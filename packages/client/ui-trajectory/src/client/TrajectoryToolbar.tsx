@@ -1,5 +1,6 @@
 /** Trajectory toolbar: timeline and ledger fold controls. */
 
+import type { ReactNode } from 'react'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import { IconSearchOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { NS } from './locales.ts'
@@ -26,6 +27,8 @@ export interface TrajectoryToolbarProps {
   searchQuery: string
   /** Update the live ledger search query. */
   onSearchQueryChange: (query: string) => void
+  /** Optional right-aligned toolbar utilities rendered after search. */
+  utilities?: ReactNode
   /** Translate a toolbar dictionary key. */
   t: TranslateNS<typeof NS>
 }
@@ -46,6 +49,7 @@ export function TrajectoryToolbar({
   onToggleAllAssistants,
   searchQuery,
   onSearchQueryChange,
+  utilities,
   t,
 }: TrajectoryToolbarProps) {
   return (
@@ -111,16 +115,19 @@ export function TrajectoryToolbar({
             {t('toolbar.calls')}
           </button>
         </div>
-        <div className={css.search}>
-          <IconSearchOutline16 size={11} className={css.searchIcon} />
-          <input
-            type="search"
-            className={css.searchInput}
-            aria-label={t('toolbar.search')}
-            placeholder={t('toolbar.searchPlaceholder')}
-            value={searchQuery}
-            onChange={(event) => { onSearchQueryChange(event.currentTarget.value) }}
-          />
+        <div className={css.searchCluster}>
+          <div className={css.search}>
+            <IconSearchOutline16 size={11} className={css.searchIcon} />
+            <input
+              type="search"
+              className={css.searchInput}
+              aria-label={t('toolbar.search')}
+              placeholder={t('toolbar.searchPlaceholder')}
+              value={searchQuery}
+              onChange={(event) => { onSearchQueryChange(event.currentTarget.value) }}
+            />
+          </div>
+          {utilities}
         </div>
       </div>
     </div>

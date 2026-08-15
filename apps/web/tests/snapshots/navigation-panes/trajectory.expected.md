@@ -4,6 +4,9 @@
   - button "Collapse calls": Calls
   - img
   - searchbox "Search trajectory"
+  - button "Session log":
+    - text: Session log
+    - img
 - region "Trajectory timeline":
   - tooltip "ASSISTANT {{clock}} → {{clock}} Total 1,542 ms · TTFT 368 ms · Decoding 1,174 ms"
 - table:

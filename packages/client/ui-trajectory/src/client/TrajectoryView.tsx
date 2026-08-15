@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ConvViewProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { InjectFace, PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
+import type { TrajectoryViewRenderSlots } from './slots.ts'
 import type {
   AssistantBlock, AssistantMessageNode, ConversationSnapshot,
   SnapshotStore,
@@ -119,8 +120,8 @@ function addUsage(
 
 export function TrajectoryView({
   useSession, useDuration, loadOlder, setActualDuration,
-  inspect, onInspectDone, t,
-}: ConvViewProps & InjectFace<TrajectoryViewInjected> & PropsLocale<'trajectory'>) {
+  inspect, onInspectDone, renderSlot = () => null, t,
+}: ConvViewProps & InjectFace<TrajectoryViewInjected> & TrajectoryViewRenderSlots & PropsLocale<'trajectory'>) {
   const [collapsedTurns, setCollapsedTurns] = useState<ReadonlySet<number>>(EMPTY_TURN_IDS)
   const [collapsedAssistants, setCollapsedAssistants] =
     useState<ReadonlySet<string>>(EMPTY_RECORD_IDS)
@@ -462,6 +463,7 @@ export function TrajectoryView({
         onToggleAllAssistants={toggleAllAssistants}
         searchQuery={searchQuery}
         onSearchQueryChange={setSearchQuery}
+        utilities={renderSlot('conversation.trajectory.toolbar.utilities', {})}
         t={t}
       />
       <TrajectoryTimeline

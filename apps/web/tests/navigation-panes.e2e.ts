@@ -288,19 +288,22 @@ describe('web e2e: navigation & panes over a rich seeded session', () => {
     await details.getByRole('button', { name: 'Close details' }).click()
   }, 60_000)
 
-  it.skipIf(MODE === 'record')('downloads through the Session Header and /export with one dialog', async () => {
+  it.skipIf(MODE === 'record')('downloads through the Trajectory toolbar and /export with one dialog', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-navigation-export'))
     await ensureSeedOpen(page)
+    await page.getByRole('tab', { name: 'Trajectory' }).click()
     const exportButton = page.getByRole('button', { name: 'Session log' })
     expect(await exportButton.isDisabled()).toBe(false)
-    const header = exportButton.locator('xpath=ancestor::header[1]')
-    const [buttonBox, headerBox] = await Promise.all([
-      exportButton.boundingBox(), header.boundingBox(),
+    const toolbar = page.getByRole('toolbar', { name: 'Trajectory toolbar' })
+    const search = toolbar.getByRole('searchbox', { name: 'Search trajectory' })
+    const [buttonBox, searchBox, toolbarBox] = await Promise.all([
+      exportButton.boundingBox(), search.boundingBox(), toolbar.boundingBox(),
     ])
-    if (buttonBox === null || headerBox === null) {
-      throw new Error('Session Header export geometry is unavailable')
+    if (buttonBox === null || searchBox === null || toolbarBox === null) {
+      throw new Error('Trajectory toolbar export geometry is unavailable')
     }
-    expect(headerBox.x + headerBox.width - (buttonBox.x + buttonBox.width)).toBeLessThanOrEqual(32)
+    expect(buttonBox.x).toBeGreaterThan(searchBox.x + searchBox.width - 1)
+    expect(toolbarBox.x + toolbarBox.width - (buttonBox.x + buttonBox.width)).toBeLessThanOrEqual(16)
     const responsePromise = page.waitForResponse(response =>
       response.request().method() === 'HEAD'
       && new URL(response.url()).pathname === '/api/session.export', { timeout: 30_000 })

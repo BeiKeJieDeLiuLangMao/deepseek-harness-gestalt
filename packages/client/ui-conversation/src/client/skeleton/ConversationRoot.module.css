@@ -128,7 +128,8 @@
   margin-left: 20px;
 }
 
-.headerUtilities:empty {
+.headerUtilities:empty,
+.headerUtilities:not(:has(button, a, [role='button'])) {
   display: none;
 }
 
