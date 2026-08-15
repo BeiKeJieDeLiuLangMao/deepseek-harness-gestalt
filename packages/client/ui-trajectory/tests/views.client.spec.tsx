@@ -168,6 +168,7 @@ function standaloneProps(
     useProjection: (() => undefined) as never,
     // The locale seat the outlet would inject for the declared namespace.
     t: (key: LocaleKeysOf<'trajectory'>) => zh[key as TrajectoryKey] ?? key,
+    renderSlot: () => null,
   } as unknown as ConvViewProps & { t: (key: LocaleKeysOf<'trajectory'>) => string }
 }
 
