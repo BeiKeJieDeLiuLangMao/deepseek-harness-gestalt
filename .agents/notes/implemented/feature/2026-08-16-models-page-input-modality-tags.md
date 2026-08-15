@@ -18,7 +18,9 @@ Each pi-ai model row's disclosure carries Text and Image tags for that model's `
 
 Selecting thinking levels stores a dict: `off` writes `null` (YAML `off:`), every other selected level writes itself as the wire value (`high: high`). A custom wire spelling already stored survives a toggle of another level. Selecting none omits the field rather than writing `{}` or `false`; a hand-declared model then offers no thinking levels. Off alone, or an empty dict, is refused before write because the adapter rejects both.
 
-Unknown input entries already stored survive a toggle. DeepSeek's catalog stays text-only and gets no input or thinking tags: that adapter rejects image content on the wire and owns its own effort catalog.
+Unknown input entries already stored survive a toggle. A stored `reasoningEfforts: false` keeps that value until a tag is pressed and shows its own hint rather than looking unset. DeepSeek's catalog stays text-only and gets no input or thinking tags: that adapter rejects image content on the wire and owns its own effort catalog.
+
+The offered tags are this card's copies of `text`/`image` and pi-ai's current thinking levels, not a live read of the adapter. A new modality or level stays YAML-only until the card adds it.
 
 ## Alternatives considered
 
@@ -32,8 +34,8 @@ Unknown input entries already stored survive a toggle. DeepSeek's catalog stays 
 
 ## Consequences
 
-A custom vision or thinking model is configurable without leaving the browser. Catalog providers still inherit modalities and efforts from the installed catalog; `defaultInput` still only answers for models the catalog does not describe. Custom wire spellings (`max: ultra`) and `false` (strip reasoning from a catalog model) remain YAML-only. `modelOverrides` for a catalog id remains YAML-only, because a catalog route has no `models` list to hang a per-id tag on.
+A custom vision or thinking model is configurable without leaving the browser. Catalog providers still inherit modalities and efforts from the installed catalog; `defaultInput` still only answers for models the catalog does not describe. Custom wire spellings (`max: ultra`) remain YAML-only. `false` is visible and preserved until a tag is pressed. `modelOverrides` for a catalog id remains YAML-only, because a catalog route has no `models` list to hang a per-id tag on.
 
 ## Testing
 
-`packages/client/ui-settings-models/tests/input-modality.client.spec.ts` pins omit-vs-empty, toggle order, and unknown-entry preservation. `packages/client/ui-settings-models/tests/reasoning-effort.client.spec.ts` pins omit-vs-empty, `off: null`, custom wire spellings, and the Off-only refusal. `packages/client/ui-settings-models/tests/provider-form.client.spec.tsx` writes `input: [text, image]`, `defaultInput: [image]`, and `reasoningEfforts: { off: null, high: high, max: max }` through the editor, omits a cleared model list, keeps an unknown stored modality and a custom effort spelling across a toggle, and refuses Off alone.
+`packages/client/ui-settings-models/tests/input-modality.client.spec.ts` pins omit-vs-empty, toggle order, and unknown-entry preservation. `packages/client/ui-settings-models/tests/reasoning-effort.client.spec.ts` pins omit-vs-empty, `off: null`, custom wire spellings, and the Off-only refusal. `packages/client/ui-settings-models/tests/provider-form.client.spec.tsx` writes `input: [text, image]`, `defaultInput: [image]`, and `reasoningEfforts: { off: null, high: high, max: max }` through the editor, omits a cleared model list, keeps an unknown stored modality and a custom effort spelling across a toggle, shows a stored `false` as non-reasoning without rewriting it, and refuses Off alone.

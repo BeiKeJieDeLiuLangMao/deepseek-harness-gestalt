@@ -308,6 +308,26 @@ describe('model list editing', () => {
     }])
   })
 
+  it('names a stored non-reasoning model instead of looking unset', async () => {
+    const { mutate } = await mountSection({
+      providers: {
+        openai: {
+          baseURL: 'https://proxy.example/v1',
+          models: [{ id: 'kept', reasoningEfforts: false }],
+        },
+      },
+    })
+    openEditor('openai')
+    expandModel(1)
+
+    expect(screen.getByText(en.modelReasoningDisabled)).toBeTruthy()
+    expect(screen.getByLabelText(`${en.modelReasoning} 1 ${en.effortHigh}`).getAttribute('aria-pressed')).toBe('false')
+    fireEvent.click(screen.getByText(en.apply))
+
+    await waitFor(() => { expect(screen.getByText(en.savedProvider.replace('{provider}', 'openai'))).toBeTruthy() })
+    expect(mutate).not.toHaveBeenCalled()
+  })
+
   it('refuses to apply a thinking range that only offers Off', async () => {
     const { mutate } = await mountSection()
     openEditor('openai')

@@ -18,7 +18,9 @@ Models 页写入适配器已经在读的那些数组和字典。
 
 选中思考档位则写入字典：`off` 写成 `null`（YAML 的 `off:`），其余每个选中档位把自己写成线路值（`high: high`）。已经存下的自定义线路拼写在切换另一档时予以保留。一个都不选则省略该字段，而不是写入 `{}` 或 `false`；手工声明的模型此时不提供思考档位。只选「关闭」，或空字典，会在写入前被拒绝，因为适配器两者都不接受。
 
-已经存下的未知输入项在切换时予以保留。DeepSeek 的目录仍是纯文本，不加输入或思考标签：该适配器在线路上拒绝图片内容，并拥有自己的档位目录。
+已经存下的未知输入项在切换时予以保留。已存的 `reasoningEfforts: false` 在点选档位之前会保留，并显示单独提示，而不是看起来像未设置。DeepSeek 的目录仍是纯文本，不加输入或思考标签：该适配器在线路上拒绝图片内容，并拥有自己的档位目录。
+
+标签集合是本卡片对 `text`/`image` 与 pi-ai 当前思考档位的副本，不是适配器的实时读取。新增模态或档位在本卡片补上之前只能写 YAML。
 
 ## Alternatives considered
 
@@ -32,8 +34,8 @@ Models 页写入适配器已经在读的那些数组和字典。
 
 ## Consequences
 
-自定义视觉或思考模型无需离开浏览器即可配置。目录提供方仍从已安装目录继承模态和档位；`defaultInput` 仍只为目录未描述的模型作答。自定义线路拼写（`max: ultra`）和 `false`（从 catalog 模型上剥除推理）仍只能写 YAML。针对目录 id 的 `modelOverrides` 仍只能写 YAML，因为目录路由没有可挂按 id 标签的 `models` 列表。
+自定义视觉或思考模型无需离开浏览器即可配置。目录提供方仍从已安装目录继承模态和档位；`defaultInput` 仍只为目录未描述的模型作答。自定义线路拼写（`max: ultra`）仍只能写 YAML。`false` 可见，并在点选档位之前予以保留。针对目录 id 的 `modelOverrides` 仍只能写 YAML，因为目录路由没有可挂按 id 标签的 `models` 列表。
 
 ## Testing
 
-`packages/client/ui-settings-models/tests/input-modality.client.spec.ts` 钉住省略与空列表的区分、切换顺序，以及未知项的保留。`packages/client/ui-settings-models/tests/reasoning-effort.client.spec.ts` 钉住省略与空字典的区分、`off: null`、自定义线路拼写，以及只选「关闭」的拒绝。`packages/client/ui-settings-models/tests/provider-form.client.spec.tsx` 经编辑卡片写入 `input: [text, image]`、`defaultInput: [image]` 与 `reasoningEfforts: { off: null, high: high, max: max }`，省略被清空的模型列表，在切换后保留已存的未知模态和自定义档位拼写，并拒绝只选「关闭」。
+`packages/client/ui-settings-models/tests/input-modality.client.spec.ts` 钉住省略与空列表的区分、切换顺序，以及未知项的保留。`packages/client/ui-settings-models/tests/reasoning-effort.client.spec.ts` 钉住省略与空字典的区分、`off: null`、自定义线路拼写，以及只选「关闭」的拒绝。`packages/client/ui-settings-models/tests/provider-form.client.spec.tsx` 经编辑卡片写入 `input: [text, image]`、`defaultInput: [image]` 与 `reasoningEfforts: { off: null, high: high, max: max }`，省略被清空的模型列表，在切换后保留已存的未知模态和自定义档位拼写，把已存的 `false` 显示为不思考且不改写，并拒绝只选「关闭」。

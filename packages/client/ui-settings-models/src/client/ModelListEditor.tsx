@@ -453,7 +453,9 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
                     }}
                     onChange={(next) => { patch(index, { reasoningEfforts: next }) }}
                   />
-                  <span className={styles['modelFieldHint']}>{t('modelReasoningHint')}</span>
+                  <span className={styles['modelFieldHint']}>
+                    {model['reasoningEfforts'] === false ? t('modelReasoningDisabled') : t('modelReasoningHint')}
+                  </span>
                 </div>
               </div>
             )
