@@ -36,6 +36,7 @@ import { zh, type TrajectoryKey } from '../src/client/locales.ts'
 import { apply, inject } from '@deepseek-ai/dsh-client-ui-trajectory/client'
 import { apply as nodeApply } from '@deepseek-ai/dsh-client-ui-trajectory'
 import type { TrajectoryTurnModel } from '../src/client/layout.ts'
+import type { TrajectoryViewRenderSlots } from '../src/client/slots.ts'
 import { TrajectoryTimeline } from '../src/client/TrajectoryTimeline.tsx'
 import {
   TrajectoryView, type TrajectoryViewInjected,
@@ -159,7 +160,7 @@ function emptyWorkspaces() {
 /** Standalone view props: the session-scope standard kit the outlet would bake. */
 function standaloneProps(
   nodes: ConversationSnapshot['nodes'],
-): ConvViewProps & { t: (key: LocaleKeysOf<'trajectory'>) => string } {
+): ConvViewProps & TrajectoryViewRenderSlots & { t: (key: LocaleKeysOf<'trajectory'>) => string } {
   return {
     sessionId: SID,
     useSession: fakeSession(nodes).useSession,
@@ -169,7 +170,7 @@ function standaloneProps(
     // The locale seat the outlet would inject for the declared namespace.
     t: (key: LocaleKeysOf<'trajectory'>) => zh[key as TrajectoryKey] ?? key,
     renderSlot: () => null,
-  } as unknown as ConvViewProps & { t: (key: LocaleKeysOf<'trajectory'>) => string }
+  } as unknown as ConvViewProps & TrajectoryViewRenderSlots & { t: (key: LocaleKeysOf<'trajectory'>) => string }
 }
 
 /** Real-stack bench: root Context + real SlotRegistry ring + the plugin fiber. */
@@ -1145,6 +1146,7 @@ describe('TrajectoryView state', () => {
     const first = render(
       <TrajectoryView
         {...commonProps}
+        renderSlot={() => null}
         useDuration={bindSnapshotSelector(firstDuration)}
         setActualDuration={(value) => { firstDuration.set(value) }}
       />,
@@ -1160,6 +1162,7 @@ describe('TrajectoryView state', () => {
     render(
       <TrajectoryView
         {...commonProps}
+        renderSlot={() => null}
         useDuration={bindSnapshotSelector(restoredDuration)}
         setActualDuration={(value) => { restoredDuration.set(value) }}
       />,
@@ -1184,6 +1187,7 @@ describe('TrajectoryView state', () => {
       <TrajectoryView
         {...standaloneProps([])}
         {...standaloneDuration()}
+        renderSlot={() => null}
         useSession={bindSnapshotSelector(store)}
         loadOlder={vi.fn(() => Promise.resolve(false))}
       />,
