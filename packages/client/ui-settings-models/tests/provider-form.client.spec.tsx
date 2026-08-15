@@ -213,6 +213,74 @@ describe('model list editing', () => {
     })
   })
 
+  it('writes input as the same YAML array the settings file stores', async () => {
+    const { mutate } = await mountSection()
+    openEditor('openai')
+
+    fireEvent.click(screen.getByRole('button', { name: en.addModel }))
+    fireEvent.change(screen.getByLabelText(`${en.modelId} 1`), { target: { value: 'vision' } })
+    expandModel(1)
+    fireEvent.click(screen.getByLabelText(`${en.modelInput} 1 ${en.modalityText}`))
+    fireEvent.click(screen.getByLabelText(`${en.modelInput} 1 ${en.modalityImage}`))
+    fireEvent.click(screen.getByText(en.apply))
+
+    await waitFor(() => { expect(mutate).toHaveBeenCalled() })
+    expect(firstMutate(mutate).ops[0]?.value).toEqual([{ id: 'vision', input: ['text', 'image'] }])
+  })
+
+  it('omits an emptied input and keeps unknown modalities already stored', async () => {
+    const { mutate } = await mountSection({
+      providers: {
+        openai: {
+          baseURL: 'https://proxy.example/v1',
+          models: [{ id: 'kept', input: ['audio', 'image'] }],
+        },
+      },
+    })
+    openEditor('openai')
+    expandModel(1)
+
+    expect(screen.getByLabelText(`${en.modelInput} 1 ${en.modalityImage}`).getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByLabelText(`${en.modelInput} 1 ${en.modalityText}`).getAttribute('aria-pressed')).toBe('false')
+    fireEvent.click(screen.getByLabelText(`${en.modelInput} 1 ${en.modalityText}`))
+    fireEvent.click(screen.getByLabelText(`${en.modelInput} 1 ${en.modalityImage}`))
+    fireEvent.click(screen.getByText(en.apply))
+
+    await waitFor(() => { expect(mutate).toHaveBeenCalled() })
+    expect(firstMutate(mutate).ops[0]?.value).toEqual([{ id: 'kept', input: ['text', 'audio'] }])
+  })
+
+  it('clears a model input list instead of storing an empty one', async () => {
+    const { mutate } = await mountSection({
+      providers: {
+        openai: {
+          baseURL: 'https://proxy.example/v1',
+          models: [{ id: 'kept', input: ['image'] }],
+        },
+      },
+    })
+    openEditor('openai')
+    expandModel(1)
+    fireEvent.click(screen.getByLabelText(`${en.modelInput} 1 ${en.modalityImage}`))
+    fireEvent.click(screen.getByText(en.apply))
+
+    await waitFor(() => { expect(mutate).toHaveBeenCalled() })
+    expect(firstMutate(mutate).ops[0]?.value).toEqual([{ id: 'kept' }])
+  })
+
+  it('writes route defaultInput independently of each model', async () => {
+    const { mutate } = await mountSection()
+    openEditor('openai')
+    fireEvent.click(screen.getByLabelText(`${en.defaultInput} ${en.modalityImage}`))
+    fireEvent.click(screen.getByText(en.apply))
+
+    await waitFor(() => { expect(mutate).toHaveBeenCalled() })
+    expect(firstMutate(mutate)).toMatchObject({
+      ns: 'llm-pi-ai',
+      ops: [{ op: 'set', path: ['providers', 'openai', 'defaultInput'], value: ['image'] }],
+    })
+  })
+
   it('names a duplicate model id in the edit flow too', async () => {
     const { mutate } = await mountSection({
       providers: { openai: { baseURL: 'https://proxy.example/v1', models: [{ id: 'dup' }] } },
@@ -685,6 +753,9 @@ describe('hand-declared providers', () => {
     fireEvent.change(screen.getByLabelText(`${en.modelId} 1`), { target: { value: 'acme-large' } })
     expandModel(1)
     fireEvent.change(screen.getByLabelText(`${en.modelContextWindow} 1`), { target: { value: '65536' } })
+    fireEvent.click(screen.getByLabelText(`${en.modelInput} 1 ${en.modalityText}`))
+    fireEvent.click(screen.getByLabelText(`${en.modelInput} 1 ${en.modalityImage}`))
+    fireEvent.click(screen.getByLabelText(`${en.defaultInput} ${en.modalityImage}`))
     fireEvent.click(screen.getByText(en.create))
 
     await waitFor(() => { expect(onClose).toHaveBeenCalledWith(true) })
@@ -698,7 +769,8 @@ describe('hand-declared providers', () => {
           apiKeyEnv: 'ACME_GATEWAY_API_KEY',
           api: 'openai-completions',
           baseURL: 'https://gateway.acme.example/v1',
-          models: [{ id: 'acme-large', contextWindow: 65_536 }],
+          defaultInput: ['image'],
+          models: [{ id: 'acme-large', contextWindow: 65_536, input: ['text', 'image'] }],
         },
       }],
       // The section this card was drafted over: a route another tab declared

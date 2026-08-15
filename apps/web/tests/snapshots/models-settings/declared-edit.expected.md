@@ -46,6 +46,11 @@
           - option "openai-completions" [selected]
           - option "openai-responses"
           - option "anthropic-messages"
+        - text: 默认接受的输入
+        - group "默认接受的输入":
+          - button "默认接受的输入 文本": 文本
+          - button "默认接受的输入 图片": 图片
+        - text: 模型未单独设置时使用。适配器默认只接受文本。
         - region "模型目录":
           - text: 模型目录 已自定义模型目录
           - button "恢复默认模型"

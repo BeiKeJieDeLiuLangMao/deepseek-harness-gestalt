@@ -7,10 +7,10 @@
  * a key is entered; a blank key materializes a reference-free profile for
  * provider-native authentication);
  * the collapsed 自定义设置 area carries the per-family extras (`baseURL` for
- * both families, DeepSeek's id/name/context-window model catalog, and the
- * display name and wire protocol of a pi-ai route the adapter does not ship —
- * the two fields the create card asked that route for, editable here for the
- * same reason).
+ * both families, DeepSeek's id/name/context-window model catalog, a pi-ai
+ * route's `defaultInput` tags, and the display name and wire protocol of a
+ * pi-ai route the adapter does not ship — the two fields the create card
+ * asked that route for, editable here for the same reason).
  * Reasoning effort is deliberately absent: it is a per-MODEL capability, and
  * the models under one provider disagree about it, so a provider-scoped
  * control can only be set to a value some of them reject. The composer's
@@ -32,6 +32,7 @@ import {
 } from './DeepSeekModelsEditor.tsx'
 import { apiKeyFailure } from './apiKey.ts'
 import { EditorFooter } from './EditorFooter.tsx'
+import { InputModalityTags } from './InputModalityTags.tsx'
 import { ModelListEditor } from './ModelListEditor.tsx'
 import { deriveKeyRef, messageOf, protocolChoices } from './store.ts'
 import type { en } from './locales.ts'
@@ -444,6 +445,25 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
                     {probeApi === undefined ? <option value="">{t('customApiUnset')}</option> : null}
                     {protocols.map(choice => <option key={choice} value={choice}>{choice}</option>)}
                   </select>
+                </div>
+              )
+              : null}
+            {family === 'pi-ai'
+              ? (
+                <div className={styles['field']}>
+                  <span className={styles['fieldLabel']}>{t('defaultInput')}</span>
+                  <InputModalityTags
+                    value={getPath(draft, ['defaultInput'])}
+                    disabled={disabled}
+                    name={t('defaultInput')}
+                    labels={{ text: t('modalityText'), image: t('modalityImage') }}
+                    onChange={(next) => {
+                      setDraft(current => next === undefined
+                        ? deletePath(current, ['defaultInput'])
+                        : setPath(current, ['defaultInput'], next))
+                    }}
+                  />
+                  <span className={styles['advancedHint']}>{t('defaultInputHint')}</span>
                 </div>
               )
               : null}

@@ -32,7 +32,7 @@ Under **Model catalog**, choose **Fetch available models** to query the base URL
 
 A model you enter by hand is treated as text-only until it says otherwise, because nothing can ask an endpoint which modalities it accepts. Attaching an image to such a model is refused before it is sent, naming the model.
 
-A vision model on a custom provider therefore needs one line. The form has no field for it; add `input` to the model in `$DSH_HOME/settings.yaml`:
+A vision model on a custom provider therefore needs that list. Open the model row's disclosure and select **Text** and **Image** — they write the same `input` array `$DSH_HOME/settings.yaml` stores:
 
 ```yaml
 llm-pi-ai:
@@ -49,7 +49,7 @@ llm-pi-ai:
 
 `input` accepts `text` and `image`, and applies to that model alone, so one route can serve both kinds. Omitting it — or writing an empty list, which means the same thing — keeps whatever the installed catalog records for that model, and falls back to the route's `defaultInput` for a model the catalog does not describe.
 
-If every model you entered by hand takes images, set the fallback once on the route instead of on each of them:
+If every model you entered by hand takes images, set the fallback once on the route instead of on each of them. The same tags sit on the provider card as **Default accepted input**:
 
 ```yaml
 llm-pi-ai:
@@ -90,7 +90,7 @@ If a saved default names a provider that was deleted, the composer displays **Se
 - **`MISSING_CREDENTIAL`** — Store the provider key through the Models page or supply the referenced environment variable.
 - **`UNKNOWN_MODEL`** — Select a configured model or add the missing model to the custom provider.
 - **Fetching available models returns 401** — Check the key. Model discovery calls the OpenAI-compatible `GET /models` endpoint; enter models manually for endpoints that do not provide it.
-- **An image is refused before sending** — The model declares no image modality. Give a custom provider's model `input: [text, image]`; DeepSeek's own chat-completions route is text-only and cannot be configured otherwise.
+- **An image is refused before sending** — The model declares no image modality. Select **Text** and **Image** on that custom model's accepted-input tags, or set the provider's default accepted input; DeepSeek's own chat-completions route is text-only and cannot be configured otherwise.
 - **The provider rejects a request carrying an image** — The model declares images its endpoint does not actually serve. Remove `image` from whichever list granted it — the model's `input`, or the route's `defaultInput` — then start a new session: the attached image stays in the session log, so the same request repeats until the session moves off it.
 
 ## Advanced configuration

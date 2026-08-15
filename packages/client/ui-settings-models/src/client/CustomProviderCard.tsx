@@ -18,7 +18,10 @@
  * card: effort is a per-MODEL capability, and the models under one provider
  * disagree about it, so a provider-scoped control can only be set to a value
  * some of them reject. The composer's model picker offers each model its own
- * levels instead.
+ * levels instead. Route `defaultInput` and per-model `input` are the
+ * exception: both are the same YAML arrays the adapter already reads, so the
+ * card writes them as `text`/`image` tags rather than leaving vision models
+ * reachable only through `settings.yaml`.
  */
 
 import { useState } from 'react'
@@ -27,6 +30,7 @@ import type { IApiClient } from '@deepseek-ai/dsh-api-remotes/client'
 import { apiKeyFailure } from './apiKey.ts'
 import { EditorFooter } from './EditorFooter.tsx'
 import { validateDeepSeekModels } from './DeepSeekModelsEditor.tsx'
+import { InputModalityTags } from './InputModalityTags.tsx'
 import { ModelListEditor } from './ModelListEditor.tsx'
 import type { ModelDraft } from './ModelListEditor.tsx'
 import { deriveKeyRef, messageOf } from './store.ts'
@@ -84,6 +88,7 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
   const [protocol, setProtocol] = useState(protocols[0] ?? '')
   const [keyDraft, setKeyDraft] = useState('')
   const [models, setModels] = useState<readonly ModelDraft[]>([])
+  const [defaultInput, setDefaultInput] = useState<string[] | undefined>(undefined)
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<string | undefined>(undefined)
   /**
@@ -142,6 +147,7 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
         ...storesKey ? { apiKeyEnv: keyRef } : {},
         api: protocol,
         baseURL,
+        ...defaultInput === undefined ? {} : { defaultInput },
         models: models.map(model => ({ ...model })),
       }
       const response = await api.settings.mutate({
@@ -244,6 +250,17 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
         >
           {protocols.map(choice => <option key={choice} value={choice}>{choice}</option>)}
         </select>
+      </div>
+      <div className={styles['field']}>
+        <span className={styles['fieldLabel']}>{t('defaultInput')}</span>
+        <InputModalityTags
+          value={defaultInput}
+          disabled={profileDisabled}
+          name={t('defaultInput')}
+          labels={{ text: t('modalityText'), image: t('modalityImage') }}
+          onChange={setDefaultInput}
+        />
+        <span className={styles['advancedHint']}>{t('defaultInputHint')}</span>
       </div>
       <div className={styles['field']}>
         <span className={styles['fieldLabel']}>{t('keyInput')}</span>
