@@ -21,7 +21,9 @@
  * levels instead. Route `defaultInput` and per-model `input` are the
  * exception: both are the same YAML arrays the adapter already reads, so the
  * card writes them as `text`/`image` tags rather than leaving vision models
- * reachable only through `settings.yaml`.
+ * reachable only through `settings.yaml`. Per-model `reasoningEfforts` is the
+ * same kind of exception: the tags write the selectable thinking levels the
+ * composer already reads.
  */
 
 import { useState } from 'react'

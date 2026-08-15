@@ -268,6 +268,60 @@ describe('model list editing', () => {
     expect(firstMutate(mutate).ops[0]?.value).toEqual([{ id: 'kept' }])
   })
 
+  it('writes reasoningEfforts as the same YAML dict the settings file stores', async () => {
+    const { mutate } = await mountSection()
+    openEditor('openai')
+
+    fireEvent.click(screen.getByRole('button', { name: en.addModel }))
+    fireEvent.change(screen.getByLabelText(`${en.modelId} 1`), { target: { value: 'think' } })
+    expandModel(1)
+    fireEvent.click(screen.getByLabelText(`${en.modelReasoning} 1 ${en.effortOff}`))
+    fireEvent.click(screen.getByLabelText(`${en.modelReasoning} 1 ${en.effortHigh}`))
+    fireEvent.click(screen.getByLabelText(`${en.modelReasoning} 1 ${en.effortMax}`))
+    fireEvent.click(screen.getByText(en.apply))
+
+    await waitFor(() => { expect(mutate).toHaveBeenCalled() })
+    expect(firstMutate(mutate).ops[0]?.value).toEqual([{
+      id: 'think',
+      reasoningEfforts: { off: null, high: 'high', max: 'max' },
+    }])
+  })
+
+  it('keeps a custom wire spelling when another thinking level is toggled', async () => {
+    const { mutate } = await mountSection({
+      providers: {
+        openai: {
+          baseURL: 'https://proxy.example/v1',
+          models: [{ id: 'kept', reasoningEfforts: { off: null, max: 'ultra' } }],
+        },
+      },
+    })
+    openEditor('openai')
+    expandModel(1)
+    fireEvent.click(screen.getByLabelText(`${en.modelReasoning} 1 ${en.effortHigh}`))
+    fireEvent.click(screen.getByText(en.apply))
+
+    await waitFor(() => { expect(mutate).toHaveBeenCalled() })
+    expect(firstMutate(mutate).ops[0]?.value).toEqual([{
+      id: 'kept',
+      reasoningEfforts: { off: null, max: 'ultra', high: 'high' },
+    }])
+  })
+
+  it('refuses to apply a thinking range that only offers Off', async () => {
+    const { mutate } = await mountSection()
+    openEditor('openai')
+
+    fireEvent.click(screen.getByRole('button', { name: en.addModel }))
+    fireEvent.change(screen.getByLabelText(`${en.modelId} 1`), { target: { value: 'think' } })
+    expandModel(1)
+    fireEvent.click(screen.getByLabelText(`${en.modelReasoning} 1 ${en.effortOff}`))
+
+    expect(screen.getByText(`${en.model} 1: ${en.modelReasoningInvalid}`)).toBeTruthy()
+    expect(buttonNamed(en.apply).disabled).toBe(true)
+    expect(mutate).not.toHaveBeenCalled()
+  })
+
   it('writes route defaultInput independently of each model', async () => {
     const { mutate } = await mountSection()
     openEditor('openai')

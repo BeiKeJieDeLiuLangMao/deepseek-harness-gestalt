@@ -503,6 +503,9 @@ describe('ModelsSection', () => {
     expect(validateDeepSeekModels([{ id: 'model', maxTokens: 0 }]))
       .toEqual({ index: 0, key: 'modelMaxTokensInvalid' })
     expect(validateDeepSeekModels([{ id: 'model', maxTokens: 8192 }])).toBeUndefined()
+    expect(validateDeepSeekModels([{ id: 'model', reasoningEfforts: { off: null } }]))
+      .toEqual({ index: 0, key: 'modelReasoningInvalid' })
+    expect(validateDeepSeekModels([{ id: 'model', reasoningEfforts: { high: 'high' } }])).toBeUndefined()
   })
 
   it('reads context windows written as counts, thousands, or millions', () => {

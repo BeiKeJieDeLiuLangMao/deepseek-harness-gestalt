@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-16-models-page-input-modality-tags.md
-2026-08-16-models-page-input-modality-tags.md: 9db7f61062986b0cead4b1890f09e4d22825c70c
-2026-08-16-models-page-input-modality-tags.zh.md: f8333105d839b16c4cbd74c32c4f4be3ec90b348
+2026-08-16-models-page-input-modality-tags.md: 143223d74d78a6132adb12f3972f9ea3616dd7f8
+2026-08-16-models-page-input-modality-tags.zh.md: d7d7aef86e723683cdea0c15fcf02554ec47e8e1

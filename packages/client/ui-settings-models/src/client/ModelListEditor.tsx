@@ -12,8 +12,8 @@
  * A provider that cannot be interrogated (an unreachable endpoint, a protocol
  * with no readable listing) is not a dead end: the failure is shown next to the
  * rows the user can still fill in by hand. Each row's disclosure also edits
- * that model's `input` list as `text`/`image` tags, the same array
- * `settings.yaml` stores.
+ * that model's `input` list and `reasoningEfforts` dict as localized tags,
+ * writing the same values `settings.yaml` stores.
  */
 
 import { useState } from 'react'
@@ -23,6 +23,8 @@ import { Button, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import { formatCapacity, parseCapacity } from './DeepSeekModelsEditor.tsx'
 import type { DeepSeekModelDraft } from './DeepSeekModelsEditor.tsx'
 import { InputModalityTags } from './InputModalityTags.tsx'
+import { ReasoningEffortTags } from './ReasoningEffortTags.tsx'
+import type { ReasoningEffortsDraft } from './ReasoningEffortTags.tsx'
 import { messageOf } from './store.ts'
 import type { en } from './locales.ts'
 import styles from './ModelsSection.module.css'
@@ -213,7 +215,10 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
     })
   }
 
-  const patch = (index: number, next: Record<string, string | number | string[] | undefined>): void => {
+  const patch = (
+    index: number,
+    next: Record<string, string | number | string[] | ReasoningEffortsDraft | undefined>,
+  ): void => {
     onChange(models.map((model, at) => {
       if (at !== index) return model
       // Rebuilt rather than spread over: an emptied optional field has to leave
@@ -420,7 +425,7 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
                     onChange={(event) => { editCapacity(index, 'maxTokens', event.target.value) }}
                   />
                 </label>
-                <div className={styles['modelField']}>
+                <div className={`${styles['modelField']} ${styles['modelFieldWide']}`}>
                   <span className={styles['modelFieldLabel']}>{t('modelInput')}</span>
                   <InputModalityTags
                     value={model['input']}
@@ -430,6 +435,25 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
                     onChange={(next) => { patch(index, { input: next }) }}
                   />
                   <span className={styles['modelFieldHint']}>{t('modelInputHint')}</span>
+                </div>
+                <div className={`${styles['modelField']} ${styles['modelFieldWide']}`}>
+                  <span className={styles['modelFieldLabel']}>{t('modelReasoning')}</span>
+                  <ReasoningEffortTags
+                    value={model['reasoningEfforts']}
+                    disabled={disabled}
+                    name={`${t('modelReasoning')} ${index + 1}`}
+                    labels={{
+                      off: t('effortOff'),
+                      minimal: t('effortMinimal'),
+                      low: t('effortLow'),
+                      medium: t('effortMedium'),
+                      high: t('effortHigh'),
+                      xhigh: t('effortXhigh'),
+                      max: t('effortMax'),
+                    }}
+                    onChange={(next) => { patch(index, { reasoningEfforts: next }) }}
+                  />
+                  <span className={styles['modelFieldHint']}>{t('modelReasoningHint')}</span>
                 </div>
               </div>
             )

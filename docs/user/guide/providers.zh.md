@@ -79,6 +79,24 @@ llm-pi-ai:
 
 这两个字段都是对你端点的断言，而不是对它的检查。声明了端点并不提供的图片能力的模型不会在这里被拦下，改由提供方拒绝该请求。
 
+### 思考档位
+
+手动输入的模型在自己声明之前不提供思考档位。展开该模型行，勾选输入框应提供的档位——它们写入的就是 `$DSH_HOME/settings.yaml` 里的 `reasoningEfforts` 字典：
+
+```yaml
+llm-pi-ai:
+  providers:
+    my-gateway:
+      models:
+        - id: think
+          reasoningEfforts:
+            off:
+            high: high
+            max: max
+```
+
+全部不选则沿用模型目录。自定义模型此时不提供思考档位。若要设置，除「关闭」外至少再选一档。像 `max: ultra` 这样的自定义线路拼写仍写在 `settings.yaml` 中。
+
 ## 选择模型
 
 已配置的提供方会出现在模型选择器中。选择模型也会将其设为新会话的默认值。已发送过请求的会话会保留自身日志中记录的模型。

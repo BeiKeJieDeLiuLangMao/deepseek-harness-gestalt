@@ -79,6 +79,24 @@ Every list must name at least one modality except a model's own, where an empty 
 
 Both fields state a claim about your endpoint rather than checking it. A model that declares images its endpoint does not serve is not caught here; the provider rejects the request instead.
 
+### Thinking levels
+
+A model you enter by hand offers no thinking levels until it says otherwise. Open the model row's disclosure and select the levels the composer should offer — they write the same `reasoningEfforts` dict `$DSH_HOME/settings.yaml` stores:
+
+```yaml
+llm-pi-ai:
+  providers:
+    my-gateway:
+      models:
+        - id: think
+          reasoningEfforts:
+            off:
+            high: high
+            max: max
+```
+
+Leave every level unselected to inherit the catalog. A custom model then offers no thinking levels. Off plus at least one other level is required when any level is set. Custom wire spellings such as `max: ultra` stay in `settings.yaml`.
+
 ## Select a model
 
 Configured providers appear in the model picker. Selecting a model also makes it the default for new sessions. A session that has already sent a request retains the model recorded in its own log.
