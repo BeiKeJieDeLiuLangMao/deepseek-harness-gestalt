@@ -107,6 +107,15 @@ describe('Desktop release workflow', () => {
     expect(verify).toBeLessThan(upload)
   })
 
+  it('raises the open-file limit before macOS signing starts', () => {
+    const signed = steps('pack-mac').find(step => step.name === 'Package signed and notarized')
+    const command = String(signed?.run)
+    expect(command).toContain('ulimit -n 65536')
+    expect(command.indexOf('ulimit -n 65536')).toBeLessThan(
+      command.indexOf('electron-builder --mac'),
+    )
+  })
+
   it('publishes a verified draft only after every packaged smoke passes', () => {
     expect(workflow).toContain('needs: [prepare, pack-mac, pack-win]')
     expect(workflow).toContain('tag=${{ needs.prepare.outputs.tag }}')
