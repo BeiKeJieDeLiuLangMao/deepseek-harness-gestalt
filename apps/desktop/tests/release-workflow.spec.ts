@@ -63,6 +63,13 @@ describe('Desktop release workflow', () => {
 
   it('keeps the prepared workspace dependencies intact while packaging', () => {
     expect(record(record(desktopPackage).build).npmRebuild).toBe(false)
+    expect(workflow).not.toContain('dsh-desktop exec electron-builder')
+    expect(workflow.match(/node_modules\/\.bin\/electron-builder/g)).toHaveLength(3)
+    const packageSteps = [...steps('pack-mac'), ...steps('pack-win')].filter(step =>
+      String(step.name).startsWith('Package'),
+    )
+    expect(packageSteps).toHaveLength(3)
+    expect(packageSteps.every(step => step['working-directory'] === 'apps/desktop')).toBe(true)
   })
 
   it('smokes every packaged app before artifact upload', () => {

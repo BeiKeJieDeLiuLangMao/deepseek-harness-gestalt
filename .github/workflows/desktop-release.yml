@@ -111,22 +111,24 @@ jobs:
 
       - name: Package unsigned
         if: ${{ !inputs.publish }}
+        working-directory: apps/desktop
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         run: |
-          pnpm --filter @deepseek-ai/dsh-desktop exec electron-builder \
+          node_modules/.bin/electron-builder \
             --mac --${{ matrix.arch }} --publish never \
             -c.mac.identity=null -c.mac.notarize=false
 
       - name: Package signed and notarized
         if: inputs.publish
+        working-directory: apps/desktop
         env:
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: pnpm --filter @deepseek-ai/dsh-desktop exec electron-builder --mac --${{ matrix.arch }} --publish never -c.forceCodeSigning=true
+        run: node_modules/.bin/electron-builder --mac --${{ matrix.arch }} --publish never -c.forceCodeSigning=true
 
       - name: Verify signed app
         if: inputs.publish
@@ -184,7 +186,8 @@ jobs:
           node apps/desktop/scripts/isolate-dsh-snapshot.mjs
 
       - name: Package
-        run: pnpm --filter @deepseek-ai/dsh-desktop exec electron-builder --win --x64 --publish never
+        working-directory: apps/desktop
+        run: node_modules/.bin/electron-builder.cmd --win --x64 --publish never
 
       - name: Smoke packaged Desktop Host
         shell: pwsh
