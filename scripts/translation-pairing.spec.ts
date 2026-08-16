@@ -222,6 +222,9 @@ describe('translation scope discovery', () => {
     'packages/example/node_modules/dependency/README.md',
     'packages/example/lib/README.md',
     'coverage/report/README.md',
+    'apps/desktop/out/README.md',
+    'apps/desktop/release/mac-arm64/App.app/Contents/Resources/node/README.md',
+    'apps/desktop/resources/node/README.md',
     'python/sdk-runtime/src/deepseek_harness_runtime/runtime/dsh-jsonrpc-agent-macos-arm64/README.md',
     'python/sdk-runtime/src/deepseek_harness_runtime/runtime/node/README.md',
   ])('excludes non-source or non-README path %s', (file) => {

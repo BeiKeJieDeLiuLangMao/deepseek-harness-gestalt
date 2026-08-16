@@ -35,7 +35,7 @@ export function declaredEfforts(value: unknown): ReasoningEffortsDraft | undefin
   if (value === undefined || value === null) return undefined
   if (typeof value !== 'object' || Array.isArray(value)) return undefined
   const next: Record<string, string | null> = {}
-  for (const [key, wire] of Object.entries(value)) {
+  for (const [key, wire] of Object.entries(value as Record<string, unknown>)) {
     if (wire === null || typeof wire === 'string') next[key] = wire
   }
   return next

@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "lib/types",
+    "allowJs": true,
+    "checkJs": false,
+    "lib": ["ES2023"],
+    "types": ["node"]
+  },
+  "include": ["src", "tests", "scripts"],
+  "references": [
+    { "path": "../../packages/client/ui-desktop" }
+  ]
+}

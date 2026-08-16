@@ -7,8 +7,9 @@
  * same top-down order) on one fade that ends with the slide. The bottom-pinned
  * settings control only fades. The workspace/session browsing region between
  * the New Session button and the foot is the `sidebar.workspaces` registrant's,
- * and the foot holds `sidebar.settings` plus `sidebar.footer.action`; the shell
- * hands them the wide flag (plus an expand request callback for the browser).
+ * and the foot holds `sidebar.settings` plus `sidebar.footer.action` on one
+ * row; the shell hands them the wide flag (plus an expand request callback
+ * for the browser). Desktop may fill `sidebar.chrome.drag` and `sidebar.brand`.
  *
  * The column also owns whether the scroll regions nested in it draw a
  * scrollbar at all: the shell tracks the pointer and rebinds ui-theme's
@@ -48,6 +49,7 @@ export function SidebarRoot({
   toggleSidebar,
   t,
   renderSlot,
+  renderSlotChain,
 }: SidebarRootComponentProps) {
   // Wide content stays mounted while the collapse animates (fading via
   // .collapsed .wide), unmounts at settle, and remounts right away on expand.
@@ -127,6 +129,9 @@ export function SidebarRoot({
       }}
       onPointerLeave={() => { armLinger() }}
     >
+      <div className={css.dragStrip}>
+        {renderSlot('sidebar.chrome.drag', { wide })}
+      </div>
       <div className={css.logoRow}>
         {/* Expanded, the wordmark doubles as a New Session shortcut; the
             collapsed rail's logo is the expand toggle below instead. */}
@@ -137,23 +142,26 @@ export function SidebarRoot({
             aria-label={t('session.new.label')}
             onClick={() => { startSession() }}
           >
-            <BrandWordmark />
+            {renderSlotChain('sidebar.brand', { wide }, { fallback: <BrandWordmark /> })}
           </button>
         )}
         {/* Rail resting state is the whale mark; hovering swaps in the panel
-            icon (the expand affordance, figma sidebar-hover flow). */}
-        <Tooltip label={collapsed ? t('toggle.open') : t('toggle.collapse')} delayMs={500}>
-          <button
-            type="button"
-            className={clsx(css.iconButton, css.toggle)}
-            aria-label={collapsed ? t('toggle.open') : t('toggle.collapse')}
-            onClick={() => { toggleSidebar() }}
-          >
-            {!wide && <FishLogo className={css.railFish} size={24} />}
-            {/* Rail icons render at 18 (figma rail spec); expanded keeps the glyph-native sizes. */}
-            <IconPanelLeftOutline16 className={css.panelIcon} size={wide ? 16 : 18} />
-          </button>
-        </Tooltip>
+            icon (the expand affordance, figma sidebar-hover flow). Desktop
+            macOS lifts this control onto the traffic-light row. */}
+        <div className={css.titleRow}>
+          <Tooltip label={collapsed ? t('toggle.open') : t('toggle.collapse')} delayMs={500}>
+            <button
+              type="button"
+              className={clsx(css.iconButton, css.toggle)}
+              aria-label={collapsed ? t('toggle.open') : t('toggle.collapse')}
+              onClick={() => { toggleSidebar() }}
+            >
+              {!wide && <FishLogo className={css.railFish} size={24} />}
+              {/* Rail icons render at 18 (figma rail spec); expanded keeps the glyph-native sizes. */}
+              <IconPanelLeftOutline16 className={css.panelIcon} size={wide ? 16 : 18} />
+            </button>
+          </Tooltip>
+        </div>
       </div>
 
       {/* Expanded, the button carries its own label — tooltip only on the rail. */}
@@ -178,13 +186,15 @@ export function SidebarRoot({
         })}
       </div>
 
-      {/* Footer actions stack above Settings in both sidebar widths. */}
+      {/* Wide: Settings left, footer actions right. Rail: actions then Settings. */}
       <div className={css.footArea}>
-        <div className={css.footerActions}>
-          {renderSlot('sidebar.footer.action', { wide })}
-        </div>
-        <div className={css.settingsArea}>
-          {renderSlot('sidebar.settings', { wide })}
+        <div className={css.settingsRow}>
+          <div className={css.footerActions}>
+            {renderSlot('sidebar.footer.action', { wide })}
+          </div>
+          <div className={css.settingsArea}>
+            {renderSlot('sidebar.settings', { wide })}
+          </div>
         </div>
       </div>
     </div>

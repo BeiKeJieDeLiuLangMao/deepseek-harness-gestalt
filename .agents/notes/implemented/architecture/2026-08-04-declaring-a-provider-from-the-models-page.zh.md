@@ -14,7 +14,7 @@ Status: implemented
 
 模型列表是两条流程共用的组件；创建则是它自己的卡片。
 
-`ModelListEditor` 编辑 profile 的 `models` 数组——一行一个模型，含 id、显示名称、上下文窗口、输出上限与 `input` 标签——并持有获取动作。空列表意味着「使用该路由的内置 catalog」，因此每一行都只会被刻意添加；清空某个可选字段会丢弃它，而不是存入一个 schema 会拒绝的值，不是正整数的容量则根本不会被存下。标签写入的就是 `$DSH_HOME/settings.yaml` 里的 `text`/`image` 数组；创建卡片和编辑卡片也用同一方式暴露路由的 `defaultInput`（[模态标签](../../feature/2026-08-16-models-page-input-modality-tags.md)）。
+`ModelListEditor` 编辑 profile 的 `models` 数组——一行一个模型，含 id、显示名称、上下文窗口、输出上限与 `input` 标签——并持有获取动作。空列表意味着「使用该路由的内置 catalog」，因此每一行都只会被刻意添加；清空某个可选字段会丢弃它，而不是存入一个 schema 会拒绝的值，不是正整数的容量则根本不会被存下。标签写入的就是 `$DSH_HOME/settings.yaml` 里的 `text`/`image` 数组；创建卡片和编辑卡片也用同一方式暴露路由的 `defaultInput`（[模态标签](../feature/2026-08-16-models-page-input-modality-tags.md)）。
 
 获取会询问表单**当前显示**的端点——已修改但未保存的 API 地址、已键入但未存储的密钥——因此新增一个提供方是一趟走完，而不是「先保存再回来」。回复会打开一个选择框而不是直接写入：已配置过的候选默认不勾选，因此采纳一次选择绝不会覆盖用户已更正的容量。无法被询问的提供方只是绕路而非死路；适配器自己的消息会出现在各行旁边，而这些行仍可手工编辑。
 

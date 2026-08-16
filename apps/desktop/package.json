@@ -1,0 +1,87 @@
+{
+  "name": "@deepseek-ai/dsh-desktop",
+  "productName": "DeepSeek Gestalt",
+  "description": "DeepSeek Gestalt Desktop Host: Electron window around bundled dsh web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "out/main.mjs",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt.git",
+    "directory": "apps/desktop"
+  },
+  "license": "MIT",
+  "scripts": {
+    "dev": "node scripts/build-main.mjs && electron out/main.mjs",
+    "build:main": "node scripts/build-main.mjs",
+    "package": "node scripts/build-main.mjs && electron-builder --publish never",
+    "package:unsigned": "node scripts/build-main.mjs && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dir --arm64 --publish never -c.mac.notarize=false"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-client-ui-desktop": "workspace:^",
+    "electron-updater": "^6.8.3"
+  },
+  "devDependencies": {
+    "electron": "41.2.1",
+    "electron-builder": "^26.8.1",
+    "esbuild": "^0.24.0",
+    "tsx": "^4.19.0"
+  },
+  "build": {
+    "appId": "com.gestalt.deepseek",
+    "productName": "DeepSeek Gestalt",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "out/main.mjs",
+      "out/preload.cjs",
+      "cordis.patch.yml",
+      "package.json"
+    ],
+    "afterPack": "./scripts/after-pack.mjs",
+    "extraResources": [
+      { "from": "cordis.patch.yml", "to": "cordis.patch.yml" },
+      { "from": "resources/node", "to": "node" }
+    ],
+    "asar": true,
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "BeiKeJieDeLiuLangMao",
+        "repo": "deepseek-harness-gestalt"
+      }
+    ],
+    "mac": {
+      "target": [
+        { "target": "zip", "arch": ["arm64"] },
+        { "target": "zip", "arch": ["x64"] },
+        { "target": "dmg", "arch": ["arm64"] },
+        { "target": "dmg", "arch": ["x64"] }
+      ],
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.inherit.plist",
+      "notarize": true,
+      "artifactName": "DeepSeek-Gestalt-${version}-${arch}.${ext}"
+    },
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64"] }
+      ],
+      "signAndEditExecutable": false,
+      "artifactName": "DeepSeekGestalt-Setup-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "DeepSeek Gestalt"
+    }
+  }
+}

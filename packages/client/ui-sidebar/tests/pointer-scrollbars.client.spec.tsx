@@ -36,6 +36,7 @@ function mountColumn(): { column: HTMLElement; quiet: () => boolean } {
       startSession={vi.fn()} toggleSidebar={vi.fn()} t={t}
       renderSlot={((_key: string, owner: SidebarSectionOwnerProps) =>
         <div data-testid="region" data-wide={owner.wide} />) as SidebarRootComponentProps['renderSlot']}
+      renderSlotChain={((_key, _owner, opts) => opts?.fallback ?? null) as SidebarRootComponentProps['renderSlotChain']}
     />,
   )
   const column = view.container.firstElementChild

@@ -1,0 +1,68 @@
+.wide,
+.rail {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: var(--dsw-alias-label-primary);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.wide {
+  height: 34px;
+  margin: 4px 0;
+  padding: 6px 10px;
+  border-radius: 12px;
+}
+
+.rail {
+  width: 36px;
+  height: 36px;
+  margin: 8px 0 0;
+  justify-content: center;
+  padding: 0;
+  border-radius: 50%;
+}
+
+.wide:hover,
+.rail:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.wide:disabled,
+.rail:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--dsw-alias-label-tertiary);
+}
+
+.dot[data-state='available'],
+.dot[data-state='downloaded'] {
+  background: var(--dsw-alias-button-info-fill);
+}
+
+.dot[data-state='error'] {
+  background: var(--dsw-alias-state-error-primary);
+}
+
+.dot[data-state='downloading'],
+.dot[data-state='checking'],
+.dot[data-state='installing'] {
+  background: var(--dsw-alias-state-success-primary);
+}
+
+.label {
+  overflow: hidden;
+  white-space: nowrap;
+}

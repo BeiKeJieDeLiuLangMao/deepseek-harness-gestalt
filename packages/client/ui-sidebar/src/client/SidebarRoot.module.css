@@ -100,6 +100,65 @@
   overflow: hidden;
 }
 
+.titleRow {
+  display: contents;
+}
+
+/* Desktop macOS: Codex-style chrome. Toggle sits on the traffic-light
+   row; the wordmark sits under the lights, left-aligned. */
+.root:has([data-desktop-chrome='mac']) {
+  padding-top: 28px;
+}
+
+.root:has([data-desktop-chrome='win']) {
+  padding-top: 42px;
+}
+
+.dragStrip:has([data-desktop-chrome='mac']) + .logoRow {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  height: auto;
+  padding: 0;
+  margin-bottom: 4px;
+  gap: 0;
+}
+
+.dragStrip:has([data-desktop-chrome='mac']) + .logoRow .titleRow {
+  display: flex;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 6;
+  align-items: center;
+  justify-content: flex-start;
+  height: 28px;
+  padding: 0 8px 0 var(--dsh-traffic-inset, 82px);
+  margin: 0;
+  -webkit-app-region: drag;
+  background: var(--dsw-specific-sidebar-fill);
+}
+
+.dragStrip:has([data-desktop-chrome='mac']) + .logoRow .toggle {
+  width: 12px;
+  height: 12px;
+}
+
+.dragStrip:has([data-desktop-chrome='mac']) + .logoRow .toggle .panelIcon {
+  width: 12px;
+  height: 12px;
+}
+
+html[data-dsh-fullscreen] {
+  --dsh-traffic-inset: 12px;
+}
+
+.dragStrip:has([data-desktop-chrome='mac']) + .logoRow .brand {
+  height: 36px;
+  margin: 0;
+}
+
 .collapsed .logoRow {
   height: 36px;
   padding: 0;
@@ -122,6 +181,7 @@
   background: transparent;
   color: inherit;
   cursor: pointer;
+  -webkit-app-region: no-drag;
 }
 
 .iconButton {
@@ -131,6 +191,7 @@
   justify-content: center;
   width: 28px;
   height: 28px;
+  -webkit-app-region: no-drag;
   border: none;
   border-radius: 50%;
   padding: 0;
@@ -151,8 +212,20 @@
 /* Rail logo swap: collapsed, the toggle rests as the whale mark (brand ink,
    no hover circle) and hovering reveals the panel icon — the expand
    affordance (figma sidebar-hover flow). Expanded it is a plain panel icon. */
+.root:has([data-desktop-chrome='mac']) .railFish {
+  display: none;
+}
+
+.root:has([data-desktop-chrome='mac']) .panelIcon {
+  display: inline;
+}
+
 .collapsed .toggle .panelIcon {
   display: none;
+}
+
+.root:has([data-desktop-chrome='mac']).collapsed .toggle .panelIcon {
+  display: inline;
 }
 
 .collapsed .toggle:hover .panelIcon {
@@ -241,27 +314,47 @@
   padding-left: 0;
 }
 
-/* Footer seats: additive actions stack above Settings. Each occupant owns its
-   button geometry and hover chrome. */
+/* Footer seats: Settings and footer actions share one row (wide) or a
+   column (rail). Each occupant owns its button geometry and hover chrome. */
+.dragStrip {
+  flex: none;
+  min-height: 0;
+}
+
 .footArea {
   flex: none;
   display: flex;
   flex-direction: column;
 }
 
-.settingsArea,
-.footerActions {
-  flex: none;
+.settingsRow {
+  display: flex;
+  flex-direction: row-reverse;
+  flex-wrap: nowrap;
+  align-items: center;
   min-width: 0;
   width: 100%;
 }
 
-.footerActions {
-  display: flex;
+.settingsArea {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
-.collapsed .footArea {
+.footerActions {
+  flex: none;
+  display: flex;
   align-items: center;
+}
+
+.collapsed .footArea,
+.collapsed .settingsRow {
+  align-items: center;
+}
+
+.collapsed .settingsRow {
+  flex-direction: column;
+  width: auto;
 }
 
 .collapsed .settingsArea,
