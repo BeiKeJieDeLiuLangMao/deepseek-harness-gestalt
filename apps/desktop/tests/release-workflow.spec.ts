@@ -56,7 +56,10 @@ describe('Desktop release workflow', () => {
 
   it('builds the Electron entry and publishes an explicit asset list', () => {
     expect(workflow.match(/@deepseek-ai\/dsh-desktop build:main/g)).toHaveLength(2)
-    expect(workflow.match(/pnpm --ignore-scripts --filter @deepseek-ai\/dsh deploy/g)).toHaveLength(2)
+    expect(workflow.match(/--config\.node-linker=hoisted/g)).toHaveLength(2)
+    expect(workflow.match(/--config\.inject-workspace-packages=true/g)).toHaveLength(2)
+    expect(workflow.match(/--filter @deepseek-ai\/dsh deploy --prod/g)).toHaveLength(2)
+    expect(workflow).not.toContain('--legacy')
     expect(workflow).toContain('RELEASE_VERSION: ${{ needs.prepare.outputs.version }}')
     expect(workflow).toContain('node apps/desktop/scripts/release-assets.mjs dist "$RELEASE_VERSION"')
     expect(workflow).not.toContain('dist/**/*')

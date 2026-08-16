@@ -29,12 +29,13 @@ pnpm gestalt:dev
 
 ```sh
 node apps/desktop/scripts/fetch-node.mjs --platform darwin --arch arm64
-pnpm --ignore-scripts --filter @deepseek-ai/dsh deploy --prod --legacy apps/desktop/resources/dsh
+pnpm --ignore-scripts --config.node-linker=hoisted --config.inject-workspace-packages=true \
+  --filter @deepseek-ai/dsh deploy --prod apps/desktop/resources/dsh
 node apps/desktop/scripts/isolate-dsh-snapshot.mjs
 pnpm --filter @deepseek-ai/dsh-desktop package:unsigned
 ```
 
-工作区包的 `pnpm deploy` 会留下指向仓库的 `file:` 链接。isolate 一步把这些目标拷进快照，打包后的 Web Host 才能在仓库外解析 `dsh`。
+hoisted deploy 会纳入工作区包，但不带 pnpm 的链接式虚拟依赖图。`pnpm deploy` 仍会留下少量指向仓库的 `file:` 链接；isolate 一步把这些目标拷进快照，让打包后的 Web Host 能在仓库外解析 `dsh`，并确保 Windows 安装器不会归档目录 junction。
 
 ## Known Limitations and Deferred Work
 

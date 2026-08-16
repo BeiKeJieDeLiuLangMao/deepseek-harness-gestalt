@@ -29,12 +29,13 @@ Local unsigned arm64 rehearsal (no notarization):
 
 ```sh
 node apps/desktop/scripts/fetch-node.mjs --platform darwin --arch arm64
-pnpm --ignore-scripts --filter @deepseek-ai/dsh deploy --prod --legacy apps/desktop/resources/dsh
+pnpm --ignore-scripts --config.node-linker=hoisted --config.inject-workspace-packages=true \
+  --filter @deepseek-ai/dsh deploy --prod apps/desktop/resources/dsh
 node apps/desktop/scripts/isolate-dsh-snapshot.mjs
 pnpm --filter @deepseek-ai/dsh-desktop package:unsigned
 ```
 
-`pnpm deploy` of workspace packages leaves `file:` links into the monorepo. The isolate step copies those targets so the packed Web Host can resolve `dsh` outside the repo.
+The hoisted deploy includes workspace packages without pnpm's linked virtual dependency graph. `pnpm deploy` still leaves a small number of `file:` links into the monorepo; the isolate step copies those targets so the packed Web Host can resolve `dsh` outside the repo and the Windows installer never archives directory junctions.
 
 ## Known Limitations and Deferred Work
 
