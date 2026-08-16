@@ -3,23 +3,16 @@
 import { appendFileSync, readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 
-const REQUIRED_PUBLISH_SECRETS = [
-  'CSC_LINK',
-  'CSC_KEY_PASSWORD',
-  'APPLE_ID',
-  'APPLE_APP_SPECIFIC_PASSWORD',
-  'APPLE_TEAM_ID',
-]
 const VERSION_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/
 
 /**
  * Derive the tag for one validated Desktop Bundle candidate.
- * @param {{ requestedVersion: string, packageVersion: string, publish: boolean, refName: string, tagExists: boolean, environment: Record<string, string | undefined> }} input - dispatch and repository state.
+ * @param {{ requestedVersion: string, packageVersion: string, publish: boolean, refName: string, tagExists: boolean }} input - dispatch and repository state.
  * @returns {{ version: string, tag: string }} validated release identifiers.
  */
 export function prepareRelease(input) {
   if (!VERSION_PATTERN.test(input.requestedVersion)) {
-    throw new Error(`Desktop Bundle version is not valid semver: ${input.requestedVersion}`)
+    throw new Error(`Desktop Bundle must use the supported X.Y.Z version grammar: ${input.requestedVersion}`)
   }
   if (input.requestedVersion !== input.packageVersion) {
     throw new Error(
@@ -34,13 +27,6 @@ export function prepareRelease(input) {
     }
     if (input.tagExists) throw new Error(`Desktop release tag already exists: ${tag}`)
 
-    const missing = REQUIRED_PUBLISH_SECRETS.filter(name => {
-      const value = input.environment[name]
-      return value === undefined || value.trim().length === 0
-    })
-    if (missing.length > 0) {
-      throw new Error(`Desktop publication is missing GitHub Actions secrets: ${missing.join(', ')}`)
-    }
   }
 
   return { tag, version: input.requestedVersion }
@@ -73,7 +59,6 @@ if (process.argv[1]?.endsWith('prepare-release.mjs') === true) {
     publish: publishText === 'true',
     refName,
     tagExists: localTagExists(`gestalt-v${requestedVersion}`),
-    environment: process.env,
   })
   const output = process.env.GITHUB_OUTPUT
   if (output === undefined) throw new Error('GITHUB_OUTPUT is required')

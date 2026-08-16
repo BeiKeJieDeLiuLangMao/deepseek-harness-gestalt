@@ -45,17 +45,14 @@ jobs:
         env:
           INPUT_VERSION: ${{ inputs.version }}
           PUBLISH: ${{ inputs.publish }}
-          CSC_LINK: ${{ secrets.CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: node apps/desktop/scripts/prepare-release.mjs "$INPUT_VERSION" "$PUBLISH" "$GITHUB_REF_NAME"
 
   pack-mac:
     name: Pack macOS ${{ matrix.arch }}
     needs: prepare
     runs-on: ${{ matrix.runner }}
+    environment:
+      name: ${{ inputs.publish && 'desktop-release' || 'desktop-dry-run' }}
     strategy:
       fail-fast: false
       matrix:
@@ -65,6 +62,24 @@ jobs:
           - arch: x64
             runner: macos-15-intel
     steps:
+      - name: Validate release credentials
+        if: inputs.publish
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          missing=()
+          for name in CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
+            if [[ -z "${!name:-}" ]]; then missing+=("$name"); fi
+          done
+          if (( ${#missing[@]} > 0 )); then
+            echo "desktop-release environment is missing secrets: ${missing[*]}"
+            exit 1
+          fi
+
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
@@ -91,24 +106,35 @@ jobs:
 
       - name: Deploy dsh snapshot
         run: |
-          pnpm --filter @deepseek-ai/dsh deploy --prod --legacy apps/desktop/resources/dsh
+          pnpm --ignore-scripts --filter @deepseek-ai/dsh deploy --prod --legacy apps/desktop/resources/dsh
           node apps/desktop/scripts/isolate-dsh-snapshot.mjs
 
-      - name: Package
+      - name: Package unsigned
+        if: ${{ !inputs.publish }}
         env:
-          PUBLISH: ${{ inputs.publish }}
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: |
+          pnpm --filter @deepseek-ai/dsh-desktop exec electron-builder \
+            --mac --${{ matrix.arch }} --publish never \
+            -c.mac.identity=null -c.mac.notarize=false
+
+      - name: Package signed and notarized
+        if: inputs.publish
+        env:
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: pnpm --filter @deepseek-ai/dsh-desktop exec electron-builder --mac --${{ matrix.arch }} --publish never -c.forceCodeSigning=true
+
+      - name: Verify signed app
+        if: inputs.publish
         run: |
-          builder_args=(--mac --${{ matrix.arch }} --publish never)
-          if [[ "$PUBLISH" != 'true' ]]; then
-            export CSC_IDENTITY_AUTO_DISCOVERY=false
-            builder_args+=(-c.mac.notarize=false)
-          fi
-          pnpm --filter @deepseek-ai/dsh-desktop exec electron-builder "${builder_args[@]}"
+          app_bundle=$(find apps/desktop/release -name 'DeepSeek Gestalt.app' -type d -print -quit)
+          test -n "$app_bundle"
+          codesign --verify --deep --strict "$app_bundle"
+          xcrun stapler validate "$app_bundle"
 
       - name: Smoke packaged Desktop Host
         run: |
@@ -154,7 +180,7 @@ jobs:
 
       - name: Deploy dsh snapshot
         run: |
-          pnpm --filter @deepseek-ai/dsh deploy --prod --legacy apps/desktop/resources/dsh
+          pnpm --ignore-scripts --filter @deepseek-ai/dsh deploy --prod --legacy apps/desktop/resources/dsh
           node apps/desktop/scripts/isolate-dsh-snapshot.mjs
 
       - name: Package
@@ -203,9 +229,29 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
         run: |
+          set -Eeuo pipefail
           tag=${{ needs.prepare.outputs.tag }}
           mapfile -t assets < <(node apps/desktop/scripts/release-assets.mjs dist "$RELEASE_VERSION")
-          gh release create "$tag" "${assets[@]}" \
+          created=false
+          cleanup() {
+            if [[ "$created" == 'true' ]]; then
+              gh release delete "$tag" --yes --cleanup-tag >/dev/null 2>&1 || true
+            fi
+          }
+          trap cleanup ERR
+          gh release create "$tag" \
+            --draft \
             --target "$GITHUB_SHA" \
             --title "DeepSeek Gestalt ${{ needs.prepare.outputs.version }}" \
             --generate-notes
+          created=true
+          gh release upload "$tag" "${assets[@]}"
+          local_names=$(printf '%s\n' "${assets[@]##*/}" | sort)
+          remote_names=$(gh release view "$tag" --json assets --jq '.assets[].name' | sort)
+          if [[ "$local_names" != "$remote_names" ]]; then
+            echo 'uploaded release assets do not match the validated candidate'
+            diff <(printf '%s\n' "$local_names") <(printf '%s\n' "$remote_names") || true
+            exit 1
+          fi
+          gh release edit "$tag" --draft=false --latest
+          trap - ERR

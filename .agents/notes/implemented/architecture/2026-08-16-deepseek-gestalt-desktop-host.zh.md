@@ -16,7 +16,7 @@ Electron 在退出阶段继续监管 Web Host。窗口退出、终止信号和 s
 
 第一个 Desktop Bundle 是 `0.1.0`，与 npm `dsh` 版本线独立。app id 为 `com.gestalt.deepseek`。显示名为 DeepSeek Gestalt。更新源是 `BeiKeJieDeLiuLangMao/deepseek-harness-gestalt` 上的 GitHub Releases（`gestalt-v*` 标签，非 prerelease）。每个 macOS 目标都先在匹配架构的 runner 上安装与部署，再使用千机团队身份公证；Windows 发未签名 NSIS 仍更新。普通退出不会安装已下载更新。
 
-Desktop Release 从 `master` 手动运行，并显式指定 Desktop Bundle 版本。发布运行会先用 `apps/desktop/package.json` 校验该版本，拒绝已有标签，并要求证书和 Apple 公证 secrets 齐备，然后才开始打包。无凭据运行会显式关闭 macOS 签名和公证。两个 macOS 架构和 Windows 都通过已打包 smoke 后，发布 job 校验完整的版本化安装包与更新 feed 集合，再在受测提交上创建 `gestalt-v<version>` 标签和非 prerelease GitHub Release。
+Desktop Release 从 `master` 手动运行，并显式指定 Desktop Bundle 版本。发布运行会先用 `apps/desktop/package.json` 校验该版本并拒绝已有标签；macOS 发布打包只在 `desktop-release` environment 中进行，该 environment 的分支策略只允许 `master`，并提供证书与 Apple 公证 secrets。无凭据运行使用另一个 environment，显式关闭 macOS identity 选择和公证。每个发布构建都强制签名，并在上传 artifact 前验证 app 签名和已装订的公证票据。两个 macOS 架构和 Windows 都通过已打包 smoke 后，发布 job 校验精确的版本化安装包、blockmap 和更新 feed 集合，上传到 draft 并核对远端文件名，最后才在受测提交上发布 `gestalt-v<version>` 标签和非 prerelease GitHub Release。正常的上传失败会删除对应 draft 和标签，使同一候选版本可以重试。
 
 Desktop 只多一层 `--patch`：GESTALT 次标、拖拽带、设置右侧的 Update Control。浏览器 `dsh web` 不加载这层。从 Dock 启动时，Web Host 的 cwd 是 `~/Library/Application Support/DeepSeek Gestalt/defaultWorkspace`（Windows：`%APPDATA%\DeepSeek Gestalt\defaultWorkspace`），进程 cwd 不是安装目录。Session Surface、`~/.dsh` 和 web profile 仍然共用。
 
@@ -44,8 +44,8 @@ macOS chrome 为 traffic lights 保留固定顶部间距，同时保留 DSH 侧�
 - macOS 展开和收起布局让未改动的侧栏控件位于原生控件下方；Windows 把 caption 按钮放在全窗口拖拽行右侧。
 - Dock 式启动把 Launch Directory 当作 cwd，并且不把该路径登记为 Workspace。
 - Desktop 退出会等待尚未启动完成和正在运行的 Web Host 进程退出；smoke 测试会拒绝遗留子进程和缺失的 Desktop 组合。
-- 无密钥浏览器 golden 会启动已交付 Web profile 与 Desktop overlay；release job 会校验 Node 归档摘要，并在上传前 smoke 每个打包目标。
-- 发布计划测试覆盖版本、分支、已有标签和 secret 校验；发布资产测试要求两个更新 feed 以及全部版本化 macOS 和 Windows 安装包。
+- 无密钥浏览器 golden 会启动已交付 Web profile 与 Desktop overlay；release job 会校验 Node 归档摘要，要求发布构建通过代码签名和已装订公证票据校验，并在上传前 smoke 每个打包目标。
+- 发布计划测试覆盖版本、分支和已有标签校验；发布资产测试要求两个更新 feed、全部版本化 macOS 与 Windows 安装包及其 blockmap，并排除未打包应用内部文件。
 - 单测覆盖从 `dsh web:` 行发现 URL、Launch Directory 解析，以及不下载的更新阶段转换。
 
 ## Consequences
@@ -54,4 +54,4 @@ macOS chrome 为 traffic lights 保留固定顶部间距，同时保留 DSH 侧�
 - 公证后的 Mac 身份属于千机 Apple 团队。以后改 app id 等于新应用。
 - 在有 Authenticode 证书之前，Windows 用户会看到 SmartScreen。
 - 个人 GitHub feed 就是产品 feed；没有能保住已装包更新的迁仓路径。
-- 发布运行必须先配置五项仓库 secrets 才能开始打包：`CSC_LINK`、`CSC_KEY_PASSWORD`、`APPLE_ID`、`APPLE_APP_SPECIFIC_PASSWORD` 和 `APPLE_TEAM_ID`。
+- 发布运行必须先在 `desktop-release` environment 中配置 `CSC_LINK`、`CSC_KEY_PASSWORD`、`APPLE_ID`、`APPLE_APP_SPECIFIC_PASSWORD` 和 `APPLE_TEAM_ID`，才能开始打包。

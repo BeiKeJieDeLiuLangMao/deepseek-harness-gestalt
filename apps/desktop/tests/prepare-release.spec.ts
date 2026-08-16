@@ -1,14 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { prepareRelease } from '../scripts/prepare-release.mjs'
 
-const signingEnvironment = {
-  CSC_LINK: 'certificate',
-  CSC_KEY_PASSWORD: 'password',
-  APPLE_ID: 'developer@example.com',
-  APPLE_APP_SPECIFIC_PASSWORD: 'app-password',
-  APPLE_TEAM_ID: 'TEAM123',
-}
-
 describe('prepareRelease', () => {
   it('derives a release tag from the matching Desktop Bundle version', () => {
     expect(
@@ -18,7 +10,6 @@ describe('prepareRelease', () => {
         publish: true,
         refName: 'master',
         tagExists: false,
-        environment: signingEnvironment,
       }),
     ).toEqual({ tag: 'gestalt-v0.1.0', version: '0.1.0' })
   })
@@ -31,7 +22,6 @@ describe('prepareRelease', () => {
         publish: false,
         refName: 'feature',
         tagExists: false,
-        environment: {},
       }),
     ).toThrow('does not match')
   })
@@ -42,25 +32,21 @@ describe('prepareRelease', () => {
       packageVersion: '0.1.0',
       publish: true,
       tagExists: false,
-      environment: signingEnvironment,
     }
     expect(() => prepareRelease({ ...base, refName: 'feature' })).toThrow('master')
     expect(() => prepareRelease({ ...base, refName: 'master', tagExists: true })).toThrow('already exists')
   })
 
-  it('lists every missing signing and notarization secret before publication', () => {
+  it('rejects versions outside the supported Desktop Bundle grammar', () => {
     expect(() =>
       prepareRelease({
-        requestedVersion: '0.1.0',
-        packageVersion: '0.1.0',
-        publish: true,
-        refName: 'master',
+        requestedVersion: '0.1',
+        packageVersion: '0.1',
+        publish: false,
+        refName: 'feature',
         tagExists: false,
-        environment: { CSC_LINK: 'certificate' },
       }),
-    ).toThrow(
-      'CSC_KEY_PASSWORD, APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID',
-    )
+    ).toThrow('supported X.Y.Z version')
   })
 
   it('allows credential-free dry-run packaging from a branch', () => {
@@ -71,7 +57,6 @@ describe('prepareRelease', () => {
         publish: false,
         refName: 'feature',
         tagExists: false,
-        environment: {},
       }),
     ).toEqual({ tag: 'gestalt-v0.1.0', version: '0.1.0' })
   })

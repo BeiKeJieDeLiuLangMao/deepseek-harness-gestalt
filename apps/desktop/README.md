@@ -23,13 +23,13 @@ Needs a real Node on `DSH_NODE` or `npm_node_execpath` (pnpm sets the latter). D
 
 ## Release
 
-Tag `gestalt-v0.1.0` and run the `Desktop Release` workflow. macOS arm64 and x64 install dependencies on matching GitHub runner architectures before packaging; Mac notarizes with repository secrets. Windows NSIS is unsigned and still updates. The workflow verifies each official Node archive against a reviewed SHA-256 digest and starts every packaged target before upload. Downloaded updates install only after the user selects Install and restart.
+Run the `Desktop Release` workflow from `master` with the package version and `publish` selected. macOS arm64 and x64 install dependencies on matching GitHub runner architectures; publish builds use the `desktop-release` environment to sign and notarize, while dry runs receive no release credentials. Windows NSIS is unsigned and still updates. The workflow verifies each official Node archive, starts every packaged target, checks the signed and stapled Mac applications, uploads the exact installer, blockmap, and updater-feed set to a draft, then publishes the `gestalt-v<version>` tag and Release. Downloaded updates install only after the user selects Install and restart.
 
 Local unsigned arm64 rehearsal (no notarization):
 
 ```sh
 node apps/desktop/scripts/fetch-node.mjs --platform darwin --arch arm64
-pnpm --filter @deepseek-ai/dsh deploy --prod --legacy apps/desktop/resources/dsh
+pnpm --ignore-scripts --filter @deepseek-ai/dsh deploy --prod --legacy apps/desktop/resources/dsh
 node apps/desktop/scripts/isolate-dsh-snapshot.mjs
 pnpm --filter @deepseek-ai/dsh-desktop package:unsigned
 ```

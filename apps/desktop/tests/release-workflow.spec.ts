@@ -1,14 +1,47 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { load } from 'js-yaml'
 import { describe, expect, it } from 'vitest'
 
 const workflow = readFileSync(join(process.cwd(), '.github/workflows/desktop-release.yml'), 'utf8')
+const parsed = load(workflow)
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function record(value: unknown): Record<string, unknown> {
+  if (!isRecord(value)) throw new Error('expected record')
+  return value
+}
+
+function job(name: string): Record<string, unknown> {
+  return record(record(record(parsed).jobs)[name])
+}
+
+function steps(name: string): Record<string, unknown>[] {
+  const value = job(name).steps
+  if (!Array.isArray(value)) throw new Error(`expected ${name} steps`)
+  return value.map(record)
+}
 
 describe('Desktop release workflow', () => {
   it('plans an explicit Desktop Bundle version before packaging', () => {
     expect(workflow).toContain('version:')
     expect(workflow).toContain('node apps/desktop/scripts/prepare-release.mjs')
     expect(workflow.match(/needs: prepare/g)).toHaveLength(2)
+  })
+
+  it('keeps release credentials out of preparation and dry-run packaging', () => {
+    expect(JSON.stringify(job('prepare'))).not.toContain('secrets.')
+    const mac = job('pack-mac')
+    expect(record(mac.environment).name).toBe(
+      "${{ inputs.publish && 'desktop-release' || 'desktop-dry-run' }}",
+    )
+    const dry = steps('pack-mac').find(step => step.name === 'Package unsigned')
+    expect(JSON.stringify(dry)).not.toContain('secrets.')
+    expect(dry?.run).toContain('-c.mac.identity=null')
+    expect(dry?.run).toContain('-c.mac.notarize=false')
   })
 
   it('installs each macOS bundle on a matching runner architecture', () => {
@@ -19,6 +52,7 @@ describe('Desktop release workflow', () => {
 
   it('builds the Electron entry and publishes an explicit asset list', () => {
     expect(workflow.match(/@deepseek-ai\/dsh-desktop build:main/g)).toHaveLength(2)
+    expect(workflow.match(/pnpm --ignore-scripts --filter @deepseek-ai\/dsh deploy/g)).toHaveLength(2)
     expect(workflow).toContain('RELEASE_VERSION: ${{ needs.prepare.outputs.version }}')
     expect(workflow).toContain('node apps/desktop/scripts/release-assets.mjs dist "$RELEASE_VERSION"')
     expect(workflow).not.toContain('dist/**/*')
@@ -35,18 +69,27 @@ describe('Desktop release workflow', () => {
     expect(winSmoke).toBeLessThan(workflow.indexOf('name: gestalt-win-x64'))
   })
 
-  it('makes dry runs explicitly unsigned and reserves credentials for publication', () => {
-    expect(workflow).toContain('CSC_IDENTITY_AUTO_DISCOVERY=false')
-    expect(workflow).toContain('-c.mac.notarize=false')
-    expect(workflow).toContain('CSC_LINK: ${{ secrets.CSC_LINK }}')
-    expect(workflow).toContain('APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}')
+  it('forces and verifies signing and notarization before signed artifacts upload', () => {
+    const macSteps = steps('pack-mac')
+    const signed = macSteps.findIndex(step => step.name === 'Package signed and notarized')
+    const verify = macSteps.findIndex(step => step.name === 'Verify signed app')
+    const upload = macSteps.findIndex(step => step.uses === 'actions/upload-artifact@v4')
+    expect(JSON.stringify(macSteps[signed])).toContain('secrets.CSC_LINK')
+    expect(macSteps[signed]?.run).toContain('-c.forceCodeSigning=true')
+    expect(macSteps[verify]?.run).toContain('codesign --verify --deep --strict')
+    expect(macSteps[verify]?.run).toContain('xcrun stapler validate')
+    expect(signed).toBeLessThan(verify)
+    expect(verify).toBeLessThan(upload)
   })
 
-  it('creates the tag and release only after every packaged smoke passes', () => {
+  it('publishes a verified draft only after every packaged smoke passes', () => {
     expect(workflow).toContain('needs: [prepare, pack-mac, pack-win]')
     expect(workflow).toContain('tag=${{ needs.prepare.outputs.tag }}')
     expect(workflow).toContain('gh release create "$tag"')
     expect(workflow).toContain('--target "$GITHUB_SHA"')
+    expect(workflow).toContain('--draft')
+    expect(workflow).toContain('gh release upload "$tag"')
+    expect(workflow).toContain('gh release edit "$tag" --draft=false --latest')
     expect(workflow).not.toContain('tag=${GITHUB_REF_NAME}')
   })
 })

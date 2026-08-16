@@ -16,7 +16,7 @@ Electron supervises the Web Host through shutdown. Window exit, termination sign
 
 The first Desktop Bundle is `0.1.0`, independent of the npm `dsh` line. The app id is `com.gestalt.deepseek`. Display name is DeepSeek Gestalt. Feed is GitHub Releases on `BeiKeJieDeLiuLangMao/deepseek-harness-gestalt` (`gestalt-v*` tags, non-prerelease). Each macOS target installs and deploys on a matching runner architecture before notarization with the 千机 team identity; Windows ships unsigned NSIS and still updates. Downloaded updates never install on an ordinary quit.
 
-The Desktop Release manual dispatch runs from `master` with an explicit Desktop Bundle version. A publish run verifies that version against `apps/desktop/package.json`, rejects an existing tag, and requires the certificate plus Apple notarization secrets before packaging begins. Credential-free runs explicitly disable macOS signing and notarization. After both macOS architectures and Windows pass packaged smoke tests, the publish job validates the complete versioned installer and updater-feed set, then creates the `gestalt-v<version>` tag and non-prerelease GitHub Release at the tested commit.
+The Desktop Release manual dispatch runs from `master` with an explicit Desktop Bundle version. A publish run verifies that version against `apps/desktop/package.json`, rejects an existing tag, and packages macOS only inside the `desktop-release` environment, whose branch policy admits `master` and supplies the certificate plus Apple notarization secrets. Credential-free runs use a separate environment and explicitly disable macOS identity selection and notarization. Each publish build requires code signing and verifies the signed, stapled application before artifact upload. After both macOS architectures and Windows pass packaged smoke tests, the publish job validates the exact versioned installer, blockmap, and updater-feed set, uploads it to a draft, verifies the remote filenames, and only then publishes the `gestalt-v<version>` tag and non-prerelease GitHub Release at the tested commit. An ordinary upload failure deletes its draft and tag so the same candidate can be retried.
 
 Desktop adds a `--patch` overlay only: GESTALT badge, a drag strip, and the Update Control to the right of Settings. Browser `dsh web` does not load that overlay. Dock launch sets the Web Host cwd to `~/Library/Application Support/DeepSeek Gestalt/defaultWorkspace` (Windows: `%APPDATA%\DeepSeek Gestalt\defaultWorkspace`) so the process cwd is not the install directory. Session Surface, `~/.dsh`, and the web profile stay shared.
 
@@ -44,8 +44,8 @@ The macOS chrome reserves a fixed top inset for the traffic lights while preserv
 - macOS expanded and collapsed layouts keep the unchanged sidebar controls below native controls; Windows keeps its caption buttons at the right edge of the full-window drag row.
 - Dock-style spawn uses the Launch Directory as cwd and does not register that path as a Workspace.
 - Desktop shutdown waits for pending and running Web Host processes to exit; the smoke test rejects an orphaned child and missing Desktop composition.
-- The keyless browser golden boots the shipped Web profile plus Desktop overlay; release jobs verify Node archive digests and smoke each packaged target before upload.
-- Release-plan tests cover version, branch, existing-tag, and secret validation; release-asset tests require both updater feeds and every versioned macOS and Windows installer.
+- The keyless browser golden boots the shipped Web profile plus Desktop overlay; release jobs verify Node archive digests, require code signing plus a stapled notarization ticket for publish builds, and smoke each packaged target before upload.
+- Release-plan tests cover version, branch, and existing-tag validation; release-asset tests require both updater feeds and every versioned macOS and Windows installer plus blockmap while excluding unpacked application contents.
 - Unit tests cover URL discovery from the `dsh web:` line, Launch Directory resolution, and updater phase transitions without downloading.
 
 ## Consequences
@@ -54,4 +54,4 @@ The macOS chrome reserves a fixed top inset for the traffic lights while preserv
 - The notarized Mac identity belongs to the 千机 Apple team. Changing the app id later is a new application.
 - Windows users see SmartScreen until an Authenticode certificate exists.
 - The personal GitHub feed is the product feed; there is no migration path that preserves updates for already-installed builds.
-- A publish dispatch cannot start packaging until all five repository secrets are configured: `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, and `APPLE_TEAM_ID`.
+- A publish dispatch cannot start packaging until the `desktop-release` environment contains `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, and `APPLE_TEAM_ID`.
