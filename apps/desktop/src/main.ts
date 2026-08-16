@@ -245,17 +245,45 @@ function installIntegrationsOnce(): void {
 }
 
 async function finishSmoke(target: BrowserWindow): Promise<void> {
-  const evidence: unknown = await target.webContents.executeJavaScript(`({
-    boot: typeof window.__DSH_BOOT__,
-    gestalt: document.body.textContent?.includes('GESTALT') ?? false,
-    update: document.querySelector('button [data-state="disabled"]') !== null,
-    chrome: document.querySelector('[data-desktop-chrome]')?.getAttribute('data-desktop-chrome') ?? null,
-  })`)
+  const evidence: unknown = await target.webContents.executeJavaScript(`(async () => {
+    const bridge = window.dshDesktop
+    const updaterStatus = await bridge?.getStatus()
+    const unsubscribe = typeof bridge?.onStatus === 'function'
+      ? bridge.onStatus(() => {})
+      : null
+    if (typeof unsubscribe === 'function') unsubscribe()
+    const rendererDeadline = Date.now() + 5_000
+    while (
+      document.querySelector('[data-desktop-updater-state="disabled"]') === null
+      && Date.now() < rendererDeadline
+    ) {
+      await new Promise((resolve) => { setTimeout(resolve, 50) })
+    }
+    return {
+      boot: typeof window.__DSH_BOOT__,
+      gestalt: document.body.textContent?.includes('GESTALT') ?? false,
+      updaterBridge: bridge !== undefined
+        && typeof bridge.getStatus === 'function'
+        && typeof bridge.checkNow === 'function'
+        && typeof bridge.downloadNow === 'function'
+        && typeof bridge.quitAndInstall === 'function'
+        && typeof bridge.onStatus === 'function'
+        && typeof unsubscribe === 'function',
+      updaterState: updaterStatus?.state ?? null,
+      rendererUpdaterState: document.querySelector('[data-desktop-updater-state]')
+        ?.getAttribute('data-desktop-updater-state') ?? null,
+      updateControlAbsent: document.querySelector('[data-desktop-update-control]') === null,
+      chrome: document.querySelector('[data-desktop-chrome]')?.getAttribute('data-desktop-chrome') ?? null,
+    }
+  })()`)
   const expectedChrome = process.platform === 'darwin' ? 'mac' : process.platform === 'win32' ? 'win' : null
   const valid = evidence !== null && typeof evidence === 'object'
     && 'boot' in evidence && evidence.boot === 'object'
     && 'gestalt' in evidence && evidence.gestalt === true
-    && 'update' in evidence && evidence.update === true
+    && 'updaterBridge' in evidence && evidence.updaterBridge === true
+    && 'updaterState' in evidence && evidence.updaterState === 'disabled'
+    && 'rendererUpdaterState' in evidence && evidence.rendererUpdaterState === 'disabled'
+    && 'updateControlAbsent' in evidence && evidence.updateControlAbsent === true
     && 'chrome' in evidence && evidence.chrome === expectedChrome
   if (!valid) {
     smokeLog('missing Desktop Session Surface evidence ' + JSON.stringify(evidence))

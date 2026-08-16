@@ -45,7 +45,7 @@ macOS chrome 在 DSH 侧栏标题和中间 Session 内容上方为 traffic light
 - Desktop 组合显示 GESTALT 次标和 logo 行上方的拖拽带。Update Control 渲染测试确保不活跃阶段不出现，可操作阶段与设置位于同一脚部行。
 - macOS 展开和收起布局让未改动的侧栏控件与中间 Session 内容位于原生控件下方；Windows 把 caption 按钮放在全窗口拖拽行右侧，且不移动 Session 内容。
 - Dock 式启动把 Launch Directory 当作 cwd，并且不把该路径登记为 Workspace。
-- Desktop 退出会等待尚未启动完成和正在运行的 Web Host 进程退出；smoke 测试会拒绝遗留子进程和缺失的 Desktop 组合。
+- Desktop 退出会等待尚未启动完成和正在运行的 Web Host 进程退出；smoke 测试会拒绝遗留子进程、缺失的 Desktop 组合或 updater bridge、尚未到达 renderer 的更新状态，以及可见但尚未激活的 Update Control。
 - 无密钥浏览器 golden 会启动已交付 Web profile 与 Desktop overlay；release job 会校验 Node 归档摘要，在 macOS 签名前将打开文件数限制提升到 runner 硬限制，并对 `@electron/osx-sign` 应用有界的资源遍历。发布构建必须通过代码签名和已装订公证票据校验，并在上传前 smoke 每个打包目标。
 - Desktop 图标测试固定三个源文件摘要及其容器签名，要求 512x512 RGBA PNG，检查 macOS、Windows、打包资源、Dock 与 BrowserWindow 的接线，并拒绝缺少最大分辨率 ICO 载荷的 Windows PE 文件。
 - 发布计划测试覆盖版本、分支和已有标签校验；发布资产测试要求两个更新 feed、全部版本化 macOS 与 Windows 安装包及其 blockmap，并排除未打包应用内部文件。

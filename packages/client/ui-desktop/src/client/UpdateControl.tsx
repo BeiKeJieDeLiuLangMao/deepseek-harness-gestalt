@@ -24,19 +24,20 @@ export type UpdateControlProps =
 /**
  * Render the Update Control.
  * @param props - composed slot props.
- * @returns the control for an actionable update, or null while updates are inactive.
+ * @returns the actionable control, a hidden state marker while inactive, or null without the Desktop bridge.
  */
 export function UpdateControl({ wide, t, useUpdater }: UpdateControlProps) {
   const desktop = window.dshDesktop
   if (desktop === undefined) return null
   const status = useUpdater(snapshot => snapshot)
-  if (!isVisible(status)) return null
+  if (!isVisible(status)) return <span hidden data-desktop-updater-state={status.state} />
   const label = labelOf(status, t)
   const onClick = () => { applyUpdaterClick(status.state, desktop) }
   return (
     <button
       type="button"
       className={wide ? css.wide : css.rail}
+      data-desktop-update-control=""
       aria-label={label}
       title={status.state === 'error' ? status.errorMessage : undefined}
       disabled={status.state === 'downloading' || status.state === 'installing'}

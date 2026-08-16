@@ -1,8 +1,11 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { useSyncExternalStore } from 'react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 import type { DesktopBridge, UpdaterStatus } from '../src/protocol.ts'
 import { applyUpdaterClick, UpdateControl } from '../src/client/UpdateControl.tsx'
+import { bindDesktopUpdater, createUpdaterSource } from '../src/client/status-source.ts'
 import { en } from '../src/client/locales.ts'
 
 afterEach(() => {
@@ -13,19 +16,10 @@ afterEach(() => {
 const t = (key: string) => (en as Record<string, string>)[key] ?? key
 
 function mount(status: UpdaterStatus, bridge?: Partial<DesktopBridge>) {
-  const desktop: DesktopBridge = {
-    platform: 'darwin',
+  const desktop = mountBridge({
     getStatus: () => Promise.resolve(status),
-    checkNow: vi.fn(),
-    downloadNow: vi.fn(),
-    quitAndInstall: vi.fn(),
-    onStatus: () => () => {},
-    windowMinimize: vi.fn(),
-    windowMaximize: vi.fn(),
-    windowClose: vi.fn(),
     ...bridge,
-  }
-  window.dshDesktop = desktop
+  })
   render(
     <UpdateControl
       wide
@@ -57,14 +51,57 @@ describe('UpdateControl', () => {
     { state: 'idle', lastCheckedAt: null },
     { state: 'checking', lastCheckedAt: null },
     { state: 'error', lastCheckedAt: 1, errorMessage: 'offline' },
-  ] satisfies UpdaterStatus[])('does not mount inactive status $state', (status) => {
+  ] satisfies UpdaterStatus[])('does not expose a control for inactive status $state', (status) => {
     mount(status)
     expect(screen.queryByRole('button')).toBeNull()
   })
 
+  it('projects disabled state without an accessible control', () => {
+    mount({ state: 'disabled', lastCheckedAt: null })
+    const marker = document.querySelector('[data-desktop-updater-state="disabled"]')
+    expect(marker).not.toBeNull()
+    expect(marker?.hasAttribute('hidden')).toBe(true)
+    expect(marker?.textContent).toBe('')
+    expect(screen.queryByRole('button')).toBeNull()
+  })
+
+  it('projects an asynchronous idle to disabled renderer transition', async () => {
+    let resolveStatus: ((status: UpdaterStatus) => void) | undefined
+    const source = createUpdaterSource()
+    const desktop = mountBridge({
+      getStatus: () => new Promise((resolve) => { resolveStatus = resolve }),
+    })
+    const stop = bindDesktopUpdater(source, desktop)
+    const useUpdater: SnapshotSelectorHook<UpdaterStatus> = selector => selector(useSyncExternalStore(
+      source.subscribe,
+      source.getSnapshot,
+    ))
+    render(
+      <UpdateControl
+        wide
+        t={t as never}
+        useSessions={(() => { throw new Error('unused') })}
+        useWorkspaces={(() => { throw new Error('unused') })}
+        useUpdater={useUpdater}
+      />,
+    )
+    expect(document.querySelector('[data-desktop-updater-state="idle"]')).not.toBeNull()
+
+    resolveStatus?.({ state: 'disabled', lastCheckedAt: null })
+
+    await waitFor(() => {
+      expect(document.querySelector('[data-desktop-updater-state="disabled"]')).not.toBeNull()
+    })
+    expect(document.querySelector('[data-desktop-update-control]')).toBeNull()
+    expect(screen.queryByRole('button')).toBeNull()
+    stop()
+  })
+
   it('downloads when a version is available', () => {
     const available = mount({ state: 'available', lastCheckedAt: 1, newVersion: '0.1.1' })
-    fireEvent.click(screen.getByRole('button', { name: 'Download 0.1.1' }))
+    const control = screen.getByRole('button', { name: 'Download 0.1.1' })
+    expect(control.getAttribute('data-desktop-update-control')).toBe('')
+    fireEvent.click(control)
     expect(available.downloadNow).toHaveBeenCalledOnce()
   })
 
@@ -126,3 +163,20 @@ describe('UpdateControl', () => {
     expect(desktop.quitAndInstall).not.toHaveBeenCalled()
   })
 })
+
+function mountBridge(bridge?: Partial<DesktopBridge>): DesktopBridge {
+  const desktop: DesktopBridge = {
+    platform: 'darwin',
+    getStatus: () => Promise.resolve({ state: 'idle', lastCheckedAt: null }),
+    checkNow: vi.fn(),
+    downloadNow: vi.fn(),
+    quitAndInstall: vi.fn(),
+    onStatus: () => () => {},
+    windowMinimize: vi.fn(),
+    windowMaximize: vi.fn(),
+    windowClose: vi.fn(),
+    ...bridge,
+  }
+  window.dshDesktop = desktop
+  return desktop
+}
