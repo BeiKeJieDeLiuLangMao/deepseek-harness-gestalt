@@ -2,9 +2,9 @@
 
 English | [中文](README.zh.md)
 
-Desktop-only Session Surface chrome. The Desktop Host `--patch` overlay inserts this row; browser `dsh web` does not. It elects the GESTALT wordmark on `sidebar.brand`, fills `sidebar.chrome.drag`, and registers the Update Control on `sidebar.footer.action`. All updater and window verbs go through `window.dshDesktop` from the Desktop Host preload.
+Desktop-only Session Surface chrome. The Desktop Host `--patch` overlay inserts this row; browser `dsh web` does not. It elects the GESTALT wordmark on `sidebar.brand`, fills `sidebar.chrome.drag`, and registers the Update Control on `sidebar.footer.action`. The control mounts for an available, downloading, downloaded, or installing update and for an error after version discovery; disabled, idle, checking, and pre-discovery errors occupy no sidebar seat. All updater and window verbs go through `window.dshDesktop` from the Desktop Host preload.
 
-The macOS chrome reserves space above the unchanged DSH sidebar header for the native traffic lights. The Windows row spans the viewport and keeps its three caption buttons outside the drag region. Other development platforms render no custom Window Chrome and keep their system frame.
+The macOS chrome reserves 28px above the unchanged DSH sidebar header and center Session content for the native traffic lights. The Windows row spans the viewport and keeps its three caption buttons outside the drag region without changing the Session content inset. Other development platforms render no custom Window Chrome and keep their system frame.
 
 ## Model Experience
 

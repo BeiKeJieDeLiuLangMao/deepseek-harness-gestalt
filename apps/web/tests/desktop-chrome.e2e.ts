@@ -9,7 +9,7 @@ import {
 
 const OVERLAY = fileURLToPath(new URL('../../desktop/cordis.patch.yml', import.meta.url))
 const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/desktop-chrome', import.meta.url))
-const UPDATE_EXPECTED = fileURLToPath(new URL('./snapshots/desktop-chrome/update.expected.md', import.meta.url))
+const INACTIVE_EXPECTED = fileURLToPath(new URL('./snapshots/desktop-chrome/inactive.expected.md', import.meta.url))
 const MODE = webSnapshotMode()
 
 describe('web e2e: Desktop Session Surface overlay', () => {
@@ -46,19 +46,18 @@ describe('web e2e: Desktop Session Surface overlay', () => {
     await scaffold?.close()
   })
 
-  it('composes the Gestalt brand, drag strip, and updater into the shipped sidebar', async () => {
+  it('composes the Gestalt brand and drag strip without an inactive updater control', async () => {
     expect(await page.locator('svg text', { hasText: 'GESTALT' }).count()).toBe(1)
     expect(await page.locator('[data-desktop-chrome="mac"]').count()).toBe(1)
-    const update = page.getByRole('button', { name: 'Updates disabled in development' })
-    await update.waitFor({ timeout: 10_000 })
-    await compareOrRefreshGolden(UPDATE_EXPECTED, await captureStableAria(
+    expect(await page.getByRole('button', { name: 'Updates disabled in development' }).count()).toBe(0)
+    await compareOrRefreshGolden(INACTIVE_EXPECTED, await captureStableAria(
       page,
-      'button[aria-label="Updates disabled in development"]',
+      '[class*="footArea"]',
       scaffold.workspaceCwd,
     ), MODE)
   })
 
   it('keeps its snapshot inventory closed', async () => {
-    await assertFixtureInventory(SNAPSHOT_DIR, ['update.expected.md'])
+    await assertFixtureInventory(SNAPSHOT_DIR, ['inactive.expected.md'])
   })
 })

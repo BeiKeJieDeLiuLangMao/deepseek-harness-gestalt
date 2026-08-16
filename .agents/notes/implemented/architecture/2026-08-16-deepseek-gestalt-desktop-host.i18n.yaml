@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-16-deepseek-gestalt-desktop-host.md
-2026-08-16-deepseek-gestalt-desktop-host.md: 459852967a31ee633c856f81ad94cd696416e7e7
-2026-08-16-deepseek-gestalt-desktop-host.zh.md: 21ba648074054954737a57f07e42ec3ea504fad0
+2026-08-16-deepseek-gestalt-desktop-host.md: 2180523b37ad21f877d442a7c7dcc77036c7375b
+2026-08-16-deepseek-gestalt-desktop-host.zh.md: 6dfaa88e107042c4148b7563523f3e7f957308e7

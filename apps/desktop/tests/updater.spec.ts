@@ -56,6 +56,24 @@ describe('startAutoUpdater', () => {
     expect(seen).toContain('available')
   })
 
+  it('preserves a discovered version only for later failures', () => {
+    const updater = fakeUpdater()
+    const life = startAutoUpdater({ updater, now: () => 10 })
+
+    updater.emit('error', new Error('offline'))
+    expect(life.state()).toEqual({ state: 'error', lastCheckedAt: null, errorMessage: 'offline' })
+
+    updater.emit('update-available', { version: '0.1.1' })
+    updater.emit('error', new Error('download failed'))
+    expect(life.state()).toEqual({
+      state: 'error',
+      lastCheckedAt: 10,
+      newVersion: '0.1.1',
+      errorMessage: 'download failed',
+    })
+    life.dispose()
+  })
+
   it('contains a renderer notification failure and still starts the check', () => {
     const updater = fakeUpdater()
     const report = vi.spyOn(console, 'error').mockImplementation(() => {})

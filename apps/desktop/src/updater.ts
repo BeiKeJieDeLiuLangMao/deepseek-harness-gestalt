@@ -118,7 +118,10 @@ export function startAutoUpdater(options: {
     transition('downloaded', versionDetail(availableVersion))
   }
   const handleError = (error: unknown): void => {
-    transition('error', { errorMessage: error instanceof Error ? error.message : String(error) })
+    transition('error', {
+      ...versionDetail(availableVersion),
+      errorMessage: error instanceof Error ? error.message : String(error),
+    })
   }
   options.updater.on('checking-for-update', handleChecking)
   options.updater.on('update-available', handleAvailable)
