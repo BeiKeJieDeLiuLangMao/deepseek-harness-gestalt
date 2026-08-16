@@ -17,14 +17,19 @@ describe.skipIf(process.env.DSH_DESKTOP_SMOKE !== '1' || !existsSync(appBin))(
       const dir = await mkdtemp(join(tmpdir(), 'gestalt-pack-smoke-'))
       const log = join(dir, 'smoke.log')
       const dshHome = join(dir, 'dsh-home')
-      await mkdir(dshHome)
+      const userHome = join(dir, 'user-home')
+      const appData = join(dir, 'app-data')
+      await Promise.all([mkdir(dshHome), mkdir(userHome), mkdir(appData)])
       await writeFile(log, '')
       const child = spawn(appBin, [`--user-data-dir=${join(dir, 'electron-user-data')}`], {
         env: {
           ...process.env,
+          APPDATA: appData,
           DSH_HOME: dshHome,
           DSH_DESKTOP_SMOKE: '1',
           DSH_DESKTOP_SMOKE_FILE: log,
+          HOME: userHome,
+          USERPROFILE: userHome,
         },
         stdio: ['ignore', 'pipe', 'pipe'],
       })
