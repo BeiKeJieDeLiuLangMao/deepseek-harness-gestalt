@@ -94,6 +94,20 @@ describe('Desktop release workflow', () => {
     expect(winSmoke).toBeLessThan(workflow.indexOf('name: gestalt-win-x64'))
   })
 
+  it('verifies the Windows executable icon before smoke and artifact upload', () => {
+    const winSteps = steps('pack-win')
+    const packageStep = winSteps.findIndex(step => step.name === 'Package')
+    const verifyIcon = winSteps.findIndex(step => step.name === 'Verify packaged icon')
+    const smoke = winSteps.findIndex(step => step.name === 'Smoke packaged Desktop Host')
+    const upload = winSteps.findIndex(step => step.uses === 'actions/upload-artifact@v4')
+
+    expect(winSteps[verifyIcon]?.run).toContain('verify-windows-icon.mjs')
+    expect(winSteps[verifyIcon]?.run).toContain('win-unpacked')
+    expect(packageStep).toBeLessThan(verifyIcon)
+    expect(verifyIcon).toBeLessThan(smoke)
+    expect(verifyIcon).toBeLessThan(upload)
+  })
+
   it('forces and verifies signing and notarization before signed artifacts upload', () => {
     const macSteps = steps('pack-mac')
     const signed = macSteps.findIndex(step => step.name === 'Package signed and notarized')

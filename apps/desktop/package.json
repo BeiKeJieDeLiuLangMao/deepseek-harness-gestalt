@@ -70,7 +70,7 @@
       "target": [
         { "target": "nsis", "arch": ["x64"] }
       ],
-      "signAndEditExecutable": false,
+      "signExecutable": false,
       "artifactName": "DeepSeekGestalt-Setup-${version}-${arch}.${ext}"
     },
     "nsis": {

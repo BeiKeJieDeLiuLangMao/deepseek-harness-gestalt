@@ -201,6 +201,15 @@ jobs:
           }
           & node_modules/.bin/electron-builder.cmd --win --x64 --publish never "-c.compression=$compression"
 
+      - name: Verify packaged icon
+        shell: pwsh
+        run: |
+          $appBin = Get-ChildItem apps/desktop/release -Recurse -Filter 'DeepSeek Gestalt.exe' |
+            Where-Object { $_.FullName -match 'win-unpacked' } |
+            Select-Object -First 1 -ExpandProperty FullName
+          if (-not $appBin) { throw 'packaged executable not found' }
+          & node apps/desktop/scripts/verify-windows-icon.mjs $appBin apps/desktop/build/icon.ico
+
       - name: Smoke packaged Desktop Host
         shell: pwsh
         run: |

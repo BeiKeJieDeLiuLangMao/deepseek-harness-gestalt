@@ -40,12 +40,18 @@ describe('Desktop application icons', () => {
       build: {
         extraResources: Array<{ from: string; to: string }>
         mac: { icon?: string }
-        win: { icon?: string }
+        win: {
+          icon?: string
+          signExecutable?: boolean
+          signAndEditExecutable?: boolean
+        }
       }
     }
 
     expect(manifest.build.mac.icon).toBe('build/icon.icns')
     expect(manifest.build.win.icon).toBe('build/icon.ico')
+    expect(manifest.build.win.signExecutable).toBe(false)
+    expect(manifest.build.win).not.toHaveProperty('signAndEditExecutable')
     expect(manifest.build.extraResources).toContainEqual({ from: 'build/icon.png', to: 'icon.png' })
 
     const main = readFileSync(join(desktopRoot, 'src/main.ts'), 'utf8')
