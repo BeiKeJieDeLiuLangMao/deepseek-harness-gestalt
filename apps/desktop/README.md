@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-DeepSeek Gestalt Desktop Host. Electron owns the window, menu, and GitHub auto-update. It starts bundled official Node plus `dsh web --host 127.0.0.1 --port 0 --patch ./cordis.patch.yml` and loads that loopback URL. The overlay adds the GESTALT badge, drag strip, and Update Control. Browser `dsh web` does not load the overlay.
+DeepSeek Gestalt Desktop Host. Electron owns the window, menu, and GitHub auto-update. It starts bundled official Node plus `dsh web --host 127.0.0.1 --port 0 --patch ./cordis.patch.yml` and loads that loopback URL. The overlay adds the GESTALT badge, drag strip, and Update Control; the control remains absent until an update is actionable or an error follows version discovery. Browser `dsh web` does not load the overlay.
 
 Window exit, Ctrl+C, and smoke-test completion cancel any pending start, stop the Web Host, and wait for its process to exit before Electron terminates. Startup or a later crash gets one retry before the window shows the Host error.
 
@@ -25,7 +25,7 @@ Needs a real Node on `DSH_NODE` or `npm_node_execpath` (pnpm sets the latter). D
 
 ## Release
 
-Run the `Desktop Release` workflow from `master` with the package version and `publish` selected. macOS arm64 and x64 install dependencies on matching GitHub runner architectures; publish builds use the `desktop-release` environment to sign and notarize, while dry runs receive no release credentials. Windows NSIS is unsigned and still updates. The workflow verifies each official Node archive, starts every packaged target, checks the signed and stapled Mac applications, creates the `gestalt-v<version>` tag and a draft Release at the tested commit, uploads and verifies the exact installer, blockmap, and updater-feed set, then publishes the Release. A failed or interrupted handoff removes the tag and draft owned by that run. Downloaded updates install only after the user selects Install and restart.
+Run the `Desktop Release` workflow from `master` with the package version and `publish` selected. macOS arm64 and x64 install dependencies on matching GitHub runner architectures; publish builds use the `desktop-release` environment to sign and notarize, while dry runs receive no release credentials. Windows NSIS is unsigned and still updates. The workflow verifies each official Node archive, starts every packaged target, round-trips the disabled updater status through the Desktop bridge while requiring the inactive Update Control to remain absent, checks the signed and stapled Mac applications, creates the `gestalt-v<version>` tag and a draft Release at the tested commit, uploads and verifies the exact installer, blockmap, and updater-feed set, then publishes the Release. A failed or interrupted handoff removes the tag and draft owned by that run. Downloaded updates install only after the user selects Install and restart.
 
 Local unsigned arm64 rehearsal (no notarization):
 

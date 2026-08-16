@@ -13,7 +13,7 @@ const appBin = process.env.DSH_PACKAGED_APP_BIN ?? join(
 describe.skipIf(process.env.DSH_DESKTOP_SMOKE !== '1' || !existsSync(appBin))(
   'packed Desktop Host smoke',
   () => {
-    it('loads __DSH_BOOT__ from the packaged official Node + dsh snapshot', async () => {
+    it('loads the packaged Desktop composition with an inactive updater', async () => {
       const dir = await mkdtemp(join(tmpdir(), 'gestalt-pack-smoke-'))
       const log = join(dir, 'smoke.log')
       const dshHome = join(dir, 'dsh-home')
@@ -47,7 +47,7 @@ describe.skipIf(process.env.DSH_DESKTOP_SMOKE !== '1' || !existsSync(appBin))(
           await expect.poll(() => processExists(pid), { timeout: 5_000 }).toBe(false)
           return
         }
-        if (text.includes('error ')) {
+        if (text.includes('missing Desktop Session Surface evidence') || text.includes('error ')) {
           child.kill()
           throw new Error(text)
         }

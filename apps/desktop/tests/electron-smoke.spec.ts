@@ -10,7 +10,7 @@ const desktopRoot = join(here, '..')
 const electronBin = join(desktopRoot, 'node_modules', '.bin', 'electron')
 
 describe.skipIf(process.env.DSH_DESKTOP_SMOKE !== '1')('Desktop Host smoke', () => {
-  it('opens a window on a loopback dsh web page with __DSH_BOOT__', async () => {
+  it('opens the Desktop composition with an inactive updater', async () => {
     if (process.platform === 'linux' && process.env.DISPLAY === undefined) return
     const dir = await mkdtemp(join(tmpdir(), 'gestalt-smoke-'))
     const log = join(dir, 'smoke.log')
@@ -45,7 +45,11 @@ describe.skipIf(process.env.DSH_DESKTOP_SMOKE !== '1')('Desktop Host smoke', () 
         await expect.poll(() => processExists(pid), { timeout: 5_000 }).toBe(false)
         return
       }
-      if (text.includes('missing window.__DSH_BOOT__') || text.includes('error ')) {
+      if (
+        text.includes('missing Desktop Session Surface evidence')
+        || text.includes('missing window.__DSH_BOOT__')
+        || text.includes('error ')
+      ) {
         child.kill()
         throw new Error(text + '\n' + output.slice(-2000))
       }
