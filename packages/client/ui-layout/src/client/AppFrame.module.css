@@ -36,6 +36,11 @@
   overflow: hidden;
 }
 
+.frame:has([data-desktop-chrome='mac']) .centerCol {
+  box-sizing: border-box;
+  padding-top: 28px;
+}
+
 .detailsCol {
   min-width: 0;
   overflow: hidden;

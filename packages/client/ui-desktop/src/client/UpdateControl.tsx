@@ -24,12 +24,13 @@ export type UpdateControlProps =
 /**
  * Render the Update Control.
  * @param props - composed slot props.
- * @returns the control, or null when the Desktop bridge is missing.
+ * @returns the control for an actionable update, or null while updates are inactive.
  */
 export function UpdateControl({ wide, t, useUpdater }: UpdateControlProps) {
   const desktop = window.dshDesktop
   if (desktop === undefined) return null
   const status = useUpdater(snapshot => snapshot)
+  if (!isVisible(status)) return null
   const label = labelOf(status, t)
   const onClick = () => { applyUpdaterClick(status.state, desktop) }
   return (
@@ -38,7 +39,7 @@ export function UpdateControl({ wide, t, useUpdater }: UpdateControlProps) {
       className={wide ? css.wide : css.rail}
       aria-label={label}
       title={status.state === 'error' ? status.errorMessage : undefined}
-      disabled={status.state === 'checking' || status.state === 'downloading' || status.state === 'installing'}
+      disabled={status.state === 'downloading' || status.state === 'installing'}
       onClick={onClick}
     >
       <span className={css.dot} data-state={status.state} />
@@ -72,10 +73,26 @@ export function applyUpdaterClick(state: UpdaterPhase, desktop: DesktopBridge): 
   }
 }
 
-function labelOf(status: UpdaterStatus, t: UpdateControlProps['t']): string {
+type VisibleUpdaterPhase = Exclude<UpdaterPhase, 'disabled' | 'idle' | 'checking'>
+
+function isVisible(status: UpdaterStatus): status is UpdaterStatus & { state: VisibleUpdaterPhase } {
   switch (status.state) {
+    case 'available':
+    case 'downloading':
+    case 'downloaded':
+    case 'installing':
+      return true
+    case 'error':
+      return status.newVersion !== undefined
+    case 'disabled':
+    case 'idle':
     case 'checking':
-      return t('update.checking')
+      return false
+  }
+}
+
+function labelOf(status: UpdaterStatus & { state: VisibleUpdaterPhase }, t: UpdateControlProps['t']): string {
+  switch (status.state) {
     case 'available':
       return t('update.available').replace('{version}', status.newVersion ?? '')
     case 'downloading':
@@ -85,10 +102,6 @@ function labelOf(status: UpdaterStatus, t: UpdateControlProps['t']): string {
       return t('update.install')
     case 'error':
       return t('update.error')
-    case 'disabled':
-      return t('update.disabled')
-    case 'idle':
-      return t('update.idle')
     /* v8 ignore next -- closed UpdaterPhase union */
     default: {
       const _exhaustive: never = status.state

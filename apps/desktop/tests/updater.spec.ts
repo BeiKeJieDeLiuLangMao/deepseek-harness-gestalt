@@ -56,6 +56,48 @@ describe('startAutoUpdater', () => {
     expect(seen).toContain('available')
   })
 
+  it('preserves a discovered version only for later failures', () => {
+    const updater = fakeUpdater()
+    const life = startAutoUpdater({ updater, now: () => 10 })
+
+    updater.emit('error', new Error('offline'))
+    expect(life.state()).toEqual({ state: 'error', lastCheckedAt: null, errorMessage: 'offline' })
+
+    updater.emit('update-available', { version: '0.1.1' })
+    updater.emit('error', new Error('download failed'))
+    expect(life.state()).toEqual({
+      state: 'error',
+      lastCheckedAt: 10,
+      newVersion: '0.1.1',
+      errorMessage: 'download failed',
+    })
+    life.dispose()
+  })
+
+  it('preserves a discovered version when a repeated check rejects', async () => {
+    let rejectCheck: ((error: Error) => void) | undefined
+    const updater = {
+      ...fakeUpdater(),
+      checkForUpdates: vi.fn(() => new Promise((_resolve, reject) => { rejectCheck = reject })),
+    }
+    const life = startAutoUpdater({ updater, now: () => 10 })
+
+    updater.emit('update-available', { version: '0.1.1' })
+    updater.emit('error', new Error('event failure'))
+    life.checkForUpdates()
+    rejectCheck?.(new Error('retry failed'))
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(life.state()).toEqual({
+      state: 'error',
+      lastCheckedAt: 10,
+      newVersion: '0.1.1',
+      errorMessage: 'retry failed',
+    })
+    life.dispose()
+  })
+
   it('contains a renderer notification failure and still starts the check', () => {
     const updater = fakeUpdater()
     const report = vi.spyOn(console, 'error').mockImplementation(() => {})

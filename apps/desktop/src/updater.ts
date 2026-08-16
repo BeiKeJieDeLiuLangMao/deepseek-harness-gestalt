@@ -81,6 +81,13 @@ export function startAutoUpdater(options: {
     }
   }
 
+  const handleError = (error: unknown): void => {
+    transition('error', {
+      ...versionDetail(availableVersion),
+      errorMessage: error instanceof Error ? error.message : String(error),
+    })
+  }
+
   const check = (): void => {
     if (
       disposed || checking
@@ -89,9 +96,7 @@ export function startAutoUpdater(options: {
     ) return
     checking = true
     transition('checking')
-    void options.updater.checkForUpdates().catch((error: unknown) => {
-      transition('error', { errorMessage: error instanceof Error ? error.message : String(error) })
-    }).finally(() => { checking = false })
+    void options.updater.checkForUpdates().catch(handleError).finally(() => { checking = false })
   }
 
   options.updater.autoDownload = false
@@ -116,9 +121,6 @@ export function startAutoUpdater(options: {
   const handleDownloaded = (info: unknown): void => {
     availableVersion = versionOf(info) ?? availableVersion
     transition('downloaded', versionDetail(availableVersion))
-  }
-  const handleError = (error: unknown): void => {
-    transition('error', { errorMessage: error instanceof Error ? error.message : String(error) })
   }
   options.updater.on('checking-for-update', handleChecking)
   options.updater.on('update-available', handleAvailable)

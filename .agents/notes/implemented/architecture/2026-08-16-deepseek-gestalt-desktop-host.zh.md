@@ -20,9 +20,9 @@ Desktop 在 `apps/desktop/build/` 下拥有 ICNS、ICO 与 512x512 RGBA PNG 应�
 
 Desktop Release 从 `master` 手动运行，并显式指定 Desktop Bundle 版本。发布运行会先用 `apps/desktop/package.json` 校验该版本并拒绝已有标签；macOS 发布打包只在 `desktop-release` environment 中进行，该 environment 的分支策略只允许 `master`，并提供证书与 Apple 公证 secrets。无凭据运行使用另一个 environment，显式关闭 macOS identity 选择和公证。CLI 组装显式提供 Web 和 headless provider 使用的服务定义，让 production-only 部署保留与源码启动相同的插件导入闭包。每个平台都部署注入工作区包的 hoisted 生产快照，再实体化剩余的文件链接；因此 Windows 安装器不会收到供 7zip 遍历的 pnpm 目录 junction 图。每个发布构建都强制签名，并在上传 artifact 前验证 app 签名和已装订的公证票据。两个 macOS 架构和 Windows 都通过已打包 smoke 后，发布 job 校验精确的版本化安装包、blockmap 和更新 feed 集合，在受测提交上创建本次运行拥有的 `gestalt-v<version>` 标签与 draft GitHub Release，上传资产并核对远端文件名，然后发布非 prerelease Release。交接失败或中断时会删除本次运行拥有的 draft 和标签，使同一候选版本可以重试。
 
-Desktop 只多一层 `--patch`：GESTALT 次标、拖拽带、设置右侧的 Update Control。浏览器 `dsh web` 不加载这层。从 Dock 启动时，Web Host 的 cwd 是 `~/Library/Application Support/DeepSeek Gestalt/defaultWorkspace`（Windows：`%APPDATA%\DeepSeek Gestalt\defaultWorkspace`），进程 cwd 不是安装目录。Session Surface、`~/.dsh` 和 web profile 仍然共用。
+Desktop 只多一层 `--patch`：GESTALT 次标、拖拽带、设置右侧的 Update Control。Update Control 只在可操作的更新阶段和发现版本后的 error 阶段占用侧栏 seat；disabled、idle、checking 和发现版本前的 error 阶段不渲染。浏览器 `dsh web` 不加载这层。从 Dock 启动时，Web Host 的 cwd 是 `~/Library/Application Support/DeepSeek Gestalt/defaultWorkspace`（Windows：`%APPDATA%\DeepSeek Gestalt\defaultWorkspace`），进程 cwd 不是安装目录。Session Surface、`~/.dsh` 和 web profile 仍然共用。
 
-macOS chrome 为 traffic lights 保留固定顶部间距，同时保留 DSH 侧栏标题和收起交互。Windows 使用横跨整个窗口的拖拽行，其中三个 caption 按钮为不可拖拽区域。未支持平台的开发运行保留系统窗口框架。
+macOS chrome 在 DSH 侧栏标题和中间 Session 内容上方为 traffic lights 保留固定 28px 顶部间距，同时保留原始收起交互。详情栏保留现有顶边。Windows 使用横跨整个窗口的拖拽行，其中三个 caption 按钮为不可拖拽区域，Session 内容不增加顶部间距。未支持平台的开发运行保留系统窗口框架。
 
 ## Alternatives considered
 
@@ -42,8 +42,8 @@ macOS chrome 为 traffic lights 保留固定顶部间距，同时保留 DSH 侧�
 
 - `pnpm gestalt:dev` 启动 Desktop Host，由它启动 Web Host，并在环回 URL 上加载带 `window.__DSH_BOOT__` 的页面（不是裸 Vite）。
 - 浏览器 `dsh web` 仍是 HARNESS 次标，没有拖拽带，也没有 Update Control。
-- Desktop 组合显示 GESTALT 次标、logo 行上方的拖拽带，以及与设置同一行的 Update Control。
-- macOS 展开和收起布局让未改动的侧栏控件位于原生控件下方；Windows 把 caption 按钮放在全窗口拖拽行右侧。
+- Desktop 组合显示 GESTALT 次标和 logo 行上方的拖拽带。Update Control 渲染测试确保不活跃阶段不出现，可操作阶段与设置位于同一脚部行。
+- macOS 展开和收起布局让未改动的侧栏控件与中间 Session 内容位于原生控件下方；Windows 把 caption 按钮放在全窗口拖拽行右侧，且不移动 Session 内容。
 - Dock 式启动把 Launch Directory 当作 cwd，并且不把该路径登记为 Workspace。
 - Desktop 退出会等待尚未启动完成和正在运行的 Web Host 进程退出；smoke 测试会拒绝遗留子进程和缺失的 Desktop 组合。
 - 无密钥浏览器 golden 会启动已交付 Web profile 与 Desktop overlay；release job 会校验 Node 归档摘要，在 macOS 签名前将打开文件数限制提升到 runner 硬限制，并对 `@electron/osx-sign` 应用有界的资源遍历。发布构建必须通过代码签名和已装订公证票据校验，并在上传前 smoke 每个打包目标。

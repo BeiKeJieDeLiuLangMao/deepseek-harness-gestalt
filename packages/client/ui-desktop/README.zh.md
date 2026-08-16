@@ -2,9 +2,9 @@
 
 [English](README.md) | 中文
 
-仅 Desktop 的 Session Surface 铬。Desktop Host 的 `--patch` 叠加层插入这一行；浏览器 `dsh web` 不加载。它在 `sidebar.brand` 上选中 GESTALT 字标，填充 `sidebar.chrome.drag`，并在 `sidebar.footer.action` 注册 Update Control。更新和窗口操作都走 Desktop Host preload 注入的 `window.dshDesktop`。
+仅 Desktop 的 Session Surface 铬。Desktop Host 的 `--patch` 叠加层插入这一行；浏览器 `dsh web` 不加载。它在 `sidebar.brand` 上选中 GESTALT 字标，填充 `sidebar.chrome.drag`，并在 `sidebar.footer.action` 注册 Update Control。发现可用版本后，控件会在 available、downloading、downloaded、installing 阶段及后续 error 阶段挂载；disabled、idle、checking 和发现版本前的 error 不占侧栏 seat。更新和窗口操作都走 Desktop Host preload 注入的 `window.dshDesktop`。
 
-macOS chrome 在未改动的 DSH 侧栏标题行上方为原生 traffic lights 保留空间。Windows 拖拽行横跨视口，三个 caption 按钮位于不可拖拽区域。其他开发平台不绘制自定义 Window Chrome，并保留系统窗口框架。
+macOS chrome 在未改动的 DSH 侧栏标题行和中间 Session 内容上方为原生 traffic lights 保留 28px 空间。Windows 拖拽行横跨视口，三个 caption 按钮位于不可拖拽区域，但不改变 Session 内容的顶部间距。其他开发平台不绘制自定义 Window Chrome，并保留系统窗口框架。
 
 ## Model Experience
 
