@@ -107,11 +107,12 @@ describe('Desktop release workflow', () => {
     expect(verify).toBeLessThan(upload)
   })
 
-  it('raises the open-file limit before macOS signing starts', () => {
+  it('raises the open-file limit to the runner hard limit before macOS signing starts', () => {
     const signed = steps('pack-mac').find(step => step.name === 'Package signed and notarized')
     const command = String(signed?.run)
-    expect(command).toContain('ulimit -n 65536')
-    expect(command.indexOf('ulimit -n 65536')).toBeLessThan(
+    expect(command).toContain('hard_open_files=$(ulimit -Hn)')
+    expect(command).toContain('ulimit -n "$hard_open_files"')
+    expect(command.indexOf('ulimit -n "$hard_open_files"')).toBeLessThan(
       command.indexOf('electron-builder --mac'),
     )
   })
