@@ -45,7 +45,7 @@ The macOS chrome reserves a fixed top inset for the traffic lights while preserv
 
 ## Consequences
 
-- A Desktop release is a snapshot of `dsh` plus Electron. npm `dsh` versions continue on their own line.
+- A Desktop release is a snapshot of `dsh` plus Electron. The private Desktop app is not an npm `dsh` release-family member, so both version lines remain independent.
 - The notarized Mac identity belongs to the 千机 Apple team. Changing the app id later is a new application.
 - Windows users see SmartScreen until an Authenticode certificate exists.
 - The personal GitHub feed is the product feed; there is no migration path that preserves updates for already-installed builds.

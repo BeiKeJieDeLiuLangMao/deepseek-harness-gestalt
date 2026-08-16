@@ -45,7 +45,7 @@ macOS chrome 为 traffic lights 保留固定顶部间距，同时保留 DSH 侧�
 
 ## Consequences
 
-- 一次 Desktop 发布是 `dsh` 加 Electron 的快照。npm `dsh` 版本线继续独立。
+- 一次 Desktop 发布是 `dsh` 加 Electron 的快照。私有 Desktop app 不属于 npm `dsh` 发布家族，因此两条版本线保持独立。
 - 公证后的 Mac 身份属于千机 Apple 团队。以后改 app id 等于新应用。
 - 在有 Authenticode 证书之前，Windows 用户会看到 SmartScreen。
 - 个人 GitHub feed 就是产品 feed；没有能保住已装包更新的迁仓路径。

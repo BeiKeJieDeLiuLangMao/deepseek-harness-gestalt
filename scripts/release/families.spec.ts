@@ -16,6 +16,14 @@ function member(directory: string, name: string, manifest: Record<string, unknow
 }
 
 describe('release families', () => {
+  it('discovers only npm-published apps in the dsh family', () => {
+    const directories = releaseFamily('dsh').members(process.cwd()).map(member => member.directory)
+
+    expect(directories).toContain('apps/cli')
+    expect(directories).toContain('apps/web')
+    expect(directories).not.toContain('apps/desktop')
+  })
+
   it('names one tag for the whole dsh family and one per vendored package', () => {
     const dsh = releaseFamily('dsh')
     const vendor = releaseFamily('vendor')
