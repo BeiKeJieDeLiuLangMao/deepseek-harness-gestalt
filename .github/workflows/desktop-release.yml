@@ -142,7 +142,7 @@ jobs:
         run: |
           app_bin=$(find apps/desktop/release -path '*/DeepSeek Gestalt.app/Contents/MacOS/DeepSeek Gestalt' -type f -print -quit)
           test -n "$app_bin"
-          DSH_DESKTOP_SMOKE=1 DSH_PACKAGED_APP_BIN="$app_bin" pnpm exec vitest run apps/desktop/tests/electron-smoke-packaged.spec.ts
+          DSH_DESKTOP_SMOKE=1 DSH_PACKAGED_APP_BIN="$app_bin" node_modules/.bin/vitest run apps/desktop/tests/electron-smoke-packaged.spec.ts
 
       - uses: actions/upload-artifact@v4
         with:
@@ -198,7 +198,7 @@ jobs:
           if (-not $appBin) { throw 'packaged executable not found' }
           $env:DSH_DESKTOP_SMOKE = '1'
           $env:DSH_PACKAGED_APP_BIN = $appBin
-          pnpm exec vitest run apps/desktop/tests/electron-smoke-packaged.spec.ts
+          & node_modules/.bin/vitest.cmd run apps/desktop/tests/electron-smoke-packaged.spec.ts
 
       - uses: actions/upload-artifact@v4
         with:

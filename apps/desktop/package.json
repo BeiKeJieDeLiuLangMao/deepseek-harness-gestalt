@@ -55,12 +55,7 @@
       }
     ],
     "mac": {
-      "target": [
-        { "target": "zip", "arch": ["arm64"] },
-        { "target": "zip", "arch": ["x64"] },
-        { "target": "dmg", "arch": ["arm64"] },
-        { "target": "dmg", "arch": ["x64"] }
-      ],
+      "target": ["zip", "dmg"],
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
       "entitlements": "build/entitlements.mac.plist",

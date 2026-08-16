@@ -51,6 +51,7 @@ describe('Desktop release workflow', () => {
     expect(workflow).toContain('arch: arm64\n            runner: macos-15')
     expect(workflow).toContain('arch: x64\n            runner: macos-15-intel')
     expect(workflow).toContain('runs-on: ${{ matrix.runner }}')
+    expect(record(record(record(desktopPackage).build).mac).target).toEqual(['zip', 'dmg'])
   })
 
   it('builds the Electron entry and publishes an explicit asset list', () => {
@@ -75,6 +76,8 @@ describe('Desktop release workflow', () => {
   it('smokes every packaged app before artifact upload', () => {
     expect(workflow.match(/electron-smoke-packaged\.spec\.ts/g)).toHaveLength(2)
     expect(workflow.match(/DSH_PACKAGED_APP_BIN/g)).toHaveLength(2)
+    expect(workflow).not.toContain('pnpm exec vitest run apps/desktop/tests/electron-smoke-packaged.spec.ts')
+    expect(workflow.match(/node_modules\/\.bin\/vitest/g)).toHaveLength(2)
     const macSmoke = workflow.indexOf('app_bin=$(find apps/desktop/release')
     const winSmoke = workflow.indexOf('$appBin = Get-ChildItem apps/desktop/release')
     expect(macSmoke).toBeGreaterThan(workflow.indexOf('electron-builder --mac'))
