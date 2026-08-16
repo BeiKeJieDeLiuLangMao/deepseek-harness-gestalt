@@ -130,7 +130,9 @@ jobs:
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          ulimit -n 65536
+          hard_open_files=$(ulimit -Hn)
+          ulimit -n "$hard_open_files"
+          echo "open-file limit: $(ulimit -Sn)"
           node_modules/.bin/electron-builder --mac --${{ matrix.arch }} --publish never -c.forceCodeSigning=true
 
       - name: Verify signed app
