@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -16,12 +16,20 @@ describe.skipIf(process.env.DSH_DESKTOP_SMOKE !== '1' || !existsSync(appBin))(
     it('loads __DSH_BOOT__ from the packaged official Node + dsh snapshot', async () => {
       const dir = await mkdtemp(join(tmpdir(), 'gestalt-pack-smoke-'))
       const log = join(dir, 'smoke.log')
+      const dshHome = join(dir, 'dsh-home')
+      const userHome = join(dir, 'user-home')
+      const appData = join(dir, 'app-data')
+      await Promise.all([mkdir(dshHome), mkdir(userHome), mkdir(appData)])
       await writeFile(log, '')
-      const child = spawn(appBin, [], {
+      const child = spawn(appBin, [`--user-data-dir=${join(dir, 'electron-user-data')}`], {
         env: {
           ...process.env,
+          APPDATA: appData,
+          DSH_HOME: dshHome,
           DSH_DESKTOP_SMOKE: '1',
           DSH_DESKTOP_SMOKE_FILE: log,
+          HOME: userHome,
+          USERPROFILE: userHome,
         },
         stdio: ['ignore', 'pipe', 'pipe'],
       })
