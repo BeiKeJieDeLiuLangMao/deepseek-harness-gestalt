@@ -187,7 +187,13 @@ jobs:
 
       - name: Package
         working-directory: apps/desktop
-        run: node_modules/.bin/electron-builder.cmd --win --x64 --publish never
+        run: |
+          if ('${{ inputs.publish }}' -eq 'true') {
+            $compression = 'normal'
+          } else {
+            $compression = 'store'
+          }
+          & node_modules/.bin/electron-builder.cmd --win --x64 --publish never "-c.compression=$compression"
 
       - name: Smoke packaged Desktop Host
         shell: pwsh

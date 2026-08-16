@@ -71,6 +71,11 @@ describe('Desktop release workflow', () => {
     )
     expect(packageSteps).toHaveLength(3)
     expect(packageSteps.every(step => step['working-directory'] === 'apps/desktop')).toBe(true)
+    const winPackage = steps('pack-win').find(step => step.name === 'Package')
+    expect(winPackage?.run).toContain("if ('${{ inputs.publish }}' -eq 'true')")
+    expect(winPackage?.run).toContain("$compression = 'normal'")
+    expect(winPackage?.run).toContain("$compression = 'store'")
+    expect(winPackage?.run).toContain('"-c.compression=$compression"')
   })
 
   it('smokes every packaged app before artifact upload', () => {
