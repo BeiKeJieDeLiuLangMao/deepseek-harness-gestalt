@@ -23,18 +23,19 @@ Needs a real Node on `DSH_NODE` or `npm_node_execpath` (pnpm sets the latter). D
 
 ## Release
 
-Tag `gestalt-v0.1.0` and run the `Desktop Release` workflow. macOS arm64 and x64 install dependencies on matching GitHub runner architectures before packaging; Mac notarizes with repository secrets. Windows NSIS is unsigned and still updates. The workflow verifies each official Node archive against a reviewed SHA-256 digest and starts every packaged target before upload. Downloaded updates install only after the user selects Install and restart.
+Run the `Desktop Release` workflow from `master` with the package version and `publish` selected. macOS arm64 and x64 install dependencies on matching GitHub runner architectures; publish builds use the `desktop-release` environment to sign and notarize, while dry runs receive no release credentials. Windows NSIS is unsigned and still updates. The workflow verifies each official Node archive, starts every packaged target, checks the signed and stapled Mac applications, creates the `gestalt-v<version>` tag and a draft Release at the tested commit, uploads and verifies the exact installer, blockmap, and updater-feed set, then publishes the Release. A failed or interrupted handoff removes the tag and draft owned by that run. Downloaded updates install only after the user selects Install and restart.
 
 Local unsigned arm64 rehearsal (no notarization):
 
 ```sh
 node apps/desktop/scripts/fetch-node.mjs --platform darwin --arch arm64
-pnpm --filter @deepseek-ai/dsh deploy --prod --legacy apps/desktop/resources/dsh
+pnpm --ignore-scripts --config.node-linker=hoisted --config.inject-workspace-packages=true \
+  --filter @deepseek-ai/dsh deploy --prod apps/desktop/resources/dsh
 node apps/desktop/scripts/isolate-dsh-snapshot.mjs
 pnpm --filter @deepseek-ai/dsh-desktop package:unsigned
 ```
 
-`pnpm deploy` of workspace packages leaves `file:` links into the monorepo. The isolate step copies those targets so the packed Web Host can resolve `dsh` outside the repo.
+The hoisted deploy includes workspace packages without pnpm's linked virtual dependency graph. `pnpm deploy` still leaves a small number of `file:` links into the monorepo; the isolate step copies those targets so the packed Web Host can resolve `dsh` outside the repo and the Windows installer never archives directory junctions.
 
 ## Known Limitations and Deferred Work
 

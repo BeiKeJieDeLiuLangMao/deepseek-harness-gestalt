@@ -23,18 +23,19 @@ pnpm gestalt:dev
 
 ## 发布
 
-打 `gestalt-v0.1.0` 标签并跑 `Desktop Release` workflow。macOS arm64 与 x64 会先在匹配架构的 GitHub runner 上安装依赖再打包；Mac 用仓库 secrets 公证。Windows NSIS 未签名但仍更新。workflow 会用已审查的 SHA-256 摘要校验每个官方 Node 归档，并在上传前启动每个打包目标。已下载更新只在用户选择“安装并重启”后安装。
+从 `master` 运行 `Desktop Release` workflow，填写包版本并选择 `publish`。macOS arm64 与 x64 会先在匹配架构的 GitHub runner 上安装依赖；发布构建通过 `desktop-release` environment 完成签名和公证，dry run 不接收发布凭据。Windows NSIS 未签名但仍更新。workflow 会校验每个官方 Node 归档、启动每个打包目标、检查 Mac app 的签名和已装订公证票据，在已测试提交上创建 `gestalt-v<version>` 标签与 draft Release，上传并核验精确的安装包、blockmap 与更新 feed 集合，然后发布 Release。交接失败或中断时，workflow 会删除本次运行拥有的标签和 draft。已下载更新只在用户选择“安装并重启”后安装。
 
 本机未签名 arm64 排练（不做公证）：
 
 ```sh
 node apps/desktop/scripts/fetch-node.mjs --platform darwin --arch arm64
-pnpm --filter @deepseek-ai/dsh deploy --prod --legacy apps/desktop/resources/dsh
+pnpm --ignore-scripts --config.node-linker=hoisted --config.inject-workspace-packages=true \
+  --filter @deepseek-ai/dsh deploy --prod apps/desktop/resources/dsh
 node apps/desktop/scripts/isolate-dsh-snapshot.mjs
 pnpm --filter @deepseek-ai/dsh-desktop package:unsigned
 ```
 
-工作区包的 `pnpm deploy` 会留下指向仓库的 `file:` 链接。isolate 一步把这些目标拷进快照，打包后的 Web Host 才能在仓库外解析 `dsh`。
+hoisted deploy 会纳入工作区包，但不带 pnpm 的链接式虚拟依赖图。`pnpm deploy` 仍会留下少量指向仓库的 `file:` 链接；isolate 一步把这些目标拷进快照，让打包后的 Web Host 能在仓库外解析 `dsh`，并确保 Windows 安装器不会归档目录 junction。
 
 ## Known Limitations and Deferred Work
 

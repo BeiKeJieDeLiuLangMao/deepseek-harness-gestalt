@@ -1,21 +1,26 @@
 # Pack DeepSeek Gestalt installers and publish a GitHub Release for electron-updater.
-# Pack runs on workflow_dispatch; publication requires a gestalt-v* tag.
+# A publish dispatch from master creates its gestalt-v* tag after every packaged smoke passes.
 name: Desktop Release
 
 on:
   workflow_dispatch:
     inputs:
+      version:
+        description: Desktop Bundle version from apps/desktop/package.json.
+        required: true
+        type: string
+        default: '0.1.0'
       publish:
-        description: Create a GitHub Release from the current gestalt-v* tag and upload installers.
+        description: Create the gestalt-v* tag and GitHub Release after packaging succeeds.
         required: true
         type: boolean
         default: false
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: desktop-release-${{ github.ref }}
+  group: desktop-release-${{ inputs.version }}
   cancel-in-progress: false
 
 env:
@@ -23,9 +28,31 @@ env:
   DSH_TELEMETRY_DISABLED: '1'
 
 jobs:
+  prepare:
+    name: Prepare release
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate dispatch
+        id: release
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          PUBLISH: ${{ inputs.publish }}
+        run: node apps/desktop/scripts/prepare-release.mjs "$INPUT_VERSION" "$PUBLISH" "$GITHUB_REF_NAME"
+
   pack-mac:
     name: Pack macOS ${{ matrix.arch }}
+    needs: prepare
     runs-on: ${{ matrix.runner }}
+    environment:
+      name: ${{ inputs.publish && 'desktop-release' || 'desktop-dry-run' }}
     strategy:
       fail-fast: false
       matrix:
@@ -35,6 +62,24 @@ jobs:
           - arch: x64
             runner: macos-15-intel
     steps:
+      - name: Validate release credentials
+        if: inputs.publish
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          missing=()
+          for name in CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
+            if [[ -z "${!name:-}" ]]; then missing+=("$name"); fi
+          done
+          if (( ${#missing[@]} > 0 )); then
+            echo "desktop-release environment is missing secrets: ${missing[*]}"
+            exit 1
+          fi
+
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
@@ -61,23 +106,44 @@ jobs:
 
       - name: Deploy dsh snapshot
         run: |
-          pnpm --filter @deepseek-ai/dsh deploy --prod --legacy apps/desktop/resources/dsh
+          pnpm --ignore-scripts --config.node-linker=hoisted --config.inject-workspace-packages=true \
+            --filter @deepseek-ai/dsh deploy --prod apps/desktop/resources/dsh
           node apps/desktop/scripts/isolate-dsh-snapshot.mjs
 
-      - name: Package
+      - name: Package unsigned
+        if: ${{ !inputs.publish }}
+        working-directory: apps/desktop
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: |
+          node_modules/.bin/electron-builder \
+            --mac --${{ matrix.arch }} --publish never \
+            -c.mac.identity=null -c.mac.notarize=false
+
+      - name: Package signed and notarized
+        if: inputs.publish
+        working-directory: apps/desktop
         env:
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: pnpm --filter @deepseek-ai/dsh-desktop exec electron-builder --mac --${{ matrix.arch }} --publish never
+        run: node_modules/.bin/electron-builder --mac --${{ matrix.arch }} --publish never -c.forceCodeSigning=true
+
+      - name: Verify signed app
+        if: inputs.publish
+        run: |
+          app_bundle=$(find apps/desktop/release -name 'DeepSeek Gestalt.app' -type d -print -quit)
+          test -n "$app_bundle"
+          codesign --verify --deep --strict "$app_bundle"
+          xcrun stapler validate "$app_bundle"
 
       - name: Smoke packaged Desktop Host
         run: |
           app_bin=$(find apps/desktop/release -path '*/DeepSeek Gestalt.app/Contents/MacOS/DeepSeek Gestalt' -type f -print -quit)
           test -n "$app_bin"
-          DSH_DESKTOP_SMOKE=1 DSH_PACKAGED_APP_BIN="$app_bin" pnpm exec vitest run apps/desktop/tests/electron-smoke-packaged.spec.ts
+          DSH_DESKTOP_SMOKE=1 DSH_PACKAGED_APP_BIN="$app_bin" node_modules/.bin/vitest run apps/desktop/tests/electron-smoke-packaged.spec.ts
 
       - uses: actions/upload-artifact@v4
         with:
@@ -88,6 +154,7 @@ jobs:
 
   pack-win:
     name: Pack Windows x64
+    needs: prepare
     runs-on: windows-2025
     steps:
       - uses: actions/checkout@v6
@@ -116,11 +183,19 @@ jobs:
 
       - name: Deploy dsh snapshot
         run: |
-          pnpm --filter @deepseek-ai/dsh deploy --prod --legacy apps/desktop/resources/dsh
+          pnpm --ignore-scripts --config.node-linker=hoisted --config.inject-workspace-packages=true `
+            --filter @deepseek-ai/dsh deploy --prod apps/desktop/resources/dsh
           node apps/desktop/scripts/isolate-dsh-snapshot.mjs
 
       - name: Package
-        run: pnpm --filter @deepseek-ai/dsh-desktop exec electron-builder --win --x64 --publish never
+        working-directory: apps/desktop
+        run: |
+          if ('${{ inputs.publish }}' -eq 'true') {
+            $compression = 'normal'
+          } else {
+            $compression = 'store'
+          }
+          & node_modules/.bin/electron-builder.cmd --win --x64 --publish never "-c.compression=$compression"
 
       - name: Smoke packaged Desktop Host
         shell: pwsh
@@ -131,7 +206,7 @@ jobs:
           if (-not $appBin) { throw 'packaged executable not found' }
           $env:DSH_DESKTOP_SMOKE = '1'
           $env:DSH_PACKAGED_APP_BIN = $appBin
-          pnpm exec vitest run apps/desktop/tests/electron-smoke-packaged.spec.ts
+          & node_modules/.bin/vitest.cmd run apps/desktop/tests/electron-smoke-packaged.spec.ts
 
       - uses: actions/upload-artifact@v4
         with:
@@ -143,12 +218,15 @@ jobs:
   publish:
     name: GitHub Release
     if: inputs.publish
-    needs: [pack-mac, pack-win]
+    needs: [prepare, pack-mac, pack-win]
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - uses: actions/download-artifact@v4
         with:
@@ -160,8 +238,50 @@ jobs:
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
         run: |
-          tag=${GITHUB_REF_NAME}
-          case "$tag" in gestalt-v*) ;; *) echo "publish requires a gestalt-v* tag"; exit 1 ;; esac
-          mapfile -t assets < <(node apps/desktop/scripts/release-assets.mjs dist)
-          gh release create "$tag" "${assets[@]}" --title "$tag" --generate-notes
+          set -Eeuo pipefail
+          tag=${{ needs.prepare.outputs.tag }}
+          mapfile -t assets < <(node apps/desktop/scripts/release-assets.mjs dist "$RELEASE_VERSION")
+          tag_owned=false
+          release_owned=false
+          published=false
+          cleanup() {
+            status=$?
+            trap - EXIT INT TERM
+            if [[ "$published" == 'true' ]]; then
+              exit "$status"
+            fi
+            if [[ "$release_owned" == 'true' ]]; then
+              gh release delete "$tag" --yes >/dev/null 2>&1 || true
+            fi
+            if [[ "$tag_owned" == 'true' ]]; then
+              gh api --method DELETE "repos/$GITHUB_REPOSITORY/git/refs/tags/$tag" >/dev/null 2>&1 || true
+            fi
+            exit "$status"
+          }
+          trap cleanup EXIT
+          trap 'exit 130' INT
+          trap 'exit 143' TERM
+          gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
+            --field ref="refs/tags/$tag" \
+            --field sha="$GITHUB_SHA" >/dev/null
+          tag_owned=true
+          gh release create "$tag" \
+            --draft \
+            --verify-tag \
+            --target "$GITHUB_SHA" \
+            --title "DeepSeek Gestalt ${{ needs.prepare.outputs.version }}" \
+            --generate-notes
+          release_owned=true
+          gh release upload "$tag" "${assets[@]}"
+          local_names=$(printf '%s\n' "${assets[@]##*/}" | sort)
+          remote_names=$(gh release view "$tag" --json assets --jq '.assets[].name' | sort)
+          if [[ "$local_names" != "$remote_names" ]]; then
+            echo 'uploaded release assets do not match the validated candidate'
+            diff <(printf '%s\n' "$local_names") <(printf '%s\n' "$remote_names") || true
+            exit 1
+          fi
+          gh release edit "$tag" --draft=false --latest
+          published=true
+          trap - EXIT INT TERM
