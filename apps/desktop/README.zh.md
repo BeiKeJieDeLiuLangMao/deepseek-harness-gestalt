@@ -23,7 +23,7 @@ pnpm gestalt:dev
 
 ## 发布
 
-从 `master` 运行 `Desktop Release` workflow，填写包版本并选择 `publish`。macOS arm64 与 x64 会先在匹配架构的 GitHub runner 上安装依赖；发布构建通过 `desktop-release` environment 完成签名和公证，dry run 不接收发布凭据。Windows NSIS 未签名但仍更新。workflow 会校验每个官方 Node 归档、启动每个打包目标、检查 Mac app 的签名和已装订公证票据，把精确的安装包、blockmap 与更新 feed 集合上传到 draft，然后发布 `gestalt-v<version>` 标签和 Release。已下载更新只在用户选择“安装并重启”后安装。
+从 `master` 运行 `Desktop Release` workflow，填写包版本并选择 `publish`。macOS arm64 与 x64 会先在匹配架构的 GitHub runner 上安装依赖；发布构建通过 `desktop-release` environment 完成签名和公证，dry run 不接收发布凭据。Windows NSIS 未签名但仍更新。workflow 会校验每个官方 Node 归档、启动每个打包目标、检查 Mac app 的签名和已装订公证票据，在已测试提交上创建 `gestalt-v<version>` 标签与 draft Release，上传并核验精确的安装包、blockmap 与更新 feed 集合，然后发布 Release。交接失败或中断时，workflow 会删除本次运行拥有的标签和 draft。已下载更新只在用户选择“安装并重启”后安装。
 
 本机未签名 arm64 排练（不做公证）：
 

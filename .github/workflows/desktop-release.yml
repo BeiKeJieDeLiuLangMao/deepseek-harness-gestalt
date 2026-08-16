@@ -237,15 +237,24 @@ jobs:
           mapfile -t assets < <(node apps/desktop/scripts/release-assets.mjs dist "$RELEASE_VERSION")
           tag_owned=false
           release_owned=false
+          published=false
           cleanup() {
+            status=$?
+            trap - EXIT INT TERM
+            if [[ "$published" == 'true' ]]; then
+              exit "$status"
+            fi
             if [[ "$release_owned" == 'true' ]]; then
               gh release delete "$tag" --yes >/dev/null 2>&1 || true
             fi
             if [[ "$tag_owned" == 'true' ]]; then
               gh api --method DELETE "repos/$GITHUB_REPOSITORY/git/refs/tags/$tag" >/dev/null 2>&1 || true
             fi
+            exit "$status"
           }
-          trap cleanup ERR
+          trap cleanup EXIT
+          trap 'exit 130' INT
+          trap 'exit 143' TERM
           gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
             --field ref="refs/tags/$tag" \
             --field sha="$GITHUB_SHA" >/dev/null
@@ -266,4 +275,5 @@ jobs:
             exit 1
           fi
           gh release edit "$tag" --draft=false --latest
-          trap - ERR
+          published=true
+          trap - EXIT INT TERM
