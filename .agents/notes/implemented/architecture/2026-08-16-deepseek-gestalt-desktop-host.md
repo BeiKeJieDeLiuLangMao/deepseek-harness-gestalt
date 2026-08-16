@@ -44,7 +44,7 @@ The macOS chrome reserves a fixed top inset for the traffic lights while preserv
 - macOS expanded and collapsed layouts keep the unchanged sidebar controls below native controls; Windows keeps its caption buttons at the right edge of the full-window drag row.
 - Dock-style spawn uses the Launch Directory as cwd and does not register that path as a Workspace.
 - Desktop shutdown waits for pending and running Web Host processes to exit; the smoke test rejects an orphaned child and missing Desktop composition.
-- The keyless browser golden boots the shipped Web profile plus Desktop overlay; release jobs verify Node archive digests, raise the open-file limit to the runner hard limit before macOS signing, require code signing plus a stapled notarization ticket for publish builds, and smoke each packaged target before upload.
+- The keyless browser golden boots the shipped Web profile plus Desktop overlay; release jobs verify Node archive digests, raise the open-file limit to the runner hard limit, and apply a bounded `@electron/osx-sign` resource walk before macOS signing. Publish builds require code signing plus a stapled notarization ticket, and each packaged target is smoked before upload.
 - Release-plan tests cover version, branch, and existing-tag validation; release-asset tests require both updater feeds and every versioned macOS and Windows installer plus blockmap while excluding unpacked application contents.
 - Unit tests cover URL discovery from the `dsh web:` line, Launch Directory resolution, and updater phase transitions without downloading.
 

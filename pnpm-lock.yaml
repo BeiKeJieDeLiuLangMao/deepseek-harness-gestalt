@@ -9,6 +9,7 @@ overrides:
   '@deepseek-ai/schemastery': link:vendor/schemastery
 
 patchedDependencies:
+  '@electron/osx-sign@1.3.3': 35ff070f57c595c9a8af0de266a55400194723a5dcad6f4589be0491dc9e9815
   node-pty@1.1.0: 7a0c04f1f49d798a9ffe2f7f414c01064a44ca2489772d0c3e1235ab336755e6
 
 importers:
@@ -15956,7 +15957,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@electron/osx-sign@1.3.3':
+  '@electron/osx-sign@1.3.3(patch_hash=35ff070f57c595c9a8af0de266a55400194723a5dcad6f4589be0491dc9e9815)':
     dependencies:
       compare-version: 0.1.2
       debug: 4.4.3
@@ -18027,7 +18028,7 @@ snapshots:
       '@electron/fuses': 1.8.0
       '@electron/get': 3.1.0
       '@electron/notarize': 2.5.0
-      '@electron/osx-sign': 1.3.3
+      '@electron/osx-sign': 1.3.3(patch_hash=35ff070f57c595c9a8af0de266a55400194723a5dcad6f4589be0491dc9e9815)
       '@electron/rebuild': 4.2.0
       '@electron/universal': 2.0.3
       '@malept/flatpak-bundler': 0.4.0
