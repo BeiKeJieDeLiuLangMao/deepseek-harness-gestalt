@@ -24,6 +24,6 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 export type TrajectoryToolbarUtilityProps =
   PropsRuntime<'conversation.trajectory.toolbar.utilities'>
 
-/** Render share the Trajectory view passes into its toolbar. */
+/** Optional render share the Trajectory view passes into its toolbar. */
 export type TrajectoryViewRenderSlots =
-  PropsRenderSlots<'conversation.trajectory.toolbar.utilities'>
+  Partial<PropsRenderSlots<'conversation.trajectory.toolbar.utilities'>>

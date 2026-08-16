@@ -1,0 +1,4 @@
+# Desktop-only overlay on the web profile. Browser `dsh web` does not load this file.
+- insert:
+    - id: ui-desktop
+      name: '@deepseek-ai/dsh-client-ui-desktop'

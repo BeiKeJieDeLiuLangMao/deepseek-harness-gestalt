@@ -1,0 +1,55 @@
+.strip {
+  position: fixed;
+  z-index: 7;
+  top: 0;
+  right: 0;
+  left: 0;
+  display: flex;
+  align-items: stretch;
+  height: 36px;
+  background: var(--dsw-specific-sidebar-fill);
+  -webkit-app-region: drag;
+}
+
+/* macOS traffic lights sit over this Desktop-owned drag row. */
+.macChrome {
+  position: fixed;
+  z-index: 5;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 28px;
+  background: var(--dsw-specific-sidebar-fill);
+  -webkit-app-region: drag;
+}
+
+.drag {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.captions {
+  display: flex;
+  flex: none;
+  -webkit-app-region: no-drag;
+}
+
+.caption {
+  width: 46px;
+  height: 36px;
+  border: none;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 36px;
+}
+
+.caption:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.caption:last-child:hover {
+  background: #c42b1c;
+  color: #fff;
+}

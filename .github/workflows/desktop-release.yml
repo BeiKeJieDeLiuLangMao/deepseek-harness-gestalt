@@ -1,0 +1,167 @@
+# Pack DeepSeek Gestalt installers and publish a GitHub Release for electron-updater.
+# Pack runs on workflow_dispatch; publication requires a gestalt-v* tag.
+name: Desktop Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Create a GitHub Release from the current gestalt-v* tag and upload installers.
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: desktop-release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PRIMARY_NODE_VERSION: '24'
+  DSH_TELEMETRY_DISABLED: '1'
+
+jobs:
+  pack-mac:
+    name: Pack macOS ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-15
+          - arch: x64
+            runner: macos-15-intel
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4
+        with:
+          dest: ${{ runner.temp }}/setup-pnpm
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.PRIMARY_NODE_VERSION }}
+
+      - name: Install (immutable)
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: |
+          pnpm run build
+          pnpm --filter @deepseek-ai/dsh-desktop build:main
+
+      - name: Fetch official Node
+        run: node apps/desktop/scripts/fetch-node.mjs --platform darwin --arch ${{ matrix.arch }}
+
+      - name: Deploy dsh snapshot
+        run: |
+          pnpm --filter @deepseek-ai/dsh deploy --prod --legacy apps/desktop/resources/dsh
+          node apps/desktop/scripts/isolate-dsh-snapshot.mjs
+
+      - name: Package
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: pnpm --filter @deepseek-ai/dsh-desktop exec electron-builder --mac --${{ matrix.arch }} --publish never
+
+      - name: Smoke packaged Desktop Host
+        run: |
+          app_bin=$(find apps/desktop/release -path '*/DeepSeek Gestalt.app/Contents/MacOS/DeepSeek Gestalt' -type f -print -quit)
+          test -n "$app_bin"
+          DSH_DESKTOP_SMOKE=1 DSH_PACKAGED_APP_BIN="$app_bin" pnpm exec vitest run apps/desktop/tests/electron-smoke-packaged.spec.ts
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gestalt-mac-${{ matrix.arch }}
+          path: apps/desktop/release/*
+          if-no-files-found: error
+          retention-days: 14
+
+  pack-win:
+    name: Pack Windows x64
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4
+        with:
+          dest: ${{ runner.temp }}/setup-pnpm
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.PRIMARY_NODE_VERSION }}
+
+      - name: Install (immutable)
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: |
+          pnpm run build
+          pnpm --filter @deepseek-ai/dsh-desktop build:main
+
+      - name: Fetch official Node
+        run: node apps/desktop/scripts/fetch-node.mjs --platform win32 --arch x64
+
+      - name: Deploy dsh snapshot
+        run: |
+          pnpm --filter @deepseek-ai/dsh deploy --prod --legacy apps/desktop/resources/dsh
+          node apps/desktop/scripts/isolate-dsh-snapshot.mjs
+
+      - name: Package
+        run: pnpm --filter @deepseek-ai/dsh-desktop exec electron-builder --win --x64 --publish never
+
+      - name: Smoke packaged Desktop Host
+        shell: pwsh
+        run: |
+          $appBin = Get-ChildItem apps/desktop/release -Recurse -Filter 'DeepSeek Gestalt.exe' |
+            Where-Object { $_.FullName -match 'win-unpacked' } |
+            Select-Object -First 1 -ExpandProperty FullName
+          if (-not $appBin) { throw 'packaged executable not found' }
+          $env:DSH_DESKTOP_SMOKE = '1'
+          $env:DSH_PACKAGED_APP_BIN = $appBin
+          pnpm exec vitest run apps/desktop/tests/electron-smoke-packaged.spec.ts
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gestalt-win-x64
+          path: apps/desktop/release/*
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: GitHub Release
+    if: inputs.publish
+    needs: [pack-mac, pack-win]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Merge macOS update feeds
+        run: node apps/desktop/scripts/merge-latest-mac.mjs dist
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag=${GITHUB_REF_NAME}
+          case "$tag" in gestalt-v*) ;; *) echo "publish requires a gestalt-v* tag"; exit 1 ;; esac
+          mapfile -t assets < <(node apps/desktop/scripts/release-assets.mjs dist)
+          gh release create "$tag" "${assets[@]}" --title "$tag" --generate-notes

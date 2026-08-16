@@ -1,0 +1,4 @@
+interface:
+  display_name: "Orchestrate DSH Delivery"
+  short_description: "Run ticket delivery from issue to verified merge"
+  default_prompt: "Use $orchestrate-dsh-delivery to implement this ticket through a verified pull request and merge."
