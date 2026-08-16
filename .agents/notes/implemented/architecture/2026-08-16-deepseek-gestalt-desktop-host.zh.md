@@ -44,7 +44,7 @@ macOS chrome 为 traffic lights 保留固定顶部间距，同时保留 DSH 侧�
 - macOS 展开和收起布局让未改动的侧栏控件位于原生控件下方；Windows 把 caption 按钮放在全窗口拖拽行右侧。
 - Dock 式启动把 Launch Directory 当作 cwd，并且不把该路径登记为 Workspace。
 - Desktop 退出会等待尚未启动完成和正在运行的 Web Host 进程退出；smoke 测试会拒绝遗留子进程和缺失的 Desktop 组合。
-- 无密钥浏览器 golden 会启动已交付 Web profile 与 Desktop overlay；release job 会校验 Node 归档摘要，在 macOS 签名前将打开文件数限制提升到 runner 硬限制，要求发布构建通过代码签名和已装订公证票据校验，并在上传前 smoke 每个打包目标。
+- 无密钥浏览器 golden 会启动已交付 Web profile 与 Desktop overlay；release job 会校验 Node 归档摘要，在 macOS 签名前将打开文件数限制提升到 runner 硬限制，并对 `@electron/osx-sign` 应用有界的资源遍历。发布构建必须通过代码签名和已装订公证票据校验，并在上传前 smoke 每个打包目标。
 - 发布计划测试覆盖版本、分支和已有标签校验；发布资产测试要求两个更新 feed、全部版本化 macOS 与 Windows 安装包及其 blockmap，并排除未打包应用内部文件。
 - 单测覆盖从 `dsh web:` 行发现 URL、Launch Directory 解析，以及不下载的更新阶段转换。
 
