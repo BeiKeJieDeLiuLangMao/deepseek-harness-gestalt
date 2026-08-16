@@ -44,6 +44,7 @@
     "afterPack": "./scripts/after-pack.mjs",
     "extraResources": [
       { "from": "cordis.patch.yml", "to": "cordis.patch.yml" },
+      { "from": "build/icon.png", "to": "icon.png" },
       { "from": "resources/node", "to": "node" }
     ],
     "asar": true,
@@ -55,6 +56,7 @@
       }
     ],
     "mac": {
+      "icon": "build/icon.icns",
       "target": ["zip", "dmg"],
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
@@ -64,6 +66,7 @@
       "artifactName": "DeepSeek-Gestalt-${version}-${arch}.${ext}"
     },
     "win": {
+      "icon": "build/icon.ico",
       "target": [
         { "target": "nsis", "arch": ["x64"] }
       ],

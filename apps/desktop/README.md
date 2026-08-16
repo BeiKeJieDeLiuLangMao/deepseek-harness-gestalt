@@ -10,6 +10,8 @@ The main window accepts navigation only within the active loopback Host origin. 
 
 On macOS, a 28px top inset keeps the unchanged DSH sidebar header below the traffic lights. Windows uses a full-window 36px drag row with 46px minimize, maximize, and close targets. Unsupported development platforms keep the system frame.
 
+Desktop owns `build/icon.icns`, `build/icon.ico`, and `build/icon.png` as byte-for-byte copies of the tracked 千机·Gestalt production artwork. electron-builder uses the ICNS for macOS and the ICO for Windows; the PNG supplies the unpackaged macOS Dock icon and the Windows runtime window icon. The packaged PNG is an explicit extra resource rather than an implicit build-resource lookup.
+
 Dock / Start Menu cwd is the Launch Directory (`defaultWorkspace` under Application Support / `%APPDATA%`). User data stays in `~/.dsh`.
 
 ## Develop

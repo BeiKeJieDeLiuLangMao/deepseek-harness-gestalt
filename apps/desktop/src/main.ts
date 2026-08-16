@@ -23,6 +23,7 @@ import {
   autoUpdaterFromModule, startAutoUpdater, type AutoUpdaterLifecycle, type AutoUpdaterModule,
 } from './updater.ts'
 import { windowChromeOptions } from './window-options.ts'
+import { desktopIconOptions } from './app-icon.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const PRELOAD = join(here, 'preload.cjs')
@@ -136,6 +137,13 @@ async function focusOrReopen(): Promise<void> {
 function createWindow(): BrowserWindow {
   const target = new BrowserWindow({
     ...windowChromeOptions(process.platform),
+    ...desktopIconOptions({
+      platform: process.platform,
+      packaged: app.isPackaged,
+      appPath: app.getAppPath(),
+      resourcesPath: process.resourcesPath,
+      setDockIcon: (path) => { app.dock.setIcon(path) },
+    }),
     width: 1280,
     height: 800,
     minWidth: 800,

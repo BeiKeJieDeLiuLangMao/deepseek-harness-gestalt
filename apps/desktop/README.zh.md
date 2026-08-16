@@ -10,6 +10,8 @@ DeepSeek Gestalt 的 Desktop Host。Electron 拥有窗口、菜单和 GitHub 自
 
 在 macOS 上，28px 顶部间距让未改动的 DSH 侧栏标题行避开 traffic lights。Windows 使用覆盖整个窗口的 36px 拖拽行，最小化、最大化和关闭按钮各占 46px。未支持平台的开发运行保留系统窗口框架。
 
+Desktop 将 `build/icon.icns`、`build/icon.ico` 和 `build/icon.png` 作为自有资源，其字节与千机·Gestalt 已跟踪的生产图标一致。electron-builder 在 macOS 使用 ICNS，在 Windows 使用 ICO；PNG 供未打包的 macOS Dock 图标与 Windows 运行时窗口图标使用。打包后的 PNG 是显式 extra resource，不依赖对构建资源的隐式查找。
+
 Dock / 开始菜单的 cwd 是 Launch Directory（Application Support / `%APPDATA%` 下的 `defaultWorkspace`）。用户数据仍在 `~/.dsh`。
 
 ## 开发
