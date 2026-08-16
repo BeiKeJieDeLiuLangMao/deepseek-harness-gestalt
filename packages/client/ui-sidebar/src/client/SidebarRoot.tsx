@@ -146,22 +146,19 @@ export function SidebarRoot({
           </button>
         )}
         {/* Rail resting state is the whale mark; hovering swaps in the panel
-            icon (the expand affordance, figma sidebar-hover flow). Desktop
-            macOS lifts this control onto the traffic-light row. */}
-        <div className={css.titleRow}>
-          <Tooltip label={collapsed ? t('toggle.open') : t('toggle.collapse')} delayMs={500}>
-            <button
-              type="button"
-              className={clsx(css.iconButton, css.toggle)}
-              aria-label={collapsed ? t('toggle.open') : t('toggle.collapse')}
-              onClick={() => { toggleSidebar() }}
-            >
-              {!wide && <FishLogo className={css.railFish} size={24} />}
-              {/* Rail icons render at 18 (figma rail spec); expanded keeps the glyph-native sizes. */}
-              <IconPanelLeftOutline16 className={css.panelIcon} size={wide ? 16 : 18} />
-            </button>
-          </Tooltip>
-        </div>
+            icon (the expand affordance, figma sidebar-hover flow). */}
+        <Tooltip label={collapsed ? t('toggle.open') : t('toggle.collapse')} delayMs={500}>
+          <button
+            type="button"
+            className={clsx(css.iconButton, css.toggle)}
+            aria-label={collapsed ? t('toggle.open') : t('toggle.collapse')}
+            onClick={() => { toggleSidebar() }}
+          >
+            {!wide && <FishLogo className={css.railFish} size={24} />}
+            {/* Rail icons render at 18 (figma rail spec); expanded keeps the glyph-native sizes. */}
+            <IconPanelLeftOutline16 className={css.panelIcon} size={wide ? 16 : 18} />
+          </button>
+        </Tooltip>
       </div>
 
       {/* Expanded, the button carries its own label — tooltip only on the rail. */}

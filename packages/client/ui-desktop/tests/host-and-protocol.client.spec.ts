@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { apply } from '../src/index.ts'
 import { apply as applyInvariant, name } from '../src/invariant.ts'
 import {
@@ -22,19 +22,23 @@ describe('host half and protocol', () => {
   })
 
   it('registers the invariant companion', async () => {
-    const register = it
-    expect(typeof applyInvariant).toBe('function')
-    expect(register).toBeDefined()
+    const dispose = vi.fn()
+    const install = vi.fn()
+    const register = vi.fn((pkg: string, installer: () => void) => {
+      expect(pkg).toBe('@deepseek-ai/dsh-client-ui-desktop')
+      install()
+      installer()
+      return dispose
+    })
     const ctx = {
-      invariants: {
-        register: (pkg: string, install: () => void) => {
-          expect(pkg).toBe('@deepseek-ai/dsh-client-ui-desktop')
-          install()
-          return () => {}
-        },
-      },
+      invariants: { register },
     }
-    const dispose = await applyInvariant(ctx as never)
-    dispose()
+    const registered = await applyInvariant(ctx as never)
+
+    expect(register).toHaveBeenCalledOnce()
+    expect(install).toHaveBeenCalledOnce()
+    expect(registered).toBe(dispose)
+    registered()
+    expect(dispose).toHaveBeenCalledOnce()
   })
 })

@@ -17,3 +17,25 @@ export function planHostExit(windowAlive: boolean, alreadyRespawned: boolean): H
   if (!alreadyRespawned) return 'respawn'
   return 'error'
 }
+
+/**
+ * Run a startup operation at most twice.
+ * @param start - one independent startup attempt.
+ * @returns the successful value and whether the first attempt failed.
+ */
+export async function startWithOneRetry<T>(
+  start: () => Promise<T>,
+  onRetry: () => void = () => {},
+  shouldRetry: (error: unknown) => boolean = () => true,
+): Promise<{
+  readonly value: T
+  readonly retried: boolean
+}> {
+  try {
+    return { value: await start(), retried: false }
+  } catch (error) {
+    if (!shouldRetry(error)) throw error
+    onRetry()
+    return { value: await start(), retried: true }
+  }
+}

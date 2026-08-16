@@ -15,10 +15,4 @@ contextBridge.exposeInMainWorld('dshDesktop', {
   windowMinimize: () => { ipcRenderer.send('window:minimize') },
   windowMaximize: () => { ipcRenderer.send('window:maximize') },
   windowClose: () => { ipcRenderer.send('window:close') },
-  getFullscreen: () => ipcRenderer.invoke('window:fullscreen'),
-  onFullscreen: (listener) => {
-    const wrapped = (_event, fullscreen) => { listener(fullscreen) }
-    ipcRenderer.on('window:fullscreen-changed', wrapped)
-    return () => { ipcRenderer.removeListener('window:fullscreen-changed', wrapped) }
-  },
 })

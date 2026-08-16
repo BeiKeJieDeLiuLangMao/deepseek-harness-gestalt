@@ -23,8 +23,6 @@ function mount(status: UpdaterStatus, bridge?: Partial<DesktopBridge>) {
     windowMinimize: vi.fn(),
     windowMaximize: vi.fn(),
     windowClose: vi.fn(),
-    getFullscreen: () => Promise.resolve(false),
-    onFullscreen: () => () => {},
     ...bridge,
   }
   window.dshDesktop = desktop
@@ -75,7 +73,9 @@ describe('UpdateControl', () => {
 
   it('surfaces error, disabled, and download progress copy', () => {
     const errored = mount({ state: 'error', lastCheckedAt: 1, errorMessage: 'offline' })
-    fireEvent.click(screen.getByRole('button', { name: 'offline' }))
+    const errorButton = screen.getByRole('button', { name: 'Update failed' })
+    expect(errorButton.getAttribute('title')).toBe('offline')
+    fireEvent.click(errorButton)
     expect(errored.checkNow).toHaveBeenCalledOnce()
     cleanup()
     const disabled = mount({ state: 'disabled', lastCheckedAt: null })
@@ -108,8 +108,6 @@ describe('UpdateControl', () => {
       windowMinimize: vi.fn(),
       windowMaximize: vi.fn(),
       windowClose: vi.fn(),
-      getFullscreen: () => Promise.resolve(false),
-      onFullscreen: () => () => {},
     }
     render(
       <UpdateControl

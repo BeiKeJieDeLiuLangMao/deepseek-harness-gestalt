@@ -71,9 +71,14 @@ export function startAutoUpdater(options: {
     state: UpdaterPhase,
     detail: Pick<UpdaterStatus, 'newVersion' | 'downloadPercent' | 'errorMessage'> = {},
   ): void => {
+    if (disposed) return
     const next = Object.freeze({ state, lastCheckedAt, ...detail })
     current = next
-    options.onStateChange?.(next)
+    try {
+      options.onStateChange?.(next)
+    } catch (error) {
+      console.error('failed to publish updater state', error)
+    }
   }
 
   const check = (): void => {
@@ -90,7 +95,7 @@ export function startAutoUpdater(options: {
   }
 
   options.updater.autoDownload = false
-  options.updater.autoInstallOnAppQuit = true
+  options.updater.autoInstallOnAppQuit = false
   const handleChecking = (): void => { transition('checking') }
   const handleAvailable = (info: unknown): void => {
     availableVersion = versionOf(info)

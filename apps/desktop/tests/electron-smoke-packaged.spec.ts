@@ -5,15 +5,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
-const appBin = join(
-  import.meta.dirname,
-  '..',
-  'release',
-  'mac-arm64',
-  'DeepSeek Gestalt.app',
-  'Contents',
-  'MacOS',
-  'DeepSeek Gestalt',
+const appBin = process.env.DSH_PACKAGED_APP_BIN ?? join(
+  import.meta.dirname, '..', 'release', 'mac-arm64', 'DeepSeek Gestalt.app',
+  'Contents', 'MacOS', 'DeepSeek Gestalt',
 )
 
 describe.skipIf(process.env.DSH_DESKTOP_SMOKE !== '1' || !existsSync(appBin))(

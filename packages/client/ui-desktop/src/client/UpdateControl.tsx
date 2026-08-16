@@ -37,6 +37,7 @@ export function UpdateControl({ wide, t, useUpdater }: UpdateControlProps) {
       type="button"
       className={wide ? css.wide : css.rail}
       aria-label={label}
+      title={status.state === 'error' ? status.errorMessage : undefined}
       disabled={status.state === 'checking' || status.state === 'downloading' || status.state === 'installing'}
       onClick={onClick}
     >
@@ -83,7 +84,7 @@ function labelOf(status: UpdaterStatus, t: UpdateControlProps['t']): string {
     case 'installing':
       return t('update.install')
     case 'error':
-      return status.errorMessage ?? t('update.error')
+      return t('update.error')
     case 'disabled':
       return t('update.disabled')
     case 'idle':

@@ -20,10 +20,6 @@ export const WINDOW_MINIMIZE = 'window:minimize'
 export const WINDOW_MAXIMIZE = 'window:maximize'
 /** IPC / preload channel: close the window. */
 export const WINDOW_CLOSE = 'window:close'
-/** IPC invoke: whether the Desktop Host window is fullscreen. */
-export const WINDOW_FULLSCREEN = 'window:fullscreen'
-/** IPC event: fullscreen entered or left. */
-export const WINDOW_FULLSCREEN_CHANGED = 'window:fullscreen-changed'
 
 /** Updater lifecycle the Update Control renders. */
 export type UpdaterPhase =
@@ -74,14 +70,6 @@ export interface DesktopBridge {
   readonly windowMaximize: () => void
   /** Close the Desktop Host window. */
   readonly windowClose: () => void
-  /** Whether the Desktop Host window is fullscreen. */
-  readonly getFullscreen: () => Promise<boolean>
-  /**
-   * Subscribe to fullscreen enter/leave.
-   * @param listener - true after enter, false after leave.
-   * @returns unsubscribe.
-   */
-  readonly onFullscreen: (listener: (fullscreen: boolean) => void) => () => void
 }
 
 declare global {

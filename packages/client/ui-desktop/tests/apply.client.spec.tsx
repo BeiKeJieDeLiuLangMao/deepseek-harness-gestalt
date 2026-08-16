@@ -60,8 +60,6 @@ describe('ui-desktop apply', () => {
       windowMinimize: vi.fn(),
       windowMaximize: vi.fn(),
       windowClose: vi.fn(),
-      getFullscreen: () => Promise.resolve(false),
-      onFullscreen: () => () => {},
     }
     window.dshDesktop = desktop
     const b = await bench()

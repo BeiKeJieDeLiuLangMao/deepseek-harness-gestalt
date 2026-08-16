@@ -12,13 +12,13 @@ Status: implemented
 
 DeepSeek Gestalt 是 Desktop Host：Electron 拥有窗口、应用菜单、进程寿命和更新检查。启动时拉起捆绑的官方 Node 加上锁死的 `dsh web` Web Host（`--host 127.0.0.1 --port 0`），并打开该环回 URL。Web Host 保留全部 Host 能力，包括原生选目录。
 
-Electron 在退出阶段继续监管 Web Host。窗口退出、终止信号和 smoke 结束都会停止子进程，并等待进程退出后才终止 Desktop Host；主动关闭不会触发一次性崩溃重启。
+Electron 在退出阶段继续监管 Web Host。窗口退出、终止信号和 smoke 结束都会取消尚未完成的启动、停止子进程，并等待进程退出后才终止 Desktop Host；主动关闭不会触发一次性崩溃重启。可信主窗口停留在当前环回 origin，普通网页链接交给系统浏览器，并拒绝其他导航和所有新 Electron 窗口。
 
-第一个 Desktop Bundle 是 `0.1.0`，与 npm `dsh` 版本线独立。app id 为 `com.gestalt.deepseek`。显示名为 DeepSeek Gestalt。更新源是 `BeiKeJieDeLiuLangMao/deepseek-harness-gestalt` 上的 GitHub Releases（`gestalt-v*` 标签，非 prerelease）。Mac 用千机团队身份公证；Windows 发未签名 NSIS 仍更新。
+第一个 Desktop Bundle 是 `0.1.0`，与 npm `dsh` 版本线独立。app id 为 `com.gestalt.deepseek`。显示名为 DeepSeek Gestalt。更新源是 `BeiKeJieDeLiuLangMao/deepseek-harness-gestalt` 上的 GitHub Releases（`gestalt-v*` 标签，非 prerelease）。每个 macOS 目标都先在匹配架构的 runner 上安装与部署，再使用千机团队身份公证；Windows 发未签名 NSIS 仍更新。普通退出不会安装已下载更新。
 
 Desktop 只多一层 `--patch`：GESTALT 次标、拖拽带、设置右侧的 Update Control。浏览器 `dsh web` 不加载这层。从 Dock 启动时，Web Host 的 cwd 是 `~/Library/Application Support/DeepSeek Gestalt/defaultWorkspace`（Windows：`%APPDATA%\DeepSeek Gestalt\defaultWorkspace`），进程 cwd 不是安装目录。Session Surface、`~/.dsh` 和 web profile 仍然共用。
 
-macOS 拖拽行在 traffic lights 后留下固定间距，全屏时侧栏开关回到正常内边距。Windows 使用横跨整个窗口的拖拽行，其中三个 caption 按钮为不可拖拽区域。未支持平台的开发运行保留系统窗口框架。
+macOS chrome 为 traffic lights 保留固定顶部间距，同时保留 DSH 侧栏标题和收起交互。Windows 使用横跨整个窗口的拖拽行，其中三个 caption 按钮为不可拖拽区域。未支持平台的开发运行保留系统窗口框架。
 
 ## Alternatives considered
 
@@ -37,9 +37,10 @@ macOS 拖拽行在 traffic lights 后留下固定间距，全屏时侧栏开关�
 - `pnpm gestalt:dev` 启动 Desktop Host，由它启动 Web Host，并在环回 URL 上加载带 `window.__DSH_BOOT__` 的页面（不是裸 Vite）。
 - 浏览器 `dsh web` 仍是 HARNESS 次标，没有拖拽带，也没有 Update Control。
 - Desktop 组合显示 GESTALT 次标、logo 行上方的拖拽带，以及与设置同一行的 Update Control。
-- macOS 展开、收起和全屏布局都让侧栏开关避开原生控件；Windows 把 caption 按钮放在全窗口拖拽行右侧。
+- macOS 展开和收起布局让未改动的侧栏控件位于原生控件下方；Windows 把 caption 按钮放在全窗口拖拽行右侧。
 - Dock 式启动把 Launch Directory 当作 cwd，并且不把该路径登记为 Workspace。
-- Desktop 退出会等待 Web Host 进程退出；smoke 测试会拒绝遗留的孤儿子进程。
+- Desktop 退出会等待尚未启动完成和正在运行的 Web Host 进程退出；smoke 测试会拒绝遗留子进程和缺失的 Desktop 组合。
+- 无密钥浏览器 golden 会启动已交付 Web profile 与 Desktop overlay；release job 会校验 Node 归档摘要，并在上传前 smoke 每个打包目标。
 - 单测覆盖从 `dsh web:` 行发现 URL、Launch Directory 解析，以及不下载的更新阶段转换。
 
 ## Consequences

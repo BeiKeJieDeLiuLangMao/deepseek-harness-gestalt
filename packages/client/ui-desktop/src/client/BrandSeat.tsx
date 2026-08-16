@@ -1,6 +1,6 @@
 /** Desktop wordmark: same whale + deepseek letterforms, GESTALT plate. */
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import { GestaltWordmark } from './GestaltWordmark.tsx'
+import { BrandWordmark } from '@deepseek-ai/dsh-client-ui-primitives'
 
 /** Chain occupant for `sidebar.brand`. */
 export type BrandSeatProps = PropsRuntime<'sidebar.brand'>
@@ -11,5 +11,5 @@ export type BrandSeatProps = PropsRuntime<'sidebar.brand'>
  * @returns the wordmark svg.
  */
 export function BrandSeat(_props: BrandSeatProps) {
-  return <GestaltWordmark />
+  return <BrandWordmark badge="gestalt" />
 }

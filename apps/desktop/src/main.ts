@@ -6,21 +6,21 @@ import { appendFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
-  app, BrowserWindow, Menu, ipcMain, type IpcMainEvent,
+  app, BrowserWindow, Menu, ipcMain, shell, type IpcMainEvent,
 } from 'electron'
 import {
   UPDATER_CHECK_NOW, UPDATER_DOWNLOAD_NOW, UPDATER_GET_STATUS,
   UPDATER_QUIT_AND_INSTALL, UPDATER_STATUS_CHANGED,
-  WINDOW_CLOSE, WINDOW_FULLSCREEN, WINDOW_FULLSCREEN_CHANGED,
-  WINDOW_MAXIMIZE, WINDOW_MINIMIZE,
+  WINDOW_CLOSE, WINDOW_MAXIMIZE, WINDOW_MINIMIZE,
   type UpdaterStatus,
 } from '@deepseek-ai/dsh-client-ui-desktop/protocol'
 import { ensureLaunchDirectory } from './launch-directory.ts'
 import { isElectronExecutable, resolveDesktopRuntime } from './runtime-paths.ts'
-import { planHostExit } from './host-exit.ts'
+import { planHostExit, startWithOneRetry } from './host-exit.ts'
+import { classifyNavigation } from './navigation-policy.ts'
 import { spawnWebHost, type RunningWebHost } from './spawn-web-host.ts'
 import {
-  autoUpdaterFromModule, startAutoUpdater, type AutoUpdaterLifecycle,
+  autoUpdaterFromModule, startAutoUpdater, type AutoUpdaterLifecycle, type AutoUpdaterModule,
 } from './updater.ts'
 import { windowChromeOptions } from './window-options.ts'
 
@@ -38,6 +38,10 @@ let window: BrowserWindow | undefined
 let updater: AutoUpdaterLifecycle | undefined
 let respawned = false
 let shuttingDown = false
+let integrationsInstalled = false
+let updaterInitialized = false
+const hostStartController = new AbortController()
+let pendingHost: Promise<RunningWebHost> | undefined
 
 smokeLog('main loaded')
 const gotLock = app.requestSingleInstanceLock()
@@ -64,13 +68,19 @@ process.once('SIGTERM', () => { app.quit() })
 /** Create the window, spawn Web Host, attach updater. */
 async function boot(): Promise<void> {
   window = createWindow()
-  installIpc()
-  installMenu()
+  installIntegrationsOnce()
   try {
-    host = await startHost()
+    const started = respawned
+      ? { value: await startHost(), retried: false }
+      : await startWithOneRetry(
+        startHost,
+        () => { respawned = true },
+        () => !hostStartController.signal.aborted,
+      )
+    host = started.value
+    observeHostExit(host)
     smokeLog('host ' + host.url + ' pid ' + String(host.child.pid))
     await window.loadURL(host.url)
-    host.child.once('exit', () => { void onHostExit() })
     if (process.env.DSH_DESKTOP_SMOKE === '1') {
       await finishSmoke(window)
       return
@@ -83,12 +93,15 @@ async function boot(): Promise<void> {
       return
     }
   }
+  if (updaterInitialized) return
+  updaterInitialized = true
   if (!app.isPackaged) {
     pushStatus({ state: 'disabled', lastCheckedAt: null })
     return
   }
   try {
-    const autoUpdater = autoUpdaterFromModule(await import('electron-updater'))
+    const module = await import('electron-updater')
+    const autoUpdater = autoUpdaterFromModule(module as unknown as AutoUpdaterModule)
     updater = startAutoUpdater({
       updater: autoUpdater,
       onStateChange: pushStatus,
@@ -108,16 +121,16 @@ async function focusOrReopen(): Promise<void> {
     window.focus()
     return
   }
-  window = createWindow()
-  if (host !== undefined) {
-    try {
-      await window.loadURL(host.url)
-    } catch (error) {
-      await showError(window, error)
-    }
+  if (host === undefined) {
+    await boot()
     return
   }
-  await boot()
+  window = createWindow()
+  try {
+    await window.loadURL(host.url)
+  } catch (error) {
+    await showError(window, error)
+  }
 }
 
 function createWindow(): BrowserWindow {
@@ -138,17 +151,38 @@ function createWindow(): BrowserWindow {
   })
   target.on('enter-full-screen', () => { syncTrafficLights(target, true) })
   target.on('leave-full-screen', () => { syncTrafficLights(target, false) })
+  guardNavigation(target)
   return target
+}
+
+function guardNavigation(target: BrowserWindow): void {
+  target.webContents.setWindowOpenHandler(({ url }) => {
+    openExternalIfAllowed(url)
+    return { action: 'deny' }
+  })
+  target.webContents.on('will-navigate', (event, url) => {
+    const decision = classifyNavigation(url, host?.url)
+    if (decision === 'host') return
+    event.preventDefault()
+    if (decision === 'external') openExternalIfAllowed(url)
+  })
+}
+
+function openExternalIfAllowed(url: string): void {
+  if (classifyNavigation(url, host?.url) !== 'external') return
+  void shell.openExternal(url).catch((error: unknown) => {
+    console.error('failed to open external URL', error)
+  })
 }
 
 function syncTrafficLights(target: BrowserWindow, fullscreen: boolean): void {
   if (process.platform === 'darwin') {
     target.setWindowButtonPosition(fullscreen ? null : { x: 12, y: 8 })
   }
-  target.webContents.send(WINDOW_FULLSCREEN_CHANGED, fullscreen)
 }
 
 async function startHost(): Promise<RunningWebHost> {
+  if (hostStartController.signal.aborted) throw new Error('dsh web startup aborted')
   const paths = resolveDesktopRuntime({
     packaged: app.isPackaged,
     resourcesPath: process.resourcesPath,
@@ -157,24 +191,36 @@ async function startHost(): Promise<RunningWebHost> {
   if (!app.isPackaged && isElectronExecutable(paths.node)) {
     throw new Error('Desktop Host needs a real Node executable; set DSH_NODE or run via pnpm gestalt:dev')
   }
-  return spawnWebHost({
+  const pending = spawnWebHost({
     node: paths.node,
     args: paths.args,
     cwd: app.isPackaged ? ensureLaunchDirectory() : (paths.workspaceRoot ?? ensureLaunchDirectory()),
     env: { DSH_DESKTOP: '1' },
+    signal: hostStartController.signal,
   })
+  pendingHost = pending
+  try {
+    return await pending
+  } finally {
+    if (pendingHost === pending) pendingHost = undefined
+  }
 }
 
-async function onHostExit(): Promise<void> {
-  if (shuttingDown) return
+function observeHostExit(running: RunningWebHost): void {
+  void running.exited.then(() => { void onHostExit(running) })
+}
+
+async function onHostExit(exited: RunningWebHost): Promise<void> {
+  if (shuttingDown || host !== exited) return
+  host = undefined
   const plan = planHostExit(window !== undefined && !window.isDestroyed(), respawned)
   if (plan === 'ignore' || window === undefined) return
   if (plan === 'respawn') {
     respawned = true
     try {
       host = await startHost()
+      observeHostExit(host)
       await window.loadURL(host.url)
-      host.child.once('exit', () => { void onHostExit() })
     } catch (error) {
       await showError(window, error)
     }
@@ -183,11 +229,29 @@ async function onHostExit(): Promise<void> {
   await showError(window, new Error('Web Host exited'))
 }
 
+function installIntegrationsOnce(): void {
+  if (integrationsInstalled) return
+  integrationsInstalled = true
+  installIpc()
+  installMenu()
+}
+
 async function finishSmoke(target: BrowserWindow): Promise<void> {
-  const kind: unknown = await target.webContents.executeJavaScript('typeof window.__DSH_BOOT__')
-  if (kind !== 'object') {
-    smokeLog('missing window.__DSH_BOOT__')
-    console.error('dsh desktop smoke: missing window.__DSH_BOOT__')
+  const evidence: unknown = await target.webContents.executeJavaScript(`({
+    boot: typeof window.__DSH_BOOT__,
+    gestalt: document.body.textContent?.includes('GESTALT') ?? false,
+    update: document.querySelector('button [data-state="disabled"]') !== null,
+    chrome: document.querySelector('[data-desktop-chrome]')?.getAttribute('data-desktop-chrome') ?? null,
+  })`)
+  const expectedChrome = process.platform === 'darwin' ? 'mac' : process.platform === 'win32' ? 'win' : null
+  const valid = evidence !== null && typeof evidence === 'object'
+    && 'boot' in evidence && evidence.boot === 'object'
+    && 'gestalt' in evidence && evidence.gestalt === true
+    && 'update' in evidence && evidence.update === true
+    && 'chrome' in evidence && evidence.chrome === expectedChrome
+  if (!valid) {
+    smokeLog('missing Desktop Session Surface evidence ' + JSON.stringify(evidence))
+    console.error('dsh desktop smoke: missing Desktop Session Surface evidence', evidence)
     requestShutdown(1)
     return
   }
@@ -201,9 +265,13 @@ function requestShutdown(exitCode: number): void {
   shuttingDown = true
   updater?.dispose()
   updater = undefined
+  hostStartController.abort()
+  const starting = pendingHost
   const running = host
   host = undefined
   void (async () => {
+    const started = await starting?.catch(() => undefined)
+    if (started !== running) await started?.stop()
     await running?.stop()
     app.exit(exitCode)
   })()
@@ -221,7 +289,6 @@ function installIpc(): void {
     else window.maximize()
   })
   ipcMain.on(WINDOW_CLOSE, (_event: IpcMainEvent) => { window?.close() })
-  ipcMain.handle(WINDOW_FULLSCREEN, () => window?.isFullScreen() ?? false)
 }
 
 function installMenu(): void {

@@ -100,63 +100,14 @@
   overflow: hidden;
 }
 
-.titleRow {
-  display: contents;
-}
-
-/* Desktop macOS: Codex-style chrome. Toggle sits on the traffic-light
-   row; the wordmark sits under the lights, left-aligned. */
+/* Desktop chrome reserves the native/caption row above the unchanged
+   sidebar controls. */
 .root:has([data-desktop-chrome='mac']) {
   padding-top: 28px;
 }
 
 .root:has([data-desktop-chrome='win']) {
   padding-top: 42px;
-}
-
-.dragStrip:has([data-desktop-chrome='mac']) + .logoRow {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  height: auto;
-  padding: 0;
-  margin-bottom: 4px;
-  gap: 0;
-}
-
-.dragStrip:has([data-desktop-chrome='mac']) + .logoRow .titleRow {
-  display: flex;
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 6;
-  align-items: center;
-  justify-content: flex-start;
-  height: 28px;
-  padding: 0 8px 0 var(--dsh-traffic-inset, 82px);
-  margin: 0;
-  -webkit-app-region: drag;
-  background: var(--dsw-specific-sidebar-fill);
-}
-
-.dragStrip:has([data-desktop-chrome='mac']) + .logoRow .toggle {
-  width: 12px;
-  height: 12px;
-}
-
-.dragStrip:has([data-desktop-chrome='mac']) + .logoRow .toggle .panelIcon {
-  width: 12px;
-  height: 12px;
-}
-
-html[data-dsh-fullscreen] {
-  --dsh-traffic-inset: 12px;
-}
-
-.dragStrip:has([data-desktop-chrome='mac']) + .logoRow .brand {
-  height: 36px;
-  margin: 0;
 }
 
 .collapsed .logoRow {
@@ -212,20 +163,8 @@ html[data-dsh-fullscreen] {
 /* Rail logo swap: collapsed, the toggle rests as the whale mark (brand ink,
    no hover circle) and hovering reveals the panel icon — the expand
    affordance (figma sidebar-hover flow). Expanded it is a plain panel icon. */
-.root:has([data-desktop-chrome='mac']) .railFish {
-  display: none;
-}
-
-.root:has([data-desktop-chrome='mac']) .panelIcon {
-  display: inline;
-}
-
 .collapsed .toggle .panelIcon {
   display: none;
-}
-
-.root:has([data-desktop-chrome='mac']).collapsed .toggle .panelIcon {
-  display: inline;
 }
 
 .collapsed .toggle:hover .panelIcon {

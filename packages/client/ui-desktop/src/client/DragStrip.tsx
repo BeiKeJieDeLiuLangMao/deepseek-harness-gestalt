@@ -13,6 +13,8 @@ export type DragStripProps = PropsRuntime<'sidebar.chrome.drag'> & PropsLocale<'
 export function DragStrip({ t }: DragStripProps) {
   const desktop = window.dshDesktop
   const windows = desktop?.platform === 'win32'
+  const mac = desktop?.platform === 'darwin'
+  if (!windows && !mac) return null
   return (
     <div
       className={windows ? css.strip : css.macChrome}

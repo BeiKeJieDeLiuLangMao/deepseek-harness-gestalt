@@ -8,13 +8,13 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import { BrandSeat } from './BrandSeat.tsx'
 import { DragStrip } from './DragStrip.tsx'
 import { UpdateControl } from './UpdateControl.tsx'
-import { createUpdaterSource } from './status-source.ts'
+import { bindDesktopUpdater, createUpdaterSource } from './status-source.ts'
 import { en, zh, type DesktopKey } from './locales.ts'
 
 export type { DesktopBridge, UpdaterPhase, UpdaterStatus } from '../protocol.ts'
 export type { DesktopKey } from './locales.ts'
 export type { UpdateControlProps } from './UpdateControl.tsx'
-export { createUpdaterSource, INITIAL_UPDATER_STATUS } from './status-source.ts'
+export { bindDesktopUpdater, createUpdaterSource, INITIAL_UPDATER_STATUS } from './status-source.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -40,10 +40,7 @@ export function apply(ctx: ClientContext): void {
   /* v8 ignore next -- the client half always has window */
   const desktop = typeof window === 'undefined' ? undefined : window.dshDesktop
   if (desktop !== undefined) {
-    void desktop.getStatus().then((status) => { updater.set(status) })
-    ctx.effect(() => desktop.onStatus((status) => { updater.set(status) }), 'ui-desktop: updater status')
-    void desktop.getFullscreen().then((on) => { applyFullscreen(on) })
-    ctx.effect(() => desktop.onFullscreen(applyFullscreen), 'ui-desktop: fullscreen')
+    ctx.effect(() => bindDesktopUpdater(updater, desktop), 'ui-desktop: updater status')
   }
 
   ctx.slots.inject('sidebar.brand', () => ctx.slots.register(
@@ -63,8 +60,4 @@ export function apply(ctx: ClientContext): void {
     },
     UpdateControl,
   ))
-}
-
-function applyFullscreen(on: boolean): void {
-  document.documentElement.toggleAttribute('data-dsh-fullscreen', on)
 }

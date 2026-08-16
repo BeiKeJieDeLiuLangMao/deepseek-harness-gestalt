@@ -15,12 +15,16 @@ export interface WebHostCommand {
   readonly cwd: string
   /** Extra environment. */
   readonly env?: NodeJS.ProcessEnv
+  /** Abort startup and terminate the child before rejecting. */
+  readonly signal?: AbortSignal
 }
 
 /** A running Web Host plus the loopback URL it printed. */
 export interface RunningWebHost {
   /** Child process. */
   readonly child: ChildProcess
+  /** Resolves whenever the child exits, including before a consumer attaches. */
+  readonly exited: Promise<void>
   /** Request termination and resolve after the child exits. */
   readonly stop: () => Promise<void>
   /** Loopback URL including the assigned port. */
@@ -44,7 +48,10 @@ export function spawnWebHost(
       stdio: ['ignore', 'pipe', 'pipe'],
     })
     const exited = new Promise<void>((resolveExit) => {
-      child.once('exit', () => { resolveExit() })
+      child.once('exit', () => {
+        command.signal?.removeEventListener('abort', onAbort)
+        resolveExit()
+      })
     })
     let stopPromise: Promise<void> | undefined
     const stop = (): Promise<void> => {
@@ -56,19 +63,31 @@ export function spawnWebHost(
     }
     let buffer = ''
     let settled = false
-    const timer = setTimeout(() => {
+    const terminateBeforeReady = (error: Error): void => {
       if (settled) return
       settled = true
-      child.kill()
-      reject(new Error(`dsh web did not print a loopback URL within ${String(timeoutMs)}ms`))
+      clearTimeout(timer)
+      void stop().then(() => { reject(error) })
+    }
+    const onAbort = (): void => {
+      if (settled) {
+        if (child.exitCode === null && child.signalCode === null) child.kill()
+        return
+      }
+      terminateBeforeReady(new Error('dsh web startup aborted'))
+    }
+    command.signal?.addEventListener('abort', onAbort, { once: true })
+    const timer = setTimeout(() => {
+      terminateBeforeReady(new Error(`dsh web did not print a loopback URL within ${String(timeoutMs)}ms`))
     }, timeoutMs)
+    if (command.signal?.aborted === true) onAbort()
     const onData = (chunk: Buffer | string): void => {
       buffer += chunk.toString()
       const url = webUrlFromOutput(buffer)
       if (url === undefined || settled) return
       settled = true
       clearTimeout(timer)
-      resolve({ child, stop, url })
+      resolve({ child, exited, stop, url })
     }
     child.stdout.on('data', onData)
     child.stderr.on('data', onData)

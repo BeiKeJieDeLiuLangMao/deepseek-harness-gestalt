@@ -42,6 +42,7 @@ describe('startAutoUpdater', () => {
       now: () => 10,
     })
     expect(updater.autoDownload).toBe(false)
+    expect(updater.autoInstallOnAppQuit).toBe(false)
     life.checkForUpdates()
     updater.emit('update-available', { version: '0.1.1' })
     expect(life.state()).toMatchObject({ state: 'available', newVersion: '0.1.1' })
@@ -53,5 +54,40 @@ describe('startAutoUpdater', () => {
     expect(updater.quitAndInstall).toHaveBeenCalledWith(false, true)
     life.dispose()
     expect(seen).toContain('available')
+  })
+
+  it('contains a renderer notification failure and still starts the check', () => {
+    const updater = fakeUpdater()
+    const report = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const life = startAutoUpdater({
+      updater,
+      onStateChange: () => { throw new Error('renderer gone') },
+    })
+
+    expect(() => { life.checkForUpdates() }).not.toThrow()
+    expect(updater.checkForUpdates).toHaveBeenCalledOnce()
+    expect(report).toHaveBeenCalled()
+    life.dispose()
+    report.mockRestore()
+  })
+
+  it('ignores a late check failure after disposal', async () => {
+    let rejectCheck: ((error: Error) => void) | undefined
+    const updater = {
+      ...fakeUpdater(),
+      checkForUpdates: vi.fn(() => new Promise((_resolve, reject) => { rejectCheck = reject })),
+    }
+    const seen = vi.fn()
+    const life = startAutoUpdater({ updater, onStateChange: seen })
+    life.checkForUpdates()
+    expect(seen).toHaveBeenCalledOnce()
+
+    life.dispose()
+    rejectCheck?.(new Error('late failure'))
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(seen).toHaveBeenCalledOnce()
+    expect(life.state().state).toBe('checking')
   })
 })

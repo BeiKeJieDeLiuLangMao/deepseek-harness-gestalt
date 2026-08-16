@@ -11,10 +11,16 @@
   -webkit-app-region: drag;
 }
 
-/* macOS traffic lights sit in this row; the strip must not push the logo down. */
+/* macOS traffic lights sit over this Desktop-owned drag row. */
 .macChrome {
-  height: 0;
-  overflow: hidden;
+  position: fixed;
+  z-index: 5;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 28px;
+  background: var(--dsw-specific-sidebar-fill);
+  -webkit-app-region: drag;
 }
 
 .drag {
