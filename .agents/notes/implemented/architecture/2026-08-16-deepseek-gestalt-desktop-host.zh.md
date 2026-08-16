@@ -16,6 +16,8 @@ Electron 在退出阶段继续监管 Web Host。窗口退出、终止信号和 s
 
 第一个 Desktop Bundle 是 `0.1.0`，与 npm `dsh` 版本线独立。app id 为 `com.gestalt.deepseek`。显示名为 DeepSeek Gestalt。更新源是 `BeiKeJieDeLiuLangMao/deepseek-harness-gestalt` 上的 GitHub Releases（`gestalt-v*` 标签，非 prerelease）。每个 macOS 目标都先在匹配架构的 runner 上安装与部署，再使用千机团队身份公证；Windows 发未签名 NSIS 仍更新。普通退出不会安装已下载更新。
 
+Desktop Release 从 `master` 手动运行，并显式指定 Desktop Bundle 版本。发布运行会先用 `apps/desktop/package.json` 校验该版本，拒绝已有标签，并要求证书和 Apple 公证 secrets 齐备，然后才开始打包。无凭据运行会显式关闭 macOS 签名和公证。两个 macOS 架构和 Windows 都通过已打包 smoke 后，发布 job 校验完整的版本化安装包与更新 feed 集合，再在受测提交上创建 `gestalt-v<version>` 标签和非 prerelease GitHub Release。
+
 Desktop 只多一层 `--patch`：GESTALT 次标、拖拽带、设置右侧的 Update Control。浏览器 `dsh web` 不加载这层。从 Dock 启动时，Web Host 的 cwd 是 `~/Library/Application Support/DeepSeek Gestalt/defaultWorkspace`（Windows：`%APPDATA%\DeepSeek Gestalt\defaultWorkspace`），进程 cwd 不是安装目录。Session Surface、`~/.dsh` 和 web profile 仍然共用。
 
 macOS chrome 为 traffic lights 保留固定顶部间距，同时保留 DSH 侧栏标题和收起交互。Windows 使用横跨整个窗口的拖拽行，其中三个 caption 按钮为不可拖拽区域。未支持平台的开发运行保留系统窗口框架。
@@ -32,6 +34,8 @@ macOS chrome 为 traffic lights 保留固定顶部间距，同时保留 DSH 侧�
 
 **用 Electron 对话框替换原生选目录。** 那会改 Web Host 能力。Desktop 只补 Apple Events entitlement，让现有 osascript 选择器在 Hardened Runtime 下能跑。
 
+**在运行 workflow 前先创建发布标签。** 该标签会指向未经检查的候选版本，并在打包或 smoke 失败后残留。发布 job 只在所有目标通过后才与 Release 一起创建标签。
+
 ## Verification
 
 - `pnpm gestalt:dev` 启动 Desktop Host，由它启动 Web Host，并在环回 URL 上加载带 `window.__DSH_BOOT__` 的页面（不是裸 Vite）。
@@ -41,6 +45,7 @@ macOS chrome 为 traffic lights 保留固定顶部间距，同时保留 DSH 侧�
 - Dock 式启动把 Launch Directory 当作 cwd，并且不把该路径登记为 Workspace。
 - Desktop 退出会等待尚未启动完成和正在运行的 Web Host 进程退出；smoke 测试会拒绝遗留子进程和缺失的 Desktop 组合。
 - 无密钥浏览器 golden 会启动已交付 Web profile 与 Desktop overlay；release job 会校验 Node 归档摘要，并在上传前 smoke 每个打包目标。
+- 发布计划测试覆盖版本、分支、已有标签和 secret 校验；发布资产测试要求两个更新 feed 以及全部版本化 macOS 和 Windows 安装包。
 - 单测覆盖从 `dsh web:` 行发现 URL、Launch Directory 解析，以及不下载的更新阶段转换。
 
 ## Consequences
@@ -49,3 +54,4 @@ macOS chrome 为 traffic lights 保留固定顶部间距，同时保留 DSH 侧�
 - 公证后的 Mac 身份属于千机 Apple 团队。以后改 app id 等于新应用。
 - 在有 Authenticode 证书之前，Windows 用户会看到 SmartScreen。
 - 个人 GitHub feed 就是产品 feed；没有能保住已装包更新的迁仓路径。
+- 发布运行必须先配置五项仓库 secrets 才能开始打包：`CSC_LINK`、`CSC_KEY_PASSWORD`、`APPLE_ID`、`APPLE_APP_SPECIFIC_PASSWORD` 和 `APPLE_TEAM_ID`。

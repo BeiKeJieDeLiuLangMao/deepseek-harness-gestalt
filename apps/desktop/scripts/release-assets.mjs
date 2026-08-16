@@ -8,9 +8,10 @@ const RELEASE_EXTENSIONS = new Set(['.dmg', '.exe', '.zip', '.yml', '.yaml'])
 /**
  * Collect publishable Desktop Bundle assets and require the merged macOS feed.
  * @param {string} root - downloaded artifact root.
+ * @param {string} version - Desktop Bundle version.
  * @returns {Promise<string[]>} sorted asset paths.
  */
-export async function releaseAssetPaths(root) {
+export async function releaseAssetPaths(root, version) {
   const assets = []
   async function walk(dir) {
     for (const entry of await readdir(dir, { withFileTypes: true })) {
@@ -20,9 +21,18 @@ export async function releaseAssetPaths(root) {
     }
   }
   await walk(root)
-  if (!assets.some(path => basename(path) === 'latest-mac.yml')) {
-    throw new Error('release assets are missing merged latest-mac.yml')
-  }
+  const names = new Set(assets.map(path => basename(path)))
+  const expected = [
+    `DeepSeek-Gestalt-${version}-arm64.dmg`,
+    `DeepSeek-Gestalt-${version}-arm64.zip`,
+    `DeepSeek-Gestalt-${version}-x64.dmg`,
+    `DeepSeek-Gestalt-${version}-x64.zip`,
+    `DeepSeekGestalt-Setup-${version}-x64.exe`,
+    'latest-mac.yml',
+    'latest.yml',
+  ]
+  const missing = expected.filter(name => !names.has(name))
+  if (missing.length > 0) throw new Error(`release assets are missing: ${missing.join(', ')}`)
   return assets.sort()
 }
 
@@ -35,6 +45,9 @@ function isReleaseAsset(name) {
 
 if (process.argv[1]?.endsWith('release-assets.mjs') === true) {
   const root = process.argv[2]
-  if (root === undefined || root.length === 0) throw new Error('usage: release-assets.mjs <artifact-root>')
-  for (const path of await releaseAssetPaths(root)) console.log(path)
+  const version = process.argv[3]
+  if (root === undefined || root.length === 0 || version === undefined || version.length === 0) {
+    throw new Error('usage: release-assets.mjs <artifact-root> <version>')
+  }
+  for (const path of await releaseAssetPaths(root, version)) console.log(path)
 }

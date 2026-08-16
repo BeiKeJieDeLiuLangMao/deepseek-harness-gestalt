@@ -1,21 +1,26 @@
 # Pack DeepSeek Gestalt installers and publish a GitHub Release for electron-updater.
-# Pack runs on workflow_dispatch; publication requires a gestalt-v* tag.
+# A publish dispatch from master creates its gestalt-v* tag after every packaged smoke passes.
 name: Desktop Release
 
 on:
   workflow_dispatch:
     inputs:
+      version:
+        description: Desktop Bundle version from apps/desktop/package.json.
+        required: true
+        type: string
+        default: '0.1.0'
       publish:
-        description: Create a GitHub Release from the current gestalt-v* tag and upload installers.
+        description: Create the gestalt-v* tag and GitHub Release after packaging succeeds.
         required: true
         type: boolean
         default: false
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: desktop-release-${{ github.ref }}
+  group: desktop-release-${{ inputs.version }}
   cancel-in-progress: false
 
 env:
@@ -23,8 +28,33 @@ env:
   DSH_TELEMETRY_DISABLED: '1'
 
 jobs:
+  prepare:
+    name: Prepare release
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate dispatch
+        id: release
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          PUBLISH: ${{ inputs.publish }}
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: node apps/desktop/scripts/prepare-release.mjs "$INPUT_VERSION" "$PUBLISH" "$GITHUB_REF_NAME"
+
   pack-mac:
     name: Pack macOS ${{ matrix.arch }}
+    needs: prepare
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -66,12 +96,19 @@ jobs:
 
       - name: Package
         env:
+          PUBLISH: ${{ inputs.publish }}
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: pnpm --filter @deepseek-ai/dsh-desktop exec electron-builder --mac --${{ matrix.arch }} --publish never
+        run: |
+          builder_args=(--mac --${{ matrix.arch }} --publish never)
+          if [[ "$PUBLISH" != 'true' ]]; then
+            export CSC_IDENTITY_AUTO_DISCOVERY=false
+            builder_args+=(-c.mac.notarize=false)
+          fi
+          pnpm --filter @deepseek-ai/dsh-desktop exec electron-builder "${builder_args[@]}"
 
       - name: Smoke packaged Desktop Host
         run: |
@@ -88,6 +125,7 @@ jobs:
 
   pack-win:
     name: Pack Windows x64
+    needs: prepare
     runs-on: windows-2025
     steps:
       - uses: actions/checkout@v6
@@ -143,12 +181,15 @@ jobs:
   publish:
     name: GitHub Release
     if: inputs.publish
-    needs: [pack-mac, pack-win]
+    needs: [prepare, pack-mac, pack-win]
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - uses: actions/download-artifact@v4
         with:
@@ -160,8 +201,11 @@ jobs:
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
         run: |
-          tag=${GITHUB_REF_NAME}
-          case "$tag" in gestalt-v*) ;; *) echo "publish requires a gestalt-v* tag"; exit 1 ;; esac
-          mapfile -t assets < <(node apps/desktop/scripts/release-assets.mjs dist)
-          gh release create "$tag" "${assets[@]}" --title "$tag" --generate-notes
+          tag=${{ needs.prepare.outputs.tag }}
+          mapfile -t assets < <(node apps/desktop/scripts/release-assets.mjs dist "$RELEASE_VERSION")
+          gh release create "$tag" "${assets[@]}" \
+            --target "$GITHUB_SHA" \
+            --title "DeepSeek Gestalt ${{ needs.prepare.outputs.version }}" \
+            --generate-notes
