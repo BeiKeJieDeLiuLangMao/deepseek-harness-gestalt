@@ -5,6 +5,9 @@ import { describe, expect, it } from 'vitest'
 
 const workflow = readFileSync(join(process.cwd(), '.github/workflows/desktop-release.yml'), 'utf8')
 const parsed = load(workflow)
+const desktopPackage = JSON.parse(
+  readFileSync(join(process.cwd(), 'apps/desktop/package.json'), 'utf8'),
+) as unknown
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -58,6 +61,10 @@ describe('Desktop release workflow', () => {
     expect(workflow).not.toContain('dist/**/*')
   })
 
+  it('keeps the prepared workspace dependencies intact while packaging', () => {
+    expect(record(record(desktopPackage).build).npmRebuild).toBe(false)
+  })
+
   it('smokes every packaged app before artifact upload', () => {
     expect(workflow.match(/electron-smoke-packaged\.spec\.ts/g)).toHaveLength(2)
     expect(workflow.match(/DSH_PACKAGED_APP_BIN/g)).toHaveLength(2)
@@ -86,10 +93,22 @@ describe('Desktop release workflow', () => {
     expect(workflow).toContain('needs: [prepare, pack-mac, pack-win]')
     expect(workflow).toContain('tag=${{ needs.prepare.outputs.tag }}')
     expect(workflow).toContain('gh release create "$tag"')
+    expect(workflow).toContain('gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs"')
     expect(workflow).toContain('--target "$GITHUB_SHA"')
+    expect(workflow).toContain('--verify-tag')
     expect(workflow).toContain('--draft')
     expect(workflow).toContain('gh release upload "$tag"')
     expect(workflow).toContain('gh release edit "$tag" --draft=false --latest')
+    expect(workflow).toContain('if [[ "$tag_owned" == \'true\' ]]')
+    expect(workflow).not.toContain('--cleanup-tag')
     expect(workflow).not.toContain('tag=${GITHUB_REF_NAME}')
+
+    const createTag = workflow.indexOf('gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs"')
+    const createDraft = workflow.indexOf('gh release create "$tag"')
+    const uploadAssets = workflow.indexOf('gh release upload "$tag"')
+    const publishRelease = workflow.indexOf('gh release edit "$tag" --draft=false --latest')
+    expect(createTag).toBeLessThan(createDraft)
+    expect(createDraft).toBeLessThan(uploadAssets)
+    expect(uploadAssets).toBeLessThan(publishRelease)
   })
 })

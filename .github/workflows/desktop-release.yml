@@ -232,19 +232,28 @@ jobs:
           set -Eeuo pipefail
           tag=${{ needs.prepare.outputs.tag }}
           mapfile -t assets < <(node apps/desktop/scripts/release-assets.mjs dist "$RELEASE_VERSION")
-          created=false
+          tag_owned=false
+          release_owned=false
           cleanup() {
-            if [[ "$created" == 'true' ]]; then
-              gh release delete "$tag" --yes --cleanup-tag >/dev/null 2>&1 || true
+            if [[ "$release_owned" == 'true' ]]; then
+              gh release delete "$tag" --yes >/dev/null 2>&1 || true
+            fi
+            if [[ "$tag_owned" == 'true' ]]; then
+              gh api --method DELETE "repos/$GITHUB_REPOSITORY/git/refs/tags/$tag" >/dev/null 2>&1 || true
             fi
           }
           trap cleanup ERR
+          gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
+            --field ref="refs/tags/$tag" \
+            --field sha="$GITHUB_SHA" >/dev/null
+          tag_owned=true
           gh release create "$tag" \
             --draft \
+            --verify-tag \
             --target "$GITHUB_SHA" \
             --title "DeepSeek Gestalt ${{ needs.prepare.outputs.version }}" \
             --generate-notes
-          created=true
+          release_owned=true
           gh release upload "$tag" "${assets[@]}"
           local_names=$(printf '%s\n' "${assets[@]##*/}" | sort)
           remote_names=$(gh release view "$tag" --json assets --jq '.assets[].name' | sort)

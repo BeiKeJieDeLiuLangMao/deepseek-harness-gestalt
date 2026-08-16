@@ -30,6 +30,7 @@
   "build": {
     "appId": "com.gestalt.deepseek",
     "productName": "DeepSeek Gestalt",
+    "npmRebuild": false,
     "directories": {
       "output": "release",
       "buildResources": "build"
