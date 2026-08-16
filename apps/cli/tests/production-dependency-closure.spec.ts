@@ -6,7 +6,9 @@ import { describe, expect, it } from 'vitest'
 interface PackageManifest {
   readonly dependencies?: Record<string, string>
   readonly name?: string
+  readonly optionalDependencies?: Record<string, string>
   readonly peerDependencies?: Record<string, string>
+  readonly peerDependenciesMeta?: Record<string, { readonly optional?: boolean }>
 }
 
 const workspaceRoot = fileURLToPath(new URL('../../..', import.meta.url))
@@ -38,7 +40,11 @@ describe('CLI production dependency closure', () => {
       reachable.add(name)
       const manifest = manifests.get(name)
       if (manifest === undefined) throw new Error(`workspace package not found: ${name}`)
-      for (const dependency of Object.keys(manifest.dependencies ?? {})) {
+      const dependencies = {
+        ...manifest.dependencies,
+        ...manifest.optionalDependencies,
+      }
+      for (const dependency of Object.keys(dependencies)) {
         if (manifests.has(dependency)) pending.push(dependency)
       }
     }
@@ -47,6 +53,7 @@ describe('CLI production dependency closure', () => {
       const manifest = manifests.get(name)
       if (manifest === undefined) continue
       for (const [peer, range] of Object.entries(manifest.peerDependencies ?? {})) {
+        if (manifest.peerDependenciesMeta?.[peer]?.optional === true) continue
         if (range.startsWith('workspace:') && manifests.has(peer) && !reachable.has(peer)) {
           missing.push(`${name} -> ${peer}`)
         }
