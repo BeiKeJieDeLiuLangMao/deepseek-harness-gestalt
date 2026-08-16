@@ -1,44 +1,89 @@
+import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import {
   assertFixtureInventory, captureStableAria, compareOrRefreshGolden,
-  launchWebScaffold, webSnapshotMode, type WebScaffold,
+  fixtureUserPrompts, launchWebScaffold, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
+import { connectFreshWorkspace } from './support.ts'
 
 const OVERLAY = fileURLToPath(new URL('../../desktop/cordis.patch.yml', import.meta.url))
+const FIXTURE = fileURLToPath(new URL('./snapshots/lifecycle-chrome/session.jsonl', import.meta.url))
 const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/desktop-chrome', import.meta.url))
 const INACTIVE_EXPECTED = fileURLToPath(new URL('./snapshots/desktop-chrome/inactive.expected.md', import.meta.url))
 const MODE = webSnapshotMode()
+const PROMPT = 'Reply with the single word LIGHTHOUSE and stop.'
+
+async function openDesktopPage(browser: Browser, baseUrl: string, platform: 'darwin' | 'win32'): Promise<Page> {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 800 }, locale: 'en-US' })
+  await page.addInitScript((desktopPlatform) => {
+    Object.defineProperty(window, 'dshDesktop', {
+      configurable: true,
+      value: {
+        platform: desktopPlatform,
+        getStatus: async () => ({ state: 'disabled', lastCheckedAt: null }),
+        checkNow: () => {},
+        downloadNow: () => {},
+        quitAndInstall: () => {},
+        onStatus: () => () => {},
+        windowMinimize: () => {},
+        windowMaximize: () => {},
+        windowClose: () => {},
+      },
+    })
+  }, platform)
+  await page.goto(baseUrl, { waitUntil: 'load' })
+  await page.waitForSelector(`[data-desktop-chrome="${platform === 'darwin' ? 'mac' : 'win'}"]`, {
+    timeout: 30_000,
+  })
+  return page
+}
+
+async function sessionSurfaceGeometry(page: Page): Promise<{
+  inset: number
+  paddingTop: number
+  chrome: string | null
+}> {
+  return await page.locator('[data-phase="active"]').first().evaluate((surface) => {
+    const frame = surface.closest('[style*="grid-template-columns"]')
+    let center = surface.parentElement
+    while (center !== null && center.parentElement !== frame) center = center.parentElement
+    if (center === null || frame === null) throw new Error('assembled Session Surface geometry is unavailable')
+    return {
+      inset: Math.round(surface.getBoundingClientRect().top - frame.getBoundingClientRect().top),
+      paddingTop: Number.parseFloat(getComputedStyle(center).paddingTop),
+      chrome: frame.querySelector('[data-desktop-chrome]')?.getAttribute('data-desktop-chrome') ?? null,
+    }
+  })
+}
 
 describe('web e2e: Desktop Session Surface overlay', () => {
   let scaffold: WebScaffold
   let browser: Browser
-  let page: Page
+  let macPage: Page
+  let winPage: Page
 
   beforeAll(async () => {
-    scaffold = await launchWebScaffold({ extraOverlayPath: OVERLAY })
+    const fixture = await readFile(FIXTURE, 'utf8')
+    expect(fixtureUserPrompts(fixture)).toEqual([PROMPT])
+    scaffold = await launchWebScaffold({ extraOverlayPath: OVERLAY, replayFixture: FIXTURE, paceMs: 5 })
     browser = await chromium.launch()
-    page = await browser.newPage({ viewport: { width: 1280, height: 800 }, locale: 'en-US' })
-    await page.addInitScript(() => {
-      Object.defineProperty(window, 'dshDesktop', {
-        configurable: true,
-        value: {
-          platform: 'darwin',
-          getStatus: async () => ({ state: 'disabled', lastCheckedAt: null }),
-          checkNow: () => {},
-          downloadNow: () => {},
-          quitAndInstall: () => {},
-          onStatus: () => () => {},
-          windowMinimize: () => {},
-          windowMaximize: () => {},
-          windowClose: () => {},
-        },
-      })
-    })
-    await page.goto(scaffold.baseUrl, { waitUntil: 'load' })
-    await page.waitForSelector('[data-desktop-chrome="mac"]', { timeout: 30_000 })
+    macPage = await openDesktopPage(browser, scaffold.baseUrl, 'darwin')
+    await connectFreshWorkspace(macPage, scaffold.workspaceCwd)
+    const settled = scaffold.whenTurnSettled()
+    const input = macPage.locator('textarea').first()
+    await input.fill(PROMPT)
+    await input.press('Enter')
+    await settled
+    await macPage.getByText('LIGHTHOUSE', { exact: true }).waitFor({ timeout: 15_000 })
+    await macPage.getByText('Standard mode', { exact: true }).waitFor({ timeout: 15_000 })
+
+    winPage = await openDesktopPage(browser, scaffold.baseUrl, 'win32')
+    await winPage.locator('[role="treeitem"]').filter({ hasText: 'Reply with the single word' }).first().click()
+    await winPage.getByText('LIGHTHOUSE', { exact: true }).waitFor({ timeout: 15_000 })
+    await winPage.getByText('Standard mode', { exact: true }).waitFor({ timeout: 15_000 })
   }, 120_000)
 
   afterAll(async () => {
@@ -47,14 +92,27 @@ describe('web e2e: Desktop Session Surface overlay', () => {
   })
 
   it('composes the Gestalt brand and drag strip without an inactive updater control', async () => {
-    expect(await page.locator('svg text', { hasText: 'GESTALT' }).count()).toBe(1)
-    expect(await page.locator('[data-desktop-chrome="mac"]').count()).toBe(1)
-    expect(await page.getByRole('button', { name: 'Updates disabled in development' }).count()).toBe(0)
+    expect(await macPage.locator('svg text', { hasText: 'GESTALT' }).count()).toBe(1)
+    expect(await macPage.locator('[data-desktop-chrome="mac"]').count()).toBe(1)
+    expect(await macPage.getByRole('button', { name: 'Updates disabled in development' }).count()).toBe(0)
     await compareOrRefreshGolden(INACTIVE_EXPECTED, await captureStableAria(
-      page,
+      macPage,
       '[class*="footArea"]',
       scaffold.workspaceCwd,
     ), MODE)
+  })
+
+  it('insets only the active macOS Session Surface below its drag strip', async () => {
+    expect(await sessionSurfaceGeometry(macPage)).toEqual({
+      inset: 28,
+      paddingTop: 28,
+      chrome: 'mac',
+    })
+    expect(await sessionSurfaceGeometry(winPage)).toEqual({
+      inset: 0,
+      paddingTop: 0,
+      chrome: 'win',
+    })
   })
 
   it('keeps its snapshot inventory closed', async () => {
