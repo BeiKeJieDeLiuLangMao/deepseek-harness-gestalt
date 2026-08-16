@@ -4,7 +4,7 @@
  */
 
 /** Matches the `dsh web: http://127.0.0.1:<port>` announcement line. */
-export const WEB_URL_LINE = /^dsh web: (http:\/\/127\.0\.0\.1:\d+)\b/m
+const WEB_URL_LINE = /^dsh web: (http:\/\/127\.0\.0\.1:\d+)\b/m
 
 /**
  * Extract the loopback Web Host URL from mixed stdout.

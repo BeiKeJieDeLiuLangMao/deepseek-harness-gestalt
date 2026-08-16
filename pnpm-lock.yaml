@@ -383,9 +383,6 @@ importers:
       esbuild:
         specifier: ^0.24.0
         version: 0.24.2
-      tsx:
-        specifier: ^4.19.0
-        version: 4.22.4
 
   apps/web:
     dependencies:
@@ -1959,9 +1956,6 @@ importers:
       '@deepseek-ai/dsh-client-ui-slots':
         specifier: workspace:^
         version: link:../ui-slots
-      clsx:
-        specifier: ^2.0.0
-        version: 2.1.1
       react:
         specifier: ^18.2.0
         version: 18.3.1
