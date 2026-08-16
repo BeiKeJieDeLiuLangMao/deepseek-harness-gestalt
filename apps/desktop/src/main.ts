@@ -252,6 +252,13 @@ async function finishSmoke(target: BrowserWindow): Promise<void> {
       ? bridge.onStatus(() => {})
       : null
     if (typeof unsubscribe === 'function') unsubscribe()
+    const rendererDeadline = Date.now() + 5_000
+    while (
+      document.querySelector('[data-desktop-updater-state="disabled"]') === null
+      && Date.now() < rendererDeadline
+    ) {
+      await new Promise((resolve) => { setTimeout(resolve, 50) })
+    }
     return {
       boot: typeof window.__DSH_BOOT__,
       gestalt: document.body.textContent?.includes('GESTALT') ?? false,
@@ -263,7 +270,9 @@ async function finishSmoke(target: BrowserWindow): Promise<void> {
         && typeof bridge.onStatus === 'function'
         && typeof unsubscribe === 'function',
       updaterState: updaterStatus?.state ?? null,
-      updateControlAbsent: document.querySelector('button [data-state]') === null,
+      rendererUpdaterState: document.querySelector('[data-desktop-updater-state]')
+        ?.getAttribute('data-desktop-updater-state') ?? null,
+      updateControlAbsent: document.querySelector('[data-desktop-update-control]') === null,
       chrome: document.querySelector('[data-desktop-chrome]')?.getAttribute('data-desktop-chrome') ?? null,
     }
   })()`)
@@ -273,6 +282,7 @@ async function finishSmoke(target: BrowserWindow): Promise<void> {
     && 'gestalt' in evidence && evidence.gestalt === true
     && 'updaterBridge' in evidence && evidence.updaterBridge === true
     && 'updaterState' in evidence && evidence.updaterState === 'disabled'
+    && 'rendererUpdaterState' in evidence && evidence.rendererUpdaterState === 'disabled'
     && 'updateControlAbsent' in evidence && evidence.updateControlAbsent === true
     && 'chrome' in evidence && evidence.chrome === expectedChrome
   if (!valid) {
