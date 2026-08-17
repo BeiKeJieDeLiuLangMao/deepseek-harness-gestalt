@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import { resolveExampleLaunch } from '@deepseek-ai/dsh-loader-smoke'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const repo = join(here, '..', '..', '..')
@@ -22,13 +23,18 @@ describe('Desktop overlay isolation', () => {
     expect(desktop).not.toMatch(/directory-picker/)
   })
 
-  it('composes Schedule through the Desktop profile path after its required services', () => {
+  it('composes Schedule through the built Desktop profile path after its required services', () => {
     const home = mkdtempSync(join(tmpdir(), 'dsh-desktop-overlay-'))
     const bin = join(repo, 'apps', 'cli', 'src', 'bin.ts')
     const patch = join(here, '..', 'cordis.patch.yml')
-    const run = (args: readonly string[]): string => execFileSync(process.execPath, [
-      '--import', 'tsx/esm', bin, ...args,
-    ], { encoding: 'utf8', cwd: repo, env: { ...process.env, DSH_HOME: home } })
+    const run = (args: readonly string[]): string => {
+      const launch = resolveExampleLaunch({ srcBin: bin, configArgs: args, mode: 'lib' })
+      return execFileSync(launch.command, launch.args, {
+        encoding: 'utf8',
+        cwd: repo,
+        env: { ...process.env, ...launch.env, DSH_HOME: home },
+      })
+    }
     try {
       const web = run(['web', '--dump-default-config'])
       expect(web).not.toMatch(/ui-desktop|dsh-client-ui-desktop|dsh-time-context|dsh-schedule/)

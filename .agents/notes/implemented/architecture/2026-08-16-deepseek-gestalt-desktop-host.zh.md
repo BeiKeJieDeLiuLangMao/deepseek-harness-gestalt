@@ -24,7 +24,7 @@ Desktop 在 Web profile 之后只加一层 `--patch`：`@deepseek-ai/dsh-time-co
 
 Update Control 只在可操作的更新阶段和发现版本后的 error 阶段占用侧栏 seat；disabled、idle、checking 和发现版本前的 error 阶段不渲染。从 Dock 启动时，Web Host 的 cwd 是 `~/Library/Application Support/DeepSeek Gestalt/defaultWorkspace`（Windows：`%APPDATA%\DeepSeek Gestalt\defaultWorkspace`），进程 cwd 不是安装目录。Session Surface、`~/.dsh` 和 web profile 仍然共用。
 
-锁定 Web Host 快照中存在某个包，并不表示相应能力已经激活。Desktop 不配置任何 MCP server；Cordis 自修改与 Code Mode preset 可供选择但不是默认值；standard preset 保留关闭的 Codex 与 Claude Code subagent 模板；Web 能力提供搜索但不提供 fetch。headless、ACP 与 JSON-RPC example 是其他应用组合，不是 Desktop 插件。
+锁定 Web Host 快照中存在某个包，并不表示相应能力已经激活。Desktop 不配置任何 MCP server；Cordis 自修改与 Code Mode preset 可供选择但不是默认值；standard preset 保留关闭的 Codex 与 Claude Code subagent 模板；Web 能力提供搜索但不提供 fetch。production HMR 保持关闭；因为 `session-query-sqlite` 使用 `openAt: never`，全文 Session 搜索仍需显式启用。headless、ACP 与 JSON-RPC example 是其他应用组合，不是 Desktop 插件。
 
 macOS chrome 在 DSH 侧栏标题和中间 Session 内容上方为 traffic lights 保留固定 28px 顶部间距，同时保留原始收起交互。详情栏保留现有顶边。Windows 使用横跨整个窗口的拖拽行，其中三个 caption 按钮为不可拖拽区域，Session 内容不增加顶部间距。未支持平台的开发运行保留系统窗口框架。
 
@@ -55,7 +55,7 @@ macOS chrome 在 DSH 侧栏标题和中间 Session 内容上方为 traffic light
 - Dock 式启动把 Launch Directory 当作 cwd，并且不把该路径登记为 Workspace。
 - Desktop 退出会等待尚未启动完成和正在运行的 Web Host 进程退出；smoke 测试会拒绝遗留子进程、缺失的 Desktop 组合或 updater bridge、尚未到达 renderer 的更新状态，以及可见但尚未激活的 Update Control。
 - 无密钥浏览器 golden 会启动已交付 Web profile 与 Desktop overlay；release job 会校验 Node 归档摘要，在 macOS 签名前将打开文件数限制提升到 runner 硬限制，并对 `@electron/osx-sign` 应用有界的资源遍历。发布构建必须通过代码签名和已装订公证票据校验，并在上传前 smoke 每个打包目标。
-- 无需启动 Host 的无密钥 CLI 检查会组合真实 Web profile 与 Desktop overlay，要求 time-context 和 Schedule 位于其依赖服务之后，并证明浏览器默认树不含这两个插件。组装出的新 Desktop Session 必须具有全部三个 Schedule 工具。
+- 无需启动 Host 的无密钥 CLI 检查会组合真实 Web profile 与 Desktop overlay，要求 time-context 和 Schedule 位于其依赖服务之后，并证明浏览器默认树不含这两个插件。组装出的无密钥 Desktop turn 会快照两条 time-context 消息、全部三个 Schedule schema、`schedule_list` 调用与结果，以及最终 assistant 回复。
 - Desktop 图标测试固定三个源文件摘要及其容器签名，要求 512x512 RGBA PNG，检查 macOS、Windows、打包资源、Dock 与 BrowserWindow 的接线，并拒绝缺少最大分辨率 ICO 载荷的 Windows PE 文件。
 - 发布计划测试覆盖版本、分支和已有标签校验；release-note 测试覆盖双语渲染、manifest 完整性、版本与标签一致性、Git ancestry、提交数计算和工作流顺序；发布资产测试要求两个更新 feed、全部版本化 macOS 与 Windows 安装包及其 blockmap，并排除未打包应用内部文件。
 - 单测覆盖从 `dsh web:` 行发现 URL、Launch Directory 解析，以及不下载的更新阶段转换。

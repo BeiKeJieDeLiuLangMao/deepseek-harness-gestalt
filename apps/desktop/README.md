@@ -20,7 +20,7 @@ Every new Desktop Session exposes `schedule_create`, `schedule_list`, and `sched
 
 Schedule delivery is `session-local`: the original Session runs reminders only while live, and reopening it attempts overdue work. Closing DeepSeek Gestalt produces no operating-system, browser, email, SMS, or other external notification.
 
-The locked Web Host snapshot contains packages that the Desktop default does not activate. It configures no MCP server, keeps the Cordis self-modification and Code Mode / PTC presets selectable instead of making either the default, leaves the `subagent_codex` and `subagent_claude_code` templates disabled in the standard preset, and exposes `web_search` without `web_fetch`. The headless, ACP, and JSON-RPC examples are alternate application compositions rather than Desktop plugins.
+The locked Web Host snapshot contains packages that the Desktop default does not activate. It configures no MCP server, keeps the Cordis self-modification and Code Mode / PTC presets selectable instead of making either the default, leaves the `subagent_codex` and `subagent_claude_code` templates disabled in the standard preset, and exposes `web_search` without `web_fetch`. Production HMR stays disabled, and full-text Session search remains opt-in (`session-query-sqlite` uses `openAt: never`). The headless, ACP, and JSON-RPC examples are alternate application compositions rather than Desktop plugins.
 
 ## Develop
 

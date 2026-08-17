@@ -20,7 +20,7 @@ Dock / 开始菜单的 cwd 是 Launch Directory（Application Support / `%APPDAT
 
 Schedule 交付为 `session-local`：只有原 Session 处于 live 状态时才会运行提醒，重新打开该 Session 会尝试处理逾期任务。关闭 DeepSeek Gestalt 不会产生操作系统、浏览器、邮件、短信或其他外部通知。
 
-锁定的 Web Host 快照包含一些 Desktop 默认不激活的包。默认配置不设置任何 MCP server；Cordis 自修改与 Code Mode / PTC preset 仍可选择，但都不是默认 preset；standard preset 中的 `subagent_codex` 与 `subagent_claude_code` 模板保持关闭；Web 能力提供 `web_search`，但不提供 `web_fetch`。headless、ACP 与 JSON-RPC example 是其他应用组合，不是 Desktop 插件。
+锁定的 Web Host 快照包含一些 Desktop 默认不激活的包。默认配置不设置任何 MCP server；Cordis 自修改与 Code Mode / PTC preset 仍可选择，但都不是默认 preset；standard preset 中的 `subagent_codex` 与 `subagent_claude_code` 模板保持关闭；Web 能力提供 `web_search`，但不提供 `web_fetch`。production HMR 保持关闭，全文 Session 搜索仍需显式启用（`session-query-sqlite` 使用 `openAt: never`）。headless、ACP 与 JSON-RPC example 是其他应用组合，不是 Desktop 插件。
 
 ## 开发
 
