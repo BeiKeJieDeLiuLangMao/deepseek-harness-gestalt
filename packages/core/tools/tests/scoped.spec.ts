@@ -321,7 +321,11 @@ describe('allow-only eligibility declarations', () => {
 
     expect(contribution.current()).toBeUndefined()
     expect(contribution.baseAllow()).toEqual(['preset'])
-    contribution.replace(['workspace', 'workspace'])
+    const notifyWorkspace = contribution.commit(['workspace', 'workspace'])
+    expect(ctx.tools.eligibilityAllow(session.key)).toEqual(['preset', 'workspace'])
+    expect(publications).toEqual([])
+    expect(changes).toEqual([])
+    expect(notifyWorkspace?.()).toEqual([])
     contribution.replace(['workspace'])
     contribution.replace(undefined)
     contribution.replace(['session'])
@@ -344,6 +348,52 @@ describe('allow-only eligibility declarations', () => {
     await inactiveResolver
     await inactiveResolver.dispose()
     expect(() => { inactive.replace([]) }).toThrow(/disposed/)
+  })
+
+  it('preserves both notification failures for standalone replacement and disposal', async () => {
+    const ctx = await mount()
+    const preset = await mintAgentScope(ctx, 'preset-notification-failures')
+    const session = await mintChildScope(ctx, preset.key, 'session-notification-failures')
+    preset.scope.ctx.tools.allowEligible(['preset'])
+    const publicationFailure = new Error('publication observer failed')
+    const changeFailure = new Error('registry observer failed')
+    ctx.on('tools/change', () => { throw changeFailure })
+    let contribution!: ToolEligibilityContribution
+    const resolver = ctx.plugin(Object.assign((inner: Context) => {
+      contribution = inner.tools[TOOL_ELIGIBILITY_CONTRIBUTIONS].register(
+        inner,
+        session.key,
+        () => { throw publicationFailure },
+      )
+    }, { inject: ['tools'] }))
+    await resolver
+
+    let replacementFailure: unknown
+    try {
+      contribution.replace(['workspace'])
+    } catch (error) {
+      replacementFailure = error
+    }
+    expect(replacementFailure).toBeInstanceOf(AggregateError)
+    expect((replacementFailure as AggregateError).errors).toEqual([
+      publicationFailure,
+      changeFailure,
+    ])
+    expect(ctx.tools.eligibilityAllow(session.key)).toEqual(['preset', 'workspace'])
+
+    let disposalFailure: unknown
+    try {
+      contribution.dispose()
+    } catch (error) {
+      disposalFailure = error
+    }
+    expect(disposalFailure).toBeInstanceOf(AggregateError)
+    expect((disposalFailure as AggregateError).errors).toEqual([
+      publicationFailure,
+      changeFailure,
+    ])
+    expect(ctx.tools.eligibilityAllow(session.key)).toEqual(['preset'])
+    await resolver.dispose()
   })
 
   it('keeps schemas and execution aligned for inherited and scope-local tools', async () => {

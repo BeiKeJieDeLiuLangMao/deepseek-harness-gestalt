@@ -699,7 +699,13 @@ export interface ToolEligibilityContribution {
   current(): readonly string[] | undefined
   /** Effective allowance along the scope chain without this contribution. */
   baseAllow(): readonly string[] | undefined
-  /** Atomically replace the contribution before publishing registry change events. */
+  /**
+   * Commit a replacement without notifying observers.
+   * @param names - sorted by the contribution before storage, or absent to remove its allowance.
+   * @returns a dispatcher that attempts both notification families and reports their failures, or absent when unchanged.
+   */
+  commit(names: readonly string[] | undefined): (() => readonly unknown[]) | undefined
+  /** Commit and immediately notify observers for one standalone lifecycle mutation. */
   replace(names: readonly string[] | undefined): void
   /** Remove the exact contribution; resolver-fiber teardown also calls this disposer. */
   dispose(): void
@@ -1177,12 +1183,19 @@ export class ToolRuntime extends Service {
   ): ToolEligibilityContribution {
     const allowance: EligibilityAllowance = { names: undefined }
     let active = true
-    const notifyCommitted = (settingsAllow: readonly string[] | undefined): void => {
+    const notifyCommitted = (settingsAllow: readonly string[] | undefined): readonly unknown[] => {
+      const failures: unknown[] = []
       try {
         publish(settingsAllow)
-      } finally {
-        this.ctx.emit('tools/change')
+      } catch (error) {
+        failures.push(error)
       }
+      try {
+        this.ctx.emit('tools/change')
+      } catch (error) {
+        failures.push(error)
+      }
+      return failures
     }
     const remove = this.layers.effectAt(
       owner,
@@ -1195,7 +1208,10 @@ export class ToolRuntime extends Service {
           active = false
           undo()
           if (!changed) return
-          notifyCommitted(undefined)
+          const failures = notifyCommitted(undefined)
+          if (failures.length > 0) {
+            throw new AggregateError(failures, 'tool eligibility observers failed')
+          }
         }
       },
       { label: 'tools.eligibilityContribution()', notify: false },
@@ -1203,16 +1219,23 @@ export class ToolRuntime extends Service {
     const read = (): readonly string[] | undefined => allowance.names === undefined
       ? undefined
       : [...allowance.names].sort()
+    const commit = (names: readonly string[] | undefined): (() => readonly unknown[]) | undefined => {
+      if (!active) throw new Error('tool eligibility contribution is disposed')
+      const next = names === undefined ? undefined : [...new Set(names)].sort()
+      const current = read()
+      if (sameStringList(current, next)) return undefined
+      allowance.names = next === undefined ? undefined : new Set(next)
+      return () => notifyCommitted(next)
+    }
     return {
       current: read,
       baseAllow: () => this.resolveEligibilityAllow(scope, allowance),
+      commit,
       replace: (names) => {
-        if (!active) throw new Error('tool eligibility contribution is disposed')
-        const next = names === undefined ? undefined : [...new Set(names)].sort()
-        const current = read()
-        if (sameStringList(current, next)) return
-        allowance.names = next === undefined ? undefined : new Set(next)
-        notifyCommitted(next)
+        const failures = commit(names)?.() ?? []
+        if (failures.length > 0) {
+          throw new AggregateError(failures, 'tool eligibility observers failed')
+        }
       },
       dispose: remove,
     }

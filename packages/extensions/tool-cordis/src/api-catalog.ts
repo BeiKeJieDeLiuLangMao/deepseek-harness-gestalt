@@ -4563,7 +4563,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ToolEligibilityContribution',
-    declaration: 'export interface ToolEligibilityContribution {\n    current(): readonly string[] | undefined;\n    baseAllow(): readonly string[] | undefined;\n    replace(names: readonly string[] | undefined): void;\n    dispose(): void;\n}',
+    declaration: 'export interface ToolEligibilityContribution {\n    current(): readonly string[] | undefined;\n    baseAllow(): readonly string[] | undefined;\n    commit(names: readonly string[] | undefined): (() => readonly unknown[]) | undefined;\n    replace(names: readonly string[] | undefined): void;\n    dispose(): void;\n}',
   },
   {
     name: 'ToolEligibilityContributions',

@@ -591,7 +591,7 @@ async execute(exec: ToolExecutionInput): Promise<ToolExecutionResult>
 
 Types: [ScopeKey](scope.md)
 
-Source: [`packages/core/tools/src/index.ts:834`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:840`](../../packages/core/tools/src/index.ts)
 
 <a id="tool-eligibility-events"></a>
 

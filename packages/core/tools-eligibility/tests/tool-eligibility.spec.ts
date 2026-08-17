@@ -109,6 +109,28 @@ async function harness(options: HarnessOptions = {}) {
   return { agent, ctx, removeAgent, resolverRow, settingsRow }
 }
 
+async function addSecondAgent(ctx: Context): Promise<Agent> {
+  const preset = { kind: 'preset' }
+  let presetCtx!: Context
+  let agentCtx!: Context
+  const id = SessionId('session-2')
+  const session = Session.create(id, [], {
+    version: 0,
+    id,
+    createdAt: 0,
+    cwd: '/workspace',
+  })
+  const agent = { id, session } as Agent
+  await ctx.plugin(Object.assign((inner: Context) => {
+    presetCtx = createScope(inner, preset).ctx
+    agentCtx = createScope(inner, agent, { parent: preset }).ctx
+  }, { inject: ['tools', 'systemPrompt'] }))
+  Object.assign(agent, { ctx: agentCtx, status: 'idle' })
+  presetCtx.tools.allowEligible(['preset-tool', 'late-tool'])
+  ctx.agents.register(agent)
+  return agent
+}
+
 describe('allow-only tool eligibility', () => {
   it('unions preset, Workspace, and Session additions for schemas and execution', async () => {
     const { agent, ctx } = await harness()
@@ -250,6 +272,115 @@ describe('allow-only tool eligibility', () => {
       sessions: { 'session-1': ['blocked-tool'] },
     })
     expect(ctx.tools.eligibilityAllow(agent)).toEqual(['blocked-tool', 'late-tool', 'preset-tool'])
+  })
+
+  it('commits every affected Agent before publishing a settings refresh', async () => {
+    const { agent: first, ctx } = await harness()
+    const second = await addSecondAgent(ctx)
+    const observed: Array<[string, readonly string[] | undefined, readonly string[] | undefined]> = []
+    const observe = (event: string): void => {
+      observed.push([
+        event,
+        ctx.tools.eligibilityAllow(first),
+        ctx.tools.eligibilityAllow(second),
+      ])
+    }
+    ctx.on('tool-eligibility/published', () => { observe('published') })
+    ctx.on('tools/change', () => { observe('tools/change') })
+
+    await ctx.settings.replace(TOOL_ELIGIBILITY_SETTINGS_NAMESPACE, {
+      workspaces: {},
+      sessions: { 'session-1': ['bash'], 'session-2': ['bash'] },
+    })
+
+    expect(observed).toHaveLength(4)
+    for (const observation of observed) {
+      expect(observation).toEqual([
+        observation[0],
+        ['bash', 'late-tool', 'preset-tool'],
+        ['bash', 'late-tool', 'preset-tool'],
+      ])
+    }
+  })
+
+  it('attempts every Agent notification after the first tools/change observer failure', async () => {
+    const { agent: first, ctx } = await harness()
+    const second = await addSecondAgent(ctx)
+    const publicationViews: Array<[readonly string[] | undefined, readonly string[] | undefined]> = []
+    const changeViews: Array<[readonly string[] | undefined, readonly string[] | undefined]> = []
+    const firstFailure = new Error('first tools/change observer failed')
+    const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => ctx.logger)
+    ctx.on('tool-eligibility/published', () => {
+      publicationViews.push([
+        ctx.tools.eligibilityAllow(first),
+        ctx.tools.eligibilityAllow(second),
+      ])
+    })
+    ctx.on('tools/change', () => {
+      changeViews.push([
+        ctx.tools.eligibilityAllow(first),
+        ctx.tools.eligibilityAllow(second),
+      ])
+      if (changeViews.length === 1) throw firstFailure
+    })
+
+    await ctx.settings.replace(TOOL_ELIGIBILITY_SETTINGS_NAMESPACE, {
+      workspaces: {},
+      sessions: { 'session-1': ['bash'], 'session-2': ['bash'] },
+    })
+
+    expect(publicationViews).toHaveLength(2)
+    expect(changeViews).toHaveLength(2)
+    for (const view of [...publicationViews, ...changeViews]) {
+      expect(view).toEqual([
+        ['bash', 'late-tool', 'preset-tool'],
+        ['bash', 'late-tool', 'preset-tool'],
+      ])
+    }
+    await vi.waitFor(() => {
+      const aggregate = warn.mock.calls.flatMap(([value]) => value instanceof AggregateError ? [value] : [])[0]
+      expect(aggregate?.errors).toContain(firstFailure)
+    })
+  })
+
+  it('attempts both notification families for every Agent after the first publication failure', async () => {
+    const { agent: first, ctx } = await harness()
+    const second = await addSecondAgent(ctx)
+    const publicationViews: Array<[readonly string[] | undefined, readonly string[] | undefined]> = []
+    const changeViews: Array<[readonly string[] | undefined, readonly string[] | undefined]> = []
+    const firstFailure = new Error('first publication observer failed')
+    const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => ctx.logger)
+    ctx.on('tool-eligibility/published', () => {
+      publicationViews.push([
+        ctx.tools.eligibilityAllow(first),
+        ctx.tools.eligibilityAllow(second),
+      ])
+      if (publicationViews.length === 1) throw firstFailure
+    })
+    ctx.on('tools/change', () => {
+      changeViews.push([
+        ctx.tools.eligibilityAllow(first),
+        ctx.tools.eligibilityAllow(second),
+      ])
+    })
+
+    await ctx.settings.replace(TOOL_ELIGIBILITY_SETTINGS_NAMESPACE, {
+      workspaces: {},
+      sessions: { 'session-1': ['bash'], 'session-2': ['bash'] },
+    })
+
+    expect(publicationViews).toHaveLength(2)
+    expect(changeViews).toHaveLength(2)
+    for (const view of [...publicationViews, ...changeViews]) {
+      expect(view).toEqual([
+        ['bash', 'late-tool', 'preset-tool'],
+        ['bash', 'late-tool', 'preset-tool'],
+      ])
+    }
+    await vi.waitFor(() => {
+      const aggregate = warn.mock.calls.flatMap(([value]) => value instanceof AggregateError ? [value] : [])[0]
+      expect(aggregate?.errors).toContain(firstFailure)
+    })
   })
 
   it('handles unrestricted agents, unmatched Workspaces, and duplicate lifecycle notifications', async () => {
