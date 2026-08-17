@@ -19,6 +19,8 @@ GitHub Issues 和 PR（Pull Request）共享同一编号空间。遇到含义不
 
 Issue 策略从工作流提供的 `GITHUB_REPOSITORY` 解析仓库；仓库 owner 和名称不是部署配置。
 
+Issue Priority 同步是 `.github/issue-management/config.json` 中的一项显式部署选项。仅当仓库支持对应字段时，才把 `priorityField` 设为组织 Issue field 的名称；策略随后读取每个被引用 Issue 的字段值，并在 API 出错时失败。设为 `null` 会关闭该集成：策略不会发出 Issue field 请求，并把被引用 Issue 视为未设置 Priority。个人账户 tracker 使用 `null`，因为 GitHub Issue fields 不适用于用户账户拥有的仓库。
+
 组织 Project 生命周期投影是一项显式部署选项。仅当仓库 owner 与 `.github/issue-management/config.json` 中的 `projectOrganization` 一致、该配置指定了目标组织 Project，并且仓库为具备所需仓库与组织权限的已安装 GitHub App 提供 `DSH_ISSUE_APP_CLIENT_ID` 和 `DSH_ISSUE_APP_PRIVATE_KEY` 时，才将仓库变量 `DSH_ISSUE_PROJECT_LIFECYCLE_ENABLED` 设为 `true`。工作流会在请求 installation token 前验证两者使用同一 owner。该变量缺失或不等于 `true` 时，生命周期 job 会在此验证前跳过。个人账号 tracker 保持禁用此选项，因为 installation token 不会授予用户 ProjectV2 的访问权。
 
 ## 将 PR 作为 triage 入口

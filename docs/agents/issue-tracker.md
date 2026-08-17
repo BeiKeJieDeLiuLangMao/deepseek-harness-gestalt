@@ -19,6 +19,8 @@ GitHub shares one number space across issues and pull requests. Resolve an ambig
 
 Issue policy resolves its repository from the workflow-provided `GITHUB_REPOSITORY`; repository owner and name are not deployment configuration.
 
+Issue Priority synchronization is an explicit deployment option in `.github/issue-management/config.json`. Set `priorityField` to an organization Issue field name only when the repository supports that field; the policy then reads every referenced Issue's value and fails on API errors. Set it to `null` to disable the integration: the policy makes no Issue field request and treats referenced Issues as having no Priority. Personal-account trackers use `null` because GitHub Issue fields are unavailable for user-owned repositories.
+
 Organization Project lifecycle projection is an explicit deployment option. Set the repository variable `DSH_ISSUE_PROJECT_LIFECYCLE_ENABLED` to `true` only when the repository owner matches `projectOrganization` in `.github/issue-management/config.json`, that configuration names the target organization Project, and the repository provides `DSH_ISSUE_APP_CLIENT_ID` and `DSH_ISSUE_APP_PRIVATE_KEY` for an installed GitHub App with the required repository and organization permissions. The workflow validates the shared owner before requesting an installation token. When the variable is absent or not `true`, the lifecycle job skips before that validation. Personal-account trackers leave this option disabled because an installation token does not grant access to a user's ProjectV2.
 
 ## Pull requests as a triage surface

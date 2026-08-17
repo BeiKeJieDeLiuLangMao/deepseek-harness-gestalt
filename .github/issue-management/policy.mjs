@@ -55,6 +55,12 @@ if (typeof config.lifecycleActor !== 'string' || !config.lifecycleActor) {
 if (typeof config.projectOrganization !== 'string' || !config.projectOrganization) {
   throw new Error('config.projectOrganization 未设置')
 }
+if (
+  config.priorityField !== null &&
+  (typeof config.priorityField !== 'string' || !config.priorityField)
+) {
+  throw new Error('config.priorityField 必须为非空字符串或 null')
+}
 
 /**
  * Resolve the repository that emitted the workflow event.
@@ -447,8 +453,12 @@ async function graphql(query, variables) {
 async function issueSnapshot(number, status = undefined) {
   const issue = await api(repositoryApiPath(`/issues/${number}`))
   if (issue.pull_request) return null
-  const values = await api(repositoryApiPath(`/issues/${number}/issue-field-values?per_page=100`))
-  const field = (name) => values.find((value) => value.issue_field_name === name)
+  let priority = null
+  if (config.priorityField !== null) {
+    const values = await api(repositoryApiPath(`/issues/${number}/issue-field-values?per_page=100`))
+    const field = values.find((value) => value.issue_field_name === config.priorityField)
+    priority = field?.single_select_option?.name ?? null
+  }
   return {
     number,
     nodeId: issue.node_id,
@@ -457,7 +467,7 @@ async function issueSnapshot(number, status = undefined) {
     assignees: issue.assignees.map((assignee) => assignee.login),
     labels: issue.labels.map((label) => label.name),
     type: issue.type?.name ?? null,
-    priority: field(config.priorityField)?.single_select_option?.name ?? null,
+    priority,
     status: status === undefined ? await projectStatus(number) : status,
     state: issue.state,
     stateReason: issue.state_reason ?? null,
