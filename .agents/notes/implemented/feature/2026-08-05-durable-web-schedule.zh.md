@@ -14,11 +14,11 @@ Status: implemented
 
 [`examples/web-schedule`](../../../../examples/web-schedule/README.md) overlay 显式加载 `@deepseek-ai/dsh-time-context` 与 `@deepseek-ai/dsh-schedule`；纯浏览器 Web 的默认配置树保持不变。DeepSeek Gestalt Desktop overlay 默认加载同一插件对。Schedule 只观察插件加载后发布的根 Agent，并在该 Agent scope 中安装三个工具和一个可丢弃 owner。cold history 读取、已发布的根、child Agent 与没有其中一层 overlay 的 host 都不会激活它。
 
-用户可见边界是 `session-local`：原 Session 只有在 live 时才会准时运行提醒，cold 期间不发送任何外部通知；该 Session 再次 live 后才会处理 overdue 提醒。到期工作会等待 Agent 完全 idle，再通过 `followup()` 进入普通的下一轮队列；它绝不会中途引导当前轮次，也没有独立 Web 回执（[对话式交付](../simplification/2026-08-09-conversational-schedule-delivery.md)）。
+用户可见的投递边界是 `session-local`：原 Session 只有在 live 时才会准时运行提醒，cold 期间不发送任何外部通知；该 Session 再次 live 后才会处理 overdue 提醒。到期工作会等待 Agent 完全 idle，再通过 `followup()` 进入普通的下一轮队列；它绝不会中途引导当前轮次，也没有独立投递回执（[对话式交付](../simplification/2026-08-09-conversational-schedule-delivery.md)）。单独的 [Session Schedule 任务板](2026-08-17-session-schedule-board.md) 投影当前保留状态，并负责人工 pause、resume 与 delete，但不声明投递成功。
 
 | 场景 | 持久事实 | live 行为 | 用户可见结果 |
 | --- | --- | --- | --- |
-| 创建与管理 | 原 Session 中的 `schedule/change` create／delete | Agent-scoped 工具在读取前、变更后执行 checkpoint | 稳定 id、UTC 目标、状态与 `session-local` 说明 |
+| 创建与管理 | 原 Session 中的 `schedule/change` create／pause／resume／delete | Agent-scoped 工具与人工 Remote 变更在读取前、变更后执行 checkpoint | 稳定 id、UTC 目标、状态与 `session-local` 说明 |
 | 到期时繁忙 | 活动 create 仍在 fold 中 | owner 等待 idle maintenance，排入一个 follow-up，再追加 dispatch | 后续一个普通对话轮次 |
 | 多条 Every 记录逾期 | 每条活动记录都保留最早一个尚未接受且与锚点对齐的目标 | 一次决策选择每条记录的最新发生时点，并将其推进到当前时刻之后 | 一个普通 follow-up，其中每条记录各有一个发生时点 |
 | 进程停止或 Session cold | 活动 create 仍在 persistence 中 | 不存在 timer 或后台扫描；resume 重建 owner | 未来目标继续等待；overdue 目标会被尝试 |
@@ -26,7 +26,7 @@ Status: implemented
 
 ### Session 日志权威与工具
 
-版本 1 `schedule/change` stream 是唯一持久的 Schedule 权威。create 记录拥有一个 Session 内不复用的品牌 id、trim 后的提示词、规则判别字段和 UTC 目标。delete 与一次性 dispatch 是终结转换。Every dispatch 会存储 id 与决策时点，使 fold 将该记录直接推进到错过的发生时点之后。严格 decoder 与纯 fold 会拒绝未知版本、额外字段、重复使用的 id、形状不匹配的 dispatch，以及针对非活动记录的转换。普通 Session 折叠完整 stream；fork 只折叠 `SessionHeader.seedLength` 位置及其后的 event。
+版本 1 `schedule/change` stream 是唯一持久的 Schedule 权威。create 记录拥有一个 Session 内不复用的品牌 id、trim 后的提示词、规则判别字段和 UTC 目标。pause 与 resume 保留记录且不改变目标；delete 与一次性 dispatch 是终结转换。Every dispatch 会存储 id 与决策时点，使 fold 将该记录直接推进到错过的发生时点之后。严格 decoder 与纯 fold 会拒绝未知版本、额外字段、重复使用的 id、形状不匹配的 dispatch，以及从缺失或不兼容状态发起的转换。普通 Session 折叠完整 stream；fork 只折叠 `SessionHeader.seedLength` 位置及其后的 event。
 
 当前规则 union 接受非空提示词和恰好一个 selector。`after_seconds` 是正的安全整数 delay，其记录为 `{ id, kind: 'after', prompt, afterSeconds, scheduledAt }`。`at` 可以是带 `Z` 或数值偏移量且严格符合 RFC 3339 的值，也可以是带显式时区的结构化 `{ date, time, time_zone }`；其记录为 `{ id, kind: 'at', prompt, scheduledAt }`。`every_seconds` 是不小于 300 的安全整数，其 `{ id, kind: 'every', prompt, everySeconds, scheduledAt }` 记录始终与从创建时刻加一个间隔开始的序列对齐。一次性 dispatch 只存储 id；Every dispatch 存储 `id + acceptedAt`。工具值派生 `scheduled` 或 `overdue`，并包含 `deliveryMode: 'session-local'`。
 
@@ -64,7 +64,7 @@ dispatch 记录的是队列准入，而不是模型完成或用户收到提醒�
 
 **持久化 Session 时区并推断本地 `at`。** 这会让一个解释默认值扩散到 Session core、Host create／fork、持久化格式、client 和不匹配恢复中。请求本地的模型指导与显式工具边界消除了这种耦合。
 
-**保留独立的持久 Web 回执。** dispatch 是内部队列事实，而不是用户的提醒。渲染普通 assistant 回答既避免了第二种交付含义，也从 Host 与 client 层移除了 Schedule 代码。
+**保留独立的持久 Web 回执。** dispatch 是内部队列事实，而不是用户的提醒。渲染普通 assistant 回答避免了第二种交付含义。当前状态任务板刻意是管理 UI，而不是回执。
 
 **增加通用周期规则引擎。** 固定时长间隔只需要锚点运算。共享的周期抽象、全局准入门控和日历求值器会扩大回放与运行时状态，却不能服务于保留的产品行为。
 
@@ -81,6 +81,6 @@ dispatch 记录的是队列准入，而不是模型完成或用户收到提醒�
 - 提醒状态通过普通 Session persistence 跨重启存活，无需新数据库或公开 service。
 - cold Session 不工作、不发送外部通知；重新打开后可能交付 overdue 工作。
 - 无需持久 Session 时区状态或从 Schedule 到 time-context 的依赖，绝对时间输入仍然具有确定性。
-- 用户看到普通对话输出；dispatch 绝不会夸大模型成功或 acknowledgement。
+- 用户在普通对话中看到提醒输出，并在管理任务板中看到当前保留状态；dispatch 与任务板都绝不会夸大模型成功或 acknowledgement。
 - 每个 live 根只增加从 fold 派生的 timer、可选 idle wait 与一个 in-flight operation。
 - 固定速率周期性受到至少 5 分钟、只追赶最新一次，以及每条逾期记录只在一个批次中贡献一个发生时点的约束；日历周期性仍在此产品边界之外。

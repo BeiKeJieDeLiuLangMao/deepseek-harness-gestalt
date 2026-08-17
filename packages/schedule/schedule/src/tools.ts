@@ -21,7 +21,7 @@ import {
   scheduleView,
 } from './domain.ts'
 import { flushSchedulePersistence } from './persistence.ts'
-import { runScheduleTransaction } from './transaction.ts'
+import type { ScheduleTransactions } from './transaction.ts'
 import type {
   AtInput,
   PersistenceUncertainError,
@@ -39,7 +39,7 @@ const SHARED_VIEW_PROPERTIES = {
   id: { type: 'string', required: true },
   prompt: { type: 'string', required: true },
   scheduledAt: { type: 'string', required: true },
-  state: { type: 'string', required: true, enum: ['scheduled', 'overdue'] },
+  state: { type: 'string', required: true, enum: ['scheduled', 'overdue', 'paused'] },
   deliveryMode: { type: 'string', required: true, const: 'session-local' },
 } as const
 
@@ -154,12 +154,12 @@ const CREATE_DESCRIPTION =
   + 'is live and otherwise becomes overdue until the session is resumed.'
 
 const LIST_DESCRIPTION =
-  'List every active reminder in the current session in creation order, including its exact id, '
-  + 'UTC target, scheduled or overdue state, and session-local delivery mode.'
+  'List every retained active or paused reminder in the current session in creation order, including '
+  + 'its exact id, UTC target, scheduled, overdue, or paused state, and session-local delivery mode.'
 
 const DELETE_DESCRIPTION =
-  'Delete one active reminder in the current session by the exact id returned by schedule_create '
-  + 'or schedule_list. Unknown or already-finished ids return deleted false.'
+  'Delete one retained active or paused reminder in the current session by the exact id returned by '
+  + 'schedule_create or schedule_list. Unknown or already-finished ids return deleted false.'
 
 /** Deterministic model content for every canonical Schedule value. */
 function renderValue(_args: unknown, value: unknown): ContentBlock[] {
@@ -185,11 +185,12 @@ function cancellationPlaceholder(signal: AbortSignal): InternalScheduleError | u
 
 /** Serialize one operation, stopping a body whose caller cancelled before its FIFO turn. */
 function runCancellableScheduleTransaction<T>(
+  transactions: ScheduleTransactions,
   agent: Agent,
   signal: AbortSignal,
   task: () => Promise<T>,
 ): Promise<T | InternalScheduleError> {
-  return runScheduleTransaction(agent, async () => {
+  return transactions.run(agent.id, async () => {
     const cancelled = cancellationPlaceholder(signal)
     return cancelled ?? task()
   })
@@ -293,6 +294,7 @@ function validateCreateArgs(args: {
  * @param rootCtx - Global service context owning sessions and durability.
  * @param toolCtx - Exact agent-scoped context receiving the definitions.
  * @param agent - Exact live owner whose session the tools mutate.
+ * @param transactions - Plugin-owned FIFO shared with Remote and runtime work.
  * @param onDurableChange - Called after every successful preflight and again after a create or actual delete barrier succeeds.
  * @returns Idempotent aggregate disposer for the three registrations.
  */
@@ -300,6 +302,7 @@ export function registerScheduleTools(
   rootCtx: Context,
   toolCtx: Context,
   agent: Agent,
+  transactions: ScheduleTransactions,
   onDurableChange: () => void,
 ): () => void {
   const disposers: Array<() => void> = []
@@ -352,7 +355,7 @@ export function registerScheduleTools(
         if (exec.agent !== agent) return internalError()
         const invalid = validateCreateArgs(args)
         if (invalid !== undefined) return invalid
-        return runCancellableScheduleTransaction(agent, exec.signal, async () => {
+        return runCancellableScheduleTransaction(transactions, agent, exec.signal, async () => {
           const uncertain = await preflight(rootCtx, agent, 'create')
           if (uncertain !== undefined) return uncertain
           notifyDurableChange()
@@ -403,14 +406,14 @@ export function registerScheduleTools(
       output: { schema: LIST_OUTPUT_SCHEMA, render: renderValue },
       async execute(_args, exec): Promise<ScheduleListValue> {
         if (exec.agent !== agent) return internalError()
-        return runCancellableScheduleTransaction(agent, exec.signal, async () => {
+        return runCancellableScheduleTransaction(transactions, agent, exec.signal, async () => {
           const uncertain = await preflight(rootCtx, agent, 'list')
           if (uncertain !== undefined) return uncertain
           notifyDurableChange()
           const folded = foldForTool(agent)
           if (isToolError(folded)) return folded
           const now = Date.now()
-          return folded.active.map(record => scheduleView(record, now))
+          return folded.schedules.map(({ record, paused }) => scheduleView(record, now, paused))
         })
       },
       presentCall: () => present('List reminders', 'read'),
@@ -429,13 +432,13 @@ export function registerScheduleTools(
         }
         const id = ScheduleId(args.id)
         if (exec.agent !== agent) return internalError()
-        return runCancellableScheduleTransaction(agent, exec.signal, async () => {
+        return runCancellableScheduleTransaction(transactions, agent, exec.signal, async () => {
           const uncertain = await preflight(rootCtx, agent, 'delete', id)
           if (uncertain !== undefined) return uncertain
           notifyDurableChange()
           const folded = foldForTool(agent)
           if (isToolError(folded)) return folded
-          if (!folded.active.some(record => record.id === id)) {
+          if (!folded.schedules.some(schedule => schedule.record.id === id)) {
             return { id, deleted: false, code: 'schedule_not_found' }
           }
           const cancelledBeforeAppend = cancellationPlaceholder(exec.signal)

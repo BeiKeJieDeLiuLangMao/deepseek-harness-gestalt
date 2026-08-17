@@ -9,7 +9,7 @@ import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import type { ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 import { registerScheduleTools } from '../src/tools.ts'
-import { runScheduleTransaction } from '../src/transaction.ts'
+import { ScheduleTransactions } from '../src/transaction.ts'
 
 const signal = new AbortController().signal
 const contexts: Context[] = []
@@ -19,6 +19,7 @@ interface ToolHarness {
   readonly agent: Agent
   readonly flushes: { count: number; outcomes: Array<'resolve' | 'reject' | Promise<'resolve' | 'reject'>> }
   readonly changes: { count: number }
+  readonly transactions: ScheduleTransactions
   readonly disposeTools: () => void
 }
 
@@ -60,8 +61,9 @@ async function harness(withPersistence = true): Promise<ToolHarness> {
     })
   }
   const changes = { count: 0 }
-  const disposeTools = registerScheduleTools(ctx, ctx, agent, () => { changes.count += 1 })
-  return { ctx, agent, flushes, changes, disposeTools }
+  const transactions = new ScheduleTransactions()
+  const disposeTools = registerScheduleTools(ctx, ctx, agent, transactions, () => { changes.count += 1 })
+  return { ctx, agent, flushes, changes, transactions, disposeTools }
 }
 
 async function execute(
@@ -120,6 +122,8 @@ describe('Schedule tool protocol', () => {
       .toEqual({ card: 'generic', title: 'List reminders', kind: 'read' })
     expect(test.ctx.tools.get('schedule_delete')?.presentCall?.({ id: 'schedule-1' }))
       .toEqual({ card: 'generic', title: 'Delete reminder', kind: 'other', rawInput: 'schedule-1' })
+    expect(test.ctx.tools.get('schedule_list')?.description).toContain('active or paused')
+    expect(test.ctx.tools.get('schedule_delete')?.description).toContain('active or paused')
     test.disposeTools()
     test.disposeTools()
     expect(test.ctx.tools.get('schedule_create')).toBeUndefined()
@@ -134,7 +138,7 @@ describe('Schedule tool protocol', () => {
     test.disposeTools()
     const disposeConflict = test.ctx.tools.register(list)
 
-    expect(() => registerScheduleTools(test.ctx, test.ctx, test.agent, () => {})).toThrow()
+    expect(() => registerScheduleTools(test.ctx, test.ctx, test.agent, test.transactions, () => {})).toThrow()
     expect(test.ctx.tools.get('schedule_create')).toBeUndefined()
     expect(test.ctx.tools.get('schedule_list')).toBe(list)
     expect(test.ctx.tools.get('schedule_delete')).toBeUndefined()
@@ -325,7 +329,7 @@ describe('Schedule tool protocol', () => {
     const test = await harness()
     test.disposeTools()
     let calls = 0
-    const dispose = registerScheduleTools(test.ctx, test.ctx, test.agent, () => {
+    const dispose = registerScheduleTools(test.ctx, test.ctx, test.agent, test.transactions, () => {
       calls += 1
       if (calls === 1) throw new Error('observer failed')
       throw 'observer failed again'
@@ -417,7 +421,7 @@ describe('Schedule persistence failure boundaries', () => {
     const ownerStarted = new Promise<void>((resolve) => {
       markOwnerStarted = resolve
     })
-    const owner = runScheduleTransaction(test.agent, async () => {
+    const owner = test.transactions.run(test.agent.id, async () => {
       markOwnerStarted?.()
       await new Promise<void>((resolve) => { releaseOwner = resolve })
     })

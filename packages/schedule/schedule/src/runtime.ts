@@ -16,7 +16,7 @@ import {
 } from './domain.ts'
 import type { FoldedSchedules } from './domain.ts'
 import { flushSchedulePersistence } from './persistence.ts'
-import { runScheduleTransaction } from './transaction.ts'
+import type { ScheduleTransactions } from './transaction.ts'
 
 /** Largest delay that Node timers represent without clamping. */
 export const MAX_TIMER_DELAY_MS = 2_147_483_647
@@ -92,6 +92,7 @@ export class ScheduleRuntime {
   constructor(
     private readonly ctx: Context,
     private readonly agent: Agent,
+    private readonly transactions: ScheduleTransactions,
   ) {}
 
   /** Begin the initial durability preflight and timer derivation. */
@@ -143,7 +144,7 @@ export class ScheduleRuntime {
   private async runRequested(): Promise<void> {
     while (this.requested && !this.stopping && !this.faulted) {
       this.requested = false
-      await runScheduleTransaction(this.agent, () => this.driveOnce())
+      await this.transactions.run(this.agent.id, () => this.driveOnce())
     }
   }
 

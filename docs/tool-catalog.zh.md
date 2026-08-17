@@ -1099,7 +1099,7 @@ create、edit、pause 和 resume 要求直接来自人类的根权限；complete
 
 ### `schedule_delete`
 
-使用 schedule_create 或 schedule_list 返回的确切 id，删除当前会话中的一条活动提醒。未知或已经结束的 id 会返回 deleted false。
+使用 schedule_create 或 schedule_list 返回的确切 id，删除当前会话中保留的活动或已暂停提醒。未知或已经结束的 id 会返回 deleted false。
 
 ```json
 {
@@ -1120,7 +1120,7 @@ create、edit、pause 和 resume 要求直接来自人类的根权限；complete
 
 ### `schedule_list`
 
-按创建顺序列出当前会话中的所有活动提醒，包括确切 id、UTC 目标、scheduled 或 overdue 状态，以及 session-local 交付模式。
+按创建顺序列出当前会话中保留的所有活动或已暂停提醒，包括确切 id、UTC 目标、scheduled、overdue 或 paused 状态，以及 session-local 交付模式。
 
 ```json
 {

@@ -11,6 +11,7 @@ import {
   foldScheduleEvents,
 } from '../src/domain.ts'
 import { MAX_TIMER_DELAY_MS, ScheduleRuntime } from '../src/runtime.ts'
+import { ScheduleTransactions } from '../src/transaction.ts'
 
 const contexts: Context[] = []
 const runtimes: ScheduleRuntime[] = []
@@ -139,7 +140,7 @@ async function settle(): Promise<void> {
 }
 
 function runtimeFor(test: RuntimeHarness): ScheduleRuntime {
-  const runtime = new ScheduleRuntime(test.ctx, test.agent)
+  const runtime = new ScheduleRuntime(test.ctx, test.agent, new ScheduleTransactions())
   runtimes.push(runtime)
   return runtime
 }

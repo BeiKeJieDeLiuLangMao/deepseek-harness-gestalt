@@ -10,7 +10,7 @@ import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-test
 import { LlmAdapter, type GenerateOptions, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
-import * as toolSchedule from '../src/index.ts'
+import ScheduleService from '../src/index.ts'
 import {
   ScheduleId,
   createAfterScheduleRecord,
@@ -54,7 +54,7 @@ async function mountRuntime(root: string, adapter: RecordingAdapter): Promise<Co
   await ctx.plugin(AgentLoop, { agents: [] })
   await ctx.plugin(JsonlSessionPersistence, { root, compression: 'none' })
   ctx.llm.registerAdapter(['mock'], adapter)
-  await ctx.plugin(toolSchedule)
+  await ctx.plugin(ScheduleService)
   return ctx
 }
 
@@ -81,6 +81,66 @@ async function settleCurrentTasks(): Promise<void> {
 }
 
 describe('Schedule production JSONL restart', () => {
+  it('pauses a cold overdue reminder without activation and preserves it across a Host restart', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-schedule-jsonl-cold-pause-'))
+    roots.push(root)
+    const sessionId = SessionId('schedule-jsonl-cold-pause')
+    const first = await mountPersistence(root)
+    const pending = first.sessions.create(sessionId, { meta: { cwd: '/tmp' } })
+    pending.append('schedule/change', {
+      version: 1,
+      operation: 'create',
+      schedule: createAfterScheduleRecord(
+        ScheduleId('schedule-1'), 'cold paused reminder', 1, Date.now() - 60_000,
+      ),
+    })
+    await expect(first.sessions.flush(pending)).resolves.toBe(true)
+    await disposeContext(first)
+
+    const pausingAdapter = new RecordingAdapter()
+    const pausing = await mountRuntime(root, pausingAdapter)
+    const created: SessionId[] = []
+    const sessionCreated: SessionId[] = []
+    const sessionDisposed: SessionId[] = []
+    pausing.on('agent/created', ({ agent }) => { created.push(agent.id) })
+    pausing.on('session/created', (session) => { sessionCreated.push(session.id) })
+    pausing.on('session/disposed', (session) => { sessionDisposed.push(session.id) })
+    await expect(pausing.schedules.pause(sessionId, ScheduleId('schedule-1')))
+      .resolves.toMatchObject({ id: 'schedule-1', state: 'paused' })
+    expect(created).toEqual([])
+    expect(sessionCreated).toEqual([])
+    expect(sessionDisposed).toEqual([])
+    expect(pausing.sessions.get(sessionId)).toBeUndefined()
+    expect(pausingAdapter.requests).toEqual([])
+    const pausedStored = await pausing.sessionPersistence.inspect(sessionId)
+    expect(foldScheduleEvents(pausedStored.events, pausedStored.meta.seedLength ?? 0).paused)
+      .toEqual([expect.objectContaining({ id: 'schedule-1' })])
+    await disposeContext(pausing)
+
+    const resumedAdapter = new RecordingAdapter()
+    const restarted = await mountRuntime(root, resumedAdapter)
+    const handle = await restarted.agents.resume({
+      resumeSessionId: sessionId,
+      agentOptions: { provider: 'mock', model: 'mock' },
+    })
+    await handle.agent.whenIdle()
+    await settleCurrentTasks()
+    expect(resumedAdapter.requests).toEqual([])
+    expect(handle.agent.session.events.filter(event =>
+      event.type === 'schedule/change' && event.data.operation === 'dispatch')).toEqual([])
+
+    const dispatched = waitForDispatch(restarted, sessionId)
+    await expect(restarted.schedules.resume(sessionId, ScheduleId('schedule-1')))
+      .resolves.toMatchObject({ id: 'schedule-1', state: 'overdue' })
+    await dispatched
+    await handle.agent.whenIdle()
+    expect(resumedAdapter.requests).toHaveLength(1)
+    expect(handle.agent.session.events.filter(event =>
+      event.type === 'schedule/change' && event.data.operation === 'dispatch')).toHaveLength(1)
+    await handle.dispose()
+    await disposeContext(restarted)
+  })
+
   it('resumes one overdue reminder exactly once across fresh runtime mounts', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-schedule-jsonl-'))
     roots.push(root)

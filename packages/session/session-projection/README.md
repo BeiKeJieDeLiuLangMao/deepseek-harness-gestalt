@@ -15,7 +15,7 @@ Session-projection Service Definition and drive registry. It owns `ctx.sessionPr
 ### Key Types
 
 - `SessionProjectionMap` — the single merge-extensible type table for the whole chain (host unit, wire block, React hook). Values are wire-JSON whole values; rendering belongs to the slot system, never this layer.
-- `ProjectionDefinition<K, S>` — `{ key, schema, init(), apply(state, event), view(state), stateVersion }`: a state-driven computation unit of three pure synchronous functions plus declarations, never an opaque getter.
+- `ProjectionDefinition<K, S>` — `{ key, schema, init(), apply(state, event), view(state), eventScope?, stateVersion }`: a state-driven computation unit of three pure synchronous functions plus declarations, never an opaque getter. `eventScope: 'owned-suffix'` starts a fork at its immutable `SessionHeader.seedLength`; the default `full` includes inherited history.
 
 ## Contract
 
@@ -24,6 +24,7 @@ Session-projection Service Definition and drive registry. It owns `ctx.sessionPr
 - **Whole-value event rule (load-bearing).** A state-carrying log event MUST carry the complete post-change state, never a bare delta — it keeps every transition trivially cheap and every served value self-describing (last-wins for consumers).
 - **Synchronous unit discipline.** `init`/`apply`/`view` MUST be synchronous; carriers read `snapshot()` in the same tick as their page slice, which is what makes `asOfSeq` one consistent cut. An accidentally-async `view` returns a Promise, which fails the boundary `schema.parse` loudly.
 - **State is plain JSON, `stateVersion` is its invalidation anchor.** The persisted projection cache stores `(sessionId, key, ver, seq, val)` rows; bump `stateVersion` whenever the state shape or the fold semantics change so stale rows are discarded instead of forward-applied into garbage.
+- **Fork ownership is explicit.** The registry and cache apply `eventScope` consistently in eager drive, lazy cold folds, checkpoint restore, and suffix replay. Use `owned-suffix` only when inherited history must remain visible elsewhere but must not activate the domain in the child Session.
 - **No wire vocabulary here.** The registry exposes only the change feed and the snapshot read face; carriers (api-proxy) mint their own frames (`session/projection`) and blocks from them.
 - **Optional capability.** Domain plugins register under `ctx.inject(['sessionProjections'], …)` so headless assemblies without the registry stay unaffected; carriers use `ctx.get('sessionProjections')` and omit their block/frames entirely when the registry is absent.
 

@@ -15,7 +15,7 @@
 ### 关键类型
 
 - `SessionProjectionMap`——整条链路唯一的 merge-extensible 类型表（host 侧单元、协议块、React 钩子）。值是协议层 JSON 全量值；渲染归 slot 体系管，永远不归本层。
-- `ProjectionDefinition<K, S>`——`{ key, schema, init(), apply(state, event), view(state), stateVersion }`：由三个纯同步函数外加若干声明构成的状态驱动计算单元（state-driven computation unit），绝不是一个不透明的 getter。
+- `ProjectionDefinition<K, S>`——`{ key, schema, init(), apply(state, event), view(state), eventScope?, stateVersion }`：由三个纯同步函数外加若干声明构成的状态驱动计算单元（state-driven computation unit），绝不是一个不透明的 getter。`eventScope: 'owned-suffix'` 从 fork 不可变的 `SessionHeader.seedLength` 开始；默认的 `full` 包含继承历史。
 
 ## 约定
 
@@ -24,6 +24,7 @@
 - **全量值事件规则（承重）。** 携带状态的日志事件必须携带变更后的完整状态，绝不携带裸增量——这让每次状态转移始终足够廉价，也让每个被供给的值自描述（对消费方即 last-wins）。
 - **单元的同步纪律。**`init`/`apply`/`view` 必须是同步的；载体在切出页面切片的同一 tick 内读取 `snapshot()`，`asOfSeq` 之所以是一个一致切面正系于此。误写成异步的 `view` 会返回 Promise，让边界的 `schema.parse` 当场大声失败。
 - **状态是纯 JSON，`stateVersion` 是其失效锚点。** 持久投影缓存（persisted projection cache）存储 `(sessionId, key, ver, seq, val)` 行；状态形状或折叠语义一旦变化就递增 `stateVersion`，使陈旧行被丢弃，而不是被正向 apply 成垃圾。
+- **Fork 所有权必须显式。** registry 与 cache 在 eager drive、lazy cold fold、checkpoint restore 和 suffix replay 中一致应用 `eventScope`。仅当继承历史需要在其他位置保持可见、却不能在子 Session 激活该 domain 时，才使用 `owned-suffix`。
 - **本层没有协议词汇。** 注册表只暴露变更流与快照读取面；载体（api-proxy）据此自铸各自的帧（`session/projection`）与块。
 - **可选能力。** 领域插件在 `ctx.inject(['sessionProjections'], …)` 下注册，因此不带注册表的 headless 组装完全不受影响；载体使用 `ctx.get('sessionProjections')`，注册表缺席时完全省略自己的块与帧。
 

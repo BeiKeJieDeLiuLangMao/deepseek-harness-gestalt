@@ -65,6 +65,12 @@ export interface ProjectionDefinition<K extends keyof SessionProjectionMap, S> {
    */
   view(state: S): SessionProjectionMap[K]
   /**
+   * Which portion of a forked Session log this domain owns. The default
+   * `full` folds inherited history; `owned-suffix` starts at the immutable
+   * `SessionHeader.seedLength` boundary.
+   */
+  eventScope?: 'full' | 'owned-suffix'
+  /**
    * Persisted-cache invalidation version: bump whenever the serialized state fields or the
    * fold semantics change, so persisted `(sessionId, key, ver, seq, val)`
    * rows from an older unit are discarded instead of being forward-applied
@@ -124,6 +130,7 @@ interface ErasedDefinition {
   init(): unknown
   apply(state: unknown, event: SessionEvent): unknown
   view(state: unknown): unknown
+  eventScope?: 'full' | 'owned-suffix'
   stateVersion: number
 }
 
@@ -205,7 +212,8 @@ export class SessionProjectionRegistry extends Service {
         // the versioned contract says the cached state shape differs, so the
         // two registrants cannot share cells. Anything else about a definition
         // is functions, which no runtime comparison can tell apart.
-        if (existing.def.stateVersion !== definition.stateVersion) {
+        if (existing.def.stateVersion !== definition.stateVersion
+          || (existing.def.eventScope ?? 'full') !== (definition.eventScope ?? 'full')) {
           throw new Error(`session projection key ${JSON.stringify(key)} is already registered at stateVersion ${String(existing.def.stateVersion)}; refusing to share it with stateVersion ${String(definition.stateVersion)}`)
         }
         existing.refs += 1
@@ -348,11 +356,12 @@ export class SessionProjectionRegistry extends Service {
    * @param checkpoint - persisted rows for one session (possibly stale or empty).
    * @param events - the stored events with `seq >= baseSeq`, in seq order.
    * @param baseSeq - the seq `events` starts at (its first event's seq when non-empty).
+   * @param seedLength - inherited prefix length excluded by `owned-suffix` units.
    * @returns the snapshot cut at the supplied log end (`asOfSeq` is the last
    *   supplied event's seq, `baseSeq - 1` for an empty tail) plus the
    *   refreshed checkpoint rows at that cut, ready for a durable write-back.
    */
-  restore(checkpoint: ProjectionCheckpoint, events: readonly SessionEvent[], baseSeq: number):
+  restore(checkpoint: ProjectionCheckpoint, events: readonly SessionEvent[], baseSeq: number, seedLength: number = 0):
   { snapshot: ProjectionSnapshot; checkpoint: ProjectionCheckpoint } {
     const endSeq = events.at(-1)?.seq ?? baseSeq - 1
     const values: Record<string, unknown> = {}
@@ -373,7 +382,9 @@ export class SessionProjectionRegistry extends Service {
       let state = usable ? row.val : def.init()
       const from = usable ? row.seq : baseSeq - 1
       for (const event of events) {
-        if (event.seq > from) state = def.apply(state, event)
+        if (event.seq > from && (def.eventScope !== 'owned-suffix' || event.seq >= seedLength)) {
+          state = def.apply(state, event)
+        }
       }
       values[def.key] = def.schema.parse(def.view(state))
       refreshed[def.key] = { ver: def.stateVersion, seq: endSeq, val: state }
@@ -385,9 +396,11 @@ export class SessionProjectionRegistry extends Service {
   }
 
   /** Fold one unit from init over `events`, producing a cell watermarked at the last folded event. */
-  private buildCell(def: ErasedDefinition, events: readonly SessionEvent[]): UnitCell {
+  private buildCell(def: ErasedDefinition, events: readonly SessionEvent[], seedLength: number): UnitCell {
     let state = def.init()
-    for (const event of events) state = def.apply(state, event)
+    for (const event of events) {
+      if (def.eventScope !== 'owned-suffix' || event.seq >= seedLength) state = def.apply(state, event)
+    }
     return { state, observedSeq: (events.at(-1)?.seq ?? -1) }
   }
 
@@ -395,7 +408,7 @@ export class SessionProjectionRegistry extends Service {
   private cellFor(registration: Registration, session: Session): UnitCell {
     let cell = registration.cells.get(session)
     if (cell === undefined) {
-      cell = this.buildCell(registration.def, session.events)
+      cell = this.buildCell(registration.def, session.events, session.header.seedLength ?? 0)
       registration.cells.set(session, cell)
     }
     return cell
@@ -408,7 +421,11 @@ export class SessionProjectionRegistry extends Service {
       if (cell === undefined) {
         // Late build mid-stream: fold history before this event (seq = log
         // index, so the prefix slice is exact), then take the normal gate.
-        cell = this.buildCell(registration.def, session.events.slice(0, event.seq))
+        cell = this.buildCell(
+          registration.def,
+          session.events.slice(0, event.seq),
+          session.header.seedLength ?? 0,
+        )
         registration.cells.set(session, cell)
       }
       const next = registration.def.apply(cell.state, event)

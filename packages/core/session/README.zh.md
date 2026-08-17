@@ -8,7 +8,7 @@
 
 ## 服务：`SessionStore`（ctx 键：`sessions`）
 
-创建并持有事件溯源的 `Session` 实例。这里有意不实现持久化：插件订阅 `session/event`，在 `session/flush` 时刷新，并可镜像成对的 `session/created`／`session/disposed` 生命周期。
+创建并持有事件溯源的 `Session` 实例。这里有意不实现持久化：插件订阅 `session/event`，在 `session/flush` 时刷新，并在 `session/detached` 时退役附着关系拥有的状态。公开的 `session/created`／`session/disposed` 生命周期仍只为已 announce 的 Session 成对出现。
 
 ### 公共 API
 
@@ -23,14 +23,14 @@
 仅在清理必须与另一项资源排序时使用拆分生命周期：
 
 - `prepare(id?, options?)` 校验并构造，但不发布。
-- `enter(session)` 执行冲突检查，在不通知的情况下发布，并返回一个绑定到该条目的幂等脱离函数。允许并发准备相同 id，但只有一个条目能够成功进入；陈旧的脱离函数无法移除其替代项。
+- `enter(session)` 执行冲突检查，在不通知的情况下发布，并返回一个绑定到该条目的幂等脱离函数。允许并发准备相同 id，但只有一个条目能够成功进入；陈旧的脱离函数无法移除其替代项。detach 总会发出面向基础设施的 `session/detached` 所有权释放；未 announce 的条目不会发出任何公开生命周期边。
 - `announce(session)` 发出唯一一次创建边，并拒绝重复或重入通知。该次分发期间请求的脱离操作会延后，之后再发出成对的释放边；未通知的条目不会发出任何生命周期边。
 
 `dsh-agent-loop` 使用这一拆分，以保证循环的最终刷新先于会话脱离；详见[所有权 Agent Note](../../../.agents/notes/implemented/architecture/2026-06-18-agent-lifecycle-and-ownership-contracts.md)。
 
 ### 实时服务事件
 
-会话存储会将已通知的创建与释放配对，在提交后发布追加通知并逐个监听器收容失败，同时提供受等待的持久性检查点。确切签名和作用域行为见 [session.md](../../../docs/subsystems/session.md#cordis-surface) 的生成区块；载荷见[持久化目录](../../../docs/persistence-catalog.md)。
+会话存储会将已通知的创建与释放配对，为每个脱离的条目发出所有权释放，在提交后发布追加通知并逐个监听器收容失败，同时提供受等待的持久性检查点。确切签名和作用域行为见 [session.md](../../../docs/subsystems/session.md#cordis-surface) 的生成区块；载荷见[持久化目录](../../../docs/persistence-catalog.md)。
 
 ### 类：`Session`
 

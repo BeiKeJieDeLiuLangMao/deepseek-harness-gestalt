@@ -45,6 +45,12 @@ interface ProjectionDefinition<K extends keyof SessionProjectionMap, S> {
    */
   view(state: S): SessionProjectionMap[K]
   /**
+   * Which portion of a forked Session log this domain owns. The default
+   * `full` folds inherited history; `owned-suffix` starts at the immutable
+   * `SessionHeader.seedLength` boundary.
+   */
+  eventScope?: 'full' | 'owned-suffix'
+  /**
    * Persisted-cache invalidation version: bump whenever the serialized state fields or the
    * fold semantics change, so persisted `(sessionId, key, ver, seq, val)`
    * rows from an older unit are discarded instead of being forward-applied
@@ -55,6 +61,8 @@ interface ProjectionDefinition<K extends keyof SessionProjectionMap, S> {
 ```
 
 全量值事件规则是承重结构：携带状态的日志事件携带的是变更后的完整状态，绝不是裸增量——这让每次状态转移始终足够廉价，也让每个被供给的值自描述（对消费方即 last-wins）。
+
+Fork 所有权同样属于单元声明。registry 与持久化 cache 会在 eager drive、lazy fold、checkpoint restore 和后续 replay 中遵守 `eventScope`。`owned-suffix` 仅用于父历史保持可见、但不能在子 Session 中激活状态的 domain；其他单元保留默认的 `full` 事件流。
 
 ## 快照与变更流
 
@@ -104,7 +112,7 @@ Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnp
 
 ### `ctx.sessionProjectionCache` — `SessionProjectionCache`
 
-The persisted projection cache service. Opens the `session_projcache` domain at init, checkpoints live sessions on a throttled write-behind (count/interval triggers from Config) plus two mandatory points — `turn/end` and session disposal (the live-to-cold moment) — and serves the cold-read ladder: cached row, persistence `readFrom` tail, registry `restore`, durable write-back. Every durable write is fail-soft: failures log a warning and the cache self-heals on the next write or cold read.
+The persisted projection cache service. Opens the `session_projcache` domain at init, checkpoints live sessions on a throttled write-behind (count/interval triggers from Config) plus two mandatory points — `turn/end` and Session detachment (the live-to-cold moment) — and serves the cold-read ladder: cached row, persistence `readFrom` tail, registry `restore`, durable write-back. Every durable write is fail-soft: failures log a warning and the cache self-heals on the next write or cold read.
 
 ```ts cordis-catalog
 /**
@@ -249,14 +257,15 @@ viewCheckpoint(checkpoint: ProjectionCheckpoint): Partial<SessionProjectionMap>
  * @param checkpoint - persisted rows for one session (possibly stale or empty).
  * @param events - the stored events with `seq >= baseSeq`, in seq order.
  * @param baseSeq - the seq `events` starts at (its first event's seq when non-empty).
+ * @param seedLength - inherited prefix length excluded by `owned-suffix` units.
  * @returns the snapshot cut at the supplied log end (`asOfSeq` is the last
  *   supplied event's seq, `baseSeq - 1` for an empty tail) plus the
  *   refreshed checkpoint rows at that cut, ready for a durable write-back.
  */
-restore(checkpoint: ProjectionCheckpoint, events: readonly SessionEvent[], baseSeq: number): { snapshot: ProjectionSnapshot; checkpoint: ProjectionCheckpoint }
+restore(checkpoint: ProjectionCheckpoint, events: readonly SessionEvent[], baseSeq: number, seedLength: number = 0): { snapshot: ProjectionSnapshot; checkpoint: ProjectionCheckpoint }
 ```
 
 Types: [Session](session.md) · [SessionEvent](session.md)
 
-Source: [`packages/session/session-projection/src/index.ts:171`](../../packages/session/session-projection/src/index.ts)
+Source: [`packages/session/session-projection/src/index.ts:178`](../../packages/session/session-projection/src/index.ts)
 <!-- END GENERATED cordis-surface -->

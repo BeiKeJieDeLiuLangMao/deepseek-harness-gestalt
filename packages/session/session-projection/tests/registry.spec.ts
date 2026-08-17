@@ -80,6 +80,24 @@ describe('SessionProjectionRegistry drive', () => {
     expect(ctx.sessionProjections.snapshot(session).values['test/marks']).toEqual({ marks: ['after'] })
   })
 
+  it('lets an owned-suffix unit ignore inherited fork events in live and cold folds', async () => {
+    const { ctx } = await harness()
+    ctx.sessionProjections.register({ ...marksUnit(), eventScope: 'owned-suffix' })
+    const events: SessionEvent[] = [
+      { type: 'test/mark', seq: 0, time: 0, data: { marks: ['parent'] } },
+    ]
+    const child = ctx.sessions.create(undefined, {
+      seed: events,
+      meta: { seedLength: 1 },
+    })
+
+    expect(ctx.sessionProjections.snapshot(child).values['test/marks']).toEqual({ marks: [] })
+    expect(ctx.sessionProjections.restore({}, events, 0, 1).snapshot.values['test/marks'])
+      .toEqual({ marks: [] })
+    mark(child, ['child'])
+    expect(ctx.sessionProjections.snapshot(child).values['test/marks']).toEqual({ marks: ['child'] })
+  })
+
   it('serves init-derived state and asOfSeq -1 for an empty log', async () => {
     const { ctx, session } = await harness()
     ctx.sessionProjections.register(marksUnit())

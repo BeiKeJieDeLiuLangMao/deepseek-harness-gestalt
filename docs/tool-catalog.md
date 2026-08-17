@@ -1095,7 +1095,7 @@ Source: [`packages/schedule/schedule/src/tools.ts`](../packages/schedule/schedul
 
 ### `schedule_delete`
 
-Delete one active reminder in the current session by the exact id returned by schedule_create or schedule_list. Unknown or already-finished ids return deleted false.
+Delete one retained active or paused reminder in the current session by the exact id returned by schedule_create or schedule_list. Unknown or already-finished ids return deleted false.
 
 ```json
 {
@@ -1116,7 +1116,7 @@ Source: [`packages/schedule/schedule/src/tools.ts`](../packages/schedule/schedul
 
 ### `schedule_list`
 
-List every active reminder in the current session in creation order, including its exact id, UTC target, scheduled or overdue state, and session-local delivery mode.
+List every retained active or paused reminder in the current session in creation order, including its exact id, UTC target, scheduled, overdue, or paused state, and session-local delivery mode.
 
 ```json
 {

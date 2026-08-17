@@ -36,8 +36,8 @@ declare module '@deepseek-ai/cordis' {
 /**
  * Plugin config. Both throttle triggers are deployment choices with no
  * universally correct value, so the composition states them explicitly
- * (cordis.yml); the two mandatory write points (`turn/end` and session
- * disposal) are policy, not tunables, and always fire.
+ * (cordis.yml); the two mandatory write points (`turn/end` and Session
+ * detachment) are policy, not tunables, and always fire.
  */
 export interface Config {
   /** Committed events per session that force a durable checkpoint write between mandatory points. */
@@ -63,7 +63,7 @@ interface DirtyState {
  * The persisted projection cache service. Opens the `session_projcache`
  * domain at init, checkpoints live sessions on a throttled write-behind
  * (count/interval triggers from {@link Config}) plus two mandatory points —
- * `turn/end` and session disposal (the live-to-cold moment) — and serves the
+ * `turn/end` and Session detachment (the live-to-cold moment) — and serves the
  * cold-read ladder: cached row, persistence `readFrom` tail, registry
  * `restore`, durable write-back. Every durable write is fail-soft: failures
  * log a warning and the cache self-heals on the next write or cold read.
@@ -183,14 +183,14 @@ export class SessionProjectionCache extends Service {
     const related = record === undefined || identityMatches(record.identity, identityOf(tail.meta))
     try {
       if (!related) throw new Error('unrelated log identity')
-      restored = this.ctx.sessionProjections.restore(cached, tail.events, floor)
+      restored = this.ctx.sessionProjections.restore(cached, tail.events, floor, tail.meta.seedLength ?? 0)
     } catch {
       // The recoverable restore failures: an unrelated record, or a row
       // overreaching the stored log end (or predating the floor). Both imply
       // floor > 0 (baseSeq-0 restores never throw and an unrelated record
       // still carried a usable watermark), so the full log is a fresh read.
       const whole = await persistence.readFrom(id, 0, signal)
-      restored = this.ctx.sessionProjections.restore({}, whole.events, 0)
+      restored = this.ctx.sessionProjections.restore({}, whole.events, 0, whole.meta.seedLength ?? 0)
     }
     await this.putSoft(id, identityOf(tail.meta), restored.checkpoint, 'cold-read write-back')
     return restored.snapshot
@@ -219,11 +219,12 @@ export class SessionProjectionCache extends Service {
       }, this.config.writeIntervalMs)
     })
 
-    // Detach (the live-to-cold moment): the second mandatory point. After
+    // Store detachment (the live-to-cold moment): the second mandatory point
+    // for every entered Session, including an unpublished preparation. After
     // this write the cold-read ladder serves the session from the cache.
     // flushSoft's synchronous prefix reads and resets the dirty state, so
     // dropping it (timer already cleared by markClean) right after is safe.
-    this.ctx.on('session/disposed', (session: Session) => {
+    this.ctx.on('session/detached', (session: Session) => {
       void this.flushSoft(session, 'detach')
       this.markClean(session)
       this.dirty.delete(session)

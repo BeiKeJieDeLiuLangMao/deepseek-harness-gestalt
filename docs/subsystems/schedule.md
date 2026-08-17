@@ -2,7 +2,7 @@
 
 English | [中文](schedule.zh.md)
 
-Schedule owns durable reminders that return to the original live Session as ordinary later conversation turns. The [durable Schedule Agent Note](../../.agents/notes/implemented/feature/2026-08-05-durable-web-schedule.md) owns the persistence and lifecycle decisions, [conversational delivery](../../.agents/notes/implemented/simplification/2026-08-09-conversational-schedule-delivery.md) owns the no-receipt boundary, the [explicit time-zone boundary](../../.agents/notes/implemented/simplification/2026-08-09-explicit-schedule-time-zone.md) owns browser-local interpretation, and [bounded fixed-rate Schedule](../../.agents/notes/implemented/simplification/2026-08-09-bounded-fixed-rate-schedule.md) owns recurrence. This page records the durable and model-facing shapes from [`packages/schedule/schedule/src/types.ts`](../../packages/schedule/schedule/src/types.ts); the [package README](../../packages/schedule/schedule/README.md) owns composition, tool behavior, and the exact reminder framing.
+Schedule owns durable reminders that return to the original live Session as ordinary later conversation turns. The [durable Schedule Agent Note](../../.agents/notes/implemented/feature/2026-08-05-durable-web-schedule.md) owns the persistence and lifecycle decisions, the [Session Schedule board](../../.agents/notes/implemented/feature/2026-08-17-session-schedule-board.md) owns human management and projection decisions, [conversational delivery](../../.agents/notes/implemented/simplification/2026-08-09-conversational-schedule-delivery.md) owns the no-receipt boundary, the [explicit time-zone boundary](../../.agents/notes/implemented/simplification/2026-08-09-explicit-schedule-time-zone.md) owns browser-local interpretation, and [bounded fixed-rate Schedule](../../.agents/notes/implemented/simplification/2026-08-09-bounded-fixed-rate-schedule.md) owns recurrence. This page records the durable and model-facing shapes from [`packages/schedule/schedule/src/types.ts`](../../packages/schedule/schedule/src/types.ts); the [package README](../../packages/schedule/schedule/README.md) owns composition, tool behavior, and the exact reminder framing.
 
 ## Durable records
 
@@ -99,7 +99,7 @@ When multiple distinct Every records are overdue and no one-shot is due, each co
 
 ## Durable changes and replay
 
-The version-1 `schedule/change` Session event is the only durable Schedule authority. Create stores the complete record, and delete is a terminal id-only transition. A one-shot dispatch is also terminal and id-only. An Every dispatch carries the wall-clock decision time used to select its latest due occurrence and normally advances the active record instead of terminating it. Dispatch means the follow-up was synchronously queued, not that a model answer succeeded or the user read it.
+The version-1 `schedule/change` Session event is the only durable Schedule authority. Create stores the complete record; pause and resume retain it without changing its target; delete is a terminal id-only transition. A one-shot dispatch is also terminal and id-only. An Every dispatch carries the wall-clock decision time used to select its latest due occurrence and normally advances the active record instead of terminating it. Dispatch means the follow-up was synchronously queued, not that a model answer succeeded or the user read it.
 
 ```ts type-equiv
 /** Creates one durable reminder record. */
@@ -115,6 +115,24 @@ interface ScheduleCreateChange {
 interface ScheduleDeleteChange {
   readonly version: 1
   readonly operation: 'delete'
+  readonly id: ScheduleId
+}
+```
+
+```ts type-equiv
+/** Pauses one currently deliverable reminder without changing its target. */
+interface SchedulePauseChange {
+  readonly version: 1
+  readonly operation: 'pause'
+  readonly id: ScheduleId
+}
+```
+
+```ts type-equiv
+/** Resumes one paused reminder without changing its target. */
+interface ScheduleResumeChange {
+  readonly version: 1
+  readonly operation: 'resume'
   readonly id: ScheduleId
 }
 ```
@@ -146,7 +164,12 @@ type ScheduleDispatchChange = OneShotScheduleDispatchChange | EveryScheduleDispa
 
 ```ts type-equiv
 /** Strict version-1 durable Schedule mutation union. */
-type ScheduleChange = ScheduleCreateChange | ScheduleDeleteChange | ScheduleDispatchChange
+type ScheduleChange =
+  | ScheduleCreateChange
+  | ScheduleDeleteChange
+  | SchedulePauseChange
+  | ScheduleResumeChange
+  | ScheduleDispatchChange
 ```
 
 The strict decoder and fold reject unknown versions, extra fields, reused ids, mismatched one-shot or Every dispatch shapes, and delete or dispatch transitions against inactive records. A normal Session folds its complete event stream. A fork folds only events at or after `SessionHeader.seedLength`, so it retains history without adopting the parent Session's active reminders. The `schedule/change` declaration and source location are also indexed in the [persistence catalog](../persistence-catalog.md#schedulechange--log-only).
@@ -157,7 +180,7 @@ Tool values combine the durable record with delivery state derived from the curr
 
 ```ts type-equiv
 /** Current delivery timing derived from the durable record and wall clock. */
-type ScheduleState = 'scheduled' | 'overdue'
+type ScheduleState = 'scheduled' | 'overdue' | 'paused'
 ```
 
 ```ts type-equiv
@@ -166,16 +189,67 @@ type ScheduleDeliveryMode = 'session-local'
 ```
 
 ```ts type-equiv
-/** Complete model-facing view of one active reminder. */
+/** Complete model-facing view of one retained reminder. */
 type ScheduleView = ScheduleRecord & {
-  /** Whether the target remains in the future. */
+  /** Current timing or durable delivery suspension. */
   readonly state: ScheduleState
   /** Reminder delivery never leaves the owning session. */
   readonly deliveryMode: ScheduleDeliveryMode
 }
 ```
 
-The generated [tool catalog](../tool-catalog.md#deepseek-aidsh-schedule) owns the argument and result schemas for `schedule_create`, `schedule_list`, and `schedule_delete`. Management calls serialize with due work in one Agent-scoped queue. Every read or decision first waits for the shared Session persistence barrier; create and an actual delete wait again after appending. A barrier failure reports `persistence_uncertain` instead of guessing whether an eager write committed. The other stable error codes are `invalid_prompt`, `invalid_selector`, `invalid_rule`, `invalid_time_zone`, `not_future`, `time_out_of_range`, `frequency_too_high`, `corrupt_schedule_log`, and `internal_error`.
+The generated [tool catalog](../tool-catalog.md#deepseek-aidsh-schedule) owns the argument and result schemas for `schedule_create`, `schedule_list`, and `schedule_delete`. List includes paused records, and delete accepts active or paused records; there are no model-facing pause or resume tools. Management calls serialize with due work in one Schedule Service-owned, per-Session FIFO. Every read or decision first waits for the shared Session persistence barrier; create and an actual delete wait again after appending. Plugin teardown closes admission and awaits accepted transactions, while independent Contexts own independent queues. A barrier failure reports `persistence_uncertain` instead of guessing whether an eager write committed. The other stable error codes are `invalid_prompt`, `invalid_selector`, `invalid_rule`, `invalid_time_zone`, `not_future`, `time_out_of_range`, `frequency_too_high`, `corrupt_schedule_log`, and `internal_error`.
+
+The `ctx.schedules` Remote Service takes a branded Session id without invoking cold Agent resume. It uses an already-live root when present; otherwise it reserves and enters the exact prepared Session without announcing it, flushes before folding, appends and flushes the mutation, then detaches without publishing Session or Agent lifecycle or starting delivery. A preparation or entry collision recomputes against the exact live root inside the same FIFO. The same persistence barriers and Service-owned queue cover tools, human mutations, and due work.
+
+## Browser projection
+
+The `schedules` Session projection is an `owned-suffix` fold over `schedule/change`. Its whole value retains records in creation order and adds only the durable `paused` flag; the Client clock derives scheduled versus overdue presentation from `scheduledAt`. Desktop displays this value as a Session-header current-state board immediately after background jobs. Its active count excludes paused records, and its controls pause, resume, or delete with an inline second confirmation. The board has no create form and never reconstructs state from transcript or tool-call rendering.
+
+<!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
+
+<a id="cordis-surface"></a>
+
+## Cordis API
+
+Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — this section is byte-identical in both language sides of the page. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
+
+<a id="ctxschedules--scheduleservice"></a>
+
+### `ctx.schedules` — `ScheduleService`
+
+Durable Schedule owner, Remote mutation namespace, and live Agent runtime installer.
+
+```ts cordis-catalog
+/**
+ * Pause one retained deliverable reminder.
+ * @param sessionId - Exact root Session identity; a cold mutation publishes no Agent.
+ * @param id - Session-local reminder identity.
+ * @returns The paused durable view after its persistence barrier.
+ */
+@Remote('pause') pause(sessionId: SessionId, id: ScheduleId): Promise<ScheduleView>
+
+/**
+ * Resume one paused reminder without changing its target.
+ * @param sessionId - Exact root Session identity; a cold mutation publishes no Agent.
+ * @param id - Session-local reminder identity.
+ * @returns The resumed timing view after its persistence barrier.
+ */
+@Remote('resume') resume(sessionId: SessionId, id: ScheduleId): Promise<ScheduleView>
+
+/**
+ * Delete one retained reminder, including a paused reminder.
+ * @param sessionId - Exact root Session identity; a cold mutation publishes no Agent.
+ * @param id - Session-local reminder identity.
+ * @returns The deleted identity after its persistence barrier.
+ */
+@Remote('delete') async delete(sessionId: SessionId, id: ScheduleId): Promise<ScheduleDeleteResult>
+```
+
+Types: [SessionId](core.md)
+
+Source: [`packages/schedule/schedule/src/index.ts:65`](../../packages/schedule/schedule/src/index.ts)
+<!-- END GENERATED cordis-surface -->
 
 ## Live delivery
 
@@ -183,4 +257,4 @@ The process-local owner derives its earliest timer from the durable fold and rer
 
 Due work waits for the Agent to become fully idle and claims the maintenance phase before it refolds state, samples the decision, queues one `followup()`, and appends the corresponding dispatch changes. It never calls `steer()` and never interrupts a current turn.
 
-The admitted one-shot or fixed-rate batch starts one normal later turn and appears only through the ordinary conversation transcript; Schedule has no independent durable Web receipt or browser renderer. If framing or synchronous queue admission fails, no dispatch is recorded and the reminder stays active. The narrow crash interval after admission but before durable dispatch can repeat reminder content after recovery, so the boundary is best-effort at-least-once rather than exactly-once delivery.
+The admitted one-shot or fixed-rate batch starts one normal later turn and appears through the ordinary conversation transcript; Schedule has no independent durable delivery receipt. The browser board shows current reminder management state, not model completion or acknowledgement. If framing or synchronous queue admission fails, no dispatch is recorded and the reminder stays active. The narrow crash interval after admission but before durable dispatch can repeat reminder content after recovery, so the boundary is best-effort at-least-once rather than exactly-once delivery.

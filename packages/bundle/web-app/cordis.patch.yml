@@ -237,6 +237,10 @@
     - id: ui-jobs
       name: '@deepseek-ai/dsh-client-ui-jobs'
 
+    # Schedule board: the session-header action over durable Schedule projection state.
+    - id: ui-schedule
+      name: '@deepseek-ai/dsh-client-ui-schedule'
+
     # Goal surface: GoalBar in the input dock over the goal session projection.
     - id: ui-goal
       name: '@deepseek-ai/dsh-client-ui-goal'

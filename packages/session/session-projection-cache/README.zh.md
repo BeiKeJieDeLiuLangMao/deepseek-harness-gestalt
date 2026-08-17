@@ -19,7 +19,7 @@
 | 触发 | 性质 |
 |---|---|
 | `turn/end` | 必写——冷读要的正是轮次终值。 |
-| 会话释放（detach） | 必写——live 转 cold 的时刻；此后冷读阶梯接管该会话。 |
+| Session detach | 每个已 enter 的 attachment 都必写，包括未发布的 preparation；它在清退 dirty 与 interval 状态前写入检查点。已 announce 的 disposal 不会增加第二次写入。 |
 | 累计 `writeEveryEvents` 个已提交事件 | 配置节流（条数）。 |
 | 距首个脏事件 `writeIntervalMs` 毫秒 | 配置节流（间隔）。 |
 
