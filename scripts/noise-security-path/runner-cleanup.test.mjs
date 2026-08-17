@@ -22,6 +22,22 @@ describe('iOS proof runner cleanup', () => {
     })
   }
 
+  it('preserves a boot failure while reporting cleanup failure and awaiting Shutdown', async () => {
+    const harness = createIosHarness('boot', { shutdownFails: true })
+    await assert.rejects(runIosProof(harness.adapters), error => {
+      assert(error instanceof AggregateError)
+      assert.match(error.errors[0].message, /boot failed/)
+      assert.match(error.errors[1].message, /simctl shutdown exited with 1/)
+      return true
+    })
+    assertOrdered(
+      harness.calls,
+      'simctl boot IOS-TEST',
+      'simctl shutdown IOS-TEST',
+      'list devices IOS-TEST --json',
+    )
+  })
+
   it('reports cleanup failure without skipping the shutdown-state wait', async () => {
     const harness = createIosHarness('build', { shutdownFails: true })
     await assert.rejects(runIosProof(harness.adapters), error => {
@@ -90,6 +106,7 @@ function createIosHarness(failure, options = {}) {
       if (args.join(' ') === 'simctl list devices IOS-TEST --json') {
         return JSON.stringify({ devices: { runtime: [{ ...iosDevice, state: 'Shutdown' }] } })
       }
+      if (args[1] === 'boot' && failure === 'boot') throw new Error('boot failed')
       if (command === 'xcodebuild' && failure === 'build') throw new Error('build failed')
       if (args[1] === 'install' && failure === 'install') throw new Error('install failed')
       if (args[1] === 'launch' && failure === 'launch') throw new Error('launch failed')

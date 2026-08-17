@@ -43,7 +43,6 @@ export async function runIosProof(overrides = {}) {
 
   try {
     if (device.state !== 'Booted') {
-      commands.execFileSync('xcrun', ['simctl', 'boot', device.udid], { stdio: 'inherit' })
       cleanup.defer('wait for iOS Simulator shutdown', () => waitForSimulatorShutdown(
         commands,
         clock,
@@ -55,6 +54,7 @@ export async function runIosProof(overrides = {}) {
           'simctl shutdown',
         )
       })
+      commands.execFileSync('xcrun', ['simctl', 'boot', device.udid], { stdio: 'inherit' })
       commands.execFileSync('xcrun', ['simctl', 'bootstatus', device.udid, '-b'], {
         stdio: 'inherit',
       })
