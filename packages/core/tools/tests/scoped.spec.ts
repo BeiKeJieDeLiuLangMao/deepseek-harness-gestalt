@@ -5,6 +5,8 @@ import { bindScopeParent, createScope } from '@deepseek-ai/dsh-scope'
 import type { Scope } from '@deepseek-ai/dsh-scope'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
+import { TOOL_ELIGIBILITY_CONTRIBUTIONS } from '@deepseek-ai/dsh-tools'
+import type { ToolEligibilityContribution } from '@deepseek-ai/dsh-tools'
 import type { PreToolDecision, ToolDefinition, ToolExecution, ToolExecutionInput, ToolExecutionToken } from '@deepseek-ai/dsh-tools'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 
@@ -293,9 +295,55 @@ describe('allow-only eligibility declarations', () => {
     const ctx = await mount()
     const { scope, key } = await mintAgentScope(ctx, 'empty')
 
+    expect(() => { ctx.tools.allowEligible([]) }).toThrow(/requires a scoped context/)
     scope.ctx.tools.allowEligible([])
 
     expect(ctx.tools.eligibilityAllow(key)).toEqual([])
+  })
+
+  it('keeps an explicitly targeted mutable contribution owned by its resolver fiber', async () => {
+    const ctx = await mount()
+    const preset = await mintAgentScope(ctx, 'preset')
+    const session = await mintChildScope(ctx, preset.key, 'session')
+    preset.scope.ctx.tools.allowEligible(['preset'])
+    const publications: Array<readonly string[] | undefined> = []
+    const changes: Array<readonly string[] | undefined> = []
+    ctx.on('tools/change', () => { changes.push(ctx.tools.eligibilityAllow(session.key)) })
+    let contribution!: ToolEligibilityContribution
+    const resolver = ctx.plugin(Object.assign((inner: Context) => {
+      contribution = inner.tools[TOOL_ELIGIBILITY_CONTRIBUTIONS].register(
+        inner,
+        session.key,
+        (settingsAllow) => { publications.push(settingsAllow) },
+      )
+    }, { inject: ['tools'] }))
+    await resolver
+
+    expect(contribution.current()).toBeUndefined()
+    expect(contribution.baseAllow()).toEqual(['preset'])
+    contribution.replace(['workspace', 'workspace'])
+    contribution.replace(['workspace'])
+    contribution.replace(undefined)
+    contribution.replace(['session'])
+    await resolver.dispose()
+
+    expect(publications).toEqual([['workspace'], undefined, ['session'], undefined])
+    expect(changes).toEqual([
+      ['preset', 'workspace'],
+      ['preset'],
+      ['preset', 'session'],
+      ['preset'],
+    ])
+    expect(ctx.tools.eligibilityAllow(session.key)).toEqual(['preset'])
+    expect(() => { contribution.replace(['stale']) }).toThrow(/disposed/)
+
+    let inactive!: ToolEligibilityContribution
+    const inactiveResolver = ctx.plugin(Object.assign((inner: Context) => {
+      inactive = inner.tools[TOOL_ELIGIBILITY_CONTRIBUTIONS].register(inner, session.key, vi.fn())
+    }, { inject: ['tools'] }))
+    await inactiveResolver
+    await inactiveResolver.dispose()
+    expect(() => { inactive.replace([]) }).toThrow(/disposed/)
   })
 
   it('keeps schemas and execution aligned for inherited and scope-local tools', async () => {

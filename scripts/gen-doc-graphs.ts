@@ -287,14 +287,6 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Registers capabilities, owns Code Mode transport, and routes calls through pre-policy, monotonic guards, around dispatch, post-policy, and final-result observation.',
   },
   {
-    key: 'toolEligibility',
-    pkg: 'tools-eligibility',
-    title: 'Allow-only tool eligibility resolution',
-    mode: 'core',
-    consumers: ['apiproxy'],
-    note: 'Combines preset, matching Workspace, and matching Session allowances, contributes the specific additions to each live Agent, and exposes its effective catalog to Host clients.',
-  },
-  {
     key: 'userQuestions',
     pkg: 'user-questions',
     title: 'Human question/answer seam',

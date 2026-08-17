@@ -14,9 +14,9 @@ tool-eligibility:
 
 所有配置列表都只做正向添加。最终集合是 preset、匹配 Workspace 与匹配 Session 三份列表的排序并集。三者都不存在时，为兼容既有组装，该 Session 保持不受限。任一声明都会启用 allow-only 资格；最终并集为空时不允许任何末端工具。settings 更新会直接作用于实时 Agent，无需重启。
 
-服务通过 `ctx.tools.allowEligible()` 贡献 settings 条目。注册表让模型 schema、查询和分发共用解析后的视图，因此不合格或过期调用会在工具主体运行前被解析为未知工具。发送给模型的精确 schema 已记录在持久 `request/header` 事件中；回放无需读取当前 settings 即可重建模型可见资格。
+解析器为每个实时 Agent 持有一条可变注册表贡献。settings 刷新会在一次提交中替换该贡献；解析器卸载、HMR 或 Agent 销毁都会移除它。注册表让模型 schema、查询和分发共用解析后的视图，因此不合格或过期调用会在工具主体运行前被解析为未知工具。发送给模型的精确 schema 已记录在持久 `request/header` 事件中；回放无需读取当前 settings 即可重建模型可见资格。
 
-`session.toolEligibility` 向 Host 客户端公开同一份最终并集与 schema 目录。settings schema 只包含 `workspaces` 和 `sessions`；内部支持 deny 的 `ctx.tools.restrict()` API 不会投影到用户配置。
+`session.toolEligibility` 直接读取权威 `ctx.tools` 许可与 schema 目录。settings schema 只包含 `workspaces` 和 `sessions`；内部支持 deny 的 `ctx.tools.restrict()` API 不会投影到用户配置。
 
 ## 模型体验
 

@@ -14,15 +14,15 @@ agent preset 可以组合工具目录，但用户还需要 Workspace 与 Session
 
 `dsh-tools` 按作用域持有正向资格贡献。preset 到 Agent 的作用域链上的贡献取并集。没有贡献时保留既有的不受限目录；已声明且并集为空的作用域链不允许任何末端工具。一旦启用，同一份解析视图会为 `schemas()`、`get()` 和 `execute()` 筛选继承与作用域本地定义。声明时不校验名称，因此 preset 或 setting 可以早于动态工具注册。内部 allow/deny `restrict()` 接口继续供受信插件使用，不进入用户配置。
 
-`dsh-agent-tool-eligibility` 是 preset 配置行，只公开一个必填 `allow` 列表。`dsh-tools-eligibility` 注册 allow-only 的 `tool-eligibility` settings 分节，其中含 `workspaces` 与 `sessions` 两张映射。它为每个实时 Agent 先贡献匹配的 Workspace 列表，再贡献匹配的 Session 列表；两者都是在 preset 基础上的正向添加，实时 settings 变化会替换该贡献，无需重启 Session。Workspace 匹配先找到规范路径等于 `session.header.cwd` 的 Workspace，再使用其稳定 id。
+`dsh-agent-tool-eligibility` 是 preset 配置行，只公开一个必填 `allow` 列表。`dsh-tools-eligibility` 注册 allow-only 的 `tool-eligibility` settings 分节，其中含 `workspaces` 与 `sessions` 两张映射。它通过由解析器 fiber 持有的一条可变条目贡献匹配的 Workspace 与 Session 列表。settings 变化会在通知前替换该条目，因此观察者不会看到新旧添加项同时取并集；解析器卸载、HMR 和 Agent 销毁都会移除同一条目。Workspace 匹配先找到规范路径等于 `session.header.cwd` 的 Workspace，再使用其稳定 id。
 
-解析后的工具视图是唯一运行时事实。Agent loop 从中取得请求 schema，分发也在进入工具主体前从中解析被调用定义。`session.toolEligibility` 向 Host 客户端返回同一份正向并集与当前 schema。现有持久 `request/header` 事件会记录每次组装请求的全部工具，因此仍可重建精确的模型可见 schema。不会新增资格事件：单独记录当前 settings 只会复制策略输入，却不能证明当时哪些动态定义进入了请求。
+解析后的工具视图是唯一运行时权威。Agent loop 从中取得请求 schema，分发在进入工具主体前从中解析被调用定义，`session.toolEligibility` 也直接读取该视图。解析器的运行时接口只负责 settings 到注册表的生命周期，不发布独立的解析服务。解析器在每次 settings 贡献提交后发出非持久关系 publication，让 invariant companion 对比预期并集与实时注册表。持久 `request/header` 事件会记录每次组装请求的全部工具，因此仍可重建精确的模型可见 schema；不会用持久资格事件重复记录该结果。
 
 Code Mode 保留 `run_code` 作为呈现基础设施。正向资格筛选其 SDK 使用的末端工具定义；该传输不是一项可单独配置的能力。
 
 ## 验证
 
-工具注册表测试覆盖作用域链并集、显式 allow-none、继承与作用域本地 schema 筛选、过期调用拒绝和工具主体未执行。解析器测试覆盖 preset、Workspace 与 Session 添加、动态注册、实时 settings 更新和用户配置中不存在 deny 字段。API 测试覆盖 `session.toolEligibility`。Web minimal-preset 无密钥回放会挂载 allow-only preset，在持久请求 header 中只记录 `bash`，执行该工具，并证明过期 `str_replace_editor` 调用在执行前失败。
+工具注册表测试覆盖作用域链并集、显式 allow-none、继承与作用域本地 schema 筛选、过期调用拒绝和工具主体未执行。解析器测试覆盖 preset、Workspace 与 Session 添加、正常及抛错监听器下的原子刷新、解析器卸载/HMR、Agent 销毁、动态注册和用户配置中不存在 deny 字段。invariant 负控会拒绝与实时注册表不一致的 publication。API 测试覆盖 `session.toolEligibility` 对 `ctx.tools` 的直接投影。Web minimal-preset 无密钥回放会挂载 allow-only preset，在持久请求 header 中只记录 `bash`，执行该工具，并证明过期 `str_replace_editor` 调用在执行前失败。
 
 ## 曾考虑的替代方案
 

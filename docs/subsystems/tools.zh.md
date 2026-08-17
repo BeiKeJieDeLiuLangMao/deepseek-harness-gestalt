@@ -475,25 +475,6 @@ type ObjectJsonSchema = JsonSchemaNode & { type: 'object' }
 
 Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — this section is byte-identical in both language sides of the page. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
 
-<a id="ctxtooleligibility--tooleligibilityservice"></a>
-
-### `ctx.toolEligibility` — `ToolEligibilityService`
-
-Host-plane eligibility resolver. A configured Workspace or Session entry contributes to the same positive scope-chain union as preset declarations; no declaration preserves the existing unrestricted catalog.
-
-```ts cordis-catalog
-/**
- * Resolve the configured allowances and live eligible catalog for an agent.
- * @param agent - live agent whose preset, Workspace, and Session apply.
- * @returns a fresh Host API projection.
- */
-resolve(agent: Agent): ToolEligibilityResolution
-```
-
-Types: [Agent](core.md)
-
-Source: [`packages/core/tools-eligibility/src/index.ts:60`](../../packages/core/tools-eligibility/src/index.ts)
-
 <a id="ctxtools--toolruntime"></a>
 
 ### `ctx.tools` — `ToolRuntime`
@@ -610,7 +591,32 @@ async execute(exec: ToolExecutionInput): Promise<ToolExecutionResult>
 
 Types: [ScopeKey](scope.md)
 
-Source: [`packages/core/tools/src/index.ts:789`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:834`](../../packages/core/tools/src/index.ts)
+
+<a id="tool-eligibility-events"></a>
+
+### `tool-eligibility/*` events
+
+<a id="tool-eligibilitypublished--emit"></a>
+
+#### `tool-eligibility/published` — emit
+
+A settings-derived allowance was committed to or removed from one live Agent's registry scope.
+
+```ts cordis-catalog
+/**
+ * A settings-derived allowance was committed to or removed from one live
+ * Agent's registry scope.
+ * @param agent - live Agent whose scoped registry view changed.
+ * @param publication - committed settings addition and expected effective union.
+ * @mode emit
+ */
+'tool-eligibility/published'(agent: Agent, publication: ToolEligibilityPublication): void
+```
+
+Types: [Agent](core.md)
+
+Source: [`packages/core/tools-eligibility/src/index.ts:58`](../../packages/core/tools-eligibility/src/index.ts)
 
 <a id="tools-events"></a>
 
@@ -635,7 +641,7 @@ A tool was registered or unregistered, or a scoped restriction changed (the avai
 'tools/change'(): void
 ```
 
-Source: [`packages/core/tools/src/index.ts:207`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:216`](../../packages/core/tools/src/index.ts)
 
 <a id="toolscode-dispatch-log--waterfall"></a>
 
@@ -662,7 +668,7 @@ Allow a listener to replace content in the DURABLE LOG COPY of one `run_code` su
 
 Types: [ContentBlock](llm-streaming.md) · [Scoped](scope.md)
 
-Source: [`packages/core/tools/src/index.ts:189`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:198`](../../packages/core/tools/src/index.ts)
 
 <a id="toolsexecute--waterfall"></a>
 
@@ -686,7 +692,7 @@ Around-dispatch waterfall for timeout, retry, or metrics. `next()` returns a nor
 
 Types: [Scoped](scope.md)
 
-Source: [`packages/core/tools/src/index.ts:163`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:172`](../../packages/core/tools/src/index.ts)
 
 <a id="toolspost-execute--waterfall"></a>
 
@@ -711,7 +717,7 @@ Accept, replace, enrich, or block a normalized dispatch result. `next()` accepts
 
 Types: [Scoped](scope.md)
 
-Source: [`packages/core/tools/src/index.ts:175`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:184`](../../packages/core/tools/src/index.ts)
 
 <a id="toolspre-execute--waterfall"></a>
 
@@ -734,7 +740,7 @@ Allow, deny, or ask before dispatch. `next()` delegates to allow; missing approv
 
 Types: [Scoped](scope.md)
 
-Source: [`packages/core/tools/src/index.ts:152`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:161`](../../packages/core/tools/src/index.ts)
 
 <a id="toolsresult--emit"></a>
 
@@ -755,5 +761,5 @@ Observe the frozen, lossless-JSON final outcome. Listener failures are contained
 
 Types: [Scoped](scope.md)
 
-Source: [`packages/core/tools/src/index.ts:197`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:206`](../../packages/core/tools/src/index.ts)
 <!-- END GENERATED cordis-surface -->

@@ -62,6 +62,15 @@ const SDK_RENDERERS: Record<string, (schemas: ToolSdkSchema[]) => string> = {
   python: renderToolsSdkPy,
 } satisfies Record<CodeSdkLanguage, (schemas: ToolSdkSchema[]) => string>
 
+/** Compare two normalized optional string lists. */
+function sameStringList(
+  left: readonly string[] | undefined,
+  right: readonly string[] | undefined,
+): boolean {
+  return left === right || (left !== undefined && right !== undefined
+    && left.length === right.length && left.every((value, index) => value === right[index]))
+}
+
 export {
   defineTool,
   valueSchemaSpecToJsonSchema,
@@ -684,6 +693,42 @@ export interface ToolRestriction {
   readonly deny?: readonly string[]
 }
 
+/** Mutable positive allowance owned by a settings resolver for one live scope. */
+export interface ToolEligibilityContribution {
+  /** Current sorted names, or `undefined` while this contribution is inactive. */
+  current(): readonly string[] | undefined
+  /** Effective allowance along the scope chain without this contribution. */
+  baseAllow(): readonly string[] | undefined
+  /** Atomically replace the contribution before publishing registry change events. */
+  replace(names: readonly string[] | undefined): void
+  /** Remove the exact contribution; resolver-fiber teardown also calls this disposer. */
+  dispose(): void
+}
+
+/** Resolver-only registry entry point kept out of the named `ctx.tools` API. */
+export interface ToolEligibilityContributions {
+  /**
+   * Register one mutable allowance with separate lifecycle ownership and visibility scope.
+   * @param owner - resolver context that owns teardown.
+   * @param scope - exact Agent scope that sees the allowance.
+   * @param publish - relationship publication run after each committed mutation.
+   * @returns the resolver-owned mutable contribution.
+   */
+  register(
+    owner: Context,
+    scope: ScopeKey,
+    publish: (settingsAllow: readonly string[] | undefined) => void,
+  ): ToolEligibilityContribution
+}
+
+/** Symbol-keyed settings bridge omitted from the generated named service API. @internal */
+export const TOOL_ELIGIBILITY_CONTRIBUTIONS: unique symbol = Symbol('@deepseek-ai/dsh-tools.eligibility-contributions')
+
+/** Mutable cell retained as one registry entry across settings refreshes. */
+interface EligibilityAllowance {
+  names: ReadonlySet<string> | undefined
+}
+
 /** One restriction compiled at registration for repeated live-global lookup. */
 interface CompiledToolRestriction {
   readonly allow?: ReadonlySet<string>
@@ -714,7 +759,7 @@ export type ToolGuard = (execution: Readonly<ToolExecution>) => string | undefin
 class ToolLayer implements ScopeLayer {
   readonly tools: NamedEntries<ToolDefinition>
   readonly restrictions = new AnonymousEntries<CompiledToolRestriction>()
-  readonly eligibilityAllowances = new AnonymousEntries<ReadonlySet<string>>()
+  readonly eligibilityAllowances = new AnonymousEntries<EligibilityAllowance>()
   readonly guards = new AnonymousEntries<ToolGuard>()
   /**
    * Presentation this scope's agent declared for itself, shadowing the
@@ -800,6 +845,11 @@ export class ToolRuntime extends Service {
     dispatch: exec => this.dispatchScheduledExecution(exec),
     finalize: (exec, result) => this.finalizeScheduledExecution(exec, result),
     finish: (exec, result) => this.finishScheduledExecution(exec, result),
+  }
+
+  /** Resolver-only mutable eligibility bridge. */
+  readonly [TOOL_ELIGIBILITY_CONTRIBUTIONS]: ToolEligibilityContributions = {
+    register: (owner, scope, publish) => this.createEligibilityContribution(owner, scope, publish),
   }
 
   /** Context deferred by a running tool body, keyed by its scheduler-owned execution. */
@@ -1114,9 +1164,53 @@ export class ToolRuntime extends Service {
     }
     return this.layers.effect(
       this.ctx,
-      layer => layer.eligibilityAllowances.append(new Set(names)),
+      layer => layer.eligibilityAllowances.append({ names: new Set(names) }),
       { label: 'tools.allowEligible()' },
     )
+  }
+
+  /** Create one mutable allowance whose owner and visibility scope differ. */
+  private createEligibilityContribution(
+    owner: Context,
+    scope: ScopeKey,
+    publish: (settingsAllow: readonly string[] | undefined) => void,
+  ): ToolEligibilityContribution {
+    const allowance: EligibilityAllowance = { names: undefined }
+    let active = true
+    const remove = this.layers.effectAt(
+      owner,
+      scope,
+      (layer) => {
+        const undo = layer.eligibilityAllowances.append(allowance)
+        return () => {
+          const changed = allowance.names !== undefined
+          allowance.names = undefined
+          active = false
+          undo()
+          if (!changed) return
+          publish(undefined)
+          this.ctx.emit('tools/change')
+        }
+      },
+      { label: 'tools.eligibilityContribution()', notify: false },
+    )
+    const read = (): readonly string[] | undefined => allowance.names === undefined
+      ? undefined
+      : [...allowance.names].sort()
+    return {
+      current: read,
+      baseAllow: () => this.resolveEligibilityAllow(scope, allowance),
+      replace: (names) => {
+        if (!active) throw new Error('tool eligibility contribution is disposed')
+        const next = names === undefined ? undefined : [...new Set(names)].sort()
+        const current = read()
+        if (sameStringList(current, next)) return
+        allowance.names = next === undefined ? undefined : new Set(next)
+        publish(next)
+        this.ctx.emit('tools/change')
+      },
+      dispose: remove,
+    }
   }
 
   /**
@@ -1127,12 +1221,21 @@ export class ToolRuntime extends Service {
    * @returns the sorted union, or `undefined` when the chain declares none.
    */
   eligibilityAllow(scope?: ScopeKey): readonly string[] | undefined {
+    return this.resolveEligibilityAllow(scope)
+  }
+
+  /** Resolve eligibility while optionally omitting one mutable contribution. */
+  private resolveEligibilityAllow(
+    scope?: ScopeKey,
+    omitted?: EligibilityAllowance,
+  ): readonly string[] | undefined {
     const names = new Set<string>()
     let declared = false
     for (const layer of this.layers.chainLayers(scope)) {
       for (const allowance of layer.eligibilityAllowances.values()) {
+        if (allowance === omitted || allowance.names === undefined) continue
         declared = true
-        for (const name of allowance) names.add(name)
+        for (const name of allowance.names) names.add(name)
       }
     }
     return declared ? [...names].sort() : undefined

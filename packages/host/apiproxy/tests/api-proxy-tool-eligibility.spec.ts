@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
+import { createScope } from '@deepseek-ai/dsh-scope'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import SessionStore from '@deepseek-ai/dsh-session'
@@ -34,11 +35,14 @@ describe('session.toolEligibility', () => {
     ctx.tools.register(tool('read'))
     ctx.tools.register(tool('write'))
     const session = ctx.sessions.create()
-    const agent = { id: session.id, session, status: 'idle', ctx } as Agent
+    const agent = { id: session.id, session } as Agent
+    let agentCtx!: Context
+    await ctx.plugin(Object.assign((inner: Context) => {
+      agentCtx = createScope(inner, agent).ctx
+      agentCtx.tools.allowEligible(['read'])
+    }, { inject: ['tools'] }))
+    Object.assign(agent, { status: 'idle', ctx: agentCtx })
     ctx.agents.register(agent)
-    ctx.provide('toolEligibility', {
-      resolve: () => ({ allow: ['read'], tools: ctx.tools.schemas().filter(schema => schema.name === 'read') }),
-    } as never)
     const api = createApiProxy(ctx, {
       defaultModelSelection: () => ({ provider: 'test', model: 'test' }),
       cwd: '/tmp',

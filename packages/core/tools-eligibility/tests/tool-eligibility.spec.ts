@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { createScope } from '@deepseek-ai/dsh-scope'
+import { createScope, scopeTarget } from '@deepseek-ai/dsh-scope'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { CallId } from '@deepseek-ai/dsh-llm'
@@ -11,7 +11,8 @@ import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import { WorkspaceId } from '@deepseek-ai/dsh-workspace'
-import ToolEligibilityService, {
+import * as ToolEligibility from '../src/index.ts'
+import {
   Config,
   TOOL_ELIGIBILITY_SETTINGS_NAMESPACE,
 } from '../src/index.ts'
@@ -52,35 +53,60 @@ function tool(name: string, execute = vi.fn(() => Promise.resolve(name))): ToolD
   }
 }
 
-async function harness() {
+interface HarnessOptions {
+  readonly cwd?: string | undefined
+  readonly settings?: Config
+  readonly presetAllow?: readonly string[] | null
+  readonly workspaceRegistry?: 'match' | 'miss' | 'absent'
+}
+
+async function harness(options: HarnessOptions = {}) {
   const ctx = new Context()
   await ctx.plugin(SystemPrompt, {})
   await ctx.plugin(ToolRuntime, {})
   await ctx.plugin(AgentRegistry)
-  ctx.provide('workspaceRegistry', {
-    list: () => [{ id: WorkspaceId('workspace-1'), path: '/workspace' }],
-  } as never)
-  await ctx.plugin(MemorySettings, {
-    [TOOL_ELIGIBILITY_SETTINGS_NAMESPACE]: {
-      workspaces: { 'workspace-1': ['workspace-tool'] },
-      sessions: { 'session-1': ['session-tool'] },
-    },
+  if (options.workspaceRegistry !== 'absent') {
+    ctx.provide('workspaceRegistry', {
+      list: () => [{
+        id: WorkspaceId('workspace-1'),
+        path: options.workspaceRegistry === 'miss' ? '/elsewhere' : '/workspace',
+      }],
+    } as never)
+  }
+  const settings = options.settings ?? {
+    workspaces: { 'workspace-1': ['workspace-tool'] },
+    sessions: { 'session-1': ['session-tool'] },
+  }
+  const settingsRow = ctx.plugin(MemorySettings, {
+    [TOOL_ELIGIBILITY_SETTINGS_NAMESPACE]: settings,
   })
-  await ctx.plugin(ToolEligibilityService, { workspaces: {}, sessions: {} })
+  await settingsRow
+  const resolverRow = ctx.plugin(ToolEligibility, { workspaces: {}, sessions: {} })
+  await resolverRow
 
   const preset = { kind: 'preset' }
   let presetCtx!: Context
   let agentCtx!: Context
   const id = SessionId('session-1')
-  const session = Session.create(id, [], { version: 0, id, createdAt: 0, cwd: '/workspace' })
+  const session = Session.create(id, [], {
+    version: 0,
+    id,
+    createdAt: 0,
+    ...'cwd' in options
+      ? options.cwd === undefined ? {} : { cwd: options.cwd }
+      : { cwd: '/workspace' },
+  })
   const agent = { id, session } as Agent
   await ctx.plugin(Object.assign((inner: Context) => {
     presetCtx = createScope(inner, preset).ctx
     agentCtx = createScope(inner, agent, { parent: preset }).ctx
   }, { inject: ['tools', 'systemPrompt'] }))
   Object.assign(agent, { ctx: agentCtx, status: 'idle' })
-  presetCtx.tools.allowEligible(['preset-tool', 'late-tool'])
-  return { agent, ctx }
+  if (options.presetAllow !== null) {
+    presetCtx.tools.allowEligible(options.presetAllow ?? ['preset-tool', 'late-tool'])
+  }
+  const removeAgent = ctx.agents.register(agent)
+  return { agent, ctx, removeAgent, resolverRow, settingsRow }
 }
 
 describe('allow-only tool eligibility', () => {
@@ -94,11 +120,12 @@ describe('allow-only tool eligibility', () => {
       tool('blocked-tool', blockedBody),
     ]) ctx.tools.register(definition)
 
-    ctx.agents.register(agent)
-
-    expect(ctx.toolEligibility.resolve(agent)).toMatchObject({
-      allow: ['late-tool', 'preset-tool', 'session-tool', 'workspace-tool'],
-    })
+    expect(ctx.tools.eligibilityAllow(agent)).toEqual([
+      'late-tool',
+      'preset-tool',
+      'session-tool',
+      'workspace-tool',
+    ])
     expect(ctx.tools.schemas(agent).map(schema => schema.name).sort()).toEqual([
       'preset-tool',
       'session-tool',
@@ -121,8 +148,6 @@ describe('allow-only tool eligibility', () => {
     for (const name of ['preset-tool', 'workspace-tool', 'session-tool', 'blocked-tool']) {
       ctx.tools.register(tool(name))
     }
-    ctx.agents.register(agent)
-
     ctx.tools.register(tool('late-tool'))
     expect(ctx.tools.schemas(agent).map(schema => schema.name)).toContain('late-tool')
 
@@ -138,5 +163,138 @@ describe('allow-only tool eligibility', () => {
     expect(schema).toContain('sessions')
     expect(schema).not.toContain('deny')
     expect(() => Config({ workspaces: {}, sessions: { 'session-1': [''] } })).toThrow()
+  })
+
+  it('removes settings allowances with agent removal and resolver disposal', async () => {
+    const first = await harness()
+    expect(first.ctx.tools.eligibilityAllow(first.agent)).toEqual([
+      'late-tool',
+      'preset-tool',
+      'session-tool',
+      'workspace-tool',
+    ])
+
+    first.removeAgent()
+    expect(first.ctx.tools.eligibilityAllow(first.agent)).toEqual(['late-tool', 'preset-tool'])
+
+    const second = await harness()
+    await second.resolverRow.dispose()
+    expect(second.ctx.tools.eligibilityAllow(second.agent)).toEqual(['late-tool', 'preset-tool'])
+
+    await second.settingsRow.dispose()
+    const replacement = second.ctx.plugin(ToolEligibility, {
+      workspaces: {},
+      sessions: { 'session-1': ['replacement-tool'] },
+    })
+    await replacement
+    expect(second.ctx.tools.eligibilityAllow(second.agent)).toEqual([
+      'late-tool',
+      'preset-tool',
+      'replacement-tool',
+    ])
+  })
+
+  it('replaces one settings contribution without publishing an old-plus-new view', async () => {
+    const { agent, ctx } = await harness()
+    const observed: Array<readonly string[] | undefined> = []
+    ctx.on('tools/change', () => { observed.push(ctx.tools.eligibilityAllow(agent)) })
+
+    await ctx.settings.replace(TOOL_ELIGIBILITY_SETTINGS_NAMESPACE, {
+      workspaces: {},
+      sessions: { 'session-1': ['blocked-tool'] },
+    })
+
+    expect(observed).toEqual([['blocked-tool', 'late-tool', 'preset-tool']])
+    expect(ctx.tools.eligibilityAllow(agent)).toEqual(['blocked-tool', 'late-tool', 'preset-tool'])
+  })
+
+  it('commits replacement before a throwing tools/change listener observes it', async () => {
+    const { agent, ctx } = await harness()
+    const observed: Array<readonly string[] | undefined> = []
+    ctx.on('tools/change', () => {
+      observed.push(ctx.tools.eligibilityAllow(agent))
+      throw new Error('observer failed')
+    })
+
+    await ctx.settings.replace(TOOL_ELIGIBILITY_SETTINGS_NAMESPACE, {
+      workspaces: {},
+      sessions: { 'session-1': ['blocked-tool'] },
+    })
+
+    expect(observed).toEqual([['blocked-tool', 'late-tool', 'preset-tool']])
+    expect(ctx.tools.eligibilityAllow(agent)).toEqual(['blocked-tool', 'late-tool', 'preset-tool'])
+  })
+
+  it('handles unrestricted agents, unmatched Workspaces, and duplicate lifecycle notifications', async () => {
+    const empty = await harness({
+      cwd: undefined,
+      presetAllow: null,
+      settings: { workspaces: {}, sessions: {} },
+      workspaceRegistry: 'absent',
+    })
+    expect(empty.ctx.tools.eligibilityAllow(empty.agent)).toBeUndefined()
+    empty.ctx.emit(scopeTarget(empty.agent, empty.agent), 'agent/created', { agent: empty.agent })
+    empty.ctx.emit(scopeTarget(empty.agent, empty.agent), 'agent/disposed', {
+      agent: { ...empty.agent, id: SessionId('unknown') },
+    })
+
+    await empty.ctx.settings.replace(TOOL_ELIGIBILITY_SETTINGS_NAMESPACE, {
+      workspaces: { unused: ['unused'] },
+      sessions: {},
+    })
+    await empty.ctx.settings.replace(TOOL_ELIGIBILITY_SETTINGS_NAMESPACE, {
+      workspaces: {},
+      sessions: { 'session-1': ['solo'] },
+    })
+    expect(empty.ctx.tools.eligibilityAllow(empty.agent)).toEqual(['solo'])
+    await empty.ctx.settings.replace(TOOL_ELIGIBILITY_SETTINGS_NAMESPACE, {
+      workspaces: {},
+      sessions: {},
+    })
+    expect(empty.ctx.tools.eligibilityAllow(empty.agent)).toBeUndefined()
+
+    const unmatched = await harness({
+      presetAllow: null,
+      settings: { workspaces: { 'workspace-1': ['unused'] }, sessions: {} },
+      workspaceRegistry: 'miss',
+    })
+    expect(unmatched.ctx.tools.eligibilityAllow(unmatched.agent)).toBeUndefined()
+
+    const workspaceOnly = await harness({
+      presetAllow: null,
+      settings: { workspaces: { 'workspace-1': ['workspace-only'] }, sessions: {} },
+    })
+    expect(workspaceOnly.ctx.tools.eligibilityAllow(workspaceOnly.agent)).toEqual(['workspace-only'])
+
+    const absentRegistry = await harness({
+      presetAllow: null,
+      settings: { workspaces: { 'workspace-1': ['unused'] }, sessions: {} },
+      workspaceRegistry: 'absent',
+    })
+    expect(absentRegistry.ctx.tools.eligibilityAllow(absentRegistry.agent)).toBeUndefined()
+  })
+
+  it('coalesces settings refreshes that preserve the normalized addition', async () => {
+    const { agent, ctx } = await harness()
+    await ctx.settings.replace(TOOL_ELIGIBILITY_SETTINGS_NAMESPACE, {
+      workspaces: { 'workspace-1': ['workspace-tool'] },
+      sessions: { 'session-1': ['session-tool', 'session-tool'] },
+    })
+    expect(ctx.tools.eligibilityAllow(agent)).toEqual([
+      'late-tool',
+      'preset-tool',
+      'session-tool',
+      'workspace-tool',
+    ])
+    await ctx.settings.replace(TOOL_ELIGIBILITY_SETTINGS_NAMESPACE, {
+      workspaces: { 'workspace-1': ['workspace-tool'] },
+      sessions: { 'session-1': ['blocked-tool'] },
+    })
+    expect(ctx.tools.eligibilityAllow(agent)).toEqual([
+      'blocked-tool',
+      'late-tool',
+      'preset-tool',
+      'workspace-tool',
+    ])
   })
 })

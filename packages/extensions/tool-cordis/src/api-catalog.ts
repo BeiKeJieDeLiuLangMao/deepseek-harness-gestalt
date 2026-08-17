@@ -1938,19 +1938,6 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
-    key: 'toolEligibility',
-    summary: 'Host-plane eligibility resolver.',
-    description: 'Host-plane eligibility resolver. A configured Workspace or Session entry contributes to the same positive scope-chain union as preset declarations; no declaration preserves the existing unrestricted catalog.',
-    methods: [
-      {
-        signature: 'resolve(agent: Agent): ToolEligibilityResolution',
-        description: 'Resolve the configured allowances and live eligible catalog for an agent.',
-        parameters: [{ name: 'agent', description: 'live agent whose preset, Workspace, and Session apply.' }],
-        returns: 'a fresh Host API projection.',
-      },
-    ],
-  },
-  {
     key: 'toolResultPruner',
     summary: 'Deterministic head/middle/tail pruning for current tool-result surface nodes.',
     description: 'Deterministic head/middle/tail pruning for current tool-result surface nodes.',
@@ -2625,6 +2612,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     summary: 'Emitted when any prompt provider changes.',
     description: 'Emitted when any prompt provider changes. This registry notification is unfiltered because a global change affects every scope.',
     parameters: [],
+  },
+  {
+    name: 'tool-eligibility/published',
+    mode: 'emit',
+    signature: '\'tool-eligibility/published\'(agent: Agent, publication: ToolEligibilityPublication): void',
+    summary: 'A settings-derived allowance was committed to or removed from one live Agent\'s registry scope.',
+    description: 'A settings-derived allowance was committed to or removed from one live Agent\'s registry scope.',
+    parameters: [{ name: 'agent', description: 'live Agent whose scoped registry view changed.' }, { name: 'publication', description: 'committed settings addition and expected effective union.' }],
   },
   {
     name: 'tools/change',
@@ -4567,8 +4562,16 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ToolDispatchExecution extends Omit<ToolExecution, \'signal\'> {\n    signal: AbortSignal;\n}',
   },
   {
-    name: 'ToolEligibilityResolution',
-    declaration: 'export interface ToolEligibilityResolution {\n    readonly allow?: readonly string[];\n    readonly tools: readonly ToolSchema[];\n}',
+    name: 'ToolEligibilityContribution',
+    declaration: 'export interface ToolEligibilityContribution {\n    current(): readonly string[] | undefined;\n    baseAllow(): readonly string[] | undefined;\n    replace(names: readonly string[] | undefined): void;\n    dispose(): void;\n}',
+  },
+  {
+    name: 'ToolEligibilityContributions',
+    declaration: 'export interface ToolEligibilityContributions {\n    register(owner: Context, scope: ScopeKey, publish: (settingsAllow: readonly string[] | undefined) => void): ToolEligibilityContribution;\n}',
+  },
+  {
+    name: 'ToolEligibilityPublication',
+    declaration: 'export interface ToolEligibilityPublication {\n    readonly settingsAllow?: readonly string[];\n    readonly effectiveAllow?: readonly string[];\n}',
   },
   {
     name: 'ToolErrorInfo',
@@ -4652,7 +4655,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ToolRuntime',
-    declaration: 'export class ToolRuntime extends Service {\n    static inject;\n    static Config: z<Config>;\n    readonly [TOOL_RUNTIME_SCHEDULER]: ToolRuntimeScheduler;\n    constructor(ctx: Context, config: Config = {});\n    presentAs(mode: ToolPresentationMode): () => void;\n    register(definition: ToolDefinition): () => void;\n    restrict(filter: ToolRestriction): () => void;\n    allowEligible(names: readonly string[]): () => void;\n    eligibilityAllow(scope?: ScopeKey): readonly string[] | undefined;\n    guard(guard: ToolGuard): () => void;\n    get(name: string, scope?: ScopeKey): ToolDefinition | undefined;\n    schemas(scope?: ScopeKey): ToolSchema[];\n    executionMode(exec: ToolExecutionInput): ToolExecutionMode;\n    async execute(exec: ToolExecutionInput): Promise<ToolExecutionResult>;\n}',
+    declaration: 'export class ToolRuntime extends Service {\n    static inject;\n    static Config: z<Config>;\n    readonly [TOOL_RUNTIME_SCHEDULER]: ToolRuntimeScheduler;\n    readonly [TOOL_ELIGIBILITY_CONTRIBUTIONS]: ToolEligibilityContributions;\n    constructor(ctx: Context, config: Config = {});\n    presentAs(mode: ToolPresentationMode): () => void;\n    register(definition: ToolDefinition): () => void;\n    restrict(filter: ToolRestriction): () => void;\n    allowEligible(names: readonly string[]): () => void;\n    eligibilityAllow(scope?: ScopeKey): readonly string[] | undefined;\n    guard(guard: ToolGuard): () => void;\n    get(name: string, scope?: ScopeKey): ToolDefinition | undefined;\n    schemas(scope?: ScopeKey): ToolSchema[];\n    executionMode(exec: ToolExecutionInput): ToolExecutionMode;\n    async execute(exec: ToolExecutionInput): Promise<ToolExecutionResult>;\n}',
   },
   {
     name: 'ToolRuntimeScheduler',

@@ -2988,7 +2988,7 @@ export interface Config {
 export type ToolPresentationMode = 'native' | 'code' | 'both'
 ```
 
-Source: [`packages/core/tools/src/index.ts:654`](../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:663`](../packages/core/tools/src/index.ts)
 
 <a id="deepseek-aidsh-tools-eligibility"></a>
 
@@ -3006,7 +3006,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/core/tools-eligibility/src/index.ts:24`](../packages/core/tools-eligibility/src/index.ts)
+Source: [`packages/core/tools-eligibility/src/index.ts:28`](../packages/core/tools-eligibility/src/index.ts)
 
 <a id="deepseek-aidsh-typert-loader"></a>
 

@@ -2226,13 +2226,11 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       async toolEligibility(request) {
         const found = await agentFor(request.payload.sessionId)
         if ('error' in found) return err(request, found.error)
-        const resolution = ctx.get('toolEligibility')?.resolve(found.agent)
-        return ok(request, resolution === undefined
-          ? { tools: ctx.tools.schemas(found.agent) }
-          : {
-            ...resolution.allow === undefined ? {} : { allow: [...resolution.allow] },
-            tools: [...resolution.tools],
-          })
+        const allow = ctx.tools.eligibilityAllow(found.agent)
+        return ok(request, {
+          ...allow === undefined ? {} : { allow: [...allow] },
+          tools: ctx.tools.schemas(found.agent),
+        })
       },
 
       async selectModel(request) {

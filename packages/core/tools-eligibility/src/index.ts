@@ -4,11 +4,12 @@
  * @module @deepseek-ai/dsh-tools-eligibility
  */
 
-import { Context, Service } from '@deepseek-ai/cordis'
+import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { ToolSchema } from '@deepseek-ai/dsh-llm'
 import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
+import { TOOL_ELIGIBILITY_CONTRIBUTIONS } from '@deepseek-ai/dsh-tools'
+import type { ToolEligibilityContribution } from '@deepseek-ai/dsh-tools'
 import type { Workspace } from '@deepseek-ai/dsh-workspace'
 // Type-only imports install the service declarations used through Context.
 import type {} from '@deepseek-ai/dsh-tools'
@@ -16,6 +17,9 @@ import type {} from '@deepseek-ai/dsh-workspace'
 
 /** Cordis plugin name. */
 export const name = 'tool-eligibility'
+
+/** Services required by the settings-to-registry resolver. */
+export const inject = ['agents', 'tools']
 
 /** User-settings namespace for Workspace and Session additions. */
 export const TOOL_ELIGIBILITY_SETTINGS_NAMESPACE = settingsNamespace('tool-eligibility')
@@ -34,124 +38,105 @@ export const Config: z<Config> = z.object({
   sessions: z.dict(z.array(z.string().min(1))).default({}),
 })
 
-/** Effective allow declaration and the exact currently eligible schemas. */
-export interface ToolEligibilityResolution {
-  /** Sorted union of configured allowances, or absent when eligibility is unrestricted. */
-  readonly allow?: readonly string[]
-  /** Schemas the agent may currently expose and execute. */
-  readonly tools: readonly ToolSchema[]
+/** Committed settings contribution and its expected effective registry view. */
+export interface ToolEligibilityPublication {
+  /** Sorted Workspace and Session additions, or absent when neither applies. */
+  readonly settingsAllow?: readonly string[]
+  /** Sorted preset-plus-settings union, or absent when no declaration applies. */
+  readonly effectiveAllow?: readonly string[]
+}
+
+declare module '@deepseek-ai/cordis' {
+  interface Events {
+    /**
+     * A settings-derived allowance was committed to or removed from one live
+     * Agent's registry scope.
+     * @param agent - live Agent whose scoped registry view changed.
+     * @param publication - committed settings addition and expected effective union.
+     * @mode emit
+     */
+    'tool-eligibility/published'(agent: Agent, publication: ToolEligibilityPublication): void
+  }
 }
 
 interface AgentEligibilityState {
   readonly agent: Agent
-  additions: readonly string[] | undefined
-  lift: (() => void) | undefined
+  readonly contribution: ToolEligibilityContribution
 }
 
-const sameNames = (left: readonly string[] | undefined, right: readonly string[] | undefined): boolean =>
-  left === right || (left !== undefined && right !== undefined
-    && left.length === right.length && left.every((name, index) => name === right[index]))
+function sameNames(left: readonly string[] | undefined, right: readonly string[] | undefined): boolean {
+  return left === right || (left !== undefined && right !== undefined
+    && left.length === right.length && left.every((entry, index) => entry === right[index]))
+}
+
+function unionNames(
+  base: readonly string[] | undefined,
+  additions: readonly string[] | undefined,
+): readonly string[] | undefined {
+  if (base === undefined && additions === undefined) return undefined
+  return [...new Set([...base ?? [], ...additions ?? []])].sort()
+}
 
 /**
- * Host-plane eligibility resolver. A configured Workspace or Session entry
- * contributes to the same positive scope-chain union as preset declarations;
- * no declaration preserves the existing unrestricted catalog.
+ * Contribute live Workspace and Session allowances to each Agent's authoritative
+ * tool-registry scope. Preset allowances remain the base of the scope-chain union.
+ * @param ctx - resolver context that owns every contribution and listener.
+ * @param config - composition defaults beneath live user settings.
  */
-export class ToolEligibilityService extends Service {
-  static inject = ['agents', 'tools']
+export function apply(ctx: Context, config: Config): void {
+  const entry = Config(config)
+  let source = (): Config => entry
+  const states = new Map<Agent, AgentEligibilityState>()
 
-  private source: () => Config
-  private readonly states = new Map<Agent, AgentEligibilityState>()
-
-  /**
-   * @param ctx - host context carrying agent and tool registries.
-   * @param config - composition defaults beneath live user settings.
-   */
-  constructor(ctx: Context, config: Config) {
-    super(ctx, 'toolEligibility')
-    const entry = Config(config)
-    this.source = () => entry
-
-    ctx.on('agent/created', ({ agent }) => { this.attach(agent) })
-    ctx.on('agent/disposed', ({ agent }) => { this.states.delete(agent) })
-    installSettingsSection(ctx, TOOL_ELIGIBILITY_SETTINGS_NAMESPACE, Config, entry, {
-      setSource: (source) => { this.source = source },
-      onChange: () => { this.refreshAll() },
-    })
-
-    for (const agent of ctx.agents.list()) this.attach(agent)
+  const workspaceFor = (agent: Agent): Workspace | undefined => {
+    const registry = ctx.get('workspaceRegistry')
+    const cwd = agent.session.header.cwd
+    return cwd === undefined ? undefined : registry?.list().find(workspace => workspace.path === cwd)
   }
 
-  /**
-   * Resolve the configured allowances and live eligible catalog for an agent.
-   * @param agent - live agent whose preset, Workspace, and Session apply.
-   * @returns a fresh Host API projection.
-   */
-  resolve(agent: Agent): ToolEligibilityResolution {
-    const allow = this.resolveAllow(agent)
-    return {
-      ...allow === undefined ? {} : { allow: [...allow] },
-      tools: agent.ctx.tools.schemas(agent),
-    }
-  }
-
-  /** Begin enforcing eligibility for one published agent. */
-  private attach(agent: Agent): void {
-    if (this.states.has(agent)) return
-    const state: AgentEligibilityState = {
-      agent,
-      additions: undefined,
-      lift: undefined,
-    }
-    this.states.set(agent, state)
-    this.refresh(state)
-  }
-
-  /** Refresh every live agent after a settings change. */
-  private refreshAll(): void {
-    for (const state of this.states.values()) this.refresh(state)
-  }
-
-  /** Replace one agent's Workspace and Session allowance contribution. */
-  private refresh(state: AgentEligibilityState): void {
-    const additions = this.resolveAdditions(state.agent)
-    if (sameNames(state.additions, additions)) return
-
-    state.additions = additions
-    const prior = state.lift
-    state.lift = additions === undefined
-      ? undefined
-      : state.agent.ctx.tools.allowEligible(additions)
-    prior?.()
-  }
-
-  /** Read the full preset, Workspace, and Session union from the tool registry. */
-  private resolveAllow(agent: Agent): readonly string[] | undefined {
-    return agent.ctx.tools.eligibilityAllow(agent)
-  }
-
-  /** Union Workspace and Session additions contributed by this service. */
-  private resolveAdditions(agent: Agent): readonly string[] | undefined {
-    const config = this.source()
-    const workspace = this.workspaceFor(agent)
-    const workspaceAllow = workspace === undefined ? undefined : config.workspaces[String(workspace.id)]
-    const sessionAllow = config.sessions[String(agent.session.id)]
+  const additionsFor = (agent: Agent): readonly string[] | undefined => {
+    const current = source()
+    const workspace = workspaceFor(agent)
+    const workspaceAllow = workspace === undefined ? undefined : current.workspaces[String(workspace.id)]
+    const sessionAllow = current.sessions[String(agent.session.id)]
     if (workspaceAllow === undefined && sessionAllow === undefined) return undefined
     return [...new Set([...workspaceAllow ?? [], ...sessionAllow ?? []])].sort()
   }
 
-  /** Resolve the optional Workspace owning the session cwd without I/O. */
-  private workspaceFor(agent: Agent): Workspace | undefined {
-    const registry = this.ctx.get('workspaceRegistry')
-    const cwd = agent.session.header.cwd
-    return cwd === undefined ? undefined : registry?.list().find(workspace => workspace.path === cwd)
+  const attach = (agent: Agent): void => {
+    if (states.has(agent)) return
+    const contribution: ToolEligibilityContribution = ctx.tools[TOOL_ELIGIBILITY_CONTRIBUTIONS]
+      .register(ctx, agent, (settingsAllow) => {
+        const effectiveAllow = unionNames(contribution.baseAllow(), settingsAllow)
+        ctx.emit('tool-eligibility/published', agent, {
+          ...settingsAllow === undefined ? {} : { settingsAllow },
+          ...effectiveAllow === undefined ? {} : { effectiveAllow },
+        })
+      })
+    const state = { agent, contribution }
+    states.set(agent, state)
+    contribution.replace(additionsFor(agent))
   }
-}
 
-declare module '@deepseek-ai/cordis' {
-  interface Context {
-    toolEligibility: ToolEligibilityService
+  const refresh = (state: AgentEligibilityState): void => {
+    const additions = additionsFor(state.agent)
+    if (sameNames(state.contribution.current(), additions)) return
+    state.contribution.replace(additions)
   }
-}
 
-export default ToolEligibilityService
+  ctx.on('agent/created', ({ agent }) => { attach(agent) })
+  ctx.on('agent/disposed', ({ agent }) => {
+    const state = states.get(agent)
+    if (state === undefined) return
+    states.delete(agent)
+    state.contribution.dispose()
+  })
+  installSettingsSection(ctx, TOOL_ELIGIBILITY_SETTINGS_NAMESPACE, Config, entry, {
+    setSource: (current) => { source = current },
+    onChange: () => {
+      for (const state of states.values()) refresh(state)
+    },
+  })
+
+  for (const agent of ctx.agents.list()) attach(agent)
+}
