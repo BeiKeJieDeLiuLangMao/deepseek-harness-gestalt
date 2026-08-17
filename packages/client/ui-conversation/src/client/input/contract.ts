@@ -219,6 +219,8 @@ export interface InputState {
   readonly imageIds: readonly DraftAttachmentId[]
   /** Ordered Composer-owned annotations; absent from the Session log. */
   readonly annotations: readonly TextAnnotation[]
+  /** True while one exact annotation snapshot awaits Host admission settlement. */
+  readonly annotationSubmitting: boolean
   /** Monotonic draft revision (span CAS compares against this). */
   readonly draftRev: number
   readonly phase: 'plain' | 'adjudicating' | 'claimed' | 'submitting'

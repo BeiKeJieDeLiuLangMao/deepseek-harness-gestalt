@@ -16,7 +16,9 @@ export function AnnotationEditor({ initialNote = '', placeholder, saveLabel, onS
   const [note, setNote] = useState(initialNote)
   const composing = useRef(false)
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>): void => {
-    if (event.key !== 'Enter' || event.shiftKey || composing.current || event.nativeEvent.isComposing) return
+    // keyCode 229 is the legacy IME-composition signal engines emit without isComposing.
+    const compositionEnter = composing.current || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229
+    if (event.key !== 'Enter' || event.shiftKey || compositionEnter) return
     event.preventDefault()
     onSave(note)
   }
@@ -29,7 +31,10 @@ export function AnnotationEditor({ initialNote = '', placeholder, saveLabel, onS
         onChange={(event) => { setNote(event.target.value) }}
         onKeyDown={onKeyDown}
         onCompositionStart={() => { composing.current = true }}
-        onCompositionEnd={() => { composing.current = false }}
+        onCompositionEnd={() => {
+          // Safari sends the closing Enter after compositionend.
+          setTimeout(() => { composing.current = false }, 10)
+        }}
       />
       <button type="button" aria-label={saveLabel} onClick={() => { onSave(note) }}>↑</button>
     </div>

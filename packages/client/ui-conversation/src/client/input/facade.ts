@@ -21,6 +21,12 @@ import { InputMachine } from './machine.ts'
 import type { AnnotationCompilerLabels, TextAnchor, TextAnnotation, TextAnnotationId } from '../annotation/model.ts'
 import { compileAnnotationSubmission, TextAnnotationId as createTextAnnotationId } from '../annotation/model.ts'
 
+/** One exact annotation snapshot whose object identity owns its settlement. */
+export interface AnnotationSubmissionReservation {
+  readonly restoreText: string
+  readonly ids: readonly TextAnnotationId[]
+}
+
 /** Popup face the shell needs (dismissal only; typed structurally to avoid a value import). */
 export interface PopupDismissFace {
   dismiss(): void
@@ -51,7 +57,7 @@ export interface SessionInputDeps {
     text: string,
     imageIds: readonly DraftAttachmentId[],
     mode: InputSubmitMode,
-    annotationDraft?: { readonly restoreText: string; readonly ids: readonly TextAnnotationId[] },
+    annotationDraft?: AnnotationSubmissionReservation,
   ): void
   /** Localized ordinary-prose fragments for Annotation Submission. */
   annotationLabels?: AnnotationCompilerLabels | undefined
@@ -99,6 +105,7 @@ export class SessionInputShell implements SessionInput {
   private lastDraft = ''
   private imageIds: readonly DraftAttachmentId[] = []
   private annotations: readonly TextAnnotation[] = []
+  private annotationSubmission: AnnotationSubmissionReservation | undefined
   private annotationSeq = 0
   private disposed = false
   /** Draft persistence mirror (chat store write; receives the clipboard projection, never raw placeholders). */
@@ -118,6 +125,7 @@ export class SessionInputShell implements SessionInput {
    * (narrows the machine's occurrence math; absent → diff scan).
    */
   setDraft(text: string, editRange?: EditRange): void {
+    if (this.annotationSubmission !== undefined) return
     this.run(this.core.dispatch({ type: 'draft-changed', draft: text, ...(editRange !== undefined ? { editRange } : {}) }))
   }
 
@@ -170,6 +178,7 @@ export class SessionInputShell implements SessionInput {
    * @param note - Replacement comment.
    */
   updateTextAnnotation(id: TextAnnotationId, note: string): void {
+    if (this.annotationSubmission !== undefined) return
     const next = this.annotations.map(item => item.id === id ? { ...item, note } : item)
     if (next.every((item, index) => item === this.annotations[index])) return
     this.annotations = next
@@ -181,6 +190,7 @@ export class SessionInputShell implements SessionInput {
    * @param id - Annotation to remove.
    */
   removeTextAnnotation(id: TextAnnotationId): void {
+    if (this.annotationSubmission !== undefined) return
     const next = this.annotations.filter(item => item.id !== id)
     if (next.length === this.annotations.length) return
     this.annotations = next
@@ -188,12 +198,17 @@ export class SessionInputShell implements SessionInput {
   }
 
   /**
-   * Remove submitted annotations after Host admission succeeds.
-   * @param ids - Exact annotation snapshot admitted by the Host.
+   * Settle the owned annotation snapshot after Host admission.
+   * @param reservation - Exact object handed to the sink.
+   * @param admitted - Whether the Host accepted the compiled message.
    */
-  commitAnnotations(ids: readonly TextAnnotationId[]): void {
-    const submitted = new Set(ids)
-    this.annotations = this.annotations.filter(item => !submitted.has(item.id))
+  settleAnnotationSubmission(reservation: AnnotationSubmissionReservation, admitted: boolean): void {
+    if (this.annotationSubmission !== reservation) return
+    this.annotationSubmission = undefined
+    if (admitted) {
+      const submitted = new Set(reservation.ids)
+      this.annotations = this.annotations.filter(item => !submitted.has(item.id))
+    }
     this.publish()
   }
 
@@ -257,6 +272,7 @@ export class SessionInputShell implements SessionInput {
    * dismisses and the menu tracks frozen.
    */
   submit(mode: InputSubmitMode = 'queue'): void {
+    if (this.annotationSubmission !== undefined) return
     if (this.snapshot.draft.trim() === '' && (this.imageIds.length > 0 || this.annotations.length > 0)) {
       if (this.snapshot.phase === 'plain') this.sinkSerialized('', mode)
       return
@@ -480,6 +496,10 @@ export class SessionInputShell implements SessionInput {
     const annotationDraft = annotations.length === 0
       ? undefined
       : { restoreText: draft, ids: annotations.map(item => item.id) }
+    if (annotationDraft !== undefined) {
+      this.annotationSubmission = annotationDraft
+      this.publish()
+    }
     const occurrences = this.core.state.occurrences
     if (occurrences.length === 0) {
       const compiled = this.compile(draft, annotations)
@@ -511,6 +531,7 @@ export class SessionInputShell implements SessionInput {
       (error: unknown) => {
         controller.abort()
         if (this.disposed) return
+        if (annotationDraft !== undefined) this.settleAnnotationSubmission(annotationDraft, false)
         const message = error instanceof Error ? error.message : String(error)
         this.notify('error', message)
       },
@@ -568,6 +589,7 @@ export class SessionInputShell implements SessionInput {
       ...core,
       imageIds: this.imageIds,
       annotations: this.annotations,
+      annotationSubmitting: this.annotationSubmission !== undefined,
       queue: this.deps.queue?.getSnapshot() ?? EMPTY_QUEUE,
     }
   }

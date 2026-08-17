@@ -14,8 +14,7 @@ import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import { queueReadFaceOf } from '../queue/store.ts'
 import type { ComposerKeyboard, DraftAttachmentId, SessionInputResolver, SessionInput } from './contract.ts'
 import type { InputSubmitMode } from '../contract/composer-submission.ts'
-import type { TextAnnotationId } from '../annotation/model.ts'
-import type { PopupDismissFace } from './facade.ts'
+import type { AnnotationSubmissionReservation, PopupDismissFace } from './facade.ts'
 import { SessionInputShell } from './facade.ts'
 
 /** Structural command face for per-session popup resolution. */
@@ -159,16 +158,19 @@ export class InputHub implements SessionInputResolver {
     text: string,
     imageIds: readonly DraftAttachmentId[],
     mode: InputSubmitMode,
-    annotationDraft?: { readonly restoreText: string; readonly ids: readonly TextAnnotationId[] },
+    annotationDraft?: AnnotationSubmissionReservation,
   ): void {
     if (text === '' && imageIds.length === 0) return
     const shell = this.shells.get(session.sessionId)
     // Commit, not an editable clear: undo must not resurrect sent content.
     shell?.commitSend(imageIds)
     void this.conversation().sendSession(session, text, imageIds, mode).then(() => {
-      if (this.shells.get(session.sessionId) === shell) shell?.commitAnnotations(annotationDraft?.ids ?? [])
+      if (this.shells.get(session.sessionId) === shell && annotationDraft !== undefined) {
+        shell?.settleAnnotationSubmission(annotationDraft, true)
+      }
     }).catch(() => {
       if (this.shells.get(session.sessionId) === shell) {
+        if (annotationDraft !== undefined) shell?.settleAnnotationSubmission(annotationDraft, false)
         shell?.restoreImages(imageIds)
         if (shell?.snapshot.draft === '') shell.setDraft(annotationDraft?.restoreText ?? text)
         return

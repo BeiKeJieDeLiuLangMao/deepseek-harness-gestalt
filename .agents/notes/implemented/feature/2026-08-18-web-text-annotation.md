@@ -14,7 +14,7 @@ Completed assistant text blocks are the only text-selection targets. A selection
 
 Selecting text first opens a two-action toolbar containing Add annotation and Copy. Add annotation opens the shared anchored note editor. Composition Enter does nothing, ordinary Enter and the submit button save, and Shift+Enter inserts a newline. Notes may be empty. The Composer owns annotation creation order, editing, deletion, and the `N annotations` summary; its named interactive region reveals complete draft contents on hover or keyboard focus.
 
-Submission compiles the current question and annotation snapshot into localized ordinary prose. The question is first when present, followed by numbered annotations containing the exact quote and optional note. The Host receives this prose through the existing message sink, so the durable `user/message`, model request, and user bubble agree. Draft Marks and the summary remain until Host admission succeeds; a failed send restores the original question instead of the compiled prose.
+Submission compiles the current question and annotation snapshot into localized ordinary prose. The question is first when present, followed by numbered annotations containing the exact quote and optional note. The Host receives this prose through the existing message sink, so the durable `user/message`, model request, and user bubble agree. One object-identity reservation owns the submitted annotation ids until Host admission settles. The Composer remains read-only during that interval, repeated submission and annotation edits are refused, a stale settlement cannot affect a later reservation, success removes only the owned annotations, and failure releases the same drafts for retry. Draft Marks and the summary remain until Host admission succeeds; a failed send restores the original question instead of the compiled prose.
 
 Unsent annotation drafts remain resident Composer state. They do not add a Session event or browser persistence format. Draft durability remains an independent concern, while every successfully admitted model-visible message is logged.
 
@@ -28,7 +28,7 @@ Unsent annotation drafts remain resident Composer state. They do not add a Sessi
 
 ## Verification
 
-Focused component tests cover repeated-quote anchor resolution, selection across Markdown spans, toolbar contents, IME and Enter behavior, compilation order, annotation-only submission, admission clearing, and cross-target Draft Mark aggregation. The GUI suite covers the unchanged conversation and Composer surfaces.
+Focused component tests cover repeated-quote anchor resolution, keyboard selection across Markdown spans, toolbar contents, Safari IME settlement, compilation order, duplicate-submission exclusion, in-flight edit refusal, owned success and failure settlement, admission clearing, and cross-target Draft Mark aggregation. The GUI suite covers the conversation and Composer lock surfaces.
 
 A keyless assembled Web scenario starts the real server and Chromium against the replay model, creates a completed Markdown response, selects across plain and bold nodes, saves and reopens the shared editor, edits the note, sends a question plus annotation, and pins the exact model-visible ordinary prose. It also verifies that the Composer summary and Draft Mark disappear after admission.
 

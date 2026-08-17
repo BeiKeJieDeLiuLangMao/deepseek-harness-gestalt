@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { CSSProperties, MouseEvent, ReactNode } from 'react'
+import type { CSSProperties, KeyboardEvent, MouseEvent, ReactNode } from 'react'
 import { extractMarkdownPlainText } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TextAnchor, TextAnnotation, TextAnnotationId } from './model.ts'
 import { createTextAnchor, resolveTextAnchor } from './model.ts'
@@ -106,8 +106,18 @@ export function TextAnnotationTarget({ sourceId, source, annotations, add, t, ch
     '--annotation-top': `${pending.top}px`,
   } as CSSProperties
   const keepSelection = (event: MouseEvent<HTMLButtonElement>): void => { event.preventDefault() }
+  const selectFromKeyboard = (event: KeyboardEvent<HTMLDivElement>): void => {
+    if (event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLButtonElement) return
+    select()
+  }
   return (
-    <div ref={root} className={css.target} onMouseUp={select} data-annotation-source={sourceId}>
+    <div
+      ref={root}
+      className={css.target}
+      onMouseUp={select}
+      onKeyUp={selectFromKeyboard}
+      data-annotation-source={sourceId}
+    >
       {children}
       {pending !== null && (
         <div className={css.floating} style={style}>

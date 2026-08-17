@@ -144,7 +144,8 @@ export function InputBar({
   // the composer asking for the only thing it prevents. The other reasons to
   // be disabled do lock it — there is no session to choose a model for.
   const modelSeatLocked = removed || inert || !live
-  const machineBusy = input?.phase === 'adjudicating' || input?.phase === 'submitting'
+  const annotationBusy = input?.annotationSubmitting === true
+  const machineBusy = input?.phase === 'adjudicating' || input?.phase === 'submitting' || annotationBusy
   // The no-workspace textarea remains the resident DOM node but acts as the
   // existing picker trigger. Message controls stay locked until a Session
   // exists; the trigger itself is read-only rather than disabled so pointer
@@ -176,6 +177,10 @@ export function InputBar({
   useEffect(() => {
     if (preview !== null && !attachments.some(attachment => attachment.id === preview.id)) setPreview(null)
   }, [attachments, preview])
+
+  useEffect(() => {
+    if (annotationBusy) setEditingAnnotation(null)
+  }, [annotationBusy])
 
   useEffect(() => {
     if (editingAnnotation !== null && !annotations.some(item => item.id === editingAnnotation)) {
@@ -731,6 +736,7 @@ export function InputBar({
                 <div className={css.annotationSummaryItem} key={annotation.id}>
                   <button
                     type="button"
+                    disabled={annotationBusy}
                     onClick={() => { setEditingAnnotation(annotation.id) }}
                     aria-label={t('annotation.item', { index: index + 1, quote: annotation.anchor.quote })}
                   >
@@ -739,6 +745,7 @@ export function InputBar({
                   </button>
                   <button
                     type="button"
+                    disabled={annotationBusy}
                     aria-label={t('annotation.delete')}
                     onClick={() => { inputActions.removeTextAnnotation(annotation.id) }}
                   >×</button>

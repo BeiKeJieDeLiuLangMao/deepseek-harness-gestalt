@@ -48,7 +48,7 @@ const SID = 's1' as SessionId
 type RoutedChatNodeOwner = ChatNodeOwnerProps & { readonly node: ChatNode }
 
 const emptyInput = createSnapshotStore({
-  draft: '', imageIds: [], annotations: [], draftRev: 0,
+  draft: '', imageIds: [], annotations: [], annotationSubmitting: false, draftRev: 0,
   phase: 'plain' as const, occurrences: [], queue: [],
 })
 

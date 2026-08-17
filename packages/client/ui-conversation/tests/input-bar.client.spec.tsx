@@ -16,6 +16,7 @@ import type { ClientContext, ConversationSnapshot, SessionId } from '@deepseek-a
 import { SessionInputShell } from '../src/client/input/facade.ts'
 import type { ComposerAttachment } from '../src/client/contract/slots.ts'
 import type { DraftAttachmentId } from '../src/client/input/contract.ts'
+import { createTextAnchor } from '../src/client/annotation/model.ts'
 import { InputBar } from '../src/client/skeleton/InputBar.tsx'
 import type { InputBarProps } from '../src/client/skeleton/InputBar.tsx'
 import { zh } from '../src/client/locales.ts'
@@ -617,6 +618,21 @@ describe('Enter semantics', () => {
 })
 
 describe('running and lock semantics', () => {
+  it('locks the ordinary Composer while an annotation submission is awaiting settlement', () => {
+    const { textarea, button, view, shell } = bench({ draft: 'Please revise this.' })
+    shell.actions.addTextAnnotation(
+      createTextAnchor('message-1', 'Exact quotation', 'Exact quotation', 0),
+      '',
+    )
+
+    fireEvent.click(button)
+
+    expect(shell.snapshot.annotationSubmitting).toBe(true)
+    expect(textarea.readOnly).toBe(true)
+    expect(button.disabled).toBe(true)
+    expect((view.getByLabelText('删除批示') as HTMLButtonElement).disabled).toBe(true)
+  })
+
   it('running keeps the input free (typing + Enter queue) while the primary turns stop', () => {
     const { textarea, button, stop, sink } = bench({ running: true, draft: '排队消息' })
     expect(textarea.disabled).toBe(false)

@@ -6,10 +6,12 @@ import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import {
   compileAnnotationSubmission, createTextAnchor, resolveTextAnchor, TextAnnotationId,
 } from '../src/client/annotation/model.ts'
+import { AnnotationEditor } from '../src/client/annotation/AnnotationEditor.tsx'
 import { TextAnnotationTarget } from '../src/client/annotation/TextAnnotationTarget.tsx'
 import {
   removeDraftHighlightOwner, replaceDraftHighlightRanges,
 } from '../src/client/annotation/draft-highlights.ts'
+import type { AnnotationSubmissionReservation, SessionInputDeps } from '../src/client/input/facade.ts'
 import { SessionInputShell } from '../src/client/input/facade.ts'
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
@@ -43,7 +45,7 @@ describe('text annotation mechanics', () => {
     expect(compiled).not.toMatch(/<annotation|json|respond in/i)
   })
 
-  it('selection shows only annotate/copy before the shared editor obeys IME and Enter rules', () => {
+  it('keyboard selection across Markdown shows only annotate/copy before the shared editor', () => {
     const add = vi.fn(() => TextAnnotationId('annotation-1'))
     const view = render(
       <TextAnnotationTarget
@@ -69,24 +71,43 @@ describe('text annotation mechanics', () => {
     const selection = window.getSelection()!
     selection.removeAllRanges()
     selection.addRange(range)
-    fireEvent.mouseUp(view.container.querySelector('[data-annotation-source]')!)
+    fireEvent.keyUp(view.container.querySelector('[data-annotation-source]')!, { key: 'ArrowRight', shiftKey: true })
 
     expect(view.getByRole('toolbar').textContent).toBe('Add annotationCopy')
     fireEvent.click(view.getByRole('button', { name: 'Add annotation' }))
     const editor = view.getByPlaceholderText('Optional note')
     fireEvent.change(editor, { target: { value: 'Tighten this' } })
-    fireEvent.compositionStart(editor)
-    fireEvent.keyDown(editor, { key: 'Enter', isComposing: true })
-    expect(add).not.toHaveBeenCalled()
-    fireEvent.compositionEnd(editor)
     fireEvent.keyDown(editor, { key: 'Enter', shiftKey: true })
     expect(add).not.toHaveBeenCalled()
     fireEvent.keyDown(editor, { key: 'Enter' })
     expect(add).toHaveBeenCalledWith(expect.objectContaining({ quote: 'Alpha bold omega' }), 'Tighten this')
   })
 
-  it('submits annotation-only prose through the ordinary sink and clears only after admission', () => {
-    const sink = vi.fn()
+  it('defers the composition guard so Safari closing Enter never saves', () => {
+    vi.useFakeTimers()
+    try {
+      const save = vi.fn()
+      const view = render(
+        <AnnotationEditor placeholder="Optional note" saveLabel="Save annotation" onSave={save} />,
+      )
+      const editor = view.getByPlaceholderText('Optional note')
+      fireEvent.compositionStart(editor)
+      fireEvent.compositionEnd(editor)
+      fireEvent.keyDown(editor, { key: 'Enter' })
+      expect(save).not.toHaveBeenCalled()
+      vi.advanceTimersByTime(20)
+      fireEvent.keyDown(editor, { key: 'Enter' })
+      expect(save).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('submits annotation-only prose through one owned reservation and clears only after admission', () => {
+    const reservations: AnnotationSubmissionReservation[] = []
+    const sink = vi.fn<SessionInputDeps['defaultSink']>((...args) => {
+      if (args[3] !== undefined) reservations.push(args[3])
+    })
     const shell = new SessionInputShell({
       actx: {} as ClientContext,
       defaultSink: sink,
@@ -103,7 +124,52 @@ describe('text annotation mechanics', () => {
       restoreText: '', ids: [id],
     })
     expect(shell.snapshot.annotations).toHaveLength(1)
-    shell.commitAnnotations([id])
+    const reservation = reservations[0]
+    expect(reservation).toBeDefined()
+    if (reservation === undefined) throw new Error('annotation submission was not reserved')
+    expect(shell.snapshot.annotationSubmitting).toBe(true)
+    shell.submit()
+    shell.actions.updateTextAnnotation(id, 'must not replace the submitted snapshot')
+    shell.actions.removeTextAnnotation(id)
+    expect(sink).toHaveBeenCalledTimes(1)
+    expect(shell.snapshot.annotations[0]?.note).toBe('')
+    shell.settleAnnotationSubmission(reservation, true)
+    expect(shell.snapshot.annotations).toEqual([])
+    expect(shell.snapshot.annotationSubmitting).toBe(false)
+  })
+
+  it('failure releases the reservation without deleting its annotations', () => {
+    const reservations: AnnotationSubmissionReservation[] = []
+    const sink = vi.fn<SessionInputDeps['defaultSink']>((...args) => {
+      if (args[3] !== undefined) reservations.push(args[3])
+    })
+    const shell = new SessionInputShell({ actx: {} as ClientContext, defaultSink: sink })
+    shell.setDraft('Please revise this.')
+    const anchor = createTextAnchor('message-1', 'Exact quotation', 'Exact quotation', 0)
+    const id = shell.actions.addTextAnnotation(anchor, 'Original note')
+
+    shell.submit()
+    const reservation = reservations[0]
+    expect(reservation).toBeDefined()
+    if (reservation === undefined) throw new Error('annotation submission was not reserved')
+    shell.submit()
+    shell.setDraft('A later edit must not enter the admitted snapshot.')
+    expect(sink).toHaveBeenCalledTimes(1)
+    expect(shell.snapshot.draft).toBe('Please revise this.')
+    shell.settleAnnotationSubmission(reservation, false)
+
+    expect(shell.snapshot.annotationSubmitting).toBe(false)
+    expect(shell.snapshot.annotations).toEqual([{ id, kind: 'text', anchor, note: 'Original note' }])
+    shell.actions.updateTextAnnotation(id, 'Retry note')
+    shell.submit()
+    expect(sink).toHaveBeenCalledTimes(2)
+    const retry = reservations[1]
+    expect(retry).toBeDefined()
+    if (retry === undefined) throw new Error('annotation retry was not reserved')
+    shell.settleAnnotationSubmission(reservation, true)
+    expect(shell.snapshot.annotationSubmitting).toBe(true)
+    expect(shell.snapshot.annotations[0]?.note).toBe('Retry note')
+    shell.settleAnnotationSubmission(retry, true)
     expect(shell.snapshot.annotations).toEqual([])
   })
 

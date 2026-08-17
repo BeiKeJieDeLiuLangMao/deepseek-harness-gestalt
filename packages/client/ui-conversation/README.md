@@ -52,7 +52,7 @@ A finished turn materializes one ordered `turn-tail` Conversation Node. Its engi
 
 #### What the model sees
 
-Text annotations compile into the same ordinary `user/message` that the Composer sends. A non-empty question stays first, followed by each annotation in creation order with a localized heading, exact quoted text, and the optional note. Annotation-only sends use the same form. No annotation protocol, response-format instruction, or hidden metadata enters the request.
+Text annotations compile into the same ordinary `user/message` that the Composer sends. A non-empty question stays first, followed by each annotation in creation order with a localized heading, exact quoted text, and the optional note. Annotation-only sends use the same form. No annotation protocol, response-format instruction, or hidden metadata enters the request. One in-flight reservation owns the exact annotation snapshot until Host admission settles. During that interval the Composer is read-only, repeated submission and annotation edits are refused, success clears only the owned annotations, and failure releases the same drafts for retry.
 
 #### Token effect
 

@@ -23,6 +23,11 @@
   line-height: 18px;
 }
 
+.root textarea:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 1px;
+}
+
 .root button {
   align-self: end;
   width: 32px;
