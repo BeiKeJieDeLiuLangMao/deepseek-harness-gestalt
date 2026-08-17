@@ -36,8 +36,8 @@ declare module '@deepseek-ai/cordis' {
 /**
  * Plugin config. Both throttle triggers are deployment choices with no
  * universally correct value, so the composition states them explicitly
- * (cordis.yml); the two mandatory write points (`turn/end` and session
- * disposal) are policy, not tunables, and always fire.
+ * (cordis.yml); the two mandatory write points (`turn/end` and Session
+ * detachment) are policy, not tunables, and always fire.
  */
 export interface Config {
   /** Committed events per session that force a durable checkpoint write between mandatory points. */
@@ -63,7 +63,7 @@ interface DirtyState {
  * The persisted projection cache service. Opens the `session_projcache`
  * domain at init, checkpoints live sessions on a throttled write-behind
  * (count/interval triggers from {@link Config}) plus two mandatory points —
- * `turn/end` and session disposal (the live-to-cold moment) — and serves the
+ * `turn/end` and Session detachment (the live-to-cold moment) — and serves the
  * cold-read ladder: cached row, persistence `readFrom` tail, registry
  * `restore`, durable write-back. Every durable write is fail-soft: failures
  * log a warning and the cache self-heals on the next write or cold read.
@@ -219,11 +219,12 @@ export class SessionProjectionCache extends Service {
       }, this.config.writeIntervalMs)
     })
 
-    // Detach (the live-to-cold moment): the second mandatory point. After
+    // Store detachment (the live-to-cold moment): the second mandatory point
+    // for every entered Session, including an unpublished preparation. After
     // this write the cold-read ladder serves the session from the cache.
     // flushSoft's synchronous prefix reads and resets the dirty state, so
     // dropping it (timer already cleared by markClean) right after is safe.
-    this.ctx.on('session/disposed', (session: Session) => {
+    this.ctx.on('session/detached', (session: Session) => {
       void this.flushSoft(session, 'detach')
       this.markClean(session)
       this.dirty.delete(session)

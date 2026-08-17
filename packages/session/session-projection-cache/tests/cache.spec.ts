@@ -129,8 +129,10 @@ describe('SessionProjectionCache write policy', () => {
     expect(rows?.['cache-test/marks']).toEqual({ ver: 1, seq: end.seq, val: { marks: ['a'] } })
   })
 
-  it('writes at session disposal (detach, the live-to-cold moment)', async () => {
-    const { ctx, pool } = await harness()
+  it('checkpoints an announced session once at ordinary detachment', async () => {
+    vi.useFakeTimers()
+    const { ctx, pool } = await harness({ config: { writeEveryEvents: 100, writeIntervalMs: 250 } })
+    const writes = vi.spyOn(pool, 'consumeInjectedFailure')
     // Sessions dispose with their owning fiber: create in a child plugin.
     let session: Session | undefined
     const owner = await ctx.plugin(Object.assign((inner: Context) => {
@@ -139,8 +141,28 @@ describe('SessionProjectionCache write policy', () => {
     if (session === undefined) throw new Error('session was not created')
     mark(session, ['live'])
     await owner.dispose()
-    await settle()
+    await vi.advanceTimersByTimeAsync(0)
     expect(storedRows(pool, session.id)?.['cache-test/marks']?.val).toEqual({ marks: ['live'] })
+    expect(writes).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(250)
+    expect(writes).toHaveBeenCalledTimes(1)
+  })
+
+  it('checkpoints and retires dirty state when an unannounced session detaches', async () => {
+    vi.useFakeTimers()
+    const { ctx, pool } = await harness({ config: { writeEveryEvents: 100, writeIntervalMs: 250 } })
+    const session = ctx.sessions.prepare(SessionId('unannounced-detach'))
+    const detach = ctx.sessions.enter(session)
+    mark(session, ['reserved'])
+    expect(storedRows(pool, session.id)).toBeUndefined()
+
+    detach()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(storedRows(pool, session.id)?.['cache-test/marks']?.val).toEqual({ marks: ['reserved'] })
+
+    pool.failNextWrites = 1
+    await vi.advanceTimersByTimeAsync(250)
+    expect(pool.failNextWrites).toBe(1)
   })
 
   it('flushes when the in-turn event count reaches the configured threshold', async () => {

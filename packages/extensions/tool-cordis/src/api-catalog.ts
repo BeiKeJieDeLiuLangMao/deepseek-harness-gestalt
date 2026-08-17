@@ -1104,7 +1104,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
   {
     key: 'sessionProjectionCache',
     summary: 'The persisted projection cache service.',
-    description: 'The persisted projection cache service. Opens the `session_projcache` domain at init, checkpoints live sessions on a throttled write-behind (count/interval triggers from Config) plus two mandatory points — `turn/end` and session disposal (the live-to-cold moment) — and serves the cold-read ladder: cached row, persistence `readFrom` tail, registry `restore`, durable write-back. Every durable write is fail-soft: failures log a warning and the cache self-heals on the next write or cold read.',
+    description: 'The persisted projection cache service. Opens the `session_projcache` domain at init, checkpoints live sessions on a throttled write-behind (count/interval triggers from Config) plus two mandatory points — `turn/end` and Session detachment (the live-to-cold moment) — and serves the cold-read ladder: cached row, persistence `readFrom` tail, registry `restore`, durable write-back. Every durable write is fail-soft: failures log a warning and the cache self-heals on the next write or cold read.',
     methods: [
       {
         signature: 'cachedSnapshot(meta: SessionHeader): ProjectionSnapshot | undefined',

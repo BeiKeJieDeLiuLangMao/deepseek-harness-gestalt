@@ -1638,8 +1638,8 @@ Requires: `storageDomain` · `sessionProjections` · `sessionPersistence` · `se
 /**
  * Plugin config. Both throttle triggers are deployment choices with no
  * universally correct value, so the composition states them explicitly
- * (cordis.yml); the two mandatory write points (`turn/end` and session
- * disposal) are policy, not tunables, and always fire.
+ * (cordis.yml); the two mandatory write points (`turn/end` and Session
+ * detachment) are policy, not tunables, and always fire.
  */
 export interface Config {
   /** Committed events per session that force a durable checkpoint write between mandatory points. */

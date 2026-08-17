@@ -19,7 +19,7 @@ Two mandatory points, throttled in between:
 | Trigger | Nature |
 |---|---|
 | `turn/end` | Mandatory — the turn-final value is what cold reads want. |
-| Session disposal (detach) | Mandatory — the live-to-cold moment; after it the cold ladder serves this session. |
+| Session detachment | Mandatory for every entered attachment, including an unpublished preparation; it checkpoints before retiring dirty and interval state. Announced disposal adds no second write. |
 | `writeEveryEvents` committed events | Config throttle (count). |
 | `writeIntervalMs` since the first dirty event | Config throttle (interval). |
 
