@@ -3,15 +3,18 @@ import type { ReactNode } from 'react'
 import type { PlatformAccountInstallation } from '@deepseek-ai/dsh-platform-account-client'
 import { ACCOUNT_PRIVACY_NOTICE } from '@deepseek-ai/dsh-platform-account/privacy'
 import css from './MobileAccount.module.css'
+import { MobilePairing, type MobilePairingActions } from './MobilePairing.tsx'
 
 /** Mobile Account page props. */
 export interface MobileAccountProps {
   /** Current Mobile installation lifecycle controller. */
   installation: PlatformAccountInstallation
+  /** Personal Pairing adapter available after the current Installation signs in. */
+  pairing?: MobilePairingActions
 }
 
-/** Account-only Mobile landing used before Personal Pairing exists. */
-export function MobileAccount({ installation }: MobileAccountProps): ReactNode {
+/** Mobile Account landing with an optional same-installation Personal Pairing projection. */
+export function MobileAccount({ installation, pairing }: MobileAccountProps): ReactNode {
   const snapshot = useSyncExternalStore(
     listener => installation.subscribe(listener),
     () => installation.getSnapshot(),
@@ -103,6 +106,7 @@ export function MobileAccount({ installation }: MobileAccountProps): ReactNode {
         </>
       )}
       {snapshot.error !== undefined && <p className={css.error} role="alert">{snapshot.error}</p>}
+      {signedIn && pairing !== undefined && <MobilePairing actions={pairing} />}
       <footer>此账号仅识别你的安装；它不会授予任何 Desktop 访问权限。</footer>
     </main>
   )

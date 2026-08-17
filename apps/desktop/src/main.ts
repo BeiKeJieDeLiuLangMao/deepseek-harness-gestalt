@@ -11,6 +11,8 @@ import {
 import {
   ACCOUNT_ACCEPT_PRIVACY, ACCOUNT_BEGIN_LOGIN, ACCOUNT_GET_SNAPSHOT,
   ACCOUNT_SIGN_OUT, ACCOUNT_SNAPSHOT_CHANGED,
+  PAIRING_CANCEL_CHALLENGE, PAIRING_CONFIRM, PAIRING_CREATE_CHALLENGE,
+  PAIRING_GET_SNAPSHOT, PAIRING_REJECT, PAIRING_SET_ENABLED, PAIRING_SNAPSHOT_CHANGED,
   UPDATER_CHECK_NOW, UPDATER_DOWNLOAD_NOW, UPDATER_GET_STATUS,
   UPDATER_QUIT_AND_INSTALL, UPDATER_STATUS_CHANGED,
   WINDOW_CLOSE, WINDOW_MAXIMIZE, WINDOW_MINIMIZE,
@@ -33,6 +35,7 @@ import {
   DesktopAccountController, EncryptedDesktopAccountStore,
   UnavailableDesktopAccountController, type DesktopAccountActions,
 } from './platform-account.ts'
+import { UnavailableDesktopPairingController, type DesktopPairingActions } from './personal-pairing.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const PRELOAD = join(here, 'preload.cjs')
@@ -52,6 +55,10 @@ let integrationsInstalled = false
 let updaterInitialized = false
 let account: DesktopAccountActions = new UnavailableDesktopAccountController('Platform Account is starting')
 let stopAccountEvents: (() => void) | undefined
+const pairing: DesktopPairingActions = new UnavailableDesktopPairingController(
+  'Personal Pairing waits for the independent Noise security review.',
+)
+let stopPairingEvents: (() => void) | undefined
 const hostStartController = new AbortController()
 let pendingHost: Promise<RunningWebHost> | undefined
 
@@ -83,6 +90,7 @@ async function boot(): Promise<void> {
   window = createWindow()
   account = createDesktopAccount(accountEnvironment)
   stopAccountEvents = account.subscribe(pushAccountSnapshot)
+  stopPairingEvents = pairing.subscribe(pushPairingSnapshot)
   try {
     await account.start()
   } catch (error) {
@@ -271,6 +279,7 @@ async function finishSmoke(target: BrowserWindow): Promise<void> {
   const evidence: unknown = await target.webContents.executeJavaScript(`(async () => {
     const bridge = window.dshDesktop
     const updaterStatus = await bridge?.getStatus()
+    const pairingStatus = await bridge?.pairingGetSnapshot()
     const unsubscribe = typeof bridge?.onStatus === 'function'
       ? bridge.onStatus(() => {})
       : null
@@ -293,6 +302,16 @@ async function finishSmoke(target: BrowserWindow): Promise<void> {
         && typeof bridge.onStatus === 'function'
         && typeof unsubscribe === 'function',
       updaterState: updaterStatus?.state ?? null,
+      pairingBridge: bridge !== undefined
+        && typeof bridge.pairingGetSnapshot === 'function'
+        && typeof bridge.pairingSetEnabled === 'function'
+        && typeof bridge.pairingCreateChallenge === 'function'
+        && typeof bridge.pairingCancelChallenge === 'function'
+        && typeof bridge.pairingConfirm === 'function'
+        && typeof bridge.pairingReject === 'function'
+        && typeof bridge.onPairingSnapshot === 'function',
+      mobileAccessEnabled: pairingStatus?.enabled ?? null,
+      pairingState: pairingStatus?.status ?? null,
       rendererUpdaterState: document.querySelector('[data-desktop-updater-state]')
         ?.getAttribute('data-desktop-updater-state') ?? null,
       updateControlAbsent: document.querySelector('[data-desktop-update-control]') === null,
@@ -305,6 +324,9 @@ async function finishSmoke(target: BrowserWindow): Promise<void> {
     && 'gestalt' in evidence && evidence.gestalt === true
     && 'updaterBridge' in evidence && evidence.updaterBridge === true
     && 'updaterState' in evidence && evidence.updaterState === 'disabled'
+    && 'pairingBridge' in evidence && evidence.pairingBridge === true
+    && 'mobileAccessEnabled' in evidence && evidence.mobileAccessEnabled === false
+    && 'pairingState' in evidence && evidence.pairingState === 'unavailable'
     && 'rendererUpdaterState' in evidence && evidence.rendererUpdaterState === 'disabled'
     && 'updateControlAbsent' in evidence && evidence.updateControlAbsent === true
     && 'chrome' in evidence && evidence.chrome === expectedChrome
@@ -326,7 +348,10 @@ function requestShutdown(exitCode: number): void {
   updater = undefined
   stopAccountEvents?.()
   stopAccountEvents = undefined
+  stopPairingEvents?.()
+  stopPairingEvents = undefined
   const accountDisposal = account.dispose()
+  const pairingDisposal = pairing.dispose()
   hostStartController.abort()
   const starting = pendingHost
   const running = host
@@ -334,6 +359,7 @@ function requestShutdown(exitCode: number): void {
   void (async () => {
     try {
       await accountDisposal
+      await pairingDisposal
       const started = await starting?.catch(() => undefined)
       if (started !== running) await started?.stop()
       await running?.stop()
@@ -361,6 +387,12 @@ function installIpc(): void {
   ipcMain.handle(ACCOUNT_ACCEPT_PRIVACY, () => account.acceptPrivacy())
   ipcMain.handle(ACCOUNT_BEGIN_LOGIN, () => account.beginLogin())
   ipcMain.handle(ACCOUNT_SIGN_OUT, () => account.signOut())
+  ipcMain.handle(PAIRING_GET_SNAPSHOT, () => pairing.getSnapshot())
+  ipcMain.handle(PAIRING_SET_ENABLED, (_event, enabled: boolean) => pairing.setEnabled(enabled))
+  ipcMain.handle(PAIRING_CREATE_CHALLENGE, () => pairing.createChallenge())
+  ipcMain.handle(PAIRING_CANCEL_CHALLENGE, () => pairing.cancelChallenge())
+  ipcMain.handle(PAIRING_CONFIRM, (_event, pendingPairingId: string) => pairing.confirm(pendingPairingId))
+  ipcMain.handle(PAIRING_REJECT, (_event, pendingPairingId: string) => pairing.reject(pendingPairingId))
 }
 
 function installMenu(): void {
@@ -389,6 +421,10 @@ function pushStatus(status: UpdaterStatus): void {
 
 function pushAccountSnapshot(snapshot: ReturnType<DesktopAccountActions['getSnapshot']>): void {
   window?.webContents.send(ACCOUNT_SNAPSHOT_CHANGED, snapshot)
+}
+
+function pushPairingSnapshot(snapshot: ReturnType<DesktopPairingActions['getSnapshot']>): void {
+  window?.webContents.send(PAIRING_SNAPSHOT_CHANGED, snapshot)
 }
 
 function createDesktopAccount(environment: SelectedPlatformEnvironment): DesktopAccountActions {

@@ -51,6 +51,7 @@ dsh --profile web --dump-config
 | [`llm/llm`](subsystems/llm-streaming.md) | 消息与流式词汇表，以及适配器 seam | `ctx.llm` |
 | [`platform/platform-account`](../packages/platform/platform-account/README.md) | Platform 身份与当前安装账号会话 | `ctx.platformAccount` |
 | [`platform/remote-protocol`](../packages/platform/remote-protocol/README.md) | 独立的 Relay Transport 与加密 Companion codec | 库，无键 |
+| [`platform/remote-access`](../packages/platform/remote-access/README.md) | Settings 所有的 Personal Pairing lifecycle 与 Companion-only Device Principal | `ctx.remoteAccess` |
 
 <a id="events"></a>
 

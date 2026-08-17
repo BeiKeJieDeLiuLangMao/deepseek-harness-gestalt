@@ -10,6 +10,7 @@ import '@deepseek-ai/dsh-client-ui-theme/src/styles/base.css'
 import '@deepseek-ai/dsh-client-ui-theme/src/styles/design-platform.css'
 import '@deepseek-ai/dsh-client-ui-theme/src/styles/gradient-shadow-text.css'
 import { MobileAccount } from './MobileAccount.tsx'
+import type { MobilePairingActions } from './MobilePairing.tsx'
 import { mobileSystemBrowser } from './system-browser.ts'
 import './root.css'
 
@@ -47,11 +48,21 @@ const installation = new PlatformAccountInstallation({
   store: new IndexedDbInstallationAccountStore(`deepseek-gestalt-platform-account:${environment.databaseIdentity}`),
   systemBrowser: mobileSystemBrowser,
 })
+const unavailablePairing = {
+  status: 'unavailable',
+  error: 'Personal Pairing waits for the independent Noise security review.',
+} as const
+const pairing: MobilePairingActions = {
+  getSnapshot: () => unavailablePairing,
+  subscribe: () => () => {},
+  completeLink: () => {},
+  scanQr: () => {},
+}
 
 const root = document.getElementById('root')
 if (root === null) throw new Error('mobile app: missing #root')
 createRoot(root).render(
   <StrictMode>
-    <MobileAccount installation={installation} />
+    <MobileAccount installation={installation} pairing={pairing} />
   </StrictMode>,
 )

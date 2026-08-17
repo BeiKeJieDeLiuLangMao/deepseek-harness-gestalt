@@ -30,6 +30,20 @@ export const ACCOUNT_BEGIN_LOGIN = 'account:beginLogin'
 export const ACCOUNT_SIGN_OUT = 'account:signOut'
 /** IPC event pushed for every current-installation Account transition. */
 export const ACCOUNT_SNAPSHOT_CHANGED = 'account:snapshot-changed'
+/** IPC / preload channel for Mobile Access and Personal Pairing state. */
+export const PAIRING_GET_SNAPSHOT = 'pairing:getSnapshot'
+/** IPC / preload channel changing Settings-owned Mobile Access. */
+export const PAIRING_SET_ENABLED = 'pairing:setEnabled'
+/** IPC / preload channel creating one high-entropy invitation. */
+export const PAIRING_CREATE_CHALLENGE = 'pairing:createChallenge'
+/** IPC / preload channel cancelling the current invitation. */
+export const PAIRING_CANCEL_CHALLENGE = 'pairing:cancelChallenge'
+/** IPC / preload channel confirming matching authentication words. */
+export const PAIRING_CONFIRM = 'pairing:confirm'
+/** IPC / preload channel rejecting a pending handshake. */
+export const PAIRING_REJECT = 'pairing:reject'
+/** IPC event pushed for every Mobile Access or pairing transition. */
+export const PAIRING_SNAPSHOT_CHANGED = 'pairing:snapshot-changed'
 
 /** Updater lifecycle the Update Control renders. */
 export type UpdaterPhase =
@@ -72,6 +86,39 @@ export interface DesktopAccountSnapshot {
   readonly error?: string
 }
 
+/** High-entropy invitation shown as both QR and a complete one-time link. */
+export interface DesktopPairingChallenge {
+  readonly id: string
+  readonly expiresAt: number
+  readonly oneTimeLink: string
+  readonly qrPayload: string
+}
+
+/** Same-account handshake awaiting explicit Desktop confirmation. */
+export interface DesktopPendingPairing {
+  readonly id: string
+  readonly deviceName: string
+  readonly authenticationWords: readonly [string, string, string, string, string, string]
+}
+
+/** Confirmed Companion-only device listed in Mobile Pairing Settings. */
+export interface DesktopPersonalPairing {
+  readonly id: string
+  readonly deviceName: string
+  readonly platform: 'ios' | 'android'
+  readonly pairedAt: number
+}
+
+/** Desktop Host-owned Mobile Access and Personal Pairing lifecycle. */
+export interface DesktopPairingSnapshot {
+  readonly status: 'unavailable' | 'ready' | 'challenge' | 'pending' | 'failed'
+  readonly enabled: boolean
+  readonly challenge?: DesktopPairingChallenge
+  readonly pending?: DesktopPendingPairing
+  readonly pairings: readonly DesktopPersonalPairing[]
+  readonly error?: string
+}
+
 /** Preload API exposed as `window.dshDesktop`. Absent in browser `dsh web`. */
 export interface DesktopBridge {
   /** Node `process.platform` of the Desktop Host. */
@@ -106,6 +153,20 @@ export interface DesktopBridge {
   readonly accountSignOut: () => Promise<DesktopAccountSnapshot>
   /** Subscribe to current-installation Account transitions. */
   readonly onAccountSnapshot: (listener: (snapshot: DesktopAccountSnapshot) => void) => () => void
+  /** Read Settings-owned Mobile Access and Personal Pairing state. */
+  readonly pairingGetSnapshot: () => Promise<DesktopPairingSnapshot>
+  /** Enable or disable Mobile Access for this Desktop Installation. */
+  readonly pairingSetEnabled: (enabled: boolean) => Promise<DesktopPairingSnapshot>
+  /** Create one two-minute QR/full-link challenge. */
+  readonly pairingCreateChallenge: () => Promise<DesktopPairingSnapshot>
+  /** Cancel the current challenge and destroy its invitation capability. */
+  readonly pairingCancelChallenge: () => Promise<DesktopPairingSnapshot>
+  /** Confirm matching authentication words and activate one Device Principal. */
+  readonly pairingConfirm: (pendingPairingId: string) => Promise<DesktopPairingSnapshot>
+  /** Reject a pending handshake and destroy its pending key. */
+  readonly pairingReject: (pendingPairingId: string) => Promise<DesktopPairingSnapshot>
+  /** Subscribe to Mobile Access and Personal Pairing transitions. */
+  readonly onPairingSnapshot: (listener: (snapshot: DesktopPairingSnapshot) => void) => () => void
 }
 
 declare global {

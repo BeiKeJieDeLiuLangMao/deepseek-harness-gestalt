@@ -167,6 +167,7 @@
     { "path": "./packages/platform/platform-account-core" },
     { "path": "./packages/platform/platform-account-http" },
     { "path": "./packages/platform/remote-protocol" },
+    { "path": "./packages/platform/remote-access" },
     { "path": "./packages/session/session-telemetry-otel" },
     { "path": "./packages/core/system-prompt" },
     { "path": "./packages/core/agent" },

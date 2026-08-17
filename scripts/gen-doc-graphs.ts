@@ -239,6 +239,15 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Owns GitHub public identity and proof-of-possession installation sessions; HTTP and Desktop/Mobile clients complete signed polling without receiving provider credentials.',
   },
   {
+    key: 'remoteAccess',
+    pkg: 'remote-access',
+    title: 'Personal Pairing lifecycle seam',
+    mode: 'seam',
+    implementations: ['remote-access'],
+    consumers: [],
+    note: 'Combines the public lifecycle definition with a single-process provider; Desktop and Mobile remain fail-closed until an independently reviewed handshake adapter is assembled.',
+  },
+  {
     key: 'workspaceRegistry',
     pkg: 'workspace',
     title: 'Workspace entity registry',

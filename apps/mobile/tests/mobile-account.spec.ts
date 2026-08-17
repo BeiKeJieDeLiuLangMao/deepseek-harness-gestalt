@@ -16,6 +16,7 @@ import {
   type PlatformAccountTransport,
 } from '@deepseek-ai/dsh-platform-account-client'
 import { MobileAccount } from '../src/MobileAccount.tsx'
+import type { MobilePairingActions } from '../src/MobilePairing.tsx'
 
 afterEach(cleanup)
 
@@ -74,13 +75,21 @@ describe('MobileAccount', () => {
 
   it('polls to the current-installation account and signs out only that installation', async () => {
     const { installation, api } = fixture()
-    render(createElement(MobileAccount, { installation }))
+    const unavailablePairing = { status: 'unavailable', error: 'independent review pending' } as const
+    const pairing: MobilePairingActions = {
+      getSnapshot: () => unavailablePairing,
+      subscribe: () => () => {},
+      completeLink: vi.fn(),
+      scanQr: vi.fn(),
+    }
+    render(createElement(MobileAccount, { installation, pairing }))
 
     fireEvent.click(screen.getByRole('checkbox'))
     await waitFor(() => { expect(screen.getByRole('button', { name: '使用 GitHub 继续' }).hasAttribute('disabled')).toBe(false) })
     fireEvent.click(screen.getByRole('button', { name: '使用 GitHub 继续' }))
     await screen.findByText('@octocat')
     expect(screen.getByText('当前安装')).toBeTruthy()
+    expect(screen.getByText('independent review pending')).toBeTruthy()
 
     fireEvent.click(screen.getByRole('button', { name: '退出此安装' }))
     await waitFor(() => { expect(api.signOut).toHaveBeenCalledOnce() })

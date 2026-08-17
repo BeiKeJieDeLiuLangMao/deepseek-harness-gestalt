@@ -8,6 +8,8 @@ Window exit, Ctrl+C, and smoke-test completion cancel any pending start, stop th
 
 The main window accepts navigation only within the active loopback Host origin. Ordinary HTTP links, including GitHub authorization, open in the system browser; other origins and schemes cannot replace the Session Surface or create another Electron window. Platform Account signing keys and tokens stay in an environment-specific `safeStorage`-encrypted file under Electron userData. The preload exposes only current state and lifecycle verbs.
 
+Personal Pairing is configured only in the real `手机配对` Settings section. The preload exposes Mobile Access, challenge, pending-confirmation, and paired-device verbs without adding status to the normal Session header, sidebar, approval, composer, or offline views. Product composition keeps Mobile Access disabled and reports pairing unavailable until the independent Noise review admits a reviewed handshake adapter; the Host does not assemble the proof-local Snow implementation.
+
 Desktop Platform Account validates the full development and production pair before creating a window: each `DSH_PLATFORM_DEVELOPMENT_*` and `DSH_PLATFORM_PRODUCTION_*` side supplies `ORIGIN`, `CALLBACK_URL`, `GITHUB_CLIENT_ID`, `CREDENTIAL_REFERENCE`, `DATABASE_IDENTITY`, and `IDENTITY_NAMESPACE`, and `DSH_PLATFORM_ENV` explicitly selects one. Missing, unknown, shared, non-HTTPS, or callback-mismatched configuration fails startup before rendering or traffic. Unavailable operating-system encryption remains a visible capability failure. The encrypted record is replaced through `dsh-atomic-write` with a random exclusive sibling, owner-only permissions, symlink-safe rename, and failure cleanup.
 
 On macOS, a 28px top inset keeps the unchanged DSH sidebar header below the traffic lights. Windows uses a full-window 36px drag row with 46px minimize, maximize, and close targets. Unsupported development platforms keep the system frame.
@@ -57,3 +59,4 @@ The hoisted deploy includes workspace packages without pnpm's linked virtual dep
 
 - **Packaged extraResources Node + dsh snapshot is assembled by the release workflow** — `gestalt:dev` runs the workspace source tree.
 - **Windows Authenticode is absent** — SmartScreen warns; the updater still runs.
+- **Personal Pairing crypto is not assembled** — Settings and the Host bridge fail closed until independent Noise review admits a product adapter.

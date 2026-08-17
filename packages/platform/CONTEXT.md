@@ -25,3 +25,11 @@ _Avoid_: Installation, Desktop Host
 **Personal Pairing**: A durable relationship between installations owned outside Account. Current-installation sign-out invalidates the Account Session and connections but preserves Personal Pairings.
 
 _Avoid_: Account Session, OAuth connection
+
+**Pairing Challenge**: A two-minute single-use invitation capability created only by an enabled Desktop Installation. QR and full-link presentation carry the same 256-bit secret and protocol binding.
+
+_Avoid_: pairing code, Login Attempt
+
+**Device Principal**: The independently keyed, revocable identity created only after same-account handshake completion and explicit Desktop confirmation. Its grant is limited to Companion Surface authority.
+
+_Avoid_: Platform Account, Account Session, mobile user

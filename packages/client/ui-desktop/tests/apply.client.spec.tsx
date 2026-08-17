@@ -72,6 +72,13 @@ describe('ui-desktop apply', () => {
       accountBeginLogin: vi.fn(),
       accountSignOut: vi.fn(),
       onAccountSnapshot: vi.fn(() => () => {}),
+      pairingGetSnapshot: vi.fn().mockResolvedValue({ status: 'unavailable', enabled: false, pairings: [] }),
+      pairingSetEnabled: vi.fn(),
+      pairingCreateChallenge: vi.fn(),
+      pairingCancelChallenge: vi.fn(),
+      pairingConfirm: vi.fn(),
+      pairingReject: vi.fn(),
+      onPairingSnapshot: vi.fn(() => () => {}),
     }
     window.dshDesktop = desktop
     const b = await bench()
@@ -81,10 +88,15 @@ describe('ui-desktop apply', () => {
     expect(desktop.onStatus).toHaveBeenCalledOnce()
     expect(desktop.accountGetSnapshot).toHaveBeenCalledOnce()
     expect(desktop.onAccountSnapshot).toHaveBeenCalledOnce()
+    expect(desktop.pairingGetSnapshot).toHaveBeenCalledOnce()
+    expect(desktop.onPairingSnapshot).toHaveBeenCalledOnce()
     const brand = b.slots.entries('sidebar.brand')[0]
     expect(brand?.select?.({} as never)).toEqual({})
     const footer = b.slots.entries('sidebar.footer.action').find(entry => entry.options.id === 'desktop-update')
     expect((footer?.inject as () => { hooks: { updater: unknown } } | undefined)?.()?.hooks.updater).toBeDefined()
+    const pairing = b.slots.entries('settings.section').find(entry => entry.options.id === 'mobile-pairing')
+    expect((pairing?.options.label as (() => string) | undefined)?.()).toBe('Mobile pairing')
+    expect((pairing?.inject as () => { hooks: { pairing: unknown } } | undefined)?.()?.hooks.pairing).toBeDefined()
     await Promise.resolve()
     await Promise.resolve()
     await fiber.dispose()

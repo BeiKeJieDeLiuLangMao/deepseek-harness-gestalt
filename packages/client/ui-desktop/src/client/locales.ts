@@ -26,6 +26,16 @@ export const zh = {
   'account.noticeTitle': '授权前请确认数据保留规则',
   'account.consent': '我已阅读中英文隐私说明，并理解首个版本不提供账号删除。',
   'account.continueGitHub': '继续前往 GitHub',
+  'pairing.mobileAccess': 'Mobile Access',
+  'pairing.mobileAccessDescription': '仅在此 Settings section 开启；普通 Session 界面保持不变。',
+  'pairing.createChallenge': '创建手机配对',
+  'pairing.scan': '用已登录同一账号的手机扫描',
+  'pairing.fullLink': '也可以复制完整的一次性链接；不提供手输短码。',
+  'pairing.qrLabel': 'Personal Pairing 二维码',
+  'pairing.cancel': '取消配对',
+  'pairing.compareWords': '请在手机和 Desktop 比对以下认证词',
+  'pairing.confirm': '确认配对',
+  'pairing.reject': '拒绝',
 } as const
 
 /** English fallback for Desktop chrome copy. */
@@ -55,6 +65,16 @@ export const en = {
   'account.noticeTitle': 'Review data retention before authorization',
   'account.consent': 'I have read both notices and understand the first version has no account deletion.',
   'account.continueGitHub': 'Continue to GitHub',
+  'pairing.mobileAccess': 'Mobile Access',
+  'pairing.mobileAccessDescription': 'Enable only here in Settings; normal Session views stay unchanged.',
+  'pairing.createChallenge': 'Create phone pairing',
+  'pairing.scan': 'Scan with a phone signed in to the same account',
+  'pairing.fullLink': 'Or copy the complete one-time link; there is no short manual code.',
+  'pairing.qrLabel': 'Personal Pairing QR code',
+  'pairing.cancel': 'Cancel pairing',
+  'pairing.compareWords': 'Compare these authentication words on Mobile and Desktop',
+  'pairing.confirm': 'Confirm pairing',
+  'pairing.reject': 'Reject',
 } as const
 
 /** Locale keys owned by Desktop chrome. */

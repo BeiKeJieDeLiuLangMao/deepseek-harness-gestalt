@@ -145,6 +145,9 @@ describe('UpdateControl', () => {
       accountBeginLogin: vi.fn(),
       accountSignOut: vi.fn(),
       onAccountSnapshot: () => () => {},
+      pairingGetSnapshot: vi.fn(), pairingSetEnabled: vi.fn(), pairingCreateChallenge: vi.fn(),
+      pairingCancelChallenge: vi.fn(), pairingConfirm: vi.fn(), pairingReject: vi.fn(),
+      onPairingSnapshot: () => () => {},
     }
     render(
       <UpdateControl
@@ -185,6 +188,9 @@ function mountBridge(bridge?: Partial<DesktopBridge>): DesktopBridge {
     accountBeginLogin: vi.fn(),
     accountSignOut: vi.fn(),
     onAccountSnapshot: () => () => {},
+    pairingGetSnapshot: vi.fn(), pairingSetEnabled: vi.fn(), pairingCreateChallenge: vi.fn(),
+    pairingCancelChallenge: vi.fn(), pairingConfirm: vi.fn(), pairingReject: vi.fn(),
+    onPairingSnapshot: () => () => {},
     ...bridge,
   }
   window.dshDesktop = desktop

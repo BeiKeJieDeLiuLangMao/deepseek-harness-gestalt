@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import type { DesktopAccountSnapshot, DesktopBridge } from '../src/protocol.ts'
+import type { DesktopAccountSnapshot, DesktopBridge, DesktopPairingSnapshot } from '../src/protocol.ts'
 import { AccountControl } from '../src/client/AccountControl.tsx'
 import { en } from '../src/client/locales.ts'
 
@@ -51,15 +51,108 @@ describe('AccountControl', () => {
     expect(desktop.accountSignOut).toHaveBeenCalledOnce()
     expect(screen.getByText(/preserves Personal Pairings/)).toBeTruthy()
   })
+
+  it('configures Personal Pairing only inside the signed-in Settings section', () => {
+    const signedIn: DesktopAccountSnapshot = {
+      status: 'signed-in', privacyAccepted: true,
+      account: { id: 'account-1', githubId: 1, githubLogin: 'octocat', avatarUrl: 'https://avatars.example/octocat' },
+    }
+    const pairing: DesktopPairingSnapshot = { status: 'ready', enabled: false, pairings: [] }
+    const desktop = bridge(signedIn)
+    window.dshDesktop = desktop
+    renderControl(signedIn, pairing)
+
+    expect(screen.getByRole('switch', { name: 'Mobile Access' }).getAttribute('aria-checked')).toBe('false')
+    expect(screen.queryByRole('textbox')).toBeNull()
+    fireEvent.click(screen.getByRole('switch', { name: 'Mobile Access' }))
+    expect(desktop.pairingSetEnabled).toHaveBeenCalledWith(true)
+
+    cleanup()
+    renderControl(signedIn, { status: 'ready', enabled: true, pairings: [] })
+    fireEvent.click(screen.getByRole('button', { name: 'Create phone pairing' }))
+    expect(desktop.pairingCreateChallenge).toHaveBeenCalledOnce()
+
+    cleanup()
+    renderControl(signedIn, {
+      status: 'challenge', enabled: true, pairings: [],
+      challenge: {
+        id: 'challenge-1', expiresAt: Date.now() + 120_000,
+        oneTimeLink: 'https://platform.example.com/pair?secret=complete-high-entropy-value',
+        qrPayload: 'https://platform.example.com/pair?secret=complete-high-entropy-value',
+      },
+    })
+    expect(screen.getAllByText('https://platform.example.com/pair?secret=complete-high-entropy-value')).toHaveLength(2)
+    expect(screen.getByLabelText('Pairing QR payload').textContent).toContain('complete-high-entropy-value')
+    expect(screen.queryByRole('textbox')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel pairing' }))
+    expect(desktop.pairingCancelChallenge).toHaveBeenCalledOnce()
+
+    cleanup()
+    renderControl(signedIn, {
+      status: 'pending', enabled: true, pairings: [],
+      pending: { id: 'pending-1', deviceName: 'Alice phone', authenticationWords: ['amber', 'binary', 'cedar', 'delta', 'ember', 'frost'] },
+    })
+    expect(screen.getByText('amber binary cedar delta ember frost')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm pairing' }))
+    expect(desktop.pairingConfirm).toHaveBeenCalledWith('pending-1')
+    fireEvent.click(screen.getByRole('button', { name: 'Reject' }))
+    expect(desktop.pairingReject).toHaveBeenCalledWith('pending-1')
+
+    cleanup()
+    renderControl(signedIn, {
+      status: 'ready', enabled: true,
+      pairings: [{ id: 'pairing-1', deviceName: 'Alice phone', platform: 'ios', pairedAt: 1 }],
+      error: 'temporary warning',
+    })
+    expect(screen.getByText('Alice phone')).toBeTruthy()
+    expect(screen.getByRole('alert').textContent).toBe('temporary warning')
+  })
+
+  it('projects every Account state and renders nothing without the Desktop bridge', () => {
+    const idle: DesktopAccountSnapshot = { status: 'idle', privacyAccepted: false }
+    const empty = renderControl(idle)
+    expect(empty.container.textContent).toBe('')
+
+    const desktop = bridge(idle)
+    window.dshDesktop = desktop
+    cleanup()
+    renderControl({ status: 'unavailable', privacyAccepted: false })
+    expect(screen.getByText('Platform Account is not configured for this installation.')).toBeTruthy()
+
+    cleanup()
+    renderControl({ status: 'unavailable', privacyAccepted: false, error: 'secure storage unavailable' })
+    expect(screen.getByText('secure storage unavailable')).toBeTruthy()
+
+    for (const status of ['polling', 'authorizing'] as const) {
+      cleanup()
+      renderControl({ status, privacyAccepted: true })
+      expect(screen.getByText('Finish GitHub sign-in in your system browser')).toBeTruthy()
+    }
+
+    cleanup()
+    renderControl({ status: 'failed', privacyAccepted: true, error: 'login failed' })
+    expect(screen.getByText('login failed')).toBeTruthy()
+
+    cleanup()
+    renderControl({
+      status: 'signing-out', privacyAccepted: true,
+      account: { id: 'account-1', githubId: 1, githubLogin: 'octocat', avatarUrl: 'https://avatars.example/octocat' },
+    })
+    expect(screen.getByRole('button', { name: 'Sign out this installation' }).hasAttribute('disabled')).toBe(true)
+  })
 })
 
-function renderControl(snapshot: DesktopAccountSnapshot): void {
-  render(
+function renderControl(
+  snapshot: DesktopAccountSnapshot,
+  pairing: DesktopPairingSnapshot = { status: 'unavailable', enabled: false, pairings: [] },
+): ReturnType<typeof render> {
+  return render(
     <AccountControl
       t={t as never}
       useSessions={(() => { throw new Error('unused') })}
       useWorkspaces={(() => { throw new Error('unused') })}
       useAccount={selector => selector(snapshot)}
+      usePairing={selector => selector(pairing)}
       close={vi.fn()}
     />,
   )
@@ -81,5 +174,12 @@ function bridge(snapshot: DesktopAccountSnapshot): DesktopBridge {
     accountBeginLogin: vi.fn().mockResolvedValue({ status: 'polling', privacyAccepted: true }),
     accountSignOut: vi.fn().mockResolvedValue({ status: 'idle', privacyAccepted: true }),
     onAccountSnapshot: () => () => {},
+    pairingGetSnapshot: vi.fn(),
+    pairingSetEnabled: vi.fn(),
+    pairingCreateChallenge: vi.fn(),
+    pairingCancelChallenge: vi.fn(),
+    pairingConfirm: vi.fn(),
+    pairingReject: vi.fn(),
+    onPairingSnapshot: () => () => {},
   }
 }
