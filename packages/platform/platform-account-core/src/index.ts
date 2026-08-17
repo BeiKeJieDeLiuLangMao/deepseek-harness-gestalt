@@ -1,0 +1,833 @@
+/**
+ * Platform Account provider: GitHub OAuth, signed polling, P-256 installation
+ * proof, rotating Account Sessions, and cross-instance invalidation.
+ * @module @deepseek-ai/dsh-platform-account-core
+ */
+
+import {
+  createHash,
+  createHmac,
+  createPublicKey,
+  randomBytes,
+  randomUUID,
+  timingSafeEqual,
+  verify,
+} from 'node:crypto'
+import type { Context } from '@deepseek-ai/cordis'
+import AccountService, {
+  AccountError,
+  type AccountProof,
+  type AccountSessionId,
+  type AccountSessionView,
+  type InstallationKind,
+  type LoginAttemptId,
+  type LoginAttemptView,
+  type LoginPollResult,
+  type PlatformAccountId,
+  type PlatformAccountView,
+  type PlatformEnvironment,
+} from '@deepseek-ai/dsh-platform-account'
+
+/** Fixed five-minute Login Attempt lifetime. */
+export const LOGIN_ATTEMPT_TTL_MS = 5 * 60 * 1000
+/** Fixed fifteen-minute access-token lifetime. */
+export const ACCESS_TOKEN_TTL_MS = 15 * 60 * 1000
+/** Maximum and issued refresh-token lifetime. */
+export const MAX_REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000
+/** Accepted clock skew for one installation proof. */
+export const ACCOUNT_PROOF_WINDOW_MS = 60 * 1000
+
+/** GitHub public identity retained after the provider token is discarded. */
+export interface GitHubIdentity {
+  /** Immutable numeric GitHub user id. */
+  providerSubject: number
+  /** Current public GitHub login. */
+  login: string
+  /** Current public GitHub avatar URL. */
+  avatarUrl: string
+}
+
+/** GitHub OAuth adapter used by the Account provider. */
+export interface GitHubIdentityProvider {
+  /** Build the system-browser authorization URL with S256 PKCE and no scope parameter. */
+  authorizationUrl(input: { callbackUrl: string; state: string; codeChallenge: string }): string
+  /** Exchange one callback code and return only the public identity retained by Platform. */
+  exchange(code: string, verifier: string): Promise<GitHubIdentity>
+}
+
+/** Construction inputs for the GitHub OAuth HTTP adapter. */
+export interface GitHubOAuthIdentityProviderOptions {
+  /** Environment-specific GitHub OAuth App client id. */
+  clientId: string
+  /** Environment-specific GitHub OAuth App client secret. */
+  clientSecret: string
+  /** Fixed HTTPS callback registered on the OAuth App. */
+  callbackUrl: string
+  /** HTTP implementation; defaults to global fetch. */
+  fetch?: typeof fetch
+}
+
+/** GitHub OAuth App adapter that returns only public identity fields. */
+export class GitHubOAuthIdentityProvider implements GitHubIdentityProvider {
+  private readonly fetch: typeof fetch
+
+  /** @param options - OAuth App identity, callback, secret, and HTTP adapter. */
+  constructor(private readonly options: GitHubOAuthIdentityProviderOptions) {
+    this.fetch = options.fetch ?? globalThis.fetch
+    if (new URL(options.callbackUrl).protocol !== 'https:') {
+      throw new TypeError('GitHub OAuth callback must use HTTPS')
+    }
+  }
+
+  authorizationUrl(input: { callbackUrl: string; state: string; codeChallenge: string }): string {
+    if (input.callbackUrl !== this.options.callbackUrl) {
+      throw new TypeError('GitHub OAuth callback does not match the configured fixed callback')
+    }
+    const url = new URL('https://github.com/login/oauth/authorize')
+    url.searchParams.set('client_id', this.options.clientId)
+    url.searchParams.set('redirect_uri', input.callbackUrl)
+    url.searchParams.set('state', input.state)
+    url.searchParams.set('code_challenge', input.codeChallenge)
+    url.searchParams.set('code_challenge_method', 'S256')
+    return url.toString()
+  }
+
+  async exchange(code: string, verifier: string): Promise<GitHubIdentity> {
+    const tokenResponse = await this.fetch('https://github.com/login/oauth/access_token', {
+      method: 'POST',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: this.options.clientId,
+        client_secret: this.options.clientSecret,
+        code,
+        redirect_uri: this.options.callbackUrl,
+        code_verifier: verifier,
+      }).toString(),
+    })
+    if (!tokenResponse.ok) throw new Error(`GitHub token exchange failed with HTTP ${tokenResponse.status}`)
+    const tokenBody = await tokenResponse.json() as unknown
+    if (!isRecord(tokenBody) || typeof tokenBody.access_token !== 'string') {
+      throw new Error('GitHub token exchange returned no access token')
+    }
+    if (typeof tokenBody.scope !== 'string' || tokenBody.scope !== '') {
+      throw new Error('GitHub returned a token with OAuth scopes; Platform Account accepts public identity only')
+    }
+    const identityResponse = await this.fetch('https://api.github.com/user', {
+      headers: {
+        Accept: 'application/vnd.github+json',
+        Authorization: `Bearer ${tokenBody.access_token}`,
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+    })
+    if (!identityResponse.ok) throw new Error(`GitHub identity lookup failed with HTTP ${identityResponse.status}`)
+    const body = await identityResponse.json() as unknown
+    if (!isRecord(body) || !Number.isSafeInteger(body.id)
+      || typeof body.login !== 'string' || typeof body.avatar_url !== 'string') {
+      throw new Error('GitHub identity response is missing public identity fields')
+    }
+    return { providerSubject: body.id as number, login: body.login, avatarUrl: body.avatar_url }
+  }
+}
+
+/** Clock adapter for expiry and deterministic keyless scenarios. */
+export interface AccountClock {
+  /** @returns current Unix epoch milliseconds. */
+  now(): number
+}
+
+/** Durable Login Attempt state owned by an {@link AccountBackend}. */
+export interface LoginAttemptRecord {
+  /** Opaque Login Attempt id. */
+  id: LoginAttemptId
+  /** Deployment environment that owns the attempt. */
+  environment: PlatformEnvironment
+  /** Provider identity namespace for the selected environment. */
+  identityNamespace: string
+  /** Stable id of the requesting installation. */
+  installationId: string
+  /** Desktop or Mobile installation class. */
+  installationKind: InstallationKind
+  /** Installation P-256 public key. */
+  publicKey: JsonWebKey
+  /** Random OAuth state bound to the attempt. */
+  state: string
+  /** PKCE verifier retained until the provider callback. */
+  codeVerifier: string
+  /** Unix epoch milliseconds after which the attempt is invalid. */
+  expiresAt: number
+  /** Single-use attempt lifecycle state. */
+  status: 'pending' | 'authorized' | 'used'
+  /** Public GitHub identity present only after callback authorization. */
+  identity?: GitHubIdentity
+}
+
+/** Environment-scoped durable Platform Account record. */
+export interface AccountRecord extends PlatformAccountView {
+  /** Provider identity namespace that owns the account. */
+  identityNamespace: string
+}
+
+/** Durable proof-of-possession Account Session state. */
+export interface SessionRecord {
+  /** Opaque Account Session id. */
+  id: AccountSessionId
+  /** Provider identity namespace that owns the session. */
+  identityNamespace: string
+  /** Platform Account authorized by the session. */
+  accountId: PlatformAccountId
+  /** Stable id of the authorized installation. */
+  installationId: string
+  /** Desktop or Mobile installation class. */
+  installationKind: InstallationKind
+  /** Installation P-256 public key. */
+  publicKey: JsonWebKey
+  /** Monotonic refresh-token generation. */
+  revision: number
+  /** Whether the session still authorizes requests. */
+  active: boolean
+  /** Hash of the current rotating refresh token. */
+  refreshHash: string
+  /** Unix epoch milliseconds after which refresh is forbidden. */
+  refreshExpiresAt: number
+}
+
+/** Atomic result of consuming an authorized Login Attempt. */
+export interface CreatedSession {
+  /** Newly created session. */
+  session: SessionRecord
+  /** Platform Account selected or created for the GitHub identity. */
+  account: AccountRecord
+  /** Earlier session replaced for the same installation, when present. */
+  replacedSessionId?: AccountSessionId
+}
+
+/** Persistence operations requiring atomic compare-and-mutate behavior. */
+export interface AccountBackend {
+  /** Persist a new Login Attempt. */
+  createAttempt(record: LoginAttemptRecord): Promise<void>
+  /** Find the Login Attempt bound to one OAuth state. */
+  findAttemptByState(state: string): Promise<LoginAttemptRecord | undefined>
+  /** Read one Login Attempt by id. */
+  getAttempt(id: LoginAttemptId): Promise<LoginAttemptRecord | undefined>
+  /** Attach public provider identity after a valid callback. */
+  authorizeAttempt(id: LoginAttemptId, identity: GitHubIdentity): Promise<void>
+  /** Atomically consume authorization and replace the installation session. */
+  consumeAuthorizedAttempt(id: LoginAttemptId, refreshHash: string, refreshExpiresAt: number): Promise<CreatedSession>
+  /** Find a session by the hash of its current refresh token. */
+  getSessionByRefreshHash(hash: string): Promise<SessionRecord | undefined>
+  /** Read one session by id. */
+  getSession(id: AccountSessionId): Promise<SessionRecord | undefined>
+  /** Read one Platform Account by id. */
+  getAccount(id: PlatformAccountId): Promise<AccountRecord | undefined>
+  /** Atomically rotate the matching refresh token generation. */
+  rotateRefresh(sessionId: AccountSessionId, expectedHash: string, replacementHash: string): Promise<SessionRecord | undefined>
+  /** Revoke one session and report whether it was active. */
+  revokeSession(sessionId: AccountSessionId): Promise<boolean>
+  /** Atomically reject replayed proof ids inside their validity window. */
+  consumeProof(jti: string, expiresAt: number, now: number): Promise<boolean>
+}
+
+/** Shared invalidation channel used by every Platform Instance. */
+export interface AccountInvalidationBus {
+  /** Publish one committed Account Session invalidation. */
+  publish(sessionId: AccountSessionId): void
+  /** Subscribe to committed Account Session invalidations. */
+  subscribe(listener: (sessionId: AccountSessionId) => void): () => void
+}
+
+/** In-process backend for keyless assembled scenarios and development. */
+export class MemoryAccountBackend implements AccountBackend {
+  private readonly attempts = new Map<LoginAttemptId, LoginAttemptRecord>()
+  private readonly stateIndex = new Map<string, LoginAttemptId>()
+  private readonly accounts = new Map<PlatformAccountId, AccountRecord>()
+  private readonly accountIndex = new Map<string, PlatformAccountId>()
+  private readonly sessions = new Map<AccountSessionId, SessionRecord>()
+  private readonly refreshIndex = new Map<string, AccountSessionId>()
+  private readonly installationIndex = new Map<string, AccountSessionId>()
+  private readonly proofs = new Map<string, number>()
+
+  createAttempt(record: LoginAttemptRecord): Promise<void> {
+    this.attempts.set(record.id, structuredClone(record))
+    this.stateIndex.set(record.state, record.id)
+    return Promise.resolve()
+  }
+
+  findAttemptByState(state: string): Promise<LoginAttemptRecord | undefined> {
+    const id = this.stateIndex.get(state)
+    return Promise.resolve(id === undefined ? undefined : this.cloneAttempt(this.attempts.get(id)))
+  }
+
+  getAttempt(id: LoginAttemptId): Promise<LoginAttemptRecord | undefined> {
+    return Promise.resolve(this.cloneAttempt(this.attempts.get(id)))
+  }
+
+  authorizeAttempt(id: LoginAttemptId, identity: GitHubIdentity): Promise<void> {
+    const attempt = this.attempts.get(id)
+    if (attempt === undefined || attempt.status !== 'pending') {
+      return Promise.reject(new AccountError('LOGIN_ATTEMPT_USED', 'login attempt is no longer pending'))
+    }
+    attempt.status = 'authorized'
+    attempt.identity = structuredClone(identity)
+    this.stateIndex.delete(attempt.state)
+    return Promise.resolve()
+  }
+
+  consumeAuthorizedAttempt(
+    id: LoginAttemptId,
+    refreshHash: string,
+    refreshExpiresAt: number,
+  ): Promise<CreatedSession> {
+    const attempt = this.attempts.get(id)
+    if (attempt === undefined) return Promise.reject(new AccountError('LOGIN_ATTEMPT_INVALID', 'login attempt is unknown'))
+    if (attempt.status === 'used') return Promise.reject(new AccountError('LOGIN_ATTEMPT_USED', 'login attempt was already consumed'))
+    if (attempt.status !== 'authorized' || attempt.identity === undefined) {
+      return Promise.reject(new AccountError('LOGIN_ATTEMPT_INVALID', 'login attempt is not authorized'))
+    }
+    const identityKey = `${attempt.identityNamespace}:${attempt.identity.providerSubject}`
+    let accountId = this.accountIndex.get(identityKey)
+    if (accountId === undefined) {
+      accountId = randomUUID() as PlatformAccountId
+      this.accountIndex.set(identityKey, accountId)
+    }
+    const account: AccountRecord = {
+      id: accountId,
+      identityNamespace: attempt.identityNamespace,
+      githubId: attempt.identity.providerSubject,
+      githubLogin: attempt.identity.login,
+      avatarUrl: attempt.identity.avatarUrl,
+    }
+    this.accounts.set(accountId, account)
+
+    const installationKey = `${attempt.identityNamespace}:${attempt.installationId}`
+    const replacedSessionId = this.installationIndex.get(installationKey)
+    if (replacedSessionId !== undefined) this.revoke(replacedSessionId)
+    const session: SessionRecord = {
+      id: randomUUID() as AccountSessionId,
+      identityNamespace: attempt.identityNamespace,
+      accountId,
+      installationId: attempt.installationId,
+      installationKind: attempt.installationKind,
+      publicKey: structuredClone(attempt.publicKey),
+      revision: 1,
+      active: true,
+      refreshHash,
+      refreshExpiresAt,
+    }
+    this.sessions.set(session.id, session)
+    this.refreshIndex.set(refreshHash, session.id)
+    this.installationIndex.set(installationKey, session.id)
+    attempt.status = 'used'
+    delete attempt.identity
+    return Promise.resolve({
+      session: structuredClone(session),
+      account: structuredClone(account),
+      ...(replacedSessionId === undefined ? {} : { replacedSessionId }),
+    })
+  }
+
+  getSessionByRefreshHash(hash: string): Promise<SessionRecord | undefined> {
+    const id = this.refreshIndex.get(hash)
+    return Promise.resolve(id === undefined ? undefined : this.cloneSession(this.sessions.get(id)))
+  }
+
+  getSession(id: AccountSessionId): Promise<SessionRecord | undefined> {
+    return Promise.resolve(this.cloneSession(this.sessions.get(id)))
+  }
+
+  getAccount(id: PlatformAccountId): Promise<AccountRecord | undefined> {
+    const account = this.accounts.get(id)
+    return Promise.resolve(account === undefined ? undefined : structuredClone(account))
+  }
+
+  rotateRefresh(
+    sessionId: AccountSessionId,
+    expectedHash: string,
+    replacementHash: string,
+  ): Promise<SessionRecord | undefined> {
+    const session = this.sessions.get(sessionId)
+    if (session === undefined || !session.active || session.refreshHash !== expectedHash) return Promise.resolve(undefined)
+    this.refreshIndex.delete(expectedHash)
+    session.refreshHash = replacementHash
+    session.revision += 1
+    this.refreshIndex.set(replacementHash, session.id)
+    return Promise.resolve(structuredClone(session))
+  }
+
+  revokeSession(sessionId: AccountSessionId): Promise<boolean> {
+    const session = this.sessions.get(sessionId)
+    if (session === undefined || !session.active) return Promise.resolve(false)
+    this.revoke(sessionId)
+    return Promise.resolve(true)
+  }
+
+  consumeProof(jti: string, expiresAt: number, now: number): Promise<boolean> {
+    for (const [id, expiry] of this.proofs) {
+      if (expiry < now) this.proofs.delete(id)
+    }
+    if (this.proofs.has(jti)) return Promise.resolve(false)
+    this.proofs.set(jti, expiresAt)
+    return Promise.resolve(true)
+  }
+
+  private revoke(sessionId: AccountSessionId): void {
+    const session = this.sessions.get(sessionId)
+    if (session === undefined || !session.active) return
+    session.active = false
+    session.revision += 1
+    this.refreshIndex.delete(session.refreshHash)
+  }
+
+  private cloneAttempt(record: LoginAttemptRecord | undefined): LoginAttemptRecord | undefined {
+    return record === undefined ? undefined : structuredClone(record)
+  }
+
+  private cloneSession(record: SessionRecord | undefined): SessionRecord | undefined {
+    return record === undefined ? undefined : structuredClone(record)
+  }
+}
+
+/** In-process invalidation bus for two-instance keyless scenarios. */
+export class MemoryAccountInvalidationBus implements AccountInvalidationBus {
+  private readonly listeners = new Set<(sessionId: AccountSessionId) => void>()
+
+  publish(sessionId: AccountSessionId): void {
+    for (const listener of this.listeners) listener(sessionId)
+  }
+
+  subscribe(listener: (sessionId: AccountSessionId) => void): () => void {
+    this.listeners.add(listener)
+    return () => { this.listeners.delete(listener) }
+  }
+}
+
+/** Provider configuration for exactly one deployment environment. */
+export interface PlatformAccountConfig {
+  /** Deployment environment. */
+  environment: PlatformEnvironment
+  /** Namespace included in every account and token identity. */
+  identityNamespace: string
+  /** Trusted Platform HTTPS origin. */
+  origin: string
+  /** Fixed GitHub OAuth callback on the trusted origin. */
+  callbackUrl: string
+  /** Shared secret used to sign short-lived access tokens. */
+  tokenSigningKey: Uint8Array
+  /** Shared secret used to sign five-minute polling tokens. */
+  pollingSigningKey: Uint8Array
+}
+
+/** Deployment identity fields that cannot be shared between environments. */
+export interface PlatformEnvironmentIdentity {
+  environment: PlatformEnvironment
+  origin: string
+  callbackUrl: string
+  githubClientId: string
+  credentialNamespace: string
+  databaseNamespace: string
+  identityNamespace: string
+}
+
+/** Complete development and production identity set. */
+export interface PlatformEnvironmentPair {
+  development: PlatformEnvironmentIdentity & { environment: 'development' }
+  production: PlatformEnvironmentIdentity & { environment: 'production' }
+}
+
+/**
+ * Validate that development and production cannot authenticate or persist in
+ * one another's namespace.
+ * @param pair - both deployment identities selected by packaging/deployment.
+ * @returns the unchanged validated pair.
+ */
+export function validatePlatformEnvironmentPair(pair: PlatformEnvironmentPair): PlatformEnvironmentPair {
+  const fields = [
+    'origin',
+    'callbackUrl',
+    'githubClientId',
+    'credentialNamespace',
+    'databaseNamespace',
+    'identityNamespace',
+  ] as const
+  for (const field of fields) {
+    if (pair.development[field] === pair.production[field]) {
+      throw new TypeError(`Platform environments must use distinct ${field}`)
+    }
+  }
+  validateEnvironmentIdentity(pair.development)
+  validateEnvironmentIdentity(pair.production)
+  return pair
+}
+
+/** Construction dependencies for one Platform Account instance. */
+export interface PlatformAccountOptions {
+  /** Durable atomic persistence shared by Platform Instances. */
+  backend: AccountBackend
+  /** Cross-instance channel carrying committed session invalidations. */
+  invalidation: AccountInvalidationBus
+  /** GitHub public-identity adapter for the selected environment. */
+  github: GitHubIdentityProvider
+  /** One environment's trusted origin, namespace, and signing keys. */
+  config: PlatformAccountConfig
+  /** Optional deterministic time source. */
+  clock?: AccountClock
+}
+
+interface SignedAccessPayload {
+  sessionId: AccountSessionId
+  accountId: PlatformAccountId
+  namespace: string
+  revision: number
+  expiresAt: number
+}
+
+interface SignedPollingPayload {
+  attemptId: LoginAttemptId
+  namespace: string
+  expiresAt: number
+}
+
+/**
+ * Produce canonical bytes signed by installation P-256 keys.
+ * @param input - operation, token binding, timestamp, and single-use proof id.
+ * @returns UTF-8 signature payload.
+ */
+export function accountProofPayload(input: {
+  operation: string
+  binding: string
+  issuedAt: number
+  jti: string
+}): Buffer {
+  return Buffer.from(`${input.operation}\n${input.binding}\n${input.issuedAt}\n${input.jti}`, 'utf8')
+}
+
+/**
+ * Hash a bearer without retaining or logging it.
+ * @param token - opaque bearer token.
+ * @returns base64url SHA-256 digest.
+ */
+export function hashAccountToken(token: string): string {
+  return createHash('sha256').update(token).digest('base64url')
+}
+
+/**
+ * Platform Account provider mounted once per Platform Instance. All durable
+ * mutation is delegated to the shared backend before invalidation publishes.
+ */
+export class PlatformAccount extends AccountService {
+  private readonly backend: AccountBackend
+  private readonly invalidation: AccountInvalidationBus
+  private readonly github: GitHubIdentityProvider
+  private readonly config: PlatformAccountConfig
+  private readonly clock: AccountClock
+  private readonly connections = new Map<AccountSessionId, Set<() => void>>()
+  private readonly stopInvalidation: () => void
+
+  /**
+   * @param ctx - Platform Cordis context.
+   * @param options - shared backend, provider, invalidation, and environment configuration.
+   */
+  constructor(ctx: Context, options: PlatformAccountOptions) {
+    super(ctx)
+    this.backend = options.backend
+    this.invalidation = options.invalidation
+    this.github = options.github
+    this.config = validateConfig(options.config)
+    this.clock = options.clock ?? { now: Date.now }
+    this.stopInvalidation = this.invalidation.subscribe((sessionId) => { this.closeConnections(sessionId) })
+    ctx.effect(() => () => { this.dispose() }, 'platform-account: invalidation subscription')
+  }
+
+  async beginLogin(input: {
+    installationId: string
+    installationKind: InstallationKind
+    publicKey: JsonWebKey
+  }): Promise<LoginAttemptView> {
+    validateP256PublicKey(input.publicKey)
+    const now = this.clock.now()
+    const id = randomUUID() as LoginAttemptId
+    const state = randomBytes(32).toString('base64url')
+    const codeVerifier = randomBytes(48).toString('base64url')
+    const codeChallenge = createHash('sha256').update(codeVerifier).digest('base64url')
+    const expiresAt = now + LOGIN_ATTEMPT_TTL_MS
+    await this.backend.createAttempt({
+      id,
+      environment: this.config.environment,
+      identityNamespace: this.config.identityNamespace,
+      installationId: input.installationId,
+      installationKind: input.installationKind,
+      publicKey: structuredClone(input.publicKey),
+      state,
+      codeVerifier,
+      expiresAt,
+      status: 'pending',
+    })
+    const pollingToken = signEnvelope({
+      attemptId: id,
+      namespace: this.config.identityNamespace,
+      expiresAt,
+    }, this.config.pollingSigningKey)
+    return {
+      id,
+      state,
+      authorizationUrl: this.github.authorizationUrl({
+        callbackUrl: this.config.callbackUrl,
+        state,
+        codeChallenge,
+      }),
+      pollingToken,
+      expiresAt,
+    }
+  }
+
+  async completeGitHubCallback(input: { code: string; state: string }): Promise<{ completed: true }> {
+    const attempt = await this.backend.findAttemptByState(input.state)
+    if (attempt === undefined) throw new AccountError('LOGIN_STATE_INVALID', 'login callback state is invalid')
+    if (attempt.expiresAt < this.clock.now()) {
+      throw new AccountError('LOGIN_ATTEMPT_EXPIRED', 'login attempt expired before callback')
+    }
+    const identity = await this.github.exchange(input.code, attempt.codeVerifier)
+    validateGitHubIdentity(identity)
+    await this.backend.authorizeAttempt(attempt.id, identity)
+    return { completed: true }
+  }
+
+  async pollLogin(input: {
+    attemptId: string
+    pollingToken: string
+    proof: AccountProof
+  }): Promise<LoginPollResult> {
+    const payload = verifyEnvelope(input.pollingToken, this.config.pollingSigningKey) as SignedPollingPayload
+    if (payload.attemptId !== input.attemptId || payload.namespace !== this.config.identityNamespace) {
+      throw new AccountError('LOGIN_ATTEMPT_INVALID', 'polling token does not bind this attempt')
+    }
+    const now = this.clock.now()
+    if (payload.expiresAt < now) throw new AccountError('LOGIN_ATTEMPT_EXPIRED', 'login attempt expired')
+    const attempt = await this.backend.getAttempt(payload.attemptId)
+    if (attempt === undefined) throw new AccountError('LOGIN_ATTEMPT_INVALID', 'login attempt is unknown')
+    if (attempt.status === 'used') throw new AccountError('LOGIN_ATTEMPT_USED', 'login attempt was already consumed')
+    await this.verifyProof(
+      attempt.publicKey,
+      'login-poll',
+      `${attempt.id}:${hashAccountToken(input.pollingToken)}`,
+      input.proof,
+    )
+    if (attempt.status === 'pending') return { status: 'pending' }
+    const refreshToken = randomBytes(32).toString('base64url')
+    const created = await this.backend.consumeAuthorizedAttempt(
+      attempt.id,
+      hashAccountToken(refreshToken),
+      now + MAX_REFRESH_TOKEN_TTL_MS,
+    )
+    if (created.replacedSessionId !== undefined) this.invalidation.publish(created.replacedSessionId)
+    return { status: 'complete', ...this.issueSession(created.session, created.account, refreshToken, now) }
+  }
+
+  async refresh(input: { refreshToken: string; proof: AccountProof }): Promise<AccountSessionView> {
+    const now = this.clock.now()
+    const currentHash = hashAccountToken(input.refreshToken)
+    const session = await this.backend.getSessionByRefreshHash(currentHash)
+    if (session === undefined || !session.active) throw new AccountError('SESSION_REVOKED', 'Account Session is revoked')
+    if (session.refreshExpiresAt < now) {
+      await this.revoke(session.id)
+      throw new AccountError('SESSION_EXPIRED', 'Account Session refresh lifetime expired')
+    }
+    await this.verifyProof(session.publicKey, 'refresh', currentHash, input.proof)
+    const replacement = randomBytes(32).toString('base64url')
+    const rotated = await this.backend.rotateRefresh(session.id, currentHash, hashAccountToken(replacement))
+    if (rotated === undefined) throw new AccountError('SESSION_REVOKED', 'Account Session refresh token was already rotated')
+    const account = await this.requireAccount(rotated.accountId)
+    return this.issueSession(rotated, account, replacement, now)
+  }
+
+  async current(input: { accessToken: string; proof: AccountProof }): Promise<PlatformAccountView> {
+    const { payload, session } = await this.authorizeAccess(input.accessToken)
+    await this.verifyProof(session.publicKey, 'current', hashAccountToken(input.accessToken), input.proof)
+    return accountView(await this.requireAccount(payload.accountId))
+  }
+
+  async signOut(input: { accessToken: string; proof: AccountProof }): Promise<void> {
+    const { session } = await this.authorizeAccess(input.accessToken)
+    await this.verifyProof(session.publicKey, 'sign-out', hashAccountToken(input.accessToken), input.proof)
+    await this.revoke(session.id)
+  }
+
+  trackConnection(sessionId: AccountSessionId, close: () => void): () => void {
+    let set = this.connections.get(sessionId)
+    if (set === undefined) {
+      set = new Set()
+      this.connections.set(sessionId, set)
+    }
+    set.add(close)
+    return () => {
+      const current = this.connections.get(sessionId)
+      current?.delete(close)
+      if (current?.size === 0) this.connections.delete(sessionId)
+    }
+  }
+
+  /** Stop the cross-instance subscription and close locally tracked connections. */
+  dispose(): void {
+    this.stopInvalidation()
+    for (const sessionId of this.connections.keys()) this.closeConnections(sessionId)
+  }
+
+  private async authorizeAccess(accessToken: string): Promise<{ payload: SignedAccessPayload; session: SessionRecord }> {
+    const payload = verifyEnvelope(accessToken, this.config.tokenSigningKey) as SignedAccessPayload
+    const now = this.clock.now()
+    if (payload.expiresAt < now) throw new AccountError('SESSION_EXPIRED', 'access token expired')
+    if (payload.namespace !== this.config.identityNamespace) {
+      throw new AccountError('SESSION_REVOKED', 'access token belongs to another identity namespace')
+    }
+    const session = await this.backend.getSession(payload.sessionId)
+    if (session === undefined || !session.active || session.revision !== payload.revision) {
+      throw new AccountError('SESSION_REVOKED', 'Account Session is revoked')
+    }
+    return { payload, session }
+  }
+
+  private issueSession(
+    session: SessionRecord,
+    account: AccountRecord,
+    refreshToken: string,
+    now: number,
+  ): AccountSessionView {
+    const accessExpiresAt = now + ACCESS_TOKEN_TTL_MS
+    return {
+      sessionId: session.id,
+      account: accountView(account),
+      accessToken: signEnvelope({
+        sessionId: session.id,
+        accountId: session.accountId,
+        namespace: session.identityNamespace,
+        revision: session.revision,
+        expiresAt: accessExpiresAt,
+      }, this.config.tokenSigningKey),
+      refreshToken,
+      accessExpiresAt,
+      refreshExpiresAt: session.refreshExpiresAt,
+    }
+  }
+
+  private async verifyProof(
+    publicKey: JsonWebKey,
+    operation: string,
+    binding: string,
+    proof: AccountProof,
+  ): Promise<void> {
+    const now = this.clock.now()
+    if (!Number.isSafeInteger(proof.issuedAt) || Math.abs(now - proof.issuedAt) > ACCOUNT_PROOF_WINDOW_MS) {
+      throw new AccountError('PROOF_INVALID', 'installation proof is outside the accepted time window')
+    }
+    const signature = Buffer.from(proof.signature, 'base64url')
+    const valid = verify('sha256', accountProofPayload({ operation, binding, ...proof }), {
+      key: createPublicKey({ key: publicKey as import('node:crypto').JsonWebKey, format: 'jwk' }),
+      dsaEncoding: 'ieee-p1363',
+    }, signature)
+    if (!valid) throw new AccountError('PROOF_INVALID', 'installation proof signature is invalid')
+    const consumed = await this.backend.consumeProof(proof.jti, now + ACCOUNT_PROOF_WINDOW_MS, now)
+    if (!consumed) throw new AccountError('PROOF_REPLAYED', 'installation proof was already used')
+  }
+
+  private async revoke(sessionId: AccountSessionId): Promise<void> {
+    if (await this.backend.revokeSession(sessionId)) this.invalidation.publish(sessionId)
+  }
+
+  private closeConnections(sessionId: AccountSessionId): void {
+    const connections = this.connections.get(sessionId)
+    this.connections.delete(sessionId)
+    if (connections === undefined) return
+    for (const close of connections) close()
+  }
+
+  private async requireAccount(id: PlatformAccountId): Promise<AccountRecord> {
+    const account = await this.backend.getAccount(id)
+    if (account === undefined) throw new AccountError('SESSION_REVOKED', 'Account Session account is unavailable')
+    return account
+  }
+}
+
+function accountView(account: AccountRecord): PlatformAccountView {
+  return {
+    id: account.id,
+    githubId: account.githubId,
+    githubLogin: account.githubLogin,
+    avatarUrl: account.avatarUrl,
+  }
+}
+
+function validateConfig(config: PlatformAccountConfig): PlatformAccountConfig {
+  const origin = new URL(config.origin)
+  const callback = new URL(config.callbackUrl)
+  if (origin.protocol !== 'https:' || callback.protocol !== 'https:' || callback.origin !== origin.origin) {
+    throw new TypeError('Platform Account origin and fixed callback must share one HTTPS origin')
+  }
+  if (callback.pathname !== '/v1/account/oauth/github/callback') {
+    throw new TypeError('Platform Account callback must use /v1/account/oauth/github/callback')
+  }
+  if (config.identityNamespace.trim() === '') throw new TypeError('identityNamespace must be non-empty')
+  if (config.tokenSigningKey.byteLength < 32 || config.pollingSigningKey.byteLength < 32) {
+    throw new TypeError('Platform Account signing keys must contain at least 256 bits')
+  }
+  return config
+}
+
+function validateP256PublicKey(key: JsonWebKey): void {
+  if (key.kty !== 'EC' || key.crv !== 'P-256' || typeof key.x !== 'string' || typeof key.y !== 'string' || key.d !== undefined) {
+    throw new AccountError('PROOF_INVALID', 'installation public key must be a public P-256 JWK')
+  }
+}
+
+function validateGitHubIdentity(identity: GitHubIdentity): void {
+  if (!Number.isSafeInteger(identity.providerSubject) || identity.providerSubject <= 0) {
+    throw new TypeError('GitHub identity id must be a positive safe integer')
+  }
+  if (identity.login === '' || identity.avatarUrl === '') throw new TypeError('GitHub public identity is incomplete')
+}
+
+function validateEnvironmentIdentity(identity: PlatformEnvironmentIdentity): void {
+  const origin = new URL(identity.origin)
+  const callback = new URL(identity.callbackUrl)
+  if (origin.protocol !== 'https:' || callback.protocol !== 'https:' || callback.origin !== origin.origin) {
+    throw new TypeError(`${identity.environment} Platform origin and callback must share one HTTPS origin`)
+  }
+  if (callback.pathname !== '/v1/account/oauth/github/callback') {
+    throw new TypeError(`${identity.environment} Platform callback path is invalid`)
+  }
+  for (const value of [
+    identity.githubClientId,
+    identity.credentialNamespace,
+    identity.databaseNamespace,
+    identity.identityNamespace,
+  ]) {
+    if (value.trim() === '') throw new TypeError(`${identity.environment} Platform identity fields must be non-empty`)
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function signEnvelope(payload: object, key: Uint8Array): string {
+  const encoded = Buffer.from(JSON.stringify(payload)).toString('base64url')
+  const signature = createHmac('sha256', key).update(encoded).digest('base64url')
+  return `${encoded}.${signature}`
+}
+
+function verifyEnvelope(token: string, key: Uint8Array): unknown {
+  const [encoded, supplied, extra] = token.split('.')
+  if (encoded === undefined || supplied === undefined || extra !== undefined) {
+    throw new AccountError('SESSION_REVOKED', 'signed Account token is malformed')
+  }
+  const expected = createHmac('sha256', key).update(encoded).digest()
+  const actual = Buffer.from(supplied, 'base64url')
+  if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) {
+    throw new AccountError('SESSION_REVOKED', 'signed Account token is invalid')
+  }
+  try {
+    return JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8')) as unknown
+  } catch (error) {
+    throw new AccountError('SESSION_REVOKED', `signed Account token payload is invalid: ${String(error)}`)
+  }
+}
+
+export default PlatformAccount

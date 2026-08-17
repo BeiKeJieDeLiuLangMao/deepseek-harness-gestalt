@@ -140,6 +140,11 @@ describe('UpdateControl', () => {
       windowMinimize: vi.fn(),
       windowMaximize: vi.fn(),
       windowClose: vi.fn(),
+      accountGetSnapshot: vi.fn().mockResolvedValue({ status: 'unavailable', privacyAccepted: false }),
+      accountAcceptPrivacy: vi.fn(),
+      accountBeginLogin: vi.fn(),
+      accountSignOut: vi.fn(),
+      onAccountSnapshot: () => () => {},
     }
     render(
       <UpdateControl
@@ -175,6 +180,11 @@ function mountBridge(bridge?: Partial<DesktopBridge>): DesktopBridge {
     windowMinimize: vi.fn(),
     windowMaximize: vi.fn(),
     windowClose: vi.fn(),
+    accountGetSnapshot: vi.fn().mockResolvedValue({ status: 'unavailable', privacyAccepted: false }),
+    accountAcceptPrivacy: vi.fn(),
+    accountBeginLogin: vi.fn(),
+    accountSignOut: vi.fn(),
+    onAccountSnapshot: () => () => {},
     ...bridge,
   }
   window.dshDesktop = desktop

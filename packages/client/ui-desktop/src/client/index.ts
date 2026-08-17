@@ -1,20 +1,25 @@
 /**
- * Desktop-only Session Surface chrome: GESTALT wordmark, drag strip, Update Control.
+ * Desktop-only chrome plus Platform Account state in Mobile Pairing Settings.
  * Mounted only through the Desktop `--patch` overlay.
  */
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
+import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import { BrandSeat } from './BrandSeat.tsx'
 import { DragStrip } from './DragStrip.tsx'
 import { UpdateControl } from './UpdateControl.tsx'
+import { AccountControl } from './AccountControl.tsx'
 import { bindDesktopUpdater, createUpdaterSource } from './status-source.ts'
+import { bindDesktopAccount, createDesktopAccountSource } from './account-source.ts'
 import { en, zh, type DesktopKey } from './locales.ts'
 
 export type { DesktopBridge, UpdaterPhase, UpdaterStatus } from '../protocol.ts'
 export type { DesktopKey } from './locales.ts'
 export type { UpdateControlProps } from './UpdateControl.tsx'
 export { bindDesktopUpdater, createUpdaterSource, INITIAL_UPDATER_STATUS } from './status-source.ts'
+export { bindDesktopAccount, createDesktopAccountSource, INITIAL_ACCOUNT_SNAPSHOT } from './account-source.ts'
+export type { AccountControlProps } from './AccountControl.tsx'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -37,10 +42,12 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-desktop: dictionaries')
 
   const updater = createUpdaterSource()
+  const account = createDesktopAccountSource()
   /* v8 ignore next -- the client half always has window */
   const desktop = typeof window === 'undefined' ? undefined : window.dshDesktop
   if (desktop !== undefined) {
     ctx.effect(() => bindDesktopUpdater(updater, desktop), 'ui-desktop: updater status')
+    ctx.effect(() => bindDesktopAccount(account, desktop), 'ui-desktop: account status')
   }
 
   ctx.slots.inject('sidebar.brand', () => ctx.slots.register(
@@ -50,6 +57,17 @@ export function apply(ctx: ClientContext): void {
   ctx.slots.inject('sidebar.chrome.drag', () => ctx.slots.register(
     { name: 'sidebar.chrome.drag', id: 'desktop-drag', locale: NS },
     DragStrip,
+  ))
+  ctx.slots.inject('settings.section', () => ctx.slots.register(
+    {
+      name: 'settings.section',
+      id: 'mobile-pairing',
+      order: 50,
+      label: () => ctx.locale.bind(NS)('account.settingsNav'),
+      locale: NS,
+      inject: () => ({ hooks: { account } }),
+    },
+    AccountControl,
   ))
   ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register(
     {

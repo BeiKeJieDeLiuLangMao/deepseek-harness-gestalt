@@ -6,7 +6,9 @@ DeepSeek Gestalt Desktop Host. Electron owns the window, menu, and GitHub auto-u
 
 Window exit, Ctrl+C, and smoke-test completion cancel any pending start, stop the Web Host, and wait for its process to exit before Electron terminates. Startup or a later crash gets one retry before the window shows the Host error.
 
-The main window accepts navigation only within the active loopback Host origin. Ordinary HTTP links open in the system browser; other origins and schemes cannot replace the Session Surface or create another Electron window.
+The main window accepts navigation only within the active loopback Host origin. Ordinary HTTP links, including GitHub authorization, open in the system browser; other origins and schemes cannot replace the Session Surface or create another Electron window. Platform Account signing keys and tokens stay in an environment-specific `safeStorage`-encrypted file under Electron userData. The preload exposes only current state and lifecycle verbs.
+
+Desktop Platform Account requires `DSH_PLATFORM_ENV`, `DSH_PLATFORM_DEVELOPMENT_ORIGIN`, and `DSH_PLATFORM_PRODUCTION_ORIGIN`. The two origins must be distinct HTTPS origins; a missing or invalid selection leaves the `手机配对` Settings section visibly unavailable rather than selecting another environment.
 
 On macOS, a 28px top inset keeps the unchanged DSH sidebar header below the traffic lights. Windows uses a full-window 36px drag row with 46px minimize, maximize, and close targets. Unsupported development platforms keep the system frame.
 

@@ -1,0 +1,85 @@
+# Platform Account
+
+English | [中文](platform-account.zh.md)
+
+[`@deepseek-ai/dsh-platform-account`](../../packages/platform/platform-account/README.md) defines Platform identity and the proof-of-possession Account Session bound to one Desktop or Mobile Installation. GitHub supplies only the immutable numeric subject and current public login/avatar; its OAuth token is discarded after identity validation.
+
+## Login and session lifecycle
+
+An Installation accepts the bilingual privacy notice before it creates a five-minute `LoginAttemptView`. The system browser uses Authorization Code with S256 PKCE, random state, no OAuth scope, and one fixed HTTPS Platform callback. The application receives no callback credential; `LoginPollResult` completes only when a P-256 `AccountProof` redeems the single-use signed polling token.
+
+`AccountSessionView` contains a 15-minute access token and a rotating refresh token valid for at most 30 days. Every current-account read, refresh, and sign-out proves possession of the Installation key. The opaque `AccountSessionId` is the invalidation identity shared across Platform Instances.
+
+## Ownership and isolation
+
+One Installation holds one current Platform Account. Account-scoped pairing keys, caches, and operation receipts use a namespace containing the environment and Account id, so switching accounts selects separate material. Current-installation sign-out commits session invalidation, closes matching connections on every Platform Instance, and preserves Personal Pairings.
+
+Development and production have distinct trusted origins, callbacks, OAuth Apps, credential namespaces, database namespaces, and identity namespaces. The in-memory backend and invalidation bus support keyless acceptance and development only; production persistence and distributed invalidation belong to the Platform deployment.
+
+<!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
+
+<a id="cordis-surface"></a>
+
+## Cordis API
+
+Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — this section is byte-identical in both language sides of the page. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
+
+<a id="ctxplatformaccount--accountservice-abstract-seam"></a>
+
+### `ctx.platformAccount` — `AccountService` (abstract seam)
+
+Platform Account capability. Providers own OAuth, installation-key binding, token rotation, and current-installation invalidation behind this interface.
+
+```ts cordis-catalog
+/**
+ * Start one GitHub Authorization Code attempt for an installation key.
+ * @param input - installation identity, kind, and public P-256 JWK.
+ * @returns the system-browser URL and signed polling capability.
+ */
+abstract beginLogin(input: { installationId: string installationKind: 'desktop' | 'mobile' publicKey: JsonWebKey }): Promise<LoginAttemptView>
+
+/**
+ * Settle the fixed HTTPS GitHub callback; provider credentials never leave the provider.
+ * @param input - GitHub authorization code and returned random state.
+ * @returns completion marker suitable for a browser confirmation page.
+ */
+abstract completeGitHubCallback(input: { code: string; state: string }): Promise<{ completed: true }>
+
+/**
+ * Poll one attempt using both its signed polling token and installation proof.
+ * @param input - attempt binding and one-use proof.
+ * @returns pending or the newly created Account Session.
+ */
+abstract pollLogin(input: { attemptId: string pollingToken: string proof: AccountProof }): Promise<LoginPollResult>
+
+/**
+ * Rotate a current installation's refresh token and issue a new access token.
+ * @param input - current refresh token and installation proof.
+ * @returns replacement tokens retaining the original absolute refresh expiry.
+ */
+abstract refresh(input: { refreshToken: string; proof: AccountProof }): Promise<AccountSessionView>
+
+/**
+ * Read the current installation account.
+ * @param input - access token and installation proof.
+ * @returns current account projection.
+ */
+abstract current(input: { accessToken: string; proof: AccountProof }): Promise<PlatformAccountView>
+
+/**
+ * Revoke only the current installation Account Session.
+ * @param input - access token and installation proof.
+ */
+abstract signOut(input: { accessToken: string; proof: AccountProof }): Promise<void>
+
+/**
+ * Track a Platform connection so cross-instance session invalidation closes it.
+ * @param sessionId - Account Session owning the connection.
+ * @param close - idempotent close callback.
+ * @returns disposer removing the tracked connection.
+ */
+abstract trackConnection(sessionId: AccountSessionId, close: () => void): () => void
+```
+
+Source: [`packages/platform/platform-account/src/index.ts:28`](../../packages/platform/platform-account/src/index.ts)
+<!-- END GENERATED cordis-surface -->

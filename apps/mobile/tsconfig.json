@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.client.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "lib/types",
+    "jsx": "react-jsx"
+  },
+  "include": ["src", "tests"],
+  "references": [
+    { "path": "../../packages/platform/platform-account-client" }
+  ]
+}

@@ -6,14 +6,17 @@ import { appendFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
-  app, BrowserWindow, Menu, ipcMain, shell, type IpcMainEvent,
+  app, BrowserWindow, Menu, ipcMain, safeStorage, shell, type IpcMainEvent,
 } from 'electron'
 import {
+  ACCOUNT_ACCEPT_PRIVACY, ACCOUNT_BEGIN_LOGIN, ACCOUNT_GET_SNAPSHOT,
+  ACCOUNT_SIGN_OUT, ACCOUNT_SNAPSHOT_CHANGED,
   UPDATER_CHECK_NOW, UPDATER_DOWNLOAD_NOW, UPDATER_GET_STATUS,
   UPDATER_QUIT_AND_INSTALL, UPDATER_STATUS_CHANGED,
   WINDOW_CLOSE, WINDOW_MAXIMIZE, WINDOW_MINIMIZE,
   type UpdaterStatus,
 } from '@deepseek-ai/dsh-client-ui-desktop/protocol'
+import { PlatformAccountHttpTransport } from '@deepseek-ai/dsh-platform-account-client'
 import { ensureLaunchDirectory } from './launch-directory.ts'
 import { isElectronExecutable, resolveDesktopRuntime } from './runtime-paths.ts'
 import { planHostExit, startWithOneRetry } from './host-exit.ts'
@@ -24,6 +27,10 @@ import {
 } from './updater.ts'
 import { windowChromeOptions } from './window-options.ts'
 import { desktopIconOptions } from './app-icon.ts'
+import {
+  DesktopAccountController, EncryptedDesktopAccountStore,
+  UnavailableDesktopAccountController, type DesktopAccountActions,
+} from './platform-account.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const PRELOAD = join(here, 'preload.cjs')
@@ -41,6 +48,8 @@ let respawned = false
 let shuttingDown = false
 let integrationsInstalled = false
 let updaterInitialized = false
+let account: DesktopAccountActions = new UnavailableDesktopAccountController('Platform Account is starting')
+let stopAccountEvents: (() => void) | undefined
 const hostStartController = new AbortController()
 let pendingHost: Promise<RunningWebHost> | undefined
 
@@ -69,6 +78,17 @@ process.once('SIGTERM', () => { app.quit() })
 /** Create the window, spawn Web Host, attach updater. */
 async function boot(): Promise<void> {
   window = createWindow()
+  account = createDesktopAccount()
+  stopAccountEvents = account.subscribe(pushAccountSnapshot)
+  try {
+    await account.start()
+  } catch (error) {
+    stopAccountEvents()
+    account.dispose()
+    account = new UnavailableDesktopAccountController(
+      error instanceof Error ? error.message : String(error),
+    )
+  }
   installIntegrationsOnce()
   try {
     const started = respawned
@@ -142,7 +162,7 @@ function createWindow(): BrowserWindow {
       packaged: app.isPackaged,
       appPath: app.getAppPath(),
       resourcesPath: process.resourcesPath,
-      setDockIcon: (path) => { app.dock.setIcon(path) },
+      setDockIcon: (path) => { app.dock?.setIcon(path) },
     }),
     width: 1280,
     height: 800,
@@ -301,6 +321,9 @@ function requestShutdown(exitCode: number): void {
   shuttingDown = true
   updater?.dispose()
   updater = undefined
+  stopAccountEvents?.()
+  stopAccountEvents = undefined
+  account.dispose()
   hostStartController.abort()
   const starting = pendingHost
   const running = host
@@ -325,6 +348,10 @@ function installIpc(): void {
     else window.maximize()
   })
   ipcMain.on(WINDOW_CLOSE, (_event: IpcMainEvent) => { window?.close() })
+  ipcMain.handle(ACCOUNT_GET_SNAPSHOT, () => account.getSnapshot())
+  ipcMain.handle(ACCOUNT_ACCEPT_PRIVACY, () => account.acceptPrivacy())
+  ipcMain.handle(ACCOUNT_BEGIN_LOGIN, () => account.beginLogin())
+  ipcMain.handle(ACCOUNT_SIGN_OUT, () => account.signOut())
 }
 
 function installMenu(): void {
@@ -349,6 +376,48 @@ function installMenu(): void {
 
 function pushStatus(status: UpdaterStatus): void {
   window?.webContents.send(UPDATER_STATUS_CHANGED, status)
+}
+
+function pushAccountSnapshot(snapshot: ReturnType<DesktopAccountActions['getSnapshot']>): void {
+  window?.webContents.send(ACCOUNT_SNAPSHOT_CHANGED, snapshot)
+}
+
+function createDesktopAccount(): DesktopAccountActions {
+  const environment = process.env.DSH_PLATFORM_ENV
+  if (environment !== 'development' && environment !== 'production') {
+    return new UnavailableDesktopAccountController('Set DSH_PLATFORM_ENV to development or production')
+  }
+  const development = process.env.DSH_PLATFORM_DEVELOPMENT_ORIGIN
+  const production = process.env.DSH_PLATFORM_PRODUCTION_ORIGIN
+  if (development === undefined || production === undefined) {
+    return new UnavailableDesktopAccountController('Platform Account origins are not configured')
+  }
+  if (!safeStorage.isEncryptionAvailable()) {
+    return new UnavailableDesktopAccountController('Secure operating-system storage is unavailable')
+  }
+  try {
+    const transport = new PlatformAccountHttpTransport({
+      environment,
+      origins: { development, production },
+    })
+    const store = new EncryptedDesktopAccountStore(
+      join(app.getPath('userData'), `platform-account-${environment}.bin`),
+      {
+        encrypt: value => safeStorage.encryptString(value),
+        decrypt: value => safeStorage.decryptString(Buffer.from(value)),
+      },
+    )
+    return new DesktopAccountController({
+      environment,
+      transport,
+      store,
+      openSystemBrowser: async (url) => { await shell.openExternal(url) },
+    })
+  } catch (error) {
+    return new UnavailableDesktopAccountController(
+      error instanceof Error ? error.message : String(error),
+    )
+  }
 }
 
 async function showError(target: BrowserWindow, error: unknown): Promise<void> {

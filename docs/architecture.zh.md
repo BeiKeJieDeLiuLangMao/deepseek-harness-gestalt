@@ -49,6 +49,7 @@ dsh --profile web --dump-config
 | [`core/agent-loop`](subsystems/core.md) | 实现该接口的默认驱动器 | `ctx.agentLoop` |
 | [`core/scope`](subsystems/scope.md) | 按 agent 划分作用域的注册原语 | 库，无 ctx 键 |
 | [`llm/llm`](subsystems/llm-streaming.md) | 消息与流式词汇表，以及适配器 seam | `ctx.llm` |
+| [`platform/platform-account`](../packages/platform/platform-account/README.md) | Platform 身份与当前安装账号会话 | `ctx.platformAccount` |
 
 <a id="events"></a>
 
