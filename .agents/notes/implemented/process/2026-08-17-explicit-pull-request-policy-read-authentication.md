@@ -1,4 +1,4 @@
-# Agent Note: Explicit pull-request policy read authentication
+# Agent Note: Explicit pull-request policy read authentication and activation
 
 Status: implemented
 
@@ -6,32 +6,40 @@ English | [中文](2026-08-17-explicit-pull-request-policy-read-authentication.z
 
 ## Problem
 
-Pull-request policy reads pull-request metadata, review requests, reviews, referenced Issues, and optionally Issue field values. GitHub allows the relevant pull-request review endpoints to read public resources without authentication, but an authenticated request can fail when its token does not have the required Pull requests permission. Treating that failure as a missing pull request or retrying anonymously would hide deployment and authorization errors.
+Pull-request policy reads pull-request metadata, referenced Issues, and optionally Issue field values. The personal tracker has observed intermittent `504` responses for ordinary unauthenticated pull-request and Issue reads. Its workflow already declares pull-request and Issue read permissions, and the workflow token is the verified authorization path for these reads. Authentication remains an explicit deployment choice because other trackers can have different access requirements.
+
+Review requests and reviews supply only an activation signal; they do not participate in metadata validation. Making them mandatory for activation adds endpoint availability and authorization requirements without strengthening the validation result.
 
 Pull-request policy reads, Issue Priority integration, and Project lifecycle automation have different availability and authorization requirements. Authentication for one cannot safely imply authentication for the others.
 
 ## Decision
 
-`.github/issue-management/config.json` declares `pullRequestReadAuthentication` as the exact value `anonymous` or `token`. The personal public tracker selects `anonymous`. The `pr` command passes that choice to every REST read of pull-request or referenced-Issue data. Anonymous mode omits `Authorization` even when a token is present in the environment. Token mode sends `GH_TOKEN` or `GITHUB_TOKEN` as a Bearer token and fails before the first API request when neither variable is set. Invalid configuration fails at startup.
+`.github/issue-management/config.json` declares `pullRequestReadAuthentication` as the exact value `anonymous` or `token`. The `pr` command passes that choice to every REST read of pull-request or referenced-Issue data. Anonymous mode omits `Authorization` even when a token is present in the environment. Token mode sends `GH_TOKEN` or `GITHUB_TOKEN` as a Bearer token and fails before the first API request when neither variable is set.
 
-API errors remain fatal in both modes. The policy never retries a failed authenticated request anonymously and never converts `404` into absent metadata.
+The same configuration declares `pullRequestPolicyActivation` as `non-draft` or `review-activity`. Both modes classify Draft, Bot, and App pull requests from the initial pull-request response and return before reading review activity, referenced Issues, or Priority. `non-draft` applies metadata policy to every remaining PR and never requests requested reviewers or reviews. `review-activity` retains activation after a review request or review and reads both endpoints. Invalid or blank values fail at startup.
+
+The personal tracker selects `token` because the workflow grants the required read permissions and that path has been verified for its ordinary pull-request and Issue reads. It selects `non-draft` independently because review activity does not contribute to metadata validation. These choices do not make API access infallible; failures remain visible.
+
+API errors remain fatal for every authentication and activation combination. The policy never retries a failed authenticated request anonymously and never converts `404` into absent metadata.
 
 The generic API client remains token-authenticated by default. Lifecycle, Project GraphQL, and audit read or write operations do not consume `pullRequestReadAuthentication`; they require the GitHub App token supplied by the lifecycle workflow. The [Issue Priority field decision](2026-08-17-explicit-issue-priority-field-deployment.md) and [repository-relative lifecycle decision](2026-08-17-repository-relative-issue-policy.md) own those independent deployment choices.
 
 ## Verification
 
-Issue-management tests execute the real `policy.mjs pr` and `policy.mjs lifecycle` commands against a local fake GitHub API. They inspect every request header, verify zero-request failures for missing token and invalid configuration, preserve `404` failures in both modes, and exercise a token-authenticated lifecycle mutation.
+Issue-management tests execute the real `policy.mjs pr` and `policy.mjs lifecycle` commands against a local fake GitHub API. They inspect exact request lists and headers for both activation modes, prove that Draft, Bot, and App pull requests stop after the initial pull-request read, prove that eligible `non-draft` requests succeed without review endpoints, verify zero-request failures for missing tokens and invalid configuration, preserve API failures, and exercise a token-authenticated lifecycle mutation.
 
 ## Alternatives considered
 
-**Store a personal access token secret.** Rejected because public policy reads do not require a personal credential, and a PAT would expand secret ownership and rotation obligations.
+**Use `anonymous` with `non-draft` for the personal tracker.** Rejected because it would avoid review endpoints but retain dependence on public-only access for ordinary reads, which has shown intermittent `504` responses in this deployment. Anonymous mode remains available to deployments that verify their required endpoints.
 
-**Require or expand GitHub App Pull requests permission.** Rejected because repository configuration cannot verify the installed App permission set, while public read-only resources have an explicit unauthenticated API path.
+**Store a personal access token secret.** Rejected because the workflow token already reads the required ordinary PR and Issue resources, while a PAT would expand secret ownership and rotation obligations.
+
+**Require or expand GitHub App Pull requests permission.** Rejected because lifecycle authorization is independent of read-only pull-request policy and repository configuration cannot verify the installed App permission set.
 
 **Retry `404` without authentication.** Rejected because the same response can identify a private repository, missing permission, wrong repository, or nonexistent resource. Authentication fallback would turn configuration failures into ambiguous behavior.
 
-**Make the generic API client anonymous.** Rejected because lifecycle and audit operations read protected Project state and write repository or Project data. Anonymous access is confined to the `pr` command's public read path.
+**Keep review activity as the personal tracker activation signal.** Rejected because review counts do not validate metadata, and reading them adds an authorization dependency without strengthening policy results.
 
 ## Consequences
 
-The public personal tracker no longer depends on unverifiable token permissions for PR policy reads. Private or authenticated deployments retain Bearer authentication and fail before network access when credentials are absent. Anonymous mode accepts GitHub's unauthenticated rate limits and cannot be used for lifecycle or audit operations.
+The personal tracker enforces metadata from the first non-Draft human PR event using its workflow token and no review endpoint. Deployments that select `review-activity` retain the review-driven timing and its endpoint requirements. Anonymous mode remains confined to `pr` reads in deployments that verify every required endpoint supports it; lifecycle and audit operations always require a token.
