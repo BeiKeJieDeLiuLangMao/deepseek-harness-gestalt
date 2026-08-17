@@ -16,13 +16,13 @@ agent preset 可以组合工具目录，但用户还需要 Workspace 与 Session
 
 `dsh-agent-tool-eligibility` 是 preset 配置行，只公开一个必填 `allow` 列表。`dsh-tools-eligibility` 注册 allow-only 的 `tool-eligibility` settings 分节，其中含 `workspaces` 与 `sessions` 两张映射。它为每个实时 Agent 持有一条可变条目，用于贡献匹配的 Workspace 与 Session 列表；这些条目由解析器 fiber 持有。settings 刷新会先提交所有受影响条目，再通知任何观察者，随后为每个受影响 Agent 尝试关系 publication 与注册表变化通知。完整扇出结束后，观察者错误会保留在一个 `AggregateError` 中。因此观察者只能看到完整提交后的 Agent 集合，不会看到新旧条目并存或部分刷新的集合。解析器卸载、HMR 和 Agent 销毁都会移除对应条目。Workspace 匹配先找到规范路径等于 `session.header.cwd` 的 Workspace，再使用其稳定 id。
 
-解析后的工具视图是唯一运行时权威。Agent loop 从中取得请求 schema，`session.toolEligibility` 也直接读取该视图。执行创建会在策略运行前拒绝已注册但已被资格排除的定义。分发会在前置策略之后、环绕分发包装层之前重新检查资格，因此 settings 收窄产生的拒绝无法被包装层结果替换；未知或尚未加载的名称仍保留常规包装层路径。解析器的运行时接口只负责 settings 到注册表的生命周期，不发布独立的解析服务。解析器在每次 settings 贡献提交后发出非持久关系 publication，让 invariant companion 对比预期并集与实时注册表。持久 `request/header` 事件会记录每次组装请求的全部工具，因此仍可重建精确的模型可见 schema；不会用持久资格事件重复记录该结果。
+解析后的工具视图是唯一运行时权威。Agent loop 从中取得请求 schema，`session.toolEligibility` 也直接读取该视图。执行创建会在策略运行前拒绝已注册但已被资格排除的定义。分发会在前置策略之后、环绕分发包装层之前重新检查资格。任一种资格拒绝都是终止结果：环绕分发包装层、工具主体、post-execute 监听器与已捕获的定义 finalizer 都不会运行，但规范的 `UNKNOWN_TOOL` 结果仍会到达 `tools/result` 和循环持久化的 `tool/result`。未知或尚未加载的名称仍保留常规包装层路径。解析器的运行时接口只负责 settings 到注册表的生命周期，不发布独立的解析服务。解析器在每次 settings 贡献提交后发出非持久关系 publication，让 invariant companion 对比预期并集与实时注册表。持久 `request/header` 事件会记录每次组装请求的全部工具，因此仍可重建精确的模型可见 schema；不会用持久资格事件重复记录该结果。
 
 Code Mode 保留 `run_code` 作为呈现基础设施。正向资格筛选其 SDK 使用的末端工具定义；该传输不是一项可单独配置的能力。
 
 ## 验证
 
-工具注册表测试覆盖作用域链并集、显式 allow-none、继承与作用域本地 schema 筛选、在环绕分发短路前拒绝、前置策略期间的资格收窄、未知名称包装层兼容性、工具主体未执行和分阶段贡献通知。解析器测试覆盖 preset、Workspace 与 Session 添加；publication 或注册表观察者失败时的双 Agent 批量可见性与完整通知扇出；解析器卸载/HMR；Agent 销毁；动态注册；以及用户配置中不存在 deny 字段。invariant 负控会拒绝与实时注册表不一致的 publication。API 测试覆盖 `session.toolEligibility` 对 `ctx.tools` 的直接投影。Web minimal-preset 无密钥回放把 preset allowance 设为空，通过 Loader composition 中真实的 Session settings namespace 添加 `bash`，在持久请求 header 中只记录该工具，执行它，并证明过期 `str_replace_editor` 调用在执行前失败。
+工具注册表测试覆盖作用域链并集、显式 allow-none、继承与作用域本地 schema 筛选、在环绕分发短路前拒绝、前置策略期间的终止式资格收窄、未知名称包装层兼容性、工具主体与 finalizer 未执行、规范结果通知和分阶段贡献通知。Agent-loop 覆盖还证明晚期拒绝会跳过 post-execute 并持久化规范的 `UNKNOWN_TOOL` 结果。解析器测试覆盖 preset、Workspace 与 Session 添加；publication 或注册表观察者失败时的双 Agent 批量可见性与完整通知扇出；解析器卸载/HMR；Agent 销毁；动态注册；以及用户配置中不存在 deny 字段。invariant 负控会拒绝与实时注册表不一致的 publication。API 测试覆盖 `session.toolEligibility` 对 `ctx.tools` 的直接投影。Web minimal-preset 无密钥回放把 preset allowance 设为空，通过 Loader composition 中真实的 Session settings namespace 添加 `bash`，在持久请求 header 中只记录该工具，执行它，并证明过期 `str_replace_editor` 调用在执行前失败。
 
 ## 曾考虑的替代方案
 

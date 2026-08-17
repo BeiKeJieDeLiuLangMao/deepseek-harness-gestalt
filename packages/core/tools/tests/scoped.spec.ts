@@ -467,11 +467,18 @@ describe('allow-only eligibility declarations', () => {
     let preCalls = 0
     let wrapperCalls = 0
     let bodyCalls = 0
+    let postCalls = 0
+    let finalizerCalls = 0
+    const observedResults: Array<{ readonly content: readonly unknown[]; readonly isError: boolean }> = []
     ctx.tools.register({
       ...tool('stale'),
       execute: () => {
         bodyCalls += 1
         return Promise.resolve('ran:stale')
+      },
+      finalizeContent: () => {
+        finalizerCalls += 1
+        return [{ type: 'text', text: 'FINALIZER_REPLACED_DENIAL' }]
       },
     })
     const liftInitialAllowance = scope.ctx.tools.allowEligible(['stale'])
@@ -485,6 +492,11 @@ describe('allow-only eligibility declarations', () => {
       wrapperCalls += 1
       return { content: [], isError: false, value: 'short-circuited' }
     })
+    ctx.on('tools/post-execute', async (_exec, _result, next) => {
+      postCalls += 1
+      return next()
+    })
+    ctx.on('tools/result', (_exec, result) => { observedResults.push(result) })
 
     const result = await ctx.tools.execute({
       signal: testToolSignal,
@@ -497,7 +509,17 @@ describe('allow-only eligibility declarations', () => {
     expect(preCalls).toBe(1)
     expect(wrapperCalls).toBe(0)
     expect(bodyCalls).toBe(0)
-    expect(result.error?.info).toEqual({ name: 'ToolNotFoundError', code: 'UNKNOWN_TOOL' })
+    expect(postCalls).toBe(0)
+    expect(finalizerCalls).toBe(0)
+    expect(result).toEqual({
+      content: [{ type: 'text', text: 'Error: unknown tool "stale"' }],
+      isError: true,
+      error: {
+        message: 'unknown tool "stale"',
+        info: { name: 'ToolNotFoundError', code: 'UNKNOWN_TOOL' },
+      },
+    })
+    expect(observedResults).toEqual([result])
   })
 })
 

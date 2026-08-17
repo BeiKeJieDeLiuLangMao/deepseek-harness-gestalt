@@ -1515,9 +1515,11 @@ export class ToolRuntime extends Service {
    * listener failures resolve as materialized error results; an invisible tool
    * reports `UNKNOWN_TOOL`. A registered tool excluded by positive eligibility
    * is rejected before policy, and eligibility narrowed during pre-policy is
-   * rechecked before around-dispatch listeners. Unknown or unloaded names keep
-   * the ordinary pipeline. The returned outcome is the same lossless, frozen
-   * snapshot final observers receive. Cancellation
+   * rechecked before around-dispatch listeners. Both eligibility denials skip
+   * around-dispatch, post-policy, the definition-owned content finalizer, and
+   * the tool body while retaining final notification. Unknown or unloaded
+   * names keep the ordinary pipeline. The returned outcome is the same
+   * lossless, frozen snapshot final observers receive. Cancellation
    * arriving after entry and before final result materialization skips a
    * not-yet-started body with `ABORTED_BEFORE_DISPATCH` or replaces a
    * successful started outcome with `ABORTED`; already-started work is still
@@ -1617,7 +1619,7 @@ export class ToolRuntime extends Service {
           return {
             kind: 'final-result',
             exec: execution,
-            result: toolErrorResult(new ToolNotFoundError(name)),
+            result: this.terminalEligibilityDenial(execution),
           }
         }
         // The name IS visible here, so the denial carries the route the model
@@ -1760,7 +1762,7 @@ export class ToolRuntime extends Service {
   private async dispatchScheduledExecution(exec: ToolRunContext): Promise<ScheduledToolDispatch> {
     try {
       if (this.eligibilityDenies(this.view(exec.agent), exec.name)) {
-        return { kind: 'post-result', result: toolErrorResult(new ToolNotFoundError(exec.name)) }
+        return { kind: 'final-result', result: this.terminalEligibilityDenial(exec) }
       }
       const mutableExec = exec as MutableToolRunContext
       const carrier = scopeTarget(this, exec.agent)
@@ -1790,6 +1792,12 @@ export class ToolRuntime extends Service {
     } catch (error: unknown) {
       return { kind: 'final-result', result: toolErrorResult(error) }
     }
+  }
+
+  /** Remove a snapshotted definition finalizer and return the canonical eligibility denial. */
+  private terminalEligibilityDenial(exec: ToolRunContext): ToolExecutionResult {
+    this.contentFinalizers.delete(exec)
+    return toolErrorResult(new ToolNotFoundError(exec.name))
   }
 
   /**

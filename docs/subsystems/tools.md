@@ -169,7 +169,7 @@ interface ToolRestriction {
 
 ## Execution: extensible waterfalls plus monotonic policy
 
-`ctx.tools.execute()` accepts a caller-owned `ToolExecutionInput` with a required readonly `signal`, materializes its parsed JSON arguments once into a pipeline-owned `ToolExecution`, and runs that call through `tools/pre-execute` (the reorderable allow/deny/ask waterfall) → registered monotonic guards → `tools/execute` (around-dispatch wrappers) → `tools/post-execute` (inspect/replace the result) → optional definition-owned `finalizeContent` → `tools/result` (the immutable authoritative outcome). A registered definition excluded by positive eligibility resolves to `UNKNOWN_TOOL` before policy, and eligibility narrowed during pre-policy is rechecked before `tools/execute`; unknown or not-yet-loaded names retain the ordinary pipeline. Only the `tools/execute` view may replace the required signal. The outcome is a `ToolExecutionResult`.
+`ctx.tools.execute()` accepts a caller-owned `ToolExecutionInput` with a required readonly `signal`, materializes its parsed JSON arguments once into a pipeline-owned `ToolExecution`, and runs that call through `tools/pre-execute` (the reorderable allow/deny/ask waterfall) → registered monotonic guards → `tools/execute` (around-dispatch wrappers) → `tools/post-execute` (inspect/replace the result) → optional definition-owned `finalizeContent` → `tools/result` (the immutable authoritative outcome). A registered definition excluded by positive eligibility resolves to `UNKNOWN_TOOL` before policy, and eligibility narrowed during pre-policy is rechecked before `tools/execute`. Both eligibility denials skip the around-dispatch wrapper, tool body, post-policy, and definition finalizer while retaining the canonical `tools/result` notification; unknown or not-yet-loaded names retain the ordinary pipeline. Only the `tools/execute` view may replace the required signal. The outcome is a `ToolExecutionResult`.
 
 ```ts type-equiv
 /** Opaque call identity that permits correlation without exposing mutable execution state. */
@@ -578,9 +578,11 @@ executionMode(exec: ToolExecutionInput): ToolExecutionMode
  * listener failures resolve as materialized error results; an invisible tool
  * reports `UNKNOWN_TOOL`. A registered tool excluded by positive eligibility
  * is rejected before policy, and eligibility narrowed during pre-policy is
- * rechecked before around-dispatch listeners. Unknown or unloaded names keep
- * the ordinary pipeline. The returned outcome is the same lossless, frozen
- * snapshot final observers receive. Cancellation
+ * rechecked before around-dispatch listeners. Both eligibility denials skip
+ * around-dispatch, post-policy, the definition-owned content finalizer, and
+ * the tool body while retaining final notification. Unknown or unloaded
+ * names keep the ordinary pipeline. The returned outcome is the same
+ * lossless, frozen snapshot final observers receive. Cancellation
  * arriving after entry and before final result materialization skips a
  * not-yet-started body with `ABORTED_BEFORE_DISPATCH` or replaces a
  * successful started outcome with `ABORTED`; already-started work is still
