@@ -57,6 +57,25 @@ function transport(results: AccountSessionView[]): MockTransport {
 }
 
 describe('PlatformAccountInstallation', () => {
+  it('keeps a fresh installation idle when no stored session exists', async () => {
+    const api = transport([])
+    const installation = new PlatformAccountInstallation({
+      environment: 'development',
+      installationId: 'desktop-fresh',
+      installationKind: 'desktop',
+      transport: api,
+      store: new MemoryInstallationAccountStore(),
+      openSystemBrowser: vi.fn(),
+      crypto: webcrypto as Crypto,
+    })
+
+    await installation.load()
+
+    expect(installation.getSnapshot()).toEqual({ status: 'idle', privacyAccepted: false })
+    expect(api.current).not.toHaveBeenCalled()
+    expect(api.refresh).not.toHaveBeenCalled()
+  })
+
   it.each(['desktop', 'mobile'] as const)('shows bilingual privacy before %s authorization', async (kind) => {
     const openSystemBrowser = vi.fn()
     const installation = new PlatformAccountInstallation({

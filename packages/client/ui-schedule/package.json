@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-client-ui-schedule",
   "description": "Session-header Schedule board over durable session projection state",
-  "version": "0.1.0-rc.5",
+  "version": "0.1.0-rc.7",
   "publishConfig": {
     "access": "public"
   },
