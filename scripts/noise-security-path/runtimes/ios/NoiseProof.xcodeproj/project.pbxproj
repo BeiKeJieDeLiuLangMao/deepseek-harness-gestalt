@@ -1,0 +1,156 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		100000000000000000000001 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000001 /* AppDelegate.swift */; };
+		100000000000000000000002 /* web in Resources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000003 /* web */; };
+		100000000000000000000003 /* pkg in Resources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000004 /* pkg */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		200000000000000000000001 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		200000000000000000000002 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		200000000000000000000003 /* web */ = {isa = PBXFileReference; lastKnownFileType = folder; name = web; path = ../../web; sourceTree = "<group>"; };
+		200000000000000000000004 /* pkg */ = {isa = PBXFileReference; lastKnownFileType = folder; name = pkg; path = ../../pkg; sourceTree = "<group>"; };
+		200000000000000000000005 /* NoiseProof.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = NoiseProof.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		300000000000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				300000000000000000000002 /* NoiseProof */,
+				200000000000000000000003 /* web */,
+				200000000000000000000004 /* pkg */,
+				300000000000000000000003 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		300000000000000000000002 /* NoiseProof */ = {
+			isa = PBXGroup;
+			children = (
+				200000000000000000000001 /* AppDelegate.swift */,
+				200000000000000000000002 /* Info.plist */,
+			);
+			path = NoiseProof;
+			sourceTree = "<group>";
+		};
+		300000000000000000000003 /* Products */ = {
+			isa = PBXGroup;
+			children = (200000000000000000000005 /* NoiseProof.app */);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		400000000000000000000001 /* NoiseProof */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 700000000000000000000002 /* Build configuration list for PBXNativeTarget "NoiseProof" */;
+			buildPhases = (
+				500000000000000000000001 /* Sources */,
+				500000000000000000000002 /* Frameworks */,
+				500000000000000000000003 /* Resources */,
+			);
+			buildRules = ();
+			dependencies = ();
+			name = NoiseProof;
+			productName = NoiseProof;
+			productReference = 200000000000000000000005 /* NoiseProof.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		400000000000000000000002 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2640;
+				LastUpgradeCheck = 2640;
+				TargetAttributes = {400000000000000000000001 = {CreatedOnToolsVersion = 26.4;};};
+			};
+			buildConfigurationList = 700000000000000000000001 /* Build configuration list for PBXProject "NoiseProof" */;
+			compatibilityVersion = "Xcode 16.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (en, Base);
+			mainGroup = 300000000000000000000001;
+			productRefGroup = 300000000000000000000003 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (400000000000000000000001 /* NoiseProof */);
+		};
+/* End PBXProject section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		500000000000000000000002 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXResourcesBuildPhase section */
+		500000000000000000000003 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				100000000000000000000002 /* web in Resources */,
+				100000000000000000000003 /* pkg in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		500000000000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (100000000000000000000001 /* AppDelegate.swift in Sources */);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		600000000000000000000001 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {CLANG_ENABLE_MODULES = YES; IPHONEOS_DEPLOYMENT_TARGET = 15.0; SDKROOT = iphoneos;}; name = Debug; };
+		600000000000000000000002 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {CLANG_ENABLE_MODULES = YES; IPHONEOS_DEPLOYMENT_TARGET = 15.0; SDKROOT = iphoneos;}; name = Release; };
+		600000000000000000000003 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = NoiseProof/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.deepseek.noiseproof;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphonesimulator iphoneos";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		600000000000000000000004 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = NoiseProof/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.deepseek.noiseproof;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphonesimulator iphoneos";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		700000000000000000000001 /* Build configuration list for PBXProject "NoiseProof" */ = {isa = XCConfigurationList; buildConfigurations = (600000000000000000000001 /* Debug */, 600000000000000000000002 /* Release */); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		700000000000000000000002 /* Build configuration list for PBXNativeTarget "NoiseProof" */ = {isa = XCConfigurationList; buildConfigurations = (600000000000000000000003 /* Debug */, 600000000000000000000004 /* Release */); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+/* End XCConfigurationList section */
+	};
+	rootObject = 400000000000000000000002 /* Project object */;
+}
