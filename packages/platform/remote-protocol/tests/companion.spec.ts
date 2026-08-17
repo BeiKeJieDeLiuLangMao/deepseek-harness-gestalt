@@ -21,7 +21,6 @@ describe('Encrypted Companion Protocol codec', () => {
       createCompanionVersionOffer('desktop', [1, 2]),
     )
     expect(negotiated.major).toBe(2)
-    expect(negotiated.major).toBe(2)
 
     const operationId = parseCompanionOperationId('operation-keyless')
     const sessionId = parseCompanionSessionId('session-keyless')
