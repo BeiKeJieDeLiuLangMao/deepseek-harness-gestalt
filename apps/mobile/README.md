@@ -4,7 +4,9 @@ English | [中文](README.zh.md)
 
 Mobile account shell for the current Installation. It shows the bilingual retention notice before GitHub authorization, opens authorization outside the app, polls Platform with P-256 proof, restores only a server-confirmed Account Session, and signs out this Installation without deleting Personal Pairings.
 
-The build selects exactly one identity environment with `VITE_PLATFORM_ENV` (`development` or `production`) while both distinct HTTPS origins come from `VITE_PLATFORM_DEVELOPMENT_ORIGIN` and `VITE_PLATFORM_PRODUCTION_ORIGIN`. Native packaging owns the system-browser adapter and a stable WebView origin; the browser development entry uses `window.open` and IndexedDB.
+The entry validates the complete development and production identity pair before rendering: each side supplies `ORIGIN`, `CALLBACK_URL`, `GITHUB_CLIENT_ID`, `CREDENTIAL_REFERENCE`, `DATABASE_IDENTITY`, and `IDENTITY_NAMESPACE` under its `VITE_PLATFORM_DEVELOPMENT_*` or `VITE_PLATFORM_PRODUCTION_*` prefix, and `VITE_PLATFORM_ENV` explicitly selects one side. Every paired field must differ. Missing, unknown, shared, non-HTTPS, or callback-mismatched configuration fails before rendering or network traffic.
+
+The shared Mobile entry includes the `@capacitor/browser` adapter and calls it directly from the prepared authorization button's user activation. It has no `window.open`, popup, or custom-URL token fallback. `IndexedDbInstallationAccountStore` uses the selected database identity in its database name; native packaging supplies the stable WebView origin.
 
 ```sh
 pnpm --filter @deepseek-ai/dsh-mobile build
@@ -13,4 +15,4 @@ pnpm --filter @deepseek-ai/dsh-mobile build
 ## Known Limitations and Deferred Work
 
 - This shell includes no Personal Pairing, Remote Access, push, or attachment flow.
-- Native iOS/Android packaging is outside this ticket; the checked-in app is the shared WebView presentation and Account lifecycle.
+- Native iOS/Android project generation and device packaging remain outside this shell; the checked-in composition includes the Capacitor system-browser adapter and shared WebView Account lifecycle.

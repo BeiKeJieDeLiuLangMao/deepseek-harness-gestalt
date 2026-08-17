@@ -2,7 +2,14 @@
 import { createElement } from 'react'
 import { afterEach, describe, expect, it, vi, type Mock } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import type { AccountSessionView, LoginAttemptView } from '@deepseek-ai/dsh-platform-account'
+import {
+  parseInstallationId,
+  selectPlatformEnvironment,
+  validatePlatformEnvironmentPair,
+  type AccountSessionView,
+  type LoginAttemptView,
+  type SelectedPlatformEnvironment,
+} from '@deepseek-ai/dsh-platform-account'
 import {
   MemoryInstallationAccountStore,
   PlatformAccountInstallation,
@@ -11,6 +18,21 @@ import {
 import { MobileAccount } from '../src/MobileAccount.tsx'
 
 afterEach(cleanup)
+
+const ENVIRONMENT = selectPlatformEnvironment(validatePlatformEnvironmentPair({
+  development: {
+    environment: 'development', origin: 'https://dev.example',
+    callbackUrl: 'https://dev.example/v1/account/oauth/github/callback',
+    githubClientId: 'mobile-development', credentialReference: 'credentials://development',
+    databaseIdentity: 'database-development', identityNamespace: 'namespace-development',
+  },
+  production: {
+    environment: 'production', origin: 'https://prod.example',
+    callbackUrl: 'https://prod.example/v1/account/oauth/github/callback',
+    githubClientId: 'mobile-production', credentialReference: 'credentials://production',
+    databaseIdentity: 'database-production', identityNamespace: 'namespace-production',
+  },
+}), 'development')
 
 const attempt: LoginAttemptView = {
   id: 'attempt-mobile' as never,
@@ -45,6 +67,7 @@ describe('MobileAccount', () => {
     expect(continueButton.hasAttribute('disabled')).toBe(true)
 
     fireEvent.click(screen.getByRole('checkbox'))
+    await waitFor(() => { expect(continueButton.hasAttribute('disabled')).toBe(false) })
     fireEvent.click(continueButton)
     await waitFor(() => { expect(openSystemBrowser).toHaveBeenCalledWith(attempt.authorizationUrl) })
   })
@@ -54,6 +77,7 @@ describe('MobileAccount', () => {
     render(createElement(MobileAccount, { installation }))
 
     fireEvent.click(screen.getByRole('checkbox'))
+    await waitFor(() => { expect(screen.getByRole('button', { name: '使用 GitHub 继续' }).hasAttribute('disabled')).toBe(false) })
     fireEvent.click(screen.getByRole('button', { name: '使用 GitHub 继续' }))
     await screen.findByText('@octocat')
     expect(screen.getByText('当前安装')).toBeTruthy()
@@ -70,6 +94,7 @@ function fixture(): {
   openSystemBrowser: ReturnType<typeof vi.fn>
 } {
   const api: MockTransport = {
+    environment: ENVIRONMENT,
     beginLogin: vi.fn<PlatformAccountTransport['beginLogin']>().mockResolvedValue(attempt),
     pollLogin: vi.fn<PlatformAccountTransport['pollLogin']>().mockResolvedValue({ status: 'complete', ...session }),
     refresh: vi.fn<PlatformAccountTransport['refresh']>(),
@@ -81,18 +106,19 @@ function fixture(): {
     api,
     openSystemBrowser,
     installation: new PlatformAccountInstallation({
-      environment: 'development',
-      installationId: 'mobile-ui',
+      environment: ENVIRONMENT,
+      installationId: parseInstallationId('mobile-ui'),
       installationKind: 'mobile',
       transport: api,
       store: new MemoryInstallationAccountStore(),
-      openSystemBrowser,
+      systemBrowser: { open: openSystemBrowser },
       crypto: globalThis.crypto,
     }),
   }
 }
 
 interface MockTransport {
+  environment: SelectedPlatformEnvironment
   beginLogin: Mock<PlatformAccountTransport['beginLogin']>
   pollLogin: Mock<PlatformAccountTransport['pollLogin']>
   refresh: Mock<PlatformAccountTransport['refresh']>

@@ -7,7 +7,12 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { AccountError, type AccountProof } from '@deepseek-ai/dsh-platform-account'
+import {
+  AccountError,
+  parseInstallationId,
+  parseLoginAttemptId,
+  type AccountProof,
+} from '@deepseek-ai/dsh-platform-account'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 
 const MAX_JSON_BYTES = 64 * 1024
@@ -50,7 +55,7 @@ export function apply(ctx: Context, config: Config): void {
     requireMethod(req, 'POST')
     const body = await readJson(req)
     const attempt = await ctx.platformAccount.beginLogin({
-      installationId: requiredString(body, 'installationId'),
+      installationId: parseInstallationId(requiredString(body, 'installationId')),
       installationKind: requiredKind(body.installationKind),
       publicKey: requiredObject(body, 'publicKey'),
     })
@@ -72,7 +77,7 @@ export function apply(ctx: Context, config: Config): void {
     requireMethod(req, 'POST')
     const body = await readJson(req)
     answerJson(res, 200, await ctx.platformAccount.pollLogin({
-      attemptId: requiredString(body, 'attemptId'),
+      attemptId: parseLoginAttemptId(requiredString(body, 'attemptId')),
       pollingToken: requiredString(body, 'pollingToken'),
       proof: requiredProof(body.proof),
     }))

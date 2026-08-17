@@ -19,6 +19,7 @@
     "package:unsigned": "node scripts/build-main.mjs && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dir --arm64 --publish never -c.mac.notarize=false"
   },
   "dependencies": {
+    "@deepseek-ai/dsh-atomic-write": "workspace:^",
     "@deepseek-ai/dsh-client-ui-desktop": "workspace:^",
     "@deepseek-ai/dsh-platform-account": "workspace:^",
     "@deepseek-ai/dsh-platform-account-client": "workspace:^",

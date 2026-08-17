@@ -7,21 +7,27 @@ import {
   randomUUID,
   sign,
 } from 'node:crypto'
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
-import { dirname } from 'node:path'
+import { readFile } from 'node:fs/promises'
+import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import type {
   AccountProof,
+  InstallationId,
   AccountSessionView,
   LoginAttemptView,
   LoginPollResult,
-  PlatformEnvironment,
+  SelectedPlatformEnvironment,
 } from '@deepseek-ai/dsh-platform-account'
-import type { PlatformAccountTransport } from '@deepseek-ai/dsh-platform-account-client'
+import {
+  AccountLifecycleTransitions,
+  type PlatformAccountTransport,
+  type SystemBrowser,
+} from '@deepseek-ai/dsh-platform-account-client'
+import { AccountError, parseAccountSessionView, parseInstallationId, parseLoginAttemptView } from '@deepseek-ai/dsh-platform-account'
 import type { DesktopAccountSnapshot } from '@deepseek-ai/dsh-client-ui-desktop/protocol'
 
 /** Entire encrypted Account record; account-scoped pairing material lives elsewhere. */
 export interface PersistedDesktopAccount {
-  installationId: string
+  installationId: InstallationId
   session?: AccountSessionView
   sessionPrivateKey?: string
   pending?: LoginAttemptView
@@ -49,32 +55,30 @@ export class EncryptedDesktopAccountStore implements DesktopAccountStore {
   ) {}
 
   async load(): Promise<PersistedDesktopAccount | undefined> {
-    let bytes: Buffer
+    let encoded: string
     try {
-      bytes = await readFile(this.path)
+      encoded = await readFile(this.path, 'utf8')
     } catch (error) {
       if (isNodeError(error) && error.code === 'ENOENT') return undefined
       throw error
     }
-    const value = JSON.parse(this.protection.decrypt(bytes)) as unknown
-    if (!isPersistedDesktopAccount(value)) throw new Error('Desktop Platform Account record is invalid')
-    return value
+    const value = JSON.parse(this.protection.decrypt(decodeBase64(encoded))) as unknown
+    return parsePersistedDesktopAccount(value)
   }
 
   async save(record: PersistedDesktopAccount): Promise<void> {
-    await mkdir(dirname(this.path), { recursive: true })
-    const temporary = `${this.path}.${process.pid}.tmp`
-    await writeFile(temporary, this.protection.encrypt(JSON.stringify(record)), { mode: 0o600 })
-    await rename(temporary, this.path)
+    const encrypted = this.protection.encrypt(JSON.stringify(record))
+    await writeFileAtomic(this.path, Buffer.from(encrypted).toString('base64'), { mode: 0o600, dirMode: 0o700 })
   }
 }
 
 /** Desktop controller construction inputs. */
 export interface DesktopAccountControllerOptions {
-  environment: PlatformEnvironment
+  environment: SelectedPlatformEnvironment
   transport: PlatformAccountTransport
   store: DesktopAccountStore
-  openSystemBrowser: (url: string) => Promise<void>
+  systemBrowser: SystemBrowser
+  transitions?: AccountLifecycleTransitions
   now?: () => number
   schedule?: (task: () => void, delayMs: number) => ReturnType<typeof setTimeout>
 }
@@ -99,11 +103,16 @@ export class DesktopAccountController implements DesktopAccountActions {
   private readonly schedule: (task: () => void, delayMs: number) => ReturnType<typeof setTimeout>
   private timer: ReturnType<typeof setTimeout> | undefined
   private disposed = false
+  private readonly transitions: AccountLifecycleTransitions
 
   /** @param options - trusted transport, protected storage, system browser, and timing adapters. */
   constructor(private readonly options: DesktopAccountControllerOptions) {
     this.now = options.now ?? Date.now
     this.schedule = options.schedule ?? setTimeout
+    this.transitions = options.transitions ?? new AccountLifecycleTransitions()
+    if (options.transport.environment !== options.environment) {
+      throw new TypeError('Desktop Account transport does not match the selected environment')
+    }
   }
 
   getSnapshot(): DesktopAccountSnapshot {
@@ -116,7 +125,11 @@ export class DesktopAccountController implements DesktopAccountActions {
   }
 
   async start(): Promise<void> {
-    this.record = await this.options.store.load() ?? { installationId: randomUUID() }
+    await this.transitions.run(async () => { await this.startTransition() })
+  }
+
+  private async startTransition(): Promise<void> {
+    this.record = await this.options.store.load() ?? { installationId: parseInstallationId(randomUUID()) }
     await this.options.store.save(this.record)
     if (this.record.pending !== undefined) {
       if (this.record.pending.expiresAt > this.now() && this.record.pendingPrivateKey !== undefined) {
@@ -137,6 +150,10 @@ export class DesktopAccountController implements DesktopAccountActions {
   }
 
   async beginLogin(): Promise<DesktopAccountSnapshot> {
+    return this.transitions.run(async () => this.beginLoginTransition())
+  }
+
+  private async beginLoginTransition(): Promise<DesktopAccountSnapshot> {
     if (!this.snapshot.privacyAccepted) throw new Error('privacy notice must be accepted before authorization')
     const record = this.requireRecord()
     this.publish({ status: 'authorizing', privacyAccepted: true })
@@ -150,7 +167,7 @@ export class DesktopAccountController implements DesktopAccountActions {
       record.pending = attempt
       record.pendingPrivateKey = privateKey.export({ format: 'pem', type: 'pkcs8' }).toString()
       await this.options.store.save(record)
-      await this.options.openSystemBrowser(attempt.authorizationUrl)
+      await this.options.systemBrowser.open(attempt.authorizationUrl)
       this.publish({ status: 'polling', privacyAccepted: true })
       this.schedulePoll()
     } catch (error) {
@@ -161,6 +178,10 @@ export class DesktopAccountController implements DesktopAccountActions {
   }
 
   async signOut(): Promise<DesktopAccountSnapshot> {
+    return this.transitions.run(async () => this.signOutTransition())
+  }
+
+  private async signOutTransition(): Promise<DesktopAccountSnapshot> {
     const record = this.requireRecord()
     if (record.session === undefined || record.sessionPrivateKey === undefined) return this.snapshot
     this.publish({ ...withoutDesktopError(this.snapshot), status: 'signing-out' })
@@ -224,7 +245,7 @@ export class DesktopAccountController implements DesktopAccountActions {
     if (this.disposed || this.timer !== undefined) return
     this.timer = this.schedule(() => {
       this.timer = undefined
-      void this.poll().catch(() => {})
+      void this.transitions.run(async () => { await this.poll() }).catch(() => {})
     }, 1_500)
     this.timer.unref()
   }
@@ -335,13 +356,46 @@ function withoutDesktopError(snapshot: DesktopAccountSnapshot): DesktopAccountSn
 }
 
 function isTerminalSessionError(error: unknown): boolean {
-  if (!(error instanceof Error)) return false
-  return error.message.startsWith('SESSION_REVOKED:') || error.message.startsWith('SESSION_EXPIRED:')
+  return error instanceof AccountError && (error.code === 'SESSION_REVOKED' || error.code === 'SESSION_EXPIRED')
 }
 
-function isPersistedDesktopAccount(value: unknown): value is PersistedDesktopAccount {
-  if (typeof value !== 'object' || value === null || !('installationId' in value)) return false
-  return typeof value.installationId === 'string' && value.installationId !== ''
+function parsePersistedDesktopAccount(value: unknown): PersistedDesktopAccount {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new TypeError('Desktop Platform Account record must be an object')
+  }
+  const record = value as Record<string, unknown>
+  const session = record.session === undefined ? undefined : parseAccountSessionView(record.session)
+  const sessionPrivateKey = optionalPrivateKey(record.sessionPrivateKey, 'sessionPrivateKey')
+  const pending = record.pending === undefined ? undefined : parseLoginAttemptView(record.pending)
+  const pendingPrivateKey = optionalPrivateKey(record.pendingPrivateKey, 'pendingPrivateKey')
+  if ((session === undefined) !== (sessionPrivateKey === undefined)) {
+    throw new TypeError('Desktop Platform Account session and private key must be stored together')
+  }
+  if ((pending === undefined) !== (pendingPrivateKey === undefined)) {
+    throw new TypeError('Desktop Platform Account pending attempt and private key must be stored together')
+  }
+  return {
+    installationId: parseInstallationId(record.installationId),
+    ...(session === undefined ? {} : { session, sessionPrivateKey }),
+    ...(pending === undefined ? {} : { pending, pendingPrivateKey }),
+  }
+}
+
+function optionalPrivateKey(value: unknown, name: string): string | undefined {
+  if (value === undefined) return undefined
+  if (typeof value !== 'string' || value === '') throw new TypeError(`Desktop Platform Account ${name} is invalid`)
+  const key = createPrivateKey(value)
+  if (key.asymmetricKeyType !== 'ec' || key.asymmetricKeyDetails?.namedCurve !== 'prime256v1') {
+    throw new TypeError(`Desktop Platform Account ${name} must be a P-256 private key`)
+  }
+  return value
+}
+
+function decodeBase64(value: string): Buffer {
+  if (value === '' || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(value)) {
+    throw new TypeError('Desktop Platform Account encrypted record is not canonical base64')
+  }
+  return Buffer.from(value, 'base64')
 }
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {

@@ -1,6 +1,13 @@
 import { createHash, generateKeyPairSync, randomUUID, sign } from 'node:crypto'
 import { Context } from '@deepseek-ai/cordis'
-import { ACCOUNT_PRIVACY_NOTICE, type AccountProof, type AccountSessionView } from '@deepseek-ai/dsh-platform-account'
+import {
+  ACCOUNT_PRIVACY_NOTICE,
+  parseInstallationId,
+  selectPlatformEnvironment,
+  validatePlatformEnvironmentPair,
+  type AccountProof,
+  type AccountSessionView,
+} from '@deepseek-ai/dsh-platform-account'
 import {
   MemoryAccountBackend,
   MemoryAccountInvalidationBus,
@@ -14,10 +21,31 @@ export const name = 'platform-account-keyless-scenario'
 /** Run the complete Account lifecycle while the real Loader activates this plugin. */
 export async function apply(ctx: Context): Promise<void> {
   const now = Date.parse('2026-08-17T10:00:00.000Z')
-  const backend = new MemoryAccountBackend()
+  const environment = selectPlatformEnvironment(validatePlatformEnvironmentPair({
+    development: {
+      environment: 'development',
+      origin: 'https://platform.dev.example.com',
+      callbackUrl: 'https://platform.dev.example.com/v1/account/oauth/github/callback',
+      githubClientId: 'keyless-development',
+      credentialReference: 'credentials://platform-account/development/github-oauth-app',
+      databaseIdentity: 'keyless-database-development',
+      identityNamespace: 'keyless-development',
+    },
+    production: {
+      environment: 'production',
+      origin: 'https://platform.example.com',
+      callbackUrl: 'https://platform.example.com/v1/account/oauth/github/callback',
+      githubClientId: 'keyless-production',
+      credentialReference: 'credentials://platform-account/production/github-oauth-app',
+      databaseIdentity: 'keyless-database-production',
+      identityNamespace: 'keyless-production',
+    },
+  }), 'development')
+  const backend = new MemoryAccountBackend(environment.databaseIdentity)
   const invalidation = new MemoryAccountInvalidationBus()
   let callback: { code: string; state: string } | undefined
   const github: GitHubIdentityProvider = {
+    environment,
     authorizationUrl(input) {
       callback = { code: 'keyless-github-code', state: input.state }
       const url = new URL('https://github.com/login/oauth/authorize')
@@ -33,23 +61,21 @@ export async function apply(ctx: Context): Promise<void> {
     },
   }
   const config = {
-    environment: 'development' as const,
-    identityNamespace: 'keyless-development',
-    origin: 'https://platform.dev.example.com',
-    callbackUrl: 'https://platform.dev.example.com/v1/account/oauth/github/callback',
     tokenSigningKey: Buffer.alloc(32, 1),
     pollingSigningKey: Buffer.alloc(32, 2),
   }
-  const first = new PlatformAccount(ctx, { backend, invalidation, github, config, clock: { now: () => now } })
+  const first = new PlatformAccount(ctx, {
+    backend, invalidation, github, environment, config, clock: { now: () => now },
+  })
   const second = new PlatformAccount(new Context(), {
-    backend, invalidation, github, config, clock: { now: () => now },
+    backend, invalidation, github, environment, config, clock: { now: () => now },
   })
 
   const pair = generateKeyPairSync('ec', { namedCurve: 'P-256' })
   console.log('PRIVACY zh+en before authorization')
   console.log(`NOTICE ${ACCOUNT_PRIVACY_NOTICE.zh.includes('不提供账号删除') && ACCOUNT_PRIVACY_NOTICE.en.includes('does not provide account deletion') ? 'accepted' : 'missing'}`)
   const attempt = await first.beginLogin({
-    installationId: 'desktop-keyless-1',
+    installationId: parseInstallationId('desktop-keyless-1'),
     installationKind: 'desktop',
     publicKey: pair.publicKey.export({ format: 'jwk' }),
   })
@@ -73,8 +99,8 @@ export async function apply(ctx: Context): Promise<void> {
     proof: proof(pair.privateKey, 'sign-out', hash(session.accessToken), now),
   })
   console.log(`SIGN_OUT crossInstanceClosed=${String(closed)} local=idle`)
-  first.dispose()
-  second.dispose()
+  await first.dispose()
+  await second.dispose()
 }
 
 function proof(

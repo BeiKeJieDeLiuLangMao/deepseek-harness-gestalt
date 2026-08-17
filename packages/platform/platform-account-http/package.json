@@ -27,9 +27,13 @@
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
+    "@deepseek-ai/cordis-plugin-include": "workspace:^",
+    "@deepseek-ai/cordis-plugin-loader": "workspace:^",
     "@deepseek-ai/dsh-host-webserver": "workspace:^",
     "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-platform-account": "workspace:^"
+    "@deepseek-ai/dsh-platform-account": "workspace:^",
+    "@deepseek-ai/dsh-platform-account-client": "workspace:^",
+    "@deepseek-ai/dsh-platform-account-core": "workspace:^"
   },
   "dependencies": { "@deepseek-ai/schemastery": "workspace:^" }
 }

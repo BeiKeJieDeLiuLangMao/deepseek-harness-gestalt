@@ -16,11 +16,11 @@ Desktop 与 Mobile 需要先建立一个 Platform 身份，个人配对与远程
 
 安装会启动一个五分钟登录尝试。GitHub 返回唯一固定的 HTTPS Platform 回调。应用不会取得 OAuth code 或提供方 token，而是使用签名、单次有效的尝试令牌与新鲜 P-256 证明轮询。轮询成功后为该安装创建唯一账号会话，并替换该安装更早的会话。访问令牌有效期为 15 分钟；刷新令牌每次使用都轮换，最长有效期为 30 天。当前账号读取、刷新和退出都要求带时间戳且防重放的证明。
 
-账号提供方先提交撤销，再通过 `AccountInvalidationBus` 发布账号会话 id。每个 Platform 实例都会关闭该 id 下已跟踪的连接。退出只清除当前安装的授权。个人配对与账号域材料保留在包含环境和账号 id 的命名空间中；切换账号会选择另一个命名空间，而不会覆盖或共享上一个命名空间。
+账号提供方先提交撤销，再等待 `AccountInvalidationBus` 发布账号会话 id。投递会分别隔离每个订阅方的同步抛错与异步拒绝；每个 Platform 实例也会运行全部连接 closer 后再汇总报告失败。退出只清除当前安装的授权。个人配对与账号域材料保留在包含环境和账号 id 的命名空间中；切换账号会选择另一个命名空间，而不会覆盖或共享上一个命名空间。
 
-Desktop Host 拥有私钥、会话令牌、系统浏览器调用和 `safeStorage` 加密的按环境文件。renderer 只经 preload 取得账号快照和生命周期动词。Desktop 只在「手机配对」Settings 分区展示账号状态；普通侧边栏和 Session 交互保持不变。Mobile 在 IndexedDB 中拥有不可导出的 WebCrypto 密钥，并从原生打包取得系统浏览器适配器。两种呈现都在授权前展示完整的中英文保留说明，并明确首个版本不提供账号删除。
+Desktop Host 拥有私钥、会话令牌、Electron `shell.openExternal` 调用和 `safeStorage` 加密的按环境文件。文件使用随机独占 atomic-write 同级文件与仅所有者可读的 rename 提交。renderer 只经 preload 取得账号快照和生命周期动词。Desktop 只在「手机配对」Settings 分区展示账号状态；普通侧边栏和 Session 交互保持不变。Mobile 在 IndexedDB 中拥有不可导出的 WebCrypto 密钥，composition 内置 `@capacitor/browser` 适配器。授权按钮激活前会先准备登录尝试，因此点击会直接调用原生浏览器 API，不使用弹窗或自定义 URL 回退。两种呈现都在授权前导入同一份完整中英文保留说明，并明确首个版本不提供账号删除。
 
-开发与生产使用不同的 HTTPS origin、固定回调、GitHub OAuth App、凭证命名空间、数据库命名空间和身份命名空间。配置会拒绝任一身份相等；客户端显式选择唯一环境，绝不在两个环境之间故障转移。
+开发与生产使用不同的 HTTPS origin、固定回调、GitHub OAuth App、凭证引用、数据库身份和身份命名空间。每个 Desktop 与 Mobile composition 都会解析两侧完整身份，并在渲染或流量前要求显式选择。所选值绑定 HTTP transport、OAuth adapter、backend 数据库身份、本地存储、回调与签发身份命名空间；单环境配置不能绕过环境对校验。HTTP 响应、IndexedDB 记录与 Desktop 加密文件都有显式 parser。一个 lifecycle transition owner 串行化加载、登录、轮询、刷新、账号切换与退出。
 
 ## Alternatives considered
 
@@ -36,8 +36,8 @@ Desktop Host 拥有私钥、会话令牌、系统浏览器调用和 `safeStorage
 
 ## Consequences
 
-Platform 部署必须提供原子账号持久化、分布式失效、OAuth 凭证、签名密钥、限流、审计保留和 HTTPS edge 行为。内存后端和总线只用于验收与开发，不是生产持久性。原生 Mobile 打包必须提供系统浏览器 opener 与稳定 WebView origin。账号删除、会话列表、远程退出、全部退出、恢复、身份关联、个人配对与远程访问仍是独立能力。
+Platform 部署必须提供原子账号持久化、分布式失效、OAuth 凭证、签名密钥、限流、审计保留和 HTTPS edge 行为。内存后端和总线只用于验收与开发，不是生产持久性。原生 Mobile 打包必须提供稳定 WebView origin；Mobile composition 自己拥有 Capacitor Browser 适配器。账号删除、会话列表、远程退出、全部退出、恢复、身份关联、个人配对与远程访问仍是独立能力。
 
 ## Testing
 
-核心测试覆盖 PKCE／无 scope 授权、单次轮询、过期值、证明重放、刷新轮换、环境分离、回调 state 和跨实例连接关闭。安装测试覆盖 Desktop 与 Mobile 隐私门槛、服务端确认恢复、恢复时刷新、账号命名空间隔离和退出保留。Desktop 集成测试让 Host 生成的 P-256 证明通过真实账号提供方。`examples/platform-account/cordis.yml` Loader snapshot 通过两个提供方实例运行完整无密钥流程，并记录 15 分钟／30 天生命周期与跨实例退出。
+核心测试覆盖 PKCE／无 scope 授权、单次轮询、精确到期边界、证明重放、刷新轮换、完整环境绑定、回调 state、异步失效隔离与跨实例连接关闭。安装测试覆盖隐私门槛、串行重复恢复与刷新／退出、显式 HTTP 与持久化 parser、账号命名空间隔离和退出保留。Mobile entry 覆盖通过 Capacitor Browser 适配器边界运行真实 composition；Desktop 存储覆盖符号链接替换、失败清理与并发原子写。Loader 测试会挂载真实 WebServer、账号提供方、HTTP Consumer、客户端 transport 与 TCP server，覆盖 P-256 header、JSON 解析、轮换、轮询与跨实例退出。`examples/platform-account/cordis.yml` Loader snapshot 记录 15 分钟／30 天生命周期与跨实例退出。

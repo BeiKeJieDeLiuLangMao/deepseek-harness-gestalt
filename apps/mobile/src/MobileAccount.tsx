@@ -1,9 +1,7 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import type { ReactNode } from 'react'
-import {
-  ACCOUNT_PRIVACY_NOTICE,
-  type PlatformAccountInstallation,
-} from '@deepseek-ai/dsh-platform-account-client'
+import type { PlatformAccountInstallation } from '@deepseek-ai/dsh-platform-account-client'
+import { ACCOUNT_PRIVACY_NOTICE } from '@deepseek-ai/dsh-platform-account/privacy'
 import css from './MobileAccount.module.css'
 
 /** Mobile Account page props. */
@@ -55,7 +53,7 @@ export function MobileAccount({ installation }: MobileAccountProps): ReactNode {
             <span>GitHub ID {snapshot.account?.githubId}</span>
           </div>
           <span className={css.status}>当前安装</span>
-          <button type="button" className={css.secondary} onClick={() => { void installation.signOut() }}>
+          <button type="button" className={css.secondary} onClick={() => { setAccepted(false); void installation.signOut() }}>
             退出此安装
           </button>
         </section>
@@ -82,7 +80,10 @@ export function MobileAccount({ installation }: MobileAccountProps): ReactNode {
               checked={accepted}
               onChange={(event) => {
                 setAccepted(event.target.checked)
-                if (event.target.checked) installation.acceptPrivacy()
+                if (event.target.checked) {
+                  installation.acceptPrivacy()
+                  void installation.prepareLogin()
+                }
               }}
             />
             <span>我已阅读中英文隐私说明</span>
@@ -90,10 +91,14 @@ export function MobileAccount({ installation }: MobileAccountProps): ReactNode {
           <button
             type="button"
             className={css.primary}
-            disabled={!accepted || snapshot.status === 'authorizing' || snapshot.status === 'polling'}
-            onClick={() => { void installation.beginLogin() }}
+            disabled={!accepted || snapshot.status !== 'ready'}
+            onClick={() => { installation.openLogin() }}
           >
-            {snapshot.status === 'polling' ? '等待 GitHub 授权…' : '使用 GitHub 继续'}
+            {snapshot.status === 'preparing'
+              ? '准备安全授权…'
+              : snapshot.status === 'polling'
+                ? '等待 GitHub 授权…'
+                : '使用 GitHub 继续'}
           </button>
         </>
       )}

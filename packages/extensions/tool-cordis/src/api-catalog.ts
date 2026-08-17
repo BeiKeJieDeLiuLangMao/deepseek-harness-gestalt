@@ -975,7 +975,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Platform Account capability. Providers own OAuth, installation-key binding, token rotation, and current-installation invalidation behind this interface.',
     methods: [
       {
-        signature: 'abstract beginLogin(input: { installationId: string installationKind: \'desktop\' | \'mobile\' publicKey: JsonWebKey }): Promise<LoginAttemptView>',
+        signature: 'abstract beginLogin(input: { installationId: InstallationId installationKind: \'desktop\' | \'mobile\' publicKey: JsonWebKey }): Promise<LoginAttemptView>',
         description: 'Start one GitHub Authorization Code attempt for an installation key.',
         parameters: [{ name: 'input', description: 'installation identity, kind, and public P-256 JWK.' }],
         returns: 'the system-browser URL and signed polling capability.',
@@ -987,7 +987,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'completion marker suitable for a browser confirmation page.',
       },
       {
-        signature: 'abstract pollLogin(input: { attemptId: string pollingToken: string proof: AccountProof }): Promise<LoginPollResult>',
+        signature: 'abstract pollLogin(input: { attemptId: LoginAttemptId pollingToken: string proof: AccountProof }): Promise<LoginPollResult>',
         description: 'Poll one attempt using both its signed polling token and installation proof.',
         parameters: [{ name: 'input', description: 'attempt binding and one-use proof.' }],
         returns: 'pending or the newly created Account Session.',
@@ -1010,7 +1010,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'input', description: 'access token and installation proof.' }],
       },
       {
-        signature: 'abstract trackConnection(sessionId: AccountSessionId, close: () => void): () => void',
+        signature: 'abstract trackConnection(sessionId: AccountSessionId, close: () => void | Promise<void>): () => void',
         description: 'Track a Platform connection so cross-instance session invalidation closes it.',
         parameters: [{ name: 'sessionId', description: 'Account Session owning the connection.' }, { name: 'close', description: 'idempotent close callback.' }],
         returns: 'disposer removing the tracked connection.',
@@ -3267,6 +3267,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'InboxTarget',
     declaration: 'export type InboxTarget = \'next-turn\' | \'next-step\';',
+  },
+  {
+    name: 'InstallationId',
+    declaration: 'export type InstallationId = Branded<\'InstallationId\'>;',
   },
   {
     name: 'InvariantFailure',

@@ -1387,7 +1387,9 @@ export interface PlatformAccountOptions {
   invalidation: AccountInvalidationBus
   /** GitHub public-identity adapter for the selected environment. */
   github: GitHubIdentityProvider
-  /** One environment's trusted origin, namespace, and signing keys. */
+  /** Identity selected from a validated development/production pair. */
+  environment: SelectedPlatformEnvironment
+  /** Secret signing material for the selected environment. */
   config: PlatformAccountConfig
   /** Optional deterministic time source. */
   clock?: AccountClock
@@ -1395,6 +1397,8 @@ export interface PlatformAccountOptions {
 
 /** Persistence operations requiring atomic compare-and-mutate behavior. */
 export interface AccountBackend {
+  /** Durable database identity selected for this deployment. */
+  readonly databaseIdentity: string
   /** Persist a new Login Attempt. */
   createAttempt(record: LoginAttemptRecord): Promise<void>
   /** Find the Login Attempt bound to one OAuth state. */
@@ -1421,30 +1425,24 @@ export interface AccountBackend {
 
 /** Shared invalidation channel used by every Platform Instance. */
 export interface AccountInvalidationBus {
-  /** Publish one committed Account Session invalidation. */
-  publish(sessionId: AccountSessionId): void
+  /** Publish one committed Account Session invalidation after every subscriber settles. */
+  publish(sessionId: AccountSessionId): Promise<void>
   /** Subscribe to committed Account Session invalidations. */
-  subscribe(listener: (sessionId: AccountSessionId) => void): () => void
+  subscribe(listener: (sessionId: AccountSessionId) => void | Promise<void>): () => void
 }
 
 /** GitHub OAuth adapter used by the Account provider. */
 export interface GitHubIdentityProvider {
+  /** Validated deployment identity owning the OAuth App and callback. */
+  readonly environment: SelectedPlatformEnvironment
   /** Build the system-browser authorization URL with S256 PKCE and no scope parameter. */
   authorizationUrl(input: { callbackUrl: string; state: string; codeChallenge: string }): string
   /** Exchange one callback code and return only the public identity retained by Platform. */
   exchange(code: string, verifier: string): Promise<GitHubIdentity>
 }
 
-/** Provider configuration for exactly one deployment environment. */
+/** Secret signing material for one Platform Account provider. */
 export interface PlatformAccountConfig {
-  /** Deployment environment. */
-  environment: PlatformEnvironment
-  /** Namespace included in every account and token identity. */
-  identityNamespace: string
-  /** Trusted Platform HTTPS origin. */
-  origin: string
-  /** Fixed GitHub OAuth callback on the trusted origin. */
-  callbackUrl: string
   /** Shared secret used to sign short-lived access tokens. */
   tokenSigningKey: Uint8Array
   /** Shared secret used to sign five-minute polling tokens. */
@@ -1466,7 +1464,7 @@ export interface LoginAttemptRecord {
   /** Provider identity namespace for the selected environment. */
   identityNamespace: string
   /** Stable id of the requesting installation. */
-  installationId: string
+  installationId: InstallationId
   /** Desktop or Mobile installation class. */
   installationKind: InstallationKind
   /** Installation P-256 public key. */
@@ -1512,7 +1510,7 @@ export interface SessionRecord {
   /** Platform Account authorized by the session. */
   accountId: PlatformAccountId
   /** Stable id of the authorized installation. */
-  installationId: string
+  installationId: InstallationId
   /** Desktop or Mobile installation class. */
   installationKind: InstallationKind
   /** Installation P-256 public key. */
@@ -1534,9 +1532,9 @@ export interface AccountRecord extends PlatformAccountView {
 }
 ```
 
-依赖： [`AccountSessionId`](subsystems/platform-account.md) · [`InstallationKind`](../packages/platform/platform-account/src/index.ts) · [`LoginAttemptId`](../packages/platform/platform-account/src/index.ts) · [`PlatformAccountId`](../packages/platform/platform-account/src/index.ts) · [`PlatformAccountView`](subsystems/platform-account.md) · [`PlatformEnvironment`](../packages/platform/platform-account/src/index.ts)
+依赖： [`AccountSessionId`](subsystems/platform-account.md) · [`InstallationId`](subsystems/platform-account.md) · [`InstallationKind`](../packages/platform/platform-account/src/index.ts) · [`LoginAttemptId`](subsystems/platform-account.md) · [`PlatformAccountId`](../packages/platform/platform-account/src/index.ts) · [`PlatformAccountView`](subsystems/platform-account.md) · [`PlatformEnvironment`](../packages/platform/platform-account/src/index.ts) · [`SelectedPlatformEnvironment`](../packages/platform/platform-account/src/index.ts)
 
-来源： [`packages/platform/platform-account-core/src/index.ts:462`](../packages/platform/platform-account-core/src/index.ts)
+来源： [`packages/platform/platform-account-core/src/index.ts:443`](../packages/platform/platform-account-core/src/index.ts)
 
 <a id="deepseek-aidsh-platform-account-http"></a>
 
@@ -1552,7 +1550,7 @@ export interface Config {
 }
 ```
 
-来源： [`packages/platform/platform-account-http/src/index.ts:16`](../packages/platform/platform-account-http/src/index.ts)
+来源： [`packages/platform/platform-account-http/src/index.ts:21`](../packages/platform/platform-account-http/src/index.ts)
 
 <a id="deepseek-aidsh-pwsh-local"></a>
 

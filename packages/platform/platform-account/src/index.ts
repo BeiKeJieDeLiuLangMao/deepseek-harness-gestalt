@@ -8,11 +8,16 @@ import type {
   AccountProof,
   AccountSessionView,
   AccountSessionId,
+  InstallationId,
+  LoginAttemptId,
   LoginAttemptView,
   LoginPollResult,
   PlatformAccountView,
 } from './types.ts'
 
+export * from './environment.ts'
+export * from './parsers.ts'
+export * from './privacy.ts'
 export * from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -37,7 +42,7 @@ export abstract class AccountService extends Service {
    * @returns the system-browser URL and signed polling capability.
    */
   abstract beginLogin(input: {
-    installationId: string
+    installationId: InstallationId
     installationKind: 'desktop' | 'mobile'
     publicKey: JsonWebKey
   }): Promise<LoginAttemptView>
@@ -55,7 +60,7 @@ export abstract class AccountService extends Service {
    * @returns pending or the newly created Account Session.
    */
   abstract pollLogin(input: {
-    attemptId: string
+    attemptId: LoginAttemptId
     pollingToken: string
     proof: AccountProof
   }): Promise<LoginPollResult>
@@ -86,7 +91,7 @@ export abstract class AccountService extends Service {
    * @param close - idempotent close callback.
    * @returns disposer removing the tracked connection.
    */
-  abstract trackConnection(sessionId: AccountSessionId, close: () => void): () => void
+  abstract trackConnection(sessionId: AccountSessionId, close: () => void | Promise<void>): () => void
 }
 
 export default AccountService

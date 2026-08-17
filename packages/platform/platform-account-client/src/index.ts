@@ -6,41 +6,45 @@
 
 import {
   ACCOUNT_PRIVACY_NOTICE,
+  AccountError,
+  parseAccountSessionView,
+  parseLoginAttemptView,
+  parseLoginPollResult,
+  parsePlatformAccountView,
   type AccountProof,
+  type AccountErrorCode,
   type AccountSessionView,
+  type InstallationId,
   type InstallationKind,
+  type LoginAttemptId,
   type LoginAttemptView,
   type LoginPollResult,
   type PlatformAccountId,
   type PlatformAccountView,
   type PlatformEnvironment,
+  type SelectedPlatformEnvironment,
 } from '@deepseek-ai/dsh-platform-account'
 
 export { ACCOUNT_PRIVACY_NOTICE }
 
 /** Transport operations used by one installation controller. */
 export interface PlatformAccountTransport {
+  /** Deployment identity owning every request. */
+  readonly environment: SelectedPlatformEnvironment
   beginLogin(input: {
-    installationId: string
+    installationId: InstallationId
     installationKind: InstallationKind
     publicKey: JsonWebKey
   }): Promise<LoginAttemptView>
-  pollLogin(input: { attemptId: string; pollingToken: string; proof: AccountProof }): Promise<LoginPollResult>
+  pollLogin(input: { attemptId: LoginAttemptId; pollingToken: string; proof: AccountProof }): Promise<LoginPollResult>
   refresh(input: { refreshToken: string; proof: AccountProof }): Promise<AccountSessionView>
   current(input: { accessToken: string; proof: AccountProof }): Promise<PlatformAccountView>
   signOut(input: { accessToken: string; proof: AccountProof }): Promise<void>
 }
 
-/** Trusted Platform origins compiled for the two supported environments. */
-export interface PlatformOrigins {
-  development: string
-  production: string
-}
-
 /** HTTP transport construction inputs. */
 export interface PlatformAccountHttpTransportOptions {
-  environment: PlatformEnvironment
-  origins: PlatformOrigins
+  environment: SelectedPlatformEnvironment
   fetch?: typeof fetch
 }
 
@@ -48,40 +52,37 @@ export interface PlatformAccountHttpTransportOptions {
 export class PlatformAccountHttpTransport implements PlatformAccountTransport {
   private readonly origin: string
   private readonly fetch: typeof fetch
+  /** Deployment identity owning every request. */
+  readonly environment: SelectedPlatformEnvironment
 
-  /** @param options - build-owned environment/origin set and HTTP adapter. */
+  /** @param options - validated deployment identity and HTTP adapter. */
   constructor(options: PlatformAccountHttpTransportOptions) {
-    const development = new URL(options.origins.development)
-    const production = new URL(options.origins.production)
-    if (development.protocol !== 'https:' || production.protocol !== 'https:'
-      || development.origin === production.origin) {
-      throw new TypeError('Platform Account origins must be distinct HTTPS origins')
-    }
-    this.origin = options.environment === 'development' ? development.origin : production.origin
+    this.environment = options.environment
+    this.origin = options.environment.origin
     this.fetch = options.fetch ?? globalThis.fetch
   }
 
   beginLogin(input: {
-    installationId: string
+    installationId: InstallationId
     installationKind: InstallationKind
     publicKey: JsonWebKey
   }): Promise<LoginAttemptView> {
-    return this.json('/v1/account/login-attempts', { method: 'POST', body: JSON.stringify(input) })
+    return this.json('/v1/account/login-attempts', { method: 'POST', body: JSON.stringify(input) }, parseLoginAttemptView)
   }
 
-  pollLogin(input: { attemptId: string; pollingToken: string; proof: AccountProof }): Promise<LoginPollResult> {
-    return this.json('/v1/account/login-poll', { method: 'POST', body: JSON.stringify(input) })
+  pollLogin(input: { attemptId: LoginAttemptId; pollingToken: string; proof: AccountProof }): Promise<LoginPollResult> {
+    return this.json('/v1/account/login-poll', { method: 'POST', body: JSON.stringify(input) }, parseLoginPollResult)
   }
 
   refresh(input: { refreshToken: string; proof: AccountProof }): Promise<AccountSessionView> {
-    return this.json('/v1/account/session/refresh', { method: 'POST', body: JSON.stringify(input) })
+    return this.json('/v1/account/session/refresh', { method: 'POST', body: JSON.stringify(input) }, parseAccountSessionView)
   }
 
   current(input: { accessToken: string; proof: AccountProof }): Promise<PlatformAccountView> {
     return this.json('/v1/account/session', {
       method: 'GET',
       headers: proofHeaders(input.accessToken, input.proof),
-    })
+    }, parsePlatformAccountView)
   }
 
   async signOut(input: { accessToken: string; proof: AccountProof }): Promise<void> {
@@ -91,9 +92,9 @@ export class PlatformAccountHttpTransport implements PlatformAccountTransport {
     })
   }
 
-  private async json<T>(path: string, init: RequestInit): Promise<T> {
+  private async json<T>(path: string, init: RequestInit, parse: (value: unknown) => T): Promise<T> {
     const response = await this.request(path, init)
-    return await response.json() as T
+    return parse(await response.json())
   }
 
   private async request(path: string, init: RequestInit): Promise<Response> {
@@ -102,11 +103,15 @@ export class PlatformAccountHttpTransport implements PlatformAccountTransport {
     const response = await this.fetch(`${this.origin}${path}`, { ...init, headers })
     if (response.ok) return response
     let message = `Platform Account request failed with HTTP ${response.status}`
+    let body: unknown
     try {
-      const body = await response.json() as unknown
-      if (isErrorBody(body)) message = `${body.error.code}: ${body.error.message}`
+      body = await response.json()
     } catch {
       // A non-JSON proxy failure has no stable Platform error body.
+    }
+    if (isErrorBody(body)) {
+      if (isAccountErrorCode(body.error.code)) throw new AccountError(body.error.code, body.error.message)
+      message = `${body.error.code}: ${body.error.message}`
     }
     throw new Error(message)
   }
@@ -209,7 +214,7 @@ export class IndexedDbInstallationAccountStore implements InstallationAccountSto
   }
 
   loadSession(environment: PlatformEnvironment): Promise<StoredInstallationSession | undefined> {
-    return this.read(`${environment}:session`)
+    return this.read(`${environment}:session`, value => parseStoredInstallationSession(value, environment))
   }
 
   saveSession(record: StoredInstallationSession): Promise<void> {
@@ -225,18 +230,24 @@ export class IndexedDbInstallationAccountStore implements InstallationAccountSto
   }
 
   loadPending(environment: PlatformEnvironment): Promise<PendingLogin | undefined> {
-    return this.read(`${environment}:pending`)
+    return this.read(`${environment}:pending`, value => parsePendingLogin(value))
   }
 
   clearPending(environment: PlatformEnvironment): Promise<void> {
     return this.remove(`${environment}:pending`)
   }
 
-  private async read<T>(key: string): Promise<T | undefined> {
+  private async read<T>(key: string, parse: (value: unknown) => T): Promise<T | undefined> {
     const database = await this.database
     return new Promise((resolve, reject) => {
       const request = database.transaction('records', 'readonly').objectStore('records').get(key)
-      request.onsuccess = () => { resolve(request.result as T | undefined) }
+      request.onsuccess = () => {
+        try {
+          resolve(request.result === undefined ? undefined : parse(request.result))
+        } catch (error) {
+          reject(new Error(String(error), { cause: error }))
+        }
+      }
       request.onerror = () => { reject(request.error ?? new Error('Platform Account IndexedDB read failed')) }
     })
   }
@@ -262,6 +273,46 @@ export class IndexedDbInstallationAccountStore implements InstallationAccountSto
   }
 }
 
+function parseStoredInstallationSession(
+  value: unknown,
+  environment: PlatformEnvironment,
+): StoredInstallationSession {
+  const record = durableRecord(value, 'stored installation session')
+  if (record.environment !== environment) {
+    throw new TypeError('stored installation session belongs to another environment')
+  }
+  return {
+    environment,
+    session: parseAccountSessionView(record.session),
+    privateKey: parseP256PrivateKey(record.privateKey),
+  }
+}
+
+function parsePendingLogin(value: unknown): PendingLogin {
+  const record = durableRecord(value, 'pending login')
+  return {
+    attempt: parseLoginAttemptView(record.attempt),
+    privateKey: parseP256PrivateKey(record.privateKey),
+  }
+}
+
+function parseP256PrivateKey(value: unknown): CryptoKey {
+  const record = durableRecord(value, 'installation private key')
+  const algorithm = durableRecord(record.algorithm, 'installation private-key algorithm')
+  if (record.type !== 'private' || algorithm.name !== 'ECDSA' || algorithm.namedCurve !== 'P-256'
+    || !Array.isArray(record.usages) || !record.usages.includes('sign')) {
+    throw new TypeError('installation private key must be a signing P-256 CryptoKey')
+  }
+  return value as CryptoKey
+}
+
+function durableRecord(value: unknown, name: string): Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new TypeError(`${name} must be an object`)
+  }
+  return value as Record<string, unknown>
+}
+
 /**
  * Build the stable local prefix for pairing keys, caches, and operation receipts.
  * @param environment - deployment environment owning the material.
@@ -274,20 +325,43 @@ export function accountStorageNamespace(environment: PlatformEnvironment, accoun
 
 /** Observable installation state consumed by Desktop and Mobile presentation. */
 export interface PlatformAccountInstallationSnapshot {
-  status: 'idle' | 'authorizing' | 'polling' | 'signed-in' | 'signing-out' | 'failed'
+  status: 'idle' | 'preparing' | 'ready' | 'polling' | 'signed-in' | 'signing-out' | 'failed'
   privacyAccepted: boolean
   account?: PlatformAccountView
   error?: string
 }
 
+/** Native or Desktop system-browser capability used for OAuth authorization. */
+export interface SystemBrowser {
+  /** Open one trusted HTTPS authorization URL outside the app webview. */
+  open(url: string): void | Promise<void>
+}
+
+/** Serial owner for current-installation lifecycle mutations. */
+export class AccountLifecycleTransitions {
+  private tail: Promise<void> = Promise.resolve()
+
+  /**
+   * Run one transition after every earlier transition has settled.
+   * @param transition - lifecycle mutation with exclusive access to local state.
+   * @returns the transition result.
+   */
+  run<T>(transition: () => Promise<T>): Promise<T> {
+    const result = this.tail.then(transition)
+    this.tail = result.then(() => undefined, () => undefined)
+    return result
+  }
+}
+
 /** Controller construction inputs. */
 export interface PlatformAccountInstallationOptions {
-  environment: PlatformEnvironment
-  installationId: string
+  environment: SelectedPlatformEnvironment
+  installationId: InstallationId
   installationKind: InstallationKind
   transport: PlatformAccountTransport
   store: InstallationAccountStore
-  openSystemBrowser: (url: string) => void | Promise<void>
+  systemBrowser: SystemBrowser
+  transitions?: AccountLifecycleTransitions
   crypto?: Crypto
   now?: () => number
 }
@@ -301,11 +375,17 @@ export class PlatformAccountInstallation {
   private readonly listeners = new Set<() => void>()
   private readonly crypto: Crypto
   private readonly now: () => number
+  private readonly transitions: AccountLifecycleTransitions
+  private preparedAuthorizationUrl: string | undefined
 
   /** @param options - environment, installation identity, adapters, and browser opener. */
   constructor(private readonly options: PlatformAccountInstallationOptions) {
     this.crypto = options.crypto ?? globalThis.crypto
     this.now = options.now ?? Date.now
+    this.transitions = options.transitions ?? new AccountLifecycleTransitions()
+    if (options.transport.environment !== options.environment) {
+      throw new TypeError('Platform Account transport does not match the selected installation environment')
+    }
   }
 
   /** Read the current observable installation lifecycle state.
@@ -332,10 +412,14 @@ export class PlatformAccountInstallation {
 
   /** Restore a current installation session from protected local storage. */
   async load(): Promise<void> {
-    const stored = await this.options.store.loadSession(this.options.environment)
+    await this.transitions.run(async () => { await this.loadTransition() })
+  }
+
+  private async loadTransition(): Promise<void> {
+    const stored = await this.options.store.loadSession(this.options.environment.environment)
     if (stored === undefined) return
     if (stored.session.refreshExpiresAt <= this.now()) {
-      await this.options.store.clearSession(this.options.environment)
+      await this.options.store.clearSession(this.options.environment.environment)
       return
     }
     try {
@@ -360,7 +444,7 @@ export class PlatformAccountInstallation {
       this.publish({ status: 'signed-in', privacyAccepted: this.snapshot.privacyAccepted, account: session.account })
     } catch (error) {
       if (isTerminalSessionError(error)) {
-        await this.options.store.clearSession(this.options.environment)
+        await this.options.store.clearSession(this.options.environment.environment)
         this.publish({ status: 'idle', privacyAccepted: this.snapshot.privacyAccepted })
         return
       }
@@ -368,10 +452,14 @@ export class PlatformAccountInstallation {
     }
   }
 
-  /** Generate a fresh P-256 installation key and open GitHub in the system browser. */
-  async beginLogin(): Promise<void> {
+  /** Generate a fresh P-256 key and persist the attempt before the authorization click. */
+  async prepareLogin(): Promise<void> {
+    await this.transitions.run(async () => { await this.prepareLoginTransition() })
+  }
+
+  private async prepareLoginTransition(): Promise<void> {
     if (!this.snapshot.privacyAccepted) throw new Error('privacy notice must be accepted before authorization')
-    this.publish({ status: 'authorizing', privacyAccepted: true })
+    this.publish({ status: 'preparing', privacyAccepted: true })
     try {
       const pair = await this.crypto.subtle.generateKey(
         { name: 'ECDSA', namedCurve: 'P-256' },
@@ -384,13 +472,30 @@ export class PlatformAccountInstallation {
         installationKind: this.options.installationKind,
         publicKey,
       })
-      await this.options.store.savePending(this.options.environment, { attempt, privateKey: pair.privateKey })
-      await this.options.openSystemBrowser(attempt.authorizationUrl)
-      this.publish({ status: 'polling', privacyAccepted: true })
+      await this.options.store.savePending(this.options.environment.environment, { attempt, privateKey: pair.privateKey })
+      this.preparedAuthorizationUrl = attempt.authorizationUrl
+      this.publish({ status: 'ready', privacyAccepted: true })
     } catch (error) {
       this.fail(error)
       throw error
     }
+  }
+
+  /** Open the prepared URL synchronously from the user activation callback. */
+  openLogin(): void {
+    if (this.preparedAuthorizationUrl === undefined || this.snapshot.status !== 'ready') {
+      throw new Error('login authorization is not prepared')
+    }
+    const opened = this.options.systemBrowser.open(this.preparedAuthorizationUrl)
+    this.preparedAuthorizationUrl = undefined
+    this.publish({ status: 'polling', privacyAccepted: true })
+    if (opened !== undefined) void Promise.resolve(opened).catch((error: unknown) => { this.fail(error) })
+  }
+
+  /** Prepare and open login for hosts whose system-browser API does not require user activation. */
+  async beginLogin(): Promise<void> {
+    await this.prepareLogin()
+    this.openLogin()
   }
 
   /**
@@ -398,7 +503,11 @@ export class PlatformAccountInstallation {
    * @returns pending state or the newly issued current-installation session.
    */
   async pollLogin(): Promise<LoginPollResult> {
-    const pending = await this.options.store.loadPending(this.options.environment)
+    return this.transitions.run(async () => this.pollLoginTransition())
+  }
+
+  private async pollLoginTransition(): Promise<LoginPollResult> {
+    const pending = await this.options.store.loadPending(this.options.environment.environment)
     if (pending === undefined) throw new Error('no login attempt is pending')
     const proof = await this.proof(
       pending.privateKey,
@@ -413,11 +522,11 @@ export class PlatformAccountInstallation {
       })
       if (result.status === 'pending') return result
       await this.options.store.saveSession({
-        environment: this.options.environment,
+        environment: this.options.environment.environment,
         session: result,
         privateKey: pending.privateKey,
       })
-      await this.options.store.clearPending(this.options.environment)
+      await this.options.store.clearPending(this.options.environment.environment)
       this.publish({ status: 'signed-in', privacyAccepted: true, account: result.account })
       return result
     } catch (error) {
@@ -428,7 +537,11 @@ export class PlatformAccountInstallation {
 
   /** Revoke this installation session and retain every account-scoped material namespace. */
   async signOut(): Promise<void> {
-    const stored = await this.options.store.loadSession(this.options.environment)
+    await this.transitions.run(async () => { await this.signOutTransition() })
+  }
+
+  private async signOutTransition(): Promise<void> {
+    const stored = await this.options.store.loadSession(this.options.environment.environment)
     if (stored === undefined) return
     this.publish({ ...withoutError(this.snapshot), status: 'signing-out' })
     try {
@@ -438,11 +551,11 @@ export class PlatformAccountInstallation {
         await hashToken(this.crypto, stored.session.accessToken),
       )
       await this.options.transport.signOut({ accessToken: stored.session.accessToken, proof })
-      await this.options.store.clearSession(this.options.environment)
+      await this.options.store.clearSession(this.options.environment.environment)
       this.publish({ status: 'idle', privacyAccepted: this.snapshot.privacyAccepted })
     } catch (error) {
       if (isTerminalSessionError(error)) {
-        await this.options.store.clearSession(this.options.environment)
+        await this.options.store.clearSession(this.options.environment.environment)
         this.publish({ status: 'idle', privacyAccepted: this.snapshot.privacyAccepted })
         return
       }
@@ -501,6 +614,19 @@ function isErrorBody(value: unknown): value is { error: { code: string; message:
     && 'message' in error && typeof error.message === 'string'
 }
 
+function isAccountErrorCode(value: string): value is AccountErrorCode {
+  return [
+    'LOGIN_ATTEMPT_EXPIRED',
+    'LOGIN_ATTEMPT_INVALID',
+    'LOGIN_ATTEMPT_USED',
+    'LOGIN_STATE_INVALID',
+    'PROOF_INVALID',
+    'PROOF_REPLAYED',
+    'SESSION_EXPIRED',
+    'SESSION_REVOKED',
+  ].includes(value)
+}
+
 function withoutError(snapshot: PlatformAccountInstallationSnapshot): PlatformAccountInstallationSnapshot {
   if (snapshot.error === undefined) return snapshot
   const clean: PlatformAccountInstallationSnapshot = {
@@ -512,6 +638,5 @@ function withoutError(snapshot: PlatformAccountInstallationSnapshot): PlatformAc
 }
 
 function isTerminalSessionError(error: unknown): boolean {
-  if (!(error instanceof Error)) return false
-  return error.message.startsWith('SESSION_REVOKED:') || error.message.startsWith('SESSION_EXPIRED:')
+  return error instanceof AccountError && (error.code === 'SESSION_REVOKED' || error.code === 'SESSION_EXPIRED')
 }

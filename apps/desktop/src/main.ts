@@ -17,6 +17,7 @@ import {
   type UpdaterStatus,
 } from '@deepseek-ai/dsh-client-ui-desktop/protocol'
 import { PlatformAccountHttpTransport } from '@deepseek-ai/dsh-platform-account-client'
+import type { SelectedPlatformEnvironment } from '@deepseek-ai/dsh-platform-account'
 import { ensureLaunchDirectory } from './launch-directory.ts'
 import { isElectronExecutable, resolveDesktopRuntime } from './runtime-paths.ts'
 import { planHostExit, startWithOneRetry } from './host-exit.ts'
@@ -27,6 +28,7 @@ import {
 } from './updater.ts'
 import { windowChromeOptions } from './window-options.ts'
 import { desktopIconOptions } from './app-icon.ts'
+import { loadDesktopPlatformEnvironment } from './platform-environment.ts'
 import {
   DesktopAccountController, EncryptedDesktopAccountStore,
   UnavailableDesktopAccountController, type DesktopAccountActions,
@@ -77,8 +79,9 @@ process.once('SIGTERM', () => { app.quit() })
 
 /** Create the window, spawn Web Host, attach updater. */
 async function boot(): Promise<void> {
+  const accountEnvironment = loadDesktopPlatformEnvironment(process.env)
   window = createWindow()
-  account = createDesktopAccount()
+  account = createDesktopAccount(accountEnvironment)
   stopAccountEvents = account.subscribe(pushAccountSnapshot)
   try {
     await account.start()
@@ -382,42 +385,24 @@ function pushAccountSnapshot(snapshot: ReturnType<DesktopAccountActions['getSnap
   window?.webContents.send(ACCOUNT_SNAPSHOT_CHANGED, snapshot)
 }
 
-function createDesktopAccount(): DesktopAccountActions {
-  const environment = process.env.DSH_PLATFORM_ENV
-  if (environment !== 'development' && environment !== 'production') {
-    return new UnavailableDesktopAccountController('Set DSH_PLATFORM_ENV to development or production')
-  }
-  const development = process.env.DSH_PLATFORM_DEVELOPMENT_ORIGIN
-  const production = process.env.DSH_PLATFORM_PRODUCTION_ORIGIN
-  if (development === undefined || production === undefined) {
-    return new UnavailableDesktopAccountController('Platform Account origins are not configured')
-  }
+function createDesktopAccount(environment: SelectedPlatformEnvironment): DesktopAccountActions {
   if (!safeStorage.isEncryptionAvailable()) {
     return new UnavailableDesktopAccountController('Secure operating-system storage is unavailable')
   }
-  try {
-    const transport = new PlatformAccountHttpTransport({
-      environment,
-      origins: { development, production },
-    })
-    const store = new EncryptedDesktopAccountStore(
-      join(app.getPath('userData'), `platform-account-${environment}.bin`),
-      {
-        encrypt: value => safeStorage.encryptString(value),
-        decrypt: value => safeStorage.decryptString(Buffer.from(value)),
-      },
-    )
-    return new DesktopAccountController({
-      environment,
-      transport,
-      store,
-      openSystemBrowser: async (url) => { await shell.openExternal(url) },
-    })
-  } catch (error) {
-    return new UnavailableDesktopAccountController(
-      error instanceof Error ? error.message : String(error),
-    )
-  }
+  const transport = new PlatformAccountHttpTransport({ environment })
+  const store = new EncryptedDesktopAccountStore(
+    join(app.getPath('userData'), `platform-account-${environment.databaseIdentity}.bin`),
+    {
+      encrypt: value => safeStorage.encryptString(value),
+      decrypt: value => safeStorage.decryptString(Buffer.from(value)),
+    },
+  )
+  return new DesktopAccountController({
+    environment,
+    transport,
+    store,
+    systemBrowser: { open: async (url) => { await shell.openExternal(url) } },
+  })
 }
 
 async function showError(target: BrowserWindow, error: unknown): Promise<void> {

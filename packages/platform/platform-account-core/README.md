@@ -4,9 +4,9 @@ English | [中文](README.zh.md)
 
 Platform Account provider. A Login Attempt lasts five minutes, carries random OAuth state and S256 PKCE, and can be consumed once with a signed polling token plus P-256 installation proof. The GitHub OAuth adapter requests no scope, rejects inherited non-empty scopes, retains only the immutable numeric id plus public login and avatar, and discards the provider token after identity lookup.
 
-Account Sessions bind one Account to one Installation key. Access tokens last 15 minutes. Refresh tokens rotate on every use and expire after at most 30 days. Current reads, refresh, and sign-out require a fresh, non-replayed proof. Replacing or signing out a session publishes invalidation so every Platform Instance closes connections tracked for that session.
+Account Sessions bind one Account to one Installation key. Access tokens last 15 minutes. Refresh tokens rotate on every use and expire after at most 30 days; an expiry timestamp is already invalid at equality. Current reads, refresh, and sign-out require a fresh, non-replayed proof. Replacing or signing out a session commits revocation before awaiting invalidation. The bus and each instance contain subscriber and connection-close failures independently, run every callback, and report aggregated completion errors.
 
-`validatePlatformEnvironmentPair` rejects development and production configurations that share an origin, callback, GitHub OAuth App id, credential namespace, database namespace, or identity namespace.
+`loadPlatformEnvironment` requires and selects a complete pair. Development and production cannot share an origin, callback, GitHub OAuth App id, credential reference, database identity, or identity namespace. The provider rejects a GitHub adapter or backend whose selected identity does not match before serving traffic.
 
 ## Extension Points
 

@@ -8,6 +8,12 @@ import type {
   PlatformAccountId,
 } from '@deepseek-ai/dsh-platform-account'
 import {
+  parseInstallationId,
+  parseLoginAttemptId,
+  selectPlatformEnvironment,
+  validatePlatformEnvironmentPair,
+} from '@deepseek-ai/dsh-platform-account'
+import {
   ACCESS_TOKEN_TTL_MS,
   ACCOUNT_PROOF_WINDOW_MS,
   LOGIN_ATTEMPT_TTL_MS,
@@ -24,6 +30,26 @@ import {
 } from '../src/index.ts'
 
 const NOW = Date.parse('2026-08-17T10:00:00.000Z')
+const ENVIRONMENT = selectPlatformEnvironment(validatePlatformEnvironmentPair({
+  development: {
+    environment: 'development',
+    origin: 'https://platform.dev.example.com',
+    callbackUrl: 'https://platform.dev.example.com/v1/account/oauth/github/callback',
+    githubClientId: 'github-client-development',
+    credentialReference: 'credentials://platform-account/development/github-oauth-app',
+    databaseIdentity: 'database-development',
+    identityNamespace: 'gestalt-development',
+  },
+  production: {
+    environment: 'production',
+    origin: 'https://platform.example.com',
+    callbackUrl: 'https://platform.example.com/v1/account/oauth/github/callback',
+    githubClientId: 'github-client-production',
+    credentialReference: 'credentials://platform-account/production/github-oauth-app',
+    databaseIdentity: 'database-production',
+    identityNamespace: 'gestalt-production',
+  },
+}), 'development')
 
 function installationKey() {
   const pair = generateKeyPairSync('ec', { namedCurve: 'P-256' })
@@ -47,6 +73,7 @@ function github(): GitHubIdentityProvider & { exchanges: Array<{ code: string; v
   const exchanges: Array<{ code: string; verifier: string }> = []
   return {
     exchanges,
+    environment: ENVIRONMENT,
     authorizationUrl(input) {
       const url = new URL('https://github.com/login/oauth/authorize')
       url.searchParams.set('client_id', 'github-client-development')
@@ -64,10 +91,6 @@ function github(): GitHubIdentityProvider & { exchanges: Array<{ code: string; v
 }
 
 const CONFIG: PlatformAccountConfig = {
-  environment: 'development' as const,
-  identityNamespace: 'gestalt-development',
-  origin: 'https://platform.dev.example.com',
-  callbackUrl: 'https://platform.dev.example.com/v1/account/oauth/github/callback',
   tokenSigningKey: Buffer.alloc(32, 7),
   pollingSigningKey: Buffer.alloc(32, 9),
 }
@@ -79,20 +102,24 @@ function accountHarness(options: {
   clock?: { now(): number }
   config?: PlatformAccountConfig
 } = {}) {
-  const backend = options.backend ?? new MemoryAccountBackend()
+  const backend = options.backend ?? new MemoryAccountBackend(ENVIRONMENT.databaseIdentity)
   const invalidation = options.invalidation ?? new MemoryAccountInvalidationBus()
   const provider = options.provider ?? github()
   const clock = options.clock ?? { now: () => NOW }
   const config = options.config ?? CONFIG
-  const first = new PlatformAccount(new Context(), { backend, invalidation, github: provider, clock, config })
-  const second = new PlatformAccount(new Context(), { backend, invalidation, github: provider, clock, config })
+  const first = new PlatformAccount(new Context(), {
+    backend, invalidation, github: provider, environment: ENVIRONMENT, clock, config,
+  })
+  const second = new PlatformAccount(new Context(), {
+    backend, invalidation, github: provider, environment: ENVIRONMENT, clock, config,
+  })
   return { backend, invalidation, provider, clock, config, first, second }
 }
 
 async function login(
   account: PlatformAccount,
   key = installationKey(),
-  installationId = 'installation-1',
+  installationId = parseInstallationId('installation-1'),
 ): Promise<{ key: ReturnType<typeof installationKey>; session: Extract<Awaited<ReturnType<PlatformAccount['pollLogin']>>, { status: 'complete' }> }> {
   const attempt = await account.beginLogin({ installationId, installationKind: 'desktop', publicKey: key.publicKey })
   await account.completeGitHubCallback({ code: 'code', state: attempt.state })
@@ -128,12 +155,42 @@ function proxyBackend(base: AccountBackend, overrides: Partial<AccountBackend>):
 }
 
 describe('PlatformAccount', () => {
+  it('rejects a backend from another database identity before serving traffic', () => {
+    expect(() => new PlatformAccount(new Context(), {
+      backend: new MemoryAccountBackend('database-production'),
+      invalidation: new MemoryAccountInvalidationBus(),
+      github: github(),
+      environment: ENVIRONMENT,
+      config: CONFIG,
+    })).toThrow('database identity does not match')
+    expect(() => new MemoryAccountBackend(' ')).toThrow('must be non-empty')
+  })
+
+  it('rejects a GitHub adapter selected from another environment before serving traffic', () => {
+    const production = selectPlatformEnvironment(validatePlatformEnvironmentPair({
+      development: { ...ENVIRONMENT, environment: 'development' },
+      production: {
+        environment: 'production', origin: 'https://other.example.com',
+        callbackUrl: 'https://other.example.com/v1/account/oauth/github/callback',
+        githubClientId: 'other-client', credentialReference: 'credentials://other',
+        databaseIdentity: 'other-database', identityNamespace: 'other-namespace',
+      },
+    }), 'production')
+    expect(() => new PlatformAccount(new Context(), {
+      backend: new MemoryAccountBackend(ENVIRONMENT.databaseIdentity),
+      invalidation: new MemoryAccountInvalidationBus(),
+      github: { ...github(), environment: production },
+      environment: ENVIRONMENT,
+      config: CONFIG,
+    })).toThrow('GitHub OAuth adapter does not match')
+  })
+
   it('uses one signed five-minute PKCE attempt without requesting a GitHub scope', async () => {
     const provider = github()
     const { first } = accountHarness({ provider })
     const key = installationKey()
     const attempt = await first.beginLogin({
-      installationId: 'desktop-installation-1',
+      installationId: parseInstallationId('desktop-installation-1'),
       installationKind: 'desktop',
       publicKey: key.publicKey,
     })
@@ -169,7 +226,7 @@ describe('PlatformAccount', () => {
     const { first } = accountHarness()
     const key = installationKey()
     const attempt = await first.beginLogin({
-      installationId: 'mobile-installation-1',
+      installationId: parseInstallationId('mobile-installation-1'),
       installationKind: 'mobile',
       publicKey: key.publicKey,
     })
@@ -197,7 +254,7 @@ describe('PlatformAccount', () => {
     const { first, second } = accountHarness()
     const key = installationKey()
     const attempt = await first.beginLogin({
-      installationId: 'desktop-installation-2',
+      installationId: parseInstallationId('desktop-installation-2'),
       installationKind: 'desktop',
       publicKey: key.publicKey,
     })
@@ -226,12 +283,45 @@ describe('PlatformAccount', () => {
     })).rejects.toMatchObject({ code: 'SESSION_REVOKED' })
   })
 
+  it('runs every invalidation listener and connection closer before reporting failures', async () => {
+    const bus = new MemoryAccountInvalidationBus()
+    const sessionId = 'contained-session' as AccountSessionId
+    const firstListener = vi.fn(async () => { throw new Error('listener one failed') })
+    const secondListener = vi.fn()
+    bus.subscribe(firstListener)
+    bus.subscribe(secondListener)
+
+    await expect(bus.publish(sessionId)).rejects.toMatchObject({
+      errors: [expect.objectContaining({ message: 'listener one failed' })],
+    })
+    expect(firstListener).toHaveBeenCalledOnce()
+    expect(secondListener).toHaveBeenCalledOnce()
+
+    const harness = accountHarness()
+    const { key, session } = await login(harness.first)
+    const firstClose = vi.fn(async () => { throw new Error('connection one failed') })
+    const secondClose = vi.fn()
+    harness.second.trackConnection(session.sessionId, firstClose)
+    harness.second.trackConnection(session.sessionId, secondClose)
+
+    await expect(harness.first.signOut({
+      accessToken: session.accessToken,
+      proof: key.proof('sign-out', hashAccountToken(session.accessToken)),
+    })).rejects.toThrow('connection one failed')
+    expect(firstClose).toHaveBeenCalledOnce()
+    expect(secondClose).toHaveBeenCalledOnce()
+    await expect(harness.first.current({
+      accessToken: session.accessToken,
+      proof: key.proof('current', hashAccountToken(session.accessToken)),
+    })).rejects.toMatchObject({ code: 'SESSION_REVOKED' })
+  })
+
   it('rejects a callback with the wrong state without contacting GitHub', async () => {
     const provider = github()
     const { first } = accountHarness({ provider })
     const key = installationKey()
     await first.beginLogin({
-      installationId: 'desktop-installation-3',
+      installationId: parseInstallationId('desktop-installation-3'),
       installationKind: 'desktop',
       publicKey: key.publicKey,
     })
@@ -244,7 +334,7 @@ describe('PlatformAccount', () => {
     const { first, second } = accountHarness()
     const key = installationKey()
     const attempt = await first.beginLogin({
-      installationId: 'desktop-reused', installationKind: 'desktop', publicKey: key.publicKey,
+      installationId: parseInstallationId('desktop-reused'), installationKind: 'desktop', publicKey: key.publicKey,
     })
     await expect(first.pollLogin({
       attemptId: attempt.id, pollingToken: attempt.pollingToken,
@@ -259,7 +349,7 @@ describe('PlatformAccount', () => {
     const closed = vi.fn()
     second.trackConnection(initial.sessionId, closed)
 
-    const replacement = await login(first, key, 'desktop-reused')
+    const replacement = await login(first, key, parseInstallationId('desktop-reused'))
     expect(replacement.session.account.id).toBe(initial.account.id)
     expect(closed).toHaveBeenCalledOnce()
     await expect(first.current({
@@ -272,7 +362,7 @@ describe('PlatformAccount', () => {
     let now = NOW
     const expiring = accountHarness({ clock: { now: () => now } }).first
     const attempt = await expiring.beginLogin({
-      installationId: 'desktop-expired', installationKind: 'desktop', publicKey: installationKey().publicKey,
+      installationId: parseInstallationId('desktop-expired'), installationKind: 'desktop', publicKey: installationKey().publicKey,
     })
     now += LOGIN_ATTEMPT_TTL_MS + 1
     await expect(expiring.completeGitHubCallback({ code: 'code', state: attempt.state }))
@@ -286,15 +376,54 @@ describe('PlatformAccount', () => {
     ]
     for (const identity of identities) {
       const provider: GitHubIdentityProvider = {
+        environment: ENVIRONMENT,
         authorizationUrl: () => 'https://github.com/login/oauth/authorize',
         exchange: vi.fn().mockResolvedValue(identity),
       }
       const account = accountHarness({ provider }).first
       const next = await account.beginLogin({
-        installationId: randomUUID(), installationKind: 'desktop', publicKey: installationKey().publicKey,
+        installationId: parseInstallationId(randomUUID()), installationKind: 'desktop', publicKey: installationKey().publicKey,
       })
       await expect(account.completeGitHubCallback({ code: 'code', state: next.state })).rejects.toThrow()
     }
+  })
+
+  it('rejects callback, polling, and refresh at the exact expiry instant', async () => {
+    let callbackNow = NOW
+    const callbackAccount = accountHarness({ clock: { now: () => callbackNow } }).first
+    const callbackAttempt = await callbackAccount.beginLogin({
+      installationId: parseInstallationId('callback-boundary'), installationKind: 'desktop', publicKey: installationKey().publicKey,
+    })
+    callbackNow = callbackAttempt.expiresAt
+    await expect(callbackAccount.completeGitHubCallback({ code: 'code', state: callbackAttempt.state }))
+      .rejects.toMatchObject({ code: 'LOGIN_ATTEMPT_EXPIRED' })
+
+    let pollingNow = NOW
+    const pollingAccount = accountHarness({ clock: { now: () => pollingNow } }).first
+    const pollingKey = installationKey()
+    const pollingAttempt = await pollingAccount.beginLogin({
+      installationId: parseInstallationId('poll-boundary'), installationKind: 'mobile', publicKey: pollingKey.publicKey,
+    })
+    await pollingAccount.completeGitHubCallback({ code: 'code', state: pollingAttempt.state })
+    pollingNow = pollingAttempt.expiresAt
+    await expect(pollingAccount.pollLogin({
+      attemptId: pollingAttempt.id,
+      pollingToken: pollingAttempt.pollingToken,
+      proof: pollingKey.proof(
+        'login-poll',
+        `${pollingAttempt.id}:${hashAccountToken(pollingAttempt.pollingToken)}`,
+        pollingNow,
+      ),
+    })).rejects.toMatchObject({ code: 'LOGIN_ATTEMPT_EXPIRED' })
+
+    let refreshNow = NOW
+    const refreshAccount = accountHarness({ clock: { now: () => refreshNow } }).first
+    const { key, session } = await login(refreshAccount)
+    refreshNow = session.refreshExpiresAt
+    await expect(refreshAccount.refresh({
+      refreshToken: session.refreshToken,
+      proof: key.proof('refresh', hashAccountToken(session.refreshToken), refreshNow),
+    })).rejects.toMatchObject({ code: 'SESSION_EXPIRED' })
   })
 
   it.each([
@@ -305,16 +434,11 @@ describe('PlatformAccount', () => {
     { kty: 'EC', crv: 'P-256', x: 'x', y: 'y', d: 'private' },
   ])('rejects a non-public P-256 installation key %#', async (publicKey) => {
     await expect(accountHarness().first.beginLogin({
-      installationId: 'invalid-key', installationKind: 'desktop', publicKey,
+      installationId: parseInstallationId('invalid-key'), installationKind: 'desktop', publicKey,
     })).rejects.toMatchObject({ code: 'PROOF_INVALID' })
   })
 
   it.each([
-    { origin: 'http://platform.dev.example.com' },
-    { callbackUrl: 'http://platform.dev.example.com/v1/account/oauth/github/callback' },
-    { callbackUrl: 'https://other.example.com/v1/account/oauth/github/callback' },
-    { callbackUrl: 'https://platform.dev.example.com/wrong' },
-    { identityNamespace: ' ' },
     { tokenSigningKey: Buffer.alloc(31) },
     { pollingSigningKey: Buffer.alloc(31) },
   ])('rejects invalid provider config %#', (override) => {
@@ -325,7 +449,7 @@ describe('PlatformAccount', () => {
     const { first } = accountHarness()
     const key = installationKey()
     const attempt = await first.beginLogin({
-      installationId: 'poll-validation', installationKind: 'desktop', publicKey: key.publicKey,
+      installationId: parseInstallationId('poll-validation'), installationKind: 'desktop', publicKey: key.publicKey,
     })
     const proof = () => key.proof('login-poll', `${attempt.id}:${hashAccountToken(attempt.pollingToken)}`)
     for (const token of ['encoded-only', 'a.b.c']) {
@@ -351,7 +475,7 @@ describe('PlatformAccount', () => {
     await expect(first.pollLogin({ attemptId: attempt.id, pollingToken: expired, proof: proof() }))
       .rejects.toMatchObject({ code: 'LOGIN_ATTEMPT_EXPIRED' })
     const unknown = replaceEnvelope(attempt.pollingToken, CONFIG.pollingSigningKey, (payload) => { payload.attemptId = 'unknown' })
-    await expect(first.pollLogin({ attemptId: 'unknown', pollingToken: unknown, proof: proof() }))
+    await expect(first.pollLogin({ attemptId: parseLoginAttemptId('unknown'), pollingToken: unknown, proof: proof() }))
       .rejects.toMatchObject({ code: 'LOGIN_ATTEMPT_INVALID' })
   })
 
@@ -428,7 +552,7 @@ describe('PlatformAccount', () => {
   })
 
   it('handles backend compare-and-mutate failures, proof pruning, and bus disposal', async () => {
-    const backend = new MemoryAccountBackend()
+    const backend = new MemoryAccountBackend(ENVIRONMENT.databaseIdentity)
     const missingAttempt = 'missing-attempt' as LoginAttemptId
     const missingSession = 'missing-session' as AccountSessionId
     const missingAccount = 'missing-account' as PlatformAccountId
@@ -447,7 +571,7 @@ describe('PlatformAccount', () => {
     const key = installationKey()
     await backend.createAttempt({
       id: 'attempt' as LoginAttemptId,
-      environment: 'development', identityNamespace: 'namespace', installationId: 'installation',
+      environment: 'development', identityNamespace: 'namespace', installationId: parseInstallationId('installation'),
       installationKind: 'desktop', publicKey: key.publicKey, state: 'state', codeVerifier: 'verifier',
       expiresAt: NOW, status: 'pending',
     })
@@ -469,7 +593,7 @@ describe('PlatformAccount', () => {
     expect(await backend.rotateRefresh(created.session.id, 'refresh', 'new')).toBeUndefined()
     await backend.createAttempt({
       id: 'replacement' as LoginAttemptId,
-      environment: 'development', identityNamespace: 'namespace', installationId: 'installation',
+      environment: 'development', identityNamespace: 'namespace', installationId: parseInstallationId('installation'),
       installationKind: 'desktop', publicKey: key.publicKey, state: 'replacement-state', codeVerifier: 'verifier',
       expiresAt: NOW, status: 'pending',
     })
@@ -484,9 +608,9 @@ describe('PlatformAccount', () => {
     const bus = new MemoryAccountInvalidationBus()
     const listener = vi.fn()
     const unsubscribe = bus.subscribe(listener)
-    bus.publish(created.session.id)
+    await bus.publish(created.session.id)
     unsubscribe()
-    bus.publish(created.session.id)
+    await bus.publish(created.session.id)
     expect(listener).toHaveBeenCalledOnce()
   })
 
@@ -500,10 +624,10 @@ describe('PlatformAccount', () => {
     disposeFirst()
     disposeSecond()
     disposeSecond()
-    harness.invalidation.publish('unknown' as AccountSessionId)
+    await harness.invalidation.publish('unknown' as AccountSessionId)
 
     harness.first.trackConnection(session.sessionId, firstClose)
-    harness.first.dispose()
+    await harness.first.dispose()
     expect(firstClose).toHaveBeenCalledOnce()
 
     const publish = vi.spyOn(harness.invalidation, 'publish')
@@ -518,11 +642,23 @@ describe('PlatformAccount', () => {
     expect(publish).not.toHaveBeenCalled()
   })
 
+  it('contains every connection failure during disposal and reports non-Error failures', async () => {
+    const harness = accountHarness()
+    const first = vi.fn(async () => { throw 'first close failed' })
+    const second = vi.fn(async () => { throw new Error('second close failed') })
+    harness.first.trackConnection('dispose-a' as AccountSessionId, first)
+    harness.first.trackConnection('dispose-b' as AccountSessionId, second)
+
+    await expect(harness.first.dispose()).rejects.toThrow('first close failed')
+    expect(first).toHaveBeenCalledOnce()
+    expect(second).toHaveBeenCalledOnce()
+  })
+
   it('uses the system clock and disposes through the Cordis effect', async () => {
     const ctx = new Context()
     new PlatformAccount(ctx, {
-      backend: new MemoryAccountBackend(), invalidation: new MemoryAccountInvalidationBus(),
-      github: github(), config: CONFIG,
+      backend: new MemoryAccountBackend(ENVIRONMENT.databaseIdentity), invalidation: new MemoryAccountInvalidationBus(),
+      github: github(), environment: ENVIRONMENT, config: CONFIG,
     })
     await ctx.fiber.dispose()
   })

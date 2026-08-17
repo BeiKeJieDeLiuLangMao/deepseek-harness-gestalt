@@ -14,6 +14,7 @@
   "exports": {
     ".": { "types": "./lib/types/index.d.ts", "default": "./lib/index.js" },
     "./invariant": { "types": "./lib/types/invariant.d.ts", "default": "./lib/invariant.js" },
+    "./privacy": { "types": "./lib/types/privacy.d.ts", "default": "./lib/types/privacy.js" },
     "./types": { "types": "./lib/types/types.d.ts", "default": "./lib/types/types.js" },
     "./src/*": "./src/*",
     "./package.json": "./package.json"

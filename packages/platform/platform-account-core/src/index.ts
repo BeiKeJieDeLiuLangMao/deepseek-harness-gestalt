@@ -20,13 +20,18 @@ import AccountService, {
   type AccountSessionId,
   type AccountSessionView,
   type InstallationKind,
+  type InstallationId,
   type LoginAttemptId,
   type LoginAttemptView,
   type LoginPollResult,
   type PlatformAccountId,
   type PlatformAccountView,
   type PlatformEnvironment,
+  type SelectedPlatformEnvironment,
 } from '@deepseek-ai/dsh-platform-account'
+
+export { loadPlatformEnvironment, selectPlatformEnvironment, validatePlatformEnvironmentPair } from '@deepseek-ai/dsh-platform-account'
+export type { PlatformEnvironmentIdentity, PlatformEnvironmentPair } from '@deepseek-ai/dsh-platform-account'
 
 /** Fixed five-minute Login Attempt lifetime. */
 export const LOGIN_ATTEMPT_TTL_MS = 5 * 60 * 1000
@@ -49,6 +54,8 @@ export interface GitHubIdentity {
 
 /** GitHub OAuth adapter used by the Account provider. */
 export interface GitHubIdentityProvider {
+  /** Validated deployment identity owning the OAuth App and callback. */
+  readonly environment: SelectedPlatformEnvironment
   /** Build the system-browser authorization URL with S256 PKCE and no scope parameter. */
   authorizationUrl(input: { callbackUrl: string; state: string; codeChallenge: string }): string
   /** Exchange one callback code and return only the public identity retained by Platform. */
@@ -57,12 +64,13 @@ export interface GitHubIdentityProvider {
 
 /** Construction inputs for the GitHub OAuth HTTP adapter. */
 export interface GitHubOAuthIdentityProviderOptions {
-  /** Environment-specific GitHub OAuth App client id. */
-  clientId: string
-  /** Environment-specific GitHub OAuth App client secret. */
-  clientSecret: string
-  /** Fixed HTTPS callback registered on the OAuth App. */
-  callbackUrl: string
+  /** Environment selected from the validated deployment pair. */
+  environment: SelectedPlatformEnvironment
+  /** Secret resolved from the selected environment's credential reference. */
+  credential: {
+    reference: string
+    secret: string
+  }
   /** HTTP implementation; defaults to global fetch. */
   fetch?: typeof fetch
 }
@@ -70,21 +78,25 @@ export interface GitHubOAuthIdentityProviderOptions {
 /** GitHub OAuth App adapter that returns only public identity fields. */
 export class GitHubOAuthIdentityProvider implements GitHubIdentityProvider {
   private readonly fetch: typeof fetch
+  /** Selected deployment identity owning this adapter. */
+  readonly environment: SelectedPlatformEnvironment
 
   /** @param options - OAuth App identity, callback, secret, and HTTP adapter. */
   constructor(private readonly options: GitHubOAuthIdentityProviderOptions) {
+    this.environment = options.environment
     this.fetch = options.fetch ?? globalThis.fetch
-    if (new URL(options.callbackUrl).protocol !== 'https:') {
-      throw new TypeError('GitHub OAuth callback must use HTTPS')
+    if (options.credential.reference !== options.environment.credentialReference) {
+      throw new TypeError('GitHub OAuth credential reference does not match the selected Platform environment')
     }
+    if (options.credential.secret === '') throw new TypeError('GitHub OAuth client secret must be non-empty')
   }
 
   authorizationUrl(input: { callbackUrl: string; state: string; codeChallenge: string }): string {
-    if (input.callbackUrl !== this.options.callbackUrl) {
+    if (input.callbackUrl !== this.environment.callbackUrl) {
       throw new TypeError('GitHub OAuth callback does not match the configured fixed callback')
     }
     const url = new URL('https://github.com/login/oauth/authorize')
-    url.searchParams.set('client_id', this.options.clientId)
+    url.searchParams.set('client_id', this.environment.githubClientId)
     url.searchParams.set('redirect_uri', input.callbackUrl)
     url.searchParams.set('state', input.state)
     url.searchParams.set('code_challenge', input.codeChallenge)
@@ -97,10 +109,10 @@ export class GitHubOAuthIdentityProvider implements GitHubIdentityProvider {
       method: 'POST',
       headers: { Accept: 'application/json', 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
-        client_id: this.options.clientId,
-        client_secret: this.options.clientSecret,
+        client_id: this.environment.githubClientId,
+        client_secret: this.options.credential.secret,
         code,
-        redirect_uri: this.options.callbackUrl,
+        redirect_uri: this.environment.callbackUrl,
         code_verifier: verifier,
       }).toString(),
     })
@@ -144,7 +156,7 @@ export interface LoginAttemptRecord {
   /** Provider identity namespace for the selected environment. */
   identityNamespace: string
   /** Stable id of the requesting installation. */
-  installationId: string
+  installationId: InstallationId
   /** Desktop or Mobile installation class. */
   installationKind: InstallationKind
   /** Installation P-256 public key. */
@@ -176,7 +188,7 @@ export interface SessionRecord {
   /** Platform Account authorized by the session. */
   accountId: PlatformAccountId
   /** Stable id of the authorized installation. */
-  installationId: string
+  installationId: InstallationId
   /** Desktop or Mobile installation class. */
   installationKind: InstallationKind
   /** Installation P-256 public key. */
@@ -203,6 +215,8 @@ export interface CreatedSession {
 
 /** Persistence operations requiring atomic compare-and-mutate behavior. */
 export interface AccountBackend {
+  /** Durable database identity selected for this deployment. */
+  readonly databaseIdentity: string
   /** Persist a new Login Attempt. */
   createAttempt(record: LoginAttemptRecord): Promise<void>
   /** Find the Login Attempt bound to one OAuth state. */
@@ -229,10 +243,10 @@ export interface AccountBackend {
 
 /** Shared invalidation channel used by every Platform Instance. */
 export interface AccountInvalidationBus {
-  /** Publish one committed Account Session invalidation. */
-  publish(sessionId: AccountSessionId): void
+  /** Publish one committed Account Session invalidation after every subscriber settles. */
+  publish(sessionId: AccountSessionId): Promise<void>
   /** Subscribe to committed Account Session invalidations. */
-  subscribe(listener: (sessionId: AccountSessionId) => void): () => void
+  subscribe(listener: (sessionId: AccountSessionId) => void | Promise<void>): () => void
 }
 
 /** In-process backend for keyless assembled scenarios and development. */
@@ -245,6 +259,13 @@ export class MemoryAccountBackend implements AccountBackend {
   private readonly refreshIndex = new Map<string, AccountSessionId>()
   private readonly installationIndex = new Map<string, AccountSessionId>()
   private readonly proofs = new Map<string, number>()
+
+  /**
+   * @param databaseIdentity - deployment database identity bound to this backend.
+   */
+  constructor(readonly databaseIdentity: string) {
+    if (databaseIdentity.trim() === '') throw new TypeError('Account backend database identity must be non-empty')
+  }
 
   createAttempt(record: LoginAttemptRecord): Promise<void> {
     this.attempts.set(record.id, structuredClone(record))
@@ -388,74 +409,34 @@ export class MemoryAccountBackend implements AccountBackend {
 
 /** In-process invalidation bus for two-instance keyless scenarios. */
 export class MemoryAccountInvalidationBus implements AccountInvalidationBus {
-  private readonly listeners = new Set<(sessionId: AccountSessionId) => void>()
+  private readonly listeners = new Set<(sessionId: AccountSessionId) => void | Promise<void>>()
 
-  publish(sessionId: AccountSessionId): void {
-    for (const listener of this.listeners) listener(sessionId)
+  async publish(sessionId: AccountSessionId): Promise<void> {
+    const errors: Error[] = []
+    for (const listener of this.listeners) {
+      try {
+        await listener(sessionId)
+      } catch (error) {
+        errors.push(asError(error))
+      }
+    }
+    if (errors.length > 0) {
+      throw new AggregateError(errors, `Account invalidation failed: ${errors.map(error => error.message).join('; ')}`)
+    }
   }
 
-  subscribe(listener: (sessionId: AccountSessionId) => void): () => void {
+  subscribe(listener: (sessionId: AccountSessionId) => void | Promise<void>): () => void {
     this.listeners.add(listener)
     return () => { this.listeners.delete(listener) }
   }
 }
 
-/** Provider configuration for exactly one deployment environment. */
+/** Secret signing material for one Platform Account provider. */
 export interface PlatformAccountConfig {
-  /** Deployment environment. */
-  environment: PlatformEnvironment
-  /** Namespace included in every account and token identity. */
-  identityNamespace: string
-  /** Trusted Platform HTTPS origin. */
-  origin: string
-  /** Fixed GitHub OAuth callback on the trusted origin. */
-  callbackUrl: string
   /** Shared secret used to sign short-lived access tokens. */
   tokenSigningKey: Uint8Array
   /** Shared secret used to sign five-minute polling tokens. */
   pollingSigningKey: Uint8Array
-}
-
-/** Deployment identity fields that cannot be shared between environments. */
-export interface PlatformEnvironmentIdentity {
-  environment: PlatformEnvironment
-  origin: string
-  callbackUrl: string
-  githubClientId: string
-  credentialNamespace: string
-  databaseNamespace: string
-  identityNamespace: string
-}
-
-/** Complete development and production identity set. */
-export interface PlatformEnvironmentPair {
-  development: PlatformEnvironmentIdentity & { environment: 'development' }
-  production: PlatformEnvironmentIdentity & { environment: 'production' }
-}
-
-/**
- * Validate that development and production cannot authenticate or persist in
- * one another's namespace.
- * @param pair - both deployment identities selected by packaging/deployment.
- * @returns the unchanged validated pair.
- */
-export function validatePlatformEnvironmentPair(pair: PlatformEnvironmentPair): PlatformEnvironmentPair {
-  const fields = [
-    'origin',
-    'callbackUrl',
-    'githubClientId',
-    'credentialNamespace',
-    'databaseNamespace',
-    'identityNamespace',
-  ] as const
-  for (const field of fields) {
-    if (pair.development[field] === pair.production[field]) {
-      throw new TypeError(`Platform environments must use distinct ${field}`)
-    }
-  }
-  validateEnvironmentIdentity(pair.development)
-  validateEnvironmentIdentity(pair.production)
-  return pair
 }
 
 /** Construction dependencies for one Platform Account instance. */
@@ -466,7 +447,9 @@ export interface PlatformAccountOptions {
   invalidation: AccountInvalidationBus
   /** GitHub public-identity adapter for the selected environment. */
   github: GitHubIdentityProvider
-  /** One environment's trusted origin, namespace, and signing keys. */
+  /** Identity selected from a validated development/production pair. */
+  environment: SelectedPlatformEnvironment
+  /** Secret signing material for the selected environment. */
   config: PlatformAccountConfig
   /** Optional deterministic time source. */
   clock?: AccountClock
@@ -517,9 +500,11 @@ export class PlatformAccount extends AccountService {
   private readonly backend: AccountBackend
   private readonly invalidation: AccountInvalidationBus
   private readonly github: GitHubIdentityProvider
+  /** Validated deployment identity owning every operation. */
+  readonly environment: SelectedPlatformEnvironment
   private readonly config: PlatformAccountConfig
   private readonly clock: AccountClock
-  private readonly connections = new Map<AccountSessionId, Set<() => void>>()
+  private readonly connections = new Map<AccountSessionId, Set<() => void | Promise<void>>>()
   private readonly stopInvalidation: () => void
 
   /**
@@ -531,14 +516,21 @@ export class PlatformAccount extends AccountService {
     this.backend = options.backend
     this.invalidation = options.invalidation
     this.github = options.github
+    this.environment = options.environment
+    if (this.backend.databaseIdentity !== this.environment.databaseIdentity) {
+      throw new TypeError('Account backend database identity does not match the selected Platform environment')
+    }
+    if (this.github.environment !== this.environment) {
+      throw new TypeError('GitHub OAuth adapter does not match the selected Platform environment')
+    }
     this.config = validateConfig(options.config)
     this.clock = options.clock ?? { now: Date.now }
-    this.stopInvalidation = this.invalidation.subscribe((sessionId) => { this.closeConnections(sessionId) })
-    ctx.effect(() => () => { this.dispose() }, 'platform-account: invalidation subscription')
+    this.stopInvalidation = this.invalidation.subscribe(async (sessionId) => { await this.closeConnections(sessionId) })
+    ctx.effect(() => async () => { await this.dispose() }, 'platform-account: invalidation subscription')
   }
 
   async beginLogin(input: {
-    installationId: string
+    installationId: InstallationId
     installationKind: InstallationKind
     publicKey: JsonWebKey
   }): Promise<LoginAttemptView> {
@@ -551,8 +543,8 @@ export class PlatformAccount extends AccountService {
     const expiresAt = now + LOGIN_ATTEMPT_TTL_MS
     await this.backend.createAttempt({
       id,
-      environment: this.config.environment,
-      identityNamespace: this.config.identityNamespace,
+      environment: this.environment.environment,
+      identityNamespace: this.environment.identityNamespace,
       installationId: input.installationId,
       installationKind: input.installationKind,
       publicKey: structuredClone(input.publicKey),
@@ -563,14 +555,14 @@ export class PlatformAccount extends AccountService {
     })
     const pollingToken = signEnvelope({
       attemptId: id,
-      namespace: this.config.identityNamespace,
+      namespace: this.environment.identityNamespace,
       expiresAt,
     }, this.config.pollingSigningKey)
     return {
       id,
       state,
       authorizationUrl: this.github.authorizationUrl({
-        callbackUrl: this.config.callbackUrl,
+        callbackUrl: this.environment.callbackUrl,
         state,
         codeChallenge,
       }),
@@ -582,7 +574,7 @@ export class PlatformAccount extends AccountService {
   async completeGitHubCallback(input: { code: string; state: string }): Promise<{ completed: true }> {
     const attempt = await this.backend.findAttemptByState(input.state)
     if (attempt === undefined) throw new AccountError('LOGIN_STATE_INVALID', 'login callback state is invalid')
-    if (attempt.expiresAt < this.clock.now()) {
+    if (attempt.expiresAt <= this.clock.now()) {
       throw new AccountError('LOGIN_ATTEMPT_EXPIRED', 'login attempt expired before callback')
     }
     const identity = await this.github.exchange(input.code, attempt.codeVerifier)
@@ -592,16 +584,16 @@ export class PlatformAccount extends AccountService {
   }
 
   async pollLogin(input: {
-    attemptId: string
+    attemptId: LoginAttemptId
     pollingToken: string
     proof: AccountProof
   }): Promise<LoginPollResult> {
     const payload = verifyEnvelope(input.pollingToken, this.config.pollingSigningKey) as SignedPollingPayload
-    if (payload.attemptId !== input.attemptId || payload.namespace !== this.config.identityNamespace) {
+    if (payload.attemptId !== input.attemptId || payload.namespace !== this.environment.identityNamespace) {
       throw new AccountError('LOGIN_ATTEMPT_INVALID', 'polling token does not bind this attempt')
     }
     const now = this.clock.now()
-    if (payload.expiresAt < now) throw new AccountError('LOGIN_ATTEMPT_EXPIRED', 'login attempt expired')
+    if (payload.expiresAt <= now) throw new AccountError('LOGIN_ATTEMPT_EXPIRED', 'login attempt expired')
     const attempt = await this.backend.getAttempt(payload.attemptId)
     if (attempt === undefined) throw new AccountError('LOGIN_ATTEMPT_INVALID', 'login attempt is unknown')
     if (attempt.status === 'used') throw new AccountError('LOGIN_ATTEMPT_USED', 'login attempt was already consumed')
@@ -618,7 +610,7 @@ export class PlatformAccount extends AccountService {
       hashAccountToken(refreshToken),
       now + MAX_REFRESH_TOKEN_TTL_MS,
     )
-    if (created.replacedSessionId !== undefined) this.invalidation.publish(created.replacedSessionId)
+    if (created.replacedSessionId !== undefined) await this.invalidation.publish(created.replacedSessionId)
     return { status: 'complete', ...this.issueSession(created.session, created.account, refreshToken, now) }
   }
 
@@ -627,7 +619,7 @@ export class PlatformAccount extends AccountService {
     const currentHash = hashAccountToken(input.refreshToken)
     const session = await this.backend.getSessionByRefreshHash(currentHash)
     if (session === undefined || !session.active) throw new AccountError('SESSION_REVOKED', 'Account Session is revoked')
-    if (session.refreshExpiresAt < now) {
+    if (session.refreshExpiresAt <= now) {
       await this.revoke(session.id)
       throw new AccountError('SESSION_EXPIRED', 'Account Session refresh lifetime expired')
     }
@@ -651,7 +643,7 @@ export class PlatformAccount extends AccountService {
     await this.revoke(session.id)
   }
 
-  trackConnection(sessionId: AccountSessionId, close: () => void): () => void {
+  trackConnection(sessionId: AccountSessionId, close: () => void | Promise<void>): () => void {
     let set = this.connections.get(sessionId)
     if (set === undefined) {
       set = new Set()
@@ -666,16 +658,26 @@ export class PlatformAccount extends AccountService {
   }
 
   /** Stop the cross-instance subscription and close locally tracked connections. */
-  dispose(): void {
+  async dispose(): Promise<void> {
     this.stopInvalidation()
-    for (const sessionId of this.connections.keys()) this.closeConnections(sessionId)
+    const errors: Error[] = []
+    for (const sessionId of [...this.connections.keys()]) {
+      try {
+        await this.closeConnections(sessionId)
+      } catch (error) {
+        errors.push(asError(error))
+      }
+    }
+    if (errors.length > 0) {
+      throw new AggregateError(errors, `Account connection disposal failed: ${errors.map(error => error.message).join('; ')}`)
+    }
   }
 
   private async authorizeAccess(accessToken: string): Promise<{ payload: SignedAccessPayload; session: SessionRecord }> {
     const payload = verifyEnvelope(accessToken, this.config.tokenSigningKey) as SignedAccessPayload
     const now = this.clock.now()
-    if (payload.expiresAt < now) throw new AccountError('SESSION_EXPIRED', 'access token expired')
-    if (payload.namespace !== this.config.identityNamespace) {
+    if (payload.expiresAt <= now) throw new AccountError('SESSION_EXPIRED', 'access token expired')
+    if (payload.namespace !== this.environment.identityNamespace) {
       throw new AccountError('SESSION_REVOKED', 'access token belongs to another identity namespace')
     }
     const session = await this.backend.getSession(payload.sessionId)
@@ -729,14 +731,24 @@ export class PlatformAccount extends AccountService {
   }
 
   private async revoke(sessionId: AccountSessionId): Promise<void> {
-    if (await this.backend.revokeSession(sessionId)) this.invalidation.publish(sessionId)
+    if (await this.backend.revokeSession(sessionId)) await this.invalidation.publish(sessionId)
   }
 
-  private closeConnections(sessionId: AccountSessionId): void {
+  private async closeConnections(sessionId: AccountSessionId): Promise<void> {
     const connections = this.connections.get(sessionId)
     this.connections.delete(sessionId)
     if (connections === undefined) return
-    for (const close of connections) close()
+    const errors: Error[] = []
+    for (const close of connections) {
+      try {
+        await close()
+      } catch (error) {
+        errors.push(asError(error))
+      }
+    }
+    if (errors.length > 0) {
+      throw new AggregateError(errors, `Account connection close failed: ${errors.map(error => error.message).join('; ')}`)
+    }
   }
 
   private async requireAccount(id: PlatformAccountId): Promise<AccountRecord> {
@@ -756,15 +768,6 @@ function accountView(account: AccountRecord): PlatformAccountView {
 }
 
 function validateConfig(config: PlatformAccountConfig): PlatformAccountConfig {
-  const origin = new URL(config.origin)
-  const callback = new URL(config.callbackUrl)
-  if (origin.protocol !== 'https:' || callback.protocol !== 'https:' || callback.origin !== origin.origin) {
-    throw new TypeError('Platform Account origin and fixed callback must share one HTTPS origin')
-  }
-  if (callback.pathname !== '/v1/account/oauth/github/callback') {
-    throw new TypeError('Platform Account callback must use /v1/account/oauth/github/callback')
-  }
-  if (config.identityNamespace.trim() === '') throw new TypeError('identityNamespace must be non-empty')
   if (config.tokenSigningKey.byteLength < 32 || config.pollingSigningKey.byteLength < 32) {
     throw new TypeError('Platform Account signing keys must contain at least 256 bits')
   }
@@ -784,27 +787,12 @@ function validateGitHubIdentity(identity: GitHubIdentity): void {
   if (identity.login === '' || identity.avatarUrl === '') throw new TypeError('GitHub public identity is incomplete')
 }
 
-function validateEnvironmentIdentity(identity: PlatformEnvironmentIdentity): void {
-  const origin = new URL(identity.origin)
-  const callback = new URL(identity.callbackUrl)
-  if (origin.protocol !== 'https:' || callback.protocol !== 'https:' || callback.origin !== origin.origin) {
-    throw new TypeError(`${identity.environment} Platform origin and callback must share one HTTPS origin`)
-  }
-  if (callback.pathname !== '/v1/account/oauth/github/callback') {
-    throw new TypeError(`${identity.environment} Platform callback path is invalid`)
-  }
-  for (const value of [
-    identity.githubClientId,
-    identity.credentialNamespace,
-    identity.databaseNamespace,
-    identity.identityNamespace,
-  ]) {
-    if (value.trim() === '') throw new TypeError(`${identity.environment} Platform identity fields must be non-empty`)
-  }
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function asError(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error))
 }
 
 function signEnvelope(payload: object, key: Uint8Array): string {

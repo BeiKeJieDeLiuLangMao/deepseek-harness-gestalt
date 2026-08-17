@@ -1,12 +1,71 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   GitHubOAuthIdentityProvider,
+  loadPlatformEnvironment,
+  selectPlatformEnvironment,
   validatePlatformEnvironmentPair,
 } from '../src/index.ts'
 
 afterEach(() => { vi.unstubAllGlobals() })
 
+const development = {
+  environment: 'development' as const,
+  origin: 'https://platform.dev.example.com',
+  callbackUrl: 'https://platform.dev.example.com/v1/account/oauth/github/callback',
+  githubClientId: 'github-development',
+  credentialReference: 'credentials://platform-account/development/github-oauth-app',
+  databaseIdentity: 'database-development',
+  identityNamespace: 'identity-development',
+}
+const production = {
+  environment: 'production' as const,
+  origin: 'https://platform.example.com',
+  callbackUrl: 'https://platform.example.com/v1/account/oauth/github/callback',
+  githubClientId: 'github-production',
+  credentialReference: 'credentials://platform-account/production/github-oauth-app',
+  databaseIdentity: 'database-production',
+  identityNamespace: 'identity-production',
+}
+
+function selectedDevelopment() {
+  return selectPlatformEnvironment(validatePlatformEnvironmentPair({ development, production }), 'development')
+}
+
+function oauthOptions(fetch?: typeof globalThis.fetch) {
+  const environment = selectedDevelopment()
+  return {
+    environment,
+    credential: { reference: environment.credentialReference, secret: 'secret-development' },
+    ...(fetch === undefined ? {} : { fetch }),
+  }
+}
+
 describe('GitHubOAuthIdentityProvider', () => {
+  it('rejects an OAuth credential resolved from another environment before traffic', () => {
+    const environment = selectedDevelopment()
+    const fetch = vi.fn()
+    expect(() => new GitHubOAuthIdentityProvider({
+      environment,
+      credential: {
+        reference: 'credentials://platform-account/production/github-oauth-app',
+        secret: 'secret-production',
+      },
+      fetch,
+    })).toThrow('credential reference does not match')
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it('rejects an empty resolved OAuth secret before traffic', () => {
+    const environment = selectedDevelopment()
+    const fetch = vi.fn()
+    expect(() => new GitHubOAuthIdentityProvider({
+      environment,
+      credential: { reference: environment.credentialReference, secret: '' },
+      fetch,
+    })).toThrow('client secret must be non-empty')
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
   it('requests no scope and retains only numeric id, login, and avatar URL', async () => {
     const fetch = vi.fn<typeof globalThis.fetch>()
       .mockResolvedValueOnce(new Response(JSON.stringify({
@@ -21,12 +80,7 @@ describe('GitHubOAuthIdentityProvider', () => {
         email: 'must-not-be-retained@example.com',
         company: 'must-not-be-retained',
       }), { status: 200, headers: { 'content-type': 'application/json' } }))
-    const provider = new GitHubOAuthIdentityProvider({
-      clientId: 'client-development',
-      clientSecret: 'secret-development',
-      callbackUrl: 'https://platform.dev.example.com/v1/account/oauth/github/callback',
-      fetch,
-    })
+    const provider = new GitHubOAuthIdentityProvider(oauthOptions(fetch))
     const authorization = new URL(provider.authorizationUrl({
       callbackUrl: 'https://platform.dev.example.com/v1/account/oauth/github/callback',
       state: 'random-state',
@@ -51,26 +105,15 @@ describe('GitHubOAuthIdentityProvider', () => {
       token_type: 'bearer',
       scope: 'repo,user',
     }), { status: 200, headers: { 'content-type': 'application/json' } }))
-    const provider = new GitHubOAuthIdentityProvider({
-      clientId: 'client-development',
-      clientSecret: 'secret-development',
-      callbackUrl: 'https://platform.dev.example.com/v1/account/oauth/github/callback',
-      fetch,
-    })
+    const provider = new GitHubOAuthIdentityProvider(oauthOptions(fetch))
     await expect(provider.exchange('github-code', 'pkce-verifier'))
       .rejects.toThrow('GitHub returned a token with OAuth scopes')
     expect(fetch).toHaveBeenCalledOnce()
   })
 
-  it('defaults to global fetch and enforces the fixed HTTPS callback', () => {
+  it('defaults to global fetch and enforces the selected fixed callback', () => {
     vi.stubGlobal('fetch', vi.fn())
-    expect(() => new GitHubOAuthIdentityProvider({
-      clientId: 'client', clientSecret: 'secret', callbackUrl: 'http://platform.example/callback',
-    })).toThrow('must use HTTPS')
-    const provider = new GitHubOAuthIdentityProvider({
-      clientId: 'client', clientSecret: 'secret',
-      callbackUrl: 'https://platform.example/v1/account/oauth/github/callback',
-    })
+    const provider = new GitHubOAuthIdentityProvider(oauthOptions())
     expect(() => provider.authorizationUrl({
       callbackUrl: 'https://other.example/v1/account/oauth/github/callback', state: 'state', codeChallenge: 'challenge',
     })).toThrow('does not match')
@@ -89,40 +132,40 @@ describe('GitHubOAuthIdentityProvider', () => {
   ])('rejects $name', async ({ responses, message }) => {
     const fetch = vi.fn()
     for (const response of responses) fetch.mockResolvedValueOnce(response)
-    const provider = new GitHubOAuthIdentityProvider({
-      clientId: 'client', clientSecret: 'secret',
-      callbackUrl: 'https://platform.example/v1/account/oauth/github/callback', fetch,
-    })
+    const provider = new GitHubOAuthIdentityProvider(oauthOptions(fetch))
     await expect(provider.exchange('code', 'verifier')).rejects.toThrow(message)
   })
 })
 
 describe('validatePlatformEnvironmentPair', () => {
-  const development = {
-    environment: 'development' as const,
-    origin: 'https://platform.dev.example.com',
-    callbackUrl: 'https://platform.dev.example.com/v1/account/oauth/github/callback',
-    githubClientId: 'github-development',
-    credentialNamespace: 'credentials-development',
-    databaseNamespace: 'database-development',
-    identityNamespace: 'identity-development',
-  }
-  const production = {
-    environment: 'production' as const,
-    origin: 'https://platform.example.com',
-    callbackUrl: 'https://platform.example.com/v1/account/oauth/github/callback',
-    githubClientId: 'github-production',
-    credentialNamespace: 'credentials-production',
-    databaseNamespace: 'database-production',
-    identityNamespace: 'identity-production',
-  }
-
   it('accepts two completely separate deployment identities', () => {
     expect(validatePlatformEnvironmentPair({ development, production })).toEqual({ development, production })
   })
 
+  it('requires an explicit known environment before selecting any deployment identity', () => {
+    const pair = validatePlatformEnvironmentPair({ development, production })
+    expect(selectPlatformEnvironment(pair, 'development')).toEqual(development)
+    expect(selectPlatformEnvironment(pair, 'production')).toEqual(production)
+    expect(() => selectPlatformEnvironment(pair, undefined)).toThrow('must be development or production')
+    expect(() => selectPlatformEnvironment(pair, '')).toThrow('must be development or production')
+    expect(() => selectPlatformEnvironment(pair, 'preview')).toThrow('must be development or production')
+  })
+
+  it('rejects selection before validation and parses required deployment fields', () => {
+    expect(() => selectPlatformEnvironment({ development, production }, 'development'))
+      .toThrow('must be validated before selection')
+    expect(() => validatePlatformEnvironmentPair({
+      development: { ...development, environment: 'production' as never }, production,
+    })).toThrow('development Platform environment tag is invalid')
+    expect(() => loadPlatformEnvironment({
+      selection: 'development',
+      development: { ...development, origin: undefined },
+      production,
+    })).toThrow('development origin is required')
+  })
+
   it.each([
-    'origin', 'callbackUrl', 'githubClientId', 'credentialNamespace', 'databaseNamespace', 'identityNamespace',
+    'origin', 'callbackUrl', 'githubClientId', 'credentialReference', 'databaseIdentity', 'identityNamespace',
   ] as const)('rejects a shared %s', (field) => {
     expect(() => validatePlatformEnvironmentPair({
       development,
@@ -136,8 +179,8 @@ describe('validatePlatformEnvironmentPair', () => {
     { field: 'callbackUrl', value: 'https://other.example.com/v1/account/oauth/github/callback', message: 'share one HTTPS origin' },
     { field: 'callbackUrl', value: 'https://platform.dev.example.com/wrong', message: 'callback path is invalid' },
     { field: 'githubClientId', value: ' ', message: 'identity fields must be non-empty' },
-    { field: 'credentialNamespace', value: '', message: 'identity fields must be non-empty' },
-    { field: 'databaseNamespace', value: '', message: 'identity fields must be non-empty' },
+    { field: 'credentialReference', value: '', message: 'identity fields must be non-empty' },
+    { field: 'databaseIdentity', value: '', message: 'identity fields must be non-empty' },
     { field: 'identityNamespace', value: '', message: 'identity fields must be non-empty' },
   ])('rejects invalid development $field', ({ field, value, message }) => {
     expect(() => validatePlatformEnvironmentPair({

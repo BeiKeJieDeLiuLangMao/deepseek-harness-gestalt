@@ -8,7 +8,7 @@ Window exit, Ctrl+C, and smoke-test completion cancel any pending start, stop th
 
 The main window accepts navigation only within the active loopback Host origin. Ordinary HTTP links, including GitHub authorization, open in the system browser; other origins and schemes cannot replace the Session Surface or create another Electron window. Platform Account signing keys and tokens stay in an environment-specific `safeStorage`-encrypted file under Electron userData. The preload exposes only current state and lifecycle verbs.
 
-Desktop Platform Account requires `DSH_PLATFORM_ENV`, `DSH_PLATFORM_DEVELOPMENT_ORIGIN`, and `DSH_PLATFORM_PRODUCTION_ORIGIN`. The two origins must be distinct HTTPS origins; a missing or invalid selection leaves the `手机配对` Settings section visibly unavailable rather than selecting another environment.
+Desktop Platform Account validates the full development and production pair before creating a window: each `DSH_PLATFORM_DEVELOPMENT_*` and `DSH_PLATFORM_PRODUCTION_*` side supplies `ORIGIN`, `CALLBACK_URL`, `GITHUB_CLIENT_ID`, `CREDENTIAL_REFERENCE`, `DATABASE_IDENTITY`, and `IDENTITY_NAMESPACE`, and `DSH_PLATFORM_ENV` explicitly selects one. Missing, unknown, shared, non-HTTPS, or callback-mismatched configuration fails startup before rendering or traffic. Unavailable operating-system encryption remains a visible capability failure. The encrypted record is replaced through `dsh-atomic-write` with a random exclusive sibling, owner-only permissions, symlink-safe rename, and failure cleanup.
 
 On macOS, a 28px top inset keeps the unchanged DSH sidebar header below the traffic lights. Windows uses a full-window 36px drag row with 46px minimize, maximize, and close targets. Unsupported development platforms keep the system frame.
 

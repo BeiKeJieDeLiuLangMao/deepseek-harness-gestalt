@@ -2,9 +2,9 @@
 
 English | [中文](README.zh.md)
 
-Installation client shared by Desktop and Mobile. It displays one bilingual retention notice before authorization, creates a P-256 key, opens the GitHub URL through an injected system-browser adapter, and completes the five-minute attempt by signed polling. A restored session is displayed only after Platform confirms its access token or rotates its refresh token.
+Installation client shared by Desktop and Mobile. It displays one canonical bilingual retention notice before authorization, creates a P-256 key, prepares the five-minute attempt before a user activation opens the system browser, and completes authorization by signed polling. A restored session is displayed only after Platform confirms its access token or rotates its refresh token.
 
-`PlatformAccountHttpTransport` selects one trusted HTTPS origin from a build-owned development/production pair. `IndexedDbInstallationAccountStore` persists non-exported Mobile WebCrypto keys and Account Sessions; Desktop uses the same transport with its Electron Host-owned encrypted store. `accountStorageNamespace` gives pairing keys, caches, and receipts disjoint account/environment prefixes when one Installation switches Accounts.
+`PlatformAccountHttpTransport` accepts only an identity selected from a validated development/production pair and parses every response variant from `unknown`. `IndexedDbInstallationAccountStore` parses durable records and persists non-exported Mobile WebCrypto keys and Account Sessions; Desktop uses the same transport with its Electron Host-owned encrypted store. One `AccountLifecycleTransitions` owner serializes load, login, polling, refresh, switching, and sign-out so concurrent restoration cannot clear or resurrect a newer session. `accountStorageNamespace` gives pairing keys, caches, and receipts disjoint account/environment prefixes when one Installation switches Accounts.
 
 ## Model Experience
 
@@ -17,4 +17,4 @@ None.
 ## Known Limitations and Deferred Work
 
 - This library does not implement Personal Pairing or Remote Access.
-- Mobile native packaging must supply a system-browser opener and stable WebView storage origin.
+- Mobile native packaging must supply a stable WebView storage origin; the Mobile composition owns its Capacitor Browser adapter.

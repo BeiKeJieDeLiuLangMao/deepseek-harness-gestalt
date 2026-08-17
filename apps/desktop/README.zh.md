@@ -8,7 +8,7 @@ DeepSeek Gestalt 的 Desktop Host。Electron 拥有窗口、菜单和 GitHub 自
 
 主窗口只接受当前环回 Host 同源导航。包括 GitHub 授权在内的普通 HTTP 链接交给系统浏览器；其他来源和 scheme 不能替换 Session Surface，也不能创建另一个 Electron 窗口。Platform 账号签名密钥和令牌保存在 Electron userData 下、按环境分开的 `safeStorage` 加密文件中；preload 只暴露当前状态与生命周期动词。
 
-Desktop Platform 账号要求设置 `DSH_PLATFORM_ENV`、`DSH_PLATFORM_DEVELOPMENT_ORIGIN` 和 `DSH_PLATFORM_PRODUCTION_ORIGIN`。两个 origin 必须是互不相同的 HTTPS origin；选择缺失或无效时，`手机配对` Settings section 会明确显示不可用，而不会改选其他环境。
+Desktop Platform 账号会在创建窗口前校验完整开发与生产环境对：`DSH_PLATFORM_DEVELOPMENT_*` 和 `DSH_PLATFORM_PRODUCTION_*` 两侧分别提供 `ORIGIN`、`CALLBACK_URL`、`GITHUB_CLIENT_ID`、`CREDENTIAL_REFERENCE`、`DATABASE_IDENTITY` 与 `IDENTITY_NAMESPACE`，再由 `DSH_PLATFORM_ENV` 显式选择一侧。缺失、未知、共享、非 HTTPS 或回调不匹配的配置会在渲染与网络流量前使启动失败。操作系统加密不可用仍会作为明确的能力失败显示。加密记录通过 `dsh-atomic-write` 的随机独占同级文件、仅所有者权限、符号链接安全 rename 与失败清理完成替换。
 
 在 macOS 上，28px 顶部间距让未改动的 DSH 侧栏标题行避开 traffic lights。Windows 使用覆盖整个窗口的 36px 拖拽行，最小化、最大化和关闭按钮各占 46px。未支持平台的开发运行保留系统窗口框架。
 

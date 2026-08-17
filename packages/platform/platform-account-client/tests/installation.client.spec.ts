@@ -1,6 +1,15 @@
 import { webcrypto } from 'node:crypto'
 import { afterEach, describe, expect, it, vi, type Mock } from 'vitest'
-import type { AccountSessionView, LoginAttemptView } from '@deepseek-ai/dsh-platform-account'
+import {
+  AccountError,
+  parseInstallationId,
+  parseLoginAttemptId,
+  selectPlatformEnvironment,
+  validatePlatformEnvironmentPair,
+  type AccountSessionView,
+  type LoginAttemptView,
+  type SelectedPlatformEnvironment,
+} from '@deepseek-ai/dsh-platform-account'
 import {
   ACCOUNT_PRIVACY_NOTICE,
   IndexedDbInstallationAccountStore,
@@ -12,6 +21,23 @@ import {
 } from '../src/index.ts'
 
 afterEach(() => { vi.unstubAllGlobals() })
+
+const PAIR = validatePlatformEnvironmentPair({
+  development: {
+    environment: 'development', origin: 'https://dev.example',
+    callbackUrl: 'https://dev.example/v1/account/oauth/github/callback',
+    githubClientId: 'client-development', credentialReference: 'credentials://development',
+    databaseIdentity: 'database-development', identityNamespace: 'namespace-development',
+  },
+  production: {
+    environment: 'production', origin: 'https://prod.example',
+    callbackUrl: 'https://prod.example/v1/account/oauth/github/callback',
+    githubClientId: 'client-production', credentialReference: 'credentials://production',
+    databaseIdentity: 'database-production', identityNamespace: 'namespace-production',
+  },
+})
+const DEVELOPMENT = selectPlatformEnvironment(PAIR, 'development')
+const PRODUCTION = selectPlatformEnvironment(PAIR, 'production')
 
 const ATTEMPT: LoginAttemptView = {
   id: 'attempt-1' as never,
@@ -38,6 +64,7 @@ function session(accountId: string, login: string, accessExpiresAt = Date.now() 
 }
 
 interface MockTransport {
+  environment: SelectedPlatformEnvironment
   beginLogin: Mock<PlatformAccountTransport['beginLogin']>
   pollLogin: Mock<PlatformAccountTransport['pollLogin']>
   refresh: Mock<PlatformAccountTransport['refresh']>
@@ -45,8 +72,12 @@ interface MockTransport {
   signOut: Mock<PlatformAccountTransport['signOut']>
 }
 
-function transport(results: AccountSessionView[]): MockTransport {
+function transport(
+  results: AccountSessionView[],
+  environment: SelectedPlatformEnvironment = DEVELOPMENT,
+): MockTransport {
   return {
+    environment,
     beginLogin: vi.fn<PlatformAccountTransport['beginLogin']>().mockResolvedValue(ATTEMPT),
     pollLogin: vi.fn<PlatformAccountTransport['pollLogin']>()
       .mockImplementation(async () => ({ status: 'complete', ...results.shift()! })),
@@ -57,15 +88,37 @@ function transport(results: AccountSessionView[]): MockTransport {
 }
 
 describe('PlatformAccountInstallation', () => {
+  it('rejects a transport from another environment and an unprepared browser open', () => {
+    expect(() => new PlatformAccountInstallation({
+      environment: DEVELOPMENT,
+      installationId: parseInstallationId('mismatch'),
+      installationKind: 'mobile',
+      transport: transport([], PRODUCTION),
+      store: new MemoryInstallationAccountStore(),
+      systemBrowser: { open: vi.fn() },
+      crypto: webcrypto as Crypto,
+    })).toThrow('transport does not match')
+    const installation = new PlatformAccountInstallation({
+      environment: DEVELOPMENT,
+      installationId: parseInstallationId('unprepared'),
+      installationKind: 'mobile',
+      transport: transport([]),
+      store: new MemoryInstallationAccountStore(),
+      systemBrowser: { open: vi.fn() },
+      crypto: webcrypto as Crypto,
+    })
+    expect(() => { installation.openLogin() }).toThrow('not prepared')
+  })
+
   it('keeps a fresh installation idle when no stored session exists', async () => {
     const api = transport([])
     const installation = new PlatformAccountInstallation({
-      environment: 'development',
-      installationId: 'desktop-fresh',
+      environment: DEVELOPMENT,
+      installationId: parseInstallationId('desktop-fresh'),
       installationKind: 'desktop',
       transport: api,
       store: new MemoryInstallationAccountStore(),
-      openSystemBrowser: vi.fn(),
+      systemBrowser: { open: vi.fn() },
       crypto: webcrypto as Crypto,
     })
 
@@ -79,12 +132,12 @@ describe('PlatformAccountInstallation', () => {
   it.each(['desktop', 'mobile'] as const)('shows bilingual privacy before %s authorization', async (kind) => {
     const openSystemBrowser = vi.fn()
     const installation = new PlatformAccountInstallation({
-      environment: 'development',
-      installationId: `${kind}-1`,
+      environment: DEVELOPMENT,
+      installationId: parseInstallationId(`${kind}-1`),
       installationKind: kind,
       transport: transport([session('account-a', 'octocat')]),
       store: new MemoryInstallationAccountStore(),
-      openSystemBrowser,
+      systemBrowser: { open: openSystemBrowser },
       crypto: webcrypto as Crypto,
     })
     expect(installation.getSnapshot().privacyAccepted).toBe(false)
@@ -97,12 +150,12 @@ describe('PlatformAccountInstallation', () => {
   it('keeps account-specific material namespaces separate when an installation switches accounts', async () => {
     const store = new MemoryInstallationAccountStore()
     const installation = new PlatformAccountInstallation({
-      environment: 'production',
-      installationId: 'mobile-2',
+      environment: PRODUCTION,
+      installationId: parseInstallationId('mobile-2'),
       installationKind: 'mobile',
-      transport: transport([session('account-a', 'octocat'), session('account-b', 'hubot')]),
+      transport: transport([session('account-a', 'octocat'), session('account-b', 'hubot')], PRODUCTION),
       store,
-      openSystemBrowser: vi.fn(),
+      systemBrowser: { open: vi.fn() },
       crypto: webcrypto as Crypto,
     })
     installation.acceptPrivacy()
@@ -124,12 +177,12 @@ describe('PlatformAccountInstallation', () => {
     const store = new MemoryInstallationAccountStore()
     const api = transport([session('account-a', 'octocat')])
     const installation = new PlatformAccountInstallation({
-      environment: 'development',
-      installationId: 'desktop-2',
+      environment: DEVELOPMENT,
+      installationId: parseInstallationId('desktop-2'),
       installationKind: 'desktop',
       transport: api,
       store,
-      openSystemBrowser: vi.fn(),
+      systemBrowser: { open: vi.fn() },
       crypto: webcrypto as Crypto,
     })
     installation.acceptPrivacy()
@@ -154,12 +207,12 @@ describe('PlatformAccountInstallation', () => {
     const api = transport([])
     vi.mocked(api.current).mockResolvedValue(restored.account)
     const installation = new PlatformAccountInstallation({
-      environment: 'development',
-      installationId: 'desktop-restored',
+      environment: DEVELOPMENT,
+      installationId: parseInstallationId('desktop-restored'),
       installationKind: 'desktop',
       transport: api,
       store,
-      openSystemBrowser: vi.fn(),
+      systemBrowser: { open: vi.fn() },
       crypto: webcrypto as Crypto,
       now: () => 1_000,
     })
@@ -183,12 +236,12 @@ describe('PlatformAccountInstallation', () => {
     const api = transport([])
     vi.mocked(api.refresh).mockResolvedValue(replacement)
     const installation = new PlatformAccountInstallation({
-      environment: 'production',
-      installationId: 'mobile-restored',
+      environment: PRODUCTION,
+      installationId: parseInstallationId('mobile-restored'),
       installationKind: 'mobile',
-      transport: api,
+      transport: Object.assign(api, { environment: PRODUCTION }),
       store,
-      openSystemBrowser: vi.fn(),
+      systemBrowser: { open: vi.fn() },
       crypto: webcrypto as Crypto,
       now: () => 1_000,
     })
@@ -210,14 +263,14 @@ describe('PlatformAccountInstallation', () => {
     )
     await store.saveSession({ environment: 'development', session: restored, privateKey: pair.privateKey })
     const api = transport([])
-    vi.mocked(api.current).mockRejectedValue(new Error('SESSION_REVOKED: Account Session is revoked'))
+    vi.mocked(api.current).mockRejectedValue(new AccountError('SESSION_REVOKED', 'Account Session is revoked'))
     const installation = new PlatformAccountInstallation({
-      environment: 'development',
-      installationId: 'desktop-revoked',
+      environment: DEVELOPMENT,
+      installationId: parseInstallationId('desktop-revoked'),
       installationKind: 'desktop',
       transport: api,
       store,
-      openSystemBrowser: vi.fn(),
+      systemBrowser: { open: vi.fn() },
       crypto: webcrypto as Crypto,
       now: () => 1_000,
     })
@@ -232,8 +285,8 @@ describe('PlatformAccountInstallation', () => {
     const store = new MemoryInstallationAccountStore()
     const api = transport([session('account-a', 'octocat')])
     const installation = new PlatformAccountInstallation({
-      environment: 'development', installationId: 'mobile-errors', installationKind: 'mobile',
-      transport: api, store, openSystemBrowser: vi.fn(), crypto: webcrypto as Crypto,
+      environment: DEVELOPMENT, installationId: parseInstallationId('mobile-errors'), installationKind: 'mobile',
+      transport: api, store, systemBrowser: { open: vi.fn() }, crypto: webcrypto as Crypto,
     })
     await expect(installation.pollLogin()).rejects.toThrow('no login attempt')
     await expect(installation.signOut()).resolves.toBeUndefined()
@@ -248,7 +301,7 @@ describe('PlatformAccountInstallation', () => {
     installation.acceptPrivacy()
     await installation.pollLogin()
 
-    vi.mocked(api.signOut).mockRejectedValueOnce(new Error('SESSION_EXPIRED: expired'))
+    vi.mocked(api.signOut).mockRejectedValueOnce(new AccountError('SESSION_EXPIRED', 'expired'))
     await installation.signOut()
     expect(installation.getSnapshot().status).toBe('idle')
   })
@@ -263,8 +316,8 @@ describe('PlatformAccountInstallation', () => {
     const api = transport([])
     vi.mocked(api.current).mockRejectedValueOnce(new Error('network unavailable'))
     const installation = new PlatformAccountInstallation({
-      environment: 'development', installationId: 'desktop-failure', installationKind: 'desktop',
-      transport: api, store, openSystemBrowser: vi.fn(), crypto: webcrypto as Crypto, now: () => 1_000,
+      environment: DEVELOPMENT, installationId: parseInstallationId('desktop-failure'), installationKind: 'desktop',
+      transport: api, store, systemBrowser: { open: vi.fn() }, crypto: webcrypto as Crypto, now: () => 1_000,
     })
     const listener = vi.fn()
     const dispose = installation.subscribe(listener)
@@ -287,8 +340,8 @@ describe('PlatformAccountInstallation', () => {
     )
     await store.saveSession({ environment: 'development', session: { ...expired, refreshExpiresAt: 1 }, privateKey: pair.privateKey })
     const installation = new PlatformAccountInstallation({
-      environment: 'development', installationId: 'desktop-defaults', installationKind: 'desktop',
-      transport: transport([]), store, openSystemBrowser: vi.fn(),
+      environment: DEVELOPMENT, installationId: parseInstallationId('desktop-defaults'), installationKind: 'desktop',
+      transport: transport([]), store, systemBrowser: { open: vi.fn() },
     })
     await installation.load()
     expect(await store.loadSession('development')).toBeUndefined()
@@ -298,8 +351,8 @@ describe('PlatformAccountInstallation', () => {
     const api = transport([])
     vi.mocked(api.beginLogin).mockRejectedValueOnce(new Error('login unavailable'))
     const installation = new PlatformAccountInstallation({
-      environment: 'development', installationId: 'desktop-login-error', installationKind: 'desktop',
-      transport: api, store: new MemoryInstallationAccountStore(), openSystemBrowser: vi.fn(),
+      environment: DEVELOPMENT, installationId: parseInstallationId('desktop-login-error'), installationKind: 'desktop',
+      transport: api, store: new MemoryInstallationAccountStore(), systemBrowser: { open: vi.fn() },
       crypto: webcrypto as Crypto,
     })
     installation.acceptPrivacy()
@@ -309,12 +362,27 @@ describe('PlatformAccountInstallation', () => {
     expect(installation.getSnapshot().error).toBeUndefined()
   })
 
+  it('publishes an asynchronous native browser failure after direct invocation', async () => {
+    const installation = new PlatformAccountInstallation({
+      environment: DEVELOPMENT, installationId: parseInstallationId('browser-failure'), installationKind: 'mobile',
+      transport: transport([]), store: new MemoryInstallationAccountStore(),
+      systemBrowser: { open: vi.fn(async () => { throw new Error('native browser failed') }) },
+      crypto: webcrypto as Crypto,
+    })
+    installation.acceptPrivacy()
+    await installation.prepareLogin()
+    installation.openLogin()
+    await vi.waitFor(() => {
+      expect(installation.getSnapshot()).toMatchObject({ status: 'failed', error: 'native browser failed' })
+    })
+  })
+
   it('retains the signed-in account on non-terminal sign-out failure', async () => {
     const store = new MemoryInstallationAccountStore()
     const api = transport([session('account-a', 'octocat')])
     const installation = new PlatformAccountInstallation({
-      environment: 'development', installationId: 'desktop-signout-error', installationKind: 'desktop',
-      transport: api, store, openSystemBrowser: vi.fn(), crypto: webcrypto as Crypto,
+      environment: DEVELOPMENT, installationId: parseInstallationId('desktop-signout-error'), installationKind: 'desktop',
+      transport: api, store, systemBrowser: { open: vi.fn() }, crypto: webcrypto as Crypto,
     })
     installation.acceptPrivacy()
     await installation.beginLogin()
@@ -325,36 +393,89 @@ describe('PlatformAccountInstallation', () => {
     installation.acceptPrivacy()
     expect(installation.getSnapshot()).toMatchObject({ status: 'failed', account: { githubLogin: 'octocat' } })
   })
+
+  it('serializes StrictMode double load so a stale refresh cannot clear the replacement', async () => {
+    const store = new MemoryInstallationAccountStore()
+    const expired = session('account-a', 'octocat', 999)
+    const replacement = session('account-a', 'octocat', 2_000)
+    const pair = await webcrypto.subtle.generateKey(
+      { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign', 'verify'],
+    )
+    await store.saveSession({ environment: 'development', session: expired, privateKey: pair.privateKey })
+    const api = transport([])
+    const refresh = deferred<AccountSessionView>()
+    vi.mocked(api.refresh).mockImplementation(async () => refresh.promise)
+    vi.mocked(api.current).mockResolvedValue(replacement.account)
+    const installation = new PlatformAccountInstallation({
+      environment: DEVELOPMENT, installationId: parseInstallationId('strict-mode'), installationKind: 'mobile',
+      transport: api, store, systemBrowser: { open: vi.fn() }, crypto: webcrypto as Crypto, now: () => 1_000,
+    })
+
+    const first = installation.load()
+    const second = installation.load()
+    await vi.waitFor(() => { expect(api.refresh).toHaveBeenCalledOnce() })
+    refresh.resolve(replacement)
+    await Promise.all([first, second])
+
+    expect(api.refresh).toHaveBeenCalledOnce()
+    expect(api.current).toHaveBeenCalledOnce()
+    expect((await store.loadSession('development'))?.session).toEqual(replacement)
+  })
+
+  it('orders refresh before concurrent sign-out so no refreshed session is resurrected', async () => {
+    const store = new MemoryInstallationAccountStore()
+    const expired = session('account-a', 'octocat', 999)
+    const replacement = session('account-a', 'octocat', 2_000)
+    const pair = await webcrypto.subtle.generateKey(
+      { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign', 'verify'],
+    )
+    await store.saveSession({ environment: 'development', session: expired, privateKey: pair.privateKey })
+    const api = transport([])
+    const refresh = deferred<AccountSessionView>()
+    vi.mocked(api.refresh).mockImplementation(async () => refresh.promise)
+    const installation = new PlatformAccountInstallation({
+      environment: DEVELOPMENT, installationId: parseInstallationId('refresh-signout'), installationKind: 'desktop',
+      transport: api, store, systemBrowser: { open: vi.fn() }, crypto: webcrypto as Crypto, now: () => 1_000,
+    })
+
+    const loading = installation.load()
+    const signingOut = installation.signOut()
+    await vi.waitFor(() => { expect(api.refresh).toHaveBeenCalledOnce() })
+    refresh.resolve(replacement)
+    await Promise.all([loading, signingOut])
+
+    expect(api.signOut).toHaveBeenCalledWith(expect.objectContaining({ accessToken: replacement.accessToken }))
+    expect(await store.loadSession('development')).toBeUndefined()
+    expect(installation.getSnapshot().status).toBe('idle')
+  })
 })
 
 describe('PlatformAccountHttpTransport', () => {
   const proof = { jti: 'proof', issuedAt: 123, signature: 'signature' }
 
-  it.each([
-    { development: 'http://dev.example', production: 'https://prod.example' },
-    { development: 'https://dev.example', production: 'http://prod.example' },
-    { development: 'https://same.example/a', production: 'https://same.example/b' },
-  ])('rejects invalid origin pairs', (origins) => {
-    expect(() => new PlatformAccountHttpTransport({ environment: 'development', origins }))
-      .toThrow('distinct HTTPS origins')
-  })
-
   it('routes every operation to the selected environment with JSON and proof headers', async () => {
     const calls: Array<[string, RequestInit]> = []
     const fetch = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
-      calls.push([typeof url === 'string' ? url : url instanceof URL ? url.href : url.url, init ?? {}])
+      const address = typeof url === 'string' ? url : url instanceof URL ? url.href : url.url
+      calls.push([address, init ?? {}])
       if (init?.method === 'DELETE') return new Response(null, { status: 204 })
-      return new Response(JSON.stringify({ status: 'pending', githubLogin: 'octocat' }), {
+      const value = address.endsWith('/login-attempts')
+        ? ATTEMPT
+        : address.endsWith('/login-poll')
+          ? { status: 'pending' }
+          : address.endsWith('/refresh')
+            ? session('account-a', 'octocat')
+            : session('account-a', 'octocat').account
+      return new Response(JSON.stringify(value), {
         status: 200, headers: { 'content-type': 'application/json' },
       })
     })
     const transport = new PlatformAccountHttpTransport({
-      environment: 'production',
-      origins: { development: 'https://dev.example', production: 'https://prod.example/path' },
+      environment: PRODUCTION,
       fetch,
     })
-    await transport.beginLogin({ installationId: 'mobile-1', installationKind: 'mobile', publicKey: {} })
-    await transport.pollLogin({ attemptId: 'attempt', pollingToken: 'poll', proof })
+    await transport.beginLogin({ installationId: parseInstallationId('mobile-1'), installationKind: 'mobile', publicKey: {} })
+    await transport.pollLogin({ attemptId: parseLoginAttemptId('attempt'), pollingToken: 'poll', proof })
     await transport.refresh({ refreshToken: 'refresh', proof })
     await transport.current({ accessToken: 'access', proof })
     await transport.signOut({ accessToken: 'access', proof })
@@ -374,7 +495,7 @@ describe('PlatformAccountHttpTransport', () => {
 
   it('uses stable Platform errors and falls back for proxy and malformed error bodies', async () => {
     const bodies: Array<{ body: BodyInit; contentType?: string; expected: string }> = [
-      { body: JSON.stringify({ error: { code: 'SESSION_REVOKED', message: 'revoked' } }), contentType: 'application/json', expected: 'SESSION_REVOKED: revoked' },
+      { body: JSON.stringify({ error: { code: 'SESSION_REVOKED', message: 'revoked' } }), contentType: 'application/json', expected: 'revoked' },
       { body: 'proxy failure', expected: 'Platform Account request failed with HTTP 502' },
       { body: 'null', contentType: 'application/json', expected: 'Platform Account request failed with HTTP 502' },
       { body: '{}', contentType: 'application/json', expected: 'Platform Account request failed with HTTP 502' },
@@ -382,11 +503,11 @@ describe('PlatformAccountHttpTransport', () => {
       { body: JSON.stringify({ error: {} }), contentType: 'application/json', expected: 'Platform Account request failed with HTTP 502' },
       { body: JSON.stringify({ error: { code: 1, message: 'bad' } }), contentType: 'application/json', expected: 'Platform Account request failed with HTTP 502' },
       { body: JSON.stringify({ error: { code: 'BAD', message: 1 } }), contentType: 'application/json', expected: 'Platform Account request failed with HTTP 502' },
+      { body: JSON.stringify({ error: { code: 'BAD', message: 'bad request' } }), contentType: 'application/json', expected: 'BAD: bad request' },
     ]
     for (const item of bodies) {
       const transport = new PlatformAccountHttpTransport({
-        environment: 'development',
-        origins: { development: 'https://dev.example', production: 'https://prod.example' },
+        environment: DEVELOPMENT,
         fetch: vi.fn().mockResolvedValue(new Response(item.body, {
           status: 502, headers: item.contentType === undefined ? {} : { 'content-type': item.contentType },
         })),
@@ -397,9 +518,39 @@ describe('PlatformAccountHttpTransport', () => {
 
   it('retains the global fetch default without crossing environments', () => {
     expect(() => new PlatformAccountHttpTransport({
-      environment: 'development',
-      origins: { development: 'https://dev.example', production: 'https://prod.example' },
+      environment: DEVELOPMENT,
     })).not.toThrow()
+  })
+
+  it('rejects malformed response variants at every HTTP boundary', async () => {
+    const transport = new PlatformAccountHttpTransport({
+      environment: DEVELOPMENT,
+      fetch: vi.fn(async () => json({})),
+    })
+    await expect(transport.beginLogin({
+      installationId: parseInstallationId('malformed'), installationKind: 'desktop', publicKey: {},
+    })).rejects.toThrow('attemptId')
+    await expect(transport.pollLogin({
+      attemptId: parseLoginAttemptId('malformed'), pollingToken: 'poll', proof,
+    })).rejects.toThrow('status')
+    await expect(transport.refresh({ refreshToken: 'refresh', proof })).rejects.toThrow('Account Session')
+    await expect(transport.current({ accessToken: 'access', proof })).rejects.toThrow('Platform Account')
+    const backwards = { ...session('account-a', 'octocat'), accessExpiresAt: 2_000, refreshExpiresAt: 1_000 }
+    const backwardsTransport = new PlatformAccountHttpTransport({
+      environment: DEVELOPMENT, fetch: vi.fn(async () => json(backwards)),
+    })
+    await expect(backwardsTransport.refresh({ refreshToken: 'refresh', proof }))
+      .rejects.toThrow('refresh expiry must not precede access expiry')
+    const nonObject = new PlatformAccountHttpTransport({
+      environment: DEVELOPMENT, fetch: vi.fn(async () => json(null)),
+    })
+    await expect(nonObject.current({ accessToken: 'access', proof })).rejects.toThrow('must be an object')
+    const insecureAttempt = new PlatformAccountHttpTransport({
+      environment: DEVELOPMENT, fetch: vi.fn(async () => json({ ...ATTEMPT, authorizationUrl: 'http://github.example' })),
+    })
+    await expect(insecureAttempt.beginLogin({
+      installationId: parseInstallationId('insecure'), installationKind: 'mobile', publicKey: {},
+    })).rejects.toThrow('must use HTTPS')
   })
 })
 
@@ -463,6 +614,27 @@ describe('IndexedDbInstallationAccountStore', () => {
     }
     await expect(operation).rejects.toThrow(message)
   })
+
+  it('rejects malformed session, attempt, and P-256 key records from IndexedDB', async () => {
+    const fake = indexedDbFake()
+    vi.stubGlobal('indexedDB', fake.api)
+    const store = new IndexedDbInstallationAccountStore('malformed-db')
+    fake.records.set('development:session', {
+      environment: 'development', session: {}, privateKey: { type: 'private', algorithm: {}, usages: ['sign'] },
+    })
+    await expect(store.loadSession('development')).rejects.toThrow('Account Session')
+    fake.records.set('development:session', {
+      environment: 'production', session: session('account-a', 'octocat'),
+      privateKey: { type: 'private', algorithm: { name: 'ECDSA', namedCurve: 'P-256' }, usages: ['sign'] },
+    })
+    await expect(store.loadSession('development')).rejects.toThrow('another environment')
+    fake.records.set('production:pending', {
+      attempt: ATTEMPT, privateKey: { type: 'private', algorithm: { name: 'ECDSA', namedCurve: 'P-384' }, usages: ['sign'] },
+    })
+    await expect(store.loadPending('production')).rejects.toThrow('must be a signing P-256 CryptoKey')
+    fake.records.set('production:pending', null)
+    await expect(store.loadPending('production')).rejects.toThrow('pending login must be an object')
+  })
 })
 
 describe('ACCOUNT_PRIVACY_NOTICE', () => {
@@ -479,6 +651,7 @@ describe('ACCOUNT_PRIVACY_NOTICE', () => {
 function indexedDbFake(failure?: 'open' | 'read' | 'write' | 'remove' | 'open-null' | 'read-null' | 'write-null' | 'remove-null'): {
   api: IDBFactory
   opened: string[]
+  records: Map<IDBValidKey, unknown>
 } {
   const records = new Map<IDBValidKey, unknown>()
   const opened: string[] = []
@@ -519,6 +692,7 @@ function indexedDbFake(failure?: 'open' | 'read' | 'write' | 'remove' | 'open-nu
   }
   return {
     opened,
+    records,
     api: {
       open(name: string) {
         opened.push(name)
@@ -536,4 +710,13 @@ function indexedDbFake(failure?: 'open' | 'read' | 'write' | 'remove' | 'open-nu
       },
     } as unknown as IDBFactory,
   }
+}
+
+function json(value: unknown): Response {
+  return new Response(JSON.stringify(value), { status: 200, headers: { 'content-type': 'application/json' } })
+}
+
+function deferred<T>(): { promise: Promise<T>; resolve(value: T): void } {
+  let resolve!: (value: T) => void
+  return { promise: new Promise<T>((next) => { resolve = next }), resolve }
 }

@@ -6,15 +6,15 @@ English | [中文](platform-account.zh.md)
 
 ## Login and session lifecycle
 
-An Installation accepts the bilingual privacy notice before it creates a five-minute `LoginAttemptView`. The system browser uses Authorization Code with S256 PKCE, random state, no OAuth scope, and one fixed HTTPS Platform callback. The application receives no callback credential; `LoginPollResult` completes only when a P-256 `AccountProof` redeems the single-use signed polling token.
+An Installation accepts the canonical bilingual privacy notice before it creates a five-minute `LoginAttemptView`. Mobile prepares the attempt before the authorization button can be pressed, then the button's user activation directly calls the Capacitor Browser adapter; Desktop delegates to Electron `shell.openExternal`. The system browser uses Authorization Code with S256 PKCE, random state, no OAuth scope, and one fixed HTTPS Platform callback. The application receives no callback credential or token-bearing custom URL; `LoginPollResult` completes only when a P-256 `AccountProof` redeems the single-use signed polling token.
 
 `AccountSessionView` contains a 15-minute access token and a rotating refresh token valid for at most 30 days. Every current-account read, refresh, and sign-out proves possession of the Installation key. The opaque `AccountSessionId` is the invalidation identity shared across Platform Instances.
 
 ## Ownership and isolation
 
-One Installation holds one current Platform Account. Account-scoped pairing keys, caches, and operation receipts use a namespace containing the environment and Account id, so switching accounts selects separate material. Current-installation sign-out commits session invalidation, closes matching connections on every Platform Instance, and preserves Personal Pairings.
+One Installation holds one current Platform Account. Account-scoped pairing keys, caches, and operation receipts use a namespace containing the environment and Account id, so switching accounts selects separate material. A serial lifecycle owner orders restoration, refresh, login, polling, switching, and sign-out; duplicate loads cannot clear or resurrect a newer session. Current-installation sign-out commits session invalidation, awaits every invalidation listener and connection closer with independent error containment, and preserves Personal Pairings.
 
-Development and production have distinct trusted origins, callbacks, OAuth Apps, credential namespaces, database namespaces, and identity namespaces. The in-memory backend and invalidation bus support keyless acceptance and development only; production persistence and distributed invalidation belong to the Platform deployment.
+Development and production have distinct trusted origins, callbacks, OAuth Apps, credential references, database identities, and identity namespaces. Desktop and Mobile parse both identities and require an explicit selection before rendering or traffic. The selected identity binds the HTTP transport, OAuth adapter, backend database, local store, callback, and issued account namespace. HTTP and durable records are parsed from `unknown` at their boundaries. The in-memory backend and invalidation bus support keyless acceptance and development only; production persistence and distributed invalidation belong to the Platform deployment.
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -36,7 +36,7 @@ Platform Account capability. Providers own OAuth, installation-key binding, toke
  * @param input - installation identity, kind, and public P-256 JWK.
  * @returns the system-browser URL and signed polling capability.
  */
-abstract beginLogin(input: { installationId: string installationKind: 'desktop' | 'mobile' publicKey: JsonWebKey }): Promise<LoginAttemptView>
+abstract beginLogin(input: { installationId: InstallationId installationKind: 'desktop' | 'mobile' publicKey: JsonWebKey }): Promise<LoginAttemptView>
 
 /**
  * Settle the fixed HTTPS GitHub callback; provider credentials never leave the provider.
@@ -50,7 +50,7 @@ abstract completeGitHubCallback(input: { code: string; state: string }): Promise
  * @param input - attempt binding and one-use proof.
  * @returns pending or the newly created Account Session.
  */
-abstract pollLogin(input: { attemptId: string pollingToken: string proof: AccountProof }): Promise<LoginPollResult>
+abstract pollLogin(input: { attemptId: LoginAttemptId pollingToken: string proof: AccountProof }): Promise<LoginPollResult>
 
 /**
  * Rotate a current installation's refresh token and issue a new access token.
@@ -78,8 +78,8 @@ abstract signOut(input: { accessToken: string; proof: AccountProof }): Promise<v
  * @param close - idempotent close callback.
  * @returns disposer removing the tracked connection.
  */
-abstract trackConnection(sessionId: AccountSessionId, close: () => void): () => void
+abstract trackConnection(sessionId: AccountSessionId, close: () => void | Promise<void>): () => void
 ```
 
-Source: [`packages/platform/platform-account/src/index.ts:28`](../../packages/platform/platform-account/src/index.ts)
+Source: [`packages/platform/platform-account/src/index.ts:33`](../../packages/platform/platform-account/src/index.ts)
 <!-- END GENERATED cordis-surface -->
