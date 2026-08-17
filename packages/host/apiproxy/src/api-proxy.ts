@@ -34,6 +34,7 @@ import {
 } from '@deepseek-ai/dsh-agent-presets'
 import type { PresetBearingSession } from '@deepseek-ai/dsh-agent-presets'
 import type {} from '@deepseek-ai/dsh-tools'
+import type {} from '@deepseek-ai/dsh-tools-eligibility'
 import type {
   ApiProxy, ConfigurableProviderView, CredentialView, GoalRef, HistoryEntry, HostFrame,
   ModelCatalogFailure, ModelProviderGroup,
@@ -2220,6 +2221,18 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         const { groups, failures } = await buildModelCatalog(ctx)
         const routable = routeServed(current.provider)
         return ok(request, { current: { ...current }, routable, groups, failures })
+      },
+
+      async toolEligibility(request) {
+        const found = await agentFor(request.payload.sessionId)
+        if ('error' in found) return err(request, found.error)
+        const resolution = ctx.get('toolEligibility')?.resolve(found.agent)
+        return ok(request, resolution === undefined
+          ? { tools: ctx.tools.schemas(found.agent) }
+          : {
+            ...resolution.allow === undefined ? {} : { allow: [...resolution.allow] },
+            tools: [...resolution.tools],
+          })
       },
 
       async selectModel(request) {

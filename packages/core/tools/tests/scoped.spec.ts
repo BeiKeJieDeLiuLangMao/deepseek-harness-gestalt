@@ -33,6 +33,16 @@ async function mintAgentScope(ctx: Context, name: string): Promise<{ scope: Scop
   return { scope, key }
 }
 
+/** Mint a child scope parented to `parent`, matching nested agent composition. */
+async function mintChildScope(ctx: Context, parent: Agent, name: string): Promise<{ scope: Scope; key: Agent }> {
+  const key = { id: name as SessionId } as Agent
+  bindScopeParent(key, parent)
+  let scope!: Scope
+  await ctx.plugin(Object.assign((inner: Context) => { scope = createScope(inner, key) },
+    { inject: ['tools', 'systemPrompt'] }))
+  return { scope, key }
+}
+
 function tool(name: string, reply = `ran:${name}`): ToolDefinition {
   return {
     name,
@@ -202,16 +212,6 @@ describe('restrict()', () => {
 })
 
 describe('restrict() over an inherited scope layer', () => {
-  /** Mint a child scope parented to `parent`, as a subagent's creation window does. */
-  async function mintChild(ctx: Context, parentKey: Agent, name: string): Promise<{ scope: Scope; key: Agent }> {
-    const key = { id: name as SessionId } as Agent
-    bindScopeParent(key, parentKey)
-    let scope!: Scope
-    await ctx.plugin(Object.assign((inner: Context) => { scope = createScope(inner, key) },
-      { inject: ['tools', 'systemPrompt'] }))
-    return { scope, key }
-  }
-
   it('filters tools the child inherits from an ancestor scope, not only global ones', async () => {
     // The shape every preset deployment has: no model-facing row in the global
     // layer, all of them contributed by an ancestor scope the child joined.
@@ -219,7 +219,7 @@ describe('restrict() over an inherited scope layer', () => {
     const parent = await mintAgentScope(ctx, 'parent')
     parent.scope.ctx.tools.register(tool('bash'))
     parent.scope.ctx.tools.register(tool('read'))
-    const child = await mintChild(ctx, parent.key, 'child')
+    const child = await mintChildScope(ctx, parent.key, 'child')
 
     expect(ctx.tools.schemas(child.key).map(t => t.name).sort()).toEqual(['bash', 'read'])
     child.scope.ctx.tools.restrict({ deny: ['bash'] })
@@ -240,7 +240,7 @@ describe('restrict() over an inherited scope layer', () => {
     const parent = await mintAgentScope(ctx, 'parent')
     parent.scope.ctx.tools.register(tool('bash'))
     parent.scope.ctx.tools.register(tool('read'))
-    const child = await mintChild(ctx, parent.key, 'child')
+    const child = await mintChildScope(ctx, parent.key, 'child')
     child.scope.ctx.tools.register(tool('report'))
 
     child.scope.ctx.tools.restrict({ allow: ['read'] })
@@ -254,11 +254,69 @@ describe('restrict() over an inherited scope layer', () => {
     ctx.tools.register(tool('web'))
     const parent = await mintAgentScope(ctx, 'parent')
     parent.scope.ctx.tools.register(tool('bash'))
-    const child = await mintChild(ctx, parent.key, 'child')
+    const child = await mintChildScope(ctx, parent.key, 'child')
     parent.scope.ctx.tools.restrict({ deny: ['web'] })
 
     expect(ctx.tools.schemas(child.key).map(t => t.name)).toEqual(['bash'])
     expect(ctx.tools.schemas(parent.key).map(t => t.name)).toEqual(['bash'])
+  })
+})
+
+describe('allow-only eligibility declarations', () => {
+  it('unions preset, Workspace, and Session additions without exposing deny configuration', async () => {
+    const ctx = await mount()
+    const preset = await mintAgentScope(ctx, 'preset')
+    const session = await mintChildScope(ctx, preset.key, 'session')
+    const unrelated = await mintAgentScope(ctx, 'unrelated')
+
+    const disposePreset = preset.scope.ctx.tools.allowEligible(['mcp__browser__navigate'])
+    session.scope.ctx.tools.allowEligible([
+      'mcp__browser__screenshot',
+      'mcp__browser__navigate',
+    ])
+
+    expect(ctx.tools.eligibilityAllow(session.key)).toEqual([
+      'mcp__browser__navigate',
+      'mcp__browser__screenshot',
+    ])
+    expect(ctx.tools.eligibilityAllow(preset.key)).toEqual(['mcp__browser__navigate'])
+    expect(ctx.tools.eligibilityAllow(unrelated.key)).toBeUndefined()
+
+    disposePreset()
+    expect(ctx.tools.eligibilityAllow(session.key)).toEqual([
+      'mcp__browser__navigate',
+      'mcp__browser__screenshot',
+    ])
+  })
+
+  it('preserves an explicit empty allowance as allow-nothing', async () => {
+    const ctx = await mount()
+    const { scope, key } = await mintAgentScope(ctx, 'empty')
+
+    scope.ctx.tools.allowEligible([])
+
+    expect(ctx.tools.eligibilityAllow(key)).toEqual([])
+  })
+
+  it('keeps schemas and execution aligned for inherited and scope-local tools', async () => {
+    const ctx = await mount()
+    const { scope, key } = await mintAgentScope(ctx, 'filtered')
+    let blockedCalls = 0
+    ctx.tools.register(tool('allowed'))
+    ctx.tools.register({
+      ...tool('blocked'),
+      execute: () => {
+        blockedCalls += 1
+        return Promise.resolve('ran:blocked')
+      },
+    })
+    scope.ctx.tools.register(tool('local'))
+    scope.ctx.tools.allowEligible(['allowed'])
+
+    expect(ctx.tools.schemas(key).map(schema => schema.name)).toEqual(['allowed'])
+    expect(await run(ctx, 'blocked', key)).toBe('Error: unknown tool "blocked"')
+    expect(await run(ctx, 'local', key)).toBe('Error: unknown tool "local"')
+    expect(blockedCalls).toBe(0)
   })
 })
 

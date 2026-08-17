@@ -1938,6 +1938,19 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'toolEligibility',
+    summary: 'Host-plane eligibility resolver.',
+    description: 'Host-plane eligibility resolver. A configured Workspace or Session entry contributes to the same positive scope-chain union as preset declarations; no declaration preserves the existing unrestricted catalog.',
+    methods: [
+      {
+        signature: 'resolve(agent: Agent): ToolEligibilityResolution',
+        description: 'Resolve the configured allowances and live eligible catalog for an agent.',
+        parameters: [{ name: 'agent', description: 'live agent whose preset, Workspace, and Session apply.' }],
+        returns: 'a fresh Host API projection.',
+      },
+    ],
+  },
+  {
     key: 'toolResultPruner',
     summary: 'Deterministic head/middle/tail pruning for current tool-result surface nodes.',
     description: 'Deterministic head/middle/tail pruning for current tool-result surface nodes.',
@@ -1990,6 +2003,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Restrict global tools for the calling agent scope. Empty filters, unknown names, scope-local names, and reserved transport names fail. Restrictions intersect; scoped registrations remain visible.',
         parameters: [{ name: 'filter', description: 'global-tool mask: `allow` (keep only) and/or `deny` (remove).' }],
         returns: 'the exact disposer that lifts this restriction.',
+      },
+      {
+        signature: 'allowEligible(names: readonly string[]): () => void',
+        description: 'Add positive tool-eligibility entries for the calling scope. Entries from a preset and its descendant agent scopes union; this declaration does not expose the internal deny-capable restriction interface to user settings. Names may precede dynamic tool registration, so they are not validated against the current registry generation here.',
+        parameters: [{ name: 'names', description: 'exact public tool names this scope adds to eligibility.' }],
+        returns: 'the exact disposer that removes this contribution.',
+      },
+      {
+        signature: 'eligibilityAllow(scope?: ScopeKey): readonly string[] | undefined',
+        description: 'Resolve the positive eligibility entries declared along one scope chain. Absence means no allow-only policy was configured; an empty array means a declaration explicitly allows no end tool.',
+        parameters: [{ name: 'scope', description: 'the agent or standing preset whose declarations are read.' }],
+        returns: 'the sorted union, or `undefined` when the chain declares none.',
       },
       {
         signature: 'guard(guard: ToolGuard): () => void',
@@ -4542,6 +4567,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ToolDispatchExecution extends Omit<ToolExecution, \'signal\'> {\n    signal: AbortSignal;\n}',
   },
   {
+    name: 'ToolEligibilityResolution',
+    declaration: 'export interface ToolEligibilityResolution {\n    readonly allow?: readonly string[];\n    readonly tools: readonly ToolSchema[];\n}',
+  },
+  {
     name: 'ToolErrorInfo',
     declaration: 'export interface ToolErrorInfo {\n    name: string;\n    code: string;\n}',
   },
@@ -4623,7 +4652,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ToolRuntime',
-    declaration: 'export class ToolRuntime extends Service {\n    static inject;\n    static Config: z<Config>;\n    readonly [TOOL_RUNTIME_SCHEDULER]: ToolRuntimeScheduler;\n    constructor(ctx: Context, config: Config = {});\n    presentAs(mode: ToolPresentationMode): () => void;\n    register(definition: ToolDefinition): () => void;\n    restrict(filter: ToolRestriction): () => void;\n    guard(guard: ToolGuard): () => void;\n    get(name: string, scope?: ScopeKey): ToolDefinition | undefined;\n    schemas(scope?: ScopeKey): ToolSchema[];\n    executionMode(exec: ToolExecutionInput): ToolExecutionMode;\n    async execute(exec: ToolExecutionInput): Promise<ToolExecutionResult>;\n}',
+    declaration: 'export class ToolRuntime extends Service {\n    static inject;\n    static Config: z<Config>;\n    readonly [TOOL_RUNTIME_SCHEDULER]: ToolRuntimeScheduler;\n    constructor(ctx: Context, config: Config = {});\n    presentAs(mode: ToolPresentationMode): () => void;\n    register(definition: ToolDefinition): () => void;\n    restrict(filter: ToolRestriction): () => void;\n    allowEligible(names: readonly string[]): () => void;\n    eligibilityAllow(scope?: ScopeKey): readonly string[] | undefined;\n    guard(guard: ToolGuard): () => void;\n    get(name: string, scope?: ScopeKey): ToolDefinition | undefined;\n    schemas(scope?: ScopeKey): ToolSchema[];\n    executionMode(exec: ToolExecutionInput): ToolExecutionMode;\n    async execute(exec: ToolExecutionInput): Promise<ToolExecutionResult>;\n}',
   },
   {
     name: 'ToolRuntimeScheduler',

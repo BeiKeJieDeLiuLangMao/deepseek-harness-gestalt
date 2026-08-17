@@ -13,6 +13,7 @@ import type { Wire } from './rpc.schema.ts'
 import type {
   HistoryEntry, ModelCatalogFailure, ModelCatalogModel, ModelProviderGroup, ModelReasoning,
   ModelReasoningEffort, ModelSelection, SessionListMetadata, SessionProjectionsBlock, SessionSearchItem, SessionSummary,
+  SessionToolEligibility,
 } from './sessions.ts'
 import type { ToolEventView } from './events.ts'
 import type { AttachmentIdType, ImageAttachmentLimits, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
@@ -253,6 +254,24 @@ export const sessionModelsValueSchema = z.object({
   groups: z.array(modelProviderGroupSchema),
   failures: z.array(modelCatalogFailureSchema),
 }) satisfies z.ZodType<Wire<ResponseValue<'session.models'>>>
+
+/** session.toolEligibility request payload. */
+export const sessionToolEligibilityRequestSchema = z.object({
+  sessionId: sessionIdSchema,
+}) satisfies z.ZodType<Wire<RequestPayload<'session.toolEligibility'>>>
+
+/** One model-facing tool schema. */
+const toolSchema = z.object({
+  name: z.string().min(1),
+  description: z.string(),
+  parameters: z.record(z.string(), z.unknown()),
+})
+
+/** session.toolEligibility response value. */
+export const sessionToolEligibilityValueSchema: z.ZodType<Wire<SessionToolEligibility>> = z.object({
+  allow: z.array(z.string()).optional(),
+  tools: z.array(toolSchema),
+})
 
 /** session.selectModel request payload. */
 export const sessionSelectModelRequestSchema = z.object({

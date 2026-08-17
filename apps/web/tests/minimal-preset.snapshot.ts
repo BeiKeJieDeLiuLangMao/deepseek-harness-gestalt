@@ -1,4 +1,5 @@
-import { mkdir, writeFile } from 'node:fs/promises'
+import { appendFile, cp, mkdir, mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -12,14 +13,29 @@ import { assertFixtureInventory, launchWebScaffold, type WebScaffold } from './s
 const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/minimal-preset', import.meta.url))
 const FIXTURE = join(SNAPSHOT_DIR, 'session.jsonl')
 const PROMPT = 'Reply exactly MINIMAL_PRESET_REQUEST_OK and stop.'
+const SHIPPED_MINIMAL_PRESET = fileURLToPath(new URL('../../cli/config/agent-presets/minimal', import.meta.url))
 
 describe('minimal agent preset', () => {
   let scaffold: WebScaffold
   let agentHandle: AgentHandle
   let disposeInjectedPrompt: () => void
+  let presetRoot: string
 
   beforeAll(async () => {
-    scaffold = await launchWebScaffold({ replayFixture: FIXTURE })
+    presetRoot = await mkdtemp(join(tmpdir(), 'dsh-allow-only-preset-'))
+    const minimal = join(presetRoot, 'minimal')
+    await cp(SHIPPED_MINIMAL_PRESET, minimal, { recursive: true })
+    await appendFile(join(minimal, 'agent.cordis.yml'), `
+
+- id: tool-eligibility
+  name: '@deepseek-ai/dsh-agent-tool-eligibility'
+  config:
+    allow: [bash]
+`)
+    scaffold = await launchWebScaffold({
+      replayFixture: FIXTURE,
+      agentPresets: { roots: [{ path: presetRoot, trust: 'system' }], default: 'minimal' },
+    })
     disposeInjectedPrompt = scaffold.ctx.systemPrompt.section({
       name: 'test:injected-prompt',
       order: 999,
@@ -42,11 +58,12 @@ describe('minimal agent preset', () => {
       failures.push(error)
     }
     await scaffold?.close().catch((error: unknown) => failures.push(error))
+    await rm(presetRoot, { recursive: true, force: true }).catch((error: unknown) => failures.push(error))
     if (failures.length === 1) throw failures[0]
     if (failures.length > 1) throw new AggregateError(failures, 'minimal preset smoke teardown failed')
   })
 
-  it('sends the exact RL prompt and schemas, then executes the persistent shell and editor', async () => {
+  it('sends only eligible schemas, executes the allowed shell, and rejects a stale editor call', async () => {
     agentHandle.agent.followup(createUserMessage({
       content: [{ type: 'text', text: PROMPT }],
       source: { kind: 'user' },
@@ -80,13 +97,11 @@ describe('minimal agent preset', () => {
       arguments: { command: 'printf \'%s:%s\n\' "$DSH_MINIMAL_STATE" "$PWD"' },
       agent: agentHandle.agent,
     })
-    const seedPath = join(scaffold.workspaceCwd, 'preset-smoke.txt')
-    await writeFile(seedPath, 'MINIMAL_EDITOR_OK\n')
     const editor = await scaffold.ctx.tools.execute({
       signal,
       callId: CallId('minimal-editor-smoke'),
       name: 'str_replace_editor',
-      arguments: { command: 'view', path: seedPath },
+      arguments: { command: 'view', path: join(scaffold.workspaceCwd, 'preset-smoke.txt') },
       agent: agentHandle.agent,
     })
 
@@ -105,13 +120,10 @@ describe('minimal agent preset', () => {
     }).toMatchInlineSnapshot(`
       {
         "bash": "PERSISTED:{{cwd}}/persistent-state",
-        "editor": "Here's the content of {{cwd}}/preset-smoke.txt with line numbers (which has a total of 2 lines):
-           1  MINIMAL_EDITOR_OK
-           2",
+        "editor": "Error: unknown tool \"str_replace_editor\"",
         "prompt": "You are a helpful software engineer assistant.",
         "tools": [
           "bash",
-          "str_replace_editor",
         ],
       }
     `)

@@ -714,6 +714,7 @@ export type ToolGuard = (execution: Readonly<ToolExecution>) => string | undefin
 class ToolLayer implements ScopeLayer {
   readonly tools: NamedEntries<ToolDefinition>
   readonly restrictions = new AnonymousEntries<CompiledToolRestriction>()
+  readonly eligibilityAllowances = new AnonymousEntries<ReadonlySet<string>>()
   readonly guards = new AnonymousEntries<ToolGuard>()
   /**
    * Presentation this scope's agent declared for itself, shadowing the
@@ -730,7 +731,8 @@ class ToolLayer implements ScopeLayer {
 
   /** Whether every contribution table in this aggregate layer is empty. */
   isEmpty(): boolean {
-    return this.tools.isEmpty() && this.restrictions.isEmpty() && this.guards.isEmpty()
+    return this.tools.isEmpty() && this.restrictions.isEmpty()
+      && this.eligibilityAllowances.isEmpty() && this.guards.isEmpty()
       && this.mode === undefined
   }
 
@@ -1098,6 +1100,45 @@ export class ToolRuntime extends Service {
   }
 
   /**
+   * Add positive tool-eligibility entries for the calling scope. Entries from
+   * a preset and its descendant agent scopes union; this declaration does not
+   * expose the internal deny-capable restriction interface to user settings.
+   * Names may precede dynamic tool registration, so they are not validated
+   * against the current registry generation here.
+   * @param names - exact public tool names this scope adds to eligibility.
+   * @returns the exact disposer that removes this contribution.
+   */
+  allowEligible(names: readonly string[]): () => void {
+    if (scopeOf(this.ctx) === undefined) {
+      throw new Error('tools.allowEligible() requires a scoped context: declare preset eligibility in its standing scope and Workspace or Session additions through the agent scope')
+    }
+    return this.layers.effect(
+      this.ctx,
+      layer => layer.eligibilityAllowances.append(new Set(names)),
+      { label: 'tools.allowEligible()' },
+    )
+  }
+
+  /**
+   * Resolve the positive eligibility entries declared along one scope chain.
+   * Absence means no allow-only policy was configured; an empty array means a
+   * declaration explicitly allows no end tool.
+   * @param scope - the agent or standing preset whose declarations are read.
+   * @returns the sorted union, or `undefined` when the chain declares none.
+   */
+  eligibilityAllow(scope?: ScopeKey): readonly string[] | undefined {
+    const names = new Set<string>()
+    let declared = false
+    for (const layer of this.layers.chainLayers(scope)) {
+      for (const allowance of layer.eligibilityAllowances.values()) {
+        declared = true
+        for (const name of allowance) names.add(name)
+      }
+    }
+    return declared ? [...names].sort() : undefined
+  }
+
+  /**
    * Register a monotonic guard after the extensible `tools/pre-execute`
    * waterfall. A plain-context guard applies globally; one registered through
    * `agent.ctx` applies only to that agent. Any matching guard may deny by
@@ -1129,10 +1170,10 @@ export class ToolRuntime extends Service {
 
   /**
    * Resolve every registry fact one scope needs in one layer traversal. The
-   * visible map applies restrictions to the INHERITED surface, then the
-   * scope's own registrations and the reserved presentation transport; the
-   * other sets retain the pre-restriction facts needed by restriction and
-   * prompt-order validation.
+   * visible map applies positive eligibility to inherited and scope-owned
+   * tools, internal restrictions to the INHERITED surface, then the reserved
+   * presentation transport; the other sets retain the pre-restriction facts
+   * needed by restriction and prompt-order validation.
    *
    * A restriction filters what a scope inherits — the global layer and every
    * ancestor layer on its chain — and never what its OWN layer registers.
@@ -1166,19 +1207,22 @@ export class ToolRuntime extends Service {
     const visible = new Map<string, ToolDefinition>()
     const knownNames = new Set<string>()
     const restrictableNames = new Set<string>()
+    const eligibleNames = this.eligibilityAllow(scope)
+    const eligible = eligibleNames === undefined ? undefined : new Set(eligibleNames)
+    const admitsEligibility = (name: string): boolean => eligible === undefined || eligible.has(name)
     for (const [name, definition] of inherited) {
       knownNames.add(name)
       restrictableNames.add(name)
       // Restrictions intersect across the whole chain: any scope on it may
       // mask an inherited name for everything nested inside it.
-      if (layers.every(layer => layer.admits(name))) visible.set(name, definition)
+      if (admitsEligibility(name) && layers.every(layer => layer.admits(name))) visible.set(name, definition)
     }
     // The scope's own registrations last, shadowing an inherited name and
     // outside the filter above.
     if (own !== undefined) {
       for (const [name, definition] of own.tools.entries()) {
         knownNames.add(name)
-        visible.set(name, definition)
+        if (admitsEligibility(name)) visible.set(name, definition)
       }
     }
     // Presentation infrastructure is resolved last and outside capability

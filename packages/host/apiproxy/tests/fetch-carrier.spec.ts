@@ -70,6 +70,9 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
           },
         }
       },
+      async toolEligibility(request) {
+        return { rpcId: request.rpcId, result: { ok: true, value: { tools: [] } } }
+      },
       async selectModel(request) {
         return {
           rpcId: request.rpcId,

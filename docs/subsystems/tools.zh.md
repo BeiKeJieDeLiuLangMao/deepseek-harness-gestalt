@@ -475,6 +475,25 @@ type ObjectJsonSchema = JsonSchemaNode & { type: 'object' }
 
 Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — this section is byte-identical in both language sides of the page. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
 
+<a id="ctxtooleligibility--tooleligibilityservice"></a>
+
+### `ctx.toolEligibility` — `ToolEligibilityService`
+
+Host-plane eligibility resolver. A configured Workspace or Session entry contributes to the same positive scope-chain union as preset declarations; no declaration preserves the existing unrestricted catalog.
+
+```ts cordis-catalog
+/**
+ * Resolve the configured allowances and live eligible catalog for an agent.
+ * @param agent - live agent whose preset, Workspace, and Session apply.
+ * @returns a fresh Host API projection.
+ */
+resolve(agent: Agent): ToolEligibilityResolution
+```
+
+Types: [Agent](core.md)
+
+Source: [`packages/core/tools-eligibility/src/index.ts:60`](../../packages/core/tools-eligibility/src/index.ts)
+
 <a id="ctxtools--toolruntime"></a>
 
 ### `ctx.tools` — `ToolRuntime`
@@ -511,6 +530,26 @@ register(definition: ToolDefinition): () => void
  * @returns the exact disposer that lifts this restriction.
  */
 restrict(filter: ToolRestriction): () => void
+
+/**
+ * Add positive tool-eligibility entries for the calling scope. Entries from
+ * a preset and its descendant agent scopes union; this declaration does not
+ * expose the internal deny-capable restriction interface to user settings.
+ * Names may precede dynamic tool registration, so they are not validated
+ * against the current registry generation here.
+ * @param names - exact public tool names this scope adds to eligibility.
+ * @returns the exact disposer that removes this contribution.
+ */
+allowEligible(names: readonly string[]): () => void
+
+/**
+ * Resolve the positive eligibility entries declared along one scope chain.
+ * Absence means no allow-only policy was configured; an empty array means a
+ * declaration explicitly allows no end tool.
+ * @param scope - the agent or standing preset whose declarations are read.
+ * @returns the sorted union, or `undefined` when the chain declares none.
+ */
+eligibilityAllow(scope?: ScopeKey): readonly string[] | undefined
 
 /**
  * Register a monotonic guard after the extensible `tools/pre-execute`
@@ -571,7 +610,7 @@ async execute(exec: ToolExecutionInput): Promise<ToolExecutionResult>
 
 Types: [ScopeKey](scope.md)
 
-Source: [`packages/core/tools/src/index.ts:787`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:789`](../../packages/core/tools/src/index.ts)
 
 <a id="tools-events"></a>
 
