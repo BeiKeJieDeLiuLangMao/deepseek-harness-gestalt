@@ -127,7 +127,7 @@ export const scheduleProjectionDefinition: ProjectionDefinition<'schedules', Sch
   init: emptyScheduleProjectionState,
   apply: applyScheduleProjection,
   view: state => Object.freeze(state.schedules.map(({ record, paused }): ScheduleProjectionItem =>
-    Object.freeze({ ...record, paused }))) as ScheduleProjection,
+    Object.freeze({ ...record, paused }))),
   eventScope: 'owned-suffix',
   stateVersion: 1,
 }

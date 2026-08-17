@@ -710,6 +710,35 @@ describe('PersistenceCoordinator session preparations', () => {
     }
   })
 
+  it('releases persistence ownership when an entered preparation stays unannounced', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    const backend = new ControlledBackend()
+    const id = SessionId('unannounced-preparation-release')
+    backend.store.set(id, { meta: meta(id), events: oneTurnLog() })
+    let coordinator!: PersistenceCoordinator<never>
+    const fiber = await ctx.plugin(Object.assign((inner: Context) => {
+      coordinator = new PersistenceCoordinator(inner, backend)
+    }, { inject: ['sessions'] }))
+    const first = await coordinator.prepare(id)
+    const detach = ctx.sessions.enter(first.session)
+
+    try {
+      await ctx.sessions.flush(first.session)
+      detach()
+      first[Symbol.dispose]()
+
+      const second = await coordinator.prepare(id)
+      expect(second.session.events).toEqual(first.session.events)
+      second[Symbol.dispose]()
+    } finally {
+      detach()
+      first[Symbol.dispose]()
+      await fiber.dispose()
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('reuses the exact Session from inspect through repeated unpublished prepare calls', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)

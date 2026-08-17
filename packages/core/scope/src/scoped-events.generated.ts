@@ -23,6 +23,7 @@ const scopedSubjectResolvers: Readonly<Record<string, ScopedSubjectResolver | nu
   'approval/request': args => (args[0] as Record<string, unknown>)['agent'],
   'goal/changed': args => (args[0] as Record<string, unknown>)['agent'],
   'session/created': null,
+  'session/detached': null,
   'session/disposed': null,
   'session/event': null,
   'session/flush': null,

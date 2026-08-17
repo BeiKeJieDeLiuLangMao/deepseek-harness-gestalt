@@ -21,7 +21,7 @@ import {
   scheduleView,
 } from './domain.ts'
 import { flushSchedulePersistence } from './persistence.ts'
-import { runScheduleTransaction } from './transaction.ts'
+import type { ScheduleTransactions } from './transaction.ts'
 import type {
   AtInput,
   PersistenceUncertainError,
@@ -185,11 +185,12 @@ function cancellationPlaceholder(signal: AbortSignal): InternalScheduleError | u
 
 /** Serialize one operation, stopping a body whose caller cancelled before its FIFO turn. */
 function runCancellableScheduleTransaction<T>(
+  transactions: ScheduleTransactions,
   agent: Agent,
   signal: AbortSignal,
   task: () => Promise<T>,
 ): Promise<T | InternalScheduleError> {
-  return runScheduleTransaction(agent.id, async () => {
+  return transactions.run(agent.id, async () => {
     const cancelled = cancellationPlaceholder(signal)
     return cancelled ?? task()
   })
@@ -293,6 +294,7 @@ function validateCreateArgs(args: {
  * @param rootCtx - Global service context owning sessions and durability.
  * @param toolCtx - Exact agent-scoped context receiving the definitions.
  * @param agent - Exact live owner whose session the tools mutate.
+ * @param transactions - Plugin-owned FIFO shared with Remote and runtime work.
  * @param onDurableChange - Called after every successful preflight and again after a create or actual delete barrier succeeds.
  * @returns Idempotent aggregate disposer for the three registrations.
  */
@@ -300,6 +302,7 @@ export function registerScheduleTools(
   rootCtx: Context,
   toolCtx: Context,
   agent: Agent,
+  transactions: ScheduleTransactions,
   onDurableChange: () => void,
 ): () => void {
   const disposers: Array<() => void> = []
@@ -352,7 +355,7 @@ export function registerScheduleTools(
         if (exec.agent !== agent) return internalError()
         const invalid = validateCreateArgs(args)
         if (invalid !== undefined) return invalid
-        return runCancellableScheduleTransaction(agent, exec.signal, async () => {
+        return runCancellableScheduleTransaction(transactions, agent, exec.signal, async () => {
           const uncertain = await preflight(rootCtx, agent, 'create')
           if (uncertain !== undefined) return uncertain
           notifyDurableChange()
@@ -403,7 +406,7 @@ export function registerScheduleTools(
       output: { schema: LIST_OUTPUT_SCHEMA, render: renderValue },
       async execute(_args, exec): Promise<ScheduleListValue> {
         if (exec.agent !== agent) return internalError()
-        return runCancellableScheduleTransaction(agent, exec.signal, async () => {
+        return runCancellableScheduleTransaction(transactions, agent, exec.signal, async () => {
           const uncertain = await preflight(rootCtx, agent, 'list')
           if (uncertain !== undefined) return uncertain
           notifyDurableChange()
@@ -429,7 +432,7 @@ export function registerScheduleTools(
         }
         const id = ScheduleId(args.id)
         if (exec.agent !== agent) return internalError()
-        return runCancellableScheduleTransaction(agent, exec.signal, async () => {
+        return runCancellableScheduleTransaction(transactions, agent, exec.signal, async () => {
           const uncertain = await preflight(rootCtx, agent, 'delete', id)
           if (uncertain !== undefined) return uncertain
           notifyDurableChange()

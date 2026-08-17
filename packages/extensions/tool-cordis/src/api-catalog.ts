@@ -1312,7 +1312,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         signature: 'enter(session: Session): () => void',
         description: 'Enter a prepared session into the store: install the module-private append publication hooks and add it to the store. Returns the DETACH disposer (hooks + store removal). Does NOT emit `session/created` — the caller yields this disposer inside its effect and THEN calls announce, so a throwing `session/created` listener rolls the attach back instead of leaking it.\n\nRe-checks the id for a duplicate: `prepare` and `enter` are public cross-package primitives and a caller may interleave arbitrary work (or another create) between them, so a stale prepared session must NOT overwrite a live store entry of the same id — its detach disposer would later delete the REAL session. The create convenience and the agent factory call the two back-to-back so they never trip this, but the public API cannot assume that.',
         parameters: [{ name: 'session', description: 'a {@link prepare}d session not yet in the store.' }],
-        returns: 'the detach disposer (publication hooks + store removal). When called from a synchronous `session/created` listener, removal and disposal wait until that creation dispatch unwinds.',
+        returns: 'the detach disposer (publication hooks + store removal). It emits `session/detached` for attachment-owned infrastructure and emits `session/disposed` only after announcement. When called from a synchronous `session/created` listener, removal waits until that dispatch unwinds.',
         throws: ['if a session with this id is already in the store.'],
       },
       {
@@ -2437,6 +2437,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     summary: 'Creation announcement during session publication.',
     description: 'Creation announcement during session publication. A synchronous throw vetoes and rolls back with a paired disposal; detach requested during dispatch is deferred. A returned-promise rejection is logged but cannot retroactively veto this synchronous boundary. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only sessions entered through that agent\'s context.',
     parameters: [{ name: 'session', description: 'the session just entered and announced.' }],
+  },
+  {
+    name: 'session/detached',
+    mode: 'emit',
+    signature: '\'session/detached\'(this: Scoped<Session>, session: Session): void',
+    summary: 'Ownership release for every entered Session, including an unpublished preparation.',
+    description: 'Ownership release for every entered Session, including an unpublished preparation. Persistence uses this edge to retire append state without turning an unpublished reservation into the public created/disposed lifecycle. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`) reuses the attachment owner scope.',
+    parameters: [{ name: 'session', description: 'the Session whose store attachment ended.' }],
   },
   {
     name: 'session/disposed',

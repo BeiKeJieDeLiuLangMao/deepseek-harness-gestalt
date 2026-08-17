@@ -198,9 +198,9 @@ type ScheduleView = ScheduleRecord & {
 }
 ```
 
-生成的[工具目录](../tool-catalog.md#deepseek-aidsh-schedule)负责 `schedule_create`、`schedule_list` 和 `schedule_delete` 的参数与结果 schema。list 包含已暂停记录，delete 接受活动或已暂停记录；不存在面向模型的 pause 或 resume 工具。一条 Session-scoped 队列将管理调用与到期工作串行化。每次读取或判断都会先等待共享的 Session 持久化 barrier；create 与实际执行的 delete 在追加后还会再次等待。barrier 失败会报告 `persistence_uncertain`，而不是猜测 eager write 是否已提交。其他稳定错误代码是 `invalid_prompt`、`invalid_selector`、`invalid_rule`、`invalid_time_zone`、`not_future`、`time_out_of_range`、`frequency_too_high`、`corrupt_schedule_log` 和 `internal_error`。
+生成的[工具目录](../tool-catalog.md#deepseek-aidsh-schedule)负责 `schedule_create`、`schedule_list` 和 `schedule_delete` 的参数与结果 schema。list 包含已暂停记录，delete 接受活动或已暂停记录；不存在面向模型的 pause 或 resume 工具。一条由 Schedule Service 拥有、按 Session 串行化的 FIFO 会把管理调用与到期工作串行化。每次读取或判断都会先等待共享的 Session 持久化 barrier；create 与实际执行的 delete 在追加后还会再次等待。插件拆卸会关闭准入并等待已接纳事务，而独立 Context 拥有独立队列。barrier 失败会报告 `persistence_uncertain`，而不是猜测 eager write 是否已提交。其他稳定错误代码是 `invalid_prompt`、`invalid_selector`、`invalid_rule`、`invalid_time_zone`、`not_future`、`time_out_of_range`、`frequency_too_high`、`corrupt_schedule_log` 和 `internal_error`。
 
-`ctx.schedules` Remote Service 接受 branded Session id，而不会调用 cold Agent resume。存在 live 根 Agent 时直接使用；否则预留并短暂附着精确的 prepared Session 以完成 append 与 flush，随后在不发布 Agent、不启动投递的情况下 detach。同一条 Session FIFO 与持久化 barrier 覆盖工具、人工变更与到期工作。
+`ctx.schedules` Remote Service 接受 branded Session id，而不会调用 cold Agent resume。存在 live 根 Agent 时直接使用；否则预留并 enter 精确的 prepared Session，但不 announce；它在 fold 前 flush，append 并再次 flush，随后 detach，整个过程不发布 Session 或 Agent 生命周期，也不启动投递。preparation 或 enter 冲突会在同一 FIFO 内针对精确 live root 重新计算。同一组持久化 barrier 与 Service-owned queue 覆盖工具、人工变更与到期工作。
 
 ## 浏览器 Projection
 

@@ -100,10 +100,17 @@ describe('Schedule production JSONL restart', () => {
     const pausingAdapter = new RecordingAdapter()
     const pausing = await mountRuntime(root, pausingAdapter)
     const created: SessionId[] = []
+    const sessionCreated: SessionId[] = []
+    const sessionDisposed: SessionId[] = []
     pausing.on('agent/created', ({ agent }) => { created.push(agent.id) })
+    pausing.on('session/created', (session) => { sessionCreated.push(session.id) })
+    pausing.on('session/disposed', (session) => { sessionDisposed.push(session.id) })
     await expect(pausing.schedules.pause(sessionId, ScheduleId('schedule-1')))
       .resolves.toMatchObject({ id: 'schedule-1', state: 'paused' })
     expect(created).toEqual([])
+    expect(sessionCreated).toEqual([])
+    expect(sessionDisposed).toEqual([])
+    expect(pausing.sessions.get(sessionId)).toBeUndefined()
     expect(pausingAdapter.requests).toEqual([])
     const pausedStored = await pausing.sessionPersistence.inspect(sessionId)
     expect(foldScheduleEvents(pausedStored.events, pausedStored.meta.seedLength ?? 0).paused)

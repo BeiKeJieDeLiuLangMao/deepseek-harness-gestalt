@@ -497,7 +497,7 @@ export function decodeScheduleChange(value: unknown): ScheduleChange {
         version: SCHEDULE_CHANGE_VERSION,
         operation: value['operation'],
         id: decodeId(value['id']),
-      }) as Extract<ScheduleChange, { operation: 'delete' | 'pause' | 'resume' }>
+      })
     }
     case 'dispatch': {
       if (hasExactKeys(value, ['version', 'operation', 'id'])) {

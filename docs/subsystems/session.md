@@ -683,9 +683,10 @@ prepare(id?: SessionId, options?: PrepareSessionOptions): Session
  * assume that.
  *
  * @param session - a {@link prepare}d session not yet in the store.
- * @returns the detach disposer (publication hooks + store removal). When called from
- *   a synchronous `session/created` listener, removal and disposal wait until
- *   that creation dispatch unwinds.
+ * @returns the detach disposer (publication hooks + store removal). It emits
+ *   `session/detached` for attachment-owned infrastructure and emits
+ *   `session/disposed` only after announcement. When called from a synchronous
+ *   `session/created` listener, removal waits until that dispatch unwinds.
  * @throws if a session with this id is already in the store.
  */
 enter(session: Session): () => void
@@ -746,7 +747,7 @@ fork(source: SessionForkSource, boundary?: number, childSessionId?: SessionId): 
 
 Types: [CreateSessionOptions](persistence.md) · [PrepareSessionOptions](persistence.md) · [SessionId](core.md)
 
-Source: [`packages/core/session/src/index.ts:792`](../../packages/core/session/src/index.ts)
+Source: [`packages/core/session/src/index.ts:802`](../../packages/core/session/src/index.ts)
 
 <a id="session-events"></a>
 
@@ -776,6 +777,29 @@ Creation announcement during session publication. A synchronous throw vetoes and
 Types: [Scoped](scope.md)
 
 Source: [`packages/core/session/src/index.ts:54`](../../packages/core/session/src/index.ts)
+
+<a id="sessiondetached--emit"></a>
+
+#### `session/detached` — emit
+
+Ownership release for every entered Session, including an unpublished preparation. Persistence uses this edge to retire append state without turning an unpublished reservation into the public created/disposed lifecycle. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`) reuses the attachment owner scope.
+
+```ts cordis-catalog
+/**
+ * Ownership release for every entered Session, including an unpublished preparation.
+ * Persistence uses this edge to retire append state without turning an unpublished
+ * reservation into the public created/disposed lifecycle.
+ * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`) reuses the attachment owner scope.
+ * @param session - the Session whose store attachment ended.
+ * @dshScopeScan unsupported
+ * @mode emit
+ */
+'session/detached'(this: Scoped<Session>, session: Session): void
+```
+
+Types: [Scoped](scope.md)
+
+Source: [`packages/core/session/src/index.ts:74`](../../packages/core/session/src/index.ts)
 
 <a id="sessiondisposed--emit"></a>
 
@@ -823,7 +847,7 @@ Post-commit, fire-and-forget append feed. The listener snapshot resolves before 
 
 Types: [Scoped](scope.md)
 
-Source: [`packages/core/session/src/index.ts:76`](../../packages/core/session/src/index.ts)
+Source: [`packages/core/session/src/index.ts:86`](../../packages/core/session/src/index.ts)
 
 <a id="sessionflush--parallel"></a>
 
@@ -845,5 +869,5 @@ Awaited parallel durability checkpoint: every listener runs and the caller await
 
 Types: [Scoped](scope.md)
 
-Source: [`packages/core/session/src/index.ts:85`](../../packages/core/session/src/index.ts)
+Source: [`packages/core/session/src/index.ts:95`](../../packages/core/session/src/index.ts)
 <!-- END GENERATED cordis-surface -->

@@ -13,7 +13,7 @@ import { flushSchedulePersistence } from './persistence.ts'
 import { scheduleProjectionDefinition } from './projection.ts'
 import { ScheduleRuntime } from './runtime.ts'
 import { registerScheduleTools } from './tools.ts'
-import { runScheduleTransaction } from './transaction.ts'
+import { ScheduleTransactions } from './transaction.ts'
 import type { ScheduleDeleteResult, ScheduleId, ScheduleView } from './types.ts'
 
 export type * from './types.ts'
@@ -66,6 +66,7 @@ export class ScheduleService extends TypertRemoteService {
   static inject = ['agents', 'sessions', 'tools', 'sessionPersistence']
 
   private readonly runtimes = new Map<Agent, { readonly cleanup: OwnerCleanup; readonly runtime: ScheduleRuntime }>()
+  private readonly transactions = new ScheduleTransactions()
   private stopping = false
 
   /**
@@ -81,9 +82,15 @@ export class ScheduleService extends TypertRemoteService {
     ctx.effect(() => {
       const stopCreated = ctx.on('agent/created', ({ agent }) => {
         if (this.stopping || this.runtimes.has(agent) || !ctx.agents.roots().includes(agent)) return
-        const runtime = new ScheduleRuntime(ctx, agent)
+        const runtime = new ScheduleRuntime(ctx, agent, this.transactions)
         const cleanup: OwnerCleanup = agent.ctx.effect(() => {
-          const disposeTools = registerScheduleTools(ctx, agent.ctx, agent, () => { runtime.requestDrive() })
+          const disposeTools = registerScheduleTools(
+            ctx,
+            agent.ctx,
+            agent,
+            this.transactions,
+            () => { runtime.requestDrive() },
+          )
           const stopStatus = agent.ctx.on('agent/status', ({ status }) => {
             if (status === 'idle' && agent.session.events.some(event => event.type === 'schedule/change')) {
               runtime.requestDrive()
@@ -108,7 +115,11 @@ export class ScheduleService extends TypertRemoteService {
         stopCreated()
         const cleanups = [...this.runtimes.values()].map(owner => owner.cleanup)
         this.runtimes.clear()
-        await Promise.allSettled(cleanups.map(cleanup => Promise.resolve(cleanup())))
+        const transactionDisposal = this.transactions.dispose()
+        await Promise.allSettled([
+          ...cleanups.map(cleanup => Promise.resolve(cleanup())),
+          transactionDisposal,
+        ])
       }
     }, 'schedule.lifecycle()')
   }
@@ -144,7 +155,7 @@ export class ScheduleService extends TypertRemoteService {
   @Remote('delete')
   async delete(sessionId: SessionId, id: ScheduleId): Promise<ScheduleDeleteResult> {
     this.assertId(id)
-    return runScheduleTransaction(sessionId, async () => {
+    return this.transactions.run(sessionId, async () => {
       const live = this.liveRoot(sessionId)
       if (live === undefined) {
         return this.withColdSession(sessionId, async (session) => {
@@ -184,7 +195,7 @@ export class ScheduleService extends TypertRemoteService {
     operation: 'pause' | 'resume',
   ): Promise<ScheduleView> {
     this.assertId(id)
-    return runScheduleTransaction(sessionId, async () => {
+    return this.transactions.run(sessionId, async () => {
       const live = this.liveRoot(sessionId)
       if (live === undefined) {
         return this.withColdSession(sessionId, async (session) => {
@@ -238,13 +249,20 @@ export class ScheduleService extends TypertRemoteService {
       if (live !== undefined) return racedLive(live)
       throw error
     }
-    let detach: (() => void) | undefined
+    let detach: (() => void)
     try {
       detach = this.ctx.sessions.enter(preparation.session)
-      this.ctx.sessions.announce(preparation.session)
+    } catch (error: unknown) {
+      preparation[Symbol.dispose]()
+      const live = this.liveRoot(sessionId)
+      if (live !== undefined) return racedLive(live)
+      throw error
+    }
+    try {
+      await flushSchedulePersistence(this.ctx, preparation.session)
       return await operation(preparation.session)
     } finally {
-      detach?.()
+      detach()
       preparation[Symbol.dispose]()
     }
   }

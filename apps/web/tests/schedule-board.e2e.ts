@@ -73,6 +73,8 @@ describe.skipIf(MODE === 'record')('web e2e: Desktop Session Schedule board', ()
   it('persists pause across reload, then resumes and deletes through Remote mutations', async () => {
     await page.getByRole('button', { name: 'Pause Audit CI' }).click()
     await page.getByRole('button', { name: '1 scheduled task waiting' }).waitFor({ timeout: 10_000 })
+    await expect.poll(() => page.locator('[role="treeitem"]').nth(1).isVisible()).toBe(true)
+    await expect.poll(() => page.locator('textarea').isEnabled()).toBe(true)
 
     const warningStart = tripwire.warnings.length
     await page.reload({ waitUntil: 'load' })

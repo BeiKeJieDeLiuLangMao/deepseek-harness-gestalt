@@ -1128,15 +1128,15 @@ export class PersistenceCoordinator<TornMarker = unknown> {
     // Callers use flush as the immediate durability barrier for buffered writes.
     ctx.on('session/flush', session => this.flush(session))
 
-    // Session disposal is observe-only, so retirement contains its own failure.
-    ctx.on('session/disposed', (session) => { this.retire(session) })
+    // Attachment release is observe-only, so retirement contains its own failure.
+    ctx.on('session/detached', (session) => { this.retire(session) })
 
     // HMR: a hot reload does not replay session/created, so seed existing live
     // sessions (mirrors dsh-invariants).
     for (const session of ctx.sessions.list()) void this.initFor(session)
   }
 
-  /** Start and observe one disposed session's final drain. */
+  /** Start and observe one detached Session's final drain. */
   private retire(session: Session): void {
     if (!this.live.has(session)) return
     const retirement = this.retireCore(session)
@@ -1150,7 +1150,7 @@ export class PersistenceCoordinator<TornMarker = unknown> {
     })
   }
 
-  /** Drain and release state owned by one exact disposed Session lifecycle. */
+  /** Drain and release state owned by one exact Session attachment. */
   private async retireCore(session: Session): Promise<void> {
     await this.flush(session)
     const id = session.header.id

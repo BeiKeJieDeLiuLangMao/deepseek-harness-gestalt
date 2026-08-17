@@ -120,12 +120,12 @@ describe('version-1 Schedule decoding and folding', () => {
     const first = scheduleEvent(createData('first'), 0)
     const second = scheduleEvent(atCreateData('second'), 1)
     const removed = scheduleEvent({ version: 1, operation: 'delete', id: 'first' }, 2)
-    expect(foldScheduleEvents([first, second, removed])).toEqual({
-      active: [expect.objectContaining({ id: 'second' })],
-      paused: [],
-      schedules: [{ record: expect.objectContaining({ id: 'second' }), paused: false }],
-      seenIds: ['first', 'second'],
-    })
+    const folded = foldScheduleEvents([first, second, removed])
+    expect(folded.active.map(record => record.id)).toEqual(['second'])
+    expect(folded.paused).toEqual([])
+    expect(folded.schedules.map(({ record, paused }) => ({ id: record.id, paused })))
+      .toEqual([{ id: 'second', paused: false }])
+    expect(folded.seenIds).toEqual(['first', 'second'])
     expect(() => foldScheduleEvents([
       first,
       scheduleEvent(createData('first'), 1),
@@ -143,15 +143,12 @@ describe('version-1 Schedule decoding and folding', () => {
     const second = scheduleEvent(atCreateData('second'), 1)
     const paused = scheduleEvent({ version: 1, operation: 'pause', id: 'first' }, 2)
 
-    expect(foldScheduleEvents([first, second, paused])).toEqual({
-      active: [expect.objectContaining({ id: 'second' })],
-      paused: [expect.objectContaining({ id: 'first' })],
-      schedules: [
-        { record: expect.objectContaining({ id: 'first' }), paused: true },
-        { record: expect.objectContaining({ id: 'second' }), paused: false },
-      ],
-      seenIds: ['first', 'second'],
-    })
+    const folded = foldScheduleEvents([first, second, paused])
+    expect(folded.active.map(record => record.id)).toEqual(['second'])
+    expect(folded.paused.map(record => record.id)).toEqual(['first'])
+    expect(folded.schedules.map(({ record, paused: isPaused }) => ({ id: record.id, paused: isPaused })))
+      .toEqual([{ id: 'first', paused: true }, { id: 'second', paused: false }])
+    expect(folded.seenIds).toEqual(['first', 'second'])
     expect(scheduleView(createData('first').schedule as never, Date.parse('2026-08-05T12:01:00.000Z'), true))
       .toMatchObject({ id: 'first', state: 'paused' })
 
@@ -168,12 +165,12 @@ describe('version-1 Schedule decoding and folding', () => {
   it('folds only the fork-owned suffix and validates its boundary', () => {
     const parentCreate = scheduleEvent(createData('parent'), 0)
     const childCreate = scheduleEvent(createData('child'), 1)
-    expect(foldScheduleEvents([parentCreate, childCreate], 1)).toEqual({
-      active: [expect.objectContaining({ id: 'child' })],
-      paused: [],
-      schedules: [{ record: expect.objectContaining({ id: 'child' }), paused: false }],
-      seenIds: ['child'],
-    })
+    const folded = foldScheduleEvents([parentCreate, childCreate], 1)
+    expect(folded.active.map(record => record.id)).toEqual(['child'])
+    expect(folded.paused).toEqual([])
+    expect(folded.schedules.map(({ record, paused }) => ({ id: record.id, paused })))
+      .toEqual([{ id: 'child', paused: false }])
+    expect(folded.seenIds).toEqual(['child'])
     expect(() => foldScheduleEvents([], -1)).toThrow(/seedLength/)
     expect(() => foldScheduleEvents([], 1)).toThrow(/seedLength/)
     expect(() => foldScheduleEvents([], 0.5)).toThrow(/seedLength/)

@@ -8,7 +8,7 @@ The optional `@deepseek-ai/dsh-session/invariant` companion registers this packa
 
 ## Service: `SessionStore` (ctx key: `sessions`)
 
-Creates and holds event-sourced `Session` instances. Persistence is intentionally not implemented here — plugins subscribe to `session/event`, flush on `session/flush`, and may mirror the paired `session/created`/`session/disposed` lifecycle.
+Creates and holds event-sourced `Session` instances. Persistence is intentionally not implemented here — plugins subscribe to `session/event`, flush on `session/flush`, and retire attachment-owned state on `session/detached`. The public `session/created`/`session/disposed` lifecycle remains paired for announced Sessions only.
 
 ### Public API
 
@@ -23,14 +23,14 @@ Creates and holds event-sourced `Session` instances. Persistence is intentionall
 Use the split lifecycle only when teardown must be ordered with another resource:
 
 - `prepare(id?, options?)` validates and constructs without publication.
-- `enter(session)` performs the collision check, publishes without announcing, and returns an entry-bound idempotent detach. Concurrent same-id preparations are allowed, but only one entry succeeds; a stale detach cannot remove its replacement.
+- `enter(session)` performs the collision check, publishes without announcing, and returns an entry-bound idempotent detach. Concurrent same-id preparations are allowed, but only one entry succeeds; a stale detach cannot remove its replacement. Detach always emits the infrastructure-facing `session/detached` ownership release, while an unannounced entry emits neither public lifecycle edge.
 - `announce(session)` emits the single creation edge and rejects repeat or reentrant announcements. Detach during that dispatch is deferred and later emits the paired disposal edge; an unannounced entry emits neither lifecycle edge.
 
 `dsh-agent-loop` uses this split so final loop flush precedes session detach; see the [ownership Agent Note](../../../.agents/notes/implemented/architecture/2026-06-18-agent-lifecycle-and-ownership-contracts.md).
 
 ### Live service events
 
-The store pairs announced creation with disposal, publishes post-commit append notifications with per-listener containment, and provides an awaited durability checkpoint. Exact signatures and scope behavior live in the generated region of [session.md](../../../docs/subsystems/session.md#cordis-surface); payloads live in the [persistence catalog](../../../docs/persistence-catalog.md).
+The store pairs announced creation with disposal, emits an ownership release for every detached entry, publishes post-commit append notifications with per-listener containment, and provides an awaited durability checkpoint. Exact signatures and scope behavior live in the generated region of [session.md](../../../docs/subsystems/session.md#cordis-surface); payloads live in the [persistence catalog](../../../docs/persistence-catalog.md).
 
 ### Class: `Session`
 

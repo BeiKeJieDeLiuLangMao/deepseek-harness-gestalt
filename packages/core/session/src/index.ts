@@ -63,6 +63,16 @@ declare module '@deepseek-ai/cordis' {
      */
     'session/disposed'(this: Scoped<Session>, session: Session): void
     /**
+     * Ownership release for every entered Session, including an unpublished preparation.
+     * Persistence uses this edge to retire append state without turning an unpublished
+     * reservation into the public created/disposed lifecycle.
+     * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`) reuses the attachment owner scope.
+     * @param session - the Session whose store attachment ended.
+     * @dshScopeScan unsupported
+     * @mode emit
+     */
+    'session/detached'(this: Scoped<Session>, session: Session): void
+    /**
      * Post-commit, fire-and-forget append feed. The listener snapshot resolves
      * before the log push, but callbacks run after it; observer failures are
      * logged and contained without making the committed append fail.
@@ -381,7 +391,7 @@ function collectSessionCallbacks(ctx: Context, args: unknown[]): SessionCallback
 /** Invoke one resolved observe-only listener snapshot with per-listener containment. */
 function invokeContainedSessionObservers(
   ctx: Context,
-  name: 'session/event' | 'session/disposed',
+  name: 'session/event' | 'session/disposed' | 'session/detached',
   id: SessionId,
   args: unknown[],
   callbacks: SessionCallback[],
@@ -905,9 +915,10 @@ export class SessionStore extends Service {
    * assume that.
    *
    * @param session - a {@link prepare}d session not yet in the store.
-   * @returns the detach disposer (publication hooks + store removal). When called from
-   *   a synchronous `session/created` listener, removal and disposal wait until
-   *   that creation dispatch unwinds.
+   * @returns the detach disposer (publication hooks + store removal). It emits
+   *   `session/detached` for attachment-owned infrastructure and emits
+   *   `session/disposed` only after announcement. When called from a synchronous
+   *   `session/created` listener, removal waits until that dispatch unwinds.
    * @throws if a session with this id is already in the store.
    */
   enter(session: Session): () => void {
@@ -946,7 +957,7 @@ export class SessionStore extends Service {
     return detach
   }
 
-  /** Remove one exact entered session and emit its paired disposal when announced. */
+  /** Remove one exact entry, release infrastructure ownership, and dispose it when announced. */
   private detachEntered(entry: SessionEntry): void {
     entry.detachRequested = false
     // A stale capability cannot remove observers or storage belonging to a
@@ -955,7 +966,19 @@ export class SessionStore extends Service {
     if (this.store.get(entry.id) !== entry) return
     this.store.delete(entry.id)
     attachments.delete(entry.session)
+    this.emitDetached(entry)
     if (entry.announced) this.emitDisposed(entry)
+  }
+
+  /** Emit the store-ownership release used by infrastructure for every entry. */
+  private emitDetached(entry: SessionEntry): void {
+    const callbackArgs: unknown[] = [entry.session]
+    try {
+      const callbacks = collectSessionCallbacks(this.ctx, [entry.carrier, 'session/detached', entry.session])
+      invokeContainedSessionObservers(this.ctx, 'session/detached', entry.id, callbackArgs, callbacks)
+    } catch (error: unknown) {
+      this.ctx.logger.warn(`session "${entry.id}": session/detached dispatch threw: ${String(error)}`)
+    }
   }
 
   /** Emit `session/created` exactly once for an {@link enter}ed session (with

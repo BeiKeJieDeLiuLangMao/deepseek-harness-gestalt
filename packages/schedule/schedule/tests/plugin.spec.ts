@@ -5,7 +5,7 @@ import { agentEvents } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
 import { CallId } from '@deepseek-ai/dsh-llm'
-import { SessionId, SessionPreparation } from '@deepseek-ai/dsh-session'
+import SessionStore, { SessionId, SessionPreparation } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import { remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
 import ScheduleService, { ScheduleId } from '../src/index.ts'
@@ -147,6 +147,141 @@ describe('Schedule plugin composition', () => {
 
     await plugin.dispose()
     await raced?.dispose()
+    await ctx.fiber.dispose()
+  })
+
+  it('recomputes the live root when publication wins after preparation', async () => {
+    const ctx = await harness()
+    const plugin = await ctx.plugin(ScheduleService)
+    const sessionId = SessionId('schedule-enter-race')
+    const prepared = ctx.sessions.prepare(sessionId, { meta: { cwd: '/tmp' } })
+    const raced = await ctx.agents.create({
+      sessionId,
+      seed: [{
+        type: 'schedule/change', seq: 0, time: Date.now(),
+        data: {
+          version: 1,
+          operation: 'create',
+          schedule: {
+            id: ScheduleId('schedule-1'), kind: 'after', prompt: 'raced', afterSeconds: 3_600,
+            scheduledAt: new Date(Date.now() + 3_600_000).toISOString(),
+          },
+        },
+      }],
+    })
+    const get = ctx.agents.get.bind(ctx.agents)
+    let reads = 0
+    ctx.agents.get = vi.fn((id: SessionId) => {
+      reads += 1
+      return reads === 1 && id === sessionId ? undefined : get(id)
+    })
+    ctx.sessionPersistence.prepare = vi.fn(async () => SessionPreparation.create(prepared))
+
+    await expect(ctx.schedules.pause(sessionId, ScheduleId('schedule-1')))
+      .resolves.toMatchObject({ id: 'schedule-1', state: 'paused' })
+    expect(raced.agent.session.events.filter(event =>
+      event.type === 'schedule/change' && event.data.operation === 'pause')).toHaveLength(1)
+
+    await plugin.dispose()
+    await raced.dispose()
+    await ctx.fiber.dispose()
+  })
+
+  it('propagates an entry failure when no live root owns the Session', async () => {
+    const ctx = await harness()
+    const plugin = await ctx.plugin(ScheduleService)
+    const other = new Context()
+    await other.plugin(SessionStore)
+    const sessionId = SessionId('schedule-enter-failure')
+    const prepared = other.sessions.prepare(sessionId, { meta: { cwd: '/tmp' } })
+    const detach = other.sessions.enter(prepared)
+    ctx.sessionPersistence.prepare = vi.fn(async () => SessionPreparation.create(prepared))
+
+    await expect(ctx.schedules.pause(sessionId, ScheduleId('schedule-1')))
+      .rejects.toThrow(/already attached to a store/)
+
+    detach()
+    await plugin.dispose()
+    await other.fiber.dispose()
+    await ctx.fiber.dispose()
+  })
+
+  it('flushes an unpublished preparation before reading its fold', async () => {
+    const ctx = await harness()
+    const plugin = await ctx.plugin(ScheduleService)
+    const sessionId = SessionId('schedule-cold-preflight')
+    const prepared = ctx.sessions.prepare(sessionId, { meta: { cwd: '/tmp' } })
+    ctx.sessionPersistence.prepare = vi.fn(async () => SessionPreparation.create(prepared))
+    const lifecycle: string[] = []
+    ctx.on('session/created', () => { lifecycle.push('created') })
+    ctx.on('session/disposed', () => { lifecycle.push('disposed') })
+    let flushes = 0
+    ctx.on('session/flush', (session) => {
+      if (session.id !== sessionId) return
+      flushes += 1
+      if (flushes === 1) {
+        session.append('schedule/change', {
+          version: 1,
+          operation: 'create',
+          schedule: {
+            id: ScheduleId('schedule-1'), kind: 'after', prompt: 'preflight', afterSeconds: 3_600,
+            scheduledAt: new Date(Date.now() + 3_600_000).toISOString(),
+          },
+        })
+      }
+    })
+
+    await expect(ctx.schedules.pause(sessionId, ScheduleId('schedule-1')))
+      .resolves.toMatchObject({ id: 'schedule-1', state: 'paused' })
+    expect(flushes).toBe(2)
+    expect(lifecycle).toEqual([])
+    expect(ctx.sessions.get(sessionId)).toBeUndefined()
+
+    await plugin.dispose()
+    await ctx.fiber.dispose()
+  })
+
+  it('closes transaction admission before waiting for plugin teardown', async () => {
+    const ctx = await harness()
+    const plugin = await ctx.plugin(ScheduleService)
+    const schedules = ctx.schedules
+    const sessionId = SessionId('schedule-teardown-admission')
+    const prepared = ctx.sessions.prepare(sessionId, {
+      meta: { cwd: '/tmp' },
+      seed: [{
+        type: 'schedule/change', seq: 0, time: 1,
+        data: {
+          version: 1,
+          operation: 'create',
+          schedule: {
+            id: ScheduleId('schedule-1'), kind: 'after', prompt: 'teardown', afterSeconds: 3_600,
+            scheduledAt: new Date(Date.now() + 3_600_000).toISOString(),
+          },
+        },
+      }],
+    })
+    ctx.sessionPersistence.prepare = vi.fn(async () => SessionPreparation.create(prepared))
+    let release: (() => void) | undefined
+    const stopFlush = ctx.on('session/flush', async (session) => {
+      if (session.id !== sessionId || release !== undefined) return
+      await new Promise<void>((resolve) => { release = resolve })
+    })
+    const pausing = schedules.pause(sessionId, ScheduleId('schedule-1'))
+    await vi.waitFor(() => { expect(release).toBeDefined() })
+    let disposed = false
+    const disposing = plugin.dispose().then(() => { disposed = true })
+
+    await Promise.resolve()
+    expect(disposed).toBe(false)
+    await expect(schedules.resume(sessionId, ScheduleId('schedule-1')))
+      .rejects.toThrow('Schedule transactions are stopping')
+    if (release === undefined) throw new Error('missing persistence release')
+    release()
+    await expect(pausing).resolves.toMatchObject({ id: 'schedule-1', state: 'paused' })
+    await disposing
+    expect(disposed).toBe(true)
+
+    stopFlush()
     await ctx.fiber.dispose()
   })
 
