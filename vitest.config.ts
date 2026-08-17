@@ -200,6 +200,7 @@ export default defineConfig({
         'packages/platform/platform-account-core/src/invariant.ts',
         'packages/platform/platform-account-client/src/invariant.ts',
         'packages/platform/platform-account-http/src/invariant.ts',
+        'packages/platform/remote-protocol/src/invariant.ts',
         'packages/client/ui-primitives/src/DisclosureRow.tsx',
         'packages/client/ui-tool/src/*',
         'packages/client/ui-slots/src/*',

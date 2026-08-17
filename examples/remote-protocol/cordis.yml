@@ -1,0 +1,2 @@
+- id: remote-protocol-keyless-scenario
+  name: './start.ts'

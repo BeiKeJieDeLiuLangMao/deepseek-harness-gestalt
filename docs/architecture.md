@@ -50,6 +50,7 @@ Here are some core packages that contribute to the Cordis tree.
 | [`core/scope`](subsystems/scope.md) | The per-agent scoped-registration primitive | library, no key |
 | [`llm/llm`](subsystems/llm-streaming.md) | Message and stream vocabulary plus the adapter seam | `ctx.llm` |
 | [`platform/platform-account`](../packages/platform/platform-account/README.md) | Platform identity and current-installation Account Sessions | `ctx.platformAccount` |
+| [`platform/remote-protocol`](../packages/platform/remote-protocol/README.md) | Independent Relay Transport and encrypted Companion codecs | library, no key |
 
 ## Events
 
