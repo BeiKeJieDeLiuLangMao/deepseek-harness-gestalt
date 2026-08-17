@@ -1,0 +1,11 @@
+This proof embeds Snow 0.10.0 and its Cargo.lock-resolved Rust dependencies in
+pkg/dsh_noise_security_path_proof_bg.wasm.
+
+Snow is Copyright (c) 2017-2026 Jake McGinty and contributors and is available
+under either the Apache License, Version 2.0, or the MIT License:
+
+https://github.com/mcginty/snow/blob/v0.10.0/LICENSE-APACHE
+https://github.com/mcginty/snow/blob/v0.10.0/LICENSE-MIT
+
+Cargo.lock is the authoritative dependency inventory. Each dependency's
+Cargo.toml metadata identifies its license and source release.
