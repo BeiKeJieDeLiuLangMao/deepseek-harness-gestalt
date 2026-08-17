@@ -161,4 +161,19 @@ describe('Desktop release workflow', () => {
     expect(uploadAssets).toBeLessThan(publishRelease)
     expect(publishRelease).toBeLessThan(markPublished)
   })
+
+  it('renders verified release notes before tag creation and passes the file to the draft', () => {
+    const publishSteps = steps('publish')
+    const renderIndex = publishSteps.findIndex(step => step.name === 'Render release notes')
+    const publishIndex = publishSteps.findIndex(step => step.name === 'Publish release')
+    const render = String(publishSteps[renderIndex]?.run)
+    const publish = String(publishSteps[publishIndex]?.run)
+
+    expect(render).toContain('apps/desktop/scripts/render-release-notes.mjs')
+    expect(render).toContain('"$RELEASE_VERSION" "$GITHUB_SHA" "$RELEASE_NOTES_FILE"')
+    expect(publish).toContain('--notes-file "$RELEASE_NOTES_FILE"')
+    expect(workflow).not.toContain('--generate-notes')
+    expect(renderIndex).toBeGreaterThan(-1)
+    expect(renderIndex).toBeLessThan(publishIndex)
+  })
 })

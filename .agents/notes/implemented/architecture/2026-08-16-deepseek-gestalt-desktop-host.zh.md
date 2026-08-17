@@ -18,7 +18,7 @@ Electron 在退出阶段继续监管 Web Host。窗口退出、终止信号和 s
 
 Desktop 在 `apps/desktop/build/` 下拥有 ICNS、ICO 与 512x512 RGBA PNG 应用图标。这些文件保留千机·Gestalt 源提交 `70ddb80bdfc713493dea8c3fc451817365a63f06` 中已跟踪生产资源的字节；固定的 SHA-256 摘要依次为 `da6a1174df80af2efadf763b22f8bc37f355680f8315f9ab78a8c59991c60e25`、`46a26b6a0e98e4a96e6151d7627b3a779af57c9214ff960a8447c618cfd88387` 和 `8eb4eb7cc767a5d929fee6715e78d5360ebca184996d757ffef18db90319c802`。electron-builder 在 macOS 使用 ICNS，并将 ICO 资源写入未签名的 Windows 可执行文件。发布 workflow 要求 PE 文件在 smoke 和上传前包含每个最大分辨率的源 ICO 帧。PNG 是打包后的运行时资源、未打包的 macOS Dock 图标和 Windows BrowserWindow 图标；打包后的 macOS 保留由 ICNS 生成的应用图标。
 
-Desktop Release 从 `master` 手动运行，并显式指定 Desktop Bundle 版本。发布运行会先用 `apps/desktop/package.json` 校验该版本并拒绝已有标签；macOS 发布打包只在 `desktop-release` environment 中进行，该 environment 的分支策略只允许 `master`，并提供证书与 Apple 公证 secrets。无凭据运行使用另一个 environment，显式关闭 macOS identity 选择和公证。CLI 组装显式提供 Web 和 headless provider 使用的服务定义，让 production-only 部署保留与源码启动相同的插件导入闭包。每个平台都部署注入工作区包的 hoisted 生产快照，再实体化剩余的文件链接；因此 Windows 安装器不会收到供 7zip 遍历的 pnpm 目录 junction 图。每个发布构建都强制签名，并在上传 artifact 前验证 app 签名和已装订的公证票据。两个 macOS 架构和 Windows 都通过已打包 smoke 后，发布 job 校验精确的版本化安装包、blockmap 和更新 feed 集合，在受测提交上创建本次运行拥有的 `gestalt-v<version>` 标签与 draft GitHub Release，上传资产并核对远端文件名，然后发布非 prerelease Release。交接失败或中断时会删除本次运行拥有的 draft 和标签，使同一候选版本可以重试。
+Desktop Release 从 `master` 手动运行，并显式指定 Desktop Bundle 版本。发布运行会先用 `apps/desktop/package.json` 校验该版本并拒绝已有标签；macOS 发布打包只在 `desktop-release` environment 中进行，该 environment 的分支策略只允许 `master`，并提供证书与 Apple 公证 secrets。无凭据运行使用另一个 environment，显式关闭 macOS identity 选择和公证。CLI 组装显式提供 Web 和 headless provider 使用的服务定义，让 production-only 部署保留与源码启动相同的插件导入闭包。每个平台都部署注入工作区包的 hoisted 生产快照，再实体化剩余的文件链接；因此 Windows 安装器不会收到供 7zip 遍历的 pnpm 目录 junction 图。每个发布构建都强制签名，并在上传 artifact 前验证 app 签名和已装订的公证票据。两个 macOS 架构和 Windows 都通过已打包 smoke 后，发布 job 校验精确的版本化安装包、blockmap 和更新 feed 集合，按受测 Git 历史校验仓库内双语 release-note manifest（元数据清单），并在创建本次运行拥有的 `gestalt-v<version>` 标签与 draft GitHub Release 之前渲染 notes file。每个 manifest 都显式指定基线类型、仓库和提交，Git 提供发布目标和提交数。第一个 bundle 使用 `official-upstream` 基线 `deepseek-ai/deepseek-harness@47f943859bef60e4160492346772ded9b24f765a`，并比较该提交与 `gestalt-v0.1.0`；后续 bundle 可以使用 `previous-release` 基线。job 随后上传资产、核对远端文件名，再发布非 prerelease Release。交接失败或中断时会删除本次运行拥有的 draft 和标签，使同一候选版本可以重试。
 
 Desktop 只多一层 `--patch`：GESTALT 次标、拖拽带、设置右侧的 Update Control。Update Control 只在可操作的更新阶段和发现版本后的 error 阶段占用侧栏 seat；disabled、idle、checking 和发现版本前的 error 阶段不渲染。浏览器 `dsh web` 不加载这层。从 Dock 启动时，Web Host 的 cwd 是 `~/Library/Application Support/DeepSeek Gestalt/defaultWorkspace`（Windows：`%APPDATA%\DeepSeek Gestalt\defaultWorkspace`），进程 cwd 不是安装目录。Session Surface、`~/.dsh` 和 web profile 仍然共用。
 
@@ -38,6 +38,8 @@ macOS chrome 在 DSH 侧栏标题和中间 Session 内容上方为 traffic light
 
 **在运行 workflow 前先创建发布标签。** 该标签会指向未经检查的候选版本，并在打包或 smoke 失败后残留。发布 job 只在所有目标通过后才与 Release 一起创建标签。
 
+**使用 GitHub 自动生成的 Desktop release notes。** 自动生成的说明会枚举已合并 PR，却不能确定官方上游基线、完整产品分类或同等完整的中英文内容。这些事实由仓库内 manifest 和经过验证的 renderer 负责。
+
 ## Verification
 
 - `pnpm gestalt:dev` 启动 Desktop Host，由它启动 Web Host，并在环回 URL 上加载带 `window.__DSH_BOOT__` 的页面（不是裸 Vite）。
@@ -48,7 +50,7 @@ macOS chrome 在 DSH 侧栏标题和中间 Session 内容上方为 traffic light
 - Desktop 退出会等待尚未启动完成和正在运行的 Web Host 进程退出；smoke 测试会拒绝遗留子进程、缺失的 Desktop 组合或 updater bridge、尚未到达 renderer 的更新状态，以及可见但尚未激活的 Update Control。
 - 无密钥浏览器 golden 会启动已交付 Web profile 与 Desktop overlay；release job 会校验 Node 归档摘要，在 macOS 签名前将打开文件数限制提升到 runner 硬限制，并对 `@electron/osx-sign` 应用有界的资源遍历。发布构建必须通过代码签名和已装订公证票据校验，并在上传前 smoke 每个打包目标。
 - Desktop 图标测试固定三个源文件摘要及其容器签名，要求 512x512 RGBA PNG，检查 macOS、Windows、打包资源、Dock 与 BrowserWindow 的接线，并拒绝缺少最大分辨率 ICO 载荷的 Windows PE 文件。
-- 发布计划测试覆盖版本、分支和已有标签校验；发布资产测试要求两个更新 feed、全部版本化 macOS 与 Windows 安装包及其 blockmap，并排除未打包应用内部文件。
+- 发布计划测试覆盖版本、分支和已有标签校验；release-note 测试覆盖双语渲染、manifest 完整性、版本与标签一致性、Git ancestry、提交数计算和工作流顺序；发布资产测试要求两个更新 feed、全部版本化 macOS 与 Windows 安装包及其 blockmap，并排除未打包应用内部文件。
 - 单测覆盖从 `dsh web:` 行发现 URL、Launch Directory 解析，以及不下载的更新阶段转换。
 
 ## Consequences
