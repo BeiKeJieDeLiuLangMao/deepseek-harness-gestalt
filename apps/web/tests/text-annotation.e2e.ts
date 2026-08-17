@@ -62,7 +62,7 @@ describe('web e2e: text annotation becomes an ordinary model-visible message', (
     await page.getByText('exact phrase', { exact: true }).waitFor({ timeout: 10_000 })
 
     const target = page.locator('[data-annotation-source]').last()
-    await target.evaluate((element) => {
+    const selectPhrase = async (): Promise<void> => target.evaluate((element) => {
       const strong = element.querySelector('strong')
       if (strong === null) throw new Error('expected bold Markdown text')
       const before = strong.previousSibling
@@ -77,8 +77,27 @@ describe('web e2e: text annotation becomes an ordinary model-visible message', (
       // Keyboard, assistive technology, and pointer selection converge on this browser event.
       document.dispatchEvent(new Event('selectionchange'))
     })
+    await selectPhrase()
 
     const toolbar = page.getByRole('toolbar')
+    await expect(toolbar.getByRole('button').allTextContents()).resolves.toEqual(['Add annotation', 'Copy'])
+    await page.evaluate(() => {
+      const selection = window.getSelection()
+      const composer = document.querySelector('[data-composer-card]')
+      if (selection === null || selection.rangeCount !== 1 || composer === null) {
+        throw new Error('expected active annotation selection and Composer')
+      }
+      const walker = document.createTreeWalker(composer, NodeFilter.SHOW_TEXT)
+      const outside = walker.nextNode()
+      if (outside === null) throw new Error('expected Composer text outside the assistant message')
+      const range = selection.getRangeAt(0)
+      range.setEnd(outside, Math.min(1, outside.textContent?.length ?? 0))
+      selection.removeAllRanges()
+      selection.addRange(range)
+      document.dispatchEvent(new Event('selectionchange'))
+    })
+    await expect(toolbar.count()).resolves.toBe(0)
+    await selectPhrase()
     await expect(toolbar.getByRole('button').allTextContents()).resolves.toEqual(['Add annotation', 'Copy'])
     await toolbar.getByRole('button', { name: 'Add annotation' }).click()
     const editor = page.getByRole('dialog').getByRole('textbox')

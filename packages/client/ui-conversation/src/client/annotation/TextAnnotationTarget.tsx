@@ -77,11 +77,25 @@ export function TextAnnotationTarget({ sourceId, source, annotations, add, t, ch
   const select = useCallback((): void => {
     const container = root.current
     const selection = window.getSelection()
-    if (container === null || selection === null || selection.isCollapsed || selection.rangeCount !== 1) return
+    if (container === null || selection === null || selection.isCollapsed) return
+    const dismiss = (): void => {
+      setPending(null)
+      setEditing(false)
+    }
+    if (selection.rangeCount !== 1) {
+      dismiss()
+      return
+    }
     const range = selection.getRangeAt(0)
-    if (!container.contains(range.startContainer) || !container.contains(range.endContainer)) return
+    if (!container.contains(range.startContainer) || !container.contains(range.endContainer)) {
+      dismiss()
+      return
+    }
     const quote = selection.toString()
-    if (quote.trim() === '') return
+    if (quote.trim() === '') {
+      dismiss()
+      return
+    }
     const visible = extractMarkdownPlainText(source)
     const before = document.createRange()
     before.selectNodeContents(container)
@@ -90,7 +104,10 @@ export function TextAnnotationTarget({ sourceId, source, annotations, add, t, ch
     const starts: number[] = []
     for (let at = visible.indexOf(quote); at >= 0; at = visible.indexOf(quote, at + 1)) starts.push(at)
     const start = starts.toSorted((a, b) => Math.abs(a - approximate) - Math.abs(b - approximate))[0]
-    if (start === undefined) return
+    if (start === undefined) {
+      dismiss()
+      return
+    }
     const rect = range.getBoundingClientRect()
     setPending({
       anchor: createTextAnchor(sourceId, visible, quote, start),

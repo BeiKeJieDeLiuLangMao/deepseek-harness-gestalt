@@ -83,6 +83,47 @@ describe('text annotation mechanics', () => {
     expect(add).toHaveBeenCalledWith(expect.objectContaining({ quote: 'Alpha bold omega' }), 'Tighten this')
   })
 
+  it('dismisses a pending toolbar when the selection grows across messages', () => {
+    const view = render(
+      <div>
+        <TextAnnotationTarget
+          sourceId="message-1:0"
+          source="First message"
+          annotations={[]}
+          add={() => TextAnnotationId('annotation-1')}
+          t={key => ({
+            'annotation.add': 'Add annotation',
+            'annotation.copy': 'Copy',
+            'annotation.notePlaceholder': 'Optional note',
+            'annotation.save': 'Save annotation',
+          })[key]}
+        >
+          <p>First message</p>
+        </TextAnnotationTarget>
+        <p>Second message</p>
+      </div>,
+    )
+    const messages = view.container.querySelectorAll('p')
+    const first = messages[0]!.firstChild!
+    const second = messages[1]!.firstChild!
+    const selection = window.getSelection()!
+    const range = document.createRange()
+    range.setStart(first, 0)
+    range.setEnd(first, 5)
+    Object.defineProperty(range, 'getBoundingClientRect', { value: () => ({ left: 20, bottom: 40 }) })
+    selection.removeAllRanges()
+    selection.addRange(range)
+    fireEvent(document, new Event('selectionchange'))
+    expect(view.getByRole('toolbar')).toBeDefined()
+
+    range.setEnd(second, 6)
+    selection.removeAllRanges()
+    selection.addRange(range)
+    fireEvent(document, new Event('selectionchange'))
+
+    expect(view.queryByRole('toolbar')).toBeNull()
+  })
+
   it('defers the composition guard so Safari closing Enter never saves', () => {
     vi.useFakeTimers()
     try {
