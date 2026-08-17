@@ -1011,21 +1011,21 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Durable Schedule owner, Remote mutation namespace, and live Agent runtime installer.',
     methods: [
       {
-        signature: '@Remote(\'pause\') pause(agent: Agent, id: ScheduleId): Promise<ScheduleView>',
+        signature: '@Remote(\'pause\') pause(sessionId: SessionId, id: ScheduleId): Promise<ScheduleView>',
         description: 'Pause one retained deliverable reminder.',
-        parameters: [{ name: 'agent', description: 'Exact live root Agent resolved from the Session wire identity.' }, { name: 'id', description: 'Session-local reminder identity.' }],
+        parameters: [{ name: 'sessionId', description: 'Exact root Session identity; a cold mutation publishes no Agent.' }, { name: 'id', description: 'Session-local reminder identity.' }],
         returns: 'The paused durable view after its persistence barrier.',
       },
       {
-        signature: '@Remote(\'resume\') resume(agent: Agent, id: ScheduleId): Promise<ScheduleView>',
+        signature: '@Remote(\'resume\') resume(sessionId: SessionId, id: ScheduleId): Promise<ScheduleView>',
         description: 'Resume one paused reminder without changing its target.',
-        parameters: [{ name: 'agent', description: 'Exact live root Agent resolved from the Session wire identity.' }, { name: 'id', description: 'Session-local reminder identity.' }],
+        parameters: [{ name: 'sessionId', description: 'Exact root Session identity; a cold mutation publishes no Agent.' }, { name: 'id', description: 'Session-local reminder identity.' }],
         returns: 'The resumed timing view after its persistence barrier.',
       },
       {
-        signature: '@Remote(\'delete\') async delete(agent: Agent, id: ScheduleId): Promise<ScheduleDeleteResult>',
+        signature: '@Remote(\'delete\') async delete(sessionId: SessionId, id: ScheduleId): Promise<ScheduleDeleteResult>',
         description: 'Delete one retained reminder, including a paused reminder.',
-        parameters: [{ name: 'agent', description: 'Exact live root Agent resolved from the Session wire identity.' }, { name: 'id', description: 'Session-local reminder identity.' }],
+        parameters: [{ name: 'sessionId', description: 'Exact root Session identity; a cold mutation publishes no Agent.' }, { name: 'id', description: 'Session-local reminder identity.' }],
         returns: 'The deleted identity after its persistence barrier.',
       },
     ],

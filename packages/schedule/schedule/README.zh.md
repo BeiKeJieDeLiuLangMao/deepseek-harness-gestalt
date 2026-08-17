@@ -28,9 +28,9 @@ Schedule 负责确定性的日历规范化。落在夏令时缺口内的本地�
 
 生成的[工具目录](../../../docs/tool-catalog.md)负责 `schedule_create`、`schedule_list` 和 `schedule_delete` 的参数与输出 schema。虽然模型输入使用 `after_seconds` 和 `time_zone`，但其规范值中的记录字段使用 camelCase。
 
-一条 Agent-scoped 队列会将每项已接纳的管理事务与 live owner 的到期事务从 preflight 到任何 post-append barrier 全程串行化。`schedule_create` 要求 `after_seconds`、`at` 与 `every_seconds` 有且只有一项；它会在进入队列前验证只依赖输入形状的失败，随后执行检查点、分配永不复用的 id、追加 create，再次执行检查点。`schedule_list` 按创建顺序返回活动和已暂停记录，其中包含 `state: "scheduled" | "overdue" | "paused"` 与 `deliveryMode: "session-local"`。`schedule_delete` 会在进入队列前拒绝空 id 或前后带空白的 id，并为活动或已暂停 id 追加事件；未知或已终结的 id 会在 preflight 后返回 `{ id, deleted: false, code: "schedule_not_found" }`。
+一条 Session-scoped 队列会将每项已接纳的管理事务与 live owner 的到期事务从 preflight 到任何 post-append barrier 全程串行化。`schedule_create` 要求 `after_seconds`、`at` 与 `every_seconds` 有且只有一项；它会在进入队列前验证只依赖输入形状的失败，随后执行检查点、分配永不复用的 id、追加 create，再次执行检查点。`schedule_list` 按创建顺序返回活动和已暂停记录，其中包含 `state: "scheduled" | "overdue" | "paused"` 与 `deliveryMode: "session-local"`。`schedule_delete` 会在进入队列前拒绝空 id 或前后带空白的 id，并为活动或已暂停 id 追加事件；未知或已终结的 id 会在 preflight 后返回 `{ id, deleted: false, code: "schedule_not_found" }`。
 
-仅供人工使用的 `schedules` Remote 命名空间接收 pause、resume 和 delete，并针对 wire Session id 解析出的精确 live 根 Agent 执行。每项变更与工具和到期工作共享 Agent FIFO 及持久化 barrier。pause 与 resume 刻意不进入面向模型的工具目录；浏览器用它们管理持久状态，但不增加模型的行动权限。
+仅供人工使用的 `schedules` Remote 命名空间接收 branded Session id，因此 cold 管理不会经过 Agent-resume lookup。已存在的 live 根 Agent 使用普通持久化 barrier 并重算 runtime。cold 变更会预留精确的 prepared Session，只在 append 与 flush 期间附着，随后在不发布 Agent、不启动投递的情况下 detach。每项变更都会与工具和到期工作共享 Session FIFO。pause 与 resume 刻意不进入面向模型的工具目录；浏览器用它们管理持久状态，但不增加模型的行动权限。
 
 ## 浏览器 Projection 与任务板
 

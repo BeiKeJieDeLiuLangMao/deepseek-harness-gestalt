@@ -39,10 +39,12 @@ function replace(
   return Object.freeze({ schedules: Object.freeze(schedules), seenIds: state.seenIds })
 }
 
-/** Apply one decoded change, returning the same reference for invalid transitions. */
+/** Apply one decoded change, rejecting transition-invalid durable history. */
 function applyChange(state: ScheduleProjectionState, change: ScheduleChange): ScheduleProjectionState {
   if (change.operation === 'create') {
-    if (state.seenIds.includes(change.schedule.id)) return state
+    if (state.seenIds.includes(change.schedule.id)) {
+      throw new ScheduleLogError(`schedule id ${JSON.stringify(change.schedule.id)} was reused`)
+    }
     return Object.freeze({
       schedules: Object.freeze([
         ...state.schedules,
@@ -53,7 +55,9 @@ function applyChange(state: ScheduleProjectionState, change: ScheduleChange): Sc
   }
 
   const index = state.schedules.findIndex(schedule => schedule.record.id === change.id)
-  if (index < 0) return state
+  if (index < 0) {
+    throw new ScheduleLogError(`schedule ${change.operation} targets inactive id ${JSON.stringify(change.id)}`)
+  }
   const current = state.schedules[index]
   /* v8 ignore next -- findIndex established the indexed entry. */
   if (current === undefined) return state
@@ -65,17 +69,20 @@ function applyChange(state: ScheduleProjectionState, change: ScheduleChange): Sc
         seenIds: state.seenIds,
       })
     case 'pause':
-      return current.paused ? state : replace(state, index, current.record, true)
-    case 'resume':
-      return current.paused ? replace(state, index, current.record, false) : state
-    case 'dispatch': {
-      if (current.paused) return state
-      let next: ScheduleRecord | undefined
-      try {
-        next = advanceDispatchedSchedule(current.record, change)
-      } catch (_invalidDispatch) {
-        return state
+      if (current.paused) {
+        throw new ScheduleLogError(`schedule pause targets inactive or paused id ${JSON.stringify(change.id)}`)
       }
+      return replace(state, index, current.record, true)
+    case 'resume':
+      if (!current.paused) {
+        throw new ScheduleLogError(`schedule resume targets inactive or active id ${JSON.stringify(change.id)}`)
+      }
+      return replace(state, index, current.record, false)
+    case 'dispatch': {
+      if (current.paused) {
+        throw new ScheduleLogError(`schedule dispatch targets inactive id ${JSON.stringify(change.id)}`)
+      }
+      const next: ScheduleRecord | undefined = advanceDispatchedSchedule(current.record, change)
       if (next !== undefined) return replace(state, index, next, false)
       return Object.freeze({
         schedules: Object.freeze(state.schedules.filter((_schedule, candidate) => candidate !== index)),
@@ -89,19 +96,15 @@ function applyChange(state: ScheduleProjectionState, change: ScheduleChange): Sc
  * Fold one committed Session event into the Schedule projection.
  * @param state - Plain retained-record state covering prior owned events.
  * @param event - Next committed Session event.
- * @returns Updated state, or the same reference for unrelated or malformed input.
+ * @returns Updated state, or the same reference for an unrelated event.
+ * @throws {@link ScheduleLogError} when durable Schedule JSON or its transition is invalid.
  */
 export function applyScheduleProjection(
   state: ScheduleProjectionState,
   event: SessionEvent,
 ): ScheduleProjectionState {
   if (event.type !== 'schedule/change') return state
-  try {
-    return applyChange(state, decodeScheduleChange(event.data))
-  } catch (error: unknown) {
-    if (error instanceof ScheduleLogError) return state
-    throw error
-  }
+  return applyChange(state, decodeScheduleChange(event.data))
 }
 
 const shared = {

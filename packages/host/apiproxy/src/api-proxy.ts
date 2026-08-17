@@ -869,11 +869,12 @@ function listProjectionsFor(ctx: Context, meta: SessionHeader, session: Session 
 /** Projection baseline for a detached history tail without Agent activation. */
 function detachedProjectionsFor(
   ctx: Context,
+  header: SessionHeader,
   events: readonly SessionEvent[],
 ): SessionProjectionsBlock | undefined {
   const registry = ctx.get('sessionProjections')
   if (registry === undefined) return undefined
-  return registry.restore({}, events, 0).snapshot
+  return registry.restore({}, events, 0, header.seedLength ?? 0).snapshot
 }
 
 /**
@@ -1565,7 +1566,9 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     includeProjections: boolean,
   ): { events: SessionEvent[]; projections?: SessionProjectionsBlock } {
     if (source.kind === 'detached') {
-      const projections = includeProjections ? detachedProjectionsFor(ctx, source.events) : undefined
+      const projections = includeProjections
+        ? detachedProjectionsFor(ctx, source.header, source.events)
+        : undefined
       return { events: source.events, ...projections === undefined ? {} : { projections } }
     }
     const events = [...source.session.events]
@@ -2692,7 +2695,11 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             header = inspected.meta
             events = inspected.events
             projections = beforeSeq === undefined
-              ? subagentHistoryProjections(ctx, childSessionId, () => detachedProjectionsFor(ctx, inspected.events))
+              ? subagentHistoryProjections(
+                ctx,
+                childSessionId,
+                () => detachedProjectionsFor(ctx, inspected.meta, inspected.events),
+              )
               : undefined
           } catch (error: unknown) {
             if (signal?.aborted) {

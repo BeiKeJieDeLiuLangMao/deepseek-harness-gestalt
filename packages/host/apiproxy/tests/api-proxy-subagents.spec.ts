@@ -27,6 +27,8 @@ function bench(options: {
   liveChild?: true
   /** Every registered projection unit throws on this child's payloads. */
   projectionsThrow?: true
+  /** Durable fork boundary excluding inherited events from owned-suffix projections. */
+  seedLength?: number
   historyParent?: SessionId
 } = {}) {
   const parent = { id: PARENT }
@@ -65,6 +67,7 @@ function bench(options: {
   })
   const childHeader = {
     version: 0, id: CHILD, createdAt: 1, cwd: '/proj', parentSession: options.historyParent ?? PARENT,
+    ...options.seedLength === undefined ? {} : { seedLength: options.seedLength },
   } satisfies SessionHeader
   const childEvents = [
     { type: 'user/message', seq: 0, time: 1, data: { content: [{ type: 'text', text: 'work' }], source: { kind: 'user' } } },
@@ -76,7 +79,12 @@ function bench(options: {
     if (options.projectionsThrow === true) throw new Error('hostile unit')
     return liveBlock
   })
-  const restore = vi.fn(() => {
+  const restore = vi.fn((
+    _checkpoint: unknown,
+    _events: readonly SessionEvent[],
+    _baseSeq: number,
+    _seedLength = 0,
+  ) => {
     if (options.projectionsThrow === true) throw new Error('hostile unit')
     return { snapshot: coldBlock }
   })
@@ -162,6 +170,16 @@ describe('subagent gateway', () => {
     expect(inspect).toHaveBeenCalledWith(CHILD)
     expect(restore).toHaveBeenCalledTimes(1)
     expect(getAgent).not.toHaveBeenCalled()
+  })
+
+  it('passes a detached fork boundary into the cold projection restore', async () => {
+    const { api, restore } = bench({ seedLength: 1 })
+    const response = await api.subagents.history(request({
+      parentSessionId: PARENT, childSessionId: CHILD, mode: 'continuable', maxMessages: 10,
+    }))
+    expect(response.result).toMatchObject({ ok: true })
+    expect(restore).toHaveBeenCalledTimes(1)
+    expect(restore.mock.calls[0]?.[3]).toBe(1)
   })
 
   it('serves a live child from the in-memory snapshot and the watermark projections', async () => {

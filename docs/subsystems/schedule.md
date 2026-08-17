@@ -198,9 +198,9 @@ type ScheduleView = ScheduleRecord & {
 }
 ```
 
-The generated [tool catalog](../tool-catalog.md#deepseek-aidsh-schedule) owns the argument and result schemas for `schedule_create`, `schedule_list`, and `schedule_delete`. List includes paused records; there are no model-facing pause or resume tools. Management calls serialize with due work in one Agent-scoped queue. Every read or decision first waits for the shared Session persistence barrier; create and an actual delete wait again after appending. A barrier failure reports `persistence_uncertain` instead of guessing whether an eager write committed. The other stable error codes are `invalid_prompt`, `invalid_selector`, `invalid_rule`, `invalid_time_zone`, `not_future`, `time_out_of_range`, `frequency_too_high`, `corrupt_schedule_log`, and `internal_error`.
+The generated [tool catalog](../tool-catalog.md#deepseek-aidsh-schedule) owns the argument and result schemas for `schedule_create`, `schedule_list`, and `schedule_delete`. List includes paused records, and delete accepts active or paused records; there are no model-facing pause or resume tools. Management calls serialize with due work in one Session-scoped queue. Every read or decision first waits for the shared Session persistence barrier; create and an actual delete wait again after appending. A barrier failure reports `persistence_uncertain` instead of guessing whether an eager write committed. The other stable error codes are `invalid_prompt`, `invalid_selector`, `invalid_rule`, `invalid_time_zone`, `not_future`, `time_out_of_range`, `frequency_too_high`, `corrupt_schedule_log`, and `internal_error`.
 
-The `ctx.schedules` Remote Service exposes human pause, resume, and delete mutations for the exact live root Agent selected by the wire Session id. The same Agent FIFO and pre/post persistence barriers cover tools, human mutations, and due work.
+The `ctx.schedules` Remote Service takes a branded Session id without invoking cold Agent resume. It uses an already-live root when present; otherwise it reserves and briefly attaches the exact prepared Session for append and flush, then detaches without publishing an Agent or starting delivery. The same Session FIFO and persistence barriers cover tools, human mutations, and due work.
 
 ## Browser projection
 
@@ -223,32 +223,32 @@ Durable Schedule owner, Remote mutation namespace, and live Agent runtime instal
 ```ts cordis-catalog
 /**
  * Pause one retained deliverable reminder.
- * @param agent - Exact live root Agent resolved from the Session wire identity.
+ * @param sessionId - Exact root Session identity; a cold mutation publishes no Agent.
  * @param id - Session-local reminder identity.
  * @returns The paused durable view after its persistence barrier.
  */
-@Remote('pause') pause(agent: Agent, id: ScheduleId): Promise<ScheduleView>
+@Remote('pause') pause(sessionId: SessionId, id: ScheduleId): Promise<ScheduleView>
 
 /**
  * Resume one paused reminder without changing its target.
- * @param agent - Exact live root Agent resolved from the Session wire identity.
+ * @param sessionId - Exact root Session identity; a cold mutation publishes no Agent.
  * @param id - Session-local reminder identity.
  * @returns The resumed timing view after its persistence barrier.
  */
-@Remote('resume') resume(agent: Agent, id: ScheduleId): Promise<ScheduleView>
+@Remote('resume') resume(sessionId: SessionId, id: ScheduleId): Promise<ScheduleView>
 
 /**
  * Delete one retained reminder, including a paused reminder.
- * @param agent - Exact live root Agent resolved from the Session wire identity.
+ * @param sessionId - Exact root Session identity; a cold mutation publishes no Agent.
  * @param id - Session-local reminder identity.
  * @returns The deleted identity after its persistence barrier.
  */
-@Remote('delete') async delete(agent: Agent, id: ScheduleId): Promise<ScheduleDeleteResult>
+@Remote('delete') async delete(sessionId: SessionId, id: ScheduleId): Promise<ScheduleDeleteResult>
 ```
 
-Types: [Agent](core.md)
+Types: [SessionId](core.md)
 
-Source: [`packages/schedule/schedule/src/index.ts:64`](../../packages/schedule/schedule/src/index.ts)
+Source: [`packages/schedule/schedule/src/index.ts:65`](../../packages/schedule/schedule/src/index.ts)
 <!-- END GENERATED cordis-surface -->
 
 ## Live delivery

@@ -120,6 +120,8 @@ describe('Schedule tool protocol', () => {
       .toEqual({ card: 'generic', title: 'List reminders', kind: 'read' })
     expect(test.ctx.tools.get('schedule_delete')?.presentCall?.({ id: 'schedule-1' }))
       .toEqual({ card: 'generic', title: 'Delete reminder', kind: 'other', rawInput: 'schedule-1' })
+    expect(test.ctx.tools.get('schedule_list')?.description).toContain('active or paused')
+    expect(test.ctx.tools.get('schedule_delete')?.description).toContain('active or paused')
     test.disposeTools()
     test.disposeTools()
     expect(test.ctx.tools.get('schedule_create')).toBeUndefined()
@@ -417,7 +419,7 @@ describe('Schedule persistence failure boundaries', () => {
     const ownerStarted = new Promise<void>((resolve) => {
       markOwnerStarted = resolve
     })
-    const owner = runScheduleTransaction(test.agent, async () => {
+    const owner = runScheduleTransaction(test.agent.id, async () => {
       markOwnerStarted?.()
       await new Promise<void>((resolve) => { releaseOwner = resolve })
     })

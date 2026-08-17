@@ -154,12 +154,12 @@ const CREATE_DESCRIPTION =
   + 'is live and otherwise becomes overdue until the session is resumed.'
 
 const LIST_DESCRIPTION =
-  'List every active reminder in the current session in creation order, including its exact id, '
-  + 'UTC target, scheduled or overdue state, and session-local delivery mode.'
+  'List every retained active or paused reminder in the current session in creation order, including '
+  + 'its exact id, UTC target, scheduled, overdue, or paused state, and session-local delivery mode.'
 
 const DELETE_DESCRIPTION =
-  'Delete one active reminder in the current session by the exact id returned by schedule_create '
-  + 'or schedule_list. Unknown or already-finished ids return deleted false.'
+  'Delete one retained active or paused reminder in the current session by the exact id returned by '
+  + 'schedule_create or schedule_list. Unknown or already-finished ids return deleted false.'
 
 /** Deterministic model content for every canonical Schedule value. */
 function renderValue(_args: unknown, value: unknown): ContentBlock[] {
@@ -189,7 +189,7 @@ function runCancellableScheduleTransaction<T>(
   signal: AbortSignal,
   task: () => Promise<T>,
 ): Promise<T | InternalScheduleError> {
-  return runScheduleTransaction(agent, async () => {
+  return runScheduleTransaction(agent.id, async () => {
     const cancelled = cancellationPlaceholder(signal)
     return cancelled ?? task()
   })

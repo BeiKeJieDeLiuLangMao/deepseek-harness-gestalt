@@ -228,15 +228,15 @@ export type ScheduleToolError =
 /** Canonical `schedule_create` value. */
 export type ScheduleCreateValue = ScheduleView | ScheduleToolError
 
-/** Canonical `schedule_list` value. */
+/** Canonical `schedule_list` value containing retained active and paused reminders. */
 export type ScheduleListValue = ScheduleView[] | ScheduleToolError
 
-/** Successful `schedule_delete` value, including the non-mutating not-found result. */
+/** Successful active-or-paused `schedule_delete` value, including the non-mutating not-found result. */
 export type ScheduleDeleteResult =
   | { readonly id: ScheduleId; readonly deleted: true }
   | { readonly id: ScheduleId; readonly deleted: false; readonly code: 'schedule_not_found' }
 
-/** Canonical `schedule_delete` value. */
+/** Canonical `schedule_delete` value for retained active or paused reminders. */
 export type ScheduleDeleteValue = ScheduleDeleteResult | ScheduleToolError
 
 declare module '@deepseek-ai/dsh-session/types' {

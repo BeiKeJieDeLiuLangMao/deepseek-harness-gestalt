@@ -143,7 +143,7 @@ export class ScheduleRuntime {
   private async runRequested(): Promise<void> {
     while (this.requested && !this.stopping && !this.faulted) {
       this.requested = false
-      await runScheduleTransaction(this.agent, () => this.driveOnce())
+      await runScheduleTransaction(this.agent.id, () => this.driveOnce())
     }
   }
 

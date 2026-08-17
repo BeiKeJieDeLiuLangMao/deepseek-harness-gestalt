@@ -1,11 +1,11 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { Context, Service } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import { agentEvents } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
 import { CallId } from '@deepseek-ai/dsh-llm'
-import { SessionId } from '@deepseek-ai/dsh-session'
+import { SessionId, SessionPreparation } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import { remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
 import ScheduleService, { ScheduleId } from '../src/index.ts'
@@ -101,16 +101,92 @@ describe('Schedule plugin composition', () => {
 
     expect(remoteMethods(ctx.schedules).map(method => method.exportName ?? method.method))
       .toEqual(['pause', 'resume', 'delete'])
-    await ctx.schedules.pause(root.agent, ScheduleId('schedule-1'))
+    await ctx.schedules.pause(root.agent.id, ScheduleId('schedule-1'))
     expect(ctx.sessionProjections.snapshot(root.agent.session).values.schedules)
       .toEqual([expect.objectContaining({ id: 'schedule-1', paused: true })])
-    await ctx.schedules.resume(root.agent, ScheduleId('schedule-1'))
+    await ctx.schedules.resume(root.agent.id, ScheduleId('schedule-1'))
     expect(ctx.sessionProjections.snapshot(root.agent.session).values.schedules)
       .toEqual([expect.objectContaining({ id: 'schedule-1', paused: false })])
-    await ctx.schedules.delete(root.agent, ScheduleId('schedule-1'))
+    await ctx.schedules.delete(root.agent.id, ScheduleId('schedule-1'))
     expect(ctx.sessionProjections.snapshot(root.agent.session).values.schedules).toEqual([])
 
+    await plugin.dispose()
+    expect('schedules' in ctx.sessionProjections.snapshot(root.agent.session).values).toBe(false)
     await root.dispose()
+    await ctx.fiber.dispose()
+  })
+
+  it('recomputes an already-live root when Agent publication wins the cold preparation race', async () => {
+    const ctx = await harness()
+    const plugin = await ctx.plugin(ScheduleService)
+    const sessionId = SessionId('schedule-prepare-race')
+    let raced: Awaited<ReturnType<typeof ctx.agents.create>> | undefined
+    const prepare = vi.fn(async () => {
+      raced = await ctx.agents.create({ sessionId })
+      raced.agent.session.append('schedule/change', {
+        version: 1,
+        operation: 'create',
+        schedule: {
+          id: ScheduleId('schedule-1'),
+          kind: 'after',
+          prompt: 'race reminder',
+          afterSeconds: 3_600,
+          scheduledAt: new Date(Date.now() + 3_600_000).toISOString(),
+        },
+      })
+      throw new Error('cannot prepare while the Session is live')
+    })
+    ctx.sessionPersistence.prepare = prepare
+
+    await expect(ctx.schedules.pause(sessionId, ScheduleId('schedule-1')))
+      .resolves.toMatchObject({ id: 'schedule-1', state: 'paused' })
+    expect(prepare).toHaveBeenCalledTimes(1)
+    expect(ctx.agents.roots()).toEqual([raced?.agent])
+    expect(raced?.agent.session.events.filter(event =>
+      event.type === 'schedule/change' && event.data.operation === 'pause')).toHaveLength(1)
+
+    await plugin.dispose()
+    await raced?.dispose()
+    await ctx.fiber.dispose()
+  })
+
+  it('reports uncertainty when a cold mutation cannot complete its persistence barrier', async () => {
+    const ctx = await harness()
+    const plugin = await ctx.plugin(ScheduleService)
+    const sessionId = SessionId('schedule-cold-uncertain')
+    const prepared = ctx.sessions.prepare(sessionId, {
+      meta: { cwd: '/tmp' },
+      seed: [{
+        type: 'schedule/change',
+        seq: 0,
+        time: 1,
+        data: {
+          version: 1,
+          operation: 'create',
+          schedule: {
+            id: ScheduleId('schedule-1'),
+            kind: 'after',
+            prompt: 'uncertain reminder',
+            afterSeconds: 3_600,
+            scheduledAt: new Date(Date.now() + 3_600_000).toISOString(),
+          },
+        },
+      }],
+    })
+    ctx.sessionPersistence.prepare = vi.fn(async () => SessionPreparation.create(prepared))
+    const stopFailure = ctx.on('session/flush', (session) => {
+      if (session.id === sessionId && session.events.some(event =>
+        event.type === 'schedule/change' && event.data.operation === 'pause')) {
+        throw new Error('disk uncertain')
+      }
+    })
+
+    await expect(ctx.schedules.pause(sessionId, ScheduleId('schedule-1')))
+      .rejects.toMatchObject({ name: 'SchedulePersistenceError' })
+    expect(ctx.agents.get(sessionId)).toBeUndefined()
+    expect(ctx.sessions.get(sessionId)).toBeUndefined()
+
+    stopFailure()
     await plugin.dispose()
     await ctx.fiber.dispose()
   })

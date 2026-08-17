@@ -5,6 +5,7 @@ import {
   emptyScheduleProjectionState,
   scheduleProjectionDefinition,
 } from '../src/projection.ts'
+import { ScheduleLogError } from '../src/domain.ts'
 
 function change(data: unknown, seq: number): SessionEvent {
   return { type: 'schedule/change', seq, time: seq, data } as SessionEvent
@@ -40,12 +41,14 @@ describe('Schedule session projection', () => {
     expect(scheduleProjectionDefinition.view(deleted)).toEqual([])
   })
 
-  it('ignores unrelated and malformed transitions without publishing a new reference', () => {
+  it('ignores unrelated events but rejects malformed or transition-invalid durable changes', () => {
     const empty = emptyScheduleProjectionState()
     expect(applyScheduleProjection(empty, { type: 'turn/start', seq: 0, time: 0, data: { turn: 1 } }))
       .toBe(empty)
-    expect(applyScheduleProjection(empty, change({ version: 1, operation: 'pause', id: 'missing' }, 1)))
-      .toBe(empty)
+    expect(() => applyScheduleProjection(empty, change({ version: 1, operation: 'pause', id: 'missing' }, 1)))
+      .toThrow(ScheduleLogError)
+    expect(() => applyScheduleProjection(empty, change({ version: 1, operation: 'pause', id: '' }, 2)))
+      .toThrow(ScheduleLogError)
   })
 
   it('declares fork-owned event scope for standard Session projection transport', () => {

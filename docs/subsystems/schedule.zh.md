@@ -198,9 +198,9 @@ type ScheduleView = ScheduleRecord & {
 }
 ```
 
-生成的[工具目录](../tool-catalog.md#deepseek-aidsh-schedule)负责 `schedule_create`、`schedule_list` 和 `schedule_delete` 的参数与结果 schema。list 包含已暂停记录；不存在面向模型的 pause 或 resume 工具。一条 Agent-scoped 队列将管理调用与到期工作串行化。每次读取或判断都会先等待共享的 Session 持久化 barrier；create 与实际执行的 delete 在追加后还会再次等待。barrier 失败会报告 `persistence_uncertain`，而不是猜测 eager write 是否已提交。其他稳定错误代码是 `invalid_prompt`、`invalid_selector`、`invalid_rule`、`invalid_time_zone`、`not_future`、`time_out_of_range`、`frequency_too_high`、`corrupt_schedule_log` 和 `internal_error`。
+生成的[工具目录](../tool-catalog.md#deepseek-aidsh-schedule)负责 `schedule_create`、`schedule_list` 和 `schedule_delete` 的参数与结果 schema。list 包含已暂停记录，delete 接受活动或已暂停记录；不存在面向模型的 pause 或 resume 工具。一条 Session-scoped 队列将管理调用与到期工作串行化。每次读取或判断都会先等待共享的 Session 持久化 barrier；create 与实际执行的 delete 在追加后还会再次等待。barrier 失败会报告 `persistence_uncertain`，而不是猜测 eager write 是否已提交。其他稳定错误代码是 `invalid_prompt`、`invalid_selector`、`invalid_rule`、`invalid_time_zone`、`not_future`、`time_out_of_range`、`frequency_too_high`、`corrupt_schedule_log` 和 `internal_error`。
 
-`ctx.schedules` Remote Service 为 wire Session id 选中的精确 live 根 Agent 暴露人工 pause、resume 与 delete 变更。同一条 Agent FIFO 以及变更前后的持久化 barrier 同时覆盖工具、人工变更和到期工作。
+`ctx.schedules` Remote Service 接受 branded Session id，而不会调用 cold Agent resume。存在 live 根 Agent 时直接使用；否则预留并短暂附着精确的 prepared Session 以完成 append 与 flush，随后在不发布 Agent、不启动投递的情况下 detach。同一条 Session FIFO 与持久化 barrier 覆盖工具、人工变更与到期工作。
 
 ## 浏览器 Projection
 
@@ -223,32 +223,32 @@ Durable Schedule owner, Remote mutation namespace, and live Agent runtime instal
 ```ts cordis-catalog
 /**
  * Pause one retained deliverable reminder.
- * @param agent - Exact live root Agent resolved from the Session wire identity.
+ * @param sessionId - Exact root Session identity; a cold mutation publishes no Agent.
  * @param id - Session-local reminder identity.
  * @returns The paused durable view after its persistence barrier.
  */
-@Remote('pause') pause(agent: Agent, id: ScheduleId): Promise<ScheduleView>
+@Remote('pause') pause(sessionId: SessionId, id: ScheduleId): Promise<ScheduleView>
 
 /**
  * Resume one paused reminder without changing its target.
- * @param agent - Exact live root Agent resolved from the Session wire identity.
+ * @param sessionId - Exact root Session identity; a cold mutation publishes no Agent.
  * @param id - Session-local reminder identity.
  * @returns The resumed timing view after its persistence barrier.
  */
-@Remote('resume') resume(agent: Agent, id: ScheduleId): Promise<ScheduleView>
+@Remote('resume') resume(sessionId: SessionId, id: ScheduleId): Promise<ScheduleView>
 
 /**
  * Delete one retained reminder, including a paused reminder.
- * @param agent - Exact live root Agent resolved from the Session wire identity.
+ * @param sessionId - Exact root Session identity; a cold mutation publishes no Agent.
  * @param id - Session-local reminder identity.
  * @returns The deleted identity after its persistence barrier.
  */
-@Remote('delete') async delete(agent: Agent, id: ScheduleId): Promise<ScheduleDeleteResult>
+@Remote('delete') async delete(sessionId: SessionId, id: ScheduleId): Promise<ScheduleDeleteResult>
 ```
 
-Types: [Agent](core.md)
+Types: [SessionId](core.md)
 
-Source: [`packages/schedule/schedule/src/index.ts:64`](../../packages/schedule/schedule/src/index.ts)
+Source: [`packages/schedule/schedule/src/index.ts:65`](../../packages/schedule/schedule/src/index.ts)
 <!-- END GENERATED cordis-surface -->
 
 ## Live 交付
