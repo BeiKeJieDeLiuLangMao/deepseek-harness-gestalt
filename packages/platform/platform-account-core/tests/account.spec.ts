@@ -145,6 +145,16 @@ function signEncoded(encoded: string, key: Uint8Array): string {
   return `${encoded}.${createHmac('sha256', key).update(encoded).digest('base64url')}`
 }
 
+function tamperEnvelopeSignature(token: string): string {
+  const separator = token.indexOf('.')
+  const encoded = token.slice(0, separator)
+  const signature = Buffer.from(token.slice(separator + 1), 'base64url')
+  const firstByte = signature[0]
+  if (firstByte === undefined) throw new Error('expected signed token')
+  signature[0] = firstByte ^ 0x80
+  return `${encoded}.${signature.toString('base64url')}`
+}
+
 function proxyBackend(base: AccountBackend, overrides: Partial<AccountBackend>): AccountBackend {
   return new Proxy(base, {
     get(target, property) {
@@ -480,7 +490,7 @@ describe('PlatformAccount', () => {
     }
     await expect(first.pollLogin({ attemptId: attempt.id, pollingToken: 'a.b', proof: proof() }))
       .rejects.toMatchObject({ code: 'SESSION_REVOKED' })
-    const badSignature = `${attempt.pollingToken.slice(0, -1)}${attempt.pollingToken.endsWith('A') ? 'B' : 'A'}`
+    const badSignature = tamperEnvelopeSignature(attempt.pollingToken)
     await expect(first.pollLogin({ attemptId: attempt.id, pollingToken: badSignature, proof: proof() }))
       .rejects.toMatchObject({ code: 'SESSION_REVOKED' })
     const invalidJson = signEncoded(Buffer.from('{').toString('base64url'), CONFIG.pollingSigningKey)
