@@ -248,10 +248,17 @@ jobs:
       - name: Merge macOS update feeds
         run: node apps/desktop/scripts/merge-latest-mac.mjs dist
 
+      - name: Render release notes
+        env:
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+          RELEASE_NOTES_FILE: ${{ runner.temp }}/desktop-release-notes.md
+        run: node apps/desktop/scripts/render-release-notes.mjs "$RELEASE_VERSION" "$GITHUB_SHA" "$RELEASE_NOTES_FILE"
+
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+          RELEASE_NOTES_FILE: ${{ runner.temp }}/desktop-release-notes.md
         run: |
           set -Eeuo pipefail
           tag=${{ needs.prepare.outputs.tag }}
@@ -285,7 +292,7 @@ jobs:
             --verify-tag \
             --target "$GITHUB_SHA" \
             --title "DeepSeek Gestalt ${{ needs.prepare.outputs.version }}" \
-            --generate-notes
+            --notes-file "$RELEASE_NOTES_FILE"
           release_owned=true
           gh release upload "$tag" "${assets[@]}"
           local_names=$(printf '%s\n' "${assets[@]##*/}" | sort)
