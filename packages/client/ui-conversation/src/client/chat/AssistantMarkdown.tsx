@@ -19,6 +19,8 @@ import type { ChatViewSlotProps } from '../contract/slots.ts'
 import { messageImageLabels } from '../image-labels.ts'
 import { ReasoningRow } from './ReasoningRow.tsx'
 import css from './AssistantMarkdown.module.css'
+import type { InputActions, InputState } from '../input/contract.ts'
+import { TextAnnotationTarget } from '../annotation/TextAnnotationTarget.tsx'
 
 export interface AssistantMarkdownProps {
   blocks: readonly AssistantBlock[]
@@ -31,11 +33,15 @@ export interface AssistantMarkdownProps {
   mentions?: MarkdownFileMentions | undefined
   /** The owning view's locale seat, passed down as a plain prop. */
   t: ChatViewSlotProps['t']
+  /** Stable completed-message identity; absence keeps selection inert. */
+  sourceId?: string | undefined
+  annotations?: InputState['annotations'] | undefined
+  annotationActions?: Pick<InputActions, 'addTextAnnotation'> | undefined
 }
 
 /** Reasoning block as the Think variant summary row (figma 39:28304). */
 export const AssistantMarkdown = memo(function AssistantMarkdown({
-  blocks, streaming, interrupted, loadImage, mentions, t,
+  blocks, streaming, interrupted, loadImage, mentions, t, sourceId, annotations = [], annotationActions,
 }: AssistantMarkdownProps) {
   const imageLoader = loadImage ?? (() => Promise.reject(new Error(t('image.serviceUnavailable'))))
   // Stable per locale revision (t identity changes on switch): a fresh object
@@ -55,15 +61,31 @@ export const AssistantMarkdown = memo(function AssistantMarkdown({
     if (block === undefined) continue
     switch (block.kind) {
       case 'text':
-        rendered.push(
-          <MarkdownText
-            key={i}
-            text={block.text}
-            streaming={streaming}
-            codeLabels={codeLabels}
-            fileMentions={mentions}
-          />,
-        )
+        {
+          const markdown = (
+            <MarkdownText
+              text={block.text}
+              streaming={streaming}
+              codeLabels={codeLabels}
+              fileMentions={mentions}
+            />
+          )
+          const blockSourceId = sourceId === undefined ? undefined : `${sourceId}:${i}`
+          rendered.push(blockSourceId === undefined || annotationActions === undefined
+            ? <span key={i}>{markdown}</span>
+            : (
+              <TextAnnotationTarget
+                key={i}
+                sourceId={blockSourceId}
+                source={block.text}
+                annotations={annotations.filter(item => item.anchor.sourceId === blockSourceId)}
+                add={annotationActions.addTextAnnotation}
+                t={t}
+              >
+                {markdown}
+              </TextAnnotationTarget>
+            ))
+        }
         break
       case 'reasoning':
         rendered.push(<ReasoningRow key={i} text={block.text} running={streaming && i === last} t={t} />)

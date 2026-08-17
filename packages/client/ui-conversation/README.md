@@ -48,14 +48,23 @@ A finished turn materializes one ordered `turn-tail` Conversation Node. Its engi
 
 ## Model Experience
 
-None, as the conversation UI renders session history and streams in the browser; nothing here reaches a model request.
+### Annotation submission
+
+#### What the model sees
+
+Text annotations compile into the same ordinary `user/message` that the Composer sends. A non-empty question stays first, followed by each annotation in creation order with a localized heading, exact quoted text, and the optional note. Annotation-only sends use the same form. No annotation protocol, response-format instruction, or hidden metadata enters the request.
+
+#### Token effect
+
+Each exact quote, non-empty note, localized heading, and optional question contributes ordinary user-message tokens.
 
 #### KV Cache effect
 
-None; this package neither assembles nor sends a provider request.
+The compiled prose is ordinary user-message content, so it contributes tokens and invalidates the request suffix exactly like manually typed text.
 
 ## Known Limitations and Deferred Work
 
+- **Unsent annotation drafts are page-local** — text anchors, notes, and Draft Marks live in the resident Composer only. Reloading the page discards them; sent annotations survive because they have already become an ordinary logged user message.
 - **The stats-line fallback fold covers the in-window flow only** — without the `sessionStats` projection (an assembly that does not mount the unit), every figure folds the snapshot's assistant `timing` and tool call/result pairs, so nodes outside the loaded event window (older history) are not counted and the numbers grow per loaded page.
 - **The details panel has no entry point** — `ChatViewInjected.openDetails` is implemented but uncalled, so the raw selected-call display is unreachable in the assembled application. There is no Input/Output/Metadata switch, Prev/Next stepping, or trajectory deep link.
 - **Assistant per-message paging is a reserved slot** — drawn in the design, not implemented. The finalized content IconActions row (copy / clock / branch) ships under the last content-text assistant of each turn that has ended; mid-turn narration, Think-only nodes, and every node of a turn still producing steps stay chrome-free. Branch stays disabled unless that message is also the last transcript node of a completed turn; when enabled, it forks through that turn, increments the inherited title on the client, and opens the child. A fork or rename failure leaves the source selected ([decision](../../../.agents/notes/implemented/bug-fix/2026-08-02-message-fork-actions-require-completed-turn-tail.md)).

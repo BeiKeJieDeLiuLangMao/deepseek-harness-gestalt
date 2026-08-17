@@ -6,7 +6,7 @@
  * region-slot content) ride the owner props. Session facts
  * (running/removed/promptError) are self-selected via useSession. */
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, KeyboardEvent, MouseEvent, ReactNode } from 'react'
 import clsx from 'clsx'
 import {
@@ -33,6 +33,7 @@ import { ContextMeter } from './ContextMeter.tsx'
 import { PermissionSelect } from './PermissionSelect.tsx'
 import { isSafariBrowser, repairSafariTextareaLayout } from './safari.ts'
 import css from './InputBar.module.css'
+import { AnnotationEditor } from '../annotation/AnnotationEditor.tsx'
 
 /** Decoration product of the no-session state (no machine, empty draft). */
 const INERT_DECORATIONS: DraftDecorations = { token: null, chips: [], textRefs: [], hint: null }
@@ -52,6 +53,7 @@ export function InputBar({
   workspacePickerOpen = false, onRequestWorkspace,
   placeholder, accessory, overlay, leftItems, rightItems, footer,
 }: InputBarProps) {
+  const annotationDetailsId = useId()
   const input = useInput(s => s)
   const notice = useNotices(s => s)
   const lexicon = useLexicon(s => s)
@@ -73,7 +75,9 @@ export function InputBar({
     () => input === undefined || draftImages === undefined ? [] : draftImages(input.imageIds),
     [draftImages, input?.imageIds],
   )
-  const empty = draft.trim() === '' && attachments.length === 0
+  const annotations = input?.annotations ?? []
+  const empty = draft.trim() === '' && attachments.length === 0 && annotations.length === 0
+  const [editingAnnotation, setEditingAnnotation] = useState<string | null>(null)
   const [preview, setPreview] = useState<ComposerAttachment | null>(null)
   const [dragActive, setDragActive] = useState(false)
   // Transient error banner (image-intake rejections and prompt failures): the
@@ -172,6 +176,12 @@ export function InputBar({
   useEffect(() => {
     if (preview !== null && !attachments.some(attachment => attachment.id === preview.id)) setPreview(null)
   }, [attachments, preview])
+
+  useEffect(() => {
+    if (editingAnnotation !== null && !annotations.some(item => item.id === editingAnnotation)) {
+      setEditingAnnotation(null)
+    }
+  }, [annotations, editingAnnotation])
 
   // Scroll the draft scrollport the minimum that brings `caret` into view — the
   // browser's own behavior for typing, performed for the paths where it does
@@ -700,6 +710,58 @@ export function InputBar({
               onOpen={(item) => { setPreview(item.attachment) }}
               onRemove={(item) => { removeImage?.(item.attachment.id) }}
             />
+          </div>
+        )}
+        {annotations.length > 0 && inputActions !== undefined && (
+          <div className={css.annotationSummary}>
+            <button
+              type="button"
+              className={css.annotationSummaryTrigger}
+              aria-controls={annotationDetailsId}
+            >
+              {t('annotation.summary', { count: annotations.length })}
+            </button>
+            <div
+              id={annotationDetailsId}
+              role="region"
+              aria-label={t('annotation.summary', { count: annotations.length })}
+              className={css.annotationSummaryDetails}
+            >
+              {annotations.map((annotation, index) => (
+                <div className={css.annotationSummaryItem} key={annotation.id}>
+                  <button
+                    type="button"
+                    onClick={() => { setEditingAnnotation(annotation.id) }}
+                    aria-label={t('annotation.item', { index: index + 1, quote: annotation.anchor.quote })}
+                  >
+                    <strong>{index + 1}. {annotation.anchor.quote}</strong>
+                    <small>{annotation.note}</small>
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={t('annotation.delete')}
+                    onClick={() => { inputActions.removeTextAnnotation(annotation.id) }}
+                  >×</button>
+                </div>
+              ))}
+            </div>
+            {editingAnnotation !== null && (() => {
+              const annotation = annotations.find(item => item.id === editingAnnotation)
+              return annotation === undefined ? null : (
+                <div className={css.annotationEditPopover}>
+                  <AnnotationEditor
+                    key={annotation.id}
+                    initialNote={annotation.note}
+                    placeholder={t('annotation.notePlaceholder')}
+                    saveLabel={t('annotation.save')}
+                    onSave={(note) => {
+                      inputActions.updateTextAnnotation(annotation.id, note)
+                      setEditingAnnotation(null)
+                    }}
+                  />
+                </div>
+              )
+            })()}
           </div>
         )}
         {/* One scrollport, two text layers. The hidden mirror renders draft+'\n' and stretches the

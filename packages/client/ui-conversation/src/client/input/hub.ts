@@ -14,6 +14,7 @@ import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import { queueReadFaceOf } from '../queue/store.ts'
 import type { ComposerKeyboard, DraftAttachmentId, SessionInputResolver, SessionInput } from './contract.ts'
 import type { InputSubmitMode } from '../contract/composer-submission.ts'
+import type { TextAnnotationId } from '../annotation/model.ts'
 import type { PopupDismissFace } from './facade.ts'
 import { SessionInputShell } from './facade.ts'
 
@@ -75,7 +76,14 @@ export class InputHub implements SessionInputResolver {
       inputTriggers: () => this.controller(actx),
       popup: () => this.popup(actx),
       queue: queueReadFaceOf(session),
-      defaultSink: (text, imageIds, mode) => { this.sink(session, text, imageIds, mode) },
+      defaultSink: (text, imageIds, mode, annotationDraft) => {
+        this.sink(session, text, imageIds, mode, annotationDraft)
+      },
+      annotationLabels: {
+        heading: index => this.t('annotation.compiled.heading', { index }),
+        quote: value => this.t('annotation.compiled.quote', { value }),
+        note: value => this.t('annotation.compiled.note', { value }),
+      },
       steerQueue: () => { void this.steerQueue(session, shell) },
     })
     this.shells.set(id, shell)
@@ -151,15 +159,18 @@ export class InputHub implements SessionInputResolver {
     text: string,
     imageIds: readonly DraftAttachmentId[],
     mode: InputSubmitMode,
+    annotationDraft?: { readonly restoreText: string; readonly ids: readonly TextAnnotationId[] },
   ): void {
     if (text === '' && imageIds.length === 0) return
     const shell = this.shells.get(session.sessionId)
     // Commit, not an editable clear: undo must not resurrect sent content.
     shell?.commitSend(imageIds)
-    void this.conversation().sendSession(session, text, imageIds, mode).catch(() => {
+    void this.conversation().sendSession(session, text, imageIds, mode).then(() => {
+      if (this.shells.get(session.sessionId) === shell) shell?.commitAnnotations(annotationDraft?.ids ?? [])
+    }).catch(() => {
       if (this.shells.get(session.sessionId) === shell) {
         shell?.restoreImages(imageIds)
-        if (shell?.snapshot.draft === '') shell.setDraft(text)
+        if (shell?.snapshot.draft === '') shell.setDraft(annotationDraft?.restoreText ?? text)
         return
       }
       const conversation = this.rootCtx.get('conversation') as ConversationAttachmentFace | undefined

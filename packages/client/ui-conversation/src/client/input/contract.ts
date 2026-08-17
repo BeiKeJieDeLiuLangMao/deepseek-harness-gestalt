@@ -13,6 +13,7 @@ import type {
 } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import type { QueueRow } from '../contract/queue.ts'
 import type { InputSubmitMode } from '../contract/composer-submission.ts'
+import type { TextAnchor, TextAnnotation, TextAnnotationId } from '../annotation/model.ts'
 
 /** Browser-runtime identity of one unsent image draft. */
 export type DraftAttachmentId = Branded<'DraftAttachmentId'>
@@ -79,6 +80,12 @@ export interface InputActions {
   removeImage(id: DraftAttachmentId): void
   /** Drop ids whose browser-owned objects no longer exist. */
   pruneImages(ids: readonly DraftAttachmentId[]): void
+  /** Append one text annotation in creation order. */
+  addTextAnnotation(anchor: TextAnchor, note: string): TextAnnotationId
+  /** Replace one text annotation note without changing its identity or order. */
+  updateTextAnnotation(id: TextAnnotationId, note: string): void
+  /** Remove one unsent text annotation. */
+  removeTextAnnotation(id: TextAnnotationId): void
   /** Enter submission (adjudication / claim transaction / default sink inside). */
   submit(): void
 }
@@ -210,6 +217,8 @@ export interface InputState {
   readonly draft: string
   /** Ordered runtime-only image ids; bytes and URLs stay in ConversationController. */
   readonly imageIds: readonly DraftAttachmentId[]
+  /** Ordered Composer-owned annotations; absent from the Session log. */
+  readonly annotations: readonly TextAnnotation[]
   /** Monotonic draft revision (span CAS compares against this). */
   readonly draftRev: number
   readonly phase: 'plain' | 'adjudicating' | 'claimed' | 'submitting'
