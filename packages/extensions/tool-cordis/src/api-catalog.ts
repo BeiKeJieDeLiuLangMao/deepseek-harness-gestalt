@@ -970,6 +970,59 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'platformAccount',
+    summary: 'Platform Account capability.',
+    description: 'Platform Account capability. Providers own OAuth, installation-key binding, token rotation, and current-installation invalidation behind this interface.',
+    methods: [
+      {
+        signature: 'abstract readonly environment: SelectedPlatformEnvironment',
+        description: 'Validated deployment identity selected by this Account provider.',
+        parameters: [],
+      },
+      {
+        signature: 'abstract beginLogin(input: { installationId: InstallationId installationKind: \'desktop\' | \'mobile\' publicKey: JsonWebKey }): Promise<LoginAttemptView>',
+        description: 'Start one GitHub Authorization Code attempt for an installation key.',
+        parameters: [{ name: 'input', description: 'installation identity, kind, and public P-256 JWK.' }],
+        returns: 'the system-browser URL and signed polling capability.',
+      },
+      {
+        signature: 'abstract completeGitHubCallback(input: { code: string; state: string }): Promise<{ completed: true }>',
+        description: 'Settle the fixed HTTPS GitHub callback; provider credentials never leave the provider.',
+        parameters: [{ name: 'input', description: 'GitHub authorization code and returned random state.' }],
+        returns: 'completion marker suitable for a browser confirmation page.',
+      },
+      {
+        signature: 'abstract pollLogin(input: { attemptId: LoginAttemptId pollingToken: string proof: AccountProof }): Promise<LoginPollResult>',
+        description: 'Poll one attempt using both its signed polling token and installation proof.',
+        parameters: [{ name: 'input', description: 'attempt binding and one-use proof.' }],
+        returns: 'pending or the newly created Account Session.',
+      },
+      {
+        signature: 'abstract refresh(input: { refreshToken: string; proof: AccountProof }): Promise<AccountSessionView>',
+        description: 'Rotate a current installation\'s refresh token and issue a new access token.',
+        parameters: [{ name: 'input', description: 'current refresh token and installation proof.' }],
+        returns: 'replacement tokens retaining the original absolute refresh expiry.',
+      },
+      {
+        signature: 'abstract current(input: { accessToken: string; proof: AccountProof }): Promise<PlatformAccountView>',
+        description: 'Read the current installation account.',
+        parameters: [{ name: 'input', description: 'access token and installation proof.' }],
+        returns: 'current account projection.',
+      },
+      {
+        signature: 'abstract signOut(input: { accessToken: string; proof: AccountProof }): Promise<void>',
+        description: 'Revoke only the current installation Account Session.',
+        parameters: [{ name: 'input', description: 'access token and installation proof.' }],
+      },
+      {
+        signature: 'abstract trackConnection(sessionId: AccountSessionId, close: () => void | Promise<void>): () => void',
+        description: 'Track a Platform connection so cross-instance session invalidation closes it.',
+        parameters: [{ name: 'sessionId', description: 'Account Session owning the connection.' }, { name: 'close', description: 'idempotent close callback.' }],
+        returns: 'disposer removing the tracked connection.',
+      },
+    ],
+  },
+  {
     key: 'sandbox',
     summary: 'Abstract process-sandbox service.',
     description: 'Abstract process-sandbox service. confine must return enforcing argv or fail closed at wrap or runner-execution time; silent unconfined passthrough is forbidden. Functional probes arbitrate multi-runner chains and may be skipped for a sole candidate, whose own refusal remains the fail-closed end.',
@@ -2649,6 +2702,22 @@ export const EVENT_API: readonly EventApiEntry[] = [
 /** Shapes of every exported type the Service and Event signatures reference (transitively), sorted by name. */
 export const TYPE_API: readonly TypeApiEntry[] = [
   {
+    name: 'AccountProof',
+    declaration: 'export interface AccountProof {\n    jti: AccountProofJti;\n    issuedAt: number;\n    signature: string;\n}',
+  },
+  {
+    name: 'AccountProofJti',
+    declaration: 'export type AccountProofJti = Branded<\'AccountProofJti\'>;',
+  },
+  {
+    name: 'AccountSessionId',
+    declaration: 'export type AccountSessionId = Branded<\'AccountSessionId\'>;',
+  },
+  {
+    name: 'AccountSessionView',
+    declaration: 'export interface AccountSessionView {\n    sessionId: AccountSessionId;\n    account: PlatformAccountView;\n    accessToken: string;\n    refreshToken: string;\n    accessExpiresAt: number;\n    refreshExpiresAt: number;\n}',
+  },
+  {
     name: 'AdapterRegistrationHandle',
     declaration: 'export interface AdapterRegistrationHandle {\n    (): void;\n    replace(providers: string[]): void;\n}',
   },
@@ -3209,6 +3278,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type InboxTarget = \'next-turn\' | \'next-step\';',
   },
   {
+    name: 'InstallationId',
+    declaration: 'export type InstallationId = Branded<\'InstallationId\'>;',
+  },
+  {
     name: 'InvariantFailure',
     declaration: 'export type InvariantFailure = (message: string) => never;',
   },
@@ -3367,6 +3440,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'LlmRuntime',
     declaration: 'export class LlmRuntime extends Service {\n    constructor(ctx: Context);\n    registerAdapter(providers: string[], adapter: LlmAdapter): AdapterRegistrationHandle;\n    listProviders(): LlmProviderInfo[];\n    registerConfigurableProviders(entries: readonly LlmConfigurableProvider[]): DirectoryRegistrationHandle;\n    listConfigurableProviders(): LlmConfigurableProvider[];\n    registerModelDiscovery(settingsNs: string, discover: (request: LlmModelDiscoveryRequest) => Promise<readonly LlmDiscoveredModel[]>): () => void;\n    async discoverModels(settingsNs: string, request: LlmModelDiscoveryRequest): Promise<LlmDiscoveredModel[]>;\n    providerRetryPolicy(provider: string): ResolvedRetryPolicy;\n    async listModels(provider: string): Promise<LlmModelInfo[]>;\n    async resolveModelInfo(provider: string, model: string, signal?: AbortSignal): Promise<LlmResolvedModelInfo>;\n    async resolveCallConfig(config: LlmCallConfig, signal?: AbortSignal): Promise<LlmCallConfig>;\n    async prepareCall(config: LlmCallConfig, signal?: AbortSignal): Promise<PreparedLlmCall>;\n    stream(options: GenerateOptions): AsyncIterable<StreamChunk>;\n}',
+  },
+  {
+    name: 'LoginAttemptId',
+    declaration: 'export type LoginAttemptId = Branded<\'LoginAttemptId\'>;',
+  },
+  {
+    name: 'LoginAttemptView',
+    declaration: 'export interface LoginAttemptView {\n    id: LoginAttemptId;\n    state: string;\n    authorizationUrl: string;\n    pollingToken: string;\n    expiresAt: number;\n}',
+  },
+  {
+    name: 'LoginPollResult',
+    declaration: 'export type LoginPollResult = {\n    status: \'pending\';\n} | ({\n    status: \'complete\';\n} & AccountSessionView);',
   },
   {
     name: 'LspHover',
@@ -3531,6 +3616,22 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'PermissionSelect',
     declaration: 'export interface PermissionSelect {\n    options: PresetOption[];\n    currentValue: string;\n}',
+  },
+  {
+    name: 'PlatformAccountId',
+    declaration: 'export type PlatformAccountId = Branded<\'PlatformAccountId\'>;',
+  },
+  {
+    name: 'PlatformAccountView',
+    declaration: 'export interface PlatformAccountView {\n    id: PlatformAccountId;\n    githubId: number;\n    githubLogin: string;\n    avatarUrl: string;\n}',
+  },
+  {
+    name: 'PlatformEnvironment',
+    declaration: 'export type PlatformEnvironment = \'development\' | \'production\';',
+  },
+  {
+    name: 'PlatformEnvironmentIdentity',
+    declaration: 'export interface PlatformEnvironmentIdentity {\n    environment: PlatformEnvironment;\n    origin: string;\n    callbackUrl: string;\n    githubClientId: string;\n    credentialReference: string;\n    databaseIdentity: string;\n    identityNamespace: string;\n}',
   },
   {
     name: 'PostToolDecision',
@@ -3801,6 +3902,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type SearchResultView = SearchMatchesResultView | SearchPathsResultView;',
   },
   {
+    name: 'SelectedPlatformEnvironment',
+    declaration: 'export type SelectedPlatformEnvironment = Readonly<PlatformEnvironmentIdentity> & {\n    readonly [selectedPlatformEnvironment]: true;\n};',
+  },
+  {
     name: 'ServerResponse',
     declaration: 'export interface ServerResponse {\n    type: \'server-response\';\n    rpcId: RpcId;\n    result: RpcResult<unknown>;\n}',
   },
@@ -3927,10 +4032,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SessionRawArtifact',
     declaration: 'export interface SessionRawArtifact {\n    readonly meta: SessionHeader;\n    readonly filename: string;\n    readonly content: string;\n}',
-  },
-  {
-    name: 'SessionRecord',
-    declaration: 'export interface SessionRecord {\n    header: SessionHeader;\n    live: boolean;\n    persisted: boolean;\n}',
   },
   {
     name: 'SessionReferenceCandidate',

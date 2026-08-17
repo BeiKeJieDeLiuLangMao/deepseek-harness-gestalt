@@ -16,7 +16,13 @@ async function bench() {
   ctx.provide('locale', new LocaleRuntime(ctx))
   const slots = ctx.get('slots') as SlotRegistry
   slots.register(
-    { name: 'root', children: { sidebar: { kind: 'single', scope: 'root' } } } as never,
+    {
+      name: 'root',
+      children: {
+        sidebar: { kind: 'single', scope: 'root' },
+        'settings.section': { kind: 'list', scope: 'root' },
+      },
+    } as never,
     () => null,
   )
   slots.register(
@@ -38,12 +44,13 @@ describe('ui-desktop apply', () => {
     expect(inject).toEqual(['slots', 'locale'])
   })
 
-  it('occupies brand, drag, and footer seats', async () => {
+  it('occupies brand, drag, update, and Mobile Pairing Settings seats', async () => {
     const b = await bench()
     await b.ctx.plugin({ inject: [...inject], apply }).await()
     expect(b.slots.entries('sidebar.brand')).not.toHaveLength(0)
     expect(b.slots.entries('sidebar.chrome.drag')).not.toHaveLength(0)
     expect(b.slots.entries('sidebar.footer.action')).not.toHaveLength(0)
+    expect(b.slots.entries('settings.section').map(entry => entry.options.id)).toContain('mobile-pairing')
   })
 
   it('subscribes to the Desktop updater bridge when present', async () => {
@@ -60,6 +67,11 @@ describe('ui-desktop apply', () => {
       windowMinimize: vi.fn(),
       windowMaximize: vi.fn(),
       windowClose: vi.fn(),
+      accountGetSnapshot: vi.fn().mockResolvedValue({ status: 'unavailable', privacyAccepted: false }),
+      accountAcceptPrivacy: vi.fn(),
+      accountBeginLogin: vi.fn(),
+      accountSignOut: vi.fn(),
+      onAccountSnapshot: vi.fn(() => () => {}),
     }
     window.dshDesktop = desktop
     const b = await bench()
@@ -67,9 +79,11 @@ describe('ui-desktop apply', () => {
     await fiber.await()
     expect(desktop.getStatus).toHaveBeenCalledOnce()
     expect(desktop.onStatus).toHaveBeenCalledOnce()
+    expect(desktop.accountGetSnapshot).toHaveBeenCalledOnce()
+    expect(desktop.onAccountSnapshot).toHaveBeenCalledOnce()
     const brand = b.slots.entries('sidebar.brand')[0]
     expect(brand?.select?.({} as never)).toEqual({})
-    const footer = b.slots.entries('sidebar.footer.action')[0]
+    const footer = b.slots.entries('sidebar.footer.action').find(entry => entry.options.id === 'desktop-update')
     expect((footer?.inject as () => { hooks: { updater: unknown } } | undefined)?.()?.hooks.updater).toBeDefined()
     await Promise.resolve()
     await Promise.resolve()

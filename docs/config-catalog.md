@@ -1372,6 +1372,184 @@ export interface PlanModeConfig {
 
 Source: [`packages/plan/plan-mode/src/index.ts:70`](../packages/plan/plan-mode/src/index.ts)
 
+<a id="deepseek-aidsh-platform-account-core"></a>
+
+## `@deepseek-ai/dsh-platform-account-core`
+
+```ts config-catalog
+/** Construction dependencies for one Platform Account instance. */
+export interface PlatformAccountOptions {
+  /** Durable atomic persistence shared by Platform Instances. */
+  backend: AccountBackend
+  /** Cross-instance channel carrying committed session invalidations. */
+  invalidation: AccountInvalidationBus
+  /** GitHub public-identity adapter for the selected environment. */
+  github: GitHubIdentityProvider
+  /** Identity selected from a validated development/production pair. */
+  environment: SelectedPlatformEnvironment
+  /** Secret signing material for the selected environment. */
+  config: PlatformAccountConfig
+  /** Optional deterministic time source. */
+  clock?: AccountClock
+}
+
+/** Persistence operations requiring atomic compare-and-mutate behavior. */
+export interface AccountBackend {
+  /** Durable database identity selected for this deployment. */
+  readonly databaseIdentity: string
+  /** Persist a new Login Attempt. */
+  createAttempt(record: LoginAttemptRecord): Promise<void>
+  /** Find the Login Attempt bound to one OAuth state. */
+  findAttemptByState(state: string): Promise<LoginAttemptRecord | undefined>
+  /** Read one Login Attempt by id. */
+  getAttempt(id: LoginAttemptId): Promise<LoginAttemptRecord | undefined>
+  /** Attach public provider identity after a valid callback. */
+  authorizeAttempt(id: LoginAttemptId, identity: GitHubIdentity): Promise<void>
+  /** Atomically consume authorization and replace the installation session. */
+  consumeAuthorizedAttempt(id: LoginAttemptId, refreshHash: string, refreshExpiresAt: number): Promise<CreatedSession>
+  /** Find a session by the hash of its current refresh token. */
+  getSessionByRefreshHash(hash: string): Promise<SessionRecord | undefined>
+  /** Read one session by id. */
+  getSession(id: AccountSessionId): Promise<SessionRecord | undefined>
+  /** Read one Platform Account by id. */
+  getAccount(id: PlatformAccountId): Promise<AccountRecord | undefined>
+  /** Atomically rotate the matching refresh token generation. */
+  rotateRefresh(sessionId: AccountSessionId, expectedHash: string, replacementHash: string): Promise<SessionRecord | undefined>
+  /** Revoke one session and report whether it was active. */
+  revokeSession(sessionId: AccountSessionId): Promise<boolean>
+  /** Atomically reject replayed proof ids inside their validity window. */
+  consumeProof(jti: AccountProofJti, expiresAt: number, now: number): Promise<boolean>
+}
+
+/** Shared invalidation channel used by every Platform Instance. */
+export interface AccountInvalidationBus {
+  /** Publish one committed Account Session invalidation after every subscriber settles. */
+  publish(sessionId: AccountSessionId): Promise<void>
+  /** Subscribe to committed Account Session invalidations. */
+  subscribe(listener: (sessionId: AccountSessionId) => void | Promise<void>): () => void
+}
+
+/** GitHub OAuth adapter used by the Account provider. */
+export interface GitHubIdentityProvider {
+  /** Validated deployment identity owning the OAuth App and callback. */
+  readonly environment: SelectedPlatformEnvironment
+  /** Build the system-browser authorization URL with S256 PKCE and no scope parameter. */
+  authorizationUrl(input: { callbackUrl: string; state: string; codeChallenge: string }): string
+  /** Exchange one callback code and return only the public identity retained by Platform. */
+  exchange(code: string, verifier: string): Promise<GitHubIdentity>
+}
+
+/** Secret signing material for one Platform Account provider. */
+export interface PlatformAccountConfig {
+  /** Shared secret used to sign short-lived access tokens. */
+  tokenSigningKey: Uint8Array
+  /** Shared secret used to sign five-minute polling tokens. */
+  pollingSigningKey: Uint8Array
+}
+
+/** Clock adapter for expiry and deterministic keyless scenarios. */
+export interface AccountClock {
+  /** @returns current Unix epoch milliseconds. */
+  now(): number
+}
+
+/** Durable Login Attempt state owned by an {@link AccountBackend}. */
+export interface LoginAttemptRecord {
+  /** Opaque Login Attempt id. */
+  id: LoginAttemptId
+  /** Deployment environment that owns the attempt. */
+  environment: PlatformEnvironment
+  /** Provider identity namespace for the selected environment. */
+  identityNamespace: string
+  /** Stable id of the requesting installation. */
+  installationId: InstallationId
+  /** Desktop or Mobile installation class. */
+  installationKind: InstallationKind
+  /** Installation P-256 public key. */
+  publicKey: JsonWebKey
+  /** Random OAuth state bound to the attempt. */
+  state: string
+  /** PKCE verifier retained until the provider callback. */
+  codeVerifier: string
+  /** Unix epoch milliseconds after which the attempt is invalid. */
+  expiresAt: number
+  /** Single-use attempt lifecycle state. */
+  status: 'pending' | 'authorized' | 'used'
+  /** Public GitHub identity present only after callback authorization. */
+  identity?: GitHubIdentity
+}
+
+/** GitHub public identity retained after the provider token is discarded. */
+export interface GitHubIdentity {
+  /** Immutable numeric GitHub user id. */
+  providerSubject: number
+  /** Current public GitHub login. */
+  login: string
+  /** Current public GitHub avatar URL. */
+  avatarUrl: string
+}
+
+/** Atomic result of consuming an authorized Login Attempt. */
+export interface CreatedSession {
+  /** Newly created session. */
+  session: SessionRecord
+  /** Platform Account selected or created for the GitHub identity. */
+  account: AccountRecord
+  /** Earlier session replaced for the same installation, when present. */
+  replacedSessionId?: AccountSessionId
+}
+
+/** Durable proof-of-possession Account Session state. */
+export interface SessionRecord {
+  /** Opaque Account Session id. */
+  id: AccountSessionId
+  /** Provider identity namespace that owns the session. */
+  identityNamespace: string
+  /** Platform Account authorized by the session. */
+  accountId: PlatformAccountId
+  /** Stable id of the authorized installation. */
+  installationId: InstallationId
+  /** Desktop or Mobile installation class. */
+  installationKind: InstallationKind
+  /** Installation P-256 public key. */
+  publicKey: JsonWebKey
+  /** Monotonic refresh-token generation. */
+  revision: number
+  /** Whether the session still authorizes requests. */
+  active: boolean
+  /** Hash of the current rotating refresh token. */
+  refreshHash: string
+  /** Unix epoch milliseconds after which refresh is forbidden. */
+  refreshExpiresAt: number
+}
+
+/** Environment-scoped durable Platform Account record. */
+export interface AccountRecord extends PlatformAccountView {
+  /** Provider identity namespace that owns the account. */
+  identityNamespace: string
+}
+```
+
+Depends on: [`AccountProofJti`](../packages/platform/platform-account/src/index.ts) · [`AccountSessionId`](subsystems/platform-account.md) · [`InstallationId`](subsystems/platform-account.md) · [`InstallationKind`](../packages/platform/platform-account/src/index.ts) · [`LoginAttemptId`](subsystems/platform-account.md) · [`PlatformAccountId`](../packages/platform/platform-account/src/index.ts) · [`PlatformAccountView`](subsystems/platform-account.md) · [`PlatformEnvironment`](../packages/platform/platform-account/src/index.ts) · [`SelectedPlatformEnvironment`](../packages/platform/platform-account/src/index.ts)
+
+Source: [`packages/platform/platform-account-core/src/index.ts:444`](../packages/platform/platform-account-core/src/index.ts)
+
+<a id="deepseek-aidsh-platform-account-http"></a>
+
+## `@deepseek-ai/dsh-platform-account-http`
+
+Requires: `platformAccount` · `webServer`
+
+```ts config-catalog
+/** HTTP consumer configuration. */
+export interface Config {
+  /** Selected Platform environment origin allowed to call Account routes. */
+  origin: string
+}
+```
+
+Source: [`packages/platform/platform-account-http/src/index.ts:22`](../packages/platform/platform-account-http/src/index.ts)
+
 <a id="deepseek-aidsh-pwsh-local"></a>
 
 ## `@deepseek-ai/dsh-pwsh-local`
@@ -3104,6 +3282,7 @@ Abstract service classes — a deployment loads a concrete implementation packag
 - `@deepseek-ai/dsh-fs` — abstract `FileSystem` ([`packages/fs/fs/src/index.ts`](../packages/fs/fs/src/index.ts))
 - `@deepseek-ai/dsh-host-directory-picker` — abstract `DirectoryPicker` ([`packages/host/directory-picker/src/index.ts`](../packages/host/directory-picker/src/index.ts))
 - `@deepseek-ai/dsh-jobs` — abstract `JobRegistry` ([`packages/jobs/jobs/src/index.ts`](../packages/jobs/jobs/src/index.ts))
+- `@deepseek-ai/dsh-platform-account` — abstract `AccountService` ([`packages/platform/platform-account/src/index.ts`](../packages/platform/platform-account/src/index.ts))
 - `@deepseek-ai/dsh-sandbox` — abstract `SandboxProvider` ([`packages/sandbox/sandbox/src/index.ts`](../packages/sandbox/sandbox/src/index.ts))
 - `@deepseek-ai/dsh-session-persistence` — abstract `SessionPersistence` ([`packages/session/session-persistence/src/index.ts`](../packages/session/session-persistence/src/index.ts))
 - `@deepseek-ai/dsh-session-query` — abstract `SessionQueryEngine` ([`packages/session-query/session-query/src/index.ts`](../packages/session-query/session-query/src/index.ts))
@@ -3139,6 +3318,7 @@ Imported as libraries by other packages; a `cordis.yml` cannot load them.
 - `@deepseek-ai/dsh-loader-smoke` ([`packages/test-support/loader-smoke/src/index.ts`](../packages/test-support/loader-smoke/src/index.ts))
 - `@deepseek-ai/dsh-native-command` ([`packages/util/native-command/src/index.ts`](../packages/util/native-command/src/index.ts))
 - `@deepseek-ai/dsh-output-retention` ([`packages/util/output-retention/src/index.ts`](../packages/util/output-retention/src/index.ts))
+- `@deepseek-ai/dsh-platform-account-client` ([`packages/platform/platform-account-client/src/index.ts`](../packages/platform/platform-account-client/src/index.ts))
 - `@deepseek-ai/dsh-sandbox-windows-acl` ([`packages/sandbox/sandbox-windows-acl/src/index.ts`](../packages/sandbox/sandbox-windows-acl/src/index.ts))
 - `@deepseek-ai/dsh-scope` ([`packages/core/scope/src/index.ts`](../packages/core/scope/src/index.ts))
 - `@deepseek-ai/dsh-sdk-client` ([`packages/sdk/client/src/index.ts`](../packages/sdk/client/src/index.ts))

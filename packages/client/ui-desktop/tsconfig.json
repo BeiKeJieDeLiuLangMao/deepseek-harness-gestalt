@@ -24,7 +24,13 @@
       "path": "../ui-sidebar"
     },
     {
+      "path": "../ui-settings"
+    },
+    {
       "path": "../ui-slots"
+    },
+    {
+      "path": "../../platform/platform-account"
     },
     {
       "path": "../../runtime-diagnostics/invariants"

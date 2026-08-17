@@ -15,4 +15,13 @@ contextBridge.exposeInMainWorld('dshDesktop', {
   windowMinimize: () => { ipcRenderer.send('window:minimize') },
   windowMaximize: () => { ipcRenderer.send('window:maximize') },
   windowClose: () => { ipcRenderer.send('window:close') },
+  accountGetSnapshot: () => ipcRenderer.invoke('account:getSnapshot'),
+  accountAcceptPrivacy: () => ipcRenderer.invoke('account:acceptPrivacy'),
+  accountBeginLogin: () => ipcRenderer.invoke('account:beginLogin'),
+  accountSignOut: () => ipcRenderer.invoke('account:signOut'),
+  onAccountSnapshot: (listener) => {
+    const wrapped = (_event, snapshot) => { listener(snapshot) }
+    ipcRenderer.on('account:snapshot-changed', wrapped)
+    return () => { ipcRenderer.removeListener('account:snapshot-changed', wrapped) }
+  },
 })

@@ -42,6 +42,7 @@ packages/    @deepseek-ai/dsh-<pkg> workspaces at packages/<group>/<pkg>/
   identity/    anonymous identity
   settings/    user-settings capability + file provider
   credentials/ credential-reference capability + env/.env provider
+  platform/    identity/sessions
   acp/         automation-only Agent Client Protocol server
   interaction/ approval/interaction capabilities, permission, commands, ask-user
   boot/        shared app-bin glue

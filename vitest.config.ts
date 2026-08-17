@@ -194,6 +194,12 @@ export default defineConfig({
         // exemption while gating the newly stateful Host half and vocabulary.
         'packages/client/ui-conversation/src/client/*',
         'packages/client/ui-conversation/src/invariant.ts',
+        // Self-executing package companions are exercised by the source and
+        // built invariant gates; lifecycle behavior remains coverage-gated.
+        'packages/platform/platform-account/src/invariant.ts',
+        'packages/platform/platform-account-core/src/invariant.ts',
+        'packages/platform/platform-account-client/src/invariant.ts',
+        'packages/platform/platform-account-http/src/invariant.ts',
         'packages/client/ui-primitives/src/DisclosureRow.tsx',
         'packages/client/ui-tool/src/*',
         'packages/client/ui-slots/src/*',

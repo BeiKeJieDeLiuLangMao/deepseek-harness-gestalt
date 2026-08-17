@@ -25,6 +25,11 @@ function bridge(platform: NodeJS.Platform): DesktopBridge {
     windowMinimize: vi.fn(),
     windowMaximize: vi.fn(),
     windowClose: vi.fn(),
+    accountGetSnapshot: vi.fn().mockResolvedValue({ status: 'unavailable', privacyAccepted: false }),
+    accountAcceptPrivacy: vi.fn(),
+    accountBeginLogin: vi.fn(),
+    accountSignOut: vi.fn(),
+    onAccountSnapshot: () => () => {},
   }
 }
 
