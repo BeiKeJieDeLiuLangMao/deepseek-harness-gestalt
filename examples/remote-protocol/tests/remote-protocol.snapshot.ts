@@ -2,6 +2,7 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { LOADER_SMOKE_TEST_TIMEOUT_MS, runLoaderSmoke } from '@deepseek-ai/dsh-loader-smoke'
 import {
+  createCompanionNegotiationChannel,
   createCompanionVersionOffer,
   decodeCompanionMessage,
   decodeRelayMessage,
@@ -43,6 +44,7 @@ describe('Remote Protocol keyless assembled path', () => {
 
   it('carries the largest legal Companion message through harness AES-GCM and Relay framing', () => {
     const negotiated = negotiateCompanionProtocol(
+      createCompanionNegotiationChannel(),
       createCompanionVersionOffer('mobile'),
       createCompanionVersionOffer('desktop'),
     )

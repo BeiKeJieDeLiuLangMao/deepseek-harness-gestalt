@@ -1,6 +1,7 @@
 import { createCipheriv, createDecipheriv } from 'node:crypto'
-import { Context } from '@deepseek-ai/cordis'
+import type { Context } from '@deepseek-ai/cordis'
 import {
+  createCompanionNegotiationChannel,
   createCompanionVersionOffer,
   decodeCompanionMessage,
   decodeCompanionVersionOffer,
@@ -32,6 +33,8 @@ export function apply(_ctx: Context): void {
   const desktopAttachment = parseRelayAttachmentId('desktop-keyless')
   const mobileOffer = createCompanionVersionOffer('mobile')
   const desktopOffer = createCompanionVersionOffer('desktop')
+  const mobileChannel = createCompanionNegotiationChannel()
+  const desktopChannel = createCompanionNegotiationChannel()
   const mobileOfferAtDesktop = decodeCompanionVersionOffer(cipher.open(forward(
     routeId,
     mobileAttachment,
@@ -44,8 +47,8 @@ export function apply(_ctx: Context): void {
     mobileAttachment,
     cipher.seal(encodeCompanionVersionOffer(desktopOffer)),
   )))
-  const mobileProtocol = negotiateCompanionProtocol(mobileOffer, desktopOfferAtMobile)
-  const desktopProtocol = negotiateCompanionProtocol(mobileOfferAtDesktop, desktopOffer)
+  const mobileProtocol = negotiateCompanionProtocol(mobileChannel, mobileOffer, desktopOfferAtMobile)
+  const desktopProtocol = negotiateCompanionProtocol(desktopChannel, mobileOfferAtDesktop, desktopOffer)
   console.log(`COMPANION version=${String(mobileProtocol.major)} security=preserved`)
 
   const operation = {
@@ -97,6 +100,7 @@ export function apply(_ctx: Context): void {
   let applicationPlaintextSent = false
   try {
     negotiateCompanionProtocol(
+      mobileChannel,
       createCompanionVersionOffer('mobile', [1]),
       createCompanionVersionOffer('desktop', [2]),
     )

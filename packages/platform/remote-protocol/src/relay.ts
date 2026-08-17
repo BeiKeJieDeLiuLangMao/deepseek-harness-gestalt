@@ -1,4 +1,9 @@
-import { decodeProtocolJson, encodeProtocolJson } from './boundary.ts'
+import {
+  decodeProtocolBase64Url,
+  decodeProtocolJson,
+  encodeProtocolBase64Url,
+  encodeProtocolJson,
+} from './boundary.ts'
 import { RemoteProtocolError } from './errors.ts'
 import { REMOTE_PROTOCOL_LIMITS } from './limits.ts'
 import type { RelayAttachmentId, RelayErrorCode, RelayMessage, RelayRouteId } from './types.ts'
@@ -37,7 +42,7 @@ export function encodeRelayMessage(message: RelayMessage): Uint8Array {
       if (message.ciphertext.byteLength > REMOTE_PROTOCOL_LIMITS.ciphertextBytes) {
         throw new RemoteProtocolError('REMOTE_PROTOCOL_LIMIT_EXCEEDED', 'Relay ciphertext exceeds its byte ceiling')
       }
-      return encode({ ...message, ciphertext: encodeBase64Url(message.ciphertext) })
+      return encode({ ...message, ciphertext: encodeProtocolBase64Url(message.ciphertext) })
     case 'error':
       return encode({ ...message })
     case 'heartbeat':
@@ -76,7 +81,11 @@ export function decodeRelayMessage(encoded: Uint8Array): RelayMessage {
           routeId: parseRelayRouteId(record.routeId),
           sourceAttachmentId: parseRelayAttachmentId(record.sourceAttachmentId),
           targetAttachmentId: parseRelayAttachmentId(record.targetAttachmentId),
-          ciphertext: decodeBase64Url(record.ciphertext),
+          ciphertext: decodeProtocolBase64Url(
+            record.ciphertext,
+            REMOTE_PROTOCOL_LIMITS.ciphertextBytes,
+            'Relay ciphertext',
+          ),
         }
       case 'heartbeat':
         exactKeys(record, ['type', 'transportVersion', 'attachmentId', 'sentAt'], 'Relay heartbeat message')
@@ -152,25 +161,6 @@ function exactKeys(record: Record<string, unknown>, keys: readonly string[], nam
   if (actual.length !== keys.length || actual.some(key => !keys.includes(key))) {
     invalid(`${name} contains unsupported fields`)
   }
-}
-
-function encodeBase64Url(bytes: Uint8Array): string {
-  let binary = ''
-  for (const byte of bytes) binary += String.fromCharCode(byte)
-  return btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/u, '')
-}
-
-function decodeBase64Url(value: unknown): Uint8Array {
-  if (typeof value !== 'string' || !/^[A-Za-z0-9_-]*$/u.test(value)) {
-    invalid('Relay ciphertext must be canonical base64url')
-  }
-  const padded = value.replaceAll('-', '+').replaceAll('_', '/') + '='.repeat((4 - value.length % 4) % 4)
-  const binary = atob(padded)
-  const decoded = Uint8Array.from(binary, character => character.charCodeAt(0))
-  if (decoded.byteLength > REMOTE_PROTOCOL_LIMITS.ciphertextBytes) {
-    throw new RemoteProtocolError('REMOTE_PROTOCOL_LIMIT_EXCEEDED', 'Relay ciphertext exceeds its byte ceiling')
-  }
-  return decoded
 }
 
 function encode(value: Record<string, unknown>): Uint8Array {

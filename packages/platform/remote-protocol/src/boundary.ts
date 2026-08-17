@@ -34,6 +34,41 @@ export function encodeProtocolJson(value: unknown, byteLimit: number, name: stri
   return encoded
 }
 
+/**
+ * Encode bytes to the one unpadded base64url spelling accepted by protocol parsers.
+ * @param bytes - binary wire value.
+ * @returns canonical unpadded base64url.
+ */
+export function encodeProtocolBase64Url(bytes: Uint8Array): string {
+  let binary = ''
+  for (const byte of bytes) binary += String.fromCharCode(byte)
+  return btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/u, '')
+}
+
+/**
+ * Decode canonical unpadded base64url and reject alternate spellings of the same bytes.
+ * @param value - untrusted encoded wire value.
+ * @param byteLimit - decoded byte ceiling.
+ * @param name - protocol subject used in stable diagnostics.
+ * @returns decoded bytes.
+ */
+export function decodeProtocolBase64Url(value: unknown, byteLimit: number, name: string): Uint8Array {
+  if (typeof value !== 'string' || !/^[A-Za-z0-9_-]*$/u.test(value)) {
+    invalid(`${name} must be canonical base64url`)
+  }
+  const padded = value.replaceAll('-', '+').replaceAll('_', '/') + '='.repeat((4 - value.length % 4) % 4)
+  let binary: string
+  try {
+    binary = atob(padded)
+  } catch {
+    invalid(`${name} must be canonical base64url`)
+  }
+  const decoded = Uint8Array.from(binary, character => character.charCodeAt(0))
+  if (encodeProtocolBase64Url(decoded) !== value) invalid(`${name} must be canonical base64url`)
+  if (decoded.byteLength > byteLimit) limit(`${name} exceeds its byte ceiling`)
+  return decoded
+}
+
 function validateEncodedValue(root: unknown, name: string): void {
   const pending: Array<{ value: unknown; depth: number }> = [{ value: root, depth: 0 }]
   let count = 0

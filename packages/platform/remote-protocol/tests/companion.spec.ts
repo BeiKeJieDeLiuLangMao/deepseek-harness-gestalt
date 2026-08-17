@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  createCompanionNegotiationChannel,
   createCompanionVersionOffer,
   decodeCompanionMessage,
   decodeCompanionVersionOffer,
@@ -15,10 +16,11 @@ import {
 
 describe('Encrypted Companion Protocol codec', () => {
   it('negotiates the current major before round-tripping an approved operation and Desktop-confirmed result', () => {
-    const negotiated = negotiateCompanionProtocol(
-      createCompanionVersionOffer('mobile', [2, 1]),
-      createCompanionVersionOffer('desktop', [2]),
+    const negotiated = negotiateFresh(
+      createCompanionVersionOffer('mobile', [1, 2]),
+      createCompanionVersionOffer('desktop', [1, 2]),
     )
+    expect(negotiated.major).toBe(2)
     expect(negotiated.major).toBe(2)
 
     const operationId = parseCompanionOperationId('operation-keyless')
@@ -53,7 +55,7 @@ describe('Encrypted Companion Protocol codec', () => {
     const desktop = decodeCompanionVersionOffer(encodeCompanionVersionOffer(
       createCompanionVersionOffer('desktop', [2, 1]),
     ))
-    expect(negotiateCompanionProtocol(mobile, desktop).major).toBe(1)
+    expect(negotiateFresh(mobile, desktop).major).toBe(1)
 
     const weakenedMobile = decodeCompanionVersionOffer(new TextEncoder().encode(JSON.stringify({
       endpoint: 'mobile',
@@ -62,7 +64,7 @@ describe('Encrypted Companion Protocol codec', () => {
         capabilities: ['authenticated-encryption', 'pairing-key-separation'],
       }],
     })))
-    expect(() => negotiateCompanionProtocol(weakenedMobile, desktop)).toThrow(
+    expect(() => negotiateFresh(weakenedMobile, desktop)).toThrow(
       expect.objectContaining<Partial<RemoteProtocolError>>({
         code: 'COMPANION_SECURITY_CAPABILITY_MISSING',
         updateEndpoint: 'mobile',
@@ -86,13 +88,13 @@ describe('Encrypted Companion Protocol codec', () => {
     }))
     const desktop = createCompanionVersionOffer('desktop', [2, 1])
 
-    expect(negotiateCompanionProtocol(mobile, desktop).major).toBe(1)
+    expect(negotiateFresh(mobile, desktop).major).toBe(1)
   })
 
   it('identifies the stale endpoint and exposes no application encoder when majors do not overlap', () => {
     const mobile = createCompanionVersionOffer('mobile', [1])
     const desktop = createCompanionVersionOffer('desktop', [2])
-    expect(() => negotiateCompanionProtocol(mobile, desktop)).toThrow(
+    expect(() => negotiateFresh(mobile, desktop)).toThrow(
       expect.objectContaining<Partial<RemoteProtocolError>>({
         code: 'COMPANION_UPDATE_REQUIRED',
         updateEndpoint: 'mobile',
@@ -120,8 +122,68 @@ describe('Encrypted Companion Protocol codec', () => {
     }
   })
 
+  it('invalidates only the renegotiated channel capability before evaluating new offers', () => {
+    const firstChannel = createCompanionNegotiationChannel()
+    const secondChannel = createCompanionNegotiationChannel()
+    const firstProtocol = negotiateCompanionProtocol(
+      firstChannel,
+      createCompanionVersionOffer('mobile'),
+      createCompanionVersionOffer('desktop'),
+    )
+    const secondProtocol = negotiateCompanionProtocol(
+      secondChannel,
+      createCompanionVersionOffer('mobile'),
+      createCompanionVersionOffer('desktop'),
+    )
+    const operation = {
+      type: 'operation' as const,
+      operation: {
+        type: 'submit-prompt' as const,
+        operationId: parseCompanionOperationId('operation-channel'),
+        sessionId: parseCompanionSessionId('session-channel'),
+        text: 'channel lifetime',
+      },
+    }
+
+    expect(() => negotiateCompanionProtocol(
+      firstChannel,
+      createCompanionVersionOffer('mobile', [1]),
+      createCompanionVersionOffer('desktop', [2]),
+    )).toThrow(expect.objectContaining<Partial<RemoteProtocolError>>({ code: 'COMPANION_UPDATE_REQUIRED' }))
+    expect(() => encodeCompanionMessage(firstProtocol, operation)).toThrow(
+      expect.objectContaining<Partial<RemoteProtocolError>>({ code: 'COMPANION_VERSION_NOT_NEGOTIATED' }),
+    )
+    expect(decodeCompanionMessage(
+      secondProtocol,
+      encodeCompanionMessage(secondProtocol, operation),
+    )).toEqual(operation)
+
+    const renewedProtocol = negotiateCompanionProtocol(
+      firstChannel,
+      createCompanionVersionOffer('mobile'),
+      createCompanionVersionOffer('desktop'),
+    )
+    expect(() => encodeCompanionMessage(firstProtocol, operation)).toThrow(
+      expect.objectContaining<Partial<RemoteProtocolError>>({ code: 'COMPANION_VERSION_NOT_NEGOTIATED' }),
+    )
+    expect(decodeCompanionMessage(
+      renewedProtocol,
+      encodeCompanionMessage(renewedProtocol, operation),
+    )).toEqual(operation)
+  })
+
+  it('rejects structurally forged negotiation channels', () => {
+    expect(() => negotiateCompanionProtocol(
+      { type: 'companion-negotiation-channel' },
+      createCompanionVersionOffer('mobile'),
+      createCompanionVersionOffer('desktop'),
+    )).toThrow(expect.objectContaining<Partial<RemoteProtocolError>>({
+      code: 'COMPANION_VERSION_NOT_NEGOTIATED',
+    }))
+  })
+
   it('round-trips an approved transcript projection and enforces its page ceiling', () => {
-    const negotiated = negotiateCompanionProtocol(
+    const negotiated = negotiateFresh(
       createCompanionVersionOffer('mobile'),
       createCompanionVersionOffer('desktop'),
     )
@@ -162,7 +224,7 @@ describe('Encrypted Companion Protocol codec', () => {
   })
 
   it('bounds transcript pages at 50 events or 48 KiB of encoded wire bytes', () => {
-    const negotiated = negotiateCompanionProtocol(
+    const negotiated = negotiateFresh(
       createCompanionVersionOffer('mobile'),
       createCompanionVersionOffer('desktop'),
     )
@@ -181,7 +243,21 @@ describe('Encrypted Companion Protocol codec', () => {
       expect.objectContaining<Partial<RemoteProtocolError>>({ code: 'REMOTE_PROTOCOL_LIMIT_EXCEEDED' }),
     )
 
+    const oneByteOverflow = transcriptPageWithEncodedBytes(negotiated, 1, (48 * 1_024) + 1)
+    const oneByteOverflowWire = json({ applicationVersion: 2, ...oneByteOverflow })
+    expect(oneByteOverflowWire).toHaveLength((48 * 1_024) + 1)
+    expect(() => encodeCompanionMessage(negotiated, oneByteOverflow)).toThrow(
+      expect.objectContaining<Partial<RemoteProtocolError>>({ code: 'REMOTE_PROTOCOL_LIMIT_EXCEEDED' }),
+    )
+    expect(() => decodeCompanionMessage(negotiated, oneByteOverflowWire)).toThrow(
+      expect.objectContaining<Partial<RemoteProtocolError>>({ code: 'REMOTE_PROTOCOL_LIMIT_EXCEEDED' }),
+    )
+
     const multibyteBase = transcriptPageWithEncodedBytes(negotiated, 1)
+    expect(decodeCompanionMessage(
+      negotiated,
+      encodeCompanionMessage(negotiated, multibyteBase),
+    )).toEqual(multibyteBase)
     const baseBytes = encodeCompanionMessage(negotiated, multibyteBase).byteLength
     const firstEntry = multibyteBase.projection.entries[0]
     if (firstEntry === undefined) throw new Error('Multibyte transcript fixture requires one entry')
@@ -241,11 +317,11 @@ describe('Encrypted Companion Protocol codec', () => {
   })
 
   it('rejects wrong negotiation roles and identifies either stale endpoint', () => {
-    expect(() => negotiateCompanionProtocol(
+    expect(() => negotiateFresh(
       createCompanionVersionOffer('desktop'),
       createCompanionVersionOffer('desktop'),
     )).toThrow(expect.objectContaining<Partial<RemoteProtocolError>>({ code: 'REMOTE_PROTOCOL_INVALID_MESSAGE' }))
-    expect(() => negotiateCompanionProtocol(
+    expect(() => negotiateFresh(
       createCompanionVersionOffer('mobile'),
       createCompanionVersionOffer('mobile'),
     )).toThrow(expect.objectContaining<Partial<RemoteProtocolError>>({ code: 'REMOTE_PROTOCOL_INVALID_MESSAGE' }))
@@ -254,14 +330,14 @@ describe('Encrypted Companion Protocol codec', () => {
       endpoint: 'desktop',
       versions: [{ major: 2, capabilities: ['authenticated-encryption', 'pairing-key-separation'] }],
     }))
-    expect(() => negotiateCompanionProtocol(
+    expect(() => negotiateFresh(
       createCompanionVersionOffer('mobile', [2]),
       weakenedDesktop,
     )).toThrow(expect.objectContaining<Partial<RemoteProtocolError>>({
       code: 'COMPANION_SECURITY_CAPABILITY_MISSING', updateEndpoint: 'desktop',
     }))
 
-    expect(() => negotiateCompanionProtocol(
+    expect(() => negotiateFresh(
       createCompanionVersionOffer('mobile', [2]),
       createCompanionVersionOffer('desktop', [1]),
     )).toThrow(expect.objectContaining<Partial<RemoteProtocolError>>({
@@ -270,7 +346,7 @@ describe('Encrypted Companion Protocol codec', () => {
   })
 
   it('rejects unapproved application messages and fields', () => {
-    const negotiated = negotiateCompanionProtocol(
+    const negotiated = negotiateFresh(
       createCompanionVersionOffer('mobile'),
       createCompanionVersionOffer('desktop'),
     )
@@ -323,19 +399,42 @@ describe('Encrypted Companion Protocol codec', () => {
   })
 
   it('enforces Companion message and encoded-value ceilings', () => {
-    const negotiated = negotiateCompanionProtocol(
+    const negotiated = negotiateFresh(
       createCompanionVersionOffer('mobile'),
       createCompanionVersionOffer('desktop'),
     )
-    expect(() => encodeCompanionMessage(negotiated, {
-      type: 'operation',
-      operation: {
-        type: 'submit-prompt',
-        operationId: parseCompanionOperationId('operation-large'),
-        sessionId: parseCompanionSessionId('session-large'),
-        text: 'x'.repeat(REMOTE_PROTOCOL_LIMITS.companionMessageBytes),
-      },
-    })).toThrow(expect.objectContaining<Partial<RemoteProtocolError>>({ code: 'REMOTE_PROTOCOL_LIMIT_EXCEEDED' }))
+    const exactLimit = companionOperationWithEncodedBytes(negotiated, REMOTE_PROTOCOL_LIMITS.companionMessageBytes)
+    const exactWire = encodeCompanionMessage(negotiated, exactLimit)
+    expect(exactWire).toHaveLength(60 * 1_024)
+    expect(decodeCompanionMessage(negotiated, exactWire)).toEqual(exactLimit)
+
+    const oneByteOverflow = companionOperationWithEncodedBytes(
+      negotiated,
+      REMOTE_PROTOCOL_LIMITS.companionMessageBytes + 1,
+    )
+    const oneByteOverflowWire = json({ applicationVersion: 2, ...oneByteOverflow })
+    expect(oneByteOverflowWire).toHaveLength((60 * 1_024) + 1)
+    expect(() => encodeCompanionMessage(negotiated, oneByteOverflow)).toThrow(
+      expect.objectContaining<Partial<RemoteProtocolError>>({ code: 'REMOTE_PROTOCOL_LIMIT_EXCEEDED' }),
+    )
+    expect(() => decodeCompanionMessage(negotiated, oneByteOverflowWire)).toThrow(
+      expect.objectContaining<Partial<RemoteProtocolError>>({ code: 'REMOTE_PROTOCOL_LIMIT_EXCEEDED' }),
+    )
+
+    const multibyteBase = companionOperationWithEncodedBytes(negotiated)
+    const multibyteBaseBytes = encodeCompanionMessage(negotiated, multibyteBase).byteLength
+    multibyteBase.operation.text = '界'.repeat(
+      Math.floor((REMOTE_PROTOCOL_LIMITS.companionMessageBytes - (multibyteBaseBytes - 1)) / 3) + 1,
+    )
+    const multibyteWire = json({ applicationVersion: 2, ...multibyteBase })
+    expect(multibyteWire.byteLength).toBeGreaterThan(REMOTE_PROTOCOL_LIMITS.companionMessageBytes)
+    expect(multibyteBase.operation.text.length).toBeLessThan(REMOTE_PROTOCOL_LIMITS.companionMessageBytes)
+    expect(() => encodeCompanionMessage(negotiated, multibyteBase)).toThrow(
+      expect.objectContaining<Partial<RemoteProtocolError>>({ code: 'REMOTE_PROTOCOL_LIMIT_EXCEEDED' }),
+    )
+    expect(() => decodeCompanionMessage(negotiated, multibyteWire)).toThrow(
+      expect.objectContaining<Partial<RemoteProtocolError>>({ code: 'REMOTE_PROTOCOL_LIMIT_EXCEEDED' }),
+    )
 
     const manyValues = Array.from({ length: 17 }, () => Array.from({ length: 256 }, () => null))
     expect(() => decodeCompanionMessage(negotiated, json({
@@ -354,6 +453,13 @@ describe('Encrypted Companion Protocol codec', () => {
 
 function json(value: unknown): Uint8Array {
   return new TextEncoder().encode(JSON.stringify(value))
+}
+
+function negotiateFresh(
+  mobile: Parameters<typeof negotiateCompanionProtocol>[1],
+  desktop: Parameters<typeof negotiateCompanionProtocol>[2],
+): ReturnType<typeof negotiateCompanionProtocol> {
+  return negotiateCompanionProtocol(createCompanionNegotiationChannel(), mobile, desktop)
 }
 
 function transcriptPageWithEncodedBytes(
@@ -380,4 +486,24 @@ function transcriptPageWithEncodedBytes(
   if (last === undefined || baseBytes > targetBytes) throw new Error('Transcript fixture cannot reach target size')
   last.text = 'x'.repeat(targetBytes - baseBytes)
   return projection
+}
+
+function companionOperationWithEncodedBytes(
+  negotiated: ReturnType<typeof negotiateCompanionProtocol>,
+  targetBytes?: number,
+) {
+  const operation = {
+    type: 'operation' as const,
+    operation: {
+      type: 'submit-prompt' as const,
+      operationId: parseCompanionOperationId('operation-limit'),
+      sessionId: parseCompanionSessionId('session-limit'),
+      text: 'x',
+    },
+  }
+  if (targetBytes === undefined) return operation
+  const baseBytes = encodeCompanionMessage(negotiated, operation).byteLength
+  if (baseBytes > targetBytes) throw new Error('Companion fixture cannot reach target size')
+  operation.operation.text = 'x'.repeat(targetBytes - baseBytes + 1)
+  return operation
 }

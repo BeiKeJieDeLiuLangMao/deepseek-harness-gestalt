@@ -14,9 +14,9 @@ Mobile 与 Desktop 独立发布，而 Platform Relay 必须在不获得 Harness 
 
 Relay Transport 版本 1 只接受路由 attachment、不透明密文转发、心跳、撤销、transport 错误与 transport 版本协商。每个解码对象都使用精确字段集。Encrypted Companion 只接受显式 projection、operation、result union 与应用版本 offer。协议原生 Companion id 在本包之外适配到 Desktop authority，而不会在 wire 上复用携带 authority 的 Harness id。
 
-只有双方 offer 在 Companion major 2 或紧邻的前一 major 1 上都包含已认证加密、配对密钥隔离和重放保护时，才会完成协商。协商选择最高的安全共同 major；若较新的共同 major 不安全，而紧邻前一 major 仍安全，则跳过前者。安全交集成功后会创建应用 encode/decode 必须持有的、进程内不可伪造 token。不存在安全交集时，会在应用明文可编码前抛出稳定错误，指出必须更新 Mobile 还是 Desktop endpoint。
+只有双方 offer 在 Companion major 2 或紧邻的前一 major 1 上都包含已认证加密、配对密钥隔离和重放保护时，才会完成协商。协商不受 offer 数组顺序影响，始终选择最高的安全共同 major；若较新的共同 major 不安全，而紧邻前一 major 仍安全，则跳过前者。每条逻辑 endpoint 连接拥有一个 negotiation channel，且至多有一个应用 encode/decode 必须持有的、进程内不可伪造 token。开始协商时会在求值 offer 前让该 channel 的此前 token 失效；失败后该 channel 保持未激活，且无关 channel 不会被撤销。不存在安全交集时，会在应用明文可编码前抛出稳定错误，指出必须更新 Mobile 还是 Desktop endpoint。
 
-Codec 会限制完整消息字节、密文字节、parser 深度、container 值数、编码值总数、字符串字节和 transcript page 条数。加密前 Companion 应用数据限制为 60 KiB，从而在固定 65,535 字节 Noise 消息上限内为加密开销保留 4,095 字节。完整编码 transcript-page 消息限制为 50 条或 48 KiB UTF-8 wire 字节。它们在 dispatch 前拒绝畸形 UTF-8/JSON、不安全数值、未知 discriminant 与额外字段。
+Codec 会限制完整消息字节、密文字节、parser 深度、container 值数、编码值总数、字符串字节和 transcript page 条数。Base64url wire 字段必须使用规范的无填充拼写。加密前 Companion 应用数据限制为 60 KiB，从而在固定 65,535 字节 Noise 消息上限内为加密开销保留 4,095 字节。完整编码 transcript-page 消息限制为 50 条或 48 KiB UTF-8 wire 字节。它们在 dispatch 前拒绝畸形 UTF-8/JSON、不安全数值、未知 discriminant 与额外字段。
 
 由 Loader assembled 的无密钥 example 使用 harness-local AES-GCM adapter 加密 Mobile 与 Desktop payload，并且只让密文通过 Relay codec。该 adapter 证明装配与明文隔离，不证明产品密码实现。[Snow 跨运行时决策](2026-08-17-cross-runtime-noise-security-path.md)仍只属于 proof，产品集成或 release 仍须完成其安全入口记录的独立评审。Platform Account 与 Installation authorization 继续由[账号决策](../feature/2026-08-17-platform-account-installation-sessions.md)拥有。
 

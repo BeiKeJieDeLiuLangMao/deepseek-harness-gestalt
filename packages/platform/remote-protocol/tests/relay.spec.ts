@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   decodeRelayMessage,
   encodeRelayMessage,
@@ -99,6 +99,20 @@ describe('Relay Transport Protocol codec', () => {
       expect.objectContaining<Partial<RemoteProtocolError>>({ code: 'REMOTE_PROTOCOL_LIMIT_EXCEEDED' }),
     )
 
+    const exactCiphertext = Uint8Array.from(
+      { length: REMOTE_PROTOCOL_LIMITS.ciphertextBytes },
+      (_, index) => index % 256,
+    )
+    const exactCiphertextMessage = {
+      type: 'ciphertext' as const,
+      transportVersion: 1 as const,
+      routeId: parseRelayRouteId('route'),
+      sourceAttachmentId: parseRelayAttachmentId('mobile'),
+      targetAttachmentId: parseRelayAttachmentId('desktop'),
+      ciphertext: exactCiphertext,
+    }
+    expect(decodeRelayMessage(encodeRelayMessage(exactCiphertextMessage))).toEqual(exactCiphertextMessage)
+
     expect(() => encodeRelayMessage({
       type: 'ciphertext', transportVersion: 1,
       routeId: parseRelayRouteId('route'),
@@ -145,6 +159,34 @@ describe('Relay Transport Protocol codec', () => {
     }))).toThrow(
       expect.objectContaining<Partial<RemoteProtocolError>>({ code: 'REMOTE_PROTOCOL_INVALID_MESSAGE' }),
     )
+  })
+
+  it('rejects non-canonical base64url aliases for opaque ciphertext', () => {
+    const frame = {
+      type: 'ciphertext', transportVersion: 1, routeId: 'route',
+      sourceAttachmentId: 'mobile', targetAttachmentId: 'desktop',
+    }
+    expect(() => decodeRelayMessage(json({ ...frame, ciphertext: 'AB' }))).toThrow(
+      expect.objectContaining<Partial<RemoteProtocolError>>({ code: 'REMOTE_PROTOCOL_INVALID_MESSAGE' }),
+    )
+    expect(decodeRelayMessage(json({ ...frame, ciphertext: 'AA' }))).toEqual({
+      ...frame,
+      routeId: 'route',
+      sourceAttachmentId: 'mobile',
+      targetAttachmentId: 'desktop',
+      ciphertext: Uint8Array.of(0),
+    })
+
+    const decodeFailure = vi.spyOn(Uint8Array, 'from').mockImplementationOnce(() => {
+      throw new Error('base64 decoder unavailable')
+    })
+    try {
+      expect(() => decodeRelayMessage(json({ ...frame, ciphertext: 'AA' }))).toThrow(
+        expect.objectContaining<Partial<RemoteProtocolError>>({ code: 'REMOTE_PROTOCOL_INVALID_MESSAGE' }),
+      )
+    } finally {
+      decodeFailure.mockRestore()
+    }
   })
 
   it('bounds every encoded JSON value before Relay dispatch', () => {

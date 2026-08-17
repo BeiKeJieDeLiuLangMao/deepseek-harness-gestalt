@@ -10,7 +10,7 @@ Version 1 exposes only route attachment, opaque ciphertext forwarding, heartbeat
 
 ## Encrypted Companion Protocol
 
-Companion majors 2 and 1 are the current and immediately preceding application versions. Both endpoints must advertise authenticated encryption, pairing-key separation, and replay protection at the selected major. Negotiation selects the highest safe shared major, so an unsafe shared major can fall back only to a safe immediately preceding major. Successful negotiation returns the only token accepted by the application encoder. No safe version overlap fails with an endpoint-specific update requirement before application plaintext can be encoded.
+Companion majors 2 and 1 are the current and immediately preceding application versions. Both endpoints must advertise authenticated encryption, pairing-key separation, and replay protection at the selected major. Negotiation selects the highest safe shared major regardless of offer-array order, so an unsafe shared major can fall back only to a safe immediately preceding major. Each logical endpoint connection owns a negotiation channel. Starting a negotiation on that channel invalidates its prior application-codec token before the offers are evaluated; a failed attempt leaves the channel inactive, while other channels remain valid. No safe version overlap fails with an endpoint-specific update requirement before application plaintext can be encoded.
 
 The implemented catalog contains a bounded transcript-page projection, a prompt-submission operation, and a Desktop-confirmed result. Every identifier is branded by this protocol rather than imported from a Harness domain package. Unsupported operations and projection fields fail during decoding.
 
@@ -28,7 +28,7 @@ The implemented catalog contains a bounded transcript-page projection, a prompt-
 | Complete encoded transcript-page message | 49,152 bytes (48 KiB) |
 | Transcript page | 50 entries |
 
-`RemoteProtocolError` exposes stable codes for invalid input, exceeded limits, incompatible Relay versions, missing Companion security capabilities, required endpoint updates, and missing negotiation. Diagnostics never contain application plaintext. The 60 KiB application ceiling leaves 4,095 bytes inside the fixed 65,535-byte Noise message ceiling for encryption overhead; the Relay frame ceiling also covers base64url and transport metadata at that maximum.
+`RemoteProtocolError` exposes stable codes for invalid input, exceeded limits, incompatible Relay versions, missing Companion security capabilities, required endpoint updates, and missing negotiation. Diagnostics never contain application plaintext. Binary wire values use one canonical unpadded base64url spelling; aliases that decode to the same bytes are rejected. The 60 KiB application ceiling leaves 4,095 bytes inside the fixed 65,535-byte Noise message ceiling for encryption overhead; the Relay frame ceiling also covers base64url and transport metadata at that maximum.
 
 The package does not encrypt. Mobile and Desktop supply an independently reviewed end-to-end channel, then encrypt version offers and encoded Companion messages before Relay forwarding. The [keyless assembled example](../../../examples/remote-protocol/start.ts) uses an example-only AES-GCM adapter to prove the composition and ciphertext-only Relay view; it is not a product cryptographic implementation or security-review result. Product integration remains subject to the [independent Noise review](../../../docs/security/noise-cross-runtime-proof.md).
 

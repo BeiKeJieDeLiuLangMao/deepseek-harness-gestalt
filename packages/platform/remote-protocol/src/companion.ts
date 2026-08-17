@@ -31,13 +31,34 @@ export interface NegotiatedCompanionProtocol {
   readonly major: 1 | 2
 }
 
-const negotiatedProtocols = new WeakSet<object>()
+/** Logical endpoint connection whose latest negotiation owns one active codec capability. */
+export interface CompanionNegotiationChannel {
+  /** Protocol-native tag; ownership is validated against process-local state. */
+  readonly type: 'companion-negotiation-channel'
+}
+
+interface CompanionNegotiationState {
+  active: NegotiatedCompanionProtocol | undefined
+}
+
+const negotiationChannels = new WeakMap<object, CompanionNegotiationState>()
+const protocolOwners = new WeakMap<object, CompanionNegotiationChannel>()
+
+/**
+ * Create isolated negotiation state for one logical endpoint connection.
+ * @returns channel whose next negotiation invalidates only its previous codec capability.
+ */
+export function createCompanionNegotiationChannel(): CompanionNegotiationChannel {
+  const channel = Object.freeze({ type: 'companion-negotiation-channel' as const })
+  negotiationChannels.set(channel, { active: undefined })
+  return channel
+}
 
 /**
  * Build an endpoint offer for the current or immediately preceding Companion major.
  * @param endpoint - endpoint sending the offer.
- * @param majors - supported majors in preference order.
- * @returns offer whose majors retain every required security property.
+ * @param majors - supported majors; array order does not affect selection.
+ * @returns offer whose majors retain every required security property; negotiation selects the highest safe shared major.
  */
 export function createCompanionVersionOffer(
   endpoint: 'mobile' | 'desktop',
@@ -88,14 +109,22 @@ export function decodeCompanionVersionOffer(encoded: Uint8Array): CompanionVersi
 
 /**
  * Select the highest shared Companion major only after security capabilities intersect.
+ * The attempt first invalidates this channel's prior capability, including when the new offers fail closed.
+ * @param channel - logical endpoint connection that owns the returned capability.
  * @param mobile - Mobile endpoint offer.
  * @param desktop - Desktop endpoint offer.
  * @returns capability required to encode application plaintext.
  */
 export function negotiateCompanionProtocol(
+  channel: CompanionNegotiationChannel,
   mobile: CompanionVersionOffer,
   desktop: CompanionVersionOffer,
 ): NegotiatedCompanionProtocol {
+  const state = negotiationChannels.get(channel)
+  if (state === undefined) {
+    throw new RemoteProtocolError('COMPANION_VERSION_NOT_NEGOTIATED', 'Companion negotiation requires a process-owned channel')
+  }
+  state.active = undefined
   if (mobile.endpoint !== 'mobile' || desktop.endpoint !== 'desktop') {
     throw new RemoteProtocolError('REMOTE_PROTOCOL_INVALID_MESSAGE', 'Companion version offers use the wrong endpoints')
   }
@@ -113,7 +142,8 @@ export function negotiateCompanionProtocol(
       continue
     }
     const negotiated = Object.freeze({ major })
-    negotiatedProtocols.add(negotiated)
+    state.active = negotiated
+    protocolOwners.set(negotiated, channel)
     return negotiated
   }
   if (unsafeEndpoint !== undefined) {
@@ -293,7 +323,11 @@ function parseSecurityCapability(value: unknown): CompanionSecurityCapability {
 }
 
 function requireNegotiated(protocol: unknown): asserts protocol is NegotiatedCompanionProtocol {
-  if (typeof protocol !== 'object' || protocol === null || !negotiatedProtocols.has(protocol)) {
+  if (typeof protocol !== 'object' || protocol === null) {
+    throw new RemoteProtocolError('COMPANION_VERSION_NOT_NEGOTIATED', 'Companion application data requires successful negotiation')
+  }
+  const owner = protocolOwners.get(protocol)
+  if (owner === undefined || negotiationChannels.get(owner)?.active !== protocol) {
     throw new RemoteProtocolError('COMPANION_VERSION_NOT_NEGOTIATED', 'Companion application data requires successful negotiation')
   }
 }
