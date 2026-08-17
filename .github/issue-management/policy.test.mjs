@@ -221,6 +221,16 @@ test('rejects a malformed Priority integration setting before API access', async
   assert.deepEqual(fixture.requests, [])
 })
 
+test('rejects whitespace-only Priority configuration before API access', async (t) => {
+  const fixture = await preparePullRequestCli(t, { priorityField: '   ' })
+
+  await assert.rejects(fixture.run(), (error) => {
+    assert.match(error.stderr, /config\.priorityField 必须为非空字符串或 null/)
+    return true
+  })
+  assert.deepEqual(fixture.requests, [])
+})
+
 test('attempts every fake API resource cleanup when one disposer fails', async () => {
   const disposed = []
 

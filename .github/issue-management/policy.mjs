@@ -57,7 +57,7 @@ if (typeof config.projectOrganization !== 'string' || !config.projectOrganizatio
 }
 if (
   config.priorityField !== null &&
-  (typeof config.priorityField !== 'string' || !config.priorityField)
+  (typeof config.priorityField !== 'string' || !config.priorityField.trim())
 ) {
   throw new Error('config.priorityField 必须为非空字符串或 null')
 }
