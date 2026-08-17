@@ -74,7 +74,8 @@ describe('web e2e: text annotation becomes an ordinary model-visible message', (
       const selection = window.getSelection()
       selection?.removeAllRanges()
       selection?.addRange(range)
-      element.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))
+      // Keyboard, assistive technology, and pointer selection converge on this browser event.
+      document.dispatchEvent(new Event('selectionchange'))
     })
 
     const toolbar = page.getByRole('toolbar')

@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
-import type { CSSProperties, KeyboardEvent, MouseEvent, ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import type { CSSProperties, MouseEvent, ReactNode } from 'react'
 import { extractMarkdownPlainText } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TextAnchor, TextAnnotation, TextAnnotationId } from './model.ts'
 import { createTextAnchor, resolveTextAnchor } from './model.ts'
@@ -74,7 +74,7 @@ export function TextAnnotationTarget({ sourceId, source, annotations, add, t, ch
   }, [annotations, source])
   useEffect(() => () => { removeDraftHighlightOwner(highlightOwner.current) }, [])
 
-  const select = (): void => {
+  const select = useCallback((): void => {
     const container = root.current
     const selection = window.getSelection()
     if (container === null || selection === null || selection.isCollapsed || selection.rangeCount !== 1) return
@@ -99,23 +99,23 @@ export function TextAnnotationTarget({ sourceId, source, annotations, add, t, ch
       top: rect.bottom + 8,
     })
     setEditing(false)
-  }
+  }, [source, sourceId])
+
+  useEffect(() => {
+    document.addEventListener('selectionchange', select)
+    return () => { document.removeEventListener('selectionchange', select) }
+  }, [select])
 
   const style = pending === null ? undefined : {
     '--annotation-left': `${pending.left}px`,
     '--annotation-top': `${pending.top}px`,
   } as CSSProperties
   const keepSelection = (event: MouseEvent<HTMLButtonElement>): void => { event.preventDefault() }
-  const selectFromKeyboard = (event: KeyboardEvent<HTMLDivElement>): void => {
-    if (event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLButtonElement) return
-    select()
-  }
   return (
     <div
       ref={root}
       className={css.target}
       onMouseUp={select}
-      onKeyUp={selectFromKeyboard}
       data-annotation-source={sourceId}
     >
       {children}

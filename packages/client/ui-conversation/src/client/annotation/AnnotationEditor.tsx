@@ -17,6 +17,7 @@ export function AnnotationEditor({ initialNote = '', placeholder, saveLabel, onS
   const composing = useRef(false)
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>): void => {
     // keyCode 229 is the legacy IME-composition signal engines emit without isComposing.
+    // oxlint-disable-next-line typescript/no-deprecated
     const compositionEnter = composing.current || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229
     if (event.key !== 'Enter' || event.shiftKey || compositionEnter) return
     event.preventDefault()

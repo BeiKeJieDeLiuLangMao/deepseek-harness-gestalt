@@ -71,7 +71,7 @@ describe('text annotation mechanics', () => {
     const selection = window.getSelection()!
     selection.removeAllRanges()
     selection.addRange(range)
-    fireEvent.keyUp(view.container.querySelector('[data-annotation-source]')!, { key: 'ArrowRight', shiftKey: true })
+    fireEvent(document, new Event('selectionchange'))
 
     expect(view.getByRole('toolbar').textContent).toBe('Add annotationCopy')
     fireEvent.click(view.getByRole('button', { name: 'Add annotation' }))
