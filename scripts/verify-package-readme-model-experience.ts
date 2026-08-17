@@ -75,6 +75,7 @@ const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
   'packages/platform/platform-account-core': { kind: 'none', reason: 'Platform identity provider; Account state never enters a model request.' },
   'packages/platform/platform-account-http': { kind: 'none', reason: 'Platform identity HTTP consumer; Account state never enters a model request.' },
   'packages/platform/platform-account-client': { kind: 'none', reason: 'Desktop and Mobile identity client; Account state never enters a model request.' },
+  'packages/platform/remote-protocol': { kind: 'none', reason: 'Remote transport metadata and device origin never enter a model request.' },
   'packages/client/ui-message-feedback': { kind: 'none', reason: 'Browser-side controls over the message-feedback sidecar; ratings and notes never enter the Session log, model context, or telemetry.' },
   'packages/client/ui-tool': { kind: 'none', reason: 'Browser-side Tool presentation layer; renders logged calls without changing model context.' },
   'packages/client/ui-jobs': { kind: 'none', reason: 'Browser-side read-only projection of ctx.jobs records; dsh-tool-jobs owns the model-facing behavior.' },
