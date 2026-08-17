@@ -28,6 +28,10 @@ _Avoid_: backend (Gestalt's word for a different process), kernel
 The in-page control on the same sidebar-foot row as Settings, to the right of the gear, that drives Desktop Host update phases. It is not a Settings panel page and is not present in the browser-only web profile.
 _Avoid_: updater window, settings section (for this control)
 
+**Mobile Pairing Settings**:
+The Desktop-only `手机配对` Settings section that presents Platform Account state before Personal Pairing arrives. Desktop Host owns its system-browser authorization and protected installation key; the Web Host renders only bridge-projected state. The normal sidebar and Session Surface have no Account status.
+_Avoid_: Account Control, GitHub sidebar button, pairing window
+
 **Personal Release Channel**:
 The first public GitHub Releases feed, hosted on the current origin fork rather than `deepseek-ai/deepseek-harness`.
 _Avoid_: official DeepSeek release, upstream release

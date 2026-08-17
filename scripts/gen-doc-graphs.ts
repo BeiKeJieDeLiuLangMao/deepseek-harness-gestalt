@@ -230,6 +230,15 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Owns local per-assistant-message feedback, lifecycle and target validation, per-item compare-and-set, and the Host unary Remote contract without entering Session history or telemetry.',
   },
   {
+    key: 'platformAccount',
+    pkg: 'platform-account',
+    title: 'Platform Account identity seam',
+    mode: 'seam',
+    implementations: ['platform-account-core'],
+    consumers: ['platform-account-http', 'platform-account-client'],
+    note: 'Owns GitHub public identity and proof-of-possession installation sessions; HTTP and Desktop/Mobile clients complete signed polling without receiving provider credentials.',
+  },
+  {
     key: 'workspaceRegistry',
     pkg: 'workspace',
     title: 'Workspace entity registry',

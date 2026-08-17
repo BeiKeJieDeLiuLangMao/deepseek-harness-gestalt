@@ -12,6 +12,20 @@ export const zh = {
   'window.minimize': '最小化',
   'window.maximize': '最大化',
   'window.close': '关闭',
+  'account.title': 'Platform 账号',
+  'account.settingsNav': '手机配对',
+  'account.sectionDescription': '登录 Platform 账号，为后续个人配对建立安装身份。',
+  'account.close': '关闭',
+  'account.signIn': '使用 GitHub 登录',
+  'account.signOut': '退出当前安装',
+  'account.unavailable': '此安装尚未配置 Platform 账号。',
+  'account.currentInstallation': '此会话仅属于当前安装。退出不会删除个人配对。',
+  'account.finishBrowser': '请在系统浏览器中完成 GitHub 登录',
+  'account.polling': '此窗口会安全地等待登录结果。',
+  'account.privacyBadge': '隐私说明 / Privacy',
+  'account.noticeTitle': '授权前请确认数据保留规则',
+  'account.consent': '我已阅读中英文隐私说明，并理解首个版本不提供账号删除。',
+  'account.continueGitHub': '继续前往 GitHub',
 } as const
 
 /** English fallback for Desktop chrome copy. */
@@ -27,6 +41,20 @@ export const en = {
   'window.minimize': 'Minimize',
   'window.maximize': 'Maximize',
   'window.close': 'Close',
+  'account.title': 'Platform Account',
+  'account.settingsNav': 'Mobile pairing',
+  'account.sectionDescription': 'Sign in to Platform to establish this installation before Personal Pairing.',
+  'account.close': 'Close',
+  'account.signIn': 'Sign in with GitHub',
+  'account.signOut': 'Sign out this installation',
+  'account.unavailable': 'Platform Account is not configured for this installation.',
+  'account.currentInstallation': 'This session belongs only to this installation. Sign-out preserves Personal Pairings.',
+  'account.finishBrowser': 'Finish GitHub sign-in in your system browser',
+  'account.polling': 'This window will securely wait for the result.',
+  'account.privacyBadge': 'Privacy / 隐私说明',
+  'account.noticeTitle': 'Review data retention before authorization',
+  'account.consent': 'I have read both notices and understand the first version has no account deletion.',
+  'account.continueGitHub': 'Continue to GitHub',
 } as const
 
 /** Locale keys owned by Desktop chrome. */
