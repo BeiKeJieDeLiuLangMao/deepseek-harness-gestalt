@@ -3,7 +3,8 @@
   "projectNumber": 1,
   "projectTitle": "DSH Issue Management",
   "lifecycleActor": "dsh-issue-management",
-  "priorityField": "Priority",
+  "pullRequestReadAuthentication": "anonymous",
+  "priorityField": null,
   "allowUnassignedOwner": true,
   "statuses": [
     "Inbox",

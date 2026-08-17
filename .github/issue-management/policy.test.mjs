@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { copyFile, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -22,6 +22,7 @@ import {
 
 const execFileAsync = promisify(execFile)
 const policyEntrypoint = join(import.meta.dirname, 'policy.mjs')
+const policyConfig = join(import.meta.dirname, 'config.json')
 
 const runResourceCleanups = async (cleanups) => {
   const results = await Promise.allSettled(
@@ -41,6 +42,108 @@ const registerResourceCleanups = (t) => {
 
 const withDetails = (summary) =>
   `${summary}\n\n<details><summary>验收与细节</summary>待补充。</details>`
+
+const preparePullRequestCli = async (
+  t,
+  {
+    priorityField,
+    pullRequestReadAuthentication = 'token',
+    issueFieldStatus = 200,
+    pullStatus = 200,
+    token = 'test-token',
+  },
+) => {
+  const registerCleanup = registerResourceCleanups(t)
+  const requests = []
+  const requestDetails = []
+  const server = createServer(async (request, response) => {
+    requests.push(request.url)
+    requestDetails.push({
+      method: request.method,
+      path: request.url,
+      authorization: request.headers.authorization ?? null,
+    })
+    const send = (value, status = 200) => {
+      response.writeHead(status, { 'Content-Type': 'application/json' })
+      response.end(JSON.stringify(value))
+    }
+    if (request.url?.endsWith('/pulls/49')) {
+      send({
+        body: 'Fixes #49',
+        draft: false,
+        labels: [{ name: 'kind/bug-fix' }, { name: 'area/infra' }],
+        user: { type: 'User' },
+      }, pullStatus)
+      return
+    }
+    if (request.url?.endsWith('/pulls/49/requested_reviewers')) {
+      send({ users: [{ login: 'reviewer' }], teams: [] })
+      return
+    }
+    if (request.url?.endsWith('/pulls/49/reviews?per_page=100')) {
+      send([])
+      return
+    }
+    if (request.url?.endsWith('/issues/49')) {
+      send({
+        node_id: 'issue-id',
+        title: '为个人 tracker 显式关闭 Issue Priority 字段查询',
+        body: withDetails('修复个人 tracker 的 Priority 查询。'),
+        assignees: [],
+        labels: [],
+        type: null,
+        state: 'open',
+        state_reason: null,
+      })
+      return
+    }
+    if (request.url?.endsWith('/issues/49/issue-field-values?per_page=100')) {
+      send(issueFieldStatus === 200 ? [] : { message: 'Not Found' }, issueFieldStatus)
+      return
+    }
+    send({ message: 'Not Found' }, 404)
+  })
+  server.listen(0, '127.0.0.1')
+  await new Promise((resolve, reject) => {
+    server.once('listening', resolve)
+    server.once('error', reject)
+  })
+  registerCleanup(
+    () =>
+      new Promise((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()))
+      }),
+  )
+  const address = server.address()
+  assert.notEqual(address, null)
+  assert.equal(typeof address, 'object')
+
+  const directory = await mkdtemp(join(tmpdir(), 'dsh-issue-priority-policy-'))
+  registerCleanup(() => rm(directory, { recursive: true, force: true }))
+  const entrypoint = join(await realpath(directory), 'policy.mjs')
+  const eventPath = join(directory, 'pull-request.json')
+  const config = JSON.parse(await readFile(policyConfig, 'utf8'))
+  await copyFile(policyEntrypoint, entrypoint)
+  await writeFile(
+    join(directory, 'config.json'),
+    JSON.stringify({ ...config, priorityField, pullRequestReadAuthentication }),
+  )
+  await writeFile(eventPath, JSON.stringify({ pull_request: { number: 49 } }))
+
+  return {
+    requests,
+    requestDetails,
+    run: () =>
+      execFileAsync(process.execPath, [entrypoint, 'pr'], {
+        env: {
+          ...(token === null ? {} : { GH_TOKEN: token }),
+          GITHUB_API_URL: `http://127.0.0.1:${address.port}`,
+          GITHUB_EVENT_PATH: eventPath,
+          GITHUB_REPOSITORY: 'BeiKeJieDeLiuLangMao/deepseek-harness-gestalt',
+        },
+      }),
+  }
+}
 
 const legalIssue = {
   title: '完成议题管理校验',
@@ -94,6 +197,145 @@ test('routes policy requests to the repository from the workflow event', () => {
   )
 })
 
+test('skips Issue field requests when Priority integration is disabled', async (t) => {
+  const fixture = await preparePullRequestCli(t, { priorityField: null })
+
+  const result = await fixture.run()
+
+  assert.match(result.stdout, /Issue policy 通过。/)
+  assert.ok(
+    !fixture.requests.includes(
+      '/repos/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/issues/49/issue-field-values?per_page=100',
+    ),
+  )
+})
+
+test('uses anonymous authentication for every PR policy read', async (t) => {
+  const fixture = await preparePullRequestCli(t, {
+    priorityField: 'Priority',
+    pullRequestReadAuthentication: 'anonymous',
+  })
+
+  const result = await fixture.run()
+
+  assert.match(result.stdout, /Issue policy 通过。/)
+  assert.equal(fixture.requestDetails.length, 5)
+  for (const request of fixture.requestDetails) {
+    assert.equal(request.method, 'GET')
+    assert.equal(request.authorization, null)
+  }
+})
+
+test('uses bearer authentication for every token-mode PR policy read', async (t) => {
+  const fixture = await preparePullRequestCli(t, {
+    priorityField: 'Priority',
+    pullRequestReadAuthentication: 'token',
+  })
+
+  const result = await fixture.run()
+
+  assert.match(result.stdout, /Issue policy 通过。/)
+  assert.equal(fixture.requestDetails.length, 5)
+  for (const request of fixture.requestDetails) {
+    assert.equal(request.method, 'GET')
+    assert.equal(request.authorization, 'Bearer test-token')
+  }
+})
+
+test('rejects a missing token before token-mode PR policy API access', async (t) => {
+  const fixture = await preparePullRequestCli(t, {
+    priorityField: null,
+    pullRequestReadAuthentication: 'token',
+    token: null,
+  })
+
+  await assert.rejects(fixture.run(), (error) => {
+    assert.match(error.stderr, /GH_TOKEN 或 GITHUB_TOKEN 未设置/)
+    return true
+  })
+  assert.deepEqual(fixture.requests, [])
+})
+
+test('rejects invalid PR-read authentication modes before API access', async (t) => {
+  for (const pullRequestReadAuthentication of ['oauth', '   ']) {
+    const fixture = await preparePullRequestCli(t, {
+      priorityField: null,
+      pullRequestReadAuthentication,
+    })
+
+    await assert.rejects(fixture.run(), (error) => {
+      assert.match(
+        error.stderr,
+        /config\.pullRequestReadAuthentication 必须为 anonymous 或 token/,
+      )
+      return true
+    })
+    assert.deepEqual(fixture.requests, [])
+  }
+})
+
+test('fails loud on PR API 404 without authentication fallback', async (t) => {
+  for (const pullRequestReadAuthentication of ['anonymous', 'token']) {
+    const fixture = await preparePullRequestCli(t, {
+      priorityField: null,
+      pullRequestReadAuthentication,
+      pullStatus: 404,
+    })
+
+    await assert.rejects(fixture.run(), (error) => {
+      assert.match(
+        error.stderr,
+        /GET \/repos\/BeiKeJieDeLiuLangMao\/deepseek-harness-gestalt\/pulls\/49: 404/,
+      )
+      return true
+    })
+    assert.equal(
+      fixture.requests.filter((path) => path?.endsWith('/pulls/49')).length,
+      1,
+    )
+  }
+})
+
+test('fails loud when enabled Priority integration cannot read Issue fields', async (t) => {
+  const fixture = await preparePullRequestCli(t, {
+    priorityField: 'Priority',
+    issueFieldStatus: 404,
+  })
+
+  await assert.rejects(fixture.run(), (error) => {
+    assert.match(
+      error.stderr,
+      /GET \/repos\/BeiKeJieDeLiuLangMao\/deepseek-harness-gestalt\/issues\/49\/issue-field-values\?per_page=100: 404/,
+    )
+    return true
+  })
+  assert.ok(
+    fixture.requests.includes(
+      '/repos/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/issues/49/issue-field-values?per_page=100',
+    ),
+  )
+})
+
+test('rejects a malformed Priority integration setting before API access', async (t) => {
+  const fixture = await preparePullRequestCli(t, { priorityField: false })
+
+  await assert.rejects(fixture.run(), (error) => {
+    assert.match(error.stderr, /config\.priorityField 必须为非空字符串或 null/)
+    return true
+  })
+  assert.deepEqual(fixture.requests, [])
+})
+
+test('rejects whitespace-only Priority configuration before API access', async (t) => {
+  const fixture = await preparePullRequestCli(t, { priorityField: '   ' })
+
+  await assert.rejects(fixture.run(), (error) => {
+    assert.match(error.stderr, /config\.priorityField 必须为非空字符串或 null/)
+    return true
+  })
+  assert.deepEqual(fixture.requests, [])
+})
+
 test('attempts every fake API resource cleanup when one disposer fails', async () => {
   const disposed = []
 
@@ -116,14 +358,19 @@ test('attempts every fake API resource cleanup when one disposer fails', async (
   assert.deepEqual(disposed.sort(), ['directory', 'server'])
 })
 
-test('routes CLI repository policy and enabled lifecycle requests through the event repository', async (t) => {
+test('routes CLI policy and keeps lifecycle requests token-authenticated', async (t) => {
   const registerCleanup = registerResourceCleanups(t)
   const requests = []
   const server = createServer(async (request, response) => {
     const chunks = []
     for await (const chunk of request) chunks.push(chunk)
     const body = Buffer.concat(chunks).toString('utf8')
-    requests.push({ method: request.method, path: request.url, body })
+    requests.push({
+      method: request.method,
+      path: request.url,
+      body,
+      authorization: request.headers.authorization ?? null,
+    })
 
     const send = (value, status = 200) => {
       response.writeHead(status, { 'Content-Type': 'application/json' })
@@ -141,7 +388,10 @@ test('routes CLI repository policy and enabled lifecycle requests through the ev
                   {
                     id: 'status-field-id',
                     name: 'Status',
-                    options: [{ id: 'in-progress-id', name: 'In progress' }],
+                    options: [
+                      { id: 'inbox-id', name: 'Inbox' },
+                      { id: 'in-progress-id', name: 'In progress' },
+                    ],
                   },
                 ],
               },
@@ -196,10 +446,6 @@ test('routes CLI repository policy and enabled lifecycle requests through the ev
       })
       return
     }
-    if (request.url?.endsWith('/issues/47/issue-field-values?per_page=100')) {
-      send([])
-      return
-    }
     if (request.url?.endsWith('/issues/47/comments?per_page=100')) {
       send([])
       return
@@ -226,11 +472,11 @@ test('routes CLI repository policy and enabled lifecycle requests through the ev
   const pullEvent = join(directory, 'pull-request.json')
   const issueEvent = join(directory, 'issue.json')
   await writeFile(pullEvent, JSON.stringify({ pull_request: { number: 48 } }))
-  await writeFile(issueEvent, JSON.stringify({ action: 'edited', issue: { number: 47 } }))
-  const environment = {
-    GH_TOKEN: 'test-token',
+  await writeFile(issueEvent, JSON.stringify({ action: 'opened', issue: { number: 47 } }))
+  const apiEnvironment = {
     GITHUB_API_URL: `http://127.0.0.1:${address.port}`,
   }
+  const environment = { ...apiEnvironment, GH_TOKEN: 'test-token' }
 
   await assert.rejects(
     execFileAsync(process.execPath, [policyEntrypoint, 'deployment'], {
@@ -261,23 +507,57 @@ test('routes CLI repository policy and enabled lifecycle requests through the ev
     },
   })
 
+  const requestCount = requests.length
+  await assert.rejects(
+    execFileAsync(process.execPath, [policyEntrypoint, 'lifecycle'], {
+      env: {
+        ...apiEnvironment,
+        GITHUB_EVENT_NAME: 'issues',
+        GITHUB_EVENT_PATH: issueEvent,
+        GITHUB_REPOSITORY: 'deepseek-harness/tracker',
+      },
+    }),
+    (error) => {
+      assert.match(error.stderr, /GH_TOKEN 或 GITHUB_TOKEN 未设置/)
+      return true
+    },
+  )
+  assert.equal(requests.length, requestCount)
+
   const restPaths = requests
     .filter((request) => request.path !== '/graphql')
     .map((request) => request.path)
     .sort()
   assert.deepEqual(restPaths, [
     '/repos/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/issues/47',
-    '/repos/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/issues/47/issue-field-values?per_page=100',
     '/repos/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/pulls/48',
     '/repos/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/pulls/48/requested_reviewers',
     '/repos/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/pulls/48/reviews?per_page=100',
     '/repos/deepseek-harness/tracker/issues/47',
     '/repos/deepseek-harness/tracker/issues/47/comments?per_page=100',
-    '/repos/deepseek-harness/tracker/issues/47/issue-field-values?per_page=100',
   ])
+  const pullRequestReads = requests.filter((request) =>
+    request.path?.startsWith('/repos/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/'),
+  )
+  assert.ok(pullRequestReads.length > 0)
+  for (const request of pullRequestReads) assert.equal(request.authorization, null)
+  const lifecycleRequests = requests.filter(
+    (request) =>
+      request.path === '/graphql' || request.path?.startsWith('/repos/deepseek-harness/tracker/'),
+  )
+  assert.ok(lifecycleRequests.length > 0)
+  for (const request of lifecycleRequests) {
+    assert.equal(request.authorization, 'Bearer test-token')
+  }
+  assert.ok(
+    lifecycleRequests.some(
+      (request) => request.path === '/graphql' && request.body.includes('mutation('),
+    ),
+  )
   const graphqlVariables = requests
     .filter((request) => request.path === '/graphql')
     .map((request) => JSON.parse(request.body).variables)
+    .filter((variables) => variables.organization !== undefined)
   assert.ok(graphqlVariables.length >= 2)
   for (const variables of graphqlVariables) {
     assert.equal(variables.organization, 'deepseek-harness')
