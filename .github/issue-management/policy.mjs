@@ -52,6 +52,35 @@ for (const status of ['In progress', 'In review']) {
 if (typeof config.lifecycleActor !== 'string' || !config.lifecycleActor) {
   throw new Error('config.lifecycleActor 未设置')
 }
+if (typeof config.projectOrganization !== 'string' || !config.projectOrganization) {
+  throw new Error('config.projectOrganization 未设置')
+}
+
+/**
+ * Resolve the repository that emitted the workflow event.
+ * @param {Record<string, string|undefined>} environment Workflow environment.
+ * @returns {{owner: string, name: string, fullName: string}} Repository coordinates.
+ */
+export function repositoryCoordinates(environment = process.env) {
+  const value = environment.GITHUB_REPOSITORY
+  const match = value?.match(/^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)$/)
+  if (!match) throw new Error('GITHUB_REPOSITORY 必须为 owner/name')
+  const [, owner, name] = match
+  return { owner, name, fullName: `${owner}/${name}` }
+}
+
+function repositoryApiPath(path) {
+  return `/repos/${repositoryCoordinates().fullName}${path}`
+}
+
+function validateLifecycleDeployment(environment = process.env) {
+  const { owner } = repositoryCoordinates(environment)
+  if (config.projectOrganization !== owner) {
+    throw new Error(
+      `config.projectOrganization 必须与 GITHUB_REPOSITORY owner 一致：${config.projectOrganization} != ${owner}`,
+    )
+  }
+}
 
 /**
  * Return Markdown outside balanced details elements.
@@ -416,11 +445,9 @@ async function graphql(query, variables) {
 }
 
 async function issueSnapshot(number, status = undefined) {
-  const issue = await api(`/repos/${config.organization}/${config.repository}/issues/${number}`)
+  const issue = await api(repositoryApiPath(`/issues/${number}`))
   if (issue.pull_request) return null
-  const values = await api(
-    `/repos/${config.organization}/${config.repository}/issues/${number}/issue-field-values?per_page=100`,
-  )
+  const values = await api(repositoryApiPath(`/issues/${number}/issue-field-values?per_page=100`))
   const field = (name) => values.find((value) => value.issue_field_name === name)
   return {
     number,
@@ -438,9 +465,11 @@ async function issueSnapshot(number, status = undefined) {
 }
 
 async function projectContext(number, includeStatusActor = false) {
+  const repository = repositoryCoordinates()
   const data = await graphql(
     `query(
       $organization: String!
+      $repositoryOwner: String!
       $repository: String!
       $number: Int!
       $project: Int!
@@ -457,7 +486,7 @@ async function projectContext(number, includeStatusActor = false) {
           }
         }
       }
-      repository(owner: $organization, name: $repository) {
+      repository(owner: $repositoryOwner, name: $repository) {
         issue(number: $number) {
           id
           timelineItems(last: 100, itemTypes: [PROJECT_V2_ITEM_STATUS_CHANGED_EVENT])
@@ -483,8 +512,9 @@ async function projectContext(number, includeStatusActor = false) {
       }
     }`,
     {
-      organization: config.organization,
-      repository: config.repository,
+      organization: config.projectOrganization,
+      repositoryOwner: repository.owner,
+      repository: repository.name,
       number,
       project: config.projectNumber,
       includeStatusActor,
@@ -556,15 +586,13 @@ async function setStatus(number, status) {
 }
 
 async function upsertAudit(number, errors) {
-  const comments = await api(
-    `/repos/${config.organization}/${config.repository}/issues/${number}/comments?per_page=100`,
-  )
+  const comments = await api(repositoryApiPath(`/issues/${number}/comments?per_page=100`))
   const existing = comments.find(
     (comment) => comment.user?.type === 'Bot' && comment.body?.includes(AUDIT_MARKER),
   )
   if (errors.length === 0) {
     if (existing) {
-      await api(`/repos/${config.organization}/${config.repository}/issues/comments/${existing.id}`, {
+      await api(repositoryApiPath(`/issues/comments/${existing.id}`), {
         method: 'DELETE',
       })
     }
@@ -573,13 +601,13 @@ async function upsertAudit(number, errors) {
   const body = `${AUDIT_MARKER}\n⚠️ Issue policy 未通过：\n\n${errors.map((error) => `- ${error}`).join('\n')}`
   if (existing) {
     if (existing.body === body) return
-    await api(`/repos/${config.organization}/${config.repository}/issues/comments/${existing.id}`, {
+    await api(repositoryApiPath(`/issues/comments/${existing.id}`), {
       method: 'PATCH',
       body: JSON.stringify({ body }),
       headers: { 'Content-Type': 'application/json' },
     })
   } else {
-    await api(`/repos/${config.organization}/${config.repository}/issues/${number}/comments`, {
+    await api(repositoryApiPath(`/issues/${number}/comments`), {
       method: 'POST',
       body: JSON.stringify({ body }),
       headers: { 'Content-Type': 'application/json' },
@@ -598,7 +626,7 @@ async function auditIssue(number, extraErrors = [], status = undefined) {
 async function resolvingReferencesSnapshot(number, pull) {
   const references = parseReferences({
     body: pull.body ?? '',
-    repository: `${config.organization}/${config.repository}`,
+    repository: repositoryCoordinates().fullName,
   })
   const issues = new Map()
   for (const issueNumber of references.all) {
@@ -614,9 +642,9 @@ async function resolvingReferencesSnapshot(number, pull) {
 
 async function pullRequestSnapshot(number) {
   const [pull, reviewRequests, reviews] = await Promise.all([
-    api(`/repos/${config.organization}/${config.repository}/pulls/${number}`),
-    api(`/repos/${config.organization}/${config.repository}/pulls/${number}/requested_reviewers`),
-    api(`/repos/${config.organization}/${config.repository}/pulls/${number}/reviews?per_page=100`),
+    api(repositoryApiPath(`/pulls/${number}`)),
+    api(repositoryApiPath(`/pulls/${number}/requested_reviewers`)),
+    api(repositoryApiPath(`/pulls/${number}/reviews?per_page=100`)),
   ])
   const resolving = await resolvingReferencesSnapshot(number, pull)
   return {
@@ -630,7 +658,7 @@ async function pullRequestSnapshot(number) {
 }
 
 async function lifecyclePullRequestSnapshot(number) {
-  const pull = await api(`/repos/${config.organization}/${config.repository}/pulls/${number}`)
+  const pull = await api(repositoryApiPath(`/pulls/${number}`))
   return resolvingReferencesSnapshot(number, pull)
 }
 
@@ -663,6 +691,7 @@ async function runPullRequestCheck(event) {
 }
 
 async function runLifecycle(eventName, event) {
+  validateLifecycleDeployment()
   if (eventName === 'issues') {
     const number = event.issue.number
     if (event.action === 'opened') await setStatus(number, 'Inbox')
@@ -695,7 +724,8 @@ async function main(argv) {
   const [command] = argv
   if (command === 'pr') await runPullRequestCheck(readEvent())
   else if (command === 'lifecycle') await runLifecycle(process.env.GITHUB_EVENT_NAME, readEvent())
-  else throw new Error('用法：policy.mjs pr|lifecycle')
+  else if (command === 'deployment') validateLifecycleDeployment()
+  else throw new Error('用法：policy.mjs pr|lifecycle|deployment')
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

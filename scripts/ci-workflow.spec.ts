@@ -388,8 +388,32 @@ describe('Issue lifecycle workflow', () => {
     expect(lifecyclePullRequest.types).toContain('review_requested')
     expect(lifecycleReview.types).toEqual(['submitted'])
     expect(lifecycleJob.if).toBe(
-      "${{ github.event_name != 'pull_request_review' || (github.event.action == 'submitted' && github.event.review.state == 'changes_requested') }}",
+      "${{ vars.DSH_ISSUE_PROJECT_LIFECYCLE_ENABLED == 'true' && (github.event_name != 'pull_request_review' || (github.event.action == 'submitted' && github.event.review.state == 'changes_requested')) }}",
     )
+    if (!Array.isArray(lifecycleJob.steps)) {
+      throw new TypeError('Issue lifecycle job must define steps')
+    }
+    const lifecycleSteps: unknown[] = lifecycleJob.steps
+    const validationStepIndex = lifecycleSteps.findIndex(
+      step => isRecord(step) && step.name === 'Validate project owner',
+    )
+    const tokenStepIndex = lifecycleSteps.findIndex(
+      step => isRecord(step) && step.name === 'Create project token',
+    )
+    expect(lifecycleSteps[validationStepIndex]).toMatchObject({
+      run: 'node .github/issue-management/policy.mjs deployment',
+    })
+    expect(validationStepIndex).toBeGreaterThanOrEqual(0)
+    expect(tokenStepIndex).toBeGreaterThan(validationStepIndex)
+    const tokenStep = lifecycleSteps.find(
+      step => isRecord(step) && step.name === 'Create project token',
+    )
+    expect(tokenStep).toMatchObject({
+      with: {
+        owner: '${{ github.repository_owner }}',
+        repositories: '${{ github.event.repository.name }}',
+      },
+    })
     expect(policyPullRequest.types).toContain('ready_for_review')
   })
 })

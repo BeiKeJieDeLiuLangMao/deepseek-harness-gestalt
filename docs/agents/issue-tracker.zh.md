@@ -15,6 +15,12 @@ DeepSeek Gestalt 产品规格和 ticket 存放在 `BeiKeJieDeLiuLangMao/deepseek
 
 GitHub Issues 和 PR（Pull Request）共享同一编号空间。遇到含义不明的编号时，先用 `gh pr view` 解析，失败后再用 `gh issue view`。
 
+## 工作流部署
+
+Issue 策略从工作流提供的 `GITHUB_REPOSITORY` 解析仓库；仓库 owner 和名称不是部署配置。
+
+组织 Project 生命周期投影是一项显式部署选项。仅当仓库 owner 与 `.github/issue-management/config.json` 中的 `projectOrganization` 一致、该配置指定了目标组织 Project，并且仓库为具备所需仓库与组织权限的已安装 GitHub App 提供 `DSH_ISSUE_APP_CLIENT_ID` 和 `DSH_ISSUE_APP_PRIVATE_KEY` 时，才将仓库变量 `DSH_ISSUE_PROJECT_LIFECYCLE_ENABLED` 设为 `true`。工作流会在请求 installation token 前验证两者使用同一 owner。该变量缺失或不等于 `true` 时，生命周期 job 会在此验证前跳过。个人账号 tracker 保持禁用此选项，因为 installation token 不会授予用户 ProjectV2 的访问权。
+
 ## 将 PR 作为 triage 入口
 
 **将 PR 作为请求入口：否。**
