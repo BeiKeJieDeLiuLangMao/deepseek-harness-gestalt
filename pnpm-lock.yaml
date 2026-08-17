@@ -686,6 +686,9 @@ importers:
       '@deepseek-ai/dsh-pwsh-local':
         specifier: workspace:*
         version: link:../packages/shell/pwsh-local
+      '@deepseek-ai/dsh-remote-protocol':
+        specifier: workspace:*
+        version: link:../packages/platform/remote-protocol
       '@deepseek-ai/dsh-repeat-tool-reminder':
         specifier: workspace:*
         version: link:../packages/guard/repeat-tool-reminder
@@ -5863,6 +5866,18 @@ importers:
       '@deepseek-ai/dsh-platform-account-core':
         specifier: workspace:^
         version: link:../platform-account-core
+
+  packages/platform/remote-protocol:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-brand':
+        specifier: workspace:^
+        version: link:../../util/brand
+      '@deepseek-ai/dsh-invariants':
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
 
   packages/preset/agent-presets:
     dependencies:
