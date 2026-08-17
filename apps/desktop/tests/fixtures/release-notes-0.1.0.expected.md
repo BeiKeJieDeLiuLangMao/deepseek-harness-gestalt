@@ -14,7 +14,7 @@ DeepSeek Gestalt 0.1.0 是首个 Desktop Bundle，收录官方上游基线之后
 
 ### 发布可靠性
 
-- 发布流程固定官方 Node 与生产依赖闭包，在对应架构 runner 上 smoke 每个安装包，并核验安装器、blockmap 与更新 feed 的精确集合。
+- 发布流程固定官方 Node 与生产依赖闭包，在对应架构 runner 上启动每个打包后的应用，并核验安装器、blockmap 与更新 feed 的精确集合。
 - Windows 快照会实体化 pnpm 文件链接；macOS 签名使用 runner 的文件数硬限制与有界资源遍历；失败或中断的交接会清理本次运行拥有的 draft 和标签。
 
 ### Agent 工程工作流
@@ -42,7 +42,7 @@ DeepSeek Gestalt 0.1.0 is the first Desktop Bundle and contains the 25 commits a
 
 ### Release reliability
 
-- The release flow pins official Node and the production dependency closure, smokes every installer on a matching runner architecture, and verifies the exact installer, blockmap, and update-feed set.
+- The release flow pins official Node and the production dependency closure, smokes each packaged application on a matching runner architecture, and verifies the exact installer, blockmap, and update-feed set.
 - Windows snapshots materialize pnpm file links; macOS signing uses the runner's hard open-file limit and a bounded resource walk; failed or interrupted handoffs remove the draft and tag owned by the run.
 
 ### Agent engineering workflow
