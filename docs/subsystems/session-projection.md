@@ -45,6 +45,12 @@ interface ProjectionDefinition<K extends keyof SessionProjectionMap, S> {
    */
   view(state: S): SessionProjectionMap[K]
   /**
+   * Which portion of a forked Session log this domain owns. The default
+   * `full` folds inherited history; `owned-suffix` starts at the immutable
+   * `SessionHeader.seedLength` boundary.
+   */
+  eventScope?: 'full' | 'owned-suffix'
+  /**
    * Persisted-cache invalidation version: bump whenever the serialized state fields or the
    * fold semantics change, so persisted `(sessionId, key, ver, seq, val)`
    * rows from an older unit are discarded instead of being forward-applied
@@ -55,6 +61,8 @@ interface ProjectionDefinition<K extends keyof SessionProjectionMap, S> {
 ```
 
 The whole-value event rule is load-bearing: a state-carrying log event carries the complete post-change state, never a bare delta — it keeps every transition trivially cheap and every served value self-describing (last-wins for consumers).
+
+Fork ownership is also part of the unit declaration. The registry and persisted cache honor `eventScope` in eager drive, lazy folds, checkpoint restore, and later replay. `owned-suffix` is for domains whose parent history stays visible but must not activate state in the child Session; all other units retain the default `full` stream.
 
 ## The snapshot and the change feed
 
@@ -249,14 +257,15 @@ viewCheckpoint(checkpoint: ProjectionCheckpoint): Partial<SessionProjectionMap>
  * @param checkpoint - persisted rows for one session (possibly stale or empty).
  * @param events - the stored events with `seq >= baseSeq`, in seq order.
  * @param baseSeq - the seq `events` starts at (its first event's seq when non-empty).
+ * @param seedLength - inherited prefix length excluded by `owned-suffix` units.
  * @returns the snapshot cut at the supplied log end (`asOfSeq` is the last
  *   supplied event's seq, `baseSeq - 1` for an empty tail) plus the
  *   refreshed checkpoint rows at that cut, ready for a durable write-back.
  */
-restore(checkpoint: ProjectionCheckpoint, events: readonly SessionEvent[], baseSeq: number): { snapshot: ProjectionSnapshot; checkpoint: ProjectionCheckpoint }
+restore(checkpoint: ProjectionCheckpoint, events: readonly SessionEvent[], baseSeq: number, seedLength: number = 0): { snapshot: ProjectionSnapshot; checkpoint: ProjectionCheckpoint }
 ```
 
 Types: [Session](session.md) · [SessionEvent](session.md)
 
-Source: [`packages/session/session-projection/src/index.ts:171`](../../packages/session/session-projection/src/index.ts)
+Source: [`packages/session/session-projection/src/index.ts:178`](../../packages/session/session-projection/src/index.ts)
 <!-- END GENERATED cordis-surface -->

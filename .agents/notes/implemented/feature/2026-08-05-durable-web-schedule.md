@@ -14,11 +14,11 @@ Busy Agents, long waits, wall-clock changes, cold Sessions, forks, persistence f
 
 The [`examples/web-schedule`](../../../../examples/web-schedule/README.md) overlay explicitly loads `@deepseek-ai/dsh-time-context` and `@deepseek-ai/dsh-schedule`; the default browser-only Web tree remains unchanged. The DeepSeek Gestalt Desktop overlay loads the same pair by default. Schedule observes only root Agents published after the plugin loads and installs its three tools plus one disposable owner in that Agent scope. Cold history reads, already-published roots, child Agents, and hosts without one of those overlays do not activate it.
 
-The user-visible boundary is `session-local`: the original Session runs an on-time reminder only while live, does no external notification while cold, and processes an overdue reminder after it becomes live again. Due work waits until the Agent is fully idle, then enters the ordinary next-turn queue through `followup()`; it never steers the current turn and has no independent Web receipt ([conversational delivery](../simplification/2026-08-09-conversational-schedule-delivery.md)).
+The user-visible delivery boundary is `session-local`: the original Session runs an on-time reminder only while live, does no external notification while cold, and processes an overdue reminder after it becomes live again. Due work waits until the Agent is fully idle, then enters the ordinary next-turn queue through `followup()`; it never steers the current turn and has no independent delivery receipt ([conversational delivery](../simplification/2026-08-09-conversational-schedule-delivery.md)). A separate [Session Schedule board](2026-08-17-session-schedule-board.md) projects current retained state and owns human pause, resume, and delete without claiming delivery success.
 
 | Scenario | Durable fact | Live behavior | User-visible result |
 | --- | --- | --- | --- |
-| Create and manage | `schedule/change` create/delete in the original Session | Agent-scoped tools checkpoint before reads and after mutations | Stable id, UTC target, state, and `session-local` disclosure |
+| Create and manage | `schedule/change` create/pause/resume/delete in the original Session | Agent-scoped tools and human Remote mutations checkpoint before reads and after mutations | Stable id, UTC target, state, and `session-local` disclosure |
 | Due while busy | Active create remains in the fold | Owner waits for idle maintenance, queues one follow-up, then appends dispatch | A later ordinary conversation turn |
 | Several Every records are overdue | Each active record retains its earliest unaccepted anchor-aligned target | One decision selects each record's latest occurrence and advances it past now | One ordinary follow-up containing one occurrence per record |
 | Process stopped or Session cold | Active create remains persisted | No timer or background scan; resume rebuilds the owner | Future target waits; overdue target is attempted |
@@ -26,7 +26,7 @@ The user-visible boundary is `session-local`: the original Session runs an on-ti
 
 ### Session-log authority and tools
 
-The version-1 `schedule/change` stream is the only durable Schedule authority. A create record owns a Session-local, non-reused branded id, the trimmed prompt, its rule discriminator, and UTC target. Delete and one-shot dispatch are terminal transitions. Every dispatch stores its id and decision time so the fold advances that record directly past missed occurrences. The strict decoder and pure fold reject unknown versions, extra fields, reused ids, mismatched dispatch shapes, and transitions against inactive records. A normal Session folds its complete stream; a fork folds only events at or after `SessionHeader.seedLength`.
+The version-1 `schedule/change` stream is the only durable Schedule authority. A create record owns a Session-local, non-reused branded id, the trimmed prompt, its rule discriminator, and UTC target. Pause and resume retain the record without changing its target; delete and one-shot dispatch are terminal transitions. Every dispatch stores its id and decision time so the fold advances that record directly past missed occurrences. The strict decoder and pure fold reject unknown versions, extra fields, reused ids, mismatched dispatch shapes, and transitions from absent or incompatible states. A normal Session folds its complete stream; a fork folds only events at or after `SessionHeader.seedLength`.
 
 The current rule union accepts a non-empty prompt and exactly one selector. `after_seconds` is a positive safe-integer delay whose record is `{ id, kind: 'after', prompt, afterSeconds, scheduledAt }`. `at` is either strict RFC 3339 with `Z` or a numeric offset, or structured `{ date, time, time_zone }` with an explicit zone; its record is `{ id, kind: 'at', prompt, scheduledAt }`. `every_seconds` is a safe integer of at least 300 whose `{ id, kind: 'every', prompt, everySeconds, scheduledAt }` record stays aligned to its creation-plus-interval sequence. One-shot dispatch stores only the id; Every dispatch stores `id + acceptedAt`. Tool values derive `scheduled` or `overdue` and include `deliveryMode: 'session-local'`.
 
@@ -64,7 +64,7 @@ Dispatch records queue admission, not model completion or user receipt. Framing 
 
 **Persist a Session time zone and infer local `at`.** This spreads one interpretive default through Session core, Host create/fork, persistence formats, clients, and mismatch recovery. Request-local model guidance plus an explicit tool boundary deletes that coupling.
 
-**Keep an independent durable Web receipt.** Dispatch is an internal queue fact, not the user's reminder. Rendering the ordinary assistant answer avoids a second delivery meaning and removes Schedule code from Host and client layers.
+**Keep an independent durable Web receipt.** Dispatch is an internal queue fact, not the user's reminder. Rendering the ordinary assistant answer avoids a second delivery meaning. The current-state board is deliberately management UI rather than a receipt.
 
 **Add a general recurring-rule engine.** Fixed-duration intervals need only anchor arithmetic. A shared recurrence abstraction, global admission gate, and calendar evaluator would enlarge replay and runtime state without serving the retained product behavior.
 
@@ -81,6 +81,6 @@ Package tests pin strict replay, one-shot and Every transitions, creation-anchor
 - Reminder state survives restart through ordinary Session persistence without a new database or public service.
 - Cold Sessions do no work and send no external notification; reopening one may deliver overdue work.
 - Absolute input is deterministic without persistent Session-zone state or a dependency from Schedule to time-context.
-- Users see normal conversation output; dispatch never overstates model success or acknowledgement.
+- Users see reminder output in normal conversation and current retained state in the management board; neither dispatch nor the board overstates model success or acknowledgement.
 - Each live root adds only fold-derived timers, an optional idle wait, and one in-flight operation.
 - Fixed-rate recurrence is bounded by a five-minute minimum, latest-only catch-up, and one batched occurrence per overdue record; calendar recurrence remains outside this product boundary.

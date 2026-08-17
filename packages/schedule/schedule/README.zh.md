@@ -2,11 +2,11 @@
 
 [English](README.md) | 中文
 
-`dsh-schedule` 为未来创建的 live 根 agent（智能体）提供 3 个会话范围内的工具，用于管理持久提醒。版本 1 接受正的安全整数 `after_seconds` 延时、显式绝对时间 `at` 目标，以及至少 5 分钟的固定速率 `every_seconds` 间隔。会话事件日志拥有提醒状态；timer、工具值和模型 follow-up 都是该日志的可丢弃投影。
+`dsh-schedule` 为未来创建的 live 根 agent（智能体）提供 3 个会话范围内的持久提醒工具，并通过 `ctx.schedules` 暴露人工暂停、恢复和删除变更。版本 1 接受正的安全整数 `after_seconds` 延时、显式绝对时间 `at` 目标，以及至少 5 分钟的固定速率 `every_seconds` 间隔。会话事件日志拥有提醒状态；timer、工具值、浏览器 projection 和模型 follow-up 都是该日志的可丢弃投影。
 
 ## 组合
 
-请在 `ctx.sessions`、`ctx.agents`、`ctx.tools`、`ctx.sessionPersistence`，以及实现 Session flush 的持久化监听器之后加载此函数插件。静态注入会使缺少持久化服务的组合直接失败。此插件只监听后续的 `agent/created` 事件，在运行时根 agent 上安装，并通过完全相同的 `agent.ctx` 注册所有工具。插件加载时已经存在的 agent 与运行时子 agent 不会获得 Schedule。
+请在 `ctx.sessions`、`ctx.agents`、`ctx.tools`、`ctx.sessionPersistence`，以及实现 Session flush 的持久化监听器之后加载此 Service 插件。静态注入会使缺少持久化服务的组合直接失败。它安装 `ctx.schedules`，在 `ctx.sessionProjections` 存在时贡献 `schedules` 单元，只监听后续的 `agent/created` 事件，在运行时根 agent 上安装，并通过完全相同的 `agent.ctx` 注册所有工具。插件加载时已经存在的 agent 与运行时子 agent 不会获得 Schedule。
 
 Time-context 不是 Schedule 的依赖。组合可以挂载 `@deepseek-ai/dsh-time-context`，使模型能够按浏览器的请求本地时区解释自然语言；官方 Schedule Web overlay 正是如此。模型仍必须向 `schedule_create` 传入显式偏移量或 `time_zone`；Schedule 绝不会从模型上下文中导入或推断该值。
 
@@ -14,9 +14,9 @@ Time-context 不是 Schedule 的依赖。组合可以挂载 `@deepseek-ai/dsh-ti
 
 ## 持久状态
 
-此包拥有严格的版本 1 `schedule/change` create、delete 与 dispatch 联合。每条 create 记录都包含稳定的会话本地 `ScheduleId`、已 trim 的提示词，以及使用四位年份的 RFC 3339 UTC `scheduledAt`。`after` 记录还会存储 `afterSeconds`；`at` 记录不会保留所提交的偏移量、本地日历字段或解释该值时所用的时区；`every` 记录存储 `everySeconds`，并把 `scheduledAt` 视为尚未 dispatch 的最早一个创建锚点对齐发生时点。delete 与一次性 dispatch 只携带 id。Every dispatch 还会添加 `acceptedAt`；回放会据此直接推进到该决策时点之后的第一个锚点对齐目标。
+此包拥有严格的版本 1 `schedule/change` create、delete、pause、resume 与 dispatch 联合。每条 create 记录都包含稳定的会话本地 `ScheduleId`、已 trim 的提示词，以及使用四位年份的 RFC 3339 UTC `scheduledAt`。`after` 记录还会存储 `afterSeconds`；`at` 记录不会保留所提交的偏移量、本地日历字段或解释该值时所用的时区；`every` 记录存储 `everySeconds`，并把 `scheduledAt` 视为尚未 dispatch 的最早一个创建锚点对齐发生时点。delete、pause、resume 与一次性 dispatch 只携带 id。Every dispatch 还会添加 `acceptedAt`；回放会据此直接推进到该决策时点之后的第一个锚点对齐目标。pause 保留记录并暂停投递且不改变目标；resume 让该目标重新可投递。
 
-回放会拒绝未知版本、额外字段、重复使用的 id、形状不匹配的一次性或 Every dispatch，以及针对非活动记录的 delete 或 dispatch 转换。普通会话折叠完整日志。fork 只折叠 `session.events.slice(session.header.seedLength ?? 0)`，因此不会继承父会话的提醒。此包的 `./invariant` 配套模块会对现有日志和候选事件应用相同策略。
+回放会拒绝未知版本、额外字段、重复使用的 id、形状不匹配的一次性或 Every dispatch，以及从缺失或不兼容状态发起的转换。普通会话折叠完整日志。fork 只折叠 `session.events.slice(session.header.seedLength ?? 0)`，因此不会继承父会话的提醒。此包的 `./invariant` 配套模块会对现有日志和候选事件应用相同策略。
 
 ## 绝对时间输入
 
@@ -28,7 +28,15 @@ Schedule 负责确定性的日历规范化。落在夏令时缺口内的本地�
 
 生成的[工具目录](../../../docs/tool-catalog.md)负责 `schedule_create`、`schedule_list` 和 `schedule_delete` 的参数与输出 schema。虽然模型输入使用 `after_seconds` 和 `time_zone`，但其规范值中的记录字段使用 camelCase。
 
-一条 Agent-scoped 队列会将每项已接纳的管理事务与 live owner 的到期事务从 preflight 到任何 post-append barrier 全程串行化。`schedule_create` 要求 `after_seconds`、`at` 与 `every_seconds` 有且只有一项；它会在进入队列前验证只依赖输入形状的失败，随后执行检查点、分配永不复用的 id、追加 create，再次执行检查点。`schedule_list` 按创建顺序返回活动记录，其中包含 `state: "scheduled" | "overdue"` 与 `deliveryMode: "session-local"`。`schedule_delete` 会在进入队列前拒绝空 id 或前后带空白的 id，并只为活动 id 追加事件；未知或已终结的 id 会在 preflight 后返回 `{ id, deleted: false, code: "schedule_not_found" }`。
+一条 Agent-scoped 队列会将每项已接纳的管理事务与 live owner 的到期事务从 preflight 到任何 post-append barrier 全程串行化。`schedule_create` 要求 `after_seconds`、`at` 与 `every_seconds` 有且只有一项；它会在进入队列前验证只依赖输入形状的失败，随后执行检查点、分配永不复用的 id、追加 create，再次执行检查点。`schedule_list` 按创建顺序返回活动和已暂停记录，其中包含 `state: "scheduled" | "overdue" | "paused"` 与 `deliveryMode: "session-local"`。`schedule_delete` 会在进入队列前拒绝空 id 或前后带空白的 id，并为活动或已暂停 id 追加事件；未知或已终结的 id 会在 preflight 后返回 `{ id, deleted: false, code: "schedule_not_found" }`。
+
+仅供人工使用的 `schedules` Remote 命名空间接收 pause、resume 和 delete，并针对 wire Session id 解析出的精确 live 根 Agent 执行。每项变更与工具和到期工作共享 Agent FIFO 及持久化 barrier。pause 与 resume 刻意不进入面向模型的工具目录；浏览器用它们管理持久状态，但不增加模型的行动权限。
+
+## 浏览器 Projection 与任务板
+
+Session projection 存在时，Schedule 会贡献 `owned-suffix` 的 `schedules` 值，其中按创建顺序包含每条保留记录及其持久化 `paused` 标志。Host 从 `schedule/change` 折叠它；Client 绝不从工具调用或 transcript 内容重建状态。Client 时钟根据 `scheduledAt` 推导等待中或待补跑展示。
+
+标准 Web app bundle 包含 Schedule 标题栏入口，但仅在 Host 暴露 `schedules` Remote 命名空间时激活。在 Desktop 组合中，该入口紧接后台任务，为空时隐藏，计数包含等待中与待补跑记录并排除已暂停记录；当前状态任务板提供暂停、恢复和行内二次确认删除。创建仍通过面向模型的 `schedule_create` 完成；任务板没有创建表单。
 
 每次成功的管理 preflight 还会要求 live owner 重新计算。如果先前的 post-append barrier 返回 `persistence_uncertain`，这会恢复所保留的 create 或 delete batch，而无需 Schedule 专属的持久化重试 timer。
 
@@ -40,7 +48,7 @@ live owner 从持久折叠结果派生最早的目标。它会拆分超过 Node 
 
 overdue 提醒首先为持久化建立检查点。如果 agent 已被某个轮次或另一项 maintenance task 占用，`runMaintenance()` 会拒绝对 idle phase 的认领；记录会保持活动，owner 会在 `whenIdle()` 后重试。获准执行的 maintenance task 会重新折叠、采样一个决策时点、构造相应的固定 framing、同步将 `followup()` 入队，并在释放 phase 前追加 dispatch。一次性提醒只追加 id。批次中的每条 Every 记录都会追加其 id 和相同的 `acceptedAt`；整数运算会选择该记录最新一个已到期且与创建锚点对齐的发生时点，并将记录直接推进到第一个未来目标。系统绝不会枚举或回放错过的间隔；每条不同的逾期记录各贡献一个发生时点，并且不存在共享的周期性准入门控。触发唤醒的 input 会保持 parked，直到 phase 释放；随后 owner 为 dispatch 建立检查点。
 
-Agent 完全 idle 后，follow-up 会开启一个普通的后续轮次；它绝不会中途引导或中断当前对话。assistant 输出通过普通 transcript（文本记录）显示，不存在独立回执或 Schedule 专属浏览器 UI。dispatch 表示 follow-up 已入队并被记录，不表示模型成功或用户已读取回答。
+Agent 完全 idle 后，follow-up 会开启一个普通的后续轮次；它绝不会中途引导或中断当前对话。assistant 输出通过普通 transcript（文本记录）显示，不存在独立投递回执。浏览器任务板是当前状态管理 projection，而不是 dispatch 或模型完成回执。dispatch 表示 follow-up 已入队并被记录，不表示模型成功或用户已读取回答。
 
 framing 构造或同步 follow-up 失败不会写入 dispatch。追加失败会使该 owner 进入故障状态，因为消息可能已经入队；barrier 拒绝会把 dispatch 留给后续普通 preflight。agent 或插件执行资源释放时，会取消 timer、停止新工作，并等待进行中的 preflight 与 idle wait，且不会删除持久记录。
 
@@ -115,3 +123,4 @@ reminders_json: <JSON.stringify(reminders)>
 - **只追赶最新一次**：逾期 Every 记录只贡献其最新一个到期发生时点，因此 Schedule 绝不会回放因错过间隔而形成的积压。
 - **存在狭窄的崩溃重复窗口**：同步 follow-up 获得准入后、dispatch 检查点完成前发生崩溃，可能使提醒重复；此包不承诺模型完成、用户确认或副作用恰好执行一次。
 - **加载顺序边界**：插件不会扫描或接管加载时已经 live 的 Agent。
+- **没有浏览器创建表单**：用户在任务板管理保留记录，创建仍只能通过 `schedule_create` 完成。

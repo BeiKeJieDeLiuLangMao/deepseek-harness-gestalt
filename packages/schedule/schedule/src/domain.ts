@@ -88,10 +88,20 @@ export class ScheduleInputError extends Error {
 
 /** Pure replay result, retaining active create order and every used id. */
 export interface FoldedSchedules {
-  /** Active records in their original create order. */
+  /** Deliverable records in their original create order. */
   readonly active: readonly ScheduleRecord[]
+  /** Paused records in their original create order. */
+  readonly paused: readonly ScheduleRecord[]
+  /** Every retained record with its durable paused flag, in create order. */
+  readonly schedules: readonly FoldedSchedule[]
   /** Every id ever created in this session-local suffix. */
   readonly seenIds: readonly ScheduleIdType[]
+}
+
+/** One retained durable record and whether delivery is paused. */
+export interface FoldedSchedule {
+  readonly record: ScheduleRecord
+  readonly paused: boolean
 }
 
 /** One latest-only fixed-rate decision derived without enumerating a backlog. */
@@ -477,15 +487,17 @@ export function decodeScheduleChange(value: unknown): ScheduleChange {
         operation: 'create',
         schedule: decodeScheduleRecord(value['schedule']),
       })
-    case 'delete': {
+    case 'delete':
+    case 'pause':
+    case 'resume': {
       if (!hasExactKeys(value, ['version', 'operation', 'id'])) {
-        throw new ScheduleLogError('schedule delete must contain exactly version, operation, and id')
+        throw new ScheduleLogError(`schedule ${value['operation']} must contain exactly version, operation, and id`)
       }
       return Object.freeze({
         version: SCHEDULE_CHANGE_VERSION,
-        operation: 'delete',
+        operation: value['operation'],
         id: decodeId(value['id']),
-      })
+      }) as Extract<ScheduleChange, { operation: 'delete' | 'pause' | 'resume' }>
     }
     case 'dispatch': {
       if (hasExactKeys(value, ['version', 'operation', 'id'])) {
@@ -506,7 +518,7 @@ export function decodeScheduleChange(value: unknown): ScheduleChange {
       throw new ScheduleLogError('schedule dispatch must contain id and optional acceptedAt only')
     }
     default:
-      throw new ScheduleLogError('schedule/change operation must be create, delete, or dispatch')
+      throw new ScheduleLogError('schedule/change operation must be create, delete, pause, resume, or dispatch')
   }
 }
 
@@ -552,8 +564,16 @@ export function resolveEveryOccurrence(
 
 type DecodedDispatch = Extract<ScheduleChange, { operation: 'dispatch' }>
 
-/** Apply one decoded dispatch to its exact active record. */
-function dispatchedRecord(record: ScheduleRecord, change: DecodedDispatch): ScheduleRecord | undefined {
+/**
+ * Apply one decoded dispatch to its exact active record.
+ * @param record - Active reminder receiving the dispatch.
+ * @param change - Decoded dispatch for that reminder.
+ * @returns The advanced Every record, or undefined for a terminal dispatch.
+ */
+export function advanceDispatchedSchedule(
+  record: ScheduleRecord,
+  change: DecodedDispatch,
+): ScheduleRecord | undefined {
   const hasAcceptedAt = 'acceptedAt' in change
   if (record.kind !== 'every') {
     if (hasAcceptedAt) throw new ScheduleLogError('one-shot dispatch must not contain acceptedAt')
@@ -579,7 +599,7 @@ export function foldScheduleEvents(
   if (!Number.isSafeInteger(seedLength) || seedLength < 0 || seedLength > events.length) {
     throw new ScheduleLogError('schedule seedLength must be within the supplied event log')
   }
-  const active = new Map<ScheduleIdType, ScheduleRecord>()
+  const retained = new Map<ScheduleIdType, FoldedSchedule>()
   const seen = new Set<ScheduleIdType>()
   for (const event of events.slice(seedLength)) {
     if (event.type !== 'schedule/change') continue
@@ -590,21 +610,37 @@ export function foldScheduleEvents(
           throw new ScheduleLogError(`schedule id ${JSON.stringify(change.schedule.id)} was reused`)
         }
         seen.add(change.schedule.id)
-        active.set(change.schedule.id, change.schedule)
+        retained.set(change.schedule.id, Object.freeze({ record: change.schedule, paused: false }))
         break
       case 'delete':
-        if (!active.delete(change.id)) {
+        if (!retained.delete(change.id)) {
           throw new ScheduleLogError(`schedule delete targets inactive id ${JSON.stringify(change.id)}`)
         }
         break
+      case 'pause': {
+        const schedule = retained.get(change.id)
+        if (schedule === undefined || schedule.paused) {
+          throw new ScheduleLogError(`schedule pause targets inactive or paused id ${JSON.stringify(change.id)}`)
+        }
+        retained.set(change.id, Object.freeze({ record: schedule.record, paused: true }))
+        break
+      }
+      case 'resume': {
+        const schedule = retained.get(change.id)
+        if (schedule === undefined || !schedule.paused) {
+          throw new ScheduleLogError(`schedule resume targets inactive or active id ${JSON.stringify(change.id)}`)
+        }
+        retained.set(change.id, Object.freeze({ record: schedule.record, paused: false }))
+        break
+      }
       case 'dispatch': {
-        const record = active.get(change.id)
-        if (record === undefined) {
+        const schedule = retained.get(change.id)
+        if (schedule === undefined || schedule.paused) {
           throw new ScheduleLogError(`schedule dispatch targets inactive id ${JSON.stringify(change.id)}`)
         }
-        const next = dispatchedRecord(record, change)
-        if (next === undefined) active.delete(change.id)
-        else active.set(change.id, next)
+        const next = advanceDispatchedSchedule(schedule.record, change)
+        if (next === undefined) retained.delete(change.id)
+        else retained.set(change.id, Object.freeze({ record: next, paused: false }))
         break
       }
       /* v8 ignore next 3 -- decodeScheduleChange returns a closed operation union. */
@@ -614,8 +650,11 @@ export function foldScheduleEvents(
       }
     }
   }
+  const schedules = Object.freeze([...retained.values()])
   return Object.freeze({
-    active: Object.freeze([...active.values()]),
+    active: Object.freeze(schedules.filter(schedule => !schedule.paused).map(schedule => schedule.record)),
+    paused: Object.freeze(schedules.filter(schedule => schedule.paused).map(schedule => schedule.record)),
+    schedules,
     seenIds: Object.freeze([...seen]),
   })
 }
@@ -625,7 +664,7 @@ export function foldScheduleEvents(
  * @param folded - Fold containing every previously created id.
  * @returns A fresh `schedule-N` identity.
  */
-export function allocateScheduleId(folded: FoldedSchedules): ScheduleIdType {
+export function allocateScheduleId(folded: Pick<FoldedSchedules, 'seenIds'>): ScheduleIdType {
   const seen = new Set(folded.seenIds)
   let sequence = seen.size + 1
   let candidate = ScheduleId(`schedule-${sequence}`)
@@ -759,14 +798,15 @@ export function createEveryScheduleRecord(
 
 /**
  * Derive one execution-local management view.
- * @param record - Active durable record.
+ * @param record - Retained durable record.
  * @param now - Wall-clock sample used for its timing state.
+ * @param paused - Whether durable delivery is suspended.
  * @returns Complete session-local view.
  */
-export function scheduleView(record: ScheduleRecord, now: number): ScheduleView {
+export function scheduleView(record: ScheduleRecord, now: number, paused = false): ScheduleView {
   return Object.freeze({
     ...record,
-    state: now >= Date.parse(record.scheduledAt) ? 'overdue' : 'scheduled',
+    state: paused ? 'paused' : now >= Date.parse(record.scheduledAt) ? 'overdue' : 'scheduled',
     deliveryMode: 'session-local',
   })
 }

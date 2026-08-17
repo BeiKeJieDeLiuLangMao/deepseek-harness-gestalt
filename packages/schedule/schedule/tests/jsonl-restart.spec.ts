@@ -10,7 +10,7 @@ import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-test
 import { LlmAdapter, type GenerateOptions, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
-import * as toolSchedule from '../src/index.ts'
+import ScheduleService from '../src/index.ts'
 import {
   ScheduleId,
   createAfterScheduleRecord,
@@ -54,7 +54,7 @@ async function mountRuntime(root: string, adapter: RecordingAdapter): Promise<Co
   await ctx.plugin(AgentLoop, { agents: [] })
   await ctx.plugin(JsonlSessionPersistence, { root, compression: 'none' })
   ctx.llm.registerAdapter(['mock'], adapter)
-  await ctx.plugin(toolSchedule)
+  await ctx.plugin(ScheduleService)
   return ctx
 }
 

@@ -6,7 +6,9 @@ import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
 import { CallId } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import * as toolSchedule from '../src/index.ts'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
+import { remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
+import ScheduleService, { ScheduleId } from '../src/index.ts'
 
 class PersistenceProbe extends Service {
   constructor(ctx: Context) {
@@ -18,6 +20,7 @@ async function harness(): Promise<Context> {
   const ctx = new Context()
   await mountAgentLoopTestDependencies(ctx)
   await ctx.plugin(PersistenceProbe)
+  await ctx.plugin(SessionProjectionRegistry)
   ctx.on('session/flush', () => {})
   await ctx.plugin(AgentLoop, { agents: [] })
   return ctx
@@ -28,18 +31,16 @@ async function settle(): Promise<void> {
 }
 
 describe('Schedule plugin composition', () => {
-  it('has the Loader-safe function-plugin export shape', () => {
-    expect('default' in toolSchedule).toBe(false)
-    expect(toolSchedule.name).toBe('schedule')
-    expect(toolSchedule.inject).toEqual(['agents', 'sessions', 'tools', 'sessionPersistence'])
+  it('exports one Loader-safe Remote Service', () => {
+    expect(ScheduleService.inject).toEqual(['agents', 'sessions', 'tools', 'sessionPersistence'])
     const loader = Object.create(Loader.prototype) as Loader
-    expect(loader.unwrapExports(toolSchedule)).toBe(toolSchedule)
+    expect(loader.unwrapExports({ default: ScheduleService })).toBe(ScheduleService)
   })
 
   it('installs only on future root agents and unwinds on plugin disposal', async () => {
     const ctx = await harness()
     const existing = await ctx.agents.create({ sessionId: SessionId('schedule-existing') })
-    const plugin = await ctx.plugin(toolSchedule)
+    const plugin = await ctx.plugin(ScheduleService)
     expect(ctx.tools.get('schedule_create', existing.agent)).toBeUndefined()
     expect(ctx.tools.get('schedule_create')).toBeUndefined()
 
@@ -82,9 +83,41 @@ describe('Schedule plugin composition', () => {
     await ctx.fiber.dispose()
   })
 
+  it('mutates pause, resume, and delete through the Host service and publishes the projection', async () => {
+    const ctx = await harness()
+    const plugin = await ctx.plugin(ScheduleService)
+    const root = await ctx.agents.create({ sessionId: SessionId('schedule-remote') })
+    root.agent.session.append('schedule/change', {
+      version: 1,
+      operation: 'create',
+      schedule: {
+        id: ScheduleId('schedule-1'),
+        kind: 'after',
+        prompt: 'check logs',
+        afterSeconds: 3_600,
+        scheduledAt: new Date(Date.now() + 3_600_000).toISOString(),
+      },
+    })
+
+    expect(remoteMethods(ctx.schedules).map(method => method.exportName ?? method.method))
+      .toEqual(['pause', 'resume', 'delete'])
+    await ctx.schedules.pause(root.agent, ScheduleId('schedule-1'))
+    expect(ctx.sessionProjections.snapshot(root.agent.session).values.schedules)
+      .toEqual([expect.objectContaining({ id: 'schedule-1', paused: true })])
+    await ctx.schedules.resume(root.agent, ScheduleId('schedule-1'))
+    expect(ctx.sessionProjections.snapshot(root.agent.session).values.schedules)
+      .toEqual([expect.objectContaining({ id: 'schedule-1', paused: false })])
+    await ctx.schedules.delete(root.agent, ScheduleId('schedule-1'))
+    expect(ctx.sessionProjections.snapshot(root.agent.session).values.schedules).toEqual([])
+
+    await root.dispose()
+    await plugin.dispose()
+    await ctx.fiber.dispose()
+  })
+
   it('does not checkpoint unrelated idle sessions', async () => {
     const ctx = await harness()
-    const plugin = await ctx.plugin(toolSchedule)
+    const plugin = await ctx.plugin(ScheduleService)
     const root = await ctx.agents.create({ sessionId: SessionId('schedule-unrelated-idle') })
     await settle()
     let flushes = 0

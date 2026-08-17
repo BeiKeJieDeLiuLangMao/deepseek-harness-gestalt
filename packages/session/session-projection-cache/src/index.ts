@@ -183,14 +183,14 @@ export class SessionProjectionCache extends Service {
     const related = record === undefined || identityMatches(record.identity, identityOf(tail.meta))
     try {
       if (!related) throw new Error('unrelated log identity')
-      restored = this.ctx.sessionProjections.restore(cached, tail.events, floor)
+      restored = this.ctx.sessionProjections.restore(cached, tail.events, floor, tail.meta.seedLength ?? 0)
     } catch {
       // The recoverable restore failures: an unrelated record, or a row
       // overreaching the stored log end (or predating the floor). Both imply
       // floor > 0 (baseSeq-0 restores never throw and an unrelated record
       // still carried a usable watermark), so the full log is a fresh read.
       const whole = await persistence.readFrom(id, 0, signal)
-      restored = this.ctx.sessionProjections.restore({}, whole.events, 0)
+      restored = this.ctx.sessionProjections.restore({}, whole.events, 0, whole.meta.seedLength ?? 0)
     }
     await this.putSoft(id, identityOf(tail.meta), restored.checkpoint, 'cold-read write-back')
     return restored.snapshot

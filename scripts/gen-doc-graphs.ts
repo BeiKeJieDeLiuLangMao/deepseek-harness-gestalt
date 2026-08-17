@@ -139,6 +139,14 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Owns append-only Session instances and emits the durable session event feed.',
   },
   {
+    key: 'schedules',
+    pkg: 'schedule',
+    title: 'Durable Session reminder owner',
+    mode: 'core',
+    consumers: ['ui-schedule'],
+    note: 'Owns human Remote mutations and the root-Agent timer lifecycle; the Session log remains the durable authority and the browser consumes its independent projection.',
+  },
+  {
     key: 'invariants',
     pkg: 'invariants',
     title: 'Package-owned invariant registry',
