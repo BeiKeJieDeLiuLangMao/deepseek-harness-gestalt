@@ -23,6 +23,22 @@ import {
 const execFileAsync = promisify(execFile)
 const policyEntrypoint = join(import.meta.dirname, 'policy.mjs')
 
+const runResourceCleanups = async (cleanups) => {
+  const results = await Promise.allSettled(
+    cleanups.map((cleanup) => Promise.resolve().then(cleanup)),
+  )
+  const errors = results.flatMap((result) =>
+    result.status === 'rejected' ? [result.reason] : [],
+  )
+  if (errors.length > 0) throw new AggregateError(errors, 'fake API resource cleanup failed')
+}
+
+const registerResourceCleanups = (t) => {
+  const cleanups = []
+  t.after(() => runResourceCleanups(cleanups))
+  return (cleanup) => cleanups.push(cleanup)
+}
+
 const withDetails = (summary) =>
   `${summary}\n\n<details><summary>验收与细节</summary>待补充。</details>`
 
@@ -78,7 +94,30 @@ test('routes policy requests to the repository from the workflow event', () => {
   )
 })
 
-test('routes CLI repository policy and enabled lifecycle requests through the event repository', async () => {
+test('attempts every fake API resource cleanup when one disposer fails', async () => {
+  const disposed = []
+
+  await assert.rejects(
+    runResourceCleanups([
+      async () => {
+        disposed.push('server')
+        throw new Error('server close failed')
+      },
+      async () => {
+        disposed.push('directory')
+      },
+    ]),
+    (error) => {
+      assert.ok(error instanceof AggregateError)
+      assert.deepEqual(error.errors.map((entry) => entry.message), ['server close failed'])
+      return true
+    },
+  )
+  assert.deepEqual(disposed.sort(), ['directory', 'server'])
+})
+
+test('routes CLI repository policy and enabled lifecycle requests through the event repository', async (t) => {
+  const registerCleanup = registerResourceCleanups(t)
   const requests = []
   const server = createServer(async (request, response) => {
     const chunks = []
@@ -172,11 +211,18 @@ test('routes CLI repository policy and enabled lifecycle requests through the ev
     server.once('listening', resolve)
     server.once('error', reject)
   })
+  registerCleanup(
+    () =>
+      new Promise((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()))
+      }),
+  )
   const address = server.address()
   assert.notEqual(address, null)
   assert.equal(typeof address, 'object')
 
   const directory = await mkdtemp(join(tmpdir(), 'dsh-issue-policy-'))
+  registerCleanup(() => rm(directory, { recursive: true, force: true }))
   const pullEvent = join(directory, 'pull-request.json')
   const issueEvent = join(directory, 'issue.json')
   await writeFile(pullEvent, JSON.stringify({ pull_request: { number: 48 } }))
@@ -186,41 +232,34 @@ test('routes CLI repository policy and enabled lifecycle requests through the ev
     GITHUB_API_URL: `http://127.0.0.1:${address.port}`,
   }
 
-  try {
-    await assert.rejects(
-      execFileAsync(process.execPath, [policyEntrypoint, 'deployment'], {
-        env: {
-          ...environment,
-          GITHUB_REPOSITORY: 'BeiKeJieDeLiuLangMao/deepseek-harness-gestalt',
-        },
-      }),
-      (error) => {
-        assert.match(error.stderr, /config\.projectOrganization 必须与 GITHUB_REPOSITORY owner 一致/)
-        return true
-      },
-    )
-
-    await execFileAsync(process.execPath, [policyEntrypoint, 'pr'], {
+  await assert.rejects(
+    execFileAsync(process.execPath, [policyEntrypoint, 'deployment'], {
       env: {
         ...environment,
-        GITHUB_EVENT_PATH: pullEvent,
         GITHUB_REPOSITORY: 'BeiKeJieDeLiuLangMao/deepseek-harness-gestalt',
       },
-    })
-    await execFileAsync(process.execPath, [policyEntrypoint, 'lifecycle'], {
-      env: {
-        ...environment,
-        GITHUB_EVENT_NAME: 'issues',
-        GITHUB_EVENT_PATH: issueEvent,
-        GITHUB_REPOSITORY: 'deepseek-harness/tracker',
-      },
-    })
-  } finally {
-    await new Promise((resolve, reject) => {
-      server.close((error) => (error ? reject(error) : resolve()))
-    })
-    await rm(directory, { recursive: true, force: true })
-  }
+    }),
+    (error) => {
+      assert.match(error.stderr, /config\.projectOrganization 必须与 GITHUB_REPOSITORY owner 一致/)
+      return true
+    },
+  )
+
+  await execFileAsync(process.execPath, [policyEntrypoint, 'pr'], {
+    env: {
+      ...environment,
+      GITHUB_EVENT_PATH: pullEvent,
+      GITHUB_REPOSITORY: 'BeiKeJieDeLiuLangMao/deepseek-harness-gestalt',
+    },
+  })
+  await execFileAsync(process.execPath, [policyEntrypoint, 'lifecycle'], {
+    env: {
+      ...environment,
+      GITHUB_EVENT_NAME: 'issues',
+      GITHUB_EVENT_PATH: issueEvent,
+      GITHUB_REPOSITORY: 'deepseek-harness/tracker',
+    },
+  })
 
   const restPaths = requests
     .filter((request) => request.path !== '/graphql')
