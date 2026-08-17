@@ -7,6 +7,7 @@ import type { AgentHandle } from '@deepseek-ai/dsh-agent'
 import { CallId, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-agent-presets'
+import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import { assertFixtureInventory, launchWebScaffold, type WebScaffold } from './scaffold.ts'
 
@@ -30,11 +31,15 @@ describe('minimal agent preset', () => {
 - id: tool-eligibility
   name: '@deepseek-ai/dsh-agent-tool-eligibility'
   config:
-    allow: [bash]
+    allow: []
 `)
     scaffold = await launchWebScaffold({
       replayFixture: FIXTURE,
       agentPresets: { roots: [{ path: presetRoot, trust: 'system' }], default: 'minimal' },
+    })
+    await scaffold.ctx.settings.replace(settingsNamespace('tool-eligibility'), {
+      workspaces: {},
+      sessions: { 'minimal-preset-smoke': ['bash'] },
     })
     disposeInjectedPrompt = scaffold.ctx.systemPrompt.section({
       name: 'test:injected-prompt',

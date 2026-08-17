@@ -22,7 +22,7 @@ Code Mode 保留 `run_code` 作为呈现基础设施。正向资格筛选其 SDK
 
 ## 验证
 
-工具注册表测试覆盖作用域链并集、显式 allow-none、继承与作用域本地 schema 筛选、过期调用拒绝和工具主体未执行。解析器测试覆盖 preset、Workspace 与 Session 添加、正常及抛错监听器下的原子刷新、解析器卸载/HMR、Agent 销毁、动态注册和用户配置中不存在 deny 字段。invariant 负控会拒绝与实时注册表不一致的 publication。API 测试覆盖 `session.toolEligibility` 对 `ctx.tools` 的直接投影。Web minimal-preset 无密钥回放会挂载 allow-only preset，在持久请求 header 中只记录 `bash`，执行该工具，并证明过期 `str_replace_editor` 调用在执行前失败。
+工具注册表测试覆盖作用域链并集、显式 allow-none、继承与作用域本地 schema 筛选、过期调用拒绝和工具主体未执行。解析器测试覆盖 preset、Workspace 与 Session 添加、正常及抛错监听器下的原子刷新、解析器卸载/HMR、Agent 销毁、动态注册和用户配置中不存在 deny 字段。invariant 负控会拒绝与实时注册表不一致的 publication。API 测试覆盖 `session.toolEligibility` 对 `ctx.tools` 的直接投影。Web minimal-preset 无密钥回放把 preset allowance 设为空，通过 Loader composition 中真实的 Session settings namespace 添加 `bash`，在持久请求 header 中只记录该工具，执行它，并证明过期 `str_replace_editor` 调用在执行前失败。
 
 ## 曾考虑的替代方案
 

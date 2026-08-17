@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-18-allow-only-tool-eligibility.md
-2026-08-18-allow-only-tool-eligibility.md: 5184efdee71925e0273eda9ec2cc1d32ae181c89
-2026-08-18-allow-only-tool-eligibility.zh.md: 28cb518cd346e8cc179e2a5a32512431270f0ab1
+2026-08-18-allow-only-tool-eligibility.md: e77e2cd0c9bb7ffc4402bd021ef44182348e9b29
+2026-08-18-allow-only-tool-eligibility.zh.md: 5594653c98242f3ba4e20fda0d3579b392e6788a

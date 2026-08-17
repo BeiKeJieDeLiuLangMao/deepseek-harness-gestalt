@@ -225,6 +225,33 @@ describe('allow-only tool eligibility', () => {
     expect(ctx.tools.eligibilityAllow(agent)).toEqual(['blocked-tool', 'late-tool', 'preset-tool'])
   })
 
+  it('notifies tools/change after a committed publication observer failure', async () => {
+    const { agent, ctx } = await harness()
+    const observed: Array<[string, readonly string[] | undefined]> = []
+    ctx.on('tool-eligibility/published', () => {
+      observed.push(['published', ctx.tools.eligibilityAllow(agent)])
+      throw Object.assign(new Error('publication invariant failed'), { code: 'INVARIANT' })
+    })
+    ctx.on('tools/change', () => {
+      observed.push(['tools/change', ctx.tools.eligibilityAllow(agent)])
+    })
+
+    await ctx.settings.replace(TOOL_ELIGIBILITY_SETTINGS_NAMESPACE, {
+      workspaces: {},
+      sessions: { 'session-1': ['blocked-tool'] },
+    })
+
+    expect(observed).toEqual([
+      ['published', ['blocked-tool', 'late-tool', 'preset-tool']],
+      ['tools/change', ['blocked-tool', 'late-tool', 'preset-tool']],
+    ])
+    expect(ctx.settings.get(TOOL_ELIGIBILITY_SETTINGS_NAMESPACE)).toEqual({
+      workspaces: {},
+      sessions: { 'session-1': ['blocked-tool'] },
+    })
+    expect(ctx.tools.eligibilityAllow(agent)).toEqual(['blocked-tool', 'late-tool', 'preset-tool'])
+  })
+
   it('handles unrestricted agents, unmatched Workspaces, and duplicate lifecycle notifications', async () => {
     const empty = await harness({
       cwd: undefined,

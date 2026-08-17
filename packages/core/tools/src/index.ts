@@ -1177,6 +1177,13 @@ export class ToolRuntime extends Service {
   ): ToolEligibilityContribution {
     const allowance: EligibilityAllowance = { names: undefined }
     let active = true
+    const notifyCommitted = (settingsAllow: readonly string[] | undefined): void => {
+      try {
+        publish(settingsAllow)
+      } finally {
+        this.ctx.emit('tools/change')
+      }
+    }
     const remove = this.layers.effectAt(
       owner,
       scope,
@@ -1188,8 +1195,7 @@ export class ToolRuntime extends Service {
           active = false
           undo()
           if (!changed) return
-          publish(undefined)
-          this.ctx.emit('tools/change')
+          notifyCommitted(undefined)
         }
       },
       { label: 'tools.eligibilityContribution()', notify: false },
@@ -1206,8 +1212,7 @@ export class ToolRuntime extends Service {
         const current = read()
         if (sameStringList(current, next)) return
         allowance.names = next === undefined ? undefined : new Set(next)
-        publish(next)
-        this.ctx.emit('tools/change')
+        notifyCommitted(next)
       },
       dispose: remove,
     }

@@ -22,7 +22,7 @@ Code Mode keeps `run_code` as reserved presentation infrastructure. Positive eli
 
 ## Verification
 
-Tool registry tests cover scope-chain union, explicit allow-none, inherited and scope-local schema filtering, stale-call refusal, and body non-execution. Resolver tests cover preset, Workspace, and Session additions, atomic refresh under normal and throwing listeners, resolver unload/HMR, Agent disposal, dynamic registration, and absence of a user-facing deny field. The invariant negative control rejects a publication that differs from the live registry. API tests cover the direct `ctx.tools` projection in `session.toolEligibility`. The Web minimal-preset keyless replay mounts an allow-only preset, records only `bash` in the durable request header, executes it, and proves a stale `str_replace_editor` call fails before execution.
+Tool registry tests cover scope-chain union, explicit allow-none, inherited and scope-local schema filtering, stale-call refusal, and body non-execution. Resolver tests cover preset, Workspace, and Session additions, atomic refresh under normal and throwing listeners, resolver unload/HMR, Agent disposal, dynamic registration, and absence of a user-facing deny field. The invariant negative control rejects a publication that differs from the live registry. API tests cover the direct `ctx.tools` projection in `session.toolEligibility`. The Web minimal-preset keyless replay gives the preset an empty allowance, adds `bash` through the real Session settings namespace in the Loader composition, records only `bash` in the durable request header, executes it, and proves a stale `str_replace_editor` call fails before execution.
 
 ## Alternatives considered
 
