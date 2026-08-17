@@ -390,6 +390,17 @@ describe('Issue lifecycle workflow', () => {
       throw new TypeError('Issue lifecycle job must define steps')
     }
     const lifecycleSteps: unknown[] = lifecycleJob.steps
+    const validationStepIndex = lifecycleSteps.findIndex(
+      step => isRecord(step) && step.name === 'Validate project owner',
+    )
+    const tokenStepIndex = lifecycleSteps.findIndex(
+      step => isRecord(step) && step.name === 'Create project token',
+    )
+    expect(lifecycleSteps[validationStepIndex]).toMatchObject({
+      run: 'node .github/issue-management/policy.mjs deployment',
+    })
+    expect(validationStepIndex).toBeGreaterThanOrEqual(0)
+    expect(tokenStepIndex).toBeGreaterThan(validationStepIndex)
     const tokenStep = lifecycleSteps.find(
       step => isRecord(step) && step.name === 'Create project token',
     )

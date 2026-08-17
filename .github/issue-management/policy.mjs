@@ -73,6 +73,15 @@ function repositoryApiPath(path) {
   return `/repos/${repositoryCoordinates().fullName}${path}`
 }
 
+function validateLifecycleDeployment(environment = process.env) {
+  const { owner } = repositoryCoordinates(environment)
+  if (config.projectOrganization !== owner) {
+    throw new Error(
+      `config.projectOrganization 必须与 GITHUB_REPOSITORY owner 一致：${config.projectOrganization} != ${owner}`,
+    )
+  }
+}
+
 /**
  * Return Markdown outside balanced details elements.
  * @param {string} body Markdown body.
@@ -682,6 +691,7 @@ async function runPullRequestCheck(event) {
 }
 
 async function runLifecycle(eventName, event) {
+  validateLifecycleDeployment()
   if (eventName === 'issues') {
     const number = event.issue.number
     if (event.action === 'opened') await setStatus(number, 'Inbox')
@@ -714,7 +724,8 @@ async function main(argv) {
   const [command] = argv
   if (command === 'pr') await runPullRequestCheck(readEvent())
   else if (command === 'lifecycle') await runLifecycle(process.env.GITHUB_EVENT_NAME, readEvent())
-  else throw new Error('用法：policy.mjs pr|lifecycle')
+  else if (command === 'deployment') validateLifecycleDeployment()
+  else throw new Error('用法：policy.mjs pr|lifecycle|deployment')
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
