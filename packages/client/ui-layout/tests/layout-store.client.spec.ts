@@ -19,7 +19,13 @@ beforeEach(() => { localStorage.clear() })
 describe('createLayoutStore', () => {
   it('initializes the sidebar at its default width, details closed, wide viewport assumed', () => {
     const { store } = createLayoutStore().create()
-    expect(store.getSnapshot()).toEqual({ sidebar: SIDEBAR_DEFAULT, details: 0, narrow: false, narrowExpanded: false })
+    expect(store.getSnapshot()).toEqual({
+      sidebar: SIDEBAR_DEFAULT,
+      details: 0,
+      detailsRange: { minimum: DETAILS_MIN, default: DETAILS_DEFAULT, maximum: DETAILS_MAX },
+      narrow: false,
+      narrowExpanded: false,
+    })
   })
 
   it('each create() is an independent instance (factory is not a singleton)', () => {
@@ -55,7 +61,13 @@ describe('createLayoutStore', () => {
     actions.setSidebar(400)
     actions.setNarrow(true)
     actions.toggleSidebar()
-    expect(store.getSnapshot()).toEqual({ sidebar: 400, details: 0, narrow: true, narrowExpanded: true })
+    expect(store.getSnapshot()).toEqual({
+      sidebar: 400,
+      details: 0,
+      detailsRange: { minimum: DETAILS_MIN, default: DETAILS_DEFAULT, maximum: DETAILS_MAX },
+      narrow: true,
+      narrowExpanded: true,
+    })
     actions.toggleSidebar()
     expect(store.getSnapshot().narrowExpanded).toBe(false)
     expect(store.getSnapshot().sidebar).toBe(400)
@@ -85,6 +97,33 @@ describe('createLayoutStore', () => {
     expect(store.getSnapshot().details).toBe(0)
   })
 
+  it('opens, drags, and reopens within the active occupant width range', () => {
+    const { store, actions } = createLayoutStore().create()
+    const browserRange = { minimum: 420, default: 640, maximum: 960 }
+
+    actions.openDetails(browserRange)
+    expect(store.getSnapshot()).toMatchObject({ details: 640, detailsRange: browserRange })
+    actions.setDetails(2000)
+    expect(store.getSnapshot().details).toBe(960)
+    actions.openDetails({ ...browserRange })
+    expect(store.getSnapshot().details).toBe(960)
+    actions.closeDetails()
+    actions.openDetails(browserRange)
+    expect(store.getSnapshot().details).toBe(640)
+  })
+
+  it('restores ordinary details geometry when the next occupant omits a range', () => {
+    const { store, actions } = createLayoutStore().create()
+    actions.openDetails({ minimum: 420, default: 640, maximum: 960 })
+
+    actions.openDetails()
+
+    expect(store.getSnapshot()).toMatchObject({
+      details: DETAILS_DEFAULT,
+      detailsRange: { minimum: DETAILS_MIN, default: DETAILS_DEFAULT, maximum: DETAILS_MAX },
+    })
+  })
+
   it('does not persist panel geometry', () => {
     const first = createLayoutStore().create()
     first.actions.setSidebar(400)
@@ -96,6 +135,7 @@ describe('createLayoutStore', () => {
     expect(second.store.getSnapshot()).toEqual({
       sidebar: SIDEBAR_DEFAULT,
       details: 0,
+      detailsRange: { minimum: DETAILS_MIN, default: DETAILS_DEFAULT, maximum: DETAILS_MAX },
       narrow: false,
       narrowExpanded: false,
     })

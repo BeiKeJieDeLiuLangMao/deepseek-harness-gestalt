@@ -92,9 +92,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [],
       },
       {
-        signature: 'openDetails(): void',
-        description: 'Open the details panel (no-op when already open).',
-        parameters: [],
+        signature: 'openDetails(range?: DetailsWidthRange): void',
+        description: 'Open details for an occupant. Repeating the active range preserves an open dragged width; a different range adopts its default, and omission uses the ordinary 300/360/520 px geometry.',
+        parameters: [{ name: 'range', description: 'occupant-specific minimum, default, and maximum widths.' }],
       },
       {
         signature: 'closeDetails(): void',
@@ -540,6 +540,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ConversationViewSnapshotStore',
     declaration: 'export interface ConversationViewSnapshotStore {\n    get<Target extends Extract<keyof ConversationViewSnapshotMap, string>>(target: Target): ConversationViewSnapshotMap[Target] | undefined;\n}',
+  },
+  {
+    name: 'DetailsWidthRange',
+    declaration: 'export interface DetailsWidthRange {\n    readonly minimum: number;\n    readonly default: number;\n    readonly maximum: number;\n}',
   },
   {
     name: 'EntryKeyOf',

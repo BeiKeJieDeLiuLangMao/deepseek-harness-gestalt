@@ -17,6 +17,17 @@ describe('clampWidth', () => {
 })
 
 describe('computeColumns', () => {
+  it('uses an occupant-specific details range without weakening the center minimum', () => {
+    const range = { minimum: 420, default: 640, maximum: 960 }
+
+    expect(computeColumns(1880, open(SIDEBAR_DEFAULT), open(1200), range))
+      .toEqual({ sidebar: SIDEBAR_DEFAULT, center: 640, details: 960 })
+    expect(computeColumns(1400, open(SIDEBAR_DEFAULT), open(range.default), range))
+      .toEqual({ sidebar: SIDEBAR_DEFAULT, center: CENTER_MIN, details: 480 })
+    expect(computeColumns(1339, open(SIDEBAR_DEFAULT), open(range.default), range))
+      .toEqual({ sidebar: SIDEBAR_DEFAULT, center: 1059, details: 0 })
+  })
+
   it('step 1: everything fits at preferred widths', () => {
     const cols = computeColumns(1920, open(SIDEBAR_DEFAULT), open(DETAILS_DEFAULT))
     expect(cols).toEqual({ sidebar: 280, center: 1920 - 280 - 360, details: 360 })
