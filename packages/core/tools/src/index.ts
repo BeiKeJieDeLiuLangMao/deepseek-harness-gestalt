@@ -745,6 +745,8 @@ interface CompiledToolRestriction {
 interface ToolView {
   /** Visible definitions after restrictions, scoped shadowing, and transport insertion. */
   readonly visible: ReadonlyMap<string, ToolDefinition>
+  /** Effective positive allowance, or absent when eligibility is unrestricted. */
+  readonly eligibility: ReadonlySet<string> | undefined
   /** Pre-restriction capability names used by prompt-order validation. */
   readonly knownNames: ReadonlySet<string>
   /** Current global names that a scoped restriction may name. */
@@ -1364,7 +1366,14 @@ export class ToolRuntime extends Service {
     if (this.modeFor(scope) !== 'native') {
       visible.set(RUN_CODE_NAME, this.requireCodeTransport())
     }
-    return { visible, knownNames, restrictableNames }
+    return { visible, eligibility: eligible, knownNames, restrictableNames }
+  }
+
+  /** Whether a registered definition is excluded by one derived positive allowance. */
+  private eligibilityDenies(view: ToolView, name: string): boolean {
+    return view.eligibility !== undefined
+      && view.knownNames.has(name)
+      && !view.eligibility.has(name)
   }
 
   /**
@@ -1504,7 +1513,10 @@ export class ToolRuntime extends Service {
    * Execute through pre-policy, guards, around-dispatch, post-policy,
    * definition-owned content finalization, and final notification. Tool and
    * listener failures resolve as materialized error results; an invisible tool
-   * reports `UNKNOWN_TOOL`. The returned outcome is the same lossless, frozen
+   * reports `UNKNOWN_TOOL`. A registered tool excluded by positive eligibility
+   * is rejected before policy, and eligibility narrowed during pre-policy is
+   * rechecked before around-dispatch listeners. Unknown or unloaded names keep
+   * the ordinary pipeline. The returned outcome is the same lossless, frozen
    * snapshot final observers receive. Cancellation
    * arriving after entry and before final result materialization skips a
    * not-yet-started body with `ABORTED_BEFORE_DISPATCH` or replaces a
@@ -1545,14 +1557,13 @@ export class ToolRuntime extends Service {
     const agent = exec.agent
     const parent = exec.parent
     const signal = exec.signal
-    // Distinguish a mode-collapsed call (visible in the scope, denied only by
-    // the `code` collapse) from a genuinely unknown tool. A collapsed call is
-    // deterministically denied, so it terminates BEFORE the extensible policy
-    // pipeline: pre-execute listeners, approval `ask`, and guards must never
-    // observe — or worse, approve — a call that can only fail. An unknown tool
-    // keeps the historical dispatch-stage `UNKNOWN_TOOL` path so policy
-    // listeners still see every name that reaches the registry.
-    const visible = this.get(name, agent)
+    // Distinguish deterministic eligibility and mode denials from a genuinely
+    // unknown tool. Deterministic denials terminate before extensible policy;
+    // an unknown tool keeps the historical dispatch-stage `UNKNOWN_TOOL` path
+    // so policy and around-dispatch listeners still observe unloaded names.
+    const initialView = this.view(agent)
+    const visible = initialView.visible.get(name)
+    const eligibilityDenied = this.eligibilityDenies(initialView, name)
     const collapsed = visible !== undefined && this.collapses(name, agent, parent !== undefined)
     const concludingExecutions = this.concludingExecutions
     const base = {
@@ -1595,14 +1606,19 @@ export class ToolRuntime extends Service {
         callerSignal: signal,
         bodyInvoked: false,
       })
-      if (collapsed) {
-        // The collapse denies the call before the policy pipeline, but a
-        // pre-dispatch abort still keeps the established cancellation
-        // contract: `prepare`'s caller-cancellation check is skipped for
-        // final-results, so honor the abort here instead of surfacing
-        // `UNKNOWN_TOOL` on an already-cancelled call.
+      if (eligibilityDenied || collapsed) {
+        // A deterministic denial precedes policy, but a pre-dispatch abort
+        // still keeps the established cancellation contract: `prepare` skips
+        // its caller-cancellation check for final results.
         if (signal.aborted) {
           return { kind: 'final-result', exec: execution, result: toolAbortedBeforeDispatchResult() }
+        }
+        if (eligibilityDenied) {
+          return {
+            kind: 'final-result',
+            exec: execution,
+            result: toolErrorResult(new ToolNotFoundError(name)),
+          }
         }
         // The name IS visible here, so the denial carries the route the model
         // must take instead. Without it the model reads a bare `unknown tool`
@@ -1743,6 +1759,9 @@ export class ToolRuntime extends Service {
    */
   private async dispatchScheduledExecution(exec: ToolRunContext): Promise<ScheduledToolDispatch> {
     try {
+      if (this.eligibilityDenies(this.view(exec.agent), exec.name)) {
+        return { kind: 'post-result', result: toolErrorResult(new ToolNotFoundError(exec.name)) }
+      }
       const mutableExec = exec as MutableToolRunContext
       const carrier = scopeTarget(this, exec.agent)
       const result = await this.ctx.waterfall(

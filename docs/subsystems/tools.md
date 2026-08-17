@@ -169,7 +169,7 @@ interface ToolRestriction {
 
 ## Execution: extensible waterfalls plus monotonic policy
 
-`ctx.tools.execute()` accepts a caller-owned `ToolExecutionInput` with a required readonly `signal`, materializes its parsed JSON arguments once into a pipeline-owned `ToolExecution`, and runs that call through `tools/pre-execute` (the reorderable allow/deny/ask waterfall) → registered monotonic guards → `tools/execute` (around-dispatch wrappers) → `tools/post-execute` (inspect/replace the result) → optional definition-owned `finalizeContent` → `tools/result` (the immutable authoritative outcome). Only the `tools/execute` view may replace the required signal. The outcome is a `ToolExecutionResult`.
+`ctx.tools.execute()` accepts a caller-owned `ToolExecutionInput` with a required readonly `signal`, materializes its parsed JSON arguments once into a pipeline-owned `ToolExecution`, and runs that call through `tools/pre-execute` (the reorderable allow/deny/ask waterfall) → registered monotonic guards → `tools/execute` (around-dispatch wrappers) → `tools/post-execute` (inspect/replace the result) → optional definition-owned `finalizeContent` → `tools/result` (the immutable authoritative outcome). A registered definition excluded by positive eligibility resolves to `UNKNOWN_TOOL` before policy, and eligibility narrowed during pre-policy is rechecked before `tools/execute`; unknown or not-yet-loaded names retain the ordinary pipeline. Only the `tools/execute` view may replace the required signal. The outcome is a `ToolExecutionResult`.
 
 ```ts type-equiv
 /** Opaque call identity that permits correlation without exposing mutable execution state. */
@@ -576,7 +576,10 @@ executionMode(exec: ToolExecutionInput): ToolExecutionMode
  * Execute through pre-policy, guards, around-dispatch, post-policy,
  * definition-owned content finalization, and final notification. Tool and
  * listener failures resolve as materialized error results; an invisible tool
- * reports `UNKNOWN_TOOL`. The returned outcome is the same lossless, frozen
+ * reports `UNKNOWN_TOOL`. A registered tool excluded by positive eligibility
+ * is rejected before policy, and eligibility narrowed during pre-policy is
+ * rechecked before around-dispatch listeners. Unknown or unloaded names keep
+ * the ordinary pipeline. The returned outcome is the same lossless, frozen
  * snapshot final observers receive. Cancellation
  * arriving after entry and before final result materialization skips a
  * not-yet-started body with `ABORTED_BEFORE_DISPATCH` or replaces a
@@ -591,7 +594,7 @@ async execute(exec: ToolExecutionInput): Promise<ToolExecutionResult>
 
 Types: [ScopeKey](scope.md)
 
-Source: [`packages/core/tools/src/index.ts:840`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:842`](../../packages/core/tools/src/index.ts)
 
 <a id="tool-eligibility-events"></a>
 

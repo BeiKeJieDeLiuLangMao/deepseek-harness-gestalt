@@ -416,6 +416,89 @@ describe('allow-only eligibility declarations', () => {
     expect(await run(ctx, 'local', key)).toBe('Error: unknown tool "local"')
     expect(blockedCalls).toBe(0)
   })
+
+  it('rejects a stale ineligible call before an around-dispatch listener can short-circuit it', async () => {
+    const ctx = await mount()
+    const { scope, key } = await mintAgentScope(ctx, 'filtered-short-circuit')
+    let wrapperCalls = 0
+    let bodyCalls = 0
+    ctx.tools.register({
+      ...tool('blocked'),
+      execute: () => {
+        bodyCalls += 1
+        return Promise.resolve('ran:blocked')
+      },
+    })
+    scope.ctx.tools.allowEligible(['allowed'])
+    ctx.on('tools/execute', async () => {
+      wrapperCalls += 1
+      return { content: [], isError: false, value: 'short-circuited' }
+    })
+
+    const result = await ctx.tools.execute({
+      signal: testToolSignal,
+      callId: CallId('stale-ineligible'),
+      name: 'blocked',
+      arguments: {},
+      agent: key,
+    })
+
+    expect(wrapperCalls).toBe(0)
+    expect(bodyCalls).toBe(0)
+    expect(result.error).toEqual({
+      message: 'unknown tool "blocked"',
+      info: { name: 'ToolNotFoundError', code: 'UNKNOWN_TOOL' },
+    })
+
+    const notLoaded = await ctx.tools.execute({
+      signal: testToolSignal,
+      callId: CallId('not-loaded'),
+      name: 'not-loaded',
+      arguments: {},
+      agent: key,
+    })
+    expect(wrapperCalls).toBe(1)
+    expect(notLoaded.error?.info).toEqual({ name: 'ToolNotFoundError', code: 'UNKNOWN_TOOL' })
+  })
+
+  it('rechecks eligibility after pre-policy and before around-dispatch listeners', async () => {
+    const ctx = await mount()
+    const { scope, key } = await mintAgentScope(ctx, 'narrowed-before-dispatch')
+    let preCalls = 0
+    let wrapperCalls = 0
+    let bodyCalls = 0
+    ctx.tools.register({
+      ...tool('stale'),
+      execute: () => {
+        bodyCalls += 1
+        return Promise.resolve('ran:stale')
+      },
+    })
+    const liftInitialAllowance = scope.ctx.tools.allowEligible(['stale'])
+    ctx.on('tools/pre-execute', async (_exec, next) => {
+      preCalls += 1
+      liftInitialAllowance()
+      scope.ctx.tools.allowEligible([])
+      return next()
+    })
+    ctx.on('tools/execute', async () => {
+      wrapperCalls += 1
+      return { content: [], isError: false, value: 'short-circuited' }
+    })
+
+    const result = await ctx.tools.execute({
+      signal: testToolSignal,
+      callId: CallId('narrowed-before-dispatch'),
+      name: 'stale',
+      arguments: {},
+      agent: key,
+    })
+
+    expect(preCalls).toBe(1)
+    expect(wrapperCalls).toBe(0)
+    expect(bodyCalls).toBe(0)
+    expect(result.error?.info).toEqual({ name: 'ToolNotFoundError', code: 'UNKNOWN_TOOL' })
+  })
 })
 
 describe('scoped execution dispatch', () => {

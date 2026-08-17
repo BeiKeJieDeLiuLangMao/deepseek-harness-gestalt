@@ -169,7 +169,7 @@ interface ToolRestriction {
 
 ## 执行：可扩展的 waterfall（瀑布式事件）加单调策略
 
-`ctx.tools.execute()` 接受由调用方拥有且包含必需 readonly `signal` 的 `ToolExecutionInput`，将其解析后的 JSON 参数一次性物化为流水线拥有的 `ToolExecution`，然后让调用依次经过 `tools/pre-execute`（可重排的 allow/deny/ask waterfall）→ 已注册的单调 guard → `tools/execute`（环绕分派包装层）→ `tools/post-execute`（检查/替换结果）→ 可选且由定义拥有的 `finalizeContent` → `tools/result`（不可变的权威结果）。只有 `tools/execute` 视图可以替换必需的 signal。最终产出为 `ToolExecutionResult`。
+`ctx.tools.execute()` 接受由调用方拥有且包含必需 readonly `signal` 的 `ToolExecutionInput`，将其解析后的 JSON 参数一次性物化为流水线拥有的 `ToolExecution`，然后让调用依次经过 `tools/pre-execute`（可重排的 allow/deny/ask waterfall）→ 已注册的单调 guard → `tools/execute`（环绕分派包装层）→ `tools/post-execute`（检查/替换结果）→ 可选且由定义拥有的 `finalizeContent` → `tools/result`（不可变的权威结果）。已注册但被正向资格排除的定义会在策略运行前解析为 `UNKNOWN_TOOL`；如果资格在前置策略期间收窄，执行器会在进入 `tools/execute` 前重新检查；未知或尚未加载的名称仍走常规流水线。只有 `tools/execute` 视图可以替换必需的 signal。最终产出为 `ToolExecutionResult`。
 
 ```ts type-equiv
 /** Opaque call identity that permits correlation without exposing mutable execution state. */
@@ -576,7 +576,10 @@ executionMode(exec: ToolExecutionInput): ToolExecutionMode
  * Execute through pre-policy, guards, around-dispatch, post-policy,
  * definition-owned content finalization, and final notification. Tool and
  * listener failures resolve as materialized error results; an invisible tool
- * reports `UNKNOWN_TOOL`. The returned outcome is the same lossless, frozen
+ * reports `UNKNOWN_TOOL`. A registered tool excluded by positive eligibility
+ * is rejected before policy, and eligibility narrowed during pre-policy is
+ * rechecked before around-dispatch listeners. Unknown or unloaded names keep
+ * the ordinary pipeline. The returned outcome is the same lossless, frozen
  * snapshot final observers receive. Cancellation
  * arriving after entry and before final result materialization skips a
  * not-yet-started body with `ABORTED_BEFORE_DISPATCH` or replaces a
@@ -591,7 +594,7 @@ async execute(exec: ToolExecutionInput): Promise<ToolExecutionResult>
 
 Types: [ScopeKey](scope.md)
 
-Source: [`packages/core/tools/src/index.ts:840`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:842`](../../packages/core/tools/src/index.ts)
 
 <a id="tool-eligibility-events"></a>
 
