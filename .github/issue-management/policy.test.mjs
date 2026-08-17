@@ -48,8 +48,13 @@ const preparePullRequestCli = async (
   {
     priorityField,
     pullRequestReadAuthentication = 'token',
+    pullRequestPolicyActivation = 'non-draft',
     issueFieldStatus = 200,
+    issueStatus = 200,
     pullStatus = 200,
+    pullDraft = false,
+    pullAuthorType = 'User',
+    reviewEndpointStatus = 200,
     token = 'test-token',
   },
 ) => {
@@ -70,31 +75,41 @@ const preparePullRequestCli = async (
     if (request.url?.endsWith('/pulls/49')) {
       send({
         body: 'Fixes #49',
-        draft: false,
+        draft: pullDraft,
         labels: [{ name: 'kind/bug-fix' }, { name: 'area/infra' }],
-        user: { type: 'User' },
+        user: { type: pullAuthorType },
       }, pullStatus)
       return
     }
     if (request.url?.endsWith('/pulls/49/requested_reviewers')) {
-      send({ users: [{ login: 'reviewer' }], teams: [] })
+      send(
+        reviewEndpointStatus === 200
+          ? { users: [{ login: 'reviewer' }], teams: [] }
+          : { message: 'Not Found' },
+        reviewEndpointStatus,
+      )
       return
     }
     if (request.url?.endsWith('/pulls/49/reviews?per_page=100')) {
-      send([])
+      send(reviewEndpointStatus === 200 ? [] : { message: 'Not Found' }, reviewEndpointStatus)
       return
     }
     if (request.url?.endsWith('/issues/49')) {
-      send({
-        node_id: 'issue-id',
-        title: '为个人 tracker 显式关闭 Issue Priority 字段查询',
-        body: withDetails('修复个人 tracker 的 Priority 查询。'),
-        assignees: [],
-        labels: [],
-        type: null,
-        state: 'open',
-        state_reason: null,
-      })
+      send(
+        issueStatus === 200
+          ? {
+              node_id: 'issue-id',
+              title: '为个人 tracker 显式关闭 Issue Priority 字段查询',
+              body: withDetails('修复个人 tracker 的 Priority 查询。'),
+              assignees: [],
+              labels: [],
+              type: null,
+              state: 'open',
+              state_reason: null,
+            }
+          : { message: 'Not Found' },
+        issueStatus,
+      )
       return
     }
     if (request.url?.endsWith('/issues/49/issue-field-values?per_page=100')) {
@@ -126,7 +141,12 @@ const preparePullRequestCli = async (
   await copyFile(policyEntrypoint, entrypoint)
   await writeFile(
     join(directory, 'config.json'),
-    JSON.stringify({ ...config, priorityField, pullRequestReadAuthentication }),
+    JSON.stringify({
+      ...config,
+      priorityField,
+      pullRequestReadAuthentication,
+      pullRequestPolicyActivation,
+    }),
   )
   await writeFile(eventPath, JSON.stringify({ pull_request: { number: 49 } }))
 
@@ -210,10 +230,80 @@ test('skips Issue field requests when Priority integration is disabled', async (
   )
 })
 
+test('non-draft activation skips unavailable review endpoints and uses the workflow token', async (t) => {
+  const fixture = await preparePullRequestCli(t, {
+    priorityField: null,
+    pullRequestPolicyActivation: 'non-draft',
+    reviewEndpointStatus: 404,
+  })
+
+  const result = await fixture.run()
+
+  assert.match(result.stdout, /Issue policy 通过。/)
+  assert.deepEqual(
+    fixture.requestDetails.map(({ path }) => path),
+    [
+      '/repos/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/pulls/49',
+      '/repos/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/issues/49',
+    ],
+  )
+  for (const request of fixture.requestDetails) {
+    assert.equal(request.method, 'GET')
+    assert.equal(request.authorization, 'Bearer test-token')
+  }
+})
+
+test('Draft, Bot, and App pull requests stop after the initial PR read', async (t) => {
+  const exemptions = [
+    { name: 'Draft', pullDraft: true, pullAuthorType: 'User' },
+    { name: 'Bot', pullDraft: false, pullAuthorType: 'Bot' },
+    { name: 'App', pullDraft: false, pullAuthorType: 'App' },
+  ]
+  for (const pullRequestPolicyActivation of ['non-draft', 'review-activity']) {
+    for (const exemption of exemptions) {
+      await t.test(`${pullRequestPolicyActivation}: ${exemption.name}`, async (t) => {
+        const fixture = await preparePullRequestCli(t, {
+          priorityField: 'Priority',
+          pullRequestPolicyActivation,
+          pullDraft: exemption.pullDraft,
+          pullAuthorType: exemption.pullAuthorType,
+          reviewEndpointStatus: 404,
+          issueStatus: 404,
+        })
+
+        const result = await fixture.run()
+
+        assert.match(result.stdout, /PR 尚未进入 Issue policy 强制范围。/)
+        assert.deepEqual(
+          fixture.requestDetails.map(({ path }) => path),
+          ['/repos/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/pulls/49'],
+        )
+      })
+    }
+  }
+})
+
+test('eligible non-draft pull requests keep downstream API failures fatal', async (t) => {
+  const fixture = await preparePullRequestCli(t, {
+    priorityField: null,
+    pullRequestPolicyActivation: 'non-draft',
+    issueStatus: 404,
+  })
+
+  await assert.rejects(fixture.run(), (error) => {
+    assert.match(
+      error.stderr,
+      /GET \/repos\/BeiKeJieDeLiuLangMao\/deepseek-harness-gestalt\/issues\/49: 404/,
+    )
+    return true
+  })
+})
+
 test('uses anonymous authentication for every PR policy read', async (t) => {
   const fixture = await preparePullRequestCli(t, {
     priorityField: 'Priority',
     pullRequestReadAuthentication: 'anonymous',
+    pullRequestPolicyActivation: 'review-activity',
   })
 
   const result = await fixture.run()
@@ -226,16 +316,26 @@ test('uses anonymous authentication for every PR policy read', async (t) => {
   }
 })
 
-test('uses bearer authentication for every token-mode PR policy read', async (t) => {
+test('review-activity activation reads review activity with bearer authentication', async (t) => {
   const fixture = await preparePullRequestCli(t, {
     priorityField: 'Priority',
     pullRequestReadAuthentication: 'token',
+    pullRequestPolicyActivation: 'review-activity',
   })
 
   const result = await fixture.run()
 
   assert.match(result.stdout, /Issue policy 通过。/)
-  assert.equal(fixture.requestDetails.length, 5)
+  assert.deepEqual(
+    fixture.requestDetails.map(({ path }) => path),
+    [
+      '/repos/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/pulls/49',
+      '/repos/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/pulls/49/requested_reviewers',
+      '/repos/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/pulls/49/reviews?per_page=100',
+      '/repos/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/issues/49',
+      '/repos/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/issues/49/issue-field-values?per_page=100',
+    ],
+  )
   for (const request of fixture.requestDetails) {
     assert.equal(request.method, 'GET')
     assert.equal(request.authorization, 'Bearer test-token')
@@ -243,17 +343,20 @@ test('uses bearer authentication for every token-mode PR policy read', async (t)
 })
 
 test('rejects a missing token before token-mode PR policy API access', async (t) => {
-  const fixture = await preparePullRequestCli(t, {
-    priorityField: null,
-    pullRequestReadAuthentication: 'token',
-    token: null,
-  })
+  for (const pullRequestPolicyActivation of ['non-draft', 'review-activity']) {
+    const fixture = await preparePullRequestCli(t, {
+      priorityField: null,
+      pullRequestReadAuthentication: 'token',
+      pullRequestPolicyActivation,
+      token: null,
+    })
 
-  await assert.rejects(fixture.run(), (error) => {
-    assert.match(error.stderr, /GH_TOKEN 或 GITHUB_TOKEN 未设置/)
-    return true
-  })
-  assert.deepEqual(fixture.requests, [])
+    await assert.rejects(fixture.run(), (error) => {
+      assert.match(error.stderr, /GH_TOKEN 或 GITHUB_TOKEN 未设置/)
+      return true
+    })
+    assert.deepEqual(fixture.requests, [])
+  }
 })
 
 test('rejects invalid PR-read authentication modes before API access', async (t) => {
@@ -272,6 +375,45 @@ test('rejects invalid PR-read authentication modes before API access', async (t)
     })
     assert.deepEqual(fixture.requests, [])
   }
+})
+
+test('rejects invalid PR policy activation modes before API access', async (t) => {
+  for (const pullRequestPolicyActivation of ['opened', '   ']) {
+    const fixture = await preparePullRequestCli(t, {
+      priorityField: null,
+      pullRequestPolicyActivation,
+    })
+
+    await assert.rejects(fixture.run(), (error) => {
+      assert.match(
+        error.stderr,
+        /config\.pullRequestPolicyActivation 必须为 non-draft 或 review-activity/,
+      )
+      return true
+    })
+    assert.deepEqual(fixture.requests, [])
+  }
+})
+
+test('review-activity API failures remain fatal', async (t) => {
+  const fixture = await preparePullRequestCli(t, {
+    priorityField: null,
+    pullRequestPolicyActivation: 'review-activity',
+    reviewEndpointStatus: 404,
+  })
+
+  await assert.rejects(fixture.run(), (error) => {
+    assert.match(
+      error.stderr,
+      /GET \/repos\/BeiKeJieDeLiuLangMao\/deepseek-harness-gestalt\/pulls\/49\/(?:requested_reviewers|reviews\?per_page=100): 404/,
+    )
+    return true
+  })
+  assert.ok(
+    fixture.requests.some(
+      (path) => path?.endsWith('/requested_reviewers') || path?.endsWith('/reviews?per_page=100'),
+    ),
+  )
 })
 
 test('fails loud on PR API 404 without authentication fallback', async (t) => {
@@ -529,10 +671,7 @@ test('routes CLI policy and keeps lifecycle requests token-authenticated', async
     .map((request) => request.path)
     .sort()
   assert.deepEqual(restPaths, [
-    '/repos/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/issues/47',
     '/repos/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/pulls/48',
-    '/repos/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/pulls/48/requested_reviewers',
-    '/repos/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/pulls/48/reviews?per_page=100',
     '/repos/deepseek-harness/tracker/issues/47',
     '/repos/deepseek-harness/tracker/issues/47/comments?per_page=100',
   ])
@@ -540,7 +679,9 @@ test('routes CLI policy and keeps lifecycle requests token-authenticated', async
     request.path?.startsWith('/repos/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/'),
   )
   assert.ok(pullRequestReads.length > 0)
-  for (const request of pullRequestReads) assert.equal(request.authorization, null)
+  for (const request of pullRequestReads) {
+    assert.equal(request.authorization, 'Bearer test-token')
+  }
   const lifecycleRequests = requests.filter(
     (request) =>
       request.path === '/graphql' || request.path?.startsWith('/repos/deepseek-harness/tracker/'),
@@ -736,25 +877,29 @@ test('enforces highest resolving Priority without Type or area synchronization',
   )
 })
 
-test('requires policy only after a human PR enters review', () => {
+test('activates policy by the configured non-draft or review-activity rule', () => {
+  const unreviewed = {
+    isDraft: false,
+    authorType: 'User',
+    reviewRequestCount: 0,
+    reviewCount: 0,
+  }
+  assert.equal(requiresPullRequestPolicy(unreviewed, 'non-draft'), true)
+  assert.equal(requiresPullRequestPolicy(unreviewed, 'review-activity'), false)
   assert.equal(
     requiresPullRequestPolicy({
       isDraft: false,
       authorType: 'User',
       reviewRequestCount: 1,
       reviewCount: 0,
-    }),
+    }, 'review-activity'),
     true,
   )
-  assert.equal(
-    requiresPullRequestPolicy({
-      isDraft: false,
-      authorType: 'User',
-      reviewRequestCount: 0,
-      reviewCount: 0,
-    }),
-    false,
-  )
+  for (const activation of ['non-draft', 'review-activity']) {
+    assert.equal(requiresPullRequestPolicy({ ...unreviewed, isDraft: true }, activation), false)
+    assert.equal(requiresPullRequestPolicy({ ...unreviewed, authorType: 'Bot' }, activation), false)
+    assert.equal(requiresPullRequestPolicy({ ...unreviewed, authorType: 'App' }, activation), false)
+  }
 })
 
 test('maps only explicit review handoffs to review status commands', () => {
