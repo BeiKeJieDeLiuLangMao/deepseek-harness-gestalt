@@ -1,4 +1,10 @@
 # Desktop-only overlay on the web profile. Browser `dsh web` does not load this file.
 - insert:
+    - id: time-context
+      name: '@deepseek-ai/dsh-time-context'
+
+    - id: schedule
+      name: '@deepseek-ai/dsh-schedule'
+
     - id: ui-desktop
       name: '@deepseek-ai/dsh-client-ui-desktop'

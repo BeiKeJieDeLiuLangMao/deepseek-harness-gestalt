@@ -20,7 +20,11 @@ Desktop owns ICNS, ICO, and 512x512 RGBA PNG application artwork under `apps/des
 
 The Desktop Release manual dispatch runs from `master` with an explicit Desktop Bundle version. A publish run verifies that version against `apps/desktop/package.json`, rejects an existing tag, and packages macOS only inside the `desktop-release` environment, whose branch policy admits `master` and supplies the certificate plus Apple notarization secrets. Credential-free runs use a separate environment and explicitly disable macOS identity selection and notarization. The CLI composition explicitly supplies the service definitions used by its Web and headless providers, so a production-only deployment preserves the same plugin import closure as source launch. Each platform deploys a hoisted production snapshot with injected workspace packages, then materializes its remaining file links; the Windows installer therefore receives no pnpm directory junction graph for 7zip to traverse. Each publish build requires code signing and verifies the signed, stapled application before artifact upload. After both macOS architectures and Windows pass packaged smoke tests, the publish job validates the exact versioned installer, blockmap, and updater-feed set, creates an owned `gestalt-v<version>` tag and draft GitHub Release at the tested commit, uploads the assets, verifies the remote filenames, and then publishes the non-prerelease Release. A failed or interrupted handoff deletes the draft and tag owned by that run so the same candidate can be retried.
 
-Desktop adds a `--patch` overlay only: GESTALT badge, a drag strip, and the Update Control to the right of Settings. The Update Control occupies its sidebar seat only for actionable update phases and errors after version discovery; disabled, idle, checking, and pre-discovery errors remain absent. Browser `dsh web` does not load that overlay. Dock launch sets the Web Host cwd to `~/Library/Application Support/DeepSeek Gestalt/defaultWorkspace` (Windows: `%APPDATA%\DeepSeek Gestalt\defaultWorkspace`) so the process cwd is not the install directory. Session Surface, `~/.dsh`, and the web profile stay shared.
+Desktop adds one `--patch` overlay after the Web profile: `@deepseek-ai/dsh-time-context` and `@deepseek-ai/dsh-schedule` follow the persistence and Agent services they require, then the GESTALT badge, drag strip, and Update Control join the Session Surface. Every new Desktop Session exposes `schedule_create`, `schedule_list`, and `schedule_delete`. Reminder delivery is Session-local: it runs only while the original Session is live, retries overdue work when that Session reopens, and sends no operating-system or external notification. Browser `dsh web` does not load the overlay, so Schedule and time-context remain opt-in there.
+
+The Update Control occupies its sidebar seat only for actionable update phases and errors after version discovery; disabled, idle, checking, and pre-discovery errors remain absent. Dock launch sets the Web Host cwd to `~/Library/Application Support/DeepSeek Gestalt/defaultWorkspace` (Windows: `%APPDATA%\DeepSeek Gestalt\defaultWorkspace`) so the process cwd is not the install directory. Session Surface, `~/.dsh`, and the web profile stay shared.
+
+Package presence in the locked Web Host snapshot does not activate a capability. Desktop configures no MCP server, keeps the Cordis self-modification and Code Mode presets selectable rather than default, retains disabled Codex and Claude Code subagent templates in the standard preset, and exposes Web search without Web fetch. The headless, ACP, and JSON-RPC examples are alternate application compositions, not Desktop plugins.
 
 The macOS chrome reserves a fixed 28px top inset for the traffic lights across the DSH sidebar header and center Session content while preserving the collapse interaction. The details column keeps its existing top edge. Windows uses a full-window drag row with three non-drag caption buttons and no Session content inset. Unsupported development platforms keep their system frame.
 
@@ -38,6 +42,8 @@ The macOS chrome reserves a fixed 28px top inset for the traffic lights across t
 
 **Create the release tag before dispatching the workflow.** The tag would identify an unchecked candidate and remain after a packaging or smoke failure. The publish job creates it with the Release only after every target passes.
 
+**Enable every package present in the Desktop Bundle.** A package in the locked snapshot is resolution inventory, not product authorization. Defaulting trusted MCP commands, self-modification, alternate tool presentation, or product-specific subagent providers would expand the Desktop capability set without a user decision; the overlay activates only the Session-local reminder pair required by this product.
+
 ## Verification
 
 - `pnpm gestalt:dev` starts Desktop Host, which starts Web Host and loads `window.__DSH_BOOT__` at a loopback URL (not a bare Vite server).
@@ -47,6 +53,7 @@ The macOS chrome reserves a fixed 28px top inset for the traffic lights across t
 - Dock-style spawn uses the Launch Directory as cwd and does not register that path as a Workspace.
 - Desktop shutdown waits for pending and running Web Host processes to exit; the smoke test rejects an orphaned child, missing Desktop composition or updater bridge, an updater status that has not reached the renderer, and a visible inactive Update Control.
 - The keyless browser golden boots the shipped Web profile plus Desktop overlay; release jobs verify Node archive digests, raise the open-file limit to the runner hard limit, and apply a bounded `@electron/osx-sign` resource walk before macOS signing. Publish builds require code signing plus a stapled notarization ticket, and each packaged target is smoked before upload.
+- A boot-free keyless CLI check composes the real Web profile plus Desktop overlay, requires time-context and Schedule after their services, and proves the default browser-only tree lacks them. An assembled fresh Desktop Session requires all three Schedule tools.
 - The Desktop icon tests pin all three source digests and their container signatures, require a 512x512 RGBA PNG, check macOS, Windows, packaged-resource, Dock, and BrowserWindow wiring, and reject a Windows PE file without the maximum-resolution ICO payload.
 - Release-plan tests cover version, branch, and existing-tag validation; release-asset tests require both updater feeds and every versioned macOS and Windows installer plus blockmap while excluding unpacked application contents.
 - Unit tests cover URL discovery from the `dsh web:` line, Launch Directory resolution, and updater phase transitions without downloading.
@@ -54,6 +61,7 @@ The macOS chrome reserves a fixed 28px top inset for the traffic lights across t
 ## Consequences
 
 - A Desktop release is a snapshot of `dsh` plus Electron. The private Desktop app is not an npm `dsh` release-family member, so both version lines remain independent.
+- Desktop users receive Session-local reminders by default; browser-only Web users opt in explicitly, and neither host gains external notification.
 - The notarized Mac identity belongs to the 千机 Apple team. Changing the app id later is a new application.
 - Windows users see SmartScreen until an Authenticode certificate exists.
 - The personal GitHub feed is the product feed; there is no migration path that preserves updates for already-installed builds.

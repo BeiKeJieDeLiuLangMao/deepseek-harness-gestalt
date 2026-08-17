@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
@@ -8,23 +9,45 @@ const here = dirname(fileURLToPath(import.meta.url))
 const repo = join(here, '..', '..', '..')
 
 describe('Desktop overlay isolation', () => {
-  it('keeps ui-desktop out of the default web graph and only in the Desktop patch', () => {
+  it('keeps Desktop-only plugins out of the default web graph', () => {
     const web = readFileSync(join(repo, 'packages', 'bundle', 'web-app', 'cordis.patch.yml'), 'utf8')
     const desktop = readFileSync(join(here, '..', 'cordis.patch.yml'), 'utf8')
-    expect(web).not.toMatch(/ui-desktop|dsh-client-ui-desktop/)
+    expect(web).not.toMatch(/ui-desktop|dsh-client-ui-desktop|dsh-time-context|dsh-schedule/)
+    expect(desktop).toMatch(/id: time-context/)
+    expect(desktop).toMatch(/@deepseek-ai\/dsh-time-context/)
+    expect(desktop).toMatch(/id: schedule/)
+    expect(desktop).toMatch(/@deepseek-ai\/dsh-schedule/)
     expect(desktop).toMatch(/id: ui-desktop/)
     expect(desktop).toMatch(/@deepseek-ai\/dsh-client-ui-desktop/)
     expect(desktop).not.toMatch(/directory-picker/)
   })
 
-  it('dump-default-config has no Desktop overlay and keeps the native picker', () => {
-    const out = execFileSync(process.execPath, [
-      '--import', 'tsx/esm',
-      join(repo, 'apps', 'cli', 'src', 'bin.ts'),
-      'web', '--dump-default-config',
-    ], { encoding: 'utf8', cwd: repo })
-    expect(out).not.toMatch(/ui-desktop|dsh-client-ui-desktop/)
-    expect(out).toMatch(/@deepseek-ai\/dsh-host-directory-picker-auto/)
+  it('composes Schedule through the Desktop profile path after its required services', () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-desktop-overlay-'))
+    const bin = join(repo, 'apps', 'cli', 'src', 'bin.ts')
+    const patch = join(here, '..', 'cordis.patch.yml')
+    const run = (args: readonly string[]): string => execFileSync(process.execPath, [
+      '--import', 'tsx/esm', bin, ...args,
+    ], { encoding: 'utf8', cwd: repo, env: { ...process.env, DSH_HOME: home } })
+    try {
+      const web = run(['web', '--dump-default-config'])
+      expect(web).not.toMatch(/ui-desktop|dsh-client-ui-desktop|dsh-time-context|dsh-schedule/)
+      expect(web).toMatch(/@deepseek-ai\/dsh-host-directory-picker-auto/)
+
+      const desktop = run(['web', '--patch', patch, '--dump-config'])
+      const persistence = desktop.indexOf("name: '@deepseek-ai/dsh-session-persistence-jsonl'")
+      const agents = desktop.indexOf("name: '@deepseek-ai/dsh-agent-loop'")
+      const timeContext = desktop.indexOf("name: '@deepseek-ai/dsh-time-context'")
+      const schedule = desktop.indexOf("name: '@deepseek-ai/dsh-schedule'")
+      expect(persistence).toBeGreaterThanOrEqual(0)
+      expect(agents).toBeGreaterThanOrEqual(0)
+      expect(timeContext).toBeGreaterThan(persistence)
+      expect(schedule).toBeGreaterThan(agents)
+      expect(schedule).toBeGreaterThan(timeContext)
+      expect(desktop).toMatch(/@deepseek-ai\/dsh-client-ui-desktop/)
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
   }, 20_000)
 
   it('keeps dsh-scope and dsh-timeout in the deploy graph', () => {
