@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-DeepSeek Gestalt Desktop Host. Electron owns the window, menu, and GitHub auto-update. It starts bundled official Node plus `dsh web --host 127.0.0.1 --port 0 --patch ./cordis.patch.yml` and loads that loopback URL. The overlay adds the GESTALT badge, drag strip, and Update Control; the control remains absent until an update is actionable or an error follows version discovery. Browser `dsh web` does not load the overlay.
+DeepSeek Gestalt Desktop Host. Electron owns the window, menu, and GitHub auto-update. It starts bundled official Node plus `dsh web --host 127.0.0.1 --port 0 --patch ./cordis.patch.yml` and loads that loopback URL. The overlay adds Schedule, per-step time context, the GESTALT badge, drag strip, and Update Control; the control remains absent until an update is actionable or an error follows version discovery. Browser `dsh web` does not load the overlay.
 
 Window exit, Ctrl+C, and smoke-test completion cancel any pending start, stop the Web Host, and wait for its process to exit before Electron terminates. Startup or a later crash gets one retry before the window shows the Host error.
 
@@ -13,6 +13,14 @@ On macOS, a 28px top inset keeps the unchanged DSH sidebar header below the traf
 Desktop owns `build/icon.icns`, `build/icon.ico`, and `build/icon.png` as byte-for-byte copies of the tracked 千机·Gestalt production artwork. electron-builder uses the ICNS for macOS and edits the ICO resources into the unsigned Windows executable; the release workflow verifies the largest source ICO frame in that PE file. The PNG supplies the unpackaged macOS Dock icon and the Windows runtime window icon. The packaged PNG is an explicit extra resource rather than an implicit build-resource lookup.
 
 Dock / Start Menu cwd is the Launch Directory (`defaultWorkspace` under Application Support / `%APPDATA%`). User data stays in `~/.dsh`.
+
+## Schedule and capability defaults
+
+Every new Desktop Session exposes `schedule_create`, `schedule_list`, and `schedule_delete`. The browser's IANA zone reaches the model through time-context, while an absolute `schedule_create.at` value must still carry an explicit offset or `time_zone`.
+
+Schedule delivery is `session-local`: the original Session runs reminders only while live, and reopening it attempts overdue work. Closing DeepSeek Gestalt produces no operating-system, browser, email, SMS, or other external notification.
+
+The locked Web Host snapshot contains packages that the Desktop default does not activate. It configures no MCP server, keeps the Cordis self-modification and Code Mode / PTC presets selectable instead of making either the default, leaves the `subagent_codex` and `subagent_claude_code` templates disabled in the standard preset, and exposes `web_search` without `web_fetch`. Production HMR stays disabled, and full-text Session search remains opt-in (`session-query-sqlite` uses `openAt: never`). The headless, ACP, and JSON-RPC examples are alternate application compositions rather than Desktop plugins.
 
 ## Develop
 

@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-DeepSeek Gestalt 的 Desktop Host。Electron 拥有窗口、菜单和 GitHub 自动更新。它启动捆绑的官方 Node 加上 `dsh web --host 127.0.0.1 --port 0 --patch ./cordis.patch.yml`，并打开该环回 URL。叠加层加入 GESTALT 次标、拖拽带和 Update Control；只有更新可操作或发现版本后发生错误时，控件才会出现。浏览器 `dsh web` 不加载这层。
+DeepSeek Gestalt 的 Desktop Host。Electron 拥有窗口、菜单和 GitHub 自动更新。它启动捆绑的官方 Node 加上 `dsh web --host 127.0.0.1 --port 0 --patch ./cordis.patch.yml`，并打开该环回 URL。叠加层加入 Schedule、逐 step 时间上下文、GESTALT 次标、拖拽带和 Update Control；只有更新可操作或发现版本后发生错误时，控件才会出现。浏览器 `dsh web` 不加载这层。
 
 窗口退出、Ctrl+C 和 smoke 测试结束都会取消尚未完成的启动、停止 Web Host，并等待其进程退出后再终止 Electron。首次启动或后续崩溃共允许一次重试，之后窗口才显示 Host 错误。
 
@@ -13,6 +13,14 @@ DeepSeek Gestalt 的 Desktop Host。Electron 拥有窗口、菜单和 GitHub 自
 Desktop 将 `build/icon.icns`、`build/icon.ico` 和 `build/icon.png` 作为自有资源，其字节与千机·Gestalt 已跟踪的生产图标一致。electron-builder 在 macOS 使用 ICNS，并将 ICO 资源写入未签名的 Windows 可执行文件；发布 workflow 会校验该 PE 文件包含最大的源 ICO 帧。PNG 供未打包的 macOS Dock 图标与 Windows 运行时窗口图标使用。打包后的 PNG 是显式 extra resource，不依赖对构建资源的隐式查找。
 
 Dock / 开始菜单的 cwd 是 Launch Directory（Application Support / `%APPDATA%` 下的 `defaultWorkspace`）。用户数据仍在 `~/.dsh`。
+
+## Schedule 与能力默认值
+
+每个新 Desktop Session 都会提供 `schedule_create`、`schedule_list` 和 `schedule_delete`。浏览器的 IANA 时区会通过 time-context 进入模型上下文，但绝对时间 `schedule_create.at` 仍必须带显式偏移量或 `time_zone`。
+
+Schedule 交付为 `session-local`：只有原 Session 处于 live 状态时才会运行提醒，重新打开该 Session 会尝试处理逾期任务。关闭 DeepSeek Gestalt 不会产生操作系统、浏览器、邮件、短信或其他外部通知。
+
+锁定的 Web Host 快照包含一些 Desktop 默认不激活的包。默认配置不设置任何 MCP server；Cordis 自修改与 Code Mode / PTC preset 仍可选择，但都不是默认 preset；standard preset 中的 `subagent_codex` 与 `subagent_claude_code` 模板保持关闭；Web 能力提供 `web_search`，但不提供 `web_fetch`。production HMR 保持关闭，全文 Session 搜索仍需显式启用（`session-query-sqlite` 使用 `openAt: never`）。headless、ACP 与 JSON-RPC example 是其他应用组合，不是 Desktop 插件。
 
 ## 开发
 

@@ -3,6 +3,11 @@ import { fileURLToPath } from 'node:url'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { SessionId } from '@deepseek-ai/dsh-session'
+// Empty type imports carry the agents, presets, and tools Context merges.
+import type {} from '@deepseek-ai/dsh-agent'
+import type {} from '@deepseek-ai/dsh-agent-presets'
+import type {} from '@deepseek-ai/dsh-tools'
 import {
   assertFixtureInventory, captureStableAria, compareOrRefreshGolden,
   fixtureUserPrompts, launchWebScaffold, webSnapshotMode, type WebScaffold,
@@ -100,6 +105,23 @@ describe('web e2e: Desktop Session Surface overlay', () => {
       '[class*="footArea"]',
       scaffold.workspaceCwd,
     ), MODE)
+  })
+
+  it('gives a fresh Desktop Session the Schedule tools', async () => {
+    const ctx = scaffold.ctx
+    const handle = await ctx.agents.create({
+      sessionId: SessionId('desktop-schedule-default'),
+      meta: { cwd: scaffold.workspaceCwd },
+      setup: agentCtx => ctx.agentPresets.mount(agentCtx).then(() => undefined),
+    })
+    try {
+      expect(ctx.tools.schemas(handle.agent)
+        .map(schema => schema.name)
+        .filter(name => name.startsWith('schedule_'))
+        .sort()).toEqual(['schedule_create', 'schedule_delete', 'schedule_list'])
+    } finally {
+      await handle.dispose()
+    }
   })
 
   it('insets only the active macOS Session Surface below its drag strip', async () => {

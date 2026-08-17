@@ -12,7 +12,7 @@ Status: implemented
 
 ## 决策
 
-[`examples/web-schedule`](../../../../examples/web-schedule/README.md) overlay 显式加载 `@deepseek-ai/dsh-time-context` 与 `@deepseek-ai/dsh-schedule`；默认 Web 配置树保持不变。Schedule 只观察插件加载后发布的根 Agent，并在该 Agent scope 中安装三个工具和一个可丢弃 owner。cold history 读取、已发布的根、child Agent 与其他 host 都不会激活它。
+[`examples/web-schedule`](../../../../examples/web-schedule/README.md) overlay 显式加载 `@deepseek-ai/dsh-time-context` 与 `@deepseek-ai/dsh-schedule`；纯浏览器 Web 的默认配置树保持不变。DeepSeek Gestalt Desktop overlay 默认加载同一插件对。Schedule 只观察插件加载后发布的根 Agent，并在该 Agent scope 中安装三个工具和一个可丢弃 owner。cold history 读取、已发布的根、child Agent 与没有其中一层 overlay 的 host 都不会激活它。
 
 用户可见边界是 `session-local`：原 Session 只有在 live 时才会准时运行提醒，cold 期间不发送任何外部通知；该 Session 再次 live 后才会处理 overdue 提醒。到期工作会等待 Agent 完全 idle，再通过 `followup()` 进入普通的下一轮队列；它绝不会中途引导当前轮次，也没有独立 Web 回执（[对话式交付](../simplification/2026-08-09-conversational-schedule-delivery.md)）。
 
@@ -74,7 +74,7 @@ dispatch 记录的是队列准入，而不是模型完成或用户收到提醒�
 
 ## 验证
 
-包测试以逐文件 100% coverage 固定严格回放、一次性与 Every 状态转换、创建锚点运算、只追赶最新一次、多记录批处理、fork 后缀、id 复用、偏移量与本地日历 profile、IANA 校验、夏令时缺口与重叠、时间边界、timer 分段、墙钟变化、overdue 准入、固定 framing、入队与 append 失败、barrier 恢复、注册 rollback 和完全停稳的 dispose。属性测试会在不同间隔与跳过跨度下比较 Every 计算与回放。production JSONL restart 测试证明一条 overdue 提醒会经过真实 Agent 生命周期 dispatch，并且再次 restart 后不会重复 dispatch。Host／client 测试固定浏览器时区采样与绑定到提示词的校验。无密钥组装 Web 场景覆盖浏览器本地 At，以及通过普通 assistant follow-up 交付的逾期双记录 Every 批次，两者都没有回执 UI。
+包测试以逐文件 100% coverage 固定严格回放、一次性与 Every 状态转换、创建锚点运算、只追赶最新一次、多记录批处理、fork 后缀、id 复用、偏移量与本地日历 profile、IANA 校验、夏令时缺口与重叠、时间边界、timer 分段、墙钟变化、overdue 准入、固定 framing、入队与 append 失败、barrier 恢复、注册 rollback 和完全停稳的 dispose。属性测试会在不同间隔与跳过跨度下比较 Every 计算与回放。production JSONL restart 测试证明一条 overdue 提醒会经过真实 Agent 生命周期 dispatch，并且再次 restart 后不会重复 dispatch。Host／client 测试固定浏览器时区采样与绑定到提示词的校验。无密钥组装 Web 场景覆盖浏览器本地 At，以及通过普通 assistant follow-up 交付的逾期双记录 Every 批次，两者都没有回执 UI；Desktop 组合覆盖要求该插件对与全部三个工具存在，并要求纯浏览器默认组合不含它们。
 
 ## 后果
 
