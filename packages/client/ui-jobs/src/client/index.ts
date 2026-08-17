@@ -6,8 +6,18 @@
  */
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import { JobListAction } from './JobListAction.tsx'
+import { ScheduleBoardPrototype } from './ScheduleBoardPrototype.tsx'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import { en, NS, zh, type JobKey } from './locales.ts'
+
+declare global {
+  interface ImportMeta {
+    readonly env: { readonly MODE?: string }
+  }
+}
+
+/** Build-time mode replaced by the client bundler. */
+const BUILD_MODE = import.meta.env.MODE
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -37,4 +47,15 @@ export function apply(ctx: ClientContext): void {
       locale: NS,
     }, JobListAction),
   )
+  if (BUILD_MODE !== 'production') {
+    ctx.slots.inject(
+      'conversation.session.header.actions',
+      () => ctx.slots.register({
+        name: 'conversation.session.header.actions',
+        id: 'schedule-board-prototype',
+        // PROTOTYPE: immediately after the existing Bash background-job action.
+        order: 30,
+      }, ScheduleBoardPrototype),
+    )
+  }
 }
