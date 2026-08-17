@@ -672,24 +672,32 @@ async function resolvingReferencesSnapshot(number, pull, read = api) {
 
 async function pullRequestSnapshot(number) {
   const pull = await pullRequestReadApi(repositoryApiPath(`/pulls/${number}`))
-  let reviewRequestCount = 0
-  let reviewCount = 0
+  const snapshot = {
+    number,
+    isDraft: pull.draft,
+    authorType: pull.user?.type ?? 'User',
+    reviewRequestCount: 0,
+    reviewCount: 0,
+    labels: pull.labels.map((label) => label.name),
+    references: { all: [], resolving: [], related: [] },
+    issues: new Map(),
+  }
+  if (snapshot.isDraft || snapshot.authorType === 'Bot' || snapshot.authorType === 'App') {
+    return snapshot
+  }
   if (config.pullRequestPolicyActivation === 'review-activity') {
     const [reviewRequests, reviews] = await Promise.all([
       pullRequestReadApi(repositoryApiPath(`/pulls/${number}/requested_reviewers`)),
       pullRequestReadApi(repositoryApiPath(`/pulls/${number}/reviews?per_page=100`)),
     ])
-    reviewRequestCount = reviewRequests.users.length + reviewRequests.teams.length
-    reviewCount = reviews.length
+    snapshot.reviewRequestCount = reviewRequests.users.length + reviewRequests.teams.length
+    snapshot.reviewCount = reviews.length
   }
+  if (!requiresPullRequestPolicy(snapshot)) return snapshot
   const resolving = await resolvingReferencesSnapshot(number, pull, pullRequestReadApi)
   return {
+    ...snapshot,
     ...resolving,
-    isDraft: pull.draft,
-    authorType: pull.user?.type ?? 'User',
-    reviewRequestCount,
-    reviewCount,
-    labels: pull.labels.map((label) => label.name),
   }
 }
 
@@ -716,14 +724,16 @@ async function transitionResolvingIssues(pull, command) {
 
 async function runPullRequestCheck(event) {
   const pull = await pullRequestSnapshot(event.pull_request.number)
+  if (!requiresPullRequestPolicy(pull)) {
+    process.stdout.write('PR 尚未进入 Issue policy 强制范围。\n')
+    return
+  }
   const errors = validatePullRequest(pull)
   if (errors.length > 0) {
     for (const error of errors) process.stdout.write(`::error::${error}\n`)
     throw new Error(`Issue policy 未通过，共 ${errors.length} 项`)
   }
-  process.stdout.write(
-    requiresPullRequestPolicy(pull) ? 'Issue policy 通过。\n' : 'PR 尚未进入 Issue policy 强制范围。\n',
-  )
+  process.stdout.write('Issue policy 通过。\n')
 }
 
 async function runLifecycle(eventName, event) {

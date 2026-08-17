@@ -50,7 +50,10 @@ const preparePullRequestCli = async (
     pullRequestReadAuthentication = 'token',
     pullRequestPolicyActivation = 'non-draft',
     issueFieldStatus = 200,
+    issueStatus = 200,
     pullStatus = 200,
+    pullDraft = false,
+    pullAuthorType = 'User',
     reviewEndpointStatus = 200,
     token = 'test-token',
   },
@@ -72,9 +75,9 @@ const preparePullRequestCli = async (
     if (request.url?.endsWith('/pulls/49')) {
       send({
         body: 'Fixes #49',
-        draft: false,
+        draft: pullDraft,
         labels: [{ name: 'kind/bug-fix' }, { name: 'area/infra' }],
-        user: { type: 'User' },
+        user: { type: pullAuthorType },
       }, pullStatus)
       return
     }
@@ -92,16 +95,21 @@ const preparePullRequestCli = async (
       return
     }
     if (request.url?.endsWith('/issues/49')) {
-      send({
-        node_id: 'issue-id',
-        title: '为个人 tracker 显式关闭 Issue Priority 字段查询',
-        body: withDetails('修复个人 tracker 的 Priority 查询。'),
-        assignees: [],
-        labels: [],
-        type: null,
-        state: 'open',
-        state_reason: null,
-      })
+      send(
+        issueStatus === 200
+          ? {
+              node_id: 'issue-id',
+              title: '为个人 tracker 显式关闭 Issue Priority 字段查询',
+              body: withDetails('修复个人 tracker 的 Priority 查询。'),
+              assignees: [],
+              labels: [],
+              type: null,
+              state: 'open',
+              state_reason: null,
+            }
+          : { message: 'Not Found' },
+        issueStatus,
+      )
       return
     }
     if (request.url?.endsWith('/issues/49/issue-field-values?per_page=100')) {
@@ -243,6 +251,52 @@ test('non-draft activation skips unavailable review endpoints and uses the workf
     assert.equal(request.method, 'GET')
     assert.equal(request.authorization, 'Bearer test-token')
   }
+})
+
+test('Draft, Bot, and App pull requests stop after the initial PR read', async (t) => {
+  const exemptions = [
+    { name: 'Draft', pullDraft: true, pullAuthorType: 'User' },
+    { name: 'Bot', pullDraft: false, pullAuthorType: 'Bot' },
+    { name: 'App', pullDraft: false, pullAuthorType: 'App' },
+  ]
+  for (const pullRequestPolicyActivation of ['non-draft', 'review-activity']) {
+    for (const exemption of exemptions) {
+      await t.test(`${pullRequestPolicyActivation}: ${exemption.name}`, async (t) => {
+        const fixture = await preparePullRequestCli(t, {
+          priorityField: 'Priority',
+          pullRequestPolicyActivation,
+          pullDraft: exemption.pullDraft,
+          pullAuthorType: exemption.pullAuthorType,
+          reviewEndpointStatus: 404,
+          issueStatus: 404,
+        })
+
+        const result = await fixture.run()
+
+        assert.match(result.stdout, /PR 尚未进入 Issue policy 强制范围。/)
+        assert.deepEqual(
+          fixture.requestDetails.map(({ path }) => path),
+          ['/repos/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/pulls/49'],
+        )
+      })
+    }
+  }
+})
+
+test('eligible non-draft pull requests keep downstream API failures fatal', async (t) => {
+  const fixture = await preparePullRequestCli(t, {
+    priorityField: null,
+    pullRequestPolicyActivation: 'non-draft',
+    issueStatus: 404,
+  })
+
+  await assert.rejects(fixture.run(), (error) => {
+    assert.match(
+      error.stderr,
+      /GET \/repos\/BeiKeJieDeLiuLangMao\/deepseek-harness-gestalt\/issues\/49: 404/,
+    )
+    return true
+  })
 })
 
 test('uses anonymous authentication for every PR policy read', async (t) => {
@@ -617,7 +671,6 @@ test('routes CLI policy and keeps lifecycle requests token-authenticated', async
     .map((request) => request.path)
     .sort()
   assert.deepEqual(restPaths, [
-    '/repos/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/issues/47',
     '/repos/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/pulls/48',
     '/repos/deepseek-harness/tracker/issues/47',
     '/repos/deepseek-harness/tracker/issues/47/comments?per_page=100',
