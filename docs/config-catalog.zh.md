@@ -1607,6 +1607,22 @@ export type Config = LocalConfig
 
 来源：[`packages/shell/pwsh-sandbox/src/index.ts:40`](../packages/shell/pwsh-sandbox/src/index.ts)
 
+<a id="deepseek-aidsh-remote-access-http"></a>
+
+## `@deepseek-ai/dsh-remote-access-http`
+
+需要：`remoteAccess` · `webServer`
+
+```ts config-catalog
+/** HTTP Consumer configuration. */
+export interface Config {
+  /** Trusted browser origin allowed to call the route. */
+  origin: string
+}
+```
+
+来源：[`packages/platform/remote-access-http/src/index.ts:21`](../packages/platform/remote-access-http/src/index.ts)
+
 <a id="deepseek-aidsh-repeat-tool-reminder"></a>
 
 ## `@deepseek-ai/dsh-repeat-tool-reminder`
@@ -3321,6 +3337,7 @@ export interface Config {
 - `@deepseek-ai/dsh-native-command`（[`packages/util/native-command/src/index.ts`](../packages/util/native-command/src/index.ts)）
 - `@deepseek-ai/dsh-output-retention`（[`packages/util/output-retention/src/index.ts`](../packages/util/output-retention/src/index.ts)）
 - `@deepseek-ai/dsh-platform-account-client`（[`packages/platform/platform-account-client/src/index.ts`](../packages/platform/platform-account-client/src/index.ts)）
+- `@deepseek-ai/dsh-remote-access-client`（[`packages/platform/remote-access-client/src/index.ts`](../packages/platform/remote-access-client/src/index.ts)）
 - `@deepseek-ai/dsh-remote-protocol`（[`packages/platform/remote-protocol/src/index.ts`](../packages/platform/remote-protocol/src/index.ts)）
 - `@deepseek-ai/dsh-sandbox-windows-acl`（[`packages/sandbox/sandbox-windows-acl/src/index.ts`](../packages/sandbox/sandbox-windows-acl/src/index.ts)）
 - `@deepseek-ai/dsh-scope`（[`packages/core/scope/src/index.ts`](../packages/core/scope/src/index.ts)）

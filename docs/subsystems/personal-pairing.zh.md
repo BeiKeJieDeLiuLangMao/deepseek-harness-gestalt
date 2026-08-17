@@ -1,20 +1,20 @@
-# Personal Pairing
+# 个人配对
 
 [English](personal-pairing.md) | 中文
 
-[`@deepseek-ai/dsh-remote-access`](../../packages/platform/remote-access/README.md) 拥有 Mobile Access enablement、Pairing Challenge consumption、pending handshake confirmation、Personal Pairing identity 与 Companion-only Device Principal authority。它调用 `ctx.platformAccount.current()` 完成 Desktop 与 Mobile authorization 并比较 opaque Platform Account id；它从不读取 Account storage 或 GitHub fields。
+[`@deepseek-ai/dsh-remote-access`](../../packages/platform/remote-access/README.md) 拥有手机访问开关、配对挑战消费、待确认握手确认、个人配对身份与仅限 Companion 的设备主体权限。它调用 `ctx.platformAccount.currentInstallation()` 鉴别每个账号会话的安装 id 与类型，再比较不透明的平台账号 id；它从不读取账号存储或 GitHub 字段，也不信任调用方自行提供的安装身份。
 
-## Challenge and confirmation lifecycle
+## 挑战与确认生命周期
 
-每个 Desktop Installation 的 Mobile Access 都默认为 false，直到 Desktop Settings owner 开启。已开启的 Desktop 创建一项 challenge，其中包含 32-byte invitation capability、Desktop fingerprint、rendezvous id、两分钟 expiry 与 protocol major。QR 与完整链接 presentation 编码同一个 HTTPS value。不存在 short-code parser 或 fallback。
+每个 Desktop 安装的手机访问都默认为关闭，直到 Desktop 设置所有者开启。已开启的 Desktop 创建一项挑战，其中包含 32 字节邀请能力、Desktop 指纹、rendezvous id、两分钟过期时间与协议主版本。QR 与完整链接展示编码同一个 HTTPS 值。不存在短码解析器或回退路径。
 
-Mobile completion 只在完整链接与保留 capability 相符后消费 invitation。cross-account attempt 会在 crypto adapter 运行前销毁该 invitation。有效的同账号 handshake 生成 pending key 与 handshake hash；六个派生 authentication words 会出现在两个 Installation 上，但 active pairing list 在 Desktop 确认前保持为空。确认会激活唯一且由 provider 拥有的 key reference，并授予 branded Device Principal，其 authority 严格等于 `companion-surface`。
+Mobile 仅在完整链接与保留能力相符后消费邀请。跨账号尝试会在密码适配器运行前销毁邀请。有效的同账号握手生成待确认密钥与握手哈希；六个派生认证词会出现在两个安装上，但活跃配对列表在 Desktop 确认前保持为空。确认会激活唯一且由提供方拥有的密钥引用，并授予带品牌的设备主体，其权限严格等于 `companion-surface`。
 
-Mutation 串行执行。expiry、cancel、reject、disablement 与一次成功 completion 都会在另一 mutation 能观察前移除 capability。重复同一 completion 或 confirmation id 会返回首次提交结果；竞争 id 无法复用 invitation。
+变更串行执行。过期、取消、拒绝、关闭手机访问与一次成功完成都会先提交终态，使另一项变更无法再观察该能力。密码资源销毁可以独立重试：清理失败不会重复完成握手或激活配对，提供方释放资源时会尝试处理每项挑战、待确认密钥、活跃密钥与清理记录。挑战创建时就调度过期任务，不会等待另一项完成请求。不透明生成 id 与已激活密钥引用都会在插入前判重，因此碰撞不能覆盖既有记录，也不能遗弃新分配的密钥。
 
-## Cryptographic adapter
+## 密码适配器
 
-`PairingHandshakeProvider` 准备、完成、激活并销毁 provider-private handshake state。Remote Access 从不实现 Noise transition 或 cryptographic primitive。assembled keyless adapter 只证明 lifecycle behavior。Desktop 与 Mobile 产品 composition 会把独立 Noise review 报告为 unavailable，并保持 Mobile Access 关闭，直到提供经过评审的 adapter。
+`PairingHandshakeProvider` 准备、完成、激活并销毁提供方私有握手状态。远程访问从不实现 Noise 状态迁移或密码原语。`remote-access-http` 消费 `ctx.remoteAccess`，`remote-access-client` 则校验真实 Desktop 设置与 Mobile 控制器使用的协议值。组装后的 loader 场景使用明确标记为未评审的 keyless 提供方，让提供方、HTTP 消费方和共享传输通过真实环回服务器运行。Desktop 与 Mobile 开发入口只能通过显式标志选择各自的真实控制器。生产组合在独立 Noise 评审接纳经过评审的提供方前保持不可用；开发证明永远不会由生产路径选择。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -60,6 +60,13 @@ abstract setMobileAccess(input: { desktop: PairingAccountAuthentication enabled:
 abstract completeChallenge(input: { mobile: PairingAccountAuthentication completionId: PairingCompletionId oneTimeLink: string device: PairingDeviceDescription mobileHandshake: Uint8Array }): Promise<PairingCompletionView>
 
 /**
+ * Read the decision for one pairing completed by the current Mobile Installation.
+ * @param input - current Mobile authorization and pending identity.
+ * @returns pending, paired, or rejected without exposing Desktop authority.
+ */
+abstract getMobilePairingStatus(input: { mobile: PairingAccountAuthentication pendingPairingId: PendingPairingId }): Promise<MobilePairingStatus>
+
+/**
  * List active pairings visible to one signed-in Desktop Account.
  * @param desktop - current Desktop Account authorization.
  * @returns only confirmed pairings; pending handshakes are excluded.
@@ -93,5 +100,5 @@ abstract cancelChallenge(input: { desktop: PairingAccountAuthentication challeng
 abstract rejectPairing(input: { desktop: PairingAccountAuthentication pendingPairingId: PendingPairingId }): Promise<void>
 ```
 
-Source: [`packages/platform/remote-access/src/index.ts:198`](../../packages/platform/remote-access/src/index.ts)
+Source: [`packages/platform/remote-access/src/index.ts:221`](../../packages/platform/remote-access/src/index.ts)
 <!-- END GENERATED cordis-surface -->

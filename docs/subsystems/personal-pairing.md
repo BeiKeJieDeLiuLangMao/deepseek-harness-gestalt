@@ -2,7 +2,7 @@
 
 English | [中文](personal-pairing.zh.md)
 
-[`@deepseek-ai/dsh-remote-access`](../../packages/platform/remote-access/README.md) owns Mobile Access enablement, Pairing Challenge consumption, pending handshake confirmation, Personal Pairing identity, and Companion-only Device Principal authority. It calls `ctx.platformAccount.current()` for Desktop and Mobile authorization and compares opaque Platform Account ids; it never reads Account storage or GitHub fields.
+[`@deepseek-ai/dsh-remote-access`](../../packages/platform/remote-access/README.md) owns Mobile Access enablement, Pairing Challenge consumption, pending handshake confirmation, Personal Pairing identity, and Companion-only Device Principal authority. It calls `ctx.platformAccount.currentInstallation()` to authenticate each Account Session's installation id and kind, then compares opaque Platform Account ids; it never reads Account storage or GitHub fields and never trusts a caller-supplied installation identity.
 
 ## Challenge and confirmation lifecycle
 
@@ -10,11 +10,11 @@ Mobile Access is false for each Desktop Installation until the Desktop Settings 
 
 The Mobile completion consumes the invitation only after its complete link matches the retained capability. A cross-account attempt destroys that invitation before the crypto adapter runs. A valid same-account handshake produces a pending key and handshake hash; the six derived authentication words appear on both installations, but active pairing lists remain empty until Desktop confirmation. Confirmation activates one unique provider-owned key reference and grants a branded Device Principal whose authority is exactly `companion-surface`.
 
-Mutations are serialized. Expiry, cancellation, rejection, disablement, and one successful completion remove their capability before another mutation can observe it. Repeating one completion or confirmation id returns the first committed result; a competing id cannot reuse the invitation.
+Mutations are serialized. Expiry, cancellation, rejection, disablement, and one successful completion commit terminal state before another mutation can observe the capability. Crypto-resource destruction is independently retryable: a failed cleanup never repeats handshake completion or pairing activation, and provider disposal attempts every challenge, pending key, active key, and cleanup record. Challenge expiry is scheduled at creation rather than waiting for another completion request. Opaque generated ids and activated key references are checked before insertion, so a collision cannot replace an existing record or abandon a newly allocated key.
 
 ## Cryptographic adapter
 
-`PairingHandshakeProvider` prepares, completes, activates, and destroys provider-private handshake state. Remote Access never implements Noise transitions or cryptographic primitives. The assembled keyless adapter proves lifecycle behavior only. Desktop and Mobile product compositions report the independent Noise review as unavailable and leave Mobile Access disabled until a reviewed adapter is supplied.
+`PairingHandshakeProvider` prepares, completes, activates, and destroys provider-private handshake state. Remote Access never implements Noise transitions or cryptographic primitives. `remote-access-http` consumes `ctx.remoteAccess`, while `remote-access-client` validates the wire values used by the real Desktop Settings and Mobile controllers. The assembled Loader scenario runs the provider, HTTP Consumer, and shared transport through a real loopback server with an explicitly unreviewed keyless provider. Desktop and Mobile development entrypoints select their real controllers only through explicit flags. Production composition stays unavailable until the independent Noise review admits a reviewed provider; the development proof is never selected by the production path.
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -60,6 +60,13 @@ abstract setMobileAccess(input: { desktop: PairingAccountAuthentication enabled:
 abstract completeChallenge(input: { mobile: PairingAccountAuthentication completionId: PairingCompletionId oneTimeLink: string device: PairingDeviceDescription mobileHandshake: Uint8Array }): Promise<PairingCompletionView>
 
 /**
+ * Read the decision for one pairing completed by the current Mobile Installation.
+ * @param input - current Mobile authorization and pending identity.
+ * @returns pending, paired, or rejected without exposing Desktop authority.
+ */
+abstract getMobilePairingStatus(input: { mobile: PairingAccountAuthentication pendingPairingId: PendingPairingId }): Promise<MobilePairingStatus>
+
+/**
  * List active pairings visible to one signed-in Desktop Account.
  * @param desktop - current Desktop Account authorization.
  * @returns only confirmed pairings; pending handshakes are excluded.
@@ -93,5 +100,5 @@ abstract cancelChallenge(input: { desktop: PairingAccountAuthentication challeng
 abstract rejectPairing(input: { desktop: PairingAccountAuthentication pendingPairingId: PendingPairingId }): Promise<void>
 ```
 
-Source: [`packages/platform/remote-access/src/index.ts:198`](../../packages/platform/remote-access/src/index.ts)
+Source: [`packages/platform/remote-access/src/index.ts:221`](../../packages/platform/remote-access/src/index.ts)
 <!-- END GENERATED cordis-surface -->

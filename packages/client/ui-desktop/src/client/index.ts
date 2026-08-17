@@ -20,7 +20,6 @@ export type { DesktopKey } from './locales.ts'
 export type { UpdateControlProps } from './UpdateControl.tsx'
 export { bindDesktopUpdater, createUpdaterSource, INITIAL_UPDATER_STATUS } from './status-source.ts'
 export { bindDesktopAccount, createDesktopAccountSource, INITIAL_ACCOUNT_SNAPSHOT } from './account-source.ts'
-export { bindDesktopPairing, createDesktopPairingSource, INITIAL_PAIRING_SNAPSHOT } from './pairing-source.ts'
 export type { AccountControlProps } from './AccountControl.tsx'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {

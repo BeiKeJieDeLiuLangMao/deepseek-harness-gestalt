@@ -6,13 +6,15 @@ Status: implemented
 
 ## Problem
 
-Platform Account 识别 Installation，但不会授予 Desktop authority。Personal Pairing 需要短期 capability、认证过的同账号 exchange、明确的人工比对与窄授权 Device Principal，同时不能把 Remote Access state 暴露到既有 Session Surface 各处。所选 Noise implementation 也仍受独立评审要求约束，因此 lifecycle delivery 不能把 proof-local dependency 静默变成产品密码实现。
+Platform 账号识别安装，但不会授予 Desktop 权限。个人配对需要短期能力、已鉴权的同账号交换、明确的人工比对与窄授权设备主体，同时不能把远程访问状态暴露到既有 Session Surface 各处。所选 Noise 实现仍受独立评审要求约束，因此生命周期交付不能把仅用于证明的依赖静默变成产品密码实现。
 
 ## Decision
 
-`@deepseek-ai/dsh-remote-access` 是拥有 Mobile Access 与 Personal Pairing lifecycle 的 Remote Access module。其 public service 通过 Platform Account service 验证两个 Installation Account Session，拥有 challenge/pending/confirmed state transition，串行执行 mutation，并且仅在 Desktop 确认后授予 `companion-surface` Device Principal。Branded id 区分 challenge、rendezvous、completion、pending pairing、Personal Pairing 与 Device Principal。
+`@deepseek-ai/dsh-remote-access` 是拥有手机访问与个人配对生命周期的远程访问模块。其公开服务要求 Platform 账号鉴别会话拥有的安装 id 与类型，拥有挑战、待确认与已确认状态迁移，串行执行变更，并且仅在 Desktop 确认后授予 `companion-surface` 设备主体。带品牌的 id 区分挑战、rendezvous、完成、待确认配对、个人配对、设备主体与活跃密钥引用。调用方永远不能自行声明安装角色。
 
-Desktop 与 Mobile 的 crypto behavior 通过 `PairingHandshakeProvider` 进入。lifecycle 向它传递全新的 32-byte invitation secret，在每个 terminal transition 销毁 provider-private state，仅从返回的 handshake hash 派生显示词，并要求 activation 使用唯一 key reference。keyless Loader composition 运行完整 state machine，但明确标识为未经评审的 proof。在独立 Snow review 接纳产品 adapter 前，产品 composition 保持 unavailable 与 disabled。
+Desktop 与 Mobile 的密码行为通过 `PairingHandshakeProvider` 进入。生命周期向它传递全新的 32 字节邀请密钥，仅从返回的握手哈希派生显示词，并要求激活使用唯一密钥引用。终态结果与资源清理相互独立：重试会返回已提交结果，不会重复握手或激活；销毁失败的资源仍由清理记录持有，提供方释放资源时会聚合处理全部保留资源。挑战创建时就调度过期任务，生成 id 碰撞不能覆盖既有记录。
+
+`remote-access-http` 消费 `ctx.remoteAccess`；`remote-access-client` 为 Host 拥有的 Desktop 控制器与 Mobile 控制器校验 JSON 和带品牌的 id。组装后的 loader 场景使用明确标记为未评审的 keyless 握手提供方，让提供方、HTTP 消费方和共享传输通过真实环回服务器运行。Desktop 与 Mobile 开发入口可以通过显式环境标志选择各自的真实控制器。生产环境在独立 Snow 评审接纳产品提供方前保持 fail-closed，任何生产路径都不会导入 keyless 实现。
 
 既有 Desktop `手机配对` Settings section 拥有 Mobile Access toggle、QR/完整链接 challenge、authentication words、confirm、reject 与 paired-device list。QR generation 使用维护中的 `qrcode` encoder。Mobile 接受同一个完整链接或 native QR payload，并等待 Desktop confirmation。不会注册新的 Session header、sidebar、approval、composer 或 offline presentation。
 
@@ -28,4 +30,4 @@ Desktop 与 Mobile 的 crypto behavior 通过 `PairingHandshakeProvider` 进入�
 
 ## Consequences
 
-公开 lifecycle 与真实 Settings/Mobile component 可以在不声称产品 encryption 的情况下接受 review 与 test。cross-account、expiry、cancel、reject、concurrency、retry、pre-confirmation 与 narrow-authority behavior 固定在同一 interface。Production pairing 仍被独立安全评审与 durable Platform adapter 阻挡；单进程 provider 与 keyless scenario 不是 deployment persistence 或 Relay implementation。
+公开生命周期与真实设置／Mobile 控制器可以在不声称产品加密的情况下接受评审与测试。跨账号、安装角色、过期、取消、拒绝、并发、清理重试、确认前不可用、碰撞与窄授权行为固定在同一接口及同一个已鉴权 HTTP 消费方。生产配对仍受独立安全评审阻挡；单进程提供方与 keyless 场景不是部署持久化，也不是 issue #32 规划的跨实例 Relay。

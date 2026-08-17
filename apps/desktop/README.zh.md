@@ -8,7 +8,7 @@ DeepSeek Gestalt 的 Desktop Host。Electron 拥有窗口、菜单和 GitHub 自
 
 主窗口只接受当前环回 Host 同源导航。包括 GitHub 授权在内的普通 HTTP 链接交给系统浏览器；其他来源和 scheme 不能替换 Session Surface，也不能创建另一个 Electron 窗口。Platform 账号签名密钥和令牌保存在 Electron userData 下、按环境分开的 `safeStorage` 加密文件中；preload 只暴露当前状态与生命周期动词。
 
-Personal Pairing 只在真实的 `手机配对` Settings section 中配置。preload 暴露 Mobile Access、challenge、pending-confirmation 与 paired-device verb，不会向普通 Session header、sidebar、approval、composer 或 offline view 增加状态。在独立 Noise review 接纳经过评审的 handshake adapter 前，产品 composition 保持 Mobile Access 关闭并报告 pairing unavailable；Host 不会组装 proof-local Snow implementation。
+个人配对只在真实的 `手机配对` 设置区中配置。preload 暴露手机访问、挑战、待确认决策与已配对设备操作，不会向普通 Session 标题栏、侧栏、审批、输入框或离线视图增加状态。账号登录后，由 Host 拥有的控制器为每项远程访问操作签署新的当前安装证明，在设置中的配对开关开启时轮询待确认决策，并在调用变更前校验 renderer 传入的布尔值与带品牌的待确认 id。开发环境可以用 `DSH_PERSONAL_PAIRING_KEYLESS=1` 选择真实 HTTP 控制器；生产环境在独立 Noise 评审接纳经过评审的握手提供方前保持不可用。Host 永远不会组装仅用于证明的 Snow 实现或开发 keyless 提供方。
 
 Desktop Platform 账号会在创建窗口前校验完整开发与生产环境对：`DSH_PLATFORM_DEVELOPMENT_*` 和 `DSH_PLATFORM_PRODUCTION_*` 两侧分别提供 `ORIGIN`、`CALLBACK_URL`、`GITHUB_CLIENT_ID`、`CREDENTIAL_REFERENCE`、`DATABASE_IDENTITY` 与 `IDENTITY_NAMESPACE`，再由 `DSH_PLATFORM_ENV` 显式选择一侧。缺失、未知、共享、非 HTTPS 或回调不匹配的配置会在渲染与网络流量前使启动失败。操作系统加密不可用仍会作为明确的能力失败显示。加密记录通过 `dsh-atomic-write` 的随机独占同级文件、仅所有者权限、符号链接安全 rename 与失败清理完成替换。
 
@@ -59,4 +59,4 @@ hoisted deploy 会纳入工作区包，但不带 pnpm 的链接式虚拟依赖�
 
 - **安装包里的 Node + dsh 快照由发布 workflow 组装** — `gestalt:dev` 跑的是工作区源码树。
 - **没有 Windows Authenticode** — SmartScreen 会警告；更新器仍会运行。
-- **Personal Pairing crypto 尚未组装** — 在独立 Noise review 接纳产品 adapter 前，Settings 与 Host bridge 保持 fail-closed。
+- **生产个人配对密码实现尚未组装** — 开发 keyless 标志只证明控制器接线；在独立 Noise 评审接纳产品提供方前，生产设置与 Host bridge 保持 fail-closed。

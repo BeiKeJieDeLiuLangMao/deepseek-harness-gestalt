@@ -21,9 +21,10 @@ describe('Personal Pairing keyless assembled path', () => {
       "MOBILE_ACCESS default=false
       CROSS_ACCOUNT result=PAIRING_ACCOUNT_MISMATCH principals=0
       CHALLENGE ttlMs=120000 secretBits=256 qrEqualsLink=true
-      AUTH_WORDS mobile=amber-binary-cedar-delta-ember-frost desktop=amber-binary-cedar-delta-ember-frost idempotent=true
-      CONFIRM authority=companion-surface active=1 idempotent=true
+      AUTH_WORDS mobile=amber-binary-cedar-delta-ember-frost desktop=amber-binary-cedar-delta-ember-frost
+      CONFIRM mobile=paired active=1 authority=companion-surface
       CAPABILITY_DESTROYED challenge=2 pending=1
+      FLOW transport=http consumer=ctx.remoteAccess
       CRYPTO provider=keyless-proof reviewed=false
       "
     `)

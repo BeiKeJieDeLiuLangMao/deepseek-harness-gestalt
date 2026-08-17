@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-这是当前安装的 Mobile 账号与 Personal Pairing shell。它在 GitHub 授权前展示中英文数据保留说明，在应用外打开授权，以 P-256 证明轮询 Platform，只恢复经服务端确认的账号会话，并在不删除个人配对的前提下退出当前安装。登录后，配对 component 只接受完整的一次性链接或 native QR payload，显示 authentication words，并等待 Desktop 明确确认后才显示 paired state。
+这是当前安装的 Mobile 账号与个人配对 shell。它在 GitHub 授权前展示中英文数据保留说明，在应用外打开授权，以 P-256 证明轮询 Platform，只恢复经服务端确认的账号会话，并在不删除个人配对的前提下退出当前安装。登录后，配对控制器会把粘贴或原生 QR 扫描器得到的完整一次性链接送入同一条已鉴权远程访问传输，显示认证词，并轮询由 Mobile 拥有的待确认 id，直到 Desktop 明确确认后才显示已配对状态。
 
 入口会在渲染前校验完整的开发与生产身份对：两侧分别通过 `VITE_PLATFORM_DEVELOPMENT_*` 或 `VITE_PLATFORM_PRODUCTION_*` 前缀提供 `ORIGIN`、`CALLBACK_URL`、`GITHUB_CLIENT_ID`、`CREDENTIAL_REFERENCE`、`DATABASE_IDENTITY` 和 `IDENTITY_NAMESPACE`，再由 `VITE_PLATFORM_ENV` 显式选择一侧。成对字段必须全部不同；缺失、未知、共享、非 HTTPS 或回调不匹配的配置会在渲染和网络流量前失败。
 
@@ -14,6 +14,6 @@ pnpm --filter @deepseek-ai/dsh-mobile build
 
 ## 已知限制与暂缓事项
 
-- 在独立 Noise review 接纳经过评审的 handshake adapter 前，产品配对保持 unavailable；仓库内 composition 不会创建 invitation 或 Device Principal。
+- 生产配对在独立 Noise 评审接纳经过评审的握手提供方前保持不可用。只有所选 Platform 环境为开发环境时，`VITE_PERSONAL_PAIRING_KEYLESS=1` 才会选择真实开发控制器与明确标记为未评审的 keyless Mobile 握手。
 - Remote Companion traffic、推送与附件 flow 不在此 shell 范围内。
 - 原生 iOS/Android 工程生成与设备打包不属于本 shell；仓库内 composition 已包含 Capacitor 系统浏览器适配器与共用 WebView 账号生命周期。

@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import css from './MobilePairing.module.css'
 
 /** Mobile Personal Pairing presentation state. */
-type MobilePairingSnapshot =
+export type MobilePairingSnapshot =
   | { status: 'ready' }
   | { status: 'completing' }
   | {
@@ -11,7 +11,7 @@ type MobilePairingSnapshot =
     deviceName: string
     authenticationWords: readonly [string, string, string, string, string, string]
   }
-  | { status: 'paired'; desktopName: string }
+  | { status: 'paired' }
   | { status: 'unavailable'; error: string }
 
 /** Mobile adapter for full-link/QR completion and handshake state. */
@@ -52,7 +52,7 @@ export function MobilePairing({ actions }: { actions: MobilePairingActions }): R
     )
   }
   if (snapshot.status === 'paired') {
-    return <section className={css.card}><h2>已配对</h2><p>{snapshot.desktopName}</p></section>
+    return <section className={css.card} data-mobile-pairing="paired"><h2>已配对</h2><p>Companion Surface 已激活。</p></section>
   }
   return (
     <section className={css.card} data-mobile-pairing={snapshot.status}>

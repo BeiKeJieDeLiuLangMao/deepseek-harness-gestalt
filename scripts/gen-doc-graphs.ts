@@ -244,8 +244,8 @@ const SERVICE_ROLES: ServiceRole[] = [
     title: 'Personal Pairing lifecycle seam',
     mode: 'seam',
     implementations: ['remote-access'],
-    consumers: [],
-    note: 'Combines the public lifecycle definition with a single-process provider; Desktop and Mobile remain fail-closed until an independently reviewed handshake adapter is assembled.',
+    consumers: ['remote-access-http'],
+    note: 'The HTTP consumer exposes the lifecycle through one validated transport for Desktop Settings and Mobile; production remains fail-closed until an independently reviewed handshake provider is assembled.',
   },
   {
     key: 'workspaceRegistry',

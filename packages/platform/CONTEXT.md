@@ -14,6 +14,8 @@ _Avoid_: device (when several installations can exist on one device), client ses
 
 _Avoid_: GitHub token, browser session, Personal Pairing
 
+The Account provider, not an operation caller, is authoritative for the authenticated Installation id and kind. A capability that needs this identity calls `currentInstallation()` with a fresh proof; it never accepts a caller's role claim.
+
 **Login Attempt**: A five-minute, single-use, signed polling authorization started by an Installation. GitHub returns only to Platform's fixed HTTPS callback; no provider token or credential returns through an application URL.
 
 _Avoid_: pairing code, login session
@@ -25,6 +27,8 @@ _Avoid_: Installation, Desktop Host
 **Personal Pairing**: A durable relationship between installations owned outside Account. Current-installation sign-out invalidates the Account Session and connections but preserves Personal Pairings.
 
 _Avoid_: Account Session, OAuth connection
+
+The checked-in Remote Access provider owns the single-process challenge and confirmation lifecycle. Cross-instance Relay routing and durable multi-instance pairing state are separate deployment work.
 
 **Pairing Challenge**: A two-minute single-use invitation capability created only by an enabled Desktop Installation. QR and full-link presentation carry the same 256-bit secret and protocol binding.
 

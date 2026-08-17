@@ -8,6 +8,7 @@ import type { Branded } from '@deepseek-ai/dsh-brand'
 import type {
   AccountProof,
   AccountService,
+  AuthenticatedInstallationView,
   InstallationId,
 } from '@deepseek-ai/dsh-platform-account'
 
@@ -28,6 +29,8 @@ export type PendingPairingId = Branded<'PendingPairingId'>
 export type DevicePrincipalId = Branded<'DevicePrincipalId'>
 /** Opaque identity for one confirmed Personal Pairing. */
 export type PersonalPairingId = Branded<'PersonalPairingId'>
+/** Opaque provider reference for one active Personal Pairing key. */
+export type PersonalPairingKeyReference = Branded<'PersonalPairingKeyReference'>
 /** Opaque reference to crypto-provider state for one challenge. */
 export type PairingChallengeState = Uint8Array
 /** Opaque reference to crypto-provider state awaiting Desktop confirmation. */
@@ -35,8 +38,6 @@ export type PendingPairingKey = Uint8Array
 
 /** Current-installation Account authorization supplied to Remote Access. */
 export interface PairingAccountAuthentication {
-  /** Installation whose proof authorizes this operation. */
-  installationId: InstallationId
   /** Current Platform Account access token. */
   accessToken: string
   /** Single-use proof created by the Installation key. */
@@ -93,24 +94,36 @@ export interface PairingHandshakeProvider {
    * @returns fingerprint and provider-private state.
    */
   createChallenge(input: { invitationSecret: Uint8Array; expiresAt: number }): Promise<PairingHandshakeChallenge>
-  /** Complete the cryptographic exchange without activating authority. */
+  /**
+   * Complete the cryptographic exchange without activating authority.
+   * @param input - invitation secret, provider-private challenge state, and Mobile handshake.
+   * @returns pending key, handshake hash, and Desktop response.
+   */
   completeChallenge(input: {
     invitationSecret: Uint8Array
     challengeState: PairingChallengeState
     mobileHandshake: Uint8Array
   }): Promise<CompletedPairingHandshake>
-  /** Activate one independently keyed pairing after Desktop confirmation. */
-  activatePairing(input: { pendingPairingKey: PendingPairingKey }): Promise<{ keyReference: string }>
-  /** Destroy provider-private invitation state after any terminal challenge outcome. */
+  /**
+   * Activate one independently keyed pairing after Desktop confirmation.
+   * @param input - provider-private pending key.
+   * @returns unique provider-owned active key reference.
+   */
+  activatePairing(input: {
+    pendingPairingKey: PendingPairingKey
+  }): Promise<{ keyReference: PersonalPairingKeyReference }>
+  /** @param state - provider-private invitation state to destroy. */
   destroyChallenge(state: PairingChallengeState): void | Promise<void>
-  /** Destroy provider-private pending key state after rejection or activation. */
+  /** @param state - provider-private pending key state to destroy. */
   destroyPendingPairing(state: PendingPairingKey): void | Promise<void>
+  /** @param keyReference - activated Personal Pairing key to destroy. */
+  destroyPairing(keyReference: PersonalPairingKeyReference): void | Promise<void>
 }
 
 /** Construction inputs for the single-process Personal Pairing provider. */
 export interface PersonalPairingProviderOptions {
   /** Platform Account public seam used to prove both Installations own one Account. */
-  account: Pick<AccountService, 'current'>
+  account: Pick<AccountService, 'currentInstallation'>
   /** Replaceable reviewed handshake adapter; this package does not implement Noise. */
   handshake: PairingHandshakeProvider
   /** Clock used for fixed challenge expiry and deterministic assembled scenarios. */
@@ -119,6 +132,8 @@ export interface PersonalPairingProviderOptions {
   randomBytes?: (size: number) => Uint8Array
   /** Opaque id source for challenge and pairing records. */
   randomId?: (kind: 'challenge' | 'pairing' | 'principal' | 'completion') => string
+  /** Expiry scheduler; production defaults to the process timer. */
+  schedule?: (task: () => void, delayMs: number) => ReturnType<typeof setTimeout>
   /** HTTPS origin and path used by both QR and full-link flows. */
   pairingLinkOrigin: string
 }
@@ -127,10 +142,12 @@ export interface PersonalPairingProviderOptions {
 export type RemoteAccessErrorCode =
   | 'MOBILE_ACCESS_DISABLED'
   | 'PAIRING_ACCOUNT_MISMATCH'
+  | 'PAIRING_INSTALLATION_KIND_INVALID'
   | 'PAIRING_CHALLENGE_INVALID'
   | 'PAIRING_CHALLENGE_EXPIRED'
   | 'PAIRING_CHALLENGE_USED'
   | 'PAIRING_PENDING_INVALID'
+  | 'PAIRING_ID_COLLISION'
 
 /** Personal Pairing failure with a content-free stable code. */
 export class RemoteAccessError extends Error {
@@ -188,6 +205,12 @@ export interface MobileAccessState {
   enabled: boolean
 }
 
+/** Mobile projection of the Desktop confirmation decision. */
+export type MobilePairingStatus =
+  | { status: 'pending' }
+  | { status: 'paired'; pairingId: PersonalPairingId }
+  | { status: 'rejected' }
+
 declare module '@deepseek-ai/cordis' {
   interface Context {
     remoteAccess: RemoteAccessService
@@ -242,6 +265,16 @@ export abstract class RemoteAccessService extends Service {
   }): Promise<PairingCompletionView>
 
   /**
+   * Read the decision for one pairing completed by the current Mobile Installation.
+   * @param input - current Mobile authorization and pending identity.
+   * @returns pending, paired, or rejected without exposing Desktop authority.
+   */
+  abstract getMobilePairingStatus(input: {
+    mobile: PairingAccountAuthentication
+    pendingPairingId: PendingPairingId
+  }): Promise<MobilePairingStatus>
+
+  /**
    * List active pairings visible to one signed-in Desktop Account.
    * @param desktop - current Desktop Account authorization.
    * @returns only confirmed pairings; pending handshakes are excluded.
@@ -284,46 +317,70 @@ export abstract class RemoteAccessService extends Service {
   }): Promise<void>
 }
 
+interface CleanupRecord<T> { resource?: T }
+
 interface ChallengeRecord {
   invitation: PairingInvitation
   accountId: string
   desktopInstallationId: InstallationId
-  state: PairingChallengeState
+  cleanup: CleanupRecord<PairingChallengeState>
+  timer: ReturnType<typeof setTimeout>
+}
+
+type ChallengeOutcome = 'cancelled' | 'expired' | 'completed' | 'account-mismatch' | 'disabled' | 'disposed'
+interface SettledChallengeRecord {
+  accountId: string
+  desktopInstallationId: InstallationId
+  outcome: ChallengeOutcome
+  cleanup: CleanupRecord<PairingChallengeState>
 }
 
 interface CompletionReplayRecord {
   accountId: string
   mobileInstallationId: InstallationId
+  challengeId: PairingChallengeId
+  challengeCleanup: CleanupRecord<PairingChallengeState>
   view: PairingCompletionView
 }
 
 interface PendingPairingRecord extends CompletionReplayRecord {
   desktopInstallationId: InstallationId
-  pendingPairingKey: PendingPairingKey
+  cleanup: CleanupRecord<PendingPairingKey>
+}
+
+type PendingOutcome = 'confirmed' | 'rejected' | 'disabled' | 'collision' | 'disposed'
+interface SettledPendingRecord {
+  accountId: string
+  desktopInstallationId: InstallationId
+  mobileInstallationId: InstallationId
+  outcome: PendingOutcome
+  cleanup: CleanupRecord<PendingPairingKey>
+  activeCleanup?: CleanupRecord<PersonalPairingKeyReference>
+  view?: PersonalPairingView
 }
 
 type StoredPersonalPairing = PersonalPairingView & {
   desktopInstallationId: InstallationId
-  keyReference: string
+  keyReference: PersonalPairingKeyReference
+  cleanup: CleanupRecord<PersonalPairingKeyReference>
 }
 
 /** Single-process provider for challenge and Personal Pairing lifecycle behavior. */
 export class PersonalPairingProvider extends RemoteAccessService {
   private readonly challenges = new Map<PairingChallengeId, ChallengeRecord>()
+  private readonly settledChallenges = new Map<PairingChallengeId, SettledChallengeRecord>()
   private readonly completions = new Map<PairingCompletionId, CompletionReplayRecord>()
   private readonly pending = new Map<PendingPairingId, PendingPairingRecord>()
+  private readonly settledPending = new Map<PendingPairingId, SettledPendingRecord>()
   private readonly pairings = new Map<PersonalPairingId, StoredPersonalPairing>()
-  private readonly confirmed = new Map<PendingPairingId, {
-    view: PersonalPairingView
-    desktopInstallationId: InstallationId
-  }>()
-  private readonly cancelledChallenges = new Set<PairingChallengeId>()
-  private readonly rejectedPending = new Set<PendingPairingId>()
+  private readonly principalIds = new Set<DevicePrincipalId>()
+  private readonly orphanPendingCleanups = new Set<CleanupRecord<PendingPairingKey>>()
   private readonly mobileAccess = new Set<string>()
   private serial: Promise<void> = Promise.resolve()
   private readonly clock: { now(): number }
   private readonly randomBytes: (size: number) => Uint8Array
-  private readonly randomId: PersonalPairingProviderOptions['randomId']
+  private readonly randomId: NonNullable<PersonalPairingProviderOptions['randomId']>
+  private readonly schedule: NonNullable<PersonalPairingProviderOptions['schedule']>
   private readonly pairingLinkOrigin: string
 
   /** @param ctx - Platform context. @param options - Account, crypto, time, random, and link adapters. */
@@ -335,6 +392,8 @@ export class PersonalPairingProvider extends RemoteAccessService {
     this.clock = options.clock ?? { now: () => Date.now() }
     this.randomBytes = options.randomBytes ?? secureRandomBytes
     this.randomId = options.randomId ?? (kind => `${kind}-${crypto.randomUUID()}`)
+    this.schedule = options.schedule ?? ((task, delayMs) => setTimeout(task, delayMs))
+    ctx.effect(() => async () => { await this.dispose() }, 'remote-access: Personal Pairing resources')
   }
 
   async createChallenge(input: {
@@ -342,47 +401,56 @@ export class PersonalPairingProvider extends RemoteAccessService {
     rendezvousId: PairingRendezvousId
   }): Promise<PairingChallengeView> {
     return this.exclusive(async () => {
-      const account = await this.options.account.current({
-        accessToken: input.desktop.accessToken,
-        proof: input.desktop.proof,
-      })
-      if (!this.mobileAccess.has(accessKey(account.id, input.desktop.installationId))) {
+      const { account, installation } = await this.authenticate(input.desktop, 'desktop')
+      if (!this.mobileAccess.has(accessKey(account.id, installation.id))) {
         throw new RemoteAccessError('MOBILE_ACCESS_DISABLED', 'Mobile Access is disabled for this Desktop Installation')
       }
       const invitationSecret = this.randomBytes(32)
       if (invitationSecret.byteLength !== 32) throw new TypeError('Personal Pairing random source must return 32 bytes')
       const expiresAt = this.clock.now() + PAIRING_CHALLENGE_TTL_MS
       const cryptoChallenge = await this.options.handshake.createChallenge({ invitationSecret, expiresAt })
+      const cleanup: CleanupRecord<PairingChallengeState> = { resource: cryptoChallenge.state }
       try {
+        const challengeId = parsePairingChallengeId(this.randomId('challenge'))
+        if (this.challenges.has(challengeId) || this.settledChallenges.has(challengeId)) {
+          throw new RemoteAccessError('PAIRING_ID_COLLISION', 'Pairing Challenge id was already allocated')
+        }
         const invitation: PairingInvitation = {
-          challengeId: parsePairingChallengeId(this.randomId?.('challenge')),
+          challengeId,
           invitationSecret: invitationSecret.slice(),
           desktopFingerprint: nonEmpty(cryptoChallenge.desktopFingerprint, 'Desktop fingerprint'),
           rendezvousId: parsePairingRendezvousId(input.rendezvousId),
           expiresAt,
           protocolMajor: PERSONAL_PAIRING_PROTOCOL_MAJOR,
         }
-        if (this.challenges.has(invitation.challengeId)) {
-          throw new TypeError('Personal Pairing id source reused an active challenge id')
-        }
         const oneTimeLink = encodePairingInvitationLink(this.pairingLinkOrigin, invitation)
-        this.challenges.set(invitation.challengeId, {
+        const timer = this.schedule(() => {
+          void this.expireChallenge(challengeId).catch((error: unknown) => {
+            console.error('[remote-access] Pairing Challenge expiry cleanup failed:', error)
+          })
+        }, PAIRING_CHALLENGE_TTL_MS)
+        timer.unref()
+        const record: ChallengeRecord = {
           invitation,
           accountId: account.id,
-          desktopInstallationId: input.desktop.installationId,
-          state: cryptoChallenge.state,
-        })
+          desktopInstallationId: installation.id,
+          cleanup,
+          timer,
+        }
+        this.challenges.set(challengeId, record)
         return { ...withoutSecret(invitation), oneTimeLink, qrPayload: oneTimeLink }
       } catch (error) {
-        await this.options.handshake.destroyChallenge(cryptoChallenge.state)
+        await this.cleanupChallenge(cleanup)
         throw error
+      } finally {
+        invitationSecret.fill(0)
       }
     })
   }
 
   async getMobileAccessState(desktop: PairingAccountAuthentication): Promise<MobileAccessState> {
-    const account = await this.options.account.current({ accessToken: desktop.accessToken, proof: desktop.proof })
-    return { enabled: this.mobileAccess.has(accessKey(account.id, desktop.installationId)) }
+    const { account, installation } = await this.authenticate(desktop, 'desktop')
+    return { enabled: this.mobileAccess.has(accessKey(account.id, installation.id)) }
   }
 
   async setMobileAccess(input: {
@@ -390,26 +458,24 @@ export class PersonalPairingProvider extends RemoteAccessService {
     enabled: boolean
   }): Promise<MobileAccessState> {
     return this.exclusive(async () => {
-      const account = await this.options.account.current({
-        accessToken: input.desktop.accessToken,
-        proof: input.desktop.proof,
-      })
-      const key = accessKey(account.id, input.desktop.installationId)
+      const { account, installation } = await this.authenticate(input.desktop, 'desktop')
+      const key = accessKey(account.id, installation.id)
       if (input.enabled) {
         this.mobileAccess.add(key)
         return { enabled: true }
       }
       this.mobileAccess.delete(key)
-      const challenges = [...this.challenges.values()].filter(challenge =>
-        challenge.accountId === account.id && challenge.desktopInstallationId === input.desktop.installationId)
-      for (const challenge of challenges) await this.destroyChallenge(challenge)
-      const pending = [...this.pending.entries()].filter(([, record]) =>
-        record.accountId === account.id && record.desktopInstallationId === input.desktop.installationId)
-      for (const [pendingPairingId, record] of pending) {
-        this.pending.delete(pendingPairingId)
-        this.rejectedPending.add(pendingPairingId)
-        await this.options.handshake.destroyPendingPairing(record.pendingPairingKey)
+      for (const challenge of [...this.challenges.values()]) {
+        if (challenge.accountId === account.id && challenge.desktopInstallationId === installation.id) {
+          this.settleChallenge(challenge, 'disabled')
+        }
       }
+      for (const [id, record] of [...this.pending]) {
+        if (record.accountId === account.id && record.desktopInstallationId === installation.id) {
+          this.settlePending(id, record, 'disabled')
+        }
+      }
+      await this.cleanupOwner(account.id, installation.id)
       return { enabled: false }
     })
   }
@@ -422,84 +488,121 @@ export class PersonalPairingProvider extends RemoteAccessService {
     mobileHandshake: Uint8Array
   }): Promise<PairingCompletionView> {
     return this.exclusive(async () => {
-      const account = await this.options.account.current({
-        accessToken: input.mobile.accessToken,
-        proof: input.mobile.proof,
-      })
+      const { account, installation } = await this.authenticate(input.mobile, 'mobile')
       const completionId = parsePairingCompletionId(input.completionId)
+      const invitation = parsePairingInvitationLink(input.oneTimeLink)
       const previous = this.completions.get(completionId)
       if (previous !== undefined) {
-        if (previous.accountId !== account.id || previous.mobileInstallationId !== input.mobile.installationId) {
+        if (previous.accountId !== account.id || previous.mobileInstallationId !== installation.id) {
           throw new RemoteAccessError('PAIRING_CHALLENGE_USED', 'Pairing completion id belongs to another Installation')
         }
+        if (previous.challengeId !== invitation.challengeId) {
+          throw new RemoteAccessError('PAIRING_ID_COLLISION', 'Pairing completion id was reused for another challenge')
+        }
+        await this.retryChallengeCleanup(previous.challengeCleanup)
         return cloneCompletion(previous.view)
       }
 
-      const invitation = parsePairingInvitationLink(input.oneTimeLink)
-      const challenge = this.challenges.get(invitation.challengeId)
-      if (challenge === undefined || !sameInvitation(challenge.invitation, invitation)) {
+      let challenge = this.challenges.get(invitation.challengeId)
+      if (challenge === undefined) {
+        challenge = await this.throwSettledChallenge(invitation.challengeId, account.id)
+      }
+      if (!sameInvitation(challenge.invitation, invitation)) {
         throw new RemoteAccessError('PAIRING_CHALLENGE_INVALID', 'Pairing invitation is invalid or unavailable')
       }
       if (this.clock.now() >= challenge.invitation.expiresAt) {
-        await this.destroyChallenge(challenge)
+        const settled = this.settleChallenge(challenge, 'expired')
+        await this.cleanupChallenge(settled.cleanup)
         throw new RemoteAccessError('PAIRING_CHALLENGE_EXPIRED', 'Pairing invitation expired')
       }
       if (challenge.accountId !== account.id) {
-        await this.destroyChallenge(challenge)
+        const settled = this.settleChallenge(challenge, 'account-mismatch')
+        await this.cleanupChallenge(settled.cleanup)
         throw new RemoteAccessError('PAIRING_ACCOUNT_MISMATCH', 'Desktop and Mobile must use the same Platform Account')
       }
 
-      this.challenges.delete(invitation.challengeId)
-      let completed: CompletedPairingHandshake
-      try {
-        completed = await this.options.handshake.completeChallenge({
-          invitationSecret: invitation.invitationSecret,
-          challengeState: challenge.state,
-          mobileHandshake: input.mobileHandshake,
-        })
-      } finally {
-        await this.options.handshake.destroyChallenge(challenge.state)
-      }
+      const completed = await this.options.handshake.completeChallenge({
+        invitationSecret: invitation.invitationSecret,
+        challengeState: challenge.cleanup.resource as PairingChallengeState,
+        mobileHandshake: input.mobileHandshake,
+      }).finally(() => { invitation.invitationSecret.fill(0) })
+      const pendingCleanup: CleanupRecord<PendingPairingKey> = { resource: completed.pendingPairingKey }
       let view: PairingCompletionView
       try {
+        const pendingPairingId = parsePendingPairingId(this.randomId('completion'))
+        if (this.pending.has(pendingPairingId) || this.settledPending.has(pendingPairingId)) {
+          throw new RemoteAccessError('PAIRING_ID_COLLISION', 'Pending Pairing id was already allocated')
+        }
         view = {
-          pendingPairingId: parsePendingPairingId(this.randomId?.('completion')),
+          pendingPairingId,
           authenticationWords: deriveAuthenticationWords(completed.handshakeHash),
           desktopHandshake: completed.desktopHandshake.slice(),
           device: parseDevice(input.device),
         }
       } catch (error) {
-        await this.options.handshake.destroyPendingPairing(completed.pendingPairingKey)
+        this.orphanPendingCleanups.add(pendingCleanup)
+        const settled = this.settleChallenge(challenge, 'completed')
+        await cleanupAll([
+          () => this.cleanupChallenge(settled.cleanup),
+          () => this.cleanupPending(pendingCleanup),
+        ])
         throw error
       }
-      this.completions.set(completionId, {
+      const settled = this.settleChallenge(challenge, 'completed')
+      const replay: CompletionReplayRecord = {
         accountId: account.id,
-        mobileInstallationId: input.mobile.installationId,
+        mobileInstallationId: installation.id,
+        challengeId: invitation.challengeId,
+        challengeCleanup: settled.cleanup,
         view,
-      })
+      }
+      this.completions.set(completionId, replay)
       this.pending.set(view.pendingPairingId, {
-        accountId: account.id,
+        ...replay,
         desktopInstallationId: challenge.desktopInstallationId,
-        mobileInstallationId: input.mobile.installationId,
-        view,
-        pendingPairingKey: completed.pendingPairingKey,
+        cleanup: pendingCleanup,
       })
+      await this.cleanupChallenge(settled.cleanup)
       return cloneCompletion(view)
     })
   }
 
   async listPersonalPairings(desktop: PairingAccountAuthentication): Promise<readonly PersonalPairingView[]> {
-    const account = await this.options.account.current({ accessToken: desktop.accessToken, proof: desktop.proof })
+    const { account, installation } = await this.authenticate(desktop, 'desktop')
     return [...this.pairings.values()]
       .filter(pairing => pairing.devicePrincipal.accountId === account.id
-        && pairing.desktopInstallationId === desktop.installationId)
+        && pairing.desktopInstallationId === installation.id)
       .map(clonePairing)
   }
 
+  async getMobilePairingStatus(input: {
+    mobile: PairingAccountAuthentication
+    pendingPairingId: PendingPairingId
+  }): Promise<MobilePairingStatus> {
+    const { account, installation } = await this.authenticate(input.mobile, 'mobile')
+    const pendingPairingId = parsePendingPairingId(input.pendingPairingId)
+    const pending = this.pending.get(pendingPairingId)
+    if (pending !== undefined) {
+      if (pending.accountId === account.id && pending.mobileInstallationId === installation.id) {
+        return { status: 'pending' }
+      }
+      throw new RemoteAccessError('PAIRING_PENDING_INVALID', 'Pending Pairing is invalid or unavailable')
+    }
+    const settled = this.settledPending.get(pendingPairingId)
+    if (settled === undefined || settled.accountId !== account.id
+      || settled.mobileInstallationId !== installation.id) {
+      throw new RemoteAccessError('PAIRING_PENDING_INVALID', 'Pending Pairing is invalid or unavailable')
+    }
+    if (settled.outcome === 'confirmed' && settled.view !== undefined) {
+      return { status: 'paired', pairingId: settled.view.id }
+    }
+    return { status: 'rejected' }
+  }
+
   async listPendingPairings(desktop: PairingAccountAuthentication): Promise<readonly PairingCompletionView[]> {
-    const account = await this.options.account.current({ accessToken: desktop.accessToken, proof: desktop.proof })
+    const { account, installation } = await this.authenticate(desktop, 'desktop')
     return [...this.pending.values()]
-      .filter(record => record.accountId === account.id && record.desktopInstallationId === desktop.installationId)
+      .filter(record => record.accountId === account.id && record.desktopInstallationId === installation.id)
       .map(record => cloneCompletion(record.view))
   }
 
@@ -508,38 +611,51 @@ export class PersonalPairingProvider extends RemoteAccessService {
     pendingPairingId: PendingPairingId
   }): Promise<PersonalPairingView> {
     return this.exclusive(async () => {
-      const account = await this.options.account.current({
-        accessToken: input.desktop.accessToken,
-        proof: input.desktop.proof,
-      })
+      const { account, installation } = await this.authenticate(input.desktop, 'desktop')
       const pendingPairingId = parsePendingPairingId(input.pendingPairingId)
-      const previous = this.confirmed.get(pendingPairingId)
-      if (previous !== undefined) {
-        if (previous.view.devicePrincipal.accountId !== account.id
-          || previous.desktopInstallationId !== input.desktop.installationId) {
-          throw new RemoteAccessError('PAIRING_PENDING_INVALID', 'Pending Pairing belongs to another Desktop Installation')
+      const settled = this.settledPending.get(pendingPairingId)
+      if (settled !== undefined) {
+        if (settled.accountId === account.id && settled.desktopInstallationId === installation.id
+          && settled.outcome === 'collision') {
+          await this.cleanupSettledPending(settled)
+          throw new RemoteAccessError('PAIRING_ID_COLLISION', 'Personal Pairing identity was already allocated')
         }
-        return clonePairing(previous.view)
+        if (settled.accountId !== account.id || settled.desktopInstallationId !== installation.id
+          || settled.outcome !== 'confirmed' || settled.view === undefined) {
+          throw new RemoteAccessError('PAIRING_PENDING_INVALID', 'Pending Pairing is invalid or unavailable')
+        }
+        await this.cleanupPending(settled.cleanup)
+        return clonePairing(settled.view)
       }
-      const record = this.pending.get(pendingPairingId)
-      if (record === undefined
-        || record.accountId !== account.id
-        || record.desktopInstallationId !== input.desktop.installationId) {
-        throw new RemoteAccessError('PAIRING_PENDING_INVALID', 'Pending Pairing is invalid or unavailable')
-      }
+      const record = this.requirePending(pendingPairingId, account.id, installation.id)
       const activation = await this.options.handshake.activatePairing({
-        pendingPairingKey: record.pendingPairingKey,
+        pendingPairingKey: record.cleanup.resource as PendingPairingKey,
       })
-      const keyReference = nonEmpty(activation.keyReference, 'Personal Pairing key reference')
+      const keyReference = parsePersonalPairingKeyReference(activation.keyReference)
       if ([...this.pairings.values()].some(pairing => pairing.keyReference === keyReference)) {
-        await this.options.handshake.destroyPendingPairing(record.pendingPairingKey)
-        this.pending.delete(pendingPairingId)
-        throw new TypeError('Personal Pairing crypto adapter reused a pairing key reference')
+        const activeCleanup: CleanupRecord<PersonalPairingKeyReference> = { resource: keyReference }
+        this.settlePending(pendingPairingId, record, 'collision', undefined, activeCleanup)
+        await cleanupAll([
+          () => this.cleanupPending(record.cleanup),
+          () => this.cleanupActive(activeCleanup),
+        ])
+        throw new RemoteAccessError('PAIRING_ID_COLLISION', 'Personal Pairing key reference was already allocated')
+      }
+      const pairingId = parsePersonalPairingId(this.randomId('pairing'))
+      const principalId = parseDevicePrincipalId(this.randomId('principal'))
+      if (this.pairings.has(pairingId) || this.principalIds.has(principalId)) {
+        const activeCleanup: CleanupRecord<PersonalPairingKeyReference> = { resource: keyReference }
+        this.settlePending(pendingPairingId, record, 'collision', undefined, activeCleanup)
+        await cleanupAll([
+          () => this.cleanupPending(record.cleanup),
+          () => this.cleanupActive(activeCleanup),
+        ])
+        throw new RemoteAccessError('PAIRING_ID_COLLISION', 'Personal Pairing identity was already allocated')
       }
       const view: PersonalPairingView = {
-        id: parsePersonalPairingId(this.randomId?.('pairing')),
+        id: pairingId,
         devicePrincipal: {
-          id: parseDevicePrincipalId(this.randomId?.('principal')),
+          id: principalId,
           accountId: account.id,
           installationId: record.mobileInstallationId,
           authority: 'companion-surface',
@@ -547,13 +663,15 @@ export class PersonalPairingProvider extends RemoteAccessService {
         device: { ...record.view.device },
         pairedAt: this.clock.now(),
       }
-      this.pending.delete(pendingPairingId)
-      this.pairings.set(view.id, { ...view, desktopInstallationId: record.desktopInstallationId, keyReference })
-      this.confirmed.set(pendingPairingId, {
-        view,
+      this.principalIds.add(principalId)
+      this.pairings.set(view.id, {
+        ...view,
         desktopInstallationId: record.desktopInstallationId,
+        keyReference,
+        cleanup: { resource: keyReference },
       })
-      await this.options.handshake.destroyPendingPairing(record.pendingPairingKey)
+      const confirmed = this.settlePending(pendingPairingId, record, 'confirmed', view)
+      await this.cleanupPending(confirmed.cleanup)
       return clonePairing(view)
     })
   }
@@ -563,20 +681,24 @@ export class PersonalPairingProvider extends RemoteAccessService {
     challengeId: PairingChallengeId
   }): Promise<void> {
     await this.exclusive(async () => {
-      const account = await this.options.account.current({
-        accessToken: input.desktop.accessToken,
-        proof: input.desktop.proof,
-      })
+      const { account, installation } = await this.authenticate(input.desktop, 'desktop')
       const challengeId = parsePairingChallengeId(input.challengeId)
-      if (this.cancelledChallenges.has(challengeId)) return
+      const previous = this.settledChallenges.get(challengeId)
+      if (previous !== undefined) {
+        if (previous.accountId !== account.id || previous.desktopInstallationId !== installation.id
+          || (previous.outcome !== 'cancelled' && previous.outcome !== 'disabled')) {
+          throw new RemoteAccessError('PAIRING_CHALLENGE_INVALID', 'Pairing Challenge is invalid or unavailable')
+        }
+        await this.cleanupChallenge(previous.cleanup)
+        return
+      }
       const challenge = this.challenges.get(challengeId)
-      if (challenge === undefined
-        || challenge.accountId !== account.id
-        || challenge.desktopInstallationId !== input.desktop.installationId) {
+      if (challenge === undefined || challenge.accountId !== account.id
+        || challenge.desktopInstallationId !== installation.id) {
         throw new RemoteAccessError('PAIRING_CHALLENGE_INVALID', 'Pairing Challenge is invalid or unavailable')
       }
-      this.cancelledChallenges.add(challengeId)
-      await this.destroyChallenge(challenge)
+      const settled = this.settleChallenge(challenge, 'cancelled')
+      await this.cleanupChallenge(settled.cleanup)
     })
   }
 
@@ -585,27 +707,158 @@ export class PersonalPairingProvider extends RemoteAccessService {
     pendingPairingId: PendingPairingId
   }): Promise<void> {
     await this.exclusive(async () => {
-      const account = await this.options.account.current({
-        accessToken: input.desktop.accessToken,
-        proof: input.desktop.proof,
-      })
+      const { account, installation } = await this.authenticate(input.desktop, 'desktop')
       const pendingPairingId = parsePendingPairingId(input.pendingPairingId)
-      if (this.rejectedPending.has(pendingPairingId)) return
-      const record = this.pending.get(pendingPairingId)
-      if (record === undefined
-        || record.accountId !== account.id
-        || record.desktopInstallationId !== input.desktop.installationId) {
-        throw new RemoteAccessError('PAIRING_PENDING_INVALID', 'Pending Pairing is invalid or unavailable')
+      const previous = this.settledPending.get(pendingPairingId)
+      if (previous !== undefined) {
+        if (previous.accountId !== account.id || previous.desktopInstallationId !== installation.id
+          || (previous.outcome !== 'rejected' && previous.outcome !== 'disabled')) {
+          throw new RemoteAccessError('PAIRING_PENDING_INVALID', 'Pending Pairing is invalid or unavailable')
+        }
+        await this.cleanupPending(previous.cleanup)
+        return
       }
-      this.pending.delete(pendingPairingId)
-      this.rejectedPending.add(pendingPairingId)
-      await this.options.handshake.destroyPendingPairing(record.pendingPairingKey)
+      const record = this.requirePending(pendingPairingId, account.id, installation.id)
+      const settled = this.settlePending(pendingPairingId, record, 'rejected')
+      await this.cleanupPending(settled.cleanup)
     })
   }
 
-  private async destroyChallenge(challenge: ChallengeRecord): Promise<void> {
+  /** Destroy every retained crypto resource; repeated disposal retries tombstones. */
+  async dispose(): Promise<void> {
+    await this.exclusive(async () => {
+      for (const challenge of [...this.challenges.values()]) this.settleChallenge(challenge, 'disposed')
+      for (const [id, record] of [...this.pending]) this.settlePending(id, record, 'disposed')
+      const operations: Array<() => Promise<void>> = []
+      for (const record of this.settledChallenges.values()) operations.push(() => this.cleanupChallenge(record.cleanup))
+      for (const record of this.settledPending.values()) operations.push(() => this.cleanupSettledPending(record))
+      for (const cleanup of this.orphanPendingCleanups) operations.push(() => this.cleanupPending(cleanup))
+      for (const pairing of this.pairings.values()) operations.push(() => this.cleanupActive(pairing.cleanup))
+      await cleanupAll(operations)
+    })
+  }
+
+  private expireChallenge(challengeId: PairingChallengeId): Promise<void> {
+    return this.exclusive(async () => {
+      const challenge = this.challenges.get(challengeId)
+      if (challenge === undefined || this.clock.now() < challenge.invitation.expiresAt) return
+      const settled = this.settleChallenge(challenge, 'expired')
+      await this.cleanupChallenge(settled.cleanup)
+    })
+  }
+
+  private settleChallenge(challenge: ChallengeRecord, outcome: ChallengeOutcome): SettledChallengeRecord {
     this.challenges.delete(challenge.invitation.challengeId)
-    await this.options.handshake.destroyChallenge(challenge.state)
+    clearTimeout(challenge.timer)
+    challenge.invitation.invitationSecret.fill(0)
+    const settled = {
+      accountId: challenge.accountId,
+      desktopInstallationId: challenge.desktopInstallationId,
+      outcome,
+      cleanup: challenge.cleanup,
+    }
+    this.settledChallenges.set(challenge.invitation.challengeId, settled)
+    return settled
+  }
+
+  private settlePending(
+    id: PendingPairingId,
+    record: PendingPairingRecord,
+    outcome: PendingOutcome,
+    view?: PersonalPairingView,
+    activeCleanup?: CleanupRecord<PersonalPairingKeyReference>,
+  ): SettledPendingRecord {
+    this.pending.delete(id)
+    const settled = {
+      accountId: record.accountId,
+      desktopInstallationId: record.desktopInstallationId,
+      mobileInstallationId: record.mobileInstallationId,
+      outcome,
+      cleanup: record.cleanup,
+      ...(activeCleanup === undefined ? {} : { activeCleanup }),
+      ...(view === undefined ? {} : { view }),
+    }
+    this.settledPending.set(id, settled)
+    return settled
+  }
+
+  private requirePending(id: PendingPairingId, accountId: string, installationId: InstallationId): PendingPairingRecord {
+    const record = this.pending.get(id)
+    if (record === undefined || record.accountId !== accountId || record.desktopInstallationId !== installationId) {
+      throw new RemoteAccessError('PAIRING_PENDING_INVALID', 'Pending Pairing is invalid or unavailable')
+    }
+    return record
+  }
+
+  private async throwSettledChallenge(challengeId: PairingChallengeId, accountId: string): Promise<never> {
+    const settled = this.settledChallenges.get(challengeId)
+    if (settled === undefined) {
+      throw new RemoteAccessError('PAIRING_CHALLENGE_INVALID', 'Pairing invitation is invalid or unavailable')
+    }
+    await this.cleanupChallenge(settled.cleanup)
+    if (settled.outcome === 'expired') {
+      throw new RemoteAccessError('PAIRING_CHALLENGE_EXPIRED', 'Pairing invitation expired')
+    }
+    if (settled.outcome === 'account-mismatch' && settled.accountId !== accountId) {
+      throw new RemoteAccessError('PAIRING_ACCOUNT_MISMATCH', 'Desktop and Mobile must use the same Platform Account')
+    }
+    throw new RemoteAccessError('PAIRING_CHALLENGE_INVALID', 'Pairing invitation is invalid or unavailable')
+  }
+
+  private async retryChallengeCleanup(cleanup: CleanupRecord<PairingChallengeState>): Promise<void> {
+    await this.cleanupChallenge(cleanup)
+  }
+
+  private async cleanupOwner(accountId: string, installationId: InstallationId): Promise<void> {
+    const operations: Array<() => Promise<void>> = []
+    for (const record of this.settledChallenges.values()) {
+      if (record.accountId === accountId && record.desktopInstallationId === installationId) {
+        operations.push(() => this.cleanupChallenge(record.cleanup))
+      }
+    }
+    for (const record of this.settledPending.values()) {
+      if (record.accountId === accountId && record.desktopInstallationId === installationId) {
+        operations.push(() => this.cleanupSettledPending(record))
+      }
+    }
+    await cleanupAll(operations)
+  }
+
+  private cleanupChallenge(cleanup: CleanupRecord<PairingChallengeState>): Promise<void> {
+    return cleanupResource(cleanup, state => this.options.handshake.destroyChallenge(state))
+  }
+
+  private async cleanupPending(cleanup: CleanupRecord<PendingPairingKey>): Promise<void> {
+    await cleanupResource(cleanup, state => this.options.handshake.destroyPendingPairing(state))
+    this.orphanPendingCleanups.delete(cleanup)
+  }
+
+  private cleanupSettledPending(record: SettledPendingRecord): Promise<void> {
+    const operations: Array<() => Promise<void>> = [() => this.cleanupPending(record.cleanup)]
+    const activeCleanup = record.activeCleanup
+    if (activeCleanup !== undefined) operations.push(() => this.cleanupActive(activeCleanup))
+    return cleanupAll(operations)
+  }
+
+  private cleanupActive(cleanup: CleanupRecord<PersonalPairingKeyReference>): Promise<void> {
+    return cleanupResource(cleanup, keyReference => this.options.handshake.destroyPairing(keyReference))
+  }
+
+  private async authenticate(
+    authentication: PairingAccountAuthentication,
+    expectedKind: 'desktop' | 'mobile',
+  ): Promise<AuthenticatedInstallationView> {
+    const authenticated = await this.options.account.currentInstallation({
+      accessToken: authentication.accessToken,
+      proof: authentication.proof,
+    })
+    if (authenticated.installation.kind !== expectedKind) {
+      throw new RemoteAccessError(
+        'PAIRING_INSTALLATION_KIND_INVALID',
+        `Personal Pairing operation requires an authenticated ${expectedKind} Installation`,
+      )
+    }
+    return authenticated
   }
 
   private exclusive<T>(operation: () => Promise<T>): Promise<T> {
@@ -613,6 +866,25 @@ export class PersonalPairingProvider extends RemoteAccessService {
     this.serial = result.then(() => undefined, () => undefined)
     return result
   }
+}
+
+async function cleanupResource<T>(
+  cleanup: CleanupRecord<T>,
+  destroy: (resource: T) => void | Promise<void>,
+): Promise<void> {
+  const resource = cleanup.resource
+  if (resource === undefined) return
+  await destroy(resource)
+  delete cleanup.resource
+}
+
+async function cleanupAll(operations: readonly (() => Promise<void>)[]): Promise<void> {
+  const results = await Promise.allSettled(operations.map(operation => operation()))
+  const errors: unknown[] = []
+  for (const result of results) {
+    if (result.status === 'rejected') errors.push(result.reason as unknown)
+  }
+  if (errors.length > 0) throw new AggregateError(errors, 'Personal Pairing resource cleanup failed')
 }
 
 /**
@@ -667,6 +939,15 @@ export function parseDevicePrincipalId(value: unknown): DevicePrincipalId {
  */
 export function parsePersonalPairingId(value: unknown): PersonalPairingId {
   return nonEmpty(value, 'Personal Pairing id') as PersonalPairingId
+}
+
+/**
+ * Parse a provider key reference at a crypto or durable boundary.
+ * @param value - untrusted provider reference.
+ * @returns branded non-empty Personal Pairing key reference.
+ */
+export function parsePersonalPairingKeyReference(value: unknown): PersonalPairingKeyReference {
+  return nonEmpty(value, 'Personal Pairing key reference') as PersonalPairingKeyReference
 }
 
 /**

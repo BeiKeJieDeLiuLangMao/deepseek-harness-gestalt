@@ -137,6 +137,6 @@ function validateEnvironmentIdentity<T extends PlatformEnvironment>(
 }
 
 function required(value: unknown, name: string): string {
-  if (typeof value !== 'string' || value.trim() === '') throw new TypeError(`Platform ${name} is required`)
-  return value
+  if (typeof value === 'string' && value.trim() !== '') return value
+  throw new TypeError(`Platform ${name} is required`)
 }

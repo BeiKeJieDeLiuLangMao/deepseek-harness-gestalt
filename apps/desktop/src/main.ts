@@ -19,6 +19,7 @@ import {
   type UpdaterStatus,
 } from '@deepseek-ai/dsh-client-ui-desktop/protocol'
 import { PlatformAccountHttpTransport } from '@deepseek-ai/dsh-platform-account-client'
+import { RemoteAccessHttpTransport } from '@deepseek-ai/dsh-remote-access-client'
 import type { SelectedPlatformEnvironment } from '@deepseek-ai/dsh-platform-account'
 import { ensureLaunchDirectory } from './launch-directory.ts'
 import { isElectronExecutable, resolveDesktopRuntime } from './runtime-paths.ts'
@@ -35,7 +36,15 @@ import {
   DesktopAccountController, EncryptedDesktopAccountStore,
   UnavailableDesktopAccountController, type DesktopAccountActions,
 } from './platform-account.ts'
-import { UnavailableDesktopPairingController, type DesktopPairingActions } from './personal-pairing.ts'
+import {
+  DesktopPairingController,
+  UnavailableDesktopPairingController,
+  confirmPairingFromIpc,
+  rejectPairingFromIpc,
+  setPairingEnabledFromIpc,
+  type DesktopPairingActions,
+} from './personal-pairing.ts'
+import { disposeDesktopOwners } from './shutdown.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const PRELOAD = join(here, 'preload.cjs')
@@ -55,10 +64,11 @@ let integrationsInstalled = false
 let updaterInitialized = false
 let account: DesktopAccountActions = new UnavailableDesktopAccountController('Platform Account is starting')
 let stopAccountEvents: (() => void) | undefined
-const pairing: DesktopPairingActions = new UnavailableDesktopPairingController(
+let pairing: DesktopPairingActions = new UnavailableDesktopPairingController(
   'Personal Pairing waits for the independent Noise security review.',
 )
 let stopPairingEvents: (() => void) | undefined
+let accountSignedIn = false
 const hostStartController = new AbortController()
 let pendingHost: Promise<RunningWebHost> | undefined
 
@@ -90,7 +100,6 @@ async function boot(): Promise<void> {
   window = createWindow()
   account = createDesktopAccount(accountEnvironment)
   stopAccountEvents = account.subscribe(pushAccountSnapshot)
-  stopPairingEvents = pairing.subscribe(pushPairingSnapshot)
   try {
     await account.start()
   } catch (error) {
@@ -99,6 +108,16 @@ async function boot(): Promise<void> {
     account = new UnavailableDesktopAccountController(
       error instanceof Error ? error.message : String(error),
     )
+  }
+  pairing = createDesktopPairing(accountEnvironment, account)
+  stopPairingEvents = pairing.subscribe(pushPairingSnapshot)
+  stopAccountEvents()
+  stopAccountEvents = account.subscribe(handleAccountSnapshot)
+  accountSignedIn = account.getSnapshot().status === 'signed-in'
+  if (accountSignedIn) {
+    await pairing.start().catch((error: unknown) => {
+      console.error('[desktop-personal-pairing] initial Remote Access load failed:', error)
+    })
   }
   installIntegrationsOnce()
   try {
@@ -173,7 +192,7 @@ function createWindow(): BrowserWindow {
       packaged: app.isPackaged,
       appPath: app.getAppPath(),
       resourcesPath: process.resourcesPath,
-      setDockIcon: (path) => { app.dock?.setIcon(path) },
+      setDockIcon: (path) => { app.dock.setIcon(path) },
     }),
     width: 1280,
     height: 800,
@@ -350,16 +369,14 @@ function requestShutdown(exitCode: number): void {
   stopAccountEvents = undefined
   stopPairingEvents?.()
   stopPairingEvents = undefined
-  const accountDisposal = account.dispose()
-  const pairingDisposal = pairing.dispose()
+  const ownerDisposal = disposeDesktopOwners(account, pairing)
   hostStartController.abort()
   const starting = pendingHost
   const running = host
   host = undefined
   void (async () => {
     try {
-      await accountDisposal
-      await pairingDisposal
+      await ownerDisposal
       const started = await starting?.catch(() => undefined)
       if (started !== running) await started?.stop()
       await running?.stop()
@@ -388,11 +405,13 @@ function installIpc(): void {
   ipcMain.handle(ACCOUNT_BEGIN_LOGIN, () => account.beginLogin())
   ipcMain.handle(ACCOUNT_SIGN_OUT, () => account.signOut())
   ipcMain.handle(PAIRING_GET_SNAPSHOT, () => pairing.getSnapshot())
-  ipcMain.handle(PAIRING_SET_ENABLED, (_event, enabled: boolean) => pairing.setEnabled(enabled))
+  ipcMain.handle(PAIRING_SET_ENABLED, (_event, enabled: unknown) => setPairingEnabledFromIpc(pairing, enabled))
   ipcMain.handle(PAIRING_CREATE_CHALLENGE, () => pairing.createChallenge())
   ipcMain.handle(PAIRING_CANCEL_CHALLENGE, () => pairing.cancelChallenge())
-  ipcMain.handle(PAIRING_CONFIRM, (_event, pendingPairingId: string) => pairing.confirm(pendingPairingId))
-  ipcMain.handle(PAIRING_REJECT, (_event, pendingPairingId: string) => pairing.reject(pendingPairingId))
+  ipcMain.handle(PAIRING_CONFIRM, (_event, pendingPairingId: unknown) =>
+    confirmPairingFromIpc(pairing, pendingPairingId))
+  ipcMain.handle(PAIRING_REJECT, (_event, pendingPairingId: unknown) =>
+    rejectPairingFromIpc(pairing, pendingPairingId))
 }
 
 function installMenu(): void {
@@ -423,6 +442,17 @@ function pushAccountSnapshot(snapshot: ReturnType<DesktopAccountActions['getSnap
   window?.webContents.send(ACCOUNT_SNAPSHOT_CHANGED, snapshot)
 }
 
+function handleAccountSnapshot(snapshot: ReturnType<DesktopAccountActions['getSnapshot']>): void {
+  pushAccountSnapshot(snapshot)
+  const signedIn = snapshot.status === 'signed-in'
+  if (signedIn && !accountSignedIn) {
+    void pairing.start().catch((error: unknown) => {
+      console.error('[desktop-personal-pairing] signed-in Remote Access load failed:', error)
+    })
+  }
+  accountSignedIn = signedIn
+}
+
 function pushPairingSnapshot(snapshot: ReturnType<DesktopPairingActions['getSnapshot']>): void {
   window?.webContents.send(PAIRING_SNAPSHOT_CHANGED, snapshot)
 }
@@ -444,6 +474,21 @@ function createDesktopAccount(environment: SelectedPlatformEnvironment): Desktop
     transport,
     store,
     systemBrowser: { open: async (url) => { await shell.openExternal(url) } },
+  })
+}
+
+function createDesktopPairing(
+  environment: SelectedPlatformEnvironment,
+  currentAccount: DesktopAccountActions,
+): DesktopPairingActions {
+  if (environment.environment !== 'development' || process.env.DSH_PERSONAL_PAIRING_KEYLESS !== '1') {
+    return new UnavailableDesktopPairingController(
+      'Personal Pairing requires an independently reviewed handshake provider. Development proof mode is disabled.',
+    )
+  }
+  return new DesktopPairingController({
+    account: currentAccount,
+    transport: new RemoteAccessHttpTransport({ environment }),
   })
 }
 

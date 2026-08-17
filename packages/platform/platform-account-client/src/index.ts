@@ -386,6 +386,14 @@ export interface PlatformAccountInstallationOptions {
   now?: () => number
 }
 
+/** Access token and proof for one authenticated current-Installation operation. */
+export interface CurrentInstallationAuthorization {
+  /** Current short-lived Platform access token. */
+  accessToken: string
+  /** One-use proof bound to that access token and Installation key. */
+  proof: AccountProof
+}
+
 /**
  * One Desktop or Mobile installation's Account lifecycle. OAuth callbacks
  * return only to Platform; the installation completes through signed polling.
@@ -423,6 +431,34 @@ export class PlatformAccountInstallation {
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener)
     return () => { this.listeners.delete(listener) }
+  }
+
+  /**
+   * Authorize one current-Installation service operation without exposing the private key.
+   * @returns current access token and fresh proof after any required refresh.
+   */
+  async authorizeCurrentInstallation(): Promise<CurrentInstallationAuthorization> {
+    return this.transitions.run(async () => {
+      const stored = await this.options.store.loadSession(this.options.environment.environment)
+      if (stored === undefined) throw new AccountError('SESSION_REVOKED', 'Installation is not signed in')
+      let session = stored.session
+      if (session.refreshExpiresAt <= this.now()) {
+        await this.options.store.clearSession(this.options.environment.environment)
+        throw new AccountError('SESSION_EXPIRED', 'Installation Account Session expired')
+      }
+      if (session.accessExpiresAt <= this.now()) {
+        session = await this.options.transport.refresh({
+          refreshToken: session.refreshToken,
+          proof: await this.proof(stored.privateKey, 'refresh', await hashToken(this.crypto, session.refreshToken)),
+        })
+        await this.options.store.saveSession({ ...stored, session })
+        this.publish({ status: 'signed-in', privacyAccepted: this.snapshot.privacyAccepted, account: session.account })
+      }
+      return {
+        accessToken: session.accessToken,
+        proof: await this.proof(stored.privateKey, 'current', await hashToken(this.crypto, session.accessToken)),
+      }
+    })
   }
 
   /** Record acceptance of the bilingual notice for this presentation run. */

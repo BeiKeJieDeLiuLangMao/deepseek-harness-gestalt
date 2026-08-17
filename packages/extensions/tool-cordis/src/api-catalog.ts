@@ -1010,6 +1010,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'current account projection.',
       },
       {
+        signature: 'abstract currentInstallation(input: { accessToken: string proof: AccountProof }): Promise<AuthenticatedInstallationView>',
+        description: 'Authenticate the Account and Installation identity bound to one current session.',
+        parameters: [{ name: 'input', description: 'access token and proof from the session\'s Installation key.' }],
+        returns: 'provider-owned Account id, Installation id, and Installation kind.',
+      },
+      {
         signature: 'abstract signOut(input: { accessToken: string; proof: AccountProof }): Promise<void>',
         description: 'Revoke only the current installation Account Session.',
         parameters: [{ name: 'input', description: 'access token and installation proof.' }],
@@ -1050,6 +1056,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Complete the same-account cryptographic exchange without granting authority.',
         parameters: [{ name: 'input', description: 'Mobile authorization, invitation, device metadata, and handshake bytes.' }],
         returns: 'pending result shown on both installations before Desktop confirmation.',
+      },
+      {
+        signature: 'abstract getMobilePairingStatus(input: { mobile: PairingAccountAuthentication pendingPairingId: PendingPairingId }): Promise<MobilePairingStatus>',
+        description: 'Read the decision for one pairing completed by the current Mobile Installation.',
+        parameters: [{ name: 'input', description: 'current Mobile authorization and pending identity.' }],
+        returns: 'pending, paired, or rejected without exposing Desktop authority.',
       },
       {
         signature: 'abstract listPersonalPairings(desktop: PairingAccountAuthentication): Promise<readonly PersonalPairingView[]>',
@@ -2889,6 +2901,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type AttachmentId = Branded<\'AttachmentId\'>;',
   },
   {
+    name: 'AuthenticatedInstallationView',
+    declaration: 'export interface AuthenticatedInstallationView {\n    account: PlatformAccountView;\n    installation: {\n        id: InstallationId;\n        kind: InstallationKind;\n    };\n}',
+  },
+  {
     name: 'BackendRegistry',
     declaration: 'export class BackendRegistry {\n    register(name: string, backend: StorageBackend): () => void;\n    get(name: string): StorageBackend;\n    names(): string[];\n}',
   },
@@ -3345,6 +3361,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type InstallationId = Branded<\'InstallationId\'>;',
   },
   {
+    name: 'InstallationKind',
+    declaration: 'export type InstallationKind = \'desktop\' | \'mobile\';',
+  },
+  {
     name: 'InvariantFailure',
     declaration: 'export type InvariantFailure = (message: string) => never;',
   },
@@ -3657,6 +3677,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface MobileAccessState {\n    enabled: boolean;\n}',
   },
   {
+    name: 'MobilePairingStatus',
+    declaration: 'export type MobilePairingStatus = {\n    status: \'pending\';\n} | {\n    status: \'paired\';\n    pairingId: PersonalPairingId;\n} | {\n    status: \'rejected\';\n};',
+  },
+  {
     name: 'ModelMessageSource',
     declaration: 'export interface ModelMessageSource extends AssistantProvenance {\n    kind: \'model\';\n}',
   },
@@ -3682,7 +3706,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'PairingAccountAuthentication',
-    declaration: 'export interface PairingAccountAuthentication {\n    installationId: InstallationId;\n    accessToken: string;\n    proof: AccountProof;\n}',
+    declaration: 'export interface PairingAccountAuthentication {\n    accessToken: string;\n    proof: AccountProof;\n}',
   },
   {
     name: 'PairingChallengeId',
