@@ -23,12 +23,16 @@ describe('Desktop overlay isolation', () => {
     expect(desktop).not.toMatch(/directory-picker/)
   })
 
-  it('composes Schedule through the built Desktop profile path after its required services', () => {
+  it('composes Schedule through the Desktop profile path after its required services', () => {
     const home = mkdtempSync(join(tmpdir(), 'dsh-desktop-overlay-'))
     const bin = join(repo, 'apps', 'cli', 'src', 'bin.ts')
     const patch = join(here, '..', 'cordis.patch.yml')
     const run = (args: readonly string[]): string => {
-      const launch = resolveExampleLaunch({ srcBin: bin, configArgs: args, mode: 'lib' })
+      const launch = resolveExampleLaunch({
+        srcBin: bin,
+        configArgs: args,
+        tsconfigPath: join(repo, 'tsconfig.base.json'),
+      })
       return execFileSync(launch.command, launch.args, {
         encoding: 'utf8',
         cwd: repo,
