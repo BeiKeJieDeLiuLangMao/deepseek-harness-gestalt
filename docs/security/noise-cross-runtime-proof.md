@@ -18,14 +18,14 @@ The committed proof is [scripts/noise-security-path/src/lib.rs](../../scripts/no
 
 | Evidence | What is checked |
 |---|---|
-| Official vectors | The exact handshake ciphertext, transport ciphertext, payload, and handshake hash for the two fixed protocol names are compared against the Noise v34 Cacophony vectors. |
+| Official vectors | All six messages, including exact handshake and transport ciphertexts and payloads, plus the handshake hash for each fixed protocol name are compared against the Noise v34 Cacophony vectors. |
 | Target flows | XKpsk3 pairing and IK reconnect complete in both directions, authenticate the expected remote static keys, and exchange bidirectional transport payloads. |
 | Fresh ephemerals | Two independently generated pairing handshakes and two independently generated reconnect handshakes expose different first ephemeral public keys. |
-| Active attacks | Modified ciphertext, replayed handshake messages, replayed transport messages, out-of-order transport messages, a different Desktop static identity during pairing, and non-allowlisted protocol names are rejected. |
+| Active attacks | Modified ciphertext, the authenticated third message from a completed XKpsk3 transcript replayed at the matching authentication stage of a fresh pairing, replayed transport messages, out-of-order transport messages, a different Desktop static identity during pairing, and non-allowlisted protocol names are rejected. The stale transcript's first message is accepted before the fresh responder emits a new second message, so this case is distinct from a generic state-order error. |
 | Resource bounds | A 65,535-byte Noise message carrying a 65,519-byte payload round-trips, and sixteen consecutive 65,536-byte messages are rejected. The attempt count is fixed so the proof itself stays bounded. |
 | Runtime parity | The same committed WASM module and JavaScript loader produce the same report in Node 22, Node 24, iOS Simulator `WKWebView`, and Android Emulator `WebView`. Native hosts only load assets and return the JSON result. |
 
-The vector subset is committed at [official-noise-v34.json](../../scripts/noise-security-path/vectors/official-noise-v34.json). Its metadata pins the [Snow 0.10.0 copy of Cacophony's vectors](https://github.com/mcginty/snow/blob/v0.10.0/tests/vectors/cacophony.txt) by SHA-256. The Noise project documents Cacophony as an official vector generator and defines the vector format in its [test-vector guidance](https://github.com/noiseprotocol/noise_wiki/wiki/Test-vectors). The 65,535-byte message ceiling comes from the [Noise Protocol Framework](https://noiseprotocol.org/noise.html#message-format).
+The two selected complete vectors are committed at [official-noise-v34.json](../../scripts/noise-security-path/vectors/official-noise-v34.json). Their metadata records the Git blob and SHA-256 of the [Snow 0.10.0 copy of Cacophony's vectors](https://github.com/mcginty/snow/blob/v0.10.0/tests/vectors/cacophony.txt); the proof rejects either selected vector unless all six upstream messages are present. The Noise project documents Cacophony as an official vector generator and defines the vector format in its [test-vector guidance](https://github.com/noiseprotocol/noise_wiki/wiki/Test-vectors). The 65,535-byte message ceiling comes from the [Noise Protocol Framework](https://noiseprotocol.org/noise.html#message-format).
 
 ## Key storage claim
 
@@ -45,18 +45,21 @@ Run:
 pnpm run proof:noise:build
 git diff --exit-code -- scripts/noise-security-path/pkg
 cargo test --locked --manifest-path scripts/noise-security-path/Cargo.toml
+cargo clippy --locked --manifest-path scripts/noise-security-path/Cargo.toml --all-targets -- -D warnings
+cargo tree --locked --manifest-path scripts/noise-security-path/Cargo.toml -i getrandom@0.3.4
+pnpm run test:noise-runners
 pnpm run proof:noise:node-matrix
 pnpm run proof:noise:ios
 pnpm run proof:noise:android
 pnpm exec vitest run --config vitest.snapshot.config.ts scripts/noise-security-path.snapshot.ts
 ```
 
-The build command must reproduce the committed JavaScript and WASM without a diff. Each runtime command must return `allPass: true`, the two exact protocol names, every attack result as `true`, and the same resource limits. The iOS and Android runners build disposable native hosts, launch the actual platform WebView, validate the runtime label, then remove the proof app. They do not substitute a Node result.
+The build command must reproduce the committed JavaScript and WASM without a diff. The dependency query must show Snow and the proof crate on the same `getrandom` 0.3.4 graph, with no 0.2 branch. Each runtime command must return `allPass: true`, the two exact protocol names, every attack result as `true`, and the same resource limits. The iOS and Android runners build disposable native hosts, launch the actual platform WebView, validate the runtime label, then remove the proof app. Their keyless fake-command tests cover owned-resource cleanup after wait, boot, build, install, and launch failures; cleanup failures are aggregated and do not suppress the primary failure. They do not substitute a Node result.
 
 An independent reviewer should also inspect the following items before approving product integration:
 
-1. Confirm that `Cargo.toml`, `Cargo.lock`, and `THIRD_PARTY_NOTICES.txt` resolve Snow 0.10.0 from the expected registry source and that the upstream release and repository maintenance posture remain acceptable.
-2. Compare the committed vector subset with the pinned Cacophony source, including ciphertexts and handshake hashes, rather than trusting the proof's success label.
+1. Confirm that `Cargo.toml`, `Cargo.lock`, and `THIRD_PARTY_NOTICES.txt` resolve Snow 0.10.0 from the expected registry source, that Snow uses the retained `getrandom` 0.3.4 graph, that no unused 0.2 branch remains, and that the upstream release and repository maintenance posture remain acceptable.
+2. Compare all six messages in each committed vector with the pinned Cacophony Git blob and SHA-256 source, including ciphertexts, payloads, and handshake hashes, rather than trusting the proof's success label.
 3. Confirm that the Rust adapter uses Snow's public builder and state-machine APIs and contains no copied Noise primitive or modified Snow source.
 4. Inspect each negative case for the intended failure reason and confirm that the protocol allowlist has no negotiation fallback.
 5. Re-run all five environments and retain exact tool, OS, simulator, emulator, and WebView versions with the review record.

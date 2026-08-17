@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "runtime": "snapshot",
   "engine": "snow 0.10.0 compiled to WebAssembly",
   "allPass": true,
@@ -19,7 +19,7 @@
   },
   "attacks": {
     "tamperRejected": true,
-    "handshakeReplayRejected": true,
+    "pairingStaleTranscriptRejected": true,
     "transportReplayRejected": true,
     "orderingRejected": true,
     "crossPairingRejected": true,

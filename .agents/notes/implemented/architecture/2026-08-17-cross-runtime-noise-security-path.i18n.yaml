@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-17-cross-runtime-noise-security-path.md
-2026-08-17-cross-runtime-noise-security-path.md: 58e501dfa66b4c2f9bd24e0a5f26b7022de591b6
-2026-08-17-cross-runtime-noise-security-path.zh.md: 5ac7e2fec5e2a59bf24c91554e1bc9154813112e
+2026-08-17-cross-runtime-noise-security-path.md: aba96da00d43983471173a6758cb9d65eef332a9
+2026-08-17-cross-runtime-noise-security-path.zh.md: 1d05887ce6f27805bd4f2c6b01b847a9883f49bb

@@ -41,7 +41,7 @@ struct TargetFlows {
 #[serde(rename_all = "camelCase")]
 struct AttackChecks {
     tamper_rejected: bool,
-    handshake_replay_rejected: bool,
+    pairing_stale_transcript_rejected: bool,
     transport_replay_rejected: bool,
     ordering_rejected: bool,
     cross_pairing_rejected: bool,
@@ -73,6 +73,11 @@ struct CompletedFlow {
     first_ephemeral: [u8; 32],
     initiator: TransportState,
     responder: TransportState,
+}
+
+struct PairingStaleTranscriptCheck {
+    first_message_accepted: bool,
+    authenticated_message_rejected: bool,
 }
 
 #[derive(Deserialize)]
@@ -415,6 +420,12 @@ fn run_official_vectors() -> ProofResult<()> {
         }
     }
     for vector in &vectors.vectors {
+        if vector.messages.len() != 6 {
+            return Err(format!(
+                "official {} vector must contain all six upstream messages",
+                vector.protocol_name
+            ));
+        }
         run_official_vector(vector)?;
     }
     Ok(())
@@ -439,19 +450,74 @@ fn tamper_is_rejected(statics: &StaticPair, psk: &[u8; 32]) -> ProofResult<bool>
         .is_err())
 }
 
-fn handshake_replay_is_rejected(statics: &StaticPair, psk: &[u8; 32]) -> ProofResult<bool> {
-    let (mut initiator, mut responder) = new_handshakes(PAIRING_PROTOCOL, statics, Some(psk))?;
+fn completed_handshake_transcript(
+    protocol: &str,
+    statics: &StaticPair,
+    psk: Option<&[u8; 32]>,
+) -> ProofResult<Vec<Vec<u8>>> {
+    let (mut initiator, mut responder) = new_handshakes(protocol, statics, psk)?;
     let mut message = vec![0_u8; MAX_NOISE_MESSAGE_BYTES];
     let mut payload = vec![0_u8; MAX_NOISE_MESSAGE_BYTES];
-    let length = initiator
-        .write_message(&[], &mut message)
-        .map_err(|error| format!("replay first write: {error:?}"))?;
-    responder
-        .read_message(&message[..length], &mut payload)
-        .map_err(|error| format!("replay first read: {error:?}"))?;
-    Ok(responder
-        .read_message(&message[..length], &mut payload)
-        .is_err())
+    let mut transcript = Vec::new();
+
+    while !initiator.is_handshake_finished() {
+        let (sender, receiver) = if initiator.is_my_turn() {
+            (&mut initiator, &mut responder)
+        } else {
+            (&mut responder, &mut initiator)
+        };
+        let length = sender
+            .write_message(&[], &mut message)
+            .map_err(|error| format!("transcript handshake write: {error:?}"))?;
+        let captured = message[..length].to_vec();
+        receiver
+            .read_message(&captured, &mut payload)
+            .map_err(|error| format!("transcript handshake read: {error:?}"))?;
+        transcript.push(captured);
+    }
+    if !responder.is_handshake_finished() {
+        return Err("transcript responder did not finish with initiator".to_owned());
+    }
+    Ok(transcript)
+}
+
+fn pairing_stale_transcript_is_rejected(
+    statics: &StaticPair,
+    psk: &[u8; 32],
+) -> ProofResult<PairingStaleTranscriptCheck> {
+    let transcript = completed_handshake_transcript(PAIRING_PROTOCOL, statics, Some(psk))?;
+    if transcript.len() != 3 {
+        return Err("XKpsk3 transcript must contain three handshake messages".to_owned());
+    }
+
+    let (_, mut fresh_responder) = new_handshakes(PAIRING_PROTOCOL, statics, Some(psk))?;
+    let mut fresh_response = vec![0_u8; MAX_NOISE_MESSAGE_BYTES];
+    let mut payload = vec![0_u8; MAX_NOISE_MESSAGE_BYTES];
+    let first_message_accepted = fresh_responder
+        .read_message(&transcript[0], &mut payload)
+        .is_ok();
+    if !first_message_accepted {
+        return Ok(PairingStaleTranscriptCheck {
+            first_message_accepted,
+            authenticated_message_rejected: false,
+        });
+    }
+    if !fresh_responder.is_my_turn() {
+        return Err("fresh pairing responder did not reach its response turn".to_owned());
+    }
+    fresh_responder
+        .write_message(&[], &mut fresh_response)
+        .map_err(|error| format!("fresh pairing response write: {error:?}"))?;
+    if fresh_responder.is_my_turn() {
+        return Err("fresh pairing responder did not reach authenticated read turn".to_owned());
+    }
+    let authenticated_message_rejected = fresh_responder
+        .read_message(&transcript[2], &mut payload)
+        .is_err();
+    Ok(PairingStaleTranscriptCheck {
+        first_message_accepted,
+        authenticated_message_rejected,
+    })
 }
 
 fn transport_replay_is_rejected(mut flow: CompletedFlow) -> ProofResult<bool> {
@@ -580,7 +646,9 @@ fn proof_report(runtime: &str) -> ProofResult<ProofReport<'_>> {
     assert_bidirectional_transport(&mut first_reconnect)?;
 
     let tamper_rejected = tamper_is_rejected(&statics, &psk)?;
-    let handshake_replay_rejected = handshake_replay_is_rejected(&statics, &psk)?;
+    let stale_pairing = pairing_stale_transcript_is_rejected(&statics, &psk)?;
+    let pairing_stale_transcript_rejected =
+        stale_pairing.first_message_accepted && stale_pairing.authenticated_message_rejected;
     let transport_replay_rejected =
         transport_replay_is_rejected(run_flow(RECONNECT_PROTOCOL, &statics, None)?)?;
     let ordering_rejected = ordering_is_rejected(run_flow(RECONNECT_PROTOCOL, &statics, None)?)?;
@@ -590,7 +658,7 @@ fn proof_report(runtime: &str) -> ProofResult<ProofReport<'_>> {
 
     let all_pass = fresh_ephemeral_keys
         && tamper_rejected
-        && handshake_replay_rejected
+        && pairing_stale_transcript_rejected
         && transport_replay_rejected
         && ordering_rejected
         && cross_pairing_rejected
@@ -602,7 +670,7 @@ fn proof_report(runtime: &str) -> ProofResult<ProofReport<'_>> {
     }
 
     Ok(ProofReport {
-        schema_version: 1,
+        schema_version: 2,
         runtime,
         engine: "snow 0.10.0 compiled to WebAssembly",
         all_pass,
@@ -616,7 +684,7 @@ fn proof_report(runtime: &str) -> ProofResult<ProofReport<'_>> {
         },
         attacks: AttackChecks {
             tamper_rejected,
-            handshake_replay_rejected,
+            pairing_stale_transcript_rejected,
             transport_replay_rejected,
             ordering_rejected,
             cross_pairing_rejected,
@@ -649,5 +717,27 @@ mod tests {
             report.resources.oversize_attempts_rejected,
             RESOURCE_REJECTION_ATTEMPTS
         );
+    }
+
+    #[test]
+    fn official_vectors_include_every_upstream_message() {
+        let vectors: VectorSet =
+            serde_json::from_str(include_str!("../vectors/official-noise-v34.json"))
+                .expect("official vectors must parse");
+        assert!(
+            vectors
+                .vectors
+                .iter()
+                .all(|vector| vector.messages.len() == 6)
+        );
+    }
+
+    #[test]
+    fn completed_pairing_transcript_fails_at_fresh_session_authentication() {
+        let statics = generate_static_pair().expect("static keys must generate");
+        let result = pairing_stale_transcript_is_rejected(&statics, &[0x5a; 32])
+            .expect("stale transcript check must execute");
+        assert!(result.first_message_accepted);
+        assert!(result.authenticated_message_rejected);
     }
 }

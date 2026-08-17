@@ -18,14 +18,14 @@
 
 | 证据 | 检查内容 |
 |---|---|
-| 官方向量 | 针对两个固定协议名，将准确的握手密文、传输密文、载荷与握手哈希同 Noise v34 Cacophony 向量比较。 |
+| 官方向量 | 针对两个固定协议名，将全部六条消息（包括准确的握手与传输密文及载荷）和握手哈希同 Noise v34 Cacophony 向量比较。 |
 | 目标流程 | XKpsk3 配对与 IK 重连双向完成，认证预期远端静态密钥，并交换双向传输载荷。 |
 | 新鲜临时密钥 | 两次独立生成的配对握手与两次独立生成的重连握手，各自给出不同的首个临时公钥。 |
-| 主动攻击 | 修改密文、重放握手消息、重放传输消息、乱序传输消息、配对时使用不同 Desktop 静态身份，以及使用允许列表之外的协议名都会被拒绝。 |
+| 主动攻击 | 修改密文、把已完成 XKpsk3 transcript 的认证第三条消息重放到 fresh 配对的对应认证阶段、重放传输消息、乱序传输消息、配对时使用不同 Desktop 静态身份，以及使用允许列表之外的协议名都会被拒绝。该用例先确认 stale transcript 的第一条消息被接受，再由 fresh responder 发出新的第二条消息，因此它不同于一般状态顺序错误。 |
 | 资源上限 | 携带 65,519 字节载荷的 65,535 字节 Noise 消息可往返，连续十六个 65,536 字节消息均被拒绝。尝试次数固定，使证明自身保持有界。 |
 | 运行时一致性 | 同一份已提交 WASM 模块与 JavaScript 加载器在 Node 22、Node 24、iOS Simulator `WKWebView` 和 Android Emulator `WebView` 中生成相同报告。原生宿主只加载资源并返回 JSON 结果。 |
 
-向量子集提交于 [official-noise-v34.json](../../scripts/noise-security-path/vectors/official-noise-v34.json)。其元数据通过 SHA-256 固定 [Snow 0.10.0 中的 Cacophony 向量副本](https://github.com/mcginty/snow/blob/v0.10.0/tests/vectors/cacophony.txt)。Noise 项目将 Cacophony 记为官方向量生成器，并在其[测试向量指南](https://github.com/noiseprotocol/noise_wiki/wiki/Test-vectors)中定义向量格式。65,535 字节消息上限来自 [Noise Protocol Framework](https://noiseprotocol.org/noise.html#message-format)。
+两个选定的完整向量提交于 [official-noise-v34.json](../../scripts/noise-security-path/vectors/official-noise-v34.json)。其元数据记录 [Snow 0.10.0 中 Cacophony 向量副本](https://github.com/mcginty/snow/blob/v0.10.0/tests/vectors/cacophony.txt)的 Git blob 与 SHA-256；任一选定向量未包含上游全部六条消息时，证明都会拒绝。Noise 项目将 Cacophony 记为官方向量生成器，并在其[测试向量指南](https://github.com/noiseprotocol/noise_wiki/wiki/Test-vectors)中定义向量格式。65,535 字节消息上限来自 [Noise Protocol Framework](https://noiseprotocol.org/noise.html#message-format)。
 
 ## 密钥存储声明
 
@@ -45,18 +45,21 @@
 pnpm run proof:noise:build
 git diff --exit-code -- scripts/noise-security-path/pkg
 cargo test --locked --manifest-path scripts/noise-security-path/Cargo.toml
+cargo clippy --locked --manifest-path scripts/noise-security-path/Cargo.toml --all-targets -- -D warnings
+cargo tree --locked --manifest-path scripts/noise-security-path/Cargo.toml -i getrandom@0.3.4
+pnpm run test:noise-runners
 pnpm run proof:noise:node-matrix
 pnpm run proof:noise:ios
 pnpm run proof:noise:android
 pnpm exec vitest run --config vitest.snapshot.config.ts scripts/noise-security-path.snapshot.ts
 ```
 
-构建命令必须在不产生 diff 的情况下复现已提交的 JavaScript 与 WASM。每条运行时命令都必须返回 `allPass: true`、两个准确协议名、值均为 `true` 的攻击结果，以及相同资源上限。iOS 与 Android runner 会构建一次性原生宿主、启动真实平台 WebView、校验运行时标签，然后移除证明应用。它们不会用 Node 结果替代。
+构建命令必须在不产生 diff 的情况下复现已提交的 JavaScript 与 WASM。依赖查询必须显示 Snow 与证明 crate 使用同一条 `getrandom` 0.3.4 依赖图，且不存在 0.2 分支。每条运行时命令都必须返回 `allPass: true`、两个准确协议名、值均为 `true` 的攻击结果，以及相同资源上限。iOS 与 Android runner 会构建一次性原生宿主、启动真实平台 WebView、校验运行时标签，然后移除证明应用。其无密钥 fake-command 测试覆盖 wait、boot、build、install 与 launch 失败后的自有资源清理；清理失败会被汇总，且不会覆盖主失败。它们不会用 Node 结果替代。
 
 独立评审者在批准产品集成前还应检查下列事项：
 
-1. 确认 `Cargo.toml`、`Cargo.lock` 与 `THIRD_PARTY_NOTICES.txt` 从预期 registry 来源解析 Snow 0.10.0，并确认上游版本和仓库维护状态仍可接受。
-2. 将已提交向量子集与固定的 Cacophony 来源比较，包括密文与握手哈希，而不是相信证明的成功标签。
+1. 确认 `Cargo.toml`、`Cargo.lock` 与 `THIRD_PARTY_NOTICES.txt` 从预期 registry 来源解析 Snow 0.10.0，Snow 使用保留的 `getrandom` 0.3.4 依赖图，不存在未使用的 0.2 分支，并确认上游版本和仓库维护状态仍可接受。
+2. 将每个已提交向量的全部六条消息同固定的 Cacophony Git blob 与 SHA-256 来源比较，包括密文、载荷与握手哈希，而不是相信证明的成功标签。
 3. 确认 Rust 适配层使用 Snow 的公开 builder 与状态机 API，且不包含复制的 Noise 原语或修改后的 Snow 源码。
 4. 检查每个负向用例是否因预期原因失败，并确认协议允许列表不存在协商回退。
 5. 重新运行全部五种环境，并在评审记录中保留准确的工具、操作系统、模拟器、仿真器与 WebView 版本。

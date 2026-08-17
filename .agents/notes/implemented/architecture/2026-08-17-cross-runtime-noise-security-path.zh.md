@@ -1,6 +1,6 @@
-# Agent Note：为跨运行时 Noise 安全路径选择 Snow WebAssembly
+# Agent Note: 为跨运行时 Noise 安全路径选择 Snow WebAssembly
 
-状态：已实现
+Status: implemented
 
 [English](2026-08-17-cross-runtime-noise-security-path.md) | 中文
 
@@ -14,7 +14,7 @@ Mobile Companion 要求固定的 `Noise_XKpsk3_25519_ChaChaPoly_SHA256` 配对�
 
 选择由证明专属 `Cargo.lock` 固定的 Snow 0.10.0，并将其纯 Rust 25519、ChaChaPoly 与 SHA-256 resolver 一次编译为 WebAssembly。同一份已提交模块在全部四类运行时中执行。轻量 Rust 适配层可以选择协议、提供密钥与 prologue、驱动 Snow 的公开握手及传输 API 并比较结果；不得复制、分叉或替换 Noise 或密码原语。
 
-将有界证明保留在 `scripts/noise-security-path` 下，而不创建产品 package。产品代码不得依赖它。证明拥有两个准确 Cacophony 向量、XKpsk3 与 IK 流程、双向传输、新鲜临时密钥比较、篡改/重放/乱序/跨配对/降级用例、65,535 字节最大消息往返，以及对 65,536 字节消息的重复拒绝。无密钥快照固定稳定结果，而一次性原生宿主证明实际 WebView 执行。
+将有界证明保留在 `scripts/noise-security-path` 下，而不创建产品 package。产品代码不得依赖它。证明拥有两个完整的六消息 Cacophony 向量、XKpsk3 与 IK 流程、双向传输、新鲜临时密钥比较、篡改/stale 配对 transcript/传输重放/乱序/跨配对/降级用例、65,535 字节最大消息往返，以及对 65,536 字节消息的重复拒绝。stale 配对用例在 fresh responder 状态中接受旧第一条消息，发出 fresh 第二条消息，再拒绝旧的认证第三条消息。无密钥快照固定稳定结果，而一次性原生宿主证明实际 WebView 执行。
 
 [跨运行时安全证明](../../../../docs/security/noise-cross-runtime-proof.md)是独立评审入口。Snow 是已选实现，但产品集成与发布仍以独立评审者复现证明、审计依赖与适配层、记录准确环境并解决发现为门禁。模拟器证据绝不表示物理设备硬件保护。
 
