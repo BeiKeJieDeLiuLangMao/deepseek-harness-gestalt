@@ -1,10 +1,17 @@
 import assert from 'node:assert/strict'
+import { execFile } from 'node:child_process'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { createServer } from 'node:http'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import test from 'node:test'
+import { promisify } from 'node:util'
 
 import {
   countVisibleUnits,
   nextResolvingIssueStatus,
   parseReferences,
+  repositoryCoordinates,
   retainIssueReferences,
   resolvingIssueStatusCommand,
   requiresPullRequestPolicy,
@@ -12,6 +19,25 @@ import {
   validateIssue,
   validatePullRequest,
 } from './policy.mjs'
+
+const execFileAsync = promisify(execFile)
+const policyEntrypoint = join(import.meta.dirname, 'policy.mjs')
+
+const runResourceCleanups = async (cleanups) => {
+  const results = await Promise.allSettled(
+    cleanups.map((cleanup) => Promise.resolve().then(cleanup)),
+  )
+  const errors = results.flatMap((result) =>
+    result.status === 'rejected' ? [result.reason] : [],
+  )
+  if (errors.length > 0) throw new AggregateError(errors, 'fake API resource cleanup failed')
+}
+
+const registerResourceCleanups = (t) => {
+  const cleanups = []
+  t.after(() => runResourceCleanups(cleanups))
+  return (cleanup) => cleanups.push(cleanup)
+}
 
 const withDetails = (summary) =>
   `${summary}\n\n<details><summary>验收与细节</summary>待补充。</details>`
@@ -52,6 +78,213 @@ const legacyLabels = [
   'llm',
   'web-search',
 ]
+
+test('routes policy requests to the repository from the workflow event', () => {
+  assert.deepEqual(
+    repositoryCoordinates({ GITHUB_REPOSITORY: 'BeiKeJieDeLiuLangMao/deepseek-harness-gestalt' }),
+    {
+      owner: 'BeiKeJieDeLiuLangMao',
+      name: 'deepseek-harness-gestalt',
+      fullName: 'BeiKeJieDeLiuLangMao/deepseek-harness-gestalt',
+    },
+  )
+  assert.throws(
+    () => repositoryCoordinates({ GITHUB_REPOSITORY: 'deepseek-harness-gestalt' }),
+    /GITHUB_REPOSITORY 必须为 owner\/name/,
+  )
+})
+
+test('attempts every fake API resource cleanup when one disposer fails', async () => {
+  const disposed = []
+
+  await assert.rejects(
+    runResourceCleanups([
+      async () => {
+        disposed.push('server')
+        throw new Error('server close failed')
+      },
+      async () => {
+        disposed.push('directory')
+      },
+    ]),
+    (error) => {
+      assert.ok(error instanceof AggregateError)
+      assert.deepEqual(error.errors.map((entry) => entry.message), ['server close failed'])
+      return true
+    },
+  )
+  assert.deepEqual(disposed.sort(), ['directory', 'server'])
+})
+
+test('routes CLI repository policy and enabled lifecycle requests through the event repository', async (t) => {
+  const registerCleanup = registerResourceCleanups(t)
+  const requests = []
+  const server = createServer(async (request, response) => {
+    const chunks = []
+    for await (const chunk of request) chunks.push(chunk)
+    const body = Buffer.concat(chunks).toString('utf8')
+    requests.push({ method: request.method, path: request.url, body })
+
+    const send = (value, status = 200) => {
+      response.writeHead(status, { 'Content-Type': 'application/json' })
+      response.end(JSON.stringify(value))
+    }
+    if (request.url === '/graphql') {
+      send({
+        data: {
+          organization: {
+            projectV2: {
+              id: 'project-id',
+              title: 'DSH Issue Management',
+              fields: {
+                nodes: [
+                  {
+                    id: 'status-field-id',
+                    name: 'Status',
+                    options: [{ id: 'in-progress-id', name: 'In progress' }],
+                  },
+                ],
+              },
+            },
+          },
+          repository: {
+            issue: {
+              id: 'issue-id',
+              timelineItems: { nodes: [] },
+              projectItems: {
+                nodes: [
+                  {
+                    id: 'item-id',
+                    project: { id: 'project-id' },
+                    fieldValueByName: { name: 'In progress', optionId: 'in-progress-id' },
+                  },
+                ],
+              },
+            },
+          },
+        },
+      })
+      return
+    }
+    if (request.url?.endsWith('/pulls/48')) {
+      send({
+        body: 'Related to #47',
+        draft: false,
+        labels: [],
+        user: { type: 'Bot' },
+      })
+      return
+    }
+    if (request.url?.endsWith('/pulls/48/requested_reviewers')) {
+      send({ users: [], teams: [] })
+      return
+    }
+    if (request.url?.endsWith('/pulls/48/reviews?per_page=100')) {
+      send([])
+      return
+    }
+    if (request.url?.endsWith('/issues/47')) {
+      send({
+        node_id: 'issue-id',
+        title: '完成议题管理校验',
+        body: withDetails('完成议题管理校验。'),
+        assignees: [],
+        labels: [],
+        type: { name: 'Idea' },
+        state: 'open',
+        state_reason: null,
+      })
+      return
+    }
+    if (request.url?.endsWith('/issues/47/issue-field-values?per_page=100')) {
+      send([])
+      return
+    }
+    if (request.url?.endsWith('/issues/47/comments?per_page=100')) {
+      send([])
+      return
+    }
+    send({ message: 'Not Found' }, 404)
+  })
+  server.listen(0, '127.0.0.1')
+  await new Promise((resolve, reject) => {
+    server.once('listening', resolve)
+    server.once('error', reject)
+  })
+  registerCleanup(
+    () =>
+      new Promise((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()))
+      }),
+  )
+  const address = server.address()
+  assert.notEqual(address, null)
+  assert.equal(typeof address, 'object')
+
+  const directory = await mkdtemp(join(tmpdir(), 'dsh-issue-policy-'))
+  registerCleanup(() => rm(directory, { recursive: true, force: true }))
+  const pullEvent = join(directory, 'pull-request.json')
+  const issueEvent = join(directory, 'issue.json')
+  await writeFile(pullEvent, JSON.stringify({ pull_request: { number: 48 } }))
+  await writeFile(issueEvent, JSON.stringify({ action: 'edited', issue: { number: 47 } }))
+  const environment = {
+    GH_TOKEN: 'test-token',
+    GITHUB_API_URL: `http://127.0.0.1:${address.port}`,
+  }
+
+  await assert.rejects(
+    execFileAsync(process.execPath, [policyEntrypoint, 'deployment'], {
+      env: {
+        ...environment,
+        GITHUB_REPOSITORY: 'BeiKeJieDeLiuLangMao/deepseek-harness-gestalt',
+      },
+    }),
+    (error) => {
+      assert.match(error.stderr, /config\.projectOrganization 必须与 GITHUB_REPOSITORY owner 一致/)
+      return true
+    },
+  )
+
+  await execFileAsync(process.execPath, [policyEntrypoint, 'pr'], {
+    env: {
+      ...environment,
+      GITHUB_EVENT_PATH: pullEvent,
+      GITHUB_REPOSITORY: 'BeiKeJieDeLiuLangMao/deepseek-harness-gestalt',
+    },
+  })
+  await execFileAsync(process.execPath, [policyEntrypoint, 'lifecycle'], {
+    env: {
+      ...environment,
+      GITHUB_EVENT_NAME: 'issues',
+      GITHUB_EVENT_PATH: issueEvent,
+      GITHUB_REPOSITORY: 'deepseek-harness/tracker',
+    },
+  })
+
+  const restPaths = requests
+    .filter((request) => request.path !== '/graphql')
+    .map((request) => request.path)
+    .sort()
+  assert.deepEqual(restPaths, [
+    '/repos/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/issues/47',
+    '/repos/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/issues/47/issue-field-values?per_page=100',
+    '/repos/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/pulls/48',
+    '/repos/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/pulls/48/requested_reviewers',
+    '/repos/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/pulls/48/reviews?per_page=100',
+    '/repos/deepseek-harness/tracker/issues/47',
+    '/repos/deepseek-harness/tracker/issues/47/comments?per_page=100',
+    '/repos/deepseek-harness/tracker/issues/47/issue-field-values?per_page=100',
+  ])
+  const graphqlVariables = requests
+    .filter((request) => request.path === '/graphql')
+    .map((request) => JSON.parse(request.body).variables)
+  assert.ok(graphqlVariables.length >= 2)
+  for (const variables of graphqlVariables) {
+    assert.equal(variables.organization, 'deepseek-harness')
+    assert.equal(variables.repositoryOwner, 'deepseek-harness')
+    assert.equal(variables.repository, 'tracker')
+  }
+})
 
 const reviewedPull = (labels) => ({
   isDraft: false,

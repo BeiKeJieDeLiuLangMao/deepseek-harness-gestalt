@@ -72,6 +72,9 @@ describe('CI workflow', () => {
     expect(windowsNative['runs-on']).toContain('dsh-windows-2025-16core')
     expect(windowsNative.name).toBe('windows node 24 / native complete')
     expect(windowsNative.if).toBe("github.event_name == 'pull_request'")
+    expect(windowsNative.env).toMatchObject({
+      DSH_COVERAGE_TEST_TIMEOUT_MS: '30000',
+    })
     const nativeCommandSteps = (windowsNative.steps as unknown[]).filter((step): step is Record<string, unknown> & { run: string } => (
       isRecord(step) && typeof step.run === 'string'
     ))
@@ -342,6 +345,7 @@ describe('Python release workflows', () => {
     expect(manylinuxAddon).toMatchObject({ if: "runner.os == 'Linux'" })
     expect(JSON.stringify(manylinuxAddon)).toContain('manylinux_2_28_x86_64')
     expect(JSON.stringify(manylinuxAddon)).toContain('manylinux_2_28_aarch64')
+    expect(JSON.stringify(manylinuxAddon)).toContain('npm_config_build_from_source=true pnpm run install')
     expect(JSON.stringify(manylinuxAddon)).toContain('$HOME/setup-pnpm:$HOME/setup-pnpm:ro')
     expect(JSON.stringify(manylinuxAddon)).toContain('node-pty-glibc-versions.txt')
     expect(JSON.stringify(manylinuxAddon)).toContain('le 2.28')
@@ -384,8 +388,32 @@ describe('Issue lifecycle workflow', () => {
     expect(lifecyclePullRequest.types).toContain('review_requested')
     expect(lifecycleReview.types).toEqual(['submitted'])
     expect(lifecycleJob.if).toBe(
-      "${{ github.event_name != 'pull_request_review' || (github.event.action == 'submitted' && github.event.review.state == 'changes_requested') }}",
+      "${{ vars.DSH_ISSUE_PROJECT_LIFECYCLE_ENABLED == 'true' && (github.event_name != 'pull_request_review' || (github.event.action == 'submitted' && github.event.review.state == 'changes_requested')) }}",
     )
+    if (!Array.isArray(lifecycleJob.steps)) {
+      throw new TypeError('Issue lifecycle job must define steps')
+    }
+    const lifecycleSteps: unknown[] = lifecycleJob.steps
+    const validationStepIndex = lifecycleSteps.findIndex(
+      step => isRecord(step) && step.name === 'Validate project owner',
+    )
+    const tokenStepIndex = lifecycleSteps.findIndex(
+      step => isRecord(step) && step.name === 'Create project token',
+    )
+    expect(lifecycleSteps[validationStepIndex]).toMatchObject({
+      run: 'node .github/issue-management/policy.mjs deployment',
+    })
+    expect(validationStepIndex).toBeGreaterThanOrEqual(0)
+    expect(tokenStepIndex).toBeGreaterThan(validationStepIndex)
+    const tokenStep = lifecycleSteps.find(
+      step => isRecord(step) && step.name === 'Create project token',
+    )
+    expect(tokenStep).toMatchObject({
+      with: {
+        owner: '${{ github.repository_owner }}',
+        repositories: '${{ github.event.repository.name }}',
+      },
+    })
     expect(policyPullRequest.types).toContain('ready_for_review')
   })
 })

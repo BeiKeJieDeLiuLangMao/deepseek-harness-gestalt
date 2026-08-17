@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-client-ui-desktop",
   "description": "Desktop-only Session Surface chrome: GESTALT badge, drag strip, Update Control",
-  "version": "0.1.0-rc.5",
+  "version": "0.1.0-rc.7",
   "publishConfig": {
     "access": "public"
   },
