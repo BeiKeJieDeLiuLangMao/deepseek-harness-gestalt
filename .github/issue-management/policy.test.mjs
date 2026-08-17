@@ -5,6 +5,7 @@ import {
   countVisibleUnits,
   nextResolvingIssueStatus,
   parseReferences,
+  repositoryCoordinates,
   retainIssueReferences,
   resolvingIssueStatusCommand,
   requiresPullRequestPolicy,
@@ -52,6 +53,21 @@ const legacyLabels = [
   'llm',
   'web-search',
 ]
+
+test('routes policy requests to the repository from the workflow event', () => {
+  assert.deepEqual(
+    repositoryCoordinates({ GITHUB_REPOSITORY: 'BeiKeJieDeLiuLangMao/deepseek-harness-gestalt' }),
+    {
+      owner: 'BeiKeJieDeLiuLangMao',
+      name: 'deepseek-harness-gestalt',
+      fullName: 'BeiKeJieDeLiuLangMao/deepseek-harness-gestalt',
+    },
+  )
+  assert.throws(
+    () => repositoryCoordinates({ GITHUB_REPOSITORY: 'deepseek-harness-gestalt' }),
+    /GITHUB_REPOSITORY 必须为 owner\/name/,
+  )
+})
 
 const reviewedPull = (labels) => ({
   isDraft: false,
