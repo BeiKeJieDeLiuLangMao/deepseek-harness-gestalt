@@ -36,6 +36,7 @@ const LEGACY_LABELS = new Set([
   'web-search',
 ])
 const TERMINAL_STATUSES = new Set(['Done', 'No action'])
+const PULL_REQUEST_READ_AUTHENTICATIONS = new Set(['anonymous', 'token'])
 const ACTIVE_STATUS_ORDER = config.statuses.filter((status) => !TERMINAL_STATUSES.has(status))
 const IMPLEMENTATION_PULL_REQUEST_ACTIONS = new Set([
   'opened',
@@ -60,6 +61,9 @@ if (
   (typeof config.priorityField !== 'string' || !config.priorityField.trim())
 ) {
   throw new Error('config.priorityField 必须为非空字符串或 null')
+}
+if (!PULL_REQUEST_READ_AUTHENTICATIONS.has(config.pullRequestReadAuthentication)) {
+  throw new Error('config.pullRequestReadAuthentication 必须为 anonymous 或 token')
 }
 
 /**
@@ -420,24 +424,32 @@ function token() {
   return value
 }
 
-async function api(path, options = {}) {
+async function api(
+  path,
+  { allow404 = false, authentication = 'token', headers = {}, ...options } = {},
+) {
+  const authorization = authentication === 'token' ? { Authorization: `Bearer ${token()}` } : {}
   const response = await fetch(`${process.env.GITHUB_API_URL ?? 'https://api.github.com'}${path}`, {
     ...options,
     headers: {
       Accept: 'application/vnd.github+json',
-      Authorization: `Bearer ${token()}`,
+      ...authorization,
       'X-GitHub-Api-Version': API_VERSION,
       'User-Agent': 'dsh-issue-policy',
-      ...options.headers,
+      ...headers,
     },
   })
-  if (options.allow404 && response.status === 404) return null
+  if (allow404 && response.status === 404) return null
   if (!response.ok) {
     const body = await response.text()
     throw new Error(`${options.method ?? 'GET'} ${path}: ${response.status} ${body}`)
   }
   if (response.status === 204) return null
   return response.json()
+}
+
+function pullRequestReadApi(path, options = {}) {
+  return api(path, { ...options, authentication: config.pullRequestReadAuthentication })
 }
 
 async function graphql(query, variables) {
@@ -450,12 +462,14 @@ async function graphql(query, variables) {
   return result.data
 }
 
-async function issueSnapshot(number, status = undefined) {
-  const issue = await api(repositoryApiPath(`/issues/${number}`))
+async function issueSnapshot(number, status = undefined, read = api) {
+  const issue = await read(repositoryApiPath(`/issues/${number}`))
   if (issue.pull_request) return null
   let priority = null
   if (config.priorityField !== null) {
-    const values = await api(repositoryApiPath(`/issues/${number}/issue-field-values?per_page=100`))
+    const values = await read(
+      repositoryApiPath(`/issues/${number}/issue-field-values?per_page=100`),
+    )
     const field = values.find((value) => value.issue_field_name === config.priorityField)
     priority = field?.single_select_option?.name ?? null
   }
@@ -633,14 +647,14 @@ async function auditIssue(number, extraErrors = [], status = undefined) {
   return errors
 }
 
-async function resolvingReferencesSnapshot(number, pull) {
+async function resolvingReferencesSnapshot(number, pull, read = api) {
   const references = parseReferences({
     body: pull.body ?? '',
     repository: repositoryCoordinates().fullName,
   })
   const issues = new Map()
   for (const issueNumber of references.all) {
-    const issue = await issueSnapshot(issueNumber, null)
+    const issue = await issueSnapshot(issueNumber, null, read)
     if (issue) issues.set(issueNumber, issue)
   }
   return {
@@ -652,11 +666,11 @@ async function resolvingReferencesSnapshot(number, pull) {
 
 async function pullRequestSnapshot(number) {
   const [pull, reviewRequests, reviews] = await Promise.all([
-    api(repositoryApiPath(`/pulls/${number}`)),
-    api(repositoryApiPath(`/pulls/${number}/requested_reviewers`)),
-    api(repositoryApiPath(`/pulls/${number}/reviews?per_page=100`)),
+    pullRequestReadApi(repositoryApiPath(`/pulls/${number}`)),
+    pullRequestReadApi(repositoryApiPath(`/pulls/${number}/requested_reviewers`)),
+    pullRequestReadApi(repositoryApiPath(`/pulls/${number}/reviews?per_page=100`)),
   ])
-  const resolving = await resolvingReferencesSnapshot(number, pull)
+  const resolving = await resolvingReferencesSnapshot(number, pull, pullRequestReadApi)
   return {
     ...resolving,
     isDraft: pull.draft,
