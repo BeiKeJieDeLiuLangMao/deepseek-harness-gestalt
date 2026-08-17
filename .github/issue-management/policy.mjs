@@ -37,6 +37,7 @@ const LEGACY_LABELS = new Set([
 ])
 const TERMINAL_STATUSES = new Set(['Done', 'No action'])
 const PULL_REQUEST_READ_AUTHENTICATIONS = new Set(['anonymous', 'token'])
+const PULL_REQUEST_POLICY_ACTIVATIONS = new Set(['non-draft', 'review-activity'])
 const ACTIVE_STATUS_ORDER = config.statuses.filter((status) => !TERMINAL_STATUSES.has(status))
 const IMPLEMENTATION_PULL_REQUEST_ACTIONS = new Set([
   'opened',
@@ -64,6 +65,9 @@ if (
 }
 if (!PULL_REQUEST_READ_AUTHENTICATIONS.has(config.pullRequestReadAuthentication)) {
   throw new Error('config.pullRequestReadAuthentication 必须为 anonymous 或 token')
+}
+if (!PULL_REQUEST_POLICY_ACTIVATIONS.has(config.pullRequestPolicyActivation)) {
+  throw new Error('config.pullRequestPolicyActivation 必须为 non-draft 或 review-activity')
 }
 
 /**
@@ -194,8 +198,9 @@ export function validateBody({
 }
 
 /**
- * Decide whether the human-review policy applies to a PR.
+ * Decide whether repository metadata policy applies to a PR.
  * @param {{isDraft: boolean, authorType: string, reviewRequestCount: number, reviewCount: number}} input PR state.
+ * @param {'non-draft'|'review-activity'} activation Deployment activation mode.
  * @returns {boolean} Whether the PR policy is mandatory.
  */
 export function requiresPullRequestPolicy({
@@ -203,9 +208,10 @@ export function requiresPullRequestPolicy({
   authorType,
   reviewRequestCount,
   reviewCount,
-}) {
+}, activation = config.pullRequestPolicyActivation) {
   const automated = authorType === 'Bot' || authorType === 'App'
-  return !isDraft && !automated && (reviewRequestCount > 0 || reviewCount > 0)
+  if (isDraft || automated) return false
+  return activation === 'non-draft' || reviewRequestCount > 0 || reviewCount > 0
 }
 
 /**
@@ -665,19 +671,33 @@ async function resolvingReferencesSnapshot(number, pull, read = api) {
 }
 
 async function pullRequestSnapshot(number) {
-  const [pull, reviewRequests, reviews] = await Promise.all([
-    pullRequestReadApi(repositoryApiPath(`/pulls/${number}`)),
-    pullRequestReadApi(repositoryApiPath(`/pulls/${number}/requested_reviewers`)),
-    pullRequestReadApi(repositoryApiPath(`/pulls/${number}/reviews?per_page=100`)),
-  ])
-  const resolving = await resolvingReferencesSnapshot(number, pull, pullRequestReadApi)
-  return {
-    ...resolving,
+  const pull = await pullRequestReadApi(repositoryApiPath(`/pulls/${number}`))
+  const snapshot = {
+    number,
     isDraft: pull.draft,
     authorType: pull.user?.type ?? 'User',
-    reviewRequestCount: reviewRequests.users.length + reviewRequests.teams.length,
-    reviewCount: reviews.length,
+    reviewRequestCount: 0,
+    reviewCount: 0,
     labels: pull.labels.map((label) => label.name),
+    references: { all: [], resolving: [], related: [] },
+    issues: new Map(),
+  }
+  if (snapshot.isDraft || snapshot.authorType === 'Bot' || snapshot.authorType === 'App') {
+    return snapshot
+  }
+  if (config.pullRequestPolicyActivation === 'review-activity') {
+    const [reviewRequests, reviews] = await Promise.all([
+      pullRequestReadApi(repositoryApiPath(`/pulls/${number}/requested_reviewers`)),
+      pullRequestReadApi(repositoryApiPath(`/pulls/${number}/reviews?per_page=100`)),
+    ])
+    snapshot.reviewRequestCount = reviewRequests.users.length + reviewRequests.teams.length
+    snapshot.reviewCount = reviews.length
+  }
+  if (!requiresPullRequestPolicy(snapshot)) return snapshot
+  const resolving = await resolvingReferencesSnapshot(number, pull, pullRequestReadApi)
+  return {
+    ...snapshot,
+    ...resolving,
   }
 }
 
@@ -704,14 +724,16 @@ async function transitionResolvingIssues(pull, command) {
 
 async function runPullRequestCheck(event) {
   const pull = await pullRequestSnapshot(event.pull_request.number)
+  if (!requiresPullRequestPolicy(pull)) {
+    process.stdout.write('PR 尚未进入 Issue policy 强制范围。\n')
+    return
+  }
   const errors = validatePullRequest(pull)
   if (errors.length > 0) {
     for (const error of errors) process.stdout.write(`::error::${error}\n`)
     throw new Error(`Issue policy 未通过，共 ${errors.length} 项`)
   }
-  process.stdout.write(
-    requiresPullRequestPolicy(pull) ? 'Issue policy 通过。\n' : 'PR 尚未进入 Issue policy 强制范围。\n',
-  )
+  process.stdout.write('Issue policy 通过。\n')
 }
 
 async function runLifecycle(eventName, event) {
