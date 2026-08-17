@@ -1,8 +1,28 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi, type Mock } from 'vitest'
-import { AccountError, type AccountService } from '@deepseek-ai/dsh-platform-account'
+import {
+  AccountError,
+  selectPlatformEnvironment,
+  validatePlatformEnvironmentPair,
+  type AccountService,
+} from '@deepseek-ai/dsh-platform-account'
 import { apply } from '../src/index.ts'
+
+const ENVIRONMENT = selectPlatformEnvironment(validatePlatformEnvironmentPair({
+  development: {
+    environment: 'development', origin: 'https://desktop.dev.example.com',
+    callbackUrl: 'https://desktop.dev.example.com/v1/account/oauth/github/callback',
+    githubClientId: 'http-development', credentialReference: 'credentials://http-development',
+    databaseIdentity: 'http-database-development', identityNamespace: 'http-development',
+  },
+  production: {
+    environment: 'production', origin: 'https://desktop.example.com',
+    callbackUrl: 'https://desktop.example.com/v1/account/oauth/github/callback',
+    githubClientId: 'http-production', credentialReference: 'credentials://http-production',
+    databaseIdentity: 'http-database-production', identityNamespace: 'http-production',
+  },
+}), 'development')
 
 interface RegisteredRoute {
   kind: 'exact'
@@ -20,7 +40,7 @@ describe('Platform Account HTTP consumer', () => {
   it('serves the complete lifecycle and bilingual fixed callback with exact CORS', async () => {
     const account = accountService()
     const server = await start(account)
-    const origin = 'https://desktop.dev.example.com'
+    const origin = ENVIRONMENT.origin
     const begin = await fetch(`${server.origin}/v1/account/login-attempts`, {
       method: 'POST',
       headers: { origin, 'content-type': 'application/json' },
@@ -73,7 +93,7 @@ describe('Platform Account HTTP consumer', () => {
     const server = await start(accountService())
     const preflight = await fetch(`${server.origin}/v1/account/session`, {
       method: 'OPTIONS',
-      headers: { origin: 'https://mobile.dev.example.com' },
+      headers: { origin: ENVIRONMENT.origin },
     })
     expect(preflight.status).toBe(204)
     expect(preflight.headers.get('access-control-allow-methods')).toContain('DELETE')
@@ -149,6 +169,15 @@ describe('Platform Account HTTP consumer', () => {
       },
     })
     expect(await error(invalidIssuedAt)).toEqual([400, 'INVALID_REQUEST'])
+    const emptyProofJti = await fetch(`${server.origin}/v1/account/session`, {
+      headers: {
+        authorization: 'Bearer access',
+        'x-gestalt-proof-jti': '',
+        'x-gestalt-proof-issued-at': '1',
+        'x-gestalt-proof-signature': 'sig',
+      },
+    })
+    expect(await error(emptyProofJti)).toEqual([400, 'INVALID_REQUEST'])
     const emptyBearer = await fetch(`${server.origin}/v1/account/session`, {
       headers: { authorization: 'Bearer ' },
     })
@@ -173,6 +202,10 @@ describe('Platform Account HTTP consumer', () => {
       attemptId: 'attempt-1', pollingToken: 'poll', proof: null,
     })
     expect(await error(invalidProof)).toEqual([400, 'INVALID_REQUEST'])
+    const emptyProofJti = await post(server.origin, '/v1/account/login-poll', {
+      attemptId: 'attempt-1', pollingToken: 'poll', proof: { jti: '', issuedAt: 1, signature: 'signature' },
+    })
+    expect(await error(emptyProofJti)).toEqual([400, 'INVALID_REQUEST'])
     const wrongMethod = await fetch(`${server.origin}/v1/account/login-attempts`)
     expect(await error(wrongMethod)).toEqual([405, 'METHOD_NOT_ALLOWED'])
 
@@ -191,6 +224,7 @@ describe('Platform Account HTTP consumer', () => {
 })
 
 interface MockAccountService {
+  environment: AccountService['environment']
   beginLogin: Mock<AccountService['beginLogin']>
   completeGitHubCallback: Mock<AccountService['completeGitHubCallback']>
   pollLogin: Mock<AccountService['pollLogin']>
@@ -202,6 +236,7 @@ interface MockAccountService {
 
 function accountService(): MockAccountService {
   return {
+    environment: ENVIRONMENT,
     beginLogin: vi.fn<AccountService['beginLogin']>().mockResolvedValue({
       id: 'attempt-1' as never, state: 'state', authorizationUrl: 'https://github.com/login/oauth/authorize',
       pollingToken: 'poll', expiresAt: 300_000,
@@ -238,7 +273,7 @@ async function start(
     },
     effect(register: () => () => void) { register() },
   } as unknown as Context
-  apply(ctx, { allowedOrigins: ['https://desktop.dev.example.com', 'https://mobile.dev.example.com'] })
+  apply(ctx, { origin: account.environment.origin })
   const http = createServer((req, res) => {
     const path = new URL(req.url ?? '/', 'http://localhost').pathname
     const route = routes.get(path)

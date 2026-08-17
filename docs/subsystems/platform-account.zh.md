@@ -8,13 +8,13 @@
 
 安装在创建五分钟 `LoginAttemptView` 前接受唯一规范的双语隐私说明。Mobile 会先准备登录尝试，再允许点击授权按钮；按钮的用户激活会直接调用 Capacitor Browser 适配器，Desktop 则委托 Electron `shell.openExternal`。系统浏览器使用带 S256 PKCE、随机 state、无 OAuth scope 的 Authorization Code，并返回唯一固定的 HTTPS Platform 回调。应用不会收到回调凭证或携带令牌的自定义 URL；只有 P-256 `AccountProof` 兑换单次使用的签名轮询令牌后，`LoginPollResult` 才会完成。
 
-`AccountSessionView` 包含 15 分钟访问令牌和有效期最多 30 天的轮换刷新令牌。当前账号读取、刷新和退出都证明持有安装密钥。不透明 `AccountSessionId` 是 Platform 实例之间共享的失效身份。
+`AccountSessionView` 包含 15 分钟访问令牌和有效期最多 30 天的轮换刷新令牌。只有完整 15 分钟访问期限能落在该绝对限制内时才接受刷新；过晚的请求会在消费证明或轮换令牌前被拒绝。当前账号读取、刷新和退出都通过品牌化的单次证明 JTI 来证明持有安装密钥。不透明 `AccountSessionId` 是 Platform 实例之间共享的失效身份。
 
 ## 所有权与隔离
 
-一个安装只持有一个当前 Platform 账号。账号域配对密钥、缓存和操作回执使用包含环境与账号 id 的命名空间，因此切换账号会选择隔离的材料。一个串行 lifecycle owner 会依次处理恢复、刷新、登录、轮询、切换与退出，重复加载不能清除或复活较新的会话。当前安装退出会提交会话失效，分别隔离错误并等待全部失效 listener 与连接 closer，同时保留个人配对。
+一个安装只持有一个当前 Platform 账号。账号域配对密钥、缓存和操作回执使用包含环境与账号 id 的命名空间，因此切换账号会选择隔离的材料。一个串行 lifecycle owner 会依次处理恢复、刷新、登录、轮询、切换与退出，重复加载不能清除或复活较新的会话。Desktop 关闭时会关闭该 owner、排空已经接纳的轮询，并抑制 dispose 后的状态变更或发布。快照 listener 的错误会分别隔离。当前安装退出会提交会话失效，分别隔离错误并等待全部失效 listener 与连接 closer，同时保留个人配对。
 
-开发与生产使用不同的可信 origin、回调、OAuth App、凭证引用、数据库身份和身份命名空间。Desktop 与 Mobile 会解析两侧身份，并在渲染或流量前要求显式选择。所选身份绑定 HTTP transport、OAuth adapter、backend 数据库、本地存储、回调与签发账号命名空间。HTTP 与持久化记录都会在各自边界从 `unknown` 解析。内存后端与失效总线只支持无密钥验收和开发；生产持久化与分布式失效属于 Platform 部署。
+开发与生产使用不同的可信 origin、回调、OAuth App、凭证引用、数据库身份和身份命名空间。Desktop 与 Mobile 会解析两侧身份，并在渲染或流量前要求显式选择。所选身份绑定 HTTP Consumer 唯一的 CORS origin、客户端 transport、OAuth adapter、backend 数据库、本地存储、回调与签发账号命名空间；Consumer origin 缺失或不匹配会在注册路由前失败。HTTP 与持久化记录都会在各自边界从 `unknown` 解析，IndexedDB 只接受真正的 P-256 私有签名 `CryptoKey`。内存后端与失效总线只支持无密钥验收和开发；生产持久化与分布式失效属于 Platform 部署。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -81,5 +81,5 @@ abstract signOut(input: { accessToken: string; proof: AccountProof }): Promise<v
 abstract trackConnection(sessionId: AccountSessionId, close: () => void | Promise<void>): () => void
 ```
 
-Source: [`packages/platform/platform-account/src/index.ts:33`](../../packages/platform/platform-account/src/index.ts)
+Source: [`packages/platform/platform-account/src/index.ts:35`](../../packages/platform/platform-account/src/index.ts)
 <!-- END GENERATED cordis-surface -->

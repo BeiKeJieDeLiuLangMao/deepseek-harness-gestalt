@@ -18,11 +18,18 @@ import type {
   SelectedPlatformEnvironment,
 } from '@deepseek-ai/dsh-platform-account'
 import {
+  AccountLifecycleClosedError,
   AccountLifecycleTransitions,
   type PlatformAccountTransport,
   type SystemBrowser,
 } from '@deepseek-ai/dsh-platform-account-client'
-import { AccountError, parseAccountSessionView, parseInstallationId, parseLoginAttemptView } from '@deepseek-ai/dsh-platform-account'
+import {
+  AccountError,
+  parseAccountProofJti,
+  parseAccountSessionView,
+  parseInstallationId,
+  parseLoginAttemptView,
+} from '@deepseek-ai/dsh-platform-account'
 import type { DesktopAccountSnapshot } from '@deepseek-ai/dsh-client-ui-desktop/protocol'
 
 /** Entire encrypted Account record; account-scoped pairing material lives elsewhere. */
@@ -91,7 +98,7 @@ export interface DesktopAccountActions {
   signOut(): Promise<DesktopAccountSnapshot>
   subscribe(listener: (snapshot: DesktopAccountSnapshot) => void): () => void
   start(): Promise<void>
-  dispose(): void
+  dispose(): Promise<void>
 }
 
 /** Account lifecycle whose private signing key never enters the renderer. */
@@ -103,6 +110,7 @@ export class DesktopAccountController implements DesktopAccountActions {
   private readonly schedule: (task: () => void, delayMs: number) => ReturnType<typeof setTimeout>
   private timer: ReturnType<typeof setTimeout> | undefined
   private disposed = false
+  private disposalGeneration = 0
   private readonly transitions: AccountLifecycleTransitions
 
   /** @param options - trusted transport, protected storage, system browser, and timing adapters. */
@@ -203,11 +211,13 @@ export class DesktopAccountController implements DesktopAccountActions {
     return this.snapshot
   }
 
-  dispose(): void {
+  async dispose(): Promise<void> {
     this.disposed = true
+    this.disposalGeneration += 1
     if (this.timer !== undefined) clearTimeout(this.timer)
     this.timer = undefined
     this.listeners.clear()
+    await this.transitions.close()
   }
 
   private async restoreSession(): Promise<void> {
@@ -245,12 +255,17 @@ export class DesktopAccountController implements DesktopAccountActions {
     if (this.disposed || this.timer !== undefined) return
     this.timer = this.schedule(() => {
       this.timer = undefined
-      void this.transitions.run(async () => { await this.poll() }).catch(() => {})
+      void this.transitions.run(async () => { await this.poll() }).catch((error: unknown) => {
+        if (error instanceof AccountLifecycleClosedError) return
+        console.error('[desktop-platform-account] background poll failed:', error)
+      })
     }, 1_500)
     this.timer.unref()
   }
 
   private async poll(): Promise<void> {
+    if (this.disposed) return
+    const generation = this.disposalGeneration
     const record = this.requireRecord()
     if (record.pending === undefined || record.pendingPrivateKey === undefined) return
     if (record.pending.expiresAt <= this.now()) {
@@ -271,6 +286,7 @@ export class DesktopAccountController implements DesktopAccountActions {
           this.now(),
         ),
       })
+      if (generation !== this.disposalGeneration) return
       if (result.status === 'pending') {
         this.schedulePoll()
         return
@@ -282,6 +298,7 @@ export class DesktopAccountController implements DesktopAccountActions {
       await this.options.store.save(record)
       this.publish({ status: 'signed-in', privacyAccepted: true, account: result.account })
     } catch (error) {
+      if (generation !== this.disposalGeneration) return
       this.fail(error)
     }
   }
@@ -308,7 +325,20 @@ export class DesktopAccountController implements DesktopAccountActions {
 
   private publish(snapshot: DesktopAccountSnapshot): void {
     this.snapshot = snapshot
-    for (const listener of this.listeners) listener(snapshot)
+    const failures: unknown[] = []
+    for (const listener of [...this.listeners]) {
+      try {
+        listener(snapshot)
+      } catch (error) {
+        failures.push(error)
+      }
+    }
+    if (failures.length > 0) {
+      console.error(
+        '[desktop-platform-account] subscriber failures:',
+        new AggregateError(failures, 'Desktop Platform Account subscribers failed'),
+      )
+    }
   }
 }
 
@@ -327,11 +357,11 @@ export class UnavailableDesktopAccountController implements DesktopAccountAction
   signOut(): Promise<DesktopAccountSnapshot> { return Promise.resolve(this.snapshot) }
   subscribe(): () => void { return () => {} }
   start(): Promise<void> { return Promise.resolve() }
-  dispose(): void {}
+  dispose(): Promise<void> { return Promise.resolve() }
 }
 
 function desktopProof(privateKey: string, operation: string, binding: string, issuedAt: number): AccountProof {
-  const jti = randomUUID()
+  const jti = parseAccountProofJti(randomUUID())
   const payload = Buffer.from(`${operation}\n${binding}\n${issuedAt}\n${jti}`, 'utf8')
   return {
     jti,

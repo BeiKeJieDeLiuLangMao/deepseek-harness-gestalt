@@ -4,6 +4,7 @@
  */
 
 import { Context, Service } from '@deepseek-ai/cordis'
+import type { SelectedPlatformEnvironment } from './environment.ts'
 import type {
   AccountProof,
   AccountSessionView,
@@ -16,6 +17,7 @@ import type {
 } from './types.ts'
 
 export * from './environment.ts'
+export * from './errors.ts'
 export * from './parsers.ts'
 export * from './privacy.ts'
 export * from './types.ts'
@@ -35,6 +37,9 @@ export abstract class AccountService extends Service {
   constructor(ctx: Context) {
     super(ctx, 'platformAccount')
   }
+
+  /** Validated deployment identity selected by this Account provider. */
+  abstract readonly environment: SelectedPlatformEnvironment
 
   /**
    * Start one GitHub Authorization Code attempt for an installation key.

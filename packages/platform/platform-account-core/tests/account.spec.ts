@@ -8,6 +8,7 @@ import type {
   PlatformAccountId,
 } from '@deepseek-ai/dsh-platform-account'
 import {
+  parseAccountProofJti,
   parseInstallationId,
   parseLoginAttemptId,
   selectPlatformEnvironment,
@@ -56,7 +57,7 @@ function installationKey() {
   return {
     publicKey: pair.publicKey.export({ format: 'jwk' }),
     proof(operation: string, binding: string, issuedAt = NOW): AccountProof {
-      const jti = randomUUID()
+      const jti = parseAccountProofJti(randomUUID())
       return {
         jti,
         issuedAt,
@@ -426,6 +427,27 @@ describe('PlatformAccount', () => {
     })).rejects.toMatchObject({ code: 'SESSION_EXPIRED' })
   })
 
+  it('rejects a late refresh before rotation and accepts the last full access-token window', async () => {
+    let refreshNow = NOW
+    const refreshAccount = accountHarness({ clock: { now: () => refreshNow } }).first
+    const { key, session } = await login(refreshAccount)
+    const binding = hashAccountToken(session.refreshToken)
+
+    refreshNow = session.refreshExpiresAt - 1
+    await expect(refreshAccount.refresh({
+      refreshToken: session.refreshToken,
+      proof: key.proof('refresh', binding, refreshNow),
+    })).rejects.toMatchObject({ code: 'SESSION_EXPIRED' })
+
+    refreshNow = session.refreshExpiresAt - ACCESS_TOKEN_TTL_MS
+    const refreshed = await refreshAccount.refresh({
+      refreshToken: session.refreshToken,
+      proof: key.proof('refresh', binding, refreshNow),
+    })
+    expect(refreshed.accessExpiresAt).toBe(session.refreshExpiresAt)
+    expect(refreshed.refreshExpiresAt).toBe(session.refreshExpiresAt)
+  })
+
   it.each([
     { kty: 'RSA', crv: 'P-256', x: 'x', y: 'y' },
     { kty: 'EC', crv: 'P-384', x: 'x', y: 'y' },
@@ -519,7 +541,7 @@ describe('PlatformAccount', () => {
     })).rejects.toMatchObject({ code: 'PROOF_INVALID' })
     await expect(harness.first.current({
       accessToken: session.accessToken,
-      proof: { jti: randomUUID(), issuedAt: NOW, signature: 'invalid' },
+      proof: { jti: parseAccountProofJti(randomUUID()), issuedAt: NOW, signature: 'invalid' },
     })).rejects.toMatchObject({ code: 'PROOF_INVALID' })
 
     const record = await harness.backend.getSession(session.sessionId)
@@ -601,9 +623,9 @@ describe('PlatformAccount', () => {
       providerSubject: 1, login: 'octocat', avatarUrl: 'avatar',
     })
     await backend.consumeAuthorizedAttempt('replacement' as LoginAttemptId, 'replacement-refresh', NOW)
-    expect(await backend.consumeProof('expired', 1, 0)).toBe(true)
-    expect(await backend.consumeProof('current', 3, 2)).toBe(true)
-    expect(await backend.consumeProof('current', 3, 2)).toBe(false)
+    expect(await backend.consumeProof(parseAccountProofJti('expired'), 1, 0)).toBe(true)
+    expect(await backend.consumeProof(parseAccountProofJti('current'), 3, 2)).toBe(true)
+    expect(await backend.consumeProof(parseAccountProofJti('current'), 3, 2)).toBe(false)
 
     const bus = new MemoryAccountInvalidationBus()
     const listener = vi.fn()

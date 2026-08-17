@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi, type Mock } from 'vitest'
 import {
   AccountError,
   parseInstallationId,
+  parseAccountProofJti,
   parseLoginAttemptId,
   selectPlatformEnvironment,
   validatePlatformEnvironmentPair,
@@ -12,6 +13,8 @@ import {
 } from '@deepseek-ai/dsh-platform-account'
 import {
   ACCOUNT_PRIVACY_NOTICE,
+  AccountLifecycleClosedError,
+  AccountLifecycleTransitions,
   IndexedDbInstallationAccountStore,
   MemoryInstallationAccountStore,
   PlatformAccountHttpTransport,
@@ -88,6 +91,30 @@ function transport(
 }
 
 describe('PlatformAccountInstallation', () => {
+  it('contains a throwing subscriber and still notifies later subscribers', () => {
+    const reported = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const installation = new PlatformAccountInstallation({
+      environment: DEVELOPMENT,
+      installationId: parseInstallationId('subscriber-containment'),
+      installationKind: 'mobile',
+      transport: transport([]),
+      store: new MemoryInstallationAccountStore(),
+      systemBrowser: { open: vi.fn() },
+      crypto: webcrypto as Crypto,
+    })
+    const later = vi.fn()
+    installation.subscribe(() => { throw new Error('first subscriber failed') })
+    installation.subscribe(later)
+
+    expect(() => { installation.acceptPrivacy() }).not.toThrow()
+
+    expect(later).toHaveBeenCalledOnce()
+    expect(reported).toHaveBeenCalledWith(
+      '[platform-account-client] subscriber failures:',
+      expect.any(AggregateError),
+    )
+  })
+
   it('rejects a transport from another environment and an unprepared browser open', () => {
     expect(() => new PlatformAccountInstallation({
       environment: DEVELOPMENT,
@@ -450,8 +477,23 @@ describe('PlatformAccountInstallation', () => {
   })
 })
 
+describe('AccountLifecycleTransitions', () => {
+  it('drains admitted work and rejects transitions after close', async () => {
+    const transition = deferred<undefined>()
+    const transitions = new AccountLifecycleTransitions()
+    const running = transitions.run(async () => transition.promise)
+    let closed = false
+    const closing = transitions.close().then(() => { closed = true })
+    await Promise.resolve()
+    expect(closed).toBe(false)
+    await expect(transitions.run(async () => undefined)).rejects.toBeInstanceOf(AccountLifecycleClosedError)
+    transition.resolve(undefined)
+    await Promise.all([running, closing])
+  })
+})
+
 describe('PlatformAccountHttpTransport', () => {
-  const proof = { jti: 'proof', issuedAt: 123, signature: 'signature' }
+  const proof = { jti: parseAccountProofJti('proof'), issuedAt: 123, signature: 'signature' }
 
   it('routes every operation to the selected environment with JSON and proof headers', async () => {
     const calls: Array<[string, RequestInit]> = []
@@ -632,6 +674,18 @@ describe('IndexedDbInstallationAccountStore', () => {
       attempt: ATTEMPT, privateKey: { type: 'private', algorithm: { name: 'ECDSA', namedCurve: 'P-384' }, usages: ['sign'] },
     })
     await expect(store.loadPending('production')).rejects.toThrow('must be a signing P-256 CryptoKey')
+    fake.records.set('production:pending', {
+      attempt: ATTEMPT,
+      privateKey: { type: 'private', algorithm: { name: 'ECDSA', namedCurve: 'P-256' }, usages: ['sign'] },
+    })
+    await expect(store.loadPending('production')).rejects.toThrow('must be a signing P-256 CryptoKey')
+    const pair = await webcrypto.subtle.generateKey(
+      { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign', 'verify'],
+    )
+    fake.records.set('production:pending', { attempt: ATTEMPT, privateKey: pair.publicKey })
+    await expect(store.loadPending('production')).rejects.toThrow('must be a signing P-256 CryptoKey')
+    fake.records.set('production:pending', { attempt: ATTEMPT, privateKey: pair.privateKey })
+    await expect(store.loadPending('production')).resolves.toMatchObject({ attempt: ATTEMPT })
     fake.records.set('production:pending', null)
     await expect(store.loadPending('production')).rejects.toThrow('pending login must be an object')
   })

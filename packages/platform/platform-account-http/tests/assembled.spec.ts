@@ -55,6 +55,21 @@ afterEach(async () => {
 })
 
 describe('real Platform Account HTTP composition', () => {
+  it.each([
+    { label: 'missing', origin: undefined },
+    { label: 'mismatched', origin: 'https://platform.example.com' },
+  ])('fails Loader composition for a $label HTTP origin before traffic', async ({ origin }) => {
+    let failure: unknown
+    try {
+      await loadComposition(validationProvider(), origin)
+    } catch (error) {
+      failure = error
+    }
+    expect(String(failure)).toContain(
+      origin === undefined ? 'origin' : 'does not match the selected Platform environment',
+    )
+  })
+
   it('boots Loader and proves P-256 polling, rotation, JSON parsing, and cross-instance sign-out', { timeout: 60_000 }, async () => {
     let now = Date.parse('2026-08-17T10:00:00.000Z')
     const backend = new MemoryAccountBackend(ENVIRONMENT.databaseIdentity)
@@ -89,7 +104,7 @@ describe('real Platform Account HTTP composition', () => {
         secondary = new PlatformAccount(new Context(), options)
       },
     }
-    const loaded = await loadComposition(Provider)
+    const loaded = await loadComposition(Provider, ENVIRONMENT.origin)
     const port = loaded.webServer.port
     const requests: Array<{ url: string; init: RequestInit }> = []
     const networkFetch: typeof fetch = async (input, init = {}) => {
@@ -147,7 +162,30 @@ describe('real Platform Account HTTP composition', () => {
   })
 })
 
-async function loadComposition(provider: unknown): Promise<Context> {
+function validationProvider(): unknown {
+  return {
+    name: 'assembled-platform-account-provider',
+    apply(ctx: Context) {
+      const backend = new MemoryAccountBackend(ENVIRONMENT.databaseIdentity)
+      const github: GitHubIdentityProvider = {
+        environment: ENVIRONMENT,
+        authorizationUrl: () => 'https://github.com/login/oauth/authorize',
+        async exchange() {
+          return { providerSubject: 13994321, login: 'octocat', avatarUrl: 'https://avatars.example/octocat' }
+        },
+      }
+      new PlatformAccount(ctx, {
+        backend,
+        invalidation: new MemoryAccountInvalidationBus(),
+        github,
+        environment: ENVIRONMENT,
+        config: { tokenSigningKey: Buffer.alloc(32, 7), pollingSigningKey: Buffer.alloc(32, 9) },
+      })
+    },
+  }
+}
+
+async function loadComposition(provider: unknown, origin: string | undefined): Promise<Context> {
   root = await mkdtemp(join(tmpdir(), 'dsh-platform-account-loader-'))
   const configPath = join(root, 'cordis.yml')
   await writeFile(configPath, [
@@ -157,9 +195,7 @@ async function loadComposition(provider: unknown): Promise<Context> {
     '    port: 0',
     "- name: 'assembled-platform-account-provider'",
     "- name: '@deepseek-ai/dsh-platform-account-http'",
-    '  config:',
-    '    allowedOrigins:',
-    `      - '${ENVIRONMENT.origin}'`,
+    ...(origin === undefined ? [] : ['  config:', `    origin: '${origin}'`]),
     '',
   ].join('\n'))
   context = new Context()

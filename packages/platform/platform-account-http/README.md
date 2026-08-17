@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-HTTP Consumer for `ctx.platformAccount`. It registers Login Attempt creation, the fixed `/v1/account/oauth/github/callback`, signed polling, refresh, current-account, and current-installation sign-out routes. Responses disable caching; errors use stable JSON envelopes. CORS admits only exact configured application origins, request bodies are capped at 64 KiB, and access-token operations carry installation proof in dedicated headers.
+HTTP Consumer for `ctx.platformAccount`. It registers Login Attempt creation, the fixed `/v1/account/oauth/github/callback`, signed polling, refresh, current-account, and current-installation sign-out routes. Responses disable caching; errors use stable JSON envelopes. Its required CORS origin must exactly equal the Account provider's selected validated environment origin or composition fails before route registration. Request bodies are capped at 64 KiB, and access-token operations carry branded single-use proof ids in dedicated headers.
 
 The callback returns a bilingual completion page and never redirects an OAuth code or provider token to an application URL.
 

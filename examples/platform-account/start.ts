@@ -1,6 +1,7 @@
 import { createHash, generateKeyPairSync, randomUUID, sign } from 'node:crypto'
 import { Context } from '@deepseek-ai/cordis'
 import {
+  parseAccountProofJti,
   ACCOUNT_PRIVACY_NOTICE,
   parseInstallationId,
   selectPlatformEnvironment,
@@ -109,7 +110,7 @@ function proof(
   binding: string,
   issuedAt: number,
 ): AccountProof {
-  const jti = randomUUID()
+  const jti = parseAccountProofJti(randomUUID())
   return {
     jti,
     issuedAt,

@@ -15,6 +15,9 @@ export type LoginAttemptId = Branded<'LoginAttemptId'>
 /** Opaque current-installation Account Session identifier. */
 export type AccountSessionId = Branded<'AccountSessionId'>
 
+/** Opaque single-use identifier for one installation proof. */
+export type AccountProofJti = Branded<'AccountProofJti'>
+
 /** Installation kinds that may own independent Account Sessions. */
 export type InstallationKind = 'desktop' | 'mobile'
 
@@ -33,7 +36,7 @@ export interface PlatformAccountView {
 /** Proof that the installation private key authorized one Account operation. */
 export interface AccountProof {
   /** Unique proof id; a successful verification consumes it once. */
-  jti: string
+  jti: AccountProofJti
   /** Unix epoch milliseconds used for the bounded proof freshness check. */
   issuedAt: number
   /** Base64url P-256/SHA-256 signature in IEEE P1363 form. */
@@ -83,19 +86,3 @@ export type AccountErrorCode =
   | 'PROOF_REPLAYED'
   | 'SESSION_EXPIRED'
   | 'SESSION_REVOKED'
-
-/** Account failure with a stable code safe for client branching. */
-export class AccountError extends Error {
-  /** Stable machine-readable failure code. */
-  readonly code: AccountErrorCode
-
-  /**
-   * @param code - stable failure category.
-   * @param message - safe diagnostic without credentials or signed values.
-   */
-  constructor(code: AccountErrorCode, message: string) {
-    super(message)
-    this.name = 'AccountError'
-    this.code = code
-  }
-}

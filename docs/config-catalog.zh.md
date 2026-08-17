@@ -1420,7 +1420,7 @@ export interface AccountBackend {
   /** Revoke one session and report whether it was active. */
   revokeSession(sessionId: AccountSessionId): Promise<boolean>
   /** Atomically reject replayed proof ids inside their validity window. */
-  consumeProof(jti: string, expiresAt: number, now: number): Promise<boolean>
+  consumeProof(jti: AccountProofJti, expiresAt: number, now: number): Promise<boolean>
 }
 
 /** Shared invalidation channel used by every Platform Instance. */
@@ -1532,9 +1532,9 @@ export interface AccountRecord extends PlatformAccountView {
 }
 ```
 
-依赖： [`AccountSessionId`](subsystems/platform-account.md) · [`InstallationId`](subsystems/platform-account.md) · [`InstallationKind`](../packages/platform/platform-account/src/index.ts) · [`LoginAttemptId`](subsystems/platform-account.md) · [`PlatformAccountId`](../packages/platform/platform-account/src/index.ts) · [`PlatformAccountView`](subsystems/platform-account.md) · [`PlatformEnvironment`](../packages/platform/platform-account/src/index.ts) · [`SelectedPlatformEnvironment`](../packages/platform/platform-account/src/index.ts)
+依赖： [`AccountProofJti`](../packages/platform/platform-account/src/index.ts) · [`AccountSessionId`](subsystems/platform-account.md) · [`InstallationId`](subsystems/platform-account.md) · [`InstallationKind`](../packages/platform/platform-account/src/index.ts) · [`LoginAttemptId`](subsystems/platform-account.md) · [`PlatformAccountId`](../packages/platform/platform-account/src/index.ts) · [`PlatformAccountView`](subsystems/platform-account.md) · [`PlatformEnvironment`](../packages/platform/platform-account/src/index.ts) · [`SelectedPlatformEnvironment`](../packages/platform/platform-account/src/index.ts)
 
-来源： [`packages/platform/platform-account-core/src/index.ts:443`](../packages/platform/platform-account-core/src/index.ts)
+来源： [`packages/platform/platform-account-core/src/index.ts:444`](../packages/platform/platform-account-core/src/index.ts)
 
 <a id="deepseek-aidsh-platform-account-http"></a>
 
@@ -1545,12 +1545,12 @@ export interface AccountRecord extends PlatformAccountView {
 ```ts config-catalog
 /** HTTP consumer configuration. */
 export interface Config {
-  /** Exact trusted application origins allowed to call Account routes. */
-  allowedOrigins: string[]
+  /** Selected Platform environment origin allowed to call Account routes. */
+  origin: string
 }
 ```
 
-来源： [`packages/platform/platform-account-http/src/index.ts:21`](../packages/platform/platform-account-http/src/index.ts)
+来源： [`packages/platform/platform-account-http/src/index.ts:22`](../packages/platform/platform-account-http/src/index.ts)
 
 <a id="deepseek-aidsh-pwsh-local"></a>
 

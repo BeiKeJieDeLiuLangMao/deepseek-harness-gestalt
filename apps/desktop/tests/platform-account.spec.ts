@@ -5,6 +5,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { parseInstallationId, selectPlatformEnvironment, validatePlatformEnvironmentPair } from '@deepseek-ai/dsh-platform-account'
+import type { AccountSessionView, LoginPollResult } from '@deepseek-ai/dsh-platform-account'
+import type { PlatformAccountTransport } from '@deepseek-ai/dsh-platform-account-client'
 import {
   MemoryAccountBackend,
   MemoryAccountInvalidationBus,
@@ -86,6 +88,83 @@ function platform() {
 }
 
 describe('DesktopAccountController', () => {
+  it('contains a throwing subscriber and still notifies later subscribers', async () => {
+    const reported = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const controller = new DesktopAccountController({
+      environment: ENVIRONMENT,
+      transport: platform(),
+      store: new MemoryDesktopStore(),
+      systemBrowser: { open: vi.fn() },
+      now: () => NOW,
+    })
+    const later = vi.fn()
+    controller.subscribe(() => { throw new Error('first Desktop subscriber failed') })
+    controller.subscribe(later)
+
+    await expect(controller.acceptPrivacy()).resolves.toMatchObject({ privacyAccepted: true })
+
+    expect(later).toHaveBeenCalledOnce()
+    expect(reported).toHaveBeenCalledWith(
+      '[desktop-platform-account] subscriber failures:',
+      expect.any(AggregateError),
+    )
+  })
+
+  it('drains an in-flight poll during disposal without post-dispose mutation or callbacks', async () => {
+    const poll = deferred<LoginPollResult>()
+    const pollLogin = vi.fn(async () => poll.promise)
+    const transport: PlatformAccountTransport = {
+      environment: ENVIRONMENT,
+      beginLogin: vi.fn(),
+      pollLogin,
+      refresh: vi.fn(),
+      current: vi.fn(),
+      signOut: vi.fn(),
+    }
+    const privateKey = generateKeyPairSync('ec', { namedCurve: 'P-256' }).privateKey
+      .export({ format: 'pem', type: 'pkcs8' }).toString()
+    const store = new MemoryDesktopStore()
+    store.record = {
+      installationId: parseInstallationId('dispose-poll'),
+      pending: {
+        id: 'dispose-attempt' as never,
+        state: 'state',
+        authorizationUrl: 'https://github.com/login/oauth/authorize',
+        pollingToken: 'polling-token',
+        expiresAt: NOW + 300_000,
+      },
+      pendingPrivateKey: privateKey,
+    }
+    const scheduled: Array<() => void> = []
+    const controller = new DesktopAccountController({
+      environment: ENVIRONMENT,
+      transport,
+      store,
+      systemBrowser: { open: vi.fn() },
+      now: () => NOW,
+      schedule: (task) => {
+        scheduled.push(task)
+        return { unref() {} } as never
+      },
+    })
+    await controller.start()
+    const listener = vi.fn()
+    controller.subscribe(listener)
+    scheduled.shift()?.()
+    await vi.waitFor(() => { expect(pollLogin).toHaveBeenCalledOnce() })
+
+    let quiescent = false
+    const disposal = controller.dispose().then(() => { quiescent = true })
+    await Promise.resolve()
+    expect(quiescent).toBe(false)
+    poll.resolve({ status: 'complete', ...desktopSession() })
+    await disposal
+
+    expect(store.record?.session).toBeUndefined()
+    expect(store.record?.pending?.id).toBe('dispose-attempt')
+    expect(listener).not.toHaveBeenCalled()
+  })
+
   it('keeps the P-256 private key in Host storage and completes signed polling', async () => {
     const service = platform()
     const store = new MemoryDesktopStore()
@@ -235,6 +314,28 @@ async function temporaryDirectory(): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), 'dsh-desktop-account-'))
   temporaryDirectories.push(directory)
   return directory
+}
+
+function desktopSession(): AccountSessionView {
+  return {
+    sessionId: 'desktop-session' as never,
+    account: {
+      id: 'desktop-account' as never,
+      githubId: 13994321,
+      githubLogin: 'octocat',
+      avatarUrl: 'https://avatars.example/octocat',
+    },
+    accessToken: 'access',
+    refreshToken: 'refresh',
+    accessExpiresAt: NOW + 900_000,
+    refreshExpiresAt: NOW + 2_592_000_000,
+  }
+}
+
+function deferred<T>(): { promise: Promise<T>; resolve(value: T): void } {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((settle) => { resolve = settle })
+  return { promise, resolve }
 }
 
 function desktopEnvironmentSource(): NodeJS.ProcessEnv {

@@ -17,6 +17,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import AccountService, {
   AccountError,
   type AccountProof,
+  type AccountProofJti,
   type AccountSessionId,
   type AccountSessionView,
   type InstallationKind,
@@ -238,7 +239,7 @@ export interface AccountBackend {
   /** Revoke one session and report whether it was active. */
   revokeSession(sessionId: AccountSessionId): Promise<boolean>
   /** Atomically reject replayed proof ids inside their validity window. */
-  consumeProof(jti: string, expiresAt: number, now: number): Promise<boolean>
+  consumeProof(jti: AccountProofJti, expiresAt: number, now: number): Promise<boolean>
 }
 
 /** Shared invalidation channel used by every Platform Instance. */
@@ -258,7 +259,7 @@ export class MemoryAccountBackend implements AccountBackend {
   private readonly sessions = new Map<AccountSessionId, SessionRecord>()
   private readonly refreshIndex = new Map<string, AccountSessionId>()
   private readonly installationIndex = new Map<string, AccountSessionId>()
-  private readonly proofs = new Map<string, number>()
+  private readonly proofs = new Map<AccountProofJti, number>()
 
   /**
    * @param databaseIdentity - deployment database identity bound to this backend.
@@ -381,7 +382,7 @@ export class MemoryAccountBackend implements AccountBackend {
     return Promise.resolve(true)
   }
 
-  consumeProof(jti: string, expiresAt: number, now: number): Promise<boolean> {
+  consumeProof(jti: AccountProofJti, expiresAt: number, now: number): Promise<boolean> {
     for (const [id, expiry] of this.proofs) {
       if (expiry < now) this.proofs.delete(id)
     }
@@ -478,7 +479,7 @@ export function accountProofPayload(input: {
   operation: string
   binding: string
   issuedAt: number
-  jti: string
+  jti: AccountProofJti
 }): Buffer {
   return Buffer.from(`${input.operation}\n${input.binding}\n${input.issuedAt}\n${input.jti}`, 'utf8')
 }
@@ -622,6 +623,9 @@ export class PlatformAccount extends AccountService {
     if (session.refreshExpiresAt <= now) {
       await this.revoke(session.id)
       throw new AccountError('SESSION_EXPIRED', 'Account Session refresh lifetime expired')
+    }
+    if (now > session.refreshExpiresAt - ACCESS_TOKEN_TTL_MS) {
+      throw new AccountError('SESSION_EXPIRED', 'Account Session cannot issue a full access-token lifetime')
     }
     await this.verifyProof(session.publicKey, 'refresh', currentHash, input.proof)
     const replacement = randomBytes(32).toString('base64url')

@@ -9,6 +9,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import {
   AccountError,
+  parseAccountProofJti,
   parseInstallationId,
   parseLoginAttemptId,
   type AccountProof,
@@ -19,13 +20,13 @@ const MAX_JSON_BYTES = 64 * 1024
 
 /** HTTP consumer configuration. */
 export interface Config {
-  /** Exact trusted application origins allowed to call Account routes. */
-  allowedOrigins: string[]
+  /** Selected Platform environment origin allowed to call Account routes. */
+  origin: string
 }
 
 /** Validated HTTP consumer configuration. */
 export const Config: z<Config> = z.object({
-  allowedOrigins: z.array(z.string()).required(),
+  origin: z.string().required(),
 })
 
 /** Cordis plugin name. */
@@ -35,7 +36,15 @@ export const inject = ['platformAccount', 'webServer']
 
 /** Register the complete Account HTTP route set. */
 export function apply(ctx: Context, config: Config): void {
-  const origins = new Set(config.allowedOrigins.map(origin => new URL(origin).origin))
+  const candidate: unknown = config
+  if (candidate === null || typeof candidate !== 'object' || typeof (candidate as { origin?: unknown }).origin !== 'string') {
+    throw new TypeError('Platform Account HTTP origin configuration is required')
+  }
+  const origin = (candidate as Config).origin
+  if (origin !== ctx.platformAccount.environment.origin) {
+    throw new TypeError('Platform Account HTTP origin does not match the selected Platform environment')
+  }
+  const origins = new Set([origin])
   const route = (path: string, handler: (req: IncomingMessage, res: ServerResponse) => Promise<void>): void => {
     ctx.effect(() => ctx.webServer.register({
       kind: 'exact',
@@ -172,11 +181,11 @@ function requiredKind(value: unknown): 'desktop' | 'mobile' {
 }
 
 function requiredProof(value: unknown): AccountProof {
-  if (!isRecord(value) || typeof value.jti !== 'string' || !Number.isSafeInteger(value.issuedAt)
+  if (!isRecord(value) || typeof value.jti !== 'string' || value.jti === '' || !Number.isSafeInteger(value.issuedAt)
     || typeof value.signature !== 'string') {
     throw new HttpError(400, 'INVALID_REQUEST', 'proof must contain jti, issuedAt, and signature')
   }
-  return { jti: value.jti, issuedAt: value.issuedAt as number, signature: value.signature }
+  return { jti: parseAccountProofJti(value.jti), issuedAt: value.issuedAt as number, signature: value.signature }
 }
 
 function requiredQuery(url: URL, key: string): string {
@@ -200,9 +209,10 @@ function proofHeaders(req: IncomingMessage): AccountProof {
   if (typeof jti !== 'string' || typeof issuedAt !== 'string' || typeof signature !== 'string') {
     throw new HttpError(400, 'INVALID_REQUEST', 'installation proof headers are required')
   }
+  if (jti === '') throw new HttpError(400, 'INVALID_REQUEST', 'proof jti header is invalid')
   const parsed = Number(issuedAt)
   if (!Number.isSafeInteger(parsed)) throw new HttpError(400, 'INVALID_REQUEST', 'proof issued-at header is invalid')
-  return { jti, issuedAt: parsed, signature }
+  return { jti: parseAccountProofJti(jti), issuedAt: parsed, signature }
 }
 
 function requireMethod(req: IncomingMessage, method: string): void {

@@ -87,7 +87,7 @@ async function boot(): Promise<void> {
     await account.start()
   } catch (error) {
     stopAccountEvents()
-    account.dispose()
+    await account.dispose()
     account = new UnavailableDesktopAccountController(
       error instanceof Error ? error.message : String(error),
     )
@@ -326,16 +326,22 @@ function requestShutdown(exitCode: number): void {
   updater = undefined
   stopAccountEvents?.()
   stopAccountEvents = undefined
-  account.dispose()
+  const accountDisposal = account.dispose()
   hostStartController.abort()
   const starting = pendingHost
   const running = host
   host = undefined
   void (async () => {
-    const started = await starting?.catch(() => undefined)
-    if (started !== running) await started?.stop()
-    await running?.stop()
-    app.exit(exitCode)
+    try {
+      await accountDisposal
+      const started = await starting?.catch(() => undefined)
+      if (started !== running) await started?.stop()
+      await running?.stop()
+      app.exit(exitCode)
+    } catch (error) {
+      console.error('dsh desktop: shutdown failed', error)
+      app.exit(1)
+    }
   })()
 }
 

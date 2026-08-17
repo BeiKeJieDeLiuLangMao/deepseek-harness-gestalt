@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-本包是 `ctx.platformAccount` 的 HTTP 消费方。它注册登录尝试创建、固定的 `/v1/account/oauth/github/callback`、签名轮询、刷新、当前账号和当前安装退出路由。响应禁用缓存，错误使用稳定 JSON 信封；CORS 只允许精确配置的应用 origin，请求体上限为 64 KiB，访问令牌操作通过专用请求头携带安装证明。
+本包是 `ctx.platformAccount` 的 HTTP 消费方。它注册登录尝试创建、固定的 `/v1/account/oauth/github/callback`、签名轮询、刷新、当前账号和当前安装退出路由。响应禁用缓存，错误使用稳定 JSON 信封。必填 CORS origin 必须与账号提供方选中的已校验环境 origin 完全相等，否则 composition 会在注册路由前失败。请求体上限为 64 KiB，访问令牌操作通过专用请求头携带品牌化的单次证明 id。
 
 回调返回中英文完成页，绝不会把 OAuth code 或提供方令牌重定向到应用 URL。
 

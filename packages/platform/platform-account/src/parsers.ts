@@ -1,4 +1,5 @@
 import type {
+  AccountProofJti,
   AccountSessionId,
   AccountSessionView,
   InstallationId,
@@ -8,6 +9,15 @@ import type {
   PlatformAccountId,
   PlatformAccountView,
 } from './types.ts'
+
+/**
+ * Parse a proof jti at a wire or random-source boundary.
+ * @param value - untrusted single-use identifier.
+ * @returns branded non-empty proof jti.
+ */
+export function parseAccountProofJti(value: unknown): AccountProofJti {
+  return nonEmptyString(value, 'proof jti') as AccountProofJti
+}
 
 /**
  * Parse an installation id at a wire or durable-data boundary.

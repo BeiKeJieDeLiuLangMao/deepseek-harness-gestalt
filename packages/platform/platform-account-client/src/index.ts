@@ -8,6 +8,7 @@ import {
   ACCOUNT_PRIVACY_NOTICE,
   AccountError,
   parseAccountSessionView,
+  parseAccountProofJti,
   parseLoginAttemptView,
   parseLoginPollResult,
   parsePlatformAccountView,
@@ -297,13 +298,16 @@ function parsePendingLogin(value: unknown): PendingLogin {
 }
 
 function parseP256PrivateKey(value: unknown): CryptoKey {
+  if (!(value instanceof CryptoKey)) {
+    throw new TypeError('installation private key must be a signing P-256 CryptoKey')
+  }
   const record = durableRecord(value, 'installation private key')
   const algorithm = durableRecord(record.algorithm, 'installation private-key algorithm')
   if (record.type !== 'private' || algorithm.name !== 'ECDSA' || algorithm.namedCurve !== 'P-256'
     || !Array.isArray(record.usages) || !record.usages.includes('sign')) {
     throw new TypeError('installation private key must be a signing P-256 CryptoKey')
   }
-  return value as CryptoKey
+  return value
 }
 
 function durableRecord(value: unknown, name: string): Record<string, unknown> {
@@ -340,6 +344,7 @@ export interface SystemBrowser {
 /** Serial owner for current-installation lifecycle mutations. */
 export class AccountLifecycleTransitions {
   private tail: Promise<void> = Promise.resolve()
+  private closed = false
 
   /**
    * Run one transition after every earlier transition has settled.
@@ -347,9 +352,24 @@ export class AccountLifecycleTransitions {
    * @returns the transition result.
    */
   run<T>(transition: () => Promise<T>): Promise<T> {
+    if (this.closed) return Promise.reject(new AccountLifecycleClosedError())
     const result = this.tail.then(transition)
     this.tail = result.then(() => undefined, () => undefined)
     return result
+  }
+
+  /** Refuse new transitions and drain every transition already admitted. */
+  async close(): Promise<void> {
+    this.closed = true
+    await this.tail
+  }
+}
+
+/** Expected rejection when a lifecycle transition arrives after owner shutdown. */
+export class AccountLifecycleClosedError extends Error {
+  constructor() {
+    super('Platform Account lifecycle transition owner is closed')
+    this.name = 'AccountLifecycleClosedError'
   }
 }
 
@@ -566,7 +586,7 @@ export class PlatformAccountInstallation {
 
   private async proof(privateKey: CryptoKey, operation: string, binding: string): Promise<AccountProof> {
     const issuedAt = this.now()
-    const jti = this.crypto.randomUUID()
+    const jti = parseAccountProofJti(this.crypto.randomUUID())
     const payload = new TextEncoder().encode(`${operation}\n${binding}\n${issuedAt}\n${jti}`)
     const signature = await this.crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, privateKey, payload)
     return { jti, issuedAt, signature: base64url(new Uint8Array(signature)) }
@@ -582,7 +602,20 @@ export class PlatformAccountInstallation {
 
   private publish(snapshot: PlatformAccountInstallationSnapshot): void {
     this.snapshot = snapshot
-    for (const listener of this.listeners) listener()
+    const failures: unknown[] = []
+    for (const listener of [...this.listeners]) {
+      try {
+        listener()
+      } catch (error) {
+        failures.push(error)
+      }
+    }
+    if (failures.length > 0) {
+      console.error(
+        '[platform-account-client] subscriber failures:',
+        new AggregateError(failures, 'Platform Account installation subscribers failed'),
+      )
+    }
   }
 }
 

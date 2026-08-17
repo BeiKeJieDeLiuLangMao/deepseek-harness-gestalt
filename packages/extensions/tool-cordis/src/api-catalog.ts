@@ -975,6 +975,11 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Platform Account capability. Providers own OAuth, installation-key binding, token rotation, and current-installation invalidation behind this interface.',
     methods: [
       {
+        signature: 'abstract readonly environment: SelectedPlatformEnvironment',
+        description: 'Validated deployment identity selected by this Account provider.',
+        parameters: [],
+      },
+      {
         signature: 'abstract beginLogin(input: { installationId: InstallationId installationKind: \'desktop\' | \'mobile\' publicKey: JsonWebKey }): Promise<LoginAttemptView>',
         description: 'Start one GitHub Authorization Code attempt for an installation key.',
         parameters: [{ name: 'input', description: 'installation identity, kind, and public P-256 JWK.' }],
@@ -2698,7 +2703,11 @@ export const EVENT_API: readonly EventApiEntry[] = [
 export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'AccountProof',
-    declaration: 'export interface AccountProof {\n    jti: string;\n    issuedAt: number;\n    signature: string;\n}',
+    declaration: 'export interface AccountProof {\n    jti: AccountProofJti;\n    issuedAt: number;\n    signature: string;\n}',
+  },
+  {
+    name: 'AccountProofJti',
+    declaration: 'export type AccountProofJti = Branded<\'AccountProofJti\'>;',
   },
   {
     name: 'AccountSessionId',
@@ -3617,6 +3626,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface PlatformAccountView {\n    id: PlatformAccountId;\n    githubId: number;\n    githubLogin: string;\n    avatarUrl: string;\n}',
   },
   {
+    name: 'PlatformEnvironment',
+    declaration: 'export type PlatformEnvironment = \'development\' | \'production\';',
+  },
+  {
+    name: 'PlatformEnvironmentIdentity',
+    declaration: 'export interface PlatformEnvironmentIdentity {\n    environment: PlatformEnvironment;\n    origin: string;\n    callbackUrl: string;\n    githubClientId: string;\n    credentialReference: string;\n    databaseIdentity: string;\n    identityNamespace: string;\n}',
+  },
+  {
     name: 'PostToolDecision',
     declaration: 'export type PostToolDecision = {\n    kind: \'accept\';\n    content?: ContentBlock[];\n    value?: never;\n    additionalContexts?: UserMessage[];\n} | {\n    kind: \'accept\';\n    value: JsonValue;\n    content?: never;\n    additionalContexts?: UserMessage[];\n} | {\n    kind: \'block\';\n    feedback: ContentBlock[];\n    additionalContexts?: UserMessage[];\n};',
   },
@@ -3883,6 +3900,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SearchResultView',
     declaration: 'export type SearchResultView = SearchMatchesResultView | SearchPathsResultView;',
+  },
+  {
+    name: 'SelectedPlatformEnvironment',
+    declaration: 'export type SelectedPlatformEnvironment = Readonly<PlatformEnvironmentIdentity> & {\n    readonly [selectedPlatformEnvironment]: true;\n};',
   },
   {
     name: 'ServerResponse',
