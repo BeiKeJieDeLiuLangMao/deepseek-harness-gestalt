@@ -12,6 +12,6 @@ Relay Transport 版本协商独立于 Encrypted Companion 应用协商。Relay �
 
 ## Wire 值
 
-Relay route/attachment id 与 Companion operation、Session projection、transcript entry id 是从 `unknown` 解析出的不同品牌化字符串。Companion 使用协议原生标识符，不导入 Harness 领域类型。两个 codec 都会拒绝未知 discriminant、额外字段、不安全数值、畸形 UTF-8/JSON、过深 parser、大型 container、过多编码值、超大消息和超大密文。Transcript page 另有 200 条上限。
+Relay route/attachment id 与 Companion operation、Session projection、transcript entry id 是从 `unknown` 解析出的不同品牌化字符串。Companion 使用协议原生标识符，不导入 Harness 领域类型。两个 codec 都会拒绝未知 discriminant、额外字段、不安全数值、畸形 UTF-8/JSON、过深 parser、大型 container、过多编码值、超大消息和超大密文。加密前 Companion 应用数据最多为 60 KiB。完整编码 transcript-page 消息采用更严格的 50 条或 48 KiB 上限，并按 UTF-8 wire 字节计量。
 
 本包不拥有加密实现。Endpoint adapter 使用已评审的配对通道加密 offer 和应用消息。无密钥 Loader example 只用 harness-local cipher 证明 Relay 解码与转发不需要应用明文。

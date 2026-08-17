@@ -23,11 +23,12 @@ The implemented catalog contains a bounded transcript-page projection, a prompt-
 | Total encoded values | 4,096 |
 | UTF-8 bytes in one string | 90,000 |
 | Complete Relay message | 98,304 bytes |
-| Opaque ciphertext | 65,535 bytes |
-| Companion plaintext before encryption | 65,519 bytes |
-| Transcript page | 200 entries |
+| Opaque Noise message | 65,535 bytes |
+| Companion application before encryption | 61,440 bytes (60 KiB) |
+| Complete encoded transcript-page message | 49,152 bytes (48 KiB) |
+| Transcript page | 50 entries |
 
-`RemoteProtocolError` exposes stable codes for invalid input, exceeded limits, incompatible Relay versions, missing Companion security capabilities, required endpoint updates, and missing negotiation. Diagnostics never contain application plaintext.
+`RemoteProtocolError` exposes stable codes for invalid input, exceeded limits, incompatible Relay versions, missing Companion security capabilities, required endpoint updates, and missing negotiation. Diagnostics never contain application plaintext. The 60 KiB application ceiling leaves 4,095 bytes inside the fixed 65,535-byte Noise message ceiling for encryption overhead; the Relay frame ceiling also covers base64url and transport metadata at that maximum.
 
 The package does not encrypt. Mobile and Desktop supply an independently reviewed end-to-end channel, then encrypt version offers and encoded Companion messages before Relay forwarding. The [keyless assembled example](../../../examples/remote-protocol/start.ts) uses an example-only AES-GCM adapter to prove the composition and ciphertext-only Relay view; it is not a product cryptographic implementation or security-review result. Product integration remains subject to the [independent Noise review](../../../docs/security/noise-cross-runtime-proof.md).
 

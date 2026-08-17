@@ -161,6 +161,49 @@ describe('Encrypted Companion Protocol codec', () => {
     )
   })
 
+  it('bounds transcript pages at 50 events or 48 KiB of encoded wire bytes', () => {
+    const negotiated = negotiateCompanionProtocol(
+      createCompanionVersionOffer('mobile'),
+      createCompanionVersionOffer('desktop'),
+    )
+    expect(REMOTE_PROTOCOL_LIMITS.transcriptPageEntries).toBe(50)
+    expect(REMOTE_PROTOCOL_LIMITS.transcriptPageBytes).toBe(48 * 1_024)
+
+    const exactLimit = transcriptPageWithEncodedBytes(negotiated, 50, 48 * 1_024)
+    expect(encodeCompanionMessage(negotiated, exactLimit)).toHaveLength(48 * 1_024)
+    expect(decodeCompanionMessage(negotiated, encodeCompanionMessage(negotiated, exactLimit))).toEqual(exactLimit)
+
+    const tooManyEntries = transcriptPageWithEncodedBytes(negotiated, 51)
+    expect(() => encodeCompanionMessage(negotiated, tooManyEntries)).toThrow(
+      expect.objectContaining<Partial<RemoteProtocolError>>({ code: 'REMOTE_PROTOCOL_LIMIT_EXCEEDED' }),
+    )
+    expect(() => decodeCompanionMessage(negotiated, json({ applicationVersion: 2, ...tooManyEntries }))).toThrow(
+      expect.objectContaining<Partial<RemoteProtocolError>>({ code: 'REMOTE_PROTOCOL_LIMIT_EXCEEDED' }),
+    )
+
+    const multibyteBase = transcriptPageWithEncodedBytes(negotiated, 1)
+    const baseBytes = encodeCompanionMessage(negotiated, multibyteBase).byteLength
+    const firstEntry = multibyteBase.projection.entries[0]
+    if (firstEntry === undefined) throw new Error('Multibyte transcript fixture requires one entry')
+    const multibyteOverflow = {
+      ...multibyteBase,
+      projection: {
+        ...multibyteBase.projection,
+        entries: [{
+          ...firstEntry,
+          text: '界'.repeat(Math.floor(((48 * 1_024) - baseBytes) / 3) + 1),
+        }],
+      },
+    }
+    expect(new TextEncoder().encode(JSON.stringify({ applicationVersion: 2, ...multibyteOverflow })).byteLength).toBeGreaterThan(48 * 1_024)
+    expect(() => encodeCompanionMessage(negotiated, multibyteOverflow)).toThrow(
+      expect.objectContaining<Partial<RemoteProtocolError>>({ code: 'REMOTE_PROTOCOL_LIMIT_EXCEEDED' }),
+    )
+    expect(() => decodeCompanionMessage(negotiated, json({ applicationVersion: 2, ...multibyteOverflow }))).toThrow(
+      expect.objectContaining<Partial<RemoteProtocolError>>({ code: 'REMOTE_PROTOCOL_LIMIT_EXCEEDED' }),
+    )
+  })
+
   it('validates version offers before negotiation', () => {
     for (const majors of [[], [1, 1]] as const) {
       expect(() => createCompanionVersionOffer('mobile', majors)).toThrow(
@@ -311,4 +354,30 @@ describe('Encrypted Companion Protocol codec', () => {
 
 function json(value: unknown): Uint8Array {
   return new TextEncoder().encode(JSON.stringify(value))
+}
+
+function transcriptPageWithEncodedBytes(
+  negotiated: ReturnType<typeof negotiateCompanionProtocol>,
+  entryCount: number,
+  targetBytes?: number,
+) {
+  const projection = {
+    type: 'projection' as const,
+    projection: {
+      type: 'transcript-page' as const,
+      sessionId: parseCompanionSessionId('session-limit'),
+      entries: Array.from({ length: entryCount }, (_, index) => ({
+        type: 'text' as const,
+        entryId: parseCompanionTranscriptEntryId(`entry-${String(index)}`),
+        role: 'assistant' as const,
+        text: '',
+      })),
+    },
+  }
+  if (targetBytes === undefined) return projection
+  const baseBytes = encodeCompanionMessage(negotiated, projection).byteLength
+  const last = projection.projection.entries.at(-1)
+  if (last === undefined || baseBytes > targetBytes) throw new Error('Transcript fixture cannot reach target size')
+  last.text = 'x'.repeat(targetBytes - baseBytes)
+  return projection
 }

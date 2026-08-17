@@ -127,10 +127,16 @@ function forward(
   return forwarded.ciphertext
 }
 
-class KeylessHarnessCipher {
+/** Example-only authenticated cipher used by the assembled acceptance path. */
+export class KeylessHarnessCipher {
   private readonly key = Buffer.alloc(32, 29)
   private counter = 0
 
+  /**
+   * Encrypt one Companion message with the example-only key.
+   * @param plaintext - encoded Companion application bytes.
+   * @returns nonce-prefixed authenticated ciphertext.
+   */
   seal(plaintext: Uint8Array): Uint8Array {
     this.counter += 1
     const nonce = Buffer.alloc(12)
@@ -140,6 +146,11 @@ class KeylessHarnessCipher {
     return new Uint8Array(Buffer.concat([nonce, encrypted, cipher.getAuthTag()]))
   }
 
+  /**
+   * Decrypt one ciphertext produced by this example instance.
+   * @param sealed - nonce-prefixed authenticated ciphertext.
+   * @returns encoded Companion application bytes.
+   */
   open(sealed: Uint8Array): Uint8Array {
     const nonce = sealed.slice(0, 12)
     const tag = sealed.slice(sealed.byteLength - 16)

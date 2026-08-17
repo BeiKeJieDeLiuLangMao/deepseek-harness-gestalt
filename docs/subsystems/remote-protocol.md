@@ -12,6 +12,6 @@ The negotiation result is an unforgeable process-local capability required by `e
 
 ## Wire values
 
-Relay route and attachment ids and Companion operation, Session-projection, and transcript-entry ids are distinct branded strings parsed from `unknown`. Companion uses protocol-native identifiers and does not import Harness domain types. Both codecs reject unknown discriminants, extra fields, unsafe numbers, malformed UTF-8/JSON, excessive parser depth, large containers, excessive encoded values, oversized messages, and oversized ciphertext. Transcript pages have an additional 200-entry ceiling.
+Relay route and attachment ids and Companion operation, Session-projection, and transcript-entry ids are distinct branded strings parsed from `unknown`. Companion uses protocol-native identifiers and does not import Harness domain types. Both codecs reject unknown discriminants, extra fields, unsafe numbers, malformed UTF-8/JSON, excessive parser depth, large containers, excessive encoded values, oversized messages, and oversized ciphertext. Companion application data is at most 60 KiB before encryption. A complete encoded transcript-page message has the tighter ceiling of 50 entries or 48 KiB, measured in UTF-8 wire bytes.
 
 The package owns no encryption implementation. Endpoint adapters encrypt offers and application messages with the reviewed paired channel. The keyless Loader example uses a harness-local cipher only to prove that Relay decoding and forwarding never require application plaintext.

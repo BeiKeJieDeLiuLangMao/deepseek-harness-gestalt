@@ -10,10 +10,12 @@ export const REMOTE_PROTOCOL_LIMITS = {
   stringBytes: 90_000,
   /** Maximum complete Relay JSON frame bytes, including base64url overhead. */
   relayMessageBytes: 98_304,
-  /** Maximum opaque ciphertext bytes forwarded by one Relay frame. */
+  /** Maximum opaque Noise message bytes forwarded by one Relay frame. */
   ciphertextBytes: 65_535,
-  /** Maximum Encrypted Companion plaintext bytes before endpoint encryption. */
-  companionMessageBytes: 65_519,
+  /** Maximum Encrypted Companion application bytes before endpoint encryption. */
+  companionMessageBytes: 60 * 1_024,
+  /** Maximum complete encoded transcript-page message bytes. */
+  transcriptPageBytes: 48 * 1_024,
   /** Maximum transcript entries in one approved Companion projection. */
-  transcriptPageEntries: 200,
+  transcriptPageEntries: 50,
 } as const

@@ -23,11 +23,12 @@ Companion major 2 和 1 是当前及紧邻的前一应用版本。双方 endpoin
 | 编码值总数 | 4,096 |
 | 单个字符串的 UTF-8 字节 | 90,000 |
 | 完整 Relay 消息 | 98,304 字节 |
-| 不透明密文 | 65,535 字节 |
-| 加密前 Companion 明文 | 65,519 字节 |
-| Transcript page | 200 条 |
+| 不透明 Noise 消息 | 65,535 字节 |
+| 加密前 Companion 应用数据 | 61,440 字节（60 KiB） |
+| 完整编码 transcript-page 消息 | 49,152 字节（48 KiB） |
+| Transcript page | 50 条 |
 
-`RemoteProtocolError` 为无效输入、超过限制、不兼容 Relay 版本、缺少 Companion 安全 capability、endpoint 必须更新及缺少协商提供稳定 code。诊断不会包含应用明文。
+`RemoteProtocolError` 为无效输入、超过限制、不兼容 Relay 版本、缺少 Companion 安全 capability、endpoint 必须更新及缺少协商提供稳定 code。诊断不会包含应用明文。60 KiB 应用上限在固定 65,535 字节 Noise 消息上限内为加密开销保留 4,095 字节；Relay frame 上限也能在该最大值下容纳 base64url 与 transport 元数据。
 
 本包不执行加密。Mobile 与 Desktop 提供经过独立评审的端到端通道，再在 Relay 转发前加密版本 offer 和已编码 Companion 消息。[无密钥 assembled example](../../../examples/remote-protocol/start.ts)使用仅限示例的 AES-GCM adapter，证明 composition 与 Relay 仅见密文；它不是产品密码实现或安全评审结论。产品集成仍受[独立 Noise 评审](../../../docs/security/noise-cross-runtime-proof.md)约束。
 
