@@ -17,6 +17,7 @@ import { AppFrame } from '@deepseek-ai/dsh-client-ui-layout/src/client/AppFrame.
 import type { AppFrameProps } from '@deepseek-ai/dsh-client-ui-layout/src/client/AppFrame.tsx'
 import { SIDEBAR_COLLAPSED } from '@deepseek-ai/dsh-client-ui-layout/src/client/columns.ts'
 import { createLayoutStore } from '@deepseek-ai/dsh-client-ui-layout/src/client/stores.ts'
+import { LayoutController } from '@deepseek-ai/dsh-client-ui-layout/src/client/service.ts'
 import type {
   SessionId, SessionListState, WorkspaceListState,
 } from '@deepseek-ai/dsh-client-runtime/client'
@@ -55,6 +56,8 @@ function hookOf<T>(inst: { subscribe: (fn: () => void) => () => void; getSnapsho
 function mountFrame() {
   window.innerWidth = frameWidth // first-render viewport source before the observer fires
   const instance = createLayoutStore().create()
+  const layout = new LayoutController()
+  layout.attachPanels(instance.actions)
   const slotCalls: { key: string; props: unknown }[] = []
   const renderSlot = ((key: string, owner: object) => {
     slotCalls.push({ key, props: owner })
@@ -92,7 +95,7 @@ function mountFrame() {
   )
   const utils = render(element())
   const frame = utils.container.firstElementChild as HTMLElement
-  return { instance, frame, slotCalls, rerenderFrame: () => { utils.rerender(element()) }, ...utils }
+  return { instance, layout, frame, slotCalls, rerenderFrame: () => { utils.rerender(element()) }, ...utils }
 }
 
 function tracks(frame: HTMLElement): number[] {
@@ -227,11 +230,38 @@ describe('AppFrame', () => {
   })
 
   it('details drag widens leftward (negative dx grows the panel)', () => {
-    const { frame, instance } = mountFrame()
-    act(() => { instance.actions.openDetails() })
+    const { frame, layout } = mountFrame()
+    act(() => { layout.openDetails() })
     const handles = frame.querySelectorAll('[class*="handle"]')
     drag(handles[1]!, 1560, 1500)
     expect(tracks(frame)[1]).toBe(420)
+  })
+
+  it('applies the public occupant range to drag, reopen, and narrow-window concession', () => {
+    frameWidth = 2000
+    const { frame, instance, layout } = mountFrame()
+    const browserRange = { minimum: 420, default: 640, maximum: 960 }
+
+    act(() => { layout.openDetails(browserRange) })
+    expect(tracks(frame)).toEqual([280, 640])
+    const handles = frame.querySelectorAll('[class*="handle"]')
+    drag(handles[1]!, 1500, 1100)
+    expect(tracks(frame)).toEqual([280, 960])
+    expect(instance.getSnapshot().details).toBe(960)
+
+    act(() => { layout.closeDetails(); layout.openDetails(browserRange) })
+    expect(tracks(frame)).toEqual([280, 640])
+
+    frameWidth = 1400
+    act(() => { fireResize?.(); vi.advanceTimersByTime(20) })
+    expect(tracks(frame)).toEqual([280, 480])
+    frameWidth = 1339
+    act(() => { fireResize?.(); vi.advanceTimersByTime(20) })
+    expect(tracks(frame)).toEqual([280, 0])
+    expect(instance.getSnapshot().details).toBe(640)
+    frameWidth = 2000
+    act(() => { fireResize?.(); vi.advanceTimersByTime(20) })
+    expect(tracks(frame)).toEqual([280, 640])
   })
 
   it('drag base is the rendered (concession-clamped) width, not the preference', () => {

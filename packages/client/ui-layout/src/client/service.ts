@@ -9,7 +9,10 @@
  * declared action set, delivered as the registration's bound actions.
  */
 import type { BoundActions } from '@deepseek-ai/dsh-client-ui-slots'
+import type { DetailsWidthRange } from './details-width.ts'
 import type { createLayoutStore } from './stores.ts'
+
+export type { DetailsWidthRange } from './details-width.ts'
 
 /** The layout store's bound action set (framework-baked, draft params peeled). */
 export type PanelActions = BoundActions<ReturnType<typeof createLayoutStore>>
@@ -23,8 +26,13 @@ export type PanelActions = BoundActions<ReturnType<typeof createLayoutStore>>
 export interface ILayout {
   /** Toggle the sidebar panel (closed ⟷ contract default width). */
   toggleSidebar(): void
-  /** Open the details panel (no-op when already open). */
-  openDetails(): void
+  /**
+   * Open details for an occupant. Repeating the active range preserves an
+   * open dragged width; a different range adopts its default, and omission
+   * uses the ordinary 300/360/520 px geometry.
+   * @param range - occupant-specific minimum, default, and maximum widths.
+   */
+  openDetails(range?: DetailsWidthRange): void
   /** Close the details panel. */
   closeDetails(): void
 }
@@ -49,9 +57,12 @@ export class LayoutController implements ILayout {
     this.#require().toggleSidebar()
   }
 
-  /** Open the details panel (no-op when already open). */
-  openDetails(): void {
-    this.#require().openDetails()
+  /**
+   * Open details for an occupant.
+   * @param range - occupant-specific minimum, default, and maximum widths.
+   */
+  openDetails(range?: DetailsWidthRange): void {
+    this.#require().openDetails(range)
   }
 
   /** Close the details panel. */
