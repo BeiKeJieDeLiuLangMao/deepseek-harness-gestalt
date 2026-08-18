@@ -14,7 +14,7 @@ Status: implemented
 
 [CI](../../../../.github/workflows/ci.yml) 把 GitHub 标准托管容量作为普通执行路径。三个主要 Node 24 Linux 作业与 `all checks passed` 默认使用 `ubuntu-latest`；独立的原生 Windows 作业默认使用 `windows-2025`。必需的 Windows 作业在 `ubuntu-latest` 上通过 Wine 运行 Windows Node，覆盖阻断性检查范围，而原生 Windows 不参与聚合流程（[双 Windows 决策](2026-08-08-native-windows-pull-request-ci.md)）。Node 22.19、Node 26、Python SDK 单元测试套件与[发布形态的 Linux x64 Python 运行时验证](../testing/2026-08-12-required-python-runtime-pull-request-ci.md)也使用标准托管容量。
 
-三项 Linux 主作业、Node 兼容性、Python SDK 单元测试套件、Python 运行时验证和 `windows node 24 / wine blocking` 继续作为 `all checks passed` 的依赖项；`windows node 24 / native complete` 被刻意排除。分支保护继续要求 `e2e` 和 `all checks passed`。只有匹配的 runner 已注册并在线时，可选自托管选择器才会重定向对应的非 Dependabot worker；可选容量缺失不会改变标准默认值。
+三项 Linux 主作业、Node 兼容性、Python SDK 单元测试套件、Python 运行时验证和 `windows node 24 / wine blocking` 继续作为 `all checks passed` 的依赖项；`windows node 24 / native complete` 被刻意排除。分支保护继续要求 `e2e` 和 `all checks passed`。只有匹配的 runner 已注册并在线时，可选自托管选择器才会重定向对应的同仓库、非 Dependabot worker；外部 fork 的拉取请求继续使用托管 runner，可选容量缺失不会改变标准默认值。
 
 [公开仓库 runner 决策](2026-08-18-public-repository-ci-runner-defaults.md)拥有 runner 标签、故障切换选择器与有界 fan-out。[大规格 runner 决策](2026-07-22-evidence-based-larger-hosted-runners.md)保留手动基准测试清单的测量结果，但不会扩大必需矩阵。
 

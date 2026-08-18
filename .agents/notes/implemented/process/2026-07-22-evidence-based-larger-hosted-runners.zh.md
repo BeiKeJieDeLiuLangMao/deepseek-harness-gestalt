@@ -52,7 +52,7 @@ Windows 仓库工作在超过 16 核后收益很小，但 32 核池可以让完�
 
 标准托管的 Linux、macOS 和 Windows 串行参考定义保持禁用。拉取请求使用标准托管必需路径，而大规格 runner 只有在标签已配置后才通过手动派发运行。
 
-工作流为 `[self-hosted, linux, x64, vm-backup]` 与 `[self-hosted, dsh-win-ci, windows]` 保留可选的自托管热备定义。只有匹配的 runner 已注册并在线时，它们才会产出证据。对应的仓库变量只会重定向该平台的非 Dependabot worker，详见[公开仓库 runner 决策](2026-08-18-public-repository-ci-runner-defaults.md)；变量不会配置容量。
+工作流为 `[self-hosted, linux, x64, vm-backup]` 与 `[self-hosted, dsh-win-ci, windows]` 保留可选的自托管热备定义。只有匹配的 runner 已注册并在线时，它们才会产出证据。对应的仓库变量只会重定向该平台的同仓库、非 Dependabot worker，详见[公开仓库 runner 决策](2026-08-18-public-repository-ci-runner-defaults.md)；外部 fork 的拉取请求继续使用托管 runner，变量不会配置容量。
 
 ## 曾考虑的替代方案
 

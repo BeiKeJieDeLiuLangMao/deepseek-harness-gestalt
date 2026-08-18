@@ -53,8 +53,8 @@ jobs:
   # DSH_CI_FAILOVER_LINUX repository variable. Unset (normal), the expressions
   # pick the standard GitHub-hosted pool below. Setting the variable to
   # 'selfhosted' (repo Settings → Actions → Variables; writer-manageable
-  # repository state — not PR-editable, no merge required) retargets all
-  # three workers and their verdict onto the optional vm-backup pool. Matching
+  # repository state — not PR-editable, no merge required) retargets eligible
+  # same-repository workers and their verdict onto the optional vm-backup pool. Matching
   # runners must already be registered, online, and authorized for the workflow;
   # the serial-linux-selfhosted definition provides evidence only when it runs.
   # The Windows switch independently retargets only windows-native. See
@@ -64,6 +64,7 @@ jobs:
     runs-on: >-
       ${{ vars.DSH_CI_FAILOVER_LINUX == 'selfhosted'
           && github.event.pull_request.user.login != 'dependabot[bot]'
+          && github.event.pull_request.head.repo.full_name == github.repository
           && fromJSON('["self-hosted", "linux", "x64", "vm-backup"]')
           || 'ubuntu-latest' }}
     name: node 24 / static
@@ -96,7 +97,7 @@ jobs:
       # compression and upload on the required path. Skipped
       # under failover — see the coverage lane's identical rationale.
       - uses: actions/cache/restore@v4
-        if: vars.DSH_CI_FAILOVER_LINUX != 'selfhosted' || github.event.pull_request.user.login == 'dependabot[bot]'
+        if: vars.DSH_CI_FAILOVER_LINUX != 'selfhosted' || github.event.pull_request.user.login == 'dependabot[bot]' || github.event.pull_request.head.repo.full_name != github.repository
         with:
           path: ${{ steps.pnpm-store.outputs.path }}
           key: ${{ runner.os }}-node-${{ env.PRIMARY_NODE_VERSION }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
@@ -116,6 +117,7 @@ jobs:
     runs-on: >-
       ${{ vars.DSH_CI_FAILOVER_LINUX == 'selfhosted'
           && github.event.pull_request.user.login != 'dependabot[bot]'
+          && github.event.pull_request.head.repo.full_name == github.repository
           && fromJSON('["self-hosted", "linux", "x64", "vm-backup"]')
           || 'ubuntu-latest' }}
     name: node 24 / coverage
@@ -123,7 +125,7 @@ jobs:
       # Standard hosted runners use two coverage workers. The optional Linux
       # route permits eight on each separately provisioned runner; process-bound
       # suites remain isolated in forks.
-      DSH_COVERAGE_MAX_WORKERS: ${{ vars.DSH_CI_FAILOVER_LINUX == 'selfhosted' && github.event.pull_request.user.login != 'dependabot[bot]' && '8' || '2' }}
+      DSH_COVERAGE_MAX_WORKERS: ${{ vars.DSH_CI_FAILOVER_LINUX == 'selfhosted' && github.event.pull_request.user.login != 'dependabot[bot]' && github.event.pull_request.head.repo.full_name == github.repository && '8' || '2' }}
       DSH_GATE_CONCURRENCY: '2'
     steps:
       - uses: actions/checkout@v6
@@ -150,7 +152,7 @@ jobs:
       # already serves warm installs, while restoring the hosted archive
       # would spend ~52 s pulling ~180 MB into that populated store.
       - uses: actions/cache/restore@v4
-        if: vars.DSH_CI_FAILOVER_LINUX != 'selfhosted' || github.event.pull_request.user.login == 'dependabot[bot]'
+        if: vars.DSH_CI_FAILOVER_LINUX != 'selfhosted' || github.event.pull_request.user.login == 'dependabot[bot]' || github.event.pull_request.head.repo.full_name != github.repository
         with:
           path: ${{ steps.pnpm-store.outputs.path }}
           key: ${{ runner.os }}-node-${{ env.PRIMARY_NODE_VERSION }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
@@ -178,6 +180,7 @@ jobs:
     runs-on: >-
       ${{ vars.DSH_CI_FAILOVER_LINUX == 'selfhosted'
           && github.event.pull_request.user.login != 'dependabot[bot]'
+          && github.event.pull_request.head.repo.full_name == github.repository
           && fromJSON('["self-hosted", "linux", "x64", "vm-backup"]')
           || 'ubuntu-latest' }}
     name: node 24 / snapshots and artifacts
@@ -187,7 +190,7 @@ jobs:
       DSH_OXLINT_THREADS: '2'
       DSH_PUBLINT_CONCURRENCY: '2'
       # The optional Linux route permits twelve snapshot workers on a provisioned runner.
-      DSH_SNAPSHOT_MAX_CONCURRENCY: ${{ vars.DSH_CI_FAILOVER_LINUX == 'selfhosted' && github.event.pull_request.user.login != 'dependabot[bot]' && '12' || '2' }}
+      DSH_SNAPSHOT_MAX_CONCURRENCY: ${{ vars.DSH_CI_FAILOVER_LINUX == 'selfhosted' && github.event.pull_request.user.login != 'dependabot[bot]' && github.event.pull_request.head.repo.full_name == github.repository && '12' || '2' }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -211,7 +214,7 @@ jobs:
 
       # Skipped under failover — see the coverage lane's identical rationale.
       - uses: actions/cache/restore@v4
-        if: vars.DSH_CI_FAILOVER_LINUX != 'selfhosted' || github.event.pull_request.user.login == 'dependabot[bot]'
+        if: vars.DSH_CI_FAILOVER_LINUX != 'selfhosted' || github.event.pull_request.user.login == 'dependabot[bot]' || github.event.pull_request.head.repo.full_name != github.repository
         with:
           path: ${{ steps.pnpm-store.outputs.path }}
           key: ${{ runner.os }}-node-${{ env.PRIMARY_NODE_VERSION }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
@@ -221,7 +224,7 @@ jobs:
       # Pull requests restore any compatible default-branch archive; they do
       # not pay compression and upload on the required path.
       - uses: actions/cache/restore@v4
-        if: vars.DSH_CI_FAILOVER_LINUX != 'selfhosted' || github.event.pull_request.user.login == 'dependabot[bot]'
+        if: vars.DSH_CI_FAILOVER_LINUX != 'selfhosted' || github.event.pull_request.user.login == 'dependabot[bot]' || github.event.pull_request.head.repo.full_name != github.repository
         with:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ hashFiles('pnpm-lock.yaml') }}
@@ -242,13 +245,13 @@ jobs:
           exit "$sandbox_status"
 
       - name: Install Playwright Chromium and hosted dependencies
-        if: vars.DSH_CI_FAILOVER_LINUX != 'selfhosted' || github.event.pull_request.user.login == 'dependabot[bot]'
+        if: vars.DSH_CI_FAILOVER_LINUX != 'selfhosted' || github.event.pull_request.user.login == 'dependabot[bot]' || github.event.pull_request.head.repo.full_name != github.repository
         run: pnpm --filter @deepseek-ai/dsh-web-frontend exec playwright install --with-deps chromium
 
       # The persistent VM image owns Playwright's Linux system packages; do
       # not mutate the shared host with apt on every failover run.
       - name: Install Playwright Chromium on the failover VM
-        if: vars.DSH_CI_FAILOVER_LINUX == 'selfhosted' && github.event.pull_request.user.login != 'dependabot[bot]'
+        if: vars.DSH_CI_FAILOVER_LINUX == 'selfhosted' && github.event.pull_request.user.login != 'dependabot[bot]' && github.event.pull_request.head.repo.full_name == github.repository
         run: pnpm --filter @deepseek-ai/dsh-web-frontend exec playwright install chromium
 
       - name: Run compatibility, snapshot, and artifact gates
@@ -437,8 +440,8 @@ jobs:
   # all-checks-passed.needs, so it never delays or changes that required
   # verdict. Under normal operation it runs on standard GitHub-hosted Windows;
   # Windows failover (DSH_CI_FAILOVER_WINDOWS=selfhosted) retargets only this
-  # job onto an optional self-hosted Windows pool. Dependabot PRs are excluded
-  # from the self-hosted pool and stay on the standard hosted runner — see the
+  # job onto an optional self-hosted Windows pool. Dependabot and fork PRs are
+  # excluded from the self-hosted pool and stay on the standard hosted runner — see the
   # runner-default decision above. This Windows switch is independent of the Linux
   # DSH_CI_FAILOVER_LINUX variable that retargets the three required Linux jobs
   # and the all-checks-passed verdict above.
@@ -447,6 +450,7 @@ jobs:
     runs-on: >-
       ${{ vars.DSH_CI_FAILOVER_WINDOWS == 'selfhosted'
           && github.event.pull_request.user.login != 'dependabot[bot]'
+          && github.event.pull_request.head.repo.full_name == github.repository
           && fromJSON('["self-hosted", "dsh-win-ci", "windows"]')
           || 'windows-2025' }}
     name: windows node 24 / native complete
@@ -489,8 +493,9 @@ jobs:
         shell: pwsh
         run: pnpm run check:ci:windows-complete
 
-  # The hosted reference jobs below are temporarily disabled; the self-hosted
-  # standby remains active. Each enabled host executes the complete, unsharded
+  # The hosted reference jobs below are temporarily disabled. Each optional
+  # self-hosted standby runs only when its runner is available; an executing
+  # host runs the complete, unsharded
   # primary Node aggregate with one gate worker, giving reviewers a simple
   # cross-platform oracle for completeness and timing.
   serial-linux:
@@ -531,7 +536,8 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-node-${{ env.PRIMARY_NODE_VERSION }}-pnpm-
 
-      # Master produces the hosted Chromium cache restored by pull requests.
+      # When re-enabled, this hosted master reference refreshes the Chromium
+      # cache that pull requests restore opportunistically.
       - uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
@@ -567,7 +573,7 @@ jobs:
   # Push-triggered, so this lane always executes the base branch's own
   # workflow definition. (Under failover, pull_request jobs do reach these
   # runners with the PR merge ref's workflow — the boundary there is
-  # non-Dependabot pull-request merge refs; operators must provision and
+  # same-repository, non-Dependabot pull-request merge refs; operators must provision and
   # restrict the optional pool accordingly.)
   # Non-blocking for
   # pull requests; no cache steps because the VM's persistent pnpm store and
@@ -925,6 +931,7 @@ jobs:
     runs-on: >-
       ${{ vars.DSH_CI_FAILOVER_LINUX == 'selfhosted'
           && github.event.pull_request.user.login != 'dependabot[bot]'
+          && github.event.pull_request.head.repo.full_name == github.repository
           && fromJSON('["self-hosted", "linux", "x64", "vm-backup"]')
           || 'ubuntu-latest' }}
     needs: [node-24, node-24-coverage, node-24-consumers, node-compat, python-sdk, python-runtime, windows]

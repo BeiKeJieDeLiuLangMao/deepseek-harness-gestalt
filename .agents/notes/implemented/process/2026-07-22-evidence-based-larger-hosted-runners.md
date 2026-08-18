@@ -52,7 +52,7 @@ The process-bound coverage project contains exactly five suite files. Thirty-two
 
 The standard-hosted serial Linux, macOS, and Windows definitions remain disabled. Pull requests use the standard-hosted required path, while larger-runner sizes run only by manual dispatch and only after their labels are provisioned.
 
-The workflow retains optional self-hosted standby definitions for `[self-hosted, linux, x64, vm-backup]` and `[self-hosted, dsh-win-ci, windows]`. They yield evidence only when matching runners are registered and online. The corresponding repository variable retargets only that platform's non-Dependabot workers, as the [public-repository runner decision](2026-08-18-public-repository-ci-runner-defaults.md) records; the variable does not provision capacity.
+The workflow retains optional self-hosted standby definitions for `[self-hosted, linux, x64, vm-backup]` and `[self-hosted, dsh-win-ci, windows]`. They yield evidence only when matching runners are registered and online. The corresponding repository variable retargets only that platform's same-repository, non-Dependabot workers, as the [public-repository runner decision](2026-08-18-public-repository-ci-runner-defaults.md) records; pull requests from external forks remain hosted, and the variable does not provision capacity.
 
 ## Alternatives considered
 

@@ -117,14 +117,14 @@ describe('CI workflow', () => {
 
     expect(node24.env).toMatchObject({ DSH_GATE_CONCURRENCY: '2' })
     expect(node24Coverage.env).toMatchObject({
-      DSH_COVERAGE_MAX_WORKERS: "${{ vars.DSH_CI_FAILOVER_LINUX == 'selfhosted' && github.event.pull_request.user.login != 'dependabot[bot]' && '8' || '2' }}",
+      DSH_COVERAGE_MAX_WORKERS: "${{ vars.DSH_CI_FAILOVER_LINUX == 'selfhosted' && github.event.pull_request.user.login != 'dependabot[bot]' && github.event.pull_request.head.repo.full_name == github.repository && '8' || '2' }}",
       DSH_GATE_CONCURRENCY: '2',
     })
     expect(node24Consumers.env).toMatchObject({
       DSH_GATE_CONCURRENCY: '2',
       DSH_OXLINT_THREADS: '2',
       DSH_PUBLINT_CONCURRENCY: '2',
-      DSH_SNAPSHOT_MAX_CONCURRENCY: "${{ vars.DSH_CI_FAILOVER_LINUX == 'selfhosted' && github.event.pull_request.user.login != 'dependabot[bot]' && '12' || '2' }}",
+      DSH_SNAPSHOT_MAX_CONCURRENCY: "${{ vars.DSH_CI_FAILOVER_LINUX == 'selfhosted' && github.event.pull_request.user.login != 'dependabot[bot]' && github.event.pull_request.head.repo.full_name == github.repository && '12' || '2' }}",
     })
     expect(windowsNative.env).toMatchObject({
       DSH_COVERAGE_MAX_WORKERS: '2',
@@ -139,6 +139,7 @@ describe('CI workflow', () => {
     expect(workflowSource).not.toContain('six always-on runner instances')
     expect(workflowSource).not.toContain('readiness is re-proven on every master push')
     expect(workflowSource).not.toContain('take over the required')
+    expect(workflowSource).not.toContain('Master produces the hosted Chromium cache')
     expect(workflowSource).toContain('only when matching runners are registered and online')
 
     const portableDecision = readFileSync(resolve(root, '.agents/notes/implemented/process/2026-07-23-portable-required-pull-request-ci.md'), 'utf8')
@@ -157,6 +158,14 @@ describe('CI workflow', () => {
     expect(currentDecision).toContain('default to `ubuntu-latest`')
     expect(currentDecision).toContain('defaults to `windows-2025`')
     expect(currentDecision).toContain('registered and online')
+
+    const webLaneDecision = readFileSync(resolve(root, '.agents/notes/implemented/testing/2026-07-24-web-gui-browser-e2e-lane.md'), 'utf8')
+    expect(webLaneDecision).not.toContain('The hosted and self-hosted default-branch Linux serial jobs run the same gate')
+    expect(webLaneDecision).toContain('opportunistically restores')
+
+    const browserSnapshotDecision = readFileSync(resolve(root, '.agents/notes/implemented/testing/2026-07-30-web-browser-snapshot-ci-gate.md'), 'utf8')
+    expect(browserSnapshotDecision).not.toContain('The hosted default-branch Linux serial job runs the suite and produces')
+    expect(browserSnapshotDecision).toContain('only when its optional runner is available')
   })
 
   it('exempts push from cancellation, so one master merge does not cancel the running drill', () => {
@@ -521,25 +530,29 @@ function expectFailoverRunner(
   const supportedSelector = [
     `\${{ vars.${variable} == 'selfhosted'`,
     "    && github.event.pull_request.user.login != 'dependabot[bot]'",
+    '    && github.event.pull_request.head.repo.full_name == github.repository',
     `    && fromJSON('${selfHostedJson}')`,
     `    || '${hostedDefault}' }}`,
   ].join('\n')
   expect(runsOn, `${variable} must use the complete supported failover selector`).toBe(supportedSelector)
   expect(hostedDefault).not.toMatch(/^dsh-/)
 
-  expect(resolveSupportedFailoverRunner(undefined, 'maintainer', selfHostedLabels, hostedDefault)).toBe(hostedDefault)
-  expect(resolveSupportedFailoverRunner(undefined, 'dependabot[bot]', selfHostedLabels, hostedDefault)).toBe(hostedDefault)
-  expect(resolveSupportedFailoverRunner('selfhosted', 'maintainer', selfHostedLabels, hostedDefault)).toEqual(selfHostedLabels)
-  expect(resolveSupportedFailoverRunner('selfhosted', 'dependabot[bot]', selfHostedLabels, hostedDefault)).toBe(hostedDefault)
+  expect(resolveSupportedFailoverRunner(undefined, 'maintainer', 'owner/repository', selfHostedLabels, hostedDefault)).toBe(hostedDefault)
+  expect(resolveSupportedFailoverRunner(undefined, 'contributor', 'contributor/fork', selfHostedLabels, hostedDefault)).toBe(hostedDefault)
+  expect(resolveSupportedFailoverRunner(undefined, 'dependabot[bot]', 'owner/repository', selfHostedLabels, hostedDefault)).toBe(hostedDefault)
+  expect(resolveSupportedFailoverRunner('selfhosted', 'maintainer', 'owner/repository', selfHostedLabels, hostedDefault)).toEqual(selfHostedLabels)
+  expect(resolveSupportedFailoverRunner('selfhosted', 'contributor', 'contributor/fork', selfHostedLabels, hostedDefault)).toBe(hostedDefault)
+  expect(resolveSupportedFailoverRunner('selfhosted', 'dependabot[bot]', 'owner/repository', selfHostedLabels, hostedDefault)).toBe(hostedDefault)
 }
 
 function resolveSupportedFailoverRunner(
   failover: string | undefined,
   login: string,
+  headRepository: string,
   selfHostedLabels: string[],
   hostedDefault: string,
 ): string | string[] {
-  return failover === 'selfhosted' && login !== 'dependabot[bot]'
+  return failover === 'selfhosted' && login !== 'dependabot[bot]' && headRepository === 'owner/repository'
     ? selfHostedLabels
     : hostedDefault
 }
