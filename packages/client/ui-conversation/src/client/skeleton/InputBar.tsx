@@ -728,6 +728,15 @@ export function InputBar({
             >
               {t(annotationSummaryKey, { count: annotations.length })}
             </button>
+            <button
+              type="button"
+              className={css.annotationDiscard}
+              disabled={annotationBusy}
+              aria-label={t('annotation.discard')}
+              onClick={() => { inputActions.discardTextAnnotations() }}
+            >
+              ×
+            </button>
             <div
               id={annotationDetailsId}
               role="region"

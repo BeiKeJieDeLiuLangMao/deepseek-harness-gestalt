@@ -473,7 +473,7 @@ describe('DetailsPanel Output section', () => {
         inputActions={{
           setDraft: () => {}, addImages: () => true, removeImage: () => {}, pruneImages: () => {},
           addTextAnnotation: () => { throw new Error('unused') }, updateTextAnnotation: () => {},
-          removeTextAnnotation: () => {}, submit: () => {},
+          removeTextAnnotation: () => {}, discardTextAnnotations: () => {}, submit: () => {},
         }}
         useProjection={(() => undefined)}
         useStore={bindSnapshotSelector(chat)}
@@ -663,7 +663,7 @@ describe('DetailsPanel Output section', () => {
         inputActions={{
           setDraft: () => {}, addImages: () => true, removeImage: () => {}, pruneImages: () => {},
           addTextAnnotation: () => { throw new Error('unused') }, updateTextAnnotation: () => {},
-          removeTextAnnotation: () => {}, submit: () => {},
+          removeTextAnnotation: () => {}, discardTextAnnotations: () => {}, submit: () => {},
         }}
         useProjection={(() => undefined)}
         useStore={bindSnapshotSelector(chat)}

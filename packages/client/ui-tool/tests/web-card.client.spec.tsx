@@ -235,7 +235,7 @@ describe('DetailsPanel web Output section', () => {
           pruneImages: () => {},
           addTextAnnotation: () => { throw new Error('unused') },
           updateTextAnnotation: () => {},
-          removeTextAnnotation: () => {},
+          removeTextAnnotation: () => {}, discardTextAnnotations: () => {},
           submit: () => {},
         }}
         useProjection={(() => undefined)}
