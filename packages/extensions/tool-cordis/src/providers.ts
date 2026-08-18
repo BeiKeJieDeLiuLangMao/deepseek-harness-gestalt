@@ -58,7 +58,7 @@ export function hostInspectProviders(ctx: Context): HostCordisInspectProviderReg
       },
       query(method, _input, context) {
         if (method !== 'listTools') throw new Error(`unknown Tool inspect method "${method}"`)
-        return Promise.resolve({ tools: ctx.tools.schemas(context.agent) } as unknown as JsonValue)
+        return Promise.resolve({ tools: ctx.tools.catalogSchemas(context.agent) } as unknown as JsonValue)
       },
     },
   ]

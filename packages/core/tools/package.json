@@ -52,7 +52,9 @@
     "@deepseek-ai/cordis": "workspace:^"
   },
   "dependencies": {
-    "@deepseek-ai/schemastery": "workspace:^"
+    "@deepseek-ai/schemastery": "workspace:^",
+    "ajv": "^8.20.0",
+    "minisearch": "^7.2.0"
   },
   "devDependencies": {
     "@deepseek-ai/dsh-agent": "workspace:^",
