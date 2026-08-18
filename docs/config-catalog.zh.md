@@ -1297,7 +1297,7 @@ export interface ReconnectConfig {
 }
 ```
 
-来源：[`packages/mcp/mcp-client/src/index.ts:102`](../packages/mcp/mcp-client/src/index.ts)
+来源：[`packages/mcp/mcp-client/src/index.ts:103`](../packages/mcp/mcp-client/src/index.ts)
 
 <a id="deepseek-aidsh-message-feedback"></a>
 
@@ -3020,7 +3020,7 @@ export interface Config {
 export type ToolPresentationMode = 'native' | 'code' | 'both'
 ```
 
-来源：[`packages/core/tools/src/index.ts:672`](../packages/core/tools/src/index.ts)
+来源：[`packages/core/tools/src/index.ts:706`](../packages/core/tools/src/index.ts)
 
 <a id="deepseek-aidsh-tools-eligibility"></a>
 
