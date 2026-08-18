@@ -49,6 +49,18 @@ async function captureIdentities(inspector: ProcessInspector, state: TreeState):
   }, { interval: 10, timeout: scenarioTimeoutMs })
 }
 
+async function captureRootedTree(
+  inspector: ProcessInspector,
+  rootPid: number,
+  minimumSize: number,
+): Promise<ProcessIdentity[]> {
+  return vi.waitFor(() => {
+    const identities = inspector.processTree(rootPid)
+    if (identities.length < minimumSize) throw new Error('managed tree is not fully observable yet')
+    return identities
+  }, { interval: 10, timeout: scenarioTimeoutMs })
+}
+
 async function waitForGone(state: TreeState): Promise<void> {
   await Promise.all([state.root, state.descendant].map(pid => vi.waitFor(() => {
     if (processExists(pid)) throw new Error(`managed pid ${pid} is still alive`)
@@ -83,6 +95,96 @@ function cleanupTree(state: TreeState | undefined, identities: ProcessIdentity[]
       } catch (_alreadyGone) {
         // The scenario failed before process identities became observable.
       }
+    }
+  }
+}
+
+function mergeIdentities(...groups: ProcessIdentity[][]): ProcessIdentity[] {
+  return [...new Map(groups.flat().map(identity => [`${identity.pid}:${identity.started}`, identity])).values()]
+}
+
+function cleanupPublicationTree(
+  rootPid: number,
+  inspector: ProcessInspector | undefined,
+  captured: ProcessIdentity[],
+): ProcessIdentity[] {
+  if (process.platform === 'win32') {
+    taskkillProcessTree(rootPid)
+    return captured
+  }
+  if (inspector === undefined) return captured
+  let observed: ProcessIdentity[] = []
+  try {
+    observed = inspector.processTree(rootPid)
+  } catch (_unreadableProcessTable) {
+    // Identities captured before publication remain sufficient for this cleanup attempt.
+  }
+  const identities = mergeIdentities(captured, observed)
+  for (const identity of identities) {
+    try {
+      inspector.signalProcess(identity, 'SIGKILL')
+    } catch (_alreadyGone) {
+      // Exact start identity prevents PID-reuse cleanup from reaching another process.
+    }
+  }
+  return identities
+}
+
+async function runManagedTreePublication(
+  inspectWhilePaused: (statePath: string, identities: readonly ProcessIdentity[]) => Promise<void>,
+  maxWriteBytes?: number,
+): Promise<TreeState> {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-subprocess-managed-tree-publish-'))
+  const statePath = join(root, 'tree.json')
+  const publishStartedPath = join(root, 'publish-started')
+  const publishProceedPath = join(root, 'publish-proceed')
+  const launch = resolveExampleLaunch({
+    srcBin: managedTreeScript,
+    mode: 'src',
+    tsconfigPath: join(repoRoot, 'tsconfig.json'),
+    configArgs: [
+      statePath,
+      publishStartedPath,
+      publishProceedPath,
+      ...(maxWriteBytes === undefined ? [] : [String(maxWriteBytes)]),
+    ],
+  })
+  const child = execa(launch.command, launch.args, {
+    cwd: repoRoot,
+    env: launch.env,
+    stdin: 'ignore',
+    reject: false,
+    timeout: scenarioTimeoutMs,
+  })
+  if (child.pid === undefined) throw new Error('managed-tree fixture did not publish a root pid')
+  const rootPid = child.pid
+  const inspector = process.platform === 'win32' ? undefined : createProcessInspector()
+  let identities: ProcessIdentity[] = []
+  try {
+    if (inspector !== undefined) identities = await captureRootedTree(inspector, rootPid, 1)
+    await vi.waitFor(() => readFile(publishStartedPath, 'utf8'), {
+      interval: 10,
+      timeout: scenarioTimeoutMs,
+    })
+    if (inspector !== undefined) identities = mergeIdentities(
+      identities,
+      await captureRootedTree(inspector, rootPid, 2),
+    )
+    await inspectWhilePaused(statePath, identities)
+    await writeFile(publishProceedPath, 'proceed')
+    return await readTree(statePath)
+  } finally {
+    try {
+      identities = cleanupPublicationTree(rootPid, inspector, identities)
+      child.kill('SIGKILL')
+      await child
+      if (inspector !== undefined) {
+        await Promise.all(identities.map(identity => vi.waitFor(() => {
+          if (inspector.isAlive(identity)) throw new Error(`managed pid ${identity.pid} is still alive`)
+        }, { interval: 25, timeout: 10_000 })))
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true })
     }
   }
 }
@@ -141,47 +243,24 @@ async function runScenario(kind: ManagedKind, trigger: ExitTrigger) {
 
 describe('synchronous cleanup on host exit', () => {
   it('publishes managed-tree state only after the document is complete', { timeout: 45_000 }, async () => {
-    const root = await mkdtemp(join(tmpdir(), 'dsh-subprocess-managed-tree-publish-'))
-    const statePath = join(root, 'tree.json')
-    const publishStartedPath = join(root, 'publish-started')
-    const publishProceedPath = join(root, 'publish-proceed')
-    const launch = resolveExampleLaunch({
-      srcBin: managedTreeScript,
-      mode: 'src',
-      tsconfigPath: join(repoRoot, 'tsconfig.json'),
-      configArgs: [statePath, publishStartedPath, publishProceedPath],
-    })
-    const child = execa(launch.command, launch.args, {
-      cwd: repoRoot,
-      env: launch.env,
-      stdin: 'ignore',
-      reject: false,
-      timeout: scenarioTimeoutMs,
-    })
-    let state: TreeState | undefined
-    let identities: ProcessIdentity[] = []
-    try {
-      await vi.waitFor(() => readFile(publishStartedPath, 'utf8'), {
-        interval: 10,
-        timeout: scenarioTimeoutMs,
-      })
+    await runManagedTreePublication(async (statePath) => {
       await expect(readFile(statePath, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
-      await writeFile(publishProceedPath, 'proceed')
-      state = await readTree(statePath)
-      if (process.platform !== 'win32') identities = await captureIdentities(createProcessInspector(), state)
-    } finally {
-      await writeFile(publishProceedPath, 'proceed')
-      const publishedState = state ?? await readTree(statePath)
-      if (process.platform !== 'win32' && identities.length === 0) {
-        identities = await captureIdentities(createProcessInspector(), publishedState)
-      }
-      cleanupTree(publishedState, identities)
-      child.kill('SIGKILL')
-      await child
-      await waitForGone(publishedState)
-      await rm(root, { recursive: true, force: true })
-    }
+    }, 1)
   })
+
+  it.skipIf(process.platform === 'win32')(
+    'removes the managed tree when publication inspection fails',
+    { timeout: 45_000 },
+    async () => {
+      let captured: readonly ProcessIdentity[] = []
+      await expect(runManagedTreePublication(async (_statePath, identities) => {
+        captured = identities
+        throw new Error('controlled publication inspection failure')
+      })).rejects.toThrow('controlled publication inspection failure')
+      expect(captured).toHaveLength(2)
+      expect(captured.every(identity => !processExists(identity.pid))).toBe(true)
+    },
+  )
 
   it.each([
     { trigger: 'direct' as const, expectedCode: 23, diagnostic: undefined },
