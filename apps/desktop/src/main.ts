@@ -6,7 +6,8 @@ import { appendFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
-  app, BrowserWindow, Menu, ipcMain, safeStorage, shell, type IpcMainEvent,
+  app, autoUpdater as electronAutoUpdater, BrowserWindow, Menu, ipcMain, safeStorage, shell,
+  type IpcMainEvent,
 } from 'electron'
 import {
   ACCOUNT_ACCEPT_PRIVACY, ACCOUNT_BEGIN_LOGIN, ACCOUNT_GET_SNAPSHOT,
@@ -170,6 +171,7 @@ async function boot(): Promise<void> {
       updater: autoUpdater,
       onStateChange: pushStatus,
       autoInstallOnAppQuit: process.platform === 'darwin',
+      ...process.platform === 'darwin' ? { nativeStage: electronAutoUpdater } : {},
     })
   } catch (error) {
     pushStatus({

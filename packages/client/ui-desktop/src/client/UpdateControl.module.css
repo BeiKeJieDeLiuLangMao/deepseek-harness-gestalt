@@ -59,6 +59,7 @@
 }
 
 .dot[data-state='downloading'],
+.dot[data-state='preparing'],
 .dot[data-state='checking'],
 .dot[data-state='installing'] {
   background: var(--dsw-alias-state-success-primary);
