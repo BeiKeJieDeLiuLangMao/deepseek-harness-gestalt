@@ -140,8 +140,11 @@ export class DesktopAccountController implements DesktopAccountActions {
   }
 
   private async startTransition(): Promise<void> {
-    this.record = await this.options.store.load() ?? { installationId: parseInstallationId(randomUUID()) }
-    await this.options.store.save(this.record)
+    this.record = await this.options.store.load()
+    if (this.record === undefined) {
+      this.record = { installationId: parseInstallationId(randomUUID()) }
+      return
+    }
     if (this.record.pending !== undefined) {
       if (this.record.pending.expiresAt > this.now() && this.record.pendingPrivateKey !== undefined) {
         this.publish({ status: 'polling', privacyAccepted: false })
