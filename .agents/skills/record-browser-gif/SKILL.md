@@ -27,9 +27,19 @@ The recording itself is part of the evidence: use a real server booted from that
 A GIF for a specific pull request demonstrates that pull request's tree, so stage per pull request:
 
 1. Require a clean worktree, record its exact commit with `git rev-parse HEAD`, then build that recorded tree — here, `pnpm run build && pnpm run build:web`. A GIF recorded against another commit's build misattributes the evidence.
-2. Boot one server per port from that tree with fresh scratch `DSH_HOME`, `DSH_AGENTS_HOME`, workspace, and session state. Give the browser a fresh isolated context or profile as well; if the browser workflow cannot create one, clear that origin's cookies and site storage before navigation so persisted client state cannot affect the evidence. Source the root `.env` for the API key through the application's normal path; never echo the key.
+2. Boot one server per port from that tree with fresh scratch `DSH_HOME`, `DSH_AGENTS_HOME`, workspace, and session state. Populate `DSH_HOME` through one credential branch below. Give the browser a fresh isolated context or profile as well; if the browser workflow cannot create one, clear that origin's cookies and site storage before navigation so persisted client state cannot affect the evidence.
 3. Treat one storyboard as one evidence run: every published frame comes from that server and those state roots, workspace, session, and model-backed scenario run. If capture automation fails, discard its frames and rerun from fresh roots; never splice frames from separate runs.
 4. When switching between pull requests, stop the old server by PID or an exact match on its command line. A broad `pkill -f` pattern can match and kill the shell that launched it — including your own.
+
+### Stage credentials
+
+Choose one source:
+
+- **Recording-local configuration.** Source the root `.env` through the application's normal path without echoing its values.
+- **Configured application, with explicit user authorization.** Keep the normal application `DSH_HOME` read-only. Create the recording `DSH_HOME` with `mktemp -d`, set the directory to `0700`, and blindly copy only the required `.credentials.yaml` and `settings.yaml` files into it with mode `0600`. Verify source and destination using basenames, regular-file status, and permission modes only. Keep sessions, workspaces, browser profiles, caches, and every other application-state file out of the recording home. Keep server logs outside the frame/artifact directory, enable no environment or configuration dumps, and record only provider and model reference names in provenance. Stop the server, remove the exact scratch credential home, and verify that path is absent.
+- **No authorized source.** Report the credential blocker and stop before substituting a fixture, mock transport, or test hook.
+
+Credential commands and outputs never print, parse for display, or otherwise expose secret values. Before encoding and publication, require the frame/artifact tree to contain only the expected PNG frames and GIF.
 
 ## Record the flow
 
