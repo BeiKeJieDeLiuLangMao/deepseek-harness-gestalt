@@ -5,10 +5,11 @@
 // deepsuite `@deepseek/md` code blocks; token colors stay on `--shiki-*`.
 
 import { useCallback, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import type { CSSProperties, Key, ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import clsx from 'clsx'
 import { writeClipboard } from '../clipboard.ts'
 import { grammarLoadCount, highlightLines, highlightToHtml, subscribeGrammarLoaded } from './highlight.ts'
+import type { MarkdownTextContribution, MarkdownTextRun } from './selection-map.tsx'
 import css from './CodeBlock.module.css'
 
 export interface CodeBlockProps {
@@ -22,12 +23,12 @@ export interface CodeBlockProps {
   copyLabel?: string | undefined
   /** Copy-button label during the post-copy confirmation window. */
   copiedLabel?: string | undefined
-  /** Optional renderer-owned registration for each visible source-text run. */
-  renderText?: ((value: string, key: Key, style?: CSSProperties) => ReactNode) | undefined
+  /** Optional stable renderer-owned registration for this code contribution. */
+  textContribution?: MarkdownTextContribution | undefined
 }
 
 export function CodeBlock({
-  code, lang, className, copyLabel = '复制', copiedLabel = '复制成功', renderText,
+  code, lang, className, copyLabel = '复制', copiedLabel = '复制成功', textContribution,
 }: CodeBlockProps) {
   const trimmed = code.endsWith('\n') ? code.slice(0, -1) : code
   // Re-render when a lazy grammar finishes loading, so a fence that showed plain
@@ -35,12 +36,12 @@ export function CodeBlock({
   // snapshot value is opaque; only its change across renders drives the memo.
   const loaded = useSyncExternalStore(subscribeGrammarLoaded, grammarLoadCount, grammarLoadCount)
   const html = useMemo(
-    () => renderText === undefined ? highlightToHtml(trimmed, lang) : undefined,
-    [trimmed, lang, loaded, renderText],
+    () => textContribution === undefined ? highlightToHtml(trimmed, lang) : undefined,
+    [trimmed, lang, loaded, textContribution],
   )
   const registeredLines = useMemo(
-    () => renderText === undefined ? undefined : highlightLines(trimmed, lang),
-    [trimmed, lang, loaded, renderText],
+    () => textContribution === undefined ? undefined : highlightLines(trimmed, lang),
+    [trimmed, lang, loaded, textContribution],
   )
   const rootRef = useRef<HTMLDivElement>(null)
   const [copied, setCopied] = useState(false)
@@ -58,7 +59,18 @@ export function CodeBlock({
   }, [copied, trimmed])
 
   let body: ReactNode
-  if (renderText !== undefined && registeredLines !== undefined) {
+  if (textContribution !== undefined && registeredLines !== undefined) {
+    const runs: MarkdownTextRun[] = []
+    const lineLengths: number[] = []
+    for (const [lineIndex, line] of registeredLines.entries()) {
+      lineLengths.push(line.length + (lineIndex < registeredLines.length - 1 ? 1 : 0))
+      for (const [tokenIndex, token] of line.entries()) {
+        runs.push({ value: token.text, key: `${lineIndex}:${tokenIndex}`, style: token.style })
+      }
+      if (lineIndex < registeredLines.length - 1) runs.push({ value: '\n', key: `${lineIndex}:newline` })
+    }
+    const registered = textContribution.render(runs)
+    let runIndex = 0
     body = (
       <pre
         className="shiki css-variables"
@@ -66,17 +78,20 @@ export function CodeBlock({
         tabIndex={0}
       >
         <code>
-          {registeredLines.map((line, lineIndex) => (
-            <span className="line" key={lineIndex}>
-              {line.map((token, tokenIndex) => renderText(token.text, tokenIndex, token.style))}
-              {lineIndex < registeredLines.length - 1 && renderText('\n', 'newline')}
-            </span>
-          ))}
+          {lineLengths.map((length, lineIndex) => {
+            const line = registered.slice(runIndex, runIndex + length)
+            runIndex += length
+            return <span className="line" key={lineIndex}>{line}</span>
+          })}
         </code>
       </pre>
     )
-  } else if (renderText !== undefined) {
-    body = <pre className={css.plain}><code>{renderText(trimmed, 'code')}</code></pre>
+  } else if (textContribution !== undefined) {
+    body = (
+      <pre className={css.plain}>
+        <code>{textContribution.render([{ value: trimmed, key: 'code' }])}</code>
+      </pre>
+    )
   } else if (html === undefined) {
     body = <pre className={css.plain}><code>{trimmed}</code></pre>
   } else {

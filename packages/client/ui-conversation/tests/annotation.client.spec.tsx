@@ -319,6 +319,108 @@ describe('text annotation mechanics', () => {
     expect(mark.ranges.map(item => item.toString())).toEqual(['ready'])
   })
 
+  it('keeps one source-ordered fence contribution across a copy-state rerender', async () => {
+    class FakeHighlight {
+      readonly ranges: readonly Range[]
+      constructor(...ranges: Range[]) { this.ranges = ranges }
+    }
+    const set = vi.fn()
+    vi.stubGlobal('CSS', { highlights: { set, delete: vi.fn() } })
+    vi.stubGlobal('Highlight', FakeHighlight)
+    const clipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard')
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: vi.fn().mockResolvedValue(undefined) },
+    })
+    let saved: TextAnchor | undefined
+    const props = {
+      blocks: [{ kind: 'text' as const, text: 'before\n\n```ts\nconst ready = true\n```\n\nafter' }],
+      streaming: false,
+      t: makeTranslate(zh, commonZh),
+      sourceId: 'message-1',
+      annotationActions: {
+        addTextAnnotation: (anchor: TextAnchor) => {
+          saved = anchor
+          return TextAnnotationId('annotation-1')
+        },
+      },
+    }
+    try {
+      const view = render(<AssistantMarkdown {...props} annotations={[]} />)
+      fireEvent.click(view.getByRole('button', { name: '复制' }))
+      await view.findByRole('button', { name: '复制成功' })
+      const start = textPosition(view.container.querySelector('.md-code-block')!, 'ready')
+      const range = document.createRange()
+      range.setStart(start.node, start.offset)
+      range.setEnd(start.node, start.offset + 'ready'.length)
+      Object.defineProperty(range, 'getBoundingClientRect', { value: () => ({ left: 20, bottom: 40 }) })
+      const selection = window.getSelection()!
+      selection.removeAllRanges()
+      selection.addRange(range)
+      fireEvent(document, new Event('selectionchange'))
+
+      fireEvent.click(view.getByRole('button', { name: '添加批示' }))
+      fireEvent.click(view.getByRole('button', { name: '保存批示' }))
+      expect(saved).toMatchObject({ quote: 'ready', prefix: 'beforeconst ', suffix: ' = trueafter' })
+      if (saved === undefined) throw new Error('expected saved rerendered-fence annotation')
+      view.unmount()
+      render(<AssistantMarkdown {...props} annotations={[{
+        id: TextAnnotationId('annotation-1'), kind: 'text', anchor: saved, note: '',
+      }]} />)
+      const mark = set.mock.lastCall?.[1] as FakeHighlight
+      expect(mark.ranges.map(item => item.toString())).toEqual(['ready'])
+    } finally {
+      if (clipboard === undefined) delete (navigator as { clipboard?: Clipboard }).clipboard
+      else Object.defineProperty(navigator, 'clipboard', clipboard)
+    }
+  })
+
+  it('replaces the plain fence contribution after a lazy grammar loads', async () => {
+    class FakeHighlight {
+      readonly ranges: readonly Range[]
+      constructor(...ranges: Range[]) { this.ranges = ranges }
+    }
+    const set = vi.fn()
+    vi.stubGlobal('CSS', { highlights: { set, delete: vi.fn() } })
+    vi.stubGlobal('Highlight', FakeHighlight)
+    let saved: TextAnchor | undefined
+    const props = {
+      blocks: [{ kind: 'text' as const, text: 'before\n\n```python\nready = True\n```\n\nafter' }],
+      streaming: false,
+      t: makeTranslate(zh, commonZh),
+      sourceId: 'message-1',
+      annotationActions: {
+        addTextAnnotation: (anchor: TextAnchor) => {
+          saved = anchor
+          return TextAnnotationId('annotation-1')
+        },
+      },
+    }
+    const view = render(<AssistantMarkdown {...props} annotations={[]} />)
+    expect(view.container.querySelector('pre.shiki')).toBeNull()
+    await vi.waitFor(() => { expect(view.container.querySelector('pre.shiki')).not.toBeNull() })
+    const start = textPosition(view.container.querySelector('.md-code-block')!, 'ready')
+    const range = document.createRange()
+    range.setStart(start.node, start.offset)
+    range.setEnd(start.node, start.offset + 'ready'.length)
+    Object.defineProperty(range, 'getBoundingClientRect', { value: () => ({ left: 20, bottom: 40 }) })
+    const selection = window.getSelection()!
+    selection.removeAllRanges()
+    selection.addRange(range)
+    fireEvent(document, new Event('selectionchange'))
+
+    fireEvent.click(view.getByRole('button', { name: '添加批示' }))
+    fireEvent.click(view.getByRole('button', { name: '保存批示' }))
+    expect(saved).toMatchObject({ quote: 'ready', prefix: 'before', suffix: ' = Trueafter' })
+    if (saved === undefined) throw new Error('expected saved lazy-fence annotation')
+    view.unmount()
+    render(<AssistantMarkdown {...props} annotations={[{
+      id: TextAnnotationId('annotation-1'), kind: 'text', anchor: saved, note: '',
+    }]} />)
+    const mark = set.mock.lastCall?.[1] as FakeHighlight
+    expect(mark.ranges.map(item => item.toString())).toEqual(['ready'])
+  })
+
   it('annotates raw HTML that the Markdown renderer exposes as literal text', () => {
     class FakeHighlight {
       readonly ranges: readonly Range[]

@@ -20,6 +20,26 @@ export interface MarkdownTextAnchor {
   suffix: string
 }
 
+/** One visible source-text run owned by a replaceable renderer contribution. */
+export interface MarkdownTextRun {
+  /** Visible source text. */
+  value: string
+  /** React key within the contribution. */
+  key: Key
+  /** Optional syntax-highlighting style. */
+  style?: CSSProperties | undefined
+}
+
+/** Stable source-order contribution whose rendered runs may change across local rerenders. */
+export interface MarkdownTextContribution {
+  /**
+   * Replace the contribution's visible runs and return their registered spans.
+   * @param runs - Current visible runs in source order.
+   * @returns Registered spans in the same order.
+   */
+  render(runs: readonly MarkdownTextRun[]): ReactNode[]
+}
+
 /**
  * Renderer-owned mapping between selectable Markdown leaves and DOM Ranges.
  * Consumers inspect registered endpoints; they never reconstruct the rendered DOM.
@@ -43,13 +63,8 @@ export interface MarkdownSelectionMap {
 export type MarkdownSelectionMapRef = MutableRefObject<MarkdownSelectionMap | null>
 
 interface TextLeaf {
-  readonly start: number
   readonly value: string
-}
-
-interface ImageLeaf {
-  readonly start: number
-  readonly end: number
+  node: Node | null
 }
 
 interface TextBoundary {
@@ -57,89 +72,155 @@ interface TextBoundary {
   readonly offset: number
 }
 
-/** One settled render's registration collector and selection mapping. */
-export class MarkdownSelectionCollector implements MarkdownSelectionMap {
-  private cursor = 0
-  private text = ''
-  private readonly textLeaves: TextLeaf[] = []
-  private readonly imageLeaves: ImageLeaf[] = []
-  private readonly mountedImages = new Set<HTMLImageElement>()
-  private readonly startBoundaries: TextBoundary[] = []
-  private readonly endBoundaries: TextBoundary[] = []
+class TextContribution implements MarkdownTextContribution {
+  private leaves: readonly TextLeaf[] = []
 
-  /** Render and register one text leaf without inspecting the mounted DOM. */
-  renderText(value: string, key: Key, style?: CSSProperties): ReactNode {
-    const leaf: TextLeaf = { start: this.cursor, value }
-    this.cursor += value.length
-    this.text += value
-    this.textLeaves.push(leaf)
-    const register: RefCallback<HTMLSpanElement> = (element) => {
-      if (element === null) return
-      const node = element.childNodes.item(0)
-      for (let offset = 0; offset < value.length; offset += 1) {
-        this.startBoundaries[leaf.start + offset] = { node, offset }
-        this.endBoundaries[leaf.start + offset + 1] = { node, offset: offset + 1 }
+  render(runs: readonly MarkdownTextRun[]): ReactNode[] {
+    const entries = runs.map((run) => {
+      const leaf: TextLeaf = { value: run.value, node: null }
+      return { run, leaf }
+    })
+    const leaves = entries.map(entry => entry.leaf)
+    return entries.map(({ run, leaf }) => {
+      const register: RefCallback<HTMLSpanElement> = (element) => {
+        leaf.node = element?.childNodes.item(0) ?? null
+        if (element !== null) this.leaves = leaves
       }
-    }
-    return <span key={key} ref={register} style={style}>{value}</span>
+      return <span key={run.key} ref={register} style={run.style}>{run.value}</span>
+    })
   }
 
-  /** Reserve an image's plain-text alt span and return its DOM registration. */
+  /** Current committed runs; null refs retain text but remove mounted endpoints. */
+  currentLeaves(): readonly TextLeaf[] {
+    return this.leaves
+  }
+}
+
+class ImageContribution {
+  node: HTMLImageElement | null = null
+
+  constructor(readonly alt: string) {}
+
+  readonly register: RefCallback<HTMLImageElement> = (element) => {
+    this.node = element
+  }
+}
+
+type Contribution = TextContribution | ImageContribution
+
+/** One settled render's source-ordered registration collector and selection mapping. */
+export class MarkdownSelectionCollector implements MarkdownSelectionMap {
+  private readonly contributions: Contribution[] = []
+
+  /** Allocate a stable contribution at the renderer's current source-order position. */
+  createTextContribution(): MarkdownTextContribution {
+    const contribution = new TextContribution()
+    this.contributions.push(contribution)
+    return contribution
+  }
+
+  /** Render and register one text leaf at the renderer's current source-order position. */
+  renderText(value: string, key: Key, style?: CSSProperties): ReactNode {
+    return this.createTextContribution().render([{ value, key, style }])[0]
+  }
+
+  /** Reserve an image's plain-text alt span and return its mounted-node registration. */
   registerImage(alt: string): RefCallback<HTMLImageElement> {
-    const leaf: ImageLeaf = { start: this.cursor, end: this.cursor + alt.length }
-    this.cursor += alt.length
-    this.text += alt
-    this.imageLeaves.push(leaf)
-    let mounted: HTMLImageElement
-    return (element) => {
-      if (element === null) {
-        this.mountedImages.delete(mounted)
-        return
-      }
-      mounted = element
-      this.mountedImages.add(element)
-    }
+    const contribution = new ImageContribution(alt)
+    this.contributions.push(contribution)
+    return contribution.register
   }
 
   inspect(range: Range): MarkdownSelection | null {
     const start = this.offsetForEndpoint(range.startContainer, range.startOffset)
     const end = this.offsetForEndpoint(range.endContainer, range.endOffset)
     if (start === null || end === null) return null
-    for (const element of this.mountedImages) {
-      if (range.intersectsNode(element)) return null
+    for (const contribution of this.contributions) {
+      if (contribution instanceof ImageContribution
+        && contribution.node !== null
+        && range.intersectsNode(contribution.node)) return null
     }
+    const projection = this.projection()
     const quote = range.toString()
-    if (this.text.slice(start, end) !== quote) return null
-    return { quote, projection: this.text, start }
+    if (projection.slice(start, end) !== quote) return null
+    return { quote, projection, start }
   }
 
   rangeForText(anchor: MarkdownTextAnchor): Range | null {
+    const projection = this.projection()
     const needle = anchor.prefix + anchor.quote + anchor.suffix
-    const match = this.text.indexOf(needle)
-    if (match < 0 || this.text.indexOf(needle, match + 1) >= 0) return null
+    const match = projection.indexOf(needle)
+    if (match < 0 || projection.indexOf(needle, match + 1) >= 0) return null
     const start = match + anchor.prefix.length
     const end = start + anchor.quote.length
-    for (const image of this.imageLeaves) {
-      const crosses = image.start === image.end
-        ? start < image.start && image.end < end
-        : start < image.end && image.start < end
-      if (crosses) return null
+    let cursor = 0
+    for (const contribution of this.contributions) {
+      const length = contribution instanceof TextContribution
+        ? contribution.currentLeaves().reduce((total, leaf) => total + leaf.value.length, 0)
+        : contribution.alt.length
+      if (contribution instanceof ImageContribution) {
+        const crosses = length === 0
+          ? start < cursor && cursor < end
+          : start < cursor + length && cursor < end
+        if (crosses) return null
+      }
+      cursor += length
     }
-    // A nonempty quotation in the text projection that excludes images has registered text on both boundaries.
-    const startLeaf = this.startBoundaries[start] as TextBoundary
-    const endLeaf = this.endBoundaries[end] as TextBoundary
+    const startBoundary = this.boundaryAt(start, 'start')
+    const endBoundary = this.boundaryAt(end, 'end')
+    if (startBoundary === null || endBoundary === null) return null
     const range = document.createRange()
-    range.setStart(startLeaf.node, startLeaf.offset)
-    range.setEnd(endLeaf.node, endLeaf.offset)
+    range.setStart(startBoundary.node, startBoundary.offset)
+    range.setEnd(endBoundary.node, endBoundary.offset)
     return range
   }
 
+  private projection(): string {
+    let projection = ''
+    for (const contribution of this.contributions) {
+      projection += contribution instanceof TextContribution
+        ? contribution.currentLeaves().map(leaf => leaf.value).join('')
+        : contribution.alt
+    }
+    return projection
+  }
+
+  private boundaryAt(offset: number, edge: 'start' | 'end'): TextBoundary | null {
+    let cursor = 0
+    for (const contribution of this.contributions) {
+      if (contribution instanceof ImageContribution) {
+        cursor += contribution.alt.length
+        continue
+      }
+      for (const leaf of contribution.currentLeaves()) {
+        const end = cursor + leaf.value.length
+        const contains = edge === 'start'
+          ? cursor <= offset && offset < end
+          : cursor < offset && offset <= end
+        if (contains) return leaf.node === null ? null : { node: leaf.node, offset: offset - cursor }
+        cursor = end
+      }
+    }
+    /* v8 ignore next -- nonempty Text Anchors that resolve inside the projection
+       return from one registered leaf; null-node disposal returns above. */
+    return null
+  }
+
   private offsetForEndpoint(container: Node, offset: number): number | null {
-    for (const leaf of this.textLeaves) {
-      const element = this.startBoundaries[leaf.start]?.node.parentNode
-      const node = this.startBoundaries[leaf.start]?.node
-      if (container === node) return leaf.start + Math.min(offset, leaf.value.length)
-      if (container === element) return leaf.start + (offset === 0 ? 0 : leaf.value.length)
+    let cursor = 0
+    for (const contribution of this.contributions) {
+      if (contribution instanceof ImageContribution) {
+        cursor += contribution.alt.length
+        continue
+      }
+      for (const leaf of contribution.currentLeaves()) {
+        const node = leaf.node
+        if (node !== null) {
+          if (container === node) return cursor + Math.min(offset, leaf.value.length)
+          if (container === node.parentNode) return cursor + (offset === 0 ? 0 : leaf.value.length)
+        }
+        cursor += leaf.value.length
+      }
     }
     return null
   }

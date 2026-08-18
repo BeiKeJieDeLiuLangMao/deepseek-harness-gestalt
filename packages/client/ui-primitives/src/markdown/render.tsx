@@ -329,7 +329,7 @@ function renderCode(node: Md.Code, key: Key, context: MarkdownRenderContext): Re
       lang={context.streaming ? undefined : lang}
       copyLabel={context.codeLabels?.copyLabel}
       copiedLabel={context.codeLabels?.copiedLabel}
-      renderText={context.selection?.renderText.bind(context.selection)}
+      textContribution={context.selection?.createTextContribution()}
     />
   )
 }
