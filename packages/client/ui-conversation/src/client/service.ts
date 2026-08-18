@@ -165,6 +165,7 @@ export class ConversationController extends Service implements IConversation {
   /**
    * Create runtime-only draft images and their object URLs.
    * @param files - browser files to register after MIME validation.
+   * @param sessionId - Session owner used to persist staged bytes for unsent pins.
    * @returns ordered draft descriptors.
    */
   createDraftImages(files: readonly File[], sessionId?: SessionId): readonly ComposerAttachment[] {
@@ -230,6 +231,7 @@ export class ConversationController extends Service implements IConversation {
   /**
    * Release one browser-owned draft image and preview URL.
    * @param id - draft attachment id.
+   * @param sessionId - Session owner used to drop persisted staged bytes.
    */
   releaseDraftImage(id: DraftAttachmentId, sessionId?: SessionId): void {
     const attachment = this.draftAttachments.get(id)

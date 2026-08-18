@@ -4,6 +4,7 @@ const DB_NAME = 'dsh.annotation.staged-images'
 const STORE = 'files'
 const DB_VERSION = 1
 
+/** One IndexedDB row of Composer-staged image bytes for an unsent pin. */
 export interface StagedImageRecord {
   readonly key: string
   readonly name: string
