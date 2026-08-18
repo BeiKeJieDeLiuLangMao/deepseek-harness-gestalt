@@ -2139,6 +2139,9 @@ importers:
       '@deepseek-ai/dsh-remote-access':
         specifier: workspace:^
         version: link:../../platform/remote-access
+      '@deepseek-ai/dsh-remote-protocol':
+        specifier: workspace:^
+        version: link:../../platform/remote-protocol
       react:
         specifier: ^18.2.0
         version: 18.3.1
