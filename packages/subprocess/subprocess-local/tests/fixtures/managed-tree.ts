@@ -2,12 +2,24 @@ import { spawn } from 'node:child_process'
 import { access, open, rename, writeFile } from 'node:fs/promises'
 import type { FileHandle } from 'node:fs/promises'
 
-const [statePath, publishStartedPath, publishProceedPath, maxWriteBytesText] = process.argv.slice(2)
+const [
+  statePath,
+  publishStartedPath,
+  publishProceedPath,
+  descendantStartedPath,
+  descendantProceedPath,
+  maxWriteBytesText,
+]
+  = process.argv.slice(2)
 const maxWriteBytes = maxWriteBytesText === undefined ? undefined : Number(maxWriteBytesText)
 if (statePath === undefined || (publishStartedPath === undefined) !== (publishProceedPath === undefined)
-  || (maxWriteBytes !== undefined && (!Number.isSafeInteger(maxWriteBytes) || maxWriteBytes <= 0))) {
+  || (publishStartedPath !== undefined
+    && (descendantStartedPath === undefined || descendantProceedPath === undefined))
+  || (maxWriteBytes !== undefined && (!Number.isSafeInteger(maxWriteBytes) || maxWriteBytes < 0))) {
   throw new Error(
-    'usage: managed-tree.ts <state-path> [<publish-started-path> <publish-proceed-path> [<max-write-bytes>]]',
+    'usage: managed-tree.ts <state-path> '
+      + '[<publish-started-path> <publish-proceed-path> '
+      + '<descendant-started-path> <descendant-proceed-path> [<max-write-bytes>]]',
   )
 }
 
@@ -22,12 +34,20 @@ async function waitForFile(path: string): Promise<void> {
   }
 }
 
-async function writeAll(file: FileHandle, data: Buffer, maxWriteBytes?: number): Promise<void> {
+type StateWrite = (data: Buffer, offset: number, requested: number) => Promise<{ bytesWritten: number }>
+
+function createStateWrite(file: FileHandle, maxBytes?: number): StateWrite {
+  return (data, offset, requested) => {
+    if (maxBytes === 0) return Promise.resolve({ bytesWritten: 0 })
+    return file.write(data, offset, Math.min(requested, maxBytes ?? requested))
+  }
+}
+
+async function writeAll(write: StateWrite, data: Buffer): Promise<void> {
   let offset = 0
   while (offset < data.length) {
-    const remaining = data.length - offset
-    const requested = Math.min(remaining, maxWriteBytes ?? remaining)
-    const { bytesWritten } = await file.write(data, offset, requested)
+    const requested = data.length - offset
+    const { bytesWritten } = await write(data, offset, requested)
     if (bytesWritten <= 0) throw new Error('managed-tree state write made no progress')
     offset += bytesWritten
   }
@@ -40,26 +60,42 @@ const descendant = spawn(process.execPath, [
   'process.on("SIGTERM",()=>{});process.on("SIGHUP",()=>{});setInterval(()=>{},60_000)',
 ], { stdio: 'ignore' })
 if (descendant.pid === undefined) throw new Error('managed descendant did not publish a pid')
+const descendantDone = new Promise<void>((resolve) => {
+  descendant.once('exit', () => { resolve() })
+  descendant.once('error', () => { resolve() })
+})
 
-const state = JSON.stringify({ root: process.pid, descendant: descendant.pid })
-const stagedStatePath = `${statePath}.${process.pid}.tmp`
-const stateFile = await open(stagedStatePath, 'wx', 0o600)
 try {
-  if (publishStartedPath === undefined || publishProceedPath === undefined) {
-    await stateFile.writeFile(state)
-  } else {
-    const stateBytes = Buffer.from(state)
-    const split = Math.floor(stateBytes.length / 2)
-    const first = stateBytes.subarray(0, split)
-    const second = stateBytes.subarray(split)
-    await writeAll(stateFile, first, maxWriteBytes)
-    await writeFile(publishStartedPath, 'started')
-    await waitForFile(publishProceedPath)
-    await writeAll(stateFile, second, maxWriteBytes)
+  if (descendantStartedPath !== undefined && descendantProceedPath !== undefined) {
+    await writeFile(descendantStartedPath, String(descendant.pid))
+    await waitForFile(descendantProceedPath)
   }
-  await stateFile.sync()
-} finally {
-  await stateFile.close()
+
+  const state = JSON.stringify({ root: process.pid, descendant: descendant.pid })
+  const stagedStatePath = `${statePath}.${process.pid}.tmp`
+  const stateFile = await open(stagedStatePath, 'wx', 0o600)
+  try {
+    if (publishStartedPath === undefined || publishProceedPath === undefined) {
+      await stateFile.writeFile(state)
+    } else {
+      const stateBytes = Buffer.from(state)
+      const split = Math.floor(stateBytes.length / 2)
+      const first = stateBytes.subarray(0, split)
+      const second = stateBytes.subarray(split)
+      const write = createStateWrite(stateFile, maxWriteBytes)
+      await writeAll(write, first)
+      await writeFile(publishStartedPath, 'started')
+      await waitForFile(publishProceedPath)
+      await writeAll(write, second)
+    }
+    await stateFile.sync()
+  } finally {
+    await stateFile.close()
+  }
+  await rename(stagedStatePath, statePath)
+} catch (publicationError) {
+  descendant.kill('SIGKILL')
+  await descendantDone
+  throw publicationError
 }
-await rename(stagedStatePath, statePath)
 setInterval(() => {}, 60_000)

@@ -138,6 +138,8 @@ async function runManagedTreePublication(
   const statePath = join(root, 'tree.json')
   const publishStartedPath = join(root, 'publish-started')
   const publishProceedPath = join(root, 'publish-proceed')
+  const descendantStartedPath = join(root, 'descendant-started')
+  const descendantProceedPath = join(root, 'descendant-proceed')
   const launch = resolveExampleLaunch({
     srcBin: managedTreeScript,
     mode: 'src',
@@ -146,6 +148,8 @@ async function runManagedTreePublication(
       statePath,
       publishStartedPath,
       publishProceedPath,
+      descendantStartedPath,
+      descendantProceedPath,
       ...(maxWriteBytes === undefined ? [] : [String(maxWriteBytes)]),
     ],
   })
@@ -162,7 +166,7 @@ async function runManagedTreePublication(
   let identities: ProcessIdentity[] = []
   try {
     if (inspector !== undefined) identities = await captureRootedTree(inspector, rootPid, 1)
-    await vi.waitFor(() => readFile(publishStartedPath, 'utf8'), {
+    await vi.waitFor(() => readFile(descendantStartedPath, 'utf8'), {
       interval: 10,
       timeout: scenarioTimeoutMs,
     })
@@ -170,6 +174,11 @@ async function runManagedTreePublication(
       identities,
       await captureRootedTree(inspector, rootPid, 2),
     )
+    await writeFile(descendantProceedPath, 'proceed')
+    await vi.waitFor(() => readFile(publishStartedPath, 'utf8'), {
+      interval: 10,
+      timeout: scenarioTimeoutMs,
+    })
     await inspectWhilePaused(statePath, identities)
     await writeFile(publishProceedPath, 'proceed')
     return await readTree(statePath)
@@ -261,6 +270,59 @@ describe('synchronous cleanup on host exit', () => {
       expect(captured.every(identity => !processExists(identity.pid))).toBe(true)
     },
   )
+
+  it('removes the descendant when the first state write makes no progress', { timeout: 45_000 }, async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-subprocess-managed-tree-zero-write-'))
+    const statePath = join(root, 'tree.json')
+    const descendantStartedPath = join(root, 'descendant-started')
+    const descendantProceedPath = join(root, 'descendant-proceed')
+    const launch = resolveExampleLaunch({
+      srcBin: managedTreeScript,
+      mode: 'src',
+      tsconfigPath: join(repoRoot, 'tsconfig.json'),
+      configArgs: [
+        statePath,
+        join(root, 'publish-started'),
+        join(root, 'publish-proceed'),
+        descendantStartedPath,
+        descendantProceedPath,
+        '0',
+      ],
+    })
+    const child = execa(launch.command, launch.args, {
+      cwd: repoRoot,
+      env: launch.env,
+      stdin: 'ignore',
+      reject: false,
+      timeout: scenarioTimeoutMs,
+    })
+    if (child.pid === undefined) throw new Error('managed-tree fixture did not publish a root pid')
+    let state: TreeState | undefined
+    let identities: ProcessIdentity[] = []
+    let treeGone = false
+    try {
+      const descendant = Number(await vi.waitFor(() => readFile(descendantStartedPath, 'utf8'), {
+        interval: 10,
+        timeout: scenarioTimeoutMs,
+      }))
+      state = { root: child.pid, descendant }
+      if (process.platform !== 'win32') identities = await captureIdentities(createProcessInspector(), state)
+      await writeFile(descendantProceedPath, 'proceed')
+      const outcome = await child
+      expect(outcome.exitCode).toBe(1)
+      expect(outcome.stderr).toContain('managed-tree state write made no progress')
+      await waitForGone(state)
+      treeGone = true
+    } finally {
+      child.kill('SIGKILL')
+      await child
+      if (!treeGone) {
+        cleanupTree(state, identities)
+        if (state !== undefined) await waitForGone(state)
+      }
+      await rm(root, { recursive: true, force: true })
+    }
+  })
 
   it.each([
     { trigger: 'direct' as const, expectedCode: 23, diagnostic: undefined },
