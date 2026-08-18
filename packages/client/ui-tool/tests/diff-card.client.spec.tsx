@@ -338,6 +338,9 @@ describe('DetailsPanel diff Output section', () => {
           addImages: () => true,
           removeImage: () => {},
           pruneImages: () => {},
+          addTextAnnotation: () => { throw new Error('unused') },
+          updateTextAnnotation: () => {},
+          removeTextAnnotation: () => {}, discardTextAnnotations: () => {}, addImagePin: () => 'pin' as never, updateImagePin: () => {}, removeImagePin: () => {},
           submit: () => {},
         }}
         useProjection={(() => undefined)}

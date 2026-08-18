@@ -13,6 +13,7 @@ import type {
 } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import type { QueueRow } from '../contract/queue.ts'
 import type { InputSubmitMode } from '../contract/composer-submission.ts'
+import type { DraftAnnotation, TextAnchor, TextAnnotationId } from '../annotation/model.ts'
 
 /** Browser-runtime identity of one unsent image draft. */
 export type DraftAttachmentId = Branded<'DraftAttachmentId'>
@@ -79,6 +80,20 @@ export interface InputActions {
   removeImage(id: DraftAttachmentId): void
   /** Drop ids whose browser-owned objects no longer exist. */
   pruneImages(ids: readonly DraftAttachmentId[]): void
+  /** Append one text annotation in creation order. */
+  addTextAnnotation(anchor: TextAnchor, note: string): TextAnnotationId
+  /** Replace one text annotation note without changing its identity or order. */
+  updateTextAnnotation(id: TextAnnotationId, note: string): void
+  /** Remove one unsent text annotation. */
+  removeTextAnnotation(id: TextAnnotationId): void
+  /** Discard the complete unsent text annotation draft and every Draft Mark at once. */
+  discardTextAnnotations(): void
+  /** Append one image pin in the shared creation order. */
+  addImagePin(imageId: DraftAttachmentId, imageName: string, x: number, y: number, note: string, source?: 'composer' | 'history'): TextAnnotationId
+  /** Replace one image pin's note or position without changing identity or order. */
+  updateImagePin(id: TextAnnotationId, patch: { note?: string; x?: number; y?: number }): void
+  /** Remove one unsent image pin. */
+  removeImagePin(id: TextAnnotationId): void
   /** Enter submission (adjudication / claim transaction / default sink inside). */
   submit(): void
 }
@@ -210,6 +225,10 @@ export interface InputState {
   readonly draft: string
   /** Ordered runtime-only image ids; bytes and URLs stay in ConversationController. */
   readonly imageIds: readonly DraftAttachmentId[]
+  /** Ordered Composer-owned annotations; absent from the Session log. */
+  readonly annotations: readonly DraftAnnotation[]
+  /** True while one exact annotation snapshot awaits Host admission settlement. */
+  readonly annotationSubmitting: boolean
   /** Monotonic draft revision (span CAS compares against this). */
   readonly draftRev: number
   readonly phase: 'plain' | 'adjudicating' | 'claimed' | 'submitting'

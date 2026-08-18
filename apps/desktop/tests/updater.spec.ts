@@ -137,4 +137,52 @@ describe('startAutoUpdater', () => {
     expect(seen).toHaveBeenCalledOnce()
     expect(life.state().state).toBe('checking')
   })
+
+  it('keeps Install disabled until the native Squirrel stage finishes', () => {
+    const updater = fakeUpdater()
+    const native = fakeUpdater()
+    const life = startAutoUpdater({
+      updater,
+      nativeStage: native,
+      autoInstallOnAppQuit: true,
+      now: () => 10,
+    })
+    updater.emit('update-available', { version: '0.1.4' })
+    life.download()
+    updater.emit('update-downloaded', { version: '0.1.4' })
+    expect(life.state()).toMatchObject({ state: 'preparing', newVersion: '0.1.4' })
+    life.install()
+    expect(updater.quitAndInstall).not.toHaveBeenCalled()
+    native.emit('update-downloaded')
+    expect(life.state()).toMatchObject({ state: 'downloaded', newVersion: '0.1.4' })
+    life.install()
+    expect(updater.quitAndInstall).toHaveBeenCalledWith(false, true)
+    life.dispose()
+  })
+
+  it('fails preparation when the native stage never becomes ready', () => {
+    vi.useFakeTimers()
+    const updater = fakeUpdater()
+    const native = fakeUpdater()
+    const life = startAutoUpdater({
+      updater,
+      nativeStage: native,
+      autoInstallOnAppQuit: true,
+      stageTimeoutMs: 1_000,
+      now: () => 10,
+    })
+    updater.emit('update-available', { version: '0.1.4' })
+    life.download()
+    updater.emit('update-downloaded', { version: '0.1.4' })
+    vi.advanceTimersByTime(1_000)
+    expect(life.state()).toMatchObject({
+      state: 'error',
+      newVersion: '0.1.4',
+      errorMessage: 'update preparation timed out',
+    })
+    life.install()
+    expect(updater.quitAndInstall).not.toHaveBeenCalled()
+    life.dispose()
+    vi.useRealTimers()
+  })
 })

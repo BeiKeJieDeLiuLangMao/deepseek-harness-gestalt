@@ -14,7 +14,7 @@ import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import { queueReadFaceOf } from '../queue/store.ts'
 import type { ComposerKeyboard, DraftAttachmentId, SessionInputResolver, SessionInput } from './contract.ts'
 import type { InputSubmitMode } from '../contract/composer-submission.ts'
-import type { PopupDismissFace } from './facade.ts'
+import type { AnnotationSubmissionReservation, PopupDismissFace } from './facade.ts'
 import { SessionInputShell } from './facade.ts'
 
 /** Structural command face for per-session popup resolution. */
@@ -24,12 +24,18 @@ interface CommandFace {
 
 /** Attachment-send face resolved lazily to keep hub/service construction acyclic. */
 interface ConversationAttachmentFace {
+  /**
+   * Submit one complete request through the Host.
+   * @returns whether the Host admitted the request; false = rejected (mirrored
+   * into promptError), while local failures reject.
+   */
   sendSession(
     session: SessionFace,
     text: string,
     imageIds: readonly DraftAttachmentId[],
     mode: InputSubmitMode,
-  ): Promise<void>
+    historyImageIds?: readonly string[],
+  ): Promise<boolean>
   releaseDraftImage(id: DraftAttachmentId): void
 }
 
@@ -75,7 +81,18 @@ export class InputHub implements SessionInputResolver {
       inputTriggers: () => this.controller(actx),
       popup: () => this.popup(actx),
       queue: queueReadFaceOf(session),
-      defaultSink: (text, imageIds, mode) => { this.sink(session, text, imageIds, mode) },
+      defaultSink: (text, imageIds, mode, annotationDraft) => {
+        this.sink(session, text, imageIds, mode, annotationDraft)
+      },
+      annotationLabels: {
+        heading: index => this.t('annotation.compiled.heading', { index }),
+        quote: value => this.t('annotation.compiled.quote', { value }),
+        note: value => this.t('annotation.compiled.note', { value }),
+        image: (name, x, y) => this.t('annotation.compiled.image', {
+          name, x: x.toFixed(1), y: y.toFixed(1),
+        }),
+        overflow: this.t('annotation.overflow'),
+      },
       steerQueue: () => { void this.steerQueue(session, shell) },
     })
     this.shells.set(id, shell)
@@ -143,28 +160,63 @@ export class InputHub implements SessionInputResolver {
   /**
    * Default sink: optimistic clear + prompt. The session is always a real
    * host entity (materialized when its workspace was picked), so there is
-   * exactly one path; a failed first prompt is an ordinary prompt failure
-   * (error strip via promptError, draft restored only while untouched).
+   * exactly one path; the annotation reservation settles only on the Host's
+   * admission of the complete request (the prompt acceptance the ordinary
+   * path checks), never on mere promise resolution — a send that resolves
+   * without admission restores the full draft.
    */
   private sink(
     session: SessionFace,
     text: string,
     imageIds: readonly DraftAttachmentId[],
     mode: InputSubmitMode,
+    annotationDraft?: AnnotationSubmissionReservation,
   ): void {
-    if (text === '' && imageIds.length === 0) return
     const shell = this.shells.get(session.sessionId)
+    const historyImageIds = [...new Set(
+      (shell?.snapshot.annotations ?? [])
+        .flatMap(item => item.kind === 'image-pin' && item.source === 'history' ? [item.imageId] : []),
+    )]
+    if (text === '' && imageIds.length === 0 && historyImageIds.length === 0) return
     // Commit, not an editable clear: undo must not resurrect sent content.
     shell?.commitSend(imageIds)
-    void this.conversation().sendSession(session, text, imageIds, mode).catch(() => {
-      if (this.shells.get(session.sessionId) === shell) {
-        shell?.restoreImages(imageIds)
-        if (shell?.snapshot.draft === '') shell.setDraft(text)
-        return
-      }
-      const conversation = this.rootCtx.get('conversation') as ConversationAttachmentFace | undefined
-      for (const id of imageIds) conversation?.releaseDraftImage(id)
-    })
+    void this.conversation().sendSession(session, text, imageIds, mode, historyImageIds).then(
+      (admitted) => {
+        if (this.shells.get(session.sessionId) !== shell) {
+          if (!admitted) this.releaseOrphanedImages(imageIds)
+          return
+        }
+        if (admitted) {
+          if (annotationDraft !== undefined) shell?.settleAnnotationSubmission(annotationDraft, true)
+          return
+        }
+        this.restoreFailedSend(shell, text, imageIds, annotationDraft)
+      },
+      () => {
+        if (this.shells.get(session.sessionId) === shell) {
+          this.restoreFailedSend(shell, text, imageIds, annotationDraft)
+          return
+        }
+        this.releaseOrphanedImages(imageIds)
+      },
+    )
+  }
+
+  /** Restore one non-admitted or failed send: reservation released, images and (untouched) draft back. */
+  private restoreFailedSend(
+    shell: SessionInputShell | undefined,
+    text: string,
+    imageIds: readonly DraftAttachmentId[],
+    annotationDraft: AnnotationSubmissionReservation | undefined,
+  ): void {
+    if (annotationDraft !== undefined) shell?.settleAnnotationSubmission(annotationDraft, false)
+    shell?.restoreImages(imageIds)
+    if (shell?.snapshot.draft === '') shell.setDraft(annotationDraft?.restoreText ?? text)
+  }
+
+  private releaseOrphanedImages(imageIds: readonly DraftAttachmentId[]): void {
+    const conversation = this.rootCtx.get('conversation') as ConversationAttachmentFace | undefined
+    for (const id of imageIds) conversation?.releaseDraftImage(id)
   }
 
   /**

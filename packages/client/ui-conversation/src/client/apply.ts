@@ -16,7 +16,7 @@ import type {
   ComposerChainProps, ConversationInjected, ConversationSessionHeaderInjected, ConversationSessionInjected,
   DetailsInjected,
 } from './contract/slots.ts'
-import type { InputNotice } from './input/contract.ts'
+import type { DraftAttachmentId, InputNotice } from './input/contract.ts'
 import { createChatStore } from './stores.ts'
 import { ConversationController, UnsupportedImageMediaTypeError } from './service.ts'
 import type { IConversation } from './service.ts'
@@ -248,6 +248,18 @@ export function apply(ctx: Context): void {
         views,
         releaseSessionImages: (id) => { conversation.releaseSessionImages(id) },
         bindDraftMirror: write => inputHub.shell(sessionId).bindMirror(write),
+        bindAnnotationMirror: write => inputHub.shell(sessionId).bindAnnotationMirror(write),
+        restoreAnnotationDraft: (draft) => {
+          if (draft === null) return
+          inputHub.shell(sessionId).restoreAnnotationDraft(draft)
+          const pinIds = draft.annotations
+            .filter(item => item.kind === 'image-pin')
+            .map(item => item.imageId as DraftAttachmentId)
+          if (pinIds.length === 0) return
+          void conversation.restoreStagedImages(sessionId, pinIds).then((images) => {
+            inputHub.shell(sessionId).addImages(images.map(image => image.id))
+          })
+        },
       }
     },
   }, ConversationSession)
@@ -307,7 +319,7 @@ export function apply(ctx: Context): void {
         keyboard: shell,
         addImages: (files) => {
           try {
-            const images = conversation.createDraftImages(files)
+            const images = conversation.createDraftImages(files, sessionId)
             if (!shell.addImages(images.map(image => image.id))) {
               conversation.releaseDraftImages(images)
             }

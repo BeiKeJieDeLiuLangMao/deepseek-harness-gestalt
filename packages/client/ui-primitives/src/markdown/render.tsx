@@ -24,6 +24,7 @@ import { normalizeUri } from 'micromark-util-sanitize-uri'
 import { CodeBlock } from './CodeBlock.tsx'
 import { renderTexToReact } from './katex.tsx'
 import type { PositionedBlock } from './incremental.ts'
+import type { MarkdownSelectionCollector } from './selection-map.tsx'
 import css from './MarkdownText.module.css'
 
 /** Copy-button labels forwarded to fence CodeBlocks (this package is cordis-free, so copy arrives via props). */
@@ -133,6 +134,8 @@ export interface MarkdownRenderContext {
   readonly footnoteOrder: string[]
   /** References rendered per identifier; drives the section's back-reference count. */
   readonly footnoteCounts: Map<string, number>
+  /** Settled annotation-selection registration; absent for ordinary and streaming renders. */
+  readonly selection?: MarkdownSelectionCollector | undefined
 }
 
 /**
@@ -205,7 +208,7 @@ function renderChildren(
 function renderNode(node: Md.RootContent, key: Key, context: MarkdownRenderContext): ReactNode {
   switch (node.type) {
     case 'text':
-      return node.value
+      return context.selection?.renderText(node.value, key) ?? node.value
     case 'paragraph':
       return <p key={key}>{renderChildren(node.children, context)}</p>
     case 'heading':
@@ -236,7 +239,8 @@ function renderNode(node: Md.RootContent, key: Key, context: MarkdownRenderConte
       // authored text, not a parsed destination, so no normalizeUri: port,
       // path, and query render unchanged.
       const href = inlineCodeHttpUrl(value)
-      if (href !== undefined) return <code key={key}>{renderSafeLink(href, [value], 'link')}</code>
+      const rendered = context.selection?.renderText(value, 'value') ?? value
+      if (href !== undefined) return <code key={key}>{renderSafeLink(href, [rendered], 'link')}</code>
       // A token the owner's file-mention vocabulary recognizes opens that
       // file; the resolver, not this renderer, decides what names a file.
       // Inside an anchor the token stays inert — a button cannot nest there.
@@ -251,16 +255,16 @@ function renderNode(node: Md.RootContent, key: Key, context: MarkdownRenderConte
               aria-label={mention.label}
               onClick={mention.open}
             >
-              {value}
+              {rendered}
             </button>
           </code>
         )
       }
-      return <code key={key}>{value}</code>
+      return <code key={key}>{rendered}</code>
     }
     case 'html':
       // No HTML parser enters the pipeline: raw HTML stays literal text.
-      return node.value
+      return context.selection?.renderText(node.value, key) ?? node.value
     case 'code':
       return renderCode(node, key, context)
     case 'math':
@@ -279,7 +283,7 @@ function renderNode(node: Md.RootContent, key: Key, context: MarkdownRenderConte
     case 'linkReference':
       return renderLinkReference(node, key, context)
     case 'image':
-      return renderImage(node.url, node.alt ?? '', key)
+      return renderImage(node.url, node.alt ?? '', key, context.selection)
     case 'imageReference':
       return renderImageReference(node, key, context)
     case 'footnoteReference':
@@ -325,6 +329,7 @@ function renderCode(node: Md.Code, key: Key, context: MarkdownRenderContext): Re
       lang={context.streaming ? undefined : lang}
       copyLabel={context.codeLabels?.copyLabel}
       copiedLabel={context.codeLabels?.copiedLabel}
+      textContribution={context.selection?.createTextContribution()}
     />
   )
 }
@@ -468,7 +473,12 @@ function inlineCodeHttpUrl(value: string): string | undefined {
   }
 }
 
-function renderImage(url: string, alt: string, key: Key): ReactNode {
+function renderImage(
+  url: string,
+  alt: string,
+  key: Key,
+  selection?: MarkdownSelectionCollector,
+): ReactNode {
   const imageSrc = remoteImageUrl(sanitizeUrl(normalizeUri(url)))
   if (imageSrc === undefined) {
     return <span key={key} className={css.imageAlt}>{alt}</span>
@@ -482,6 +492,7 @@ function renderImage(url: string, alt: string, key: Key): ReactNode {
       loading="lazy"
       decoding="async"
       referrerPolicy="no-referrer"
+      ref={selection?.registerImage(alt)}
     />
   )
 }
@@ -516,7 +527,7 @@ function renderImageReference(
 ): ReactNode {
   const definition = context.targets.definitions.get(node.identifier.toUpperCase())
   if (definition === undefined) return `![${node.alt ?? ''}${referenceSuffix(node)}`
-  return renderImage(definition.url, node.alt ?? '', key)
+  return renderImage(definition.url, node.alt ?? '', key, context.selection)
 }
 
 function renderFootnoteReference(
