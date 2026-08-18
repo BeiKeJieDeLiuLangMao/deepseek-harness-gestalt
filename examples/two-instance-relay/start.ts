@@ -171,6 +171,7 @@ export async function apply(_ctx: Context, config: Config): Promise<void> {
     const failoverProjection = deferred<void>()
     const result = deferred<'accepted'>()
     const offline = deferred<string>()
+    const transportErrors: string[] = []
     const desktopLifecycle = new DesktopRelayEndpointLifecycle({
       attachmentId: () => {
         desktopGeneration += 1
@@ -227,7 +228,10 @@ export async function apply(_ctx: Context, config: Config): Promise<void> {
           }
         }
       },
-      onTransportError: (error) => { if (error.code === 'REMOTE_OFFLINE') offline.resolve(error.code) },
+      onTransportError: (error) => {
+        transportErrors.push(error.code)
+        if (error.code === 'REMOTE_OFFLINE') offline.resolve(error.code)
+      },
     })
     resources.add({ close: async () => { await mobile.stop() } })
     resources.add({ close: async () => { await desktopLifecycle.stop('quit') } })
@@ -273,8 +277,22 @@ export async function apply(_ctx: Context, config: Config): Promise<void> {
       lifecycleOffline.push(reason)
       lifecyclePresence.push(await backendA.coordinator.locate(routeId, attachment) !== undefined)
     }
-    await withPhaseTimeout('offline ciphertext send', mobile.sendCiphertext(desktopAttachmentId, cipher.seal(Uint8Array.of(1))))
-    console.log(`OFFLINE code=${await withPhaseTimeout('offline observation', offline.promise)} retainedCiphertextValues=${String(bus.retainedCiphertextValueCount())}`)
+    // A Mobile reconnect loses the error frame bound to its previous socket, so the
+    // missing-target observation resends until REMOTE_OFFLINE arrives on the live one.
+    let offlineCode: string | undefined
+    for (let attempt = 0; attempt < 5 && offlineCode === undefined; attempt += 1) {
+      await withPhaseTimeout('offline ciphertext send', mobile.sendCiphertext(desktopAttachmentId, cipher.seal(Uint8Array.of(1))))
+      offlineCode = await withPhaseTimeout('offline observation', Promise.race([
+        offline.promise,
+        new Promise<undefined>((resolve) => { setTimeout(() => { resolve(undefined) }, 2_000) }),
+      ]))
+    }
+    if (offlineCode === undefined) {
+      throw new Error(
+        `Mobile never observed REMOTE_OFFLINE for a stopped Desktop (transportErrors=${transportErrors.join(',') || 'none'})`,
+      )
+    }
+    console.log(`OFFLINE code=${offlineCode} retainedCiphertextValues=${String(bus.retainedCiphertextValueCount())}`)
     console.log(`LIFECYCLE observed=${lifecycleOffline.join(',')} offline=${String(lifecyclePresence.every(present => !present))}`)
     const pairingReplacement = createPairingProvider(backendA.provider)
     resources.add({ close: async () => { await pairingReplacement.dispose() } })
