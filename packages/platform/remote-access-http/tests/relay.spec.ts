@@ -37,8 +37,12 @@ describe('RelayWebSocketConsumer', () => {
     const relay = relayFixture(attachment)
     const endpoint = await start(relay)
     const socket = await connect(endpoint.url)
+    const ready = nextMessage(socket)
     socket.send(encodeRelayMessage(attach()))
     await vi.waitFor(() => { expect(relay.attach).toHaveBeenCalledOnce() })
+    expect(await ready).toEqual({
+      type: 'ready', transportVersion: 1, attachmentId: parseRelayAttachmentId('mobile-one'),
+    })
 
     const ciphertext = ciphertextMessage()
     const heartbeat = heartbeatMessage()
@@ -74,11 +78,14 @@ describe('RelayWebSocketConsumer', () => {
     socket.send(encodeRelayMessage(first))
     if (second !== undefined) {
       await vi.waitFor(() => { expect(relay.attach).toHaveBeenCalledOnce() })
+      expect(await error).toMatchObject({ type: 'ready' })
+      const secondError = nextMessage(socket)
       socket.send(encodeRelayMessage(second))
+      expect(await secondError).toMatchObject({ type: 'error', code })
     } else {
       socket.send(encodeRelayMessage(first))
+      expect(await error).toMatchObject({ type: 'error', code })
     }
-    expect(await error).toMatchObject({ type: 'error', code })
     await once(socket, 'close')
   })
 
@@ -139,8 +146,10 @@ describe('RelayWebSocketConsumer', () => {
     const relay = relayFixture(attachment)
     const endpoint = await start(relay)
     const socket = await connect(endpoint.url)
+    const ready = nextMessage(socket)
     socket.send(encodeRelayMessage(attach()))
     await vi.waitFor(() => { expect(relay.attach).toHaveBeenCalledOnce() })
+    expect(await ready).toMatchObject({ type: 'ready' })
     const error = nextMessage(socket)
     socket.send(encodeRelayMessage(ciphertextMessage()))
     expect(await error).toMatchObject({ type: 'error', code: failure.code })

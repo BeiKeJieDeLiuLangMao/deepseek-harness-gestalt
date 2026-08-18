@@ -17,10 +17,14 @@ import type {
   PairingRendezvousId,
   PendingPairingId,
   PersonalPairingView,
+  RelayCredentialGrant,
   RemoteAccessErrorCode,
 } from '@deepseek-ai/dsh-remote-access'
+import { parseRelayCredential, parseRelayRouteId } from '@deepseek-ai/dsh-remote-protocol'
 
 export * from './relay.ts'
+export * from './browser-relay-socket.ts'
+export * from './relay-queue.ts'
 import {
   PERSONAL_PAIRING_PROTOCOL_MAJOR,
   RemoteAccessError,
@@ -203,7 +207,14 @@ export class RemoteAccessHttpTransport implements RemoteAccessTransport {
 function parseMobileAccess(value: unknown): MobileAccessState {
   const record = requiredRecord(value, 'Mobile Access response')
   if (typeof record.enabled !== 'boolean') throw new TypeError('Mobile Access enabled must be boolean')
-  return { enabled: record.enabled }
+  if (!record.enabled || record.relay === undefined) return { enabled: record.enabled }
+  const relay = requiredRecord(record.relay, 'Mobile Access Relay grant')
+  const grant: RelayCredentialGrant = {
+    routeId: parseRelayRouteId(relay.routeId),
+    credential: parseRelayCredential(relay.credential),
+    revision: requiredPositiveInteger(relay.revision, 'Mobile Access Relay revision'),
+  }
+  return { enabled: true, relay: grant }
 }
 
 function parseMobilePairingStatus(value: unknown): MobilePairingStatus {

@@ -1,27 +1,31 @@
 import { Context } from '@deepseek-ai/cordis'
 import {
   parseRelayAttachmentId,
+  parseRelayCredential,
   parseRelayRouteId,
   type RelayCiphertextMessage,
 } from '@deepseek-ai/dsh-remote-protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   RemoteRelayError,
-  RemoteRelayProvider,
   parseRelayConnectionToken,
+  parseRelayDeliveryId,
   parseRelayInstanceId,
   type RelayCoordinationEvent,
   type RelayCoordinator,
   type RelayDirectoryEntry,
   type RelayRouteStore,
 } from '../src/index.ts'
+import { RemoteRelayProvider } from '../src/relay-provider.ts'
 
 const CONFIG = {
   capacityRetryAfterMs: 1_000,
+  deliveryAckTimeoutMs: 50,
   directoryTtlMs: 30_000,
   heartbeatTimeoutMs: 45_000,
   maxBufferedCiphertextBytes: 128 * 1024,
   maxConnections: 20,
+  maxPendingDeliveries: 20,
 } as const
 
 afterEach(() => { vi.useRealTimers() })
@@ -63,6 +67,7 @@ describe('RemoteRelayProvider', () => {
     expect(desktopFrames).toEqual([expect.objectContaining({ ciphertext })])
     expect(coordinator.events).toEqual([
       expect.objectContaining({ type: 'ciphertext', routeId, ciphertext }),
+      expect.objectContaining({ type: 'delivered' }),
     ])
     await Promise.all([platformA.dispose(), platformB.dispose()])
   })
@@ -139,14 +144,15 @@ describe('RemoteRelayProvider', () => {
       deliver: async () => { await writer.promise },
     })
     const first = mobile.receive(ciphertext(routeId, 'mobile-one', 'desktop-one', Uint8Array.of(1, 2, 3, 4)))
+      .then(() => undefined, error => error as RemoteRelayError)
     await Promise.resolve()
 
     await expect(mobile.receive(ciphertext(routeId, 'mobile-one', 'desktop-one', Uint8Array.of(5))))
-      .rejects.toEqual(expect.objectContaining<Partial<RemoteRelayError>>({ code: 'RELAY_SLOW_CONSUMER' }))
+      .rejects.toEqual(expect.objectContaining<Partial<RemoteRelayError>>({ code: 'REMOTE_OFFLINE' }))
     await expect(desktop.receive(ciphertext(routeId, 'desktop-one', 'mobile-one', Uint8Array.of(6))))
       .rejects.toEqual(expect.objectContaining<Partial<RemoteRelayError>>({ code: 'REMOTE_OFFLINE' }))
     writer.resolve(undefined)
-    await first
+    expect(await first).toMatchObject({ code: 'REMOTE_OFFLINE' })
     await Promise.all([platformA.dispose(), platformB.dispose()])
   })
 
@@ -237,6 +243,151 @@ describe('RemoteRelayProvider', () => {
       routeId, 'desktop-established', 'mobile-missing', Uint8Array.of(1),
     ))).rejects.toEqual(expect.objectContaining<Partial<RemoteRelayError>>({ code: 'REMOTE_OFFLINE' }))
     await platform.dispose()
+  })
+
+  it('reserves capacity before concurrent attachment authorization completes', async () => {
+    const authorization = deferred<number | undefined>()
+    const routeStore = new SharedRouteStore()
+    const authorize = vi.spyOn(routeStore, 'authorize').mockImplementation(async () => await authorization.promise)
+    const coordinator = new SharedCoordinator()
+    const platform = new RemoteRelayProvider(new Context(), {
+      instanceId: parseRelayInstanceId('platform-reservation'), routeStore, coordinator,
+      config: { ...CONFIG, maxConnections: 1 },
+      randomBytes: size => new Uint8Array(size).fill(63),
+    })
+    const credential = parseRelayCredential('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA')
+    const first = platform.attach({
+      message: {
+        type: 'attach', transportVersion: 1, routeId: parseRelayRouteId('route-capacity'),
+        attachmentId: parseRelayAttachmentId('desktop-one'), endpoint: 'desktop', credential,
+      },
+      deliver: async () => {},
+    })
+    await vi.waitFor(() => { expect(authorize).toHaveBeenCalledOnce() })
+
+    const second = platform.attach({
+      message: {
+        type: 'attach', transportVersion: 1, routeId: parseRelayRouteId('route-capacity'),
+        attachmentId: parseRelayAttachmentId('mobile-one'), endpoint: 'mobile', credential,
+      },
+      deliver: async () => {},
+    })
+    await Promise.resolve()
+    expect(authorize).toHaveBeenCalledOnce()
+
+    authorization.resolve(1)
+    await first
+    await expect(second).rejects.toMatchObject({ code: 'PLATFORM_CAPACITY' })
+    await platform.dispose()
+  })
+
+  it('quiesces an attachment registration before stopping coordination during disposal', async () => {
+    const routeStore = new SharedRouteStore()
+    const coordinator = new SharedCoordinator()
+    const entered = deferred<undefined>()
+    const release = deferred<undefined>()
+    const register = coordinator.register.bind(coordinator)
+    vi.spyOn(coordinator, 'register').mockImplementation(async (entry) => {
+      entered.resolve(undefined)
+      await release.promise
+      await register(entry)
+    })
+    const stopped = vi.fn()
+    const listen = coordinator.listen.bind(coordinator)
+    vi.spyOn(coordinator, 'listen').mockImplementation(async (instanceId, listener) => {
+      const stop = await listen(instanceId, listener)
+      return async () => { stopped(); await stop() }
+    })
+    const platform = provider('platform-quiescence', routeStore, coordinator, 65)
+    const routeId = parseRelayRouteId('route-quiescence')
+    const grant = await platform.rotateCredential(routeId)
+    const attaching = platform.attach({
+      message: {
+        type: 'attach', transportVersion: 1, routeId,
+        attachmentId: parseRelayAttachmentId('desktop-one'), endpoint: 'desktop', credential: grant.credential,
+      },
+      deliver: async () => {},
+    })
+    await entered.promise
+    const disposing = platform.dispose()
+    await new Promise<void>((resolve) => { setImmediate(resolve) })
+    expect(stopped).not.toHaveBeenCalled()
+
+    release.resolve(undefined)
+    await expect(attaching).rejects.toMatchObject({ code: 'REMOTE_OFFLINE' })
+    await disposing
+    expect(stopped).toHaveBeenCalledOnce()
+    expect(await coordinator.locate(routeId, parseRelayAttachmentId('desktop-one'))).toBeUndefined()
+  })
+
+  it('rejects an old authorization that is invalidated before attachment registration', async () => {
+    const routeStore = new SharedRouteStore()
+    const coordinator = new SharedCoordinator()
+    let randomByte = 70
+    const platform = new RemoteRelayProvider(new Context(), {
+      instanceId: parseRelayInstanceId('platform-authorization-race'),
+      routeStore,
+      coordinator,
+      config: CONFIG,
+      randomBytes: size => new Uint8Array(size).fill(++randomByte),
+    })
+    const routeId = parseRelayRouteId('route-authorization-race')
+    const firstGrant = await platform.rotateCredential(routeId)
+    const entered = deferred<undefined>()
+    const release = deferred<undefined>()
+    const authorize = routeStore.authorize.bind(routeStore)
+    vi.spyOn(routeStore, 'authorize').mockImplementationOnce(async () => {
+      entered.resolve(undefined)
+      await release.promise
+      return firstGrant.revision
+    }).mockImplementation(authorize)
+    const attaching = platform.attach({
+      message: {
+        type: 'attach', transportVersion: 1, routeId,
+        attachmentId: parseRelayAttachmentId('desktop-one'), endpoint: 'desktop', credential: firstGrant.credential,
+      },
+      deliver: async () => {},
+    })
+    await entered.promise
+
+    await platform.rotateCredential(routeId)
+    release.resolve(undefined)
+
+    await expect(attaching).rejects.toMatchObject({ code: 'RELAY_ATTACHMENT_REJECTED' })
+    expect(await coordinator.locate(routeId, parseRelayAttachmentId('desktop-one'))).toBeUndefined()
+    await platform.dispose()
+  })
+
+  it('requires a target delivery acknowledgement after asynchronous publication', async () => {
+    const routeStore = new SharedRouteStore()
+    const coordinator = new SharedCoordinator()
+    const platformA = provider('platform-ack-source', routeStore, coordinator, 72)
+    const platformB = provider('platform-ack-target', routeStore, coordinator, 74)
+    const routeId = parseRelayRouteId('route-stale-ack')
+    const grant = await platformA.rotateCredential(routeId)
+    const mobile = await platformA.attach({
+      message: {
+        type: 'attach', transportVersion: 1, routeId,
+        attachmentId: parseRelayAttachmentId('mobile-one'), endpoint: 'mobile', credential: grant.credential,
+      },
+      deliver: async () => {},
+    })
+    coordinator.put({
+      routeId,
+      attachmentId: parseRelayAttachmentId('desktop-stale'),
+      endpoint: 'desktop',
+      instanceId: parseRelayInstanceId('platform-ack-target'),
+      connectionToken: parseRelayConnectionToken('stale-connection'),
+      revision: grant.revision,
+      expiresAt: Date.now() + 10_000,
+    })
+
+    await expect(mobile.receive(ciphertext(
+      routeId, 'mobile-one', 'desktop-stale', Uint8Array.of(1),
+    ))).rejects.toMatchObject({ code: 'REMOTE_OFFLINE' })
+    expect(coordinator.events).toContainEqual(expect.objectContaining({ type: 'ciphertext' }))
+    expect(coordinator.events).not.toContainEqual(expect.objectContaining({ type: 'delivered' }))
+    await Promise.all([platformA.dispose(), platformB.dispose()])
   })
 
   it('fails closed and detaches on heartbeat when shared route authority is uncertain', async () => {
@@ -340,6 +491,7 @@ describe('RemoteRelayProvider', () => {
       deliver: async () => { await writer.promise },
     })
     const forwarding = mobile.receive(ciphertext(routeId, 'mobile-one', 'desktop-one', Uint8Array.of(1)))
+      .then(() => undefined, error => error as RemoteRelayError)
     await Promise.resolve()
     let disposed = false
     const disposal = platform.dispose().then(() => { disposed = true })
@@ -347,7 +499,8 @@ describe('RemoteRelayProvider', () => {
 
     expect(disposed).toBe(false)
     writer.resolve(undefined)
-    await Promise.all([forwarding, disposal])
+    expect(await forwarding).toMatchObject({ code: 'REMOTE_OFFLINE' })
+    await disposal
     expect(disposed).toBe(true)
   })
 
@@ -362,8 +515,10 @@ describe('RemoteRelayProvider', () => {
     for (const value of [undefined, '', 'x'.repeat(129), 'not valid']) {
       expect(() => parseRelayInstanceId(value)).toThrow('Relay instance id')
       expect(() => parseRelayConnectionToken(value)).toThrow('Relay connection token')
+      expect(() => parseRelayDeliveryId(value)).toThrow('Relay delivery id')
     }
     expect(parseRelayConnectionToken('connection_valid-1')).toBe('connection_valid-1')
+    expect(parseRelayDeliveryId('delivery_valid-1')).toBe('delivery_valid-1')
 
     const routeStore = new SharedRouteStore()
     const coordinator = new SharedCoordinator()
@@ -536,7 +691,9 @@ describe('RemoteRelayProvider', () => {
     })
     await coordinator.send(parseRelayInstanceId('platform-b'), {
       ...ciphertext(routeId, 'mobile-one', 'missing', Uint8Array.of(1)),
+      sourceInstanceId: parseRelayInstanceId('platform-a'),
       targetConnectionToken: parseRelayConnectionToken('missing-token'), revision: grant.revision,
+      deliveryId: parseRelayDeliveryId('delivery-missing'),
     })
     const current = await coordinator.locate(routeId, message.attachmentId)
     if (current === undefined) throw new Error('replacement directory entry missing')
@@ -546,7 +703,9 @@ describe('RemoteRelayProvider', () => {
     ]) {
       await coordinator.send(current.instanceId, {
         ...ciphertext(routeId, 'mobile-one', 'desktop-one', Uint8Array.of(2)),
+        sourceInstanceId: parseRelayInstanceId('platform-a'),
         targetConnectionToken: event.token, revision: event.revision,
+        deliveryId: parseRelayDeliveryId(`delivery-${String(event.revision)}`),
       })
     }
     await expect(mobile.receive(ciphertext(
@@ -606,7 +765,7 @@ describe('RemoteRelayProvider', () => {
       type: 'invalidate', routeId, revision: grant.revision + 1,
     })).rejects.toThrow('Relay invalidation cleanup failed')
     coordinator.failUnregister = false
-    await replacement.close()
+    await expect(replacement.close()).rejects.toThrow('Relay attachment drain failed')
     await platform.dispose()
   })
 
@@ -639,12 +798,18 @@ describe('RemoteRelayProvider', () => {
       deliver: async () => { deliveries += 1; await writer.promise },
     })
     const first = mobile.receive(ciphertext(routeId, 'mobile-one', 'desktop-one', Uint8Array.of(1)))
+      .then(() => undefined, error => error as RemoteRelayError)
     await vi.waitFor(() => { expect(deliveries).toBe(1) })
     const second = mobile.receive(ciphertext(routeId, 'mobile-one', 'desktop-one', Uint8Array.of(2)))
+      .then(() => undefined, error => error as RemoteRelayError)
     await new Promise<void>((resolve) => { setImmediate(resolve) })
     const closing = desktop.close()
     writer.resolve(undefined)
-    await Promise.all([first, second, closing])
+    const [firstResult, secondResult] = await Promise.all([first, second, closing]).then(
+      ([firstValue, secondValue]) => [firstValue, secondValue],
+    )
+    expect(firstResult).toMatchObject({ code: 'REMOTE_OFFLINE' })
+    expect(secondResult).toMatchObject({ code: 'REMOTE_OFFLINE' })
     expect(deliveries).toBe(1)
 
     const timed = await platformB.attach({
@@ -659,7 +824,7 @@ describe('RemoteRelayProvider', () => {
     timeout?.()
     await vi.waitFor(() => { expect(consoleError).toHaveBeenCalledOnce() })
     coordinator.failUnregister = false
-    await timed.close()
+    await expect(timed.close()).rejects.toThrow('Relay attachment drain failed')
     consoleError.mockRestore()
     await Promise.all([platformA.dispose(), platformB.dispose()])
   })
@@ -782,7 +947,7 @@ class SharedCoordinator implements RelayCoordinator {
     this.events.push(event)
     const listener = this.listeners.get(instanceId)
     if (listener === undefined) return false
-    await listener(event)
+    queueMicrotask(() => { void listener(event).catch(() => {}) })
     return true
   }
 

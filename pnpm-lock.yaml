@@ -6005,6 +6005,10 @@ importers:
         version: link:../remote-protocol
 
   packages/platform/remote-access-client:
+    dependencies:
+      ws:
+        specifier: ^8.21.0
+        version: 8.21.0
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^
@@ -6021,6 +6025,9 @@ importers:
       '@deepseek-ai/dsh-remote-protocol':
         specifier: workspace:^
         version: link:../remote-protocol
+      '@types/ws':
+        specifier: ^8.18.1
+        version: 8.18.1
 
   packages/platform/remote-access-http:
     dependencies:

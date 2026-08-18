@@ -3,6 +3,7 @@
 import { createClient } from 'redis'
 import {
   parseRelayConnectionToken,
+  parseRelayDeliveryId,
   parseRelayInstanceId,
   type RelayCoordinationEvent,
   type RelayCoordinator,
@@ -183,11 +184,22 @@ export async function connectRedisRelayCoordinator(options: {
   validateKeyPrefix(options.keyPrefix)
   const command = createClient({ url: options.url })
   const subscriber = command.duplicate()
-  try {
-    await Promise.all([command.connect(), subscriber.connect()])
-  } catch (error) {
+  const onCommandError = (error: Error): void => {
+    console.error('[remote-access-redis] command client error:', error)
+  }
+  const onSubscriberError = (error: Error): void => {
+    console.error('[remote-access-redis] subscriber client error:', error)
+  }
+  command.on('error', onCommandError)
+  subscriber.on('error', onSubscriberError)
+  const connected = await Promise.allSettled([command.connect(), subscriber.connect()])
+  const connectionErrors = rejectedReasons(connected)
+  if (connectionErrors.length > 0) {
     await Promise.allSettled([command.close(), subscriber.close()])
-    throw error
+    command.off('error', onCommandError)
+    subscriber.off('error', onSubscriberError)
+    if (connectionErrors.length === 1) throw connectionErrors[0]
+    throw new AggregateError(connectionErrors, 'Relay Redis clients failed to connect')
   }
   const coordinator = new RedisRelayCoordinator({
     command: command,
@@ -198,7 +210,9 @@ export async function connectRedisRelayCoordinator(options: {
     coordinator,
     close: async () => {
       const results = await Promise.allSettled([command.quit(), subscriber.quit()])
-      const errors = results.filter(result => result.status === 'rejected').map(result => result.reason as unknown)
+      command.off('error', onCommandError)
+      subscriber.off('error', onSubscriberError)
+      const errors = rejectedReasons(results)
       if (errors.length > 0) throw new AggregateError(errors, 'Relay Redis clients failed to close')
     },
   }
@@ -227,12 +241,16 @@ function decodeDirectory(value: string): RelayDirectoryEntry {
 function encodeEvent(event: RelayCoordinationEvent): string {
   const value = event.type === 'invalidate'
     ? JSON.stringify(event)
-    : JSON.stringify({
-      type: 'ciphertext',
-      targetConnectionToken: event.targetConnectionToken,
-      revision: event.revision,
-      frame: Buffer.from(encodeRelayMessage(withoutCoordination(event))).toString('base64url'),
-    })
+    : event.type === 'delivered'
+      ? JSON.stringify(event)
+      : JSON.stringify({
+        type: 'ciphertext',
+        sourceInstanceId: event.sourceInstanceId,
+        targetConnectionToken: event.targetConnectionToken,
+        deliveryId: event.deliveryId,
+        revision: event.revision,
+        frame: Buffer.from(encodeRelayMessage(withoutCoordination(event))).toString('base64url'),
+      })
   return value
 }
 
@@ -247,7 +265,11 @@ function decodeEvent(value: string): RelayCoordinationEvent {
       revision: positiveInteger(record.revision, 'revision'),
     }
   }
-  exactKeys(record, ['type', 'targetConnectionToken', 'revision', 'frame'])
+  if (record.type === 'delivered') {
+    exactKeys(record, ['type', 'deliveryId'])
+    return { type: 'delivered', deliveryId: parseRelayDeliveryId(record.deliveryId) }
+  }
+  exactKeys(record, ['type', 'sourceInstanceId', 'targetConnectionToken', 'deliveryId', 'revision', 'frame'])
   if (record.type !== 'ciphertext' || typeof record.frame !== 'string') {
     throw new TypeError('Relay coordination event type is invalid')
   }
@@ -263,15 +285,23 @@ function decodeEvent(value: string): RelayCoordinationEvent {
   if (frame.type !== 'ciphertext') throw new TypeError('Relay coordination frame must carry ciphertext')
   return {
     ...frame,
+    sourceInstanceId: parseRelayInstanceId(record.sourceInstanceId),
     targetConnectionToken: parseRelayConnectionToken(record.targetConnectionToken),
+    deliveryId: parseRelayDeliveryId(record.deliveryId),
     revision: positiveInteger(record.revision, 'revision'),
   }
 }
 
 function withoutCoordination(
-  event: Exclude<RelayCoordinationEvent, { type: 'invalidate' }>,
+  event: Extract<RelayCoordinationEvent, { type: 'ciphertext' }>,
 ): RelayCiphertextMessage {
-  const { targetConnectionToken: _targetConnectionToken, revision: _revision, ...frame } = event
+  const {
+    sourceInstanceId: _sourceInstanceId,
+    targetConnectionToken: _targetConnectionToken,
+    deliveryId: _deliveryId,
+    revision: _revision,
+    ...frame
+  } = event
   return frame
 }
 
@@ -296,4 +326,8 @@ function validateKeyPrefix(keyPrefix: string): void {
   if (keyPrefix.length === 0 || keyPrefix.length > 128 || !KEY_PREFIX_PATTERN.test(keyPrefix)) {
     throw new TypeError('Relay Redis keyPrefix must be 1-128 namespace characters')
   }
+}
+
+function rejectedReasons(results: PromiseSettledResult<unknown>[]): unknown[] {
+  return results.flatMap(result => result.status === 'rejected' ? [result.reason] : [])
 }

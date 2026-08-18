@@ -7,6 +7,7 @@ import { createClient } from 'redis'
 import { describe, expect, it, vi } from 'vitest'
 import {
   parseRelayConnectionToken,
+  parseRelayDeliveryId,
   parseRelayInstanceId,
   type RelayCoordinationEvent,
   type RelayDirectoryEntry,
@@ -51,12 +52,20 @@ describe('RedisRelayCoordinator', () => {
       sourceAttachmentId: parseRelayAttachmentId('mobile-one'), targetAttachmentId: attachmentId, ciphertext,
     }
     expect(await platformA.publish(entry.instanceId, {
-      ...frame, targetConnectionToken: entry.connectionToken, revision: entry.revision,
+      ...frame,
+      sourceInstanceId: parseRelayInstanceId('platform-a'),
+      targetConnectionToken: entry.connectionToken,
+      deliveryId: parseRelayDeliveryId('delivery-one'),
+      revision: entry.revision,
+    })).toBe(true)
+    expect(await platformA.publish(entry.instanceId, {
+      type: 'delivered', deliveryId: parseRelayDeliveryId('delivery-one'),
     })).toBe(true)
     await platformA.invalidate({ type: 'invalidate', routeId, revision: 4 })
 
     expect(received).toEqual([
       expect.objectContaining({ type: 'ciphertext', ciphertext }),
+      { type: 'delivered', deliveryId: parseRelayDeliveryId('delivery-one') },
       { type: 'invalidate', routeId, revision: 4 },
     ])
     expect(bus.published.join('\n')).not.toContain('private prompt')
@@ -77,6 +86,8 @@ describe('RedisRelayCoordinator', () => {
       sourceAttachmentId: parseRelayAttachmentId('mobile-one'),
       targetAttachmentId: parseRelayAttachmentId('desktop-one'),
       targetConnectionToken: parseRelayConnectionToken('connection-one'),
+      sourceInstanceId: parseRelayInstanceId('platform-a'),
+      deliveryId: parseRelayDeliveryId('delivery-one'),
       revision: 1,
       ciphertext: Uint8Array.of(1),
     } as const
@@ -198,9 +209,13 @@ describe('RedisRelayCoordinator', () => {
     })
     expect(command.connect).toHaveBeenCalledOnce()
     expect(subscriber.connect).toHaveBeenCalledOnce()
+    expect(command.on).toHaveBeenCalledBefore(command.connect)
+    expect(subscriber.on).toHaveBeenCalledBefore(subscriber.connect)
     await connected.close()
     expect(command.quit).toHaveBeenCalledOnce()
     expect(subscriber.quit).toHaveBeenCalledOnce()
+    expect(command.off).toHaveBeenCalledOnce()
+    expect(subscriber.off).toHaveBeenCalledOnce()
 
     command.connect.mockReset().mockResolvedValue(undefined)
     subscriber.connect.mockReset().mockResolvedValue(undefined)
@@ -298,5 +313,7 @@ function redisClientFixture() {
     connect: vi.fn(async () => undefined),
     close: vi.fn(async () => undefined),
     quit: vi.fn(async () => undefined),
+    on: vi.fn(),
+    off: vi.fn(),
   }
 }

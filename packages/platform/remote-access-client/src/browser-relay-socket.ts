@@ -1,0 +1,79 @@
+import { RemoteRelayError } from '@deepseek-ai/dsh-remote-access'
+import type { RelayEndpointSocket } from './relay.ts'
+import { RelayInboundQueue, type RelayInboundQueueLimits } from './relay-queue.ts'
+
+/** Browser WebSocket adapter with a bounded live inbound queue. */
+export class BrowserRelayEndpointSocket implements RelayEndpointSocket {
+  private readonly queue: RelayInboundQueue
+  private readonly done: Promise<void>
+  private closed = false
+
+  private constructor(private readonly socket: WebSocket, limits: RelayInboundQueueLimits) {
+    this.queue = new RelayInboundQueue(limits)
+    socket.binaryType = 'arraybuffer'
+    this.done = new Promise<void>((resolve) => {
+      socket.addEventListener('message', (event) => {
+        try {
+          if (!(event.data instanceof ArrayBuffer)) {
+            throw new RemoteRelayError('RELAY_ATTACHMENT_REJECTED', 'Relay WebSocket requires binary frames')
+          }
+          this.queue.push(new Uint8Array(event.data))
+        } catch (error) {
+          this.queue.fail(error)
+          socket.close(1009, 'relay inbound limit')
+        }
+      })
+      socket.addEventListener('close', () => {
+        this.closed = true
+        this.queue.end()
+        resolve()
+      }, { once: true })
+      socket.addEventListener('error', () => {
+        this.queue.fail(new RemoteRelayError('REMOTE_OFFLINE', 'Relay WebSocket failed'))
+      })
+    })
+  }
+
+  /**
+   * Open one browser WebSocket owned by the supplied lifecycle signal.
+   * @param url - deployment WSS endpoint.
+   * @param signal - lifecycle cancellation.
+   * @param limits - bounded live inbound queue.
+   * @returns connected Relay socket.
+   */
+  static async connect(url: string, signal: AbortSignal, limits: RelayInboundQueueLimits): Promise<BrowserRelayEndpointSocket> {
+    const parsed = new URL(url)
+    if (parsed.protocol !== 'wss:') throw new TypeError('Browser Relay endpoint must use WSS')
+    const socket = new WebSocket(parsed)
+    await opened(socket, signal)
+    return new BrowserRelayEndpointSocket(socket, limits)
+  }
+
+  async send(value: Uint8Array): Promise<void> {
+    if (this.socket.readyState !== WebSocket.OPEN) throw new RemoteRelayError('REMOTE_OFFLINE', 'Relay WebSocket is closed')
+    this.socket.send(Uint8Array.from(value))
+  }
+
+  messages(): AsyncIterable<Uint8Array> { return this.queue }
+
+  async close(): Promise<void> {
+    if (!this.closed) this.socket.close()
+    await this.done
+  }
+}
+
+function opened(socket: WebSocket, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    socket.addEventListener('open', () => finish(resolve), { once: true })
+    socket.addEventListener('error', () => finish(() => reject(new RemoteRelayError('REMOTE_OFFLINE', 'Relay WebSocket failed to open'))), { once: true })
+    signal.addEventListener('abort', aborted, { once: true })
+    function aborted(): void {
+      socket.close()
+      finish(() => reject(new RemoteRelayError('REMOTE_OFFLINE', 'Relay WebSocket acquisition was cancelled')))
+    }
+    function finish(settle: () => void): void {
+      signal.removeEventListener('abort', aborted)
+      settle()
+    }
+  })
+}

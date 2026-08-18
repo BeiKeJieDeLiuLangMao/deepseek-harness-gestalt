@@ -11,6 +11,8 @@ import type {
   AuthenticatedInstallationView,
   InstallationId,
 } from '@deepseek-ai/dsh-platform-account'
+import { parseRelayRouteId, type RelayRouteId } from '@deepseek-ai/dsh-remote-protocol'
+import type { RelayCredentialGrant, RemoteRelayService } from './relay.ts'
 
 export * from './relay.ts'
 
@@ -138,12 +140,14 @@ export interface PersonalPairingProviderOptions {
   account: Pick<AccountService, 'currentInstallation'>
   /** Replaceable reviewed handshake adapter; this package does not implement Noise. */
   handshake: PairingHandshakeProvider
+  /** Optional assembled Relay authority; production omits it until the crypto gate is approved. */
+  relay?: Pick<RemoteRelayService, 'rotateCredential' | 'revokeRoute'>
   /** Clock used for fixed challenge expiry and deterministic assembled scenarios. */
   clock?: { now(): number }
   /** Cryptographic random source; production defaults to Web Crypto. */
   randomBytes?: (size: number) => Uint8Array
   /** Opaque id source for challenge and pairing records. */
-  randomId?: (kind: 'challenge' | 'pairing' | 'principal' | 'completion') => string
+  randomId?: (kind: 'challenge' | 'pairing' | 'principal' | 'completion' | 'relay-route') => string
   /** Expiry scheduler; production defaults to the process timer. */
   schedule?: (task: () => void, delayMs: number) => ReturnType<typeof setTimeout>
   /** HTTPS origin and path used by both QR and full-link flows. */
@@ -216,6 +220,8 @@ export interface PersonalPairingView {
 export interface MobileAccessState {
   /** Whether this Desktop may create invitations and authorize Companion traffic. */
   enabled: boolean
+  /** Fresh Relay authority returned only by a successful enable mutation. */
+  relay?: RelayCredentialGrant
 }
 
 /** Mobile projection of the Desktop confirmation decision. */
@@ -400,6 +406,7 @@ export class PersonalPairingProvider extends RemoteAccessService {
   private readonly principalIds = new Set<DevicePrincipalId>()
   private readonly orphanPendingCleanups = new Map<CleanupRecord<PendingPairingKey>, OrphanPendingCleanupRecord>()
   private readonly mobileAccess = new Set<string>()
+  private readonly relayRoutes = new Map<string, RelayRouteId>()
   private serial: Promise<void> = Promise.resolve()
   private readonly clock: { now(): number }
   private readonly randomBytes: (size: number) => Uint8Array
@@ -497,9 +504,21 @@ export class PersonalPairingProvider extends RemoteAccessService {
       this.evictExpiredRecords()
       const key = accessKey(account.id, installation.id)
       if (input.enabled) {
+        let relay: RelayCredentialGrant | undefined
+        if (this.options.relay !== undefined) {
+          let routeId = this.relayRoutes.get(key)
+          if (routeId === undefined) {
+            routeId = parseRelayRouteId(this.randomId('relay-route'))
+            this.relayRoutes.set(key, routeId)
+          }
+          relay = await this.options.relay.rotateCredential(routeId)
+        }
         this.mobileAccess.add(key)
-        return { enabled: true }
+        return { enabled: true, ...(relay === undefined ? {} : { relay }) }
       }
+      const routeId = this.relayRoutes.get(key)
+      if (routeId !== undefined && this.options.relay !== undefined) await this.options.relay.revokeRoute(routeId)
+      this.relayRoutes.delete(key)
       this.mobileAccess.delete(key)
       for (const challenge of [...this.challenges.values()]) {
         if (challenge.accountId === account.id && challenge.desktopInstallationId === installation.id) {
@@ -809,6 +828,10 @@ export class PersonalPairingProvider extends RemoteAccessService {
         operations.push(() => this.cleanupPending(record.cleanup))
       }
       for (const pairing of this.pairings.values()) operations.push(() => this.cleanupActive(pairing.cleanup))
+      const relay = this.options.relay
+      if (relay !== undefined) {
+        for (const routeId of this.relayRoutes.values()) operations.push(() => relay.revokeRoute(routeId))
+      }
       await cleanupAll(operations)
     })
   }

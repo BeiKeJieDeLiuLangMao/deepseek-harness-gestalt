@@ -117,6 +117,13 @@ export interface RelayHeartbeatMessage {
   sentAt: number
 }
 
+/** Content-free confirmation that Platform authenticated and registered one attachment. */
+export interface RelayReadyMessage {
+  type: 'ready'
+  transportVersion: 1
+  attachmentId: RelayAttachmentId
+}
+
 /** Content-free revocation frame for one Relay attachment. */
 export interface RelayRevokeMessage {
   type: 'revoke'
@@ -149,4 +156,5 @@ export type RelayMessage =
   | RelayCiphertextMessage
   | RelayErrorMessage
   | RelayHeartbeatMessage
+  | RelayReadyMessage
   | RelayRevokeMessage

@@ -2,6 +2,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 import type { AccountProof, PlatformAccountView } from '@deepseek-ai/dsh-platform-account'
 import { parseAccountProofJti, parseInstallationId } from '@deepseek-ai/dsh-platform-account'
+import { parseRelayCredential, parseRelayRouteId } from '@deepseek-ai/dsh-remote-protocol'
 import {
   MAX_ACTIVE_PAIRING_CHALLENGES_PER_INSTALLATION,
   MAX_PENDING_PAIRINGS_PER_INSTALLATION,
@@ -38,6 +39,36 @@ describe('PersonalPairingProvider', () => {
 
     expect(await provider.setMobileAccess({ desktop, enabled: true })).toEqual({ enabled: true })
     await expect(provider.createChallenge({ desktop, rendezvousId: 'enabled' as never })).resolves.toBeDefined()
+  })
+
+  it('rotates and revokes Relay authority through the authenticated Settings mutation', async () => {
+    const routeId = parseRelayRouteId('relay-route-id')
+    const credential = parseRelayCredential('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA')
+    const relay = {
+      rotateCredential: vi.fn(async () => ({ routeId, credential, revision: 1 })),
+      revokeRoute: vi.fn(async () => {}),
+    }
+    const provider = new PersonalPairingProvider(new Context(), {
+      account: accountService(account('account-one')),
+      handshake: handshakeProvider(),
+      relay,
+      randomId: kind => `${kind}-id`,
+      pairingLinkOrigin: 'https://platform.example.com/pair',
+    })
+    const desktop = authentication('desktop-installation', 'account-one')
+
+    await expect(provider.setMobileAccess({ desktop, enabled: true })).resolves.toEqual({
+      enabled: true,
+      relay: { routeId, credential, revision: 1 },
+    })
+    await provider.setMobileAccess({ desktop, enabled: true })
+    expect(relay.rotateCredential).toHaveBeenNthCalledWith(1, routeId)
+    expect(relay.rotateCredential).toHaveBeenNthCalledWith(2, routeId)
+
+    await provider.setMobileAccess({ desktop, enabled: false })
+    expect(relay.revokeRoute).toHaveBeenCalledOnce()
+    expect(await provider.getMobileAccessState(desktop)).toEqual({ enabled: false })
+    await provider.dispose()
   })
 
   it('uses authenticated installation identity and role instead of caller claims', async () => {

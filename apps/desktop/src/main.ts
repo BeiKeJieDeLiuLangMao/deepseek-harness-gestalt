@@ -44,6 +44,7 @@ import {
   setPairingEnabledFromIpc,
   type DesktopPairingActions,
 } from './personal-pairing.ts'
+import { FailClosedDesktopRelayLifecycle } from '@deepseek-ai/dsh-remote-access-client/desktop-relay-lifecycle'
 import { disposeDesktopOwners } from './shutdown.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -501,14 +502,15 @@ function createDesktopPairing(
   environment: SelectedPlatformEnvironment,
   currentAccount: DesktopAccountActions,
 ): DesktopPairingActions {
+  const unavailableReason = 'Personal Pairing requires an independently reviewed handshake and Relay crypto provider.'
+  const relay = new FailClosedDesktopRelayLifecycle(unavailableReason)
   if (environment.environment !== 'development' || process.env.DSH_PERSONAL_PAIRING_KEYLESS !== '1') {
-    return new UnavailableDesktopPairingController(
-      'Personal Pairing requires an independently reviewed handshake provider. Development proof mode is disabled.',
-    )
+    return new UnavailableDesktopPairingController(`${unavailableReason} Development proof mode is disabled.`, relay)
   }
   return new DesktopPairingController({
     account: currentAccount,
     transport: new RemoteAccessHttpTransport({ environment }),
+    relay,
   })
 }
 

@@ -15,10 +15,15 @@ import {
   type PersonalPairingId,
 } from '@deepseek-ai/dsh-remote-access'
 import type { RemoteAccessTransport } from '@deepseek-ai/dsh-remote-access-client'
+import { FailClosedDesktopRelayLifecycle } from '@deepseek-ai/dsh-remote-access-client/desktop-relay-lifecycle'
 import {
   bindDesktopPairing,
   createDesktopPairingSource,
 } from '../../../packages/client/ui-desktop/src/client/pairing-source.ts'
+import {
+  parseRelayCredential,
+  parseRelayRouteId,
+} from '@deepseek-ai/dsh-remote-protocol'
 import {
   DesktopPairingController,
   UnavailableDesktopPairingController,
@@ -47,9 +52,55 @@ describe('UnavailableDesktopPairingController', () => {
     await expect(controller.deactivate()).resolves.toBeUndefined()
     await expect(controller.dispose()).resolves.toBeUndefined()
   })
+
+  it('keeps the product Relay composition observably offline for lifecycle hooks', async () => {
+    const relay = new FailClosedDesktopRelayLifecycle('crypto gate pending')
+    const controller = new UnavailableDesktopPairingController('crypto gate pending', relay)
+    await expect(relay.start()).rejects.toThrow('crypto gate pending')
+    expect(relay.getState()).toEqual({ connected: false })
+
+    await controller.deactivate('sleep')
+    expect(relay.getState()).toEqual({ connected: false, stopReason: 'sleep' })
+    await controller.dispose()
+    expect(relay.getState()).toEqual({ connected: false, stopReason: 'quit' })
+  })
 })
 
 describe('DesktopPairingController', () => {
+  it('installs the Settings Relay grant before starting the endpoint lifecycle', async () => {
+    const transport = transportFixture()
+    const grant = {
+      routeId: parseRelayRouteId('route-settings'),
+      credential: parseRelayCredential('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'),
+      revision: 1,
+    }
+    transport.setMobileAccess.mockResolvedValueOnce({ enabled: true, relay: grant })
+    const order: string[] = []
+    const relay = {
+      configure: vi.fn(async () => { order.push('configure') }),
+      start: vi.fn(async () => { order.push('start') }),
+      stop: vi.fn(async () => {}),
+    }
+    const controller = new DesktopPairingController({
+      account: {
+        getSnapshot: signedInAccountSnapshot,
+        authorizeCurrentInstallation: vi.fn(async () => ({
+          accessToken: 'desktop-access',
+          proof: { jti: parseAccountProofJti('proof'), issuedAt: 1, signature: 'signature' },
+        })),
+      },
+      transport,
+      relay,
+    })
+    await controller.start()
+
+    await controller.setEnabled(true)
+
+    expect(relay.configure).toHaveBeenCalledWith(grant)
+    expect(order).toEqual(['configure', 'start'])
+    await controller.dispose()
+  })
+
   it('owns the live Relay only while Mobile Access is enabled and the Desktop is awake', async () => {
     const transport = transportFixture()
     const relay = { start: vi.fn(async () => {}), stop: vi.fn(async () => {}) }
@@ -125,6 +176,7 @@ describe('DesktopPairingController', () => {
 
   it('deactivation drains an in-flight poll and rejects work after sign-out or close', async () => {
     const transport = transportFixture()
+    const relay = { start: vi.fn(async () => {}), stop: vi.fn(async () => {}) }
     const scheduled: Array<() => void> = []
     const controller = new DesktopPairingController({
       account: {
@@ -135,6 +187,7 @@ describe('DesktopPairingController', () => {
         })),
       },
       transport,
+      relay,
       schedule: (task) => { scheduled.push(task); return { unref: vi.fn() } as never },
     })
     await controller.start()
@@ -147,6 +200,7 @@ describe('DesktopPairingController', () => {
     let drained = false
     const deactivating = controller.deactivate().then(() => { drained = true })
     await Promise.resolve()
+    expect(relay.stop).toHaveBeenCalledWith('quit')
     expect(drained).toBe(false)
     refresh.resolve({ enabled: true })
     await deactivating
@@ -157,6 +211,75 @@ describe('DesktopPairingController', () => {
     await controller.dispose()
     await expect(controller.start()).rejects.toThrow('closed')
     await expect(controller.setEnabled(true)).rejects.toThrow('inactive')
+  })
+
+  it('does not let an old deferred stop close a resumed lifecycle owner', async () => {
+    const transport = transportFixture()
+    const stopRelease = deferred<undefined>()
+    const stopEntered = deferred<undefined>()
+    const relay = {
+      start: vi.fn(async () => {}),
+      stop: vi.fn(async (reason?: string) => {
+        if (reason === 'sleep') {
+          stopEntered.resolve(undefined)
+          await stopRelease.promise
+        }
+      }),
+    }
+    const controller = new DesktopPairingController({
+      account: {
+        getSnapshot: signedInAccountSnapshot,
+        authorizeCurrentInstallation: vi.fn(async () => ({
+          accessToken: 'desktop-access',
+          proof: { jti: parseAccountProofJti('proof'), issuedAt: 1, signature: 'signature' },
+        })),
+      },
+      transport,
+      relay,
+    })
+    await controller.start()
+    await controller.setEnabled(true)
+    const startsBeforeSuspend = relay.start.mock.calls.length
+
+    const suspending = controller.deactivate('sleep')
+    await stopEntered.promise
+    const resuming = controller.start()
+    await Promise.resolve()
+    expect(relay.start).toHaveBeenCalledTimes(startsBeforeSuspend)
+
+    stopRelease.resolve(undefined)
+    await suspending
+    await resuming
+    expect(relay.start).toHaveBeenCalledTimes(startsBeforeSuspend + 1)
+    await controller.dispose()
+  })
+
+  it('stays locally offline when the remote disable mutation fails and recovers only on explicit enable', async () => {
+    const transport = transportFixture()
+    const relay = { start: vi.fn(async () => {}), stop: vi.fn(async () => {}) }
+    const controller = new DesktopPairingController({
+      account: {
+        getSnapshot: signedInAccountSnapshot,
+        authorizeCurrentInstallation: vi.fn(async () => ({
+          accessToken: 'desktop-access',
+          proof: { jti: parseAccountProofJti('proof'), issuedAt: 1, signature: 'signature' },
+        })),
+      },
+      transport,
+      relay,
+    })
+    await controller.start()
+    await controller.setEnabled(true)
+    transport.setMobileAccess.mockRejectedValueOnce(new Error('disable failed'))
+
+    await expect(controller.setEnabled(false)).rejects.toThrow('disable failed')
+    expect(relay.stop).toHaveBeenLastCalledWith('mobile-access-disabled')
+    expect(controller.getSnapshot()).toMatchObject({ status: 'failed', enabled: false, error: 'disable failed' })
+
+    await controller.setEnabled(true)
+    expect(controller.getSnapshot()).toMatchObject({ status: 'ready', enabled: true })
+    expect(relay.start).toHaveBeenCalledTimes(2)
+    await controller.dispose()
   })
 
   it('drops Account A projection before Account B starts even when its first refresh fails', async () => {
@@ -278,7 +401,7 @@ describe('DesktopPairingController', () => {
 function transportFixture() {
   return {
     getMobileAccessState: vi.fn().mockResolvedValueOnce({ enabled: false }).mockResolvedValue({ enabled: true }),
-    setMobileAccess: vi.fn().mockResolvedValue({ enabled: true }),
+    setMobileAccess: vi.fn(async (input: { enabled: boolean }) => ({ enabled: input.enabled })),
     createChallenge: vi.fn().mockResolvedValue({
       challengeId: parsePairingChallengeId('challenge-one'),
       desktopFingerprint: 'fingerprint',

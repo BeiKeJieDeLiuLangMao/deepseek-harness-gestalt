@@ -18,12 +18,12 @@ describe('two-instance Remote Relay keyless assembled path', () => {
     })
     expect(result.stderr).toBe('')
     expect(result.stdout).toMatchInlineSnapshot(`
-      "PLATFORM endpoint=one nonSticky=true mobile=platform-a desktop=platform-b
+      "PLATFORM endpointProtocol=wss: endpointPath=/v1/remote-access/relay endpointCount=1 nonSticky=true mobile=platform-a desktop=platform-b
       ROUND_TRIP encrypted=true relayBusinessValue=false outcome=accepted
-      FAILOVER liveSocketMigration=false desktopReconnect=platform-a resync=2
-      OFFLINE code=REMOTE_OFFLINE queued=0
-      LIFECYCLE windowClose=offline sleep=offline quit=offline disable=offline backgroundHost=false remoteWake=false
-      CRYPTO product=fail-closed keylessScenario=true
+      FAILOVER liveSocketMigration=false desktopReconnect=platform-a mobileRevision=2 mobileText=desktop authoritative revision 2
+      OFFLINE code=REMOTE_OFFLINE retainedCiphertextValues=0
+      LIFECYCLE observed=window-close,sleep,mobile-access-disabled,quit offline=true
+      CRYPTO startRejected=true connected=false stop=quit
       "
     `)
   }, LOADER_SMOKE_TEST_TIMEOUT_MS)

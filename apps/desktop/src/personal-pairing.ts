@@ -1,17 +1,21 @@
 /** Desktop Host ownership for Settings-only Personal Pairing projection. */
 
 import type { DesktopPairingSnapshot } from '@deepseek-ai/dsh-client-ui-desktop/protocol'
-import type { PlatformAccountId } from '@deepseek-ai/dsh-platform-account'
+import { parsePlatformAccountId, type PlatformAccountId } from '@deepseek-ai/dsh-platform-account'
 import {
   parsePairingChallengeId,
   parsePairingRendezvousId,
   parsePendingPairingId,
   type PendingPairingId,
 } from '@deepseek-ai/dsh-remote-access'
-import type {
-  DesktopRelayStopReason,
-  RemoteAccessTransport,
+import {
+  type DesktopRelayStopReason,
+  type RemoteAccessTransport,
 } from '@deepseek-ai/dsh-remote-access-client'
+import {
+  FailClosedDesktopRelayLifecycle,
+  type DesktopRelayLifecycle,
+} from '@deepseek-ai/dsh-remote-access-client/desktop-relay-lifecycle'
 import type { DesktopAccountActions } from './platform-account.ts'
 
 /** Host verbs exposed to the Mobile Pairing Settings section. */
@@ -43,10 +47,7 @@ export interface DesktopPairingControllerOptions {
   account: Pick<DesktopAccountActions, 'authorizeCurrentInstallation' | 'getSnapshot'>
   transport: RemoteAccessTransport
   /** Optional production-gated Relay lifecycle controlled by Mobile Access state. */
-  relay?: {
-    start(): Promise<void>
-    stop(reason?: DesktopRelayStopReason): Promise<void>
-  }
+  relay?: DesktopRelayLifecycle
   randomId?: () => string
   now?: () => number
   schedule?: (task: () => void, delayMs: number) => ReturnType<typeof setTimeout>
@@ -62,6 +63,8 @@ export class DesktopPairingController implements DesktopPairingActions {
   private readonly schedule: (task: () => void, delayMs: number) => ReturnType<typeof setTimeout>
   private readonly pollIntervalMs: number
   private serial: Promise<void> = Promise.resolve()
+  private lifecycleBarrier: Promise<void> = Promise.resolve()
+  private lifecycleGeneration = 0
   private active = false
   private closed = false
   private accountId: PlatformAccountId | undefined
@@ -88,15 +91,31 @@ export class DesktopPairingController implements DesktopPairingActions {
   async setEnabled(enabled: boolean): Promise<DesktopPairingSnapshot> {
     return this.exclusive(async () => {
       this.assertActive()
-      if (!enabled) await this.options.relay?.stop('mobile-access-disabled')
-      const state = await this.options.transport.setMobileAccess({
-        authentication: await this.options.account.authorizeCurrentInstallation(),
-        enabled,
-      })
+      const authentication = await this.options.account.authorizeCurrentInstallation()
+      const stop = enabled ? Promise.resolve() : this.options.relay?.stop('mobile-access-disabled') ?? Promise.resolve()
+      const mutation = this.options.transport.setMobileAccess({ authentication, enabled })
+      const results = await Promise.allSettled([stop, mutation])
+      const stateResult = results[1]
+      if (stateResult.status === 'rejected') {
+        if (!enabled) this.publish({
+          status: 'failed', enabled: false, pairings: [],
+          error: stateResult.reason instanceof Error ? stateResult.reason.message : String(stateResult.reason),
+        })
+        throwSettled(results, 'Desktop Mobile Access update failed')
+        throw stateResult.reason
+      }
+      const state = stateResult.value
       if (!state.enabled) {
-        await this.options.relay?.stop('mobile-access-disabled')
         this.publish({ status: 'ready', enabled: false, pairings: [] })
+        throwSettled([results[0]], 'Desktop Relay stop failed')
         return this.snapshot
+      }
+      throwSettled([results[0]], 'Desktop Relay stop failed')
+      if (state.relay !== undefined) {
+        if (this.options.relay?.configure === undefined) {
+          throw new Error('Desktop Relay authority has no lifecycle owner')
+        }
+        await this.options.relay.configure(state.relay)
       }
       await this.refresh()
       return this.snapshot
@@ -171,6 +190,7 @@ export class DesktopPairingController implements DesktopPairingActions {
 
   async start(): Promise<void> {
     await this.exclusive(async () => {
+      await this.lifecycleBarrier
       if (this.closed) throw new Error('Desktop Personal Pairing is closed')
       const accountId = this.currentAccountId()
       if (this.accountId !== accountId) this.resetAccountScope()
@@ -181,21 +201,32 @@ export class DesktopPairingController implements DesktopPairingActions {
   }
 
   async deactivate(reason: DesktopRelayStopReason = 'quit'): Promise<void> {
+    const generation = ++this.lifecycleGeneration
     this.active = false
     this.resetAccountScope()
-    await this.serial
-    await this.options.relay?.stop(reason)
-    this.resetAccountScope()
+    const draining = this.serial
+    const stopping = this.options.relay?.stop(reason) ?? Promise.resolve()
+    const settled = Promise.allSettled([stopping, draining])
+    this.lifecycleBarrier = settled.then(() => {})
+    const results = await settled
+    if (this.lifecycleGeneration === generation) this.resetAccountScope()
+    throwSettled(results, 'Desktop Personal Pairing deactivation failed')
   }
 
   async dispose(): Promise<void> {
+    const generation = ++this.lifecycleGeneration
     this.closed = true
     this.active = false
     if (this.timer !== undefined) clearTimeout(this.timer)
     this.timer = undefined
-    await this.serial
-    await this.options.relay?.stop('quit')
+    const draining = this.serial
+    const stopping = this.options.relay?.stop('quit') ?? Promise.resolve()
+    const settled = Promise.allSettled([stopping, draining])
+    this.lifecycleBarrier = settled.then(() => {})
+    const results = await settled
+    if (this.lifecycleGeneration !== generation) return
     this.listeners.clear()
+    throwSettled(results, 'Desktop Personal Pairing disposal failed')
   }
 
   private async refresh(): Promise<void> {
@@ -250,7 +281,7 @@ export class DesktopPairingController implements DesktopPairingActions {
     if (snapshot.status !== 'signed-in' || snapshot.account === undefined) {
       throw new Error('Desktop Personal Pairing requires a signed-in Platform Account')
     }
-    return snapshot.account.id
+    return parsePlatformAccountId(snapshot.account.id)
   }
 
   private async listPairings() {
@@ -319,6 +350,12 @@ export class DesktopPairingController implements DesktopPairingActions {
   }
 }
 
+function throwSettled(results: PromiseSettledResult<unknown>[], message: string): void {
+  const errors = results.flatMap(result => result.status === 'rejected' ? [result.reason] : [])
+  if (errors.length === 1) throw errors[0]
+  if (errors.length > 1) throw new AggregateError(errors, message)
+}
+
 /**
  * Fail-closed controller used until the independently reviewed Noise adapter is available.
  * Mobile Access remains disabled and no invitation capability is created.
@@ -327,7 +364,7 @@ export class UnavailableDesktopPairingController implements DesktopPairingAction
   private readonly snapshot: DesktopPairingSnapshot
 
   /** @param reason - exact unavailable reason shown only inside Settings. */
-  constructor(reason: string) {
+  constructor(reason: string, private readonly relay: DesktopRelayLifecycle = new FailClosedDesktopRelayLifecycle(reason)) {
     this.snapshot = { status: 'unavailable', enabled: false, pairings: [], error: reason }
   }
 
@@ -339,8 +376,8 @@ export class UnavailableDesktopPairingController implements DesktopPairingAction
   reject(_pendingPairingId: PendingPairingId): Promise<DesktopPairingSnapshot> { return this.rejectUnavailable() }
   subscribe(_listener: (snapshot: DesktopPairingSnapshot) => void): () => void { return () => {} }
   start(): Promise<void> { return Promise.resolve() }
-  deactivate(): Promise<void> { return Promise.resolve() }
-  dispose(): Promise<void> { return Promise.resolve() }
+  deactivate(reason: DesktopRelayStopReason = 'quit'): Promise<void> { return this.relay.stop(reason) }
+  dispose(): Promise<void> { return this.relay.stop('quit') }
 
   private rejectUnavailable(): Promise<never> {
     return Promise.reject(new Error(this.snapshot.error ?? 'Personal Pairing is unavailable'))

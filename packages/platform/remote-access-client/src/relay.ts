@@ -26,13 +26,15 @@ export type DesktopRelayStopReason = 'window-close' | 'sleep' | 'quit' | 'mobile
 export interface RemoteRelayEndpointOptions {
   endpoint: 'mobile' | 'desktop'
   /** Current protected route authority; production storage remains endpoint-owned. */
-  route(): Promise<{ routeId: RelayRouteId; credential: RelayCredential }>
+  route(signal: AbortSignal): Promise<{ routeId: RelayRouteId; credential: RelayCredential }>
   /** Fresh live attachment id for every physical connection. */
   attachmentId(): RelayAttachmentId
   /** Open one outbound connection through the deployment's single Platform endpoint. */
-  connect(): Promise<RelayEndpointSocket>
+  connect(signal: AbortSignal): Promise<RelayEndpointSocket>
   /** Validated heartbeat interval shorter than the Platform heartbeat timeout. */
   heartbeatIntervalMs: number
+  /** Maximum wait for Platform to authenticate and register an attach frame. */
+  attachTimeoutMs: number
   /** Validated delay before a fresh non-sticky connection acquisition. */
   reconnectDelayMs: number
   /** Desktop-only authoritative projection emitted after every successful attachment. */
@@ -50,18 +52,26 @@ interface ActiveConnection {
   socket: RelayEndpointSocket
   routeId: RelayRouteId
   attachmentId: RelayAttachmentId
+  close: Promise<void> | undefined
+}
+
+interface LifecycleOwner {
+  readonly controller: AbortController
+  readonly ready: Deferred<void>
+  readonly stopped: Deferred<void>
+  run: Promise<void>
+  stop: Promise<void> | undefined
+  connection: ActiveConnection | undefined
 }
 
 /** Reconnecting outbound endpoint; reconnect starts a new socket and never replays a mutation. */
 export class RemoteRelayEndpointController {
-  private active = false
-  private connection: ActiveConnection | undefined
-  private lifecycle: AbortController | undefined
-  private run: Promise<void> | undefined
+  private owner: LifecycleOwner | undefined
 
   /** @param options - route authority, socket adapter, lifecycle tunables, and endpoint callbacks. */
   constructor(private readonly options: RemoteRelayEndpointOptions) {
     for (const [name, value] of [
+      ['attachTimeoutMs', options.attachTimeoutMs],
       ['heartbeatIntervalMs', options.heartbeatIntervalMs],
       ['reconnectDelayMs', options.reconnectDelayMs],
     ] as const) {
@@ -76,13 +86,25 @@ export class RemoteRelayEndpointController {
 
   /** Start the lifecycle and resolve after the first attached endpoint resynchronizes. */
   async start(): Promise<void> {
-    if (this.active) return
-    this.active = true
-    const lifecycle = new AbortController()
-    this.lifecycle = lifecycle
-    const ready = deferred<void>()
-    this.run = this.runConnections(lifecycle.signal, ready)
-    await ready.promise
+    while (true) {
+      const current = this.owner
+      if (current === undefined) {
+        const owner: LifecycleOwner = {
+          controller: new AbortController(),
+          ready: deferred<void>(),
+          stopped: deferred<void>(),
+          run: Promise.resolve(),
+          stop: undefined,
+          connection: undefined,
+        }
+        this.owner = owner
+        owner.run = this.runConnections(owner)
+        void owner.run.catch(() => {})
+        return owner.ready.promise
+      }
+      if (current.stop === undefined) return current.ready.promise
+      await current.stopped.promise
+    }
   }
 
   /**
@@ -90,16 +112,10 @@ export class RemoteRelayEndpointController {
    * @param _reason - local Desktop lifecycle event that made the endpoint offline.
    */
   async stop(_reason?: DesktopRelayStopReason): Promise<void> {
-    const running = this.run
-    if (running === undefined) return
-    this.active = false
-    this.lifecycle?.abort()
-    const connection = this.connection
-    this.connection = undefined
-    if (connection !== undefined) await connection.socket.close()
-    this.run = undefined
-    await running
-    this.lifecycle = undefined
+    const owner = this.owner
+    if (owner === undefined) return
+    owner.stop ??= this.stopOwner(owner)
+    await owner.stop
   }
 
   /**
@@ -108,8 +124,9 @@ export class RemoteRelayEndpointController {
    * @param ciphertext - bounded encrypted Companion Protocol frame.
    */
   async sendCiphertext(targetAttachmentId: RelayAttachmentId, ciphertext: Uint8Array): Promise<void> {
-    const connection = this.connection
-    if (!this.active || connection === undefined) {
+    const owner = this.owner
+    const connection = owner?.connection
+    if (owner === undefined || owner.stop !== undefined || connection === undefined) {
       throw new RemoteRelayError('REMOTE_OFFLINE', 'Paired Desktop is Remote Offline')
     }
     await connection.socket.send(encodeRelayMessage({
@@ -121,52 +138,119 @@ export class RemoteRelayEndpointController {
     }))
   }
 
-  private async runConnections(signal: AbortSignal, ready: ReturnType<typeof deferred<void>>): Promise<void> {
+  private async stopOwner(owner: LifecycleOwner): Promise<void> {
+    owner.controller.abort()
+    const connection = owner.connection
+    owner.connection = undefined
+    const results = await Promise.allSettled([
+      connection === undefined ? Promise.resolve() : this.closeConnection(connection),
+      owner.run,
+    ])
+    if (this.owner === owner) this.owner = undefined
+    owner.stopped.resolve()
+    throwRejected(results, 'Remote Relay stop failed')
+  }
+
+  private async runConnections(owner: LifecycleOwner): Promise<void> {
     let first = true
+    let stopFailure: unknown
+    const signal = owner.controller.signal
     while (!isAborted(signal)) {
       try {
-        const route = await this.options.route()
-        const socket = await this.options.connect()
-        if (isAborted(signal)) { await socket.close(); break }
-        const attachmentId = this.options.attachmentId()
-        await socket.send(encodeRelayMessage({
-          type: 'attach', transportVersion: 1,
-          routeId: route.routeId,
-          attachmentId,
-          endpoint: this.options.endpoint,
-          credential: route.credential,
-        }))
-        const connection = { socket, routeId: route.routeId, attachmentId }
-        this.connection = connection
-        if (this.options.endpoint === 'desktop') {
-          await this.options.resynchronize?.((target, ciphertext) => this.sendCiphertext(target, ciphertext))
-        }
-        if (first) { first = false; ready.resolve() }
-        const heartbeatAbort = new AbortController()
-        const heartbeat = this.heartbeat(connection, heartbeatAbort.signal)
-        try {
-          for await (const encoded of socket.messages()) {
-            if (isAborted(signal)) break
-            await this.receive(encoded)
-          }
-        } finally {
-          heartbeatAbort.abort()
-          if (this.connection === connection) this.connection = undefined
-          await socket.close()
-          await heartbeat
+        await this.runConnection(owner)
+        if (first && owner.connection !== undefined) {
+          first = false
+          owner.ready.resolve()
         }
       } catch (error) {
-        if (!isAborted(signal)) this.observeError(error)
+        if (isAborted(signal)) {
+          if (error instanceof ConnectionTeardownError) stopFailure = error.cause
+          break
+        }
+        this.observeError(error)
       }
       if (!isAborted(signal)) await delay(this.options.reconnectDelayMs, signal)
     }
-    if (first) ready.reject(new RemoteRelayError('REMOTE_OFFLINE', 'Relay lifecycle stopped before attachment'))
+    if (first) owner.ready.reject(new RemoteRelayError('REMOTE_OFFLINE', 'Relay lifecycle stopped before attachment'))
+    if (stopFailure !== undefined) throw stopFailure
   }
 
-  private async heartbeat(connection: ActiveConnection, signal: AbortSignal): Promise<void> {
-    while (!isAborted(signal) && this.connection === connection) {
+  private async runConnection(owner: LifecycleOwner): Promise<void> {
+    const signal = owner.controller.signal
+    const route = await this.options.route(signal)
+    const socket = await this.options.connect(signal)
+    const connection: ActiveConnection = {
+      socket,
+      routeId: route.routeId,
+      attachmentId: this.options.attachmentId(),
+      close: undefined,
+    }
+    if (isAborted(signal)) {
+      await this.closeConnection(connection)
+      return
+    }
+    const iterator = socket.messages()[Symbol.asyncIterator]()
+    let heartbeat: Promise<void> = Promise.resolve()
+    const heartbeatAbort = new AbortController()
+    try {
+      await socket.send(encodeRelayMessage({
+        type: 'attach', transportVersion: 1,
+        routeId: route.routeId,
+        attachmentId: connection.attachmentId,
+        endpoint: this.options.endpoint,
+        credential: route.credential,
+      }))
+      await this.awaitReady(connection, iterator, signal)
+      if (isAborted(signal)) return
+      owner.connection = connection
+      if (this.options.endpoint === 'desktop') {
+        await this.options.resynchronize?.((target, ciphertext) => this.sendCiphertext(target, ciphertext))
+      }
+      owner.ready.resolve()
+      heartbeat = this.heartbeat(owner, connection, heartbeatAbort.signal)
+      while (!isAborted(signal)) {
+        const next = await iterator.next()
+        if (next.done || isAborted(signal)) break
+        await this.receive(connection, next.value)
+      }
+    } finally {
+      heartbeatAbort.abort()
+      if (owner.connection === connection) owner.connection = undefined
+      const results = await Promise.allSettled([this.closeConnection(connection), heartbeat])
+      const errors = rejectedReasons(results)
+      if (errors.length > 0) {
+        throw new ConnectionTeardownError(errors.length === 1
+          ? errors[0]
+          : new AggregateError(errors, 'Remote Relay connection teardown failed'))
+      }
+    }
+  }
+
+  private async awaitReady(
+    connection: ActiveConnection,
+    iterator: AsyncIterator<Uint8Array>,
+    signal: AbortSignal,
+  ): Promise<void> {
+    const next = await withTimeout(
+      iterator.next(),
+      this.options.attachTimeoutMs,
+      signal,
+      () => new RemoteRelayError('REMOTE_OFFLINE', 'Platform did not acknowledge Relay attachment'),
+    )
+    if (next.done) throw new RemoteRelayError('REMOTE_OFFLINE', 'Relay socket closed before attachment acknowledgement')
+    const message = decodeRelayMessage(next.value)
+    if (message.type === 'error') {
+      throw new RemoteRelayError(message.code, `Remote Relay returned ${message.code}`, message.retryAfterMs)
+    }
+    if (message.type !== 'ready' || message.attachmentId !== connection.attachmentId) {
+      throw new RemoteRelayError('RELAY_ATTACHMENT_REJECTED', 'Relay endpoint received an invalid attachment acknowledgement')
+    }
+  }
+
+  private async heartbeat(owner: LifecycleOwner, connection: ActiveConnection, signal: AbortSignal): Promise<void> {
+    while (!isAborted(signal) && owner.connection === connection) {
       await delay(this.options.heartbeatIntervalMs, signal)
-      if (isAborted(signal) || this.connection !== connection) return
+      if (isAborted(signal) || owner.connection !== connection) return
       await connection.socket.send(encodeRelayMessage({
         type: 'heartbeat', transportVersion: 1,
         attachmentId: connection.attachmentId,
@@ -175,26 +259,45 @@ export class RemoteRelayEndpointController {
     }
   }
 
-  private async receive(encoded: Uint8Array): Promise<void> {
+  private async receive(connection: ActiveConnection, encoded: Uint8Array): Promise<void> {
     const message = decodeRelayMessage(encoded)
     if (message.type === 'ciphertext') {
+      if (message.routeId !== connection.routeId || message.targetAttachmentId !== connection.attachmentId) {
+        throw new RemoteRelayError('RELAY_ATTACHMENT_REJECTED', 'Relay ciphertext does not belong to this attachment')
+      }
       await this.options.onCiphertext?.(message.ciphertext, message.sourceAttachmentId)
       return
     }
     if (message.type === 'error') {
       const error = new RemoteRelayError(message.code, `Remote Relay returned ${message.code}`, message.retryAfterMs)
-      this.options.onTransportError?.(error)
-      if (message.code === 'REMOTE_OFFLINE' || message.code === 'PLATFORM_CAPACITY') return
+      if (message.code === 'REMOTE_OFFLINE' || message.code === 'PLATFORM_CAPACITY') {
+        this.observeError(error)
+        return
+      }
       throw error
     }
     throw new RemoteRelayError('RELAY_ATTACHMENT_REJECTED', 'Relay endpoint received an invalid server message')
   }
 
-  private observeError(error: unknown): void {
-    this.options.onTransportError?.(error instanceof RemoteRelayError
-      ? error
-      : new RemoteRelayError('REMOTE_OFFLINE', 'Relay connection was lost'))
+  private closeConnection(connection: ActiveConnection): Promise<void> {
+    return connection.close ??= connection.socket.close()
   }
+
+  private observeError(error: unknown): void {
+    try {
+      this.options.onTransportError?.(error instanceof RemoteRelayError
+        ? error
+        : new RemoteRelayError('REMOTE_OFFLINE', 'Relay connection was lost'))
+    } catch {
+      // Transport observers cannot own or interrupt the Relay lifecycle.
+    }
+  }
+}
+
+interface Deferred<T> {
+  promise: Promise<T>
+  resolve(value: T): void
+  reject(error: unknown): void
 }
 
 function isAborted(signal: AbortSignal): boolean { return signal.aborted }
@@ -211,7 +314,47 @@ function delay(milliseconds: number, signal: AbortSignal): Promise<void> {
   })
 }
 
-function deferred<T>(): { promise: Promise<T>; resolve(value: T): void; reject(error: unknown): void } {
+function withTimeout<T>(
+  operation: Promise<T>,
+  milliseconds: number,
+  signal: AbortSignal,
+  timeoutError: () => Error,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => finish(() => reject(timeoutError())), milliseconds)
+    signal.addEventListener('abort', aborted, { once: true })
+    operation.then(
+      value => finish(() => resolve(value)),
+      error => finish(() => reject(error)),
+    )
+    function aborted(): void {
+      finish(() => reject(new RemoteRelayError('REMOTE_OFFLINE', 'Relay lifecycle stopped before attachment')))
+    }
+    function finish(settle: () => void): void {
+      clearTimeout(timer)
+      signal.removeEventListener('abort', aborted)
+      settle()
+    }
+  })
+}
+
+function throwRejected(results: PromiseSettledResult<unknown>[], message: string): void {
+  const errors = rejectedReasons(results)
+  if (errors.length === 1) throw errors[0]
+  if (errors.length > 1) throw new AggregateError(errors, message)
+}
+
+function rejectedReasons(results: PromiseSettledResult<unknown>[]): unknown[] {
+  return results.flatMap(result => result.status === 'rejected' ? [result.reason] : [])
+}
+
+class ConnectionTeardownError extends Error {
+  constructor(override readonly cause: unknown) {
+    super('Remote Relay connection teardown failed')
+  }
+}
+
+function deferred<T>(): Deferred<T> {
   let resolve!: (value: T) => void
   let reject!: (error: unknown) => void
   const promise = new Promise<T>((onResolve, onReject) => { resolve = onResolve; reject = onReject })

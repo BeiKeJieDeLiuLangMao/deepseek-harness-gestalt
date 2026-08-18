@@ -66,6 +66,8 @@ export function encodeRelayMessage(message: RelayMessage): Uint8Array {
       return encode({ ...message })
     case 'heartbeat':
       return encode({ ...message })
+    case 'ready':
+      return encode({ ...message })
     case 'revoke':
       return encode({ ...message })
     default:
@@ -117,6 +119,12 @@ export function decodeRelayMessage(encoded: Uint8Array): RelayMessage {
           type: 'heartbeat', transportVersion: 1,
           attachmentId: parseRelayAttachmentId(record.attachmentId),
           sentAt: positiveSafeInteger(record.sentAt, 'Relay heartbeat sentAt'),
+        }
+      case 'ready':
+        exactKeys(record, ['type', 'transportVersion', 'attachmentId'], 'Relay ready message')
+        return {
+          type: 'ready', transportVersion: 1,
+          attachmentId: parseRelayAttachmentId(record.attachmentId),
         }
       case 'revoke':
         exactKeys(record, ['type', 'transportVersion', 'routeId', 'attachmentId', 'reason'], 'Relay revoke message')
