@@ -8,7 +8,7 @@
 
 ## `ToolDefinition` — 一个已注册的工具
 
-由一个 `ToolSchema`（面向模型的字段）、必需的规范输出声明、`execute` 函数、仅供宿主使用的调度器元数据、可选的最终内容回调和可选 UI 展示函数组成。注册表持有这些定义，循环通过它们分派调用。注册表的 `schemas()` 通过显式允许列表构建面向模型的 `ToolSchema[]`；`output`/`execute`/`finalizeContent`/`timeoutMs`/`isConcurrencySafe`/`presentCall`/`presentResult` 绝不能泄漏到模型请求中。
+由一个 `ToolSchema`（面向模型的字段）、必需的规范输出声明、`execute` 函数、仅供宿主使用的调度器元数据、可选的最终内容回调和可选 UI 展示函数组成。注册表持有这些定义，循环通过它们分派调用。注册表的 `schemas()` 通过显式允许列表构建宿主 catalog；`output`/`execute`/`finalizeContent`/`timeoutMs`/`isConcurrencySafe`/`presentCall`/`presentResult` 绝不能泄漏到其中。带有 `deferLoading: true` 的定义仍保留在该 catalog 中，但在持久化工具结果发现其名称之前不会进入模型请求或 Code Mode 绑定。
 
 ```ts type-equiv
 /** Tool-owned canonical output contract used after the body returns a JSON value. */
@@ -25,6 +25,8 @@ interface ToolOutputDefinition {
 ```ts type-equiv
 /** A registered tool: its schema plus the execution function. */
 interface ToolDefinition extends ToolSchema {
+  /** Omit this definition from model requests until durable history discovers its name. */
+  readonly deferLoading?: boolean
   /** Mandatory canonical output declaration. */
   readonly output: ToolOutputDefinition
   /**
@@ -209,7 +211,7 @@ interface ToolExecutionInput {
 }
 ```
 
-工具函数体接收运行时扩展。`deferContext()` 把上下文附着到本次执行自己的结果上——既是组合工具转运嵌套分派上下文的通道，也可供叶子工具铸造插件来源指令——而不会在外层调用尚未结束时注入这些上下文。
+工具函数体接收运行时扩展。`deferContext()` 把上下文附着到本次执行自己的结果上，而不会在外层调用尚未结束时注入上下文。`discoverTools()` 把 schema 附到成功结果上，以便持久延续；该方法记录发现结果，绝不改变注册表。
 
 ```ts type-equiv
 /**
@@ -228,6 +230,13 @@ interface ToolRunContext extends ToolExecution {
    * source and metadata and are emitted in call order.
    */
   deferContext(context: UserMessage): void
+  /**
+   * Attach discovered schemas to this successful result. Request assembly
+   * reloads only names that still resolve as eligible deferred definitions;
+   * this records discovery and does not mutate the registry.
+   * @param schemas - schemas returned by this execution in result order.
+   */
+  discoverTools(schemas: readonly ToolSchema[]): void
   /**
    * Mark a successful final result as terminal for the current agent turn.
    * The marker rides this execution's own result (`concludesTurn` exists only
@@ -344,6 +353,8 @@ interface ToolExecutionSuccess {
   readonly error?: never
   readonly meta?: JsonValue
   readonly additionalContexts?: UserMessage[]
+  /** Durable schema discoveries carried by this successful result. */
+  readonly discoveredTools?: ToolSchema[]
   /** The agent loop stops after committing this successful result batch. */
   readonly concludesTurn?: true
 }
@@ -358,6 +369,7 @@ interface ToolExecutionFailure {
   readonly content: ContentBlock[]
   readonly meta?: JsonValue
   readonly additionalContexts?: UserMessage[]
+  readonly discoveredTools?: never
   readonly concludesTurn?: never
 }
 ```
@@ -367,7 +379,7 @@ interface ToolExecutionFailure {
 type ToolExecutionResult = ToolExecutionSuccess | ToolExecutionFailure
 ```
 
-结果仅承载产出。调用身份保留在不可变的 `ToolExecution` 上，后者伴随结果经过每个钩子，并出现在持久化的 `tool/call` / `tool/result` 会话事件上，因此包装层无法创建第二个相互矛盾的身份。规范的 `value` 仅存在于执行期间：循环只持久化 `content`、`error` 和 `meta`，`tool/code-dispatch` 则原样存储子调用渲染后的 `content` 与 `isError`。回放可以重现展示，却无法重建规范的中间值。
+结果仅承载产出。调用身份保留在不可变的 `ToolExecution` 上，后者伴随结果经过每个钩子，并出现在持久化的 `tool/call` / `tool/result` 会话事件上，因此包装层无法创建第二个相互矛盾的身份。规范的 `value` 仅存在于执行期间：循环会持久化 `content`、`error`、`meta` 和成功结果中的 `discoveredTools`，`tool/code-dispatch` 则原样存储子调用渲染后的 `content` 与 `isError`。回放可以重现展示和 schema 发现结果，却无法重建规范的中间值。请求组装只把持久化 schema 当作发现证据，并从当前具有资格的定义中重新加载每个名称。
 
 成功时，注册表会快照并校验函数体返回值，将其冻结，然后调用纯渲染器；对于直接的外层调用，还会调用可选的元数据投影器。注册表会在 `tools/result` 之前另行物化持久展示字段；无效值、渲染器/投影器失败或非 JSON 展示都会转为 JSON 安全的 `isError`。因此，最终实时观察者能看到精确的执行期值，以及可安全用于后续持久追加的字段。
 
@@ -497,7 +509,7 @@ presentAs(mode: ToolPresentationMode): () => void
 
 /**
  * Register globally or in the calling agent scope. Scoped tools shadow
- * globals; duplicates within one layer and the reserved `run_code` name fail.
+ * globals; duplicates within one layer and reserved transport names fail.
  * @param definition - tool schema, execution, and optional finalization/presentation callbacks.
  * @returns the exact disposer that unregisters the tool.
  */
@@ -596,7 +608,7 @@ async execute(exec: ToolExecutionInput): Promise<ToolExecutionResult>
 
 Types: [ScopeKey](scope.md)
 
-Source: [`packages/core/tools/src/index.ts:842`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:891`](../../packages/core/tools/src/index.ts)
 
 <a id="tool-eligibility-events"></a>
 
@@ -646,7 +658,7 @@ A tool was registered or unregistered, or a scoped restriction changed (the avai
 'tools/change'(): void
 ```
 
-Source: [`packages/core/tools/src/index.ts:216`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:242`](../../packages/core/tools/src/index.ts)
 
 <a id="toolscode-dispatch-log--waterfall"></a>
 
@@ -673,7 +685,7 @@ Allow a listener to replace content in the DURABLE LOG COPY of one `run_code` su
 
 Types: [ContentBlock](llm-streaming.md) · [Scoped](scope.md)
 
-Source: [`packages/core/tools/src/index.ts:198`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:224`](../../packages/core/tools/src/index.ts)
 
 <a id="toolsexecute--waterfall"></a>
 
@@ -697,7 +709,7 @@ Around-dispatch waterfall for timeout, retry, or metrics. `next()` returns a nor
 
 Types: [Scoped](scope.md)
 
-Source: [`packages/core/tools/src/index.ts:172`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:198`](../../packages/core/tools/src/index.ts)
 
 <a id="toolspost-execute--waterfall"></a>
 
@@ -722,7 +734,7 @@ Accept, replace, enrich, or block a normalized dispatch result. `next()` accepts
 
 Types: [Scoped](scope.md)
 
-Source: [`packages/core/tools/src/index.ts:184`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:210`](../../packages/core/tools/src/index.ts)
 
 <a id="toolspre-execute--waterfall"></a>
 
@@ -745,7 +757,7 @@ Allow, deny, or ask before dispatch. `next()` delegates to allow; missing approv
 
 Types: [Scoped](scope.md)
 
-Source: [`packages/core/tools/src/index.ts:161`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:187`](../../packages/core/tools/src/index.ts)
 
 <a id="toolsresult--emit"></a>
 
@@ -766,5 +778,5 @@ Observe the frozen, lossless-JSON final outcome. Listener failures are contained
 
 Types: [Scoped](scope.md)
 
-Source: [`packages/core/tools/src/index.ts:206`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:232`](../../packages/core/tools/src/index.ts)
 <!-- END GENERATED cordis-surface -->

@@ -2982,13 +2982,15 @@ export interface Config {
    * restores strictly serial dispatch. Must be a positive integer.
    */
   maxParallelSubCalls?: number
+  /** Maximum schemas returned by one `tool_search` call (default 8). */
+  maxToolSearchResults?: number
 }
 
 /** How the registry presents its tools to the model (see {@link Config.mode}). */
 export type ToolPresentationMode = 'native' | 'code' | 'both'
 ```
 
-Source: [`packages/core/tools/src/index.ts:663`](../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:701`](../packages/core/tools/src/index.ts)
 
 <a id="deepseek-aidsh-tools-eligibility"></a>
 

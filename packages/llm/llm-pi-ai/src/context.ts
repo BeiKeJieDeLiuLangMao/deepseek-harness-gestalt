@@ -113,6 +113,9 @@ function textOnlyContext(options: GenerateOptions, onReplayDegrade?: (reason: st
           type: 'text',
           text: toolResultText(result.content) || '(no output)',
         }],
+        ...result.discoveredTools === undefined
+          ? {}
+          : { addedToolNames: result.discoveredTools.map(tool => tool.name) },
         isError: result.isError ?? false,
         timestamp: 0,
       })
@@ -200,6 +203,9 @@ async function toPiContextWithImages(
         content: typeof resultContent === 'string'
           ? [{ type: 'text', text: resultContent || '(no output)' }]
           : resultContent,
+        ...result.discoveredTools === undefined
+          ? {}
+          : { addedToolNames: result.discoveredTools.map(tool => tool.name) },
         isError: result.isError ?? false,
         timestamp: 0,
       })

@@ -89,6 +89,8 @@ export interface ToolResultBlock {
   type: 'tool-result'
   toolCallId: CallId
   content: ContentBlock[]
+  /** Schemas discovered by this result; request assembly revalidates their names before reuse. */
+  discoveredTools?: ToolSchema[]
   isError?: boolean
 }
 

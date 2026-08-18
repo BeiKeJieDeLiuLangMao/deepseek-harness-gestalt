@@ -163,7 +163,7 @@ pi-ai installs several provider SDKs and lazy-loads the one selected by the cata
 
 #### What the model sees
 
-The selected catalog model receives `GenerateOptions.system`, history, tools, and sampling fields supported by pi-ai's common streaming API. This package adds no prompt prose. Provider-native replay metadata is restored only when the adapter validates it for the historical content.
+The selected catalog model receives `GenerateOptions.system`, history, tools, and sampling fields supported by pi-ai's common streaming API. This package adds no prompt prose. Provider-native replay metadata is restored only when the adapter validates it for the historical content. A provider-neutral tool result carrying `discoveredTools` maps their names to pi-ai's `addedToolNames`, allowing a provider with native client-side tool-search history to serialize the same discovery point without changing registry state.
 
 #### Token effect
 

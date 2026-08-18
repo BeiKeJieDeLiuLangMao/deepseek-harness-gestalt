@@ -487,6 +487,8 @@ export interface DefineToolOptions<S extends ParameterSchemaSpec, O extends Valu
   readonly description: string
   /** Per-property parameter schema compiled to an implicit open object root. */
   readonly parameters: S
+  /** Omit this tool from requests until a durable tool result discovers its schema. */
+  readonly deferLoading?: boolean
   /** Canonical output schema plus pure Native and presentation projections. */
   readonly output: {
     /** Schema enforced against every successful body or policy-replaced value. */
@@ -570,6 +572,7 @@ export function defineTool<const S extends ParameterSchemaSpec, const O extends 
     name: options.name,
     description: options.description,
     parameters: parameters as unknown as Record<string, unknown>,
+    ...(options.deferLoading === true ? { deferLoading: true } : {}),
     output: {
       schema: outputSchema,
       render(args: unknown, value: JsonValue): ContentBlock[] {

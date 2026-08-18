@@ -80,6 +80,29 @@ describe('pi-ai request context conversion', () => {
     }])]))).toThrow(/durable attachment service/)
   })
 
+  it('marks discovered schemas as the provider-native deferred load point', () => {
+    const callId = CallId('search-1')
+    const context = toPiContext(request([
+      history('assistant', [{ type: 'tool-call', id: callId, name: 'tool_search', arguments: '{"query":"weather"}' }]),
+      user([{
+        type: 'tool-result',
+        toolCallId: callId,
+        content: [{ type: 'text', text: 'Found weather_lookup.' }],
+        discoveredTools: [{
+          name: 'weather_lookup',
+          description: 'Look up weather forecasts.',
+          parameters: { type: 'object' },
+        }],
+      }]),
+    ]))
+
+    expect(context.messages[1]).toMatchObject({
+      role: 'toolResult',
+      toolName: 'tool_search',
+      addedToolNames: ['weather_lookup'],
+    })
+  })
+
   it('resolves user and tool-result images while preserving explicit fallbacks', async () => {
     const callId = CallId('missing-call')
     const knownCallId = CallId('known-call')

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { createUserMessage, CallId  } from '@deepseek-ai/dsh-llm'
+import { createToolResultMessage, createUserMessage, CallId  } from '@deepseek-ai/dsh-llm'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import type { Scope } from '@deepseek-ai/dsh-scope'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
@@ -61,7 +61,8 @@ async function setup(options: SetupOptions = {}) {
 
 /** Mint an agent scope configured like production that can register scoped tool policy. */
 async function mintAgentScope(ctx: Context, name = 'scoped'): Promise<{ scope: Scope; agent: Agent }> {
-  const agent = { id: SessionId(name) } as Agent
+  const session = Session.create(SessionId(name))
+  const agent = { id: session.id, session } as Agent
   let scope!: Scope
   await ctx.plugin(Object.assign((inner: Context) => { scope = createScope(inner, agent) },
     { inject: ['tools', 'systemPrompt'] }))
@@ -94,6 +95,7 @@ function fakeAgent(): { agent: Agent; events: { type: string; data: unknown }[] 
     session: {
       header: { cwd: '/workspace' },
       append: (type: string, data: unknown) => { events.push({ type, data }) },
+      events: [],
     },
   } as unknown as Agent
   return { agent, events }
@@ -133,6 +135,55 @@ describe('mode-aware wire contribution', () => {
     expect(sdk?.text).toContain('declare const tools: {')
     expect(sdk?.text).toContain('echo: {')
     expect(sdk?.text).not.toContain('run_code:')
+  })
+
+  it('adds a discovered deferred binding only after the outer result enters durable history', async () => {
+    const { ctx, systemPrompt, runtime } = await setup({ mode: 'code' })
+    ctx.tools.register(defineTool({
+      name: 'weather_lookup',
+      description: 'Look up weather forecasts by city.',
+      parameters: { city: { type: 'string', required: true } },
+      deferLoading: true,
+      output: {
+        schema: { type: 'string' },
+        render: (_args, value) => [{ type: 'text', text: value }],
+      },
+      async execute(args) { return `${args.city}: sunny` },
+    }))
+    const { agent } = await mintAgentScope(ctx, 'deferred-code')
+    const assemble = () => systemPrompt.assemble({ scope: agent, agent })
+
+    const initialSdk = (await assemble()).sections.find(section => section.name === 'tools:sdk')?.text
+    expect(initialSdk).toContain('tool_search: {')
+    expect(initialSdk).not.toContain('weather_lookup:')
+
+    runtime.behavior = async (request) => {
+      await request.bindings[0]!.functions.tool_search!({ query: 'weather' })
+      return { logs: [], value: 'found weather' }
+    }
+    const result = await runCode(ctx, 'await tools.tool_search({ query: "weather" })', { agent })
+    expect(result).toMatchObject({
+      isError: false,
+      discoveredTools: [{ name: 'weather_lookup' }],
+    })
+    if (result.isError) throw new Error('expected run_code success')
+    if (result.discoveredTools === undefined) throw new Error('expected propagated tool discovery')
+    const call = agent.session.append('tool/call', {
+      turn: 1, step: 1, callId: CallId('call-1'), name: RUN_CODE_NAME, arguments: '{}',
+    })
+    agent.session.append('tool/result', {
+      turn: 1,
+      step: 1,
+      message: createToolResultMessage({
+        callId: CallId('call-1'),
+        content: result.content,
+        discoveredTools: result.discoveredTools,
+        isError: false,
+      }),
+    }, { surfaceOp: 'append', sourceEventSeqs: [call.seq] })
+
+    const continuedSdk = (await assemble()).sections.find(section => section.name === 'tools:sdk')?.text
+    expect(continuedSdk).toContain('weather_lookup: {')
   })
 
   it("mode 'code' states the run_code-only rule BEFORE the per-tool guidance that names each tool", async () => {
@@ -1642,6 +1693,13 @@ describe('the run_code dispatch bridge', () => {
     await ctx.plugin(SystemPrompt, {})
     expect(() => new ToolRuntime(ctx, { mode: 'code', maxParallelSubCalls: 0 }))
       .toThrow('maxParallelSubCalls must be a positive integer')
+  })
+
+  it('direct construction rejects a non-positive tool-search result cap at load', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SystemPrompt, {})
+    expect(() => new ToolRuntime(ctx, { maxToolSearchResults: 0 }))
+      .toThrow('maxToolSearchResults must be a positive integer')
   })
 
   it('direct construction in code mode defaults the parallel sub-call cap', async () => {

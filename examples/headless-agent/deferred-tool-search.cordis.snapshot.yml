@@ -1,0 +1,30 @@
+# Keyless real composition for deferred tool schema discovery and continuation.
+- id: llm
+  name: './tests/fixtures/deferred-tool-search-llm.ts'
+
+- id: spine
+  name: '@deepseek-ai/dsh-agent-spine-demo'
+  config:
+    includeHarnessIdentity: false
+    includeRuntimeContext: false
+    persona: 'Exercise deferred schema discovery.'
+    workspaceContext: false
+    skills:
+      enabled: false
+    toolBash: false
+    toolJobs: false
+    goals: false
+    agents:
+      - id: main
+        provider: deferred-snapshot
+        model: deferred-snapshot
+        cwd: !!js process.cwd()
+
+- id: deferred-tool
+  name: './tests/fixtures/deferred-tool-search.ts'
+
+- id: persistence
+  name: '@deepseek-ai/dsh-session-persistence-jsonl'
+  config:
+    root: './.sessions'
+    compression: none

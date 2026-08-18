@@ -51,6 +51,78 @@ describe('ToolRuntime', () => {
     expect(assembly.tools.map(t => t.name)).toEqual(['echo'])
   })
 
+  it('ranks only deferred schemas and returns bounded discoveries without activating them', async () => {
+    const ctx = await setup()
+    ctx.tools.register(echoTool)
+    for (const definition of [
+      defineContentToolFixture({
+        name: 'weather_lookup',
+        description: 'Look up weather forecasts by city.',
+        parameters: {},
+        deferLoading: true,
+        async execute() { return [] },
+      }),
+      defineContentToolFixture({
+        name: 'weather_history',
+        description: 'Read historical climate observations.',
+        parameters: {},
+        deferLoading: true,
+        async execute() { return [] },
+      }),
+    ]) ctx.tools.register(definition)
+
+    expect(ctx.tools.schemas().map(schema => schema.name)).toEqual([
+      'echo', 'weather_lookup', 'weather_history', 'tool_search',
+    ])
+    expect((await ctx.systemPrompt.assemble()).tools.map(schema => schema.name)).toEqual([
+      'echo', 'tool_search',
+    ])
+
+    const result = await ctx.tools.execute({
+      signal: testToolSignal,
+      callId: CallId('search'),
+      name: 'tool_search',
+      arguments: { query: 'weather_lookup weather', limit: 1 },
+    })
+    expect(result).toMatchObject({
+      isError: false,
+      value: { tools: [{ name: 'weather_lookup' }] },
+      discoveredTools: [{ name: 'weather_lookup' }],
+    })
+    expect((await ctx.systemPrompt.assemble()).tools.map(schema => schema.name)).toEqual([
+      'echo', 'tool_search',
+    ])
+  })
+
+  it('rejects invalid search bounds and reserves the search transport name', async () => {
+    const ctx = await setup()
+    ctx.tools.register(defineContentToolFixture({
+      name: 'deferred', description: 'Deferred capability.', parameters: {}, deferLoading: true,
+      async execute() { return [] },
+    }))
+
+    await expect(ctx.tools.execute({
+      signal: testToolSignal,
+      callId: CallId('bad-search'),
+      name: 'tool_search',
+      arguments: { query: 'deferred', limit: 9 },
+    })).resolves.toMatchObject({ isError: true, error: { message: 'limit must be an integer from 1 to 8' } })
+    expect(() => ctx.tools.register({ ...echoTool, name: 'tool_search' })).toThrow(/reserved/)
+  })
+
+  it('removes search presentation when the last deferred registration is disposed', async () => {
+    const ctx = await setup()
+    const dispose = ctx.tools.register(defineContentToolFixture({
+      name: 'deferred', description: 'Deferred capability.', parameters: {}, deferLoading: true,
+      async execute() { return [] },
+    }))
+
+    expect((await ctx.systemPrompt.assemble()).tools.map(schema => schema.name)).toEqual(['tool_search'])
+    dispose()
+    expect(ctx.tools.schemas()).toEqual([])
+    expect((await ctx.systemPrompt.assemble()).tools).toEqual([])
+  })
+
   it('schemas() drops host callbacks — they must never reach the model', async () => {
     const ctx = await setup()
     // Tool definitions contain output, finalization, execution, and presentation

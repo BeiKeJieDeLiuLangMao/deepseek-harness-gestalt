@@ -7,7 +7,8 @@
  */
 
 import { CallId, createUserMessage, HarnessError } from '@deepseek-ai/dsh-llm'
-import type { ContentBlock } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock, ToolSchema } from '@deepseek-ai/dsh-llm'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { CodeBindingFunction, CodeRunResult, CodeRuntime } from '@deepseek-ai/dsh-code-runtime'
 import { snapshotJsonValue } from '@deepseek-ai/dsh-session'
 import type { JsonValue } from '@deepseek-ai/dsh-session'
@@ -280,6 +281,8 @@ export interface RunCodeBridgeOptions {
   maxParallel: number
   /** Runs the contained `tools/code-dispatch-log` waterfall over one settled sub-dispatch (the registry's private invoker). */
   shapeDispatchLog: (dispatch: CodeDispatchLog) => Promise<ContentBlock[]>
+  /** Request-visible schemas used for one run's worker bindings. */
+  bindingSchemas: (agent: Agent | undefined) => readonly ToolSchema[]
 }
 
 /**
@@ -294,7 +297,7 @@ export interface RunCodeBridgeOptions {
  * @returns the registry-ready definition.
  */
 export function createRunCodeTool(registry: ToolRuntime, options: RunCodeBridgeOptions): ToolDefinition {
-  const { requireRuntime, peekRuntime, maxParallel, shapeDispatchLog } = options
+  const { requireRuntime, peekRuntime, maxParallel, shapeDispatchLog, bindingSchemas } = options
   const definition = defineTool({
     name: RUN_CODE_NAME,
     // The description and `code` parameter description are placeholders here:
@@ -570,6 +573,7 @@ export function createRunCodeTool(registry: ToolRuntime, options: RunCodeBridgeO
               for (const context of result.additionalContexts ?? []) {
                 exec.deferContext(context)
               }
+              if (result.discoveredTools !== undefined) exec.discoverTools(result.discoveredTools)
               // The composite forwards `additionalContexts` above and
               // `concludesTurn` here from the nested result. Only a successful
               // nested result can carry the terminal marker
@@ -611,7 +615,7 @@ export function createRunCodeTool(registry: ToolRuntime, options: RunCodeBridgeO
       // restricted globals vanish) — the same view the SDK section declared,
       // so a program can bind exactly what its prompt promised; sub-dispatch
       // re-resolves per call through the same view (exec.agent threads down).
-      for (const schema of registry.schemas(exec.agent)) {
+      for (const schema of bindingSchemas(exec.agent)) {
         if (schema.name === RUN_CODE_NAME) continue
         Object.defineProperty(functions, schema.name, { enumerable: true, value: binding(schema.name) })
       }

@@ -25,6 +25,8 @@ const advancedScenarioDir = join(snapshotsDir, 'advanced-toolchain')
 const advancedSessionFixture = join(advancedScenarioDir, 'session.jsonl')
 const advancedStreamExpected = join(advancedScenarioDir, 'stream-json.expected.jsonl')
 const advancedConfigPath = fileURLToPath(new URL('../advanced.cordis.snapshot.yml', import.meta.url))
+const deferredScenarioDir = join(snapshotsDir, 'deferred-tool-search')
+const deferredConfigPath = fileURLToPath(new URL('../deferred-tool-search.cordis.snapshot.yml', import.meta.url))
 const ptyScenarioDir = join(snapshotsDir, 'pty-tools')
 const ptySessionFixture = join(ptyScenarioDir, 'session.jsonl')
 const ptyStreamExpected = join(ptyScenarioDir, 'stream-json.expected.jsonl')
@@ -126,7 +128,7 @@ function contextFromLogs(contents: readonly string[]): NormalizeContext {
   }
 }
 
-function normalizeHeadlessStream(rawStdout: string, cwd: string): string {
+function normalizeHeadlessStream(rawStdout: string, cwd: string, scrubHeaders = true): string {
   const records = parseJsonl(rawStdout)
   if (records.length === 0) throw new Error('headless snapshot emitted no stream-json records')
   const final = records.at(-1)
@@ -144,10 +146,9 @@ function normalizeHeadlessStream(rawStdout: string, cwd: string): string {
     }
     return record.event as JsonObject
   })
-  const normalizedEvents = parseJsonl(scrubRequestHeaders(normalizeSessionLog(
-    `${events.map(event => JSON.stringify(event)).join('\n')}\n`,
-    context,
-  )))
+  const normalizedLog = normalizeSessionLog(
+    `${events.map(event => JSON.stringify(event)).join('\n')}\n`, context)
+  const normalizedEvents = parseJsonl(scrubHeaders ? scrubRequestHeaders(normalizedLog) : normalizedLog)
   const normalizedRecords = records.map((record, index) => index < normalizedEvents.length
     ? { ...record, event: normalizedEvents[index] }
     : record)
@@ -219,6 +220,49 @@ async function prepareCliMockFixture(cwd: string): Promise<void> {
 }
 
 describe('headless stream-json snapshots', () => {
+  it('reconstructs deferred tool search through a real Loader composition', async () => {
+    const sessionExpected = join(deferredScenarioDir, 'session.expected.jsonl')
+    const streamExpected = join(deferredScenarioDir, 'stream-json.expected.jsonl')
+    let runCwd = ''
+    const result = await runLoaderSmoke({
+      label: 'deferred tool search headless snapshot',
+      tempDirPrefix: 'headless-snapshot-deferred-tools-',
+      binScript,
+      libBinScript: binScript,
+      configPath: deferredConfigPath,
+      binArgs: [deferredConfigPath, 'Find and use the weather tool for Hangzhou.'],
+      tsconfigPath,
+      env: {
+        DSH_SNAPSHOT: 'replay',
+        NODE_OPTIONS: [process.env.NODE_OPTIONS, '--disable-warning=ExperimentalWarning'].filter(Boolean).join(' '),
+      },
+      prepare: (cwd) => { runCwd = cwd },
+      inspect: async (cwd) => {
+        const logs = await persistedLogs(cwd)
+        expect(logs).toHaveLength(1)
+        const log = logs[0]
+        if (log === undefined) throw new Error('deferred snapshot did not persist its session')
+        const normalized = normalizeSessionLog(log.content, contextFromLogs([log.content]))
+        if (refreshing) await writeFile(sessionExpected, normalized)
+        expect(normalized).toBe(await readFile(sessionExpected, 'utf8'))
+
+        const headers = parseJsonl(normalized).filter(event => event.type === 'request/header')
+        expect(headers.map((event) => {
+          const data = event.data as { header?: { tools?: { name?: string }[] } }
+          return data.header?.tools?.map(tool => tool.name)
+        })).toEqual([
+          ['tool_search'],
+          ['tool_search', 'weather_lookup'],
+        ])
+      },
+    })
+
+    expect(result.stderr).toBe('')
+    const normalized = normalizeHeadlessStream(result.stdout, runCwd, false)
+    if (refreshing) await writeFile(streamExpected, normalized)
+    expect(normalized).toBe(await readFile(streamExpected, 'utf8'))
+  }, LOADER_SMOKE_TEST_TIMEOUT_MS)
+
   it('runs one task through the product headless profile command', async () => {
     const task = 'Prove the product headless profile path with one real tool round trip.'
     const result = await runLoaderSmoke({
