@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-18-temporary-browser-runtime-tracer.md
-2026-08-18-temporary-browser-runtime-tracer.md: 3458a20b65fd2e8d05305c15c4144be2a7a6d9d2
-2026-08-18-temporary-browser-runtime-tracer.zh.md: 27fba88ff810e6412b328472aea945dcc589d85e
+2026-08-18-temporary-browser-runtime-tracer.md: c499ab5dfe766c47f68ff020703514f93720a107
+2026-08-18-temporary-browser-runtime-tracer.zh.md: 0f1f1d71c36ad45c114eb0fea6b20c7321eff708

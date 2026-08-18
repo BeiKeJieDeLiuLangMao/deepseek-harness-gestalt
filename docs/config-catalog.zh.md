@@ -426,12 +426,12 @@ export interface DeterministicBrowserPage {
   title: string
   /** Page text returned by observations. */
   text: string
-  /** PNG screenshot bytes encoded as base64. */
+  /** Non-empty canonical base64 whose decoded bytes start with the PNG signature. */
   screenshotPngBase64: string
 }
 ```
 
-来源：[`packages/browser/browser-runtime-deterministic/src/index.ts:41`](../packages/browser/browser-runtime-deterministic/src/index.ts)
+来源：[`packages/browser/browser-runtime-deterministic/src/index.ts:46`](../packages/browser/browser-runtime-deterministic/src/index.ts)
 
 <a id="deepseek-aidsh-client-connection"></a>
 

@@ -6,9 +6,9 @@ Provider-neutral Service Definition for browser control. `ctx.browserRuntime` cr
 
 ## Service API
 
-`create` returns the initial open state at revision `0`. `navigate`, `focus`, and `close` require the caller's last observed `expectedRevision`; Providers serialize operations and reject stale mutations with `BROWSER_REVISION_CONFLICT`. `observe` and `screenshot` are read-only. `close` returns a terminal receipt that retains all four opaque identities.
+`create` returns the initial open state at revision `0`. `navigate`, `focus`, and `close` require the caller's last observed `expectedRevision`; Providers serialize operations and reject stale mutations with `BROWSER_REVISION_CONFLICT`. `observe` and `screenshot` are read-only. `close` returns a terminal receipt that retains all four opaque identities. Each method documents its applicable stable `BrowserRuntimeError` codes at the Service Definition.
 
-Providers publish committed states on `browser/runtime-state`. The stateful Provider owns validation of that mutable relationship; this definition package owns only types and the service name.
+Providers publish committed states on `browser/runtime-state`. The notification is non-vetoing: each synchronous throw or asynchronous rejection is contained, later listeners still run, and asynchronous listener work is not awaited. The stateful Provider owns validation of that mutable relationship; this definition package owns only types and the service name.
 
 ## Model Experience
 

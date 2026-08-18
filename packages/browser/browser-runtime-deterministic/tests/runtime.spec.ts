@@ -9,7 +9,6 @@ import {
 import BrowserRuntimeDeterministic from '@deepseek-ai/dsh-browser-runtime-deterministic'
 import InvariantRegistry from '@deepseek-ai/dsh-invariants'
 import * as BrowserRuntimeInvariant from '../../browser-runtime/src/invariant.ts'
-import * as BrowserRuntimeDeterministicInvariant from '../src/invariant.ts'
 
 const PNG_1X1 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
 
@@ -104,7 +103,7 @@ describe('deterministic Browser Runtime public lifecycle', () => {
     expect(state).toMatchObject({ status: 'open', revision: 1, url: 'https://one.test/' })
   })
 
-  it('enforces one open Profile, permits reuse after close, and rejects malformed config at load', async () => {
+  it('admits one temporary Profile for the Provider lifetime and rejects reuse after close', async () => {
     const ctx = new Context()
     await ctx.plugin(BrowserRuntimeDeterministic, {
       idPrefix: 'capacity',
@@ -114,9 +113,17 @@ describe('deterministic Browser Runtime public lifecycle', () => {
     await expect(ctx.browserRuntime.create({ profile: 'temporary' })).rejects.toMatchObject({
       code: 'BROWSER_CAPACITY',
     })
-    await ctx.browserRuntime.close({ target: created.target, expectedRevision: 0 })
-    await expect(ctx.browserRuntime.create({ profile: 'temporary' })).resolves.toMatchObject({ revision: 0 })
+    const closed = await ctx.browserRuntime.close({ target: created.target, expectedRevision: 0 })
+    await expect(ctx.browserRuntime.create({ profile: 'temporary' })).rejects.toMatchObject({
+      code: 'BROWSER_CAPACITY',
+      message: 'the deterministic browser runtime has already created its temporary Profile',
+    })
+    await expect(ctx.browserRuntime.focus({ target: created.target, expectedRevision: closed.revision }))
+      .rejects.toMatchObject({ code: 'BROWSER_NOT_OPEN' })
+    await expect(ctx.browserRuntime.observe({ target: created.target })).resolves.toEqual(closed)
+  })
 
+  it('rejects malformed screenshot configuration at load', async () => {
     const empty = new Context()
     await expect(empty.plugin(BrowserRuntimeDeterministic, { pages: [] })).rejects.toThrow(/at least one page/)
     const duplicate = new Context()
@@ -129,7 +136,43 @@ describe('deterministic Browser Runtime public lifecycle', () => {
     const malformed = new Context()
     await expect(malformed.plugin(BrowserRuntimeDeterministic, {
       pages: [{ url: 'https://bad.test/', title: 'Bad', text: 'bad', screenshotPngBase64: 'not base64!' }],
-    })).rejects.toThrow(/must be base64 data/)
+    })).rejects.toThrow(/canonical base64 data/)
+
+    const nonCanonical = new Context()
+    let nonCanonicalError: unknown
+    try {
+      await nonCanonical.plugin(BrowserRuntimeDeterministic, {
+        pages: [{ url: 'https://short.test/', title: 'Short', text: 'short', screenshotPngBase64: 'A' }],
+      })
+    } catch (error) {
+      nonCanonicalError = error
+    }
+    expect(nonCanonicalError).toBeInstanceOf(Error)
+    if (!(nonCanonicalError instanceof Error)) throw new Error('expected screenshot validation to fail')
+    expect(nonCanonicalError.message).toMatch(/canonical base64/)
+
+    const nonCanonicalPaddingBits = new Context()
+    await expect(nonCanonicalPaddingBits.plugin(BrowserRuntimeDeterministic, {
+      pages: [{ url: 'https://padding.test/', title: 'Padding', text: 'padding', screenshotPngBase64: 'AB==' }],
+    })).rejects.toThrow(/canonical base64/)
+
+    const emptyScreenshot = new Context()
+    await expect(emptyScreenshot.plugin(BrowserRuntimeDeterministic, {
+      pages: [{ url: 'https://empty.test/', title: 'Empty', text: 'empty', screenshotPngBase64: '' }],
+    })).rejects.toThrow()
+
+    const wrongSignature = new Context()
+    let wrongSignatureError: unknown
+    try {
+      await wrongSignature.plugin(BrowserRuntimeDeterministic, {
+        pages: [{ url: 'https://text.test/', title: 'Text', text: 'text', screenshotPngBase64: 'SGVsbG8=' }],
+      })
+    } catch (error) {
+      wrongSignatureError = error
+    }
+    expect(wrongSignatureError).toBeInstanceOf(Error)
+    if (!(wrongSignatureError instanceof Error)) throw new Error('expected screenshot validation to fail')
+    expect(wrongSignatureError.message).toMatch(/PNG data/)
   })
 
   it('closes the temporary Profile to quiescence and removes the service on Provider disposal', async () => {
@@ -194,76 +237,28 @@ describe('deterministic Browser Runtime public lifecycle', () => {
     await fiber.dispose()
   })
 
-  it('rejects an impossible lifecycle publication through the package invariant negative control', async () => {
+  it('contains post-commit observer failures without starving later observers', async () => {
     const ctx = new Context()
-    await ctx.plugin(InvariantRegistry)
     await ctx.plugin(BrowserRuntimeDeterministic, {
-      idPrefix: 'invariant',
       pages: [{ url: 'https://one.test/', title: 'One', text: 'one', screenshotPngBase64: PNG_1X1 }],
     })
-    await ctx.plugin(BrowserRuntimeDeterministicInvariant)
-    const target = {
-      profileId: BrowserProfileId('wrong-profile'),
-      workspaceId: BrowserWorkspaceId('wrong-workspace'),
-      browserId: BrowserInstanceId('wrong-browser'),
-      tabId: BrowserTabId('wrong-tab'),
-    }
+    const created = await ctx.browserRuntime.create({ profile: 'temporary' })
+    const observed: number[] = []
+    ctx.on('browser/runtime-state', () => { throw new Error('ordinary observer failed') })
+    ctx.on('browser/runtime-state', () => { throw Object.assign(new Error('invariant observer failed'), { code: 'INVARIANT' }) })
+    // oxlint-disable-next-line typescript/no-misused-promises -- this listener exercises rejected post-commit observation
+    ctx.on('browser/runtime-state', async () => { throw new Error('async observer failed') })
+    ctx.on('browser/runtime-state', (state) => { observed.push(state.revision) })
 
-    expect(() => {
-      ctx.emit('browser/runtime-state', {
-        status: 'open',
-        target,
-        revision: 2,
-        url: 'about:blank',
-        title: 'New Tab',
-        text: '',
-        focused: false,
-      })
-    }).toThrow(/invariant violated by "@deepseek-ai\/dsh-browser-runtime-deterministic"/)
-  })
-
-  it('accepts the real lifecycle and rejects identity and revision discontinuities', async () => {
-    const valid = new Context()
-    await valid.plugin(InvariantRegistry)
-    await valid.plugin(BrowserRuntimeDeterministic, {
-      pages: [{ url: 'https://one.test/', title: 'One', text: 'one', screenshotPngBase64: PNG_1X1 }],
-    })
-    await valid.plugin(BrowserRuntimeDeterministicInvariant)
-    const created = await valid.browserRuntime.create({ profile: 'temporary' })
-    const navigated = await valid.browserRuntime.navigate({
+    const navigated = await ctx.browserRuntime.navigate({
       target: created.target,
-      expectedRevision: 0,
+      expectedRevision: created.revision,
       url: 'https://one.test/',
     })
-    await valid.browserRuntime.close({ target: created.target, expectedRevision: navigated.revision })
-    await expect(valid.browserRuntime.create({ profile: 'temporary' })).resolves.toMatchObject({ revision: 0 })
-
-    const wrongIdentity = new Context()
-    await wrongIdentity.plugin(InvariantRegistry)
-    await wrongIdentity.plugin(BrowserRuntimeDeterministic, {
-      pages: [{ url: 'https://one.test/', title: 'One', text: 'one', screenshotPngBase64: PNG_1X1 }],
-    })
-    await wrongIdentity.plugin(BrowserRuntimeDeterministicInvariant)
-    const first = await wrongIdentity.browserRuntime.create({ profile: 'temporary' })
-    expect(() => {
-      wrongIdentity.emit('browser/runtime-state', {
-        ...first,
-        target: { ...first.target, tabId: BrowserTabId('different-tab') },
-        revision: 1,
-      })
-    }).toThrow(/changed an opaque target identity/)
-
-    const skippedRevision = new Context()
-    await skippedRevision.plugin(InvariantRegistry)
-    await skippedRevision.plugin(BrowserRuntimeDeterministic, {
-      pages: [{ url: 'https://one.test/', title: 'One', text: 'one', screenshotPngBase64: PNG_1X1 }],
-    })
-    await skippedRevision.plugin(BrowserRuntimeDeterministicInvariant)
-    const revisionZero = await skippedRevision.browserRuntime.create({ profile: 'temporary' })
-    expect(() => {
-      skippedRevision.emit('browser/runtime-state', { ...revisionZero, revision: 2 })
-    })
-      .toThrow(/revision 2 must follow 0/)
+    expect(navigated.revision).toBe(1)
+    expect(await ctx.browserRuntime.observe({ target: created.target })).toEqual(navigated)
+    expect(observed).toEqual([1])
+    await Promise.resolve()
   })
 
   it('registers and disposes the type-only Service Definition invariant companion', async () => {

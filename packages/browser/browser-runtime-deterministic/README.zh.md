@@ -6,9 +6,11 @@
 
 ## 配置
 
-`idPrefix` 控制稳定的不透明 fixture 身份，默认值为 `browser-trace`。必填 `pages` 条目包含 `url`、`title`、`text` 与 `screenshotPngBase64`。空页面集合、重复 URL 与无效 base64 会让插件加载失败。
+`idPrefix` 控制稳定的不透明 fixture 身份，默认值为 `browser-trace`。必填 `pages` 条目包含 `url`、`title`、`text` 与 `screenshotPngBase64`；截图数据必须是非空 canonical base64，且解码后的字节以 PNG signature 开头。空页面集合、重复 URL 与无效截图会让插件加载失败。
 
-所有操作进入同一个串行队列。写操作要求当前修订号，读操作返回当前修订号且不递增。释放阶段停止接收新操作、排空已接受操作、关闭仍打开的临时 Profile，并使 Provider 不可再用。
+所有操作进入同一个串行队列。写操作要求当前修订号，读操作返回当前修订号且不递增。一个 Provider 实例只接收一个临时 Profile 生命周期：关闭后再次 `create` 会以 `BROWSER_CAPACITY` 拒绝；释放开始后的操作会以 `BROWSER_DISPOSED` 拒绝。释放阶段停止接收新操作、排空已接受操作，并关闭仍打开的临时 Profile。
+
+Provider state 是权威来源。其 invariant companion 在首次安装与热重载时从该状态建立基线，随后验证身份与精确修订顺序。`browser/runtime-state` 是受容纳的提交后通知，因此损坏的普通或 invariant observer 不会让已提交操作表现为失败。
 
 ## 模型体验
 

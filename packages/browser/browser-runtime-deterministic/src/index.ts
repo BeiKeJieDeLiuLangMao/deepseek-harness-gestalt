@@ -3,6 +3,7 @@
  * @module @deepseek-ai/dsh-browser-runtime-deterministic
  */
 
+import { Buffer } from 'node:buffer'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import {
@@ -24,6 +25,10 @@ import type {
   BrowserScreenshot,
   BrowserTarget,
 } from '@deepseek-ai/dsh-browser-runtime'
+import { registerRuntimeStateReader } from './runtime-state.ts'
+
+const PNG_SIGNATURE = Uint8Array.of(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a)
+const CANONICAL_BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/
 
 /** One URL and its deterministic observable and screenshot facts. */
 export interface DeterministicBrowserPage {
@@ -33,7 +38,7 @@ export interface DeterministicBrowserPage {
   title: string
   /** Page text returned by observations. */
   text: string
-  /** PNG screenshot bytes encoded as base64. */
+  /** Non-empty canonical base64 whose decoded bytes start with the PNG signature. */
   screenshotPngBase64: string
 }
 
@@ -84,6 +89,27 @@ function targetFor(prefix: string): BrowserTarget {
   })
 }
 
+/** Decode one canonical, non-empty PNG fixture or fail Provider loading. */
+function validateScreenshot(url: string, value: string): void {
+  if (value.length === 0 || !CANONICAL_BASE64.test(value)) {
+    throw new Error(
+      `browser-runtime-deterministic: page ${JSON.stringify(url)} screenshotPngBase64 must be non-empty canonical base64 data`,
+    )
+  }
+  const bytes = Buffer.from(value, 'base64')
+  if (bytes.toString('base64') !== value) {
+    throw new Error(
+      `browser-runtime-deterministic: page ${JSON.stringify(url)} screenshotPngBase64 must be non-empty canonical base64 data`,
+    )
+  }
+  if (bytes.length < PNG_SIGNATURE.length
+    || PNG_SIGNATURE.some((byte, index) => bytes[index] !== byte)) {
+    throw new Error(
+      `browser-runtime-deterministic: page ${JSON.stringify(url)} screenshotPngBase64 must contain PNG data`,
+    )
+  }
+}
+
 /**
  * One-state deterministic Browser Runtime. Every operation enters one serialized queue;
  * mutations require the last observed revision and commit a lifecycle publication only
@@ -110,13 +136,15 @@ export class DeterministicBrowserRuntime extends BrowserRuntime {
       if (pages.has(page.url)) {
         throw new Error(`browser-runtime-deterministic: duplicate page URL ${JSON.stringify(page.url)}`)
       }
-      if (!/^[A-Za-z0-9+/]+={0,2}$/.test(page.screenshotPngBase64)) {
-        throw new Error(`browser-runtime-deterministic: page ${JSON.stringify(page.url)} screenshotPngBase64 must be base64 data`)
-      }
+      validateScreenshot(page.url, page.screenshotPngBase64)
       pages.set(page.url, Object.freeze({ ...page }))
     }
     this.pages = pages
     this.target = targetFor(resolved.idPrefix)
+    ctx.effect(
+      () => registerRuntimeStateReader(ctx.root, () => this.state),
+      'deterministic browser runtime state reader',
+    )
     ctx.effect(() => () => this.teardown(), 'deterministic browser runtime teardown')
   }
 
@@ -135,11 +163,34 @@ export class DeterministicBrowserRuntime extends BrowserRuntime {
     return result
   }
 
-  /** Publish a state only after assigning it as the authoritative state. */
+  /** Publish one committed state while containing every post-commit observer failure. */
+  private notifyState(state: BrowserRuntimeState): void {
+    const args = ['browser/runtime-state', state]
+    for (const listener of this.ctx.events.dispatch('emit', args) as Array<(value: BrowserRuntimeState) => unknown>) {
+      try {
+        const returned = listener(state)
+        if (returned != null && typeof (returned as PromiseLike<unknown>).then === 'function') {
+          void Promise.resolve(returned as PromiseLike<unknown>).then(undefined, (error: unknown) => {
+            this.warnStateObserverFailure(error)
+          })
+        }
+      } catch (error) {
+        this.warnStateObserverFailure(error)
+      }
+    }
+  }
+
+  /** Log one contained state-observer failure without reading it through an unsafe coercion. */
+  private warnStateObserverFailure(error: unknown): void {
+    this.ctx.logger.warn('browser-runtime-deterministic: a browser/runtime-state observer failed')
+    this.ctx.logger.warn(error)
+  }
+
+  /** Assign one authoritative state, then notify non-vetoing observers. */
   private commit<T extends BrowserRuntimeState>(state: T): T {
     const committed = Object.freeze(state) as T
     this.state = committed
-    this.ctx.emit('browser/runtime-state', committed)
+    this.notifyState(committed)
     return committed
   }
 
@@ -174,8 +225,11 @@ export class DeterministicBrowserRuntime extends BrowserRuntime {
     assertNotAborted(request.signal)
     return this.exclusive(() => {
       assertNotAborted(request.signal)
-      if (this.state?.status === 'open') {
-        throw new BrowserRuntimeError('the deterministic browser runtime already has an open Profile', 'BROWSER_CAPACITY')
+      if (this.state !== undefined) {
+        throw new BrowserRuntimeError(
+          'the deterministic browser runtime has already created its temporary Profile',
+          'BROWSER_CAPACITY',
+        )
       }
       return this.commit({
         status: 'open',

@@ -39,7 +39,9 @@ declare module '@deepseek-ai/cordis' {
 
   interface Events {
     /**
-     * A Browser Runtime Provider committed a new lifecycle state.
+     * Post-commit Browser Runtime lifecycle notification. Providers contain synchronous throws and
+     * asynchronous rejections from each listener, continue the fan-out, and never change a committed
+     * operation's outcome; returned promises are observed but not awaited.
      * @mode emit
      * @param state - Complete committed state after the operation.
      */
@@ -48,9 +50,10 @@ declare module '@deepseek-ai/cordis' {
 }
 
 /**
- * Browser Runtime Service Definition. Providers serialize mutations and reject a stale
- * `expectedRevision`; Consumers can therefore coordinate Agent and human operations
- * without relying on last-writer-wins state.
+ * Browser Runtime Service Definition. Providers serialize every operation, own target lifecycles,
+ * and reject stale mutations. Callers retain returned targets and revisions but do not dispose
+ * Provider resources directly. A method resolves only after its state commit and synchronous
+ * post-commit notification attempts; asynchronous observers are not awaited.
  */
 export abstract class BrowserRuntime extends Service {
   constructor(ctx: Context) {
@@ -60,37 +63,54 @@ export abstract class BrowserRuntime extends Service {
   /**
    * Create one temporary Profile, Workspace, browser instance, and tab.
    * @param request - Temporary-profile request and cancellation signal.
-   * @returns initial open page state at revision zero.
+   * @returns initial open page state at revision zero; its target addresses every later operation in
+   * this lifecycle.
+   * @throws `BrowserRuntimeError` with `BROWSER_ABORTED` when cancellation wins, `BROWSER_CAPACITY`
+   * when this Provider cannot admit another lifecycle, or `BROWSER_DISPOSED` after teardown starts.
    */
   abstract create(request: BrowserCreateRequest): Promise<BrowserPageState>
   /**
    * Navigate the addressed tab after checking its expected revision.
    * @param request - Target, expected revision, URL, and cancellation signal.
-   * @returns committed open page state.
+   * @returns committed open page state whose revision replaces the caller's prior revision.
+   * @throws `BrowserRuntimeError` with `BROWSER_ABORTED`, `BROWSER_DISPOSED`, `BROWSER_NOT_FOUND`,
+   * `BROWSER_NOT_OPEN`, `BROWSER_REVISION_CONFLICT`, or `BROWSER_UNKNOWN_URL` when the corresponding
+   * precondition fails before commit.
    */
   abstract navigate(request: BrowserNavigateRequest): Promise<BrowserPageState>
   /**
    * Observe the latest open or closed state for one target.
    * @param request - Target and cancellation signal.
-   * @returns current state without changing its revision.
+   * @returns current state after earlier queued operations, without changing its revision.
+   * @throws `BrowserRuntimeError` with `BROWSER_ABORTED`, `BROWSER_DISPOSED`, or
+   * `BROWSER_NOT_FOUND`; a closed target is returned rather than rejected.
    */
   abstract observe(request: BrowserObserveRequest): Promise<BrowserRuntimeState>
   /**
-   * Capture deterministic PNG bytes for the addressed open tab.
+   * Capture PNG bytes for the addressed open tab.
    * @param request - Target and cancellation signal.
-   * @returns screenshot bytes and depicted page facts at the current revision.
+   * @returns screenshot bytes and depicted page facts from one serialized read at the current revision.
+   * @throws `BrowserRuntimeError` with `BROWSER_ABORTED`, `BROWSER_DISPOSED`, `BROWSER_NOT_FOUND`,
+   * `BROWSER_NOT_OPEN`, or `BROWSER_UNKNOWN_URL` when the Provider cannot depict the addressed open
+   * page.
    */
   abstract screenshot(request: BrowserObserveRequest): Promise<BrowserScreenshot>
   /**
    * Focus the addressed tab after checking its expected revision.
    * @param request - Target, expected revision, and cancellation signal.
-   * @returns committed focused page state.
+   * @returns committed focused page state whose revision replaces the caller's prior revision.
+   * @throws `BrowserRuntimeError` with `BROWSER_ABORTED`, `BROWSER_DISPOSED`, `BROWSER_NOT_FOUND`,
+   * `BROWSER_NOT_OPEN`, or `BROWSER_REVISION_CONFLICT` when the corresponding precondition fails
+   * before commit.
    */
   abstract focus(request: BrowserMutationRequest): Promise<BrowserPageState>
   /**
    * Close the addressed tab and its temporary Profile after checking its expected revision.
    * @param request - Target, expected revision, and cancellation signal.
-   * @returns terminal close receipt.
+   * @returns terminal close receipt retained by the Provider for later observation.
+   * @throws `BrowserRuntimeError` with `BROWSER_ABORTED`, `BROWSER_DISPOSED`, `BROWSER_NOT_FOUND`,
+   * `BROWSER_NOT_OPEN`, or `BROWSER_REVISION_CONFLICT` when the corresponding precondition fails
+   * before commit.
    */
   abstract close(request: BrowserMutationRequest): Promise<BrowserClosedState>
 }
