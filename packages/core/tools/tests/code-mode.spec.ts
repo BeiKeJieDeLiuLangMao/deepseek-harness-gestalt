@@ -61,7 +61,8 @@ async function setup(options: SetupOptions = {}) {
 
 /** Mint an agent scope configured like production that can register scoped tool policy. */
 async function mintAgentScope(ctx: Context, name = 'scoped'): Promise<{ scope: Scope; agent: Agent }> {
-  const agent = { id: SessionId(name) } as Agent
+  const id = SessionId(name)
+  const agent = { id, session: Session.create(id) } as Agent
   let scope!: Scope
   await ctx.plugin(Object.assign((inner: Context) => { scope = createScope(inner, agent) },
     { inject: ['tools', 'systemPrompt'] }))
@@ -93,6 +94,7 @@ function fakeAgent(): { agent: Agent; events: { type: string; data: unknown }[] 
   const agent = {
     session: {
       header: { cwd: '/workspace' },
+      deriveMessages: () => [],
       append: (type: string, data: unknown) => { events.push({ type, data }) },
     },
   } as unknown as Agent

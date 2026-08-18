@@ -2,7 +2,7 @@
 
 import { MessageId, type CallId } from './brand.ts'
 import { deepFreeze } from './call-config.ts'
-import type { ContentBlock, StreamChunk, ToolResultBlock } from './types.ts'
+import type { ContentBlock, StreamChunk, ToolResultBlock, ToolSchema } from './types.ts'
 
 /** Provider/model identity and adapter-private replay data for an assistant message. */
 export interface AssistantProvenance {
@@ -221,6 +221,8 @@ export interface ToolResultMessageInput {
   readonly callId: CallId
   readonly content: ContentBlock[]
   readonly isError: boolean
+  /** Exact deferred schemas discovered by the call. */
+  readonly loadedTools?: ToolSchema[]
 }
 
 /**
@@ -236,6 +238,7 @@ export function createToolResultMessage(input: ToolResultMessageInput): ToolResu
       toolCallId: input.callId,
       content: input.content,
       isError: input.isError,
+      ...input.loadedTools !== undefined ? { loadedTools: input.loadedTools } : {},
     }],
   })
 }
