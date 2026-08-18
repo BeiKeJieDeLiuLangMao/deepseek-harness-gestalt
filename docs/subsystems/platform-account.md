@@ -67,6 +67,13 @@ abstract refresh(input: { refreshToken: string; proof: AccountProof }): Promise<
 abstract current(input: { accessToken: string; proof: AccountProof }): Promise<PlatformAccountView>
 
 /**
+ * Authenticate the Account and Installation identity bound to one current session.
+ * @param input - access token and proof from the session's Installation key.
+ * @returns provider-owned Account id, Installation id, and Installation kind.
+ */
+abstract currentInstallation(input: { accessToken: string proof: AccountProof }): Promise<AuthenticatedInstallationView>
+
+/**
  * Revoke only the current installation Account Session.
  * @param input - access token and installation proof.
  */
@@ -81,5 +88,5 @@ abstract signOut(input: { accessToken: string; proof: AccountProof }): Promise<v
 abstract trackConnection(sessionId: AccountSessionId, close: () => void | Promise<void>): () => void
 ```
 
-Source: [`packages/platform/platform-account/src/index.ts:35`](../../packages/platform/platform-account/src/index.ts)
+Source: [`packages/platform/platform-account/src/index.ts:36`](../../packages/platform/platform-account/src/index.ts)
 <!-- END GENERATED cordis-surface -->

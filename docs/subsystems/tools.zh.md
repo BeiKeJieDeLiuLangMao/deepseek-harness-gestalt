@@ -169,7 +169,7 @@ interface ToolRestriction {
 
 ## 执行：可扩展的 waterfall（瀑布式事件）加单调策略
 
-`ctx.tools.execute()` 接受由调用方拥有且包含必需 readonly `signal` 的 `ToolExecutionInput`，将其解析后的 JSON 参数一次性物化为流水线拥有的 `ToolExecution`，然后让调用依次经过 `tools/pre-execute`（可重排的 allow/deny/ask waterfall）→ 已注册的单调 guard → `tools/execute`（环绕分派包装层）→ `tools/post-execute`（检查/替换结果）→ 可选且由定义拥有的 `finalizeContent` → `tools/result`（不可变的权威结果）。只有 `tools/execute` 视图可以替换必需的 signal。最终产出为 `ToolExecutionResult`。
+`ctx.tools.execute()` 接受由调用方拥有且包含必需 readonly `signal` 的 `ToolExecutionInput`，将其解析后的 JSON 参数一次性物化为流水线拥有的 `ToolExecution`，然后让调用依次经过 `tools/pre-execute`（可重排的 allow/deny/ask waterfall）→ 已注册的单调 guard → `tools/execute`（环绕分派包装层）→ `tools/post-execute`（检查/替换结果）→ 可选且由定义拥有的 `finalizeContent` → `tools/result`（不可变的权威结果）。已注册但被正向资格排除的定义会在策略运行前解析为 `UNKNOWN_TOOL`；如果资格在前置策略期间收窄，执行器会在进入 `tools/execute` 前重新检查。两种资格拒绝都会跳过环绕分派包装层、工具主体、后置策略与定义 finalizer，同时保留规范的 `tools/result` 通知；未知或尚未加载的名称仍走常规流水线。只有 `tools/execute` 视图可以替换必需的 signal。最终产出为 `ToolExecutionResult`。
 
 ```ts type-equiv
 /** Opaque call identity that permits correlation without exposing mutable execution state. */
@@ -513,6 +513,26 @@ register(definition: ToolDefinition): () => void
 restrict(filter: ToolRestriction): () => void
 
 /**
+ * Add positive tool-eligibility entries for the calling scope. Entries from
+ * a preset and its descendant agent scopes union; this declaration does not
+ * expose the internal deny-capable restriction interface to user settings.
+ * Names may precede dynamic tool registration, so they are not validated
+ * against the current registry generation here.
+ * @param names - exact public tool names this scope adds to eligibility.
+ * @returns the exact disposer that removes this contribution.
+ */
+allowEligible(names: readonly string[]): () => void
+
+/**
+ * Resolve the positive eligibility entries declared along one scope chain.
+ * Absence means no allow-only policy was configured; an empty array means a
+ * declaration explicitly allows no end tool.
+ * @param scope - the agent or standing preset whose declarations are read.
+ * @returns the sorted union, or `undefined` when the chain declares none.
+ */
+eligibilityAllow(scope?: ScopeKey): readonly string[] | undefined
+
+/**
  * Register a monotonic guard after the extensible `tools/pre-execute`
  * waterfall. A plain-context guard applies globally; one registered through
  * `agent.ctx` applies only to that agent. Any matching guard may deny by
@@ -556,8 +576,13 @@ executionMode(exec: ToolExecutionInput): ToolExecutionMode
  * Execute through pre-policy, guards, around-dispatch, post-policy,
  * definition-owned content finalization, and final notification. Tool and
  * listener failures resolve as materialized error results; an invisible tool
- * reports `UNKNOWN_TOOL`. The returned outcome is the same lossless, frozen
- * snapshot final observers receive. Cancellation
+ * reports `UNKNOWN_TOOL`. A registered tool excluded by positive eligibility
+ * is rejected before policy, and eligibility narrowed during pre-policy is
+ * rechecked before around-dispatch listeners. Both eligibility denials skip
+ * around-dispatch, post-policy, the definition-owned content finalizer, and
+ * the tool body while retaining final notification. Unknown or unloaded
+ * names keep the ordinary pipeline. The returned outcome is the same
+ * lossless, frozen snapshot final observers receive. Cancellation
  * arriving after entry and before final result materialization skips a
  * not-yet-started body with `ABORTED_BEFORE_DISPATCH` or replaces a
  * successful started outcome with `ABORTED`; already-started work is still
@@ -571,7 +596,32 @@ async execute(exec: ToolExecutionInput): Promise<ToolExecutionResult>
 
 Types: [ScopeKey](scope.md)
 
-Source: [`packages/core/tools/src/index.ts:787`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:842`](../../packages/core/tools/src/index.ts)
+
+<a id="tool-eligibility-events"></a>
+
+### `tool-eligibility/*` events
+
+<a id="tool-eligibilitypublished--emit"></a>
+
+#### `tool-eligibility/published` — emit
+
+A settings-derived allowance was committed to or removed from one live Agent's registry scope.
+
+```ts cordis-catalog
+/**
+ * A settings-derived allowance was committed to or removed from one live
+ * Agent's registry scope.
+ * @param agent - live Agent whose scoped registry view changed.
+ * @param publication - committed settings addition and expected effective union.
+ * @mode emit
+ */
+'tool-eligibility/published'(agent: Agent, publication: ToolEligibilityPublication): void
+```
+
+Types: [Agent](core.md)
+
+Source: [`packages/core/tools-eligibility/src/index.ts:58`](../../packages/core/tools-eligibility/src/index.ts)
 
 <a id="tools-events"></a>
 
@@ -596,7 +646,7 @@ A tool was registered or unregistered, or a scoped restriction changed (the avai
 'tools/change'(): void
 ```
 
-Source: [`packages/core/tools/src/index.ts:207`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:216`](../../packages/core/tools/src/index.ts)
 
 <a id="toolscode-dispatch-log--waterfall"></a>
 
@@ -623,7 +673,7 @@ Allow a listener to replace content in the DURABLE LOG COPY of one `run_code` su
 
 Types: [ContentBlock](llm-streaming.md) · [Scoped](scope.md)
 
-Source: [`packages/core/tools/src/index.ts:189`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:198`](../../packages/core/tools/src/index.ts)
 
 <a id="toolsexecute--waterfall"></a>
 
@@ -647,7 +697,7 @@ Around-dispatch waterfall for timeout, retry, or metrics. `next()` returns a nor
 
 Types: [Scoped](scope.md)
 
-Source: [`packages/core/tools/src/index.ts:163`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:172`](../../packages/core/tools/src/index.ts)
 
 <a id="toolspost-execute--waterfall"></a>
 
@@ -672,7 +722,7 @@ Accept, replace, enrich, or block a normalized dispatch result. `next()` accepts
 
 Types: [Scoped](scope.md)
 
-Source: [`packages/core/tools/src/index.ts:175`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:184`](../../packages/core/tools/src/index.ts)
 
 <a id="toolspre-execute--waterfall"></a>
 
@@ -695,7 +745,7 @@ Allow, deny, or ask before dispatch. `next()` delegates to allow; missing approv
 
 Types: [Scoped](scope.md)
 
-Source: [`packages/core/tools/src/index.ts:152`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:161`](../../packages/core/tools/src/index.ts)
 
 <a id="toolsresult--emit"></a>
 
@@ -716,5 +766,5 @@ Observe the frozen, lossless-JSON final outcome. Listener failures are contained
 
 Types: [Scoped](scope.md)
 
-Source: [`packages/core/tools/src/index.ts:197`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:206`](../../packages/core/tools/src/index.ts)
 <!-- END GENERATED cordis-surface -->

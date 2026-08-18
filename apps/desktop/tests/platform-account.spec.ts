@@ -197,6 +197,10 @@ describe('DesktopAccountController', () => {
     expect(controller.getSnapshot().account?.githubLogin).toBe('octocat')
     expect(store.record?.pendingPrivateKey).toBeUndefined()
     expect(store.record?.sessionPrivateKey).toContain('BEGIN PRIVATE KEY')
+    const authorization = await controller.authorizeCurrentInstallation()
+    await expect(service.currentInstallation(authorization)).resolves.toMatchObject({
+      installation: { id: store.record?.installationId, kind: 'desktop' },
+    })
   })
 
   it('revokes only the stored installation session and preserves account-scoped material', async () => {

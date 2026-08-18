@@ -140,6 +140,7 @@ describe('GitHubOAuthIdentityProvider', () => {
 describe('validatePlatformEnvironmentPair', () => {
   it('accepts two completely separate deployment identities', () => {
     expect(validatePlatformEnvironmentPair({ development, production })).toEqual({ development, production })
+    expect(loadPlatformEnvironment({ selection: 'development', development, production })).toMatchObject(development)
   })
 
   it('requires an explicit known environment before selecting any deployment identity', () => {
@@ -160,6 +161,11 @@ describe('validatePlatformEnvironmentPair', () => {
     expect(() => loadPlatformEnvironment({
       selection: 'development',
       development: { ...development, origin: undefined },
+      production,
+    })).toThrow('development origin is required')
+    expect(() => loadPlatformEnvironment({
+      selection: 'development',
+      development: { ...development, origin: ' ' },
       production,
     })).toThrow('development origin is required')
   })

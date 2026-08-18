@@ -1,0 +1,9 @@
+{
+  "private": true,
+  "name": "@deepseek-ai/dsh-example-personal-pairing",
+  "type": "module",
+  "dependencies": {
+    "@deepseek-ai/dsh-host-webserver": "workspace:^",
+    "@deepseek-ai/dsh-remote-access-http": "workspace:^"
+  }
+}

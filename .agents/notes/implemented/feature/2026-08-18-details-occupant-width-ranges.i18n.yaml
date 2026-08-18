@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-18-details-occupant-width-ranges.md
+2026-08-18-details-occupant-width-ranges.md: 0842f30c6998c3288211040dc30ceac8ffb986ae
+2026-08-18-details-occupant-width-ranges.zh.md: 893dce3939925291c09287f0fb522811e883ffc8

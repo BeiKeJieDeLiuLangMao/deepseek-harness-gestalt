@@ -12,6 +12,7 @@
  * the effective sidebar preference before solving; the solver itself stays
  * breakpoint-free.
  */
+import type { DetailsWidthRange } from './details-width.ts'
 
 /** Resolved widths for one frame; center may drop below CENTER_MIN only at the final fallback. */
 export interface Columns { sidebar: number; center: number; details: number }
@@ -31,12 +32,19 @@ export const SIDEBAR_COLLAPSED = 56
  * LG breakpoint); a manual toggle below it re-expands over the squeezed center
  * (stores.ts narrowExpanded). */
 export const SIDEBAR_AUTO_COLLAPSE = 1024
-/** Details drag clamp floor. */
+/** Ordinary details drag clamp floor. */
 export const DETAILS_MIN = 300
-/** Details drag clamp ceiling. */
+/** Ordinary details drag clamp ceiling. */
 export const DETAILS_MAX = 520
-/** Details width before any user drag. */
+/** Ordinary details width before any user drag. */
 export const DETAILS_DEFAULT = 360
+
+/** Width range used when a details occupant does not declare one. */
+export const DEFAULT_DETAILS_WIDTH_RANGE: DetailsWidthRange = {
+  minimum: DETAILS_MIN,
+  default: DETAILS_DEFAULT,
+  maximum: DETAILS_MAX,
+}
 
 /**
  * Clamp a panel width into its contract range.
@@ -53,22 +61,29 @@ export function clampWidth(px: number, min: number, max: number): number {
  * Solve the three column widths for one viewport frame. Pure: no hysteresis —
  * the output is a function of (viewport, preferences) only, so recovery on
  * re-widening is automatic. Preferences re-clamp here because they cross the
- * store boundary and callers may still supply stale ranges.
+ * store boundary. The active occupant range controls details clamping and the
+ * minimum at which details auto-closes.
  * @param viewport - available frame width in px.
  * @param sidebar - sidebar width preference in px (0 = closed).
  * @param details - details width preference in px (0 = closed).
+ * @param detailsRange - active occupant's details clamp and reopen widths.
  * @returns resolved widths; details 0 means visually closed (never unmounted), while a closed sidebar keeps its compact rail.
  */
-export function computeColumns(viewport: number, sidebar: number, details: number): Columns {
+export function computeColumns(
+  viewport: number,
+  sidebar: number,
+  details: number,
+  detailsRange: DetailsWidthRange = DEFAULT_DETAILS_WIDTH_RANGE,
+): Columns {
   // The sidebar is fixed at its preference (or the rail) — it never concedes.
   const s = sidebar === 0 ? SIDEBAR_COLLAPSED : clampWidth(sidebar, SIDEBAR_MIN, SIDEBAR_MAX)
-  const d0 = details === 0 ? 0 : clampWidth(details, DETAILS_MIN, DETAILS_MAX)
+  const d0 = details === 0 ? 0 : clampWidth(details, detailsRange.minimum, detailsRange.maximum)
 
   // Step 1: everything fits at preferred widths.
   if (s + d0 + CENTER_MIN <= viewport) return { sidebar: s, center: viewport - s - d0, details: d0 }
 
   // Step 2: shrink details toward its minimum.
-  const d1 = d0 === 0 ? 0 : Math.max(DETAILS_MIN, viewport - s - CENTER_MIN)
+  const d1 = d0 === 0 ? 0 : Math.max(detailsRange.minimum, viewport - s - CENTER_MIN)
   if (s + d1 + CENTER_MIN <= viewport) return { sidebar: s, center: CENTER_MIN, details: d1 }
 
   // Step 3: auto-close details (derived — preferences untouched); center

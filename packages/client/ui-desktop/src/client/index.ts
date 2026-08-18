@@ -12,6 +12,7 @@ import { UpdateControl } from './UpdateControl.tsx'
 import { AccountControl } from './AccountControl.tsx'
 import { bindDesktopUpdater, createUpdaterSource } from './status-source.ts'
 import { bindDesktopAccount, createDesktopAccountSource } from './account-source.ts'
+import { bindDesktopPairing, createDesktopPairingSource } from './pairing-source.ts'
 import { en, zh, type DesktopKey } from './locales.ts'
 
 export type { DesktopBridge, UpdaterPhase, UpdaterStatus } from '../protocol.ts'
@@ -43,11 +44,13 @@ export function apply(ctx: ClientContext): void {
 
   const updater = createUpdaterSource()
   const account = createDesktopAccountSource()
+  const pairing = createDesktopPairingSource()
   /* v8 ignore next -- the client half always has window */
   const desktop = typeof window === 'undefined' ? undefined : window.dshDesktop
   if (desktop !== undefined) {
     ctx.effect(() => bindDesktopUpdater(updater, desktop), 'ui-desktop: updater status')
     ctx.effect(() => bindDesktopAccount(account, desktop), 'ui-desktop: account status')
+    ctx.effect(() => bindDesktopPairing(pairing, desktop), 'ui-desktop: pairing status')
   }
 
   ctx.slots.inject('sidebar.brand', () => ctx.slots.register(
@@ -65,7 +68,7 @@ export function apply(ctx: ClientContext): void {
       order: 50,
       label: () => ctx.locale.bind(NS)('account.settingsNav'),
       locale: NS,
-      inject: () => ({ hooks: { account } }),
+      inject: () => ({ hooks: { account, pairing } }),
     },
     AccountControl,
   ))

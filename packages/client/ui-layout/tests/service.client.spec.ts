@@ -36,6 +36,17 @@ describe('LayoutController', () => {
     expect(panels.setDetails).not.toHaveBeenCalled()
   })
 
+  it('forwards an occupant-specific details width range', () => {
+    const service = new LayoutController()
+    const panels = fakePanels()
+    const range = { minimum: 420, default: 640, maximum: 960 }
+    service.attachPanels(panels)
+
+    service.openDetails(range)
+
+    expect(panels.openDetails).toHaveBeenCalledWith(range)
+  })
+
   it('fails loud before the root entry wired its actions', () => {
     const service = new LayoutController()
     expect(() => { service.toggleSidebar() }).toThrow(/panel actions not wired/)

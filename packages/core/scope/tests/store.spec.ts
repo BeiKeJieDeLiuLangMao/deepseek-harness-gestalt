@@ -213,6 +213,28 @@ describe('ScopedLayers', () => {
     expect(action).not.toHaveBeenCalled()
   })
 
+  it('separates explicit visibility scope from effect ownership and reclaims after a throwing undo', () => {
+    const ctx = new Context()
+    const key = {}
+    const layers = new ScopedLayers(scope => new TestLayer(scope), vi.fn())
+    const dispose = layers.effectAt(
+      ctx,
+      key,
+      (layer) => {
+        const undo = layer.anonymous.append('owned-by-root')
+        return () => {
+          undo()
+          throw new Error('undo failed')
+        }
+      },
+      { label: 'store.explicit-scope', notify: false },
+    )
+
+    expect([...layers.peek(key)!.anonymous.values()]).toEqual(['owned-by-root'])
+    expect(() => { dispose() }).toThrow('undo failed')
+    expect(layers.peek(key)).toBeUndefined()
+  })
+
   it('cleans up failed factories and empty failed actions without discarding an existing layer', async () => {
     const ctx = new Context()
     const key = {}

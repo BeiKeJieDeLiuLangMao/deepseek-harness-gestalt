@@ -6,7 +6,7 @@
 
 import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
 import type { AttachmentIdType, ImageAttachmentLimits, ImageAttachmentRef, ImageMediaType } from '@deepseek-ai/dsh-attachment'
-import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
+import type { ContentBlock, ToolSchema } from '@deepseek-ai/dsh-llm/types'
 import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session/types'
 // The pure-type outlet: api/ is browser-importable, and the package root's
 // cordis Context merge (via dsh-agent) must not enter client aggregates.
@@ -167,6 +167,14 @@ export interface SessionModels {
   failures: ModelCatalogFailure[]
 }
 
+/** Effective allow-only tool catalog for one live Session. */
+export interface SessionToolEligibility {
+  /** Sorted configured union; absent means no allow-only policy is active. */
+  allow?: string[]
+  /** Exact schemas currently eligible for model assembly and execution. */
+  tools: ToolSchema[]
+}
+
 /** A client-requested mutation of one still-pending queue item. */
 export type QueueAction =
   | { kind: 'edit'; content: ContentBlock[] }
@@ -287,6 +295,9 @@ export interface SessionsApi {
    * lookups run independently; subagents reject with `agent-busy`.
    */
   models(request: RpcRequest<{ sessionId: SessionId }>): Promise<RpcResponse<SessionModels>>
+
+  /** Reads the effective allow-only tool catalog for a live Session. */
+  toolEligibility(request: RpcRequest<{ sessionId: SessionId }>): Promise<RpcResponse<SessionToolEligibility>>
 
   /**
    * Selects the complete model selection for this session. Exact model metadata
