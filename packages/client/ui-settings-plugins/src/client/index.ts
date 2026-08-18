@@ -31,6 +31,7 @@ import { SHELL_NS, BashCardController } from './bash-card-controller.ts'
 import { ConfigurablePluginsTabController } from './tab-store.ts'
 import {
   WEB_SEARCH_ANTHROPIC_NS, WEB_SEARCH_NS, WebSearchCardController,
+  type WebSearchSettings,
 } from './web-search-card-controller.ts'
 import { en, zh } from './locales.ts'
 
@@ -64,7 +65,7 @@ export function apply(ctx: ClientContext): void {
 
   const bash = new BashCardController(ctx.settingsScope.bind({ namespace: SHELL_NS }))
   const agentLoop = new AgentLoopCardController(ctx.settingsScope.bind({ namespace: AGENT_LOOP_NS }))
-  const deepseekScope = ctx.settingsScope.bind({ namespace: WEB_SEARCH_NS })
+  const deepseekScope = ctx.settingsScope.bind<WebSearchSettings>({ namespace: WEB_SEARCH_NS })
   const webSearch = new WebSearchCardController(deepseekScope, api, 'deepseek', deepseekScope, {
     titleKey: 'webSearchTitle',
     descriptionKey: 'webSearchDescription',
@@ -72,7 +73,7 @@ export function apply(ctx: ClientContext): void {
     idPrefix: 'plugin-config-web-search',
   })
   const anthropicSearch = new WebSearchCardController(
-    ctx.settingsScope.bind({ namespace: WEB_SEARCH_ANTHROPIC_NS }),
+    ctx.settingsScope.bind<WebSearchSettings>({ namespace: WEB_SEARCH_ANTHROPIC_NS }),
     api,
     'anthropic-messages',
     deepseekScope,
