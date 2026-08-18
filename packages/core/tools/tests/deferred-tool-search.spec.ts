@@ -321,7 +321,8 @@ describe('deferred tool search', () => {
       signal,
     })
     expect(result).toMatchObject({ isError: true })
-    expect(result.content).toEqual([{ type: 'text', text: expect.stringMatching(message) }])
+    expect(result.content).toHaveLength(1)
+    expect(result.content[0]?.type === 'text' ? result.content[0].text : '').toMatch(message)
     expect(result).not.toHaveProperty('loadedTools')
   })
 
@@ -439,9 +440,7 @@ describe('deferred tool search', () => {
   })
 
   it.each([
-    [null, 'non-object schema'],
     [{ name: 'mcp__weather__forecast', description: 'Forecast weather' }, 'missing field'],
-    [{ name: '', description: 'Forecast weather', parameters: { type: 'object' } }, 'empty name'],
     [{ name: 'mcp__weather__forecast', description: 42, parameters: { type: 'object' } }, 'description'],
     [{ name: 'mcp__weather__forecast', description: 'Forecast weather', parameters: null }, 'parameters'],
     [{
@@ -449,6 +448,11 @@ describe('deferred tool search', () => {
       description: 'Forecast weather',
       parameters: { type: 'object', properties: { city: { type: 'unknown' } } },
     }, 'nested parameter schema'],
+    [{
+      name: 'mcp__weather__forecast',
+      description: 'Forecast weather',
+      parameters: { $schema: 'https://example.com/schema', type: 'object' },
+    }, 'unsupported dialect'],
   ] as const)('rejects restored loadedTools with malformed %s', async (malformed, _case) => {
     const ctx = await mount()
     ctx.tools.register(tool('mcp__weather__forecast', 'Forecast weather', true))
@@ -471,6 +475,78 @@ describe('deferred tool search', () => {
 
     await expect(ctx.systemPrompt.assemble({ scope: agent, agent }))
       .rejects.toThrow(/durable loadedTools/)
+  })
+
+  it('ignores malformed, unsupported, huge, and hostile stale restored candidates', async () => {
+    const ctx = await mount({ toolSearch: { maxResultBytes: 1_024 } })
+    const eligible = deferredSchema('mcp__restored__eligible', 'Eligible restored schema')
+    ctx.tools.register(tool(eligible.name, eligible.description, true))
+    ctx.tools.register(tool('mcp__restored__ineligible', 'Currently ineligible schema', true))
+    const session = Session.create(SessionId('restored-stale-candidates'))
+    const { agent, scope } = await scopedAgent(ctx, session)
+    scope.ctx.tools.allowEligible([eligible.name])
+    const hostile = JSON.parse(`{
+      "name": "__proto__",
+      "description": "hostile stale schema",
+      "parameters": { "type": "object" },
+      "__proto__": { "polluted": true }
+    }`) as unknown
+    const stale = [
+      null,
+      { description: 'missing name', parameters: { type: 'object' } },
+      { name: '', description: 'empty stale name', parameters: { type: 'object' } },
+      { name: 42, description: 'non-string stale name', parameters: { type: 'object' } },
+      {
+        name: 'mcp__restored__unregistered',
+        description: 'x'.repeat(1_000_000),
+        parameters: { $schema: 'https://example.com/schema', type: 'object' },
+      },
+      {
+        name: 'mcp__restored__ineligible',
+        description: 42,
+        parameters: { $schema: 'https://example.com/schema', type: 'object' },
+      },
+      hostile,
+    ]
+    session.append('tool/result', {
+      turn: 1,
+      step: 1,
+      message: createToolResultMessage({
+        callId: CallId('restored-stale'),
+        content: [{ type: 'text', text: 'stale and eligible discovery candidates' }],
+        isError: false,
+        loadedTools: [...stale, eligible] as never,
+      }),
+    }, { surfaceOp: 'append' })
+
+    const assembly = await ctx.systemPrompt.assemble({ scope: agent, agent })
+    expect(assembly.tools.map(schema => schema.name)).toContain(eligible.name)
+    expect(({} as { polluted?: boolean }).polluted).toBeUndefined()
+  })
+
+  it('budgets an eligible raw restored candidate before schema validation', async () => {
+    const ctx = await mount({ toolSearch: { maxResultBytes: 512 } })
+    const name = 'mcp__restored__oversized-invalid'
+    ctx.tools.register(tool(name, 'Oversized invalid restored schema', true))
+    const session = Session.create(SessionId('restored-budget-before-validation'))
+    session.append('tool/result', {
+      turn: 1,
+      step: 1,
+      message: createToolResultMessage({
+        callId: CallId('restored-oversized-invalid'),
+        content: [{ type: 'text', text: 'oversized invalid durable discovery' }],
+        isError: false,
+        loadedTools: [{
+          name,
+          description: 'x'.repeat(1_000_000),
+          parameters: { $schema: 'https://example.com/schema', type: 'object' },
+        }] as never,
+      }),
+    }, { surfaceOp: 'append' })
+    const agent = { session } as Agent
+
+    await expect(ctx.systemPrompt.assemble({ scope: agent, agent }))
+      .rejects.toThrow(/maxResultBytes 512/)
   })
 
   it.each([
@@ -505,7 +581,10 @@ describe('deferred tool search', () => {
 
   it('accepts exact and under-budget restoration after filtering stale eligibility', async () => {
     const eligible = deferredSchema('mcp__restored__eligible', 'Eligible restored schema')
-    const stale = deferredSchema('mcp__restored__stale', '界'.repeat(1_000))
+    const stale = {
+      ...deferredSchema('mcp__restored__stale', '界'.repeat(1_000)),
+      parameters: { $schema: 'https://example.com/schema', type: 'object' },
+    }
     const exactBytes = reconstructedResultBytes([eligible])
     const assemble = async (maxResultBytes: number): Promise<ReturnType<Context['systemPrompt']['assemble']>> => {
       const ctx = await mount({ toolSearch: { maxResultBytes } })
@@ -518,12 +597,8 @@ describe('deferred tool search', () => {
       return ctx.systemPrompt.assemble({ scope: agent, agent })
     }
 
-    await expect(assemble(exactBytes)).resolves.toMatchObject({
-      tools: expect.arrayContaining([expect.objectContaining({ name: eligible.name })]),
-    })
-    await expect(assemble(exactBytes + 1)).resolves.toMatchObject({
-      tools: expect.arrayContaining([expect.objectContaining({ name: eligible.name })]),
-    })
+    expect((await assemble(exactBytes)).tools.map(schema => schema.name)).toContain(eligible.name)
+    expect((await assemble(exactBytes + 1)).tools.map(schema => schema.name)).toContain(eligible.name)
     await expect(assemble(exactBytes - 1)).rejects.toThrow(/maxResultBytes/)
   })
 

@@ -934,11 +934,13 @@ function resolveToolSearchConfig(config: Config['toolSearch']): ResolvedToolSear
 
 /** Parse one complete model-facing schema from durable or generated JSON. */
 function parseDeferredToolSchema(value: unknown, subject: string): ToolSchema {
+  /* v8 ignore next 2 -- generated definitions are typed, and restoration retains only safely named records. */
   if (!isPlainJsonRecord(value)) throw new Error(`${subject} must be an object`)
   const keys = Object.keys(value)
   if (keys.length !== 3 || !keys.includes('name') || !keys.includes('description') || !keys.includes('parameters')) {
     throw new Error(`${subject} must contain exactly name, description, and parameters`)
   }
+  /* v8 ignore next 3 -- restoration already matched this exact non-empty name against the live eligible set. */
   if (typeof value.name !== 'string' || value.name.length === 0) {
     throw new Error(`${subject}.name must be a non-empty string`)
   }
@@ -994,7 +996,7 @@ function parseDeferredToolSchema(value: unknown, subject: string): ToolSchema {
 function deferredToolResultBytes(
   callId: CallId,
   content: readonly ContentBlock[],
-  schemas: readonly ToolSchema[],
+  schemas: readonly unknown[],
 ): number {
   const block = {
     type: 'tool-result',
@@ -1007,7 +1009,7 @@ function deferredToolResultBytes(
 }
 
 /** Canonical rendered content used to budget a reconstructed eligible schema set. */
-function renderedDeferredSchemas(schemas: readonly ToolSchema[]): ContentBlock[] {
+function renderedDeferredSchemas(schemas: readonly unknown[]): ContentBlock[] {
   return [{ type: 'text', text: JSON.stringify(schemas, null, 2) }]
 }
 
@@ -1015,7 +1017,7 @@ function renderedDeferredSchemas(schemas: readonly ToolSchema[]): ContentBlock[]
 function assertDeferredResultWithinBudget(
   callId: CallId,
   content: readonly ContentBlock[],
-  schemas: readonly ToolSchema[],
+  schemas: readonly unknown[],
   config: ResolvedToolSearchConfig,
 ): void {
   const resultBytes = deferredToolResultBytes(callId, content, schemas)
@@ -1024,6 +1026,21 @@ function assertDeferredResultWithinBudget(
     `deferred discovery result is ${resultBytes} bytes, exceeding configured maxResultBytes ${config.maxResultBytes}`,
     'TOOL_SEARCH_RESULT_TOO_LARGE',
   )
+}
+
+/** Read only an own enumerable data-property name before restored-candidate eligibility is known. */
+function restoredDeferredToolName(value: unknown): string | undefined {
+  if (!isPlainJsonRecord(value)) return undefined
+  try {
+    const descriptor = Object.getOwnPropertyDescriptor(value, 'name')
+    if (descriptor === undefined || descriptor.enumerable !== true || !('value' in descriptor)) return undefined
+    return typeof descriptor.value === 'string' && descriptor.value.length > 0
+      ? descriptor.value
+      : undefined
+  } catch {
+    /* v8 ignore next -- persisted JSON cannot carry a Proxy; contain a hostile same-process candidate defensively. */
+    return undefined
+  }
 }
 
 /**
@@ -1359,24 +1376,30 @@ export class ToolRuntime extends Service {
     return { schemas, knownNames: schemas.map(schema => schema.name) }
   }
 
-  /** Recover discovered schemas from durable history and recheck live eligibility. */
+  /** Recover current deferred schemas by name-filtering, budgeting, then fully validating durable history. */
   private loadedSchemas(agent: Agent | undefined, view: ToolView): ToolSchema[] {
     const messages = agent?.session.deriveMessages()
     if (messages === undefined) return []
-    const loaded = new Map<string, ToolSchema>()
+    const eligibleNames = new Set<string>()
+    let maxEligibleNameLength = 0
+    for (const definition of view.visible.values()) {
+      if (definition.deferLoading !== true) continue
+      eligibleNames.add(definition.name)
+      maxEligibleNameLength = Math.max(maxEligibleNameLength, definition.name.length)
+    }
+    if (eligibleNames.size === 0) return []
+    const loaded = new Map<string, unknown>()
     for (const message of messages) {
       for (const block of message.content) {
         if (block.type !== 'tool-result' || block.loadedTools === undefined) continue
         for (const candidate of block.loadedTools as unknown[]) {
-          const schema = parseDeferredToolSchema(candidate, 'durable loadedTools entry')
-          loaded.set(schema.name, schema)
+          const name = restoredDeferredToolName(candidate)
+          if (name === undefined || name.length > maxEligibleNameLength || !eligibleNames.has(name)) continue
+          loaded.set(name, candidate)
         }
       }
     }
-    const eligible = [...loaded.values()].filter((schema) => {
-      const definition = view.visible.get(schema.name)
-      return definition?.deferLoading === true
-    })
+    const eligible = [...loaded.values()]
     if (eligible.length === 0) return []
     const config = this.toolSearchConfig
     /* v8 ignore next 3 -- a visible deferred definition cannot be registered while search is disabled. */
@@ -1387,7 +1410,7 @@ export class ToolRuntime extends Service {
       eligible,
       config,
     )
-    return eligible
+    return eligible.map(candidate => parseDeferredToolSchema(candidate, 'durable loadedTools entry'))
   }
 
   /**
