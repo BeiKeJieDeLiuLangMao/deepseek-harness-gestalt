@@ -59,6 +59,27 @@ return (ctx) => {
   }))
 }
 """
+SNAPSHOT_DEFERRED_PLUGIN = """\
+export const inject = ['tools']
+export function apply(ctx) {
+  ctx.tools.register({
+    name: 'snapshot_deferred_double',
+    description: 'Double a number through a deferred schema.',
+    parameters: {
+      type: 'object',
+      properties: { value: { type: 'number' } },
+      required: ['value'],
+      additionalProperties: false
+    },
+    output: {
+      schema: { type: 'number' },
+      render(_args, value) { return [{ type: 'text', text: String(value) }] }
+    },
+    execute(args) { return args.value * 2 },
+    deferLoading: true
+  })
+}
+"""
 SNAPSHOT_WORKFLOW_SCRIPT = (
     "phase('Delegate')\n"
     f"const reply = await agent('{SNAPSHOT_WORKFLOW_CHILD_PROMPT}', {{ label: 'workflow-child' }})\n"
@@ -88,6 +109,8 @@ CUSTOM_CORDIS = """\
     toolBash: false
     tools:
       mode: both
+      toolSearch:
+        maxResultBytes: 65536
 - id: sessions
   name: '@deepseek-ai/dsh-session-persistence-jsonl'
   config:
@@ -309,13 +332,24 @@ def advanced_tool_followup(
     if call_id == "advanced-run" and tool_name == "cordis_run":
         if "snap-1/pkg-1 is running (run-1)" not in tool_text:
             raise AssertionError(f"cordis_run returned no running Package ids: {tool_text}")
+        if "snapshot_deferred_double" in advertised_tool_names(body):
+            raise AssertionError("snapshot_deferred_double was advertised before discovery")
+        assert_advertised_tool(body, "tool_search")
+        return tool_call_chunks(
+            "advanced-search",
+            "tool_search",
+            {"query": "deferred double"},
+        )
+    if call_id == "advanced-search" and tool_name == "tool_search":
+        if "snapshot_deferred_double" not in tool_text:
+            raise AssertionError(f"tool_search returned no deferred snapshot schema: {tool_text}")
         assert_advertised_tool(body, "run_code")
-        assert_advertised_tool(body, "snapshot_double")
+        assert_advertised_tool(body, "snapshot_deferred_double")
         return tool_call_chunks(
             "advanced-code",
             "run_code",
             {
-                "code": "return await tools.snapshot_double({ value: 21 })",
+                "code": "return await tools.snapshot_deferred_double({ value: 21 })",
                 "description": "Run the temporary Plugin tool",
             },
         )
@@ -602,7 +636,12 @@ def smoke_sdk_snapshot(base_url: str, executable: Path, update_snapshots: bool) 
         root = Path(temporary).resolve()
         sessions = root / "sessions"
         cordis = root / "cordis.yml"
-        cordis.write_text(CUSTOM_CORDIS)
+        deferred_plugin = root / "deferred-sdk-tool.mjs"
+        deferred_plugin.write_text(SNAPSHOT_DEFERRED_PLUGIN)
+        cordis.write_text(
+            CUSTOM_CORDIS
+            + "- id: deferred-sdk-tool\n  name: './deferred-sdk-tool.mjs'\n"
+        )
         with DeepSeekHarness(
             provider="deepseek-official",
             model="smoke-model",

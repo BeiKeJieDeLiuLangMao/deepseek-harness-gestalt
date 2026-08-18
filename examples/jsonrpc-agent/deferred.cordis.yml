@@ -1,0 +1,22 @@
+# SDK scenario overlay: the ordinary runnable JSON-RPC example plus one
+# deferred tool and an explicit discovery-result budget.
+- id: base
+  name: '@deepseek-ai/cordis-plugin-include'
+  config:
+    path: ./cordis.yml
+    patches:
+      - id: agent-spine
+        config:
+          persona: !!js process.env.DSH_SYSTEM_PROMPT ?? 'You are a coding agent.'
+          workspaceContext: false
+          skills:
+            enabled: false
+          toolBash:
+            enableRunInBackground: false
+          toolJobs: false
+          tools:
+            toolSearch:
+              maxResultBytes: 65536
+      - insert:
+          - id: deferred-sdk-tool
+            name: './tests/fixtures/deferred-sdk-tool.ts'

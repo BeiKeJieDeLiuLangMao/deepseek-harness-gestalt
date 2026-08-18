@@ -1,0 +1,58 @@
+# Keyless overlay for the shipped base + headless profile. Tool discovery is
+# deliberately absent here: the bundle-owned tools row is the behavior under test.
+- id: agent-loop
+  # The restart scenario requires persistence to exist before the fixed
+  # Session identity is restored; ordinary headless tasks use fresh ids.
+  inject: [sessionPersistence]
+  config:
+    agents:
+      - id: main
+        sessionId: deferred-tool-search-snapshot
+        provider: snapshot
+        model: snapshot
+        cwd: !!js process.cwd()
+
+- id: system-prompt
+  config:
+    persona: |
+      Follow the replayed deferred-tool discovery scenario exactly.
+
+- id: headless-runner
+  disabled: true
+
+# The one replay stream belongs to the agent turn; keep the auxiliary title
+# request on the shipped deterministic fallback path.
+- id: session-title-llm
+  disabled: true
+
+- insert:
+    - id: mcp-everything
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        transport: stdio
+        serverName: everything
+        command: !!js process.execPath
+        args: [!!js process.env.DSH_MCP_SERVER_EVERYTHING_ENTRY, stdio]
+        env: {}
+        cwd: ''
+        toolCallTimeoutMs: 30000
+        failOnStartupError: true
+        deferLoading: true
+        reconnect:
+          enabled: false
+
+    - id: llm-replay
+      name: './snapshot-fixtures/llm-replay-proxy.mjs'
+      config:
+        file: !!js process.env.DSH_SNAPSHOT_FILE
+        providers:
+          - id: snapshot
+            models:
+              - id: snapshot
+                contextWindow: 128000
+
+    - id: deferred-snapshot-runner
+      name: './snapshot-fixtures/deferred-tool-search-runner.ts'
+      inject: [headlessStartup]
+      config:
+        task: !!js ctx.headlessStartup.task
