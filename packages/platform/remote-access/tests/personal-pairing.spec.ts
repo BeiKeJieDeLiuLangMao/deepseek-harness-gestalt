@@ -143,8 +143,10 @@ describe('PersonalPairingProvider', () => {
   })
 
   it('revokes one pairing without disabling Desktop Mobile Access', async () => {
-    const handshake = handshakeProvider()
-    handshake.sealMobileRelayAuthority = vi.fn(async () => Uint8Array.of(1))
+    const handshake = {
+      ...handshakeProvider(),
+      sealMobileRelayAuthority: vi.fn(async () => Uint8Array.of(1)),
+    }
     const relay = {
       rotateCredential: vi.fn(async () => ({
         routeId: parseRelayRouteId('route-revoke'),
