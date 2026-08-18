@@ -128,6 +128,7 @@ function agentOn(model: string | undefined, provider = 'visual'): object {
     session: {
       header: { cwd: dir },
       requestHeader: () => (model === undefined ? undefined : { config: { provider, model } }),
+      deriveMessages: () => [],
       append: () => undefined,
     },
   }

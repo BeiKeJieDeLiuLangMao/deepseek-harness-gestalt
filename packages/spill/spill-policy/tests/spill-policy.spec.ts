@@ -198,6 +198,7 @@ describe('outer Code Mode failure capture', () => {
     const agent = {
       session: {
         header: { id: SessionId('code-spill'), cwd: '/workspace' },
+        deriveMessages: () => [],
         append: (_type: string, data: unknown) => { events.push(data) },
       },
     }
@@ -247,6 +248,7 @@ describe('the durable dispatch-log arm', () => {
     const agent = {
       session: {
         header: { id: SessionId('dispatch-spill'), cwd: '/workspace' },
+        deriveMessages: () => [],
         append: (type: string, data: unknown) => { events.push({ type, data }) },
       },
     }
@@ -330,6 +332,7 @@ describe('the durable dispatch-log arm', () => {
     const agent = {
       session: {
         header: { id: SessionId('dispatch-slow-spill'), cwd: '/workspace' },
+        deriveMessages: () => [],
         append: (type: string, data: unknown) => { events.push({ type, data }) },
       },
     }
@@ -388,6 +391,7 @@ describe('the durable dispatch-log arm', () => {
     const agent = {
       session: {
         header: { id: SessionId('dispatch-spill-bound'), cwd: '/workspace' },
+        deriveMessages: () => [],
         append: (type: string, data: unknown) => { events.push({ type, data }) },
       },
     }
@@ -440,6 +444,7 @@ describe('the durable dispatch-log arm', () => {
     const agent = {
       session: {
         header: { id: SessionId('dispatch-spill-fail'), cwd: '/workspace' },
+        deriveMessages: () => [],
         append: (type: string, data: unknown) => { events.push({ type, data }) },
       },
     }

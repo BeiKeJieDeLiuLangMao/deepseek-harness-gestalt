@@ -2093,6 +2093,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'one deep-cloned schema per visible tool.',
       },
       {
+        signature: 'catalogSchemas(scope?: ScopeKey): ToolSchema[]',
+        description: 'Project the current eligible end-tool catalog, including deferred schemas and excluding reserved model-presentation infrastructure.',
+        parameters: [{ name: 'scope', description: 'the viewing scope (the agent); omitted = the global view.' }],
+        returns: 'one deep-cloned schema per eligible registered end tool.',
+      },
+      {
         signature: 'executionMode(exec: ToolExecutionInput): ToolExecutionMode',
         description: 'Classify a pending call through the caller\'s visible tool definition. Only an exact `true` is parallel; unknown, hidden, undeclared, invalid, or throwing classifiers are exclusive.',
         parameters: [{ name: 'exec', description: 'call name, parsed arguments, and optional agent scope.' }],
@@ -4690,7 +4696,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ToolDefinition',
-    declaration: 'export interface ToolDefinition extends ToolSchema {\n    readonly output: ToolOutputDefinition;\n    execute(args: unknown, exec: ToolRunContext): Promise<unknown>;\n    finalizeContent?(exec: Readonly<ToolExecution>, result: Readonly<ToolExecutionResult>): ContentBlock[] | undefined;\n    timeoutMs?: number;\n    isConcurrencySafe?(args: unknown): boolean;\n    presentCall?(args: unknown): ToolCallView | undefined;\n    presentResult?(args: unknown, result: ToolResult): ToolResultView | undefined;\n}',
+    declaration: 'export interface ToolDefinition extends ToolSchema {\n    readonly deferLoading?: boolean;\n    readonly output: ToolOutputDefinition;\n    execute(args: unknown, exec: ToolRunContext): Promise<unknown>;\n    finalizeContent?(exec: Readonly<ToolExecution>, result: Readonly<ToolExecutionResult>): ContentBlock[] | undefined;\n    timeoutMs?: number;\n    isConcurrencySafe?(args: unknown): boolean;\n    presentCall?(args: unknown): ToolCallView | undefined;\n    presentResult?(args: unknown, result: ToolResult): ToolResultView | undefined;\n}',
   },
   {
     name: 'ToolDispatchExecution',
@@ -4734,7 +4740,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ToolExecutionSuccess',
-    declaration: 'export interface ToolExecutionSuccess {\n    readonly isError: false;\n    readonly value: JsonValue;\n    readonly content: ContentBlock[];\n    readonly error?: never;\n    readonly meta?: JsonValue;\n    readonly additionalContexts?: UserMessage[];\n    readonly concludesTurn?: true;\n}',
+    declaration: 'export interface ToolExecutionSuccess {\n    readonly isError: false;\n    readonly value: JsonValue;\n    readonly content: ContentBlock[];\n    readonly loadedTools?: ToolSchema[];\n    readonly error?: never;\n    readonly meta?: JsonValue;\n    readonly additionalContexts?: UserMessage[];\n    readonly concludesTurn?: true;\n}',
   },
   {
     name: 'ToolExecutionToken',
@@ -4774,7 +4780,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ToolResultBlock',
-    declaration: 'export interface ToolResultBlock {\n    type: \'tool-result\';\n    toolCallId: CallId;\n    content: ContentBlock[];\n    isError?: boolean;\n}',
+    declaration: 'export interface ToolResultBlock {\n    type: \'tool-result\';\n    toolCallId: CallId;\n    content: ContentBlock[];\n    isError?: boolean;\n    loadedTools?: ToolSchema[];\n}',
   },
   {
     name: 'ToolResultMessage',
@@ -4790,7 +4796,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ToolRuntime',
-    declaration: 'export class ToolRuntime extends Service {\n    static inject;\n    static Config: z<Config>;\n    readonly [TOOL_RUNTIME_SCHEDULER]: ToolRuntimeScheduler;\n    readonly [TOOL_ELIGIBILITY_CONTRIBUTIONS]: ToolEligibilityContributions;\n    constructor(ctx: Context, config: Config = {});\n    presentAs(mode: ToolPresentationMode): () => void;\n    register(definition: ToolDefinition): () => void;\n    restrict(filter: ToolRestriction): () => void;\n    allowEligible(names: readonly string[]): () => void;\n    eligibilityAllow(scope?: ScopeKey): readonly string[] | undefined;\n    guard(guard: ToolGuard): () => void;\n    get(name: string, scope?: ScopeKey): ToolDefinition | undefined;\n    schemas(scope?: ScopeKey): ToolSchema[];\n    executionMode(exec: ToolExecutionInput): ToolExecutionMode;\n    async execute(exec: ToolExecutionInput): Promise<ToolExecutionResult>;\n}',
+    declaration: 'export class ToolRuntime extends Service {\n    static inject;\n    static Config: z<Config>;\n    readonly [TOOL_RUNTIME_SCHEDULER]: ToolRuntimeScheduler;\n    readonly [TOOL_ELIGIBILITY_CONTRIBUTIONS]: ToolEligibilityContributions;\n    constructor(ctx: Context, config: Config = {});\n    presentAs(mode: ToolPresentationMode): () => void;\n    register(definition: ToolDefinition): () => void;\n    restrict(filter: ToolRestriction): () => void;\n    allowEligible(names: readonly string[]): () => void;\n    eligibilityAllow(scope?: ScopeKey): readonly string[] | undefined;\n    guard(guard: ToolGuard): () => void;\n    get(name: string, scope?: ScopeKey): ToolDefinition | undefined;\n    schemas(scope?: ScopeKey): ToolSchema[];\n    catalogSchemas(scope?: ScopeKey): ToolSchema[];\n    executionMode(exec: ToolExecutionInput): ToolExecutionMode;\n    async execute(exec: ToolExecutionInput): Promise<ToolExecutionResult>;\n}',
   },
   {
     name: 'ToolRuntimeScheduler',

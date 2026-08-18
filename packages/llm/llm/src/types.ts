@@ -90,6 +90,8 @@ export interface ToolResultBlock {
   toolCallId: CallId
   content: ContentBlock[]
   isError?: boolean
+  /** Exact deferred schemas discovered by this result for later requests. */
+  loadedTools?: ToolSchema[]
 }
 
 /**

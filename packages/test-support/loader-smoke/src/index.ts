@@ -164,6 +164,55 @@ export interface LoaderSmokeResult {
   readonly stderr: string
 }
 
+/** One process in a shared-cwd Loader smoke sequence. */
+export interface LoaderSmokeInvocation {
+  /** Complete argv after the bin path; defaults to the sequence config path. */
+  readonly binArgs?: readonly string[]
+  /** Environment overrides layered over the sequence environment. */
+  readonly env?: Readonly<NodeJS.ProcessEnv>
+  /** Expected process exit code; defaults to zero. */
+  readonly expectedExitCode?: number
+}
+
+/** Inputs for ordered process launches that share one isolated cwd and DSH home. */
+export interface LoaderSmokeSequenceOptions extends Omit<LoaderSmokeOptions, 'binArgs' | 'expectedExitCode'> {
+  /** Non-empty ordered launches. */
+  readonly invocations: readonly LoaderSmokeInvocation[]
+}
+
+/** Spawn one Loader smoke process inside an already prepared isolated cwd. */
+async function runLoaderSmokeProcess(
+  options: LoaderSmokeOptions,
+  cwd: string,
+): Promise<LoaderSmokeResult> {
+  const processTimeoutMs = options.processTimeoutMs ?? DEFAULT_PROCESS_TIMEOUT_MS
+  const launch = resolveExampleLaunch({
+    srcBin: options.binScript,
+    libBin: options.libBinScript,
+    configArgs: options.binArgs ?? [options.configPath],
+    ...options.mode !== undefined ? { mode: options.mode } : {},
+    tsconfigPath: options.tsconfigPath,
+    env: { DSH_HOME: join(cwd, '.dsh'), DSH_AGENTS_HOME: join(cwd, '.agents'), ...options.env },
+  })
+  const result = await execa(launch.command, launch.args, {
+    cwd,
+    env: launch.env,
+    input: '',
+    timeout: processTimeoutMs,
+    killSignal: 'SIGKILL',
+    reject: false,
+    stripFinalNewline: false,
+  })
+  if (result.timedOut) {
+    throw new Error(`${options.label} did not exit within ${processTimeoutMs / 1_000}s. stdout:\n${result.stdout}\nstderr:\n${result.stderr}`)
+  }
+  const expectedExitCode = options.expectedExitCode ?? 0
+  if (result.exitCode !== expectedExitCode) {
+    throw new Error(`${options.label} exited ${String(result.exitCode)} (expected ${expectedExitCode}). stdout:\n${result.stdout}\nstderr:\n${result.stderr}`)
+  }
+  return { stdout: result.stdout, stderr: result.stderr }
+}
+
 /**
  * Boot one real Loader tree from an isolated cwd, close stdin immediately, and
  * await a clean exit. The helper owns process kill and temp-directory cleanup on
@@ -173,39 +222,41 @@ export interface LoaderSmokeResult {
  */
 export async function runLoaderSmoke(options: LoaderSmokeOptions): Promise<LoaderSmokeResult> {
   const cwd = await mkdtemp(join(tmpdir(), options.tempDirPrefix))
-  const processTimeoutMs = options.processTimeoutMs ?? DEFAULT_PROCESS_TIMEOUT_MS
   try {
     await options.prepare?.(cwd)
-    const launch = resolveExampleLaunch({
-      srcBin: options.binScript,
-      libBin: options.libBinScript,
-      configArgs: options.binArgs ?? [options.configPath],
-      ...options.mode !== undefined ? { mode: options.mode } : {},
-      tsconfigPath: options.tsconfigPath,
-      env: { DSH_HOME: join(cwd, '.dsh'), DSH_AGENTS_HOME: join(cwd, '.agents'), ...options.env },
-    })
-    // `input: ''` writes nothing and closes stdin — the fixture-visible
-    // stdin-close contract. `reject: false` folds spawn errors, the SIGKILL
-    // deadline, and nonzero exits into independent result fields, so the
-    // diagnostics below embed both streams on every failure.
-    const result = await execa(launch.command, launch.args, {
-      cwd,
-      env: launch.env,
-      input: '',
-      timeout: processTimeoutMs,
-      killSignal: 'SIGKILL',
-      reject: false,
-      stripFinalNewline: false,
-    })
-    if (result.timedOut) {
-      throw new Error(`${options.label} did not exit within ${processTimeoutMs / 1_000}s. stdout:\n${result.stdout}\nstderr:\n${result.stderr}`)
-    }
-    const expectedExitCode = options.expectedExitCode ?? 0
-    if (result.exitCode !== expectedExitCode) {
-      throw new Error(`${options.label} exited ${String(result.exitCode)} (expected ${expectedExitCode}). stdout:\n${result.stdout}\nstderr:\n${result.stderr}`)
+    const result = await runLoaderSmokeProcess(options, cwd)
+    await options.inspect?.(cwd)
+    return result
+  } finally {
+    await rm(cwd, { recursive: true, force: true })
+  }
+}
+
+/**
+ * Run ordered app launches against one isolated cwd and DSH home, then inspect
+ * their shared durable state before cleanup.
+ * @param options - common launch inputs plus per-process argv/environment/exit expectations.
+ * @returns captured streams in invocation order.
+ */
+export async function runLoaderSmokeSequence(
+  options: LoaderSmokeSequenceOptions,
+): Promise<LoaderSmokeResult[]> {
+  if (options.invocations.length === 0) throw new Error('runLoaderSmokeSequence requires at least one invocation')
+  const cwd = await mkdtemp(join(tmpdir(), options.tempDirPrefix))
+  try {
+    await options.prepare?.(cwd)
+    const results: LoaderSmokeResult[] = []
+    for (const [index, invocation] of options.invocations.entries()) {
+      results.push(await runLoaderSmokeProcess({
+        ...options,
+        label: `${options.label} invocation ${index + 1}`,
+        env: { ...options.env, ...invocation.env },
+        ...invocation.binArgs === undefined ? {} : { binArgs: invocation.binArgs },
+        ...invocation.expectedExitCode === undefined ? {} : { expectedExitCode: invocation.expectedExitCode },
+      }, cwd))
     }
     await options.inspect?.(cwd)
-    return { stdout: result.stdout, stderr: result.stderr }
+    return results
   } finally {
     await rm(cwd, { recursive: true, force: true })
   }

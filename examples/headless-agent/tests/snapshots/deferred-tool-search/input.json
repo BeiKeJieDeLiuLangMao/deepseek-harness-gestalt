@@ -1,0 +1,14 @@
+{
+  "steps": [
+    {
+      "op": "initialize"
+    },
+    {
+      "op": "newSession"
+    },
+    {
+      "op": "prompt",
+      "text": "Discover the echo capability, call it with deferred-loaded, then reply with exactly DEFERRED_TOOL_SEARCH_OK."
+    }
+  ]
+}

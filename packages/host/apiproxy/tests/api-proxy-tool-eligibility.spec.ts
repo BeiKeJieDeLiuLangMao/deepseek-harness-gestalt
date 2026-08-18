@@ -11,11 +11,12 @@ import UserQuestionService from '@deepseek-ai/dsh-user-questions'
 import { createApiProxy } from '@deepseek-ai/dsh-host-apiproxy'
 import { RpcId } from '@deepseek-ai/dsh-host-apiproxy/api/rpc'
 
-function tool(name: string): ToolDefinition {
+function tool(name: string, deferLoading = false): ToolDefinition {
   return {
     name,
     description: `tool ${name}`,
     parameters: { type: 'object', properties: {} },
+    deferLoading,
     output: {
       schema: { type: 'string' },
       render: (_args, value) => [{ type: 'text', text: value as string }],
@@ -31,8 +32,8 @@ describe('session.toolEligibility', () => {
     await ctx.plugin(UserQuestionService)
     await ctx.plugin(AgentRegistry)
     await ctx.plugin(SystemPrompt, {})
-    await ctx.plugin(ToolRuntime, {})
-    ctx.tools.register(tool('read'))
+    await ctx.plugin(ToolRuntime, { toolSearch: { maxResultBytes: 65_536 } })
+    ctx.tools.register(tool('read', true))
     ctx.tools.register(tool('write'))
     const session = ctx.sessions.create()
     const agent = { id: session.id, session } as Agent

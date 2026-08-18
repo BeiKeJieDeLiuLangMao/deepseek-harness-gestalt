@@ -8,7 +8,7 @@ Source: [`packages/core/tools/src/index.ts`](../../packages/core/tools/src/index
 
 ## `ToolDefinition` — a registered tool
 
-A `ToolSchema` (the model-facing fields) plus a mandatory canonical output declaration, the `execute` function, host-only scheduler metadata, an optional final-content callback, and optional UI presenters. The registry holds these; the loop dispatches calls through them. The registry's `schemas()` builds the model-facing `ToolSchema[]` by an explicit allowlist — `output`/`execute`/`finalizeContent`/`timeoutMs`/`isConcurrencySafe`/`presentCall`/`presentResult` must never leak into a model request.
+A `ToolSchema` (the model-facing fields) plus a mandatory canonical output declaration, the `execute` function, host-only scheduler metadata, an optional final-content callback, and optional UI presenters. The registry holds these; the loop dispatches calls through them. The registry's `schemas()` builds the initial model-facing `ToolSchema[]` by an explicit allowlist and omits deferred definitions; `catalogSchemas()` retains the complete eligible end-tool catalog. `output`/`execute`/`finalizeContent`/`timeoutMs`/`isConcurrencySafe`/`presentCall`/`presentResult` must never leak into a model request.
 
 ```ts type-equiv
 /** Tool-owned canonical output contract used after the body returns a JSON value. */
@@ -25,6 +25,12 @@ interface ToolOutputDefinition {
 ```ts type-equiv
 /** A registered tool: its schema plus the execution function. */
 interface ToolDefinition extends ToolSchema {
+  /**
+   * Omit this schema from the initial model request and expose it through
+   * `tool_search`. The definition remains registered and executable; current
+   * scope eligibility still governs both discovery and dispatch.
+   */
+  readonly deferLoading?: boolean
   /** Mandatory canonical output declaration. */
   readonly output: ToolOutputDefinition
   /**
@@ -149,6 +155,8 @@ type InferArgs<S> = InferProperties<S, []>
 `defineTool({ name, description, parameters, output, execute, … })` ties parameter inference to `parameterSchemaSpecToJsonSchema()` and `validateArgs()`, and ties `execute`/`render`/`presentationMeta` to `InferValue<OutputSchema>`. Schema records contain only own enumerable string keys, and schema arrays are dense intrinsic arrays, so inference, compilation, and validation observe the same declaration. Inference stays exact through 16 container levels and then widens to `JsonValue`; runtime validation keeps walking the complete schema. `valueSchemaSpecToJsonSchema()` compiles output declarations through the same enforced raw subset. A parameter mismatch throws `ToolArgsError` (`INVALID_ARGS`); an invalid body or post-policy value throws `ToolOutputError` (`INVALID_TOOL_OUTPUT`). Both use the normal tool-error path. Raw JSON Schema remains open by default; unsupported keywords reject instead of being accepted without enforcement.
 
 Registration is a trusted same-process contract. The registry borrows the typed definition as readonly input, requires `output`, validates its raw schema, and checks semantic requirements such as a positive finite `timeoutMs`; `schemas()` constructs the model-facing projection when building a request, so execution and presentation share one resolved definition without leaking callbacks onto the wire.
+
+With `toolSearch` enabled, the reserved `tool_search` tool indexes only current eligible definitions marked `deferLoading`. Its validated input uses the configured result-count caps, while the required `maxResultBytes` caps the complete durable result block containing both rendered content and `loadedTools`. The same package-owned serializer and limit cover merged nested discoveries on the final outer `run_code` result and the complete eligible set reconstructed from history; overflow becomes a canonical error without partial metadata. Its result contains the exact matched `ToolSchema[]`; the agent loop stores those schemas on the durable tool-result block. Parameter schemas use draft-07 when `$schema` is absent and accept explicit draft-07 or the MCP JSON Schema 2020-12 dialect; unsupported dialects and malformed schemas fail validation. Each later assembly rejects Proxies before record inspection, reads only an own enumerable string name from every stored candidate, and filters and deduplicates those names against the current live deferred eligible view. Retained candidates must be accessor-free lossless JSON before canonical serialization, so traps and getters never run; assembly then budgets the complete raw retained set before fully validating and projecting its schemas. Stale malformed, unsupported, and oversized entries are ignored without reading their nested schemas; an invalid or oversized current candidate fails assembly. This is discovery rather than activation: the registry does not mutate, and old results cannot restore or consume budget for a schema excluded by current eligibility. A provider-neutral adapter sees an ordinary direct function call/result plus the expanded next request; the pi-ai OpenAI Responses path projects the same direct-search record into native tool-search history.
 
 ## `ToolRestriction` — one scope's live filter over what it inherits
 
@@ -341,6 +349,8 @@ interface ToolExecutionSuccess {
   /** Execution-local canonical value; deliberately omitted from durable events. */
   readonly value: JsonValue
   readonly content: ContentBlock[]
+  /** Deferred schemas discovered by this result for subsequent requests. */
+  readonly loadedTools?: ToolSchema[]
   readonly error?: never
   readonly meta?: JsonValue
   readonly additionalContexts?: UserMessage[]
@@ -564,6 +574,14 @@ get(name: string, scope?: ScopeKey): ToolDefinition | undefined
 schemas(scope?: ScopeKey): ToolSchema[]
 
 /**
+ * Project the current eligible end-tool catalog, including deferred schemas
+ * and excluding reserved model-presentation infrastructure.
+ * @param scope - the viewing scope (the agent); omitted = the global view.
+ * @returns one deep-cloned schema per eligible registered end tool.
+ */
+catalogSchemas(scope?: ScopeKey): ToolSchema[]
+
+/**
  * Classify a pending call through the caller's visible tool definition. Only
  * an exact `true` is parallel; unknown, hidden, undeclared, invalid, or
  * throwing classifiers are exclusive.
@@ -596,7 +614,7 @@ async execute(exec: ToolExecutionInput): Promise<ToolExecutionResult>
 
 Types: [ScopeKey](scope.md)
 
-Source: [`packages/core/tools/src/index.ts:842`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:1065`](../../packages/core/tools/src/index.ts)
 
 <a id="tool-eligibility-events"></a>
 
@@ -646,7 +664,7 @@ A tool was registered or unregistered, or a scoped restriction changed (the avai
 'tools/change'(): void
 ```
 
-Source: [`packages/core/tools/src/index.ts:216`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:261`](../../packages/core/tools/src/index.ts)
 
 <a id="toolscode-dispatch-log--waterfall"></a>
 
@@ -673,7 +691,7 @@ Allow a listener to replace content in the DURABLE LOG COPY of one `run_code` su
 
 Types: [ContentBlock](llm-streaming.md) · [Scoped](scope.md)
 
-Source: [`packages/core/tools/src/index.ts:198`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:243`](../../packages/core/tools/src/index.ts)
 
 <a id="toolsexecute--waterfall"></a>
 
@@ -697,7 +715,7 @@ Around-dispatch waterfall for timeout, retry, or metrics. `next()` returns a nor
 
 Types: [Scoped](scope.md)
 
-Source: [`packages/core/tools/src/index.ts:172`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:217`](../../packages/core/tools/src/index.ts)
 
 <a id="toolspost-execute--waterfall"></a>
 
@@ -722,7 +740,7 @@ Accept, replace, enrich, or block a normalized dispatch result. `next()` accepts
 
 Types: [Scoped](scope.md)
 
-Source: [`packages/core/tools/src/index.ts:184`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:229`](../../packages/core/tools/src/index.ts)
 
 <a id="toolspre-execute--waterfall"></a>
 
@@ -745,7 +763,7 @@ Allow, deny, or ask before dispatch. `next()` delegates to allow; missing approv
 
 Types: [Scoped](scope.md)
 
-Source: [`packages/core/tools/src/index.ts:161`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:206`](../../packages/core/tools/src/index.ts)
 
 <a id="toolsresult--emit"></a>
 
@@ -766,5 +784,5 @@ Observe the frozen, lossless-JSON final outcome. Listener failures are contained
 
 Types: [Scoped](scope.md)
 
-Source: [`packages/core/tools/src/index.ts:206`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:251`](../../packages/core/tools/src/index.ts)
 <!-- END GENERATED cordis-surface -->
