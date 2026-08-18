@@ -20,7 +20,7 @@ describe('composer image pin annotations', () => {
     const compiled = compileAnnotationSubmission('Look here.', [
       { id: TextAnnotationId('annotation-1'), kind: 'text', anchor, note: '' },
       {
-        id: TextAnnotationId('annotation-2'), kind: 'image-pin', imageId: 'img-1',
+        id: TextAnnotationId('annotation-2'), kind: 'image-pin', imageId: 'img-1', source: 'composer',
         imageName: 'shot.png', x: 12.5, y: 80, note: 'this corner',
       },
     ], LABELS)

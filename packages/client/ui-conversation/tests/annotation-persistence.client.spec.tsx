@@ -218,6 +218,7 @@ describe('annotation draft persistence', () => {
       compiled,
       [],
       'queue',
+      [],
     )
     // Newer text typed during the attempt must not enter the snapshot.
     shell.setDraft('A later edit must not win.')

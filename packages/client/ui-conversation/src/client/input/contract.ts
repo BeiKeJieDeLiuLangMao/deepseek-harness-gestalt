@@ -89,7 +89,7 @@ export interface InputActions {
   /** Discard the complete unsent text annotation draft and every Draft Mark at once. */
   discardTextAnnotations(): void
   /** Append one image pin in the shared creation order. */
-  addImagePin(imageId: DraftAttachmentId, imageName: string, x: number, y: number, note: string): TextAnnotationId
+  addImagePin(imageId: DraftAttachmentId, imageName: string, x: number, y: number, note: string, source?: 'composer' | 'history'): TextAnnotationId
   /** Replace one image pin's note or position without changing identity or order. */
   updateImagePin(id: TextAnnotationId, patch: { note?: string; x?: number; y?: number }): void
   /** Remove one unsent image pin. */

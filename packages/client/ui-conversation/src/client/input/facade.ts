@@ -100,6 +100,7 @@ function isPersistedAnnotationDraft(value: unknown): value is PersistedAnnotatio
     }
     if (annotation.kind === 'image-pin') {
       return typeof annotation.imageId === 'string' && typeof annotation.imageName === 'string'
+        && (annotation.source === 'composer' || annotation.source === 'history')
         && typeof annotation.x === 'number' && typeof annotation.y === 'number'
         && annotation.x >= 0 && annotation.x <= 100 && annotation.y >= 0 && annotation.y <= 100
     }
@@ -257,6 +258,7 @@ export class SessionInputShell implements SessionInput {
    * @param x - Displayed-raster X percent.
    * @param y - Displayed-raster Y percent.
    * @param note - Optional user-authored comment.
+   * @param source - Composer-staged image or durable history attachment.
    * @returns The stable draft identity.
    */
   addImagePin(
@@ -265,10 +267,11 @@ export class SessionInputShell implements SessionInput {
     x: number,
     y: number,
     note: string,
+    source: 'composer' | 'history' = 'composer',
   ): TextAnnotationId {
     this.annotationSeq += 1
     const id = createTextAnnotationId(`annotation-${this.annotationSeq}`)
-    this.annotations = [...this.annotations, { id, kind: 'image-pin', imageId, imageName, x, y, note }]
+    this.annotations = [...this.annotations, { id, kind: 'image-pin', imageId, source, imageName, x, y, note }]
     this.publish()
     return id
   }
