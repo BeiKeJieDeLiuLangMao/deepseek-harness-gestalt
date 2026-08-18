@@ -10,7 +10,7 @@ This is an **implementation** package: it registers a provider into `ctx.web`, r
 
 Exa and Perplexity expose dedicated search endpoints; DeepSeek's official search does not. On a DeepSeek Anthropic base this provider issues a **full Messages model call** carrying the `web_search` server tool, so one search costs a complete model turn in latency and tokens — heavier than a pure retrieval endpoint. DeepSeek runs the search server-side and returns **structured** `web_search_tool_result` blocks; the provider parses those blocks and **never scrapes URLs out of model prose**.
 
-When the same settings card names a Moonshot/Kimi dedicated search URL (`api.moonshot.cn`, `api.moonshot.ai`, `api.kimi.com`, `api.kimi.ai`, or any path ending in `/search`), the provider instead `POST`s that URL as-is with `{text_query, limit, enable_page_crawling: false, timeout_seconds: 30}` — Kimi CLI's `moonshot_search` retrieval contract. A path that still contains `/anthropic` stays on DeepSeek Messages even on a Moonshot host.
+When the same settings card names a Moonshot dedicated search URL (`api.moonshot.cn`, `api.moonshot.ai`, or any path ending in `/search`), the provider instead `POST`s that URL as-is with `{text_query, limit, enable_page_crawling: false, timeout_seconds: 30}` — Kimi CLI's `moonshot_search` retrieval contract. A path that still contains `/anthropic` or `/coding` stays on DeepSeek Messages: Kimi's coding API (`https://api.kimi.com/coding/v1`) speaks the same Anthropic Messages + `web_search_20250305` contract.
 
 **Strict mode**: if a DeepSeek response carries no `web_search_tool_result` block, or a Moonshot response carries no `search_results` array, the provider throws `WebError` `WEB_PROVIDER_ERROR` rather than degrading to prose-scraping.
 

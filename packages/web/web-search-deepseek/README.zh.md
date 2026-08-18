@@ -10,7 +10,7 @@
 
 Exa 和 Perplexity 提供专用搜索端点，DeepSeek 官方搜索则没有。在 DeepSeek Anthropic 基址上，该提供方会发起一次携带 `web_search` 服务器工具的**完整 Messages 模型调用**，因此一次搜索会产生完整模型轮次的延迟与 token 开销，比纯检索端点更重。DeepSeek 在服务器侧执行搜索，返回**结构化** `web_search_tool_result` 块；提供方解析这些块，**绝不会从模型文本中抓取 URL**。
 
-当同一设置卡片指向 Moonshot／Kimi 专用搜索 URL（`api.moonshot.cn`、`api.moonshot.ai`、`api.kimi.com`、`api.kimi.ai`，或任何以 `/search` 结尾的路径）时，提供方改为按原样 `POST` 该 URL，请求体为 `{text_query, limit, enable_page_crawling: false, timeout_seconds: 30}`——即 Kimi CLI 的 `moonshot_search` 检索约定。路径中仍包含 `/anthropic` 时，即使主机是 Moonshot，也继续走 DeepSeek Messages。
+当同一设置卡片指向 Moonshot 专用搜索 URL（`api.moonshot.cn`、`api.moonshot.ai`，或任何以 `/search` 结尾的路径）时，提供方改为按原样 `POST` 该 URL，请求体为 `{text_query, limit, enable_page_crawling: false, timeout_seconds: 30}`——即 Kimi CLI 的 `moonshot_search` 检索约定。路径中仍包含 `/anthropic` 或 `/coding` 时继续走 DeepSeek Messages：Kimi 的 coding API（`https://api.kimi.com/coding/v1`）使用同一套 Anthropic Messages + `web_search_20250305` 约定。
 
 **严格模式**：如果 DeepSeek 响应不含 `web_search_tool_result` 块，或 Moonshot 响应不含 `search_results` 数组，提供方会抛出 `WebError` `WEB_PROVIDER_ERROR`，而非降级为文本抓取。
 

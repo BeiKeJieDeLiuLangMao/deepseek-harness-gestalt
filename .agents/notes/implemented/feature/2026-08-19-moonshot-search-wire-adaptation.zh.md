@@ -12,8 +12,8 @@ Gestalt 将 `searchProvider` 固定为 `deepseek-official`，并只通过 `web-s
 
 `@deepseek-ai/dsh-web-search-deepseek` 会分类已配置的 `baseURL`，并在同一个提供方 id 下使用两种协议格式：
 
-- 路径包含 `/anthropic`，或任何不是 Moonshot 专用搜索端点的 URL，继续走 DeepSeek Messages（`POST {baseURL}/messages`，携带 `web_search_20250305`）。
-- 已知的 Moonshot／Kimi 主机（`api.moonshot.cn`、`api.moonshot.ai`、`api.kimi.com`、`api.kimi.ai`）或以 `/search` 结尾的路径，会按原样 POST 已配置 URL，请求体采用 Kimi CLI 的 `moonshot_search` 格式 `{text_query, limit, enable_page_crawling: false, timeout_seconds: 30}`，并把 `search_results[]` 映射为 seam 的 `WebSearchResult`。
+- 路径包含 `/anthropic` 或 `/coding`，或任何不是 Moonshot 专用搜索端点的 URL，继续走 DeepSeek Messages（`POST {baseURL}/messages`，携带 `web_search_20250305`）。Kimi 的 coding API（`https://api.kimi.com/coding/v1`）走这条路径。
+- 已知的 Moonshot 搜索主机（`api.moonshot.cn`、`api.moonshot.ai`）或以 `/search` 结尾的路径，会按原样 POST 已配置 URL，请求体采用 Kimi CLI 的 `moonshot_search` 格式 `{text_query, limit, enable_page_crawling: false, timeout_seconds: 30}`，并把 `search_results[]` 映射为 seam 的 `WebSearchResult`。
 
 设置卡片、凭据引用（`DEEPSEEK_API_KEY`）以及 `searchProvider: deepseek-official` 固定项均不改变。Moonshot 检索不写入 `web/deepseek-search-llm-request` 事件，因为它不是辅助模型轮次。两种格式都会在跟随 `Location` 之前拒绝 HTTP 重定向。`moonshot_fetch` 不在范围内：Gestalt 默认禁用 `web_fetch`。
 
@@ -31,7 +31,7 @@ Gestalt 将 `searchProvider` 固定为 `deepseek-official`，并只通过 `web-s
 
 ## Testing
 
-`packages/web/web-search-deepseek/tests/endpoint.spec.ts` 固定主机、路径、`/anthropic` 覆盖，以及无法解析时的回退。`tests/moonshot.spec.ts` 固定请求映射（URL 按原样、`text_query`、无 Messages 日志、无 Anthropic 标头）、响应映射、`limit` 截断，以及 Moonshot 的错误／取消分类。`tests/redirect.spec.ts` 证明 Moonshot 路径同样拒绝跟随 `Location`。既有 DeepSeek Messages 测试继续覆盖 `/messages` 约定。
+`packages/web/web-search-deepseek/tests/endpoint.spec.ts` 固定主机、路径、`/anthropic` 与 `/coding` 覆盖，以及无法解析时的回退。`tests/moonshot.spec.ts` 固定请求映射（URL 按原样、`text_query`、无 Messages 日志、无 Anthropic 标头）、响应映射、`limit` 截断，以及 Moonshot 的错误／取消分类。`tests/redirect.spec.ts` 证明 Moonshot 路径同样拒绝跟随 `Location`。既有 DeepSeek Messages 测试继续覆盖 `/messages` 约定。
 
 ## Related
 

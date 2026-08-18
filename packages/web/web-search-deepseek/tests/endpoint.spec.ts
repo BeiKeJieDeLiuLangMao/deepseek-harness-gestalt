@@ -10,13 +10,19 @@ describe('classifySearchEndpoint', () => {
   it('selects Moonshot dedicated search on official hosts', () => {
     expect(classifySearchEndpoint('https://api.moonshot.cn/v1/search')).toBe('moonshot-search')
     expect(classifySearchEndpoint('https://api.moonshot.ai/v1/search')).toBe('moonshot-search')
-    expect(classifySearchEndpoint('https://api.kimi.com/v1/search')).toBe('moonshot-search')
-    expect(classifySearchEndpoint('https://API.Kimi.AI/v1/search')).toBe('moonshot-search')
+    expect(classifySearchEndpoint('https://api.moonshot.cn/v1')).toBe('moonshot-search')
+  })
+
+  it('keeps Kimi coding Anthropic bases on Messages search', () => {
+    expect(classifySearchEndpoint('https://api.kimi.com/coding/v1')).toBe('deepseek-messages')
+    expect(classifySearchEndpoint('https://api.kimi.com/coding/')).toBe('deepseek-messages')
+    expect(classifySearchEndpoint('https://api.kimi.ai/coding/v1')).toBe('deepseek-messages')
   })
 
   it('selects Moonshot dedicated search when the path ends in /search', () => {
     expect(classifySearchEndpoint('https://gateway.internal/v1/search')).toBe('moonshot-search')
     expect(classifySearchEndpoint('https://gateway.internal/v1/search/')).toBe('moonshot-search')
+    expect(classifySearchEndpoint('https://api.kimi.com/v1/search')).toBe('moonshot-search')
   })
 
   it('keeps an /anthropic path on Messages even on a Moonshot host', () => {

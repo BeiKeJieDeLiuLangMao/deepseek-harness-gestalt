@@ -12,8 +12,8 @@ Gestalt pins `searchProvider: deepseek-official` and exposes one web-search sett
 
 `@deepseek-ai/dsh-web-search-deepseek` classifies the configured `baseURL` and speaks two wire formats under the same provider id:
 
-- A path containing `/anthropic`, or any URL that is not a Moonshot dedicated-search endpoint, keeps DeepSeek Messages (`POST {baseURL}/messages` with `web_search_20250305`).
-- A known Moonshot/Kimi host (`api.moonshot.cn`, `api.moonshot.ai`, `api.kimi.com`, `api.kimi.ai`) or a path ending in `/search` posts the configured URL as-is with Kimi CLI's `moonshot_search` body `{text_query, limit, enable_page_crawling: false, timeout_seconds: 30}` and maps `search_results[]` into the seam's `WebSearchResult`.
+- A path containing `/anthropic` or `/coding`, or any URL that is not a Moonshot dedicated-search endpoint, keeps DeepSeek Messages (`POST {baseURL}/messages` with `web_search_20250305`). Kimi's coding API (`https://api.kimi.com/coding/v1`) uses this path.
+- A known Moonshot search host (`api.moonshot.cn`, `api.moonshot.ai`) or a path ending in `/search` posts the configured URL as-is with Kimi CLI's `moonshot_search` body `{text_query, limit, enable_page_crawling: false, timeout_seconds: 30}` and maps `search_results[]` into the seam's `WebSearchResult`.
 
 The settings card, credential reference (`DEEPSEEK_API_KEY`), and `searchProvider: deepseek-official` pin do not change. Moonshot retrieval writes no `web/deepseek-search-llm-request` event because it is not an auxiliary model turn. Both formats reject HTTP redirects before following `Location`. `moonshot_fetch` stays out of scope: Gestalt ships `web_fetch` disabled.
 
@@ -31,7 +31,7 @@ The shipped search card can name either a DeepSeek Anthropic base or a Moonshot 
 
 ## Testing
 
-`packages/web/web-search-deepseek/tests/endpoint.spec.ts` pins host, path, `/anthropic` override, and unparseable fallback. `tests/moonshot.spec.ts` pins request mapping (URL as-is, `text_query`, no Messages log, no Anthropic headers), response mapping, `limit` clamping, and the Moonshot error/abort taxonomy. `tests/redirect.spec.ts` proves the Moonshot path also refuses to follow `Location`. Existing DeepSeek Messages tests keep the `/messages` contract.
+`packages/web/web-search-deepseek/tests/endpoint.spec.ts` pins host, path, `/anthropic` and `/coding` overrides, and unparseable fallback. `tests/moonshot.spec.ts` pins request mapping (URL as-is, `text_query`, no Messages log, no Anthropic headers), response mapping, `limit` clamping, and the Moonshot error/abort taxonomy. `tests/redirect.spec.ts` proves the Moonshot path also refuses to follow `Location`. Existing DeepSeek Messages tests keep the `/messages` contract.
 
 ## Related
 
