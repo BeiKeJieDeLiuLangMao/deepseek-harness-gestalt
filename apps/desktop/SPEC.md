@@ -61,7 +61,7 @@ Ship **DeepSeek Gestalt**, a Desktop Host: an Electron window that starts a bund
 - Window Chrome: no system title bar. macOS traffic lights sit on a Desktop-only drag strip above the logo row. Windows paints its own caption buttons. No back/forward.
 - Wordmark: Desktop elects GESTALT via the existing sidebar brand chain; browser fallback remains HARNESS.
 - Update Control occupies the existing sidebar footer-action list on the same row as Settings (right when wide). It is not a Settings page.
-- Updater protocol (from the prototype state machine): phases `disabled | idle | checking | available | downloading | downloaded | installing | error`. `autoDownload` is false. User must confirm download, then quit-and-install.
+- Updater protocol (from the prototype state machine): phases `disabled | idle | checking | available | downloading | preparing | downloaded | installing | error`. `autoDownload` is false. User must confirm download. On macOS, `preparing` waits until Squirrel stages the bundle; Install and restart is offered only after that. Ordinary quit does not install.
 - Preload `contextBridge` exposes only updater and window verbs as `window.dshDesktop`. The page never imports Electron or Node.
 - Development builds leave the updater in `disabled`. Packaged builds use electron-updater's GitHub provider against `BeiKeJieDeLiuLangMao/deepseek-harness-gestalt`.
 - First Desktop Bundle version is `0.1.0`, independent of npm `dsh`. App id is `com.gestalt.deepseek`. Display name is DeepSeek Gestalt.
@@ -73,7 +73,7 @@ Ship **DeepSeek Gestalt**, a Desktop Host: an Electron window that starts a bund
 ```ts
 type UpdaterPhase =
   | "disabled" | "idle" | "checking" | "available"
-  | "downloading" | "downloaded" | "installing" | "error"
+  | "downloading" | "preparing" | "downloaded" | "installing" | "error"
 
 interface UpdaterStatus {
   readonly state: UpdaterPhase

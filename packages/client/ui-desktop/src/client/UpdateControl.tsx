@@ -40,7 +40,11 @@ export function UpdateControl({ wide, t, useUpdater }: UpdateControlProps) {
       data-desktop-update-control=""
       aria-label={label}
       title={status.state === 'error' ? status.errorMessage : undefined}
-      disabled={status.state === 'downloading' || status.state === 'installing'}
+      disabled={
+        status.state === 'downloading'
+        || status.state === 'preparing'
+        || status.state === 'installing'
+      }
       onClick={onClick}
     >
       <span className={css.dot} data-state={status.state} />
@@ -69,6 +73,7 @@ export function applyUpdaterClick(state: UpdaterPhase, desktop: DesktopBridge): 
       return
     case 'checking':
     case 'downloading':
+    case 'preparing':
     case 'installing':
       return
   }
@@ -85,6 +90,7 @@ function isVisible(status: UpdaterStatus): status is UpdaterStatus & { state: Vi
   switch (status.state) {
     case 'available':
     case 'downloading':
+    case 'preparing':
     case 'downloaded':
     case 'installing':
       return true
@@ -103,6 +109,8 @@ function labelOf(status: UpdaterStatus & { state: VisibleUpdaterPhase }, t: Upda
       return t('update.available').replace('{version}', status.newVersion ?? '')
     case 'downloading':
       return t('update.downloading').replace('{percent}', formatDownloadPercent(status.downloadPercent))
+    case 'preparing':
+      return t('update.preparing')
     case 'downloaded':
     case 'installing':
       return t('update.install')
