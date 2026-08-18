@@ -1,8 +1,11 @@
 /**
- * DeepSeek search through an Anthropic-compatible Messages model call with the native
- * `web_search_20250305` server tool. Each search costs a model turn, but returns structured
- * result blocks; absence of those blocks is an error rather than a prose-scraping fallback.
- * The wire format and native `fetch` client are provider-private and do not use `ctx.llm`.
+ * Shipped search provider: DeepSeek Anthropic Messages with native
+ * `web_search_20250305`, or Moonshot/Kimi dedicated search when the configured
+ * endpoint names that service. Each DeepSeek search costs a model turn and
+ * returns structured result blocks; Moonshot is a retrieval POST. Absence of
+ * the expected result envelope is an error rather than a prose-scraping
+ * fallback. Wire formats and the native `fetch` client are provider-private
+ * and do not use `ctx.llm`.
  * @module @deepseek-ai/dsh-web-search-deepseek/provider
  */
 
@@ -15,6 +18,13 @@ import type {
 } from '@deepseek-ai/dsh-web'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import type {} from '@deepseek-ai/dsh-session'
+import { classifySearchEndpoint } from './endpoint.ts'
+import {
+  mapMoonshotResponse,
+  moonshotSearchBody,
+  type MoonshotSearchError,
+  type MoonshotSearchResponse,
+} from './moonshot.ts'
 import type {
   AnthropicError,
   AnthropicResponse,
@@ -173,6 +183,65 @@ export function mapAnthropicResponse(response: AnthropicResponse): WebSearchResu
   return { sources, truncated: false }
 }
 
+/**
+ * POST Moonshot dedicated search to the configured URL as-is. Unlike DeepSeek
+ * Messages, this is retrieval: no `/messages` suffix, no auxiliary model turn,
+ * and no `web/deepseek-search-llm-request` event.
+ *
+ * @param request - the seam search request.
+ * @param endpoint - the configured dedicated search URL.
+ * @param apiKey - the resolved Bearer credential.
+ * @param signal - optional caller abort signal.
+ * @returns the normalized Moonshot result.
+ */
+async function searchMoonshot(
+  request: WebSearchRequest,
+  endpoint: string,
+  apiKey: string,
+  signal?: AbortSignal,
+): Promise<WebSearchResult> {
+  const body = moonshotSearchBody(request.query, request.maxResults)
+  let response: Response
+  try {
+    response = await fetch(endpoint, {
+      method: 'POST',
+      redirect: 'error',
+      headers: {
+        'authorization': `Bearer ${apiKey}`,
+        'content-type': 'application/json',
+        'accept': 'application/json',
+        'user-agent': USER_AGENT,
+      },
+      body: JSON.stringify(body),
+      ...signal !== undefined ? { signal } : {},
+    })
+  } catch (error: unknown) {
+    if (signal?.aborted === true || isAbortError(error)) throw searchAborted(signal, error)
+    throw new WebError(`Moonshot search request failed: ${String(error)}`, 'WEB_PROVIDER_ERROR', { cause: error })
+  }
+
+  if (!response.ok) {
+    const status = response.status
+    let message = `Moonshot API error (HTTP ${status})`
+    try {
+      const parsed = await response.json() as MoonshotSearchError
+      const detail = typeof parsed.error === 'string' ? parsed.error : parsed.error?.message ?? parsed.message
+      if (detail !== undefined && detail.length > 0) message = detail
+    } catch (error: unknown) {
+      if (signal?.aborted === true || isAbortError(error)) throw searchAborted(signal, error)
+    }
+    throw new WebError(message, 'WEB_PROVIDER_ERROR')
+  }
+
+  try {
+    return mapMoonshotResponse(await response.json() as MoonshotSearchResponse)
+  } catch (error: unknown) {
+    if (signal?.aborted === true || isAbortError(error)) throw searchAborted(signal, error)
+    if (error instanceof WebError) throw error
+    throw new WebError(`Moonshot returned an unprocessable response body: ${String(error)}`, 'WEB_PROVIDER_ERROR', { cause: error })
+  }
+}
+
 /** The DeepSeek-backed search provider; HTTP redirects fail as `WEB_PROVIDER_ERROR`. */
 export class DeepSeekSearchProvider implements WebSearchProvider {
   readonly id = DEEPSEEK_PROVIDER_ID
@@ -201,6 +270,9 @@ export class DeepSeekSearchProvider implements WebSearchProvider {
     const options = this.resolveOptions()
     const apiKey = await this.apiKey(options, signal)
     throwIfSearchAborted(signal)
+    if (classifySearchEndpoint(options.baseURL) === 'moonshot-search') {
+      return searchMoonshot(request, options.baseURL, apiKey, signal)
+    }
     const endpoint = `${options.baseURL}/messages`
     const body: DeepSeekSearchLlmRequest['body'] = {
       model: options.model,

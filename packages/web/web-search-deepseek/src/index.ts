@@ -1,6 +1,8 @@
 /**
- * Register a DeepSeek-backed provider in `ctx.web`. It calls the Anthropic-compatible Messages API
- * with native `web_search_20250305`. The provider reuses `DEEPSEEK_API_KEY` but not
+ * Register a DeepSeek-backed provider in `ctx.web`. The default endpoint calls
+ * the Anthropic-compatible Messages API with native `web_search_20250305`. A
+ * Moonshot/Kimi dedicated search URL on the same settings card is posted as-is
+ * with `text_query`. The provider reuses `DEEPSEEK_API_KEY` but not
  * `DEEPSEEK_BASE_URL`, because search and chat-completions use different bases.
  * @module @deepseek-ai/dsh-web-search-deepseek
  */
@@ -48,7 +50,7 @@ export interface Config {
   apiKey?: string
   /** Credential reference resolved for each search; defaults to `DEEPSEEK_API_KEY`. */
   apiKeyEnv?: string
-  /** Anthropic-compatible endpoint base; `/messages` is appended. */
+  /** Search endpoint. A DeepSeek Anthropic base appends `/messages`; a Moonshot dedicated search URL is posted as-is. */
   baseURL?: string
   /** Anthropic-format model name. Defaults to `deepseek-v4-flash`. */
   model?: string

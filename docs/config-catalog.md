@@ -3172,7 +3172,7 @@ export interface Config {
   apiKey?: string
   /** Credential reference resolved for each search; defaults to `DEEPSEEK_API_KEY`. */
   apiKeyEnv?: string
-  /** Anthropic-compatible endpoint base; `/messages` is appended. */
+  /** Search endpoint. A DeepSeek Anthropic base appends `/messages`; a Moonshot dedicated search URL is posted as-is. */
   baseURL?: string
   /** Anthropic-format model name. Defaults to `deepseek-v4-flash`. */
   model?: string
@@ -3185,7 +3185,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/web/web-search-deepseek/src/index.ts:46`](../packages/web/web-search-deepseek/src/index.ts)
+Source: [`packages/web/web-search-deepseek/src/index.ts:48`](../packages/web/web-search-deepseek/src/index.ts)
 
 <a id="deepseek-aidsh-web-search-exa"></a>
 
