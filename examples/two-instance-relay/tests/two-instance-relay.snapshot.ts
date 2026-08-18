@@ -1,6 +1,6 @@
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { LOADER_SMOKE_TEST_TIMEOUT_MS, runLoaderSmoke } from '@deepseek-ai/dsh-loader-smoke'
+import { runLoaderSmoke } from '@deepseek-ai/dsh-loader-smoke'
 
 const driver = fileURLToPath(new URL('./fixtures/driver.ts', import.meta.url))
 const config = fileURLToPath(new URL('../cordis.yml', import.meta.url))
@@ -15,6 +15,7 @@ describe('two-instance Remote Relay keyless assembled path', () => {
       libBinScript: driver,
       configPath: config,
       tsconfigPath: tsconfig,
+      processTimeoutMs: 120_000,
     })
     expect(result.stderr).toBe('')
     expect(result.stdout).toMatchInlineSnapshot(`
@@ -27,5 +28,5 @@ describe('two-instance Remote Relay keyless assembled path', () => {
       CRYPTO startRejected=true connected=false stop=quit
       "
     `)
-  }, LOADER_SMOKE_TEST_TIMEOUT_MS)
+  }, 135_000)
 })

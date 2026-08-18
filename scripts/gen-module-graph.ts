@@ -8,6 +8,7 @@ import { resolve } from 'node:path'
 import { readFileSync, writeFileSync } from 'node:fs'
 import {
   collectPackageGraph,
+  compareCodepoints,
   escapeMermaidLabel as escLabel,
   graphNodeId as nodeId,
   type PackageGraphNode,
@@ -58,12 +59,12 @@ function render(pkgs: Pkg[]): string {
     const ib = GROUP_ORDER.indexOf(b)
     const na = ia === -1 ? Number.MAX_SAFE_INTEGER : ia
     const nb = ib === -1 ? Number.MAX_SAFE_INTEGER : ib
-    return na - nb || a.localeCompare(b)
+    return na - nb || compareCodepoints(a, b)
   })
   const groupBlocks: string[] = []
   for (const group of groups) {
     groupBlocks.push(`  subgraph ${nodeId('group', group)}["packages/${escLabel(group)}"]`)
-    for (const pkg of pkgs.filter(p => p.group === group).sort((a, b) => a.short.localeCompare(b.short))) {
+    for (const pkg of pkgs.filter(p => p.group === group).sort((a, b) => compareCodepoints(a.short, b.short))) {
       groupBlocks.push(`    ${nodeId('pkg', pkg.short)}["${escLabel(pkg.short)}"]`)
     }
     groupBlocks.push('  end')
