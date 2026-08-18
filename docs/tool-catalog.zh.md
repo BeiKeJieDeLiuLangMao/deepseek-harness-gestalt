@@ -1865,7 +1865,7 @@ todo_write 是会话所有的状态；UI 将最新的 todo/write 事件渲染为
 
 ### `browser_close`
 
-使用最新修订号关闭一个浏览器标签页及其临时 Browser Profile。
+使用最新修订号关闭一个浏览器标签页。临时 Profile 丢弃身份；命名 Profile 保留 persist partition。
 
 ```json
 {
@@ -1911,12 +1911,25 @@ todo_write 是会话所有的状态；UI 将最新的 todo/write 事件渲染为
 
 ### `browser_create`
 
-创建一个临时 Browser Profile、Browser Workspace、浏览器实例与标签页。
+创建一个临时或命名持久 Browser Profile、Browser Workspace、浏览器实例与标签页。
 
 ```json
 {
   "type": "object",
-  "properties": {}
+  "properties": {
+    "profile": {
+      "type": "string",
+      "description": "temporary discards identity; persistent restores a named Profile.",
+      "enum": [
+        "temporary",
+        "persistent"
+      ]
+    },
+    "name": {
+      "type": "string",
+      "description": "Named persistent Browser Profile. Required when profile is persistent."
+    }
+  }
 }
 ```
 

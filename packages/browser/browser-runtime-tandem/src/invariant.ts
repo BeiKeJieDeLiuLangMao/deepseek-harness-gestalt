@@ -2,7 +2,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { BrowserRuntime, BrowserRuntimeState } from '@deepseek-ai/dsh-browser-runtime'
-import { sameBrowserTarget } from '@deepseek-ai/dsh-browser-runtime'
+import { browserTargetKey, sameBrowserTarget } from '@deepseek-ai/dsh-browser-runtime'
 import type { InvariantFailure, InvariantInstaller } from '@deepseek-ai/dsh-invariants'
 import {
   registerTandemRuntimeStateValidator,
@@ -26,19 +26,26 @@ const install: InvariantInstaller = Object.assign((_ctx: Context, fail: Invarian
   if (owner === undefined) fail('the Tandem Browser Runtime invariant requires its own Provider implementation')
   const readState = tandemRuntimeStateReader(owner)
   if (readState === undefined) fail('the Tandem Browser Runtime invariant requires its Provider state reader')
-  let previous: BrowserRuntimeState | undefined = readState()
+  const previousByTarget = new Map<string, BrowserRuntimeState>(readState())
   _ctx.effect(() => registerTandemRuntimeStateValidator(owner, (state) => {
+    const key = browserTargetKey(state.target)
+    const previous = previousByTarget.get(key)
+    const sibling = [...previousByTarget.values()].find(candidate => (
+      candidate.status === 'open'
+      && candidate.target.profileId === state.target.profileId
+      && !sameBrowserTarget(candidate.target, state.target)
+    ))
+    if (sibling !== undefined) fail('a Tandem Browser Runtime lifecycle changed an opaque target identity')
     if (previous === undefined) {
       if (state.status !== 'open' || state.revision !== 0) fail('a Tandem Browser Runtime lifecycle must begin with an open revision 0 state')
-      previous = state
+      previousByTarget.set(key, state)
       return undefined
     }
     if (previous.status === 'closed') fail('a Tandem Browser Runtime terminal state cannot reopen')
-    if (!sameBrowserTarget(previous.target, state.target)) fail('a Tandem Browser Runtime lifecycle changed an opaque target identity')
     if (state.revision !== previous.revision + 1) {
       fail(`Tandem Browser Runtime revision ${String(state.revision)} must follow ${String(previous.revision)}`)
     }
-    previous = state
+    previousByTarget.set(key, state)
     return undefined
   }), 'Tandem Browser Runtime pre-commit validator')
 }, { inject: ['browserRuntime'] })

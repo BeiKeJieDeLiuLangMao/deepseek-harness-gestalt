@@ -2,6 +2,8 @@ import type { Branded } from '@deepseek-ai/dsh-brand'
 
 /** Opaque identity of a Browser Profile. */
 export type BrowserProfileId = Branded<'BrowserProfileId'>
+/** User-chosen name of a persistent Browser Profile. */
+export type BrowserProfileName = Branded<'BrowserProfileName'>
 /** Opaque identity of a Browser Workspace inside a Profile. */
 export type BrowserWorkspaceId = Branded<'BrowserWorkspaceId'>
 /** Opaque identity of one browser instance. */
@@ -15,6 +17,12 @@ export type BrowserTabId = Branded<'BrowserTabId'>
  * @returns the branded identity.
  */
 export const BrowserProfileId = (id: string): BrowserProfileId => id as BrowserProfileId
+/**
+ * Brand a raw string as a user-chosen persistent Browser Profile name.
+ * @param name - Caller-visible Profile name.
+ * @returns the branded name.
+ */
+export const BrowserProfileName = (name: string): BrowserProfileName => name as BrowserProfileName
 /**
  * Brand a raw string as a Browser Workspace identity.
  * @param id - Provider-issued opaque value.
@@ -42,6 +50,25 @@ export interface BrowserTarget {
   readonly tabId: BrowserTabId
 }
 
+/** Kind of Browser Profile storage a Provider committed. */
+export type BrowserProfileKind = 'temporary' | 'persistent'
+
+/** Address-field chrome facts for one committed Browser Profile. Temporary Profiles omit a label. */
+export interface BrowserProfileChrome {
+  readonly kind: BrowserProfileKind
+  readonly name?: BrowserProfileName
+  readonly partition: string
+}
+
+/** Partition-backed identity restored with a named Browser Profile. */
+export interface BrowserProfileStorage {
+  readonly cookies: string
+  readonly localStorage: string
+  readonly indexedDb: string
+  readonly cache: string
+  readonly serviceWorker: string
+}
+
 /** Open-page facts returned by Browser Runtime operations. */
 export interface BrowserPageState {
   readonly status: 'open'
@@ -51,6 +78,8 @@ export interface BrowserPageState {
   readonly title: string
   readonly text: string
   readonly focused: boolean
+  readonly chrome: BrowserProfileChrome
+  readonly storage: BrowserProfileStorage
 }
 
 /** Terminal state retained after the temporary Profile closes. */
@@ -82,11 +111,21 @@ export interface BrowserScreenshot {
   readonly data: string
 }
 
-/** Request to create this tracer's temporary Profile and initial tab. */
-export interface BrowserCreateRequest {
+/** Request to create one temporary Browser Profile and its initial tab. */
+export interface BrowserTemporaryCreateRequest {
   readonly profile: 'temporary'
   readonly signal?: AbortSignal
 }
+
+/** Request to create or reopen one named persistent Browser Profile. */
+export interface BrowserPersistentCreateRequest {
+  readonly profile: 'persistent'
+  readonly name: BrowserProfileName
+  readonly signal?: AbortSignal
+}
+
+/** Request to create a temporary or named persistent Browser Profile. */
+export type BrowserCreateRequest = BrowserTemporaryCreateRequest | BrowserPersistentCreateRequest
 
 /** Mutation request guarded by the caller's last observed revision. */
 export interface BrowserMutationRequest {
@@ -113,6 +152,8 @@ export type BrowserRuntimeErrorCode =
   | 'BROWSER_DISPOSED'
   | 'BROWSER_NOT_FOUND'
   | 'BROWSER_NOT_OPEN'
+  | 'BROWSER_PROFILE_BUSY'
+  | 'BROWSER_PROFILE_NAME'
   | 'BROWSER_PROTOCOL'
   | 'BROWSER_REVISION_CONFLICT'
   | 'BROWSER_RUNTIME_UNAVAILABLE'

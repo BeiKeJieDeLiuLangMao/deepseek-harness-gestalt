@@ -9,8 +9,8 @@ import type { BrowserRuntimeState } from '@deepseek-ai/dsh-browser-runtime'
 export const TANDEM_RUNTIME_STATE_OWNER: unique symbol = Symbol('browser-runtime-tandem.state-owner')
 /** Opaque identity for one Tandem Provider generation. */
 export type TandemRuntimeStateOwner = object
-/** Synchronous read of one Tandem Provider generation's authoritative state. */
-export type TandemRuntimeStateReader = () => BrowserRuntimeState | undefined
+/** Synchronous read of one Tandem Provider generation's authoritative states, keyed by target. */
+export type TandemRuntimeStateReader = () => ReadonlyMap<string, BrowserRuntimeState>
 /** Synchronous pre-commit validation of one Tandem Provider generation's next state. */
 export type TandemRuntimeStateValidator = (state: BrowserRuntimeState) => undefined
 

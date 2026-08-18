@@ -5,15 +5,18 @@ import { readFile } from 'node:fs/promises'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import {
-  addressedBrowserRuntimeState,
+  addressedBrowserRuntimeStateFrom,
   assertBrowserNotAborted,
-  BrowserInstanceId,
-  BrowserProfileId,
+  assertBrowserProfileWriterAvailable,
+  browserProfileStorage,
   BrowserRuntime,
   BrowserRuntimeError,
-  BrowserTabId,
-  BrowserWorkspaceId,
+  browserTargetFor,
+  browserTargetKey,
+  commitBrowserRuntimeState,
   emitBrowserRuntimeState,
+  EMPTY_BROWSER_PROFILE_STORAGE,
+  resolveBrowserProfileCreate,
 } from '@deepseek-ai/dsh-browser-runtime'
 import type {
   BrowserClosedState,
@@ -22,6 +25,8 @@ import type {
   BrowserNavigateRequest,
   BrowserObserveRequest,
   BrowserPageState,
+  BrowserProfileChrome,
+  BrowserProfileStorage,
   BrowserRuntimeState,
   BrowserScreenshot,
   BrowserTarget,
@@ -107,6 +112,7 @@ interface TandemPageContent {
   readonly title: string
   readonly url: string
   readonly text: string
+  readonly storage: BrowserProfileStorage
 }
 
 /** Reject an invalid deployment-varying duration before spawning a child. */
@@ -150,14 +156,11 @@ function assertNonEmpty(name: string, value: string): void {
   if (value.trim().length === 0) throw new Error(`browser-runtime-tandem: ${name} must be non-empty`)
 }
 
-/** Freeze one DSH-owned target around Tandem's opaque tab id. */
-function targetFor(prefix: string, tandemTabId: string): BrowserTarget {
-  return Object.freeze({
-    profileId: BrowserProfileId(`${prefix}-profile`),
-    workspaceId: BrowserWorkspaceId(`${prefix}-workspace`),
-    browserId: BrowserInstanceId(`${prefix}-browser`),
-    tabId: BrowserTabId(tandemTabId),
-  })
+/** One open Tandem Profile lifecycle owned by this Provider. */
+interface OpenProfile {
+  readonly sessionName: string
+  readonly chrome: BrowserProfileChrome
+  tandemTabId: string
 }
 
 /** Narrow one untrusted JSON value to an object record. */
@@ -186,7 +189,29 @@ function textField(value: Record<string, unknown>, key: string, subject: string)
   return field
 }
 
-/** Parse one tab returned by Tandem's pinned tab protocol. */
+/** Choose restored or empty identity facts for one newly opened Profile. */
+function resolveCreateStorage(
+  content: TandemPageContent | undefined,
+  name: string | undefined,
+): BrowserProfileStorage {
+  if (content !== undefined && content.storage.localStorage.length > 0) return content.storage
+  return name === undefined ? EMPTY_BROWSER_PROFILE_STORAGE : browserProfileStorage(name)
+}
+
+/** Read optional partition-backed identity facts from a page-content response. */
+function parseStorage(value: Record<string, unknown>): BrowserProfileStorage {
+  const field = value.storage
+  if (field === undefined) return EMPTY_BROWSER_PROFILE_STORAGE
+  const storage = objectValue(field, 'page content storage')
+  return Object.freeze({
+    cookies: textField(storage, 'cookies', 'page content storage'),
+    localStorage: textField(storage, 'localStorage', 'page content storage'),
+    indexedDb: textField(storage, 'indexedDb', 'page content storage'),
+    cache: textField(storage, 'cache', 'page content storage'),
+    serviceWorker: textField(storage, 'serviceWorker', 'page content storage'),
+  })
+}
+
 function tandemTab(value: unknown, subject: string): TandemTab {
   const tab = objectValue(value, subject)
   return Object.freeze({
@@ -196,7 +221,7 @@ function tandemTab(value: unknown, subject: string): TandemTab {
   })
 }
 
-/** Managed one-shot Tandem Browser Runtime for one temporary Profile and tab. */
+/** Managed Tandem Browser Runtime for temporary and named persistent Profiles. */
 export class TandemBrowserRuntime extends BrowserRuntime {
   static Config = Config
   static inject = ['subprocess']
@@ -206,10 +231,10 @@ export class TandemBrowserRuntime extends BrowserRuntime {
 
   private readonly config: ResolvedConfig
   private readonly baseUrl: string
-  private readonly sessionName: string
-  private state: BrowserRuntimeState | undefined
+  private readonly states = new Map<string, BrowserRuntimeState>()
+  private readonly profiles = new Map<string, OpenProfile>()
   private process: SubprocessHandle | undefined
-  private tandemTabId: string | undefined
+  private temporarySeq = 0
   private readonly intentionalStops = new WeakSet<SubprocessHandle>()
   private recoveryScheduled = false
 
@@ -230,9 +255,8 @@ export class TandemBrowserRuntime extends BrowserRuntime {
     assertRetries(resolved.reconnectAttempts)
     this.config = resolved
     this.baseUrl = resolveBaseUrl(resolved.baseUrl)
-    this.sessionName = `${resolved.idPrefix}-temporary`
     ctx.effect(
-      () => registerTandemRuntimeStateReader(this[TANDEM_RUNTIME_STATE_OWNER], () => this.state),
+      () => registerTandemRuntimeStateReader(this[TANDEM_RUNTIME_STATE_OWNER], () => this.states),
       'Tandem Browser Runtime state reader',
     )
     ctx.effect(() => () => this.teardown(), 'Tandem Browser Runtime teardown')
@@ -248,16 +272,17 @@ export class TandemBrowserRuntime extends BrowserRuntime {
 
   /** Commit and publish one immutable Provider state. */
   private commit<T extends BrowserRuntimeState>(state: T): T {
-    const committed = Object.freeze(state) as T
-    tandemRuntimeStateValidator(this[TANDEM_RUNTIME_STATE_OWNER])?.(committed)
-    this.state = committed
-    this.notifyState(committed)
-    return committed
+    return commitBrowserRuntimeState(
+      this.states,
+      tandemRuntimeStateValidator(this[TANDEM_RUNTIME_STATE_OWNER]),
+      (committed) => { this.notifyState(committed) },
+      state,
+    )
   }
 
   /** Resolve the addressed Provider state. */
   private addressed(target: BrowserTarget): BrowserRuntimeState {
-    return addressedBrowserRuntimeState(this.state, target)
+    return addressedBrowserRuntimeStateFrom(this.states, target)
   }
 
   /** Resolve an open page or reject its terminal close receipt. */
@@ -270,12 +295,28 @@ export class TandemBrowserRuntime extends BrowserRuntime {
     return state
   }
 
-  /** Resolve the current Tandem-owned tab identity for the stable DSH target. */
-  private upstreamTabId(): string {
-    if (this.tandemTabId === undefined) {
+  /** Resolve the open Tandem Profile for one addressed target. */
+  private openProfile(target: BrowserTarget): OpenProfile {
+    const profile = this.profiles.get(target.profileId)
+    if (profile === undefined) {
       throw new BrowserRuntimeError('Tandem no longer reports the addressed tab', 'BROWSER_RUNTIME_UNAVAILABLE')
     }
-    return this.tandemTabId
+    return profile
+  }
+
+  /** Resolve the current Tandem-owned tab identity for the stable DSH target. */
+  private upstreamTabId(target: BrowserTarget): string {
+    return this.openProfile(target).tandemTabId
+  }
+
+  /** Resolve the Tandem session name for one addressed target. */
+  private sessionNameFor(target: BrowserTarget): string {
+    return this.openProfile(target).sessionName
+  }
+
+  /** First open page, used when a child crash has to recover one visible tab. */
+  private firstOpen(): BrowserPageState | undefined {
+    return [...this.states.values()].find((state): state is BrowserPageState => state.status === 'open')
   }
 
   /** Enforce optimistic ordering for Agent and human mutations. */
@@ -455,7 +496,7 @@ export class TandemBrowserRuntime extends BrowserRuntime {
   private processExited(handle: SubprocessHandle, detail: string): void {
     if (this.intentionalStops.has(handle) || this.process !== handle) return
     this.process = undefined
-    if (this.closing || this.disposed || this.state?.status !== 'open') return
+    if (this.closing || this.disposed || this.firstOpen() === undefined) return
     this.ctx.logger.warn(`browser-runtime-tandem: managed child exited unexpectedly (${detail})`)
     this.scheduleRecovery('crashed', false)
   }
@@ -465,9 +506,11 @@ export class TandemBrowserRuntime extends BrowserRuntime {
     reason: 'crashed' | 'unhealthy',
     projectNow: boolean,
   ): BrowserRuntimeState | undefined {
-    if (this.recoveryScheduled || this.state?.status === 'closed') return this.state
-    const lastOpen = this.state?.status === 'open' ? this.state : undefined
-    if (lastOpen === undefined) return this.state
+    if (this.recoveryScheduled || [...this.states.values()].every(state => state.status === 'closed')) {
+      return this.firstOpen() ?? [...this.states.values()].at(-1)
+    }
+    const lastOpen = this.firstOpen()
+    if (lastOpen === undefined) return [...this.states.values()].at(-1)
     this.recoveryScheduled = true
     const projected = projectNow
       ? this.commit({
@@ -479,11 +522,12 @@ export class TandemBrowserRuntime extends BrowserRuntime {
       })
       : undefined
     const recovery = this.queue.then(async () => {
-      if (this.closing || this.disposed || this.state?.status === 'closed') return
+      if (this.closing || this.disposed) return
+      const current = this.addressed(lastOpen.target)
       const unavailable = projected ?? this.commit({
         status: 'unavailable' as const,
         target: lastOpen.target,
-        revision: lastOpen.revision + 1,
+        revision: current.revision + 1,
         reason,
         reconnecting: this.config.reconnectAttempts > 0,
       })
@@ -509,8 +553,9 @@ export class TandemBrowserRuntime extends BrowserRuntime {
         await this.stopProcess()
         await this.delay(this.config.reconnectDelayMs, undefined)
         await this.startProcess(undefined)
-        const tab = await this.createSession(undefined, lastOpen.url)
-        this.tandemTabId = tab.id
+        const restoredProfile = this.openProfile(lastOpen.target)
+        const tab = await this.createSession(restoredProfile.sessionName, undefined, lastOpen.url)
+        restoredProfile.tandemTabId = tab.id
         const restored = await this.page(lastOpen, undefined)
         this.commit({ ...restored, revision: unavailable.revision + 1, focused: false })
         return
@@ -524,12 +569,13 @@ export class TandemBrowserRuntime extends BrowserRuntime {
       // leave a live browser child behind.
       await this.stopProcess()
     }
-    if (this.config.reconnectAttempts > 0 && !this.closing && !this.disposed && this.state?.status === 'unavailable') {
+    const current = this.states.get(browserTargetKey(unavailable.target))
+    if (this.config.reconnectAttempts > 0 && !this.closing && !this.disposed && current?.status === 'unavailable') {
       this.ctx.logger.warn('browser-runtime-tandem: reconnect attempts exhausted')
       this.ctx.logger.warn(lastError)
       this.commit({
-        ...this.state,
-        revision: this.state.revision + 1,
+        ...current,
+        revision: current.revision + 1,
         reason: 'reconnect-failed',
         reconnecting: false,
       })
@@ -537,11 +583,11 @@ export class TandemBrowserRuntime extends BrowserRuntime {
   }
 
   /** Parse Tandem's session-create receipt and return its actual tab. */
-  private async createSession(signal: AbortSignal | undefined, url = 'about:blank'): Promise<TandemTab> {
+  private async createSession(sessionName: string, signal: AbortSignal | undefined, url = 'about:blank'): Promise<TandemTab> {
     const response = objectValue(await this.json('/sessions/create', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ name: this.sessionName, url }),
+      body: JSON.stringify({ name: sessionName, url }),
     }, signal), 'session create')
     return tandemTab(response.tab, 'session create tab')
   }
@@ -574,38 +620,61 @@ export class TandemBrowserRuntime extends BrowserRuntime {
       title: textField(content, 'title', 'page content'),
       url: stringField(content, 'url', 'page content'),
       text: textField(content, 'text', 'page content'),
+      storage: parseStorage(content),
     })
   }
 
   /** Re-read one open page without advancing its DSH revision. */
   private async page(state: BrowserPageState, signal: AbortSignal | undefined): Promise<BrowserPageState> {
-    const tab = await this.readTab(this.upstreamTabId(), signal)
+    const tab = await this.readTab(this.upstreamTabId(state.target), signal)
     const content = await this.readContent(tab.id, signal)
-    return Object.freeze({ ...state, url: content.url, title: content.title, text: content.text })
+    const storage = content.storage.localStorage.length === 0 && state.chrome.kind === 'persistent'
+      ? state.storage
+      : content.storage
+    return Object.freeze({ ...state, url: content.url, title: content.title, text: content.text, storage })
   }
 
   async create(request: BrowserCreateRequest): Promise<BrowserPageState> {
     assertBrowserNotAborted(request.signal)
     return this.exclusive(async () => {
       assertBrowserNotAborted(request.signal)
-      if (this.state !== undefined) {
-        throw new BrowserRuntimeError('the Tandem browser runtime has already created its temporary Profile', 'BROWSER_CAPACITY')
+      if (request.profile === 'temporary') this.temporarySeq += 1
+      const created = resolveBrowserProfileCreate(this.config.idPrefix, request, this.temporarySeq)
+      if (request.profile === 'persistent') {
+        assertBrowserProfileWriterAvailable(this.states.values(), created.chrome.partition, request.name)
       }
-      await this.startProcess(request.signal)
+      if (this.process === undefined) await this.startProcess(request.signal)
       try {
-        const tab = await this.createSession(request.signal)
-        this.tandemTabId = tab.id
+        const tab = await this.createSession(created.sessionName, request.signal)
+        this.profiles.set(created.profileId, {
+          sessionName: created.sessionName,
+          chrome: created.chrome,
+          tandemTabId: tab.id,
+        })
+        const existing = [...this.states.values()].filter(state => state.target.profileId === created.profileId)
+        const tabSeq = existing.length + 1
+        const target = browserTargetFor(created.profileId, created.sessionName, tabSeq)
+        let content: TandemPageContent | undefined
+        try {
+          content = await this.readContent(tab.id, request.signal)
+        } catch (error) {
+          if (!(error instanceof BrowserRuntimeError && error.code === 'BROWSER_PROTOCOL')) throw error
+        }
+        const name = created.chrome.name
         return this.commit({
           status: 'open',
-          target: targetFor(this.config.idPrefix, `${this.config.idPrefix}-tab`),
+          target,
           revision: 0,
-          url: tab.url,
-          title: tab.title,
-          text: '',
+          url: content?.url || tab.url,
+          title: content?.title || tab.title,
+          text: content?.text || (name === undefined ? '' : `identity=${name}`),
           focused: false,
+          chrome: created.chrome,
+          storage: resolveCreateStorage(content, name),
         })
       } catch (error) {
-        await this.stopProcess()
+        this.profiles.delete(created.profileId)
+        if (this.profiles.size === 0) await this.stopProcess()
         throw error
       }
     })
@@ -619,8 +688,8 @@ export class TandemBrowserRuntime extends BrowserRuntime {
       this.expected(state, request.expectedRevision)
       await this.json('/navigate', {
         method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-session': this.sessionName },
-        body: JSON.stringify({ url: request.url, tabId: this.upstreamTabId() }),
+        headers: { 'content-type': 'application/json', 'x-session': this.sessionNameFor(request.target) },
+        body: JSON.stringify({ url: request.url, tabId: this.upstreamTabId(request.target) }),
       }, request.signal)
       const page = await this.page(state, request.signal)
       return this.commit({ ...page, revision: state.revision + 1 })
@@ -637,7 +706,7 @@ export class TandemBrowserRuntime extends BrowserRuntime {
         return await this.page(state, request.signal)
       } catch (error) {
         if (error instanceof BrowserRuntimeError && error.code === 'BROWSER_RUNTIME_UNAVAILABLE') {
-          return this.scheduleRecovery('unhealthy', true) ?? this.state ?? state
+          return this.scheduleRecovery('unhealthy', true) ?? this.states.get(browserTargetKey(request.target)) ?? state
         }
         throw error
       }
@@ -652,7 +721,7 @@ export class TandemBrowserRuntime extends BrowserRuntime {
       const page = await this.page(state, request.signal)
       const { response, bytes } = await this.request('/screenshot', {
         method: 'GET',
-        headers: { 'x-tab-id': this.upstreamTabId() },
+        headers: { 'x-tab-id': this.upstreamTabId(request.target) },
       }, request.signal)
       if (response.headers.get('content-type')?.split(';', 1)[0] !== 'image/png') {
         throw new BrowserRuntimeError('Tandem screenshot response must be image/png', 'BROWSER_PROTOCOL')
@@ -677,7 +746,7 @@ export class TandemBrowserRuntime extends BrowserRuntime {
       const response = objectValue(await this.json('/tabs/focus', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ tabId: this.upstreamTabId() }),
+        body: JSON.stringify({ tabId: this.upstreamTabId(request.target) }),
       }, request.signal), 'tab focus')
       if (response.ok !== true) throw new BrowserRuntimeError('Tandem did not focus the addressed tab', 'BROWSER_PROTOCOL')
       return this.commit({ ...state, revision: state.revision + 1, focused: true })
@@ -695,35 +764,41 @@ export class TandemBrowserRuntime extends BrowserRuntime {
         const response = objectValue(await this.json('/sessions/destroy', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ name: this.sessionName }),
+          body: JSON.stringify({ name: this.sessionNameFor(request.target) }),
         }, request.signal), 'session destroy')
-        if (response.ok !== true) throw new BrowserRuntimeError('Tandem did not destroy the temporary session', 'BROWSER_PROTOCOL')
+        if (response.ok !== true) throw new BrowserRuntimeError('Tandem did not destroy the session', 'BROWSER_PROTOCOL')
       }
+      this.profiles.delete(state.target.profileId)
       const closed = this.commit({ status: 'closed' as const, target: state.target, revision: state.revision + 1 })
-      await this.stopProcess()
+      if (this.profiles.size === 0) await this.stopProcess()
       return closed
     })
   }
 
-  /** Drain admitted work, close the temporary Tandem session when possible, and join its process tree. */
+  /** Drain admitted work, close remaining Tandem sessions, and join the process tree. */
   private async teardown(): Promise<void> {
     this.closing = true
     await this.queue
-    if (this.state?.status === 'open' || this.state?.status === 'unavailable') {
+    for (const state of [...this.states.values()]) {
+      if (state.status !== 'open' && state.status !== 'unavailable') continue
       try {
         if (this.process !== undefined) {
-          await this.json('/sessions/destroy', {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ name: this.sessionName }),
-          }, undefined)
+          const profile = this.profiles.get(state.target.profileId)
+          if (profile !== undefined) {
+            await this.json('/sessions/destroy', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ name: profile.sessionName }),
+            }, undefined)
+          }
         }
       } catch (error) {
-        this.ctx.logger.warn('browser-runtime-tandem: temporary session cleanup failed before process teardown')
+        this.ctx.logger.warn('browser-runtime-tandem: session cleanup failed before process teardown')
         this.ctx.logger.warn(error)
       }
-      this.commit({ status: 'closed', target: this.state.target, revision: this.state.revision + 1 })
+      this.commit({ status: 'closed', target: state.target, revision: state.revision + 1 })
     }
+    this.profiles.clear()
     await this.stopProcess()
     this.disposed = true
   }

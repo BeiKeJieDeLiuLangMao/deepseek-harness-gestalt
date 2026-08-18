@@ -26,8 +26,9 @@ mkdirSync(dirname(tokenFile), { recursive: true })
 writeFileSync(tokenFile, `${token}\n`, { mode: 0o600 })
 if (pidFile !== undefined) writeFileSync(pidFile, `${process.pid}\n`, { mode: 0o600 })
 
-let sessionName
-let sessionTab
+const sessions = new Map()
+const persisted = new Map()
+let tabSeq = 0
 
 function inventoryTab(id, url, title, active, partition) {
   return {
@@ -56,7 +57,33 @@ function titleFor(url) {
 }
 
 function listedTabs() {
-  return sessionTab === undefined ? [defaultTab] : [sessionTab, defaultTab]
+  return [...sessions.values()].map(session => session.tab).concat(defaultTab)
+}
+
+function emptyStorage() {
+  return { cookies: '', localStorage: '', indexedDb: '', cache: '', serviceWorker: '' }
+}
+
+function storageFor(token) {
+  if (token.length === 0) return emptyStorage()
+  return {
+    cookies: `profile=${token}`,
+    localStorage: token,
+    indexedDb: token,
+    cache: token,
+    serviceWorker: token,
+  }
+}
+
+function identityToken(sessionName) {
+  const temporary = sessionName.match(/-tmp-\d+$/)
+  if (temporary !== null) return ''
+  const marker = sessionName.lastIndexOf('-')
+  return marker === -1 ? sessionName : sessionName.slice(marker + 1)
+}
+
+function isTemporary(sessionName) {
+  return /-tmp-\d+$/.test(sessionName)
 }
 
 function json(response, status, value) {
@@ -94,7 +121,7 @@ const server = createServer(async (request, response) => {
       json(response, 200, { ready: 'yes', tabs: listedTabs().length, version: '1.11.4' })
       return
     }
-    const active = sessionTab ?? defaultTab
+    const active = [...sessions.values()].at(-1)?.tab ?? defaultTab
     json(response, 200, {
       ready: faults.status !== 'never-ready',
       url: active.url,
@@ -113,17 +140,26 @@ const server = createServer(async (request, response) => {
   if (request.method === 'POST' && url.pathname === '/sessions/create') {
     if (crashMarker !== undefined && existsSync(`${crashMarker}.die`)) process.exit(9)
     const input = await body(request)
-    sessionName = input.name
-    const initialUrl = input.url ?? 'about:blank'
-    const base = inventoryTab('tandem-tab-1', initialUrl, titleFor(initialUrl), true, `persist:session-${sessionName}`)
-    if (faults.create === 'bad-tab-id') sessionTab = { ...base, id: '' }
-    else if (faults.create === 'bad-title-type') sessionTab = { ...base, title: 7 }
-    else sessionTab = base
+    const sessionName = input.name
+    const stored = persisted.get(sessionName)
+    const initialUrl = stored?.url ?? input.url ?? 'about:blank'
+    tabSeq += 1
+    const base = inventoryTab(`tandem-tab-${String(tabSeq)}`, initialUrl, titleFor(initialUrl), true, `persist:session-${sessionName}`)
+    const tab = faults.create === 'bad-tab-id'
+      ? { ...base, id: '' }
+      : faults.create === 'bad-title-type' ? { ...base, title: 7 } : base
+    const session = {
+      name: sessionName,
+      tab: stored === undefined ? tab : { ...tab, url: stored.url, title: titleFor(stored.url) },
+      storage: stored?.storage ?? emptyStorage(),
+      text: stored?.text ?? '',
+    }
+    sessions.set(sessionName, session)
     if (faults.create === 'no-tab') {
-      json(response, 200, { ok: true, name: sessionName, partition: sessionTab.partition })
+      json(response, 200, { ok: true, name: sessionName, partition: tab.partition })
       return
     }
-    json(response, 200, { ok: true, name: sessionName, partition: sessionTab.partition, tab: sessionTab })
+    json(response, 200, { ok: true, name: sessionName, partition: tab.partition, tab })
     return
   }
   if (request.method === 'POST' && url.pathname === '/navigate') {
@@ -138,9 +174,15 @@ const server = createServer(async (request, response) => {
       return
     }
     const input = await body(request)
-    sessionTab = sessionTab === undefined ? undefined : { ...sessionTab, url: input.url, title: titleFor(input.url) }
-    if (input.url === 'https://forget.test/') sessionTab = undefined
-    json(response, 200, { ok: true, url: input.url, tab: sessionTab?.id ?? input.tabId })
+    const session = [...sessions.values()].find(value => value.tab.id === input.tabId) ?? [...sessions.values()].at(-1)
+    if (session !== undefined) {
+      session.tab = { ...session.tab, url: input.url, title: titleFor(input.url) }
+      if (input.url === 'https://login.test/' || input.url === 'https://example.test/') {
+        session.storage = storageFor(identityToken(session.name))
+      }
+      if (input.url === 'https://forget.test/') sessions.delete(session.name)
+    }
+    json(response, 200, { ok: true, url: input.url, tab: session?.tab.id ?? input.tabId })
     if (input.url === 'https://crash.test/' && crashMarker !== undefined && !existsSync(crashMarker)) {
       writeFileSync(crashMarker, 'crashed\n')
       setTimeout(() => process.exit(17), 20)
@@ -177,11 +219,31 @@ const server = createServer(async (request, response) => {
       json(response, 200, { title: null, url: '', description: '', text: '', length: 0 })
       return
     }
-    const tab = sessionTab
+    const tabId = request.headers['x-tab-id']
+    const session = [...sessions.values()].find(value => value.tab.id === tabId) ?? [...sessions.values()].at(-1)
+    const tab = session?.tab
+    const identity = session?.storage.localStorage ?? ''
     const text = tab?.url === 'https://example.test/'
-      ? 'A real Tandem protocol page.'
-      : tab?.url === 'https://crash.test/' || tab?.url === 'https://forget.test/' ? 'Recovered crash page.' : ''
-    json(response, 200, { title: tab?.title ?? '', url: tab?.url ?? '', description: '', text, length: text.length })
+      ? identity.length === 0 ? 'A real Tandem protocol page.' : `A real Tandem protocol page.\nidentity=${identity}`
+      : tab?.url === 'https://login.test/'
+        ? `Signed in as ${identity}.\nidentity=${identity}`
+        : tab?.url === 'https://crash.test/' || tab?.url === 'https://forget.test/'
+          ? 'Recovered crash page.'
+          : session?.text || (identity.length === 0 ? '' : `identity=${identity}`)
+    if (session !== undefined) session.text = text
+    const body = {
+      title: tab?.title ?? '',
+      url: tab?.url ?? '',
+      description: '',
+      text,
+      length: text.length,
+    }
+    if (faults.pageContent === 'seed-storage') {
+      body.storage = storageFor('seeded')
+    } else if (faults.pageContent !== 'omit-storage') {
+      body.storage = session?.storage ?? emptyStorage()
+    }
+    json(response, 200, body)
     return
   }
   if (request.method === 'GET' && url.pathname === '/screenshot') {
@@ -222,12 +284,15 @@ const server = createServer(async (request, response) => {
       json(response, 404, { error: `Session ${input.name} does not exist` })
       return
     }
-    if (input.name !== sessionName) {
+    const session = sessions.get(input.name)
+    if (session === undefined) {
       json(response, 404, { error: `Session ${input.name} does not exist` })
       return
     }
-    sessionTab = undefined
-    json(response, 200, { ok: true, name: sessionName })
+    sessions.delete(input.name)
+    if (isTemporary(input.name)) persisted.delete(input.name)
+    else persisted.set(input.name, { url: session.tab.url, storage: session.storage, text: session.text })
+    json(response, 200, { ok: true, name: input.name })
     return
   }
   json(response, 404, { error: `fixture route not found: ${request.method} ${url.pathname}` })

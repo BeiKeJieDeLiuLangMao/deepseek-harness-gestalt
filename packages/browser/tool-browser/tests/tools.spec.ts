@@ -84,11 +84,12 @@ describe('deferred Browser Runtime Consumer', () => {
       value: {
         status: 'open',
         target: {
-          profileId: 'tool-profile',
-          workspaceId: 'tool-workspace',
-          browserId: 'tool-browser',
-          tabId: 'tool-tab',
+          profileId: 'tool-tmp-1',
+          workspaceId: 'tool-tmp-1-workspace',
+          browserId: 'tool-tmp-1-browser',
+          tabId: 'tool-tmp-1-tab-1',
         },
+        chrome: { kind: 'temporary', partition: 'persist:session-tool-tmp-1' },
         revision: 0,
       },
     })
@@ -98,10 +99,10 @@ describe('deferred Browser Runtime Consumer', () => {
     }])
 
     const target = {
-      profileId: 'tool-profile',
-      workspaceId: 'tool-workspace',
-      browserId: 'tool-browser',
-      tabId: 'tool-tab',
+      profileId: 'tool-tmp-1',
+      workspaceId: 'tool-tmp-1-workspace',
+      browserId: 'tool-tmp-1-browser',
+      tabId: 'tool-tmp-1-tab-1',
     }
     const navigated = await ctx.tools.execute({
       callId: CallId('browser-navigate'),
@@ -147,12 +148,39 @@ describe('deferred Browser Runtime Consumer', () => {
   it('rejects invalid Consumer arguments and timeout configuration at their owning boundaries', async () => {
     const ctx = await harness()
     const target = {
-      profileId: 'tool-profile',
-      workspaceId: 'tool-workspace',
-      browserId: 'tool-browser',
-      tabId: 'tool-tab',
+      profileId: 'tool-tmp-1',
+      workspaceId: 'tool-tmp-1-workspace',
+      browserId: 'tool-tmp-1-browser',
+      tabId: 'tool-tmp-1-tab-1',
     }
     await ctx.tools.execute({ callId: CallId('create'), name: 'browser_create', arguments: {}, signal })
+
+    const missingName = await ctx.tools.execute({
+      callId: CallId('missing-name'),
+      name: 'browser_create',
+      arguments: { profile: 'persistent' },
+      signal,
+    })
+    expect(missingName).toMatchObject({ isError: true })
+
+    const blankName = await ctx.tools.execute({
+      callId: CallId('blank-name'),
+      name: 'browser_create',
+      arguments: { profile: 'persistent', name: '  ' },
+      signal,
+    })
+    expect(blankName).toMatchObject({ isError: true })
+
+    const named = await ctx.tools.execute({
+      callId: CallId('named-create'),
+      name: 'browser_create',
+      arguments: { profile: 'persistent', name: 'work' },
+      signal,
+    })
+    expect(named).toMatchObject({
+      isError: false,
+      value: { chrome: { kind: 'persistent', name: 'work' } },
+    })
 
     const emptyIdentity = await ctx.tools.execute({
       callId: CallId('empty-identity'),

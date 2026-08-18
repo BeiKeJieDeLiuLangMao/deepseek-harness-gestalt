@@ -10,6 +10,7 @@ import {
   BrowserProfileId,
   type BrowserRuntimeState,
   BrowserTabId,
+  browserTargetKey,
   BrowserWorkspaceId,
 } from '@deepseek-ai/dsh-browser-runtime'
 import TandemBrowserRuntime from '@deepseek-ai/dsh-browser-runtime-tandem'
@@ -311,29 +312,30 @@ describe('Tandem Browser Runtime invariant lifecycle', () => {
 
     const leftState = await leftMount.ctx.browserRuntime.create({ profile: 'temporary' })
     const rightState = await rightMount.ctx.browserRuntime.create({ profile: 'temporary' })
-    expect(tandemRuntimeStateReader(leftOwner)?.()).toEqual(leftState)
-    expect(tandemRuntimeStateReader(rightOwner)?.()).toEqual(rightState)
+    expect(tandemRuntimeStateReader(leftOwner)?.().get(browserTargetKey(leftState.target))).toEqual(leftState)
+    expect(tandemRuntimeStateReader(rightOwner)?.().get(browserTargetKey(rightState.target))).toEqual(rightState)
 
     await leftMount.fiber.dispose()
     expect(tandemRuntimeStateReader(leftOwner)).toBeUndefined()
-    expect(tandemRuntimeStateReader(rightOwner)?.()).toEqual(rightState)
+    expect(tandemRuntimeStateReader(rightOwner)?.().get(browserTargetKey(rightState.target))).toEqual(rightState)
     await rightMount.fiber.dispose()
   })
 
   it('uses registration identity for replacement disposal and rejects missing or duplicate owners', () => {
     const owner = Object.freeze({}) as TandemRuntimeStateOwner
     const otherOwner = Object.freeze({}) as TandemRuntimeStateOwner
-    const initialState = undefined
     const replacementState = { status: 'closed', target: TARGET, revision: 1 } satisfies BrowserRuntimeState
-    const disposeInitial = registerTandemRuntimeStateReader(owner, () => initialState)
-    const disposeOther = registerTandemRuntimeStateReader(otherOwner, () => replacementState)
-    expect(() => registerTandemRuntimeStateReader(owner, () => replacementState)).toThrow(/already registered/)
+    const initialStates = new Map<string, BrowserRuntimeState>()
+    const replacementStates = new Map([[browserTargetKey(replacementState.target), replacementState]])
+    const disposeInitial = registerTandemRuntimeStateReader(owner, () => initialStates)
+    const disposeOther = registerTandemRuntimeStateReader(otherOwner, () => replacementStates)
+    expect(() => registerTandemRuntimeStateReader(owner, () => replacementStates)).toThrow(/already registered/)
 
     disposeInitial()
-    const disposeReplacement = registerTandemRuntimeStateReader(owner, () => replacementState)
+    const disposeReplacement = registerTandemRuntimeStateReader(owner, () => replacementStates)
     disposeInitial()
-    expect(tandemRuntimeStateReader(owner)?.()).toEqual(replacementState)
-    expect(tandemRuntimeStateReader(otherOwner)?.()).toEqual(replacementState)
+    expect(tandemRuntimeStateReader(owner)?.()).toEqual(replacementStates)
+    expect(tandemRuntimeStateReader(otherOwner)?.()).toEqual(replacementStates)
 
     const validate = (): undefined => undefined
     expect(() => registerTandemRuntimeStateValidator(Object.freeze({}) as TandemRuntimeStateOwner, validate))

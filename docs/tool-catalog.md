@@ -1860,7 +1860,7 @@ Source: [`packages/workflow/tool-workflow/src/index.ts`](../packages/workflow/to
 
 ### `browser_close`
 
-Close one browser tab and its temporary Browser Profile using the latest revision.
+Close one browser tab using the latest revision. Temporary Profiles discard identity; named Profiles keep the persist partition.
 
 ```json
 {
@@ -1906,12 +1906,25 @@ Source: [`packages/browser/tool-browser/src/index.ts`](../packages/browser/tool-
 
 ### `browser_create`
 
-Create one temporary Browser Profile, Browser Workspace, browser instance, and tab.
+Create one temporary or named persistent Browser Profile, Browser Workspace, browser instance, and tab.
 
 ```json
 {
   "type": "object",
-  "properties": {}
+  "properties": {
+    "profile": {
+      "type": "string",
+      "description": "temporary discards identity; persistent restores a named Profile.",
+      "enum": [
+        "temporary",
+        "persistent"
+      ]
+    },
+    "name": {
+      "type": "string",
+      "description": "Named persistent Browser Profile. Required when profile is persistent."
+    }
+  }
 }
 ```
 

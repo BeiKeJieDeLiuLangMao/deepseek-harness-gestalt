@@ -5,6 +5,7 @@ import z from '@deepseek-ai/schemastery'
 import {
   BrowserInstanceId,
   BrowserProfileId,
+  BrowserProfileName,
   BrowserTabId,
   BrowserWorkspaceId,
 } from '@deepseek-ai/dsh-browser-runtime'
@@ -41,6 +42,28 @@ const TARGET_SCHEMA = {
   properties: TARGET_PROPERTIES,
 } as const
 
+const CHROME_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    kind: { type: 'string', required: true, enum: ['temporary', 'persistent'] },
+    name: { type: 'string' },
+    partition: { type: 'string', required: true },
+  },
+} as const
+
+const STORAGE_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    cookies: { type: 'string', required: true },
+    localStorage: { type: 'string', required: true },
+    indexedDb: { type: 'string', required: true },
+    cache: { type: 'string', required: true },
+    serviceWorker: { type: 'string', required: true },
+  },
+} as const
+
 const OPEN_STATE_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -52,6 +75,8 @@ const OPEN_STATE_SCHEMA = {
     title: { type: 'string', required: true },
     text: { type: 'string', required: true },
     focused: { type: 'boolean', required: true },
+    chrome: { ...CHROME_SCHEMA, required: true },
+    storage: { ...STORAGE_SCHEMA, required: true },
   },
 } as const
 
@@ -144,11 +169,27 @@ export function apply(ctx: Context, config: Config): void {
   ctx.tools.register({
     ...defineTool({
       name: 'browser_create',
-      description: 'Create one temporary Browser Profile, Browser Workspace, browser instance, and tab.',
+      description: 'Create one temporary or named persistent Browser Profile, Browser Workspace, browser instance, and tab.',
       timeoutMs,
-      parameters: {},
+      parameters: {
+        profile: { type: 'string', enum: ['temporary', 'persistent'], description: 'temporary discards identity; persistent restores a named Profile.' },
+        name: { type: 'string', description: 'Named persistent Browser Profile. Required when profile is persistent.' },
+      },
       output: { schema: OPEN_STATE_SCHEMA, render: renderValue },
-      execute: async (_args, exec) => ctx.browserRuntime.create({ profile: 'temporary', signal: exec.signal }),
+      execute: async (args, exec) => {
+        const profile = args.profile === 'persistent' ? 'persistent' : 'temporary'
+        if (profile === 'persistent') {
+          if (typeof args.name !== 'string' || args.name.trim().length === 0) {
+            throw new Error('name must be a non-empty Browser Profile name')
+          }
+          return ctx.browserRuntime.create({
+            profile,
+            name: BrowserProfileName(args.name),
+            signal: exec.signal,
+          })
+        }
+        return ctx.browserRuntime.create({ profile, signal: exec.signal })
+      },
     }),
     deferLoading: true,
   })
@@ -223,7 +264,7 @@ export function apply(ctx: Context, config: Config): void {
   ctx.tools.register({
     ...defineTool({
       name: 'browser_close',
-      description: 'Close one browser tab and its temporary Browser Profile using the latest revision.',
+      description: 'Close one browser tab using the latest revision. Temporary Profiles discard identity; named Profiles keep the persist partition.',
       timeoutMs,
       parameters: {
         target: TARGET_PARAMETER,

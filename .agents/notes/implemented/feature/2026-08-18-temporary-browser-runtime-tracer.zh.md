@@ -12,7 +12,7 @@
 
 `dsh-browser-runtime` 通过 `ctx.browserRuntime` 定义 create、navigate、observe、screenshot、focus 与 close 的 Service Definition 方法。Browser Profile、Browser Workspace、浏览器实例与标签页身份使用各自独立的 `Branded<B>` 类型，并作为一个 `BrowserTarget` 一起传递。打开与关闭状态携带单调递增修订号。写操作要求 `expectedRevision`；Provider 串行执行操作，并拒绝过期调用方，而不是在 Agent 与人并发操作时接受后写覆盖。
 
-`dsh-browser-runtime-deterministic` 是首个 Provider。一个 Provider 实例只接收一个含单标签页的临时层级；close 会永久耗尽该实例的容量，因此稳定身份与修订号零不会标识第二个生命周期。每个 Provider generation 都有独立 owner token，用于其权威 state reader 与同步 invariant validator。invariant 在首次加载与热重载时从当前 state 建立基线，随后在赋值前验证稳定身份、精确修订顺序与终态关闭；拒绝后原 state 仍是权威来源。Provider 只识别配置的页面，返回确定性观察与 PNG 数据，并通过受容纳的提交后 fan-out 向普通 observer 发布每个已提交状态。释放阶段停止接收新操作、排空操作队列，并关闭仍打开的临时 Profile。配置负责身份前缀、fixture 页面与截图数据；截图必须是含 PNG signature 的非空 canonical base64，无效或有歧义的配置会在加载时失败。
+`dsh-browser-runtime-deterministic` 是首个 Provider。它接收临时与命名持久 Profile，每个 Profile 只有一个标签页。close 丢弃临时身份，并在 Provider 释放前保留命名 persist 映射。每个 Provider generation 都有独立 owner token，用于其权威 state reader 与同步 invariant validator。invariant 在首次加载与热重载时从当前 state 建立基线，随后在赋值前按 target 验证身份、精确修订顺序与终态关闭；拒绝后原 state 仍是权威来源。Provider 只识别配置的页面，返回确定性观察与 PNG 数据，并通过受容纳的提交后 fan-out 向普通 observer 发布每个已提交状态。释放阶段停止接收新操作、排空操作队列、关闭每个仍打开的 Profile，并丢弃 persist 记忆。配置负责身份前缀、fixture 页面与截图数据；截图必须是含 PNG signature 的非空 canonical base64，无效或有歧义的配置会在加载时失败。
 
 `dsh-tool-browser` 是面向模型的 Consumer。六个普通工具定义使用 `deferLoading: true`。`tool_search` 通过现有延迟发现路径返回精确 schema，但不激活工具；当前 eligibility 继续控制发现与执行。每个结果都把模型可见的身份、修订号、页面、截图、焦点与关闭事实渲染到普通持久 `tool/result` 中。请求头已经记录组装后的工具 schema，因此 Session 日志无需新增 Session 事件即可重建已发现 schema 与 Browser 事实。Consumer 不提供展示方法，让 Host 客户端继续使用通用工具卡路径。
 
@@ -30,4 +30,4 @@
 
 ## 结果
 
-仓库具备完整 Browser Runtime 能力 seam，其接口、确定性 Provider 与模型 Consumer 可以独立演进。Session 重放能够重建模型获得的事实，并发写操作有明确冲突结果，终态身份不能复活，且提交后 observer failure 不能改变操作结果。确定性 Provider 是 tracer 而非生产浏览器：持久 cookie/storage 隔离、多 Workspace 与标签页、原生 Electron 控制、Browser Dock UI、catalog policy 与迁移/发布工作仍属于独立功能。
+仓库具备完整 Browser Runtime 能力 seam，其接口、确定性 Provider 与模型 Consumer 可以独立演进。Session 重放能够重建模型获得的事实，并发写操作有明确冲突结果，终态身份不能复活，且提交后 observer failure 不能改变操作结果。确定性 Provider 是无密钥存储而非生产浏览器。命名持久 Browser Profile 通过该 seam 复用隔离 partition；多 Workspace 与标签页、原生 Electron 控制、Browser Dock UI、catalog policy 与迁移/发布工作仍属于独立功能。见[持久 Browser Profile Agent Note](2026-08-19-persistent-browser-profiles.md)。

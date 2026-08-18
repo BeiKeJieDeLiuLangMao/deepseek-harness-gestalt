@@ -2,11 +2,11 @@
 
 [English](README.md) | 中文
 
-这是与 Provider 无关的浏览器控制 Service Definition。`ctx.browserRuntime` 创建一个临时 Profile 层级，并以带品牌类型的 `BrowserProfileId`、`BrowserWorkspaceId`、`BrowserInstanceId` 与 `BrowserTabId` 标识每次操作。
+这是与 Provider 无关的浏览器控制 Service Definition。`ctx.browserRuntime` 创建一个临时或命名持久 Browser Profile 层级，并以带品牌类型的 `BrowserProfileId`、`BrowserWorkspaceId`、`BrowserInstanceId` 与 `BrowserTabId` 标识每次操作。
 
 ## 服务 API
 
-`create` 返回修订号为 `0` 的初始打开状态。`navigate`、`focus` 与 `close` 要求调用方提供最后观察到的 `expectedRevision`；Provider 串行执行操作，并用 `BROWSER_REVISION_CONFLICT` 拒绝过期写入。`observe` 与 `screenshot` 只读。`close` 返回保留全部四个不透明身份的终态回执。Service Definition 为每个方法记录其适用的稳定 `BrowserRuntimeError` code。
+`create` 返回修订号为 `0` 的初始打开状态。临时请求在关闭后丢弃身份。持久请求命名一个 Browser Profile，并在之后恢复同一 `persist:session-*` partition。`navigate`、`focus` 与 `close` 要求调用方提供最后观察到的 `expectedRevision`；Provider 串行执行操作，并用 `BROWSER_REVISION_CONFLICT` 拒绝过期写入。同一命名 Profile 的第二个打开写入方会以 `BROWSER_PROFILE_BUSY` 拒绝。`observe` 与 `screenshot` 只读。`close` 返回保留全部四个不透明身份的终态回执。打开状态携带地址栏 `chrome` 与 partition 存储的 `storage`；临时 chrome 不带标签。Service Definition 为每个方法记录其适用的稳定 `BrowserRuntimeError` code。
 
 `BrowserRuntimeState` 携带打开、`unavailable` 与关闭三种状态。`unavailable` 状态是对既有 target 的 Provider 可用性丢失的真实投影：它保留 target 与最后修订号，说明原因（`crashed`、`unhealthy` 或 `reconnect-failed`），并标记进行中的重连；它不是终态关闭回执。针对不可用 target 的操作会以 `BROWSER_RUNTIME_UNAVAILABLE` 拒绝；无法解释其后端响应的 Provider 会以 `BROWSER_PROTOCOL` 拒绝。
 
@@ -22,4 +22,4 @@ Provider 在 `browser/runtime-state` 上发布已提交状态。该通知不可�
 
 ## 已知限制与后续工作
 
-- Service Definition 目前只表达临时单标签页 tracer；持久隔离、多 Workspace 与标签页，以及真实 Electron 后端属于后续能力 Provider。
+- Service Definition 表达一个标签页上的临时与命名持久 Profile；多 Workspace 与标签页、人工接管以及 Dock chrome 仍属于后续工作。

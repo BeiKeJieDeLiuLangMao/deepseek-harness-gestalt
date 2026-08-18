@@ -802,16 +802,21 @@ describe('headless stream-json snapshots', () => {
           return JSON.parse(text) as JsonObject
         })
         expect(browserValues.map(value => value.revision)).toEqual([0, 1, 1, 1, 2, 3])
+        expect(browserValues[0]).toMatchObject({
+          chrome: { kind: 'temporary', partition: 'persist:session-trace-tmp-1' },
+        })
+        expect(browserValues[0]).not.toHaveProperty('chrome.name')
         expect(browserValues[1]).toMatchObject({
           url: 'https://example.test/',
           title: 'Example Domain',
           text: 'A deterministic browser page.',
+          chrome: { kind: 'temporary' },
         })
         expect(browserValues[3]).toMatchObject({ mediaType: 'image/png' })
         expect(browserValues[4]).toMatchObject({ focused: true })
         expect(browserValues[5]).toMatchObject({ status: 'closed' })
         const renderedFacts = JSON.stringify(browserValues)
-        for (const identity of ['trace-profile', 'trace-workspace', 'trace-browser', 'trace-tab']) {
+        for (const identity of ['trace-tmp-1', 'trace-tmp-1-workspace', 'trace-tmp-1-browser', 'trace-tmp-1-tab-1']) {
           expect(renderedFacts).toContain(identity)
         }
 
@@ -927,16 +932,20 @@ describe('headless stream-json snapshots', () => {
           return JSON.parse(text) as JsonObject
         })
         expect(browserValues.map(value => value.revision)).toEqual([0, 1, 1, 1, 2, 3])
+        expect(browserValues[0]).toMatchObject({
+          chrome: { kind: 'temporary', partition: 'persist:session-tandem-tmp-1' },
+        })
         expect(browserValues[1]).toMatchObject({
           url: 'https://example.test/',
           title: 'Example Domain',
           text: 'A real Tandem protocol page.',
+          chrome: { kind: 'temporary' },
         })
         expect(browserValues[3]).toMatchObject({ mediaType: 'image/png' })
         expect(browserValues[4]).toMatchObject({ focused: true })
         expect(browserValues[5]).toMatchObject({ status: 'closed' })
         const renderedFacts = JSON.stringify(browserValues)
-        for (const identity of ['tandem-profile', 'tandem-workspace', 'tandem-browser', 'tandem-tab']) {
+        for (const identity of ['tandem-tmp-1', 'tandem-tmp-1-workspace', 'tandem-tmp-1-browser', 'tandem-tmp-1-tab-1']) {
           expect(renderedFacts).toContain(identity)
         }
 

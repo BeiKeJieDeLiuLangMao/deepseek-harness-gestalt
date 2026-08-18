@@ -3,6 +3,11 @@
   "entries": [
     {
       "doc": "docs/subsystems/browser-runtime.md",
+      "symbol": "BrowserProfileChrome",
+      "source": "packages/browser/browser-runtime/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/browser-runtime.md",
       "symbol": "BrowserUnavailableState",
       "source": "packages/browser/browser-runtime/src/types.ts"
     },
