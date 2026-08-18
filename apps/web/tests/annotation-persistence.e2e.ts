@@ -100,6 +100,19 @@ describe('web e2e: annotation drafts persist per session and recover after reloa
     await expect(summary.isVisible()).resolves.toBe(true)
     expect(await page.evaluate(() => CSS.highlights?.has('annotation-draft-mark') ?? false)).toBe(true)
 
+    // Explicit discard removes the complete draft and every Draft Mark at
+    // once; the question text stays, and the draft can be rebuilt afterwards.
+    await page.getByRole('button', { name: 'Discard annotation draft' }).click()
+    await expect(page.getByRole('button', { name: '1 annotation' }).count()).resolves.toBe(0)
+    expect(await page.evaluate(() => CSS.highlights?.has('annotation-draft-mark') ?? false)).toBe(false)
+    await expect(composer.inputValue()).resolves.toBe(QUESTION)
+    await selectPhrase()
+    await toolbar.getByRole('button', { name: 'Add annotation' }).click()
+    await editor.fill('Keep the emphasis')
+    await page.getByRole('button', { name: 'Save annotation' }).click()
+    await expect(summary.isVisible()).resolves.toBe(true)
+    expect(await page.evaluate(() => CSS.highlights?.has('annotation-draft-mark') ?? false)).toBe(true)
+
     // A forked sibling session owns an empty composer: no cross-session draft.
     const parentRowText = await page.locator('[role="treeitem"][aria-selected="true"]').textContent()
     if (parentRowText === null) throw new Error('expected the source session row')

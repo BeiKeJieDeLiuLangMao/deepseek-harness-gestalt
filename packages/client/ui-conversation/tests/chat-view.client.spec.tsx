@@ -281,7 +281,7 @@ function makeHarness(init?: Partial<ConversationSnapshot>) {
       pruneImages: () => {},
       addTextAnnotation: () => { throw new Error('unused') },
       updateTextAnnotation: () => {},
-      removeTextAnnotation: () => {},
+      removeTextAnnotation: () => {}, discardTextAnnotations: () => {},
       submit: () => {},
     },
     useStore: bindSnapshotSelector(chat),

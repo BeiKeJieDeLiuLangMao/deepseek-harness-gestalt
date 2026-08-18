@@ -65,7 +65,9 @@ describe('annotation draft persistence', () => {
     expect(restoredIds).not.toContain(minted)
   })
 
-  it('clears the persisted draft with the admitted annotations only', () => {
+  // Admission clearing rides the same publish→mirror path (empty draft ⇒
+  // null); the assembled admission flow is owned by annotation-persistence.e2e.ts.
+  it('clears the persisted draft when the last annotation is deleted', () => {
     localStorage.clear()
     const store = createChatStore().create('sess-2')
     const shell = makeShell()
@@ -75,6 +77,53 @@ describe('annotation draft persistence', () => {
     expect(store.store.getSnapshot().annotationDraft).not.toBeNull()
     shell.actions.removeTextAnnotation(shell.snapshot.annotations[0]!.id)
     expect(store.store.getSnapshot().annotationDraft).toBeNull()
+  })
+
+  it('discards the complete draft in one action: annotations, persisted value, and every Draft Mark', () => {
+    localStorage.clear()
+    class FakeHighlight {
+      readonly ranges: readonly Range[]
+      constructor(...ranges: Range[]) { this.ranges = ranges }
+    }
+    const set = vi.fn()
+    const deleteMark = vi.fn()
+    vi.stubGlobal('CSS', { highlights: { set, delete: deleteMark } })
+    vi.stubGlobal('Highlight', FakeHighlight)
+    const store = createChatStore().create('sess-discard')
+    const shell = makeShell()
+    shell.bindAnnotationMirror((value) => { store.actions.setAnnotationDraft(value) })
+    const first = createTextAnchor('message-1:0', 'Alpha bold omega', 'Alpha', 0)
+    const second = createTextAnchor('message-1:0', 'Alpha bold omega', 'omega', 11)
+    shell.actions.addTextAnnotation(first, 'one')
+    shell.actions.addTextAnnotation(second, 'two')
+    expect(store.store.getSnapshot().annotationDraft?.annotations).toHaveLength(2)
+
+    const props = {
+      blocks: [{ kind: 'text' as const, text: 'Alpha **bold** omega' }],
+      streaming: false,
+      t: makeTranslate(zh, commonZh),
+      sourceId: 'message-1',
+      annotationActions: { addTextAnnotation: () => TextAnnotationId('unused') },
+    }
+    const view = render(
+      <AssistantMarkdown
+        {...props}
+        annotations={shell.snapshot.annotations}
+      />,
+    )
+    const mark = set.mock.lastCall?.[1] as FakeHighlight
+    expect(mark.ranges).toHaveLength(2)
+
+    shell.actions.discardTextAnnotations()
+    expect(shell.snapshot.annotations).toEqual([])
+    expect(store.store.getSnapshot().annotationDraft).toBeNull()
+    view.rerender(
+      <AssistantMarkdown
+        {...props}
+        annotations={shell.snapshot.annotations}
+      />,
+    )
+    expect(deleteMark).toHaveBeenLastCalledWith('annotation-draft-mark')
   })
 
   it('ignores a malformed persisted value instead of adopting garbage', () => {

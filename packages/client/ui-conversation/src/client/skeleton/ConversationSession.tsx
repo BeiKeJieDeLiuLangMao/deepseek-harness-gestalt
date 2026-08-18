@@ -155,10 +155,10 @@ export function ConversationSession({
   useEffect(() => {
     if (inputState.draft === '' && storedDraft !== '') inputActions.setDraft(storedDraft)
     if (inputState.annotations.length === 0 && storedAnnotations !== null) {
-      restoreAnnotationDraft?.(storedAnnotations)
+      restoreAnnotationDraft(storedAnnotations)
     }
     const unmirror = bindDraftMirror(actions.setDraft)
-    const unannotate = bindAnnotationMirror?.(actions.setAnnotationDraft) ?? ((): (() => void) => () => {})
+    const unannotate = bindAnnotationMirror(actions.setAnnotationDraft)
     return () => {
       unmirror()
       unannotate()

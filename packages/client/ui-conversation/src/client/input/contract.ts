@@ -86,6 +86,8 @@ export interface InputActions {
   updateTextAnnotation(id: TextAnnotationId, note: string): void
   /** Remove one unsent text annotation. */
   removeTextAnnotation(id: TextAnnotationId): void
+  /** Discard the complete unsent text annotation draft and every Draft Mark at once. */
+  discardTextAnnotations(): void
   /** Enter submission (adjudication / claim transaction / default sink inside). */
   submit(): void
 }

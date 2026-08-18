@@ -148,6 +148,21 @@
   line-height: 18px;
 }
 
+.annotationDiscard {
+  height: 30px;
+  margin-left: 4px;
+  padding: 0 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.annotationDiscard:hover:enabled { background: var(--dsw-alias-interactive-bg-hover-danger); }
+.annotationDiscard:disabled { opacity: 0.5; }
+
 .annotationSummaryDetails {
   position: absolute;
   z-index: 20;

@@ -119,6 +119,7 @@ export class SessionInputShell implements SessionInput {
     addTextAnnotation: (anchor, note) => this.addTextAnnotation(anchor, note),
     updateTextAnnotation: (id, note) => { this.updateTextAnnotation(id, note) },
     removeTextAnnotation: (id) => { this.removeTextAnnotation(id) },
+    discardTextAnnotations: () => { this.discardTextAnnotations() },
     submit: () => { this.submit('queue') },
   }
 
@@ -222,6 +223,17 @@ export class SessionInputShell implements SessionInput {
     const next = this.annotations.filter(item => item.id !== id)
     if (next.length === this.annotations.length) return
     this.annotations = next
+    this.publish()
+  }
+
+  /**
+   * Discard the complete Annotation Draft — every annotation and Draft Mark —
+   * in one action; the persisted draft mirrors out as null. Refused while a
+   * submission holds a reservation.
+   */
+  discardTextAnnotations(): void {
+    if (this.annotationSubmission !== undefined || this.annotations.length === 0) return
+    this.annotations = []
     this.publish()
   }
 

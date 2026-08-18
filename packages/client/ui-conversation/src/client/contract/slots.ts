@@ -436,17 +436,10 @@ export interface ConversationSessionInjected {
   releaseSessionImages: (sessionId: SessionId) => void
   /** Bind the input machine's draft persistence mirror to the session store. */
   bindDraftMirror: (write: (text: string) => void) => () => void
-  /**
-   * Bind the Annotation Draft persistence mirror to the session store.
-   * Optional: presentation-only harnesses mount the body without persistence.
-   */
-  bindAnnotationMirror?: (write: (draft: ChatStoreState['annotationDraft']) => void) => () => void
-  /**
-   * Seed the shell from a rehydrated Annotation Draft (remount/reload path).
-   * Optional for the same presentation-only-harness reason as
-   * {@link ConversationSessionInjected.bindAnnotationMirror}.
-   */
-  restoreAnnotationDraft?: (draft: ChatStoreState['annotationDraft']) => void
+  /** Bind the Annotation Draft persistence mirror to the session store. */
+  bindAnnotationMirror: (write: (draft: ChatStoreState['annotationDraft']) => void) => () => void
+  /** Seed the shell from a rehydrated Annotation Draft (remount/reload path). */
+  restoreAnnotationDraft: (draft: ChatStoreState['annotationDraft']) => void
 }
 
 /** Business callbacks injected into the strict session header seat. */
