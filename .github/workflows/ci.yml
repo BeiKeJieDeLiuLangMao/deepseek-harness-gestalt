@@ -671,6 +671,8 @@ jobs:
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: Enable Developer Mode (symlink support)
         shell: pwsh
@@ -857,6 +859,8 @@ jobs:
             workers: '2'
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - uses: pnpm/action-setup@v4
         with:

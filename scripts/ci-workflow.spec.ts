@@ -179,12 +179,15 @@ describe('CI workflow', () => {
     expect(resolveSupportedLinuxSetupRoute('selfhosted', 'dependabot[bot]', 'owner/repository')).toBe('hosted')
   })
 
-  it('fetches complete history in pull-request jobs that run release-note verification', () => {
+  it('fetches complete history in every live or manual job that runs release-note verification', () => {
     const workflow = loadWorkflow('.github/workflows/ci.yml')
 
     for (const [jobName, command] of [
       ['node-24-coverage', 'pnpm run check:ci:coverage'],
       ['windows-native', 'pnpm run check:ci:windows-complete'],
+      ['serial-linux-selfhosted', 'pnpm run check:ci:linux-primary'],
+      ['serial-windows', 'pnpm run check:ci:windows-complete'],
+      ['consolidated-runner-benchmark', 'pnpm run check:ci'],
     ] as const) {
       const job = workflowJob(workflow, jobName)
       if (!Array.isArray(job.steps)) throw new TypeError(`${jobName} must define steps`)
@@ -198,6 +201,10 @@ describe('CI workflow', () => {
         throw new TypeError(`${jobName} must define an actions/checkout step with inputs`)
       }
       expect(checkout.with['fetch-depth']).toBe(0)
+    }
+
+    for (const jobName of ['serial-linux', 'serial-macos']) {
+      expect(workflowJob(workflow, jobName).if).toBe(false)
     }
   })
 
