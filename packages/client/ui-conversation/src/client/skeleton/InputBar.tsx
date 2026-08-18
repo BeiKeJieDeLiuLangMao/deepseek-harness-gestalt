@@ -34,6 +34,8 @@ import { PermissionSelect } from './PermissionSelect.tsx'
 import { isSafariBrowser, repairSafariTextareaLayout } from './safari.ts'
 import css from './InputBar.module.css'
 import { AnnotationEditor } from '../annotation/AnnotationEditor.tsx'
+import { isAnimatedGif } from '../annotation/model.ts'
+import type { ImagePinAnnotation } from '../annotation/model.ts'
 
 /** Decoration product of the no-session state (no machine, empty draft). */
 const INERT_DECORATIONS: DraftDecorations = { token: null, chips: [], textRefs: [], hint: null }
@@ -76,8 +78,13 @@ export function InputBar({
     [draftImages, input?.imageIds],
   )
   const annotations = input?.annotations ?? []
+  const editingPin = annotations.find((item): item is ImagePinAnnotation => (
+    item.kind === 'image-pin' && item.id === editingAnnotation
+  ))
   const empty = draft.trim() === '' && attachments.length === 0 && annotations.length === 0
   const [editingAnnotation, setEditingAnnotation] = useState<string | null>(null)
+  const [pinMode, setPinMode] = useState(false)
+  const [gifRefuse, setGifRefuse] = useState(false)
   const [preview, setPreview] = useState<ComposerAttachment | null>(null)
   const [dragActive, setDragActive] = useState(false)
   // Transient error banner (image-intake rejections and prompt failures): the
@@ -538,7 +545,11 @@ export function InputBar({
     }
   }, [canAcceptDrop, intakeImages])
 
-  const closePreview = useCallback(() => { setPreview(null) }, [])
+  const closePreview = useCallback(() => {
+    setPreview(null)
+    setPinMode(false)
+    setGifRefuse(false)
+  }, [])
 
   // Rail thumbnails with their strings resolved here: the attachment atoms are
   // zero-cordis and read no locale.
@@ -743,25 +754,33 @@ export function InputBar({
               aria-label={t(annotationSummaryKey, { count: annotations.length })}
               className={css.annotationSummaryDetails}
             >
-              {annotations.map((annotation, index) => (
-                <div className={css.annotationSummaryItem} key={annotation.id}>
-                  <button
-                    type="button"
-                    disabled={annotationBusy}
-                    onClick={() => { setEditingAnnotation(annotation.id) }}
-                    aria-label={t('annotation.item', { index: index + 1, quote: annotation.anchor.quote })}
-                  >
-                    <strong>{index + 1}. {annotation.anchor.quote}</strong>
-                    <small>{annotation.note}</small>
-                  </button>
-                  <button
-                    type="button"
-                    disabled={annotationBusy}
-                    aria-label={t('annotation.delete')}
-                    onClick={() => { inputActions.removeTextAnnotation(annotation.id) }}
-                  >×</button>
-                </div>
-              ))}
+              {annotations.map((annotation, index) => {
+                const label = annotation.kind === 'text'
+                  ? annotation.anchor.quote
+                  : `${annotation.imageName} (${annotation.x.toFixed(1)}%, ${annotation.y.toFixed(1)}%)`
+                return (
+                  <div className={css.annotationSummaryItem} key={annotation.id}>
+                    <button
+                      type="button"
+                      disabled={annotationBusy}
+                      onClick={() => { setEditingAnnotation(annotation.id) }}
+                      aria-label={t('annotation.item', { index: index + 1, quote: label })}
+                    >
+                      <strong>{index + 1}. {label}</strong>
+                      <small>{annotation.note}</small>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={annotationBusy}
+                      aria-label={t('annotation.delete')}
+                      onClick={() => {
+                        if (annotation.kind === 'image-pin') inputActions.removeImagePin(annotation.id)
+                        else inputActions.removeTextAnnotation(annotation.id)
+                      }}
+                    >×</button>
+                  </div>
+                )
+              })}
             </div>
             {editingAnnotation !== null && (() => {
               const annotation = annotations.find(item => item.id === editingAnnotation)
@@ -896,6 +915,52 @@ export function InputBar({
           alt={preview.file.name || t('image.original')}
           labels={lightboxLabels(t)}
           onClose={closePreview}
+          {...(inputActions === undefined ? {} : { annotation: {
+            mode: pinMode,
+            pins: annotations.flatMap((item, index) => (
+              item.kind === 'image-pin' && item.imageId === preview.id
+                ? [{ id: item.id, x: item.x, y: item.y, index: index + 1 }]
+                : []
+            )),
+            modeLabel: t('annotation.pinMode'),
+            exitLabel: t('annotation.pinModeExit'),
+            ...(gifRefuse ? { refuse: t('annotation.gifRefuse') } : {}),
+            onToggleMode: () => {
+              if (pinMode) {
+                setPinMode(false)
+                return
+              }
+              void preview.file.arrayBuffer().then((buffer) => {
+                if (isAnimatedGif(new Uint8Array(buffer))) {
+                  setGifRefuse(true)
+                  return
+                }
+                setGifRefuse(false)
+                setPinMode(true)
+              })
+            },
+            onPlace: (x, y) => {
+              const id = inputActions.addImagePin(
+                preview.id, preview.file.name || t('image.original'), x, y, '',
+              )
+              setEditingAnnotation(id)
+            },
+            onSelect: (id) => {
+              setPinMode(true)
+              setEditingAnnotation(id)
+            },
+          } })}
+        />
+      )}
+      {editingPin !== undefined && editingPin !== null && inputActions !== undefined && (
+        <AnnotationEditor
+          initialNote={editingPin.note}
+          placeholder={t('annotation.notePlaceholder')}
+          saveLabel={t('annotation.save')}
+          onSave={(note) => {
+            inputActions.updateImagePin(editingPin.id, { note })
+            setEditingAnnotation(null)
+          }}
         />
       )}
       {footer}

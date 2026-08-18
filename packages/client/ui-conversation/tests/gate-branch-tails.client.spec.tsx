@@ -133,7 +133,7 @@ describe('render branch tails', () => {
           pruneImages: () => {},
           addTextAnnotation: () => { throw new Error('unused') },
           updateTextAnnotation: () => {},
-          removeTextAnnotation: () => {}, discardTextAnnotations: () => {},
+          removeTextAnnotation: () => {}, discardTextAnnotations: () => {}, addImagePin: () => 'pin' as never, updateImagePin: () => {}, removeImagePin: () => {},
           submit: () => {},
         }}
         useStore={bindSnapshotSelector(chat)}
@@ -193,7 +193,7 @@ describe('render branch tails', () => {
           pruneImages: () => {},
           addTextAnnotation: () => { throw new Error('unused') },
           updateTextAnnotation: () => {},
-          removeTextAnnotation: () => {}, discardTextAnnotations: () => {},
+          removeTextAnnotation: () => {}, discardTextAnnotations: () => {}, addImagePin: () => 'pin' as never, updateImagePin: () => {}, removeImagePin: () => {},
           submit: () => {},
         }}
         useStore={bindSnapshotSelector(chat)}

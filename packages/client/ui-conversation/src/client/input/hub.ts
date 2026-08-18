@@ -87,6 +87,9 @@ export class InputHub implements SessionInputResolver {
         heading: index => this.t('annotation.compiled.heading', { index }),
         quote: value => this.t('annotation.compiled.quote', { value }),
         note: value => this.t('annotation.compiled.note', { value }),
+        image: (name, x, y) => this.t('annotation.compiled.image', {
+          name, x: x.toFixed(1), y: y.toFixed(1),
+        }),
       },
       steerQueue: () => { void this.steerQueue(session, shell) },
     })

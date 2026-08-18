@@ -13,7 +13,7 @@ import type {
 } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import type { QueueRow } from '../contract/queue.ts'
 import type { InputSubmitMode } from '../contract/composer-submission.ts'
-import type { TextAnchor, TextAnnotation, TextAnnotationId } from '../annotation/model.ts'
+import type { DraftAnnotation, TextAnchor, TextAnnotationId } from '../annotation/model.ts'
 
 /** Browser-runtime identity of one unsent image draft. */
 export type DraftAttachmentId = Branded<'DraftAttachmentId'>
@@ -88,6 +88,12 @@ export interface InputActions {
   removeTextAnnotation(id: TextAnnotationId): void
   /** Discard the complete unsent text annotation draft and every Draft Mark at once. */
   discardTextAnnotations(): void
+  /** Append one image pin in the shared creation order. */
+  addImagePin(imageId: DraftAttachmentId, imageName: string, x: number, y: number, note: string): TextAnnotationId
+  /** Replace one image pin's note or position without changing identity or order. */
+  updateImagePin(id: TextAnnotationId, patch: { note?: string; x?: number; y?: number }): void
+  /** Remove one unsent image pin. */
+  removeImagePin(id: TextAnnotationId): void
   /** Enter submission (adjudication / claim transaction / default sink inside). */
   submit(): void
 }
@@ -220,7 +226,7 @@ export interface InputState {
   /** Ordered runtime-only image ids; bytes and URLs stay in ConversationController. */
   readonly imageIds: readonly DraftAttachmentId[]
   /** Ordered Composer-owned annotations; absent from the Session log. */
-  readonly annotations: readonly TextAnnotation[]
+  readonly annotations: readonly DraftAnnotation[]
   /** True while one exact annotation snapshot awaits Host admission settlement. */
   readonly annotationSubmitting: boolean
   /** Monotonic draft revision (span CAS compares against this). */

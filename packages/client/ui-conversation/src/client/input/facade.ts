@@ -18,7 +18,9 @@ import type {
 } from './contract.ts'
 import type { InputSubmitMode } from '../contract/composer-submission.ts'
 import { InputMachine } from './machine.ts'
-import type { AnnotationCompilerLabels, PersistedAnnotationDraft, TextAnchor, TextAnnotation, TextAnnotationId } from '../annotation/model.ts'
+import type {
+  AnnotationCompilerLabels, DraftAnnotation, PersistedAnnotationDraft, TextAnchor, TextAnnotationId,
+} from '../annotation/model.ts'
 import { compileAnnotationSubmission, TextAnnotationId as createTextAnnotationId } from '../annotation/model.ts'
 
 /** One exact annotation snapshot whose object identity owns its settlement. */
@@ -85,16 +87,23 @@ function isPersistedAnnotationDraft(value: unknown): value is PersistedAnnotatio
   if (typeof value !== 'object' || value === null) return false
   const candidate = value as { annotations?: unknown; nextSeq?: unknown }
   if (!Array.isArray(candidate.annotations) || typeof candidate.nextSeq !== 'number') return false
-  return candidate.annotations.every((item): item is TextAnnotation => {
+  return candidate.annotations.every((item): item is DraftAnnotation => {
     if (typeof item !== 'object' || item === null) return false
     const annotation = item as Record<string, unknown>
-    return typeof annotation.id === 'string' && annotation.kind === 'text'
-      && typeof annotation.note === 'string'
-      && typeof annotation.anchor === 'object' && annotation.anchor !== null
-      && typeof (annotation.anchor as Record<string, unknown>).sourceId === 'string'
-      && typeof (annotation.anchor as Record<string, unknown>).quote === 'string'
-      && typeof (annotation.anchor as Record<string, unknown>).prefix === 'string'
-      && typeof (annotation.anchor as Record<string, unknown>).suffix === 'string'
+    if (typeof annotation.id !== 'string' || typeof annotation.note !== 'string') return false
+    if (annotation.kind === 'text') {
+      return typeof annotation.anchor === 'object' && annotation.anchor !== null
+        && typeof (annotation.anchor as Record<string, unknown>).sourceId === 'string'
+        && typeof (annotation.anchor as Record<string, unknown>).quote === 'string'
+        && typeof (annotation.anchor as Record<string, unknown>).prefix === 'string'
+        && typeof (annotation.anchor as Record<string, unknown>).suffix === 'string'
+    }
+    if (annotation.kind === 'image-pin') {
+      return typeof annotation.imageId === 'string' && typeof annotation.imageName === 'string'
+        && typeof annotation.x === 'number' && typeof annotation.y === 'number'
+        && annotation.x >= 0 && annotation.x <= 100 && annotation.y >= 0 && annotation.y <= 100
+    }
+    return false
   })
 }
 
@@ -120,6 +129,9 @@ export class SessionInputShell implements SessionInput {
     updateTextAnnotation: (id, note) => { this.updateTextAnnotation(id, note) },
     removeTextAnnotation: (id) => { this.removeTextAnnotation(id) },
     discardTextAnnotations: () => { this.discardTextAnnotations() },
+    addImagePin: (imageId, imageName, x, y, note) => this.addImagePin(imageId, imageName, x, y, note),
+    updateImagePin: (id, patch) => { this.updateImagePin(id, patch) },
+    removeImagePin: (id) => { this.removeImagePin(id) },
     submit: () => { this.submit('queue') },
   }
 
@@ -129,7 +141,7 @@ export class SessionInputShell implements SessionInput {
   private noticeSeq = 0
   private lastDraft = ''
   private imageIds: readonly DraftAttachmentId[] = []
-  private annotations: readonly TextAnnotation[] = []
+  private annotations: readonly DraftAnnotation[] = []
   private annotationSubmission: AnnotationSubmissionReservation | undefined
   private annotationSeq = 0
   private disposed = false
@@ -137,7 +149,7 @@ export class SessionInputShell implements SessionInput {
   private mirrorFn: ((text: string) => void) | undefined
   /** Annotation Draft persistence mirror (chat store write; null = no draft). */
   private annotationMirrorFn: ((draft: PersistedAnnotationDraft | null) => void) | undefined
-  private lastAnnotations: readonly TextAnnotation[] = []
+  private lastAnnotations: readonly DraftAnnotation[] = []
   private lastAnnotationSeq = 0
 
   constructor(private readonly deps: SessionInputDeps) {
@@ -172,6 +184,7 @@ export class SessionInputShell implements SessionInput {
     const next = this.imageIds.filter(candidate => candidate !== id)
     if (next.length === this.imageIds.length) return
     this.imageIds = next
+    this.annotations = this.annotations.filter(item => item.kind !== 'image-pin' || item.imageId !== id)
     this.publish()
   }
 
@@ -235,6 +248,58 @@ export class SessionInputShell implements SessionInput {
     if (this.annotationSubmission !== undefined || this.annotations.length === 0) return
     this.annotations = []
     this.publish()
+  }
+
+  /**
+   * Add one image pin in the shared creation order.
+   * @param imageId - Staged Composer image id.
+   * @param imageName - Display name used in compiled prose.
+   * @param x - Displayed-raster X percent.
+   * @param y - Displayed-raster Y percent.
+   * @param note - Optional user-authored comment.
+   * @returns The stable draft identity.
+   */
+  addImagePin(
+    imageId: DraftAttachmentId,
+    imageName: string,
+    x: number,
+    y: number,
+    note: string,
+  ): TextAnnotationId {
+    this.annotationSeq += 1
+    const id = createTextAnnotationId(`annotation-${this.annotationSeq}`)
+    this.annotations = [...this.annotations, { id, kind: 'image-pin', imageId, imageName, x, y, note }]
+    this.publish()
+    return id
+  }
+
+  /**
+   * Edit one pin's note or position while preserving identity and order.
+   * @param id - Pin to edit.
+   * @param patch - Replacement fields.
+   */
+  updateImagePin(id: TextAnnotationId, patch: { note?: string; x?: number; y?: number }): void {
+    if (this.annotationSubmission !== undefined) return
+    const next = this.annotations.map((item) => {
+      if (item.id !== id || item.kind !== 'image-pin') return item
+      return {
+        ...item,
+        note: patch.note ?? item.note,
+        x: patch.x ?? item.x,
+        y: patch.y ?? item.y,
+      }
+    })
+    if (next.every((item, index) => item === this.annotations[index])) return
+    this.annotations = next
+    this.publish()
+  }
+
+  /**
+   * Delete one unsent image pin.
+   * @param id - Pin to remove.
+   */
+  removeImagePin(id: TextAnnotationId): void {
+    this.removeTextAnnotation(id)
   }
 
   /**
@@ -663,7 +728,7 @@ export class SessionInputShell implements SessionInput {
     }
   }
 
-  private compile(question: string, annotations: readonly TextAnnotation[]): string {
+  private compile(question: string, annotations: readonly DraftAnnotation[]): string {
     return compileAnnotationSubmission(question, annotations, this.deps.annotationLabels)
   }
 

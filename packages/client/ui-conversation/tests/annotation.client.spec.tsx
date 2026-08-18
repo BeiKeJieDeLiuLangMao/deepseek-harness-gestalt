@@ -41,6 +41,7 @@ const LABELS = {
   heading: (index: number) => `Annotation ${index}`,
   quote: (value: string) => `Quoted text: “${value}”`,
   note: (value: string) => `Note: ${value}`,
+  image: (name: string, x: number, y: number) => `Image “${name}” at ${x.toFixed(1)}%, ${y.toFixed(1)}%`,
 }
 
 describe('text annotation mechanics', () => {
@@ -67,6 +68,7 @@ describe('text annotation mechanics', () => {
       heading: n => `Annotation ${n}`,
       quote: value => `Quoted text: “${value}”`,
       note: value => `Note: ${value}`,
+      image: (name, x, y) => `Image “${name}” at ${x.toFixed(1)}%, ${y.toFixed(1)}%`,
     })
 
     expect(compiled).toBe('Please tighten this.\n\nAnnotation 1\nQuoted text: “exact passage”')

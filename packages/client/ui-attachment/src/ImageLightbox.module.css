@@ -17,14 +17,59 @@
   backdrop-filter: var(--dsw-mask-blur);
 }
 
+.stage {
+  position: relative;
+  display: inline-grid;
+}
+
 .image {
   position: relative;
   max-width: min(100%, 1600px);
   max-height: calc(100vh - 80px);
   object-fit: contain;
+  image-orientation: from-image;
   border-radius: 12px;
   background: var(--dsw-specific-input-major);
   box-shadow: var(--dsw-shadow-lv3);
+}
+
+.pin {
+  position: absolute;
+  z-index: 1;
+  width: 22px;
+  height: 22px;
+  margin: -11px 0 0 -11px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--dsw-alias-interactive-bg-brand);
+  color: var(--dsw-alias-label-on-color);
+  font-size: 11px;
+}
+
+.annotate {
+  position: fixed;
+  top: 20px;
+  left: 20px;
+  z-index: 1;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--dsw-alias-border-l2-darkmode-thin);
+  border-radius: 999px;
+  background: var(--dsw-specific-input-major);
+  color: var(--dsw-alias-label-primary);
+}
+
+.refuse {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  z-index: 1;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--dsw-specific-input-major);
+  color: var(--dsw-alias-label-primary);
 }
 
 .close {

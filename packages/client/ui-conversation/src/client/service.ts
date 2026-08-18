@@ -19,6 +19,7 @@ import type { QueueAction, QueueItemId } from './contract/queue.ts'
 import type { ComposerBlocks } from './input/blocks.ts'
 import type { DraftAttachmentId, SessionInputResolver } from './input/contract.ts'
 import type { InputSubmitMode } from './contract/composer-submission.ts'
+import { deleteStagedImage, getStagedImage, putStagedImage, stagedImageKey } from './annotation/staged-images.ts'
 
 /**
  * The outward conversation face (`ctx.conversation`): the scope-addressed
@@ -59,10 +60,10 @@ export interface IConversation {
 }
 
 /** Create one browser-only draft descriptor; only its id enters input state. */
-function browserDraftAttachment(file: File): ComposerAttachment {
+function browserDraftAttachment(file: File, id = crypto.randomUUID() as DraftAttachmentId): ComposerAttachment {
   return {
     kind: 'image',
-    id: crypto.randomUUID() as DraftAttachmentId,
+    id,
     previewUrl: URL.createObjectURL(file),
     file,
   }
@@ -166,14 +167,50 @@ export class ConversationController extends Service implements IConversation {
    * @param files - browser files to register after MIME validation.
    * @returns ordered draft descriptors.
    */
-  createDraftImages(files: readonly File[]): readonly ComposerAttachment[] {
+  createDraftImages(files: readonly File[], sessionId?: SessionId): readonly ComposerAttachment[] {
     for (const file of files) imageMediaType(file.type)
     return files.map((file) => {
       const attachment = browserDraftAttachment(file)
       this.draftAttachments.set(attachment.id, attachment)
       this.createdImageUrls.add(attachment.previewUrl)
+      if (sessionId !== undefined) {
+        void file.arrayBuffer().then(bytes => putStagedImage({
+          key: stagedImageKey(sessionId, attachment.id),
+          name: file.name,
+          type: file.type,
+          bytes,
+        }))
+      }
       return attachment
     })
+  }
+
+  /**
+   * Rehydrate staged images required by an unsent Annotation Draft after reload.
+   * @param sessionId - Session owner.
+   * @param imageIds - Draft attachment ids referenced by image pins.
+   * @returns Restored descriptors that were found in IndexedDB.
+   */
+  async restoreStagedImages(
+    sessionId: SessionId,
+    imageIds: readonly DraftAttachmentId[],
+  ): Promise<readonly ComposerAttachment[]> {
+    const restored: ComposerAttachment[] = []
+    for (const imageId of imageIds) {
+      if (this.draftAttachments.has(imageId)) {
+        const live = this.draftAttachments.get(imageId)
+        if (live !== undefined) restored.push(live)
+        continue
+      }
+      const record = await getStagedImage(stagedImageKey(sessionId, imageId))
+      if (record === undefined) continue
+      const file = new File([record.bytes], record.name, { type: record.type })
+      const attachment = browserDraftAttachment(file, imageId)
+      this.draftAttachments.set(attachment.id, attachment)
+      this.createdImageUrls.add(attachment.previewUrl)
+      restored.push(attachment)
+    }
+    return restored
   }
 
   /**
@@ -194,12 +231,13 @@ export class ConversationController extends Service implements IConversation {
    * Release one browser-owned draft image and preview URL.
    * @param id - draft attachment id.
    */
-  releaseDraftImage(id: DraftAttachmentId): void {
+  releaseDraftImage(id: DraftAttachmentId, sessionId?: SessionId): void {
     const attachment = this.draftAttachments.get(id)
     if (attachment === undefined) return
     this.draftAttachments.delete(id)
     this.createdImageUrls.delete(attachment.previewUrl)
     revokePreview(attachment.previewUrl)
+    if (sessionId !== undefined) void deleteStagedImage(stagedImageKey(sessionId, id))
   }
 
   /**
