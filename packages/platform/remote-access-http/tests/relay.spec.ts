@@ -157,18 +157,24 @@ describe('RelayWebSocketConsumer', () => {
     else socket.close()
   })
 
-  it('ignores an attach rejection that completes after the deadline already closed the socket', async () => {
-    let rejectAttach: ((error: Error) => void) | undefined
+  it('cancels and drains in-flight attach work when the deadline closes the socket', async () => {
+    let attachSignal: AbortSignal | undefined
     const relay = relayFixture(attachmentFixture())
-    relay.attach.mockImplementationOnce(async () => await new Promise<RemoteRelayAttachment>((_resolve, reject) => {
-      rejectAttach = reject
-    }))
+    relay.attach.mockImplementationOnce(async (input) => {
+      attachSignal = input.signal
+      await new Promise<void>((resolve) => {
+        if (input.signal?.aborted) resolve()
+        else input.signal?.addEventListener('abort', () => { resolve() }, { once: true })
+      })
+      throw new RemoteRelayError('REMOTE_OFFLINE', 'cancelled')
+    })
     const endpoint = await start(relay, 10)
     const socket = await connect(endpoint.url)
     socket.send(encodeRelayMessage(attach()))
     await once(socket, 'close')
-    rejectAttach?.(new Error('late rejection'))
-    await new Promise(resolve => setImmediate(resolve))
+    expect(attachSignal?.aborted).toBe(true)
+    await endpoint.consumer.close()
+    endpoint.closed = true
   })
 
   it('enforces the first-frame deadline and wire payload limit', async () => {

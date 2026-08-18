@@ -83,6 +83,13 @@ describe('BrowserRelayEndpointSocket', () => {
     )).rejects.toThrow('failed to open')
 
     openMode = 'pending'
+    const alreadyCancelled = new AbortController()
+    alreadyCancelled.abort()
+    await expect(BrowserRelayEndpointSocket.connect(
+      'wss://platform.example/pre-aborted', alreadyCancelled.signal, { maxBytes: 4, maxMessages: 1 },
+    )).rejects.toThrow('acquisition was cancelled')
+    expect(instances.at(-1)?.closeCalls).toHaveLength(1)
+
     const cancelled = new AbortController()
     const connecting = BrowserRelayEndpointSocket.connect(
       'wss://platform.example/pending', cancelled.signal, { maxBytes: 4, maxMessages: 1 },

@@ -31,6 +31,234 @@ const CONFIG = {
 afterEach(() => { vi.useRealTimers() })
 
 describe('RemoteRelayProvider', () => {
+  it('issues independent endpoint authority only while a route remains active', async () => {
+    let entropy = 0
+    const platform = new RemoteRelayProvider(new Context(), {
+      instanceId: parseRelayInstanceId('platform-issue'),
+      routeStore: new SharedRouteStore(),
+      coordinator: new SharedCoordinator(),
+      config: CONFIG,
+      randomBytes: size => new Uint8Array(size).fill(++entropy),
+    })
+    const routeId = parseRelayRouteId('route-issue')
+    const desktop = await platform.rotateCredential(routeId)
+    const mobile = await platform.issueCredential(routeId)
+
+    expect(mobile).toMatchObject({ routeId, revision: desktop.revision })
+    expect(mobile.credential).not.toBe(desktop.credential)
+    await platform.revokeRoute(routeId)
+    await expect(platform.issueCredential(routeId)).rejects.toMatchObject({ code: 'RELAY_ROUTE_REVOKED' })
+    await platform.dispose()
+  })
+
+  it('does not retain invalidation history for routes with no local attach work', async () => {
+    const routeStore = new SharedRouteStore()
+    const coordinator = new SharedCoordinator()
+    const platform = provider('platform-a', routeStore, coordinator, 7)
+    for (let index = 0; index < 1_000; index += 1) {
+      await coordinator.invalidate({
+        type: 'invalidate', routeId: parseRelayRouteId(`reclaimed-${String(index)}`), revision: 1,
+      })
+    }
+    const routeId = parseRelayRouteId('route-after-reclamation')
+    const grant = await platform.rotateCredential(routeId)
+    const attachment = await platform.attach({
+      message: {
+        type: 'attach', transportVersion: 1, routeId,
+        attachmentId: parseRelayAttachmentId('desktop-after-reclamation'), endpoint: 'desktop',
+        credential: grant.credential,
+      },
+      deliver: async () => {},
+    })
+    await attachment.close()
+    await platform.dispose()
+  })
+
+  it('retains failed cleanup as a capacity-owning tombstone and retries only unfinished work', async () => {
+    const routeStore = new SharedRouteStore()
+    const coordinator = new SharedCoordinator()
+    const platform = new RemoteRelayProvider(new Context(), {
+      instanceId: parseRelayInstanceId('platform-a'), routeStore, coordinator,
+      config: { ...CONFIG, maxConnections: 1 }, randomBytes: size => new Uint8Array(size).fill(9),
+    })
+    const routeId = parseRelayRouteId('route-cleanup-tombstone')
+    const grant = await platform.rotateCredential(routeId)
+    const closeSocket = vi.fn()
+    const first = await platform.attach({
+      message: {
+        type: 'attach', transportVersion: 1, routeId,
+        attachmentId: parseRelayAttachmentId('desktop-tombstone'), endpoint: 'desktop', credential: grant.credential,
+      },
+      deliver: async () => {}, close: closeSocket,
+    })
+    coordinator.failUnregister = true
+    await expect(first.close()).rejects.toThrow('Relay attachment drain failed')
+    expect(closeSocket).toHaveBeenCalledOnce()
+    await expect(platform.attach({
+      message: {
+        type: 'attach', transportVersion: 1, routeId,
+        attachmentId: parseRelayAttachmentId('desktop-blocked'), endpoint: 'desktop', credential: grant.credential,
+      }, deliver: async () => {},
+    })).rejects.toMatchObject({ code: 'PLATFORM_CAPACITY' })
+    coordinator.failUnregister = false
+    await first.close()
+    expect(closeSocket).toHaveBeenCalledOnce()
+    const replacement = await platform.attach({
+      message: {
+        type: 'attach', transportVersion: 1, routeId,
+        attachmentId: parseRelayAttachmentId('desktop-replacement'), endpoint: 'desktop', credential: grant.credential,
+      }, deliver: async () => {},
+    })
+    await replacement.close()
+    await platform.dispose()
+  })
+
+  it.each(['authorize', 'register'] as const)('cancels in-flight $stage work and reaches provider quiescence', async (stage) => {
+    const routeStore = new SharedRouteStore()
+    const coordinator = new SharedCoordinator()
+    const platform = provider('platform-a', routeStore, coordinator, 10)
+    const routeId = parseRelayRouteId(`route-cancel-${stage}`)
+    const grant = await platform.rotateCredential(routeId)
+    const entered = deferred<undefined>()
+    if (stage === 'authorize') {
+      routeStore.authorize = vi.fn(async (_routeId: string, _digest: Uint8Array, signal?: AbortSignal) => {
+        entered.resolve(undefined)
+        await aborted(signal)
+        throw new Error('authority cancelled')
+      })
+    } else {
+      coordinator.register = vi.fn(async (_entry: RelayDirectoryEntry, signal?: AbortSignal) => {
+        entered.resolve(undefined)
+        await aborted(signal)
+        throw new Error('registration cancelled')
+      })
+    }
+    const controller = new AbortController()
+    const attaching = platform.attach({
+      message: {
+        type: 'attach', transportVersion: 1, routeId,
+        attachmentId: parseRelayAttachmentId(`desktop-cancel-${stage}`), endpoint: 'desktop', credential: grant.credential,
+      }, deliver: async () => {}, signal: controller.signal,
+    })
+    await entered.promise
+    controller.abort()
+    await expect(attaching).rejects.toBeDefined()
+    await expect(platform.dispose()).resolves.toBeUndefined()
+  })
+
+  it('rejects a pre-aborted attach before acquiring shared resources', async () => {
+    const routeStore = new SharedRouteStore()
+    const coordinator = new SharedCoordinator()
+    const platform = provider('platform-pre-aborted', routeStore, coordinator, 12)
+    const routeId = parseRelayRouteId('route-pre-aborted')
+    const grant = await platform.rotateCredential(routeId)
+    const controller = new AbortController()
+    controller.abort()
+
+    await expect(platform.attach({
+      message: {
+        type: 'attach', transportVersion: 1, routeId,
+        attachmentId: parseRelayAttachmentId('desktop-pre-aborted'), endpoint: 'desktop', credential: grant.credential,
+      }, deliver: async () => {}, signal: controller.signal,
+    })).rejects.toMatchObject({ code: 'REMOTE_OFFLINE' })
+    expect(await coordinator.locate(routeId, parseRelayAttachmentId('desktop-pre-aborted'))).toBeUndefined()
+    await platform.dispose()
+  })
+
+  it('shares one in-flight disposal transaction across concurrent callers', async () => {
+    const stopped = deferred<undefined>()
+    const coordinator = new SharedCoordinator()
+    const listen = vi.fn(async () => async () => { await stopped.promise })
+    coordinator.listen = listen
+    const platform = provider('platform-concurrent-dispose', new SharedRouteStore(), coordinator, 15)
+
+    const first = platform.dispose()
+    const second = platform.dispose()
+    await Promise.resolve()
+    stopped.resolve(undefined)
+
+    await Promise.all([first, second])
+    expect(listen).toHaveBeenCalledOnce()
+  })
+
+  it('retries a concurrent delivery-id collision without overwriting the first acknowledgement', async () => {
+    const routeStore = new SharedRouteStore()
+    const coordinator = new SharedCoordinator()
+    const collision = parseRelayDeliveryId('delivery-collision')
+    const next = parseRelayDeliveryId('delivery-next')
+    const deliveryId = vi.fn<() => ReturnType<typeof parseRelayDeliveryId>>()
+      .mockReturnValueOnce(collision).mockReturnValueOnce(collision).mockReturnValueOnce(next)
+    const platformA = new RemoteRelayProvider(new Context(), {
+      instanceId: parseRelayInstanceId('platform-a'), routeStore, coordinator,
+      config: { ...CONFIG, deliveryAckTimeoutMs: 1_000 }, deliveryId,
+    })
+    const platformB = provider('platform-b', routeStore, coordinator, 13)
+    const routeId = parseRelayRouteId('route-delivery-collision')
+    const grant = await platformA.rotateCredential(routeId)
+    const release = deferred<undefined>()
+    const mobile = await platformA.attach({
+      message: {
+        type: 'attach', transportVersion: 1, routeId,
+        attachmentId: parseRelayAttachmentId('mobile-collision'), endpoint: 'mobile', credential: grant.credential,
+      }, deliver: async () => {},
+    })
+    await platformB.attach({
+      message: {
+        type: 'attach', transportVersion: 1, routeId,
+        attachmentId: parseRelayAttachmentId('desktop-collision'), endpoint: 'desktop', credential: grant.credential,
+      }, deliver: async () => { await release.promise },
+    })
+    const first = mobile.receive(ciphertext(routeId, 'mobile-collision', 'desktop-collision', Uint8Array.of(1)))
+    void first.catch(() => {})
+    await vi.waitFor(() => { expect(deliveryId).toHaveBeenCalledOnce() })
+    const second = mobile.receive(ciphertext(routeId, 'mobile-collision', 'desktop-collision', Uint8Array.of(2)))
+    void second.catch(() => {})
+    await vi.waitFor(() => { expect(deliveryId).toHaveBeenCalledTimes(3) })
+    release.resolve(undefined)
+    await Promise.all([first, second])
+    await Promise.all([platformA.dispose(), platformB.dispose()])
+  })
+
+  it('fails loud when bounded delivery-id collision retries are exhausted', async () => {
+    const routeStore = new SharedRouteStore()
+    const coordinator = new SharedCoordinator()
+    const collision = parseRelayDeliveryId('delivery-exhausted')
+    const source = new RemoteRelayProvider(new Context(), {
+      instanceId: parseRelayInstanceId('platform-collision-source'), routeStore, coordinator,
+      config: { ...CONFIG, deliveryAckTimeoutMs: 1_000 }, deliveryId: () => collision,
+    })
+    const target = provider('platform-collision-target', routeStore, coordinator, 14)
+    const routeId = parseRelayRouteId('route-collision-exhausted')
+    const grant = await source.rotateCredential(routeId)
+    const release = deferred<undefined>()
+    const mobile = await source.attach({
+      message: {
+        type: 'attach', transportVersion: 1, routeId,
+        attachmentId: parseRelayAttachmentId('mobile-collision-exhausted'), endpoint: 'mobile',
+        credential: grant.credential,
+      }, deliver: async () => {},
+    })
+    await target.attach({
+      message: {
+        type: 'attach', transportVersion: 1, routeId,
+        attachmentId: parseRelayAttachmentId('desktop-collision-exhausted'), endpoint: 'desktop',
+        credential: grant.credential,
+      }, deliver: async () => { await release.promise },
+    })
+    const first = mobile.receive(ciphertext(
+      routeId, 'mobile-collision-exhausted', 'desktop-collision-exhausted', Uint8Array.of(1),
+    ))
+    void first.catch(() => {})
+    await vi.waitFor(() => { expect(coordinator.events).toContainEqual(expect.objectContaining({ type: 'ciphertext' })) })
+
+    await expect(mobile.receive(ciphertext(
+      routeId, 'mobile-collision-exhausted', 'desktop-collision-exhausted', Uint8Array.of(2),
+    ))).rejects.toMatchObject({ code: 'PLATFORM_CAPACITY' })
+    release.resolve(undefined)
+    await first
+    await Promise.all([source.dispose(), target.dispose()])
+  })
+
   it('forwards bounded ciphertext when Mobile and Desktop attach to different instances', async () => {
     const routeStore = new SharedRouteStore()
     const coordinator = new SharedCoordinator()
@@ -543,6 +771,7 @@ describe('RemoteRelayProvider', () => {
     const routeId = parseRelayRouteId('route-shutdown')
     const grant = await platform.rotateCredential(routeId)
     const closeCalls: string[] = []
+    let failClose = true
     for (const attachmentId of ['mobile-one', 'desktop-one'] as const) {
       await platform.attach({
         message: {
@@ -554,7 +783,7 @@ describe('RemoteRelayProvider', () => {
         deliver: async () => {},
         close: async () => {
           closeCalls.push(attachmentId)
-          throw new Error(`${attachmentId} close failed`)
+          if (failClose) throw new Error(`${attachmentId} close failed`)
         },
       })
     }
@@ -564,6 +793,12 @@ describe('RemoteRelayProvider', () => {
     })
     expect(closeCalls).toEqual(['mobile-one', 'desktop-one'])
     expect(coordinator.unregisterCalls).toBe(2)
+    coordinator.failUnregister = false
+    coordinator.failStop = false
+    failClose = false
+    await expect(platform.dispose()).resolves.toBeUndefined()
+    expect(closeCalls).toEqual(['mobile-one', 'desktop-one', 'mobile-one', 'desktop-one'])
+    expect(coordinator.unregisterCalls).toBe(4)
   })
 
   it('does not finish shutdown before an in-flight socket writer reaches quiescence', async () => {
@@ -862,7 +1097,7 @@ describe('RemoteRelayProvider', () => {
       type: 'invalidate', routeId, revision: grant.revision + 1,
     })).rejects.toThrow('Relay invalidation cleanup failed')
     coordinator.failUnregister = false
-    await expect(replacement.close()).rejects.toThrow('Relay attachment drain failed')
+    await expect(replacement.close()).resolves.toBeUndefined()
     await platform.dispose()
   })
 
@@ -921,7 +1156,7 @@ describe('RemoteRelayProvider', () => {
     timeout?.()
     await vi.waitFor(() => { expect(consoleError).toHaveBeenCalledOnce() })
     coordinator.failUnregister = false
-    await expect(timed.close()).rejects.toThrow('Relay attachment drain failed')
+    await expect(timed.close()).resolves.toBeUndefined()
     consoleError.mockRestore()
     await Promise.all([platformA.dispose(), platformB.dispose()])
   })
@@ -961,27 +1196,34 @@ function provider(
 
 class SharedRouteStore implements RelayRouteStore {
   uncertain = false
-  private readonly routes = new Map<string, { digest: string; revision: number; revoked: boolean }>()
+  private readonly routes = new Map<string, { digests: Set<string>; revision: number; revoked: boolean }>()
 
   async rotate(routeId: string, credentialDigest: Uint8Array): Promise<number> {
     const current = this.routes.get(routeId)
     const revision = (current?.revision ?? 0) + 1
-    this.routes.set(routeId, { digest: Buffer.from(credentialDigest).toString('hex'), revision, revoked: false })
+    this.routes.set(routeId, { digests: new Set([Buffer.from(credentialDigest).toString('hex')]), revision, revoked: false })
     return revision
+  }
+
+  async issue(routeId: string, credentialDigest: Uint8Array): Promise<number | undefined> {
+    const current = this.routes.get(routeId)
+    if (current === undefined || current.revoked) return undefined
+    current.digests.add(Buffer.from(credentialDigest).toString('hex'))
+    return current.revision
   }
 
   async authorize(routeId: string, credentialDigest: Uint8Array): Promise<number | undefined> {
     if (this.uncertain) throw new Error('shared route store unavailable')
     const current = this.routes.get(routeId)
     if (current === undefined || current.revoked
-      || current.digest !== Buffer.from(credentialDigest).toString('hex')) return undefined
+      || !current.digests.has(Buffer.from(credentialDigest).toString('hex'))) return undefined
     return current.revision
   }
 
   async revoke(routeId: string): Promise<number> {
     const current = this.routes.get(routeId)
     const revision = (current?.revision ?? 0) + 1
-    this.routes.set(routeId, { digest: '', revision, revoked: true })
+    this.routes.set(routeId, { digests: new Set(), revision, revoked: true })
     return revision
   }
 
@@ -1083,4 +1325,11 @@ function deferred<T>(): { promise: Promise<T>; resolve(value: T): void } {
   let resolve!: (value: T) => void
   const promise = new Promise<T>((settle) => { resolve = settle })
   return { promise, resolve }
+}
+
+function aborted(signal: AbortSignal | undefined): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal?.aborted === true) resolve()
+    else signal?.addEventListener('abort', () => { resolve() }, { once: true })
+  })
 }

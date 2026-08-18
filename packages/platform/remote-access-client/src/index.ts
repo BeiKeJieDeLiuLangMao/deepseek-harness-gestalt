@@ -25,6 +25,7 @@ import { parseRelayCredential, parseRelayRouteId } from '@deepseek-ai/dsh-remote
 export * from './relay.ts'
 export * from './browser-relay-socket.ts'
 export * from './relay-queue.ts'
+export * from './mobile-relay-lifecycle.ts'
 import {
   PERSONAL_PAIRING_PROTOCOL_MAJOR,
   RemoteAccessError,
@@ -221,7 +222,12 @@ function parseMobilePairingStatus(value: unknown): MobilePairingStatus {
   const record = requiredRecord(value, 'Mobile Pairing status response')
   if (record.status === 'pending' || record.status === 'rejected') return { status: record.status }
   if (record.status === 'paired') {
-    return { status: 'paired', pairingId: parsePersonalPairingId(record.pairingId) }
+    return {
+      status: 'paired', pairingId: parsePersonalPairingId(record.pairingId),
+      ...(record.sealedRelayAuthority === undefined
+        ? {}
+        : { sealedRelayAuthority: decodeBytes(record.sealedRelayAuthority, 'Mobile Pairing sealed Relay authority') }),
+    }
   }
   throw new TypeError('Mobile Pairing status is invalid')
 }

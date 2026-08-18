@@ -106,7 +106,7 @@ abstract cancelChallenge(input: { desktop: PairingAccountAuthentication challeng
 abstract rejectPairing(input: { desktop: PairingAccountAuthentication pendingPairingId: PendingPairingId }): Promise<void>
 ```
 
-Source: [`packages/platform/remote-access/src/index.ts:240`](../../packages/platform/remote-access/src/index.ts)
+Source: [`packages/platform/remote-access/src/index.ts:348`](../../packages/platform/remote-access/src/index.ts)
 
 <a id="ctxremoterelay--remoterelayservice-abstract-seam"></a>
 
@@ -123,6 +123,13 @@ Public Remote Access Relay capability used by the WSS Consumer.
 abstract rotateCredential(routeId: RelayRouteId): Promise<RelayCredentialGrant>
 
 /**
+ * Issue distinct endpoint authority without invalidating other credentials on the active route.
+ * @param routeId - active route receiving another independently revocable bearer.
+ * @returns a fresh credential at the current route revision.
+ */
+abstract issueCredential(routeId: RelayRouteId): Promise<RelayCredentialGrant>
+
+/**
  * Revoke one route and close its attachments across Platform Instances.
  * @param routeId - opaque route whose current authority becomes invalid.
  */
@@ -133,8 +140,8 @@ abstract revokeRoute(routeId: RelayRouteId): Promise<void>
  * @param input - attach frame plus the socket writer and optional close callback.
  * @returns the admitted attachment receiving later frames from that socket.
  */
-abstract attach(input: { message: RelayAttachMessage deliver: (message: RelayCiphertextMessage) => Promise<void> close?: () => void | Promise<void> }): Promise<RemoteRelayAttachment>
+abstract attach(input: { message: RelayAttachMessage deliver: (message: RelayCiphertextMessage) => Promise<void> close?: () => void | Promise<void> signal?: AbortSignal }): Promise<RemoteRelayAttachment>
 ```
 
-Source: [`packages/platform/remote-access/src/relay.ts:126`](../../packages/platform/remote-access/src/relay.ts)
+Source: [`packages/platform/remote-access/src/relay.ts:128`](../../packages/platform/remote-access/src/relay.ts)
 <!-- END GENERATED cordis-surface -->

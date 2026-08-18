@@ -7,6 +7,8 @@ import {
   RemoteAccessError,
   parsePairingCompletionId,
   parsePairingRendezvousId,
+  parsePersonalPairingId,
+  type MobilePairingStatus,
   type PairingAccountAuthentication,
 } from '@deepseek-ai/dsh-remote-access'
 import {
@@ -235,7 +237,7 @@ describe('Remote Access HTTP assembled flow', () => {
       cancelChallenge: vi.fn(),
       listPendingPairings: vi.fn(async () => []),
       listPersonalPairings: vi.fn(async () => []),
-      getMobilePairingStatus: vi.fn(async () => ({ status: 'pending' })),
+      getMobilePairingStatus: vi.fn(async (): Promise<MobilePairingStatus> => ({ status: 'pending' })),
       confirmPairing: vi.fn(async () => ({ id: 'pairing-one' })),
       rejectPairing: vi.fn(),
       completeChallenge: vi.fn(async () => ({
@@ -258,6 +260,14 @@ describe('Remote Access HTTP assembled flow', () => {
     expect((await request({ operation: 'get-mobile-access' })).status).toBe(200)
     expect((await request({ operation: 'cancel-challenge', challengeId: 'challenge-one' })).status).toBe(200)
     expect((await request({ operation: 'reject-pairing', pendingPairingId: 'pending-one' })).status).toBe(200)
+    remoteAccess.getMobilePairingStatus.mockResolvedValueOnce({
+      status: 'paired', pairingId: parsePersonalPairingId('pairing-one'), sealedRelayAuthority: Uint8Array.of(1, 2),
+    })
+    await expect((await request({
+      operation: 'get-mobile-pairing-status', pendingPairingId: 'pending-one',
+    })).json()).resolves.toEqual({
+      status: 'paired', pairingId: 'pairing-one', sealedRelayAuthority: 'AQI',
+    })
     expect((await request({ operation: 'unknown' })).status).toBe(400)
     expect((await request({}, { method: 'GET' })).status).toBe(405)
 

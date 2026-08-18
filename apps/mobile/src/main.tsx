@@ -6,7 +6,12 @@ import {
   PlatformAccountInstallation,
 } from '@deepseek-ai/dsh-platform-account-client'
 import { loadPlatformEnvironment, parseInstallationId } from '@deepseek-ai/dsh-platform-account'
-import { RemoteAccessHttpTransport } from '@deepseek-ai/dsh-remote-access-client'
+import {
+  BrowserRelayEndpointSocket,
+  MobileRelayEndpointLifecycle,
+  RemoteAccessHttpTransport,
+} from '@deepseek-ai/dsh-remote-access-client'
+import { parseRelayAttachmentId, REMOTE_PROTOCOL_LIMITS } from '@deepseek-ai/dsh-remote-protocol'
 import '@deepseek-ai/dsh-client-ui-theme/src/styles/base.css'
 import '@deepseek-ai/dsh-client-ui-theme/src/styles/design-platform.css'
 import '@deepseek-ai/dsh-client-ui-theme/src/styles/gradient-shadow-text.css'
@@ -66,16 +71,44 @@ let pairing: MobilePairingActions = {
 }
 if (environment.environment === 'development' && import.meta.env.VITE_PERSONAL_PAIRING_KEYLESS === '1') {
   const { DevelopmentKeylessMobileHandshakeClient } = await import('./development-keyless-pairing.ts')
+  const relayUrl = requiredWss(import.meta.env.VITE_REMOTE_RELAY_WSS_URL)
+  const inboundMaxBytes = positiveInteger(import.meta.env.VITE_REMOTE_RELAY_INBOUND_MAX_BYTES, 'inbound bytes')
+  const inboundMaxMessages = positiveInteger(import.meta.env.VITE_REMOTE_RELAY_INBOUND_MAX_MESSAGES, 'inbound messages')
+  if (inboundMaxBytes < REMOTE_PROTOCOL_LIMITS.relayMessageBytes) {
+    throw new TypeError('Mobile Relay inbound bytes must admit one maximum Relay message')
+  }
+  const relay = new MobileRelayEndpointLifecycle({
+    attachmentId: () => parseRelayAttachmentId(crypto.randomUUID()),
+    connect: async signal => await BrowserRelayEndpointSocket.connect(relayUrl, signal, {
+      maxBytes: REMOTE_PROTOCOL_LIMITS.relayMessageBytes,
+      maxMessages: inboundMaxMessages,
+    }),
+    attachTimeoutMs: positiveInteger(import.meta.env.VITE_REMOTE_RELAY_ATTACH_TIMEOUT_MS, 'attach timeout'),
+    heartbeatIntervalMs: positiveInteger(import.meta.env.VITE_REMOTE_RELAY_HEARTBEAT_INTERVAL_MS, 'heartbeat interval'),
+    reconnectDelayMs: positiveInteger(import.meta.env.VITE_REMOTE_RELAY_RECONNECT_DELAY_MS, 'reconnect delay'),
+  })
   pairing = new MobilePairingController({
     installation,
     transport: new RemoteAccessHttpTransport({ environment }),
     handshake: new DevelopmentKeylessMobileHandshakeClient(),
     scanner: new NativeMobilePairingQrScanner(),
+    relay,
     device: {
       name: navigator.userAgent.includes('Android') ? 'Android phone' : 'iPhone',
       platform: navigator.userAgent.includes('Android') ? 'android' : 'ios',
     },
   })
+}
+
+function positiveInteger(value: unknown, name: string): number {
+  const parsed = Number(value)
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) throw new TypeError(`Mobile Relay ${name} must be a positive integer`)
+  return parsed
+}
+
+function requiredWss(value: unknown): string {
+  if (typeof value !== 'string' || new URL(value).protocol !== 'wss:') throw new TypeError('Mobile Relay endpoint must use WSS')
+  return value
 }
 
 const root = document.getElementById('root')

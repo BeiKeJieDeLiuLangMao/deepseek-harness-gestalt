@@ -7,6 +7,7 @@ import {
   type PairingCompletionId,
   type PairingCompletionView,
   type PendingPairingId,
+  type RelayCredentialGrant,
 } from '@deepseek-ai/dsh-remote-access'
 import type { PlatformAccountId } from '@deepseek-ai/dsh-platform-account'
 import type { PlatformAccountInstallation } from '@deepseek-ai/dsh-platform-account-client'
@@ -19,6 +20,8 @@ export interface MobilePairingHandshakeClient {
   begin(oneTimeLink: string): Promise<{ completionId: PairingCompletionId; mobileHandshake: Uint8Array }>
   /** Consume the Desktop handshake response before exposing authentication words. */
   acceptDesktopHandshake(desktopHandshake: Uint8Array): Promise<void>
+  /** Open Mobile-specific Relay authority sealed to this Personal Pairing. */
+  openRelayAuthority?(sealedAuthority: Uint8Array): Promise<RelayCredentialGrant>
 }
 
 /** Native QR scanner returning the exact full invitation payload. */
@@ -63,6 +66,8 @@ export interface MobilePairingControllerOptions {
   handshake: MobilePairingHandshakeClient
   scanner: MobilePairingQrScanner
   device: { name: string; platform: 'ios' | 'android' }
+  /** Product Relay lifecycle receiving only Mobile-specific authority. */
+  relay?: { configure(grant: RelayCredentialGrant): void | Promise<void>; start(): Promise<void>; stop(): Promise<void> }
   schedule?: (task: () => void, delayMs: number) => ReturnType<typeof setTimeout>
   pollIntervalMs?: number
   now?: () => number
@@ -109,8 +114,9 @@ export class MobilePairingController implements MobilePairingActions {
   async deactivate(): Promise<void> {
     this.active = false
     this.resetAccountScope()
-    await this.serial
+    const results = await Promise.allSettled([this.options.relay?.stop() ?? Promise.resolve(), this.serial])
     this.resetAccountScope()
+    throwRejected(results, 'Mobile Personal Pairing deactivation failed')
   }
 
   async completeLink(link: string): Promise<void> {
@@ -273,6 +279,14 @@ export class MobilePairingController implements MobilePairingActions {
           if (status.status === 'pending') {
             this.scheduleStatus(pendingPairingId)
           } else if (status.status === 'paired') {
+            if (status.sealedRelayAuthority !== undefined) {
+              if (this.options.handshake.openRelayAuthority === undefined || this.options.relay === undefined) {
+                throw new Error('Mobile Relay authority has no product lifecycle owner')
+              }
+              const grant = await this.options.handshake.openRelayAuthority(status.sealedRelayAuthority)
+              await this.options.relay.configure(grant)
+              await this.options.relay.start()
+            }
             this.clearAttempt()
             this.publish({ status: 'paired' })
           } else {
@@ -311,4 +325,9 @@ export class MobilePairingController implements MobilePairingActions {
     this.assertActive()
     this.requireAccountId()
   }
+}
+
+function throwRejected(results: PromiseSettledResult<unknown>[], message: string): void {
+  const errors = results.filter(result => result.status === 'rejected').map(result => result.reason as unknown)
+  if (errors.length > 0) throw new AggregateError(errors, message)
 }

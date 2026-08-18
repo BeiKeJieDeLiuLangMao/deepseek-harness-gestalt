@@ -51,6 +51,8 @@ export interface RelayRedisClient {
   publish(channel: string, message: string): Promise<number>
   subscribe(channel: string, listener: (message: string) => void): Promise<unknown>
   unsubscribe(channel: string, listener: (message: string) => void): Promise<unknown>
+  /** @returns a command face whose queued and in-flight work is cancelled by the signal. */
+  withAbortSignal(signal: AbortSignal): RelayRedisClient
 }
 
 /** Construction inputs for one environment-scoped Redis coordinator. */
@@ -101,8 +103,10 @@ export class RedisRelayCoordinator implements RelayCoordinator {
     }
   }
 
-  async register(entry: RelayDirectoryEntry): Promise<void> {
-    await this.options.command.set(
+  async register(entry: RelayDirectoryEntry, signal?: AbortSignal): Promise<void> {
+    signal?.throwIfAborted()
+    const command = signal === undefined ? this.options.command : this.options.command.withAbortSignal(signal)
+    await command.set(
       this.directoryKey(entry.routeId, entry.attachmentId),
       encodeDirectory(entry),
       { PX: this.ttl(entry) },

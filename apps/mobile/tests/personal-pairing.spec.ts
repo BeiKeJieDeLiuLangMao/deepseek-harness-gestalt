@@ -5,10 +5,101 @@ import {
   parsePairingCompletionId,
   parsePendingPairingId,
 } from '@deepseek-ai/dsh-remote-access'
+import { parseRelayCredential, parseRelayRouteId } from '@deepseek-ai/dsh-remote-protocol'
 import type { RemoteAccessTransport } from '@deepseek-ai/dsh-remote-access-client'
 import { MobilePairingController } from '../src/personal-pairing.ts'
 
 describe('MobilePairingController', () => {
+  it('opens pairing-delivered Mobile authority and starts Relay without a Desktop secret', async () => {
+    const scheduled: Array<() => void> = []
+    const transport = transportFixture()
+    const sealedRelayAuthority = Uint8Array.of(7, 8, 9)
+    transport.getMobilePairingStatus.mockResolvedValueOnce({
+      status: 'paired', pairingId: 'pairing-one', sealedRelayAuthority,
+    })
+    const mobileGrant = {
+      routeId: parseRelayRouteId('mobile-route'),
+      credential: parseRelayCredential('AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE'),
+      revision: 1,
+    }
+    const handshake = {
+      begin: vi.fn(async () => ({
+        completionId: parsePairingCompletionId('mobile-authority'), mobileHandshake: Uint8Array.of(9),
+      })),
+      acceptDesktopHandshake: vi.fn(),
+      openRelayAuthority: vi.fn(async () => mobileGrant),
+    }
+    const relay = { configure: vi.fn(), start: vi.fn(), stop: vi.fn() }
+    const controller = new MobilePairingController({
+      installation: installationFixture(), transport, handshake, relay,
+      scanner: { scan: vi.fn() }, device: { name: 'Alice phone', platform: 'ios' },
+      schedule: (task) => { scheduled.push(task); return { unref: vi.fn() } as never },
+      now: () => Date.parse('2026-08-18T10:01:00.000Z'),
+    })
+
+    await controller.completeLink(pairingLink(Date.parse('2026-08-18T10:02:00.000Z')))
+    scheduled.shift()?.()
+    await vi.waitFor(() => { expect(controller.getSnapshot()).toEqual({ status: 'paired' }) })
+
+    expect(handshake.openRelayAuthority).toHaveBeenCalledWith(sealedRelayAuthority)
+    expect(relay.configure).toHaveBeenCalledWith(mobileGrant)
+    expect(relay.start).toHaveBeenCalledOnce()
+    await controller.deactivate()
+    expect(relay.stop).toHaveBeenCalledOnce()
+  })
+
+  it.each(['handshake', 'relay'] as const)(
+    'fails closed when sealed Mobile authority has no %s lifecycle owner',
+    async (missing) => {
+      const scheduled: Array<() => void> = []
+      const transport = transportFixture()
+      transport.getMobilePairingStatus.mockResolvedValueOnce({
+        status: 'paired', pairingId: 'pairing-one', sealedRelayAuthority: Uint8Array.of(7),
+      })
+      const handshake = {
+        begin: vi.fn(async () => ({
+          completionId: parsePairingCompletionId(`missing-${missing}`), mobileHandshake: Uint8Array.of(9),
+        })),
+        acceptDesktopHandshake: vi.fn(),
+        ...(missing === 'handshake' ? {} : { openRelayAuthority: vi.fn() }),
+      }
+      const controller = new MobilePairingController({
+        installation: installationFixture(), transport, handshake,
+        ...(missing === 'relay' ? {} : { relay: { configure: vi.fn(), start: vi.fn(), stop: vi.fn() } }),
+        scanner: { scan: vi.fn() }, device: { name: 'Alice phone', platform: 'ios' },
+        schedule: (task) => { scheduled.push(task); return { unref: vi.fn() } as never },
+        now: () => Date.parse('2026-08-18T10:01:00.000Z'),
+      })
+      await controller.completeLink(pairingLink(Date.parse('2026-08-18T10:02:00.000Z')))
+
+      scheduled.shift()?.()
+
+      await vi.waitFor(() => {
+        expect(controller.getSnapshot()).toEqual({
+          status: 'retryable', error: 'Mobile Relay authority has no product lifecycle owner',
+        })
+      })
+    },
+  )
+
+  it('keeps Mobile offline and reports Relay shutdown failure during deactivation', async () => {
+    const controller = new MobilePairingController({
+      installation: installationFixture(), transport: transportFixture(),
+      handshake: {
+        begin: vi.fn(), acceptDesktopHandshake: vi.fn(),
+      },
+      relay: {
+        configure: vi.fn(), start: vi.fn(), stop: vi.fn(async () => { throw new Error('relay stop failed') }),
+      },
+      scanner: { scan: vi.fn() }, device: { name: 'Alice phone', platform: 'ios' },
+    })
+
+    await expect(controller.deactivate()).rejects.toMatchObject({
+      message: 'Mobile Personal Pairing deactivation failed',
+    })
+    expect(controller.getSnapshot()).toEqual({ status: 'ready' })
+  })
+
   it('uses the identical full-link completion flow for pasted links and native QR payloads', async () => {
     const link = pairingLink(Date.parse('2026-08-18T10:02:00.000Z'))
     const authorizeCurrentInstallation = vi.fn(async () => ({

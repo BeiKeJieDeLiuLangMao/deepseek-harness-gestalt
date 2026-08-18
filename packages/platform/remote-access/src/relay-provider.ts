@@ -36,6 +36,9 @@ interface LocalAttachment {
   heartbeatTimer: ReturnType<typeof setTimeout> | undefined
   closed: boolean
   closeTransaction: Promise<void> | undefined
+  unregistered: boolean
+  writerDrained: boolean
+  socketClosed: boolean
 }
 
 interface PendingDelivery {
@@ -48,13 +51,15 @@ export class RemoteRelayProvider extends RemoteRelayService {
   private readonly attachments = new Map<string, LocalAttachment>()
   private readonly attachmentReservations = new Set<string>()
   private readonly attachmentQuiescence = new Set<Promise<void>>()
-  private readonly invalidatedRevisions = new Map<RelayRouteId, number>()
   private readonly pendingDeliveries = new Map<RelayDeliveryId, (delivered: boolean) => void>()
   private readonly ready: Promise<() => Promise<void>>
   private readonly config: RemoteRelayConfig
   private readonly randomBytes: (size: number) => Uint8Array
   private readonly schedule: (task: () => void, delayMs: number) => ReturnType<typeof setTimeout>
   private disposed = false
+  private deliverySequence = 0
+  private disposeTransaction: Promise<void> | undefined
+  private coordinatorStopped = false
 
   /** @param ctx - Platform context. @param options - instance, storage, coordination, bounds, and entropy. */
   constructor(ctx: Context, private readonly options: {
@@ -63,6 +68,7 @@ export class RemoteRelayProvider extends RemoteRelayService {
     coordinator: RelayCoordinator
     config: RemoteRelayConfig
     randomBytes?: (size: number) => Uint8Array
+    deliveryId?: () => RelayDeliveryId
     clock?: { now(): number }
     schedule?: (task: () => void, delayMs: number) => ReturnType<typeof setTimeout>
   }) {
@@ -76,12 +82,17 @@ export class RemoteRelayProvider extends RemoteRelayService {
 
   async rotateCredential(routeId: RelayRouteId): Promise<RelayCredentialGrant> {
     this.assertOpen()
-    const bytes = this.randomBytes(32)
-    if (bytes.byteLength !== 32) throw new TypeError('Relay credential source must return 32 bytes')
-    const credential = parseRelayCredential(Buffer.from(bytes).toString('base64url'))
-    bytes.fill(0)
+    const credential = this.newCredential()
     const revision = await this.options.routeStore.rotate(routeId, credentialDigest(credential))
     if (revision > 1) await this.options.coordinator.invalidate({ type: 'invalidate', routeId, revision })
+    return { routeId, credential, revision }
+  }
+
+  async issueCredential(routeId: RelayRouteId): Promise<RelayCredentialGrant> {
+    this.assertOpen()
+    const credential = this.newCredential()
+    const revision = await this.options.routeStore.issue(routeId, credentialDigest(credential))
+    if (revision === undefined) throw new RemoteRelayError('RELAY_ROUTE_REVOKED', 'Relay route is inactive')
     return { routeId, credential, revision }
   }
 
@@ -95,6 +106,7 @@ export class RemoteRelayProvider extends RemoteRelayService {
     message: RelayAttachMessage
     deliver: (message: RelayCiphertextMessage) => Promise<void>
     close?: () => void | Promise<void>
+    signal?: AbortSignal
   }): Promise<RemoteRelayAttachment> {
     this.assertOpen()
     const quiescence = deferred<void>()
@@ -111,8 +123,12 @@ export class RemoteRelayProvider extends RemoteRelayService {
     message: RelayAttachMessage
     deliver: (message: RelayCiphertextMessage) => Promise<void>
     close?: () => void | Promise<void>
+    signal?: AbortSignal
   }): Promise<RemoteRelayAttachment> {
+    const signal = input.signal ?? NEVER_ABORTED
+    throwIfAborted(signal)
     await this.ready
+    throwIfAborted(signal)
     this.assertOpen()
     const key = attachmentKey(input.message.routeId, input.message.attachmentId)
     const replacing = this.attachments.has(key)
@@ -125,7 +141,7 @@ export class RemoteRelayProvider extends RemoteRelayService {
       const digest = credentialDigest(input.message.credential)
       let revision: number | undefined
       try {
-        revision = await this.options.routeStore.authorize(input.message.routeId, digest)
+        revision = await this.options.routeStore.authorize(input.message.routeId, digest, signal)
       } catch {
         throw new RemoteRelayError('RELAY_ATTACHMENT_REJECTED', 'Relay route authority is unavailable')
       }
@@ -145,9 +161,7 @@ export class RemoteRelayProvider extends RemoteRelayService {
       const existing = this.attachments.get(key)
       if (existing !== undefined) await this.closeAndDrain(existing)
       this.assertOpen()
-      if ((this.invalidatedRevisions.get(entry.routeId) ?? 0) > entry.revision) {
-        throw new RemoteRelayError('RELAY_ATTACHMENT_REJECTED', 'Relay credential was superseded during attachment')
-      }
+      throwIfAborted(signal)
       const local: LocalAttachment = {
         entry,
         deliver: input.deliver,
@@ -158,13 +172,16 @@ export class RemoteRelayProvider extends RemoteRelayService {
         heartbeatTimer: undefined,
         closed: false,
         closeTransaction: undefined,
+        unregistered: false,
+        writerDrained: false,
+        socketClosed: input.close === undefined,
       }
       this.attachments.set(key, local)
       try {
-        await this.options.coordinator.register(entry)
-        const currentRevision = await this.options.routeStore.authorize(entry.routeId, digest)
-        if (this.disposed || currentRevision !== entry.revision
-          || (this.invalidatedRevisions.get(entry.routeId) ?? 0) > entry.revision) {
+        await this.options.coordinator.register(entry, signal)
+        throwIfAborted(signal)
+        const currentRevision = await this.options.routeStore.authorize(entry.routeId, digest, signal)
+        if (this.disposed || currentRevision !== entry.revision) {
           await this.closeAndDrain(local)
           throw new RemoteRelayError(
             this.disposed ? 'REMOTE_OFFLINE' : 'RELAY_ATTACHMENT_REJECTED',
@@ -190,8 +207,18 @@ export class RemoteRelayProvider extends RemoteRelayService {
 
   /** Close every local attachment and coordination subscription, observing every failure. */
   async dispose(): Promise<void> {
-    if (this.disposed) return
     this.disposed = true
+    if (this.disposeTransaction !== undefined) return this.disposeTransaction
+    const transaction = this.runDispose()
+    this.disposeTransaction = transaction
+    try {
+      await transaction
+    } finally {
+      this.disposeTransaction = undefined
+    }
+  }
+
+  private async runDispose(): Promise<void> {
     for (const resolve of this.pendingDeliveries.values()) resolve(false)
     this.pendingDeliveries.clear()
     await Promise.all(this.attachmentQuiescence)
@@ -204,10 +231,10 @@ export class RemoteRelayProvider extends RemoteRelayService {
     }
     const stop = readiness[0].value
     const attachments = [...this.attachments.values()]
-    const results = await Promise.allSettled([
-      ...attachments.map(attachment => this.closeAndDrain(attachment)),
-      stop(),
-    ])
+    const stopCoordinator = this.coordinatorStopped
+      ? Promise.resolve()
+      : stop().then(() => { this.coordinatorStopped = true })
+    const results = await Promise.allSettled([...attachments.map(attachment => this.closeAndDrain(attachment)), stopCoordinator])
     const errors = results.filter(result => result.status === 'rejected').map(result => result.reason as unknown)
     if (errors.length > 0) throw new AggregateError(errors, 'Remote Relay disposal failed')
   }
@@ -228,7 +255,7 @@ export class RemoteRelayProvider extends RemoteRelayService {
         this.config.capacityRetryAfterMs,
       )
     }
-    const deliveryId = this.deliveryId()
+    const deliveryId = this.allocateDeliveryId()
     const acknowledgement = this.awaitDelivery(deliveryId)
     try {
       const subscribed = await this.options.coordinator.publish(target.instanceId, {
@@ -274,10 +301,6 @@ export class RemoteRelayProvider extends RemoteRelayService {
 
   private async receiveCoordinationEvent(event: RelayCoordinationEvent): Promise<void> {
     if (event.type === 'invalidate') {
-      this.invalidatedRevisions.set(
-        event.routeId,
-        Math.max(event.revision, this.invalidatedRevisions.get(event.routeId) ?? 0),
-      )
       const matches = [...this.attachments.values()].filter(
         attachment => attachment.entry.routeId === event.routeId && attachment.entry.revision < event.revision,
       )
@@ -332,16 +355,38 @@ export class RemoteRelayProvider extends RemoteRelayService {
     local.closed = true
     clearTimeout(local.heartbeatTimer)
     local.heartbeatTimer = undefined
-    local.closeTransaction = (async () => {
-      const operations: Promise<unknown>[] = [this.options.coordinator.unregister(local.entry), local.writer]
-      if (local.close !== undefined) operations.push(Promise.resolve().then(local.close))
-      const results = await Promise.allSettled(operations)
-      const key = attachmentKey(local.entry.routeId, local.entry.attachmentId)
-      this.attachments.delete(key)
-      const errors = results.filter(result => result.status === 'rejected').map(result => result.reason as unknown)
-      if (errors.length > 0) throw new AggregateError(errors, 'Relay attachment drain failed')
-    })()
-    return local.closeTransaction
+    const transaction = this.runCloseTransaction(local)
+    local.closeTransaction = transaction
+    try {
+      await transaction
+    } finally {
+      local.closeTransaction = undefined
+    }
+  }
+
+  private async runCloseTransaction(local: LocalAttachment): Promise<void> {
+    const operations: Array<{ complete(): void; promise: Promise<unknown> }> = []
+    if (!local.unregistered) operations.push({
+      complete: () => { local.unregistered = true },
+      promise: this.options.coordinator.unregister(local.entry),
+    })
+    if (!local.writerDrained) operations.push({
+      complete: () => { local.writerDrained = true },
+      promise: local.writer,
+    })
+    if (!local.socketClosed && local.close !== undefined) operations.push({
+      complete: () => { local.socketClosed = true },
+      promise: Promise.resolve().then(local.close),
+    })
+    const results = await Promise.allSettled(operations.map(operation => operation.promise))
+    const errors: unknown[] = []
+    for (const [index, result] of results.entries()) {
+      if (result.status === 'fulfilled') operations[index]?.complete()
+      else errors.push(result.reason as unknown)
+    }
+    if (errors.length > 0) throw new AggregateError(errors, 'Relay attachment drain failed')
+    const key = attachmentKey(local.entry.routeId, local.entry.attachmentId)
+    if (this.attachments.get(key) === local) this.attachments.delete(key)
   }
 
   private connectionToken(): RelayConnectionToken {
@@ -353,11 +398,25 @@ export class RemoteRelayProvider extends RemoteRelayService {
   }
 
   private deliveryId(): RelayDeliveryId {
+    if (this.options.deliveryId !== undefined) return this.options.deliveryId()
     const bytes = this.randomBytes(16)
     if (bytes.byteLength !== 16) throw new TypeError('Relay delivery-id source must return 16 bytes')
-    const value = Buffer.from(bytes).toString('base64url') as RelayDeliveryId
+    this.deliverySequence += 1
+    const value = `${Buffer.from(bytes).toString('base64url')}-${String(this.deliverySequence)}` as RelayDeliveryId
     bytes.fill(0)
     return value
+  }
+
+  private allocateDeliveryId(): RelayDeliveryId {
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const deliveryId = this.deliveryId()
+      if (!this.pendingDeliveries.has(deliveryId)) return deliveryId
+    }
+    throw new RemoteRelayError(
+      'PLATFORM_CAPACITY',
+      'Relay delivery correlation could not be allocated',
+      this.config.capacityRetryAfterMs,
+    )
   }
 
   private awaitDelivery(deliveryId: RelayDeliveryId): PendingDelivery {
@@ -388,7 +447,21 @@ export class RemoteRelayProvider extends RemoteRelayService {
   private assertOpen(): void {
     if (this.disposed) throw new RemoteRelayError('REMOTE_OFFLINE', 'Platform Instance is offline')
   }
+
+  private newCredential(): RelayCredential {
+    const bytes = this.randomBytes(32)
+    if (bytes.byteLength !== 32) throw new TypeError('Relay credential source must return 32 bytes')
+    const credential = parseRelayCredential(Buffer.from(bytes).toString('base64url'))
+    bytes.fill(0)
+    return credential
+  }
 }
+
+function throwIfAborted(signal: AbortSignal): void {
+  if (signal.aborted) throw new RemoteRelayError('REMOTE_OFFLINE', 'Relay attachment was cancelled')
+}
+
+const NEVER_ABORTED = new AbortController().signal
 
 function credentialDigest(credential: RelayCredential): Uint8Array {
   return new Uint8Array(createHash('sha256').update(credential).digest())

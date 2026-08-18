@@ -43,8 +43,10 @@ export interface RemoteRelayConfig {
 export interface RelayRouteStore {
   /** @returns the new monotonically increasing route revision. */
   rotate(routeId: RelayRouteId, credentialDigest: Uint8Array): Promise<number>
+  /** @returns the current revision after adding endpoint-specific authority, or undefined when the route is inactive. */
+  issue(routeId: RelayRouteId, credentialDigest: Uint8Array): Promise<number | undefined>
   /** @returns the current authorized revision, or undefined for wrong/revoked authority. */
-  authorize(routeId: RelayRouteId, credentialDigest: Uint8Array): Promise<number | undefined>
+  authorize(routeId: RelayRouteId, credentialDigest: Uint8Array, signal?: AbortSignal): Promise<number | undefined>
   /** @returns the new monotonically increasing revoked revision. */
   revoke(routeId: RelayRouteId): Promise<number>
 }
@@ -79,7 +81,7 @@ export interface RelayCoordinator {
     listener: (event: RelayCoordinationEvent) => Promise<void>,
   ): Promise<() => Promise<void>>
   /** Publish or replace one expiring live-attachment directory entry. */
-  register(entry: RelayDirectoryEntry): Promise<void>
+  register(entry: RelayDirectoryEntry, signal?: AbortSignal): Promise<void>
   /** Extend one still-current directory entry. */
   refresh(entry: RelayDirectoryEntry): Promise<boolean>
   /** Remove one entry only when its connection token is still current. */
@@ -134,6 +136,12 @@ export abstract class RemoteRelayService extends Service {
    */
   abstract rotateCredential(routeId: RelayRouteId): Promise<RelayCredentialGrant>
   /**
+   * Issue distinct endpoint authority without invalidating other credentials on the active route.
+   * @param routeId - active route receiving another independently revocable bearer.
+   * @returns a fresh credential at the current route revision.
+   */
+  abstract issueCredential(routeId: RelayRouteId): Promise<RelayCredentialGrant>
+  /**
    * Revoke one route and close its attachments across Platform Instances.
    * @param routeId - opaque route whose current authority becomes invalid.
    */
@@ -147,6 +155,7 @@ export abstract class RemoteRelayService extends Service {
     message: RelayAttachMessage
     deliver: (message: RelayCiphertextMessage) => Promise<void>
     close?: () => void | Promise<void>
+    signal?: AbortSignal
   }): Promise<RemoteRelayAttachment>
 }
 

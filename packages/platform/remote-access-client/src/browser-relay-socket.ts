@@ -67,6 +67,11 @@ export class BrowserRelayEndpointSocket implements RelayEndpointSocket {
 
 function opened(socket: WebSocket, signal: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
+    if (signal.aborted) {
+      socket.close()
+      reject(new RemoteRelayError('REMOTE_OFFLINE', 'Relay WebSocket acquisition was cancelled'))
+      return
+    }
     socket.addEventListener('open', onOpen)
     socket.addEventListener('error', onError)
     signal.addEventListener('abort', aborted, { once: true })

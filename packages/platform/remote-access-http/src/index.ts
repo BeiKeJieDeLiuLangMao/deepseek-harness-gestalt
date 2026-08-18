@@ -73,10 +73,10 @@ async function dispatch(
     case 'list-pending': return (await ctx.remoteAccess.listPendingPairings(authentication)).map(completionWire)
     case 'list-pairings': return ctx.remoteAccess.listPersonalPairings(authentication)
     case 'get-mobile-pairing-status':
-      return ctx.remoteAccess.getMobilePairingStatus({
+      return mobilePairingStatusWire(await ctx.remoteAccess.getMobilePairingStatus({
         mobile: authentication,
         pendingPairingId: parsePendingPairingId(body.pendingPairingId),
-      })
+      }))
     case 'confirm-pairing':
       return ctx.remoteAccess.confirmPairing({
         desktop: authentication,
@@ -102,6 +102,11 @@ async function dispatch(
 
 function completionWire(value: PairingCompletionView): unknown {
   return { ...value, desktopHandshake: encodeBytes(value.desktopHandshake) }
+}
+
+function mobilePairingStatusWire(value: Awaited<ReturnType<Context['remoteAccess']['getMobilePairingStatus']>>): unknown {
+  if (value.status !== 'paired' || value.sealedRelayAuthority === undefined) return value
+  return { ...value, sealedRelayAuthority: encodeBytes(value.sealedRelayAuthority) }
 }
 
 function authenticationFromHeaders(req: IncomingMessage): PairingAccountAuthentication {

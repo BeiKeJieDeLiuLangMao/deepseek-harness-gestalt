@@ -91,13 +91,16 @@ export class RelayWebSocketConsumer {
     let attachment: RemoteRelayAttachment | undefined
     let failed = false
     let serial = Promise.resolve()
+    const attachmentAbort = new AbortController()
     const attachTimer = setTimeout(() => {
       failed = true
+      attachmentAbort.abort()
       socket.close(1008, 'attach timeout')
     }, this.attachTimeoutMs)
     attachTimer.unref()
     const settle = async (): Promise<void> => {
       clearTimeout(attachTimer)
+      attachmentAbort.abort()
       if (attachment !== undefined) await attachment.close()
     }
     const pump = new Promise<void>((resolve, reject) => {
@@ -113,6 +116,7 @@ export class RelayWebSocketConsumer {
               message,
               deliver: outgoing => send(socket, encodeRelayMessage(outgoing)),
               close: () => { socket.terminate() },
+              signal: attachmentAbort.signal,
             })
             await send(socket, encodeRelayMessage({
               type: 'ready', transportVersion: 1, attachmentId: message.attachmentId,

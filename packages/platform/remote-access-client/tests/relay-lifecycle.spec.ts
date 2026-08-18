@@ -8,11 +8,49 @@ import {
 import { describe, expect, it, vi } from 'vitest'
 import type { RemoteRelayError } from '@deepseek-ai/dsh-remote-access'
 import {
+  MobileRelayEndpointLifecycle,
   RemoteRelayEndpointController,
   type RelayEndpointSocket,
 } from '../src/index.ts'
 
 describe('RemoteRelayEndpointController', () => {
+  it('starts Mobile only after pairing-delivered authority configures its lifecycle', async () => {
+    const unavailableError = vi.fn()
+    const unavailable = new MobileRelayEndpointLifecycle({
+      attachmentId: () => parseRelayAttachmentId('mobile-unconfigured'),
+      connect: async () => new FakeSocket(),
+      attachTimeoutMs: 20,
+      heartbeatIntervalMs: 30_000,
+      reconnectDelayMs: 1,
+      onTransportError: unavailableError,
+    })
+    const unavailableStart = unavailable.start()
+    void unavailableStart.catch(() => {})
+    await vi.waitFor(() => { expect(unavailableError).toHaveBeenCalled() })
+    await unavailable.stop()
+    await expect(unavailableStart).rejects.toMatchObject({ code: 'REMOTE_OFFLINE' })
+
+    const socket = new FakeSocket()
+    const lifecycle = new MobileRelayEndpointLifecycle({
+      attachmentId: () => parseRelayAttachmentId('mobile-product'),
+      connect: async () => socket,
+      attachTimeoutMs: 20,
+      heartbeatIntervalMs: 30_000,
+      reconnectDelayMs: 1,
+    })
+    lifecycle.configure({
+      routeId: parseRelayRouteId('route-product'),
+      credential: parseRelayCredential('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'),
+      revision: 1,
+    })
+
+    await lifecycle.start()
+    expect(lifecycle.isConnected()).toBe(true)
+    expect(socket.decoded()[0]).toMatchObject({ type: 'attach', endpoint: 'mobile', routeId: 'route-product' })
+    await lifecycle.stop()
+    expect(lifecycle.isConnected()).toBe(false)
+  })
+
   it('rejects invalid lifecycle configuration and Desktop without authoritative resync', () => {
     const base = {
       endpoint: 'mobile' as const,

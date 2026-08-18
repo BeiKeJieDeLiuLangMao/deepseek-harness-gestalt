@@ -2,7 +2,11 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 import { parseAccountProofJti, parseInstallationId } from '@deepseek-ai/dsh-platform-account'
-import { PersonalPairingProvider, type PairingAccountAuthentication } from '@deepseek-ai/dsh-remote-access'
+import {
+  MemoryPersonalPairingAuthorityStore,
+  PersonalPairingProvider,
+  type PairingAccountAuthentication,
+} from '@deepseek-ai/dsh-remote-access'
 import { RemoteAccessHttpTransport, type RelayEndpointSocket } from '@deepseek-ai/dsh-remote-access-client'
 import { DesktopRelayEndpointLifecycle } from '@deepseek-ai/dsh-remote-access-client/desktop-relay-lifecycle'
 import { apply } from '@deepseek-ai/dsh-remote-access-http'
@@ -42,6 +46,7 @@ describe('Desktop Settings Remote Access composition', () => {
       },
       handshake: handshakeFixture(),
       relay: { rotateCredential, revokeRoute },
+      authority: new MemoryPersonalPairingAuthorityStore(),
       randomBytes: size => new Uint8Array(size),
       randomId: kind => `${kind}-settings-route`,
       pairingLinkOrigin: 'https://platform.example/pair',
@@ -83,6 +88,7 @@ describe('Desktop Settings Remote Access composition', () => {
       expect(rotateCredential).toHaveBeenCalledOnce()
       expect(socket.sent[0]).toMatchObject({ type: 'attach', credential })
       expect(resynchronize).toHaveBeenCalledOnce()
+      expect(relay.getState()).toEqual({ connected: true })
       expect(controller.getSnapshot()).toMatchObject({ status: 'ready', enabled: true })
       await relay.sendCiphertext(parseRelayAttachmentId('mobile-settings'), Uint8Array.of(7))
       expect(socket.sent.at(-1)).toMatchObject({ type: 'ciphertext', ciphertext: Uint8Array.of(7) })
@@ -90,6 +96,7 @@ describe('Desktop Settings Remote Access composition', () => {
       await controller.setEnabled(false)
       expect(revokeRoute).toHaveBeenCalledOnce()
       expect(socket.closed).toBe(true)
+      expect(relay.getState()).toEqual({ connected: false, stopReason: 'mobile-access-disabled' })
       expect(controller.getSnapshot()).toEqual({ status: 'ready', enabled: false, pairings: [] })
       await controller.dispose()
     } finally {

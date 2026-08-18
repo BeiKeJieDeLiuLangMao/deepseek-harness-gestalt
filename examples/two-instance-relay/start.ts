@@ -3,12 +3,15 @@ import { createServer, type Server } from 'node:https'
 import { fileURLToPath } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import {
+  MemoryPersonalPairingAuthorityStore,
+  PersonalPairingProvider,
   parseRelayInstanceId,
   type RelayCoordinator,
   type RelayDirectoryEntry,
   type RelayRouteStore,
   type RemoteRelayConfig,
 } from '@deepseek-ai/dsh-remote-access'
+import { parseAccountProofJti, parseInstallationId, parsePlatformAccountId } from '@deepseek-ai/dsh-platform-account'
 import { RemoteRelayProvider } from '@deepseek-ai/dsh-remote-access/relay-provider'
 import {
   RemoteRelayEndpointController,
@@ -31,6 +34,7 @@ import {
   parseCompanionSessionId,
   parseCompanionTranscriptEntryId,
   parseRelayAttachmentId,
+  parseRelayCredential,
   parseRelayRouteId,
   REMOTE_PROTOCOL_LIMITS,
   type RelayAttachmentId,
@@ -85,8 +89,69 @@ export async function apply(_ctx: Context, config: Config): Promise<void> {
       { maxBytes: config.inboundMaxBytes, maxMessages: config.inboundMaxMessages },
       { rejectUnauthorized: false },
     )
-    const routeId = parseRelayRouteId('route-keyless')
-    const grant = await backendA.provider.rotateCredential(routeId)
+    const pairingAuthority = new MemoryPersonalPairingAuthorityStore()
+    let pairingId = 0
+    const createPairingProvider = (relay: RemoteRelayProvider) => new PersonalPairingProvider(new Context(), {
+      account: {
+        currentInstallation: async ({ accessToken }) => {
+          const [kind, id] = accessToken.split(':') as ['desktop' | 'mobile', string]
+          return {
+            account: {
+              id: parsePlatformAccountId('account-keyless'), githubId: 1, githubLogin: 'keyless',
+              avatarUrl: 'https://avatars.example/keyless',
+            },
+            installation: { id: parseInstallationId(id), kind },
+          }
+        },
+      },
+      handshake: {
+        createChallenge: async () => ({ desktopFingerprint: 'desktop-keyless', state: Uint8Array.of(1) }),
+        completeChallenge: async () => ({
+          handshakeHash: new Uint8Array(32), desktopHandshake: Uint8Array.of(2), pendingPairingKey: Uint8Array.of(3),
+        }),
+        activatePairing: async () => ({ keyReference: 'keyless-active' as never, activePairingKey: Uint8Array.of(4) }),
+        sealMobileRelayAuthority: async ({ grant }) => new TextEncoder().encode(JSON.stringify(grant)),
+        destroyChallenge: () => {}, destroyPendingPairing: () => {}, destroyPairing: () => {},
+      },
+      relay,
+      authority: pairingAuthority,
+      randomBytes: size => new Uint8Array(size).fill(41),
+      randomId: kind => kind === 'relay-route' ? 'route-keyless' : `${kind}-keyless-${String(++pairingId)}`,
+      pairingLinkOrigin: 'https://platform.example/pair',
+    })
+    const pairingA = createPairingProvider(backendA.provider)
+    const pairingB = createPairingProvider(backendB.provider)
+    resources.add({ close: async () => { await pairingA.dispose() } })
+    resources.add({ close: async () => { await pairingB.dispose() } })
+    const authentication = (kind: 'desktop' | 'mobile', id: string) => ({
+      accessToken: `${kind}:${id}`,
+      proof: { jti: parseAccountProofJti(`${kind}-${id}`), issuedAt: 1, signature: 'keyless' },
+    })
+    const desktopAuthentication = authentication('desktop', 'desktop-keyless')
+    const mobileAuthentication = authentication('mobile', 'mobile-keyless')
+    const desktopAccess = await pairingA.setMobileAccess({ desktop: desktopAuthentication, enabled: true })
+    if (desktopAccess.relay === undefined) throw new Error('Desktop product flow did not issue Relay authority')
+    const challenge = await pairingA.createChallenge({
+      desktop: desktopAuthentication, rendezvousId: 'rendezvous-keyless' as never,
+    })
+    const pending = await pairingA.completeChallenge({
+      mobile: mobileAuthentication,
+      completionId: 'completion-keyless' as never,
+      oneTimeLink: challenge.oneTimeLink,
+      device: { name: 'Keyless phone', platform: 'ios' },
+      mobileHandshake: Uint8Array.of(5),
+    })
+    await pairingA.confirmPairing({ desktop: desktopAuthentication, pendingPairingId: pending.pendingPairingId })
+    const mobileStatus = await pairingB.getMobilePairingStatus({
+      mobile: mobileAuthentication, pendingPairingId: pending.pendingPairingId,
+    })
+    if (mobileStatus.status !== 'paired' || mobileStatus.sealedRelayAuthority === undefined) {
+      throw new Error('Mobile product flow did not receive paired Relay authority')
+    }
+    const mobileGrant = parseKeylessRelayAuthority(mobileStatus.sealedRelayAuthority)
+    const routeId = desktopAccess.relay.routeId
+    await pairingA.dispose()
+    const replacementAccess = await pairingB.getMobileAccessState(desktopAuthentication)
     const cipher = new KeylessHarnessCipher()
     const mobileProtocol = negotiateCompanionProtocol(
       createCompanionNegotiationChannel(),
@@ -144,7 +209,7 @@ export async function apply(_ctx: Context, config: Config): Promise<void> {
     })
     const mobile = new RemoteRelayEndpointController({
       endpoint: 'mobile',
-      route: async () => grant,
+      route: async () => mobileGrant,
       attachmentId: () => mobileAttachmentId,
       connect: connectEndpoint,
       attachTimeoutMs: config.attachTimeoutMs,
@@ -169,11 +234,12 @@ export async function apply(_ctx: Context, config: Config): Promise<void> {
 
     await mobile.start()
     await waitForDirectory(backendA.coordinator, routeId, mobileAttachmentId)
-    desktopLifecycle.configure(grant)
+    desktopLifecycle.configure(desktopAccess.relay)
     await desktopLifecycle.start()
     await waitForDirectory(backendA.coordinator, routeId, desktopAttachmentId)
     const endpoint = new URL(loadBalancer.url)
-    console.log(`PLATFORM endpointProtocol=${endpoint.protocol} endpointPath=${endpoint.pathname} endpointCount=1 nonSticky=${String(acquired[0] !== acquired[1])} mobile=${acquired[0]} desktop=${acquired[1]}`)
+    const endpointCount = new Set([loadBalancer.url]).size
+    console.log(`PLATFORM endpointProtocol=${endpoint.protocol} endpointPath=${endpoint.pathname} endpointCount=${String(endpointCount)} nonSticky=${String(acquired[0] !== acquired[1])} mobile=${acquired[0]} desktop=${acquired[1]} productAuthority=${String(replacementAccess.enabled)} distinctCredentials=${String(desktopAccess.relay.credential !== mobileGrant.credential)}`)
 
     const prompt = 'continue from Mobile across instances'
     await mobile.sendCiphertext(desktopAttachmentId, cipher.seal(encodeCompanionMessage(mobileProtocol, {
@@ -183,7 +249,10 @@ export async function apply(_ctx: Context, config: Config): Promise<void> {
         sessionId: parseCompanionSessionId('session-keyless'), text: prompt,
       },
     })))
-    console.log(`ROUND_TRIP encrypted=true relayBusinessValue=${String(bus.published.some(value => value.includes(prompt)))} outcome=${await result.promise}`)
+    const outcome = await result.promise
+    const relayBusinessValue = bus.published.some(value => value.includes(prompt))
+    const encrypted = !relayBusinessValue
+    console.log(`ROUND_TRIP encrypted=${String(encrypted)} relayBusinessValue=${String(relayBusinessValue)} outcome=${outcome}`)
 
     await backendB.close()
     await failoverProjection.promise
@@ -191,19 +260,28 @@ export async function apply(_ctx: Context, config: Config): Promise<void> {
     if (mobileProjection?.revision !== 2 || mobileProjection.text !== 'desktop authoritative revision 2') {
       throw new Error('Mobile did not apply the Desktop-authoritative failover projection')
     }
-    console.log(`FAILOVER liveSocketMigration=false desktopReconnect=${replacement.instanceId} mobileRevision=${String(mobileProjection.revision)} mobileText=${mobileProjection.text}`)
+    const liveSocketMigration = desktopGeneration === 1
+    console.log(`FAILOVER liveSocketMigration=${String(liveSocketMigration)} desktopReconnect=${replacement.instanceId} mobileRevision=${String(mobileProjection.revision)} mobileText=${mobileProjection.text}`)
 
     const lifecycleOffline: DesktopRelayStopReason[] = []
+    const lifecyclePresence: boolean[] = []
     for (const reason of ['window-close', 'sleep', 'mobile-access-disabled', 'quit'] as const) {
       if (lifecycleOffline.length > 0) await desktopLifecycle.start()
       const attachment = desktopAttachmentId
       await desktopLifecycle.stop(reason)
       await waitUntil(async () => await backendA.coordinator.locate(routeId, attachment) === undefined)
       lifecycleOffline.push(reason)
+      lifecyclePresence.push(await backendA.coordinator.locate(routeId, attachment) !== undefined)
     }
     await mobile.sendCiphertext(desktopAttachmentId, cipher.seal(Uint8Array.of(1)))
     console.log(`OFFLINE code=${await offline.promise} retainedCiphertextValues=${String(bus.retainedCiphertextValueCount())}`)
-    console.log(`LIFECYCLE observed=${lifecycleOffline.join(',')} offline=${String(lifecycleOffline.length === 4)}`)
+    console.log(`LIFECYCLE observed=${lifecycleOffline.join(',')} offline=${String(lifecyclePresence.every(present => !present))}`)
+    const pairingReplacement = createPairingProvider(backendA.provider)
+    resources.add({ close: async () => { await pairingReplacement.dispose() } })
+    await pairingReplacement.setMobileAccess({ desktop: desktopAuthentication, enabled: false })
+    await waitUntil(async () => await backendA.coordinator.locate(routeId, mobileAttachmentId) === undefined)
+    const routeOffline = await backendA.coordinator.locate(routeId, mobileAttachmentId) === undefined
+    console.log(`AUTHORITY disableInstance=platform-replacement routeOffline=${String(routeOffline)}`)
 
     const failClosed = new FailClosedDesktopRelayLifecycle('production crypto gate pending')
     let failed = false
@@ -233,6 +311,7 @@ async function startBackend(
   const coordinator = new RedisRelayCoordinator({
     command: bus.client(), subscriber: bus.client(), keyPrefix: 'dsh:development:relay',
   })
+  let entropyAllocation = 0
   const provider = new RemoteRelayProvider(ctx, {
     instanceId: parseRelayInstanceId(id), routeStore, coordinator,
     config: {
@@ -244,7 +323,10 @@ async function startBackend(
       maxConnections: config.maxConnections,
       maxPendingDeliveries: config.maxPendingDeliveries,
     },
-    randomBytes: size => new Uint8Array(size).fill(randomByte),
+    randomBytes: (size) => {
+      entropyAllocation += 1
+      return new Uint8Array(size).fill((randomByte + entropyAllocation) % 256)
+    },
   })
   const consumer = new RelayWebSocketConsumer(ctx, config.attachTimeoutMs)
   let open = true
@@ -300,20 +382,26 @@ async function startLoadBalancer(backends: Backend[], acquired: string[]): Promi
 }
 
 class KeylessRouteStore implements RelayRouteStore {
-  private readonly routes = new Map<string, { digest: string; revision: number; revoked: boolean }>()
+  private readonly routes = new Map<string, { digests: Set<string>; revision: number; revoked: boolean }>()
   async rotate(routeId: RelayRouteId, digest: Uint8Array): Promise<number> {
     const revision = (this.routes.get(routeId)?.revision ?? 0) + 1
-    this.routes.set(routeId, { digest: Buffer.from(digest).toString('hex'), revision, revoked: false })
+    this.routes.set(routeId, { digests: new Set([Buffer.from(digest).toString('hex')]), revision, revoked: false })
     return revision
+  }
+  async issue(routeId: RelayRouteId, digest: Uint8Array): Promise<number | undefined> {
+    const route = this.routes.get(routeId)
+    if (route === undefined || route.revoked) return undefined
+    route.digests.add(Buffer.from(digest).toString('hex'))
+    return route.revision
   }
   async authorize(routeId: RelayRouteId, digest: Uint8Array): Promise<number | undefined> {
     const route = this.routes.get(routeId)
-    return route !== undefined && !route.revoked && route.digest === Buffer.from(digest).toString('hex')
+    return route !== undefined && !route.revoked && route.digests.has(Buffer.from(digest).toString('hex'))
       ? route.revision : undefined
   }
   async revoke(routeId: RelayRouteId): Promise<number> {
     const revision = (this.routes.get(routeId)?.revision ?? 0) + 1
-    this.routes.set(routeId, { digest: '', revision, revoked: true })
+    this.routes.set(routeId, { digests: new Set(), revision, revoked: true })
     return revision
   }
 }
@@ -323,7 +411,7 @@ class KeylessRedisBus {
   private readonly values = new Map<string, string>()
   private readonly subscriptions = new Map<string, Set<(message: string) => void>>()
   client(): RelayRedisClient {
-    return {
+    const client: RelayRedisClient = {
       get: async key => this.values.get(key) ?? null,
       set: async (key, value) => { this.values.set(key, value); return 'OK' },
       eval: async (_script, options) => {
@@ -350,7 +438,9 @@ class KeylessRedisBus {
         this.subscriptions.set(channel, listeners)
       },
       unsubscribe: async (channel, listener) => { this.subscriptions.get(channel)?.delete(listener) },
+      withAbortSignal: () => client,
     }
+    return client
   }
   retainedCiphertextValueCount(): number {
     return [...this.values.values()].filter(value => value.includes('ciphertext')).length
@@ -384,6 +474,22 @@ export function validateBundledConfig(config: Config): void {
   }
   if (config.inboundMaxBytes < REMOTE_PROTOCOL_LIMITS.relayMessageBytes) {
     throw new TypeError('Relay inboundMaxBytes must admit one maximum Relay message')
+  }
+}
+
+function parseKeylessRelayAuthority(value: Uint8Array) {
+  const decoded = JSON.parse(new TextDecoder().decode(value)) as unknown
+  if (typeof decoded !== 'object' || decoded === null || Array.isArray(decoded)) {
+    throw new TypeError('Keyless Mobile Relay authority must be an object')
+  }
+  const record = decoded as Record<string, unknown>
+  if (!Number.isSafeInteger(record.revision) || (record.revision as number) <= 0) {
+    throw new TypeError('Keyless Mobile Relay revision must be positive')
+  }
+  return {
+    routeId: parseRelayRouteId(record.routeId),
+    credential: parseRelayCredential(record.credential),
+    revision: record.revision as number,
   }
 }
 

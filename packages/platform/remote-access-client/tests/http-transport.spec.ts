@@ -69,8 +69,15 @@ describe('RemoteAccessHttpTransport', () => {
 
   it('serializes every Desktop and Mobile operation and parses their public results', async () => {
     const replies = [
-      { enabled: false }, { enabled: true }, challenge, {}, [completion], [pairing], pairing, {}, completion,
-      { status: 'pending' }, { status: 'rejected' }, { status: 'paired', pairingId: 'pairing-one' },
+      { enabled: false }, {
+        enabled: true,
+        relay: {
+          routeId: 'route-one', credential: 'AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE', revision: 1,
+        },
+      }, challenge, {}, [completion], [pairing], pairing, {}, completion,
+      { status: 'pending' }, { status: 'rejected' }, {
+        status: 'paired', pairingId: 'pairing-one', sealedRelayAuthority: 'AQI',
+      },
     ]
     const fetch = vi.fn(async (
       _input: Parameters<typeof globalThis.fetch>[0],
@@ -85,7 +92,9 @@ describe('RemoteAccessHttpTransport', () => {
     const pendingPairingId = parsePendingPairingId('pending-one')
 
     await expect(client.getMobileAccessState(authentication)).resolves.toEqual({ enabled: false })
-    await expect(client.setMobileAccess({ authentication, enabled: true })).resolves.toEqual({ enabled: true })
+    await expect(client.setMobileAccess({ authentication, enabled: true })).resolves.toMatchObject({
+      enabled: true, relay: { routeId: 'route-one', revision: 1 },
+    })
     await expect(client.createChallenge({ authentication, rendezvousId })).resolves.toMatchObject(challenge)
     await expect(client.cancelChallenge({ authentication, challengeId })).resolves.toBeUndefined()
     await expect(client.listPendingPairings(authentication)).resolves.toMatchObject([{
@@ -104,7 +113,7 @@ describe('RemoteAccessHttpTransport', () => {
     await expect(client.getMobilePairingStatus({ authentication, pendingPairingId })).resolves.toEqual({ status: 'pending' })
     await expect(client.getMobilePairingStatus({ authentication, pendingPairingId })).resolves.toEqual({ status: 'rejected' })
     await expect(client.getMobilePairingStatus({ authentication, pendingPairingId })).resolves.toEqual({
-      status: 'paired', pairingId: 'pairing-one',
+      status: 'paired', pairingId: 'pairing-one', sealedRelayAuthority: Uint8Array.of(1, 2),
     })
 
     expect(fetch).toHaveBeenCalledTimes(12)

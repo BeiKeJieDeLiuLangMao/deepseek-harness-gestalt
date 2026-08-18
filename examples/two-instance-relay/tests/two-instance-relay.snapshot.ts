@@ -18,11 +18,12 @@ describe('two-instance Remote Relay keyless assembled path', () => {
     })
     expect(result.stderr).toBe('')
     expect(result.stdout).toMatchInlineSnapshot(`
-      "PLATFORM endpointProtocol=wss: endpointPath=/v1/remote-access/relay endpointCount=1 nonSticky=true mobile=platform-a desktop=platform-b
+      "PLATFORM endpointProtocol=wss: endpointPath=/v1/remote-access/relay endpointCount=1 nonSticky=true mobile=platform-a desktop=platform-b productAuthority=true distinctCredentials=true
       ROUND_TRIP encrypted=true relayBusinessValue=false outcome=accepted
       FAILOVER liveSocketMigration=false desktopReconnect=platform-a mobileRevision=2 mobileText=desktop authoritative revision 2
       OFFLINE code=REMOTE_OFFLINE retainedCiphertextValues=0
       LIFECYCLE observed=window-close,sleep,mobile-access-disabled,quit offline=true
+      AUTHORITY disableInstance=platform-replacement routeOffline=true
       CRYPTO startRejected=true connected=false stop=quit
       "
     `)

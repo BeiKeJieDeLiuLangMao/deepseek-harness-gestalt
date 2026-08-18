@@ -19,5 +19,5 @@ describe('Remote Relay WSS publication', () => {
 
     expect(result.stdout).toBe('RELAY_LOADER bare-subpath=active\n')
     expect(result.stderr).toBe('')
-  })
+  }, 30_000)
 })

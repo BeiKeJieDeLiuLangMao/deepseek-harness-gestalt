@@ -1105,12 +1105,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the one-time credential grant and its persistent revision.',
       },
       {
+        signature: 'abstract issueCredential(routeId: RelayRouteId): Promise<RelayCredentialGrant>',
+        description: 'Issue distinct endpoint authority without invalidating other credentials on the active route.',
+        parameters: [{ name: 'routeId', description: 'active route receiving another independently revocable bearer.' }],
+        returns: 'a fresh credential at the current route revision.',
+      },
+      {
         signature: 'abstract revokeRoute(routeId: RelayRouteId): Promise<void>',
         description: 'Revoke one route and close its attachments across Platform Instances.',
         parameters: [{ name: 'routeId', description: 'opaque route whose current authority becomes invalid.' }],
       },
       {
-        signature: 'abstract attach(input: { message: RelayAttachMessage deliver: (message: RelayCiphertextMessage) => Promise<void> close?: () => void | Promise<void> }): Promise<RemoteRelayAttachment>',
+        signature: 'abstract attach(input: { message: RelayAttachMessage deliver: (message: RelayCiphertextMessage) => Promise<void> close?: () => void | Promise<void> signal?: AbortSignal }): Promise<RemoteRelayAttachment>',
         description: 'Authenticate and register one outbound Mobile or Desktop attachment.',
         parameters: [{ name: 'input', description: 'attach frame plus the socket writer and optional close callback.' }],
         returns: 'the admitted attachment receiving later frames from that socket.',
@@ -3722,7 +3728,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'MobilePairingStatus',
-    declaration: 'export type MobilePairingStatus = {\n    status: \'pending\';\n} | {\n    status: \'paired\';\n    pairingId: PersonalPairingId;\n} | {\n    status: \'rejected\';\n};',
+    declaration: 'export type MobilePairingStatus = {\n    status: \'pending\';\n} | {\n    status: \'paired\';\n    pairingId: PersonalPairingId;\n    sealedRelayAuthority?: Uint8Array;\n} | {\n    status: \'rejected\';\n};',
   },
   {
     name: 'ModelMessageSource',

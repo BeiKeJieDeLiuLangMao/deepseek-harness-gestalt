@@ -115,6 +115,32 @@ describe('RedisRelayCoordinator', () => {
     })).rejects.toThrow('must use invalidate')
   })
 
+  it('cancels an in-flight directory registration through the maintained Redis client', async () => {
+    const command = clientFixture()
+    const controller = new AbortController()
+    let commandSignal: AbortSignal | undefined
+    command.withAbortSignal.mockImplementation((signal) => {
+      commandSignal = signal
+      return {
+        ...command,
+        set: async () => await new Promise<never>((_resolve, reject) => {
+          signal.addEventListener('abort', () => {
+            reject(signal.reason instanceof Error ? signal.reason : new Error('registration aborted'))
+          }, { once: true })
+        }),
+      }
+    })
+    const coordinator = new RedisRelayCoordinator({
+      command, subscriber: clientFixture(), keyPrefix: 'dsh:relay', clock: { now: () => 1_000 },
+    })
+
+    const registration = coordinator.register(directoryEntry(2_000), controller.signal)
+    controller.abort(new Error('attach timed out'))
+
+    await expect(registration).rejects.toThrow('attach timed out')
+    expect(commandSignal).toBe(controller.signal)
+  })
+
   it('rolls back partial subscription and aggregates unsubscribe failures', async () => {
     const command = clientFixture()
     const subscriber = clientFixture()
@@ -257,7 +283,7 @@ class FakeRedisBus {
   private readonly subscriptions = new Map<string, Set<(message: string) => void>>()
 
   client(): RelayRedisClient {
-    return {
+    const client: RelayRedisClient = {
       get: async key => this.values.get(key) ?? null,
       set: async (key, value) => { this.values.set(key, value); return 'OK' },
       eval: async (_script, options) => {
@@ -283,7 +309,9 @@ class FakeRedisBus {
         this.subscriptions.set(channel, listeners)
       },
       unsubscribe: async (channel, listener) => { this.subscriptions.get(channel)?.delete(listener) },
+      withAbortSignal: () => client,
     }
+    return client
   }
 
   emit(channel: string, message: string): void {
@@ -317,16 +345,19 @@ function coordinationValue(type: string, frame: unknown): string {
 }
 
 function clientFixture() {
-  return {
+  const fixture = {
     get: vi.fn(async () => null),
     set: vi.fn(async () => 'OK'),
     eval: vi.fn(async () => 1),
     publish: vi.fn(async () => 1),
     subscribe: vi.fn(async () => undefined),
     unsubscribe: vi.fn(async () => undefined),
+    withAbortSignal: vi.fn(),
   } satisfies Record<keyof RelayRedisClient, unknown> as unknown as {
     [K in keyof RelayRedisClient]: ReturnType<typeof vi.fn<RelayRedisClient[K]>>
   }
+  fixture.withAbortSignal.mockReturnValue(fixture)
+  return fixture
 }
 
 function redisClientFixture() {
