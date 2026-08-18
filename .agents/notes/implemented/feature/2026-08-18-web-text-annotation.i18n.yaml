@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-18-web-text-annotation.md
-2026-08-18-web-text-annotation.md: f99a3091f9844c8e07d7c704f5d3f9dabe253e26
-2026-08-18-web-text-annotation.zh.md: c59f96205b0d736087fe8eb90a85ff21781ca11e
+2026-08-18-web-text-annotation.md: a5f07c79e9baa597bad6a2a15f5ae3d450255404
+2026-08-18-web-text-annotation.zh.md: 09b0f4abb3662de52ae96af0dbc77a2b6eff9a92

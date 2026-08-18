@@ -21,6 +21,13 @@ import { InputBar } from '../src/client/skeleton/InputBar.tsx'
 import type { InputBarProps } from '../src/client/skeleton/InputBar.tsx'
 import { zh } from '../src/client/locales.ts'
 
+/** Compiler labels required by every shell construction (the hub always supplies them). */
+const TEST_LABELS = {
+  heading: (index: number) => `Annotation ${index}`,
+  quote: (value: string) => `Quoted text: \u201c${value}\u201d`,
+  note: (value: string) => `Note: ${value}`,
+}
+
 afterEach(cleanup)
 
 // jsdom implements no Range geometry at all — `Range.prototype.getBoundingClientRect`
@@ -115,6 +122,7 @@ function bench(over?: BenchOptions) {
   const shell = new SessionInputShell({
     actx: SCTX,
     defaultSink: sink,
+    annotationLabels: TEST_LABELS,
     queue: {
       getSnapshot: () => session.getSnapshot().queue,
       subscribe: fn => session.subscribe(fn),
@@ -630,7 +638,7 @@ describe('running and lock semantics', () => {
     expect(shell.snapshot.annotationSubmitting).toBe(true)
     expect(textarea.readOnly).toBe(true)
     expect(button.disabled).toBe(true)
-    expect((view.getByLabelText('删除批示') as HTMLButtonElement).disabled).toBe(true)
+    expect((view.getByLabelText('删除注释') as HTMLButtonElement).disabled).toBe(true)
   })
 
   it('running keeps the input free (typing + Enter queue) while the primary turns stop', () => {

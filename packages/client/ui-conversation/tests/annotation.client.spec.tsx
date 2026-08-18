@@ -6,7 +6,7 @@ import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import {
-  compileAnnotationSubmission, createTextAnchor, resolveTextAnchor, TextAnnotationId,
+  compileAnnotationSubmission, createTextAnchor, TextAnnotationId,
 } from '../src/client/annotation/model.ts'
 import type { TextAnchor } from '../src/client/annotation/model.ts'
 import { AnnotationEditor } from '../src/client/annotation/AnnotationEditor.tsx'
@@ -36,6 +36,13 @@ function textPosition(node: Node, value: string): { node: Text; offset: number }
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
+/** Compiler labels required by every shell construction (the hub always supplies them). */
+const LABELS = {
+  heading: (index: number) => `Annotation ${index}`,
+  quote: (value: string) => `Quoted text: “${value}”`,
+  note: (value: string) => `Note: ${value}`,
+}
+
 describe('text annotation mechanics', () => {
   it('anchors an exact repeated quotation with surrounding context', () => {
     const source = 'Alpha repeat middle repeat omega.'
@@ -47,8 +54,9 @@ describe('text annotation mechanics', () => {
       prefix: 'Alpha repeat middle ',
       suffix: ' omega.',
     })
-    expect(resolveTextAnchor(anchor, source)).toEqual({ start: 20, end: 26 })
-    expect(resolveTextAnchor(anchor, 'Alpha repeat middle changed omega.')).toBeNull()
+    // Anchor-to-range resolution lives in the renderer projection
+    // (MarkdownSelectionMap.rangeForText); stale and ambiguous anchors are
+    // covered by the Draft Mark rebuild tests below.
   })
 
   it('compiles question-first readable prose without an annotation protocol', () => {
@@ -129,8 +137,8 @@ describe('text annotation mechanics', () => {
     selection.addRange(range)
     fireEvent(document, new Event('selectionchange'))
 
-    expect(view.getByRole('toolbar').textContent).toBe('添加批示复制')
-    fireEvent.click(view.getByRole('button', { name: '添加批示' }))
+    expect(view.getByRole('toolbar').textContent).toBe('添加注释复制')
+    fireEvent.click(view.getByRole('button', { name: '添加注释' }))
     const editor = view.getByPlaceholderText('添加说明（可选）')
     fireEvent.change(editor, { target: { value: 'Tighten this' } })
     fireEvent.keyDown(editor, { key: 'Enter', shiftKey: true })
@@ -171,8 +179,8 @@ describe('text annotation mechanics', () => {
     selection.addRange(range)
     fireEvent(document, new Event('selectionchange'))
 
-    fireEvent.click(view.getByRole('button', { name: '添加批示' }))
-    fireEvent.click(view.getByRole('button', { name: '保存批示' }))
+    fireEvent.click(view.getByRole('button', { name: '添加注释' }))
+    fireEvent.click(view.getByRole('button', { name: '保存注释' }))
     expect(saved?.quote).toBe('code')
     if (saved === undefined) throw new Error('expected saved inline-code annotation')
     view.unmount()
@@ -215,8 +223,8 @@ describe('text annotation mechanics', () => {
     selection.addRange(range)
     fireEvent(document, new Event('selectionchange'))
 
-    fireEvent.click(view.getByRole('button', { name: '添加批示' }))
-    fireEvent.click(view.getByRole('button', { name: '保存批示' }))
+    fireEvent.click(view.getByRole('button', { name: '添加注释' }))
+    fireEvent.click(view.getByRole('button', { name: '保存注释' }))
     expect(saved?.quote).toBe('before code after')
     if (saved === undefined) throw new Error('expected saved cross-inline annotation')
     view.unmount()
@@ -259,8 +267,8 @@ describe('text annotation mechanics', () => {
     selection.addRange(range)
     fireEvent(document, new Event('selectionchange'))
 
-    fireEvent.click(view.getByRole('button', { name: '添加批示' }))
-    fireEvent.click(view.getByRole('button', { name: '保存批示' }))
+    fireEvent.click(view.getByRole('button', { name: '添加注释' }))
+    fireEvent.click(view.getByRole('button', { name: '保存注释' }))
     expect(saved).toMatchObject({ quote: 'repeat', prefix: 'A          ', suffix: ' x repeat' })
     if (saved === undefined) throw new Error('expected saved repeated-quote annotation')
     view.unmount()
@@ -307,8 +315,8 @@ describe('text annotation mechanics', () => {
     selection.addRange(range)
     fireEvent(document, new Event('selectionchange'))
 
-    fireEvent.click(view.getByRole('button', { name: '添加批示' }))
-    fireEvent.click(view.getByRole('button', { name: '保存批示' }))
+    fireEvent.click(view.getByRole('button', { name: '添加注释' }))
+    fireEvent.click(view.getByRole('button', { name: '保存注释' }))
     expect(saved?.quote).toBe('ready')
     if (saved === undefined) throw new Error('expected saved fenced-code annotation')
     view.unmount()
@@ -359,8 +367,8 @@ describe('text annotation mechanics', () => {
       selection.addRange(range)
       fireEvent(document, new Event('selectionchange'))
 
-      fireEvent.click(view.getByRole('button', { name: '添加批示' }))
-      fireEvent.click(view.getByRole('button', { name: '保存批示' }))
+      fireEvent.click(view.getByRole('button', { name: '添加注释' }))
+      fireEvent.click(view.getByRole('button', { name: '保存注释' }))
       expect(saved).toMatchObject({ quote: 'ready', prefix: 'beforeconst ', suffix: ' = trueafter' })
       if (saved === undefined) throw new Error('expected saved rerendered-fence annotation')
       view.unmount()
@@ -409,8 +417,8 @@ describe('text annotation mechanics', () => {
     selection.addRange(range)
     fireEvent(document, new Event('selectionchange'))
 
-    fireEvent.click(view.getByRole('button', { name: '添加批示' }))
-    fireEvent.click(view.getByRole('button', { name: '保存批示' }))
+    fireEvent.click(view.getByRole('button', { name: '添加注释' }))
+    fireEvent.click(view.getByRole('button', { name: '保存注释' }))
     expect(saved).toMatchObject({ quote: 'ready', prefix: 'before', suffix: ' = Trueafter' })
     if (saved === undefined) throw new Error('expected saved lazy-fence annotation')
     view.unmount()
@@ -453,8 +461,8 @@ describe('text annotation mechanics', () => {
     selection.addRange(range)
     fireEvent(document, new Event('selectionchange'))
 
-    fireEvent.click(view.getByRole('button', { name: '添加批示' }))
-    fireEvent.click(view.getByRole('button', { name: '保存批示' }))
+    fireEvent.click(view.getByRole('button', { name: '添加注释' }))
+    fireEvent.click(view.getByRole('button', { name: '保存注释' }))
     expect(saved?.quote).toBe('<tag>')
     if (saved === undefined) throw new Error('expected saved raw-HTML annotation')
     view.unmount()
@@ -533,6 +541,55 @@ describe('text annotation mechanics', () => {
     expect(view.queryByRole('toolbar')).toBeNull()
   })
 
+  it('keeps the floating toolbar on its anchor across scroll and resize', async () => {
+    const rect = { left: 20, bottom: 40 }
+    // jsdom ships no Range geometry: define it once on the prototype so both
+    // the captured selection and its cloned anchor range resolve the same rect.
+    Object.defineProperty(Range.prototype, 'getBoundingClientRect', {
+      configurable: true,
+      value: () => rect,
+    })
+    try {
+      const view = render(
+        <AssistantMarkdown
+          blocks={[{ kind: 'text', text: 'Alpha beta gamma' }]}
+          streaming={false}
+          t={makeTranslate(zh, commonZh)}
+          sourceId="message-1"
+          annotations={[]}
+          annotationActions={{ addTextAnnotation: () => TextAnnotationId('annotation-1') }}
+        />,
+      )
+      const text = firstTextNode(view.container.querySelector('p')!)
+      const range = document.createRange()
+      range.setStart(text, 0)
+      range.setEnd(text, 5)
+      const selection = window.getSelection()!
+      selection.removeAllRanges()
+      selection.addRange(range)
+      fireEvent(document, new Event('selectionchange'))
+      const floating = view.getByRole('toolbar').parentElement!
+      expect(floating.style.getPropertyValue('--annotation-left')).toBe('20px')
+      expect(floating.style.getPropertyValue('--annotation-top')).toBe('48px')
+
+      rect.left = 120
+      rect.bottom = 200
+      fireEvent(window, new Event('scroll'))
+      await new Promise<void>((resolve) => { requestAnimationFrame(() => { resolve() }) })
+      expect(floating.style.getPropertyValue('--annotation-left')).toBe('120px')
+      expect(floating.style.getPropertyValue('--annotation-top')).toBe('208px')
+
+      rect.left = 40
+      rect.bottom = 60
+      fireEvent(window, new Event('resize'))
+      await new Promise<void>((resolve) => { requestAnimationFrame(() => { resolve() }) })
+      expect(floating.style.getPropertyValue('--annotation-left')).toBe('40px')
+      expect(floating.style.getPropertyValue('--annotation-top')).toBe('68px')
+    } finally {
+      delete (Range.prototype as { getBoundingClientRect?: unknown }).getBoundingClientRect
+    }
+  })
+
   it('defers the composition guard so Safari closing Enter never saves', () => {
     vi.useFakeTimers()
     try {
@@ -561,11 +618,7 @@ describe('text annotation mechanics', () => {
     const shell = new SessionInputShell({
       actx: {} as ClientContext,
       defaultSink: sink,
-      annotationLabels: {
-        heading: index => `Annotation ${index}`,
-        quote: value => `Quoted text: “${value}”`,
-        note: value => `Note: ${value}`,
-      },
+      annotationLabels: LABELS,
     })
     const anchor = createTextAnchor('message-1', 'Exact quotation', 'Exact quotation', 0)
     const id = shell.actions.addTextAnnotation(anchor, '')
@@ -593,7 +646,7 @@ describe('text annotation mechanics', () => {
     const sink = vi.fn<SessionInputDeps['defaultSink']>((...args) => {
       if (args[3] !== undefined) reservations.push(args[3])
     })
-    const shell = new SessionInputShell({ actx: {} as ClientContext, defaultSink: sink })
+    const shell = new SessionInputShell({ actx: {} as ClientContext, defaultSink: sink, annotationLabels: LABELS })
     shell.setDraft('Please revise this.')
     const anchor = createTextAnchor('message-1', 'Exact quotation', 'Exact quotation', 0)
     const id = shell.actions.addTextAnnotation(anchor, 'Original note')
@@ -624,7 +677,7 @@ describe('text annotation mechanics', () => {
   })
 
   it('edits and deletes an unsent annotation through the Composer actions', () => {
-    const shell = new SessionInputShell({ actx: {} as ClientContext, defaultSink: vi.fn() })
+    const shell = new SessionInputShell({ actx: {} as ClientContext, defaultSink: vi.fn(), annotationLabels: LABELS })
     const anchor = createTextAnchor('message-1', 'Exact quotation', 'Exact quotation', 0)
     const id = shell.actions.addTextAnnotation(anchor, '')
 

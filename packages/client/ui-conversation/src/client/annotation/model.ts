@@ -62,20 +62,6 @@ export function createTextAnchor(sourceId: string, source: string, quote: string
 }
 
 /**
- * Resolve one anchor only when its quote and context identify one source range.
- * @param anchor - Draft anchor to resolve.
- * @param source - Current renderer-owned source-text projection.
- * @returns The unique half-open source range, or null when stale or ambiguous.
- */
-export function resolveTextAnchor(anchor: TextAnchor, source: string): { start: number; end: number } | null {
-  const needle = anchor.prefix + anchor.quote + anchor.suffix
-  const match = source.indexOf(needle)
-  if (match < 0 || source.indexOf(needle, match + 1) >= 0) return null
-  const start = match + anchor.prefix.length
-  return { start, end: start + anchor.quote.length }
-}
-
-/**
  * Compile unsent annotations into the ordinary user-message text.
  * @param question - Composer question, kept first when present.
  * @param annotations - Annotation creation order.

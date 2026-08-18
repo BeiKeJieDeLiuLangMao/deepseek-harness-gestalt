@@ -27,6 +27,13 @@ import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-web-react'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ConversationSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
 
+/** Compiler labels required by every shell construction (the hub always supplies them). */
+const TEST_LABELS = {
+  heading: (index: number) => `Annotation ${index}`,
+  quote: (value: string) => `Quoted text: \u201c${value}\u201d`,
+  note: (value: string) => `Note: ${value}`,
+}
+
 afterEach(cleanup)
 
 /** Directory row driving kind derivation (input? = leadingInput, else execute). */
@@ -107,7 +114,7 @@ async function scopedBench(register?: (inputTriggers: InputTriggerService) => vo
   const actx = sessions.scope(sessionId)!
   const controller = inputTriggers.sessionOf(actx)
   const sink = vi.fn()
-  const shell = new SessionInputShell({ actx, inputTriggers: () => controller, defaultSink: sink })
+  const shell = new SessionInputShell({ actx, inputTriggers: () => controller, defaultSink: sink, annotationLabels: TEST_LABELS })
   // The hub's listener wiring, verbatim.
   actx.on('slash/input-begin-command', req => shell.beginCommand(req.claim, req.span) ? true : undefined)
   actx.on('slash/input-insert-reference', req => shell.insertReference(req.reference, req.span) ? true : undefined)

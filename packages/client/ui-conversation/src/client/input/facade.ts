@@ -59,8 +59,8 @@ export interface SessionInputDeps {
     mode: InputSubmitMode,
     annotationDraft?: AnnotationSubmissionReservation,
   ): void
-  /** Localized ordinary-prose fragments for Annotation Submission. */
-  annotationLabels?: AnnotationCompilerLabels | undefined
+  /** Localized ordinary-prose fragments for Annotation Submission (the hub always supplies them). */
+  annotationLabels: AnnotationCompilerLabels
 }
 
 /** Guard tier from the machine phase. */
@@ -595,12 +595,7 @@ export class SessionInputShell implements SessionInput {
   }
 
   private compile(question: string, annotations: readonly TextAnnotation[]): string {
-    const labels = this.deps.annotationLabels ?? {
-      heading: (index: number) => `Annotation ${index}`,
-      quote: (value: string) => `Quoted text: “${value}”`,
-      note: (value: string) => `Note: ${value}`,
-    }
-    return compileAnnotationSubmission(question, annotations, labels)
+    return compileAnnotationSubmission(question, annotations, this.deps.annotationLabels)
   }
 
   private publish(): void {

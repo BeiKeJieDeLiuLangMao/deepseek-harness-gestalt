@@ -54,7 +54,7 @@ Completed assistant Markdown registers ordinary text, inline code, fenced code, 
 
 #### What the model sees
 
-Text annotations compile into the same ordinary `user/message` that the Composer sends. A non-empty question stays first, followed by each annotation in creation order with a localized heading, exact quoted text, and the optional note. Annotation-only sends use the same form. No annotation protocol, response-format instruction, or hidden metadata enters the request. One in-flight reservation owns the exact annotation snapshot until Host admission settles. During that interval the Composer is read-only, repeated submission and annotation edits are refused, success clears only the owned annotations, and failure releases the same drafts for retry.
+Text annotations compile into the same ordinary `user/message` that the Composer sends. A non-empty question stays first, followed by each annotation in creation order with a localized heading, exact quoted text, and the optional note. Annotation-only sends use the same form. No annotation protocol, response-format instruction, or hidden metadata enters the request. One in-flight reservation owns the exact annotation snapshot until the Host admits the complete request — the prompt acceptance the ordinary send path checks, never mere promise resolution. During that interval the Composer is read-only, repeated submission and annotation edits are refused, admission clears only the owned annotations, and a send that resolves without admission restores the full draft for retry.
 
 #### Token effect
 

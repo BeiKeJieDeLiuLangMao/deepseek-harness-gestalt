@@ -14,6 +14,15 @@ interface PendingSelection {
   top: number
 }
 
+/** Viewport placement of one anchored floating surface, clamped away from the viewport edges. */
+function place(range: Range): { left: number; top: number } {
+  const rect = range.getBoundingClientRect()
+  return {
+    left: Math.max(12, Math.min(rect.left, window.innerWidth - 300)),
+    top: rect.bottom + 8,
+  }
+}
+
 function rangeForAnchor(
   selectionMapRef: MarkdownSelectionMapRef,
   anchor: TextAnchor,
@@ -82,12 +91,12 @@ export function TextAnnotationTarget({ sourceId, selectionMapRef, annotations, a
       dismiss()
       return
     }
-    const rect = range.getBoundingClientRect()
+    const rect = place(range)
     setPending({
       anchor: createTextAnchor(sourceId, inspected.projection, quote, inspected.start),
       range: range.cloneRange(),
-      left: Math.max(12, Math.min(rect.left, window.innerWidth - 300)),
-      top: rect.bottom + 8,
+      left: rect.left,
+      top: rect.top,
     })
     setEditing(false)
   }, [selectionMapRef, sourceId])
@@ -96,6 +105,29 @@ export function TextAnnotationTarget({ sourceId, selectionMapRef, annotations, a
     document.addEventListener('selectionchange', select)
     return () => { document.removeEventListener('selectionchange', select) }
   }, [select])
+
+  // While a pending selection is open, its floating surface follows the
+  // anchor: scroll (capture: scroll events never bubble) and resize recompute
+  // the placement on the next animation frame.
+  const pendingOpen = pending !== null
+  useEffect(() => {
+    if (!pendingOpen) return
+    let frame = 0
+    const follow = (): void => {
+      if (frame !== 0) return
+      frame = requestAnimationFrame(() => {
+        frame = 0
+        setPending(current => current === null ? current : { ...current, ...place(current.range) })
+      })
+    }
+    window.addEventListener('scroll', follow, true)
+    window.addEventListener('resize', follow)
+    return () => {
+      if (frame !== 0) cancelAnimationFrame(frame)
+      window.removeEventListener('scroll', follow, true)
+      window.removeEventListener('resize', follow)
+    }
+  }, [pendingOpen])
 
   const style = pending === null ? undefined : {
     '--annotation-left': `${pending.left}px`,

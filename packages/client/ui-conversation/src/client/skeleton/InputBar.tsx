@@ -146,6 +146,8 @@ export function InputBar({
   const modelSeatLocked = removed || inert || !live
   const annotationBusy = input?.annotationSubmitting === true
   const machineBusy = input?.phase === 'adjudicating' || input?.phase === 'submitting' || annotationBusy
+  // Locale plural pattern: one vs other, keyed by the draft annotation count.
+  const annotationSummaryKey = annotations.length === 1 ? 'annotation.summary.one' : 'annotation.summary.other'
   // The no-workspace textarea remains the resident DOM node but acts as the
   // existing picker trigger. Message controls stay locked until a Session
   // exists; the trigger itself is read-only rather than disabled so pointer
@@ -724,12 +726,12 @@ export function InputBar({
               className={css.annotationSummaryTrigger}
               aria-controls={annotationDetailsId}
             >
-              {t('annotation.summary', { count: annotations.length })}
+              {t(annotationSummaryKey, { count: annotations.length })}
             </button>
             <div
               id={annotationDetailsId}
               role="region"
-              aria-label={t('annotation.summary', { count: annotations.length })}
+              aria-label={t(annotationSummaryKey, { count: annotations.length })}
               className={css.annotationSummaryDetails}
             >
               {annotations.map((annotation, index) => (
