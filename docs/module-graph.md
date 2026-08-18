@@ -114,6 +114,11 @@ flowchart TD
     pkg_app_boot["app-boot"]
     pkg_cmdline["cmdline"]
   end
+  subgraph group_browser["packages/browser"]
+    pkg_browser_runtime["browser-runtime"]
+    pkg_browser_runtime_deterministic["browser-runtime-deterministic"]
+    pkg_tool_browser["tool-browser"]
+  end
   subgraph group_bundle["packages/bundle"]
     pkg_base["base"]
     pkg_headless["headless"]
@@ -371,6 +376,8 @@ flowchart TD
   pkg_typert_registry --> pkg_invariants
   pkg_attachment --> pkg_brand
   pkg_attachment --> pkg_invariants
+  pkg_browser_runtime --> pkg_brand
+  pkg_browser_runtime --> pkg_invariants
   pkg_client_connection --> pkg_host_webserver
   pkg_client_connection --> pkg_invariants
   pkg_client_hmr --> pkg_client_modules
@@ -417,6 +424,8 @@ flowchart TD
   pkg_attachment_local --> pkg_attachment
   pkg_attachment_local --> pkg_home_paths
   pkg_attachment_local --> pkg_invariants
+  pkg_browser_runtime_deterministic --> pkg_browser_runtime
+  pkg_browser_runtime_deterministic --> pkg_invariants
   pkg_credentials_local --> pkg_atomic_write
   pkg_credentials_local --> pkg_credentials
   pkg_credentials_local --> pkg_home_paths
@@ -865,6 +874,10 @@ flowchart TD
   pkg_tool_session_query --> pkg_system_prompt
   pkg_tool_session_query --> pkg_timeout
   pkg_tool_session_query --> pkg_tools
+  pkg_tool_browser --> pkg_browser_runtime
+  pkg_tool_browser --> pkg_invariants
+  pkg_tool_browser --> pkg_llm
+  pkg_tool_browser --> pkg_tools
   pkg_command_compact --> pkg_commands
   pkg_command_compact --> pkg_compaction
   pkg_command_compact --> pkg_invariants
@@ -1514,6 +1527,7 @@ flowchart TD
 | [`typert-protocol`](../packages/typert/protocol) | `typert` | [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`typert-registry`](../packages/typert/registry) | `typert` | [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`attachment`](../packages/attachment/attachment) | `attachment` | [`brand`](../packages/util/brand), [`invariants`](../packages/runtime-diagnostics/invariants) |
+| [`browser-runtime`](../packages/browser/browser-runtime) | `browser` | [`brand`](../packages/util/brand), [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`client-connection`](../packages/client/connection) | `client` | [`host-webserver`](../packages/host/webserver), [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`client-hmr`](../packages/client/hmr) | `client` | [`client-modules`](../packages/client/modules), [`host-webserver`](../packages/host/webserver), [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`credentials`](../packages/credentials/credentials) | `credentials` | [`brand`](../packages/util/brand), [`invariants`](../packages/runtime-diagnostics/invariants) |
@@ -1532,6 +1546,7 @@ flowchart TD
 | [`llm`](../packages/llm/llm) | `llm` | [`attachment`](../packages/attachment/attachment), [`brand`](../packages/util/brand), [`invariants`](../packages/runtime-diagnostics/invariants), [`timeout`](../packages/util/timeout) |
 | [`api-gateway`](../packages/api/gateway) | `api` | [`client-connection`](../packages/client/connection), [`invariants`](../packages/runtime-diagnostics/invariants), [`typert-registry`](../packages/typert/registry) |
 | [`attachment-local`](../packages/attachment/attachment-local) | `attachment` | [`attachment`](../packages/attachment/attachment), [`home-paths`](../packages/util/home-paths), [`invariants`](../packages/runtime-diagnostics/invariants) |
+| [`browser-runtime-deterministic`](../packages/browser/browser-runtime-deterministic) | `browser` | [`browser-runtime`](../packages/browser/browser-runtime), [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`credentials-local`](../packages/credentials/credentials-local) | `credentials` | [`atomic-write`](../packages/util/atomic-write), [`credentials`](../packages/credentials/credentials), [`home-paths`](../packages/util/home-paths), [`invariants`](../packages/runtime-diagnostics/invariants), [`launch-environment`](../packages/util/launch-environment) |
 | [`platform-account-client`](../packages/platform/platform-account-client) | `platform` | [`invariants`](../packages/runtime-diagnostics/invariants), [`platform-account`](../packages/platform/platform-account) |
 | [`platform-account-core`](../packages/platform/platform-account-core) | `platform` | [`invariants`](../packages/runtime-diagnostics/invariants), [`platform-account`](../packages/platform/platform-account) |
@@ -1626,6 +1641,7 @@ flowchart TD
 | [`hooks-codex`](../packages/hooks/hooks-codex) | `hooks` | [`agent`](../packages/core/agent), [`hook-protocol`](../packages/hooks/hook-protocol), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`session-persistence`](../packages/session/session-persistence), [`tools`](../packages/core/tools) |
 | [`session-query-sqlite`](../packages/session-query/session-query-sqlite) | `session-query` | [`invariants`](../packages/runtime-diagnostics/invariants), [`session`](../packages/core/session), [`session-persistence`](../packages/session/session-persistence), [`session-query`](../packages/session-query/session-query) |
 | [`tool-session-query`](../packages/session-query/tool-session-query) | `session-query` | [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`session-query`](../packages/session-query/session-query), [`system-prompt`](../packages/core/system-prompt), [`timeout`](../packages/util/timeout), [`tools`](../packages/core/tools) |
+| [`tool-browser`](../packages/browser/tool-browser) | `browser` | [`browser-runtime`](../packages/browser/browser-runtime), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`tools`](../packages/core/tools) |
 | [`command-compact`](../packages/compaction/command-compact) | `compaction` | [`commands`](../packages/interaction/commands), [`compaction`](../packages/compaction/compaction), [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`agent-instructions`](../packages/context/agent-instructions) | `context` | [`agent`](../packages/core/agent), [`fs`](../packages/fs/fs), [`home-paths`](../packages/util/home-paths), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`tools`](../packages/core/tools) |
 | [`session-reference`](../packages/context/session-reference) | `context` | [`agent`](../packages/core/agent), [`compaction`](../packages/compaction/compaction), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`output-retention`](../packages/util/output-retention), [`session`](../packages/core/session), [`session-query`](../packages/session-query/session-query) |

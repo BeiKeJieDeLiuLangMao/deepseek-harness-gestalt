@@ -148,6 +148,9 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   '@deepseek-ai/dsh-sandbox-windows-acl': ['lib/runner.js', 'lib/types-*.js'],
   '@deepseek-ai/dsh-skill-badge': ['assets'],
   '@deepseek-ai/dsh-subprocess-local': ['scripts/ensure-spawn-helper.mjs'],
+  // Browser Runtime Providers share their authoritative-state registry with
+  // the invariant companion through a hashed runtime chunk beside the lib.
+  '@deepseek-ai/dsh-browser-runtime-deterministic': ['lib/runtime-state-*.js'],
 }
 
 function sameStringList(actual: readonly string[] | undefined, expected: readonly string[]): boolean {
