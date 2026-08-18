@@ -1,7 +1,7 @@
-// Web e2e scenario: the composer's independent Stop interrupts a running
+// Web e2e scenario: the composer's primary Stop interrupts a running
 // continuable child. The child holds its model turn open through a replay
-// hang entry; the browser proves Send and Stop coexist, the parent-offline
-// disabled-Send-with-Stop composer, the subagent.interrupt
+// hang entry; the browser proves the primary Send/Stop toggle, the parent-offline
+// locked-input composer, the subagent.interrupt
 // (never session.cancel) transport, the parked follow-up, and the FIFO resume
 // on a waking send.
 //
@@ -207,9 +207,7 @@ describe.skipIf(MODE === 'record')('web e2e: composer interrupt for a running co
       const stop = page.getByRole('button', { name: 'Stop generating' })
       expect(await stop.count()).toBe(1)
       expect(await stop.isEnabled()).toBe(true)
-      const send = page.getByRole('button', { name: 'Send message' })
-      expect(await send.count()).toBe(1)
-      expect(await send.isDisabled()).toBe(true)
+      expect(await page.getByRole('button', { name: 'Send message' }).count()).toBe(0)
       await compareOrRefreshGolden(
         OFFLINE_COMPOSER_EXPECTED,
         await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd),
@@ -218,7 +216,7 @@ describe.skipIf(MODE === 'record')('web e2e: composer interrupt for a running co
 
       // Keep the continuable Activation resident after this first abort. The
       // direct setup queue does not change the parent-offline UI contract: its
-      // input and Send remain disabled throughout the exercised browser path.
+      // input remains disabled throughout the exercised browser path.
       await scaffold.ctx.subagents.followup(
         parent,
         childId,
@@ -262,11 +260,11 @@ describe.skipIf(MODE === 'record')('web e2e: composer interrupt for a running co
     await input.waitFor({ timeout: 15_000 })
     expect(await input.isDisabled()).toBe(false)
 
-    // Queue a follow-up through Send while independent Stop remains available.
+    // Queue a follow-up through Enter while the primary button is Stop.
     const promptResponse = page.waitForResponse(response =>
       new URL(response.url()).pathname === '/api/subagent.prompt')
     await input.fill(FOLLOWUP)
-    await page.getByRole('button', { name: 'Send message' }).click()
+    await input.press('Enter')
     expect(((await (await promptResponse).json()) as { result: { ok: boolean } }).result)
       .toMatchObject({ ok: true })
 
