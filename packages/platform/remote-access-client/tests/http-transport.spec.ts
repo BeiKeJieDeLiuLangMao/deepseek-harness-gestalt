@@ -41,6 +41,8 @@ const pairing = {
   },
   device: { name: 'Alice phone', platform: 'android' },
   pairedAt: 123,
+  lastAccessAt: 123,
+  online: false,
 }
 
 function transport(value: unknown, status = 200): { client: RemoteAccessHttpTransport; fetch: ReturnType<typeof vi.fn> } {

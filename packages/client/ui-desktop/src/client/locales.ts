@@ -5,6 +5,7 @@ export const zh = {
   'update.checking': '正在检查更新',
   'update.available': '下载 {version}',
   'update.downloading': '正在下载 {percent}%',
+  'update.preparing': '正在准备更新',
   'update.install': '安装并重启',
   'update.idle': '已是最新',
   'update.disabled': '开发版不检查更新',
@@ -36,6 +37,7 @@ export const zh = {
   'pairing.compareWords': '请在手机和 Desktop 比对以下认证词',
   'pairing.confirm': '确认配对',
   'pairing.reject': '拒绝',
+  'pairing.revoke': '撤销配对',
 } as const
 
 /** English fallback for Desktop chrome copy. */
@@ -44,6 +46,7 @@ export const en = {
   'update.checking': 'Checking for updates',
   'update.available': 'Download {version}',
   'update.downloading': 'Downloading {percent}%',
+  'update.preparing': 'Preparing update',
   'update.install': 'Install and restart',
   'update.idle': 'Up to date',
   'update.disabled': 'Updates disabled in development',
@@ -75,6 +78,7 @@ export const en = {
   'pairing.compareWords': 'Compare these authentication words on Mobile and Desktop',
   'pairing.confirm': 'Confirm pairing',
   'pairing.reject': 'Reject',
+  'pairing.revoke': 'Revoke pairing',
 } as const
 
 /** Locale keys owned by Desktop chrome. */

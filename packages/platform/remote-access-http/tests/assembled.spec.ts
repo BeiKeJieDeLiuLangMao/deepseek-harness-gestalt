@@ -178,6 +178,7 @@ describe('Remote Access HTTP assembled flow', () => {
       listPersonalPairings: http.listPersonalPairings.bind(http),
       confirmPairing: http.confirmPairing.bind(http),
       rejectPairing: http.rejectPairing.bind(http),
+      revokePersonalPairing: http.revokePersonalPairing.bind(http),
       getMobilePairingStatus: http.getMobilePairingStatus.bind(http),
       completeChallenge: async (request) => {
         requests.push(request)
@@ -241,6 +242,7 @@ describe('Remote Access HTTP assembled flow', () => {
       getMobilePairingStatus: vi.fn(async (): Promise<MobilePairingStatus> => ({ status: 'pending' })),
       confirmPairing: vi.fn(async () => ({ id: 'pairing-one' })),
       rejectPairing: vi.fn(),
+      revokePersonalPairing: vi.fn(),
       completeChallenge: vi.fn(async () => ({
         pendingPairingId: 'pending-one', authenticationWords: [], desktopHandshake: Uint8Array.of(1),
         device: { name: 'phone', platform: 'ios' },

@@ -225,6 +225,10 @@ export interface PersonalPairingView {
   device: PairingDeviceDescription
   /** Unix epoch milliseconds of Desktop confirmation. */
   pairedAt: number
+  /** Unix epoch milliseconds of the last observed Companion access. */
+  lastAccessAt: number
+  /** Whether a live Relay attachment is currently registered for this pairing. */
+  online: boolean
 }
 
 /** Desktop Installation Mobile Access state; the default is disabled. */
@@ -280,6 +284,8 @@ export interface PersonalPairingAuthorityStore {
   confirmMobilePairing(authority: MobilePairingAuthority): Promise<void>
   /** Read a confirmed Mobile result from any Platform Instance. */
   getMobilePairing(pendingPairingId: PendingPairingId): Promise<MobilePairingAuthority | undefined>
+  /** Drop one confirmed Mobile pairing result after Desktop revocation. */
+  revokeMobilePairing(pairingId: PersonalPairingId): Promise<void>
 }
 
 /** Durable short-lived pairing transaction records loaded under one store-owned exclusive lease. */
@@ -366,6 +372,13 @@ export class MemoryPersonalPairingAuthorityStore implements PersonalPairingAutho
     const authority = this.pairings.get(pendingPairingId)
     return Promise.resolve(authority === undefined ? undefined : cloneMobileAuthority(authority))
   }
+
+  revokeMobilePairing(pairingId: PersonalPairingId): Promise<void> {
+    for (const [pendingPairingId, pairing] of this.pairings) {
+      if (pairing.pairingId === pairingId) this.pairings.delete(pendingPairingId)
+    }
+    return Promise.resolve()
+  }
 }
 
 declare module '@deepseek-ai/cordis' {
@@ -444,6 +457,15 @@ export abstract class RemoteAccessService extends Service {
    * @returns only confirmed pairings; pending handshakes are excluded.
    */
   abstract listPersonalPairings(desktop: PairingAccountAuthentication): Promise<readonly PersonalPairingView[]>
+
+  /**
+   * Revoke one confirmed pairing: destroy its key, drop Mobile Relay authority, and close live attachments.
+   * @param input - Desktop authorization and pairing identity.
+   */
+  abstract revokePersonalPairing(input: {
+    desktop: PairingAccountAuthentication
+    pairingId: PersonalPairingId
+  }): Promise<void>
 
   /**
    * List completed handshakes awaiting this Desktop Installation's decision.
@@ -547,6 +569,7 @@ export type StoredPersonalPairing = PersonalPairingView & {
   desktopInstallationId: InstallationId
   keyReference: PersonalPairingKeyReference
   cleanup: CleanupRecord<ActivePairingKey>
+  mobileGrant?: RelayCredentialGrant
 }
 
 /** Provider combining instance-local handshake work with deployment-owned confirmed authority. */
@@ -711,6 +734,17 @@ export class PersonalPairingProvider extends RemoteAccessService {
           this.settlePending(id, record, 'disabled')
         }
       }
+      for (const [pairingId, pairing] of [...this.pairings]) {
+        if (pairing.devicePrincipal.accountId === account.id
+          && pairing.desktopInstallationId === installation.id) {
+          this.pairings.delete(pairingId)
+          this.principalIds.delete(pairing.devicePrincipal.id)
+          await this.cleanupActive(pairing.cleanup)
+          if (pairing.mobileGrant !== undefined) {
+            await this.options.relay?.revokeCredential(pairing.mobileGrant)
+          }
+        }
+      }
       await this.cleanupOwner(account.id, installation.id)
       return { enabled: false }
     })
@@ -847,6 +881,34 @@ export class PersonalPairingProvider extends RemoteAccessService {
     })
   }
 
+  async revokePersonalPairing(input: {
+    desktop: PairingAccountAuthentication
+    pairingId: PersonalPairingId
+  }): Promise<void> {
+    await this.exclusive(async () => {
+      const { account, installation } = await this.authenticate(input.desktop, 'desktop')
+      this.evictExpiredRecords()
+      const pairingId = parsePersonalPairingId(input.pairingId)
+      const pairing = this.pairings.get(pairingId)
+      if (pairing === undefined
+        || pairing.devicePrincipal.accountId !== account.id
+        || pairing.desktopInstallationId !== installation.id) {
+        throw new RemoteAccessError('PAIRING_PENDING_INVALID', 'Personal Pairing is invalid or unavailable')
+      }
+      this.pairings.delete(pairingId)
+      this.principalIds.delete(pairing.devicePrincipal.id)
+      const operations: Array<() => Promise<void>> = [
+        () => this.cleanupActive(pairing.cleanup),
+        () => this.authority.revokeMobilePairing(pairingId),
+      ]
+      if (pairing.mobileGrant !== undefined && this.options.relay !== undefined) {
+        const grant = pairing.mobileGrant
+        operations.push(async () => { await this.options.relay?.revokeCredential(grant) })
+      }
+      await cleanupAll(operations)
+    })
+  }
+
   async getMobilePairingStatus(input: {
     mobile: PairingAccountAuthentication
     pendingPairingId: PendingPairingId
@@ -955,6 +1017,8 @@ export class PersonalPairingProvider extends RemoteAccessService {
           },
           device: { ...record.view.device },
           pairedAt: this.clock.now(),
+          lastAccessAt: this.clock.now(),
+          online: false,
         }
         let sealedRelayAuthority: Uint8Array | undefined
         let issuedMobileGrant: RelayCredentialGrant | undefined
@@ -1007,6 +1071,7 @@ export class PersonalPairingProvider extends RemoteAccessService {
           desktopInstallationId: record.desktopInstallationId,
           keyReference,
           cleanup: activationCleanup,
+          ...(issuedMobileGrant === undefined ? {} : { mobileGrant: issuedMobileGrant }),
         })
         delete record.activationCleanup
         const confirmed = this.settlePending(pendingPairingId, record, 'confirmed', view)
@@ -1546,6 +1611,8 @@ function clonePairing(view: PersonalPairingView): PersonalPairingView {
     devicePrincipal: { ...view.devicePrincipal },
     device: { ...view.device },
     pairedAt: view.pairedAt,
+    lastAccessAt: view.lastAccessAt,
+    online: view.online,
   }
 }
 

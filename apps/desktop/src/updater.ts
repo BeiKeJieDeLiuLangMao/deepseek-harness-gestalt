@@ -8,6 +8,8 @@ import type {
 
 const INITIAL_CHECK_DELAY_MS = 3_000
 const CHECK_INTERVAL_MS = 15 * 60 * 1_000
+/** How long macOS may stay in `preparing` waiting for native Squirrel. */
+const DEFAULT_STAGE_TIMEOUT_MS = 10 * 60 * 1_000
 
 /** Minimal port over electron-updater's AppUpdater. */
 export interface AutoUpdaterPort {
@@ -18,6 +20,12 @@ export interface AutoUpdaterPort {
   readonly quitAndInstall: (isSilent?: boolean, isForceRunAfter?: boolean) => void
   readonly on: (event: string, listener: (...args: unknown[]) => void) => this
   readonly removeListener: (event: string, listener: (...args: unknown[]) => void) => this
+}
+
+/** Electron `autoUpdater` events that mean Squirrel finished staging. */
+export interface NativeStagePort {
+  readonly on: (event: 'update-downloaded' | 'error', listener: (...args: unknown[]) => void) => this
+  readonly removeListener: (event: 'update-downloaded' | 'error', listener: (...args: unknown[]) => void) => this
 }
 
 /** Node ESM view of electron-updater's named or CommonJS default export. */
@@ -54,6 +62,8 @@ export interface AutoUpdaterLifecycle {
  * @param options.updater - electron-updater port.
  * @param options.onStateChange - notify the page / menu.
  * @param options.autoInstallOnAppQuit - macOS Squirrel prefetch after download; ordinary quit still does not install.
+ * @param options.nativeStage - Electron autoUpdater; when present, Install waits until Squirrel stages.
+ * @param options.stageTimeoutMs - fail `preparing` if native staging never signals.
  * @returns lifecycle handle.
  */
 export function startAutoUpdater(options: {
@@ -61,6 +71,8 @@ export function startAutoUpdater(options: {
   readonly onStateChange?: (state: UpdaterStatus) => void
   readonly now?: () => number
   readonly autoInstallOnAppQuit?: boolean
+  readonly nativeStage?: NativeStagePort
+  readonly stageTimeoutMs?: number
 }): AutoUpdaterLifecycle {
   const now = options.now ?? Date.now
   let disposed = false
@@ -84,6 +96,7 @@ export function startAutoUpdater(options: {
   }
 
   const handleError = (error: unknown): void => {
+    clearStageTimer()
     transition('error', {
       ...versionDetail(availableVersion),
       errorMessage: error instanceof Error ? error.message : String(error),
@@ -94,7 +107,8 @@ export function startAutoUpdater(options: {
     if (
       disposed || checking
       || current.state === 'available' || current.state === 'downloading'
-      || current.state === 'downloaded' || current.state === 'installing'
+      || current.state === 'preparing' || current.state === 'downloaded'
+      || current.state === 'installing'
     ) return
     checking = true
     transition('checking')
@@ -122,9 +136,32 @@ export function startAutoUpdater(options: {
       ...percentDetail(percentOf(info)),
     })
   }
+  let stageTimer: ReturnType<typeof setTimeout> | undefined
+  const clearStageTimer = (): void => {
+    if (stageTimer === undefined) return
+    clearTimeout(stageTimer)
+    stageTimer = undefined
+  }
+  const handleStaged = (): void => {
+    if (current.state !== 'preparing') return
+    clearStageTimer()
+    transition('downloaded', versionDetail(availableVersion))
+  }
+  const handleStageError = (error: unknown): void => {
+    if (current.state !== 'preparing') return
+    handleError(error)
+  }
   const handleDownloaded = (info: unknown): void => {
     availableVersion = versionOf(info) ?? availableVersion
-    transition('downloaded', versionDetail(availableVersion))
+    if (options.nativeStage === undefined) {
+      transition('downloaded', versionDetail(availableVersion))
+      return
+    }
+    transition('preparing', versionDetail(availableVersion))
+    clearStageTimer()
+    stageTimer = setTimeout(() => {
+      handleError(new Error('update preparation timed out'))
+    }, options.stageTimeoutMs ?? DEFAULT_STAGE_TIMEOUT_MS)
   }
   options.updater.on('checking-for-update', handleChecking)
   options.updater.on('update-available', handleAvailable)
@@ -132,6 +169,8 @@ export function startAutoUpdater(options: {
   options.updater.on('download-progress', handleProgress)
   options.updater.on('update-downloaded', handleDownloaded)
   options.updater.on('error', handleError)
+  options.nativeStage?.on('update-downloaded', handleStaged)
+  options.nativeStage?.on('error', handleStageError)
 
   const initial = setTimeout(check, INITIAL_CHECK_DELAY_MS)
   const interval = setInterval(check, CHECK_INTERVAL_MS)
@@ -154,12 +193,15 @@ export function startAutoUpdater(options: {
       disposed = true
       clearTimeout(initial)
       clearInterval(interval)
+      clearStageTimer()
       options.updater.removeListener('checking-for-update', handleChecking)
       options.updater.removeListener('update-available', handleAvailable)
       options.updater.removeListener('update-not-available', handleNotAvailable)
       options.updater.removeListener('download-progress', handleProgress)
       options.updater.removeListener('update-downloaded', handleDownloaded)
       options.updater.removeListener('error', handleError)
+      options.nativeStage?.removeListener('update-downloaded', handleStaged)
+      options.nativeStage?.removeListener('error', handleStageError)
     },
   }
 }

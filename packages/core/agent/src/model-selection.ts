@@ -28,6 +28,15 @@ export interface ModelSelectionRef {
 }
 
 /**
+ * Read the live model selection that the next parent prompt would use.
+ * @param agent - the parent whose installed selection to inspect.
+ * @returns the current selection, or `undefined` when no selection is installed.
+ */
+export function liveModelSelection(agent: Agent): ModelSelection | undefined {
+  return liveSelections.get(agent.ctx)?.current
+}
+
+/**
  * Couple one mutable selection to Agent-scoped prompt assembly and request routing.
  * Prompt assembly snapshots the selected model before delegating, then applies
  * its provider/model pair and effort to request config so a
@@ -39,15 +48,6 @@ export interface ModelSelectionRef {
  * @param selection - Mutable selection owned by the calling entry point.
  * @returns Disposer for both scoped waterfall listeners.
  */
-/**
- * Read the live model selection that the next parent prompt would use.
- * @param agent - the parent whose installed selection to inspect.
- * @returns the current selection, or `undefined` when no selection is installed.
- */
-export function liveModelSelection(agent: Agent): ModelSelection | undefined {
-  return liveSelections.get(agent.ctx)?.current
-}
-
 export function installModelSelection(agentCtx: Context, selection: ModelSelectionRef): () => void {
   liveSelections.set(agentCtx, selection)
   const disposeAssembly = agentCtx.on('system-prompt/assemble', async (_assembly, _context, next) => {

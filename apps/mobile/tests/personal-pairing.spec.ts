@@ -49,6 +49,43 @@ describe('MobilePairingController', () => {
     expect(relay.stop).toHaveBeenCalled()
   })
 
+  it('unpairs by wiping local handshake material and stopping Relay', async () => {
+    const scheduled: Array<() => void> = []
+    const transport = transportFixture()
+    transport.getMobilePairingStatus.mockResolvedValueOnce({
+      status: 'paired', pairingId: 'pairing-one', sealedRelayAuthority: Uint8Array.of(7),
+    })
+    const handshake = {
+      begin: vi.fn(async () => ({
+        completionId: parsePairingCompletionId('unpair'), mobileHandshake: Uint8Array.of(9),
+      })),
+      acceptDesktopHandshake: vi.fn(),
+      openRelayAuthority: vi.fn(async () => ({
+        routeId: parseRelayRouteId('route-unpair'),
+        endpoint: 'mobile' as const,
+        credential: parseRelayCredential('AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE'),
+        revision: 1,
+      })),
+      wipe: vi.fn(),
+    }
+    const relay = { configure: vi.fn(), start: vi.fn(), stop: vi.fn() }
+    const controller = new MobilePairingController({
+      installation: installationFixture(), transport, handshake, relay,
+      scanner: { scan: vi.fn() }, device: { name: 'Alice phone', platform: 'ios' },
+      schedule: (task) => { scheduled.push(task); return { unref: vi.fn() } as never },
+      now: () => Date.parse('2026-08-18T10:01:00.000Z'),
+    })
+    await controller.completeLink(pairingLink(Date.parse('2026-08-18T10:02:00.000Z')))
+    scheduled.shift()?.()
+    await vi.waitFor(() => { expect(controller.getSnapshot()).toEqual({ status: 'paired' }) })
+
+    await controller.unpair()
+
+    expect(handshake.wipe).toHaveBeenCalledOnce()
+    expect(relay.stop).toHaveBeenCalled()
+    expect(controller.getSnapshot()).toEqual({ status: 'ready' })
+  })
+
   it.each(['handshake', 'relay'] as const)(
     'fails closed when sealed Mobile authority has no %s lifecycle owner',
     async (missing) => {
@@ -434,6 +471,7 @@ function transportFixture() {
     listPersonalPairings: vi.fn(),
     confirmPairing: vi.fn(),
     rejectPairing: vi.fn(),
+    revokePersonalPairing: vi.fn(),
     completeChallenge: vi.fn<RemoteAccessTransport['completeChallenge']>().mockResolvedValue({
       pendingPairingId: parsePendingPairingId('pending-one'),
       authenticationWords: ['amber', 'binary', 'cedar', 'delta', 'ember', 'frost'],

@@ -387,6 +387,7 @@ describe('DesktopPairingController', () => {
     expectTypeOf<DesktopPersonalPairing['id']>().toEqualTypeOf<PersonalPairingId>()
     expectTypeOf<DesktopBridge['pairingConfirm']>().parameter(0).toEqualTypeOf<PendingPairingId>()
     expectTypeOf<DesktopBridge['pairingReject']>().parameter(0).toEqualTypeOf<PendingPairingId>()
+    expectTypeOf<DesktopBridge['pairingRevoke']>().parameter(0).toEqualTypeOf<PersonalPairingId>()
     expect(parsePairingEnabled(true)).toBe(true)
     expect(() => parsePairingEnabled('true')).toThrow('must be boolean')
     expect(parseDesktopPendingPairingId('pending-one')).toBe('pending-one')
@@ -631,9 +632,12 @@ function transportFixture() {
       },
       device: { name: 'Alice phone', platform: 'ios' },
       pairedAt: 1,
+      lastAccessAt: 1,
+      online: false,
     }]),
     confirmPairing: vi.fn().mockResolvedValue({}),
     rejectPairing: vi.fn(),
+    revokePersonalPairing: vi.fn(),
     completeChallenge: vi.fn(),
     getMobilePairingStatus: vi.fn(),
   } satisfies RemoteAccessTransport
