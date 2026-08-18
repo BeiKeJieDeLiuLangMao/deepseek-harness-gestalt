@@ -6,12 +6,19 @@
   "ignoreBinaries": [
     "bwrap",
     "icacls",
+    "jar",
+    "javac",
+    "keytool",
     "musl-gcc",
     "python3",
     "sandbox-exec",
     "tar",
     "taskkill",
+    "wasm-bindgen",
     "where.exe"
+  ],
+  "ignore": [
+    "scripts/noise-security-path/pkg/*.d.ts"
   ],
   "ignoreWorkspaces": [
     "vendor/*",
