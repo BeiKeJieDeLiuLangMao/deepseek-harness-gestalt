@@ -49,3 +49,10 @@
   border-radius: 12px;
   background: var(--dsw-alias-fill-secondary);
 }
+
+.composer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 16px;
+}

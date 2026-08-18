@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { formatToolArgs, previewTerminalLines, type MobileContentBlock } from './mobile-content.ts'
 import css from './MobileConversation.module.css'
 
@@ -10,10 +10,19 @@ export interface MobileConversationProps {
   onBack: () => void
   /** Desktop-confirmed content blocks. */
   blocks: readonly MobileContentBlock[]
+  /** Submit a prompt through Desktop acceptance. */
+  onSubmit?: (text: string) => void
+  /** Cancel active execution through Desktop cancellation. */
+  onCancel?: () => void
+  /** Whether Desktop is currently streaming. */
+  streaming?: boolean
 }
 
 /** Phone conversation that reuses Gestalt tokens and never exposes terminal input. */
-export function MobileConversation({ title, onBack, blocks }: MobileConversationProps): ReactNode {
+export function MobileConversation({
+  title, onBack, blocks, onSubmit, onCancel, streaming = false,
+}: MobileConversationProps): ReactNode {
+  const [draft, setDraft] = useState('')
   return (
     <section className={css.page} data-mobile-conversation="detail">
       <header className={css.header}>
@@ -23,6 +32,27 @@ export function MobileConversation({ title, onBack, blocks }: MobileConversation
       <div className={css.blocks}>
         {blocks.map((block, index) => <ContentBlock key={index} block={block} />)}
       </div>
+      {onSubmit !== undefined && (
+        <form
+          className={css.composer}
+          onSubmit={(event) => {
+            event.preventDefault()
+            if (draft === '') return
+            onSubmit(draft)
+            setDraft('')
+          }}
+        >
+          <textarea
+            aria-label="继续会话"
+            value={draft}
+            onChange={(event) => { setDraft(event.target.value) }}
+          />
+          <button type="submit">发送</button>
+          {onCancel !== undefined && streaming && (
+            <button type="button" onClick={onCancel}>取消</button>
+          )}
+        </form>
+      )}
     </section>
   )
 }
