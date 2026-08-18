@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from 'node:child_process'
+import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -14,7 +14,10 @@ import { createClient } from 'redis'
 import { describe, expect, it } from 'vitest'
 import { RedisRelayCoordinator } from '../src/index.ts'
 
-describe('RedisRelayCoordinator with disposable Redis', () => {
+// Real-redis integration requires a redis-server binary; CI jobs do not install one.
+const redisServerAvailable = spawnSync('redis-server', ['--version'], { encoding: 'utf8' }).status === 0
+
+describe.skipIf(!redisServerAvailable)('RedisRelayCoordinator with disposable Redis', () => {
   it('executes token-safe Lua, preserves TTL, and creates no offline queue value', async () => {
     const runtime = await startRedis()
     const command = createClient({ socket: { path: runtime.socketPath, tls: false } })

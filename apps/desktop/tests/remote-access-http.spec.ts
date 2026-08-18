@@ -31,7 +31,7 @@ describe('Desktop Settings Remote Access composition', () => {
     const ctx = new Context()
     const credential = parseRelayCredential('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA')
     const rotateCredential = vi.fn(async (routeId: RelayRouteId) => {
-      return { routeId, credential, revision: 1 }
+      return { routeId, endpoint: 'desktop' as const, credential, revision: 1 }
     })
     const revokeRoute = vi.fn()
     const remoteAccess = new PersonalPairingProvider(ctx, {

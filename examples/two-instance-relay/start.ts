@@ -266,15 +266,15 @@ export async function apply(_ctx: Context, config: Config): Promise<void> {
     const lifecycleOffline: DesktopRelayStopReason[] = []
     const lifecyclePresence: boolean[] = []
     for (const reason of ['window-close', 'sleep', 'mobile-access-disabled', 'quit'] as const) {
-      if (lifecycleOffline.length > 0) await desktopLifecycle.start()
+      if (lifecycleOffline.length > 0) await withPhaseTimeout(`lifecycle start ${reason}`, desktopLifecycle.start())
       const attachment = desktopAttachmentId
-      await desktopLifecycle.stop(reason)
+      await withPhaseTimeout(`lifecycle stop ${reason}`, desktopLifecycle.stop(reason))
       await waitUntil(async () => await backendA.coordinator.locate(routeId, attachment) === undefined)
       lifecycleOffline.push(reason)
       lifecyclePresence.push(await backendA.coordinator.locate(routeId, attachment) !== undefined)
     }
-    await mobile.sendCiphertext(desktopAttachmentId, cipher.seal(Uint8Array.of(1)))
-    console.log(`OFFLINE code=${await offline.promise} retainedCiphertextValues=${String(bus.retainedCiphertextValueCount())}`)
+    await withPhaseTimeout('offline ciphertext send', mobile.sendCiphertext(desktopAttachmentId, cipher.seal(Uint8Array.of(1))))
+    console.log(`OFFLINE code=${await withPhaseTimeout('offline observation', offline.promise)} retainedCiphertextValues=${String(bus.retainedCiphertextValueCount())}`)
     console.log(`LIFECYCLE observed=${lifecycleOffline.join(',')} offline=${String(lifecyclePresence.every(present => !present))}`)
     const pairingReplacement = createPairingProvider(backendA.provider)
     resources.add({ close: async () => { await pairingReplacement.dispose() } })
@@ -531,6 +531,20 @@ async function waitUntil(check: () => boolean | Promise<boolean>): Promise<void>
     if (Date.now() >= deadline) throw new Error('Relay keyless scenario timed out')
     await new Promise<void>((resolve) => { setTimeout(resolve, 5) })
   }
+}
+
+/**
+ * Bound one scenario phase so a CI-only stall fails with the phase name instead of a global timeout.
+ * @param phase - human-readable scenario phase for the diagnostic message.
+ * @param operation - scenario step to bound.
+ * @returns the settled operation result.
+ */
+function withPhaseTimeout<T>(phase: string, operation: Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => { reject(new Error(`two-instance relay phase timed out: ${phase}`)) }, 10_000)
+  })
+  return Promise.race([operation, timeout]).finally(() => { clearTimeout(timer) })
 }
 
 function closeServer(server: Server): Promise<void> {
