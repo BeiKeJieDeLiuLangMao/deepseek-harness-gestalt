@@ -1,4 +1,5 @@
 /** Shared conversation view, selection, and store-state contracts. */
+import type { PersistedAnnotationDraft } from '../annotation/model.ts'
 
 /** Tool call identity as carried on the wire (branded upstream in connection). */
 export type CallId = string
@@ -29,4 +30,10 @@ export interface ChatStoreState {
    * persisted snapshots from before this field rehydrate without it.
    */
   inspect: { callId: CallId } | null
+  /**
+   * Persisted Annotation Draft (identities, order, anchors, notes, and the id
+   * sequence). Read with `?? null` — persisted snapshots from before this
+   * field rehydrate without it; null = no draft.
+   */
+  annotationDraft: PersistedAnnotationDraft | null
 }

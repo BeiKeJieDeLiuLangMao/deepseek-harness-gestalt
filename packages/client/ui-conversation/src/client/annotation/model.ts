@@ -29,6 +29,16 @@ export interface TextAnnotation {
   readonly note: string
 }
 
+/**
+ * JSON-persisted whole value of one Session's Annotation Draft. `annotations`
+ * keeps creation order and identities; `nextSeq` continues the owner's id
+ * sequence so a restored draft never reuses a live identity.
+ */
+export interface PersistedAnnotationDraft {
+  readonly annotations: readonly TextAnnotation[]
+  readonly nextSeq: number
+}
+
 /** Locale-owned prose fragments used by the deterministic compiler. */
 export interface AnnotationCompilerLabels {
   /** @returns A localized heading for the one-based annotation index. */

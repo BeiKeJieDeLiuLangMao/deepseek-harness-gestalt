@@ -248,6 +248,10 @@ export function apply(ctx: Context): void {
         views,
         releaseSessionImages: (id) => { conversation.releaseSessionImages(id) },
         bindDraftMirror: write => inputHub.shell(sessionId).bindMirror(write),
+        bindAnnotationMirror: write => inputHub.shell(sessionId).bindAnnotationMirror(write),
+        restoreAnnotationDraft: (draft) => {
+          if (draft !== null) inputHub.shell(sessionId).restoreAnnotationDraft(draft)
+        },
       }
     },
   }, ConversationSession)

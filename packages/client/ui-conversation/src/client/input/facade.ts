@@ -18,7 +18,7 @@ import type {
 } from './contract.ts'
 import type { InputSubmitMode } from '../contract/composer-submission.ts'
 import { InputMachine } from './machine.ts'
-import type { AnnotationCompilerLabels, TextAnchor, TextAnnotation, TextAnnotationId } from '../annotation/model.ts'
+import type { AnnotationCompilerLabels, PersistedAnnotationDraft, TextAnchor, TextAnnotation, TextAnnotationId } from '../annotation/model.ts'
 import { compileAnnotationSubmission, TextAnnotationId as createTextAnnotationId } from '../annotation/model.ts'
 
 /** One exact annotation snapshot whose object identity owns its settlement. */
@@ -74,6 +74,30 @@ function guardOf(phase: InputState['phase']): 'plain' | 'claimed' | 'frozen' {
 
 const EMPTY_QUEUE: readonly QueuedMessage[] = []
 
+/**
+ * Structural check for one rehydrated Annotation Draft. localStorage JSON is
+ * a durable boundary: a value written by anything other than this store is
+ * dropped whole instead of partially adopted.
+ * @param value - parsed persisted value.
+ * @returns whether the value is a well-formed Annotation Draft.
+ */
+function isPersistedAnnotationDraft(value: unknown): value is PersistedAnnotationDraft {
+  if (typeof value !== 'object' || value === null) return false
+  const candidate = value as { annotations?: unknown; nextSeq?: unknown }
+  if (!Array.isArray(candidate.annotations) || typeof candidate.nextSeq !== 'number') return false
+  return candidate.annotations.every((item): item is TextAnnotation => {
+    if (typeof item !== 'object' || item === null) return false
+    const annotation = item as Record<string, unknown>
+    return typeof annotation.id === 'string' && annotation.kind === 'text'
+      && typeof annotation.note === 'string'
+      && typeof annotation.anchor === 'object' && annotation.anchor !== null
+      && typeof (annotation.anchor as Record<string, unknown>).sourceId === 'string'
+      && typeof (annotation.anchor as Record<string, unknown>).quote === 'string'
+      && typeof (annotation.anchor as Record<string, unknown>).prefix === 'string'
+      && typeof (annotation.anchor as Record<string, unknown>).suffix === 'string'
+  })
+}
+
 /** No-pipeline lexicon: zero text-ref decorations. */
 const EMPTY_LEXICON: ReadonlyMap<'/' | '@', readonly string[]> = new Map()
 
@@ -110,6 +134,10 @@ export class SessionInputShell implements SessionInput {
   private disposed = false
   /** Draft persistence mirror (chat store write; receives the clipboard projection, never raw placeholders). */
   private mirrorFn: ((text: string) => void) | undefined
+  /** Annotation Draft persistence mirror (chat store write; null = no draft). */
+  private annotationMirrorFn: ((draft: PersistedAnnotationDraft | null) => void) | undefined
+  private lastAnnotations: readonly TextAnnotation[] = []
+  private lastAnnotationSeq = 0
 
   constructor(private readonly deps: SessionInputDeps) {
     this.state = createSnapshotStore<InputState>(this.compose())
@@ -452,6 +480,35 @@ export class SessionInputShell implements SessionInput {
     }
   }
 
+  /**
+   * Bind the Annotation Draft persistence mirror (chat store write). Every
+   * published annotation mutation mirrors out as one whole value; an emptied
+   * draft mirrors as null.
+   * @param write - store annotation-draft write.
+   * @returns the unbind disposer.
+   */
+  bindAnnotationMirror(write: (draft: PersistedAnnotationDraft | null) => void): () => void {
+    this.annotationMirrorFn = write
+    return () => {
+      if (this.annotationMirrorFn === write) this.annotationMirrorFn = undefined
+    }
+  }
+
+  /**
+   * Adopt a persisted Annotation Draft wholesale (remount/reload seeding).
+   * Ignored while annotations already exist or a submission is in flight, so
+   * a late restore can never clobber live or reserved state; malformed
+   * persisted values are dropped rather than adopted.
+   * @param persisted - rehydrated store value.
+   */
+  restoreAnnotationDraft(persisted: PersistedAnnotationDraft): void {
+    if (this.annotations.length > 0 || this.annotationSubmission !== undefined) return
+    if (!isPersistedAnnotationDraft(persisted)) return
+    this.annotations = persisted.annotations
+    this.annotationSeq = Math.max(this.annotationSeq, persisted.nextSeq - 1, 0)
+    this.publish()
+  }
+
   // ---- effect executor ----
 
   private run(effects: readonly InputEffect[]): void {
@@ -604,6 +661,15 @@ export class SessionInputShell implements SessionInput {
     if (next.draft !== this.lastDraft) {
       this.lastDraft = next.draft
       this.mirrorFn?.(next.draft)
+    }
+    if (this.annotations !== this.lastAnnotations || this.annotationSeq !== this.lastAnnotationSeq) {
+      this.lastAnnotations = this.annotations
+      this.lastAnnotationSeq = this.annotationSeq
+      this.annotationMirrorFn?.(
+        this.annotations.length === 0
+          ? null
+          : { annotations: this.annotations, nextSeq: this.annotationSeq + 1 },
+      )
     }
   }
 }

@@ -188,6 +188,10 @@ function mount(
           views={views}
           releaseSessionImages={vi.fn()}
           bindDraftMirror={write => wiring.bindMirror(write)}
+          bindAnnotationMirror={write => wiring.bindAnnotationMirror(write)}
+          restoreAnnotationDraft={(draft) => {
+            if (draft !== null) wiring.restoreAnnotationDraft(draft)
+          }}
         />
       )
     }

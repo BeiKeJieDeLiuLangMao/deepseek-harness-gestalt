@@ -137,7 +137,7 @@ export function ConversationSessionHeader({
  */
 export function ConversationSession({
   sessionId, useSession, useInput, inputActions, useStore, actions,
-  renderSlot, views, bindDraftMirror, releaseSessionImages,
+  renderSlot, views, bindDraftMirror, bindAnnotationMirror, restoreAnnotationDraft, releaseSessionImages,
 }: ConversationSessionProps) {
   useSyncExternalStore(views.subscribe, views.version)
   const tabs = views.list()
@@ -149,11 +149,20 @@ export function ConversationSession({
   const storedDraft = useStore(s => s.draft)
   // `?? null`: persisted snapshots from before the inspect field rehydrate without it.
   const inspect = useStore(s => s.inspect ?? null)
+  // Same tolerance for the annotation-draft field's older persisted snapshots.
+  const storedAnnotations = useStore(s => s.annotationDraft ?? null)
 
   useEffect(() => {
     if (inputState.draft === '' && storedDraft !== '') inputActions.setDraft(storedDraft)
+    if (inputState.annotations.length === 0 && storedAnnotations !== null) {
+      restoreAnnotationDraft?.(storedAnnotations)
+    }
     const unmirror = bindDraftMirror(actions.setDraft)
-    return () => { unmirror() }
+    const unannotate = bindAnnotationMirror?.(actions.setAnnotationDraft) ?? ((): (() => void) => () => {})
+    return () => {
+      unmirror()
+      unannotate()
+    }
     // Mount-only (deps pinned to inputActions): later store writes come from
     // the machine mirror, not this seed effect.
   }, [inputActions])

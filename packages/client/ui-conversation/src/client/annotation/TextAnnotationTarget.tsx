@@ -6,7 +6,6 @@ import { createTextAnchor } from './model.ts'
 import { AnnotationEditor } from './AnnotationEditor.tsx'
 import { removeDraftHighlightOwner, replaceDraftHighlightRanges } from './draft-highlights.ts'
 import css from './TextAnnotationTarget.module.css'
-
 interface PendingSelection {
   anchor: TextAnchor
   range: Range
@@ -40,7 +39,7 @@ export function TextAnnotationTarget({ sourceId, selectionMapRef, annotations, a
   selectionMapRef: MarkdownSelectionMapRef
   annotations: readonly TextAnnotation[]
   add: (anchor: TextAnchor, note: string) => TextAnnotationId
-  t: (key: 'annotation.add' | 'annotation.copy' | 'annotation.notePlaceholder' | 'annotation.save') => string
+  t: (key: 'annotation.add' | 'annotation.copy' | 'annotation.notePlaceholder' | 'annotation.save' | 'annotation.staleAnchor') => string
   children: ReactNode
 }) {
   const root = useRef<HTMLDivElement | null>(null)
@@ -48,18 +47,29 @@ export function TextAnnotationTarget({ sourceId, selectionMapRef, annotations, a
   const highlightOwner = useRef<object>({})
   const [pending, setPending] = useState<PendingSelection | null>(null)
   const [editing, setEditing] = useState(false)
+  const [stale, setStale] = useState<readonly TextAnnotation[]>([])
 
   useEffect(() => {
     const container = root.current
     if (container === null) return
     const live = new Set(annotations.map(item => item.id))
     for (const id of ranges.current.keys()) if (!live.has(id)) ranges.current.delete(id)
+    const unresolved: TextAnnotation[] = []
     for (const annotation of annotations) {
       const current = ranges.current.get(annotation.id)
       if (current !== undefined && container.contains(current.commonAncestorContainer)) continue
       const rebuilt = rangeForAnchor(selectionMapRef, annotation.anchor)
       if (rebuilt !== null) ranges.current.set(annotation.id, rebuilt)
+      else unresolved.push(annotation)
     }
+    // A present selection map that fails to resolve an anchor marks it stale
+    // or ambiguous; an absent map (renderer not mounted yet) adjudicates
+    // nothing. Identity-stable writes keep this effect render-neutral.
+    const nextStale = selectionMapRef.current === null ? [] : unresolved
+    setStale(prev => prev.length === nextStale.length
+      && prev.every((item, index) => item === nextStale[index])
+      ? prev
+      : nextStale)
     replaceDraftHighlightRanges(highlightOwner.current, [...ranges.current.values()])
   }, [annotations, selectionMapRef])
   useEffect(() => () => { removeDraftHighlightOwner(highlightOwner.current) }, [])
@@ -142,6 +152,9 @@ export function TextAnnotationTarget({ sourceId, selectionMapRef, annotations, a
       data-annotation-source={sourceId}
     >
       {children}
+      {stale.length > 0 && (
+        <p role="alert" className={css.staleAnchor}>{t('annotation.staleAnchor')}</p>
+      )}
       {pending !== null && (
         <div className={css.floating} style={style}>
           {editing ? (
