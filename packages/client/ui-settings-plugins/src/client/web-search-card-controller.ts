@@ -1,6 +1,7 @@
 /**
- * The web-search card's staged form over the `web-search-deepseek` settings
- * namespace.
+ * One web-search card's staged form. Official DeepSeek and the Anthropic-protocol
+ * card share this controller; each binds its own settings namespace and writes
+ * `backend` on the DeepSeek section so the Host does not guess the wire from a URL.
  *
  * The key is the one control that does not live in the section: its literal
  * never rides a response, so the card learns only whether one is configured
@@ -15,12 +16,19 @@ import {
   CardForm, numberField, textField,
   type CardActions, type CardFieldState, type CardShell,
 } from './card-form.ts'
+import type { PluginsSettingsLocaleKey } from './locales.ts'
 
 /**
  * Namespace of the DeepSeek search provider. Spelled here rather than
  * imported: a client package must not depend on a Host package.
  */
 export const WEB_SEARCH_NS = 'web-search-deepseek'
+
+/** Namespace of the Anthropic-protocol search card. */
+export const WEB_SEARCH_ANTHROPIC_NS = 'web-search-anthropic'
+
+/** Which search card the Host should read on the next `web_search`. */
+export type WebSearchBackend = 'deepseek' | 'anthropic-messages'
 
 /** Credential reference the provider resolves when the section names none. */
 const DEFAULT_API_KEY_REF = 'DEEPSEEK_API_KEY'
@@ -30,6 +38,8 @@ const API_KEY_FIELD = 'apiKey'
 
 /** The search-provider fields this card edits. */
 export interface WebSearchSettings {
+  /** Which card the next search reads; only the DeepSeek section stores this. */
+  backend?: WebSearchBackend
   /** Credential reference naming the environment key. */
   apiKeyEnv?: string
   /** Provider endpoint; blank inherits the provider default. */
@@ -60,6 +70,8 @@ export interface WebSearchCardState extends CardShell {
   apiKeyConfigured: boolean
   /** Whether the credentials domain accepts a write for it; false disables the control. */
   apiKeyWritable: boolean
+  /** Whether this card is the one the next search will read. */
+  active: boolean
 }
 
 /** The registration-side face the web-search card's slot entry injects. */
@@ -68,6 +80,16 @@ export interface WebSearchCardFace extends CardActions {
     /** Card snapshot bound by the renderer as useWebSearchCard. */
     webSearchCard: SnapshotStore<WebSearchCardState>
   }
+  /** Locale key of this card's title. */
+  titleKey: PluginsSettingsLocaleKey
+  /** Locale key of this card's description. */
+  descriptionKey: PluginsSettingsLocaleKey
+  /** Locale key of the endpoint hint. */
+  baseUrlHintKey: PluginsSettingsLocaleKey
+  /** Prefix for control ids so two cards on one page do not collide. */
+  idPrefix: string
+  /** Make this card the one the next search reads. */
+  useThis: () => void
 }
 
 /** Bridges the `web-search-deepseek` scope and the credentials domain onto the card. */
@@ -77,12 +99,23 @@ export class WebSearchCardController {
   private credential: CredentialState = { ref: '', configured: false, writable: true }
 
   /**
-   * @param scope - the bound settings scope for the `web-search-deepseek` namespace.
+   * @param scope - the bound settings scope for this card's namespace.
    * @param api - wire face used for the credential the section references.
+   * @param backend - the `backend` value this card writes when selected.
+   * @param selectionScope - the DeepSeek section that stores `backend`.
+   * @param copy - locale keys this card renders.
    */
   constructor(
     private readonly scope: SettingsScope<WebSearchSettings>,
     private readonly api: Pick<IApiClient, 'credentials'>,
+    private readonly backend: WebSearchBackend,
+    private readonly selectionScope: SettingsScope<WebSearchSettings>,
+    private readonly copy: {
+      titleKey: PluginsSettingsLocaleKey
+      descriptionKey: PluginsSettingsLocaleKey
+      baseUrlHintKey: PluginsSettingsLocaleKey
+      idPrefix: string
+    },
   ) {
     this.form = new CardForm(
       scope,
@@ -91,6 +124,7 @@ export class WebSearchCardController {
     )
     this.store = this.form.bind(() => this.projection())
     scope.subscribe(() => { void this.readCredential() })
+    this.selectionScope.subscribe(() => { this.store.set(this.projection()) })
     void this.readCredential()
   }
 
@@ -102,6 +136,7 @@ export class WebSearchCardController {
       apiKey: this.form.field(API_KEY_FIELD),
       apiKeyConfigured: this.credential.configured,
       apiKeyWritable: this.credential.writable,
+      active: (this.selectionScope.getSnapshot().value?.backend ?? 'deepseek') === this.backend,
     }
   }
 
@@ -161,7 +196,12 @@ export class WebSearchCardController {
    * @returns the card's snapshot and its form actions.
    */
   inject(): WebSearchCardFace {
-    return { hooks: { webSearchCard: this.store }, ...this.form.actions() }
+    return {
+      hooks: { webSearchCard: this.store },
+      ...this.copy,
+      ...this.form.actions(),
+      useThis: () => { void this.selectionScope.set('backend', this.backend) },
+    }
   }
 
   /**

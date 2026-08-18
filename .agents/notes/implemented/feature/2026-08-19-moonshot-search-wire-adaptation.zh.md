@@ -1,4 +1,4 @@
-# Agent Note: Moonshot dedicated-search wire adaptation on the shipped search provider
+# Agent Note: Explicit DeepSeek and Anthropic-protocol search cards
 
 Status: implemented
 
@@ -6,34 +6,34 @@ Status: implemented
 
 ## Problem
 
-Gestalt 将 `searchProvider` 固定为 `deepseek-official`，并只通过 `web-search-deepseek` 命名空间暴露一张网页搜索设置卡片。已经持有 Kimi 密钥的用户会把该卡片的 `baseURL` 指到 Moonshot 专用搜索 URL（`https://api.moonshot.cn/v1/search`）。已发布提供方总是追加 `/messages`，并发送带 `web_search_20250305` 的 Anthropic Messages 请求体，因此请求落到 `…/v1/search/messages`，Moonshot 返回 `url.not_found`。面向模型的 `web_search` 工具仍然注册；出错的只是厂商协议格式。当同一张卡片仍指向 Anthropic 基址时，DeepSeek 官方搜索必须继续可用。
+Gestalt 只发货一个 `web_search` 工具，以及一张覆盖 `web-search-deepseek` 的设置卡片。需要另一条 Anthropic Messages 搜索基址的用户——例如 Kimi coding 的 `https://api.kimi.com/coding/v1`——只能改写该卡片的 `baseURL`，并猜测这个字段要的是 DeepSeek Anthropic 基址、Kimi coding 基址，还是专用检索 URL。猜测会把协议混在一起。面向模型的工具仍然是一个 `web_search`；缺的是下一次搜索读取哪条 Messages 基址的显式选择。
 
 ## Decision
 
-`@deepseek-ai/dsh-web-search-deepseek` 会分类已配置的 `baseURL`，并在同一个提供方 id 下使用两种协议格式：
+同一提供方仍然只讲 Anthropic Messages + `web_search_20250305`。设置页现在展示两张卡片：
 
-- 路径包含 `/anthropic` 或 `/coding`，或任何不是 Moonshot 专用搜索端点的 URL，继续走 DeepSeek Messages（`POST {baseURL}/messages`，携带 `web_search_20250305`）。Kimi 的 coding API（`https://api.kimi.com/coding/v1`）走这条路径。
-- 已知的 Moonshot 搜索主机（`api.moonshot.cn`、`api.moonshot.ai`）或以 `/search` 结尾的路径，会按原样 POST 已配置 URL，请求体采用 Kimi CLI 的 `moonshot_search` 格式 `{text_query, limit, enable_page_crawling: false, timeout_seconds: 30}`，并把 `search_results[]` 映射为 seam 的 `WebSearchResult`。
+- **DeepSeek 搜索**（`web-search-deepseek`）——官方 DeepSeek Anthropic 基址，默认 `https://api.deepseek.com/anthropic/v1`。
+- **Anthropic 协议搜索**（`web-search-anthropic`）——由用户填写的 Messages 基址，例如 `https://api.kimi.com/coding/v1`。
 
-设置卡片、凭据引用（`DEEPSEEK_API_KEY`）以及 `searchProvider: deepseek-official` 固定项均不改变。Moonshot 检索不写入 `web/deepseek-search-llm-request` 事件，因为它不是辅助模型轮次。两种格式都会在跟随 `Location` 之前拒绝 HTTP 重定向。`moonshot_fetch` 不在范围内：Gestalt 默认禁用 `web_fetch`。
+DeepSeek 段存储 `backend: 'deepseek' | 'anthropic-messages'`。每张卡片的 **使用此搜索** 会写入该字段。提供方按次投影两段，并读取 `backend` 所点名的卡片。专用检索（`POST /v1/search` 带 `text_query`）是另一种协议，不属于本包。
 
 ## Alternatives considered
 
-**再做一个由 `searchProvider` 选择的 `web-search-moonshot` 提供方包。** 本次变更否决：已发布组合把提供方固定为 `deepseek-official`，设置卡片也写死为 `web-search-deepseek`。在同时改掉固定项和卡片之前，第二个已注册提供方永远不会运行，也就修不好用户已经保存的 URL。
+**根据已配置 URL 的主机或路径猜测协议。** 否决：`api.kimi.com/coding/v1` 是 Messages 搜索，`api.moonshot.cn/v1/search` 是检索，主机白名单会分错路。用户必须知道自己填的是哪一类 URL。
 
-**在 `ctx.web` 内部按域名选择。** 否决：seam 按显式提供方 id 选择，或在“恰好只有一个可用提供方”时自动选择。让它认识各厂商 URL 族会把 Service Definition 耦合到 Moonshot 与 DeepSeek 主机，而且仍然需要第二个提供方并改写设置卡片。
+**再做一个 `WebSearchProvider` id，并在 `ctx.web` 里选择 `searchProvider`。** 暂缓：已发布组合把 `searchProvider` 固定为 `deepseek-official`，而且 `WebRuntime` 在构造时固化该 id。一张提供方 id 上的两张卡片只改页面，不改 seam 选择。
 
-**在 `baseURL` 是 Moonshot 主机时大声失败。** 否决：用户已经把该 URL 存在已发布卡片上，并要求当前工具同时支持这两种服务。更清晰的错误仍然会让搜索不可用。
+**一张卡片加协议下拉框。** 否决：两个入口需要不同文案和提示，用户才能对上官方 DeepSeek 与 Kimi coding，而不必去读下拉选项。
 
 ## Consequences
 
-已发布的搜索卡片可以指向 DeepSeek Anthropic 基址或 Moonshot 专用搜索 URL，而无需更换提供方 id。自定义代理只要保留 `/anthropic` 或以 `/search` 结尾即可继续工作。若某个 Moonshot 主机日后提供 Anthropic Messages 搜索路径，只要该路径包含 `/anthropic`，就仍走 DeepSeek Messages。以后仍可再增加真正的第二个可选提供方；此次适配不会发明第二个面向模型的工具。
+想用 Kimi coding 的用户选择 Anthropic 协议卡片，填入 `https://api.kimi.com/coding/v1`，并点击 **使用此搜索**。想用官方 DeepSeek 的用户选择 DeepSeek 卡片。另一张卡片上残留的 `baseURL` 不会被读取。Moonshot 专用搜索仍需要自己的提供方包。
 
 ## Testing
 
-`packages/web/web-search-deepseek/tests/endpoint.spec.ts` 固定主机、路径、`/anthropic` 与 `/coding` 覆盖，以及无法解析时的回退。`tests/moonshot.spec.ts` 固定请求映射（URL 按原样、`text_query`、无 Messages 日志、无 Anthropic 标头）、响应映射、`limit` 截断，以及 Moonshot 的错误／取消分类。`tests/redirect.spec.ts` 证明 Moonshot 路径同样拒绝跟随 `Location`。既有 DeepSeek Messages 测试继续覆盖 `/messages` 约定。
+`packages/web/web-search-deepseek/tests/settings.spec.ts` 会切换 `backend`，并断言下一次搜索打到 Anthropic 卡片的 `{baseURL}/messages`。客户端卡片测试覆盖“使用此搜索”控件以及第二个命名空间的注册。plugin-config 快照列出两张卡片的标题。
 
 ## Related
 
 - [Web 能力 seam](../architecture/2026-06-24-web-capability-seam.md) — 提供方注册能力；`dsh-tool-web` 拥有稳定的 `web_search` schema。
-- [Web 默认搜索](2026-07-31-web-default-search.md) — 已发布组合仍将 `searchProvider` 固定为 `deepseek-official`。
+- [Web 插件配置](2026-08-10-web-plugin-configuration.md) — 设置卡片各自绑定一个命名空间。

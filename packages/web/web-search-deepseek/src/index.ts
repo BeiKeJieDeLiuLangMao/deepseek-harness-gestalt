@@ -1,9 +1,10 @@
 /**
- * Register a DeepSeek-backed provider in `ctx.web`. The default endpoint calls
- * the Anthropic-compatible Messages API with native `web_search_20250305`. A
- * Moonshot/Kimi dedicated search URL on the same settings card is posted as-is
- * with `text_query`. The provider reuses `DEEPSEEK_API_KEY` but not
- * `DEEPSEEK_BASE_URL`, because search and chat-completions use different bases.
+ * Register a DeepSeek-backed provider in `ctx.web`. It calls the Anthropic-compatible
+ * Messages API with native `web_search_20250305`. The settings page exposes two
+ * sections — official DeepSeek and a generic Anthropic-compatible base — and the
+ * `backend` field chooses which section the next search reads. The provider reuses
+ * `DEEPSEEK_API_KEY` but not `DEEPSEEK_BASE_URL`, because search and chat-completions
+ * use different bases.
  * @module @deepseek-ai/dsh-web-search-deepseek
  */
 
@@ -44,13 +45,21 @@ export const inject = ['web']
 
 const DEFAULT_API_KEY_ENV = 'DEEPSEEK_API_KEY'
 
+/** Which settings card the next search reads. */
+export type WebSearchBackend = 'deepseek' | 'anthropic-messages'
+
 /** Plugin config (all optional — `apply` fills env-var and constant defaults). */
 export interface Config {
+  /**
+   * Which settings card the next search reads. `deepseek` uses this section's
+   * official DeepSeek endpoint; `anthropic-messages` uses the Anthropic card.
+   */
+  backend?: WebSearchBackend
   /** Literal DeepSeek API key; prefer {@link apiKeyEnv} so no secret enters configuration files. */
   apiKey?: string
   /** Credential reference resolved for each search; defaults to `DEEPSEEK_API_KEY`. */
   apiKeyEnv?: string
-  /** Search endpoint. A DeepSeek Anthropic base appends `/messages`; a Moonshot dedicated search URL is posted as-is. */
+  /** Anthropic-compatible endpoint base; `/messages` is appended. */
   baseURL?: string
   /** Anthropic-format model name. Defaults to `deepseek-v4-flash`. */
   model?: string
@@ -63,6 +72,7 @@ export interface Config {
 }
 
 export const Config: z<Config> = z.object({
+  backend: z.union(['deepseek', 'anthropic-messages'] as const).default('deepseek'),
   apiKey: z.string().role('secret'),
   apiKeyEnv: z.string().role('credential-ref').default(DEFAULT_API_KEY_ENV),
   // Declared here rather than only at the use site: a configuration surface
@@ -75,6 +85,34 @@ export const Config: z<Config> = z.object({
   maxUses: z.number().step(1).min(1).default(DEEPSEEK_DEFAULT_MAX_USES),
 })
 
+/** Anthropic-protocol card: a Messages base the user names explicitly. */
+export interface AnthropicSearchConfig {
+  /** Literal API key; prefer {@link apiKeyEnv}. */
+  apiKey?: string
+  /** Credential reference resolved for each Anthropic-protocol search. */
+  apiKeyEnv?: string
+  /** Anthropic-compatible endpoint base; `/messages` is appended. */
+  baseURL?: string
+  /** Anthropic-format model name. */
+  model?: string
+  /** `anthropic-version` header value. */
+  apiVersion?: string
+  /** Upper bound on generated tokens for the Messages request. */
+  maxTokens?: number
+  /** Maximum `web_search` server-tool uses per request. */
+  maxUses?: number
+}
+
+export const AnthropicSearchConfig: z<AnthropicSearchConfig> = z.object({
+  apiKey: z.string().role('secret'),
+  apiKeyEnv: z.string().role('credential-ref'),
+  baseURL: z.string(),
+  model: z.string(),
+  apiVersion: z.string(),
+  maxTokens: z.number().step(1).min(1),
+  maxUses: z.number().step(1).min(1),
+})
+
 /**
  * Environment variable naming this provider's endpoint. Deliberately distinct
  * from `$DEEPSEEK_BASE_URL`, which belongs to the chat-completions adapter:
@@ -83,8 +121,11 @@ export const Config: z<Config> = z.object({
  */
 const SEARCH_BASE_URL_ENV = 'DEEPSEEK_SEARCH_BASE_URL'
 
-/** Settings namespace carrying this provider's endpoint, model, and key reference. */
+/** Settings namespace for the official DeepSeek search card. */
 export const WEB_SEARCH_DEEPSEEK_SETTINGS_NAMESPACE = settingsNamespace('web-search-deepseek')
+
+/** Settings namespace for the Anthropic-protocol search card. */
+export const WEB_SEARCH_ANTHROPIC_SETTINGS_NAMESPACE = settingsNamespace('web-search-anthropic')
 
 /**
  * Project one resolved section into the options the provider serves its next
@@ -94,28 +135,35 @@ export const WEB_SEARCH_DEEPSEEK_SETTINGS_NAMESPACE = settingsNamespace('web-sea
  * @param config - the currently authoritative section.
  * @returns options for one search.
  */
-function resolveOptions(ctx: Context, config: Config): DeepSeekSearchProviderOptions {
-  const apiKeyEnv = credentialRef(config.apiKeyEnv ?? DEFAULT_API_KEY_ENV)
-  const literalApiKey = config.apiKey !== undefined && config.apiKey.length > 0
-    ? config.apiKey
-    : undefined
+function resolveOptions(
+  ctx: Context,
+  deepseek: Config,
+  anthropic: AnthropicSearchConfig,
+): DeepSeekSearchProviderOptions {
+  const section = deepseek.backend === 'anthropic-messages' ? anthropic : deepseek
+  const apiKeyEnv = credentialRef(section.apiKeyEnv ?? deepseek.apiKeyEnv ?? DEFAULT_API_KEY_ENV)
+  const literalApiKey = section.apiKey !== undefined && section.apiKey.length > 0
+    ? section.apiKey
+    : deepseek.apiKey !== undefined && deepseek.apiKey.length > 0
+      ? deepseek.apiKey
+      : undefined
+  const fallbackBaseURL = deepseek.backend === 'anthropic-messages'
+    ? undefined
+    : launchEnvironmentOf(ctx).get(SEARCH_BASE_URL_ENV)?.value ?? DEEPSEEK_DEFAULT_BASE_URL
   return {
     ...literalApiKey === undefined ? {} : { apiKey: literalApiKey },
     resolveApiKey: async () => {
       const credentials = ctx.get('credentials')
       if (credentials !== undefined) return (await credentials.resolve(apiKeyEnv))?.value
-      // Without the seam the environment is the whole credential plane.
       const ambient = launchEnvironmentOf(ctx).get(apiKeyEnv)
       return ambient !== undefined && ambient.value.length > 0 ? ambient.value : undefined
     },
     apiKeyEnv,
-    baseURL: config.baseURL
-      ?? launchEnvironmentOf(ctx).get(SEARCH_BASE_URL_ENV)?.value
-      ?? DEEPSEEK_DEFAULT_BASE_URL,
-    model: config.model ?? DEEPSEEK_DEFAULT_MODEL,
-    apiVersion: config.apiVersion ?? DEEPSEEK_DEFAULT_API_VERSION,
-    maxTokens: config.maxTokens ?? DEEPSEEK_DEFAULT_MAX_TOKENS,
-    maxUses: config.maxUses ?? DEEPSEEK_DEFAULT_MAX_USES,
+    baseURL: section.baseURL ?? fallbackBaseURL ?? '',
+    model: section.model ?? deepseek.model ?? DEEPSEEK_DEFAULT_MODEL,
+    apiVersion: section.apiVersion ?? deepseek.apiVersion ?? DEEPSEEK_DEFAULT_API_VERSION,
+    maxTokens: section.maxTokens ?? deepseek.maxTokens ?? DEEPSEEK_DEFAULT_MAX_TOKENS,
+    maxUses: section.maxUses ?? deepseek.maxUses ?? DEEPSEEK_DEFAULT_MAX_USES,
     recordRequest: (request) => {
       ctx.get('agents')?.currentInitiator()?.session.append(
         'web/deepseek-search-llm-request',
@@ -127,14 +175,21 @@ function resolveOptions(ctx: Context, config: Config): DeepSeekSearchProviderOpt
 
 /** Register the DeepSeek search provider with `ctx.web`. */
 export function apply(ctx: Context, config: Config): void {
-  let current: () => Config = () => config
+  let currentDeepseek: () => Config = () => config
+  let currentAnthropic: () => AnthropicSearchConfig = () => ({})
   installSettingsSection(ctx, WEB_SEARCH_DEEPSEEK_SETTINGS_NAMESPACE, Config, config, {
     setSource: (source) => {
-      current = source
+      currentDeepseek = source
     },
-    // The registration carries no resolved value: the provider projects the
-    // section per search, so a committed change needs no re-registration.
     onChange: () => {},
   })
-  ctx.web.registerSearchProvider(new DeepSeekSearchProvider(() => resolveOptions(ctx, current())))
+  installSettingsSection(ctx, WEB_SEARCH_ANTHROPIC_SETTINGS_NAMESPACE, AnthropicSearchConfig, {}, {
+    setSource: (source) => {
+      currentAnthropic = source
+    },
+    onChange: () => {},
+  })
+  ctx.web.registerSearchProvider(new DeepSeekSearchProvider(
+    () => resolveOptions(ctx, currentDeepseek(), currentAnthropic()),
+  ))
 }

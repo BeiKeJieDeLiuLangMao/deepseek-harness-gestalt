@@ -125,7 +125,7 @@ describe('ui-settings-plugins apply', () => {
     await ctx.plugin({ inject: [...inject], apply }).await()
 
     expect(slots.entries('settings.plugin.item').map(entry => entry.options.key))
-      .toEqual(['shell', 'agent-loop', 'web-search-deepseek'])
+      .toEqual(['shell', 'agent-loop', 'web-search-deepseek', 'web-search-anthropic'])
   })
 
   it('dispatches the served namespaces its cards claim, and no others', async () => {
@@ -181,7 +181,7 @@ describe('ui-settings-plugins apply', () => {
     // event is the only thing that reaches the card.
     ctx.remote.$dispatch('credentials/updated', ['DEEPSEEK_API_KEY'])
 
-    await vi.waitFor(() => { expect(describeCredentials).toHaveBeenCalledTimes(1) })
+    await vi.waitFor(() => { expect(describeCredentials).toHaveBeenCalledTimes(2) })
   })
 
   it('ignores a credential change for a reference no card watches', async () => {
@@ -211,7 +211,7 @@ describe('ui-settings-plugins apply', () => {
     declareRoot(slots)
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
-    expect(slots.entries('settings.plugin.item')).toHaveLength(3)
+    expect(slots.entries('settings.plugin.item')).toHaveLength(4)
 
     await fiber.dispose()
 

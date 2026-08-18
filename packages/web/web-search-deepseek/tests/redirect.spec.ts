@@ -66,21 +66,6 @@ describe('DeepSeekSearchProvider redirect policy', () => {
     expect(targetRequests).toHaveLength(0)
   })
 
-  it.each([301, 302, 303, 307, 308])('rejects Moonshot HTTP %i before contacting Location', async (status) => {
-    targetRequests.length = 0
-    const provider = searchProvider({
-      apiKey: TEST_API_KEY,
-      baseURL: `${redirectOrigin}/${status}/search`,
-      model: 'deepseek-chat',
-      apiVersion: '2023-06-01',
-      maxTokens: 32,
-      maxUses: 1,
-    })
-
-    await expect(provider.search({ query: TEST_QUERY }))
-      .rejects.toMatchObject({ code: 'WEB_PROVIDER_ERROR' })
-    expect(targetRequests).toHaveLength(0)
-  })
 
   it('shows default 307 following forwards the custom credential and POST body', async () => {
     targetRequests.length = 0
