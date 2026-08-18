@@ -413,9 +413,16 @@ function closeServer(server: Server): Promise<void> {
 }
 
 function throwRejected(results: PromiseSettledResult<unknown>[], message: string): void {
-  const errors = results.flatMap(result => result.status === 'rejected' ? [result.reason] : [])
-  if (errors.length === 1) throw errors[0]
+  const errors: unknown[] = []
+  for (const result of results) {
+    if (result.status === 'rejected') errors.push(result.reason)
+  }
+  if (errors.length === 1) throw errorFromUnknown(errors[0])
   if (errors.length > 1) throw new AggregateError(errors, message)
+}
+
+function errorFromUnknown(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error), { cause: error })
 }
 
 function deferred<T>(): { promise: Promise<T>; resolve(value: T): void; reject(error: unknown): void } {

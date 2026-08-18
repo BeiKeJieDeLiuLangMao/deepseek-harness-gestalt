@@ -24,12 +24,14 @@ const CONFIG: Config = {
 
 describe('two-instance Relay composition ownership', () => {
   it('rejects timing and queue relationships before composition acquisition', () => {
-    expect(() => validateBundledConfig({ ...CONFIG, heartbeatIntervalMs: CONFIG.heartbeatTimeoutMs }))
+    const timeoutConfig = structuredClone(CONFIG)
+    timeoutConfig.heartbeatIntervalMs = CONFIG.heartbeatTimeoutMs
+    expect(() => { validateBundledConfig(timeoutConfig) })
       .toThrow('heartbeatIntervalMs')
-    expect(() => validateBundledConfig({
-      ...CONFIG, inboundMaxBytes: REMOTE_PROTOCOL_LIMITS.relayMessageBytes - 1,
-    })).toThrow('inboundMaxBytes')
-    expect(() => validateBundledConfig(CONFIG)).not.toThrow()
+    const inboundConfig = structuredClone(CONFIG)
+    inboundConfig.inboundMaxBytes = REMOTE_PROTOCOL_LIMITS.relayMessageBytes - 1
+    expect(() => { validateBundledConfig(inboundConfig) }).toThrow('inboundMaxBytes')
+    expect(() => { validateBundledConfig(CONFIG) }).not.toThrow()
   })
 
   it('closes every staged owner in reverse order and aggregates cleanup failures', async () => {

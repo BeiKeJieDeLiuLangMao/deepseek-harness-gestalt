@@ -1,3 +1,4 @@
+import { once } from 'node:events'
 import { RemoteRelayError } from '@deepseek-ai/dsh-remote-access'
 import { REMOTE_PROTOCOL_LIMITS } from '@deepseek-ai/dsh-remote-protocol'
 import WebSocket, { type RawData } from 'ws'
@@ -46,7 +47,16 @@ export class NodeRelayEndpointSocket implements RelayEndpointSocket {
       maxPayload: REMOTE_PROTOCOL_LIMITS.relayMessageBytes,
       ...(trust === undefined ? {} : { rejectUnauthorized: trust.rejectUnauthorized }),
     })
-    await opened(socket, signal)
+    try {
+      await once(socket, 'open', { signal })
+    } catch (error) {
+      socket.terminate()
+      if (signal.aborted) {
+        throw new RemoteRelayError('REMOTE_OFFLINE', 'Relay WebSocket acquisition was cancelled')
+      }
+      if (error instanceof Error) throw error
+      throw new RemoteRelayError('REMOTE_OFFLINE', 'Relay WebSocket failed to open')
+    }
     return new NodeRelayEndpointSocket(socket, limits)
   }
 
@@ -68,24 +78,9 @@ export class NodeRelayEndpointSocket implements RelayEndpointSocket {
   }
 }
 
-function opened(socket: WebSocket, signal: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    socket.once('open', () => finish(resolve))
-    socket.once('error', error => finish(() => reject(error)))
-    signal.addEventListener('abort', aborted, { once: true })
-    function aborted(): void {
-      socket.terminate()
-      finish(() => reject(new RemoteRelayError('REMOTE_OFFLINE', 'Relay WebSocket acquisition was cancelled')))
-    }
-    function finish(settle: () => void): void {
-      signal.removeEventListener('abort', aborted)
-      settle()
-    }
-  })
-}
-
 function bytes(data: RawData): Uint8Array {
+  if (Array.isArray(data)) return Uint8Array.from(Buffer.concat(data))
   if (data instanceof ArrayBuffer) return new Uint8Array(data)
-  if (Array.isArray(data)) return new Uint8Array(Buffer.concat(data))
-  return new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
+  const { buffer, byteOffset, byteLength } = data
+  return new Uint8Array(buffer, byteOffset, byteLength)
 }

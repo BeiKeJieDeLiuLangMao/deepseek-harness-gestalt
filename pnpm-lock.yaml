@@ -447,6 +447,9 @@ importers:
       '@deepseek-ai/dsh-platform-account-core':
         specifier: workspace:^
         version: link:../../packages/platform/platform-account-core
+      '@deepseek-ai/dsh-remote-access-http':
+        specifier: workspace:^
+        version: link:../../packages/platform/remote-access-http
       electron:
         specifier: 41.2.1
         version: 41.2.1
@@ -575,6 +578,9 @@ importers:
       '@deepseek-ai/cordis-plugin-include':
         specifier: workspace:*
         version: link:../vendor/include
+      '@deepseek-ai/cordis-plugin-loader':
+        specifier: workspace:*
+        version: link:../vendor/loader
       '@deepseek-ai/cordis-plugin-logger-console':
         specifier: workspace:*
         version: link:../vendor/logger-console
@@ -920,12 +926,6 @@ importers:
       '@deepseek-ai/schemastery':
         specifier: link:../vendor/schemastery
         version: link:../vendor/schemastery
-      '@types/ws':
-        specifier: ^8.18.1
-        version: 8.18.1
-      ws:
-        specifier: ^8.21.0
-        version: 8.21.0
 
   native/landlock-run:
     devDependencies:

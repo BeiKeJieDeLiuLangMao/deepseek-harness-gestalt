@@ -329,5 +329,9 @@ function validateKeyPrefix(keyPrefix: string): void {
 }
 
 function rejectedReasons(results: PromiseSettledResult<unknown>[]): unknown[] {
-  return results.flatMap(result => result.status === 'rejected' ? [result.reason] : [])
+  const errors: unknown[] = []
+  for (const result of results) {
+    if (result.status === 'rejected') errors.push(result.reason)
+  }
+  return errors
 }

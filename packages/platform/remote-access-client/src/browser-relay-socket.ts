@@ -49,9 +49,12 @@ export class BrowserRelayEndpointSocket implements RelayEndpointSocket {
     return new BrowserRelayEndpointSocket(socket, limits)
   }
 
-  async send(value: Uint8Array): Promise<void> {
-    if (this.socket.readyState !== WebSocket.OPEN) throw new RemoteRelayError('REMOTE_OFFLINE', 'Relay WebSocket is closed')
+  send(value: Uint8Array): Promise<void> {
+    if (this.socket.readyState !== WebSocket.OPEN) {
+      return Promise.reject(new RemoteRelayError('REMOTE_OFFLINE', 'Relay WebSocket is closed'))
+    }
     this.socket.send(Uint8Array.from(value))
+    return Promise.resolve()
   }
 
   messages(): AsyncIterable<Uint8Array> { return this.queue }
@@ -64,14 +67,20 @@ export class BrowserRelayEndpointSocket implements RelayEndpointSocket {
 
 function opened(socket: WebSocket, signal: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
-    socket.addEventListener('open', () => finish(resolve), { once: true })
-    socket.addEventListener('error', () => finish(() => reject(new RemoteRelayError('REMOTE_OFFLINE', 'Relay WebSocket failed to open'))), { once: true })
+    socket.addEventListener('open', onOpen)
+    socket.addEventListener('error', onError)
     signal.addEventListener('abort', aborted, { once: true })
+    function onOpen(): void { finish(resolve) }
+    function onError(): void {
+      finish(() => { reject(new RemoteRelayError('REMOTE_OFFLINE', 'Relay WebSocket failed to open')) })
+    }
     function aborted(): void {
       socket.close()
-      finish(() => reject(new RemoteRelayError('REMOTE_OFFLINE', 'Relay WebSocket acquisition was cancelled')))
+      finish(() => { reject(new RemoteRelayError('REMOTE_OFFLINE', 'Relay WebSocket acquisition was cancelled')) })
     }
     function finish(settle: () => void): void {
+      socket.removeEventListener('open', onOpen)
+      socket.removeEventListener('error', onError)
       signal.removeEventListener('abort', aborted)
       settle()
     }

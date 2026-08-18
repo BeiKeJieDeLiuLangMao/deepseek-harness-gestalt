@@ -9,7 +9,10 @@ import {
   parsePairingRendezvousId,
   type PairingAccountAuthentication,
 } from '@deepseek-ai/dsh-remote-access'
-import { RemoteAccessHttpTransport, type RemoteAccessTransport } from '@deepseek-ai/dsh-remote-access-client'
+import {
+  RemoteAccessHttpTransport,
+  type RemoteAccessTransport,
+} from '@deepseek-ai/dsh-remote-access-client'
 import { MobilePairingController } from '../../../../apps/mobile/src/personal-pairing.ts'
 import { apply } from '../src/index.ts'
 

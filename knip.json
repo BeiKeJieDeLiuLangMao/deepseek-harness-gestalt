@@ -8,6 +8,7 @@
     "icacls",
     "musl-gcc",
     "python3",
+    "redis-server",
     "sandbox-exec",
     "tar",
     "taskkill",

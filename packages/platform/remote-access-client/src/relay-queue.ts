@@ -18,7 +18,7 @@ export class RelayInboundQueue implements AsyncIterable<Uint8Array> {
   }> = []
   private bufferedBytes = 0
   private ended = false
-  private failure: unknown
+  private failure: Error | undefined
 
   /** @param limits - validated live item and aggregate-byte ceilings. */
   constructor(private readonly limits: RelayInboundQueueLimits) {
@@ -57,15 +57,20 @@ export class RelayInboundQueue implements AsyncIterable<Uint8Array> {
     for (const wait of this.waits.splice(0)) wait.resolve({ done: true, value: undefined })
   }
 
-  /** Fail the consumer and discard buffered live frames. @param error - stable transport failure. */
-  fail(error: unknown): unknown {
-    if (this.ended) return error
-    this.failure = error
+  /**
+   * Fail the consumer and discard buffered live frames.
+   * @param error - transport failure from the native socket or queue limit.
+   * @returns the normalized Error retained by the queue.
+   */
+  fail(error: unknown): Error {
+    const failure = error instanceof Error ? error : new Error(String(error), { cause: error })
+    if (this.ended) return failure
+    this.failure = failure
     this.ended = true
     this.values.length = 0
     this.bufferedBytes = 0
-    for (const wait of this.waits.splice(0)) wait.reject(error)
-    return error
+    for (const wait of this.waits.splice(0)) wait.reject(failure)
+    return failure
   }
 
   async *[Symbol.asyncIterator](): AsyncIterator<Uint8Array> {

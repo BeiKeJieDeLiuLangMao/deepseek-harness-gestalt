@@ -119,6 +119,15 @@ export class RemoteRelayEndpointController {
   }
 
   /**
+   * Report current acknowledged attachment ownership.
+   * @returns whether this lifecycle currently owns an acknowledged live attachment.
+   */
+  isConnected(): boolean {
+    const owner = this.owner
+    return owner !== undefined && owner.stop === undefined && owner.connection !== undefined
+  }
+
+  /**
    * Send only on the current live socket; offline operations are never retained or replayed.
    * @param targetAttachmentId - current peer attachment receiving the ciphertext.
    * @param ciphertext - bounded encrypted Companion Protocol frame.
@@ -146,22 +155,17 @@ export class RemoteRelayEndpointController {
       connection === undefined ? Promise.resolve() : this.closeConnection(connection),
       owner.run,
     ])
-    if (this.owner === owner) this.owner = undefined
+    this.owner = undefined
     owner.stopped.resolve()
     throwRejected(results, 'Remote Relay stop failed')
   }
 
   private async runConnections(owner: LifecycleOwner): Promise<void> {
-    let first = true
     let stopFailure: unknown
     const signal = owner.controller.signal
     while (!isAborted(signal)) {
       try {
         await this.runConnection(owner)
-        if (first && owner.connection !== undefined) {
-          first = false
-          owner.ready.resolve()
-        }
       } catch (error) {
         if (isAborted(signal)) {
           if (error instanceof ConnectionTeardownError) stopFailure = error.cause
@@ -171,8 +175,8 @@ export class RemoteRelayEndpointController {
       }
       if (!isAborted(signal)) await delay(this.options.reconnectDelayMs, signal)
     }
-    if (first) owner.ready.reject(new RemoteRelayError('REMOTE_OFFLINE', 'Relay lifecycle stopped before attachment'))
-    if (stopFailure !== undefined) throw stopFailure
+    owner.ready.reject(new RemoteRelayError('REMOTE_OFFLINE', 'Relay lifecycle stopped before attachment'))
+    if (stopFailure !== undefined) throw errorFromUnknown(stopFailure)
   }
 
   private async runConnection(owner: LifecycleOwner): Promise<void> {
@@ -201,6 +205,7 @@ export class RemoteRelayEndpointController {
         credential: route.credential,
       }))
       await this.awaitReady(connection, iterator, signal)
+      /* v8 ignore next -- stop can win only in the microtask gap after the acknowledged wait settles. */
       if (isAborted(signal)) return
       owner.connection = connection
       if (this.options.endpoint === 'desktop') {
@@ -208,6 +213,7 @@ export class RemoteRelayEndpointController {
       }
       owner.ready.resolve()
       heartbeat = this.heartbeat(owner, connection, heartbeatAbort.signal)
+      void heartbeat.catch(() => {})
       while (!isAborted(signal)) {
         const next = await iterator.next()
         if (next.done || isAborted(signal)) break
@@ -321,14 +327,14 @@ function withTimeout<T>(
   timeoutError: () => Error,
 ): Promise<T> {
   return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => finish(() => reject(timeoutError())), milliseconds)
+    const timer = setTimeout(() => { finish(() => { reject(timeoutError()) }) }, milliseconds)
     signal.addEventListener('abort', aborted, { once: true })
     operation.then(
-      value => finish(() => resolve(value)),
-      error => finish(() => reject(error)),
+      (value) => { finish(() => { resolve(value) }) },
+      (error: unknown) => { finish(() => { reject(errorFromUnknown(error)) }) },
     )
     function aborted(): void {
-      finish(() => reject(new RemoteRelayError('REMOTE_OFFLINE', 'Relay lifecycle stopped before attachment')))
+      finish(() => { reject(new RemoteRelayError('REMOTE_OFFLINE', 'Relay lifecycle stopped before attachment')) })
     }
     function finish(settle: () => void): void {
       clearTimeout(timer)
@@ -340,12 +346,19 @@ function withTimeout<T>(
 
 function throwRejected(results: PromiseSettledResult<unknown>[], message: string): void {
   const errors = rejectedReasons(results)
-  if (errors.length === 1) throw errors[0]
-  if (errors.length > 1) throw new AggregateError(errors, message)
+  if (errors.length > 0) throw new AggregateError(errors, message)
 }
 
-function rejectedReasons(results: PromiseSettledResult<unknown>[]): unknown[] {
-  return results.flatMap(result => result.status === 'rejected' ? [result.reason] : [])
+function rejectedReasons(results: PromiseSettledResult<unknown>[]): Error[] {
+  const errors: Error[] = []
+  for (const result of results) {
+    if (result.status === 'rejected') errors.push(errorFromUnknown(result.reason))
+  }
+  return errors
+}
+
+function errorFromUnknown(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error), { cause: error })
 }
 
 class ConnectionTeardownError extends Error {

@@ -44,7 +44,10 @@ describe('MobilePairingController', () => {
       handshake,
       scanner,
       device: { name: 'Alice phone', platform: 'ios' },
-      schedule: (task) => { scheduled = task; return 1 },
+      schedule: (task) => {
+        scheduled = task
+        return setTimeout(() => {}, 60_000)
+      },
       now: () => Date.parse('2026-08-18T10:01:00.000Z'),
     })
 

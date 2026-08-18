@@ -3718,7 +3718,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'MobileAccessState',
-    declaration: 'export interface MobileAccessState {\n    enabled: boolean;\n}',
+    declaration: 'export interface MobileAccessState {\n    enabled: boolean;\n    relay?: RelayCredentialGrant;\n}',
   },
   {
     name: 'MobilePairingStatus',

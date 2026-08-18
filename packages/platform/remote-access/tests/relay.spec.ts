@@ -144,7 +144,7 @@ describe('RemoteRelayProvider', () => {
       deliver: async () => { await writer.promise },
     })
     const first = mobile.receive(ciphertext(routeId, 'mobile-one', 'desktop-one', Uint8Array.of(1, 2, 3, 4)))
-      .then(() => undefined, error => error as RemoteRelayError)
+      .then(() => undefined, (error: unknown) => error as RemoteRelayError)
     await Promise.resolve()
 
     await expect(mobile.receive(ciphertext(routeId, 'mobile-one', 'desktop-one', Uint8Array.of(5))))
@@ -320,6 +320,15 @@ describe('RemoteRelayProvider', () => {
     expect(await coordinator.locate(routeId, parseRelayAttachmentId('desktop-one'))).toBeUndefined()
   })
 
+  it('reports coordination startup failure during disposal without acquiring attachments', async () => {
+    const routeStore = new SharedRouteStore()
+    const coordinator = new SharedCoordinator()
+    coordinator.failListen = true
+    const platform = provider('platform-listen-failure', routeStore, coordinator, 66)
+
+    await expect(platform.dispose()).rejects.toThrow('Remote Relay disposal failed')
+  })
+
   it('rejects an old authorization that is invalidated before attachment registration', async () => {
     const routeStore = new SharedRouteStore()
     const coordinator = new SharedCoordinator()
@@ -358,6 +367,31 @@ describe('RemoteRelayProvider', () => {
     await platform.dispose()
   })
 
+  it('removes a registered attachment when authority changes during post-register revalidation', async () => {
+    const routeStore = new SharedRouteStore()
+    const coordinator = new SharedCoordinator()
+    const platform = provider('platform-post-register-race', routeStore, coordinator, 71)
+    const routeId = parseRelayRouteId('route-post-register-race')
+    const grant = await platform.rotateCredential(routeId)
+    const authorize = routeStore.authorize.bind(routeStore)
+    let calls = 0
+    vi.spyOn(routeStore, 'authorize').mockImplementation(async (id, digest) => {
+      calls += 1
+      if (calls === 2) return grant.revision + 1
+      return await authorize(id, digest)
+    })
+
+    await expect(platform.attach({
+      message: {
+        type: 'attach', transportVersion: 1, routeId,
+        attachmentId: parseRelayAttachmentId('desktop-one'), endpoint: 'desktop', credential: grant.credential,
+      },
+      deliver: async () => {},
+    })).rejects.toMatchObject({ code: 'RELAY_ATTACHMENT_REJECTED' })
+    expect(await coordinator.locate(routeId, parseRelayAttachmentId('desktop-one'))).toBeUndefined()
+    await platform.dispose()
+  })
+
   it('requires a target delivery acknowledgement after asynchronous publication', async () => {
     const routeStore = new SharedRouteStore()
     const coordinator = new SharedCoordinator()
@@ -388,6 +422,69 @@ describe('RemoteRelayProvider', () => {
     expect(coordinator.events).toContainEqual(expect.objectContaining({ type: 'ciphertext' }))
     expect(coordinator.events).not.toContainEqual(expect.objectContaining({ type: 'delivered' }))
     await Promise.all([platformA.dispose(), platformB.dispose()])
+  })
+
+  it('bounds pending delivery acknowledgements and validates delivery correlation entropy', async () => {
+    const routeStore = new SharedRouteStore()
+    const coordinator = new SharedCoordinator()
+    let timeout: (() => void) | undefined
+    const source = new RemoteRelayProvider(new Context(), {
+      instanceId: parseRelayInstanceId('platform-pending-source'), routeStore, coordinator,
+      config: { ...CONFIG, maxPendingDeliveries: 1 },
+      randomBytes: size => new Uint8Array(size).fill(72),
+      schedule: (task) => { timeout = task; return { unref: () => {} } as never },
+    })
+    const target = provider('platform-pending-target', routeStore, coordinator, 73)
+    const routeId = parseRelayRouteId('route-pending-capacity')
+    const grant = await source.rotateCredential(routeId)
+    const mobile = await source.attach({
+      message: {
+        type: 'attach', transportVersion: 1, routeId,
+        attachmentId: parseRelayAttachmentId('mobile-one'), endpoint: 'mobile', credential: grant.credential,
+      },
+      deliver: async () => {},
+    })
+    const writer = deferred<undefined>()
+    await target.attach({
+      message: {
+        type: 'attach', transportVersion: 1, routeId,
+        attachmentId: parseRelayAttachmentId('desktop-one'), endpoint: 'desktop', credential: grant.credential,
+      },
+      deliver: async () => { await writer.promise },
+    })
+    const first = mobile.receive(ciphertext(routeId, 'mobile-one', 'desktop-one', Uint8Array.of(1)))
+    await vi.waitFor(() => { expect(coordinator.events).toContainEqual(expect.objectContaining({ type: 'ciphertext' })) })
+    await expect(mobile.receive(ciphertext(routeId, 'mobile-one', 'desktop-one', Uint8Array.of(2))))
+      .rejects.toMatchObject({ code: 'PLATFORM_CAPACITY' })
+    timeout?.()
+    writer.resolve(undefined)
+    await expect(first).rejects.toMatchObject({ code: 'REMOTE_OFFLINE' })
+    await Promise.all([source.dispose(), target.dispose()])
+
+    let entropyCalls = 0
+    const badCoordinator = new SharedCoordinator()
+    const badDelivery = new RemoteRelayProvider(new Context(), {
+      instanceId: parseRelayInstanceId('platform-bad-delivery'), routeStore: new SharedRouteStore(),
+      coordinator: badCoordinator, config: CONFIG,
+      randomBytes: size => new Uint8Array(++entropyCalls === 3 ? 15 : size).fill(74),
+    })
+    const badRoute = parseRelayRouteId('route-bad-delivery')
+    const badGrant = await badDelivery.rotateCredential(badRoute)
+    const badMobile = await badDelivery.attach({
+      message: {
+        type: 'attach', transportVersion: 1, routeId: badRoute,
+        attachmentId: parseRelayAttachmentId('mobile-bad'), endpoint: 'mobile', credential: badGrant.credential,
+      },
+      deliver: async () => {},
+    })
+    await badCoordinator.register({
+      routeId: badRoute, attachmentId: parseRelayAttachmentId('desktop-bad'), endpoint: 'desktop',
+      instanceId: parseRelayInstanceId('platform-missing'), connectionToken: parseRelayConnectionToken('token-bad'),
+      revision: badGrant.revision, expiresAt: Date.now() + 1_000,
+    })
+    await expect(badMobile.receive(ciphertext(badRoute, 'mobile-bad', 'desktop-bad', Uint8Array.of(1))))
+      .rejects.toThrow('delivery-id source must return 16 bytes')
+    await badDelivery.dispose()
   })
 
   it('fails closed and detaches on heartbeat when shared route authority is uncertain', async () => {
@@ -491,7 +588,7 @@ describe('RemoteRelayProvider', () => {
       deliver: async () => { await writer.promise },
     })
     const forwarding = mobile.receive(ciphertext(routeId, 'mobile-one', 'desktop-one', Uint8Array.of(1)))
-      .then(() => undefined, error => error as RemoteRelayError)
+      .then(() => undefined, (error: unknown) => error as RemoteRelayError)
     await Promise.resolve()
     let disposed = false
     const disposal = platform.dispose().then(() => { disposed = true })
@@ -798,10 +895,10 @@ describe('RemoteRelayProvider', () => {
       deliver: async () => { deliveries += 1; await writer.promise },
     })
     const first = mobile.receive(ciphertext(routeId, 'mobile-one', 'desktop-one', Uint8Array.of(1)))
-      .then(() => undefined, error => error as RemoteRelayError)
+      .then(() => undefined, (error: unknown) => error as RemoteRelayError)
     await vi.waitFor(() => { expect(deliveries).toBe(1) })
     const second = mobile.receive(ciphertext(routeId, 'mobile-one', 'desktop-one', Uint8Array.of(2)))
-      .then(() => undefined, error => error as RemoteRelayError)
+      .then(() => undefined, (error: unknown) => error as RemoteRelayError)
     await new Promise<void>((resolve) => { setImmediate(resolve) })
     const closing = desktop.close()
     writer.resolve(undefined)
@@ -899,6 +996,7 @@ class SharedCoordinator implements RelayCoordinator {
   readonly events: RelayCoordinationEvent[] = []
   readonly queuedEventCount = 0
   failStop = false
+  failListen = false
   failRegister = false
   failRefresh = false
   failUnregister = false
@@ -911,6 +1009,7 @@ class SharedCoordinator implements RelayCoordinator {
     instanceId: string,
     listener: (event: RelayCoordinationEvent) => Promise<void>,
   ): Promise<() => Promise<void>> {
+    if (this.failListen) throw new Error('listen failed')
     this.listeners.set(instanceId, listener)
     return async () => {
       this.listeners.delete(instanceId)

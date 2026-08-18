@@ -61,6 +61,7 @@ describe('RemoteRelayEndpointController', () => {
     })
 
     await controller.start()
+    expect(controller.isConnected()).toBe(true)
     expect(resynchronize).toHaveBeenCalledTimes(1)
     expect(first.decoded().map(message => message.type)).toEqual(['attach', 'ciphertext'])
     first.end()
@@ -69,6 +70,7 @@ describe('RemoteRelayEndpointController', () => {
     expect(first.decoded()).toHaveLength(2)
 
     await controller.stop()
+    expect(controller.isConnected()).toBe(false)
     await expect(controller.sendCiphertext(parseRelayAttachmentId('mobile-one'), Uint8Array.of(1)))
       .rejects.toMatchObject({ code: 'REMOTE_OFFLINE' })
   })
@@ -369,6 +371,109 @@ describe('RemoteRelayEndpointController', () => {
     await stopping
   })
 
+  it('fails an unacknowledged attach on timeout and cancels a pending acknowledgement during stop', async () => {
+    vi.useFakeTimers()
+    const timedOut = new FakeSocket(false)
+    const onTransportError = vi.fn()
+    const timeoutController = new RemoteRelayEndpointController({
+      ...mobileOptions(async () => timedOut),
+      attachTimeoutMs: 20,
+      reconnectDelayMs: 100,
+      onTransportError,
+    })
+    const starting = timeoutController.start()
+    await vi.advanceTimersByTimeAsync(20)
+    expect(onTransportError).toHaveBeenCalledWith(expect.objectContaining({ code: 'REMOTE_OFFLINE' }))
+    const stopping = timeoutController.stop()
+    await expect(starting).rejects.toMatchObject({ code: 'REMOTE_OFFLINE' })
+    await stopping
+
+    const pending = new PendingReadSocket()
+    const pendingController = new RemoteRelayEndpointController(mobileOptions(async () => pending))
+    const pendingStart = pendingController.start()
+    await pending.readEntered.promise
+    const pendingStop = pendingController.stop()
+    await expect(pendingStart).rejects.toMatchObject({ code: 'REMOTE_OFFLINE' })
+    await pendingStop
+    vi.useRealTimers()
+  })
+
+  it('does not publish a connection when stop wins immediately after ready', async () => {
+    const socket = new FakeSocket(false)
+    const controller = new RemoteRelayEndpointController(mobileOptions(async () => socket))
+    const starting = controller.start()
+    await vi.waitFor(() => { expect(socket.decoded()).toHaveLength(1) })
+    socket.receive(encodeRelayMessage({
+      type: 'ready', transportVersion: 1, attachmentId: parseRelayAttachmentId('mobile-one'),
+    }))
+    await Promise.resolve()
+    const stopping = controller.stop()
+    await expect(starting).rejects.toMatchObject({ code: 'REMOTE_OFFLINE' })
+    await stopping
+    await expect(controller.sendCiphertext(parseRelayAttachmentId('desktop-one'), Uint8Array.of(1)))
+      .rejects.toMatchObject({ code: 'REMOTE_OFFLINE' })
+  })
+
+  it('aggregates simultaneous heartbeat and socket close failures before reconnecting', async () => {
+    vi.useFakeTimers()
+    const socket = new DualFailureSocket()
+    const cancelled = deferred<undefined>()
+    let connects = 0
+    const onTransportError = vi.fn()
+    const controller = new RemoteRelayEndpointController({
+      ...mobileOptions(async (signal) => {
+        connects += 1
+        if (connects === 1) return socket
+        return await new Promise<never>((_resolve, reject) => {
+          signal.addEventListener('abort', () => {
+            cancelled.resolve(undefined)
+            reject(new Error('replacement cancelled'))
+          }, { once: true })
+        })
+      }),
+      heartbeatIntervalMs: 10,
+      onTransportError,
+    })
+    await controller.start()
+    await vi.advanceTimersByTimeAsync(10)
+    socket.end()
+    await vi.advanceTimersByTimeAsync(1)
+    expect(onTransportError).toHaveBeenCalledWith(expect.objectContaining({ code: 'REMOTE_OFFLINE' }))
+    const stopping = controller.stop()
+    await cancelled.promise
+    await stopping
+    vi.useRealTimers()
+  })
+
+  it('reconnects when an attach is rejected, its socket closes, or its read fails before acknowledgement', async () => {
+    const rejected = new FakeSocket(false)
+    const closed = new FakeSocket(false)
+    const readFailed = new RejectingReadSocket()
+    const ready = new FakeSocket()
+    const sockets: RelayEndpointSocket[] = [rejected, closed, readFailed, ready]
+    const onTransportError = vi.fn()
+    const controller = new RemoteRelayEndpointController({
+      ...mobileOptions(async () => {
+        const socket = sockets.shift()
+        if (socket === undefined) throw new Error('no replacement')
+        return socket
+      }),
+      attachTimeoutMs: 1_000,
+      onTransportError,
+    })
+    const starting = controller.start()
+    await vi.waitFor(() => { expect(rejected.decoded()).toHaveLength(1) })
+    rejected.receive(encodeRelayMessage({
+      type: 'error', transportVersion: 1, code: 'RELAY_ROUTE_REVOKED',
+    }))
+    await vi.waitFor(() => { expect(closed.decoded()).toHaveLength(1) })
+    closed.end()
+    await starting
+    expect(onTransportError).toHaveBeenCalledWith(expect.objectContaining({ code: 'RELAY_ROUTE_REVOKED' }))
+    expect(onTransportError).toHaveBeenCalledWith(expect.objectContaining({ code: 'REMOTE_OFFLINE' }))
+    await controller.stop()
+  })
+
   it('fails closed for ciphertext addressed to another route or attachment', async () => {
     const firstSocket = new FakeSocket()
     const sockets = [firstSocket, new FakeSocket()]
@@ -409,6 +514,17 @@ describe('RemoteRelayEndpointController', () => {
       .rejects.toMatchObject({ code: 'REMOTE_OFFLINE' })
   })
 
+  it('normalizes a non-Error native close rejection while draining the run', async () => {
+    const socket = new NonErrorRejectingCloseSocket()
+    const controller = new RemoteRelayEndpointController(mobileOptions(async () => socket))
+    await controller.start()
+
+    await expect(controller.stop()).rejects.toSatisfy((error: unknown) => {
+      return error instanceof AggregateError
+        && error.errors.every(item => item instanceof Error && item.message === 'close failed')
+    })
+  })
+
   it('isolates a throwing observer and keeps reconnecting after one post-ready error', async () => {
     const first = new FakeSocket()
     const second = new FakeSocket()
@@ -445,7 +561,7 @@ describe('RemoteRelayEndpointController', () => {
     if (stage === 'route') options.route = async (signal: AbortSignal) => await never(signal)
     const controller = new RemoteRelayEndpointController(options)
     const starting = controller.start()
-    const startResult = starting.then(() => undefined, error => error as RemoteRelayError)
+    const startResult = starting.then(() => undefined, (error: unknown) => error as RemoteRelayError)
     await Promise.resolve()
 
     const stopping = controller.stop()
@@ -541,6 +657,52 @@ class RejectingCloseSocket extends FakeSocket {
   override async close(): Promise<void> {
     this.end()
     throw new Error('close failed')
+  }
+}
+
+class NonErrorRejectingCloseSocket extends FakeSocket {
+  private readonly rejectClose = vi.fn<() => Promise<void>>().mockRejectedValue('close failed')
+
+  override close(): Promise<void> {
+    this.end()
+    return this.rejectClose()
+  }
+}
+
+class RejectingReadSocket extends FakeSocket {
+  constructor() { super(false) }
+
+  override messages(): AsyncIterable<Uint8Array> {
+    return {
+      async *[Symbol.asyncIterator]() { throw new Error('read failed before ready') },
+    }
+  }
+}
+
+class PendingReadSocket extends FakeSocket {
+  readonly readEntered = deferred<undefined>()
+
+  constructor() { super(false) }
+
+  override messages(): AsyncIterable<Uint8Array> {
+    const messages = super.messages()
+    const entered = this.readEntered
+    return {
+      async *[Symbol.asyncIterator]() {
+        entered.resolve(undefined)
+        yield* messages
+      },
+    }
+  }
+}
+
+class DualFailureSocket extends RejectingCloseSocket {
+  private sends = 0
+
+  override async send(value: Uint8Array): Promise<void> {
+    this.sends += 1
+    if (this.sends > 1) throw new Error('heartbeat failed')
+    await super.send(value)
   }
 }
 

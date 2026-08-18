@@ -148,13 +148,14 @@ describe('RedisRelayCoordinator', () => {
       JSON.stringify({ type: 'invalidate', routeId: 'route-one', revision: 1, extra: true }),
       JSON.stringify({ type: 'invalidate', routeId: 'bad route', revision: 1 }),
       JSON.stringify({ type: 'invalidate', routeId: 'route-one', revision: 0 }),
-      JSON.stringify({ type: 'unknown', targetConnectionToken: 'token', revision: 1, frame: '' }),
-      JSON.stringify({ type: 'ciphertext', targetConnectionToken: 'token', revision: 1, frame: 1 }),
-      JSON.stringify({ type: 'ciphertext', targetConnectionToken: 'token', revision: 1, frame: 'AA==' }),
-      JSON.stringify({ type: 'ciphertext', targetConnectionToken: 'token', revision: 1, frame: 'A' }),
-      JSON.stringify({ type: 'ciphertext', targetConnectionToken: 'token', revision: 1, frame: 'AB' }),
+      coordinationValue('unknown', ''),
+      coordinationValue('ciphertext', 1),
+      coordinationValue('ciphertext', 'AA=='),
+      coordinationValue('ciphertext', 'A'),
+      coordinationValue('ciphertext', 'AB'),
       JSON.stringify({
-        type: 'ciphertext', targetConnectionToken: 'token', revision: 1,
+        type: 'ciphertext', sourceInstanceId: 'platform-a', targetConnectionToken: 'token',
+        deliveryId: 'delivery-one', revision: 1,
         frame: Buffer.from(JSON.stringify({
           type: 'attach', transportVersion: 1, routeId: 'route-one', attachmentId: 'mobile-one',
           endpoint: 'mobile', credential: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
@@ -211,6 +212,11 @@ describe('RedisRelayCoordinator', () => {
     expect(subscriber.connect).toHaveBeenCalledOnce()
     expect(command.on).toHaveBeenCalledBefore(command.connect)
     expect(subscriber.on).toHaveBeenCalledBefore(subscriber.connect)
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    command.emitError(new Error('command runtime error'))
+    subscriber.emitError(new Error('subscriber runtime error'))
+    expect(consoleError).toHaveBeenCalledTimes(2)
+    consoleError.mockRestore()
     await connected.close()
     expect(command.quit).toHaveBeenCalledOnce()
     expect(subscriber.quit).toHaveBeenCalledOnce()
@@ -235,6 +241,12 @@ describe('RedisRelayCoordinator', () => {
     })).rejects.toThrow('connect failed')
     expect(command.close).toHaveBeenCalled()
     expect(subscriber.close).toHaveBeenCalled()
+
+    command.connect.mockReset().mockRejectedValue(new Error('command connect failed'))
+    subscriber.connect.mockReset().mockRejectedValue(new Error('subscriber connect failed'))
+    await expect(connectRedisRelayCoordinator({
+      url: 'redis://localhost:6379', keyPrefix: 'dsh:relay',
+    })).rejects.toThrow('clients failed to connect')
   })
 })
 
@@ -293,6 +305,17 @@ function directoryEntry(expiresAt: number): RelayDirectoryEntry {
   }
 }
 
+function coordinationValue(type: string, frame: unknown): string {
+  return JSON.stringify({
+    type,
+    sourceInstanceId: 'platform-a',
+    targetConnectionToken: 'connection-one',
+    deliveryId: 'delivery-one',
+    revision: 1,
+    frame,
+  })
+}
+
 function clientFixture() {
   return {
     get: vi.fn(async () => null),
@@ -307,13 +330,15 @@ function clientFixture() {
 }
 
 function redisClientFixture() {
+  const errorListeners: Array<(error: Error) => void> = []
   return {
     ...clientFixture(),
     duplicate: vi.fn(),
     connect: vi.fn(async () => undefined),
     close: vi.fn(async () => undefined),
     quit: vi.fn(async () => undefined),
-    on: vi.fn(),
+    on: vi.fn((_event: 'error', listener: (error: Error) => void) => { errorListeners.push(listener) }),
     off: vi.fn(),
+    emitError: (error: Error) => { for (const listener of errorListeners) listener(error) },
   }
 }

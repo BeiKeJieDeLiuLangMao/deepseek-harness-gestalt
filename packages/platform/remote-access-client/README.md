@@ -6,7 +6,9 @@ Authenticated Desktop and Mobile HTTP transport for the public Remote Access ser
 
 The client does not implement a handshake or store pairing keys. Product controllers supply signed-in Account authorization and use the independently reviewed server-side handshake provider selected by the Platform deployment.
 
-`RemoteRelayEndpointController` owns one outbound Mobile or Desktop WSS lifecycle through the deployment's single non-sticky Platform endpoint. Every physical connection obtains a fresh attachment id and authenticates with the current opaque route id plus rotatable high-entropy credential. Socket loss starts a new connection after the validated retry delay; Desktop emits its authoritative encrypted resynchronization after every attachment. Sends fail with `REMOTE_OFFLINE` while disconnected and are never retained or replayed.
+`RemoteRelayEndpointController` owns one outbound Mobile or Desktop WSS lifecycle through the deployment's single non-sticky Platform endpoint. Every physical connection obtains a fresh attachment id and authenticates with the current opaque route id plus rotatable high-entropy credential. The controller waits for the matching Platform ready acknowledgement before resynchronizing, cancels credential and DNS/TLS acquisition during stop, and observes socket plus heartbeat teardown through all-settled cleanup. Socket loss starts a new connection after the validated retry delay; Desktop emits its authoritative encrypted resynchronization after every attachment. Sends fail with `REMOTE_OFFLINE` while disconnected and are never retained or replayed.
+
+The browser and Node adapters enforce the Relay wire ceiling on the physical socket and feed an item-and-byte-bounded live queue. A blocked consumer or oversized inbound frame closes the socket instead of accumulating unowned ciphertext. Received ciphertext must name the active route and target attachment before the endpoint callback can observe it.
 
 The Desktop Settings owner starts this lifecycle only while Mobile Access is enabled. Window close quits the Desktop process, and sleep, quit, sign-out, or disabling Mobile Access stops and drains the socket. There is no daemon, background Host, or remote wake path.
 
@@ -20,5 +22,5 @@ None.
 
 ## Known Limitations and Deferred Work
 
-- Native and browser WSS adapters are composition responsibilities; this package owns the lifecycle and encoded Relay frames.
+- Product composition supplies the validated WSS URL, retry and heartbeat intervals, and live-queue limits; this package owns the Node and browser adapters, lifecycle, and encoded Relay frames.
 - Production use still requires a reviewed handshake provider in the Platform deployment.

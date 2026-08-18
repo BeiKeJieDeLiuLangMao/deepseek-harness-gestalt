@@ -106,7 +106,7 @@ abstract cancelChallenge(input: { desktop: PairingAccountAuthentication challeng
 abstract rejectPairing(input: { desktop: PairingAccountAuthentication pendingPairingId: PendingPairingId }): Promise<void>
 ```
 
-Source: [`packages/platform/remote-access/src/index.ts:234`](../../packages/platform/remote-access/src/index.ts)
+Source: [`packages/platform/remote-access/src/index.ts:240`](../../packages/platform/remote-access/src/index.ts)
 
 <a id="ctxremoterelay--remoterelayservice-abstract-seam"></a>
 
@@ -136,5 +136,5 @@ abstract revokeRoute(routeId: RelayRouteId): Promise<void>
 abstract attach(input: { message: RelayAttachMessage deliver: (message: RelayCiphertextMessage) => Promise<void> close?: () => void | Promise<void> }): Promise<RemoteRelayAttachment>
 ```
 
-Source: [`packages/platform/remote-access/src/relay.ts:116`](../../packages/platform/remote-access/src/relay.ts)
+Source: [`packages/platform/remote-access/src/relay.ts:126`](../../packages/platform/remote-access/src/relay.ts)
 <!-- END GENERATED cordis-surface -->

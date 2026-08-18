@@ -40,6 +40,8 @@ export interface DesktopPairingActions {
   deactivate(reason?: DesktopRelayStopReason): Promise<void>
   /** Drain lifecycle work during Desktop shutdown. */
   dispose(): Promise<void>
+  /** Read transport-only Relay ownership for Host lifecycle evidence. */
+  getRelayState(): { connected: boolean; stopReason?: DesktopRelayStopReason }
 }
 
 /** Real Settings controller construction inputs. */
@@ -62,7 +64,8 @@ export class DesktopPairingController implements DesktopPairingActions {
   private readonly now: () => number
   private readonly schedule: (task: () => void, delayMs: number) => ReturnType<typeof setTimeout>
   private readonly pollIntervalMs: number
-  private serial: Promise<void> = Promise.resolve()
+  private serial: Promise<unknown> = Promise.resolve()
+  private currentOperation: Promise<unknown> | undefined
   private lifecycleBarrier: Promise<void> = Promise.resolve()
   private lifecycleGeneration = 0
   private active = false
@@ -83,6 +86,10 @@ export class DesktopPairingController implements DesktopPairingActions {
 
   getSnapshot(): DesktopPairingSnapshot { return this.snapshot }
 
+  getRelayState(): { connected: boolean; stopReason?: DesktopRelayStopReason } {
+    return this.options.relay?.getState?.() ?? { connected: false }
+  }
+
   subscribe(listener: (snapshot: DesktopPairingSnapshot) => void): () => void {
     this.listeners.add(listener)
     return () => { this.listeners.delete(listener) }
@@ -101,16 +108,22 @@ export class DesktopPairingController implements DesktopPairingActions {
           status: 'failed', enabled: false, pairings: [],
           error: stateResult.reason instanceof Error ? stateResult.reason.message : String(stateResult.reason),
         })
-        throwSettled(results, 'Desktop Mobile Access update failed')
+        const stopResult = results[0]
+        if (stopResult.status === 'rejected') {
+          throw new AggregateError(
+            [stopResult.reason, stateResult.reason],
+            'Desktop Mobile Access update failed',
+          )
+        }
         throw stateResult.reason
       }
       const state = stateResult.value
       if (!state.enabled) {
         this.publish({ status: 'ready', enabled: false, pairings: [] })
-        throwSettled([results[0]], 'Desktop Relay stop failed')
+        throwSettled([results[0]])
         return this.snapshot
       }
-      throwSettled([results[0]], 'Desktop Relay stop failed')
+      throwSettled([results[0]])
       if (state.relay !== undefined) {
         if (this.options.relay?.configure === undefined) {
           throw new Error('Desktop Relay authority has no lifecycle owner')
@@ -204,13 +217,13 @@ export class DesktopPairingController implements DesktopPairingActions {
     const generation = ++this.lifecycleGeneration
     this.active = false
     this.resetAccountScope()
-    const draining = this.serial
+    const draining = this.currentOperation ?? this.serial
     const stopping = this.options.relay?.stop(reason) ?? Promise.resolve()
     const settled = Promise.allSettled([stopping, draining])
     this.lifecycleBarrier = settled.then(() => {})
     const results = await settled
     if (this.lifecycleGeneration === generation) this.resetAccountScope()
-    throwSettled(results, 'Desktop Personal Pairing deactivation failed')
+    throwSettled(results)
   }
 
   async dispose(): Promise<void> {
@@ -219,14 +232,14 @@ export class DesktopPairingController implements DesktopPairingActions {
     this.active = false
     if (this.timer !== undefined) clearTimeout(this.timer)
     this.timer = undefined
-    const draining = this.serial
+    const draining = this.currentOperation ?? this.serial
     const stopping = this.options.relay?.stop('quit') ?? Promise.resolve()
     const settled = Promise.allSettled([stopping, draining])
     this.lifecycleBarrier = settled.then(() => {})
     const results = await settled
     if (this.lifecycleGeneration !== generation) return
     this.listeners.clear()
-    throwSettled(results, 'Desktop Personal Pairing disposal failed')
+    throwSettled(results)
   }
 
   private async refresh(): Promise<void> {
@@ -341,7 +354,12 @@ export class DesktopPairingController implements DesktopPairingActions {
 
   private exclusive<T>(operation: () => Promise<T>): Promise<T> {
     const result = this.serial.then(operation)
+    this.currentOperation = result
     this.serial = result.then(() => undefined, () => undefined)
+    const release = (): void => {
+      if (this.currentOperation === result) this.currentOperation = undefined
+    }
+    void result.then(release, release)
     return result
   }
 
@@ -350,10 +368,17 @@ export class DesktopPairingController implements DesktopPairingActions {
   }
 }
 
-function throwSettled(results: PromiseSettledResult<unknown>[], message: string): void {
-  const errors = results.flatMap(result => result.status === 'rejected' ? [result.reason] : [])
-  if (errors.length === 1) throw errors[0]
-  if (errors.length > 1) throw new AggregateError(errors, message)
+function throwSettled(results: PromiseSettledResult<unknown>[]): void {
+  const errors: unknown[] = []
+  for (const result of results) {
+    if (result.status === 'rejected') errors.push(result.reason)
+  }
+  if (errors.length === 1) throw errorFromUnknown(errors[0])
+  if (errors.length > 1) throw new AggregateError(errors, 'Desktop Personal Pairing lifecycle failed')
+}
+
+function errorFromUnknown(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error), { cause: error })
 }
 
 /**
@@ -362,13 +387,18 @@ function throwSettled(results: PromiseSettledResult<unknown>[], message: string)
  */
 export class UnavailableDesktopPairingController implements DesktopPairingActions {
   private readonly snapshot: DesktopPairingSnapshot
+  private readonly reason: string
 
   /** @param reason - exact unavailable reason shown only inside Settings. */
   constructor(reason: string, private readonly relay: DesktopRelayLifecycle = new FailClosedDesktopRelayLifecycle(reason)) {
+    this.reason = reason
     this.snapshot = { status: 'unavailable', enabled: false, pairings: [], error: reason }
   }
 
   getSnapshot(): DesktopPairingSnapshot { return this.snapshot }
+  getRelayState(): { connected: boolean; stopReason?: DesktopRelayStopReason } {
+    return this.relay.getState?.() ?? { connected: false }
+  }
   setEnabled(_enabled: boolean): Promise<DesktopPairingSnapshot> { return this.rejectUnavailable() }
   createChallenge(): Promise<DesktopPairingSnapshot> { return this.rejectUnavailable() }
   cancelChallenge(): Promise<DesktopPairingSnapshot> { return this.rejectUnavailable() }
@@ -380,7 +410,7 @@ export class UnavailableDesktopPairingController implements DesktopPairingAction
   dispose(): Promise<void> { return this.relay.stop('quit') }
 
   private rejectUnavailable(): Promise<never> {
-    return Promise.reject(new Error(this.snapshot.error ?? 'Personal Pairing is unavailable'))
+    return Promise.reject(new Error(this.reason))
   }
 }
 

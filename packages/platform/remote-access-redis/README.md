@@ -6,7 +6,7 @@ Redis coordination adapter for the stateless multi-instance Remote Relay. It use
 
 The adapter stores only expiring attachment directory values: opaque route and attachment ids, endpoint kind, Platform Instance id, connection token, route revision, and expiry. Conditional Lua refresh and unregister operations compare the connection token so cleanup from an old socket cannot delete a replacement. Direct Pub/Sub channels carry bounded Relay ciphertext envelopes to one live Platform Instance; a separate channel carries content-free route invalidations. Values are parsed and all wire ids are branded before they reach the Relay provider.
 
-This package never creates Redis Streams, Lists, or another offline queue. A publish with no live subscriber reports false, allowing the Relay provider to return `REMOTE_OFFLINE` immediately. Redis contains no prompt, Session, approval, model, Workspace, or other DSH business value.
+This package never creates Redis Streams, Lists, or another offline queue. A publish subscriber count is only transport admission: the sender waits for a bounded, content-free delivery acknowledgement correlated by an opaque id. A stale target, silent drop, or acknowledgement timeout therefore returns `REMOTE_OFFLINE`. Redis contains no prompt, Session, approval, model, Workspace, or other DSH business value.
 
 ## Model Experience
 

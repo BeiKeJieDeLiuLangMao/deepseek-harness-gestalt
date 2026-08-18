@@ -19,8 +19,8 @@ describe('RedisRelayCoordinator with disposable Redis', () => {
     const runtime = await startRedis()
     const command = createClient({ socket: { path: runtime.socketPath, tls: false } })
     const subscriber = command.duplicate()
-    command.on('error', runtime.observeClientError)
-    subscriber.on('error', runtime.observeClientError)
+    command.on('error', (error: unknown) => { runtime.observeClientError(errorFromUnknown(error)) })
+    subscriber.on('error', (error: unknown) => { runtime.observeClientError(errorFromUnknown(error)) })
     try {
       await Promise.all([command.connect(), subscriber.connect()])
       const now = Date.now()
@@ -118,4 +118,8 @@ async function stopProcess(process: ChildProcess): Promise<void> {
   const exited = new Promise<void>((resolve) => { process.once('exit', () => { resolve() }) })
   process.kill('SIGTERM')
   await exited
+}
+
+function errorFromUnknown(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error), { cause: error })
 }

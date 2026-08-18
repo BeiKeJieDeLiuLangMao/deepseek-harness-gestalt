@@ -14,6 +14,8 @@ export interface DesktopRelayLifecycle {
   start(): Promise<void>
   /** Make the route Remote Offline for one Desktop lifecycle reason. */
   stop(reason?: DesktopRelayStopReason): Promise<void>
+  /** Read transport-only lifecycle state without exposing route authority. */
+  getState?(): { connected: boolean; stopReason?: DesktopRelayStopReason }
 }
 
 /** Observable fail-closed Relay lifecycle used before production crypto/provider approval. */
@@ -39,6 +41,7 @@ export class FailClosedDesktopRelayLifecycle implements DesktopRelayLifecycle {
 /** Real Desktop endpoint composition that owns its current route grant. */
 export class DesktopRelayEndpointLifecycle implements DesktopRelayLifecycle {
   private grant: RelayCredentialGrant | undefined
+  private stopReason: DesktopRelayStopReason | undefined
   private readonly endpoint: RemoteRelayEndpointController
 
   /** @param options - Desktop endpoint adapters other than route authority. */
@@ -46,16 +49,29 @@ export class DesktopRelayEndpointLifecycle implements DesktopRelayLifecycle {
     this.endpoint = new RemoteRelayEndpointController({
       ...options,
       endpoint: 'desktop',
-      route: async () => {
+      route: () => {
         if (this.grant === undefined) throw new Error('Desktop Relay authority is unavailable')
-        return this.grant
+        return Promise.resolve(this.grant)
       },
     })
   }
 
   configure(grant: RelayCredentialGrant): void { this.grant = grant }
-  async start(): Promise<void> { await this.endpoint.start() }
-  async stop(reason: DesktopRelayStopReason = 'quit'): Promise<void> { await this.endpoint.stop(reason) }
+  async start(): Promise<void> {
+    await this.endpoint.start()
+    this.stopReason = undefined
+  }
+  async stop(reason: DesktopRelayStopReason = 'quit'): Promise<void> {
+    try { await this.endpoint.stop(reason) } finally { this.stopReason = reason }
+  }
+
+  /** @returns observed attachment ownership and the last completed stop reason. */
+  getState(): { connected: boolean; stopReason?: DesktopRelayStopReason } {
+    return {
+      connected: this.endpoint.isConnected(),
+      ...(this.stopReason === undefined ? {} : { stopReason: this.stopReason }),
+    }
+  }
 
   /**
    * Send encrypted Companion Protocol bytes through the owned live attachment.

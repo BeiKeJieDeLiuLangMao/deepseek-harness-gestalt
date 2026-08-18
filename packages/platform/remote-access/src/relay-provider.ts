@@ -196,7 +196,7 @@ export class RemoteRelayProvider extends RemoteRelayService {
     this.pendingDeliveries.clear()
     await Promise.all(this.attachmentQuiescence)
     const readiness = await Promise.allSettled([this.ready])
-    if (readiness[0]?.status !== 'fulfilled') {
+    if (readiness[0].status !== 'fulfilled') {
       throw new AggregateError(
         readiness.filter(result => result.status === 'rejected').map(result => result.reason as unknown),
         'Remote Relay disposal failed',
@@ -337,7 +337,7 @@ export class RemoteRelayProvider extends RemoteRelayService {
       if (local.close !== undefined) operations.push(Promise.resolve().then(local.close))
       const results = await Promise.allSettled(operations)
       const key = attachmentKey(local.entry.routeId, local.entry.attachmentId)
-      if (this.attachments.get(key) === local) this.attachments.delete(key)
+      this.attachments.delete(key)
       const errors = results.filter(result => result.status === 'rejected').map(result => result.reason as unknown)
       if (errors.length > 0) throw new AggregateError(errors, 'Relay attachment drain failed')
     })()
@@ -361,17 +361,14 @@ export class RemoteRelayProvider extends RemoteRelayService {
   }
 
   private awaitDelivery(deliveryId: RelayDeliveryId): PendingDelivery {
-    let settled = false
     const result = deferred<boolean>()
-    const timeout = this.schedule(() => settle(false), this.config.deliveryAckTimeoutMs)
-    timeout.unref()
     const settle = (delivered: boolean): void => {
-      if (settled) return
-      settled = true
       clearTimeout(timeout)
       this.pendingDeliveries.delete(deliveryId)
       result.resolve(delivered)
     }
+    const timeout = this.schedule(() => { settle(false) }, this.config.deliveryAckTimeoutMs)
+    timeout.unref()
     this.pendingDeliveries.set(deliveryId, settle)
     return { promise: result.promise, settle }
   }

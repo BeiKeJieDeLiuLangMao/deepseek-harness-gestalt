@@ -8,6 +8,7 @@
     "@deepseek-ai/cordis": "workspace:*",
     "@deepseek-ai/cordis-plugin-hmr": "workspace:*",
     "@deepseek-ai/cordis-plugin-include": "workspace:*",
+    "@deepseek-ai/cordis-plugin-loader": "workspace:*",
     "@deepseek-ai/cordis-plugin-logger-console": "workspace:*",
     "@deepseek-ai/cordis-plugin-timer": "workspace:*",
     "@deepseek-ai/dsh-acp-demo": "workspace:*",
@@ -122,8 +123,6 @@
     "@deepseek-ai/dsh-web-fetch-http": "workspace:*",
     "@deepseek-ai/dsh-workflow-worker-thread": "workspace:*",
     "@deepseek-ai/dsh-agent-instructions": "workspace:*",
-    "@deepseek-ai/schemastery": "workspace:^",
-    "@types/ws": "^8.18.1",
-    "ws": "^8.21.0"
+    "@deepseek-ai/schemastery": "workspace:^"
   }
 }

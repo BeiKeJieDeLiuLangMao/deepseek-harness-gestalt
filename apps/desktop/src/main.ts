@@ -20,6 +20,7 @@ import {
 } from '@deepseek-ai/dsh-client-ui-desktop/protocol'
 import { PlatformAccountHttpTransport } from '@deepseek-ai/dsh-platform-account-client'
 import { RemoteAccessHttpTransport } from '@deepseek-ai/dsh-remote-access-client'
+import type { DesktopRelayLifecycle } from '@deepseek-ai/dsh-remote-access-client/desktop-relay-lifecycle'
 import type { SelectedPlatformEnvironment } from '@deepseek-ai/dsh-platform-account'
 import { ensureLaunchDirectory } from './launch-directory.ts'
 import { isElectronExecutable, resolveDesktopRuntime } from './runtime-paths.ts'
@@ -44,8 +45,8 @@ import {
   setPairingEnabledFromIpc,
   type DesktopPairingActions,
 } from './personal-pairing.ts'
-import { FailClosedDesktopRelayLifecycle } from '@deepseek-ai/dsh-remote-access-client/desktop-relay-lifecycle'
 import { disposeDesktopOwners } from './shutdown.ts'
+import { createDesktopRemoteRelay } from './remote-relay.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const PRELOAD = join(here, 'preload.cjs')
@@ -98,6 +99,7 @@ process.once('SIGTERM', () => { app.quit() })
 /** Create the window, spawn Web Host, attach updater. */
 async function boot(): Promise<void> {
   const accountEnvironment = loadDesktopPlatformEnvironment(process.env)
+  const relay = createDesktopRemoteRelay({ environment: accountEnvironment, source: process.env })
   window = createWindow()
   account = createDesktopAccount(accountEnvironment)
   stopAccountEvents = account.subscribe(pushAccountSnapshot)
@@ -110,7 +112,7 @@ async function boot(): Promise<void> {
       error instanceof Error ? error.message : String(error),
     )
   }
-  pairing = createDesktopPairing(accountEnvironment, account)
+  pairing = createDesktopPairing(accountEnvironment, account, relay)
   stopPairingEvents = pairing.subscribe(pushPairingSnapshot)
   stopAccountEvents()
   stopAccountEvents = account.subscribe(handleAccountSnapshot)
@@ -210,6 +212,22 @@ function createWindow(): BrowserWindow {
   })
   target.on('enter-full-screen', () => { syncTrafficLights(target, true) })
   target.on('leave-full-screen', () => { syncTrafficLights(target, false) })
+  let closing = false
+  target.on('close', (event) => {
+    if (shuttingDown || closing) return
+    event.preventDefault()
+    closing = true
+    void pairing.deactivate('window-close').then(
+      () => {
+        smokeLog(`relay window-close ${JSON.stringify(pairing.getRelayState())}`)
+        target.destroy()
+      },
+      (error: unknown) => {
+        console.error('[desktop-personal-pairing] window close shutdown failed:', error)
+        target.destroy()
+      },
+    )
+  })
   guardNavigation(target)
   return target
 }
@@ -369,7 +387,12 @@ async function finishSmoke(target: BrowserWindow): Promise<void> {
   }
   smokeLog('ok')
   console.log('dsh desktop smoke: ok')
-  app.quit()
+  smokeLog(`relay production-gate ${JSON.stringify(pairing.getRelayState())}`)
+  await pairing.deactivate('sleep')
+  smokeLog(`relay sleep ${JSON.stringify(pairing.getRelayState())}`)
+  await pairing.deactivate('mobile-access-disabled')
+  smokeLog(`relay mobile-access-disabled ${JSON.stringify(pairing.getRelayState())}`)
+  target.close()
 }
 
 function requestShutdown(exitCode: number): void {
@@ -389,6 +412,7 @@ function requestShutdown(exitCode: number): void {
   void (async () => {
     try {
       await ownerDisposal
+      smokeLog(`relay quit ${JSON.stringify(pairing.getRelayState())}`)
       const started = await starting?.catch(() => undefined)
       if (started !== running) await started?.stop()
       await running?.stop()
@@ -501,9 +525,9 @@ function createDesktopAccount(environment: SelectedPlatformEnvironment): Desktop
 function createDesktopPairing(
   environment: SelectedPlatformEnvironment,
   currentAccount: DesktopAccountActions,
+  relay: DesktopRelayLifecycle,
 ): DesktopPairingActions {
   const unavailableReason = 'Personal Pairing requires an independently reviewed handshake and Relay crypto provider.'
-  const relay = new FailClosedDesktopRelayLifecycle(unavailableReason)
   if (environment.environment !== 'development' || process.env.DSH_PERSONAL_PAIRING_KEYLESS !== '1') {
     return new UnavailableDesktopPairingController(`${unavailableReason} Development proof mode is disabled.`, relay)
   }

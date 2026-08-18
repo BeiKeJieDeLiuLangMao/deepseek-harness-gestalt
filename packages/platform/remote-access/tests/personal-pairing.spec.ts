@@ -71,6 +71,32 @@ describe('PersonalPairingProvider', () => {
     await provider.dispose()
   })
 
+  it('revokes retained Relay authority during provider disposal', async () => {
+    const routeId = parseRelayRouteId('relay-route-dispose')
+    const relay = {
+      rotateCredential: vi.fn(async () => ({
+        routeId,
+        credential: parseRelayCredential('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'),
+        revision: 1,
+      })),
+      revokeRoute: vi.fn(async () => {}),
+    }
+    const provider = new PersonalPairingProvider(new Context(), {
+      account: accountService(account('account-one')),
+      handshake: handshakeProvider(),
+      relay,
+      randomId: kind => `${kind}-dispose`,
+      pairingLinkOrigin: 'https://platform.example.com/pair',
+    })
+    await provider.setMobileAccess({
+      desktop: authentication('desktop-installation', 'account-one'), enabled: true,
+    })
+
+    await provider.dispose()
+
+    expect(relay.revokeRoute).toHaveBeenCalledWith(routeId)
+  })
+
   it('uses authenticated installation identity and role instead of caller claims', async () => {
     const handshake = handshakeProvider()
     const provider = pairingProvider(handshake)

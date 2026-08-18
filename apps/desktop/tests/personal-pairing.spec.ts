@@ -49,6 +49,8 @@ describe('UnavailableDesktopPairingController', () => {
     const listener = vi.fn()
     controller.subscribe(listener)()
     expect(listener).not.toHaveBeenCalled()
+    expect(controller.getRelayState()).toEqual({ connected: false })
+    await expect(controller.start()).resolves.toBeUndefined()
     await expect(controller.deactivate()).resolves.toBeUndefined()
     await expect(controller.dispose()).resolves.toBeUndefined()
   })
@@ -56,6 +58,7 @@ describe('UnavailableDesktopPairingController', () => {
   it('keeps the product Relay composition observably offline for lifecycle hooks', async () => {
     const relay = new FailClosedDesktopRelayLifecycle('crypto gate pending')
     const controller = new UnavailableDesktopPairingController('crypto gate pending', relay)
+    await expect(relay.configure()).rejects.toThrow('crypto gate pending')
     await expect(relay.start()).rejects.toThrow('crypto gate pending')
     expect(relay.getState()).toEqual({ connected: false })
 
@@ -396,6 +399,201 @@ describe('DesktopPairingController', () => {
     expect(actions.confirm).not.toHaveBeenCalled()
     expect(actions.reject).not.toHaveBeenCalled()
   })
+
+  it('validates polling and isolates subscribers and scheduled refresh failures', async () => {
+    const transport = transportFixture()
+    for (const pollIntervalMs of [0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+      expect(() => new DesktopPairingController({
+        account: accountFixture(), transport, pollIntervalMs,
+      })).toThrow('positive integer')
+    }
+    transport.getMobileAccessState.mockReset().mockResolvedValue({ enabled: true })
+    const scheduled: Array<() => void> = []
+    const controller = new DesktopPairingController({
+      account: accountFixture(),
+      transport,
+      schedule: (task) => { scheduled.push(task); return { unref: vi.fn() } as never },
+    })
+    controller.subscribe(vi.fn())()
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    controller.subscribe(() => { throw new Error('subscriber failed') })
+    await controller.start()
+    expect(consoleError).toHaveBeenCalledWith(
+      '[desktop-personal-pairing] subscriber failures:', expect.any(AggregateError),
+    )
+    expect(controller.getRelayState()).toEqual({ connected: false })
+    transport.getMobileAccessState.mockRejectedValueOnce(new Error('poll failed'))
+    scheduled.shift()?.()
+    await vi.waitFor(() => { expect(consoleError).toHaveBeenCalledWith(
+      '[desktop-personal-pairing] Remote Access refresh failed:', expect.any(Error),
+    ) })
+    await controller.deactivate()
+    scheduled.shift()?.()
+    await controller.dispose()
+    consoleError.mockRestore()
+  })
+
+  it('fails closed across mutation, grant-owner, account, and lifecycle errors', async () => {
+    const transport = transportFixture()
+    const stop = vi.fn(async () => {})
+    const relay = { start: vi.fn(async () => {}), stop }
+    const controller = new DesktopPairingController({ account: accountFixture(), transport, relay })
+    await controller.start()
+
+    const grant = {
+      routeId: parseRelayRouteId('route-settings'),
+      credential: parseRelayCredential('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'),
+      revision: 1,
+    }
+    transport.setMobileAccess.mockResolvedValueOnce({ enabled: true, relay: grant })
+    await expect(controller.setEnabled(true)).rejects.toThrow('no lifecycle owner')
+
+    stop.mockRejectedValueOnce(new Error('stop failed'))
+    transport.setMobileAccess.mockRejectedValueOnce(new Error('mutation failed'))
+    await expect(controller.setEnabled(false)).rejects.toThrow('Desktop Mobile Access update failed')
+    expect(controller.getSnapshot()).toMatchObject({ status: 'failed', enabled: false })
+
+    stop.mockRejectedValueOnce(new Error('stop failed'))
+    transport.setMobileAccess.mockResolvedValueOnce({ enabled: false })
+    await expect(controller.setEnabled(false)).rejects.toThrow('stop failed')
+    await expect(controller.dispose()).resolves.toBeUndefined()
+
+    const signedOut = new DesktopPairingController({
+      account: {
+        getSnapshot: () => ({ status: 'signed-out', privacyAccepted: true }),
+        authorizeCurrentInstallation: vi.fn(),
+      },
+      transport: transportFixture(),
+    })
+    await expect(signedOut.start()).rejects.toThrow('signed-in Platform Account')
+  })
+
+  it('owns cancel, reject, default id generation, state observation, and disposal races', async () => {
+    const transport = transportFixture()
+    const quit = deferred<undefined>()
+    const relay = {
+      configure: vi.fn(),
+      start: vi.fn(async () => {}),
+      stop: vi.fn(async (reason?: string) => {
+        if (reason === 'quit') await quit.promise
+      }),
+      getState: () => ({ connected: true }),
+    }
+    const controller = new DesktopPairingController({ account: accountFixture(), transport, relay })
+    await controller.start()
+    expect(controller.getRelayState()).toEqual({ connected: true })
+    expect(await controller.cancelChallenge()).toEqual(controller.getSnapshot())
+    await controller.setEnabled(true)
+    await controller.createChallenge()
+    await controller.cancelChallenge()
+    expect(transport.cancelChallenge).toHaveBeenCalledOnce()
+    await controller.reject(parsePendingPairingId('pending-one'))
+    expect(transport.rejectPairing).toHaveBeenCalledOnce()
+
+    const disposing = controller.dispose()
+    const deactivating = controller.deactivate('sleep')
+    quit.resolve(undefined)
+    await Promise.all([disposing, deactivating])
+    await expect(controller.createChallenge()).rejects.toThrow('inactive')
+
+    const unavailable = new UnavailableDesktopPairingController('gate', {
+      start: vi.fn(), stop: vi.fn(async () => {}),
+    })
+    expect(unavailable.getRelayState()).toEqual({ connected: false })
+  })
+
+  it('projects non-Error transport failures and no-Relay disablement', async () => {
+    const transport = transportFixture()
+    const stop = vi.fn(async () => {})
+    const controller = new DesktopPairingController({
+      account: accountFixture(), transport, relay: { start: vi.fn(async () => {}), stop },
+    })
+    await controller.start()
+    transport.setMobileAccess.mockRejectedValueOnce('enable failed')
+    await expect(controller.setEnabled(true)).rejects.toBe('enable failed')
+    transport.setMobileAccess.mockRejectedValueOnce('disable failed')
+    await expect(controller.setEnabled(false)).rejects.toThrow('disable failed')
+    expect(controller.getSnapshot()).toMatchObject({ status: 'failed', error: 'disable failed' })
+    stop.mockRejectedValueOnce('stop failed')
+    transport.setMobileAccess.mockResolvedValueOnce({ enabled: false })
+    await expect(controller.setEnabled(false)).rejects.toThrow('stop failed')
+    transport.setMobileAccess.mockResolvedValueOnce({ enabled: false })
+    await expect(controller.setEnabled(false)).resolves.toMatchObject({ enabled: false })
+    transport.createChallenge.mockRejectedValueOnce('challenge failed')
+    await expect(controller.createChallenge()).rejects.toBe('challenge failed')
+    expect(controller.getSnapshot()).toMatchObject({ status: 'failed', error: 'challenge failed' })
+    await controller.dispose()
+  })
+
+  it('preserves a queued lifecycle owner when the preceding operation fails', async () => {
+    const transport = transportFixture()
+    const controller = new DesktopPairingController({ account: accountFixture(), transport })
+    await controller.start()
+    transport.createChallenge.mockRejectedValueOnce(new Error('challenge failed'))
+    const challenge = controller.createChallenge()
+    const observedChallenge = challenge.catch((error: unknown) => error)
+    const enabling = controller.setEnabled(true)
+
+    expect(await observedChallenge).toEqual(expect.objectContaining({ message: 'challenge failed' }))
+    await expect(enabling).resolves.toMatchObject({ enabled: true })
+    await expect(controller.setEnabled(false)).resolves.toMatchObject({ enabled: false })
+    await controller.dispose()
+  })
+
+  it('does not let a stale deactivation reset a concurrently disposed owner', async () => {
+    const sleeping = deferred<undefined>()
+    const entered = deferred<undefined>()
+    const relay = {
+      start: vi.fn(async () => {}),
+      stop: vi.fn(async (reason?: string) => {
+        if (reason === 'sleep') {
+          entered.resolve(undefined)
+          await sleeping.promise
+        }
+      }),
+    }
+    const controller = new DesktopPairingController({
+      account: accountFixture(), transport: transportFixture(), relay,
+    })
+    await controller.start()
+    const deactivating = controller.deactivate('sleep')
+    await entered.promise
+    const disposing = controller.dispose()
+    sleeping.resolve(undefined)
+    await Promise.all([deactivating, disposing])
+    await expect(controller.start()).rejects.toThrow('closed')
+  })
+
+  it('aggregates Relay stop and in-flight refresh failures during deactivation', async () => {
+    const refresh = deferred<{ enabled: boolean }>()
+    const entered = deferred<undefined>()
+    const transport = transportFixture()
+    transport.getMobileAccessState.mockReset()
+    transport.getMobileAccessState.mockImplementationOnce(async () => {
+      entered.resolve(undefined)
+      return await refresh.promise
+    })
+    const controller = new DesktopPairingController({
+      account: accountFixture(),
+      transport,
+      relay: {
+        start: vi.fn(async () => {}),
+        stop: vi.fn(async () => { throw new Error('stop failed') }),
+      },
+    })
+    const starting = controller.start()
+    const observedStart = starting.catch((error: unknown) => error)
+    await entered.promise
+    const deactivating = controller.deactivate('sleep')
+    const observedDeactivation = deactivating.catch((error: unknown) => error)
+    refresh.reject(new Error('refresh failed'))
+
+    expect(await observedStart).toEqual(expect.objectContaining({ message: 'refresh failed' }))
+    const error = await observedDeactivation
+    expect(error).toBeInstanceOf(AggregateError)
+    if (!(error instanceof AggregateError)) throw new Error('Expected aggregated lifecycle failure')
+    expect(error.errors).toHaveLength(2)
+  })
 })
 
 function transportFixture() {
@@ -451,5 +649,15 @@ function signedInAccountSnapshot() {
       githubLogin: 'account-one',
       avatarUrl: 'https://avatars.example/account',
     },
+  }
+}
+
+function accountFixture() {
+  return {
+    getSnapshot: signedInAccountSnapshot,
+    authorizeCurrentInstallation: vi.fn(async () => ({
+      accessToken: 'desktop-access',
+      proof: { jti: parseAccountProofJti('proof'), issuedAt: 1, signature: 'signature' },
+    })),
   }
 }
