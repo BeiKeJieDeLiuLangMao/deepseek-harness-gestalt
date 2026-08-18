@@ -32,6 +32,8 @@ Normal disposal remains the [subprocess seam's](../architecture/2026-07-26-subpr
 
 A parent test starts an isolated TypeScript host through the repository source launcher, waits until exact root and descendant process identities are observable, then allows the host to take each fatal path. Direct exit, default uncaught exception, and default unhandled rejection cover ordinary TERM-resistant trees; direct exit also covers a real terminal root and descendant. The parent asserts the original host exit category and waits for every recorded process to disappear, while failure cleanup targets only recorded identities or the recorded Windows tree.
 
+The managed-tree fixture writes its PID document to an exclusive same-directory staging file, flushes and closes it, and publishes it with an atomic rename. A controlled pause after the first staged byte verifies that `tree.json` remains absent until a complete document can be read.
+
 Unit evidence pins synchronous POSIX group and Windows taskkill delivery, terminal scans before and after the PTY root kill, repeated finalization, per-target failure containment, normal TERM-to-KILL disposal, live-set retention during pending disposal, and listener removal after disposal.
 
 ## Alternatives considered

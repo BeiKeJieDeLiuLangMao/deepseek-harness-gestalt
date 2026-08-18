@@ -15,6 +15,7 @@ interface TreeState { root: number; descendant: number }
 
 const repoRoot = fileURLToPath(new URL('../../../../', import.meta.url))
 const hostScript = fileURLToPath(new URL('./fixtures/process-exit-host.ts', import.meta.url))
+const managedTreeScript = fileURLToPath(new URL('./fixtures/managed-tree.ts', import.meta.url))
 const scenarioTimeoutMs = 30_000
 
 function processExists(pid: number): boolean {
@@ -139,6 +140,49 @@ async function runScenario(kind: ManagedKind, trigger: ExitTrigger) {
 }
 
 describe('synchronous cleanup on host exit', () => {
+  it('publishes managed-tree state only after the document is complete', { timeout: 45_000 }, async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-subprocess-managed-tree-publish-'))
+    const statePath = join(root, 'tree.json')
+    const publishStartedPath = join(root, 'publish-started')
+    const publishProceedPath = join(root, 'publish-proceed')
+    const launch = resolveExampleLaunch({
+      srcBin: managedTreeScript,
+      mode: 'src',
+      tsconfigPath: join(repoRoot, 'tsconfig.json'),
+      configArgs: [statePath, publishStartedPath, publishProceedPath],
+    })
+    const child = execa(launch.command, launch.args, {
+      cwd: repoRoot,
+      env: launch.env,
+      stdin: 'ignore',
+      reject: false,
+      timeout: scenarioTimeoutMs,
+    })
+    let state: TreeState | undefined
+    let identities: ProcessIdentity[] = []
+    try {
+      await vi.waitFor(() => readFile(publishStartedPath, 'utf8'), {
+        interval: 10,
+        timeout: scenarioTimeoutMs,
+      })
+      await expect(readFile(statePath, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+      await writeFile(publishProceedPath, 'proceed')
+      state = await readTree(statePath)
+      if (process.platform !== 'win32') identities = await captureIdentities(createProcessInspector(), state)
+    } finally {
+      await writeFile(publishProceedPath, 'proceed')
+      const publishedState = state ?? await readTree(statePath)
+      if (process.platform !== 'win32' && identities.length === 0) {
+        identities = await captureIdentities(createProcessInspector(), publishedState)
+      }
+      cleanupTree(publishedState, identities)
+      child.kill('SIGKILL')
+      await child
+      await waitForGone(publishedState)
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
   it.each([
     { trigger: 'direct' as const, expectedCode: 23, diagnostic: undefined },
     { trigger: 'uncaught-exception' as const, expectedCode: 1, diagnostic: 'host-exit-uncaught-exception' },

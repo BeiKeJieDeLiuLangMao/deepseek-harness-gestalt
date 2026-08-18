@@ -32,6 +32,8 @@ Status: implemented
 
 父测试通过仓库 source launcher启动隔离的 TypeScript宿主，等待精确 root与后代进程身份可观察后，再允许宿主进入各条致命路径。直接退出、默认未捕获异常和默认未处理 rejection覆盖忽略 TERM的普通进程树；直接退出还覆盖真实 terminal root与后代。父测试断言原始宿主退出类别，并等待所有已记录进程消失；失败清理只针对已记录身份或已记录的 Windows进程树。
 
+managed-tree fixture将 PID文档写入同目录的独占 staging文件，完成刷写并关闭后，通过原子 rename发布。可控暂停会停在写入 staging文件首字节之后，并验证完整文档可读前 `tree.json` 始终不存在。
+
 单元证据固定同步 POSIX进程组与 Windows taskkill投递、PTY root终止前后的 terminal扫描、重复最终清理、逐目标失败包含、正常 TERM到 KILL dispose、dispose等待期间保留存活集合，以及 dispose后移除 listener。
 
 ## Alternatives considered
