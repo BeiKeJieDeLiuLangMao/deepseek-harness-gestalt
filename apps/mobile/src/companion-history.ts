@@ -96,3 +96,38 @@ export function projectMobileCompanionHistory(
     ...(session.blocks === undefined ? {} : { blocks: session.blocks }),
   }))
 }
+
+/** Request to create one Desktop-default Session from Mobile. */
+export interface CreateCompanionSessionInput {
+  /** Idempotency key attributed to the Device Principal. */
+  operationId: string
+  /** Session title using Desktop defaults. */
+  title: string
+  /** Target Workspace; omit for Ungrouped. */
+  workspace?: string
+  /** Device Principal that requested the create. */
+  devicePrincipalId: string
+}
+
+/**
+ * Append one created Session unless this operation id already committed.
+ * @param sessions - current Desktop-confirmed list.
+ * @param committed - previously applied operation ids.
+ * @param input - create request.
+ * @returns next list and whether a new row was appended.
+ */
+export function createCompanionSession(
+  sessions: readonly CompanionSessionSummary[],
+  committed: ReadonlySet<string>,
+  input: CreateCompanionSessionInput,
+): { sessions: readonly CompanionSessionSummary[]; created: boolean } {
+  if (input.operationId === '') throw new TypeError('Companion create operation id must be non-empty')
+  if (committed.has(input.operationId)) return { sessions, created: false }
+  const created: CompanionSessionSummary = {
+    id: input.operationId,
+    title: input.title,
+    ...(input.workspace === undefined ? {} : { workspace: input.workspace }),
+    summary: 'New Session',
+  }
+  return { sessions: [...sessions, created], created: true }
+}

@@ -16,10 +16,12 @@ export interface MobileBrowseProps {
   connection: 'online' | 'offline'
   /** Desktop-confirmed Session history. */
   sessions: readonly CompanionSessionSummary[]
+  /** Optional create handler used by Workspace and global create actions. */
+  onCreate?: (input: { workspace?: string }) => void
 }
 
 /** Phone-sized Workspace/Session browse without Desktop columns. */
-export function MobileBrowse({ desktopName, connection, sessions }: MobileBrowseProps): ReactNode {
+export function MobileBrowse({ desktopName, connection, sessions, onCreate }: MobileBrowseProps): ReactNode {
   const [openId, setOpenId] = useState<string>()
   const [page, setPage] = useState(0)
   const paged = useMemo(
@@ -51,10 +53,16 @@ export function MobileBrowse({ desktopName, connection, sessions }: MobileBrowse
       <header className={css.header}>
         <p className={css.desktop}>{desktopName}</p>
         <p className={css.connection} data-connection={connection}>{connection === 'online' ? 'Remote Online' : 'Remote Offline'}</p>
+        {onCreate !== undefined && (
+          <button type="button" onClick={() => { onCreate({}) }}>新建 Ungrouped Session</button>
+        )}
       </header>
       {grouped.groups.map(group => (
         <section key={group.name} className={css.group} aria-label={group.name}>
           <h2>{group.name}</h2>
+          {onCreate !== undefined && (
+            <button type="button" onClick={() => { onCreate({ workspace: group.name }) }}>在 {group.name} 新建 Session</button>
+          )}
           <SessionList sessions={group.sessions} onOpen={setOpenId} />
         </section>
       ))}

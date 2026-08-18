@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import type { PlatformAccountInstallation } from '@deepseek-ai/dsh-platform-account-client'
 import { ACCOUNT_PRIVACY_NOTICE } from '@deepseek-ai/dsh-platform-account/privacy'
 import css from './MobileAccount.module.css'
+import { createCompanionSession, type CompanionSessionSummary } from './companion-history.ts'
 import { MobileBrowse } from './MobileBrowse.tsx'
 import { MobilePairing, type MobilePairingActions } from './MobilePairing.tsx'
 
@@ -21,6 +22,8 @@ export function MobileAccount({ installation, pairing }: MobileAccountProps): Re
     () => installation.getSnapshot(),
   )
   const [accepted, setAccepted] = useState(false)
+  const [sessions, setSessions] = useState<readonly CompanionSessionSummary[]>([])
+  const [committed] = useState(() => new Set<string>())
 
   useEffect(() => { void installation.load() }, [installation])
   useEffect(() => {
@@ -109,7 +112,22 @@ export function MobileAccount({ installation, pairing }: MobileAccountProps): Re
       {snapshot.error !== undefined && <p className={css.error} role="alert">{snapshot.error}</p>}
       {signedIn && pairing !== undefined && <MobilePairing actions={pairing} />}
       {signedIn && (
-        <MobileBrowse desktopName="Paired Desktop" connection="offline" sessions={[]} />
+        <MobileBrowse
+          desktopName="Paired Desktop"
+          connection="offline"
+          sessions={sessions}
+          onCreate={(input) => {
+            const operationId = crypto.randomUUID()
+            const next = createCompanionSession(sessions, committed, {
+              operationId,
+              title: input.workspace === undefined ? 'Ungrouped Session' : 'Workspace Session',
+              ...(input.workspace === undefined ? {} : { workspace: input.workspace }),
+              devicePrincipalId: 'current-mobile',
+            })
+            if (next.created) committed.add(operationId)
+            setSessions(next.sessions)
+          }}
+        />
       )}
       <footer>此账号仅识别你的安装；它不会授予任何 Desktop 访问权限。</footer>
     </main>
