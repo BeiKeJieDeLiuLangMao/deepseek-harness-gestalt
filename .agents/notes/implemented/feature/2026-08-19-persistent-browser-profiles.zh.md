@@ -10,7 +10,7 @@ Status: implemented
 
 ## 决策
 
-`ctx.browserRuntime.create` 接收临时 Profile 或命名持久 Browser Profile。持久 Profile 复用稳定的 Tandem `persist:session-${idPrefix}-${name}` partition，因此 cookie、localStorage、IndexedDB、cache 与 service worker 状态会随同一 `BrowserProfileId` 返回。临时 Profile 获得唯一的 `tmp-N` session 名、空存储，且没有地址栏标签。
+`ctx.browserRuntime.create` 接收临时 Profile 或命名持久 Browser Profile。持久 Profile 复用稳定的 Tandem `persist:session-${idPrefix}-${name}` partition 与同一 `BrowserProfileId`。无密钥测试用带名称的存储 token 证明隔离，而不是真实 Electron cookie jar。临时 Profile 获得唯一的 `tmp-N` session 名、空存储，且没有地址栏标签。
 
 产品词汇只有 Browser Profile。打开页面状态携带供 Dock 放在地址栏旁的 `chrome`，以及作为模型可见身份证明的 `storage`。临时 chrome 省略 `name`。Dock 页眉、页脚与账号选择器均不存在。
 
@@ -30,7 +30,7 @@ Provider 串行执行操作，并以 `BROWSER_PROFILE_BUSY` 拒绝同一命名 P
 
 ## 后果
 
-命名 Profile 可在没有账号选择器的情况下恢复隔离身份。临时 Profile 仍可丢弃且无标签。并发写入方会明确失败。持久化、隔离、清理与修订冲突在公开运行时 seam 上测试；Tandem fixture 与按环境门控的真实 Electron e2e 对持有 `persist:session-*` partition 的 Provider 验证同一事实。
+命名 Profile 可在没有账号选择器的情况下恢复隔离身份。临时 Profile 仍可丢弃且无标签。并发写入方会明确失败。持久化、清理、修订冲突与带名称 token 的隔离在公开运行时 seam 上测试。Tandem fixture 记录 `persist:session-*` partition；有 checkout 时，按环境门控的真实 Electron e2e 才能证明 cookie 隔离。
 
 ## 验证
 

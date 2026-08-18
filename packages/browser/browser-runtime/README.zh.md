@@ -22,4 +22,4 @@ Provider 在 `browser/runtime-state` 上发布已提交状态。该通知不可�
 
 ## 已知限制与后续工作
 
-- Service Definition 现在表达一个标签页上的临时与命名持久 Profile；多 Workspace 与标签页、人工接管以及 Dock chrome 仍属于后续工作。
+- Service Definition 表达一个标签页上的临时与命名持久 Profile；多 Workspace 与标签页、人工接管以及 Dock chrome 仍属于后续工作。

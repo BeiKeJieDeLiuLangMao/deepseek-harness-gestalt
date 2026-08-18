@@ -123,12 +123,11 @@ export abstract class BrowserRuntime extends Service {
    * @param request - Temporary or named persistent Profile request and cancellation signal.
    * @returns initial open page state at revision zero; its target addresses every later operation in
    * this lifecycle. Persistent Profiles restore the same storage partition on later creates.
-   * @throws `BrowserRuntimeError` with `BROWSER_ABORTED` when cancellation wins, `BROWSER_CAPACITY`
-   * when this Provider cannot admit another lifecycle, `BROWSER_DISPOSED` after teardown starts,
-   * `BROWSER_PROFILE_BUSY` when the named Profile already has a writer, `BROWSER_PROFILE_NAME` when
-   * the name cannot be a stable partition key, `BROWSER_PROTOCOL` when the upstream runtime breaks
-   * its response protocol, or `BROWSER_RUNTIME_UNAVAILABLE` when the upstream runtime cannot be
-   * reached or starts unhealthy.
+   * @throws `BrowserRuntimeError` with `BROWSER_ABORTED` when cancellation wins, `BROWSER_DISPOSED`
+   * after teardown starts, `BROWSER_PROFILE_BUSY` when the named Profile already has a writer,
+   * `BROWSER_PROFILE_NAME` when the name cannot be a stable partition key, `BROWSER_PROTOCOL` when
+   * the upstream runtime breaks its response protocol, or `BROWSER_RUNTIME_UNAVAILABLE` when the
+   * upstream runtime cannot be reached or starts unhealthy.
    */
   abstract create(request: BrowserCreateRequest): Promise<BrowserPageState>
   /**

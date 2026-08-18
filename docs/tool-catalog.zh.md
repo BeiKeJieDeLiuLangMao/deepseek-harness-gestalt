@@ -1865,7 +1865,7 @@ todo_write 是会话所有的状态；UI 将最新的 todo/write 事件渲染为
 
 ### `browser_close`
 
-使用最新修订号关闭一个浏览器标签页及其临时 Browser Profile。
+使用最新修订号关闭一个浏览器标签页。临时 Profile 丢弃身份；命名 Profile 保留 persist partition。
 
 ```json
 {

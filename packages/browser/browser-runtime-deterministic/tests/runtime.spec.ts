@@ -314,6 +314,27 @@ describe('deterministic Browser Runtime public lifecycle', () => {
     await expect(runtime.create({ profile: 'temporary' })).rejects.toMatchObject({ code: 'BROWSER_DISPOSED' })
   })
 
+  it('drops named persist memory on disposal instead of leaving a half-open store', async () => {
+    const ctx = new Context()
+    const fiber = await ctx.plugin(BrowserRuntimeDeterministic, {
+      idPrefix: 'persist-dispose',
+      pages: [{ url: 'https://login.test/', title: 'Login', text: 'login', screenshotPngBase64: PNG_1X1 }],
+    })
+    const runtime = ctx.browserRuntime
+    const created = await runtime.create({ profile: 'persistent', name: BrowserProfileName('work') })
+    await runtime.navigate({
+      target: created.target,
+      expectedRevision: 0,
+      url: 'https://login.test/',
+    })
+    const internals = runtime as unknown as { persisted: Map<string, unknown> }
+    expect(internals.persisted.size).toBe(0)
+    await fiber.dispose()
+    expect(internals.persisted.size).toBe(0)
+    await expect(runtime.create({ profile: 'persistent', name: BrowserProfileName('work') }))
+      .rejects.toMatchObject({ code: 'BROWSER_DISPOSED' })
+  })
+
   it('rejects aborted, missing, closed, and unconfigured operations without changing state', async () => {
     const ctx = new Context()
     const fiber = await ctx.plugin(BrowserRuntimeDeterministic, {

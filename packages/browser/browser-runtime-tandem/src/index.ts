@@ -674,7 +674,7 @@ export class TandemBrowserRuntime extends BrowserRuntime {
         })
       } catch (error) {
         this.profiles.delete(created.profileId)
-        await this.stopProcess()
+        if (this.profiles.size === 0) await this.stopProcess()
         throw error
       }
     })

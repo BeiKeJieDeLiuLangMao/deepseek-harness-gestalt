@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/subsystems/browser-runtime.md
-browser-runtime.md: 18cc669bba9ec92204885d0ad49ea320213eedc9
-browser-runtime.zh.md: 4f93f91f5791c42dbc502548bd71aab3a6ac08f8
+browser-runtime.md: 340fe74a7d0db650e904f82ef5e861d5bee00e5f
+browser-runtime.zh.md: 849b8ce06da9979a9baa7ea251d5f909c83bf988

@@ -313,32 +313,38 @@ export class DeterministicBrowserRuntime extends BrowserRuntime {
       assertBrowserNotAborted(request.signal)
       const state = this.open(request.target)
       this.expected(state, request.expectedRevision)
-      if (state.chrome.kind === 'persistent') {
-        const sessionName = state.chrome.partition.slice('persist:session-'.length)
-        const previous = this.persisted.get(sessionName)
-        this.persisted.set(sessionName, Object.freeze({
-          url: state.url,
-          title: state.title,
-          text: state.text,
-          storage: state.storage,
-          chrome: state.chrome,
-          sessionName,
-          tabSeq: (previous?.tabSeq ?? 0) + 1,
-        }))
-      }
+      this.rememberPersistent(state)
       return this.commit({ status: 'closed', target: state.target, revision: state.revision + 1 })
     })
   }
 
-  /** Finish accepted operations, close every open Profile, then make the Provider unusable. */
+  /** Snapshot one named Profile so a later create can restore its identity. */
+  private rememberPersistent(state: BrowserPageState): void {
+    if (state.chrome.kind !== 'persistent') return
+    const sessionName = state.chrome.partition.slice('persist:session-'.length)
+    const previous = this.persisted.get(sessionName)
+    this.persisted.set(sessionName, Object.freeze({
+      url: state.url,
+      title: state.title,
+      text: state.text,
+      storage: state.storage,
+      chrome: state.chrome,
+      sessionName,
+      tabSeq: (previous?.tabSeq ?? 0) + 1,
+    }))
+  }
+
+  /** Finish accepted operations, close every open Profile, then drop persist memory. */
   private async teardown(): Promise<void> {
     this.closing = true
     await this.queue
     for (const state of [...this.states.values()]) {
       if (state.status === 'open') {
+        this.rememberPersistent(state)
         this.commit({ status: 'closed', target: state.target, revision: state.revision + 1 })
       }
     }
+    this.persisted.clear()
     this.disposed = true
   }
 }

@@ -1860,7 +1860,7 @@ Source: [`packages/workflow/tool-workflow/src/index.ts`](../packages/workflow/to
 
 ### `browser_close`
 
-Close one browser tab and its temporary Browser Profile using the latest revision.
+Close one browser tab using the latest revision. Temporary Profiles discard identity; named Profiles keep the persist partition.
 
 ```json
 {

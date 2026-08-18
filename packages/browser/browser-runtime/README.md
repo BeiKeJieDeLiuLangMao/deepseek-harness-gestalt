@@ -22,4 +22,4 @@ This package alone adds no model tokens and changes no request prefix.
 
 ## Known Limitations and Deferred Work
 
-- The Service Definition now expresses temporary and named persistent Profiles for one tab; multiple Workspaces and tabs, human takeover, and Dock chrome remain later work.
+- The Service Definition expresses temporary and named persistent Profiles for one tab; multiple Workspaces and tabs, human takeover, and Dock chrome remain later work.

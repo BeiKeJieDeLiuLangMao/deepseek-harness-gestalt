@@ -264,7 +264,7 @@ export function apply(ctx: Context, config: Config): void {
   ctx.tools.register({
     ...defineTool({
       name: 'browser_close',
-      description: 'Close one browser tab and its temporary Browser Profile using the latest revision.',
+      description: 'Close one browser tab using the latest revision. Temporary Profiles discard identity; named Profiles keep the persist partition.',
       timeoutMs,
       parameters: {
         target: TARGET_PARAMETER,

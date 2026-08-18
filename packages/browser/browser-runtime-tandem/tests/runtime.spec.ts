@@ -37,6 +37,7 @@ interface RuntimeInternals {
   scheduleRecovery(reason: 'crashed' | 'unhealthy', projectNow: boolean): unknown
   reconnect(lastOpen: never, unavailable: never): Promise<void>
   readTab(tabId: string, signal: AbortSignal | undefined): Promise<unknown>
+  createSession(sessionName: string, signal: AbortSignal | undefined, url?: string): Promise<unknown>
 }
 
 function runtimeOf(ctx: Context): RuntimeInternals {
@@ -310,6 +311,27 @@ describe('Tandem Browser Runtime public lifecycle', () => {
     await expect(ctx.browserRuntime.observe({ target: first.target })).resolves.toMatchObject({
       status: 'open',
       revision: 0,
+      chrome: { name: 'work' },
+    })
+  })
+
+  it('keeps the shared Tandem child alive when a later create fails', async () => {
+    const { ctx, pidFile } = await setup()
+    const first = await ctx.browserRuntime.create({ profile: 'persistent', name: BrowserProfileName('work') })
+    const firstPid = Number((await readFile(pidFile, 'utf8')).trim())
+    expect(Number.isInteger(firstPid)).toBe(true)
+    const runtime = runtimeOf(ctx)
+    const originalCreateSession = runtime.createSession?.bind(runtime)
+    runtime.createSession = async () => {
+      throw new BrowserRuntimeError('Tandem session create tab field id must be a string', 'BROWSER_PROTOCOL')
+    }
+    await expect(ctx.browserRuntime.create({ profile: 'persistent', name: BrowserProfileName('home') }))
+      .rejects.toMatchObject({ code: 'BROWSER_PROTOCOL' })
+    runtime.createSession = originalCreateSession
+    const stillPid = Number((await readFile(pidFile, 'utf8')).trim())
+    expect(stillPid).toBe(firstPid)
+    await expect(ctx.browserRuntime.observe({ target: first.target })).resolves.toMatchObject({
+      status: 'open',
       chrome: { name: 'work' },
     })
   })

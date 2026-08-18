@@ -14,7 +14,7 @@ Browser Runtime 能力目前只有一个无密钥确定性 Provider。驱动真�
 
 协议保真仅限于固定 revision，并以 `TANDEM_UPSTREAM_REVISION` 与 `TANDEM_UPSTREAM_VERSION` 导出。使用的端点为 `POST /sessions/create`、`POST /sessions/destroy`、`GET /tabs/list`、`POST /tabs/focus`、`POST /navigate`、`GET /page-content` 与 `GET /screenshot`，全部携带 bearer token 鉴权，并受 `requestTimeoutMs` 与 `maxResponseBytes` 约束。页面读取携带 Provider 自有的 `settleMs`/`timeout`/`minLength` 查询上限，因为上游路由在短静态页面上会等待其内部 10 秒的稳定窗口。固定 revision 不可能产生的响应——错误的结构、id 位置出现空字符串、超限响应体——会以 `BROWSER_PROTOCOL` 拒绝；传输与进程失败会以 `BROWSER_RUNTIME_UNAVAILABLE` 拒绝。
 
-Provider 只接收一个临时 Profile 生命周期：一个 Tandem session、一个标签页，由 `idPrefix` 派生的 DSH 持有不透明 Profile/Workspace/浏览器身份包裹 Tandem 的 tab id。所有操作通过同一个队列串行执行；写操作精确校验 `expectedRevision`。释放阶段停止接收新操作、排空队列、销毁 session，并在 `processGraceMs` 内 join 进程树。
+Provider 在一个托管子进程上接收临时与命名持久 Profile。每个 Profile 映射到一个 Tandem session 与一个 `persist:session-*` partition，并由 `idPrefix` 派生 DSH 持有的不透明 Profile/Workspace/浏览器身份。所有操作通过同一个队列串行执行；写操作精确校验 `expectedRevision`。后续 create 失败时，已打开 Profile 的子进程继续运行。释放阶段停止接收新操作、排空队列、销毁剩余 session，并在 `processGraceMs` 内 join 进程树。
 
 `BrowserRuntimeState` 扩展出 `BrowserUnavailableState`（`status: 'unavailable'`、target、revision、reason 为 `crashed` | `unhealthy` | `reconnect-failed`、`reconnecting`），因为持有真实进程的 Provider 存在确定性 tracer 无法表达的失败形态：进程仍在语义上存在，target 身份仍然有效，服务可能恢复。子进程意外退出或健康探测失败会提交 `unavailable`，其 `reconnecting` 来自配置，随后最多尝试 `reconnectAttempts` 次重启；成功后以同一 target、下一修订号重新提交打开页面状态，重连耗尽则提交 `reconnect-failed`。不可用期间，针对该 target 的操作会以 `BROWSER_RUNTIME_UNAVAILABLE` 拒绝——投影绝不把过期的页面事实呈现为打开状态。两个新错误码 `BROWSER_PROTOCOL` 与 `BROWSER_RUNTIME_UNAVAILABLE` 分别承载响应格式错误与运行时丢失两类失败。
 

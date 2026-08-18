@@ -10,7 +10,7 @@ A user can sign in inside a real browser, but the Browser Runtime tracer only ad
 
 ## Decision
 
-`ctx.browserRuntime.create` accepts a temporary Profile or a named persistent Browser Profile. Persistent Profiles reuse a stable Tandem `persist:session-${idPrefix}-${name}` partition so cookies, localStorage, IndexedDB, cache, and service-worker state return with the same `BrowserProfileId`. Temporary Profiles receive a unique `tmp-N` session name, empty storage, and no address-field label.
+`ctx.browserRuntime.create` accepts a temporary Profile or a named persistent Browser Profile. Persistent Profiles reuse a stable Tandem `persist:session-${idPrefix}-${name}` partition and the same `BrowserProfileId`. Keyless tests prove isolation with name-stamped storage tokens, not a live Electron cookie jar. Temporary Profiles receive a unique `tmp-N` session name, empty storage, and no address-field label.
 
 The product vocabulary is Browser Profiles only. Open page state carries `chrome` for Dock to place one label near the address field and `storage` as the model-visible identity proof. Temporary chrome omits `name`. Dock headers, footers, and an account picker are absent.
 
@@ -30,7 +30,7 @@ The deterministic Provider is the keyless store for persistence, isolation, clea
 
 ## Consequences
 
-Named Profiles restore isolated identities without an account picker. Temporary Profiles remain disposable and unlabeled. Concurrent writers fail loudly. Persistence, isolation, cleanup, and revision conflict are tested at the public runtime seam; the Tandem fixture and env-gated real Electron e2e exercise the same facts against a provider that owns `persist:session-*` partitions.
+Named Profiles restore isolated identities without an account picker. Temporary Profiles remain disposable and unlabeled. Concurrent writers fail loudly. Persistence, cleanup, revision conflict, and name-stamped isolation are tested at the public runtime seam. The Tandem fixture records the `persist:session-*` partition; env-gated real Electron e2e can prove cookie isolation when a checkout is present.
 
 ## Verification
 
