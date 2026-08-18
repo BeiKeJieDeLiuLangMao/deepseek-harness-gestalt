@@ -53,7 +53,7 @@ macOS chrome 在 DSH 侧栏标题和中间 Session 内容上方为 traffic light
 - Desktop 组合显示 GESTALT 次标和 logo 行上方的拖拽带。Update Control 渲染测试确保不活跃阶段不出现，可操作阶段与设置位于同一脚部行。
 - macOS 展开和收起布局让未改动的侧栏控件与中间 Session 内容位于原生控件下方；Windows 把 caption 按钮放在全窗口拖拽行右侧，且不移动 Session 内容。
 - Dock 式启动把 Launch Directory 当作 cwd，并且不把该路径登记为 Workspace。
-- Desktop 退出会等待尚未启动完成和正在运行的 Web Host 进程退出；smoke 测试会拒绝遗留子进程、缺失的 Desktop 组合或 updater bridge、尚未到达 renderer 的更新状态，以及可见但尚未激活的 Update Control。
+- Desktop 退出会等待尚未启动完成和正在运行的 Web Host 进程退出；smoke 测试会拒绝遗留子进程、缺失的 Desktop 组合或 updater bridge、尚未到达 renderer 的更新状态，以及可见但尚未激活的 Update Control。打包 smoke 会排空 Electron 的 stdout/stderr，避免 Windows 管道填满后卡住启动，并在进程于写入 `ok` 前退出时失败。缺少或无效的 Platform Account 部署配对会停用 Account 与 Pairing，但仍启动 Web Host。首次启动的 Platform Account 只在内存中保留 installation id，直到登录尝试才加密写入记录，且 Web Host 启动不等待这次 start。
 - 无密钥浏览器 golden 会启动已交付 Web profile 与 Desktop overlay；release job 会校验 Node 归档摘要，在 macOS 签名前将打开文件数限制提升到 runner 硬限制，并对 `@electron/osx-sign` 应用有界的资源遍历。发布构建必须通过代码签名和已装订公证票据校验，并在上传前 smoke 每个打包目标。
 - 无需启动 Host 的无密钥 CLI 检查会组合真实 Web profile 与 Desktop overlay，要求 time-context 和 Schedule 位于其依赖服务之后，并证明浏览器默认树不含这两个插件。组装出的无密钥 Desktop turn 会快照两条 time-context 消息、全部三个 Schedule schema、`schedule_list` 调用与结果，以及最终 assistant 回复。
 - Desktop 图标测试固定三个源文件摘要及其容器签名，要求 512x512 RGBA PNG，检查 macOS、Windows、打包资源、Dock 与 BrowserWindow 的接线，并拒绝缺少最大分辨率 ICO 载荷的 Windows PE 文件。
