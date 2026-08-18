@@ -29,6 +29,15 @@ export function parseInstallationId(value: unknown): InstallationId {
 }
 
 /**
+ * Parse an Account id at a wire or durable-data boundary.
+ * @param value - untrusted identifier value.
+ * @returns branded non-empty Platform Account id.
+ */
+export function parsePlatformAccountId(value: unknown): PlatformAccountId {
+  return nonEmptyString(value, 'Platform Account id') as PlatformAccountId
+}
+
+/**
  * Parse a Login Attempt id at a wire or durable-data boundary.
  * @param value - untrusted identifier value.
  * @returns branded non-empty Login Attempt id.
@@ -49,7 +58,7 @@ export function parsePlatformAccountView(value: unknown): PlatformAccountView {
     throw new TypeError('Platform Account githubId must be a positive safe integer')
   }
   return {
-    id: nonEmptyString(record.id, 'Platform Account id') as PlatformAccountId,
+    id: parsePlatformAccountId(record.id),
     githubId: githubId as number,
     githubLogin: nonEmptyString(record.githubLogin, 'Platform Account githubLogin'),
     avatarUrl: httpsUrl(record.avatarUrl, 'Platform Account avatarUrl'),

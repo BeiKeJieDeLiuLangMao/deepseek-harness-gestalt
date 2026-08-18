@@ -51,6 +51,7 @@ Here are some core packages that contribute to the Cordis tree.
 | [`llm/llm`](subsystems/llm-streaming.md) | Message and stream vocabulary plus the adapter seam | `ctx.llm` |
 | [`platform/platform-account`](../packages/platform/platform-account/README.md) | Platform identity and current-installation Account Sessions | `ctx.platformAccount` |
 | [`platform/remote-protocol`](../packages/platform/remote-protocol/README.md) | Independent Relay Transport and encrypted Companion codecs | library, no key |
+| [`platform/remote-access`](../packages/platform/remote-access/README.md) | Settings-owned Personal Pairing lifecycle and Companion-only Device Principals | `ctx.remoteAccess` |
 
 ## Events
 

@@ -1010,6 +1010,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'current account projection.',
       },
       {
+        signature: 'abstract currentInstallation(input: { accessToken: string proof: AccountProof }): Promise<AuthenticatedInstallationView>',
+        description: 'Authenticate the Account and Installation identity bound to one current session.',
+        parameters: [{ name: 'input', description: 'access token and proof from the session\'s Installation key.' }],
+        returns: 'provider-owned Account id, Installation id, and Installation kind.',
+      },
+      {
         signature: 'abstract signOut(input: { accessToken: string; proof: AccountProof }): Promise<void>',
         description: 'Revoke only the current installation Account Session.',
         parameters: [{ name: 'input', description: 'access token and installation proof.' }],
@@ -1019,6 +1025,71 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Track a Platform connection so cross-instance session invalidation closes it.',
         parameters: [{ name: 'sessionId', description: 'Account Session owning the connection.' }, { name: 'close', description: 'idempotent close callback.' }],
         returns: 'disposer removing the tracked connection.',
+      },
+    ],
+  },
+  {
+    key: 'remoteAccess',
+    summary: 'Remote Access capability owning the complete Personal Pairing lifecycle.',
+    description: 'Remote Access capability owning the complete Personal Pairing lifecycle.',
+    methods: [
+      {
+        signature: 'abstract createChallenge(input: { desktop: PairingAccountAuthentication rendezvousId: PairingRendezvousId }): Promise<PairingChallengeView>',
+        description: 'Create one two-minute invitation for a signed-in Desktop Installation.',
+        parameters: [{ name: 'input', description: 'Desktop authorization and opaque rendezvous identity.' }],
+        returns: 'complete QR/link projection; no low-entropy fallback exists.',
+      },
+      {
+        signature: 'abstract getMobileAccessState(desktop: PairingAccountAuthentication): Promise<MobileAccessState>',
+        description: 'Read the current Desktop Installation\'s Mobile Access state.',
+        parameters: [{ name: 'desktop', description: 'current Desktop authorization.' }],
+        returns: 'whether Settings has enabled Mobile Access for this Installation.',
+      },
+      {
+        signature: 'abstract setMobileAccess(input: { desktop: PairingAccountAuthentication enabled: boolean }): Promise<MobileAccessState>',
+        description: 'Set Mobile Access from the Desktop Settings owner.',
+        parameters: [{ name: 'input', description: 'current Desktop authorization and requested state.' }],
+        returns: 'committed Mobile Access state.',
+      },
+      {
+        signature: 'abstract completeChallenge(input: { mobile: PairingAccountAuthentication completionId: PairingCompletionId oneTimeLink: string device: PairingDeviceDescription mobileHandshake: Uint8Array }): Promise<PairingCompletionView>',
+        description: 'Complete the same-account cryptographic exchange without granting authority.',
+        parameters: [{ name: 'input', description: 'Mobile authorization, invitation, device metadata, and handshake bytes.' }],
+        returns: 'pending result shown on both installations before Desktop confirmation.',
+      },
+      {
+        signature: 'abstract getMobilePairingStatus(input: { mobile: PairingAccountAuthentication pendingPairingId: PendingPairingId }): Promise<MobilePairingStatus>',
+        description: 'Read the decision for one pairing completed by the current Mobile Installation.',
+        parameters: [{ name: 'input', description: 'current Mobile authorization and pending identity.' }],
+        returns: 'pending, paired, or rejected without exposing Desktop authority.',
+      },
+      {
+        signature: 'abstract listPersonalPairings(desktop: PairingAccountAuthentication): Promise<readonly PersonalPairingView[]>',
+        description: 'List active pairings visible to one signed-in Desktop Account.',
+        parameters: [{ name: 'desktop', description: 'current Desktop Account authorization.' }],
+        returns: 'only confirmed pairings; pending handshakes are excluded.',
+      },
+      {
+        signature: 'abstract listPendingPairings(desktop: PairingAccountAuthentication): Promise<readonly PairingCompletionView[]>',
+        description: 'List completed handshakes awaiting this Desktop Installation\'s decision.',
+        parameters: [{ name: 'desktop', description: 'current Desktop authorization.' }],
+        returns: 'pending handshakes owned by this Desktop Installation.',
+      },
+      {
+        signature: 'abstract confirmPairing(input: { desktop: PairingAccountAuthentication pendingPairingId: PendingPairingId }): Promise<PersonalPairingView>',
+        description: 'Activate one pending pairing after the Desktop user compares authentication words.',
+        parameters: [{ name: 'input', description: 'confirming Desktop and pending identity.' }],
+        returns: 'independently keyed Companion-only Device Principal.',
+      },
+      {
+        signature: 'abstract cancelChallenge(input: { desktop: PairingAccountAuthentication challengeId: PairingChallengeId }): Promise<void>',
+        description: 'Cancel one active invitation; repeated cancellation is a no-op.',
+        parameters: [{ name: 'input', description: 'owning Desktop authorization and challenge identity.' }],
+      },
+      {
+        signature: 'abstract rejectPairing(input: { desktop: PairingAccountAuthentication pendingPairingId: PendingPairingId }): Promise<void>',
+        description: 'Reject one pending handshake; repeated rejection is a no-op.',
+        parameters: [{ name: 'input', description: 'owning Desktop authorization and pending identity.' }],
       },
     ],
   },
@@ -2856,6 +2927,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type AttachmentId = Branded<\'AttachmentId\'>;',
   },
   {
+    name: 'AuthenticatedInstallationView',
+    declaration: 'export interface AuthenticatedInstallationView {\n    account: PlatformAccountView;\n    installation: {\n        id: InstallationId;\n        kind: InstallationKind;\n    };\n}',
+  },
+  {
     name: 'BackendRegistry',
     declaration: 'export class BackendRegistry {\n    register(name: string, backend: StorageBackend): () => void;\n    get(name: string): StorageBackend;\n    names(): string[];\n}',
   },
@@ -3062,6 +3137,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'CredentialRef',
     declaration: 'export type CredentialRef = Branded<\'CredentialRef\'>;',
+  },
+  {
+    name: 'DevicePrincipalId',
+    declaration: 'export type DevicePrincipalId = Branded<\'DevicePrincipalId\'>;',
   },
   {
     name: 'DiffCallView',
@@ -3306,6 +3385,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'InstallationId',
     declaration: 'export type InstallationId = Branded<\'InstallationId\'>;',
+  },
+  {
+    name: 'InstallationKind',
+    declaration: 'export type InstallationKind = \'desktop\' | \'mobile\';',
   },
   {
     name: 'InvariantFailure',
@@ -3616,6 +3699,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface MessageSourceMap {\n    user: {\n        kind: \'user\';\n    };\n    plugin: {\n        kind: \'plugin\';\n        plugin: string;\n    } & ContextFormed;\n    model: ModelMessageSource;\n    tool: ToolMessageSource;\n}',
   },
   {
+    name: 'MobileAccessState',
+    declaration: 'export interface MobileAccessState {\n    enabled: boolean;\n}',
+  },
+  {
+    name: 'MobilePairingStatus',
+    declaration: 'export type MobilePairingStatus = {\n    status: \'pending\';\n} | {\n    status: \'paired\';\n    pairingId: PersonalPairingId;\n} | {\n    status: \'rejected\';\n};',
+  },
+  {
     name: 'ModelMessageSource',
     declaration: 'export interface ModelMessageSource extends AssistantProvenance {\n    kind: \'model\';\n}',
   },
@@ -3640,8 +3731,52 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface OneShotSubagentDescriptorData extends SubagentDescriptorBase {\n    readonly mode: \'one-shot\';\n    readonly label?: string;\n}',
   },
   {
+    name: 'PairingAccountAuthentication',
+    declaration: 'export interface PairingAccountAuthentication {\n    accessToken: string;\n    proof: AccountProof;\n}',
+  },
+  {
+    name: 'PairingChallengeId',
+    declaration: 'export type PairingChallengeId = Branded<\'PairingChallengeId\'>;',
+  },
+  {
+    name: 'PairingChallengeView',
+    declaration: 'export interface PairingChallengeView extends Omit<PairingInvitation, \'invitationSecret\'> {\n    oneTimeLink: string;\n    qrPayload: string;\n}',
+  },
+  {
+    name: 'PairingCompletionId',
+    declaration: 'export type PairingCompletionId = Branded<\'PairingCompletionId\'>;',
+  },
+  {
+    name: 'PairingCompletionView',
+    declaration: 'export interface PairingCompletionView {\n    pendingPairingId: PendingPairingId;\n    authenticationWords: readonly [\n        string,\n        string,\n        string,\n        string,\n        string,\n        string\n    ];\n    desktopHandshake: Uint8Array;\n    device: PairingDeviceDescription;\n}',
+  },
+  {
+    name: 'PairingDeviceDescription',
+    declaration: 'export interface PairingDeviceDescription {\n    name: string;\n    platform: \'ios\' | \'android\';\n}',
+  },
+  {
+    name: 'PairingInvitation',
+    declaration: 'export interface PairingInvitation {\n    challengeId: PairingChallengeId;\n    invitationSecret: Uint8Array;\n    desktopFingerprint: string;\n    rendezvousId: PairingRendezvousId;\n    expiresAt: number;\n    protocolMajor: typeof PERSONAL_PAIRING_PROTOCOL_MAJOR;\n}',
+  },
+  {
+    name: 'PairingRendezvousId',
+    declaration: 'export type PairingRendezvousId = Branded<\'PairingRendezvousId\'>;',
+  },
+  {
+    name: 'PendingPairingId',
+    declaration: 'export type PendingPairingId = Branded<\'PendingPairingId\'>;',
+  },
+  {
     name: 'PermissionSelect',
     declaration: 'export interface PermissionSelect {\n    options: PresetOption[];\n    currentValue: string;\n}',
+  },
+  {
+    name: 'PersonalPairingId',
+    declaration: 'export type PersonalPairingId = Branded<\'PersonalPairingId\'>;',
+  },
+  {
+    name: 'PersonalPairingView',
+    declaration: 'export interface PersonalPairingView {\n    id: PersonalPairingId;\n    devicePrincipal: {\n        id: DevicePrincipalId;\n        accountId: Branded<\'PlatformAccountId\'>;\n        installationId: InstallationId;\n        authority: \'companion-surface\';\n    };\n    device: PairingDeviceDescription;\n    pairedAt: number;\n}',
   },
   {
     name: 'PlatformAccountId',

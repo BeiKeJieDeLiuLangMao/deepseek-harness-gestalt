@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-Service Definition for Platform Account identity and the Account Session bound to one Desktop or Mobile Installation. `AccountService` owns Login Attempt creation, GitHub callback completion, signed polling, access-token refresh, current-account reads, current-installation sign-out, and connection tracking through `ctx.platformAccount`.
+Service Definition for Platform Account identity and the Account Session bound to one Desktop or Mobile Installation. `AccountService` owns Login Attempt creation, GitHub callback completion, signed polling, access-token refresh, current-account reads, authenticated current-installation reads, current-installation sign-out, and connection tracking through `ctx.platformAccount`. `currentInstallation()` returns the provider-bound Installation id and kind with the Account projection, so another capability never needs Account tables or caller-supplied role claims.
 
 The public types brand Account, Login Attempt, Account Session, Installation, and proof-JTI ids. Runtime `AccountError` exposes stable failure codes for invalid or expired attempts, invalid or replayed proof, and expired or revoked sessions; the `./types` subpath remains type-only.
 

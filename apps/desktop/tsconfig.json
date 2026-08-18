@@ -13,6 +13,9 @@
     { "path": "../../packages/client/ui-desktop" },
     { "path": "../../packages/platform/platform-account" },
     { "path": "../../packages/platform/platform-account-client" },
-    { "path": "../../packages/platform/platform-account-core" }
+    { "path": "../../packages/platform/platform-account-core" },
+    { "path": "../../packages/platform/remote-access" },
+    { "path": "../../packages/platform/remote-access-client" },
+    { "path": "../../packages/test-support/loader-smoke" }
   ]
 }

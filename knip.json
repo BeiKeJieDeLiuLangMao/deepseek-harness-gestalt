@@ -66,6 +66,8 @@
         "jsonrpc-agent/tests/fixtures/subagent/subagent-dsh-sdk/mock-delegating-llm.ts",
         "platform-account/start.ts",
         "remote-protocol/start.ts",
+        "personal-pairing/start.ts",
+        "personal-pairing/src/provider.ts",
         "*/tests/**/*.e2e.ts",
         "*/tests/**/*.snapshot.ts"
       ],

@@ -431,6 +431,12 @@ importers:
       '@deepseek-ai/dsh-platform-account-client':
         specifier: workspace:^
         version: link:../../packages/platform/platform-account-client
+      '@deepseek-ai/dsh-remote-access':
+        specifier: workspace:^
+        version: link:../../packages/platform/remote-access
+      '@deepseek-ai/dsh-remote-access-client':
+        specifier: workspace:^
+        version: link:../../packages/platform/remote-access-client
       electron-updater:
         specifier: ^6.8.3
         version: 6.8.9
@@ -468,6 +474,12 @@ importers:
       '@deepseek-ai/dsh-platform-account-client':
         specifier: workspace:^
         version: link:../../packages/platform/platform-account-client
+      '@deepseek-ai/dsh-remote-access':
+        specifier: workspace:^
+        version: link:../../packages/platform/remote-access
+      '@deepseek-ai/dsh-remote-access-client':
+        specifier: workspace:^
+        version: link:../../packages/platform/remote-access-client
       react:
         specifier: ^18.2.0
         version: 18.3.1
@@ -647,6 +659,9 @@ importers:
       '@deepseek-ai/dsh-hooks-codex':
         specifier: workspace:*
         version: link:../packages/hooks/hooks-codex
+      '@deepseek-ai/dsh-host-webserver':
+        specifier: workspace:*
+        version: link:../packages/host/webserver
       '@deepseek-ai/dsh-invariants':
         specifier: workspace:*
         version: link:../packages/runtime-diagnostics/invariants
@@ -689,6 +704,15 @@ importers:
       '@deepseek-ai/dsh-pwsh-local':
         specifier: workspace:*
         version: link:../packages/shell/pwsh-local
+      '@deepseek-ai/dsh-remote-access':
+        specifier: workspace:*
+        version: link:../packages/platform/remote-access
+      '@deepseek-ai/dsh-remote-access-client':
+        specifier: workspace:*
+        version: link:../packages/platform/remote-access-client
+      '@deepseek-ai/dsh-remote-access-http':
+        specifier: workspace:*
+        version: link:../packages/platform/remote-access-http
       '@deepseek-ai/dsh-remote-protocol':
         specifier: workspace:*
         version: link:../packages/platform/remote-protocol
@@ -2087,9 +2111,15 @@ importers:
       '@deepseek-ai/dsh-platform-account':
         specifier: workspace:^
         version: link:../../platform/platform-account
+      '@deepseek-ai/dsh-remote-access':
+        specifier: workspace:^
+        version: link:../../platform/remote-access
       react:
         specifier: ^18.2.0
         version: 18.3.1
+      uqr:
+        specifier: ^0.1.3
+        version: 0.1.3
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^
@@ -5943,6 +5973,61 @@ importers:
       '@deepseek-ai/dsh-platform-account-core':
         specifier: workspace:^
         version: link:../platform-account-core
+
+  packages/platform/remote-access:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-brand':
+        specifier: workspace:^
+        version: link:../../util/brand
+      '@deepseek-ai/dsh-invariants':
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+      '@deepseek-ai/dsh-platform-account':
+        specifier: workspace:^
+        version: link:../platform-account
+
+  packages/platform/remote-access-client:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-invariants':
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+      '@deepseek-ai/dsh-platform-account':
+        specifier: workspace:^
+        version: link:../platform-account
+      '@deepseek-ai/dsh-remote-access':
+        specifier: workspace:^
+        version: link:../remote-access
+
+  packages/platform/remote-access-http:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-host-webserver':
+        specifier: workspace:^
+        version: link:../../host/webserver
+      '@deepseek-ai/dsh-invariants':
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+      '@deepseek-ai/dsh-platform-account':
+        specifier: workspace:^
+        version: link:../platform-account
+      '@deepseek-ai/dsh-remote-access':
+        specifier: workspace:^
+        version: link:../remote-access
+      '@deepseek-ai/dsh-remote-access-client':
+        specifier: workspace:^
+        version: link:../remote-access-client
 
   packages/platform/remote-protocol:
     devDependencies:
@@ -15183,6 +15268,9 @@ packages:
     peerDependencies:
       browserslist: '>= 4.21.0'
 
+  uqr@0.1.3:
+    resolution: {integrity: sha512-0rjE8iEJe4YmT9TOhwsZtqCMRLc5DXZUI2UEYUUg63ikBkqqE5EYWaI0etFe/5KUcmcYwLih2RND1kq+hrUJXA==}
+
   uri-js@4.4.1:
     resolution: {integrity: sha512-7rKUyy33Q1yc98pQ1DAmLtwX109F7TIfWlW1Ydo8Wl1ii1SeHieeh0HHfPeL2fMXK6z0s8ecKs9frCuLJvndBg==}
 
@@ -21769,6 +21857,8 @@ snapshots:
       browserslist: 4.28.6
       escalade: 3.2.0
       picocolors: 1.1.1
+
+  uqr@0.1.3: {}
 
   uri-js@4.4.1:
     dependencies:
