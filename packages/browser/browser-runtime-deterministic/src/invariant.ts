@@ -5,9 +5,14 @@
 
 /* jscpd:ignore-start */
 import type { Context } from '@deepseek-ai/cordis'
-import type { BrowserRuntimeState, BrowserTarget } from '@deepseek-ai/dsh-browser-runtime'
+import type { BrowserRuntime, BrowserRuntimeState, BrowserTarget } from '@deepseek-ai/dsh-browser-runtime'
 import type { InvariantFailure, InvariantInstaller } from '@deepseek-ai/dsh-invariants'
-import { runtimeStateReader } from './runtime-state.ts'
+import {
+  registerRuntimeStateValidator,
+  RUNTIME_STATE_OWNER,
+  runtimeStateReader,
+  type RuntimeStateOwner,
+} from './runtime-state.ts'
 
 const PACKAGE_NAME = '@deepseek-ai/dsh-browser-runtime-deterministic'
 
@@ -26,18 +31,24 @@ function sameTarget(left: BrowserTarget, right: BrowserTarget): boolean {
 
 /** Validate lifecycle publications as one open-to-closed revision stream. */
 const install: InvariantInstaller = Object.assign((_ctx: Context, fail: InvariantFailure) => {
-  const readState = runtimeStateReader(_ctx.root)
-  if (readState === undefined) {
+  const owner = (_ctx.browserRuntime as BrowserRuntime & {
+    readonly [RUNTIME_STATE_OWNER]?: RuntimeStateOwner
+  })[RUNTIME_STATE_OWNER]
+  if (owner === undefined) {
     fail('the deterministic Browser Runtime invariant requires its own Provider implementation')
   }
+  const readState = runtimeStateReader(owner)
+  if (readState === undefined) {
+    fail('the deterministic Browser Runtime invariant requires its Provider state reader')
+  }
   let previous: BrowserRuntimeState | undefined = readState()
-  _ctx.on('browser/runtime-state', (state) => {
+  _ctx.effect(() => registerRuntimeStateValidator(owner, (state) => {
     if (previous === undefined) {
       if (state.status !== 'open' || state.revision !== 0) {
         fail('a deterministic Browser Runtime lifecycle must begin with an open revision 0 state')
       }
       previous = state
-      return
+      return undefined
     }
     if (previous.status === 'closed') {
       fail('a deterministic Browser Runtime terminal state cannot reopen')
@@ -49,7 +60,8 @@ const install: InvariantInstaller = Object.assign((_ctx: Context, fail: Invarian
       fail(`deterministic Browser Runtime revision ${String(state.revision)} must follow ${String(previous.revision)}`)
     }
     previous = state
-  }, { global: true })
+    return undefined
+  }), 'deterministic Browser Runtime pre-commit validator')
 }, { inject: ['browserRuntime'] })
 
 /**

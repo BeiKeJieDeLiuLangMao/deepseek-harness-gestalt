@@ -12,7 +12,7 @@ Browser Runtime 能力把与 Provider 无关的 [`ctx.browserRuntime`](../../pac
 
 Provider 串行执行操作。`navigate`、`focus` 与 `close` 要求最后观察到的修订号，并拒绝过期写入。`observe` 与 `screenshot` 不递增修订号。确定性 Provider 在其整个生命周期内只接收一个临时 Profile 生命周期；close 是终态，后续 create 会以 `BROWSER_CAPACITY` 拒绝。释放阶段停止接收新操作、排空已接受操作，并关闭仍打开的临时 Profile。
 
-确定性 Provider 在 `browser/runtime-state` 上发布已提交状态。每个 observer failure 都在提交后受到容纳，后续 observer 继续运行，且异步 observer 不会被等待。其 invariant 在首次加载与热重载时从 Provider 的当前权威 state 建立基线，随后检查稳定身份、精确修订顺序与终态关闭。
+确定性 Provider 为每个 generation 分配独立 owner token。其 invariant 在首次加载与热重载时从该 generation 的当前权威 state 建立基线，随后为稳定身份、精确修订顺序与终态关闭注册同步 pre-commit validator。验证失败时，原 state 仍是权威来源。提交后，Provider 在 `browser/runtime-state` 上发布状态；每个普通 observer failure 都受到容纳，后续 observer 继续运行，且异步 observer 不会被等待。
 
 ## 发现与重放
 

@@ -245,7 +245,6 @@ describe('deterministic Browser Runtime public lifecycle', () => {
     const created = await ctx.browserRuntime.create({ profile: 'temporary' })
     const observed: number[] = []
     ctx.on('browser/runtime-state', () => { throw new Error('ordinary observer failed') })
-    ctx.on('browser/runtime-state', () => { throw Object.assign(new Error('invariant observer failed'), { code: 'INVARIANT' }) })
     // oxlint-disable-next-line typescript/no-misused-promises -- this listener exercises rejected post-commit observation
     ctx.on('browser/runtime-state', async () => { throw new Error('async observer failed') })
     ctx.on('browser/runtime-state', (state) => { observed.push(state.revision) })

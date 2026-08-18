@@ -10,7 +10,7 @@
 
 所有操作进入同一个串行队列。写操作要求当前修订号，读操作返回当前修订号且不递增。一个 Provider 实例只接收一个临时 Profile 生命周期：关闭后再次 `create` 会以 `BROWSER_CAPACITY` 拒绝；释放开始后的操作会以 `BROWSER_DISPOSED` 拒绝。释放阶段停止接收新操作、排空已接受操作，并关闭仍打开的临时 Profile。
 
-Provider state 是权威来源。其 invariant companion 在首次安装与热重载时从该状态建立基线，随后验证身份与精确修订顺序。`browser/runtime-state` 是受容纳的提交后通知，因此损坏的普通或 invariant observer 不会让已提交操作表现为失败。
+Provider state 是权威来源。其 invariant companion 在首次安装与热重载时从该状态建立基线，随后为身份、精确修订顺序与终态关闭注册同步 pre-commit validator。invariant 失败时，原 state 仍是权威来源。`browser/runtime-state` 是受容纳的提交后通知，因此损坏的普通 observer 不会让已提交操作表现为失败。
 
 ## 模型体验
 

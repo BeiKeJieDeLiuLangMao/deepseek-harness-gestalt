@@ -10,7 +10,7 @@ Deterministic keyless Browser Runtime Provider for one temporary Profile, one Wo
 
 Operations enter one serialized queue. Mutations require the current revision, while reads return the current revision without advancing it. A Provider instance admits exactly one temporary Profile lifecycle: after close, another `create` rejects with `BROWSER_CAPACITY`; after disposal starts, operations reject with `BROWSER_DISPOSED`. Disposal stops admission, drains accepted operations, and closes an open temporary Profile.
 
-The Provider's state is authoritative. Its invariant companion seeds from that state on initial installation and hot reload, then validates identity and exact revision succession. `browser/runtime-state` is a contained post-commit notification, so a broken ordinary or invariant observer cannot make a committed operation appear to fail.
+The Provider's state is authoritative. Its invariant companion seeds from that state on initial installation and hot reload, then registers a synchronous pre-commit validator for identity, exact revision succession, and terminal closure. A failed invariant leaves the previous state authoritative. `browser/runtime-state` is a contained post-commit notification, so a broken ordinary observer cannot make a committed operation appear to fail.
 
 ## Model Experience
 

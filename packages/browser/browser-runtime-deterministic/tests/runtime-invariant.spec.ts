@@ -3,12 +3,21 @@ import { Context } from '@deepseek-ai/cordis'
 import {
   BrowserInstanceId,
   BrowserProfileId,
+  type BrowserRuntimeState,
   BrowserTabId,
   BrowserWorkspaceId,
 } from '@deepseek-ai/dsh-browser-runtime'
 import BrowserRuntimeDeterministic from '@deepseek-ai/dsh-browser-runtime-deterministic'
-import InvariantRegistry from '@deepseek-ai/dsh-invariants'
+import InvariantRegistry, { InvariantError } from '@deepseek-ai/dsh-invariants'
 import * as BrowserRuntimeDeterministicInvariant from '../src/invariant.ts'
+import {
+  registerRuntimeStateReader,
+  registerRuntimeStateValidator,
+  RUNTIME_STATE_OWNER,
+  runtimeStateReader,
+  runtimeStateValidator,
+  type RuntimeStateOwner,
+} from '../src/runtime-state.ts'
 
 const PNG_1X1 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
 const PAGE = { url: 'https://one.test/', title: 'One', text: 'one', screenshotPngBase64: PNG_1X1 }
@@ -26,6 +35,14 @@ async function mountInvariant(ctx: Context): Promise<ReturnType<Context['plugin'
   return fiber
 }
 
+function ownerOf(ctx: Context): RuntimeStateOwner {
+  const owner = (ctx.browserRuntime as typeof ctx.browserRuntime & {
+    readonly [RUNTIME_STATE_OWNER]?: RuntimeStateOwner
+  })[RUNTIME_STATE_OWNER]
+  if (owner === undefined) throw new Error('expected deterministic Browser Runtime owner')
+  return owner
+}
+
 describe('deterministic Browser Runtime invariant lifecycle', () => {
   it('fails load against a different Browser Runtime Provider', async () => {
     const ctx = new Context()
@@ -33,11 +50,21 @@ describe('deterministic Browser Runtime invariant lifecycle', () => {
     ctx.provide('browserRuntime', {} as never)
     await expect(ctx.plugin(BrowserRuntimeDeterministicInvariant).await())
       .rejects.toThrow(/requires its own Provider implementation/)
+
+    const missingReader = new Context()
+    await missingReader.plugin(InvariantRegistry).await()
+    missingReader.provide('browserRuntime', {
+      [RUNTIME_STATE_OWNER]: Object.freeze({}) as RuntimeStateOwner,
+    } as never)
+    await expect(missingReader.plugin(BrowserRuntimeDeterministicInvariant).await())
+      .rejects.toThrow(/requires its Provider state reader/)
   })
 
-  it('rejects an impossible initial publication', async () => {
+  it('rejects an impossible initial transition before state commit', async () => {
     const ctx = await setup()
     await mountInvariant(ctx)
+    const validate = runtimeStateValidator(ownerOf(ctx))
+    if (validate === undefined) throw new Error('expected deterministic Browser Runtime validator')
     const target = {
       profileId: BrowserProfileId('initial-profile'),
       workspaceId: BrowserWorkspaceId('initial-workspace'),
@@ -45,16 +72,18 @@ describe('deterministic Browser Runtime invariant lifecycle', () => {
       tabId: BrowserTabId('initial-tab'),
     }
 
-    expect(() => { ctx.emit('browser/runtime-state', { status: 'closed', target, revision: 0 }) })
+    expect(() => { validate({ status: 'closed', target, revision: 0 }) })
       .toThrow(/must begin with an open revision 0 state/)
     await expect(ctx.browserRuntime.create({ profile: 'temporary' })).resolves.toMatchObject({ revision: 0 })
   })
 
-  it('seeds and reloads from authoritative live state', async () => {
+  it('seeds and reloads its pre-commit validator from authoritative live state', async () => {
     const ctx = await setup()
     const created = await ctx.browserRuntime.create({ profile: 'temporary' })
     const firstInvariant = await mountInvariant(ctx)
-    expect(() => { ctx.emit('browser/runtime-state', { ...created, revision: 2 }) })
+    const firstValidate = runtimeStateValidator(ownerOf(ctx))
+    if (firstValidate === undefined) throw new Error('expected deterministic Browser Runtime validator')
+    expect(() => { firstValidate({ ...created, revision: 2 }) })
       .toThrow(/revision 2 must follow 0/)
 
     const navigated = await ctx.browserRuntime.navigate({
@@ -66,7 +95,9 @@ describe('deterministic Browser Runtime invariant lifecycle', () => {
 
     await firstInvariant.dispose()
     await mountInvariant(ctx)
-    expect(() => { ctx.emit('browser/runtime-state', { ...navigated, revision: 3 }) })
+    const reloadedValidate = runtimeStateValidator(ownerOf(ctx))
+    if (reloadedValidate === undefined) throw new Error('expected reloaded Browser Runtime validator')
+    expect(() => { reloadedValidate({ ...navigated, revision: 3 }) })
       .toThrow(/revision 3 must follow 1/)
     const focused = await ctx.browserRuntime.focus({
       target: created.target,
@@ -75,12 +106,14 @@ describe('deterministic Browser Runtime invariant lifecycle', () => {
     expect(await ctx.browserRuntime.observe({ target: created.target })).toEqual(focused)
   })
 
-  it('rejects identity, revision, and terminal-to-open discontinuities', async () => {
+  it('rejects identity, revision, and terminal-to-open discontinuities before commit', async () => {
     const wrongIdentity = await setup()
     await mountInvariant(wrongIdentity)
     const first = await wrongIdentity.browserRuntime.create({ profile: 'temporary' })
+    const validateIdentity = runtimeStateValidator(ownerOf(wrongIdentity))
+    if (validateIdentity === undefined) throw new Error('expected deterministic Browser Runtime validator')
     expect(() => {
-      wrongIdentity.emit('browser/runtime-state', {
+      validateIdentity({
         ...first,
         target: { ...first.target, tabId: BrowserTabId('different-tab') },
         revision: 1,
@@ -90,14 +123,94 @@ describe('deterministic Browser Runtime invariant lifecycle', () => {
     const skippedRevision = await setup()
     await mountInvariant(skippedRevision)
     const revisionZero = await skippedRevision.browserRuntime.create({ profile: 'temporary' })
-    expect(() => { skippedRevision.emit('browser/runtime-state', { ...revisionZero, revision: 2 }) })
+    const validateRevision = runtimeStateValidator(ownerOf(skippedRevision))
+    if (validateRevision === undefined) throw new Error('expected deterministic Browser Runtime validator')
+    expect(() => { validateRevision({ ...revisionZero, revision: 2 }) })
       .toThrow(/revision 2 must follow 0/)
 
     const terminal = await setup()
     const terminalOpen = await terminal.browserRuntime.create({ profile: 'temporary' })
     await terminal.browserRuntime.close({ target: terminalOpen.target, expectedRevision: terminalOpen.revision })
     await mountInvariant(terminal)
-    expect(() => { terminal.emit('browser/runtime-state', terminalOpen) })
+    const validateTerminal = runtimeStateValidator(ownerOf(terminal))
+    if (validateTerminal === undefined) throw new Error('expected deterministic Browser Runtime validator')
+    expect(() => { validateTerminal(terminalOpen) })
       .toThrow(/terminal state cannot reopen/)
+  })
+
+  it('leaves authoritative state unchanged when a pre-commit validator rejects', async () => {
+    const ctx = await setup()
+    const created = await ctx.browserRuntime.create({ profile: 'temporary' })
+    const disposeValidator = registerRuntimeStateValidator(ownerOf(ctx), () => {
+      throw new InvariantError(
+        '@deepseek-ai/dsh-browser-runtime-deterministic',
+        'forced pre-commit rejection',
+      )
+    })
+
+    await expect(ctx.browserRuntime.navigate({
+      target: created.target,
+      expectedRevision: created.revision,
+      url: PAGE.url,
+    })).rejects.toMatchObject({ code: 'INVARIANT' })
+    await expect(ctx.browserRuntime.observe({ target: created.target })).resolves.toEqual(created)
+    disposeValidator()
+  })
+
+  it('scopes readers to isolated Provider owners and tears down only the disposed Provider', async () => {
+    const root = new Context()
+    const left = root.isolate('browserRuntime')
+    const right = root.isolate('browserRuntime')
+    const leftFiber = await left.plugin(BrowserRuntimeDeterministic, { idPrefix: 'left', pages: [PAGE] })
+    const rightFiber = await right.plugin(BrowserRuntimeDeterministic, { idPrefix: 'right', pages: [PAGE] })
+    const leftOwner = ownerOf(left)
+    const rightOwner = ownerOf(right)
+    expect(leftOwner).not.toBe(rightOwner)
+
+    const leftState = await left.browserRuntime.create({ profile: 'temporary' })
+    const rightState = await right.browserRuntime.create({ profile: 'temporary' })
+    expect(runtimeStateReader(leftOwner)?.()).toEqual(leftState)
+    expect(runtimeStateReader(rightOwner)?.()).toEqual(rightState)
+
+    await leftFiber.dispose()
+    expect(runtimeStateReader(leftOwner)).toBeUndefined()
+    expect(runtimeStateReader(rightOwner)?.()).toEqual(rightState)
+    await rightFiber.dispose()
+  })
+
+  it('uses registration identity for replacement disposal and rejects missing or duplicate owners', () => {
+    const owner = Object.freeze({}) as RuntimeStateOwner
+    const otherOwner = Object.freeze({}) as RuntimeStateOwner
+    const initialState = undefined
+    const replacementState = { status: 'closed', target: {
+      profileId: BrowserProfileId('replacement-profile'),
+      workspaceId: BrowserWorkspaceId('replacement-workspace'),
+      browserId: BrowserInstanceId('replacement-browser'),
+      tabId: BrowserTabId('replacement-tab'),
+    }, revision: 1 } satisfies BrowserRuntimeState
+    const disposeInitial = registerRuntimeStateReader(owner, () => initialState)
+    const disposeOther = registerRuntimeStateReader(otherOwner, () => replacementState)
+    expect(() => registerRuntimeStateReader(owner, () => replacementState)).toThrow(/already registered/)
+
+    disposeInitial()
+    const disposeReplacement = registerRuntimeStateReader(owner, () => replacementState)
+    disposeInitial()
+    expect(runtimeStateReader(owner)?.()).toEqual(replacementState)
+    expect(runtimeStateReader(otherOwner)?.()).toEqual(replacementState)
+
+    const validate = (): undefined => undefined
+    expect(() => registerRuntimeStateValidator(Object.freeze({}) as RuntimeStateOwner, validate))
+      .toThrow(/has no state reader/)
+    const disposeValidator = registerRuntimeStateValidator(owner, validate)
+    expect(() => registerRuntimeStateValidator(owner, validate)).toThrow(/already registered/)
+    disposeValidator()
+    const replacementValidator = (): undefined => undefined
+    const disposeReplacementValidator = registerRuntimeStateValidator(owner, replacementValidator)
+    disposeValidator()
+    expect(runtimeStateValidator(owner)).toBe(replacementValidator)
+
+    disposeReplacementValidator()
+    disposeReplacement()
+    disposeOther()
   })
 })

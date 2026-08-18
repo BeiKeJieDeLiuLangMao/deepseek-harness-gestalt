@@ -12,7 +12,7 @@ A `BrowserTarget` contains four opaque branded identities: Profile, Workspace, b
 
 Providers serialize operations. `navigate`, `focus`, and `close` require the last observed revision and reject stale mutations. `observe` and `screenshot` do not advance the revision. The deterministic Provider admits one temporary Profile lifecycle for its whole lifetime; close is terminal, and a later create rejects with `BROWSER_CAPACITY`. Teardown stops new admission, drains accepted operations, and closes an open temporary Profile.
 
-The deterministic Provider publishes committed states on `browser/runtime-state`. Each observer failure is contained after commit, later observers still run, and asynchronous observers are not awaited. Its invariant seeds from the Provider's authoritative current state on initial load and hot reload, then checks stable identity, exact revision succession, and terminal closure.
+The deterministic Provider gives each generation an independent owner token. Its invariant seeds from that generation's authoritative current state on initial load and hot reload, then registers a synchronous pre-commit validator for stable identity, exact revision succession, and terminal closure. A validation failure leaves the previous state authoritative. After commit, the Provider publishes on `browser/runtime-state`; each ordinary observer failure is contained, later observers still run, and asynchronous observers are not awaited.
 
 ## Discovery and replay
 

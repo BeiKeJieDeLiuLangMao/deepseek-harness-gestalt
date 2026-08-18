@@ -431,7 +431,7 @@ export interface DeterministicBrowserPage {
 }
 ```
 
-来源：[`packages/browser/browser-runtime-deterministic/src/index.ts:46`](../packages/browser/browser-runtime-deterministic/src/index.ts)
+来源：[`packages/browser/browser-runtime-deterministic/src/index.ts:51`](../packages/browser/browser-runtime-deterministic/src/index.ts)
 
 <a id="deepseek-aidsh-client-connection"></a>
 

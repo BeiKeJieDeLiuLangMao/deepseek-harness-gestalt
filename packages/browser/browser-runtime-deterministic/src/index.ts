@@ -25,7 +25,12 @@ import type {
   BrowserScreenshot,
   BrowserTarget,
 } from '@deepseek-ai/dsh-browser-runtime'
-import { registerRuntimeStateReader } from './runtime-state.ts'
+import {
+  registerRuntimeStateReader,
+  RUNTIME_STATE_OWNER,
+  runtimeStateValidator,
+  type RuntimeStateOwner,
+} from './runtime-state.ts'
 
 const PNG_SIGNATURE = Uint8Array.of(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a)
 const CANONICAL_BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/
@@ -112,11 +117,14 @@ function validateScreenshot(url: string, value: string): void {
 
 /**
  * One-state deterministic Browser Runtime. Every operation enters one serialized queue;
- * mutations require the last observed revision and commit a lifecycle publication only
- * after the state changes.
+ * mutations require the last observed revision, run the package invariant before assignment,
+ * and publish only committed state.
  */
 export class DeterministicBrowserRuntime extends BrowserRuntime {
   static Config = Config
+
+  /** Package-private identity for this concrete Provider generation. */
+  readonly [RUNTIME_STATE_OWNER]: RuntimeStateOwner = Object.freeze({})
 
   private readonly pages: ReadonlyMap<string, DeterministicBrowserPage>
   private readonly target: BrowserTarget
@@ -142,7 +150,7 @@ export class DeterministicBrowserRuntime extends BrowserRuntime {
     this.pages = pages
     this.target = targetFor(resolved.idPrefix)
     ctx.effect(
-      () => registerRuntimeStateReader(ctx.root, () => this.state),
+      () => registerRuntimeStateReader(this[RUNTIME_STATE_OWNER], () => this.state),
       'deterministic browser runtime state reader',
     )
     ctx.effect(() => () => this.teardown(), 'deterministic browser runtime teardown')
@@ -186,9 +194,10 @@ export class DeterministicBrowserRuntime extends BrowserRuntime {
     this.ctx.logger.warn(error)
   }
 
-  /** Assign one authoritative state, then notify non-vetoing observers. */
+  /** Validate and assign one authoritative state, then notify non-vetoing observers. */
   private commit<T extends BrowserRuntimeState>(state: T): T {
     const committed = Object.freeze(state) as T
+    runtimeStateValidator(this[RUNTIME_STATE_OWNER])?.(committed)
     this.state = committed
     this.notifyState(committed)
     return committed
