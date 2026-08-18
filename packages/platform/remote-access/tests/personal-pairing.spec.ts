@@ -444,6 +444,99 @@ describe('PersonalPairingProvider', () => {
     })).resolves.toBeDefined()
   })
 
+  it('retains orphaned pending-key capacity by owning Installation until cleanup succeeds', async () => {
+    const now = { value: NOW }
+    const handshake = handshakeProvider()
+    handshake.destroyPendingPairing.mockRejectedValue(new Error('pending cleanup unavailable'))
+    let invalidPendingId = true
+    let sequence = 0
+    const provider = new PersonalPairingProvider(new Context(), {
+      account: {
+        currentInstallation: vi.fn(async ({ accessToken }: { accessToken: string }) => authenticated(accessToken)),
+      },
+      handshake,
+      clock: { now: () => now.value },
+      randomBytes: size => new Uint8Array(size),
+      randomId: kind => invalidPendingId && kind === 'completion' ? '' : `${kind}-${String(sequence += 1)}`,
+      pairingLinkOrigin: 'https://platform.example.com/pair',
+    })
+    const desktop = authentication('desktop-installation', 'account-one')
+    const mobile = authentication('mobile-installation', 'account-one')
+    const otherDesktop = authentication('other-desktop', 'account-one')
+    await provider.setMobileAccess({ desktop, enabled: true })
+    await provider.setMobileAccess({ desktop: otherDesktop, enabled: true })
+
+    let blockedChallenge: Awaited<ReturnType<typeof provider.createChallenge>> | undefined
+    for (let index = 0; index < MAX_RETAINED_PAIRING_RECORDS_PER_INSTALLATION; index += 1) {
+      const challenge = await provider.createChallenge({
+        desktop,
+        rendezvousId: parsePairingRendezvousId(`orphan-capacity-${String(index)}`),
+      })
+      const allocationCount = handshake.completeChallenge.mock.calls.length
+      const result = await provider.completeChallenge({
+        mobile,
+        completionId: parsePairingCompletionId(`orphan-capacity-${String(index)}`),
+        oneTimeLink: challenge.oneTimeLink,
+        device: { name: 'Alice phone', platform: 'ios' },
+        mobileHandshake: Uint8Array.of(9),
+      }).catch((error: unknown) => error)
+      if (result instanceof RemoteAccessError && result.code === 'PAIRING_RESOURCE_LIMIT') {
+        expect(handshake.completeChallenge).toHaveBeenCalledTimes(allocationCount)
+        blockedChallenge = challenge
+        break
+      }
+      if (result instanceof RemoteAccessError) {
+        throw new Error(`unexpected ${result.code}: ${result.message}`)
+      }
+      expect(result).toBeInstanceOf(AggregateError)
+      now.value += PAIRING_REPLAY_RETENTION_MS
+    }
+    expect(blockedChallenge).toBeDefined()
+    const retainedAllocationCount = handshake.completeChallenge.mock.calls.length
+
+    now.value += PAIRING_REPLAY_RETENTION_MS * 3
+    const stillBlockedChallenge = await provider.createChallenge({
+      desktop,
+      rendezvousId: parsePairingRendezvousId('orphan-capacity-still-blocked'),
+    })
+    await expect(provider.completeChallenge({
+      mobile,
+      completionId: parsePairingCompletionId('orphan-capacity-still-blocked'),
+      oneTimeLink: stillBlockedChallenge.oneTimeLink,
+      device: { name: 'Alice phone', platform: 'ios' },
+      mobileHandshake: Uint8Array.of(9),
+    })).rejects.toEqual(expect.objectContaining<Partial<RemoteAccessError>>({ code: 'PAIRING_RESOURCE_LIMIT' }))
+    expect(handshake.completeChallenge).toHaveBeenCalledTimes(retainedAllocationCount)
+
+    invalidPendingId = false
+    const isolatedChallenge = await provider.createChallenge({
+      desktop: otherDesktop,
+      rendezvousId: parsePairingRendezvousId('orphan-capacity-isolated'),
+    })
+    await expect(completeAs(
+      provider,
+      isolatedChallenge.oneTimeLink,
+      'orphan-capacity-isolated',
+      'other-mobile',
+      'account-one',
+    )).resolves.toBeDefined()
+    handshake.destroyPendingPairing.mockResolvedValue(undefined)
+    await provider.setMobileAccess({ desktop: otherDesktop, enabled: false })
+    handshake.destroyPendingPairing.mockRejectedValue(new Error('pending cleanup unavailable'))
+    await expect(provider.createChallenge({
+      desktop,
+      rendezvousId: parsePairingRendezvousId('orphan-capacity-cross-owner-cleanup'),
+    })).rejects.toEqual(expect.objectContaining<Partial<RemoteAccessError>>({ code: 'PAIRING_RESOURCE_LIMIT' }))
+
+    handshake.destroyPendingPairing.mockResolvedValue(undefined)
+    await provider.setMobileAccess({ desktop, enabled: false })
+    await provider.setMobileAccess({ desktop, enabled: true })
+    await expect(provider.createChallenge({
+      desktop,
+      rendezvousId: parsePairingRendezvousId('orphan-capacity-released'),
+    })).resolves.toBeDefined()
+  })
+
   it('retries cleanup tombstones without repeating handshake or activation', async () => {
     const handshake = handshakeProvider()
     handshake.destroyChallenge.mockRejectedValueOnce(new Error('challenge cleanup failed'))

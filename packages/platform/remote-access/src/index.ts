@@ -330,6 +330,13 @@ export abstract class RemoteAccessService extends Service {
 
 interface CleanupRecord<T> { resource?: T }
 
+interface OrphanPendingCleanupRecord {
+  accountId: string
+  desktopInstallationId: InstallationId
+  mobileInstallationId: InstallationId
+  cleanup: CleanupRecord<PendingPairingKey>
+}
+
 interface ChallengeRecord {
   invitation: PairingInvitation
   accountId: string
@@ -389,7 +396,7 @@ export class PersonalPairingProvider extends RemoteAccessService {
   private readonly settledPending = new Map<PendingPairingId, SettledPendingRecord>()
   private readonly pairings = new Map<PersonalPairingId, StoredPersonalPairing>()
   private readonly principalIds = new Set<DevicePrincipalId>()
-  private readonly orphanPendingCleanups = new Set<CleanupRecord<PendingPairingKey>>()
+  private readonly orphanPendingCleanups = new Map<CleanupRecord<PendingPairingKey>, OrphanPendingCleanupRecord>()
   private readonly mobileAccess = new Set<string>()
   private serial: Promise<void> = Promise.resolve()
   private readonly clock: { now(): number }
@@ -578,7 +585,12 @@ export class PersonalPairingProvider extends RemoteAccessService {
           device: parseDevice(input.device),
         }
       } catch (error) {
-        this.orphanPendingCleanups.add(pendingCleanup)
+        this.orphanPendingCleanups.set(pendingCleanup, {
+          accountId: account.id,
+          desktopInstallationId: challenge.desktopInstallationId,
+          mobileInstallationId: installation.id,
+          cleanup: pendingCleanup,
+        })
         const settled = this.settleChallenge(challenge, 'completed')
         await cleanupAll([
           () => this.cleanupChallenge(settled.cleanup),
@@ -791,7 +803,9 @@ export class PersonalPairingProvider extends RemoteAccessService {
       const operations: Array<() => Promise<void>> = []
       for (const record of this.settledChallenges.values()) operations.push(() => this.cleanupChallenge(record.cleanup))
       for (const record of this.settledPending.values()) operations.push(() => this.cleanupSettledPending(record))
-      for (const cleanup of this.orphanPendingCleanups) operations.push(() => this.cleanupPending(cleanup))
+      for (const record of this.orphanPendingCleanups.values()) {
+        operations.push(() => this.cleanupPending(record.cleanup))
+      }
       for (const pairing of this.pairings.values()) operations.push(() => this.cleanupActive(pairing.cleanup))
       await cleanupAll(operations)
     })
@@ -883,6 +897,11 @@ export class PersonalPairingProvider extends RemoteAccessService {
         operations.push(() => this.cleanupSettledPending(record))
       }
     }
+    for (const record of this.orphanPendingCleanups.values()) {
+      if (record.accountId === accountId && record.desktopInstallationId === installationId) {
+        operations.push(() => this.cleanupPending(record.cleanup))
+      }
+    }
     await cleanupAll(operations)
   }
 
@@ -919,6 +938,7 @@ export class PersonalPairingProvider extends RemoteAccessService {
     count += [...this.completions.values()].filter(owns).length
     count += [...this.pending.values()].filter(owns).length
     count += [...this.settledPending.values()].filter(owns).length
+    count += [...this.orphanPendingCleanups.values()].filter(owns).length
     return count
   }
 
