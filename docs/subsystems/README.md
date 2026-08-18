@@ -42,7 +42,7 @@ One page per subsystem of the DeepSeek Harness: what it is, the data structures 
 | [compaction.md](compaction.md) | the compaction seam: the `compaction/*` session events, `CompactionResult`, the `CompactionEngine` interface |
 | [subagent.md](subagent.md) | the subagent seam: the named-provider registry, `SubagentStartRequest`/`Result`/`Run`, the start-time-vs-runtime capability split |
 | [web.md](web.md) | the web access seam: `WebSearchRequest`/`Result`, `WebFetchRequest`/`Result`, `WebFetchBody`, provider availability, `WebError` |
-| [browser-runtime.md](browser-runtime.md) | the Browser Runtime seam: opaque Profile/Workspace/browser/tab identities, revision-guarded operations, deterministic Provider, and deferred tool Consumer |
+| [browser-runtime.md](browser-runtime.md) | the Browser Runtime seam: opaque Profile/Workspace/browser/tab identities, revision-guarded operations, Session-owned Workspace binder, deterministic Provider, and deferred tool Consumer |
 | [spill.md](spill.md) | the spill storage seam: `SaveTextSpill`, `SpillOwner`/`SpillSource`, `SpillRef`, the branded `SpillLocator` |
 | [workflow.md](workflow.md) | the workflow seam: `WorkflowStartRequest`, `WorkflowMeta`, `WorkflowRun`/`Result`, the `workflow/*` event payloads, `WorkflowError` fatality |
 | [jobs.md](jobs.md) | the background-job runtime: branded `JobId`s, the producer contract, consumer views, and `ctx.jobs` service behavior |

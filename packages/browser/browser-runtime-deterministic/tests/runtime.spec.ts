@@ -32,7 +32,7 @@ describe('deterministic Browser Runtime public lifecycle', () => {
       target: {
         profileId: 'trace-tmp-1',
         workspaceId: 'trace-tmp-1-workspace',
-        browserId: 'trace-tmp-1-browser',
+        browserId: 'trace-tmp-1-browser-1',
         tabId: 'trace-tmp-1-tab-1',
       },
       revision: 0,
@@ -205,6 +205,25 @@ describe('deterministic Browser Runtime public lifecycle', () => {
       serviceWorker: '',
     })
     expect(second.chrome).not.toHaveProperty('name')
+  })
+
+  it('attaches a second tab to an open temporary Profile and rejects a missing attach', async () => {
+    const ctx = new Context()
+    await ctx.plugin(BrowserRuntimeDeterministic, {
+      idPrefix: 'attach',
+      pages: [{ url: 'https://one.test/', title: 'One', text: 'one', screenshotPngBase64: PNG_1X1 }],
+    })
+    const first = await ctx.browserRuntime.create({ profile: 'temporary' })
+    const second = await ctx.browserRuntime.create({
+      profile: 'temporary',
+      attach: { kind: 'browser', workspaceId: first.target.workspaceId, browserId: first.target.browserId },
+    })
+    expect(second.target.profileId).toBe(first.target.profileId)
+    expect(second.target.tabId).not.toBe(first.target.tabId)
+    await expect(ctx.browserRuntime.create({
+      profile: 'temporary',
+      attach: { kind: 'workspace', workspaceId: BrowserWorkspaceId('missing') },
+    })).rejects.toMatchObject({ code: 'BROWSER_NOT_FOUND' })
   })
 
   it('rejects a second writer of the same named Profile without corrupting stored identity', async () => {

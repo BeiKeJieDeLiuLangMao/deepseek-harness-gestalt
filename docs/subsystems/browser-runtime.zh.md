@@ -2,7 +2,7 @@
 
 [English](browser-runtime.md) | 中文
 
-Browser Runtime 能力把与 Provider 无关的 [`ctx.browserRuntime`](../../packages/browser/browser-runtime) 服务、无密钥 [`dsh-browser-runtime-deterministic`](../../packages/browser/browser-runtime-deterministic) Provider、托管式 Tandem Browser 的 [`dsh-browser-runtime-tandem`](../../packages/browser/browser-runtime-tandem) Provider 与延迟 [`dsh-tool-browser`](../../packages/browser/tool-browser) Consumer 分离开来。它是 Agent loop 之外的可选能力。
+Browser Runtime 能力把与 Provider 无关的 [`ctx.browserRuntime`](../../packages/browser/browser-runtime) 服务、无密钥 [`dsh-browser-runtime-deterministic`](../../packages/browser/browser-runtime-deterministic) Provider、托管式 Tandem Browser 的 [`dsh-browser-runtime-tandem`](../../packages/browser/browser-runtime-tandem) Provider、Session 持有的 [`dsh-browser-workspace`](../../packages/browser/browser-workspace) binder 与延迟 [`dsh-tool-browser`](../../packages/browser/tool-browser) Consumer 分离开来。它是 Agent loop 之外的可选能力。
 
 ## 身份与状态
 
@@ -32,7 +32,7 @@ interface BrowserUnavailableState {
 
 ## 并发与生命周期
 
-Provider 串行执行操作。`navigate`、`focus` 与 `close` 要求最后观察到的修订号，并拒绝过期写入。`observe` 与 `screenshot` 不递增修订号。命名持久 Profile 在关闭后恢复同一 `persist:session-*` partition。临时 Profile 获得唯一 partition，且不留下可复用身份。同一命名 Profile 的第二个打开写入方会以 `BROWSER_PROFILE_BUSY` 拒绝。释放阶段停止接收新操作、排空已接受操作，并关闭每个仍打开的 Profile。
+Provider 串行执行操作。`create` 可以把新实例附加到已有 Workspace，或把新标签页附加到已有实例。`navigate`、`focus` 与 `close` 要求最后观察到的修订号，并拒绝过期写入。`observe` 与 `screenshot` 不递增修订号。命名持久 Profile 在关闭后恢复同一 `persist:session-*` partition。临时 Profile 获得唯一 partition，且不留下可复用身份。同一命名 Profile 的第二个独立写入方会以 `BROWSER_PROFILE_BUSY` 拒绝。释放阶段停止接收新操作、排空已接受操作，并关闭每个仍打开的 Profile。Session 本地所有权、Dock 事实与跨 Session 隔离见 [`dsh-browser-workspace`](../../packages/browser/browser-workspace)。
 
 确定性 Provider 为每个 generation 分配独立 owner token。其 invariant 在首次加载与热重载时从该 generation 的当前权威 state 建立基线，随后为稳定身份、精确修订顺序与终态关闭注册同步 pre-commit validator。验证失败时，原 state 仍是权威来源。提交后，Provider 在 `browser/runtime-state` 上发布状态；每个普通 observer failure 都受到容纳，后续 observer 继续运行，且异步 observer 不会被等待。
 
@@ -40,7 +40,7 @@ tandem Provider 持有一个固定上游 revision `3b613cfd4c299609ca7ca415d638c
 
 ## 发现与重放
 
-Consumer 注册六个延迟普通工具。`tool_search` 返回 schema 但不激活工具，当前 eligibility 继续作为权威。每次操作把完整 Browser 事实渲染到持久普通工具结果中。结合已记录的请求头，Session 无需 Browser 专用 Session 事件或对话卡片，即可精确重建模型看到的内容。
+Consumer 注册六个延迟普通工具。`tool_search` 返回 schema 但不激活工具，当前 eligibility 继续作为权威。每次操作把完整 Browser 事实渲染到持久普通工具结果中。当调用 Agent Session 存在且已组合 Workspace binder 时，创建的标签页也会成为 Session 持有的 Workspace 事实。结合已记录的请求头与 `browser/workspace` 快照，Session 可以重建模型可见的 Browser 事实以及 Session 本地 Workspace 所有权。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -58,15 +58,18 @@ Browser Runtime Service Definition. Providers serialize every operation, own tar
 
 ```ts cordis-catalog
 /**
- * Create one temporary or named persistent Profile, Workspace, browser instance, and tab.
- * @param request - Temporary or named persistent Profile request and cancellation signal.
+ * Create one temporary or named persistent Profile tab. Omitting `attach` starts a new Workspace
+ * and browser instance. Attaching to a Workspace starts another instance; attaching to a browser
+ * instance starts another tab in that instance.
+ * @param request - Temporary or named persistent Profile request, optional attach, and cancellation.
  * @returns initial open page state at revision zero; its target addresses every later operation in
  * this lifecycle. Persistent Profiles restore the same storage partition on later creates.
  * @throws `BrowserRuntimeError` with `BROWSER_ABORTED` when cancellation wins, `BROWSER_DISPOSED`
- * after teardown starts, `BROWSER_PROFILE_BUSY` when the named Profile already has a writer,
- * `BROWSER_PROFILE_NAME` when the name cannot be a stable partition key, `BROWSER_PROTOCOL` when
- * the upstream runtime breaks its response protocol, or `BROWSER_RUNTIME_UNAVAILABLE` when the
- * upstream runtime cannot be reached or starts unhealthy.
+ * after teardown starts, `BROWSER_NOT_FOUND` when `attach` names a missing hierarchy,
+ * `BROWSER_PROFILE_BUSY` when the named Profile already has a writer, `BROWSER_PROFILE_NAME` when
+ * the name cannot be a stable partition key, `BROWSER_PROTOCOL` when the upstream runtime breaks
+ * its response protocol, or `BROWSER_RUNTIME_UNAVAILABLE` when the upstream runtime cannot be
+ * reached or starts unhealthy.
  */
 abstract create(request: BrowserCreateRequest): Promise<BrowserPageState>
 
@@ -128,7 +131,81 @@ abstract focus(request: BrowserMutationRequest): Promise<BrowserPageState>
 abstract close(request: BrowserMutationRequest): Promise<BrowserClosedState>
 ```
 
-Source: [`packages/browser/browser-runtime/src/index.ts:89`](../../packages/browser/browser-runtime/src/index.ts)
+Source: [`packages/browser/browser-runtime/src/index.ts:95`](../../packages/browser/browser-runtime/src/index.ts)
+
+<a id="ctxbrowserworkspace--browserworkspacebinder"></a>
+
+### `ctx.browserWorkspace` — `BrowserWorkspaceBinder`
+
+Bind Browser Runtime identities to one Session log and project Dock plus instance and tab ownership from durable Session facts.
+
+```ts cordis-catalog
+/**
+ * Read the last logged Workspace for one Session.
+ * @param session - Owning Session.
+ * @returns the last logged snapshot, or the empty Workspace.
+ */
+snapshot(session: Session): BrowserWorkspaceProjection
+
+/**
+ * Record Dock visibility and preferred width for one Session.
+ * @param request - Session, open flag, and optional width.
+ * @returns the committed Workspace snapshot.
+ */
+setDock(request: BrowserWorkspaceDockRequest): BrowserWorkspaceProjection
+
+/**
+ * Create one tab in the Session's Browser Workspace.
+ * @param request - Session-bound create request.
+ * @returns the committed open page.
+ */
+async create(request: BrowserWorkspaceCreateRequest): Promise<BrowserPageState>
+
+/**
+ * Navigate one Session-owned tab.
+ * @param request - Session-bound navigate request.
+ * @returns the committed open page.
+ */
+async navigate(request: BrowserWorkspaceNavigateRequest): Promise<BrowserPageState>
+
+/**
+ * Observe one Session-owned tab.
+ * @param request - Session-bound observe request.
+ * @returns the current open, unavailable, or closed state.
+ */
+async observe(request: BrowserWorkspaceObserveRequest): Promise<BrowserRuntimeState>
+
+/**
+ * Capture one Session-owned tab.
+ * @param request - Session-bound observe request.
+ * @returns screenshot bytes and depicted page facts.
+ */
+async screenshot(request: BrowserWorkspaceObserveRequest): Promise<BrowserScreenshot>
+
+/**
+ * Focus one Session-owned tab and record it as the Session's active tab.
+ * @param request - Session-bound mutation request.
+ * @returns the committed focused page.
+ */
+async focus(request: BrowserWorkspaceMutationRequest): Promise<BrowserPageState>
+
+/**
+ * Close one Session-owned tab and drop it from the Session Workspace.
+ * @param request - Session-bound mutation request.
+ * @returns the terminal close receipt.
+ */
+async close(request: BrowserWorkspaceMutationRequest): Promise<BrowserClosedState>
+
+/**
+ * Close every live tab still owned by one Session.
+ * @param session - Session whose leftover Runtime tabs must be closed.
+ */
+async cleanup(session: Session): Promise<void>
+```
+
+Types: [Session](session.md)
+
+Source: [`packages/browser/browser-workspace/src/index.ts:84`](../../packages/browser/browser-workspace/src/index.ts)
 
 <a id="browser-events"></a>
 
@@ -151,5 +228,5 @@ Post-commit Browser Runtime lifecycle notification. Providers contain synchronou
 'browser/runtime-state'(state: BrowserRuntimeState): void
 ```
 
-Source: [`packages/browser/browser-runtime/src/index.ts:79`](../../packages/browser/browser-runtime/src/index.ts)
+Source: [`packages/browser/browser-runtime/src/index.ts:85`](../../packages/browser/browser-runtime/src/index.ts)
 <!-- END GENERATED cordis-surface -->

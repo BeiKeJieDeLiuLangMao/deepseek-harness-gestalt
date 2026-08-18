@@ -816,7 +816,7 @@ describe('headless stream-json snapshots', () => {
         expect(browserValues[4]).toMatchObject({ focused: true })
         expect(browserValues[5]).toMatchObject({ status: 'closed' })
         const renderedFacts = JSON.stringify(browserValues)
-        for (const identity of ['trace-tmp-1', 'trace-tmp-1-workspace', 'trace-tmp-1-browser', 'trace-tmp-1-tab-1']) {
+        for (const identity of ['trace-tmp-1', 'trace-tmp-1-workspace', 'trace-tmp-1-browser-1', 'trace-tmp-1-tab-1']) {
           expect(renderedFacts).toContain(identity)
         }
 
@@ -945,7 +945,7 @@ describe('headless stream-json snapshots', () => {
         expect(browserValues[4]).toMatchObject({ focused: true })
         expect(browserValues[5]).toMatchObject({ status: 'closed' })
         const renderedFacts = JSON.stringify(browserValues)
-        for (const identity of ['tandem-tmp-1', 'tandem-tmp-1-workspace', 'tandem-tmp-1-browser', 'tandem-tmp-1-tab-1']) {
+        for (const identity of ['tandem-tmp-1', 'tandem-tmp-1-workspace', 'tandem-tmp-1-browser-1', 'tandem-tmp-1-tab-1']) {
           expect(renderedFacts).toContain(identity)
         }
 

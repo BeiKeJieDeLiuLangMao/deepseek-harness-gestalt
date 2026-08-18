@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-这是服务临时与命名持久 Browser Profile 的确定性无密钥 Browser Runtime Provider。每个 Profile 仍只有一个 Workspace、一个浏览器实例与一个标签页。它是可运行存储与 fixture 后端，不是操作系统浏览器。
+这是服务临时与命名持久 Browser Profile 的确定性无密钥 Browser Runtime Provider。一个 Profile 可以拥有多个 Workspace、浏览器实例与标签页。它是可运行存储与 fixture 后端，不是操作系统浏览器。
 
 ## 配置
 
@@ -22,4 +22,4 @@ Provider 自身不贡献请求文本；Consumer schema 与已记录结果决定�
 
 ## 已知限制与后续工作
 
-- 导航只对配置的 fixture URL 成功；人工接管、多标签页与原生浏览器自动化仍不在本包中。
+- 导航只对配置的 fixture URL 成功；人工接管与原生浏览器自动化仍不在本包中。

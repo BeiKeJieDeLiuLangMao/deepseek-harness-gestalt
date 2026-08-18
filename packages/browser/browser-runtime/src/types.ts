@@ -42,13 +42,21 @@ export const BrowserInstanceId = (id: string): BrowserInstanceId => id as Browse
  */
 export const BrowserTabId = (id: string): BrowserTabId => id as BrowserTabId
 
-/** Complete identity required to address the tracer's one tab. */
+/** Complete identity required to address one tab. */
 export interface BrowserTarget {
   readonly profileId: BrowserProfileId
   readonly workspaceId: BrowserWorkspaceId
   readonly browserId: BrowserInstanceId
   readonly tabId: BrowserTabId
 }
+
+/** How a create request attaches a new tab to an existing hierarchy. */
+export type BrowserCreateAttach =
+  | { readonly kind: 'workspace'; readonly workspaceId: BrowserWorkspaceId }
+  | { readonly kind: 'browser'; readonly workspaceId: BrowserWorkspaceId; readonly browserId: BrowserInstanceId }
+
+/** Preferred Dock width in pixels for one Session-owned Browser Workspace. */
+export type BrowserDockWidth = number
 
 /** Kind of Browser Profile storage a Provider committed. */
 export type BrowserProfileKind = 'temporary' | 'persistent'
@@ -114,6 +122,7 @@ export interface BrowserScreenshot {
 /** Request to create one temporary Browser Profile and its initial tab. */
 export interface BrowserTemporaryCreateRequest {
   readonly profile: 'temporary'
+  readonly attach?: BrowserCreateAttach
   readonly signal?: AbortSignal
 }
 
@@ -121,6 +130,7 @@ export interface BrowserTemporaryCreateRequest {
 export interface BrowserPersistentCreateRequest {
   readonly profile: 'persistent'
   readonly name: BrowserProfileName
+  readonly attach?: BrowserCreateAttach
   readonly signal?: AbortSignal
 }
 
@@ -154,6 +164,8 @@ export type BrowserRuntimeErrorCode =
   | 'BROWSER_NOT_OPEN'
   | 'BROWSER_PROFILE_BUSY'
   | 'BROWSER_PROFILE_NAME'
+  | 'BROWSER_SESSION_MISMATCH'
+  | 'BROWSER_TRANSFER_UNSUPPORTED'
   | 'BROWSER_PROTOCOL'
   | 'BROWSER_REVISION_CONFLICT'
   | 'BROWSER_RUNTIME_UNAVAILABLE'

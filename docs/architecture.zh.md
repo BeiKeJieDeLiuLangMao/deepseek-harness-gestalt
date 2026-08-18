@@ -108,7 +108,7 @@ turn/end
 
 seam 正是替换一个提供方就能改变整个产品的原因。文件系统与进程提供方共享同一个执行世界，因此把它们指向远程沙箱，也就把 Bash、PTY 和 LSP 一并搬了过去，无需提供方专用 fork。[subagent 提供方](subsystems/subagent.md)在同一个接口之后同样千差万别，从新建一个子 agent，到把一个轮次委派给另一个产品。
 
-[Browser Runtime seam](subsystems/browser-runtime.md) 将不透明的 Profile、Workspace、浏览器实例与标签页身份封装在 `ctx.browserRuntime` 后。首个确定性 Provider 证明串行、修订保护操作与释放；deferred Consumer 则沿用普通工具与通用展示路径。
+[Browser Runtime seam](subsystems/browser-runtime.md) 将不透明的 Profile、Workspace、浏览器实例与标签页身份封装在 `ctx.browserRuntime` 后。Session 本地 Workspace 所有权由 `ctx.browserWorkspace` 持有。首个确定性 Provider 证明串行、修订保护操作与释放；deferred Consumer 则沿用普通工具与通用展示路径。
 
 ## 新行为的归属位置
 

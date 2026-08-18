@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-18-tandem-browser-runtime-provider.md
-2026-08-18-tandem-browser-runtime-provider.md: 4266de3a7e656a8408702b88f886ed3f0fe43587
-2026-08-18-tandem-browser-runtime-provider.zh.md: 34190aefff0ab47dd849e2dd89db02ceb6bb9941
+2026-08-18-tandem-browser-runtime-provider.md: 79c746db63a1867e12db19bd103a3d2d46644322
+2026-08-18-tandem-browser-runtime-provider.zh.md: 15d444baed5cd55187534bfe6e84514e57962782

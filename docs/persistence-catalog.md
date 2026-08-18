@@ -235,6 +235,24 @@ Types: [TokenUsage](subsystems/llm-streaming.md)
 
 Source: [`packages/core/session/src/types.ts:273`](../packages/core/session/src/types.ts)
 
+### `browser/*`
+
+<a id="browserworkspace--log-only"></a>
+
+#### `browser/workspace` — log-only
+
+```ts persistence-catalog
+/**
+ * Whole Session-owned Browser Workspace snapshot. Log-only, last-wins.
+ * Carries dock visibility and width plus every owned instance and tab so
+ * Session switch, reload, and replay restore the same Workspace without
+ * exposing another Session's tabs.
+ */
+'browser/workspace': BrowserWorkspaceProjection
+```
+
+Source: [`packages/browser/browser-workspace/src/types.ts:60`](../packages/browser/browser-workspace/src/types.ts)
+
 ### `command/*`
 
 <a id="commanddone--log-only"></a>

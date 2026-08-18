@@ -82,7 +82,7 @@ describe.skipIf(tandemCheckout === undefined || tandemBin === undefined)('Tandem
       target: {
         profileId: 'tandem-e2e-tmp-1',
         workspaceId: 'tandem-e2e-tmp-1-workspace',
-        browserId: 'tandem-e2e-tmp-1-browser',
+        browserId: 'tandem-e2e-tmp-1-browser-1',
         tabId: 'tandem-e2e-tmp-1-tab-1',
       },
       chrome: { kind: 'temporary', partition: 'persist:session-tandem-e2e-tmp-1' },

@@ -8,6 +8,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import {
   addressedBrowserRuntimeStateFrom,
+  assertBrowserCreateAttach,
   assertBrowserNotAborted,
   assertBrowserProfileWriterAvailable,
   browserProfileStorage,
@@ -18,11 +19,14 @@ import {
   emitBrowserRuntimeState,
   EMPTY_BROWSER_PROFILE_STORAGE,
   requireOpenBrowserPage,
+  resolveBrowserCreateAttach,
   resolveBrowserProfileCreate,
 } from '@deepseek-ai/dsh-browser-runtime'
 import type {
   BrowserClosedState,
+  BrowserCreateAttach,
   BrowserCreateRequest,
+  ResolvedBrowserProfileCreate,
   BrowserMutationRequest,
   BrowserNavigateRequest,
   BrowserObserveRequest,
@@ -197,28 +201,37 @@ export class DeterministicBrowserRuntime extends BrowserRuntime {
     return this.exclusive(() => {
       assertBrowserNotAborted(request.signal)
       if (request.profile === 'temporary') {
-        this.temporarySeq += 1
-        const created = resolveBrowserProfileCreate(this.idPrefix, request, this.temporarySeq)
-        return this.commit({
-          status: 'open',
-          target: browserTargetFor(created.profileId, created.sessionName, 1),
-          revision: 0,
-          url: 'about:blank',
-          title: 'New Tab',
-          text: '',
-          focused: false,
-          chrome: created.chrome,
-          storage: EMPTY_BROWSER_PROFILE_STORAGE,
-        })
+        const attached = resolveBrowserCreateAttach(this.states.values(), request.attach)
+        if (attached === undefined) this.temporarySeq += 1
+        const created = attached === undefined
+          ? resolveBrowserProfileCreate(this.idPrefix, request, this.temporarySeq)
+          : {
+            profileId: attached.target.profileId,
+            sessionName: attached.chrome.partition.slice('persist:session-'.length),
+            chrome: attached.chrome,
+          }
+        const existing = [...this.states.values()].filter(state => (
+          state.status === 'open' && state.target.profileId === created.profileId
+        ))
+        const tabSeq = existing.length + 1
+        assertBrowserCreateAttach(this.states.values(), created.profileId, request.attach)
+        return this.commitBlank(created, tabSeq, request.attach)
       }
       const created = resolveBrowserProfileCreate(this.idPrefix, request, this.temporarySeq)
-      assertBrowserProfileWriterAvailable(this.states.values(), created.chrome.partition, request.name)
+      const existing = [...this.states.values()].filter(state => (
+        state.status === 'open' && state.target.profileId === created.profileId
+      ))
+      if (request.attach === undefined) {
+        assertBrowserProfileWriterAvailable(this.states.values(), created.chrome.partition, request.name)
+      }
+      assertBrowserCreateAttach(this.states.values(), created.profileId, request.attach)
       const stored = this.persisted.get(created.sessionName)
+      const historical = [...this.states.values()].filter(state => state.target.profileId === created.profileId)
+      const tabSeq = stored === undefined ? historical.length + 1 : stored.tabSeq + existing.length + 1
       if (stored !== undefined) {
-        const nextSeq = stored.tabSeq + 1
         return this.commit({
           status: 'open',
-          target: browserTargetFor(created.profileId, created.sessionName, nextSeq),
+          target: browserTargetFor(created.profileId, created.sessionName, tabSeq, request.attach),
           revision: 0,
           url: stored.url,
           title: stored.title,
@@ -228,17 +241,26 @@ export class DeterministicBrowserRuntime extends BrowserRuntime {
           storage: stored.storage,
         })
       }
-      return this.commit({
-        status: 'open',
-        target: browserTargetFor(created.profileId, created.sessionName, 1),
-        revision: 0,
-        url: 'about:blank',
-        title: 'New Tab',
-        text: '',
-        focused: false,
-        chrome: created.chrome,
-        storage: EMPTY_BROWSER_PROFILE_STORAGE,
-      })
+      return this.commitBlank(created, tabSeq, request.attach)
+    })
+  }
+
+  /** Commit a blank open page for a newly created or attached tab. */
+  private commitBlank(
+    created: ResolvedBrowserProfileCreate,
+    tabSeq: number,
+    attach: BrowserCreateAttach | undefined,
+  ): BrowserPageState {
+    return this.commit({
+      status: 'open',
+      target: browserTargetFor(created.profileId, created.sessionName, tabSeq, attach),
+      revision: 0,
+      url: 'about:blank',
+      title: 'New Tab',
+      text: '',
+      focused: false,
+      chrome: created.chrome,
+      storage: EMPTY_BROWSER_PROFILE_STORAGE,
     })
   }
 

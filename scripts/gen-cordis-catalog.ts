@@ -51,6 +51,7 @@ export { REGION_BEGIN, REGION_END }
  */
 export const SERVICE_PAGE: Record<string, string> = {
   browserRuntime: 'browser-runtime.md',
+  browserWorkspace: 'browser-runtime.md',
   agentLoop: 'core.md',
   agentDefaultModel: 'core.md',
   agentPresets: 'core.md',
@@ -237,7 +238,13 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   BrowserTabId: 'browser-runtime.md',
   BrowserTarget: 'browser-runtime.md',
   BrowserUnavailableState: 'browser-runtime.md',
+  BrowserWorkspaceCreateRequest: 'browser-runtime.md',
+  BrowserWorkspaceDockRequest: 'browser-runtime.md',
   BrowserWorkspaceId: 'browser-runtime.md',
+  BrowserWorkspaceMutationRequest: 'browser-runtime.md',
+  BrowserWorkspaceNavigateRequest: 'browser-runtime.md',
+  BrowserWorkspaceObserveRequest: 'browser-runtime.md',
+  BrowserWorkspaceProjection: 'browser-runtime.md',
   Agent: 'core.md',
   AgentCancelCause: 'core.md',
   AgentFactory: 'core.md',

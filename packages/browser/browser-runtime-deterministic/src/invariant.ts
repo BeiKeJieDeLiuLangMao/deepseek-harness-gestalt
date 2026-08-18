@@ -6,7 +6,7 @@
 /* jscpd:ignore-start */
 import type { Context } from '@deepseek-ai/cordis'
 import type { BrowserRuntime, BrowserRuntimeState } from '@deepseek-ai/dsh-browser-runtime'
-import { browserTargetKey, sameBrowserTarget } from '@deepseek-ai/dsh-browser-runtime'
+import { browserTargetKey } from '@deepseek-ai/dsh-browser-runtime'
 import type { InvariantFailure, InvariantInstaller } from '@deepseek-ai/dsh-invariants'
 import {
   registerRuntimeStateValidator,
@@ -38,14 +38,6 @@ const install: InvariantInstaller = Object.assign((_ctx: Context, fail: Invarian
   _ctx.effect(() => registerRuntimeStateValidator(owner, (state) => {
     const key = browserTargetKey(state.target)
     const previous = previousByTarget.get(key)
-    const sibling = [...previousByTarget.values()].find(candidate => (
-      candidate.status === 'open'
-      && candidate.target.profileId === state.target.profileId
-      && !sameBrowserTarget(candidate.target, state.target)
-    ))
-    if (sibling !== undefined) {
-      fail('a deterministic Browser Runtime lifecycle changed an opaque target identity')
-    }
     if (previous === undefined) {
       if (state.status !== 'open' || state.revision !== 0) {
         fail('a deterministic Browser Runtime lifecycle must begin with an open revision 0 state')

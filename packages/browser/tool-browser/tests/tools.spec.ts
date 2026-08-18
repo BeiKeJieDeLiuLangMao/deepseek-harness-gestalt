@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { CallId } from '@deepseek-ai/dsh-llm'
+import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
+import type { Agent } from '@deepseek-ai/dsh-agent'
+import BrowserWorkspaceBinder from '@deepseek-ai/dsh-browser-workspace'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import BrowserRuntimeDeterministic from '@deepseek-ai/dsh-browser-runtime-deterministic'
@@ -86,7 +89,7 @@ describe('deferred Browser Runtime Consumer', () => {
         target: {
           profileId: 'tool-tmp-1',
           workspaceId: 'tool-tmp-1-workspace',
-          browserId: 'tool-tmp-1-browser',
+          browserId: 'tool-tmp-1-browser-1',
           tabId: 'tool-tmp-1-tab-1',
         },
         chrome: { kind: 'temporary', partition: 'persist:session-tool-tmp-1' },
@@ -101,7 +104,7 @@ describe('deferred Browser Runtime Consumer', () => {
     const target = {
       profileId: 'tool-tmp-1',
       workspaceId: 'tool-tmp-1-workspace',
-      browserId: 'tool-tmp-1-browser',
+      browserId: 'tool-tmp-1-browser-1',
       tabId: 'tool-tmp-1-tab-1',
     }
     const navigated = await ctx.tools.execute({
@@ -150,7 +153,7 @@ describe('deferred Browser Runtime Consumer', () => {
     const target = {
       profileId: 'tool-tmp-1',
       workspaceId: 'tool-tmp-1-workspace',
-      browserId: 'tool-tmp-1-browser',
+      browserId: 'tool-tmp-1-browser-1',
       tabId: 'tool-tmp-1-tab-1',
     }
     await ctx.tools.execute({ callId: CallId('create'), name: 'browser_create', arguments: {}, signal })
@@ -214,6 +217,80 @@ describe('deferred Browser Runtime Consumer', () => {
     })
     expect(unsafeRevision).toMatchObject({ isError: true })
 
+    const badAttachNull = await ctx.tools.execute({
+      callId: CallId('bad-attach-null'),
+      name: 'browser_create',
+      arguments: { attach: null },
+      signal,
+    })
+    expect(badAttachNull).toMatchObject({ isError: true })
+
+    const badAttachObject = await ctx.tools.execute({
+      callId: CallId('bad-attach-object'),
+      name: 'browser_create',
+      arguments: { attach: 'nope' },
+      signal,
+    })
+    expect(badAttachObject).toMatchObject({ isError: true })
+
+    const badAttachKind = await ctx.tools.execute({
+      callId: CallId('bad-attach-kind'),
+      name: 'browser_create',
+      arguments: { attach: { kind: 'other', workspaceId: 'ws' } },
+      signal,
+    })
+    expect(badAttachKind).toMatchObject({ isError: true })
+
+    const badAttachWorkspace = await ctx.tools.execute({
+      callId: CallId('bad-attach-workspace'),
+      name: 'browser_create',
+      arguments: { attach: { kind: 'workspace', workspaceId: '  ' } },
+      signal,
+    })
+    expect(badAttachWorkspace).toMatchObject({ isError: true })
+
+    const badAttachBrowser = await ctx.tools.execute({
+      callId: CallId('bad-attach-browser'),
+      name: 'browser_create',
+      arguments: { attach: { kind: 'browser', workspaceId: 'ws' } },
+      signal,
+    })
+    expect(badAttachBrowser).toMatchObject({ isError: true })
+
+    const createdForAttach = await ctx.tools.execute({
+      callId: CallId('attach-base'),
+      name: 'browser_create',
+      arguments: {},
+      signal,
+    })
+    expect(createdForAttach).toMatchObject({ isError: false })
+    const createdTarget = createdForAttach.isError ? undefined : createdForAttach.value as { target: typeof target }
+    const attached = await ctx.tools.execute({
+      callId: CallId('attach-tab'),
+      name: 'browser_create',
+      arguments: {
+        attach: {
+          kind: 'browser',
+          workspaceId: createdTarget?.target.workspaceId,
+          browserId: createdTarget?.target.browserId,
+        },
+      },
+      signal,
+    })
+    expect(attached).toMatchObject({ isError: false })
+    const attachedWorkspace = await ctx.tools.execute({
+      callId: CallId('attach-workspace'),
+      name: 'browser_create',
+      arguments: {
+        attach: {
+          kind: 'workspace',
+          workspaceId: createdTarget?.target.workspaceId,
+        },
+      },
+      signal,
+    })
+    expect(attachedWorkspace).toMatchObject({ isError: false })
+
     expect(() => { ToolBrowser.apply(new Context(), { timeoutMs: 0 }) }).toThrow(/positive safe integer/)
     expect(() => { ToolBrowser.apply(new Context(), { timeoutMs: 1.5 }) }).toThrow(/positive safe integer/)
   })
@@ -252,6 +329,94 @@ describe('deferred Browser Runtime Consumer', () => {
     await fiber.dispose()
     expect(ctx.tools.catalogSchemas()).toEqual([])
     expect(ctx.tools.schemas().map(schema => schema.name)).toEqual(['tool_search'])
+  })
+
+  it('binds created tabs to the calling Agent Session when the Workspace binder is composed', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime, { toolSearch: { maxResultBytes: 65_536, maxResults: 10 } })
+    await ctx.plugin(BrowserRuntimeDeterministic, {
+      idPrefix: 'bound',
+      pages: [{
+        url: 'https://example.test/',
+        title: 'Example Domain',
+        text: 'A deterministic browser page.',
+        screenshotPngBase64: PNG_1X1,
+      }],
+    })
+    await ctx.plugin(BrowserWorkspaceBinder)
+    await ctx.plugin(ToolBrowser)
+    const session = ctx.sessions.create(SessionId('bound-session'))
+    const agent = { id: session.id, session } as unknown as Agent
+    const created = await ctx.tools.execute({
+      callId: CallId('bound-create'),
+      name: 'browser_create',
+      arguments: {},
+      signal,
+      agent,
+    })
+    expect(created).toMatchObject({ isError: false, value: { revision: 0 } })
+    expect(ctx.browserWorkspace.snapshot(session).workspaces).toHaveLength(1)
+    const createdValue = created.isError
+      ? undefined
+      : created.value as { target: { profileId: string; workspaceId: string; browserId: string; tabId: string } }
+    const target = createdValue?.target
+    const named = await ctx.tools.execute({
+      callId: CallId('bound-named'),
+      name: 'browser_create',
+      arguments: { profile: 'persistent', name: 'work' },
+      signal,
+      agent,
+    })
+    expect(named).toMatchObject({ isError: false })
+    const namedTarget = named.isError ? undefined : (named.value as { target: { workspaceId: string; browserId: string } }).target
+    await expect(ctx.tools.execute({
+      callId: CallId('bound-named-attach'),
+      name: 'browser_create',
+      arguments: {
+        profile: 'persistent',
+        name: 'work',
+        attach: { kind: 'browser', workspaceId: namedTarget?.workspaceId, browserId: namedTarget?.browserId },
+      },
+      signal,
+      agent,
+    })).resolves.toMatchObject({ isError: false })
+    await expect(ctx.tools.execute({
+      callId: CallId('bound-observe'),
+      name: 'browser_observe',
+      arguments: { target },
+      signal,
+      agent,
+    })).resolves.toMatchObject({ isError: false })
+    await expect(ctx.tools.execute({
+      callId: CallId('bound-navigate'),
+      name: 'browser_navigate',
+      arguments: { target, expectedRevision: 0, url: 'https://example.test/' },
+      signal,
+      agent,
+    })).resolves.toMatchObject({ isError: false })
+    await expect(ctx.tools.execute({
+      callId: CallId('bound-screenshot'),
+      name: 'browser_screenshot',
+      arguments: { target },
+      signal,
+      agent,
+    })).resolves.toMatchObject({ isError: false })
+    await expect(ctx.tools.execute({
+      callId: CallId('bound-focus'),
+      name: 'browser_focus',
+      arguments: { target, expectedRevision: 1 },
+      signal,
+      agent,
+    })).resolves.toMatchObject({ isError: false })
+    await expect(ctx.tools.execute({
+      callId: CallId('bound-close'),
+      name: 'browser_close',
+      arguments: { target, expectedRevision: 2 },
+      signal,
+      agent,
+    })).resolves.toMatchObject({ isError: false })
   })
 
   it('uses the direct-call timeout default and disposes its empty invariant companion', async () => {

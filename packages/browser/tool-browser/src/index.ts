@@ -9,7 +9,9 @@ import {
   BrowserTabId,
   BrowserWorkspaceId,
 } from '@deepseek-ai/dsh-browser-runtime'
-import type { BrowserTarget } from '@deepseek-ai/dsh-browser-runtime'
+import type { BrowserCreateAttach, BrowserTarget } from '@deepseek-ai/dsh-browser-runtime'
+import type { BrowserWorkspaceBinder } from '@deepseek-ai/dsh-browser-workspace'
+import type { Session } from '@deepseek-ai/dsh-session'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 
@@ -129,6 +131,26 @@ function renderValue(_args: unknown, value: unknown): ContentBlock[] {
   return [{ type: 'text', text: JSON.stringify(value, null, 2) }]
 }
 
+/** Convert an optional attach object into a branded Browser Runtime attach request. */
+function attachFrom(raw: unknown): BrowserCreateAttach | undefined {
+  if (raw === undefined) return undefined
+  const value = raw as { kind: 'workspace' | 'browser'; workspaceId: string; browserId?: string }
+  if (typeof value.workspaceId !== 'string' || value.workspaceId.trim().length === 0) {
+    throw new Error('attach.workspaceId must be a non-empty Browser Workspace identity')
+  }
+  if (value.kind === 'workspace') {
+    return { kind: 'workspace', workspaceId: BrowserWorkspaceId(value.workspaceId) }
+  }
+  if (typeof value.browserId !== 'string' || value.browserId.trim().length === 0) {
+    throw new Error('attach.browserId must be a non-empty browser-instance identity')
+  }
+  return {
+    kind: 'browser',
+    workspaceId: BrowserWorkspaceId(value.workspaceId),
+    browserId: BrowserInstanceId(value.browserId),
+  }
+}
+
 /** Convert schema-validated model strings into the Service Definition's opaque identities. */
 function targetFrom(raw: {
   profileId: string
@@ -156,6 +178,28 @@ function revision(value: number): number {
 }
 
 /**
+ * Route one Browser Runtime call through the Session binder when both are present.
+ * @param ctx - Consumer context that may compose `browserWorkspace`.
+ * @param exec - Tool execution carrying an optional calling Agent Session.
+ * @param bound - Binder method to invoke when a Session is present.
+ * @param unbound - Runtime method to invoke otherwise.
+ * @param request - Operation request shared by both paths.
+ * @returns the Runtime or Binder result.
+ */
+function routeBrowserCall<TRequest, TResult>(
+  ctx: Context,
+  exec: { agent?: { session?: Session } },
+  bound: (workspace: BrowserWorkspaceBinder, request: TRequest & { session: Session }) => Promise<TResult>,
+  unbound: (request: TRequest) => Promise<TResult>,
+  request: TRequest,
+): Promise<TResult> {
+  const workspace = ctx.get('browserWorkspace')
+  const session = workspace === undefined ? undefined : exec.agent?.session
+  if (workspace === undefined || session === undefined) return unbound(request)
+  return bound(workspace, { ...request, session })
+}
+
+/**
  * Register six deferred Browser Runtime operations without presentation-specific cards.
  * @param ctx - Consumer context with Browser Runtime and tool registry services.
  * @param config - Per-call timeout configuration.
@@ -174,21 +218,48 @@ export function apply(ctx: Context, config: Config): void {
       parameters: {
         profile: { type: 'string', enum: ['temporary', 'persistent'], description: 'temporary discards identity; persistent restores a named Profile.' },
         name: { type: 'string', description: 'Named persistent Browser Profile. Required when profile is persistent.' },
+        attach: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            kind: { type: 'string', enum: ['workspace', 'browser'], description: 'workspace starts another instance; browser starts another tab.' },
+            workspaceId: { type: 'string', description: 'Existing Browser Workspace to reuse.' },
+            browserId: { type: 'string', description: 'Existing browser instance to reuse when kind is browser.' },
+          },
+          description: 'Attach a new instance or tab to an existing Session-owned hierarchy.',
+        },
       },
       output: { schema: OPEN_STATE_SCHEMA, render: renderValue },
       execute: async (args, exec) => {
-        const profile = args.profile === 'persistent' ? 'persistent' : 'temporary'
-        if (profile === 'persistent') {
+        const attach = attachFrom(args.attach)
+        if (args.profile === 'persistent') {
           if (typeof args.name !== 'string' || args.name.trim().length === 0) {
             throw new Error('name must be a non-empty Browser Profile name')
           }
-          return ctx.browserRuntime.create({
-            profile,
-            name: BrowserProfileName(args.name),
-            signal: exec.signal,
-          })
+          return routeBrowserCall(
+            ctx,
+            exec,
+            (workspace, request) => workspace.create(request),
+            request => ctx.browserRuntime.create(request),
+            {
+              profile: 'persistent' as const,
+              name: BrowserProfileName(args.name),
+              ...attach === undefined ? {} : { attach },
+              signal: exec.signal,
+            },
+          )
         }
-        return ctx.browserRuntime.create({ profile, signal: exec.signal })
+        return routeBrowserCall(
+          ctx,
+          exec,
+          (workspace, request) => workspace.create(request),
+          request => ctx.browserRuntime.create(request),
+          {
+            profile: 'temporary' as const,
+            ...attach === undefined ? {} : { attach },
+            signal: exec.signal,
+          },
+        )
       },
     }),
     deferLoading: true,
@@ -207,12 +278,18 @@ export function apply(ctx: Context, config: Config): void {
       output: { schema: OPEN_STATE_SCHEMA, render: renderValue },
       execute: async (args, exec) => {
         if (args.url.trim().length === 0) throw new Error('url must be non-empty')
-        return ctx.browserRuntime.navigate({
-          target: targetFrom(args.target),
-          expectedRevision: revision(args.expectedRevision),
-          url: args.url,
-          signal: exec.signal,
-        })
+        return routeBrowserCall(
+          ctx,
+          exec,
+          (workspace, request) => workspace.navigate(request),
+          request => ctx.browserRuntime.navigate(request),
+          {
+            target: targetFrom(args.target),
+            expectedRevision: revision(args.expectedRevision),
+            url: args.url,
+            signal: exec.signal,
+          },
+        )
       },
     }),
     deferLoading: true,
@@ -225,7 +302,15 @@ export function apply(ctx: Context, config: Config): void {
       timeoutMs,
       parameters: { target: TARGET_PARAMETER },
       output: { schema: STATE_SCHEMA, render: renderValue },
-      execute: async (args, exec) => ctx.browserRuntime.observe({ target: targetFrom(args.target), signal: exec.signal }),
+      execute: async (args, exec) => {
+        return routeBrowserCall(
+          ctx,
+          exec,
+          (workspace, request) => workspace.observe(request),
+          request => ctx.browserRuntime.observe(request),
+          { target: targetFrom(args.target), signal: exec.signal },
+        )
+      },
     }),
     deferLoading: true,
   })
@@ -237,7 +322,15 @@ export function apply(ctx: Context, config: Config): void {
       timeoutMs,
       parameters: { target: TARGET_PARAMETER },
       output: { schema: SCREENSHOT_SCHEMA, render: renderValue },
-      execute: async (args, exec) => ctx.browserRuntime.screenshot({ target: targetFrom(args.target), signal: exec.signal }),
+      execute: async (args, exec) => {
+        return routeBrowserCall(
+          ctx,
+          exec,
+          (workspace, request) => workspace.screenshot(request),
+          request => ctx.browserRuntime.screenshot(request),
+          { target: targetFrom(args.target), signal: exec.signal },
+        )
+      },
     }),
     deferLoading: true,
   })
@@ -252,11 +345,19 @@ export function apply(ctx: Context, config: Config): void {
         expectedRevision: { type: 'integer', required: true, description: 'Latest revision returned by a browser operation.' },
       },
       output: { schema: OPEN_STATE_SCHEMA, render: renderValue },
-      execute: async (args, exec) => ctx.browserRuntime.focus({
-        target: targetFrom(args.target),
-        expectedRevision: revision(args.expectedRevision),
-        signal: exec.signal,
-      }),
+      execute: async (args, exec) => {
+        return routeBrowserCall(
+          ctx,
+          exec,
+          (workspace, request) => workspace.focus(request),
+          request => ctx.browserRuntime.focus(request),
+          {
+            target: targetFrom(args.target),
+            expectedRevision: revision(args.expectedRevision),
+            signal: exec.signal,
+          },
+        )
+      },
     }),
     deferLoading: true,
   })
@@ -271,11 +372,19 @@ export function apply(ctx: Context, config: Config): void {
         expectedRevision: { type: 'integer', required: true, description: 'Latest revision returned by a browser operation.' },
       },
       output: { schema: CLOSED_STATE_SCHEMA, render: renderValue },
-      execute: async (args, exec) => ctx.browserRuntime.close({
-        target: targetFrom(args.target),
-        expectedRevision: revision(args.expectedRevision),
-        signal: exec.signal,
-      }),
+      execute: async (args, exec) => {
+        return routeBrowserCall(
+          ctx,
+          exec,
+          (workspace, request) => workspace.close(request),
+          request => ctx.browserRuntime.close(request),
+          {
+            target: targetFrom(args.target),
+            expectedRevision: revision(args.expectedRevision),
+            signal: exec.signal,
+          },
+        )
+      },
     }),
     deferLoading: true,
   })

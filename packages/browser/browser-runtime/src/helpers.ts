@@ -2,6 +2,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { BrowserInstanceId, BrowserProfileId, BrowserProfileName, BrowserRuntimeError, BrowserTabId, BrowserWorkspaceId } from './types.ts'
 import type {
+  BrowserCreateAttach,
   BrowserPageState,
   BrowserProfileChrome,
   BrowserProfileKind,
@@ -93,19 +94,43 @@ export const EMPTY_BROWSER_PROFILE_STORAGE: BrowserProfileStorage = Object.freez
  * @param profileId - Opaque Profile identity.
  * @param sessionName - Provider-owned Tandem session name.
  * @param tabSeq - Positive sequence that distinguishes one open tab lifecycle.
+ * @param attach - Optional existing Workspace or browser instance to reuse.
  * @returns the frozen target for that open lifecycle.
  */
 export function browserTargetFor(
   profileId: BrowserProfileId,
   sessionName: string,
   tabSeq: number,
+  attach?: BrowserCreateAttach,
 ): BrowserTarget {
   return Object.freeze({
     profileId,
-    workspaceId: BrowserWorkspaceId(`${sessionName}-workspace`),
-    browserId: BrowserInstanceId(`${sessionName}-browser`),
+    workspaceId: attach?.workspaceId ?? BrowserWorkspaceId(`${sessionName}-workspace`),
+    browserId: attach?.kind === 'browser'
+      ? attach.browserId
+      : BrowserInstanceId(`${sessionName}-browser-${String(tabSeq)}`),
     tabId: BrowserTabId(`${sessionName}-tab-${String(tabSeq)}`),
   })
+}
+
+/**
+ * Compare only the Workspace identity of two targets.
+ * @param left - First target.
+ * @param right - Second target.
+ * @returns whether both targets address the same Browser Workspace.
+ */
+export function sameBrowserWorkspace(left: BrowserTarget, right: BrowserTarget): boolean {
+  return left.profileId === right.profileId && left.workspaceId === right.workspaceId
+}
+
+/**
+ * Compare only the browser-instance identity of two targets.
+ * @param left - First target.
+ * @param right - Second target.
+ * @returns whether both targets address the same browser instance.
+ */
+export function sameBrowserInstance(left: BrowserTarget, right: BrowserTarget): boolean {
+  return sameBrowserWorkspace(left, right) && left.browserId === right.browserId
 }
 
 /**
@@ -116,6 +141,48 @@ export function browserTargetFor(
  */
 export function sameBrowserProfile(left: BrowserTarget, right: BrowserTarget): boolean {
   return left.profileId === right.profileId
+}
+
+/**
+ * Resolve the open page that an attach request names.
+ * @param states - Current Provider states.
+ * @param attach - Existing Workspace or browser instance to reuse.
+ * @returns the open page when attach is present, otherwise `undefined`.
+ */
+export function resolveBrowserCreateAttach(
+  states: Iterable<BrowserRuntimeState>,
+  attach: BrowserCreateAttach | undefined,
+): BrowserPageState | undefined {
+  if (attach === undefined) return undefined
+  const attached = [...states].find((state): state is BrowserPageState => (
+    state.status === 'open' && state.target.workspaceId === attach.workspaceId
+  ))
+  if (attached === undefined) {
+    throw new BrowserRuntimeError('browser attach target is not present', 'BROWSER_NOT_FOUND')
+  }
+  return attached
+}
+
+/**
+ * Reject an attach request that names a missing or closed hierarchy.
+ * @param states - Current Provider states.
+ * @param profileId - Profile identity of the incoming create.
+ * @param attach - Existing Workspace or browser instance to reuse.
+ */
+export function assertBrowserCreateAttach(
+  states: Iterable<BrowserRuntimeState>,
+  profileId: BrowserProfileId,
+  attach: BrowserCreateAttach | undefined,
+): void {
+  if (attach === undefined) return
+  const open = [...states].filter(state => state.status === 'open' && state.target.profileId === profileId)
+  const workspace = open.find(state => state.target.workspaceId === attach.workspaceId)
+  if (workspace === undefined) {
+    throw new BrowserRuntimeError('browser attach target is not present', 'BROWSER_NOT_FOUND')
+  }
+  if (attach.kind === 'browser' && !open.some(state => state.target.browserId === attach.browserId)) {
+    throw new BrowserRuntimeError('browser attach target is not present', 'BROWSER_NOT_FOUND')
+  }
 }
 
 /**
