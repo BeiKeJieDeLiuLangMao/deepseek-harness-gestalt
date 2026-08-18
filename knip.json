@@ -3,14 +3,22 @@
   "exclude": [
     "duplicates"
   ],
+  "ignore": [
+    "scripts/noise-security-path/pkg/dsh_noise_security_path_proof.d.ts",
+    "scripts/noise-security-path/pkg/dsh_noise_security_path_proof_bg.wasm.d.ts"
+  ],
   "ignoreBinaries": [
     "bwrap",
     "icacls",
+    "jar",
+    "javac",
+    "keytool",
     "musl-gcc",
     "python3",
     "sandbox-exec",
     "tar",
     "taskkill",
+    "wasm-bindgen",
     "where.exe"
   ],
   "ignoreWorkspaces": [
