@@ -64,7 +64,7 @@ function createMockClient(tools: MockTool[], callResult: MockCallResult = { cont
 async function mountRegistry(): Promise<Context> {
   const ctx = new Context()
   await ctx.plugin(SystemPrompt)
-  await ctx.plugin(ToolRuntime)
+  await ctx.plugin(ToolRuntime, { toolSearch: { maxResultBytes: 65_536 } })
   return ctx
 }
 
@@ -145,6 +145,7 @@ const defaultOpts: ToolBridgeOptions = {
   registrationFailure: 'contain',
   serverName: 'srv',
   toolCallTimeoutMs: 60_000,
+  deferLoading: false,
 }
 
 // ---- Tests ----
@@ -199,6 +200,33 @@ describe('syncTools', () => {
     // Raw names are NOT registered.
     expect(ctx.tools.get('greet')).toBeUndefined()
     expect(ctx.tools.get('add')).toBeUndefined()
+  })
+
+  it('marks a server generation as deferred when configured', async () => {
+    const inputSchema = {
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      type: 'object',
+      properties: {
+        names: { type: 'array', prefixItems: [{ type: 'string' }], items: false },
+      },
+    }
+    const client = createMockClient([
+      { name: 'greet', description: 'Say hello', inputSchema },
+    ])
+
+    await syncTools(client as never, ctx, { ...defaultOpts, deferLoading: true }, new Map())
+
+    expect(ctx.tools.schemas().map(schema => schema.name)).toEqual(['tool_search'])
+    expect(ctx.tools.catalogSchemas().map(schema => schema.name)).toEqual(['mcp__srv__greet'])
+    await expect(ctx.tools.execute({
+      callId: CallId('search-deferred-mcp'),
+      name: 'tool_search',
+      arguments: { query: 'greet' },
+      signal: testToolSignal,
+    })).resolves.toMatchObject({
+      isError: false,
+      loadedTools: [{ name: 'mcp__srv__greet', parameters: inputSchema }],
+    })
   })
 
   it('lets two servers publish the same raw name side by side', async () => {

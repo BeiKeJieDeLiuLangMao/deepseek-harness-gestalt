@@ -80,7 +80,7 @@ if (environment.environment === 'development' && import.meta.env.VITE_PERSONAL_P
   const relay = new MobileRelayEndpointLifecycle({
     attachmentId: () => parseRelayAttachmentId(crypto.randomUUID()),
     connect: async signal => await BrowserRelayEndpointSocket.connect(relayUrl, signal, {
-      maxBytes: REMOTE_PROTOCOL_LIMITS.relayMessageBytes,
+      maxBytes: inboundMaxBytes,
       maxMessages: inboundMaxMessages,
     }),
     attachTimeoutMs: positiveInteger(import.meta.env.VITE_REMOTE_RELAY_ATTACH_TIMEOUT_MS, 'attach timeout'),

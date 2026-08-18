@@ -80,20 +80,30 @@ export class RemoteRelayProvider extends RemoteRelayService {
     ctx.effect(() => async () => { await this.dispose() }, 'remote-access: Relay resources')
   }
 
-  async rotateCredential(routeId: RelayRouteId): Promise<RelayCredentialGrant> {
+  async rotateCredential(routeId: RelayRouteId, endpoint: 'mobile' | 'desktop' = 'desktop'): Promise<RelayCredentialGrant> {
     this.assertOpen()
     const credential = this.newCredential()
-    const revision = await this.options.routeStore.rotate(routeId, credentialDigest(credential))
+    const revision = await this.options.routeStore.rotate(routeId, endpoint, credentialDigest(credential))
     if (revision > 1) await this.options.coordinator.invalidate({ type: 'invalidate', routeId, revision })
-    return { routeId, credential, revision }
+    return { routeId, endpoint, credential, revision }
   }
 
-  async issueCredential(routeId: RelayRouteId): Promise<RelayCredentialGrant> {
+  async issueCredential(routeId: RelayRouteId, endpoint: 'mobile' | 'desktop' = 'mobile'): Promise<RelayCredentialGrant> {
     this.assertOpen()
     const credential = this.newCredential()
-    const revision = await this.options.routeStore.issue(routeId, credentialDigest(credential))
+    const revision = await this.options.routeStore.issue(routeId, endpoint, credentialDigest(credential))
     if (revision === undefined) throw new RemoteRelayError('RELAY_ROUTE_REVOKED', 'Relay route is inactive')
-    return { routeId, credential, revision }
+    return { routeId, endpoint, credential, revision }
+  }
+
+  async revokeCredential(grant: RelayCredentialGrant): Promise<void> {
+    this.assertOpen()
+    const revision = await this.options.routeStore.revokeCredential(
+      grant.routeId,
+      grant.endpoint,
+      credentialDigest(grant.credential),
+    )
+    await this.options.coordinator.invalidate({ type: 'invalidate', routeId: grant.routeId, revision })
   }
 
   async revokeRoute(routeId: RelayRouteId): Promise<void> {
@@ -141,7 +151,12 @@ export class RemoteRelayProvider extends RemoteRelayService {
       const digest = credentialDigest(input.message.credential)
       let revision: number | undefined
       try {
-        revision = await this.options.routeStore.authorize(input.message.routeId, digest, signal)
+        revision = await this.options.routeStore.authorize(
+          input.message.routeId,
+          input.message.endpoint,
+          digest,
+          signal,
+        )
       } catch {
         throw new RemoteRelayError('RELAY_ATTACHMENT_REJECTED', 'Relay route authority is unavailable')
       }
@@ -180,7 +195,7 @@ export class RemoteRelayProvider extends RemoteRelayService {
       try {
         await this.options.coordinator.register(entry, signal)
         throwIfAborted(signal)
-        const currentRevision = await this.options.routeStore.authorize(entry.routeId, digest, signal)
+        const currentRevision = await this.options.routeStore.authorize(entry.routeId, entry.endpoint, digest, signal)
         if (this.disposed || currentRevision !== entry.revision) {
           await this.closeAndDrain(local)
           throw new RemoteRelayError(
@@ -281,7 +296,11 @@ export class RemoteRelayProvider extends RemoteRelayService {
     }
     let revision: number | undefined
     try {
-      revision = await this.options.routeStore.authorize(local.entry.routeId, local.credentialDigest)
+      revision = await this.options.routeStore.authorize(
+        local.entry.routeId,
+        local.entry.endpoint,
+        local.credentialDigest,
+      )
     } catch {
       await this.closeAndDrain(local)
       throw new RemoteRelayError('RELAY_ROUTE_REVOKED', 'Relay route authority could not be revalidated')

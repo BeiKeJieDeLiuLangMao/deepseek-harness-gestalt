@@ -701,6 +701,9 @@ importers:
       '@deepseek-ai/dsh-lsp-stdio':
         specifier: workspace:*
         version: link:../packages/lsp/lsp-stdio
+      '@deepseek-ai/dsh-mcp-client':
+        specifier: workspace:*
+        version: link:../packages/mcp/mcp-client
       '@deepseek-ai/dsh-permission-presets':
         specifier: workspace:*
         version: link:../packages/interaction/permission-presets
@@ -929,6 +932,10 @@ importers:
       '@deepseek-ai/schemastery':
         specifier: link:../vendor/schemastery
         version: link:../vendor/schemastery
+    devDependencies:
+      '@modelcontextprotocol/server-everything':
+        specifier: ^2026.7.4
+        version: 2026.7.4
 
   native/landlock-run:
     devDependencies:
@@ -3950,6 +3957,12 @@ importers:
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
         version: link:../../../vendor/schemastery
+      ajv:
+        specifier: ^8.20.0
+        version: 8.20.0
+      minisearch:
+        specifier: ^7.2.0
+        version: 7.2.0
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^

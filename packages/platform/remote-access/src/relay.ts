@@ -42,11 +42,22 @@ export interface RemoteRelayConfig {
 /** Persistent, content-free route authorization required by every Platform Instance. */
 export interface RelayRouteStore {
   /** @returns the new monotonically increasing route revision. */
-  rotate(routeId: RelayRouteId, credentialDigest: Uint8Array): Promise<number>
+  rotate(routeId: RelayRouteId, endpoint: 'mobile' | 'desktop', credentialDigest: Uint8Array): Promise<number>
   /** @returns the current revision after adding endpoint-specific authority, or undefined when the route is inactive. */
-  issue(routeId: RelayRouteId, credentialDigest: Uint8Array): Promise<number | undefined>
+  issue(routeId: RelayRouteId, endpoint: 'mobile' | 'desktop', credentialDigest: Uint8Array): Promise<number | undefined>
   /** @returns the current authorized revision, or undefined for wrong/revoked authority. */
-  authorize(routeId: RelayRouteId, credentialDigest: Uint8Array, signal?: AbortSignal): Promise<number | undefined>
+  authorize(
+    routeId: RelayRouteId,
+    endpoint: 'mobile' | 'desktop',
+    credentialDigest: Uint8Array,
+    signal?: AbortSignal,
+  ): Promise<number | undefined>
+  /** @returns the new revision after removing exactly one endpoint credential. */
+  revokeCredential(
+    routeId: RelayRouteId,
+    endpoint: 'mobile' | 'desktop',
+    credentialDigest: Uint8Array,
+  ): Promise<number>
   /** @returns the new monotonically increasing revoked revision. */
   revoke(routeId: RelayRouteId): Promise<number>
 }
@@ -97,6 +108,8 @@ export interface RelayCoordinator {
 /** One newly rotated Desktop Relay credential; only its digest enters persistence. */
 export interface RelayCredentialGrant {
   routeId: RelayRouteId
+  /** Endpoint kind that may present this credential. */
+  endpoint: 'mobile' | 'desktop'
   credential: RelayCredential
   revision: number
 }
@@ -134,13 +147,18 @@ export abstract class RemoteRelayService extends Service {
    * @param routeId - opaque route receiving new attachment authority.
    * @returns the one-time credential grant and its persistent revision.
    */
-  abstract rotateCredential(routeId: RelayRouteId): Promise<RelayCredentialGrant>
+  abstract rotateCredential(routeId: RelayRouteId, endpoint?: 'mobile' | 'desktop'): Promise<RelayCredentialGrant>
   /**
    * Issue distinct endpoint authority without invalidating other credentials on the active route.
    * @param routeId - active route receiving another independently revocable bearer.
    * @returns a fresh credential at the current route revision.
    */
-  abstract issueCredential(routeId: RelayRouteId): Promise<RelayCredentialGrant>
+  abstract issueCredential(routeId: RelayRouteId, endpoint?: 'mobile' | 'desktop'): Promise<RelayCredentialGrant>
+  /**
+   * Remove one issued endpoint credential without revoking its route peers.
+   * @param grant - exact issued authority whose ownership did not commit.
+   */
+  abstract revokeCredential(grant: RelayCredentialGrant): Promise<void>
   /**
    * Revoke one route and close its attachments across Platform Instances.
    * @param routeId - opaque route whose current authority becomes invalid.

@@ -42,6 +42,8 @@ export interface RemoteAccessTransport {
   getMobileAccessState(authentication: PairingAccountAuthentication): Promise<MobileAccessState>
   /** @param input - current Desktop authorization and requested state. @returns committed state. */
   setMobileAccess(input: { authentication: PairingAccountAuthentication; enabled: boolean }): Promise<MobileAccessState>
+  /** @param authentication - current Desktop authorization. @returns fresh Desktop-only Relay authority. */
+  reissueDesktopRelayAuthority(authentication: PairingAccountAuthentication): Promise<MobileAccessState>
   /** @param input - current Desktop authorization and rendezvous id. @returns single-use challenge. */
   createChallenge(input: {
     authentication: PairingAccountAuthentication
@@ -109,6 +111,10 @@ export class RemoteAccessHttpTransport implements RemoteAccessTransport {
     return parseMobileAccess(await this.call(input.authentication, {
       operation: 'set-mobile-access', enabled: input.enabled,
     }))
+  }
+
+  async reissueDesktopRelayAuthority(authentication: PairingAccountAuthentication): Promise<MobileAccessState> {
+    return parseMobileAccess(await this.call(authentication, { operation: 'reissue-desktop-relay' }))
   }
 
   async createChallenge(input: {
@@ -212,10 +218,16 @@ function parseMobileAccess(value: unknown): MobileAccessState {
   const relay = requiredRecord(record.relay, 'Mobile Access Relay grant')
   const grant: RelayCredentialGrant = {
     routeId: parseRelayRouteId(relay.routeId),
+    endpoint: requiredEndpoint(relay.endpoint, 'Mobile Access Relay endpoint'),
     credential: parseRelayCredential(relay.credential),
     revision: requiredPositiveInteger(relay.revision, 'Mobile Access Relay revision'),
   }
   return { enabled: true, relay: grant }
+}
+
+function requiredEndpoint(value: unknown, name: string): 'mobile' | 'desktop' {
+  if (value !== 'mobile' && value !== 'desktop') throw new TypeError(`${name} must be mobile or desktop`)
+  return value
 }
 
 function parseMobilePairingStatus(value: unknown): MobilePairingStatus {

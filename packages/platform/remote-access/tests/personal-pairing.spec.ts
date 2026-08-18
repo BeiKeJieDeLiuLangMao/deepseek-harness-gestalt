@@ -77,8 +77,9 @@ describe('PersonalPairingProvider', () => {
     const desktopCredential = parseRelayCredential('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA')
     const mobileCredential = parseRelayCredential('AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE')
     const relay = {
-      rotateCredential: vi.fn(async () => ({ routeId, credential: desktopCredential, revision: 1 })),
-      issueCredential: vi.fn(async () => ({ routeId, credential: mobileCredential, revision: 1 })),
+      rotateCredential: vi.fn(async () => ({ routeId, endpoint: 'desktop' as const, credential: desktopCredential, revision: 1 })),
+      issueCredential: vi.fn(async () => ({ routeId, endpoint: 'mobile' as const, credential: mobileCredential, revision: 1 })),
+      revokeCredential: vi.fn(async () => {}),
       revokeRoute: vi.fn(async () => {}),
     }
     const sharedHandshake = {
@@ -122,7 +123,7 @@ describe('PersonalPairingProvider', () => {
     expect(localStatus.status).toBe('paired')
     if (localStatus.status !== 'paired') throw new Error('expected paired local status')
     expect(localStatus.sealedRelayAuthority).toBeInstanceOf(Uint8Array)
-    expect(relay.issueCredential).toHaveBeenCalledWith(routeId)
+    expect(relay.issueCredential).toHaveBeenCalledWith(routeId, 'mobile')
     expect(mobileCredential).not.toBe(desktopCredential)
 
     await platformB.setMobileAccess({ desktop, enabled: false })
@@ -174,11 +175,14 @@ describe('PersonalPairingProvider', () => {
       }
       const relay = {
         rotateCredential: vi.fn(async () => ({
-          routeId, credential: parseRelayCredential('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'), revision: 1,
+          routeId, endpoint: 'desktop' as const,
+          credential: parseRelayCredential('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'), revision: 1,
         })),
         issueCredential: vi.fn(async () => ({
-          routeId, credential: parseRelayCredential('AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE'), revision: 1,
+          routeId, endpoint: 'mobile' as const,
+          credential: parseRelayCredential('AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE'), revision: 1,
         })),
+        revokeCredential: vi.fn(async () => {}),
         revokeRoute: vi.fn(),
       }
       const provider = new PersonalPairingProvider(new Context(), {
@@ -239,8 +243,9 @@ describe('PersonalPairingProvider', () => {
     const routeId = parseRelayRouteId('relay-route-id')
     const credential = parseRelayCredential('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA')
     const relay = {
-      rotateCredential: vi.fn(async () => ({ routeId, credential, revision: 1 })),
-      issueCredential: vi.fn(async () => ({ routeId, credential, revision: 1 })),
+      rotateCredential: vi.fn(async () => ({ routeId, endpoint: 'desktop' as const, credential, revision: 1 })),
+      issueCredential: vi.fn(async () => ({ routeId, endpoint: 'mobile' as const, credential, revision: 1 })),
+      revokeCredential: vi.fn(async () => {}),
       revokeRoute: vi.fn(async () => {}),
     }
     const provider = new PersonalPairingProvider(new Context(), {
@@ -273,6 +278,7 @@ describe('PersonalPairingProvider', () => {
     const relay = {
       rotateCredential: vi.fn(async () => { throw new Error('route store unavailable') }),
       issueCredential: vi.fn(),
+      revokeCredential: vi.fn(async () => {}),
       revokeRoute: vi.fn(async () => {}),
     }
     const provider = new PersonalPairingProvider(new Context(), {
@@ -320,6 +326,7 @@ describe('PersonalPairingProvider', () => {
     const relay = {
       rotateCredential: vi.fn(async () => { throw new Error('rotation unavailable') }),
       issueCredential: vi.fn(),
+      revokeCredential: vi.fn(async () => {}),
       revokeRoute: vi.fn(async () => { throw new Error('revocation unavailable') }),
     }
     const provider = new PersonalPairingProvider(new Context(), {
@@ -362,14 +369,17 @@ describe('PersonalPairingProvider', () => {
     const relay = {
       rotateCredential: vi.fn(async () => ({
         routeId,
+        endpoint: 'desktop' as const,
         credential: parseRelayCredential('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'),
         revision: 1,
       })),
       issueCredential: vi.fn(async () => ({
         routeId,
+        endpoint: 'mobile' as const,
         credential: parseRelayCredential('AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE'),
         revision: 1,
       })),
+      revokeCredential: vi.fn(async () => {}),
       revokeRoute: vi.fn(async () => {}),
     }
     const provider = new PersonalPairingProvider(new Context(), {

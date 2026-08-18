@@ -57,6 +57,7 @@ export class RelayWebSocketConsumer {
     perMessageDeflate: false,
   })
   private readonly pumps = new Set<Promise<void>>()
+  private readonly attachmentAborts = new Set<AbortController>()
 
   /** @param ctx - Remote Relay public service. @param attachTimeoutMs - first-frame deadline. */
   constructor(private readonly ctx: Context, private readonly attachTimeoutMs: number) {
@@ -77,6 +78,7 @@ export class RelayWebSocketConsumer {
 
   /** Terminate every socket and wait for all attachment cleanup. */
   async close(): Promise<void> {
+    for (const controller of this.attachmentAborts) controller.abort(new Error('Relay WSS Consumer is closing'))
     for (const socket of this.server.clients) socket.terminate()
     const serverClose = new Promise<void>((resolve, reject) => {
       this.server.close((error) => { if (error === undefined) resolve(); else reject(error) })
@@ -92,6 +94,7 @@ export class RelayWebSocketConsumer {
     let failed = false
     let serial = Promise.resolve()
     const attachmentAbort = new AbortController()
+    this.attachmentAborts.add(attachmentAbort)
     const attachTimer = setTimeout(() => {
       failed = true
       attachmentAbort.abort()
@@ -101,7 +104,11 @@ export class RelayWebSocketConsumer {
     const settle = async (): Promise<void> => {
       clearTimeout(attachTimer)
       attachmentAbort.abort()
-      if (attachment !== undefined) await attachment.close()
+      try {
+        if (attachment !== undefined) await attachment.close()
+      } finally {
+        this.attachmentAborts.delete(attachmentAbort)
+      }
     }
     const pump = new Promise<void>((resolve, reject) => {
       socket.on('message', (data) => {

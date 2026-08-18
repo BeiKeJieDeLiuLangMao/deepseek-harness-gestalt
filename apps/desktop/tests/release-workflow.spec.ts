@@ -85,6 +85,14 @@ describe('Desktop release workflow', () => {
     expect(workflow.match(/electron-smoke-packaged\.spec\.ts/g)).toHaveLength(2)
     expect(workflow.match(/DSH_PACKAGED_APP_BIN/g)).toHaveLength(2)
     expect(workflow).not.toContain('pnpm exec vitest run apps/desktop/tests/electron-smoke-packaged.spec.ts')
+    const packagedSmoke = readFileSync(
+      join(process.cwd(), 'apps/desktop/tests/electron-smoke-packaged.spec.ts'),
+      'utf8',
+    )
+    expect(packagedSmoke).toContain("child.stdout?.on('data'")
+    expect(packagedSmoke).toContain("child.stderr?.on('data'")
+    expect(packagedSmoke).toContain('ELECTRON_ENABLE_LOGGING')
+    expect(packagedSmoke).toContain('exited ${String(exitCode)} before ok')
     expect(workflow.match(/node_modules\/\.bin\/vitest/g)).toHaveLength(2)
     const macSmoke = workflow.indexOf('app_bin=$(find apps/desktop/release')
     const winSmoke = workflow.indexOf('$appBin = Get-ChildItem apps/desktop/release')

@@ -209,7 +209,7 @@ export class DesktopPairingController implements DesktopPairingActions {
       if (this.accountId !== accountId) this.resetAccountScope()
       this.accountId = accountId
       this.active = true
-      await this.refresh()
+      await this.refresh(true)
     })
   }
 
@@ -242,7 +242,7 @@ export class DesktopPairingController implements DesktopPairingActions {
     throwSettled(results)
   }
 
-  private async refresh(): Promise<void> {
+  private async refresh(reissueDesktopAuthority = false): Promise<void> {
     try {
       const state = await this.options.transport.getMobileAccessState(
         await this.options.account.authorizeCurrentInstallation(),
@@ -251,6 +251,15 @@ export class DesktopPairingController implements DesktopPairingActions {
         await this.options.relay?.stop('mobile-access-disabled')
         this.publish({ status: 'ready', enabled: false, pairings: [] })
         return
+      }
+      if (reissueDesktopAuthority && this.options.relay !== undefined) {
+        const recovered = await this.options.transport.reissueDesktopRelayAuthority(
+          await this.options.account.authorizeCurrentInstallation(),
+        )
+        if (recovered.relay === undefined) {
+          throw new Error('Enabled Desktop Remote Access did not return Relay authority')
+        }
+        await this.options.relay.configure(recovered.relay)
       }
       await this.options.relay?.start()
       const pending = await this.options.transport.listPendingPairings(

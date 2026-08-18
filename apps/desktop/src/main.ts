@@ -77,6 +77,7 @@ let pendingHost: Promise<RunningWebHost> | undefined
 smokeLog('main loaded')
 const gotLock = app.requestSingleInstanceLock()
 if (!gotLock) {
+  smokeLog('error single-instance lock unavailable')
   app.quit()
 } else {
   app.on('second-instance', () => { void focusOrReopen() })
@@ -98,30 +99,46 @@ process.once('SIGTERM', () => { app.quit() })
 
 /** Create the window, spawn Web Host, attach updater. */
 async function boot(): Promise<void> {
-  const accountEnvironment = loadDesktopPlatformEnvironment(process.env)
-  const relay = createDesktopRemoteRelay({ environment: accountEnvironment, source: process.env })
+  smokeLog('boot start')
   window = createWindow()
-  account = createDesktopAccount(accountEnvironment)
-  stopAccountEvents = account.subscribe(pushAccountSnapshot)
+  smokeLog('window created')
+  let accountEnvironment: SelectedPlatformEnvironment | undefined
   try {
-    await account.start()
+    accountEnvironment = loadDesktopPlatformEnvironment(process.env)
   } catch (error) {
-    stopAccountEvents()
-    await account.dispose()
-    account = new UnavailableDesktopAccountController(
-      error instanceof Error ? error.message : String(error),
-    )
+    smokeLog('account environment unavailable ' + (error instanceof Error ? error.message : String(error)))
   }
-  pairing = createDesktopPairing(accountEnvironment, account, relay)
+  if (accountEnvironment === undefined) {
+    account = new UnavailableDesktopAccountController('Platform environment is not configured')
+    pairing = new UnavailableDesktopPairingController('Platform environment is not configured')
+  } else {
+    const relay = createDesktopRemoteRelay({ environment: accountEnvironment, source: process.env })
+    account = createDesktopAccount(accountEnvironment)
+    let accountReady = true
+    try {
+      await account.start()
+    } catch (error) {
+      accountReady = false
+      smokeLog('account start failed ' + (error instanceof Error ? error.message : String(error)))
+      const failed = account
+      account = new UnavailableDesktopAccountController(
+        error instanceof Error ? error.message : String(error),
+      )
+      void failed.dispose().catch((disposeError: unknown) => {
+        console.error('[desktop-platform-account] dispose after failed start:', disposeError)
+      })
+    }
+    if (accountReady) smokeLog('account ready')
+    pairing = createDesktopPairing(accountEnvironment, account, relay)
+    accountSignedIn = account.getSnapshot().status === 'signed-in'
+    if (accountSignedIn) {
+      await pairing.start().catch((error: unknown) => {
+        console.error('[desktop-personal-pairing] initial Remote Access load failed:', error)
+      })
+    }
+  }
   stopPairingEvents = pairing.subscribe(pushPairingSnapshot)
-  stopAccountEvents()
   stopAccountEvents = account.subscribe(handleAccountSnapshot)
-  accountSignedIn = account.getSnapshot().status === 'signed-in'
-  if (accountSignedIn) {
-    await pairing.start().catch((error: unknown) => {
-      console.error('[desktop-personal-pairing] initial Remote Access load failed:', error)
-    })
-  }
   installIntegrationsOnce()
   try {
     const started = respawned

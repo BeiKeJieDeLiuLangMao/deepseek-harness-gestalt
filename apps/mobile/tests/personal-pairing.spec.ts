@@ -19,6 +19,7 @@ describe('MobilePairingController', () => {
     })
     const mobileGrant = {
       routeId: parseRelayRouteId('mobile-route'),
+      endpoint: 'mobile' as const,
       credential: parseRelayCredential('AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE'),
       revision: 1,
     }
@@ -45,7 +46,7 @@ describe('MobilePairingController', () => {
     expect(relay.configure).toHaveBeenCalledWith(mobileGrant)
     expect(relay.start).toHaveBeenCalledOnce()
     await controller.deactivate()
-    expect(relay.stop).toHaveBeenCalledOnce()
+    expect(relay.stop).toHaveBeenCalled()
   })
 
   it.each(['handshake', 'relay'] as const)(
@@ -426,6 +427,7 @@ function transportFixture() {
   return {
     getMobileAccessState: vi.fn(),
     setMobileAccess: vi.fn(),
+    reissueDesktopRelayAuthority: vi.fn(),
     createChallenge: vi.fn(),
     cancelChallenge: vi.fn(),
     listPendingPairings: vi.fn(),

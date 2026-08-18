@@ -85,6 +85,7 @@ export class MobilePairingController implements MobilePairingActions {
   private attempt: PreparedMobilePairingAttempt | undefined
   private accountId: PlatformAccountId | undefined
   private active = true
+  private lifecycleBarrier: Promise<void> = Promise.resolve()
 
   /** @param options - Account authority, Remote Access transport, reviewed handshake, and QR scanner. */
   constructor(private readonly options: MobilePairingControllerOptions) {
@@ -104,6 +105,7 @@ export class MobilePairingController implements MobilePairingActions {
   }
 
   async activate(): Promise<void> {
+    await this.lifecycleBarrier
     await this.serial
     const accountId = this.currentAccountId()
     if (this.accountId !== accountId) this.resetAccountScope()
@@ -114,9 +116,14 @@ export class MobilePairingController implements MobilePairingActions {
   async deactivate(): Promise<void> {
     this.active = false
     this.resetAccountScope()
-    const results = await Promise.allSettled([this.options.relay?.stop() ?? Promise.resolve(), this.serial])
-    this.resetAccountScope()
-    throwRejected(results, 'Mobile Personal Pairing deactivation failed')
+    const transaction = (async () => {
+      const first = await Promise.allSettled([this.options.relay?.stop() ?? Promise.resolve(), this.serial])
+      const final = await Promise.allSettled([this.options.relay?.stop() ?? Promise.resolve()])
+      this.resetAccountScope()
+      throwRejected([...first, ...final], 'Mobile Personal Pairing deactivation failed')
+    })()
+    this.lifecycleBarrier = transaction.then(() => undefined, () => undefined)
+    await transaction
   }
 
   async completeLink(link: string): Promise<void> {
@@ -284,8 +291,11 @@ export class MobilePairingController implements MobilePairingActions {
                 throw new Error('Mobile Relay authority has no product lifecycle owner')
               }
               const grant = await this.options.handshake.openRelayAuthority(status.sealedRelayAuthority)
+              this.assertActiveAccount()
               await this.options.relay.configure(grant)
+              this.assertActiveAccount()
               await this.options.relay.start()
+              this.assertActiveAccount()
             }
             this.clearAttempt()
             this.publish({ status: 'paired' })

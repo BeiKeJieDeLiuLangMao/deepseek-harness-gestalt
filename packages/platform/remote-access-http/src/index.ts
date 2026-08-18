@@ -59,6 +59,7 @@ async function dispatch(
     case 'get-mobile-access': return ctx.remoteAccess.getMobileAccessState(authentication)
     case 'set-mobile-access':
       return ctx.remoteAccess.setMobileAccess({ desktop: authentication, enabled: requiredBoolean(body.enabled, 'enabled') })
+    case 'reissue-desktop-relay': return ctx.remoteAccess.reissueDesktopRelayAuthority(authentication)
     case 'create-challenge':
       return ctx.remoteAccess.createChallenge({
         desktop: authentication,

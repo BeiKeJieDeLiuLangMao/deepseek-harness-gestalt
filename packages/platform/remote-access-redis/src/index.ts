@@ -82,8 +82,20 @@ export class RedisRelayCoordinator implements RelayCoordinator {
   ): Promise<() => Promise<void>> {
     const instanceChannel = this.instanceChannel(instanceId)
     const invalidationChannel = this.invalidationChannel()
-    const onInstance = (message: string): void => { this.dispatch(message, listener) }
-    const onInvalidation = (message: string): void => { this.dispatch(message, listener) }
+    const inFlight = new Set<Promise<void>>()
+    const listenerErrors: unknown[] = []
+    let stopping = false
+    const dispatch = (message: string): void => {
+      if (stopping) return
+      const operation = this.dispatch(message, listener).catch((error: unknown) => {
+        listenerErrors.push(error)
+        console.error('[remote-access-redis] coordination listener failed:', error)
+      })
+      inFlight.add(operation)
+      void operation.finally(() => { inFlight.delete(operation) })
+    }
+    const onInstance = (message: string): void => { dispatch(message) }
+    const onInvalidation = (message: string): void => { dispatch(message) }
     const subscribed: Array<{ channel: string; callback: (message: string) => void }> = []
     try {
       await this.options.subscriber.subscribe(instanceChannel, onInstance)
@@ -91,14 +103,25 @@ export class RedisRelayCoordinator implements RelayCoordinator {
       await this.options.subscriber.subscribe(invalidationChannel, onInvalidation)
       subscribed.push({ channel: invalidationChannel, callback: onInvalidation })
     } catch (error) {
-      await Promise.allSettled(subscribed.map(item => this.options.subscriber.unsubscribe(item.channel, item.callback)))
+      const cleanup = await Promise.allSettled(
+        subscribed.map(item => this.options.subscriber.unsubscribe(item.channel, item.callback)),
+      )
+      const cleanupErrors = rejectedReasons(cleanup)
+      if (cleanupErrors.length > 0) {
+        throw new AggregateError([error, ...cleanupErrors], 'Relay Redis subscription acquisition rollback failed')
+      }
       throw error
     }
     return async () => {
-      const results = await Promise.allSettled(
-        subscribed.map(item => this.options.subscriber.unsubscribe(item.channel, item.callback)),
-      )
-      const errors = results.filter(result => result.status === 'rejected').map(result => result.reason as unknown)
+      stopping = true
+      const results = await Promise.allSettled([
+        ...subscribed.map(item => this.options.subscriber.unsubscribe(item.channel, item.callback)),
+        ...inFlight,
+      ])
+      const errors = [
+        ...rejectedReasons(results),
+        ...listenerErrors,
+      ]
       if (errors.length > 0) throw new AggregateError(errors, 'Relay Redis subscription shutdown failed')
     }
   }
@@ -142,7 +165,7 @@ export class RedisRelayCoordinator implements RelayCoordinator {
     await this.options.command.publish(this.invalidationChannel(), encodeEvent(event))
   }
 
-  private dispatch(message: string, listener: (event: RelayCoordinationEvent) => Promise<void>): void {
+  private async dispatch(message: string, listener: (event: RelayCoordinationEvent) => Promise<void>): Promise<void> {
     let event: RelayCoordinationEvent
     try {
       event = decodeEvent(message)
@@ -150,9 +173,7 @@ export class RedisRelayCoordinator implements RelayCoordinator {
       console.error('[remote-access-redis] rejected malformed coordination event:', error)
       return
     }
-    void listener(event).catch((error: unknown) => {
-      console.error('[remote-access-redis] coordination listener failed:', error)
-    })
+    await listener(event)
   }
 
   private directoryKey(routeId: RelayRouteId, attachmentId: RelayAttachmentId): string {
@@ -199,11 +220,12 @@ export async function connectRedisRelayCoordinator(options: {
   const connected = await Promise.allSettled([command.connect(), subscriber.connect()])
   const connectionErrors = rejectedReasons(connected)
   if (connectionErrors.length > 0) {
-    await Promise.allSettled([command.close(), subscriber.close()])
+    const cleanup = await Promise.allSettled([command.close(), subscriber.close()])
     command.off('error', onCommandError)
     subscriber.off('error', onSubscriberError)
-    if (connectionErrors.length === 1) throw connectionErrors[0]
-    throw new AggregateError(connectionErrors, 'Relay Redis clients failed to connect')
+    const errors = [...connectionErrors, ...rejectedReasons(cleanup)]
+    if (errors.length === 1) throw errors[0]
+    throw new AggregateError(errors, 'Relay Redis clients failed to connect and close')
   }
   const coordinator = new RedisRelayCoordinator({
     command: command,

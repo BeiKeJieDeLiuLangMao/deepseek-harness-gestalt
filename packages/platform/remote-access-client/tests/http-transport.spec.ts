@@ -72,7 +72,12 @@ describe('RemoteAccessHttpTransport', () => {
       { enabled: false }, {
         enabled: true,
         relay: {
-          routeId: 'route-one', credential: 'AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE', revision: 1,
+          routeId: 'route-one', endpoint: 'desktop', credential: 'AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE', revision: 1,
+        },
+      }, {
+        enabled: true,
+        relay: {
+          routeId: 'route-one', endpoint: 'desktop', credential: 'AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE', revision: 2,
         },
       }, challenge, {}, [completion], [pairing], pairing, {}, completion,
       { status: 'pending' }, { status: 'rejected' }, {
@@ -93,7 +98,10 @@ describe('RemoteAccessHttpTransport', () => {
 
     await expect(client.getMobileAccessState(authentication)).resolves.toEqual({ enabled: false })
     await expect(client.setMobileAccess({ authentication, enabled: true })).resolves.toMatchObject({
-      enabled: true, relay: { routeId: 'route-one', revision: 1 },
+      enabled: true, relay: { routeId: 'route-one', endpoint: 'desktop', revision: 1 },
+    })
+    await expect(client.reissueDesktopRelayAuthority(authentication)).resolves.toMatchObject({
+      enabled: true, relay: { routeId: 'route-one', endpoint: 'desktop', revision: 2 },
     })
     await expect(client.createChallenge({ authentication, rendezvousId })).resolves.toMatchObject(challenge)
     await expect(client.cancelChallenge({ authentication, challengeId })).resolves.toBeUndefined()
@@ -116,7 +124,7 @@ describe('RemoteAccessHttpTransport', () => {
       status: 'paired', pairingId: 'pairing-one', sealedRelayAuthority: Uint8Array.of(1, 2),
     })
 
-    expect(fetch).toHaveBeenCalledTimes(12)
+    expect(fetch).toHaveBeenCalledTimes(13)
     const first = vi.mocked(fetch).mock.calls[0]
     expect(first?.[0]).toBe('https://platform.example/v1/remote-access/personal-pairing')
     expect(first?.[1]).toMatchObject({

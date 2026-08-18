@@ -600,6 +600,15 @@ function transportFixture() {
   return {
     getMobileAccessState: vi.fn().mockResolvedValueOnce({ enabled: false }).mockResolvedValue({ enabled: true }),
     setMobileAccess: vi.fn(async (input: { enabled: boolean }) => ({ enabled: input.enabled })),
+    reissueDesktopRelayAuthority: vi.fn(async () => ({
+      enabled: true,
+      relay: {
+        routeId: parseRelayRouteId('route-reissue'),
+        endpoint: 'desktop' as const,
+        credential: parseRelayCredential('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'),
+        revision: 2,
+      },
+    })),
     createChallenge: vi.fn().mockResolvedValue({
       challengeId: parsePairingChallengeId('challenge-one'),
       desktopFingerprint: 'fingerprint',

@@ -150,7 +150,7 @@ export interface PersonalPairingProviderOptions {
   /** Replaceable reviewed handshake adapter; this package does not implement Noise. */
   handshake: PairingHandshakeProvider
   /** Optional assembled Relay authority; production omits it until the crypto gate is approved. */
-  relay?: Pick<RemoteRelayService, 'rotateCredential' | 'issueCredential' | 'revokeRoute'>
+  relay?: Pick<RemoteRelayService, 'rotateCredential' | 'issueCredential' | 'revokeCredential' | 'revokeRoute'>
   /** Deployment-owned durable Mobile Access and pairing-to-route authority. */
   authority?: PersonalPairingAuthorityStore
   /** Clock used for fixed challenge expiry and deterministic assembled scenarios. */
@@ -261,6 +261,13 @@ export interface MobilePairingAuthority {
 
 /** Deployment-owned atomic authority store shared by non-sticky Platform Instances. */
 export interface PersonalPairingAuthorityStore {
+  /**
+   * Exclusively own the durable short-lived pairing transaction state.
+   * Mutations, including cleanup tombstones retained by a rejected operation, must be persisted before settlement.
+   * @param operation - bounded state transition serialized across every Platform Instance.
+   * @returns the operation result after its state changes are durable.
+   */
+  runPairingTransaction<T>(operation: (state: PersonalPairingTransactionState) => Promise<T>): Promise<T>
   /** Read current Desktop access without process-local caching. */
   getDesktop(accountId: Branded<'PlatformAccountId'>, desktopInstallationId: InstallationId): Promise<DesktopRemoteAccessAuthority>
   /** Atomically keep an active route or install the supplied fresh route. */
@@ -275,6 +282,18 @@ export interface PersonalPairingAuthorityStore {
   getMobilePairing(pendingPairingId: PendingPairingId): Promise<MobilePairingAuthority | undefined>
 }
 
+/** Durable short-lived pairing transaction records loaded under one store-owned exclusive lease. */
+export interface PersonalPairingTransactionState {
+  challenges: Map<PairingChallengeId, ChallengeRecord>
+  settledChallenges: Map<PairingChallengeId, SettledChallengeRecord>
+  completions: Map<PairingCompletionId, CompletionReplayRecord>
+  pending: Map<PendingPairingId, PendingPairingRecord>
+  settledPending: Map<PendingPairingId, SettledPendingRecord>
+  pairings: Map<PersonalPairingId, StoredPersonalPairing>
+  principalIds: Set<DevicePrincipalId>
+  orphanPendingCleanups: Map<CleanupRecord<PendingPairingKey>, OrphanPendingCleanupRecord>
+}
+
 interface StoredDesktopAuthority {
   activeRouteId?: RelayRouteId
   revokingRouteIds: Set<RelayRouteId>
@@ -284,6 +303,17 @@ interface StoredDesktopAuthority {
 export class MemoryPersonalPairingAuthorityStore implements PersonalPairingAuthorityStore {
   private readonly desktops = new Map<string, StoredDesktopAuthority>()
   private readonly pairings = new Map<PendingPairingId, MobilePairingAuthority>()
+  private readonly pairingTransactions = createPairingTransactionState()
+  private pairingSerial: Promise<void> = Promise.resolve()
+
+  runPairingTransaction<T>(operation: (state: PersonalPairingTransactionState) => Promise<T>): Promise<T> {
+    const result = this.pairingSerial.then(
+      () => operation(this.pairingTransactions),
+      () => operation(this.pairingTransactions),
+    )
+    this.pairingSerial = result.then(() => undefined, () => undefined)
+    return result
+  }
 
   getDesktop(accountId: Branded<'PlatformAccountId'>, desktopInstallationId: InstallationId): Promise<DesktopRemoteAccessAuthority> {
     const routeId = this.desktops.get(accessKey(accountId, desktopInstallationId))?.activeRouteId
@@ -379,6 +409,13 @@ export abstract class RemoteAccessService extends Service {
   }): Promise<MobileAccessState>
 
   /**
+   * Rotate and return fresh Desktop-only Relay authority after process startup or window reopen.
+   * @param desktop - current Desktop authorization for an enabled installation.
+   * @returns enabled state carrying a fresh Desktop grant.
+   */
+  abstract reissueDesktopRelayAuthority(desktop: PairingAccountAuthentication): Promise<MobileAccessState>
+
+  /**
    * Complete the same-account cryptographic exchange without granting authority.
    * @param input - Mobile authorization, invitation, device metadata, and handshake bytes.
    * @returns pending result shown on both installations before Desktop confirmation.
@@ -444,25 +481,29 @@ export abstract class RemoteAccessService extends Service {
   }): Promise<void>
 }
 
-interface CleanupRecord<T> { resource?: T }
+/** Durable ownership tombstone for provider-private crypto material. */
+export interface CleanupRecord<T> { resource?: T }
 
-interface OrphanPendingCleanupRecord {
+/** Pending-key cleanup retained when allocation fails before a pending id commits. */
+export interface OrphanPendingCleanupRecord {
   accountId: string
   desktopInstallationId: InstallationId
   mobileInstallationId: InstallationId
   cleanup: CleanupRecord<PendingPairingKey>
 }
 
-interface ChallengeRecord {
+/** Durable live Pairing Challenge transaction. */
+export interface ChallengeRecord {
   invitation: PairingInvitation
   accountId: string
   desktopInstallationId: InstallationId
   cleanup: CleanupRecord<PairingChallengeState>
-  timer: ReturnType<typeof setTimeout>
 }
 
-type ChallengeOutcome = 'cancelled' | 'expired' | 'completed' | 'account-mismatch' | 'disabled' | 'disposed'
-interface SettledChallengeRecord {
+/** Terminal Pairing Challenge outcome retained for bounded replay. */
+export type ChallengeOutcome = 'cancelled' | 'expired' | 'completed' | 'account-mismatch' | 'disabled' | 'disposed'
+/** Durable terminal Pairing Challenge transaction. */
+export interface SettledChallengeRecord {
   accountId: string
   desktopInstallationId: InstallationId
   outcome: ChallengeOutcome
@@ -470,7 +511,8 @@ interface SettledChallengeRecord {
   settledAt: number
 }
 
-interface CompletionReplayRecord {
+/** Durable idempotency projection for one completed Mobile handshake. */
+export interface CompletionReplayRecord {
   accountId: string
   desktopInstallationId: InstallationId
   mobileInstallationId: InstallationId
@@ -480,13 +522,16 @@ interface CompletionReplayRecord {
   completedAt: number
 }
 
-interface PendingPairingRecord extends CompletionReplayRecord {
+/** Durable pending handshake awaiting a Desktop decision. */
+export interface PendingPairingRecord extends CompletionReplayRecord {
   cleanup: CleanupRecord<PendingPairingKey>
   activationCleanup?: CleanupRecord<ActivePairingKey>
 }
 
-type PendingOutcome = 'confirmed' | 'rejected' | 'disabled' | 'collision' | 'disposed'
-interface SettledPendingRecord {
+/** Terminal pending-handshake outcome retained for bounded replay. */
+export type PendingOutcome = 'confirmed' | 'rejected' | 'disabled' | 'collision' | 'disposed'
+/** Durable terminal pending-handshake transaction. */
+export interface SettledPendingRecord {
   accountId: string
   desktopInstallationId: InstallationId
   mobileInstallationId: InstallationId
@@ -497,7 +542,8 @@ interface SettledPendingRecord {
   settledAt: number
 }
 
-type StoredPersonalPairing = PersonalPairingView & {
+/** Durable confirmed Personal Pairing plus crypto cleanup ownership. */
+export type StoredPersonalPairing = PersonalPairingView & {
   desktopInstallationId: InstallationId
   keyReference: PersonalPairingKeyReference
   cleanup: CleanupRecord<ActivePairingKey>
@@ -505,14 +551,7 @@ type StoredPersonalPairing = PersonalPairingView & {
 
 /** Provider combining instance-local handshake work with deployment-owned confirmed authority. */
 export class PersonalPairingProvider extends RemoteAccessService {
-  private readonly challenges = new Map<PairingChallengeId, ChallengeRecord>()
-  private readonly settledChallenges = new Map<PairingChallengeId, SettledChallengeRecord>()
-  private readonly completions = new Map<PairingCompletionId, CompletionReplayRecord>()
-  private readonly pending = new Map<PendingPairingId, PendingPairingRecord>()
-  private readonly settledPending = new Map<PendingPairingId, SettledPendingRecord>()
-  private readonly pairings = new Map<PersonalPairingId, StoredPersonalPairing>()
-  private readonly principalIds = new Set<DevicePrincipalId>()
-  private readonly orphanPendingCleanups = new Map<CleanupRecord<PendingPairingKey>, OrphanPendingCleanupRecord>()
+  private transactionState: PersonalPairingTransactionState | undefined
   private serial: Promise<void> = Promise.resolve()
   private readonly clock: { now(): number }
   private readonly randomBytes: (size: number) => Uint8Array
@@ -520,6 +559,7 @@ export class PersonalPairingProvider extends RemoteAccessService {
   private readonly schedule: NonNullable<PersonalPairingProviderOptions['schedule']>
   private readonly pairingLinkOrigin: string
   private readonly authority: PersonalPairingAuthorityStore
+  private readonly ownsAuthority: boolean
 
   /** @param ctx - Platform context. @param options - Account, crypto, time, random, and link adapters. */
   constructor(ctx: Context, private readonly options: PersonalPairingProviderOptions) {
@@ -530,6 +570,7 @@ export class PersonalPairingProvider extends RemoteAccessService {
       throw new TypeError('Remote Relay composition requires a deployment-owned shared authority store')
     }
     this.pairingLinkOrigin = origin.toString()
+    this.ownsAuthority = options.authority === undefined
     this.authority = options.authority ?? new MemoryPersonalPairingAuthorityStore()
     this.clock = options.clock ?? { now: () => Date.now() }
     this.randomBytes = options.randomBytes ?? secureRandomBytes
@@ -585,7 +626,6 @@ export class PersonalPairingProvider extends RemoteAccessService {
           accountId: account.id,
           desktopInstallationId: installation.id,
           cleanup,
-          timer,
         }
         this.challenges.set(challengeId, record)
         return { ...withoutSecret(invitation), oneTimeLink, qrPayload: oneTimeLink }
@@ -624,7 +664,7 @@ export class PersonalPairingProvider extends RemoteAccessService {
             parseRelayRouteId(this.randomId('relay-route')),
           )
           try {
-            relay = await this.options.relay.rotateCredential(routeId)
+            relay = await this.options.relay.rotateCredential(routeId, 'desktop')
           } catch (error) {
             if (!previous.enabled) {
               try {
@@ -650,14 +690,14 @@ export class PersonalPairingProvider extends RemoteAccessService {
       }
       const routeIds = await this.authority.disableDesktop(account.id, installation.id)
       if (this.options.relay !== undefined) {
-        for (const routeId of routeIds) {
-          await this.options.relay.revokeRoute(routeId)
+        await cleanupAll(routeIds.map(routeId => async () => {
+          await this.options.relay?.revokeRoute(routeId)
           await this.authority.completeRouteRevocation(account.id, installation.id, routeId)
-        }
+        }))
       } else {
-        for (const routeId of routeIds) {
+        await cleanupAll(routeIds.map(routeId => async () => {
           await this.authority.completeRouteRevocation(account.id, installation.id, routeId)
-        }
+        }))
       }
       for (const challenge of [...this.challenges.values()]) {
         if (challenge.accountId === account.id && challenge.desktopInstallationId === installation.id) {
@@ -671,6 +711,21 @@ export class PersonalPairingProvider extends RemoteAccessService {
       }
       await this.cleanupOwner(account.id, installation.id)
       return { enabled: false }
+    })
+  }
+
+  async reissueDesktopRelayAuthority(desktop: PairingAccountAuthentication): Promise<MobileAccessState> {
+    return this.exclusive(async () => {
+      const { account, installation } = await this.authenticate(desktop, 'desktop')
+      const authority = await this.authority.getDesktop(account.id, installation.id)
+      if (!authority.enabled || authority.routeId === undefined) {
+        throw new RemoteAccessError('MOBILE_ACCESS_DISABLED', 'Mobile Access is disabled for this Desktop Installation')
+      }
+      if (this.options.relay === undefined) return { enabled: true }
+      return {
+        enabled: true,
+        relay: await this.options.relay.rotateCredential(authority.routeId, 'desktop'),
+      }
     })
   }
 
@@ -900,6 +955,7 @@ export class PersonalPairingProvider extends RemoteAccessService {
           pairedAt: this.clock.now(),
         }
         let sealedRelayAuthority: Uint8Array | undefined
+        let issuedMobileGrant: RelayCredentialGrant | undefined
         const desktopAuthority = await this.authority.getDesktop(account.id, record.desktopInstallationId)
         if (this.options.relay !== undefined) {
           if (!desktopAuthority.enabled || desktopAuthority.routeId === undefined) {
@@ -908,20 +964,41 @@ export class PersonalPairingProvider extends RemoteAccessService {
           if (this.options.handshake.sealMobileRelayAuthority === undefined) {
             throw new Error('Personal Pairing crypto adapter cannot seal Mobile Relay authority')
           }
-          const mobileGrant = await this.options.relay.issueCredential(desktopAuthority.routeId)
-          sealedRelayAuthority = await this.options.handshake.sealMobileRelayAuthority({
-            activePairingKey: activation.activePairingKey,
-            grant: mobileGrant,
-          })
+          const mobileGrant = await this.options.relay.issueCredential(desktopAuthority.routeId, 'mobile')
+          issuedMobileGrant = mobileGrant
+          try {
+            sealedRelayAuthority = await this.options.handshake.sealMobileRelayAuthority({
+              activePairingKey: activation.activePairingKey,
+              grant: mobileGrant,
+            })
+          } catch (error) {
+            try {
+              await this.options.relay.revokeCredential(mobileGrant)
+            } catch (cleanupError) {
+              throw new AggregateError([error, cleanupError], 'Mobile Relay authority rollback failed')
+            }
+            throw error
+          }
         }
-        await this.authority.confirmMobilePairing({
-          accountId: account.id,
-          desktopInstallationId: record.desktopInstallationId,
-          mobileInstallationId: record.mobileInstallationId,
-          pendingPairingId,
-          pairingId: view.id,
-          ...(sealedRelayAuthority === undefined ? {} : { sealedRelayAuthority }),
-        })
+        try {
+          await this.authority.confirmMobilePairing({
+            accountId: account.id,
+            desktopInstallationId: record.desktopInstallationId,
+            mobileInstallationId: record.mobileInstallationId,
+            pendingPairingId,
+            pairingId: view.id,
+            ...(sealedRelayAuthority === undefined ? {} : { sealedRelayAuthority }),
+          })
+        } catch (error) {
+          if (issuedMobileGrant !== undefined && this.options.relay !== undefined) {
+            try {
+              await this.options.relay.revokeCredential(issuedMobileGrant)
+            } catch (cleanupError) {
+              throw new AggregateError([error, cleanupError], 'Mobile Relay authority commit rollback failed')
+            }
+          }
+          throw error
+        }
         this.principalIds.add(principalId)
         this.pairings.set(view.id, {
           ...view,
@@ -998,6 +1075,10 @@ export class PersonalPairingProvider extends RemoteAccessService {
 
   /** Drain instance-local incomplete crypto work while preserving durable confirmed authority. */
   async dispose(): Promise<void> {
+    if (!this.ownsAuthority) {
+      await this.serial
+      return
+    }
     await this.exclusive(async () => {
       for (const challenge of [...this.challenges.values()]) this.settleChallenge(challenge, 'disposed')
       for (const [id, record] of [...this.pending]) this.settlePending(id, record, 'disposed')
@@ -1022,7 +1103,6 @@ export class PersonalPairingProvider extends RemoteAccessService {
 
   private settleChallenge(challenge: ChallengeRecord, outcome: ChallengeOutcome): SettledChallengeRecord {
     this.challenges.delete(challenge.invitation.challengeId)
-    clearTimeout(challenge.timer)
     challenge.invitation.invitationSecret.fill(0)
     const settled = {
       accountId: challenge.accountId,
@@ -1216,9 +1296,50 @@ export class PersonalPairingProvider extends RemoteAccessService {
   }
 
   private exclusive<T>(operation: () => Promise<T>): Promise<T> {
-    const result = this.serial.then(operation, operation)
+    const owned = async (): Promise<T> => await this.authority.runPairingTransaction(async (state) => {
+      this.transactionState = state
+      try {
+        return await operation()
+      } finally {
+        this.transactionState = undefined
+      }
+    })
+    const result = this.serial.then(owned, owned)
     this.serial = result.then(() => undefined, () => undefined)
     return result
+  }
+
+  private get challenges(): PersonalPairingTransactionState['challenges'] { return this.requireTransactions().challenges }
+  private get settledChallenges(): PersonalPairingTransactionState['settledChallenges'] {
+    return this.requireTransactions().settledChallenges
+  }
+  private get completions(): PersonalPairingTransactionState['completions'] { return this.requireTransactions().completions }
+  private get pending(): PersonalPairingTransactionState['pending'] { return this.requireTransactions().pending }
+  private get settledPending(): PersonalPairingTransactionState['settledPending'] {
+    return this.requireTransactions().settledPending
+  }
+  private get pairings(): PersonalPairingTransactionState['pairings'] { return this.requireTransactions().pairings }
+  private get principalIds(): PersonalPairingTransactionState['principalIds'] { return this.requireTransactions().principalIds }
+  private get orphanPendingCleanups(): PersonalPairingTransactionState['orphanPendingCleanups'] {
+    return this.requireTransactions().orphanPendingCleanups
+  }
+
+  private requireTransactions(): PersonalPairingTransactionState {
+    if (this.transactionState === undefined) throw new Error('Personal Pairing transaction state is not owned')
+    return this.transactionState
+  }
+}
+
+function createPairingTransactionState(): PersonalPairingTransactionState {
+  return {
+    challenges: new Map(),
+    settledChallenges: new Map(),
+    completions: new Map(),
+    pending: new Map(),
+    settledPending: new Map(),
+    pairings: new Map(),
+    principalIds: new Set(),
+    orphanPendingCleanups: new Map(),
   }
 }
 

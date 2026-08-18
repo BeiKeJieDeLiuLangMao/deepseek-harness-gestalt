@@ -382,26 +382,47 @@ async function startLoadBalancer(backends: Backend[], acquired: string[]): Promi
 }
 
 class KeylessRouteStore implements RelayRouteStore {
-  private readonly routes = new Map<string, { digests: Set<string>; revision: number; revoked: boolean }>()
-  async rotate(routeId: RelayRouteId, digest: Uint8Array): Promise<number> {
+  private readonly routes = new Map<string, {
+    authorities: Map<string, 'mobile' | 'desktop'>
+    revision: number
+    revoked: boolean
+  }>()
+  async rotate(routeId: RelayRouteId, endpoint: 'mobile' | 'desktop', digest: Uint8Array): Promise<number> {
     const revision = (this.routes.get(routeId)?.revision ?? 0) + 1
-    this.routes.set(routeId, { digests: new Set([Buffer.from(digest).toString('hex')]), revision, revoked: false })
+    const authorities = new Map(this.routes.get(routeId)?.authorities ?? [])
+    for (const [value, owner] of authorities) if (owner === endpoint) authorities.delete(value)
+    authorities.set(Buffer.from(digest).toString('hex'), endpoint)
+    this.routes.set(routeId, { authorities, revision, revoked: false })
     return revision
   }
-  async issue(routeId: RelayRouteId, digest: Uint8Array): Promise<number | undefined> {
+  async issue(routeId: RelayRouteId, endpoint: 'mobile' | 'desktop', digest: Uint8Array): Promise<number | undefined> {
     const route = this.routes.get(routeId)
     if (route === undefined || route.revoked) return undefined
-    route.digests.add(Buffer.from(digest).toString('hex'))
+    route.authorities.set(Buffer.from(digest).toString('hex'), endpoint)
     return route.revision
   }
-  async authorize(routeId: RelayRouteId, digest: Uint8Array): Promise<number | undefined> {
+  async authorize(routeId: RelayRouteId, endpoint: 'mobile' | 'desktop', digest: Uint8Array): Promise<number | undefined> {
     const route = this.routes.get(routeId)
-    return route !== undefined && !route.revoked && route.digests.has(Buffer.from(digest).toString('hex'))
+    return route !== undefined && !route.revoked
+      && route.authorities.get(Buffer.from(digest).toString('hex')) === endpoint
       ? route.revision : undefined
+  }
+  async revokeCredential(
+    routeId: RelayRouteId,
+    endpoint: 'mobile' | 'desktop',
+    digest: Uint8Array,
+  ): Promise<number> {
+    const current = this.routes.get(routeId)
+    const revision = (current?.revision ?? 0) + 1
+    const authorities = new Map(current?.authorities ?? [])
+    const encoded = Buffer.from(digest).toString('hex')
+    if (authorities.get(encoded) === endpoint) authorities.delete(encoded)
+    this.routes.set(routeId, { authorities, revision, revoked: current?.revoked ?? true })
+    return revision
   }
   async revoke(routeId: RelayRouteId): Promise<number> {
     const revision = (this.routes.get(routeId)?.revision ?? 0) + 1
-    this.routes.set(routeId, { digests: new Set(), revision, revoked: true })
+    this.routes.set(routeId, { authorities: new Map(), revision, revoked: true })
     return revision
   }
 }

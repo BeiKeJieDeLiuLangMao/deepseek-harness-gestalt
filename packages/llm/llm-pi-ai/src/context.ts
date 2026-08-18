@@ -105,15 +105,19 @@ function textOnlyContext(options: GenerateOptions, onReplayDegrade?: (reason: st
     const results = message.content.filter(block => block.type === 'tool-result')
     if (text.length > 0 || results.length === 0) messages.push({ role: 'user', content: text, timestamp: 0 })
     for (const result of results) {
+      const toolName = toolNames.get(result.toolCallId) ?? 'unknown'
       messages.push({
         role: 'toolResult',
         toolCallId: result.toolCallId,
-        toolName: toolNames.get(result.toolCallId) ?? 'unknown',
+        toolName,
         content: [{
           type: 'text',
           text: toolResultText(result.content) || '(no output)',
         }],
         isError: result.isError ?? false,
+        ...toolName === 'tool_search' && result.loadedTools !== undefined
+          ? { addedToolNames: result.loadedTools.map(tool => tool.name) }
+          : {},
         timestamp: 0,
       })
     }
@@ -193,14 +197,18 @@ async function toPiContextWithImages(
     }
     for (const result of results) {
       const resultContent = await userContent(result.content, attachments)
+      const toolName = toolNames.get(result.toolCallId) ?? 'unknown'
       messages.push({
         role: 'toolResult',
         toolCallId: result.toolCallId,
-        toolName: toolNames.get(result.toolCallId) ?? 'unknown',
+        toolName,
         content: typeof resultContent === 'string'
           ? [{ type: 'text', text: resultContent || '(no output)' }]
           : resultContent,
         isError: result.isError ?? false,
+        ...toolName === 'tool_search' && result.loadedTools !== undefined
+          ? { addedToolNames: result.loadedTools.map(tool => tool.name) }
+          : {},
         timestamp: 0,
       })
     }
