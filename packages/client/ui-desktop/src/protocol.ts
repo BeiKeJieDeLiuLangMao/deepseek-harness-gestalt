@@ -60,6 +60,7 @@ export type UpdaterPhase =
   | 'checking'
   | 'available'
   | 'downloading'
+  | 'preparing'
   | 'downloaded'
   | 'installing'
   | 'error'

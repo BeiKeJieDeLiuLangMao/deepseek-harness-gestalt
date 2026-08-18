@@ -105,6 +105,16 @@ describe('UpdateControl', () => {
     expect(available.downloadNow).toHaveBeenCalledOnce()
   })
 
+  it('does not install while Squirrel is still preparing', () => {
+    const preparing = mount({ state: 'preparing', lastCheckedAt: 1, newVersion: '0.1.4' })
+    const control = screen.getByRole('button', { name: 'Preparing update' })
+    expect(control.hasAttribute('disabled')).toBe(true)
+    fireEvent.click(control)
+    expect(preparing.quitAndInstall).not.toHaveBeenCalled()
+    applyUpdaterClick('preparing', preparing)
+    expect(preparing.quitAndInstall).not.toHaveBeenCalled()
+  })
+
   it('installs after download', () => {
     const downloaded = mount({ state: 'downloaded', lastCheckedAt: 1, newVersion: '0.1.1' })
     fireEvent.click(screen.getByRole('button', { name: 'Install and restart' }))
