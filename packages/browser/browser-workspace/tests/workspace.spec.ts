@@ -118,6 +118,17 @@ describe('Session-owned Browser Workspace', () => {
 
     await expect(ctx.browserWorkspace.observe({ session: second, target: work.target }))
       .rejects.toMatchObject({ code: 'BROWSER_TRANSFER_UNSUPPORTED' })
+    await expect(ctx.browserWorkspace.create({
+      session: second,
+      profile: 'persistent',
+      name: BrowserProfileName('work'),
+      attach: { kind: 'browser', workspaceId: work.target.workspaceId, browserId: work.target.browserId },
+    })).rejects.toMatchObject({ code: 'BROWSER_TRANSFER_UNSUPPORTED' })
+    await expect(ctx.browserWorkspace.create({
+      session: first,
+      profile: 'temporary',
+      attach: { kind: 'workspace', workspaceId: work.target.workspaceId.replace('workspace', 'missing') as typeof work.target.workspaceId },
+    })).rejects.toMatchObject({ code: 'BROWSER_SESSION_MISMATCH' })
     await expect(ctx.browserWorkspace.focus({
       session: first,
       target: {
@@ -192,12 +203,13 @@ describe('Session-owned Browser Workspace', () => {
 
   it('closes leftover live tabs when the owning Session leaves the store', async () => {
     const ctx = await harness()
-    const leftover = ctx.sessions.create(SessionId('session-cleanup'))
+    const leftover = ctx.sessions.prepare(SessionId('session-cleanup'))
+    const detach = ctx.sessions.enter(leftover)
+    ctx.sessions.announce(leftover)
     const live = await ctx.browserWorkspace.create({ session: leftover, profile: 'temporary' })
-    ctx.emit('session/disposed', leftover)
-    await ctx.browserWorkspace.cleanup(leftover)
-    await expect(ctx.browserRuntime.observe({ target: live.target })).resolves.toMatchObject({ status: 'closed' })
-    await ctx.browserWorkspace.cleanup(leftover)
+    detach()
+    await expect.poll(() => ctx.browserRuntime.observe({ target: live.target })).toMatchObject({ status: 'closed' })
+    expect(ctx.browserWorkspace.snapshot(leftover).workspaces).toEqual([])
     const sameDock = ctx.browserWorkspace.setDock({ session: leftover, open: false, width: 640 })
     expect(sameDock).toEqual(ctx.browserWorkspace.snapshot(leftover))
 
@@ -224,6 +236,25 @@ describe('Session-owned Browser Workspace', () => {
     })
     await ctx.browserWorkspace.cleanup(failing)
     ctx.browserRuntime.observe = observer
+
+    const alreadyClosed = ctx.sessions.create(SessionId('session-already-closed'))
+    alreadyClosed.append('browser/workspace', {
+      dockOpen: false,
+      dockWidth: 640,
+      activeWorkspaceId: live.target.workspaceId,
+      workspaces: [{
+        workspaceId: live.target.workspaceId,
+        profileId: live.target.profileId,
+        activeBrowserId: live.target.browserId,
+        browsers: [{
+          browserId: live.target.browserId,
+          activeTabId: live.target.tabId,
+          tabs: [{ tabId: live.target.tabId }],
+        }],
+      }],
+    })
+    await ctx.browserWorkspace.cleanup(alreadyClosed)
+    expect(ctx.browserWorkspace.snapshot(alreadyClosed).workspaces).toEqual([])
   })
 
   it('rejects an invalid Dock width and disposes its invariant companion', async () => {

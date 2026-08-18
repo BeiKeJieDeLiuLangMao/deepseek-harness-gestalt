@@ -12,6 +12,7 @@ import type { ZodType } from 'zod'
 import { BrowserRuntimeError } from '@deepseek-ai/dsh-browser-runtime'
 import type {
   BrowserClosedState,
+  BrowserCreateAttach,
   BrowserCreateRequest,
   BrowserMutationRequest,
   BrowserNavigateRequest,
@@ -86,9 +87,7 @@ export class BrowserWorkspaceBinder extends Service {
 
   constructor(ctx: Context) {
     super(ctx, 'browserWorkspace')
-    ctx.on('session/disposed', (session) => {
-      void this.cleanup(session)
-    }, { global: true })
+    ctx.on('session/disposed', session => this.cleanup(session), { global: true })
     ctx.inject(['sessionProjections'], (projectionCtx) => {
       projectionCtx.sessionProjections.register<'browserWorkspace', BrowserWorkspaceProjection>({
         key: 'browserWorkspace',
@@ -131,6 +130,7 @@ export class BrowserWorkspaceBinder extends Service {
    * @returns the committed open page.
    */
   async create(request: BrowserWorkspaceCreateRequest): Promise<BrowserPageState> {
+    this.assertCreateAttach(request.session, request.attach)
     const created = await this.ctx.browserRuntime.create(request)
     this.adopt(request.session, created.target)
     return created
@@ -207,15 +207,34 @@ export class BrowserWorkspaceBinder extends Service {
           }
           try {
             const state = await this.ctx.browserRuntime.observe({ target })
-            if (state.status === 'closed') continue
-            await this.ctx.browserRuntime.close({ target, expectedRevision: state.revision })
+            if (state.status !== 'closed') {
+              await this.ctx.browserRuntime.close({ target, expectedRevision: state.revision })
+            }
           } catch (error) {
             this.ctx.logger.warn('browser-workspace: Session cleanup failed for one tab')
             this.ctx.logger.warn(error)
           }
+          this.forget(session, target)
         }
       }
     }
+  }
+
+  /** Reject attach that names another Session's hierarchy or an unowned one. */
+  private assertCreateAttach(session: Session, attach: BrowserCreateRequest['attach']): void {
+    if (attach === undefined) return
+    const owner = this.ownerOfAttach(attach)
+    if (owner !== undefined && owner.id !== session.id) {
+      throw new BrowserRuntimeError('cross-Session page transfer is not supported', 'BROWSER_TRANSFER_UNSUPPORTED')
+    }
+    if (!ownsAttach(this.snapshot(session), attach)) {
+      throw new BrowserRuntimeError('browser attach target is not owned by this Session', 'BROWSER_SESSION_MISMATCH')
+    }
+  }
+
+  /** Find the live Session that already owns one attach hierarchy, if any. */
+  private ownerOfAttach(attach: NonNullable<BrowserCreateRequest['attach']>): Session | undefined {
+    return this.ctx.sessions.list().find(session => ownsAttach(this.snapshot(session), attach))
   }
 
   /** Reject a target that another Session owns or that this Session never adopted. */
@@ -265,6 +284,13 @@ function ownsTarget(snapshot: BrowserWorkspaceProjection, target: BrowserTarget)
   if (workspace === undefined || workspace.profileId !== target.profileId) return false
   const browser = workspace.browsers.find(item => item.browserId === target.browserId)
   return browser?.tabs.some(tab => tab.tabId === target.tabId) === true
+}
+
+/** Whether one snapshot already owns the Workspace or instance named by attach. */
+function ownsAttach(snapshot: BrowserWorkspaceProjection, attach: BrowserCreateAttach): boolean {
+  const workspace = snapshot.workspaces.find(item => item.workspaceId === attach.workspaceId)
+  if (workspace === undefined) return false
+  return attach.kind === 'workspace' || workspace.browsers.some(browser => browser.browserId === attach.browserId)
 }
 
 /** Add one target to the Session snapshot, creating Workspace and instance rows as needed. */

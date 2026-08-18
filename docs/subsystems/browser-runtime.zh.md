@@ -205,7 +205,7 @@ async cleanup(session: Session): Promise<void>
 
 Types: [Session](session.md)
 
-Source: [`packages/browser/browser-workspace/src/index.ts:84`](../../packages/browser/browser-workspace/src/index.ts)
+Source: [`packages/browser/browser-workspace/src/index.ts:85`](../../packages/browser/browser-workspace/src/index.ts)
 
 <a id="browser-events"></a>
 

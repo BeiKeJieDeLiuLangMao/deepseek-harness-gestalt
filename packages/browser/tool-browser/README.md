@@ -28,4 +28,4 @@ The first request keeps the large Browser schemas out of the prefix. Discovery c
 
 ## Known Limitations and Deferred Work
 
-- The Consumer exposes temporary and named persistent Browser Profiles and adds no account picker, Browser Dock, or browser-specific conversation card. Persistent chrome is a runtime fact, not a Dock header. Session-local Workspace ownership lives in [`dsh-browser-workspace`](../browser-workspace/README.md).
+- The Consumer exposes temporary and named persistent Browser Profiles and adds no account picker, Browser Dock, or browser-specific conversation card. Persistent chrome is a runtime fact, not a Dock header. Session-local Workspace ownership lives in [`dsh-browser-workspace`](../browser-workspace/README.md). Headless Browser Runtime snapshots stay Binder-free because they prove discovery and rendered Runtime facts, not Session isolation.
