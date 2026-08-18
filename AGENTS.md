@@ -100,6 +100,8 @@ Before pushes, select checks via [dsh-pre-push-checks](.agents/skills/dsh-pre-pu
 
 Real-API tests and demos read `DEEPSEEK_API_KEY`, optional `DEEPSEEK_BASE_URL`, and root `.env`. cordis.yml allows `!!js` (never `!js`) under plugin `config` and entry `disabled`; other metadata stays literal, so conditional composition also uses overlays ([primer](docs/cordis-primer.md#loader-configuration)). Never commit credentials. CI e2e skips without a key; [testing.md](docs/testing.md) owns key policy.
 
+With explicit user authorization, real-model tests and demos may blind-copy only required settings and credentials from the read-only normal `DSH_HOME` to a gitignored `0700` scratch `DSH_HOME` with `0600` files. Exclude session, workspace, and browser state; never print or parse-display secrets; keep logs and artifacts secret-free; record provider and model reference names only; delete and verify the copy. Otherwise report the credential blocker.
+
 ## Conventions
 
 - Every npm package is `@deepseek-ai/dsh-<name>`; vendored packages are rescoped ([mapping](docs/rescope.md)) and `private: true`. `@deepseek-ai/cordis` is a peerDependency (+ dev) of every harness package.
