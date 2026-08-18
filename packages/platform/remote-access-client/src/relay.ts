@@ -99,7 +99,9 @@ export class RemoteRelayEndpointController {
         }
         this.owner = owner
         owner.run = this.runConnections(owner)
-        void owner.run.catch(() => {})
+        void owner.run.catch(() => {
+          // runConnections rejection is collected later by stopOwner's allSettled + throwRejected.
+        })
         return owner.ready.promise
       }
       if (current.stop === undefined) return current.ready.promise
@@ -213,7 +215,9 @@ export class RemoteRelayEndpointController {
       }
       owner.ready.resolve()
       heartbeat = this.heartbeat(owner, connection, heartbeatAbort.signal)
-      void heartbeat.catch(() => {})
+      void heartbeat.catch(() => {
+        // Abort during delay/send is the finally teardown; send failures surface via receive/stop.
+      })
       while (!isAborted(signal)) {
         const next = await iterator.next()
         if (next.done || isAborted(signal)) break
