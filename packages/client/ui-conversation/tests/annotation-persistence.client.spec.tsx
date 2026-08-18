@@ -21,6 +21,7 @@ const LABELS = {
   heading: (index: number) => `Annotation ${index}`,
   quote: (value: string) => `Quoted text: “${value}”`,
   note: (value: string) => `Note: ${value}`,
+  image: (name: string, x: number, y: number) => `Image “${name}” at ${x.toFixed(1)}%, ${y.toFixed(1)}%`,
 }
 
 function makeShell(deps: Partial<SessionInputDeps> = {}): SessionInputShell {

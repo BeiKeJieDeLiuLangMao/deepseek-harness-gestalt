@@ -57,7 +57,9 @@ function AnnotatableAssistantText({
     <TextAnnotationTarget
       sourceId={sourceId}
       selectionMapRef={selectionMapRef}
-      annotations={annotations.filter(item => item.anchor.sourceId === sourceId)}
+      annotations={annotations.filter((item): item is Extract<typeof item, { kind: 'text' }> => (
+        item.kind === 'text' && item.anchor.sourceId === sourceId
+      ))}
       add={add}
       t={t}
     >

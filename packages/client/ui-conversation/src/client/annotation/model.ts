@@ -29,13 +29,27 @@ export interface TextAnnotation {
   readonly note: string
 }
 
+/** One unsent pin on a Composer-staged static image. */
+export interface ImagePinAnnotation {
+  readonly id: TextAnnotationId
+  readonly kind: 'image-pin'
+  readonly imageId: string
+  readonly imageName: string
+  readonly x: number
+  readonly y: number
+  readonly note: string
+}
+
+/** One unsent draft item in shared creation order. */
+export type DraftAnnotation = TextAnnotation | ImagePinAnnotation
+
 /**
  * JSON-persisted whole value of one Session's Annotation Draft. `annotations`
  * keeps creation order and identities; `nextSeq` continues the owner's id
  * sequence so a restored draft never reuses a live identity.
  */
 export interface PersistedAnnotationDraft {
-  readonly annotations: readonly TextAnnotation[]
+  readonly annotations: readonly DraftAnnotation[]
   readonly nextSeq: number
 }
 
@@ -47,6 +61,8 @@ export interface AnnotationCompilerLabels {
   quote: (value: string) => string
   /** @returns A localized non-empty note paragraph. */
   note: (value: string) => string
+  /** @returns A localized image-identity and percentage-coordinate paragraph. */
+  image: (name: string, x: number, y: number) => string
 }
 
 const CONTEXT_LENGTH = 48
@@ -80,14 +96,57 @@ export function createTextAnchor(sourceId: string, source: string, quote: string
  */
 export function compileAnnotationSubmission(
   question: string,
-  annotations: readonly TextAnnotation[],
+  annotations: readonly DraftAnnotation[],
   labels: AnnotationCompilerLabels,
 ): string {
-  const paragraphs = annotations.map((annotation, index) => [
-    labels.heading(index + 1),
-    labels.quote(annotation.anchor.quote),
-    ...(annotation.note === '' ? [] : [labels.note(annotation.note)]),
-  ].join('\n'))
+  const paragraphs = annotations.map((annotation, index) => {
+    const body = annotation.kind === 'text'
+      ? labels.quote(annotation.anchor.quote)
+      : labels.image(annotation.imageName, annotation.x, annotation.y)
+    return [
+      labels.heading(index + 1),
+      body,
+      ...(annotation.note === '' ? [] : [labels.note(annotation.note)]),
+    ].join('\n')
+  })
   const prompt = question.trim()
   return [...(prompt === '' ? [] : [prompt]), ...paragraphs].join('\n\n')
+}
+
+/**
+ * Convert a click on the displayed raster into stored percentage coordinates.
+ * @param clientX - Pointer X in viewport coordinates.
+ * @param clientY - Pointer Y in viewport coordinates.
+ * @param rect - Displayed image box.
+ * @returns Percentages in `[0, 100]` against the displayed, EXIF-oriented raster.
+ */
+export function pinPercentFromClientPoint(
+  clientX: number,
+  clientY: number,
+  rect: Pick<DOMRect, 'left' | 'top' | 'width' | 'height'>,
+): { x: number; y: number } {
+  if (rect.width <= 0 || rect.height <= 0) return { x: 0, y: 0 }
+  const x = ((clientX - rect.left) / rect.width) * 100
+  const y = ((clientY - rect.top) / rect.height) * 100
+  return {
+    x: Math.min(100, Math.max(0, x)),
+    y: Math.min(100, Math.max(0, y)),
+  }
+}
+
+/**
+ * Detect an animated GIF from its bytes. Static GIF and non-GIF files return false.
+ * @param bytes - File bytes.
+ * @returns whether more than one image descriptor is present.
+ */
+export function isAnimatedGif(bytes: Uint8Array): boolean {
+  if (bytes.length < 6) return false
+  const header = String.fromCharCode(...bytes.subarray(0, 6))
+  if (header !== 'GIF87a' && header !== 'GIF89a') return false
+  let frames = 0
+  for (let i = 6; i < bytes.length; i += 1) {
+    if (bytes[i] === 0x2c) frames += 1
+    if (frames > 1) return true
+  }
+  return false
 }

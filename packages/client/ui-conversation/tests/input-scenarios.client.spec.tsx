@@ -32,6 +32,7 @@ const TEST_LABELS = {
   heading: (index: number) => `Annotation ${index}`,
   quote: (value: string) => `Quoted text: \u201c${value}\u201d`,
   note: (value: string) => `Note: ${value}`,
+  image: (name: string, x: number, y: number) => `Image “${name}” at ${x.toFixed(1)}%, ${y.toFixed(1)}%`,
 }
 
 afterEach(cleanup)
