@@ -15,6 +15,7 @@ import { parseRelayRouteId, type RelayRouteId } from '@deepseek-ai/dsh-remote-pr
 import type { RelayCredentialGrant, RemoteRelayService } from './relay.ts'
 
 export * from './relay.ts'
+export * from './open-registration-quotas.ts'
 
 /** Fixed lifetime of one Personal Pairing invitation. */
 export const PAIRING_CHALLENGE_TTL_MS = 2 * 60 * 1000
