@@ -108,6 +108,25 @@ function reconstructedResultBytes(schemas: ToolSchema[]): number {
   return new TextEncoder().encode(JSON.stringify(message.content[0])).byteLength
 }
 
+function agentWithRestoredCandidates(candidates: readonly unknown[]): Agent {
+  const base = createToolResultMessage({
+    callId: CallId('hostile-restored-candidates'),
+    content: [{ type: 'text', text: 'restored discovery candidates' }],
+    isError: false,
+  })
+  const block = base.content[0]
+  if (block?.type !== 'tool-result') throw new Error('expected canonical tool result block')
+  const message = {
+    ...base,
+    content: [{ ...block, loadedTools: candidates }],
+  }
+  return {
+    session: {
+      deriveMessages: () => [message] as never,
+    },
+  } as unknown as Agent
+}
+
 describe('deferred tool search', () => {
   it('applies direct-construction search defaults', async () => {
     const ctx = new Context()
@@ -522,6 +541,62 @@ describe('deferred tool search', () => {
     const assembly = await ctx.systemPrompt.assemble({ scope: agent, agent })
     expect(assembly.tools.map(schema => schema.name)).toContain(eligible.name)
     expect(({} as { polluted?: boolean }).polluted).toBeUndefined()
+  })
+
+  it('ignores restored proxies and accessors without invoking their traps', async () => {
+    const ctx = await mount()
+    const eligible = deferredSchema('mcp__restored__eligible', 'Eligible restored schema')
+    ctx.tools.register(tool(eligible.name, eligible.description, true))
+    let prototypeTrapCalls = 0
+    let accessorReads = 0
+    const revoked = Proxy.revocable({
+      name: 'mcp__restored__revoked',
+      description: 'Revoked stale schema',
+      parameters: { type: 'object' },
+    }, {})
+    revoked.revoke()
+    const prototypeTrap = new Proxy({
+      name: 'mcp__restored__trapped',
+      description: 'Trapped stale schema',
+      parameters: { type: 'object' },
+    }, {
+      getPrototypeOf: () => {
+        prototypeTrapCalls++
+        throw new Error('restored candidate prototype trap must not run')
+      },
+    })
+    const accessorParameters = { type: 'object' }
+    Object.defineProperty(accessorParameters, 'properties', {
+      enumerable: true,
+      get: () => {
+        accessorReads++
+        throw new Error('restored candidate accessor must not run')
+      },
+    })
+    const accessor = {
+      name: eligible.name,
+      description: 'Accessor-bearing eligible schema',
+      parameters: accessorParameters,
+    }
+    const cyclicParameters: Record<string, unknown> = { type: 'object' }
+    cyclicParameters.self = cyclicParameters
+    const cyclic = {
+      name: eligible.name,
+      description: 'Cyclic eligible schema',
+      parameters: cyclicParameters,
+    }
+    const agent = agentWithRestoredCandidates([
+      revoked.proxy,
+      prototypeTrap,
+      eligible,
+      cyclic,
+      accessor,
+    ])
+
+    const assembly = await ctx.systemPrompt.assemble({ agent })
+    expect(assembly.tools.map(schema => schema.name)).toContain(eligible.name)
+    expect(prototypeTrapCalls).toBe(0)
+    expect(accessorReads).toBe(0)
   })
 
   it('budgets an eligible raw restored candidate before schema validation', async () => {

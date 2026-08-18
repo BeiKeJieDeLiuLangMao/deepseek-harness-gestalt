@@ -137,7 +137,7 @@ agent loop 将连续的 `parallel` 调用归入有界滚动池，并把每个 `e
 
 #### 模型看到什么
 
-初始请求包含 [`tool_search`](../../../docs/tool-catalog.md#deepseek-aidsh-tools) 与所有非 deferred 的合资格 schema。成功搜索结果在配置的数量与持久结果字节上限内包含精确匹配的 schema。Deferred 参数 schema 可以省略 `$schema` 以使用 Harness 的 draft-07 默认值，也可以声明 draft-07 或 MCP 的 JSON Schema 2020-12 dialect；不受支持的 dialect 标识与格式错误 schema 都会使发现失败。重建时，注册表只会从每个已存候选项安全读取自有、可枚举的字符串名称，按当前合资格 deferred 视图丢弃并去重名称，对完整原始合资格集合计算预算，然后才校验并投影其完整 schema。格式错误、使用不受支持 dialect 或体积巨大的过期候选项会被忽略；无效或超限的当前候选项会使组装失败。这是 schema 发现，而不是激活：不会产生可见的注册表状态变更；当前 allow-only 资格排除的 schema 既不会被返回，也不会计入重建预算。在 Code Mode 中，嵌套发现得到的 schema 会随外层 `run_code` 结果传递；其完整合并元数据会在规范结果写入日志前接受预算检查。provider-neutral 适配器收到普通的直接搜索调用／结果和新加入的请求 schema；OpenAI Responses 路径还会把该直接搜索事实投影为原生 `tool_search_call`／`tool_search_output` 历史。
+初始请求包含 [`tool_search`](../../../docs/tool-catalog.md#deepseek-aidsh-tools) 与所有非 deferred 的合资格 schema。成功搜索结果在配置的数量与持久结果字节上限内包含精确匹配的 schema。Deferred 参数 schema 可以省略 `$schema` 以使用 Harness 的 draft-07 默认值，也可以声明 draft-07 或 MCP 的 JSON Schema 2020-12 dialect；不受支持的 dialect 标识与格式错误 schema 都会使发现失败。重建时，注册表会在检查 record 前拒绝 Proxy，只从每个已存候选项安全读取自有、可枚举的字符串名称，并按当前合资格 deferred 视图丢弃并去重名称。保留候选项在规范序列化前必须是不含 accessor 的 lossless JSON，因此不会运行 Proxy trap 或 getter；随后，注册表会对完整原始合资格集合计算预算，然后才校验并投影其完整 schema。格式错误、使用不受支持 dialect 或体积巨大的过期候选项会被忽略；无效或超限的当前候选项会使组装失败。这是 schema 发现，而不是激活：不会产生可见的注册表状态变更；当前 allow-only 资格排除的 schema 既不会被返回，也不会计入重建预算。在 Code Mode 中，嵌套发现得到的 schema 会随外层 `run_code` 结果传递；其完整合并元数据会在规范结果写入日志前接受预算检查。provider-neutral 适配器收到普通的直接搜索调用／结果和新加入的请求 schema；OpenAI Responses 路径还会把该直接搜索事实投影为原生 `tool_search_call`／`tool_search_output` 历史。
 
 #### Token 影响
 

@@ -3022,7 +3022,7 @@ export interface Config {
 export type ToolPresentationMode = 'native' | 'code' | 'both'
 ```
 
-来源：[`packages/core/tools/src/index.ts:715`](../packages/core/tools/src/index.ts)
+来源：[`packages/core/tools/src/index.ts:716`](../packages/core/tools/src/index.ts)
 
 <a id="deepseek-aidsh-tools-eligibility"></a>
 

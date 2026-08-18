@@ -3020,7 +3020,7 @@ export interface Config {
 export type ToolPresentationMode = 'native' | 'code' | 'both'
 ```
 
-Source: [`packages/core/tools/src/index.ts:715`](../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:716`](../packages/core/tools/src/index.ts)
 
 <a id="deepseek-aidsh-tools-eligibility"></a>
 

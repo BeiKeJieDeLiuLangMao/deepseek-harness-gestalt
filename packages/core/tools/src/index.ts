@@ -4,6 +4,7 @@
  * @module @deepseek-ai/dsh-tools
  */
 
+import { isProxy } from 'node:util/types'
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import Ajv from 'ajv'
@@ -14,7 +15,7 @@ import type { ScopeKey, ScopeLayer, Scoped } from '@deepseek-ai/dsh-scope'
 import type { ContentBlock, ToolSchema } from '@deepseek-ai/dsh-llm'
 import { assertNever, CallId, deepFreeze, HarnessError } from '@deepseek-ai/dsh-llm'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { snapshotJsonValue } from '@deepseek-ai/dsh-session'
+import { isJsonValue, snapshotJsonValue } from '@deepseek-ai/dsh-session'
 import type { JsonValue, UserMessage } from '@deepseek-ai/dsh-session'
 import type { AssembleContext, ToolProviderResult } from '@deepseek-ai/dsh-system-prompt'
 import type { CodeRuntime } from '@deepseek-ai/dsh-code-runtime'
@@ -1030,17 +1031,31 @@ function assertDeferredResultWithinBudget(
 
 /** Read only an own enumerable data-property name before restored-candidate eligibility is known. */
 function restoredDeferredToolName(value: unknown): string | undefined {
-  if (!isPlainJsonRecord(value)) return undefined
-  try {
-    const descriptor = Object.getOwnPropertyDescriptor(value, 'name')
-    if (descriptor === undefined || descriptor.enumerable !== true || !('value' in descriptor)) return undefined
-    return typeof descriptor.value === 'string' && descriptor.value.length > 0
-      ? descriptor.value
-      : undefined
-  } catch {
-    /* v8 ignore next -- persisted JSON cannot carry a Proxy; contain a hostile same-process candidate defensively. */
-    return undefined
+  if (typeof value !== 'object' || value === null || isProxy(value) || !isPlainJsonRecord(value)) return undefined
+  const descriptor = Object.getOwnPropertyDescriptor(value, 'name')
+  if (descriptor === undefined || descriptor.enumerable !== true || !('value' in descriptor)) return undefined
+  return typeof descriptor.value === 'string' && descriptor.value.length > 0
+    ? descriptor.value
+    : undefined
+}
+
+/** Whether one eligible restored candidate is accessor-free lossless JSON safe for canonical serialization. */
+function isSafeRestoredToolSchema(value: unknown): boolean {
+  const pending: unknown[] = [value]
+  const seen = new Set<object>()
+  while (pending.length > 0) {
+    const current = pending.pop()
+    if (current === null || typeof current !== 'object') continue
+    if (isProxy(current) || seen.has(current)) return false
+    seen.add(current)
+    for (const key of Reflect.ownKeys(current)) {
+      const descriptor = Object.getOwnPropertyDescriptor(current, key)
+      /* v8 ignore next -- ownKeys on a non-Proxy object names an extant own property. */
+      if (descriptor === undefined || !('value' in descriptor)) return false
+      pending.push(descriptor.value)
+    }
   }
+  return isJsonValue(value)
 }
 
 /**
@@ -1395,6 +1410,7 @@ export class ToolRuntime extends Service {
         for (const candidate of block.loadedTools as unknown[]) {
           const name = restoredDeferredToolName(candidate)
           if (name === undefined || name.length > maxEligibleNameLength || !eligibleNames.has(name)) continue
+          if (!isSafeRestoredToolSchema(candidate)) continue
           loaded.set(name, candidate)
         }
       }

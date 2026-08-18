@@ -156,7 +156,7 @@ type InferArgs<S> = InferProperties<S, []>
 
 注册是一项受信任的同进程约定。注册表以 readonly 输入借用已类型化定义，要求它声明 `output`，校验其原始 schema，并检查 `timeoutMs` 必须为正有限值等语义要求；`schemas()` 在构建请求时生成面向模型的投影，使执行和展示共享同一份已解析定义，而不会将回调泄漏到协议上。
 
-启用 `toolSearch` 后，保留的 `tool_search` 工具只索引当前合资格且标记 `deferLoading` 的定义。其已校验输入使用配置的结果数量上限，必填的 `maxResultBytes` 则限制包含渲染内容与 `loadedTools` 的完整持久结果块。同一个由 package 持有的序列化器与上限也覆盖最终外层 `run_code` 结果合并后的嵌套发现，以及从历史重建出的完整合资格集合；超限会成为一条不含部分元数据的规范错误。其结果包含精确匹配的 `ToolSchema[]`；agent loop 会把这些 schema 存入持久 tool-result 块。参数 schema 在省略 `$schema` 时使用 draft-07，并接受显式 draft-07 或 MCP 的 JSON Schema 2020-12 dialect；不受支持的 dialect 与格式错误 schema 都会校验失败。后续每次组装都只从每个已存候选项读取自有、可枚举的字符串名称，按当前存活、deferred 且合资格的视图过滤并去重名称，对完整原始保留集合计算预算，然后才完整校验并投影 schema。格式错误、使用不受支持 dialect 或超大的过期条目会在不读取其嵌套 schema 的情况下被忽略；无效或超限的当前候选项会使组装失败。这是发现而不是激活：注册表不会发生变化，旧结果也无法恢复当前资格排除的 schema，或让它消耗预算。provider-neutral 适配器会看到普通的直接函数调用／结果与扩展后的下一次请求；pi-ai 的 OpenAI Responses 路径则把同一直接搜索记录投影为原生工具搜索历史。
+启用 `toolSearch` 后，保留的 `tool_search` 工具只索引当前合资格且标记 `deferLoading` 的定义。其已校验输入使用配置的结果数量上限，必填的 `maxResultBytes` 则限制包含渲染内容与 `loadedTools` 的完整持久结果块。同一个由 package 持有的序列化器与上限也覆盖最终外层 `run_code` 结果合并后的嵌套发现，以及从历史重建出的完整合资格集合；超限会成为一条不含部分元数据的规范错误。其结果包含精确匹配的 `ToolSchema[]`；agent loop 会把这些 schema 存入持久 tool-result 块。参数 schema 在省略 `$schema` 时使用 draft-07，并接受显式 draft-07 或 MCP 的 JSON Schema 2020-12 dialect；不受支持的 dialect 与格式错误 schema 都会校验失败。后续每次组装都会在检查 record 前拒绝 Proxy，只从每个已存候选项读取自有、可枚举的字符串名称，并按当前存活、deferred 且合资格的视图过滤及去重名称。保留候选项在规范序列化前必须是不含 accessor 的 lossless JSON，因此不会运行 trap 或 getter；随后，组装会对完整原始保留集合计算预算，再完整校验并投影 schema。格式错误、使用不受支持 dialect 或超大的过期条目会在不读取其嵌套 schema 的情况下被忽略；无效或超限的当前候选项会使组装失败。这是发现而不是激活：注册表不会发生变化，旧结果也无法恢复当前资格排除的 schema，或让它消耗预算。provider-neutral 适配器会看到普通的直接函数调用／结果与扩展后的下一次请求；pi-ai 的 OpenAI Responses 路径则把同一直接搜索记录投影为原生工具搜索历史。
 
 ## `ToolRestriction` — 单个作用域对其继承内容的实时过滤器
 
@@ -614,7 +614,7 @@ async execute(exec: ToolExecutionInput): Promise<ToolExecutionResult>
 
 Types: [ScopeKey](scope.md)
 
-Source: [`packages/core/tools/src/index.ts:1050`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:1065`](../../packages/core/tools/src/index.ts)
 
 <a id="tool-eligibility-events"></a>
 
@@ -664,7 +664,7 @@ A tool was registered or unregistered, or a scoped restriction changed (the avai
 'tools/change'(): void
 ```
 
-Source: [`packages/core/tools/src/index.ts:260`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:261`](../../packages/core/tools/src/index.ts)
 
 <a id="toolscode-dispatch-log--waterfall"></a>
 
@@ -691,7 +691,7 @@ Allow a listener to replace content in the DURABLE LOG COPY of one `run_code` su
 
 Types: [ContentBlock](llm-streaming.md) · [Scoped](scope.md)
 
-Source: [`packages/core/tools/src/index.ts:242`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:243`](../../packages/core/tools/src/index.ts)
 
 <a id="toolsexecute--waterfall"></a>
 
@@ -715,7 +715,7 @@ Around-dispatch waterfall for timeout, retry, or metrics. `next()` returns a nor
 
 Types: [Scoped](scope.md)
 
-Source: [`packages/core/tools/src/index.ts:216`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:217`](../../packages/core/tools/src/index.ts)
 
 <a id="toolspost-execute--waterfall"></a>
 
@@ -740,7 +740,7 @@ Accept, replace, enrich, or block a normalized dispatch result. `next()` accepts
 
 Types: [Scoped](scope.md)
 
-Source: [`packages/core/tools/src/index.ts:228`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:229`](../../packages/core/tools/src/index.ts)
 
 <a id="toolspre-execute--waterfall"></a>
 
@@ -763,7 +763,7 @@ Allow, deny, or ask before dispatch. `next()` delegates to allow; missing approv
 
 Types: [Scoped](scope.md)
 
-Source: [`packages/core/tools/src/index.ts:205`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:206`](../../packages/core/tools/src/index.ts)
 
 <a id="toolsresult--emit"></a>
 
@@ -784,5 +784,5 @@ Observe the frozen, lossless-JSON final outcome. Listener failures are contained
 
 Types: [Scoped](scope.md)
 
-Source: [`packages/core/tools/src/index.ts:250`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:251`](../../packages/core/tools/src/index.ts)
 <!-- END GENERATED cordis-surface -->
