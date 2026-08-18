@@ -64,6 +64,8 @@ export interface AnnotationCompilerLabels {
   note: (value: string) => string
   /** @returns A localized image-identity and percentage-coordinate paragraph. */
   image: (name: string, x: number, y: number) => string
+  /** Localized overflow notice when advertised capacity is known to be exceeded. */
+  overflow: string
 }
 
 const CONTEXT_LENGTH = 48
@@ -150,4 +152,20 @@ export function isAnimatedGif(bytes: Uint8Array): boolean {
     if (frames > 1) return true
   }
   return false
+}
+
+/**
+ * Preflight an assembled annotation request against advertised model capacity.
+ * Uses a 4-characters-per-token estimate; unknown capacity is not this function.
+ * @param assembledChars - Compiled question plus annotation prose length.
+ * @param usedTokens - Current projected occupancy.
+ * @param contextWindow - Advertised model context capacity.
+ * @returns whether the assembled request is known to overflow.
+ */
+export function assembledRequestOverflows(
+  assembledChars: number,
+  usedTokens: number,
+  contextWindow: number,
+): boolean {
+  return usedTokens + Math.ceil(assembledChars / 4) > contextWindow
 }

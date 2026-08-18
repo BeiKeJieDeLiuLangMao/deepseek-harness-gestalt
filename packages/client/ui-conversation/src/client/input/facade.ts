@@ -21,7 +21,9 @@ import { InputMachine } from './machine.ts'
 import type {
   AnnotationCompilerLabels, DraftAnnotation, PersistedAnnotationDraft, TextAnchor, TextAnnotationId,
 } from '../annotation/model.ts'
-import { compileAnnotationSubmission, TextAnnotationId as createTextAnnotationId } from '../annotation/model.ts'
+import {
+  assembledRequestOverflows, compileAnnotationSubmission, TextAnnotationId as createTextAnnotationId,
+} from '../annotation/model.ts'
 
 /** One exact annotation snapshot whose object identity owns its settlement. */
 export interface AnnotationSubmissionReservation {
@@ -63,6 +65,8 @@ export interface SessionInputDeps {
   ): void
   /** Localized ordinary-prose fragments for Annotation Submission (the hub always supplies them). */
   annotationLabels: AnnotationCompilerLabels
+  /** Advertised occupancy when the selected model reports a context window. */
+  contextCapacity?: () => { usedTokens: number; contextWindow: number } | undefined
 }
 
 /** Guard tier from the machine phase. */
@@ -640,6 +644,7 @@ export class SessionInputShell implements SessionInput {
     const occurrences = this.core.state.occurrences
     if (occurrences.length === 0) {
       const compiled = this.compile(draft, annotations)
+      if (this.rejectKnownOverflow(compiled, annotationDraft)) return
       if (annotationDraft === undefined) this.deps.defaultSink(compiled, imageIds, mode)
       else this.deps.defaultSink(compiled, imageIds, mode, annotationDraft)
       return
@@ -733,6 +738,24 @@ export class SessionInputShell implements SessionInput {
 
   private compile(question: string, annotations: readonly DraftAnnotation[]): string {
     return compileAnnotationSubmission(question, annotations, this.deps.annotationLabels)
+  }
+
+  /**
+   * Reject a known overflow before the sink. Unknown capacity is not this path.
+   * @param compiled - assembled request text.
+   * @param annotationDraft - in-flight reservation to release on overflow.
+   * @returns whether the request must not be sent.
+   */
+  private rejectKnownOverflow(
+    compiled: string,
+    annotationDraft: AnnotationSubmissionReservation | undefined,
+  ): boolean {
+    const capacity = this.deps.contextCapacity?.()
+    if (capacity === undefined) return false
+    if (!assembledRequestOverflows(compiled.length, capacity.usedTokens, capacity.contextWindow)) return false
+    if (annotationDraft !== undefined) this.settleAnnotationSubmission(annotationDraft, false)
+    this.notify('error', this.deps.annotationLabels.overflow)
+    return true
   }
 
   private publish(): void {

@@ -3,8 +3,8 @@ import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import { SessionInputShell } from '../src/client/input/facade.ts'
 import type { DraftAttachmentId } from '../src/client/input/contract.ts'
 import {
-  compileAnnotationSubmission, createTextAnchor, isAnimatedGif, pinPercentFromClientPoint,
-  TextAnnotationId,
+  assembledRequestOverflows, compileAnnotationSubmission, createTextAnchor, isAnimatedGif,
+  pinPercentFromClientPoint, TextAnnotationId,
 } from '../src/client/annotation/model.ts'
 
 const LABELS = {
@@ -12,6 +12,7 @@ const LABELS = {
   quote: (value: string) => `Quoted text: “${value}”`,
   note: (value: string) => `Note: ${value}`,
   image: (name: string, x: number, y: number) => `Image “${name}” at ${x.toFixed(1)}%, ${y.toFixed(1)}%`,
+  overflow: 'Request exceeds context capacity',
 }
 
 describe('composer image pin annotations', () => {
@@ -70,5 +71,10 @@ describe('composer image pin annotations', () => {
     expect(pin?.kind === 'image-pin' && pin.x === 33 && pin.note === 'moved').toBe(true)
     shell.removeImage(imageId)
     expect(shell.snapshot.annotations.map(item => item.id)).toEqual([textId])
+  })
+
+  it('rejects a known-capacity overflow without claiming the request fits', () => {
+    expect(assembledRequestOverflows(40, 10, 19)).toBe(true)
+    expect(assembledRequestOverflows(8, 10, 20)).toBe(false)
   })
 })

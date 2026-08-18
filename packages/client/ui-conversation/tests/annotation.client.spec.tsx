@@ -42,6 +42,7 @@ const LABELS = {
   quote: (value: string) => `Quoted text: “${value}”`,
   note: (value: string) => `Note: ${value}`,
   image: (name: string, x: number, y: number) => `Image “${name}” at ${x.toFixed(1)}%, ${y.toFixed(1)}%`,
+  overflow: 'Request exceeds context capacity',
 }
 
 describe('text annotation mechanics', () => {
@@ -69,6 +70,7 @@ describe('text annotation mechanics', () => {
       quote: value => `Quoted text: “${value}”`,
       note: value => `Note: ${value}`,
       image: (name, x, y) => `Image “${name}” at ${x.toFixed(1)}%, ${y.toFixed(1)}%`,
+      overflow: 'Request exceeds context capacity',
     })
 
     expect(compiled).toBe('Please tighten this.\n\nAnnotation 1\nQuoted text: “exact passage”')
