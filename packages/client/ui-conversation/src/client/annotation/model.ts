@@ -34,6 +34,7 @@ export interface ImagePinAnnotation {
   readonly id: TextAnnotationId
   readonly kind: 'image-pin'
   readonly imageId: string
+  readonly source: 'composer' | 'history'
   readonly imageName: string
   readonly x: number
   readonly y: number

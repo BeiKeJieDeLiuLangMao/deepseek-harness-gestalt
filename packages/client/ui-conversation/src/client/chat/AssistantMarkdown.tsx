@@ -37,7 +37,7 @@ export interface AssistantMarkdownProps {
   /** Stable completed-message identity; absence keeps selection inert. */
   sourceId?: string | undefined
   annotations?: InputState['annotations'] | undefined
-  annotationActions?: Pick<InputActions, 'addTextAnnotation'> | undefined
+  annotationActions?: (Pick<InputActions, 'addTextAnnotation'> & Partial<Pick<InputActions, 'addImagePin'>>) | undefined
 }
 
 function AnnotatableAssistantText({
@@ -141,7 +141,35 @@ export const AssistantMarkdown = memo(function AssistantMarkdown({
           group.push(next)
           i += 1
         }
-        rendered.push(<ImageGallery key={start} images={group} load={imageLoader} align="start" labels={messageImageLabels(t)} />)
+        {
+          const addPin = annotationActions?.addImagePin
+          rendered.push(
+            <ImageGallery
+              key={start}
+              images={group}
+              load={imageLoader}
+              align="start"
+              labels={messageImageLabels(t)}
+              {...(addPin === undefined ? {} : {
+                pinOverlayFor: attachment => ({
+                  pins: annotations.flatMap((item, index) => (
+                    item.kind === 'image-pin' && item.source === 'history' && item.imageId === attachment.attachmentId
+                      ? [{ id: item.id, x: item.x, y: item.y, index: index + 1 }]
+                      : []
+                  )),
+                  modeLabel: t('annotation.pinMode'),
+                  exitLabel: t('annotation.pinModeExit'),
+                  onPlace: (x, y) => {
+                    addPin(
+                      attachment.attachmentId as never, attachment.name ?? t('image.original'), x, y, '', 'history',
+                    )
+                  },
+                  onSelect: () => {},
+                }),
+              })}
+            />,
+          )
+        }
         break
       }
       // Grouped into tool rows by ChatView; hasVisible above skips an empty shell.

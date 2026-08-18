@@ -34,6 +34,7 @@ interface ConversationAttachmentFace {
     text: string,
     imageIds: readonly DraftAttachmentId[],
     mode: InputSubmitMode,
+    historyImageIds?: readonly string[],
   ): Promise<boolean>
   releaseDraftImage(id: DraftAttachmentId): void
 }
@@ -170,11 +171,15 @@ export class InputHub implements SessionInputResolver {
     mode: InputSubmitMode,
     annotationDraft?: AnnotationSubmissionReservation,
   ): void {
-    if (text === '' && imageIds.length === 0) return
     const shell = this.shells.get(session.sessionId)
+    const historyImageIds = [...new Set(
+      (shell?.snapshot.annotations ?? [])
+        .flatMap(item => item.kind === 'image-pin' && item.source === 'history' ? [item.imageId] : []),
+    )]
+    if (text === '' && imageIds.length === 0 && historyImageIds.length === 0) return
     // Commit, not an editable clear: undo must not resurrect sent content.
     shell?.commitSend(imageIds)
-    void this.conversation().sendSession(session, text, imageIds, mode).then(
+    void this.conversation().sendSession(session, text, imageIds, mode, historyImageIds).then(
       (admitted) => {
         if (this.shells.get(session.sessionId) !== shell) {
           if (!admitted) this.releaseOrphanedImages(imageIds)

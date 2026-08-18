@@ -139,6 +139,7 @@ export class ConversationController extends Service implements IConversation {
    * @param text - serialized prompt text.
    * @param imageIds - ordered draft-local attachment ids.
    * @param mode - queue or steer delivery selected by composer policy.
+   * @param historyImageIds - durable attachment ids to reattach with pin prose.
    * @returns whether the Host admitted the complete request. A rejected
    * prompt resolves false (the failure is already mirrored into the session
    * snapshot's promptError); local failures (missing drafts, upload errors)
@@ -149,13 +150,17 @@ export class ConversationController extends Service implements IConversation {
     text: string,
     imageIds: readonly DraftAttachmentId[],
     mode: InputSubmitMode,
+    historyImageIds: readonly string[] = [],
   ): Promise<boolean> {
     const attachments = this.draftImages(imageIds)
     if (attachments.length !== imageIds.length) {
       throw new Error('conversation.sendSession: one or more draft images are no longer available')
     }
     const uploaded = await this.serializeImages(attachments.map(attachment => attachment.file))
-    const content = [...uploaded, ...(text === '' ? [] : [{ type: 'text' as const, text }])]
+    const history = historyImageIds.length === 0
+      ? []
+      : await this.serializeHistoryImages(session, historyImageIds)
+    const content = [...history, ...uploaded, ...(text === '' ? [] : [{ type: 'text' as const, text }])]
     const result = await session.prompt(content, mode)
     if (!result.ok) return false
     this.releaseDraftImages(attachments)
@@ -355,6 +360,32 @@ export class ConversationController extends Service implements IConversation {
     const sessions = this.ctx.get('sessions')
     if (sessions === undefined) throw new Error('conversation: sessions service unavailable')
     return sessions
+  }
+
+  /**
+   * Reattach durable history images by their content-addressed ids.
+   * @param session - owning session.
+   * @param historyImageIds - attachment ids referenced by history pins.
+   * @returns image prompt parts, or throws when a referenced image is missing.
+   */
+  private async serializeHistoryImages(
+    session: SessionFace,
+    historyImageIds: readonly string[],
+  ): Promise<Parameters<SessionFace['prompt']>[0]> {
+    const parts: Parameters<SessionFace['prompt']>[0] = []
+    for (const attachmentId of historyImageIds) {
+      const result = await session.readAttachment(attachmentId as never)
+      if (!result.ok) {
+        throw new Error(`conversation.sendSession: history image "${attachmentId}" is no longer available`)
+      }
+      parts.push({
+        type: 'image' as const,
+        mediaType: result.value.attachment.mediaType,
+        data: bytesToBase64(Uint8Array.from(result.value.data)),
+        ...(result.value.attachment.name === undefined ? {} : { name: result.value.attachment.name }),
+      })
+    }
+    return parts
   }
 
   /** Convert browser files to canonical base64 prompt parts. */
