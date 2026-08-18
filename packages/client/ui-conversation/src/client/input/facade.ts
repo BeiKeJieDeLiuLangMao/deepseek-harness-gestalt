@@ -258,6 +258,7 @@ export class SessionInputShell implements SessionInput {
    * @param x - Displayed-raster X percent.
    * @param y - Displayed-raster Y percent.
    * @param note - Optional user-authored comment.
+   * @param source - Composer-staged image or durable history attachment.
    * @returns The stable draft identity.
    */
   addImagePin(
