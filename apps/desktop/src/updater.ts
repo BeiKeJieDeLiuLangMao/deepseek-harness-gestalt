@@ -53,12 +53,14 @@ export interface AutoUpdaterLifecycle {
  * Drive updater phases. autoDownload stays false; the user must confirm.
  * @param options.updater - electron-updater port.
  * @param options.onStateChange - notify the page / menu.
+ * @param options.autoInstallOnAppQuit - macOS Squirrel prefetch after download; ordinary quit still does not install.
  * @returns lifecycle handle.
  */
 export function startAutoUpdater(options: {
   readonly updater: AutoUpdaterPort
   readonly onStateChange?: (state: UpdaterStatus) => void
   readonly now?: () => number
+  readonly autoInstallOnAppQuit?: boolean
 }): AutoUpdaterLifecycle {
   const now = options.now ?? Date.now
   let disposed = false
@@ -100,7 +102,9 @@ export function startAutoUpdater(options: {
   }
 
   options.updater.autoDownload = false
-  options.updater.autoInstallOnAppQuit = false
+  // macOS Squirrel only prefetches after HTTP download when this is true.
+  // MacUpdater does not install on an ordinary quit.
+  options.updater.autoInstallOnAppQuit = options.autoInstallOnAppQuit === true
   const handleChecking = (): void => { transition('checking') }
   const handleAvailable = (info: unknown): void => {
     availableVersion = versionOf(info)
@@ -167,7 +171,8 @@ function versionOf(info: unknown): string | undefined {
 
 function percentOf(info: unknown): number | undefined {
   if (info === null || typeof info !== 'object' || !('percent' in info)) return undefined
-  return typeof info.percent === 'number' ? info.percent : undefined
+  if (typeof info.percent !== 'number' || !Number.isFinite(info.percent)) return undefined
+  return Math.max(0, Math.min(100, Math.trunc(info.percent)))
 }
 
 function versionDetail(version: string | undefined): Pick<UpdaterStatus, 'newVersion'> {
