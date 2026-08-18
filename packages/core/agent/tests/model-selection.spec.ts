@@ -4,6 +4,7 @@ import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import {
   agentEvents,
   installModelSelection,
+  liveModelSelection,
   type Agent,
   type ModelSelectionRef,
 } from '../src/index.ts'
@@ -57,5 +58,18 @@ describe('installModelSelection()', () => {
       'agent/request', { turn: 2, step: 0, signal }, () => Promise.resolve(seed),
     )).resolves.toBe(seed)
     await ctx.fiber.dispose()
+  })
+
+  it('exposes the installed live selection on the agent context until dispose', () => {
+    const ctx = new Context()
+    const selection: ModelSelectionRef = {
+      current: { provider: 'grok', model: 'grok-4' },
+      assembled: undefined,
+    }
+    const dispose = installModelSelection(ctx, selection)
+    const agent = { ctx } as Agent
+    expect(liveModelSelection(agent)).toEqual({ provider: 'grok', model: 'grok-4' })
+    dispose()
+    expect(liveModelSelection(agent)).toBeUndefined()
   })
 })

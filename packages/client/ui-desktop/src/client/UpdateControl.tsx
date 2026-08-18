@@ -76,6 +76,11 @@ export function applyUpdaterClick(state: UpdaterPhase, desktop: DesktopBridge): 
 
 type VisibleUpdaterPhase = Exclude<UpdaterPhase, 'disabled' | 'idle' | 'checking'>
 
+function formatDownloadPercent(percent: number | undefined): string {
+  if (percent === undefined || !Number.isFinite(percent)) return '0'
+  return String(Math.max(0, Math.min(100, Math.trunc(percent))))
+}
+
 function isVisible(status: UpdaterStatus): status is UpdaterStatus & { state: VisibleUpdaterPhase } {
   switch (status.state) {
     case 'available':
@@ -97,7 +102,7 @@ function labelOf(status: UpdaterStatus & { state: VisibleUpdaterPhase }, t: Upda
     case 'available':
       return t('update.available').replace('{version}', status.newVersion ?? '')
     case 'downloading':
-      return t('update.downloading').replace('{percent}', String(status.downloadPercent ?? 0))
+      return t('update.downloading').replace('{percent}', formatDownloadPercent(status.downloadPercent))
     case 'downloaded':
     case 'installing':
       return t('update.install')
