@@ -198,50 +198,58 @@ describe('PiAiAdapter provider routing', () => {
     expect(server.paths).toEqual(['/v1/responses'])
   })
 
-  it('projects a discovered schema as native Responses tool-search history', async () => {
-    const server = await mockServer([{ status: 401, body: JSON.stringify({ error: { message: 'captured' } }) }])
+  it('projects durable discovered schemas as native Responses tool-search history', async () => {
+    const server = await mockServer([{ status: 401, body: JSON.stringify({ error: { message: 'expected mock failure' } }) }])
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
     await ctx.plugin(LlmPiAi, {
       providers: { openai: { apiKeyEnv: 'PI_TEST_KEY', baseURL: `${server.url}/v1` } },
     })
-    const callId = CallId('search-1')
+    const callId = CallId('search-call')
     const weather = {
-      name: 'weather_lookup',
-      description: 'Look up weather forecasts.',
-      parameters: { type: 'object', properties: { city: { type: 'string' } } },
+      name: 'mcp__weather__forecast',
+      description: 'Forecast weather',
+      parameters: { type: 'object' },
     }
 
     await assemble(ctx, {
       provider: 'openai',
-      model: 'gpt-5.4',
-      tools: [{ name: 'tool_search', description: 'Search tools.', parameters: { type: 'object' } }, weather],
+      model: 'gpt-5.5',
+      tools: [
+        { name: 'tool_search', description: 'Search tools', parameters: { type: 'object' } },
+        weather,
+      ],
       messages: [
         createMessage({
           role: 'assistant',
-          source: { kind: 'plugin', plugin: 'test' },
           content: [{ type: 'tool-call', id: callId, name: 'tool_search', arguments: '{"query":"weather"}' }],
+          source: { kind: 'model', provider: 'openai', model: 'gpt-5.5' },
         }),
         createToolResultMessage({
           callId,
-          content: [{ type: 'text', text: 'Found weather_lookup.' }],
-          discoveredTools: [weather],
+          content: [{ type: 'text', text: JSON.stringify([weather]) }],
           isError: false,
+          loadedTools: [weather],
         }),
       ],
     })
 
-    const body = server.requests[0] as { tools?: unknown[]; input?: { type?: string; tools?: unknown[] }[] }
-    expect(body.tools).toEqual([expect.objectContaining({ type: 'function', name: 'tool_search' })])
-    expect(body.input).toEqual(expect.arrayContaining([
-      expect.objectContaining({ type: 'tool_search_call', execution: 'client', status: 'completed' }),
-      expect.objectContaining({
-        type: 'tool_search_output',
-        execution: 'client',
-        status: 'completed',
-        tools: [expect.objectContaining({ type: 'function', name: 'weather_lookup', defer_loading: true })],
-      }),
-    ]))
+    const request = server.requests[0] as { tools?: unknown[]; input?: { type?: string; tools?: { name?: string }[] }[] }
+    expect(request.tools).toMatchObject([{
+      type: 'function',
+      name: 'tool_search',
+    }])
+    expect(request.tools).toHaveLength(1)
+    expect(request.input?.map(item => item.type)).toEqual([
+      'function_call',
+      'function_call_output',
+      'tool_search_call',
+      'tool_search_output',
+    ])
+    expect(request.input?.at(-1)?.tools).toMatchObject([{
+      name: weather.name,
+      defer_loading: true,
+    }])
   })
 
   it('resolves an attachment service mounted after the adapter when dispatching an image', async () => {

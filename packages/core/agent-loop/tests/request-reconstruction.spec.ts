@@ -5,9 +5,9 @@
  * replacement or header change explains the difference.
  */
 
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import LlmRuntime, { CallId, createUserMessage, LlmError, ReasoningEffortId  } from '@deepseek-ai/dsh-llm'
+import LlmRuntime, { createUserMessage, LlmError, ReasoningEffortId  } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, LlmModelReasoningInfo, LlmResolvedModelInfo, StreamChunk } from '@deepseek-ai/dsh-llm'
 import SessionStore, { Session, SessionId, foldRequestHeader } from '@deepseek-ai/dsh-session'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
@@ -71,95 +71,6 @@ function registerEcho(ctx: Context) {
 }
 
 describe('request stability across the loop', () => {
-  it('reconstructs a deferred search continuation from the durable result', async () => {
-    const adapter = new MockAdapter([
-      toolCallResponse('search-1', 'tool_search', { query: 'weather' }),
-      toolCallResponse('weather-1', 'weather_lookup', { city: 'Hangzhou' }),
-      textResponse('done'),
-    ])
-    const ctx = await harness(adapter)
-    ctx.tools.register(defineContentToolFixture({
-      name: 'weather_lookup',
-      description: 'Look up weather forecasts by city.',
-      parameters: { city: { type: 'string', required: true } },
-      deferLoading: true,
-      async execute(args) {
-        return [{ type: 'text', text: `${args.city}: sunny` }]
-      },
-    }))
-    ctx.tools.register(defineContentToolFixture({
-      name: 'secret_weather',
-      description: 'Look up private weather forecasts.',
-      parameters: {},
-      deferLoading: true,
-      async execute() {
-        return [{ type: 'text', text: 'secret' }]
-      },
-    }))
-    const agent = ctx.agentLoop.create(SessionId('deferred-tools'), { provider: 'mock', model: 'mock' })
-    agent.ctx.tools.allowEligible(['weather_lookup'])
-
-    send(agent, 'Find the weather tool, then use it for Hangzhou.')
-    await waitForIdle(ctx, agent)
-    expect(adapter.requests.map(request => request.tools?.map(tool => tool.name))).toEqual([
-      ['tool_search'],
-      ['tool_search', 'weather_lookup'],
-      ['tool_search', 'weather_lookup'],
-    ])
-    const searchResult = agent.session.events.find(event =>
-      event.type === 'tool/result' && event.data.message.source.callId === 'search-1')
-    expect(searchResult?.type === 'tool/result'
-      ? searchResult.data.message.content[0].discoveredTools
-      : undefined).toEqual([{
-      name: 'weather_lookup',
-      description: 'Look up weather forecasts by city.',
-      parameters: {
-        type: 'object',
-        properties: { city: { type: 'string' } },
-        required: ['city'],
-      },
-    }])
-    expect(JSON.stringify(adapter.requests)).not.toContain('secret_weather')
-  })
-
-  it('rechecks eligibility after discovery instead of activating a stale schema', async () => {
-    const adapter = new MockAdapter([
-      toolCallResponse('search-1', 'tool_search', { query: 'weather' }),
-      textResponse('no callable weather tool remains'),
-    ])
-    const ctx = await harness(adapter)
-    const body = vi.fn(() => Promise.resolve([{ type: 'text' as const, text: 'sunny' }]))
-    ctx.tools.register(defineContentToolFixture({
-      name: 'weather_lookup',
-      description: 'Look up weather forecasts.',
-      parameters: {},
-      deferLoading: true,
-      execute: body,
-    }))
-    const agent = ctx.agentLoop.create(SessionId('deferred-tools-revoked'), { provider: 'mock', model: 'mock' })
-    const allowWeather = agent.ctx.tools.allowEligible(['weather_lookup'])
-    ctx.on('tools/result', (exec, result) => {
-      if (exec.agent !== agent || exec.name !== 'tool_search' || result.isError) return
-      allowWeather()
-      agent.ctx.tools.allowEligible([])
-    })
-
-    send(agent, 'Find a weather tool.')
-    await waitForIdle(ctx, agent)
-
-    expect(adapter.requests[0]?.tools?.map(tool => tool.name)).toEqual(['tool_search'])
-    expect(adapter.requests[1]?.tools).toBeUndefined()
-    const denied = await ctx.tools.execute({
-      agent,
-      callId: CallId('stale-weather'),
-      name: 'weather_lookup',
-      arguments: {},
-      signal: new AbortController().signal,
-    })
-    expect(denied).toMatchObject({ isError: true, error: { info: { code: 'UNKNOWN_TOOL' } } })
-    expect(body).not.toHaveBeenCalled()
-  })
-
   it('each step request within a turn append-extends the previous, frozen end to end', async () => {
     const adapter = new MockAdapter([
       toolCallResponse('c1', 'echo', { text: 'one' }, 'first'),

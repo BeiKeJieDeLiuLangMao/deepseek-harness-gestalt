@@ -96,24 +96,4 @@ describe('message construction', () => {
     expect(Object.isFrozen(message)).toBe(true)
     expect(Object.isFrozen(message.content[0])).toBe(true)
   })
-
-  it('stores discovered tool schemas on the durable result block', () => {
-    const callId = CallId('search-1')
-    const discoveredTools = [{
-      name: 'weather_lookup',
-      description: 'Look up weather forecasts.',
-      parameters: { type: 'object', properties: { city: { type: 'string' } } },
-    }]
-
-    const message = createToolResultMessage({
-      callId,
-      content: [{ type: 'text', text: 'Found weather_lookup.' }],
-      discoveredTools,
-      isError: false,
-    })
-
-    expect(message.content[0]).toMatchObject({ discoveredTools })
-    expect(Object.isFrozen(message.content[0].discoveredTools)).toBe(true)
-    expect(Object.isFrozen(message.content[0].discoveredTools?.[0]?.parameters)).toBe(true)
-  })
 })

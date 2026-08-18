@@ -276,8 +276,8 @@ function appendToolResult(
   const message = createToolResultMessage({
     callId: block.id,
     content: result.content,
-    ...result.discoveredTools === undefined ? {} : { discoveredTools: result.discoveredTools },
     isError: result.isError,
+    ...!result.isError && result.loadedTools !== undefined ? { loadedTools: result.loadedTools } : {},
   })
   session.append('tool/result', {
     turn, step,

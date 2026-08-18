@@ -8,7 +8,7 @@ Source: [`packages/core/tools/src/index.ts`](../../packages/core/tools/src/index
 
 ## `ToolDefinition` — a registered tool
 
-A `ToolSchema` (the model-facing fields) plus a mandatory canonical output declaration, the `execute` function, host-only scheduler metadata, an optional final-content callback, and optional UI presenters. The registry holds these; the loop dispatches calls through them. The registry's `schemas()` builds the Host catalog by an explicit allowlist — `output`/`execute`/`finalizeContent`/`timeoutMs`/`isConcurrencySafe`/`presentCall`/`presentResult` must never leak into it. A definition with `deferLoading: true` remains in that catalog but stays out of model requests and Code Mode bindings until a durable tool result discovers its name.
+A `ToolSchema` (the model-facing fields) plus a mandatory canonical output declaration, the `execute` function, host-only scheduler metadata, an optional final-content callback, and optional UI presenters. The registry holds these; the loop dispatches calls through them. The registry's `schemas()` builds the initial model-facing `ToolSchema[]` by an explicit allowlist and omits deferred definitions; `catalogSchemas()` retains the complete eligible end-tool catalog. `output`/`execute`/`finalizeContent`/`timeoutMs`/`isConcurrencySafe`/`presentCall`/`presentResult` must never leak into a model request.
 
 ```ts type-equiv
 /** Tool-owned canonical output contract used after the body returns a JSON value. */
@@ -25,7 +25,11 @@ interface ToolOutputDefinition {
 ```ts type-equiv
 /** A registered tool: its schema plus the execution function. */
 interface ToolDefinition extends ToolSchema {
-  /** Omit this definition from model requests until durable history discovers its name. */
+  /**
+   * Omit this schema from the initial model request and expose it through
+   * `tool_search`. The definition remains registered and executable; current
+   * scope eligibility still governs both discovery and dispatch.
+   */
   readonly deferLoading?: boolean
   /** Mandatory canonical output declaration. */
   readonly output: ToolOutputDefinition
@@ -152,6 +156,8 @@ type InferArgs<S> = InferProperties<S, []>
 
 Registration is a trusted same-process contract. The registry borrows the typed definition as readonly input, requires `output`, validates its raw schema, and checks semantic requirements such as a positive finite `timeoutMs`; `schemas()` constructs the model-facing projection when building a request, so execution and presentation share one resolved definition without leaking callbacks onto the wire.
 
+With `toolSearch` enabled, the reserved `tool_search` tool indexes only current eligible definitions marked `deferLoading`. Its result contains the exact matched `ToolSchema[]`; the agent loop stores those schemas on the durable tool-result block. Code Mode forwards schemas from a nested search onto the outer `run_code` result. Each later assembly reads the log, retains only names that are still live, deferred, and eligible, and adds the stored schemas to the native request or generated SDK. This is discovery rather than activation: the registry does not mutate, and old results cannot restore a schema excluded by current eligibility. A provider-neutral adapter sees an ordinary direct function call/result plus the expanded next request; the pi-ai OpenAI Responses path projects the same direct-search record into native tool-search history.
+
 ## `ToolRestriction` — one scope's live filter over what it inherits
 
 `ToolRestriction` applies to the tools a scope inherits: the deployment-global layer plus every ancestor scope on its chain. The registry compiles readonly names into private sets, intersects multiple restrictions, then overlays the scope's OWN registrations, which stay exempt so a delegated child keeps the tools it answers through. A deny-only filter admits later unlisted inherited tools, while an allow-list excludes them.
@@ -211,7 +217,7 @@ interface ToolExecutionInput {
 }
 ```
 
-A tool body receives the runtime extension. `deferContext()` attaches context to the execution's own result without injecting inside the still-open outer call. `discoverTools()` attaches schemas to a successful result for durable continuation; it records discovery and never mutates the registry.
+A tool body receives the runtime extension. `deferContext()` attaches context to the execution's own result — the composite-tool nested-dispatch channel, also usable by a leaf tool minting a plugin-sourced instruction — without injecting inside the still-open outer call.
 
 ```ts type-equiv
 /**
@@ -230,13 +236,6 @@ interface ToolRunContext extends ToolExecution {
    * source and metadata and are emitted in call order.
    */
   deferContext(context: UserMessage): void
-  /**
-   * Attach discovered schemas to this successful result. Request assembly
-   * reloads only names that still resolve as eligible deferred definitions;
-   * this records discovery and does not mutate the registry.
-   * @param schemas - schemas returned by this execution in result order.
-   */
-  discoverTools(schemas: readonly ToolSchema[]): void
   /**
    * Mark a successful final result as terminal for the current agent turn.
    * The marker rides this execution's own result (`concludesTurn` exists only
@@ -350,11 +349,11 @@ interface ToolExecutionSuccess {
   /** Execution-local canonical value; deliberately omitted from durable events. */
   readonly value: JsonValue
   readonly content: ContentBlock[]
+  /** Deferred schemas discovered by this result for subsequent requests. */
+  readonly loadedTools?: ToolSchema[]
   readonly error?: never
   readonly meta?: JsonValue
   readonly additionalContexts?: UserMessage[]
-  /** Durable schema discoveries carried by this successful result. */
-  readonly discoveredTools?: ToolSchema[]
   /** The agent loop stops after committing this successful result batch. */
   readonly concludesTurn?: true
 }
@@ -369,7 +368,6 @@ interface ToolExecutionFailure {
   readonly content: ContentBlock[]
   readonly meta?: JsonValue
   readonly additionalContexts?: UserMessage[]
-  readonly discoveredTools?: never
   readonly concludesTurn?: never
 }
 ```
@@ -379,7 +377,7 @@ interface ToolExecutionFailure {
 type ToolExecutionResult = ToolExecutionSuccess | ToolExecutionFailure
 ```
 
-The result carries only the outcome. Call identity remains on the immutable `ToolExecution` that accompanies it through every hook and on the durable `tool/call` / `tool/result` session events, so wrappers cannot create a second, disagreeing identity. The canonical `value` is execution-local: the loop persists `content`, `error`, `meta`, and successful `discoveredTools`, while `tool/code-dispatch` stores the sub-call's rendered `content` and `isError` verbatim. Replay reproduces presentation and schema discovery but cannot reconstruct canonical intermediate values. Request assembly treats persisted schemas as discovery evidence only and reloads each name from the current eligible definition.
+The result carries only the outcome. Call identity remains on the immutable `ToolExecution` that accompanies it through every hook and on the durable `tool/call` / `tool/result` session events, so wrappers cannot create a second, disagreeing identity. The canonical `value` is execution-local: the loop persists only `content`, `error`, and `meta`, while `tool/code-dispatch` stores the sub-call's rendered `content` and `isError` verbatim. Replay reproduces presentation but cannot reconstruct canonical intermediate values.
 
 On success the registry snapshots and validates the body value, freezes it, and invokes the pure renderer plus the optional top-level-call metadata projector. It separately materializes the durable presentation fields immediately before `tools/result`; an invalid value, renderer/projector failure, or non-JSON presentation becomes a JSON-safe `isError`. The final live observer therefore sees the exact execution-local value beside fields safe for the later durable append.
 
@@ -509,7 +507,7 @@ presentAs(mode: ToolPresentationMode): () => void
 
 /**
  * Register globally or in the calling agent scope. Scoped tools shadow
- * globals; duplicates within one layer and reserved transport names fail.
+ * globals; duplicates within one layer and the reserved `run_code` name fail.
  * @param definition - tool schema, execution, and optional finalization/presentation callbacks.
  * @returns the exact disposer that unregisters the tool.
  */
@@ -576,6 +574,14 @@ get(name: string, scope?: ScopeKey): ToolDefinition | undefined
 schemas(scope?: ScopeKey): ToolSchema[]
 
 /**
+ * Project the current eligible end-tool catalog, including deferred schemas
+ * and excluding reserved model-presentation infrastructure.
+ * @param scope - the viewing scope (the agent); omitted = the global view.
+ * @returns one deep-cloned schema per eligible registered end tool.
+ */
+catalogSchemas(scope?: ScopeKey): ToolSchema[]
+
+/**
  * Classify a pending call through the caller's visible tool definition. Only
  * an exact `true` is parallel; unknown, hidden, undeclared, invalid, or
  * throwing classifiers are exclusive.
@@ -608,7 +614,7 @@ async execute(exec: ToolExecutionInput): Promise<ToolExecutionResult>
 
 Types: [ScopeKey](scope.md)
 
-Source: [`packages/core/tools/src/index.ts:891`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:889`](../../packages/core/tools/src/index.ts)
 
 <a id="tool-eligibility-events"></a>
 
@@ -658,7 +664,7 @@ A tool was registered or unregistered, or a scoped restriction changed (the avai
 'tools/change'(): void
 ```
 
-Source: [`packages/core/tools/src/index.ts:242`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:217`](../../packages/core/tools/src/index.ts)
 
 <a id="toolscode-dispatch-log--waterfall"></a>
 
@@ -685,7 +691,7 @@ Allow a listener to replace content in the DURABLE LOG COPY of one `run_code` su
 
 Types: [ContentBlock](llm-streaming.md) · [Scoped](scope.md)
 
-Source: [`packages/core/tools/src/index.ts:224`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:199`](../../packages/core/tools/src/index.ts)
 
 <a id="toolsexecute--waterfall"></a>
 
@@ -709,7 +715,7 @@ Around-dispatch waterfall for timeout, retry, or metrics. `next()` returns a nor
 
 Types: [Scoped](scope.md)
 
-Source: [`packages/core/tools/src/index.ts:198`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:173`](../../packages/core/tools/src/index.ts)
 
 <a id="toolspost-execute--waterfall"></a>
 
@@ -734,7 +740,7 @@ Accept, replace, enrich, or block a normalized dispatch result. `next()` accepts
 
 Types: [Scoped](scope.md)
 
-Source: [`packages/core/tools/src/index.ts:210`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:185`](../../packages/core/tools/src/index.ts)
 
 <a id="toolspre-execute--waterfall"></a>
 
@@ -757,7 +763,7 @@ Allow, deny, or ask before dispatch. `next()` delegates to allow; missing approv
 
 Types: [Scoped](scope.md)
 
-Source: [`packages/core/tools/src/index.ts:187`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:162`](../../packages/core/tools/src/index.ts)
 
 <a id="toolsresult--emit"></a>
 
@@ -778,5 +784,5 @@ Observe the frozen, lossless-JSON final outcome. Listener failures are contained
 
 Types: [Scoped](scope.md)
 
-Source: [`packages/core/tools/src/index.ts:232`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:207`](../../packages/core/tools/src/index.ts)
 <!-- END GENERATED cordis-surface -->

@@ -1254,6 +1254,8 @@ export interface StdioConfig {
   toolCallTimeoutMs: number
   /** Fail plugin activation when the initial connection or tool synchronization fails. */
   failOnStartupError: boolean
+  /** Publish this server's schemas through `tool_search` instead of the initial request. */
+  deferLoading?: boolean
   /** Automatic reconnect policy after a lost connection; omission uses the defaults. */
   reconnect?: ReconnectConfig
 }
@@ -1276,6 +1278,8 @@ export interface StreamableHttpConfig {
   toolCallTimeoutMs: number
   /** Fail plugin activation when the initial connection or tool synchronization fails. */
   failOnStartupError: boolean
+  /** Publish this server's schemas through `tool_search` instead of the initial request. */
+  deferLoading?: boolean
   /** Automatic reconnect policy after a lost connection; omission uses the defaults. */
   reconnect?: ReconnectConfig
 }
@@ -1293,7 +1297,7 @@ export interface ReconnectConfig {
 }
 ```
 
-来源：[`packages/mcp/mcp-client/src/index.ts:98`](../packages/mcp/mcp-client/src/index.ts)
+来源：[`packages/mcp/mcp-client/src/index.ts:102`](../packages/mcp/mcp-client/src/index.ts)
 
 <a id="deepseek-aidsh-message-feedback"></a>
 
@@ -2984,15 +2988,23 @@ export interface Config {
    * restores strictly serial dispatch. Must be a positive integer.
    */
   maxParallelSubCalls?: number
-  /** Maximum schemas returned by one `tool_search` call (default 8). */
-  maxToolSearchResults?: number
+  /**
+   * Enable the reserved `tool_search` discovery tool. `false` (default)
+   * rejects deferred registrations; an object configures result limits.
+   */
+  toolSearch?: false | {
+    /** Results returned when the model omits `limit`. */
+    defaultLimit?: number
+    /** Highest accepted `limit`. */
+    maxResults?: number
+  }
 }
 
 /** How the registry presents its tools to the model (see {@link Config.mode}). */
 export type ToolPresentationMode = 'native' | 'code' | 'both'
 ```
 
-来源：[`packages/core/tools/src/index.ts:701`](../packages/core/tools/src/index.ts)
+来源：[`packages/core/tools/src/index.ts:672`](../packages/core/tools/src/index.ts)
 
 <a id="deepseek-aidsh-tools-eligibility"></a>
 

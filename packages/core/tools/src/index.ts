@@ -6,6 +6,7 @@
 
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
+import MiniSearch from 'minisearch'
 import { AnonymousEntries, NamedEntries, ScopedLayers, scopeOf, scopeTarget } from '@deepseek-ai/dsh-scope'
 import type { ScopeKey, ScopeLayer, Scoped } from '@deepseek-ai/dsh-scope'
 import type { CallId, ContentBlock, ToolSchema } from '@deepseek-ai/dsh-llm'
@@ -23,7 +24,6 @@ import { assertSupportedJsonSchema, validateJsonSchemaValue } from './json-schem
 import type { JsonSchemaNode } from './json-schema.ts'
 import { createRunCodeTool, RUN_CODE_NAME, SDK_SECTION_ORDER } from './code-mode.ts'
 import type { CodeSdkLanguage } from './code-mode.ts'
-import { defineTool } from './schema.ts'
 import { renderToolsSdk } from './ts-types.ts'
 import type { ToolSdkSchema } from './ts-types.ts'
 import { renderToolsSdkPy } from './py-types.ts'
@@ -58,12 +58,6 @@ const COLLAPSE_SECTION_ORDER = 99
  */
 const CODE_ONLY_INSTRUCTION = `\`${RUN_CODE_NAME}\` is the only tool you can call directly — a tool call naming any other tool fails. Reach every tool the SDK declares below from inside the program.`
 
-/** Reserved schema-discovery tool that returns deferred definitions without registering them. */
-export const TOOL_SEARCH_NAME = 'tool_search'
-
-/** Default maximum schemas returned by one {@link TOOL_SEARCH_NAME} call. */
-const DEFAULT_MAX_TOOL_SEARCH_RESULTS = 8
-
 const SDK_RENDERERS: Record<string, (schemas: ToolSdkSchema[]) => string> = {
   typescript: renderToolsSdk,
   python: renderToolsSdkPy,
@@ -76,25 +70,6 @@ function sameStringList(
 ): boolean {
   return left === right || (left !== undefined && right !== undefined
     && left.length === right.length && left.every((value, index) => value === right[index]))
-}
-
-/** Query terms used by the deterministic deferred-tool ranker. */
-function searchTerms(query: string): string[] {
-  return [...new Set(query.toLowerCase().match(/[\p{L}\p{N}_-]+/gu) ?? [])]
-}
-
-/** Rank one definition by exact name, name terms, then description terms. */
-function toolSearchScore(definition: ToolDefinition, terms: readonly string[]): number {
-  const name = definition.name.toLowerCase()
-  const description = definition.description.toLowerCase()
-  let score = 0
-  for (const term of terms) {
-    if (name === term) score += 1_000
-    else if (name.startsWith(term)) score += 300
-    else if (name.includes(term)) score += 150
-    if (description.includes(term)) score += 20
-  }
-  return score
 }
 
 export {
@@ -255,7 +230,11 @@ export interface ToolOutputDefinition {
 
 /** A registered tool: its schema plus the execution function. */
 export interface ToolDefinition extends ToolSchema {
-  /** Omit this definition from model requests until durable history discovers its name. */
+  /**
+   * Omit this schema from the initial model request and expose it through
+   * `tool_search`. The definition remains registered and executable; current
+   * scope eligibility still governs both discovery and dispatch.
+   */
   readonly deferLoading?: boolean
   /** Mandatory canonical output declaration. */
   readonly output: ToolOutputDefinition
@@ -447,13 +426,6 @@ export interface ToolRunContext extends ToolExecution {
    */
   deferContext(context: UserMessage): void
   /**
-   * Attach discovered schemas to this successful result. Request assembly
-   * reloads only names that still resolve as eligible deferred definitions;
-   * this records discovery and does not mutate the registry.
-   * @param schemas - schemas returned by this execution in result order.
-   */
-  discoverTools(schemas: readonly ToolSchema[]): void
-  /**
    * Mark a successful final result as terminal for the current agent turn.
    * The marker rides this execution's own result (`concludesTurn` exists only
    * on {@link ToolExecutionSuccess}); a composite that dispatches nested
@@ -602,11 +574,11 @@ export interface ToolExecutionSuccess {
   /** Execution-local canonical value; deliberately omitted from durable events. */
   readonly value: JsonValue
   readonly content: ContentBlock[]
+  /** Deferred schemas discovered by this result for subsequent requests. */
+  readonly loadedTools?: ToolSchema[]
   readonly error?: never
   readonly meta?: JsonValue
   readonly additionalContexts?: UserMessage[]
-  /** Durable schema discoveries carried by this successful result. */
-  readonly discoveredTools?: ToolSchema[]
   /** The agent loop stops after committing this successful result batch. */
   readonly concludesTurn?: true
 }
@@ -619,7 +591,6 @@ export interface ToolExecutionFailure {
   readonly content: ContentBlock[]
   readonly meta?: JsonValue
   readonly additionalContexts?: UserMessage[]
-  readonly discoveredTools?: never
   readonly concludesTurn?: never
 }
 
@@ -718,8 +689,30 @@ export interface Config {
    * restores strictly serial dispatch. Must be a positive integer.
    */
   maxParallelSubCalls?: number
-  /** Maximum schemas returned by one `tool_search` call (default 8). */
-  maxToolSearchResults?: number
+  /**
+   * Enable the reserved `tool_search` discovery tool. `false` (default)
+   * rejects deferred registrations; an object configures result limits.
+   */
+  toolSearch?: false | {
+    /** Results returned when the model omits `limit`. */
+    defaultLimit?: number
+    /** Highest accepted `limit`. */
+    maxResults?: number
+  }
+}
+
+/** Reserved schema-discovery tool name. */
+export const TOOL_SEARCH_NAME = 'tool_search'
+
+interface ResolvedToolSearchConfig {
+  readonly defaultLimit: number
+  readonly maxResults: number
+}
+
+interface ToolSearchDocument {
+  readonly id: string
+  readonly name: string
+  readonly description: string
 }
 
 /**
@@ -875,13 +868,18 @@ function resolveMaxParallelSubCalls(value: number | undefined): number {
   return maxParallelSubCalls
 }
 
-/** Resolve the search result cap at the owning config interface. */
-function resolveMaxToolSearchResults(value: number | undefined): number {
-  const maxToolSearchResults = value ?? DEFAULT_MAX_TOOL_SEARCH_RESULTS
-  if (!Number.isInteger(maxToolSearchResults) || maxToolSearchResults < 1) {
-    throw new Error('maxToolSearchResults must be a positive integer')
+/** Resolve and validate deferred-discovery limits for direct construction. */
+function resolveToolSearchConfig(config: Config['toolSearch']): ResolvedToolSearchConfig | undefined {
+  if (config === undefined || config === false) return undefined
+  const maxResults = config.maxResults ?? 10
+  const defaultLimit = config.defaultLimit ?? 5
+  if (!Number.isInteger(maxResults) || maxResults < 1) {
+    throw new Error('toolSearch.maxResults must be a positive integer')
   }
-  return maxToolSearchResults
+  if (!Number.isInteger(defaultLimit) || defaultLimit < 1 || defaultLimit > maxResults) {
+    throw new Error('toolSearch.defaultLimit must be a positive integer no greater than toolSearch.maxResults')
+  }
+  return { defaultLimit, maxResults }
 }
 
 /**
@@ -894,7 +892,13 @@ export class ToolRuntime extends Service {
   static Config: z<Config> = z.object({
     mode: z.union(['native', 'code', 'both'] as const).default('native'),
     maxParallelSubCalls: z.natural().min(1).default(10),
-    maxToolSearchResults: z.natural().min(1).default(DEFAULT_MAX_TOOL_SEARCH_RESULTS),
+    toolSearch: z.union([
+      z.const(false),
+      z.object({
+        defaultLimit: z.natural().min(1).default(5),
+        maxResults: z.natural().min(1).default(10),
+      }),
+    ]).default(false),
   })
 
   /** Internal staged view consumed by `dsh-agent-loop`'s parallel scheduler. */
@@ -912,8 +916,6 @@ export class ToolRuntime extends Service {
 
   /** Context deferred by a running tool body, keyed by its scheduler-owned execution. */
   private deferredContexts = new WeakMap<ToolRunContext, UserMessage[]>()
-  /** Schemas discovered by a running body, committed only with its successful result. */
-  private discoveredTools = new WeakMap<ToolExecution, ToolSchema[]>()
   /** Executions whose tool body declared the current turn complete. */
   private concludingExecutions = new WeakSet<ToolExecution>()
   /** Original caller cancellation, kept outside the wrapper-mutable execution object. */
@@ -927,7 +929,9 @@ export class ToolRuntime extends Service {
   /** Presentation for scopes that declare none; {@link presentAs} shadows it per scope. */
   private readonly defaultMode: ToolPresentationMode
   private readonly maxParallelSubCalls: number
-  private readonly maxToolSearchResults: number
+  private readonly toolSearchConfig: ResolvedToolSearchConfig | undefined
+  /** Schemas discovered by the reserved search execution that produced a result. */
+  private readonly loadedTools = new WeakMap<ToolExecution, ToolSchema[]>()
   /**
    * Reserved presentation transport, kept outside the filterable registration
    * layers. Built on first need rather than at construction: which agents run
@@ -935,8 +939,7 @@ export class ToolRuntime extends Service {
    * transport is stateless beyond its closures over `this`.
    */
   private codeTransport: ToolDefinition | undefined
-  /** Reserved schema-discovery transport, built only when a scope has deferred candidates. */
-  private searchTransport: ToolDefinition | undefined
+  private toolSearchTool: ToolDefinition | undefined
 
   constructor(ctx: Context, config: Config = {}) {
     super(ctx, 'tools')
@@ -944,7 +947,7 @@ export class ToolRuntime extends Service {
     // optional-input type for direct (non-Loader) construction in tests.
     this.defaultMode = config.mode ?? 'native'
     this.maxParallelSubCalls = resolveMaxParallelSubCalls(config.maxParallelSubCalls)
-    this.maxToolSearchResults = resolveMaxToolSearchResults(config.maxToolSearchResults)
+    this.toolSearchConfig = resolveToolSearchConfig(config.toolSearch)
     ctx.systemPrompt.tools(context => this.wireSchemas(context))
     if (this.defaultMode !== 'native') {
       ctx.systemPrompt.section(this.collapseSection())
@@ -988,7 +991,7 @@ export class ToolRuntime extends Service {
    * dropped from the rendered prompt.
    * @returns the section registration.
    */
-  private sdkSection(): { name: string; order: number; text: (context: AssembleContext) => string } {
+  private sdkSection(): { name: string; order: number; text: (context: { scope?: ScopeKey }) => string } {
     return {
       name: 'tools:sdk',
       order: SDK_SECTION_ORDER,
@@ -1044,71 +1047,86 @@ export class ToolRuntime extends Service {
       peekRuntime: () => this.ctx.get('codeRuntime'),
       maxParallel: this.maxParallelSubCalls,
       shapeDispatchLog: dispatch => this.shapeDispatchLog(dispatch),
-      bindingSchemas: agent => this.sdkSchemas(agent === undefined ? {} : { scope: agent, agent }),
+      recordLoadedTools: (exec, schemas) => {
+        const loaded = new Map((this.loadedTools.get(exec) ?? []).map(schema => [schema.name, schema]))
+        for (const schema of schemas) loaded.set(schema.name, schema)
+        this.loadedTools.set(exec, [...loaded.values()])
+      },
     })
     return this.codeTransport
   }
 
-  /** Build the reserved client-side schema search over the caller's live eligible catalog. */
-  private requireSearchTransport(): ToolDefinition {
-    this.searchTransport ??= defineTool({
+  /** Build the reserved schema-discovery tool on first use. */
+  private requireToolSearch(): ToolDefinition {
+    const config = this.toolSearchConfig
+    /* v8 ignore next 3 -- view() contributes this tool only when the same resolved config exists. */
+    if (config === undefined) {
+      throw new Error('dsh-tools: deferred tools require toolSearch configuration')
+    }
+    this.toolSearchTool ??= {
       name: TOOL_SEARCH_NAME,
-      description: 'Search deferred tools by capability. The result discovers schemas; it does not execute or register a tool.',
+      description: 'Search deferred tools by name and description. Returns matching callable schemas for subsequent requests.',
       parameters: {
-        query: { type: 'string', required: true, description: 'Capability or tool name to search for.' },
-        limit: { type: 'integer', description: `Maximum matches to return, from 1 to ${this.maxToolSearchResults}.` },
+        type: 'object',
+        properties: {
+          query: { type: 'string', minLength: 1, description: 'Words describing the needed capability.' },
+          limit: {
+            type: 'integer',
+            minimum: 1,
+            maximum: config.maxResults,
+            description: `Maximum matches to return (default ${config.defaultLimit}).`,
+          },
+        },
+        required: ['query'],
+        additionalProperties: false,
       },
       output: {
         schema: {
-          type: 'object',
-          additionalProperties: false,
-          properties: {
-            tools: { type: 'array', required: true, items: { type: 'json' } },
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              name: { type: 'string' },
+              description: { type: 'string' },
+              parameters: { type: 'object', additionalProperties: true },
+            },
+            required: ['name', 'description', 'parameters'],
+            additionalProperties: false,
           },
         },
-        render: (_args, value) => [{ type: 'text', text: JSON.stringify(value, undefined, 2) }],
+        render: (_args, value) => [{ type: 'text', text: JSON.stringify(value, null, 2) }],
       },
       execute: (args, exec) => {
-        const query = args.query.trim()
-        if (query.length === 0) throw new Error('query must contain a search term')
-        const limit = args.limit ?? this.maxToolSearchResults
-        if (!Number.isInteger(limit) || limit < 1 || limit > this.maxToolSearchResults) {
-          throw new Error(`limit must be an integer from 1 to ${this.maxToolSearchResults}`)
-        }
-        const terms = searchTerms(query)
-        const matches = [...this.view(exec.agent).visible.values()]
+        const { query, limit = config.defaultLimit } = args as { query: string; limit?: number }
+        const definitions = [...this.view(exec.agent).visible.values()]
           .filter(definition => definition.deferLoading === true)
-          .map(definition => ({ definition, score: toolSearchScore(definition, terms) }))
-          .filter(match => match.score > 0)
-          .sort((left, right) => right.score - left.score
-            || (left.definition.name < right.definition.name ? -1 : left.definition.name > right.definition.name ? 1 : 0))
-          .slice(0, limit)
-          .map(match => this.schemaOf(match.definition, true))
-        exec.discoverTools(matches)
-        return Promise.resolve({ tools: matches as unknown as JsonValue[] })
+        const byName = new Map(definitions.map(definition => [definition.name, definition]))
+        const search = new MiniSearch<ToolSearchDocument>({
+          fields: ['name', 'description'],
+          idField: 'id',
+        })
+        search.addAll(definitions.map(definition => ({
+          id: definition.name,
+          name: definition.name,
+          description: definition.description,
+        })))
+        const schemas = search.search(query, {
+          boost: { name: 2 },
+          combineWith: 'AND',
+          prefix: true,
+        }).slice(0, limit).flatMap((result) => {
+          const definition = byName.get(String(result.id))
+          /* v8 ignore next 3 -- this index was populated from the same byName map immediately above. */
+          if (definition === undefined) {
+            throw new Error(`tool_search returned unknown indexed tool "${String(result.id)}"`)
+          }
+          return [this.schemaOf(definition, true)]
+        })
+        this.loadedTools.set(exec, schemas)
+        return Promise.resolve(schemas)
       },
-    })
-    return this.searchTransport
-  }
-
-  /** Names discovered in the durable event log, in first-discovery order. */
-  private discoveredToolNames(agent: Agent | undefined): ReadonlySet<string> {
-    const names = new Set<string>()
-    if (agent === undefined) return names
-    for (const event of agent.session.events) {
-      if (event.type !== 'tool/result') continue
-      const result = event.data.message.content[0]
-      if (result.isError === true) continue
-      for (const schema of result.discoveredTools ?? []) names.add(schema.name)
     }
-    return names
-  }
-
-  /** Current definitions admitted to one request after durable discovery and live eligibility. */
-  private requestDefinitions(context: AssembleContext): ToolDefinition[] {
-    const loaded = this.discoveredToolNames(context.agent)
-    return [...this.view(context.scope).visible.values()]
-      .filter(definition => definition.deferLoading !== true || loaded.has(definition.name))
+    return this.toolSearchTool
   }
 
   /**
@@ -1159,9 +1177,12 @@ export class ToolRuntime extends Service {
   private wireSchemas(context: AssembleContext): ToolProviderResult {
     const view = this.view(context.scope)
     const mode = this.modeFor(context.scope)
-    const definitions = this.requestDefinitions(context)
+    const loaded = this.loadedSchemas(context, view)
     if (mode === 'native') {
-      const schemas = definitions.map(definition => this.schemaOf(definition, false))
+      const schemas = [...view.visible.values()]
+        .filter(definition => definition.deferLoading !== true)
+        .map(definition => this.schemaOf(definition, false))
+      schemas.push(...loaded)
       return { schemas, knownNames: [...view.knownNames] }
     }
     // Validate the runtime language BEFORE projecting schemas: schemaOf reads
@@ -1170,14 +1191,34 @@ export class ToolRuntime extends Service {
     // renderer-table rejection the canonical assembly-time error for a
     // language with no SDK renderer.
     this.requireCodeRuntime(mode)
-    const schemas = definitions.map(definition => this.schemaOf(definition, false))
+    const schemas = [...view.visible.values()]
+      .filter(definition => definition.deferLoading !== true)
+      .map(definition => this.schemaOf(definition, false))
     if (mode === 'code') {
       return {
         schemas: schemas.filter(schema => schema.name === RUN_CODE_NAME),
         knownNames: [RUN_CODE_NAME],
       }
     }
+    schemas.push(...loaded)
     return { schemas, knownNames: [...view.knownNames, RUN_CODE_NAME] }
+  }
+
+  /** Recover discovered schemas from durable history and recheck live eligibility. */
+  private loadedSchemas(context: AssembleContext, view: ToolView): ToolSchema[] {
+    const messages = context.agent?.session.deriveMessages()
+    if (messages === undefined) return []
+    const loaded = new Map<string, ToolSchema>()
+    for (const message of messages) {
+      for (const block of message.content) {
+        if (block.type !== 'tool-result' || block.loadedTools === undefined) continue
+        for (const schema of block.loadedTools) loaded.set(schema.name, schema)
+      }
+    }
+    return [...loaded.values()].filter((schema) => {
+      const definition = view.visible.get(schema.name)
+      return definition?.deferLoading === true
+    })
   }
 
   /**
@@ -1210,7 +1251,7 @@ export class ToolRuntime extends Service {
 
   /**
    * Register globally or in the calling agent scope. Scoped tools shadow
-   * globals; duplicates within one layer and reserved transport names fail.
+   * globals; duplicates within one layer and the reserved `run_code` name fail.
    * @param definition - tool schema, execution, and optional finalization/presentation callbacks.
    * @returns the exact disposer that unregisters the tool.
    */
@@ -1235,7 +1276,10 @@ export class ToolRuntime extends Service {
       throw new Error(`tool name "${RUN_CODE_NAME}" is reserved for the Code Mode presentation transport and cannot be registered or shadowed`)
     }
     if (name === TOOL_SEARCH_NAME) {
-      throw new Error(`tool name "${TOOL_SEARCH_NAME}" is reserved for the deferred-schema search transport and cannot be registered or shadowed`)
+      throw new Error(`tool name "${TOOL_SEARCH_NAME}" is reserved for deferred schema discovery and cannot be registered or shadowed`)
+    }
+    if (definition.deferLoading === true && this.toolSearchConfig === undefined) {
+      throw new Error(`tool "${name}" sets deferLoading but dsh-tools toolSearch is disabled`)
     }
     return this.layers.effect(
       this.ctx,
@@ -1481,10 +1525,6 @@ export class ToolRuntime extends Service {
         if (admitsEligibility(name)) visible.set(name, definition)
       }
     }
-    if ([...visible.values()].some(definition => definition.deferLoading === true)) {
-      visible.set(TOOL_SEARCH_NAME, this.requireSearchTransport())
-      knownNames.add(TOOL_SEARCH_NAME)
-    }
     // Presentation infrastructure is resolved last and outside capability
     // filtering. Registration rejects this reserved name, so the insertion is
     // an invariant assertion as well as protection against future layer
@@ -1493,12 +1533,14 @@ export class ToolRuntime extends Service {
     if (this.modeFor(scope) !== 'native') {
       visible.set(RUN_CODE_NAME, this.requireCodeTransport())
     }
+    if (this.toolSearchConfig !== undefined) {
+      visible.set(TOOL_SEARCH_NAME, this.requireToolSearch())
+    }
     return { visible, eligibility: eligible, knownNames, restrictableNames }
   }
 
   /** Whether a registered definition is excluded by one derived positive allowance. */
   private eligibilityDenies(view: ToolView, name: string): boolean {
-    if (name === RUN_CODE_NAME || name === TOOL_SEARCH_NAME) return false
     return view.eligibility !== undefined
       && view.knownNames.has(name)
       && !view.eligibility.has(name)
@@ -1544,13 +1586,29 @@ export class ToolRuntime extends Service {
    * @returns one deep-cloned schema per visible tool.
    */
   schemas(scope?: ScopeKey): ToolSchema[] {
-    return [...this.view(scope).visible.values()].map(definition => this.schemaOf(definition, true))
+    return [...this.view(scope).visible.values()]
+      .filter(definition => definition.deferLoading !== true)
+      .map(definition => this.schemaOf(definition, true))
+  }
+
+  /**
+   * Project the current eligible end-tool catalog, including deferred schemas
+   * and excluding reserved model-presentation infrastructure.
+   * @param scope - the viewing scope (the agent); omitted = the global view.
+   * @returns one deep-cloned schema per eligible registered end tool.
+   */
+  catalogSchemas(scope?: ScopeKey): ToolSchema[] {
+    return [...this.view(scope).visible.values()]
+      .filter(definition => definition.name !== RUN_CODE_NAME && definition.name !== TOOL_SEARCH_NAME)
+      .map(definition => this.schemaOf(definition, true))
   }
 
   /** Project visible callable tools onto the generated Code Mode SDK contract. */
   private sdkSchemas(context: AssembleContext): ToolSdkSchema[] {
-    return this.requestDefinitions(context)
-      .filter(definition => definition.name !== RUN_CODE_NAME)
+    const view = this.view(context.scope)
+    const loaded = new Map(this.loadedSchemas(context, view).map(schema => [schema.name, schema]))
+    return [...view.visible.values()]
+      .filter(definition => definition.name !== RUN_CODE_NAME && definition.deferLoading !== true)
       .map((definition): ToolSdkSchema => {
         const output = snapshotJsonValue(definition.output.schema)
         /* v8 ignore next -- registration already validated and retained this schema as lossless JSON. */
@@ -1562,6 +1620,19 @@ export class ToolRuntime extends Service {
           output,
         }
       })
+      .concat([...loaded.values()].map((schema): ToolSdkSchema => {
+        const definition = view.visible.get(schema.name)
+        /* v8 ignore next 3 -- loadedSchemas retained only live deferred definitions. */
+        if (definition === undefined) {
+          throw new Error(`loaded tool "${schema.name}" is not live`)
+        }
+        const output = snapshotJsonValue(definition.output.schema)
+        /* v8 ignore next 3 -- registration validated this schema as lossless JSON. */
+        if (output === undefined) {
+          throw new Error(`tool "${schema.name}" output schema must be lossless JSON before SDK projection`)
+        }
+        return { ...schema, output }
+      }))
   }
 
   /** Project one definition onto the model-facing schema fields. */
@@ -1680,7 +1751,6 @@ export class ToolRuntime extends Service {
 
   private createExecution(exec: ToolExecutionInput): ScheduledToolPreparation | { kind: 'ready'; exec: MutableToolRunContext } {
     const deferredContexts: UserMessage[] = []
-    const discoveredTools: ToolSchema[] = []
     const token = createExecutionToken()
     const callId = exec.callId
     const rootCallId = exec.rootCallId ?? callId
@@ -1708,11 +1778,6 @@ export class ToolRuntime extends Service {
       deferContext(context: UserMessage): void {
         deferredContexts.push(context)
       },
-      discoverTools(schemas: readonly ToolSchema[]): void {
-        for (const schema of schemas) {
-          if (!discoveredTools.some(existing => existing.name === schema.name)) discoveredTools.push(schema)
-        }
-      },
       concludeTurn(): void {
         concludingExecutions.add(this as unknown as ToolExecution)
       },
@@ -1737,7 +1802,6 @@ export class ToolRuntime extends Service {
       }
       const execution: MutableToolRunContext = { ...base, arguments: deepFreeze(detached) }
       this.deferredContexts.set(execution, deferredContexts)
-      this.discoveredTools.set(execution, discoveredTools)
       this.contentFinalizers.set(execution, finalizerFor())
       this.cancellationStates.set(execution, {
         callerSignal: signal,
@@ -2150,13 +2214,13 @@ export class ToolRuntime extends Service {
       meta = snapshotProjection(tool.name, 'presentationMeta', projected)
     }
     const concludesTurn = this.concludingExecutions.has(exec)
-    const discoveredTools = this.discoveredTools.get(exec)
+    const loadedTools = this.loadedTools.get(exec)
     return this.markCanonical(exec, this.materializeFinalResult({
       isError: false,
       value,
       content,
       ...meta !== undefined ? { meta } : {},
-      ...discoveredTools !== undefined && discoveredTools.length > 0 ? { discoveredTools } : {},
+      ...loadedTools !== undefined ? { loadedTools } : {},
       ...concludesTurn ? { concludesTurn: true as const } : {},
     }) as ToolExecutionSuccess)
   }
@@ -2188,6 +2252,7 @@ export class ToolRuntime extends Service {
       content: result.content,
       ...result.meta !== undefined ? { meta: result.meta } : {},
       ...result.additionalContexts !== undefined ? { additionalContexts: result.additionalContexts } : {},
+      ...!result.isError && result.loadedTools !== undefined ? { loadedTools: result.loadedTools } : {},
     }
     if (result.isError) {
       return materializePresentation({ isError: true as const, error: result.error, ...presentation })
@@ -2195,7 +2260,6 @@ export class ToolRuntime extends Service {
     const detached = materializePresentation({
       isError: false as const,
       ...presentation,
-      ...result.discoveredTools !== undefined ? { discoveredTools: result.discoveredTools } : {},
       ...result.concludesTurn === true ? { concludesTurn: true as const } : {},
     })
     return deepFreeze({ ...detached, value: result.value })

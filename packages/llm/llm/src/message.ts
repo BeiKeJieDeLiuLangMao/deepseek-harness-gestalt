@@ -220,9 +220,9 @@ export function createAssistantMessage(
 export interface ToolResultMessageInput {
   readonly callId: CallId
   readonly content: ContentBlock[]
-  /** Tool schemas discovered by this result and stored with it for continuation reconstruction. */
-  readonly discoveredTools?: ToolSchema[]
   readonly isError: boolean
+  /** Exact deferred schemas discovered by the call. */
+  readonly loadedTools?: ToolSchema[]
 }
 
 /**
@@ -237,8 +237,8 @@ export function createToolResultMessage(input: ToolResultMessageInput): ToolResu
       type: 'tool-result',
       toolCallId: input.callId,
       content: input.content,
-      ...input.discoveredTools === undefined ? {} : { discoveredTools: input.discoveredTools },
       isError: input.isError,
+      ...input.loadedTools !== undefined ? { loadedTools: input.loadedTools } : {},
     }],
   })
 }

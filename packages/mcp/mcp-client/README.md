@@ -45,6 +45,7 @@ The model sees `mcp__github__create_issue`, `mcp__web__search`, … — the same
 | `headers` | http | no | Extra headers (e.g. auth tokens) |
 | `toolCallTimeoutMs` | both | no | Timeout per `callTool` invocation (default 60000) |
 | `failOnStartupError` | both | no | Reject plugin activation when initial connection or tool synchronization fails (default `false`) |
+| `deferLoading` | both | no | Keep this server's schemas out of the initial request and return matches through `tool_search` (default `false`; requires `dsh-tools.toolSearch`) |
 | `reconnect.enabled` | both | no | Reconnect automatically after a lost connection (default `true`) |
 | `reconnect.initialDelayMs` | both | no | First reconnect delay in ms; doubles per consecutive failed attempt (default 500) |
 | `reconnect.maxDelayMs` | both | no | Backoff ceiling in ms; also the uptime after which the attempt budget resets (default 30000) |
@@ -84,11 +85,11 @@ Every MCP tool has two names: the raw MCP name (sent on the wire in `tools/call`
 
 #### What the model sees
 
-After initial discovery succeeds, each advertised MCP tool appears as a native tool named `mcp__<serverName>__<rawName>` (or its deterministic normalized form), with the server-provided description and input schema. A successful re-sync — including the one after an automatic reconnect — replaces the generation; plugin disposal or an exhausted reconnect budget removes it.
+After initial discovery succeeds, each advertised MCP tool uses the name `mcp__<serverName>__<rawName>` (or its deterministic normalized form), with the server-provided description and input schema. With `deferLoading: false`, those schemas appear in the initial request. With `deferLoading: true`, the initial request contains `tool_search`; its result returns matching schemas without activating or mutating the registered generation, and the next request reconstructs them from durable history. A successful re-sync — including the one after an automatic reconnect — replaces the generation; plugin disposal or an exhausted reconnect budget removes it.
 
 #### Token effect
 
-Data-dependent schema cost is paid on every request while the tools are registered. Re-sync replaces rather than accumulates schemas, and the server-qualified name adds tokens to every tool definition and call.
+Immediate schema cost is paid on every request while those tools are registered. Deferred schemas cost tokens only after a matching search result, while the result itself adds the returned JSON schemas to history. Re-sync replaces rather than accumulates schemas, and the server-qualified name adds tokens to every tool definition and call.
 
 #### KV Cache effect
 

@@ -34,6 +34,7 @@
 
 - id: tools
   config:
+    toolSearch: {}
     # TEMPORARY workaround: DSH_TOOLS_MODE (native|code|both) opts a whole dsh
     # process into Code Mode while per-session tool-presentation selection is being
     # designed; unset keeps the schema default (native). Remove the env seam
