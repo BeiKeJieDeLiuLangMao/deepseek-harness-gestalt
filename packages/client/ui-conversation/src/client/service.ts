@@ -19,6 +19,7 @@ import type { QueueAction, QueueItemId } from './contract/queue.ts'
 import type { ComposerBlocks } from './input/blocks.ts'
 import type { DraftAttachmentId, SessionInputResolver } from './input/contract.ts'
 import type { InputSubmitMode } from './contract/composer-submission.ts'
+import { deleteStagedImage, getStagedImage, putStagedImage, stagedImageKey } from './annotation/staged-images.ts'
 
 /**
  * The outward conversation face (`ctx.conversation`): the scope-addressed
@@ -59,10 +60,10 @@ export interface IConversation {
 }
 
 /** Create one browser-only draft descriptor; only its id enters input state. */
-function browserDraftAttachment(file: File): ComposerAttachment {
+function browserDraftAttachment(file: File, id = crypto.randomUUID() as DraftAttachmentId): ComposerAttachment {
   return {
     kind: 'image',
-    id: crypto.randomUUID() as DraftAttachmentId,
+    id,
     previewUrl: URL.createObjectURL(file),
     file,
   }
@@ -138,37 +139,84 @@ export class ConversationController extends Service implements IConversation {
    * @param text - serialized prompt text.
    * @param imageIds - ordered draft-local attachment ids.
    * @param mode - queue or steer delivery selected by composer policy.
+   * @param historyImageIds - durable attachment ids to reattach with pin prose.
+   * @returns whether the Host admitted the complete request. A rejected
+   * prompt resolves false (the failure is already mirrored into the session
+   * snapshot's promptError); local failures (missing drafts, upload errors)
+   * reject.
    */
   async sendSession(
     session: SessionFace,
     text: string,
     imageIds: readonly DraftAttachmentId[],
     mode: InputSubmitMode,
-  ): Promise<void> {
+    historyImageIds: readonly string[] = [],
+  ): Promise<boolean> {
     const attachments = this.draftImages(imageIds)
     if (attachments.length !== imageIds.length) {
       throw new Error('conversation.sendSession: one or more draft images are no longer available')
     }
     const uploaded = await this.serializeImages(attachments.map(attachment => attachment.file))
-    const content = [...uploaded, ...(text === '' ? [] : [{ type: 'text' as const, text }])]
+    const history = historyImageIds.length === 0
+      ? []
+      : await this.serializeHistoryImages(session, historyImageIds)
+    const content = [...history, ...uploaded, ...(text === '' ? [] : [{ type: 'text' as const, text }])]
     const result = await session.prompt(content, mode)
-    if (!result.ok) throw new Error(`conversation.send failed: ${result.error.code}: ${result.error.message}`)
+    if (!result.ok) return false
     this.releaseDraftImages(attachments)
+    return true
   }
 
   /**
    * Create runtime-only draft images and their object URLs.
    * @param files - browser files to register after MIME validation.
+   * @param sessionId - Session owner used to persist staged bytes for unsent pins.
    * @returns ordered draft descriptors.
    */
-  createDraftImages(files: readonly File[]): readonly ComposerAttachment[] {
+  createDraftImages(files: readonly File[], sessionId?: SessionId): readonly ComposerAttachment[] {
     for (const file of files) imageMediaType(file.type)
     return files.map((file) => {
       const attachment = browserDraftAttachment(file)
       this.draftAttachments.set(attachment.id, attachment)
       this.createdImageUrls.add(attachment.previewUrl)
+      if (sessionId !== undefined) {
+        void file.arrayBuffer().then(bytes => putStagedImage({
+          key: stagedImageKey(sessionId, attachment.id),
+          name: file.name,
+          type: file.type,
+          bytes,
+        }))
+      }
       return attachment
     })
+  }
+
+  /**
+   * Rehydrate staged images required by an unsent Annotation Draft after reload.
+   * @param sessionId - Session owner.
+   * @param imageIds - Draft attachment ids referenced by image pins.
+   * @returns Restored descriptors that were found in IndexedDB.
+   */
+  async restoreStagedImages(
+    sessionId: SessionId,
+    imageIds: readonly DraftAttachmentId[],
+  ): Promise<readonly ComposerAttachment[]> {
+    const restored: ComposerAttachment[] = []
+    for (const imageId of imageIds) {
+      if (this.draftAttachments.has(imageId)) {
+        const live = this.draftAttachments.get(imageId)
+        if (live !== undefined) restored.push(live)
+        continue
+      }
+      const record = await getStagedImage(stagedImageKey(sessionId, imageId))
+      if (record === undefined) continue
+      const file = new File([record.bytes], record.name, { type: record.type })
+      const attachment = browserDraftAttachment(file, imageId)
+      this.draftAttachments.set(attachment.id, attachment)
+      this.createdImageUrls.add(attachment.previewUrl)
+      restored.push(attachment)
+    }
+    return restored
   }
 
   /**
@@ -188,13 +236,15 @@ export class ConversationController extends Service implements IConversation {
   /**
    * Release one browser-owned draft image and preview URL.
    * @param id - draft attachment id.
+   * @param sessionId - Session owner used to drop persisted staged bytes.
    */
-  releaseDraftImage(id: DraftAttachmentId): void {
+  releaseDraftImage(id: DraftAttachmentId, sessionId?: SessionId): void {
     const attachment = this.draftAttachments.get(id)
     if (attachment === undefined) return
     this.draftAttachments.delete(id)
     this.createdImageUrls.delete(attachment.previewUrl)
     revokePreview(attachment.previewUrl)
+    if (sessionId !== undefined) void deleteStagedImage(stagedImageKey(sessionId, id))
   }
 
   /**
@@ -310,6 +360,32 @@ export class ConversationController extends Service implements IConversation {
     const sessions = this.ctx.get('sessions')
     if (sessions === undefined) throw new Error('conversation: sessions service unavailable')
     return sessions
+  }
+
+  /**
+   * Reattach durable history images by their content-addressed ids.
+   * @param session - owning session.
+   * @param historyImageIds - attachment ids referenced by history pins.
+   * @returns image prompt parts, or throws when a referenced image is missing.
+   */
+  private async serializeHistoryImages(
+    session: SessionFace,
+    historyImageIds: readonly string[],
+  ): Promise<Parameters<SessionFace['prompt']>[0]> {
+    const parts: Parameters<SessionFace['prompt']>[0] = []
+    for (const attachmentId of historyImageIds) {
+      const result = await session.readAttachment(attachmentId as never)
+      if (!result.ok) {
+        throw new Error(`conversation.sendSession: history image "${attachmentId}" is no longer available`)
+      }
+      parts.push({
+        type: 'image' as const,
+        mediaType: result.value.attachment.mediaType,
+        data: bytesToBase64(Uint8Array.from(result.value.data)),
+        ...(result.value.attachment.name === undefined ? {} : { name: result.value.attachment.name }),
+      })
+    }
+    return parts
   }
 
   /** Convert browser files to canonical base64 prompt parts. */

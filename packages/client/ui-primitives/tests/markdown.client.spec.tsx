@@ -2,6 +2,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { JsonBlock, MarkdownText, MessageText } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { MarkdownSelectionMap } from '@deepseek-ai/dsh-client-ui-primitives'
 import { cjkFriendlyStrong } from '../src/markdown/cjkFriendlyStrong.ts'
 import { mathCompatibility } from '../src/markdown/mathCompatibility.ts'
 
@@ -231,6 +232,28 @@ describe('MarkdownText', () => {
     live.unmount()
     const done = render(<MarkdownText text={fence} />)
     expect(done.container.querySelector('pre.shiki')).not.toBeNull()
+  })
+
+  it('disposes fenced-code selection boundaries when the Markdown unmounts', () => {
+    const selectionMapRef: { current: MarkdownSelectionMap | null } = { current: null }
+    const view = render(
+      <MarkdownText
+        text={'```ts\nconst ready = true\n```'}
+        selectionMapRef={selectionMapRef}
+      />,
+    )
+    const map = selectionMapRef.current
+    if (map === null) throw new Error('expected settled Markdown selection map')
+    const anchor = { quote: 'ready', prefix: 'const ', suffix: ' = true' }
+    const range = map.rangeForText(anchor)
+    expect(range?.toString()).toBe('ready')
+    if (range === null) throw new Error('expected mounted fenced-code range')
+
+    view.unmount()
+
+    expect(selectionMapRef.current).toBeNull()
+    expect(map.rangeForText(anchor)).toBeNull()
+    expect(map.inspect(range)).toBeNull()
   })
 
   it('forwards localized labels to fenced code blocks', () => {
