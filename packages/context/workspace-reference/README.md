@@ -1,0 +1,46 @@
+# `@deepseek-ai/dsh-workspace-reference`
+
+English | [中文](README.zh.md)
+
+Validates `@path` tokens in direct user messages and injects an existence-only Workspace Reference before the agent step. The plugin does not read file bytes or list directory children. Decision record: the [Workspace Reference Agent Note](../../../.agents/notes/proposed/feature/2026-08-19-workspace-reference.md).
+
+## Public API
+
+- `scanMentions(text)` returns unique `@path` tokens. `@[label](dsh-session:…)` is not a path token.
+- `expandMentions(messages, cwd, fileSystem, signal)` validates tokens with `lstat` and returns sourced `user/message` injections.
+- `rankFiles(files, query, limit)` ranks picker candidates: basename queries, ordered path-segment queries, and directories-first browse.
+
+## Configuration
+
+| Key | Default | Contract |
+|---|---:|---|
+| `maxIndexedFiles` | `5000` | Maximum picker index entries; the walk stops and reports truncation. |
+| `ignoreDirs` | built-in VCS, IDE, dependency, and build names | Directory basenames skipped by the picker walk. Providing the key replaces the built-in list. |
+
+## Model Experience
+
+### Workspace path pointer
+
+#### What the model sees
+
+One sourced user-role message per validated path:
+
+```xml
+<workspace-reference path="docs/spec.pdf" kind="file" />
+```
+
+The path is workspace-relative. `kind` is `file` or `directory`. The model inspects the path with the session's existing tools when the task requires contents.
+
+#### Token effect
+
+Each reference adds one short marker. File bytes and directory listings are not added here.
+
+#### KV Cache effect
+
+Append-only. A new reference changes only the new suffix.
+
+## Known Limitations and Deferred Work
+
+- **Web scanner only in the first landing** — other hosts can mount the same plugin later; ACP and SDK text are not scanned until they do.
+- **Picker index is advisory** — paths beyond `maxIndexedFiles` or inside ignored directories can still be referenced by a hand-typed `@path` that exists inside the workspace.
+- **No gitignore** — only configured directory basenames and later settings filters apply.

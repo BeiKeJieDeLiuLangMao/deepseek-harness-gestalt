@@ -2,10 +2,11 @@
 
 [English](README.md) | 中文
 
-在不定义工具的情况下添加模型可见的请求上下文的产品插件。`agent-instructions` 包含在默认 `dsh-agent-spine-demo` 组合包中，可通过组合包配置禁用；`time-context`、`tmux-context` 和 `session-reference` 需主动启用。
+在不定义工具的情况下添加模型可见的请求上下文的产品插件。`agent-instructions` 包含在默认 `dsh-agent-spine-demo` 组合包中，可通过组合包配置禁用；`time-context`、`tmux-context` 和 `session-reference` 需主动启用。`workspace-reference` 随 web profile 交付。
 
 | 包 | 职责 | ctx key |
 |---|---|---|
+| [`workspace-reference/`](workspace-reference/README.md) | 仅表示存在性的工作区路径指针 | — |
 | [`session-reference/`](session-reference/README.md) | 其他会话的有界快照 | `ctx.sessionReferenceResolver` |
 | [`time-context/`](time-context/README.md) | 当前时间与耗时上下文 | — |
 | [`tmux-context/`](tmux-context/README.md) | tmux 位置上下文 | — |
