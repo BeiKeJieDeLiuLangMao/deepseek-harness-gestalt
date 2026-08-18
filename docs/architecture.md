@@ -104,7 +104,7 @@ A **seam** is a swappable capability with three roles: a **Service Definition** 
 
 Seams are why one provider swap changes the whole product. Filesystem and subprocess providers share one execution world, so pointing them at a remote sandbox moves Bash, PTY, and LSP with them, with no provider forks. [Subagent providers](subsystems/subagent.md) vary just as widely behind one interface, from a fresh child agent to a delegated turn in another product.
 
-The [Browser Runtime seam](subsystems/browser-runtime.md) keeps opaque Profile, Workspace, browser-instance, and tab identities behind `ctx.browserRuntime`. Its first deterministic Provider proves serialized revision-guarded operations and teardown, while the deferred Consumer stays on the ordinary tool and generic presentation paths.
+The [Browser Runtime seam](subsystems/browser-runtime.md) keeps opaque Profile, Workspace, browser-instance, and tab identities behind `ctx.browserRuntime`. Session-local Workspace ownership lives in `ctx.browserWorkspace`. Its first deterministic Provider proves serialized revision-guarded operations and teardown, while the deferred Consumer stays on the ordinary tool and generic presentation paths.
 
 ## Where new behavior goes
 

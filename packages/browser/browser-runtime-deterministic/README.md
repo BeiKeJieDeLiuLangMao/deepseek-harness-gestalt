@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-Deterministic keyless Browser Runtime Provider for temporary and named persistent Browser Profiles. Each Profile still has one Workspace, one browser instance, and one tab. It is a runnable store and fixture backend, not an operating-system browser.
+Deterministic keyless Browser Runtime Provider for temporary and named persistent Browser Profiles. One Profile can own multiple Workspaces, browser instances, and tabs. It is a runnable store and fixture backend, not an operating-system browser.
 
 ## Configuration
 
@@ -22,4 +22,4 @@ The Provider itself contributes no request text; Consumer schemas and logged res
 
 ## Known Limitations and Deferred Work
 
-- Navigation succeeds only for configured fixture URLs; human takeover, multiple tabs, and native browser automation remain absent.
+- Navigation succeeds only for configured fixture URLs; human takeover and native browser automation remain absent.

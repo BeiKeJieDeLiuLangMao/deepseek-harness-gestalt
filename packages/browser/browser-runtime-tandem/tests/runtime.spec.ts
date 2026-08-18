@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import TandemBrowserRuntime from '@deepseek-ai/dsh-browser-runtime-tandem'
-import { BrowserProfileName, BrowserRuntimeError } from '@deepseek-ai/dsh-browser-runtime'
+import { BrowserProfileName, BrowserRuntimeError, BrowserWorkspaceId } from '@deepseek-ai/dsh-browser-runtime'
 import SubprocessLocal from '@deepseek-ai/dsh-subprocess-local'
 
 const FIXTURE = join(dirname(fileURLToPath(import.meta.url)), 'fixtures/tandem-http-fixture.mjs')
@@ -25,7 +25,7 @@ interface Harness {
 
 /** Private seams reachable only from this package's own behavioral tests. */
 interface RuntimeInternals {
-  profiles: Map<string, { tandemTabId: string }>
+  profiles: Map<string, { tabs: Map<string, string> }>
   closing: boolean
   recoveryScheduled: boolean
   disposed: boolean
@@ -189,7 +189,7 @@ describe('Tandem Browser Runtime public lifecycle', () => {
       target: {
         profileId: 'tandem-test-tmp-1',
         workspaceId: 'tandem-test-tmp-1-workspace',
-        browserId: 'tandem-test-tmp-1-browser',
+        browserId: 'tandem-test-tmp-1-browser-1',
         tabId: 'tandem-test-tmp-1-tab-1',
       },
       revision: 0,
@@ -280,6 +280,37 @@ describe('Tandem Browser Runtime public lifecycle', () => {
     expect(restored.text).toContain('identity=work')
   })
 
+  it('attaches a second Tandem tab to an open temporary Profile', async () => {
+    const { ctx } = await setup()
+    const first = await ctx.browserRuntime.create({ profile: 'temporary' })
+    const second = await ctx.browserRuntime.create({
+      profile: 'temporary',
+      attach: { kind: 'browser', workspaceId: first.target.workspaceId, browserId: first.target.browserId },
+    })
+    expect(second.target.profileId).toBe(first.target.profileId)
+    expect(second.target.tabId).not.toBe(first.target.tabId)
+    const third = await ctx.browserRuntime.create({
+      profile: 'temporary',
+      attach: { kind: 'workspace', workspaceId: first.target.workspaceId },
+    })
+    expect(third.target.browserId).not.toBe(first.target.browserId)
+    await expect(ctx.browserRuntime.create({
+      profile: 'temporary',
+      attach: { kind: 'workspace', workspaceId: BrowserWorkspaceId('missing') },
+    })).rejects.toMatchObject({ code: 'BROWSER_NOT_FOUND' })
+    await ctx.browserRuntime.close({ target: third.target, expectedRevision: 0 })
+    const runtime = runtimeOf(ctx)
+    runtime.profiles.get(first.target.profileId)?.tabs.delete(first.target.tabId)
+    await expect(ctx.browserRuntime.navigate({
+      target: first.target,
+      expectedRevision: 0,
+      url: 'https://example.test/',
+    })).rejects.toMatchObject({ code: 'BROWSER_RUNTIME_UNAVAILABLE' })
+    runtime.profiles.get(first.target.profileId)?.tabs.set(first.target.tabId, 'restored-tab')
+    await ctx.browserRuntime.close({ target: second.target, expectedRevision: 0 })
+    await ctx.browserRuntime.close({ target: first.target, expectedRevision: 0 })
+  })
+
   it('discards a temporary Tandem Profile identity and never labels it', async () => {
     const { ctx } = await setup()
     const first = await ctx.browserRuntime.create({ profile: 'temporary' })
@@ -327,6 +358,11 @@ describe('Tandem Browser Runtime public lifecycle', () => {
     }
     await expect(ctx.browserRuntime.create({ profile: 'persistent', name: BrowserProfileName('home') }))
       .rejects.toMatchObject({ code: 'BROWSER_PROTOCOL' })
+    await expect(ctx.browserRuntime.create({
+      profile: 'persistent',
+      name: BrowserProfileName('work'),
+      attach: { kind: 'browser', workspaceId: first.target.workspaceId, browserId: first.target.browserId },
+    })).rejects.toMatchObject({ code: 'BROWSER_PROTOCOL' })
     runtime.createSession = originalCreateSession
     const stillPid = Number((await readFile(pidFile, 'utf8')).trim())
     expect(stillPid).toBe(firstPid)
@@ -799,8 +835,6 @@ describe('Tandem Browser Runtime teardown ownership', () => {
     // Force create to read content through page-content after session create by
     // replacing readContent via observe of the same private method.
     runtime.readTab = original
-    const originalRead = runtime.readTab
-    runtime.readTab = originalRead
     const internals = runtime as RuntimeInternals & { readContent(tabId: string, signal: AbortSignal | undefined): Promise<unknown> }
     internals.readContent = async () => { throw new Error('raw create content failure') }
     await expect(ctx.browserRuntime.create({ profile: 'temporary' })).rejects.toThrow('raw create content failure')

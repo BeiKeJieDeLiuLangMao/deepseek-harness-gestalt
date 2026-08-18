@@ -429,7 +429,7 @@ export interface DeterministicBrowserPage {
 }
 ```
 
-Source: [`packages/browser/browser-runtime-deterministic/src/index.ts:59`](../packages/browser/browser-runtime-deterministic/src/index.ts)
+Source: [`packages/browser/browser-runtime-deterministic/src/index.ts:63`](../packages/browser/browser-runtime-deterministic/src/index.ts)
 
 <a id="deepseek-aidsh-browser-runtime-tandem"></a>
 
@@ -473,7 +473,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/browser/browser-runtime-tandem/src/index.ts:50`](../packages/browser/browser-runtime-tandem/src/index.ts)
+Source: [`packages/browser/browser-runtime-tandem/src/index.ts:52`](../packages/browser/browser-runtime-tandem/src/index.ts)
 
 <a id="deepseek-aidsh-client-connection"></a>
 
@@ -2672,7 +2672,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/browser/tool-browser/src/index.ts:22`](../packages/browser/tool-browser/src/index.ts)
+Source: [`packages/browser/tool-browser/src/index.ts:24`](../packages/browser/tool-browser/src/index.ts)
 
 <a id="deepseek-aidsh-tool-fs"></a>
 
@@ -3360,6 +3360,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-agent` ([`packages/core/agent/src/index.ts`](../packages/core/agent/src/index.ts))
 - `@deepseek-ai/dsh-api-gateway` — requires `typert` ([`packages/api/gateway/src/index.ts`](../packages/api/gateway/src/index.ts))
 - `@deepseek-ai/dsh-api-remotes` ([`packages/api/remotes/src/index.ts`](../packages/api/remotes/src/index.ts))
+- `@deepseek-ai/dsh-browser-workspace` — requires `browserRuntime` · `sessions` ([`packages/browser/browser-workspace/src/index.ts`](../packages/browser/browser-workspace/src/index.ts))
 - `@deepseek-ai/dsh-client-locale` ([`packages/client/locale/src/index.ts`](../packages/client/locale/src/index.ts))
 - `@deepseek-ai/dsh-client-modules` — requires `webServer` · `loader` ([`packages/client/modules/src/index.ts`](../packages/client/modules/src/index.ts))
 - `@deepseek-ai/dsh-client-runtime` ([`packages/client/runtime/src/index.ts`](../packages/client/runtime/src/index.ts))

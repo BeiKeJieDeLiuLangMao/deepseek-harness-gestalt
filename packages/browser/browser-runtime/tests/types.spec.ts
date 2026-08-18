@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import {
   addressedBrowserRuntimeState,
+  assertBrowserCreateAttach,
   assertBrowserNotAborted,
   assertBrowserProfileName,
   browserProfileChrome,
@@ -17,8 +18,10 @@ import {
   labeledBrowserProfileName,
   requireOpenBrowserPage,
   resolveBrowserProfileCreate,
+  sameBrowserInstance,
   sameBrowserProfile,
   sameBrowserTarget,
+  sameBrowserWorkspace,
   browserProfileStorage,
   browserTargetFor,
 } from '@deepseek-ai/dsh-browser-runtime'
@@ -109,10 +112,41 @@ describe('Browser Runtime public vocabulary', () => {
     expect(work).toEqual({
       profileId: 'tandem-profile-work',
       workspaceId: 'tandem-work-workspace',
-      browserId: 'tandem-work-browser',
+      browserId: 'tandem-work-browser-1',
       tabId: 'tandem-work-tab-1',
     })
-    expect(sameBrowserProfile(work, browserTargetFor(BrowserProfileId('tandem-profile-work'), 'tandem-work', 2))).toBe(true)
+    const second = browserTargetFor(BrowserProfileId('tandem-profile-work'), 'tandem-work', 2, {
+      kind: 'browser',
+      workspaceId: work.workspaceId,
+      browserId: work.browserId,
+    })
+    expect(sameBrowserProfile(work, second)).toBe(true)
+    expect(sameBrowserWorkspace(work, second)).toBe(true)
+    expect(sameBrowserInstance(work, second)).toBe(true)
+    expect(second.tabId).toBe('tandem-work-tab-2')
+    expect(() => {
+      assertBrowserCreateAttach([], work.profileId, {
+        kind: 'workspace',
+        workspaceId: work.workspaceId,
+      })
+    }).toThrow(BrowserRuntimeError)
+    expect(() => {
+      assertBrowserCreateAttach([{
+        status: 'open',
+        target: work,
+        revision: 0,
+        url: 'about:blank',
+        title: 'New Tab',
+        text: '',
+        focused: false,
+        chrome: { kind: 'temporary', partition: 'persist:session-tandem-work' },
+        storage: browserProfileStorage(''),
+      }], work.profileId, {
+        kind: 'browser',
+        workspaceId: work.workspaceId,
+        browserId: BrowserInstanceId('missing-browser'),
+      })
+    }).toThrow(BrowserRuntimeError)
     expect(browserProfileStorage('work')).toEqual({
       cookies: 'profile=work',
       localStorage: 'work',

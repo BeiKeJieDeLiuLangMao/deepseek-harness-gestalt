@@ -6,6 +6,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import {
   addressedBrowserRuntimeStateFrom,
+  assertBrowserCreateAttach,
   assertBrowserNotAborted,
   assertBrowserProfileWriterAvailable,
   browserProfileStorage,
@@ -16,6 +17,7 @@ import {
   commitBrowserRuntimeState,
   emitBrowserRuntimeState,
   EMPTY_BROWSER_PROFILE_STORAGE,
+  resolveBrowserCreateAttach,
   resolveBrowserProfileCreate,
 } from '@deepseek-ai/dsh-browser-runtime'
 import type {
@@ -160,7 +162,7 @@ function assertNonEmpty(name: string, value: string): void {
 interface OpenProfile {
   readonly sessionName: string
   readonly chrome: BrowserProfileChrome
-  tandemTabId: string
+  readonly tabs: Map<string, string>
 }
 
 /** Narrow one untrusted JSON value to an object record. */
@@ -306,7 +308,11 @@ export class TandemBrowserRuntime extends BrowserRuntime {
 
   /** Resolve the current Tandem-owned tab identity for the stable DSH target. */
   private upstreamTabId(target: BrowserTarget): string {
-    return this.openProfile(target).tandemTabId
+    const tabId = this.openProfile(target).tabs.get(target.tabId)
+    if (tabId === undefined) {
+      throw new BrowserRuntimeError('Tandem no longer reports the addressed tab', 'BROWSER_RUNTIME_UNAVAILABLE')
+    }
+    return tabId
   }
 
   /** Resolve the Tandem session name for one addressed target. */
@@ -555,7 +561,7 @@ export class TandemBrowserRuntime extends BrowserRuntime {
         await this.startProcess(undefined)
         const restoredProfile = this.openProfile(lastOpen.target)
         const tab = await this.createSession(restoredProfile.sessionName, undefined, lastOpen.url)
-        restoredProfile.tandemTabId = tab.id
+        restoredProfile.tabs.set(lastOpen.target.tabId, tab.id)
         const restored = await this.page(lastOpen, undefined)
         this.commit({ ...restored, revision: unavailable.revision + 1, focused: false })
         return
@@ -638,22 +644,35 @@ export class TandemBrowserRuntime extends BrowserRuntime {
     assertBrowserNotAborted(request.signal)
     return this.exclusive(async () => {
       assertBrowserNotAborted(request.signal)
-      if (request.profile === 'temporary') this.temporarySeq += 1
-      const created = resolveBrowserProfileCreate(this.config.idPrefix, request, this.temporarySeq)
-      if (request.profile === 'persistent') {
+      const attached = resolveBrowserCreateAttach(this.states.values(), request.attach)
+      if (request.profile === 'temporary' && attached === undefined) this.temporarySeq += 1
+      const created = attached === undefined
+        ? resolveBrowserProfileCreate(this.config.idPrefix, request, this.temporarySeq)
+        : {
+          profileId: attached.target.profileId,
+          sessionName: this.openProfile(attached.target).sessionName,
+          chrome: attached.chrome,
+        }
+      const existing = [...this.states.values()].filter(state => (
+        state.status === 'open' && state.target.profileId === created.profileId
+      ))
+      if (request.profile === 'persistent' && request.attach === undefined) {
         assertBrowserProfileWriterAvailable(this.states.values(), created.chrome.partition, request.name)
       }
+      assertBrowserCreateAttach(this.states.values(), created.profileId, request.attach)
       if (this.process === undefined) await this.startProcess(request.signal)
       try {
         const tab = await this.createSession(created.sessionName, request.signal)
-        this.profiles.set(created.profileId, {
+        const profile = this.profiles.get(created.profileId) ?? {
           sessionName: created.sessionName,
           chrome: created.chrome,
-          tandemTabId: tab.id,
-        })
-        const existing = [...this.states.values()].filter(state => state.target.profileId === created.profileId)
-        const tabSeq = existing.length + 1
-        const target = browserTargetFor(created.profileId, created.sessionName, tabSeq)
+          tabs: new Map<string, string>(),
+        }
+        const historical = [...this.states.values()].filter(state => state.target.profileId === created.profileId)
+        const tabSeq = historical.length + 1
+        const target = browserTargetFor(created.profileId, created.sessionName, tabSeq, request.attach)
+        profile.tabs.set(target.tabId, tab.id)
+        this.profiles.set(created.profileId, profile)
         let content: TandemPageContent | undefined
         try {
           content = await this.readContent(tab.id, request.signal)
@@ -673,7 +692,7 @@ export class TandemBrowserRuntime extends BrowserRuntime {
           storage: resolveCreateStorage(content, name),
         })
       } catch (error) {
-        this.profiles.delete(created.profileId)
+        if (existing.length === 0) this.profiles.delete(created.profileId)
         if (this.profiles.size === 0) await this.stopProcess()
         throw error
       }
@@ -760,15 +779,19 @@ export class TandemBrowserRuntime extends BrowserRuntime {
       const state = this.addressed(request.target)
       this.expected(state, request.expectedRevision)
       if (state.status === 'closed') throw new BrowserRuntimeError('browser target is closed', 'BROWSER_NOT_OPEN')
-      if (this.process !== undefined) {
+      const profile = this.openProfile(request.target)
+      const sessionName = profile.sessionName
+      profile.tabs.delete(state.target.tabId)
+      const lastTab = profile.tabs.size === 0
+      if (lastTab && this.process !== undefined) {
         const response = objectValue(await this.json('/sessions/destroy', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ name: this.sessionNameFor(request.target) }),
+          body: JSON.stringify({ name: sessionName }),
         }, request.signal), 'session destroy')
         if (response.ok !== true) throw new BrowserRuntimeError('Tandem did not destroy the session', 'BROWSER_PROTOCOL')
       }
-      this.profiles.delete(state.target.profileId)
+      if (lastTab) this.profiles.delete(state.target.profileId)
       const closed = this.commit({ status: 'closed' as const, target: state.target, revision: state.revision + 1 })
       if (this.profiles.size === 0) await this.stopProcess()
       return closed

@@ -40,6 +40,6 @@ The Provider itself contributes no request text; Consumer schemas and logged res
 
 ## Known Limitations and Deferred Work
 
-- One Tandem child process per Provider lifetime; multiple tabs and human takeover remain absent.
+- One Tandem child process per Provider lifetime; human takeover remains absent. A later create can attach another instance or tab to an already-open Profile.
 - Running against a real Tandem Browser requires a checkout of the pinned revision `3b613cfd4c299609ca7ca415d638c1b71c6ba5de`; unit tests run against the in-repository HTTP fixture.
 - Upstream-contribution candidates — isolated-session security stack and extension loading, persisted session registry, close/forget/wipe storage erasure, MCP tool allowlist/profiles, an ownership/handoff event stream, and first-class Linux support — are listed in [UPSTREAM.md](UPSTREAM.md).

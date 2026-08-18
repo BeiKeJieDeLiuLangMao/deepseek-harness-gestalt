@@ -40,6 +40,6 @@ Provider 自身不贡献请求文本；Consumer schema 与已记录结果决定�
 
 ## 已知限制与后续工作
 
-- 每个 Provider 生命周期只有一个 Tandem 子进程；多标签页与人工接管仍不在本包中。
+- 每个 Provider 生命周期只有一个 Tandem 子进程；人工接管仍不在本包中。后续 create 可以把另一个实例或标签页附加到已打开的 Profile。
 - 对真实 Tandem Browser 运行需要固定 revision `3b613cfd4c299609ca7ca415d638c1b71c6ba5de` 的 checkout；单元测试运行在仓库内 HTTP fixture 上。
 - 上游贡献候选——隔离 session 的安全栈与扩展加载、可持久化的 session registry、close/forget/wipe 存储擦除、MCP 工具 allowlist/profile、page-content 稳定等待上限、默认绑定全部接口的 API、ownership/handoff 事件流，以及一线 Linux 支持——列于 [UPSTREAM.md](UPSTREAM.md)。

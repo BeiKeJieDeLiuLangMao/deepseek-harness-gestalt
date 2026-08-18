@@ -16,6 +16,15 @@
       "path": "../browser-runtime"
     },
     {
+      "path": "../browser-workspace"
+    },
+    {
+      "path": "../../core/agent"
+    },
+    {
+      "path": "../../core/session"
+    },
+    {
       "path": "../../llm/llm"
     },
     {

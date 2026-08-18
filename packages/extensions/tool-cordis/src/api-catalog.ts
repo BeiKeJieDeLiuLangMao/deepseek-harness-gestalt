@@ -391,10 +391,10 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     methods: [
       {
         signature: 'abstract create(request: BrowserCreateRequest): Promise<BrowserPageState>',
-        description: 'Create one temporary or named persistent Profile, Workspace, browser instance, and tab.',
-        parameters: [{ name: 'request', description: 'Temporary or named persistent Profile request and cancellation signal.' }],
+        description: 'Create one temporary or named persistent Profile tab. Omitting `attach` starts a new Workspace and browser instance. Attaching to a Workspace starts another instance; attaching to a browser instance starts another tab in that instance.',
+        parameters: [{ name: 'request', description: 'Temporary or named persistent Profile request, optional attach, and cancellation.' }],
         returns: 'initial open page state at revision zero; its target addresses every later operation in this lifecycle. Persistent Profiles restore the same storage partition on later creates.',
-        throws: ['`BrowserRuntimeError` with `BROWSER_ABORTED` when cancellation wins, `BROWSER_DISPOSED` after teardown starts, `BROWSER_PROFILE_BUSY` when the named Profile already has a writer, `BROWSER_PROFILE_NAME` when the name cannot be a stable partition key, `BROWSER_PROTOCOL` when the upstream runtime breaks its response protocol, or `BROWSER_RUNTIME_UNAVAILABLE` when the upstream runtime cannot be reached or starts unhealthy.'],
+        throws: ['`BrowserRuntimeError` with `BROWSER_ABORTED` when cancellation wins, `BROWSER_DISPOSED` after teardown starts, `BROWSER_NOT_FOUND` when `attach` names a missing hierarchy, `BROWSER_PROFILE_BUSY` when the named Profile already has a writer, `BROWSER_PROFILE_NAME` when the name cannot be a stable partition key, `BROWSER_PROTOCOL` when the upstream runtime breaks its response protocol, or `BROWSER_RUNTIME_UNAVAILABLE` when the upstream runtime cannot be reached or starts unhealthy.'],
       },
       {
         signature: 'abstract navigate(request: BrowserNavigateRequest): Promise<BrowserPageState>',
@@ -430,6 +430,66 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'request', description: 'Target, expected revision, and cancellation signal.' }],
         returns: 'terminal close receipt retained by the Provider for later observation.',
         throws: ['`BrowserRuntimeError` with `BROWSER_ABORTED`, `BROWSER_DISPOSED`, `BROWSER_NOT_FOUND`, `BROWSER_NOT_OPEN`, or `BROWSER_REVISION_CONFLICT` when the corresponding precondition fails before commit, `BROWSER_PROTOCOL` when the upstream runtime breaks its response protocol, or `BROWSER_RUNTIME_UNAVAILABLE` when it cannot be reached.'],
+      },
+    ],
+  },
+  {
+    key: 'browserWorkspace',
+    summary: 'Bind Browser Runtime identities to one Session log and project Dock plus instance and tab ownership from durable Session facts.',
+    description: 'Bind Browser Runtime identities to one Session log and project Dock plus instance and tab ownership from durable Session facts.',
+    methods: [
+      {
+        signature: 'snapshot(session: Session): BrowserWorkspaceProjection',
+        description: 'Read the last logged Workspace for one Session.',
+        parameters: [{ name: 'session', description: 'Owning Session.' }],
+        returns: 'the last logged snapshot, or the empty Workspace.',
+      },
+      {
+        signature: 'setDock(request: BrowserWorkspaceDockRequest): BrowserWorkspaceProjection',
+        description: 'Record Dock visibility and preferred width for one Session.',
+        parameters: [{ name: 'request', description: 'Session, open flag, and optional width.' }],
+        returns: 'the committed Workspace snapshot.',
+      },
+      {
+        signature: 'async create(request: BrowserWorkspaceCreateRequest): Promise<BrowserPageState>',
+        description: 'Create one tab in the Session\'s Browser Workspace.',
+        parameters: [{ name: 'request', description: 'Session-bound create request.' }],
+        returns: 'the committed open page.',
+      },
+      {
+        signature: 'async navigate(request: BrowserWorkspaceNavigateRequest): Promise<BrowserPageState>',
+        description: 'Navigate one Session-owned tab.',
+        parameters: [{ name: 'request', description: 'Session-bound navigate request.' }],
+        returns: 'the committed open page.',
+      },
+      {
+        signature: 'async observe(request: BrowserWorkspaceObserveRequest): Promise<BrowserRuntimeState>',
+        description: 'Observe one Session-owned tab.',
+        parameters: [{ name: 'request', description: 'Session-bound observe request.' }],
+        returns: 'the current open, unavailable, or closed state.',
+      },
+      {
+        signature: 'async screenshot(request: BrowserWorkspaceObserveRequest): Promise<BrowserScreenshot>',
+        description: 'Capture one Session-owned tab.',
+        parameters: [{ name: 'request', description: 'Session-bound observe request.' }],
+        returns: 'screenshot bytes and depicted page facts.',
+      },
+      {
+        signature: 'async focus(request: BrowserWorkspaceMutationRequest): Promise<BrowserPageState>',
+        description: 'Focus one Session-owned tab and record it as the Session\'s active tab.',
+        parameters: [{ name: 'request', description: 'Session-bound mutation request.' }],
+        returns: 'the committed focused page.',
+      },
+      {
+        signature: 'async close(request: BrowserWorkspaceMutationRequest): Promise<BrowserClosedState>',
+        description: 'Close one Session-owned tab and drop it from the Session Workspace.',
+        parameters: [{ name: 'request', description: 'Session-bound mutation request.' }],
+        returns: 'the terminal close receipt.',
+      },
+      {
+        signature: 'async cleanup(session: Session): Promise<void>',
+        description: 'Close every live tab still owned by one Session.',
+        parameters: [{ name: 'session', description: 'Session whose leftover Runtime tabs must be closed.' }],
       },
     ],
   },
@@ -3012,6 +3072,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface BrowserClosedState {\n    readonly status: \'closed\';\n    readonly target: BrowserTarget;\n    readonly revision: number;\n}',
   },
   {
+    name: 'BrowserCreateAttach',
+    declaration: 'export type BrowserCreateAttach = {\n    readonly kind: \'workspace\';\n    readonly workspaceId: BrowserWorkspaceId;\n} | {\n    readonly kind: \'browser\';\n    readonly workspaceId: BrowserWorkspaceId;\n    readonly browserId: BrowserInstanceId;\n};',
+  },
+  {
     name: 'BrowserCreateRequest',
     declaration: 'export type BrowserCreateRequest = BrowserTemporaryCreateRequest | BrowserPersistentCreateRequest;',
   },
@@ -3037,7 +3101,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'BrowserPersistentCreateRequest',
-    declaration: 'export interface BrowserPersistentCreateRequest {\n    readonly profile: \'persistent\';\n    readonly name: BrowserProfileName;\n    readonly signal?: AbortSignal;\n}',
+    declaration: 'export interface BrowserPersistentCreateRequest {\n    readonly profile: \'persistent\';\n    readonly name: BrowserProfileName;\n    readonly attach?: BrowserCreateAttach;\n    readonly signal?: AbortSignal;\n}',
   },
   {
     name: 'BrowserProfileChrome',
@@ -3077,15 +3141,55 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'BrowserTemporaryCreateRequest',
-    declaration: 'export interface BrowserTemporaryCreateRequest {\n    readonly profile: \'temporary\';\n    readonly signal?: AbortSignal;\n}',
+    declaration: 'export interface BrowserTemporaryCreateRequest {\n    readonly profile: \'temporary\';\n    readonly attach?: BrowserCreateAttach;\n    readonly signal?: AbortSignal;\n}',
   },
   {
     name: 'BrowserUnavailableState',
     declaration: 'export interface BrowserUnavailableState {\n    readonly status: \'unavailable\';\n    readonly target: BrowserTarget;\n    readonly revision: number;\n    readonly reason: \'crashed\' | \'unhealthy\' | \'reconnect-failed\';\n    readonly reconnecting: boolean;\n}',
   },
   {
+    name: 'BrowserWorkspaceCreateRequest',
+    declaration: 'export type BrowserWorkspaceCreateRequest = BrowserCreateRequest & BrowserWorkspaceSessionRequest;',
+  },
+  {
+    name: 'BrowserWorkspaceDockRequest',
+    declaration: 'export interface BrowserWorkspaceDockRequest {\n    readonly session: Session;\n    readonly open: boolean;\n    readonly width?: number;\n}',
+  },
+  {
     name: 'BrowserWorkspaceId',
     declaration: 'export type BrowserWorkspaceId = Branded<\'BrowserWorkspaceId\'>;',
+  },
+  {
+    name: 'BrowserWorkspaceInstanceRecord',
+    declaration: 'export interface BrowserWorkspaceInstanceRecord {\n    readonly browserId: BrowserInstanceId;\n    readonly tabs: readonly BrowserWorkspaceTabRecord[];\n    readonly activeTabId: BrowserTabId | null;\n}',
+  },
+  {
+    name: 'BrowserWorkspaceMutationRequest',
+    declaration: 'export type BrowserWorkspaceMutationRequest = BrowserMutationRequest & BrowserWorkspaceSessionRequest;',
+  },
+  {
+    name: 'BrowserWorkspaceNavigateRequest',
+    declaration: 'export type BrowserWorkspaceNavigateRequest = BrowserNavigateRequest & BrowserWorkspaceSessionRequest;',
+  },
+  {
+    name: 'BrowserWorkspaceObserveRequest',
+    declaration: 'export type BrowserWorkspaceObserveRequest = BrowserObserveRequest & BrowserWorkspaceSessionRequest;',
+  },
+  {
+    name: 'BrowserWorkspaceProjection',
+    declaration: 'export interface BrowserWorkspaceProjection {\n    readonly dockOpen: boolean;\n    readonly dockWidth: number;\n    readonly workspaces: readonly BrowserWorkspaceRecord[];\n    readonly activeWorkspaceId: BrowserWorkspaceId | null;\n}',
+  },
+  {
+    name: 'BrowserWorkspaceRecord',
+    declaration: 'export interface BrowserWorkspaceRecord {\n    readonly workspaceId: BrowserWorkspaceId;\n    readonly profileId: BrowserProfileId;\n    readonly browsers: readonly BrowserWorkspaceInstanceRecord[];\n    readonly activeBrowserId: BrowserInstanceId | null;\n}',
+  },
+  {
+    name: 'BrowserWorkspaceSessionRequest',
+    declaration: 'export interface BrowserWorkspaceSessionRequest {\n    readonly session: Session;\n}',
+  },
+  {
+    name: 'BrowserWorkspaceTabRecord',
+    declaration: 'export interface BrowserWorkspaceTabRecord {\n    readonly tabId: BrowserTabId;\n}',
   },
   {
     name: 'CancelOptions',

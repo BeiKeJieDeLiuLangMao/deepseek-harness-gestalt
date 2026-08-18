@@ -193,7 +193,7 @@ describe('Tandem Browser Runtime invariant lifecycle', () => {
         target: { ...first.target, tabId: BrowserTabId('different-tab') },
         revision: 1,
       })
-    }).toThrow(/changed an opaque target identity/)
+    }).toThrow(/must begin with an open revision 0 state/)
 
     const skippedRevision = await setup()
     await mountInvariant(skippedRevision)

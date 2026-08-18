@@ -45,6 +45,7 @@ const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
   'packages/browser/browser-runtime': { kind: 'indirect', reason: 'The Service Definition delegates model rendering to dsh-tool-browser.' },
   'packages/browser/browser-runtime-deterministic': { kind: 'indirect', reason: 'The deterministic Provider delegates model rendering to dsh-tool-browser.' },
   'packages/browser/browser-runtime-tandem': { kind: 'indirect', reason: 'The managed Tandem Provider delegates model rendering to dsh-tool-browser.' },
+  'packages/browser/browser-workspace': { kind: 'indirect', reason: 'The Session binder delegates model rendering to dsh-tool-browser.' },
   'packages/attachment/attachment': { kind: 'indirect', reason: 'The storage seam delegates model request rendering to provider adapters.' },
   'packages/attachment/attachment-local': { kind: 'indirect', reason: 'The local backend delegates model request rendering to provider adapters.' },
   'packages/shell/shell': { kind: 'indirect', reason: 'The service interface delegates all model rendering to dsh-tool-bash.' },

@@ -1923,6 +1923,29 @@ Create one temporary or named persistent Browser Profile, Browser Workspace, bro
     "name": {
       "type": "string",
       "description": "Named persistent Browser Profile. Required when profile is persistent."
+    },
+    "attach": {
+      "type": "object",
+      "description": "Attach a new instance or tab to an existing Session-owned hierarchy.",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "type": "string",
+          "description": "workspace starts another instance; browser starts another tab.",
+          "enum": [
+            "workspace",
+            "browser"
+          ]
+        },
+        "workspaceId": {
+          "type": "string",
+          "description": "Existing Browser Workspace to reuse."
+        },
+        "browserId": {
+          "type": "string",
+          "description": "Existing browser instance to reuse when kind is browser."
+        }
+      }
     }
   }
 }

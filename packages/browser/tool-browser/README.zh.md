@@ -6,7 +6,7 @@
 
 ## 配置
 
-`timeoutMs` 是每次调用的正安全整数协作超时，默认值为 `30000`。无效值会让插件加载失败。Consumer 依赖 Browser Runtime 与工具注册表；禁用 `toolSearch` 时注册会明确失败。
+`timeoutMs` 是每次调用的正安全整数协作超时，默认值为 `30000`。无效值会让插件加载失败。Consumer 依赖 Browser Runtime 与工具注册表；禁用 `toolSearch` 时注册会明确失败。当调用 Agent Session 存在且已组合 `ctx.browserWorkspace` 时，操作会把创建的标签页绑定到该 Session。
 
 `tool_search` 返回匹配 schema，但绝不激活工具。eligibility 仍是发现与调度的唯一权威。工具不提供自定义 presenter，因此 Host 客户端沿用与其他普通工具相同的通用 MCP 风格工具卡路径。
 
@@ -28,4 +28,4 @@
 
 ## 已知限制与后续工作
 
-- Consumer 暴露临时与命名持久 Browser Profile，不添加账号选择器、Browser Dock 或浏览器专用对话卡片。持久 chrome 是运行时事实，不是 Dock 页眉。
+- Consumer 暴露临时与命名持久 Browser Profile，不添加账号选择器、Browser Dock 或浏览器专用对话卡片。持久 chrome 是运行时事实，不是 Dock 页眉。Session 本地 Workspace 所有权见 [`dsh-browser-workspace`](../browser-workspace/README.md)。无密钥 Browser Runtime 快照保持不含 Binder，因为它们证明发现与已渲染 Runtime 事实，而不是 Session 隔离。
