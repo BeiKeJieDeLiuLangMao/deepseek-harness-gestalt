@@ -225,7 +225,10 @@ export class DesktopPairingController implements DesktopPairingActions {
     if (this.timer !== undefined) clearTimeout(this.timer)
     this.timer = undefined
     this.accountId = undefined
-    this.snapshot = { status: 'ready', enabled: false, pairings: [] }
+    if (this.snapshot.status === 'ready' && !this.snapshot.enabled && this.snapshot.pairings.length === 0) return
+    const snapshot: DesktopPairingSnapshot = { status: 'ready', enabled: false, pairings: [] }
+    this.snapshot = snapshot
+    this.notify(snapshot)
   }
 
   private currentAccountId(): PlatformAccountId {
@@ -261,6 +264,10 @@ export class DesktopPairingController implements DesktopPairingActions {
     if (!this.active || this.closed) return
     this.snapshot = snapshot
     this.updatePolling(snapshot.enabled)
+    this.notify(snapshot)
+  }
+
+  private notify(snapshot: DesktopPairingSnapshot): void {
     const errors: unknown[] = []
     for (const listener of [...this.listeners]) {
       try { listener(snapshot) } catch (error) { errors.push(error) }

@@ -16,6 +16,10 @@ import {
 } from '@deepseek-ai/dsh-remote-access'
 import type { RemoteAccessTransport } from '@deepseek-ai/dsh-remote-access-client'
 import {
+  bindDesktopPairing,
+  createDesktopPairingSource,
+} from '../../../packages/client/ui-desktop/src/client/pairing-source.ts'
+import {
   DesktopPairingController,
   UnavailableDesktopPairingController,
   confirmPairingFromIpc,
@@ -159,6 +163,66 @@ describe('DesktopPairingController', () => {
     })
   })
 
+  it('pushes an Account reset through the bound renderer source before Account B refreshes', async () => {
+    const accountId = { value: 'account-a' }
+    const account = {
+      getSnapshot: vi.fn(() => ({
+        status: 'signed-in' as const,
+        privacyAccepted: true,
+        account: {
+          id: accountId.value as never,
+          githubId: 1,
+          githubLogin: accountId.value,
+          avatarUrl: 'https://avatars.example/account',
+        },
+      })),
+      authorizeCurrentInstallation: vi.fn(async () => ({
+        accessToken: `${accountId.value}-access`,
+        proof: {
+          jti: parseAccountProofJti(`${accountId.value}-proof`),
+          issuedAt: 1,
+          signature: 'signature',
+        },
+      })),
+    }
+    const transport = transportFixture()
+    const controller = new DesktopPairingController({ account, transport })
+    const source = createDesktopPairingSource()
+    bindDesktopPairing(source, {
+      pairingGetSnapshot: async () => controller.getSnapshot(),
+      onPairingSnapshot: listener => controller.subscribe(listener),
+    })
+    const rendererSubscriber = vi.fn()
+    source.subscribe(rendererSubscriber)
+
+    await controller.start()
+    await controller.setEnabled(true)
+    expect(source.getSnapshot()).toMatchObject({
+      status: 'ready', enabled: true, pairings: [{ id: 'pairing-one' }],
+    })
+
+    const callsBeforeReset = rendererSubscriber.mock.calls.length
+    const deactivating = controller.deactivate()
+    expect(source.getSnapshot()).toEqual({ status: 'ready', enabled: false, pairings: [] })
+    expect(rendererSubscriber).toHaveBeenCalledTimes(callsBeforeReset + 1)
+    await deactivating
+    expect(rendererSubscriber).toHaveBeenCalledTimes(callsBeforeReset + 1)
+
+    accountId.value = 'account-b'
+    const refresh = deferred<{ enabled: boolean }>()
+    transport.getMobileAccessState.mockReturnValueOnce(refresh.promise)
+    const starting = controller.start()
+    await Promise.resolve()
+    expect(source.getSnapshot()).toEqual({ status: 'ready', enabled: false, pairings: [] })
+    expect(rendererSubscriber).toHaveBeenCalledTimes(callsBeforeReset + 1)
+
+    refresh.reject(new Error('account B refresh failed'))
+    await expect(starting).rejects.toThrow('account B refresh failed')
+    expect(source.getSnapshot()).toEqual({
+      status: 'failed', enabled: false, pairings: [], error: 'account B refresh failed',
+    })
+  })
+
   it('parses Electron IPC payloads before controller side effects', () => {
     expectTypeOf<DesktopPairingChallenge['id']>().toEqualTypeOf<PairingChallengeId>()
     expectTypeOf<DesktopPendingPairing['id']>().toEqualTypeOf<PendingPairingId>()
@@ -215,8 +279,12 @@ function transportFixture() {
 
 function deferred<T>() {
   let resolve!: (value: T) => void
-  const promise = new Promise<T>((done) => { resolve = done })
-  return { promise, resolve }
+  let reject!: (error: unknown) => void
+  const promise = new Promise<T>((done, fail) => {
+    resolve = done
+    reject = fail
+  })
+  return { promise, reject, resolve }
 }
 
 function signedInAccountSnapshot() {
