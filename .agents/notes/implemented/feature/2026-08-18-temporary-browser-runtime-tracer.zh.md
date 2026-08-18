@@ -30,4 +30,4 @@
 
 ## 结果
 
-仓库具备完整 Browser Runtime 能力 seam，其接口、确定性 Provider 与模型 Consumer 可以独立演进。Session 重放能够重建模型获得的事实，并发写操作有明确冲突结果，终态身份不能复活，且提交后 observer failure 不能改变操作结果。确定性 Provider 是 tracer 而非生产浏览器：持久 cookie/storage 隔离、多 Workspace 与标签页、原生 Electron 控制、Browser Dock UI、catalog policy 与迁移/发布工作仍属于独立功能。
+仓库具备完整 Browser Runtime 能力 seam，其接口、确定性 Provider 与模型 Consumer 可以独立演进。Session 重放能够重建模型获得的事实，并发写操作有明确冲突结果，终态身份不能复活，且提交后 observer failure 不能改变操作结果。确定性 Provider 仍是无密钥存储而非生产浏览器。命名持久 Browser Profile 现在通过该 seam 复用隔离 partition；多 Workspace 与标签页、原生 Electron 控制、Browser Dock UI、catalog policy 与迁移/发布工作仍属于独立功能。见[持久 Browser Profile Agent Note](2026-08-19-persistent-browser-profiles.md)。

@@ -1,7 +1,166 @@
 /** Shared Provider helpers for the Browser Runtime capability. @module @deepseek-ai/dsh-browser-runtime */
 import type { Context } from '@deepseek-ai/cordis'
-import { BrowserRuntimeError } from './types.ts'
-import type { BrowserPageState, BrowserRuntimeState, BrowserTarget } from './types.ts'
+import { BrowserInstanceId, BrowserProfileId, BrowserProfileName, BrowserRuntimeError, BrowserTabId, BrowserWorkspaceId } from './types.ts'
+import type {
+  BrowserPageState,
+  BrowserProfileChrome,
+  BrowserProfileKind,
+  BrowserProfileStorage,
+  BrowserRuntimeState,
+  BrowserTarget,
+} from './types.ts'
+
+const PROFILE_NAME = /^(?!tmp(?:-|$))[A-Za-z0-9][A-Za-z0-9._-]{0,62}$/
+
+/** Facts a Provider uses to project address-field chrome for one Profile. */
+export interface BrowserProfileChromeRequest {
+  readonly kind: BrowserProfileKind
+  readonly name?: BrowserProfileName
+  readonly sessionName: string
+}
+
+/**
+ * Reject a Profile name that cannot be a stable Electron partition key.
+ * @param name - Caller-visible persistent Profile name.
+ * @returns the branded name when it is a valid partition key.
+ */
+export function assertBrowserProfileName(name: string): BrowserProfileName {
+  if (!PROFILE_NAME.test(name)) {
+    throw new BrowserRuntimeError(
+      `browser Profile name is not a stable partition key: ${JSON.stringify(name)}`,
+      'BROWSER_PROFILE_NAME',
+    )
+  }
+  return BrowserProfileName(name)
+}
+
+/**
+ * Map one Provider-owned session name to Tandem's Electron persist partition.
+ * @param sessionName - Exact Tandem session name the Provider created.
+ * @returns the `persist:session-*` partition that stores that Profile's identity.
+ */
+export function browserSessionPartition(sessionName: string): string {
+  return `persist:session-${sessionName}`
+}
+
+/**
+ * Project address-field chrome for one committed Profile. Temporary Profiles omit a label.
+ * @param request - Profile kind, optional name, and Provider-owned session name.
+ * @returns chrome facts Dock can place near the address field without a second account concept.
+ */
+export function browserProfileChrome(request: BrowserProfileChromeRequest): BrowserProfileChrome {
+  const partition = browserSessionPartition(request.sessionName)
+  if (request.kind === 'temporary') {
+    return Object.freeze({ kind: 'temporary', partition })
+  }
+  if (request.name === undefined) {
+    throw new BrowserRuntimeError('a persistent Browser Profile requires a name', 'BROWSER_PROFILE_NAME')
+  }
+  return Object.freeze({
+    kind: 'persistent',
+    name: request.name,
+    partition,
+  })
+}
+
+/**
+ * Read the address-field label for one Profile, if any.
+ * @param chrome - Committed chrome facts.
+ * @returns the persistent Profile name, or `undefined` for a temporary Profile.
+ */
+export function labeledBrowserProfileName(chrome: BrowserProfileChrome): BrowserProfileName | undefined {
+  return chrome.kind === 'persistent' ? chrome.name : undefined
+}
+
+/** Resolved create facts for one temporary or named persistent Profile. */
+export interface ResolvedBrowserProfileCreate {
+  readonly profileId: BrowserProfileId
+  readonly sessionName: string
+  readonly chrome: BrowserProfileChrome
+}
+
+/** Empty identity retained only while a temporary Profile is open. */
+export const EMPTY_BROWSER_PROFILE_STORAGE: BrowserProfileStorage = Object.freeze({
+  cookies: '',
+  localStorage: '',
+  indexedDb: '',
+  cache: '',
+  serviceWorker: '',
+})
+
+/**
+ * Build one Profile hierarchy around a session name and tab sequence.
+ * @param profileId - Opaque Profile identity.
+ * @param sessionName - Provider-owned Tandem session name.
+ * @param tabSeq - Positive sequence that distinguishes one open tab lifecycle.
+ * @returns the frozen target for that open lifecycle.
+ */
+export function browserTargetFor(
+  profileId: BrowserProfileId,
+  sessionName: string,
+  tabSeq: number,
+): BrowserTarget {
+  return Object.freeze({
+    profileId,
+    workspaceId: BrowserWorkspaceId(`${sessionName}-workspace`),
+    browserId: BrowserInstanceId(`${sessionName}-browser`),
+    tabId: BrowserTabId(`${sessionName}-tab-${String(tabSeq)}`),
+  })
+}
+
+/**
+ * Compare only the Profile identity of two targets.
+ * @param left - First target.
+ * @param right - Second target.
+ * @returns whether both targets address the same Browser Profile.
+ */
+export function sameBrowserProfile(left: BrowserTarget, right: BrowserTarget): boolean {
+  return left.profileId === right.profileId
+}
+
+/**
+ * Build partition-backed identity facts for one Profile.
+ * @param token - Stable identity written into every storage slot, or empty to wipe.
+ * @returns frozen storage facts for cookies, localStorage, IndexedDB, cache, and service workers.
+ */
+export function browserProfileStorage(token: string): BrowserProfileStorage {
+  return Object.freeze({
+    cookies: `profile=${token}`,
+    localStorage: token,
+    indexedDb: token,
+    cache: token,
+    serviceWorker: token,
+  })
+}
+
+/**
+ * Resolve opaque Profile identity, Tandem session name, and chrome for one create request.
+ * @param prefix - Provider-owned identity prefix.
+ * @param request - Temporary or named persistent create request.
+ * @param temporarySeq - Positive sequence used only for a temporary Profile.
+ * @returns stable named-Profile facts, or unique disposable facts for a temporary Profile.
+ */
+export function resolveBrowserProfileCreate(
+  prefix: string,
+  request: { readonly profile: 'temporary' } | { readonly profile: 'persistent'; readonly name: string },
+  temporarySeq: number,
+): ResolvedBrowserProfileCreate {
+  if (request.profile === 'temporary') {
+    const sessionName = `${prefix}-tmp-${String(temporarySeq)}`
+    return Object.freeze({
+      profileId: BrowserProfileId(sessionName),
+      sessionName,
+      chrome: browserProfileChrome({ kind: 'temporary', sessionName }),
+    })
+  }
+  const name = assertBrowserProfileName(request.name)
+  const sessionName = `${prefix}-${name}`
+  return Object.freeze({
+    profileId: BrowserProfileId(`${prefix}-profile-${name}`),
+    sessionName,
+    chrome: browserProfileChrome({ kind: 'persistent', name, sessionName }),
+  })
+}
 
 /**
  * Compare all four opaque identities without exposing Provider structure.
@@ -14,6 +173,15 @@ export function sameBrowserTarget(left: BrowserTarget, right: BrowserTarget): bo
     && left.workspaceId === right.workspaceId
     && left.browserId === right.browserId
     && left.tabId === right.tabId
+}
+
+/**
+ * Serialize one target into a stable map key.
+ * @param target - Opaque identities for one tab lifecycle.
+ * @returns a key that distinguishes Profile, Workspace, browser, and tab.
+ */
+export function browserTargetKey(target: BrowserTarget): string {
+  return `${target.profileId}\0${target.workspaceId}\0${target.browserId}\0${target.tabId}`
 }
 
 /**
@@ -84,6 +252,61 @@ export function addressedBrowserRuntimeState(
     throw new BrowserRuntimeError('browser target is not present', 'BROWSER_NOT_FOUND')
   }
   return state
+}
+
+/**
+ * Resolve one addressed state from a target-keyed map.
+ * @param states - Authoritative states keyed by {@link browserTargetKey}.
+ * @param target - Opaque identities from the caller.
+ * @returns the current state when it addresses `target`.
+ */
+export function addressedBrowserRuntimeStateFrom(
+  states: ReadonlyMap<string, BrowserRuntimeState>,
+  target: BrowserTarget,
+): BrowserRuntimeState {
+  return addressedBrowserRuntimeState(states.get(browserTargetKey(target)), target)
+}
+
+/**
+ * Freeze, validate, store, and publish one committed Browser Runtime state.
+ * @param states - Authoritative states keyed by {@link browserTargetKey}.
+ * @param validate - Optional pre-commit validator.
+ * @param notify - Publishes the committed state.
+ * @param state - Next state to commit.
+ * @returns the frozen committed state.
+ */
+export function commitBrowserRuntimeState<T extends BrowserRuntimeState>(
+  states: Map<string, BrowserRuntimeState>,
+  validate: ((state: BrowserRuntimeState) => undefined) | undefined,
+  notify: (state: BrowserRuntimeState) => void,
+  state: T,
+): T {
+  const committed = Object.freeze(state) as T
+  validate?.(committed)
+  states.set(browserTargetKey(committed.target), committed)
+  notify(committed)
+  return committed
+}
+
+/**
+ * Reject a second open writer of the same named persist partition.
+ * @param states - Current Provider states.
+ * @param partition - Persist partition claimed by the incoming named Profile.
+ * @param name - Caller-visible Profile name used in the failure.
+ */
+export function assertBrowserProfileWriterAvailable(
+  states: Iterable<BrowserRuntimeState>,
+  partition: string,
+  name: string,
+): void {
+  for (const state of states) {
+    if (state.status === 'open' && state.chrome.kind === 'persistent' && state.chrome.partition === partition) {
+      throw new BrowserRuntimeError(
+        `browser Profile ${JSON.stringify(name)} already has a writer`,
+        'BROWSER_PROFILE_BUSY',
+      )
+    }
+  }
 }
 
 /**

@@ -80,11 +80,12 @@ describe.skipIf(tandemCheckout === undefined || tandemBin === undefined)('Tandem
       status: 'open',
       revision: 0,
       target: {
-        profileId: 'tandem-e2e-profile',
-        workspaceId: 'tandem-e2e-workspace',
-        browserId: 'tandem-e2e-browser',
-        tabId: 'tandem-e2e-tab',
+        profileId: 'tandem-e2e-tmp-1',
+        workspaceId: 'tandem-e2e-tmp-1-workspace',
+        browserId: 'tandem-e2e-tmp-1-browser',
+        tabId: 'tandem-e2e-tmp-1-tab-1',
       },
+      chrome: { kind: 'temporary', partition: 'persist:session-tandem-e2e-tmp-1' },
     })
     const navigated = await ctx.browserRuntime.navigate({
       target: created.target,

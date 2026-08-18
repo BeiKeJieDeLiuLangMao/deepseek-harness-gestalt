@@ -11,8 +11,8 @@ export const RUNTIME_STATE_OWNER: unique symbol = Symbol('browser-runtime-determ
 /** Opaque identity for one deterministic Provider generation. */
 export type RuntimeStateOwner = object
 
-/** Synchronous read of one Provider generation's authoritative state. */
-export type RuntimeStateReader = () => BrowserRuntimeState | undefined
+/** Synchronous read of one Provider generation's authoritative states, keyed by target. */
+export type RuntimeStateReader = () => ReadonlyMap<string, BrowserRuntimeState>
 
 /** Synchronous pre-commit validation of one Provider generation's next state. */
 export type RuntimeStateValidator = (state: BrowserRuntimeState) => undefined

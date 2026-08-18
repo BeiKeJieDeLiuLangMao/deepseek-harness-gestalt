@@ -16,7 +16,7 @@ Model-facing Consumer for `ctx.browserRuntime`. It registers `browser_create`, `
 
 #### What the model sees
 
-The initial tool list omits all six Browser tools and includes the ordinary `tool_search` schema. A search for browser capabilities returns the exact schemas in a durable result. Later requests revalidate those names against current eligible deferred definitions. Every operation result renders all Profile, Workspace, browser, tab, revision, page, screenshot, focus, close, and availability facts — including `unavailable` states with their reason and reconnect flag — as JSON text.
+The initial tool list omits all six Browser tools and includes the ordinary `tool_search` schema. A search for browser capabilities returns the exact schemas in a durable result. Later requests revalidate those names against current eligible deferred definitions. Every operation result renders all Profile, Workspace, browser, tab, revision, page, screenshot, focus, close, availability, chrome, and storage facts — including unlabeled temporary Profiles and `unavailable` states with their reason and reconnect flag — as JSON text.
 
 #### Token effect
 
@@ -28,4 +28,4 @@ The first request keeps the large Browser schemas out of the prefix. Discovery c
 
 ## Known Limitations and Deferred Work
 
-- The Consumer exposes the one temporary-Profile tracer only and adds no account picker, Browser Dock, persistent-profile policy, or browser-specific conversation card.
+- The Consumer exposes temporary and named persistent Browser Profiles and adds no account picker, Browser Dock, or browser-specific conversation card. Persistent chrome is a runtime fact, not a Dock header.

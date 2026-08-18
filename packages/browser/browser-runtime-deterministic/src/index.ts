@@ -1,5 +1,5 @@
 /**
- * Deterministic keyless Browser Runtime Provider for one temporary Profile and tab.
+ * Deterministic keyless Browser Runtime Provider for temporary and named persistent Profiles.
  * @module @deepseek-ai/dsh-browser-runtime-deterministic
  */
 
@@ -7,16 +7,18 @@ import { Buffer } from 'node:buffer'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import {
-  addressedBrowserRuntimeState,
+  addressedBrowserRuntimeStateFrom,
   assertBrowserNotAborted,
-  BrowserInstanceId,
-  BrowserProfileId,
+  assertBrowserProfileWriterAvailable,
+  browserProfileStorage,
   BrowserRuntime,
   BrowserRuntimeError,
-  BrowserTabId,
-  BrowserWorkspaceId,
+  browserTargetFor,
+  commitBrowserRuntimeState,
   emitBrowserRuntimeState,
+  EMPTY_BROWSER_PROFILE_STORAGE,
   requireOpenBrowserPage,
+  resolveBrowserProfileCreate,
 } from '@deepseek-ai/dsh-browser-runtime'
 import type {
   BrowserClosedState,
@@ -25,6 +27,8 @@ import type {
   BrowserNavigateRequest,
   BrowserObserveRequest,
   BrowserPageState,
+  BrowserProfileChrome,
+  BrowserProfileStorage,
   BrowserRuntimeState,
   BrowserScreenshot,
   BrowserTarget,
@@ -73,14 +77,15 @@ export const Config: z<Config> = z.object({
 /** Complete config after Schemastery applies its defaults. */
 type ResolvedConfig = Required<Config>
 
-/** Freeze one target so returned state cannot mutate the Provider's relationship keys. */
-function targetFor(prefix: string): BrowserTarget {
-  return Object.freeze({
-    profileId: BrowserProfileId(`${prefix}-profile`),
-    workspaceId: BrowserWorkspaceId(`${prefix}-workspace`),
-    browserId: BrowserInstanceId(`${prefix}-browser`),
-    tabId: BrowserTabId(`${prefix}-tab`),
-  })
+/** Partition-backed page identity retained for a named Profile after close. */
+interface PersistedProfile {
+  readonly url: string
+  readonly title: string
+  readonly text: string
+  readonly storage: BrowserProfileStorage
+  readonly chrome: BrowserProfileChrome
+  readonly sessionName: string
+  readonly tabSeq: number
 }
 
 /** Decode one canonical, non-empty PNG fixture or fail Provider loading. */
@@ -105,9 +110,9 @@ function validateScreenshot(url: string, value: string): void {
 }
 
 /**
- * One-state deterministic Browser Runtime. Every operation enters one serialized queue;
- * mutations require the last observed revision, run the package invariant before assignment,
- * and publish only committed state.
+ * Multi-Profile deterministic Browser Runtime. Every operation enters one serialized queue;
+ * mutations require the last observed revision of the addressed target, run the package
+ * invariant before assignment, and publish only committed state.
  */
 export class DeterministicBrowserRuntime extends BrowserRuntime {
   static Config = Config
@@ -116,8 +121,10 @@ export class DeterministicBrowserRuntime extends BrowserRuntime {
   readonly [RUNTIME_STATE_OWNER]: RuntimeStateOwner = Object.freeze({})
 
   private readonly pages: ReadonlyMap<string, DeterministicBrowserPage>
-  private readonly target: BrowserTarget
-  private state: BrowserRuntimeState | undefined
+  private readonly idPrefix: string
+  private readonly states = new Map<string, BrowserRuntimeState>()
+  private readonly persisted = new Map<string, PersistedProfile>()
+  private temporarySeq = 0
 
   constructor(ctx: Context, config: Config) {
     super(ctx)
@@ -134,9 +141,9 @@ export class DeterministicBrowserRuntime extends BrowserRuntime {
       pages.set(page.url, Object.freeze({ ...page }))
     }
     this.pages = pages
-    this.target = targetFor(resolved.idPrefix)
+    this.idPrefix = resolved.idPrefix
     ctx.effect(
-      () => registerRuntimeStateReader(this[RUNTIME_STATE_OWNER], () => this.state),
+      () => registerRuntimeStateReader(this[RUNTIME_STATE_OWNER], () => this.states),
       'deterministic browser runtime state reader',
     )
     ctx.effect(() => () => this.teardown(), 'deterministic browser runtime teardown')
@@ -157,16 +164,17 @@ export class DeterministicBrowserRuntime extends BrowserRuntime {
 
   /** Validate and assign one authoritative state, then notify non-vetoing observers. */
   private commit<T extends BrowserRuntimeState>(state: T): T {
-    const committed = Object.freeze(state) as T
-    runtimeStateValidator(this[RUNTIME_STATE_OWNER])?.(committed)
-    this.state = committed
-    this.notifyState(committed)
-    return committed
+    return commitBrowserRuntimeState(
+      this.states,
+      runtimeStateValidator(this[RUNTIME_STATE_OWNER]),
+      (committed) => { this.notifyState(committed) },
+      state,
+    )
   }
 
   /** Resolve and validate the addressed state. */
   private addressed(target: BrowserTarget): BrowserRuntimeState {
-    return addressedBrowserRuntimeState(this.state, target)
+    return addressedBrowserRuntimeStateFrom(this.states, target)
   }
 
   /** Resolve an open page or reject a closed target. */
@@ -188,20 +196,48 @@ export class DeterministicBrowserRuntime extends BrowserRuntime {
     assertBrowserNotAborted(request.signal)
     return this.exclusive(() => {
       assertBrowserNotAborted(request.signal)
-      if (this.state !== undefined) {
-        throw new BrowserRuntimeError(
-          'the deterministic browser runtime has already created its temporary Profile',
-          'BROWSER_CAPACITY',
-        )
+      if (request.profile === 'temporary') {
+        this.temporarySeq += 1
+        const created = resolveBrowserProfileCreate(this.idPrefix, request, this.temporarySeq)
+        return this.commit({
+          status: 'open',
+          target: browserTargetFor(created.profileId, created.sessionName, 1),
+          revision: 0,
+          url: 'about:blank',
+          title: 'New Tab',
+          text: '',
+          focused: false,
+          chrome: created.chrome,
+          storage: EMPTY_BROWSER_PROFILE_STORAGE,
+        })
+      }
+      const created = resolveBrowserProfileCreate(this.idPrefix, request, this.temporarySeq)
+      assertBrowserProfileWriterAvailable(this.states.values(), created.chrome.partition, request.name)
+      const stored = this.persisted.get(created.sessionName)
+      if (stored !== undefined) {
+        const nextSeq = stored.tabSeq + 1
+        return this.commit({
+          status: 'open',
+          target: browserTargetFor(created.profileId, created.sessionName, nextSeq),
+          revision: 0,
+          url: stored.url,
+          title: stored.title,
+          text: stored.text,
+          focused: false,
+          chrome: stored.chrome,
+          storage: stored.storage,
+        })
       }
       return this.commit({
         status: 'open',
-        target: this.target,
+        target: browserTargetFor(created.profileId, created.sessionName, 1),
         revision: 0,
         url: 'about:blank',
         title: 'New Tab',
         text: '',
         focused: false,
+        chrome: created.chrome,
+        storage: EMPTY_BROWSER_PROFILE_STORAGE,
       })
     })
   }
@@ -216,6 +252,9 @@ export class DeterministicBrowserRuntime extends BrowserRuntime {
       if (page === undefined) {
         throw new BrowserRuntimeError(`deterministic browser page is not configured: ${request.url}`, 'BROWSER_UNKNOWN_URL')
       }
+      const storage = state.chrome.kind === 'persistent' && state.chrome.name !== undefined
+        ? browserProfileStorage(state.chrome.name)
+        : EMPTY_BROWSER_PROFILE_STORAGE
       return this.commit({
         status: 'open',
         target: state.target,
@@ -224,6 +263,8 @@ export class DeterministicBrowserRuntime extends BrowserRuntime {
         title: page.title,
         text: page.text,
         focused: state.focused,
+        chrome: state.chrome,
+        storage,
       })
     })
   }
@@ -272,16 +313,31 @@ export class DeterministicBrowserRuntime extends BrowserRuntime {
       assertBrowserNotAborted(request.signal)
       const state = this.open(request.target)
       this.expected(state, request.expectedRevision)
+      if (state.chrome.kind === 'persistent') {
+        const sessionName = state.chrome.partition.slice('persist:session-'.length)
+        const previous = this.persisted.get(sessionName)
+        this.persisted.set(sessionName, Object.freeze({
+          url: state.url,
+          title: state.title,
+          text: state.text,
+          storage: state.storage,
+          chrome: state.chrome,
+          sessionName,
+          tabSeq: (previous?.tabSeq ?? 0) + 1,
+        }))
+      }
       return this.commit({ status: 'closed', target: state.target, revision: state.revision + 1 })
     })
   }
 
-  /** Finish accepted operations, close the temporary Profile, then make the Provider unusable. */
+  /** Finish accepted operations, close every open Profile, then make the Provider unusable. */
   private async teardown(): Promise<void> {
     this.closing = true
     await this.queue
-    if (this.state?.status === 'open') {
-      this.commit({ status: 'closed', target: this.state.target, revision: this.state.revision + 1 })
+    for (const state of [...this.states.values()]) {
+      if (state.status === 'open') {
+        this.commit({ status: 'closed', target: state.target, revision: state.revision + 1 })
+      }
     }
     this.disposed = true
   }

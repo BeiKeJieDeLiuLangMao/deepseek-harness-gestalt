@@ -391,10 +391,10 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     methods: [
       {
         signature: 'abstract create(request: BrowserCreateRequest): Promise<BrowserPageState>',
-        description: 'Create one temporary Profile, Workspace, browser instance, and tab.',
-        parameters: [{ name: 'request', description: 'Temporary-profile request and cancellation signal.' }],
-        returns: 'initial open page state at revision zero; its target addresses every later operation in this lifecycle.',
-        throws: ['`BrowserRuntimeError` with `BROWSER_ABORTED` when cancellation wins, `BROWSER_CAPACITY` when this Provider cannot admit another lifecycle, `BROWSER_DISPOSED` after teardown starts, `BROWSER_PROTOCOL` when the upstream runtime breaks its response protocol, or `BROWSER_RUNTIME_UNAVAILABLE` when the upstream runtime cannot be reached or starts unhealthy.'],
+        description: 'Create one temporary or named persistent Profile, Workspace, browser instance, and tab.',
+        parameters: [{ name: 'request', description: 'Temporary or named persistent Profile request and cancellation signal.' }],
+        returns: 'initial open page state at revision zero; its target addresses every later operation in this lifecycle. Persistent Profiles restore the same storage partition on later creates.',
+        throws: ['`BrowserRuntimeError` with `BROWSER_ABORTED` when cancellation wins, `BROWSER_CAPACITY` when this Provider cannot admit another lifecycle, `BROWSER_DISPOSED` after teardown starts, `BROWSER_PROFILE_BUSY` when the named Profile already has a writer, `BROWSER_PROFILE_NAME` when the name cannot be a stable partition key, `BROWSER_PROTOCOL` when the upstream runtime breaks its response protocol, or `BROWSER_RUNTIME_UNAVAILABLE` when the upstream runtime cannot be reached or starts unhealthy.'],
       },
       {
         signature: 'abstract navigate(request: BrowserNavigateRequest): Promise<BrowserPageState>',
@@ -426,7 +426,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'abstract close(request: BrowserMutationRequest): Promise<BrowserClosedState>',
-        description: 'Close the addressed tab and its temporary Profile after checking its expected revision.',
+        description: 'Close the addressed tab after checking its expected revision. Temporary Profiles discard identity; persistent Profiles keep the named storage partition.',
         parameters: [{ name: 'request', description: 'Target, expected revision, and cancellation signal.' }],
         returns: 'terminal close receipt retained by the Provider for later observation.',
         throws: ['`BrowserRuntimeError` with `BROWSER_ABORTED`, `BROWSER_DISPOSED`, `BROWSER_NOT_FOUND`, `BROWSER_NOT_OPEN`, or `BROWSER_REVISION_CONFLICT` when the corresponding precondition fails before commit, `BROWSER_PROTOCOL` when the upstream runtime breaks its response protocol, or `BROWSER_RUNTIME_UNAVAILABLE` when it cannot be reached.'],
@@ -3013,7 +3013,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'BrowserCreateRequest',
-    declaration: 'export interface BrowserCreateRequest {\n    readonly profile: \'temporary\';\n    readonly signal?: AbortSignal;\n}',
+    declaration: 'export type BrowserCreateRequest = BrowserTemporaryCreateRequest | BrowserPersistentCreateRequest;',
   },
   {
     name: 'BrowserInstanceId',
@@ -3033,11 +3033,31 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'BrowserPageState',
-    declaration: 'export interface BrowserPageState {\n    readonly status: \'open\';\n    readonly target: BrowserTarget;\n    readonly revision: number;\n    readonly url: string;\n    readonly title: string;\n    readonly text: string;\n    readonly focused: boolean;\n}',
+    declaration: 'export interface BrowserPageState {\n    readonly status: \'open\';\n    readonly target: BrowserTarget;\n    readonly revision: number;\n    readonly url: string;\n    readonly title: string;\n    readonly text: string;\n    readonly focused: boolean;\n    readonly chrome: BrowserProfileChrome;\n    readonly storage: BrowserProfileStorage;\n}',
+  },
+  {
+    name: 'BrowserPersistentCreateRequest',
+    declaration: 'export interface BrowserPersistentCreateRequest {\n    readonly profile: \'persistent\';\n    readonly name: BrowserProfileName;\n    readonly signal?: AbortSignal;\n}',
+  },
+  {
+    name: 'BrowserProfileChrome',
+    declaration: 'export interface BrowserProfileChrome {\n    readonly kind: BrowserProfileKind;\n    readonly name?: BrowserProfileName;\n    readonly partition: string;\n}',
   },
   {
     name: 'BrowserProfileId',
     declaration: 'export type BrowserProfileId = Branded<\'BrowserProfileId\'>;',
+  },
+  {
+    name: 'BrowserProfileKind',
+    declaration: 'export type BrowserProfileKind = \'temporary\' | \'persistent\';',
+  },
+  {
+    name: 'BrowserProfileName',
+    declaration: 'export type BrowserProfileName = Branded<\'BrowserProfileName\'>;',
+  },
+  {
+    name: 'BrowserProfileStorage',
+    declaration: 'export interface BrowserProfileStorage {\n    readonly cookies: string;\n    readonly localStorage: string;\n    readonly indexedDb: string;\n    readonly cache: string;\n    readonly serviceWorker: string;\n}',
   },
   {
     name: 'BrowserRuntimeState',
@@ -3054,6 +3074,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'BrowserTarget',
     declaration: 'export interface BrowserTarget {\n    readonly profileId: BrowserProfileId;\n    readonly workspaceId: BrowserWorkspaceId;\n    readonly browserId: BrowserInstanceId;\n    readonly tabId: BrowserTabId;\n}',
+  },
+  {
+    name: 'BrowserTemporaryCreateRequest',
+    declaration: 'export interface BrowserTemporaryCreateRequest {\n    readonly profile: \'temporary\';\n    readonly signal?: AbortSignal;\n}',
   },
   {
     name: 'BrowserUnavailableState',

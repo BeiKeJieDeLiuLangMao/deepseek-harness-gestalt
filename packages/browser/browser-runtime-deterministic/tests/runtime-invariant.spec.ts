@@ -5,6 +5,7 @@ import {
   BrowserProfileId,
   type BrowserRuntimeState,
   BrowserTabId,
+  browserTargetKey,
   BrowserWorkspaceId,
 } from '@deepseek-ai/dsh-browser-runtime'
 import BrowserRuntimeDeterministic from '@deepseek-ai/dsh-browser-runtime-deterministic'
@@ -178,34 +179,35 @@ describe('deterministic Browser Runtime invariant lifecycle', () => {
 
     const leftState = await left.browserRuntime.create({ profile: 'temporary' })
     const rightState = await right.browserRuntime.create({ profile: 'temporary' })
-    expect(runtimeStateReader(leftOwner)?.()).toEqual(leftState)
-    expect(runtimeStateReader(rightOwner)?.()).toEqual(rightState)
+    expect(runtimeStateReader(leftOwner)?.().get(browserTargetKey(leftState.target))).toEqual(leftState)
+    expect(runtimeStateReader(rightOwner)?.().get(browserTargetKey(rightState.target))).toEqual(rightState)
 
     await leftFiber.dispose()
     expect(runtimeStateReader(leftOwner)).toBeUndefined()
-    expect(runtimeStateReader(rightOwner)?.()).toEqual(rightState)
+    expect(runtimeStateReader(rightOwner)?.().get(browserTargetKey(rightState.target))).toEqual(rightState)
     await rightFiber.dispose()
   })
 
   it('uses registration identity for replacement disposal and rejects missing or duplicate owners', () => {
     const owner = Object.freeze({}) as RuntimeStateOwner
     const otherOwner = Object.freeze({}) as RuntimeStateOwner
-    const initialState = undefined
     const replacementState = { status: 'closed', target: {
       profileId: BrowserProfileId('replacement-profile'),
       workspaceId: BrowserWorkspaceId('replacement-workspace'),
       browserId: BrowserInstanceId('replacement-browser'),
       tabId: BrowserTabId('replacement-tab'),
     }, revision: 1 } satisfies BrowserRuntimeState
-    const disposeInitial = registerRuntimeStateReader(owner, () => initialState)
-    const disposeOther = registerRuntimeStateReader(otherOwner, () => replacementState)
-    expect(() => registerRuntimeStateReader(owner, () => replacementState)).toThrow(/already registered/)
+    const initialStates = new Map<string, BrowserRuntimeState>()
+    const replacementStates = new Map([[browserTargetKey(replacementState.target), replacementState]])
+    const disposeInitial = registerRuntimeStateReader(owner, () => initialStates)
+    const disposeOther = registerRuntimeStateReader(otherOwner, () => replacementStates)
+    expect(() => registerRuntimeStateReader(owner, () => replacementStates)).toThrow(/already registered/)
 
     disposeInitial()
-    const disposeReplacement = registerRuntimeStateReader(owner, () => replacementState)
+    const disposeReplacement = registerRuntimeStateReader(owner, () => replacementStates)
     disposeInitial()
-    expect(runtimeStateReader(owner)?.()).toEqual(replacementState)
-    expect(runtimeStateReader(otherOwner)?.()).toEqual(replacementState)
+    expect(runtimeStateReader(owner)?.()).toEqual(replacementStates)
+    expect(runtimeStateReader(otherOwner)?.()).toEqual(replacementStates)
 
     const validate = (): undefined => undefined
     expect(() => registerRuntimeStateValidator(Object.freeze({}) as RuntimeStateOwner, validate))

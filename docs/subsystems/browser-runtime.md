@@ -6,9 +6,18 @@ The Browser Runtime capability separates the provider-neutral [`ctx.browserRunti
 
 ## Identity and state
 
-A `BrowserTarget` contains four opaque branded identities: Profile, Workspace, browser instance, and tab. Callers carry the complete target returned by `create`; none of its string values have caller-visible structure. Open state contains URL, title, text, focus, and revision facts. Closed state is a terminal receipt retaining the target and revision.
+A `BrowserTarget` contains four opaque branded identities: Profile, Workspace, browser instance, and tab. Callers carry the complete target returned by `create`; none of its string values have caller-visible structure. Open state contains URL, title, text, focus, revision, address-field `chrome`, and partition-backed `storage`. Temporary chrome omits a label. Closed state is a terminal receipt retaining the target and revision.
 
 An `unavailable` state is the truthful projection of Provider availability loss for an existing target: the managed Tandem Provider commits it when its child process crashes or fails health checks, keeps the target and last revision, names the loss reason, and flags an in-flight reconnect. It is not the terminal closed receipt; a successful reconnect re-commits open page state for the same target at the next revision, and exhausted reconnects commit `reconnect-failed`.
+
+```ts type-equiv
+/** Address-field chrome facts for one committed Browser Profile. Temporary Profiles omit a label. */
+interface BrowserProfileChrome {
+  readonly kind: BrowserProfileKind
+  readonly name?: BrowserProfileName
+  readonly partition: string
+}
+```
 
 ```ts type-equiv
 /** Recoverable or terminal Provider availability loss for an existing target. */
@@ -23,11 +32,11 @@ interface BrowserUnavailableState {
 
 ## Concurrency and lifecycle
 
-Providers serialize operations. `navigate`, `focus`, and `close` require the last observed revision and reject stale mutations. `observe` and `screenshot` do not advance the revision. The deterministic Provider admits one temporary Profile lifecycle for its whole lifetime; close is terminal, and a later create rejects with `BROWSER_CAPACITY`. Teardown stops new admission, drains accepted operations, and closes an open temporary Profile.
+Providers serialize operations. `navigate`, `focus`, and `close` require the last observed revision and reject stale mutations. `observe` and `screenshot` do not advance the revision. A named persistent Profile restores the same `persist:session-*` partition after close. Temporary Profiles receive unique partitions and leave no reusable identity. A second open writer of the same named Profile rejects with `BROWSER_PROFILE_BUSY`. Teardown stops new admission, drains accepted operations, and closes every open Profile.
 
 The deterministic Provider gives each generation an independent owner token. Its invariant seeds from that generation's authoritative current state on initial load and hot reload, then registers a synchronous pre-commit validator for stable identity, exact revision succession, and terminal closure. A validation failure leaves the previous state authoritative. After commit, the Provider publishes on `browser/runtime-state`; each ordinary observer failure is contained, later observers still run, and asynchronous observers are not awaited.
 
-The tandem Provider owns one managed Tandem Browser child process at the pinned upstream revision `3b613cfd4c299609ca7ca415d638c1b71c6ba5de`. It resolves the executable and spawns through the subprocess service with a credential-scrubbed environment, constrains `baseUrl` to an absolute loopback HTTP origin, reads the bearer token from `tokenFile`, and polls `GET /agent/version` and `GET /status` under `startupTimeoutMs` before admitting work. It creates exactly one Tandem session (`POST /sessions/create`) and one temporary Profile lifecycle, projecting DSH-owned opaque identities around Tandem tab ids. A child crash or failed health probe commits the `unavailable` state and attempts up to `reconnectAttempts` child restarts, re-committing open page state for the same target on success. Teardown drains the operation queue, destroys the session (`POST /sessions/destroy`), and joins the process tree. Malformed Tandem responses reject with `BROWSER_PROTOCOL`; a lost or unreachable runtime rejects with `BROWSER_RUNTIME_UNAVAILABLE`. Provenance and upstream-contribution candidates live in the package's [UPSTREAM.md](../../packages/browser/browser-runtime-tandem/UPSTREAM.md).
+The tandem Provider owns one managed Tandem Browser child process at the pinned upstream revision `3b613cfd4c299609ca7ca415d638c1b71c6ba5de`. It resolves the executable and spawns through the subprocess service with a credential-scrubbed environment, constrains `baseUrl` to an absolute loopback HTTP origin, reads the bearer token from `tokenFile`, and polls `GET /agent/version` and `GET /status` under `startupTimeoutMs` before admitting work. Each Profile creates one Tandem session (`POST /sessions/create`) and a `persist:session-*` partition, projecting DSH-owned opaque identities around Tandem tab ids. A child crash or failed health probe commits the `unavailable` state and attempts up to `reconnectAttempts` child restarts, re-committing open page state for the same target on success. Teardown drains the operation queue, destroys remaining sessions (`POST /sessions/destroy`), and joins the process tree. Malformed Tandem responses reject with `BROWSER_PROTOCOL`; a lost or unreachable runtime rejects with `BROWSER_RUNTIME_UNAVAILABLE`. Provenance and upstream-contribution candidates live in the package's [UPSTREAM.md](../../packages/browser/browser-runtime-tandem/UPSTREAM.md).
 
 ## Discovery and replay
 
@@ -49,14 +58,16 @@ Browser Runtime Service Definition. Providers serialize every operation, own tar
 
 ```ts cordis-catalog
 /**
- * Create one temporary Profile, Workspace, browser instance, and tab.
- * @param request - Temporary-profile request and cancellation signal.
+ * Create one temporary or named persistent Profile, Workspace, browser instance, and tab.
+ * @param request - Temporary or named persistent Profile request and cancellation signal.
  * @returns initial open page state at revision zero; its target addresses every later operation in
- * this lifecycle.
+ * this lifecycle. Persistent Profiles restore the same storage partition on later creates.
  * @throws `BrowserRuntimeError` with `BROWSER_ABORTED` when cancellation wins, `BROWSER_CAPACITY`
  * when this Provider cannot admit another lifecycle, `BROWSER_DISPOSED` after teardown starts,
- * `BROWSER_PROTOCOL` when the upstream runtime breaks its response protocol, or
- * `BROWSER_RUNTIME_UNAVAILABLE` when the upstream runtime cannot be reached or starts unhealthy.
+ * `BROWSER_PROFILE_BUSY` when the named Profile already has a writer, `BROWSER_PROFILE_NAME` when
+ * the name cannot be a stable partition key, `BROWSER_PROTOCOL` when the upstream runtime breaks
+ * its response protocol, or `BROWSER_RUNTIME_UNAVAILABLE` when the upstream runtime cannot be
+ * reached or starts unhealthy.
  */
 abstract create(request: BrowserCreateRequest): Promise<BrowserPageState>
 
@@ -106,7 +117,8 @@ abstract screenshot(request: BrowserObserveRequest): Promise<BrowserScreenshot>
 abstract focus(request: BrowserMutationRequest): Promise<BrowserPageState>
 
 /**
- * Close the addressed tab and its temporary Profile after checking its expected revision.
+ * Close the addressed tab after checking its expected revision. Temporary Profiles discard
+ * identity; persistent Profiles keep the named storage partition.
  * @param request - Target, expected revision, and cancellation signal.
  * @returns terminal close receipt retained by the Provider for later observation.
  * @throws `BrowserRuntimeError` with `BROWSER_ABORTED`, `BROWSER_DISPOSED`, `BROWSER_NOT_FOUND`,
@@ -117,7 +129,7 @@ abstract focus(request: BrowserMutationRequest): Promise<BrowserPageState>
 abstract close(request: BrowserMutationRequest): Promise<BrowserClosedState>
 ```
 
-Source: [`packages/browser/browser-runtime/src/index.ts:69`](../../packages/browser/browser-runtime/src/index.ts)
+Source: [`packages/browser/browser-runtime/src/index.ts:86`](../../packages/browser/browser-runtime/src/index.ts)
 
 <a id="browser-events"></a>
 
@@ -140,5 +152,5 @@ Post-commit Browser Runtime lifecycle notification. Providers contain synchronou
 'browser/runtime-state'(state: BrowserRuntimeState): void
 ```
 
-Source: [`packages/browser/browser-runtime/src/index.ts:59`](../../packages/browser/browser-runtime/src/index.ts)
+Source: [`packages/browser/browser-runtime/src/index.ts:76`](../../packages/browser/browser-runtime/src/index.ts)
 <!-- END GENERATED cordis-surface -->

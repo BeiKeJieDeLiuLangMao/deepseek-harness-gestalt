@@ -32,7 +32,7 @@ Provenance lives in the package's `UPSTREAM.md` (pinned revision, version, MIT l
 
 ## Consequences
 
-The capability seam has a live-browser Provider whose failure model is observable rather than fatal: consumers see truthful unavailable and reconnect states through the same `BrowserRuntimeState` union, and a crashed Tandem child recovers one target across process identity changes. The Provider depends on an external Tandem checkout at the pinned revision to run for real; tests run against an in-repository HTTP fixture. Persistent profiles, multi-tab orchestration, human takeover, and the upstream contribution candidates remain separate work.
+The capability seam has a live-browser Provider whose failure model is observable rather than fatal: consumers see truthful unavailable and reconnect states through the same `BrowserRuntimeState` union, and a crashed Tandem child recovers one target across process identity changes. The Provider depends on an external Tandem checkout at the pinned revision to run for real; tests run against an in-repository HTTP fixture. Named persistent Browser Profiles reuse `persist:session-*` partitions through the same Provider; multi-tab orchestration, human takeover, and the remaining upstream contribution candidates remain separate work. See the [persistent Browser Profile Agent Note](2026-08-19-persistent-browser-profiles.md).
 
 ## Verification
 

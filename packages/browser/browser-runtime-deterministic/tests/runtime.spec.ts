@@ -3,6 +3,7 @@ import { Context } from '@deepseek-ai/cordis'
 import {
   BrowserInstanceId,
   BrowserProfileId,
+  BrowserProfileName,
   BrowserTabId,
   BrowserWorkspaceId,
 } from '@deepseek-ai/dsh-browser-runtime'
@@ -29,16 +30,27 @@ describe('deterministic Browser Runtime public lifecycle', () => {
     expect(created).toEqual({
       status: 'open',
       target: {
-        profileId: 'trace-profile',
-        workspaceId: 'trace-workspace',
-        browserId: 'trace-browser',
-        tabId: 'trace-tab',
+        profileId: 'trace-tmp-1',
+        workspaceId: 'trace-tmp-1-workspace',
+        browserId: 'trace-tmp-1-browser',
+        tabId: 'trace-tmp-1-tab-1',
       },
       revision: 0,
       url: 'about:blank',
       title: 'New Tab',
       text: '',
       focused: false,
+      chrome: {
+        kind: 'temporary',
+        partition: 'persist:session-trace-tmp-1',
+      },
+      storage: {
+        cookies: '',
+        localStorage: '',
+        indexedDb: '',
+        cache: '',
+        serviceWorker: '',
+      },
     })
 
     const navigated = await ctx.browserRuntime.navigate({
@@ -103,21 +115,131 @@ describe('deterministic Browser Runtime public lifecycle', () => {
     expect(state).toMatchObject({ status: 'open', revision: 1, url: 'https://one.test/' })
   })
 
-  it('admits one temporary Profile for the Provider lifetime and rejects reuse after close', async () => {
+  it('restores a named Profile identity after close and isolates two Profiles on one origin', async () => {
+    const ctx = new Context()
+    await ctx.plugin(BrowserRuntimeDeterministic, {
+      idPrefix: 'store',
+      pages: [{ url: 'https://login.test/', title: 'Login', text: 'login', screenshotPngBase64: PNG_1X1 }],
+    })
+    const work = await ctx.browserRuntime.create({ profile: 'persistent', name: BrowserProfileName('work') })
+    expect(work.chrome).toEqual({
+      kind: 'persistent',
+      name: 'work',
+      partition: 'persist:session-store-work',
+    })
+    expect(work.target.profileId).toBe('store-profile-work')
+    const signedIn = await ctx.browserRuntime.navigate({
+      target: work.target,
+      expectedRevision: 0,
+      url: 'https://login.test/',
+    })
+    expect(signedIn.storage).toEqual({
+      cookies: 'profile=work',
+      localStorage: 'work',
+      indexedDb: 'work',
+      cache: 'work',
+      serviceWorker: 'work',
+    })
+    await ctx.browserRuntime.close({ target: work.target, expectedRevision: signedIn.revision })
+
+    const personal = await ctx.browserRuntime.create({ profile: 'persistent', name: BrowserProfileName('personal') })
+    expect(personal.chrome).toEqual({
+      kind: 'persistent',
+      name: 'personal',
+      partition: 'persist:session-store-personal',
+    })
+    expect(personal.target.profileId).not.toBe(work.target.profileId)
+    const personalPage = await ctx.browserRuntime.navigate({
+      target: personal.target,
+      expectedRevision: 0,
+      url: 'https://login.test/',
+    })
+    expect(personalPage.storage).toEqual({
+      cookies: 'profile=personal',
+      localStorage: 'personal',
+      indexedDb: 'personal',
+      cache: 'personal',
+      serviceWorker: 'personal',
+    })
+    expect(personalPage.storage).not.toEqual(signedIn.storage)
+    await ctx.browserRuntime.close({ target: personal.target, expectedRevision: personalPage.revision })
+
+    const restored = await ctx.browserRuntime.create({ profile: 'persistent', name: BrowserProfileName('work') })
+    expect(restored.target.profileId).toBe(work.target.profileId)
+    expect(restored.chrome.partition).toBe(work.chrome.partition)
+    expect(restored.url).toBe('https://login.test/')
+    expect(restored.title).toBe('Login')
+    expect(restored.text).toBe('login')
+    expect(restored.storage).toEqual(signedIn.storage)
+  })
+
+  it('discards a temporary Profile identity and never labels it in address-field chrome', async () => {
+    const ctx = new Context()
+    await ctx.plugin(BrowserRuntimeDeterministic, {
+      idPrefix: 'ephemeral',
+      pages: [{ url: 'https://login.test/', title: 'Login', text: 'login', screenshotPngBase64: PNG_1X1 }],
+    })
+    const first = await ctx.browserRuntime.create({ profile: 'temporary' })
+    expect(first.chrome).toEqual({
+      kind: 'temporary',
+      partition: 'persist:session-ephemeral-tmp-1',
+    })
+    expect(first.chrome).not.toHaveProperty('name')
+    await ctx.browserRuntime.navigate({
+      target: first.target,
+      expectedRevision: 0,
+      url: 'https://login.test/',
+    })
+    await ctx.browserRuntime.close({ target: first.target, expectedRevision: 1 })
+
+    const second = await ctx.browserRuntime.create({ profile: 'temporary' })
+    expect(second.target.profileId).not.toBe(first.target.profileId)
+    expect(second.chrome.partition).not.toBe(first.chrome.partition)
+    expect(second.url).toBe('about:blank')
+    expect(second.text).toBe('')
+    expect(second.storage).toEqual({
+      cookies: '',
+      localStorage: '',
+      indexedDb: '',
+      cache: '',
+      serviceWorker: '',
+    })
+    expect(second.chrome).not.toHaveProperty('name')
+  })
+
+  it('rejects a second writer of the same named Profile without corrupting stored identity', async () => {
+    const ctx = new Context()
+    await ctx.plugin(BrowserRuntimeDeterministic, {
+      idPrefix: 'writer',
+      pages: [{ url: 'https://login.test/', title: 'Login', text: 'login', screenshotPngBase64: PNG_1X1 }],
+    })
+    const first = await ctx.browserRuntime.create({ profile: 'persistent', name: BrowserProfileName('work') })
+    await ctx.browserRuntime.navigate({
+      target: first.target,
+      expectedRevision: 0,
+      url: 'https://login.test/',
+    })
+    await expect(ctx.browserRuntime.create({ profile: 'persistent', name: BrowserProfileName('work') }))
+      .rejects.toMatchObject({ code: 'BROWSER_PROFILE_BUSY' })
+    const observed = await ctx.browserRuntime.observe({ target: first.target })
+    expect(observed).toMatchObject({
+      status: 'open',
+      revision: 1,
+      url: 'https://login.test/',
+      text: 'login',
+    })
+  })
+
+  it('keeps a closed target closed after a later temporary Profile opens', async () => {
     const ctx = new Context()
     await ctx.plugin(BrowserRuntimeDeterministic, {
       idPrefix: 'capacity',
       pages: [{ url: 'https://one.test/', title: 'One', text: 'one', screenshotPngBase64: PNG_1X1 }],
     })
     const created = await ctx.browserRuntime.create({ profile: 'temporary' })
-    await expect(ctx.browserRuntime.create({ profile: 'temporary' })).rejects.toMatchObject({
-      code: 'BROWSER_CAPACITY',
-    })
     const closed = await ctx.browserRuntime.close({ target: created.target, expectedRevision: 0 })
-    await expect(ctx.browserRuntime.create({ profile: 'temporary' })).rejects.toMatchObject({
-      code: 'BROWSER_CAPACITY',
-      message: 'the deterministic browser runtime has already created its temporary Profile',
-    })
+    const later = await ctx.browserRuntime.create({ profile: 'temporary' })
+    expect(later.target.profileId).not.toBe(created.target.profileId)
     await expect(ctx.browserRuntime.focus({ target: created.target, expectedRevision: closed.revision }))
       .rejects.toMatchObject({ code: 'BROWSER_NOT_OPEN' })
     await expect(ctx.browserRuntime.observe({ target: created.target })).resolves.toEqual(closed)

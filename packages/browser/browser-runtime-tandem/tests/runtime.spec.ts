@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import TandemBrowserRuntime from '@deepseek-ai/dsh-browser-runtime-tandem'
-import { BrowserRuntimeError } from '@deepseek-ai/dsh-browser-runtime'
+import { BrowserProfileName, BrowserRuntimeError } from '@deepseek-ai/dsh-browser-runtime'
 import SubprocessLocal from '@deepseek-ai/dsh-subprocess-local'
 
 const FIXTURE = join(dirname(fileURLToPath(import.meta.url)), 'fixtures/tandem-http-fixture.mjs')
@@ -25,11 +25,11 @@ interface Harness {
 
 /** Private seams reachable only from this package's own behavioral tests. */
 interface RuntimeInternals {
-  tandemTabId: string | undefined
+  profiles: Map<string, { tandemTabId: string }>
   closing: boolean
   recoveryScheduled: boolean
   disposed: boolean
-  state: unknown
+  states: Map<string, unknown>
   ctx: Context
   process: unknown
   page(state: never, signal: AbortSignal | undefined): Promise<unknown>
@@ -186,16 +186,27 @@ describe('Tandem Browser Runtime public lifecycle', () => {
     expect(created).toEqual({
       status: 'open',
       target: {
-        profileId: 'tandem-test-profile',
-        workspaceId: 'tandem-test-workspace',
-        browserId: 'tandem-test-browser',
-        tabId: 'tandem-test-tab',
+        profileId: 'tandem-test-tmp-1',
+        workspaceId: 'tandem-test-tmp-1-workspace',
+        browserId: 'tandem-test-tmp-1-browser',
+        tabId: 'tandem-test-tmp-1-tab-1',
       },
       revision: 0,
       url: 'about:blank',
       title: 'New Tab',
       text: '',
       focused: false,
+      chrome: {
+        kind: 'temporary',
+        partition: 'persist:session-tandem-test-tmp-1',
+      },
+      storage: {
+        cookies: '',
+        localStorage: '',
+        indexedDb: '',
+        cache: '',
+        serviceWorker: '',
+      },
     })
 
     const navigated = await ctx.browserRuntime.navigate({
@@ -226,6 +237,83 @@ describe('Tandem Browser Runtime public lifecycle', () => {
     await assertJoined(pidFile)
   })
 
+  it('restores a named Tandem Profile through a stable persist partition and isolates two identities', async () => {
+    const { ctx } = await setup()
+    const work = await ctx.browserRuntime.create({ profile: 'persistent', name: BrowserProfileName('work') })
+    expect(work.chrome).toEqual({
+      kind: 'persistent',
+      name: 'work',
+      partition: 'persist:session-tandem-test-work',
+    })
+    const signedIn = await ctx.browserRuntime.navigate({
+      target: work.target,
+      expectedRevision: 0,
+      url: 'https://login.test/',
+    })
+    expect(signedIn.storage).toEqual({
+      cookies: 'profile=work',
+      localStorage: 'work',
+      indexedDb: 'work',
+      cache: 'work',
+      serviceWorker: 'work',
+    })
+    expect(signedIn.text).toContain('identity=work')
+    await ctx.browserRuntime.close({ target: work.target, expectedRevision: signedIn.revision })
+
+    const personal = await ctx.browserRuntime.create({ profile: 'persistent', name: BrowserProfileName('personal') })
+    expect(personal.chrome.partition).toBe('persist:session-tandem-test-personal')
+    const personalPage = await ctx.browserRuntime.navigate({
+      target: personal.target,
+      expectedRevision: 0,
+      url: 'https://login.test/',
+    })
+    expect(personalPage.storage.localStorage).toBe('personal')
+    expect(personalPage.text).toContain('identity=personal')
+    expect(personalPage.storage).not.toEqual(signedIn.storage)
+    await ctx.browserRuntime.close({ target: personal.target, expectedRevision: personalPage.revision })
+
+    const restored = await ctx.browserRuntime.create({ profile: 'persistent', name: BrowserProfileName('work') })
+    expect(restored.chrome.partition).toBe(work.chrome.partition)
+    expect(restored.target.profileId).toBe(work.target.profileId)
+    expect(restored.storage).toEqual(signedIn.storage)
+    expect(restored.text).toContain('identity=work')
+  })
+
+  it('discards a temporary Tandem Profile identity and never labels it', async () => {
+    const { ctx } = await setup()
+    const first = await ctx.browserRuntime.create({ profile: 'temporary' })
+    expect(first.chrome).not.toHaveProperty('name')
+    await ctx.browserRuntime.navigate({
+      target: first.target,
+      expectedRevision: 0,
+      url: 'https://login.test/',
+    })
+    await ctx.browserRuntime.close({ target: first.target, expectedRevision: 1 })
+    const second = await ctx.browserRuntime.create({ profile: 'temporary' })
+    expect(second.chrome.partition).not.toBe(first.chrome.partition)
+    expect(second.storage).toEqual({
+      cookies: '',
+      localStorage: '',
+      indexedDb: '',
+      cache: '',
+      serviceWorker: '',
+    })
+    expect(second.text).not.toContain('identity=')
+    expect(second.chrome).not.toHaveProperty('name')
+  })
+
+  it('rejects a second writer of the same named Tandem Profile', async () => {
+    const { ctx } = await setup()
+    const first = await ctx.browserRuntime.create({ profile: 'persistent', name: BrowserProfileName('work') })
+    await expect(ctx.browserRuntime.create({ profile: 'persistent', name: BrowserProfileName('work') }))
+      .rejects.toMatchObject({ code: 'BROWSER_PROFILE_BUSY' })
+    await expect(ctx.browserRuntime.observe({ target: first.target })).resolves.toMatchObject({
+      status: 'open',
+      revision: 0,
+      chrome: { name: 'work' },
+    })
+  })
+
   it('rejects operations on absent, foreign, closed, and revision-mismatched state', async () => {
     const { ctx } = await setup()
     await expect(ctx.browserRuntime.observe({
@@ -245,8 +333,8 @@ describe('Tandem Browser Runtime public lifecycle', () => {
     })).rejects.toMatchObject({ code: 'BROWSER_REVISION_CONFLICT' })
     await expect(ctx.browserRuntime.focus({ target: created.target, expectedRevision: 3 }))
       .rejects.toMatchObject({ code: 'BROWSER_REVISION_CONFLICT' })
-    await expect(ctx.browserRuntime.create({ profile: 'temporary' }))
-      .rejects.toMatchObject({ code: 'BROWSER_CAPACITY' })
+    await expect(ctx.browserRuntime.create({ profile: 'persistent', name: BrowserProfileName('work') }))
+      .resolves.toMatchObject({ chrome: { name: 'work' } })
     await ctx.browserRuntime.close({ target: created.target, expectedRevision: 0 })
     await expect(ctx.browserRuntime.navigate({
       target: created.target,
@@ -325,6 +413,38 @@ describe('Tandem Browser Runtime startup bounds', () => {
     const { ctx } = await setup({ exitAtBoot: true }, { startupTimeoutMs: 1_000 })
     await expect(ctx.browserRuntime.create({ profile: 'temporary' }))
       .rejects.toMatchObject({ code: 'BROWSER_RUNTIME_UNAVAILABLE', message: /child exited before startup health/ })
+  })
+
+  it('treats omitted page-content storage as empty identity', async () => {
+    const { ctx } = await setup({ pageContent: 'omit-storage' })
+    const created = await ctx.browserRuntime.create({ profile: 'temporary' })
+    expect(created.storage).toEqual({
+      cookies: '',
+      localStorage: '',
+      indexedDb: '',
+      cache: '',
+      serviceWorker: '',
+    })
+  })
+
+  it('still creates a Profile when page-content is malformed at open', async () => {
+    const { ctx } = await setup({ pageContent: 'non-object' })
+    await expect(ctx.browserRuntime.create({ profile: 'temporary' })).resolves.toMatchObject({
+      status: 'open',
+      url: 'about:blank',
+      chrome: { kind: 'temporary' },
+    })
+    const named = await setup({ pageContent: 'non-object' })
+    await expect(named.ctx.browserRuntime.create({ profile: 'persistent', name: BrowserProfileName('work') }))
+      .resolves.toMatchObject({
+        status: 'open',
+        chrome: { kind: 'persistent', name: 'work' },
+        storage: { localStorage: 'work' },
+        text: 'identity=work',
+      })
+    const seeded = await setup({ pageContent: 'seed-storage' })
+    await expect(seeded.ctx.browserRuntime.create({ profile: 'temporary' }))
+      .resolves.toMatchObject({ storage: { localStorage: 'seeded' } })
   })
 
   it('bounds startup health verification in time', async () => {
@@ -418,7 +538,7 @@ describe('Tandem Browser Runtime protocol fidelity', () => {
       [{ screenshot: 'oversize-actual' }, (ctx, t) => ctx.browserRuntime.screenshot({ target: t as never }), /exceeds maxResponseBytes/],
       [{ focus: 'ok-false' }, (ctx, t) => ctx.browserRuntime.focus({ target: t as never, expectedRevision: 0 }), /did not focus the addressed tab/],
       [{ destroy: 'unknown' }, (ctx, t) => ctx.browserRuntime.close({ target: t as never, expectedRevision: 0 }), /HTTP 404 .*does not exist/],
-      [{ destroy: 'ok-false' }, (ctx, t) => ctx.browserRuntime.close({ target: t as never, expectedRevision: 0 }), /did not destroy the temporary session/],
+      [{ destroy: 'ok-false' }, (ctx, t) => ctx.browserRuntime.close({ target: t as never, expectedRevision: 0 }), /did not destroy the session/],
       [{ destroy: '500' }, (ctx, t) => ctx.browserRuntime.close({ target: t as never, expectedRevision: 0 }), /HTTP 500/],
     ]
     for (const [faults, operate, failure] of cases) {
@@ -628,7 +748,7 @@ describe('Tandem Browser Runtime teardown ownership', () => {
       warnings.push(args)
     })
     await ctx.fiber.dispose()
-    expect(warnings.some(args => String(args[0]).includes('temporary session cleanup failed'))).toBe(true)
+    expect(warnings.some(args => String(args[0]).includes('session cleanup failed'))).toBe(true)
     warn.mockRestore()
     await assertJoined(pidFile)
   })
@@ -649,11 +769,26 @@ describe('Tandem Browser Runtime teardown ownership', () => {
     expect(live).toBeDefined()
   })
 
+  it('rethrows a non-protocol page-content failure during create', async () => {
+    const { ctx } = await setup()
+    const runtime = runtimeOf(ctx)
+    const original = runtime.readTab.bind(runtime)
+    runtime.readTab = async () => { throw new Error('raw create inventory failure') }
+    // Force create to read content through page-content after session create by
+    // replacing readContent via observe of the same private method.
+    runtime.readTab = original
+    const originalRead = runtime.readTab
+    runtime.readTab = originalRead
+    const internals = runtime as RuntimeInternals & { readContent(tabId: string, signal: AbortSignal | undefined): Promise<unknown> }
+    internals.readContent = async () => { throw new Error('raw create content failure') }
+    await expect(ctx.browserRuntime.create({ profile: 'temporary' })).rejects.toThrow('raw create content failure')
+  })
+
   it('rejects navigation when the upstream tab identity is already gone', async () => {
     const { ctx } = await setup()
     const runtime = runtimeOf(ctx)
     const created = await ctx.browserRuntime.create({ profile: 'temporary' })
-    runtime.tandemTabId = undefined
+    runtime.profiles.clear()
     await expect(ctx.browserRuntime.navigate({
       target: created.target,
       expectedRevision: 0,
@@ -691,7 +826,7 @@ describe('Tandem Browser Runtime teardown ownership', () => {
     const runtime = runtimeOf(ctx)
     const created = await ctx.browserRuntime.create({ profile: 'temporary' })
     runtime.page = async () => {
-      runtime.state = undefined
+      runtime.states.clear()
       throw new BrowserRuntimeError('unreachable', 'BROWSER_RUNTIME_UNAVAILABLE')
     }
     runtime.scheduleRecovery = () => undefined

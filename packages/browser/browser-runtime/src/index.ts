@@ -16,15 +16,30 @@ import type {
 
 export {
   addressedBrowserRuntimeState,
+  addressedBrowserRuntimeStateFrom,
   assertBrowserNotAborted,
+  assertBrowserProfileName,
+  assertBrowserProfileWriterAvailable,
+  browserProfileChrome,
+  browserProfileStorage,
+  browserSessionPartition,
+  browserTargetFor,
+  browserTargetKey,
+  commitBrowserRuntimeState,
   emitBrowserRuntimeState,
   enqueueBrowserRuntimeOperation,
+  labeledBrowserProfileName,
   requireOpenBrowserPage,
+  resolveBrowserProfileCreate,
+  sameBrowserProfile,
   sameBrowserTarget,
 } from './helpers.ts'
+export { EMPTY_BROWSER_PROFILE_STORAGE } from './helpers.ts'
+export type { BrowserProfileChromeRequest, ResolvedBrowserProfileCreate } from './helpers.ts'
 export {
   BrowserInstanceId,
   BrowserProfileId,
+  BrowserProfileName,
   BrowserRuntimeError,
   BrowserTabId,
   BrowserWorkspaceId,
@@ -36,10 +51,15 @@ export type {
   BrowserNavigateRequest,
   BrowserObserveRequest,
   BrowserPageState,
+  BrowserPersistentCreateRequest,
+  BrowserProfileChrome,
+  BrowserProfileKind,
+  BrowserProfileStorage,
   BrowserRuntimeErrorCode,
   BrowserRuntimeState,
   BrowserScreenshot,
   BrowserTarget,
+  BrowserTemporaryCreateRequest,
   BrowserUnavailableState,
 } from './types.ts'
 
@@ -99,14 +119,16 @@ export abstract class BrowserRuntime extends Service {
   }
 
   /**
-   * Create one temporary Profile, Workspace, browser instance, and tab.
-   * @param request - Temporary-profile request and cancellation signal.
+   * Create one temporary or named persistent Profile, Workspace, browser instance, and tab.
+   * @param request - Temporary or named persistent Profile request and cancellation signal.
    * @returns initial open page state at revision zero; its target addresses every later operation in
-   * this lifecycle.
+   * this lifecycle. Persistent Profiles restore the same storage partition on later creates.
    * @throws `BrowserRuntimeError` with `BROWSER_ABORTED` when cancellation wins, `BROWSER_CAPACITY`
    * when this Provider cannot admit another lifecycle, `BROWSER_DISPOSED` after teardown starts,
-   * `BROWSER_PROTOCOL` when the upstream runtime breaks its response protocol, or
-   * `BROWSER_RUNTIME_UNAVAILABLE` when the upstream runtime cannot be reached or starts unhealthy.
+   * `BROWSER_PROFILE_BUSY` when the named Profile already has a writer, `BROWSER_PROFILE_NAME` when
+   * the name cannot be a stable partition key, `BROWSER_PROTOCOL` when the upstream runtime breaks
+   * its response protocol, or `BROWSER_RUNTIME_UNAVAILABLE` when the upstream runtime cannot be
+   * reached or starts unhealthy.
    */
   abstract create(request: BrowserCreateRequest): Promise<BrowserPageState>
   /**
@@ -151,7 +173,8 @@ export abstract class BrowserRuntime extends Service {
    */
   abstract focus(request: BrowserMutationRequest): Promise<BrowserPageState>
   /**
-   * Close the addressed tab and its temporary Profile after checking its expected revision.
+   * Close the addressed tab after checking its expected revision. Temporary Profiles discard
+   * identity; persistent Profiles keep the named storage partition.
    * @param request - Target, expected revision, and cancellation signal.
    * @returns terminal close receipt retained by the Provider for later observation.
    * @throws `BrowserRuntimeError` with `BROWSER_ABORTED`, `BROWSER_DISPOSED`, `BROWSER_NOT_FOUND`,

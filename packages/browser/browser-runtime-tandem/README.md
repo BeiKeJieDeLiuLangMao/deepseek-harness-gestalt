@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-Managed Tandem Browser HTTP Service Provider for the Browser Runtime capability. It spawns and owns one Tandem child process at the pinned upstream revision, drives its loopback HTTP API, and exposes one temporary Profile lifecycle through `ctx.browserRuntime`. Provenance is recorded in [UPSTREAM.md](UPSTREAM.md) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md); no upstream source is vendored.
+Managed Tandem Browser HTTP Service Provider for the Browser Runtime capability. It spawns and owns one Tandem child process at the pinned upstream revision, drives its loopback HTTP API, and exposes temporary and named persistent Browser Profiles through `ctx.browserRuntime`. Provenance is recorded in [UPSTREAM.md](UPSTREAM.md) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md); no upstream source is vendored.
 
 ## Configuration
 
@@ -26,7 +26,7 @@ Managed Tandem Browser HTTP Service Provider for the Browser Runtime capability.
 
 `baseUrl` must be an absolute loopback HTTP origin (`127.0.0.1`, `localhost`, or `[::1]` host, no credentials, no path, query, or fragment); anything else fails plugin load. The pinned Tandem API binds all interfaces with remote access enabled by default, so this loopback-only check is the deployment containment. Durations must be positive safe integers and `reconnectAttempts` a non-negative safe integer. The bearer token is read from `tokenFile` and every HTTP operation carries it; startup health polls `GET /agent/version` and `GET /status` under `startupTimeoutMs`. Page reads send provider-owned `settleMs`, `timeout`, and `minLength` query bounds, because the upstream route otherwise waits its internal 10-second settle window on short static pages.
 
-Operations enter one serialized queue. Mutations require the caller's last observed `expectedRevision`; reads return the current revision without advancing it. The Provider admits exactly one temporary Profile lifecycle: it creates one Tandem session with `POST /sessions/create`, projects DSH-owned opaque identities around Tandem's tab ids, and rejects a second `create` with `BROWSER_CAPACITY`. After disposal starts, operations reject with `BROWSER_DISPOSED`. Disposal stops admission, drains the queue, destroys the session with `POST /sessions/destroy`, and joins the child process tree under `processGraceMs`.
+Operations enter one serialized queue. Mutations require the caller's last observed `expectedRevision`; reads return the current revision without advancing it. Each Profile maps to one Tandem session created with `POST /sessions/create` and a `persist:session-*` partition. Named Profiles restore that partition; temporary Profiles use unique `tmp-N` session names and leave no reusable identity. A second open writer of the same named Profile rejects with `BROWSER_PROFILE_BUSY`. After disposal starts, operations reject with `BROWSER_DISPOSED`. Disposal stops admission, drains the queue, destroys remaining sessions with `POST /sessions/destroy`, and joins the child process tree under `processGraceMs`.
 
 An unexpected child exit or a failed health check commits a `BrowserUnavailableState` with reason `crashed` or `unhealthy` and `reconnecting` set by configuration, then attempts up to `reconnectAttempts` child restarts; a restored runtime re-commits open page state at the next revision with the same target, and exhausted reconnects commit `reason: 'reconnect-failed'` with `reconnecting: false`. The projection is truthful: while unavailable, operations on the target reject with `BROWSER_RUNTIME_UNAVAILABLE` instead of reporting stale page facts. Malformed Tandem responses, oversized bodies, and failed field validation reject with `BROWSER_PROTOCOL`.
 
@@ -40,6 +40,6 @@ The Provider itself contributes no request text; Consumer schemas and logged res
 
 ## Known Limitations and Deferred Work
 
-- One temporary Profile and one Tandem session per Provider lifetime; persistent profiles, multiple tabs, and human takeover are absent.
+- One Tandem child process per Provider lifetime; multiple tabs and human takeover remain absent.
 - Running against a real Tandem Browser requires a checkout of the pinned revision `3b613cfd4c299609ca7ca415d638c1b71c6ba5de`; unit tests run against the in-repository HTTP fixture.
 - Upstream-contribution candidates — isolated-session security stack and extension loading, persisted session registry, close/forget/wipe storage erasure, MCP tool allowlist/profiles, an ownership/handoff event stream, and first-class Linux support — are listed in [UPSTREAM.md](UPSTREAM.md).

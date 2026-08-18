@@ -32,7 +32,7 @@ Provider 只接收一个临时 Profile 生命周期：一个 Tandem session、�
 
 ## 结果
 
-能力 seam 获得了一个真实浏览器 Provider，其失败模型可观察而非致命：Consumer 通过同一个 `BrowserRuntimeState` union 看到真实的不可用与重连状态，崩溃的 Tandem 子进程在进程身份变化后仍能恢复同一个 target。该 Provider 真实运行时依赖固定 revision 的外部 Tandem checkout；测试运行在仓库内 HTTP fixture 上。持久 Profile、多标签页编排、人工接管与上游贡献候选仍是独立工作。
+能力 seam 获得了一个真实浏览器 Provider，其失败模型可观察而非致命：Consumer 通过同一个 `BrowserRuntimeState` union 看到真实的不可用与重连状态，崩溃的 Tandem 子进程在进程身份变化后仍能恢复同一个 target。该 Provider 真实运行时依赖固定 revision 的外部 Tandem checkout；测试运行在仓库内 HTTP fixture 上。命名持久 Browser Profile 通过同一 Provider 复用 `persist:session-*` partition；多标签页编排、人工接管以及其余上游贡献候选仍是独立工作。见[持久 Browser Profile Agent Note](2026-08-19-persistent-browser-profiles.md)。
 
 ## 验证
 
