@@ -920,6 +920,9 @@ importers:
       '@deepseek-ai/schemastery':
         specifier: link:../vendor/schemastery
         version: link:../vendor/schemastery
+      '@types/ws':
+        specifier: ^8.18.1
+        version: 8.18.1
       ws:
         specifier: ^8.21.0
         version: 8.21.0

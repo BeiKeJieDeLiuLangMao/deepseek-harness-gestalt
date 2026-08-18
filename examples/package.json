@@ -123,6 +123,7 @@
     "@deepseek-ai/dsh-workflow-worker-thread": "workspace:*",
     "@deepseek-ai/dsh-agent-instructions": "workspace:*",
     "@deepseek-ai/schemastery": "workspace:^",
+    "@types/ws": "^8.18.1",
     "ws": "^8.21.0"
   }
 }
