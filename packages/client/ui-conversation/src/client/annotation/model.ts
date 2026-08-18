@@ -13,7 +13,7 @@ export function TextAnnotationId(id: string): TextAnnotationId {
   return id as TextAnnotationId
 }
 
-/** Resilient reference to rendered text from one completed assistant message. */
+/** Resilient reference to renderer-owned source text from one completed assistant message. */
 export interface TextAnchor {
   readonly sourceId: string
   readonly quote: string
@@ -44,7 +44,7 @@ const CONTEXT_LENGTH = 48
 /**
  * Capture a quotation and nearby source text without retaining renderer nodes.
  * @param sourceId - Stable assistant-message identity.
- * @param source - Visible plain-text projection of that message block.
+ * @param source - Renderer-owned source-text projection of that message block.
  * @param quote - Exact selected quotation.
  * @param start - Quotation start in `source`.
  * @returns The durable-in-draft text anchor.
@@ -64,7 +64,7 @@ export function createTextAnchor(sourceId: string, source: string, quote: string
 /**
  * Resolve one anchor only when its quote and context identify one source range.
  * @param anchor - Draft anchor to resolve.
- * @param source - Current visible plain-text projection.
+ * @param source - Current renderer-owned source-text projection.
  * @returns The unique half-open source range, or null when stale or ambiguous.
  */
 export function resolveTextAnchor(anchor: TextAnchor, source: string): { start: number; end: number } | null {

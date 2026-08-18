@@ -46,7 +46,7 @@ Host 带 placement 的 `session/queue` 快照也会携带待处理 steering。Qu
 
 完成的一轮会物化一个有序的 `turn-tail` Conversation Node。它由引擎维护的 `TurnLocation` 提供收尾 Assistant 和 Turn data；renderer 在该 Node 的 IconActions 之前渲染 `conversation.chat.turnTail` chain，并派发包含 Turn、收尾 seq 和 `openFile` 的 `TurnTailOwnerProps`。本包只拥有空位；`@deepseek-ai/dsh-client-ui-deliverables` 把改写工具的 `locations` 累积到 Turn data，并拥有产物行、chip 上限和文案，因此把该插件从 cordis.yml 中组合掉即可关闭该交互面，空位以零成本渲染为空。收尾正文经由同一个开关参与其中：chat 视图向可选的 `chatFileMentions` service（ctx.get；由同一插件提供）索取收尾消息的行内代码词表，并把结果接进 MarkdownText 的 `fileMentions` seam——service 缺席时正文保持死文本。
 
-已完成的 assistant Markdown 会在渲染时，把可选择的文本叶节点与图片登记到 renderer 拥有的映射中。文本注释使用这份类型化映射校验选择并重建 Draft Mark，不扫描或改写消息 DOM。两个端点都必须解析到同一个已完成文本块中已登记的文本；只要所选片段与任意图片相交，整段选择都会被拒绝，包括 alt 文本为空的图片。
+已完成的 assistant Markdown 会在渲染时，把普通文本、行内代码、围栏代码、原样展示的 HTML 与图片登记到 renderer 拥有的同一份投影中。文本注释使用该投影生成 Text Anchor 前后文并恢复 Draft Mark，不扫描或改写消息 DOM。两个端点都必须解析到同一个已完成文本块中已登记的源文本。生成的数学公式与脚注界面不是源文本叶节点，跨越它们的选择会被拒绝；只要所选片段与任意图片相交，整段选择也会被拒绝，包括 alt 文本为空的图片。
 
 ## 模型体验
 

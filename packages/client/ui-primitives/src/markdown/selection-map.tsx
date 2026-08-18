@@ -1,11 +1,23 @@
-import type { Key, MutableRefObject, ReactNode, RefCallback } from 'react'
+import type { CSSProperties, Key, MutableRefObject, ReactNode, RefCallback } from 'react'
 
 /** Selection details projected from renderer-owned Markdown registrations. */
 export interface MarkdownSelection {
   /** Visible selected text. */
   quote: string
-  /** Approximate rendered-text offset used to disambiguate repeated quotations. */
-  approximate: number
+  /** Renderer-owned text projection containing the selection. */
+  projection: string
+  /** Exact selection start in {@link projection}. */
+  start: number
+}
+
+/** Text Anchor fields used to resolve one renderer-owned text range. */
+export interface MarkdownTextAnchor {
+  /** Exact selected quotation. */
+  quote: string
+  /** Bounded text immediately before the quotation. */
+  prefix: string
+  /** Bounded text immediately after the quotation. */
+  suffix: string
 }
 
 /**
@@ -16,16 +28,15 @@ export interface MarkdownSelectionMap {
   /**
    * Inspect one DOM selection.
    * @param range - Noncollapsed selection range inside the rendered Markdown.
-   * @returns Selected text and its approximate offset, or null when an image or unregistered leaf is included.
+   * @returns Selected text and its exact renderer projection, or null when an image or unregistered leaf is included.
    */
   inspect(range: Range): MarkdownSelection | null
   /**
    * Rebuild a range for an anchored quotation.
-   * @param quote - Exact selected quotation.
-   * @param approximate - Preferred occurrence offset in the plain-text projection.
+   * @param anchor - Exact quotation and surrounding renderer-projection context.
    * @returns A range over registered text leaves, or null when the quotation is not selectable.
    */
-  rangeForText(quote: string, approximate: number): Range | null
+  rangeForText(anchor: MarkdownTextAnchor): Range | null
 }
 
 /** Mutable ref shared by the Markdown renderer and its selection owner. */
@@ -57,7 +68,7 @@ export class MarkdownSelectionCollector implements MarkdownSelectionMap {
   private readonly endBoundaries: TextBoundary[] = []
 
   /** Render and register one text leaf without inspecting the mounted DOM. */
-  renderText(value: string, key: Key): ReactNode {
+  renderText(value: string, key: Key, style?: CSSProperties): ReactNode {
     const leaf: TextLeaf = { start: this.cursor, value }
     this.cursor += value.length
     this.text += value
@@ -70,7 +81,7 @@ export class MarkdownSelectionCollector implements MarkdownSelectionMap {
         this.endBoundaries[leaf.start + offset + 1] = { node, offset: offset + 1 }
       }
     }
-    return <span key={key} ref={register}>{value}</span>
+    return <span key={key} ref={register} style={style}>{value}</span>
   }
 
   /** Reserve an image's plain-text alt span and return its DOM registration. */
@@ -91,21 +102,23 @@ export class MarkdownSelectionCollector implements MarkdownSelectionMap {
   }
 
   inspect(range: Range): MarkdownSelection | null {
-    const approximate = this.offsetForEndpoint(range.startContainer, range.startOffset)
+    const start = this.offsetForEndpoint(range.startContainer, range.startOffset)
     const end = this.offsetForEndpoint(range.endContainer, range.endOffset)
-    if (approximate === null || end === null) return null
+    if (start === null || end === null) return null
     for (const element of this.mountedImages) {
       if (range.intersectsNode(element)) return null
     }
-    return { quote: range.toString(), approximate }
+    const quote = range.toString()
+    if (this.text.slice(start, end) !== quote) return null
+    return { quote, projection: this.text, start }
   }
 
-  rangeForText(quote: string, approximate: number): Range | null {
-    const starts: number[] = []
-    for (let at = this.text.indexOf(quote); at >= 0; at = this.text.indexOf(quote, at + 1)) starts.push(at)
-    const start = starts.toSorted((a, b) => Math.abs(a - approximate) - Math.abs(b - approximate))[0]
-    if (start === undefined) return null
-    const end = start + quote.length
+  rangeForText(anchor: MarkdownTextAnchor): Range | null {
+    const needle = anchor.prefix + anchor.quote + anchor.suffix
+    const match = this.text.indexOf(needle)
+    if (match < 0 || this.text.indexOf(needle, match + 1) >= 0) return null
+    const start = match + anchor.prefix.length
+    const end = start + anchor.quote.length
     for (const image of this.imageLeaves) {
       const crosses = image.start === image.end
         ? start < image.start && image.end < end

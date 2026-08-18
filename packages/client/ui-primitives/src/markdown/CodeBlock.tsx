@@ -5,9 +5,10 @@
 // deepsuite `@deepseek/md` code blocks; token colors stay on `--shiki-*`.
 
 import { useCallback, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import type { CSSProperties, Key, ReactNode } from 'react'
 import clsx from 'clsx'
 import { writeClipboard } from '../clipboard.ts'
-import { grammarLoadCount, highlightToHtml, subscribeGrammarLoaded } from './highlight.ts'
+import { grammarLoadCount, highlightLines, highlightToHtml, subscribeGrammarLoaded } from './highlight.ts'
 import css from './CodeBlock.module.css'
 
 export interface CodeBlockProps {
@@ -21,15 +22,26 @@ export interface CodeBlockProps {
   copyLabel?: string | undefined
   /** Copy-button label during the post-copy confirmation window. */
   copiedLabel?: string | undefined
+  /** Optional renderer-owned registration for each visible source-text run. */
+  renderText?: ((value: string, key: Key, style?: CSSProperties) => ReactNode) | undefined
 }
 
-export function CodeBlock({ code, lang, className, copyLabel = '复制', copiedLabel = '复制成功' }: CodeBlockProps) {
+export function CodeBlock({
+  code, lang, className, copyLabel = '复制', copiedLabel = '复制成功', renderText,
+}: CodeBlockProps) {
   const trimmed = code.endsWith('\n') ? code.slice(0, -1) : code
   // Re-render when a lazy grammar finishes loading, so a fence that showed plain
   // text while its language's grammar imported picks up highlighting. The
   // snapshot value is opaque; only its change across renders drives the memo.
   const loaded = useSyncExternalStore(subscribeGrammarLoaded, grammarLoadCount, grammarLoadCount)
-  const html = useMemo(() => highlightToHtml(trimmed, lang), [trimmed, lang, loaded])
+  const html = useMemo(
+    () => renderText === undefined ? highlightToHtml(trimmed, lang) : undefined,
+    [trimmed, lang, loaded, renderText],
+  )
+  const registeredLines = useMemo(
+    () => renderText === undefined ? undefined : highlightLines(trimmed, lang),
+    [trimmed, lang, loaded, renderText],
+  )
   const rootRef = useRef<HTMLDivElement>(null)
   const [copied, setCopied] = useState(false)
 
@@ -45,16 +57,36 @@ export function CodeBlock({ code, lang, className, copyLabel = '复制', copiedL
     })
   }, [copied, trimmed])
 
-  const body = html === undefined
-    ? (
-      <pre className={css.plain}><code>{trimmed}</code></pre>
+  let body: ReactNode
+  if (renderText !== undefined && registeredLines !== undefined) {
+    body = (
+      <pre
+        className="shiki css-variables"
+        style={{ backgroundColor: 'var(--shiki-background)', color: 'var(--shiki-foreground)' }}
+        tabIndex={0}
+      >
+        <code>
+          {registeredLines.map((line, lineIndex) => (
+            <span className="line" key={lineIndex}>
+              {line.map((token, tokenIndex) => renderText(token.text, tokenIndex, token.style))}
+              {lineIndex < registeredLines.length - 1 && renderText('\n', 'newline')}
+            </span>
+          ))}
+        </code>
+      </pre>
     )
-    : (
-  // shiki's output is a static span tree it generated from `code` (no user
-  // HTML passes through), the sanctioned innerHTML consumption path per
-  // shiki's own docs.
+  } else if (renderText !== undefined) {
+    body = <pre className={css.plain}><code>{renderText(trimmed, 'code')}</code></pre>
+  } else if (html === undefined) {
+    body = <pre className={css.plain}><code>{trimmed}</code></pre>
+  } else {
+    body = (
+    // shiki's output is a static span tree it generated from `code` (no user
+    // HTML passes through), the sanctioned innerHTML consumption path per
+    // shiki's own docs.
       <div dangerouslySetInnerHTML={{ __html: html }} />
     )
+  }
 
   return (
     <div ref={rootRef} className={clsx(css.block, 'md-code-block', className)}>

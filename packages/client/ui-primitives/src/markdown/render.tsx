@@ -239,7 +239,8 @@ function renderNode(node: Md.RootContent, key: Key, context: MarkdownRenderConte
       // authored text, not a parsed destination, so no normalizeUri: port,
       // path, and query render unchanged.
       const href = inlineCodeHttpUrl(value)
-      if (href !== undefined) return <code key={key}>{renderSafeLink(href, [value], 'link')}</code>
+      const rendered = context.selection?.renderText(value, 'value') ?? value
+      if (href !== undefined) return <code key={key}>{renderSafeLink(href, [rendered], 'link')}</code>
       // A token the owner's file-mention vocabulary recognizes opens that
       // file; the resolver, not this renderer, decides what names a file.
       // Inside an anchor the token stays inert — a button cannot nest there.
@@ -254,16 +255,16 @@ function renderNode(node: Md.RootContent, key: Key, context: MarkdownRenderConte
               aria-label={mention.label}
               onClick={mention.open}
             >
-              {value}
+              {rendered}
             </button>
           </code>
         )
       }
-      return <code key={key}>{value}</code>
+      return <code key={key}>{rendered}</code>
     }
     case 'html':
       // No HTML parser enters the pipeline: raw HTML stays literal text.
-      return node.value
+      return context.selection?.renderText(node.value, key) ?? node.value
     case 'code':
       return renderCode(node, key, context)
     case 'math':
@@ -328,6 +329,7 @@ function renderCode(node: Md.Code, key: Key, context: MarkdownRenderContext): Re
       lang={context.streaming ? undefined : lang}
       copyLabel={context.codeLabels?.copyLabel}
       copiedLabel={context.codeLabels?.copiedLabel}
+      renderText={context.selection?.renderText.bind(context.selection)}
     />
   )
 }

@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { CSSProperties, MouseEvent, ReactNode } from 'react'
-import { extractMarkdownPlainText } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { MarkdownSelectionMapRef } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TextAnchor, TextAnnotation, TextAnnotationId } from './model.ts'
-import { createTextAnchor, resolveTextAnchor } from './model.ts'
+import { createTextAnchor } from './model.ts'
 import { AnnotationEditor } from './AnnotationEditor.tsx'
 import { removeDraftHighlightOwner, replaceDraftHighlightRanges } from './draft-highlights.ts'
 import css from './TextAnnotationTarget.module.css'
@@ -16,23 +15,19 @@ interface PendingSelection {
 }
 
 function rangeForAnchor(
-  source: string,
   selectionMapRef: MarkdownSelectionMapRef,
   anchor: TextAnchor,
 ): Range | null {
-  const resolved = resolveTextAnchor(anchor, extractMarkdownPlainText(source))
-  if (resolved === null) return null
-  return selectionMapRef.current?.rangeForText(anchor.quote, resolved.start) ?? null
+  return selectionMapRef.current?.rangeForText(anchor) ?? null
 }
 
 /**
  * Render one completed-assistant Markdown selection target.
- * @param props - Source text, matching drafts, localized labels, and children.
+ * @param props - Source identity, renderer mapping, matching drafts, localized labels, and children.
  * @returns The source with selection actions and Draft Marks.
  */
-export function TextAnnotationTarget({ sourceId, source, selectionMapRef, annotations, add, t, children }: {
+export function TextAnnotationTarget({ sourceId, selectionMapRef, annotations, add, t, children }: {
   sourceId: string
-  source: string
   selectionMapRef: MarkdownSelectionMapRef
   annotations: readonly TextAnnotation[]
   add: (anchor: TextAnchor, note: string) => TextAnnotationId
@@ -53,11 +48,11 @@ export function TextAnnotationTarget({ sourceId, source, selectionMapRef, annota
     for (const annotation of annotations) {
       const current = ranges.current.get(annotation.id)
       if (current !== undefined && container.contains(current.commonAncestorContainer)) continue
-      const rebuilt = rangeForAnchor(source, selectionMapRef, annotation.anchor)
+      const rebuilt = rangeForAnchor(selectionMapRef, annotation.anchor)
       if (rebuilt !== null) ranges.current.set(annotation.id, rebuilt)
     }
     replaceDraftHighlightRanges(highlightOwner.current, [...ranges.current.values()])
-  }, [annotations, selectionMapRef, source])
+  }, [annotations, selectionMapRef])
   useEffect(() => () => { removeDraftHighlightOwner(highlightOwner.current) }, [])
 
   const select = useCallback((): void => {
@@ -87,25 +82,15 @@ export function TextAnnotationTarget({ sourceId, source, selectionMapRef, annota
       dismiss()
       return
     }
-    const visible = extractMarkdownPlainText(source)
-    const starts: number[] = []
-    for (let at = visible.indexOf(quote); at >= 0; at = visible.indexOf(quote, at + 1)) starts.push(at)
-    const start = starts.toSorted(
-      (a, b) => Math.abs(a - inspected.approximate) - Math.abs(b - inspected.approximate),
-    )[0]
-    if (start === undefined) {
-      dismiss()
-      return
-    }
     const rect = range.getBoundingClientRect()
     setPending({
-      anchor: createTextAnchor(sourceId, visible, quote, start),
+      anchor: createTextAnchor(sourceId, inspected.projection, quote, inspected.start),
       range: range.cloneRange(),
       left: Math.max(12, Math.min(rect.left, window.innerWidth - 300)),
       top: rect.bottom + 8,
     })
     setEditing(false)
-  }, [selectionMapRef, source, sourceId])
+  }, [selectionMapRef, sourceId])
 
   useEffect(() => {
     document.addEventListener('selectionchange', select)

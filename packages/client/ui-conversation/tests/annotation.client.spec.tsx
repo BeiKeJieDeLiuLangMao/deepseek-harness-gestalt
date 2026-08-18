@@ -8,6 +8,7 @@ import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts
 import {
   compileAnnotationSubmission, createTextAnchor, resolveTextAnchor, TextAnnotationId,
 } from '../src/client/annotation/model.ts'
+import type { TextAnchor } from '../src/client/annotation/model.ts'
 import { AnnotationEditor } from '../src/client/annotation/AnnotationEditor.tsx'
 import { AssistantMarkdown } from '../src/client/chat/AssistantMarkdown.tsx'
 import { zh } from '../src/client/locales.ts'
@@ -16,6 +17,22 @@ import {
 } from '../src/client/annotation/draft-highlights.ts'
 import type { AnnotationSubmissionReservation, SessionInputDeps } from '../src/client/input/facade.ts'
 import { SessionInputShell } from '../src/client/input/facade.ts'
+
+function firstTextNode(node: Node): Text {
+  for (let current: Node | null = node; current !== null; current = current.firstChild) {
+    if (current.nodeType === Node.TEXT_NODE) return current as Text
+  }
+  throw new Error('expected rendered text')
+}
+
+function textPosition(node: Node, value: string): { node: Text; offset: number } {
+  const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT)
+  for (let current = walker.nextNode(); current !== null; current = walker.nextNode()) {
+    const offset = current.textContent?.indexOf(value) ?? -1
+    if (offset >= 0) return { node: current as Text, offset }
+  }
+  throw new Error(`expected rendered text ${JSON.stringify(value)}`)
+}
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
@@ -120,6 +137,256 @@ describe('text annotation mechanics', () => {
     expect(add).not.toHaveBeenCalled()
     fireEvent.keyDown(editor, { key: 'Enter' })
     expect(add).toHaveBeenCalledWith(expect.objectContaining({ quote: 'Alpha bold omega' }), 'Tighten this')
+  })
+
+  it('annotates visible inline code through the composed Markdown selection path', () => {
+    class FakeHighlight {
+      readonly ranges: readonly Range[]
+      constructor(...ranges: Range[]) { this.ranges = ranges }
+    }
+    const set = vi.fn()
+    vi.stubGlobal('CSS', { highlights: { set, delete: vi.fn() } })
+    vi.stubGlobal('Highlight', FakeHighlight)
+    let saved: TextAnchor | undefined
+    const props = {
+      blocks: [{ kind: 'text' as const, text: 'before `code` after' }],
+      streaming: false,
+      t: makeTranslate(zh, commonZh),
+      sourceId: 'message-1',
+      annotationActions: {
+        addTextAnnotation: (anchor: TextAnchor) => {
+          saved = anchor
+          return TextAnnotationId('annotation-1')
+        },
+      },
+    }
+    const view = render(<AssistantMarkdown {...props} annotations={[]} />)
+    const code = firstTextNode(view.container.querySelector('code')!)
+    const range = document.createRange()
+    range.setStart(code, 0)
+    range.setEnd(code, 4)
+    Object.defineProperty(range, 'getBoundingClientRect', { value: () => ({ left: 20, bottom: 40 }) })
+    const selection = window.getSelection()!
+    selection.removeAllRanges()
+    selection.addRange(range)
+    fireEvent(document, new Event('selectionchange'))
+
+    fireEvent.click(view.getByRole('button', { name: '添加批示' }))
+    fireEvent.click(view.getByRole('button', { name: '保存批示' }))
+    expect(saved?.quote).toBe('code')
+    if (saved === undefined) throw new Error('expected saved inline-code annotation')
+    view.unmount()
+    render(<AssistantMarkdown {...props} annotations={[{
+      id: TextAnnotationId('annotation-1'), kind: 'text', anchor: saved, note: '',
+    }]} />)
+    const mark = set.mock.lastCall?.[1] as FakeHighlight
+    expect(mark.ranges.map(item => item.toString())).toEqual(['code'])
+  })
+
+  it('preserves an exact selection spanning ordinary text and inline code', () => {
+    class FakeHighlight {
+      readonly ranges: readonly Range[]
+      constructor(...ranges: Range[]) { this.ranges = ranges }
+    }
+    const set = vi.fn()
+    vi.stubGlobal('CSS', { highlights: { set, delete: vi.fn() } })
+    vi.stubGlobal('Highlight', FakeHighlight)
+    let saved: TextAnchor | undefined
+    const props = {
+      blocks: [{ kind: 'text' as const, text: 'before `code` after' }],
+      streaming: false,
+      t: makeTranslate(zh, commonZh),
+      sourceId: 'message-1',
+      annotationActions: {
+        addTextAnnotation: (anchor: TextAnchor) => {
+          saved = anchor
+          return TextAnnotationId('annotation-1')
+        },
+      },
+    }
+    const view = render(<AssistantMarkdown {...props} annotations={[]} />)
+    const leaves = view.container.querySelector('p')!.childNodes
+    const range = document.createRange()
+    range.setStart(firstTextNode(leaves[0]!), 0)
+    range.setEnd(firstTextNode(leaves[2]!), 6)
+    Object.defineProperty(range, 'getBoundingClientRect', { value: () => ({ left: 20, bottom: 40 }) })
+    const selection = window.getSelection()!
+    selection.removeAllRanges()
+    selection.addRange(range)
+    fireEvent(document, new Event('selectionchange'))
+
+    fireEvent.click(view.getByRole('button', { name: '添加批示' }))
+    fireEvent.click(view.getByRole('button', { name: '保存批示' }))
+    expect(saved?.quote).toBe('before code after')
+    if (saved === undefined) throw new Error('expected saved cross-inline annotation')
+    view.unmount()
+    render(<AssistantMarkdown {...props} annotations={[{
+      id: TextAnnotationId('annotation-1'), kind: 'text', anchor: saved, note: '',
+    }]} />)
+    const mark = set.mock.lastCall?.[1] as FakeHighlight
+    expect(mark.ranges.map(item => item.toString())).toEqual(['before code after'])
+  })
+
+  it('keeps repeated-quote context in the renderer projection', () => {
+    class FakeHighlight {
+      readonly ranges: readonly Range[]
+      constructor(...ranges: Range[]) { this.ranges = ranges }
+    }
+    const set = vi.fn()
+    vi.stubGlobal('CSS', { highlights: { set, delete: vi.fn() } })
+    vi.stubGlobal('Highlight', FakeHighlight)
+    let saved: TextAnchor | undefined
+    const props = {
+      blocks: [{ kind: 'text' as const, text: 'A          repeat x repeat' }],
+      streaming: false,
+      t: makeTranslate(zh, commonZh),
+      sourceId: 'message-1',
+      annotationActions: {
+        addTextAnnotation: (anchor: TextAnchor) => {
+          saved = anchor
+          return TextAnnotationId('annotation-1')
+        },
+      },
+    }
+    const view = render(<AssistantMarkdown {...props} annotations={[]} />)
+    const text = firstTextNode(view.container.querySelector('p')!)
+    const range = document.createRange()
+    range.setStart(text, 11)
+    range.setEnd(text, 17)
+    Object.defineProperty(range, 'getBoundingClientRect', { value: () => ({ left: 20, bottom: 40 }) })
+    const selection = window.getSelection()!
+    selection.removeAllRanges()
+    selection.addRange(range)
+    fireEvent(document, new Event('selectionchange'))
+
+    fireEvent.click(view.getByRole('button', { name: '添加批示' }))
+    fireEvent.click(view.getByRole('button', { name: '保存批示' }))
+    expect(saved).toMatchObject({ quote: 'repeat', prefix: 'A          ', suffix: ' x repeat' })
+    if (saved === undefined) throw new Error('expected saved repeated-quote annotation')
+    view.unmount()
+    render(<AssistantMarkdown {...props} annotations={[{
+      id: TextAnnotationId('annotation-1'), kind: 'text', anchor: saved, note: '',
+    }]} />)
+    const mark = set.mock.lastCall?.[1] as FakeHighlight
+    expect(mark.ranges).toHaveLength(1)
+    expect(mark.ranges[0]?.startOffset).toBe(11)
+  })
+
+  it('annotates ordinary fenced-code text through the composed Markdown path', () => {
+    class FakeHighlight {
+      readonly ranges: readonly Range[]
+      constructor(...ranges: Range[]) { this.ranges = ranges }
+    }
+    const set = vi.fn()
+    vi.stubGlobal('CSS', { highlights: { set, delete: vi.fn() } })
+    vi.stubGlobal('Highlight', FakeHighlight)
+    let saved: TextAnchor | undefined
+    const props = {
+      blocks: [{
+        kind: 'text' as const,
+        text: '```ts\nconst ready = true\nreturn ready\n```\n\n```\nplain fallback\n```',
+      }],
+      streaming: false,
+      t: makeTranslate(zh, commonZh),
+      sourceId: 'message-1',
+      annotationActions: {
+        addTextAnnotation: (anchor: TextAnchor) => {
+          saved = anchor
+          return TextAnnotationId('annotation-1')
+        },
+      },
+    }
+    const view = render(<AssistantMarkdown {...props} annotations={[]} />)
+    const start = textPosition(view.container.querySelector('.md-code-block')!, 'ready')
+    const range = document.createRange()
+    range.setStart(start.node, start.offset)
+    range.setEnd(start.node, start.offset + 'ready'.length)
+    Object.defineProperty(range, 'getBoundingClientRect', { value: () => ({ left: 20, bottom: 40 }) })
+    const selection = window.getSelection()!
+    selection.removeAllRanges()
+    selection.addRange(range)
+    fireEvent(document, new Event('selectionchange'))
+
+    fireEvent.click(view.getByRole('button', { name: '添加批示' }))
+    fireEvent.click(view.getByRole('button', { name: '保存批示' }))
+    expect(saved?.quote).toBe('ready')
+    if (saved === undefined) throw new Error('expected saved fenced-code annotation')
+    view.unmount()
+    render(<AssistantMarkdown {...props} annotations={[{
+      id: TextAnnotationId('annotation-1'), kind: 'text', anchor: saved, note: '',
+    }]} />)
+    const mark = set.mock.lastCall?.[1] as FakeHighlight
+    expect(mark.ranges.map(item => item.toString())).toEqual(['ready'])
+  })
+
+  it('annotates raw HTML that the Markdown renderer exposes as literal text', () => {
+    class FakeHighlight {
+      readonly ranges: readonly Range[]
+      constructor(...ranges: Range[]) { this.ranges = ranges }
+    }
+    const set = vi.fn()
+    vi.stubGlobal('CSS', { highlights: { set, delete: vi.fn() } })
+    vi.stubGlobal('Highlight', FakeHighlight)
+    let saved: TextAnchor | undefined
+    const props = {
+      blocks: [{ kind: 'text' as const, text: 'before <tag>raw</tag> after' }],
+      streaming: false,
+      t: makeTranslate(zh, commonZh),
+      sourceId: 'message-1',
+      annotationActions: {
+        addTextAnnotation: (anchor: TextAnchor) => {
+          saved = anchor
+          return TextAnnotationId('annotation-1')
+        },
+      },
+    }
+    const view = render(<AssistantMarkdown {...props} annotations={[]} />)
+    const start = textPosition(view.container.querySelector('p')!, '<tag>')
+    const range = document.createRange()
+    range.setStart(start.node, start.offset)
+    range.setEnd(start.node, start.offset + '<tag>'.length)
+    Object.defineProperty(range, 'getBoundingClientRect', { value: () => ({ left: 20, bottom: 40 }) })
+    const selection = window.getSelection()!
+    selection.removeAllRanges()
+    selection.addRange(range)
+    fireEvent(document, new Event('selectionchange'))
+
+    fireEvent.click(view.getByRole('button', { name: '添加批示' }))
+    fireEvent.click(view.getByRole('button', { name: '保存批示' }))
+    expect(saved?.quote).toBe('<tag>')
+    if (saved === undefined) throw new Error('expected saved raw-HTML annotation')
+    view.unmount()
+    render(<AssistantMarkdown {...props} annotations={[{
+      id: TextAnnotationId('annotation-1'), kind: 'text', anchor: saved, note: '',
+    }]} />)
+    const mark = set.mock.lastCall?.[1] as FakeHighlight
+    expect(mark.ranges.map(item => item.toString())).toEqual(['<tag>'])
+  })
+
+  it('rejects a selection spanning generated math chrome', () => {
+    const view = render(
+      <AssistantMarkdown
+        blocks={[{ kind: 'text', text: 'before $x$ after' }]}
+        streaming={false}
+        t={makeTranslate(zh, commonZh)}
+        sourceId="message-1"
+        annotations={[]}
+        annotationActions={{ addTextAnnotation: () => TextAnnotationId('annotation-1') }}
+      />,
+    )
+    const paragraph = view.container.querySelector('p')!
+    const before = textPosition(paragraph, 'before ')
+    const after = textPosition(paragraph, ' after')
+    const range = document.createRange()
+    range.setStart(before.node, before.offset)
+    range.setEnd(after.node, after.offset + ' after'.length)
+    Object.defineProperty(range, 'getBoundingClientRect', { value: () => ({ left: 20, bottom: 40 }) })
+    const selection = window.getSelection()!
+    selection.removeAllRanges()
+    selection.addRange(range)
+    fireEvent(document, new Event('selectionchange'))
+
+    expect(view.queryByRole('toolbar')).toBeNull()
   })
 
   it('dismisses a pending toolbar when the selection grows across messages', () => {
@@ -326,7 +593,8 @@ describe('text annotation mechanics', () => {
     const set = vi.fn()
     vi.stubGlobal('CSS', { highlights: { set, delete: vi.fn() } })
     vi.stubGlobal('Highlight', FakeHighlight)
-    const visible = 'Alpha betaimageomegatail'
+    const normalized = 'Alpha betaimageomegatail'
+    const rendererProjection = 'Alpha   betaimageomegatail'
 
     render(
       <AssistantMarkdown
@@ -340,19 +608,19 @@ describe('text annotation mechanics', () => {
         annotations={[
           {
             id: TextAnnotationId('normalized-whitespace'), kind: 'text',
-            anchor: createTextAnchor('message-1:0', visible, 'Alpha beta', 0), note: '',
+            anchor: createTextAnchor('message-1:0', normalized, 'Alpha beta', 0), note: '',
           },
           {
             id: TextAnnotationId('image-fragment'), kind: 'text',
-            anchor: createTextAnchor('message-1:0', visible, 'betaimageomega', 6), note: '',
+            anchor: createTextAnchor('message-1:0', rendererProjection, 'betaimageomega', 8), note: '',
           },
           {
             id: TextAnnotationId('empty-alt-fragment'), kind: 'text',
-            anchor: createTextAnchor('message-1:0', visible, 'omegatail', 15), note: '',
+            anchor: createTextAnchor('message-1:0', rendererProjection, 'omegatail', 17), note: '',
           },
           {
             id: TextAnnotationId('valid-text'), kind: 'text',
-            anchor: createTextAnchor('message-1:0', visible, 'omega', 15), note: '',
+            anchor: createTextAnchor('message-1:0', rendererProjection, 'omega', 17), note: '',
           },
         ]}
         annotationActions={{ addTextAnnotation: () => TextAnnotationId('unused') }}

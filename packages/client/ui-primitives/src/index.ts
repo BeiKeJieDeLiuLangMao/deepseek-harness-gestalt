@@ -46,7 +46,9 @@ export type { CodeBlockProps } from './markdown/CodeBlock.tsx'
 export { JsonBlock } from './markdown/JsonBlock.tsx'
 export { MarkdownText } from './markdown/MarkdownText.tsx'
 export type { MarkdownCodeLabels, MarkdownFileMentions } from './markdown/MarkdownText.tsx'
-export type { MarkdownSelectionMap, MarkdownSelectionMapRef } from './markdown/selection-map.tsx'
+export type {
+  MarkdownSelection, MarkdownSelectionMap, MarkdownSelectionMapRef, MarkdownTextAnchor,
+} from './markdown/selection-map.tsx'
 export { MessageText } from './markdown/MessageText.tsx'
 export { extractMarkdownPlainText } from './markdown/plain-text.ts'
 export type { MarkdownPlainTextMode, MarkdownPlainTextOptions } from './markdown/plain-text.ts'
