@@ -35,6 +35,7 @@ const TEST_LABELS = {
   quote: (value: string) => `Quoted text: \u201c${value}\u201d`,
   note: (value: string) => `Note: ${value}`,
   image: (name: string, x: number, y: number) => `Image “${name}” at ${x.toFixed(1)}%, ${y.toFixed(1)}%`,
+  overflow: 'Request exceeds context capacity',
 }
 
 /** Machine-backed wiring over a sink spy. */
