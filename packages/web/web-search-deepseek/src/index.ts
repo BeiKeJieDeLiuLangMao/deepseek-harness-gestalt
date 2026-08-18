@@ -132,7 +132,8 @@ export const WEB_SEARCH_ANTHROPIC_SETTINGS_NAMESPACE = settingsNamespace('web-se
  * search with. Environment fallbacks stay here rather than in the provider:
  * every value it reads is already fully defaulted.
  * @param ctx - plugin context supplying the credential and environment planes.
- * @param config - the currently authoritative section.
+ * @param deepseek - the official DeepSeek card, including the `backend` selector.
+ * @param anthropic - the Anthropic-protocol card.
  * @returns options for one search.
  */
 function resolveOptions(
