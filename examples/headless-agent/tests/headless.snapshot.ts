@@ -13,7 +13,7 @@ import {
   type HarvestedLog,
   type NormalizeContext,
 } from '@deepseek-ai/dsh-acp-snapshot'
-import { LOADER_SMOKE_TEST_TIMEOUT_MS, runLoaderSmoke } from '@deepseek-ai/dsh-loader-smoke'
+import { LOADER_SMOKE_TEST_TIMEOUT_MS, runLoaderSmoke, runLoaderSmokeSequence } from '@deepseek-ai/dsh-loader-smoke'
 import {
   decompressZstdFrame,
   scanZstdFrames,
@@ -43,6 +43,30 @@ const credentialsConfigPath = fileURLToPath(new URL('../credentials.cordis.snaps
 // never dialed either way, because a supplied-but-unusable key fails credential
 // resolution exactly where an absent one does.
 const invalidCredentialScenarioDir = join(snapshotsDir, 'invalid-credential')
+const deferredToolSearchScenarioDir = join(snapshotsDir, 'deferred-tool-search')
+const deferredToolSearchSessionFixture = join(deferredToolSearchScenarioDir, 'session.jsonl')
+const deferredToolSearchResumeFixture = join(deferredToolSearchScenarioDir, 'resume.jsonl')
+const deferredToolSearchStreamExpected = join(deferredToolSearchScenarioDir, 'stream-json.expected.jsonl')
+const deferredToolSearchConfigPath = fileURLToPath(new URL('../deferred-tool-search.cordis.snapshot.yml', import.meta.url))
+const deferredToolSearchDisabledConfigPath = fileURLToPath(
+  new URL('./fixtures/deferred-tool-search-disabled.cordis.yml', import.meta.url),
+)
+const deferredToolSearchRunnerPath = fileURLToPath(new URL('./fixtures/deferred-tool-search-runner.ts', import.meta.url))
+const mcpServerEverythingEntry = fileURLToPath(new URL(
+  './dist/index.js',
+  import.meta.resolve('@modelcontextprotocol/server-everything/package.json'),
+))
+const llmReplayEntry = process.env.DSH_EXAMPLE_MODE === 'lib'
+  ? fileURLToPath(new URL(import.meta.resolve('@deepseek-ai/dsh-llm-replay')))
+  : fileURLToPath(new URL('../../../packages/test-support/llm-replay/src/index.ts', import.meta.url))
+const llmReplayProxy = [
+  'const entry = process.env.DSH_LLM_REPLAY_ENTRY',
+  'if (!entry) throw new Error(\'deferred snapshot requires DSH_LLM_REPLAY_ENTRY\')',
+  'const replay = await import(entry)',
+  'export const inject = replay.inject',
+  'export const apply = replay.apply',
+  '',
+].join('\n')
 const ralphScenarioDir = join(snapshotsDir, 'ralph-loop')
 const ralphConfigPath = fileURLToPath(new URL('../ralph.cordis.snapshot.yml', import.meta.url))
 const settlementScenarioDir = join(snapshotsDir, 'subagent-settlement')
@@ -214,6 +238,17 @@ async function prepareCliMockFixture(cwd: string): Promise<void> {
   await mkdir(fixtureDir, { recursive: true })
   await Promise.all([
     copyFile(cliMockLlmPluginPath, join(fixtureDir, 'cli-mock-llm.ts')),
+    writeFile(join(fixtureDir, 'package.json'), '{"type":"module"}\n'),
+  ])
+}
+
+/** Install the restart driver into the real temporary headless profile. */
+async function prepareDeferredToolSearchFixture(cwd: string): Promise<void> {
+  const fixtureDir = join(cwd, '.dsh', 'profiles', 'headless', 'snapshot-fixtures')
+  await mkdir(fixtureDir, { recursive: true })
+  await Promise.all([
+    copyFile(deferredToolSearchRunnerPath, join(fixtureDir, 'deferred-tool-search-runner.ts')),
+    writeFile(join(fixtureDir, 'llm-replay-proxy.mjs'), llmReplayProxy),
     writeFile(join(fixtureDir, 'package.json'), '{"type":"module"}\n'),
   ])
 }
@@ -513,6 +548,118 @@ describe('headless stream-json snapshots', () => {
         },
       ]
     `)
+  }, LOADER_SMOKE_TEST_TIMEOUT_MS)
+
+  it('discovers and reloads a deferred MCP tool through the shipped headless composition', async () => {
+    const prompt = await scenarioPrompt(deferredToolSearchScenarioDir, 'deferred-tool-search')
+    let runCwd = ''
+    const results = await runLoaderSmokeSequence({
+      label: 'deferred tool search headless stream-json snapshot',
+      tempDirPrefix: 'headless-snapshot-deferred-tool-search-',
+      binScript: dshBinScript,
+      configPath: deferredToolSearchConfigPath,
+      tsconfigPath,
+      env: {
+        DSH_SNAPSHOT: 'replay',
+        DSH_LLM_REPLAY_ENTRY: llmReplayEntry,
+        DSH_MCP_SERVER_EVERYTHING_ENTRY: mcpServerEverythingEntry,
+        DSH_TELEMETRY_DISABLED: '1',
+        NODE_OPTIONS: [process.env.NODE_OPTIONS, '--disable-warning=ExperimentalWarning'].filter(Boolean).join(' '),
+      },
+      invocations: [
+        {
+          binArgs: ['--profile', 'headless', '--patch', deferredToolSearchConfigPath, prompt],
+          env: { DSH_SNAPSHOT_FILE: deferredToolSearchSessionFixture },
+        },
+        {
+          binArgs: [
+            '--profile', 'headless', '--patch', deferredToolSearchConfigPath,
+            'Confirm that the echo schema was reconstructed from the persisted discovery result.',
+          ],
+          env: { DSH_SNAPSHOT_FILE: deferredToolSearchResumeFixture },
+        },
+      ],
+      prepare: async (cwd) => {
+        runCwd = cwd
+        await prepareDeferredToolSearchFixture(cwd)
+      },
+      inspect: async (cwd) => {
+        const logs = await persistedLogs(cwd, join(cwd, '.dsh', 'sessions'))
+        expect(logs).toHaveLength(1)
+        const records = parseJsonl(logs[0]?.content ?? '')
+        const calls = records
+          .filter(record => record.type === 'tool/call')
+          .map(record => (record.data as JsonObject | undefined)?.name)
+        expect(calls).toEqual(['tool_search', 'mcp__everything__echo'])
+
+        const resultBlocks = records
+          .filter(record => record.type === 'tool/result')
+          .flatMap((record) => {
+            const data = record.data as JsonObject | undefined
+            const message = data?.message as JsonObject | undefined
+            return Array.isArray(message?.content) ? message.content as JsonObject[] : []
+          })
+        const discovery = resultBlocks.find(block => Array.isArray(block.loadedTools))
+        expect((discovery?.loadedTools as JsonObject[] | undefined)?.map(schema => schema.name))
+          .toEqual(['mcp__everything__echo'])
+        expect(JSON.stringify(resultBlocks)).toContain('Echo: deferred-loaded')
+
+        const headers = records
+          .filter(record => record.type === 'request/header')
+          .map((record) => {
+            const data = record.data as JsonObject
+            const header = data.header as JsonObject
+            const tools = Array.isArray(header.tools) ? header.tools as JsonObject[] : []
+            return { reason: data.reason, tools: tools.map(tool => tool.name) }
+          })
+        expect(headers.map(header => header.reason)).toEqual(['initial', 'change', 'resume'])
+        expect(headers[0]?.tools).toContain('tool_search')
+        expect(headers[0]?.tools).not.toContain('mcp__everything__echo')
+        expect(headers[1]?.tools).toContain('mcp__everything__echo')
+        expect(headers[2]?.tools).toContain('mcp__everything__echo')
+      },
+    })
+
+    expect(results.map(result => result.stderr)).toEqual([
+      'Starting default (STDIO) server...\n',
+      'Starting default (STDIO) server...\n',
+    ])
+    const normalized = results.map(result => normalizeHeadlessStream(result.stdout, runCwd)).join('')
+    if (refreshing) await writeFile(deferredToolSearchStreamExpected, normalized)
+    expect(normalized).toBe(await readFile(deferredToolSearchStreamExpected, 'utf8'))
+    expect(JSON.parse(results[1]?.stdout.trim().split('\n').at(-1) ?? '{}')).toMatchObject({
+      type: 'result',
+      output: 'DEFERRED_TOOL_SEARCH_RESUMED',
+    })
+  }, LOADER_SMOKE_TEST_TIMEOUT_MS)
+
+  it('fails the shipped-profile scenario when the bundle no longer enables toolSearch', async () => {
+    const result = await runLoaderSmoke({
+      label: 'deferred tool search shipped-wiring negative control',
+      tempDirPrefix: 'headless-snapshot-deferred-tool-search-disabled-',
+      binScript: dshBinScript,
+      configPath: deferredToolSearchConfigPath,
+      binArgs: [
+        '--profile', 'headless',
+        '--patch', deferredToolSearchConfigPath,
+        '--patch', deferredToolSearchDisabledConfigPath,
+        'This launch must fail before the deferred scenario can run.',
+      ],
+      tsconfigPath,
+      expectedExitCode: 1,
+      env: {
+        DSH_SNAPSHOT: 'replay',
+        DSH_SNAPSHOT_FILE: deferredToolSearchSessionFixture,
+        DSH_LLM_REPLAY_ENTRY: llmReplayEntry,
+        DSH_MCP_SERVER_EVERYTHING_ENTRY: mcpServerEverythingEntry,
+        DSH_TELEMETRY_DISABLED: '1',
+        NODE_OPTIONS: [process.env.NODE_OPTIONS, '--disable-warning=ExperimentalWarning'].filter(Boolean).join(' '),
+      },
+      prepare: prepareDeferredToolSearchFixture,
+    })
+
+    expect(result.stdout).toBe('')
+    expect(result.stderr).toContain('deferLoading requires dsh-tools toolSearch configuration')
   }, LOADER_SMOKE_TEST_TIMEOUT_MS)
 
   it('keeps provider comments alive and sends DeepSeek defaults through the one-shot app', async () => {

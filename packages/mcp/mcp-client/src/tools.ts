@@ -31,6 +31,8 @@ export interface ToolBridgeOptions {
   registrationFailure: 'contain' | 'throw'
   serverName: string
   toolCallTimeoutMs: number
+  /** Whether registered schemas are initially deferred behind `tool_search`. */
+  deferLoading: boolean
 }
 
 /** State for one sync generation: the current set of disposers keyed by public name. */
@@ -257,6 +259,7 @@ function createDefinition(
     name: publicName,
     description,
     parameters,
+    deferLoading: opts.deferLoading,
     output: createOutput(rawName, structuredSchema),
     execute: createExecutor(client, ctx, rawName, taskRequired, opts, projections),
     finalizeContent(exec: Readonly<ToolExecution>, result: Readonly<ToolExecutionResult>) {

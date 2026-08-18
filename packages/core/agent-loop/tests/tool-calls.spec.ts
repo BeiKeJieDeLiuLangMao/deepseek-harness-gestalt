@@ -16,12 +16,12 @@ import { MockAdapter, textResponse } from './mock-adapter.ts'
 import { CodeRuntime } from '@deepseek-ai/dsh-code-runtime'
 import type { CodeRunRequest, CodeRunResult } from '@deepseek-ai/dsh-code-runtime'
 
-async function harness(adapter: MockAdapter, maxParallelToolCalls?: number) {
+async function harness(adapter: MockAdapter, maxParallelToolCalls?: number, toolSearch = false) {
   const ctx = new Context()
   await ctx.plugin(LlmRuntime)
   await ctx.plugin(SessionStore)
   await ctx.plugin(SystemPrompt, { persona: '' })
-  await ctx.plugin(ToolRuntime)
+  await ctx.plugin(ToolRuntime, toolSearch ? { toolSearch: { maxResultBytes: 65_536 } } : {})
   await ctx.plugin(AgentRegistry)
   await ctx.plugin(AgentLoop, {
     agents: [],
@@ -258,6 +258,37 @@ describe('tool-call scheduler: model-order results despite out-of-order settleme
     const messages = agent.session.deriveMessages()
     const toolResults = messages.flatMap(m => m.content.filter(b => b.type === 'tool-result'))
     expect(toolResults.map(b => b.toolCallId)).toEqual([CallId('c1'), CallId('c2')])
+  })
+})
+
+describe('tool-search result persistence', () => {
+  it('records discovered schemas on the durable tool-result block', async () => {
+    const adapter = new MockAdapter([
+      multiCall([{ id: 'search-1', name: 'tool_search', args: { query: 'weather' } }]),
+      textResponse('done'),
+    ])
+    const ctx = await harness(adapter, undefined, true)
+    ctx.tools.register({
+      name: 'mcp__weather__forecast',
+      description: 'Forecast weather',
+      parameters: { type: 'object', properties: {} },
+      deferLoading: true,
+      output: {
+        schema: { type: 'string' },
+        render: (_args, value) => [{ type: 'text', text: value as string }],
+      },
+      execute: () => Promise.resolve('sunny'),
+    })
+    const agent = ctx.agentLoop.create(SessionId('tool-search-result'), { provider: 'mock', model: 'mock' })
+
+    agent.followup(createUserMessage({ content: [{ type: 'text', text: 'search' }], source: { kind: 'user' } }))
+    await waitForIdle(ctx, agent)
+
+    const event = events(agent).find(candidate => candidate.type === 'tool/result')
+    expect(event?.type === 'tool/result' ? event.data.message.content[0] : undefined).toMatchObject({
+      type: 'tool-result',
+      loadedTools: [{ name: 'mcp__weather__forecast' }],
+    })
   })
 })
 

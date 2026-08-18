@@ -7,7 +7,8 @@
  */
 
 import { CallId, createUserMessage, HarnessError } from '@deepseek-ai/dsh-llm'
-import type { ContentBlock } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock, ToolSchema } from '@deepseek-ai/dsh-llm'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { CodeBindingFunction, CodeRunResult, CodeRuntime } from '@deepseek-ai/dsh-code-runtime'
 import { snapshotJsonValue } from '@deepseek-ai/dsh-session'
 import type { JsonValue } from '@deepseek-ai/dsh-session'
@@ -280,6 +281,10 @@ export interface RunCodeBridgeOptions {
   maxParallel: number
   /** Runs the contained `tools/code-dispatch-log` waterfall over one settled sub-dispatch (the registry's private invoker). */
   shapeDispatchLog: (dispatch: CodeDispatchLog) => Promise<ContentBlock[]>
+  /** Resolves the current non-deferred and durably discovered schemas one program may bind. */
+  bindingSchemas: (agent: Agent | undefined) => readonly ToolSchema[]
+  /** Carries schemas discovered by nested calls onto the outer durable result. */
+  recordLoadedTools: (exec: ToolRunContext, schemas: readonly ToolSchema[]) => void
 }
 
 /**
@@ -294,7 +299,7 @@ export interface RunCodeBridgeOptions {
  * @returns the registry-ready definition.
  */
 export function createRunCodeTool(registry: ToolRuntime, options: RunCodeBridgeOptions): ToolDefinition {
-  const { requireRuntime, peekRuntime, maxParallel, shapeDispatchLog } = options
+  const { requireRuntime, peekRuntime, maxParallel, shapeDispatchLog, bindingSchemas, recordLoadedTools } = options
   const definition = defineTool({
     name: RUN_CODE_NAME,
     // The description and `code` parameter description are placeholders here:
@@ -570,6 +575,9 @@ export function createRunCodeTool(registry: ToolRuntime, options: RunCodeBridgeO
               for (const context of result.additionalContexts ?? []) {
                 exec.deferContext(context)
               }
+              if (!result.isError && result.loadedTools !== undefined) {
+                recordLoadedTools(exec, result.loadedTools)
+              }
               // The composite forwards `additionalContexts` above and
               // `concludesTurn` here from the nested result. Only a successful
               // nested result can carry the terminal marker
@@ -607,12 +615,10 @@ export function createRunCodeTool(registry: ToolRuntime, options: RunCodeBridgeO
       // silently dropping the binding), and the runtime host resolves
       // binding names as own properties only.
       const functions: Record<string, CodeBindingFunction> = Object.create(null) as Record<string, CodeBindingFunction>
-      // Enumerate the CALLING AGENT's visible set (scoped tools join,
-      // restricted globals vanish) — the same view the SDK section declared,
-      // so a program can bind exactly what its prompt promised; sub-dispatch
-      // re-resolves per call through the same view (exec.agent threads down).
-      for (const schema of registry.schemas(exec.agent)) {
-        if (schema.name === RUN_CODE_NAME) continue
+      // Reconstruct the CALLING AGENT's durable discoveries through the same
+      // live eligibility view as the SDK section. Sub-dispatch re-resolves each
+      // call through that view as well (exec.agent threads down).
+      for (const schema of bindingSchemas(exec.agent)) {
         Object.defineProperty(functions, schema.name, { enumerable: true, value: binding(schema.name) })
       }
 
