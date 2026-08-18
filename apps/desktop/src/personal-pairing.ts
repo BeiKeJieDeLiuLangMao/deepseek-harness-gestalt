@@ -6,7 +6,9 @@ import {
   parsePairingChallengeId,
   parsePairingRendezvousId,
   parsePendingPairingId,
+  parsePersonalPairingId,
   type PendingPairingId,
+  type PersonalPairingId,
 } from '@deepseek-ai/dsh-remote-access'
 import {
   type DesktopRelayStopReason,
@@ -32,6 +34,8 @@ export interface DesktopPairingActions {
   confirm(pendingPairingId: PendingPairingId): Promise<DesktopPairingSnapshot>
   /** Reject one pending handshake. */
   reject(pendingPairingId: PendingPairingId): Promise<DesktopPairingSnapshot>
+  /** Revoke one confirmed pairing. */
+  revoke(pairingId: PersonalPairingId): Promise<DesktopPairingSnapshot>
   /** Subscribe to Host-owned projection changes. */
   subscribe(listener: (snapshot: DesktopPairingSnapshot) => void): () => void
   /** Load Remote Access state after the Account installation has started. */
@@ -201,6 +205,18 @@ export class DesktopPairingController implements DesktopPairingActions {
     })
   }
 
+  async revoke(pairingId: PersonalPairingId): Promise<DesktopPairingSnapshot> {
+    return this.exclusive(async () => {
+      this.assertActive()
+      await this.options.transport.revokePersonalPairing({
+        authentication: await this.options.account.authorizeCurrentInstallation(),
+        pairingId,
+      })
+      await this.refresh()
+      return this.snapshot
+    })
+  }
+
   async start(): Promise<void> {
     await this.exclusive(async () => {
       await this.lifecycleBarrier
@@ -315,6 +331,8 @@ export class DesktopPairingController implements DesktopPairingActions {
       deviceName: pairing.device.name,
       platform: pairing.device.platform,
       pairedAt: pairing.pairedAt,
+      lastAccessAt: pairing.lastAccessAt,
+      online: pairing.online,
     }))
   }
 
@@ -413,6 +431,7 @@ export class UnavailableDesktopPairingController implements DesktopPairingAction
   cancelChallenge(): Promise<DesktopPairingSnapshot> { return this.rejectUnavailable() }
   confirm(_pendingPairingId: PendingPairingId): Promise<DesktopPairingSnapshot> { return this.rejectUnavailable() }
   reject(_pendingPairingId: PendingPairingId): Promise<DesktopPairingSnapshot> { return this.rejectUnavailable() }
+  revoke(_pairingId: PersonalPairingId): Promise<DesktopPairingSnapshot> { return this.rejectUnavailable() }
   subscribe(_listener: (snapshot: DesktopPairingSnapshot) => void): () => void { return () => {} }
   start(): Promise<void> { return Promise.resolve() }
   deactivate(reason: DesktopRelayStopReason = 'quit'): Promise<void> { return this.relay.stop(reason) }
@@ -456,4 +475,12 @@ export function rejectPairingFromIpc(
   value: unknown,
 ): Promise<DesktopPairingSnapshot> {
   return actions.reject(parseDesktopPendingPairingId(value))
+}
+
+/** Validate an IPC id before invoking the Desktop revocation mutation. */
+export function revokePairingFromIpc(
+  actions: Pick<DesktopPairingActions, 'revoke'>,
+  value: unknown,
+): Promise<DesktopPairingSnapshot> {
+  return actions.revoke(parsePersonalPairingId(value))
 }

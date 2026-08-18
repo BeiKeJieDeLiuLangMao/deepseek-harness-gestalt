@@ -10,6 +10,7 @@ import {
   parsePairingCompletionId,
   parsePairingRendezvousId,
   parsePendingPairingId,
+  parsePersonalPairingId,
   type PairingAccountAuthentication,
   type PairingCompletionView,
 } from '@deepseek-ai/dsh-remote-access'
@@ -73,6 +74,12 @@ async function dispatch(
       return { completed: true }
     case 'list-pending': return (await ctx.remoteAccess.listPendingPairings(authentication)).map(completionWire)
     case 'list-pairings': return ctx.remoteAccess.listPersonalPairings(authentication)
+    case 'revoke-pairing':
+      await ctx.remoteAccess.revokePersonalPairing({
+        desktop: authentication,
+        pairingId: parsePersonalPairingId(body.pairingId),
+      })
+      return { completed: true }
     case 'get-mobile-pairing-status':
       return mobilePairingStatusWire(await ctx.remoteAccess.getMobilePairingStatus({
         mobile: authentication,

@@ -30,6 +30,7 @@ contextBridge.exposeInMainWorld('dshDesktop', {
   pairingCancelChallenge: () => ipcRenderer.invoke('pairing:cancelChallenge'),
   pairingConfirm: (pendingPairingId) => ipcRenderer.invoke('pairing:confirm', pendingPairingId),
   pairingReject: (pendingPairingId) => ipcRenderer.invoke('pairing:reject', pendingPairingId),
+  pairingRevoke: (pairingId) => ipcRenderer.invoke('pairing:revoke', pairingId),
   onPairingSnapshot: (listener) => {
     const wrapped = (_event, snapshot) => { listener(snapshot) }
     ipcRenderer.on('pairing:snapshot-changed', wrapped)

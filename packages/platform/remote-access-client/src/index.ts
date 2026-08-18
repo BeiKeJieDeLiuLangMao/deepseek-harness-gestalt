@@ -16,6 +16,7 @@ import type {
   PairingDeviceDescription,
   PairingRendezvousId,
   PendingPairingId,
+  PersonalPairingId,
   PersonalPairingView,
   RelayCredentialGrant,
   RemoteAccessErrorCode,
@@ -58,6 +59,11 @@ export interface RemoteAccessTransport {
   listPendingPairings(authentication: PairingAccountAuthentication): Promise<readonly PairingCompletionView[]>
   /** @param authentication - current Desktop authorization. @returns Desktop-owned active pairings. */
   listPersonalPairings(authentication: PairingAccountAuthentication): Promise<readonly PersonalPairingView[]>
+  /** @param input - current Desktop authorization and pairing id. */
+  revokePersonalPairing(input: {
+    authentication: PairingAccountAuthentication
+    pairingId: PersonalPairingId
+  }): Promise<void>
   /** @param input - current Desktop authorization and pending id. @returns activated pairing. */
   confirmPairing(input: {
     authentication: PairingAccountAuthentication
@@ -139,6 +145,13 @@ export class RemoteAccessHttpTransport implements RemoteAccessTransport {
 
   async listPersonalPairings(authentication: PairingAccountAuthentication): Promise<readonly PersonalPairingView[]> {
     return parseArray(await this.call(authentication, { operation: 'list-pairings' }), parsePairing)
+  }
+
+  async revokePersonalPairing(input: {
+    authentication: PairingAccountAuthentication
+    pairingId: PersonalPairingId
+  }): Promise<void> {
+    await this.call(input.authentication, { operation: 'revoke-pairing', pairingId: input.pairingId })
   }
 
   async confirmPairing(input: {
@@ -290,6 +303,8 @@ function parsePairing(value: unknown): PersonalPairingView {
     },
     device: parseDevice(record.device),
     pairedAt: requiredPositiveInteger(record.pairedAt, 'Personal Pairing pairedAt'),
+    lastAccessAt: requiredPositiveInteger(record.lastAccessAt, 'Personal Pairing lastAccessAt'),
+    online: requiredBoolean(record.online, 'Personal Pairing online'),
   }
 }
 
@@ -350,6 +365,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function requiredString(value: unknown, name: string): string {
   if (typeof value !== 'string' || value === '') throw new TypeError(`${name} must be non-empty`)
+  return value
+}
+
+function requiredBoolean(value: unknown, name: string): boolean {
+  if (typeof value !== 'boolean') throw new TypeError(`${name} must be a boolean`)
   return value
 }
 

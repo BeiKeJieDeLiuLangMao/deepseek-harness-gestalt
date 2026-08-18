@@ -434,6 +434,7 @@ function transportFixture() {
     listPersonalPairings: vi.fn(),
     confirmPairing: vi.fn(),
     rejectPairing: vi.fn(),
+    revokePersonalPairing: vi.fn(),
     completeChallenge: vi.fn<RemoteAccessTransport['completeChallenge']>().mockResolvedValue({
       pendingPairingId: parsePendingPairingId('pending-one'),
       authenticationWords: ['amber', 'binary', 'cedar', 'delta', 'ember', 'frost'],
