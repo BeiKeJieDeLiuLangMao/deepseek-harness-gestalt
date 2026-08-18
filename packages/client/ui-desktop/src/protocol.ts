@@ -4,6 +4,12 @@
  * @module @deepseek-ai/dsh-client-ui-desktop/protocol
  */
 
+import type {
+  PairingChallengeId,
+  PendingPairingId,
+  PersonalPairingId,
+} from '@deepseek-ai/dsh-remote-access'
+
 /** IPC / preload channel for the current updater snapshot. */
 export const UPDATER_GET_STATUS = 'updater:getStatus'
 /** IPC / preload channel: start a check. */
@@ -88,7 +94,7 @@ export interface DesktopAccountSnapshot {
 
 /** High-entropy invitation shown as both QR and a complete one-time link. */
 export interface DesktopPairingChallenge {
-  readonly id: string
+  readonly id: PairingChallengeId
   readonly expiresAt: number
   readonly oneTimeLink: string
   readonly qrPayload: string
@@ -96,14 +102,14 @@ export interface DesktopPairingChallenge {
 
 /** Same-account handshake awaiting explicit Desktop confirmation. */
 export interface DesktopPendingPairing {
-  readonly id: string
+  readonly id: PendingPairingId
   readonly deviceName: string
   readonly authenticationWords: readonly [string, string, string, string, string, string]
 }
 
 /** Confirmed Companion-only device listed in Mobile Pairing Settings. */
 export interface DesktopPersonalPairing {
-  readonly id: string
+  readonly id: PersonalPairingId
   readonly deviceName: string
   readonly platform: 'ios' | 'android'
   readonly pairedAt: number
@@ -162,9 +168,9 @@ export interface DesktopBridge {
   /** Cancel the current challenge and destroy its invitation capability. */
   readonly pairingCancelChallenge: () => Promise<DesktopPairingSnapshot>
   /** Confirm matching authentication words and activate one Device Principal. */
-  readonly pairingConfirm: (pendingPairingId: string) => Promise<DesktopPairingSnapshot>
+  readonly pairingConfirm: (pendingPairingId: PendingPairingId) => Promise<DesktopPairingSnapshot>
   /** Reject a pending handshake and destroy its pending key. */
-  readonly pairingReject: (pendingPairingId: string) => Promise<DesktopPairingSnapshot>
+  readonly pairingReject: (pendingPairingId: PendingPairingId) => Promise<DesktopPairingSnapshot>
   /** Subscribe to Mobile Access and Personal Pairing transitions. */
   readonly onPairingSnapshot: (listener: (snapshot: DesktopPairingSnapshot) => void) => () => void
 }

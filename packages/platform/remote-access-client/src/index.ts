@@ -299,6 +299,7 @@ const REMOTE_ACCESS_ERROR_CODES: ReadonlySet<RemoteAccessErrorCode> = new Set([
   'PAIRING_CHALLENGE_USED',
   'PAIRING_PENDING_INVALID',
   'PAIRING_ID_COLLISION',
+  'PAIRING_RESOURCE_LIMIT',
 ])
 
 function parseRemoteAccessErrorCode(value: string): RemoteAccessErrorCode | undefined {

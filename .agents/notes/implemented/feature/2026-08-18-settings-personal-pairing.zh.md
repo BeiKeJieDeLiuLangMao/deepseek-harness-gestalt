@@ -12,9 +12,9 @@ Platform 账号识别安装，但不会授予 Desktop 权限。个人配对需�
 
 `@deepseek-ai/dsh-remote-access` 是拥有手机访问与个人配对生命周期的远程访问模块。其公开服务要求 Platform 账号鉴别会话拥有的安装 id 与类型，拥有挑战、待确认与已确认状态迁移，串行执行变更，并且仅在 Desktop 确认后授予 `companion-surface` 设备主体。带品牌的 id 区分挑战、rendezvous、完成、待确认配对、个人配对、设备主体与活跃密钥引用。调用方永远不能自行声明安装角色。
 
-Desktop 与 Mobile 的密码行为通过 `PairingHandshakeProvider` 进入。生命周期向它传递全新的 32 字节邀请密钥，仅从返回的握手哈希派生显示词，并要求激活使用唯一密钥引用。终态结果与资源清理相互独立：重试会返回已提交结果，不会重复握手或激活；销毁失败的资源仍由清理记录持有，提供方释放资源时会聚合处理全部保留资源。挑战创建时就调度过期任务，生成 id 碰撞不能覆盖既有记录。
+Desktop 与 Mobile 的密码行为通过 `PairingHandshakeProvider` 进入。生命周期向它传递全新的 32 字节邀请密钥，仅从返回的握手哈希派生显示词，并将每次激活的公开密钥引用与提供方私有分配句柄分开，因此碰撞回滚只能销毁本次新分配。终态结果与资源清理相互独立：重试会返回已提交结果，不会重复握手或激活；销毁失败的资源仍由清理记录持有，提供方释放资源时会聚合处理全部保留资源。每个已鉴权安装都有固定的存活挑战和待确认配对上限。清理完成的重试投影在五分钟后淘汰，清理失败的终态记录则保留到销毁成功。挑战创建时就调度过期任务，生成 id 碰撞不能覆盖既有记录。
 
-`remote-access-http` 消费 `ctx.remoteAccess`；`remote-access-client` 为 Host 拥有的 Desktop 控制器与 Mobile 控制器校验 JSON 和带品牌的 id。组装后的 loader 场景使用明确标记为未评审的 keyless 握手提供方，让提供方、HTTP 消费方和共享传输通过真实环回服务器运行。Desktop 与 Mobile 开发入口可以通过显式环境标志选择各自的真实控制器。生产环境在独立 Snow 评审接纳产品提供方前保持 fail-closed，任何生产路径都不会导入 keyless 实现。
+`remote-access-http` 消费 `ctx.remoteAccess`；`remote-access-client` 为 Host 拥有的 Desktop 控制器与 Mobile 控制器校验 JSON 和带品牌的 id。Mobile 会保留一次准备好的完成尝试直到成功或邀请过期，因此响应丢失时会复用同一个完成 id 和握手字节。Desktop 账号退出与 Mobile 卸载会停用各自的生命周期拥有者：计时器停止、进行中的工作排空，后续操作在重新激活前都会失败。组装后的 loader 场景使用明确标记为未评审的无密钥握手提供方，让提供方、HTTP 消费方和共享传输通过真实环回服务器运行。Desktop 与 Mobile 开发入口可以通过显式环境标志选择各自的真实控制器。生产环境在独立 Snow 评审接纳产品提供方前保持关闭，任何生产路径都不会导入无密钥实现。
 
 既有 Desktop `手机配对` Settings section 拥有 Mobile Access toggle、QR/完整链接 challenge、authentication words、confirm、reject 与 paired-device list。QR generation 使用维护中的 `qrcode` encoder。Mobile 接受同一个完整链接或 native QR payload，并等待 Desktop confirmation。不会注册新的 Session header、sidebar、approval、composer 或 offline presentation。
 

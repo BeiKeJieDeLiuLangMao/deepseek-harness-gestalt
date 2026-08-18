@@ -29,7 +29,10 @@ export function apply(ctx: Context): void {
       }
     },
     async activatePairing() {
-      return { keyReference: parsePersonalPairingKeyReference(`keyless-pairing-key-${String(key)}`) }
+      return {
+        keyReference: parsePersonalPairingKeyReference(`keyless-pairing-key-${String(key)}`),
+        activePairingKey: Uint8Array.of(key),
+      }
     },
     destroyChallenge() { keylessEvidence.challenges += 1 },
     destroyPendingPairing() { keylessEvidence.pending += 1 },

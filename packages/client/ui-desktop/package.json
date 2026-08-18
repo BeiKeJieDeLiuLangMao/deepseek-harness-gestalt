@@ -52,6 +52,7 @@
     "@deepseek-ai/dsh-client-ui-primitives": "workspace:^",
     "@deepseek-ai/dsh-client-ui-slots": "workspace:^",
     "@deepseek-ai/dsh-platform-account": "workspace:^",
+    "@deepseek-ai/dsh-remote-access": "workspace:^",
     "qrcode": "^1.5.4",
     "react": "^18.2.0"
   },

@@ -3,8 +3,11 @@ import { describe, expect, it, vi } from 'vitest'
 import type { AccountProof, PlatformAccountView } from '@deepseek-ai/dsh-platform-account'
 import { parseAccountProofJti, parseInstallationId } from '@deepseek-ai/dsh-platform-account'
 import {
+  MAX_ACTIVE_PAIRING_CHALLENGES_PER_INSTALLATION,
+  MAX_PENDING_PAIRINGS_PER_INSTALLATION,
   PERSONAL_PAIRING_PROTOCOL_MAJOR,
   PAIRING_CHALLENGE_TTL_MS,
+  PAIRING_REPLAY_RETENTION_MS,
   PersonalPairingProvider,
   RemoteAccessError,
   deriveAuthenticationWords,
@@ -286,6 +289,99 @@ describe('PersonalPairingProvider', () => {
     expect(handshake.destroyChallenge).toHaveBeenCalledOnce()
   })
 
+  it('bounds concurrent active state per authenticated Installation', async () => {
+    const handshake = handshakeProvider()
+    const provider = uniquePairingProvider(handshake)
+    const desktop = authentication('desktop-installation')
+    await provider.setMobileAccess({ desktop, enabled: true })
+
+    const challenges = await Promise.all(Array.from(
+      { length: MAX_ACTIVE_PAIRING_CHALLENGES_PER_INSTALLATION },
+      (_, index) => provider.createChallenge({
+        desktop,
+        rendezvousId: parsePairingRendezvousId(`bounded-${String(index)}`),
+      }),
+    ))
+    await expect(provider.createChallenge({
+      desktop,
+      rendezvousId: parsePairingRendezvousId('over-challenge-limit'),
+    })).rejects.toEqual(expect.objectContaining<Partial<RemoteAccessError>>({ code: 'PAIRING_RESOURCE_LIMIT' }))
+    expect(handshake.createChallenge).toHaveBeenCalledTimes(MAX_ACTIVE_PAIRING_CHALLENGES_PER_INSTALLATION)
+
+    await provider.cancelChallenge({ desktop, challengeId: challenges[0]!.challengeId })
+    const replacement = await provider.createChallenge({
+      desktop,
+      rendezvousId: parsePairingRendezvousId('replacement'),
+    })
+    for (const challenge of [...challenges.slice(1), replacement]) {
+      await complete(provider, challenge.oneTimeLink, challenge.challengeId)
+    }
+    const next = await provider.createChallenge({ desktop, rendezvousId: parsePairingRendezvousId('pending-limit') })
+    await expect(complete(provider, next.oneTimeLink, 'over-pending-limit')).rejects.toEqual(
+      expect.objectContaining<Partial<RemoteAccessError>>({ code: 'PAIRING_RESOURCE_LIMIT' }),
+    )
+    expect(handshake.completeChallenge).toHaveBeenCalledTimes(MAX_PENDING_PAIRINGS_PER_INSTALLATION)
+  })
+
+  it('retains idempotent replay for a fixed window and evicts cleaned terminal projections', async () => {
+    const now = { value: NOW }
+    const handshake = handshakeProvider()
+    const provider = uniquePairingProvider(handshake, now)
+    const desktop = authentication('desktop-installation')
+    const mobile = authentication('mobile-installation')
+    await provider.setMobileAccess({ desktop, enabled: true })
+    const challenge = await provider.createChallenge({ desktop, rendezvousId: parsePairingRendezvousId('retention') })
+    const input = {
+      mobile,
+      completionId: parsePairingCompletionId('retained-completion'),
+      oneTimeLink: challenge.oneTimeLink,
+      device: { name: 'Alice phone', platform: 'ios' as const },
+      mobileHandshake: Uint8Array.of(9),
+    }
+
+    const first = await provider.completeChallenge(input)
+    now.value += PAIRING_REPLAY_RETENTION_MS - 1
+    expect(await provider.completeChallenge(input)).toEqual(first)
+    await provider.rejectPairing({ desktop, pendingPairingId: first.pendingPairingId })
+    expect(await provider.getMobilePairingStatus({ mobile, pendingPairingId: first.pendingPairingId }))
+      .toEqual({ status: 'rejected' })
+
+    now.value += 1
+    await expect(provider.completeChallenge(input)).rejects.toEqual(
+      expect.objectContaining<Partial<RemoteAccessError>>({ code: 'PAIRING_CHALLENGE_INVALID' }),
+    )
+    expect(await provider.getMobilePairingStatus({ mobile, pendingPairingId: first.pendingPairingId }))
+      .toEqual({ status: 'rejected' })
+    now.value += PAIRING_REPLAY_RETENTION_MS
+    await expect(provider.getMobilePairingStatus({ mobile, pendingPairingId: first.pendingPairingId })).rejects.toEqual(
+      expect.objectContaining<Partial<RemoteAccessError>>({ code: 'PAIRING_PENDING_INVALID' }),
+    )
+    expect(handshake.completeChallenge).toHaveBeenCalledOnce()
+  })
+
+  it('keeps cleanup-failed replay tombstones past retention until retry succeeds', async () => {
+    const now = { value: NOW }
+    const handshake = handshakeProvider()
+    handshake.destroyChallenge.mockRejectedValueOnce(new Error('cleanup unavailable'))
+    const provider = uniquePairingProvider(handshake, now)
+    const desktop = authentication('desktop-installation')
+    await provider.setMobileAccess({ desktop, enabled: true })
+    const challenge = await provider.createChallenge({ desktop, rendezvousId: parsePairingRendezvousId('cleanup-retention') })
+    const input = {
+      mobile: authentication('mobile-installation'),
+      completionId: parsePairingCompletionId('cleanup-retention'),
+      oneTimeLink: challenge.oneTimeLink,
+      device: { name: 'Alice phone', platform: 'ios' as const },
+      mobileHandshake: Uint8Array.of(9),
+    }
+
+    await expect(provider.completeChallenge(input)).rejects.toThrow('cleanup unavailable')
+    now.value += PAIRING_REPLAY_RETENTION_MS
+    expect(typeof (await provider.completeChallenge(input)).pendingPairingId).toBe('string')
+    expect(handshake.completeChallenge).toHaveBeenCalledOnce()
+    expect(handshake.destroyChallenge).toHaveBeenCalledTimes(2)
+  })
+
   it('retries cleanup tombstones without repeating handshake or activation', async () => {
     const handshake = handshakeProvider()
     handshake.destroyChallenge.mockRejectedValueOnce(new Error('challenge cleanup failed'))
@@ -437,14 +533,49 @@ describe('PersonalPairingProvider', () => {
     expect(handshake.destroyPendingPairing).toHaveBeenCalledTimes(2)
   })
 
+  it('rolls back only the new activation when its public key reference collides', async () => {
+    const handshake = handshakeProvider()
+    const firstActivation = Uint8Array.of(31)
+    const collidingActivation = Uint8Array.of(32)
+    handshake.activatePairing
+      .mockResolvedValueOnce({ keyReference: 'key-shared' as never, activePairingKey: firstActivation })
+      .mockResolvedValueOnce({ keyReference: 'key-shared' as never, activePairingKey: collidingActivation })
+    const provider = uniquePairingProvider(handshake)
+    const desktop = authentication('desktop-installation')
+    await provider.setMobileAccess({ desktop, enabled: true })
+
+    const firstChallenge = await provider.createChallenge({
+      desktop,
+      rendezvousId: parsePairingRendezvousId('first-key-reference'),
+    })
+    const firstPending = await complete(provider, firstChallenge.oneTimeLink, 'first-key-reference')
+    const firstPairing = await provider.confirmPairing({ desktop, pendingPairingId: firstPending.pendingPairingId })
+    const secondChallenge = await provider.createChallenge({
+      desktop,
+      rendezvousId: parsePairingRendezvousId('second-key-reference'),
+    })
+    const secondPending = await complete(provider, secondChallenge.oneTimeLink, 'second-key-reference')
+
+    await expect(provider.confirmPairing({ desktop, pendingPairingId: secondPending.pendingPairingId }))
+      .rejects.toEqual(expect.objectContaining<Partial<RemoteAccessError>>({ code: 'PAIRING_ID_COLLISION' }))
+
+    expect(handshake.destroyPairing).toHaveBeenCalledOnce()
+    expect(handshake.destroyPairing).toHaveBeenCalledWith(collidingActivation)
+    expect(await provider.listPersonalPairings(desktop)).toEqual([firstPairing])
+    expect(firstPairing.devicePrincipal.authority).toBe('companion-surface')
+
+    await provider.dispose()
+    expect(handshake.destroyPairing).toHaveBeenNthCalledWith(2, firstActivation)
+  })
+
   it.each([
     { label: 'pairing', pairingIds: ['pairing-same', 'pairing-same'], principalIds: ['principal-one', 'principal-two'] },
     { label: 'principal', pairingIds: ['pairing-one', 'pairing-two'], principalIds: ['principal-same', 'principal-same'] },
   ])('retains retryable cleanup after a generated $label id collision', async ({ pairingIds, principalIds }) => {
     const handshake = handshakeProvider()
     handshake.activatePairing
-      .mockResolvedValueOnce({ keyReference: 'key-one' as never })
-      .mockResolvedValueOnce({ keyReference: 'key-two' as never })
+      .mockResolvedValueOnce({ keyReference: 'key-one' as never, activePairingKey: Uint8Array.of(1) })
+      .mockResolvedValueOnce({ keyReference: 'key-two' as never, activePairingKey: Uint8Array.of(2) })
     const provider = collisionPairingProvider(handshake, pairingIds, principalIds)
     const desktop = authentication('desktop-installation')
     await provider.setMobileAccess({ desktop, enabled: true })
@@ -475,8 +606,8 @@ describe('PersonalPairingProvider', () => {
   it('reports a generated pairing identity collision after successful cleanup', async () => {
     const handshake = handshakeProvider()
     handshake.activatePairing
-      .mockResolvedValueOnce({ keyReference: 'key-one' as never })
-      .mockResolvedValueOnce({ keyReference: 'key-two' as never })
+      .mockResolvedValueOnce({ keyReference: 'key-one' as never, activePairingKey: Uint8Array.of(1) })
+      .mockResolvedValueOnce({ keyReference: 'key-two' as never, activePairingKey: Uint8Array.of(2) })
     const provider = collisionPairingProvider(
       handshake,
       ['pairing-same', 'pairing-same'],
@@ -830,7 +961,10 @@ function handshakeProvider() {
       desktopHandshake: Uint8Array.of(8),
       pendingPairingKey: Uint8Array.of(7),
     }),
-    activatePairing: vi.fn().mockResolvedValue({ keyReference: 'pairing-key-one' }),
+    activatePairing: vi.fn().mockResolvedValue({
+      keyReference: 'pairing-key-one',
+      activePairingKey: Uint8Array.of(6),
+    }),
     destroyChallenge: vi.fn(),
     destroyPendingPairing: vi.fn(),
     destroyPairing: vi.fn(),

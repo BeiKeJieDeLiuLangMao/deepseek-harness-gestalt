@@ -28,6 +28,8 @@ export interface DesktopPairingActions {
   subscribe(listener: (snapshot: DesktopPairingSnapshot) => void): () => void
   /** Load Remote Access state after the Account installation has started. */
   start(): Promise<void>
+  /** Stop polling and drain work when the current Account signs out. */
+  deactivate(): Promise<void>
   /** Drain lifecycle work during Desktop shutdown. */
   dispose(): Promise<void>
 }
@@ -51,7 +53,8 @@ export class DesktopPairingController implements DesktopPairingActions {
   private readonly schedule: (task: () => void, delayMs: number) => ReturnType<typeof setTimeout>
   private readonly pollIntervalMs: number
   private serial: Promise<void> = Promise.resolve()
-  private stopped = false
+  private active = false
+  private closed = false
   private timer: ReturnType<typeof setTimeout> | undefined
 
   /** @param options - signed-in Account authority, Remote Access transport, and id source. */
@@ -74,6 +77,7 @@ export class DesktopPairingController implements DesktopPairingActions {
 
   async setEnabled(enabled: boolean): Promise<DesktopPairingSnapshot> {
     return this.exclusive(async () => {
+      this.assertActive()
       const state = await this.options.transport.setMobileAccess({
         authentication: await this.options.account.authorizeCurrentInstallation(),
         enabled,
@@ -89,6 +93,7 @@ export class DesktopPairingController implements DesktopPairingActions {
 
   async createChallenge(): Promise<DesktopPairingSnapshot> {
     return this.exclusive(async () => {
+      this.assertActive()
       try {
         const challenge = await this.options.transport.createChallenge({
           authentication: await this.options.account.authorizeCurrentInstallation(),
@@ -116,6 +121,7 @@ export class DesktopPairingController implements DesktopPairingActions {
 
   async cancelChallenge(): Promise<DesktopPairingSnapshot> {
     return this.exclusive(async () => {
+      this.assertActive()
       const challenge = this.snapshot.challenge
       if (challenge === undefined) return this.snapshot
       await this.options.transport.cancelChallenge({
@@ -129,6 +135,7 @@ export class DesktopPairingController implements DesktopPairingActions {
 
   async confirm(pendingPairingId: PendingPairingId): Promise<DesktopPairingSnapshot> {
     return this.exclusive(async () => {
+      this.assertActive()
       await this.options.transport.confirmPairing({
         authentication: await this.options.account.authorizeCurrentInstallation(),
         pendingPairingId,
@@ -140,6 +147,7 @@ export class DesktopPairingController implements DesktopPairingActions {
 
   async reject(pendingPairingId: PendingPairingId): Promise<DesktopPairingSnapshot> {
     return this.exclusive(async () => {
+      this.assertActive()
       await this.options.transport.rejectPairing({
         authentication: await this.options.account.authorizeCurrentInstallation(),
         pendingPairingId,
@@ -150,11 +158,23 @@ export class DesktopPairingController implements DesktopPairingActions {
   }
 
   async start(): Promise<void> {
-    await this.exclusive(async () => { await this.refresh() })
+    await this.exclusive(async () => {
+      if (this.closed) throw new Error('Desktop Personal Pairing is closed')
+      this.active = true
+      await this.refresh()
+    })
+  }
+
+  async deactivate(): Promise<void> {
+    this.active = false
+    if (this.timer !== undefined) clearTimeout(this.timer)
+    this.timer = undefined
+    await this.serial
   }
 
   async dispose(): Promise<void> {
-    this.stopped = true
+    this.closed = true
+    this.active = false
     if (this.timer !== undefined) clearTimeout(this.timer)
     this.timer = undefined
     await this.serial
@@ -218,7 +238,7 @@ export class DesktopPairingController implements DesktopPairingActions {
   }
 
   private publish(snapshot: DesktopPairingSnapshot): void {
-    if (this.stopped) return
+    if (!this.active || this.closed) return
     this.snapshot = snapshot
     this.updatePolling(snapshot.enabled)
     const errors: unknown[] = []
@@ -231,7 +251,7 @@ export class DesktopPairingController implements DesktopPairingActions {
   }
 
   private updatePolling(enabled: boolean): void {
-    if (!enabled || this.stopped) {
+    if (!enabled || !this.active || this.closed) {
       if (this.timer !== undefined) clearTimeout(this.timer)
       this.timer = undefined
       return
@@ -239,6 +259,7 @@ export class DesktopPairingController implements DesktopPairingActions {
     if (this.timer !== undefined) return
     this.timer = this.schedule(() => {
       this.timer = undefined
+      if (!this.active || this.closed) return
       void this.exclusive(async () => { await this.refresh() }).catch((error: unknown) => {
         console.error('[desktop-personal-pairing] Remote Access refresh failed:', error)
       })
@@ -250,6 +271,10 @@ export class DesktopPairingController implements DesktopPairingActions {
     const result = this.serial.then(operation)
     this.serial = result.then(() => undefined, () => undefined)
     return result
+  }
+
+  private assertActive(): void {
+    if (!this.active || this.closed) throw new Error('Desktop Personal Pairing is inactive')
   }
 }
 
@@ -273,6 +298,7 @@ export class UnavailableDesktopPairingController implements DesktopPairingAction
   reject(_pendingPairingId: PendingPairingId): Promise<DesktopPairingSnapshot> { return this.rejectUnavailable() }
   subscribe(_listener: (snapshot: DesktopPairingSnapshot) => void): () => void { return () => {} }
   start(): Promise<void> { return Promise.resolve() }
+  deactivate(): Promise<void> { return Promise.resolve() }
   dispose(): Promise<void> { return Promise.resolve() }
 
   private rejectUnavailable(): Promise<never> {

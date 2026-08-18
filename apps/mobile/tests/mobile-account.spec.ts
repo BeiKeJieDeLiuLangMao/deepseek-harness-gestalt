@@ -76,11 +76,15 @@ describe('MobileAccount', () => {
   it('polls to the current-installation account and signs out only that installation', async () => {
     const { installation, api } = fixture()
     const unavailablePairing = { status: 'unavailable', error: 'independent review pending' } as const
+    const deactivate = vi.fn().mockResolvedValue(undefined)
     const pairing: MobilePairingActions = {
       getSnapshot: () => unavailablePairing,
       subscribe: () => () => {},
       completeLink: vi.fn(),
       scanQr: vi.fn(),
+      retryPairing: vi.fn(),
+      activate: vi.fn().mockResolvedValue(undefined),
+      deactivate,
     }
     render(createElement(MobileAccount, { installation, pairing }))
 
@@ -94,6 +98,7 @@ describe('MobileAccount', () => {
     fireEvent.click(screen.getByRole('button', { name: '退出此安装' }))
     await waitFor(() => { expect(api.signOut).toHaveBeenCalledOnce() })
     await screen.findByRole('button', { name: '使用 GitHub 继续' })
+    expect(deactivate).toHaveBeenCalledOnce()
   })
 })
 

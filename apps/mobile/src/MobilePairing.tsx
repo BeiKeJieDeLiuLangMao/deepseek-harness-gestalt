@@ -1,30 +1,9 @@
-import { useState, useSyncExternalStore } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import type { ReactNode } from 'react'
 import css from './MobilePairing.module.css'
+import type { MobilePairingActions } from './personal-pairing-model.ts'
 
-/** Mobile Personal Pairing presentation state. */
-export type MobilePairingSnapshot =
-  | { status: 'ready' }
-  | { status: 'completing' }
-  | {
-    status: 'pending'
-    deviceName: string
-    authenticationWords: readonly [string, string, string, string, string, string]
-  }
-  | { status: 'paired' }
-  | { status: 'unavailable'; error: string }
-
-/** Mobile adapter for full-link/QR completion and handshake state. */
-export interface MobilePairingActions {
-  /** Read the current pairing state, preserving object identity until a transition. */
-  getSnapshot(): MobilePairingSnapshot
-  /** Subscribe to pairing transitions. */
-  subscribe(listener: () => void): () => void
-  /** Complete the exact high-entropy link produced by Desktop. */
-  completeLink(link: string): void | Promise<void>
-  /** Open the native QR scanner and complete its exact payload. */
-  scanQr(): void | Promise<void>
-}
+export type { MobilePairingActions, MobilePairingSnapshot } from './personal-pairing-model.ts'
 
 /**
  * Same-account Mobile pairing flow shown after Platform Account sign-in.
@@ -37,9 +16,23 @@ export function MobilePairing({ actions }: { actions: MobilePairingActions }): R
     () => actions.getSnapshot(),
   )
   const [link, setLink] = useState('')
+  useEffect(() => {
+    void actions.activate()
+    return () => { void actions.deactivate() }
+  }, [actions])
 
   if (snapshot.status === 'unavailable') {
     return <section className={css.card}><h2>Personal Pairing</h2><p role="alert">{snapshot.error}</p></section>
+  }
+  if (snapshot.status === 'retryable') {
+    return (
+      <section className={css.card} data-mobile-pairing="retryable">
+        <h2>配对尚未完成</h2>
+        <p role="alert">{snapshot.error}</p>
+        <button type="button" className={css.continue} onClick={() => { void actions.retryPairing() }}>重试配对</button>
+        <small>重试会复用同一个一次性邀请和握手，不会创建新的设备权限。</small>
+      </section>
+    )
   }
   if (snapshot.status === 'pending') {
     return (
@@ -57,6 +50,7 @@ export function MobilePairing({ actions }: { actions: MobilePairingActions }): R
   return (
     <section className={css.card} data-mobile-pairing={snapshot.status}>
       <h2>连接 Paired Desktop</h2>
+      {snapshot.status !== 'ready' || snapshot.error === undefined ? null : <p role="alert">{snapshot.error}</p>}
       <p>扫描 Desktop Settings 中的 QR，或粘贴同一个完整的一次性链接。</p>
       <button type="button" className={css.scan} onClick={() => { void actions.scanQr() }}>扫描 QR</button>
       <label>

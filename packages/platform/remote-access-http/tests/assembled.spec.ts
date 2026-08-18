@@ -9,7 +9,8 @@ import {
   parsePairingRendezvousId,
   type PairingAccountAuthentication,
 } from '@deepseek-ai/dsh-remote-access'
-import { RemoteAccessHttpTransport } from '@deepseek-ai/dsh-remote-access-client'
+import { RemoteAccessHttpTransport, type RemoteAccessTransport } from '@deepseek-ai/dsh-remote-access-client'
+import { MobilePairingController } from '../../../../apps/mobile/src/personal-pairing.ts'
 import { apply } from '../src/index.ts'
 
 interface RegisteredRoute {
@@ -31,7 +32,10 @@ describe('Remote Access HTTP assembled flow', () => {
         desktopHandshake: Uint8Array.of(2),
         pendingPairingKey: Uint8Array.of(3),
       })),
-      activatePairing: vi.fn(async () => ({ keyReference: 'key-one' as never })),
+      activatePairing: vi.fn(async () => ({
+        keyReference: 'key-one' as never,
+        activePairingKey: Uint8Array.of(6),
+      })),
       destroyChallenge: vi.fn(),
       destroyPendingPairing: vi.fn(),
       destroyPairing: vi.fn(),
@@ -106,6 +110,106 @@ describe('Remote Access HTTP assembled flow', () => {
       device: { name: 'Alice phone' },
       devicePrincipal: { installationId: 'mobile-one', authority: 'companion-surface' },
     }])
+  })
+
+  it('retries the identical Mobile attempt after a committed HTTP response is lost', async () => {
+    const ctx = new Context()
+    const handshake = {
+      createChallenge: vi.fn(async () => ({ desktopFingerprint: 'desktop-fingerprint', state: Uint8Array.of(1) })),
+      completeChallenge: vi.fn(async () => ({
+        handshakeHash: new Uint8Array(32),
+        desktopHandshake: Uint8Array.of(2),
+        pendingPairingKey: Uint8Array.of(3),
+      })),
+      activatePairing: vi.fn(async () => ({
+        keyReference: 'key-one' as never,
+        activePairingKey: Uint8Array.of(6),
+      })),
+      destroyChallenge: vi.fn(),
+      destroyPendingPairing: vi.fn(),
+      destroyPairing: vi.fn(),
+    }
+    const account = {
+      currentInstallation: vi.fn(async ({ accessToken }: { accessToken: string }) => {
+        const [accountId, kind, id] = accessToken.split(':') as [string, 'desktop' | 'mobile', string]
+        return {
+          account: {
+            id: accountId as never,
+            githubId: 1,
+            githubLogin: accountId,
+            avatarUrl: 'https://avatars.example/account',
+          },
+          installation: { id: parseInstallationId(id), kind },
+        }
+      }),
+    }
+    const remoteAccess = new PersonalPairingProvider(ctx, {
+      account,
+      handshake,
+      randomBytes: size => new Uint8Array(size),
+      randomId: kind => `${kind}-${crypto.randomUUID()}`,
+      pairingLinkOrigin: 'https://platform.example/pair',
+    })
+    const server = await start(remoteAccess)
+    const http = new RemoteAccessHttpTransport({
+      environment: { environment: 'development', origin: server.origin } as never,
+    })
+    const desktop = authentication('account-one:desktop:desktop-one')
+    const mobile = authentication('account-one:mobile:mobile-one')
+    await http.setMobileAccess({ authentication: desktop, enabled: true })
+    const challenge = await http.createChallenge({
+      authentication: desktop,
+      rendezvousId: parsePairingRendezvousId('mobile-retry'),
+    })
+    const requests: unknown[] = []
+    let loseResponse = true
+    const transport: RemoteAccessTransport = {
+      getMobileAccessState: http.getMobileAccessState.bind(http),
+      setMobileAccess: http.setMobileAccess.bind(http),
+      createChallenge: http.createChallenge.bind(http),
+      cancelChallenge: http.cancelChallenge.bind(http),
+      listPendingPairings: http.listPendingPairings.bind(http),
+      listPersonalPairings: http.listPersonalPairings.bind(http),
+      confirmPairing: http.confirmPairing.bind(http),
+      rejectPairing: http.rejectPairing.bind(http),
+      getMobilePairingStatus: http.getMobilePairingStatus.bind(http),
+      completeChallenge: async (request) => {
+        requests.push(request)
+        const result = await http.completeChallenge(request)
+        if (loseResponse) {
+          loseResponse = false
+          throw new Error('committed response was lost')
+        }
+        return result
+      },
+    }
+    const mobileHandshake = {
+      begin: vi.fn(async () => ({
+        completionId: parsePairingCompletionId('mobile-controller-retry'),
+        mobileHandshake: Uint8Array.of(9),
+      })),
+      acceptDesktopHandshake: vi.fn(),
+    }
+    const controller = new MobilePairingController({
+      installation: { authorizeCurrentInstallation: vi.fn(async () => mobile) },
+      transport,
+      handshake: mobileHandshake,
+      scanner: { scan: vi.fn() },
+      device: { name: 'Alice phone', platform: 'ios' },
+      schedule: () => ({ unref: vi.fn() }) as never,
+    })
+
+    await expect(controller.completeLink(challenge.oneTimeLink)).rejects.toThrow('committed response was lost')
+    await controller.retryPairing()
+    expect(requests).toHaveLength(2)
+    expect(requests[1]).toEqual(requests[0])
+    expect(mobileHandshake.begin).toHaveBeenCalledOnce()
+    expect(handshake.completeChallenge).toHaveBeenCalledOnce()
+    const [pending] = await http.listPendingPairings(desktop)
+    if (pending === undefined) throw new Error('expected committed pending pairing')
+    await http.confirmPairing({ authentication: desktop, pendingPairingId: pending.pendingPairingId })
+    expect(await http.listPersonalPairings(desktop)).toHaveLength(1)
+    expect(handshake.activatePairing).toHaveBeenCalledOnce()
   })
 
   it('validates every process-boundary field before dispatch and maps service failures', async () => {

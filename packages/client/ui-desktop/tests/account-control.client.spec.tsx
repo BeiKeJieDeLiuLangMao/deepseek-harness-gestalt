@@ -1,6 +1,11 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import {
+  parsePairingChallengeId,
+  parsePendingPairingId,
+  parsePersonalPairingId,
+} from '@deepseek-ai/dsh-remote-access'
 import type { DesktopAccountSnapshot, DesktopBridge, DesktopPairingSnapshot } from '../src/protocol.ts'
 import { AccountControl } from '../src/client/AccountControl.tsx'
 import { en } from '../src/client/locales.ts'
@@ -76,7 +81,7 @@ describe('AccountControl', () => {
     renderControl(signedIn, {
       status: 'challenge', enabled: true, pairings: [],
       challenge: {
-        id: 'challenge-1', expiresAt: Date.now() + 120_000,
+        id: parsePairingChallengeId('challenge-1'), expiresAt: Date.now() + 120_000,
         oneTimeLink: 'https://platform.example.com/pair?secret=complete-high-entropy-value',
         qrPayload: 'https://platform.example.com/pair?secret=complete-high-entropy-value',
       },
@@ -90,7 +95,11 @@ describe('AccountControl', () => {
     cleanup()
     renderControl(signedIn, {
       status: 'pending', enabled: true, pairings: [],
-      pending: { id: 'pending-1', deviceName: 'Alice phone', authenticationWords: ['amber', 'binary', 'cedar', 'delta', 'ember', 'frost'] },
+      pending: {
+        id: parsePendingPairingId('pending-1'),
+        deviceName: 'Alice phone',
+        authenticationWords: ['amber', 'binary', 'cedar', 'delta', 'ember', 'frost'],
+      },
     })
     expect(screen.getByText('amber binary cedar delta ember frost')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Confirm pairing' }))
@@ -101,7 +110,9 @@ describe('AccountControl', () => {
     cleanup()
     renderControl(signedIn, {
       status: 'ready', enabled: true,
-      pairings: [{ id: 'pairing-1', deviceName: 'Alice phone', platform: 'ios', pairedAt: 1 }],
+      pairings: [{
+        id: parsePersonalPairingId('pairing-1'), deviceName: 'Alice phone', platform: 'ios', pairedAt: 1,
+      }],
       error: 'temporary warning',
     })
     expect(screen.getByText('Alice phone')).toBeTruthy()

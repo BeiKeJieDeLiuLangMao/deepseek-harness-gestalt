@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-18-settings-personal-pairing.md
-2026-08-18-settings-personal-pairing.md: 57bd4c51dc508a0b8d8ba533defa01a9b81fef57
-2026-08-18-settings-personal-pairing.zh.md: 9dc57d0927b5a752f8abaaaf88205ccc73622101
+2026-08-18-settings-personal-pairing.md: 406b88fcb131c76034b14fe2c3894a27398ab895
+2026-08-18-settings-personal-pairing.zh.md: 89aa8c82d5f0f6b5197d056e7dcae0bb02c5297c

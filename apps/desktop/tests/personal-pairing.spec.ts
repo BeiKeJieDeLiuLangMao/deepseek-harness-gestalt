@@ -1,9 +1,18 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, expectTypeOf, it, vi } from 'vitest'
+import type {
+  DesktopBridge,
+  DesktopPairingChallenge,
+  DesktopPendingPairing,
+  DesktopPersonalPairing,
+} from '@deepseek-ai/dsh-client-ui-desktop/protocol'
 import { parseAccountProofJti } from '@deepseek-ai/dsh-platform-account'
 import {
   parsePairingChallengeId,
   parsePendingPairingId,
   parsePersonalPairingId,
+  type PairingChallengeId,
+  type PendingPairingId,
+  type PersonalPairingId,
 } from '@deepseek-ai/dsh-remote-access'
 import type { RemoteAccessTransport } from '@deepseek-ai/dsh-remote-access-client'
 import {
@@ -31,6 +40,7 @@ describe('UnavailableDesktopPairingController', () => {
     const listener = vi.fn()
     controller.subscribe(listener)()
     expect(listener).not.toHaveBeenCalled()
+    await expect(controller.deactivate()).resolves.toBeUndefined()
     await expect(controller.dispose()).resolves.toBeUndefined()
   })
 })
@@ -75,7 +85,47 @@ describe('DesktopPairingController', () => {
     expect(authorizeCurrentInstallation).toHaveBeenCalled()
   })
 
+  it('deactivation drains an in-flight poll and rejects work after sign-out or close', async () => {
+    const transport = transportFixture()
+    const scheduled: Array<() => void> = []
+    const controller = new DesktopPairingController({
+      account: {
+        authorizeCurrentInstallation: vi.fn(async () => ({
+          accessToken: 'desktop-access',
+          proof: { jti: parseAccountProofJti('proof'), issuedAt: 1, signature: 'signature' },
+        })),
+      },
+      transport,
+      schedule: (task) => { scheduled.push(task); return { unref: vi.fn() } as never },
+    })
+    await controller.start()
+    await controller.setEnabled(true)
+    const refresh = deferred<{ enabled: boolean }>()
+    transport.getMobileAccessState.mockReturnValueOnce(refresh.promise)
+    scheduled.shift()?.()
+    await vi.waitFor(() => { expect(transport.getMobileAccessState).toHaveBeenCalledTimes(3) })
+
+    let drained = false
+    const deactivating = controller.deactivate().then(() => { drained = true })
+    await Promise.resolve()
+    expect(drained).toBe(false)
+    refresh.resolve({ enabled: true })
+    await deactivating
+    expect(scheduled).toEqual([])
+    await expect(controller.createChallenge()).rejects.toThrow('inactive')
+
+    await controller.start()
+    await controller.dispose()
+    await expect(controller.start()).rejects.toThrow('closed')
+    await expect(controller.setEnabled(true)).rejects.toThrow('inactive')
+  })
+
   it('parses Electron IPC payloads before controller side effects', () => {
+    expectTypeOf<DesktopPairingChallenge['id']>().toEqualTypeOf<PairingChallengeId>()
+    expectTypeOf<DesktopPendingPairing['id']>().toEqualTypeOf<PendingPairingId>()
+    expectTypeOf<DesktopPersonalPairing['id']>().toEqualTypeOf<PersonalPairingId>()
+    expectTypeOf<DesktopBridge['pairingConfirm']>().parameter(0).toEqualTypeOf<PendingPairingId>()
+    expectTypeOf<DesktopBridge['pairingReject']>().parameter(0).toEqualTypeOf<PendingPairingId>()
     expect(parsePairingEnabled(true)).toBe(true)
     expect(() => parsePairingEnabled('true')).toThrow('must be boolean')
     expect(parseDesktopPendingPairingId('pending-one')).toBe('pending-one')
@@ -122,4 +172,10 @@ function transportFixture() {
     completeChallenge: vi.fn(),
     getMobilePairingStatus: vi.fn(),
   } satisfies RemoteAccessTransport
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((done) => { resolve = done })
+  return { promise, resolve }
 }

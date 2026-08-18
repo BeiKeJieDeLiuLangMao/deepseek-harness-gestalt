@@ -403,7 +403,11 @@ function installIpc(): void {
   ipcMain.handle(ACCOUNT_GET_SNAPSHOT, () => account.getSnapshot())
   ipcMain.handle(ACCOUNT_ACCEPT_PRIVACY, () => account.acceptPrivacy())
   ipcMain.handle(ACCOUNT_BEGIN_LOGIN, () => account.beginLogin())
-  ipcMain.handle(ACCOUNT_SIGN_OUT, () => account.signOut())
+  ipcMain.handle(ACCOUNT_SIGN_OUT, async () => {
+    const snapshot = await account.signOut()
+    await pairing.deactivate()
+    return snapshot
+  })
   ipcMain.handle(PAIRING_GET_SNAPSHOT, () => pairing.getSnapshot())
   ipcMain.handle(PAIRING_SET_ENABLED, (_event, enabled: unknown) => setPairingEnabledFromIpc(pairing, enabled))
   ipcMain.handle(PAIRING_CREATE_CHALLENGE, () => pairing.createChallenge())
@@ -448,6 +452,11 @@ function handleAccountSnapshot(snapshot: ReturnType<DesktopAccountActions['getSn
   if (signedIn && !accountSignedIn) {
     void pairing.start().catch((error: unknown) => {
       console.error('[desktop-personal-pairing] signed-in Remote Access load failed:', error)
+    })
+  }
+  if (!signedIn && accountSignedIn) {
+    void pairing.deactivate().catch((error: unknown) => {
+      console.error('[desktop-personal-pairing] signed-out Remote Access shutdown failed:', error)
     })
   }
   accountSignedIn = signedIn

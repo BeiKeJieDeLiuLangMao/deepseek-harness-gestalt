@@ -33,6 +33,9 @@
       "path": "../../platform/platform-account"
     },
     {
+      "path": "../../platform/remote-access"
+    },
+    {
       "path": "../../runtime-diagnostics/invariants"
     }
   ]
