@@ -149,4 +149,14 @@ describe('web-search-deepseek settings section', () => {
     await expect(searchOnce(bench.ctx)).rejects.toMatchObject({ code: 'WEB_PROVIDER_UNAVAILABLE' })
     await bench.ctx.fiber.dispose()
   })
+
+  it('does not use a leftover DeepSeek endpoint when the Anthropic card is selected', async () => {
+    const bench = await boot()
+    await bench.ctx.settings.update(WEB_SEARCH_DEEPSEEK_SETTINGS_NAMESPACE, {
+      backend: 'anthropic-messages',
+      baseURL: 'https://search.leftover.test/v1',
+    })
+    await expect(searchOnce(bench.ctx)).rejects.toMatchObject({ code: 'WEB_PROVIDER_UNAVAILABLE' })
+    await bench.ctx.fiber.dispose()
+  })
 })
