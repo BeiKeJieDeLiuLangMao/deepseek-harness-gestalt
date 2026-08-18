@@ -27,7 +27,7 @@ describe('CI workflow', () => {
     }
   })
 
-  it('keeps a required Wine Windows job, a non-blocking native Windows job with failover, and a master-only standby', () => {
+  it('keeps portable pull-request runners with explicit self-hosted failover and a master-only standby', () => {
     const workflow = loadWorkflow('.github/workflows/ci.yml')
     if (!isRecord(workflow.jobs)
       || !isRecord(workflow.jobs.windows)
@@ -69,7 +69,9 @@ describe('CI workflow', () => {
     expect(windowsNative['runs-on']).not.toContain('DSH_CI_FAILOVER_LINUX')
     expect(windowsNative['runs-on']).toContain('self-hosted')
     expect(windowsNative['runs-on']).toContain('dsh-win-ci')
-    expect(windowsNative['runs-on']).toContain('dsh-windows-2025-16core')
+    expect(windowsNative['runs-on']).toContain('dependabot[bot]')
+    expect(windowsNative['runs-on']).toContain('windows-2025')
+    expect(windowsNative['runs-on']).not.toContain('dsh-windows-2025-16core')
     expect(windowsNative.name).toBe('windows node 24 / native complete')
     expect(windowsNative.if).toBe("github.event_name == 'pull_request'")
     expect(windowsNative.env).toMatchObject({
@@ -102,10 +104,32 @@ describe('CI workflow', () => {
       expect(job['runs-on'], `${jobName} runs-on must use the Linux failover switch`).toContain('DSH_CI_FAILOVER_LINUX')
       expect(job['runs-on'], `${jobName} runs-on must not use the Windows failover switch`).not.toContain('DSH_CI_FAILOVER_WINDOWS')
       expect(job['runs-on']).toContain('vm-backup')
+      expect(job['runs-on']).toContain('dependabot[bot]')
+      expect(job['runs-on']).toContain('ubuntu-latest')
+      expect(job['runs-on']).not.toContain('dsh-ubuntu-24-04-16core')
     }
     expect(aggregate['runs-on']).toContain('DSH_CI_FAILOVER_LINUX')
     expect(aggregate['runs-on']).not.toContain('DSH_CI_FAILOVER_WINDOWS')
     expect(aggregate['runs-on']).toContain('vm-backup')
+    expect(aggregate['runs-on']).toContain('ubuntu-latest')
+    expect(aggregate['runs-on']).not.toContain('dsh-ubuntu-24-04-16core')
+
+    expect(node24.env).toMatchObject({ DSH_GATE_CONCURRENCY: '2' })
+    expect(node24Coverage.env).toMatchObject({
+      DSH_COVERAGE_MAX_WORKERS: "${{ vars.DSH_CI_FAILOVER_LINUX == 'selfhosted' && github.event.pull_request.user.login != 'dependabot[bot]' && '8' || '2' }}",
+      DSH_GATE_CONCURRENCY: '2',
+    })
+    expect(node24Consumers.env).toMatchObject({
+      DSH_GATE_CONCURRENCY: '2',
+      DSH_OXLINT_THREADS: '2',
+      DSH_PUBLINT_CONCURRENCY: '2',
+      DSH_SNAPSHOT_MAX_CONCURRENCY: "${{ vars.DSH_CI_FAILOVER_LINUX == 'selfhosted' && github.event.pull_request.user.login != 'dependabot[bot]' && '12' || '2' }}",
+    })
+    expect(windowsNative.env).toMatchObject({
+      DSH_COVERAGE_MAX_WORKERS: '2',
+      DSH_GATE_CONCURRENCY: '2',
+      DSH_PUBLINT_CONCURRENCY: '2',
+    })
   })
 
   it('exempts push from cancellation, so one master merge does not cancel the running drill', () => {
@@ -161,8 +185,9 @@ describe('CI workflow', () => {
       .sort()
     expect(pushReachable).toEqual(['serial-linux-selfhosted', 'serial-windows', 'wine-apt-cache'])
 
-    // Why workflow_dispatch must keep cancelling: each benchmark fans out to a
-    // dozen larger runners at once, in this same group on master. If it stopped
+    // Why workflow_dispatch must keep cancelling: each manual-only benchmark
+    // can fan out to a dozen separately provisioned larger runners at once, in
+    // this same group on master. If it stopped
     // cancelling, a re-dispatch would queue ahead of a drill instead of
     // replacing the stale measurement.
     for (const name of ['larger-runner-benchmark', 'consolidated-runner-benchmark']) {
