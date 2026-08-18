@@ -5,8 +5,8 @@ import { describe, expect, it } from 'vitest'
 
 const MOBILE_ROOT = fileURLToPath(new URL('..', import.meta.url))
 
-// The real bundle resolves workspace package entries to their built lib/ artifacts;
-// unit and coverage runs do not build them, while the snapshots job builds first.
+// The real bundle resolves workspace package entries to their built lib/ artifacts.
+// Coverage does not build them; the snapshots job builds first and includes this file.
 const builtClientLibsPresent = existsSync(
   fileURLToPath(new URL('../../../packages/platform/platform-account-client/lib/index.js', import.meta.url)),
 )

@@ -167,8 +167,8 @@ export abstract class RemoteRelayService extends Service {
    */
   abstract revokeRoute(routeId: RelayRouteId): Promise<void>
   /**
-   * Authenticate and register one outbound Mobile or Desktop attachment.
-   * @param input - attach frame plus the socket writer and optional close callback.
+   * Authenticate one outbound Mobile or Desktop attachment and register it only after `announce` flushes ready.
+   * @param input - attach frame, socket writer, optional close callback, and optional ready flush.
    * @returns the admitted attachment receiving later frames from that socket.
    */
   abstract attach(input: {
@@ -176,6 +176,7 @@ export abstract class RemoteRelayService extends Service {
     deliver: (message: RelayCiphertextMessage) => Promise<void>
     close?: () => void | Promise<void>
     signal?: AbortSignal
+    announce?: () => Promise<void>
   }): Promise<RemoteRelayAttachment>
 }
 

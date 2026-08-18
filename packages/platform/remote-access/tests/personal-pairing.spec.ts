@@ -401,6 +401,44 @@ describe('PersonalPairingProvider', () => {
     expect(relay.revokeRoute).not.toHaveBeenCalled()
   })
 
+  it('settles this instance live challenges when a shared-authority provider disposes', async () => {
+    const authority = new MemoryPersonalPairingAuthorityStore()
+    const handshake = handshakeProvider()
+    let ids = 0
+    const options = {
+      account: {
+        currentInstallation: vi.fn(async ({ accessToken }: { accessToken: string }) => authenticated(accessToken)),
+      },
+      handshake,
+      authority,
+      clock: { now: () => NOW },
+      randomBytes: (size: number) => Uint8Array.from({ length: size }, (_, index) => index),
+      randomId: (kind: string) => `${kind}-${String(++ids)}`,
+      pairingLinkOrigin: 'https://platform.example.com/pair',
+    } as const
+    const creator = new PersonalPairingProvider(new Context(), options)
+    const desktop = authentication('desktop-installation', 'account-one')
+    await creator.setMobileAccess({ desktop, enabled: true })
+    await Promise.all(Array.from(
+      { length: MAX_ACTIVE_PAIRING_CHALLENGES_PER_INSTALLATION },
+      (_, index) => creator.createChallenge({
+        desktop,
+        rendezvousId: parsePairingRendezvousId(`shared-dispose-${String(index)}`),
+      }),
+    ))
+    await creator.dispose()
+
+    const successor = new PersonalPairingProvider(new Context(), {
+      ...options,
+      randomId: (kind: string) => `${kind}-successor-${String(++ids)}`,
+    })
+    await expect(successor.createChallenge({
+      desktop,
+      rendezvousId: parsePairingRendezvousId('after-shared-dispose'),
+    })).resolves.toMatchObject({ challengeId: expect.any(String) })
+    await successor.dispose()
+  })
+
   it('uses authenticated installation identity and role instead of caller claims', async () => {
     const handshake = handshakeProvider()
     const provider = pairingProvider(handshake)

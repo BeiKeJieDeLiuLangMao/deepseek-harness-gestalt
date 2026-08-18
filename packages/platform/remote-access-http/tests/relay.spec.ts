@@ -296,7 +296,10 @@ function relayFixture(attachment: RemoteRelayAttachment) {
   return {
     rotateCredential: vi.fn(),
     revokeRoute: vi.fn(),
-    attach: vi.fn<RemoteRelayService['attach']>(async _input => attachment),
+    attach: vi.fn<RemoteRelayService['attach']>(async (input) => {
+      await input.announce?.()
+      return attachment
+    }),
   }
 }
 

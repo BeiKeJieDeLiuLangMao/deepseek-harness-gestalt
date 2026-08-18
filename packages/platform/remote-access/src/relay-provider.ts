@@ -117,6 +117,7 @@ export class RemoteRelayProvider extends RemoteRelayService {
     deliver: (message: RelayCiphertextMessage) => Promise<void>
     close?: () => void | Promise<void>
     signal?: AbortSignal
+    announce?: () => Promise<void>
   }): Promise<RemoteRelayAttachment> {
     this.assertOpen()
     const quiescence = deferred<void>()
@@ -134,6 +135,7 @@ export class RemoteRelayProvider extends RemoteRelayService {
     deliver: (message: RelayCiphertextMessage) => Promise<void>
     close?: () => void | Promise<void>
     signal?: AbortSignal
+    announce?: () => Promise<void>
   }): Promise<RemoteRelayAttachment> {
     const signal = input.signal ?? NEVER_ABORTED
     throwIfAborted(signal)
@@ -193,6 +195,8 @@ export class RemoteRelayProvider extends RemoteRelayService {
       }
       this.attachments.set(key, local)
       try {
+        if (input.announce !== undefined) await input.announce()
+        throwIfAborted(signal)
         await this.options.coordinator.register(entry, signal)
         throwIfAborted(signal)
         const currentRevision = await this.options.routeStore.authorize(entry.routeId, entry.endpoint, digest, signal)

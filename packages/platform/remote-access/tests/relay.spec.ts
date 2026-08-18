@@ -51,6 +51,29 @@ describe('RemoteRelayProvider', () => {
     await platform.dispose()
   })
 
+  it('does not publish a directory entry until announce flushes ready', async () => {
+    const routeStore = new SharedRouteStore()
+    const coordinator = new SharedCoordinator()
+    const platform = provider('platform-announce', routeStore, coordinator, 4)
+    const routeId = parseRelayRouteId('route-announce')
+    const grant = await platform.rotateCredential(routeId, 'desktop')
+    const attachmentId = parseRelayAttachmentId('desktop-announce')
+    let locatedBeforeReady: Awaited<ReturnType<SharedCoordinator['locate']>> = undefined
+    const attachment = await platform.attach({
+      message: {
+        type: 'attach', transportVersion: 1, routeId, attachmentId, endpoint: 'desktop', credential: grant.credential,
+      },
+      deliver: async () => {},
+      announce: async () => {
+        locatedBeforeReady = await coordinator.locate(routeId, attachmentId)
+      },
+    })
+    expect(locatedBeforeReady).toBeUndefined()
+    expect(await coordinator.locate(routeId, attachmentId)).toMatchObject({ attachmentId })
+    await attachment.close()
+    await platform.dispose()
+  })
+
   it('rejects cross-endpoint credentials in both directions', async () => {
     const routeStore = new SharedRouteStore()
     const coordinator = new SharedCoordinator()

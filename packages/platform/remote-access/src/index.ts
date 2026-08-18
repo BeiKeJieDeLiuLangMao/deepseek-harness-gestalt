@@ -560,6 +560,7 @@ export class PersonalPairingProvider extends RemoteAccessService {
   private readonly pairingLinkOrigin: string
   private readonly authority: PersonalPairingAuthorityStore
   private readonly ownsAuthority: boolean
+  private readonly localChallengeIds = new Set<PairingChallengeId>()
 
   /** @param ctx - Platform context. @param options - Account, crypto, time, random, and link adapters. */
   constructor(ctx: Context, private readonly options: PersonalPairingProviderOptions) {
@@ -628,6 +629,7 @@ export class PersonalPairingProvider extends RemoteAccessService {
           cleanup,
         }
         this.challenges.set(challengeId, record)
+        this.localChallengeIds.add(challengeId)
         return { ...withoutSecret(invitation), oneTimeLink, qrPayload: oneTimeLink }
       } catch (error) {
         await this.cleanupChallenge(cleanup)
@@ -1076,7 +1078,18 @@ export class PersonalPairingProvider extends RemoteAccessService {
   /** Drain instance-local incomplete crypto work while preserving durable confirmed authority. */
   async dispose(): Promise<void> {
     if (!this.ownsAuthority) {
-      await this.serial
+      await this.exclusive(async () => {
+        const operations: Array<() => Promise<void>> = []
+        for (const challengeId of [...this.localChallengeIds]) {
+          const challenge = this.challenges.get(challengeId)
+          if (challenge !== undefined) {
+            const settled = this.settleChallenge(challenge, 'disposed')
+            operations.push(() => this.cleanupChallenge(settled.cleanup))
+          }
+          this.localChallengeIds.delete(challengeId)
+        }
+        await cleanupAll(operations)
+      })
       return
     }
     await this.exclusive(async () => {
@@ -1103,6 +1116,7 @@ export class PersonalPairingProvider extends RemoteAccessService {
 
   private settleChallenge(challenge: ChallengeRecord, outcome: ChallengeOutcome): SettledChallengeRecord {
     this.challenges.delete(challenge.invitation.challengeId)
+    this.localChallengeIds.delete(challenge.invitation.challengeId)
     challenge.invitation.invitationSecret.fill(0)
     const settled = {
       accountId: challenge.accountId,

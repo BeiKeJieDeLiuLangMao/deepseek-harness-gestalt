@@ -124,10 +124,12 @@ export class RelayWebSocketConsumer {
               deliver: outgoing => send(socket, encodeRelayMessage(outgoing)),
               close: () => { socket.terminate() },
               signal: attachmentAbort.signal,
+              announce: async () => {
+                await send(socket, encodeRelayMessage({
+                  type: 'ready', transportVersion: 1, attachmentId: message.attachmentId,
+                }))
+              },
             })
-            await send(socket, encodeRelayMessage({
-              type: 'ready', transportVersion: 1, attachmentId: message.attachmentId,
-            }))
             clearTimeout(attachTimer)
             return
           }
