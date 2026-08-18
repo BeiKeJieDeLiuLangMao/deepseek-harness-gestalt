@@ -10,7 +10,7 @@ Status: implemented
 
 ## 决策
 
-只有已完成 assistant 的文本块可供文本选择。选择的起点和终点必须位于同一个块内，因此 user 消息、reasoning、tool 与图片都被排除。草稿存储 Text Anchor，其中包含已完成消息／块标识、精确引文，以及长度有界的前后文。DOM range 只作为页面级 CSS Highlight 聚合使用的展示值；每个已挂载目标贡献自己的 range，因此移除一个目标不会删除其他目标的 Draft Mark。
+只有已完成 assistant 的文本块可供文本选择。已定稿的 Markdown 在渲染期间，会把可选择的文本叶节点与图片登记到类型化映射中。选择目标只使用这份映射与浏览器 Range 端点，绝不重建已渲染消息 DOM。两个端点都必须解析到同一个块中已登记的文本；只要所选片段与任意图片相交，选择就会被拒绝，包括 alt 文本为空的图片。草稿存储 Text Anchor，其中包含已完成消息／块标识、精确引文，以及长度有界的前后文。DOM range 只作为页面级 CSS Highlight 聚合使用的展示值；每个已挂载目标贡献自己的 range，因此移除一个目标不会删除其他目标的 Draft Mark。
 
 选择文本后先打开只有「添加批示」与「复制」两个操作的工具栏。「添加批示」会打开共享的锚定批示编辑器。输入法组合期间按 Enter 不执行操作，普通 Enter 与提交按钮保存，Shift+Enter 插入换行。批示可以为空。Composer 拥有注释的创建顺序、编辑、删除与「N 条注释」摘要；其具名交互区域会在 hover 或键盘 focus 时显示完整草稿内容。
 
@@ -28,7 +28,7 @@ Status: implemented
 
 ## 验证
 
-聚焦组件测试覆盖重复引文的锚点解析、键盘跨 Markdown span 选择、工具栏内容、Safari 输入法结算、编译顺序、防止重复提交、拒绝在途编辑、拥有者限定的成功与失败结算、接纳后清理，以及跨目标 Draft Mark 聚合。GUI suite 覆盖会话与 Composer 锁定表层。
+聚焦组件测试覆盖重复引文的锚点解析、键盘跨 Markdown span 选择、拒绝包含空 alt 图片的选择、相邻有效选择、工具栏内容、Safari 输入法结算、编译顺序、防止重复提交、拒绝在途编辑、拥有者限定的成功与失败结算、接纳后清理，以及跨目标 Draft Mark 聚合。GUI suite 覆盖会话与 Composer 锁定表层。
 
 一个无密钥 assembled Web 场景以 replay 模型启动真实 server 与 Chromium，创建已完成的 Markdown 回答，跨普通与粗体节点选择文本，保存并重新打开共享编辑器、修改批示，再发送问题与注释，并固定精确的模型可见普通文案。它还验证 Composer 摘要与 Draft Mark 会在接纳后消失。
 

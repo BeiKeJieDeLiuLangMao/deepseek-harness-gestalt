@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { CSSProperties, MouseEvent, ReactNode } from 'react'
 import { extractMarkdownPlainText } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { MarkdownSelectionMapRef } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TextAnchor, TextAnnotation, TextAnnotationId } from './model.ts'
 import { createTextAnchor, resolveTextAnchor } from './model.ts'
 import { AnnotationEditor } from './AnnotationEditor.tsx'
@@ -14,30 +15,14 @@ interface PendingSelection {
   top: number
 }
 
-function rangeForAnchor(container: HTMLElement, anchor: TextAnchor): Range | null {
-  const text = container.textContent
-  const resolved = resolveTextAnchor(anchor, text)
+function rangeForAnchor(
+  source: string,
+  selectionMapRef: MarkdownSelectionMapRef,
+  anchor: TextAnchor,
+): Range | null {
+  const resolved = resolveTextAnchor(anchor, extractMarkdownPlainText(source))
   if (resolved === null) return null
-  const nodes: Text[] = []
-  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT)
-  for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) nodes.push(node as Text)
-  let cursor = 0
-  let start: { node: Text; offset: number } | undefined
-  let end: { node: Text; offset: number } | undefined
-  for (const node of nodes) {
-    const next = cursor + node.data.length
-    if (start === undefined && resolved.start <= next) start = { node, offset: resolved.start - cursor }
-    if (resolved.end <= next) {
-      end = { node, offset: resolved.end - cursor }
-      break
-    }
-    cursor = next
-  }
-  if (start === undefined || end === undefined) return null
-  const range = document.createRange()
-  range.setStart(start.node, start.offset)
-  range.setEnd(end.node, end.offset)
-  return range
+  return selectionMapRef.current?.rangeForText(anchor.quote, resolved.start) ?? null
 }
 
 /**
@@ -45,9 +30,10 @@ function rangeForAnchor(container: HTMLElement, anchor: TextAnchor): Range | nul
  * @param props - Source text, matching drafts, localized labels, and children.
  * @returns The source with selection actions and Draft Marks.
  */
-export function TextAnnotationTarget({ sourceId, source, annotations, add, t, children }: {
+export function TextAnnotationTarget({ sourceId, source, selectionMapRef, annotations, add, t, children }: {
   sourceId: string
   source: string
+  selectionMapRef: MarkdownSelectionMapRef
   annotations: readonly TextAnnotation[]
   add: (anchor: TextAnchor, note: string) => TextAnnotationId
   t: (key: 'annotation.add' | 'annotation.copy' | 'annotation.notePlaceholder' | 'annotation.save') => string
@@ -67,11 +53,11 @@ export function TextAnnotationTarget({ sourceId, source, annotations, add, t, ch
     for (const annotation of annotations) {
       const current = ranges.current.get(annotation.id)
       if (current !== undefined && container.contains(current.commonAncestorContainer)) continue
-      const rebuilt = rangeForAnchor(container, annotation.anchor)
+      const rebuilt = rangeForAnchor(source, selectionMapRef, annotation.anchor)
       if (rebuilt !== null) ranges.current.set(annotation.id, rebuilt)
     }
     replaceDraftHighlightRanges(highlightOwner.current, [...ranges.current.values()])
-  }, [annotations, source])
+  }, [annotations, selectionMapRef, source])
   useEffect(() => () => { removeDraftHighlightOwner(highlightOwner.current) }, [])
 
   const select = useCallback((): void => {
@@ -91,19 +77,22 @@ export function TextAnnotationTarget({ sourceId, source, annotations, add, t, ch
       dismiss()
       return
     }
-    const quote = selection.toString()
+    const inspected = selectionMapRef.current?.inspect(range)
+    if (inspected === null || inspected === undefined) {
+      dismiss()
+      return
+    }
+    const quote = inspected.quote
     if (quote.trim() === '') {
       dismiss()
       return
     }
     const visible = extractMarkdownPlainText(source)
-    const before = document.createRange()
-    before.selectNodeContents(container)
-    before.setEnd(range.startContainer, range.startOffset)
-    const approximate = before.toString().length
     const starts: number[] = []
     for (let at = visible.indexOf(quote); at >= 0; at = visible.indexOf(quote, at + 1)) starts.push(at)
-    const start = starts.toSorted((a, b) => Math.abs(a - approximate) - Math.abs(b - approximate))[0]
+    const start = starts.toSorted(
+      (a, b) => Math.abs(a - inspected.approximate) - Math.abs(b - inspected.approximate),
+    )[0]
     if (start === undefined) {
       dismiss()
       return
@@ -116,7 +105,7 @@ export function TextAnnotationTarget({ sourceId, source, annotations, add, t, ch
       top: rect.bottom + 8,
     })
     setEditing(false)
-  }, [source, sourceId])
+  }, [selectionMapRef, source, sourceId])
 
   useEffect(() => {
     document.addEventListener('selectionchange', select)

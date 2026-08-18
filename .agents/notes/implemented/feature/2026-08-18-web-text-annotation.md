@@ -10,7 +10,7 @@ Users can refer to assistant prose by copying it into the Composer, but that los
 
 ## Decision
 
-Completed assistant text blocks are the only text-selection targets. A selection must begin and end inside one block, which excludes user messages, reasoning, tools, and images. The draft stores a Text Anchor containing the completed message/block identity, exact quote, and bounded prefix and suffix context. DOM ranges remain presentation-only values used by the page-wide CSS Highlight aggregate; each mounted target contributes its own ranges, so removing one target cannot remove another target's Draft Marks.
+Completed assistant text blocks are the only text-selection targets. During settled Markdown rendering, the renderer registers selectable text leaves and images in a typed mapping. The selection target uses only that mapping and the browser Range endpoints; it never reconstructs the rendered message DOM. Both endpoints must resolve to registered text in one block, and any image intersecting the selected fragment rejects the selection, including an image with empty alt text. The draft stores a Text Anchor containing the completed message/block identity, exact quote, and bounded prefix and suffix context. DOM ranges remain presentation-only values used by the page-wide CSS Highlight aggregate; each mounted target contributes its own ranges, so removing one target cannot remove another target's Draft Marks.
 
 Selecting text first opens a two-action toolbar containing Add annotation and Copy. Add annotation opens the shared anchored note editor. Composition Enter does nothing, ordinary Enter and the submit button save, and Shift+Enter inserts a newline. Notes may be empty. The Composer owns annotation creation order, editing, deletion, and the `N annotations` summary; its named interactive region reveals complete draft contents on hover or keyboard focus.
 
@@ -28,7 +28,7 @@ Unsent annotation drafts remain resident Composer state. They do not add a Sessi
 
 ## Verification
 
-Focused component tests cover repeated-quote anchor resolution, keyboard selection across Markdown spans, toolbar contents, Safari IME settlement, compilation order, duplicate-submission exclusion, in-flight edit refusal, owned success and failure settlement, admission clearing, and cross-target Draft Mark aggregation. The GUI suite covers the conversation and Composer lock surfaces.
+Focused component tests cover repeated-quote anchor resolution, keyboard selection across Markdown spans, image-intersection rejection with an empty alt, adjacent valid selection, toolbar contents, Safari IME settlement, compilation order, duplicate-submission exclusion, in-flight edit refusal, owned success and failure settlement, admission clearing, and cross-target Draft Mark aggregation. The GUI suite covers the conversation and Composer lock surfaces.
 
 A keyless assembled Web scenario starts the real server and Chromium against the replay model, creates a completed Markdown response, selects across plain and bold nodes, saves and reopens the shared editor, edits the note, sends a question plus annotation, and pins the exact model-visible ordinary prose. It also verifies that the Composer summary and Draft Mark disappear after admission.
 

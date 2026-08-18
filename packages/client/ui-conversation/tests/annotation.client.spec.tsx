@@ -3,11 +3,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render } from '@testing-library/react'
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
+import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import {
   compileAnnotationSubmission, createTextAnchor, resolveTextAnchor, TextAnnotationId,
 } from '../src/client/annotation/model.ts'
 import { AnnotationEditor } from '../src/client/annotation/AnnotationEditor.tsx'
-import { TextAnnotationTarget } from '../src/client/annotation/TextAnnotationTarget.tsx'
+import { AssistantMarkdown } from '../src/client/chat/AssistantMarkdown.tsx'
+import { zh } from '../src/client/locales.ts'
 import {
   removeDraftHighlightOwner, replaceDraftHighlightRanges,
 } from '../src/client/annotation/draft-highlights.ts'
@@ -45,37 +48,73 @@ describe('text annotation mechanics', () => {
     expect(compiled).not.toMatch(/<annotation|json|respond in/i)
   })
 
+  it('rejects a rendered Markdown selection that contains an empty-alt image', () => {
+    const view = render(
+      <AssistantMarkdown
+        blocks={[{ kind: 'text', text: 'before![](https://example.com/pixel.png)after tail' }]}
+        streaming={false}
+        t={makeTranslate(zh, commonZh)}
+        sourceId="message-1"
+        annotations={[]}
+        annotationActions={{ addTextAnnotation: () => TextAnnotationId('annotation-1') }}
+      />,
+    )
+    const paragraph = view.container.querySelector('p')!
+    const beforeLeaf = paragraph.childNodes[0]!
+    const afterLeaf = paragraph.childNodes[2]!
+    const before = beforeLeaf.firstChild ?? beforeLeaf
+    const after = afterLeaf.firstChild ?? afterLeaf
+    const range = document.createRange()
+    Object.defineProperty(range, 'getBoundingClientRect', { value: () => ({ left: 20, bottom: 40 }) })
+    const selection = window.getSelection()!
+
+    range.setStart(before, 0)
+    range.setEnd(after, 5)
+    selection.removeAllRanges()
+    selection.addRange(range)
+    fireEvent(document, new Event('selectionchange'))
+    expect(view.queryByRole('toolbar')).toBeNull()
+
+    range.setStart(afterLeaf, 0)
+    range.setEnd(afterLeaf, 1)
+    selection.removeAllRanges()
+    selection.addRange(range)
+    fireEvent(document, new Event('selectionchange'))
+    expect(view.getByRole('toolbar')).toBeDefined()
+
+    range.setStart(after, 0)
+    range.setEnd(paragraph, 3)
+    selection.removeAllRanges()
+    selection.addRange(range)
+    fireEvent(document, new Event('selectionchange'))
+    expect(view.queryByRole('toolbar')).toBeNull()
+  })
+
   it('keyboard selection across Markdown shows only annotate/copy before the shared editor', () => {
     const add = vi.fn(() => TextAnnotationId('annotation-1'))
     const view = render(
-      <TextAnnotationTarget
-        sourceId="message-1:0"
-        source="Alpha bold omega"
+      <AssistantMarkdown
+        blocks={[{ kind: 'text', text: 'Alpha **bold** omega' }]}
+        streaming={false}
+        t={makeTranslate(zh, commonZh)}
+        sourceId="message-1"
         annotations={[]}
-        add={add}
-        t={key => ({
-          'annotation.add': 'Add annotation',
-          'annotation.copy': 'Copy',
-          'annotation.notePlaceholder': 'Optional note',
-          'annotation.save': 'Save annotation',
-        })[key]}
-      >
-        <p>Alpha <strong>bold</strong> omega</p>
-      </TextAnnotationTarget>,
+        annotationActions={{ addTextAnnotation: add }}
+      />,
     )
-    const texts = view.container.querySelector('p')!.childNodes
+    const parts = view.container.querySelector('p')!.childNodes
     const range = document.createRange()
-    range.setStart(texts[0]!, 0)
-    range.setEnd(texts[2]!, 6)
+    range.setStart(parts[0]!.firstChild!, 0)
+    range.setEnd(parts[2]!.firstChild!, 6)
     Object.defineProperty(range, 'getBoundingClientRect', { value: () => ({ left: 20, bottom: 40 }) })
     const selection = window.getSelection()!
     selection.removeAllRanges()
     selection.addRange(range)
     fireEvent(document, new Event('selectionchange'))
 
-    expect(view.getByRole('toolbar').textContent).toBe('Add annotationCopy')
-    fireEvent.click(view.getByRole('button', { name: 'Add annotation' }))
-    const editor = view.getByPlaceholderText('Optional note')
+    expect(view.getByRole('toolbar').textContent).toBe('添加批示复制')
+    fireEvent.click(view.getByRole('button', { name: '添加批示' }))
+    const editor = view.getByPlaceholderText('添加说明（可选）')
     fireEvent.change(editor, { target: { value: 'Tighten this' } })
     fireEvent.keyDown(editor, { key: 'Enter', shiftKey: true })
     expect(add).not.toHaveBeenCalled()
@@ -86,26 +125,27 @@ describe('text annotation mechanics', () => {
   it('dismisses a pending toolbar when the selection grows across messages', () => {
     const view = render(
       <div>
-        <TextAnnotationTarget
-          sourceId="message-1:0"
-          source="First message"
+        <AssistantMarkdown
+          blocks={[{ kind: 'text', text: 'First message' }]}
+          streaming={false}
+          t={makeTranslate(zh, commonZh)}
+          sourceId="message-1"
           annotations={[]}
-          add={() => TextAnnotationId('annotation-1')}
-          t={key => ({
-            'annotation.add': 'Add annotation',
-            'annotation.copy': 'Copy',
-            'annotation.notePlaceholder': 'Optional note',
-            'annotation.save': 'Save annotation',
-          })[key]}
-        >
-          <p>First message</p>
-        </TextAnnotationTarget>
-        <p>Second message</p>
+          annotationActions={{ addTextAnnotation: () => TextAnnotationId('annotation-1') }}
+        />
+        <AssistantMarkdown
+          blocks={[{ kind: 'text', text: 'Second message' }]}
+          streaming={false}
+          t={makeTranslate(zh, commonZh)}
+          sourceId="message-2"
+          annotations={[]}
+          annotationActions={{ addTextAnnotation: () => TextAnnotationId('annotation-2') }}
+        />
       </div>,
     )
     const messages = view.container.querySelectorAll('p')
-    const first = messages[0]!.firstChild!
-    const second = messages[1]!.firstChild!
+    const first = messages[0]!.firstChild!.firstChild!
+    const second = messages[1]!.firstChild!.firstChild!
     const selection = window.getSelection()!
     const range = document.createRange()
     range.setStart(first, 0)
@@ -257,22 +297,70 @@ describe('text annotation mechanics', () => {
     const set = vi.fn()
     vi.stubGlobal('CSS', { highlights: { set, delete: vi.fn() } })
     vi.stubGlobal('Highlight', FakeHighlight)
-    const anchor = createTextAnchor('message-1:0', 'Alpha bold omega', 'bold', 6)
+    const anchor = createTextAnchor('message-1:0', 'Alpha bold middle bold omega', 'bold', 18)
 
-    render(
-      <TextAnnotationTarget
-        sourceId="message-1:0"
-        source="Alpha **bold** omega"
+    const view = render(
+      <AssistantMarkdown
+        blocks={[{ kind: 'text', text: 'Alpha **bold** middle **bold** omega' }]}
+        streaming={false}
+        t={makeTranslate(zh, commonZh)}
+        sourceId="message-1"
         annotations={[{ id: TextAnnotationId('annotation-1'), kind: 'text', anchor, note: '' }]}
-        add={() => TextAnnotationId('unused')}
-        t={() => ''}
-      >
-        <p>Alpha <strong>bold</strong> omega</p>
-      </TextAnnotationTarget>,
+        annotationActions={{ addTextAnnotation: () => TextAnnotationId('unused') }}
+      />,
     )
 
     const mark = set.mock.lastCall?.[1] as FakeHighlight
     expect(mark.ranges).toHaveLength(1)
     expect(mark.ranges[0]?.toString()).toBe('bold')
+    expect(mark.ranges[0]?.startContainer.parentElement?.parentElement).toBe(
+      view.container.querySelectorAll('strong')[1],
+    )
+  })
+
+  it('does not rebuild Draft Marks through renderer whitespace or image registrations', () => {
+    class FakeHighlight {
+      readonly ranges: readonly Range[]
+      constructor(...ranges: Range[]) { this.ranges = ranges }
+    }
+    const set = vi.fn()
+    vi.stubGlobal('CSS', { highlights: { set, delete: vi.fn() } })
+    vi.stubGlobal('Highlight', FakeHighlight)
+    const visible = 'Alpha betaimageomegatail'
+
+    render(
+      <AssistantMarkdown
+        blocks={[{
+          kind: 'text',
+          text: 'Alpha   beta![image](https://example.com/pixel.png)omega![](https://example.com/empty.png)tail',
+        }]}
+        streaming={false}
+        t={makeTranslate(zh, commonZh)}
+        sourceId="message-1"
+        annotations={[
+          {
+            id: TextAnnotationId('normalized-whitespace'), kind: 'text',
+            anchor: createTextAnchor('message-1:0', visible, 'Alpha beta', 0), note: '',
+          },
+          {
+            id: TextAnnotationId('image-fragment'), kind: 'text',
+            anchor: createTextAnchor('message-1:0', visible, 'betaimageomega', 6), note: '',
+          },
+          {
+            id: TextAnnotationId('empty-alt-fragment'), kind: 'text',
+            anchor: createTextAnchor('message-1:0', visible, 'omegatail', 15), note: '',
+          },
+          {
+            id: TextAnnotationId('valid-text'), kind: 'text',
+            anchor: createTextAnchor('message-1:0', visible, 'omega', 15), note: '',
+          },
+        ]}
+        annotationActions={{ addTextAnnotation: () => TextAnnotationId('unused') }}
+      />,
+    )
+
+    const mark = set.mock.lastCall?.[1] as FakeHighlight
+    expect(mark.ranges).toHaveLength(1)
+    expect(mark.ranges[0]?.toString()).toBe('omega')
   })
 })

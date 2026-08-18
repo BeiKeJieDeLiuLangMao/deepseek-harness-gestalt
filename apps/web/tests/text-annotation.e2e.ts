@@ -65,9 +65,11 @@ describe('web e2e: text annotation becomes an ordinary model-visible message', (
     const selectPhrase = async (): Promise<void> => target.evaluate((element) => {
       const strong = element.querySelector('strong')
       if (strong === null) throw new Error('expected bold Markdown text')
-      const before = strong.previousSibling
-      const after = strong.nextSibling
-      if (before === null || after === null) throw new Error('expected split Markdown text nodes')
+      const before = strong.previousSibling?.firstChild
+      const after = strong.nextSibling?.firstChild
+      if (before === null || before === undefined || after === null || after === undefined) {
+        throw new Error('expected registered Markdown text leaves')
+      }
       const range = document.createRange()
       range.setStart(before, 0)
       range.setEnd(after, 7)

@@ -9,11 +9,12 @@
 // their branch action is enabled only when the node is also the completed
 // turn's transcript tail. Think / tool-head-only nodes stay chrome-free.
 
-import { memo, useMemo } from 'react'
+import { memo, useMemo, useRef } from 'react'
 import type { ReactNode } from 'react'
 import type { AssistantBlock } from '@deepseek-ai/dsh-client-runtime/client'
 import { JsonBlock, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { MarkdownFileMentions } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { MarkdownCodeLabels, MarkdownSelectionMap } from '@deepseek-ai/dsh-client-ui-primitives'
 import { ImageGallery, type ImageLoader } from '@deepseek-ai/dsh-client-ui-attachment'
 import type { ChatViewSlotProps } from '../contract/slots.ts'
 import { messageImageLabels } from '../image-labels.ts'
@@ -39,6 +40,39 @@ export interface AssistantMarkdownProps {
   annotationActions?: Pick<InputActions, 'addTextAnnotation'> | undefined
 }
 
+function AnnotatableAssistantText({
+  text, streaming, codeLabels, mentions, sourceId, annotations, add, t,
+}: {
+  text: string
+  streaming: boolean
+  codeLabels: MarkdownCodeLabels
+  mentions: MarkdownFileMentions | undefined
+  sourceId: string
+  annotations: InputState['annotations']
+  add: InputActions['addTextAnnotation']
+  t: ChatViewSlotProps['t']
+}) {
+  const selectionMapRef = useRef<MarkdownSelectionMap | null>(null)
+  return (
+    <TextAnnotationTarget
+      sourceId={sourceId}
+      source={text}
+      selectionMapRef={selectionMapRef}
+      annotations={annotations.filter(item => item.anchor.sourceId === sourceId)}
+      add={add}
+      t={t}
+    >
+      <MarkdownText
+        text={text}
+        streaming={streaming}
+        codeLabels={codeLabels}
+        fileMentions={mentions}
+        selectionMapRef={selectionMapRef}
+      />
+    </TextAnnotationTarget>
+  )
+}
+
 /** Reasoning block as the Think variant summary row (figma 39:28304). */
 export const AssistantMarkdown = memo(function AssistantMarkdown({
   blocks, streaming, interrupted, loadImage, mentions, t, sourceId, annotations = [], annotationActions,
@@ -62,28 +96,30 @@ export const AssistantMarkdown = memo(function AssistantMarkdown({
     switch (block.kind) {
       case 'text':
         {
-          const markdown = (
-            <MarkdownText
-              text={block.text}
-              streaming={streaming}
-              codeLabels={codeLabels}
-              fileMentions={mentions}
-            />
-          )
           const blockSourceId = sourceId === undefined ? undefined : `${sourceId}:${i}`
           rendered.push(blockSourceId === undefined || annotationActions === undefined
-            ? <span key={i}>{markdown}</span>
+            ? (
+              <span key={i}>
+                <MarkdownText
+                  text={block.text}
+                  streaming={streaming}
+                  codeLabels={codeLabels}
+                  fileMentions={mentions}
+                />
+              </span>
+            )
             : (
-              <TextAnnotationTarget
+              <AnnotatableAssistantText
                 key={i}
+                text={block.text}
+                streaming={streaming}
+                codeLabels={codeLabels}
+                mentions={mentions}
                 sourceId={blockSourceId}
-                source={block.text}
-                annotations={annotations.filter(item => item.anchor.sourceId === blockSourceId)}
+                annotations={annotations}
                 add={annotationActions.addTextAnnotation}
                 t={t}
-              >
-                {markdown}
-              </TextAnnotationTarget>
+              />
             ))
         }
         break
