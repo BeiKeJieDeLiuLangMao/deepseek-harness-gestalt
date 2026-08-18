@@ -85,6 +85,7 @@ describe('MobileAccount', () => {
       retryPairing: vi.fn(),
       activate: vi.fn().mockResolvedValue(undefined),
       deactivate,
+      unpair: vi.fn().mockResolvedValue(undefined),
     }
     render(createElement(MobileAccount, { installation, pairing }))
 

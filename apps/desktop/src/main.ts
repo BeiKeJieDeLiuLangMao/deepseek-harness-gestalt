@@ -12,7 +12,7 @@ import {
   ACCOUNT_ACCEPT_PRIVACY, ACCOUNT_BEGIN_LOGIN, ACCOUNT_GET_SNAPSHOT,
   ACCOUNT_SIGN_OUT, ACCOUNT_SNAPSHOT_CHANGED,
   PAIRING_CANCEL_CHALLENGE, PAIRING_CONFIRM, PAIRING_CREATE_CHALLENGE,
-  PAIRING_GET_SNAPSHOT, PAIRING_REJECT, PAIRING_SET_ENABLED, PAIRING_SNAPSHOT_CHANGED,
+  PAIRING_GET_SNAPSHOT, PAIRING_REJECT, PAIRING_REVOKE, PAIRING_SET_ENABLED, PAIRING_SNAPSHOT_CHANGED,
   UPDATER_CHECK_NOW, UPDATER_DOWNLOAD_NOW, UPDATER_GET_STATUS,
   UPDATER_QUIT_AND_INSTALL, UPDATER_STATUS_CHANGED,
   WINDOW_CLOSE, WINDOW_MAXIMIZE, WINDOW_MINIMIZE,
@@ -42,6 +42,7 @@ import {
   UnavailableDesktopPairingController,
   confirmPairingFromIpc,
   rejectPairingFromIpc,
+  revokePairingFromIpc,
   setPairingEnabledFromIpc,
   type DesktopPairingActions,
 } from './personal-pairing.ts'
@@ -379,6 +380,7 @@ async function finishSmoke(target: BrowserWindow): Promise<void> {
         && typeof bridge.pairingCancelChallenge === 'function'
         && typeof bridge.pairingConfirm === 'function'
         && typeof bridge.pairingReject === 'function'
+        && typeof bridge.pairingRevoke === 'function'
         && typeof bridge.onPairingSnapshot === 'function',
       mobileAccessEnabled: pairingStatus?.enabled ?? null,
       pairingState: pairingStatus?.status ?? null,
@@ -475,6 +477,8 @@ function installIpc(): void {
     confirmPairingFromIpc(pairing, pendingPairingId))
   ipcMain.handle(PAIRING_REJECT, (_event, pendingPairingId: unknown) =>
     rejectPairingFromIpc(pairing, pendingPairingId))
+  ipcMain.handle(PAIRING_REVOKE, (_event, pairingId: unknown) =>
+    revokePairingFromIpc(pairing, pairingId))
 }
 
 function installMenu(): void {

@@ -45,7 +45,13 @@ export function MobilePairing({ actions }: { actions: MobilePairingActions }): R
     )
   }
   if (snapshot.status === 'paired') {
-    return <section className={css.card} data-mobile-pairing="paired"><h2>已配对</h2><p>Companion Surface 已激活。</p></section>
+    return (
+      <section className={css.card} data-mobile-pairing="paired">
+        <h2>已配对</h2>
+        <p>Companion Surface 已激活。</p>
+        <button type="button" className={css.continue} onClick={() => { void actions.unpair() }}>解除配对</button>
+      </section>
+    )
   }
   return (
     <section className={css.card} data-mobile-pairing={snapshot.status}>

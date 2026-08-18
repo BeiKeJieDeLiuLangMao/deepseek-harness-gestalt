@@ -78,6 +78,7 @@ describe('ui-desktop apply', () => {
       pairingCancelChallenge: vi.fn(),
       pairingConfirm: vi.fn(),
       pairingReject: vi.fn(),
+      pairingRevoke: vi.fn(),
       onPairingSnapshot: vi.fn(() => () => {}),
     }
     window.dshDesktop = desktop

@@ -111,7 +111,7 @@ describe('AccountControl', () => {
     renderControl(signedIn, {
       status: 'ready', enabled: true,
       pairings: [{
-        id: parsePersonalPairingId('pairing-1'), deviceName: 'Alice phone', platform: 'ios', pairedAt: 1,
+        id: parsePersonalPairingId('pairing-1'), deviceName: 'Alice phone', platform: 'ios', pairedAt: 1, lastAccessAt: 1, online: false,
       }],
       error: 'temporary warning',
     })
@@ -191,6 +191,7 @@ function bridge(snapshot: DesktopAccountSnapshot): DesktopBridge {
     pairingCancelChallenge: vi.fn(),
     pairingConfirm: vi.fn(),
     pairingReject: vi.fn(),
+    pairingRevoke: vi.fn(),
     onPairingSnapshot: () => () => {},
   }
 }

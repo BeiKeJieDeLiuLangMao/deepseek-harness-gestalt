@@ -68,6 +68,7 @@ let pairing: MobilePairingActions = {
   retryPairing: pairingUnavailable,
   activate: () => Promise.resolve(),
   deactivate: () => Promise.resolve(),
+  unpair: pairingUnavailable,
 }
 if (environment.environment === 'development' && import.meta.env.VITE_PERSONAL_PAIRING_KEYLESS === '1') {
   const { DevelopmentKeylessMobileHandshakeClient } = await import('./development-keyless-pairing.ts')

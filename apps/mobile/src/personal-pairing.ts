@@ -22,6 +22,8 @@ export interface MobilePairingHandshakeClient {
   acceptDesktopHandshake(desktopHandshake: Uint8Array): Promise<void>
   /** Open Mobile-specific Relay authority sealed to this Personal Pairing. */
   openRelayAuthority?(sealedAuthority: Uint8Array): Promise<RelayCredentialGrant>
+  /** Wipe any retained pairing key material on this installation. */
+  wipe?(): void | Promise<void>
 }
 
 /** Native QR scanner returning the exact full invitation payload. */
@@ -111,6 +113,17 @@ export class MobilePairingController implements MobilePairingActions {
     if (this.accountId !== accountId) this.resetAccountScope()
     this.accountId = accountId
     this.active = true
+  }
+
+  async unpair(): Promise<void> {
+    await this.exclusive(async () => {
+      this.assertActiveAccount()
+      this.attempt?.mobileHandshake.fill(0)
+      this.clearAttempt()
+      await this.options.handshake.wipe?.()
+      await this.options.relay?.stop()
+      this.publish({ status: 'ready' })
+    })
   }
 
   async deactivate(): Promise<void> {
