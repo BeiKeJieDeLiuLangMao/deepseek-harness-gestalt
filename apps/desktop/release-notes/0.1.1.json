@@ -1,0 +1,80 @@
+{
+  "version": "0.1.1",
+  "tag": "gestalt-v0.1.1",
+  "source": {
+    "baselineKind": "previous-release",
+    "baselineRepository": "BeiKeJieDeLiuLangMao/deepseek-harness-gestalt",
+    "releaseRepository": "BeiKeJieDeLiuLangMao/deepseek-harness-gestalt",
+    "baselineCommit": "de2610c9590f2e5b33ab366eb338f7c42058b11b"
+  },
+  "content": {
+    "zh": {
+      "intro": "DeepSeek Gestalt 0.1.1 收录上一版本之后的 {{commitCount}} 个提交。",
+      "sections": [
+        {
+          "heading": "Desktop 与会话表面",
+          "items": [
+            "安装包使用产品图标；Update Control 与窗口 inset 对齐，打包后的 Desktop Host 启动路径纳入 smoke。",
+            "Desktop 启用 Session Schedule，并提供可在冷会话上保存的任务板。"
+          ]
+        },
+        {
+          "heading": "远程、配对与账户",
+          "items": [
+            "Settings 提供个人配对；Desktop pairing 账户重置会发布到客户端，并在失败时按生命周期重试。",
+            "加入 GitHub installation 账户会话，以及带能力协商与载荷上限的版本化 companion 协议。"
+          ]
+        },
+        {
+          "heading": "工具与界面",
+          "items": [
+            "工具搜索可延迟发现，并在恢复会话后重建可记录的 schema。",
+            "工具资格改为仅授权策略，在包装前拒绝不合格工具；Details 面板占用者可声明宽度范围。",
+            "Settings 由插件自有表面承载；提问框可折叠，并修正 Safari textarea 回流。"
+          ]
+        },
+        {
+          "heading": "安全与发布基线",
+          "items": [
+            "跨运行时 Noise 路径带有可验证证据，并在启动前登记 simulator 清理。",
+            "内置 dsh 跟随 0.1.0-rc.7；发布说明改用上一版本基线比较 `gestalt-v0.1.0` 之后的提交。"
+          ]
+        }
+      ]
+    },
+    "en": {
+      "intro": "DeepSeek Gestalt 0.1.1 contains the {{commitCount}} commits after the previous Desktop Bundle.",
+      "sections": [
+        {
+          "heading": "Desktop and session surface",
+          "items": [
+            "Installers use the product icon; Update Control aligns with the window inset, and the packaged Desktop Host launch path is covered by smoke.",
+            "Desktop enables Session Schedule and a task board that can persist on a cold session."
+          ]
+        },
+        {
+          "heading": "Remote access, pairing, and accounts",
+          "items": [
+            "Settings provides personal pairing; Desktop pairing account resets publish to the client and retry across the pairing lifecycle.",
+            "GitHub installation account sessions land with a versioned companion protocol that negotiates capabilities and enforces payload ceilings."
+          ]
+        },
+        {
+          "heading": "Tools and interface",
+          "items": [
+            "Tool search can be discovered later and reconstructs a logged schema after session restore.",
+            "Tool eligibility is allow-only and rejects ineligible tools before wrappers; details occupants can declare a width range.",
+            "Settings is owned by plugin surfaces; the question composer collapses, and Safari textarea reflow is corrected."
+          ]
+        },
+        {
+          "heading": "Security and release baseline",
+          "items": [
+            "The cross-runtime Noise path carries verifiable evidence and registers simulator cleanup before boot.",
+            "The bundled dsh follows 0.1.0-rc.7; release notes compare against the previous Desktop Bundle at `gestalt-v0.1.0`."
+          ]
+        }
+      ]
+    }
+  }
+}
