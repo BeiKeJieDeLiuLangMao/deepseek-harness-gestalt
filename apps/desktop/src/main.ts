@@ -24,7 +24,7 @@ import type { DesktopRelayLifecycle } from '@deepseek-ai/dsh-remote-access-clien
 import type { SelectedPlatformEnvironment } from '@deepseek-ai/dsh-platform-account'
 import { ensureLaunchDirectory } from './launch-directory.ts'
 import { isElectronExecutable, resolveDesktopRuntime } from './runtime-paths.ts'
-import { planHostExit, startWithOneRetry } from './host-exit.ts'
+import { planHostExit, shouldPreventQuit, startWithOneRetry } from './host-exit.ts'
 import { classifyNavigation } from './navigation-policy.ts'
 import { spawnWebHost, type RunningWebHost } from './spawn-web-host.ts'
 import {
@@ -90,7 +90,10 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', (event) => {
-  if (shuttingDown) return
+  if (!shouldPreventQuit({ shuttingDown, updaterState: updater?.state().state })) {
+    if (!shuttingDown) requestShutdown(0, 'allow-quit')
+    return
+  }
   event.preventDefault()
   requestShutdown(0)
 })
@@ -176,6 +179,7 @@ async function boot(): Promise<void> {
     updater = startAutoUpdater({
       updater: autoUpdater,
       onStateChange: pushStatus,
+      autoInstallOnAppQuit: process.platform === 'darwin',
     })
   } catch (error) {
     pushStatus({
@@ -412,11 +416,13 @@ async function finishSmoke(target: BrowserWindow): Promise<void> {
   target.close()
 }
 
-function requestShutdown(exitCode: number): void {
+function requestShutdown(exitCode: number, mode: 'exit' | 'allow-quit' = 'exit'): void {
   if (shuttingDown) return
   shuttingDown = true
-  updater?.dispose()
-  updater = undefined
+  if (mode === 'exit') {
+    updater?.dispose()
+    updater = undefined
+  }
   stopAccountEvents?.()
   stopAccountEvents = undefined
   stopPairingEvents?.()
@@ -433,10 +439,10 @@ function requestShutdown(exitCode: number): void {
       const started = await starting?.catch(() => undefined)
       if (started !== running) await started?.stop()
       await running?.stop()
-      app.exit(exitCode)
+      if (mode === 'exit') app.exit(exitCode)
     } catch (error) {
       console.error('dsh desktop: shutdown failed', error)
-      app.exit(1)
+      if (mode === 'exit') app.exit(1)
     }
   })()
 }
