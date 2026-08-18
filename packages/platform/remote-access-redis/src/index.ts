@@ -1,0 +1,299 @@
+/** Redis connection directory, invalidation, and ciphertext Pub/Sub for Remote Access. */
+
+import { createClient } from 'redis'
+import {
+  parseRelayConnectionToken,
+  parseRelayInstanceId,
+  type RelayCoordinationEvent,
+  type RelayCoordinator,
+  type RelayDirectoryEntry,
+  type RelayInstanceId,
+} from '@deepseek-ai/dsh-remote-access'
+import {
+  decodeRelayMessage,
+  encodeRelayMessage,
+  parseRelayAttachmentId,
+  parseRelayRouteId,
+  REMOTE_PROTOCOL_LIMITS,
+  type RelayAttachmentId,
+  type RelayCiphertextMessage,
+  type RelayRouteId,
+} from '@deepseek-ai/dsh-remote-protocol'
+
+const KEY_PREFIX_PATTERN = /^[A-Za-z0-9:_-]+$/u
+const DIRECTORY_VALUE_BYTES = 2_048
+const EVENT_BYTES = Math.ceil(REMOTE_PROTOCOL_LIMITS.relayMessageBytes * 4 / 3) + 1_024
+
+const REFRESH_SCRIPT = `
+local current = redis.call('GET', KEYS[1])
+if not current then return 0 end
+local decoded = cjson.decode(current)
+if decoded.connectionToken ~= ARGV[1] then return 0 end
+redis.call('SET', KEYS[1], ARGV[2], 'PX', ARGV[3])
+return 1
+`
+
+const UNREGISTER_SCRIPT = `
+local current = redis.call('GET', KEYS[1])
+if not current then return 0 end
+local decoded = cjson.decode(current)
+if decoded.connectionToken ~= ARGV[1] then return 0 end
+redis.call('DEL', KEYS[1])
+return 1
+`
+
+/** Minimal maintained-client operations used by the coordinator and its keyless adapter tests. */
+export interface RelayRedisClient {
+  get(key: string): Promise<string | null>
+  set(key: string, value: string, options: { PX: number }): Promise<unknown>
+  eval(script: string, options: { keys: string[]; arguments: string[] }): Promise<unknown>
+  publish(channel: string, message: string): Promise<number>
+  subscribe(channel: string, listener: (message: string) => void): Promise<unknown>
+  unsubscribe(channel: string, listener: (message: string) => void): Promise<unknown>
+}
+
+/** Construction inputs for one environment-scoped Redis coordinator. */
+export interface RedisRelayCoordinatorOptions {
+  command: RelayRedisClient
+  subscriber: RelayRedisClient
+  /** Environment-specific key namespace containing no credential. */
+  keyPrefix: string
+  clock?: { now(): number }
+}
+
+/** Redis adapter that never creates a stream, list, or other offline ciphertext queue. */
+export class RedisRelayCoordinator implements RelayCoordinator {
+  private readonly keyPrefix: string
+  private readonly clock: { now(): number }
+
+  /** @param options - connected maintained Redis clients and environment namespace. */
+  constructor(private readonly options: RedisRelayCoordinatorOptions) {
+    validateKeyPrefix(options.keyPrefix)
+    this.keyPrefix = options.keyPrefix
+    this.clock = options.clock ?? { now: () => Date.now() }
+  }
+
+  async listen(
+    instanceId: RelayInstanceId,
+    listener: (event: RelayCoordinationEvent) => Promise<void>,
+  ): Promise<() => Promise<void>> {
+    const instanceChannel = this.instanceChannel(instanceId)
+    const invalidationChannel = this.invalidationChannel()
+    const onInstance = (message: string): void => { this.dispatch(message, listener) }
+    const onInvalidation = (message: string): void => { this.dispatch(message, listener) }
+    const subscribed: Array<{ channel: string; callback: (message: string) => void }> = []
+    try {
+      await this.options.subscriber.subscribe(instanceChannel, onInstance)
+      subscribed.push({ channel: instanceChannel, callback: onInstance })
+      await this.options.subscriber.subscribe(invalidationChannel, onInvalidation)
+      subscribed.push({ channel: invalidationChannel, callback: onInvalidation })
+    } catch (error) {
+      await Promise.allSettled(subscribed.map(item => this.options.subscriber.unsubscribe(item.channel, item.callback)))
+      throw error
+    }
+    return async () => {
+      const results = await Promise.allSettled(
+        subscribed.map(item => this.options.subscriber.unsubscribe(item.channel, item.callback)),
+      )
+      const errors = results.filter(result => result.status === 'rejected').map(result => result.reason as unknown)
+      if (errors.length > 0) throw new AggregateError(errors, 'Relay Redis subscription shutdown failed')
+    }
+  }
+
+  async register(entry: RelayDirectoryEntry): Promise<void> {
+    await this.options.command.set(
+      this.directoryKey(entry.routeId, entry.attachmentId),
+      encodeDirectory(entry),
+      { PX: this.ttl(entry) },
+    )
+  }
+
+  async refresh(entry: RelayDirectoryEntry): Promise<boolean> {
+    const result = await this.options.command.eval(REFRESH_SCRIPT, {
+      keys: [this.directoryKey(entry.routeId, entry.attachmentId)],
+      arguments: [entry.connectionToken, encodeDirectory(entry), String(this.ttl(entry))],
+    })
+    return result === 1
+  }
+
+  async unregister(entry: RelayDirectoryEntry): Promise<void> {
+    await this.options.command.eval(UNREGISTER_SCRIPT, {
+      keys: [this.directoryKey(entry.routeId, entry.attachmentId)],
+      arguments: [entry.connectionToken],
+    })
+  }
+
+  async locate(routeId: RelayRouteId, attachmentId: RelayAttachmentId): Promise<RelayDirectoryEntry | undefined> {
+    const value = await this.options.command.get(this.directoryKey(routeId, attachmentId))
+    return value === null ? undefined : decodeDirectory(value)
+  }
+
+  async publish(instanceId: RelayInstanceId, event: RelayCoordinationEvent): Promise<boolean> {
+    if (event.type === 'invalidate') throw new TypeError('Relay invalidation must use invalidate()')
+    return await this.options.command.publish(this.instanceChannel(instanceId), encodeEvent(event)) > 0
+  }
+
+  async invalidate(event: Extract<RelayCoordinationEvent, { type: 'invalidate' }>): Promise<void> {
+    await this.options.command.publish(this.invalidationChannel(), encodeEvent(event))
+  }
+
+  private dispatch(message: string, listener: (event: RelayCoordinationEvent) => Promise<void>): void {
+    let event: RelayCoordinationEvent
+    try {
+      event = decodeEvent(message)
+    } catch (error) {
+      console.error('[remote-access-redis] rejected malformed coordination event:', error)
+      return
+    }
+    void listener(event).catch((error: unknown) => {
+      console.error('[remote-access-redis] coordination listener failed:', error)
+    })
+  }
+
+  private directoryKey(routeId: RelayRouteId, attachmentId: RelayAttachmentId): string {
+    return `${this.keyPrefix}:directory:${routeId}:${attachmentId}`
+  }
+
+  private instanceChannel(instanceId: RelayInstanceId): string {
+    return `${this.keyPrefix}:instance:${instanceId}`
+  }
+
+  private invalidationChannel(): string { return `${this.keyPrefix}:invalidation` }
+
+  private ttl(entry: RelayDirectoryEntry): number {
+    const ttl = entry.expiresAt - this.clock.now()
+    if (!Number.isSafeInteger(ttl) || ttl <= 0) throw new TypeError('Relay directory expiry must be in the future')
+    return ttl
+  }
+}
+
+/**
+ * Construct maintained Redis clients from secret-injected deployment configuration.
+ * @param options - Redis URL and environment-specific key namespace.
+ * @returns the connected coordinator and an all-settled client disposer.
+ */
+export async function connectRedisRelayCoordinator(options: {
+  url: string
+  keyPrefix: string
+}): Promise<{ coordinator: RedisRelayCoordinator; close(): Promise<void> }> {
+  const url = new URL(options.url)
+  if (url.protocol !== 'redis:' && url.protocol !== 'rediss:') {
+    throw new TypeError('Relay Redis URL must use redis or rediss')
+  }
+  validateKeyPrefix(options.keyPrefix)
+  const command = createClient({ url: options.url })
+  const subscriber = command.duplicate()
+  try {
+    await Promise.all([command.connect(), subscriber.connect()])
+  } catch (error) {
+    await Promise.allSettled([command.close(), subscriber.close()])
+    throw error
+  }
+  const coordinator = new RedisRelayCoordinator({
+    command: command,
+    subscriber: subscriber,
+    keyPrefix: options.keyPrefix,
+  })
+  return {
+    coordinator,
+    close: async () => {
+      const results = await Promise.allSettled([command.quit(), subscriber.quit()])
+      const errors = results.filter(result => result.status === 'rejected').map(result => result.reason as unknown)
+      if (errors.length > 0) throw new AggregateError(errors, 'Relay Redis clients failed to close')
+    },
+  }
+}
+
+function encodeDirectory(entry: RelayDirectoryEntry): string {
+  return JSON.stringify(entry)
+}
+
+function decodeDirectory(value: string): RelayDirectoryEntry {
+  if (Buffer.byteLength(value) > DIRECTORY_VALUE_BYTES) throw new TypeError('Relay directory entry exceeds its byte limit')
+  const record = object(JSON.parse(value) as unknown, 'Relay directory entry')
+  exactKeys(record, ['routeId', 'attachmentId', 'endpoint', 'instanceId', 'connectionToken', 'revision', 'expiresAt'])
+  if (record.endpoint !== 'mobile' && record.endpoint !== 'desktop') throw new TypeError('Relay directory endpoint is invalid')
+  return {
+    routeId: parseRelayRouteId(record.routeId),
+    attachmentId: parseRelayAttachmentId(record.attachmentId),
+    endpoint: record.endpoint,
+    instanceId: parseRelayInstanceId(record.instanceId),
+    connectionToken: parseRelayConnectionToken(record.connectionToken),
+    revision: positiveInteger(record.revision, 'revision'),
+    expiresAt: positiveInteger(record.expiresAt, 'expiresAt'),
+  }
+}
+
+function encodeEvent(event: RelayCoordinationEvent): string {
+  const value = event.type === 'invalidate'
+    ? JSON.stringify(event)
+    : JSON.stringify({
+      type: 'ciphertext',
+      targetConnectionToken: event.targetConnectionToken,
+      revision: event.revision,
+      frame: Buffer.from(encodeRelayMessage(withoutCoordination(event))).toString('base64url'),
+    })
+  return value
+}
+
+function decodeEvent(value: string): RelayCoordinationEvent {
+  if (Buffer.byteLength(value) > EVENT_BYTES) throw new TypeError('Relay coordination event exceeds its byte limit')
+  const record = object(JSON.parse(value) as unknown, 'Relay coordination event')
+  if (record.type === 'invalidate') {
+    exactKeys(record, ['type', 'routeId', 'revision'])
+    return {
+      type: 'invalidate',
+      routeId: parseRelayRouteId(record.routeId),
+      revision: positiveInteger(record.revision, 'revision'),
+    }
+  }
+  exactKeys(record, ['type', 'targetConnectionToken', 'revision', 'frame'])
+  if (record.type !== 'ciphertext' || typeof record.frame !== 'string') {
+    throw new TypeError('Relay coordination event type is invalid')
+  }
+  const encodedFrame = record.frame
+  if (!/^[A-Za-z0-9_-]*$/u.test(encodedFrame) || encodedFrame.length % 4 === 1) {
+    throw new TypeError('Relay coordination frame must use canonical base64url')
+  }
+  const decodedFrame = Buffer.from(encodedFrame, 'base64url')
+  if (decodedFrame.toString('base64url') !== encodedFrame) {
+    throw new TypeError('Relay coordination frame must use canonical base64url')
+  }
+  const frame = decodeRelayMessage(new Uint8Array(decodedFrame))
+  if (frame.type !== 'ciphertext') throw new TypeError('Relay coordination frame must carry ciphertext')
+  return {
+    ...frame,
+    targetConnectionToken: parseRelayConnectionToken(record.targetConnectionToken),
+    revision: positiveInteger(record.revision, 'revision'),
+  }
+}
+
+function withoutCoordination(
+  event: Exclude<RelayCoordinationEvent, { type: 'invalidate' }>,
+): RelayCiphertextMessage {
+  const { targetConnectionToken: _targetConnectionToken, revision: _revision, ...frame } = event
+  return frame
+}
+
+function object(value: unknown, name: string): Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new TypeError(`${name} must be an object`)
+  return value as Record<string, unknown>
+}
+
+function exactKeys(record: Record<string, unknown>, keys: readonly string[]): void {
+  const actual = Object.keys(record)
+  if (actual.length !== keys.length || actual.some(key => !keys.includes(key))) {
+    throw new TypeError('Relay coordination value contains unsupported fields')
+  }
+}
+
+function positiveInteger(value: unknown, name: string): number {
+  if (!Number.isSafeInteger(value) || (value as number) <= 0) throw new TypeError(`Relay ${name} must be a positive integer`)
+  return value as number
+}
+
+function validateKeyPrefix(keyPrefix: string): void {
+  if (keyPrefix.length === 0 || keyPrefix.length > 128 || !KEY_PREFIX_PATTERN.test(keyPrefix)) {
+    throw new TypeError('Relay Redis keyPrefix must be 1-128 namespace characters')
+  }
+}

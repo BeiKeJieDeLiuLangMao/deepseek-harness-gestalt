@@ -6,6 +6,9 @@ export type RelayRouteId = Branded<'RelayRouteId'>
 /** Opaque identifier for one live Relay attachment. */
 export type RelayAttachmentId = Branded<'RelayAttachmentId'>
 
+/** Exactly 256 bits of transport attachment authority in canonical base64url form. */
+export type RelayCredential = Branded<'RelayCredential'>
+
 /** Protocol-native identifier for one Desktop-authoritative operation. */
 export type CompanionOperationId = Branded<'CompanionOperationId'>
 
@@ -102,6 +105,8 @@ export interface RelayAttachMessage {
   routeId: RelayRouteId
   attachmentId: RelayAttachmentId
   endpoint: 'mobile' | 'desktop'
+  /** High-entropy route authority proved inside the TLS-protected attachment message. */
+  credential: RelayCredential
 }
 
 /** Content-free liveness frame for one Relay attachment. */
@@ -128,6 +133,7 @@ export type RelayErrorCode =
   | 'RELAY_ROUTE_REVOKED'
   | 'RELAY_SLOW_CONSUMER'
   | 'RELAY_TRANSPORT_INCOMPATIBLE'
+  | 'REMOTE_OFFLINE'
 
 /** Relay-visible transport failure. */
 export interface RelayErrorMessage {

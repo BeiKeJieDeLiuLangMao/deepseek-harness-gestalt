@@ -4,11 +4,11 @@
 
 DeepSeek Gestalt 的 Desktop Host。Electron 拥有窗口、菜单和 GitHub 自动更新。它启动捆绑的官方 Node 加上 `dsh web --host 127.0.0.1 --port 0 --patch ./cordis.patch.yml`，并打开该环回 URL。叠加层加入 Schedule、逐 step 时间上下文、GESTALT 次标、拖拽带和 Update Control；只有更新可操作或发现版本后发生错误时，控件才会出现。浏览器 `dsh web` 不加载这层。
 
-窗口退出、Ctrl+C 和 smoke 测试结束都会取消尚未完成的启动、停止 Web Host，并等待其进程退出后再终止 Electron。首次启动或后续崩溃共允许一次重试，之后窗口才显示 Host 错误。
+在所有平台关闭最后一个窗口、Ctrl+C 与 smoke 测试结束都会取消尚未完成的启动，停止 Personal Pairing 与受生产 gate 保护的 Relay owner，停止 Web Host，并等待其工作排空后再终止 Electron。系统 sleep 会停止 Remote Access；resume 只为仍处于登录状态的账号重新加载。首次启动或后续 Host 崩溃共允许一次重试，之后窗口才显示 Host 错误。不存在无窗口 daemon、后台 Host 或 remote wake 路径。
 
 主窗口只接受当前环回 Host 同源导航。包括 GitHub 授权在内的普通 HTTP 链接交给系统浏览器；其他来源和 scheme 不能替换 Session Surface，也不能创建另一个 Electron 窗口。Platform 账号签名密钥和令牌保存在 Electron userData 下、按环境分开的 `safeStorage` 加密文件中；preload 只暴露当前状态与生命周期动词。
 
-个人配对只在真实的 `手机配对` 设置区中配置。preload 暴露手机访问、挑战、待确认决策与已配对设备操作，不会向普通 Session 标题栏、侧栏、审批、输入框或离线视图增加状态。账号登录后，由 Host 拥有的控制器为每项远程访问操作签署新的当前安装证明，在设置中的配对开关开启时轮询待确认决策，并在调用变更前校验 renderer 传入的布尔值与带品牌的待确认 id。开发环境可以用 `DSH_PERSONAL_PAIRING_KEYLESS=1` 选择真实 HTTP 控制器；生产环境在独立 Noise 评审接纳经过评审的握手提供方前保持不可用。Host 永远不会组装仅用于证明的 Snow 实现或开发 keyless 提供方。
+个人配对只在真实的 `手机配对` 设置区中配置。preload 暴露手机访问、挑战、待确认决策与已配对设备操作，不会向普通 Session 标题栏、侧栏、审批、输入框或离线视图增加状态。账号登录后，由 Host 拥有的控制器为每项远程访问操作签署新的当前安装证明，在设置中的配对开关开启时轮询待确认决策，并在调用变更前校验 renderer 传入的布尔值与带品牌的待确认 id。同一个 owner 只在手机访问开启时启动注入的 Relay lifecycle，并在关闭开关、退出账号、sleep 或 quit 时停止。开发环境可以用 `DSH_PERSONAL_PAIRING_KEYLESS=1` 选择真实 HTTP 控制器；生产环境在独立 Noise 评审接纳经过评审的握手与 Companion channel provider 前保持不可用。Host 永远不会组装仅用于证明的 Snow 实现或任一 keyless provider。
 
 Desktop Platform 账号会在创建窗口前校验完整开发与生产环境对：`DSH_PLATFORM_DEVELOPMENT_*` 和 `DSH_PLATFORM_PRODUCTION_*` 两侧分别提供 `ORIGIN`、`CALLBACK_URL`、`GITHUB_CLIENT_ID`、`CREDENTIAL_REFERENCE`、`DATABASE_IDENTITY` 与 `IDENTITY_NAMESPACE`，再由 `DSH_PLATFORM_ENV` 显式选择一侧。缺失、未知、共享、非 HTTPS 或回调不匹配的配置会在渲染与网络流量前使启动失败。操作系统加密不可用仍会作为明确的能力失败显示。加密记录通过 `dsh-atomic-write` 的随机独占同级文件、仅所有者权限、符号链接安全 rename 与失败清理完成替换。
 

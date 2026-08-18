@@ -2,9 +2,11 @@
 
 English | [中文](README.zh.md)
 
-HTTP Consumer for the public Remote Access service. One fixed Platform route accepts current-Installation Account proof headers, validates operation input, and delegates only through `ctx.remoteAccess`.
+HTTP and WSS Consumers for the public Remote Access services. One fixed HTTP route accepts current-Installation Account proof headers, validates operation input, and delegates only through `ctx.remoteAccess`. The exact WSS path accepts only Relay Transport frames and delegates authenticated attachments through `ctx.remoteRelay`.
 
 The Consumer reads no Account database fields and grants no authority itself. The Remote Access provider authenticates the Account and Installation role through the Platform Account public service before any pairing lifecycle mutation.
+
+The WSS Consumer requires attach as its first frame, applies an explicit attach deadline and the protocol message-byte ceiling, disables compression, serializes frames, and tears down the Relay attachment with the socket. It returns only content-free stable transport errors. TLS termination and the single non-sticky endpoint remain deployment responsibilities.
 
 ## Model Experience
 
@@ -16,5 +18,5 @@ None.
 
 ## Known Limitations and Deferred Work
 
-- The route owns Personal Pairing operations only; it does not forward Relay ciphertext or Host requests.
-- Deployment TLS, rate limits, and audit policy remain Platform composition responsibilities.
+- The WSS Consumer forwards opaque Relay ciphertext only; it never accepts Host requests or Companion plaintext.
+- Deployment TLS, edge limits, and audit policy remain Platform composition responsibilities.

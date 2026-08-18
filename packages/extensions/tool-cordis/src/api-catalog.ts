@@ -1094,6 +1094,30 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'remoteRelay',
+    summary: 'Public Remote Access Relay capability used by the WSS Consumer.',
+    description: 'Public Remote Access Relay capability used by the WSS Consumer.',
+    methods: [
+      {
+        signature: 'abstract rotateCredential(routeId: RelayRouteId): Promise<RelayCredentialGrant>',
+        description: 'Rotate one route to fresh authority and invalidate older attachments.',
+        parameters: [{ name: 'routeId', description: 'opaque route receiving new attachment authority.' }],
+        returns: 'the one-time credential grant and its persistent revision.',
+      },
+      {
+        signature: 'abstract revokeRoute(routeId: RelayRouteId): Promise<void>',
+        description: 'Revoke one route and close its attachments across Platform Instances.',
+        parameters: [{ name: 'routeId', description: 'opaque route whose current authority becomes invalid.' }],
+      },
+      {
+        signature: 'abstract attach(input: { message: RelayAttachMessage deliver: (message: RelayCiphertextMessage) => Promise<void> close?: () => void | Promise<void> }): Promise<RemoteRelayAttachment>',
+        description: 'Authenticate and register one outbound Mobile or Desktop attachment.',
+        parameters: [{ name: 'input', description: 'attach frame plus the socket writer and optional close callback.' }],
+        returns: 'the admitted attachment receiving later frames from that socket.',
+      },
+    ],
+  },
+  {
     key: 'sandbox',
     summary: 'Abstract process-sandbox service.',
     description: 'Abstract process-sandbox service. confine must return enforcing argv or fail closed at wrap or runner-execution time; silent unconfined passthrough is forbidden. Functional probes arbitrate multi-runner chains and may be skipped for a sole candidate, whose own refusal remains the fail-closed end.',
@@ -3887,6 +3911,38 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'RedactedSecret',
     declaration: 'export interface RedactedSecret {\n    path: string[];\n    set: boolean;\n}',
+  },
+  {
+    name: 'RelayAttachmentId',
+    declaration: 'export type RelayAttachmentId = Branded<\'RelayAttachmentId\'>;',
+  },
+  {
+    name: 'RelayAttachMessage',
+    declaration: 'export interface RelayAttachMessage {\n    type: \'attach\';\n    transportVersion: 1;\n    routeId: RelayRouteId;\n    attachmentId: RelayAttachmentId;\n    endpoint: \'mobile\' | \'desktop\';\n    credential: RelayCredential;\n}',
+  },
+  {
+    name: 'RelayCiphertextMessage',
+    declaration: 'export interface RelayCiphertextMessage {\n    type: \'ciphertext\';\n    transportVersion: 1;\n    routeId: RelayRouteId;\n    sourceAttachmentId: RelayAttachmentId;\n    targetAttachmentId: RelayAttachmentId;\n    ciphertext: Uint8Array;\n}',
+  },
+  {
+    name: 'RelayCredential',
+    declaration: 'export type RelayCredential = Branded<\'RelayCredential\'>;',
+  },
+  {
+    name: 'RelayCredentialGrant',
+    declaration: 'export interface RelayCredentialGrant {\n    routeId: RelayRouteId;\n    credential: RelayCredential;\n    revision: number;\n}',
+  },
+  {
+    name: 'RelayHeartbeatMessage',
+    declaration: 'export interface RelayHeartbeatMessage {\n    type: \'heartbeat\';\n    transportVersion: 1;\n    attachmentId: RelayAttachmentId;\n    sentAt: number;\n}',
+  },
+  {
+    name: 'RelayRouteId',
+    declaration: 'export type RelayRouteId = Branded<\'RelayRouteId\'>;',
+  },
+  {
+    name: 'RemoteRelayAttachment',
+    declaration: 'export interface RemoteRelayAttachment {\n    receive(message: RelayCiphertextMessage | RelayHeartbeatMessage): Promise<void>;\n    close(): Promise<void>;\n}',
   },
   {
     name: 'ReplayEnvelope',

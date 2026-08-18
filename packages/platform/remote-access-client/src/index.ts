@@ -19,6 +19,8 @@ import type {
   PersonalPairingView,
   RemoteAccessErrorCode,
 } from '@deepseek-ai/dsh-remote-access'
+
+export * from './relay.ts'
 import {
   PERSONAL_PAIRING_PROTOCOL_MAJOR,
   RemoteAccessError,

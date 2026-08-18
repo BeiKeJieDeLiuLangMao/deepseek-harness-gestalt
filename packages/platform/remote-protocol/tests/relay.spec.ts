@@ -4,6 +4,7 @@ import {
   encodeRelayMessage,
   negotiateRelayTransportVersion,
   parseRelayAttachmentId,
+  parseRelayCredential,
   parseRelayRouteId,
   REMOTE_PROTOCOL_LIMITS,
   RemoteProtocolError,
@@ -35,9 +36,10 @@ describe('Relay Transport Protocol codec', () => {
   it('admits only attachment, forwarding, heartbeat, revocation, and transport errors', () => {
     const routeId = parseRelayRouteId('route-keyless')
     const attachmentId = parseRelayAttachmentId('mobile-keyless')
+    const credential = parseRelayCredential('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA')
     const messages = [
-      { type: 'attach', transportVersion: 1, routeId, attachmentId, endpoint: 'mobile' },
-      { type: 'attach', transportVersion: 1, routeId, attachmentId, endpoint: 'desktop' },
+      { type: 'attach', transportVersion: 1, routeId, attachmentId, endpoint: 'mobile', credential },
+      { type: 'attach', transportVersion: 1, routeId, attachmentId, endpoint: 'desktop', credential },
       { type: 'heartbeat', transportVersion: 1, attachmentId, sentAt: 1_787_027_200_000 },
       { type: 'revoke', transportVersion: 1, routeId, attachmentId, reason: 'device' },
       { type: 'revoke', transportVersion: 1, routeId, attachmentId, reason: 'all' },
@@ -47,6 +49,7 @@ describe('Relay Transport Protocol codec', () => {
       { type: 'error', transportVersion: 1, code: 'RELAY_ATTACHMENT_REJECTED' },
       { type: 'error', transportVersion: 1, code: 'RELAY_SLOW_CONSUMER' },
       { type: 'error', transportVersion: 1, code: 'RELAY_TRANSPORT_INCOMPATIBLE' },
+      { type: 'error', transportVersion: 1, code: 'REMOTE_OFFLINE' },
     ] as const
 
     for (const message of messages) {
@@ -60,6 +63,7 @@ describe('Relay Transport Protocol codec', () => {
       routeId,
       attachmentId,
       endpoint: 'mobile',
+      credential,
       prompt: 'must never reach Relay',
     }))
     expect(() => decodeRelayMessage(forbidden)).toThrow(
@@ -85,7 +89,8 @@ describe('Relay Transport Protocol codec', () => {
     let deepValue: unknown = 'leaf'
     for (let depth = 0; depth <= REMOTE_PROTOCOL_LIMITS.parserDepth; depth += 1) deepValue = [deepValue]
     const overDepth = new TextEncoder().encode(JSON.stringify({
-      type: 'attach', transportVersion: 1, routeId: 'route', attachmentId: 'mobile', endpoint: 'mobile', extra: deepValue,
+      type: 'attach', transportVersion: 1, routeId: 'route', attachmentId: 'mobile', endpoint: 'mobile',
+      credential: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', extra: deepValue,
     }))
     expect(() => decodeRelayMessage(overDepth)).toThrow(
       expect.objectContaining<Partial<RemoteProtocolError>>({ code: 'REMOTE_PROTOCOL_LIMIT_EXCEEDED' }),
@@ -93,6 +98,7 @@ describe('Relay Transport Protocol codec', () => {
 
     const tooManyValues = new TextEncoder().encode(JSON.stringify({
       type: 'attach', transportVersion: 1, routeId: 'route', attachmentId: 'mobile', endpoint: 'mobile',
+      credential: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
       extra: Array.from({ length: REMOTE_PROTOCOL_LIMITS.containerValues + 1 }, () => null),
     }))
     expect(() => decodeRelayMessage(tooManyValues)).toThrow(
@@ -127,6 +133,7 @@ describe('Relay Transport Protocol codec', () => {
   it('rejects malformed transport fields with stable errors', () => {
     const attach = {
       type: 'attach', transportVersion: 1, routeId: 'route', attachmentId: 'mobile', endpoint: 'mobile',
+      credential: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
     }
     const malformed = [
       null,
@@ -135,6 +142,8 @@ describe('Relay Transport Protocol codec', () => {
       { ...attach, transportVersion: 2 },
       { ...attach, endpoint: 'relay' },
       { ...attach, type: 'host-request' },
+      { type: 'attach', transportVersion: 1, routeId: 'route', attachmentId: 'mobile', endpoint: 'mobile' },
+      { ...attach, credential: 'route-id-is-not-authentication' },
       { type: 'attach', transportVersion: 1, routeId: 'route', attachmentId: 'mobile', wrong: 'mobile' },
       { type: 'ciphertext', transportVersion: 1, routeId: 'route', sourceAttachmentId: 'mobile', targetAttachmentId: 'desktop', ciphertext: 1 },
       { type: 'ciphertext', transportVersion: 1, routeId: 'route', sourceAttachmentId: 'mobile', targetAttachmentId: 'desktop', ciphertext: '*' },
@@ -192,6 +201,7 @@ describe('Relay Transport Protocol codec', () => {
   it('bounds every encoded JSON value before Relay dispatch', () => {
     const attach = {
       type: 'attach', transportVersion: 1, routeId: 'route', attachmentId: 'mobile', endpoint: 'mobile',
+      credential: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
     }
     expect(() => decodeRelayMessage(json({ ...attach, extra: 'x'.repeat(REMOTE_PROTOCOL_LIMITS.stringBytes + 1) }))).toThrow(
       expect.objectContaining<Partial<RemoteProtocolError>>({ code: 'REMOTE_PROTOCOL_LIMIT_EXCEEDED' }),
@@ -221,6 +231,11 @@ describe('Relay Transport Protocol codec', () => {
       )
     }
     expect(parseRelayAttachmentId('attachment_valid-1')).toBe('attachment_valid-1')
+    for (const value of [undefined, '', 'route-only', 'A'.repeat(42), 'A'.repeat(44)]) {
+      expect(() => parseRelayCredential(value)).toThrow(
+        expect.objectContaining<Partial<RemoteProtocolError>>({ code: 'REMOTE_PROTOCOL_INVALID_MESSAGE' }),
+      )
+    }
   })
 })
 

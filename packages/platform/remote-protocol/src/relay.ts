@@ -6,7 +6,13 @@ import {
 } from './boundary.ts'
 import { RemoteProtocolError } from './errors.ts'
 import { REMOTE_PROTOCOL_LIMITS } from './limits.ts'
-import type { RelayAttachmentId, RelayErrorCode, RelayMessage, RelayRouteId } from './types.ts'
+import type {
+  RelayAttachmentId,
+  RelayCredential,
+  RelayErrorCode,
+  RelayMessage,
+  RelayRouteId,
+} from './types.ts'
 
 const IDENTIFIER_PATTERN = /^[A-Za-z0-9_-]+$/
 const MAX_IDENTIFIER_CHARACTERS = 128
@@ -27,6 +33,19 @@ export function parseRelayRouteId(value: unknown): RelayRouteId {
  */
 export function parseRelayAttachmentId(value: unknown): RelayAttachmentId {
   return parseIdentifier(value, 'attachmentId') as RelayAttachmentId
+}
+
+/**
+ * Parse a canonical 256-bit Relay credential at the TLS wire boundary.
+ * @param value - untrusted credential string.
+ * @returns branded high-entropy credential.
+ */
+export function parseRelayCredential(value: unknown): RelayCredential {
+  if (typeof value !== 'string' || value.length !== 43 || !IDENTIFIER_PATTERN.test(value)) {
+    invalid('Relay credential must be exactly 43 canonical base64url characters')
+  }
+  decodeProtocolBase64Url(value, 32, 'Relay credential')
+  return value as RelayCredential
 }
 
 /**
@@ -66,13 +85,18 @@ export function decodeRelayMessage(encoded: Uint8Array): RelayMessage {
     requireTransportVersion(record)
     switch (record.type) {
       case 'attach':
-        exactKeys(record, ['type', 'transportVersion', 'routeId', 'attachmentId', 'endpoint'], 'Relay attach message')
+        exactKeys(
+          record,
+          ['type', 'transportVersion', 'routeId', 'attachmentId', 'endpoint', 'credential'],
+          'Relay attach message',
+        )
         if (record.endpoint !== 'mobile' && record.endpoint !== 'desktop') invalid('Relay endpoint must be mobile or desktop')
         return {
           type: 'attach', transportVersion: 1,
           routeId: parseRelayRouteId(record.routeId),
           attachmentId: parseRelayAttachmentId(record.attachmentId),
           endpoint: record.endpoint,
+          credential: parseRelayCredential(record.credential),
         }
       case 'ciphertext':
         exactKeys(record, ['type', 'transportVersion', 'routeId', 'sourceAttachmentId', 'targetAttachmentId', 'ciphertext'], 'Relay ciphertext message')
@@ -182,6 +206,7 @@ function isRelayErrorCode(value: unknown): value is RelayErrorCode {
     || value === 'RELAY_ROUTE_REVOKED'
     || value === 'RELAY_SLOW_CONSUMER'
     || value === 'RELAY_TRANSPORT_INCOMPATIBLE'
+    || value === 'REMOTE_OFFLINE'
 }
 
 function invalid(message: string): never {

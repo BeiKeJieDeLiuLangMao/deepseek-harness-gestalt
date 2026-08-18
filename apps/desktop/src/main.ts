@@ -6,7 +6,7 @@ import { appendFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
-  app, BrowserWindow, Menu, ipcMain, safeStorage, shell, type IpcMainEvent,
+  app, BrowserWindow, Menu, ipcMain, powerMonitor, safeStorage, shell, type IpcMainEvent,
 } from 'electron'
 import {
   ACCOUNT_ACCEPT_PRIVACY, ACCOUNT_BEGIN_LOGIN, ACCOUNT_GET_SNAPSHOT,
@@ -83,7 +83,7 @@ if (!gotLock) {
 }
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit()
+  app.quit()
 })
 
 app.on('before-quit', (event) => {
@@ -292,6 +292,17 @@ function installIntegrationsOnce(): void {
   integrationsInstalled = true
   installIpc()
   installMenu()
+  powerMonitor.on('suspend', () => {
+    void pairing.deactivate('sleep').catch((error: unknown) => {
+      console.error('[desktop-personal-pairing] sleep shutdown failed:', error)
+    })
+  })
+  powerMonitor.on('resume', () => {
+    if (!accountSignedIn) return
+    void pairing.start().catch((error: unknown) => {
+      console.error('[desktop-personal-pairing] resume startup failed:', error)
+    })
+  })
 }
 
 async function finishSmoke(target: BrowserWindow): Promise<void> {
@@ -405,7 +416,7 @@ function installIpc(): void {
   ipcMain.handle(ACCOUNT_BEGIN_LOGIN, () => account.beginLogin())
   ipcMain.handle(ACCOUNT_SIGN_OUT, async () => {
     const snapshot = await account.signOut()
-    await pairing.deactivate()
+    await pairing.deactivate('mobile-access-disabled')
     return snapshot
   })
   ipcMain.handle(PAIRING_GET_SNAPSHOT, () => pairing.getSnapshot())
@@ -455,7 +466,7 @@ function handleAccountSnapshot(snapshot: ReturnType<DesktopAccountActions['getSn
     })
   }
   if (!signedIn && accountSignedIn) {
-    void pairing.deactivate().catch((error: unknown) => {
+    void pairing.deactivate('mobile-access-disabled').catch((error: unknown) => {
       console.error('[desktop-personal-pairing] signed-out Remote Access shutdown failed:', error)
     })
   }

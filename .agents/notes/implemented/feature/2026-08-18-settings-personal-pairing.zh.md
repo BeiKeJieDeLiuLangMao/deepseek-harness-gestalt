@@ -30,4 +30,4 @@ Desktop 与 Mobile 的密码行为通过 `PairingHandshakeProvider` 进入。生
 
 ## Consequences
 
-公开生命周期与真实设置／Mobile 控制器可以在不声称产品加密的情况下接受评审与测试。跨账号、安装角色、过期、取消、拒绝、并发、清理重试、确认前不可用、碰撞与窄授权行为固定在同一接口及同一个已鉴权 HTTP 消费方。生产配对仍受独立安全评审阻挡；单进程提供方与 keyless 场景不是部署持久化，也不是 issue #32 规划的跨实例 Relay。
+公开生命周期与真实设置／Mobile 控制器可以在不声称产品加密的情况下接受评审与测试。跨账号、安装角色、过期、取消、拒绝、并发、清理重试、确认前不可用、碰撞与窄授权行为固定在同一接口及同一个已鉴权 HTTP 消费方。生产配对仍受独立安全评审阻挡；challenge 与确认状态仍为单进程，而独立的[无状态双实例 Relay](../architecture/2026-08-18-stateless-two-instance-remote-relay.md)拥有在线 route attachment 与密文 forwarding。

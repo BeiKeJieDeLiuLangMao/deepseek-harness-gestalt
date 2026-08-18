@@ -9,7 +9,7 @@ export const name = 'remote-access-invariant'
 /** Service required before the companion can reserve package ownership. */
 export const inject = ['invariants']
 
-/** No runtime invariant: the provider owns no external mutable relationship or event stream. */
+/** No runtime invariant: Relay authority and directory checks occur at their persistence and coordination adapters. */
 const install: InvariantInstaller = () => {}
 
 /** Register Remote Access package ownership. */

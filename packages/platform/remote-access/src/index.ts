@@ -12,6 +12,8 @@ import type {
   InstallationId,
 } from '@deepseek-ai/dsh-platform-account'
 
+export * from './relay.ts'
+
 /** Fixed lifetime of one Personal Pairing invitation. */
 export const PAIRING_CHALLENGE_TTL_MS = 2 * 60 * 1000
 /** Absolute lifetime of idempotency projections after a terminal transition. */

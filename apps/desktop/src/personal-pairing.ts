@@ -8,7 +8,10 @@ import {
   parsePendingPairingId,
   type PendingPairingId,
 } from '@deepseek-ai/dsh-remote-access'
-import type { RemoteAccessTransport } from '@deepseek-ai/dsh-remote-access-client'
+import type {
+  DesktopRelayStopReason,
+  RemoteAccessTransport,
+} from '@deepseek-ai/dsh-remote-access-client'
 import type { DesktopAccountActions } from './platform-account.ts'
 
 /** Host verbs exposed to the Mobile Pairing Settings section. */
@@ -30,7 +33,7 @@ export interface DesktopPairingActions {
   /** Load Remote Access state after the Account installation has started. */
   start(): Promise<void>
   /** Stop polling and drain work when the current Account signs out. */
-  deactivate(): Promise<void>
+  deactivate(reason?: DesktopRelayStopReason): Promise<void>
   /** Drain lifecycle work during Desktop shutdown. */
   dispose(): Promise<void>
 }
@@ -39,6 +42,11 @@ export interface DesktopPairingActions {
 export interface DesktopPairingControllerOptions {
   account: Pick<DesktopAccountActions, 'authorizeCurrentInstallation' | 'getSnapshot'>
   transport: RemoteAccessTransport
+  /** Optional production-gated Relay lifecycle controlled by Mobile Access state. */
+  relay?: {
+    start(): Promise<void>
+    stop(reason?: DesktopRelayStopReason): Promise<void>
+  }
   randomId?: () => string
   now?: () => number
   schedule?: (task: () => void, delayMs: number) => ReturnType<typeof setTimeout>
@@ -80,11 +88,13 @@ export class DesktopPairingController implements DesktopPairingActions {
   async setEnabled(enabled: boolean): Promise<DesktopPairingSnapshot> {
     return this.exclusive(async () => {
       this.assertActive()
+      if (!enabled) await this.options.relay?.stop('mobile-access-disabled')
       const state = await this.options.transport.setMobileAccess({
         authentication: await this.options.account.authorizeCurrentInstallation(),
         enabled,
       })
       if (!state.enabled) {
+        await this.options.relay?.stop('mobile-access-disabled')
         this.publish({ status: 'ready', enabled: false, pairings: [] })
         return this.snapshot
       }
@@ -170,10 +180,11 @@ export class DesktopPairingController implements DesktopPairingActions {
     })
   }
 
-  async deactivate(): Promise<void> {
+  async deactivate(reason: DesktopRelayStopReason = 'quit'): Promise<void> {
     this.active = false
     this.resetAccountScope()
     await this.serial
+    await this.options.relay?.stop(reason)
     this.resetAccountScope()
   }
 
@@ -183,6 +194,7 @@ export class DesktopPairingController implements DesktopPairingActions {
     if (this.timer !== undefined) clearTimeout(this.timer)
     this.timer = undefined
     await this.serial
+    await this.options.relay?.stop('quit')
     this.listeners.clear()
   }
 
@@ -192,9 +204,11 @@ export class DesktopPairingController implements DesktopPairingActions {
         await this.options.account.authorizeCurrentInstallation(),
       )
       if (!state.enabled) {
+        await this.options.relay?.stop('mobile-access-disabled')
         this.publish({ status: 'ready', enabled: false, pairings: [] })
         return
       }
+      await this.options.relay?.start()
       const pending = await this.options.transport.listPendingPairings(
         await this.options.account.authorizeCurrentInstallation(),
       )

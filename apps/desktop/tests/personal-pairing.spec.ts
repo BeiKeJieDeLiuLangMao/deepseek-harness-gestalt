@@ -50,6 +50,37 @@ describe('UnavailableDesktopPairingController', () => {
 })
 
 describe('DesktopPairingController', () => {
+  it('owns the live Relay only while Mobile Access is enabled and the Desktop is awake', async () => {
+    const transport = transportFixture()
+    const relay = { start: vi.fn(async () => {}), stop: vi.fn(async () => {}) }
+    const controller = new DesktopPairingController({
+      account: {
+        getSnapshot: signedInAccountSnapshot,
+        authorizeCurrentInstallation: vi.fn(async () => ({
+          accessToken: 'desktop-access',
+          proof: { jti: parseAccountProofJti('proof'), issuedAt: 1, signature: 'signature' },
+        })),
+      },
+      transport,
+      relay,
+    })
+
+    await controller.start()
+    expect(relay.stop).toHaveBeenLastCalledWith('mobile-access-disabled')
+    await controller.setEnabled(true)
+    expect(relay.start).toHaveBeenCalledOnce()
+
+    await controller.deactivate('sleep')
+    expect(relay.stop).toHaveBeenLastCalledWith('sleep')
+    await controller.start()
+    expect(relay.start).toHaveBeenCalledTimes(2)
+
+    await controller.setEnabled(false)
+    expect(relay.stop).toHaveBeenLastCalledWith('mobile-access-disabled')
+    await controller.dispose()
+    expect(relay.stop).toHaveBeenLastCalledWith('quit')
+  })
+
   it('drives the real Settings lifecycle through authenticated transport verbs', async () => {
     const authorization = {
       accessToken: 'desktop-access',

@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-remote-access-client",
-  "description": "Authenticated Desktop and Mobile HTTP transport for Personal Pairing",
+  "description": "Personal Pairing HTTP transport and reconnecting Mobile/Desktop Relay lifecycle",
   "version": "0.1.0-rc.7",
   "publishConfig": { "access": "public" },
   "repository": {
@@ -23,12 +23,14 @@
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/dsh-invariants": "workspace:^",
     "@deepseek-ai/dsh-platform-account": "workspace:^",
-    "@deepseek-ai/dsh-remote-access": "workspace:^"
+    "@deepseek-ai/dsh-remote-access": "workspace:^",
+    "@deepseek-ai/dsh-remote-protocol": "workspace:^"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/dsh-invariants": "workspace:^",
     "@deepseek-ai/dsh-platform-account": "workspace:^",
-    "@deepseek-ai/dsh-remote-access": "workspace:^"
+    "@deepseek-ai/dsh-remote-access": "workspace:^",
+    "@deepseek-ai/dsh-remote-protocol": "workspace:^"
   }
 }

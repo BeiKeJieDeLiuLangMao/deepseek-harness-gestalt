@@ -1,0 +1,11 @@
+- id: two-instance-relay-keyless-scenario
+  name: './start.ts'
+  config:
+    attachTimeoutMs: 1000
+    capacityRetryAfterMs: 100
+    directoryTtlMs: 2000
+    heartbeatIntervalMs: 50
+    heartbeatTimeoutMs: 1000
+    maxBufferedCiphertextBytes: 131070
+    maxConnections: 16
+    reconnectDelayMs: 10
