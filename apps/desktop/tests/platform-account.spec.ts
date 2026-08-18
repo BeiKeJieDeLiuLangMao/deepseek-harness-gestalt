@@ -88,6 +88,24 @@ function platform() {
 }
 
 describe('DesktopAccountController', () => {
+  it('does not persist an empty first-run account record during start', async () => {
+    const store = new MemoryDesktopStore()
+    const save = vi.spyOn(store, 'save')
+    const controller = new DesktopAccountController({
+      environment: ENVIRONMENT,
+      transport: platform(),
+      store,
+      systemBrowser: { open: vi.fn() },
+      now: () => NOW,
+    })
+
+    await controller.start()
+
+    expect(save).not.toHaveBeenCalled()
+    expect(store.record).toBeUndefined()
+    expect(controller.getSnapshot()).toEqual({ status: 'idle', privacyAccepted: false })
+  })
+
   it('contains a throwing subscriber and still notifies later subscribers', async () => {
     const reported = vi.spyOn(console, 'error').mockImplementation(() => {})
     const controller = new DesktopAccountController({
@@ -220,9 +238,10 @@ describe('DesktopAccountController', () => {
       },
     })
     await controller.start()
-    const installationId = store.record?.installationId
+    expect(store.record).toBeUndefined()
     await controller.acceptPrivacy()
     await controller.beginLogin()
+    const installationId = store.record?.installationId
     const state = new URL(authorizationUrl).searchParams.get('state')
     if (state === null) throw new Error('missing state')
     await service.completeGitHubCallback({ code: 'github-code', state })
