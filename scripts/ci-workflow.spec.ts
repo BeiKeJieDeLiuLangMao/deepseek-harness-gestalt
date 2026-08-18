@@ -64,14 +64,13 @@ describe('CI workflow', () => {
 
     // windows-native: non-blocking native job with failover, runs windows-complete.
     // Its pool is resolved by the Windows-specific switch.
-    expect(typeof windowsNative['runs-on']).toBe('string')
-    expect(windowsNative['runs-on']).toContain('DSH_CI_FAILOVER_WINDOWS')
+    expectFailoverRunner(
+      windowsNative,
+      'DSH_CI_FAILOVER_WINDOWS',
+      ['self-hosted', 'dsh-win-ci', 'windows'],
+      'windows-2025',
+    )
     expect(windowsNative['runs-on']).not.toContain('DSH_CI_FAILOVER_LINUX')
-    expect(windowsNative['runs-on']).toContain('self-hosted')
-    expect(windowsNative['runs-on']).toContain('dsh-win-ci')
-    expect(windowsNative['runs-on']).toContain('dependabot[bot]')
-    expect(windowsNative['runs-on']).toContain('windows-2025')
-    expect(windowsNative['runs-on']).not.toContain('dsh-windows-2025-16core')
     expect(windowsNative.name).toBe('windows node 24 / native complete')
     expect(windowsNative.if).toBe("github.event_name == 'pull_request'")
     expect(windowsNative.env).toMatchObject({
@@ -100,19 +99,21 @@ describe('CI workflow', () => {
     // and the verdict job resolve their pool through DSH_CI_FAILOVER_LINUX,
     // never the Windows switch.
     for (const [jobName, job] of [['node-24', node24], ['node-24-coverage', node24Coverage], ['node-24-consumers', node24Consumers]] as const) {
-      expect(typeof job['runs-on']).toBe('string')
-      expect(job['runs-on'], `${jobName} runs-on must use the Linux failover switch`).toContain('DSH_CI_FAILOVER_LINUX')
+      expectFailoverRunner(
+        job,
+        'DSH_CI_FAILOVER_LINUX',
+        ['self-hosted', 'linux', 'x64', 'vm-backup'],
+        'ubuntu-latest',
+      )
       expect(job['runs-on'], `${jobName} runs-on must not use the Windows failover switch`).not.toContain('DSH_CI_FAILOVER_WINDOWS')
-      expect(job['runs-on']).toContain('vm-backup')
-      expect(job['runs-on']).toContain('dependabot[bot]')
-      expect(job['runs-on']).toContain('ubuntu-latest')
-      expect(job['runs-on']).not.toContain('dsh-ubuntu-24-04-16core')
     }
-    expect(aggregate['runs-on']).toContain('DSH_CI_FAILOVER_LINUX')
+    expectFailoverRunner(
+      aggregate,
+      'DSH_CI_FAILOVER_LINUX',
+      ['self-hosted', 'linux', 'x64', 'vm-backup'],
+      'ubuntu-latest',
+    )
     expect(aggregate['runs-on']).not.toContain('DSH_CI_FAILOVER_WINDOWS')
-    expect(aggregate['runs-on']).toContain('vm-backup')
-    expect(aggregate['runs-on']).toContain('ubuntu-latest')
-    expect(aggregate['runs-on']).not.toContain('dsh-ubuntu-24-04-16core')
 
     expect(node24.env).toMatchObject({ DSH_GATE_CONCURRENCY: '2' })
     expect(node24Coverage.env).toMatchObject({
@@ -479,6 +480,61 @@ function workflowJob(workflow: Record<string, unknown>, job: string): Record<str
     throw new TypeError(`workflow must define the ${job} job`)
   }
   return workflow.jobs[job]
+}
+
+function expectFailoverRunner(
+  job: Record<string, unknown>,
+  variable: string,
+  selfHostedLabels: string[],
+  hostedDefault: string,
+): void {
+  const runsOn = job['runs-on']
+  if (typeof runsOn !== 'string') throw new TypeError(`${variable} job must define a runner expression`)
+
+  expect(runsOn).toContain(`vars.${variable}`)
+
+  const selfHostedMatch = /fromJSON\('(\[[^']+\])'\)/.exec(runsOn)
+  expect(selfHostedMatch, `${variable} must define one explicit self-hosted label set`).not.toBeNull()
+  expect(JSON.parse(selfHostedMatch?.[1] ?? 'null')).toEqual(selfHostedLabels)
+
+  const defaultMatch = /\|\|\s*'([^']+)'\s*}}$/.exec(runsOn.trim())
+  expect(defaultMatch, `${variable} must end with one explicit hosted default`).not.toBeNull()
+  expect(defaultMatch?.[1]).toBe(hostedDefault)
+  expect(defaultMatch?.[1]).not.toMatch(/^dsh-/)
+
+  expect(resolveFailoverRunner(runsOn, variable, undefined, 'maintainer')).toBe(hostedDefault)
+  expect(resolveFailoverRunner(runsOn, variable, 'selfhosted', 'maintainer')).toEqual(selfHostedLabels)
+  expect(resolveFailoverRunner(runsOn, variable, 'selfhosted', 'dependabot[bot]')).toBe(hostedDefault)
+}
+
+function resolveFailoverRunner(
+  runsOn: string,
+  variable: string,
+  failover: string | undefined,
+  login: string,
+): string | string[] {
+  const variableMatch = /vars\.([A-Z_]+)\s*==\s*'selfhosted'/.exec(runsOn)
+  const loginMatch = /github\.event\.pull_request\.user\.login\s*([!=]=)\s*'([^']+)'/.exec(runsOn)
+  const selfHostedMatch = /fromJSON\('(\[[^']+\])'\)/.exec(runsOn)
+  const defaultMatch = /\|\|\s*'([^']+)'\s*}}$/.exec(runsOn.trim())
+  const loginOperator = loginMatch?.[1]
+  const excludedLogin = loginMatch?.[2]
+  const selfHostedJson = selfHostedMatch?.[1]
+  const defaultRunner = defaultMatch?.[1]
+  if (variableMatch?.[1] !== variable
+    || !loginOperator
+    || !excludedLogin
+    || !selfHostedJson
+    || !defaultRunner) {
+    throw new TypeError(`${variable} runner expression must use the supported failover selector`)
+  }
+
+  const loginMatches = loginOperator === '=='
+    ? login === excludedLogin
+    : login !== excludedLogin
+  return failover === 'selfhosted' && loginMatches
+    ? JSON.parse(selfHostedJson) as string[]
+    : defaultRunner
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
