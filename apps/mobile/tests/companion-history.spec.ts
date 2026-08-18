@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   COMPANION_HISTORY_PAGE_SIZE,
+  createCompanionSession,
   groupCompanionSessions,
   pageCompanionHistory,
   projectMobileCompanionHistory,
@@ -57,5 +58,48 @@ describe('Mobile Companion browse projection', () => {
     fireEvent.click(screen.getByRole('button', { name: '返回' }))
     fireEvent.click(screen.getByRole('button', { name: /Gamma/ }))
     expect(screen.getByText('ungrouped summary')).toBeTruthy()
+  })
+
+  it('creates a Workspace Session or Ungrouped Session and ignores a repeated operation id', () => {
+    const committed = new Set<string>()
+    const workspace = createCompanionSession(history, committed, {
+      operationId: 'op-work',
+      title: 'New Work',
+      workspace: 'Work',
+      devicePrincipalId: 'device-1',
+    })
+    committed.add('op-work')
+    expect(workspace.created).toBe(true)
+    expect(groupCompanionSessions(workspace.sessions).groups[0]?.sessions.map(session => session.title))
+      .toContain('New Work')
+    const replay = createCompanionSession(workspace.sessions, committed, {
+      operationId: 'op-work',
+      title: 'Duplicate',
+      workspace: 'Work',
+      devicePrincipalId: 'device-1',
+    })
+    expect(replay.created).toBe(false)
+    expect(replay.sessions).toHaveLength(workspace.sessions.length)
+    const ungrouped = createCompanionSession(workspace.sessions, committed, {
+      operationId: 'op-ungrouped',
+      title: 'Loose',
+      devicePrincipalId: 'device-1',
+    })
+    expect(ungrouped.sessions.at(-1)).toMatchObject({ title: 'Loose' })
+    expect(ungrouped.sessions.at(-1)?.workspace).toBeUndefined()
+  })
+
+  it('exposes Workspace-targeted and global Ungrouped create actions without a voice control', () => {
+    const created: Array<{ workspace?: string }> = []
+    render(createElement(MobileBrowse, {
+      desktopName: 'Studio Mac',
+      connection: 'online',
+      sessions: history,
+      onCreate: (input) => { created.push(input) },
+    }))
+    fireEvent.click(screen.getByRole('button', { name: '在 Work 新建 Session' }))
+    fireEvent.click(screen.getByRole('button', { name: '新建 Ungrouped Session' }))
+    expect(created).toEqual([{ workspace: 'Work' }, {}])
+    expect(screen.queryByRole('button', { name: /voice|语音/i })).toBeNull()
   })
 })
