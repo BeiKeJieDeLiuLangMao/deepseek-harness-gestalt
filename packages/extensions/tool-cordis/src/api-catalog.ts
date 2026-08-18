@@ -2063,6 +2063,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the exact disposer that lifts this restriction.',
       },
       {
+        signature: 'allowEligible(names: readonly string[]): () => void',
+        description: 'Add positive tool-eligibility entries for the calling scope. Entries from a preset and its descendant agent scopes union; this declaration does not expose the internal deny-capable restriction interface to user settings. Names may precede dynamic tool registration, so they are not validated against the current registry generation here.',
+        parameters: [{ name: 'names', description: 'exact public tool names this scope adds to eligibility.' }],
+        returns: 'the exact disposer that removes this contribution.',
+      },
+      {
+        signature: 'eligibilityAllow(scope?: ScopeKey): readonly string[] | undefined',
+        description: 'Resolve the positive eligibility entries declared along one scope chain. Absence means no allow-only policy was configured; an empty array means a declaration explicitly allows no end tool.',
+        parameters: [{ name: 'scope', description: 'the agent or standing preset whose declarations are read.' }],
+        returns: 'the sorted union, or `undefined` when the chain declares none.',
+      },
+      {
         signature: 'guard(guard: ToolGuard): () => void',
         description: 'Register a monotonic guard after the extensible `tools/pre-execute` waterfall. A plain-context guard applies globally; one registered through `agent.ctx` applies only to that agent. Any matching guard may deny by returning a reason, while no guard can force-allow a call another guard denied. The exact effect disposer is returned for ordered ownership and HMR cleanup.',
         parameters: [{ name: 'guard', description: 'synchronous check; a returned string denies the execution.' }],
@@ -2088,7 +2100,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'async execute(exec: ToolExecutionInput): Promise<ToolExecutionResult>',
-        description: 'Execute through pre-policy, guards, around-dispatch, post-policy, definition-owned content finalization, and final notification. Tool and listener failures resolve as materialized error results; an invisible tool reports `UNKNOWN_TOOL`. The returned outcome is the same lossless, frozen snapshot final observers receive. Cancellation arriving after entry and before final result materialization skips a not-yet-started body with `ABORTED_BEFORE_DISPATCH` or replaces a successful started outcome with `ABORTED`; already-started work is still drained and may retain a tool-owned structured error.',
+        description: 'Execute through pre-policy, guards, around-dispatch, post-policy, definition-owned content finalization, and final notification. Tool and listener failures resolve as materialized error results; an invisible tool reports `UNKNOWN_TOOL`. A registered tool excluded by positive eligibility is rejected before policy, and eligibility narrowed during pre-policy is rechecked before around-dispatch listeners. Both eligibility denials skip around-dispatch, post-policy, the definition-owned content finalizer, and the tool body while retaining final notification. Unknown or unloaded names keep the ordinary pipeline. The returned outcome is the same lossless, frozen snapshot final observers receive. Cancellation arriving after entry and before final result materialization skips a not-yet-started body with `ABORTED_BEFORE_DISPATCH` or replaces a successful started outcome with `ABORTED`; already-started work is still drained and may retain a tool-owned structured error.',
         parameters: [{ name: 'exec', description: 'the typed same-process call input. The registry assigns its correlation token before policy begins.' }],
         returns: 'the materialized final result.',
       },
@@ -2671,6 +2683,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     summary: 'Emitted when any prompt provider changes.',
     description: 'Emitted when any prompt provider changes. This registry notification is unfiltered because a global change affects every scope.',
     parameters: [],
+  },
+  {
+    name: 'tool-eligibility/published',
+    mode: 'emit',
+    signature: '\'tool-eligibility/published\'(agent: Agent, publication: ToolEligibilityPublication): void',
+    summary: 'A settings-derived allowance was committed to or removed from one live Agent\'s registry scope.',
+    description: 'A settings-derived allowance was committed to or removed from one live Agent\'s registry scope.',
+    parameters: [{ name: 'agent', description: 'live Agent whose scoped registry view changed.' }, { name: 'publication', description: 'committed settings addition and expected effective union.' }],
   },
   {
     name: 'tools/change',
@@ -4677,6 +4697,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ToolDispatchExecution extends Omit<ToolExecution, \'signal\'> {\n    signal: AbortSignal;\n}',
   },
   {
+    name: 'ToolEligibilityContribution',
+    declaration: 'export interface ToolEligibilityContribution {\n    current(): readonly string[] | undefined;\n    baseAllow(): readonly string[] | undefined;\n    commit(names: readonly string[] | undefined): (() => readonly unknown[]) | undefined;\n    replace(names: readonly string[] | undefined): void;\n    dispose(): void;\n}',
+  },
+  {
+    name: 'ToolEligibilityContributions',
+    declaration: 'export interface ToolEligibilityContributions {\n    register(owner: Context, scope: ScopeKey, publish: (settingsAllow: readonly string[] | undefined) => void): ToolEligibilityContribution;\n}',
+  },
+  {
+    name: 'ToolEligibilityPublication',
+    declaration: 'export interface ToolEligibilityPublication {\n    readonly settingsAllow?: readonly string[];\n    readonly effectiveAllow?: readonly string[];\n}',
+  },
+  {
     name: 'ToolErrorInfo',
     declaration: 'export interface ToolErrorInfo {\n    name: string;\n    code: string;\n}',
   },
@@ -4758,7 +4790,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ToolRuntime',
-    declaration: 'export class ToolRuntime extends Service {\n    static inject;\n    static Config: z<Config>;\n    readonly [TOOL_RUNTIME_SCHEDULER]: ToolRuntimeScheduler;\n    constructor(ctx: Context, config: Config = {});\n    presentAs(mode: ToolPresentationMode): () => void;\n    register(definition: ToolDefinition): () => void;\n    restrict(filter: ToolRestriction): () => void;\n    guard(guard: ToolGuard): () => void;\n    get(name: string, scope?: ScopeKey): ToolDefinition | undefined;\n    schemas(scope?: ScopeKey): ToolSchema[];\n    executionMode(exec: ToolExecutionInput): ToolExecutionMode;\n    async execute(exec: ToolExecutionInput): Promise<ToolExecutionResult>;\n}',
+    declaration: 'export class ToolRuntime extends Service {\n    static inject;\n    static Config: z<Config>;\n    readonly [TOOL_RUNTIME_SCHEDULER]: ToolRuntimeScheduler;\n    readonly [TOOL_ELIGIBILITY_CONTRIBUTIONS]: ToolEligibilityContributions;\n    constructor(ctx: Context, config: Config = {});\n    presentAs(mode: ToolPresentationMode): () => void;\n    register(definition: ToolDefinition): () => void;\n    restrict(filter: ToolRestriction): () => void;\n    allowEligible(names: readonly string[]): () => void;\n    eligibilityAllow(scope?: ScopeKey): readonly string[] | undefined;\n    guard(guard: ToolGuard): () => void;\n    get(name: string, scope?: ScopeKey): ToolDefinition | undefined;\n    schemas(scope?: ScopeKey): ToolSchema[];\n    executionMode(exec: ToolExecutionInput): ToolExecutionMode;\n    async execute(exec: ToolExecutionInput): Promise<ToolExecutionResult>;\n}',
   },
   {
     name: 'ToolRuntimeScheduler',

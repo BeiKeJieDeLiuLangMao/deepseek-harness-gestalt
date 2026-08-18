@@ -5,6 +5,8 @@ import { bindScopeParent, createScope } from '@deepseek-ai/dsh-scope'
 import type { Scope } from '@deepseek-ai/dsh-scope'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
+import { TOOL_ELIGIBILITY_CONTRIBUTIONS } from '@deepseek-ai/dsh-tools'
+import type { ToolEligibilityContribution } from '@deepseek-ai/dsh-tools'
 import type { PreToolDecision, ToolDefinition, ToolExecution, ToolExecutionInput, ToolExecutionToken } from '@deepseek-ai/dsh-tools'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 
@@ -28,6 +30,16 @@ async function mintAgentScope(ctx: Context, name: string): Promise<{ scope: Scop
   // The scoped context resolves services through the MINTING plugin's
   // dependency chain — the minter must inject what scope holders will reach
   // (in production the agent loop's inject list plays this role).
+  await ctx.plugin(Object.assign((inner: Context) => { scope = createScope(inner, key) },
+    { inject: ['tools', 'systemPrompt'] }))
+  return { scope, key }
+}
+
+/** Mint a child scope parented to `parent`, matching nested agent composition. */
+async function mintChildScope(ctx: Context, parent: Agent, name: string): Promise<{ scope: Scope; key: Agent }> {
+  const key = { id: name as SessionId } as Agent
+  bindScopeParent(key, parent)
+  let scope!: Scope
   await ctx.plugin(Object.assign((inner: Context) => { scope = createScope(inner, key) },
     { inject: ['tools', 'systemPrompt'] }))
   return { scope, key }
@@ -202,16 +214,6 @@ describe('restrict()', () => {
 })
 
 describe('restrict() over an inherited scope layer', () => {
-  /** Mint a child scope parented to `parent`, as a subagent's creation window does. */
-  async function mintChild(ctx: Context, parentKey: Agent, name: string): Promise<{ scope: Scope; key: Agent }> {
-    const key = { id: name as SessionId } as Agent
-    bindScopeParent(key, parentKey)
-    let scope!: Scope
-    await ctx.plugin(Object.assign((inner: Context) => { scope = createScope(inner, key) },
-      { inject: ['tools', 'systemPrompt'] }))
-    return { scope, key }
-  }
-
   it('filters tools the child inherits from an ancestor scope, not only global ones', async () => {
     // The shape every preset deployment has: no model-facing row in the global
     // layer, all of them contributed by an ancestor scope the child joined.
@@ -219,7 +221,7 @@ describe('restrict() over an inherited scope layer', () => {
     const parent = await mintAgentScope(ctx, 'parent')
     parent.scope.ctx.tools.register(tool('bash'))
     parent.scope.ctx.tools.register(tool('read'))
-    const child = await mintChild(ctx, parent.key, 'child')
+    const child = await mintChildScope(ctx, parent.key, 'child')
 
     expect(ctx.tools.schemas(child.key).map(t => t.name).sort()).toEqual(['bash', 'read'])
     child.scope.ctx.tools.restrict({ deny: ['bash'] })
@@ -240,7 +242,7 @@ describe('restrict() over an inherited scope layer', () => {
     const parent = await mintAgentScope(ctx, 'parent')
     parent.scope.ctx.tools.register(tool('bash'))
     parent.scope.ctx.tools.register(tool('read'))
-    const child = await mintChild(ctx, parent.key, 'child')
+    const child = await mintChildScope(ctx, parent.key, 'child')
     child.scope.ctx.tools.register(tool('report'))
 
     child.scope.ctx.tools.restrict({ allow: ['read'] })
@@ -254,11 +256,270 @@ describe('restrict() over an inherited scope layer', () => {
     ctx.tools.register(tool('web'))
     const parent = await mintAgentScope(ctx, 'parent')
     parent.scope.ctx.tools.register(tool('bash'))
-    const child = await mintChild(ctx, parent.key, 'child')
+    const child = await mintChildScope(ctx, parent.key, 'child')
     parent.scope.ctx.tools.restrict({ deny: ['web'] })
 
     expect(ctx.tools.schemas(child.key).map(t => t.name)).toEqual(['bash'])
     expect(ctx.tools.schemas(parent.key).map(t => t.name)).toEqual(['bash'])
+  })
+})
+
+describe('allow-only eligibility declarations', () => {
+  it('unions preset, Workspace, and Session additions without exposing deny configuration', async () => {
+    const ctx = await mount()
+    const preset = await mintAgentScope(ctx, 'preset')
+    const session = await mintChildScope(ctx, preset.key, 'session')
+    const unrelated = await mintAgentScope(ctx, 'unrelated')
+
+    const disposePreset = preset.scope.ctx.tools.allowEligible(['mcp__browser__navigate'])
+    session.scope.ctx.tools.allowEligible([
+      'mcp__browser__screenshot',
+      'mcp__browser__navigate',
+    ])
+
+    expect(ctx.tools.eligibilityAllow(session.key)).toEqual([
+      'mcp__browser__navigate',
+      'mcp__browser__screenshot',
+    ])
+    expect(ctx.tools.eligibilityAllow(preset.key)).toEqual(['mcp__browser__navigate'])
+    expect(ctx.tools.eligibilityAllow(unrelated.key)).toBeUndefined()
+
+    disposePreset()
+    expect(ctx.tools.eligibilityAllow(session.key)).toEqual([
+      'mcp__browser__navigate',
+      'mcp__browser__screenshot',
+    ])
+  })
+
+  it('preserves an explicit empty allowance as allow-nothing', async () => {
+    const ctx = await mount()
+    const { scope, key } = await mintAgentScope(ctx, 'empty')
+
+    expect(() => { ctx.tools.allowEligible([]) }).toThrow(/requires a scoped context/)
+    scope.ctx.tools.allowEligible([])
+
+    expect(ctx.tools.eligibilityAllow(key)).toEqual([])
+  })
+
+  it('keeps an explicitly targeted mutable contribution owned by its resolver fiber', async () => {
+    const ctx = await mount()
+    const preset = await mintAgentScope(ctx, 'preset')
+    const session = await mintChildScope(ctx, preset.key, 'session')
+    preset.scope.ctx.tools.allowEligible(['preset'])
+    const publications: Array<readonly string[] | undefined> = []
+    const changes: Array<readonly string[] | undefined> = []
+    ctx.on('tools/change', () => { changes.push(ctx.tools.eligibilityAllow(session.key)) })
+    let contribution!: ToolEligibilityContribution
+    const resolver = ctx.plugin(Object.assign((inner: Context) => {
+      contribution = inner.tools[TOOL_ELIGIBILITY_CONTRIBUTIONS].register(
+        inner,
+        session.key,
+        (settingsAllow) => { publications.push(settingsAllow) },
+      )
+    }, { inject: ['tools'] }))
+    await resolver
+
+    expect(contribution.current()).toBeUndefined()
+    expect(contribution.baseAllow()).toEqual(['preset'])
+    const notifyWorkspace = contribution.commit(['workspace', 'workspace'])
+    expect(ctx.tools.eligibilityAllow(session.key)).toEqual(['preset', 'workspace'])
+    expect(publications).toEqual([])
+    expect(changes).toEqual([])
+    expect(notifyWorkspace?.()).toEqual([])
+    contribution.replace(['workspace'])
+    contribution.replace(undefined)
+    contribution.replace(['session'])
+    await resolver.dispose()
+
+    expect(publications).toEqual([['workspace'], undefined, ['session'], undefined])
+    expect(changes).toEqual([
+      ['preset', 'workspace'],
+      ['preset'],
+      ['preset', 'session'],
+      ['preset'],
+    ])
+    expect(ctx.tools.eligibilityAllow(session.key)).toEqual(['preset'])
+    expect(() => { contribution.replace(['stale']) }).toThrow(/disposed/)
+
+    let inactive!: ToolEligibilityContribution
+    const inactiveResolver = ctx.plugin(Object.assign((inner: Context) => {
+      inactive = inner.tools[TOOL_ELIGIBILITY_CONTRIBUTIONS].register(inner, session.key, vi.fn())
+    }, { inject: ['tools'] }))
+    await inactiveResolver
+    await inactiveResolver.dispose()
+    expect(() => { inactive.replace([]) }).toThrow(/disposed/)
+  })
+
+  it('preserves both notification failures for standalone replacement and disposal', async () => {
+    const ctx = await mount()
+    const preset = await mintAgentScope(ctx, 'preset-notification-failures')
+    const session = await mintChildScope(ctx, preset.key, 'session-notification-failures')
+    preset.scope.ctx.tools.allowEligible(['preset'])
+    const publicationFailure = new Error('publication observer failed')
+    const changeFailure = new Error('registry observer failed')
+    ctx.on('tools/change', () => { throw changeFailure })
+    let contribution!: ToolEligibilityContribution
+    const resolver = ctx.plugin(Object.assign((inner: Context) => {
+      contribution = inner.tools[TOOL_ELIGIBILITY_CONTRIBUTIONS].register(
+        inner,
+        session.key,
+        () => { throw publicationFailure },
+      )
+    }, { inject: ['tools'] }))
+    await resolver
+
+    let replacementFailure: unknown
+    try {
+      contribution.replace(['workspace'])
+    } catch (error) {
+      replacementFailure = error
+    }
+    expect(replacementFailure).toBeInstanceOf(AggregateError)
+    expect((replacementFailure as AggregateError).errors).toEqual([
+      publicationFailure,
+      changeFailure,
+    ])
+    expect(ctx.tools.eligibilityAllow(session.key)).toEqual(['preset', 'workspace'])
+
+    let disposalFailure: unknown
+    try {
+      contribution.dispose()
+    } catch (error) {
+      disposalFailure = error
+    }
+    expect(disposalFailure).toBeInstanceOf(AggregateError)
+    expect((disposalFailure as AggregateError).errors).toEqual([
+      publicationFailure,
+      changeFailure,
+    ])
+    expect(ctx.tools.eligibilityAllow(session.key)).toEqual(['preset'])
+    await resolver.dispose()
+  })
+
+  it('keeps schemas and execution aligned for inherited and scope-local tools', async () => {
+    const ctx = await mount()
+    const { scope, key } = await mintAgentScope(ctx, 'filtered')
+    let blockedCalls = 0
+    ctx.tools.register(tool('allowed'))
+    ctx.tools.register({
+      ...tool('blocked'),
+      execute: () => {
+        blockedCalls += 1
+        return Promise.resolve('ran:blocked')
+      },
+    })
+    scope.ctx.tools.register(tool('local'))
+    scope.ctx.tools.allowEligible(['allowed'])
+
+    expect(ctx.tools.schemas(key).map(schema => schema.name)).toEqual(['allowed'])
+    expect(await run(ctx, 'blocked', key)).toBe('Error: unknown tool "blocked"')
+    expect(await run(ctx, 'local', key)).toBe('Error: unknown tool "local"')
+    expect(blockedCalls).toBe(0)
+  })
+
+  it('rejects a stale ineligible call before an around-dispatch listener can short-circuit it', async () => {
+    const ctx = await mount()
+    const { scope, key } = await mintAgentScope(ctx, 'filtered-short-circuit')
+    let wrapperCalls = 0
+    let bodyCalls = 0
+    ctx.tools.register({
+      ...tool('blocked'),
+      execute: () => {
+        bodyCalls += 1
+        return Promise.resolve('ran:blocked')
+      },
+    })
+    scope.ctx.tools.allowEligible(['allowed'])
+    ctx.on('tools/execute', async () => {
+      wrapperCalls += 1
+      return { content: [], isError: false, value: 'short-circuited' }
+    })
+
+    const result = await ctx.tools.execute({
+      signal: testToolSignal,
+      callId: CallId('stale-ineligible'),
+      name: 'blocked',
+      arguments: {},
+      agent: key,
+    })
+
+    expect(wrapperCalls).toBe(0)
+    expect(bodyCalls).toBe(0)
+    expect(result.error).toEqual({
+      message: 'unknown tool "blocked"',
+      info: { name: 'ToolNotFoundError', code: 'UNKNOWN_TOOL' },
+    })
+
+    const notLoaded = await ctx.tools.execute({
+      signal: testToolSignal,
+      callId: CallId('not-loaded'),
+      name: 'not-loaded',
+      arguments: {},
+      agent: key,
+    })
+    expect(wrapperCalls).toBe(1)
+    expect(notLoaded.error?.info).toEqual({ name: 'ToolNotFoundError', code: 'UNKNOWN_TOOL' })
+  })
+
+  it('rechecks eligibility after pre-policy and before around-dispatch listeners', async () => {
+    const ctx = await mount()
+    const { scope, key } = await mintAgentScope(ctx, 'narrowed-before-dispatch')
+    let preCalls = 0
+    let wrapperCalls = 0
+    let bodyCalls = 0
+    let postCalls = 0
+    let finalizerCalls = 0
+    const observedResults: Array<{ readonly content: readonly unknown[]; readonly isError: boolean }> = []
+    ctx.tools.register({
+      ...tool('stale'),
+      execute: () => {
+        bodyCalls += 1
+        return Promise.resolve('ran:stale')
+      },
+      finalizeContent: () => {
+        finalizerCalls += 1
+        return [{ type: 'text', text: 'FINALIZER_REPLACED_DENIAL' }]
+      },
+    })
+    const liftInitialAllowance = scope.ctx.tools.allowEligible(['stale'])
+    ctx.on('tools/pre-execute', async (_exec, next) => {
+      preCalls += 1
+      liftInitialAllowance()
+      scope.ctx.tools.allowEligible([])
+      return next()
+    })
+    ctx.on('tools/execute', async () => {
+      wrapperCalls += 1
+      return { content: [], isError: false, value: 'short-circuited' }
+    })
+    ctx.on('tools/post-execute', async (_exec, _result, next) => {
+      postCalls += 1
+      return next()
+    })
+    ctx.on('tools/result', (_exec, result) => { observedResults.push(result) })
+
+    const result = await ctx.tools.execute({
+      signal: testToolSignal,
+      callId: CallId('narrowed-before-dispatch'),
+      name: 'stale',
+      arguments: {},
+      agent: key,
+    })
+
+    expect(preCalls).toBe(1)
+    expect(wrapperCalls).toBe(0)
+    expect(bodyCalls).toBe(0)
+    expect(postCalls).toBe(0)
+    expect(finalizerCalls).toBe(0)
+    expect(result).toEqual({
+      content: [{ type: 'text', text: 'Error: unknown tool "stale"' }],
+      isError: true,
+      error: {
+        message: 'unknown tool "stale"',
+        info: { name: 'ToolNotFoundError', code: 'UNKNOWN_TOOL' },
+      },
+    })
+    expect(observedResults).toEqual([result])
   })
 })
 

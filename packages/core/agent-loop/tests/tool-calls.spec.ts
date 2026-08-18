@@ -690,6 +690,72 @@ describe('tool-call scheduler: failure quiescence', () => {
   })
 })
 
+describe('tool-call scheduler: eligibility narrowing', () => {
+  it('records the terminal denial without invoking tool-owned or execution middleware', async () => {
+    const adapter = new MockAdapter([
+      multiCall([{ id: 'stale-call', name: 'stale', args: {} }]),
+      textResponse('done'),
+    ])
+    const ctx = await harness(adapter)
+    let wrapperCalls = 0
+    let bodyCalls = 0
+    let postCalls = 0
+    let finalizerCalls = 0
+    let resultNotifications = 0
+    ctx.tools.register(defineContentToolFixture({
+      name: 'stale',
+      description: 'stale tool',
+      parameters: {},
+      async execute() {
+        bodyCalls += 1
+        return [{ type: 'text', text: 'body' }]
+      },
+      finalizeContent() {
+        finalizerCalls += 1
+        return [{ type: 'text', text: 'FINALIZER_REPLACED_DENIAL' }]
+      },
+    }))
+    const agent = ctx.agentLoop.create(SessionId('eligibility-narrowing'), { provider: 'mock', model: 'mock' })
+    const liftInitialAllowance = agent.ctx.tools.allowEligible(['stale'])
+    ctx.on('tools/pre-execute', async (_exec, next): Promise<PreToolDecision> => {
+      liftInitialAllowance()
+      agent.ctx.tools.allowEligible([])
+      return next()
+    })
+    ctx.on('tools/execute', async () => {
+      wrapperCalls += 1
+      return { content: [], isError: false, value: 'short-circuited' }
+    })
+    ctx.on('tools/post-execute', async (_exec, _result, next): Promise<PostToolDecision> => {
+      postCalls += 1
+      return next()
+    })
+    ctx.on('tools/result', () => { resultNotifications += 1 })
+
+    agent.followup(createUserMessage({ content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } }))
+    await waitForIdle(ctx, agent)
+
+    expect(wrapperCalls).toBe(0)
+    expect(bodyCalls).toBe(0)
+    expect(postCalls).toBe(0)
+    expect(finalizerCalls).toBe(0)
+    expect(resultNotifications).toBe(1)
+    const result = events(agent).find(event =>
+      event.type === 'tool/result' && event.data.message.source.callId === CallId('stale-call'))
+    expect(result?.type === 'tool/result' && result.data).toMatchObject({
+      message: {
+        content: [{
+          type: 'tool-result',
+          toolCallId: CallId('stale-call'),
+          content: [{ type: 'text', text: 'Error: unknown tool "stale"' }],
+          isError: true,
+        }],
+      },
+      error: { name: 'ToolNotFoundError', code: 'UNKNOWN_TOOL' },
+    })
+  })
+})
+
 describe('code-mode native-tool denial through the agent loop', () => {
   /** A minimal in-process code runtime for test purposes — never actually runs. */
   class FakeCodeRuntime extends CodeRuntime {

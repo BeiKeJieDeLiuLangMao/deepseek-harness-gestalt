@@ -62,6 +62,15 @@ const SDK_RENDERERS: Record<string, (schemas: ToolSdkSchema[]) => string> = {
   python: renderToolsSdkPy,
 } satisfies Record<CodeSdkLanguage, (schemas: ToolSdkSchema[]) => string>
 
+/** Compare two normalized optional string lists. */
+function sameStringList(
+  left: readonly string[] | undefined,
+  right: readonly string[] | undefined,
+): boolean {
+  return left === right || (left !== undefined && right !== undefined
+    && left.length === right.length && left.every((value, index) => value === right[index]))
+}
+
 export {
   defineTool,
   valueSchemaSpecToJsonSchema,
@@ -684,6 +693,48 @@ export interface ToolRestriction {
   readonly deny?: readonly string[]
 }
 
+/** Mutable positive allowance owned by a settings resolver for one live scope. */
+export interface ToolEligibilityContribution {
+  /** Current sorted names, or `undefined` while this contribution is inactive. */
+  current(): readonly string[] | undefined
+  /** Effective allowance along the scope chain without this contribution. */
+  baseAllow(): readonly string[] | undefined
+  /**
+   * Commit a replacement without notifying observers.
+   * @param names - sorted by the contribution before storage, or absent to remove its allowance.
+   * @returns a dispatcher that attempts both notification families and reports their failures, or absent when unchanged.
+   */
+  commit(names: readonly string[] | undefined): (() => readonly unknown[]) | undefined
+  /** Commit and immediately notify observers for one standalone lifecycle mutation. */
+  replace(names: readonly string[] | undefined): void
+  /** Remove the exact contribution; resolver-fiber teardown also calls this disposer. */
+  dispose(): void
+}
+
+/** Resolver-only registry entry point kept out of the named `ctx.tools` API. */
+export interface ToolEligibilityContributions {
+  /**
+   * Register one mutable allowance with separate lifecycle ownership and visibility scope.
+   * @param owner - resolver context that owns teardown.
+   * @param scope - exact Agent scope that sees the allowance.
+   * @param publish - relationship publication run after each committed mutation.
+   * @returns the resolver-owned mutable contribution.
+   */
+  register(
+    owner: Context,
+    scope: ScopeKey,
+    publish: (settingsAllow: readonly string[] | undefined) => void,
+  ): ToolEligibilityContribution
+}
+
+/** Symbol-keyed settings bridge omitted from the generated named service API. @internal */
+export const TOOL_ELIGIBILITY_CONTRIBUTIONS: unique symbol = Symbol('@deepseek-ai/dsh-tools.eligibility-contributions')
+
+/** Mutable cell retained as one registry entry across settings refreshes. */
+interface EligibilityAllowance {
+  names: ReadonlySet<string> | undefined
+}
+
 /** One restriction compiled at registration for repeated live-global lookup. */
 interface CompiledToolRestriction {
   readonly allow?: ReadonlySet<string>
@@ -694,6 +745,8 @@ interface CompiledToolRestriction {
 interface ToolView {
   /** Visible definitions after restrictions, scoped shadowing, and transport insertion. */
   readonly visible: ReadonlyMap<string, ToolDefinition>
+  /** Effective positive allowance, or absent when eligibility is unrestricted. */
+  readonly eligibility: ReadonlySet<string> | undefined
   /** Pre-restriction capability names used by prompt-order validation. */
   readonly knownNames: ReadonlySet<string>
   /** Current global names that a scoped restriction may name. */
@@ -714,6 +767,7 @@ export type ToolGuard = (execution: Readonly<ToolExecution>) => string | undefin
 class ToolLayer implements ScopeLayer {
   readonly tools: NamedEntries<ToolDefinition>
   readonly restrictions = new AnonymousEntries<CompiledToolRestriction>()
+  readonly eligibilityAllowances = new AnonymousEntries<EligibilityAllowance>()
   readonly guards = new AnonymousEntries<ToolGuard>()
   /**
    * Presentation this scope's agent declared for itself, shadowing the
@@ -730,7 +784,8 @@ class ToolLayer implements ScopeLayer {
 
   /** Whether every contribution table in this aggregate layer is empty. */
   isEmpty(): boolean {
-    return this.tools.isEmpty() && this.restrictions.isEmpty() && this.guards.isEmpty()
+    return this.tools.isEmpty() && this.restrictions.isEmpty()
+      && this.eligibilityAllowances.isEmpty() && this.guards.isEmpty()
       && this.mode === undefined
   }
 
@@ -798,6 +853,11 @@ export class ToolRuntime extends Service {
     dispatch: exec => this.dispatchScheduledExecution(exec),
     finalize: (exec, result) => this.finalizeScheduledExecution(exec, result),
     finish: (exec, result) => this.finishScheduledExecution(exec, result),
+  }
+
+  /** Resolver-only mutable eligibility bridge. */
+  readonly [TOOL_ELIGIBILITY_CONTRIBUTIONS]: ToolEligibilityContributions = {
+    register: (owner, scope, publish) => this.createEligibilityContribution(owner, scope, publish),
   }
 
   /** Context deferred by a running tool body, keyed by its scheduler-owned execution. */
@@ -1098,6 +1158,120 @@ export class ToolRuntime extends Service {
   }
 
   /**
+   * Add positive tool-eligibility entries for the calling scope. Entries from
+   * a preset and its descendant agent scopes union; this declaration does not
+   * expose the internal deny-capable restriction interface to user settings.
+   * Names may precede dynamic tool registration, so they are not validated
+   * against the current registry generation here.
+   * @param names - exact public tool names this scope adds to eligibility.
+   * @returns the exact disposer that removes this contribution.
+   */
+  allowEligible(names: readonly string[]): () => void {
+    if (scopeOf(this.ctx) === undefined) {
+      throw new Error('tools.allowEligible() requires a scoped context: declare preset eligibility in its standing scope and Workspace or Session additions through the agent scope')
+    }
+    return this.layers.effect(
+      this.ctx,
+      layer => layer.eligibilityAllowances.append({ names: new Set(names) }),
+      { label: 'tools.allowEligible()' },
+    )
+  }
+
+  /** Create one mutable allowance whose owner and visibility scope differ. */
+  private createEligibilityContribution(
+    owner: Context,
+    scope: ScopeKey,
+    publish: (settingsAllow: readonly string[] | undefined) => void,
+  ): ToolEligibilityContribution {
+    const allowance: EligibilityAllowance = { names: undefined }
+    let active = true
+    const notifyCommitted = (settingsAllow: readonly string[] | undefined): readonly unknown[] => {
+      const failures: unknown[] = []
+      try {
+        publish(settingsAllow)
+      } catch (error) {
+        failures.push(error)
+      }
+      try {
+        this.ctx.emit('tools/change')
+      } catch (error) {
+        failures.push(error)
+      }
+      return failures
+    }
+    const remove = this.layers.effectAt(
+      owner,
+      scope,
+      (layer) => {
+        const undo = layer.eligibilityAllowances.append(allowance)
+        return () => {
+          const changed = allowance.names !== undefined
+          allowance.names = undefined
+          active = false
+          undo()
+          if (!changed) return
+          const failures = notifyCommitted(undefined)
+          if (failures.length > 0) {
+            throw new AggregateError(failures, 'tool eligibility observers failed')
+          }
+        }
+      },
+      { label: 'tools.eligibilityContribution()', notify: false },
+    )
+    const read = (): readonly string[] | undefined => allowance.names === undefined
+      ? undefined
+      : [...allowance.names].sort()
+    const commit = (names: readonly string[] | undefined): (() => readonly unknown[]) | undefined => {
+      if (!active) throw new Error('tool eligibility contribution is disposed')
+      const next = names === undefined ? undefined : [...new Set(names)].sort()
+      const current = read()
+      if (sameStringList(current, next)) return undefined
+      allowance.names = next === undefined ? undefined : new Set(next)
+      return () => notifyCommitted(next)
+    }
+    return {
+      current: read,
+      baseAllow: () => this.resolveEligibilityAllow(scope, allowance),
+      commit,
+      replace: (names) => {
+        const failures = commit(names)?.() ?? []
+        if (failures.length > 0) {
+          throw new AggregateError(failures, 'tool eligibility observers failed')
+        }
+      },
+      dispose: remove,
+    }
+  }
+
+  /**
+   * Resolve the positive eligibility entries declared along one scope chain.
+   * Absence means no allow-only policy was configured; an empty array means a
+   * declaration explicitly allows no end tool.
+   * @param scope - the agent or standing preset whose declarations are read.
+   * @returns the sorted union, or `undefined` when the chain declares none.
+   */
+  eligibilityAllow(scope?: ScopeKey): readonly string[] | undefined {
+    return this.resolveEligibilityAllow(scope)
+  }
+
+  /** Resolve eligibility while optionally omitting one mutable contribution. */
+  private resolveEligibilityAllow(
+    scope?: ScopeKey,
+    omitted?: EligibilityAllowance,
+  ): readonly string[] | undefined {
+    const names = new Set<string>()
+    let declared = false
+    for (const layer of this.layers.chainLayers(scope)) {
+      for (const allowance of layer.eligibilityAllowances.values()) {
+        if (allowance === omitted || allowance.names === undefined) continue
+        declared = true
+        for (const name of allowance.names) names.add(name)
+      }
+    }
+    return declared ? [...names].sort() : undefined
+  }
+
+  /**
    * Register a monotonic guard after the extensible `tools/pre-execute`
    * waterfall. A plain-context guard applies globally; one registered through
    * `agent.ctx` applies only to that agent. Any matching guard may deny by
@@ -1129,10 +1303,10 @@ export class ToolRuntime extends Service {
 
   /**
    * Resolve every registry fact one scope needs in one layer traversal. The
-   * visible map applies restrictions to the INHERITED surface, then the
-   * scope's own registrations and the reserved presentation transport; the
-   * other sets retain the pre-restriction facts needed by restriction and
-   * prompt-order validation.
+   * visible map applies positive eligibility to inherited and scope-owned
+   * tools, internal restrictions to the INHERITED surface, then the reserved
+   * presentation transport; the other sets retain the pre-restriction facts
+   * needed by restriction and prompt-order validation.
    *
    * A restriction filters what a scope inherits — the global layer and every
    * ancestor layer on its chain — and never what its OWN layer registers.
@@ -1166,19 +1340,22 @@ export class ToolRuntime extends Service {
     const visible = new Map<string, ToolDefinition>()
     const knownNames = new Set<string>()
     const restrictableNames = new Set<string>()
+    const eligibleNames = this.eligibilityAllow(scope)
+    const eligible = eligibleNames === undefined ? undefined : new Set(eligibleNames)
+    const admitsEligibility = (name: string): boolean => eligible === undefined || eligible.has(name)
     for (const [name, definition] of inherited) {
       knownNames.add(name)
       restrictableNames.add(name)
       // Restrictions intersect across the whole chain: any scope on it may
       // mask an inherited name for everything nested inside it.
-      if (layers.every(layer => layer.admits(name))) visible.set(name, definition)
+      if (admitsEligibility(name) && layers.every(layer => layer.admits(name))) visible.set(name, definition)
     }
     // The scope's own registrations last, shadowing an inherited name and
     // outside the filter above.
     if (own !== undefined) {
       for (const [name, definition] of own.tools.entries()) {
         knownNames.add(name)
-        visible.set(name, definition)
+        if (admitsEligibility(name)) visible.set(name, definition)
       }
     }
     // Presentation infrastructure is resolved last and outside capability
@@ -1189,7 +1366,14 @@ export class ToolRuntime extends Service {
     if (this.modeFor(scope) !== 'native') {
       visible.set(RUN_CODE_NAME, this.requireCodeTransport())
     }
-    return { visible, knownNames, restrictableNames }
+    return { visible, eligibility: eligible, knownNames, restrictableNames }
+  }
+
+  /** Whether a registered definition is excluded by one derived positive allowance. */
+  private eligibilityDenies(view: ToolView, name: string): boolean {
+    return view.eligibility !== undefined
+      && view.knownNames.has(name)
+      && !view.eligibility.has(name)
   }
 
   /**
@@ -1329,8 +1513,13 @@ export class ToolRuntime extends Service {
    * Execute through pre-policy, guards, around-dispatch, post-policy,
    * definition-owned content finalization, and final notification. Tool and
    * listener failures resolve as materialized error results; an invisible tool
-   * reports `UNKNOWN_TOOL`. The returned outcome is the same lossless, frozen
-   * snapshot final observers receive. Cancellation
+   * reports `UNKNOWN_TOOL`. A registered tool excluded by positive eligibility
+   * is rejected before policy, and eligibility narrowed during pre-policy is
+   * rechecked before around-dispatch listeners. Both eligibility denials skip
+   * around-dispatch, post-policy, the definition-owned content finalizer, and
+   * the tool body while retaining final notification. Unknown or unloaded
+   * names keep the ordinary pipeline. The returned outcome is the same
+   * lossless, frozen snapshot final observers receive. Cancellation
    * arriving after entry and before final result materialization skips a
    * not-yet-started body with `ABORTED_BEFORE_DISPATCH` or replaces a
    * successful started outcome with `ABORTED`; already-started work is still
@@ -1370,14 +1559,13 @@ export class ToolRuntime extends Service {
     const agent = exec.agent
     const parent = exec.parent
     const signal = exec.signal
-    // Distinguish a mode-collapsed call (visible in the scope, denied only by
-    // the `code` collapse) from a genuinely unknown tool. A collapsed call is
-    // deterministically denied, so it terminates BEFORE the extensible policy
-    // pipeline: pre-execute listeners, approval `ask`, and guards must never
-    // observe — or worse, approve — a call that can only fail. An unknown tool
-    // keeps the historical dispatch-stage `UNKNOWN_TOOL` path so policy
-    // listeners still see every name that reaches the registry.
-    const visible = this.get(name, agent)
+    // Distinguish deterministic eligibility and mode denials from a genuinely
+    // unknown tool. Deterministic denials terminate before extensible policy;
+    // an unknown tool keeps the historical dispatch-stage `UNKNOWN_TOOL` path
+    // so policy and around-dispatch listeners still observe unloaded names.
+    const initialView = this.view(agent)
+    const visible = initialView.visible.get(name)
+    const eligibilityDenied = this.eligibilityDenies(initialView, name)
     const collapsed = visible !== undefined && this.collapses(name, agent, parent !== undefined)
     const concludingExecutions = this.concludingExecutions
     const base = {
@@ -1420,14 +1608,19 @@ export class ToolRuntime extends Service {
         callerSignal: signal,
         bodyInvoked: false,
       })
-      if (collapsed) {
-        // The collapse denies the call before the policy pipeline, but a
-        // pre-dispatch abort still keeps the established cancellation
-        // contract: `prepare`'s caller-cancellation check is skipped for
-        // final-results, so honor the abort here instead of surfacing
-        // `UNKNOWN_TOOL` on an already-cancelled call.
+      if (eligibilityDenied || collapsed) {
+        // A deterministic denial precedes policy, but a pre-dispatch abort
+        // still keeps the established cancellation contract: `prepare` skips
+        // its caller-cancellation check for final results.
         if (signal.aborted) {
           return { kind: 'final-result', exec: execution, result: toolAbortedBeforeDispatchResult() }
+        }
+        if (eligibilityDenied) {
+          return {
+            kind: 'final-result',
+            exec: execution,
+            result: this.terminalEligibilityDenial(execution),
+          }
         }
         // The name IS visible here, so the denial carries the route the model
         // must take instead. Without it the model reads a bare `unknown tool`
@@ -1568,6 +1761,9 @@ export class ToolRuntime extends Service {
    */
   private async dispatchScheduledExecution(exec: ToolRunContext): Promise<ScheduledToolDispatch> {
     try {
+      if (this.eligibilityDenies(this.view(exec.agent), exec.name)) {
+        return { kind: 'final-result', result: this.terminalEligibilityDenial(exec) }
+      }
       const mutableExec = exec as MutableToolRunContext
       const carrier = scopeTarget(this, exec.agent)
       const result = await this.ctx.waterfall(
@@ -1596,6 +1792,12 @@ export class ToolRuntime extends Service {
     } catch (error: unknown) {
       return { kind: 'final-result', result: toolErrorResult(error) }
     }
+  }
+
+  /** Remove a snapshotted definition finalizer and return the canonical eligibility denial. */
+  private terminalEligibilityDenial(exec: ToolRunContext): ToolExecutionResult {
+    this.contentFinalizers.delete(exec)
+    return toolErrorResult(new ToolNotFoundError(exec.name))
   }
 
   /**

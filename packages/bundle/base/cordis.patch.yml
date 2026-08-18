@@ -424,6 +424,12 @@
     - id: tools
       name: '@deepseek-ai/dsh-tools'
 
+    # Positive eligibility stays dormant until a preset, Workspace, or Session
+    # supplies an allowance. The resolver contributes Workspace and Session
+    # additions to the tools registry's scope-chain eligibility union.
+    - id: tool-eligibility
+      name: '@deepseek-ai/dsh-tools-eligibility'
+
     # The deployment persona is a deployment choice; plan-mode and tool plugins own
     # their own prompt sections.
     - id: system-prompt
