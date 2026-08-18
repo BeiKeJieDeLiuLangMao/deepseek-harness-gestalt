@@ -1,6 +1,8 @@
 /** Provider-neutral Service Definition for the Browser Runtime capability. @module @deepseek-ai/dsh-browser-runtime */
 
 import { Context, Service } from '@deepseek-ai/cordis'
+import { enqueueBrowserRuntimeOperation } from './helpers.ts'
+import { BrowserRuntimeError } from './types.ts'
 import type {
   BrowserClosedState,
   BrowserCreateRequest,
@@ -12,6 +14,14 @@ import type {
   BrowserScreenshot,
 } from './types.ts'
 
+export {
+  addressedBrowserRuntimeState,
+  assertBrowserNotAborted,
+  emitBrowserRuntimeState,
+  enqueueBrowserRuntimeOperation,
+  requireOpenBrowserPage,
+  sameBrowserTarget,
+} from './helpers.ts'
 export {
   BrowserInstanceId,
   BrowserProfileId,
@@ -57,8 +67,35 @@ declare module '@deepseek-ai/cordis' {
  * post-commit notification attempts; asynchronous observers are not awaited.
  */
 export abstract class BrowserRuntime extends Service {
+  /** Tail of the serialized Provider operation queue. */
+  protected queue: Promise<void> = Promise.resolve()
+  /** True once Provider teardown has started. */
+  protected closing = false
+  /** True after teardown has joined outstanding work. */
+  protected disposed = false
+
   constructor(ctx: Context) {
     super(ctx, 'browserRuntime')
+  }
+
+  /** Reject work that enters after teardown begins. */
+  protected assertAccepting(): void {
+    if (this.closing || this.disposed) {
+      throw new BrowserRuntimeError('browser runtime is disposed', 'BROWSER_DISPOSED')
+    }
+  }
+
+  /**
+   * Serialize one accepted operation behind earlier queued work.
+   * @param operation - Work to run after earlier operations settle.
+   * @returns the operation result.
+   */
+  protected exclusive<T>(operation: () => T | Promise<T>): Promise<T> {
+    const next = enqueueBrowserRuntimeOperation(this.queue, () => {
+      this.assertAccepting()
+    }, operation)
+    this.queue = next.queue
+    return next.result
   }
 
   /**

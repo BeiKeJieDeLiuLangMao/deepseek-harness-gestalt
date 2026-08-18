@@ -290,6 +290,7 @@ describe('Tandem Browser Runtime public lifecycle', () => {
     const { ctx } = await setup()
     const observed: number[] = []
     ctx.on('browser/runtime-state', () => { throw new Error('ordinary observer failed') })
+    // oxlint-disable-next-line typescript/no-misused-promises -- this listener exercises rejected post-commit observation
     ctx.on('browser/runtime-state', async () => { throw new Error('async observer failed') })
     ctx.on('browser/runtime-state', (state: { revision: number }) => { observed.push(state.revision) })
     const created = await ctx.browserRuntime.create({ profile: 'temporary' })

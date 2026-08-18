@@ -1,7 +1,8 @@
 /** Package-owned lifecycle invariant for the Tandem Browser Runtime Provider. @module @deepseek-ai/dsh-browser-runtime-tandem/invariant */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { BrowserRuntime, BrowserRuntimeState, BrowserTarget } from '@deepseek-ai/dsh-browser-runtime'
+import type { BrowserRuntime, BrowserRuntimeState } from '@deepseek-ai/dsh-browser-runtime'
+import { sameBrowserTarget } from '@deepseek-ai/dsh-browser-runtime'
 import type { InvariantFailure, InvariantInstaller } from '@deepseek-ai/dsh-invariants'
 import {
   registerTandemRuntimeStateValidator,
@@ -16,14 +17,6 @@ const PACKAGE_NAME = '@deepseek-ai/dsh-browser-runtime-tandem'
 export const name = 'browser-runtime-tandem-invariant'
 /** Services required before this companion can observe its Provider. */
 export const inject = ['invariants']
-
-/** Compare the full opaque target relationship. */
-function sameTarget(left: BrowserTarget, right: BrowserTarget): boolean {
-  return left.profileId === right.profileId
-    && left.workspaceId === right.workspaceId
-    && left.browserId === right.browserId
-    && left.tabId === right.tabId
-}
 
 /** Validate one open-to-closed Tandem lifecycle with exact revision succession. */
 const install: InvariantInstaller = Object.assign((_ctx: Context, fail: InvariantFailure) => {
@@ -41,7 +34,7 @@ const install: InvariantInstaller = Object.assign((_ctx: Context, fail: Invarian
       return undefined
     }
     if (previous.status === 'closed') fail('a Tandem Browser Runtime terminal state cannot reopen')
-    if (!sameTarget(previous.target, state.target)) fail('a Tandem Browser Runtime lifecycle changed an opaque target identity')
+    if (!sameBrowserTarget(previous.target, state.target)) fail('a Tandem Browser Runtime lifecycle changed an opaque target identity')
     if (state.revision !== previous.revision + 1) {
       fail(`Tandem Browser Runtime revision ${String(state.revision)} must follow ${String(previous.revision)}`)
     }

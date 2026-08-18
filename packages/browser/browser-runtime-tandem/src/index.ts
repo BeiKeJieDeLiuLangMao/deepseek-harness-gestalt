@@ -5,12 +5,15 @@ import { readFile } from 'node:fs/promises'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import {
+  addressedBrowserRuntimeState,
+  assertBrowserNotAborted,
   BrowserInstanceId,
   BrowserProfileId,
   BrowserRuntime,
   BrowserRuntimeError,
   BrowserTabId,
   BrowserWorkspaceId,
+  emitBrowserRuntimeState,
 } from '@deepseek-ai/dsh-browser-runtime'
 import type {
   BrowserClosedState,
@@ -157,21 +160,6 @@ function targetFor(prefix: string, tandemTabId: string): BrowserTarget {
   })
 }
 
-/** Compare all four opaque identities without exposing Provider structure to callers. */
-function sameTarget(left: BrowserTarget, right: BrowserTarget): boolean {
-  return left.profileId === right.profileId
-    && left.workspaceId === right.workspaceId
-    && left.browserId === right.browserId
-    && left.tabId === right.tabId
-}
-
-/** Reject already-aborted work before it reaches process or HTTP state. */
-function assertNotAborted(signal: AbortSignal | undefined): void {
-  if (signal?.aborted) {
-    throw new BrowserRuntimeError(`browser operation aborted: ${String(signal.reason)}`, 'BROWSER_ABORTED')
-  }
-}
-
 /** Narrow one untrusted JSON value to an object record. */
 function objectValue(value: unknown, subject: string): Record<string, unknown> {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
@@ -223,10 +211,7 @@ export class TandemBrowserRuntime extends BrowserRuntime {
   private process: SubprocessHandle | undefined
   private tandemTabId: string | undefined
   private readonly intentionalStops = new WeakSet<SubprocessHandle>()
-  private queue: Promise<void> = Promise.resolve()
   private recoveryScheduled = false
-  private closing = false
-  private disposed = false
 
   constructor(ctx: Context, config: Config) {
     super(ctx)
@@ -253,38 +238,12 @@ export class TandemBrowserRuntime extends BrowserRuntime {
     ctx.effect(() => () => this.teardown(), 'Tandem Browser Runtime teardown')
   }
 
-  /** Reject new work after Provider teardown begins. */
-  private assertAccepting(): void {
-    if (this.closing || this.disposed) {
-      throw new BrowserRuntimeError('browser runtime is disposed', 'BROWSER_DISPOSED')
-    }
-  }
-
-  /** Serialize one accepted operation behind all earlier reads and mutations. */
-  private exclusive<T>(operation: () => Promise<T>): Promise<T> {
-    this.assertAccepting()
-    const result = this.queue.then(operation)
-    this.queue = result.then(() => undefined, () => undefined)
-    return result
-  }
-
   /** Emit one committed state while containing broken ordinary observers. */
   private notifyState(state: BrowserRuntimeState): void {
-    const args = ['browser/runtime-state', state]
-    for (const listener of this.ctx.events.dispatch('emit', args) as Array<(value: BrowserRuntimeState) => unknown>) {
-      try {
-        const returned = listener(state)
-        if (returned != null && typeof (returned as PromiseLike<unknown>).then === 'function') {
-          void Promise.resolve(returned as PromiseLike<unknown>).then(undefined, (error: unknown) => {
-            this.ctx.logger.warn('browser-runtime-tandem: a browser/runtime-state observer failed')
-            this.ctx.logger.warn(error)
-          })
-        }
-      } catch (error) {
-        this.ctx.logger.warn('browser-runtime-tandem: a browser/runtime-state observer failed')
-        this.ctx.logger.warn(error)
-      }
-    }
+    emitBrowserRuntimeState(this.ctx, state, (error) => {
+      this.ctx.logger.warn('browser-runtime-tandem: a browser/runtime-state observer failed')
+      this.ctx.logger.warn(error)
+    })
   }
 
   /** Commit and publish one immutable Provider state. */
@@ -298,10 +257,7 @@ export class TandemBrowserRuntime extends BrowserRuntime {
 
   /** Resolve the addressed Provider state. */
   private addressed(target: BrowserTarget): BrowserRuntimeState {
-    if (this.state === undefined || !sameTarget(this.state.target, target)) {
-      throw new BrowserRuntimeError('browser target is not present', 'BROWSER_NOT_FOUND')
-    }
-    return this.state
+    return addressedBrowserRuntimeState(this.state, target)
   }
 
   /** Resolve an open page or reject its terminal close receipt. */
@@ -366,7 +322,7 @@ export class TandemBrowserRuntime extends BrowserRuntime {
     signal: AbortSignal | undefined,
     authenticated = true,
   ): Promise<{ response: Response; bytes: Uint8Array }> {
-    assertNotAborted(signal)
+    assertBrowserNotAborted(signal)
     const deadline = AbortSignal.timeout(this.config.requestTimeoutMs)
     const combined = signal === undefined ? deadline : AbortSignal.any([signal, deadline])
     const headers = new Headers(init.headers)
@@ -375,7 +331,7 @@ export class TandemBrowserRuntime extends BrowserRuntime {
     try {
       response = await fetch(`${this.baseUrl}${path}`, { ...init, headers, signal: combined })
     } catch (error) {
-      if (signal?.aborted) assertNotAborted(signal)
+      if (signal?.aborted) assertBrowserNotAborted(signal)
       throw new BrowserRuntimeError(`Tandem HTTP request failed: ${String(error)}`, 'BROWSER_RUNTIME_UNAVAILABLE')
     }
     const bytes = await this.responseBytes(response)
@@ -406,7 +362,7 @@ export class TandemBrowserRuntime extends BrowserRuntime {
     const deadline = Date.now() + this.config.startupTimeoutMs
     let lastError: unknown
     while (Date.now() < deadline) {
-      assertNotAborted(signal)
+      assertBrowserNotAborted(signal)
       if (this.process === undefined) {
         throw new BrowserRuntimeError('Tandem child exited before startup health completed', 'BROWSER_RUNTIME_UNAVAILABLE')
       }
@@ -430,7 +386,7 @@ export class TandemBrowserRuntime extends BrowserRuntime {
       } catch (error) {
         // A caller abort propagates; an expired probe deadline is one more
         // failed sample that the startup bound below reports truthfully.
-        if (signal?.aborted) assertNotAborted(signal)
+        if (signal?.aborted) assertBrowserNotAborted(signal)
         if (error instanceof BrowserRuntimeError && error.code === 'BROWSER_PROTOCOL') throw error
         lastError = error
       }
@@ -442,7 +398,7 @@ export class TandemBrowserRuntime extends BrowserRuntime {
   /** Spawn one credential-scrubbed Tandem process tree and wait for its pinned API. */
   private async startProcess(signal: AbortSignal | undefined): Promise<void> {
     const executable = await this.ctx.subprocess.resolveExecutable(this.config.command, this.config.env, signal)
-    assertNotAborted(signal)
+    assertBrowserNotAborted(signal)
     const handle = this.ctx.subprocess.spawn({
       argv: [executable, ...this.config.args],
       cwd: this.config.cwd,
@@ -480,7 +436,7 @@ export class TandemBrowserRuntime extends BrowserRuntime {
 
   /** Resolve after a configured delay or reject promptly when the caller cancels. */
   private delay(milliseconds: number, signal: AbortSignal | undefined): Promise<void> {
-    assertNotAborted(signal)
+    assertBrowserNotAborted(signal)
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         signal?.removeEventListener('abort', onAbort)
@@ -629,9 +585,9 @@ export class TandemBrowserRuntime extends BrowserRuntime {
   }
 
   async create(request: BrowserCreateRequest): Promise<BrowserPageState> {
-    assertNotAborted(request.signal)
+    assertBrowserNotAborted(request.signal)
     return this.exclusive(async () => {
-      assertNotAborted(request.signal)
+      assertBrowserNotAborted(request.signal)
       if (this.state !== undefined) {
         throw new BrowserRuntimeError('the Tandem browser runtime has already created its temporary Profile', 'BROWSER_CAPACITY')
       }
@@ -656,9 +612,9 @@ export class TandemBrowserRuntime extends BrowserRuntime {
   }
 
   async navigate(request: BrowserNavigateRequest): Promise<BrowserPageState> {
-    assertNotAborted(request.signal)
+    assertBrowserNotAborted(request.signal)
     return this.exclusive(async () => {
-      assertNotAborted(request.signal)
+      assertBrowserNotAborted(request.signal)
       const state = this.open(request.target)
       this.expected(state, request.expectedRevision)
       await this.json('/navigate', {
@@ -672,9 +628,9 @@ export class TandemBrowserRuntime extends BrowserRuntime {
   }
 
   async observe(request: BrowserObserveRequest): Promise<BrowserRuntimeState> {
-    assertNotAborted(request.signal)
+    assertBrowserNotAborted(request.signal)
     return this.exclusive(async () => {
-      assertNotAborted(request.signal)
+      assertBrowserNotAborted(request.signal)
       const state = this.addressed(request.target)
       if (state.status !== 'open') return state
       try {
@@ -689,9 +645,9 @@ export class TandemBrowserRuntime extends BrowserRuntime {
   }
 
   async screenshot(request: BrowserObserveRequest): Promise<BrowserScreenshot> {
-    assertNotAborted(request.signal)
+    assertBrowserNotAborted(request.signal)
     return this.exclusive(async () => {
-      assertNotAborted(request.signal)
+      assertBrowserNotAborted(request.signal)
       const state = this.open(request.target)
       const page = await this.page(state, request.signal)
       const { response, bytes } = await this.request('/screenshot', {
@@ -713,9 +669,9 @@ export class TandemBrowserRuntime extends BrowserRuntime {
   }
 
   async focus(request: BrowserMutationRequest): Promise<BrowserPageState> {
-    assertNotAborted(request.signal)
+    assertBrowserNotAborted(request.signal)
     return this.exclusive(async () => {
-      assertNotAborted(request.signal)
+      assertBrowserNotAborted(request.signal)
       const state = this.open(request.target)
       this.expected(state, request.expectedRevision)
       const response = objectValue(await this.json('/tabs/focus', {
@@ -729,9 +685,9 @@ export class TandemBrowserRuntime extends BrowserRuntime {
   }
 
   async close(request: BrowserMutationRequest): Promise<BrowserClosedState> {
-    assertNotAborted(request.signal)
+    assertBrowserNotAborted(request.signal)
     return this.exclusive(async () => {
-      assertNotAborted(request.signal)
+      assertBrowserNotAborted(request.signal)
       const state = this.addressed(request.target)
       this.expected(state, request.expectedRevision)
       if (state.status === 'closed') throw new BrowserRuntimeError('browser target is closed', 'BROWSER_NOT_OPEN')

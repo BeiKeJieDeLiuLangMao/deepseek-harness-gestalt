@@ -119,6 +119,15 @@ describe('deterministic Browser Runtime invariant lifecycle', () => {
         revision: 1,
       })
     }).toThrow(/changed an opaque target identity/)
+    expect(() => {
+      validateIdentity({
+        status: 'unavailable',
+        target: first.target,
+        revision: 1,
+        reason: 'crashed',
+        reconnecting: false,
+      })
+    }).toThrow(/cannot publish an unavailable state/)
 
     const skippedRevision = await setup()
     await mountInvariant(skippedRevision)
