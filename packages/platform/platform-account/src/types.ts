@@ -33,6 +33,17 @@ export interface PlatformAccountView {
   avatarUrl: string
 }
 
+/** Account and Installation identity authenticated by one Account Session proof. */
+export interface AuthenticatedInstallationView {
+  /** Platform Account authorized by the current Installation session. */
+  account: PlatformAccountView
+  /** Installation identity and role bound to that session by the Account provider. */
+  installation: {
+    id: InstallationId
+    kind: InstallationKind
+  }
+}
+
 /** Proof that the installation private key authorized one Account operation. */
 export interface AccountProof {
   /** Unique proof id; a successful verification consumes it once. */

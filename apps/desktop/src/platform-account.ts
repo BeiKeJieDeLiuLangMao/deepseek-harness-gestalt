@@ -17,6 +17,7 @@ import type {
   LoginPollResult,
   SelectedPlatformEnvironment,
 } from '@deepseek-ai/dsh-platform-account'
+import type { CurrentInstallationAuthorization } from '@deepseek-ai/dsh-platform-account-client'
 import {
   AccountLifecycleClosedError,
   AccountLifecycleTransitions,
@@ -96,6 +97,8 @@ export interface DesktopAccountActions {
   acceptPrivacy(): Promise<DesktopAccountSnapshot>
   beginLogin(): Promise<DesktopAccountSnapshot>
   signOut(): Promise<DesktopAccountSnapshot>
+  /** Authorize a Host-owned current-Installation operation without exposing the private key. */
+  authorizeCurrentInstallation(): Promise<CurrentInstallationAuthorization>
   subscribe(listener: (snapshot: DesktopAccountSnapshot) => void): () => void
   start(): Promise<void>
   dispose(): Promise<void>
@@ -187,6 +190,45 @@ export class DesktopAccountController implements DesktopAccountActions {
 
   async signOut(): Promise<DesktopAccountSnapshot> {
     return this.transitions.run(async () => this.signOutTransition())
+  }
+
+  async authorizeCurrentInstallation(): Promise<CurrentInstallationAuthorization> {
+    return this.transitions.run(async () => {
+      const record = this.requireRecord()
+      if (record.session === undefined || record.sessionPrivateKey === undefined) {
+        throw new AccountError('SESSION_REVOKED', 'Desktop Installation is not signed in')
+      }
+      if (record.session.refreshExpiresAt <= this.now()) {
+        await this.clearSession(record)
+        throw new AccountError('SESSION_EXPIRED', 'Desktop Account Session expired')
+      }
+      if (record.session.accessExpiresAt <= this.now()) {
+        record.session = await this.options.transport.refresh({
+          refreshToken: record.session.refreshToken,
+          proof: desktopProof(
+            record.sessionPrivateKey,
+            'refresh',
+            hash(record.session.refreshToken),
+            this.now(),
+          ),
+        })
+        await this.options.store.save(record)
+        this.publish({
+          status: 'signed-in',
+          privacyAccepted: this.snapshot.privacyAccepted,
+          account: record.session.account,
+        })
+      }
+      return {
+        accessToken: record.session.accessToken,
+        proof: desktopProof(
+          record.sessionPrivateKey,
+          'current',
+          hash(record.session.accessToken),
+          this.now(),
+        ),
+      }
+    })
   }
 
   private async signOutTransition(): Promise<DesktopAccountSnapshot> {
@@ -355,6 +397,9 @@ export class UnavailableDesktopAccountController implements DesktopAccountAction
   acceptPrivacy(): Promise<DesktopAccountSnapshot> { return Promise.resolve(this.snapshot) }
   beginLogin(): Promise<DesktopAccountSnapshot> { return Promise.resolve(this.snapshot) }
   signOut(): Promise<DesktopAccountSnapshot> { return Promise.resolve(this.snapshot) }
+  authorizeCurrentInstallation(): Promise<CurrentInstallationAuthorization> {
+    return Promise.reject(new AccountError('SESSION_REVOKED', 'Desktop Platform Account is unavailable'))
+  }
   subscribe(): () => void { return () => {} }
   start(): Promise<void> { return Promise.resolve() }
   dispose(): Promise<void> { return Promise.resolve() }
@@ -404,11 +449,16 @@ function parsePersistedDesktopAccount(value: unknown): PersistedDesktopAccount {
   if ((pending === undefined) !== (pendingPrivateKey === undefined)) {
     throw new TypeError('Desktop Platform Account pending attempt and private key must be stored together')
   }
-  return {
-    installationId: parseInstallationId(record.installationId),
-    ...(session === undefined ? {} : { session, sessionPrivateKey }),
-    ...(pending === undefined ? {} : { pending, pendingPrivateKey }),
+  const parsed: PersistedDesktopAccount = { installationId: parseInstallationId(record.installationId) }
+  if (session !== undefined && sessionPrivateKey !== undefined) {
+    parsed.session = session
+    parsed.sessionPrivateKey = sessionPrivateKey
   }
+  if (pending !== undefined && pendingPrivateKey !== undefined) {
+    parsed.pending = pending
+    parsed.pendingPrivateKey = pendingPrivateKey
+  }
+  return parsed
 }
 
 function optionalPrivateKey(value: unknown, name: string): string | undefined {

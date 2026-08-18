@@ -17,6 +17,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import AccountService, {
   AccountError,
   type AccountProof,
+  type AuthenticatedInstallationView,
   type AccountProofJti,
   type AccountSessionId,
   type AccountSessionView,
@@ -639,6 +640,18 @@ export class PlatformAccount extends AccountService {
     const { payload, session } = await this.authorizeAccess(input.accessToken)
     await this.verifyProof(session.publicKey, 'current', hashAccountToken(input.accessToken), input.proof)
     return accountView(await this.requireAccount(payload.accountId))
+  }
+
+  async currentInstallation(input: {
+    accessToken: string
+    proof: AccountProof
+  }): Promise<AuthenticatedInstallationView> {
+    const { payload, session } = await this.authorizeAccess(input.accessToken)
+    await this.verifyProof(session.publicKey, 'current', hashAccountToken(input.accessToken), input.proof)
+    return {
+      account: accountView(await this.requireAccount(payload.accountId)),
+      installation: { id: session.installationId, kind: session.installationKind },
+    }
   }
 
   async signOut(input: { accessToken: string; proof: AccountProof }): Promise<void> {

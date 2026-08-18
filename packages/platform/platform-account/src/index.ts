@@ -7,6 +7,7 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import type { SelectedPlatformEnvironment } from './environment.ts'
 import type {
   AccountProof,
+  AuthenticatedInstallationView,
   AccountSessionView,
   AccountSessionId,
   InstallationId,
@@ -83,6 +84,16 @@ export abstract class AccountService extends Service {
    * @returns current account projection.
    */
   abstract current(input: { accessToken: string; proof: AccountProof }): Promise<PlatformAccountView>
+
+  /**
+   * Authenticate the Account and Installation identity bound to one current session.
+   * @param input - access token and proof from the session's Installation key.
+   * @returns provider-owned Account id, Installation id, and Installation kind.
+   */
+  abstract currentInstallation(input: {
+    accessToken: string
+    proof: AccountProof
+  }): Promise<AuthenticatedInstallationView>
 
   /**
    * Revoke only the current installation Account Session.

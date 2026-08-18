@@ -259,6 +259,13 @@ describe('PlatformAccount', () => {
     await expect(first.current({ accessToken: refreshed.accessToken, proof: currentProof })).resolves.toEqual(refreshed.account)
     await expect(first.current({ accessToken: refreshed.accessToken, proof: currentProof }))
       .rejects.toMatchObject({ code: 'PROOF_REPLAYED' })
+    await expect(first.currentInstallation({
+      accessToken: refreshed.accessToken,
+      proof: key.proof('current', hashAccountToken(refreshed.accessToken)),
+    })).resolves.toEqual({
+      account: refreshed.account,
+      installation: { id: 'mobile-installation-1', kind: 'mobile' },
+    })
   })
 
   it('invalidates and closes only the current installation across instances', async () => {

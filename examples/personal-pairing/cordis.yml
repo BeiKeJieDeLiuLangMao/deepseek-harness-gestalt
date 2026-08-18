@@ -1,0 +1,11 @@
+- name: '@deepseek-ai/dsh-host-webserver'
+  config:
+    host: '127.0.0.1'
+    port: 0
+- id: personal-pairing-keyless-provider
+  name: './src/provider.ts'
+- name: '@deepseek-ai/dsh-remote-access-http'
+  config:
+    origin: 'https://mobile.example.com'
+- id: personal-pairing-keyless-scenario
+  name: './start.ts'

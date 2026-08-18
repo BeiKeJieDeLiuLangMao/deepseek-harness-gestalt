@@ -11,12 +11,15 @@ import {
 import {
   ACCOUNT_ACCEPT_PRIVACY, ACCOUNT_BEGIN_LOGIN, ACCOUNT_GET_SNAPSHOT,
   ACCOUNT_SIGN_OUT, ACCOUNT_SNAPSHOT_CHANGED,
+  PAIRING_CANCEL_CHALLENGE, PAIRING_CONFIRM, PAIRING_CREATE_CHALLENGE,
+  PAIRING_GET_SNAPSHOT, PAIRING_REJECT, PAIRING_SET_ENABLED, PAIRING_SNAPSHOT_CHANGED,
   UPDATER_CHECK_NOW, UPDATER_DOWNLOAD_NOW, UPDATER_GET_STATUS,
   UPDATER_QUIT_AND_INSTALL, UPDATER_STATUS_CHANGED,
   WINDOW_CLOSE, WINDOW_MAXIMIZE, WINDOW_MINIMIZE,
   type UpdaterStatus,
 } from '@deepseek-ai/dsh-client-ui-desktop/protocol'
 import { PlatformAccountHttpTransport } from '@deepseek-ai/dsh-platform-account-client'
+import { RemoteAccessHttpTransport } from '@deepseek-ai/dsh-remote-access-client'
 import type { SelectedPlatformEnvironment } from '@deepseek-ai/dsh-platform-account'
 import { ensureLaunchDirectory } from './launch-directory.ts'
 import { isElectronExecutable, resolveDesktopRuntime } from './runtime-paths.ts'
@@ -33,6 +36,15 @@ import {
   DesktopAccountController, EncryptedDesktopAccountStore,
   UnavailableDesktopAccountController, type DesktopAccountActions,
 } from './platform-account.ts'
+import {
+  DesktopPairingController,
+  UnavailableDesktopPairingController,
+  confirmPairingFromIpc,
+  rejectPairingFromIpc,
+  setPairingEnabledFromIpc,
+  type DesktopPairingActions,
+} from './personal-pairing.ts'
+import { disposeDesktopOwners } from './shutdown.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const PRELOAD = join(here, 'preload.cjs')
@@ -52,6 +64,11 @@ let integrationsInstalled = false
 let updaterInitialized = false
 let account: DesktopAccountActions = new UnavailableDesktopAccountController('Platform Account is starting')
 let stopAccountEvents: (() => void) | undefined
+let pairing: DesktopPairingActions = new UnavailableDesktopPairingController(
+  'Personal Pairing waits for the independent Noise security review.',
+)
+let stopPairingEvents: (() => void) | undefined
+let accountSignedIn = false
 const hostStartController = new AbortController()
 let pendingHost: Promise<RunningWebHost> | undefined
 
@@ -91,6 +108,16 @@ async function boot(): Promise<void> {
     account = new UnavailableDesktopAccountController(
       error instanceof Error ? error.message : String(error),
     )
+  }
+  pairing = createDesktopPairing(accountEnvironment, account)
+  stopPairingEvents = pairing.subscribe(pushPairingSnapshot)
+  stopAccountEvents()
+  stopAccountEvents = account.subscribe(handleAccountSnapshot)
+  accountSignedIn = account.getSnapshot().status === 'signed-in'
+  if (accountSignedIn) {
+    await pairing.start().catch((error: unknown) => {
+      console.error('[desktop-personal-pairing] initial Remote Access load failed:', error)
+    })
   }
   installIntegrationsOnce()
   try {
@@ -165,7 +192,7 @@ function createWindow(): BrowserWindow {
       packaged: app.isPackaged,
       appPath: app.getAppPath(),
       resourcesPath: process.resourcesPath,
-      setDockIcon: (path) => { app.dock?.setIcon(path) },
+      setDockIcon: (path) => { app.dock.setIcon(path) },
     }),
     width: 1280,
     height: 800,
@@ -271,6 +298,7 @@ async function finishSmoke(target: BrowserWindow): Promise<void> {
   const evidence: unknown = await target.webContents.executeJavaScript(`(async () => {
     const bridge = window.dshDesktop
     const updaterStatus = await bridge?.getStatus()
+    const pairingStatus = await bridge?.pairingGetSnapshot()
     const unsubscribe = typeof bridge?.onStatus === 'function'
       ? bridge.onStatus(() => {})
       : null
@@ -293,6 +321,16 @@ async function finishSmoke(target: BrowserWindow): Promise<void> {
         && typeof bridge.onStatus === 'function'
         && typeof unsubscribe === 'function',
       updaterState: updaterStatus?.state ?? null,
+      pairingBridge: bridge !== undefined
+        && typeof bridge.pairingGetSnapshot === 'function'
+        && typeof bridge.pairingSetEnabled === 'function'
+        && typeof bridge.pairingCreateChallenge === 'function'
+        && typeof bridge.pairingCancelChallenge === 'function'
+        && typeof bridge.pairingConfirm === 'function'
+        && typeof bridge.pairingReject === 'function'
+        && typeof bridge.onPairingSnapshot === 'function',
+      mobileAccessEnabled: pairingStatus?.enabled ?? null,
+      pairingState: pairingStatus?.status ?? null,
       rendererUpdaterState: document.querySelector('[data-desktop-updater-state]')
         ?.getAttribute('data-desktop-updater-state') ?? null,
       updateControlAbsent: document.querySelector('[data-desktop-update-control]') === null,
@@ -305,6 +343,9 @@ async function finishSmoke(target: BrowserWindow): Promise<void> {
     && 'gestalt' in evidence && evidence.gestalt === true
     && 'updaterBridge' in evidence && evidence.updaterBridge === true
     && 'updaterState' in evidence && evidence.updaterState === 'disabled'
+    && 'pairingBridge' in evidence && evidence.pairingBridge === true
+    && 'mobileAccessEnabled' in evidence && evidence.mobileAccessEnabled === false
+    && 'pairingState' in evidence && evidence.pairingState === 'unavailable'
     && 'rendererUpdaterState' in evidence && evidence.rendererUpdaterState === 'disabled'
     && 'updateControlAbsent' in evidence && evidence.updateControlAbsent === true
     && 'chrome' in evidence && evidence.chrome === expectedChrome
@@ -326,14 +367,16 @@ function requestShutdown(exitCode: number): void {
   updater = undefined
   stopAccountEvents?.()
   stopAccountEvents = undefined
-  const accountDisposal = account.dispose()
+  stopPairingEvents?.()
+  stopPairingEvents = undefined
+  const ownerDisposal = disposeDesktopOwners(account, pairing)
   hostStartController.abort()
   const starting = pendingHost
   const running = host
   host = undefined
   void (async () => {
     try {
-      await accountDisposal
+      await ownerDisposal
       const started = await starting?.catch(() => undefined)
       if (started !== running) await started?.stop()
       await running?.stop()
@@ -360,7 +403,19 @@ function installIpc(): void {
   ipcMain.handle(ACCOUNT_GET_SNAPSHOT, () => account.getSnapshot())
   ipcMain.handle(ACCOUNT_ACCEPT_PRIVACY, () => account.acceptPrivacy())
   ipcMain.handle(ACCOUNT_BEGIN_LOGIN, () => account.beginLogin())
-  ipcMain.handle(ACCOUNT_SIGN_OUT, () => account.signOut())
+  ipcMain.handle(ACCOUNT_SIGN_OUT, async () => {
+    const snapshot = await account.signOut()
+    await pairing.deactivate()
+    return snapshot
+  })
+  ipcMain.handle(PAIRING_GET_SNAPSHOT, () => pairing.getSnapshot())
+  ipcMain.handle(PAIRING_SET_ENABLED, (_event, enabled: unknown) => setPairingEnabledFromIpc(pairing, enabled))
+  ipcMain.handle(PAIRING_CREATE_CHALLENGE, () => pairing.createChallenge())
+  ipcMain.handle(PAIRING_CANCEL_CHALLENGE, () => pairing.cancelChallenge())
+  ipcMain.handle(PAIRING_CONFIRM, (_event, pendingPairingId: unknown) =>
+    confirmPairingFromIpc(pairing, pendingPairingId))
+  ipcMain.handle(PAIRING_REJECT, (_event, pendingPairingId: unknown) =>
+    rejectPairingFromIpc(pairing, pendingPairingId))
 }
 
 function installMenu(): void {
@@ -391,6 +446,26 @@ function pushAccountSnapshot(snapshot: ReturnType<DesktopAccountActions['getSnap
   window?.webContents.send(ACCOUNT_SNAPSHOT_CHANGED, snapshot)
 }
 
+function handleAccountSnapshot(snapshot: ReturnType<DesktopAccountActions['getSnapshot']>): void {
+  pushAccountSnapshot(snapshot)
+  const signedIn = snapshot.status === 'signed-in'
+  if (signedIn && !accountSignedIn) {
+    void pairing.start().catch((error: unknown) => {
+      console.error('[desktop-personal-pairing] signed-in Remote Access load failed:', error)
+    })
+  }
+  if (!signedIn && accountSignedIn) {
+    void pairing.deactivate().catch((error: unknown) => {
+      console.error('[desktop-personal-pairing] signed-out Remote Access shutdown failed:', error)
+    })
+  }
+  accountSignedIn = signedIn
+}
+
+function pushPairingSnapshot(snapshot: ReturnType<DesktopPairingActions['getSnapshot']>): void {
+  window?.webContents.send(PAIRING_SNAPSHOT_CHANGED, snapshot)
+}
+
 function createDesktopAccount(environment: SelectedPlatformEnvironment): DesktopAccountActions {
   if (!safeStorage.isEncryptionAvailable()) {
     return new UnavailableDesktopAccountController('Secure operating-system storage is unavailable')
@@ -408,6 +483,21 @@ function createDesktopAccount(environment: SelectedPlatformEnvironment): Desktop
     transport,
     store,
     systemBrowser: { open: async (url) => { await shell.openExternal(url) } },
+  })
+}
+
+function createDesktopPairing(
+  environment: SelectedPlatformEnvironment,
+  currentAccount: DesktopAccountActions,
+): DesktopPairingActions {
+  if (environment.environment !== 'development' || process.env.DSH_PERSONAL_PAIRING_KEYLESS !== '1') {
+    return new UnavailableDesktopPairingController(
+      'Personal Pairing requires an independently reviewed handshake provider. Development proof mode is disabled.',
+    )
+  }
+  return new DesktopPairingController({
+    account: currentAccount,
+    transport: new RemoteAccessHttpTransport({ environment }),
   })
 }
 

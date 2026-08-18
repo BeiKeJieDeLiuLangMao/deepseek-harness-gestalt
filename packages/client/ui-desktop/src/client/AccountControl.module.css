@@ -27,6 +27,41 @@
   object-fit: cover;
 }
 
+.pairing {
+  display: grid;
+  gap: 16px;
+  padding-top: 18px;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+}
+
+.mobileAccess {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.mobileAccess p,
+.challenge p,
+.pending p { margin: 4px 0 0; color: var(--dsw-alias-label-secondary); font-size: 13px; }
+
+.toggle { width: 44px; height: 24px; padding: 2px; border: 0; border-radius: 999px; background: var(--dsw-alias-fill-tertiary); }
+.toggle span { display: block; width: 20px; height: 20px; border-radius: 50%; background: white; transition: transform .16s ease; }
+.toggle[aria-checked='true'] { background: var(--dsw-alias-button-info-fill); }
+.toggle[aria-checked='true'] span { transform: translateX(20px); }
+
+.challenge { display: grid; grid-template-columns: 148px 1fr; gap: 16px; align-items: start; }
+.challenge > button { grid-column: 2; justify-self: start; }
+.challenge code { display: block; max-height: 72px; margin-top: 8px; overflow: auto; overflow-wrap: anywhere; font-size: 11px; }
+.qr { margin: 0; }
+.qr svg { display: block; width: 148px; height: 148px; padding: 8px; border-radius: 12px; background: white; fill: #111; }
+.qr code { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+.pending { display: grid; gap: 10px; padding: 16px; border-radius: 12px; background: var(--dsw-alias-fill-secondary); }
+.pending output { font-size: 18px; font-weight: 700; letter-spacing: .04em; }
+.actions { display: flex; gap: 8px; }
+.device { display: flex; justify-content: space-between; padding: 12px 0; border-top: 1px solid var(--dsw-alias-border-l2); }
+
 .header h2,
 .header p {
   margin: 0;

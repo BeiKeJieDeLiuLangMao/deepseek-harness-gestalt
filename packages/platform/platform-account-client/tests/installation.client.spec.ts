@@ -222,6 +222,90 @@ describe('PlatformAccountInstallation', () => {
     expect(api.signOut).toHaveBeenCalledOnce()
   })
 
+  it('creates a fresh current-Installation proof for signed-in service consumers', async () => {
+    const store = new MemoryInstallationAccountStore()
+    const api = transport([session('account-a', 'octocat')])
+    const installation = new PlatformAccountInstallation({
+      environment: DEVELOPMENT,
+      installationId: parseInstallationId('mobile-authority'),
+      installationKind: 'mobile',
+      transport: api,
+      store,
+      systemBrowser: { open: vi.fn() },
+      crypto: webcrypto as Crypto,
+    })
+    installation.acceptPrivacy()
+    await installation.beginLogin()
+    await installation.pollLogin()
+
+    const authorization = await installation.authorizeCurrentInstallation()
+
+    expect(authorization.accessToken).toBe((await store.loadSession('development'))?.session.accessToken)
+    expect(authorization.proof.signature).not.toBe('')
+    expect(authorization.proof.jti).not.toBe('')
+  })
+
+  it('rejects absent or expired authority and refreshes an expired access token', async () => {
+    const emptyStore = new MemoryInstallationAccountStore()
+    const api = transport([])
+    const missing = new PlatformAccountInstallation({
+      environment: DEVELOPMENT,
+      installationId: parseInstallationId('missing-authority'),
+      installationKind: 'mobile',
+      transport: api,
+      store: emptyStore,
+      systemBrowser: { open: vi.fn() },
+      crypto: webcrypto as Crypto,
+      now: () => 1_000,
+    })
+    await expect(missing.authorizeCurrentInstallation()).rejects.toMatchObject({ code: 'SESSION_REVOKED' })
+
+    const pair = await webcrypto.subtle.generateKey(
+      { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign', 'verify'],
+    )
+    const expiredStore = new MemoryInstallationAccountStore()
+    await expiredStore.saveSession({
+      environment: 'development',
+      privateKey: pair.privateKey,
+      session: { ...session('account-a', 'octocat', 900), refreshExpiresAt: 999 },
+    })
+    const expired = new PlatformAccountInstallation({
+      environment: DEVELOPMENT,
+      installationId: parseInstallationId('expired-authority'),
+      installationKind: 'desktop',
+      transport: api,
+      store: expiredStore,
+      systemBrowser: { open: vi.fn() },
+      crypto: webcrypto as Crypto,
+      now: () => 1_000,
+    })
+    await expect(expired.authorizeCurrentInstallation()).rejects.toMatchObject({ code: 'SESSION_EXPIRED' })
+    expect(await expiredStore.loadSession('development')).toBeUndefined()
+
+    const refreshingStore = new MemoryInstallationAccountStore()
+    await refreshingStore.saveSession({
+      environment: 'development',
+      privateKey: pair.privateKey,
+      session: { ...session('account-a', 'octocat', 999), refreshExpiresAt: 2_000 },
+    })
+    const replacement = { ...session('account-a', 'octocat', 2_000), refreshExpiresAt: 3_000 }
+    vi.mocked(api.refresh).mockResolvedValue(replacement)
+    const refreshing = new PlatformAccountInstallation({
+      environment: DEVELOPMENT,
+      installationId: parseInstallationId('refresh-authority'),
+      installationKind: 'desktop',
+      transport: api,
+      store: refreshingStore,
+      systemBrowser: { open: vi.fn() },
+      crypto: webcrypto as Crypto,
+      now: () => 1_000,
+    })
+    const authorization = await refreshing.authorizeCurrentInstallation()
+    expect(authorization.accessToken).toBe(replacement.accessToken)
+    expect(api.refresh).toHaveBeenCalledOnce()
+    expect((await refreshingStore.loadSession('development'))?.session).toEqual(replacement)
+  })
+
   it('confirms a restored unexpired session with Platform before publishing the account', async () => {
     const store = new MemoryInstallationAccountStore()
     const restored = session('account-a', 'octocat', 2_000)

@@ -24,4 +24,15 @@ contextBridge.exposeInMainWorld('dshDesktop', {
     ipcRenderer.on('account:snapshot-changed', wrapped)
     return () => { ipcRenderer.removeListener('account:snapshot-changed', wrapped) }
   },
+  pairingGetSnapshot: () => ipcRenderer.invoke('pairing:getSnapshot'),
+  pairingSetEnabled: (enabled) => ipcRenderer.invoke('pairing:setEnabled', enabled),
+  pairingCreateChallenge: () => ipcRenderer.invoke('pairing:createChallenge'),
+  pairingCancelChallenge: () => ipcRenderer.invoke('pairing:cancelChallenge'),
+  pairingConfirm: (pendingPairingId) => ipcRenderer.invoke('pairing:confirm', pendingPairingId),
+  pairingReject: (pendingPairingId) => ipcRenderer.invoke('pairing:reject', pendingPairingId),
+  onPairingSnapshot: (listener) => {
+    const wrapped = (_event, snapshot) => { listener(snapshot) }
+    ipcRenderer.on('pairing:snapshot-changed', wrapped)
+    return () => { ipcRenderer.removeListener('pairing:snapshot-changed', wrapped) }
+  },
 })

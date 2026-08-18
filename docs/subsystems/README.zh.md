@@ -22,6 +22,7 @@
 | [feedback.md](feedback.md) | 绑定生命周期的逐消息反馈记录、乐观版本、伴随记录持久化与 Host Remote 契约 |
 | [platform-account.md](platform-account.md) | GitHub 公开身份、签名登录尝试、安装持有证明账号会话与跨实例失效 |
 | [remote-protocol.md](remote-protocol.md) | 独立 Relay Transport 与加密 Companion 协商、codec、品牌化 id、稳定错误和 wire 限制 |
+| [personal-pairing.md](personal-pairing.md) | Settings-owned Mobile Access、同账号 Pairing Challenge、authentication words 与 Companion-only Device Principal |
 | [session-title.md](session-title.md) | 持久标题快照、被引用的来源消息 seq 与异步提供方约定 |
 | [session-reference.md](session-reference.md) | 结构化跨会话引用：`SessionReferenceInput`/`Candidate`、prepared 消息上下文、稳定错误分类 |
 | [system-prompt.md](system-prompt.md) | 逐次组装的上下文、工具提供方结果、提示词段落与协作式组装 |
