@@ -9,7 +9,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { Agent, AgentOptions, CreateAgentOptions } from '@deepseek-ai/dsh-agent'
+import { liveModelSelection, type Agent, type AgentOptions, type CreateAgentOptions } from '@deepseek-ai/dsh-agent'
 import type { SandboxMode } from '@deepseek-ai/dsh-sandbox'
 import type { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { ToolRestriction } from '@deepseek-ai/dsh-tools'
@@ -57,7 +57,27 @@ export function resolveChildDepth(parent: Agent, maxDepth: number | undefined): 
 }
 
 /**
- * Resolve the child's `AgentOptions`: the parent's provider/model/maxTokens
+ * Resolve the parent route a new child inherits: the live session selection
+ * the next parent prompt would use, else the latest logged request header,
+ * else the parent's creation-time `AgentOptions`.
+ * @param parent - the delegating parent.
+ * @returns inherited provider, model, and output-token cap.
+ */
+export function inheritParentAgentRoute(parent: Agent): Pick<AgentOptions, 'provider' | 'model' | 'maxTokens'> {
+  const live = liveModelSelection(parent)
+  const logged = parent.session.requestHeader()?.config
+  const provider = live?.provider ?? logged?.provider ?? parent.options.provider
+  const model = live?.model ?? logged?.model ?? parent.options.model
+  const maxTokens = parent.options.maxTokens
+  return {
+    ...provider !== undefined ? { provider } : {},
+    ...model !== undefined ? { model } : {},
+    ...maxTokens !== undefined ? { maxTokens } : {},
+  }
+}
+
+/**
+ * Resolve the child's `AgentOptions`: the parent's current provider/model
  * route unless the request overrides it, stamped with the child's own
  * delegation depth.
  * @param parent - the delegating parent whose route the child inherits.
@@ -70,13 +90,8 @@ export function resolveChildAgentOptions(
   requested: AgentOptions | undefined,
   childDepth: number,
 ): AgentOptions {
-  const parentProvider = parent.options.provider
-  const parentModel = parent.options.model
-  const parentMaxTokens = parent.options.maxTokens
   return {
-    ...parentProvider !== undefined ? { provider: parentProvider } : {},
-    ...parentModel !== undefined ? { model: parentModel } : {},
-    ...parentMaxTokens !== undefined ? { maxTokens: parentMaxTokens } : {},
+    ...inheritParentAgentRoute(parent),
     ...requested,
     subagentDepth: childDepth,
   }

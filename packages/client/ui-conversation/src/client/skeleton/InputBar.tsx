@@ -126,7 +126,7 @@ export function InputBar({
   const permissions = useProjection('permissions')
 
   // A continuable child without its live parent cannot accept human input,
-  // but its independent Stop below stays available while it runs.
+  // but its primary Stop stays available while it runs.
   const continuable = subagent?.address.mode === 'continuable'
   const parentOffline = continuable && !subagent.parentAvailable
   // Running input stays free; locked = session removed, the
@@ -554,11 +554,9 @@ export function InputBar({
     if (el !== null) toggleCommandMenu?.(selectionOf(el))
   }
 
-  // Ordinary sessions retain their primary Send/Stop toggle. A continuable
-  // child keeps Send as the primary action and exposes Stop independently so
-  // pointer users can queue follow-ups while its current turn is running.
-  const primaryStops = running && subagent === null
-  const interruptible = running && continuable
+  // Ordinary and continuable sessions share one primary Send/Stop toggle.
+  // One-shot children stay send-only because they are uncancellable.
+  const primaryStops = running && subagent?.address.mode !== 'one-shot'
   const primaryLabel = primaryStops ? t('input.stop') : t('input.send')
   const onPrimary = (): void => {
     if (primaryStops) {
@@ -771,22 +769,6 @@ export function InputBar({
             {rightItems}
             {renderSlot('conversation.input.model', { locked: modelSeatLocked })}
             <ContextMeter useProjection={useProjection} t={t} />
-            {interruptible && (
-              <Tooltip label={t('input.stop')} side="top" delayMs={500}>
-                <button
-                  type="button"
-                  className={css.primary}
-                  aria-label={t('input.stop')}
-                  disabled={stop === undefined}
-                  onMouseDown={keepFocus}
-                  onClick={stop}
-                >
-                  <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden>
-                    <rect x="3" y="3" width="10" height="10" rx="3" fill="currentColor" />
-                  </svg>
-                </button>
-              </Tooltip>
-            )}
             <Tooltip label={primaryLabel} side="top" delayMs={500}>
               <button
                 type="button"
