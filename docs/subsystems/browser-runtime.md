@@ -2,17 +2,32 @@
 
 English | [中文](browser-runtime.zh.md)
 
-The Browser Runtime capability separates the provider-neutral [`ctx.browserRuntime`](../../packages/browser/browser-runtime) service, the keyless [`dsh-browser-runtime-deterministic`](../../packages/browser/browser-runtime-deterministic) Provider, and the deferred [`dsh-tool-browser`](../../packages/browser/tool-browser) Consumer. It is an optional capability outside the Agent loop.
+The Browser Runtime capability separates the provider-neutral [`ctx.browserRuntime`](../../packages/browser/browser-runtime) service, the keyless [`dsh-browser-runtime-deterministic`](../../packages/browser/browser-runtime-deterministic) Provider, the managed Tandem Browser [`dsh-browser-runtime-tandem`](../../packages/browser/browser-runtime-tandem) Provider, and the deferred [`dsh-tool-browser`](../../packages/browser/tool-browser) Consumer. It is an optional capability outside the Agent loop.
 
 ## Identity and state
 
 A `BrowserTarget` contains four opaque branded identities: Profile, Workspace, browser instance, and tab. Callers carry the complete target returned by `create`; none of its string values have caller-visible structure. Open state contains URL, title, text, focus, and revision facts. Closed state is a terminal receipt retaining the target and revision.
+
+An `unavailable` state is the truthful projection of Provider availability loss for an existing target: the managed Tandem Provider commits it when its child process crashes or fails health checks, keeps the target and last revision, names the loss reason, and flags an in-flight reconnect. It is not the terminal closed receipt; a successful reconnect re-commits open page state for the same target at the next revision, and exhausted reconnects commit `reconnect-failed`.
+
+```ts type-equiv
+/** Recoverable or terminal Provider availability loss for an existing target. */
+interface BrowserUnavailableState {
+  readonly status: 'unavailable'
+  readonly target: BrowserTarget
+  readonly revision: number
+  readonly reason: 'crashed' | 'unhealthy' | 'reconnect-failed'
+  readonly reconnecting: boolean
+}
+```
 
 ## Concurrency and lifecycle
 
 Providers serialize operations. `navigate`, `focus`, and `close` require the last observed revision and reject stale mutations. `observe` and `screenshot` do not advance the revision. The deterministic Provider admits one temporary Profile lifecycle for its whole lifetime; close is terminal, and a later create rejects with `BROWSER_CAPACITY`. Teardown stops new admission, drains accepted operations, and closes an open temporary Profile.
 
 The deterministic Provider gives each generation an independent owner token. Its invariant seeds from that generation's authoritative current state on initial load and hot reload, then registers a synchronous pre-commit validator for stable identity, exact revision succession, and terminal closure. A validation failure leaves the previous state authoritative. After commit, the Provider publishes on `browser/runtime-state`; each ordinary observer failure is contained, later observers still run, and asynchronous observers are not awaited.
+
+The tandem Provider owns one managed Tandem Browser child process at the pinned upstream revision `3b613cfd4c299609ca7ca415d638c1b71c6ba5de`. It resolves the executable and spawns through the subprocess service with a credential-scrubbed environment, constrains `baseUrl` to an absolute loopback HTTP origin, reads the bearer token from `tokenFile`, and polls `GET /agent/version` and `GET /status` under `startupTimeoutMs` before admitting work. It creates exactly one Tandem session (`POST /sessions/create`) and one temporary Profile lifecycle, projecting DSH-owned opaque identities around Tandem tab ids. A child crash or failed health probe commits the `unavailable` state and attempts up to `reconnectAttempts` child restarts, re-committing open page state for the same target on success. Teardown drains the operation queue, destroys the session (`POST /sessions/destroy`), and joins the process tree. Malformed Tandem responses reject with `BROWSER_PROTOCOL`; a lost or unreachable runtime rejects with `BROWSER_RUNTIME_UNAVAILABLE`. Provenance and upstream-contribution candidates live in the package's [UPSTREAM.md](../../packages/browser/browser-runtime-tandem/UPSTREAM.md).
 
 ## Discovery and replay
 
@@ -39,7 +54,9 @@ Browser Runtime Service Definition. Providers serialize every operation, own tar
  * @returns initial open page state at revision zero; its target addresses every later operation in
  * this lifecycle.
  * @throws `BrowserRuntimeError` with `BROWSER_ABORTED` when cancellation wins, `BROWSER_CAPACITY`
- * when this Provider cannot admit another lifecycle, or `BROWSER_DISPOSED` after teardown starts.
+ * when this Provider cannot admit another lifecycle, `BROWSER_DISPOSED` after teardown starts,
+ * `BROWSER_PROTOCOL` when the upstream runtime breaks its response protocol, or
+ * `BROWSER_RUNTIME_UNAVAILABLE` when the upstream runtime cannot be reached or starts unhealthy.
  */
 abstract create(request: BrowserCreateRequest): Promise<BrowserPageState>
 
@@ -49,16 +66,20 @@ abstract create(request: BrowserCreateRequest): Promise<BrowserPageState>
  * @returns committed open page state whose revision replaces the caller's prior revision.
  * @throws `BrowserRuntimeError` with `BROWSER_ABORTED`, `BROWSER_DISPOSED`, `BROWSER_NOT_FOUND`,
  * `BROWSER_NOT_OPEN`, `BROWSER_REVISION_CONFLICT`, or `BROWSER_UNKNOWN_URL` when the corresponding
- * precondition fails before commit.
+ * precondition fails before commit, `BROWSER_PROTOCOL` when the upstream runtime breaks its
+ * response protocol, or `BROWSER_RUNTIME_UNAVAILABLE` when it cannot be reached.
  */
 abstract navigate(request: BrowserNavigateRequest): Promise<BrowserPageState>
 
 /**
  * Observe the latest open or closed state for one target.
  * @param request - Target and cancellation signal.
- * @returns current state after earlier queued operations, without changing its revision.
+ * @returns current open, unavailable, or closed state after earlier queued operations. Read-only
+ * observation does not advance the revision; an external Provider crash or reconnect may do so.
  * @throws `BrowserRuntimeError` with `BROWSER_ABORTED`, `BROWSER_DISPOSED`, or
- * `BROWSER_NOT_FOUND`; a closed target is returned rather than rejected.
+ * `BROWSER_NOT_FOUND`; a closed target is returned rather than rejected, and an unavailable
+ * upstream runtime is returned as its unavailable state. `BROWSER_PROTOCOL` is rejected when the
+ * upstream runtime breaks its response protocol.
  */
 abstract observe(request: BrowserObserveRequest): Promise<BrowserRuntimeState>
 
@@ -68,7 +89,8 @@ abstract observe(request: BrowserObserveRequest): Promise<BrowserRuntimeState>
  * @returns screenshot bytes and depicted page facts from one serialized read at the current revision.
  * @throws `BrowserRuntimeError` with `BROWSER_ABORTED`, `BROWSER_DISPOSED`, `BROWSER_NOT_FOUND`,
  * `BROWSER_NOT_OPEN`, or `BROWSER_UNKNOWN_URL` when the Provider cannot depict the addressed open
- * page.
+ * page, `BROWSER_PROTOCOL` when the upstream runtime breaks its response protocol, or
+ * `BROWSER_RUNTIME_UNAVAILABLE` when it cannot be reached.
  */
 abstract screenshot(request: BrowserObserveRequest): Promise<BrowserScreenshot>
 
@@ -78,7 +100,8 @@ abstract screenshot(request: BrowserObserveRequest): Promise<BrowserScreenshot>
  * @returns committed focused page state whose revision replaces the caller's prior revision.
  * @throws `BrowserRuntimeError` with `BROWSER_ABORTED`, `BROWSER_DISPOSED`, `BROWSER_NOT_FOUND`,
  * `BROWSER_NOT_OPEN`, or `BROWSER_REVISION_CONFLICT` when the corresponding precondition fails
- * before commit.
+ * before commit, `BROWSER_PROTOCOL` when the upstream runtime breaks its response protocol, or
+ * `BROWSER_RUNTIME_UNAVAILABLE` when it cannot be reached.
  */
 abstract focus(request: BrowserMutationRequest): Promise<BrowserPageState>
 
@@ -88,12 +111,13 @@ abstract focus(request: BrowserMutationRequest): Promise<BrowserPageState>
  * @returns terminal close receipt retained by the Provider for later observation.
  * @throws `BrowserRuntimeError` with `BROWSER_ABORTED`, `BROWSER_DISPOSED`, `BROWSER_NOT_FOUND`,
  * `BROWSER_NOT_OPEN`, or `BROWSER_REVISION_CONFLICT` when the corresponding precondition fails
- * before commit.
+ * before commit, `BROWSER_PROTOCOL` when the upstream runtime breaks its response protocol, or
+ * `BROWSER_RUNTIME_UNAVAILABLE` when it cannot be reached.
  */
 abstract close(request: BrowserMutationRequest): Promise<BrowserClosedState>
 ```
 
-Source: [`packages/browser/browser-runtime/src/index.ts:58`](../../packages/browser/browser-runtime/src/index.ts)
+Source: [`packages/browser/browser-runtime/src/index.ts:59`](../../packages/browser/browser-runtime/src/index.ts)
 
 <a id="browser-events"></a>
 
@@ -116,5 +140,5 @@ Post-commit Browser Runtime lifecycle notification. Providers contain synchronou
 'browser/runtime-state'(state: BrowserRuntimeState): void
 ```
 
-Source: [`packages/browser/browser-runtime/src/index.ts:48`](../../packages/browser/browser-runtime/src/index.ts)
+Source: [`packages/browser/browser-runtime/src/index.ts:49`](../../packages/browser/browser-runtime/src/index.ts)
 <!-- END GENERATED cordis-surface -->

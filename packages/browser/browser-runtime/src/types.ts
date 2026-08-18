@@ -60,8 +60,17 @@ export interface BrowserClosedState {
   readonly revision: number
 }
 
+/** Recoverable or terminal Provider availability loss for an existing target. */
+export interface BrowserUnavailableState {
+  readonly status: 'unavailable'
+  readonly target: BrowserTarget
+  readonly revision: number
+  readonly reason: 'crashed' | 'unhealthy' | 'reconnect-failed'
+  readonly reconnecting: boolean
+}
+
 /** Observable Browser Runtime state. */
-export type BrowserRuntimeState = BrowserPageState | BrowserClosedState
+export type BrowserRuntimeState = BrowserPageState | BrowserUnavailableState | BrowserClosedState
 
 /** Deterministic screenshot bytes and the page facts they depict. */
 export interface BrowserScreenshot {
@@ -104,7 +113,9 @@ export type BrowserRuntimeErrorCode =
   | 'BROWSER_DISPOSED'
   | 'BROWSER_NOT_FOUND'
   | 'BROWSER_NOT_OPEN'
+  | 'BROWSER_PROTOCOL'
   | 'BROWSER_REVISION_CONFLICT'
+  | 'BROWSER_RUNTIME_UNAVAILABLE'
   | 'BROWSER_UNKNOWN_URL'
 
 /** Failure produced by a Browser Runtime implementation. */

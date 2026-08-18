@@ -21,6 +21,7 @@
     "@deepseek-ai/dsh-bash-sandbox": "workspace:*",
     "@deepseek-ai/dsh-browser-runtime": "workspace:*",
     "@deepseek-ai/dsh-browser-runtime-deterministic": "workspace:*",
+    "@deepseek-ai/dsh-browser-runtime-tandem": "workspace:*",
     "@deepseek-ai/dsh-code-runtime-worker-thread": "workspace:*",
     "@deepseek-ai/dsh-command-feedback": "workspace:*",
     "@deepseek-ai/dsh-command-goal": "workspace:*",

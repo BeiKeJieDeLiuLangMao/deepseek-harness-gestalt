@@ -431,6 +431,50 @@ export interface DeterministicBrowserPage {
 
 Source: [`packages/browser/browser-runtime-deterministic/src/index.ts:51`](../packages/browser/browser-runtime-deterministic/src/index.ts)
 
+<a id="deepseek-aidsh-browser-runtime-tandem"></a>
+
+## `@deepseek-ai/dsh-browser-runtime-tandem`
+
+Requires: `subprocess`
+
+```ts config-catalog
+/** Process, HTTP, and lifecycle configuration for one managed Tandem runtime. */
+export interface Config {
+  /** Executable used to launch the pinned Tandem Browser checkout or package. */
+  command: string
+  /** Arguments passed without shell interpretation. */
+  args?: string[]
+  /** Existing directory used as the Tandem child process working directory. */
+  cwd: string
+  /** Explicit environment layered over the subprocess service's credential-scrubbed parent environment. */
+  env?: Record<string, string>
+  /** Loopback Tandem HTTP API origin, including its configured port. */
+  baseUrl: string
+  /** Local file where Tandem writes its generated API token. */
+  tokenFile: string
+  /** Prefix for DSH-owned opaque Profile, Workspace, and browser identities. */
+  idPrefix?: string
+  /** Bound on child startup and Tandem health verification. */
+  startupTimeoutMs?: number
+  /** Bound on each Tandem HTTP operation. */
+  requestTimeoutMs?: number
+  /** Delay between startup health probes. */
+  healthPollMs?: number
+  /** Upper bound on upstream page-settle waiting for one content read. */
+  pageSettleMs?: number
+  /** Number of child restarts after an unexpected exit. */
+  reconnectAttempts?: number
+  /** Delay before each reconnect attempt. */
+  reconnectDelayMs?: number
+  /** Subprocess tree SIGTERM-to-SIGKILL grace used for teardown. */
+  processGraceMs?: number
+  /** Maximum bytes accepted from one Tandem HTTP response. */
+  maxResponseBytes?: number
+}
+```
+
+Source: [`packages/browser/browser-runtime-tandem/src/index.ts:42`](../packages/browser/browser-runtime-tandem/src/index.ts)
+
 <a id="deepseek-aidsh-client-connection"></a>
 
 ## `@deepseek-ai/dsh-client-connection`

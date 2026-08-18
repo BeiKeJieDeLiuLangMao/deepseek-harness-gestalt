@@ -16,7 +16,7 @@
 
 #### 模型看到什么
 
-初始工具列表省略全部六个 Browser 工具，并包含普通 `tool_search` schema。搜索浏览器能力会在持久结果中返回精确 schema；后续请求依据当前合资格的 deferred 定义重新验证这些名称。每个操作结果都把 Profile、Workspace、浏览器、标签页、修订号、页面、截图、焦点与关闭事实完整渲染为 JSON 文本。
+初始工具列表省略全部六个 Browser 工具，并包含普通 `tool_search` schema。搜索浏览器能力会在持久结果中返回精确 schema；后续请求依据当前合资格的 deferred 定义重新验证这些名称。每个操作结果都把 Profile、Workspace、浏览器、标签页、修订号、页面、截图、焦点、关闭与可用性事实——包括携带原因与重连标志的 `unavailable` 状态——完整渲染为 JSON 文本。
 
 #### Token 影响
 

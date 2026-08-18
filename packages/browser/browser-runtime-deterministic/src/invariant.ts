@@ -53,6 +53,9 @@ const install: InvariantInstaller = Object.assign((_ctx: Context, fail: Invarian
     if (previous.status === 'closed') {
       fail('a deterministic Browser Runtime terminal state cannot reopen')
     }
+    if (state.status === 'unavailable') {
+      fail('a deterministic Browser Runtime cannot publish an unavailable state')
+    }
     if (!sameTarget(previous.target, state.target)) {
       fail('a deterministic Browser Runtime lifecycle changed an opaque target identity')
     }

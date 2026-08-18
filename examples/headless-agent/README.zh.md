@@ -19,6 +19,8 @@ pnpm dsh --profile headless "fix the failing test in this workspace"
 
 [`browser-runtime.cordis.snapshot.yml`](browser-runtime.cordis.snapshot.yml) 是无密钥可运行 Browser Runtime tracer。它发现六个 deferred Browser 工具，创建一个临时 Profile 与标签页，依次导航、观察、截图、聚焦与关闭，然后重新加载同一个 Session，以证明 schema 与已渲染 Browser 事实可以重建。
 
+`browser-runtime-tandem.cordis.snapshot.yml` 以托管式 Tandem Provider 和本地 Tandem HTTP fixture 运行同一条 Browser 工具路径——`tool_search` → `browser_create` → `browser_navigate` → `browser_observe` → `browser_screenshot` → `browser_focus` → `browser_close`。
+
 ## E2B POC overlay
 
 [`e2b.cordis.yml`](e2b.cordis.yml) 使用一个共享 E2B 沙箱替换本地文件系统与子进程提供方，同时保留 `dsh-bash-local` 和相同的面向模型工具。请在 git 忽略的根目录 `.env` 中，将 `E2B_API_KEY` 与 `DEEPSEEK_API_KEY` 放在一起，然后运行凭据门控的实机组合测试；它在同一个沙箱中驱动 FS、Bash、PTY 和 LSP，并证明沙箱最终被删除：
