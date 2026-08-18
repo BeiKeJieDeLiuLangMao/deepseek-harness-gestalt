@@ -6,23 +6,23 @@ Status: implemented
 
 ## 问题
 
-分配到组织自有运行器标签的拉取请求必需作业，在 GitHub 无法为这些池分配运行器时会持续排队。工作流本身有效，GitHub 标准托管作业仍能通过，但 `all checks passed` 始终无法启动，原本健康的拉取请求因此无法满足分支保护要求。
+分配到不可用组织自有 runner 标签的拉取请求必需作业，即使 GitHub 标准托管作业能够执行，也会持续排队。有效的工作流只有在每个必需 worker 和 `all checks passed` 判定作业都获得 runner 后，才能满足分支保护。
 
-账单状态正常、运行器定义处于 `Ready` 状态以及较高的自动扩缩容上限，都不能证明指定的运行器池可以接收作业。必需的正确性检查需要预先明确一条可移植恢复路径，即使日常低延迟路径依赖仓库外部的运行器预配也不例外。
+账单状态正常、存在 runner 定义以及公布了较大的自动扩缩容上限，都不能证明指定的 runner 池可以接收作业。必需的正确性检查需要一个不依赖仓库外部 runner 配置的可移植默认路线。
 
 ## 决策
 
-[CI](../../../../.github/workflows/ci.yml) 在仅限本仓库使用的企业级 32 核运行器池上运行必需的主 Node 24 作业，以及稳定的 `all checks passed` 聚合流程。该聚合流程不执行代码检出或仓库门禁；但让它与所依赖的实质性作业共用企业级运行器池，可以避免这些作业已经成功后，必需判定结果又引入一项单独的标准托管计费依赖。必需的 Windows 作业在标准 `ubuntu-latest` 上通过 Wine 运行 Windows Node，覆盖阻断性检查范围；一个独立的原生 `windows-2025` 作业会自动启动，但不参与聚合流程（[双 Windows 决策](2026-08-08-native-windows-pull-request-ci.md)）。标准 `ubuntu-latest` 作业保留 Node 22.19、Node 26、Python SDK 单元测试套件与[发布形态的 Linux x64 Python 运行时验证](../testing/2026-08-12-required-python-runtime-pull-request-ci.md)，串行参考流程仍是完整且未分片的跨平台定义。这些标准托管作业让可移植执行边界保持可观测，而不必在每个拉取请求中重复主清单。
+[CI](../../../../.github/workflows/ci.yml) 把 GitHub 标准托管容量作为普通执行路径。三个主要 Node 24 Linux 作业与 `all checks passed` 默认使用 `ubuntu-latest`；独立的原生 Windows 作业默认使用 `windows-2025`。必需的 Windows 作业在 `ubuntu-latest` 上通过 Wine 运行 Windows Node，覆盖阻断性检查范围，而原生 Windows 不参与聚合流程（[双 Windows 决策](2026-08-08-native-windows-pull-request-ci.md)）。Node 22.19、Node 26、Python SDK 单元测试套件与[发布形态的 Linux x64 Python 运行时验证](../testing/2026-08-12-required-python-runtime-pull-request-ci.md)也使用标准托管容量。
 
-三项 Linux 主作业、Node 兼容性、Python SDK 单元测试套件、Python 运行时验证和 `windows node 24 / wine blocking` 继续作为 `all checks passed` 的依赖项；`windows node 24 / native complete` 被刻意排除。分支保护继续要求 `e2e` 和 `all checks passed`。剩余的企业级 Linux 运行器标签无法分配运行器时没有自动后备机制：标准作业会继续报告各自的约定，但无法产出缺失的必需结果。
+三项 Linux 主作业、Node 兼容性、Python SDK 单元测试套件、Python 运行时验证和 `windows node 24 / wine blocking` 继续作为 `all checks passed` 的依赖项；`windows node 24 / native complete` 被刻意排除。分支保护继续要求 `e2e` 和 `all checks passed`。只有匹配的 runner 已注册并在线时，可选自托管选择器才会重定向对应的非 Dependabot worker；可选容量缺失不会改变标准默认值。
 
-当前主拓扑及其测量结果以[大型运行器决策](2026-07-22-evidence-based-larger-hosted-runners.md)为准。[跨平台串行参考流程](2026-07-21-serial-cross-platform-ci-reference.md)继续作为独立的标准托管完整性检查，手动大型运行器套件则保留规格比较，同时不扩大普通必需矩阵。
+[公开仓库 runner 决策](2026-08-18-public-repository-ci-runner-defaults.md)拥有 runner 标签、故障切换选择器与有界 fan-out。[大规格 runner 决策](2026-07-22-evidence-based-larger-hosted-runners.md)保留手动基准测试清单的测量结果，但不会扩大必需矩阵。
 
 ## 曾考虑的替代方案
 
-**将 Linux 主作业和聚合流程保留在标准容量上。** 此方案消除了剩余的企业级运行器分配依赖，但标准运行器上的完整作业反馈明显更慢，仍会遇到共享容量排队。当前拆分既保留可移植兼容性和串行证据，又将企业级运行器容量用于 Linux 主关键路径。
+**把 Linux 主作业和聚合流程放到组织级大规格 runner 上。**拒绝采用，因为不可用标签会使分支保护无法满足。标准容量可能更慢，但这个个人公开仓库可以使用。
 
-**根据标称核心数选择企业规格。** 基准测试表明扩展效果不呈单调变化，设置耗时也存在波动，因此必需运行器池改由完整作业的精确测量结果选定。
+**根据标称核心数选择必需池。**拒绝采用，因为基准测试显示扩展并非单调，也无法说明本仓库是否能够分配相应标签。
 
 **在容量不可用时跳过检查或降低其级别。** 这种方式通过丢弃证据而非执行仓库的必需约定来使状态变绿。
 
@@ -30,6 +30,6 @@ Status: implemented
 
 ## 后果
 
-普通拉取请求会将企业级运行器容量用于 Linux 关键路径，而 Wine 作业让必需的 Windows 判定继续使用标准 Linux 运行器容量。独立原生作业使用标准 Windows 运行器容量，不会延迟或改变聚合流程。一次针对确切分支头的实际运行会区分分支保护采用的命令与单独的诊断约定；排队延迟与每个作业从 `startedAt` 到 `completedAt` 的执行区间分开报告。
+普通拉取请求对 Linux 关键路径、必需 Wine 信号和独立的原生 Windows 信号都使用标准托管容量。一次针对确切分支头的实际运行会区分分支保护采用的命令与单独的诊断约定；排队延迟与每个作业从 `startedAt` 到 `completedAt` 的执行区间分开报告。
 
-企业级运行器分配能力下降时，标准兼容性作业、必需的 Wine 作业与诊断性原生 Windows 作业仍能提供有用证据，但无法让受阻的必需 Linux 作业或聚合流程变绿。恢复 Linux 可用性时，可能需要恢复完整的标准托管拓扑；仅改变运行器池定义的状态，不足以证明它可以接收作业。
+必需路径无需组织基础设施即可运行。启用自托管变量不会配置 runner；操作方必须先验证注册状态、监听器健康度和工作流访问权限，才能把该可选路线视为恢复容量。

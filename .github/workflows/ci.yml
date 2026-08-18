@@ -15,10 +15,10 @@ on:
           - larger-runner-benchmark
           - consolidated-runner-benchmark
 
-# Cancel a superseded run on every event EXCEPT push. A push run carries the two
-# self-hosted standby drills, which take longer than the interval between master
-# merges, so cancelling supersedes a drill before it reaches a verdict and the
-# lane yields no readiness evidence. Must be decided here: cancellation applies
+# Cancel a superseded run on every event EXCEPT push. A push run carries two
+# optional self-hosted standby definitions; when their runners are available,
+# cancelling can supersede a long aggregate before it yields readiness evidence.
+# Must be decided here: cancellation applies
 # to the whole superseded run, so a job-level group cannot exempt its job.
 # Negated rather than `== 'pull_request'` so workflow_dispatch keeps cancelling:
 # a re-dispatched runner benchmark holds up to 12 larger runners for 15 minutes
@@ -26,7 +26,7 @@ on:
 # them. The guarantee is narrow — evaluated against the newly triggered run, so a
 # dispatch on master still cancels a mid-flight drill, and a newer pending push
 # displaces an older one. Bounds and rationale:
-# .agents/notes/implemented/process/2026-07-26-ci-failover-runbook.md
+# .agents/notes/implemented/process/2026-08-18-public-repository-ci-runner-defaults.md
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name != 'push' }}
@@ -43,7 +43,7 @@ env:
 jobs:
 
   # TODO(hosted-serial-ci): Re-enable the three hosted serial reference jobs before release.
-  # The self-hosted standby remains active on every master push.
+  # The optional standby definitions run only when matching runners are registered and online.
 
   # Three standard-hosted jobs isolate coverage, static analysis, and the
   # build-backed consumer tail. The consumer job owns the only Linux build so
@@ -54,12 +54,11 @@ jobs:
   # pick the standard GitHub-hosted pool below. Setting the variable to
   # 'selfhosted' (repo Settings → Actions → Variables; writer-manageable
   # repository state — not PR-editable, no merge required) retargets all
-  # three onto the in-house
-  # vm-backup pool and re-running the failed jobs is the entire switch —
-  # see .agents/notes/implemented/process/2026-07-26-ci-failover-runbook.md. The
-  # in-house pool's readiness is re-proven on every master push by the
-  # serial-linux-selfhosted standby lane below. The Windows failover switch is
-  # the separate DSH_CI_FAILOVER_WINDOWS variable on the windows-native job below.
+  # three workers and their verdict onto the optional vm-backup pool. Matching
+  # runners must already be registered, online, and authorized for the workflow;
+  # the serial-linux-selfhosted definition provides evidence only when it runs.
+  # The Windows switch independently retargets only windows-native. See
+  # .agents/notes/implemented/process/2026-08-18-public-repository-ci-runner-defaults.md.
   node-24:
     if: github.event_name == 'pull_request'
     runs-on: >-
@@ -121,10 +120,9 @@ jobs:
           || 'ubuntu-latest' }}
     name: node 24 / coverage
     env:
-      # Standard hosted runners use two coverage workers. The failover pool
-      # shares one 64-core VM across six always-on runner instances, so each
-      # instance may use eight while keeping the worst case at 8 × 6 = 48
-      # workers; process-bound suites remain isolated in forks.
+      # Standard hosted runners use two coverage workers. The optional Linux
+      # route permits eight on each separately provisioned runner; process-bound
+      # suites remain isolated in forks.
       DSH_COVERAGE_MAX_WORKERS: ${{ vars.DSH_CI_FAILOVER_LINUX == 'selfhosted' && github.event.pull_request.user.login != 'dependabot[bot]' && '8' || '2' }}
       DSH_GATE_CONCURRENCY: '2'
     steps:
@@ -188,7 +186,7 @@ jobs:
       DSH_NODE_COMPAT_SKIP_TYPECHECK: '1'
       DSH_OXLINT_THREADS: '2'
       DSH_PUBLINT_CONCURRENCY: '2'
-      # Failover halves snapshot concurrency for the shared 64-core VM.
+      # The optional Linux route permits twelve snapshot workers on a provisioned runner.
       DSH_SNAPSHOT_MAX_CONCURRENCY: ${{ vars.DSH_CI_FAILOVER_LINUX == 'selfhosted' && github.event.pull_request.user.login != 'dependabot[bot]' && '12' || '2' }}
     steps:
       - uses: actions/checkout@v6
@@ -220,8 +218,8 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-node-${{ env.PRIMARY_NODE_VERSION }}-pnpm-
 
-      # Pull requests restore the cache normally produced by serial-linux on
-      # master; they do not pay compression and upload on the required path.
+      # Pull requests restore any compatible default-branch archive; they do
+      # not pay compression and upload on the required path.
       - uses: actions/cache/restore@v4
         if: vars.DSH_CI_FAILOVER_LINUX != 'selfhosted' || github.event.pull_request.user.login == 'dependabot[bot]'
         with:
@@ -438,10 +436,10 @@ jobs:
   # its own unmasked conclusion but is deliberately absent from
   # all-checks-passed.needs, so it never delays or changes that required
   # verdict. Under normal operation it runs on standard GitHub-hosted Windows;
-  # Windows failover (DSH_CI_FAILOVER_WINDOWS=selfhosted) retargets it onto the
-  # in-house self-hosted Windows pool. Dependabot PRs are excluded from the
-  # self-hosted pool and stay on the standard hosted runner — see the failover
-  # runbook. This Windows switch is independent of the Linux
+  # Windows failover (DSH_CI_FAILOVER_WINDOWS=selfhosted) retargets only this
+  # job onto an optional self-hosted Windows pool. Dependabot PRs are excluded
+  # from the self-hosted pool and stay on the standard hosted runner — see the
+  # runner-default decision above. This Windows switch is independent of the Linux
   # DSH_CI_FAILOVER_LINUX variable that retargets the three required Linux jobs
   # and the all-checks-passed verdict above.
   windows-native:
@@ -520,7 +518,7 @@ jobs:
           store_path=$(PNPM_CONFIG_STORE_DIR="$store_root" pnpm store path --silent)
           echo "path=$store_path" >> "$GITHUB_OUTPUT"
 
-      # Master refreshes the pnpm store cache that pull requests restore without saving.
+      # When re-enabled, this master reference refreshes the pnpm store cache.
       # The store cache stays a hand-rolled actions/cache step rather than
       # setup-node's `cache: pnpm`: the required pull-request jobs above
       # restore exactly this key and path, and setup-node's built-in cache
@@ -561,11 +559,11 @@ jobs:
           DSH_SNAPSHOT_MAX_CONCURRENCY: '1'
         run: pnpm run check:ci:linux-primary
 
-  # Hot-standby drill for the in-house self-hosted pool: every master move
-  # re-runs the complete unsharded aggregate on the persistent 64-core VM,
-  # continuously proving that environment can take over a required lane if
-  # the hosted pools degrade (the switch is then setting the writer-manageable
-  # DSH_CI_FAILOVER_LINUX variable — see the failover runbook, no merge required).
+  # Optional standby for the Linux failover target. A master push requests the
+  # complete unsharded aggregate, but it runs and yields readiness evidence only
+  # when a matching runner is registered and online. DSH_CI_FAILOVER_LINUX
+  # retargets the required Linux workers and verdict; it does not enable or
+  # provision this pool.
   # Push-triggered, so this lane always executes the base branch's own
   # workflow definition. (Under failover, pull_request jobs do reach these
   # runners with the PR merge ref's workflow — the boundary there is
@@ -648,13 +646,12 @@ jobs:
           DSH_SNAPSHOT_MAX_CONCURRENCY: '1'
         run: pnpm run check:ci
 
-  # Hot-standby drill for the in-house self-hosted Windows pool: every master
-  # move re-runs the complete unsharded Windows gate inventory on the persistent
-  # VM, continuously proving that environment can take over the required
-  # `windows` lane if the hosted pool degrades (the switch is setting the
-  # writer-manageable DSH_CI_FAILOVER_WINDOWS variable — see the failover
-  # runbook, no merge required). Push-triggered, so this lane always executes
-  # the base branch's own workflow definition. Non-blocking for pull requests;
+  # Optional standby for the windows-native failover target. A master push
+  # requests the complete Windows inventory, but it runs and yields readiness
+  # evidence only when a matching runner is registered and online.
+  # DSH_CI_FAILOVER_WINDOWS retargets only windows-native; the required Wine
+  # `windows` lane remains on hosted Linux. Push-triggered runs use the base
+  # branch's workflow definition. Non-blocking for pull requests;
   # absent from all-checks-passed.needs by design — the required `windows` job
   # owns the PR verdict. No cache steps because the VM's persistent pnpm store
   # and tool caches make them redundant (and saving here would poison the

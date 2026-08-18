@@ -133,6 +133,32 @@ describe('CI workflow', () => {
     })
   })
 
+  it('documents standard hosted defaults and provisioned-only self-hosted routes', () => {
+    const workflowSource = readFileSync(resolve(root, '.github/workflows/ci.yml'), 'utf8')
+    expect(workflowSource).not.toMatch(/in-house (?:self-hosted )?pool/)
+    expect(workflowSource).not.toContain('six always-on runner instances')
+    expect(workflowSource).not.toContain('readiness is re-proven on every master push')
+    expect(workflowSource).not.toContain('take over the required')
+    expect(workflowSource).toContain('only when matching runners are registered and online')
+
+    const portableDecision = readFileSync(resolve(root, '.agents/notes/implemented/process/2026-07-23-portable-required-pull-request-ci.md'), 'utf8')
+    expect(portableDecision).not.toContain('repo-restricted enterprise 32-core pools')
+    expect(portableDecision).toContain('default to `ubuntu-latest`')
+
+    const largerRunnerDecision = readFileSync(resolve(root, '.agents/notes/implemented/process/2026-07-22-evidence-based-larger-hosted-runners.md'), 'utf8')
+    expect(largerRunnerDecision).not.toContain('The required primary path depends on those enterprise pools.')
+    expect(largerRunnerDecision).toContain('manual benchmark inventory')
+
+    const nativeWindowsDecision = readFileSync(resolve(root, '.agents/notes/implemented/process/2026-08-08-native-windows-pull-request-ci.md'), 'utf8')
+    expect(nativeWindowsDecision).not.toContain('on the organization-owned `dsh-windows-2025-16core` runner')
+    expect(nativeWindowsDecision).toContain('defaults to `windows-2025`')
+
+    const currentDecision = readFileSync(resolve(root, '.agents/notes/implemented/process/2026-08-18-public-repository-ci-runner-defaults.md'), 'utf8')
+    expect(currentDecision).toContain('default to `ubuntu-latest`')
+    expect(currentDecision).toContain('defaults to `windows-2025`')
+    expect(currentDecision).toContain('registered and online')
+  })
+
   it('exempts push from cancellation, so one master merge does not cancel the running drill', () => {
     const workflow = loadWorkflow('.github/workflows/ci.yml')
     if (!isRecord(workflow.jobs) || !isRecord(workflow.concurrency)) {
@@ -142,7 +168,7 @@ describe('CI workflow', () => {
     // Cancellation applies to the whole superseded RUN, so this has to be
     // decided at workflow level and gated on the event: a job-level group
     // cannot exempt its job from its run being cancelled. Only push is exempt —
-    // a drill takes longer than the interval between master merges. The negated
+    // a provisioned standby can outlive the interval between master merges. The negated
     // form is load-bearing: `== 'pull_request'` would also stop cancelling
     // workflow_dispatch, and a re-dispatched runner benchmark holds up to 12
     // larger runners for 15 minutes in this same group on master. The
