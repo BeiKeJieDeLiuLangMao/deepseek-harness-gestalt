@@ -228,7 +228,26 @@ export class ScopedLayers<L extends ScopeLayer> {
     action: (layer: L) => () => void,
     options: { label: string; notify?: boolean },
   ): () => void {
-    const scope = scopeOf(ctx)
+    return this.effectAt(ctx, scopeOf(ctx), action, options)
+  }
+
+  /**
+   * Attach one synchronous layer mutation to `ctx` while targeting an explicit
+   * visibility scope. This is reserved for owner plugins that project durable
+   * state into an already-minted scope: lifecycle ownership stays with the
+   * projector rather than the scope subject.
+   * @param ctx - context that owns the effect and its teardown.
+   * @param scope - exact visibility scope, or `undefined` for the global layer.
+   * @param action - atomic mutation returning its synchronous undo.
+   * @param options - Cordis effect label and optional change notification.
+   * @returns the exact disposer returned by `ctx.effect()`.
+   */
+  effectAt(
+    ctx: Context,
+    scope: ScopeKey | undefined,
+    action: (layer: L) => () => void,
+    options: { label: string; notify?: boolean },
+  ): () => void {
     const notify = options.notify ?? true
     const dispose = ctx.effect(function* (this: ScopedLayers<L>) {
       let layer: L
@@ -255,8 +274,11 @@ export class ScopedLayers<L extends ScopeLayer> {
       }
 
       yield () => {
-        undo()
-        if (scope !== undefined && layer.isEmpty()) this.scoped.delete(scope)
+        try {
+          undo()
+        } finally {
+          if (scope !== undefined && layer.isEmpty()) this.scoped.delete(scope)
+        }
         if (notify) this.onChange()
       }
       if (notify) this.onChange()

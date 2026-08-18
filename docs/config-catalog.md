@@ -294,6 +294,22 @@ Depends on: [`AgentLoopConfig`](#deepseek-aidsh-agent-loop) · [`GoalDomainConfi
 
 Source: [`packages/examples/agent-spine-demo/src/index.ts:92`](../packages/examples/agent-spine-demo/src/index.ts)
 
+<a id="deepseek-aidsh-agent-tool-eligibility"></a>
+
+## `@deepseek-ai/dsh-agent-tool-eligibility`
+
+Requires: `tools`
+
+```ts config-catalog
+/** Positive allow-only preset configuration. */
+export interface Config {
+  /** Exact public tool names this preset makes eligible. Empty allows none. */
+  allow: string[]
+}
+```
+
+Source: [`packages/core/agent-tool-eligibility/src/index.ts:20`](../packages/core/agent-tool-eligibility/src/index.ts)
+
 <a id="deepseek-aidsh-agent-tool-presentation"></a>
 
 ## `@deepseek-ai/dsh-agent-tool-presentation`
@@ -2972,7 +2988,25 @@ export interface Config {
 export type ToolPresentationMode = 'native' | 'code' | 'both'
 ```
 
-Source: [`packages/core/tools/src/index.ts:654`](../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:663`](../packages/core/tools/src/index.ts)
+
+<a id="deepseek-aidsh-tools-eligibility"></a>
+
+## `@deepseek-ai/dsh-tools-eligibility`
+
+Requires: `agents` · `tools`
+
+```ts config-catalog
+/** Positive user configuration layered above preset allowances. */
+export interface Config {
+  /** Tool names added for every session in the Workspace keyed by its stable id. */
+  workspaces: Record<string, string[]>
+  /** Tool names added for the Session keyed by its durable id. */
+  sessions: Record<string, string[]>
+}
+```
+
+Source: [`packages/core/tools-eligibility/src/index.ts:28`](../packages/core/tools-eligibility/src/index.ts)
 
 <a id="deepseek-aidsh-typert-loader"></a>
 

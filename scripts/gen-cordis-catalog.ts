@@ -182,6 +182,7 @@ export const EVENT_SCOPE_PAGE: Record<string, string> = {
   'subagent': 'subagent.md',
   'system-prompt': 'system-prompt.md',
   'session-telemetry': 'session-telemetry.md',
+  'tool-eligibility': 'tools.md',
   'tools': 'tools.md',
   'workflow': 'workflow.md',
 }
@@ -446,6 +447,8 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   ToolExecutionMode: 'tools.md',
   ToolExecutionResult: 'tools.md',
   ToolExecutionToken: 'tools.md',
+  ToolEligibilityContribution: 'tools.md',
+  ToolEligibilityPublication: 'tools.md',
   ToolGuard: 'tools.md',
   ToolPresentationMode: 'tools.md',
   ToolRuntime: 'tools.md',
