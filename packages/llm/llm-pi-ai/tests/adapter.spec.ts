@@ -7,7 +7,7 @@ import type {
   SaveImageAttachment,
   StoredImageAttachment,
 } from '@deepseek-ai/dsh-attachment'
-import LlmRuntime, { createUserMessage, CONTEXT_WINDOW_EXCEEDED_CODE, LlmError, ReasoningEffortId, userAgent } from '@deepseek-ai/dsh-llm'
+import LlmRuntime, { CallId, createMessage, createToolResultMessage, createUserMessage, CONTEXT_WINDOW_EXCEEDED_CODE, LlmError, ReasoningEffortId, userAgent } from '@deepseek-ai/dsh-llm'
 import * as LlmPiAi from '@deepseek-ai/dsh-llm-pi-ai'
 import { PiAiAdapter } from '@deepseek-ai/dsh-llm-pi-ai'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
@@ -196,6 +196,60 @@ describe('PiAiAdapter provider routing', () => {
     const result = await assemble(ctx, { provider: 'openai', model: 'gpt-4.1', messages: [] })
     expect(result.finish.kind).toBe('error')
     expect(server.paths).toEqual(['/v1/responses'])
+  })
+
+  it('projects durable discovered schemas as native Responses tool-search history', async () => {
+    const server = await mockServer([{ status: 401, body: JSON.stringify({ error: { message: 'expected mock failure' } }) }])
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    await ctx.plugin(LlmPiAi, {
+      providers: { openai: { apiKeyEnv: 'PI_TEST_KEY', baseURL: `${server.url}/v1` } },
+    })
+    const callId = CallId('search-call')
+    const weather = {
+      name: 'mcp__weather__forecast',
+      description: 'Forecast weather',
+      parameters: { type: 'object' },
+    }
+
+    await assemble(ctx, {
+      provider: 'openai',
+      model: 'gpt-5.5',
+      tools: [
+        { name: 'tool_search', description: 'Search tools', parameters: { type: 'object' } },
+        weather,
+      ],
+      messages: [
+        createMessage({
+          role: 'assistant',
+          content: [{ type: 'tool-call', id: callId, name: 'tool_search', arguments: '{"query":"weather"}' }],
+          source: { kind: 'model', provider: 'openai', model: 'gpt-5.5' },
+        }),
+        createToolResultMessage({
+          callId,
+          content: [{ type: 'text', text: JSON.stringify([weather]) }],
+          isError: false,
+          loadedTools: [weather],
+        }),
+      ],
+    })
+
+    const request = server.requests[0] as { tools?: unknown[]; input?: { type?: string; tools?: { name?: string }[] }[] }
+    expect(request.tools).toMatchObject([{
+      type: 'function',
+      name: 'tool_search',
+    }])
+    expect(request.tools).toHaveLength(1)
+    expect(request.input?.map(item => item.type)).toEqual([
+      'function_call',
+      'function_call_output',
+      'tool_search_call',
+      'tool_search_output',
+    ])
+    expect(request.input?.at(-1)?.tools).toMatchObject([{
+      name: weather.name,
+      defer_loading: true,
+    }])
   })
 
   it('resolves an attachment service mounted after the adapter when dispatching an image', async () => {

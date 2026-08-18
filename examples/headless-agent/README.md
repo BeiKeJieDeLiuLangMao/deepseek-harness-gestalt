@@ -15,7 +15,7 @@ pnpm dsh --profile headless "fix the failing test in this workspace"
 
 The product command is [`dsh --profile headless`](../../apps/cli/README.md): it accepts one nonblank task, creates and persists a fresh session, prints the final assistant text, and exits.
 
-Snapshot suites run this directory's configuration through [`tests/fixtures/headless-driver.ts`](tests/fixtures/headless-driver.ts), an unexported test-only process that emits canonical session events as JSONL before its result record. That stream is test infrastructure, not a supported CLI output format. Child sessions surface only through parent tool events and results.
+Snapshot suites run this directory's configuration through [`tests/fixtures/headless-driver.ts`](tests/fixtures/headless-driver.ts), an unexported test-only process that emits canonical session events as JSONL before its result record. That stream is test infrastructure, not a supported CLI output format. Child sessions surface only through parent tool events and results. [`deferred-tool-search.cordis.snapshot.yml`](deferred-tool-search.cordis.snapshot.yml) mounts the shipped headless spine with a real deferred MCP server; its snapshot disposes and reloads the Loader tree over the same JSONL Session to prove discovery, continuation, execution, and request reconstruction.
 
 ## E2B POC overlay
 

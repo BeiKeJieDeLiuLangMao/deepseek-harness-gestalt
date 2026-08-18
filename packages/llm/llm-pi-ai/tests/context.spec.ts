@@ -80,6 +80,68 @@ describe('pi-ai request context conversion', () => {
     }])]))).toThrow(/durable attachment service/)
   })
 
+  it('carries discovered schema names into pi-ai tool-search continuation metadata', () => {
+    const callId = CallId('search-1')
+    const context = toPiContext(request([
+      history('assistant', [{ type: 'tool-call', id: callId, name: 'tool_search', arguments: '{}' }]),
+      user([{
+        type: 'tool-result',
+        toolCallId: callId,
+        content: [{ type: 'text', text: '[]' }],
+        loadedTools: [{
+          name: 'mcp__weather__forecast',
+          description: 'Forecast weather',
+          parameters: { type: 'object' },
+        }],
+      }]),
+    ]))
+
+    expect(context.messages.at(-1)).toMatchObject({
+      role: 'toolResult',
+      toolName: 'tool_search',
+      addedToolNames: ['mcp__weather__forecast'],
+    })
+  })
+
+  it('carries direct tool-search metadata through the asynchronous image-capable path only', async () => {
+    const searchId = CallId('async-search')
+    const runCodeId = CallId('async-run-code')
+    const context = await toPiContext(request([
+      history('assistant', [
+        { type: 'tool-call', id: searchId, name: 'tool_search', arguments: '{}' },
+        { type: 'tool-call', id: runCodeId, name: 'run_code', arguments: '{}' },
+      ]),
+      user([
+        {
+          type: 'tool-result',
+          toolCallId: searchId,
+          content: [{ type: 'text', text: '[]' }],
+          loadedTools: [{
+            name: 'mcp__weather__forecast',
+            description: 'Forecast weather',
+            parameters: { type: 'object' },
+          }],
+        },
+        {
+          type: 'tool-result',
+          toolCallId: runCodeId,
+          content: [{ type: 'text', text: 'done' }],
+          loadedTools: [{
+            name: 'mcp__calendar__list',
+            description: 'List calendar events',
+            parameters: { type: 'object' },
+          }],
+        },
+      ]),
+    ]), attachments)
+
+    expect(context.messages.slice(-2)).toMatchObject([
+      { toolName: 'tool_search', addedToolNames: ['mcp__weather__forecast'] },
+      { toolName: 'run_code' },
+    ])
+    expect(context.messages.at(-1)).not.toHaveProperty('addedToolNames')
+  })
+
   it('resolves user and tool-result images while preserving explicit fallbacks', async () => {
     const callId = CallId('missing-call')
     const knownCallId = CallId('known-call')

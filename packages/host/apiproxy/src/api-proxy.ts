@@ -2229,7 +2229,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         const allow = ctx.tools.eligibilityAllow(found.agent)
         return ok(request, {
           ...allow === undefined ? {} : { allow: [...allow] },
-          tools: ctx.tools.schemas(found.agent),
+          tools: ctx.tools.catalogSchemas(found.agent),
         })
       },
 

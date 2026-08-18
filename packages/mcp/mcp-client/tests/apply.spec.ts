@@ -181,6 +181,24 @@ describe('apply (plugin lifecycle)', () => {
     expect(ctx.tools.get('remote')).toBeUndefined()
   })
 
+  it('rejects deferred loading at lifecycle start when tool discovery is disabled', async () => {
+    const fiber = ctx.plugin({ name: 'mcp-client-deferred-misconfiguration', inject, apply }, {
+      ...stdioConfig,
+      deferLoading: true,
+    })
+    let message: string | undefined
+    try {
+      await Promise.resolve(fiber)
+    } catch (error: unknown) {
+      message = error instanceof Error ? error.message : String(error)
+    }
+    expect(message).toBe('mcp-client(srv): deferLoading requires dsh-tools toolSearch configuration')
+
+    expect(mockConnect).not.toHaveBeenCalled()
+    expect(mockListTools).not.toHaveBeenCalled()
+    expect(ctx.tools.get('mcp__srv__remote')).toBeUndefined()
+  })
+
   it('keeps the Cordis plugin loading until initial discovery publishes its tools', async () => {
     const connection: PromiseWithResolvers<void> = Promise.withResolvers()
     mockConnect.mockImplementation(async () => {
