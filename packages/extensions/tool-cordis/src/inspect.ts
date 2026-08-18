@@ -165,7 +165,7 @@ export function describePlugins(ctx: Context): string[] {
  * @returns one line per visible tool.
  */
 export function describeTools(ctx: Context, scope?: ScopeKey): string[] {
-  return ctx.tools.schemas(scope).map(schema => `- ${schema.name}`)
+  return ctx.tools.catalogSchemas(scope).map(schema => `- ${schema.name}`)
 }
 
 /**
