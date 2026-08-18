@@ -9,7 +9,10 @@ import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import { CodeRuntime } from '@deepseek-ai/dsh-code-runtime'
 import type { CodeRunRequest, CodeRunResult } from '@deepseek-ai/dsh-code-runtime'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
+import { RUN_CODE_NAME } from '@deepseek-ai/dsh-tools'
 import type { Config, ToolDefinition } from '@deepseek-ai/dsh-tools'
+
+const TEST_MAX_RESULT_BYTES = 64 * 1024
 
 const signal = new AbortController().signal
 
@@ -41,7 +44,7 @@ class FakeRuntime extends CodeRuntime {
   }
 }
 
-async function mount(config: Config = { toolSearch: {} }): Promise<Context> {
+async function mount(config: Config = { toolSearch: { maxResultBytes: TEST_MAX_RESULT_BYTES } }): Promise<Context> {
   const ctx = new Context()
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime, config)
@@ -62,7 +65,7 @@ describe('deferred tool search', () => {
   it('applies direct-construction search defaults', async () => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt)
-    new ToolRuntime(ctx, { toolSearch: {} })
+    new ToolRuntime(ctx, { toolSearch: { maxResultBytes: TEST_MAX_RESULT_BYTES } })
     const schema = ctx.tools.schemas().find(candidate => candidate.name === 'tool_search')
     expect(schema?.parameters).toMatchObject({
       properties: {
@@ -72,15 +75,20 @@ describe('deferred tool search', () => {
   })
 
   it.each([
-    [{ maxResults: 0 }, /maxResults must be a positive integer/],
-    [{ maxResults: 1.5 }, /maxResults must be a positive integer/],
-    [{ maxResults: 2, defaultLimit: 0 }, /defaultLimit must be a positive integer/],
-    [{ maxResults: 2, defaultLimit: 1.5 }, /defaultLimit must be a positive integer/],
-    [{ maxResults: 2, defaultLimit: 3 }, /defaultLimit must be a positive integer/],
+    [{}, /maxResultBytes must be a positive integer/],
+    [{ maxResultBytes: 0 }, /maxResultBytes must be a positive integer/],
+    [{ maxResultBytes: 1.5 }, /maxResultBytes must be a positive integer/],
+    [{ maxResultBytes: TEST_MAX_RESULT_BYTES, maxResults: 0 }, /maxResults must be a positive integer/],
+    [{ maxResultBytes: TEST_MAX_RESULT_BYTES, maxResults: 1.5 }, /maxResults must be a positive integer/],
+    [{ maxResultBytes: TEST_MAX_RESULT_BYTES, maxResults: 2, defaultLimit: 0 }, /defaultLimit must be a positive integer/],
+    [{ maxResultBytes: TEST_MAX_RESULT_BYTES, maxResults: 2, defaultLimit: 1.5 }, /defaultLimit must be a positive integer/],
+    [{ maxResultBytes: TEST_MAX_RESULT_BYTES, maxResults: 2, defaultLimit: 3 }, /defaultLimit must be a positive integer/],
   ] as const)('rejects invalid direct-construction limits %#', async (toolSearch, message) => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt)
-    expect(() => new ToolRuntime(ctx, { toolSearch })).toThrow(message)
+    expect(() => new ToolRuntime(ctx, {
+      toolSearch: toolSearch as Exclude<Config['toolSearch'], undefined>,
+    })).toThrow(message)
   })
 
   it('reserves tool_search and rejects deferred definitions while discovery is disabled', async () => {
@@ -134,7 +142,7 @@ describe('deferred tool search', () => {
     [{ query: 'weather', limit: 1.5 }, 'fractional limit'],
     [{ query: 'weather', limit: 999 }, 'limit above configured maximum'],
   ] as const)('rejects invalid model search arguments: %s', async (arguments_, _case) => {
-    const ctx = await mount({ toolSearch: { maxResults: 3, defaultLimit: 2 } })
+    const ctx = await mount({ toolSearch: { maxResultBytes: TEST_MAX_RESULT_BYTES, maxResults: 3, defaultLimit: 2 } })
     for (let index = 0; index < 8; index += 1) {
       ctx.tools.register(tool(`weather_${index}`, `Weather forecast source ${index}`, true))
     }
@@ -151,7 +159,7 @@ describe('deferred tool search', () => {
   })
 
   it('enforces the configured search result cap at the model boundary', async () => {
-    const ctx = await mount({ toolSearch: { maxResults: 3, defaultLimit: 2 } })
+    const ctx = await mount({ toolSearch: { maxResultBytes: TEST_MAX_RESULT_BYTES, maxResults: 3, defaultLimit: 2 } })
     for (let index = 0; index < 8; index += 1) {
       ctx.tools.register(tool(`weather_${index}`, `Weather forecast source ${index}`, true))
     }
@@ -166,6 +174,34 @@ describe('deferred tool search', () => {
     expect(result).toMatchObject({ isError: false })
     if (result.isError) throw new Error('expected tool search success')
     expect(result.loadedTools).toHaveLength(3)
+  })
+
+  it.each([
+    ['one huge description', [tool('weather_huge', `Weather ${'description '.repeat(200)}`, true)]],
+    ['one huge parameter schema', [{
+      ...tool('weather_parameters', 'Weather parameters', true),
+      parameters: {
+        type: 'object',
+        properties: { value: { type: 'string', description: `Weather ${'parameter '.repeat(200)}` } },
+        additionalProperties: false,
+      },
+    }]],
+    ['multiple schemas whose aggregate exceeds the budget', Array.from({ length: 4 }, (_, index) => (
+      tool(`weather_${index}`, `Weather ${String(index)} ${'forecast '.repeat(20)}`, true)
+    ))],
+  ] as const)('rejects %s when the complete discovery result exceeds maxResultBytes', async (_case, definitions) => {
+    const ctx = await mount({ toolSearch: { maxResultBytes: 800, maxResults: 10, defaultLimit: 10 } })
+    for (const definition of definitions) ctx.tools.register(definition)
+
+    await expect(ctx.tools.execute({
+      callId: CallId('oversize-search'),
+      name: 'tool_search',
+      arguments: { query: 'weather' },
+      signal,
+    })).resolves.toMatchObject({
+      isError: true,
+      error: { info: { code: 'TOOL_SEARCH_RESULT_TOO_LARGE' } },
+    })
   })
 
   it.each(['value', 'content', 'error'] as const)(
@@ -281,6 +317,68 @@ describe('deferred tool search', () => {
       .toEqual(next.tools)
   })
 
+  it.each([
+    [null, 'non-object schema'],
+    [{ name: 'mcp__weather__forecast', description: 'Forecast weather' }, 'missing field'],
+    [{ name: '', description: 'Forecast weather', parameters: { type: 'object' } }, 'empty name'],
+    [{ name: 'mcp__weather__forecast', description: 42, parameters: { type: 'object' } }, 'description'],
+    [{ name: 'mcp__weather__forecast', description: 'Forecast weather', parameters: null }, 'parameters'],
+    [{
+      name: 'mcp__weather__forecast',
+      description: 'Forecast weather',
+      parameters: { type: 'object', properties: { city: { type: 'unknown' } } },
+    }, 'nested parameter schema'],
+  ] as const)('rejects restored loadedTools with malformed %s', async (malformed, _case) => {
+    const ctx = await mount()
+    ctx.tools.register(tool('mcp__weather__forecast', 'Forecast weather', true))
+    const persisted = Session.create(SessionId('malformed-loaded-tool'))
+    persisted.append('tool/result', {
+      turn: 1,
+      step: 1,
+      message: createToolResultMessage({
+        callId: CallId('search-malformed'),
+        content: [{ type: 'text', text: 'malformed durable discovery' }],
+        isError: false,
+        loadedTools: [malformed] as never,
+      }),
+    }, { surfaceOp: 'append' })
+    const restored = Session.create(
+      SessionId(`restored-${_case}`),
+      JSON.parse(JSON.stringify(persisted.events)) as never,
+    )
+    const agent = { session: restored } as Agent
+
+    await expect(ctx.systemPrompt.assemble({ scope: agent, agent }))
+      .rejects.toThrow(/durable loadedTools/)
+  })
+
+  it.each(['native', 'both'] as const)('accepts visible tool_search in toolOrder under mode %s', async (mode) => {
+    const ctx = new Context()
+    await ctx.plugin(SystemPrompt, { toolOrder: ['tool_search', '<unlisted-tools>'] })
+    await ctx.plugin(ToolRuntime, { mode, toolSearch: { maxResultBytes: TEST_MAX_RESULT_BYTES } })
+    if (mode === 'both') await ctx.plugin(FakeRuntime)
+    ctx.tools.register(tool('echo', 'Echo a value'))
+
+    expect((await ctx.systemPrompt.assemble()).tools.map(schema => schema.name)[0]).toBe('tool_search')
+    expect(() => ctx.tools.register(tool('tool_search', 'Shadow reserved discovery')))
+      .toThrow(/reserved for deferred schema discovery/)
+  })
+
+  it('keeps code mode ordering limited to its actual run_code wire schema', async () => {
+    const valid = new Context()
+    await valid.plugin(SystemPrompt, { toolOrder: [RUN_CODE_NAME, '<unlisted-tools>'] })
+    await valid.plugin(ToolRuntime, { mode: 'code', toolSearch: { maxResultBytes: TEST_MAX_RESULT_BYTES } })
+    await valid.plugin(FakeRuntime)
+    expect((await valid.systemPrompt.assemble()).tools.map(schema => schema.name)).toEqual([RUN_CODE_NAME])
+
+    const invalid = new Context()
+    await invalid.plugin(SystemPrompt, { toolOrder: ['tool_search', '<unlisted-tools>'] })
+    await invalid.plugin(ToolRuntime, { mode: 'code', toolSearch: { maxResultBytes: TEST_MAX_RESULT_BYTES } })
+    await invalid.plugin(FakeRuntime)
+    await expect(invalid.systemPrompt.assemble())
+      .rejects.toThrow(/toolOrder lists unregistered tool "tool_search"/)
+  })
+
   it('drops a discovered schema when current allow-only eligibility changes', async () => {
     const ctx = await mount()
     ctx.tools.register(tool('mcp__weather__forecast', 'Forecast weather by city', true))
@@ -322,7 +420,7 @@ describe('deferred tool search', () => {
   })
 
   it('reconstructs discovered schemas in the Code Mode SDK without native activation', async () => {
-    const ctx = await mount({ mode: 'code', toolSearch: {} })
+    const ctx = await mount({ mode: 'code', toolSearch: { maxResultBytes: TEST_MAX_RESULT_BYTES } })
     ctx.tools.register(tool('mcp__weather__forecast', 'Forecast weather by city', true))
     const session = Session.create(SessionId('deferred-code-mode'))
     const agent = { session } as Agent
@@ -377,7 +475,7 @@ describe('deferred tool search', () => {
   })
 
   it('removes a reconstructed Code Mode binding when eligibility becomes stale', async () => {
-    const ctx = await mount({ mode: 'code', toolSearch: {} })
+    const ctx = await mount({ mode: 'code', toolSearch: { maxResultBytes: TEST_MAX_RESULT_BYTES } })
     ctx.tools.register(tool('mcp__weather__forecast', 'Forecast weather by city', true))
     ctx.tools.register(tool('mcp__calendar__list', 'List calendar events', true))
     const session = Session.create(SessionId('deferred-code-mode-stale'))

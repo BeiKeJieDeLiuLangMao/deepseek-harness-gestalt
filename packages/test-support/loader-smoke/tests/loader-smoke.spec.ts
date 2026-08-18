@@ -3,7 +3,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { LOADER_SMOKE_TEST_TIMEOUT_MS, runLoaderSmoke } from '@deepseek-ai/dsh-loader-smoke'
+import { LOADER_SMOKE_TEST_TIMEOUT_MS, runLoaderSmoke, runLoaderSmokeSequence } from '@deepseek-ai/dsh-loader-smoke'
 
 const configPath = '/tmp/fixture.cordis.yml'
 const tsconfigPath = fileURLToPath(new URL('../../../../tsconfig.json', import.meta.url))
@@ -114,4 +114,36 @@ describe('runLoaderSmoke', () => {
       processTimeoutMs: 100,
     })).rejects.toThrow('hanging fixture did not exit within 0.1s.')
   })
+})
+
+describe('runLoaderSmokeSequence', () => {
+  it('runs ordered invocations in one isolated cwd with independent argv and environments', async () => {
+    let inspected = ''
+    const results = await runLoaderSmokeSequence({
+      label: 'sequence fixture',
+      tempDirPrefix: 'loader-smoke-sequence-',
+      binScript: fixture('success'),
+      libBinScript: fixture('success'),
+      configPath,
+      tsconfigPath,
+      invocations: [
+        { binArgs: ['first'], env: { LOADER_SMOKE_MARKER: 'one' } },
+        { binArgs: ['second'], env: { LOADER_SMOKE_MARKER: 'two' } },
+      ],
+      inspect: (cwd) => { inspected = cwd },
+    })
+
+    const outputs = results.map(result => JSON.parse(result.stdout) as {
+      args: string[]
+      cwd: string
+      marker: string
+    })
+    expect(outputs.map(output => ({ args: output.args, marker: output.marker }))).toEqual([
+      { args: ['first'], marker: 'one' },
+      { args: ['second'], marker: 'two' },
+    ])
+    expect(outputs[0]?.cwd).toBe(outputs[1]?.cwd)
+    expect(canonicalTempPath(inspected)).toBe(canonicalTempPath(outputs[0]?.cwd ?? ''))
+    expect(existsSync(inspected)).toBe(false)
+  }, LOADER_SMOKE_TEST_TIMEOUT_MS)
 })

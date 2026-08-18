@@ -16,7 +16,8 @@
 
 - id: tools
   config:
-    toolSearch: {}
+    toolSearch:
+      maxResultBytes: 65536
     # Keep the same temporary process-wide Code Mode opt-in as the Web surface.
     mode: !!js process.env.DSH_TOOLS_MODE
 

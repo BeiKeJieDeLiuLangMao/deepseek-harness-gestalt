@@ -121,5 +121,8 @@
     "@deepseek-ai/dsh-web-fetch-http": "workspace:*",
     "@deepseek-ai/dsh-workflow-worker-thread": "workspace:*",
     "@deepseek-ai/dsh-agent-instructions": "workspace:*"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/server-everything": "^2026.7.4"
   }
 }

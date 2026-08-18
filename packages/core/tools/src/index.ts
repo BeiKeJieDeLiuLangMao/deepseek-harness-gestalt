@@ -6,6 +6,7 @@
 
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
+import Ajv from 'ajv'
 import MiniSearch from 'minisearch'
 import { AnonymousEntries, NamedEntries, ScopedLayers, scopeOf, scopeTarget } from '@deepseek-ai/dsh-scope'
 import type { ScopeKey, ScopeLayer, Scoped } from '@deepseek-ai/dsh-scope'
@@ -63,6 +64,9 @@ const SDK_RENDERERS: Record<string, (schemas: ToolSdkSchema[]) => string> = {
   typescript: renderToolsSdk,
   python: renderToolsSdkPy,
 } satisfies Record<CodeSdkLanguage, (schemas: ToolSdkSchema[]) => string>
+
+/** Draft-07 validator for model-facing input schemas restored from durable JSON. */
+const TOOL_PARAMETER_SCHEMA_VALIDATOR = new Ajv({ strict: false, allErrors: true })
 
 /** Validate and resolve one model-authored deferred-tool search request. */
 function resolveToolSearchArguments(
@@ -732,6 +736,8 @@ export interface Config {
     defaultLimit?: number
     /** Highest accepted `limit`. */
     maxResults?: number
+    /** Maximum UTF-8 bytes in the complete durable discovery result block. */
+    maxResultBytes: number
   }
 }
 
@@ -741,6 +747,7 @@ export const TOOL_SEARCH_NAME = 'tool_search'
 interface ResolvedToolSearchConfig {
   readonly defaultLimit: number
   readonly maxResults: number
+  readonly maxResultBytes: number
 }
 
 interface ToolSearchDocument {
@@ -905,15 +912,72 @@ function resolveMaxParallelSubCalls(value: number | undefined): number {
 /** Resolve and validate deferred-discovery limits for direct construction. */
 function resolveToolSearchConfig(config: Config['toolSearch']): ResolvedToolSearchConfig | undefined {
   if (config === undefined || config === false) return undefined
+  const maxResultBytes = config.maxResultBytes
   const maxResults = config.maxResults ?? 10
   const defaultLimit = config.defaultLimit ?? 5
+  if (!Number.isInteger(maxResultBytes) || maxResultBytes < 1) {
+    throw new Error('toolSearch.maxResultBytes must be a positive integer')
+  }
   if (!Number.isInteger(maxResults) || maxResults < 1) {
     throw new Error('toolSearch.maxResults must be a positive integer')
   }
   if (!Number.isInteger(defaultLimit) || defaultLimit < 1 || defaultLimit > maxResults) {
     throw new Error('toolSearch.defaultLimit must be a positive integer no greater than toolSearch.maxResults')
   }
-  return { defaultLimit, maxResults }
+  return { defaultLimit, maxResults, maxResultBytes }
+}
+
+/** Parse one complete model-facing schema from durable or generated JSON. */
+function parseDeferredToolSchema(value: unknown, subject: string): ToolSchema {
+  if (!isPlainJsonRecord(value)) throw new Error(`${subject} must be an object`)
+  const keys = Object.keys(value)
+  if (keys.length !== 3 || !keys.includes('name') || !keys.includes('description') || !keys.includes('parameters')) {
+    throw new Error(`${subject} must contain exactly name, description, and parameters`)
+  }
+  if (typeof value.name !== 'string' || value.name.length === 0) {
+    throw new Error(`${subject}.name must be a non-empty string`)
+  }
+  if (typeof value.description !== 'string') {
+    throw new Error(`${subject}.description must be a string`)
+  }
+  if (!isPlainJsonRecord(value.parameters) || value.parameters.type !== 'object') {
+    throw new Error(`${subject}.parameters must be an object-rooted JSON schema`)
+  }
+  let valid: boolean | Promise<unknown>
+  try {
+    valid = TOOL_PARAMETER_SCHEMA_VALIDATOR.validateSchema(value.parameters)
+  /* v8 ignore next 3 -- the draft-07 validator is synchronous; preserve a named file error if a future validator throws. */
+  } catch (error: unknown) {
+    /* v8 ignore next -- see the catch rationale above. */
+    throw new Error(`${subject}.parameters must be a valid JSON schema`, { cause: error })
+  }
+  /* v8 ignore next 3 -- this Ajv instance has no async schema or keyword; the type also covers asynchronously configured instances. */
+  if (typeof valid !== 'boolean') {
+    throw new Error(`${subject}.parameters must not require asynchronous schema validation`)
+  }
+  if (!valid) {
+    throw new Error(
+      `${subject}.parameters must be a valid JSON schema: ${TOOL_PARAMETER_SCHEMA_VALIDATOR.errorsText()}`,
+    )
+  }
+  return {
+    name: value.name,
+    description: value.description,
+    parameters: { ...value.parameters },
+  }
+}
+
+/** UTF-8 bytes of the exact durable tool-result block produced by discovery. */
+function deferredToolResultBytes(callId: CallId, schemas: readonly ToolSchema[]): number {
+  const text = JSON.stringify(schemas, null, 2)
+  const block = {
+    type: 'tool-result',
+    toolCallId: callId,
+    content: [{ type: 'text', text }],
+    isError: false,
+    loadedTools: schemas,
+  }
+  return new TextEncoder().encode(JSON.stringify(block)).byteLength
 }
 
 /**
@@ -931,6 +995,7 @@ export class ToolRuntime extends Service {
       z.object({
         defaultLimit: z.natural().min(1).default(5),
         maxResults: z.natural().min(1).default(10),
+        maxResultBytes: z.natural().min(1).required(),
       }),
     ]).default(false),
   })
@@ -1155,8 +1220,18 @@ export class ToolRuntime extends Service {
           if (definition === undefined) {
             throw new Error(`tool_search returned unknown indexed tool "${String(result.id)}"`)
           }
-          return [this.schemaOf(definition, true)]
+          return [parseDeferredToolSchema(
+            this.schemaOf(definition, true),
+            `tool_search result schema for "${definition.name}"`,
+          )]
         })
+        const resultBytes = deferredToolResultBytes(exec.callId, schemas)
+        if (resultBytes > config.maxResultBytes) {
+          throw new HarnessError(
+            `tool_search result is ${resultBytes} bytes, exceeding configured maxResultBytes ${config.maxResultBytes}`,
+            'TOOL_SEARCH_RESULT_TOO_LARGE',
+          )
+        }
         this.loadedTools.set(exec, schemas)
         return Promise.resolve(schemas)
       },
@@ -1207,7 +1282,7 @@ export class ToolRuntime extends Service {
 
   /**
    * Build one scope's wire schemas and names for prompt-order validation.
-   * Restrictions do not make known tools invalid, but a mode collapse does.
+   * Ordering validates against the exact schema names sent on this request.
    */
   private wireSchemas(context: AssembleContext): ToolProviderResult {
     const view = this.view(context.scope)
@@ -1218,7 +1293,7 @@ export class ToolRuntime extends Service {
         .filter(definition => definition.deferLoading !== true)
         .map(definition => this.schemaOf(definition, false))
       schemas.push(...loaded)
-      return { schemas, knownNames: [...view.knownNames] }
+      return { schemas, knownNames: schemas.map(schema => schema.name) }
     }
     // Validate the runtime language BEFORE projecting schemas: schemaOf reads
     // run_code's language-aware description/parameters getters, whose own
@@ -1236,7 +1311,7 @@ export class ToolRuntime extends Service {
       }
     }
     schemas.push(...loaded)
-    return { schemas, knownNames: [...view.knownNames, RUN_CODE_NAME] }
+    return { schemas, knownNames: schemas.map(schema => schema.name) }
   }
 
   /** Recover discovered schemas from durable history and recheck live eligibility. */
@@ -1247,7 +1322,10 @@ export class ToolRuntime extends Service {
     for (const message of messages) {
       for (const block of message.content) {
         if (block.type !== 'tool-result' || block.loadedTools === undefined) continue
-        for (const schema of block.loadedTools) loaded.set(schema.name, schema)
+        for (const candidate of block.loadedTools as unknown[]) {
+          const schema = parseDeferredToolSchema(candidate, 'durable loadedTools entry')
+          loaded.set(schema.name, schema)
+        }
       }
     }
     return [...loaded.values()].filter((schema) => {

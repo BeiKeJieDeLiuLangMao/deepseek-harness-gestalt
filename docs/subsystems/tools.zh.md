@@ -156,7 +156,7 @@ type InferArgs<S> = InferProperties<S, []>
 
 注册是一项受信任的同进程约定。注册表以 readonly 输入借用已类型化定义，要求它声明 `output`，校验其原始 schema，并检查 `timeoutMs` 必须为正有限值等语义要求；`schemas()` 在构建请求时生成面向模型的投影，使执行和展示共享同一份已解析定义，而不会将回调泄漏到协议上。
 
-启用 `toolSearch` 后，保留的 `tool_search` 工具只索引当前合资格且标记 `deferLoading` 的定义。其结果包含精确匹配的 `ToolSchema[]`；agent loop 会把这些 schema 存入持久 tool-result 块。Code Mode 会把嵌套搜索得到的 schema 转发到外层 `run_code` 结果。后续每次组装都会读取日志，只保留仍然存活、deferred 且合资格的名称，再把已存 schema 加入原生请求或生成的 SDK。这是发现而不是激活：注册表不会发生变化，旧结果也无法恢复已被当前资格排除的 schema。provider-neutral 适配器会看到普通的直接函数调用／结果与扩展后的下一次请求；pi-ai 的 OpenAI Responses 路径则把同一直接搜索记录投影为原生工具搜索历史。
+启用 `toolSearch` 后，保留的 `tool_search` 工具只索引当前合资格且标记 `deferLoading` 的定义。其已校验输入使用配置的结果数量上限，必填的 `maxResultBytes` 则限制包含渲染内容与 `loadedTools` 的完整持久结果块；超过字节上限会使搜索失败。其结果包含精确匹配的 `ToolSchema[]`；agent loop 会把这些 schema 存入持久 tool-result 块。Code Mode 会把嵌套搜索得到的 schema 转发到外层 `run_code` 结果。后续每次组装都会读取日志，把每个已存 schema 当作文件输入进行校验，只保留仍然存活、deferred 且合资格的名称，再把已存 schema 加入原生请求或生成的 SDK。格式错误的已存 schema 会使请求组装失败，而不会抵达模型。这是发现而不是激活：注册表不会发生变化，旧结果也无法恢复已被当前资格排除的 schema。provider-neutral 适配器会看到普通的直接函数调用／结果与扩展后的下一次请求；pi-ai 的 OpenAI Responses 路径则把同一直接搜索记录投影为原生工具搜索历史。
 
 ## `ToolRestriction` — 单个作用域对其继承内容的实时过滤器
 
@@ -614,7 +614,7 @@ async execute(exec: ToolExecutionInput): Promise<ToolExecutionResult>
 
 Types: [ScopeKey](scope.md)
 
-Source: [`packages/core/tools/src/index.ts:923`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:987`](../../packages/core/tools/src/index.ts)
 
 <a id="tool-eligibility-events"></a>
 
@@ -664,7 +664,7 @@ A tool was registered or unregistered, or a scoped restriction changed (the avai
 'tools/change'(): void
 ```
 
-Source: [`packages/core/tools/src/index.ts:251`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:255`](../../packages/core/tools/src/index.ts)
 
 <a id="toolscode-dispatch-log--waterfall"></a>
 
@@ -691,7 +691,7 @@ Allow a listener to replace content in the DURABLE LOG COPY of one `run_code` su
 
 Types: [ContentBlock](llm-streaming.md) · [Scoped](scope.md)
 
-Source: [`packages/core/tools/src/index.ts:233`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:237`](../../packages/core/tools/src/index.ts)
 
 <a id="toolsexecute--waterfall"></a>
 
@@ -715,7 +715,7 @@ Around-dispatch waterfall for timeout, retry, or metrics. `next()` returns a nor
 
 Types: [Scoped](scope.md)
 
-Source: [`packages/core/tools/src/index.ts:207`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:211`](../../packages/core/tools/src/index.ts)
 
 <a id="toolspost-execute--waterfall"></a>
 
@@ -740,7 +740,7 @@ Accept, replace, enrich, or block a normalized dispatch result. `next()` accepts
 
 Types: [Scoped](scope.md)
 
-Source: [`packages/core/tools/src/index.ts:219`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:223`](../../packages/core/tools/src/index.ts)
 
 <a id="toolspre-execute--waterfall"></a>
 
@@ -763,7 +763,7 @@ Allow, deny, or ask before dispatch. `next()` delegates to allow; missing approv
 
 Types: [Scoped](scope.md)
 
-Source: [`packages/core/tools/src/index.ts:196`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:200`](../../packages/core/tools/src/index.ts)
 
 <a id="toolsresult--emit"></a>
 
@@ -784,5 +784,5 @@ Observe the frozen, lossless-JSON final outcome. Listener failures are contained
 
 Types: [Scoped](scope.md)
 
-Source: [`packages/core/tools/src/index.ts:241`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:245`](../../packages/core/tools/src/index.ts)
 <!-- END GENERATED cordis-surface -->

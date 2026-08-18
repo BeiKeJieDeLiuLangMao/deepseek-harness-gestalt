@@ -3011,6 +3011,8 @@ export interface Config {
     defaultLimit?: number
     /** Highest accepted `limit`. */
     maxResults?: number
+    /** Maximum UTF-8 bytes in the complete durable discovery result block. */
+    maxResultBytes: number
   }
 }
 
@@ -3018,7 +3020,7 @@ export interface Config {
 export type ToolPresentationMode = 'native' | 'code' | 'both'
 ```
 
-Source: [`packages/core/tools/src/index.ts:706`](../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:710`](../packages/core/tools/src/index.ts)
 
 <a id="deepseek-aidsh-tools-eligibility"></a>
 

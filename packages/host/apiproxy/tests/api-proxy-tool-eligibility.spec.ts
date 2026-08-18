@@ -32,7 +32,7 @@ describe('session.toolEligibility', () => {
     await ctx.plugin(UserQuestionService)
     await ctx.plugin(AgentRegistry)
     await ctx.plugin(SystemPrompt, {})
-    await ctx.plugin(ToolRuntime, { toolSearch: {} })
+    await ctx.plugin(ToolRuntime, { toolSearch: { maxResultBytes: 65_536 } })
     ctx.tools.register(tool('read', true))
     ctx.tools.register(tool('write'))
     const session = ctx.sessions.create()

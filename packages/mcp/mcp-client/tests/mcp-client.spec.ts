@@ -64,7 +64,7 @@ function createMockClient(tools: MockTool[], callResult: MockCallResult = { cont
 async function mountRegistry(): Promise<Context> {
   const ctx = new Context()
   await ctx.plugin(SystemPrompt)
-  await ctx.plugin(ToolRuntime, { toolSearch: {} })
+  await ctx.plugin(ToolRuntime, { toolSearch: { maxResultBytes: 65_536 } })
   return ctx
 }
 

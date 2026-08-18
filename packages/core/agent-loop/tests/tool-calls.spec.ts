@@ -21,7 +21,7 @@ async function harness(adapter: MockAdapter, maxParallelToolCalls?: number, tool
   await ctx.plugin(LlmRuntime)
   await ctx.plugin(SessionStore)
   await ctx.plugin(SystemPrompt, { persona: '' })
-  await ctx.plugin(ToolRuntime, toolSearch ? { toolSearch: {} } : {})
+  await ctx.plugin(ToolRuntime, toolSearch ? { toolSearch: { maxResultBytes: 65_536 } } : {})
   await ctx.plugin(AgentRegistry)
   await ctx.plugin(AgentLoop, {
     agents: [],

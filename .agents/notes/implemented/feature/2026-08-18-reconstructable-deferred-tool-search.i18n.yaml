@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-18-reconstructable-deferred-tool-search.md
-2026-08-18-reconstructable-deferred-tool-search.md: c5b346ae4a9b2d1ed4ab7b7e04d647340a4a50ed
-2026-08-18-reconstructable-deferred-tool-search.zh.md: 885e5231729da845db8f392db94f89b8622d2f5c
+2026-08-18-reconstructable-deferred-tool-search.md: 51243625abd3fc1ca91bda454485e22e8bf9d0d6
+2026-08-18-reconstructable-deferred-tool-search.zh.md: 1d112c6cabccddb967e3d51b868fd3e61805c2c0
