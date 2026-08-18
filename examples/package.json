@@ -5,6 +5,7 @@
   "type": "module",
   "description": "Workspace umbrella for runnable demos and example-owned test compositions: declares their cordis.yml packages so plain Node resolves real exports→lib. Not a build target.",
   "dependencies": {
+    "@deepseek-ai/cordis": "workspace:*",
     "@deepseek-ai/cordis-plugin-hmr": "workspace:*",
     "@deepseek-ai/cordis-plugin-include": "workspace:*",
     "@deepseek-ai/cordis-plugin-logger-console": "workspace:*",
