@@ -33,6 +33,7 @@ import { ContextMeter } from './ContextMeter.tsx'
 import { PermissionSelect } from './PermissionSelect.tsx'
 import { isSafariBrowser, repairSafariTextareaLayout } from './safari.ts'
 import css from './InputBar.module.css'
+import a11y from '../chat/accessibility.module.css'
 import { AnnotationEditor } from '../annotation/AnnotationEditor.tsx'
 import { isAnimatedGif } from '../annotation/model.ts'
 import type { ImagePinAnnotation } from '../annotation/model.ts'
@@ -78,11 +79,11 @@ export function InputBar({
     [draftImages, input?.imageIds],
   )
   const annotations = input?.annotations ?? []
+  const [editingAnnotation, setEditingAnnotation] = useState<string | null>(null)
   const editingPin = annotations.find((item): item is ImagePinAnnotation => (
     item.kind === 'image-pin' && item.id === editingAnnotation
   ))
   const empty = draft.trim() === '' && attachments.length === 0 && annotations.length === 0
-  const [editingAnnotation, setEditingAnnotation] = useState<string | null>(null)
   const [pinMode, setPinMode] = useState(false)
   const [gifRefuse, setGifRefuse] = useState(false)
   const [preview, setPreview] = useState<ComposerAttachment | null>(null)
@@ -718,6 +719,19 @@ export function InputBar({
       >
         {overlay !== undefined && <div className={css.overlayAnchor}>{overlay}</div>}
         {accessory !== undefined && <div className={css.accessory}>{accessory}</div>}
+        <input
+          type="file"
+          className={a11y.visuallyHidden}
+          aria-label={t('image.add')}
+          accept="image/png,image/jpeg,image/webp,image/gif"
+          multiple
+          disabled={locked || machineBusy || addImages === undefined}
+          onChange={(event) => {
+            const files = [...(event.currentTarget.files ?? [])]
+            event.currentTarget.value = ''
+            intakeImages(files)
+          }}
+        />
         {railItems.length > 0 && (
           <div className={css.attachments}>
             <AttachmentRail
