@@ -5,6 +5,7 @@ import { parseAccountProofJti, parseInstallationId } from '@deepseek-ai/dsh-plat
 import {
   MAX_ACTIVE_PAIRING_CHALLENGES_PER_INSTALLATION,
   MAX_PENDING_PAIRINGS_PER_INSTALLATION,
+  MAX_RETAINED_PAIRING_RECORDS_PER_INSTALLATION,
   PERSONAL_PAIRING_PROTOCOL_MAJOR,
   PAIRING_CHALLENGE_TTL_MS,
   PAIRING_REPLAY_RETENTION_MS,
@@ -382,6 +383,67 @@ describe('PersonalPairingProvider', () => {
     expect(handshake.destroyChallenge).toHaveBeenCalledTimes(2)
   })
 
+  it('bounds retained terminal records per Installation and never evicts cleanup failures early', async () => {
+    const now = { value: NOW }
+    const handshake = handshakeProvider()
+    handshake.destroyChallenge.mockRejectedValue(new Error('cleanup unavailable'))
+    const provider = uniquePairingProvider(handshake, now)
+    const desktop = authentication('desktop-installation')
+    const otherDesktop = authentication('other-desktop')
+    await provider.setMobileAccess({ desktop, enabled: true })
+    await provider.setMobileAccess({ desktop: otherDesktop, enabled: true })
+    const retained = []
+    for (let index = 0; index < MAX_RETAINED_PAIRING_RECORDS_PER_INSTALLATION; index += 1) {
+      const challenge = await provider.createChallenge({
+        desktop, rendezvousId: parsePairingRendezvousId(`retained-${String(index)}`),
+      })
+      retained.push(challenge)
+      await expect(provider.cancelChallenge({ desktop, challengeId: challenge.challengeId }))
+        .rejects.toThrow('cleanup unavailable')
+    }
+
+    await expect(provider.createChallenge({
+      desktop, rendezvousId: parsePairingRendezvousId('retained-over-limit'),
+    })).rejects.toEqual(expect.objectContaining<Partial<RemoteAccessError>>({ code: 'PAIRING_RESOURCE_LIMIT' }))
+    await expect(provider.createChallenge({
+      desktop: otherDesktop, rendezvousId: parsePairingRendezvousId('isolated-installation'),
+    })).resolves.toBeDefined()
+
+    now.value += PAIRING_REPLAY_RETENTION_MS
+    await expect(provider.createChallenge({
+      desktop, rendezvousId: parsePairingRendezvousId('cleanup-still-retained'),
+    })).rejects.toEqual(expect.objectContaining<Partial<RemoteAccessError>>({ code: 'PAIRING_RESOURCE_LIMIT' }))
+
+    handshake.destroyChallenge.mockResolvedValue(undefined)
+    for (const challenge of retained) {
+      await provider.cancelChallenge({ desktop, challengeId: challenge.challengeId })
+    }
+    await provider.getMobileAccessState(desktop)
+    await expect(provider.createChallenge({
+      desktop, rendezvousId: parsePairingRendezvousId('capacity-released'),
+    })).resolves.toBeDefined()
+  })
+
+  it('releases cleaned retained-record capacity only after replay expiry', async () => {
+    const now = { value: NOW }
+    const provider = uniquePairingProvider(handshakeProvider(), now)
+    const desktop = authentication('desktop-installation')
+    await provider.setMobileAccess({ desktop, enabled: true })
+    for (let index = 0; index < MAX_RETAINED_PAIRING_RECORDS_PER_INSTALLATION; index += 1) {
+      const challenge = await provider.createChallenge({
+        desktop, rendezvousId: parsePairingRendezvousId(`cleaned-${String(index)}`),
+      })
+      await provider.cancelChallenge({ desktop, challengeId: challenge.challengeId })
+    }
+    await expect(provider.createChallenge({
+      desktop, rendezvousId: parsePairingRendezvousId('cleaned-over-limit'),
+    })).rejects.toEqual(expect.objectContaining<Partial<RemoteAccessError>>({ code: 'PAIRING_RESOURCE_LIMIT' }))
+    now.value += PAIRING_REPLAY_RETENTION_MS
+    await expect(provider.createChallenge({
+      desktop, rendezvousId: parsePairingRendezvousId('cleaned-after-retention'),
+    })).resolves.toBeDefined()
+  })
+
   it('retries cleanup tombstones without repeating handshake or activation', async () => {
     const handshake = handshakeProvider()
     handshake.destroyChallenge.mockRejectedValueOnce(new Error('challenge cleanup failed'))
@@ -566,6 +628,77 @@ describe('PersonalPairingProvider', () => {
 
     await provider.dispose()
     expect(handshake.destroyPairing).toHaveBeenNthCalledWith(2, firstActivation)
+  })
+
+  it.each([
+    {
+      label: 'public key reference parse',
+      configure: (handshake: ReturnType<typeof handshakeProvider>) => {
+        handshake.activatePairing.mockResolvedValueOnce({
+          keyReference: '' as never,
+          activePairingKey: Uint8Array.of(41),
+        })
+      },
+      expected: 'must be non-empty',
+    },
+    {
+      label: 'random id source',
+      configure: (_handshake: ReturnType<typeof handshakeProvider>) => {},
+      expected: 'random id unavailable',
+    },
+  ])('destroys the new activation handle when $label fails', async ({ label, configure, expected }) => {
+    const handshake = handshakeProvider()
+    configure(handshake)
+    let id = 0
+    const provider = new PersonalPairingProvider(new Context(), {
+      account: {
+        currentInstallation: vi.fn(async ({ accessToken }: { accessToken: string }) => authenticated(accessToken)),
+      },
+      handshake,
+      clock: { now: () => NOW },
+      randomBytes: size => Uint8Array.from({ length: size }, (_, index) => index),
+      randomId: (kind) => {
+        if (label === 'random id source' && kind === 'pairing') throw new Error('random id unavailable')
+        return `${kind}-${String(++id)}`
+      },
+      pairingLinkOrigin: 'https://platform.example.com/pair',
+    })
+    const desktop = authentication('desktop-installation')
+    await provider.setMobileAccess({ desktop, enabled: true })
+    const challenge = await provider.createChallenge({
+      desktop, rendezvousId: parsePairingRendezvousId(`activation-${label}`),
+    })
+    const pending = await complete(provider, challenge.oneTimeLink, `activation-${label}`)
+
+    await expect(provider.confirmPairing({ desktop, pendingPairingId: pending.pendingPairingId }))
+      .rejects.toThrow(expected)
+    expect(handshake.destroyPairing).toHaveBeenCalledOnce()
+    expect(await provider.listPendingPairings(desktop)).toHaveLength(1)
+  })
+
+  it('retains a new activation handle when parse rollback cleanup fails and retries it on disposal', async () => {
+    const handshake = handshakeProvider()
+    handshake.activatePairing.mockResolvedValueOnce({
+      keyReference: '' as never,
+      activePairingKey: Uint8Array.of(42),
+    })
+    handshake.destroyPairing.mockRejectedValueOnce(new Error('activation cleanup unavailable'))
+    const provider = uniquePairingProvider(handshake)
+    const desktop = authentication('desktop-installation')
+    await provider.setMobileAccess({ desktop, enabled: true })
+    const challenge = await provider.createChallenge({
+      desktop,
+      rendezvousId: parsePairingRendezvousId('activation-cleanup-retry'),
+    })
+    const pending = await complete(provider, challenge.oneTimeLink, 'activation-cleanup-retry')
+
+    await expect(provider.confirmPairing({ desktop, pendingPairingId: pending.pendingPairingId }))
+      .rejects.toThrow('Personal Pairing activation rollback failed')
+    expect(await provider.listPendingPairings(desktop)).toHaveLength(1)
+    await expect(provider.dispose()).resolves.toBeUndefined()
+    expect(handshake.destroyPairing).toHaveBeenCalledTimes(2)
+    expect(handshake.destroyPairing).toHaveBeenNthCalledWith(1, Uint8Array.of(42))
+    expect(handshake.destroyPairing).toHaveBeenNthCalledWith(2, Uint8Array.of(42))
   })
 
   it.each([

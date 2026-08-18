@@ -52,7 +52,10 @@ describe('DesktopPairingController', () => {
       proof: { jti: parseAccountProofJti('proof'), issuedAt: 1, signature: 'signature' },
     }
     const authorizeCurrentInstallation = vi.fn(async () => authorization)
-    const account = { authorizeCurrentInstallation }
+    const account = {
+      authorizeCurrentInstallation,
+      getSnapshot: signedInAccountSnapshot,
+    }
     const transport = transportFixture()
     const scheduled: Array<() => void> = []
     const controller = new DesktopPairingController({
@@ -90,6 +93,7 @@ describe('DesktopPairingController', () => {
     const scheduled: Array<() => void> = []
     const controller = new DesktopPairingController({
       account: {
+        getSnapshot: signedInAccountSnapshot,
         authorizeCurrentInstallation: vi.fn(async () => ({
           accessToken: 'desktop-access',
           proof: { jti: parseAccountProofJti('proof'), issuedAt: 1, signature: 'signature' },
@@ -118,6 +122,41 @@ describe('DesktopPairingController', () => {
     await controller.dispose()
     await expect(controller.start()).rejects.toThrow('closed')
     await expect(controller.setEnabled(true)).rejects.toThrow('inactive')
+  })
+
+  it('drops Account A projection before Account B starts even when its first refresh fails', async () => {
+    const accountId = { value: 'account-a' }
+    const account = {
+      getSnapshot: vi.fn(() => ({
+        status: 'signed-in' as const,
+        privacyAccepted: true,
+        account: {
+          id: accountId.value as never,
+          githubId: 1,
+          githubLogin: accountId.value,
+          avatarUrl: 'https://avatars.example/account',
+        },
+      })),
+      authorizeCurrentInstallation: vi.fn(async () => ({
+        accessToken: `${accountId.value}-access`,
+        proof: { jti: parseAccountProofJti(`${accountId.value}-proof`), issuedAt: 1, signature: 'signature' },
+      })),
+    }
+    const transport = transportFixture()
+    const controller = new DesktopPairingController({ account, transport })
+
+    await controller.start()
+    await controller.setEnabled(true)
+    expect(controller.getSnapshot().pairings).toHaveLength(1)
+    await controller.deactivate()
+    expect(controller.getSnapshot()).toEqual({ status: 'ready', enabled: false, pairings: [] })
+
+    accountId.value = 'account-b'
+    transport.getMobileAccessState.mockRejectedValueOnce(new Error('account B refresh failed'))
+    await expect(controller.start()).rejects.toThrow('account B refresh failed')
+    expect(controller.getSnapshot()).toEqual({
+      status: 'failed', enabled: false, pairings: [], error: 'account B refresh failed',
+    })
   })
 
   it('parses Electron IPC payloads before controller side effects', () => {
@@ -178,4 +217,17 @@ function deferred<T>() {
   let resolve!: (value: T) => void
   const promise = new Promise<T>((done) => { resolve = done })
   return { promise, resolve }
+}
+
+function signedInAccountSnapshot() {
+  return {
+    status: 'signed-in' as const,
+    privacyAccepted: true,
+    account: {
+      id: 'account-one' as never,
+      githubId: 1,
+      githubLogin: 'account-one',
+      avatarUrl: 'https://avatars.example/account',
+    },
+  }
 }

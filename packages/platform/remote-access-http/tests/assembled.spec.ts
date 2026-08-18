@@ -191,7 +191,19 @@ describe('Remote Access HTTP assembled flow', () => {
       acceptDesktopHandshake: vi.fn(),
     }
     const controller = new MobilePairingController({
-      installation: { authorizeCurrentInstallation: vi.fn(async () => mobile) },
+      installation: {
+        authorizeCurrentInstallation: vi.fn(async () => mobile),
+        getSnapshot: vi.fn(() => ({
+          status: 'signed-in' as const,
+          privacyAccepted: true,
+          account: {
+            id: 'account-one' as never,
+            githubId: 1,
+            githubLogin: 'account-one',
+            avatarUrl: 'https://avatars.example/account',
+          },
+        })),
+      },
       transport,
       handshake: mobileHandshake,
       scanner: { scan: vi.fn() },

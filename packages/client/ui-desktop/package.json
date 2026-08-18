@@ -53,8 +53,8 @@
     "@deepseek-ai/dsh-client-ui-slots": "workspace:^",
     "@deepseek-ai/dsh-platform-account": "workspace:^",
     "@deepseek-ai/dsh-remote-access": "workspace:^",
-    "qrcode": "^1.5.4",
-    "react": "^18.2.0"
+    "react": "^18.2.0",
+    "uqr": "^0.1.3"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
@@ -71,7 +71,6 @@
     "@deepseek-ai/dsh-client-ui-sidebar": "workspace:^",
     "@deepseek-ai/dsh-client-ui-settings": "workspace:^",
     "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@types/qrcode": "^1.5.5",
     "@types/react": "~18.3.1"
   },
   "files": [

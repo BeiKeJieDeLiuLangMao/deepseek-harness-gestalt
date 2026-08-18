@@ -20,6 +20,8 @@ export const PAIRING_REPLAY_RETENTION_MS = 5 * 60 * 1000
 export const MAX_ACTIVE_PAIRING_CHALLENGES_PER_INSTALLATION = 4
 /** Maximum unconfirmed handshakes owned by one authenticated Installation. */
 export const MAX_PENDING_PAIRINGS_PER_INSTALLATION = 4
+/** Maximum live and replay-retained lifecycle records owned by one authenticated Installation. */
+export const MAX_RETAINED_PAIRING_RECORDS_PER_INSTALLATION = 16
 /** Pairing protocol major carried by every challenge in this implementation. */
 export const PERSONAL_PAIRING_PROTOCOL_MAJOR = 1
 
@@ -347,6 +349,7 @@ interface SettledChallengeRecord {
 
 interface CompletionReplayRecord {
   accountId: string
+  desktopInstallationId: InstallationId
   mobileInstallationId: InstallationId
   challengeId: PairingChallengeId
   challengeCleanup: CleanupRecord<PairingChallengeState>
@@ -355,8 +358,8 @@ interface CompletionReplayRecord {
 }
 
 interface PendingPairingRecord extends CompletionReplayRecord {
-  desktopInstallationId: InstallationId
   cleanup: CleanupRecord<PendingPairingKey>
+  activationCleanup?: CleanupRecord<ActivePairingKey>
 }
 
 type PendingOutcome = 'confirmed' | 'rejected' | 'disabled' | 'collision' | 'disposed'
@@ -424,6 +427,7 @@ export class PersonalPairingProvider extends RemoteAccessService {
           'This Desktop Installation has reached its active Pairing Challenge limit',
         )
       }
+      this.assertRetainedCapacity(account.id, installation.id, 'desktop', 1)
       const invitationSecret = this.randomBytes(32)
       if (invitationSecret.byteLength !== 32) throw new TypeError('Personal Pairing random source must return 32 bytes')
       const expiresAt = this.clock.now() + PAIRING_CHALLENGE_TTL_MS
@@ -552,6 +556,8 @@ export class PersonalPairingProvider extends RemoteAccessService {
           'An authenticated Installation has reached its pending Personal Pairing limit',
         )
       }
+      this.assertRetainedCapacity(account.id, challenge.desktopInstallationId, 'desktop', 2)
+      this.assertRetainedCapacity(account.id, installation.id, 'mobile', 2)
 
       const completed = await this.options.handshake.completeChallenge({
         invitationSecret: invitation.invitationSecret,
@@ -583,6 +589,7 @@ export class PersonalPairingProvider extends RemoteAccessService {
       const settled = this.settleChallenge(challenge, 'completed')
       const replay: CompletionReplayRecord = {
         accountId: account.id,
+        desktopInstallationId: challenge.desktopInstallationId,
         mobileInstallationId: installation.id,
         challengeId: invitation.challengeId,
         challengeCleanup: settled.cleanup,
@@ -671,51 +678,58 @@ export class PersonalPairingProvider extends RemoteAccessService {
         return clonePairing(settled.view)
       }
       const record = this.requirePending(pendingPairingId, account.id, installation.id)
+      await this.cleanupPendingActivation(record)
       const activation = await this.options.handshake.activatePairing({
         pendingPairingKey: record.cleanup.resource as PendingPairingKey,
       })
-      const keyReference = parsePersonalPairingKeyReference(activation.keyReference)
-      if ([...this.pairings.values()].some(pairing => pairing.keyReference === keyReference)) {
-        const activeCleanup: CleanupRecord<ActivePairingKey> = { resource: activation.activePairingKey }
-        this.settlePending(pendingPairingId, record, 'collision', undefined, activeCleanup)
-        await cleanupAll([
-          () => this.cleanupPending(record.cleanup),
-          () => this.cleanupActive(activeCleanup),
-        ])
-        throw new RemoteAccessError('PAIRING_ID_COLLISION', 'Personal Pairing key reference was already allocated')
+      const activationCleanup: CleanupRecord<ActivePairingKey> = { resource: activation.activePairingKey }
+      record.activationCleanup = activationCleanup
+      try {
+        const keyReference = parsePersonalPairingKeyReference(activation.keyReference)
+        if ([...this.pairings.values()].some(pairing => pairing.keyReference === keyReference)) {
+          const collision = this.settlePending(pendingPairingId, record, 'collision')
+          await this.cleanupSettledPending(collision)
+          throw new RemoteAccessError('PAIRING_ID_COLLISION', 'Personal Pairing key reference was already allocated')
+        }
+        const pairingId = parsePersonalPairingId(this.randomId('pairing'))
+        const principalId = parseDevicePrincipalId(this.randomId('principal'))
+        if (this.pairings.has(pairingId) || this.principalIds.has(principalId)) {
+          const collision = this.settlePending(pendingPairingId, record, 'collision')
+          await this.cleanupSettledPending(collision)
+          throw new RemoteAccessError('PAIRING_ID_COLLISION', 'Personal Pairing identity was already allocated')
+        }
+        const view: PersonalPairingView = {
+          id: pairingId,
+          devicePrincipal: {
+            id: principalId,
+            accountId: account.id,
+            installationId: record.mobileInstallationId,
+            authority: 'companion-surface',
+          },
+          device: { ...record.view.device },
+          pairedAt: this.clock.now(),
+        }
+        this.principalIds.add(principalId)
+        this.pairings.set(view.id, {
+          ...view,
+          desktopInstallationId: record.desktopInstallationId,
+          keyReference,
+          cleanup: activationCleanup,
+        })
+        delete record.activationCleanup
+        const confirmed = this.settlePending(pendingPairingId, record, 'confirmed', view)
+        await this.cleanupPending(confirmed.cleanup)
+        return clonePairing(view)
+      } catch (error) {
+        if (this.pending.get(pendingPairingId) === record) {
+          try {
+            await this.cleanupPendingActivation(record)
+          } catch (cleanupError) {
+            throw new AggregateError([error, cleanupError], 'Personal Pairing activation rollback failed')
+          }
+        }
+        throw error
       }
-      const pairingId = parsePersonalPairingId(this.randomId('pairing'))
-      const principalId = parseDevicePrincipalId(this.randomId('principal'))
-      if (this.pairings.has(pairingId) || this.principalIds.has(principalId)) {
-        const activeCleanup: CleanupRecord<ActivePairingKey> = { resource: activation.activePairingKey }
-        this.settlePending(pendingPairingId, record, 'collision', undefined, activeCleanup)
-        await cleanupAll([
-          () => this.cleanupPending(record.cleanup),
-          () => this.cleanupActive(activeCleanup),
-        ])
-        throw new RemoteAccessError('PAIRING_ID_COLLISION', 'Personal Pairing identity was already allocated')
-      }
-      const view: PersonalPairingView = {
-        id: pairingId,
-        devicePrincipal: {
-          id: principalId,
-          accountId: account.id,
-          installationId: record.mobileInstallationId,
-          authority: 'companion-surface',
-        },
-        device: { ...record.view.device },
-        pairedAt: this.clock.now(),
-      }
-      this.principalIds.add(principalId)
-      this.pairings.set(view.id, {
-        ...view,
-        desktopInstallationId: record.desktopInstallationId,
-        keyReference,
-        cleanup: { resource: activation.activePairingKey },
-      })
-      const confirmed = this.settlePending(pendingPairingId, record, 'confirmed', view)
-      await this.cleanupPending(confirmed.cleanup)
-      return clonePairing(view)
     })
   }
 
@@ -815,13 +829,14 @@ export class PersonalPairingProvider extends RemoteAccessService {
     activeCleanup?: CleanupRecord<ActivePairingKey>,
   ): SettledPendingRecord {
     this.pending.delete(id)
+    const ownedActiveCleanup = activeCleanup ?? record.activationCleanup
     const settled = {
       accountId: record.accountId,
       desktopInstallationId: record.desktopInstallationId,
       mobileInstallationId: record.mobileInstallationId,
       outcome,
       cleanup: record.cleanup,
-      ...(activeCleanup === undefined ? {} : { activeCleanup }),
+      ...(ownedActiveCleanup === undefined ? {} : { activeCleanup: ownedActiveCleanup }),
       ...(view === undefined ? {} : { view }),
       settledAt: this.clock.now(),
     }
@@ -886,6 +901,42 @@ export class PersonalPairingProvider extends RemoteAccessService {
       && record.mobileInstallationId === installationId).length
   }
 
+  private countRetainedRecords(
+    accountId: string,
+    installationId: InstallationId,
+    kind: 'desktop' | 'mobile',
+  ): number {
+    const owns = (record: { accountId: string; desktopInstallationId: InstallationId; mobileInstallationId?: InstallationId }) =>
+      record.accountId === accountId
+        && (kind === 'desktop'
+          ? record.desktopInstallationId === installationId
+          : record.mobileInstallationId === installationId)
+    let count = 0
+    if (kind === 'desktop') {
+      count += [...this.challenges.values()].filter(owns).length
+      count += [...this.settledChallenges.values()].filter(owns).length
+    }
+    count += [...this.completions.values()].filter(owns).length
+    count += [...this.pending.values()].filter(owns).length
+    count += [...this.settledPending.values()].filter(owns).length
+    return count
+  }
+
+  private assertRetainedCapacity(
+    accountId: string,
+    installationId: InstallationId,
+    kind: 'desktop' | 'mobile',
+    additionalRecords: number,
+  ): void {
+    if (this.countRetainedRecords(accountId, installationId, kind) + additionalRecords
+      > MAX_RETAINED_PAIRING_RECORDS_PER_INSTALLATION) {
+      throw new RemoteAccessError(
+        'PAIRING_RESOURCE_LIMIT',
+        `This ${kind} Installation has reached its retained Personal Pairing record limit`,
+      )
+    }
+  }
+
   private evictExpiredRecords(): void {
     const cutoff = this.clock.now() - PAIRING_REPLAY_RETENTION_MS
     for (const [id, record] of this.settledChallenges) {
@@ -914,6 +965,13 @@ export class PersonalPairingProvider extends RemoteAccessService {
     const activeCleanup = record.activeCleanup
     if (activeCleanup !== undefined) operations.push(() => this.cleanupActive(activeCleanup))
     return cleanupAll(operations)
+  }
+
+  private async cleanupPendingActivation(record: PendingPairingRecord): Promise<void> {
+    const cleanup = record.activationCleanup
+    if (cleanup === undefined) return
+    await this.cleanupActive(cleanup)
+    delete record.activationCleanup
   }
 
   private cleanupActive(cleanup: CleanupRecord<ActivePairingKey>): Promise<void> {

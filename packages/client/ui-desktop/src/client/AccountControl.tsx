@@ -5,7 +5,7 @@ import { ACCOUNT_PRIVACY_NOTICE } from '@deepseek-ai/dsh-platform-account/privac
 import type { PropsLocale, PropsRuntime, SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 import type { DesktopAccountSnapshot } from '../protocol.ts'
 import type { DesktopPairingSnapshot } from '../protocol.ts'
-import { create as createQrCode } from 'qrcode/lib/browser.js'
+import { encode as encodeQrCode } from 'uqr'
 import css from './AccountControl.module.css'
 
 /** Injected current-installation Account snapshot. */
@@ -104,17 +104,16 @@ function PairingPanel({ desktop, snapshot, t }: {
 }
 
 function PairingQr({ label, value }: { label: string; value: string }) {
-  const qr = createQrCode(value, { errorCorrectionLevel: 'M' })
-  const size = qr.modules.size
+  const qr = encodeQrCode(value, { ecc: 'M' })
   let path = ''
-  for (let row = 0; row < size; row += 1) {
-    for (let column = 0; column < size; column += 1) {
-      if (qr.modules.get(row, column)) path += `M${String(column)} ${String(row)}h1v1h-1z`
+  for (let row = 0; row < qr.size; row += 1) {
+    for (let column = 0; column < qr.size; column += 1) {
+      if (qr.data[row]?.[column] === true) path += `M${String(column)} ${String(row)}h1v1h-1z`
     }
   }
   return (
     <figure className={css.qr}>
-      <svg viewBox={`-2 -2 ${String(size + 4)} ${String(size + 4)}`} aria-label={label} role="img">
+      <svg viewBox={`-2 -2 ${String(qr.size + 4)} ${String(qr.size + 4)}`} aria-label={label} role="img">
         <path d={path} />
       </svg>
       <code aria-label="Pairing QR payload">{value}</code>

@@ -1,12 +1,14 @@
 /** Signed-in Mobile Personal Pairing controller over the public Remote Access transport. */
 
 import {
+  PAIRING_REPLAY_RETENTION_MS,
   RemoteAccessError,
   parsePairingInvitationLink,
   type PairingCompletionId,
   type PairingCompletionView,
   type PendingPairingId,
 } from '@deepseek-ai/dsh-remote-access'
+import type { PlatformAccountId } from '@deepseek-ai/dsh-platform-account'
 import type { PlatformAccountInstallation } from '@deepseek-ai/dsh-platform-account-client'
 import type { RemoteAccessTransport } from '@deepseek-ai/dsh-remote-access-client'
 import type { MobilePairingActions, MobilePairingSnapshot } from './personal-pairing-model.ts'
@@ -28,8 +30,11 @@ interface MobilePairingQrScanner {
 interface PreparedMobilePairingAttempt {
   link: string
   expiresAt: number
+  accountId: PlatformAccountId
   completionId: PairingCompletionId
   mobileHandshake: Uint8Array
+  transmission: 'prepared' | 'possibly-committed' | 'pending'
+  replayExpiresAt?: number
   pendingProjection?: PairingCompletionView
 }
 
@@ -53,7 +58,7 @@ export class NativeMobilePairingQrScanner implements MobilePairingQrScanner {
 
 /** Mobile controller construction inputs. */
 export interface MobilePairingControllerOptions {
-  installation: Pick<PlatformAccountInstallation, 'authorizeCurrentInstallation'>
+  installation: Pick<PlatformAccountInstallation, 'authorizeCurrentInstallation' | 'getSnapshot'>
   transport: RemoteAccessTransport
   handshake: MobilePairingHandshakeClient
   scanner: MobilePairingQrScanner
@@ -73,6 +78,7 @@ export class MobilePairingController implements MobilePairingActions {
   private readonly now: () => number
   private timer: ReturnType<typeof setTimeout> | undefined
   private attempt: PreparedMobilePairingAttempt | undefined
+  private accountId: PlatformAccountId | undefined
   private active = true
 
   /** @param options - Account authority, Remote Access transport, reviewed handshake, and QR scanner. */
@@ -94,30 +100,29 @@ export class MobilePairingController implements MobilePairingActions {
 
   async activate(): Promise<void> {
     await this.serial
+    const accountId = this.currentAccountId()
+    if (this.accountId !== accountId) this.resetAccountScope()
+    this.accountId = accountId
     this.active = true
   }
 
   async deactivate(): Promise<void> {
     this.active = false
-    if (this.timer !== undefined) clearTimeout(this.timer)
-    this.timer = undefined
+    this.resetAccountScope()
     await this.serial
+    this.resetAccountScope()
   }
 
   async completeLink(link: string): Promise<void> {
-    await this.exclusive(async () => {
-      const retained = this.currentAttempt()
-      if (retained !== undefined && retained.link !== link) {
-        throw new Error('Retry the retained Personal Pairing attempt before using another invitation')
-      }
-      const attempt = retained ?? await this.prepareAttempt(link)
-      await this.runAttempt(attempt)
-    })
+    await this.exclusive(async () => { await this.completeLinkOwned(link) })
   }
 
   async scanQr(): Promise<void> {
-    const payload = await this.options.scanner.scan()
-    await this.completeLink(payload)
+    await this.exclusive(async () => {
+      const payload = await this.options.scanner.scan()
+      this.assertActiveAccount()
+      await this.completeLinkOwned(payload)
+    })
   }
 
   async retryPairing(): Promise<void> {
@@ -135,8 +140,10 @@ export class MobilePairingController implements MobilePairingActions {
     const attempt = {
       link,
       expiresAt: invitation.expiresAt,
+      accountId: this.requireAccountId(),
       completionId: prepared.completionId,
       mobileHandshake: prepared.mobileHandshake,
+      transmission: 'prepared' as const,
     }
     this.attempt = attempt
     return attempt
@@ -145,17 +152,22 @@ export class MobilePairingController implements MobilePairingActions {
   private async runAttempt(attempt: PreparedMobilePairingAttempt): Promise<void> {
     this.publish({ status: 'completing' })
     try {
+      const authentication = await this.options.installation.authorizeCurrentInstallation()
+      this.assertActiveAccount()
+      attempt.transmission = 'possibly-committed'
+      attempt.replayExpiresAt = this.now() + PAIRING_REPLAY_RETENTION_MS
       const completion = await this.options.transport.completeChallenge({
-        authentication: await this.options.installation.authorizeCurrentInstallation(),
+        authentication,
         completionId: attempt.completionId,
         oneTimeLink: attempt.link,
         device: this.options.device,
         mobileHandshake: attempt.mobileHandshake,
       })
-      this.assertActive()
+      this.assertActiveAccount()
       attempt.pendingProjection = completion
+      attempt.transmission = 'pending'
       await this.options.handshake.acceptDesktopHandshake(completion.desktopHandshake)
-      this.assertActive()
+      this.assertActiveAccount()
       this.publish({
         status: 'pending',
         deviceName: this.options.device.name,
@@ -177,21 +189,61 @@ export class MobilePairingController implements MobilePairingActions {
   private currentAttempt(): PreparedMobilePairingAttempt | undefined {
     const attempt = this.attempt
     if (attempt === undefined) return undefined
-    if (this.now() < attempt.expiresAt) return attempt
+    if (attempt.accountId !== this.requireAccountId()) {
+      this.resetAccountScope()
+      return undefined
+    }
+    if (attempt.transmission === 'pending') return attempt
+    const expiresAt = attempt.transmission === 'possibly-committed'
+      ? attempt.replayExpiresAt ?? attempt.expiresAt
+      : attempt.expiresAt
+    if (this.now() < expiresAt) return attempt
     this.clearAttempt()
     this.publish({ status: 'ready', error: 'Personal Pairing invitation expired' })
     return undefined
   }
 
   private isTerminal(error: unknown, attempt: PreparedMobilePairingAttempt): boolean {
-    if (this.now() >= attempt.expiresAt) return true
     return error instanceof RemoteAccessError
+      || (attempt.transmission === 'prepared' && this.now() >= attempt.expiresAt)
   }
 
   private clearAttempt(): void {
     this.attempt = undefined
     if (this.timer !== undefined) clearTimeout(this.timer)
     this.timer = undefined
+  }
+
+  private completeLinkOwned(link: string): Promise<void> {
+    const retained = this.currentAttempt()
+    if (retained !== undefined && retained.link !== link) {
+      throw new Error('Retry the retained Personal Pairing attempt before using another invitation')
+    }
+    return (async () => {
+      const attempt = retained ?? await this.prepareAttempt(link)
+      await this.runAttempt(attempt)
+    })()
+  }
+
+  private resetAccountScope(): void {
+    this.clearAttempt()
+    this.accountId = undefined
+    this.snapshot = { status: 'ready' }
+  }
+
+  private currentAccountId(): PlatformAccountId {
+    const snapshot = this.options.installation.getSnapshot()
+    if (snapshot.status !== 'signed-in' || snapshot.account === undefined) {
+      throw new Error('Mobile Personal Pairing requires a signed-in Platform Account')
+    }
+    return snapshot.account.id
+  }
+
+  private requireAccountId(): PlatformAccountId {
+    const current = this.currentAccountId()
+    if (this.accountId === undefined) this.accountId = current
+    if (this.accountId !== current) throw new Error('Mobile Personal Pairing Account changed')
+    return current
   }
 
   private publish(snapshot: MobilePairingSnapshot): void {
@@ -244,6 +296,7 @@ export class MobilePairingController implements MobilePairingActions {
   private exclusive(operation: () => Promise<void>): Promise<void> {
     const result = this.serial.then(async () => {
       this.assertActive()
+      this.requireAccountId()
       await operation()
     })
     this.serial = result.then(() => undefined, () => undefined)
@@ -252,5 +305,10 @@ export class MobilePairingController implements MobilePairingActions {
 
   private assertActive(): void {
     if (!this.active) throw new Error('Mobile Personal Pairing is inactive')
+  }
+
+  private assertActiveAccount(): void {
+    this.assertActive()
+    this.requireAccountId()
   }
 }

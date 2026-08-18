@@ -1,6 +1,7 @@
 /** Desktop Host ownership for Settings-only Personal Pairing projection. */
 
 import type { DesktopPairingSnapshot } from '@deepseek-ai/dsh-client-ui-desktop/protocol'
+import type { PlatformAccountId } from '@deepseek-ai/dsh-platform-account'
 import {
   parsePairingChallengeId,
   parsePairingRendezvousId,
@@ -36,7 +37,7 @@ export interface DesktopPairingActions {
 
 /** Real Settings controller construction inputs. */
 export interface DesktopPairingControllerOptions {
-  account: Pick<DesktopAccountActions, 'authorizeCurrentInstallation'>
+  account: Pick<DesktopAccountActions, 'authorizeCurrentInstallation' | 'getSnapshot'>
   transport: RemoteAccessTransport
   randomId?: () => string
   now?: () => number
@@ -55,6 +56,7 @@ export class DesktopPairingController implements DesktopPairingActions {
   private serial: Promise<void> = Promise.resolve()
   private active = false
   private closed = false
+  private accountId: PlatformAccountId | undefined
   private timer: ReturnType<typeof setTimeout> | undefined
 
   /** @param options - signed-in Account authority, Remote Access transport, and id source. */
@@ -160,6 +162,9 @@ export class DesktopPairingController implements DesktopPairingActions {
   async start(): Promise<void> {
     await this.exclusive(async () => {
       if (this.closed) throw new Error('Desktop Personal Pairing is closed')
+      const accountId = this.currentAccountId()
+      if (this.accountId !== accountId) this.resetAccountScope()
+      this.accountId = accountId
       this.active = true
       await this.refresh()
     })
@@ -167,9 +172,9 @@ export class DesktopPairingController implements DesktopPairingActions {
 
   async deactivate(): Promise<void> {
     this.active = false
-    if (this.timer !== undefined) clearTimeout(this.timer)
-    this.timer = undefined
+    this.resetAccountScope()
     await this.serial
+    this.resetAccountScope()
   }
 
   async dispose(): Promise<void> {
@@ -214,6 +219,21 @@ export class DesktopPairingController implements DesktopPairingActions {
       this.fail(error)
       throw error
     }
+  }
+
+  private resetAccountScope(): void {
+    if (this.timer !== undefined) clearTimeout(this.timer)
+    this.timer = undefined
+    this.accountId = undefined
+    this.snapshot = { status: 'ready', enabled: false, pairings: [] }
+  }
+
+  private currentAccountId(): PlatformAccountId {
+    const snapshot = this.options.account.getSnapshot()
+    if (snapshot.status !== 'signed-in' || snapshot.account === undefined) {
+      throw new Error('Desktop Personal Pairing requires a signed-in Platform Account')
+    }
+    return snapshot.account.id
   }
 
   private async listPairings() {

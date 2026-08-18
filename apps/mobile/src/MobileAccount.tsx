@@ -37,7 +37,7 @@ export function MobileAccount({ installation, pairing }: MobileAccountProps): Re
     return () => { stopped = true }
   }, [installation, snapshot.status])
 
-  const signedIn = snapshot.account !== undefined
+  const signedIn = snapshot.status === 'signed-in' && snapshot.account !== undefined
   return (
     <main className={css.page} data-mobile-platform-account={snapshot.status}>
       <header className={css.header}>

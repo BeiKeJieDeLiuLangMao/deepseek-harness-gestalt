@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import css from './MobilePairing.module.css'
 import type { MobilePairingActions } from './personal-pairing-model.ts'
 
-export type { MobilePairingActions, MobilePairingSnapshot } from './personal-pairing-model.ts'
+export type { MobilePairingActions } from './personal-pairing-model.ts'
 
 /**
  * Same-account Mobile pairing flow shown after Platform Account sign-in.
