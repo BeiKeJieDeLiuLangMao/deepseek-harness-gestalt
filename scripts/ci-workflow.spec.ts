@@ -161,10 +161,11 @@ describe('CI workflow', () => {
     if (!Array.isArray(node24Consumers.steps)) {
       throw new TypeError('node-24-consumers must define steps')
     }
-    const hostedPlaywright = node24Consumers.steps.find(
+    const consumerSteps: unknown[] = node24Consumers.steps
+    const hostedPlaywright = consumerSteps.find(
       step => isRecord(step) && step.name === 'Install Playwright Chromium and hosted dependencies',
     )
-    const selfHostedPlaywright = node24Consumers.steps.find(
+    const selfHostedPlaywright = consumerSteps.find(
       step => isRecord(step) && step.name === 'Install Playwright Chromium on the failover VM',
     )
     expect(hostedPlaywright).toMatchObject({ if: hostedCondition })
@@ -176,6 +177,28 @@ describe('CI workflow', () => {
     expect(resolveSupportedLinuxSetupRoute('selfhosted', 'maintainer', 'owner/repository')).toBe('self-hosted')
     expect(resolveSupportedLinuxSetupRoute('selfhosted', 'contributor', 'contributor/fork')).toBe('hosted')
     expect(resolveSupportedLinuxSetupRoute('selfhosted', 'dependabot[bot]', 'owner/repository')).toBe('hosted')
+  })
+
+  it('fetches complete history in pull-request jobs that run release-note verification', () => {
+    const workflow = loadWorkflow('.github/workflows/ci.yml')
+
+    for (const [jobName, command] of [
+      ['node-24-coverage', 'pnpm run check:ci:coverage'],
+      ['windows-native', 'pnpm run check:ci:windows-complete'],
+    ] as const) {
+      const job = workflowJob(workflow, jobName)
+      if (!Array.isArray(job.steps)) throw new TypeError(`${jobName} must define steps`)
+      const steps: unknown[] = job.steps
+
+      expect(steps.some(step => isRecord(step) && step.run === command)).toBe(true)
+      const checkout = steps.find(
+        step => isRecord(step) && typeof step.uses === 'string' && step.uses.startsWith('actions/checkout@'),
+      )
+      if (!isRecord(checkout) || !isRecord(checkout.with)) {
+        throw new TypeError(`${jobName} must define an actions/checkout step with inputs`)
+      }
+      expect(checkout.with['fetch-depth']).toBe(0)
+    }
   })
 
   it('documents standard hosted defaults and provisioned-only self-hosted routes', () => {
