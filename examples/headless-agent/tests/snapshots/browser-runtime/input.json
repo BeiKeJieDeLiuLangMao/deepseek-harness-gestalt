@@ -1,0 +1,14 @@
+{
+  "steps": [
+    {
+      "op": "initialize"
+    },
+    {
+      "op": "newSession"
+    },
+    {
+      "op": "prompt",
+      "text": "Discover the browser tools, run the complete temporary Profile tracer, then reply with exactly BROWSER_RUNTIME_OK."
+    }
+  ]
+}

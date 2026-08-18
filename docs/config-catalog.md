@@ -403,6 +403,34 @@ Depends on: [`LocalConfig`](#deepseek-aidsh-bash-local)
 
 Source: [`packages/shell/bash-sandbox/src/index.ts:35`](../packages/shell/bash-sandbox/src/index.ts)
 
+<a id="deepseek-aidsh-browser-runtime-deterministic"></a>
+
+## `@deepseek-ai/dsh-browser-runtime-deterministic`
+
+```ts config-catalog
+/** Deterministic Provider configuration. */
+export interface Config {
+  /** Prefix used for the four stable opaque identities. */
+  idPrefix?: string
+  /** Complete pages this keyless Provider can navigate to. */
+  pages: DeterministicBrowserPage[]
+}
+
+/** One URL and its deterministic observable and screenshot facts. */
+export interface DeterministicBrowserPage {
+  /** Exact URL accepted by `navigate`. */
+  url: string
+  /** Page title returned by observations. */
+  title: string
+  /** Page text returned by observations. */
+  text: string
+  /** Non-empty canonical base64 whose decoded bytes start with the PNG signature. */
+  screenshotPngBase64: string
+}
+```
+
+Source: [`packages/browser/browser-runtime-deterministic/src/index.ts:51`](../packages/browser/browser-runtime-deterministic/src/index.ts)
+
 <a id="deepseek-aidsh-client-connection"></a>
 
 ## `@deepseek-ai/dsh-client-connection`
@@ -2586,6 +2614,22 @@ export interface Config {
 
 Source: [`packages/shell/tool-bash-persistent/src/index.ts:400`](../packages/shell/tool-bash-persistent/src/index.ts)
 
+<a id="deepseek-aidsh-tool-browser"></a>
+
+## `@deepseek-ai/dsh-tool-browser`
+
+Requires: `browserRuntime` · `tools`
+
+```ts config-catalog
+/** Model-facing Browser tool configuration. */
+export interface Config {
+  /** Cooperative timeout budget in milliseconds for each Browser Runtime call. */
+  readonly timeoutMs?: number
+}
+```
+
+Source: [`packages/browser/tool-browser/src/index.ts:21`](../packages/browser/tool-browser/src/index.ts)
+
 <a id="deepseek-aidsh-tool-fs"></a>
 
 ## `@deepseek-ai/dsh-tool-fs`
@@ -3342,6 +3386,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 Abstract service classes — a deployment loads a concrete implementation package instead ([capability seams](../.agents/notes/implemented/architecture/2026-06-13-capability-seams.md)).
 
 - `@deepseek-ai/dsh-attachment` — abstract `AttachmentStore` ([`packages/attachment/attachment/src/index.ts`](../packages/attachment/attachment/src/index.ts))
+- `@deepseek-ai/dsh-browser-runtime` — abstract `BrowserRuntime` ([`packages/browser/browser-runtime/src/index.ts`](../packages/browser/browser-runtime/src/index.ts))
 - `@deepseek-ai/dsh-code-runtime` — abstract `CodeRuntime` ([`packages/code-runtime/code-runtime/src/index.ts`](../packages/code-runtime/code-runtime/src/index.ts))
 - `@deepseek-ai/dsh-compaction` — abstract `CompactionEngine` ([`packages/compaction/compaction/src/index.ts`](../packages/compaction/compaction/src/index.ts))
 - `@deepseek-ai/dsh-credentials` — abstract `CredentialProvider` ([`packages/credentials/credentials/src/index.ts`](../packages/credentials/credentials/src/index.ts))

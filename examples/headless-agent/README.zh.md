@@ -17,6 +17,8 @@ pnpm dsh --profile headless "fix the failing test in this workspace"
 
 快照套件通过 [`tests/fixtures/headless-driver.ts`](tests/fixtures/headless-driver.ts) 运行本目录的配置。这个未导出且仅供测试使用的进程会在结果记录之前，以 JSONL 发出规范会话事件。该事件流属于测试基础设施，不是受支持的 CLI（命令行界面）输出格式。子会话只通过父会话的工具事件和结果对外显示。[`deferred-tool-search.cordis.snapshot.yml`](deferred-tool-search.cordis.snapshot.yml) 把随仓交付的 headless 主干与真实 deferred MCP 服务器组装起来；其快照会在同一 JSONL Session 上释放并重新加载 Loader 树，以证明发现、续轮、执行与请求重建。
 
+[`browser-runtime.cordis.snapshot.yml`](browser-runtime.cordis.snapshot.yml) 是无密钥可运行 Browser Runtime tracer。它发现六个 deferred Browser 工具，创建一个临时 Profile 与标签页，依次导航、观察、截图、聚焦与关闭，然后重新加载同一个 Session，以证明 schema 与已渲染 Browser 事实可以重建。
+
 ## E2B POC overlay
 
 [`e2b.cordis.yml`](e2b.cordis.yml) 使用一个共享 E2B 沙箱替换本地文件系统与子进程提供方，同时保留 `dsh-bash-local` 和相同的面向模型工具。请在 git 忽略的根目录 `.env` 中，将 `E2B_API_KEY` 与 `DEEPSEEK_API_KEY` 放在一起，然后运行凭据门控的实机组合测试；它在同一个沙箱中驱动 FS、Bash、PTY 和 LSP，并证明沙箱最终被删除：

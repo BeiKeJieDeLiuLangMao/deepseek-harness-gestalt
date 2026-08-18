@@ -505,6 +505,15 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Producers (background bash, PTY sends, and subagent delegations) register running work; tool-jobs is the model-facing controller that reads, lists, and kills it; jobs-local is the process-local registry.',
   },
   {
+    key: 'browserRuntime',
+    pkg: 'browser',
+    title: 'Browser Runtime capability',
+    mode: 'seam',
+    implementations: ['browser-runtime-deterministic'],
+    consumers: ['tool-browser'],
+    note: 'Opaque Profile, Workspace, browser, and tab identities stay behind ctx.browserRuntime; the deferred Consumer uses ordinary discovery, results, and presentation.',
+  },
+  {
     key: 'web',
     pkg: 'web',
     title: 'Web access provider registry',

@@ -385,6 +385,55 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'browserRuntime',
+    summary: 'Browser Runtime Service Definition.',
+    description: 'Browser Runtime Service Definition. Providers serialize every operation, own target lifecycles, and reject stale mutations. Callers retain returned targets and revisions but do not dispose Provider resources directly. A method resolves only after its state commit and synchronous post-commit notification attempts; asynchronous observers are not awaited.',
+    methods: [
+      {
+        signature: 'abstract create(request: BrowserCreateRequest): Promise<BrowserPageState>',
+        description: 'Create one temporary Profile, Workspace, browser instance, and tab.',
+        parameters: [{ name: 'request', description: 'Temporary-profile request and cancellation signal.' }],
+        returns: 'initial open page state at revision zero; its target addresses every later operation in this lifecycle.',
+        throws: ['`BrowserRuntimeError` with `BROWSER_ABORTED` when cancellation wins, `BROWSER_CAPACITY` when this Provider cannot admit another lifecycle, or `BROWSER_DISPOSED` after teardown starts.'],
+      },
+      {
+        signature: 'abstract navigate(request: BrowserNavigateRequest): Promise<BrowserPageState>',
+        description: 'Navigate the addressed tab after checking its expected revision.',
+        parameters: [{ name: 'request', description: 'Target, expected revision, URL, and cancellation signal.' }],
+        returns: 'committed open page state whose revision replaces the caller\'s prior revision.',
+        throws: ['`BrowserRuntimeError` with `BROWSER_ABORTED`, `BROWSER_DISPOSED`, `BROWSER_NOT_FOUND`, `BROWSER_NOT_OPEN`, `BROWSER_REVISION_CONFLICT`, or `BROWSER_UNKNOWN_URL` when the corresponding precondition fails before commit.'],
+      },
+      {
+        signature: 'abstract observe(request: BrowserObserveRequest): Promise<BrowserRuntimeState>',
+        description: 'Observe the latest open or closed state for one target.',
+        parameters: [{ name: 'request', description: 'Target and cancellation signal.' }],
+        returns: 'current state after earlier queued operations, without changing its revision.',
+        throws: ['`BrowserRuntimeError` with `BROWSER_ABORTED`, `BROWSER_DISPOSED`, or `BROWSER_NOT_FOUND`; a closed target is returned rather than rejected.'],
+      },
+      {
+        signature: 'abstract screenshot(request: BrowserObserveRequest): Promise<BrowserScreenshot>',
+        description: 'Capture PNG bytes for the addressed open tab.',
+        parameters: [{ name: 'request', description: 'Target and cancellation signal.' }],
+        returns: 'screenshot bytes and depicted page facts from one serialized read at the current revision.',
+        throws: ['`BrowserRuntimeError` with `BROWSER_ABORTED`, `BROWSER_DISPOSED`, `BROWSER_NOT_FOUND`, `BROWSER_NOT_OPEN`, or `BROWSER_UNKNOWN_URL` when the Provider cannot depict the addressed open page.'],
+      },
+      {
+        signature: 'abstract focus(request: BrowserMutationRequest): Promise<BrowserPageState>',
+        description: 'Focus the addressed tab after checking its expected revision.',
+        parameters: [{ name: 'request', description: 'Target, expected revision, and cancellation signal.' }],
+        returns: 'committed focused page state whose revision replaces the caller\'s prior revision.',
+        throws: ['`BrowserRuntimeError` with `BROWSER_ABORTED`, `BROWSER_DISPOSED`, `BROWSER_NOT_FOUND`, `BROWSER_NOT_OPEN`, or `BROWSER_REVISION_CONFLICT` when the corresponding precondition fails before commit.'],
+      },
+      {
+        signature: 'abstract close(request: BrowserMutationRequest): Promise<BrowserClosedState>',
+        description: 'Close the addressed tab and its temporary Profile after checking its expected revision.',
+        parameters: [{ name: 'request', description: 'Target, expected revision, and cancellation signal.' }],
+        returns: 'terminal close receipt retained by the Provider for later observation.',
+        throws: ['`BrowserRuntimeError` with `BROWSER_ABORTED`, `BROWSER_DISPOSED`, `BROWSER_NOT_FOUND`, `BROWSER_NOT_OPEN`, or `BROWSER_REVISION_CONFLICT` when the corresponding precondition fails before commit.'],
+      },
+    ],
+  },
+  {
     key: 'clientModules',
     summary: 'The web plugin table service: incremental `dsh.client` scan + wire composition + bundle route + index tap.',
     description: 'The web plugin table service: incremental `dsh.client` scan + wire composition + bundle route + index tap. Construction runs the activation scan synchronously — a malformed declaration or missing bundle among the already-loaded entries aggregates into one loud throw (FAILED fiber; the boot activation audit reports it).',
@@ -2451,6 +2500,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [{ name: 'req', description: 'the pending decision (agent, tool identity, reason, signal).' }],
   },
   {
+    name: 'browser/runtime-state',
+    mode: 'emit',
+    signature: '\'browser/runtime-state\'(state: BrowserRuntimeState): void',
+    summary: 'Post-commit Browser Runtime lifecycle notification.',
+    description: 'Post-commit Browser Runtime lifecycle notification. Providers contain synchronous throws and asynchronous rejections from each listener, continue the fan-out, and never change a committed operation\'s outcome; returned promises are observed but not awaited.',
+    parameters: [{ name: 'state', description: 'Complete committed state after the operation.' }],
+  },
+  {
     name: 'commands/change',
     mode: 'emit',
     signature: '\'commands/change\'(): void',
@@ -2949,6 +3006,58 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'Branded',
     declaration: 'export type Branded<B extends string> = string & {\n    readonly [BRAND]: B;\n};',
+  },
+  {
+    name: 'BrowserClosedState',
+    declaration: 'export interface BrowserClosedState {\n    readonly status: \'closed\';\n    readonly target: BrowserTarget;\n    readonly revision: number;\n}',
+  },
+  {
+    name: 'BrowserCreateRequest',
+    declaration: 'export interface BrowserCreateRequest {\n    readonly profile: \'temporary\';\n    readonly signal?: AbortSignal;\n}',
+  },
+  {
+    name: 'BrowserInstanceId',
+    declaration: 'export type BrowserInstanceId = Branded<\'BrowserInstanceId\'>;',
+  },
+  {
+    name: 'BrowserMutationRequest',
+    declaration: 'export interface BrowserMutationRequest {\n    readonly target: BrowserTarget;\n    readonly expectedRevision: number;\n    readonly signal?: AbortSignal;\n}',
+  },
+  {
+    name: 'BrowserNavigateRequest',
+    declaration: 'export interface BrowserNavigateRequest extends BrowserMutationRequest {\n    readonly url: string;\n}',
+  },
+  {
+    name: 'BrowserObserveRequest',
+    declaration: 'export interface BrowserObserveRequest {\n    readonly target: BrowserTarget;\n    readonly signal?: AbortSignal;\n}',
+  },
+  {
+    name: 'BrowserPageState',
+    declaration: 'export interface BrowserPageState {\n    readonly status: \'open\';\n    readonly target: BrowserTarget;\n    readonly revision: number;\n    readonly url: string;\n    readonly title: string;\n    readonly text: string;\n    readonly focused: boolean;\n}',
+  },
+  {
+    name: 'BrowserProfileId',
+    declaration: 'export type BrowserProfileId = Branded<\'BrowserProfileId\'>;',
+  },
+  {
+    name: 'BrowserRuntimeState',
+    declaration: 'export type BrowserRuntimeState = BrowserPageState | BrowserClosedState;',
+  },
+  {
+    name: 'BrowserScreenshot',
+    declaration: 'export interface BrowserScreenshot {\n    readonly target: BrowserTarget;\n    readonly revision: number;\n    readonly url: string;\n    readonly title: string;\n    readonly mediaType: \'image/png\';\n    readonly data: string;\n}',
+  },
+  {
+    name: 'BrowserTabId',
+    declaration: 'export type BrowserTabId = Branded<\'BrowserTabId\'>;',
+  },
+  {
+    name: 'BrowserTarget',
+    declaration: 'export interface BrowserTarget {\n    readonly profileId: BrowserProfileId;\n    readonly workspaceId: BrowserWorkspaceId;\n    readonly browserId: BrowserInstanceId;\n    readonly tabId: BrowserTabId;\n}',
+  },
+  {
+    name: 'BrowserWorkspaceId',
+    declaration: 'export type BrowserWorkspaceId = Branded<\'BrowserWorkspaceId\'>;',
   },
   {
     name: 'CancelOptions',
