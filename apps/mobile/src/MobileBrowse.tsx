@@ -5,6 +5,7 @@ import {
   pageCompanionHistory,
   type CompanionSessionSummary,
 } from './companion-history.ts'
+import { MobileConversation } from './MobileConversation.tsx'
 import css from './MobileBrowse.module.css'
 
 /** Mobile Companion browse props. */
@@ -29,6 +30,9 @@ export function MobileBrowse({ desktopName, connection, sessions }: MobileBrowse
   const open = sessions.find(session => session.id === openId)
 
   if (open !== undefined) {
+    if (open.blocks !== undefined) {
+      return <MobileConversation title={open.title} onBack={() => { setOpenId(undefined) }} blocks={open.blocks} />
+    }
     return (
       <section className={css.page} data-mobile-browse="conversation">
         <header className={css.header}>

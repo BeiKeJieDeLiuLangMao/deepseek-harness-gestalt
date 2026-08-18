@@ -1,5 +1,7 @@
 /** Companion Session list projection shared by Mobile browse and keyless equality proofs. */
 
+import type { MobileContentBlock } from './mobile-content.ts'
+
 /** One Session row in the Mobile Companion list. */
 export interface CompanionSessionSummary {
   /** Opaque Session identity. */
@@ -16,6 +18,8 @@ export interface CompanionSessionSummary {
   live?: boolean
   /** Desktop-confirmed transcript lines when the Session is open. */
   transcript?: readonly string[]
+  /** Structured conversation blocks for the Mobile renderer. */
+  blocks?: readonly MobileContentBlock[]
 }
 
 /** Grouped Mobile list: named Workspace/project buckets plus Ungrouped. */
@@ -89,5 +93,6 @@ export function projectMobileCompanionHistory(
     summary: session.summary,
     ...(session.live === undefined ? {} : { live: session.live }),
     ...(session.transcript === undefined ? {} : { transcript: [...session.transcript] }),
+    ...(session.blocks === undefined ? {} : { blocks: session.blocks }),
   }))
 }
