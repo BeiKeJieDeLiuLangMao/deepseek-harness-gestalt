@@ -45,7 +45,7 @@ MCP 客户端桥接插件：连接外部 [Model Context Protocol](https://modelc
 | `headers` | http | 否 | 额外标头（例如认证 token） |
 | `toolCallTimeoutMs` | 两者 | 否 | 每次 `callTool` 调用的超时（默认 60000） |
 | `failOnStartupError` | 两者 | 否 | 初始连接或工具同步失败时拒绝插件激活（默认 `false`） |
-| `deferLoading` | 两者 | 否 | 不在初始请求中放入本服务器 schema，而通过 `tool_search` 返回匹配项（默认 `false`；要求启用 `dsh-tools.toolSearch`） |
+| `deferLoading` | 两者 | 否 | 不在初始请求中放入本服务器 schema，而通过 `tool_search` 返回匹配项（默认 `false`；要求启用 `dsh-tools.toolSearch`，缺失时会在连接前拒绝加载插件） |
 | `reconnect.enabled` | 两者 | 否 | 连接丢失后自动重新连接（默认 `true`） |
 | `reconnect.initialDelayMs` | 两者 | 否 | 首次重连延迟（毫秒）；每次连续失败尝试翻倍（默认 500） |
 | `reconnect.maxDelayMs` | 两者 | 否 | 退避上限（毫秒）；同时也是重置尝试预算所需的正常运行时长（默认 30000） |

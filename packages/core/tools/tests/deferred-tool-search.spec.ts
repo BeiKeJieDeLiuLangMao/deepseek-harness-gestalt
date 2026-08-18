@@ -122,6 +122,118 @@ describe('deferred tool search', () => {
     }])
   })
 
+  it.each([
+    [{ query: 42 }, 'query type'],
+    [{ query: '' }, 'empty query'],
+    [{ query: '   ' }, 'blank query'],
+    [{ query: 'weather', limit: '3' }, 'limit type'],
+    [{ query: 'weather', limit: -1 }, 'negative limit'],
+    [{ query: 'weather', limit: 0 }, 'zero limit'],
+    [{ query: 'weather', limit: 1.5 }, 'fractional limit'],
+    [{ query: 'weather', limit: 999 }, 'limit above configured maximum'],
+  ] as const)('rejects invalid model search arguments: %s', async (arguments_, _case) => {
+    const ctx = await mount({ toolSearch: { maxResults: 3, defaultLimit: 2 } })
+    for (let index = 0; index < 8; index += 1) {
+      ctx.tools.register(tool(`weather_${index}`, `Weather forecast source ${index}`, true))
+    }
+
+    await expect(ctx.tools.execute({
+      callId: CallId('invalid-search'),
+      name: 'tool_search',
+      arguments: arguments_,
+      signal,
+    })).resolves.toMatchObject({
+      isError: true,
+      error: { info: { code: 'INVALID_ARGS' } },
+    })
+  })
+
+  it('enforces the configured search result cap at the model boundary', async () => {
+    const ctx = await mount({ toolSearch: { maxResults: 3, defaultLimit: 2 } })
+    for (let index = 0; index < 8; index += 1) {
+      ctx.tools.register(tool(`weather_${index}`, `Weather forecast source ${index}`, true))
+    }
+
+    const result = await ctx.tools.execute({
+      callId: CallId('capped-search'),
+      name: 'tool_search',
+      arguments: { query: 'weather', limit: 3 },
+      signal,
+    })
+
+    expect(result).toMatchObject({ isError: false })
+    if (result.isError) throw new Error('expected tool search success')
+    expect(result.loadedTools).toHaveLength(3)
+  })
+
+  it.each(['value', 'content', 'error'] as const)(
+    'clears discovery metadata when post-execute replaces the committed %s',
+    async (replacement) => {
+      const ctx = await mount()
+      ctx.tools.register(tool('mcp__weather__forecast', 'Forecast weather by city', true))
+      ctx.on('tools/post-execute', async () => {
+        if (replacement === 'value') return { kind: 'accept', value: [] }
+        if (replacement === 'content') {
+          return { kind: 'accept', content: [{ type: 'text' as const, text: 'policy replaced search content' }] }
+        }
+        return { kind: 'block', feedback: [{ type: 'text' as const, text: 'search result blocked' }] }
+      })
+
+      const result = await ctx.tools.execute({
+        callId: CallId(`post-replaced-${replacement}`),
+        name: 'tool_search',
+        arguments: { query: 'weather forecast' },
+        signal,
+      })
+
+      expect('loadedTools' in result ? result.loadedTools : undefined).toBeUndefined()
+      if (replacement === 'content') {
+        expect(result).toMatchObject({
+          isError: false,
+          value: [{ name: 'mcp__weather__forecast' }],
+          content: [{ type: 'text', text: 'policy replaced search content' }],
+        })
+      } else if (replacement === 'error') {
+        expect(result).toMatchObject({ isError: true, error: { message: 'search result blocked' } })
+      } else {
+        expect(result).toMatchObject({ isError: false, value: [], content: [{ type: 'text', text: '[]' }] })
+      }
+    },
+  )
+
+  it.each(['value', 'error'] as const)(
+    'clears discovery metadata when around-execute replaces the committed %s',
+    async (replacement) => {
+      const ctx = await mount()
+      ctx.tools.register(tool('mcp__weather__forecast', 'Forecast weather by city', true))
+      ctx.on('tools/execute', async (_exec, next) => {
+        await next()
+        if (replacement === 'error') {
+          return {
+            isError: true as const,
+            error: { message: 'around policy rejected search' },
+            content: [{ type: 'text' as const, text: 'around policy rejected search' }],
+          }
+        }
+        return {
+          isError: false as const,
+          value: [],
+          content: [{ type: 'text' as const, text: 'around replacement' }],
+        }
+      })
+
+      const result = await ctx.tools.execute({
+        callId: CallId(`around-replaced-${replacement}`),
+        name: 'tool_search',
+        arguments: { query: 'weather forecast' },
+        signal,
+      })
+
+      expect('loadedTools' in result ? result.loadedTools : undefined).toBeUndefined()
+      expect(result.isError).toBe(replacement === 'error')
+    },
+  )
+
   it('reconstructs discovered schemas from the durable result on the next request', async () => {
     const ctx = await mount()
     ctx.tools.register(tool('mcp__weather__forecast', 'Forecast weather by city', true))
@@ -238,5 +350,72 @@ describe('deferred tool search', () => {
     expect(assembly.tools.map(schema => schema.name)).toEqual(['run_code'])
     expect(assembly.sections.find(section => section.name === 'tools:sdk')?.text)
       .toContain('mcp__weather__forecast')
+
+    let nextRunBindings: string[] = []
+    runtime.behavior = async (request) => {
+      nextRunBindings = Object.keys(request.bindings[0]!.functions).sort()
+      const forecast = request.bindings[0]!.functions.mcp__weather__forecast
+      if (forecast === undefined) throw new Error('weather binding missing from reconstructed program')
+      const value = await forecast({ value: 'Shanghai' })
+      return { logs: [], value }
+    }
+    const nextRun = await ctx.tools.execute({
+      callId: CallId('run-code-weather'),
+      name: 'run_code',
+      arguments: { code: 'await tools.mcp__weather__forecast({ value: "Shanghai" })', description: 'Read the weather forecast' },
+      agent,
+      signal,
+    })
+    expect(nextRun).toMatchObject({ isError: false })
+    expect(nextRunBindings).toEqual(['mcp__weather__forecast', 'tool_search'])
+  })
+
+  it('removes a reconstructed Code Mode binding when eligibility becomes stale', async () => {
+    const ctx = await mount({ mode: 'code', toolSearch: {} })
+    ctx.tools.register(tool('mcp__weather__forecast', 'Forecast weather by city', true))
+    ctx.tools.register(tool('mcp__calendar__list', 'List calendar events', true))
+    const session = Session.create(SessionId('deferred-code-mode-stale'))
+    const { agent, scope } = await scopedAgent(ctx, session)
+    const removeWeatherEligibility = scope.ctx.tools.allowEligible(['mcp__weather__forecast'])
+    const runtime = ctx.codeRuntime as FakeRuntime
+    runtime.behavior = async (request) => {
+      await request.bindings[0]!.functions.tool_search?.({ query: 'weather forecast' })
+      return { logs: [] }
+    }
+    const search = await ctx.tools.execute({
+      callId: CallId('run-code-stale-search'),
+      name: 'run_code',
+      arguments: { code: 'await tools.tool_search({ query: "weather forecast" })', description: 'Find the weather tool' },
+      agent,
+      signal,
+    })
+    if (search.isError) throw new Error('expected run_code search success')
+    session.append('tool/result', {
+      turn: 1,
+      step: 1,
+      message: createToolResultMessage({
+        callId: CallId('run-code-stale-search'),
+        content: search.content,
+        isError: false,
+        loadedTools: search.loadedTools ?? [],
+      }),
+    }, { surfaceOp: 'append' })
+
+    removeWeatherEligibility()
+    scope.ctx.tools.allowEligible(['mcp__calendar__list'])
+    let nextRunBindings: string[] = []
+    runtime.behavior = async (request) => {
+      nextRunBindings = Object.keys(request.bindings[0]!.functions).sort()
+      return { logs: [] }
+    }
+    await ctx.tools.execute({
+      callId: CallId('run-code-after-stale'),
+      name: 'run_code',
+      arguments: { code: 'return Object.keys(tools)', description: 'Inspect callable tools' },
+      agent,
+      signal,
+    })
+
+    expect(nextRunBindings).toEqual(['tool_search'])
   })
 })

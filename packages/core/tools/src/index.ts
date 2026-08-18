@@ -20,13 +20,14 @@ import type { CodeRuntime } from '@deepseek-ai/dsh-code-runtime'
 // augmentation. The seam stays optional at runtime — see `serviceAsk`.
 import type {} from '@deepseek-ai/dsh-user-approval'
 import type { ToolCallView, ToolResultView } from './presentation.ts'
-import { assertSupportedJsonSchema, validateJsonSchemaValue } from './json-schema.ts'
+import { assertSupportedJsonSchema, isPlainJsonRecord, validateJsonSchemaValue } from './json-schema.ts'
 import type { JsonSchemaNode } from './json-schema.ts'
 import { createRunCodeTool, RUN_CODE_NAME, SDK_SECTION_ORDER } from './code-mode.ts'
 import type { CodeSdkLanguage } from './code-mode.ts'
 import { renderToolsSdk } from './ts-types.ts'
 import type { ToolSdkSchema } from './ts-types.ts'
 import { renderToolsSdkPy } from './py-types.ts'
+import { ToolArgsError } from './schema.ts'
 
 /**
  * Language → SDK-section renderer. The registry looks up the loaded
@@ -62,6 +63,37 @@ const SDK_RENDERERS: Record<string, (schemas: ToolSdkSchema[]) => string> = {
   typescript: renderToolsSdk,
   python: renderToolsSdkPy,
 } satisfies Record<CodeSdkLanguage, (schemas: ToolSdkSchema[]) => string>
+
+/** Validate and resolve one model-authored deferred-tool search request. */
+function resolveToolSearchArguments(
+  value: unknown,
+  config: ResolvedToolSearchConfig,
+): { query: string; limit: number } {
+  const violations: string[] = []
+  if (!isPlainJsonRecord(value)) {
+    throw new ToolArgsError(['must be an object'])
+  }
+  for (const key of Object.keys(value)) {
+    if (key !== 'query' && key !== 'limit') violations.push(`unexpected property "${key}"`)
+  }
+  const query = value.query
+  if (typeof query !== 'string') {
+    violations.push('"query" must be a string')
+  } else if (query.trim().length === 0) {
+    violations.push('"query" must contain non-whitespace text')
+  }
+  const limit = value.limit
+  if (limit !== undefined && (!Number.isInteger(limit) || typeof limit !== 'number')) {
+    violations.push('"limit" must be an integer')
+  } else if (typeof limit === 'number' && (limit < 1 || limit > config.maxResults)) {
+    violations.push(`"limit" must be between 1 and ${config.maxResults}`)
+  }
+  if (violations.length > 0) throw new ToolArgsError(violations)
+  return {
+    query: typeof query === 'string' ? query : '',
+    limit: typeof limit === 'number' ? limit : config.defaultLimit,
+  }
+}
 
 /** Compare two normalized optional string lists. */
 function sameStringList(
@@ -1047,6 +1079,7 @@ export class ToolRuntime extends Service {
       peekRuntime: () => this.ctx.get('codeRuntime'),
       maxParallel: this.maxParallelSubCalls,
       shapeDispatchLog: dispatch => this.shapeDispatchLog(dispatch),
+      bindingSchemas: agent => this.codeBindingSchemas(agent),
       recordLoadedTools: (exec, schemas) => {
         const loaded = new Map((this.loadedTools.get(exec) ?? []).map(schema => [schema.name, schema]))
         for (const schema of schemas) loaded.set(schema.name, schema)
@@ -1097,7 +1130,7 @@ export class ToolRuntime extends Service {
         render: (_args, value) => [{ type: 'text', text: JSON.stringify(value, null, 2) }],
       },
       execute: (args, exec) => {
-        const { query, limit = config.defaultLimit } = args as { query: string; limit?: number }
+        const { query, limit } = resolveToolSearchArguments(args, config)
         const definitions = [...this.view(exec.agent).visible.values()]
           .filter(definition => definition.deferLoading === true)
         const byName = new Map(definitions.map(definition => [definition.name, definition]))
@@ -1177,7 +1210,7 @@ export class ToolRuntime extends Service {
   private wireSchemas(context: AssembleContext): ToolProviderResult {
     const view = this.view(context.scope)
     const mode = this.modeFor(context.scope)
-    const loaded = this.loadedSchemas(context, view)
+    const loaded = this.loadedSchemas(context.agent, view)
     if (mode === 'native') {
       const schemas = [...view.visible.values()]
         .filter(definition => definition.deferLoading !== true)
@@ -1205,8 +1238,8 @@ export class ToolRuntime extends Service {
   }
 
   /** Recover discovered schemas from durable history and recheck live eligibility. */
-  private loadedSchemas(context: AssembleContext, view: ToolView): ToolSchema[] {
-    const messages = context.agent?.session.deriveMessages()
+  private loadedSchemas(agent: Agent | undefined, view: ToolView): ToolSchema[] {
+    const messages = agent?.session.deriveMessages()
     if (messages === undefined) return []
     const loaded = new Map<string, ToolSchema>()
     for (const message of messages) {
@@ -1591,6 +1624,15 @@ export class ToolRuntime extends Service {
       .map(definition => this.schemaOf(definition, true))
   }
 
+  /** Project the live schemas that one Code Mode program may bind. */
+  private codeBindingSchemas(agent: Agent | undefined): ToolSchema[] {
+    const view = this.view(agent)
+    return [...view.visible.values()]
+      .filter(definition => definition.name !== RUN_CODE_NAME && definition.deferLoading !== true)
+      .map(definition => this.schemaOf(definition, true))
+      .concat(this.loadedSchemas(agent, view))
+  }
+
   /**
    * Project the current eligible end-tool catalog, including deferred schemas
    * and excluding reserved model-presentation infrastructure.
@@ -1606,7 +1648,7 @@ export class ToolRuntime extends Service {
   /** Project visible callable tools onto the generated Code Mode SDK contract. */
   private sdkSchemas(context: AssembleContext): ToolSdkSchema[] {
     const view = this.view(context.scope)
-    const loaded = new Map(this.loadedSchemas(context, view).map(schema => [schema.name, schema]))
+    const loaded = new Map(this.loadedSchemas(context.agent, view).map(schema => [schema.name, schema]))
     return [...view.visible.values()]
       .filter(definition => definition.name !== RUN_CODE_NAME && definition.deferLoading !== true)
       .map((definition): ToolSdkSchema => {
@@ -2051,7 +2093,7 @@ export class ToolRuntime extends Service {
     const finalizeContent = this.contentFinalizers.get(exec)
     if (finalizeContent === undefined) return result
     const content = finalizeContent(exec, result)
-    return content === undefined ? result : { ...result, content }
+    return content === undefined ? result : this.withoutLoadedTools({ ...result, content })
   }
 
   /** Notify observers without exposing a mutation or error channel into the outcome. */
@@ -2168,17 +2210,21 @@ export class ToolRuntime extends Service {
       }
       const tool = this.resolveExecution(exec.name, exec.agent, exec.parent !== undefined)
       if (tool === undefined) throw new ToolNotFoundError(exec.name)
-      const replaced = this.createSuccessResult(exec, tool, decision.value)
+      const replaced = this.createSuccessResult(exec, tool, decision.value, false)
       return this.markCanonical(exec, {
         ...replaced,
         ...additionalContexts.length > 0 ? { additionalContexts } : {},
       })
     }
-    return this.markCanonical(exec, {
+    const accepted = {
       ...result,
       ...decision.content !== undefined ? { content: decision.content } : {},
       ...additionalContexts.length > 0 ? { additionalContexts } : {},
-    })
+    }
+    return this.markCanonical(
+      exec,
+      decision.content === undefined ? accepted : this.withoutLoadedTools(accepted),
+    )
   }
 
   /** Registry-normalized results and the exact dispatch that validated each value. */
@@ -2191,7 +2237,12 @@ export class ToolRuntime extends Service {
   }
 
   /** Snapshot, validate, render, and optionally project one successful body value. */
-  private createSuccessResult(exec: ToolExecution, tool: ToolDefinition, candidate: unknown): ToolExecutionSuccess {
+  private createSuccessResult(
+    exec: ToolExecution,
+    tool: ToolDefinition,
+    candidate: unknown,
+    includeLoadedTools = true,
+  ): ToolExecutionSuccess {
     const detached = snapshotToolValue(tool.name, candidate)
     const violations = validateJsonSchemaValue(tool.output.schema, detached, 'value')
     if (violations.length > 0) throw new ToolOutputError(tool.name, violations)
@@ -2214,7 +2265,7 @@ export class ToolRuntime extends Service {
       meta = snapshotProjection(tool.name, 'presentationMeta', projected)
     }
     const concludesTurn = this.concludingExecutions.has(exec)
-    const loadedTools = this.loadedTools.get(exec)
+    const loadedTools = includeLoadedTools ? this.loadedTools.get(exec) : undefined
     return this.markCanonical(exec, this.materializeFinalResult({
       isError: false,
       value,
@@ -2239,11 +2290,19 @@ export class ToolRuntime extends Service {
     }
     const tool = this.resolveExecution(exec.name, exec.agent, exec.parent !== undefined)
     if (tool === undefined) throw new ToolNotFoundError(exec.name)
-    const normalized = this.createSuccessResult(exec, tool, result.value)
+    const normalized = this.createSuccessResult(exec, tool, result.value, false)
     return this.markCanonical(exec, {
       ...normalized,
       ...result.additionalContexts !== undefined ? { additionalContexts: result.additionalContexts } : {},
     })
+  }
+
+  /** Remove discovery metadata when a policy replaces a model-visible projection. */
+  private withoutLoadedTools(result: ToolExecutionResult): ToolExecutionResult {
+    if (result.isError || result.loadedTools === undefined) return result
+    const { loadedTools: discarded, ...retained } = result
+    void discarded
+    return retained
   }
 
   /** Materialize the authoritative commit outcome once, immediately before `tools/result`. */

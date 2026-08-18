@@ -1,0 +1,56 @@
+# Keyless real-composition proof for deferred MCP schema discovery. The fixed
+# Session id lets the normal snapshot driver dispose the Loader tree, boot it
+# again over the same JSONL root, and continue from the persisted result.
+- id: agent-spine
+  name: '@deepseek-ai/dsh-agent-spine-demo'
+  config:
+    agents:
+      - id: main
+        sessionId: deferred-tool-search-snapshot
+        provider: snapshot
+        model: snapshot
+        cwd: !!js process.cwd()
+    tools:
+      mode: native
+      toolSearch:
+        defaultLimit: 3
+        maxResults: 5
+    workspaceContext: false
+    skills:
+      enabled: false
+    toolBash: false
+    toolJobs: false
+    goals: false
+    persona: |
+      Follow the replayed deferred-tool discovery scenario exactly.
+
+- id: persistence
+  name: '@deepseek-ai/dsh-session-persistence-jsonl'
+  config:
+    root: './.sessions'
+    compression: none
+
+- id: mcp-everything
+  name: '@deepseek-ai/dsh-mcp-client'
+  config:
+    transport: stdio
+    serverName: everything
+    command: !!js process.env.DSH_MCP_SERVER_EVERYTHING ?? 'mcp-server-everything'
+    args: [stdio]
+    env: {}
+    cwd: ''
+    toolCallTimeoutMs: 30000
+    failOnStartupError: true
+    deferLoading: true
+    reconnect:
+      enabled: false
+
+- id: llm-replay
+  name: '@deepseek-ai/dsh-llm-replay'
+  config:
+    file: !!js process.env.DSH_SNAPSHOT_FILE
+    providers:
+      - id: snapshot
+        models:
+          - id: snapshot
+            contextWindow: 128000

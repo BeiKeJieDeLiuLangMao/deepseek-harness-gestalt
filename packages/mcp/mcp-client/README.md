@@ -45,7 +45,7 @@ The model sees `mcp__github__create_issue`, `mcp__web__search`, … — the same
 | `headers` | http | no | Extra headers (e.g. auth tokens) |
 | `toolCallTimeoutMs` | both | no | Timeout per `callTool` invocation (default 60000) |
 | `failOnStartupError` | both | no | Reject plugin activation when initial connection or tool synchronization fails (default `false`) |
-| `deferLoading` | both | no | Keep this server's schemas out of the initial request and return matches through `tool_search` (default `false`; requires `dsh-tools.toolSearch`) |
+| `deferLoading` | both | no | Keep this server's schemas out of the initial request and return matches through `tool_search` (default `false`; requires `dsh-tools.toolSearch` and fails plugin load before connection when absent) |
 | `reconnect.enabled` | both | no | Reconnect automatically after a lost connection (default `true`) |
 | `reconnect.initialDelayMs` | both | no | First reconnect delay in ms; doubles per consecutive failed attempt (default 500) |
 | `reconnect.maxDelayMs` | both | no | Backoff ceiling in ms; also the uptime after which the attempt budget resets (default 30000) |

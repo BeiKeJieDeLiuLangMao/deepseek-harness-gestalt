@@ -43,6 +43,14 @@ const credentialsConfigPath = fileURLToPath(new URL('../credentials.cordis.snaps
 // never dialed either way, because a supplied-but-unusable key fails credential
 // resolution exactly where an absent one does.
 const invalidCredentialScenarioDir = join(snapshotsDir, 'invalid-credential')
+const deferredToolSearchScenarioDir = join(snapshotsDir, 'deferred-tool-search')
+const deferredToolSearchSessionFixture = join(deferredToolSearchScenarioDir, 'session.jsonl')
+const deferredToolSearchResumeFixture = join(deferredToolSearchScenarioDir, 'resume.jsonl')
+const deferredToolSearchStreamExpected = join(deferredToolSearchScenarioDir, 'stream-json.expected.jsonl')
+const deferredToolSearchConfigPath = fileURLToPath(new URL('../deferred-tool-search.cordis.snapshot.yml', import.meta.url))
+const mcpServerEverythingBin = fileURLToPath(
+  new URL('../../../node_modules/.pnpm/node_modules/.bin/mcp-server-everything', import.meta.url),
+)
 const ralphScenarioDir = join(snapshotsDir, 'ralph-loop')
 const ralphConfigPath = fileURLToPath(new URL('../ralph.cordis.snapshot.yml', import.meta.url))
 const settlementScenarioDir = join(snapshotsDir, 'subagent-settlement')
@@ -513,6 +521,73 @@ describe('headless stream-json snapshots', () => {
         },
       ]
     `)
+  }, LOADER_SMOKE_TEST_TIMEOUT_MS)
+
+  it('discovers and reloads a deferred MCP tool through the shipped headless composition', async () => {
+    const prompt = await scenarioPrompt(deferredToolSearchScenarioDir, 'deferred-tool-search')
+    let runCwd = ''
+    const result = await runLoaderSmoke({
+      label: 'deferred tool search headless stream-json snapshot',
+      tempDirPrefix: 'headless-snapshot-deferred-tool-search-',
+      binScript,
+      libBinScript: binScript,
+      configPath: deferredToolSearchConfigPath,
+      binArgs: [deferredToolSearchConfigPath, prompt],
+      tsconfigPath,
+      env: {
+        DSH_SNAPSHOT: 'replay',
+        DSH_SNAPSHOT_FILE: deferredToolSearchSessionFixture,
+        DSH_FIXTURE_RELOAD_TASK: 'Confirm that the echo schema was reconstructed from the persisted discovery result.',
+        DSH_FIXTURE_RELOAD_SNAPSHOT_FILE: deferredToolSearchResumeFixture,
+        DSH_MCP_SERVER_EVERYTHING: mcpServerEverythingBin,
+        NODE_OPTIONS: [process.env.NODE_OPTIONS, '--disable-warning=ExperimentalWarning'].filter(Boolean).join(' '),
+      },
+      prepare: (cwd) => { runCwd = cwd },
+      inspect: async (cwd) => {
+        const logs = await persistedLogs(cwd)
+        expect(logs).toHaveLength(1)
+        const records = parseJsonl(logs[0]?.content ?? '')
+        const calls = records
+          .filter(record => record.type === 'tool/call')
+          .map(record => (record.data as JsonObject | undefined)?.name)
+        expect(calls).toEqual(['tool_search', 'mcp__everything__echo'])
+
+        const resultBlocks = records
+          .filter(record => record.type === 'tool/result')
+          .flatMap((record) => {
+            const data = record.data as JsonObject | undefined
+            const message = data?.message as JsonObject | undefined
+            return Array.isArray(message?.content) ? message.content as JsonObject[] : []
+          })
+        const discovery = resultBlocks.find(block => Array.isArray(block.loadedTools))
+        expect((discovery?.loadedTools as JsonObject[] | undefined)?.map(schema => schema.name))
+          .toEqual(['mcp__everything__echo'])
+        expect(JSON.stringify(resultBlocks)).toContain('Echo: deferred-loaded')
+
+        const headers = records
+          .filter(record => record.type === 'request/header')
+          .map((record) => {
+            const data = record.data as JsonObject
+            const header = data.header as JsonObject
+            const tools = Array.isArray(header.tools) ? header.tools as JsonObject[] : []
+            return { reason: data.reason, tools: tools.map(tool => tool.name) }
+          })
+        expect(headers.map(header => header.reason)).toEqual(['initial', 'change', 'resume'])
+        expect(headers[0]?.tools).toContain('tool_search')
+        expect(headers[0]?.tools).not.toContain('mcp__everything__echo')
+        expect(headers[1]?.tools).toContain('mcp__everything__echo')
+        expect(headers[2]?.tools).toContain('mcp__everything__echo')
+      },
+    })
+
+    expect(result.stderr).toBe('Starting default (STDIO) server...\nStarting default (STDIO) server...\n')
+    const normalized = normalizeHeadlessStream(result.stdout, runCwd)
+    if (refreshing) await writeFile(deferredToolSearchStreamExpected, normalized)
+    expect(normalized).toBe(await readFile(deferredToolSearchStreamExpected, 'utf8'))
+    expect(JSON.parse(result.stdout.trim().split('\n').at(-1) ?? '{}')).toMatchObject({
+      type: 'result',
+      output: 'DEFERRED_TOOL_SEARCH_RESUMED',
+    })
   }, LOADER_SMOKE_TEST_TIMEOUT_MS)
 
   it('keeps provider comments alive and sends DeepSeek defaults through the one-shot app', async () => {
