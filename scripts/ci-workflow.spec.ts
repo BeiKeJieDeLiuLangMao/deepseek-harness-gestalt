@@ -133,6 +133,51 @@ describe('CI workflow', () => {
     })
   })
 
+  it('keeps fork and Dependabot setup on the hosted Linux route during failover', () => {
+    const workflow = loadWorkflow('.github/workflows/ci.yml')
+    const node24 = workflowJob(workflow, 'node-24')
+    const node24Coverage = workflowJob(workflow, 'node-24-coverage')
+    const node24Consumers = workflowJob(workflow, 'node-24-consumers')
+    const hostedCondition = "vars.DSH_CI_FAILOVER_LINUX != 'selfhosted' || github.event.pull_request.user.login == 'dependabot[bot]' || github.event.pull_request.head.repo.full_name != github.repository"
+    const selfHostedCondition = "vars.DSH_CI_FAILOVER_LINUX == 'selfhosted' && github.event.pull_request.user.login != 'dependabot[bot]' && github.event.pull_request.head.repo.full_name == github.repository"
+
+    for (const [jobName, job, expectedRestores] of [
+      ['node-24', node24, 1],
+      ['node-24-coverage', node24Coverage, 1],
+      ['node-24-consumers', node24Consumers, 2],
+    ] as const) {
+      if (!Array.isArray(job.steps)) throw new TypeError(`${jobName} must define steps`)
+      const cacheRestores = job.steps.filter(
+        step => isRecord(step) && step.uses === 'actions/cache/restore@v4',
+      )
+      expect(cacheRestores, `${jobName} must retain every route-dependent cache restore`).toHaveLength(expectedRestores)
+      for (const step of cacheRestores) {
+        expect(step, `${jobName} cache restore must use the complete hosted-route condition`).toMatchObject({
+          if: hostedCondition,
+        })
+      }
+    }
+
+    if (!Array.isArray(node24Consumers.steps)) {
+      throw new TypeError('node-24-consumers must define steps')
+    }
+    const hostedPlaywright = node24Consumers.steps.find(
+      step => isRecord(step) && step.name === 'Install Playwright Chromium and hosted dependencies',
+    )
+    const selfHostedPlaywright = node24Consumers.steps.find(
+      step => isRecord(step) && step.name === 'Install Playwright Chromium on the failover VM',
+    )
+    expect(hostedPlaywright).toMatchObject({ if: hostedCondition })
+    expect(selfHostedPlaywright).toMatchObject({ if: selfHostedCondition })
+
+    expect(resolveSupportedLinuxSetupRoute(undefined, 'maintainer', 'owner/repository')).toBe('hosted')
+    expect(resolveSupportedLinuxSetupRoute(undefined, 'contributor', 'contributor/fork')).toBe('hosted')
+    expect(resolveSupportedLinuxSetupRoute(undefined, 'dependabot[bot]', 'owner/repository')).toBe('hosted')
+    expect(resolveSupportedLinuxSetupRoute('selfhosted', 'maintainer', 'owner/repository')).toBe('self-hosted')
+    expect(resolveSupportedLinuxSetupRoute('selfhosted', 'contributor', 'contributor/fork')).toBe('hosted')
+    expect(resolveSupportedLinuxSetupRoute('selfhosted', 'dependabot[bot]', 'owner/repository')).toBe('hosted')
+  })
+
   it('documents standard hosted defaults and provisioned-only self-hosted routes', () => {
     const workflowSource = readFileSync(resolve(root, '.github/workflows/ci.yml'), 'utf8')
     expect(workflowSource).not.toMatch(/in-house (?:self-hosted )?pool/)
@@ -555,6 +600,16 @@ function resolveSupportedFailoverRunner(
   return failover === 'selfhosted' && login !== 'dependabot[bot]' && headRepository === 'owner/repository'
     ? selfHostedLabels
     : hostedDefault
+}
+
+function resolveSupportedLinuxSetupRoute(
+  failover: string | undefined,
+  login: string,
+  headRepository: string,
+): 'hosted' | 'self-hosted' {
+  return failover === 'selfhosted' && login !== 'dependabot[bot]' && headRepository === 'owner/repository'
+    ? 'self-hosted'
+    : 'hosted'
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
