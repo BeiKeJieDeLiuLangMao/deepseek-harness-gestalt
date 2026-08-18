@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/testing/2026-07-30-web-browser-snapshot-ci-gate.md
-2026-07-30-web-browser-snapshot-ci-gate.md: 14402485034cd85ec5781477ce67481165d47e62
-2026-07-30-web-browser-snapshot-ci-gate.zh.md: 28a7ef9a7046516a853b3e18a44163c01d43a318
+2026-07-30-web-browser-snapshot-ci-gate.md: f8ac388dec877c257196f602b27fed0f014a98a7
+2026-07-30-web-browser-snapshot-ci-gate.zh.md: 27d4d966499d6873d2a093b0ed65e3ac9d429ee1
