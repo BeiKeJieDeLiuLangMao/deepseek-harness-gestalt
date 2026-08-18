@@ -22,6 +22,7 @@
   "scripts": {
     "build": "vite build",
     "dev": "vite",
+    "prototype:annotation": "vite prototypes/annotation-ui --host 127.0.0.1",
     "watch": "vite build --watch"
   },
   "license": "MIT",
