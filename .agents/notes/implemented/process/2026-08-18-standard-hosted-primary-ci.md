@@ -27,3 +27,5 @@ Custom larger-runner labels remain only in manually dispatched benchmark matrice
 ## Consequences
 
 Pull-request CI starts without repository-specific larger-runner provisioning, at the cost of longer Linux and native Windows execution on standard machines. Jobs already queued against an old custom label do not retarget; they must be cancelled and retriggered after a workflow with the standard selectors is available.
+
+The first standard-runner execution also made pre-existing module-graph drift and undeclared external binaries in the committed Noise security proof visible. The generated graph is current, the proof's generated TypeScript declarations are excluded from unused-source analysis, and its environment-provided build tools are registered as ignored binaries; switching runner pools does not weaken the static gates.
