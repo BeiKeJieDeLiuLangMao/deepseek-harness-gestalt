@@ -10,7 +10,7 @@
 
 Exa 和 Perplexity 提供专用搜索端点，DeepSeek 官方搜索则没有。在 DeepSeek Anthropic 基址上，该提供方会发起一次携带 `web_search` 服务器工具的**完整 Messages 模型调用**，因此一次搜索会产生完整模型轮次的延迟与 token 开销，比纯检索端点更重。DeepSeek 在服务器侧执行搜索，返回**结构化** `web_search_tool_result` 块；提供方解析这些块，**绝不会从模型文本中抓取 URL**。
 
-Kimi coding（`https://api.kimi.com/coding/v1`）使用同一套 Messages 约定，应放在 Anthropic 协议卡片上，而不是靠猜测 URL。Moonshot `POST /v1/search` 这类专用检索端点是另一种协议，属于另一个提供方。
+Kimi coding（`https://api.kimi.com/coding/v1`）使用同一套 Messages 约定，应放在 Anthropic 协议卡片上。Moonshot `POST /v1/search` 这类专用检索端点是另一种协议，属于另一个提供方。
 
 **严格模式**：如果响应不含 `web_search_tool_result` 块（未触发原生搜索），提供方会抛出 `WebError` `WEB_PROVIDER_ERROR`，而非降级为文本抓取。
 
@@ -38,6 +38,8 @@ Kimi coding（`https://api.kimi.com/coding/v1`）使用同一套 Messages 约定
 ```
 
 上面的条目是 `web-search-deepseek` Settings 段的 base 层：叠加其上的用户层会作用于**下一次**搜索，因为提供方是按次投影该段，而不是在注册时固化它。因此端点或模型变化时，seam 的提供方选择不会闪断。`apiKey` 带有 `role('secret')`，所以它在任何一层都不会出现在 `describe()` 响应中——配置表层只能知道 credentials 领域是否为 `apiKeyEnv` 所命名的引用持有值，而无从知道某一层是否带着字面密钥。
+
+Anthropic 协议卡片是第二个 Settings 段 `web-search-anthropic`，字段与 DeepSeek 段相同，但不含 `backend`。它没有 schema 默认值：当 `backend` 为 `anthropic-messages` 且缺少 `baseURL` 时，提供方不可用。未填写的 Anthropic `apiKey`、`model`、`apiVersion`、`maxTokens` 或 `maxUses` 会继承 DeepSeek 段，因此一张密钥可以服务两张卡片。残留的 DeepSeek `baseURL` 不会被读取。
 
 ## 映射
 

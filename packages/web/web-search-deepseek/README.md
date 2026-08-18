@@ -10,7 +10,7 @@ This is an **implementation** package: it registers a provider into `ctx.web`, r
 
 Exa and Perplexity expose dedicated search endpoints; DeepSeek's official search does not. On a DeepSeek Anthropic base this provider issues a **full Messages model call** carrying the `web_search` server tool, so one search costs a complete model turn in latency and tokens — heavier than a pure retrieval endpoint. DeepSeek runs the search server-side and returns **structured** `web_search_tool_result` blocks; the provider parses those blocks and **never scrapes URLs out of model prose**.
 
-Kimi coding (`https://api.kimi.com/coding/v1`) uses the same Messages contract; it belongs on the Anthropic-protocol card, not on a guessed URL. Dedicated retrieval endpoints such as Moonshot `POST /v1/search` are a different protocol and a different provider.
+Kimi coding (`https://api.kimi.com/coding/v1`) uses the same Messages contract and belongs on the Anthropic-protocol card. Dedicated retrieval endpoints such as Moonshot `POST /v1/search` are a different protocol and a different provider.
 
 **Strict mode**: if the response carries no `web_search_tool_result` block (native search did not trigger), the provider throws `WebError` `WEB_PROVIDER_ERROR` rather than degrading to prose-scraping.
 
@@ -38,6 +38,8 @@ It reuses the `DEEPSEEK_API_KEY` credential reference (no new secret) but **not*
 ```
 
 The entry above is the base layer of the `web-search-deepseek` Settings section: a user layer over it reaches the NEXT search, because the provider projects the section per call rather than capturing it at registration. The seam's provider selection therefore never flickers when an endpoint or model changes. `apiKey` carries `role('secret')`, so it never rides a `describe()` response in any layer — a configuration surface learns only whether the credentials domain holds a value for the reference `apiKeyEnv` names, never whether a layer carries a literal key.
+
+The Anthropic-protocol card is a second Settings section, `web-search-anthropic`, with the same optional fields except `backend`. It has no schema defaults: a missing `baseURL` while `backend` is `anthropic-messages` makes the provider unavailable. An omitted Anthropic `apiKey`, `model`, `apiVersion`, `maxTokens`, or `maxUses` inherits the DeepSeek section so one credential can serve both cards. The leftover DeepSeek `baseURL` is not read.
 
 ## Mapping
 
