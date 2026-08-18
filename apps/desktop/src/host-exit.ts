@@ -7,6 +7,20 @@
 export type HostExitPlan = 'ignore' | 'respawn' | 'error'
 
 /**
+ * Whether Desktop Host should cancel Electron's quit to stop the Web Host first.
+ * @param input.shuttingDown - a shutdown is already in progress.
+ * @param input.updaterState - current updater phase, when the updater is active.
+ * @returns false while quitAndInstall must finish.
+ */
+export function shouldPreventQuit(input: {
+  readonly shuttingDown: boolean
+  readonly updaterState: string | undefined
+}): boolean {
+  if (input.shuttingDown) return false
+  return input.updaterState !== 'installing'
+}
+
+/**
  * Plan the next action after the Web Host process exits.
  * @param windowAlive - the BrowserWindow still exists.
  * @param alreadyRespawned - a respawn already ran in this Desktop Host process.

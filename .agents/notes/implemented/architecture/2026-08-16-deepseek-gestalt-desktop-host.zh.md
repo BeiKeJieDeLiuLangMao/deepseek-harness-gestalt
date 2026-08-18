@@ -14,7 +14,7 @@ DeepSeek Gestalt 是 Desktop Host：Electron 拥有窗口、应用菜单、进�
 
 Electron 在退出阶段继续监管 Web Host。窗口退出、终止信号和 smoke 结束都会取消尚未完成的启动、停止子进程，并等待进程退出后才终止 Desktop Host；主动关闭不会触发一次性崩溃重启。可信主窗口停留在当前环回 origin，普通网页链接交给系统浏览器，并拒绝其他导航和所有新 Electron 窗口。
 
-第一个 Desktop Bundle 是 `0.1.0`，与 npm `dsh` 版本线独立。app id 为 `com.gestalt.deepseek`。显示名为 DeepSeek Gestalt。更新源是 `BeiKeJieDeLiuLangMao/deepseek-harness-gestalt` 上的 GitHub Releases（`gestalt-v*` 标签，非 prerelease）。每个 macOS 目标都先在匹配架构的 runner 上安装与部署，再使用千机团队身份公证；Windows 发未签名 NSIS 仍更新。普通退出不会安装已下载更新。
+第一个 Desktop Bundle 是 `0.1.0`，与 npm `dsh` 版本线独立。app id 为 `com.gestalt.deepseek`。显示名为 DeepSeek Gestalt。更新源是 `BeiKeJieDeLiuLangMao/deepseek-harness-gestalt` 上的 GitHub Releases（`gestalt-v*` 标签，非 prerelease）。每个 macOS 目标都先在匹配架构的 runner 上安装与部署，再使用千机团队身份公证；Windows 发未签名 NSIS 仍更新。普通退出不会安装已下载更新。Update Control 显示截断后的整数下载百分比。updater 处于 installing 时，`before-quit` 不取消 Electron 退出，以便 `quitAndInstall` 能替换应用。在 macOS 上，`autoInstallOnAppQuit` 只在下载后把 zip 预取进 Squirrel。
 
 Desktop 在 `apps/desktop/build/` 下拥有 ICNS、ICO 与 512x512 RGBA PNG 应用图标。这些文件保留千机·Gestalt 源提交 `70ddb80bdfc713493dea8c3fc451817365a63f06` 中已跟踪生产资源的字节；固定的 SHA-256 摘要依次为 `da6a1174df80af2efadf763b22f8bc37f355680f8315f9ab78a8c59991c60e25`、`46a26b6a0e98e4a96e6151d7627b3a779af57c9214ff960a8447c618cfd88387` 和 `8eb4eb7cc767a5d929fee6715e78d5360ebca184996d757ffef18db90319c802`。electron-builder 在 macOS 使用 ICNS，并将 ICO 资源写入未签名的 Windows 可执行文件。发布 workflow 要求 PE 文件在 smoke 和上传前包含每个最大分辨率的源 ICO 帧。PNG 是打包后的运行时资源、未打包的 macOS Dock 图标和 Windows BrowserWindow 图标；打包后的 macOS 保留由 ICNS 生成的应用图标。
 
@@ -58,7 +58,7 @@ macOS chrome 在 DSH 侧栏标题和中间 Session 内容上方为 traffic light
 - 无需启动 Host 的无密钥 CLI 检查会组合真实 Web profile 与 Desktop overlay，要求 time-context 和 Schedule 位于其依赖服务之后，并证明浏览器默认树不含这两个插件。组装出的无密钥 Desktop turn 会快照两条 time-context 消息、全部三个 Schedule schema、`schedule_list` 调用与结果，以及最终 assistant 回复。
 - Desktop 图标测试固定三个源文件摘要及其容器签名，要求 512x512 RGBA PNG，检查 macOS、Windows、打包资源、Dock 与 BrowserWindow 的接线，并拒绝缺少最大分辨率 ICO 载荷的 Windows PE 文件。
 - 发布计划测试覆盖版本、分支和已有标签校验；release-note 测试覆盖双语渲染、manifest 完整性、版本与标签一致性、Git ancestry、提交数计算和工作流顺序；发布资产测试要求两个更新 feed、全部版本化 macOS 与 Windows 安装包及其 blockmap，并排除未打包应用内部文件。
-- 单测覆盖从 `dsh web:` 行发现 URL、Launch Directory 解析，以及不下载的更新阶段转换。
+- 单测覆盖从 `dsh web:` 行发现 URL、Launch Directory 解析、不下载的更新阶段转换、整数下载百分比，以及 quitAndInstall 运行时不拦截 `before-quit`。
 
 ## Consequences
 
