@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { CallId, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
+import type { ToolSchema } from '@deepseek-ai/dsh-llm'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import { createScope } from '@deepseek-ai/dsh-scope'
@@ -10,7 +11,7 @@ import { CodeRuntime } from '@deepseek-ai/dsh-code-runtime'
 import type { CodeRunRequest, CodeRunResult } from '@deepseek-ai/dsh-code-runtime'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import { RUN_CODE_NAME } from '@deepseek-ai/dsh-tools'
-import type { Config, ToolDefinition } from '@deepseek-ai/dsh-tools'
+import type { Config, ToolDefinition, ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 
 const TEST_MAX_RESULT_BYTES = 64 * 1024
 
@@ -59,6 +60,52 @@ async function scopedAgent(ctx: Context, session: Session): Promise<{ agent: Age
     inject: ['tools', 'systemPrompt'],
   }))
   return { agent, scope }
+}
+
+function durableResultBlockBytes(callId: CallId, result: ToolExecutionResult): number {
+  if (result.isError || result.loadedTools === undefined) throw new Error('expected loaded tool result')
+  const message = createToolResultMessage({
+    callId,
+    content: result.content,
+    isError: false,
+    loadedTools: result.loadedTools,
+  })
+  return new TextEncoder().encode(JSON.stringify(message.content[0])).byteLength
+}
+
+function deferredSchema(name: string, description: string): ToolSchema {
+  return {
+    name,
+    description,
+    parameters: {
+      type: 'object',
+      properties: { value: { type: 'string' } },
+      additionalProperties: false,
+    },
+  }
+}
+
+function appendDiscovery(session: Session, callId: CallId, schemas: ToolSchema[]): void {
+  session.append('tool/result', {
+    turn: 1,
+    step: 1,
+    message: createToolResultMessage({
+      callId,
+      content: [{ type: 'text', text: JSON.stringify(schemas, null, 2) }],
+      isError: false,
+      loadedTools: schemas,
+    }),
+  }, { surfaceOp: 'append' })
+}
+
+function reconstructedResultBytes(schemas: ToolSchema[]): number {
+  const message = createToolResultMessage({
+    callId: CallId('tool-search-restored'),
+    content: [{ type: 'text', text: JSON.stringify(schemas, null, 2) }],
+    isError: false,
+    loadedTools: schemas,
+  })
+  return new TextEncoder().encode(JSON.stringify(message.content[0])).byteLength
 }
 
 describe('deferred tool search', () => {
@@ -202,6 +249,80 @@ describe('deferred tool search', () => {
       isError: true,
       error: { info: { code: 'TOOL_SEARCH_RESULT_TOO_LARGE' } },
     })
+  })
+
+  it.each([
+    ['draft-07', {
+      $schema: 'http://json-schema.org/draft-07/schema#',
+      type: 'object',
+      properties: { unit: { enum: ['celsius', 'fahrenheit'] } },
+      additionalProperties: false,
+    }],
+    ['draft-07 HTTPS alias', {
+      $schema: 'https://json-schema.org/draft-07/schema',
+      type: 'object',
+      properties: { unit: { enum: ['celsius', 'fahrenheit'] } },
+      additionalProperties: false,
+    }],
+    ['2020-12', {
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      type: 'object',
+      properties: {
+        coordinates: {
+          type: 'array',
+          prefixItems: [{ type: 'number' }, { type: 'number' }],
+          items: false,
+        },
+      },
+      unevaluatedProperties: false,
+    }],
+    ['2020-12 hash alias', {
+      $schema: 'https://json-schema.org/draft/2020-12/schema#',
+      type: 'object',
+      properties: {
+        coordinates: {
+          type: 'array',
+          prefixItems: [{ type: 'number' }, { type: 'number' }],
+          items: false,
+        },
+      },
+      unevaluatedProperties: false,
+    }],
+  ] as const)('accepts a valid %s deferred parameter schema', async (_dialect, parameters) => {
+    const ctx = await mount()
+    ctx.tools.register({ ...tool(`weather_${_dialect}`, `Weather ${_dialect}`, true), parameters })
+
+    await expect(ctx.tools.execute({
+      callId: CallId(`search-${_dialect}`),
+      name: 'tool_search',
+      arguments: { query: `weather ${_dialect}` },
+      signal,
+    })).resolves.toMatchObject({ isError: false, loadedTools: [{ parameters }] })
+  })
+
+  it.each([
+    [{
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      type: 'object',
+      properties: { location: { type: 'not-a-json-schema-type' } },
+    }, /must be equal to one of the allowed values/],
+    [{
+      $schema: 'https://example.com/custom-schema-dialect',
+      type: 'object',
+    }, /unsupported JSON schema dialect/],
+  ] as const)('rejects malformed or unsupported deferred schema dialect %#', async (parameters, message) => {
+    const ctx = await mount()
+    ctx.tools.register({ ...tool('weather_dialect', 'Weather dialect', true), parameters })
+
+    const result = await ctx.tools.execute({
+      callId: CallId('search-invalid-dialect'),
+      name: 'tool_search',
+      arguments: { query: 'weather dialect' },
+      signal,
+    })
+    expect(result).toMatchObject({ isError: true })
+    expect(result.content).toEqual([{ type: 'text', text: expect.stringMatching(message) }])
+    expect(result).not.toHaveProperty('loadedTools')
   })
 
   it.each(['value', 'content', 'error'] as const)(
@@ -352,6 +473,60 @@ describe('deferred tool search', () => {
       .rejects.toThrow(/durable loadedTools/)
   })
 
+  it.each([
+    ['one oversized schema', 'x'.repeat(1_000_000)],
+    ['multibyte schema data', '界'.repeat(300)],
+  ])('rejects restored %s under the current byte budget', async (_case, description) => {
+    const ctx = await mount({ toolSearch: { maxResultBytes: 512 } })
+    const schema = deferredSchema('mcp__restored__huge', description)
+    ctx.tools.register(tool(schema.name, 'Restored huge schema', true))
+    const session = Session.create(SessionId(`restored-${_case}`))
+    appendDiscovery(session, CallId('restored-huge'), [schema])
+    const agent = { session } as Agent
+
+    await expect(ctx.systemPrompt.assemble({ scope: agent, agent }))
+      .rejects.toThrow(/maxResultBytes 512/)
+  })
+
+  it('budgets the aggregate eligible set restored from multiple results', async () => {
+    const ctx = await mount({ toolSearch: { maxResultBytes: 900 } })
+    const schemas = ['alpha', 'bravo', 'charlie', 'delta'].map(name => (
+      deferredSchema(`mcp__restored__${name}`, `${name} ${'description '.repeat(20)}`)
+    ))
+    for (const schema of schemas) ctx.tools.register(tool(schema.name, schema.description, true))
+    const session = Session.create(SessionId('restored-aggregate'))
+    appendDiscovery(session, CallId('restored-first'), schemas.slice(0, 2))
+    appendDiscovery(session, CallId('restored-second'), schemas.slice(2))
+    const agent = { session } as Agent
+
+    await expect(ctx.systemPrompt.assemble({ scope: agent, agent }))
+      .rejects.toThrow(/maxResultBytes 900/)
+  })
+
+  it('accepts exact and under-budget restoration after filtering stale eligibility', async () => {
+    const eligible = deferredSchema('mcp__restored__eligible', 'Eligible restored schema')
+    const stale = deferredSchema('mcp__restored__stale', '界'.repeat(1_000))
+    const exactBytes = reconstructedResultBytes([eligible])
+    const assemble = async (maxResultBytes: number): Promise<ReturnType<Context['systemPrompt']['assemble']>> => {
+      const ctx = await mount({ toolSearch: { maxResultBytes } })
+      ctx.tools.register(tool(eligible.name, eligible.description, true))
+      ctx.tools.register(tool(stale.name, stale.description, true))
+      const session = Session.create(SessionId(`restored-bound-${maxResultBytes}`))
+      appendDiscovery(session, CallId('restored-bound'), [stale, eligible])
+      const { agent, scope } = await scopedAgent(ctx, session)
+      scope.ctx.tools.allowEligible([eligible.name])
+      return ctx.systemPrompt.assemble({ scope: agent, agent })
+    }
+
+    await expect(assemble(exactBytes)).resolves.toMatchObject({
+      tools: expect.arrayContaining([expect.objectContaining({ name: eligible.name })]),
+    })
+    await expect(assemble(exactBytes + 1)).resolves.toMatchObject({
+      tools: expect.arrayContaining([expect.objectContaining({ name: eligible.name })]),
+    })
+    await expect(assemble(exactBytes - 1)).rejects.toThrow(/maxResultBytes/)
+  })
+
   it.each(['native', 'both'] as const)('accepts visible tool_search in toolOrder under mode %s', async (mode) => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt, { toolOrder: ['tool_search', '<unlisted-tools>'] })
@@ -472,6 +647,91 @@ describe('deferred tool search', () => {
     })
     expect(nextRun).toMatchObject({ isError: false })
     expect(nextRunBindings).toEqual(['mcp__weather__forecast', 'tool_search'])
+  })
+
+  it('enforces the complete aggregate discovery limit on the outer Code Mode result', async () => {
+    const searches = [
+      ['alpha', 'forecast'],
+      ['bravo', 'calendar'],
+      ['charlie', 'contacts'],
+      ['delta', 'documents'],
+      ['echo', 'email'],
+      ['foxtrot', 'files'],
+      ['golf', 'geocoding'],
+      ['hotel', 'hosting'],
+    ] as const
+    const callId = CallId('run-code-aggregate-search')
+    const run = async (maxResultBytes: number): Promise<{
+      ctx: Context
+      agent: Agent
+      result: ToolExecutionResult
+      completedSearches: number
+      observed: ToolExecutionResult | undefined
+    }> => {
+      const ctx = await mount({ mode: 'code', toolSearch: { maxResultBytes, maxResults: 2, defaultLimit: 1 } })
+      for (const [query, capability] of searches) {
+        ctx.tools.register(tool(`mcp__${query}__${capability}`, `${query} ${capability} deferred capability`, true))
+      }
+      const agent = { session: Session.create(SessionId(`aggregate-${maxResultBytes}`)) } as Agent
+      const runtime = ctx.codeRuntime as FakeRuntime
+      let completedSearches = 0
+      runtime.behavior = async (request) => {
+        for (const [query] of searches) {
+          await request.bindings[0]!.functions.tool_search?.({ query, limit: 1 })
+          completedSearches += 1
+        }
+        return { logs: [] }
+      }
+      let observed: ToolExecutionResult | undefined
+      ctx.on('tools/result', (exec, result) => {
+        if (exec.callId === callId) observed = result
+      })
+      const result = await ctx.tools.execute({
+        callId,
+        name: 'run_code',
+        arguments: { code: 'await Promise.all(searches)', description: 'Discover several deferred capabilities' },
+        agent,
+        signal,
+      })
+      return { ctx, agent, result, completedSearches, observed }
+    }
+
+    const probe = await run(TEST_MAX_RESULT_BYTES)
+    if (probe.result.isError) throw new Error('expected aggregate probe success')
+    const exactBytes = durableResultBlockBytes(callId, probe.result)
+
+    const exact = await run(exactBytes)
+    expect(exact.completedSearches).toBe(searches.length)
+    expect(exact.result).toMatchObject({ isError: false })
+    expect(durableResultBlockBytes(callId, exact.result)).toBe(exactBytes)
+
+    const overflow = await run(exactBytes - 1)
+    expect(overflow.completedSearches).toBe(searches.length)
+    expect(overflow.result).toMatchObject({
+      isError: true,
+      error: { info: { code: 'TOOL_SEARCH_RESULT_TOO_LARGE' } },
+    })
+    expect(overflow.result).not.toHaveProperty('loadedTools')
+    expect(overflow.observed).toEqual(overflow.result)
+    expect(overflow.observed).not.toHaveProperty('loadedTools')
+
+    if (!overflow.result.isError) throw new Error('expected aggregate overflow failure')
+    overflow.agent.session.append('tool/result', {
+      turn: 1,
+      step: 1,
+      message: createToolResultMessage({
+        callId,
+        content: overflow.result.content,
+        isError: true,
+      }),
+      ...(overflow.result.error.info === undefined ? {} : { error: overflow.result.error.info }),
+    }, { surfaceOp: 'append' })
+    const restored = overflow.agent.session.deriveMessages().at(-1)?.content[0]
+    expect(restored).toMatchObject({ type: 'tool-result', isError: true })
+    expect(restored).not.toHaveProperty('loadedTools')
+    expect((await overflow.ctx.systemPrompt.assemble({ scope: overflow.agent, agent: overflow.agent }))
+      .sections.find(section => section.name === 'tools:sdk')?.text)
+      .not.toContain('mcp__alpha__forecast')
   })
 
   it('removes a reconstructed Code Mode binding when eligibility becomes stale', async () => {

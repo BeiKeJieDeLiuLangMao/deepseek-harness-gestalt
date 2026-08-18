@@ -203,14 +203,30 @@ describe('syncTools', () => {
   })
 
   it('marks a server generation as deferred when configured', async () => {
+    const inputSchema = {
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      type: 'object',
+      properties: {
+        names: { type: 'array', prefixItems: [{ type: 'string' }], items: false },
+      },
+    }
     const client = createMockClient([
-      { name: 'greet', description: 'Say hello', inputSchema: { type: 'object', properties: {} } },
+      { name: 'greet', description: 'Say hello', inputSchema },
     ])
 
     await syncTools(client as never, ctx, { ...defaultOpts, deferLoading: true }, new Map())
 
     expect(ctx.tools.schemas().map(schema => schema.name)).toEqual(['tool_search'])
     expect(ctx.tools.catalogSchemas().map(schema => schema.name)).toEqual(['mcp__srv__greet'])
+    await expect(ctx.tools.execute({
+      callId: CallId('search-deferred-mcp'),
+      name: 'tool_search',
+      arguments: { query: 'greet' },
+      signal: testToolSignal,
+    })).resolves.toMatchObject({
+      isError: false,
+      loadedTools: [{ name: 'mcp__srv__greet', parameters: inputSchema }],
+    })
   })
 
   it('lets two servers publish the same raw name side by side', async () => {

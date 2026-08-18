@@ -7,11 +7,12 @@
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import Ajv from 'ajv'
+import Ajv2020 from 'ajv/dist/2020.js'
 import MiniSearch from 'minisearch'
 import { AnonymousEntries, NamedEntries, ScopedLayers, scopeOf, scopeTarget } from '@deepseek-ai/dsh-scope'
 import type { ScopeKey, ScopeLayer, Scoped } from '@deepseek-ai/dsh-scope'
-import type { CallId, ContentBlock, ToolSchema } from '@deepseek-ai/dsh-llm'
-import { assertNever, deepFreeze, HarnessError } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock, ToolSchema } from '@deepseek-ai/dsh-llm'
+import { assertNever, CallId, deepFreeze, HarnessError } from '@deepseek-ai/dsh-llm'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { snapshotJsonValue } from '@deepseek-ai/dsh-session'
 import type { JsonValue, UserMessage } from '@deepseek-ai/dsh-session'
@@ -65,8 +66,12 @@ const SDK_RENDERERS: Record<string, (schemas: ToolSdkSchema[]) => string> = {
   python: renderToolsSdkPy,
 } satisfies Record<CodeSdkLanguage, (schemas: ToolSdkSchema[]) => string>
 
-/** Draft-07 validator for model-facing input schemas restored from durable JSON. */
-const TOOL_PARAMETER_SCHEMA_VALIDATOR = new Ajv({ strict: false, allErrors: true })
+/** Validators for the legacy Harness vocabulary and the MCP-declared dialect. */
+const DRAFT_7_SCHEMA_VALIDATOR = new Ajv({ strict: false, allErrors: true })
+const DRAFT_2020_SCHEMA_VALIDATOR = new Ajv2020({ strict: false, allErrors: true })
+const DRAFT_7_SCHEMA_ID = 'http://json-schema.org/draft-07/schema#'
+const DRAFT_2020_SCHEMA_ID = 'https://json-schema.org/draft/2020-12/schema'
+const RESTORED_DISCOVERY_CALL_ID = CallId('tool-search-restored')
 
 /** Validate and resolve one model-authored deferred-tool search request. */
 function resolveToolSearchArguments(
@@ -736,7 +741,7 @@ export interface Config {
     defaultLimit?: number
     /** Highest accepted `limit`. */
     maxResults?: number
-    /** Maximum UTF-8 bytes in the complete durable discovery result block. */
+    /** Maximum UTF-8 bytes in a complete fresh, composite, or reconstructed durable discovery result block. */
     maxResultBytes: number
   }
 }
@@ -943,21 +948,39 @@ function parseDeferredToolSchema(value: unknown, subject: string): ToolSchema {
   if (!isPlainJsonRecord(value.parameters) || value.parameters.type !== 'object') {
     throw new Error(`${subject}.parameters must be an object-rooted JSON schema`)
   }
+  const dialect = value.parameters.$schema
+  let validator: Ajv | Ajv2020
+  let schema = value.parameters
+  if (dialect === undefined || dialect === DRAFT_7_SCHEMA_ID) {
+    validator = DRAFT_7_SCHEMA_VALIDATOR
+  } else if (dialect === 'http://json-schema.org/draft-07/schema'
+    || dialect === 'https://json-schema.org/draft-07/schema'
+    || dialect === 'https://json-schema.org/draft-07/schema#') {
+    validator = DRAFT_7_SCHEMA_VALIDATOR
+    schema = { ...schema, $schema: DRAFT_7_SCHEMA_ID }
+  } else if (dialect === DRAFT_2020_SCHEMA_ID) {
+    validator = DRAFT_2020_SCHEMA_VALIDATOR
+  } else if (dialect === `${DRAFT_2020_SCHEMA_ID}#`) {
+    validator = DRAFT_2020_SCHEMA_VALIDATOR
+    schema = { ...schema, $schema: DRAFT_2020_SCHEMA_ID }
+  } else {
+    throw new Error(`${subject}.parameters uses unsupported JSON schema dialect ${JSON.stringify(dialect)}`)
+  }
   let valid: boolean | Promise<unknown>
   try {
-    valid = TOOL_PARAMETER_SCHEMA_VALIDATOR.validateSchema(value.parameters)
-  /* v8 ignore next 3 -- the draft-07 validator is synchronous; preserve a named file error if a future validator throws. */
+    valid = validator.validateSchema(schema)
+  /* v8 ignore next 3 -- these validators are synchronous; preserve a named file error if a future validator throws. */
   } catch (error: unknown) {
     /* v8 ignore next -- see the catch rationale above. */
     throw new Error(`${subject}.parameters must be a valid JSON schema`, { cause: error })
   }
-  /* v8 ignore next 3 -- this Ajv instance has no async schema or keyword; the type also covers asynchronously configured instances. */
+  /* v8 ignore next 3 -- neither validator has an async schema or keyword; the type also covers asynchronously configured instances. */
   if (typeof valid !== 'boolean') {
     throw new Error(`${subject}.parameters must not require asynchronous schema validation`)
   }
   if (!valid) {
     throw new Error(
-      `${subject}.parameters must be a valid JSON schema: ${TOOL_PARAMETER_SCHEMA_VALIDATOR.errorsText()}`,
+      `${subject}.parameters must be a valid JSON schema: ${validator.errorsText()}`,
     )
   }
   return {
@@ -967,17 +990,40 @@ function parseDeferredToolSchema(value: unknown, subject: string): ToolSchema {
   }
 }
 
-/** UTF-8 bytes of the exact durable tool-result block produced by discovery. */
-function deferredToolResultBytes(callId: CallId, schemas: readonly ToolSchema[]): number {
-  const text = JSON.stringify(schemas, null, 2)
+/** UTF-8 bytes of the exact durable tool-result block carrying discovery metadata. */
+function deferredToolResultBytes(
+  callId: CallId,
+  content: readonly ContentBlock[],
+  schemas: readonly ToolSchema[],
+): number {
   const block = {
     type: 'tool-result',
     toolCallId: callId,
-    content: [{ type: 'text', text }],
+    content,
     isError: false,
     loadedTools: schemas,
   }
   return new TextEncoder().encode(JSON.stringify(block)).byteLength
+}
+
+/** Canonical rendered content used to budget a reconstructed eligible schema set. */
+function renderedDeferredSchemas(schemas: readonly ToolSchema[]): ContentBlock[] {
+  return [{ type: 'text', text: JSON.stringify(schemas, null, 2) }]
+}
+
+/** Enforce one complete model-visible and durable discovery-result budget. */
+function assertDeferredResultWithinBudget(
+  callId: CallId,
+  content: readonly ContentBlock[],
+  schemas: readonly ToolSchema[],
+  config: ResolvedToolSearchConfig,
+): void {
+  const resultBytes = deferredToolResultBytes(callId, content, schemas)
+  if (resultBytes <= config.maxResultBytes) return
+  throw new HarnessError(
+    `deferred discovery result is ${resultBytes} bytes, exceeding configured maxResultBytes ${config.maxResultBytes}`,
+    'TOOL_SEARCH_RESULT_TOO_LARGE',
+  )
 }
 
 /**
@@ -1225,13 +1271,12 @@ export class ToolRuntime extends Service {
             `tool_search result schema for "${definition.name}"`,
           )]
         })
-        const resultBytes = deferredToolResultBytes(exec.callId, schemas)
-        if (resultBytes > config.maxResultBytes) {
-          throw new HarnessError(
-            `tool_search result is ${resultBytes} bytes, exceeding configured maxResultBytes ${config.maxResultBytes}`,
-            'TOOL_SEARCH_RESULT_TOO_LARGE',
-          )
-        }
+        assertDeferredResultWithinBudget(
+          exec.callId,
+          renderedDeferredSchemas(schemas),
+          schemas,
+          config,
+        )
         this.loadedTools.set(exec, schemas)
         return Promise.resolve(schemas)
       },
@@ -1328,10 +1373,21 @@ export class ToolRuntime extends Service {
         }
       }
     }
-    return [...loaded.values()].filter((schema) => {
+    const eligible = [...loaded.values()].filter((schema) => {
       const definition = view.visible.get(schema.name)
       return definition?.deferLoading === true
     })
+    if (eligible.length === 0) return []
+    const config = this.toolSearchConfig
+    /* v8 ignore next 3 -- a visible deferred definition cannot be registered while search is disabled. */
+    if (config === undefined) throw new Error('dsh-tools: restored loadedTools require toolSearch configuration')
+    assertDeferredResultWithinBudget(
+      RESTORED_DISCOVERY_CALL_ID,
+      renderedDeferredSchemas(eligible),
+      eligible,
+      config,
+    )
+    return eligible
   }
 
   /**
@@ -2160,7 +2216,10 @@ export class ToolRuntime extends Service {
     }
     let finalResult: ToolExecutionResult
     try {
-      finalResult = this.materializeFinalResult(this.applyFinalContent(exec, materializedResult))
+      finalResult = this.enforceDeferredResultLimit(
+        exec,
+        this.materializeFinalResult(this.applyFinalContent(exec, materializedResult)),
+      )
     } catch (error: unknown) {
       finalResult = this.materializeFinalResult(toolErrorResult(error))
     }
@@ -2383,6 +2442,24 @@ export class ToolRuntime extends Service {
     const { loadedTools: discarded, ...retained } = result
     void discarded
     return retained
+  }
+
+  /** Enforce the complete durable discovery-result limit at the authoritative commit point. */
+  private enforceDeferredResultLimit(exec: ToolRunContext, result: ToolExecutionResult): ToolExecutionResult {
+    if (result.isError || result.loadedTools === undefined) return result
+    const config = this.toolSearchConfig
+    /* v8 ignore next 5 -- only the configured reserved search can mint loadedTools. */
+    if (config === undefined) {
+      this.loadedTools.delete(exec)
+      throw new Error('dsh-tools: loadedTools require toolSearch configuration')
+    }
+    try {
+      assertDeferredResultWithinBudget(exec.callId, result.content, result.loadedTools, config)
+      return result
+    } catch (error: unknown) {
+      this.loadedTools.delete(exec)
+      throw error
+    }
   }
 
   /** Materialize the authoritative commit outcome once, immediately before `tools/result`. */

@@ -156,7 +156,7 @@ type InferArgs<S> = InferProperties<S, []>
 
 Registration is a trusted same-process contract. The registry borrows the typed definition as readonly input, requires `output`, validates its raw schema, and checks semantic requirements such as a positive finite `timeoutMs`; `schemas()` constructs the model-facing projection when building a request, so execution and presentation share one resolved definition without leaking callbacks onto the wire.
 
-With `toolSearch` enabled, the reserved `tool_search` tool indexes only current eligible definitions marked `deferLoading`. Its validated input uses the configured result-count caps, while the required `maxResultBytes` caps the complete durable result block containing both rendered content and `loadedTools`; exceeding the byte limit fails the search. Its result contains the exact matched `ToolSchema[]`; the agent loop stores those schemas on the durable tool-result block. Code Mode forwards schemas from a nested search onto the outer `run_code` result. Each later assembly reads the log, validates every stored schema as file input, retains only names that are still live, deferred, and eligible, and adds the stored schemas to the native request or generated SDK. Malformed stored schemas fail request assembly instead of reaching a model. This is discovery rather than activation: the registry does not mutate, and old results cannot restore a schema excluded by current eligibility. A provider-neutral adapter sees an ordinary direct function call/result plus the expanded next request; the pi-ai OpenAI Responses path projects the same direct-search record into native tool-search history.
+With `toolSearch` enabled, the reserved `tool_search` tool indexes only current eligible definitions marked `deferLoading`. Its validated input uses the configured result-count caps, while the required `maxResultBytes` caps the complete durable result block containing both rendered content and `loadedTools`. The same package-owned serializer and limit cover merged nested discoveries on the final outer `run_code` result and the complete eligible set reconstructed from history; overflow becomes a canonical error without partial metadata. Its result contains the exact matched `ToolSchema[]`; the agent loop stores those schemas on the durable tool-result block. Parameter schemas use draft-07 when `$schema` is absent and accept explicit draft-07 or the MCP JSON Schema 2020-12 dialect; unsupported dialects and malformed schemas fail validation. Each later assembly reads the log, validates every stored schema as file input, removes names that are no longer live, deferred, and eligible, applies the current byte budget to the remaining set, and only then adds it to the native request or generated SDK. This is discovery rather than activation: the registry does not mutate, and old results cannot restore or consume budget for a schema excluded by current eligibility. A provider-neutral adapter sees an ordinary direct function call/result plus the expanded next request; the pi-ai OpenAI Responses path projects the same direct-search record into native tool-search history.
 
 ## `ToolRestriction` — one scope's live filter over what it inherits
 
@@ -614,7 +614,7 @@ async execute(exec: ToolExecutionInput): Promise<ToolExecutionResult>
 
 Types: [ScopeKey](scope.md)
 
-Source: [`packages/core/tools/src/index.ts:987`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:1033`](../../packages/core/tools/src/index.ts)
 
 <a id="tool-eligibility-events"></a>
 
@@ -664,7 +664,7 @@ A tool was registered or unregistered, or a scoped restriction changed (the avai
 'tools/change'(): void
 ```
 
-Source: [`packages/core/tools/src/index.ts:255`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:260`](../../packages/core/tools/src/index.ts)
 
 <a id="toolscode-dispatch-log--waterfall"></a>
 
@@ -691,7 +691,7 @@ Allow a listener to replace content in the DURABLE LOG COPY of one `run_code` su
 
 Types: [ContentBlock](llm-streaming.md) · [Scoped](scope.md)
 
-Source: [`packages/core/tools/src/index.ts:237`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:242`](../../packages/core/tools/src/index.ts)
 
 <a id="toolsexecute--waterfall"></a>
 
@@ -715,7 +715,7 @@ Around-dispatch waterfall for timeout, retry, or metrics. `next()` returns a nor
 
 Types: [Scoped](scope.md)
 
-Source: [`packages/core/tools/src/index.ts:211`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:216`](../../packages/core/tools/src/index.ts)
 
 <a id="toolspost-execute--waterfall"></a>
 
@@ -740,7 +740,7 @@ Accept, replace, enrich, or block a normalized dispatch result. `next()` accepts
 
 Types: [Scoped](scope.md)
 
-Source: [`packages/core/tools/src/index.ts:223`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:228`](../../packages/core/tools/src/index.ts)
 
 <a id="toolspre-execute--waterfall"></a>
 
@@ -763,7 +763,7 @@ Allow, deny, or ask before dispatch. `next()` delegates to allow; missing approv
 
 Types: [Scoped](scope.md)
 
-Source: [`packages/core/tools/src/index.ts:200`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:205`](../../packages/core/tools/src/index.ts)
 
 <a id="toolsresult--emit"></a>
 
@@ -784,5 +784,5 @@ Observe the frozen, lossless-JSON final outcome. Listener failures are contained
 
 Types: [Scoped](scope.md)
 
-Source: [`packages/core/tools/src/index.ts:245`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:250`](../../packages/core/tools/src/index.ts)
 <!-- END GENERATED cordis-surface -->

@@ -14,7 +14,7 @@ tools:
   toolSearch: { maxResultBytes: 65536 } # false (default) or { maxResultBytes, defaultLimit?, maxResults? }
 ```
 
-`native` 以函数定义的形式贡献可见工具。`code` 会提供保留的 `run_code` 传输、生成的 `tools:sdk` 段，以及声明「只有 `run_code` 可被直接调用」的 `tools:code-only` 规则。执行器随后强制执行该规则：模型直接调用其他任何工具时，会在策略运行前将该调用解析为 `UNKNOWN_TOOL`；`both` 同时提供两种形式，且不声明该规则，因为其中的原生调用确实可以执行。没有单独声明呈现模式的 agent 默认采用此配置；agent preset 可通过 [`dsh-agent-tool-presentation`](../agent-tool-presentation/README.md) 自行选择呈现模式。`toolSearch` 会启用保留的 `tool_search` schema 发现工具；标记 `deferLoading` 的定义不会进入初始请求，直到一条已记录的搜索结果返回其 schema。`maxResultBytes` 限制包含渲染内容与 `loadedTools` 的完整持久发现块；超过上限会使搜索失败。发现过程不会改变注册表状态或资格。保留传输不能被注册、遮蔽、限制或移除。非原生模式要求所加载 `ctx.codeRuntime` 的 `language` 有已注册的 SDK 渲染器——TypeScript 经 [`dsh-code-runtime-worker-thread`](../../code-runtime/code-runtime-worker-thread/README.md) 交付；Python 渲染器内置，驱动任何报告 `language: 'python'` 的运行时（第一方 `dsh-code-runtime-python` 后端另行交付）。没有渲染器的运行时语言会导致提示词组装明确失败；如果 `systemPrompt.toolOrder` 条目指向当前模式未贡献的工具，系统会拒绝组装提示词。`system-prompt/assemble` 监听器可以替换注册表贡献；它返回的组装结果具有权威性，因此该监听器负责保留可用的 Code Mode 协议。
+`native` 以函数定义的形式贡献可见工具。`code` 会提供保留的 `run_code` 传输、生成的 `tools:sdk` 段，以及声明「只有 `run_code` 可被直接调用」的 `tools:code-only` 规则。执行器随后强制执行该规则：模型直接调用其他任何工具时，会在策略运行前将该调用解析为 `UNKNOWN_TOOL`；`both` 同时提供两种形式，且不声明该规则，因为其中的原生调用确实可以执行。没有单独声明呈现模式的 agent 默认采用此配置；agent preset 可通过 [`dsh-agent-tool-presentation`](../agent-tool-presentation/README.md) 自行选择呈现模式。`toolSearch` 会启用保留的 `tool_search` schema 发现工具；标记 `deferLoading` 的定义不会进入初始请求，直到一条已记录的搜索结果返回其 schema。`maxResultBytes` 限制包含渲染内容与 `loadedTools` 的完整持久发现块；同一上限也适用于外层 `run_code` 结果合并后的发现元数据，以及从 Session 历史中过滤出的当前合资格重建集合。超限会产生一条不含 `loadedTools` 的规范失败。发现过程不会改变注册表状态或资格。保留传输不能被注册、遮蔽、限制或移除。非原生模式要求所加载 `ctx.codeRuntime` 的 `language` 有已注册的 SDK 渲染器——TypeScript 经 [`dsh-code-runtime-worker-thread`](../../code-runtime/code-runtime-worker-thread/README.md) 交付；Python 渲染器内置，驱动任何报告 `language: 'python'` 的运行时（第一方 `dsh-code-runtime-python` 后端另行交付）。没有渲染器的运行时语言会导致提示词组装明确失败；如果 `systemPrompt.toolOrder` 条目指向当前模式未贡献的工具，系统会拒绝组装提示词。`system-prompt/assemble` 监听器可以替换注册表贡献；它返回的组装结果具有权威性，因此该监听器负责保留可用的 Code Mode 协议。
 
 ### 公开 API
 
@@ -137,7 +137,7 @@ agent loop 将连续的 `parallel` 调用归入有界滚动池，并把每个 `e
 
 #### 模型看到什么
 
-初始请求包含 [`tool_search`](../../../docs/tool-catalog.md#deepseek-aidsh-tools) 与所有非 deferred 的合资格 schema。成功搜索结果在配置的数量与持久结果字节上限内包含精确匹配的 schema；下一次请求会校验这些 schema，并从该持久结果与当前合资格注册表重建它们。从 Session 文件恢复的格式错误 schema 会使请求组装失败。这是 schema 发现，而不是激活：不会产生可见的注册表状态变更；当前 allow-only 资格排除的 schema 既不会被返回，也不会从旧历史恢复。在 Code Mode 中，嵌套发现得到的 schema 会随外层 `run_code` 结果传递，使下一次 SDK 可以重建。provider-neutral 适配器收到普通的直接搜索调用／结果和新加入的请求 schema；OpenAI Responses 路径还会把该直接搜索事实投影为原生 `tool_search_call`／`tool_search_output` 历史。
+初始请求包含 [`tool_search`](../../../docs/tool-catalog.md#deepseek-aidsh-tools) 与所有非 deferred 的合资格 schema。成功搜索结果在配置的数量与持久结果字节上限内包含精确匹配的 schema。Deferred 参数 schema 可以省略 `$schema` 以使用 Harness 的 draft-07 默认值，也可以声明 draft-07 或 MCP 的 JSON Schema 2020-12 dialect；不受支持的 dialect 标识与格式错误 schema 都会使发现失败。下一次请求先校验并过滤已存 schema，再把当前字节上限应用到完整的合资格重建集合，最后才从 Session 历史投影它们。这是 schema 发现，而不是激活：不会产生可见的注册表状态变更；当前 allow-only 资格排除的 schema 既不会被返回，也不会计入重建预算。在 Code Mode 中，嵌套发现得到的 schema 会随外层 `run_code` 结果传递；其完整合并元数据会在规范结果写入日志前接受预算检查。provider-neutral 适配器收到普通的直接搜索调用／结果和新加入的请求 schema；OpenAI Responses 路径还会把该直接搜索事实投影为原生 `tool_search_call`／`tool_search_output` 历史。
 
 #### Token 影响
 
