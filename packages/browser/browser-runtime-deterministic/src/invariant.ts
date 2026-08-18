@@ -1,0 +1,54 @@
+/**
+ * Package-owned lifecycle invariant for the deterministic Browser Runtime Provider.
+ * @module @deepseek-ai/dsh-browser-runtime-deterministic/invariant
+ */
+
+/* jscpd:ignore-start */
+import type { Context } from '@deepseek-ai/cordis'
+import type { BrowserRuntimeState, BrowserTarget } from '@deepseek-ai/dsh-browser-runtime'
+import type { InvariantFailure, InvariantInstaller } from '@deepseek-ai/dsh-invariants'
+
+const PACKAGE_NAME = '@deepseek-ai/dsh-browser-runtime-deterministic'
+
+/** Cordis companion plugin name. */
+export const name = 'browser-runtime-deterministic-invariant'
+/** Services required before the companion can reserve and observe its package relationship. */
+export const inject = ['invariants']
+
+/** Test opaque resource identity equality without weakening the branded Service Definition types. */
+function sameTarget(left: BrowserTarget, right: BrowserTarget): boolean {
+  return left.profileId === right.profileId
+    && left.workspaceId === right.workspaceId
+    && left.browserId === right.browserId
+    && left.tabId === right.tabId
+}
+
+/** Validate lifecycle publications as one open-to-closed revision stream. */
+const install: InvariantInstaller = Object.assign((_ctx: Context, fail: InvariantFailure) => {
+  let previous: BrowserRuntimeState | undefined
+  _ctx.on('browser/runtime-state', (state) => {
+    if (previous === undefined || previous.status === 'closed') {
+      if (state.status !== 'open' || state.revision !== 0) {
+        fail('a deterministic Browser Runtime lifecycle must begin with an open revision 0 state')
+      }
+      previous = state
+      return
+    }
+    if (!sameTarget(previous.target, state.target)) {
+      fail('a deterministic Browser Runtime lifecycle changed an opaque target identity')
+    }
+    if (state.revision !== previous.revision + 1) {
+      fail(`deterministic Browser Runtime revision ${String(state.revision)} must follow ${String(previous.revision)}`)
+    }
+    previous = state
+  }, { global: true })
+}, { inject: ['browserRuntime'] })
+
+/**
+ * Register this package's invariant companion.
+ * @param ctx - Context owning the invariant registry.
+ * @returns the exact registration disposer.
+ */
+export const apply = (ctx: Context): Promise<() => void> =>
+  Promise.resolve(ctx.invariants.register(PACKAGE_NAME, install))
+/* jscpd:ignore-end */

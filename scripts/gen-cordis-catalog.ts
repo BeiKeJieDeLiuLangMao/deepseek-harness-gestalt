@@ -50,6 +50,7 @@ export { REGION_BEGIN, REGION_END }
  * errors, so the partition can never silently drift from the service API.
  */
 export const SERVICE_PAGE: Record<string, string> = {
+  browserRuntime: 'browser-runtime.md',
   agentLoop: 'core.md',
   agentDefaultModel: 'core.md',
   agentPresets: 'core.md',
@@ -170,6 +171,7 @@ export const EVENT_SCOPE_PAGE: Record<string, string> = {
   'agent-loop': 'core.md',
   'agent-preset': 'core.md',
   'approval': 'approval.md',
+  'browser': 'browser-runtime.md',
   'commands': 'commands.md',
   'cordis': 'extensions.md',
   'credentials': 'credentials.md',
@@ -217,6 +219,20 @@ export const EVENT_WALK_EXEMPTIONS: Record<string, string> = {
  * appear on more than one page.
  */
 export const LINK_MAP: Readonly<Record<string, string>> = {
+  BrowserClosedState: 'browser-runtime.md',
+  BrowserCreateRequest: 'browser-runtime.md',
+  BrowserInstanceId: 'browser-runtime.md',
+  BrowserMutationRequest: 'browser-runtime.md',
+  BrowserNavigateRequest: 'browser-runtime.md',
+  BrowserObserveRequest: 'browser-runtime.md',
+  BrowserPageState: 'browser-runtime.md',
+  BrowserProfileId: 'browser-runtime.md',
+  BrowserRuntimeError: 'browser-runtime.md',
+  BrowserRuntimeState: 'browser-runtime.md',
+  BrowserScreenshot: 'browser-runtime.md',
+  BrowserTabId: 'browser-runtime.md',
+  BrowserTarget: 'browser-runtime.md',
+  BrowserWorkspaceId: 'browser-runtime.md',
   Agent: 'core.md',
   AgentCancelCause: 'core.md',
   AgentFactory: 'core.md',

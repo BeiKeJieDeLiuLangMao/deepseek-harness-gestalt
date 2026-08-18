@@ -12,7 +12,20 @@ interface Config {
 
 /** Drive the configured root agent and expose only canonical session events. */
 async function run(ctx: Context, task: string): Promise<void> {
-  await ctx.get('loader')?.await()
+  const configuredAgent = Promise.withResolvers<undefined>()
+  const disposeCreated = ctx.on('agent/created', () => { configuredAgent.resolve(undefined) })
+  const disposeFailed = ctx.on('agent-loop/config-start-failed', ({ error }) => {
+    configuredAgent.reject(error)
+  })
+  try {
+    await ctx.get('loader')?.await()
+    if ((ctx.get('agents')?.roots().length ?? 0) === 0) {
+      await configuredAgent.promise
+    }
+  } finally {
+    disposeCreated()
+    disposeFailed()
+  }
   const agents = ctx.get('agents')?.roots() ?? []
   const [agent] = agents ?? []
   if (agent === undefined || agents?.length !== 1) {
