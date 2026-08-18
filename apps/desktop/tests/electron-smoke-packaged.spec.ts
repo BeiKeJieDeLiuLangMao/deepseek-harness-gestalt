@@ -28,13 +28,22 @@ describe.skipIf(process.env.DSH_DESKTOP_SMOKE !== '1' || !existsSync(appBin))(
           DSH_HOME: dshHome,
           DSH_DESKTOP_SMOKE: '1',
           DSH_DESKTOP_SMOKE_FILE: log,
+          ELECTRON_ENABLE_LOGGING: '1',
           HOME: userHome,
           USERPROFILE: userHome,
         },
         stdio: ['ignore', 'pipe', 'pipe'],
       })
+      let output = ''
+      const onData = (chunk: Buffer): void => { output += chunk.toString() }
+      child.stdout?.on('data', onData)
+      child.stderr?.on('data', onData)
+      let exitCode: number | null = null
       const electronExited = new Promise<void>((resolve) => {
-        child.once('exit', () => { resolve() })
+        child.once('exit', (code) => {
+          exitCode = code
+          resolve()
+        })
       })
       const deadline = Date.now() + 80_000
       while (Date.now() < deadline) {
@@ -49,12 +58,19 @@ describe.skipIf(process.env.DSH_DESKTOP_SMOKE !== '1' || !existsSync(appBin))(
         }
         if (text.includes('missing Desktop Session Surface evidence') || text.includes('error ')) {
           child.kill()
-          throw new Error(text)
+          throw new Error(text + '\n' + output.slice(-4000))
+        }
+        if (exitCode !== null) {
+          throw new Error(
+            `packed smoke exited ${String(exitCode)} before ok\n${text}\n${output.slice(-4000)}`,
+          )
         }
         await new Promise((resolve) => { setTimeout(resolve, 250) })
       }
       child.kill()
-      throw new Error('packed smoke timed out\n' + (await readFile(log, 'utf8')))
+      throw new Error(
+        'packed smoke timed out\n' + (await readFile(log, 'utf8')) + '\n' + output.slice(-4000),
+      )
     }, 120_000)
   },
 )
