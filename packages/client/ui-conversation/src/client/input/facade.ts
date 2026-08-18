@@ -18,6 +18,14 @@ import type {
 } from './contract.ts'
 import type { InputSubmitMode } from '../contract/composer-submission.ts'
 import { InputMachine } from './machine.ts'
+import type { AnnotationCompilerLabels, TextAnchor, TextAnnotation, TextAnnotationId } from '../annotation/model.ts'
+import { compileAnnotationSubmission, TextAnnotationId as createTextAnnotationId } from '../annotation/model.ts'
+
+/** One exact annotation snapshot whose object identity owns its settlement. */
+export interface AnnotationSubmissionReservation {
+  readonly restoreText: string
+  readonly ids: readonly TextAnnotationId[]
+}
 
 /** Popup face the shell needs (dismissal only; typed structurally to avoid a value import). */
 export interface PopupDismissFace {
@@ -45,7 +53,14 @@ export interface SessionInputDeps {
    */
   steerQueue?: (() => void) | undefined
   /** The plain-message sink (send choreography / materialize fork — the hub owns it). */
-  defaultSink(text: string, imageIds: readonly DraftAttachmentId[], mode: InputSubmitMode): void
+  defaultSink(
+    text: string,
+    imageIds: readonly DraftAttachmentId[],
+    mode: InputSubmitMode,
+    annotationDraft?: AnnotationSubmissionReservation,
+  ): void
+  /** Localized ordinary-prose fragments for Annotation Submission (the hub always supplies them). */
+  annotationLabels: AnnotationCompilerLabels
 }
 
 /** Guard tier from the machine phase. */
@@ -77,6 +92,9 @@ export class SessionInputShell implements SessionInput {
     addImages: ids => this.addImages(ids),
     removeImage: (id) => { this.removeImage(id) },
     pruneImages: (ids) => { this.pruneImages(ids) },
+    addTextAnnotation: (anchor, note) => this.addTextAnnotation(anchor, note),
+    updateTextAnnotation: (id, note) => { this.updateTextAnnotation(id, note) },
+    removeTextAnnotation: (id) => { this.removeTextAnnotation(id) },
     submit: () => { this.submit('queue') },
   }
 
@@ -86,6 +104,9 @@ export class SessionInputShell implements SessionInput {
   private noticeSeq = 0
   private lastDraft = ''
   private imageIds: readonly DraftAttachmentId[] = []
+  private annotations: readonly TextAnnotation[] = []
+  private annotationSubmission: AnnotationSubmissionReservation | undefined
+  private annotationSeq = 0
   private disposed = false
   /** Draft persistence mirror (chat store write; receives the clipboard projection, never raw placeholders). */
   private mirrorFn: ((text: string) => void) | undefined
@@ -104,6 +125,7 @@ export class SessionInputShell implements SessionInput {
    * (narrows the machine's occurrence math; absent → diff scan).
    */
   setDraft(text: string, editRange?: EditRange): void {
+    if (this.annotationSubmission !== undefined) return
     this.run(this.core.dispatch({ type: 'draft-changed', draft: text, ...(editRange !== undefined ? { editRange } : {}) }))
   }
 
@@ -133,6 +155,60 @@ export class SessionInputShell implements SessionInput {
     const next = this.imageIds.filter(id => keep.has(id))
     if (next.length === this.imageIds.length) return
     this.imageIds = next
+    this.publish()
+  }
+
+  /**
+   * Add one text annotation in creation order.
+   * @param anchor - Quoted source reference.
+   * @param note - Optional user-authored comment.
+   * @returns The stable draft identity.
+   */
+  addTextAnnotation(anchor: TextAnchor, note: string): TextAnnotationId {
+    this.annotationSeq += 1
+    const id = createTextAnnotationId(`annotation-${this.annotationSeq}`)
+    this.annotations = [...this.annotations, { id, kind: 'text', anchor, note }]
+    this.publish()
+    return id
+  }
+
+  /**
+   * Edit one note while preserving annotation identity and order.
+   * @param id - Annotation to edit.
+   * @param note - Replacement comment.
+   */
+  updateTextAnnotation(id: TextAnnotationId, note: string): void {
+    if (this.annotationSubmission !== undefined) return
+    const next = this.annotations.map(item => item.id === id ? { ...item, note } : item)
+    if (next.every((item, index) => item === this.annotations[index])) return
+    this.annotations = next
+    this.publish()
+  }
+
+  /**
+   * Delete one unsent annotation.
+   * @param id - Annotation to remove.
+   */
+  removeTextAnnotation(id: TextAnnotationId): void {
+    if (this.annotationSubmission !== undefined) return
+    const next = this.annotations.filter(item => item.id !== id)
+    if (next.length === this.annotations.length) return
+    this.annotations = next
+    this.publish()
+  }
+
+  /**
+   * Settle the owned annotation snapshot after Host admission.
+   * @param reservation - Exact object handed to the sink.
+   * @param admitted - Whether the Host accepted the compiled message.
+   */
+  settleAnnotationSubmission(reservation: AnnotationSubmissionReservation, admitted: boolean): void {
+    if (this.annotationSubmission !== reservation) return
+    this.annotationSubmission = undefined
+    if (admitted) {
+      const submitted = new Set(reservation.ids)
+      this.annotations = this.annotations.filter(item => !submitted.has(item.id))
+    }
     this.publish()
   }
 
@@ -196,8 +272,9 @@ export class SessionInputShell implements SessionInput {
    * dismisses and the menu tracks frozen.
    */
   submit(mode: InputSubmitMode = 'queue'): void {
-    if (this.snapshot.draft.trim() === '' && this.imageIds.length > 0) {
-      if (this.snapshot.phase === 'plain') this.deps.defaultSink('', [...this.imageIds], mode)
+    if (this.annotationSubmission !== undefined) return
+    if (this.snapshot.draft.trim() === '' && (this.imageIds.length > 0 || this.annotations.length > 0)) {
+      if (this.snapshot.phase === 'plain') this.sinkSerialized('', mode)
       return
     }
     this.run(this.core.dispatch({ type: 'enter', mode }))
@@ -415,9 +492,19 @@ export class SessionInputShell implements SessionInput {
    */
   private sinkSerialized(draft: string, mode: InputSubmitMode): void {
     const imageIds = [...this.imageIds]
+    const annotations = [...this.annotations]
+    const annotationDraft = annotations.length === 0
+      ? undefined
+      : { restoreText: draft, ids: annotations.map(item => item.id) }
+    if (annotationDraft !== undefined) {
+      this.annotationSubmission = annotationDraft
+      this.publish()
+    }
     const occurrences = this.core.state.occurrences
     if (occurrences.length === 0) {
-      this.deps.defaultSink(draft.trim(), imageIds, mode)
+      const compiled = this.compile(draft, annotations)
+      if (annotationDraft === undefined) this.deps.defaultSink(compiled, imageIds, mode)
+      else this.deps.defaultSink(compiled, imageIds, mode, annotationDraft)
       return
     }
     const inputTriggers = this.deps.inputTriggers?.()
@@ -437,11 +524,14 @@ export class SessionInputShell implements SessionInput {
           cursor = part.offset + 1
         }
         out += draft.slice(cursor)
-        this.deps.defaultSink(out.trim(), imageIds, mode)
+        const compiled = this.compile(out, annotations)
+        if (annotationDraft === undefined) this.deps.defaultSink(compiled, imageIds, mode)
+        else this.deps.defaultSink(compiled, imageIds, mode, annotationDraft)
       },
       (error: unknown) => {
         controller.abort()
         if (this.disposed) return
+        if (annotationDraft !== undefined) this.settleAnnotationSubmission(annotationDraft, false)
         const message = error instanceof Error ? error.message : String(error)
         this.notify('error', message)
       },
@@ -495,7 +585,17 @@ export class SessionInputShell implements SessionInput {
 
   private compose(): InputState {
     const core = this.core.state
-    return { ...core, imageIds: this.imageIds, queue: this.deps.queue?.getSnapshot() ?? EMPTY_QUEUE }
+    return {
+      ...core,
+      imageIds: this.imageIds,
+      annotations: this.annotations,
+      annotationSubmitting: this.annotationSubmission !== undefined,
+      queue: this.deps.queue?.getSnapshot() ?? EMPTY_QUEUE,
+    }
+  }
+
+  private compile(question: string, annotations: readonly TextAnnotation[]): string {
+    return compileAnnotationSubmission(question, annotations, this.deps.annotationLabels)
   }
 
   private publish(): void {

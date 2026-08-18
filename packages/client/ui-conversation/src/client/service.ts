@@ -138,13 +138,17 @@ export class ConversationController extends Service implements IConversation {
    * @param text - serialized prompt text.
    * @param imageIds - ordered draft-local attachment ids.
    * @param mode - queue or steer delivery selected by composer policy.
+   * @returns whether the Host admitted the complete request. A rejected
+   * prompt resolves false (the failure is already mirrored into the session
+   * snapshot's promptError); local failures (missing drafts, upload errors)
+   * reject.
    */
   async sendSession(
     session: SessionFace,
     text: string,
     imageIds: readonly DraftAttachmentId[],
     mode: InputSubmitMode,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const attachments = this.draftImages(imageIds)
     if (attachments.length !== imageIds.length) {
       throw new Error('conversation.sendSession: one or more draft images are no longer available')
@@ -152,8 +156,9 @@ export class ConversationController extends Service implements IConversation {
     const uploaded = await this.serializeImages(attachments.map(attachment => attachment.file))
     const content = [...uploaded, ...(text === '' ? [] : [{ type: 'text' as const, text }])]
     const result = await session.prompt(content, mode)
-    if (!result.ok) throw new Error(`conversation.send failed: ${result.error.code}: ${result.error.message}`)
+    if (!result.ok) return false
     this.releaseDraftImages(attachments)
+    return true
   }
 
   /**

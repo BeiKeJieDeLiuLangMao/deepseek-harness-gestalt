@@ -20,6 +20,13 @@ import { InputBar } from '../src/client/skeleton/InputBar.tsx'
 import type { InputBarProps } from '../src/client/skeleton/InputBar.tsx'
 import { zh } from '../src/client/locales.ts'
 
+/** Compiler labels required by every shell construction (the hub always supplies them). */
+const TEST_LABELS = {
+  heading: (index: number) => `Annotation ${index}`,
+  quote: (value: string) => `Quoted text: \u201c${value}\u201d`,
+  note: (value: string) => `Note: ${value}`,
+}
+
 afterEach(cleanup)
 
 const SCTX = {} as ClientContext
@@ -70,7 +77,7 @@ function mountBar(shell: SessionInputShell, over?: { running?: boolean; disabled
 
 function bench(over?: { running?: boolean; disabled?: boolean; submit?: (args: string) => Promise<SubmitOutcome> }) {
   const sink = vi.fn()
-  const shell = new SessionInputShell({ actx: SCTX, defaultSink: sink })
+  const shell = new SessionInputShell({ actx: SCTX, defaultSink: sink, annotationLabels: TEST_LABELS })
   const wiring = shell
   const view = mountBar(shell, over)
   const textarea = view.container.querySelector('textarea')!

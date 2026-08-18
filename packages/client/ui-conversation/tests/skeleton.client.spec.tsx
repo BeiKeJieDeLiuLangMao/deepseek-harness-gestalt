@@ -29,10 +29,17 @@ import type {
 } from '../src/client/contract/slots.ts'
 import type { ViewTab } from '../src/client/contract/views.ts'
 
+/** Compiler labels required by every shell construction (the hub always supplies them). */
+const TEST_LABELS = {
+  heading: (index: number) => `Annotation ${index}`,
+  quote: (value: string) => `Quoted text: \u201c${value}\u201d`,
+  note: (value: string) => `Note: ${value}`,
+}
+
 /** Machine-backed wiring over a sink spy. */
 function fakeWiring() {
   const sink = vi.fn()
-  const shell = new SessionInputShell({ actx: {} as ClientContext, defaultSink: sink })
+  const shell = new SessionInputShell({ actx: {} as ClientContext, defaultSink: sink, annotationLabels: TEST_LABELS })
   return { wiring: shell, sink, shell }
 }
 

@@ -47,6 +47,11 @@ beforeEach(() => {
 const SID = 's1' as SessionId
 type RoutedChatNodeOwner = ChatNodeOwnerProps & { readonly node: ChatNode }
 
+const emptyInput = createSnapshotStore({
+  draft: '', imageIds: [], annotations: [], annotationSubmitting: false, draftRev: 0,
+  phase: 'plain' as const, occurrences: [], queue: [],
+})
+
 function snapshotBase(): ConversationSnapshot {
   return {
     sessionId: SID, views: EMPTY_CONVERSATION_VIEWS, chat: chatSnapshotFixture(), nodes: [],
@@ -268,12 +273,15 @@ function makeHarness(init?: Partial<ConversationSnapshot>) {
     useSessions: emptySessions(),
     useWorkspaces: emptyWorkspaces(),
     useProjection: (() => undefined),
-    useInput: (() => { throw new Error('unused') }),
+    useInput: bindSnapshotSelector(emptyInput),
     inputActions: {
       setDraft: () => {},
       addImages: () => true,
       removeImage: () => {},
       pruneImages: () => {},
+      addTextAnnotation: () => { throw new Error('unused') },
+      updateTextAnnotation: () => {},
+      removeTextAnnotation: () => {},
       submit: () => {},
     },
     useStore: bindSnapshotSelector(chat),

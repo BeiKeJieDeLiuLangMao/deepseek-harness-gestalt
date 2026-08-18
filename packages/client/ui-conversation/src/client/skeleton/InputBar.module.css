@@ -131,6 +131,83 @@
   padding: 4px 12px 0;
 }
 
+.annotationSummary {
+  position: relative;
+  width: max-content;
+  padding: 0 12px;
+}
+
+.annotationSummaryTrigger {
+  height: 30px;
+  padding: 0 11px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.annotationSummaryDetails {
+  position: absolute;
+  z-index: 20;
+  bottom: calc(100% + 4px);
+  left: 12px;
+  display: none;
+  width: 330px;
+  max-height: 240px;
+  padding: 8px;
+  overflow: auto;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 13px;
+  background: var(--dsw-alias-bg-base);
+  box-shadow: var(--dsw-shadow-lv3);
+}
+
+.annotationSummary:hover .annotationSummaryDetails,
+.annotationSummary:focus-within .annotationSummaryDetails {
+  display: grid;
+  gap: 4px;
+}
+
+.annotationSummaryItem {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 28px;
+  gap: 4px;
+  border-radius: 9px;
+  background: var(--dsw-alias-bg-module-platform);
+}
+
+.annotationSummaryItem button {
+  min-width: 0;
+  padding: 7px 8px;
+  border: 0;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  text-align: left;
+}
+
+.annotationSummaryItem strong,
+.annotationSummaryItem small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.annotationSummaryItem small {
+  color: var(--dsw-alias-label-caption);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.annotationEditPopover {
+  position: absolute;
+  z-index: 21;
+  bottom: calc(100% + 4px);
+  left: 12px;
+}
+
 /* Floating overlay anchor (menu / popupSelect shell): entries position
    themselves against the card (bottom: 100% + gap); closed entries render null. */
 .overlayAnchor {

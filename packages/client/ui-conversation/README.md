@@ -46,16 +46,27 @@ The chat stats line takes its token accounting from the generic token-meter `tok
 
 A finished turn materializes one ordered `turn-tail` Conversation Node. Its engine-owned `TurnLocation` supplies the closing Assistant and Turn data; the renderer places the `conversation.chat.turnTail` chain before that node's IconActions and dispatches `TurnTailOwnerProps` containing the Turn, closing seq, and `openFile`. This package owns only the hole; `@deepseek-ai/dsh-client-ui-deliverables` accumulates mutation-tool `locations` into Turn data and owns the produced-files row, chip cap, and copy, so composing that plugin out of cordis.yml turns the surface off while the hole renders empty at zero cost. The closing prose participates through the same off switch: the chat view asks the optional `chatFileMentions` service (ctx.get; provided by the same plugin) for a closing message's inline-code vocabulary and threads the result into MarkdownText's `fileMentions` seam — an absent service leaves the prose inert.
 
+Completed assistant Markdown registers ordinary text, inline code, fenced code, raw HTML literals, and images in one renderer-owned projection while it renders. Each source-order contribution has stable ownership: a local rerender replaces its leaves and ref cleanup removes detached endpoints, so copy state and lazy grammar loading cannot duplicate or reorder the projection. Text annotation uses that projection for both Text Anchor context and Draft Mark restoration without scanning or rewriting message DOM. Both endpoints must resolve to registered source text in one completed block. Generated math and footnote chrome are not source-text leaves, and a selection crossing either is rejected; any image intersecting the selected fragment also rejects the whole selection, including images with empty alt text.
+
 ## Model Experience
 
-None, as the conversation UI renders session history and streams in the browser; nothing here reaches a model request.
+### Annotation submission
+
+#### What the model sees
+
+Text annotations compile into the same ordinary `user/message` that the Composer sends. A non-empty question stays first, followed by each annotation in creation order with a localized heading, exact quoted text, and the optional note. Annotation-only sends use the same form. No annotation protocol, response-format instruction, or hidden metadata enters the request. One in-flight reservation owns the exact annotation snapshot until the Host admits the complete request — the prompt acceptance the ordinary send path checks, never mere promise resolution. During that interval the Composer is read-only, repeated submission and annotation edits are refused, admission clears only the owned annotations, and a send that resolves without admission restores the full draft for retry.
+
+#### Token effect
+
+Each exact quote, non-empty note, localized heading, and optional question contributes ordinary user-message tokens.
 
 #### KV Cache effect
 
-None; this package neither assembles nor sends a provider request.
+The compiled prose is ordinary user-message content, so it contributes tokens and invalidates the request suffix exactly like manually typed text.
 
 ## Known Limitations and Deferred Work
 
+- **Unsent annotation drafts are page-local** — text anchors, notes, and Draft Marks live in the resident Composer only. Reloading the page discards them; sent annotations survive because they have already become an ordinary logged user message.
 - **The stats-line fallback fold covers the in-window flow only** — without the `sessionStats` projection (an assembly that does not mount the unit), every figure folds the snapshot's assistant `timing` and tool call/result pairs, so nodes outside the loaded event window (older history) are not counted and the numbers grow per loaded page.
 - **The details panel has no entry point** — `ChatViewInjected.openDetails` is implemented but uncalled, so the raw selected-call display is unreachable in the assembled application. There is no Input/Output/Metadata switch, Prev/Next stepping, or trajectory deep link.
 - **Assistant per-message paging is a reserved slot** — drawn in the design, not implemented. The finalized content IconActions row (copy / clock / branch) ships under the last content-text assistant of each turn that has ended; mid-turn narration, Think-only nodes, and every node of a turn still producing steps stay chrome-free. Branch stays disabled unless that message is also the last transcript node of a completed turn; when enabled, it forks through that turn, increments the inherited title on the client, and opens the child. A fork or rename failure leaves the source selected ([decision](../../../.agents/notes/implemented/bug-fix/2026-08-02-message-fork-actions-require-completed-turn-tail.md)).

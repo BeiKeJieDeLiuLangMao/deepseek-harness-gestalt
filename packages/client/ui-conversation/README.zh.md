@@ -46,16 +46,27 @@ Host 带 placement 的 `session/queue` 快照也会携带待处理 steering。Qu
 
 完成的一轮会物化一个有序的 `turn-tail` Conversation Node。它由引擎维护的 `TurnLocation` 提供收尾 Assistant 和 Turn data；renderer 在该 Node 的 IconActions 之前渲染 `conversation.chat.turnTail` chain，并派发包含 Turn、收尾 seq 和 `openFile` 的 `TurnTailOwnerProps`。本包只拥有空位；`@deepseek-ai/dsh-client-ui-deliverables` 把改写工具的 `locations` 累积到 Turn data，并拥有产物行、chip 上限和文案，因此把该插件从 cordis.yml 中组合掉即可关闭该交互面，空位以零成本渲染为空。收尾正文经由同一个开关参与其中：chat 视图向可选的 `chatFileMentions` service（ctx.get；由同一插件提供）索取收尾消息的行内代码词表，并把结果接进 MarkdownText 的 `fileMentions` seam——service 缺席时正文保持死文本。
 
+已完成的 assistant Markdown 会在渲染时，把普通文本、行内代码、围栏代码、原样展示的 HTML 与图片登记到 renderer 拥有的同一份投影中。每个按源顺序排列的贡献都具有稳定所有权：局部重渲染会替换其叶节点，ref 清理会移除已分离的端点，因此复制状态与惰性语法加载不会复制投影内容或改变其顺序。文本注释使用该投影生成 Text Anchor 前后文并恢复 Draft Mark，不扫描或改写消息 DOM。两个端点都必须解析到同一个已完成文本块中已登记的源文本。生成的数学公式与脚注界面不是源文本叶节点，跨越它们的选择会被拒绝；只要所选片段与任意图片相交，整段选择也会被拒绝，包括 alt 文本为空的图片。
+
 ## 模型体验
 
-无。会话 UI 在浏览器中渲染会话历史与流；这里没有任何内容进入模型请求。
+### 注释提交
+
+#### 模型看到的内容
+
+文本注释会编译进 Composer 发送的同一条普通 `user/message`。非空问题排在最前，随后按创建顺序列出每条注释，包含本地化标题、精确引用文本与可选批示；仅含注释时也使用同一形式。请求中没有注释协议、回答格式指令或隐藏元数据。一项在途 reservation 会拥有精确的注释快照，直到 Host 接纳完整请求才完成结算——即普通发送路径检查的同一个 prompt 接纳信号，绝不依赖 promise 单纯完成。在此期间，Composer 保持只读，重复提交与注释编辑会被拒绝；接纳成功只清理该 reservation 拥有的注释，未获接纳即完成的发送会恢复完整草稿以供重试。
+
+#### Token 影响
+
+每段精确引用、非空批示、本地化标题与可选问题都会贡献普通用户消息 token。
 
 #### KV Cache 影响
 
-无；该包既不组装也不发送提供方请求。
+编译后的文案是普通用户消息内容，因此其 token 与手工输入文本一样计入请求，并使请求后缀失效。
 
 ## 已知限制与暂缓事项
 
+- **未发送的注释草稿仅存在于当前页面**：文本锚点、批示与 Draft Mark 只保存在常驻 Composer 中。刷新页面会丢弃它们；已发送的注释已经成为普通的持久用户消息，因此不受影响。
 - **统计行的回退折算只覆盖窗口内消息流**：未组合 `sessionStats` 投影单元的装配中，所有数字由快照的 assistant `timing` 与工具 call/result 配对折算，落在已加载事件窗口之外的节点（更早的历史）不计入，数字随加载页数增长。
 - **详情面板没有入口**：`ChatViewInjected.openDetails` 虽已实现却无人调用，因此以原始形式显示已选择调用的那部分在组装后的应用中不可达。没有 Input/Output/Metadata 切换、Prev/Next 步进，也没有 trajectory 深链接。
 - **assistant 逐消息分页是预留 slot**：设计中已有图稿，尚未实现。已定稿的内容 IconActions 行（复制／时钟／分支）只挂在每个已结束轮次中最后一条带 text 内容的 assistant 下；轮次中间的叙述、纯 Think 节点，以及仍在产出步骤的轮次里的所有节点都不带 chrome。除非该消息同时也是已完成轮次的最后一个 transcript 节点，否则分支保持禁用；启用后，它会 fork 到该轮次末尾，在 client 端递增继承标题并打开子会话。fork 或改名失败时源会话保持选中（[决策](../../../.agents/notes/implemented/bug-fix/2026-08-02-message-fork-actions-require-completed-turn-tail.md)）。
