@@ -5,7 +5,8 @@
 
 /* jscpd:ignore-start */
 import type { Context } from '@deepseek-ai/cordis'
-import type { BrowserRuntime, BrowserRuntimeState, BrowserTarget } from '@deepseek-ai/dsh-browser-runtime'
+import type { BrowserRuntime, BrowserRuntimeState } from '@deepseek-ai/dsh-browser-runtime'
+import { sameBrowserTarget } from '@deepseek-ai/dsh-browser-runtime'
 import type { InvariantFailure, InvariantInstaller } from '@deepseek-ai/dsh-invariants'
 import {
   registerRuntimeStateValidator,
@@ -20,14 +21,6 @@ const PACKAGE_NAME = '@deepseek-ai/dsh-browser-runtime-deterministic'
 export const name = 'browser-runtime-deterministic-invariant'
 /** Services required before the companion can reserve and observe its package relationship. */
 export const inject = ['invariants']
-
-/** Test opaque resource identity equality without weakening the branded Service Definition types. */
-function sameTarget(left: BrowserTarget, right: BrowserTarget): boolean {
-  return left.profileId === right.profileId
-    && left.workspaceId === right.workspaceId
-    && left.browserId === right.browserId
-    && left.tabId === right.tabId
-}
 
 /** Validate lifecycle publications as one open-to-closed revision stream. */
 const install: InvariantInstaller = Object.assign((_ctx: Context, fail: InvariantFailure) => {
@@ -53,7 +46,10 @@ const install: InvariantInstaller = Object.assign((_ctx: Context, fail: Invarian
     if (previous.status === 'closed') {
       fail('a deterministic Browser Runtime terminal state cannot reopen')
     }
-    if (!sameTarget(previous.target, state.target)) {
+    if (state.status === 'unavailable') {
+      fail('a deterministic Browser Runtime cannot publish an unavailable state')
+    }
+    if (!sameBrowserTarget(previous.target, state.target)) {
       fail('a deterministic Browser Runtime lifecycle changed an opaque target identity')
     }
     if (state.revision !== previous.revision + 1) {

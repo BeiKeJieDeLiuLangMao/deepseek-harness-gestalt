@@ -611,6 +611,9 @@ importers:
       '@deepseek-ai/dsh-browser-runtime-deterministic':
         specifier: workspace:*
         version: link:../packages/browser/browser-runtime-deterministic
+      '@deepseek-ai/dsh-browser-runtime-tandem':
+        specifier: workspace:*
+        version: link:../packages/browser/browser-runtime-tandem
       '@deepseek-ai/dsh-code-runtime-worker-thread':
         specifier: workspace:*
         version: link:../packages/code-runtime/code-runtime-worker-thread
@@ -1198,6 +1201,28 @@ importers:
       '@deepseek-ai/dsh-invariants':
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants
+
+  packages/browser/browser-runtime-tandem:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-browser-runtime':
+        specifier: workspace:^
+        version: link:../browser-runtime
+      '@deepseek-ai/dsh-invariants':
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+      '@deepseek-ai/dsh-subprocess':
+        specifier: workspace:^
+        version: link:../../subprocess/subprocess
+      '@deepseek-ai/dsh-subprocess-local':
+        specifier: workspace:^
+        version: link:../../subprocess/subprocess-local
 
   packages/browser/tool-browser:
     dependencies:

@@ -7,12 +7,16 @@ import { Buffer } from 'node:buffer'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import {
+  addressedBrowserRuntimeState,
+  assertBrowserNotAborted,
   BrowserInstanceId,
   BrowserProfileId,
   BrowserRuntime,
   BrowserRuntimeError,
   BrowserTabId,
   BrowserWorkspaceId,
+  emitBrowserRuntimeState,
+  requireOpenBrowserPage,
 } from '@deepseek-ai/dsh-browser-runtime'
 import type {
   BrowserClosedState,
@@ -69,21 +73,6 @@ export const Config: z<Config> = z.object({
 /** Complete config after Schemastery applies its defaults. */
 type ResolvedConfig = Required<Config>
 
-/** Return whether two opaque target values address the same Browser Runtime resources. */
-function sameTarget(left: BrowserTarget, right: BrowserTarget): boolean {
-  return left.profileId === right.profileId
-    && left.workspaceId === right.workspaceId
-    && left.browserId === right.browserId
-    && left.tabId === right.tabId
-}
-
-/** Throw the canonical abort failure before touching Provider state. */
-function assertNotAborted(signal: AbortSignal | undefined): void {
-  if (signal?.aborted) {
-    throw new BrowserRuntimeError(`browser operation aborted: ${String(signal.reason)}`, 'BROWSER_ABORTED')
-  }
-}
-
 /** Freeze one target so returned state cannot mutate the Provider's relationship keys. */
 function targetFor(prefix: string): BrowserTarget {
   return Object.freeze({
@@ -129,9 +118,6 @@ export class DeterministicBrowserRuntime extends BrowserRuntime {
   private readonly pages: ReadonlyMap<string, DeterministicBrowserPage>
   private readonly target: BrowserTarget
   private state: BrowserRuntimeState | undefined
-  private queue: Promise<void> = Promise.resolve()
-  private closing = false
-  private disposed = false
 
   constructor(ctx: Context, config: Config) {
     super(ctx)
@@ -156,36 +142,11 @@ export class DeterministicBrowserRuntime extends BrowserRuntime {
     ctx.effect(() => () => this.teardown(), 'deterministic browser runtime teardown')
   }
 
-  /** Reject work that enters after teardown begins. */
-  private assertAccepting(): void {
-    if (this.closing || this.disposed) {
-      throw new BrowserRuntimeError('browser runtime is disposed', 'BROWSER_DISPOSED')
-    }
-  }
-
-  /** Serialize one accepted operation behind all earlier reads and mutations. */
-  private exclusive<T>(operation: () => T): Promise<T> {
-    this.assertAccepting()
-    const result = this.queue.then(operation)
-    this.queue = result.then(() => undefined, () => undefined)
-    return result
-  }
-
   /** Publish one committed state while containing every post-commit observer failure. */
   private notifyState(state: BrowserRuntimeState): void {
-    const args = ['browser/runtime-state', state]
-    for (const listener of this.ctx.events.dispatch('emit', args) as Array<(value: BrowserRuntimeState) => unknown>) {
-      try {
-        const returned = listener(state)
-        if (returned != null && typeof (returned as PromiseLike<unknown>).then === 'function') {
-          void Promise.resolve(returned as PromiseLike<unknown>).then(undefined, (error: unknown) => {
-            this.warnStateObserverFailure(error)
-          })
-        }
-      } catch (error) {
-        this.warnStateObserverFailure(error)
-      }
-    }
+    emitBrowserRuntimeState(this.ctx, state, (error) => {
+      this.warnStateObserverFailure(error)
+    })
   }
 
   /** Log one contained state-observer failure without reading it through an unsafe coercion. */
@@ -205,19 +166,12 @@ export class DeterministicBrowserRuntime extends BrowserRuntime {
 
   /** Resolve and validate the addressed state. */
   private addressed(target: BrowserTarget): BrowserRuntimeState {
-    if (this.state === undefined || !sameTarget(this.state.target, target)) {
-      throw new BrowserRuntimeError('browser target is not present', 'BROWSER_NOT_FOUND')
-    }
-    return this.state
+    return addressedBrowserRuntimeState(this.state, target)
   }
 
   /** Resolve an open page or reject a closed target. */
   private open(target: BrowserTarget): BrowserPageState {
-    const state = this.addressed(target)
-    if (state.status !== 'open') {
-      throw new BrowserRuntimeError('browser target is closed', 'BROWSER_NOT_OPEN')
-    }
-    return state
+    return requireOpenBrowserPage(this.addressed(target))
   }
 
   /** Enforce optimistic mutation ordering. */
@@ -231,9 +185,9 @@ export class DeterministicBrowserRuntime extends BrowserRuntime {
   }
 
   async create(request: BrowserCreateRequest): Promise<BrowserPageState> {
-    assertNotAborted(request.signal)
+    assertBrowserNotAborted(request.signal)
     return this.exclusive(() => {
-      assertNotAborted(request.signal)
+      assertBrowserNotAborted(request.signal)
       if (this.state !== undefined) {
         throw new BrowserRuntimeError(
           'the deterministic browser runtime has already created its temporary Profile',
@@ -253,9 +207,9 @@ export class DeterministicBrowserRuntime extends BrowserRuntime {
   }
 
   async navigate(request: BrowserNavigateRequest): Promise<BrowserPageState> {
-    assertNotAborted(request.signal)
+    assertBrowserNotAborted(request.signal)
     return this.exclusive(() => {
-      assertNotAborted(request.signal)
+      assertBrowserNotAborted(request.signal)
       const state = this.open(request.target)
       this.expected(state, request.expectedRevision)
       const page = this.pages.get(request.url)
@@ -275,17 +229,17 @@ export class DeterministicBrowserRuntime extends BrowserRuntime {
   }
 
   async observe(request: BrowserObserveRequest): Promise<BrowserRuntimeState> {
-    assertNotAborted(request.signal)
+    assertBrowserNotAborted(request.signal)
     return this.exclusive(() => {
-      assertNotAborted(request.signal)
+      assertBrowserNotAborted(request.signal)
       return this.addressed(request.target)
     })
   }
 
   async screenshot(request: BrowserObserveRequest): Promise<BrowserScreenshot> {
-    assertNotAborted(request.signal)
+    assertBrowserNotAborted(request.signal)
     return this.exclusive(() => {
-      assertNotAborted(request.signal)
+      assertBrowserNotAborted(request.signal)
       const state = this.open(request.target)
       const page = this.pages.get(state.url)
       if (page === undefined) {
@@ -303,9 +257,9 @@ export class DeterministicBrowserRuntime extends BrowserRuntime {
   }
 
   async focus(request: BrowserMutationRequest): Promise<BrowserPageState> {
-    assertNotAborted(request.signal)
+    assertBrowserNotAborted(request.signal)
     return this.exclusive(() => {
-      assertNotAborted(request.signal)
+      assertBrowserNotAborted(request.signal)
       const state = this.open(request.target)
       this.expected(state, request.expectedRevision)
       return this.commit({ ...state, revision: state.revision + 1, focused: true })
@@ -313,9 +267,9 @@ export class DeterministicBrowserRuntime extends BrowserRuntime {
   }
 
   async close(request: BrowserMutationRequest): Promise<BrowserClosedState> {
-    assertNotAborted(request.signal)
+    assertBrowserNotAborted(request.signal)
     return this.exclusive(() => {
-      assertNotAborted(request.signal)
+      assertBrowserNotAborted(request.signal)
       const state = this.open(request.target)
       this.expected(state, request.expectedRevision)
       return this.commit({ status: 'closed', target: state.target, revision: state.revision + 1 })

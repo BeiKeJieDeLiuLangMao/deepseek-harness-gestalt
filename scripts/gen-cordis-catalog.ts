@@ -232,6 +232,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   BrowserScreenshot: 'browser-runtime.md',
   BrowserTabId: 'browser-runtime.md',
   BrowserTarget: 'browser-runtime.md',
+  BrowserUnavailableState: 'browser-runtime.md',
   BrowserWorkspaceId: 'browser-runtime.md',
   Agent: 'core.md',
   AgentCancelCause: 'core.md',

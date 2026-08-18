@@ -19,6 +19,8 @@ Snapshot suites run this directory's configuration through [`tests/fixtures/head
 
 [`browser-runtime.cordis.snapshot.yml`](browser-runtime.cordis.snapshot.yml) is the keyless runnable Browser Runtime tracer. It discovers six deferred Browser tools, creates one temporary Profile and tab, navigates, observes, screenshots, focuses, closes, then reloads the same Session to prove that schemas and rendered Browser facts are reconstructable.
 
+`browser-runtime-tandem.cordis.snapshot.yml` runs the same Browser tool path — `tool_search` → `browser_create` → `browser_navigate` → `browser_observe` → `browser_screenshot` → `browser_focus` → `browser_close` — against the managed Tandem Provider and a local Tandem HTTP fixture.
+
 ## E2B POC overlay
 
 [`e2b.cordis.yml`](e2b.cordis.yml) replaces the local filesystem and subprocess providers with one shared E2B sandbox while retaining `dsh-bash-local` and the same model-facing tools. Put `E2B_API_KEY` beside `DEEPSEEK_API_KEY` in the gitignored root `.env`, then run the credential-gated live composition, which drives FS, Bash, PTY, and LSP in one sandbox and proves final deletion:

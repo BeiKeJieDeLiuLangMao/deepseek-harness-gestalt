@@ -1,0 +1,14 @@
+{
+  "steps": [
+    {
+      "op": "initialize"
+    },
+    {
+      "op": "newSession"
+    },
+    {
+      "op": "prompt",
+      "text": "Discover the browser tools, drive the managed Tandem browser through the full temporary Profile tracer, then reply with exactly TANDEM_BROWSER_OK."
+    }
+  ]
+}

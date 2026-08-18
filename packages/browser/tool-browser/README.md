@@ -16,7 +16,7 @@ Model-facing Consumer for `ctx.browserRuntime`. It registers `browser_create`, `
 
 #### What the model sees
 
-The initial tool list omits all six Browser tools and includes the ordinary `tool_search` schema. A search for browser capabilities returns the exact schemas in a durable result. Later requests revalidate those names against current eligible deferred definitions. Every operation result renders all Profile, Workspace, browser, tab, revision, page, screenshot, focus, and close facts as JSON text.
+The initial tool list omits all six Browser tools and includes the ordinary `tool_search` schema. A search for browser capabilities returns the exact schemas in a durable result. Later requests revalidate those names against current eligible deferred definitions. Every operation result renders all Profile, Workspace, browser, tab, revision, page, screenshot, focus, close, and availability facts — including `unavailable` states with their reason and reconnect flag — as JSON text.
 
 #### Token effect
 

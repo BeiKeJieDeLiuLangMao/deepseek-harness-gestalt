@@ -1,6 +1,8 @@
 /** Provider-neutral Service Definition for the Browser Runtime capability. @module @deepseek-ai/dsh-browser-runtime */
 
 import { Context, Service } from '@deepseek-ai/cordis'
+import { enqueueBrowserRuntimeOperation } from './helpers.ts'
+import { BrowserRuntimeError } from './types.ts'
 import type {
   BrowserClosedState,
   BrowserCreateRequest,
@@ -12,6 +14,14 @@ import type {
   BrowserScreenshot,
 } from './types.ts'
 
+export {
+  addressedBrowserRuntimeState,
+  assertBrowserNotAborted,
+  emitBrowserRuntimeState,
+  enqueueBrowserRuntimeOperation,
+  requireOpenBrowserPage,
+  sameBrowserTarget,
+} from './helpers.ts'
 export {
   BrowserInstanceId,
   BrowserProfileId,
@@ -30,6 +40,7 @@ export type {
   BrowserRuntimeState,
   BrowserScreenshot,
   BrowserTarget,
+  BrowserUnavailableState,
 } from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -56,8 +67,35 @@ declare module '@deepseek-ai/cordis' {
  * post-commit notification attempts; asynchronous observers are not awaited.
  */
 export abstract class BrowserRuntime extends Service {
+  /** Tail of the serialized Provider operation queue. */
+  protected queue: Promise<void> = Promise.resolve()
+  /** True once Provider teardown has started. */
+  protected closing = false
+  /** True after teardown has joined outstanding work. */
+  protected disposed = false
+
   constructor(ctx: Context) {
     super(ctx, 'browserRuntime')
+  }
+
+  /** Reject work that enters after teardown begins. */
+  protected assertAccepting(): void {
+    if (this.closing || this.disposed) {
+      throw new BrowserRuntimeError('browser runtime is disposed', 'BROWSER_DISPOSED')
+    }
+  }
+
+  /**
+   * Serialize one accepted operation behind earlier queued work.
+   * @param operation - Work to run after earlier operations settle.
+   * @returns the operation result.
+   */
+  protected exclusive<T>(operation: () => T | Promise<T>): Promise<T> {
+    const next = enqueueBrowserRuntimeOperation(this.queue, () => {
+      this.assertAccepting()
+    }, operation)
+    this.queue = next.queue
+    return next.result
   }
 
   /**
@@ -66,7 +104,9 @@ export abstract class BrowserRuntime extends Service {
    * @returns initial open page state at revision zero; its target addresses every later operation in
    * this lifecycle.
    * @throws `BrowserRuntimeError` with `BROWSER_ABORTED` when cancellation wins, `BROWSER_CAPACITY`
-   * when this Provider cannot admit another lifecycle, or `BROWSER_DISPOSED` after teardown starts.
+   * when this Provider cannot admit another lifecycle, `BROWSER_DISPOSED` after teardown starts,
+   * `BROWSER_PROTOCOL` when the upstream runtime breaks its response protocol, or
+   * `BROWSER_RUNTIME_UNAVAILABLE` when the upstream runtime cannot be reached or starts unhealthy.
    */
   abstract create(request: BrowserCreateRequest): Promise<BrowserPageState>
   /**
@@ -75,15 +115,19 @@ export abstract class BrowserRuntime extends Service {
    * @returns committed open page state whose revision replaces the caller's prior revision.
    * @throws `BrowserRuntimeError` with `BROWSER_ABORTED`, `BROWSER_DISPOSED`, `BROWSER_NOT_FOUND`,
    * `BROWSER_NOT_OPEN`, `BROWSER_REVISION_CONFLICT`, or `BROWSER_UNKNOWN_URL` when the corresponding
-   * precondition fails before commit.
+   * precondition fails before commit, `BROWSER_PROTOCOL` when the upstream runtime breaks its
+   * response protocol, or `BROWSER_RUNTIME_UNAVAILABLE` when it cannot be reached.
    */
   abstract navigate(request: BrowserNavigateRequest): Promise<BrowserPageState>
   /**
    * Observe the latest open or closed state for one target.
    * @param request - Target and cancellation signal.
-   * @returns current state after earlier queued operations, without changing its revision.
+   * @returns current open, unavailable, or closed state after earlier queued operations. Read-only
+   * observation does not advance the revision; an external Provider crash or reconnect may do so.
    * @throws `BrowserRuntimeError` with `BROWSER_ABORTED`, `BROWSER_DISPOSED`, or
-   * `BROWSER_NOT_FOUND`; a closed target is returned rather than rejected.
+   * `BROWSER_NOT_FOUND`; a closed target is returned rather than rejected, and an unavailable
+   * upstream runtime is returned as its unavailable state. `BROWSER_PROTOCOL` is rejected when the
+   * upstream runtime breaks its response protocol.
    */
   abstract observe(request: BrowserObserveRequest): Promise<BrowserRuntimeState>
   /**
@@ -92,7 +136,8 @@ export abstract class BrowserRuntime extends Service {
    * @returns screenshot bytes and depicted page facts from one serialized read at the current revision.
    * @throws `BrowserRuntimeError` with `BROWSER_ABORTED`, `BROWSER_DISPOSED`, `BROWSER_NOT_FOUND`,
    * `BROWSER_NOT_OPEN`, or `BROWSER_UNKNOWN_URL` when the Provider cannot depict the addressed open
-   * page.
+   * page, `BROWSER_PROTOCOL` when the upstream runtime breaks its response protocol, or
+   * `BROWSER_RUNTIME_UNAVAILABLE` when it cannot be reached.
    */
   abstract screenshot(request: BrowserObserveRequest): Promise<BrowserScreenshot>
   /**
@@ -101,7 +146,8 @@ export abstract class BrowserRuntime extends Service {
    * @returns committed focused page state whose revision replaces the caller's prior revision.
    * @throws `BrowserRuntimeError` with `BROWSER_ABORTED`, `BROWSER_DISPOSED`, `BROWSER_NOT_FOUND`,
    * `BROWSER_NOT_OPEN`, or `BROWSER_REVISION_CONFLICT` when the corresponding precondition fails
-   * before commit.
+   * before commit, `BROWSER_PROTOCOL` when the upstream runtime breaks its response protocol, or
+   * `BROWSER_RUNTIME_UNAVAILABLE` when it cannot be reached.
    */
   abstract focus(request: BrowserMutationRequest): Promise<BrowserPageState>
   /**
@@ -110,7 +156,8 @@ export abstract class BrowserRuntime extends Service {
    * @returns terminal close receipt retained by the Provider for later observation.
    * @throws `BrowserRuntimeError` with `BROWSER_ABORTED`, `BROWSER_DISPOSED`, `BROWSER_NOT_FOUND`,
    * `BROWSER_NOT_OPEN`, or `BROWSER_REVISION_CONFLICT` when the corresponding precondition fails
-   * before commit.
+   * before commit, `BROWSER_PROTOCOL` when the upstream runtime breaks its response protocol, or
+   * `BROWSER_RUNTIME_UNAVAILABLE` when it cannot be reached.
    */
   abstract close(request: BrowserMutationRequest): Promise<BrowserClosedState>
 }

@@ -65,7 +65,19 @@ const CLOSED_STATE_SCHEMA = {
   },
 } as const
 
-const STATE_SCHEMA = { oneOf: [OPEN_STATE_SCHEMA, CLOSED_STATE_SCHEMA] } as const
+const UNAVAILABLE_STATE_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    status: { type: 'string', required: true, const: 'unavailable' },
+    target: { ...TARGET_SCHEMA, required: true },
+    revision: { type: 'integer', required: true },
+    reason: { type: 'string', required: true, enum: ['crashed', 'unhealthy', 'reconnect-failed'] },
+    reconnecting: { type: 'boolean', required: true },
+  },
+} as const
+
+const STATE_SCHEMA = { oneOf: [OPEN_STATE_SCHEMA, UNAVAILABLE_STATE_SCHEMA, CLOSED_STATE_SCHEMA] } as const
 
 const SCREENSHOT_SCHEMA = {
   type: 'object',
