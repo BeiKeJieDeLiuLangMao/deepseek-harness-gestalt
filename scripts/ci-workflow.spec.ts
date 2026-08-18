@@ -27,7 +27,7 @@ describe('CI workflow', () => {
     }
   })
 
-  it('keeps a required Wine Windows job, a non-blocking native Windows job with failover, and a master-only standby', () => {
+  it('keeps portable pull-request runners with explicit self-hosted failover and a master-only standby', () => {
     const workflow = loadWorkflow('.github/workflows/ci.yml')
     if (!isRecord(workflow.jobs)
       || !isRecord(workflow.jobs.windows)
@@ -64,12 +64,13 @@ describe('CI workflow', () => {
 
     // windows-native: non-blocking native job with failover, runs windows-complete.
     // Its pool is resolved by the Windows-specific switch.
-    expect(typeof windowsNative['runs-on']).toBe('string')
-    expect(windowsNative['runs-on']).toContain('DSH_CI_FAILOVER_WINDOWS')
+    expectFailoverRunner(
+      windowsNative,
+      'DSH_CI_FAILOVER_WINDOWS',
+      ['self-hosted', 'dsh-win-ci', 'windows'],
+      'windows-2025',
+    )
     expect(windowsNative['runs-on']).not.toContain('DSH_CI_FAILOVER_LINUX')
-    expect(windowsNative['runs-on']).toContain('self-hosted')
-    expect(windowsNative['runs-on']).toContain('dsh-win-ci')
-    expect(windowsNative['runs-on']).toContain('dsh-windows-2025-16core')
     expect(windowsNative.name).toBe('windows node 24 / native complete')
     expect(windowsNative.if).toBe("github.event_name == 'pull_request'")
     expect(windowsNative.env).toMatchObject({
@@ -98,14 +99,118 @@ describe('CI workflow', () => {
     // and the verdict job resolve their pool through DSH_CI_FAILOVER_LINUX,
     // never the Windows switch.
     for (const [jobName, job] of [['node-24', node24], ['node-24-coverage', node24Coverage], ['node-24-consumers', node24Consumers]] as const) {
-      expect(typeof job['runs-on']).toBe('string')
-      expect(job['runs-on'], `${jobName} runs-on must use the Linux failover switch`).toContain('DSH_CI_FAILOVER_LINUX')
+      expectFailoverRunner(
+        job,
+        'DSH_CI_FAILOVER_LINUX',
+        ['self-hosted', 'linux', 'x64', 'vm-backup'],
+        'ubuntu-latest',
+      )
       expect(job['runs-on'], `${jobName} runs-on must not use the Windows failover switch`).not.toContain('DSH_CI_FAILOVER_WINDOWS')
-      expect(job['runs-on']).toContain('vm-backup')
     }
-    expect(aggregate['runs-on']).toContain('DSH_CI_FAILOVER_LINUX')
+    expectFailoverRunner(
+      aggregate,
+      'DSH_CI_FAILOVER_LINUX',
+      ['self-hosted', 'linux', 'x64', 'vm-backup'],
+      'ubuntu-latest',
+    )
     expect(aggregate['runs-on']).not.toContain('DSH_CI_FAILOVER_WINDOWS')
-    expect(aggregate['runs-on']).toContain('vm-backup')
+
+    expect(node24.env).toMatchObject({ DSH_GATE_CONCURRENCY: '2' })
+    expect(node24Coverage.env).toMatchObject({
+      DSH_COVERAGE_MAX_WORKERS: "${{ vars.DSH_CI_FAILOVER_LINUX == 'selfhosted' && github.event.pull_request.user.login != 'dependabot[bot]' && github.event.pull_request.head.repo.full_name == github.repository && '8' || '2' }}",
+      DSH_GATE_CONCURRENCY: '2',
+    })
+    expect(node24Consumers.env).toMatchObject({
+      DSH_GATE_CONCURRENCY: '2',
+      DSH_OXLINT_THREADS: '2',
+      DSH_PUBLINT_CONCURRENCY: '2',
+      DSH_SNAPSHOT_MAX_CONCURRENCY: "${{ vars.DSH_CI_FAILOVER_LINUX == 'selfhosted' && github.event.pull_request.user.login != 'dependabot[bot]' && github.event.pull_request.head.repo.full_name == github.repository && '12' || '2' }}",
+    })
+    expect(windowsNative.env).toMatchObject({
+      DSH_COVERAGE_MAX_WORKERS: '2',
+      DSH_GATE_CONCURRENCY: '2',
+      DSH_PUBLINT_CONCURRENCY: '2',
+    })
+  })
+
+  it('keeps fork and Dependabot setup on the hosted Linux route during failover', () => {
+    const workflow = loadWorkflow('.github/workflows/ci.yml')
+    const node24 = workflowJob(workflow, 'node-24')
+    const node24Coverage = workflowJob(workflow, 'node-24-coverage')
+    const node24Consumers = workflowJob(workflow, 'node-24-consumers')
+    const hostedCondition = "vars.DSH_CI_FAILOVER_LINUX != 'selfhosted' || github.event.pull_request.user.login == 'dependabot[bot]' || github.event.pull_request.head.repo.full_name != github.repository"
+    const selfHostedCondition = "vars.DSH_CI_FAILOVER_LINUX == 'selfhosted' && github.event.pull_request.user.login != 'dependabot[bot]' && github.event.pull_request.head.repo.full_name == github.repository"
+
+    for (const [jobName, job, expectedRestores] of [
+      ['node-24', node24, 1],
+      ['node-24-coverage', node24Coverage, 1],
+      ['node-24-consumers', node24Consumers, 2],
+    ] as const) {
+      if (!Array.isArray(job.steps)) throw new TypeError(`${jobName} must define steps`)
+      const cacheRestores = job.steps.filter(
+        step => isRecord(step) && step.uses === 'actions/cache/restore@v4',
+      )
+      expect(cacheRestores, `${jobName} must retain every route-dependent cache restore`).toHaveLength(expectedRestores)
+      for (const step of cacheRestores) {
+        expect(step, `${jobName} cache restore must use the complete hosted-route condition`).toMatchObject({
+          if: hostedCondition,
+        })
+      }
+    }
+
+    if (!Array.isArray(node24Consumers.steps)) {
+      throw new TypeError('node-24-consumers must define steps')
+    }
+    const hostedPlaywright = node24Consumers.steps.find(
+      step => isRecord(step) && step.name === 'Install Playwright Chromium and hosted dependencies',
+    )
+    const selfHostedPlaywright = node24Consumers.steps.find(
+      step => isRecord(step) && step.name === 'Install Playwright Chromium on the failover VM',
+    )
+    expect(hostedPlaywright).toMatchObject({ if: hostedCondition })
+    expect(selfHostedPlaywright).toMatchObject({ if: selfHostedCondition })
+
+    expect(resolveSupportedLinuxSetupRoute(undefined, 'maintainer', 'owner/repository')).toBe('hosted')
+    expect(resolveSupportedLinuxSetupRoute(undefined, 'contributor', 'contributor/fork')).toBe('hosted')
+    expect(resolveSupportedLinuxSetupRoute(undefined, 'dependabot[bot]', 'owner/repository')).toBe('hosted')
+    expect(resolveSupportedLinuxSetupRoute('selfhosted', 'maintainer', 'owner/repository')).toBe('self-hosted')
+    expect(resolveSupportedLinuxSetupRoute('selfhosted', 'contributor', 'contributor/fork')).toBe('hosted')
+    expect(resolveSupportedLinuxSetupRoute('selfhosted', 'dependabot[bot]', 'owner/repository')).toBe('hosted')
+  })
+
+  it('documents standard hosted defaults and provisioned-only self-hosted routes', () => {
+    const workflowSource = readFileSync(resolve(root, '.github/workflows/ci.yml'), 'utf8')
+    expect(workflowSource).not.toMatch(/in-house (?:self-hosted )?pool/)
+    expect(workflowSource).not.toContain('six always-on runner instances')
+    expect(workflowSource).not.toContain('readiness is re-proven on every master push')
+    expect(workflowSource).not.toContain('take over the required')
+    expect(workflowSource).not.toContain('Master produces the hosted Chromium cache')
+    expect(workflowSource).toContain('only when matching runners are registered and online')
+
+    const portableDecision = readFileSync(resolve(root, '.agents/notes/implemented/process/2026-07-23-portable-required-pull-request-ci.md'), 'utf8')
+    expect(portableDecision).not.toContain('repo-restricted enterprise 32-core pools')
+    expect(portableDecision).toContain('default to `ubuntu-latest`')
+
+    const largerRunnerDecision = readFileSync(resolve(root, '.agents/notes/implemented/process/2026-07-22-evidence-based-larger-hosted-runners.md'), 'utf8')
+    expect(largerRunnerDecision).not.toContain('The required primary path depends on those enterprise pools.')
+    expect(largerRunnerDecision).toContain('manual benchmark inventory')
+
+    const nativeWindowsDecision = readFileSync(resolve(root, '.agents/notes/implemented/process/2026-08-08-native-windows-pull-request-ci.md'), 'utf8')
+    expect(nativeWindowsDecision).not.toContain('on the organization-owned `dsh-windows-2025-16core` runner')
+    expect(nativeWindowsDecision).toContain('defaults to `windows-2025`')
+
+    const currentDecision = readFileSync(resolve(root, '.agents/notes/implemented/process/2026-08-18-public-repository-ci-runner-defaults.md'), 'utf8')
+    expect(currentDecision).toContain('default to `ubuntu-latest`')
+    expect(currentDecision).toContain('defaults to `windows-2025`')
+    expect(currentDecision).toContain('registered and online')
+
+    const webLaneDecision = readFileSync(resolve(root, '.agents/notes/implemented/testing/2026-07-24-web-gui-browser-e2e-lane.md'), 'utf8')
+    expect(webLaneDecision).not.toContain('The hosted and self-hosted default-branch Linux serial jobs run the same gate')
+    expect(webLaneDecision).toContain('opportunistically restores')
+
+    const browserSnapshotDecision = readFileSync(resolve(root, '.agents/notes/implemented/testing/2026-07-30-web-browser-snapshot-ci-gate.md'), 'utf8')
+    expect(browserSnapshotDecision).not.toContain('The hosted default-branch Linux serial job runs the suite and produces')
+    expect(browserSnapshotDecision).toContain('only when its optional runner is available')
   })
 
   it('exempts push from cancellation, so one master merge does not cancel the running drill', () => {
@@ -117,7 +222,7 @@ describe('CI workflow', () => {
     // Cancellation applies to the whole superseded RUN, so this has to be
     // decided at workflow level and gated on the event: a job-level group
     // cannot exempt its job from its run being cancelled. Only push is exempt —
-    // a drill takes longer than the interval between master merges. The negated
+    // a provisioned standby can outlive the interval between master merges. The negated
     // form is load-bearing: `== 'pull_request'` would also stop cancelling
     // workflow_dispatch, and a re-dispatched runner benchmark holds up to 12
     // larger runners for 15 minutes in this same group on master. The
@@ -161,8 +266,9 @@ describe('CI workflow', () => {
       .sort()
     expect(pushReachable).toEqual(['serial-linux-selfhosted', 'serial-windows', 'wine-apt-cache'])
 
-    // Why workflow_dispatch must keep cancelling: each benchmark fans out to a
-    // dozen larger runners at once, in this same group on master. If it stopped
+    // Why workflow_dispatch must keep cancelling: each manual-only benchmark
+    // can fan out to a dozen separately provisioned larger runners at once, in
+    // this same group on master. If it stopped
     // cancelling, a re-dispatch would queue ahead of a drill instead of
     // replacing the stale measurement.
     for (const name of ['larger-runner-benchmark', 'consolidated-runner-benchmark']) {
@@ -454,6 +560,56 @@ function workflowJob(workflow: Record<string, unknown>, job: string): Record<str
     throw new TypeError(`workflow must define the ${job} job`)
   }
   return workflow.jobs[job]
+}
+
+function expectFailoverRunner(
+  job: Record<string, unknown>,
+  variable: string,
+  selfHostedLabels: string[],
+  hostedDefault: string,
+): void {
+  const runsOn = job['runs-on']
+  if (typeof runsOn !== 'string') throw new TypeError(`${variable} job must define a runner expression`)
+
+  const selfHostedJson = `[${selfHostedLabels.map(label => JSON.stringify(label)).join(', ')}]`
+  const supportedSelector = [
+    `\${{ vars.${variable} == 'selfhosted'`,
+    "    && github.event.pull_request.user.login != 'dependabot[bot]'",
+    '    && github.event.pull_request.head.repo.full_name == github.repository',
+    `    && fromJSON('${selfHostedJson}')`,
+    `    || '${hostedDefault}' }}`,
+  ].join('\n')
+  expect(runsOn, `${variable} must use the complete supported failover selector`).toBe(supportedSelector)
+  expect(hostedDefault).not.toMatch(/^dsh-/)
+
+  expect(resolveSupportedFailoverRunner(undefined, 'maintainer', 'owner/repository', selfHostedLabels, hostedDefault)).toBe(hostedDefault)
+  expect(resolveSupportedFailoverRunner(undefined, 'contributor', 'contributor/fork', selfHostedLabels, hostedDefault)).toBe(hostedDefault)
+  expect(resolveSupportedFailoverRunner(undefined, 'dependabot[bot]', 'owner/repository', selfHostedLabels, hostedDefault)).toBe(hostedDefault)
+  expect(resolveSupportedFailoverRunner('selfhosted', 'maintainer', 'owner/repository', selfHostedLabels, hostedDefault)).toEqual(selfHostedLabels)
+  expect(resolveSupportedFailoverRunner('selfhosted', 'contributor', 'contributor/fork', selfHostedLabels, hostedDefault)).toBe(hostedDefault)
+  expect(resolveSupportedFailoverRunner('selfhosted', 'dependabot[bot]', 'owner/repository', selfHostedLabels, hostedDefault)).toBe(hostedDefault)
+}
+
+function resolveSupportedFailoverRunner(
+  failover: string | undefined,
+  login: string,
+  headRepository: string,
+  selfHostedLabels: string[],
+  hostedDefault: string,
+): string | string[] {
+  return failover === 'selfhosted' && login !== 'dependabot[bot]' && headRepository === 'owner/repository'
+    ? selfHostedLabels
+    : hostedDefault
+}
+
+function resolveSupportedLinuxSetupRoute(
+  failover: string | undefined,
+  login: string,
+  headRepository: string,
+): 'hosted' | 'self-hosted' {
+  return failover === 'selfhosted' && login !== 'dependabot[bot]' && headRepository === 'owner/repository'
+    ? 'self-hosted'
+    : 'hosted'
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

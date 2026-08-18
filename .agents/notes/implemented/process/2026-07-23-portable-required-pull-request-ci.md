@@ -6,23 +6,23 @@ English | [中文](2026-07-23-portable-required-pull-request-ci.zh.md)
 
 ## Problem
 
-Required pull-request jobs assigned to organization-owned runner labels remain queued when GitHub cannot allocate those pools. The workflow is valid and standard GitHub-hosted jobs can still pass, but `all checks passed` never starts and an otherwise healthy pull request cannot satisfy branch protection.
+Required pull-request jobs assigned to unavailable organization-owned runner labels remain queued even when standard GitHub-hosted jobs execute. A valid workflow cannot satisfy branch protection until every required worker and the `all checks passed` verdict receive a runner.
 
-Billing health, a runner definition's `Ready` state, and a large autoscaling ceiling do not prove that a named pool can receive a job. Required correctness checks need a known portable recovery path even when the ordinary low-latency path depends on repository-external runner provisioning.
+Billing health, a runner definition, and an advertised autoscaling ceiling do not prove that a named pool can receive a job. Required correctness checks need a portable default that does not depend on repository-external runner provisioning.
 
 ## Decision
 
-[CI](../../../../.github/workflows/ci.yml) runs the required primary Node 24 jobs, plus the stable `all checks passed` aggregate, on repo-restricted enterprise 32-core pools. The aggregate performs no checkout or repository gate, but sharing the enterprise pool prevents the required verdict from introducing a separate standard-hosted billing dependency after its substantive jobs have already succeeded. The required Windows job runs Windows Node under Wine on standard `ubuntu-latest` for the blocking surfaces; an independent native `windows-2025` job starts automatically but does not participate in the aggregate ([dual Windows decision](2026-08-08-native-windows-pull-request-ci.md)). Standard `ubuntu-latest` jobs retain Node 22.19, Node 26, the Python SDK unit suite, and the [release-shaped Linux x64 Python runtime validation](../testing/2026-08-12-required-python-runtime-pull-request-ci.md), while the serial references remain the complete unsharded cross-platform definitions. Those standard-hosted jobs keep the portable execution boundary observable without duplicating the primary inventory on every pull request.
+[CI](../../../../.github/workflows/ci.yml) makes standard GitHub-hosted capacity the ordinary execution path. The three primary Node 24 Linux jobs and `all checks passed` default to `ubuntu-latest`; the independent native Windows job defaults to `windows-2025`. The required Windows job runs Windows Node under Wine on `ubuntu-latest` for the blocking surfaces, while native Windows does not participate in the aggregate ([dual Windows decision](2026-08-08-native-windows-pull-request-ci.md)). Node 22.19, Node 26, the Python SDK unit suite, and the [release-shaped Linux x64 Python runtime validation](../testing/2026-08-12-required-python-runtime-pull-request-ci.md) also use standard hosted capacity.
 
-The three Linux primary jobs, Node compatibility, Python SDK unit suite, Python runtime validation, and `windows node 24 / wine blocking` remain dependencies of `all checks passed`; `windows node 24 / native complete` is deliberately absent. Branch protection continues to require `e2e` and `all checks passed`. There is no automatic fallback when a remaining enterprise Linux label cannot allocate: the standard jobs continue to report their own contracts, but they cannot manufacture the missing required result.
+The three Linux primary jobs, Node compatibility, Python SDK unit suite, Python runtime validation, and `windows node 24 / wine blocking` remain dependencies of `all checks passed`; `windows node 24 / native complete` is deliberately absent. Branch protection continues to require `e2e` and `all checks passed`. Optional self-hosted selectors can retarget the corresponding same-repository, non-Dependabot workers only when matching runners are registered and online; pull requests from external forks remain hosted, and absent optional capacity does not change the standard defaults.
 
-The [larger-runner decision](2026-07-22-evidence-based-larger-hosted-runners.md) owns the current primary topology and its measurements. The [serial cross-platform reference](2026-07-21-serial-cross-platform-ci-reference.md) remains the independent standard-hosted completeness check, and the manual larger-runner suites retain size comparisons without expanding the ordinary required matrix.
+The [public-repository runner decision](2026-08-18-public-repository-ci-runner-defaults.md) owns the runner labels, failover selectors, and bounded fan-out. The [larger-runner decision](2026-07-22-evidence-based-larger-hosted-runners.md) retains measurements for manual benchmark inventory without expanding the required matrix.
 
 ## Alternatives considered
 
-**Keep the Linux primary jobs and aggregate on standard capacity.** This removes the remaining enterprise allocation dependency, but complete standard-runner jobs give materially slower feedback and still experience shared-capacity queues. The current split retains portable compatibility and serial evidence while spending enterprise capacity on the Linux primary critical path.
+**Put the Linux primary jobs and aggregate on organization larger runners.** Rejected because unavailable labels make branch protection impossible to satisfy. Standard capacity can be slower, but it is available to the personal public repository.
 
-**Select enterprise size from advertised core count.** Benchmarks show non-monotonic scaling and setup variance, so exact complete-job measurements choose the required pools instead.
+**Select a required pool from advertised core count.** Rejected because benchmarks show non-monotonic scaling and say nothing about whether this repository can allocate the label.
 
 **Skip or demote checks while capacity is unavailable.** This would make the status green by dropping evidence rather than by running the repository's required contracts.
 
@@ -30,6 +30,6 @@ The [larger-runner decision](2026-07-22-evidence-based-larger-hosted-runners.md)
 
 ## Consequences
 
-Ordinary pull requests spend enterprise capacity on the Linux critical path while the Wine job keeps the required Windows verdict on standard Linux allocation. The independent native job uses standard Windows allocation without delaying or changing the aggregate. A live exact-head run distinguishes the commands branch protection consumes from the separate diagnostic contract; queue delay is reported separately from each job's `startedAt` to `completedAt` execution interval.
+Ordinary pull requests use standard hosted capacity for the Linux critical path, the required Wine signal, and the independent native Windows signal. A live exact-head run distinguishes the commands branch protection consumes from the separate diagnostic contract; queue delay is reported separately from each job's `startedAt` to `completedAt` execution interval.
 
-Standard compatibility, required Wine, and diagnostic native Windows jobs remain useful when enterprise allocation is degraded, but they do not make a blocked required Linux job or aggregate green. Recovering Linux availability may require restoring the complete standard-hosted topology; changing a pool definition's status alone is insufficient evidence that it can receive work.
+The required path remains runnable without organization infrastructure. Enabling a self-hosted variable does not provision a runner; an operator must verify registration, listener health, and workflow access before treating that optional route as recovery capacity.
