@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { CallId, createToolResultMessage } from '@deepseek-ai/dsh-llm'
+import { CallId, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import { createScope } from '@deepseek-ai/dsh-scope'
@@ -123,9 +123,11 @@ describe('deferred tool search', () => {
   })
 
   it.each([
+    [null, 'non-object arguments'],
     [{ query: 42 }, 'query type'],
     [{ query: '' }, 'empty query'],
     [{ query: '   ' }, 'blank query'],
+    [{ query: 'weather', unexpected: true }, 'unexpected property'],
     [{ query: 'weather', limit: '3' }, 'limit type'],
     [{ query: 'weather', limit: -1 }, 'negative limit'],
     [{ query: 'weather', limit: 0 }, 'zero limit'],
@@ -240,6 +242,10 @@ describe('deferred tool search', () => {
     ctx.tools.register(tool('mcp__calendar__list', 'List calendar events', true))
     const session = Session.create(SessionId('deferred-search'))
     const agent = { session } as Agent
+    session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'Find a weather tool.' }],
+      source: { kind: 'user' },
+    }), { surfaceOp: 'append' })
 
     expect((await ctx.systemPrompt.assemble({ scope: agent, agent })).tools.map(schema => schema.name))
       .toEqual(['tool_search'])

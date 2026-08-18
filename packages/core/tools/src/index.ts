@@ -69,28 +69,30 @@ function resolveToolSearchArguments(
   value: unknown,
   config: ResolvedToolSearchConfig,
 ): { query: string; limit: number } {
-  const violations: string[] = []
   if (!isPlainJsonRecord(value)) {
     throw new ToolArgsError(['must be an object'])
   }
   for (const key of Object.keys(value)) {
-    if (key !== 'query' && key !== 'limit') violations.push(`unexpected property "${key}"`)
+    if (key !== 'query' && key !== 'limit') {
+      throw new ToolArgsError([`unexpected property "${key}"`])
+    }
   }
   const query = value.query
   if (typeof query !== 'string') {
-    violations.push('"query" must be a string')
-  } else if (query.trim().length === 0) {
-    violations.push('"query" must contain non-whitespace text')
+    throw new ToolArgsError(['"query" must be a string'])
+  }
+  if (query.trim().length === 0) {
+    throw new ToolArgsError(['"query" must contain non-whitespace text'])
   }
   const limit = value.limit
   if (limit !== undefined && (!Number.isInteger(limit) || typeof limit !== 'number')) {
-    violations.push('"limit" must be an integer')
-  } else if (typeof limit === 'number' && (limit < 1 || limit > config.maxResults)) {
-    violations.push(`"limit" must be between 1 and ${config.maxResults}`)
+    throw new ToolArgsError(['"limit" must be an integer'])
   }
-  if (violations.length > 0) throw new ToolArgsError(violations)
+  if (typeof limit === 'number' && (limit < 1 || limit > config.maxResults)) {
+    throw new ToolArgsError([`"limit" must be between 1 and ${config.maxResults}`])
+  }
   return {
-    query: typeof query === 'string' ? query : '',
+    query,
     limit: typeof limit === 'number' ? limit : config.defaultLimit,
   }
 }
