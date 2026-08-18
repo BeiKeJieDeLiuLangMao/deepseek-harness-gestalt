@@ -59,6 +59,13 @@ abstract getMobileAccessState(desktop: PairingAccountAuthentication): Promise<Mo
 abstract setMobileAccess(input: { desktop: PairingAccountAuthentication enabled: boolean }): Promise<MobileAccessState>
 
 /**
+ * Rotate and return fresh Desktop-only Relay authority after process startup or window reopen.
+ * @param desktop - current Desktop authorization for an enabled installation.
+ * @returns enabled state carrying a fresh Desktop grant.
+ */
+abstract reissueDesktopRelayAuthority(desktop: PairingAccountAuthentication): Promise<MobileAccessState>
+
+/**
  * Complete the same-account cryptographic exchange without granting authority.
  * @param input - Mobile authorization, invitation, device metadata, and handshake bytes.
  * @returns pending result shown on both installations before Desktop confirmation.
@@ -106,7 +113,7 @@ abstract cancelChallenge(input: { desktop: PairingAccountAuthentication challeng
 abstract rejectPairing(input: { desktop: PairingAccountAuthentication pendingPairingId: PendingPairingId }): Promise<void>
 ```
 
-Source: [`packages/platform/remote-access/src/index.ts:348`](../../packages/platform/remote-access/src/index.ts)
+Source: [`packages/platform/remote-access/src/index.ts:378`](../../packages/platform/remote-access/src/index.ts)
 
 <a id="ctxremoterelay--remoterelayservice-abstract-seam"></a>
 
@@ -118,16 +125,24 @@ Public Remote Access Relay capability used by the WSS Consumer.
 /**
  * Rotate one route to fresh authority and invalidate older attachments.
  * @param routeId - opaque route receiving new attachment authority.
+ * @param endpoint - endpoint whose same-endpoint credentials the rotation replaces; defaults to desktop.
  * @returns the one-time credential grant and its persistent revision.
  */
-abstract rotateCredential(routeId: RelayRouteId): Promise<RelayCredentialGrant>
+abstract rotateCredential(routeId: RelayRouteId, endpoint?: 'mobile' | 'desktop'): Promise<RelayCredentialGrant>
 
 /**
  * Issue distinct endpoint authority without invalidating other credentials on the active route.
  * @param routeId - active route receiving another independently revocable bearer.
+ * @param endpoint - endpoint the new credential authorizes; defaults to mobile.
  * @returns a fresh credential at the current route revision.
  */
-abstract issueCredential(routeId: RelayRouteId): Promise<RelayCredentialGrant>
+abstract issueCredential(routeId: RelayRouteId, endpoint?: 'mobile' | 'desktop'): Promise<RelayCredentialGrant>
+
+/**
+ * Remove one issued endpoint credential without revoking its route peers.
+ * @param grant - exact issued authority whose ownership did not commit.
+ */
+abstract revokeCredential(grant: RelayCredentialGrant): Promise<void>
 
 /**
  * Revoke one route and close its attachments across Platform Instances.
@@ -143,5 +158,5 @@ abstract revokeRoute(routeId: RelayRouteId): Promise<void>
 abstract attach(input: { message: RelayAttachMessage deliver: (message: RelayCiphertextMessage) => Promise<void> close?: () => void | Promise<void> signal?: AbortSignal }): Promise<RemoteRelayAttachment>
 ```
 
-Source: [`packages/platform/remote-access/src/relay.ts:128`](../../packages/platform/remote-access/src/relay.ts)
+Source: [`packages/platform/remote-access/src/relay.ts:141`](../../packages/platform/remote-access/src/relay.ts)
 <!-- END GENERATED cordis-surface -->

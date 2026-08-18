@@ -106,7 +106,7 @@ describe('DesktopPairingController', () => {
 
   it('owns the live Relay only while Mobile Access is enabled and the Desktop is awake', async () => {
     const transport = transportFixture()
-    const relay = { start: vi.fn(async () => {}), stop: vi.fn(async () => {}) }
+    const relay = { configure: vi.fn(async () => {}), start: vi.fn(async () => {}), stop: vi.fn(async () => {}) }
     const controller = new DesktopPairingController({
       account: {
         getSnapshot: signedInAccountSnapshot,
@@ -179,7 +179,7 @@ describe('DesktopPairingController', () => {
 
   it('deactivation drains an in-flight poll and rejects work after sign-out or close', async () => {
     const transport = transportFixture()
-    const relay = { start: vi.fn(async () => {}), stop: vi.fn(async () => {}) }
+    const relay = { configure: vi.fn(async () => {}), start: vi.fn(async () => {}), stop: vi.fn(async () => {}) }
     const scheduled: Array<() => void> = []
     const controller = new DesktopPairingController({
       account: {
@@ -221,6 +221,7 @@ describe('DesktopPairingController', () => {
     const stopRelease = deferred<undefined>()
     const stopEntered = deferred<undefined>()
     const relay = {
+      configure: vi.fn(async () => {}),
       start: vi.fn(async () => {}),
       stop: vi.fn(async (reason?: string) => {
         if (reason === 'sleep') {
@@ -259,7 +260,7 @@ describe('DesktopPairingController', () => {
 
   it('stays locally offline when the remote disable mutation fails and recovers only on explicit enable', async () => {
     const transport = transportFixture()
-    const relay = { start: vi.fn(async () => {}), stop: vi.fn(async () => {}) }
+    const relay = { configure: vi.fn(async () => {}), start: vi.fn(async () => {}), stop: vi.fn(async () => {}) }
     const controller = new DesktopPairingController({
       account: {
         getSnapshot: signedInAccountSnapshot,

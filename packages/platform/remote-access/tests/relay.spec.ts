@@ -101,7 +101,7 @@ describe('RemoteRelayProvider', () => {
     const coordinator = new SharedCoordinator()
     const platform = new RemoteRelayProvider(new Context(), {
       instanceId: parseRelayInstanceId('platform-a'), routeStore, coordinator,
-      config: { ...CONFIG, maxConnections: 1 }, randomBytes: size => uniqueBytes(size, 9),
+      config: { ...CONFIG, maxConnections: 1 }, randomBytes: uniqueRandomBytes(9),
     })
     const routeId = parseRelayRouteId('route-cleanup-tombstone')
     const grant = await platform.rotateCredential(routeId)
@@ -143,7 +143,12 @@ describe('RemoteRelayProvider', () => {
     const grant = await platform.rotateCredential(routeId)
     const entered = deferred<undefined>()
     if (stage === 'authorize') {
-      routeStore.authorize = vi.fn(async (_routeId: string, _digest: Uint8Array, signal?: AbortSignal) => {
+      routeStore.authorize = vi.fn(async (
+        _routeId: string,
+        _endpoint: 'desktop' | 'mobile',
+        _digest: Uint8Array,
+        signal?: AbortSignal,
+      ) => {
         entered.resolve(undefined)
         await aborted(signal)
         throw new Error('authority cancelled')
@@ -377,7 +382,7 @@ describe('RemoteRelayProvider', () => {
       routeStore,
       coordinator,
       config: { ...CONFIG, maxBufferedCiphertextBytes: 4 },
-      randomBytes: size => uniqueBytes(size, 37),
+      randomBytes: uniqueRandomBytes(37),
     })
     const routeId = parseRelayRouteId('route-slow')
     const grant = await platformA.rotateCredential(routeId, 'mobile')
@@ -472,7 +477,7 @@ describe('RemoteRelayProvider', () => {
     const platform = new RemoteRelayProvider(new Context(), {
       instanceId: parseRelayInstanceId('platform-a'), routeStore, coordinator,
       config: { ...CONFIG, maxConnections: 1 },
-      randomBytes: size => uniqueBytes(size, 61),
+      randomBytes: uniqueRandomBytes(61),
     })
     const routeId = parseRelayRouteId('route-capacity')
     const grant = await platform.rotateCredential(routeId)
@@ -507,7 +512,7 @@ describe('RemoteRelayProvider', () => {
     const platform = new RemoteRelayProvider(new Context(), {
       instanceId: parseRelayInstanceId('platform-reservation'), routeStore, coordinator,
       config: { ...CONFIG, maxConnections: 1 },
-      randomBytes: size => uniqueBytes(size, 63),
+      randomBytes: uniqueRandomBytes(63),
     })
     const credential = parseRelayCredential('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA')
     const first = platform.attach({
@@ -629,10 +634,10 @@ describe('RemoteRelayProvider', () => {
     const grant = await platform.rotateCredential(routeId)
     const authorize = routeStore.authorize.bind(routeStore)
     let calls = 0
-    vi.spyOn(routeStore, 'authorize').mockImplementation(async (id, digest) => {
+    vi.spyOn(routeStore, 'authorize').mockImplementation(async (id, endpoint, digest) => {
       calls += 1
       if (calls === 2) return grant.revision + 1
-      return await authorize(id, digest)
+      return await authorize(id, endpoint, digest)
     })
 
     await expect(platform.attach({
@@ -682,10 +687,14 @@ describe('RemoteRelayProvider', () => {
     const routeStore = new SharedRouteStore()
     const coordinator = new SharedCoordinator()
     let timeout: (() => void) | undefined
+    let sourceIssued = 0
     const source = new RemoteRelayProvider(new Context(), {
       instanceId: parseRelayInstanceId('platform-pending-source'), routeStore, coordinator,
       config: { ...CONFIG, maxPendingDeliveries: 1 },
-      randomBytes: size => uniqueBytes(size, 72),
+      randomBytes: (size) => {
+        sourceIssued += 1
+        return uniqueBytes(size, 72 + sourceIssued * 101)
+      },
       schedule: (task) => { timeout = task; return { unref: () => {} } as never },
     })
     const target = provider('platform-pending-target', routeStore, coordinator, 73)
@@ -724,7 +733,7 @@ describe('RemoteRelayProvider', () => {
       randomBytes: size => new Uint8Array(++entropyCalls === 3 ? 15 : size).fill(74),
     })
     const badRoute = parseRelayRouteId('route-bad-delivery')
-    const badGrant = await badDelivery.rotateCredential(badRoute)
+    const badGrant = await badDelivery.rotateCredential(badRoute, 'mobile')
     const badMobile = await badDelivery.attach({
       message: {
         type: 'attach', transportVersion: 1, routeId: badRoute,
@@ -946,7 +955,7 @@ describe('RemoteRelayProvider', () => {
     const clock = { value: 1_000 }
     const platform = new RemoteRelayProvider(new Context(), {
       instanceId: parseRelayInstanceId('platform-a'), routeStore, coordinator, config: CONFIG,
-      randomBytes: size => uniqueBytes(size, 97), clock: { now: () => clock.value },
+      randomBytes: uniqueRandomBytes(97), clock: { now: () => clock.value },
     })
     const routeId = parseRelayRouteId('route-forged')
     const grant = await platform.rotateCredential(routeId, 'mobile')
@@ -1139,7 +1148,7 @@ describe('RemoteRelayProvider', () => {
     const platformA = provider('platform-a', routeStore, coordinator, 127)
     const platformB = new RemoteRelayProvider(new Context(), {
       instanceId: parseRelayInstanceId('platform-b'), routeStore, coordinator, config: CONFIG,
-      randomBytes: size => uniqueBytes(size, 131),
+      randomBytes: uniqueRandomBytes(131),
       schedule: (task) => { timeout = task; return { unref: () => {} } as never },
     })
     const routeId = parseRelayRouteId('route-queued-close')
@@ -1203,7 +1212,7 @@ describe('RemoteRelayProvider', () => {
     const platform = new RemoteRelayProvider(ctx, {
       instanceId: parseRelayInstanceId('platform-effect'),
       routeStore: new SharedRouteStore(), coordinator: new SharedCoordinator(), config: CONFIG,
-      randomBytes: size => uniqueBytes(size, 137),
+      randomBytes: uniqueRandomBytes(137),
     })
     await disposeEffect?.()
     await expect(platform.rotateCredential(parseRelayRouteId('route-effect')))
@@ -1222,8 +1231,17 @@ function provider(
     routeStore,
     coordinator,
     config: CONFIG,
-    randomBytes: size => uniqueBytes(size, randomByte),
+    randomBytes: uniqueRandomBytes(randomByte),
   })
+}
+
+/**
+ * Deterministic random source whose bytes also differ across calls, so endpoint-scoped
+ * credential digests issued by one provider never collide in the shared route store.
+ */
+function uniqueRandomBytes(seed: number): (size: number) => Uint8Array {
+  let issued = 0
+  return (size: number): Uint8Array => uniqueBytes(size, seed + ++issued * 101)
 }
 
 function uniqueBytes(size: number, seed: number): Uint8Array {

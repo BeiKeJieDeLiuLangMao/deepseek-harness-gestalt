@@ -39,6 +39,7 @@ describe('RemoteRelayEndpointController', () => {
       reconnectDelayMs: 1,
     })
     lifecycle.configure({
+      endpoint: 'mobile',
       routeId: parseRelayRouteId('route-product'),
       credential: parseRelayCredential('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'),
       revision: 1,

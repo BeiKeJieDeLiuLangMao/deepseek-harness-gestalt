@@ -1052,6 +1052,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'committed Mobile Access state.',
       },
       {
+        signature: 'abstract reissueDesktopRelayAuthority(desktop: PairingAccountAuthentication): Promise<MobileAccessState>',
+        description: 'Rotate and return fresh Desktop-only Relay authority after process startup or window reopen.',
+        parameters: [{ name: 'desktop', description: 'current Desktop authorization for an enabled installation.' }],
+        returns: 'enabled state carrying a fresh Desktop grant.',
+      },
+      {
         signature: 'abstract completeChallenge(input: { mobile: PairingAccountAuthentication completionId: PairingCompletionId oneTimeLink: string device: PairingDeviceDescription mobileHandshake: Uint8Array }): Promise<PairingCompletionView>',
         description: 'Complete the same-account cryptographic exchange without granting authority.',
         parameters: [{ name: 'input', description: 'Mobile authorization, invitation, device metadata, and handshake bytes.' }],
@@ -1099,16 +1105,21 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Public Remote Access Relay capability used by the WSS Consumer.',
     methods: [
       {
-        signature: 'abstract rotateCredential(routeId: RelayRouteId): Promise<RelayCredentialGrant>',
+        signature: 'abstract rotateCredential(routeId: RelayRouteId, endpoint?: \'mobile\' | \'desktop\'): Promise<RelayCredentialGrant>',
         description: 'Rotate one route to fresh authority and invalidate older attachments.',
-        parameters: [{ name: 'routeId', description: 'opaque route receiving new attachment authority.' }],
+        parameters: [{ name: 'routeId', description: 'opaque route receiving new attachment authority.' }, { name: 'endpoint', description: 'endpoint whose same-endpoint credentials the rotation replaces; defaults to desktop.' }],
         returns: 'the one-time credential grant and its persistent revision.',
       },
       {
-        signature: 'abstract issueCredential(routeId: RelayRouteId): Promise<RelayCredentialGrant>',
+        signature: 'abstract issueCredential(routeId: RelayRouteId, endpoint?: \'mobile\' | \'desktop\'): Promise<RelayCredentialGrant>',
         description: 'Issue distinct endpoint authority without invalidating other credentials on the active route.',
-        parameters: [{ name: 'routeId', description: 'active route receiving another independently revocable bearer.' }],
+        parameters: [{ name: 'routeId', description: 'active route receiving another independently revocable bearer.' }, { name: 'endpoint', description: 'endpoint the new credential authorizes; defaults to mobile.' }],
         returns: 'a fresh credential at the current route revision.',
+      },
+      {
+        signature: 'abstract revokeCredential(grant: RelayCredentialGrant): Promise<void>',
+        description: 'Remove one issued endpoint credential without revoking its route peers.',
+        parameters: [{ name: 'grant', description: 'exact issued authority whose ownership did not commit.' }],
       },
       {
         signature: 'abstract revokeRoute(routeId: RelayRouteId): Promise<void>',
@@ -3942,7 +3953,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'RelayCredentialGrant',
-    declaration: 'export interface RelayCredentialGrant {\n    routeId: RelayRouteId;\n    credential: RelayCredential;\n    revision: number;\n}',
+    declaration: 'export interface RelayCredentialGrant {\n    routeId: RelayRouteId;\n    endpoint: \'mobile\' | \'desktop\';\n    credential: RelayCredential;\n    revision: number;\n}',
   },
   {
     name: 'RelayHeartbeatMessage',

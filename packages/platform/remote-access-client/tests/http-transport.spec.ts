@@ -136,7 +136,7 @@ describe('RemoteAccessHttpTransport', () => {
         'X-Gestalt-Proof-Signature': 'signature',
       },
     })
-    const completionBody = vi.mocked(fetch).mock.calls[8]?.[1]?.body
+    const completionBody = vi.mocked(fetch).mock.calls[9]?.[1]?.body
     if (typeof completionBody !== 'string') throw new TypeError('completion request body must be a string')
     expect(JSON.parse(completionBody)).toMatchObject({
       operation: 'complete-challenge', mobileHandshake: 'AQI',

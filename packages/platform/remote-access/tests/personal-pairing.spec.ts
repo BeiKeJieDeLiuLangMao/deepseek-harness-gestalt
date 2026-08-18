@@ -134,7 +134,7 @@ describe('PersonalPairingProvider', () => {
       rendezvousId: parsePairingRendezvousId('disabled-on-other-instance'),
     })).rejects.toMatchObject({ code: 'MOBILE_ACCESS_DISABLED' })
     await expect(platformB.getMobilePairingStatus({ mobile, pendingPairingId: pending.pendingPairingId }))
-      .rejects.toMatchObject({ code: 'PAIRING_PENDING_INVALID' })
+      .resolves.toEqual({ status: 'rejected' })
     expect(await platformA.getMobilePairingStatus({ mobile, pendingPairingId: pending.pendingPairingId }))
       .toEqual({ status: 'rejected' })
 
@@ -233,6 +233,7 @@ describe('PersonalPairingProvider', () => {
       relay: {
         rotateCredential: vi.fn(),
         issueCredential: vi.fn(),
+        revokeCredential: vi.fn(),
         revokeRoute: vi.fn(),
       },
       pairingLinkOrigin: 'https://platform.example.com/pair',
@@ -260,11 +261,11 @@ describe('PersonalPairingProvider', () => {
 
     await expect(provider.setMobileAccess({ desktop, enabled: true })).resolves.toEqual({
       enabled: true,
-      relay: { routeId, credential, revision: 1 },
+      relay: { routeId, endpoint: 'desktop', credential, revision: 1 },
     })
     await provider.setMobileAccess({ desktop, enabled: true })
-    expect(relay.rotateCredential).toHaveBeenNthCalledWith(1, routeId)
-    expect(relay.rotateCredential).toHaveBeenNthCalledWith(2, routeId)
+    expect(relay.rotateCredential).toHaveBeenNthCalledWith(1, routeId, 'desktop')
+    expect(relay.rotateCredential).toHaveBeenNthCalledWith(2, routeId, 'desktop')
 
     await provider.setMobileAccess({ desktop, enabled: false })
     expect(relay.revokeRoute).toHaveBeenCalledOnce()
@@ -302,10 +303,11 @@ describe('PersonalPairingProvider', () => {
     const relay = {
       rotateCredential: vi.fn()
         .mockResolvedValueOnce({
-          routeId, credential: parseRelayCredential('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'), revision: 1,
+          routeId, endpoint: 'desktop' as const, credential: parseRelayCredential('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'), revision: 1,
         })
         .mockRejectedValueOnce(new Error('rotation unavailable')),
       issueCredential: vi.fn(),
+      revokeCredential: vi.fn(),
       revokeRoute: vi.fn(),
     }
     const provider = new PersonalPairingProvider(new Context(), {

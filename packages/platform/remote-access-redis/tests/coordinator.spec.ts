@@ -215,7 +215,7 @@ describe('RedisRelayCoordinator', () => {
         parseRelayRouteId('route-one'), parseRelayAttachmentId('desktop-one'),
       )).rejects.toThrow()
     }
-    await stop()
+    await expect(stop()).rejects.toThrow('Relay Redis subscription shutdown failed')
     consoleError.mockRestore()
   })
 
@@ -266,7 +266,7 @@ describe('RedisRelayCoordinator', () => {
     subscriber.close.mockReset().mockResolvedValue(undefined)
     await expect(connectRedisRelayCoordinator({
       url: 'redis://localhost:6379', keyPrefix: 'dsh:relay',
-    })).rejects.toThrow('connect failed')
+    })).rejects.toThrow('Relay Redis clients failed to connect and close')
     expect(command.close).toHaveBeenCalled()
     expect(subscriber.close).toHaveBeenCalled()
 

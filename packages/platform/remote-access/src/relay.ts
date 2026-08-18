@@ -145,12 +145,14 @@ export abstract class RemoteRelayService extends Service {
   /**
    * Rotate one route to fresh authority and invalidate older attachments.
    * @param routeId - opaque route receiving new attachment authority.
+   * @param endpoint - endpoint whose same-endpoint credentials the rotation replaces; defaults to desktop.
    * @returns the one-time credential grant and its persistent revision.
    */
   abstract rotateCredential(routeId: RelayRouteId, endpoint?: 'mobile' | 'desktop'): Promise<RelayCredentialGrant>
   /**
    * Issue distinct endpoint authority without invalidating other credentials on the active route.
    * @param routeId - active route receiving another independently revocable bearer.
+   * @param endpoint - endpoint the new credential authorizes; defaults to mobile.
    * @returns a fresh credential at the current route revision.
    */
   abstract issueCredential(routeId: RelayRouteId, endpoint?: 'mobile' | 'desktop'): Promise<RelayCredentialGrant>

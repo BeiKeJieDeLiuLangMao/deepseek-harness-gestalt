@@ -171,6 +171,7 @@ describe('Remote Access HTTP assembled flow', () => {
     const transport: RemoteAccessTransport = {
       getMobileAccessState: http.getMobileAccessState.bind(http),
       setMobileAccess: http.setMobileAccess.bind(http),
+      reissueDesktopRelayAuthority: http.reissueDesktopRelayAuthority.bind(http),
       createChallenge: http.createChallenge.bind(http),
       cancelChallenge: http.cancelChallenge.bind(http),
       listPendingPairings: http.listPendingPairings.bind(http),

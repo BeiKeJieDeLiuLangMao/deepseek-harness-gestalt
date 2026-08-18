@@ -12,10 +12,12 @@ describe('DevelopmentKeylessMobileHandshakeClient', () => {
     })
     await expect(client.acceptDesktopHandshake(Uint8Array.of(1))).resolves.toBeUndefined()
     await expect(client.openRelayAuthority(new TextEncoder().encode(JSON.stringify({
+      endpoint: 'mobile',
       routeId: 'route-mobile',
       credential: 'AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE',
       revision: 2,
     })))).resolves.toEqual({
+      endpoint: 'mobile',
       routeId: 'route-mobile',
       credential: 'AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE',
       revision: 2,
@@ -25,10 +27,12 @@ describe('DevelopmentKeylessMobileHandshakeClient', () => {
   it.each([
     ['null', 'must be an object'],
     ['[]', 'must be an object'],
-    ['{}', 'revision must be positive'],
-    ['{"revision":0}', 'revision must be positive'],
-    ['{"revision":1,"routeId":"","credential":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE"}', 'routeId must be'],
-    ['{"revision":1,"routeId":"route","credential":"short"}', 'Relay credential'],
+    ['{}', 'endpoint must be mobile'],
+    ['{"endpoint":"desktop","revision":1}', 'endpoint must be mobile'],
+    ['{"endpoint":"mobile"}', 'revision must be positive'],
+    ['{"endpoint":"mobile","revision":0}', 'revision must be positive'],
+    ['{"endpoint":"mobile","revision":1,"routeId":"","credential":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE"}', 'routeId must be'],
+    ['{"endpoint":"mobile","revision":1,"routeId":"route","credential":"short"}', 'Relay credential'],
   ])('rejects malformed development authority %s', async (encoded, message) => {
     const client = new DevelopmentKeylessMobileHandshakeClient()
     await expect(client.openRelayAuthority(new TextEncoder().encode(encoded))).rejects.toThrow(message)

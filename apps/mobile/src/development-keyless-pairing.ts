@@ -26,10 +26,14 @@ export class DevelopmentKeylessMobileHandshakeClient implements MobilePairingHan
         throw new TypeError('Development Relay authority must be an object')
       }
       const record = value as Record<string, unknown>
+      if (record.endpoint !== 'mobile') {
+        throw new TypeError('Development Relay authority endpoint must be mobile')
+      }
       if (!Number.isSafeInteger(record.revision) || (record.revision as number) <= 0) {
         throw new TypeError('Development Relay authority revision must be positive')
       }
       return {
+        endpoint: 'mobile',
         routeId: parseRelayRouteId(record.routeId),
         credential: parseRelayCredential(record.credential),
         revision: record.revision as number,
