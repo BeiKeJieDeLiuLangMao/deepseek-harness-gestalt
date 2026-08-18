@@ -491,50 +491,31 @@ function expectFailoverRunner(
   const runsOn = job['runs-on']
   if (typeof runsOn !== 'string') throw new TypeError(`${variable} job must define a runner expression`)
 
-  expect(runsOn).toContain(`vars.${variable}`)
+  const selfHostedJson = `[${selfHostedLabels.map(label => JSON.stringify(label)).join(', ')}]`
+  const supportedSelector = [
+    `\${{ vars.${variable} == 'selfhosted'`,
+    "    && github.event.pull_request.user.login != 'dependabot[bot]'",
+    `    && fromJSON('${selfHostedJson}')`,
+    `    || '${hostedDefault}' }}`,
+  ].join('\n')
+  expect(runsOn, `${variable} must use the complete supported failover selector`).toBe(supportedSelector)
+  expect(hostedDefault).not.toMatch(/^dsh-/)
 
-  const selfHostedMatch = /fromJSON\('(\[[^']+\])'\)/.exec(runsOn)
-  expect(selfHostedMatch, `${variable} must define one explicit self-hosted label set`).not.toBeNull()
-  expect(JSON.parse(selfHostedMatch?.[1] ?? 'null')).toEqual(selfHostedLabels)
-
-  const defaultMatch = /\|\|\s*'([^']+)'\s*}}$/.exec(runsOn.trim())
-  expect(defaultMatch, `${variable} must end with one explicit hosted default`).not.toBeNull()
-  expect(defaultMatch?.[1]).toBe(hostedDefault)
-  expect(defaultMatch?.[1]).not.toMatch(/^dsh-/)
-
-  expect(resolveFailoverRunner(runsOn, variable, undefined, 'maintainer')).toBe(hostedDefault)
-  expect(resolveFailoverRunner(runsOn, variable, 'selfhosted', 'maintainer')).toEqual(selfHostedLabels)
-  expect(resolveFailoverRunner(runsOn, variable, 'selfhosted', 'dependabot[bot]')).toBe(hostedDefault)
+  expect(resolveSupportedFailoverRunner(undefined, 'maintainer', selfHostedLabels, hostedDefault)).toBe(hostedDefault)
+  expect(resolveSupportedFailoverRunner(undefined, 'dependabot[bot]', selfHostedLabels, hostedDefault)).toBe(hostedDefault)
+  expect(resolveSupportedFailoverRunner('selfhosted', 'maintainer', selfHostedLabels, hostedDefault)).toEqual(selfHostedLabels)
+  expect(resolveSupportedFailoverRunner('selfhosted', 'dependabot[bot]', selfHostedLabels, hostedDefault)).toBe(hostedDefault)
 }
 
-function resolveFailoverRunner(
-  runsOn: string,
-  variable: string,
+function resolveSupportedFailoverRunner(
   failover: string | undefined,
   login: string,
+  selfHostedLabels: string[],
+  hostedDefault: string,
 ): string | string[] {
-  const variableMatch = /vars\.([A-Z_]+)\s*==\s*'selfhosted'/.exec(runsOn)
-  const loginMatch = /github\.event\.pull_request\.user\.login\s*([!=]=)\s*'([^']+)'/.exec(runsOn)
-  const selfHostedMatch = /fromJSON\('(\[[^']+\])'\)/.exec(runsOn)
-  const defaultMatch = /\|\|\s*'([^']+)'\s*}}$/.exec(runsOn.trim())
-  const loginOperator = loginMatch?.[1]
-  const excludedLogin = loginMatch?.[2]
-  const selfHostedJson = selfHostedMatch?.[1]
-  const defaultRunner = defaultMatch?.[1]
-  if (variableMatch?.[1] !== variable
-    || !loginOperator
-    || !excludedLogin
-    || !selfHostedJson
-    || !defaultRunner) {
-    throw new TypeError(`${variable} runner expression must use the supported failover selector`)
-  }
-
-  const loginMatches = loginOperator === '=='
-    ? login === excludedLogin
-    : login !== excludedLogin
-  return failover === 'selfhosted' && loginMatches
-    ? JSON.parse(selfHostedJson) as string[]
-    : defaultRunner
+  return failover === 'selfhosted' && login !== 'dependabot[bot]'
+    ? selfHostedLabels
+    : hostedDefault
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
