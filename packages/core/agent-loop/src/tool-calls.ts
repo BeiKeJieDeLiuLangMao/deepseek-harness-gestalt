@@ -277,6 +277,7 @@ function appendToolResult(
     callId: block.id,
     content: result.content,
     isError: result.isError,
+    ...!result.isError && result.loadedTools !== undefined ? { loadedTools: result.loadedTools } : {},
   })
   session.append('tool/result', {
     turn, step,

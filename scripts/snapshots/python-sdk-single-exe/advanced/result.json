@@ -117,6 +117,7 @@
             "job_output",
             "run_code",
             "subagent",
+            "tool_search",
             "workflow"
           ]
         },
@@ -537,6 +538,7 @@
             "run_code",
             "snapshot_double",
             "subagent",
+            "tool_search",
             "workflow"
           ]
         },
@@ -567,9 +569,9 @@
         "chunk": {
           "type": "tool-call-delta",
           "index": 0,
-          "id": "advanced-code",
-          "name": "run_code",
-          "argumentsDelta": "{\"code\": \"return await tools.snapshot_double({ value: 21 })\", \"description\": \"Run the temporary Plugin tool\"}"
+          "id": "advanced-search",
+          "name": "tool_search",
+          "argumentsDelta": "{\"query\": \"deferred double\"}"
         }
       }
     },
@@ -585,9 +587,9 @@
           "index": 0,
           "block": {
             "type": "tool-call",
-            "id": "advanced-code",
-            "name": "run_code",
-            "arguments": "{\"code\": \"return await tools.snapshot_double({ value: 21 })\", \"description\": \"Run the temporary Plugin tool\"}"
+            "id": "advanced-search",
+            "name": "tool_search",
+            "arguments": "{\"query\": \"deferred double\"}"
           }
         }
       }
@@ -635,9 +637,9 @@
           "content": [
             {
               "type": "tool-call",
-              "id": "advanced-code",
-              "name": "run_code",
-              "arguments": "{\"code\": \"return await tools.snapshot_double({ value: 21 })\", \"description\": \"Run the temporary Plugin tool\"}"
+              "id": "advanced-search",
+              "name": "tool_search",
+              "arguments": "{\"query\": \"deferred double\"}"
             }
           ],
           "source": {
@@ -668,49 +670,14 @@
       "data": {
         "turn": 1,
         "step": 3,
-        "callId": "advanced-code",
-        "name": "run_code",
-        "arguments": "{\"code\": \"return await tools.snapshot_double({ value: 21 })\", \"description\": \"Run the temporary Plugin tool\"}"
-      }
-    },
-    {
-      "type": "tool/code-dispatch-start",
-      "seq": 36,
-      "time": 0,
-      "data": {
-        "rootCallId": "advanced-code",
-        "parentCallId": "advanced-code",
-        "subCallId": "advanced-code:code:1",
-        "name": "snapshot_double",
-        "arguments": {
-          "value": 21
-        }
-      }
-    },
-    {
-      "type": "tool/code-dispatch",
-      "seq": 37,
-      "time": 0,
-      "data": {
-        "rootCallId": "advanced-code",
-        "parentCallId": "advanced-code",
-        "subCallId": "advanced-code:code:1",
-        "name": "snapshot_double",
-        "arguments": {
-          "value": 21
-        },
-        "isError": false,
-        "content": [
-          {
-            "type": "text",
-            "text": "42"
-          }
-        ]
+        "callId": "advanced-search",
+        "name": "tool_search",
+        "arguments": "{\"query\": \"deferred double\"}"
       }
     },
     {
       "type": "tool/result",
-      "seq": 38,
+      "seq": 36,
       "time": 0,
       "data": {
         "turn": 1,
@@ -718,19 +685,37 @@
         "message": {
           "source": {
             "kind": "tool",
-            "callId": "advanced-code"
+            "callId": "advanced-search"
           },
           "content": [
             {
               "type": "tool-result",
-              "toolCallId": "advanced-code",
+              "toolCallId": "advanced-search",
               "content": [
                 {
                   "type": "text",
-                  "text": "42"
+                  "text": "[\n  {\n    \"name\": \"snapshot_deferred_double\",\n    \"description\": \"Double a number through a deferred schema.\",\n    \"parameters\": {\n      \"type\": \"object\",\n      \"properties\": {\n        \"value\": {\n          \"type\": \"number\"\n        }\n      },\n      \"required\": [\n        \"value\"\n      ],\n      \"additionalProperties\": false\n    }\n  }\n]"
                 }
               ],
-              "isError": false
+              "isError": false,
+              "loadedTools": [
+                {
+                  "name": "snapshot_deferred_double",
+                  "description": "Double a number through a deferred schema.",
+                  "parameters": {
+                    "type": "object",
+                    "properties": {
+                      "value": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "value"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              ]
             }
           ],
           "role": "user",
@@ -744,7 +729,7 @@
     },
     {
       "type": "step/end",
-      "seq": 39,
+      "seq": 37,
       "time": 0,
       "data": {
         "turn": 1,
@@ -753,602 +738,16 @@
     },
     {
       "type": "step/start",
-      "seq": 40,
+      "seq": 38,
       "time": 0,
       "data": {
         "turn": 1,
         "step": 4
-      }
-    },
-    {
-      "type": "assistant/chunk",
-      "seq": 41,
-      "time": 0,
-      "data": {
-        "turn": 1,
-        "step": 4,
-        "chunk": {
-          "type": "block-start",
-          "index": 0,
-          "blockType": "tool-call"
-        }
-      }
-    },
-    {
-      "type": "assistant/chunk",
-      "seq": 42,
-      "time": 0,
-      "data": {
-        "turn": 1,
-        "step": 4,
-        "chunk": {
-          "type": "tool-call-delta",
-          "index": 0,
-          "id": "advanced-direct-child",
-          "name": "subagent",
-          "argumentsDelta": "{\"description\": \"Check direct child\", \"prompt\": \"Reply with exactly DIRECT_CHILD_OK and nothing else.\"}"
-        }
-      }
-    },
-    {
-      "type": "assistant/chunk",
-      "seq": 43,
-      "time": 0,
-      "data": {
-        "turn": 1,
-        "step": 4,
-        "chunk": {
-          "type": "block-end",
-          "index": 0,
-          "block": {
-            "type": "tool-call",
-            "id": "advanced-direct-child",
-            "name": "subagent",
-            "arguments": "{\"description\": \"Check direct child\", \"prompt\": \"Reply with exactly DIRECT_CHILD_OK and nothing else.\"}"
-          }
-        }
-      }
-    },
-    {
-      "type": "assistant/chunk",
-      "seq": 44,
-      "time": 0,
-      "data": {
-        "turn": 1,
-        "step": 4,
-        "chunk": {
-          "type": "usage",
-          "usage": {
-            "inputTokens": 3,
-            "outputTokens": 3
-          }
-        }
-      }
-    },
-    {
-      "type": "assistant/chunk",
-      "seq": 45,
-      "time": 0,
-      "data": {
-        "turn": 1,
-        "step": 4,
-        "chunk": {
-          "type": "finish",
-          "reason": {
-            "kind": "tool-calls"
-          }
-        }
-      }
-    },
-    {
-      "type": "assistant/message",
-      "seq": 46,
-      "time": 0,
-      "data": {
-        "turn": 1,
-        "step": 4,
-        "message": {
-          "role": "assistant",
-          "content": [
-            {
-              "type": "tool-call",
-              "id": "advanced-direct-child",
-              "name": "subagent",
-              "arguments": "{\"description\": \"Check direct child\", \"prompt\": \"Reply with exactly DIRECT_CHILD_OK and nothing else.\"}"
-            }
-          ],
-          "source": {
-            "kind": "model",
-            "provider": "deepseek-official",
-            "model": "smoke-model"
-          },
-          "id": "{{messageId}}"
-        },
-        "usage": {
-          "inputTokens": 3,
-          "outputTokens": 3
-        }
-      },
-      "sourceEventSeqs": [
-        41,
-        42,
-        43,
-        44,
-        45
-      ],
-      "surfaceOp": "append"
-    },
-    {
-      "type": "tool/call",
-      "seq": 47,
-      "time": 0,
-      "data": {
-        "turn": 1,
-        "step": 4,
-        "callId": "advanced-direct-child",
-        "name": "subagent",
-        "arguments": "{\"description\": \"Check direct child\", \"prompt\": \"Reply with exactly DIRECT_CHILD_OK and nothing else.\"}"
-      }
-    },
-    {
-      "type": "tool/result",
-      "seq": 48,
-      "time": 0,
-      "data": {
-        "turn": 1,
-        "step": 4,
-        "message": {
-          "source": {
-            "kind": "tool",
-            "callId": "advanced-direct-child"
-          },
-          "content": [
-            {
-              "type": "tool-result",
-              "toolCallId": "advanced-direct-child",
-              "content": [
-                {
-                  "type": "text",
-                  "text": "DIRECT_CHILD_OK"
-                }
-              ],
-              "isError": false
-            }
-          ],
-          "role": "user",
-          "id": "{{messageId}}"
-        }
-      },
-      "sourceEventSeqs": [
-        47
-      ],
-      "surfaceOp": "append"
-    },
-    {
-      "type": "step/end",
-      "seq": 49,
-      "time": 0,
-      "data": {
-        "turn": 1,
-        "step": 4
-      }
-    },
-    {
-      "type": "step/start",
-      "seq": 50,
-      "time": 0,
-      "data": {
-        "turn": 1,
-        "step": 5
-      }
-    },
-    {
-      "type": "assistant/chunk",
-      "seq": 51,
-      "time": 0,
-      "data": {
-        "turn": 1,
-        "step": 5,
-        "chunk": {
-          "type": "block-start",
-          "index": 0,
-          "blockType": "tool-call"
-        }
-      }
-    },
-    {
-      "type": "assistant/chunk",
-      "seq": 52,
-      "time": 0,
-      "data": {
-        "turn": 1,
-        "step": 5,
-        "chunk": {
-          "type": "tool-call-delta",
-          "index": 0,
-          "id": "advanced-workflow",
-          "name": "workflow",
-          "argumentsDelta": "{\"script\": \"phase('Delegate')\\nconst reply = await agent('Reply with exactly WORKFLOW_CHILD_OK and nothing else.', { label: 'workflow-child' })\\nreturn { reply }\", \"meta\": {\"name\": \"advanced-exe-snapshot\", \"description\": \"exercise one packaged workflow child\"}}"
-        }
-      }
-    },
-    {
-      "type": "assistant/chunk",
-      "seq": 53,
-      "time": 0,
-      "data": {
-        "turn": 1,
-        "step": 5,
-        "chunk": {
-          "type": "block-end",
-          "index": 0,
-          "block": {
-            "type": "tool-call",
-            "id": "advanced-workflow",
-            "name": "workflow",
-            "arguments": "{\"script\": \"phase('Delegate')\\nconst reply = await agent('Reply with exactly WORKFLOW_CHILD_OK and nothing else.', { label: 'workflow-child' })\\nreturn { reply }\", \"meta\": {\"name\": \"advanced-exe-snapshot\", \"description\": \"exercise one packaged workflow child\"}}"
-          }
-        }
-      }
-    },
-    {
-      "type": "assistant/chunk",
-      "seq": 54,
-      "time": 0,
-      "data": {
-        "turn": 1,
-        "step": 5,
-        "chunk": {
-          "type": "usage",
-          "usage": {
-            "inputTokens": 3,
-            "outputTokens": 3
-          }
-        }
-      }
-    },
-    {
-      "type": "assistant/chunk",
-      "seq": 55,
-      "time": 0,
-      "data": {
-        "turn": 1,
-        "step": 5,
-        "chunk": {
-          "type": "finish",
-          "reason": {
-            "kind": "tool-calls"
-          }
-        }
-      }
-    },
-    {
-      "type": "assistant/message",
-      "seq": 56,
-      "time": 0,
-      "data": {
-        "turn": 1,
-        "step": 5,
-        "message": {
-          "role": "assistant",
-          "content": [
-            {
-              "type": "tool-call",
-              "id": "advanced-workflow",
-              "name": "workflow",
-              "arguments": "{\"script\": \"phase('Delegate')\\nconst reply = await agent('Reply with exactly WORKFLOW_CHILD_OK and nothing else.', { label: 'workflow-child' })\\nreturn { reply }\", \"meta\": {\"name\": \"advanced-exe-snapshot\", \"description\": \"exercise one packaged workflow child\"}}"
-            }
-          ],
-          "source": {
-            "kind": "model",
-            "provider": "deepseek-official",
-            "model": "smoke-model"
-          },
-          "id": "{{messageId}}"
-        },
-        "usage": {
-          "inputTokens": 3,
-          "outputTokens": 3
-        }
-      },
-      "sourceEventSeqs": [
-        51,
-        52,
-        53,
-        54,
-        55
-      ],
-      "surfaceOp": "append"
-    },
-    {
-      "type": "tool/call",
-      "seq": 57,
-      "time": 0,
-      "data": {
-        "turn": 1,
-        "step": 5,
-        "callId": "advanced-workflow",
-        "name": "workflow",
-        "arguments": "{\"script\": \"phase('Delegate')\\nconst reply = await agent('Reply with exactly WORKFLOW_CHILD_OK and nothing else.', { label: 'workflow-child' })\\nreturn { reply }\", \"meta\": {\"name\": \"advanced-exe-snapshot\", \"description\": \"exercise one packaged workflow child\"}}"
-      }
-    },
-    {
-      "type": "tool-workflow/run-start",
-      "seq": 58,
-      "time": 0,
-      "data": {
-        "runId": "{{workflow-run}}",
-        "name": "advanced-exe-snapshot"
-      }
-    },
-    {
-      "type": "tool-workflow/agent-start",
-      "seq": 59,
-      "time": 0,
-      "data": {
-        "runId": "{{workflow-run}}",
-        "seq": 1,
-        "label": "workflow-child",
-        "phase": "Delegate",
-        "childId": "{{child-2}}"
-      }
-    },
-    {
-      "type": "tool-workflow/agent-end",
-      "seq": 60,
-      "time": 0,
-      "data": {
-        "runId": "{{workflow-run}}",
-        "seq": 1,
-        "outcome": "completed"
-      }
-    },
-    {
-      "type": "tool-workflow/run-end",
-      "seq": 61,
-      "time": 0,
-      "data": {
-        "runId": "{{workflow-run}}",
-        "stopReason": "completed"
-      }
-    },
-    {
-      "type": "tool/result",
-      "seq": 62,
-      "time": 0,
-      "data": {
-        "turn": 1,
-        "step": 5,
-        "message": {
-          "source": {
-            "kind": "tool",
-            "callId": "advanced-workflow"
-          },
-          "content": [
-            {
-              "type": "tool-result",
-              "toolCallId": "advanced-workflow",
-              "content": [
-                {
-                  "type": "text",
-                  "text": "workflow \"advanced-exe-snapshot\" completed (1 agent).\nReturn value:\n{\n  \"reply\": \"WORKFLOW_CHILD_OK\"\n}"
-                }
-              ],
-              "isError": false
-            }
-          ],
-          "role": "user",
-          "id": "{{messageId}}"
-        }
-      },
-      "sourceEventSeqs": [
-        57
-      ],
-      "surfaceOp": "append"
-    },
-    {
-      "type": "step/end",
-      "seq": 63,
-      "time": 0,
-      "data": {
-        "turn": 1,
-        "step": 5
-      }
-    },
-    {
-      "type": "step/start",
-      "seq": 64,
-      "time": 0,
-      "data": {
-        "turn": 1,
-        "step": 6
-      }
-    },
-    {
-      "type": "assistant/chunk",
-      "seq": 65,
-      "time": 0,
-      "data": {
-        "turn": 1,
-        "step": 6,
-        "chunk": {
-          "type": "block-start",
-          "index": 0,
-          "blockType": "tool-call"
-        }
-      }
-    },
-    {
-      "type": "assistant/chunk",
-      "seq": 66,
-      "time": 0,
-      "data": {
-        "turn": 1,
-        "step": 6,
-        "chunk": {
-          "type": "tool-call-delta",
-          "index": 0,
-          "id": "advanced-undefine",
-          "name": "cordis_undefine",
-          "argumentsDelta": "{\"pluginId\": \"snap-1\"}"
-        }
-      }
-    },
-    {
-      "type": "assistant/chunk",
-      "seq": 67,
-      "time": 0,
-      "data": {
-        "turn": 1,
-        "step": 6,
-        "chunk": {
-          "type": "block-end",
-          "index": 0,
-          "block": {
-            "type": "tool-call",
-            "id": "advanced-undefine",
-            "name": "cordis_undefine",
-            "arguments": "{\"pluginId\": \"snap-1\"}"
-          }
-        }
-      }
-    },
-    {
-      "type": "assistant/chunk",
-      "seq": 68,
-      "time": 0,
-      "data": {
-        "turn": 1,
-        "step": 6,
-        "chunk": {
-          "type": "usage",
-          "usage": {
-            "inputTokens": 3,
-            "outputTokens": 3
-          }
-        }
-      }
-    },
-    {
-      "type": "assistant/chunk",
-      "seq": 69,
-      "time": 0,
-      "data": {
-        "turn": 1,
-        "step": 6,
-        "chunk": {
-          "type": "finish",
-          "reason": {
-            "kind": "tool-calls"
-          }
-        }
-      }
-    },
-    {
-      "type": "assistant/message",
-      "seq": 70,
-      "time": 0,
-      "data": {
-        "turn": 1,
-        "step": 6,
-        "message": {
-          "role": "assistant",
-          "content": [
-            {
-              "type": "tool-call",
-              "id": "advanced-undefine",
-              "name": "cordis_undefine",
-              "arguments": "{\"pluginId\": \"snap-1\"}"
-            }
-          ],
-          "source": {
-            "kind": "model",
-            "provider": "deepseek-official",
-            "model": "smoke-model"
-          },
-          "id": "{{messageId}}"
-        },
-        "usage": {
-          "inputTokens": 3,
-          "outputTokens": 3
-        }
-      },
-      "sourceEventSeqs": [
-        65,
-        66,
-        67,
-        68,
-        69
-      ],
-      "surfaceOp": "append"
-    },
-    {
-      "type": "tool/call",
-      "seq": 71,
-      "time": 0,
-      "data": {
-        "turn": 1,
-        "step": 6,
-        "callId": "advanced-undefine",
-        "name": "cordis_undefine",
-        "arguments": "{\"pluginId\": \"snap-1\"}"
-      }
-    },
-    {
-      "type": "tool/result",
-      "seq": 72,
-      "time": 0,
-      "data": {
-        "turn": 1,
-        "step": 6,
-        "message": {
-          "source": {
-            "kind": "tool",
-            "callId": "advanced-undefine"
-          },
-          "content": [
-            {
-              "type": "tool-result",
-              "toolCallId": "advanced-undefine",
-              "content": [
-                {
-                  "type": "text",
-                  "text": "Removed dynamic Plugin snap-1 and all of its Packages."
-                }
-              ],
-              "isError": false
-            }
-          ],
-          "role": "user",
-          "id": "{{messageId}}"
-        }
-      },
-      "sourceEventSeqs": [
-        71
-      ],
-      "surfaceOp": "append"
-    },
-    {
-      "type": "step/end",
-      "seq": 73,
-      "time": 0,
-      "data": {
-        "turn": 1,
-        "step": 6
-      }
-    },
-    {
-      "type": "step/start",
-      "seq": 74,
-      "time": 0,
-      "data": {
-        "turn": 1,
-        "step": 7
       }
     },
     {
       "type": "request/header",
-      "seq": 75,
+      "seq": 39,
       "time": 0,
       "data": {
         "header": {
@@ -1375,11 +774,635 @@
             "job_list",
             "job_output",
             "run_code",
+            "snapshot_deferred_double",
+            "snapshot_double",
             "subagent",
+            "tool_search",
             "workflow"
           ]
         },
         "reason": "change"
+      }
+    },
+    {
+      "type": "assistant/chunk",
+      "seq": 40,
+      "time": 0,
+      "data": {
+        "turn": 1,
+        "step": 4,
+        "chunk": {
+          "type": "block-start",
+          "index": 0,
+          "blockType": "tool-call"
+        }
+      }
+    },
+    {
+      "type": "assistant/chunk",
+      "seq": 41,
+      "time": 0,
+      "data": {
+        "turn": 1,
+        "step": 4,
+        "chunk": {
+          "type": "tool-call-delta",
+          "index": 0,
+          "id": "advanced-code",
+          "name": "run_code",
+          "argumentsDelta": "{\"code\": \"return await tools.snapshot_deferred_double({ value: 21 })\", \"description\": \"Run the temporary Plugin tool\"}"
+        }
+      }
+    },
+    {
+      "type": "assistant/chunk",
+      "seq": 42,
+      "time": 0,
+      "data": {
+        "turn": 1,
+        "step": 4,
+        "chunk": {
+          "type": "block-end",
+          "index": 0,
+          "block": {
+            "type": "tool-call",
+            "id": "advanced-code",
+            "name": "run_code",
+            "arguments": "{\"code\": \"return await tools.snapshot_deferred_double({ value: 21 })\", \"description\": \"Run the temporary Plugin tool\"}"
+          }
+        }
+      }
+    },
+    {
+      "type": "assistant/chunk",
+      "seq": 43,
+      "time": 0,
+      "data": {
+        "turn": 1,
+        "step": 4,
+        "chunk": {
+          "type": "usage",
+          "usage": {
+            "inputTokens": 3,
+            "outputTokens": 3
+          }
+        }
+      }
+    },
+    {
+      "type": "assistant/chunk",
+      "seq": 44,
+      "time": 0,
+      "data": {
+        "turn": 1,
+        "step": 4,
+        "chunk": {
+          "type": "finish",
+          "reason": {
+            "kind": "tool-calls"
+          }
+        }
+      }
+    },
+    {
+      "type": "assistant/message",
+      "seq": 45,
+      "time": 0,
+      "data": {
+        "turn": 1,
+        "step": 4,
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "tool-call",
+              "id": "advanced-code",
+              "name": "run_code",
+              "arguments": "{\"code\": \"return await tools.snapshot_deferred_double({ value: 21 })\", \"description\": \"Run the temporary Plugin tool\"}"
+            }
+          ],
+          "source": {
+            "kind": "model",
+            "provider": "deepseek-official",
+            "model": "smoke-model"
+          },
+          "id": "{{messageId}}"
+        },
+        "usage": {
+          "inputTokens": 3,
+          "outputTokens": 3
+        }
+      },
+      "sourceEventSeqs": [
+        40,
+        41,
+        42,
+        43,
+        44
+      ],
+      "surfaceOp": "append"
+    },
+    {
+      "type": "tool/call",
+      "seq": 46,
+      "time": 0,
+      "data": {
+        "turn": 1,
+        "step": 4,
+        "callId": "advanced-code",
+        "name": "run_code",
+        "arguments": "{\"code\": \"return await tools.snapshot_deferred_double({ value: 21 })\", \"description\": \"Run the temporary Plugin tool\"}"
+      }
+    },
+    {
+      "type": "tool/code-dispatch-start",
+      "seq": 47,
+      "time": 0,
+      "data": {
+        "rootCallId": "advanced-code",
+        "parentCallId": "advanced-code",
+        "subCallId": "advanced-code:code:1",
+        "name": "snapshot_deferred_double",
+        "arguments": {
+          "value": 21
+        }
+      }
+    },
+    {
+      "type": "tool/code-dispatch",
+      "seq": 48,
+      "time": 0,
+      "data": {
+        "rootCallId": "advanced-code",
+        "parentCallId": "advanced-code",
+        "subCallId": "advanced-code:code:1",
+        "name": "snapshot_deferred_double",
+        "arguments": {
+          "value": 21
+        },
+        "isError": false,
+        "content": [
+          {
+            "type": "text",
+            "text": "42"
+          }
+        ]
+      }
+    },
+    {
+      "type": "tool/result",
+      "seq": 49,
+      "time": 0,
+      "data": {
+        "turn": 1,
+        "step": 4,
+        "message": {
+          "source": {
+            "kind": "tool",
+            "callId": "advanced-code"
+          },
+          "content": [
+            {
+              "type": "tool-result",
+              "toolCallId": "advanced-code",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "42"
+                }
+              ],
+              "isError": false
+            }
+          ],
+          "role": "user",
+          "id": "{{messageId}}"
+        }
+      },
+      "sourceEventSeqs": [
+        46
+      ],
+      "surfaceOp": "append"
+    },
+    {
+      "type": "step/end",
+      "seq": 50,
+      "time": 0,
+      "data": {
+        "turn": 1,
+        "step": 4
+      }
+    },
+    {
+      "type": "step/start",
+      "seq": 51,
+      "time": 0,
+      "data": {
+        "turn": 1,
+        "step": 5
+      }
+    },
+    {
+      "type": "assistant/chunk",
+      "seq": 52,
+      "time": 0,
+      "data": {
+        "turn": 1,
+        "step": 5,
+        "chunk": {
+          "type": "block-start",
+          "index": 0,
+          "blockType": "tool-call"
+        }
+      }
+    },
+    {
+      "type": "assistant/chunk",
+      "seq": 53,
+      "time": 0,
+      "data": {
+        "turn": 1,
+        "step": 5,
+        "chunk": {
+          "type": "tool-call-delta",
+          "index": 0,
+          "id": "advanced-direct-child",
+          "name": "subagent",
+          "argumentsDelta": "{\"description\": \"Check direct child\", \"prompt\": \"Reply with exactly DIRECT_CHILD_OK and nothing else.\"}"
+        }
+      }
+    },
+    {
+      "type": "assistant/chunk",
+      "seq": 54,
+      "time": 0,
+      "data": {
+        "turn": 1,
+        "step": 5,
+        "chunk": {
+          "type": "block-end",
+          "index": 0,
+          "block": {
+            "type": "tool-call",
+            "id": "advanced-direct-child",
+            "name": "subagent",
+            "arguments": "{\"description\": \"Check direct child\", \"prompt\": \"Reply with exactly DIRECT_CHILD_OK and nothing else.\"}"
+          }
+        }
+      }
+    },
+    {
+      "type": "assistant/chunk",
+      "seq": 55,
+      "time": 0,
+      "data": {
+        "turn": 1,
+        "step": 5,
+        "chunk": {
+          "type": "usage",
+          "usage": {
+            "inputTokens": 3,
+            "outputTokens": 3
+          }
+        }
+      }
+    },
+    {
+      "type": "assistant/chunk",
+      "seq": 56,
+      "time": 0,
+      "data": {
+        "turn": 1,
+        "step": 5,
+        "chunk": {
+          "type": "finish",
+          "reason": {
+            "kind": "tool-calls"
+          }
+        }
+      }
+    },
+    {
+      "type": "assistant/message",
+      "seq": 57,
+      "time": 0,
+      "data": {
+        "turn": 1,
+        "step": 5,
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "tool-call",
+              "id": "advanced-direct-child",
+              "name": "subagent",
+              "arguments": "{\"description\": \"Check direct child\", \"prompt\": \"Reply with exactly DIRECT_CHILD_OK and nothing else.\"}"
+            }
+          ],
+          "source": {
+            "kind": "model",
+            "provider": "deepseek-official",
+            "model": "smoke-model"
+          },
+          "id": "{{messageId}}"
+        },
+        "usage": {
+          "inputTokens": 3,
+          "outputTokens": 3
+        }
+      },
+      "sourceEventSeqs": [
+        52,
+        53,
+        54,
+        55,
+        56
+      ],
+      "surfaceOp": "append"
+    },
+    {
+      "type": "tool/call",
+      "seq": 58,
+      "time": 0,
+      "data": {
+        "turn": 1,
+        "step": 5,
+        "callId": "advanced-direct-child",
+        "name": "subagent",
+        "arguments": "{\"description\": \"Check direct child\", \"prompt\": \"Reply with exactly DIRECT_CHILD_OK and nothing else.\"}"
+      }
+    },
+    {
+      "type": "tool/result",
+      "seq": 59,
+      "time": 0,
+      "data": {
+        "turn": 1,
+        "step": 5,
+        "message": {
+          "source": {
+            "kind": "tool",
+            "callId": "advanced-direct-child"
+          },
+          "content": [
+            {
+              "type": "tool-result",
+              "toolCallId": "advanced-direct-child",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "DIRECT_CHILD_OK"
+                }
+              ],
+              "isError": false
+            }
+          ],
+          "role": "user",
+          "id": "{{messageId}}"
+        }
+      },
+      "sourceEventSeqs": [
+        58
+      ],
+      "surfaceOp": "append"
+    },
+    {
+      "type": "step/end",
+      "seq": 60,
+      "time": 0,
+      "data": {
+        "turn": 1,
+        "step": 5
+      }
+    },
+    {
+      "type": "step/start",
+      "seq": 61,
+      "time": 0,
+      "data": {
+        "turn": 1,
+        "step": 6
+      }
+    },
+    {
+      "type": "assistant/chunk",
+      "seq": 62,
+      "time": 0,
+      "data": {
+        "turn": 1,
+        "step": 6,
+        "chunk": {
+          "type": "block-start",
+          "index": 0,
+          "blockType": "tool-call"
+        }
+      }
+    },
+    {
+      "type": "assistant/chunk",
+      "seq": 63,
+      "time": 0,
+      "data": {
+        "turn": 1,
+        "step": 6,
+        "chunk": {
+          "type": "tool-call-delta",
+          "index": 0,
+          "id": "advanced-workflow",
+          "name": "workflow",
+          "argumentsDelta": "{\"script\": \"phase('Delegate')\\nconst reply = await agent('Reply with exactly WORKFLOW_CHILD_OK and nothing else.', { label: 'workflow-child' })\\nreturn { reply }\", \"meta\": {\"name\": \"advanced-exe-snapshot\", \"description\": \"exercise one packaged workflow child\"}}"
+        }
+      }
+    },
+    {
+      "type": "assistant/chunk",
+      "seq": 64,
+      "time": 0,
+      "data": {
+        "turn": 1,
+        "step": 6,
+        "chunk": {
+          "type": "block-end",
+          "index": 0,
+          "block": {
+            "type": "tool-call",
+            "id": "advanced-workflow",
+            "name": "workflow",
+            "arguments": "{\"script\": \"phase('Delegate')\\nconst reply = await agent('Reply with exactly WORKFLOW_CHILD_OK and nothing else.', { label: 'workflow-child' })\\nreturn { reply }\", \"meta\": {\"name\": \"advanced-exe-snapshot\", \"description\": \"exercise one packaged workflow child\"}}"
+          }
+        }
+      }
+    },
+    {
+      "type": "assistant/chunk",
+      "seq": 65,
+      "time": 0,
+      "data": {
+        "turn": 1,
+        "step": 6,
+        "chunk": {
+          "type": "usage",
+          "usage": {
+            "inputTokens": 3,
+            "outputTokens": 3
+          }
+        }
+      }
+    },
+    {
+      "type": "assistant/chunk",
+      "seq": 66,
+      "time": 0,
+      "data": {
+        "turn": 1,
+        "step": 6,
+        "chunk": {
+          "type": "finish",
+          "reason": {
+            "kind": "tool-calls"
+          }
+        }
+      }
+    },
+    {
+      "type": "assistant/message",
+      "seq": 67,
+      "time": 0,
+      "data": {
+        "turn": 1,
+        "step": 6,
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "tool-call",
+              "id": "advanced-workflow",
+              "name": "workflow",
+              "arguments": "{\"script\": \"phase('Delegate')\\nconst reply = await agent('Reply with exactly WORKFLOW_CHILD_OK and nothing else.', { label: 'workflow-child' })\\nreturn { reply }\", \"meta\": {\"name\": \"advanced-exe-snapshot\", \"description\": \"exercise one packaged workflow child\"}}"
+            }
+          ],
+          "source": {
+            "kind": "model",
+            "provider": "deepseek-official",
+            "model": "smoke-model"
+          },
+          "id": "{{messageId}}"
+        },
+        "usage": {
+          "inputTokens": 3,
+          "outputTokens": 3
+        }
+      },
+      "sourceEventSeqs": [
+        62,
+        63,
+        64,
+        65,
+        66
+      ],
+      "surfaceOp": "append"
+    },
+    {
+      "type": "tool/call",
+      "seq": 68,
+      "time": 0,
+      "data": {
+        "turn": 1,
+        "step": 6,
+        "callId": "advanced-workflow",
+        "name": "workflow",
+        "arguments": "{\"script\": \"phase('Delegate')\\nconst reply = await agent('Reply with exactly WORKFLOW_CHILD_OK and nothing else.', { label: 'workflow-child' })\\nreturn { reply }\", \"meta\": {\"name\": \"advanced-exe-snapshot\", \"description\": \"exercise one packaged workflow child\"}}"
+      }
+    },
+    {
+      "type": "tool-workflow/run-start",
+      "seq": 69,
+      "time": 0,
+      "data": {
+        "runId": "{{workflow-run}}",
+        "name": "advanced-exe-snapshot"
+      }
+    },
+    {
+      "type": "tool-workflow/agent-start",
+      "seq": 70,
+      "time": 0,
+      "data": {
+        "runId": "{{workflow-run}}",
+        "seq": 1,
+        "label": "workflow-child",
+        "phase": "Delegate",
+        "childId": "{{child-2}}"
+      }
+    },
+    {
+      "type": "tool-workflow/agent-end",
+      "seq": 71,
+      "time": 0,
+      "data": {
+        "runId": "{{workflow-run}}",
+        "seq": 1,
+        "outcome": "completed"
+      }
+    },
+    {
+      "type": "tool-workflow/run-end",
+      "seq": 72,
+      "time": 0,
+      "data": {
+        "runId": "{{workflow-run}}",
+        "stopReason": "completed"
+      }
+    },
+    {
+      "type": "tool/result",
+      "seq": 73,
+      "time": 0,
+      "data": {
+        "turn": 1,
+        "step": 6,
+        "message": {
+          "source": {
+            "kind": "tool",
+            "callId": "advanced-workflow"
+          },
+          "content": [
+            {
+              "type": "tool-result",
+              "toolCallId": "advanced-workflow",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "workflow \"advanced-exe-snapshot\" completed (1 agent).\nReturn value:\n{\n  \"reply\": \"WORKFLOW_CHILD_OK\"\n}"
+                }
+              ],
+              "isError": false
+            }
+          ],
+          "role": "user",
+          "id": "{{messageId}}"
+        }
+      },
+      "sourceEventSeqs": [
+        68
+      ],
+      "surfaceOp": "append"
+    },
+    {
+      "type": "step/end",
+      "seq": 74,
+      "time": 0,
+      "data": {
+        "turn": 1,
+        "step": 6
+      }
+    },
+    {
+      "type": "step/start",
+      "seq": 75,
+      "time": 0,
+      "data": {
+        "turn": 1,
+        "step": 7
       }
     },
     {
@@ -1392,7 +1415,7 @@
         "chunk": {
           "type": "block-start",
           "index": 0,
-          "blockType": "text"
+          "blockType": "tool-call"
         }
       }
     },
@@ -1404,9 +1427,11 @@
         "turn": 1,
         "step": 7,
         "chunk": {
-          "type": "text-delta",
+          "type": "tool-call-delta",
           "index": 0,
-          "text": "ADVANCED_EXECUTABLE_OK"
+          "id": "advanced-undefine",
+          "name": "cordis_undefine",
+          "argumentsDelta": "{\"pluginId\": \"snap-1\"}"
         }
       }
     },
@@ -1421,8 +1446,10 @@
           "type": "block-end",
           "index": 0,
           "block": {
-            "type": "text",
-            "text": "ADVANCED_EXECUTABLE_OK"
+            "type": "tool-call",
+            "id": "advanced-undefine",
+            "name": "cordis_undefine",
+            "arguments": "{\"pluginId\": \"snap-1\"}"
           }
         }
       }
@@ -1453,7 +1480,7 @@
         "chunk": {
           "type": "finish",
           "reason": {
-            "kind": "stop"
+            "kind": "tool-calls"
           }
         }
       }
@@ -1469,8 +1496,10 @@
           "role": "assistant",
           "content": [
             {
-              "type": "text",
-              "text": "ADVANCED_EXECUTABLE_OK"
+              "type": "tool-call",
+              "id": "advanced-undefine",
+              "name": "cordis_undefine",
+              "arguments": "{\"pluginId\": \"snap-1\"}"
             }
           ],
           "source": {
@@ -1495,8 +1524,54 @@
       "surfaceOp": "append"
     },
     {
-      "type": "step/end",
+      "type": "tool/call",
       "seq": 82,
+      "time": 0,
+      "data": {
+        "turn": 1,
+        "step": 7,
+        "callId": "advanced-undefine",
+        "name": "cordis_undefine",
+        "arguments": "{\"pluginId\": \"snap-1\"}"
+      }
+    },
+    {
+      "type": "tool/result",
+      "seq": 83,
+      "time": 0,
+      "data": {
+        "turn": 1,
+        "step": 7,
+        "message": {
+          "source": {
+            "kind": "tool",
+            "callId": "advanced-undefine"
+          },
+          "content": [
+            {
+              "type": "tool-result",
+              "toolCallId": "advanced-undefine",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Removed dynamic Plugin snap-1 and all of its Packages."
+                }
+              ],
+              "isError": false
+            }
+          ],
+          "role": "user",
+          "id": "{{messageId}}"
+        }
+      },
+      "sourceEventSeqs": [
+        82
+      ],
+      "surfaceOp": "append"
+    },
+    {
+      "type": "step/end",
+      "seq": 84,
       "time": 0,
       "data": {
         "turn": 1,
@@ -1504,8 +1579,176 @@
       }
     },
     {
+      "type": "step/start",
+      "seq": 85,
+      "time": 0,
+      "data": {
+        "turn": 1,
+        "step": 8
+      }
+    },
+    {
+      "type": "request/header",
+      "seq": 86,
+      "time": 0,
+      "data": {
+        "header": {
+          "config": {
+            "provider": "deepseek-official",
+            "model": "smoke-model",
+            "maxTokens": 256000,
+            "reasoningEffort": "high"
+          },
+          "adapterDefaults": {
+            "reasoningEffort": true,
+            "maxTokens": true
+          },
+          "system": "{{system}}",
+          "tools": [
+            "cordis_define",
+            "cordis_inspect_list",
+            "cordis_inspect_query",
+            "cordis_inspect_self",
+            "cordis_run",
+            "cordis_stop",
+            "cordis_undefine",
+            "job_kill",
+            "job_list",
+            "job_output",
+            "run_code",
+            "snapshot_deferred_double",
+            "subagent",
+            "tool_search",
+            "workflow"
+          ]
+        },
+        "reason": "change"
+      }
+    },
+    {
+      "type": "assistant/chunk",
+      "seq": 87,
+      "time": 0,
+      "data": {
+        "turn": 1,
+        "step": 8,
+        "chunk": {
+          "type": "block-start",
+          "index": 0,
+          "blockType": "text"
+        }
+      }
+    },
+    {
+      "type": "assistant/chunk",
+      "seq": 88,
+      "time": 0,
+      "data": {
+        "turn": 1,
+        "step": 8,
+        "chunk": {
+          "type": "text-delta",
+          "index": 0,
+          "text": "ADVANCED_EXECUTABLE_OK"
+        }
+      }
+    },
+    {
+      "type": "assistant/chunk",
+      "seq": 89,
+      "time": 0,
+      "data": {
+        "turn": 1,
+        "step": 8,
+        "chunk": {
+          "type": "block-end",
+          "index": 0,
+          "block": {
+            "type": "text",
+            "text": "ADVANCED_EXECUTABLE_OK"
+          }
+        }
+      }
+    },
+    {
+      "type": "assistant/chunk",
+      "seq": 90,
+      "time": 0,
+      "data": {
+        "turn": 1,
+        "step": 8,
+        "chunk": {
+          "type": "usage",
+          "usage": {
+            "inputTokens": 3,
+            "outputTokens": 3
+          }
+        }
+      }
+    },
+    {
+      "type": "assistant/chunk",
+      "seq": 91,
+      "time": 0,
+      "data": {
+        "turn": 1,
+        "step": 8,
+        "chunk": {
+          "type": "finish",
+          "reason": {
+            "kind": "stop"
+          }
+        }
+      }
+    },
+    {
+      "type": "assistant/message",
+      "seq": 92,
+      "time": 0,
+      "data": {
+        "turn": 1,
+        "step": 8,
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "ADVANCED_EXECUTABLE_OK"
+            }
+          ],
+          "source": {
+            "kind": "model",
+            "provider": "deepseek-official",
+            "model": "smoke-model"
+          },
+          "id": "{{messageId}}"
+        },
+        "usage": {
+          "inputTokens": 3,
+          "outputTokens": 3
+        }
+      },
+      "sourceEventSeqs": [
+        87,
+        88,
+        89,
+        90,
+        91
+      ],
+      "surfaceOp": "append"
+    },
+    {
+      "type": "step/end",
+      "seq": 93,
+      "time": 0,
+      "data": {
+        "turn": 1,
+        "step": 8
+      }
+    },
+    {
       "type": "turn/end",
-      "seq": 83,
+      "seq": 94,
       "time": 0,
       "data": {
         "turn": 1,
@@ -1678,6 +1921,7 @@
                 "job_output",
                 "run_code",
                 "subagent",
+                "tool_search",
                 "workflow"
               ]
             },
@@ -2230,6 +2474,7 @@
                 "run_code",
                 "snapshot_double",
                 "subagent",
+                "tool_search",
                 "workflow"
               ]
             },
@@ -2272,9 +2517,9 @@
             "chunk": {
               "type": "tool-call-delta",
               "index": 0,
-              "id": "advanced-code",
-              "name": "run_code",
-              "argumentsDelta": "{\"code\": \"return await tools.snapshot_double({ value: 21 })\", \"description\": \"Run the temporary Plugin tool\"}"
+              "id": "advanced-search",
+              "name": "tool_search",
+              "argumentsDelta": "{\"query\": \"deferred double\"}"
             }
           }
         }
@@ -2296,9 +2541,9 @@
               "index": 0,
               "block": {
                 "type": "tool-call",
-                "id": "advanced-code",
-                "name": "run_code",
-                "arguments": "{\"code\": \"return await tools.snapshot_double({ value: 21 })\", \"description\": \"Run the temporary Plugin tool\"}"
+                "id": "advanced-search",
+                "name": "tool_search",
+                "arguments": "{\"query\": \"deferred double\"}"
               }
             }
           }
@@ -2364,9 +2609,9 @@
               "content": [
                 {
                   "type": "tool-call",
-                  "id": "advanced-code",
-                  "name": "run_code",
-                  "arguments": "{\"code\": \"return await tools.snapshot_double({ value: 21 })\", \"description\": \"Run the temporary Plugin tool\"}"
+                  "id": "advanced-search",
+                  "name": "tool_search",
+                  "arguments": "{\"query\": \"deferred double\"}"
                 }
               ],
               "source": {
@@ -2403,9 +2648,314 @@
           "data": {
             "turn": 1,
             "step": 3,
+            "callId": "advanced-search",
+            "name": "tool_search",
+            "arguments": "{\"query\": \"deferred double\"}"
+          }
+        }
+      }
+    },
+    {
+      "method": "session.event",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "event": {
+          "type": "tool/result",
+          "seq": 36,
+          "time": 0,
+          "data": {
+            "turn": 1,
+            "step": 3,
+            "message": {
+              "source": {
+                "kind": "tool",
+                "callId": "advanced-search"
+              },
+              "content": [
+                {
+                  "type": "tool-result",
+                  "toolCallId": "advanced-search",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "[\n  {\n    \"name\": \"snapshot_deferred_double\",\n    \"description\": \"Double a number through a deferred schema.\",\n    \"parameters\": {\n      \"type\": \"object\",\n      \"properties\": {\n        \"value\": {\n          \"type\": \"number\"\n        }\n      },\n      \"required\": [\n        \"value\"\n      ],\n      \"additionalProperties\": false\n    }\n  }\n]"
+                    }
+                  ],
+                  "isError": false,
+                  "loadedTools": [
+                    {
+                      "name": "snapshot_deferred_double",
+                      "description": "Double a number through a deferred schema.",
+                      "parameters": {
+                        "type": "object",
+                        "properties": {
+                          "value": {
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "value"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  ]
+                }
+              ],
+              "role": "user",
+              "id": "{{messageId}}"
+            }
+          },
+          "sourceEventSeqs": [
+            35
+          ],
+          "surfaceOp": "append"
+        }
+      }
+    },
+    {
+      "method": "session.event",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "event": {
+          "type": "step/end",
+          "seq": 37,
+          "time": 0,
+          "data": {
+            "turn": 1,
+            "step": 3
+          }
+        }
+      }
+    },
+    {
+      "method": "session.event",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "event": {
+          "type": "step/start",
+          "seq": 38,
+          "time": 0,
+          "data": {
+            "turn": 1,
+            "step": 4
+          }
+        }
+      }
+    },
+    {
+      "method": "session.event",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "event": {
+          "type": "request/header",
+          "seq": 39,
+          "time": 0,
+          "data": {
+            "header": {
+              "config": {
+                "provider": "deepseek-official",
+                "model": "smoke-model",
+                "maxTokens": 256000,
+                "reasoningEffort": "high"
+              },
+              "adapterDefaults": {
+                "reasoningEffort": true,
+                "maxTokens": true
+              },
+              "system": "{{system}}",
+              "tools": [
+                "cordis_define",
+                "cordis_inspect_list",
+                "cordis_inspect_query",
+                "cordis_inspect_self",
+                "cordis_run",
+                "cordis_stop",
+                "cordis_undefine",
+                "job_kill",
+                "job_list",
+                "job_output",
+                "run_code",
+                "snapshot_deferred_double",
+                "snapshot_double",
+                "subagent",
+                "tool_search",
+                "workflow"
+              ]
+            },
+            "reason": "change"
+          }
+        }
+      }
+    },
+    {
+      "method": "session.event",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "event": {
+          "type": "assistant/chunk",
+          "seq": 40,
+          "time": 0,
+          "data": {
+            "turn": 1,
+            "step": 4,
+            "chunk": {
+              "type": "block-start",
+              "index": 0,
+              "blockType": "tool-call"
+            }
+          }
+        }
+      }
+    },
+    {
+      "method": "session.event",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "event": {
+          "type": "assistant/chunk",
+          "seq": 41,
+          "time": 0,
+          "data": {
+            "turn": 1,
+            "step": 4,
+            "chunk": {
+              "type": "tool-call-delta",
+              "index": 0,
+              "id": "advanced-code",
+              "name": "run_code",
+              "argumentsDelta": "{\"code\": \"return await tools.snapshot_deferred_double({ value: 21 })\", \"description\": \"Run the temporary Plugin tool\"}"
+            }
+          }
+        }
+      }
+    },
+    {
+      "method": "session.event",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "event": {
+          "type": "assistant/chunk",
+          "seq": 42,
+          "time": 0,
+          "data": {
+            "turn": 1,
+            "step": 4,
+            "chunk": {
+              "type": "block-end",
+              "index": 0,
+              "block": {
+                "type": "tool-call",
+                "id": "advanced-code",
+                "name": "run_code",
+                "arguments": "{\"code\": \"return await tools.snapshot_deferred_double({ value: 21 })\", \"description\": \"Run the temporary Plugin tool\"}"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "method": "session.event",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "event": {
+          "type": "assistant/chunk",
+          "seq": 43,
+          "time": 0,
+          "data": {
+            "turn": 1,
+            "step": 4,
+            "chunk": {
+              "type": "usage",
+              "usage": {
+                "inputTokens": 3,
+                "outputTokens": 3
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "method": "session.event",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "event": {
+          "type": "assistant/chunk",
+          "seq": 44,
+          "time": 0,
+          "data": {
+            "turn": 1,
+            "step": 4,
+            "chunk": {
+              "type": "finish",
+              "reason": {
+                "kind": "tool-calls"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "method": "session.event",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "event": {
+          "type": "assistant/message",
+          "seq": 45,
+          "time": 0,
+          "data": {
+            "turn": 1,
+            "step": 4,
+            "message": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "tool-call",
+                  "id": "advanced-code",
+                  "name": "run_code",
+                  "arguments": "{\"code\": \"return await tools.snapshot_deferred_double({ value: 21 })\", \"description\": \"Run the temporary Plugin tool\"}"
+                }
+              ],
+              "source": {
+                "kind": "model",
+                "provider": "deepseek-official",
+                "model": "smoke-model"
+              },
+              "id": "{{messageId}}"
+            },
+            "usage": {
+              "inputTokens": 3,
+              "outputTokens": 3
+            }
+          },
+          "sourceEventSeqs": [
+            40,
+            41,
+            42,
+            43,
+            44
+          ],
+          "surfaceOp": "append"
+        }
+      }
+    },
+    {
+      "method": "session.event",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "event": {
+          "type": "tool/call",
+          "seq": 46,
+          "time": 0,
+          "data": {
+            "turn": 1,
+            "step": 4,
             "callId": "advanced-code",
             "name": "run_code",
-            "arguments": "{\"code\": \"return await tools.snapshot_double({ value: 21 })\", \"description\": \"Run the temporary Plugin tool\"}"
+            "arguments": "{\"code\": \"return await tools.snapshot_deferred_double({ value: 21 })\", \"description\": \"Run the temporary Plugin tool\"}"
           }
         }
       }
@@ -2416,13 +2966,13 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "tool/code-dispatch-start",
-          "seq": 36,
+          "seq": 47,
           "time": 0,
           "data": {
             "rootCallId": "advanced-code",
             "parentCallId": "advanced-code",
             "subCallId": "advanced-code:code:1",
-            "name": "snapshot_double",
+            "name": "snapshot_deferred_double",
             "arguments": {
               "value": 21
             }
@@ -2436,13 +2986,13 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "tool/code-dispatch",
-          "seq": 37,
+          "seq": 48,
           "time": 0,
           "data": {
             "rootCallId": "advanced-code",
             "parentCallId": "advanced-code",
             "subCallId": "advanced-code:code:1",
-            "name": "snapshot_double",
+            "name": "snapshot_deferred_double",
             "arguments": {
               "value": 21
             },
@@ -2463,11 +3013,11 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "tool/result",
-          "seq": 38,
+          "seq": 49,
           "time": 0,
           "data": {
             "turn": 1,
-            "step": 3,
+            "step": 4,
             "message": {
               "source": {
                 "kind": "tool",
@@ -2491,7 +3041,7 @@
             }
           },
           "sourceEventSeqs": [
-            35
+            46
           ],
           "surfaceOp": "append"
         }
@@ -2503,22 +3053,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "step/end",
-          "seq": 39,
-          "time": 0,
-          "data": {
-            "turn": 1,
-            "step": 3
-          }
-        }
-      }
-    },
-    {
-      "method": "session.event",
-      "payload": {
-        "sessionId": "{{parent}}",
-        "event": {
-          "type": "step/start",
-          "seq": 40,
+          "seq": 50,
           "time": 0,
           "data": {
             "turn": 1,
@@ -2532,12 +3067,27 @@
       "payload": {
         "sessionId": "{{parent}}",
         "event": {
-          "type": "assistant/chunk",
-          "seq": 41,
+          "type": "step/start",
+          "seq": 51,
           "time": 0,
           "data": {
             "turn": 1,
-            "step": 4,
+            "step": 5
+          }
+        }
+      }
+    },
+    {
+      "method": "session.event",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "event": {
+          "type": "assistant/chunk",
+          "seq": 52,
+          "time": 0,
+          "data": {
+            "turn": 1,
+            "step": 5,
             "chunk": {
               "type": "block-start",
               "index": 0,
@@ -2553,11 +3103,11 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "assistant/chunk",
-          "seq": 42,
+          "seq": 53,
           "time": 0,
           "data": {
             "turn": 1,
-            "step": 4,
+            "step": 5,
             "chunk": {
               "type": "tool-call-delta",
               "index": 0,
@@ -2575,11 +3125,11 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "assistant/chunk",
-          "seq": 43,
+          "seq": 54,
           "time": 0,
           "data": {
             "turn": 1,
-            "step": 4,
+            "step": 5,
             "chunk": {
               "type": "block-end",
               "index": 0,
@@ -2600,11 +3150,11 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "assistant/chunk",
-          "seq": 44,
+          "seq": 55,
           "time": 0,
           "data": {
             "turn": 1,
-            "step": 4,
+            "step": 5,
             "chunk": {
               "type": "usage",
               "usage": {
@@ -2622,11 +3172,11 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "assistant/chunk",
-          "seq": 45,
+          "seq": 56,
           "time": 0,
           "data": {
             "turn": 1,
-            "step": 4,
+            "step": 5,
             "chunk": {
               "type": "finish",
               "reason": {
@@ -2643,11 +3193,11 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "assistant/message",
-          "seq": 46,
+          "seq": 57,
           "time": 0,
           "data": {
             "turn": 1,
-            "step": 4,
+            "step": 5,
             "message": {
               "role": "assistant",
               "content": [
@@ -2671,11 +3221,11 @@
             }
           },
           "sourceEventSeqs": [
-            41,
-            42,
-            43,
-            44,
-            45
+            52,
+            53,
+            54,
+            55,
+            56
           ],
           "surfaceOp": "append"
         }
@@ -2687,11 +3237,11 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "tool/call",
-          "seq": 47,
+          "seq": 58,
           "time": 0,
           "data": {
             "turn": 1,
-            "step": 4,
+            "step": 5,
             "callId": "advanced-direct-child",
             "name": "subagent",
             "arguments": "{\"description\": \"Check direct child\", \"prompt\": \"Reply with exactly DIRECT_CHILD_OK and nothing else.\"}"
@@ -2919,6 +3469,7 @@
                 "run_code",
                 "snapshot_double",
                 "subagent",
+                "tool_search",
                 "workflow"
               ]
             },
@@ -3153,11 +3704,11 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "tool/result",
-          "seq": 48,
+          "seq": 59,
           "time": 0,
           "data": {
             "turn": 1,
-            "step": 4,
+            "step": 5,
             "message": {
               "source": {
                 "kind": "tool",
@@ -3181,7 +3732,7 @@
             }
           },
           "sourceEventSeqs": [
-            47
+            58
           ],
           "surfaceOp": "append"
         }
@@ -3193,22 +3744,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "step/end",
-          "seq": 49,
-          "time": 0,
-          "data": {
-            "turn": 1,
-            "step": 4
-          }
-        }
-      }
-    },
-    {
-      "method": "session.event",
-      "payload": {
-        "sessionId": "{{parent}}",
-        "event": {
-          "type": "step/start",
-          "seq": 50,
+          "seq": 60,
           "time": 0,
           "data": {
             "turn": 1,
@@ -3222,12 +3758,27 @@
       "payload": {
         "sessionId": "{{parent}}",
         "event": {
-          "type": "assistant/chunk",
-          "seq": 51,
+          "type": "step/start",
+          "seq": 61,
           "time": 0,
           "data": {
             "turn": 1,
-            "step": 5,
+            "step": 6
+          }
+        }
+      }
+    },
+    {
+      "method": "session.event",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "event": {
+          "type": "assistant/chunk",
+          "seq": 62,
+          "time": 0,
+          "data": {
+            "turn": 1,
+            "step": 6,
             "chunk": {
               "type": "block-start",
               "index": 0,
@@ -3243,11 +3794,11 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "assistant/chunk",
-          "seq": 52,
+          "seq": 63,
           "time": 0,
           "data": {
             "turn": 1,
-            "step": 5,
+            "step": 6,
             "chunk": {
               "type": "tool-call-delta",
               "index": 0,
@@ -3265,11 +3816,11 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "assistant/chunk",
-          "seq": 53,
+          "seq": 64,
           "time": 0,
           "data": {
             "turn": 1,
-            "step": 5,
+            "step": 6,
             "chunk": {
               "type": "block-end",
               "index": 0,
@@ -3290,11 +3841,11 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "assistant/chunk",
-          "seq": 54,
+          "seq": 65,
           "time": 0,
           "data": {
             "turn": 1,
-            "step": 5,
+            "step": 6,
             "chunk": {
               "type": "usage",
               "usage": {
@@ -3312,11 +3863,11 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "assistant/chunk",
-          "seq": 55,
+          "seq": 66,
           "time": 0,
           "data": {
             "turn": 1,
-            "step": 5,
+            "step": 6,
             "chunk": {
               "type": "finish",
               "reason": {
@@ -3333,11 +3884,11 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "assistant/message",
-          "seq": 56,
+          "seq": 67,
           "time": 0,
           "data": {
             "turn": 1,
-            "step": 5,
+            "step": 6,
             "message": {
               "role": "assistant",
               "content": [
@@ -3361,11 +3912,11 @@
             }
           },
           "sourceEventSeqs": [
-            51,
-            52,
-            53,
-            54,
-            55
+            62,
+            63,
+            64,
+            65,
+            66
           ],
           "surfaceOp": "append"
         }
@@ -3377,11 +3928,11 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "tool/call",
-          "seq": 57,
+          "seq": 68,
           "time": 0,
           "data": {
             "turn": 1,
-            "step": 5,
+            "step": 6,
             "callId": "advanced-workflow",
             "name": "workflow",
             "arguments": "{\"script\": \"phase('Delegate')\\nconst reply = await agent('Reply with exactly WORKFLOW_CHILD_OK and nothing else.', { label: 'workflow-child' })\\nreturn { reply }\", \"meta\": {\"name\": \"advanced-exe-snapshot\", \"description\": \"exercise one packaged workflow child\"}}"
@@ -3395,7 +3946,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "tool-workflow/run-start",
-          "seq": 58,
+          "seq": 69,
           "time": 0,
           "data": {
             "runId": "{{workflow-run}}",
@@ -3623,6 +4174,7 @@
                 "run_code",
                 "snapshot_double",
                 "subagent",
+                "tool_search",
                 "workflow"
               ]
             },
@@ -3653,7 +4205,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "tool-workflow/agent-start",
-          "seq": 59,
+          "seq": 70,
           "time": 0,
           "data": {
             "runId": "{{workflow-run}}",
@@ -3875,7 +4427,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "tool-workflow/agent-end",
-          "seq": 60,
+          "seq": 71,
           "time": 0,
           "data": {
             "runId": "{{workflow-run}}",
@@ -3891,7 +4443,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "tool-workflow/run-end",
-          "seq": 61,
+          "seq": 72,
           "time": 0,
           "data": {
             "runId": "{{workflow-run}}",
@@ -3906,11 +4458,11 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "tool/result",
-          "seq": 62,
+          "seq": 73,
           "time": 0,
           "data": {
             "turn": 1,
-            "step": 5,
+            "step": 6,
             "message": {
               "source": {
                 "kind": "tool",
@@ -3934,7 +4486,7 @@
             }
           },
           "sourceEventSeqs": [
-            57
+            68
           ],
           "surfaceOp": "append"
         }
@@ -3946,268 +4498,11 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "step/end",
-          "seq": 63,
-          "time": 0,
-          "data": {
-            "turn": 1,
-            "step": 5
-          }
-        }
-      }
-    },
-    {
-      "method": "session.event",
-      "payload": {
-        "sessionId": "{{parent}}",
-        "event": {
-          "type": "step/start",
-          "seq": 64,
-          "time": 0,
-          "data": {
-            "turn": 1,
-            "step": 6
-          }
-        }
-      }
-    },
-    {
-      "method": "session.event",
-      "payload": {
-        "sessionId": "{{parent}}",
-        "event": {
-          "type": "assistant/chunk",
-          "seq": 65,
-          "time": 0,
-          "data": {
-            "turn": 1,
-            "step": 6,
-            "chunk": {
-              "type": "block-start",
-              "index": 0,
-              "blockType": "tool-call"
-            }
-          }
-        }
-      }
-    },
-    {
-      "method": "session.event",
-      "payload": {
-        "sessionId": "{{parent}}",
-        "event": {
-          "type": "assistant/chunk",
-          "seq": 66,
-          "time": 0,
-          "data": {
-            "turn": 1,
-            "step": 6,
-            "chunk": {
-              "type": "tool-call-delta",
-              "index": 0,
-              "id": "advanced-undefine",
-              "name": "cordis_undefine",
-              "argumentsDelta": "{\"pluginId\": \"snap-1\"}"
-            }
-          }
-        }
-      }
-    },
-    {
-      "method": "session.event",
-      "payload": {
-        "sessionId": "{{parent}}",
-        "event": {
-          "type": "assistant/chunk",
-          "seq": 67,
-          "time": 0,
-          "data": {
-            "turn": 1,
-            "step": 6,
-            "chunk": {
-              "type": "block-end",
-              "index": 0,
-              "block": {
-                "type": "tool-call",
-                "id": "advanced-undefine",
-                "name": "cordis_undefine",
-                "arguments": "{\"pluginId\": \"snap-1\"}"
-              }
-            }
-          }
-        }
-      }
-    },
-    {
-      "method": "session.event",
-      "payload": {
-        "sessionId": "{{parent}}",
-        "event": {
-          "type": "assistant/chunk",
-          "seq": 68,
-          "time": 0,
-          "data": {
-            "turn": 1,
-            "step": 6,
-            "chunk": {
-              "type": "usage",
-              "usage": {
-                "inputTokens": 3,
-                "outputTokens": 3
-              }
-            }
-          }
-        }
-      }
-    },
-    {
-      "method": "session.event",
-      "payload": {
-        "sessionId": "{{parent}}",
-        "event": {
-          "type": "assistant/chunk",
-          "seq": 69,
-          "time": 0,
-          "data": {
-            "turn": 1,
-            "step": 6,
-            "chunk": {
-              "type": "finish",
-              "reason": {
-                "kind": "tool-calls"
-              }
-            }
-          }
-        }
-      }
-    },
-    {
-      "method": "session.event",
-      "payload": {
-        "sessionId": "{{parent}}",
-        "event": {
-          "type": "assistant/message",
-          "seq": 70,
-          "time": 0,
-          "data": {
-            "turn": 1,
-            "step": 6,
-            "message": {
-              "role": "assistant",
-              "content": [
-                {
-                  "type": "tool-call",
-                  "id": "advanced-undefine",
-                  "name": "cordis_undefine",
-                  "arguments": "{\"pluginId\": \"snap-1\"}"
-                }
-              ],
-              "source": {
-                "kind": "model",
-                "provider": "deepseek-official",
-                "model": "smoke-model"
-              },
-              "id": "{{messageId}}"
-            },
-            "usage": {
-              "inputTokens": 3,
-              "outputTokens": 3
-            }
-          },
-          "sourceEventSeqs": [
-            65,
-            66,
-            67,
-            68,
-            69
-          ],
-          "surfaceOp": "append"
-        }
-      }
-    },
-    {
-      "method": "session.event",
-      "payload": {
-        "sessionId": "{{parent}}",
-        "event": {
-          "type": "tool/call",
-          "seq": 71,
-          "time": 0,
-          "data": {
-            "turn": 1,
-            "step": 6,
-            "callId": "advanced-undefine",
-            "name": "cordis_undefine",
-            "arguments": "{\"pluginId\": \"snap-1\"}"
-          }
-        }
-      }
-    },
-    {
-      "method": "session.event",
-      "payload": {
-        "sessionId": "{{parent}}",
-        "event": {
-          "type": "tool/result",
-          "seq": 72,
-          "time": 0,
-          "data": {
-            "turn": 1,
-            "step": 6,
-            "message": {
-              "source": {
-                "kind": "tool",
-                "callId": "advanced-undefine"
-              },
-              "content": [
-                {
-                  "type": "tool-result",
-                  "toolCallId": "advanced-undefine",
-                  "content": [
-                    {
-                      "type": "text",
-                      "text": "Removed dynamic Plugin snap-1 and all of its Packages."
-                    }
-                  ],
-                  "isError": false
-                }
-              ],
-              "role": "user",
-              "id": "{{messageId}}"
-            }
-          },
-          "sourceEventSeqs": [
-            71
-          ],
-          "surfaceOp": "append"
-        }
-      }
-    },
-    {
-      "method": "session.event",
-      "payload": {
-        "sessionId": "{{parent}}",
-        "event": {
-          "type": "step/end",
-          "seq": 73,
-          "time": 0,
-          "data": {
-            "turn": 1,
-            "step": 6
-          }
-        }
-      }
-    },
-    {
-      "method": "session.event",
-      "payload": {
-        "sessionId": "{{parent}}",
-        "event": {
-          "type": "step/start",
           "seq": 74,
           "time": 0,
           "data": {
             "turn": 1,
-            "step": 7
+            "step": 6
           }
         }
       }
@@ -4217,39 +4512,12 @@
       "payload": {
         "sessionId": "{{parent}}",
         "event": {
-          "type": "request/header",
+          "type": "step/start",
           "seq": 75,
           "time": 0,
           "data": {
-            "header": {
-              "config": {
-                "provider": "deepseek-official",
-                "model": "smoke-model",
-                "maxTokens": 256000,
-                "reasoningEffort": "high"
-              },
-              "adapterDefaults": {
-                "reasoningEffort": true,
-                "maxTokens": true
-              },
-              "system": "{{system}}",
-              "tools": [
-                "cordis_define",
-                "cordis_inspect_list",
-                "cordis_inspect_query",
-                "cordis_inspect_self",
-                "cordis_run",
-                "cordis_stop",
-                "cordis_undefine",
-                "job_kill",
-                "job_list",
-                "job_output",
-                "run_code",
-                "subagent",
-                "workflow"
-              ]
-            },
-            "reason": "change"
+            "turn": 1,
+            "step": 7
           }
         }
       }
@@ -4268,7 +4536,7 @@
             "chunk": {
               "type": "block-start",
               "index": 0,
-              "blockType": "text"
+              "blockType": "tool-call"
             }
           }
         }
@@ -4286,9 +4554,11 @@
             "turn": 1,
             "step": 7,
             "chunk": {
-              "type": "text-delta",
+              "type": "tool-call-delta",
               "index": 0,
-              "text": "ADVANCED_EXECUTABLE_OK"
+              "id": "advanced-undefine",
+              "name": "cordis_undefine",
+              "argumentsDelta": "{\"pluginId\": \"snap-1\"}"
             }
           }
         }
@@ -4309,8 +4579,10 @@
               "type": "block-end",
               "index": 0,
               "block": {
-                "type": "text",
-                "text": "ADVANCED_EXECUTABLE_OK"
+                "type": "tool-call",
+                "id": "advanced-undefine",
+                "name": "cordis_undefine",
+                "arguments": "{\"pluginId\": \"snap-1\"}"
               }
             }
           }
@@ -4353,7 +4625,7 @@
             "chunk": {
               "type": "finish",
               "reason": {
-                "kind": "stop"
+                "kind": "tool-calls"
               }
             }
           }
@@ -4375,8 +4647,10 @@
               "role": "assistant",
               "content": [
                 {
-                  "type": "text",
-                  "text": "ADVANCED_EXECUTABLE_OK"
+                  "type": "tool-call",
+                  "id": "advanced-undefine",
+                  "name": "cordis_undefine",
+                  "arguments": "{\"pluginId\": \"snap-1\"}"
                 }
               ],
               "source": {
@@ -4407,8 +4681,66 @@
       "payload": {
         "sessionId": "{{parent}}",
         "event": {
-          "type": "step/end",
+          "type": "tool/call",
           "seq": 82,
+          "time": 0,
+          "data": {
+            "turn": 1,
+            "step": 7,
+            "callId": "advanced-undefine",
+            "name": "cordis_undefine",
+            "arguments": "{\"pluginId\": \"snap-1\"}"
+          }
+        }
+      }
+    },
+    {
+      "method": "session.event",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "event": {
+          "type": "tool/result",
+          "seq": 83,
+          "time": 0,
+          "data": {
+            "turn": 1,
+            "step": 7,
+            "message": {
+              "source": {
+                "kind": "tool",
+                "callId": "advanced-undefine"
+              },
+              "content": [
+                {
+                  "type": "tool-result",
+                  "toolCallId": "advanced-undefine",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "Removed dynamic Plugin snap-1 and all of its Packages."
+                    }
+                  ],
+                  "isError": false
+                }
+              ],
+              "role": "user",
+              "id": "{{messageId}}"
+            }
+          },
+          "sourceEventSeqs": [
+            82
+          ],
+          "surfaceOp": "append"
+        }
+      }
+    },
+    {
+      "method": "session.event",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "event": {
+          "type": "step/end",
+          "seq": 84,
           "time": 0,
           "data": {
             "turn": 1,
@@ -4422,8 +4754,230 @@
       "payload": {
         "sessionId": "{{parent}}",
         "event": {
+          "type": "step/start",
+          "seq": 85,
+          "time": 0,
+          "data": {
+            "turn": 1,
+            "step": 8
+          }
+        }
+      }
+    },
+    {
+      "method": "session.event",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "event": {
+          "type": "request/header",
+          "seq": 86,
+          "time": 0,
+          "data": {
+            "header": {
+              "config": {
+                "provider": "deepseek-official",
+                "model": "smoke-model",
+                "maxTokens": 256000,
+                "reasoningEffort": "high"
+              },
+              "adapterDefaults": {
+                "reasoningEffort": true,
+                "maxTokens": true
+              },
+              "system": "{{system}}",
+              "tools": [
+                "cordis_define",
+                "cordis_inspect_list",
+                "cordis_inspect_query",
+                "cordis_inspect_self",
+                "cordis_run",
+                "cordis_stop",
+                "cordis_undefine",
+                "job_kill",
+                "job_list",
+                "job_output",
+                "run_code",
+                "snapshot_deferred_double",
+                "subagent",
+                "tool_search",
+                "workflow"
+              ]
+            },
+            "reason": "change"
+          }
+        }
+      }
+    },
+    {
+      "method": "session.event",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "event": {
+          "type": "assistant/chunk",
+          "seq": 87,
+          "time": 0,
+          "data": {
+            "turn": 1,
+            "step": 8,
+            "chunk": {
+              "type": "block-start",
+              "index": 0,
+              "blockType": "text"
+            }
+          }
+        }
+      }
+    },
+    {
+      "method": "session.event",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "event": {
+          "type": "assistant/chunk",
+          "seq": 88,
+          "time": 0,
+          "data": {
+            "turn": 1,
+            "step": 8,
+            "chunk": {
+              "type": "text-delta",
+              "index": 0,
+              "text": "ADVANCED_EXECUTABLE_OK"
+            }
+          }
+        }
+      }
+    },
+    {
+      "method": "session.event",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "event": {
+          "type": "assistant/chunk",
+          "seq": 89,
+          "time": 0,
+          "data": {
+            "turn": 1,
+            "step": 8,
+            "chunk": {
+              "type": "block-end",
+              "index": 0,
+              "block": {
+                "type": "text",
+                "text": "ADVANCED_EXECUTABLE_OK"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "method": "session.event",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "event": {
+          "type": "assistant/chunk",
+          "seq": 90,
+          "time": 0,
+          "data": {
+            "turn": 1,
+            "step": 8,
+            "chunk": {
+              "type": "usage",
+              "usage": {
+                "inputTokens": 3,
+                "outputTokens": 3
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "method": "session.event",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "event": {
+          "type": "assistant/chunk",
+          "seq": 91,
+          "time": 0,
+          "data": {
+            "turn": 1,
+            "step": 8,
+            "chunk": {
+              "type": "finish",
+              "reason": {
+                "kind": "stop"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "method": "session.event",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "event": {
+          "type": "assistant/message",
+          "seq": 92,
+          "time": 0,
+          "data": {
+            "turn": 1,
+            "step": 8,
+            "message": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "ADVANCED_EXECUTABLE_OK"
+                }
+              ],
+              "source": {
+                "kind": "model",
+                "provider": "deepseek-official",
+                "model": "smoke-model"
+              },
+              "id": "{{messageId}}"
+            },
+            "usage": {
+              "inputTokens": 3,
+              "outputTokens": 3
+            }
+          },
+          "sourceEventSeqs": [
+            87,
+            88,
+            89,
+            90,
+            91
+          ],
+          "surfaceOp": "append"
+        }
+      }
+    },
+    {
+      "method": "session.event",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "event": {
+          "type": "step/end",
+          "seq": 93,
+          "time": 0,
+          "data": {
+            "turn": 1,
+            "step": 8
+          }
+        }
+      }
+    },
+    {
+      "method": "session.event",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "event": {
           "type": "turn/end",
-          "seq": 83,
+          "seq": 94,
           "time": 0,
           "data": {
             "turn": 1,

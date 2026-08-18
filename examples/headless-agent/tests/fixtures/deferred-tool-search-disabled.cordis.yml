@@ -1,0 +1,5 @@
+# Negative control: replacing the shipped tools row without toolSearch must
+# make the deferred MCP registration fail during profile activation.
+- id: tools
+  config:
+    mode: native

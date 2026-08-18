@@ -45,6 +45,7 @@ MCP 客户端桥接插件：连接外部 [Model Context Protocol](https://modelc
 | `headers` | http | 否 | 额外标头（例如认证 token） |
 | `toolCallTimeoutMs` | 两者 | 否 | 每次 `callTool` 调用的超时（默认 60000） |
 | `failOnStartupError` | 两者 | 否 | 初始连接或工具同步失败时拒绝插件激活（默认 `false`） |
+| `deferLoading` | 两者 | 否 | 不在初始请求中放入本服务器 schema，而通过 `tool_search` 返回匹配项（默认 `false`；要求启用 `dsh-tools.toolSearch`，缺失时会在连接前拒绝加载插件） |
 | `reconnect.enabled` | 两者 | 否 | 连接丢失后自动重新连接（默认 `true`） |
 | `reconnect.initialDelayMs` | 两者 | 否 | 首次重连延迟（毫秒）；每次连续失败尝试翻倍（默认 500） |
 | `reconnect.maxDelayMs` | 两者 | 否 | 退避上限（毫秒）；同时也是重置尝试预算所需的正常运行时长（默认 30000） |
@@ -84,11 +85,11 @@ MCP 客户端桥接插件：连接外部 [Model Context Protocol](https://modelc
 
 #### 模型看到的内容
 
-初始发现成功后，每个已声明的 MCP 工具都会显示为名为 `mcp__<serverName>__<rawName>`（或其确定性规范化形式）的原生工具，并携带服务器提供的描述和输入 schema。成功的重新同步——包括自动重连后的同步——会替换整个世代；对插件执行 dispose（资源释放）或重连预算耗尽会移除该世代。
+初始发现成功后，每个已声明的 MCP 工具都使用 `mcp__<serverName>__<rawName>`（或其确定性规范化形式），并携带服务器提供的描述和输入 schema。`deferLoading: false` 时，这些 schema 会进入初始请求。`deferLoading: true` 时，初始请求包含 `tool_search`；其结果会返回匹配 schema，但不会激活工具或改变已注册世代，下一次请求再从持久历史重建它们。成功的重新同步——包括自动重连后的同步——会替换整个世代；对插件执行 dispose（资源释放）或重连预算耗尽会移除该世代。
 
 #### Token 影响
 
-工具注册期间，每次请求都会承担数据相关的 schema 成本。重新同步会替换而非累积 schema，服务器限定名称也会为每个工具定义和调用增加 token。
+工具注册期间，每次请求都会承担即时 schema 的成本。Deferred schema 只会在匹配搜索结果之后消耗 token，而结果本身会把返回的 JSON schema 加入历史。重新同步会替换而非累积 schema，服务器限定名称也会为每个工具定义和调用增加 token。
 
 #### KV Cache 影响
 

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-08-16-default-ticket-delivery-orchestration.md
-2026-08-16-default-ticket-delivery-orchestration.md: 71a572a63fb0e895bc1160c10672fcc2868bcc11
-2026-08-16-default-ticket-delivery-orchestration.zh.md: 46f187ad312d118a8f20ba72a5fa7a027af1c3d7
+2026-08-16-default-ticket-delivery-orchestration.md: 398d1fb84a46201dad17fa26f7c2321b3dc80d42
+2026-08-16-default-ticket-delivery-orchestration.zh.md: c572a85ebf742d575c99e1229c28ef7803ee17cd

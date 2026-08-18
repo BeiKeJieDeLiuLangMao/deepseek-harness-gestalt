@@ -35,6 +35,8 @@ const liveConfig = join(testsDir, '..', 'cordis.yml')
 const replayConfig = join(testsDir, '..', 'cordis.snapshot.yml')
 const minimalLiveConfig = join(testsDir, '..', 'minimal.cordis.yml')
 const minimalReplayConfig = join(testsDir, '..', 'minimal.snapshot.cordis.yml')
+const deferredLiveConfig = join(testsDir, '..', 'deferred.cordis.yml')
+const deferredReplayConfig = join(testsDir, '..', 'deferred.snapshot.cordis.yml')
 const runtimeBin = fileURLToPath(new URL('../../../packages/examples/jsonrpc-demo/src/bin.ts', import.meta.url))
 const repoTsconfig = fileURLToPath(new URL('../../../tsconfig.json', import.meta.url))
 
@@ -99,6 +101,13 @@ const SCENARIOS: SdkScenario[] = [
     prompt: "Use the subagent tool exactly once with description 'echo probe' and prompt: Reply with exactly: child answer 42. Then reply with the subagent's final answer verbatim.",
     sessionId: 'sdk-snapshot-subagent',
     children: 1,
+  },
+  {
+    name: 'deferred-tool-search',
+    prompt: 'Discover the deferred SDK echo tool, call it with loaded, then reply with exactly TS_SDK_DEFERRED_OK.',
+    sessionId: 'sdk-snapshot-deferred-tool-search',
+    children: 0,
+    configs: { live: deferredLiveConfig, replay: deferredReplayConfig },
   },
   {
     name: 'persistent-tools',
