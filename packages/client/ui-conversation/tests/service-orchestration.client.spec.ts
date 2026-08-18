@@ -3,11 +3,14 @@
 // TestSessions mints tagged scopes through the production createScope, so the
 // service's scopeOf/binding path runs against production resolution (no local
 // tag probe).
-import { Context } from '@deepseek-ai/cordis'
+import { Context, Service } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import { makeTranslate, SlotTestRuntime } from '@deepseek-ai/dsh-client-test-runtime'
 import type { QueuedMessage, SessionFace } from '@deepseek-ai/dsh-client-runtime/client'
+import type { DraftAttachmentId } from '../src/client/input/contract.ts'
+import type { InputSubmitMode } from '../src/client/contract/composer-submission.ts'
+import { createTextAnchor } from '../src/client/annotation/model.ts'
 import { ComposerBlockRegistry } from '../src/client/input/blocks.ts'
 import { InputHub } from '../src/client/input/hub.ts'
 import { ConversationController, UnsupportedImageMediaTypeError } from '../src/client/service.ts'
@@ -220,6 +223,90 @@ describe('InputHub queue steering (empty-draft accelerated Enter)', () => {
     const b = await bench()
     b.shell.steerQueue()
     expect(b.updateQueue).not.toHaveBeenCalled()
+    await b.runtime.dispose()
+  })
+})
+
+describe('InputHub annotation settlement (Host admission)', () => {
+  /** Conversation face double: sendSession resolves without admitting when `admitted` is false. */
+  class FakeConversationFace extends Service {
+    readonly sent: { text: string; mode: InputSubmitMode }[] = []
+    private readonly admitted: boolean
+
+    constructor(ctx: Context, config: { admitted: boolean }) {
+      super(ctx, 'conversation')
+      this.admitted = config.admitted
+    }
+
+    async sendSession(
+      _session: SessionFace,
+      text: string,
+      _imageIds: readonly DraftAttachmentId[],
+      mode: InputSubmitMode,
+    ): Promise<boolean> {
+      this.sent.push({ text, mode })
+      return this.admitted
+    }
+
+    releaseDraftImage(_id: DraftAttachmentId): void {}
+  }
+
+  async function admissionBench(admitted: boolean) {
+    const runtime = await SlotTestRuntime.create()
+    await runtime.sessions.add({
+      id: 's1',
+      session: {
+        prompt: vi.fn(() => Promise.resolve({ ok: true as const, value: { accepted: true as const } })),
+        updateQueue: vi.fn(() => Promise.resolve({ ok: true as const, value: { accepted: true as const } })),
+        cancel: vi.fn(() => Promise.resolve({ ok: true as const, value: { accepted: true as const } })),
+        loadOlder: vi.fn(() => Promise.resolve()),
+      },
+    })
+    const hub = new InputHub(runtime.ctx, makeTranslate(zh, {}))
+    await runtime.ctx.plugin(FakeConversationFace, { admitted }).await()
+    const face = runtime.ctx.get('conversation') as unknown as FakeConversationFace
+    const shell = hub.shellFor(runtime.sessions.binding('s1')!)
+    return { runtime, hub, face, shell }
+  }
+
+  const QUESTION = '请修改这段。'
+  const anchor = createTextAnchor('message-1', 'Exact quotation', 'Exact quotation', 0)
+
+  it('restores the full draft when the send resolves without Host admission', async () => {
+    const b = await admissionBench(false)
+    b.shell.setDraft(QUESTION)
+    b.shell.actions.addTextAnnotation(anchor, 'Keep me')
+    b.shell.submit()
+    expect(b.face.sent[0]?.text).toBe(`${QUESTION}\n\n注释 1\n引用：“Exact quotation”\n批示：Keep me`)
+    await vi.waitFor(() => { expect(b.shell.snapshot.annotationSubmitting).toBe(false) })
+    expect(b.shell.snapshot.draft).toBe(QUESTION)
+    expect(b.shell.snapshot.annotations.map(item => item.note)).toEqual(['Keep me'])
+    // The restored draft can submit again.
+    b.shell.submit()
+    await vi.waitFor(() => { expect(b.face.sent).toHaveLength(2) })
+    await b.runtime.dispose()
+  })
+
+  it('clears the owned annotations only after Host admission', async () => {
+    const b = await admissionBench(true)
+    b.shell.setDraft(QUESTION)
+    b.shell.actions.addTextAnnotation(anchor, '')
+    b.shell.submit()
+    await vi.waitFor(() => { expect(b.shell.snapshot.annotationSubmitting).toBe(false) })
+    expect(b.shell.snapshot.annotations).toEqual([])
+    expect(b.shell.snapshot.draft).toBe('')
+    await b.runtime.dispose()
+  })
+
+  it('restores the draft through the real controller when the Host rejects the prompt', async () => {
+    const b = await bench()
+    b.prompt.mockResolvedValueOnce({ ok: false, error: { code: 'agent-busy', message: 'busy', details: {} } } as never)
+    b.shell.setDraft('Please revise this.')
+    b.shell.actions.addTextAnnotation(anchor, 'Original note')
+    b.shell.submit()
+    await vi.waitFor(() => { expect(b.shell.snapshot.annotationSubmitting).toBe(false) })
+    expect(b.shell.snapshot.draft).toBe('Please revise this.')
+    expect(b.shell.snapshot.annotations.map(item => item.note)).toEqual(['Original note'])
     await b.runtime.dispose()
   })
 })

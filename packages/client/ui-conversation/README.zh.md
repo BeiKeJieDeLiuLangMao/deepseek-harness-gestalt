@@ -6,7 +6,7 @@
 
 压缩（compaction）在检查点自身的消息流位置渲染为一行折叠标记，不替换其上方的 transcript（文本记录）。自动压缩使用「上下文已压缩」标题。每个已加载对应 `compaction/summary` 事件的完成标记都会显示被替换条目数量和估算 token 数量，并可点击展开摘要。手动 `/compact` 开始时显示为运行中的 `compact` 行；成功结算后，其显式摘要事件引用会在保持同一 React key 的前提下把该命令折叠进检查点行。完成的检查点静止时保留上下文压缩（context compaction）图标，仅在悬停或键盘聚焦时将其替换为收起／展开指示图标。输入被拒绝、没有可压缩历史、取消和失败时仍使用通用命令行及处理器撰写的文本。配对绝不依赖相邻关系，因为压缩运行期间可能注入持久上下文。面向模型的带框检查点载荷绝不渲染；被引用的 `compaction/summary` 事件位于已加载窗口之外时，检查点仍然可见但不可展开。
 
-常驻会话壳会跨无会话与会话状态切换而保留。没有当前会话时，它会锁定消息操作，并让整张虚线编辑器卡片成为根作用域 `conversation.hero.workspace` Workspace picker 的入口；textarea 保持只读且支持键盘操作。选择 Workspace 会连接或复用由 Host 拥有的空白会话，并在不替换会话壳的情况下打开该会话。根组件始终拥有同一个滚动容器与 Hero／编辑器子树；首个会话到达时，彼此独立的严格会话页头和主体 outlet 只填入各自区域，因此 Workspace picker、滚动主体、编辑器 seat 与 textarea 都保留原有 React 和 DOM identity。空白会话与活跃会话渲染相同的输入区主体；InputHub 则在 Workspace 切换间携带草稿，并将草稿镜像到会话 store。活跃阶段，会话标题栏作为普通列 chrome，仅显示当前会话标题和视图标签；fork 谱系仍保留为会话数据，不投影到标题栏。其下滚动容器（`data-conversation-scroll`）承载流动排版的各视图与 sticky 编辑器栈（统计 dock＋输入区 dock＋输入栏）。该滚动容器无条件预留自己的滚动条槽，选用编辑器 overlay 的视图也仍把它保留为滚动容器，因此无论对话记录是否滚动、无论展示哪个视图标签，输入卡片都保持同一个横向位置（[决策](../../../.agents/notes/implemented/bug-fix/2026-08-04-composer-tab-gutter-reservation.md)）。textarea 上的滚轮会链式处理：限高草稿先在本地滚动，到达边缘后再转交给该宿主。只有 Safari 会在原生编辑缩短草稿并留下陈旧软换行溢出时执行绘制前恢复；草稿增长、程序化更新与其他浏览器都不会为这项恢复读取布局（[决策](../../../.agents/notes/implemented/bug-fix/2026-08-13-safari-textarea-soft-wrap-reflow.md)）。
+常驻会话壳会跨无会话与会话状态切换而保留。没有当前会话时，它会锁定消息操作，并让整张虚线编辑器卡片成为根作用域 `conversation.hero.workspace` Workspace picker 的入口；textarea 保持只读且支持键盘操作。选择 Workspace 会连接或复用由 Host 拥有的空白会话，并在不替换会话壳的情况下打开该会话。根组件始终拥有同一个滚动容器与 Hero／编辑器子树；首个会话到达时，彼此独立的严格会话页头和主体 outlet 只填入各自区域，因此 Workspace picker、滚动主体、编辑器 seat 与 textarea 都保留原有 React 和 DOM identity。空白会话与活跃会话渲染相同的输入区主体；InputHub 则在 Workspace 切换间携带草稿，并把草稿与注释草稿（注释、批示、身份、创建顺序、锚点及 id 序列）一并镜像到会话 store，共用同一把按会话区分的持久化键。活跃阶段，会话标题栏作为普通列 chrome，仅显示当前会话标题和视图标签；fork 谱系仍保留为会话数据，不投影到标题栏。其下滚动容器（`data-conversation-scroll`）承载流动排版的各视图与 sticky 编辑器栈（统计 dock＋输入区 dock＋输入栏）。该滚动容器无条件预留自己的滚动条槽，选用编辑器 overlay 的视图也仍把它保留为滚动容器，因此无论对话记录是否滚动、无论展示哪个视图标签，输入卡片都保持同一个横向位置（[决策](../../../.agents/notes/implemented/bug-fix/2026-08-04-composer-tab-gutter-reservation.md)）。textarea 上的滚轮会链式处理：限高草稿先在本地滚动，到达边缘后再转交给该宿主。只有 Safari 会在原生编辑缩短草稿并留下陈旧软换行溢出时执行绘制前恢复；草稿增长、程序化更新与其他浏览器都不会为这项恢复读取布局（[决策](../../../.agents/notes/implemented/bug-fix/2026-08-13-safari-textarea-soft-wrap-reflow.md)）。
 
 别的插件可以经 `ctx.conversation.blocks` 让某个会话的编辑器变为惰性：它设置一个携带自己本地化理由的 block，输入栏就渲染同一个禁用的 textarea，并把该理由作为 placeholder——复用无 Workspace 时的那套姿态。推送方向是约束而非偏好：知道某会话发不出消息的插件（ui-model-selection，在没有适配器服务其路由时）本就依赖本包，因此本包读不到它们。模型 seat 是 block 唯一保留可用的控件——这份约定里的每个 block 都靠选模型来解除，把它一起锁上会让编辑器索要它自己拦下的那件事。block 只是提示性设计；无论客户端禁用了什么，宿主都会拒绝一个它无法路由的提示词。两者同时成立时以无 Workspace 姿态为准，因为选 Workspace 是更靠前的前提。
 
@@ -46,16 +46,27 @@ Host 带 placement 的 `session/queue` 快照也会携带待处理 steering。Qu
 
 完成的一轮会物化一个有序的 `turn-tail` Conversation Node。它由引擎维护的 `TurnLocation` 提供收尾 Assistant 和 Turn data；renderer 在该 Node 的 IconActions 之前渲染 `conversation.chat.turnTail` chain，并派发包含 Turn、收尾 seq 和 `openFile` 的 `TurnTailOwnerProps`。本包只拥有空位；`@deepseek-ai/dsh-client-ui-deliverables` 把改写工具的 `locations` 累积到 Turn data，并拥有产物行、chip 上限和文案，因此把该插件从 cordis.yml 中组合掉即可关闭该交互面，空位以零成本渲染为空。收尾正文经由同一个开关参与其中：chat 视图向可选的 `chatFileMentions` service（ctx.get；由同一插件提供）索取收尾消息的行内代码词表，并把结果接进 MarkdownText 的 `fileMentions` seam——service 缺席时正文保持死文本。
 
+已完成的 assistant Markdown 会在渲染时，把普通文本、行内代码、围栏代码、原样展示的 HTML 与图片登记到 renderer 拥有的同一份投影中。每个按源顺序排列的贡献都具有稳定所有权：局部重渲染会替换其叶节点，ref 清理会移除已分离的端点，因此复制状态与惰性语法加载不会复制投影内容或改变其顺序。文本注释使用该投影生成 Text Anchor 前后文并恢复 Draft Mark，不扫描或改写消息 DOM。两个端点都必须解析到同一个已完成文本块中已登记的源文本。生成的数学公式与脚注界面不是源文本叶节点，跨越它们的选择会被拒绝；只要所选片段与任意图片相交，整段选择也会被拒绝，包括 alt 文本为空的图片。
+
 ## 模型体验
 
-无。会话 UI 在浏览器中渲染会话历史与流；这里没有任何内容进入模型请求。
+### 注释提交
+
+#### 模型看到的内容
+
+文本注释会编译进 Composer 发送的同一条普通 `user/message`。非空问题排在最前，随后按创建顺序列出每条注释，包含本地化标题、精确引用文本与可选批示；仅含注释时也使用同一形式。请求中没有注释协议、回答格式指令或隐藏元数据。一项在途 reservation 会拥有精确的注释快照，直到 Host 接纳完整请求才完成结算——即普通发送路径检查的同一个 prompt 接纳信号，绝不依赖 promise 单纯完成。在此期间，Composer 保持只读，重复提交与注释编辑会被拒绝；接纳成功只清理该 reservation 拥有的注释（持久化草稿随之清除），未获接纳即完成的发送会恢复完整草稿以供重试。草稿本身按会话持久化在浏览器本地存储中：刷新页面或切换会话会恢复原样的注释、顺序与问题文本；锚点无法在原文中唯一解析时，会在其来源处显示可见错误，而草稿其余部分保持不变。
+
+#### Token 影响
+
+每段精确引用、非空批示、本地化标题与可选问题都会贡献普通用户消息 token。
 
 #### KV Cache 影响
 
-无；该包既不组装也不发送提供方请求。
+编译后的文案是普通用户消息内容，因此其 token 与手工输入文本一样计入请求，并使请求后缀失效。
 
 ## 已知限制与暂缓事项
 
+- **注释草稿持久化保持在浏览器本地**：整份草稿（含问题文本，按会话一份 store 值）可在刷新与会话切换后恢复，跨标签页为确定性的后写覆盖且不做实时同步；IndexedDB 暂存图片字节仍属 deferred（规格 #54 将其交给后续能力）。
 - **统计行的回退折算只覆盖窗口内消息流**：未组合 `sessionStats` 投影单元的装配中，所有数字由快照的 assistant `timing` 与工具 call/result 配对折算，落在已加载事件窗口之外的节点（更早的历史）不计入，数字随加载页数增长。
 - **详情面板没有入口**：`ChatViewInjected.openDetails` 虽已实现却无人调用，因此以原始形式显示已选择调用的那部分在组装后的应用中不可达。没有 Input/Output/Metadata 切换、Prev/Next 步进，也没有 trajectory 深链接。
 - **assistant 逐消息分页是预留 slot**：设计中已有图稿，尚未实现。已定稿的内容 IconActions 行（复制／时钟／分支）只挂在每个已结束轮次中最后一条带 text 内容的 assistant 下；轮次中间的叙述、纯 Think 节点，以及仍在产出步骤的轮次里的所有节点都不带 chrome。除非该消息同时也是已完成轮次的最后一个 transcript 节点，否则分支保持禁用；启用后，它会 fork 到该轮次末尾，在 client 端递增继承标题并打开子会话。fork 或改名失败时源会话保持选中（[决策](../../../.agents/notes/implemented/bug-fix/2026-08-02-message-fork-actions-require-completed-turn-tail.md)）。
