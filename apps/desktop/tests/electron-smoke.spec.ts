@@ -22,6 +22,19 @@ describe.skipIf(process.env.DSH_DESKTOP_SMOKE !== '1')('Desktop Host smoke', () 
         DSH_DESKTOP_SMOKE: '1',
         DSH_DESKTOP_SMOKE_FILE: log,
         DSH_NODE: process.execPath,
+        DSH_PLATFORM_ENV: 'development',
+        DSH_PLATFORM_DEVELOPMENT_ORIGIN: 'https://platform.invalid',
+        DSH_PLATFORM_DEVELOPMENT_CALLBACK_URL: 'https://platform.invalid/v1/account/oauth/github/callback',
+        DSH_PLATFORM_DEVELOPMENT_GITHUB_CLIENT_ID: 'desktop-smoke',
+        DSH_PLATFORM_DEVELOPMENT_CREDENTIAL_REFERENCE: 'credentials://desktop-smoke',
+        DSH_PLATFORM_DEVELOPMENT_DATABASE_IDENTITY: 'desktop-smoke',
+        DSH_PLATFORM_DEVELOPMENT_IDENTITY_NAMESPACE: 'desktop-smoke',
+        DSH_PLATFORM_PRODUCTION_ORIGIN: 'https://platform-production.invalid',
+        DSH_PLATFORM_PRODUCTION_CALLBACK_URL: 'https://platform-production.invalid/v1/account/oauth/github/callback',
+        DSH_PLATFORM_PRODUCTION_GITHUB_CLIENT_ID: 'desktop-smoke-production',
+        DSH_PLATFORM_PRODUCTION_CREDENTIAL_REFERENCE: 'credentials://desktop-smoke-production',
+        DSH_PLATFORM_PRODUCTION_DATABASE_IDENTITY: 'desktop-smoke-production',
+        DSH_PLATFORM_PRODUCTION_IDENTITY_NAMESPACE: 'desktop-smoke-production',
         ELECTRON_ENABLE_LOGGING: '1',
       },
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -41,6 +54,12 @@ describe.skipIf(process.env.DSH_DESKTOP_SMOKE !== '1')('Desktop Host smoke', () 
         expect(host).not.toBeNull()
         expect(text).toMatch(/(^|\n)ok(\n|$)/)
         await electronExited
+        const finalText = await readFile(log, 'utf8')
+        expect(finalText).toContain('relay production-gate {"connected":false}')
+        expect(finalText).toContain('relay sleep {"connected":false,"stopReason":"sleep"}')
+        expect(finalText).toContain('relay mobile-access-disabled {"connected":false,"stopReason":"mobile-access-disabled"}')
+        expect(finalText).toContain('relay window-close {"connected":false,"stopReason":"window-close"}')
+        expect(finalText).toContain('relay quit {"connected":false,"stopReason":"quit"}')
         const pid = Number(host?.[1])
         await expect.poll(() => processExists(pid), { timeout: 5_000 }).toBe(false)
         return

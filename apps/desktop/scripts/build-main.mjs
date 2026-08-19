@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { cp } from 'node:fs/promises'
+import { cp, mkdir } from 'node:fs/promises'
 import { build } from 'esbuild'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -14,7 +14,9 @@ await build({
   platform: 'node',
   format: 'esm',
   target: 'node22',
-  external: ['electron', 'electron-updater'],
+  external: ['electron', 'electron-updater', 'ws'],
   logLevel: 'info',
 })
 await cp(join(root, 'src', 'preload.cjs'), join(root, 'out', 'preload.cjs'))
+await mkdir(join(root, 'out', 'build'), { recursive: true })
+await cp(join(root, 'build', 'icon.png'), join(root, 'out', 'build', 'icon.png'))

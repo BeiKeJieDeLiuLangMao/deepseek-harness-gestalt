@@ -16,9 +16,17 @@ import type {
   PairingDeviceDescription,
   PairingRendezvousId,
   PendingPairingId,
+  PersonalPairingId,
   PersonalPairingView,
+  RelayCredentialGrant,
   RemoteAccessErrorCode,
 } from '@deepseek-ai/dsh-remote-access'
+import { parseRelayCredential, parseRelayRouteId } from '@deepseek-ai/dsh-remote-protocol'
+
+export * from './relay.ts'
+export * from './browser-relay-socket.ts'
+export * from './relay-queue.ts'
+export * from './mobile-relay-lifecycle.ts'
 import {
   PERSONAL_PAIRING_PROTOCOL_MAJOR,
   RemoteAccessError,
@@ -35,6 +43,8 @@ export interface RemoteAccessTransport {
   getMobileAccessState(authentication: PairingAccountAuthentication): Promise<MobileAccessState>
   /** @param input - current Desktop authorization and requested state. @returns committed state. */
   setMobileAccess(input: { authentication: PairingAccountAuthentication; enabled: boolean }): Promise<MobileAccessState>
+  /** @param authentication - current Desktop authorization. @returns fresh Desktop-only Relay authority. */
+  reissueDesktopRelayAuthority(authentication: PairingAccountAuthentication): Promise<MobileAccessState>
   /** @param input - current Desktop authorization and rendezvous id. @returns single-use challenge. */
   createChallenge(input: {
     authentication: PairingAccountAuthentication
@@ -49,6 +59,11 @@ export interface RemoteAccessTransport {
   listPendingPairings(authentication: PairingAccountAuthentication): Promise<readonly PairingCompletionView[]>
   /** @param authentication - current Desktop authorization. @returns Desktop-owned active pairings. */
   listPersonalPairings(authentication: PairingAccountAuthentication): Promise<readonly PersonalPairingView[]>
+  /** @param input - current Desktop authorization and pairing id. */
+  revokePersonalPairing(input: {
+    authentication: PairingAccountAuthentication
+    pairingId: PersonalPairingId
+  }): Promise<void>
   /** @param input - current Desktop authorization and pending id. @returns activated pairing. */
   confirmPairing(input: {
     authentication: PairingAccountAuthentication
@@ -104,6 +119,10 @@ export class RemoteAccessHttpTransport implements RemoteAccessTransport {
     }))
   }
 
+  async reissueDesktopRelayAuthority(authentication: PairingAccountAuthentication): Promise<MobileAccessState> {
+    return parseMobileAccess(await this.call(authentication, { operation: 'reissue-desktop-relay' }))
+  }
+
   async createChallenge(input: {
     authentication: PairingAccountAuthentication
     rendezvousId: PairingRendezvousId
@@ -126,6 +145,13 @@ export class RemoteAccessHttpTransport implements RemoteAccessTransport {
 
   async listPersonalPairings(authentication: PairingAccountAuthentication): Promise<readonly PersonalPairingView[]> {
     return parseArray(await this.call(authentication, { operation: 'list-pairings' }), parsePairing)
+  }
+
+  async revokePersonalPairing(input: {
+    authentication: PairingAccountAuthentication
+    pairingId: PersonalPairingId
+  }): Promise<void> {
+    await this.call(input.authentication, { operation: 'revoke-pairing', pairingId: input.pairingId })
   }
 
   async confirmPairing(input: {
@@ -201,14 +227,32 @@ export class RemoteAccessHttpTransport implements RemoteAccessTransport {
 function parseMobileAccess(value: unknown): MobileAccessState {
   const record = requiredRecord(value, 'Mobile Access response')
   if (typeof record.enabled !== 'boolean') throw new TypeError('Mobile Access enabled must be boolean')
-  return { enabled: record.enabled }
+  if (!record.enabled || record.relay === undefined) return { enabled: record.enabled }
+  const relay = requiredRecord(record.relay, 'Mobile Access Relay grant')
+  const grant: RelayCredentialGrant = {
+    routeId: parseRelayRouteId(relay.routeId),
+    endpoint: requiredEndpoint(relay.endpoint, 'Mobile Access Relay endpoint'),
+    credential: parseRelayCredential(relay.credential),
+    revision: requiredPositiveInteger(relay.revision, 'Mobile Access Relay revision'),
+  }
+  return { enabled: true, relay: grant }
+}
+
+function requiredEndpoint(value: unknown, name: string): 'mobile' | 'desktop' {
+  if (value !== 'mobile' && value !== 'desktop') throw new TypeError(`${name} must be mobile or desktop`)
+  return value
 }
 
 function parseMobilePairingStatus(value: unknown): MobilePairingStatus {
   const record = requiredRecord(value, 'Mobile Pairing status response')
   if (record.status === 'pending' || record.status === 'rejected') return { status: record.status }
   if (record.status === 'paired') {
-    return { status: 'paired', pairingId: parsePersonalPairingId(record.pairingId) }
+    return {
+      status: 'paired', pairingId: parsePersonalPairingId(record.pairingId),
+      ...(record.sealedRelayAuthority === undefined
+        ? {}
+        : { sealedRelayAuthority: decodeBytes(record.sealedRelayAuthority, 'Mobile Pairing sealed Relay authority') }),
+    }
   }
   throw new TypeError('Mobile Pairing status is invalid')
 }
@@ -259,6 +303,8 @@ function parsePairing(value: unknown): PersonalPairingView {
     },
     device: parseDevice(record.device),
     pairedAt: requiredPositiveInteger(record.pairedAt, 'Personal Pairing pairedAt'),
+    lastAccessAt: requiredPositiveInteger(record.lastAccessAt, 'Personal Pairing lastAccessAt'),
+    online: requiredBoolean(record.online, 'Personal Pairing online'),
   }
 }
 
@@ -319,6 +365,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function requiredString(value: unknown, name: string): string {
   if (typeof value !== 'string' || value === '') throw new TypeError(`${name} must be non-empty`)
+  return value
+}
+
+function requiredBoolean(value: unknown, name: string): boolean {
+  if (typeof value !== 'boolean') throw new TypeError(`${name} must be a boolean`)
   return value
 }
 

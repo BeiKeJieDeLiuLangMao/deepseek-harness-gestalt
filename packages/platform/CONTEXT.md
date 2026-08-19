@@ -28,7 +28,15 @@ _Avoid_: Installation, Desktop Host
 
 _Avoid_: Account Session, OAuth connection
 
-The checked-in Remote Access provider owns the single-process challenge and confirmation lifecycle. Cross-instance Relay routing and durable multi-instance pairing state are separate deployment work.
+The checked-in Personal Pairing provider owns single-process challenge and pending-handshake work. Every Platform Instance shares the authoritative Desktop access-to-route association and confirmed Mobile pairing result. The Remote Relay provider is stateless: instances share persistent route authority and an expiring attachment directory, then forward bounded ciphertext directly to the target instance without an offline queue.
+
+**Relay Transport Protocol**: The Platform-visible attach, heartbeat, routing metadata, stable error, and bounded ciphertext envelope. A route id is not authority; attach also requires a current high-entropy credential. Desktop rotation replaces route credentials, while each confirmed Mobile pairing receives a separate credential sealed to its pairing key.
+
+_Avoid_: Companion Protocol, Host protocol
+
+**Encrypted Companion Protocol**: The Mobile/Desktop application messages encrypted end to end under the independently reviewed paired channel. Platform never parses its business values.
+
+_Avoid_: Relay Transport Protocol, Host protocol
 
 **Pairing Challenge**: A two-minute single-use invitation capability created only by an enabled Desktop Installation. QR and full-link presentation carry the same 256-bit secret and protocol binding.
 

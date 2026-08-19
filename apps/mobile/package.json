@@ -15,6 +15,7 @@
     "@deepseek-ai/dsh-platform-account-client": "workspace:^",
     "@deepseek-ai/dsh-remote-access": "workspace:^",
     "@deepseek-ai/dsh-remote-access-client": "workspace:^",
+    "@deepseek-ai/dsh-remote-protocol": "workspace:^",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },

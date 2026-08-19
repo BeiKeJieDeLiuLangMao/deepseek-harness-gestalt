@@ -9,7 +9,7 @@ export const name = 'remote-access-client-invariant'
 /** Service required before the companion can reserve package ownership. */
 export const inject = ['invariants']
 
-/** No runtime invariant: each transport owns only immutable deployment configuration. */
+/** No runtime invariant: each controller owns only its current outbound socket and explicit callbacks. */
 const install: InvariantInstaller = () => {}
 
 /** Register client-library package ownership. */

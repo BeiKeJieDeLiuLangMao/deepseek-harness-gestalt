@@ -7,9 +7,14 @@ import {
   RemoteAccessError,
   parsePairingCompletionId,
   parsePairingRendezvousId,
+  parsePersonalPairingId,
+  type MobilePairingStatus,
   type PairingAccountAuthentication,
 } from '@deepseek-ai/dsh-remote-access'
-import { RemoteAccessHttpTransport, type RemoteAccessTransport } from '@deepseek-ai/dsh-remote-access-client'
+import {
+  RemoteAccessHttpTransport,
+  type RemoteAccessTransport,
+} from '@deepseek-ai/dsh-remote-access-client'
 import { MobilePairingController } from '../../../../apps/mobile/src/personal-pairing.ts'
 import { apply } from '../src/index.ts'
 
@@ -166,12 +171,14 @@ describe('Remote Access HTTP assembled flow', () => {
     const transport: RemoteAccessTransport = {
       getMobileAccessState: http.getMobileAccessState.bind(http),
       setMobileAccess: http.setMobileAccess.bind(http),
+      reissueDesktopRelayAuthority: http.reissueDesktopRelayAuthority.bind(http),
       createChallenge: http.createChallenge.bind(http),
       cancelChallenge: http.cancelChallenge.bind(http),
       listPendingPairings: http.listPendingPairings.bind(http),
       listPersonalPairings: http.listPersonalPairings.bind(http),
       confirmPairing: http.confirmPairing.bind(http),
       rejectPairing: http.rejectPairing.bind(http),
+      revokePersonalPairing: http.revokePersonalPairing.bind(http),
       getMobilePairingStatus: http.getMobilePairingStatus.bind(http),
       completeChallenge: async (request) => {
         requests.push(request)
@@ -232,9 +239,10 @@ describe('Remote Access HTTP assembled flow', () => {
       cancelChallenge: vi.fn(),
       listPendingPairings: vi.fn(async () => []),
       listPersonalPairings: vi.fn(async () => []),
-      getMobilePairingStatus: vi.fn(async () => ({ status: 'pending' })),
+      getMobilePairingStatus: vi.fn(async (): Promise<MobilePairingStatus> => ({ status: 'pending' })),
       confirmPairing: vi.fn(async () => ({ id: 'pairing-one' })),
       rejectPairing: vi.fn(),
+      revokePersonalPairing: vi.fn(),
       completeChallenge: vi.fn(async () => ({
         pendingPairingId: 'pending-one', authenticationWords: [], desktopHandshake: Uint8Array.of(1),
         device: { name: 'phone', platform: 'ios' },
@@ -255,6 +263,14 @@ describe('Remote Access HTTP assembled flow', () => {
     expect((await request({ operation: 'get-mobile-access' })).status).toBe(200)
     expect((await request({ operation: 'cancel-challenge', challengeId: 'challenge-one' })).status).toBe(200)
     expect((await request({ operation: 'reject-pairing', pendingPairingId: 'pending-one' })).status).toBe(200)
+    remoteAccess.getMobilePairingStatus.mockResolvedValueOnce({
+      status: 'paired', pairingId: parsePersonalPairingId('pairing-one'), sealedRelayAuthority: Uint8Array.of(1, 2),
+    })
+    await expect((await request({
+      operation: 'get-mobile-pairing-status', pendingPairingId: 'pending-one',
+    })).json()).resolves.toEqual({
+      status: 'paired', pairingId: 'pairing-one', sealedRelayAuthority: 'AQI',
+    })
     expect((await request({ operation: 'unknown' })).status).toBe(400)
     expect((await request({}, { method: 'GET' })).status).toBe(405)
 

@@ -63,6 +63,8 @@ export function ImageLightbox({ src, alt, labels, onClose, annotation }: {
 }) {
   const closeRef = useRef<HTMLButtonElement | null>(null)
   const restoreRef = useRef<HTMLElement | null>(null)
+  const annotationRef = useRef(annotation)
+  annotationRef.current = annotation
   useEffect(() => {
     restoreRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
     closeRef.current?.focus()
@@ -77,10 +79,11 @@ export function ImageLightbox({ src, alt, labels, onClose, annotation }: {
   }, [onClose])
 
   const onImageClick = (event: MouseEvent<HTMLImageElement>): void => {
-    if (annotation === undefined || !annotation.mode || annotation.refuse !== undefined) return
+    const live = annotationRef.current
+    if (live === undefined || !live.mode || live.refuse !== undefined) return
     const rect = event.currentTarget.getBoundingClientRect()
     const point = pinPercent(event.clientX, event.clientY, rect)
-    annotation.onPlace(point.x, point.y)
+    live.onPlace(point.x, point.y)
   }
 
   return createPortal(

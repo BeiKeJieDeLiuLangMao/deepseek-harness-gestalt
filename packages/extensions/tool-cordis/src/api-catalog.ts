@@ -1052,6 +1052,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'committed Mobile Access state.',
       },
       {
+        signature: 'abstract reissueDesktopRelayAuthority(desktop: PairingAccountAuthentication): Promise<MobileAccessState>',
+        description: 'Rotate and return fresh Desktop-only Relay authority after process startup or window reopen.',
+        parameters: [{ name: 'desktop', description: 'current Desktop authorization for an enabled installation.' }],
+        returns: 'enabled state carrying a fresh Desktop grant.',
+      },
+      {
         signature: 'abstract completeChallenge(input: { mobile: PairingAccountAuthentication completionId: PairingCompletionId oneTimeLink: string device: PairingDeviceDescription mobileHandshake: Uint8Array }): Promise<PairingCompletionView>',
         description: 'Complete the same-account cryptographic exchange without granting authority.',
         parameters: [{ name: 'input', description: 'Mobile authorization, invitation, device metadata, and handshake bytes.' }],
@@ -1090,6 +1096,41 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         signature: 'abstract rejectPairing(input: { desktop: PairingAccountAuthentication pendingPairingId: PendingPairingId }): Promise<void>',
         description: 'Reject one pending handshake; repeated rejection is a no-op.',
         parameters: [{ name: 'input', description: 'owning Desktop authorization and pending identity.' }],
+      },
+    ],
+  },
+  {
+    key: 'remoteRelay',
+    summary: 'Public Remote Access Relay capability used by the WSS Consumer.',
+    description: 'Public Remote Access Relay capability used by the WSS Consumer.',
+    methods: [
+      {
+        signature: 'abstract rotateCredential(routeId: RelayRouteId, endpoint?: \'mobile\' | \'desktop\'): Promise<RelayCredentialGrant>',
+        description: 'Rotate one route to fresh authority and invalidate older attachments.',
+        parameters: [{ name: 'routeId', description: 'opaque route receiving new attachment authority.' }, { name: 'endpoint', description: 'endpoint whose same-endpoint credentials the rotation replaces; defaults to desktop.' }],
+        returns: 'the one-time credential grant and its persistent revision.',
+      },
+      {
+        signature: 'abstract issueCredential(routeId: RelayRouteId, endpoint?: \'mobile\' | \'desktop\'): Promise<RelayCredentialGrant>',
+        description: 'Issue distinct endpoint authority without invalidating other credentials on the active route.',
+        parameters: [{ name: 'routeId', description: 'active route receiving another independently revocable bearer.' }, { name: 'endpoint', description: 'endpoint the new credential authorizes; defaults to mobile.' }],
+        returns: 'a fresh credential at the current route revision.',
+      },
+      {
+        signature: 'abstract revokeCredential(grant: RelayCredentialGrant): Promise<void>',
+        description: 'Remove one issued endpoint credential without revoking its route peers.',
+        parameters: [{ name: 'grant', description: 'exact issued authority whose ownership did not commit.' }],
+      },
+      {
+        signature: 'abstract revokeRoute(routeId: RelayRouteId): Promise<void>',
+        description: 'Revoke one route and close its attachments across Platform Instances.',
+        parameters: [{ name: 'routeId', description: 'opaque route whose current authority becomes invalid.' }],
+      },
+      {
+        signature: 'abstract attach(input: { message: RelayAttachMessage deliver: (message: RelayCiphertextMessage) => Promise<void> close?: () => void | Promise<void> signal?: AbortSignal }): Promise<RemoteRelayAttachment>',
+        description: 'Authenticate and register one outbound Mobile or Desktop attachment.',
+        parameters: [{ name: 'input', description: 'attach frame plus the socket writer and optional close callback.' }],
+        returns: 'the admitted attachment receiving later frames from that socket.',
       },
     ],
   },
@@ -3700,11 +3741,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'MobileAccessState',
-    declaration: 'export interface MobileAccessState {\n    enabled: boolean;\n}',
+    declaration: 'export interface MobileAccessState {\n    enabled: boolean;\n    relay?: RelayCredentialGrant;\n}',
   },
   {
     name: 'MobilePairingStatus',
-    declaration: 'export type MobilePairingStatus = {\n    status: \'pending\';\n} | {\n    status: \'paired\';\n    pairingId: PersonalPairingId;\n} | {\n    status: \'rejected\';\n};',
+    declaration: 'export type MobilePairingStatus = {\n    status: \'pending\';\n} | {\n    status: \'paired\';\n    pairingId: PersonalPairingId;\n    sealedRelayAuthority?: Uint8Array;\n} | {\n    status: \'rejected\';\n};',
   },
   {
     name: 'ModelMessageSource',
@@ -3893,6 +3934,38 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'RedactedSecret',
     declaration: 'export interface RedactedSecret {\n    path: string[];\n    set: boolean;\n}',
+  },
+  {
+    name: 'RelayAttachmentId',
+    declaration: 'export type RelayAttachmentId = Branded<\'RelayAttachmentId\'>;',
+  },
+  {
+    name: 'RelayAttachMessage',
+    declaration: 'export interface RelayAttachMessage {\n    type: \'attach\';\n    transportVersion: 1;\n    routeId: RelayRouteId;\n    attachmentId: RelayAttachmentId;\n    endpoint: \'mobile\' | \'desktop\';\n    credential: RelayCredential;\n}',
+  },
+  {
+    name: 'RelayCiphertextMessage',
+    declaration: 'export interface RelayCiphertextMessage {\n    type: \'ciphertext\';\n    transportVersion: 1;\n    routeId: RelayRouteId;\n    sourceAttachmentId: RelayAttachmentId;\n    targetAttachmentId: RelayAttachmentId;\n    ciphertext: Uint8Array;\n}',
+  },
+  {
+    name: 'RelayCredential',
+    declaration: 'export type RelayCredential = Branded<\'RelayCredential\'>;',
+  },
+  {
+    name: 'RelayCredentialGrant',
+    declaration: 'export interface RelayCredentialGrant {\n    routeId: RelayRouteId;\n    endpoint: \'mobile\' | \'desktop\';\n    credential: RelayCredential;\n    revision: number;\n}',
+  },
+  {
+    name: 'RelayHeartbeatMessage',
+    declaration: 'export interface RelayHeartbeatMessage {\n    type: \'heartbeat\';\n    transportVersion: 1;\n    attachmentId: RelayAttachmentId;\n    sentAt: number;\n}',
+  },
+  {
+    name: 'RelayRouteId',
+    declaration: 'export type RelayRouteId = Branded<\'RelayRouteId\'>;',
+  },
+  {
+    name: 'RemoteRelayAttachment',
+    declaration: 'export interface RemoteRelayAttachment {\n    receive(message: RelayCiphertextMessage | RelayHeartbeatMessage): Promise<void>;\n    close(): Promise<void>;\n}',
   },
   {
     name: 'ReplayEnvelope',

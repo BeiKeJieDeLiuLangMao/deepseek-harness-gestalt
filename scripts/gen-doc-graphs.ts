@@ -248,6 +248,15 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'The HTTP consumer exposes the lifecycle through one validated transport for Desktop Settings and Mobile; production remains fail-closed until an independently reviewed handshake provider is assembled.',
   },
   {
+    key: 'remoteRelay',
+    pkg: 'remote-access',
+    title: 'Stateless multi-instance Remote Relay seam',
+    mode: 'seam',
+    implementations: ['remote-access'],
+    consumers: ['remote-access-http'],
+    note: 'Owns credential-authenticated live attachments and ciphertext-only forwarding; an expiring Redis directory and direct Pub/Sub coordinate non-sticky Platform Instances without an offline queue.',
+  },
+  {
     key: 'workspaceRegistry',
     pkg: 'workspace',
     title: 'Workspace entity registry',

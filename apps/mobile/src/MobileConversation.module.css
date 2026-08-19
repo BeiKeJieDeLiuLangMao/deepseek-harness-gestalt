@@ -1,0 +1,58 @@
+.page {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 430px;
+  margin: 0 auto;
+  overflow-x: hidden;
+  color: var(--dsw-alias-label-primary);
+}
+
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 0 16px;
+}
+
+.back {
+  align-self: flex-start;
+}
+
+.blocks {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.markdown,
+.code,
+.diff,
+.card,
+.image {
+  overflow-wrap: anywhere;
+  max-width: 100%;
+}
+
+.code,
+.diff,
+.card pre {
+  overflow-x: auto;
+  white-space: pre-wrap;
+}
+
+.image {
+  height: auto;
+}
+
+.card {
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--dsw-alias-fill-secondary);
+}
+
+.composer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 16px;
+}

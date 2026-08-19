@@ -134,7 +134,7 @@ export class SessionInputShell implements SessionInput {
     updateTextAnnotation: (id, note) => { this.updateTextAnnotation(id, note) },
     removeTextAnnotation: (id) => { this.removeTextAnnotation(id) },
     discardTextAnnotations: () => { this.discardTextAnnotations() },
-    addImagePin: (imageId, imageName, x, y, note) => this.addImagePin(imageId, imageName, x, y, note),
+    addImagePin: (imageId, imageName, x, y, note, source) => this.addImagePin(imageId, imageName, x, y, note, source),
     updateImagePin: (id, patch) => { this.updateImagePin(id, patch) },
     removeImagePin: (id) => { this.removeImagePin(id) },
     submit: () => { this.submit('queue') },
