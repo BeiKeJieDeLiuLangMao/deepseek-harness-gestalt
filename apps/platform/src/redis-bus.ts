@@ -52,14 +52,31 @@ export class RedisAccountInvalidationBus implements AccountInvalidationBus {
   }
 }
 
+/** Connection fields for one Redis client. */
+export interface RedisConnectOptions {
+  /** Redis hostname. */
+  host: string
+  /** Redis ACL username, when present. */
+  username?: string
+  /** Redis password. */
+  password: string
+  /** Whether to use TLS. */
+  tls: boolean
+}
+
 /**
- * Open a Redis command client with TLS when requested.
- * @param url - redis:// or rediss:// URL.
+ * Open a Redis command client without putting the password in a URL.
+ * @param options - host, credentials, and TLS.
  */
-export async function connectRedis(url: string): Promise<RedisClientType> {
+export async function connectRedis(options: RedisConnectOptions): Promise<RedisClientType> {
   const client = createClient({
-    url,
-    socket: url.startsWith('rediss://') ? { tls: true, rejectUnauthorized: false } : {},
+    username: options.username,
+    password: options.password,
+    socket: {
+      host: options.host,
+      port: 6379,
+      ...(options.tls ? { tls: true, rejectUnauthorized: false } : {}),
+    },
   }) as RedisClientType
   await client.connect()
   return client
