@@ -6,14 +6,14 @@ import { appendFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
-  app, autoUpdater as electronAutoUpdater, BrowserWindow, Menu, ipcMain, safeStorage, shell,
+  app, autoUpdater as electronAutoUpdater, BrowserWindow, Menu, ipcMain, powerMonitor, safeStorage, shell,
   type IpcMainEvent,
 } from 'electron'
 import {
   ACCOUNT_ACCEPT_PRIVACY, ACCOUNT_BEGIN_LOGIN, ACCOUNT_GET_SNAPSHOT,
   ACCOUNT_SIGN_OUT, ACCOUNT_SNAPSHOT_CHANGED,
   PAIRING_CANCEL_CHALLENGE, PAIRING_CONFIRM, PAIRING_CREATE_CHALLENGE,
-  PAIRING_GET_SNAPSHOT, PAIRING_REJECT, PAIRING_SET_ENABLED, PAIRING_SNAPSHOT_CHANGED,
+  PAIRING_GET_SNAPSHOT, PAIRING_REJECT, PAIRING_REVOKE, PAIRING_SET_ENABLED, PAIRING_SNAPSHOT_CHANGED,
   UPDATER_CHECK_NOW, UPDATER_DOWNLOAD_NOW, UPDATER_GET_STATUS,
   UPDATER_QUIT_AND_INSTALL, UPDATER_STATUS_CHANGED,
   WINDOW_CLOSE, WINDOW_MAXIMIZE, WINDOW_MINIMIZE,
@@ -21,6 +21,7 @@ import {
 } from '@deepseek-ai/dsh-client-ui-desktop/protocol'
 import { PlatformAccountHttpTransport } from '@deepseek-ai/dsh-platform-account-client'
 import { RemoteAccessHttpTransport } from '@deepseek-ai/dsh-remote-access-client'
+import type { DesktopRelayLifecycle } from '@deepseek-ai/dsh-remote-access-client/desktop-relay-lifecycle'
 import type { SelectedPlatformEnvironment } from '@deepseek-ai/dsh-platform-account'
 import { ensureLaunchDirectory } from './launch-directory.ts'
 import { isElectronExecutable, resolveDesktopRuntime } from './runtime-paths.ts'
@@ -42,10 +43,12 @@ import {
   UnavailableDesktopPairingController,
   confirmPairingFromIpc,
   rejectPairingFromIpc,
+  revokePairingFromIpc,
   setPairingEnabledFromIpc,
   type DesktopPairingActions,
 } from './personal-pairing.ts'
 import { disposeDesktopOwners } from './shutdown.ts'
+import { createDesktopRemoteRelay } from './remote-relay.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const PRELOAD = join(here, 'preload.cjs')
@@ -85,7 +88,7 @@ if (!gotLock) {
 }
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit()
+  app.quit()
 })
 
 app.on('before-quit', (event) => {
@@ -114,22 +117,30 @@ async function boot(): Promise<void> {
     account = new UnavailableDesktopAccountController('Platform environment is not configured')
     pairing = new UnavailableDesktopPairingController('Platform environment is not configured')
   } else {
+    const relay = createDesktopRemoteRelay({ environment: accountEnvironment, source: process.env })
     account = createDesktopAccount(accountEnvironment)
-    pairing = createDesktopPairing(accountEnvironment, account)
-    void account.start().then(() => {
-      smokeLog('account ready')
-    }).catch((error: unknown) => {
+    let accountReady = true
+    try {
+      await account.start()
+    } catch (error) {
+      accountReady = false
       smokeLog('account start failed ' + (error instanceof Error ? error.message : String(error)))
-      stopAccountEvents?.()
       const failed = account
       account = new UnavailableDesktopAccountController(
         error instanceof Error ? error.message : String(error),
       )
-      stopAccountEvents = account.subscribe(handleAccountSnapshot)
       void failed.dispose().catch((disposeError: unknown) => {
         console.error('[desktop-platform-account] dispose after failed start:', disposeError)
       })
-    })
+    }
+    if (accountReady) smokeLog('account ready')
+    pairing = createDesktopPairing(accountEnvironment, account, relay)
+    accountSignedIn = account.getSnapshot().status === 'signed-in'
+    if (accountSignedIn) {
+      await pairing.start().catch((error: unknown) => {
+        console.error('[desktop-personal-pairing] initial Remote Access load failed:', error)
+      })
+    }
   }
   stopPairingEvents = pairing.subscribe(pushPairingSnapshot)
   stopAccountEvents = account.subscribe(handleAccountSnapshot)
@@ -225,6 +236,22 @@ function createWindow(): BrowserWindow {
   })
   target.on('enter-full-screen', () => { syncTrafficLights(target, true) })
   target.on('leave-full-screen', () => { syncTrafficLights(target, false) })
+  let closing = false
+  target.on('close', (event) => {
+    if (shuttingDown || closing) return
+    event.preventDefault()
+    closing = true
+    void pairing.deactivate('window-close').then(
+      () => {
+        smokeLog(`relay window-close ${JSON.stringify(pairing.getRelayState())}`)
+        target.destroy()
+      },
+      (error: unknown) => {
+        console.error('[desktop-personal-pairing] window close shutdown failed:', error)
+        target.destroy()
+      },
+    )
+  })
   guardNavigation(target)
   return target
 }
@@ -308,6 +335,17 @@ function installIntegrationsOnce(): void {
   integrationsInstalled = true
   installIpc()
   installMenu()
+  powerMonitor.on('suspend', () => {
+    void pairing.deactivate('sleep').catch((error: unknown) => {
+      console.error('[desktop-personal-pairing] sleep shutdown failed:', error)
+    })
+  })
+  powerMonitor.on('resume', () => {
+    if (!accountSignedIn) return
+    void pairing.start().catch((error: unknown) => {
+      console.error('[desktop-personal-pairing] resume startup failed:', error)
+    })
+  })
 }
 
 async function finishSmoke(target: BrowserWindow): Promise<void> {
@@ -344,6 +382,7 @@ async function finishSmoke(target: BrowserWindow): Promise<void> {
         && typeof bridge.pairingCancelChallenge === 'function'
         && typeof bridge.pairingConfirm === 'function'
         && typeof bridge.pairingReject === 'function'
+        && typeof bridge.pairingRevoke === 'function'
         && typeof bridge.onPairingSnapshot === 'function',
       mobileAccessEnabled: pairingStatus?.enabled ?? null,
       pairingState: pairingStatus?.status ?? null,
@@ -373,7 +412,12 @@ async function finishSmoke(target: BrowserWindow): Promise<void> {
   }
   smokeLog('ok')
   console.log('dsh desktop smoke: ok')
-  app.quit()
+  smokeLog(`relay production-gate ${JSON.stringify(pairing.getRelayState())}`)
+  await pairing.deactivate('sleep')
+  smokeLog(`relay sleep ${JSON.stringify(pairing.getRelayState())}`)
+  await pairing.deactivate('mobile-access-disabled')
+  smokeLog(`relay mobile-access-disabled ${JSON.stringify(pairing.getRelayState())}`)
+  target.close()
 }
 
 function requestShutdown(exitCode: number, mode: 'exit' | 'allow-quit' = 'exit'): void {
@@ -395,6 +439,7 @@ function requestShutdown(exitCode: number, mode: 'exit' | 'allow-quit' = 'exit')
   void (async () => {
     try {
       await ownerDisposal
+      smokeLog(`relay quit ${JSON.stringify(pairing.getRelayState())}`)
       const started = await starting?.catch(() => undefined)
       if (started !== running) await started?.stop()
       await running?.stop()
@@ -423,7 +468,7 @@ function installIpc(): void {
   ipcMain.handle(ACCOUNT_BEGIN_LOGIN, () => account.beginLogin())
   ipcMain.handle(ACCOUNT_SIGN_OUT, async () => {
     const snapshot = await account.signOut()
-    await pairing.deactivate()
+    await pairing.deactivate('mobile-access-disabled')
     return snapshot
   })
   ipcMain.handle(PAIRING_GET_SNAPSHOT, () => pairing.getSnapshot())
@@ -434,6 +479,8 @@ function installIpc(): void {
     confirmPairingFromIpc(pairing, pendingPairingId))
   ipcMain.handle(PAIRING_REJECT, (_event, pendingPairingId: unknown) =>
     rejectPairingFromIpc(pairing, pendingPairingId))
+  ipcMain.handle(PAIRING_REVOKE, (_event, pairingId: unknown) =>
+    revokePairingFromIpc(pairing, pairingId))
 }
 
 function installMenu(): void {
@@ -473,7 +520,7 @@ function handleAccountSnapshot(snapshot: ReturnType<DesktopAccountActions['getSn
     })
   }
   if (!signedIn && accountSignedIn) {
-    void pairing.deactivate().catch((error: unknown) => {
+    void pairing.deactivate('mobile-access-disabled').catch((error: unknown) => {
       console.error('[desktop-personal-pairing] signed-out Remote Access shutdown failed:', error)
     })
   }
@@ -507,15 +554,16 @@ function createDesktopAccount(environment: SelectedPlatformEnvironment): Desktop
 function createDesktopPairing(
   environment: SelectedPlatformEnvironment,
   currentAccount: DesktopAccountActions,
+  relay: DesktopRelayLifecycle,
 ): DesktopPairingActions {
+  const unavailableReason = 'Personal Pairing requires an independently reviewed handshake and Relay crypto provider.'
   if (environment.environment !== 'development' || process.env.DSH_PERSONAL_PAIRING_KEYLESS !== '1') {
-    return new UnavailableDesktopPairingController(
-      'Personal Pairing requires an independently reviewed handshake provider. Development proof mode is disabled.',
-    )
+    return new UnavailableDesktopPairingController(`${unavailableReason} Development proof mode is disabled.`, relay)
   }
   return new DesktopPairingController({
     account: currentAccount,
     transport: new RemoteAccessHttpTransport({ environment }),
+    relay,
   })
 }
 

@@ -1,5 +1,5 @@
 /**
- * Remote Access capability and single-process Personal Pairing provider.
+ * Remote Access capability with instance-local handshakes and shared confirmed authority.
  * @module @deepseek-ai/dsh-remote-access
  */
 
@@ -11,6 +11,12 @@ import type {
   AuthenticatedInstallationView,
   InstallationId,
 } from '@deepseek-ai/dsh-platform-account'
+import { parseRelayRouteId, type RelayRouteId } from '@deepseek-ai/dsh-remote-protocol'
+import type { RelayCredentialGrant, RemoteRelayService } from './relay.ts'
+
+export * from './relay.ts'
+export * from './open-registration-quotas.ts'
+export * from './platform-operations.ts'
 
 /** Fixed lifetime of one Personal Pairing invitation. */
 export const PAIRING_CHALLENGE_TTL_MS = 2 * 60 * 1000
@@ -122,6 +128,15 @@ export interface PairingHandshakeProvider {
   activatePairing(input: {
     pendingPairingKey: PendingPairingKey
   }): Promise<{ keyReference: PersonalPairingKeyReference; activePairingKey: ActivePairingKey }>
+  /**
+   * Seal endpoint-specific Relay authority to the newly activated Mobile pairing key.
+   * @param input - provider-private pairing key and Mobile-only Relay grant.
+   * @returns opaque bytes that only the paired Mobile crypto adapter can open.
+   */
+  sealMobileRelayAuthority?(input: {
+    activePairingKey: ActivePairingKey
+    grant: RelayCredentialGrant
+  }): Promise<Uint8Array>
   /** @param state - provider-private invitation state to destroy. */
   destroyChallenge(state: PairingChallengeState): void | Promise<void>
   /** @param state - provider-private pending key state to destroy. */
@@ -130,18 +145,22 @@ export interface PairingHandshakeProvider {
   destroyPairing(activePairingKey: ActivePairingKey): void | Promise<void>
 }
 
-/** Construction inputs for the single-process Personal Pairing provider. */
+/** Construction inputs for the Personal Pairing provider. */
 export interface PersonalPairingProviderOptions {
   /** Platform Account public seam used to prove both Installations own one Account. */
   account: Pick<AccountService, 'currentInstallation'>
   /** Replaceable reviewed handshake adapter; this package does not implement Noise. */
   handshake: PairingHandshakeProvider
+  /** Optional assembled Relay authority; production omits it until the crypto gate is approved. */
+  relay?: Pick<RemoteRelayService, 'rotateCredential' | 'issueCredential' | 'revokeCredential' | 'revokeRoute'>
+  /** Deployment-owned durable Mobile Access and pairing-to-route authority. */
+  authority?: PersonalPairingAuthorityStore
   /** Clock used for fixed challenge expiry and deterministic assembled scenarios. */
   clock?: { now(): number }
   /** Cryptographic random source; production defaults to Web Crypto. */
   randomBytes?: (size: number) => Uint8Array
   /** Opaque id source for challenge and pairing records. */
-  randomId?: (kind: 'challenge' | 'pairing' | 'principal' | 'completion') => string
+  randomId?: (kind: 'challenge' | 'pairing' | 'principal' | 'completion' | 'relay-route') => string
   /** Expiry scheduler; production defaults to the process timer. */
   schedule?: (task: () => void, delayMs: number) => ReturnType<typeof setTimeout>
   /** HTTPS origin and path used by both QR and full-link flows. */
@@ -208,19 +227,161 @@ export interface PersonalPairingView {
   device: PairingDeviceDescription
   /** Unix epoch milliseconds of Desktop confirmation. */
   pairedAt: number
+  /** Unix epoch milliseconds of the last observed Companion access. */
+  lastAccessAt: number
+  /** Whether a live Relay attachment is currently registered for this pairing. */
+  online: boolean
 }
 
 /** Desktop Installation Mobile Access state; the default is disabled. */
 export interface MobileAccessState {
   /** Whether this Desktop may create invitations and authorize Companion traffic. */
   enabled: boolean
+  /** Fresh Relay authority returned only by a successful enable mutation. */
+  relay?: RelayCredentialGrant
 }
 
 /** Mobile projection of the Desktop confirmation decision. */
 export type MobilePairingStatus =
   | { status: 'pending' }
-  | { status: 'paired'; pairingId: PersonalPairingId }
+  | { status: 'paired'; pairingId: PersonalPairingId; sealedRelayAuthority?: Uint8Array }
   | { status: 'rejected' }
+
+/** Durable Desktop route state shared by every Platform Instance. */
+export interface DesktopRemoteAccessAuthority {
+  /** Whether this Desktop installation currently admits Remote Access operations. */
+  enabled: boolean
+  /** Active Relay route when enabled. */
+  routeId?: RelayRouteId
+}
+
+/** Durable confirmed Mobile pairing projection returned through the pairing flow. */
+export interface MobilePairingAuthority {
+  accountId: Branded<'PlatformAccountId'>
+  desktopInstallationId: InstallationId
+  mobileInstallationId: InstallationId
+  pendingPairingId: PendingPairingId
+  pairingId: PersonalPairingId
+  sealedRelayAuthority?: Uint8Array
+}
+
+/** Deployment-owned atomic authority store shared by non-sticky Platform Instances. */
+export interface PersonalPairingAuthorityStore {
+  /**
+   * Exclusively own the durable short-lived pairing transaction state.
+   * Mutations, including cleanup tombstones retained by a rejected operation, must be persisted before settlement.
+   * @param operation - bounded state transition serialized across every Platform Instance.
+   * @returns the operation result after its state changes are durable.
+   */
+  runPairingTransaction<T>(operation: (state: PersonalPairingTransactionState) => Promise<T>): Promise<T>
+  /** Read current Desktop access without process-local caching. */
+  getDesktop(accountId: Branded<'PlatformAccountId'>, desktopInstallationId: InstallationId): Promise<DesktopRemoteAccessAuthority>
+  /** Atomically keep an active route or install the supplied fresh route. */
+  enableDesktop(accountId: Branded<'PlatformAccountId'>, desktopInstallationId: InstallationId, freshRouteId: RelayRouteId): Promise<RelayRouteId>
+  /** Atomically disable access, remove Mobile grants, and return every route still requiring revocation. */
+  disableDesktop(accountId: Branded<'PlatformAccountId'>, desktopInstallationId: InstallationId): Promise<readonly RelayRouteId[]>
+  /** Mark one route's external Relay revocation complete without touching a replacement route. */
+  completeRouteRevocation(accountId: Branded<'PlatformAccountId'>, desktopInstallationId: InstallationId, routeId: RelayRouteId): Promise<void>
+  /** Persist the confirmed pairing-to-route result before Mobile observes confirmation. */
+  confirmMobilePairing(authority: MobilePairingAuthority): Promise<void>
+  /** Read a confirmed Mobile result from any Platform Instance. */
+  getMobilePairing(pendingPairingId: PendingPairingId): Promise<MobilePairingAuthority | undefined>
+  /** Drop one confirmed Mobile pairing result after Desktop revocation. */
+  revokeMobilePairing(pairingId: PersonalPairingId): Promise<void>
+}
+
+/** Durable short-lived pairing transaction records loaded under one store-owned exclusive lease. */
+export interface PersonalPairingTransactionState {
+  challenges: Map<PairingChallengeId, ChallengeRecord>
+  settledChallenges: Map<PairingChallengeId, SettledChallengeRecord>
+  completions: Map<PairingCompletionId, CompletionReplayRecord>
+  pending: Map<PendingPairingId, PendingPairingRecord>
+  settledPending: Map<PendingPairingId, SettledPendingRecord>
+  pairings: Map<PersonalPairingId, StoredPersonalPairing>
+  principalIds: Set<DevicePrincipalId>
+  orphanPendingCleanups: Map<CleanupRecord<PendingPairingKey>, OrphanPendingCleanupRecord>
+}
+
+interface StoredDesktopAuthority {
+  activeRouteId?: RelayRouteId
+  revokingRouteIds: Set<RelayRouteId>
+}
+
+/** In-memory authority adapter for keyless tests; deployments supply a durable shared adapter. */
+export class MemoryPersonalPairingAuthorityStore implements PersonalPairingAuthorityStore {
+  private readonly desktops = new Map<string, StoredDesktopAuthority>()
+  private readonly pairings = new Map<PendingPairingId, MobilePairingAuthority>()
+  private readonly pairingTransactions = createPairingTransactionState()
+  private pairingSerial: Promise<void> = Promise.resolve()
+
+  runPairingTransaction<T>(operation: (state: PersonalPairingTransactionState) => Promise<T>): Promise<T> {
+    const result = this.pairingSerial.then(
+      () => operation(this.pairingTransactions),
+      () => operation(this.pairingTransactions),
+    )
+    this.pairingSerial = result.then(() => undefined, () => undefined)
+    return result
+  }
+
+  getDesktop(accountId: Branded<'PlatformAccountId'>, desktopInstallationId: InstallationId): Promise<DesktopRemoteAccessAuthority> {
+    const routeId = this.desktops.get(accessKey(accountId, desktopInstallationId))?.activeRouteId
+    return Promise.resolve(routeId === undefined ? { enabled: false } : { enabled: true, routeId })
+  }
+
+  enableDesktop(accountId: Branded<'PlatformAccountId'>, desktopInstallationId: InstallationId, freshRouteId: RelayRouteId): Promise<RelayRouteId> {
+    const key = accessKey(accountId, desktopInstallationId)
+    const record = this.desktops.get(key) ?? { revokingRouteIds: new Set<RelayRouteId>() }
+    record.activeRouteId ??= freshRouteId
+    this.desktops.set(key, record)
+    return Promise.resolve(record.activeRouteId)
+  }
+
+  disableDesktop(accountId: Branded<'PlatformAccountId'>, desktopInstallationId: InstallationId): Promise<readonly RelayRouteId[]> {
+    const key = accessKey(accountId, desktopInstallationId)
+    const record = this.desktops.get(key) ?? { revokingRouteIds: new Set<RelayRouteId>() }
+    if (record.activeRouteId !== undefined) {
+      record.revokingRouteIds.add(record.activeRouteId)
+      delete record.activeRouteId
+    }
+    this.desktops.set(key, record)
+    for (const [pendingPairingId, pairing] of this.pairings) {
+      if (pairing.accountId === accountId && pairing.desktopInstallationId === desktopInstallationId) {
+        this.pairings.delete(pendingPairingId)
+      }
+    }
+    return Promise.resolve([...record.revokingRouteIds])
+  }
+
+  completeRouteRevocation(accountId: Branded<'PlatformAccountId'>, desktopInstallationId: InstallationId, routeId: RelayRouteId): Promise<void> {
+    const key = accessKey(accountId, desktopInstallationId)
+    const record = this.desktops.get(key)
+    if (record === undefined) return Promise.resolve()
+    record.revokingRouteIds.delete(routeId)
+    if (record.activeRouteId === undefined && record.revokingRouteIds.size === 0) this.desktops.delete(key)
+    return Promise.resolve()
+  }
+
+  confirmMobilePairing(authority: MobilePairingAuthority): Promise<void> {
+    const existing = this.pairings.get(authority.pendingPairingId)
+    if (existing !== undefined && !sameMobileAuthority(existing, authority)) {
+      return Promise.reject(new RemoteAccessError('PAIRING_ID_COLLISION', 'Pending Pairing authority was already committed'))
+    }
+    this.pairings.set(authority.pendingPairingId, cloneMobileAuthority(authority))
+    return Promise.resolve()
+  }
+
+  getMobilePairing(pendingPairingId: PendingPairingId): Promise<MobilePairingAuthority | undefined> {
+    const authority = this.pairings.get(pendingPairingId)
+    return Promise.resolve(authority === undefined ? undefined : cloneMobileAuthority(authority))
+  }
+
+  revokeMobilePairing(pairingId: PersonalPairingId): Promise<void> {
+    for (const [pendingPairingId, pairing] of this.pairings) {
+      if (pairing.pairingId === pairingId) this.pairings.delete(pendingPairingId)
+    }
+    return Promise.resolve()
+  }
+}
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -263,6 +424,13 @@ export abstract class RemoteAccessService extends Service {
   }): Promise<MobileAccessState>
 
   /**
+   * Rotate and return fresh Desktop-only Relay authority after process startup or window reopen.
+   * @param desktop - current Desktop authorization for an enabled installation.
+   * @returns enabled state carrying a fresh Desktop grant.
+   */
+  abstract reissueDesktopRelayAuthority(desktop: PairingAccountAuthentication): Promise<MobileAccessState>
+
+  /**
    * Complete the same-account cryptographic exchange without granting authority.
    * @param input - Mobile authorization, invitation, device metadata, and handshake bytes.
    * @returns pending result shown on both installations before Desktop confirmation.
@@ -291,6 +459,15 @@ export abstract class RemoteAccessService extends Service {
    * @returns only confirmed pairings; pending handshakes are excluded.
    */
   abstract listPersonalPairings(desktop: PairingAccountAuthentication): Promise<readonly PersonalPairingView[]>
+
+  /**
+   * Revoke one confirmed pairing: destroy its key, drop Mobile Relay authority, and close live attachments.
+   * @param input - Desktop authorization and pairing identity.
+   */
+  abstract revokePersonalPairing(input: {
+    desktop: PairingAccountAuthentication
+    pairingId: PersonalPairingId
+  }): Promise<void>
 
   /**
    * List completed handshakes awaiting this Desktop Installation's decision.
@@ -328,25 +505,29 @@ export abstract class RemoteAccessService extends Service {
   }): Promise<void>
 }
 
-interface CleanupRecord<T> { resource?: T }
+/** Durable ownership tombstone for provider-private crypto material. */
+export interface CleanupRecord<T> { resource?: T }
 
-interface OrphanPendingCleanupRecord {
+/** Pending-key cleanup retained when allocation fails before a pending id commits. */
+export interface OrphanPendingCleanupRecord {
   accountId: string
   desktopInstallationId: InstallationId
   mobileInstallationId: InstallationId
   cleanup: CleanupRecord<PendingPairingKey>
 }
 
-interface ChallengeRecord {
+/** Durable live Pairing Challenge transaction. */
+export interface ChallengeRecord {
   invitation: PairingInvitation
   accountId: string
   desktopInstallationId: InstallationId
   cleanup: CleanupRecord<PairingChallengeState>
-  timer: ReturnType<typeof setTimeout>
 }
 
-type ChallengeOutcome = 'cancelled' | 'expired' | 'completed' | 'account-mismatch' | 'disabled' | 'disposed'
-interface SettledChallengeRecord {
+/** Terminal Pairing Challenge outcome retained for bounded replay. */
+export type ChallengeOutcome = 'cancelled' | 'expired' | 'completed' | 'account-mismatch' | 'disabled' | 'disposed'
+/** Durable terminal Pairing Challenge transaction. */
+export interface SettledChallengeRecord {
   accountId: string
   desktopInstallationId: InstallationId
   outcome: ChallengeOutcome
@@ -354,7 +535,8 @@ interface SettledChallengeRecord {
   settledAt: number
 }
 
-interface CompletionReplayRecord {
+/** Durable idempotency projection for one completed Mobile handshake. */
+export interface CompletionReplayRecord {
   accountId: string
   desktopInstallationId: InstallationId
   mobileInstallationId: InstallationId
@@ -364,13 +546,16 @@ interface CompletionReplayRecord {
   completedAt: number
 }
 
-interface PendingPairingRecord extends CompletionReplayRecord {
+/** Durable pending handshake awaiting a Desktop decision. */
+export interface PendingPairingRecord extends CompletionReplayRecord {
   cleanup: CleanupRecord<PendingPairingKey>
   activationCleanup?: CleanupRecord<ActivePairingKey>
 }
 
-type PendingOutcome = 'confirmed' | 'rejected' | 'disabled' | 'collision' | 'disposed'
-interface SettledPendingRecord {
+/** Terminal pending-handshake outcome retained for bounded replay. */
+export type PendingOutcome = 'confirmed' | 'rejected' | 'disabled' | 'collision' | 'disposed'
+/** Durable terminal pending-handshake transaction. */
+export interface SettledPendingRecord {
   accountId: string
   desktopInstallationId: InstallationId
   mobileInstallationId: InstallationId
@@ -381,36 +566,38 @@ interface SettledPendingRecord {
   settledAt: number
 }
 
-type StoredPersonalPairing = PersonalPairingView & {
+/** Durable confirmed Personal Pairing plus crypto cleanup ownership. */
+export type StoredPersonalPairing = PersonalPairingView & {
   desktopInstallationId: InstallationId
   keyReference: PersonalPairingKeyReference
   cleanup: CleanupRecord<ActivePairingKey>
+  mobileGrant?: RelayCredentialGrant
 }
 
-/** Single-process provider for challenge and Personal Pairing lifecycle behavior. */
+/** Provider combining instance-local handshake work with deployment-owned confirmed authority. */
 export class PersonalPairingProvider extends RemoteAccessService {
-  private readonly challenges = new Map<PairingChallengeId, ChallengeRecord>()
-  private readonly settledChallenges = new Map<PairingChallengeId, SettledChallengeRecord>()
-  private readonly completions = new Map<PairingCompletionId, CompletionReplayRecord>()
-  private readonly pending = new Map<PendingPairingId, PendingPairingRecord>()
-  private readonly settledPending = new Map<PendingPairingId, SettledPendingRecord>()
-  private readonly pairings = new Map<PersonalPairingId, StoredPersonalPairing>()
-  private readonly principalIds = new Set<DevicePrincipalId>()
-  private readonly orphanPendingCleanups = new Map<CleanupRecord<PendingPairingKey>, OrphanPendingCleanupRecord>()
-  private readonly mobileAccess = new Set<string>()
+  private transactionState: PersonalPairingTransactionState | undefined
   private serial: Promise<void> = Promise.resolve()
   private readonly clock: { now(): number }
   private readonly randomBytes: (size: number) => Uint8Array
   private readonly randomId: NonNullable<PersonalPairingProviderOptions['randomId']>
   private readonly schedule: NonNullable<PersonalPairingProviderOptions['schedule']>
   private readonly pairingLinkOrigin: string
+  private readonly authority: PersonalPairingAuthorityStore
+  private readonly ownsAuthority: boolean
+  private readonly localChallengeIds = new Set<PairingChallengeId>()
 
   /** @param ctx - Platform context. @param options - Account, crypto, time, random, and link adapters. */
   constructor(ctx: Context, private readonly options: PersonalPairingProviderOptions) {
     super(ctx)
     const origin = new URL(options.pairingLinkOrigin)
     if (origin.protocol !== 'https:') throw new TypeError('Personal Pairing link origin must use HTTPS')
+    if (options.relay !== undefined && options.authority === undefined) {
+      throw new TypeError('Remote Relay composition requires a deployment-owned shared authority store')
+    }
     this.pairingLinkOrigin = origin.toString()
+    this.ownsAuthority = options.authority === undefined
+    this.authority = options.authority ?? new MemoryPersonalPairingAuthorityStore()
     this.clock = options.clock ?? { now: () => Date.now() }
     this.randomBytes = options.randomBytes ?? secureRandomBytes
     this.randomId = options.randomId ?? (kind => `${kind}-${crypto.randomUUID()}`)
@@ -425,7 +612,7 @@ export class PersonalPairingProvider extends RemoteAccessService {
     return this.exclusive(async () => {
       const { account, installation } = await this.authenticate(input.desktop, 'desktop')
       this.evictExpiredRecords()
-      if (!this.mobileAccess.has(accessKey(account.id, installation.id))) {
+      if (!(await this.authority.getDesktop(account.id, installation.id)).enabled) {
         throw new RemoteAccessError('MOBILE_ACCESS_DISABLED', 'Mobile Access is disabled for this Desktop Installation')
       }
       if (this.countChallenges(account.id, installation.id) >= MAX_ACTIVE_PAIRING_CHALLENGES_PER_INSTALLATION) {
@@ -465,9 +652,9 @@ export class PersonalPairingProvider extends RemoteAccessService {
           accountId: account.id,
           desktopInstallationId: installation.id,
           cleanup,
-          timer,
         }
         this.challenges.set(challengeId, record)
+        this.localChallengeIds.add(challengeId)
         return { ...withoutSecret(invitation), oneTimeLink, qrPayload: oneTimeLink }
       } catch (error) {
         await this.cleanupChallenge(cleanup)
@@ -482,7 +669,8 @@ export class PersonalPairingProvider extends RemoteAccessService {
     return this.exclusive(async () => {
       const { account, installation } = await this.authenticate(desktop, 'desktop')
       this.evictExpiredRecords()
-      return { enabled: this.mobileAccess.has(accessKey(account.id, installation.id)) }
+      const authority = await this.authority.getDesktop(account.id, installation.id)
+      return { enabled: authority.enabled }
     })
   }
 
@@ -493,12 +681,51 @@ export class PersonalPairingProvider extends RemoteAccessService {
     return this.exclusive(async () => {
       const { account, installation } = await this.authenticate(input.desktop, 'desktop')
       this.evictExpiredRecords()
-      const key = accessKey(account.id, installation.id)
       if (input.enabled) {
-        this.mobileAccess.add(key)
-        return { enabled: true }
+        const previous = await this.authority.getDesktop(account.id, installation.id)
+        let relay: RelayCredentialGrant | undefined
+        if (this.options.relay !== undefined) {
+          const routeId = await this.authority.enableDesktop(
+            account.id,
+            installation.id,
+            parseRelayRouteId(this.randomId('relay-route')),
+          )
+          try {
+            relay = await this.options.relay.rotateCredential(routeId, 'desktop')
+          } catch (error) {
+            if (!previous.enabled) {
+              try {
+                const routeIds = await this.authority.disableDesktop(account.id, installation.id)
+                await cleanupAll(routeIds.map(revokingRouteId => async () => {
+                  await this.options.relay?.revokeRoute(revokingRouteId)
+                  await this.authority.completeRouteRevocation(account.id, installation.id, revokingRouteId)
+                }))
+              } catch (cleanupError) {
+                throw new AggregateError([error, cleanupError], 'Mobile Access enable rollback failed')
+              }
+            }
+            throw error
+          }
+        } else {
+          await this.authority.enableDesktop(
+            account.id,
+            installation.id,
+            parseRelayRouteId('keyless-no-relay'),
+          )
+        }
+        return { enabled: true, ...(relay === undefined ? {} : { relay }) }
       }
-      this.mobileAccess.delete(key)
+      const routeIds = await this.authority.disableDesktop(account.id, installation.id)
+      if (this.options.relay !== undefined) {
+        await cleanupAll(routeIds.map(routeId => async () => {
+          await this.options.relay?.revokeRoute(routeId)
+          await this.authority.completeRouteRevocation(account.id, installation.id, routeId)
+        }))
+      } else {
+        await cleanupAll(routeIds.map(routeId => async () => {
+          await this.authority.completeRouteRevocation(account.id, installation.id, routeId)
+        }))
+      }
       for (const challenge of [...this.challenges.values()]) {
         if (challenge.accountId === account.id && challenge.desktopInstallationId === installation.id) {
           this.settleChallenge(challenge, 'disabled')
@@ -509,8 +736,34 @@ export class PersonalPairingProvider extends RemoteAccessService {
           this.settlePending(id, record, 'disabled')
         }
       }
+      for (const [pairingId, pairing] of [...this.pairings]) {
+        if (pairing.devicePrincipal.accountId === account.id
+          && pairing.desktopInstallationId === installation.id) {
+          this.pairings.delete(pairingId)
+          this.principalIds.delete(pairing.devicePrincipal.id)
+          await this.cleanupActive(pairing.cleanup)
+          if (pairing.mobileGrant !== undefined) {
+            await this.options.relay?.revokeCredential(pairing.mobileGrant)
+          }
+        }
+      }
       await this.cleanupOwner(account.id, installation.id)
       return { enabled: false }
+    })
+  }
+
+  async reissueDesktopRelayAuthority(desktop: PairingAccountAuthentication): Promise<MobileAccessState> {
+    return this.exclusive(async () => {
+      const { account, installation } = await this.authenticate(desktop, 'desktop')
+      const authority = await this.authority.getDesktop(account.id, installation.id)
+      if (!authority.enabled || authority.routeId === undefined) {
+        throw new RemoteAccessError('MOBILE_ACCESS_DISABLED', 'Mobile Access is disabled for this Desktop Installation')
+      }
+      if (this.options.relay === undefined) return { enabled: true }
+      return {
+        enabled: true,
+        relay: await this.options.relay.rotateCredential(authority.routeId, 'desktop'),
+      }
     })
   }
 
@@ -630,6 +883,34 @@ export class PersonalPairingProvider extends RemoteAccessService {
     })
   }
 
+  async revokePersonalPairing(input: {
+    desktop: PairingAccountAuthentication
+    pairingId: PersonalPairingId
+  }): Promise<void> {
+    await this.exclusive(async () => {
+      const { account, installation } = await this.authenticate(input.desktop, 'desktop')
+      this.evictExpiredRecords()
+      const pairingId = parsePersonalPairingId(input.pairingId)
+      const pairing = this.pairings.get(pairingId)
+      if (pairing === undefined
+        || pairing.devicePrincipal.accountId !== account.id
+        || pairing.desktopInstallationId !== installation.id) {
+        throw new RemoteAccessError('PAIRING_PENDING_INVALID', 'Personal Pairing is invalid or unavailable')
+      }
+      this.pairings.delete(pairingId)
+      this.principalIds.delete(pairing.devicePrincipal.id)
+      const operations: Array<() => Promise<void>> = [
+        () => this.cleanupActive(pairing.cleanup),
+        () => this.authority.revokeMobilePairing(pairingId),
+      ]
+      if (pairing.mobileGrant !== undefined && this.options.relay !== undefined) {
+        const grant = pairing.mobileGrant
+        operations.push(async () => { await this.options.relay?.revokeCredential(grant) })
+      }
+      await cleanupAll(operations)
+    })
+  }
+
   async getMobilePairingStatus(input: {
     mobile: PairingAccountAuthentication
     pendingPairingId: PendingPairingId
@@ -648,10 +929,28 @@ export class PersonalPairingProvider extends RemoteAccessService {
       const settled = this.settledPending.get(pendingPairingId)
       if (settled === undefined || settled.accountId !== account.id
         || settled.mobileInstallationId !== installation.id) {
+        const authority = await this.authority.getMobilePairing(pendingPairingId)
+        if (authority !== undefined && authority.accountId === account.id
+          && authority.mobileInstallationId === installation.id) {
+          return {
+            status: 'paired',
+            pairingId: authority.pairingId,
+            ...(authority.sealedRelayAuthority === undefined
+              ? {}
+              : { sealedRelayAuthority: authority.sealedRelayAuthority.slice() }),
+          }
+        }
         throw new RemoteAccessError('PAIRING_PENDING_INVALID', 'Pending Pairing is invalid or unavailable')
       }
       if (settled.outcome === 'confirmed' && settled.view !== undefined) {
-        return { status: 'paired', pairingId: settled.view.id }
+        const authority = await this.authority.getMobilePairing(pendingPairingId)
+        if (authority === undefined) return { status: 'rejected' }
+        return {
+          status: 'paired', pairingId: settled.view.id,
+          ...(authority.sealedRelayAuthority === undefined
+            ? {}
+            : { sealedRelayAuthority: authority.sealedRelayAuthority.slice() }),
+        }
       }
       return { status: 'rejected' }
     })
@@ -720,6 +1019,53 @@ export class PersonalPairingProvider extends RemoteAccessService {
           },
           device: { ...record.view.device },
           pairedAt: this.clock.now(),
+          lastAccessAt: this.clock.now(),
+          online: false,
+        }
+        let sealedRelayAuthority: Uint8Array | undefined
+        let issuedMobileGrant: RelayCredentialGrant | undefined
+        const desktopAuthority = await this.authority.getDesktop(account.id, record.desktopInstallationId)
+        if (this.options.relay !== undefined) {
+          if (!desktopAuthority.enabled || desktopAuthority.routeId === undefined) {
+            throw new RemoteAccessError('MOBILE_ACCESS_DISABLED', 'Mobile Access is disabled for this Desktop Installation')
+          }
+          if (this.options.handshake.sealMobileRelayAuthority === undefined) {
+            throw new Error('Personal Pairing crypto adapter cannot seal Mobile Relay authority')
+          }
+          const mobileGrant = await this.options.relay.issueCredential(desktopAuthority.routeId, 'mobile')
+          issuedMobileGrant = mobileGrant
+          try {
+            sealedRelayAuthority = await this.options.handshake.sealMobileRelayAuthority({
+              activePairingKey: activation.activePairingKey,
+              grant: mobileGrant,
+            })
+          } catch (error) {
+            try {
+              await this.options.relay.revokeCredential(mobileGrant)
+            } catch (cleanupError) {
+              throw new AggregateError([error, cleanupError], 'Mobile Relay authority rollback failed')
+            }
+            throw error
+          }
+        }
+        try {
+          await this.authority.confirmMobilePairing({
+            accountId: account.id,
+            desktopInstallationId: record.desktopInstallationId,
+            mobileInstallationId: record.mobileInstallationId,
+            pendingPairingId,
+            pairingId: view.id,
+            ...(sealedRelayAuthority === undefined ? {} : { sealedRelayAuthority }),
+          })
+        } catch (error) {
+          if (issuedMobileGrant !== undefined && this.options.relay !== undefined) {
+            try {
+              await this.options.relay.revokeCredential(issuedMobileGrant)
+            } catch (cleanupError) {
+              throw new AggregateError([error, cleanupError], 'Mobile Relay authority commit rollback failed')
+            }
+          }
+          throw error
         }
         this.principalIds.add(principalId)
         this.pairings.set(view.id, {
@@ -727,6 +1073,7 @@ export class PersonalPairingProvider extends RemoteAccessService {
           desktopInstallationId: record.desktopInstallationId,
           keyReference,
           cleanup: activationCleanup,
+          ...(issuedMobileGrant === undefined ? {} : { mobileGrant: issuedMobileGrant }),
         })
         delete record.activationCleanup
         const confirmed = this.settlePending(pendingPairingId, record, 'confirmed', view)
@@ -795,8 +1142,23 @@ export class PersonalPairingProvider extends RemoteAccessService {
     })
   }
 
-  /** Destroy every retained crypto resource; repeated disposal retries tombstones. */
+  /** Drain instance-local incomplete crypto work while preserving durable confirmed authority. */
   async dispose(): Promise<void> {
+    if (!this.ownsAuthority) {
+      await this.exclusive(async () => {
+        const operations: Array<() => Promise<void>> = []
+        for (const challengeId of [...this.localChallengeIds]) {
+          const challenge = this.challenges.get(challengeId)
+          if (challenge !== undefined) {
+            const settled = this.settleChallenge(challenge, 'disposed')
+            operations.push(() => this.cleanupChallenge(settled.cleanup))
+          }
+          this.localChallengeIds.delete(challengeId)
+        }
+        await cleanupAll(operations)
+      })
+      return
+    }
     await this.exclusive(async () => {
       for (const challenge of [...this.challenges.values()]) this.settleChallenge(challenge, 'disposed')
       for (const [id, record] of [...this.pending]) this.settlePending(id, record, 'disposed')
@@ -806,7 +1168,6 @@ export class PersonalPairingProvider extends RemoteAccessService {
       for (const record of this.orphanPendingCleanups.values()) {
         operations.push(() => this.cleanupPending(record.cleanup))
       }
-      for (const pairing of this.pairings.values()) operations.push(() => this.cleanupActive(pairing.cleanup))
       await cleanupAll(operations)
     })
   }
@@ -822,7 +1183,7 @@ export class PersonalPairingProvider extends RemoteAccessService {
 
   private settleChallenge(challenge: ChallengeRecord, outcome: ChallengeOutcome): SettledChallengeRecord {
     this.challenges.delete(challenge.invitation.challengeId)
-    clearTimeout(challenge.timer)
+    this.localChallengeIds.delete(challenge.invitation.challengeId)
     challenge.invitation.invitationSecret.fill(0)
     const settled = {
       accountId: challenge.accountId,
@@ -1016,9 +1377,50 @@ export class PersonalPairingProvider extends RemoteAccessService {
   }
 
   private exclusive<T>(operation: () => Promise<T>): Promise<T> {
-    const result = this.serial.then(operation, operation)
+    const owned = async (): Promise<T> => await this.authority.runPairingTransaction(async (state) => {
+      this.transactionState = state
+      try {
+        return await operation()
+      } finally {
+        this.transactionState = undefined
+      }
+    })
+    const result = this.serial.then(owned, owned)
     this.serial = result.then(() => undefined, () => undefined)
     return result
+  }
+
+  private get challenges(): PersonalPairingTransactionState['challenges'] { return this.requireTransactions().challenges }
+  private get settledChallenges(): PersonalPairingTransactionState['settledChallenges'] {
+    return this.requireTransactions().settledChallenges
+  }
+  private get completions(): PersonalPairingTransactionState['completions'] { return this.requireTransactions().completions }
+  private get pending(): PersonalPairingTransactionState['pending'] { return this.requireTransactions().pending }
+  private get settledPending(): PersonalPairingTransactionState['settledPending'] {
+    return this.requireTransactions().settledPending
+  }
+  private get pairings(): PersonalPairingTransactionState['pairings'] { return this.requireTransactions().pairings }
+  private get principalIds(): PersonalPairingTransactionState['principalIds'] { return this.requireTransactions().principalIds }
+  private get orphanPendingCleanups(): PersonalPairingTransactionState['orphanPendingCleanups'] {
+    return this.requireTransactions().orphanPendingCleanups
+  }
+
+  private requireTransactions(): PersonalPairingTransactionState {
+    if (this.transactionState === undefined) throw new Error('Personal Pairing transaction state is not owned')
+    return this.transactionState
+  }
+}
+
+function createPairingTransactionState(): PersonalPairingTransactionState {
+  return {
+    challenges: new Map(),
+    settledChallenges: new Map(),
+    completions: new Map(),
+    pending: new Map(),
+    settledPending: new Map(),
+    pairings: new Map(),
+    principalIds: new Set(),
+    orphanPendingCleanups: new Map(),
   }
 }
 
@@ -1211,7 +1613,32 @@ function clonePairing(view: PersonalPairingView): PersonalPairingView {
     devicePrincipal: { ...view.devicePrincipal },
     device: { ...view.device },
     pairedAt: view.pairedAt,
+    lastAccessAt: view.lastAccessAt,
+    online: view.online,
   }
+}
+
+function cloneMobileAuthority(authority: MobilePairingAuthority): MobilePairingAuthority {
+  return {
+    ...authority,
+    ...(authority.sealedRelayAuthority === undefined
+      ? {}
+      : { sealedRelayAuthority: authority.sealedRelayAuthority.slice() }),
+  }
+}
+
+function sameMobileAuthority(left: MobilePairingAuthority, right: MobilePairingAuthority): boolean {
+  return left.accountId === right.accountId
+    && left.desktopInstallationId === right.desktopInstallationId
+    && left.mobileInstallationId === right.mobileInstallationId
+    && left.pendingPairingId === right.pendingPairingId
+    && left.pairingId === right.pairingId
+    && bytesEqual(left.sealedRelayAuthority, right.sealedRelayAuthority)
+}
+
+function bytesEqual(left: Uint8Array | undefined, right: Uint8Array | undefined): boolean {
+  if (left === undefined || right === undefined) return left === right
+  return left.byteLength === right.byteLength && left.every((byte, index) => byte === right[index])
 }
 
 function accessKey(accountId: string, installationId: InstallationId): string {

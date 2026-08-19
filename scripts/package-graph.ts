@@ -79,7 +79,17 @@ function comparePackages(a: PackageGraphNode, b: PackageGraphNode, groupOrder: r
   const groupB = groupOrder.indexOf(b.group)
   const normA = groupA === -1 ? Number.MAX_SAFE_INTEGER : groupA
   const normB = groupB === -1 ? Number.MAX_SAFE_INTEGER : groupB
-  return normA - normB || a.group.localeCompare(b.group) || a.short.localeCompare(b.short)
+  return normA - normB || compareCodepoints(a.group, b.group) || compareCodepoints(a.short, b.short)
+}
+
+/**
+ * Order strings by Unicode code points so generated artifacts are byte-identical across platforms.
+ * @param a - first string.
+ * @param b - second string.
+ * @returns negative when `a` sorts first, positive when `b` sorts first, zero when equal.
+ */
+export function compareCodepoints(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0
 }
 
 /** Stable Mermaid id for a graph value. */

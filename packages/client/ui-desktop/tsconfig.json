@@ -36,6 +36,9 @@
       "path": "../../platform/remote-access"
     },
     {
+      "path": "../../platform/remote-protocol"
+    },
+    {
       "path": "../../runtime-diagnostics/invariants"
     }
   ]

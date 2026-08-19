@@ -52,6 +52,8 @@ dsh --profile web --dump-config
 | [`platform/platform-account`](../packages/platform/platform-account/README.md) | Platform 身份与当前安装账号会话 | `ctx.platformAccount` |
 | [`platform/remote-protocol`](../packages/platform/remote-protocol/README.md) | 独立的 Relay Transport 与加密 Companion codec | 库，无键 |
 | [`platform/remote-access`](../packages/platform/remote-access/README.md) | Settings 所有的 Personal Pairing lifecycle 与 Companion-only Device Principal | `ctx.remoteAccess` |
+| [`platform/remote-access`](../packages/platform/remote-access/README.md) | 无状态多实例 Relay lifecycle 与 route authority seam | `ctx.remoteRelay` |
+| [`platform/remote-access-redis`](../packages/platform/remote-access-redis/README.md) | 会过期的 Relay 目录与直达密文 Pub/Sub | adapter，无键 |
 
 <a id="events"></a>
 

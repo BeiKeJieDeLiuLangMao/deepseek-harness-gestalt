@@ -233,6 +233,16 @@ describe('image draft rail', () => {
     expect(shell.snapshot.draft).toBe('同时粘贴的文字')
   })
 
+  it('intakes files through the named Add images control', () => {
+    const addImages = vi.fn(() => null)
+    const { view } = bench({ addImages })
+    const input = view.getByLabelText('添加图片') as HTMLInputElement
+    expect(input.type).toBe('file')
+    const image = new File([Uint8Array.of(1, 2, 3)], 'pixel.png', { type: 'image/png' })
+    fireEvent.change(input, { target: { files: [image] } })
+    expect(addImages).toHaveBeenCalledWith([image])
+  })
+
   it('accepts a drop anywhere on the page under the full-page overlay', () => {
     const addImages = vi.fn(() => null)
     const { view } = bench({ addImages })
@@ -385,6 +395,19 @@ describe('image draft rail', () => {
     expect(sink).toHaveBeenCalledWith('', ['draft-1'], 'queue')
     fireEvent.click(view.getByRole('button', { name: '移除图片 pixel.png' }))
     expect(removeImage).toHaveBeenCalledWith('draft-1')
+  })
+
+  it('places a Composer pin after entering annotation mode', async () => {
+    const file = new File([Uint8Array.of(1)], 'pixel.png', { type: 'image/png' })
+    const attachment = { kind: 'image' as const, id: 'draft-1' as DraftAttachmentId, file, previewUrl: 'blob:draft-1' }
+    const { view, shell } = bench({ attachments: [attachment] })
+    fireEvent.click(view.getByTitle('查看原图'))
+    fireEvent.click(view.getByRole('button', { name: '标注图片' }))
+    await view.findByRole('button', { name: '退出标注' })
+    const preview = view.getByRole('dialog', { name: '原图预览' })
+    fireEvent.click(preview.querySelector('img')!, { clientX: 20, clientY: 16 })
+    expect(shell.snapshot.annotations).toHaveLength(1)
+    expect(view.getAllByRole('button', { name: '保存注释' }).length).toBeGreaterThan(0)
   })
 
   it('opens the original image on a single click and closes it with Escape', () => {
