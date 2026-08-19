@@ -5,15 +5,14 @@
  * It provides no cryptographic security and is never selected by the production path.
  */
 
-import {
-  parsePersonalPairingKeyReference,
-  type ActivePairingKey,
-  type CompletedPairingHandshake,
-  type PairingChallengeState,
-  type PairingHandshakeChallenge,
-  type PairingHandshakeProvider,
-  type PendingPairingKey,
-  type PersonalPairingKeyReference,
+import type {
+  ActivePairingKey,
+  CompletedPairingHandshake,
+  PairingChallengeState,
+  PairingHandshakeChallenge,
+  PairingHandshakeProvider,
+  PendingPairingKey,
+  PersonalPairingKeyReference,
 } from './index.ts'
 import type { RelayCredentialGrant } from './relay.ts'
 
@@ -100,7 +99,7 @@ export class DevelopmentKeylessPairingHandshakeProvider implements PairingHandsh
     assertSecret(input.pendingPairingKey)
     const digest = await digestKeyless(KEY_REFERENCE_DOMAIN, input.pendingPairingKey)
     return {
-      keyReference: parsePersonalPairingKeyReference(`keyless-${hex(digest, 8)}`),
+      keyReference: `keyless-${hex(digest, 8)}` as PersonalPairingKeyReference,
       activePairingKey: input.pendingPairingKey.slice(),
     }
   }

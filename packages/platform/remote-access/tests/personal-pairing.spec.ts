@@ -683,6 +683,26 @@ describe('PersonalPairingProvider', () => {
     expect(handshake.destroyPendingPairing).toHaveBeenCalledOnce()
   })
 
+  it('accepts completion one millisecond before expiry and rejects at the deadline', async () => {
+    const now = { value: NOW }
+    const handshake = handshakeProvider()
+    const provider = uniquePairingProvider(handshake, now)
+    const desktop = authentication('desktop-installation', 'account-one')
+    await provider.setMobileAccess({ desktop, enabled: true })
+
+    const live = await provider.createChallenge({ desktop, rendezvousId: parsePairingRendezvousId('live-bound') })
+    now.value += PAIRING_CHALLENGE_TTL_MS - 1
+    await expect(complete(provider, live.oneTimeLink, 'live-bound')).resolves.toMatchObject({
+      device: { name: 'Alice phone' },
+    })
+
+    const expired = await provider.createChallenge({ desktop, rendezvousId: parsePairingRendezvousId('deadline') })
+    now.value += PAIRING_CHALLENGE_TTL_MS
+    await expect(complete(provider, expired.oneTimeLink, 'deadline')).rejects.toEqual(
+      expect.objectContaining<Partial<RemoteAccessError>>({ code: 'PAIRING_CHALLENGE_EXPIRED' }),
+    )
+  })
+
   it('destroys expiry, cancellation, rejection, and successful-use capabilities', async () => {
     const now = { value: NOW }
     const handshake = handshakeProvider()

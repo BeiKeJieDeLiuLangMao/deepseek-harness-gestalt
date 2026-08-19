@@ -33,16 +33,13 @@ export class DevelopmentKeylessMobileHandshakeClient implements MobilePairingHan
   async acceptDesktopHandshake(desktopHandshake: Uint8Array): Promise<void> {
     const secret = this.invitationSecret
     if (secret === undefined) throw new Error('Keyless Mobile Pairing has no prepared invitation')
-    try {
-      const expected = await deriveKeylessPairingKey(secret)
-      if (!bytesEqual(desktopHandshake, expected)) {
-        throw new TypeError('Keyless Desktop handshake does not match the invitation pairing key')
-      }
-      this.pairingKey = desktopHandshake.slice()
-    } finally {
-      secret.fill(0)
-      this.invitationSecret = undefined
+    const expected = await deriveKeylessPairingKey(secret)
+    if (!bytesEqual(desktopHandshake, expected)) {
+      throw new TypeError('Keyless Desktop handshake does not match the invitation pairing key')
     }
+    this.pairingKey = desktopHandshake.slice()
+    secret.fill(0)
+    this.invitationSecret = undefined
   }
 
   /** @returns copy of the retained 256-bit pairing key, or undefined before activation. */

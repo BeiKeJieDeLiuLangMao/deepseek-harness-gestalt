@@ -4,7 +4,6 @@
  */
 
 import { Context, Service } from '@deepseek-ai/cordis'
-import type { IncomingHttpHeaders } from 'node:http'
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import type {
   AccountProof,
@@ -186,7 +185,6 @@ export type RemoteAccessErrorCode =
   | 'PAIRING_PENDING_INVALID'
   | 'PAIRING_ID_COLLISION'
   | 'PAIRING_RESOURCE_LIMIT'
-  | 'PAIRING_SCOPE_CREDENTIAL_INVALID'
 
 /** Personal Pairing failure with a content-free stable code. */
 export class RemoteAccessError extends Error {
@@ -398,36 +396,6 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
-/** Authorization scheme carrying one pairing-scoped HMAC credential. */
-export const PAIRING_SCOPE_AUTHORIZATION_SCHEME = 'DSH-Pairing'
-
-/**
- * Pairing-scope authority consumed by pairing-scoped HTTP Consumers such as Remote Attachments.
- * Implementations never see request payloads; they resolve headers to exactly one Personal Pairing.
- */
-export interface RemoteAttachmentAuthority {
-  /**
-   * Authenticate one request to its owning Personal Pairing.
-   * @param input - complete untrusted request headers.
-   * @returns the confirmed Personal Pairing whose scope governs the request.
-   */
-  authenticate(input: { headers: IncomingHttpHeaders }): Promise<PersonalPairingId>
-}
-
-/**
- * Build the pairing-scope Authorization header value from endpoint-held pairing key material.
- * @param pairingId - confirmed Personal Pairing identity.
- * @param material - at least 32 bytes of independent pairing key material.
- * @returns `DSH-Pairing <pairingId>.<proof>` for one attachment-scope request.
- */
-export async function computePairingScopeAuthorization(
-  pairingId: PersonalPairingId,
-  material: Uint8Array,
-): Promise<string> {
-  const proof = await computePairingScopeProof(pairingId, material)
-  return `${PAIRING_SCOPE_AUTHORIZATION_SCHEME} ${pairingId}.${proof}`
-}
-
 /** Remote Access capability owning the complete Personal Pairing lifecycle. */
 export abstract class RemoteAccessService extends Service {
   /** @param ctx - Platform composition context receiving this capability. */
@@ -542,13 +510,6 @@ export abstract class RemoteAccessService extends Service {
     desktop: PairingAccountAuthentication
     pendingPairingId: PendingPairingId
   }): Promise<void>
-
-  /**
-   * Resolve one pairing-scoped credential to its confirmed Personal Pairing.
-   * @param input - complete untrusted request headers carrying a `DSH-Pairing` authorization.
-   * @returns the confirmed Personal Pairing whose independent key verifies the credential.
-   */
-  abstract authenticatePairingScope(input: { headers: IncomingHttpHeaders }): Promise<PersonalPairingId>
 }
 
 /** Durable ownership tombstone for provider-private crypto material. */
@@ -1188,35 +1149,6 @@ export class PersonalPairingProvider extends RemoteAccessService {
     })
   }
 
-  async authenticatePairingScope(input: { headers: IncomingHttpHeaders }): Promise<PersonalPairingId> {
-    return this.exclusive(async () => {
-      this.evictExpiredRecords()
-      const credential = parsePairingScopeAuthorization(input.headers.authorization)
-      const pairing = this.pairings.get(credential.pairingId)
-      if (pairing === undefined) {
-        throw new RemoteAccessError('PAIRING_SCOPE_CREDENTIAL_INVALID', 'Personal Pairing scope credential is invalid')
-      }
-      const exportMaterial = this.options.handshake.exportPairingKeyMaterial
-      if (exportMaterial === undefined) {
-        throw new Error('Personal Pairing crypto adapter cannot export pairing key material')
-      }
-      const activePairingKey = pairing.cleanup.resource
-      if (activePairingKey === undefined) {
-        throw new RemoteAccessError('PAIRING_SCOPE_CREDENTIAL_INVALID', 'Personal Pairing scope credential is invalid')
-      }
-      const material = await exportMaterial.call(this.options.handshake, activePairingKey)
-      try {
-        const expected = await computePairingScopeProof(credential.pairingId, material)
-        if (!constantTimeStringEqual(expected, credential.proof)) {
-          throw new RemoteAccessError('PAIRING_SCOPE_CREDENTIAL_INVALID', 'Personal Pairing scope credential is invalid')
-        }
-        return credential.pairingId
-      } finally {
-        material.fill(0)
-      }
-    })
-  }
-
   /** Drain instance-local incomplete crypto work while preserving durable confirmed authority. */
   async dispose(): Promise<void> {
     if (!this.ownsAuthority) {
@@ -1722,45 +1654,6 @@ function accessKey(accountId: string, installationId: InstallationId): string {
 
 function secureRandomBytes(size: number): Uint8Array {
   return crypto.getRandomValues(new Uint8Array(size))
-}
-
-const PAIRING_SCOPE_PROOF_DOMAIN = 'gestalt-pairing-scope\0'
-
-async function computePairingScopeProof(pairingId: PersonalPairingId, material: Uint8Array): Promise<string> {
-  if (material.byteLength < 32) throw new TypeError('Personal Pairing key material must contain at least 256 bits')
-  const key = await crypto.subtle.importKey('raw', new Uint8Array(material), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
-  const message = new TextEncoder().encode(`${PAIRING_SCOPE_PROOF_DOMAIN}${pairingId}`)
-  return encodeBase64Url(new Uint8Array(await crypto.subtle.sign('HMAC', key, message)))
-}
-
-function parsePairingScopeAuthorization(value: string | string[] | undefined): {
-  pairingId: PersonalPairingId
-  proof: string
-} {
-  if (typeof value !== 'string') return scopeCredentialInvalid()
-  const space = value.indexOf(' ')
-  if (space <= 0 || value.slice(0, space) !== PAIRING_SCOPE_AUTHORIZATION_SCHEME) return scopeCredentialInvalid()
-  const credential = value.slice(space + 1)
-  const dot = credential.lastIndexOf('.')
-  if (dot <= 0 || dot === credential.length - 1) return scopeCredentialInvalid()
-  const proof = credential.slice(dot + 1)
-  if (!/^[A-Za-z0-9_-]+$/u.test(proof) || !/^[A-Za-z0-9_-]+$/u.test(credential.slice(0, dot))) {
-    return scopeCredentialInvalid()
-  }
-  return { pairingId: parsePersonalPairingId(credential.slice(0, dot)), proof }
-}
-
-function scopeCredentialInvalid(): never {
-  throw new RemoteAccessError('PAIRING_SCOPE_CREDENTIAL_INVALID', 'Personal Pairing scope credential is invalid')
-}
-
-function constantTimeStringEqual(left: string, right: string): boolean {
-  if (left.length !== right.length) return false
-  let difference = 0
-  for (let index = 0; index < left.length; index += 1) {
-    difference |= left.charCodeAt(index) ^ right.charCodeAt(index)
-  }
-  return difference === 0
 }
 
 function encodeBase64Url(bytes: Uint8Array): string {

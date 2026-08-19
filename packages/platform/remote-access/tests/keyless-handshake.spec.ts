@@ -63,6 +63,9 @@ describe('DevelopmentKeylessPairingHandshakeProvider', () => {
     await expect(provider.completeChallenge({
       invitationSecret: OTHER_SECRET, challengeState: mismatched.state, mobileHandshake: Uint8Array.of(0),
     })).rejects.toThrow('does not match')
+    await expect(provider.completeChallenge({
+      invitationSecret: SECRET, challengeState: Uint8Array.of(1), mobileHandshake: Uint8Array.of(0),
+    })).rejects.toThrow('does not match')
   })
 
   it('hands both peers the same 256-bit pairing key and a distinct active allocation', async () => {

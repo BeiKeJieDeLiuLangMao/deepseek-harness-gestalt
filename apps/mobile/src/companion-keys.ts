@@ -1,51 +1,12 @@
-/** Per-Paired-Desktop key vault retained by the Mobile Personal Pairing seam. */
+/** Mobile retention of keyless Personal Pairing key material. */
 
-import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { PersonalPairingId } from '@deepseek-ai/dsh-remote-access'
 
 /** Maximum Personal Pairings whose key material one Mobile installation retains. */
 export const MAX_RETAINED_PAIRING_KEYS = 16
 
-/** Opaque Paired Desktop identity injected by the Personal Pairing seam. */
-export type CompanionDesktopId = Branded<'CompanionDesktopId'>
-
-const DESKTOP_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/
-
-/**
- * Parse a Paired Desktop identity arriving from the Personal Pairing seam.
- * @param value - untrusted desktop identifier.
- * @returns branded Paired Desktop identity.
- */
-export function parseCompanionDesktopId(value: unknown): CompanionDesktopId {
-  if (typeof value !== 'string' || !DESKTOP_ID_PATTERN.test(value)) {
-    throw new TypeError('Companion desktop id must be 1-128 base64url characters')
-  }
-  return value as CompanionDesktopId
-}
-
-/**
- * Project one confirmed Personal Pairing to its Paired Desktop identity.
- * @param pairingId - confirmed Personal Pairing identity.
- * @returns branded Paired Desktop identity naming the same pairing.
- */
-export function companionDesktopIdOfPairing(pairingId: PersonalPairingId): CompanionDesktopId {
-  return parseCompanionDesktopId(pairingId)
-}
-
-/** Per-desktop AES key source owned by the Personal Pairing seam. */
-export interface CompanionCacheKeySource {
-  /**
-   * Supply the cache encryption key derived for one Paired Desktop.
-   * @param desktopId - Paired Desktop identity.
-   * @returns non-extractable AES-GCM cache key.
-   */
-  keyFor(desktopId: CompanionDesktopId): Promise<CryptoKey>
-}
-
-const COMPANION_CACHE_HKDF_INFO = 'gestalt-companion-cache-v1'
-
-/** Retained independent pairing keys; each confirmed pairing scopes one derived cache key. */
-export class PairingCompanionKeyVault implements CompanionCacheKeySource {
+/** Retained independent pairing keys for confirmed Personal Pairings. */
+export class PairingCompanionKeyVault {
   private readonly materials = new Map<string, Uint8Array>()
 
   /**
@@ -58,26 +19,18 @@ export class PairingCompanionKeyVault implements CompanionCacheKeySource {
     if (!this.materials.has(pairingId) && this.materials.size >= MAX_RETAINED_PAIRING_KEYS) {
       throw new Error('Mobile retained Personal Pairing key limit reached')
     }
+    const previous = this.materials.get(pairingId)
+    previous?.fill(0)
     this.materials.set(pairingId, material.slice())
   }
 
-  /** @param desktopId - Paired Desktop identity owning the key. @returns non-extractable AES-GCM cache key. */
-  async keyFor(desktopId: CompanionDesktopId): Promise<CryptoKey> {
-    const material = this.materials.get(desktopId)
-    if (material === undefined) throw new Error('No retained Personal Pairing key for this Paired Desktop')
-    const hkdf = await crypto.subtle.importKey('raw', new Uint8Array(material), 'HKDF', false, ['deriveKey'])
-    return await crypto.subtle.deriveKey(
-      {
-        name: 'HKDF',
-        hash: 'SHA-256',
-        salt: new Uint8Array(0),
-        info: new TextEncoder().encode(COMPANION_CACHE_HKDF_INFO),
-      },
-      hkdf,
-      { name: 'AES-GCM', length: 256 },
-      false,
-      ['encrypt', 'decrypt'],
-    )
+  /**
+   * Read one retained pairing key.
+   * @param pairingId - confirmed Personal Pairing identity.
+   * @returns copy of the retained key material, or undefined when absent.
+   */
+  pairingKeyMaterial(pairingId: PersonalPairingId): Uint8Array | undefined {
+    return this.materials.get(pairingId)?.slice()
   }
 
   /** @param pairingId - confirmed Personal Pairing whose material is released and zeroed. */

@@ -1,11 +1,11 @@
-/** Desktop Host retention of keyless Personal Pairing key material for pairing-scoped consumers. */
+/** Desktop Host retention of keyless Personal Pairing key material. */
 
 import type { PendingPairingId, PersonalPairingId } from '@deepseek-ai/dsh-remote-access'
 
 /** Maximum Personal Pairings whose key material one Desktop installation retains. */
 export const MAX_RETAINED_DESKTOP_PAIRING_KEYS = 16
 
-/** Read seam consumed by pairing-scoped Desktop features such as Remote Attachments. */
+/** Read seam for independent pairing key material retained on this Desktop installation. */
 export interface DesktopPairingKeyAccess {
   /**
    * Read the independent key material of one confirmed Personal Pairing.
