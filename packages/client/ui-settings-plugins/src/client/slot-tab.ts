@@ -1,4 +1,4 @@
-import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
+import { resolveSlotLabel, type SlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
 
 /** One labeled settings-slot tab projected from a registration entry. */
 export interface LabeledSlotTab {
@@ -16,7 +16,7 @@ export interface LabeledSlotTab {
  * @returns the tab the section or card renders.
  */
 export function labeledSlotTab(entry: {
-  options: { id?: string; order?: number; label?: unknown }
+  options: { id?: string; order?: number; label?: SlotLabel }
 }): LabeledSlotTab {
   return {
     /* v8 ignore next -- list-slot registration requires id */
