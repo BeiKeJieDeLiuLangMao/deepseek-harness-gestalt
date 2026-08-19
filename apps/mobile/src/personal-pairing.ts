@@ -19,6 +19,8 @@ import type { MobilePairingActions, MobilePairingSnapshot } from './personal-pai
 export interface MobilePairingPushOwner {
   getState(): { token: string | undefined }
   clearToken(): void
+  forgetConnection(): void
+  releasePairing(): Promise<void>
 }
 
 /** Mobile handshake half selected by the reviewed product composition. */
@@ -76,7 +78,11 @@ export interface MobilePairingControllerOptions {
   scanner: MobilePairingQrScanner
   device: { name: string; platform: 'ios' | 'android' }
   /** Product Relay lifecycle receiving only Mobile-specific authority. */
-  relay?: { configure(grant: RelayCredentialGrant): void | Promise<void>; start(): Promise<void>; stop(): Promise<void> }
+  relay?: {
+    configure(grant?: RelayCredentialGrant): void | Promise<void>
+    start(): Promise<void>
+    stop(): Promise<void>
+  }
   /** Process-owned push token owner cleared on unpair. */
   companion?: MobilePairingPushOwner
   schedule?: (task: () => void, delayMs: number) => ReturnType<typeof setTimeout>
@@ -132,7 +138,13 @@ export class MobilePairingController implements MobilePairingActions {
       this.clearAttempt()
       await this.clearPushToken()
       await this.options.handshake.wipe?.()
-      await this.options.relay?.stop()
+      if (this.options.companion !== undefined) {
+        await this.options.companion.releasePairing()
+      }
+      if (this.options.relay !== this.options.companion) {
+        await this.options.relay?.configure(undefined)
+        await this.options.relay?.stop()
+      }
       this.publish({ status: 'ready' })
     })
   }
@@ -283,6 +295,13 @@ export class MobilePairingController implements MobilePairingActions {
     this.clearAttempt()
     this.pairedRouteId = undefined
     this.options.companion?.clearToken()
+    this.options.companion?.forgetConnection()
+    if (this.options.companion !== undefined) {
+      void this.options.companion.releasePairing()
+    }
+    if (this.options.relay !== this.options.companion) {
+      void this.options.relay?.configure(undefined)
+    }
     this.accountId = undefined
     this.snapshot = { status: 'ready' }
   }

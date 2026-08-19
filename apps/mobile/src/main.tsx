@@ -18,6 +18,7 @@ import '@deepseek-ai/dsh-client-ui-theme/src/styles/gradient-shadow-text.css'
 import {
   bindCompanionProcessVisibility,
   CompanionForegroundRuntime,
+  companionRuntime,
   installCompanionRuntime,
 } from './companion-push.ts'
 import { MobileAccount } from './MobileAccount.tsx'
@@ -60,6 +61,16 @@ const installation = new PlatformAccountInstallation({
   store: new IndexedDbInstallationAccountStore(`deepseek-gestalt-platform-account:${environment.databaseIdentity}`),
   systemBrowser: mobileSystemBrowser,
 })
+let companionVisibilityDisposer: (() => Promise<void>) | undefined
+
+/**
+ * Remove the process-lifetime visibility listeners bound by the Mobile entry.
+ * @returns settled after document listeners and a pending Capacitor handle are removed.
+ */
+export function disposeCompanionVisibility(): Promise<void> {
+  return companionVisibilityDisposer?.() ?? Promise.resolve()
+}
+
 const unavailablePairing = {
   status: 'unavailable',
   error: 'Personal Pairing waits for the independent Noise security review.',
@@ -92,16 +103,17 @@ if (environment.environment === 'development' && import.meta.env.VITE_PERSONAL_P
     attachTimeoutMs: positiveInteger(import.meta.env.VITE_REMOTE_RELAY_ATTACH_TIMEOUT_MS, 'attach timeout'),
     heartbeatIntervalMs: positiveInteger(import.meta.env.VITE_REMOTE_RELAY_HEARTBEAT_INTERVAL_MS, 'heartbeat interval'),
     reconnectDelayMs: positiveInteger(import.meta.env.VITE_REMOTE_RELAY_RECONNECT_DELAY_MS, 'reconnect delay'),
+    onCiphertext: () => { companionRuntime()?.synchronize() },
   })
   const companion = new CompanionForegroundRuntime({ relay })
   installCompanionRuntime(companion)
-  bindCompanionProcessVisibility(companion)
+  companionVisibilityDisposer = bindCompanionProcessVisibility(companion)
   pairing = new MobilePairingController({
     installation,
     transport: new RemoteAccessHttpTransport({ environment }),
     handshake: new DevelopmentKeylessMobileHandshakeClient(),
     scanner: new NativeMobilePairingQrScanner(),
-    relay,
+    relay: companion,
     companion,
     device: {
       name: navigator.userAgent.includes('Android') ? 'Android phone' : 'iPhone',

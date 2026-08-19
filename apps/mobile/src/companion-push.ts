@@ -1,6 +1,7 @@
 /** Content-free Companion foreground state and notification deep-link presentation. */
 
 import { registerPlugin } from '@capacitor/core'
+import type { RelayCredentialGrant } from '@deepseek-ai/dsh-remote-access'
 import {
   parseCompanionPushHint,
   type CompanionPushCategory,
@@ -25,6 +26,7 @@ export type CompanionDeepLinkPhase = 'foreground' | 'reconnect' | 'synchronize' 
 
 /** Relay lifecycle the foreground runtime actually starts and stops. */
 export interface CompanionRelayLifecycle {
+  configure?(grant?: RelayCredentialGrant): void
   start(): Promise<void>
   stop(): Promise<void>
   isConnected(): boolean
@@ -122,6 +124,8 @@ export function clearCompanionPushToken(state: CompanionPushState): CompanionPus
 /** Process-owned foreground, socket, token, and synchronization state. */
 export class CompanionForegroundRuntime {
   private state: CompanionPushState
+  private granted = false
+  private transition: Promise<void> = Promise.resolve()
   private readonly relay: CompanionRelayLifecycle | undefined
   private readonly listeners = new Set<() => void>()
 
@@ -149,32 +153,68 @@ export class CompanionForegroundRuntime {
   }
 
   /**
-   * Apply OS visibility. Background stops the real Relay socket; foreground starts
-   * it and records `socketOpen` only after `isConnected()`.
+   * Set or drop pairing-delivered Relay authority. Clearing the grant is
+   * synchronous so a later visibility `start()` cannot attach.
+   * @param grant - Mobile-specific authority, or `undefined` to drop it.
+   */
+  configure(grant?: RelayCredentialGrant): void {
+    this.granted = grant !== undefined
+    this.relay?.configure?.(grant)
+    if (grant === undefined) {
+      this.state = { ...this.state, socketOpen: false, synchronized: false }
+      this.publish()
+    }
+  }
+
+  /**
+   * Attach after pairing confirmation. Shares the runtime transition queue
+   * with visibility so a late `stop()` cannot tear down a newer `start()`.
+   */
+  async start(): Promise<void> {
+    await this.enqueue(() => this.startOwned())
+  }
+
+  /**
+   * Stop and drain the current Mobile attachment through the shared queue.
+   */
+  async stop(): Promise<void> {
+    await this.enqueue(() => this.stopOwned())
+  }
+
+  /**
+   * Apply OS visibility. Background stops the real Relay socket; foreground
+   * starts it only while a grant is present and records `socketOpen` only
+   * after `isConnected()`.
    * @param foreground - next visibility.
    */
   async setForeground(foreground: boolean): Promise<void> {
-    this.state = setCompanionForeground(this.state, foreground)
-    this.publish()
-    if (!foreground) {
-      await this.relay?.stop()
-      return
-    }
-    if (this.relay === undefined) return
-    try {
-      await this.relay.start()
-    } catch (error) {
-      // Unconfigured Mobile Relay has no grant; visibility must not fabricate a socket.
-      if (error instanceof Error && error.message === 'Mobile Relay authority is unavailable') return
-      throw error
-    }
-    if (this.relay.isConnected()) this.state = markCompanionSocketOpen(this.state)
+    await this.enqueue(() => this.applyForeground(foreground))
+  }
+
+  /**
+   * Mark Desktop-authoritative synchronization after a real reconnect.
+   * The product caller is `MobileRelayEndpointLifecycle` `onCiphertext`
+   * after Desktop resync ciphertext arrives.
+   */
+  synchronize(): void {
+    this.state = markCompanionSynchronized(this.state)
     this.publish()
   }
 
-  /** Mark Desktop-authoritative synchronization after a real reconnect. */
-  synchronize(): void {
-    this.state = markCompanionSynchronized(this.state)
+  /**
+   * Drop pairing-delivered authority, reset the socket flags, and stop the
+   * Relay through the shared transition queue.
+   */
+  async releasePairing(): Promise<void> {
+    this.configure(undefined)
+    await this.enqueue(() => this.stopOwned())
+  }
+
+  /**
+   * Reset socket and synchronization flags without dropping the local token.
+   */
+  forgetConnection(): void {
+    this.state = { ...this.state, socketOpen: false, synchronized: false }
     this.publish()
   }
 
@@ -191,6 +231,35 @@ export class CompanionForegroundRuntime {
   clearToken(): void {
     this.state = clearCompanionPushToken(this.state)
     this.publish()
+  }
+
+  private enqueue(operation: () => Promise<void>): Promise<void> {
+    const result = this.transition.then(operation, operation)
+    this.transition = result.then(() => undefined, () => undefined)
+    return result
+  }
+
+  private async applyForeground(foreground: boolean): Promise<void> {
+    this.state = setCompanionForeground(this.state, foreground)
+    this.publish()
+    if (!foreground) {
+      await this.stopOwned()
+      return
+    }
+    await this.startOwned()
+  }
+
+  private async startOwned(): Promise<void> {
+    if (this.relay === undefined || !this.granted || !this.state.foreground) return
+    await this.relay.start()
+    if (this.relay.isConnected()) {
+      this.state = markCompanionSocketOpen(this.state)
+      this.publish()
+    }
+  }
+
+  private async stopOwned(): Promise<void> {
+    await this.relay?.stop()
   }
 
   private publish(): void {
@@ -224,28 +293,37 @@ export function companionRuntime(): CompanionForegroundRuntime | undefined {
 /**
  * Bind document visibility and Capacitor app state to the real Relay lifecycle.
  * @param runtime - process-owned foreground runtime.
- * @returns disposer.
+ * @param hooks - optional App-state listener factory; omitted in the product entry.
+ * @returns disposer that waits for a pending Capacitor handle before `remove()`.
  */
-export function bindCompanionProcessVisibility(runtime: CompanionForegroundRuntime): () => void {
+export function bindCompanionProcessVisibility(
+  runtime: CompanionForegroundRuntime,
+  hooks: {
+    listenAppState?: (listener: (active: boolean) => void) => Promise<{ remove: () => Promise<void> }>
+  } = {},
+): () => Promise<void> {
   const onVisibility = (): void => {
     void runtime.setForeground(document.visibilityState === 'visible')
   }
   const onPageHide = (): void => { void runtime.setForeground(false) }
   document.addEventListener('visibilitychange', onVisibility)
   window.addEventListener('pagehide', onPageHide)
-  let removeCapacitor: (() => void) | undefined
-  try {
-    const App = registerPlugin<CapacitorAppPlugin>('App')
-    void App.addListener('appStateChange', (state) => { void runtime.setForeground(state.isActive) })
-      .then((handle) => { removeCapacitor = () => { void handle.remove() } }, () => {
-        // Capacitor App plugin is absent in web and jsdom.
-      })
-  } catch {
-    // registerPlugin throws when Capacitor native bridges are unavailable.
-  }
-  return () => {
+  const pendingHandle = Promise.resolve()
+    .then(() => (hooks.listenAppState ?? listenCapacitorAppState)((active) => {
+      void runtime.setForeground(active)
+    }))
+    .then(handle => handle, () => undefined)
+  return async () => {
     document.removeEventListener('visibilitychange', onVisibility)
     window.removeEventListener('pagehide', onPageHide)
-    removeCapacitor?.()
+    const handle = await pendingHandle
+    if (handle !== undefined) await handle.remove()
   }
+}
+
+function listenCapacitorAppState(
+  listener: (active: boolean) => void,
+): Promise<{ remove: () => Promise<void> }> {
+  const App = registerPlugin<CapacitorAppPlugin>('App')
+  return App.addListener('appStateChange', (state) => { listener(state.isActive) })
 }

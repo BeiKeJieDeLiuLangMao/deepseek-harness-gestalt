@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import 'fake-indexeddb/auto'
 import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react'
+import { parseRelayCredential, parseRelayRouteId } from '@deepseek-ai/dsh-remote-protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const browserOpen = vi.hoisted(() => vi.fn<(options: { url: string }) => Promise<void>>())
@@ -9,6 +10,7 @@ const relayLifecycle = vi.hoisted(() => ({
   start: vi.fn(async () => {}),
   stop: vi.fn(async () => {}),
   isConnected: vi.fn(() => false),
+  onCiphertext: undefined as (() => void) | undefined,
 }))
 
 vi.mock('@capacitor/browser', () => ({ Browser: { open: browserOpen } }))
@@ -17,6 +19,9 @@ vi.mock('@deepseek-ai/dsh-remote-access-client', async (importOriginal) => {
   return {
     ...actual,
     MobileRelayEndpointLifecycle: class {
+      constructor(options: { onCiphertext?: () => void } = {}) {
+        relayLifecycle.onCiphertext = options.onCiphertext
+      }
       configure = relayLifecycle.configure
       start = relayLifecycle.start
       stop = relayLifecycle.stop
@@ -33,6 +38,7 @@ afterEach(() => {
   relayLifecycle.stop.mockReset()
   relayLifecycle.isConnected.mockReset()
   relayLifecycle.isConnected.mockReturnValue(false)
+  relayLifecycle.onCiphertext = undefined
   localStorage.clear()
   vi.unstubAllEnvs()
   vi.unstubAllGlobals()
@@ -123,6 +129,12 @@ describe('Mobile Platform Account entry', () => {
     const runtime = companionRuntime()
     if (runtime === undefined) throw new Error('expected companion runtime')
     expect(companionMayMutate(runtime.getState())).toBe(false)
+    runtime.configure({
+      routeId: parseRelayRouteId('route-entry'),
+      endpoint: 'mobile',
+      credential: parseRelayCredential('AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE'),
+      revision: 1,
+    })
 
     hidden = true
     document.dispatchEvent(new Event('visibilitychange'))
@@ -142,6 +154,19 @@ describe('Mobile Platform Account entry', () => {
     expect(settleCompanionInteraction({
       operationId: 'op-approve', kind: 'approval', summary: 'write a.ts', authorized: ['once'],
     }, { accepted: true, decision: 'once' }, runtime.getState()).settled).toBeUndefined()
+
+    if (relayLifecycle.onCiphertext === undefined) throw new Error('expected Desktop resync listener')
+    relayLifecycle.onCiphertext()
+    expect(runtime.getState().synchronized).toBe(true)
+    expect(companionMayMutate(runtime.getState())).toBe(true)
+    expect(settleCompanionInteraction({
+      operationId: 'op-approve', kind: 'approval', summary: 'write a.ts', authorized: ['once'],
+    }, { accepted: true, decision: 'once' }, runtime.getState()).settled).toEqual({ decision: 'once' })
+
+    hidden = true
+    document.dispatchEvent(new Event('visibilitychange'))
+    await waitFor(() => { expect(companionMayMutate(runtime.getState())).toBe(false) })
+    expect(runtime.getState()).toMatchObject({ foreground: false, socketOpen: false, synchronized: false })
   })
 })
 
