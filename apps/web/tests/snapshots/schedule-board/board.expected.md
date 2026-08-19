@@ -5,7 +5,7 @@
     - listitem:
       - text: Once
       - strong: Audit CI
-      - text: Jan 1, {{clock}} PM · Waiting Waiting
+      - text: Jan 1, {{clock}} · Waiting Waiting
       - button "Pause Audit CI":
         - img
       - button "Delete Audit CI":
@@ -13,7 +13,7 @@
     - listitem:
       - text: Once
       - strong: Send release notes
-      - text: Jan 1, {{clock}} PM · Overdue Overdue
+      - text: Jan 1, {{clock}} · Overdue Overdue
       - button "Pause Send release notes":
         - img
       - button "Delete Send release notes":
@@ -21,7 +21,7 @@
     - listitem:
       - text: Every 7 d
       - strong: Paused review
-      - text: Jan 1, {{clock}} PM · Paused Paused
+      - text: Jan 1, {{clock}} · Paused Paused
       - button "Resume Paused review":
         - img
       - button "Delete Paused review":

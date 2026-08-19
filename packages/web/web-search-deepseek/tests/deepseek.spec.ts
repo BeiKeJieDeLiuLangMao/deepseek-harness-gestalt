@@ -6,7 +6,7 @@ import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import LocalCredentialProvider from '@deepseek-ai/dsh-credentials-local'
-import WebRuntime from '@deepseek-ai/dsh-web'
+import WebRuntime, { WebError } from '@deepseek-ai/dsh-web'
 import {
   DeepSeekSearchProvider,
   DEEPSEEK_PROVIDER_ID,
@@ -559,14 +559,19 @@ describe('Moonshot dedicated search', () => {
   })
 
   it('names a non-ASCII API key instead of throwing a ByteString error', async () => {
-    await expect(searchProvider({
-      ...options,
-      protocol: 'moonshot-search',
-      baseURL: 'https://api.moonshot.cn/v1/search',
-      apiKey: '密钥',
-    }).search({ query: 'q' })).rejects.toMatchObject({
-      code: 'WEB_PROVIDER_ERROR',
-      message: expect.stringContaining('header "authorization" is not ASCII'),
-    })
+    try {
+      await searchProvider({
+        ...options,
+        protocol: 'moonshot-search',
+        baseURL: 'https://api.moonshot.cn/v1/search',
+        apiKey: '密钥',
+      }).search({ query: 'q' })
+      expect.unreachable('expected a WebError')
+    } catch (error) {
+      expect(error).toBeInstanceOf(WebError)
+      if (!(error instanceof WebError)) return
+      expect(error.code).toBe('WEB_PROVIDER_ERROR')
+      expect(error.message).toContain('header "authorization" is not ASCII')
+    }
   })
 })

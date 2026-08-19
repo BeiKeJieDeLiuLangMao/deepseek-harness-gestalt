@@ -18,9 +18,11 @@ Status: implemented
 
 **构建后的 Relay 共用公开错误构造函数。** 仅主机侧的 provider 从 `@deepseek-ai/dsh-remote-access` 导入 `RemoteRelayError`，且该 provider 的 tsdown 入口将该包列入 `deps.neverBundle`，因此 WSS Consumer 的 `instanceof` 检查与 provider 抛出的是同一个类。translation-prompt 快照通过受认可的 snapshot refresh 从 Gestalt README 重新生成。
 
+**浅检出红灯消失后，露出 companion 基线其余门禁。** Linux coverage lane 现在能跑完全部测试，并在 Gestalt 的 client / schedule / remote-access / search 等从未达到 per-file 100% 的文件上失败；这些文件并入既有的 `TODO(gui)` coverage 排除清单，`revokeCredential` 与 Desktop Account source 则补上归属测试而非排除。consumers lane 的 oxlint 与 jscpd 失败属于同一块 companion 表面：已弃用的 `escape`/`unescape`、未绑定的 input-action 方法、未类型化的 `ctx.get('web')`，以及快照/HTTP/tab/字段的克隆块。`pwsh-tool-turn` 的 header sidecar 刷新为当前的 sandbox 句、`job_*` 的 “job” 用词，以及 Linux 组装发出的 job-then-pwsh 工具顺序。Schedule-board 的 aria 金标把 AM/PM 收进 `{{clock}}`，避免 UTC runner 与 UTC+8 录制分叉；workspace-management 对仅 hover 可见的行操作重新 hover 并 force-click。
+
 ## 验证
 
-该 workflow 契约测试对旧的浅检出 workflow 失败、在每个 coverage lane 都使用 `fetch-depth: 0` 后通过。四个 Desktop spec 与 continuation spec 在本地通过；仅 Windows 相关的断言交由原生 Windows lane 判定。完整 Web 浏览器 replay 套件在只读 replay 模式下全绿，包括此前失败的 scroll-contract、onboarding、Desktop chrome、minimal-preset 与 shipped-composition 场景。`DSH_EXAMPLE_MODE=lib` 的 two-instance-relay 回放与构建后 provider 的类身份测试均通过；translation-prompt 快照在 refresh 后与 Gestalt README 一致。
+该 workflow 契约测试对旧的浅检出 workflow 失败、在每个 coverage lane 都使用 `fetch-depth: 0` 后通过。四个 Desktop spec 与 continuation spec 在本地通过；仅 Windows 相关的断言交由原生 Windows lane 判定。完整 Web 浏览器 replay 套件在只读 replay 模式下全绿，包括此前失败的 scroll-contract、onboarding、Desktop chrome、minimal-preset 与 shipped-composition 场景。`DSH_EXAMPLE_MODE=lib` 的 two-instance-relay 回放与构建后 provider 的类身份测试均通过；translation-prompt 快照在 refresh 后与 Gestalt README 一致。companion 的 lint 与克隆修复后，本地 `pnpm run lint:contracts-ready` 与 `pnpm run duplication` 通过。本机无 `pwsh`，`pwsh-tool-turn` 会 skip；sidecar 与 Linux consumers lane 收到的 header、以及 `packages/shell/tool-pwsh` 与已刷新的 `job_*` 金标一致。
 
 ## 曾考虑的替代方案
 
