@@ -10,7 +10,7 @@
 
 Mobile 仅在完整链接与保留能力相符后消费邀请。跨账号尝试会在密码适配器运行前销毁邀请。有效的同账号握手生成待确认密钥与握手哈希；六个派生认证词会出现在两个安装上，但活跃配对列表在 Desktop 确认前保持为空。确认会激活唯一且由提供方拥有的密钥引用，并授予带品牌的设备主体，其权限严格等于 `companion-surface`。
 
-变更串行执行。过期、取消、拒绝、关闭手机访问与一次成功完成都会先提交终态，使另一项变更无法再观察该能力。密码资源销毁可以独立重试：清理失败不会重复完成握手或激活配对，提供方释放资源时会尝试处理每项挑战、待确认密钥、活跃密钥与清理记录。挑战创建时就调度过期任务，不会等待另一项完成请求。不透明生成 id 与已激活密钥引用都会在插入前判重，因此碰撞不能覆盖既有记录，也不能遗弃新分配的密钥。
+变更串行执行。过期、取消、拒绝、关闭手机访问与一次成功完成都会先提交终态，使另一项变更无法再观察该能力。组合了推送存储时，单独撤销会删除该 Mobile 安装在 Desktop route 上的 token，关闭手机访问会删除被撤销 route 上的全部 token。密码资源销毁可以独立重试：清理失败不会重复完成握手或激活配对，提供方释放资源时会尝试处理每项挑战、待确认密钥、活跃密钥与清理记录。挑战创建时就调度过期任务，不会等待另一项完成请求。不透明生成 id 与已激活密钥引用都会在插入前判重，因此碰撞不能覆盖既有记录，也不能遗弃新分配的密钥。
 
 ## 密码适配器
 
@@ -119,7 +119,7 @@ abstract cancelChallenge(input: { desktop: PairingAccountAuthentication challeng
 abstract rejectPairing(input: { desktop: PairingAccountAuthentication pendingPairingId: PendingPairingId }): Promise<void>
 ```
 
-Source: [`packages/platform/remote-access/src/index.ts:393`](../../packages/platform/remote-access/src/index.ts)
+Source: [`packages/platform/remote-access/src/index.ts:411`](../../packages/platform/remote-access/src/index.ts)
 
 <a id="ctxremoterelay--remoterelayservice-abstract-seam"></a>
 

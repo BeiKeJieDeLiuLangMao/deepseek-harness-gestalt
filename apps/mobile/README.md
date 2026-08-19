@@ -15,5 +15,5 @@ pnpm --filter @deepseek-ai/dsh-mobile build
 ## Known Limitations and Deferred Work
 
 - Production pairing remains unavailable until the independent Noise review admits a reviewed handshake provider. `VITE_PERSONAL_PAIRING_KEYLESS=1` selects the real development controller and explicitly unreviewed keyless Mobile handshake only when the selected Platform environment is development. That mode also requires `VITE_REMOTE_RELAY_WSS_URL`, `VITE_REMOTE_RELAY_ATTACH_TIMEOUT_MS`, `VITE_REMOTE_RELAY_HEARTBEAT_INTERVAL_MS`, `VITE_REMOTE_RELAY_RECONNECT_DELAY_MS`, `VITE_REMOTE_RELAY_INBOUND_MAX_BYTES`, and `VITE_REMOTE_RELAY_INBOUND_MAX_MESSAGES`; all are validated before the app renders.
-- Remote Companion traffic, push, and attachment flows are outside this shell.
+- Remote Companion traffic and attachment flows are outside this shell. Content-free push routing and foreground-sync-before-action live in `companion-push.ts`; native APNs/FCM registration and real-device delivery remain outside this shell.
 - Native iOS/Android project generation and device packaging remain outside this shell; the checked-in composition includes the Capacitor system-browser adapter and shared WebView Account lifecycle.

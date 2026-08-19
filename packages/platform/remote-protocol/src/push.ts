@@ -10,8 +10,10 @@ import { parseRelayRouteId } from './relay.ts'
 import type { CompanionPushToken, RelayRouteId } from './types.ts'
 
 const IDENTIFIER_PATTERN = /^[A-Za-z0-9_-]+$/u
-const MAX_IDENTIFIER_CHARACTERS = 128
-const MAX_TOKEN_CHARACTERS = 4_096
+/** Exact session-routing-reference character ceiling. */
+export const COMPANION_PUSH_SESSION_REF_MAX_CHARACTERS = 128
+/** Exact device-token character ceiling. */
+export const COMPANION_PUSH_TOKEN_MAX_CHARACTERS = 4_096
 
 /** Every generic Companion push category; streaming chunks have no category and never produce a hint. */
 export const COMPANION_PUSH_CATEGORIES = ['approval', 'question', 'turn-complete', 'failure'] as const
@@ -61,6 +63,28 @@ export function parseCompanionPushHint(value: unknown): CompanionPushHint {
   return hint
 }
 
+/** Desktop-confirmed event that may produce a content-free hint. Streaming never does. */
+export type CompanionPushEventKind = CompanionPushCategory | 'streaming'
+
+/**
+ * Build a content-free hint from a Desktop-confirmed event. Streaming chunks
+ * have no category and return `undefined`, so they cannot fan out.
+ * @param event - confirmed event plus the opaque routing reference.
+ * @returns the hint, or `undefined` for streaming.
+ */
+export function companionPushHintForEvent(event: {
+  kind: CompanionPushEventKind
+  routeId: RelayRouteId
+  sessionRef?: string
+}): CompanionPushHint | undefined {
+  if (event.kind === 'streaming') return undefined
+  return parseCompanionPushHint({
+    category: event.kind,
+    routeId: event.routeId,
+    ...(event.sessionRef === undefined ? {} : { sessionRef: event.sessionRef }),
+  })
+}
+
 /**
  * Parse a generic push category at a wire boundary.
  * @param value - untrusted wire value.
@@ -80,7 +104,7 @@ export function parseCompanionPushCategory(value: unknown): CompanionPushCategor
  * @returns branded push token.
  */
 export function parseCompanionPushToken(value: unknown): CompanionPushToken {
-  if (typeof value !== 'string' || value.length === 0 || value.length > MAX_TOKEN_CHARACTERS
+  if (typeof value !== 'string' || value.length === 0 || value.length > COMPANION_PUSH_TOKEN_MAX_CHARACTERS
     || /\s/u.test(value)) {
     invalid('Companion push token must be 1-4096 non-whitespace characters')
   }
@@ -144,9 +168,10 @@ export function buildFcmPushMessage(hint: CompanionPushHint, token: CompanionPus
 }
 
 function parseSessionRef(value: unknown): string {
-  if (typeof value !== 'string' || value.length === 0 || value.length > MAX_IDENTIFIER_CHARACTERS
+  if (typeof value !== 'string' || value.length === 0
+    || value.length > COMPANION_PUSH_SESSION_REF_MAX_CHARACTERS
     || !IDENTIFIER_PATTERN.test(value)) {
-    invalid(`Companion push sessionRef must be 1-${String(MAX_IDENTIFIER_CHARACTERS)} base64url characters`)
+    invalid(`Companion push sessionRef must be 1-${String(COMPANION_PUSH_SESSION_REF_MAX_CHARACTERS)} base64url characters`)
   }
   return value
 }

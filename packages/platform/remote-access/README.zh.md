@@ -12,6 +12,8 @@ QR 载荷与完整的一次性 HTTPS 链接完全相同，携带 256 位邀请�
 
 `ctx.remoteRelay` 拥有无状态多实例 Relay 生命周期。32 字节可轮换 Desktop 凭据在进入持久 `RelayRouteStore` 前会被哈希；已确认的 Mobile endpoint 在同一 route revision 获得独立签发的凭据，仅凭不透明 route id 无法 attach。每个 Platform Instance 先鉴权 attachment 并刷出 ready，再把它注册到会过期的共享目录，并直接发布到目标实例。跨实例事件只包含有界 Relay 密文、带品牌 transport id、连接 token 与 route revision。目标缺失时返回 `REMOTE_OFFLINE`，不存在离线密文或 mutation queue。容量限制只拒绝新 attachment，慢消费者在配置的字节上限处断开，心跳重新验证 route 权限，轮换或撤销会跨实例使旧在线 attachment 失效。
 
+无内容推送留在远程访问内部。`PersonalPairingProvider` 可组合 token 存储与投递适配器：仅在 Mobile 安装已拥有该 route 后登记 token，把 Desktop 确认的通用提示扇出到该 route 的 token，并在 Mobile 解除配对、单独撤销或关闭手机访问时删除对应 token。APNs 与 FCM 适配器通过注入的 transport 投影协议载荷，不会追加内容。流式事件不会产生提示。每天 500 条提示的配额仍由开放注册准入计数器拥有，本扇出不执行该配额。
+
 部署持久状态仅限 route identity、credential digest、单调 revision 与撤销／关联状态。临时协调仅限会过期的 attachment 位置、失效事件与直达密文 Pub/Sub。实例退出会关闭其 socket；Mobile 与 Desktop 获取新的 non-sticky 连接，Desktop 发送权威加密 resync，而不迁移在线 socket。容量、目录、心跳、缓冲、连接与 attach timeout 都是组合中显式校验的配置值。
 
 ## Model Experience
@@ -27,3 +29,4 @@ QR 载荷与完整的一次性 HTTPS 链接完全相同，携带 256 位邀请�
 - 在独立评审者接受 Snow 证明且组装经过评审的 `PairingHandshakeProvider` 之前，产品激活保持 fail-closed。
 - 个人配对 challenge 与待确认握手记录仍使用随附的单进程提供方。已确认的 pairing-to-route/access 权限与 Relay route store 都是部署拥有的 seam；本仓库不供应 PostgreSQL、Redis、TLS 或云实例。
 - Relay transport 可用不等于产品加密获批。在独立 Noise gate 接纳经过评审的握手与 Companion channel provider 之前，生产 Desktop 组合保持 fail-closed。
+- 推送 token 登记、注销与提示发布是 `PersonalPairingProvider` 方法。配对 HTTP 消费方尚未暴露它们。原生 APNs/FCM 凭据与真机投递仍由部署拥有。

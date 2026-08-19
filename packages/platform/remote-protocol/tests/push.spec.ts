@@ -2,8 +2,11 @@ import { describe, expect, it } from 'vitest'
 import {
   buildApnsPushPayload,
   buildFcmPushMessage,
+  companionPushHintForEvent,
   COMPANION_PUSH_CATEGORIES,
+  COMPANION_PUSH_SESSION_REF_MAX_CHARACTERS,
   COMPANION_PUSH_TITLES,
+  COMPANION_PUSH_TOKEN_MAX_CHARACTERS,
   parseCompanionPushCategory,
   parseCompanionPushHint,
   parseCompanionPushToken,
@@ -47,9 +50,34 @@ describe('Companion push hint vocabulary', () => {
 
   it('accepts bounded non-whitespace device tokens only', () => {
     expect(parseCompanionPushToken('fcm-registration-token')).toBe('fcm-registration-token')
+    expect(parseCompanionPushToken('x'.repeat(COMPANION_PUSH_TOKEN_MAX_CHARACTERS)))
+      .toHaveLength(COMPANION_PUSH_TOKEN_MAX_CHARACTERS)
     expect(() => parseCompanionPushToken('')).toThrow('push token')
     expect(() => parseCompanionPushToken('with space')).toThrow('push token')
-    expect(() => parseCompanionPushToken('x'.repeat(4_097))).toThrow('push token')
+    expect(() => parseCompanionPushToken('x'.repeat(COMPANION_PUSH_TOKEN_MAX_CHARACTERS + 1)))
+      .toThrow('push token')
+  })
+
+  it('accepts sessionRef at its exact character ceiling and rejects one extra character', () => {
+    const sessionRef = 's'.repeat(COMPANION_PUSH_SESSION_REF_MAX_CHARACTERS)
+    expect(parseCompanionPushHint({ category: 'failure', routeId: 'route-one', sessionRef }))
+      .toEqual({ category: 'failure', routeId: 'route-one', sessionRef })
+    expect(() => parseCompanionPushHint({
+      category: 'failure',
+      routeId: 'route-one',
+      sessionRef: `${sessionRef}x`,
+    })).toThrow('sessionRef')
+  })
+
+  it('emits no hint for streaming chunks and a generic hint for the four attention events', () => {
+    const routeId = parseRelayRouteId('route-one')
+    expect(companionPushHintForEvent({ kind: 'streaming', routeId, sessionRef: 'session-one' }))
+      .toBeUndefined()
+    expect(companionPushHintForEvent({ kind: 'approval', routeId, sessionRef: 'session-one' }))
+      .toEqual({ category: 'approval', routeId, sessionRef: 'session-one' })
+    expect(companionPushHintForEvent({ kind: 'question', routeId })?.category).toBe('question')
+    expect(companionPushHintForEvent({ kind: 'turn-complete', routeId })?.category).toBe('turn-complete')
+    expect(companionPushHintForEvent({ kind: 'failure', routeId })?.category).toBe('failure')
   })
 
   it('projects APNs and FCM payloads containing only the category and routing reference', () => {
