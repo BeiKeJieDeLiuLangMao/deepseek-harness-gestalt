@@ -1,0 +1,65 @@
+# Build the Platform container. Push to GHCR only when explicitly requested.
+name: Platform Image
+
+on:
+  pull_request:
+    paths:
+      - 'apps/platform/**'
+      - '.github/workflows/platform-image.yml'
+  workflow_dispatch:
+    inputs:
+      push:
+        description: Push the image to GHCR
+        required: true
+        type: boolean
+        default: false
+
+concurrency:
+  group: platform-image-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}/platform
+
+jobs:
+  build:
+    name: Build Platform image
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        if: github.event_name == 'workflow_dispatch' && inputs.push
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,format=long
+            type=raw,value=latest,enable=${{ github.event_name == 'workflow_dispatch' && inputs.push }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: apps/platform
+          file: apps/platform/Dockerfile
+          push: ${{ github.event_name == 'workflow_dispatch' && inputs.push }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

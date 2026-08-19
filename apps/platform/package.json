@@ -1,0 +1,11 @@
+{
+  "name": "@deepseek-ai/dsh-platform",
+  "private": true,
+  "version": "0.1.0-rc.7",
+  "license": "MIT",
+  "type": "module",
+  "description": "Platform composition image: HTTP listen process packaged by GitHub Actions",
+  "bin": {
+    "dsh-platform": "./server.mjs"
+  }
+}
