@@ -6,7 +6,7 @@
 import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import type { InputTriggerServiceContract } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
-import { WORKSPACE_REFERENCE_INVOCATIONS } from '@deepseek-ai/dsh-workspace-reference/src/contract.ts'
+import { WORKSPACE_REFERENCE_INVOCATIONS } from './invocations.ts'
 import { createWorkspaceSource } from './source.ts'
 import type { WorkspacePathEntry } from './rank.ts'
 
