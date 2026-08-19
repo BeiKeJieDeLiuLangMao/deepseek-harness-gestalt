@@ -899,6 +899,9 @@ importers:
       '@deepseek-ai/dsh-tools':
         specifier: workspace:*
         version: link:../packages/core/tools
+      '@deepseek-ai/dsh-typert-registry':
+        specifier: workspace:*
+        version: link:../packages/typert/registry
       '@deepseek-ai/dsh-user-approval':
         specifier: workspace:*
         version: link:../packages/interaction/user-approval
@@ -914,6 +917,9 @@ importers:
       '@deepseek-ai/dsh-workflow-worker-thread':
         specifier: workspace:*
         version: link:../packages/workflow/workflow-worker-thread
+      '@deepseek-ai/dsh-workspace-reference':
+        specifier: workspace:*
+        version: link:../packages/context/workspace-reference
     devDependencies:
       '@modelcontextprotocol/server-everything':
         specifier: ^2026.7.4
@@ -3358,9 +3364,6 @@ importers:
       '@deepseek-ai/cordis':
         specifier: workspace:^
         version: link:../../../vendor/cordis
-      '@deepseek-ai/dsh-api-remotes':
-        specifier: workspace:^
-        version: link:../../api/remotes
       '@deepseek-ai/dsh-client-locale':
         specifier: workspace:^
         version: link:../locale

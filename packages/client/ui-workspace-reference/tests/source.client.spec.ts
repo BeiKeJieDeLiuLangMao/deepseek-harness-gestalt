@@ -67,4 +67,42 @@ describe('createWorkspaceSource', () => {
     const stop = source.subscribeLexicon?.(SESSION, () => {})
     stop?.()
   })
+
+  it('invalidates a cached index and rethrows a failed fetch', async () => {
+    let calls = 0
+    const source = Object.assign(createWorkspaceSource(async () => {
+      calls += 1
+      if (calls === 1) throw new Error('boom')
+      return FILES
+    }), {})
+    const withInvalidate = source as typeof source & { invalidate(id: SessionId): void }
+    source.warm?.(SESSION)
+    await expect(source.candidates(SESSION, {
+      query: '',
+      position: 'leading',
+      signal: SIGNAL,
+    })).rejects.toThrow('boom')
+    withInvalidate.invalidate('missing' as SessionId)
+    const heard: number[] = []
+    const stop = source.subscribeLexicon?.(SESSION, () => { heard.push(1) })
+    expect(await source.candidates(SESSION, {
+      query: '',
+      position: 'leading',
+      signal: SIGNAL,
+    })).toHaveLength(2)
+    withInvalidate.invalidate(SESSION.sessionId)
+    expect(heard).toEqual([1, 1])
+    const extra = source.subscribeLexicon?.(SESSION, () => {})
+    extra?.()
+    stop?.()
+    expect(source.codec?.clipboardText('src/a.ts')).toBe('@src/a.ts')
+    await expect(source.codec?.serialize('src/a.ts', SIGNAL)).resolves.toBe('@src/a.ts')
+    expect(source.onPick({
+      candidate: { name: 'plain', description: 'plain' },
+      session: SESSION,
+      position: 'leading',
+      via: 'menu',
+      span: { start: 0, end: 1, draftRev: 0 },
+    })).toEqual({ text: '@plain ' })
+  })
 })

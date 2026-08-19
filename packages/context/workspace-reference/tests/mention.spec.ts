@@ -77,6 +77,22 @@ describe('expandMentions', () => {
     )
     expect(injections).toEqual([])
   })
+
+  it('returns nothing for a relative cwd and ignores non-text blocks', async () => {
+    const image = createUserMessage({
+      content: [{ type: 'image', mimeType: 'image/png', data: 'x' } as never],
+      source: { kind: 'user' },
+    })
+    expect(await expandMentions([image, userText('@README.md')], 'relative', fsOf({ 'README.md': 'file' }), SIGNAL)).toEqual([])
+    expect(await expandMentions([image], CWD, fsOf({}), SIGNAL)).toEqual([])
+    const injections = await expandMentions(
+      [userText('@README.md'), userText('again @README.md')],
+      CWD,
+      fsOf({ 'README.md': 'file' }),
+      SIGNAL,
+    )
+    expect(injections).toHaveLength(1)
+  })
 })
 
 describe('mentionPreStep', () => {
@@ -108,5 +124,17 @@ describe('mentionPreStep', () => {
       async () => ({ kind: 'reject' }),
     )
     expect(decision).toEqual({ kind: 'reject' })
+  })
+
+  it('returns the downstream enter when no token validates', async () => {
+    const claimed = [userText('no mentions')]
+    const decision = await mentionPreStep(
+      CWD,
+      fsOf({}),
+      claimed,
+      SIGNAL,
+      async () => ({ kind: 'enter', messages: claimed }),
+    )
+    expect(decision).toEqual({ kind: 'enter', messages: claimed })
   })
 })

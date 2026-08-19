@@ -28,5 +28,21 @@ describe('rankFiles', () => {
       'src/client/view.ts',
     ])
     expect(rankFiles(FILES, 'rdme', 10).map(entry => entry.relative)).toEqual(['README.md'])
+    expect(rankFiles(FILES, '/', 10)).toEqual([])
+    expect(rankFiles(FILES, 'docs/', 10)).toEqual([])
+    expect(rankFiles(FILES, 'src\\missing', 10)).toEqual([])
+    expect(rankFiles(FILES, 'zzzz', 10)).toEqual([])
+    expect(rankFiles([
+      { relative: 'aa.ts', kind: 'file' },
+      { relative: 'aa.ts', kind: 'file' },
+    ], '', 10)).toHaveLength(2)
+    expect(rankFiles(FILES, 'view', 1)[0]?.relative).toBe('src/view.ts')
+    expect(rankFiles(FILES, 'docs', 10)[0]?.relative).toBe('docs')
+    expect(rankFiles(FILES, 'EAD', 10)[0]?.relative).toBe('README.md')
+    expect(rankFiles(FILES, 'src/client', 10)[0]?.relative).toBe('src/client/view.ts')
+    expect(rankFiles([
+      { relative: 'ab.ts', kind: 'file' },
+      { relative: 'ac.ts', kind: 'file' },
+    ], 'a', 10).map(entry => entry.relative)).toEqual(['ab.ts', 'ac.ts'])
   })
 })

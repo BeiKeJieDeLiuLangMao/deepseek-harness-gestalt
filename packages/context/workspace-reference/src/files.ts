@@ -46,6 +46,7 @@ export async function indexWorkspace(
     if (files.length >= options.maxFiles) return { files, truncated: true }
     signal.throwIfAborted()
     const current = queue.shift()
+    /* v8 ignore next -- the loop only runs while the queue is non-empty */
     if (current === undefined) break
     let entries
     try {

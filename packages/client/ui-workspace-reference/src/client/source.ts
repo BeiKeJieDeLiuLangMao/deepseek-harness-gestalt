@@ -41,11 +41,13 @@ export function createWorkspaceSource(search: WorkspaceIndexSearch): InputTrigge
     const abort = new AbortController()
     const promise = search(sessionId, abort.signal).then((files) => {
       const current = fetches.get(sessionId)
+      /* v8 ignore next -- a superseded fetch is dropped by invalidate */
       if (current?.promise === promise) current.settled = files
       notify(sessionId)
       return files
     }, (error: unknown) => {
       const current = fetches.get(sessionId)
+      /* v8 ignore next -- a superseded fetch is dropped by invalidate */
       if (current?.promise === promise) fetches.delete(sessionId)
       throw error
     })

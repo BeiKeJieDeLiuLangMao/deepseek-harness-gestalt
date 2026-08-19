@@ -57,4 +57,46 @@ describe('indexWorkspace', () => {
     expect(index.truncated).toBe(true)
     expect(index.files).toHaveLength(2)
   })
+
+  it('stops before listing a queued child once the cap is already full', async () => {
+    await mkdir(join(dir, 'nested'))
+    await writeFile(join(dir, 'nested/a.ts'), 'a\n')
+    const index = await indexWorkspace(ctx.fs, dir, {
+      maxFiles: 1,
+      ignoreDirs: [],
+      ignoreFiles: [],
+    }, SIGNAL)
+    expect(index.truncated).toBe(true)
+    expect(index.files).toHaveLength(1)
+  })
+
+  it('skips a permission-denied directory and rethrows other list errors', async () => {
+    const { FsError } = await import('@deepseek-ai/dsh-fs')
+    const denied = {
+      resolve: ctx.fs.resolve.bind(ctx.fs),
+      listDir: async () => { throw new FsError('denied', 'FS_PERMISSION_DENIED') },
+      lstat: ctx.fs.lstat.bind(ctx.fs),
+    }
+    await expect(indexWorkspace(denied as never, dir, {
+      maxFiles: 10,
+      ignoreDirs: [],
+      ignoreFiles: [],
+    }, SIGNAL)).resolves.toEqual({ files: [], truncated: false })
+
+    const boom = {
+      resolve: ctx.fs.resolve.bind(ctx.fs),
+      listDir: async () => { throw new Error('io') },
+      lstat: ctx.fs.lstat.bind(ctx.fs),
+    }
+    await expect(indexWorkspace(boom as never, dir, {
+      maxFiles: 10,
+      ignoreDirs: [],
+      ignoreFiles: [],
+    }, SIGNAL)).rejects.toThrow('io')
+    await expect(indexWorkspace(ctx.fs, 'relative', {
+      maxFiles: 10,
+      ignoreDirs: [],
+      ignoreFiles: [],
+    }, SIGNAL)).resolves.toEqual({ files: [], truncated: false })
+  })
 })
