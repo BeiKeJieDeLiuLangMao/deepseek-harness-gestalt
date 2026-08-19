@@ -564,9 +564,11 @@ describe('Moonshot dedicated search', () => {
       protocol: 'moonshot-search',
       baseURL: 'https://api.moonshot.cn/v1/search',
       apiKey: '密钥',
-    }).search({ query: 'q' })).rejects.toMatchObject({
-      code: 'WEB_PROVIDER_ERROR',
-      message: expect.stringContaining('header "authorization" is not ASCII'),
+    }).search({ query: 'q' })).rejects.toSatisfy((error: unknown) => {
+      if (!(error instanceof Error)) return false
+      const record = error as Error & { code?: string }
+      return record.code === 'WEB_PROVIDER_ERROR'
+        && record.message.includes('header "authorization" is not ASCII')
     })
   })
 })

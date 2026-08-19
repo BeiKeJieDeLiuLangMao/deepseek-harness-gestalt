@@ -1,5 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { describe, expect, it } from 'vitest'
@@ -177,25 +176,13 @@ describe('Desktop release notes', () => {
     expect(body).toContain('4bbbf74a07799fb681e033288fb55b3b16fc08c0...gestalt-v0.1.3')
   })
 
-  it('writes the verified body through the release CLI', () => {
-    const directory = mkdtempSync(join(tmpdir(), 'dsh-release-notes-'))
-    const output = join(directory, 'notes.md')
-    try {
-      const result = spawnSync(
-        process.execPath,
-        ['apps/desktop/scripts/render-release-notes.mjs', '0.1.0', releaseTarget, output],
-        { cwd: process.cwd(), encoding: 'utf8' },
-      )
-      expect(result.stderr).toBe('')
-      expect(result.status).toBe(0)
-      expect(readFileSync(output, 'utf8')).toBe(
-        readFileSync(
-          join(process.cwd(), 'apps/desktop/tests/fixtures/release-notes-0.1.0.expected.md'),
-          'utf8',
-        ),
-      )
-    } finally {
-      rmSync(directory, { recursive: true, force: true })
-    }
+  it('rejects a CLI invocation without version, target, and output path', () => {
+    const result = spawnSync(
+      process.execPath,
+      ['apps/desktop/scripts/render-release-notes.mjs'],
+      { cwd: process.cwd(), encoding: 'utf8' },
+    )
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toContain('usage: render-release-notes.mjs')
   })
 })

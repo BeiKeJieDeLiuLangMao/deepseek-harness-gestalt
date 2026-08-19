@@ -386,7 +386,7 @@ export class WebSearchShell {
       resetField: (field) => { this.selectedFace().resetField(field) },
       save: () => { this.selectedFace().save() },
       discard: () => { this.selectedFace().discard() },
-      selectProvider: (id) => { void this.selectionScope.set('backend', id as WebSearchBackend) },
+      selectProvider: (id) => { void this.selectionScope.set('backend', id) },
       testSearch: async () => {
         await this.selectedFace().persist()
         let response: Awaited<ReturnType<IApiClient['settings']['testWebSearch']>>

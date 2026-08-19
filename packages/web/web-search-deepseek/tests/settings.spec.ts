@@ -77,7 +77,11 @@ const MOONSHOT_RESULT = {
 async function searchOnce(ctx: Context): Promise<string> {
   const fetchSpy = vi.spyOn(globalThis, 'fetch')
     .mockImplementation((input) => {
-      const url = String(input)
+      const url = typeof input === 'string'
+        ? input
+        : input instanceof URL
+          ? input.href
+          : input.url
       return Promise.resolve(jsonResponse(
         url.endsWith('/search') || url.includes('/v1/search') ? MOONSHOT_RESULT : ONE_RESULT,
       ))

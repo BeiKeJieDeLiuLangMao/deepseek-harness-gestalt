@@ -25,7 +25,10 @@ export type CompanionMutationKind = (typeof COMPANION_OFFLINE_MUTATIONS)[number]
  * @returns cache record; never stores attachment/terminal/credential bytes.
  */
 export function sealCompanionCache(desktopId: string, plaintext: string): CompanionCacheRecord {
-  return { desktopId, ciphertext: btoa(unescape(encodeURIComponent(plaintext))) }
+  const bytes = new TextEncoder().encode(plaintext)
+  let binary = ''
+  for (const byte of bytes) binary += String.fromCharCode(byte)
+  return { desktopId, ciphertext: btoa(binary) }
 }
 
 /**
@@ -34,7 +37,9 @@ export function sealCompanionCache(desktopId: string, plaintext: string): Compan
  * @returns opened metadata/transcript JSON.
  */
 export function openCompanionCache(record: CompanionCacheRecord): string {
-  return decodeURIComponent(escape(atob(record.ciphertext)))
+  const binary = atob(record.ciphertext)
+  const bytes = Uint8Array.from(binary, char => char.charCodeAt(0))
+  return new TextDecoder().decode(bytes)
 }
 
 /**

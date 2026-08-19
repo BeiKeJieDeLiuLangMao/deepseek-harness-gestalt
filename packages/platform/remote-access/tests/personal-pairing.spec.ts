@@ -485,10 +485,12 @@ describe('PersonalPairingProvider', () => {
       ...options,
       randomId: (kind: string) => `${kind}-successor-${String(++ids)}`,
     })
-    await expect(successor.createChallenge({
+    const challenge = await successor.createChallenge({
       desktop,
       rendezvousId: parsePairingRendezvousId('after-shared-dispose'),
-    })).resolves.toMatchObject({ challengeId: expect.any(String) })
+    })
+    expect(typeof challenge.challengeId).toBe('string')
+    expect(challenge.challengeId.length).toBeGreaterThan(0)
     await successor.dispose()
   })
 

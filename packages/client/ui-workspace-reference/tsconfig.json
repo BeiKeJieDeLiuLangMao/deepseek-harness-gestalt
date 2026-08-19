@@ -12,6 +12,7 @@
     { "path": "../ui-input-trigger" },
     { "path": "../../typert/protocol" },
     { "path": "../../typert/registry" },
+    { "path": "../../context/workspace-reference" },
     { "path": "../../runtime-diagnostics/invariants" }
   ]
 }

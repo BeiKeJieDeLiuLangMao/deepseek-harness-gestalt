@@ -1,13 +1,9 @@
 /** Public Workspace Reference records. */
 
 import type { FsPathInfo } from '@deepseek-ai/dsh-fs'
+import type { WorkspacePathEntry } from './search.ts'
 
-/** One indexed workspace path. */
-export interface WorkspacePathEntry {
-  /** Workspace-relative path using `/` separators. */
-  readonly relative: string
-  readonly kind: 'file' | 'dir'
-}
+export type { WorkspacePathEntry }
 
 /** Filesystem face the mention resolver needs. */
 export interface MentionFileSystem {
