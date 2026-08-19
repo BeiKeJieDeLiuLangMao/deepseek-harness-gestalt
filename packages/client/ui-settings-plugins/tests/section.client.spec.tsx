@@ -358,10 +358,20 @@ describe('WebSearchCard', () => {
       apiKey: field(''),
       apiKeyConfigured: false,
       apiKeyWritable: true,
+      active: true,
       ...state,
     })
     const actions = cardActions()
-    const props = { ...actions, t, useWebSearchCard: bindSnapshotSelector(store) } as unknown as WebSearchCardProps
+    const props = {
+      ...actions,
+      t,
+      useWebSearchCard: bindSnapshotSelector(store),
+      titleKey: 'webSearchTitle',
+      descriptionKey: 'webSearchDescription',
+      baseUrlHintKey: 'webSearchBaseUrlHint',
+      idPrefix: 'plugin-config-web-search',
+      useThis: vi.fn(),
+    } as unknown as WebSearchCardProps
     render(<WebSearchCard {...props} />)
     return actions
   }
@@ -395,6 +405,32 @@ describe('WebSearchCard', () => {
 
     expect(screen.getByLabelText(en.webSearchApiKey)).toHaveProperty('disabled', true)
     expect(screen.getByLabelText(en.webSearchBaseUrl)).toHaveProperty('disabled', false)
+  })
+
+  it('offers a use-this control when another card is selected', () => {
+    const useThis = vi.fn()
+    const store = createSnapshotStore<WebSearchCardState>({
+      ...settled,
+      baseURL: field(''),
+      maxUses: field('5'),
+      apiKey: field(''),
+      apiKeyConfigured: false,
+      apiKeyWritable: true,
+      active: false,
+    })
+    render(<WebSearchCard {...{
+      ...cardActions(),
+      t,
+      useWebSearchCard: bindSnapshotSelector(store),
+      titleKey: 'anthropicSearchTitle',
+      descriptionKey: 'anthropicSearchDescription',
+      baseUrlHintKey: 'anthropicSearchBaseUrlHint',
+      idPrefix: 'plugin-config-anthropic-search',
+      useThis,
+    } as unknown as WebSearchCardProps} />)
+    fireEvent.click(screen.getByText(en.anthropicSearchTitle))
+    fireEvent.click(screen.getByRole('button', { name: en.useThisSearch }))
+    expect(useThis).toHaveBeenCalledOnce()
   })
 
   it('stages the endpoint, the search budget, and their resets', () => {

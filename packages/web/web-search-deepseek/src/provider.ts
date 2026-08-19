@@ -2,7 +2,9 @@
  * DeepSeek search through an Anthropic-compatible Messages model call with the native
  * `web_search_20250305` server tool. Each search costs a model turn, but returns structured
  * result blocks; absence of those blocks is an error rather than a prose-scraping fallback.
- * The wire format and native `fetch` client are provider-private and do not use `ctx.llm`.
+ * The same Messages contract serves the official DeepSeek endpoint and a separately
+ * configured Anthropic-compatible base. The wire format and native `fetch` client are
+ * provider-private and do not use `ctx.llm`.
  * @module @deepseek-ai/dsh-web-search-deepseek/provider
  */
 

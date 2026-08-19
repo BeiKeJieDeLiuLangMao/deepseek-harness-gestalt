@@ -7,6 +7,7 @@
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { SecretField, ValueField } from './fields.tsx'
 import { PluginCard } from './PluginCard.tsx'
+import cardCss from './PluginCard.module.css'
 import type { WebSearchCardFace } from './web-search-card-controller.ts'
 import type {} from './slot-contract.ts'
 
@@ -28,14 +29,23 @@ export function WebSearchCard(props: WebSearchCardProps) {
   return (
     <PluginCard
       t={t}
-      titleKey="webSearchTitle"
-      descriptionKey="webSearchDescription"
+      titleKey={props.titleKey}
+      descriptionKey={props.descriptionKey}
       state={state}
       onSave={props.save}
       onDiscard={props.discard}
     >
+      {state.active
+        ? <p className={cardCss.readOnly} role="status">{t('searchInUse')}</p>
+        : (
+          <div className={cardCss.footer}>
+            <button type="button" className={cardCss.save} onClick={props.useThis}>
+              {t('useThisSearch')}
+            </button>
+          </div>
+        )}
       <SecretField
-        id="plugin-config-web-search-key"
+        id={`${props.idPrefix}-key`}
         label={t('webSearchApiKey')}
         hint={t('webSearchApiKeyHint')}
         // The credentials domain accepts a key even when the settings document
@@ -49,9 +59,9 @@ export function WebSearchCard(props: WebSearchCardProps) {
         onEdit={(text) => { props.edit('apiKey', text) }}
       />
       <ValueField
-        id="plugin-config-web-search-endpoint"
+        id={`${props.idPrefix}-endpoint`}
         label={t('webSearchBaseUrl')}
-        hint={t('webSearchBaseUrlHint')}
+        hint={t(props.baseUrlHintKey)}
         overriddenLabel={t('overridden')}
         resetLabel={t('reset')}
         invalidLabel={t('invalidNumber')}
@@ -61,7 +71,7 @@ export function WebSearchCard(props: WebSearchCardProps) {
         onReset={() => { props.resetField('baseURL') }}
       />
       <ValueField
-        id="plugin-config-web-search-max-uses"
+        id={`${props.idPrefix}-max-uses`}
         label={t('webSearchMaxUses')}
         hint={t('webSearchMaxUsesHint')}
         overriddenLabel={t('overridden')}

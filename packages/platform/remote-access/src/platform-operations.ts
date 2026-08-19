@@ -27,6 +27,7 @@ export interface PlatformEnvironmentSurfaces {
 /**
  * Resolve the isolated Platform environment. Arbitrary endpoints are rejected.
  * @param value - configured environment name.
+ * @returns the isolated environment name.
  */
 export function parsePlatformEnvironment(value: string): PlatformEnvironment {
   if (value === 'development' || value === 'production') return value
@@ -36,6 +37,7 @@ export function parsePlatformEnvironment(value: string): PlatformEnvironment {
 /**
  * Surfaces that must not be shared across environments.
  * @param environment - isolated environment.
+ * @returns origin and store namespaces for that environment.
  */
 export function platformEnvironmentSurfaces(environment: PlatformEnvironment): PlatformEnvironmentSurfaces {
   if (environment === 'development') {
@@ -62,6 +64,7 @@ export function platformEnvironmentSurfaces(environment: PlatformEnvironment): P
  * Read a deployment-managed secret reference. Missing required secrets fail closed.
  * @param references - deployment-managed map.
  * @param name - required capability secret.
+ * @returns the secret value for that capability.
  */
 export function requirePlatformSecret(
   references: ReadonlyMap<string, string>,
@@ -87,6 +90,7 @@ export interface PlatformOperationEvent {
 /**
  * Build a content-free operational event. Ciphertext, keys, tokens, names, and durable ids stay out.
  * @param input - category and optional error.
+ * @returns a content-free operational event.
  */
 export function platformOperationEvent(
   input: { category: PlatformOperationEvent['category']; error?: string },
@@ -103,6 +107,7 @@ export function platformOperationEvent(
  * Whether a log class is still retainable.
  * @param kind - log class.
  * @param ageDays - age in days.
+ * @returns whether that log class may still be retained.
  */
 export function platformLogRetainable(kind: 'raw-ip' | 'security-event' | 'live-route', ageDays: number): boolean {
   if (kind === 'live-route') return false

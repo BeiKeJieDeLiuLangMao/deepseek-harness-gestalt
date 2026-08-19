@@ -33,6 +33,10 @@
           - text: Agent 循环 Agent 如何派发工具调用。
           - img
       - listitem:
-        - 'button "展开设置: 网页搜索"':
-          - text: 网页搜索 DeepSeek 搜索提供方。
+        - 'button "展开设置: DeepSeek 搜索"':
+          - text: DeepSeek 搜索 官方 DeepSeek 搜索，走 Anthropic Messages 的原生 web_search。
+          - img
+      - listitem:
+        - 'button "展开设置: Anthropic 协议搜索"':
+          - text: Anthropic 协议搜索 任意兼容 Anthropic Messages + web_search 的接口，例如 Kimi coding。
           - img
