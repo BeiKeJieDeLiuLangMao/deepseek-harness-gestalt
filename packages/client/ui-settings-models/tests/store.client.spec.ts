@@ -39,6 +39,13 @@ const NAMESPACES = [
   },
 ]
 
+function fixtureNs<T>(value: T | undefined, name: string): T {
+  if (value === undefined) throw new Error(`missing ${name} fixture`)
+  return value
+}
+const DEEPSEEK_NS = fixtureNs(NAMESPACES[0], 'llm-deepseek')
+const PI_NS = fixtureNs(NAMESPACES[1], 'llm-pi-ai')
+
 function api(overrides: {
   providers?: () => Promise<RpcResponse<{ providers: typeof DIRECTORY }>>
   describeSettings?: () => Promise<RpcResponse<{ writable: boolean; namespaces: typeof NAMESPACES }>>
@@ -104,10 +111,10 @@ describe('ModelsSettingsStore', () => {
         writable: true,
         hasDocument: true,
         namespaces: [{
-          ...NAMESPACES[0],
+          ...DEEPSEEK_NS,
           user: {},
           secrets: [{ path: ['apiKey'], set: false }],
-        }, NAMESPACES[1]],
+        }, PI_NS],
       })),
     })
     const store = new ModelsSettingsStore(face)
@@ -122,10 +129,10 @@ describe('ModelsSettingsStore', () => {
         writable: true,
         hasDocument: true,
         namespaces: [{
-          ...NAMESPACES[0],
+          ...DEEPSEEK_NS,
           user: {},
           secrets: [{ path: ['apiKey'], set: true }],
-        }, NAMESPACES[1]],
+        }, PI_NS],
       })),
     })
     const store = new ModelsSettingsStore(face)
