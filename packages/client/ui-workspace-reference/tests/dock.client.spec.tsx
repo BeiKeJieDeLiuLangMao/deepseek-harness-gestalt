@@ -2,25 +2,17 @@
 import { describe, expect, it, vi } from 'vitest'
 import { render, fireEvent } from '@testing-library/react'
 import { WorkspaceReferenceDock, type WorkspaceReferenceDockProps } from '../src/client/Dock.tsx'
-import { createWorkspaceReferenceStore } from '../src/client/settings-store.ts'
 import { DEFAULT_WORKSPACE_REFERENCE_SETTINGS, type WorkspaceReferenceSettings } from '../src/settings.ts'
 
 function dockProps(draft: string, enable = true) {
-  const store = createWorkspaceReferenceStore().create()
   const state: WorkspaceReferenceSettings = { ...DEFAULT_WORKSPACE_REFERENCE_SETTINGS, enable }
-  store.actions.sync(state)
   const setDraft = vi.fn()
   const openPath = vi.fn()
   return {
     session: {} as never,
     input: { draft } as never,
     inputActions: { setDraft },
-    useStore: <T,>(select: (state: WorkspaceReferenceSettings) => T) => select(state),
-    useSession: () => undefined,
-    useSessions: () => undefined,
-    useWorkspaces: () => undefined,
-    sessionId: 's1',
-    actions: store.actions,
+    useSettings: <T,>(select: (state: WorkspaceReferenceSettings) => T) => select(state),
     t: (key: string) => key,
     openPath,
     setDraft,

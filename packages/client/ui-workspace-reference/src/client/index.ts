@@ -3,8 +3,7 @@
  * the composer dock, and the settings section.
  */
 import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
-import { resolveWorkspacePath } from '@deepseek-ai/dsh-client-runtime/client'
-import type { BoundActions } from '@deepseek-ai/dsh-client-ui-slots'
+import { createSnapshotStore, resolveWorkspacePath } from '@deepseek-ai/dsh-client-runtime/client'
 import type { InputTriggerServiceContract } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
@@ -16,11 +15,12 @@ import {
   type WorkspaceReferenceSettings,
 } from '../settings.ts'
 import { WorkspaceReferenceDock } from './Dock.tsx'
+import type { WorkspaceReferenceDockInjected } from './Dock.tsx'
 import { WORKSPACE_REFERENCE_INVOCATIONS } from './invocations.ts'
 import { en, zh } from './locales.ts'
 import { createWorkspaceSource } from './source.ts'
 import { WorkspaceReferenceSettingsSection } from './SettingsSection.tsx'
-import { createWorkspaceReferenceStore } from './settings-store.ts'
+import type { WorkspaceReferenceSettingsInjected } from './SettingsSection.tsx'
 import type { WorkspacePathEntry } from './rank.ts'
 
 export const inject = [
@@ -59,18 +59,20 @@ export async function apply(ctx: ClientContext): Promise<void> {
   const scope = ctx.settingsScope.bind<WorkspaceReferenceSettings>({
     namespace: WORKSPACE_REFERENCE_SETTINGS_NAMESPACE,
   })
-  const store = createWorkspaceReferenceStore()
-  let bound: BoundActions<typeof store> | undefined
-  let latest: WorkspaceReferenceSettings = { ...DEFAULT_WORKSPACE_REFERENCE_SETTINGS }
+  // One preference snapshot for the source, the dock, and the settings
+  // section; the scope listener below is its only writer.
+  const preferences = createSnapshotStore<WorkspaceReferenceSettings>({
+    ...DEFAULT_WORKSPACE_REFERENCE_SETTINGS,
+  })
   const sync = (): void => {
-    latest = {
+    preferences.set({
       ...DEFAULT_WORKSPACE_REFERENCE_SETTINGS,
       ...scope.getSnapshot().value,
-    }
-    bound?.sync(latest)
+    })
   }
+  sync()
   ctx.effect(() => scope.subscribe(sync), 'ui-workspace-reference: settings sync')
-  const settings = (): WorkspaceReferenceSettings => latest
+  const settings = (): WorkspaceReferenceSettings => preferences.getSnapshot()
   const source = createWorkspaceSource(async (sessionId: SessionId, signal) => {
     const result = await workspaceReference.search(sessionId, signal)
     if (!result.ok) throw new Error(result.error.message)
@@ -92,19 +94,15 @@ export async function apply(ctx: ClientContext): Promise<void> {
     id: 'workspace-reference',
     order: 20,
     locale: NS,
-    store,
-    inject: (sessionId: SessionId, actions: BoundActions<typeof store>) => {
-      bound = actions
-      sync()
-      return {
-        openPath: (path: string) => {
-          const cwd = ctx.sessions.list.getSnapshot().byId[sessionId]?.cwd
-          void ctx.workspaces.openPath(resolveWorkspacePath(cwd, path)).catch(() => {
-            // Host/OS open failures stay silent; the native app surfaces them.
-          })
-        },
-      }
-    },
+    inject: (sessionId: SessionId): WorkspaceReferenceDockInjected => ({
+      hooks: { settings: preferences },
+      openPath: (path: string) => {
+        const cwd = ctx.sessions.list.getSnapshot().byId[sessionId]?.cwd
+        void ctx.workspaces.openPath(resolveWorkspacePath(cwd, path)).catch(() => {
+          // Host/OS open failures stay silent; the native app surfaces them.
+        })
+      },
+    }),
   }, WorkspaceReferenceDock))
 
   ctx.slots.inject('settings.section', () => ctx.slots.register({
@@ -113,15 +111,11 @@ export async function apply(ctx: ClientContext): Promise<void> {
     order: 45,
     label: () => ctx.locale.bind(NS)('nav'),
     locale: NS,
-    store,
-    inject: (actions: BoundActions<typeof store>) => {
-      bound = actions
-      sync()
-      return {
-        setField: (field: keyof WorkspaceReferenceSettings, value: boolean | string) => {
-          void scope.set(field, value)
-        },
-      }
-    },
+    inject: (): WorkspaceReferenceSettingsInjected => ({
+      hooks: { settings: preferences },
+      setField: (field: keyof WorkspaceReferenceSettings, value: boolean | string) => {
+        void scope.set(field, value)
+      },
+    }),
   }, WorkspaceReferenceSettingsSection))
 }

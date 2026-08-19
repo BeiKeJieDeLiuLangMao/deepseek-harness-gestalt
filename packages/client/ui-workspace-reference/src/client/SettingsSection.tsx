@@ -2,14 +2,18 @@
  * Settings section for Workspace Reference enable, paste ignore, and
  * basename filters. Copy never says "File mentions".
  */
-import type { PropsLocale, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
+import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
-import type { createWorkspaceReferenceStore } from './settings-store.ts'
 import type { WorkspaceReferenceSettings } from '../settings.ts'
 import css from './SettingsSection.module.css'
 
-/** Injected writes for the durable section. */
+/** Registration-side business face: live preferences + the durable write. */
 export interface WorkspaceReferenceSettingsInjected {
+  hooks: {
+    /** Durable Workspace Reference preferences bound by the renderer as useSettings. */
+    settings: SnapshotStore<WorkspaceReferenceSettings>
+  }
   /** Persist one field. */
   setField: (field: keyof WorkspaceReferenceSettings, value: boolean | string) => void
 }
@@ -17,21 +21,20 @@ export interface WorkspaceReferenceSettingsInjected {
 /** Full settings section props. */
 export type WorkspaceReferenceSettingsProps =
   PropsRuntime<'settings.section'>
-  & PropsStore<ReturnType<typeof createWorkspaceReferenceStore>>
   & PropsLocale<'workspace-reference'>
-  & WorkspaceReferenceSettingsInjected
+  & InjectFace<WorkspaceReferenceSettingsInjected>
 
 /**
  * Render the Workspace Reference settings section.
  * @param props - composed slot props.
  */
 export function WorkspaceReferenceSettingsSection({
-  t, useStore, setField,
+  t, useSettings, setField,
 }: WorkspaceReferenceSettingsProps) {
-  const enable = useStore(s => s.enable)
-  const pasteIgnore = useStore(s => s.pasteIgnore)
-  const exact = useStore(s => s.exact)
-  const regex = useStore(s => s.regex)
+  const enable = useSettings(s => s.enable)
+  const pasteIgnore = useSettings(s => s.pasteIgnore)
+  const exact = useSettings(s => s.exact)
+  const regex = useSettings(s => s.regex)
   return (
     <section className={css.section} data-workspace-reference-settings>
       <label className={css.row}>

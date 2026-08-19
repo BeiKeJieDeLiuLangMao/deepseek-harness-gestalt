@@ -7,6 +7,10 @@ describe('draft Workspace Reference scan', () => {
       .toEqual(['src/a.ts', 'docs'])
   })
 
+  it('drops empty and repeated tokens', () => {
+    expect(scanDraftMentions('see @/ then @a.ts and @a.ts again')).toEqual(['a.ts'])
+  })
+
   it('removes one token including a trailing slash and space', () => {
     expect(removeDraftMention('see @docs/ and @src/a.ts', 'docs')).toBe('see and @src/a.ts')
   })

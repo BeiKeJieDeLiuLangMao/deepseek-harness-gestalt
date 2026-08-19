@@ -8,7 +8,7 @@ describe('WorkspaceReferenceSettingsSection', () => {
   it('writes enable, paste ignore, and filter fields', () => {
     const setField = vi.fn()
     const props = {
-      useStore: <T,>(select: (state: WorkspaceReferenceSettings) => T) => select(DEFAULT_WORKSPACE_REFERENCE_SETTINGS),
+      useSettings: <T,>(select: (state: WorkspaceReferenceSettings) => T) => select(DEFAULT_WORKSPACE_REFERENCE_SETTINGS),
       t: (key: string) => key,
       setField,
     }

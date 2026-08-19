@@ -11,6 +11,7 @@ const MENTION_PATTERN = /@([^\s@[\]]+)/g
 /**
  * Unique `@path` tokens in first-seen order. A trailing slash is stripped.
  * @param text - composer draft.
+ * @returns workspace-relative tokens without the leading `@`.
  */
 export function scanDraftMentions(text: string): readonly string[] {
   const seen = new Set<string>()
@@ -30,6 +31,7 @@ export function scanDraftMentions(text: string): readonly string[] {
  * Remove one `@path` occurrence, including an optional trailing slash and space.
  * @param text - composer draft.
  * @param path - workspace-relative token without a leading `@`.
+ * @returns the draft without that occurrence.
  */
 export function removeDraftMention(text: string, path: string): string {
   const escaped = path.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -41,6 +43,7 @@ export function removeDraftMention(text: string, path: string): string {
  * @param files - indexed entries.
  * @param exact - basename substring; empty disables.
  * @param regex - basename regular expression; empty or invalid disables.
+ * @returns the entries whose basename passes both filters.
  */
 export function filterIndexedFiles<T extends { relative: string }>(
   files: readonly T[],

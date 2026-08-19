@@ -3292,7 +3292,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/context/workspace-reference/src/index.ts:34`](../packages/context/workspace-reference/src/index.ts)
+来源：[`packages/context/workspace-reference/src/index.ts:35`](../packages/context/workspace-reference/src/index.ts)
 
 ## 无配置的可加载插件
 
