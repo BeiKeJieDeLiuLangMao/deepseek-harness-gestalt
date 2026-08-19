@@ -168,5 +168,16 @@ describe('runLoaderSmokeSequence', () => {
     })
     const output = JSON.parse(results[0]!.stdout) as { args: string[] }
     expect(output.args).toEqual([configPath])
+
+    const declared = await runLoaderSmokeSequence({
+      label: 'declared sequence failure',
+      tempDirPrefix: 'loader-smoke-sequence-fail-',
+      binScript: fixture('fail'),
+      libBinScript: fixture('fail'),
+      configPath,
+      tsconfigPath,
+      invocations: [{ expectedExitCode: 7 }],
+    })
+    expect(declared[0]?.stderr).toBe('fixture failed\n')
   }, LOADER_SMOKE_TEST_TIMEOUT_MS)
 })
