@@ -1,6 +1,7 @@
 /** End-to-end encrypted Companion attachment transfer, scoped to one Personal Pairing. */
 
 import {
+  COMPANION_ATTACHMENT_SEAL_OVERHEAD_BYTES,
   deriveCompanionAttachmentKey,
   REMOTE_PROTOCOL_LIMITS,
   sealCompanionAttachment as sealEndpointAttachment,
@@ -8,8 +9,10 @@ import {
   type CompanionOfferAttachmentOperation,
 } from '@deepseek-ai/dsh-remote-protocol'
 
-/** Accepted per-blob ceiling. */
+/** Accepted per-blob ciphertext ceiling. */
 export const COMPANION_ATTACHMENT_MAX_BYTES = REMOTE_PROTOCOL_LIMITS.attachmentBlobBytes
+/** AES-256-GCM seal overhead applied before comparing plaintext against the ciphertext ceiling. */
+export { COMPANION_ATTACHMENT_SEAL_OVERHEAD_BYTES }
 
 /** One sealed blob plus the values Mobile sends in the bounded control message. */
 export interface CompanionAttachmentTransfer {
@@ -24,14 +27,16 @@ export interface CompanionAttachmentTransfer {
  * Encrypt attachment bytes on Mobile before upload.
  * @param pairingKey - secret bytes supplied by the Personal Pairing layer.
  * @param plaintext - caller-held plaintext; never leaves Mobile unencrypted.
+ * @param ciphertextLimit - ciphertext ceiling compared against `plaintext + seal overhead`; defaults to the protocol ceiling.
  * @returns sealed transfer values for upload and the bounded control message.
  */
 export async function sealCompanionAttachment(
   pairingKey: Uint8Array,
   plaintext: Uint8Array,
+  ciphertextLimit: number = COMPANION_ATTACHMENT_MAX_BYTES,
 ): Promise<{ ciphertext: Uint8Array<ArrayBuffer>; ciphertextSha256: string }> {
-  if (plaintext.byteLength > COMPANION_ATTACHMENT_MAX_BYTES) {
-    throw new Error('Companion attachment exceeds 100 MiB')
+  if (plaintext.byteLength + COMPANION_ATTACHMENT_SEAL_OVERHEAD_BYTES > ciphertextLimit) {
+    throw new Error('Companion attachment exceeds the ciphertext blob ceiling')
   }
   const key = await deriveCompanionAttachmentKey(pairingKey)
   return await sealEndpointAttachment(key, plaintext)

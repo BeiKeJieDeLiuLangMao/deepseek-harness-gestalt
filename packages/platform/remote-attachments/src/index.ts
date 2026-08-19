@@ -11,10 +11,12 @@ import {
   REMOTE_PROTOCOL_LIMITS,
   type AttachmentCapability,
 } from '@deepseek-ai/dsh-remote-protocol'
+import z from '@deepseek-ai/schemastery'
 
 /** Stable attachment blob store failure categories; none carry application data. */
 export type RemoteAttachmentErrorCode =
   | 'ATTACHMENT_CAPABILITY_INVALID'
+  | 'ATTACHMENT_EMPTY'
   | 'ATTACHMENT_EXPIRED'
   | 'ATTACHMENT_PAIRING_MISMATCH'
   | 'ATTACHMENT_LIMIT_EXCEEDED'
@@ -72,25 +74,29 @@ export abstract class RemoteAttachmentStoreService extends Service {
   abstract publish(input: { pairingId: PersonalPairingId; ciphertext: Uint8Array; now: number }): Promise<RemoteAttachmentGrant>
 
   /**
+   * Return a copy of one retained ciphertext without consuming the capability.
+   * @param input - requesting Personal Pairing, one-time capability, and current time.
+   * @returns a copy of the retained ciphertext bytes.
+   */
+  abstract inspect(input: { pairingId: PersonalPairingId; capability: AttachmentCapability; now: number }): Promise<Uint8Array>
+
+  /**
    * Exchange one capability for its ciphertext exactly once, then remove both.
    * @param input - requesting Personal Pairing, one-time capability, and current time.
-   * @returns the retained ciphertext bytes.
+   * @returns a copy of the retained ciphertext bytes.
    */
-  abstract consume(input: {
-    pairingId: PersonalPairingId
-    capability: AttachmentCapability
-    now: number
-  }): Promise<Uint8Array>
+  abstract consume(input: { pairingId: PersonalPairingId; capability: AttachmentCapability; now: number }): Promise<Uint8Array>
 
   /**
    * Remove one blob and its capability regardless of remaining lifetime.
-   * @param capability - capability whose blob is revoked.
+   * @param input - owning Personal Pairing and the capability whose blob is revoked.
+   * A pairing mismatch fails explicitly; an unknown capability is a no-op.
    */
-  abstract revoke(capability: AttachmentCapability): Promise<void>
+  abstract revoke(input: { pairingId: PersonalPairingId; capability: AttachmentCapability }): Promise<void>
 
   /**
    * Project every retained blob for Platform-side operations.
-   * @returns ciphertext and metadata only; no plaintext exists on this side of the boundary.
+   * @returns copies of ciphertext and metadata only; no plaintext exists on this side of the boundary.
    */
   abstract observe(): readonly RemoteAttachmentBlob[]
 }
@@ -101,8 +107,8 @@ interface StoredEntry {
   expiresAt: number
 }
 
-/** In-process provider construction inputs. */
-export interface RemoteAttachmentStoreOptions {
+/** Deployment bounds for the in-process store, reachable from cordis.yml. */
+export interface Config {
   /** Per-blob ciphertext ceiling; defaults to the accepted protocol ceiling. */
   maxBlobBytes?: number
   /** Capability lifetime; defaults to the accepted fifteen-minute default. */
@@ -111,8 +117,34 @@ export interface RemoteAttachmentStoreOptions {
   maxRetainedBlobs: number
   /** Interval removing expired blobs in the background. */
   sweepIntervalMs: number
-  /** Schedule backend for the sweep timer; defaults to `setTimeout`. */
-  schedule?: (handler: () => void, ms: number) => { unref(): void }
+}
+
+/** Validated in-process store configuration. */
+export const Config: z<Config> = z.object({
+  maxBlobBytes: z.natural().min(1).max(REMOTE_PROTOCOL_LIMITS.attachmentBlobBytes)
+    .default(REMOTE_PROTOCOL_LIMITS.attachmentBlobBytes),
+  capabilityLifetimeMs: z.natural().min(1).max(REMOTE_PROTOCOL_LIMITS.attachmentCapabilityLifetimeMs)
+    .default(REMOTE_PROTOCOL_LIMITS.attachmentCapabilityLifetimeMs),
+  maxRetainedBlobs: z.natural().min(1).required(),
+  sweepIntervalMs: z.natural().min(1).required(),
+})
+
+/** In-process provider construction inputs, including the test schedule hook. */
+export interface RemoteAttachmentStoreOptions extends Config {
+  /** Schedule backend for the re-arming sweep timer; defaults to `setTimeout`. */
+  schedule?: (handler: () => void, ms: number) => { unref(): void; cancel(): void }
+}
+
+/** Cordis plugin name. */
+export const name = 'remote-attachments'
+
+/**
+ * Mount the in-process attachment blob store from validated deployment bounds.
+ * @param ctx - Platform composition context.
+ * @param config - per-blob ceiling, lifetime, retained-blob capacity, and sweep interval.
+ */
+export function apply(ctx: Context, config: Config): void {
+  new RemoteAttachmentStoreProvider(ctx, config)
 }
 
 /**
@@ -124,6 +156,8 @@ export class RemoteAttachmentStoreProvider extends RemoteAttachmentStoreService 
   readonly capabilityLifetimeMs: number
   private readonly maxRetainedBlobs: number
   private readonly entries = new Map<string, StoredEntry>()
+  private sweepTimer: { unref(): void; cancel(): void } | undefined
+  private disposed = false
 
   /** @param ctx - Platform composition context. @param options - validated deployment bounds. */
   constructor(ctx: Context, options: RemoteAttachmentStoreOptions) {
@@ -139,13 +173,31 @@ export class RemoteAttachmentStoreProvider extends RemoteAttachmentStoreService 
       || this.capabilityLifetimeMs > REMOTE_PROTOCOL_LIMITS.attachmentCapabilityLifetimeMs) {
       throw new TypeError('Remote attachment capabilityLifetimeMs must be a positive integer within the protocol default')
     }
+    if (!Number.isSafeInteger(this.maxRetainedBlobs) || this.maxRetainedBlobs <= 0) {
+      throw new TypeError('Remote attachment maxRetainedBlobs must be a positive integer')
+    }
     if (!Number.isSafeInteger(options.sweepIntervalMs) || options.sweepIntervalMs <= 0) {
       throw new TypeError('Remote attachment sweepIntervalMs must be a positive integer')
     }
-    const schedule = options.schedule ?? ((handler: () => void, ms: number) => setTimeout(handler, ms))
-    const timer = schedule(() => { this.sweep(Date.now()) }, options.sweepIntervalMs)
-    timer.unref()
+    const schedule = options.schedule ?? ((handler: () => void, ms: number) => {
+      const timer = setTimeout(handler, ms)
+      return {
+        unref() { timer.unref() },
+        cancel() { clearTimeout(timer) },
+      }
+    })
+    this.sweepTimer = this.armSweep(schedule, options.sweepIntervalMs)
     ctx.effect(() => () => { this.dispose() }, 'remote-attachments: retained blobs')
+  }
+
+  /** Arm the next sweep tick; the timer re-arms itself until disposal cancels it. */
+  private armSweep(schedule: NonNullable<RemoteAttachmentStoreOptions['schedule']>, ms: number): { unref(): void; cancel(): void } {
+    const timer = schedule(() => {
+      this.sweep(Date.now())
+      if (!this.disposed) this.sweepTimer = this.armSweep(schedule, ms)
+    }, ms)
+    timer.unref()
+    return timer
   }
 
   // oxlint-disable-next-line typescript/require-await -- async keeps the failure a rejection, not a synchronous throw
@@ -155,7 +207,7 @@ export class RemoteAttachmentStoreProvider extends RemoteAttachmentStoreService 
     now: number
   }): Promise<RemoteAttachmentGrant> {
     if (input.ciphertext.byteLength === 0) {
-      throw new RemoteAttachmentError('ATTACHMENT_LIMIT_EXCEEDED', 'Remote attachment ciphertext must not be empty')
+      throw new RemoteAttachmentError('ATTACHMENT_EMPTY', 'Remote attachment ciphertext must not be empty')
     }
     if (input.ciphertext.byteLength > this.maxBlobBytes) {
       throw new RemoteAttachmentError('ATTACHMENT_LIMIT_EXCEEDED', 'Remote attachment exceeds the per-blob byte ceiling')
@@ -167,11 +219,20 @@ export class RemoteAttachmentStoreProvider extends RemoteAttachmentStoreService 
     const capability = randomBytes(32).toString('base64url') as AttachmentCapability
     const entry: StoredEntry = {
       pairingId: input.pairingId,
-      ciphertext: input.ciphertext,
+      ciphertext: input.ciphertext.slice(),
       expiresAt: input.now + this.capabilityLifetimeMs,
     }
     this.entries.set(capability, entry)
-    return { capability, byteLength: input.ciphertext.byteLength, expiresAt: entry.expiresAt }
+    return { capability, byteLength: entry.ciphertext.byteLength, expiresAt: entry.expiresAt }
+  }
+
+  // oxlint-disable-next-line typescript/require-await -- async keeps the failure a rejection, not a synchronous throw
+  override async inspect(input: {
+    pairingId: PersonalPairingId
+    capability: AttachmentCapability
+    now: number
+  }): Promise<Uint8Array> {
+    return this.requireEntry(input).ciphertext.slice()
   }
 
   // oxlint-disable-next-line typescript/require-await -- async keeps the failure a rejection, not a synchronous throw
@@ -180,6 +241,43 @@ export class RemoteAttachmentStoreProvider extends RemoteAttachmentStoreService 
     capability: AttachmentCapability
     now: number
   }): Promise<Uint8Array> {
+    const entry = this.requireEntry(input)
+    this.entries.delete(input.capability)
+    return entry.ciphertext.slice()
+  }
+
+  // oxlint-disable-next-line typescript/require-await -- async keeps the failure a rejection, not a synchronous throw
+  override async revoke(input: { pairingId: PersonalPairingId; capability: AttachmentCapability }): Promise<void> {
+    const entry = this.entries.get(input.capability)
+    if (entry === undefined) return
+    if (entry.pairingId !== input.pairingId) {
+      throw new RemoteAttachmentError('ATTACHMENT_PAIRING_MISMATCH', 'Remote attachment capability belongs to another Personal Pairing')
+    }
+    this.entries.delete(input.capability)
+  }
+
+  override observe(): readonly RemoteAttachmentBlob[] {
+    return [...this.entries].map(([capability, entry]) => ({
+      capability: parseAttachmentCapability(capability),
+      pairingId: entry.pairingId,
+      ciphertext: entry.ciphertext.slice(),
+      expiresAt: entry.expiresAt,
+    }))
+  }
+
+  /** Remove every retained blob and capability, and cancel the background sweep. */
+  dispose(): void {
+    this.disposed = true
+    this.sweepTimer?.cancel()
+    this.sweepTimer = undefined
+    this.sweep(Number.MAX_SAFE_INTEGER)
+  }
+
+  private requireEntry(input: {
+    pairingId: PersonalPairingId
+    capability: AttachmentCapability
+    now: number
+  }): StoredEntry {
     const entry = this.entries.get(input.capability)
     if (entry === undefined) {
       throw new RemoteAttachmentError('ATTACHMENT_CAPABILITY_INVALID', 'Remote attachment capability is unknown, consumed, or revoked')
@@ -191,27 +289,7 @@ export class RemoteAttachmentStoreProvider extends RemoteAttachmentStoreService 
     if (entry.pairingId !== input.pairingId) {
       throw new RemoteAttachmentError('ATTACHMENT_PAIRING_MISMATCH', 'Remote attachment capability belongs to another Personal Pairing')
     }
-    this.entries.delete(input.capability)
-    return entry.ciphertext
-  }
-
-  // oxlint-disable-next-line typescript/require-await -- async keeps the failure a rejection, not a synchronous throw
-  override async revoke(capability: AttachmentCapability): Promise<void> {
-    this.entries.delete(capability)
-  }
-
-  override observe(): readonly RemoteAttachmentBlob[] {
-    return [...this.entries].map(([capability, entry]) => ({
-      capability: parseAttachmentCapability(capability),
-      pairingId: entry.pairingId,
-      ciphertext: entry.ciphertext,
-      expiresAt: entry.expiresAt,
-    }))
-  }
-
-  /** Remove every retained blob and capability; ownership ends with this instance. */
-  dispose(): void {
-    this.sweep(Number.MAX_SAFE_INTEGER)
+    return entry
   }
 
   private sweep(now: number): void {

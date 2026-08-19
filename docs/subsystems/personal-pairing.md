@@ -153,26 +153,34 @@ Platform attachment blob store: retains ciphertext and metadata only, bounded pe
 abstract publish(input: { pairingId: PersonalPairingId; ciphertext: Uint8Array; now: number }): Promise<RemoteAttachmentGrant>
 
 /**
+ * Return a copy of one retained ciphertext without consuming the capability.
+ * @param input - requesting Personal Pairing, one-time capability, and current time.
+ * @returns a copy of the retained ciphertext bytes.
+ */
+abstract inspect(input: { pairingId: PersonalPairingId; capability: AttachmentCapability; now: number }): Promise<Uint8Array>
+
+/**
  * Exchange one capability for its ciphertext exactly once, then remove both.
  * @param input - requesting Personal Pairing, one-time capability, and current time.
- * @returns the retained ciphertext bytes.
+ * @returns a copy of the retained ciphertext bytes.
  */
-abstract consume(input: { pairingId: PersonalPairingId capability: AttachmentCapability now: number }): Promise<Uint8Array>
+abstract consume(input: { pairingId: PersonalPairingId; capability: AttachmentCapability; now: number }): Promise<Uint8Array>
 
 /**
  * Remove one blob and its capability regardless of remaining lifetime.
- * @param capability - capability whose blob is revoked.
+ * @param input - owning Personal Pairing and the capability whose blob is revoked.
+ * A pairing mismatch fails explicitly; an unknown capability is a no-op.
  */
-abstract revoke(capability: AttachmentCapability): Promise<void>
+abstract revoke(input: { pairingId: PersonalPairingId; capability: AttachmentCapability }): Promise<void>
 
 /**
  * Project every retained blob for Platform-side operations.
- * @returns ciphertext and metadata only; no plaintext exists on this side of the boundary.
+ * @returns copies of ciphertext and metadata only; no plaintext exists on this side of the boundary.
  */
 abstract observe(): readonly RemoteAttachmentBlob[]
 ```
 
-Source: [`packages/platform/remote-attachments/src/index.ts:57`](../../packages/platform/remote-attachments/src/index.ts)
+Source: [`packages/platform/remote-attachments/src/index.ts:59`](../../packages/platform/remote-attachments/src/index.ts)
 
 <a id="ctxremoterelay--remoterelayservice-abstract-seam"></a>
 

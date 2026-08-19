@@ -67,7 +67,12 @@ export interface CompanionOfferAttachmentOperation {
   fileName: string
 }
 
-/** Stable explicit Companion attachment rejection reasons; never carry application data. */
+/**
+ * Stable explicit Companion attachment rejection reasons; never carry application data.
+ *
+ * `hash-mismatch` covers a ciphertext SHA-256 or byte-count mismatch and a post-hash
+ * AES-GCM authentication failure (wrong pairing key) after the hash already matched.
+ */
 export type CompanionAttachmentRejectionReason =
   | 'cross-pairing'
   | 'hash-mismatch'

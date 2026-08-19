@@ -9,7 +9,12 @@ import {
   sealCompanionAttachment,
   type CompanionOfferAttachmentOperation,
 } from '@deepseek-ai/dsh-remote-protocol'
-import { CompanionAttachmentReceiveError, receiveCompanionAttachment } from '../src/companion-attachments.ts'
+import {
+  CompanionAttachmentReceiveError,
+  companionAttachmentReasonFromHttpStatus,
+  downloadCompanionAttachment,
+  receiveCompanionAttachment,
+} from '../src/companion-attachments.ts'
 
 const pairingId = parsePersonalPairingId('pairing-a')
 const pairingKey = crypto.getRandomValues(new Uint8Array(32))
@@ -20,6 +25,7 @@ async function offer(overrides: Partial<CompanionOfferAttachmentOperation> = {})
   ciphertext: Uint8Array
   hash: string
 }> {
+  // oxlint-disable-next-line typescript/no-unsafe-assignment -- tsc resolves CryptoKey via @types/node; oxlint's program misses that global
   const key = await deriveCompanionAttachmentKey(pairingKey)
   const sealed = await sealCompanionAttachment(key, plaintext)
   return {
@@ -43,14 +49,16 @@ describe('Desktop Companion attachment receive', () => {
   it('verifies the ciphertext hash before decrypting and submitting into the Session path', async () => {
     const prepared = await offer()
     const submit = vi.fn(async () => {})
+    const download = vi.fn(async () => prepared.ciphertext)
     const received = await receiveCompanionAttachment(prepared.offer, {
       pairingId,
       pairingKey,
       now: 1_000,
-      download: vi.fn(async () => prepared.ciphertext),
+      download,
       submit,
     })
     expect(received).toEqual({ fileName: 'notes.txt', byteLength: plaintext.byteLength })
+    expect(download).toHaveBeenCalledWith(prepared.offer, pairingId)
     expect(submit).toHaveBeenCalledWith({ fileName: 'notes.txt', plaintext })
   })
 
@@ -128,5 +136,47 @@ describe('Desktop Companion attachment receive', () => {
       )),
       submit: () => { throw new Error('cross-pairing must never submit') },
     })).rejects.toMatchObject({ reason: 'cross-pairing' })
+  })
+
+  it('maps Platform consume HTTP statuses onto protocol-native rejection reasons', async () => {
+    expect(companionAttachmentReasonFromHttpStatus(403)).toBe('cross-pairing')
+    expect(companionAttachmentReasonFromHttpStatus(404)).toBe('absent')
+    expect(companionAttachmentReasonFromHttpStatus(410)).toBe('expired')
+    expect(companionAttachmentReasonFromHttpStatus(413)).toBe('limit-exceeded')
+    expect(companionAttachmentReasonFromHttpStatus(500)).toBeUndefined()
+    const prepared = await offer()
+    const origin = 'https://platform.example'
+    const download = async (status: number, body = new Uint8Array()) =>
+      await downloadCompanionAttachment(prepared.offer, {
+        pairingId,
+        origin,
+        fetch: async () => new Response(body, { status }),
+      })
+    await expect(download(403)).rejects.toMatchObject({ reason: 'cross-pairing' })
+    await expect(download(404)).rejects.toMatchObject({ reason: 'absent' })
+    await expect(download(410)).rejects.toMatchObject({ reason: 'expired' })
+    await expect(download(413)).rejects.toMatchObject({ reason: 'limit-exceeded' })
+    await expect(download(500)).rejects.toMatchObject({ reason: 'transfer-interrupted' })
+    await expect(downloadCompanionAttachment(prepared.offer, {
+      pairingId,
+      origin,
+      fetch: async () => { throw new Error('socket hang up') },
+    })).rejects.toMatchObject({ reason: 'transfer-interrupted' })
+    await expect(downloadCompanionAttachment(prepared.offer, {
+      pairingId,
+      origin,
+      fetch: async () => {
+        throw new CompanionAttachmentReceiveError('absent', 'already mapped')
+      },
+    })).rejects.toMatchObject({ reason: 'absent' })
+    await expect(downloadCompanionAttachment(prepared.offer, {
+      pairingId,
+      origin,
+      fetch: async (_input, init) => {
+        const headers = new Headers(init?.headers)
+        expect(headers.get('x-gestalt-pairing-id')).toBe(pairingId)
+        return new Response(prepared.ciphertext, { status: 200 })
+      },
+    })).resolves.toEqual(prepared.ciphertext)
   })
 })

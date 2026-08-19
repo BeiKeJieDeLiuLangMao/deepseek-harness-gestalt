@@ -7,6 +7,10 @@
 
 const HKDF_INFO = 'deepseek-harness/companion-attachment/v1'
 const IV_BYTES = 12
+const GCM_TAG_BYTES = 16
+
+/** AES-256-GCM seal overhead: 12-byte IV plus the 16-byte authentication tag. */
+export const COMPANION_ATTACHMENT_SEAL_OVERHEAD_BYTES = IV_BYTES + GCM_TAG_BYTES
 
 /**
  * Derive one AES-256-GCM attachment key from Personal Pairing key material.
@@ -29,7 +33,8 @@ export async function deriveCompanionAttachmentKey(pairingKey: Uint8Array): Prom
  * Encrypt attachment bytes on Mobile before upload.
  * @param key - pairing-derived attachment key.
  * @param plaintext - caller-held plaintext.
- * @returns ciphertext (`iv ‖ AES-GCM output`) and its lowercase hex SHA-256.
+ * @returns ciphertext (`iv ‖ AES-GCM ciphertext ‖ tag`) and its lowercase hex SHA-256.
+ * The ciphertext is {@link COMPANION_ATTACHMENT_SEAL_OVERHEAD_BYTES} bytes longer than the plaintext.
  */
 export async function sealCompanionAttachment(
   key: CryptoKey,

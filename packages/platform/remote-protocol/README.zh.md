@@ -16,7 +16,7 @@ Companion major 2 和 1 是当前及紧邻的前一应用版本。双方 endpoin
 
 ## Endpoint attachment cipher
 
-`deriveCompanionAttachmentKey`、`sealCompanionAttachment`、`openCompanionAttachment` 与 `hashCompanionCiphertext` 以 HKDF-SHA-256 密钥派生和 AES-256-GCM 实现加密 attachment 传输的 endpoint 侧。两个 endpoint 链接这些函数；Platform blob store 只接收 `sealCompanionAttachment` 的输出及其 SHA-256，永不派生密钥。密钥材料由 Personal Pairing 层提供。
+`deriveCompanionAttachmentKey`、`sealCompanionAttachment`、`openCompanionAttachment` 与 `hashCompanionCiphertext` 以 HKDF-SHA-256 密钥派生和 AES-256-GCM 实现加密 attachment 传输的 endpoint 侧。密封载荷是 `iv(12) ‖ ciphertext ‖ tag(16)`（`COMPANION_ATTACHMENT_SEAL_OVERHEAD_BYTES` = 28）。两个 endpoint 链接这些函数；Platform blob store 只接收 `sealCompanionAttachment` 的输出及其 SHA-256，永不派生密钥。密钥材料由 Personal Pairing 层提供。100 MiB blob 上限是密文限制；Mobile 会拒绝加上该开销后无法放入上限的明文。
 
 ## Wire 限制与错误
 
@@ -31,7 +31,7 @@ Companion major 2 和 1 是当前及紧邻的前一应用版本。双方 endpoin
 | 加密前 Companion 应用数据 | 61,440 字节（60 KiB） |
 | 完整编码 transcript-page 消息 | 49,152 字节（48 KiB） |
 | Transcript page | 50 条 |
-| 保留的 attachment blob | 104,857,600 字节（100 MiB） |
+| 保留的 attachment blob | 104,857,600 密文字节（100 MiB） |
 | Attachment capability 生命周期 | 900,000 毫秒（15 分钟） |
 | Attachment 文件名 | 255 UTF-8 字节 |
 

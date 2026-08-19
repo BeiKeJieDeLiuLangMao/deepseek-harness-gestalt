@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-19-encrypted-companion-attachments.md
-2026-08-19-encrypted-companion-attachments.md: a40cb919eba1da58bd2a80e77930396f8ae8be82
-2026-08-19-encrypted-companion-attachments.zh.md: 32a458ab267607050bca3da8e5af41cc64ff59af
+2026-08-19-encrypted-companion-attachments.md: 9038323767a819b9b9cda378c76c11713df06481
+2026-08-19-encrypted-companion-attachments.zh.md: f7dd6c7ec88d8eac9df28281297c8e21d1acce6f

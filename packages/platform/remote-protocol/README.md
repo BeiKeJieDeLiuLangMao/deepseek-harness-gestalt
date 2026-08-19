@@ -16,7 +16,7 @@ The implemented catalog contains a bounded transcript-page projection, a prompt-
 
 ## Endpoint attachment cipher
 
-`deriveCompanionAttachmentKey`, `sealCompanionAttachment`, `openCompanionAttachment`, and `hashCompanionCiphertext` implement the endpoint side of encrypted attachment transfer with HKDF-SHA-256 key derivation and AES-256-GCM. Both endpoints link these functions; the Platform blob store receives only `sealCompanionAttachment` output and its SHA-256 and never derives the key. Key material is supplied by the Personal Pairing layer.
+`deriveCompanionAttachmentKey`, `sealCompanionAttachment`, `openCompanionAttachment`, and `hashCompanionCiphertext` implement the endpoint side of encrypted attachment transfer with HKDF-SHA-256 key derivation and AES-256-GCM. The sealed payload is `iv(12) ‖ ciphertext ‖ tag(16)` (`COMPANION_ATTACHMENT_SEAL_OVERHEAD_BYTES` = 28). Both endpoints link these functions; the Platform blob store receives only `sealCompanionAttachment` output and its SHA-256 and never derives the key. Key material is supplied by the Personal Pairing layer. The 100 MiB blob ceiling is a ciphertext limit; Mobile rejects plaintext that cannot fit after this overhead.
 
 ## Wire limits and errors
 
@@ -31,7 +31,7 @@ The implemented catalog contains a bounded transcript-page projection, a prompt-
 | Companion application before encryption | 61,440 bytes (60 KiB) |
 | Complete encoded transcript-page message | 49,152 bytes (48 KiB) |
 | Transcript page | 50 entries |
-| Retained attachment blob | 104,857,600 bytes (100 MiB) |
+| Retained attachment blob | 104,857,600 ciphertext bytes (100 MiB) |
 | Attachment capability lifetime | 900,000 ms (15 minutes) |
 | Attachment file name | 255 UTF-8 bytes |
 

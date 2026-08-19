@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  COMPANION_ATTACHMENT_SEAL_OVERHEAD_BYTES,
   deriveCompanionAttachmentKey,
   hashCompanionCiphertext,
   openCompanionAttachment,
@@ -16,6 +17,7 @@ describe('Companion attachment cipher', () => {
   it('copies non-plain byte views before touching WebCrypto', async () => {
     const key = await deriveCompanionAttachmentKey(Buffer.alloc(32, 7))
     const sealed = await sealCompanionAttachment(key, Buffer.from('buffered plaintext'))
+    expect(sealed.ciphertext.byteLength).toBe(Buffer.byteLength('buffered plaintext') + COMPANION_ATTACHMENT_SEAL_OVERHEAD_BYTES)
     expect(await hashCompanionCiphertext(Buffer.from(sealed.ciphertext))).toBe(sealed.ciphertextSha256)
     const opened = await openCompanionAttachment(key, Buffer.from(sealed.ciphertext))
     expect(new TextDecoder().decode(opened)).toBe('buffered plaintext')

@@ -1,3 +1,4 @@
+import { EventEmitter } from 'node:events'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -9,8 +10,15 @@ import {
 } from '@deepseek-ai/dsh-remote-protocol'
 import { RemoteAttachmentStoreProvider, type RemoteAttachmentStoreOptions } from '../src/index.ts'
 import { apply } from '../src/http.ts'
-import { receiveCompanionAttachment } from '../../../../apps/desktop/src/companion-attachments.ts'
-import { buildCompanionAttachmentOffer, sealCompanionAttachment as mobileSeal } from '../../../../apps/mobile/src/companion-attachment.ts'
+import {
+  downloadCompanionAttachment,
+  receiveCompanionAttachment,
+} from '../../../../apps/desktop/src/companion-attachments.ts'
+import {
+  COMPANION_ATTACHMENT_SEAL_OVERHEAD_BYTES,
+  buildCompanionAttachmentOffer,
+  sealCompanionAttachment as mobileSeal,
+} from '../../../../apps/mobile/src/companion-attachment.ts'
 
 interface RegisteredRoute {
   kind: 'exact'
@@ -59,15 +67,11 @@ describe('Remote attachment HTTP assembled transfer', () => {
       pairingId: pairingA,
       pairingKey,
       now: (grant.expiresAt as number) - 1,
-      download: async (current) => {
-        const response = await fetch(`${origin}/v1/remote-attachments/consume`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json', 'x-test-pairing': 'pairing-a' },
-          body: JSON.stringify({ capability: current.capability }),
-        })
-        if (response.status !== 200) throw new Error(`consume failed with HTTP ${response.status}`)
-        return new Uint8Array(await response.arrayBuffer())
-      },
+      download: async current => await downloadCompanionAttachment(current, {
+        pairingId: pairingA,
+        origin,
+        headers: { 'x-test-pairing': 'pairing-a' },
+      }),
       submit: async (attachment) => { submitted.push(attachment) },
     })
     expect(received).toEqual({ fileName: 'notes.txt', byteLength: plaintext.byteLength })
@@ -141,8 +145,8 @@ describe('Remote attachment HTTP assembled transfer', () => {
       headers: { 'content-type': 'application/octet-stream', 'x-test-pairing': 'pairing-a' },
       body: new Uint8Array(0),
     })
-    expect(empty.status).toBe(413)
-    expect(await errorBody(empty)).toMatchObject({ code: 'ATTACHMENT_LIMIT_EXCEEDED' })
+    expect(empty.status).toBe(400)
+    expect(await errorBody(empty)).toMatchObject({ code: 'ATTACHMENT_EMPTY' })
 
     const unknown = await fetch(`${origin}/v1/remote-attachments/consume`, {
       method: 'POST',
@@ -175,6 +179,82 @@ describe('Remote attachment HTTP assembled transfer', () => {
       body: JSON.stringify({ capability: grant.capability }),
     })
     expect(consume.status).toBe(404)
+  })
+
+  it('rejects cross-pairing revocation without deleting the blob', async () => {
+    const { origin, store } = await start()
+    const sealed = await mobileSeal(pairingKey, Uint8Array.of(1, 2, 3))
+    const upload = await fetch(`${origin}/v1/remote-attachments`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/octet-stream', 'x-test-pairing': 'pairing-a' },
+      body: sealed.ciphertext,
+    })
+    const grant = await upload.json() as { capability: string }
+    const cross = await fetch(`${origin}/v1/remote-attachments/revoke`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-test-pairing': 'pairing-b' },
+      body: JSON.stringify({ capability: grant.capability }),
+    })
+    expect(cross.status).toBe(403)
+    expect(await errorBody(cross)).toMatchObject({ code: 'ATTACHMENT_PAIRING_MISMATCH' })
+    expect(store.observe()).toHaveLength(1)
+  })
+
+  it('accepts plaintext that seals to the ciphertext ceiling and rejects one extra byte before encrypting', async () => {
+    const limit = 64
+    const { origin } = await start({ store: { maxBlobBytes: limit } })
+    const accepted = await mobileSeal(pairingKey, new Uint8Array(limit - COMPANION_ATTACHMENT_SEAL_OVERHEAD_BYTES), limit)
+    expect(accepted.ciphertext.byteLength).toBe(limit)
+    const upload = await fetch(`${origin}/v1/remote-attachments`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/octet-stream', 'x-test-pairing': 'pairing-a' },
+      body: accepted.ciphertext,
+    })
+    expect(upload.status).toBe(201)
+    await expect(mobileSeal(pairingKey, new Uint8Array(limit - COMPANION_ATTACHMENT_SEAL_OVERHEAD_BYTES + 1), limit))
+      .rejects.toThrow('ciphertext blob ceiling')
+  })
+
+  it('keeps the blob when consume fails mid-write so a second consume succeeds', async () => {
+    const { routes, store } = await start()
+    const sealed = await mobileSeal(pairingKey, Uint8Array.of(9, 8, 7))
+    const uploadRoute = routes.get('/v1/remote-attachments')
+    if (uploadRoute === undefined) throw new Error('upload route was not registered')
+    const uploadResponse = stubResponse()
+    await uploadRoute.handler(
+      streamingRequest({ 'x-test-pairing': 'pairing-a' }, [new Uint8Array(sealed.ciphertext)]),
+      uploadResponse.res,
+    )
+    const grant = JSON.parse(new TextDecoder().decode(concatBytes(uploadResponse.body))) as { capability: string }
+    const consumeRoute = routes.get('/v1/remote-attachments/consume')
+    if (consumeRoute === undefined) throw new Error('consume route was not registered')
+    await consumeRoute.handler(
+      streamingRequest(
+        { 'x-test-pairing': 'pairing-a' },
+        [new TextEncoder().encode(JSON.stringify({ capability: grant.capability }))],
+      ),
+      failingResponse('mid-write failure').res,
+    )
+    expect(store.observe()).toHaveLength(1)
+    await consumeRoute.handler(
+      streamingRequest(
+        { 'x-test-pairing': 'pairing-a' },
+        [new TextEncoder().encode(JSON.stringify({ capability: grant.capability }))],
+      ),
+      failingResponse(new Error('mid-write failure')).res,
+    )
+    expect(store.observe()).toHaveLength(1)
+    const retry = stubResponse()
+    await consumeRoute.handler(
+      streamingRequest(
+        { 'x-test-pairing': 'pairing-a' },
+        [new TextEncoder().encode(JSON.stringify({ capability: grant.capability }))],
+      ),
+      retry.res,
+    )
+    expect(retry.status).toBe(200)
+    expect(concatBytes(retry.body)).toEqual(sealed.ciphertext)
+    expect(store.observe()).toHaveLength(0)
   })
 
   it('keeps a foreign pairing key unable to open another pairing seal', async () => {
@@ -321,6 +401,10 @@ describe('Remote attachment HTTP assembled transfer', () => {
     )
     expect(response.status).toBe(413)
   })
+
+  it('fails loud when the configured browser origin is not a URL', () => {
+    expect(() => { apply({} as Context, { origin: 'not a URL' }) }).toThrow()
+  })
 })
 
 async function errorBody(response: Response): Promise<{ code: string }> {
@@ -354,15 +438,46 @@ function stubResponse(): { res: ServerResponse; status: number; body: Uint8Array
     body: [],
     res: undefined as never,
   }
-  holder.res = {
-    writeHead(status: number) { holder.status = status; return holder.res },
+  const state = { headersSent: false, writableFinished: false }
+  const emitter = new EventEmitter()
+  holder.res = Object.assign(emitter, {
+    get headersSent() { return state.headersSent },
+    get writableFinished() { return state.writableFinished },
+    writeHead(status: number) {
+      holder.status = status
+      state.headersSent = true
+      return holder.res
+    },
     setHeader() { return holder.res },
     end(chunk?: unknown) {
       if (typeof chunk === 'string') holder.body.push(new TextEncoder().encode(chunk))
       else if (chunk instanceof Uint8Array) holder.body.push(chunk)
+      state.writableFinished = true
+      queueMicrotask(() => { emitter.emit('finish') })
+      return holder.res
     },
-  } as unknown as ServerResponse
+  }) as unknown as ServerResponse
   return holder
+}
+
+function failingResponse(failure: unknown = new Error('mid-write failure')): { res: ServerResponse } {
+  const state = { headersSent: false, ended: false }
+  const emitter = new EventEmitter()
+  const res = Object.assign(emitter, {
+    get headersSent() { return state.headersSent },
+    writableFinished: false,
+    writeHead() {
+      state.headersSent = true
+      return res
+    },
+    setHeader() { return res },
+    end() {
+      if (state.ended) return res
+      state.ended = true
+      throw failure
+    },
+  }) as unknown as ServerResponse
+  return { res }
 }
 
 function concatBytes(chunks: Uint8Array[]): Uint8Array {
@@ -388,14 +503,14 @@ async function start(options: { store?: Partial<RemoteAttachmentStoreOptions> } 
     maxBlobBytes: 16 * 1_024 * 1_024,
     maxRetainedBlobs: 16,
     sweepIntervalMs: 60_000,
-    schedule: () => ({ unref: vi.fn() }),
+    schedule: () => ({ unref: vi.fn(), cancel: vi.fn() }),
     ...options.store,
   })
   const fake = {
     remoteAttachments: store,
     remoteAttachmentAuthority: {
       authenticate: async ({ headers }: { headers: IncomingMessage['headers'] }) => {
-        const value = headers['x-test-pairing']
+        const value = headers['x-test-pairing'] ?? headers['x-gestalt-pairing-id']
         if (typeof value !== 'string') throw new Error('pairing header is required')
         if (value === 'explode') throw new Error('authority exploded')
         return parsePersonalPairingId(value)

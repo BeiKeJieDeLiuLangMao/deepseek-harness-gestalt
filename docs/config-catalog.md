@@ -1641,6 +1641,26 @@ export interface Config {
 
 Source: [`packages/platform/remote-access-http/src/index.ts:22`](../packages/platform/remote-access-http/src/index.ts)
 
+<a id="deepseek-aidsh-remote-attachments"></a>
+
+## `@deepseek-ai/dsh-remote-attachments`
+
+```ts config-catalog
+/** Deployment bounds for the in-process store, reachable from cordis.yml. */
+export interface Config {
+  /** Per-blob ciphertext ceiling; defaults to the accepted protocol ceiling. */
+  maxBlobBytes?: number
+  /** Capability lifetime; defaults to the accepted fifteen-minute default. */
+  capabilityLifetimeMs?: number
+  /** Maximum simultaneously retained blobs; capacity failures are explicit. */
+  maxRetainedBlobs: number
+  /** Interval removing expired blobs in the background. */
+  sweepIntervalMs: number
+}
+```
+
+Source: [`packages/platform/remote-attachments/src/index.ts:111`](../packages/platform/remote-attachments/src/index.ts)
+
 <a id="deepseek-aidsh-repeat-tool-reminder"></a>
 
 ## `@deepseek-ai/dsh-repeat-tool-reminder`
@@ -3397,7 +3417,6 @@ Imported as libraries by other packages; a `cordis.yml` cannot load them.
 - `@deepseek-ai/dsh-platform-account-client` ([`packages/platform/platform-account-client/src/index.ts`](../packages/platform/platform-account-client/src/index.ts))
 - `@deepseek-ai/dsh-remote-access-client` ([`packages/platform/remote-access-client/src/index.ts`](../packages/platform/remote-access-client/src/index.ts))
 - `@deepseek-ai/dsh-remote-access-redis` ([`packages/platform/remote-access-redis/src/index.ts`](../packages/platform/remote-access-redis/src/index.ts))
-- `@deepseek-ai/dsh-remote-attachments` ([`packages/platform/remote-attachments/src/index.ts`](../packages/platform/remote-attachments/src/index.ts))
 - `@deepseek-ai/dsh-remote-protocol` ([`packages/platform/remote-protocol/src/index.ts`](../packages/platform/remote-protocol/src/index.ts))
 - `@deepseek-ai/dsh-sandbox-windows-acl` ([`packages/sandbox/sandbox-windows-acl/src/index.ts`](../packages/sandbox/sandbox-windows-acl/src/index.ts))
 - `@deepseek-ai/dsh-scope` ([`packages/core/scope/src/index.ts`](../packages/core/scope/src/index.ts))

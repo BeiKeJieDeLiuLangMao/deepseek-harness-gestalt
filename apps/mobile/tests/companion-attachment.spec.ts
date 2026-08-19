@@ -3,6 +3,7 @@ import { parseCompanionOperationId, parseCompanionSessionId } from '@deepseek-ai
 import {
   buildCompanionAttachmentOffer,
   COMPANION_ATTACHMENT_MAX_BYTES,
+  COMPANION_ATTACHMENT_SEAL_OVERHEAD_BYTES,
   sealCompanionAttachment,
 } from '../src/companion-attachment.ts'
 
@@ -13,6 +14,7 @@ describe('Companion encrypted attachments', () => {
     const plaintext = new TextEncoder().encode('secret attachment')
     const sealed = await sealCompanionAttachment(pairingKey, plaintext)
     expect(sealed.ciphertext).not.toEqual(plaintext)
+    expect(sealed.ciphertext.byteLength).toBe(plaintext.byteLength + COMPANION_ATTACHMENT_SEAL_OVERHEAD_BYTES)
     expect(sealed.ciphertextSha256).toMatch(/^[0-9a-f]{64}$/u)
 
     const offer = buildCompanionAttachmentOffer({
@@ -34,9 +36,20 @@ describe('Companion encrypted attachments', () => {
     })
   })
 
-  it('fails the 100 MiB ceiling before any encryption work', async () => {
-    await expect(sealCompanionAttachment(pairingKey, new Uint8Array(COMPANION_ATTACHMENT_MAX_BYTES + 1)))
-      .rejects.toThrow('100 MiB')
+  it('rejects plaintext that cannot fit in the ciphertext ceiling after the GCM seal', async () => {
+    const limit = 64
+    const accepted = await sealCompanionAttachment(
+      pairingKey,
+      new Uint8Array(limit - COMPANION_ATTACHMENT_SEAL_OVERHEAD_BYTES),
+      limit,
+    )
+    expect(accepted.ciphertext.byteLength).toBe(limit)
+    await expect(sealCompanionAttachment(
+      pairingKey,
+      new Uint8Array(limit - COMPANION_ATTACHMENT_SEAL_OVERHEAD_BYTES + 1),
+      limit,
+    )).rejects.toThrow('ciphertext blob ceiling')
+    expect(COMPANION_ATTACHMENT_MAX_BYTES).toBeGreaterThan(limit)
     await expect(sealCompanionAttachment(new Uint8Array(31), Uint8Array.of(1)))
       .rejects.toThrow('at least 32 bytes')
   })

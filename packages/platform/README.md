@@ -15,5 +15,6 @@ Platform packages own installation-independent identity and session behavior use
 | [`remote-access-http/`](remote-access-http/README.md) | `@deepseek-ai/dsh-remote-access-http` | Pairing HTTP and Relay WSS Consumers | Consumer |
 | [`remote-access-redis/`](remote-access-redis/README.md) | `@deepseek-ai/dsh-remote-access-redis` | Expiring Relay directory, invalidation, and direct ciphertext Pub/Sub | Coordination adapter |
 | [`remote-protocol/`](remote-protocol/README.md) | `@deepseek-ai/dsh-remote-protocol` | Relay and encrypted Companion codecs, negotiation, errors, and limits | Pure protocol module |
+| [`remote-attachments/`](remote-attachments/README.md) | `@deepseek-ai/dsh-remote-attachments` | Pairing-scoped encrypted attachment blob store and HTTPS Consumer | `ctx.remoteAttachments` |
 
 Deployment persistence, shared invalidation transport, secrets, and observability adapters belong to the Platform composition root. The packages here define and exercise their required interfaces without embedding deployment credentials.

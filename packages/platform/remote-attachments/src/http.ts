@@ -43,6 +43,7 @@ declare module '@deepseek-ai/cordis' {
 
 const STORE_FAILURE_STATUS: Record<RemoteAttachmentErrorCode, number> = {
   ATTACHMENT_CAPABILITY_INVALID: 404,
+  ATTACHMENT_EMPTY: 400,
   ATTACHMENT_EXPIRED: 410,
   ATTACHMENT_PAIRING_MISMATCH: 403,
   ATTACHMENT_LIMIT_EXCEEDED: 413,
@@ -89,21 +90,18 @@ export function apply(ctx: Context, config: Config): void {
     path: '/v1/remote-attachments/consume',
     handler: route(async (req, res, pairingId) => {
       const body = await readJson(req)
-      const ciphertext = await store.consume({
-        pairingId,
-        capability: parseCapability(body.capability),
-        now: Date.now(),
-      })
-      res.writeHead(200, { 'content-type': 'application/octet-stream', 'cache-control': 'no-store' })
-      res.end(ciphertext)
+      const capability = parseCapability(body.capability)
+      const ciphertext = await store.inspect({ pairingId, capability, now: Date.now() })
+      await writeOctetStream(res, ciphertext)
+      await store.revoke({ pairingId, capability })
     }),
   }), 'remote-attachments: consume route')
   ctx.effect(() => ctx.webServer.register({
     kind: 'exact',
     path: '/v1/remote-attachments/revoke',
-    handler: route(async (req, res) => {
+    handler: route(async (req, res, pairingId) => {
       const body = await readJson(req)
-      await store.revoke(parseCapability(body.capability))
+      await store.revoke({ pairingId, capability: parseCapability(body.capability) })
       res.writeHead(204).end()
     }),
   }), 'remote-attachments: revoke route')
@@ -187,8 +185,33 @@ function answerJson(res: ServerResponse, status: number, value: unknown): void {
 }
 
 function answerError(res: ServerResponse, error: unknown): void {
+  if (res.headersSent) return
   const { status, body } = toFailureView(error)
   answerJson(res, status, body)
+}
+
+/** Write one ciphertext body and settle only after the response finishes. */
+function writeOctetStream(res: ServerResponse, ciphertext: Uint8Array): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const fail = (error: unknown): void => {
+      res.off('error', fail)
+      res.off('finish', succeed)
+      reject(error instanceof Error ? error : new Error('Remote attachment consume response failed'))
+    }
+    const succeed = (): void => {
+      res.off('error', fail)
+      res.off('finish', succeed)
+      resolve()
+    }
+    res.once('error', fail)
+    res.once('finish', succeed)
+    try {
+      res.writeHead(200, { 'content-type': 'application/octet-stream', 'cache-control': 'no-store' })
+      res.end(ciphertext)
+    } catch (error) {
+      fail(error)
+    }
+  })
 }
 
 function toFailureView(error: unknown): { status: number; body: { error: { code: string; message: string } } } {
