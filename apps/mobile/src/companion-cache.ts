@@ -24,7 +24,7 @@ export function parseCompanionDesktopId(value: unknown): CompanionDesktopId {
 export type CompanionCacheContentKind = 'workspace-metadata' | 'session-metadata' | 'transcript'
 
 /** Content kinds that must never be automatically cached. */
-export const COMPANION_CACHE_EXCLUDED_KINDS = [
+const COMPANION_CACHE_EXCLUDED_KINDS = [
   'attachment-bytes',
   'terminal-content',
   'spill-file',
@@ -51,7 +51,7 @@ export function companionCacheAdmits(kind: string): kind is CompanionCacheConten
 }
 
 /** Mutations Remote Offline disables; cache reads stay permitted. */
-export const COMPANION_OFFLINE_MUTATIONS = [
+const COMPANION_OFFLINE_MUTATIONS = [
   'prompt',
   'cancel',
   'approval',
