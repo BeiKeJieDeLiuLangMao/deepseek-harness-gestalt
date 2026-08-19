@@ -121,7 +121,7 @@ function createIndexedDbStub(): IDBFactory {
       })
       return request as unknown as IDBOpenDBRequest
     },
-  } as IDBFactory
+  } as unknown as IDBFactory
 }
 
 const win = window as FixtureWindow
