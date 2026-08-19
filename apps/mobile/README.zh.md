@@ -8,6 +8,8 @@
 
 共用 Mobile 入口内置 `@capacitor/browser` 适配器，并在授权尝试准备完成后由继续按钮的用户激活直接调用。入口没有 `window.open`、弹窗或携带令牌的自定义 URL 回退。`IndexedDbInstallationAccountStore` 将所选数据库身份写入数据库名；原生打包负责提供稳定 WebView origin。
 
+Companion Cache 按配对 Desktop 以 Personal Pairing seam 注入的 AES-GCM 密钥密封已打开的 Workspace/Session 元数据与 transcript，存放在独立于配对密钥存储的 IndexedDB 数据库中。附件字节、终端内容、spill 文件与凭据永不进入缓存；Remote Offline 允许读取缓存但禁用一切 mutation。`CompanionUncertainOperationSettlement` 是唯一的结算点：仅在 mutation 离开设备后写入 Operation Receipt，重连时通过协议的 `query-operation-status` operation 对账未知回执，且永不重放 operation。清除单个配对 Desktop 的缓存不会破坏配对密钥记录。
+
 ```sh
 pnpm --filter @deepseek-ai/dsh-mobile build
 ```

@@ -8,6 +8,8 @@ The entry validates the complete development and production identity pair before
 
 The shared Mobile entry includes the `@capacitor/browser` adapter and calls it directly from the prepared authorization button's user activation. It has no `window.open`, popup, or custom-URL token fallback. `IndexedDbInstallationAccountStore` uses the selected database identity in its database name; native packaging supplies the stable WebView origin.
 
+The Companion Cache seals opened Workspace/Session metadata and transcripts at rest per Paired Desktop with AES-GCM keys injected through the Personal Pairing seam, in its own IndexedDB database separate from pairing-key storage. Attachment bytes, terminal content, spill files, and credentials never enter the cache; Remote Offline permits cache reads but disables every mutation. `CompanionUncertainOperationSettlement` is the single settlement point: it stores an Operation Receipt only after a mutation left the device, reconciles unknown receipts on reconnect through the protocol's `query-operation-status` operation, and never replays an operation. Clearing one Paired Desktop's cache leaves pairing-key records intact.
+
 ```sh
 pnpm --filter @deepseek-ai/dsh-mobile build
 ```

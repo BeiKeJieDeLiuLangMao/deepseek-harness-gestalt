@@ -218,7 +218,7 @@ export async function apply(_ctx: Context, config: Config): Promise<void> {
       reconnectDelayMs: config.reconnectDelayMs,
       onCiphertext: async (ciphertext) => {
         const message = decodeCompanionMessage(mobileProtocol, cipher.open(ciphertext))
-        if (message.type === 'result') result.resolve(message.result.outcome)
+        if (message.type === 'result' && message.result.type === 'confirmed') result.resolve(message.result.outcome)
         if (message.type === 'projection') {
           const entry = message.projection.entries[0]
           if (entry?.type === 'text') {
