@@ -19,7 +19,7 @@
 
 渲染进程崩溃会提交 reason 为 `crashed` 的 `BrowserUnavailableState`，并为同一 target 重建隐藏窗口。恢复耗尽则提交 `reason: 'reconnect-failed'`。格式错误的 Chromium 结果会以 `BROWSER_PROTOCOL` 拒绝。
 
-`listenElectronBrowserHttp` 绑定一个 loopback HTTP 服务器，复制 Tandem 的 session、tab、navigate、input、page-content、screenshot、focus 与 destroy 操作，使 Web Host 可以驱动该引擎，而不嵌入第二个 Electron 应用。`POST /input` 携带客户端的 `expectedRevision`，并返回已提交的页面与修订号。
+`listenElectronBrowserHttp` 绑定一个 loopback HTTP 服务器，复制 Tandem 的 session、tab、navigate、input、page-content、screenshot、focus 与 destroy 操作，使 Web Host 可以驱动该引擎，而不嵌入第二个 Electron 应用。navigate、input 与 focus 会把客户端的 `expectedRevision` 与引擎修订号比较，不匹配时以 409 `BROWSER_REVISION_CONFLICT` 拒绝，并返回引擎已提交的修订号。
 
 ## 模型体验
 

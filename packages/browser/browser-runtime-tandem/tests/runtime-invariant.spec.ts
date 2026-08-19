@@ -158,7 +158,7 @@ describe('Tandem Browser Runtime invariant lifecycle', () => {
     const firstInvariant = await mountInvariant(ctx)
     const firstValidate = tandemRuntimeStateValidator(ownerOf(ctx))
     if (firstValidate === undefined) throw new Error('expected Tandem Browser Runtime validator')
-    expect(() => { firstValidate({ ...created, revision: 2 }) })
+    expect(() => { firstValidate({ status: 'closed', target: created.target, revision: 2 }) })
       .toThrow(/revision 2 must follow 0/)
 
     const navigated = await ctx.browserRuntime.navigate({
@@ -172,7 +172,7 @@ describe('Tandem Browser Runtime invariant lifecycle', () => {
     await mountInvariant(ctx)
     const reloadedValidate = tandemRuntimeStateValidator(ownerOf(ctx))
     if (reloadedValidate === undefined) throw new Error('expected reloaded Tandem Browser Runtime validator')
-    expect(() => { reloadedValidate({ ...navigated, revision: 3 }) })
+    expect(() => { reloadedValidate({ status: 'closed', target: created.target, revision: 3 }) })
       .toThrow(/revision 3 must follow 1/)
     const focused = await ctx.browserRuntime.focus({
       target: created.target,
@@ -200,7 +200,7 @@ describe('Tandem Browser Runtime invariant lifecycle', () => {
     const revisionZero = await skippedRevision.browserRuntime.create({ profile: 'temporary' })
     const validateRevision = tandemRuntimeStateValidator(ownerOf(skippedRevision))
     if (validateRevision === undefined) throw new Error('expected Tandem Browser Runtime validator')
-    expect(() => { validateRevision({ ...revisionZero, revision: 2 }) })
+    expect(() => { validateRevision({ status: 'closed', target: revisionZero.target, revision: 2 }) })
       .toThrow(/revision 2 must follow 0/)
 
     const terminal = await setup()
@@ -228,9 +228,11 @@ describe('Tandem Browser Runtime invariant lifecycle', () => {
       expectedRevision: created.revision,
       url: 'https://example.test/',
     })).rejects.toMatchObject({ code: 'INVARIANT' })
-    await expect(ctx.browserRuntime.observe({ target: created.target }))
-      .resolves.toMatchObject({ status: 'open', target: created.target, revision: created.revision })
+    expect(tandemRuntimeStateReader(ownerOf(ctx))?.().get(browserTargetKey(created.target)))
+      .toMatchObject({ status: 'open', target: created.target, revision: created.revision })
     disposeValidator()
+    await expect(ctx.browserRuntime.observe({ target: created.target }))
+      .resolves.toMatchObject({ status: 'open', target: created.target, revision: 1 })
   })
 
   it('keeps an unavailable projection when the restored commit fails validation', async () => {

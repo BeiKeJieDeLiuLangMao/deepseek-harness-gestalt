@@ -33,6 +33,7 @@
     "lib/invariant.js",
     "lib/runtime-state-*.js",
     "lib/testing.js",
+    "lib/host-seam.js",
     "lib/types/**/*.d.ts"
   ],
   "license": "MIT",

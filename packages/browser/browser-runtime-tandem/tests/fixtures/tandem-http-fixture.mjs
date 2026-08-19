@@ -86,12 +86,17 @@ function isTemporary(sessionName) {
   return /-tmp-\d+$/.test(sessionName)
 }
 
-function nextRevision(input, session) {
-  if (typeof input.expectedRevision === 'number' && Number.isSafeInteger(input.expectedRevision)) {
-    session.revision = input.expectedRevision + 1
-    return session.revision
+function applyRevision(input, session, response) {
+  const current = session.revision ?? 0
+  if (typeof input.expectedRevision === 'number' && Number.isSafeInteger(input.expectedRevision)
+    && input.expectedRevision !== current) {
+    json(response, 409, {
+      error: `browser revision conflict: expected ${String(input.expectedRevision)}, current ${String(current)}; observe again before mutating`,
+      code: 'BROWSER_REVISION_CONFLICT',
+    })
+    return undefined
   }
-  session.revision = (session.revision ?? 0) + 1
+  session.revision = current + 1
   return session.revision
 }
 
@@ -198,7 +203,8 @@ const server = createServer(async (request, response) => {
       }
       if (input.url === 'https://forget.test/') sessions.delete(session.name)
     }
-    const revision = session === undefined ? 1 : nextRevision(input, session)
+    const revision = session === undefined ? 1 : applyRevision(input, session, response)
+    if (revision === undefined) return
     json(response, 200, {
       ok: true,
       url: input.url,
@@ -253,12 +259,16 @@ const server = createServer(async (request, response) => {
           ? 'Recovered crash page.'
           : session?.text || (identity.length === 0 ? '' : `identity=${identity}`)
     if (session !== undefined) session.text = text
+    if (faults.pageContent === 'ahead-revision' && session !== undefined) session.revision = 4
     const body = {
       title: tab?.title ?? '',
       url: tab?.url ?? '',
       description: '',
       text,
       length: text.length,
+      ...(faults.pageContent === 'omit-revision'
+        ? {}
+        : { revision: faults.pageContent === 'ahead-revision' ? 4 : session?.revision ?? 0 }),
     }
     if (faults.pageContent === 'seed-storage') {
       body.storage = storageFor('seeded')
@@ -291,7 +301,8 @@ const server = createServer(async (request, response) => {
   if (request.method === 'POST' && url.pathname === '/tabs/focus') {
     const input = await body(request)
     const session = [...sessions.values()].find(value => value.tab.id === input.tabId) ?? [...sessions.values()].at(-1)
-    const revision = session === undefined ? 1 : nextRevision(input, session)
+    const revision = session === undefined ? 1 : applyRevision(input, session, response)
+    if (revision === undefined) return
     json(response, 200, { ok: faults.focus !== 'ok-false', revision })
     return
   }
@@ -299,6 +310,22 @@ const server = createServer(async (request, response) => {
     const input = await body(request)
     if (faults.input === 'ok-false') {
       json(response, 200, { ok: false, revision: 1, url: 'about:blank', title: '', text: '', tab: input.tabId })
+      return
+    }
+    if (faults.input === 'revision-conflict') {
+      json(response, 409, {
+        error: 'browser revision conflict: expected 0, current 2; observe again before mutating',
+        code: 'BROWSER_REVISION_CONFLICT',
+      })
+      return
+    }
+    if (faults.input === 'revision-conflict-no-message') {
+      json(response, 409, { code: 'BROWSER_REVISION_CONFLICT', error: 7 })
+      return
+    }
+    if (faults.input === 'revision-conflict-non-json') {
+      response.writeHead(409, { 'content-type': 'application/json' })
+      response.end('not-json')
       return
     }
     const session = [...sessions.values()].find(value => value.tab.id === input.tabId) ?? [...sessions.values()].at(-1)
@@ -318,7 +345,8 @@ const server = createServer(async (request, response) => {
           ? `Signed in as ${identity}.\nidentity=${identity}`
           : session.text
     }
-    const revision = nextRevision(input, session)
+    const revision = applyRevision(input, session, response)
+    if (revision === undefined) return
     json(response, 200, {
       ok: true,
       revision,

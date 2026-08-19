@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-19-electron-browser-runtime.md
-2026-08-19-electron-browser-runtime.md: a8fc5f8cd438facecd17f01571b0b206c77344e0
-2026-08-19-electron-browser-runtime.zh.md: dbb34025a81cedae7096c879c4fcafbbd11941e1
+2026-08-19-electron-browser-runtime.md: e392472d193e90cadadc2faf8e15dcf514d72676
+2026-08-19-electron-browser-runtime.zh.md: ee28c9c5b420ff23a02ea31e5c64cb1192acea77

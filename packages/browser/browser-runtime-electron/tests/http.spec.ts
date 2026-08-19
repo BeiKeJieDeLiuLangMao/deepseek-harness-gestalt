@@ -365,8 +365,8 @@ describe('Electron Browser HTTP protocol', () => {
       headers,
       body: JSON.stringify({ tabId, url: 'https://example.test/', expectedRevision: 0 }),
     })
-    expect(goodRevision.status).toBe(200)
-    const typed = await json(server.origin, '/input', {
+    expect(goodRevision).toMatchObject({ status: 200, body: { ok: true, revision: 1 } })
+    const staleInput = await json(server.origin, '/input', {
       method: 'POST',
       headers,
       body: JSON.stringify({
@@ -376,13 +376,33 @@ describe('Electron Browser HTTP protocol', () => {
         text: 'from-url',
       }),
     })
-    expect(typed.status).toBe(200)
+    expect(staleInput).toMatchObject({
+      status: 409,
+      body: { code: 'BROWSER_REVISION_CONFLICT' },
+    })
+    expect(String((staleInput.body as { error?: unknown }).error)).toMatch(/observe again before mutating/)
+    const typed = await json(server.origin, '/input', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        tabId,
+        expectedRevision: 1,
+        url: 'https://example.test/',
+        text: 'from-url',
+      }),
+    })
+    expect(typed).toMatchObject({ status: 200, body: { ok: true, revision: 2 } })
+    expect(String((typed.body as { text?: unknown }).text)).toContain('from-url')
+    const observed = await json(server.origin, '/page-content', {
+      headers: { authorization: `Bearer ${token}`, 'x-tab-id': tabId },
+    })
+    expect(observed).toMatchObject({ status: 200, body: { revision: 2 } })
     const click = await json(server.origin, '/input', {
       method: 'POST',
       headers,
-      body: JSON.stringify({ tabId, expectedRevision: 1 }),
+      body: JSON.stringify({ tabId, expectedRevision: 2 }),
     })
-    expect(click.status).toBe(200)
+    expect(click).toMatchObject({ status: 200, body: { ok: true, revision: 3 } })
     const busy = await ctx.browserRuntime.create({ profile: 'persistent', name: BrowserProfileName('held') })
     const busyHttp = await json(server.origin, '/sessions/create', {
       method: 'POST',
@@ -446,5 +466,75 @@ describe('Electron Browser HTTP protocol', () => {
     })
     expect(aborted.status).toBe(500)
     ctx.browserRuntime.observe = originalObserve
+  })
+
+  it('rejects a stale HTTP mutation after Electron recovery and resumes after observe', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-electron-http-recover-'))
+    temps.push(root)
+    const tokenFile = join(root, 'api-token')
+    const ctx = new Context()
+    contexts.push(ctx)
+    installElectronTestHost(new FakeElectronHost())
+    await ctx.plugin(ElectronBrowserRuntime, { idPrefix: 'electron-http' })
+    const server = await listenElectronBrowserHttp({
+      runtime: ctx.browserRuntime,
+      tokenFile,
+      idPrefix: 'electron-http',
+    })
+    servers.push(server)
+    const token = (await readFile(tokenFile, 'utf8')).trim()
+    const headers = { authorization: `Bearer ${token}`, 'content-type': 'application/json' }
+    let target: BrowserTarget | undefined
+    ctx.on('browser/runtime-state', (state) => {
+      if (state.status === 'open') target = state.target
+    })
+    const created = await json(server.origin, '/sessions/create', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ name: 'electron-http-tmp-1' }),
+    })
+    expect(created.status).toBe(200)
+    const tabId = (created.body as { tab: { id: string }; revision: number }).tab.id
+    const createdRevision = (created.body as { revision: number }).revision
+    if (target === undefined) throw new Error('expected created target')
+    const runtime = ctx.browserRuntime as unknown as {
+      profiles: Map<string, { tabs: Map<string, { window: { webContents: { emitCrash(): void } } }> }>
+    }
+    runtime.profiles.get(target.profileId)?.tabs.get(target.tabId)?.window.webContents.emitCrash()
+    const deadline = Date.now() + 2_000
+    let recovered = await ctx.browserRuntime.observe({ target })
+    while (!(recovered.status === 'open' && recovered.revision > createdRevision) && Date.now() < deadline) {
+      await new Promise(resolve => setTimeout(resolve, 20))
+      recovered = await ctx.browserRuntime.observe({ target })
+    }
+    expect(recovered.status).toBe('open')
+    expect(recovered.revision).toBeGreaterThan(createdRevision)
+    const stale = await json(server.origin, '/input', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ tabId, expectedRevision: createdRevision, text: 'stale' }),
+    })
+    expect(stale).toMatchObject({
+      status: 409,
+      body: { code: 'BROWSER_REVISION_CONFLICT' },
+    })
+    const observed = await json(server.origin, '/page-content', {
+      headers: { authorization: `Bearer ${token}`, 'x-tab-id': tabId },
+    })
+    expect(observed).toMatchObject({ status: 200, body: { revision: recovered.revision } })
+    const resumed = await json(server.origin, '/input', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        tabId,
+        expectedRevision: (observed.body as { revision: number }).revision,
+        text: 'after-observe',
+      }),
+    })
+    expect(resumed).toMatchObject({
+      status: 200,
+      body: { ok: true, revision: recovered.revision + 1 },
+    })
+    expect(String((resumed.body as { text?: unknown }).text)).toContain('after-observe')
   })
 })

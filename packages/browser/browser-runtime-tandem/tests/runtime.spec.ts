@@ -365,15 +365,24 @@ describe('Tandem Browser Runtime public lifecycle', () => {
     })
     expect(returned).toMatchObject({ revision: 3, controlOwner: 'agent', target: identities })
 
+    const resynced = await ctx.browserRuntime.observe({ target: created.target })
+    expect(resynced).toMatchObject({
+      status: 'open',
+      revision: 1,
+      url: 'https://example.test/',
+      controlOwner: 'agent',
+      target: identities,
+    })
+
     const agentFirst = await Promise.allSettled([
       ctx.browserRuntime.navigate({
         target: created.target,
-        expectedRevision: returned.revision,
+        expectedRevision: resynced.revision,
         url: 'https://login.test/',
       }),
       ctx.browserRuntime.input({
         target: created.target,
-        expectedRevision: returned.revision,
+        expectedRevision: resynced.revision,
         text: 'later human',
       }),
     ])
@@ -385,7 +394,7 @@ describe('Tandem Browser Runtime public lifecycle', () => {
     const afterAgentFirst = await ctx.browserRuntime.observe({ target: created.target })
     expect(afterAgentFirst).toMatchObject({
       status: 'open',
-      revision: 4,
+      revision: 2,
       url: 'https://login.test/',
       controlOwner: 'agent',
       target: identities,
@@ -396,7 +405,7 @@ describe('Tandem Browser Runtime public lifecycle', () => {
       expectedRevision: afterAgentFirst.revision,
     })
     expect(clickOnly).toMatchObject({
-      revision: 5,
+      revision: 3,
       url: 'https://login.test/',
       title: 'Loaded page',
       text: 'Signed in as .\nidentity=',
@@ -782,6 +791,9 @@ describe('Tandem Browser Runtime protocol fidelity', () => {
       [{ input: 'ok-false' }, (ctx, t) => ctx.browserRuntime.input({
         target: t as never, expectedRevision: 0, text: 'x',
       }), /did not apply input/],
+      [{ input: 'revision-conflict-non-json' }, (ctx, t) => ctx.browserRuntime.input({
+        target: t as never, expectedRevision: 0, text: 'x',
+      }), /HTTP 409 .*not-json/],
       [{ tabsList: 'not-array' }, (ctx, t) => ctx.browserRuntime.observe({ target: t as never }), /tabs must be an array/],
       [{ tabsList: 'bad-tab-shape' }, (ctx, t) => ctx.browserRuntime.observe({ target: t as never }), /tabs list tab response must be an object/],
       [{ pageContent: 'non-object' }, (ctx, t) => ctx.browserRuntime.observe({ target: t as never }), /page content response must be an object/],
@@ -801,6 +813,47 @@ describe('Tandem Browser Runtime protocol fidelity', () => {
       await expect(operate(ctx, created.target), JSON.stringify(faults))
         .rejects.toMatchObject({ code: 'BROWSER_PROTOCOL', message: failure })
     }
+  })
+
+  it('surfaces an HTTP revision conflict and adopts the server revision on observe', async () => {
+    const conflict = await setup({ input: 'revision-conflict' })
+    const conflictCreated = await conflict.ctx.browserRuntime.create({ profile: 'temporary' })
+    await expect(conflict.ctx.browserRuntime.input({
+      target: conflictCreated.target,
+      expectedRevision: 0,
+      text: 'x',
+    })).rejects.toMatchObject({
+      code: 'BROWSER_REVISION_CONFLICT',
+      message: /observe again before mutating/,
+    })
+
+    const noMessage = await setup({ input: 'revision-conflict-no-message' })
+    const noMessageCreated = await noMessage.ctx.browserRuntime.create({ profile: 'temporary' })
+    await expect(noMessage.ctx.browserRuntime.input({
+      target: noMessageCreated.target,
+      expectedRevision: 0,
+      text: 'x',
+    })).rejects.toMatchObject({
+      code: 'BROWSER_REVISION_CONFLICT',
+      message: /BROWSER_REVISION_CONFLICT/,
+    })
+
+    const omitted = await setup({ pageContent: 'omit-revision' })
+    const omittedCreated = await omitted.ctx.browserRuntime.create({ profile: 'temporary' })
+    await expect(omitted.ctx.browserRuntime.observe({ target: omittedCreated.target }))
+      .resolves.toMatchObject({ status: 'open', revision: 0 })
+
+    const ahead = await setup({ pageContent: 'ahead-revision' })
+    const created = await ahead.ctx.browserRuntime.create({ profile: 'temporary' })
+    expect(created.revision).toBe(0)
+    const observed = await ahead.ctx.browserRuntime.observe({ target: created.target })
+    expect(observed).toMatchObject({ status: 'open', revision: 4 })
+    const typed = await ahead.ctx.browserRuntime.input({
+      target: created.target,
+      expectedRevision: 4,
+      text: 'after-observe',
+    })
+    expect(typed).toMatchObject({ revision: 5, text: 'after-observe' })
   })
 
   it('bounds every HTTP request in time and reports caller aborts promptly', async () => {
@@ -850,13 +903,26 @@ describe('Tandem Browser Runtime failure projection', () => {
     expect(recovered).toMatchObject({
       status: 'open',
       target: created.target,
-      revision: 3,
+      revision: 0,
       url: 'https://crash.test/',
       title: 'Loaded page',
       text: 'Recovered crash page.',
     })
-    const closed = await ctx.browserRuntime.close({ target: created.target, expectedRevision: 3 })
-    expect(closed).toEqual({ status: 'closed', target: created.target, revision: 4 })
+    await expect(ctx.browserRuntime.input({
+      target: created.target,
+      expectedRevision: 1,
+      text: 'stale',
+    })).rejects.toMatchObject({ code: 'BROWSER_REVISION_CONFLICT' })
+    const afterObserve = await ctx.browserRuntime.observe({ target: created.target })
+    expect(afterObserve).toMatchObject({ status: 'open', revision: 0 })
+    const resumed = await ctx.browserRuntime.input({
+      target: created.target,
+      expectedRevision: afterObserve.revision,
+      text: 'after-observe',
+    })
+    expect(resumed).toMatchObject({ revision: 1, text: 'after-observe' })
+    const closed = await ctx.browserRuntime.close({ target: created.target, expectedRevision: resumed.revision })
+    expect(closed).toEqual({ status: 'closed', target: created.target, revision: 2 })
     await assertJoined(pidFile)
   })
 
@@ -915,7 +981,7 @@ describe('Tandem Browser Runtime failure projection', () => {
     expect(state).toMatchObject({
       status: 'open',
       target: created.target,
-      revision: 2,
+      revision: 0,
       url: 'about:blank',
     })
     expect(projections).toContainEqual({ status: 'unavailable', reason: 'unhealthy', revision: 1, reconnecting: true })

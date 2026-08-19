@@ -19,7 +19,7 @@ Durations and viewport sizes must be positive safe integers. Operations enter on
 
 A renderer-process crash commits `BrowserUnavailableState` with reason `crashed` and recreates the hidden window for the same target. Exhausted recovery commits `reason: 'reconnect-failed'`. Malformed Chromium results reject with `BROWSER_PROTOCOL`.
 
-`listenElectronBrowserHttp` binds a loopback HTTP server that copies Tandem's session, tab, navigate, input, page-content, screenshot, focus, and destroy operations so the Web Host can drive this engine without embedding a second Electron application. `POST /input` carries the client's `expectedRevision` and returns the committed page and revision.
+`listenElectronBrowserHttp` binds a loopback HTTP server that copies Tandem's session, tab, navigate, input, page-content, screenshot, focus, and destroy operations so the Web Host can drive this engine without embedding a second Electron application. Navigate, input, and focus compare the client's `expectedRevision` to the engine revision, reject a mismatch with 409 `BROWSER_REVISION_CONFLICT`, and return the engine's committed revision.
 
 ## Model Experience
 

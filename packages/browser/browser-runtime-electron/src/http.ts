@@ -13,6 +13,7 @@ import { dirname } from 'node:path'
 import {
   assertBrowserProfileName,
   BrowserRuntimeError,
+  requireExpectedBrowserRevision,
   type BrowserCreateRequest,
   type BrowserPageState,
   type BrowserProfileName,
@@ -120,17 +121,28 @@ function optionalRevision(input: JsonObject, fallback: number): number {
   return value
 }
 
-/** Drive one Electron mutation with Electron's current revision. */
+/**
+ * Drive one Electron mutation only when the client revision matches the
+ * engine. The committed revision is the engine's, never a client-side +1.
+ */
 async function mutateOpenPage(
   runtime: BrowserRuntime,
   target: BrowserTarget,
+  clientRevision: number,
   operate: (expectedRevision: number) => Promise<BrowserPageState>,
 ): Promise<BrowserPageState> {
   const current = await runtime.observe({ target })
   if (current.status !== 'open') {
     throw new BrowserRuntimeError('tab is not open', 'BROWSER_NOT_OPEN')
   }
-  return operate(current.revision)
+  requireExpectedBrowserRevision(current, clientRevision)
+  return operate(clientRevision)
+}
+
+/** Remember the engine revision as the HTTP tab's last committed value. */
+function rememberRevision(tab: TabRecord, page: BrowserPageState): number {
+  tab.revision = page.revision
+  return page.revision
 }
 
 /** Map a Browser Runtime failure onto an HTTP status. */
@@ -290,19 +302,18 @@ export async function listenElectronBrowserHttp(options: {
         return
       }
       const clientRevision = optionalRevision(input, found.tab.revision)
-      const navigated = await mutateOpenPage(options.runtime, found.tab.target, expectedRevision => (
+      const navigated = await mutateOpenPage(options.runtime, found.tab.target, clientRevision, expectedRevision => (
         options.runtime.navigate({
           target: found.tab.target,
           expectedRevision,
           url: nextUrl,
         })
       ))
-      found.tab.revision = clientRevision + 1
       json(response, 200, {
         ok: true,
         url: navigated.url,
         tab: found.tab.id,
-        revision: found.tab.revision,
+        revision: rememberRevision(found.tab, navigated),
       })
       return
     }
@@ -315,7 +326,7 @@ export async function listenElectronBrowserHttp(options: {
         return
       }
       const clientRevision = requiredRevision(input)
-      const typed = await mutateOpenPage(options.runtime, found.tab.target, expectedRevision => (
+      const typed = await mutateOpenPage(options.runtime, found.tab.target, clientRevision, expectedRevision => (
         options.runtime.input({
           target: found.tab.target,
           expectedRevision,
@@ -323,10 +334,9 @@ export async function listenElectronBrowserHttp(options: {
           ...(typeof input.text === 'string' ? { text: input.text } : {}),
         })
       ))
-      found.tab.revision = clientRevision + 1
       json(response, 200, {
         ok: true,
-        revision: found.tab.revision,
+        revision: rememberRevision(found.tab, typed),
         url: typed.url,
         title: typed.title,
         text: typed.text,
@@ -350,6 +360,7 @@ export async function listenElectronBrowserHttp(options: {
         json(response, 404, { error: 'tab is not open' })
         return
       }
+      rememberRevision(found.tab, state)
       json(response, 200, {
         title: state.title,
         url: state.url,
@@ -382,14 +393,13 @@ export async function listenElectronBrowserHttp(options: {
         return
       }
       const clientRevision = optionalRevision(input, found.tab.revision)
-      await mutateOpenPage(options.runtime, found.tab.target, expectedRevision => (
+      const focused = await mutateOpenPage(options.runtime, found.tab.target, clientRevision, expectedRevision => (
         options.runtime.focus({
           target: found.tab.target,
           expectedRevision,
         })
       ))
-      found.tab.revision = clientRevision + 1
-      json(response, 200, { ok: true, revision: found.tab.revision })
+      json(response, 200, { ok: true, revision: rememberRevision(found.tab, focused) })
       return
     }
     if (request.method === 'POST' && url.pathname === '/sessions/destroy') {
@@ -416,7 +426,7 @@ export async function listenElectronBrowserHttp(options: {
   const server: Server = createServer((request, response) => {
     void handle(request, response).catch((error: unknown) => {
       if (error instanceof BrowserRuntimeError) {
-        json(response, failureStatus(error), { error: error.message })
+        json(response, failureStatus(error), { error: error.message, code: error.code })
         return
       }
       json(response, 500, { error: (error as Error).message })

@@ -122,6 +122,7 @@ interface TandemPageContent {
   readonly url: string
   readonly text: string
   readonly storage: BrowserProfileStorage
+  readonly revision?: number
 }
 
 /** Reject an invalid deployment-varying duration before spawning a child. */
@@ -403,6 +404,23 @@ export class TandemBrowserRuntime extends BrowserRuntime {
     const bytes = await this.responseBytes(response)
     if (!response.ok) {
       const detail = Buffer.from(bytes).toString('utf8').slice(0, 1_000)
+      try {
+        const parsed: unknown = JSON.parse(detail)
+        if (
+          parsed !== null
+          && typeof parsed === 'object'
+          && !Array.isArray(parsed)
+          && (parsed as { code?: unknown }).code === 'BROWSER_REVISION_CONFLICT'
+        ) {
+          const message = (parsed as { error?: unknown }).error
+          throw new BrowserRuntimeError(
+            typeof message === 'string' ? message : detail,
+            'BROWSER_REVISION_CONFLICT',
+          )
+        }
+      } catch (error) {
+        if (error instanceof BrowserRuntimeError) throw error
+      }
       throw new BrowserRuntimeError(`Tandem HTTP ${String(response.status)} for ${path}: ${detail}`, 'BROWSER_PROTOCOL')
     }
     return { response, bytes }
@@ -654,11 +672,13 @@ export class TandemBrowserRuntime extends BrowserRuntime {
       method: 'GET',
       headers: { 'x-tab-id': tabId },
     }, signal), 'page content')
+    const revision = content.revision
     return Object.freeze({
       title: textField(content, 'title', 'page content'),
       url: stringField(content, 'url', 'page content'),
       text: textField(content, 'text', 'page content'),
       storage: parseStorage(content),
+      ...(typeof revision === 'number' && Number.isSafeInteger(revision) ? { revision } : {}),
     })
   }
 
@@ -668,6 +688,7 @@ export class TandemBrowserRuntime extends BrowserRuntime {
     const content = await this.readContent(tab.id, signal)
     return Object.freeze({
       ...state,
+      revision: content.revision ?? state.revision,
       url: content.url,
       title: content.title,
       text: content.text,
@@ -766,7 +787,9 @@ export class TandemBrowserRuntime extends BrowserRuntime {
       const state = this.addressed(request.target)
       if (state.status !== 'open') return state
       try {
-        return await this.page(state, request.signal)
+        const page = await this.page(state, request.signal)
+        if (page.revision !== state.revision) return this.commit(page)
+        return page
       } catch (error) {
         if (error instanceof BrowserRuntimeError && error.code === 'BROWSER_RUNTIME_UNAVAILABLE') {
           return this.scheduleRecovery('unhealthy', true) ?? this.states.get(browserTargetKey(request.target)) ?? state

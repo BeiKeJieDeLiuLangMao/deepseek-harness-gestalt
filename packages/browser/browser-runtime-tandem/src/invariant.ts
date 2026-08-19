@@ -18,7 +18,10 @@ export const name = 'browser-runtime-tandem-invariant'
 /** Services required before this companion can observe its Provider. */
 export const inject = ['invariants']
 
-/** Validate one open-to-closed Tandem lifecycle with exact revision succession. */
+/**
+ * Validate one Tandem lifecycle. Availability and close transitions require
+ * exact +1 succession. Open-to-open commits may adopt the HTTP engine revision.
+ */
 const install: InvariantInstaller = Object.assign((_ctx: Context, fail: InvariantFailure) => {
   const owner = (_ctx.browserRuntime as BrowserRuntime & {
     readonly [TANDEM_RUNTIME_STATE_OWNER]?: TandemRuntimeStateOwner
@@ -36,6 +39,10 @@ const install: InvariantInstaller = Object.assign((_ctx: Context, fail: Invarian
       return undefined
     }
     if (previous.status === 'closed') fail('a Tandem Browser Runtime terminal state cannot reopen')
+    if (previous.status === 'open' && state.status === 'open') {
+      previousByTarget.set(key, state)
+      return undefined
+    }
     if (state.revision !== previous.revision + 1) {
       fail(`Tandem Browser Runtime revision ${String(state.revision)} must follow ${String(previous.revision)}`)
     }

@@ -1,35 +1,33 @@
 import { defineConfig } from 'tsdown'
 
-/** Build the package root, invariant companion, and test-only host seam as independent bundles. */
+const library = {
+  outDir: 'lib',
+  format: ['esm'] as const,
+  platform: 'node' as const,
+  target: 'es2024',
+  fixedExtension: false,
+  dts: false,
+  clean: false,
+}
+
+/**
+ * Index and the test-only host seam share one `host-seam` chunk so
+ * `lib/testing.js` injects the same module-level holder `lib/index.js` reads.
+ * The invariant companion has no host import and stays a separate bundle.
+ */
 export default defineConfig([
   {
-    entry: ['lib/types/index.js'],
-    outDir: 'lib',
-    format: ['esm'],
-    platform: 'node',
-    target: 'es2024',
-    fixedExtension: false,
-    dts: false,
-    clean: false,
+    ...library,
+    entry: {
+      index: 'lib/types/index.js',
+      testing: 'lib/types/testing.js',
+    },
+    outputOptions: {
+      chunkFileNames: 'host-seam.js',
+    },
   },
   {
+    ...library,
     entry: ['lib/types/invariant.js'],
-    outDir: 'lib',
-    format: ['esm'],
-    platform: 'node',
-    target: 'es2024',
-    fixedExtension: false,
-    dts: false,
-    clean: false,
-  },
-  {
-    entry: ['lib/types/testing.js'],
-    outDir: 'lib',
-    format: ['esm'],
-    platform: 'node',
-    target: 'es2024',
-    fixedExtension: false,
-    dts: false,
-    clean: false,
   },
 ])
