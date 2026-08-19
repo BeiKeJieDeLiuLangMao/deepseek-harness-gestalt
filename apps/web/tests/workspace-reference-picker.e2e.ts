@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
-import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, onTestFailed, vi } from 'vitest'
 import {
   assertFixtureInventory,
   captureStableAria,
@@ -74,6 +74,24 @@ describe('web e2e: workspace reference picker', () => {
     await expect.poll(() => chip.count(), { timeout: 10_000 }).toBe(1)
     const snapshot = await captureStableAria(page, '[data-workspace-reference-dock]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(join(SNAPSHOT_DIR, 'dock.expected.md'), snapshot, MODE)
+    const openPath = vi.spyOn(scaffold.ctx.apiProxy.host, 'openPath')
+      .mockImplementation(async (request, _signal) => ({
+        rpcId: request.rpcId,
+        result: { ok: true, value: { opened: true as const } },
+      }))
+    try {
+      const [response] = await Promise.all([
+        page.waitForResponse(response => new URL(response.url()).pathname === '/api/host.openPath'),
+        chip.getByRole('button', { name: 'Open' }).click(),
+      ])
+      expect(response.status()).toBe(200)
+      expect(openPath).toHaveBeenCalledTimes(1)
+      expect(openPath.mock.calls[0]![0].payload).toEqual({
+        path: `${scaffold.workspaceCwd}/workspace/${MARKER}`,
+      })
+    } finally {
+      openPath.mockRestore()
+    }
     await chip.getByRole('button', { name: 'Remove' }).click()
     await expect.poll(() => page.locator('[data-workspace-reference-dock]').count()).toBe(0)
   })
@@ -91,6 +109,9 @@ describe('web e2e: workspace reference picker', () => {
     await expect.poll(() => page.locator('[data-workspace-reference-dock]').count(), { timeout: 5_000 }).toBe(0)
     const snapshot = await captureStableAria(page, 'textarea:enabled', scaffold.workspaceCwd)
     await compareOrRefreshGolden(join(SNAPSHOT_DIR, 'paste-ignore.expected.md'), snapshot, MODE)
+    await input.fill('')
+    await input.pressSequentially(`@${MARKER} `, { delay: 20 })
+    await expect.poll(() => page.locator(`[data-workspace-reference-chip="${MARKER}"]`).count(), { timeout: 10_000 }).toBe(1)
   })
 
   it('ArrowRight on a directory keeps the menu open at @path/', async () => {

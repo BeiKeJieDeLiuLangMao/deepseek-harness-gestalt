@@ -22,7 +22,7 @@ Web composer 没有第一方途径让用户指向一条工作区路径，并使�
 
 `@deepseek-ai/dsh-workspace-reference` 在 `agent/pre-step` 用 `ctx.fs` 校验 token。它拒绝工作区越界：绝对路径、Windows 盘符相对路径 token（`C:foo`）、`path.relative` 结果离开 cwd、中间段 symlink 的 realpath 离开 cwd，以及末段 symlink。`foo..bar.ts` 这类基名不是越界的 `..` 段。不为这条标记读取文件内容或列出目录子项。无法解析的 token 保持普通散文。紧跟在单词字符之后的 `@` 不是路径 token（`user@host.com`）。
 
-Web 的 `@` 触发器保持共享。`@deepseek-ai/dsh-client-ui-workspace-reference` 通过 [`ctx.inputTriggers`](../architecture/2026-07-25-web-input-machine-and-slash-pipeline.md) 注册名为 `workspace` 的 `InputTriggerSource`。选中一项会插入纯文本 `@rel/path`（目录保留尾斜杠）外加一个尾随空格。在高亮目录上按 ArrowRight 会插入 `@path/` 并保持菜单打开。开启粘贴忽略时，粘贴的 `@` 会带上 U+2060，Host 扫描器会跳过它们；手打且存在的路径仍会变成标记。composer dock 列出已引用路径，并可打开或移除。设置提供启用、粘贴忽略和 Exact/Regex 文件名过滤；文案不出现 “File mentions”。浏览器对 `workspaceReference.search` 返回的会话索引做本地排序，最多展示 `menuLimit` 行（默认 12）。Host 遍历用分层 `listDir`，并跳过内置忽略目录名和目录 `FS_PERMISSION_DENIED`。
+Web 的 `@` 触发器保持共享。`@deepseek-ai/dsh-client-ui-workspace-reference` 通过 [`ctx.inputTriggers`](../architecture/2026-07-25-web-input-machine-and-slash-pipeline.md) 注册名为 `workspace` 的 `InputTriggerSource`。选中一项会插入纯文本 `@rel/path`（目录保留尾斜杠）外加一个尾随空格。在高亮目录上按 ArrowRight 会插入 `@path/` 并保持菜单打开。开启粘贴忽略时，粘贴的 `@` 会带上 U+2060，Host 扫描器会跳过它们；手打且存在的路径仍会变成标记。composer dock 列出未越出工作区的已引用路径，并可打开或移除。设置提供启用、粘贴忽略和 Exact/Regex 文件名过滤；文案不出现 “File mentions”。浏览器对 `workspaceReference.search` 返回的会话索引做本地排序，最多展示 `menuLimit` 行（默认 12）。Host 遍历用分层 `listDir`，并跳过内置忽略目录名和目录 `FS_PERMISSION_DENIED`。
 
 Markdown 形式的会话引用 `@[label](dsh-session:…)` 绝不是工作区引用。扫描器匹配的是紧前面不是单词字符的 `@`，然后是 `[^\s@[\]]+`。持久化 source 是 `{ kind: 'workspace-reference', path, pathKind }`，登记在 [docs/subsystems/workspace-reference.md](../../../../docs/subsystems/workspace-reference.md)。transcript 来源信息用该路径做行标签。
 
@@ -30,7 +30,7 @@ web-app bundle 挂载这两个包。图片拖放仍是附件。第一方不检�
 
 ## Deferred
 
-dock、粘贴忽略、文件夹进入和设置的产品可见 Web GIF，在该票落地时从 pull request 运行时录制。
+dock、粘贴忽略、文件夹进入和设置的产品可见 Web GIF，由交付流程在合并前从本票的 pull request 运行时录制，并附到该 PR。
 
 ## Alternatives considered
 

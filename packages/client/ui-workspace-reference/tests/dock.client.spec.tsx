@@ -24,7 +24,7 @@ describe('WorkspaceReferenceDock', () => {
     const props = dockProps('see @README.md please')
     const view = render(<WorkspaceReferenceDock {...props as unknown as WorkspaceReferenceDockProps} />)
     expect(view.getByText('README.md')).toBeTruthy()
-    fireEvent.click(view.getByText('README.md'))
+    fireEvent.click(view.getByRole('button', { name: 'dock.open' }))
     expect(props.openPath).toHaveBeenCalledWith('README.md')
     fireEvent.click(view.getByLabelText('dock.remove'))
     expect(props.setDraft).toHaveBeenCalledWith('see please')
@@ -34,5 +34,14 @@ describe('WorkspaceReferenceDock', () => {
   it('hides when the feature is disabled', () => {
     const view = render(<WorkspaceReferenceDock {...dockProps('see @README.md', false) as unknown as WorkspaceReferenceDockProps} />)
     expect(view.queryByText('README.md')).toBeNull()
+  })
+
+  it('does not list or open a token that leaves the workspace', () => {
+    const props = dockProps('see @../secret and @/etc/passwd')
+    const view = render(<WorkspaceReferenceDock {...props as unknown as WorkspaceReferenceDockProps} />)
+    expect(view.queryByText('../secret')).toBeNull()
+    expect(view.queryByText('/etc/passwd')).toBeNull()
+    expect(props.openPath).not.toHaveBeenCalled()
+    view.unmount()
   })
 })

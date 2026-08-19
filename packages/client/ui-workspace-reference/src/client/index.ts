@@ -18,6 +18,7 @@ import {
   WORKSPACE_REFERENCE_SETTINGS_NAMESPACE,
   type WorkspaceReferenceSettings,
 } from '../settings.ts'
+import { confinedDraftPath } from './confine.ts'
 import { WorkspaceReferenceDock } from './Dock.tsx'
 import type { WorkspaceReferenceDockInjected } from './Dock.tsx'
 import { WORKSPACE_REFERENCE_INVOCATIONS } from './invocations.ts'
@@ -113,6 +114,7 @@ export async function apply(ctx: ClientContext, config?: Config): Promise<void> 
     inject: (sessionId: SessionId): WorkspaceReferenceDockInjected => ({
       hooks: { settings: preferences },
       openPath: (path: string) => {
+        if (confinedDraftPath(path) === undefined) return
         const cwd = ctx.sessions.list.getSnapshot().byId[sessionId]?.cwd
         void ctx.workspaces.openPath(resolveWorkspacePath(cwd, path)).catch(() => {
           // Host/OS open failures stay silent; the native app surfaces them.

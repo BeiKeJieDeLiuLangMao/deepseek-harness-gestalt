@@ -11,6 +11,7 @@ export const zh = {
   'settings.pasteIgnore': '粘贴时忽略 @ 路径',
   'settings.exact': '精确过滤（文件名包含）',
   'settings.regex': '正则过滤（文件名）',
+  'settings.regexInvalid': '正则无效；在模式可编译之前不过滤。',
 } as const
 
 /** English dictionary, checked complete against the zh key set. */
@@ -22,6 +23,7 @@ export const en: { [K in keyof typeof zh]: string } = {
   'settings.pasteIgnore': 'Ignore @ paths on paste',
   'settings.exact': 'Exact filter (basename contains)',
   'settings.regex': 'Regex filter (basename)',
+  'settings.regexInvalid': 'Invalid regular expression; filtering stays off until the pattern compiles.',
 }
 
 /** Locale key union. */

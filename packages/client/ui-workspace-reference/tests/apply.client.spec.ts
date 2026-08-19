@@ -128,6 +128,8 @@ describe('ui-workspace-reference apply', () => {
       hooks: { settings: { getSnapshot: () => { enable: boolean } } }
       openPath: (path: string) => void
     }
+    dock.openPath('../secret')
+    dock.openPath('/etc/passwd')
     dock.openPath('README.md')
     await new Promise(resolve => setTimeout(resolve, 0))
     expect(opened).toEqual(['/ws/README.md'])

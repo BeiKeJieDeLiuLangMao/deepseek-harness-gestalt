@@ -25,4 +25,35 @@ describe('WorkspaceReferenceSettingsSection', () => {
     expect(setField).toHaveBeenCalledWith('regex', '^src')
     view.unmount()
   })
+
+  it('disables paste ignore and filters while enable is off', () => {
+    const setField = vi.fn()
+    const state = { ...DEFAULT_WORKSPACE_REFERENCE_SETTINGS, enable: false }
+    const view = render(
+      <WorkspaceReferenceSettingsSection {...{
+        useSettings: <T,>(select: (prefs: WorkspaceReferenceSettings) => T) => select(state),
+        t: (key: string) => key,
+        setField,
+      } as unknown as WorkspaceReferenceSettingsProps} />,
+    )
+    expect((view.getByLabelText('settings.pasteIgnore') as HTMLInputElement).disabled).toBe(true)
+    expect((view.getByLabelText('settings.exact') as HTMLInputElement).disabled).toBe(true)
+    expect((view.getByLabelText('settings.regex') as HTMLInputElement).disabled).toBe(true)
+    view.unmount()
+  })
+
+  it('shows an inline error for an invalid regex without disabling fail-open filtering', () => {
+    const setField = vi.fn()
+    const state = { ...DEFAULT_WORKSPACE_REFERENCE_SETTINGS, regex: '(' }
+    const view = render(
+      <WorkspaceReferenceSettingsSection {...{
+        useSettings: <T,>(select: (prefs: WorkspaceReferenceSettings) => T) => select(state),
+        t: (key: string) => key,
+        setField,
+      } as unknown as WorkspaceReferenceSettingsProps} />,
+    )
+    expect(view.getByLabelText('settings.regex').getAttribute('aria-invalid')).toBe('true')
+    expect(view.getByRole('alert').textContent).toBe('settings.regexInvalid')
+    view.unmount()
+  })
 })

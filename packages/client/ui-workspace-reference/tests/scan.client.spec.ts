@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { filterIndexedFiles, PASTE_IGNORE_MARK, removeDraftMention, scanDraftMentions } from '../src/client/scan.ts'
+import { filterIndexedFiles, invalidBasenameRegex, PASTE_IGNORE_MARK, removeDraftMention, scanDraftMentions } from '../src/client/scan.ts'
 
 describe('draft Workspace Reference scan', () => {
   it('collects unique tokens and ignores paste marks', () => {
@@ -24,5 +24,8 @@ describe('draft Workspace Reference scan', () => {
     expect(filterIndexedFiles(files, '.ts', '').map(file => file.relative)).toEqual(['src/a.ts', 'docs/a.ts'])
     expect(filterIndexedFiles(files, '', '^b').map(file => file.relative)).toEqual(['src/b.md'])
     expect(filterIndexedFiles(files, '', '(').map(file => file.relative)).toEqual(['src/a.ts', 'src/b.md', 'docs/a.ts'])
+    expect(invalidBasenameRegex('')).toBe(false)
+    expect(invalidBasenameRegex('^src')).toBe(false)
+    expect(invalidBasenameRegex('(')).toBe(true)
   })
 })

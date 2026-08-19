@@ -21,4 +21,5 @@ None; this package neither assembles nor sends a provider request.
 ## Known Limitations and Deferred Work
 
 - **Index is one RPC per session** — keystroke ranking is local; workspace mutation is not watched until the next session scope or an explicit invalidate.
-- **Paste ignore uses U+2060** after `@`; a hand-typed existing path still becomes a marker.
+- **Paste ignore uses U+2060** after `@` in the composer draft. A hand-typed existing path still becomes a marker. Copied and sent user text keep that mark so Host scan still skips the token on submit and on replay. Stripping it from model-visible user text before send is not done: the mark must remain in the durable user message, otherwise replay would re-scan `@path` and inject a Workspace Reference, and a send-only strip would make the model-visible text differ from the session log.
+- **Dock listing and open** refuse a token that is absolute, Windows-drive, UNC, or contains a `..` segment. Host injection still collapses `foo/../bar` inside cwd.

@@ -6,6 +6,7 @@ import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-cli
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { WorkspaceReferenceSettings } from '../settings.ts'
+import { confinedDraftPath } from './confine.ts'
 import { removeDraftMention, scanDraftMentions } from './scan.ts'
 import type { WorkspaceReferenceKey } from './locales.ts'
 import css from './Dock.module.css'
@@ -34,13 +35,20 @@ export function WorkspaceReferenceDock({
   input, inputActions, useSettings, t, openPath,
 }: WorkspaceReferenceDockProps) {
   const enable = useSettings(s => s.enable)
-  const paths = enable ? scanDraftMentions(input.draft) : []
+  const paths = enable
+    ? scanDraftMentions(input.draft).filter(path => confinedDraftPath(path) !== undefined)
+    : []
   if (paths.length === 0) return null
   return (
     <div className={css.dock} data-workspace-reference-dock>
       {paths.map(path => (
         <div key={path} className={css.chip} data-workspace-reference-chip={path}>
-          <button type="button" className={css.path} onClick={() => { openPath(path) }}>
+          <button
+            type="button"
+            className={css.path}
+            aria-label={t('dock.open' satisfies WorkspaceReferenceKey)}
+            onClick={() => { openPath(path) }}
+          >
             {path}
           </button>
           <button

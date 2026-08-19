@@ -139,6 +139,16 @@ describe('createWorkspaceSource', () => {
     expect(source.pasteTransform?.('@README.md')).toBe('@\u2060README.md')
   })
 
+  it('does not rewrite paste when enable is off even if pasteIgnore is on', () => {
+    const source = createWorkspaceSource(async () => FILES, () => ({
+      enable: false,
+      pasteIgnore: true,
+      exact: '',
+      regex: '',
+    }))
+    expect(source.pasteTransform?.('@README.md')).toBe('@README.md')
+  })
+
   it('caps ranked rows at the configured menuLimit', async () => {
     const source = createWorkspaceSource(async () => FILES, undefined, 1)
     const candidates = await source.candidates(SESSION, {

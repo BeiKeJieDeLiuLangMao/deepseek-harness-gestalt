@@ -130,7 +130,8 @@ export function createWorkspaceSource(
       return { text: `@${candidate.name}/` }
     },
     pasteTransform(text) {
-      if (!settings().pasteIgnore) return text
+      const prefs = settings()
+      if (!prefs.enable || !prefs.pasteIgnore) return text
       return text.replaceAll('@', `@${PASTE_IGNORE_MARK}`)
     },
     codec: {

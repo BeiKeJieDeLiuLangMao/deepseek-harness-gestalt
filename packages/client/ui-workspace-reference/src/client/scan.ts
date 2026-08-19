@@ -58,11 +58,23 @@ export function filterIndexedFiles<T extends { relative: string }>(
   })
 }
 
-function compileFilter(regex: string): RegExp | undefined {
-  if (regex === '') return undefined
+/**
+ * True when `regex` is non-empty and does not compile. Empty input is not an
+ * error; filtering stays off (fail-open) until the pattern compiles.
+ * @param regex - basename filter text.
+ * @returns whether Settings should show the invalid-regex error.
+ */
+export function invalidBasenameRegex(regex: string): boolean {
+  if (regex === '') return false
   try {
-    return new RegExp(regex)
+    void new RegExp(regex)
+    return false
   } catch {
-    return undefined
+    return true
   }
+}
+
+function compileFilter(regex: string): RegExp | undefined {
+  if (regex === '' || invalidBasenameRegex(regex)) return undefined
+  return new RegExp(regex)
 }

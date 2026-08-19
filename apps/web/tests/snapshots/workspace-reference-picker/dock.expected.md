@@ -1,2 +1,2 @@
-- button "wsref-marker.ts"
+- button "Open": wsref-marker.ts
 - button "Remove": ×
