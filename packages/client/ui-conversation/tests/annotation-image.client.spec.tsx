@@ -73,6 +73,18 @@ describe('composer image pin annotations', () => {
     expect(shell.snapshot.annotations.map(item => item.id)).toEqual([textId])
   })
 
+  it('forwards a history pin source through the public action face', () => {
+    const shell = new SessionInputShell({
+      actx: {} as ClientContext,
+      defaultSink: () => {},
+      annotationLabels: LABELS,
+    })
+    const imageId = 'sha256:history' as DraftAttachmentId
+    shell.actions.addImagePin(imageId, 'shot.png', 10, 20, '', 'history')
+    const pin = shell.snapshot.annotations[0]
+    expect(pin?.kind === 'image-pin' && pin.source === 'history' && pin.imageId === imageId).toBe(true)
+  })
+
   it('rejects a known-capacity overflow without claiming the request fits', () => {
     expect(assembledRequestOverflows(40, 10, 19)).toBe(true)
     expect(assembledRequestOverflows(8, 10, 20)).toBe(false)

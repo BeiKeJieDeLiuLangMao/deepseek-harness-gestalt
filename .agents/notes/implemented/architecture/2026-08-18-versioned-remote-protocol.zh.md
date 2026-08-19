@@ -32,4 +32,4 @@ Codec 会限制完整消息字节、密文字节、parser 深度、container 值
 
 ## 后果
 
-Relay 实现可以在不链接 Harness 领域的情况下路由和拒绝 frame，而 endpoint adapter 共享一个应用 parser 与兼容性决策。新增 Companion operation 必须显式修改协议 union 和 parser，因此当前窄 catalog 不会静默继承 Host route。本包有意将配对、加密、路由凭据、blob capability、Desktop adaptation 与 operation receipt 留给后续经评审的集成。
+Relay 实现可以在不链接 Harness 领域的情况下路由和拒绝 frame，而 endpoint adapter 共享一个应用 parser 与兼容性决策。新增 Companion operation 必须显式修改协议 union 和 parser，因此当前窄 catalog 不会静默继承 Host route。本包有意将配对、加密、凭据持久化、blob capability、Desktop adaptation 与 operation receipt 留给服务或经评审的 endpoint 集成；[无状态双实例 Relay](2026-08-18-stateless-two-instance-remote-relay.md)拥有 attachment authority 与 forwarding。

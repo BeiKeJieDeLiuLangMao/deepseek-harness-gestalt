@@ -5,6 +5,7 @@
   "references": [
     { "path": "../platform-account" },
     { "path": "../remote-access" },
+    { "path": "../remote-protocol" },
     { "path": "../../runtime-diagnostics/invariants" }
   ]
 }

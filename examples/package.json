@@ -5,8 +5,10 @@
   "type": "module",
   "description": "Workspace umbrella for runnable demos and example-owned test compositions: declares their cordis.yml packages so plain Node resolves real exports→lib. Not a build target.",
   "dependencies": {
+    "@deepseek-ai/cordis": "workspace:*",
     "@deepseek-ai/cordis-plugin-hmr": "workspace:*",
     "@deepseek-ai/cordis-plugin-include": "workspace:*",
+    "@deepseek-ai/cordis-plugin-loader": "workspace:*",
     "@deepseek-ai/cordis-plugin-logger-console": "workspace:*",
     "@deepseek-ai/cordis-plugin-timer": "workspace:*",
     "@deepseek-ai/dsh-acp-demo": "workspace:*",
@@ -55,6 +57,7 @@
     "@deepseek-ai/dsh-remote-access": "workspace:*",
     "@deepseek-ai/dsh-remote-access-client": "workspace:*",
     "@deepseek-ai/dsh-remote-access-http": "workspace:*",
+    "@deepseek-ai/dsh-remote-access-redis": "workspace:*",
     "@deepseek-ai/dsh-remote-protocol": "workspace:*",
     "@deepseek-ai/dsh-terminal": "workspace:*",
     "@deepseek-ai/dsh-terminal-bash": "workspace:*",
@@ -122,7 +125,8 @@
     "@deepseek-ai/dsh-web": "workspace:*",
     "@deepseek-ai/dsh-web-fetch-http": "workspace:*",
     "@deepseek-ai/dsh-workflow-worker-thread": "workspace:*",
-    "@deepseek-ai/dsh-agent-instructions": "workspace:*"
+    "@deepseek-ai/dsh-agent-instructions": "workspace:*",
+    "@deepseek-ai/schemastery": "workspace:^"
   },
   "devDependencies": {
     "@modelcontextprotocol/server-everything": "^2026.7.4"

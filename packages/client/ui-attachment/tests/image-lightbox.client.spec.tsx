@@ -48,4 +48,33 @@ describe('ImageLightbox', () => {
     fireEvent.mouseDown(mask)
     expect(onClose).toHaveBeenCalledTimes(1)
   })
+
+  it('places a pin from the latest annotation mode after the toggle rerender', () => {
+    const onPlace = vi.fn()
+    const annotation = {
+      mode: false,
+      pins: [],
+      modeLabel: 'Annotate image',
+      exitLabel: 'Exit annotation',
+      onToggleMode: () => {},
+      onPlace,
+      onSelect: () => {},
+    }
+    const view = render(
+      <ImageLightbox src="blob:original" alt="shot.png" labels={labels} onClose={vi.fn()} annotation={annotation} />,
+    )
+    fireEvent.click(view.getByRole('img', { name: 'shot.png' }))
+    expect(onPlace).not.toHaveBeenCalled()
+    view.rerender(
+      <ImageLightbox
+        src="blob:original"
+        alt="shot.png"
+        labels={labels}
+        onClose={vi.fn()}
+        annotation={{ ...annotation, mode: true }}
+      />,
+    )
+    fireEvent.click(view.getByRole('img', { name: 'shot.png' }), { clientX: 25, clientY: 40 })
+    expect(onPlace).toHaveBeenCalled()
+  })
 })

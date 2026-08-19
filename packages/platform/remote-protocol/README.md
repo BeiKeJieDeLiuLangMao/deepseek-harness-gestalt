@@ -6,7 +6,7 @@ Pure codecs and negotiators for Remote Access. This package owns two independent
 
 ## Relay Transport Protocol
 
-Version 1 exposes only route attachment, opaque ciphertext forwarding, heartbeat, revocation, stable transport errors, and transport-version negotiation. Relay identifiers are protocol-native branded values. Decoding rejects unknown message types and extra fields, so a complete Host request cannot be smuggled beside transport metadata.
+Version 1 exposes only route attachment, opaque ciphertext forwarding, heartbeat, revocation, stable transport errors, and transport-version negotiation. Attach carries a separately branded canonical 32-byte credential; a route id is never attachment authority. Relay identifiers are protocol-native branded values. `REMOTE_OFFLINE` reports a missing live target without implying queued delivery. Decoding rejects unknown message types and extra fields, so a complete Host request cannot be smuggled beside transport metadata.
 
 ## Encrypted Companion Protocol
 
@@ -43,4 +43,4 @@ None.
 ## Known Limitations and Deferred Work
 
 - The current Companion catalog proves one mutation and one projection; discovery, creation, interaction, attachment, cancellation, and operation-receipt messages require later protocol additions before their adapters can expose them.
-- Pairing handshakes, route credentials, challenge lifecycle, encrypted blob capabilities, and production encryption belong to later reviewed integrations, not these codecs.
+- Pairing handshakes, credential persistence, challenge lifecycle, encrypted blob capabilities, and production encryption belong to service or reviewed endpoint integrations, not these codecs.

@@ -16,6 +16,12 @@ Mutations are serialized. Expiry, cancellation, rejection, disablement, and one 
 
 `PairingHandshakeProvider` prepares, completes, activates, and destroys provider-private handshake state. Remote Access never implements Noise transitions or cryptographic primitives. `remote-access-http` consumes `ctx.remoteAccess`, while `remote-access-client` validates the wire values used by the real Desktop Settings and Mobile controllers. The assembled Loader scenario runs the provider, HTTP Consumer, and shared transport through a real loopback server with an explicitly unreviewed keyless provider. Desktop and Mobile development entrypoints select their real controllers only through explicit flags. Production composition stays unavailable until the independent Noise review admits a reviewed provider; the development proof is never selected by the production path.
 
+## Multi-instance Relay
+
+`ctx.remoteRelay` authenticates an attachment with the opaque route id and a separate rotatable 32-byte credential, persists only its digest and revision through `RelayRouteStore`, and registers the live attachment in an expiring shared directory. `remote-access-redis` carries directory metadata, content-free invalidation, and bounded ciphertext Pub/Sub only; it creates no offline queue. A target on another Platform Instance receives the same opaque Relay frame, while a missing target returns `REMOTE_OFFLINE` immediately.
+
+Mobile and Desktop connect outward through one non-sticky TLS endpoint. Instance loss starts a fresh connection; Desktop sends an authoritative encrypted projection after attachment, and no live socket is migrated. Closing the Desktop window quits the process, while sleep, quit, sign-out, or disabling Mobile Access stops the Relay. Production stays fail-closed until reviewed product cryptography is assembled. The keyless two-instance Loader scenario proves the transport composition without weakening that gate.
+
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
 <a id="cordis-surface"></a>
@@ -51,6 +57,13 @@ abstract getMobileAccessState(desktop: PairingAccountAuthentication): Promise<Mo
  * @returns committed Mobile Access state.
  */
 abstract setMobileAccess(input: { desktop: PairingAccountAuthentication enabled: boolean }): Promise<MobileAccessState>
+
+/**
+ * Rotate and return fresh Desktop-only Relay authority after process startup or window reopen.
+ * @param desktop - current Desktop authorization for an enabled installation.
+ * @returns enabled state carrying a fresh Desktop grant.
+ */
+abstract reissueDesktopRelayAuthority(desktop: PairingAccountAuthentication): Promise<MobileAccessState>
 
 /**
  * Complete the same-account cryptographic exchange without granting authority.
@@ -100,5 +113,50 @@ abstract cancelChallenge(input: { desktop: PairingAccountAuthentication challeng
 abstract rejectPairing(input: { desktop: PairingAccountAuthentication pendingPairingId: PendingPairingId }): Promise<void>
 ```
 
-Source: [`packages/platform/remote-access/src/index.ts:232`](../../packages/platform/remote-access/src/index.ts)
+Source: [`packages/platform/remote-access/src/index.ts:378`](../../packages/platform/remote-access/src/index.ts)
+
+<a id="ctxremoterelay--remoterelayservice-abstract-seam"></a>
+
+### `ctx.remoteRelay` — `RemoteRelayService` (abstract seam)
+
+Public Remote Access Relay capability used by the WSS Consumer.
+
+```ts cordis-catalog
+/**
+ * Rotate one route to fresh authority and invalidate older attachments.
+ * @param routeId - opaque route receiving new attachment authority.
+ * @param endpoint - endpoint whose same-endpoint credentials the rotation replaces; defaults to desktop.
+ * @returns the one-time credential grant and its persistent revision.
+ */
+abstract rotateCredential(routeId: RelayRouteId, endpoint?: 'mobile' | 'desktop'): Promise<RelayCredentialGrant>
+
+/**
+ * Issue distinct endpoint authority without invalidating other credentials on the active route.
+ * @param routeId - active route receiving another independently revocable bearer.
+ * @param endpoint - endpoint the new credential authorizes; defaults to mobile.
+ * @returns a fresh credential at the current route revision.
+ */
+abstract issueCredential(routeId: RelayRouteId, endpoint?: 'mobile' | 'desktop'): Promise<RelayCredentialGrant>
+
+/**
+ * Remove one issued endpoint credential without revoking its route peers.
+ * @param grant - exact issued authority whose ownership did not commit.
+ */
+abstract revokeCredential(grant: RelayCredentialGrant): Promise<void>
+
+/**
+ * Revoke one route and close its attachments across Platform Instances.
+ * @param routeId - opaque route whose current authority becomes invalid.
+ */
+abstract revokeRoute(routeId: RelayRouteId): Promise<void>
+
+/**
+ * Authenticate and register one outbound Mobile or Desktop attachment.
+ * @param input - attach frame plus the socket writer and optional close callback.
+ * @returns the admitted attachment receiving later frames from that socket.
+ */
+abstract attach(input: { message: RelayAttachMessage deliver: (message: RelayCiphertextMessage) => Promise<void> close?: () => void | Promise<void> signal?: AbortSignal }): Promise<RemoteRelayAttachment>
+```
+
+Source: [`packages/platform/remote-access/src/relay.ts:141`](../../packages/platform/remote-access/src/relay.ts)
 <!-- END GENERATED cordis-surface -->

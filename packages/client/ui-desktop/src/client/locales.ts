@@ -37,6 +37,7 @@ export const zh = {
   'pairing.compareWords': '请在手机和 Desktop 比对以下认证词',
   'pairing.confirm': '确认配对',
   'pairing.reject': '拒绝',
+  'pairing.revoke': '撤销配对',
 } as const
 
 /** English fallback for Desktop chrome copy. */
@@ -77,6 +78,7 @@ export const en = {
   'pairing.compareWords': 'Compare these authentication words on Mobile and Desktop',
   'pairing.confirm': 'Confirm pairing',
   'pairing.reject': 'Reject',
+  'pairing.revoke': 'Revoke pairing',
 } as const
 
 /** Locale keys owned by Desktop chrome. */
