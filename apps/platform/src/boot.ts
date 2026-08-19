@@ -64,7 +64,7 @@ const environment = loadPlatformEnvironment({
     callbackUrl: callback,
     githubClientId: required('PLATFORM_GITHUB_CLIENT_ID'),
     credentialReference: process.env.PLATFORM_GITHUB_CREDENTIAL_REFERENCE ?? 'credentials://github-oauth/production',
-    databaseIdentity: process.env.PLATFORM_POSTGRES_DATABASE ?? 'postgres',
+    databaseIdentity: process.env.PLATFORM_POSTGRES_DATABASE ?? 'gestalt',
     identityNamespace: process.env.PLATFORM_IDENTITY_NAMESPACE ?? 'gestalt-production',
   },
 })
@@ -74,7 +74,7 @@ const postgres = new pg.Pool({
   port: Number(process.env.PLATFORM_POSTGRES_PORT ?? '5432'),
   user: required('PLATFORM_POSTGRES_USER'),
   password: required('PLATFORM_POSTGRES_PASSWORD'),
-  database: process.env.PLATFORM_POSTGRES_DATABASE ?? 'postgres',
+  database: process.env.PLATFORM_POSTGRES_DATABASE ?? 'gestalt',
   ssl: process.env.PLATFORM_POSTGRES_SSL === 'disable' ? false : { rejectUnauthorized: false },
 })
 
