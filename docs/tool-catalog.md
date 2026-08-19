@@ -1517,6 +1517,14 @@ Delegate a self-contained task to a subagent (a separate agent that works in its
       "type": "string",
       "description": "The complete, self-contained task for the subagent. It does not share this conversation's context, so include everything it needs."
     },
+    "provider": {
+      "type": "string",
+      "description": "LLM adapter route for the child (for example deepseek-official). This is not the subagent backend (spawn/fork/acp). Omit to inherit the parent session route; may be set without model."
+    },
+    "model": {
+      "type": "string",
+      "description": "LLM model id for the child (for example deepseek-v4-pro). Omit to inherit the parent session model; may be set without provider."
+    },
     "run_in_background": {
       "type": "boolean",
       "description": "Whether to run as a background job and return its id. Defaults to false; collect with job_output or stop with job_kill."
