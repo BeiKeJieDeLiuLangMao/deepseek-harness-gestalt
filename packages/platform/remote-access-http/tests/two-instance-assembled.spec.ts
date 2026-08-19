@@ -3,21 +3,31 @@
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto'
 import { once } from 'node:events'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import type { IncomingMessage } from 'node:http'
 import { createServer } from 'node:https'
+import { connect, type Socket } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import type { Duplex } from 'node:stream'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Include from '@deepseek-ai/cordis-plugin-include'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import WebServer from '@deepseek-ai/dsh-host-webserver'
-import { parseAccountProofJti, parseInstallationId, parsePlatformAccountId } from '@deepseek-ai/dsh-platform-account'
+import {
+  parseAccountProofJti,
+  parseInstallationId,
+  parsePlatformAccountId,
+  selectPlatformEnvironment,
+  validatePlatformEnvironmentPair,
+} from '@deepseek-ai/dsh-platform-account'
 import {
   MemoryPersonalPairingAuthorityStore,
   PersonalPairingProvider,
   parsePairingCompletionId,
   parsePairingRendezvousId,
+  parsePersonalPairingKeyReference,
   parseRelayInstanceId,
   type RelayRouteStore,
 } from '@deepseek-ai/dsh-remote-access'
@@ -45,16 +55,36 @@ import {
   parseRelayRouteId,
   REMOTE_PROTOCOL_LIMITS,
   type RelayAttachmentId,
+  type RelayCiphertextMessage,
   type RelayRouteId,
 } from '@deepseek-ai/dsh-remote-protocol'
 import WebSocket from 'ws'
 import * as RemoteAccessHttp from '../src/index.ts'
 import * as RemoteAccessRelay from '../src/relay.ts'
-import { RelayWebSocketConsumer } from '../src/relay.ts'
 
 const FIXTURES = fileURLToPath(new URL('./fixtures/', import.meta.url))
 const ORIGIN = 'https://platform.dev.example.com'
 const PROMPT = 'continue from Mobile across Loader instances'
+const ENVIRONMENT = selectPlatformEnvironment(validatePlatformEnvironmentPair({
+  development: {
+    environment: 'development',
+    origin: ORIGIN,
+    callbackUrl: `${ORIGIN}/v1/account/oauth/github/callback`,
+    githubClientId: 'assembled-development',
+    credentialReference: 'credentials://development',
+    databaseIdentity: 'assembled-database-development',
+    identityNamespace: 'assembled-development',
+  },
+  production: {
+    environment: 'production',
+    origin: 'https://platform.example.com',
+    callbackUrl: 'https://platform.example.com/v1/account/oauth/github/callback',
+    githubClientId: 'assembled-production',
+    credentialReference: 'credentials://production',
+    databaseIdentity: 'assembled-database-production',
+    identityNamespace: 'assembled-production',
+  },
+}), 'development')
 const RELAY_CONFIG = {
   capacityRetryAfterMs: 100,
   deliveryAckTimeoutMs: 500,
@@ -71,13 +101,17 @@ const CLIENT = {
   inboundMaxBytes: REMOTE_PROTOCOL_LIMITS.relayMessageBytes,
   inboundMaxMessages: 16,
 } as const
+const FORBIDDEN_REDIS_APIS = [
+  'lpush', 'rpush', 'lpop', 'rpop', 'lrange', 'llen', 'ltrim',
+  'xadd', 'xread', 'xreadgroup', 'xgroup', 'xack', 'xdel', 'xrange', 'xrevrange', 'xlen',
+] as const
 
 const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => {
   const results = await Promise.allSettled(cleanups.splice(0).reverse().map(async (close) => { await close() }))
   const errors = results.flatMap(result => result.status === 'rejected' ? [result.reason] : [])
   if (errors.length > 0) throw new AggregateError(errors, 'two-instance assembled cleanup failed')
-})
+}, 30_000)
 
 describe('two Loader-booted Platform Instances', () => {
   it('routes one encrypted pair across a non-sticky TLS endpoint and recovers after instance loss', {
@@ -98,11 +132,11 @@ describe('two Loader-booted Platform Instances', () => {
     const desktopAuth = authentication('desktop', 'desktop-assembled')
     const mobileAuth = authentication('mobile', 'mobile-assembled')
     const desktopTransport = new RemoteAccessHttpTransport({
-      environment: { environment: 'development', origin: ORIGIN } as never,
+      environment: ENVIRONMENT,
       fetch: rewriteFetch(ORIGIN, instanceA.port),
     })
     const mobileTransport = new RemoteAccessHttpTransport({
-      environment: { environment: 'development', origin: ORIGIN } as never,
+      environment: ENVIRONMENT,
       fetch: rewriteFetch(ORIGIN, instanceB.port),
     })
 
@@ -143,7 +177,14 @@ describe('two Loader-booted Platform Instances', () => {
       parseRelayCredential('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'),
     ))
     expect(rejected).toMatchObject({ type: 'error', code: 'RELAY_ATTACHMENT_REJECTED' })
-    await withPhase('direct WebServer upgrade', expectDirectUpgrade(instanceA.port))
+    const direct = await withPhase('direct WebServer attach', attachWithCredential(
+      `ws://127.0.0.1:${String(instanceA.port)}/v1/remote-access/relay`,
+      routeId,
+      parseRelayAttachmentId('direct-assembled'),
+      'desktop',
+      parseRelayCredential('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'),
+    ))
+    expect(direct).toMatchObject({ type: 'error', code: 'RELAY_ATTACHMENT_REJECTED' })
     acquired.length = 0
     endpoint.resetAcquisition()
 
@@ -259,7 +300,13 @@ describe('two Loader-booted Platform Instances', () => {
       },
     })))
     expect(await withPhase('encrypted round trip', accepted.promise)).toBe('accepted')
-    expect(bus.published.some(value => value.includes(PROMPT))).toBe(false)
+    const forwarded = publishedCiphertextFrames(bus.published)
+    expect(forwarded.length).toBeGreaterThan(0)
+    for (const frame of forwarded) {
+      expect(frame.type).toBe('ciphertext')
+      expect(ciphertextCarriesCompanionPrompt(frame.ciphertext, mobileProtocol)).toBe(false)
+    }
+    bus.assertNoRetainedCiphertextFrames()
 
     await instanceB.dispose()
     await withPhase('desktop authoritative resync', failover.promise)
@@ -273,27 +320,20 @@ describe('two Loader-booted Platform Instances', () => {
       revision: 2, text: 'desktop authoritative revision 2',
     })
 
-    const lifecycleOffline: string[] = []
+    let restarted = false
     for (const reason of ['window-close', 'sleep', 'mobile-access-disabled', 'quit'] as const) {
-      if (lifecycleOffline.length > 0) await desktop.start()
+      if (restarted) await desktop.start()
       const attachment = desktopAttachmentId
       await desktop.stop(reason)
       await waitUntil(async () => await shared.coordinator.locate(routeId, attachment) === undefined)
-      lifecycleOffline.push(reason)
+      restarted = true
     }
-    let offlineCode: string | undefined
-    for (let attempt = 0; attempt < 5 && offlineCode === undefined; attempt += 1) {
-      await mobile.sendCiphertext(desktopAttachmentId, cipher.seal(Uint8Array.of(1))).catch(() => {
-        /* the live socket may already have surfaced REMOTE_OFFLINE */
-      })
-      offlineCode = await Promise.race([
-        offline.promise,
-        new Promise<undefined>((resolve) => { setTimeout(() => { resolve(undefined) }, 2_000) }),
-      ])
-    }
-    expect(offlineCode).toBe('REMOTE_OFFLINE')
-    expect(bus.retainedCiphertextValueCount()).toBe(0)
-    expect(lifecycleOffline).toEqual(['window-close', 'sleep', 'mobile-access-disabled', 'quit'])
+    await withPhase(
+      'offline ciphertext send',
+      mobile.sendCiphertext(desktopAttachmentId, cipher.seal(Uint8Array.of(1))),
+    )
+    expect(await withPhase('offline observation', offline.promise)).toBe('REMOTE_OFFLINE')
+    bus.assertNoRetainedCiphertextFrames()
 
     await desktopTransport.setMobileAccess({ authentication: desktopAuth, enabled: false })
     await waitUntil(async () => await shared.coordinator.locate(routeId, mobileAttachmentId) === undefined)
@@ -311,7 +351,6 @@ interface InstanceHandle {
   id: string
   context: Context
   port: number
-  consumer: RelayWebSocketConsumer
   available: boolean
   dispose(): Promise<void>
 }
@@ -353,22 +392,21 @@ async function loadInstance(id: string, shared: SharedAdapters, entropy: number)
   } as unknown as NonNullable<typeof context.loader.internal>
   await context.loader.create({ name: 'cordis:include', config: { path: pathToFileURL(configPath).href } })
   await context.loader.await()
-  const webServer = context.get('webServer') as unknown as { port: number }
-  if (typeof webServer.port !== 'number') throw new Error(`${id} exposed no WebServer port`)
-  const consumer = new RelayWebSocketConsumer(context, CLIENT.attachTimeoutMs)
+  const webServer = context.get('webServer')
+  if (webServer === undefined || typeof webServer.port !== 'number') {
+    throw new Error(`${id} exposed no WebServer port`)
+  }
   let disposed = false
   const handle: InstanceHandle = {
     id,
     context,
     port: webServer.port,
-    consumer,
     available: true,
     async dispose() {
       if (disposed) return
       disposed = true
       handle.available = false
       const results = await Promise.allSettled([
-        consumer.close(),
         context.fiber.dispose(),
         rm(root, { recursive: true, force: true }),
       ])
@@ -418,7 +456,8 @@ function instanceProvider(id: string, shared: SharedAdapters, entropy: number): 
             pendingPairingKey: Uint8Array.of(3),
           }),
           activatePairing: async () => ({
-            keyReference: 'assembled-active' as never, activePairingKey: Uint8Array.of(4),
+            keyReference: parsePersonalPairingKeyReference('assembled-active'),
+            activePairingKey: Uint8Array.of(4),
           }),
           sealMobileRelayAuthority: async ({ grant }) => new TextEncoder().encode(JSON.stringify(grant)),
           destroyChallenge: () => {},
@@ -444,13 +483,17 @@ async function startNonStickyTlsEndpoint(
     readFile(`${FIXTURES}localhost-cert.pem`),
   ])
   const server = createServer({ key, cert }, (_request, response) => { response.writeHead(404); response.end() })
+  const backends = new Set<Socket>()
+  const frontends = new Set<Duplex>()
   let next = 0
   server.on('upgrade', (request, socket, head) => {
     const live = instances.filter(instance => instance.available)
     const instance = live[next++ % live.length]
     if (instance === undefined) { socket.destroy(); return }
     acquired.push(instance.id)
-    instance.consumer.handleUpgrade(request, socket, head)
+    frontends.add(socket)
+    socket.once('close', () => { frontends.delete(socket) })
+    proxyHttpUpgrade(request, socket, head, instance.port, backends)
   })
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject)
@@ -462,8 +505,15 @@ async function startNonStickyTlsEndpoint(
     throw new Error('assembled TLS endpoint did not bind a TCP port')
   }
   cleanups.push(async () => {
+    for (const frontend of frontends) frontend.destroy()
+    for (const backend of backends) backend.destroy()
     await new Promise<void>((resolve, reject) => {
-      server.close((error) => { if (error === undefined) resolve(); else reject(error) })
+      const timer = setTimeout(() => { resolve() }, 1_000)
+      server.close((error) => {
+        clearTimeout(timer)
+        if (error === undefined) resolve()
+        else reject(error)
+      })
     })
   })
   return {
@@ -472,11 +522,29 @@ async function startNonStickyTlsEndpoint(
   }
 }
 
-async function expectDirectUpgrade(port: number): Promise<void> {
-  const socket = new WebSocket(`ws://127.0.0.1:${String(port)}/v1/remote-access/relay`)
-  await once(socket, 'open')
-  socket.close()
-  await once(socket, 'close')
+function proxyHttpUpgrade(
+  request: IncomingMessage,
+  socket: Duplex,
+  head: Buffer,
+  port: number,
+  backends: Set<Socket>,
+): void {
+  const backend = connect({ host: '127.0.0.1', port })
+  backends.add(backend)
+  backend.once('close', () => { backends.delete(backend) })
+  backend.once('connect', () => {
+    let block = `${request.method ?? 'GET'} ${request.url ?? '/'} HTTP/1.1\r\n`
+    for (const [name, value] of Object.entries(request.headers)) {
+      if (value === undefined) continue
+      for (const item of Array.isArray(value) ? value : [value]) block += `${name}: ${item}\r\n`
+    }
+    backend.write(`${block}\r\n`)
+    if (head.byteLength > 0) backend.write(head)
+    backend.pipe(socket)
+    socket.pipe(backend)
+  })
+  backend.on('error', () => { socket.destroy() })
+  socket.on('error', () => { backend.destroy() })
 }
 
 async function attachWithCredential(
@@ -486,7 +554,7 @@ async function attachWithCredential(
   endpoint: 'mobile' | 'desktop',
   credential: ReturnType<typeof parseRelayCredential>,
 ): Promise<ReturnType<typeof decodeRelayMessage>> {
-  const socket = new WebSocket(url, { rejectUnauthorized: false })
+  const socket = new WebSocket(url, url.startsWith('wss:') ? { rejectUnauthorized: false } : undefined)
   await once(socket, 'open')
   const received = once(socket, 'message') as Promise<[WebSocket.RawData]>
   socket.send(encodeRelayMessage({
@@ -519,6 +587,38 @@ function parseSealedGrant(value: Uint8Array) {
     routeId: parseRelayRouteId(decoded.routeId),
     credential: parseRelayCredential(decoded.credential),
     revision: decoded.revision as number,
+  }
+}
+
+function publishedCiphertextFrames(published: readonly string[]): RelayCiphertextMessage[] {
+  const frames: RelayCiphertextMessage[] = []
+  for (const value of published) {
+    const record = JSON.parse(value) as Record<string, unknown>
+    if (record.type !== 'ciphertext') continue
+    if (typeof record.frame !== 'string') throw new Error('Relay publish event omitted its ciphertext frame')
+    const message = decodeRelayMessage(Uint8Array.from(Buffer.from(record.frame, 'base64url')))
+    if (message.type !== 'ciphertext') throw new Error('Relay publish frame was not ciphertext')
+    frames.push(message)
+  }
+  return frames
+}
+
+function ciphertextCarriesCompanionPrompt(
+  ciphertext: Uint8Array,
+  protocol: ReturnType<typeof negotiateCompanionProtocol>,
+): boolean {
+  const text = new TextDecoder().decode(ciphertext)
+  if (text.includes(PROMPT)) return true
+  try {
+    const message = decodeCompanionMessage(protocol, ciphertext)
+    return JSON.stringify(message).includes(PROMPT)
+  } catch {
+    try {
+      const parsed: unknown = JSON.parse(text)
+      return typeof parsed === 'object' && parsed !== null && JSON.stringify(parsed).includes(PROMPT)
+    } catch {
+      return false
+    }
   }
 }
 
@@ -633,23 +733,29 @@ class AssembledRouteStore implements RelayRouteStore {
 
 class AssembledRedisBus {
   readonly published: string[] = []
-  private readonly values = new Map<string, string>()
+  private readonly values = new Map<string, { value: string; expiresAt?: number }>()
   private readonly subscriptions = new Map<string, Set<(message: string) => void>>()
 
   client(): RelayRedisClient {
     const client: RelayRedisClient = {
-      get: async key => this.values.get(key) ?? null,
-      set: async (key, value) => { this.values.set(key, value); return 'OK' },
+      get: async key => this.read(key),
+      set: async (key, value, options) => {
+        this.write(key, value, options.PX)
+        return 'OK'
+      },
       eval: async (_script, options) => {
         const key = options.keys[0]
         if (key === undefined) return 0
-        const value = this.values.get(key)
-        if (value === undefined) return 0
+        const value = this.read(key)
+        if (value === null) return 0
         const record = JSON.parse(value) as { connectionToken?: string }
         if (record.connectionToken !== options.arguments[0]) return 0
         const replacement = options.arguments[1]
         if (replacement === undefined) this.values.delete(key)
-        else this.values.set(key, replacement)
+        else {
+          const ttl = options.arguments[2]
+          this.write(key, replacement, ttl === undefined ? undefined : Number(ttl))
+        }
         return 1
       },
       publish: async (channel, message) => {
@@ -666,10 +772,52 @@ class AssembledRedisBus {
       unsubscribe: async (channel, listener) => { this.subscriptions.get(channel)?.delete(listener) },
       withAbortSignal: () => client,
     }
+    for (const name of FORBIDDEN_REDIS_APIS) {
+      Object.defineProperty(client, name, {
+        value: () => {
+          throw new Error(`Relay Redis mock forbids ${name}`)
+        },
+      })
+    }
     return client
   }
 
-  retainedCiphertextValueCount(): number {
-    return [...this.values.values()].filter(value => value.includes('ciphertext')).length
+  assertNoRetainedCiphertextFrames(): void {
+    for (const record of this.values.values()) {
+      if (record.expiresAt !== undefined && Date.now() >= record.expiresAt) continue
+      assertNotCiphertextStoreValue(record.value)
+    }
+  }
+
+  private read(key: string): string | null {
+    const record = this.values.get(key)
+    if (record === undefined) return null
+    if (record.expiresAt !== undefined && Date.now() >= record.expiresAt) {
+      this.values.delete(key)
+      return null
+    }
+    return record.value
+  }
+
+  private write(key: string, value: string, ttlMs?: number): void {
+    if (ttlMs !== undefined && (!Number.isSafeInteger(ttlMs) || ttlMs <= 0)) {
+      throw new TypeError('Relay Redis mock PX must be a positive integer')
+    }
+    this.values.set(key, {
+      value,
+      ...(ttlMs === undefined ? {} : { expiresAt: Date.now() + ttlMs }),
+    })
+  }
+}
+
+function assertNotCiphertextStoreValue(value: string): void {
+  let parsed: unknown
+  try { parsed = JSON.parse(value) } catch {
+    throw new Error('Relay Redis mock retained a non-JSON value')
+  }
+  if (typeof parsed !== 'object' || parsed === null) throw new Error('Relay Redis mock retained a non-object value')
+  const record = parsed as Record<string, unknown>
+  if (record.type === 'ciphertext' || typeof record.frame === 'string') {
+    throw new Error('Relay Redis mock retained a ciphertext frame')
   }
 }
