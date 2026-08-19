@@ -20,5 +20,5 @@ Logged Workspace snapshots do not enter derived model history.
 
 ## Known Limitations and Deferred Work
 
-- Dock UI remains later work. This package persists Dock open and width plus each tab's current control owner.
+- Dock chrome lives in [`dsh-client-ui-browser`](../../client/ui-browser/README.md). This package persists Dock open, width, `userCollapsed`, and each tab's current control owner.
 - Headless Browser Runtime snapshots compose Runtime and Consumer only. Session isolation is Binder-owned and is not claimed for those Binder-free traces.

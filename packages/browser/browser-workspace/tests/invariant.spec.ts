@@ -8,6 +8,7 @@ import type { BrowserWorkspaceProjection } from '../src/types.ts'
 const VALID: BrowserWorkspaceProjection = {
   dockOpen: false,
   dockWidth: 640,
+  userCollapsed: false,
   activeWorkspaceId: null,
   workspaces: [],
 }

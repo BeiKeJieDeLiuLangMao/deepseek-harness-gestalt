@@ -14,7 +14,7 @@ Human pointer and keyboard input and Agent commands target the same Browser Work
 
 Providers serialize every mutation and reject a stale `expectedRevision` with `BROWSER_REVISION_CONFLICT`. The conflict message names the current revision and tells the Agent to observe again. Agent `navigate` and `focus` set `controlOwner` to `agent`. Browser tools do not set `ask` or a permission classifier; this ticket adds no approval product. Existing approval and permission capabilities apply only when a later composition attaches them.
 
-`dsh-browser-workspace` persists each tab's current control owner on the Session `browser/workspace` snapshot so later Dock UI can restore it after Session switch and reload. The deferred Consumer renders `controlOwner` into the ordinary tool result and adds `browser_input`, `browser_takeover`, and `browser_return_control` without a second tool-card format. Waiting, running, complete, and connection-loss facts stay on the existing tool result and `unavailable` state.
+`dsh-browser-workspace` persists each tab's current control owner on the Session `browser/workspace` snapshot so the Dock can restore it after Session switch and reload. The Dock reads that owner and offers take-control and return-to-Agent. The deferred Consumer renders `controlOwner` into the ordinary tool result and adds `browser_input`, `browser_takeover`, and `browser_return_control` without a second tool-card format. Waiting, running, complete, and connection-loss facts stay on the existing tool result and `unavailable` state.
 
 ## Alternatives considered
 
@@ -26,7 +26,7 @@ Providers serialize every mutation and reject a stale `expectedRevision` with `B
 
 ## Consequences
 
-Human and Agent can share one tab without losing identity. A stale Agent mutation fails loudly and forces a fresh observation. Session snapshots persist the current control owner for later Dock UI. Dock chrome and release remain later tickets.
+Human and Agent can share one tab without losing identity. A stale Agent mutation fails loudly and forces a fresh observation. Session snapshots persist the current control owner for the Dock. Release remains a later ticket.
 
 ## Verification
 

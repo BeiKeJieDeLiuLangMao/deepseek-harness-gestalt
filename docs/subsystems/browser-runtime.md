@@ -194,6 +194,86 @@ snapshot(session: Session): BrowserWorkspaceProjection
 setDock(request: BrowserWorkspaceDockRequest): BrowserWorkspaceProjection
 
 /**
+ * Record Dock visibility and width for the Session named on the wire.
+ * @param sessionId - Owning Session identity.
+ * @param request - Open flag and optional preferred width.
+ * @returns the committed Workspace snapshot.
+ */
+@Remote('setDock') remoteSetDock(sessionId: SessionId, request: BrowserWorkspaceDockMutation): BrowserWorkspaceProjection
+
+/**
+ * Observe one Session-owned tab named on the wire.
+ * @param sessionId - Owning Session identity.
+ * @param target - Complete tab identity.
+ * @returns the current open, unavailable, or closed state.
+ */
+@Remote('observe') remoteObserve(sessionId: SessionId, target: BrowserTarget): Promise<BrowserRuntimeState>
+
+/**
+ * Capture one Session-owned tab named on the wire.
+ * @param sessionId - Owning Session identity.
+ * @param target - Complete tab identity.
+ * @returns screenshot bytes and depicted page facts.
+ */
+@Remote('screenshot') remoteScreenshot(sessionId: SessionId, target: BrowserTarget): Promise<BrowserScreenshot>
+
+/**
+ * Focus one Session-owned tab named on the wire.
+ * @param sessionId - Owning Session identity.
+ * @param target - Complete tab identity.
+ * @param expectedRevision - Latest revision returned by a browser operation.
+ * @returns the committed focused page.
+ */
+@Remote('focus') remoteFocus(sessionId: SessionId, target: BrowserTarget, expectedRevision: number): Promise<BrowserPageState>
+
+/**
+ * Navigate one Session-owned tab named on the wire.
+ * @param sessionId - Owning Session identity.
+ * @param target - Complete tab identity.
+ * @param expectedRevision - Latest revision returned by a browser operation.
+ * @param url - URL to open.
+ * @returns the committed open page.
+ */
+@Remote('navigate') remoteNavigate( sessionId: SessionId, target: BrowserTarget, expectedRevision: number, url: string, ): Promise<BrowserPageState>
+
+/**
+ * Record one human mutation on a Session-owned tab named on the wire.
+ * @param sessionId - Owning Session identity.
+ * @param target - Complete tab identity.
+ * @param expectedRevision - Latest revision returned by a browser operation.
+ * @param input - Optional URL or text produced by the human gesture.
+ * @returns the committed open page whose `controlOwner` is `human`.
+ */
+@Remote('input') remoteInput( sessionId: SessionId, target: BrowserTarget, expectedRevision: number, input: { readonly url?: string; readonly text?: string }, ): Promise<BrowserPageState>
+
+/**
+ * Record reported human ownership of one Session-owned tab named on the wire.
+ * @param sessionId - Owning Session identity.
+ * @param target - Complete tab identity.
+ * @param expectedRevision - Latest revision returned by a browser operation.
+ * @returns the committed open page whose `controlOwner` is `human`.
+ */
+@Remote('takeover') remoteTakeover(sessionId: SessionId, target: BrowserTarget, expectedRevision: number): Promise<BrowserPageState>
+
+/**
+ * Record reported Agent ownership of one Session-owned tab named on the wire.
+ * @param sessionId - Owning Session identity.
+ * @param target - Complete tab identity.
+ * @param expectedRevision - Latest revision returned by a browser operation.
+ * @returns the committed open page whose `controlOwner` is `agent`.
+ */
+@Remote('returnControl') remoteReturnControl( sessionId: SessionId, target: BrowserTarget, expectedRevision: number, ): Promise<BrowserPageState>
+
+/**
+ * Close one Session-owned tab named on the wire.
+ * @param sessionId - Owning Session identity.
+ * @param target - Complete tab identity.
+ * @param expectedRevision - Latest revision returned by a browser operation.
+ * @returns the terminal close receipt.
+ */
+@Remote('close') remoteClose(sessionId: SessionId, target: BrowserTarget, expectedRevision: number): Promise<BrowserClosedState>
+
+/**
  * Create one tab in the Session's Browser Workspace.
  * @param request - Session-bound create request.
  * @returns the committed open page.
@@ -263,9 +343,9 @@ async close(request: BrowserWorkspaceMutationRequest): Promise<BrowserClosedStat
 async cleanup(session: Session): Promise<void>
 ```
 
-Types: [Session](session.md)
+Types: [Session](session.md) · [SessionId](core.md)
 
-Source: [`packages/browser/browser-workspace/src/index.ts:92`](../../packages/browser/browser-workspace/src/index.ts)
+Source: [`packages/browser/browser-workspace/src/index.ts:95`](../../packages/browser/browser-workspace/src/index.ts)
 
 <a id="browser-events"></a>
 

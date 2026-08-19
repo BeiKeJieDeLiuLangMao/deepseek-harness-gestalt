@@ -37,8 +37,19 @@ export interface BrowserWorkspaceRecord {
 export interface BrowserWorkspaceProjection {
   readonly dockOpen: boolean
   readonly dockWidth: number
+  /**
+   * True after the human collapses the Dock. The first Agent tab may open
+   * the Dock; later Agent activity must not reopen it while this is true.
+   */
+  readonly userCollapsed: boolean
   readonly workspaces: readonly BrowserWorkspaceRecord[]
   readonly activeWorkspaceId: BrowserWorkspaceId | null
+}
+
+/** Wire payload for one Session-owned Dock mutation. */
+export interface BrowserWorkspaceDockMutation {
+  readonly open: boolean
+  readonly width?: number
 }
 
 declare module '@deepseek-ai/dsh-session-projection/types' {

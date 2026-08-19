@@ -20,5 +20,5 @@
 
 ## 已知限制与后续工作
 
-- Dock UI 仍属于后续工作。本包会持久化 Dock 打开状态、宽度以及每个标签页的当前控制权所有者。
+- Dock chrome 见 [`dsh-client-ui-browser`](../../client/ui-browser/README.md)。本包会持久化 Dock 打开状态、宽度、`userCollapsed` 以及每个标签页的当前控制权所有者。
 - 无密钥 Browser Runtime 快照只组合 Runtime 与 Consumer。Session 隔离由 Binder 持有，这些不含 Binder 的轨迹不宣称该隔离。

@@ -2,11 +2,11 @@
  * Session-owned Browser Workspace binder. Each Session independently owns
  * zero or more Workspaces; each Workspace uses one Browser Profile and
  * contains multiple browser instances and tabs. Dock visibility, width, and
- * each tab's current control owner are Session facts for later Dock UI.
+ * each tab's current control owner are Session facts for the Dock UI.
  * @module @deepseek-ai/dsh-browser-workspace
  */
 
-import { Context, Service } from '@deepseek-ai/cordis'
+import { Context } from '@deepseek-ai/cordis'
 import { z as zod } from 'zod'
 import type { ZodType } from 'zod'
 import { BrowserRuntimeError } from '@deepseek-ai/dsh-browser-runtime'
@@ -24,10 +24,12 @@ import type {
   BrowserScreenshot,
   BrowserTarget,
 } from '@deepseek-ai/dsh-browser-runtime'
-import type { Session } from '@deepseek-ai/dsh-session'
+import type { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-projection'
+import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { applyBrowserWorkspaceProjection, EMPTY_BROWSER_WORKSPACE, foldBrowserWorkspace } from './fold.ts'
 import type {
+  BrowserWorkspaceDockMutation,
   BrowserWorkspaceInstanceRecord,
   BrowserWorkspaceProjection,
   BrowserWorkspaceRecord,
@@ -46,6 +48,7 @@ declare module '@deepseek-ai/cordis' {
 const workspaceProjectionSchema = zod.object({
   dockOpen: zod.boolean(),
   dockWidth: zod.number().int().positive(),
+  userCollapsed: zod.boolean(),
   workspaces: zod.array(zod.object({
     workspaceId: zod.string().min(1),
     profileId: zod.string().min(1),
@@ -89,7 +92,7 @@ export interface BrowserWorkspaceDockRequest {
  * Bind Browser Runtime identities to one Session log and project Dock plus
  * instance and tab ownership from durable Session facts.
  */
-export class BrowserWorkspaceBinder extends Service {
+export class BrowserWorkspaceBinder extends TypertRemoteService {
   static inject = ['browserRuntime', 'sessions']
 
   constructor(ctx: Context) {
@@ -127,8 +130,148 @@ export class BrowserWorkspaceBinder extends Service {
     if (!Number.isSafeInteger(width) || width < 1) {
       throw new BrowserRuntimeError('browser Dock width must be a positive safe integer', 'BROWSER_CAPACITY')
     }
-    if (current.dockOpen === request.open && current.dockWidth === width) return current
-    return this.commit(request.session, { ...current, dockOpen: request.open, dockWidth: width })
+    if (
+      current.dockOpen === request.open
+      && current.dockWidth === width
+      && current.userCollapsed === !request.open
+    ) return current
+    return this.commit(request.session, {
+      ...current,
+      dockOpen: request.open,
+      dockWidth: width,
+      userCollapsed: !request.open,
+    })
+  }
+
+  /**
+   * Record Dock visibility and width for the Session named on the wire.
+   * @param sessionId - Owning Session identity.
+   * @param request - Open flag and optional preferred width.
+   * @returns the committed Workspace snapshot.
+   */
+  @Remote('setDock')
+  remoteSetDock(sessionId: SessionId, request: BrowserWorkspaceDockMutation): BrowserWorkspaceProjection {
+    return this.setDock({
+      session: this.requireSession(sessionId),
+      open: request.open,
+      ...request.width === undefined ? {} : { width: request.width },
+    })
+  }
+
+  /**
+   * Observe one Session-owned tab named on the wire.
+   * @param sessionId - Owning Session identity.
+   * @param target - Complete tab identity.
+   * @returns the current open, unavailable, or closed state.
+   */
+  @Remote('observe')
+  remoteObserve(sessionId: SessionId, target: BrowserTarget): Promise<BrowserRuntimeState> {
+    return this.observe({ session: this.requireSession(sessionId), target })
+  }
+
+  /**
+   * Capture one Session-owned tab named on the wire.
+   * @param sessionId - Owning Session identity.
+   * @param target - Complete tab identity.
+   * @returns screenshot bytes and depicted page facts.
+   */
+  @Remote('screenshot')
+  remoteScreenshot(sessionId: SessionId, target: BrowserTarget): Promise<BrowserScreenshot> {
+    return this.screenshot({ session: this.requireSession(sessionId), target })
+  }
+
+  /**
+   * Focus one Session-owned tab named on the wire.
+   * @param sessionId - Owning Session identity.
+   * @param target - Complete tab identity.
+   * @param expectedRevision - Latest revision returned by a browser operation.
+   * @returns the committed focused page.
+   */
+  @Remote('focus')
+  remoteFocus(sessionId: SessionId, target: BrowserTarget, expectedRevision: number): Promise<BrowserPageState> {
+    return this.focus({ session: this.requireSession(sessionId), target, expectedRevision })
+  }
+
+  /**
+   * Navigate one Session-owned tab named on the wire.
+   * @param sessionId - Owning Session identity.
+   * @param target - Complete tab identity.
+   * @param expectedRevision - Latest revision returned by a browser operation.
+   * @param url - URL to open.
+   * @returns the committed open page.
+   */
+  @Remote('navigate')
+  remoteNavigate(
+    sessionId: SessionId,
+    target: BrowserTarget,
+    expectedRevision: number,
+    url: string,
+  ): Promise<BrowserPageState> {
+    return this.navigate({ session: this.requireSession(sessionId), target, expectedRevision, url })
+  }
+
+  /**
+   * Record one human mutation on a Session-owned tab named on the wire.
+   * @param sessionId - Owning Session identity.
+   * @param target - Complete tab identity.
+   * @param expectedRevision - Latest revision returned by a browser operation.
+   * @param input - Optional URL or text produced by the human gesture.
+   * @returns the committed open page whose `controlOwner` is `human`.
+   */
+  @Remote('input')
+  remoteInput(
+    sessionId: SessionId,
+    target: BrowserTarget,
+    expectedRevision: number,
+    input: { readonly url?: string; readonly text?: string },
+  ): Promise<BrowserPageState> {
+    return this.input({
+      session: this.requireSession(sessionId),
+      target,
+      expectedRevision,
+      ...input.url === undefined ? {} : { url: input.url },
+      ...input.text === undefined ? {} : { text: input.text },
+    })
+  }
+
+  /**
+   * Record reported human ownership of one Session-owned tab named on the wire.
+   * @param sessionId - Owning Session identity.
+   * @param target - Complete tab identity.
+   * @param expectedRevision - Latest revision returned by a browser operation.
+   * @returns the committed open page whose `controlOwner` is `human`.
+   */
+  @Remote('takeover')
+  remoteTakeover(sessionId: SessionId, target: BrowserTarget, expectedRevision: number): Promise<BrowserPageState> {
+    return this.takeover({ session: this.requireSession(sessionId), target, expectedRevision })
+  }
+
+  /**
+   * Record reported Agent ownership of one Session-owned tab named on the wire.
+   * @param sessionId - Owning Session identity.
+   * @param target - Complete tab identity.
+   * @param expectedRevision - Latest revision returned by a browser operation.
+   * @returns the committed open page whose `controlOwner` is `agent`.
+   */
+  @Remote('returnControl')
+  remoteReturnControl(
+    sessionId: SessionId,
+    target: BrowserTarget,
+    expectedRevision: number,
+  ): Promise<BrowserPageState> {
+    return this.returnControl({ session: this.requireSession(sessionId), target, expectedRevision })
+  }
+
+  /**
+   * Close one Session-owned tab named on the wire.
+   * @param sessionId - Owning Session identity.
+   * @param target - Complete tab identity.
+   * @param expectedRevision - Latest revision returned by a browser operation.
+   * @returns the terminal close receipt.
+   */
+  @Remote('close')
+  remoteClose(sessionId: SessionId, target: BrowserTarget, expectedRevision: number): Promise<BrowserClosedState> {
+    return this.close({ session: this.requireSession(sessionId), target, expectedRevision })
   }
 
   /**
@@ -296,10 +439,22 @@ export class BrowserWorkspaceBinder extends Service {
     }
   }
 
+  /** Resolve the live Session named on the wire, or reject an unknown identity. */
+  private requireSession(sessionId: SessionId): Session {
+    const session = this.ctx.sessions.get(sessionId)
+    if (session === undefined) {
+      throw new BrowserRuntimeError('browser target is not owned by this Session', 'BROWSER_SESSION_MISMATCH')
+    }
+    return session
+  }
+
   /** Record a newly created tab on the owning Session. */
   private adopt(session: Session, target: BrowserTarget, controlOwner: BrowserControlOwner): void {
     const current = this.snapshot(session)
-    this.commit(session, adoptTarget(current, target, controlOwner))
+    const adopted = adoptTarget(current, target, controlOwner)
+    this.commit(session, current.workspaces.length === 0 && !current.userCollapsed
+      ? { ...adopted, dockOpen: true }
+      : adopted)
   }
 
   /** Persist the current control owner for one already-owned tab. */
@@ -473,6 +628,7 @@ function freezeSnapshot(snapshot: BrowserWorkspaceProjection): BrowserWorkspaceP
   return Object.freeze({
     dockOpen: snapshot.dockOpen,
     dockWidth: snapshot.dockWidth,
+    userCollapsed: snapshot.userCollapsed,
     activeWorkspaceId: snapshot.activeWorkspaceId,
     workspaces: Object.freeze(snapshot.workspaces.map(workspace => Object.freeze({
       workspaceId: workspace.workspaceId,

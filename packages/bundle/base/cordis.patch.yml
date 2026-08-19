@@ -417,6 +417,25 @@
         fetch: false
         searchTimeoutMs: 60000
 
+    # Session-owned Browser Workspace over a keyless deterministic Runtime.
+    # The Dock and deferred Consumer bind created tabs to the calling Session.
+    - id: browser-runtime-deterministic
+      name: '@deepseek-ai/dsh-browser-runtime-deterministic'
+      config:
+        idPrefix: gestalt
+        pages:
+          - url: https://example.test/
+            title: Example Domain
+            text: A deterministic browser page.
+            screenshotPngBase64: iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=
+          - url: https://login.test/
+            title: Sign in
+            text: Persistent Profile login page.
+            screenshotPngBase64: iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=
+
+    - id: browser-workspace
+      name: '@deepseek-ai/dsh-browser-workspace'
+
     # ── rows every mode mounts, whose values each overlay may state ──────────────
 
     # The tool registry. Presentation mode is a deployment choice; omitting it here

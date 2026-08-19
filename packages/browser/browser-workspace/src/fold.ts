@@ -10,6 +10,7 @@ import type { BrowserWorkspaceProjection } from './types.ts'
 export const EMPTY_BROWSER_WORKSPACE: BrowserWorkspaceProjection = Object.freeze({
   dockOpen: false,
   dockWidth: 640,
+  userCollapsed: false,
   workspaces: Object.freeze([]),
   activeWorkspaceId: null,
 })

@@ -7,6 +7,7 @@ import type { BrowserWorkspaceProjection } from '../src/client.ts'
 const SNAPSHOT: BrowserWorkspaceProjection = {
   dockOpen: true,
   dockWidth: 720,
+  userCollapsed: false,
   activeWorkspaceId: BrowserWorkspaceId('ws-1'),
   workspaces: [{
     workspaceId: BrowserWorkspaceId('ws-1'),

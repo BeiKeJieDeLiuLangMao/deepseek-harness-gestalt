@@ -22,4 +22,4 @@ Provider 在 `browser/runtime-state` 上发布已提交状态。该通知不可�
 
 ## 已知限制与后续工作
 
-- Dock chrome 仍属于后续工作。Session 本地 Workspace 所有权与已持久化的控制权所有者事实见 [`dsh-browser-workspace`](../browser-workspace/README.md)。
+- Dock chrome 见 [`dsh-client-ui-browser`](../../client/ui-browser/README.md)。Session 本地 Workspace 所有权与已持久化的控制权所有者事实见 [`dsh-browser-workspace`](../browser-workspace/README.md)。

@@ -61,15 +61,16 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      */
     'conversation': { kind: 'single'; scope: 'session-maybe'; owner: ConvOwnerProps }
     /**
-     * The right details column, shown when the layout opens it. OCCUPIED by
-     * ui-conversation's DetailsPanel, which declares the tool-details seat
-     * inside it — registering here replaces the column and takes that seat
-     * with it. Absent an occupant the column renders nothing.
+     * The right details column, shown when the layout opens it. Occupants are
+     * additive list entries: ui-conversation's DetailsPanel (`id: 'tool'`)
+     * declares the tool-details seat, and Browser Dock (`id: 'browser'`)
+     * covers the column while that Session's Dock is open. Absent an occupant
+     * the column renders nothing.
      *
      * No owner props: the framework injects the session id and hooks for the
      * `session` scope, and `ctx.layout` owns whether the column is open.
      */
-    'details': { kind: 'single'; scope: 'session'; owner: DetailsOwnerProps }
+    'details': { kind: 'list'; scope: 'session'; owner: DetailsOwnerProps }
     /**
      * Frame-wide floating layer, above every column and outside their scroll
      * containers. Deliberately generic and unowned by any feature: a badge, a
@@ -122,7 +123,7 @@ export function apply(ctx: ClientContext): void {
       children: {
         'sidebar': { kind: 'single', scope: 'root' },
         'conversation': { kind: 'single', scope: 'session-maybe' },
-        'details': { kind: 'single', scope: 'session' },
+        'details': { kind: 'list', scope: 'session' },
         'shell.overlay': { kind: 'list', scope: 'root' },
       },
       // Exclusive store: the factory itself — the framework instantiates per

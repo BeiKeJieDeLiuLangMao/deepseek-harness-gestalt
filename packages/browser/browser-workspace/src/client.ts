@@ -7,3 +7,16 @@
  */
 
 export type * from './types.ts'
+export type {
+  BrowserClosedState,
+  BrowserControlOwner,
+  BrowserInstanceId,
+  BrowserPageState,
+  BrowserProfileChrome,
+  BrowserProfileId,
+  BrowserRuntimeState,
+  BrowserScreenshot,
+  BrowserTabId,
+  BrowserTarget,
+  BrowserWorkspaceId,
+} from '@deepseek-ai/dsh-browser-runtime'

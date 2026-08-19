@@ -240,6 +240,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   BrowserTarget: 'browser-runtime.md',
   BrowserUnavailableState: 'browser-runtime.md',
   BrowserWorkspaceCreateRequest: 'browser-runtime.md',
+  BrowserWorkspaceDockMutation: 'browser-runtime.md',
   BrowserWorkspaceDockRequest: 'browser-runtime.md',
   BrowserWorkspaceId: 'browser-runtime.md',
   BrowserWorkspaceInputRequest: 'browser-runtime.md',

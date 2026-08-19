@@ -84,6 +84,12 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
       inject: ChatNodeTurnDataInjected
     }
     /**
+     * Collapsed Browser Dock preview in the message region. Occupied by
+     * ui-browser's layered tab stack while the Dock is closed; hidden while
+     * the Dock is visible. Ordinary MCP tool rows stay in conversation history.
+     */
+    'conversation.browser.preview': { kind: 'single'; scope: 'session' }
+    /**
      * The chat view's per-command row hole: keyed dispatch on the command
      * name (`command/run.name`; a run-less cross-window node has none and
      * always lands on the fallback). Declared by the chat view entry; the
@@ -709,7 +715,8 @@ export interface ChatViewInjected {
 
 /** Full chat-view component props: runtime & its Tool/command/tail render shares & store & injected & locale seat. */
 export type ChatViewSlotProps =
-  PropsRuntime<'conversation.view'> & PropsRenderSlots<'conversation.chat.node'>
+  PropsRuntime<'conversation.view'>
+  & PropsRenderSlots<'conversation.chat.node' | 'conversation.browser.preview'>
   & PropsStore<ChatStore> & ChatViewInjected & PropsLocale<'conversation'>
 
 /**

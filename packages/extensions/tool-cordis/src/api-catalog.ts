@@ -472,6 +472,60 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the committed Workspace snapshot.',
       },
       {
+        signature: '@Remote(\'setDock\') remoteSetDock(sessionId: SessionId, request: BrowserWorkspaceDockMutation): BrowserWorkspaceProjection',
+        description: 'Record Dock visibility and width for the Session named on the wire.',
+        parameters: [{ name: 'sessionId', description: 'Owning Session identity.' }, { name: 'request', description: 'Open flag and optional preferred width.' }],
+        returns: 'the committed Workspace snapshot.',
+      },
+      {
+        signature: '@Remote(\'observe\') remoteObserve(sessionId: SessionId, target: BrowserTarget): Promise<BrowserRuntimeState>',
+        description: 'Observe one Session-owned tab named on the wire.',
+        parameters: [{ name: 'sessionId', description: 'Owning Session identity.' }, { name: 'target', description: 'Complete tab identity.' }],
+        returns: 'the current open, unavailable, or closed state.',
+      },
+      {
+        signature: '@Remote(\'screenshot\') remoteScreenshot(sessionId: SessionId, target: BrowserTarget): Promise<BrowserScreenshot>',
+        description: 'Capture one Session-owned tab named on the wire.',
+        parameters: [{ name: 'sessionId', description: 'Owning Session identity.' }, { name: 'target', description: 'Complete tab identity.' }],
+        returns: 'screenshot bytes and depicted page facts.',
+      },
+      {
+        signature: '@Remote(\'focus\') remoteFocus(sessionId: SessionId, target: BrowserTarget, expectedRevision: number): Promise<BrowserPageState>',
+        description: 'Focus one Session-owned tab named on the wire.',
+        parameters: [{ name: 'sessionId', description: 'Owning Session identity.' }, { name: 'target', description: 'Complete tab identity.' }, { name: 'expectedRevision', description: 'Latest revision returned by a browser operation.' }],
+        returns: 'the committed focused page.',
+      },
+      {
+        signature: '@Remote(\'navigate\') remoteNavigate( sessionId: SessionId, target: BrowserTarget, expectedRevision: number, url: string, ): Promise<BrowserPageState>',
+        description: 'Navigate one Session-owned tab named on the wire.',
+        parameters: [{ name: 'sessionId', description: 'Owning Session identity.' }, { name: 'target', description: 'Complete tab identity.' }, { name: 'expectedRevision', description: 'Latest revision returned by a browser operation.' }, { name: 'url', description: 'URL to open.' }],
+        returns: 'the committed open page.',
+      },
+      {
+        signature: '@Remote(\'input\') remoteInput( sessionId: SessionId, target: BrowserTarget, expectedRevision: number, input: { readonly url?: string; readonly text?: string }, ): Promise<BrowserPageState>',
+        description: 'Record one human mutation on a Session-owned tab named on the wire.',
+        parameters: [{ name: 'sessionId', description: 'Owning Session identity.' }, { name: 'target', description: 'Complete tab identity.' }, { name: 'expectedRevision', description: 'Latest revision returned by a browser operation.' }, { name: 'input', description: 'Optional URL or text produced by the human gesture.' }],
+        returns: 'the committed open page whose `controlOwner` is `human`.',
+      },
+      {
+        signature: '@Remote(\'takeover\') remoteTakeover(sessionId: SessionId, target: BrowserTarget, expectedRevision: number): Promise<BrowserPageState>',
+        description: 'Record reported human ownership of one Session-owned tab named on the wire.',
+        parameters: [{ name: 'sessionId', description: 'Owning Session identity.' }, { name: 'target', description: 'Complete tab identity.' }, { name: 'expectedRevision', description: 'Latest revision returned by a browser operation.' }],
+        returns: 'the committed open page whose `controlOwner` is `human`.',
+      },
+      {
+        signature: '@Remote(\'returnControl\') remoteReturnControl( sessionId: SessionId, target: BrowserTarget, expectedRevision: number, ): Promise<BrowserPageState>',
+        description: 'Record reported Agent ownership of one Session-owned tab named on the wire.',
+        parameters: [{ name: 'sessionId', description: 'Owning Session identity.' }, { name: 'target', description: 'Complete tab identity.' }, { name: 'expectedRevision', description: 'Latest revision returned by a browser operation.' }],
+        returns: 'the committed open page whose `controlOwner` is `agent`.',
+      },
+      {
+        signature: '@Remote(\'close\') remoteClose(sessionId: SessionId, target: BrowserTarget, expectedRevision: number): Promise<BrowserClosedState>',
+        description: 'Close one Session-owned tab named on the wire.',
+        parameters: [{ name: 'sessionId', description: 'Owning Session identity.' }, { name: 'target', description: 'Complete tab identity.' }, { name: 'expectedRevision', description: 'Latest revision returned by a browser operation.' }],
+        returns: 'the terminal close receipt.',
+      },
+      {
         signature: 'async create(request: BrowserWorkspaceCreateRequest): Promise<BrowserPageState>',
         description: 'Create one tab in the Session\'s Browser Workspace.',
         parameters: [{ name: 'request', description: 'Session-bound create request.' }],
@@ -3199,6 +3253,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type BrowserWorkspaceCreateRequest = BrowserCreateRequest & BrowserWorkspaceSessionRequest;',
   },
   {
+    name: 'BrowserWorkspaceDockMutation',
+    declaration: 'export interface BrowserWorkspaceDockMutation {\n    readonly open: boolean;\n    readonly width?: number;\n}',
+  },
+  {
     name: 'BrowserWorkspaceDockRequest',
     declaration: 'export interface BrowserWorkspaceDockRequest {\n    readonly session: Session;\n    readonly open: boolean;\n    readonly width?: number;\n}',
   },
@@ -3228,7 +3286,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'BrowserWorkspaceProjection',
-    declaration: 'export interface BrowserWorkspaceProjection {\n    readonly dockOpen: boolean;\n    readonly dockWidth: number;\n    readonly workspaces: readonly BrowserWorkspaceRecord[];\n    readonly activeWorkspaceId: BrowserWorkspaceId | null;\n}',
+    declaration: 'export interface BrowserWorkspaceProjection {\n    readonly dockOpen: boolean;\n    readonly dockWidth: number;\n    readonly userCollapsed: boolean;\n    readonly workspaces: readonly BrowserWorkspaceRecord[];\n    readonly activeWorkspaceId: BrowserWorkspaceId | null;\n}',
   },
   {
     name: 'BrowserWorkspaceRecord',
