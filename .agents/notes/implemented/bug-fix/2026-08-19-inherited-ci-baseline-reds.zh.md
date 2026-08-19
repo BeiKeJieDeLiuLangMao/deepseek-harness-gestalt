@@ -18,11 +18,11 @@ Status: implemented
 
 **构建后的 Relay 共用公开错误构造函数。** 仅主机侧的 provider 从 `@deepseek-ai/dsh-remote-access` 导入 `RemoteRelayError`，且该 provider 的 tsdown 入口将该包列入 `deps.neverBundle`，因此 WSS Consumer 的 `instanceof` 检查与 provider 抛出的是同一个类。translation-prompt 快照通过受认可的 snapshot refresh 从 Gestalt README 重新生成。
 
-**浅检出红灯消失后，露出 companion 基线其余门禁。** Linux coverage lane 现在能跑完全部测试，并在 Gestalt 的 client / schedule / remote-access / search 等从未达到 per-file 100% 的文件上失败；这些文件并入既有的 `TODO(gui)` coverage 排除清单，`revokeCredential` 与 Desktop Account source 则补上归属测试而非排除。consumers lane 的 oxlint 与 jscpd 失败属于同一块 companion 表面：已弃用的 `escape`/`unescape`、未绑定的 input-action 方法、未类型化的 `ctx.get('web')`，以及快照/HTTP/tab/字段的克隆块。`pwsh-tool-turn` 的 header sidecar 刷新为当前的 sandbox 句、`job_*` 的 “job” 用词，以及 Linux 组装发出的 job-then-pwsh 工具顺序。Schedule-board 的 aria 金标把 AM/PM 收进 `{{clock}}`，避免 UTC runner 与 UTC+8 录制分叉；workspace-management 对仅 hover 可见的行操作重新 hover 并 force-click。
+**浅检出红灯消失后，露出 companion 基线其余门禁。** Linux coverage lane 现在能跑完全部测试，并在 Gestalt 的 client / schedule / remote-access / search 等从未达到 per-file 100% 的文件上失败。可测的 Schedule decode/replay/时间校验（`domain.ts`、`projection.ts`）、抽出的 DeepSeek `postSearch` 路径，以及 Models 的 occupancy / `configured` / `removable` store 补上归属测试并达到 per-file 100%。其余 `remote-access` 与 `*-http` / `*-client` 的 index 文件继续排除，并标 `TODO(#168,#170,#171): delete when merged`；其它 companion UI 文件仍留在既有的 `TODO(gui)` 清单。`revokeCredential` 与 Desktop Account source 也补上归属测试。consumers lane 的 oxlint 与 jscpd 失败属于同一块 companion 表面：已弃用的 `escape`/`unescape`、未绑定的 input-action 方法、未类型化的 `ctx.get('web')`，以及快照/HTTP/tab/字段的克隆块。HTTP `readJson` 助手保留 `jscpd:ignore`，作为接受的克隆漂移——各 provider 自持状态行文案，而不是抽成共享 HTTP helper。`pwsh-tool-turn` 的 header sidecar 刷新为当前的 sandbox 句、`job_*` 的 “job” 用词，以及 Linux 组装发出的 job-then-pwsh 工具顺序。Schedule board 快照把 Playwright `timezoneId` 钉在 `Asia/Shanghai`（issue #95），使本地时间的 AM/PM 与宿主时区无关；`{{clock}}` 正规化器不再吞掉子午标记。workspace-management 在普通 click 之前对仅 hover 可见的行操作重新 hover。
 
 ## 验证
 
-该 workflow 契约测试对旧的浅检出 workflow 失败、在每个 coverage lane 都使用 `fetch-depth: 0` 后通过。四个 Desktop spec 与 continuation spec 在本地通过；仅 Windows 相关的断言交由原生 Windows lane 判定。完整 Web 浏览器 replay 套件在只读 replay 模式下全绿，包括此前失败的 scroll-contract、onboarding、Desktop chrome、minimal-preset 与 shipped-composition 场景。`DSH_EXAMPLE_MODE=lib` 的 two-instance-relay 回放与构建后 provider 的类身份测试均通过；translation-prompt 快照在 refresh 后与 Gestalt README 一致。companion 的 lint 与克隆修复后，本地 `pnpm run lint:contracts-ready` 与 `pnpm run duplication` 通过。本机无 `pwsh`，`pwsh-tool-turn` 会 skip；sidecar 与 Linux consumers lane 收到的 header、以及 `packages/shell/tool-pwsh` 与已刷新的 `job_*` 金标一致。
+该 workflow 契约测试对旧的浅检出 workflow 失败、在每个 coverage lane 都使用 `fetch-depth: 0` 后通过。四个 Desktop spec 与 continuation spec 在本地通过；仅 Windows 相关的断言交由原生 Windows lane 判定。完整 Web 浏览器 replay 套件在只读 replay 模式下全绿，包括此前失败的 scroll-contract、onboarding、Desktop chrome、minimal-preset 与 shipped-composition 场景。Schedule board 金标在钉死的 `Asia/Shanghai` 上下文下重新录制一次并可回放。对 `schedule` 的 `domain.ts` / `projection.ts`、`web-search-deepseek` 的 `provider.ts` 与 Models `store.ts` 的 scoped coverage 为 per-file 100%。`DSH_EXAMPLE_MODE=lib` 的 two-instance-relay 回放与构建后 provider 的类身份测试均通过；translation-prompt 快照在 refresh 后与 Gestalt README 一致。companion 的 lint 与克隆修复后，本地 `pnpm run lint:contracts-ready` 与 `pnpm run duplication` 通过。本机无 `pwsh`，`pwsh-tool-turn` 会 skip；sidecar 与 Linux consumers lane 收到的 header、以及 `packages/shell/tool-pwsh` 与已刷新的 `job_*` 金标一致。
 
 ## 曾考虑的替代方案
 
@@ -36,6 +36,10 @@ Status: implemented
 
 **继续从 `./relay.ts` 导入 `RemoteRelayError`，并把 `./relay.js` 标为 external。** 否决：已发布运行时是 `lib/index.js`，不是同级的 `lib/relay.js`；Consumer 从公开包入口加载该类。
 
+**把 AM/PM 吞进 `{{clock}}` 正规化器。** 否决：这会掩盖 issue #95 的时区 fixture 缺陷；Schedule 快照必须声明 `timezoneId`，并保持产品的本地时间格式化。
+
+**把 Schedule domain/projection、DeepSeek `postSearch` 与 Models store 当作 GUI 债务排除出 coverage。** 否决：这些文件是本基线已经拥有的可测逻辑。
+
 ## 影响
 
-基于该基线的 PR 不再继承 coverage、snapshots 与原生 Windows 红灯。native complete 仍是独立必过检查，不在 `all-checks-passed.needs` 中。Models 设置页在保留 provider 行改造引入的基于占用判定的 `configured` 与 `removable` 语义的同时，让首启用户重新可达 setup 卡片。scroll contract 的流长度现在是明示的容量约定（`LIVE_STREAM_CHUNKS`），而不再是隐式的竞速。lib 模式下的 two-instance-relay 回放通过同一个 `RemoteRelayError` 构造函数映射 `REMOTE_OFFLINE`。
+基于该基线的 PR 不再继承 coverage、snapshots 与原生 Windows 红灯。native complete 仍是独立必过检查，不在 `all-checks-passed.needs` 中。Models 设置页在保留 provider 行改造引入的基于占用判定的 `configured` 与 `removable` 语义的同时，让首启用户重新可达 setup 卡片。scroll contract 的流长度现在是明示的容量约定（`LIVE_STREAM_CHUNKS`），而不再是隐式的竞速。lib 模式下的 two-instance-relay 回放通过同一个 `RemoteRelayError` 构造函数映射 `REMOTE_OFFLINE`。Schedule board 快照在托管 UTC 与 `Asia/Shanghai` 宿主上时区稳定（issue #95）。`TODO(#168,#170,#171)` 的 index 排除在这些 PR 合并后失效。

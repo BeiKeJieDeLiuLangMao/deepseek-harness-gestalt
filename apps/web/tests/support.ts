@@ -18,6 +18,13 @@ export const REPO_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
 export const ZH_BROWSER_LOCALE = 'zh-CN'
 
 /**
+ * Playwright timezone the Schedule board snapshot pins so local-time AM/PM
+ * stays host-independent (issue #95). Product formatting remains the user's
+ * local zone; only the browser context is declared.
+ */
+export const SCHEDULE_SNAPSHOT_TIMEZONE = 'Asia/Shanghai'
+
+/**
  * Open the standard browser-test page advertising English before client boot.
  * This keeps role locators and goldens deterministic while leaving the Host
  * settings document free to override the provisional browser-derived locale;
@@ -25,10 +32,19 @@ export const ZH_BROWSER_LOCALE = 'zh-CN'
  * {@link ZH_BROWSER_LOCALE} instead.
  * @param browser - Playwright browser owning the page.
  * @param height - Viewport height; width is fixed to the lane baseline.
+ * @param timezoneId - optional IANA zone for the page's browser context.
  * @returns the initialized page.
  */
-export async function newEnglishPage(browser: Browser, height = 1000): Promise<Page> {
-  return await browser.newPage({ viewport: { width: 1680, height }, locale: 'en-US' })
+export async function newEnglishPage(
+  browser: Browser,
+  height = 1000,
+  timezoneId?: string,
+): Promise<Page> {
+  return await browser.newPage({
+    viewport: { width: 1680, height },
+    locale: 'en-US',
+    ...timezoneId === undefined ? {} : { timezoneId },
+  })
 }
 
 /** Fail loud on a stale checkout instead of testing yesterday's bundle. */
