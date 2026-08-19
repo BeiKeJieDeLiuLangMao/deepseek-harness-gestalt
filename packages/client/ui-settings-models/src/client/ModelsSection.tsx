@@ -267,7 +267,14 @@ function Loaded({ injected }: { injected: ModelsSectionInjected }): ReactNode {
   // One fact decides both first-run postures on this page and the onboarding
   // step: whether the user already has a provider to talk to.
   const anyUsable = state.rows.some(providerUsable)
-  const configured = state.rows.filter(row => row.configured)
+  // Official DeepSeek's empty-path join is unconfigured until the user section
+  // or a secret slot occupies it. First-run still lists that row so the setup
+  // card can open; dismissal keeps it as a row for this session; a vacant
+  // official route with another usable provider stays off the list.
+  const listed = state.rows.filter(row =>
+    row.configured
+    || needsSetup(row, anyUsable)
+    || dismissedSetup.has(row.entry.provider))
   const addable = state.rows.filter(row =>
     !row.configured
     && row.entry.settingsNs !== ''
@@ -292,7 +299,7 @@ function Loaded({ injected }: { injected: ModelsSectionInjected }): ReactNode {
           </p>
         )}
       <ul className={styles['rows']}>
-        {configured.map((row) => {
+        {listed.map((row) => {
           const target = targetOf(row)
           const namespace = state.namespaces.get(target.settingsNs)
           /* v8 ignore next -- the join marks a row configured only when its namespace resolved */

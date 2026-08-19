@@ -163,6 +163,13 @@ describe('Schedule plugin composition', () => {
         scheduledAt: new Date(Date.now() + 3_600_000).toISOString(),
       },
     })
+    const corrupt = vi.spyOn(scheduleDomain, 'foldScheduleEvents').mockImplementation(() => {
+      throw new scheduleDomain.ScheduleLogError('schedule delete targets inactive id')
+    })
+    await expect(ctx.schedules.pause(unexpected.agent.id, ScheduleId('schedule-1')))
+      .rejects.toMatchObject({ name: 'ScheduleMutationError', code: 'corrupt_schedule_log' })
+    corrupt.mockRestore()
+
     const spy = vi.spyOn(scheduleDomain, 'foldScheduleEvents').mockImplementation(() => {
       throw new TypeError('fold exploded')
     })
@@ -231,35 +238,35 @@ describe('Schedule plugin composition', () => {
     const ctx = await harness()
     const plugin = await ctx.plugin(ScheduleService)
     const sessionId = SessionId('schedule-delete-enter-race')
-    const root = await ctx.agents.create({ sessionId })
-    root.agent.session.append('schedule/change', {
-      version: 1,
-      operation: 'create',
-      schedule: {
-        id: ScheduleId('schedule-1'),
-        kind: 'after',
-        prompt: 'raced delete',
-        afterSeconds: 3_600,
-        scheduledAt: new Date(Date.now() + 3_600_000).toISOString(),
-      },
+    const unused = ctx.sessions.prepare(SessionId('schedule-delete-enter-unused'), { meta: { cwd: '/tmp' } })
+    let raced: Awaited<ReturnType<typeof ctx.agents.create>> | undefined
+    const enter = ctx.sessions.enter.bind(ctx.sessions)
+    ctx.sessions.enter = vi.fn((session) => {
+      if (session.id === unused.id) throw new Error('already attached to a store')
+      return enter(session)
     })
-    const get = ctx.agents.get.bind(ctx.agents)
-    let reads = 0
-    ctx.agents.get = vi.fn((id: SessionId) => {
-      reads += 1
-      return reads === 1 && id === sessionId ? undefined : get(id)
-    })
-    const prepared = ctx.sessions.prepare(SessionId('schedule-delete-enter-unused'), { meta: { cwd: '/tmp' } })
-    ctx.sessionPersistence.prepare = vi.fn(async () => SessionPreparation.create(prepared))
-    ctx.sessions.enter = vi.fn(() => {
-      throw new Error('already attached to a store')
+    ctx.sessionPersistence.prepare = vi.fn(async () => {
+      raced = await ctx.agents.create({ sessionId })
+      raced.agent.session.append('schedule/change', {
+        version: 1,
+        operation: 'create',
+        schedule: {
+          id: ScheduleId('schedule-1'),
+          kind: 'after',
+          prompt: 'raced delete',
+          afterSeconds: 3_600,
+          scheduledAt: new Date(Date.now() + 3_600_000).toISOString(),
+        },
+      })
+      return SessionPreparation.create(unused)
     })
 
     await expect(ctx.schedules.delete(sessionId, ScheduleId('schedule-1')))
       .resolves.toEqual({ id: 'schedule-1', deleted: true })
-    expect(root.agent.session.events.filter(event =>
+    expect(raced).toBeDefined()
+    expect(raced?.agent.session.events.filter(event =>
       event.type === 'schedule/change' && event.data.operation === 'delete')).toHaveLength(1)
-    expect(root.agent.session.events.filter(event => event.type === 'schedule/change'
+    expect(raced?.agent.session.events.filter(event => event.type === 'schedule/change'
       && event.data.operation === 'delete')[0]?.data).toEqual({
       version: 1,
       operation: 'delete',
@@ -267,7 +274,7 @@ describe('Schedule plugin composition', () => {
     })
 
     await plugin.dispose()
-    await root.dispose()
+    await raced?.dispose()
     await ctx.fiber.dispose()
   })
 
