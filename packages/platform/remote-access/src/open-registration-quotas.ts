@@ -115,7 +115,10 @@ export function decideOpenRegistration(
   return { ok: true }
 }
 
-function quotaExceeded(usage: OpenRegistrationUsage, request: OpenRegistrationRequest): boolean {
+function quotaExceeded(
+  usage: OpenRegistrationUsage,
+  request: Exclude<OpenRegistrationRequest, { kind: 'stream' }>,
+): boolean {
   switch (request.kind) {
     case 'login':
       return request.installationKind === 'desktop'

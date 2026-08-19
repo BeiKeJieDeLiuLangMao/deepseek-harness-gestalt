@@ -262,7 +262,9 @@ function requiredBoolean(value: unknown, name: string): boolean {
 }
 
 function requiredSafeInteger(value: unknown, name: string): number {
-  if (!Number.isSafeInteger(value)) throw new HttpError(400, 'BODY_INVALID', `${name} must be a safe integer`)
+  if (typeof value !== 'number' || !Number.isSafeInteger(value)) {
+    throw new HttpError(400, 'BODY_INVALID', `${name} must be a safe integer`)
+  }
   return value
 }
 

@@ -244,7 +244,6 @@ describe('Remote Access HTTP assembled flow', () => {
       rejectPairing: vi.fn(),
       reissueDesktopRelayAuthority: vi.fn(async () => ({ enabled: true })),
       revokePersonalPairing: vi.fn(),
-      reissueDesktopRelayAuthority: vi.fn(async () => ({ enabled: true })),
       completeChallenge: vi.fn(async () => ({
         pendingPairingId: 'pending-one', authenticationWords: [], desktopHandshake: Uint8Array.of(1),
         device: { name: 'phone', platform: 'ios' },

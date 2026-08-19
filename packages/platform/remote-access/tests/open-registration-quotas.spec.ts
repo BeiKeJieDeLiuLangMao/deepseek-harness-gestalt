@@ -135,7 +135,7 @@ describe('open-registration quotas', () => {
   })
 
   it('rejects an unrecognized request kind at the closed quota switch', () => {
-    expect(decideOpenRegistration(within, { kind: 'other' } as OpenRegistrationRequest, false, 12))
+    expect(decideOpenRegistration(within, { kind: 'other' } as unknown as OpenRegistrationRequest, false, 12))
       .toEqual({ ok: false, code: 'QUOTA', retryAfter: 12 })
   })
 })

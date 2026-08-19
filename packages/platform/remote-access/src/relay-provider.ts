@@ -200,7 +200,7 @@ export class RemoteRelayProvider extends RemoteRelayService {
       }
       this.assertOpen()
       throwIfAborted(signal)
-      local = {
+      const attached: LocalAttachment = {
         entry,
         deliver: input.deliver,
         credentialDigest: digest,
@@ -215,7 +215,8 @@ export class RemoteRelayProvider extends RemoteRelayService {
         socketClosed: input.close === undefined,
         capacityHeld,
       }
-      this.attachments.set(key, local)
+      local = attached
+      this.attachments.set(key, attached)
       try {
         if (input.announce !== undefined) await input.announce()
         throwIfAborted(signal)
@@ -223,23 +224,23 @@ export class RemoteRelayProvider extends RemoteRelayService {
         throwIfAborted(signal)
         const currentRevision = await this.options.routeStore.authorize(entry.routeId, entry.endpoint, digest, signal)
         if (this.disposed || currentRevision !== entry.revision) {
-          await this.closeAndDrain(local)
+          await this.closeAndDrain(attached)
           throw new RemoteRelayError(
             this.disposed ? 'REMOTE_OFFLINE' : 'RELAY_ATTACHMENT_REJECTED',
             this.disposed ? 'Platform Instance is offline' : 'Relay credential was superseded during attachment',
           )
         }
-        this.armHeartbeat(local)
+        this.armHeartbeat(attached)
       } catch (error) {
-        if (!local.closed) await this.closeAndDrain(local)
+        if (!attached.closed) await this.closeAndDrain(attached)
         throw error
       }
       return {
         receive: async (message) => {
-          if (message.type === 'heartbeat') await this.heartbeat(local, message)
-          else await this.forward(local, message)
+          if (message.type === 'heartbeat') await this.heartbeat(attached, message)
+          else await this.forward(attached, message)
         },
-        close: async () => { await this.closeAndDrain(local) },
+        close: async () => { await this.closeAndDrain(attached) },
       }
     } catch (error) {
       if (local === undefined && capacityHeld) this.options.capacity?.release()

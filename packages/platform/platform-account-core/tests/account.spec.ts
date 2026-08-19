@@ -116,12 +116,12 @@ function accountHarness(options: {
   const clock = options.clock ?? { now: () => NOW }
   const config = options.config ?? CONFIG
   const capacity = options.capacity
-  const first = new PlatformAccount(new Context(), {
-    backend, invalidation, github: provider, environment: ENVIRONMENT, clock, config, capacity,
-  })
-  const second = new PlatformAccount(new Context(), {
-    backend, invalidation, github: provider, environment: ENVIRONMENT, clock, config, capacity,
-  })
+  const accountOptions = {
+    backend, invalidation, github: provider, environment: ENVIRONMENT, clock, config,
+    ...(capacity === undefined ? {} : { capacity }),
+  }
+  const first = new PlatformAccount(new Context(), accountOptions)
+  const second = new PlatformAccount(new Context(), accountOptions)
   return { backend, invalidation, provider, clock, config, first, second }
 }
 
@@ -841,7 +841,9 @@ describe('PlatformAccount', () => {
       backend: proxyBackend(harness.backend, {
         async getAttempt(id) {
           const record = await harness.backend.getAttempt(id)
-          return record === undefined ? undefined : { ...record, identity: undefined, status: 'authorized' }
+          if (record === undefined) return undefined
+          const { identity: _identity, ...rest } = record
+          return { ...rest, status: 'authorized' }
         },
         consumeAuthorizedAttempt: async () => {
           throw new AccountError('LOGIN_ATTEMPT_INVALID', 'login attempt is not authorized')
