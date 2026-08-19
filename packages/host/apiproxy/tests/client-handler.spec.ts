@@ -115,6 +115,7 @@ function scriptedApi(overrides: {
       update: err,
       replace: err,
       mutate: err,
+      testWebSearch: r => ok(r, { count: 0 }),
       ...overrides.settings,
     },
     credentials: {
@@ -744,6 +745,7 @@ describe('config unary surface', () => {
         update: record('settings.update', r => ok(r, view)),
         replace: record('settings.replace', r => ok(r, view)),
         mutate: record('settings.mutate', r => ok(r, view)),
+        testWebSearch: record('settings.testWebSearch', r => ok(r, { count: 0 })),
       },
       credentials: {
         describe: record('credentials.describe', r => ok(r, { credentials: { OPENAI_API_KEY: { configured: true, source: 'file', writable: true } } })),

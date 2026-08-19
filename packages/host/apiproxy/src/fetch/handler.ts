@@ -59,7 +59,7 @@ import {
 } from '../api/goals.schema.ts'
 import {
   settingsDescribeRequestSchema, settingsMutateRequestSchema, settingsOpenDocumentRequestSchema,
-  settingsReplaceRequestSchema, settingsUpdateRequestSchema,
+  settingsReplaceRequestSchema, settingsTestWebSearchRequestSchema, settingsUpdateRequestSchema,
 } from '../api/settings.schema.ts'
 import {
   credentialsDescribeRequestSchema, credentialsSetRequestSchema, credentialsUnsetRequestSchema,
@@ -136,6 +136,7 @@ const UNARY_ROUTES: UnaryRoutes = {
   'settings.update': { schema: settingsUpdateRequestSchema, invoke: (api, r) => api.settings.update(r) },
   'settings.replace': { schema: settingsReplaceRequestSchema, invoke: (api, r) => api.settings.replace(r) },
   'settings.mutate': { schema: settingsMutateRequestSchema, invoke: (api, r) => api.settings.mutate(r) },
+  'settings.testWebSearch': { schema: settingsTestWebSearchRequestSchema, invoke: (api, r, signal) => api.settings.testWebSearch(r, signal) },
   'credentials.describe': { schema: credentialsDescribeRequestSchema, invoke: (api, r) => api.credentials.describe(r) },
   'credentials.set': { schema: credentialsSetRequestSchema, invoke: (api, r) => api.credentials.set(r) },
   'credentials.unset': { schema: credentialsUnsetRequestSchema, invoke: (api, r) => api.credentials.unset(r) },

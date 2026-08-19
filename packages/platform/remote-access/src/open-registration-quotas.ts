@@ -85,7 +85,7 @@ export type OpenRegistrationDecision =
  * @param request - new or established request.
  * @param capacity - when true, new login/pairing/blob/WSS attach is shed.
  * @param retryAfter - retry hint in seconds.
- * @returns the shed-or-admit decision.
+ * @returns whether the request is admitted or shed.
  */
 export function decideOpenRegistration(
   usage: OpenRegistrationUsage,

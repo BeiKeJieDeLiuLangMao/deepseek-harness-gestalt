@@ -12,13 +12,7 @@ export interface CompanionOperationReceipt {
   status: 'unknown' | 'committed' | 'absent'
 }
 
-export interface CompanionCacheState {
-  records: ReadonlyMap<string, CompanionCacheRecord>
-  receipts: ReadonlyMap<string, CompanionOperationReceipt>
-  online: boolean
-}
-
-export const COMPANION_OFFLINE_MUTATIONS = [
+const COMPANION_OFFLINE_MUTATIONS = [
   'prompt', 'cancel', 'approval', 'question', 'attachment',
 ] as const
 

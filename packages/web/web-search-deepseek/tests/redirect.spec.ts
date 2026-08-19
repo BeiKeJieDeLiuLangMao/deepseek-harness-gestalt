@@ -66,6 +66,7 @@ describe('DeepSeekSearchProvider redirect policy', () => {
     expect(targetRequests).toHaveLength(0)
   })
 
+
   it('shows default 307 following forwards the custom credential and POST body', async () => {
     targetRequests.length = 0
     const body = JSON.stringify({ query: TEST_QUERY })

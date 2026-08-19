@@ -3170,6 +3170,11 @@ export interface Config {
 ```ts config-catalog
 /** Plugin config (all optional — `apply` fills env-var and constant defaults). */
 export interface Config {
+  /**
+   * Which settings card the next search reads. `deepseek` uses this section's
+   * official DeepSeek endpoint; `anthropic-messages` uses the Anthropic card.
+   */
+  backend?: WebSearchBackend
   /** Literal DeepSeek API key; prefer {@link apiKeyEnv} so no secret enters configuration files. */
   apiKey?: string
   /** Credential reference resolved for each search; defaults to `DEEPSEEK_API_KEY`. */
@@ -3185,9 +3190,12 @@ export interface Config {
   /** Maximum `web_search` server-tool uses per request. Defaults to 5. */
   maxUses?: number
 }
+
+/** Which settings card the next search reads. */
+export type WebSearchBackend = 'deepseek' | 'anthropic-messages'
 ```
 
-来源：[`packages/web/web-search-deepseek/src/index.ts:46`](../packages/web/web-search-deepseek/src/index.ts)
+来源：[`packages/web/web-search-deepseek/src/index.ts:52`](../packages/web/web-search-deepseek/src/index.ts)
 
 <a id="deepseek-aidsh-web-search-exa"></a>
 

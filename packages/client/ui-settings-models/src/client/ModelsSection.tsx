@@ -133,10 +133,15 @@ export function needsSetup(row: ProviderRow, anyUsable: boolean): boolean {
 
 function targetOf(row: ProviderRow): EditorTarget {
   const managedRef = deriveKeyRef(row.entry.provider)
-  const credentialRef = row.apiKeyEnv === managedRef
+  const keyRef = row.apiKeyEnv === managedRef
+    ? managedRef
+    : row.entry.provider === 'deepseek-official' && row.apiKeyEnv !== undefined
+      ? row.apiKeyEnv
+      : undefined
+  const credentialRef = keyRef !== undefined
     && row.credential?.configured === true
     && row.credential.writable
-    ? managedRef
+    ? keyRef
     : undefined
   return {
     provider: row.entry.provider,
@@ -263,7 +268,10 @@ function Loaded({ injected }: { injected: ModelsSectionInjected }): ReactNode {
   // step: whether the user already has a provider to talk to.
   const anyUsable = state.rows.some(providerUsable)
   const configured = state.rows.filter(row => row.configured)
-  const addable = state.rows.filter(row => !row.configured && row.entry.settingsNs !== '')
+  const addable = state.rows.filter(row =>
+    !row.configured
+    && row.entry.settingsNs !== ''
+    && !(row.entry.provider === 'deepseek-official' && row.entry.settingsPath.length === 0))
   const addTarget = adding ? editing : undefined
   const addNamespace = addTarget === undefined ? undefined : state.namespaces.get(addTarget.settingsNs)
   // Hand-declared routes live in the pi-ai namespace, which is also the only
