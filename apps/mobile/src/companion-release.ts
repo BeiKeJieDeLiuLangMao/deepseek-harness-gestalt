@@ -26,9 +26,9 @@ export const COMPANION_RELEASE_DEVICE_CHECKS = [
   'foreground-lifecycle',
 ] as const
 
-export type CompanionReleaseFlow = (typeof COMPANION_RELEASE_FLOWS)[number]
-export type CompanionReleasePlatform = (typeof COMPANION_RELEASE_PLATFORMS)[number]
-export type CompanionReleaseDeviceCheck = (typeof COMPANION_RELEASE_DEVICE_CHECKS)[number]
+type CompanionReleaseFlow = (typeof COMPANION_RELEASE_FLOWS)[number]
+type CompanionReleasePlatform = (typeof COMPANION_RELEASE_PLATFORMS)[number]
+type CompanionReleaseDeviceCheck = (typeof COMPANION_RELEASE_DEVICE_CHECKS)[number]
 
 export interface CompanionReleaseEvidence {
   /** Completed real-device product flows. */
