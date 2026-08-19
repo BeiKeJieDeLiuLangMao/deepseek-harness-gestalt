@@ -3,7 +3,10 @@
 import { randomUUID } from 'node:crypto'
 import type { Pool, PoolClient } from 'pg'
 import {
+  ACCOUNT_DESKTOP_INSTALLATION_LIMIT,
+  ACCOUNT_MOBILE_INSTALLATION_LIMIT,
   AccountError,
+  OPEN_REGISTRATION_HARD_CAP_RETRY_AFTER_SECONDS,
   parseInstallationId,
   parseLoginAttemptId,
   parsePlatformAccountId,
@@ -176,6 +179,7 @@ export class PostgresAccountBackend implements AccountBackend {
       }
       const identity = attemptRow.identity
       const account = await upsertAccount(client, attemptRow.identity_namespace, identity)
+      await client.query('SELECT id FROM account_accounts WHERE id = $1 FOR UPDATE', [account.id])
       const replaced = await client.query<SessionRow>(
         `UPDATE account_sessions
             SET active = FALSE, revision = revision + 1, refresh_hash = NULL
@@ -183,6 +187,24 @@ export class PostgresAccountBackend implements AccountBackend {
           RETURNING *`,
         [attemptRow.identity_namespace, attemptRow.installation_id],
       )
+      if (replaced.rows[0] === undefined) {
+        const kind = attemptRow.installation_kind as InstallationKind
+        const countResult = await client.query<{ count: string }>(
+          `SELECT COUNT(*)::text AS count
+             FROM account_sessions
+            WHERE account_id = $1 AND installation_kind = $2 AND active = TRUE`,
+          [account.id, kind],
+        )
+        const count = Number(countResult.rows[0]?.count ?? 0)
+        const limit = kind === 'desktop' ? ACCOUNT_DESKTOP_INSTALLATION_LIMIT : ACCOUNT_MOBILE_INSTALLATION_LIMIT
+        if (count >= limit) {
+          throw new AccountError(
+            'QUOTA',
+            `Platform Account has reached its ${kind} installation limit`,
+            OPEN_REGISTRATION_HARD_CAP_RETRY_AFTER_SECONDS,
+          )
+        }
+      }
       const sessionId = randomUUID() as AccountSessionId
       const sessionResult = await client.query<SessionRow>(
         `INSERT INTO account_sessions (

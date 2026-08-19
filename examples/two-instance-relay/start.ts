@@ -132,7 +132,9 @@ export async function apply(_ctx: Context, config: Config): Promise<void> {
     const desktopAccess = await pairingA.setMobileAccess({ desktop: desktopAuthentication, enabled: true })
     if (desktopAccess.relay === undefined) throw new Error('Desktop product flow did not issue Relay authority')
     const challenge = await pairingA.createChallenge({
-      desktop: desktopAuthentication, rendezvousId: 'rendezvous-keyless' as never,
+      desktop: desktopAuthentication,
+      rendezvousId: 'rendezvous-keyless' as never,
+      clientIp: '127.0.0.1',
     })
     const pending = await pairingA.completeChallenge({
       mobile: mobileAuthentication,

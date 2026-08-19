@@ -271,6 +271,7 @@ describe('Remote Access HTTP assembled flow', () => {
     expect((await request({ operation: 'admit-blob', bytes: 4 })).status).toBe(200)
     expect(remoteAccess.admitAttachmentBlob).toHaveBeenCalledWith(expect.objectContaining({ bytes: 4 }))
     expect((await request({ operation: 'admit-blob', bytes: 'x' })).status).toBe(400)
+    expect((await request({ operation: 'admit-blob', bytes: -1 })).status).toBe(400)
     expect((await request({ operation: 'release-blob', reservationId: 'blob-1' })).status).toBe(200)
     expect((await request({ operation: 'release-blob', reservationId: '' })).status).toBe(400)
     expect((await request({ operation: 'emit-push-hint' })).status).toBe(200)

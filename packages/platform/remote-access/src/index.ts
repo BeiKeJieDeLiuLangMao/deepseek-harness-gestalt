@@ -321,6 +321,12 @@ export interface PersonalPairingTransactionState {
   pairings: Map<PersonalPairingId, StoredPersonalPairing>
   principalIds: Set<DevicePrincipalId>
   orphanPendingCleanups: Map<CleanupRecord<PendingPairingKey>, OrphanPendingCleanupRecord>
+  accountChallengeAt: Map<string, number[]>
+  ipChallengeAt: Map<string, number[]>
+  blobs: Map<string, { accountId: string; bytes: number }>
+  blobUploads: Map<string, Array<{ at: number; bytes: number }>>
+  pushHintsAt: Map<string, number[]>
+  blobSequence: { next: number }
 }
 
 interface StoredDesktopAuthority {
@@ -416,14 +422,15 @@ export abstract class RemoteAccessService extends Service {
 
   /**
    * Create one two-minute invitation for a signed-in Desktop Installation.
-   * @param input - Desktop authorization, opaque rendezvous identity, and optional client IP for the hourly IP quota.
+   * @param input - Desktop authorization, opaque rendezvous identity, and the client IP counted toward the hourly IP quota.
    * @returns complete QR/link projection; no low-entropy fallback exists.
    * @throws RemoteAccessError `QUOTA` or `PLATFORM_CAPACITY` with `retryAfter` seconds.
+   * @throws TypeError when `clientIp` is empty.
    */
   abstract createChallenge(input: {
     desktop: PairingAccountAuthentication
     rendezvousId: PairingRendezvousId
-    clientIp?: string
+    clientIp: string
   }): Promise<PairingChallengeView>
 
   /**
@@ -638,12 +645,6 @@ export class PersonalPairingProvider extends RemoteAccessService {
   private readonly authority: PersonalPairingAuthorityStore
   private readonly ownsAuthority: boolean
   private readonly localChallengeIds = new Set<PairingChallengeId>()
-  private readonly accountChallengeAt = new Map<string, number[]>()
-  private readonly ipChallengeAt = new Map<string, number[]>()
-  private readonly blobs = new Map<string, { accountId: string; bytes: number }>()
-  private readonly blobUploads = new Map<string, Array<{ at: number; bytes: number }>>()
-  private readonly pushHintsAt = new Map<string, number[]>()
-  private blobSequence = 0
 
   /** @param ctx - Platform context. @param options - Account, crypto, time, random, and link adapters. */
   constructor(ctx: Context, private readonly options: PersonalPairingProviderOptions) {
@@ -666,13 +667,14 @@ export class PersonalPairingProvider extends RemoteAccessService {
   async createChallenge(input: {
     desktop: PairingAccountAuthentication
     rendezvousId: PairingRendezvousId
-    clientIp?: string
+    clientIp: string
   }): Promise<PairingChallengeView> {
     return this.exclusive(async () => {
       const { account, installation } = await this.authenticate(input.desktop, 'desktop')
       this.evictExpiredRecords()
       this.assertCapacity()
-      this.assertPairingChallengeQuota(account.id, input.clientIp)
+      const clientIp = requireClientIp(input.clientIp)
+      this.assertPairingChallengeQuota(account.id, clientIp)
       if (!(await this.authority.getDesktop(account.id, installation.id)).enabled) {
         throw new RemoteAccessError('MOBILE_ACCESS_DISABLED', 'Mobile Access is disabled for this Desktop Installation')
       }
@@ -716,7 +718,7 @@ export class PersonalPairingProvider extends RemoteAccessService {
         }
         this.challenges.set(challengeId, record)
         this.localChallengeIds.add(challengeId)
-        this.recordChallengeQuota(account.id, input.clientIp)
+        this.recordChallengeQuota(account.id, clientIp)
         return { ...withoutSecret(invitation), oneTimeLink, qrPayload: oneTimeLink }
       } catch (error) {
         await this.cleanupChallenge(cleanup)
@@ -1225,20 +1227,31 @@ export class PersonalPairingProvider extends RemoteAccessService {
       const uploads = this.pruneUploads(this.blobUploads.get(account.id) ?? [], now)
       const concurrent = [...this.blobs.values()].filter(blob => blob.accountId === account.id).length
       const bytesToday = uploads.reduce((total, upload) => total + upload.bytes, 0)
-      if (input.bytes > OPEN_REGISTRATION_QUOTAS.blobBytes
-        || concurrent >= OPEN_REGISTRATION_QUOTAS.concurrentBlobs
-        || bytesToday + input.bytes > OPEN_REGISTRATION_QUOTAS.blobBytesPerAccountPerDay) {
-        const oldest = uploads[0]?.at
+      if (input.bytes > OPEN_REGISTRATION_QUOTAS.blobBytes || concurrent >= OPEN_REGISTRATION_QUOTAS.concurrentBlobs) {
         throw new RemoteAccessError(
           'QUOTA',
           'Platform Account has reached its attachment blob limit',
-          oldest === undefined
-            ? OPEN_REGISTRATION_HARD_CAP_RETRY_AFTER_SECONDS
-            : retryAfterSecondsUntil(oldest, ACCOUNT_DAILY_QUOTA_WINDOW_MS, now),
+          OPEN_REGISTRATION_HARD_CAP_RETRY_AFTER_SECONDS,
         )
       }
-      this.blobSequence += 1
-      const reservationId = `blob-${String(this.blobSequence)}`
+      if (bytesToday + input.bytes > OPEN_REGISTRATION_QUOTAS.blobBytesPerAccountPerDay) {
+        const oldest = uploads[0]
+        /* v8 ignore next 6 -- the 100 MiB per-blob cap means a daily overflow always has a prior upload */
+        if (oldest === undefined) {
+          throw new RemoteAccessError(
+            'QUOTA',
+            'Platform Account has reached its attachment blob limit',
+            OPEN_REGISTRATION_HARD_CAP_RETRY_AFTER_SECONDS,
+          )
+        }
+        throw new RemoteAccessError(
+          'QUOTA',
+          'Platform Account has reached its attachment blob limit',
+          retryAfterSecondsUntil(oldest.at, ACCOUNT_DAILY_QUOTA_WINDOW_MS, now),
+        )
+      }
+      this.blobSequence.next += 1
+      const reservationId = `blob-${String(this.blobSequence.next)}`
       this.blobs.set(reservationId, { accountId: account.id, bytes: input.bytes })
       uploads.push({ at: now, bytes: input.bytes })
       this.blobUploads.set(account.id, uploads)
@@ -1462,7 +1475,7 @@ export class PersonalPairingProvider extends RemoteAccessService {
     )
   }
 
-  private assertPairingChallengeQuota(accountId: string, clientIp: string | undefined): void {
+  private assertPairingChallengeQuota(accountId: string, clientIp: string): void {
     const now = this.clock.now()
     const accountTimes = this.pruneWindow(this.accountChallengeAt.get(accountId) ?? [], now, PAIRING_CHALLENGE_QUOTA_WINDOW_MS)
     this.accountChallengeAt.set(accountId, accountTimes)
@@ -1473,7 +1486,6 @@ export class PersonalPairingProvider extends RemoteAccessService {
         retryAfterSecondsUntil(accountTimes[0] as number, PAIRING_CHALLENGE_QUOTA_WINDOW_MS, now),
       )
     }
-    if (clientIp === undefined) return
     const ipTimes = this.pruneWindow(this.ipChallengeAt.get(clientIp) ?? [], now, PAIRING_CHALLENGE_QUOTA_WINDOW_MS)
     this.ipChallengeAt.set(clientIp, ipTimes)
     if (ipTimes.length >= OPEN_REGISTRATION_QUOTAS.pairingChallengesPerIpPerHour) {
@@ -1485,7 +1497,7 @@ export class PersonalPairingProvider extends RemoteAccessService {
     }
   }
 
-  private recordChallengeQuota(accountId: string, clientIp: string | undefined): void {
+  private recordChallengeQuota(accountId: string, clientIp: string): void {
     const now = this.clock.now()
     const accountTimes = this.accountChallengeAt.get(accountId)
     /* v8 ignore next 3 -- assertPairingChallengeQuota always inserts the account window first */
@@ -1493,7 +1505,6 @@ export class PersonalPairingProvider extends RemoteAccessService {
       throw new Error('Pairing Challenge account window was not prepared')
     }
     accountTimes.push(now)
-    if (clientIp === undefined) return
     const ipTimes = this.ipChallengeAt.get(clientIp)
     /* v8 ignore next 3 -- assertPairingChallengeQuota always inserts the IP window first */
     if (ipTimes === undefined) {
@@ -1609,11 +1620,34 @@ export class PersonalPairingProvider extends RemoteAccessService {
   private get orphanPendingCleanups(): PersonalPairingTransactionState['orphanPendingCleanups'] {
     return this.requireTransactions().orphanPendingCleanups
   }
+  private get accountChallengeAt(): PersonalPairingTransactionState['accountChallengeAt'] {
+    return this.requireTransactions().accountChallengeAt
+  }
+  private get ipChallengeAt(): PersonalPairingTransactionState['ipChallengeAt'] {
+    return this.requireTransactions().ipChallengeAt
+  }
+  private get blobs(): PersonalPairingTransactionState['blobs'] { return this.requireTransactions().blobs }
+  private get blobUploads(): PersonalPairingTransactionState['blobUploads'] {
+    return this.requireTransactions().blobUploads
+  }
+  private get pushHintsAt(): PersonalPairingTransactionState['pushHintsAt'] {
+    return this.requireTransactions().pushHintsAt
+  }
+  private get blobSequence(): PersonalPairingTransactionState['blobSequence'] {
+    return this.requireTransactions().blobSequence
+  }
 
   private requireTransactions(): PersonalPairingTransactionState {
     if (this.transactionState === undefined) throw new Error('Personal Pairing transaction state is not owned')
     return this.transactionState
   }
+}
+
+function requireClientIp(clientIp: string): string {
+  if (typeof clientIp !== 'string' || clientIp === '') {
+    throw new TypeError('Pairing Challenge requires a client IP')
+  }
+  return clientIp
 }
 
 function createPairingTransactionState(): PersonalPairingTransactionState {
@@ -1626,6 +1660,12 @@ function createPairingTransactionState(): PersonalPairingTransactionState {
     pairings: new Map(),
     principalIds: new Set(),
     orphanPendingCleanups: new Map(),
+    accountChallengeAt: new Map(),
+    ipChallengeAt: new Map(),
+    blobs: new Map(),
+    blobUploads: new Map(),
+    pushHintsAt: new Map(),
+    blobSequence: { next: 0 },
   }
 }
 

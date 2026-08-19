@@ -1243,8 +1243,8 @@ describe('RemoteRelayProvider', () => {
       .rejects.toMatchObject({ code: 'REMOTE_OFFLINE' })
   })
 
-  it('sheds new attachments through a shared capacity gate while an established attachment stays up', async () => {
-    const gate = new MemoryPlatformCapacityGate(1, 2_500)
+  it('sheds a third attachment through a shared capacity gate while an established desktop-to-mobile frame still delivers', async () => {
+    const gate = new MemoryPlatformCapacityGate(2, 2_500)
     const routeStore = new SharedRouteStore()
     const coordinator = new SharedCoordinator()
     const platform = new RemoteRelayProvider(new Context(), {
@@ -1252,33 +1252,43 @@ describe('RemoteRelayProvider', () => {
       routeStore, coordinator, config: CONFIG, randomBytes: uniqueRandomBytes(201), capacity: gate,
     })
     const routeId = parseRelayRouteId('route-shared-gate')
-    const grant = await platform.rotateCredential(routeId)
-    const established = await platform.attach({
+    const desktopGrant = await platform.rotateCredential(routeId, 'desktop')
+    const mobileGrant = await platform.issueCredential(routeId, 'mobile')
+    const mobileFrames: RelayCiphertextMessage[] = []
+    const desktop = await platform.attach({
       message: {
         type: 'attach', transportVersion: 1, routeId,
-        attachmentId: parseRelayAttachmentId('desktop-established'), endpoint: 'desktop', credential: grant.credential,
+        attachmentId: parseRelayAttachmentId('desktop-established'), endpoint: 'desktop', credential: desktopGrant.credential,
       },
       deliver: async () => {},
+    })
+    const mobile = await platform.attach({
+      message: {
+        type: 'attach', transportVersion: 1, routeId,
+        attachmentId: parseRelayAttachmentId('mobile-established'), endpoint: 'mobile', credential: mobileGrant.credential,
+      },
+      deliver: async (message) => { mobileFrames.push(message) },
     })
     expect(gate.shedding).toBe(true)
     await expect(platform.attach({
       message: {
         type: 'attach', transportVersion: 1, routeId,
-        attachmentId: parseRelayAttachmentId('mobile-new'), endpoint: 'mobile', credential: grant.credential,
+        attachmentId: parseRelayAttachmentId('desktop-shed'), endpoint: 'desktop', credential: desktopGrant.credential,
       },
       deliver: async () => {},
     })).rejects.toEqual(expect.objectContaining<Partial<RemoteRelayError>>({
       code: 'PLATFORM_CAPACITY', retryAfterMs: 2_500,
     }))
-    await expect(established.receive(ciphertext(
-      routeId, 'desktop-established', 'mobile-missing', Uint8Array.of(1),
-    ))).rejects.toEqual(expect.objectContaining<Partial<RemoteRelayError>>({ code: 'REMOTE_OFFLINE' }))
-    await established.close()
+    const frame = Uint8Array.of(1, 4, 9)
+    await desktop.receive(ciphertext(routeId, 'desktop-established', 'mobile-established', frame))
+    expect(mobileFrames).toEqual([expect.objectContaining({ ciphertext: frame })])
+    await desktop.close()
+    await mobile.close()
     expect(gate.shedding).toBe(false)
     const recovered = await platform.attach({
       message: {
         type: 'attach', transportVersion: 1, routeId,
-        attachmentId: parseRelayAttachmentId('desktop-recovered'), endpoint: 'desktop', credential: grant.credential,
+        attachmentId: parseRelayAttachmentId('desktop-recovered'), endpoint: 'desktop', credential: desktopGrant.credential,
       },
       deliver: async () => {},
     })

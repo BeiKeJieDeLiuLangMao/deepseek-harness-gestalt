@@ -109,7 +109,7 @@ async function dispatch(
     case 'admit-blob':
       return ctx.remoteAccess.admitAttachmentBlob({
         owner: authentication,
-        bytes: requiredSafeInteger(body.bytes, 'bytes'),
+        bytes: requiredNonNegativeSafeInteger(body.bytes, 'bytes'),
       })
     case 'release-blob':
       await ctx.remoteAccess.releaseAttachmentBlob({
@@ -266,6 +266,12 @@ function requiredSafeInteger(value: unknown, name: string): number {
     throw new HttpError(400, 'BODY_INVALID', `${name} must be a safe integer`)
   }
   return value
+}
+
+function requiredNonNegativeSafeInteger(value: unknown, name: string): number {
+  const integer = requiredSafeInteger(value, name)
+  if (integer < 0) throw new HttpError(400, 'BODY_INVALID', `${name} must be a non-negative integer`)
+  return integer
 }
 
 /** TCP peer address. Forwarded headers are not used for the per-IP hourly quota. */

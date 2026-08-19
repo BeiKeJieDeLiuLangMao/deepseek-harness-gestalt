@@ -144,17 +144,11 @@ describe('assembled open-registration Account quotas', () => {
 
     if (account === undefined) throw new Error('assembled Account provider was not mounted')
     const established = vi.fn()
-    account.trackConnection(replacedDesktop.sessionId, established)
+    await account.trackConnection(replacedDesktop.sessionId, established)
     for (let index = 1; index < ACCOUNT_CONCURRENT_CONNECTION_LIMIT; index += 1) {
-      account.trackConnection(replacedDesktop.sessionId, vi.fn())
+      await account.trackConnection(replacedDesktop.sessionId, vi.fn())
     }
-    let quotaFailure: unknown
-    try {
-      account.trackConnection(replacedDesktop.sessionId, vi.fn())
-    } catch (error) {
-      quotaFailure = error
-    }
-    expect(quotaFailure).toMatchObject({
+    await expect(account.trackConnection(replacedDesktop.sessionId, vi.fn())).rejects.toMatchObject({
       code: 'QUOTA', retryAfter: OPEN_REGISTRATION_HARD_CAP_RETRY_AFTER_SECONDS,
     })
     expect(established).not.toHaveBeenCalled()

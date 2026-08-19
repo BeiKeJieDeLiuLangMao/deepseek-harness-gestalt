@@ -232,7 +232,7 @@ export interface AccountBackend {
   getAttempt(id: LoginAttemptId): Promise<LoginAttemptRecord | undefined>
   /** Attach public provider identity after a valid callback. */
   authorizeAttempt(id: LoginAttemptId, identity: GitHubIdentity): Promise<void>
-  /** Atomically consume authorization and replace the installation session. */
+  /** Atomically consume authorization, enforce the installation quota, and replace the installation session. */
   consumeAuthorizedAttempt(id: LoginAttemptId, refreshHash: string, refreshExpiresAt: number): Promise<CreatedSession>
   /** Find a session by the hash of its current refresh token. */
   getSessionByRefreshHash(hash: string): Promise<SessionRecord | undefined>
@@ -337,7 +337,11 @@ export class MemoryAccountBackend implements AccountBackend {
 
     const installationKey = `${attempt.identityNamespace}:${attempt.installationId}`
     const replacedSessionId = this.installationIndex.get(installationKey)
-    if (replacedSessionId !== undefined) this.revoke(replacedSessionId)
+    if (replacedSessionId !== undefined) {
+      this.revoke(replacedSessionId)
+    } else if (this.activeInstallationCount(accountId, attempt.installationKind) >= installationLimit(attempt.installationKind)) {
+      return Promise.reject(installationQuotaError(attempt.installationKind))
+    }
     const session: SessionRecord = {
       id: randomUUID() as AccountSessionId,
       identityNamespace: attempt.identityNamespace,
@@ -407,11 +411,15 @@ export class MemoryAccountBackend implements AccountBackend {
   }
 
   countActiveInstallations(accountId: PlatformAccountId, kind: InstallationKind): Promise<number> {
+    return Promise.resolve(this.activeInstallationCount(accountId, kind))
+  }
+
+  private activeInstallationCount(accountId: PlatformAccountId, kind: InstallationKind): number {
     let count = 0
     for (const session of this.sessions.values()) {
       if (session.active && session.accountId === accountId && session.installationKind === kind) count += 1
     }
-    return Promise.resolve(count)
+    return count
   }
 
   findAccountByIdentity(identityNamespace: string, providerSubject: number): Promise<AccountRecord | undefined> {
@@ -710,9 +718,17 @@ export class PlatformAccount extends AccountService {
     await this.revoke(session.id)
   }
 
-  trackConnection(sessionId: AccountSessionId, close: () => void | Promise<void>): () => void {
-    const accountId = this.sessionAccounts.get(sessionId)
-    if (accountId !== undefined && this.countAccountConnections(accountId) >= ACCOUNT_CONCURRENT_CONNECTION_LIMIT) {
+  async trackConnection(sessionId: AccountSessionId, close: () => void | Promise<void>): Promise<() => void> {
+    let accountId = this.sessionAccounts.get(sessionId)
+    if (accountId === undefined) {
+      const session = await this.backend.getSession(sessionId)
+      if (session === undefined || !session.active) {
+        throw new AccountError('SESSION_REVOKED', 'Account Session is unavailable')
+      }
+      accountId = session.accountId
+      this.sessionAccounts.set(sessionId, accountId)
+    }
+    if (this.countAccountConnections(accountId) >= ACCOUNT_CONCURRENT_CONNECTION_LIMIT) {
       throw new AccountError(
         'QUOTA',
         'Platform Account has reached its concurrent connection limit',
@@ -855,15 +871,8 @@ export class PlatformAccount extends AccountService {
     const account = await this.backend.findAccountByIdentity(attempt.identityNamespace, identity.providerSubject)
     if (account === undefined) return
     const count = await this.backend.countActiveInstallations(account.id, attempt.installationKind)
-    const limit = attempt.installationKind === 'desktop'
-      ? ACCOUNT_DESKTOP_INSTALLATION_LIMIT
-      : ACCOUNT_MOBILE_INSTALLATION_LIMIT
-    if (count >= limit) {
-      throw new AccountError(
-        'QUOTA',
-        `Platform Account has reached its ${attempt.installationKind} installation limit`,
-        OPEN_REGISTRATION_HARD_CAP_RETRY_AFTER_SECONDS,
-      )
+    if (count >= installationLimit(attempt.installationKind)) {
+      throw installationQuotaError(attempt.installationKind)
     }
   }
 
@@ -883,6 +892,18 @@ function accountView(account: AccountRecord): PlatformAccountView {
     githubLogin: account.githubLogin,
     avatarUrl: account.avatarUrl,
   }
+}
+
+function installationLimit(kind: InstallationKind): number {
+  return kind === 'desktop' ? ACCOUNT_DESKTOP_INSTALLATION_LIMIT : ACCOUNT_MOBILE_INSTALLATION_LIMIT
+}
+
+function installationQuotaError(kind: InstallationKind): AccountError {
+  return new AccountError(
+    'QUOTA',
+    `Platform Account has reached its ${kind} installation limit`,
+    OPEN_REGISTRATION_HARD_CAP_RETRY_AFTER_SECONDS,
+  )
 }
 
 function validateConfig(config: PlatformAccountConfig): PlatformAccountConfig {

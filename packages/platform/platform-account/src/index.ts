@@ -107,12 +107,14 @@ export abstract class AccountService extends Service {
 
   /**
    * Track a Platform connection so cross-instance session invalidation closes it.
+   * Unbound session ids are resolved through the Account backend; missing or inactive sessions are rejected.
    * @param sessionId - Account Session owning the connection.
    * @param close - idempotent close callback.
    * @returns disposer removing the tracked connection.
    * @throws AccountError `QUOTA` with a 60-second `retryAfter` when the Account already has twenty tracked closers.
+   * @throws AccountError `SESSION_REVOKED` when the session is missing or inactive.
    */
-  abstract trackConnection(sessionId: AccountSessionId, close: () => void | Promise<void>): () => void
+  abstract trackConnection(sessionId: AccountSessionId, close: () => void | Promise<void>): Promise<() => void>
 }
 
 export default AccountService

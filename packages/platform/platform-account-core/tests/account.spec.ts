@@ -294,7 +294,7 @@ describe('PlatformAccount', () => {
     if (login.status !== 'complete') throw new Error('expected complete login')
 
     const closed = vi.fn()
-    second.trackConnection(login.sessionId, closed)
+    await second.trackConnection(login.sessionId, closed)
     await expect(second.current({
       accessToken: login.accessToken,
       proof: key.proof('current', hashAccountToken(login.accessToken)),
@@ -328,8 +328,8 @@ describe('PlatformAccount', () => {
     const { key, session } = await login(harness.first)
     const firstClose = vi.fn(async () => { throw new Error('connection one failed') })
     const secondClose = vi.fn()
-    harness.second.trackConnection(session.sessionId, firstClose)
-    harness.second.trackConnection(session.sessionId, secondClose)
+    await harness.second.trackConnection(session.sessionId, firstClose)
+    await harness.second.trackConnection(session.sessionId, secondClose)
 
     await expect(harness.first.signOut({
       accessToken: session.accessToken,
@@ -374,7 +374,7 @@ describe('PlatformAccount', () => {
     })
     if (initial.status !== 'complete') throw new Error('expected complete login')
     const closed = vi.fn()
-    second.trackConnection(initial.sessionId, closed)
+    await second.trackConnection(initial.sessionId, closed)
 
     const replacement = await login(first, key, parseInstallationId('desktop-reused'))
     expect(replacement.session.account.id).toBe(initial.account.id)
@@ -667,14 +667,14 @@ describe('PlatformAccount', () => {
     const { key, session } = await login(harness.first)
     const firstClose = vi.fn()
     const secondClose = vi.fn()
-    const disposeFirst = harness.first.trackConnection(session.sessionId, firstClose)
-    const disposeSecond = harness.first.trackConnection(session.sessionId, secondClose)
+    const disposeFirst = await harness.first.trackConnection(session.sessionId, firstClose)
+    const disposeSecond = await harness.first.trackConnection(session.sessionId, secondClose)
     disposeFirst()
     disposeSecond()
     disposeSecond()
     await harness.invalidation.publish('unknown' as AccountSessionId)
 
-    harness.first.trackConnection(session.sessionId, firstClose)
+    await harness.first.trackConnection(session.sessionId, firstClose)
     await harness.first.dispose()
     expect(firstClose).toHaveBeenCalledOnce()
 
@@ -694,8 +694,10 @@ describe('PlatformAccount', () => {
     const harness = accountHarness()
     const first = vi.fn(async () => { throw 'first close failed' })
     const second = vi.fn(async () => { throw new Error('second close failed') })
-    harness.first.trackConnection('dispose-a' as AccountSessionId, first)
-    harness.first.trackConnection('dispose-b' as AccountSessionId, second)
+    const firstLogin = await login(harness.first, installationKey(), parseInstallationId('dispose-a'))
+    const secondLogin = await login(harness.first, installationKey(), parseInstallationId('dispose-b'))
+    await harness.first.trackConnection(firstLogin.session.sessionId, first)
+    await harness.first.trackConnection(secondLogin.session.sessionId, second)
 
     await expect(harness.first.dispose()).rejects.toThrow('first close failed')
     expect(first).toHaveBeenCalledOnce()
@@ -732,28 +734,41 @@ describe('PlatformAccount', () => {
       })
   })
 
+  it('rejects a concurrent eleventh Desktop installation while the tenth completes', async () => {
+    const { first, second } = accountHarness()
+    for (let index = 0; index < ACCOUNT_DESKTOP_INSTALLATION_LIMIT - 1; index += 1) {
+      await login(first, installationKey(), parseInstallationId(`desktop-${String(index)}`))
+    }
+    const results = await Promise.allSettled([
+      login(first, installationKey(), parseInstallationId('desktop-tenth')),
+      login(second, installationKey(), parseInstallationId('desktop-eleventh')),
+    ])
+    const fulfilled = results.filter(result => result.status === 'fulfilled')
+    const rejected = results.filter(result => result.status === 'rejected')
+    expect(fulfilled).toHaveLength(1)
+    expect(rejected).toHaveLength(1)
+    expect((rejected[0] as PromiseRejectedResult).reason).toMatchObject({
+      code: 'QUOTA',
+      retryAfter: OPEN_REGISTRATION_HARD_CAP_RETRY_AFTER_SECONDS,
+    })
+  })
+
   it('accepts twenty tracked connections and rejects the next while leaving established closers registered', async () => {
     const { first } = accountHarness()
     const { session } = await login(first)
     const established = vi.fn()
-    const stop = first.trackConnection(session.sessionId, established)
+    const stop = await first.trackConnection(session.sessionId, established)
     for (let index = 1; index < ACCOUNT_CONCURRENT_CONNECTION_LIMIT; index += 1) {
-      first.trackConnection(session.sessionId, vi.fn())
+      await first.trackConnection(session.sessionId, vi.fn())
     }
     expect(established).not.toHaveBeenCalled()
-    let quotaFailure: unknown
-    try {
-      first.trackConnection(session.sessionId, vi.fn())
-    } catch (error) {
-      quotaFailure = error
-    }
-    expect(quotaFailure).toMatchObject({
+    await expect(first.trackConnection(session.sessionId, vi.fn())).rejects.toMatchObject({
       code: 'QUOTA',
       retryAfter: OPEN_REGISTRATION_HARD_CAP_RETRY_AFTER_SECONDS,
     })
     stop()
     expect(established).not.toHaveBeenCalled()
-    first.trackConnection(session.sessionId, vi.fn())
+    await first.trackConnection(session.sessionId, vi.fn())
   })
 
   it('sheds new login at capacity and leaves an established session usable', async () => {
@@ -803,19 +818,31 @@ describe('PlatformAccount', () => {
     const firstLogin = await login(first)
     subject = 7
     const secondLogin = await login(first, installationKey(), parseInstallationId('second-desktop'))
-    first.trackConnection(firstLogin.session.sessionId, vi.fn())
-    first.trackConnection(secondLogin.session.sessionId, vi.fn())
+    await first.trackConnection(firstLogin.session.sessionId, vi.fn())
+    await first.trackConnection(secondLogin.session.sessionId, vi.fn())
     for (let index = 1; index < ACCOUNT_CONCURRENT_CONNECTION_LIMIT; index += 1) {
-      first.trackConnection(firstLogin.session.sessionId, vi.fn())
+      await first.trackConnection(firstLogin.session.sessionId, vi.fn())
     }
-    let quotaFailure: unknown
-    try {
-      first.trackConnection(firstLogin.session.sessionId, vi.fn())
-    } catch (error) {
-      quotaFailure = error
+    await expect(first.trackConnection(firstLogin.session.sessionId, vi.fn())).rejects.toMatchObject({
+      code: 'QUOTA',
+    })
+    await first.trackConnection(secondLogin.session.sessionId, vi.fn())
+  })
+
+  it('resolves an unbound session through the Account backend before enforcing the connection ceiling', async () => {
+    const { first, second } = accountHarness()
+    const { session } = await login(first)
+    await second.trackConnection(session.sessionId, vi.fn())
+    for (let index = 1; index < ACCOUNT_CONCURRENT_CONNECTION_LIMIT; index += 1) {
+      await second.trackConnection(session.sessionId, vi.fn())
     }
-    expect(quotaFailure).toMatchObject({ code: 'QUOTA' })
-    first.trackConnection(secondLogin.session.sessionId, vi.fn())
+    await expect(second.trackConnection(session.sessionId, vi.fn())).rejects.toMatchObject({
+      code: 'QUOTA',
+      retryAfter: OPEN_REGISTRATION_HARD_CAP_RETRY_AFTER_SECONDS,
+    })
+    await expect(second.trackConnection('missing' as AccountSessionId, vi.fn())).rejects.toMatchObject({
+      code: 'SESSION_REVOKED',
+    })
   })
 
   it('treats a missing indexed session as inactive when counting a replacement Installation', async () => {

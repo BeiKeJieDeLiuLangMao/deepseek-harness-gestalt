@@ -4,6 +4,7 @@ import type { AccountProof } from '@deepseek-ai/dsh-platform-account'
 import { parseAccountProofJti, parseInstallationId } from '@deepseek-ai/dsh-platform-account'
 import {
   ACCOUNT_DAILY_QUOTA_WINDOW_MS,
+  MemoryPersonalPairingAuthorityStore,
   MemoryPlatformCapacityGate,
   OPEN_REGISTRATION_HARD_CAP_RETRY_AFTER_SECONDS,
   OPEN_REGISTRATION_QUOTAS,
@@ -12,6 +13,7 @@ import {
   PersonalPairingProvider,
   parsePairingCompletionId,
   parsePairingRendezvousId,
+  retryAfterSecondsUntil,
   type PairingHandshakeProvider,
 } from '../src/index.ts'
 
@@ -149,7 +151,10 @@ describe('open-registration enforcement', () => {
     for (let index = 0; index < OPEN_REGISTRATION_QUOTAS.concurrentBlobs; index += 1) {
       held.push((await provider.admitAttachmentBlob({ owner, bytes: 1 })).reservationId)
     }
-    await expect(provider.admitAttachmentBlob({ owner, bytes: 1 })).rejects.toMatchObject({ code: 'QUOTA' })
+    await expect(provider.admitAttachmentBlob({ owner, bytes: 1 })).rejects.toMatchObject({
+      code: 'QUOTA',
+      retryAfter: OPEN_REGISTRATION_HARD_CAP_RETRY_AFTER_SECONDS,
+    })
     await provider.releaseAttachmentBlob({ owner, reservationId: held[0] as string })
     await expect(provider.admitAttachmentBlob({
       owner,
@@ -158,7 +163,10 @@ describe('open-registration enforcement', () => {
     await expect(provider.admitAttachmentBlob({
       owner,
       bytes: OPEN_REGISTRATION_QUOTAS.blobBytes + 1,
-    })).rejects.toMatchObject({ code: 'QUOTA' })
+    })).rejects.toMatchObject({
+      code: 'QUOTA',
+      retryAfter: OPEN_REGISTRATION_HARD_CAP_RETRY_AFTER_SECONDS,
+    })
 
     const isolated = uniqueProvider(now)
     await isolated.setMobileAccess({ desktop: owner, enabled: true })
@@ -184,7 +192,10 @@ describe('open-registration enforcement', () => {
       const admitted = await daily.admitAttachmentBlob({ owner, bytes: remainder })
       await daily.releaseAttachmentBlob({ owner, reservationId: admitted.reservationId })
     }
-    await expect(daily.admitAttachmentBlob({ owner, bytes: 1 })).rejects.toMatchObject({ code: 'QUOTA' })
+    await expect(daily.admitAttachmentBlob({ owner, bytes: 1 })).rejects.toMatchObject({
+      code: 'QUOTA',
+      retryAfter: retryAfterSecondsUntil(NOW, ACCOUNT_DAILY_QUOTA_WINDOW_MS, now.value),
+    })
     now.value += ACCOUNT_DAILY_QUOTA_WINDOW_MS + 1
     await expect(daily.admitAttachmentBlob({ owner, bytes: 1 })).resolves.toMatchObject({
       reservationId: expect.any(String),
@@ -230,9 +241,72 @@ describe('open-registration enforcement', () => {
     await expect(provider.emitPushHint(desktop)).resolves.toBeUndefined()
     expect(await provider.listPersonalPairings(desktop)).toMatchObject([{ id: pairing.id }])
   })
+
+  it('rejects the eleventh challenge, sixth blob, and 501st push through a second shared-authority provider', async () => {
+    const now = { value: NOW }
+    const authority = new MemoryPersonalPairingAuthorityStore()
+    const first = uniqueProvider(now, undefined, authority, 'a-')
+    const second = uniqueProvider(now, undefined, authority, 'b-')
+    const desktopA = authentication('desktop-a', 'account-shared')
+    const desktopB = authentication('desktop-b', 'account-shared')
+    await first.setMobileAccess({ desktop: desktopA, enabled: true })
+    await second.setMobileAccess({ desktop: desktopB, enabled: true })
+    for (let index = 0; index < OPEN_REGISTRATION_QUOTAS.pairingChallengesPerAccountPerHour; index += 1) {
+      const challenge = await first.createChallenge({
+        desktop: desktopA,
+        rendezvousId: parsePairingRendezvousId(`shared-${String(index)}`),
+        clientIp: '192.0.2.80',
+      })
+      await first.cancelChallenge({ desktop: desktopA, challengeId: challenge.challengeId })
+    }
+    await expect(second.createChallenge({
+      desktop: desktopB,
+      rendezvousId: parsePairingRendezvousId('shared-over'),
+      clientIp: '192.0.2.81',
+    })).rejects.toMatchObject({
+      code: 'QUOTA',
+      retryAfter: Math.ceil(PAIRING_CHALLENGE_QUOTA_WINDOW_MS / 1_000),
+    })
+
+    const held: string[] = []
+    for (let index = 0; index < OPEN_REGISTRATION_QUOTAS.concurrentBlobs; index += 1) {
+      held.push((await first.admitAttachmentBlob({ owner: desktopA, bytes: 1 })).reservationId)
+    }
+    await expect(second.admitAttachmentBlob({ owner: desktopB, bytes: 1 })).rejects.toMatchObject({
+      code: 'QUOTA',
+      retryAfter: OPEN_REGISTRATION_HARD_CAP_RETRY_AFTER_SECONDS,
+    })
+    await first.releaseAttachmentBlob({ owner: desktopA, reservationId: held[0] as string })
+
+    for (let index = 0; index < OPEN_REGISTRATION_QUOTAS.pushHintsPerAccountPerDay; index += 1) {
+      await first.emitPushHint(desktopA)
+    }
+    await expect(second.emitPushHint(desktopB)).rejects.toMatchObject({ code: 'QUOTA' })
+  })
+
+  it('rejects a Pairing Challenge when the client IP is missing', async () => {
+    const provider = uniqueProvider({ value: NOW })
+    const desktop = authentication('desktop-installation', 'account-one')
+    await provider.setMobileAccess({ desktop, enabled: true })
+    await expect(provider.createChallenge({
+      desktop,
+      rendezvousId: parsePairingRendezvousId('missing-ip'),
+      clientIp: '',
+    })).rejects.toBeInstanceOf(TypeError)
+    await expect(provider.createChallenge({
+      desktop,
+      rendezvousId: parsePairingRendezvousId('undefined-ip'),
+      clientIp: undefined as unknown as string,
+    })).rejects.toBeInstanceOf(TypeError)
+  })
 })
 
-function uniqueProvider(now: { value: number }, capacity?: MemoryPlatformCapacityGate) {
+function uniqueProvider(
+  now: { value: number },
+  capacity?: MemoryPlatformCapacityGate,
+  authority?: MemoryPersonalPairingAuthorityStore,
+  idPrefix = '',
+) {
   let id = 0
   return new PersonalPairingProvider(new Context(), {
     account: {
@@ -255,9 +329,10 @@ function uniqueProvider(now: { value: number }, capacity?: MemoryPlatformCapacit
     handshake: handshakeProvider(),
     clock: { now: () => now.value },
     randomBytes: size => Uint8Array.from({ length: size }, (_, index) => index + 1),
-    randomId: kind => `${kind}-${String(++id)}`,
+    randomId: kind => `${kind}-${idPrefix}${String(++id)}`,
     pairingLinkOrigin: 'https://platform.example.com/pair',
     ...(capacity === undefined ? {} : { capacity }),
+    ...(authority === undefined ? {} : { authority }),
   })
 }
 

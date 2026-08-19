@@ -143,7 +143,7 @@ describe('real Platform Account HTTP composition', () => {
     expect(installation.getSnapshot()).toMatchObject({ status: 'signed-in', account: { githubLogin: 'octocat' } })
 
     const close = vi.fn()
-    secondary?.trackConnection(polled.sessionId, close)
+    await secondary?.trackConnection(polled.sessionId, close)
     const initialRefresh = polled.refreshToken
     now += ACCESS_TOKEN_TTL_MS + 1
     await installation.load()
