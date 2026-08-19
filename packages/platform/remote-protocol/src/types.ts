@@ -9,6 +9,9 @@ export type RelayAttachmentId = Branded<'RelayAttachmentId'>
 /** Exactly 256 bits of transport attachment authority in canonical base64url form. */
 export type RelayCredential = Branded<'RelayCredential'>
 
+/** Exactly 256 bits of one-time attachment blob authority in canonical base64url form. */
+export type AttachmentCapability = Branded<'AttachmentCapability'>
+
 /** Protocol-native identifier for one Desktop-authoritative operation. */
 export type CompanionOperationId = Branded<'CompanionOperationId'>
 
@@ -44,8 +47,34 @@ export interface CompanionSubmitPromptOperation {
   text: string
 }
 
-/** Operations in the first implemented Companion codec slice. */
-export type CompanionOperation = CompanionSubmitPromptOperation
+/** Operations in the implemented Companion codec slice. */
+export type CompanionOperation = CompanionSubmitPromptOperation | CompanionOfferAttachmentOperation
+
+/** Bounded Mobile control message pointing Desktop at one Platform-retained encrypted blob. */
+export interface CompanionOfferAttachmentOperation {
+  type: 'offer-attachment'
+  operationId: CompanionOperationId
+  sessionId: CompanionSessionId
+  /** One-time HTTPS capability issued by the Platform attachment blob store. */
+  capability: AttachmentCapability
+  /** Lowercase hex SHA-256 of the retained ciphertext; Desktop verifies it before decrypting. */
+  ciphertextSha256: string
+  /** Exact ciphertext byte count Desktop must re-hash before decrypting. */
+  byteLength: number
+  /** Unix epoch milliseconds after which the capability and its blob are removed. */
+  expiresAt: number
+  /** File name submitted with the decrypted attachment into the Session path. */
+  fileName: string
+}
+
+/** Stable explicit Companion attachment rejection reasons; never carry application data. */
+export type CompanionAttachmentRejectionReason =
+  | 'cross-pairing'
+  | 'hash-mismatch'
+  | 'expired'
+  | 'absent'
+  | 'transfer-interrupted'
+  | 'limit-exceeded'
 
 /** Desktop-authoritative mutation result. */
 export interface CompanionConfirmedResult {
@@ -55,8 +84,15 @@ export interface CompanionConfirmedResult {
   outcome: 'accepted'
 }
 
-/** Results in the first implemented Companion codec slice. */
-export type CompanionResult = CompanionConfirmedResult
+/** Explicit Desktop rejection of one offered attachment. */
+export interface CompanionAttachmentRejectedResult {
+  type: 'attachment-rejected'
+  operationId: CompanionOperationId
+  reason: CompanionAttachmentRejectionReason
+}
+
+/** Results in the implemented Companion codec slice. */
+export type CompanionResult = CompanionConfirmedResult | CompanionAttachmentRejectedResult
 
 /** Bounded plain-text transcript entry approved for Mobile presentation. */
 export interface CompanionTextTranscriptEntry {

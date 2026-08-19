@@ -1,68 +1,61 @@
 /** End-to-end encrypted Companion attachment transfer, scoped to one Personal Pairing. */
 
+import {
+  deriveCompanionAttachmentKey,
+  REMOTE_PROTOCOL_LIMITS,
+  sealCompanionAttachment as sealEndpointAttachment,
+  type AttachmentCapability,
+  type CompanionOfferAttachmentOperation,
+} from '@deepseek-ai/dsh-remote-protocol'
+
 /** Accepted per-blob ceiling. */
-export const COMPANION_ATTACHMENT_MAX_BYTES = 100 * 1024 * 1024
+export const COMPANION_ATTACHMENT_MAX_BYTES = REMOTE_PROTOCOL_LIMITS.attachmentBlobBytes
 
-/** Default capability lifetime. */
-export const COMPANION_ATTACHMENT_LIFETIME_MS = 15 * 60 * 1000
-
-/** One sealed blob plus its pairing-scoped capability. */
-export interface CompanionAttachmentBlob {
-  pairingId: string
-  ciphertext: Uint8Array
-  hash: string
+/** One sealed blob plus the values Mobile sends in the bounded control message. */
+export interface CompanionAttachmentTransfer {
+  capability: AttachmentCapability
+  ciphertextSha256: string
+  byteLength: number
   expiresAt: number
-}
-
-/**
- * Hash sealed attachment bytes for Desktop verification.
- * @param ciphertext - bytes Mobile already encrypted.
- */
-export function hashCompanionCiphertext(ciphertext: Uint8Array): string {
-  let hash = 2166136261
-  for (const byte of ciphertext) hash = Math.imul(hash ^ byte, 16777619)
-  return (hash >>> 0).toString(16).padStart(8, '0')
+  fileName: string
 }
 
 /**
  * Encrypt attachment bytes on Mobile before upload.
- * @param pairingId - owning Personal Pairing.
- * @param plaintext - caller-held plaintext; never stored on Platform.
- * @param now - current time.
- * @param lifetimeMs - capability lifetime.
+ * @param pairingKey - secret bytes supplied by the Personal Pairing layer.
+ * @param plaintext - caller-held plaintext; never leaves Mobile unencrypted.
+ * @returns sealed transfer values for upload and the bounded control message.
  */
-export function sealCompanionAttachment(
-  pairingId: string,
+export async function sealCompanionAttachment(
+  pairingKey: Uint8Array,
   plaintext: Uint8Array,
-  now: number,
-  lifetimeMs: number = COMPANION_ATTACHMENT_LIFETIME_MS,
-): CompanionAttachmentBlob {
+): Promise<{ ciphertext: Uint8Array<ArrayBuffer>; ciphertextSha256: string }> {
   if (plaintext.byteLength > COMPANION_ATTACHMENT_MAX_BYTES) {
     throw new Error('Companion attachment exceeds 100 MiB')
   }
-  const ciphertext = plaintext.map(byte => byte ^ 0x5a)
-  return {
-    pairingId,
-    ciphertext,
-    hash: hashCompanionCiphertext(ciphertext),
-    expiresAt: now + lifetimeMs,
-  }
+  const key = await deriveCompanionAttachmentKey(pairingKey)
+  return await sealEndpointAttachment(key, plaintext)
 }
 
 /**
- * Desktop verifies hash then decrypts. Success consumes the blob.
- * @param blob - stored ciphertext.
- * @param request - pairing, hash, and clock.
+ * Build the bounded WSS control message that points Desktop at one uploaded blob.
+ * @param transfer - values returned by the Platform blob store after upload.
+ * @param operationId - idempotency key for the Desktop mutation.
+ * @param sessionId - Companion Session that will receive the attachment.
  */
-export function receiveCompanionAttachment(
-  blob: CompanionAttachmentBlob | undefined,
-  request: { pairingId: string; hash: string; now: number },
-): { plaintext: Uint8Array } {
-  if (blob === undefined) throw new Error('Companion attachment is absent')
-  if (blob.pairingId !== request.pairingId) throw new Error('Companion attachment pairing mismatch')
-  if (request.now >= blob.expiresAt) throw new Error('Companion attachment expired')
-  if (blob.hash !== request.hash || blob.hash !== hashCompanionCiphertext(blob.ciphertext)) {
-    throw new Error('Companion attachment hash mismatch')
+export function buildCompanionAttachmentOffer(
+  transfer: CompanionAttachmentTransfer,
+  operationId: CompanionOfferAttachmentOperation['operationId'],
+  sessionId: CompanionOfferAttachmentOperation['sessionId'],
+): CompanionOfferAttachmentOperation {
+  return {
+    type: 'offer-attachment',
+    operationId,
+    sessionId,
+    capability: transfer.capability,
+    ciphertextSha256: transfer.ciphertextSha256,
+    byteLength: transfer.byteLength,
+    expiresAt: transfer.expiresAt,
+    fileName: transfer.fileName,
   }
-  return { plaintext: blob.ciphertext.map(byte => byte ^ 0x5a) }
 }

@@ -6,16 +6,20 @@ import {
   decodeCompanionMessage,
   decodeCompanionVersionOffer,
   decodeRelayMessage,
+  deriveCompanionAttachmentKey,
   encodeCompanionMessage,
   encodeCompanionVersionOffer,
   encodeRelayMessage,
+  hashCompanionCiphertext,
   negotiateCompanionProtocol,
   negotiateRelayTransportVersion,
+  openCompanionAttachment,
   parseCompanionOperationId,
   parseCompanionSessionId,
   parseRelayAttachmentId,
   parseRelayRouteId,
   RemoteProtocolError,
+  sealCompanionAttachment,
   type RelayAttachmentId,
 } from '@deepseek-ai/dsh-remote-protocol'
 
@@ -23,7 +27,7 @@ import {
 export const name = 'remote-protocol-keyless-scenario'
 
 /** Run one encrypted Mobile request and Desktop-confirmed response through an opaque Relay. */
-export function apply(_ctx: Context): void {
+export async function apply(_ctx: Context): Promise<void> {
   const transportVersion = negotiateRelayTransportVersion([1], [1])
   console.log(`TRANSPORT version=${String(transportVersion)}`)
 
@@ -76,7 +80,7 @@ export function apply(_ctx: Context): void {
     sourceAttachmentId: mobileAttachment,
     targetAttachmentId: desktopAttachment,
     ciphertext: relayOperation,
-  })).includes(received.operation.text)
+  })).includes(received.operation.type === 'submit-prompt' ? received.operation.text : received.operation.type)
   console.log(`MOBILE_REQUEST encrypted=${String(!bytesEqual(operationPlaintext, relayOperation))} relayPlaintext=${String(relayPlaintext)} type=${received.operation.type}`)
 
   const confirmed = {
@@ -95,7 +99,59 @@ export function apply(_ctx: Context): void {
     cipher.seal(encodeCompanionMessage(desktopProtocol, confirmed)),
   )))
   if (mobileResult.type !== 'result') throw new Error('Mobile did not receive the Desktop result')
-  console.log(`DESKTOP_RESPONSE confirmed=true outcome=${mobileResult.result.outcome}`)
+  console.log(`DESKTOP_RESPONSE confirmed=true outcome=${mobileResult.result.type === 'confirmed' ? mobileResult.result.outcome : mobileResult.result.type}`)
+
+  const attachmentKey = await deriveCompanionAttachmentKey(Buffer.alloc(32, 31))
+  const attachmentPlaintext = new TextEncoder().encode('attachment plaintext owned by endpoints')
+  const sealedAttachment = await sealCompanionAttachment(attachmentKey, attachmentPlaintext)
+  const retainedByPlatform = sealedAttachment.ciphertext
+  const includesPlaintext = new TextDecoder().decode(retainedByPlatform)
+    .includes('attachment plaintext owned by endpoints')
+  const attachmentOffer = {
+    type: 'operation',
+    operation: {
+      type: 'offer-attachment',
+      operationId: parseCompanionOperationId('operation-attachment'),
+      sessionId: parseCompanionSessionId('session-keyless'),
+      capability: 'A'.repeat(43) as never,
+      ciphertextSha256: sealedAttachment.ciphertextSha256,
+      byteLength: sealedAttachment.ciphertext.byteLength,
+      expiresAt: 1_787_027_200_000,
+      fileName: 'notes.txt',
+    },
+  } as const
+  const offerFrame = forward(
+    routeId,
+    mobileAttachment,
+    desktopAttachment,
+    cipher.seal(encodeCompanionMessage(mobileProtocol, attachmentOffer)),
+  )
+  const receivedOffer = decodeCompanionMessage(desktopProtocol, cipher.open(offerFrame))
+  if (receivedOffer.type !== 'operation' || receivedOffer.operation.type !== 'offer-attachment') {
+    throw new Error('Desktop did not receive the attachment offer')
+  }
+  const verified = await hashCompanionCiphertext(retainedByPlatform) === receivedOffer.operation.ciphertextSha256
+  const decryptedAttachment = verified
+    ? await openCompanionAttachment(attachmentKey, retainedByPlatform)
+    : undefined
+  const submitted = decryptedAttachment !== undefined
+    && new TextDecoder().decode(decryptedAttachment) === 'attachment plaintext owned by endpoints'
+  const rejection = {
+    type: 'result',
+    result: {
+      type: 'attachment-rejected',
+      operationId: receivedOffer.operation.operationId,
+      reason: 'hash-mismatch',
+    },
+  } as const
+  const mobileRejection = decodeCompanionMessage(mobileProtocol, cipher.open(forward(
+    routeId,
+    desktopAttachment,
+    mobileAttachment,
+    cipher.seal(encodeCompanionMessage(desktopProtocol, rejection)),
+  )))
+  if (mobileRejection.type !== 'result') throw new Error('Mobile did not receive the rejection')
+  console.log(`ATTACHMENT platformPlaintext=${String(includesPlaintext)} hashVerified=${String(verified)} submitted=${String(submitted)} controlFrameBytes=${String(offerFrame.byteLength)} rejectionReason=${mobileRejection.result.type === 'attachment-rejected' ? mobileRejection.result.reason : 'unknown'}`)
 
   let applicationPlaintextSent = false
   try {

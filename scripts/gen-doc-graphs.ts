@@ -257,6 +257,23 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Owns credential-authenticated live attachments and ciphertext-only forwarding; an expiring Redis directory and direct Pub/Sub coordinate non-sticky Platform Instances without an offline queue.',
   },
   {
+    key: 'remoteAttachments',
+    pkg: 'remote-attachments',
+    title: 'Pairing-scoped encrypted attachment blob seam',
+    mode: 'seam',
+    implementations: ['remote-attachments'],
+    consumers: ['remote-attachments'],
+    note: 'Retains endpoint-encrypted ciphertext and metadata only, issues single-use expiring capabilities scoped to one Personal Pairing, and removes blob plus capability on consume, expiry, or revocation.',
+  },
+  {
+    key: 'remoteAttachmentAuthority',
+    pkg: 'remote-attachments',
+    title: 'Attachment pairing-authentication seam',
+    mode: 'seam',
+    consumers: ['remote-attachments'],
+    note: 'Maps one HTTPS request to exactly one PersonalPairingId without seeing attachment bytes; the Personal Pairing layer owns the production implementation.',
+  },
+  {
     key: 'workspaceRegistry',
     pkg: 'workspace',
     title: 'Workspace entity registry',

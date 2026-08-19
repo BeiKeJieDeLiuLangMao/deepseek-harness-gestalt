@@ -37,6 +37,7 @@ describe('Remote Protocol keyless assembled path', () => {
       COMPANION version=2 security=preserved
       MOBILE_REQUEST encrypted=true relayPlaintext=false type=submit-prompt
       DESKTOP_RESPONSE confirmed=true outcome=accepted
+      ATTACHMENT platformPlaintext=false hashVerified=true submitted=true controlFrameBytes=388 rejectionReason=hash-mismatch
       NEGOTIATION mismatch=COMPANION_UPDATE_REQUIRED update=mobile applicationPlaintextSent=false
       "
     `)

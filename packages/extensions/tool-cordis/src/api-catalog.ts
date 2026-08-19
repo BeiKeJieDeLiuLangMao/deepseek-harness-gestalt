@@ -1105,6 +1105,59 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'remoteAttachmentAuthority',
+    summary: 'Pairing scope seam: the Personal Pairing layer authenticates one HTTPS request to exactly one Personal Pairing.',
+    description: 'Pairing scope seam: the Personal Pairing layer authenticates one HTTPS request to exactly one Personal Pairing. Implementations never see attachment bytes.',
+    methods: [
+      {
+        signature: 'authenticate(input: { headers: IncomingHttpHeaders }): Promise<PersonalPairingId>',
+        description: 'Authenticate one attachment request to its owning Personal Pairing.',
+        parameters: [{ name: 'input', description: 'complete untrusted request headers.' }],
+        returns: 'the Personal Pairing whose scope governs the capability.',
+      },
+    ],
+  },
+  {
+    key: 'remoteAttachments',
+    summary: 'Platform attachment blob store: retains ciphertext and metadata only, bounded per blob and in total, scoped to exactly one Personal Pairing, single-use, and expiring.',
+    description: 'Platform attachment blob store: retains ciphertext and metadata only, bounded per blob and in total, scoped to exactly one Personal Pairing, single-use, and expiring.',
+    methods: [
+      {
+        signature: 'abstract readonly maxBlobBytes: number',
+        description: 'Per-blob ciphertext ceiling this deployment enforces; never above the protocol ceiling.',
+        parameters: [],
+      },
+      {
+        signature: 'abstract readonly capabilityLifetimeMs: number',
+        description: 'Capability and blob lifetime this deployment enforces; never above the protocol default.',
+        parameters: [],
+      },
+      {
+        signature: 'abstract publish(input: { pairingId: PersonalPairingId; ciphertext: Uint8Array; now: number }): Promise<RemoteAttachmentGrant>',
+        description: 'Retain one pairing-scoped ciphertext blob and issue its one-time capability.',
+        parameters: [{ name: 'input', description: 'owning Personal Pairing, endpoint-encrypted ciphertext, and current time.' }],
+        returns: 'the capability grant Mobile forwards to Desktop.',
+      },
+      {
+        signature: 'abstract consume(input: { pairingId: PersonalPairingId capability: AttachmentCapability now: number }): Promise<Uint8Array>',
+        description: 'Exchange one capability for its ciphertext exactly once, then remove both.',
+        parameters: [{ name: 'input', description: 'requesting Personal Pairing, one-time capability, and current time.' }],
+        returns: 'the retained ciphertext bytes.',
+      },
+      {
+        signature: 'abstract revoke(capability: AttachmentCapability): Promise<void>',
+        description: 'Remove one blob and its capability regardless of remaining lifetime.',
+        parameters: [{ name: 'capability', description: 'capability whose blob is revoked.' }],
+      },
+      {
+        signature: 'abstract observe(): readonly RemoteAttachmentBlob[]',
+        description: 'Project every retained blob for Platform-side operations.',
+        parameters: [],
+        returns: 'ciphertext and metadata only; no plaintext exists on this side of the boundary.',
+      },
+    ],
+  },
+  {
     key: 'remoteRelay',
     summary: 'Public Remote Access Relay capability used by the WSS Consumer.',
     description: 'Public Remote Access Relay capability used by the WSS Consumer.',
@@ -2969,6 +3022,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface AtScheduleRecord {\n    readonly id: ScheduleId;\n    readonly kind: \'at\';\n    readonly prompt: string;\n    readonly scheduledAt: string;\n}',
   },
   {
+    name: 'AttachmentCapability',
+    declaration: 'export type AttachmentCapability = Branded<\'AttachmentCapability\'>;',
+  },
+  {
     name: 'AttachmentId',
     declaration: 'export type AttachmentId = Branded<\'AttachmentId\'>;',
   },
@@ -3963,6 +4020,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'RelayRouteId',
     declaration: 'export type RelayRouteId = Branded<\'RelayRouteId\'>;',
+  },
+  {
+    name: 'RemoteAttachmentBlob',
+    declaration: 'export interface RemoteAttachmentBlob {\n    capability: AttachmentCapability;\n    pairingId: PersonalPairingId;\n    ciphertext: Uint8Array;\n    expiresAt: number;\n}',
+  },
+  {
+    name: 'RemoteAttachmentGrant',
+    declaration: 'export interface RemoteAttachmentGrant {\n    capability: AttachmentCapability;\n    byteLength: number;\n    expiresAt: number;\n}',
   },
   {
     name: 'RemoteRelayAttachment',

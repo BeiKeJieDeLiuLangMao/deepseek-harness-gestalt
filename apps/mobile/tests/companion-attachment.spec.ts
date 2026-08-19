@@ -1,36 +1,43 @@
 import { describe, expect, it } from 'vitest'
+import { parseCompanionOperationId, parseCompanionSessionId } from '@deepseek-ai/dsh-remote-protocol'
 import {
-  COMPANION_ATTACHMENT_LIFETIME_MS,
+  buildCompanionAttachmentOffer,
   COMPANION_ATTACHMENT_MAX_BYTES,
-  hashCompanionCiphertext,
-  receiveCompanionAttachment,
   sealCompanionAttachment,
 } from '../src/companion-attachment.ts'
 
-const now = 1_000_000
+const pairingKey = crypto.getRandomValues(new Uint8Array(32))
 
 describe('Companion encrypted attachments', () => {
-  it('encrypts on Mobile and decrypts on Desktop only after hash verification', () => {
-    const plaintext = Uint8Array.from([1, 2, 3, 4])
-    const blob = sealCompanionAttachment('pair-a', plaintext, now)
-    expect(blob.ciphertext).not.toEqual(plaintext)
-    expect(blob.hash).toBe(hashCompanionCiphertext(blob.ciphertext))
-    expect(receiveCompanionAttachment(blob, { pairingId: 'pair-a', hash: blob.hash, now }).plaintext)
-      .toEqual(plaintext)
+  it('encrypts on Mobile with a pairing-derived key and returns the ciphertext hash', async () => {
+    const plaintext = new TextEncoder().encode('secret attachment')
+    const sealed = await sealCompanionAttachment(pairingKey, plaintext)
+    expect(sealed.ciphertext).not.toEqual(plaintext)
+    expect(sealed.ciphertextSha256).toMatch(/^[0-9a-f]{64}$/u)
+
+    const offer = buildCompanionAttachmentOffer({
+      capability: 'A'.repeat(43) as never,
+      ciphertextSha256: sealed.ciphertextSha256,
+      byteLength: sealed.ciphertext.byteLength,
+      expiresAt: 1_000_000 + 900_000,
+      fileName: 'notes.txt',
+    }, parseCompanionOperationId('operation-one'), parseCompanionSessionId('session-one'))
+    expect(offer).toEqual({
+      type: 'offer-attachment',
+      operationId: 'operation-one',
+      sessionId: 'session-one',
+      capability: 'A'.repeat(43),
+      ciphertextSha256: sealed.ciphertextSha256,
+      byteLength: sealed.ciphertext.byteLength,
+      expiresAt: 1_900_000,
+      fileName: 'notes.txt',
+    })
   })
 
-  it('fails closed on cross-pairing, hash mismatch, expiry, and size limit', () => {
-    const blob = sealCompanionAttachment('pair-a', Uint8Array.of(9), now)
-    expect(() => receiveCompanionAttachment(blob, { pairingId: 'pair-b', hash: blob.hash, now }))
-      .toThrow('pairing mismatch')
-    expect(() => receiveCompanionAttachment(blob, { pairingId: 'pair-a', hash: 'deadbeef', now }))
-      .toThrow('hash mismatch')
-    expect(() => receiveCompanionAttachment(blob, {
-      pairingId: 'pair-a', hash: blob.hash, now: now + COMPANION_ATTACHMENT_LIFETIME_MS,
-    })).toThrow('expired')
-    expect(() => receiveCompanionAttachment(undefined, { pairingId: 'pair-a', hash: 'x', now }))
-      .toThrow('absent')
-    expect(() => sealCompanionAttachment('pair-a', new Uint8Array(COMPANION_ATTACHMENT_MAX_BYTES + 1), now))
-      .toThrow('100 MiB')
+  it('fails the 100 MiB ceiling before any encryption work', async () => {
+    await expect(sealCompanionAttachment(pairingKey, new Uint8Array(COMPANION_ATTACHMENT_MAX_BYTES + 1)))
+      .rejects.toThrow('100 MiB')
+    await expect(sealCompanionAttachment(new Uint8Array(31), Uint8Array.of(1)))
+      .rejects.toThrow('at least 32 bytes')
   })
 })

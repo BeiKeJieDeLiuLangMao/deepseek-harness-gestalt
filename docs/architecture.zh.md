@@ -54,6 +54,7 @@ dsh --profile web --dump-config
 | [`platform/remote-access`](../packages/platform/remote-access/README.md) | Settings 所有的 Personal Pairing lifecycle 与 Companion-only Device Principal | `ctx.remoteAccess` |
 | [`platform/remote-access`](../packages/platform/remote-access/README.md) | 无状态多实例 Relay lifecycle 与 route authority seam | `ctx.remoteRelay` |
 | [`platform/remote-access-redis`](../packages/platform/remote-access-redis/README.md) | 会过期的 Relay 目录与直达密文 Pub/Sub | adapter，无键 |
+| [`platform/remote-attachments`](../packages/platform/remote-attachments/README.md) | 配对范围的加密 attachment blob store 与一次性 capability | `ctx.remoteAttachments` |
 
 <a id="events"></a>
 

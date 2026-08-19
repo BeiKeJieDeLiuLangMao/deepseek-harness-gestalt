@@ -1,5 +1,6 @@
 import { decodeProtocolJson, encodeProtocolJson } from './boundary.ts'
 import { RemoteProtocolError } from './errors.ts'
+import { parseAttachmentCapability } from './relay.ts'
 import { REMOTE_PROTOCOL_LIMITS } from './limits.ts'
 import type {
   CompanionMessage,
@@ -248,6 +249,36 @@ export function decodeCompanionMessage(
 
 function parseOperation(value: unknown): CompanionOperation {
   const record = object(value, 'Companion operation')
+  if (record.type === 'offer-attachment') {
+    exactKeys(
+      record,
+      ['type', 'operationId', 'sessionId', 'capability', 'ciphertextSha256', 'byteLength', 'expiresAt', 'fileName'],
+      'Companion offer-attachment operation',
+    )
+    if (typeof record.ciphertextSha256 !== 'string' || !/^[0-9a-f]{64}$/u.test(record.ciphertextSha256)) {
+      invalid('Companion attachment ciphertextSha256 must be lowercase hex SHA-256')
+    }
+    if (typeof record.fileName !== 'string' || record.fileName.length === 0) {
+      invalid('Companion attachment fileName must be non-empty')
+    }
+    if (new TextEncoder().encode(record.fileName).byteLength > REMOTE_PROTOCOL_LIMITS.attachmentFileNameBytes) {
+      invalid('Companion attachment fileName exceeds its byte ceiling')
+    }
+    const byteLength = positiveSafeInteger(record.byteLength, 'Companion attachment byteLength')
+    if (byteLength > REMOTE_PROTOCOL_LIMITS.attachmentBlobBytes) {
+      throw new RemoteProtocolError('REMOTE_PROTOCOL_LIMIT_EXCEEDED', 'Companion attachment exceeds its blob byte ceiling')
+    }
+    return {
+      type: 'offer-attachment',
+      operationId: parseCompanionOperationId(record.operationId),
+      sessionId: parseCompanionSessionId(record.sessionId),
+      capability: parseAttachmentCapability(record.capability),
+      ciphertextSha256: record.ciphertextSha256,
+      byteLength,
+      expiresAt: positiveSafeInteger(record.expiresAt, 'Companion attachment expiresAt'),
+      fileName: record.fileName,
+    }
+  }
   if (record.type !== 'submit-prompt') invalid('Companion operation type is unsupported')
   exactKeys(record, ['type', 'operationId', 'sessionId', 'text'], 'Companion submit-prompt operation')
   if (typeof record.text !== 'string' || record.text.length === 0) invalid('Companion prompt text must be non-empty')
@@ -261,6 +292,18 @@ function parseOperation(value: unknown): CompanionOperation {
 
 function parseResult(value: unknown): CompanionResult {
   const record = object(value, 'Companion result')
+  if (record.type === 'attachment-rejected') {
+    exactKeys(record, ['type', 'operationId', 'reason'], 'Companion attachment-rejected result')
+    if (record.reason !== 'cross-pairing' && record.reason !== 'hash-mismatch' && record.reason !== 'expired'
+      && record.reason !== 'absent' && record.reason !== 'transfer-interrupted' && record.reason !== 'limit-exceeded') {
+      invalid('Companion attachment rejection reason is unsupported')
+    }
+    return {
+      type: 'attachment-rejected',
+      operationId: parseCompanionOperationId(record.operationId),
+      reason: record.reason,
+    }
+  }
   if (record.type !== 'confirmed') invalid('Companion result type is unsupported')
   exactKeys(record, ['type', 'operationId', 'committedAt', 'outcome'], 'Companion confirmed result')
   if (record.outcome !== 'accepted') invalid('Companion confirmed outcome is unsupported')
