@@ -4,160 +4,317 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>DeepSeek Gestalt</title>
-    <meta name="description" content="DeepSeek Gestalt：桌面会话与手机配对。同一条 harness，装在你自己的机器上。" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Figtree:wght@400;500;600&display=swap" rel="stylesheet" />
+    <meta name="description" content="DeepSeek Gestalt：桌面会话、手机配对、自有平台。同一条 harness，装在你自己的机器上。" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <style>
+      @font-face { font-family: HostGrotesk; src: url("/fonts/host-grotesk.woff2") format("woff2"); font-weight: 500 700; font-display: swap; }
+      @font-face { font-family: DMSans; src: url("/fonts/dm-sans-400.woff2") format("woff2"); font-weight: 400; font-display: swap; }
+      @font-face { font-family: DMSans; src: url("/fonts/dm-sans-500.woff2") format("woff2"); font-weight: 500; font-display: swap; }
       :root {
-        --ink: #162028;
-        --fog: #dfe6ee;
-        --paper: #f6f3ec;
-        --oxide: #1f6f68;
-        --ember: #b85a2a;
-        --line: color-mix(in srgb, var(--ink) 16%, transparent);
+        --page: #07080b;
+        --card: #12141a;
+        --line: rgba(255,255,255,.08);
+        --text: #f4f6f8;
+        --muted: rgba(244,246,248,.62);
+        --soft: rgba(244,246,248,.38);
+        --brand: #6ea8ff;
       }
       * { box-sizing: border-box; }
-      html, body { margin: 0; min-height: 100%; }
-      body {
-        color: var(--ink);
-        background: var(--paper);
-        font-family: Figtree, "PingFang SC", "Noto Sans SC", sans-serif;
-        line-height: 1.5;
+      html, body { margin: 0; background: var(--page); color: var(--text); font-family: DMSans, "PingFang SC", "Noto Sans SC", sans-serif; }
+      a { color: inherit; }
+      .wrap { width: min(1120px, calc(100% - 40px)); margin: 0 auto; }
+      nav.top {
+        position: sticky; top: 14px; z-index: 20;
+        display: flex; justify-content: center; pointer-events: none;
       }
-      .spine {
-        position: fixed;
-        inset: 0 auto 0 0;
-        width: 3.4rem;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        writing-mode: vertical-rl;
-        transform: rotate(180deg);
-        letter-spacing: 0.38em;
-        font-family: "Bricolage Grotesque", sans-serif;
-        font-weight: 700;
-        font-size: 0.78rem;
-        background: var(--ink);
-        color: var(--paper);
+      .bar {
+        pointer-events: auto;
+        display: flex; align-items: center; gap: 10px;
+        padding: 8px 10px 8px 14px;
+        background: rgba(18,20,26,.78);
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        backdrop-filter: blur(18px);
       }
-      main {
-        margin-left: 3.4rem;
-        min-height: 100vh;
-        display: grid;
-        grid-template-columns: minmax(18rem, 1fr) minmax(16rem, 0.9fr);
+      .word { height: 18px; color: #fff; }
+      .badge, .lang button, .ghost, .solid {
+        border: 1px solid var(--line); border-radius: 999px; background: transparent; color: var(--text);
+        font: 500 13px/1 DMSans, sans-serif;
       }
-      .copy, .stage { padding: clamp(2rem, 6vw, 5rem); }
-      .copy { align-self: center; max-width: 36rem; }
-      .kicker {
-        margin: 0 0 1rem;
-        font-size: 0.78rem;
-        letter-spacing: 0.18em;
-        text-transform: uppercase;
-        color: var(--oxide);
-        font-weight: 600;
-      }
-      h1 {
-        margin: 0 0 1rem;
-        font-family: "Bricolage Grotesque", sans-serif;
-        font-size: clamp(2.6rem, 7vw, 5.2rem);
-        line-height: 0.92;
-        font-weight: 700;
-        letter-spacing: -0.04em;
-      }
-      h1 span { display: block; color: var(--ember); font-size: 0.42em; letter-spacing: 0.22em; margin-top: 0.45rem; }
-      .lead { margin: 0 0 2rem; font-size: 1.12rem; max-width: 28rem; }
-      .actions { display: flex; flex-wrap: wrap; gap: 0.75rem; }
-      a.btn {
-        display: inline-flex;
-        align-items: center;
-        padding: 0.85rem 1.15rem;
-        text-decoration: none;
-        border: 1px solid var(--ink);
-        color: var(--paper);
-        background: var(--ink);
-        font-weight: 600;
-      }
-      a.btn.ghost { background: transparent; color: var(--ink); }
-      a.btn:focus-visible { outline: 3px solid var(--oxide); outline-offset: 3px; }
-      .stage {
+      .badge { padding: 4px 8px; color: var(--muted); }
+      .lang { display: flex; padding: 2px; border-radius: 999px; border: 1px solid var(--line); }
+      .lang button { border: 0; padding: 6px 10px; cursor: pointer; color: var(--soft); }
+      .lang button.on { background: #2a2e38; color: #fff; }
+      .solid, .ghost { display: inline-flex; align-items: center; gap: 8px; padding: 10px 14px; text-decoration: none; cursor: pointer; }
+      .solid { background: #fff; color: #111; border-color: #fff; }
+      .ghost { background: rgba(255,255,255,.04); }
+      .hero {
+        position: relative; min-height: 88vh; overflow: hidden;
         background:
-          linear-gradient(var(--line) 1px, transparent 1px) 0 0 / 28px 28px,
-          linear-gradient(90deg, var(--line) 1px, transparent 1px) 0 0 / 28px 28px,
-          var(--fog);
-        display: grid;
-        place-items: center;
+          radial-gradient(60% 50% at 70% 20%, rgba(70,120,190,.45), transparent 60%),
+          radial-gradient(40% 40% at 20% 70%, rgba(30,50,90,.35), transparent 70%),
+          linear-gradient(#163055, #07080b 72%);
       }
-      .orbit {
-        width: min(22rem, 80%);
-        aspect-ratio: 1;
-        position: relative;
+      .hero::before {
+        content: ""; position: absolute; inset: 0;
+        background-image: linear-gradient(rgba(255,255,255,.04) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.04) 1px, transparent 1px);
+        background-size: 64px 64px; mask-image: radial-gradient(circle at 50% 30%, #000 20%, transparent 75%);
       }
-      .ring {
-        position: absolute;
-        inset: 12%;
-        border: 1.5px dashed color-mix(in srgb, var(--oxide) 70%, var(--ink));
-        border-radius: 50%;
-        animation: spin 28s linear infinite;
+      .hero-grid { position: relative; display: grid; grid-template-columns: 1.1fr .9fr; gap: 48px; padding: 140px 0 80px; align-items: center; }
+      .kicker { margin: 0 0 14px; color: var(--muted); }
+      h1 { margin: 0 0 18px; font-family: HostGrotesk, sans-serif; font-size: clamp(40px, 6vw, 68px); letter-spacing: -.04em; line-height: .95; }
+      .lead, .sub { color: var(--muted); max-width: 36rem; }
+      .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 28px; }
+      .term {
+        background: rgba(10,12,18,.72); border: 1px solid var(--line); border-radius: 16px; overflow: hidden;
+        box-shadow: 0 20px 80px rgba(0,0,0,.35);
       }
-      .node {
-        position: absolute;
-        width: 6.6rem;
-        padding: 0.7rem 0.8rem 0.8rem;
-        background: var(--paper);
-        border: 1px solid var(--ink);
-        font-size: 0.82rem;
-      }
-      .node strong { display: block; font-family: "Bricolage Grotesque", sans-serif; font-size: 1rem; }
-      .desk { top: 8%; left: 6%; }
-      .phone { right: 4%; bottom: 10%; }
-      .dot {
-        position: absolute;
-        width: 0.7rem;
-        height: 0.7rem;
-        border-radius: 50%;
-        background: var(--ember);
-        top: 50%;
-        left: 50%;
-        translate: -50% -50%;
-      }
-      footer {
-        margin-top: 2.5rem;
-        font-size: 0.82rem;
-        color: color-mix(in srgb, var(--ink) 62%, var(--paper));
-      }
-      @keyframes spin { to { transform: rotate(360deg); } }
-      @media (max-width: 800px) {
-        .spine { display: none; }
-        main { margin: 0; grid-template-columns: 1fr; }
-        .stage { min-height: 18rem; }
-      }
-      @media (prefers-reduced-motion: reduce) {
-        .ring { animation: none; }
+      .tabs { display: flex; gap: 4px; padding: 10px 12px 0; }
+      .tabs button { border: 0; background: #1b1f28; color: var(--soft); padding: 8px 12px; border-radius: 10px 10px 0 0; cursor: pointer; }
+      .tabs button.on { color: #fff; }
+      .win { border-top: 1px solid var(--line); padding: 14px 16px 18px; }
+      .dots { display: flex; justify-content: space-between; color: var(--soft); font-size: 13px; margin-bottom: 18px; }
+      .traffic { color: #ff5f57; }
+      code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: #d7e2f2; }
+      .copy { border: 0; background: transparent; color: var(--soft); cursor: pointer; }
+      section { padding: 88px 0; }
+      .center { text-align: center; }
+      .chip { display: inline-block; padding: 6px 10px; border: 1px solid var(--line); border-radius: 999px; color: var(--soft); font-size: 12px; letter-spacing: .08em; }
+      h2 { font-family: HostGrotesk, sans-serif; font-size: clamp(28px, 4vw, 44px); letter-spacing: -.03em; margin: 14px 0 12px; }
+      h2 em { font-style: normal; color: var(--brand); }
+      .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 40px; }
+      .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 28px 22px 26px; min-height: 220px; }
+      .card h3 { margin: 18px 0 4px; font-size: 18px; }
+      .card small { display: block; color: var(--soft); letter-spacing: .12em; font-size: 11px; margin-bottom: 12px; }
+      .card p { color: var(--muted); margin: 0; }
+      .feat { display: grid; grid-template-columns: .9fr 1.1fr; gap: 40px; align-items: start; margin-top: 36px; }
+      .feat-item { padding: 18px 0; border-top: 1px solid var(--line); }
+      .feat-item h3 { margin: 0 0 8px; }
+      .shot { width: 100%; border-radius: 16px; border: 1px solid var(--line); display: block; background: #0d1016; }
+      .modes { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 28px; }
+      .mode { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px; }
+      .mode h3 { margin: 0 0 8px; }
+      .mode p { margin: 0; color: var(--muted); }
+      .starts { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 28px; }
+      .start { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 22px; }
+      footer { border-top: 1px solid var(--line); padding: 28px 0 48px; color: var(--soft); font-size: 13px; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+      @media (max-width: 860px) {
+        .hero-grid, .cards, .feat, .modes, .starts { grid-template-columns: 1fr; }
+        .hero-grid { padding-top: 110px; }
+        .bar { flex-wrap: wrap; justify-content: center; }
       }
     </style>
   </head>
   <body>
-    <div class="spine" aria-hidden="true">DEEPSEEK GESTALT</div>
-    <main>
-      <section class="copy">
-        <p class="kicker">Desktop · Mobile Companion</p>
-        <h1>DeepSeek Gestalt<span>装在你自己的机器上</span></h1>
-        <p class="lead">桌面会话、手机配对、同一条 harness。打开本页，就是产品入口，不是文档库。</p>
-        <div class="actions">
-          <a class="btn" href="https://github.com/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/releases">下载桌面版</a>
-          <a class="btn ghost" href="https://github.com/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt">查看源码</a>
+    <nav class="top">
+      <div class="bar">
+        <img class="word" src="/images/wordmark.svg" alt="DeepSeek" />
+        <span class="badge">Gestalt</span>
+        <div class="lang">
+          <button type="button" id="zh" class="on">中文</button>
+          <button type="button" id="en">EN</button>
         </div>
-        <footer>生产源 www.gestaltrun.com · 账号与配对接口走 /v1</footer>
-      </section>
-      <aside class="stage" aria-hidden="true">
-        <div class="orbit">
-          <div class="ring"></div>
-          <div class="dot"></div>
-          <div class="node desk"><strong>Desktop</strong>本机会话</div>
-          <div class="node phone"><strong>Phone</strong>配对进同一会话</div>
+        <a class="solid" href="https://github.com/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt">GitHub</a>
+      </div>
+    </nav>
+
+    <header class="hero">
+      <div class="wrap hero-grid">
+        <div>
+          <p class="kicker" data-i="heroKicker">DeepSeek Gestalt 开发者预览版</p>
+          <h1 data-i="heroTitle">桌面、手机、自有平台</h1>
+          <p class="lead" data-i="heroLead">同一条 DeepSeek Harness，装进可更新的桌面产品，并接到你自己的生产源。手机配对、GitHub 账号、双机 Platform 已经跑在 www.gestaltrun.com。</p>
+          <p class="sub" data-i="heroSub">模型、工具、技能、会话、沙箱、存储、循环、调度、UI 仍由插件组合。Gestalt 加上桌面宿主、手机伴侣和自有源。</p>
+          <div class="actions">
+            <a class="solid" href="https://github.com/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt">GitHub</a>
+            <a class="ghost" href="https://github.com/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/releases" data-i="ctaDownload">下载桌面版</a>
+          </div>
         </div>
-      </aside>
-    </main>
+        <div class="term">
+          <div class="tabs">
+            <button type="button" data-tab="use" data-i="tabUse">一键使用</button>
+            <button type="button" class="on" data-tab="src" data-i="tabSrc">源码安装</button>
+          </div>
+          <div class="win">
+            <div class="dots"><span class="traffic">● ● ●</span><button class="copy" type="button" data-i="copy">复制</button></div>
+            <code id="cmd">$ git clone https://github.com/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt.git</code>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <section>
+      <div class="wrap center">
+        <span class="chip">AGENT = MODEL + HARNESS</span>
+        <h2><em>GESTALT</em> <span data-i="whyTitle">让 Agent 装在你自己的机器上</span></h2>
+        <p class="sub" style="margin:0 auto" data-i="whyLead">模型是 Agent 的灵魂。Gestalt 把现成的 Harness 做成可安装桌面产品，并用自有 Platform 接上手机。</p>
+        <div class="cards">
+          <article class="card">
+            <svg width="36" height="36" viewBox="0 0 36 36" fill="none"><rect x="6" y="8" width="24" height="16" rx="2" stroke="currentColor"/><path d="M12 28h12" stroke="currentColor"/></svg>
+            <h3 data-i="p1">桌面产品</h3>
+            <small>DESKTOP HOST</small>
+            <p data-i="p1d">DeepSeek Gestalt 用 Electron 包住现有 Web 会话面，带自动更新。Dock 名是 DeepSeek Gestalt，不是又一个 CLI。</p>
+          </article>
+          <article class="card">
+            <svg width="36" height="36" viewBox="0 0 36 36" fill="none"><rect x="12" y="5" width="12" height="26" rx="2" stroke="currentColor"/><circle cx="18" cy="26" r="1" fill="currentColor"/></svg>
+            <h3 data-i="p2">手机配对</h3>
+            <small>MOBILE COMPANION</small>
+            <p data-i="p2d">Companion 走 Platform 账号与配对挑战。生产源已是 https://www.gestaltrun.com，双机 ECS 经 ALB 对外。</p>
+          </article>
+          <article class="card">
+            <svg width="36" height="36" viewBox="0 0 36 36" fill="none"><circle cx="18" cy="18" r="10" stroke="currentColor"/><path d="M18 8v20M8 18h20" stroke="currentColor"/></svg>
+            <h3 data-i="p3">自有平台</h3>
+            <small>YOUR ORIGIN</small>
+            <p data-i="p3d">GitHub OAuth、PostgreSQL、Redis TLS、OSS 角色注入都走 GitHub Environment。镜像由 Actions 构建，不手工 SSH 发版。</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="wrap">
+        <span class="chip" data-i="featChip">现有能力</span>
+        <h2 data-i="featTitle">已经在跑，不是路线图</h2>
+        <div class="feat">
+          <div>
+            <article class="feat-item">
+              <h3 data-i="f1">一切皆插件</h3>
+              <p data-i="f1d">继承 DeepSeek Harness：模型、工具、技能、会话、沙箱、存储、循环、调度、UI 都是插件，配置层替换，不必改循环。</p>
+            </article>
+            <article class="feat-item">
+              <h3 data-i="f2">会话可回放</h3>
+              <p data-i="f2d">模型看见的内容写入仅追加会话日志。恢复、分叉、检索与 Trajectory 共用同一条事件流。</p>
+            </article>
+            <article class="feat-item">
+              <h3 data-i="f3">桌面更新通道</h3>
+              <p data-i="f3d">Personal Release Channel 发在本仓库 GitHub Releases。macOS 公证安装包，Windows NSIS 可更新。</p>
+            </article>
+            <article class="feat-item">
+              <h3 data-i="f4">生产源已接通</h3>
+              <p data-i="f4d">www.gestaltrun.com 经公网 ALB HTTPS 落到两台 ECS。探活、产品首页和后续 /v1 账号接口共用这个源。</p>
+            </article>
+          </div>
+          <img class="shot" src="/images/trajectory.png" alt="" />
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="wrap">
+        <span class="chip" data-i="modeChip">运行面</span>
+        <h2 data-i="modeTitle">桌面、网页，同一套模式</h2>
+        <div class="modes">
+          <article class="mode"><h3 data-i="m1">标准模式</h3><p data-i="m1d">完整编码 Agent：文件编辑、Shell、检索、Skills、计划、目标、子代理与工作流。</p></article>
+          <article class="mode"><h3 data-i="m2">PTC 模式</h3><p data-i="m2d">标准能力加上 Code Mode SDK，模型用一段 TypeScript 组合多步工具。</p></article>
+          <article class="mode"><h3 data-i="m3">极简模式</h3><p data-i="m3d">只留持久 bash 与 str_replace_editor，给最小环境做模型基准。</p></article>
+          <article class="mode"><h3 data-i="m4">创造模式</h3><p data-i="m4d">检查运行时、试验 Cordis 插件，并据此组合新的 Agent preset。</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="wrap">
+        <span class="chip" data-i="startChip">开始使用</span>
+        <h2 data-i="startTitle">下载安装包，或从源码跑</h2>
+        <div class="starts">
+          <article class="start">
+            <h3 data-i="s1">桌面版</h3>
+            <p data-i="s1d">从 Gestalt Releases 安装 DeepSeek Gestalt。开发可在仓库里执行 pnpm gestalt:dev。</p>
+            <p><code>https://github.com/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/releases</code></p>
+          </article>
+          <article class="start">
+            <h3 data-i="s2">源码</h3>
+            <p data-i="s2d">完整产品树在本仓库，含 Desktop、Mobile Companion 与 Platform 工作流。</p>
+            <p><code>git clone https://github.com/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt.git</code></p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <div class="wrap">
+      <footer>
+        <span data-i="foot">开源 · MIT · DeepSeek Gestalt</span>
+        <span>www.gestaltrun.com</span>
+      </footer>
+    </div>
+
+    <script>
+      const clone = "git clone https://github.com/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt.git"
+      const use = "pnpm gestalt:dev"
+      const i18n = {
+        zh: {
+          heroKicker: "DeepSeek Gestalt 开发者预览版", heroTitle: "桌面、手机、自有平台",
+          heroLead: "同一条 DeepSeek Harness，装进可更新的桌面产品，并接到你自己的生产源。手机配对、GitHub 账号、双机 Platform 已经跑在 www.gestaltrun.com。",
+          heroSub: "模型、工具、技能、会话、沙箱、存储、循环、调度、UI 仍由插件组合。Gestalt 加上桌面宿主、手机伴侣和自有源。",
+          ctaDownload: "下载桌面版", tabUse: "一键使用", tabSrc: "源码安装", copy: "复制",
+          whyTitle: "让 Agent 装在你自己的机器上", whyLead: "模型是 Agent 的灵魂。Gestalt 把现成的 Harness 做成可安装桌面产品，并用自有 Platform 接上手机。",
+          p1: "桌面产品", p1d: "DeepSeek Gestalt 用 Electron 包住现有 Web 会话面，带自动更新。Dock 名是 DeepSeek Gestalt，不是又一个 CLI。",
+          p2: "手机配对", p2d: "Companion 走 Platform 账号与配对挑战。生产源已是 https://www.gestaltrun.com，双机 ECS 经 ALB 对外。",
+          p3: "自有平台", p3d: "GitHub OAuth、PostgreSQL、Redis TLS、OSS 角色注入都走 GitHub Environment。镜像由 Actions 构建，不手工 SSH 发版。",
+          featChip: "现有能力", featTitle: "已经在跑，不是路线图",
+          f1: "一切皆插件", f1d: "继承 DeepSeek Harness：模型、工具、技能、会话、沙箱、存储、循环、调度、UI 都是插件，配置层替换，不必改循环。",
+          f2: "会话可回放", f2d: "模型看见的内容写入仅追加会话日志。恢复、分叉、检索与 Trajectory 共用同一条事件流。",
+          f3: "桌面更新通道", f3d: "Personal Release Channel 发在本仓库 GitHub Releases。macOS 公证安装包，Windows NSIS 可更新。",
+          f4: "生产源已接通", f4d: "www.gestaltrun.com 经公网 ALB HTTPS 落到两台 ECS。探活、产品首页和后续 /v1 账号接口共用这个源。",
+          modeChip: "运行面", modeTitle: "桌面、网页，同一套模式",
+          m1: "标准模式", m1d: "完整编码 Agent：文件编辑、Shell、检索、Skills、计划、目标、子代理与工作流。",
+          m2: "PTC 模式", m2d: "标准能力加上 Code Mode SDK，模型用一段 TypeScript 组合多步工具。",
+          m3: "极简模式", m3d: "只留持久 bash 与 str_replace_editor，给最小环境做模型基准。",
+          m4: "创造模式", m4d: "检查运行时、试验 Cordis 插件，并据此组合新的 Agent preset。",
+          startChip: "开始使用", startTitle: "下载安装包，或从源码跑",
+          s1: "桌面版", s1d: "从 Gestalt Releases 安装 DeepSeek Gestalt。开发可在仓库里执行 pnpm gestalt:dev。",
+          s2: "源码", s2d: "完整产品树在本仓库，含 Desktop、Mobile Companion 与 Platform 工作流。",
+          foot: "开源 · MIT · DeepSeek Gestalt"
+        },
+        en: {
+          heroKicker: "DeepSeek Gestalt developer preview", heroTitle: "Desktop, phone, your origin",
+          heroLead: "The same DeepSeek Harness, shipped as an updatable desktop product on your machines, pointed at your production origin. Mobile pairing, GitHub accounts, and the two-node Platform already run at www.gestaltrun.com.",
+          heroSub: "Models, tools, skills, sessions, sandboxes, storage, loops, schedules, and UI stay plugins. Gestalt adds the Desktop Host, Mobile Companion, and your own origin.",
+          ctaDownload: "Download desktop", tabUse: "Quick start", tabSrc: "From source", copy: "Copy",
+          whyTitle: "keeps the agent on your machines", whyLead: "The model is the agent's soul. Gestalt turns the harness into an installable desktop product and attaches a phone through your Platform.",
+          p1: "Desktop product", p1d: "DeepSeek Gestalt wraps the existing web session surface in Electron and updates itself. The Dock name is DeepSeek Gestalt, not another CLI.",
+          p2: "Phone pairing", p2d: "The Companion uses Platform accounts and pairing challenges. Production origin is https://www.gestaltrun.com behind ALB on two ECS hosts.",
+          p3: "Your platform", p3d: "GitHub OAuth, PostgreSQL, Redis TLS, and OSS role injection come from GitHub Environment. Images are built by Actions. No hand SSH deploys.",
+          featChip: "Shipping now", featTitle: "Running today, not a roadmap",
+          f1: "Everything is a plugin", f1d: "Inherited from DeepSeek Harness: replace models, tools, skills, sessions, sandboxes, storage, loops, schedules, and UI in configuration.",
+          f2: "Sessions replay", f2d: "Whatever the model saw is written to an append-only session log. Resume, fork, search, and Trajectory share that stream.",
+          f3: "Desktop updates", f3d: "The personal release channel is this repository's GitHub Releases. Notarized macOS builds; Windows NSIS still updates.",
+          f4: "Production origin is live", f4d: "www.gestaltrun.com reaches both ECS hosts over public ALB HTTPS. Health probes, this homepage, and later /v1 account routes share that origin.",
+          modeChip: "Surfaces", modeTitle: "Same modes on desktop and web",
+          m1: "Standard", m1d: "Full coding agent: files, shell, search, skills, plan, goals, subagents, and workflows.",
+          m2: "PTC", m2d: "Standard tools plus the Code Mode SDK so the model composes multi-step work in TypeScript.",
+          m3: "Minimal", m3d: "Persistent bash and str_replace_editor only, for smallest-environment benchmarks.",
+          m4: "Create", m4d: "Inspect the runtime, try Cordis plugins, and author a new agent preset.",
+          startChip: "Get started", startTitle: "Install a build, or clone the tree",
+          s1: "Desktop", s1d: "Install DeepSeek Gestalt from Gestalt Releases. For development, run pnpm gestalt:dev in the repo.",
+          s2: "Source", s2d: "The full product tree lives here: Desktop, Mobile Companion, and Platform workflows.",
+          foot: "Open source · MIT · DeepSeek Gestalt"
+        }
+      }
+      let lang = "zh"
+      let tab = "src"
+      function apply() {
+        const pack = i18n[lang]
+        document.documentElement.lang = lang === "zh" ? "zh-CN" : "en"
+        document.querySelectorAll("[data-i]").forEach((el) => {
+          const key = el.getAttribute("data-i")
+          if (key && pack[key]) el.textContent = pack[key]
+        })
+        document.getElementById("zh").classList.toggle("on", lang === "zh")
+        document.getElementById("en").classList.toggle("on", lang === "en")
+        document.querySelectorAll("[data-tab]").forEach((el) => el.classList.toggle("on", el.getAttribute("data-tab") === tab))
+        document.getElementById("cmd").textContent = tab === "use" ? "$ " + use : "$ " + clone
+      }
+      document.getElementById("zh").onclick = () => { lang = "zh"; apply() }
+      document.getElementById("en").onclick = () => { lang = "en"; apply() }
+      document.querySelectorAll("[data-tab]").forEach((el) => {
+        el.onclick = () => { tab = el.getAttribute("data-tab"); apply() }
+      })
+      document.querySelector(".copy").onclick = async () => {
+        const text = tab === "use" ? use : clone
+        try { await navigator.clipboard.writeText(text) } catch { /* ignore denied clipboard */ }
+      }
+      apply()
+    </script>
   </body>
 </html>
