@@ -5,6 +5,7 @@ FROM node:24-bookworm-slim
 RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin platform
 WORKDIR /app
 COPY --chown=platform:platform server.mjs package.json ./
+COPY --chown=platform:platform public ./public
 USER platform
 ENV NODE_ENV=production
 ENV PORT=8080
