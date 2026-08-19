@@ -103,6 +103,7 @@ export interface AnthropicSearchConfig {
   maxUses?: number
 }
 
+/** Settings schema for the Anthropic-protocol search card. */
 export const AnthropicSearchConfig: z<AnthropicSearchConfig> = z.object({
   apiKey: z.string().role('secret'),
   apiKeyEnv: z.string().role('credential-ref'),
