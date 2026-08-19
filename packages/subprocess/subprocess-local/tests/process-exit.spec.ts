@@ -48,7 +48,12 @@ async function captureIdentities(inspector: ProcessInspector, state: TreeState):
   }, { interval: 10, timeout: scenarioTimeoutMs })
 }
 
-async function waitForHostReady(child: ReturnType<typeof execa>, path: string): Promise<void> {
+async function waitForHostReady(
+  child: PromiseLike<{ exitCode: number | null; signal?: NodeJS.Signals | null; stderr: string }> & {
+    readonly exitCode?: number | null
+  },
+  path: string,
+): Promise<void> {
   const deadline = Date.now() + scenarioTimeoutMs
   for (;;) {
     if (typeof child.exitCode === 'number') {
