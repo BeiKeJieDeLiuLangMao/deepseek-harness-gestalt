@@ -18,6 +18,9 @@ export type CompanionSessionId = Branded<'CompanionSessionId'>
 /** Protocol-native identifier for one ordered transcript projection entry. */
 export type CompanionTranscriptEntryId = Branded<'CompanionTranscriptEntryId'>
 
+/** Opaque APNs or FCM device registration token; it routes pushes to one device and carries no account identity. */
+export type CompanionPushToken = Branded<'CompanionPushToken'>
+
 /** Security property required for a Companion major to remain negotiable. */
 export type CompanionSecurityCapability =
   | 'authenticated-encryption'
