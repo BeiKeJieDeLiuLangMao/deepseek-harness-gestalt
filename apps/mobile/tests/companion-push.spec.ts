@@ -150,6 +150,34 @@ describe('content-free Companion push', () => {
     await dispose()
   })
 
+  it('does not reopen mutation when releasePairing races an in-flight start', async () => {
+    let releaseStart: (() => void) | undefined
+    const started: string[] = []
+    const relay = {
+      configure: () => {},
+      start: async () => {
+        started.push('start')
+        await new Promise<void>((resolve) => { releaseStart = resolve })
+      },
+      stop: async () => { started.push('stop') },
+      isConnected: () => true,
+    }
+    const runtime = new CompanionForegroundRuntime({ relay })
+    const onCiphertext = () => { runtime.synchronize() }
+    runtime.configure(grant)
+    const starting = runtime.start()
+    await Promise.resolve()
+    expect(started).toEqual(['start'])
+    const releasing = runtime.releasePairing()
+    if (releaseStart === undefined) throw new Error('expected start to be pending')
+    releaseStart()
+    await starting
+    await releasing
+    onCiphertext()
+    expect(companionMayMutate(runtime.getState())).toBe(false)
+    expect(started.filter(step => step === 'start')).toHaveLength(1)
+  })
+
   it('removes a Capacitor listener that resolves after dispose starts', async () => {
     let resolveHandle: ((handle: { remove: () => Promise<void> }) => void) | undefined
     const remove = vi.fn(async () => {})

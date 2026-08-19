@@ -197,6 +197,7 @@ export class CompanionForegroundRuntime {
    * after Desktop resync ciphertext arrives.
    */
   synchronize(): void {
+    if (!this.granted) return
     this.state = markCompanionSynchronized(this.state)
     this.publish()
   }
@@ -252,6 +253,10 @@ export class CompanionForegroundRuntime {
   private async startOwned(): Promise<void> {
     if (this.relay === undefined || !this.granted || !this.state.foreground) return
     await this.relay.start()
+    if (!this.granted || !this.state.foreground) {
+      await this.relay.stop()
+      return
+    }
     if (this.relay.isConnected()) {
       this.state = markCompanionSocketOpen(this.state)
       this.publish()
