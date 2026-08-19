@@ -87,6 +87,12 @@ abstract getMobilePairingStatus(input: { mobile: PairingAccountAuthentication pe
 abstract listPersonalPairings(desktop: PairingAccountAuthentication): Promise<readonly PersonalPairingView[]>
 
 /**
+ * Revoke one confirmed pairing: destroy its key, drop Mobile Relay authority, and close live attachments.
+ * @param input - Desktop authorization and pairing identity.
+ */
+abstract revokePersonalPairing(input: { desktop: PairingAccountAuthentication pairingId: PersonalPairingId }): Promise<void>
+
+/**
  * List completed handshakes awaiting this Desktop Installation's decision.
  * @param desktop - current Desktop authorization.
  * @returns pending handshakes owned by this Desktop Installation.
@@ -113,7 +119,7 @@ abstract cancelChallenge(input: { desktop: PairingAccountAuthentication challeng
 abstract rejectPairing(input: { desktop: PairingAccountAuthentication pendingPairingId: PendingPairingId }): Promise<void>
 ```
 
-Source: [`packages/platform/remote-access/src/index.ts:378`](../../packages/platform/remote-access/src/index.ts)
+Source: [`packages/platform/remote-access/src/index.ts:393`](../../packages/platform/remote-access/src/index.ts)
 
 <a id="ctxremoterelay--remoterelayservice-abstract-seam"></a>
 
@@ -151,11 +157,11 @@ abstract revokeCredential(grant: RelayCredentialGrant): Promise<void>
 abstract revokeRoute(routeId: RelayRouteId): Promise<void>
 
 /**
- * Authenticate and register one outbound Mobile or Desktop attachment.
- * @param input - attach frame plus the socket writer and optional close callback.
+ * Authenticate one outbound Mobile or Desktop attachment and register it only after `announce` flushes ready.
+ * @param input - attach frame, socket writer, optional close callback, and optional ready flush.
  * @returns the admitted attachment receiving later frames from that socket.
  */
-abstract attach(input: { message: RelayAttachMessage deliver: (message: RelayCiphertextMessage) => Promise<void> close?: () => void | Promise<void> signal?: AbortSignal }): Promise<RemoteRelayAttachment>
+abstract attach(input: { message: RelayAttachMessage deliver: (message: RelayCiphertextMessage) => Promise<void> close?: () => void | Promise<void> signal?: AbortSignal announce?: () => Promise<void> }): Promise<RemoteRelayAttachment>
 ```
 
 Source: [`packages/platform/remote-access/src/relay.ts:141`](../../packages/platform/remote-access/src/relay.ts)

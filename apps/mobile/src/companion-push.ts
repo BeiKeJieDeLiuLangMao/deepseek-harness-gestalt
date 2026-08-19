@@ -1,6 +1,6 @@
 /** Content-free Companion push and foreground deep-link routing. */
 
-export const COMPANION_PUSH_CATEGORIES = [
+const COMPANION_PUSH_CATEGORIES = [
   'approval', 'question', 'turn-complete', 'failure',
 ] as const
 

@@ -50,15 +50,7 @@ Completed assistant Markdown registers ordinary text, inline code, fenced code, 
 
 ## Model Experience
 
-### Annotation submission
-
-#### What the model sees
-
-Text annotations and image pins compile into the same ordinary `user/message` that the Composer sends. A non-empty question stays first, followed by each annotation in creation order with a localized heading, exact quoted text or image-identity percentage-coordinate prose, and the optional note. History-image pins reattach the original durable image. Annotation-only sends use the same form. No annotation protocol, response-format instruction, or hidden metadata enters the request. One in-flight reservation owns the exact annotation snapshot until the Host admits the complete request — the prompt acceptance the ordinary send path checks, never mere promise resolution. During that interval the Composer is read-only, repeated submission and annotation edits are refused, admission clears only the owned annotations (and the persisted draft with them), and a send that resolves without admission restores the full draft for retry. The draft itself persists per Session in browser-local storage: a reload or session switch rehydrates the exact annotations, order, and question text, and an anchor that no longer resolves unambiguously in its source renders a visible error there while the rest of the draft survives.
-
-#### Token effect
-
-Each exact quote, non-empty note, localized heading, and optional question contributes ordinary user-message tokens.
+None, as this package is the browser conversation UI; compiled annotation prose reaches a model only through the ordinary `user/message` the Host admits.
 
 #### KV Cache effect
 

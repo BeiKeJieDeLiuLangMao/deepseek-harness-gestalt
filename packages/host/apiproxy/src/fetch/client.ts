@@ -56,7 +56,7 @@ import {
 } from '../api/goals.schema.ts'
 import {
   settingsDescribeValueSchema, settingsMutateValueSchema, settingsOpenDocumentValueSchema,
-  settingsReplaceValueSchema, settingsUpdateValueSchema,
+  settingsReplaceValueSchema, settingsTestWebSearchValueSchema, settingsUpdateValueSchema,
 } from '../api/settings.schema.ts'
 import {
   credentialsDescribeValueSchema, credentialsSetValueSchema, credentialsUnsetValueSchema,
@@ -152,6 +152,7 @@ export interface IApiClient {
     update(payload: RequestPayload<'settings.update'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'settings.update'>>>
     replace(payload: RequestPayload<'settings.replace'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'settings.replace'>>>
     mutate(payload: RequestPayload<'settings.mutate'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'settings.mutate'>>>
+    testWebSearch(payload: RequestPayload<'settings.testWebSearch'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'settings.testWebSearch'>>>
   }
   credentials: {
     describe(payload: RequestPayload<'credentials.describe'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'credentials.describe'>>>
@@ -219,6 +220,7 @@ const UNARY_VALUE_SCHEMAS: { [K in keyof RpcMethodMap]: z.ZodType<Wire<ResponseV
   'settings.update': settingsUpdateValueSchema,
   'settings.replace': settingsReplaceValueSchema,
   'settings.mutate': settingsMutateValueSchema,
+  'settings.testWebSearch': settingsTestWebSearchValueSchema,
   'credentials.describe': credentialsDescribeValueSchema,
   'credentials.set': credentialsSetValueSchema,
   'credentials.unset': credentialsUnsetValueSchema,
@@ -490,6 +492,9 @@ export abstract class AbstractApiClient implements IApiClient {
     update: (payload, signal) => this.callUnary('settings.update', payload, signal),
     replace: (payload, signal) => this.callUnary('settings.replace', payload, signal),
     mutate: (payload, signal) => this.callUnary('settings.mutate', payload, signal),
+    testWebSearch: (payload, signal) => this.callUnary(
+      'settings.testWebSearch', payload, signal, 'caller-signal-only',
+    ),
   }
 
   readonly credentials: IApiClient['credentials'] = {
