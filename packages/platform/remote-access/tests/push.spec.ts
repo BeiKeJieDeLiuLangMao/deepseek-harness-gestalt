@@ -12,6 +12,7 @@ import {
   ApnsCompanionPushDelivery,
   CompanionPushDeliveryRouter,
   CompanionPushError,
+  DesktopCompanionPushPublisher,
   FcmCompanionPushDelivery,
   KeylessCompanionPushDelivery,
   MemoryPersonalPairingAuthorityStore,
@@ -66,6 +67,9 @@ describe('Remote Access content-free push', () => {
     expect((await store.list('account-one' as never, routeId)).map(record => record.installationId))
       .toEqual([other])
     await store.removeRoute('account-one' as never, routeId)
+    expect(await store.list('account-one' as never, routeId)).toEqual([])
+    await store.put('account-one' as never, mobile, { routeId, platform: 'ios', token })
+    await store.removeInstallationTokens('account-one' as never, mobile)
     expect(await store.list('account-one' as never, routeId)).toEqual([])
   })
 
@@ -265,7 +269,64 @@ describe('Remote Access content-free push', () => {
     })).toEqual({ delivered: 1, pruned: 0 })
   })
 
-  it('skips token deletion on revoke when the Desktop route is already gone', async () => {
+  it('rejects an extra-field hint at the provider entry before outbox or vendor delivery', async () => {
+    const { provider, delivery } = pushProvider()
+    const desktop = authentication('desktop-installation')
+    const mobile = authentication('mobile-installation')
+    await pair(provider, desktop, mobile, 'allowlist')
+    await provider.registerPushToken({
+      mobile,
+      registration: { routeId, platform: 'ios', token },
+    })
+    const sent: unknown[] = []
+    const vendor = new ApnsCompanionPushDelivery({
+      send: async (request) => {
+        sent.push(request.payload)
+        return 'delivered'
+      },
+    })
+    const vendorProvider = uniquePairingProvider(handshakeProvider(), {
+      store: new MemoryPushTokenStore({ now: () => NOW }),
+      delivery: vendor,
+    })
+    await pair(vendorProvider, desktop, mobile, 'vendor-allowlist')
+    await vendorProvider.registerPushToken({
+      mobile,
+      registration: { routeId, platform: 'ios', token },
+    })
+    const smuggled = { category: 'approval', routeId, text: 'secret session content' }
+    await expect(provider.publishPushHint({ desktop, hint: smuggled as never }))
+      .rejects.toThrow('unsupported fields')
+    await expect(vendorProvider.publishPushHint({ desktop, hint: smuggled as never }))
+      .rejects.toThrow('unsupported fields')
+    expect(delivery.outbox).toEqual([])
+    expect(sent).toEqual([])
+  })
+
+  it('publishes hints only after a durable pending commit and never for streaming', async () => {
+    const { provider, delivery } = pushProvider()
+    const desktop = authentication('desktop-installation')
+    const mobile = authentication('mobile-installation')
+    await pair(provider, desktop, mobile, 'commit')
+    await provider.registerPushToken({
+      mobile,
+      registration: { routeId, platform: 'ios', token },
+    })
+    const publisher = new DesktopCompanionPushPublisher(hint => provider.publishPushHint({ desktop, hint }))
+    expect(delivery.outbox).toEqual([])
+    expect(await publisher.handle({ kind: 'approval', routeId, committed: false })).toBeUndefined()
+    expect(delivery.outbox).toEqual([])
+    expect(await publisher.handle({ kind: 'streaming', routeId, committed: true })).toBeUndefined()
+    expect(delivery.outbox).toEqual([])
+    expect(await publisher.handle({
+      kind: 'approval', routeId, committed: true, sessionRef: 'session-one',
+    })).toEqual({ delivered: 1, pruned: 0 })
+    expect(delivery.outbox.map(record => record.hint)).toEqual([
+      { category: 'approval', routeId, sessionRef: 'session-one' },
+    ])
+  })
+
+  it('deletes tokens on revoke even when the Desktop route is already gone', async () => {
     const authority = new MemoryPersonalPairingAuthorityStore()
     const store = new MemoryPushTokenStore()
     const delivery = new KeylessCompanionPushDelivery()
@@ -279,7 +340,7 @@ describe('Remote Access content-free push', () => {
     })
     await authority.disableDesktop('account-one' as never, parseInstallationId('desktop-installation'))
     await provider.revokePersonalPairing({ desktop, pairingId: pairing.id })
-    expect(await store.list('account-one' as never, routeId)).toHaveLength(1)
+    expect(await store.list('account-one' as never, routeId)).toEqual([])
   })
 })
 
@@ -316,7 +377,7 @@ async function pair(
 
 function uniquePairingProvider(
   handshake: PairingHandshakeProvider,
-  push?: { store: MemoryPushTokenStore; delivery: KeylessCompanionPushDelivery },
+  push?: { store: MemoryPushTokenStore; delivery: KeylessCompanionPushDelivery | ApnsCompanionPushDelivery },
   authority?: PersonalPairingAuthorityStore,
 ) {
   let id = 0

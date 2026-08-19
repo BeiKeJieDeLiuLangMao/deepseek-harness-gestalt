@@ -4,9 +4,9 @@ import {
   buildFcmPushMessage,
   companionPushHintForEvent,
   COMPANION_PUSH_CATEGORIES,
-  COMPANION_PUSH_SESSION_REF_MAX_CHARACTERS,
+  COMPANION_PUSH_SESSION_REF_MAX_BYTES,
   COMPANION_PUSH_TITLES,
-  COMPANION_PUSH_TOKEN_MAX_CHARACTERS,
+  COMPANION_PUSH_TOKEN_MAX_BYTES,
   parseCompanionPushCategory,
   parseCompanionPushHint,
   parseCompanionPushToken,
@@ -48,24 +48,33 @@ describe('Companion push hint vocabulary', () => {
       .toEqual({ category: 'failure', routeId: 'route-one' })
   })
 
-  it('accepts bounded non-whitespace device tokens only', () => {
+  it('accepts bounded non-whitespace device tokens only, measuring UTF-8 bytes', () => {
+    const exactAscii = 'x'.repeat(COMPANION_PUSH_TOKEN_MAX_BYTES)
     expect(parseCompanionPushToken('fcm-registration-token')).toBe('fcm-registration-token')
-    expect(parseCompanionPushToken('x'.repeat(COMPANION_PUSH_TOKEN_MAX_CHARACTERS)))
-      .toHaveLength(COMPANION_PUSH_TOKEN_MAX_CHARACTERS)
+    expect(parseCompanionPushToken(exactAscii)).toBe(exactAscii)
     expect(() => parseCompanionPushToken('')).toThrow('push token')
     expect(() => parseCompanionPushToken('with space')).toThrow('push token')
-    expect(() => parseCompanionPushToken('x'.repeat(COMPANION_PUSH_TOKEN_MAX_CHARACTERS + 1)))
-      .toThrow('push token')
+    expect(() => parseCompanionPushToken(`${exactAscii}x`)).toThrow('push token')
+    const multibyteExact = `${'你'.repeat(1_365)}y`
+    expect(new TextEncoder().encode(multibyteExact).byteLength).toBe(COMPANION_PUSH_TOKEN_MAX_BYTES)
+    expect(parseCompanionPushToken(multibyteExact)).toBe(multibyteExact)
+    expect(() => parseCompanionPushToken(`${multibyteExact}z`)).toThrow('push token')
+    expect(() => parseCompanionPushToken('你'.repeat(1_366))).toThrow('push token')
   })
 
-  it('accepts sessionRef at its exact character ceiling and rejects one extra character', () => {
-    const sessionRef = 's'.repeat(COMPANION_PUSH_SESSION_REF_MAX_CHARACTERS)
+  it('accepts sessionRef at its exact UTF-8 byte ceiling and rejects overflow or multibyte identifiers', () => {
+    const sessionRef = 's'.repeat(COMPANION_PUSH_SESSION_REF_MAX_BYTES)
     expect(parseCompanionPushHint({ category: 'failure', routeId: 'route-one', sessionRef }))
       .toEqual({ category: 'failure', routeId: 'route-one', sessionRef })
     expect(() => parseCompanionPushHint({
       category: 'failure',
       routeId: 'route-one',
       sessionRef: `${sessionRef}x`,
+    })).toThrow('sessionRef')
+    expect(() => parseCompanionPushHint({
+      category: 'failure',
+      routeId: 'route-one',
+      sessionRef: '你',
     })).toThrow('sessionRef')
   })
 

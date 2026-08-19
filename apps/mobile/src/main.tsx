@@ -15,6 +15,11 @@ import { parseRelayAttachmentId, REMOTE_PROTOCOL_LIMITS } from '@deepseek-ai/dsh
 import '@deepseek-ai/dsh-client-ui-theme/src/styles/base.css'
 import '@deepseek-ai/dsh-client-ui-theme/src/styles/design-platform.css'
 import '@deepseek-ai/dsh-client-ui-theme/src/styles/gradient-shadow-text.css'
+import {
+  bindCompanionProcessVisibility,
+  CompanionForegroundRuntime,
+  installCompanionRuntime,
+} from './companion-push.ts'
 import { MobileAccount } from './MobileAccount.tsx'
 import type { MobilePairingActions } from './MobilePairing.tsx'
 import { MobilePairingController, NativeMobilePairingQrScanner } from './personal-pairing.ts'
@@ -88,12 +93,16 @@ if (environment.environment === 'development' && import.meta.env.VITE_PERSONAL_P
     heartbeatIntervalMs: positiveInteger(import.meta.env.VITE_REMOTE_RELAY_HEARTBEAT_INTERVAL_MS, 'heartbeat interval'),
     reconnectDelayMs: positiveInteger(import.meta.env.VITE_REMOTE_RELAY_RECONNECT_DELAY_MS, 'reconnect delay'),
   })
+  const companion = new CompanionForegroundRuntime({ relay })
+  installCompanionRuntime(companion)
+  bindCompanionProcessVisibility(companion)
   pairing = new MobilePairingController({
     installation,
     transport: new RemoteAccessHttpTransport({ environment }),
     handshake: new DevelopmentKeylessMobileHandshakeClient(),
     scanner: new NativeMobilePairingQrScanner(),
     relay,
+    companion,
     device: {
       name: navigator.userAgent.includes('Android') ? 'Android phone' : 'iPhone',
       platform: navigator.userAgent.includes('Android') ? 'android' : 'ios',

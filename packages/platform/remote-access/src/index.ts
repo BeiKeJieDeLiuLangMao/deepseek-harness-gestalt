@@ -12,6 +12,8 @@ import type {
   InstallationId,
 } from '@deepseek-ai/dsh-platform-account'
 import {
+  parseCompanionPushHint,
+  parseCompanionPushToken,
   parseRelayRouteId,
   type CompanionPushHint,
   type CompanionPushToken,
@@ -19,6 +21,7 @@ import {
 } from '@deepseek-ai/dsh-remote-protocol'
 import type { RelayCredentialGrant, RemoteRelayService } from './relay.ts'
 import {
+  parsePushTokenRegistration,
   publishCompanionPushHint,
   type CompanionPushDelivery,
   type CompanionPushReport,
@@ -521,6 +524,35 @@ export abstract class RemoteAccessService extends Service {
     desktop: PairingAccountAuthentication
     pendingPairingId: PendingPairingId
   }): Promise<void>
+
+  /**
+   * Bind one device push token to the Mobile Installation's confirmed pairing route.
+   * @param input - Mobile authorization and the registration.
+   */
+  abstract registerPushToken(input: {
+    mobile: PairingAccountAuthentication
+    registration: PushTokenRegistration
+  }): Promise<void>
+
+  /**
+   * Drop exactly one device push token, as on Mobile unpair.
+   * @param input - Mobile authorization, route, and exact token.
+   */
+  abstract unregisterPushToken(input: {
+    mobile: PairingAccountAuthentication
+    routeId: RelayRouteId
+    token: CompanionPushToken
+  }): Promise<void>
+
+  /**
+   * Fan one Desktop-confirmed content-free hint out to the route's live tokens.
+   * @param input - Desktop authorization and the generic hint.
+   * @returns delivery and pruning counts.
+   */
+  abstract publishPushHint(input: {
+    desktop: PairingAccountAuthentication
+    hint: CompanionPushHint
+  }): Promise<CompanionPushReport>
 }
 
 /** Durable ownership tombstone for provider-private crypto material. */
@@ -927,11 +959,11 @@ export class PersonalPairingProvider extends RemoteAccessService {
         const grant = pairing.mobileGrant
         operations.push(async () => { await this.options.relay?.revokeCredential(grant) })
       }
-      const routeId = (await this.authority.getDesktop(account.id, installation.id)).routeId
-      if (routeId !== undefined && this.options.push !== undefined) {
+      if (this.options.push !== undefined) {
         const push = this.options.push
+        const installationId = pairing.devicePrincipal.installationId
         operations.push(async () => {
-          await push.store.removeInstallation(account.id, routeId, pairing.devicePrincipal.installationId)
+          await push.store.removeInstallationTokens(account.id, installationId)
         })
       }
       await cleanupAll(operations)
@@ -1169,10 +1201,6 @@ export class PersonalPairingProvider extends RemoteAccessService {
     })
   }
 
-  /**
-   * Bind one device push token to the Mobile Installation's confirmed pairing route.
-   * @param input - Mobile authorization and the registration.
-   */
   async registerPushToken(input: {
     mobile: PairingAccountAuthentication
     registration: PushTokenRegistration
@@ -1180,17 +1208,14 @@ export class PersonalPairingProvider extends RemoteAccessService {
     await this.exclusive(async () => {
       const { account, installation } = await this.authenticate(input.mobile, 'mobile')
       const push = this.requirePush()
-      if (!(await this.mobileOwnsRoute(account.id, installation.id, input.registration.routeId))) {
+      const registration = parsePushTokenRegistration(input.registration)
+      if (!(await this.mobileOwnsRoute(account.id, installation.id, registration.routeId))) {
         throw new RemoteAccessError('PAIRING_PENDING_INVALID', 'Push token route is not paired to this Installation')
       }
-      await push.store.put(account.id, installation.id, input.registration)
+      await push.store.put(account.id, installation.id, registration)
     })
   }
 
-  /**
-   * Drop exactly one device push token, as on Mobile unpair.
-   * @param input - Mobile authorization, route, and exact token.
-   */
   async unregisterPushToken(input: {
     mobile: PairingAccountAuthentication
     routeId: RelayRouteId
@@ -1199,18 +1224,15 @@ export class PersonalPairingProvider extends RemoteAccessService {
     await this.exclusive(async () => {
       const { account, installation } = await this.authenticate(input.mobile, 'mobile')
       const push = this.requirePush()
-      if (!(await this.mobileOwnsRoute(account.id, installation.id, input.routeId))) {
+      const routeId = parseRelayRouteId(input.routeId)
+      const token = parseCompanionPushToken(input.token)
+      if (!(await this.mobileOwnsRoute(account.id, installation.id, routeId))) {
         throw new RemoteAccessError('PAIRING_PENDING_INVALID', 'Push token route is not paired to this Installation')
       }
-      await push.store.remove(account.id, input.routeId, input.token)
+      await push.store.remove(account.id, routeId, token)
     })
   }
 
-  /**
-   * Fan one Desktop-confirmed content-free hint out to the route's live tokens.
-   * @param input - Desktop authorization and the generic hint.
-   * @returns delivery and pruning counts.
-   */
   async publishPushHint(input: {
     desktop: PairingAccountAuthentication
     hint: CompanionPushHint
@@ -1218,11 +1240,12 @@ export class PersonalPairingProvider extends RemoteAccessService {
     return this.exclusive(async () => {
       const { account, installation } = await this.authenticate(input.desktop, 'desktop')
       const push = this.requirePush()
+      const hint = parseCompanionPushHint(input.hint)
       const authority = await this.authority.getDesktop(account.id, installation.id)
-      if (!authority.enabled || authority.routeId !== input.hint.routeId) {
+      if (!authority.enabled || authority.routeId !== hint.routeId) {
         throw new RemoteAccessError('MOBILE_ACCESS_DISABLED', 'Push hint route is not owned by this Desktop Installation')
       }
-      return publishCompanionPushHint(push.store, push.delivery, account.id, input.hint)
+      return publishCompanionPushHint(push.store, push.delivery, account.id, hint)
     })
   }
 

@@ -10,10 +10,11 @@ import { parseRelayRouteId } from './relay.ts'
 import type { CompanionPushToken, RelayRouteId } from './types.ts'
 
 const IDENTIFIER_PATTERN = /^[A-Za-z0-9_-]+$/u
-/** Exact session-routing-reference character ceiling. */
-export const COMPANION_PUSH_SESSION_REF_MAX_CHARACTERS = 128
-/** Exact device-token character ceiling. */
-export const COMPANION_PUSH_TOKEN_MAX_CHARACTERS = 4_096
+const utf8 = new TextEncoder()
+/** Exact session-routing-reference UTF-8 byte ceiling. */
+export const COMPANION_PUSH_SESSION_REF_MAX_BYTES = 128
+/** Exact device-token UTF-8 byte ceiling. */
+export const COMPANION_PUSH_TOKEN_MAX_BYTES = 4_096
 
 /** Every generic Companion push category; streaming chunks have no category and never produce a hint. */
 export const COMPANION_PUSH_CATEGORIES = ['approval', 'question', 'turn-complete', 'failure'] as const
@@ -104,9 +105,9 @@ export function parseCompanionPushCategory(value: unknown): CompanionPushCategor
  * @returns branded push token.
  */
 export function parseCompanionPushToken(value: unknown): CompanionPushToken {
-  if (typeof value !== 'string' || value.length === 0 || value.length > COMPANION_PUSH_TOKEN_MAX_CHARACTERS
+  if (typeof value !== 'string' || value.length === 0 || utf8ByteLength(value) > COMPANION_PUSH_TOKEN_MAX_BYTES
     || /\s/u.test(value)) {
-    invalid('Companion push token must be 1-4096 non-whitespace characters')
+    invalid('Companion push token must be 1-4096 non-whitespace UTF-8 bytes')
   }
   return value as CompanionPushToken
 }
@@ -169,11 +170,15 @@ export function buildFcmPushMessage(hint: CompanionPushHint, token: CompanionPus
 
 function parseSessionRef(value: unknown): string {
   if (typeof value !== 'string' || value.length === 0
-    || value.length > COMPANION_PUSH_SESSION_REF_MAX_CHARACTERS
+    || utf8ByteLength(value) > COMPANION_PUSH_SESSION_REF_MAX_BYTES
     || !IDENTIFIER_PATTERN.test(value)) {
-    invalid(`Companion push sessionRef must be 1-${String(COMPANION_PUSH_SESSION_REF_MAX_CHARACTERS)} base64url characters`)
+    invalid(`Companion push sessionRef must be 1-${String(COMPANION_PUSH_SESSION_REF_MAX_BYTES)} base64url UTF-8 bytes`)
   }
   return value
+}
+
+function utf8ByteLength(value: string): number {
+  return utf8.encode(value).byteLength
 }
 
 function object(value: unknown, name: string): Record<string, unknown> {

@@ -640,6 +640,7 @@ function transportFixture() {
     revokePersonalPairing: vi.fn(),
     completeChallenge: vi.fn(),
     getMobilePairingStatus: vi.fn(),
+    unregisterPushToken: vi.fn(),
   } satisfies RemoteAccessTransport
 }
 

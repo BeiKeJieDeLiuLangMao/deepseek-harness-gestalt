@@ -180,6 +180,7 @@ describe('Remote Access HTTP assembled flow', () => {
       rejectPairing: http.rejectPairing.bind(http),
       revokePersonalPairing: http.revokePersonalPairing.bind(http),
       getMobilePairingStatus: http.getMobilePairingStatus.bind(http),
+      unregisterPushToken: http.unregisterPushToken.bind(http),
       completeChallenge: async (request) => {
         requests.push(request)
         const result = await http.completeChallenge(request)

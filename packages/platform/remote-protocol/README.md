@@ -34,7 +34,7 @@ The package does not encrypt. Mobile and Desktop supply an independently reviewe
 
 ## Content-free push hints
 
-A Companion push hint carries only a generic category (`approval`, `question`, `turn-complete`, or `failure`) plus an opaque `routeId` and optional `sessionRef`. Streaming chunks have no category and never produce a hint. Wire parsing rejects unknown categories, malformed identifiers, and extra fields, so Session text cannot ride beside the hint. `buildApnsPushPayload` and `buildFcmPushMessage` project that same pair onto the vendor JSON bodies; titles repeat the category and contain no transcript, interaction, device name, or credential.
+A Companion push hint carries only a generic category (`approval`, `question`, `turn-complete`, or `failure`) plus an opaque `routeId` and optional `sessionRef`. Token and `sessionRef` ceilings are UTF-8 byte limits (4096 and 128). Streaming chunks have no category and never produce a hint. Wire parsing rejects unknown categories, malformed identifiers, and extra fields, so Session text cannot ride beside the hint. `buildApnsPushPayload` and `buildFcmPushMessage` project that same pair onto the vendor JSON bodies; titles repeat the category and contain no transcript, interaction, device name, or credential.
 
 ## Model Experience
 

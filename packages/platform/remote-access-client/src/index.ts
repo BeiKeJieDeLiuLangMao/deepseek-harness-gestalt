@@ -21,7 +21,12 @@ import type {
   RelayCredentialGrant,
   RemoteAccessErrorCode,
 } from '@deepseek-ai/dsh-remote-access'
-import { parseRelayCredential, parseRelayRouteId } from '@deepseek-ai/dsh-remote-protocol'
+import {
+  parseRelayCredential,
+  parseRelayRouteId,
+  type CompanionPushToken,
+  type RelayRouteId,
+} from '@deepseek-ai/dsh-remote-protocol'
 
 export * from './relay.ts'
 export * from './browser-relay-socket.ts'
@@ -87,6 +92,12 @@ export interface RemoteAccessTransport {
     authentication: PairingAccountAuthentication
     pendingPairingId: PendingPairingId
   }): Promise<MobilePairingStatus>
+  /** Drop the current device token after Mobile unpair when the route still exists. */
+  unregisterPushToken(input: {
+    authentication: PairingAccountAuthentication
+    routeId: RelayRouteId
+    token: CompanionPushToken
+  }): Promise<void>
 }
 
 /** HTTP transport construction inputs. */
@@ -194,6 +205,18 @@ export class RemoteAccessHttpTransport implements RemoteAccessTransport {
       operation: 'get-mobile-pairing-status',
       pendingPairingId: input.pendingPairingId,
     }))
+  }
+
+  async unregisterPushToken(input: {
+    authentication: PairingAccountAuthentication
+    routeId: RelayRouteId
+    token: CompanionPushToken
+  }): Promise<void> {
+    await this.call(input.authentication, {
+      operation: 'unregister-push-token',
+      routeId: input.routeId,
+      token: input.token,
+    })
   }
 
   private async call(authentication: PairingAccountAuthentication, body: Record<string, unknown>): Promise<unknown> {

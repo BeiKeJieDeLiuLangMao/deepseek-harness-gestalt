@@ -34,7 +34,7 @@ Companion major 2 和 1 是当前及紧邻的前一应用版本。双方 endpoin
 
 ## 无内容推送提示
 
-Companion 推送提示只携带通用类别（`approval`、`question`、`turn-complete` 或 `failure`）以及不透明的 `routeId` 与可选 `sessionRef`。流式分片没有类别，也不会产生提示。线解析会拒绝未知类别、畸形标识符和额外字段，因此 Session 文本不能夹带在提示旁。`buildApnsPushPayload` 与 `buildFcmPushMessage` 把同一对字段投影到厂商 JSON 正文；标题只重复类别，不含 transcript、交互内容、设备名或凭据。
+Companion 推送提示只携带通用类别（`approval`、`question`、`turn-complete` 或 `failure`）以及不透明的 `routeId` 与可选 `sessionRef`。token 与 `sessionRef` 上限按 UTF-8 字节计（4096 与 128）。流式分片没有类别，也不会产生提示。线解析会拒绝未知类别、畸形标识符和额外字段，因此 Session 文本不能夹带在提示旁。`buildApnsPushPayload` 与 `buildFcmPushMessage` 把同一对字段投影到厂商 JSON 正文；标题只重复类别，不含 transcript、交互内容、设备名或凭据。
 
 ## 模型体验
 

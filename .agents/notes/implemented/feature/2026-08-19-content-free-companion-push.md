@@ -10,13 +10,13 @@ A backgrounded Mobile Companion cannot notice a pending approval, human question
 
 ## Decision
 
-Content-free push is a Remote Access concern, not a separate Platform notification bus. `@deepseek-ai/dsh-remote-protocol` owns the hint record, category vocabulary, wire parser, and APNs/FCM projections. A hint carries only `approval` | `question` | `turn-complete` | `failure`, a branded `routeId`, and an optional opaque `sessionRef`. `companionPushHintForEvent` returns `undefined` for streaming, so a streaming chunk cannot fan out. Parsers reject extra fields.
+Content-free push is a Remote Access concern, not a separate Platform notification bus. `@deepseek-ai/dsh-remote-protocol` owns the hint record, category vocabulary, wire parser, and APNs/FCM projections. A hint carries only `approval` | `question` | `turn-complete` | `failure`, a branded `routeId`, and an optional opaque `sessionRef`. Token and `sessionRef` ceilings are UTF-8 byte limits. `companionPushHintForEvent` returns `undefined` for streaming. Parsers reject extra fields.
 
-`@deepseek-ai/dsh-remote-access` owns token persistence and fan-out inside `PersonalPairingProvider`. A Mobile Installation may register a token only after it owns that route. Desktop publish is limited to the Installation's current route. Individual revocation deletes that Installation's tokens; Mobile Access disable deletes every token of the revoked routes. APNs and FCM adapters project the protocol payload through an injected transport and do not enrich it. Development composes `MemoryPushTokenStore` and `KeylessCompanionPushDelivery`.
+`@deepseek-ai/dsh-remote-access` owns token persistence and fan-out on `RemoteAccessService`. `registerPushToken` and `publishPushHint` re-parse at the provider entry, so an extra-field hint never reaches the outbox or a vendor payload. `DesktopCompanionPushPublisher` is the Desktop commit-point: it publishes only after the approval, question, turn-complete, or failure is durably pending, and streaming is discarded at that event layer. Individual revocation deletes tokens by Account and Installation even when the Desktop route is already gone. Mobile Access disable still deletes every token of the revoked routes.
 
-`apps/mobile` `companion-push.ts` owns process visibility. Backgrounding closes the WSS flag and clears synchronization. A notification tap returns `foreground` → `reconnect` → `synchronize` → `present` and never sets `settle: true`, so notification chrome cannot call `settleCompanionInteraction` with acceptance.
+`apps/mobile` owns process visibility. `CompanionForegroundRuntime` binds `visibilitychange` and Capacitor `appStateChange` to the real `MobileRelayEndpointLifecycle`: background calls `stop()`, and foreground `start()` records `socketOpen` only after `isConnected()`. `settleCompanionInteraction` is the single settlement entry and requires `companionMayMutate` (foreground + socket-open + synchronized). Notification chrome cannot satisfy that gate. Product `unpair()` clears the local token and calls `unregisterPushToken` when a route exists.
 
-The daily 500-hint quota stays on the open-registration admission counter. Pairing HTTP routes, native APNs/FCM credentials, and real-device TestFlight/APK proof remain outside this decision.
+The daily 500-hint quota stays on the open-registration admission counter. Pairing HTTP Consumer publish and register routes, native APNs/FCM credentials, and real-device TestFlight/APK proof remain outside this decision. The HTTP client already sends `unregister-push-token`; the Platform route is still deferred.
 
 This implements the push slice of the [Mobile Companion proposal](../../proposed/feature/2026-08-17-mobile-companion.md) without splitting pairing, Relay, blobs, and push into shallow services.
 
@@ -26,10 +26,12 @@ This implements the push slice of the [Mobile Companion proposal](../../proposed
 
 **Put vendor payload builders only in `apps/mobile`.** Platform must emit APNs/FCM bodies without Session content. Protocol projections are the shared bound both adapters and tests use.
 
-**Settle approvals from notification actions.** Stale chrome can target work that has already changed. Foreground reconnect and Desktop-authoritative sync precede every mutation.
+**Settle approvals from notification actions.** Stale chrome can target work that has already changed. The settlement function itself requires foreground reconnect and Desktop-authoritative sync.
 
 **Keep a background WSS or silent sync.** Constrained mobile background execution is unreliable, and Expo Push Service is out of scope. Content-free wake plus foreground resynchronization is the accepted path.
 
+**Treat helper return types as the settlement gate.** A pinned `settle: false` on the deep-link helper is not enforcement. The product settlement entry reads process state.
+
 ## Consequences
 
-Keyless tests pin payload bounds, streaming non-emission, account-isolated token deletion, APNs/FCM adapters against transport doubles, and the Mobile sync-before-present rule. Native vendor credentials, HTTP token routes, persistent PostgreSQL token storage, and device-level APNs/FCM remain named coverage gaps.
+Keyless tests pin payload byte bounds, streaming non-emission, provider-entry allowlisting, commit-before-publish, account-and-installation token deletion without a live route, product unpair cleanup, APNs/FCM adapters against transport doubles, real Mobile entry visibility stopping the Relay lifecycle, and settlement refusal before sync. Native vendor credentials, HTTP register/publish routes, persistent PostgreSQL token storage, and device-level APNs/FCM remain named coverage gaps.

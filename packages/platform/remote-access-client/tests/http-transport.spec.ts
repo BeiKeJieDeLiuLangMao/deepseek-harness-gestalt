@@ -7,6 +7,7 @@ import {
   parsePairingRendezvousId,
   parsePendingPairingId,
 } from '@deepseek-ai/dsh-remote-access'
+import { parseRelayRouteId } from '@deepseek-ai/dsh-remote-protocol'
 import { RemoteAccessHttpTransport } from '../src/index.ts'
 
 const authentication = {
@@ -84,7 +85,7 @@ describe('RemoteAccessHttpTransport', () => {
       }, challenge, {}, [completion], [pairing], pairing, {}, completion,
       { status: 'pending' }, { status: 'rejected' }, {
         status: 'paired', pairingId: 'pairing-one', sealedRelayAuthority: 'AQI',
-      },
+      }, {},
     ]
     const fetch = vi.fn(async (
       _input: Parameters<typeof globalThis.fetch>[0],
@@ -125,8 +126,13 @@ describe('RemoteAccessHttpTransport', () => {
     await expect(client.getMobilePairingStatus({ authentication, pendingPairingId })).resolves.toEqual({
       status: 'paired', pairingId: 'pairing-one', sealedRelayAuthority: Uint8Array.of(1, 2),
     })
+    await expect(client.unregisterPushToken({
+      authentication,
+      routeId: parseRelayRouteId('route-one'),
+      token: 'device-token' as never,
+    })).resolves.toBeUndefined()
 
-    expect(fetch).toHaveBeenCalledTimes(13)
+    expect(fetch).toHaveBeenCalledTimes(14)
     const first = vi.mocked(fetch).mock.calls[0]
     expect(first?.[0]).toBe('https://platform.example/v1/remote-access/personal-pairing')
     expect(first?.[1]).toMatchObject({

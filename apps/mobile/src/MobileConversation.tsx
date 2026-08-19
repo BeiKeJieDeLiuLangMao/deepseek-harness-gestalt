@@ -1,4 +1,6 @@
 import { useState, type ReactNode } from 'react'
+import { settleCompanionInteraction, type CompanionInteraction } from './companion-approval.ts'
+import { companionMayMutate, type CompanionPushState } from './companion-push.ts'
 import { formatToolArgs, previewTerminalLines, type MobileContentBlock } from './mobile-content.ts'
 import css from './MobileConversation.module.css'
 
@@ -16,11 +18,15 @@ export interface MobileConversationProps {
   onCancel?: () => void
   /** Whether Desktop is currently streaming. */
   streaming?: boolean
+  /** Process visibility required before any interaction settlement. */
+  companionState?: CompanionPushState
+  /** Receive the Desktop-authoritative interaction after a successful UI settlement. */
+  onSettled?: (interaction: CompanionInteraction) => void
 }
 
 /** Phone conversation that reuses Gestalt tokens and never exposes terminal input. */
 export function MobileConversation({
-  title, onBack, blocks, onSubmit, onCancel, streaming = false,
+  title, onBack, blocks, onSubmit, onCancel, streaming = false, companionState, onSettled,
 }: MobileConversationProps): ReactNode {
   const [draft, setDraft] = useState('')
   return (
@@ -30,7 +36,14 @@ export function MobileConversation({
         <h1>{title}</h1>
       </header>
       <div className={css.blocks}>
-        {blocks.map((block, index) => <ContentBlock key={index} block={block} />)}
+        {blocks.map((block, index) => (
+          <ContentBlock
+            key={index}
+            block={block}
+            {...(companionState === undefined ? {} : { companionState })}
+            {...(onSettled === undefined ? {} : { onSettled })}
+          />
+        ))}
       </div>
       {onSubmit !== undefined && (
         <form
@@ -57,7 +70,13 @@ export function MobileConversation({
   )
 }
 
-function ContentBlock({ block }: { block: MobileContentBlock }): ReactNode {
+function ContentBlock({
+  block, companionState, onSettled,
+}: {
+  block: MobileContentBlock
+  companionState?: CompanionPushState
+  onSettled?: (interaction: CompanionInteraction) => void
+}): ReactNode {
   switch (block.kind) {
     case 'markdown':
       return <article className={css.markdown}>{block.text}</article>
@@ -81,9 +100,41 @@ function ContentBlock({ block }: { block: MobileContentBlock }): ReactNode {
         </section>
       )
     case 'approval':
-      return <section className={css.card} data-kind="approval"><p>{block.summary}</p></section>
+      return (
+        <section className={css.card} data-kind="approval">
+          <p>{block.summary}</p>
+          {companionState !== undefined && (
+            <SettlementActions
+              interaction={{
+                operationId: block.summary,
+                kind: 'approval',
+                summary: block.summary,
+                authorized: ['once'],
+              }}
+              companionState={companionState}
+              {...(onSettled === undefined ? {} : { onSettled })}
+            />
+          )}
+        </section>
+      )
     case 'ask-user':
-      return <section className={css.card} data-kind="ask-user"><p>{block.question}</p></section>
+      return (
+        <section className={css.card} data-kind="ask-user">
+          <p>{block.question}</p>
+          {companionState !== undefined && (
+            <SettlementActions
+              interaction={{
+                operationId: block.question,
+                kind: 'ask-user',
+                summary: block.question,
+                authorized: ['A'],
+              }}
+              companionState={companionState}
+              {...(onSettled === undefined ? {} : { onSettled })}
+            />
+          )}
+        </section>
+      )
     case 'terminal': {
       const preview = previewTerminalLines(block.lines)
       return (
@@ -107,4 +158,26 @@ function ContentBlock({ block }: { block: MobileContentBlock }): ReactNode {
       return never
     }
   }
+}
+
+function SettlementActions({
+  interaction, companionState, onSettled,
+}: {
+  interaction: CompanionInteraction
+  companionState: CompanionPushState
+  onSettled?: (interaction: CompanionInteraction) => void
+}): ReactNode {
+  const mayMutate = companionMayMutate(companionState)
+  return (
+    <button
+      type="button"
+      disabled={!mayMutate}
+      onClick={() => {
+        const next = settleCompanionInteraction(interaction, { accepted: true, decision: interaction.authorized[0] ?? 'once' }, companionState)
+        onSettled?.(next)
+      }}
+    >
+      允许
+    </button>
+  )
 }

@@ -7,6 +7,7 @@ import {
 } from '@deepseek-ai/dsh-remote-access'
 import { parseRelayCredential, parseRelayRouteId } from '@deepseek-ai/dsh-remote-protocol'
 import type { RemoteAccessTransport } from '@deepseek-ai/dsh-remote-access-client'
+import { CompanionForegroundRuntime } from '../src/companion-push.ts'
 import { MobilePairingController } from '../src/personal-pairing.ts'
 
 describe('MobilePairingController', () => {
@@ -69,8 +70,10 @@ describe('MobilePairingController', () => {
       wipe: vi.fn(),
     }
     const relay = { configure: vi.fn(), start: vi.fn(), stop: vi.fn() }
+    const companion = new CompanionForegroundRuntime()
+    companion.rememberToken('device-token')
     const controller = new MobilePairingController({
-      installation: installationFixture(), transport, handshake, relay,
+      installation: installationFixture(), transport, handshake, relay, companion,
       scanner: { scan: vi.fn() }, device: { name: 'Alice phone', platform: 'ios' },
       schedule: (task) => { scheduled.push(task); return { unref: vi.fn() } as never },
       now: () => Date.parse('2026-08-18T10:01:00.000Z'),
@@ -83,6 +86,15 @@ describe('MobilePairingController', () => {
 
     expect(handshake.wipe).toHaveBeenCalledOnce()
     expect(relay.stop).toHaveBeenCalled()
+    expect(companion.getState().token).toBeUndefined()
+    expect(transport.unregisterPushToken).toHaveBeenCalledWith({
+      authentication: {
+        accessToken: 'mobile-access',
+        proof: { jti: 'proof', issuedAt: 1, signature: 'signature' },
+      },
+      routeId: parseRelayRouteId('route-unpair'),
+      token: 'device-token',
+    })
     expect(controller.getSnapshot()).toEqual({ status: 'ready' })
   })
 
@@ -479,6 +491,7 @@ function transportFixture() {
       device: { name: 'Alice phone', platform: 'ios' },
     }),
     getMobilePairingStatus: vi.fn().mockResolvedValue({ status: 'paired', pairingId: 'pairing-one' }),
+    unregisterPushToken: vi.fn(),
   } satisfies RemoteAccessTransport
 }
 

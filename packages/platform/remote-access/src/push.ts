@@ -9,7 +9,12 @@ import type { InstallationId, PlatformAccountId } from '@deepseek-ai/dsh-platfor
 import {
   buildApnsPushPayload,
   buildFcmPushMessage,
+  companionPushHintForEvent,
+  parseCompanionPushHint,
+  parseCompanionPushToken,
+  parseRelayRouteId,
   type ApnsPushPayload,
+  type CompanionPushEventKind,
   type CompanionPushHint,
   type CompanionPushToken,
   type FcmPushMessage,
@@ -87,6 +92,16 @@ export interface PushTokenStore {
     installationId: InstallationId,
   ): Promise<void>
   /**
+   * Remove every token registered by one Mobile Installation, including after
+   * the Desktop route is already gone.
+   * @param accountId - authenticated Account that owned the pairing.
+   * @param installationId - revoked Mobile Installation.
+   */
+  removeInstallationTokens(
+    accountId: PlatformAccountId,
+    installationId: InstallationId,
+  ): Promise<void>
+  /**
    * Remove every token of one route, as on pairing revoke-all or Mobile Access disable.
    * @param accountId - authenticated Account owning the route.
    * @param routeId - revoked route.
@@ -159,6 +174,15 @@ export class MemoryPushTokenStore implements PushTokenStore {
       record.accountId === accountId
       && record.routeId === routeId
       && record.installationId === installationId)
+    return Promise.resolve()
+  }
+
+  removeInstallationTokens(
+    accountId: PlatformAccountId,
+    installationId: InstallationId,
+  ): Promise<void> {
+    this.removeMatching(record =>
+      record.accountId === accountId && record.installationId === installationId)
     return Promise.resolve()
   }
 
@@ -286,15 +310,87 @@ export class FcmCompanionPushDelivery implements CompanionPushDelivery {
  * @param hint - generic hint; never enriched.
  * @returns delivery and pruning counts.
  */
+/**
+ * Desktop Session or Companion event that may become a hint after a durable commit.
+ * Streaming is discarded at this layer even when `committed` is true.
+ */
+export interface DurableCompanionPushEvent {
+  kind: CompanionPushEventKind
+  routeId: RelayRouteId
+  sessionRef?: string
+  /** True only after Desktop persisted the pending interaction or terminal outcome. */
+  committed: boolean
+}
+
+/**
+ * Project a Desktop event onto a hint only after the owning record is durable.
+ * Streaming never produces a hint.
+ * @param event - Desktop event plus whether its pending or terminal state has committed.
+ * @returns the content-free hint, or `undefined` when streaming or not yet committed.
+ */
+export function companionPushHintAfterDurableCommit(
+  event: DurableCompanionPushEvent,
+): CompanionPushHint | undefined {
+  if (!event.committed) return undefined
+  return companionPushHintForEvent({
+    kind: event.kind,
+    routeId: event.routeId,
+    ...(event.sessionRef === undefined ? {} : { sessionRef: event.sessionRef }),
+  })
+}
+
+/** Desktop adapter that publishes a hint only after a durable pending or terminal commit. */
+export class DesktopCompanionPushPublisher {
+  /**
+   * @param publish - already-authenticated Remote Access publish entry.
+   */
+  constructor(private readonly publish: (hint: CompanionPushHint) => Promise<CompanionPushReport>) {}
+
+  /**
+   * Observe one Desktop event. Streaming and uncommitted records leave the outbox empty.
+   * @param event - Desktop event and commit flag.
+   * @returns delivery report after a committed non-streaming event; otherwise `undefined`.
+   */
+  handle(event: DurableCompanionPushEvent): Promise<CompanionPushReport | undefined> {
+    const hint = companionPushHintAfterDurableCommit(event)
+    if (hint === undefined) return Promise.resolve(undefined)
+    return this.publish(hint)
+  }
+}
+
+/**
+ * Parse one device registration at the Remote Access executor.
+ * @param value - untrusted registration.
+ * @returns allowlisted registration.
+ */
+export function parsePushTokenRegistration(value: unknown): PushTokenRegistration {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new TypeError('Push token registration must be an object')
+  }
+  const record = value as Record<string, unknown>
+  if (Object.keys(record).some(key => key !== 'routeId' && key !== 'platform' && key !== 'token')) {
+    throw new TypeError('Push token registration contains unsupported fields')
+  }
+  if (record.platform !== 'ios' && record.platform !== 'android') {
+    throw new TypeError('Push token platform is unsupported')
+  }
+  return {
+    routeId: parseRelayRouteId(record.routeId),
+    platform: record.platform,
+    token: parseCompanionPushToken(record.token),
+  }
+}
+
 export async function publishCompanionPushHint(
   store: PushTokenStore,
   delivery: CompanionPushDelivery,
   accountId: PlatformAccountId,
   hint: CompanionPushHint,
 ): Promise<CompanionPushReport> {
-  const targets = await store.list(accountId, hint.routeId)
+  const allowlisted = parseCompanionPushHint(hint)
+  const targets = await store.list(accountId, allowlisted.routeId)
   const settled = await Promise.allSettled(targets.map(async (target) => {
-    const outcome = await delivery.deliver(target, hint)
+    const outcome = await delivery.deliver(target, allowlisted)
     if (outcome === 'unregistered') await store.remove(accountId, target.routeId, target.token)
     return outcome
   }))
