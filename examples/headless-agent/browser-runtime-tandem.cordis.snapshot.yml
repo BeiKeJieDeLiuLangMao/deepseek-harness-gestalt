@@ -1,4 +1,4 @@
-# Keyless managed Tandem Browser tracer over the shipped base + headless profile.
+# Keyless Tandem-shaped HTTP Browser tracer over the shipped base + headless profile.
 - id: agent-loop
   # Restart requires persistence before the fixed Session identity is restored.
   inject: [sessionPersistence]

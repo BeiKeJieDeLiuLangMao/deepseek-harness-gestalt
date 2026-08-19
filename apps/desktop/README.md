@@ -2,9 +2,9 @@
 
 English | [中文](README.zh.md)
 
-DeepSeek Gestalt Desktop Host. Electron owns the window, menu, and GitHub auto-update. It starts bundled official Node plus `dsh web --host 127.0.0.1 --port 0 --patch ./cordis.patch.yml` and loads that loopback URL. The overlay adds Schedule, per-step time context, the GESTALT badge, drag strip, and Update Control; the control remains absent until an update is actionable or an error follows version discovery. Browser `dsh web` does not load the overlay.
+DeepSeek Gestalt Desktop Host. Electron owns the window, menu, GitHub auto-update, and in-process Browser Runtime `webContents`. It starts bundled official Node plus `dsh web --host 127.0.0.1 --port 0 --patch ./cordis.patch.yml` and loads that loopback URL. The overlay adds Schedule, per-step time context, the GESTALT badge, drag strip, Update Control, and the Tandem-shaped HTTP client pointed at the Host's loopback Browser origin; the control remains absent until an update is actionable or an error follows version discovery. Browser `dsh web` does not load the overlay and keeps the deterministic Browser Runtime.
 
-Window exit, Ctrl+C, and smoke-test completion cancel any pending start, stop the Web Host, and wait for its process to exit before Electron terminates. Startup or a later crash gets one retry before the window shows the Host error.
+Window exit, Ctrl+C, and smoke-test completion cancel any pending start, stop the Web Host, dispose hidden Browser windows, and wait for the Host process to exit before Electron terminates. Startup or a later crash gets one retry before the window shows the Host error. Browser partitions stay under Electron `userData/browser-runtime` and never write Tandem Browser Application Support. The Dock remains a native pane of screenshot, title, and text.
 
 The main window accepts navigation only within the active loopback Host origin. Ordinary HTTP links, including GitHub authorization, open in the system browser; other origins and schemes cannot replace the Session Surface or create another Electron window. Platform Account signing keys and tokens stay in an environment-specific `safeStorage`-encrypted file under Electron userData. The preload exposes only current state and lifecycle verbs.
 

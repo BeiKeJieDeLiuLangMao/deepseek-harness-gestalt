@@ -335,7 +335,7 @@ async function freePort(): Promise<number> {
   return address.port
 }
 
-/** Install the managed Tandem provider proxy and driver into the temporary profile. */
+/** Install the Tandem-shaped HTTP provider proxy and driver into the temporary profile. */
 async function prepareBrowserRuntimeTandemFixture(cwd: string): Promise<void> {
   const fixtureDir = join(cwd, '.dsh', 'profiles', 'headless', 'snapshot-fixtures')
   await mkdir(fixtureDir, { recursive: true })

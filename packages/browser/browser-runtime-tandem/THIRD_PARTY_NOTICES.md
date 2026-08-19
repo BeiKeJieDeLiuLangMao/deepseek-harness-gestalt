@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-This package integrates with Tandem Browser (https://github.com/hydro13/tandem-browser) at runtime as an external child process. No source from the upstream project is distributed in this package or repository; see [UPSTREAM.md](UPSTREAM.md) for the pinned revision and integration scope.
+This package copies Tandem Browser's HTTP operation vocabulary (https://github.com/hydro13/tandem-browser) as a protocol-only integration. No source from the upstream project is distributed in this package or repository, and Tandem.app is never launched; see [UPSTREAM.md](UPSTREAM.md) for the pinned revision and integration scope.
 
 Tandem Browser is licensed by its copyright holder as follows:
 

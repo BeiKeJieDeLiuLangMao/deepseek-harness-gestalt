@@ -130,6 +130,7 @@ describe('Tandem Browser Runtime configuration', () => {
     const cases: Array<[string, Record<string, unknown>, RegExp]> = [
       ['empty command', { command: '' }, /command must be non-empty/],
       ['blank cwd', { cwd: ' ' }, /cwd must be non-empty/],
+      ['command without cwd', { command: process.execPath, cwd: undefined }, /command and cwd must both be set/],
       ['empty tokenFile', { tokenFile: '' }, /tokenFile must be non-empty/],
       ['blank idPrefix', { idPrefix: ' \t' }, /idPrefix must be non-empty/],
       ['zero startupTimeoutMs', { startupTimeoutMs: 0 }, /startupTimeoutMs/],
@@ -163,6 +164,56 @@ describe('Tandem Browser Runtime configuration', () => {
         ...overrides,
       }), label).rejects.toThrow(failure)
     }
+  })
+
+  it('loads as a protocol-only HTTP client without a fixture child', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-tandem-protocol-'))
+    const port = await freePort()
+    const tokenFile = join(root, 'api-token')
+    const { spawn } = await import('node:child_process')
+    const child = spawn(process.execPath, [FIXTURE], {
+      cwd: root,
+      env: {
+        ...process.env,
+        TANDEM_FIXTURE_PORT: String(port),
+        TANDEM_FIXTURE_TOKEN_FILE: tokenFile,
+      },
+      stdio: 'ignore',
+    })
+    const ctx = new Context()
+    contexts.push(ctx)
+    await ctx.plugin(TandemBrowserRuntime, {
+      baseUrl: `http://127.0.0.1:${String(port)}`,
+      tokenFile,
+      idPrefix: 'protocol-only',
+      startupTimeoutMs: 5_000,
+      requestTimeoutMs: 2_000,
+      healthPollMs: 10,
+      reconnectAttempts: 0,
+      processGraceMs: 100,
+    })
+    const created = await ctx.browserRuntime.create({ profile: 'temporary' })
+    expect(created.chrome.partition).toBe('persist:session-protocol-only-tmp-1')
+    await ctx.browserRuntime.close({ target: created.target, expectedRevision: 0 })
+    child.kill('SIGTERM')
+    await rm(root, { recursive: true, force: true })
+  })
+
+  it('rejects a fixture command when subprocess is not composed', async () => {
+    const ctx = new Context()
+    contexts.push(ctx)
+    await ctx.plugin(TandemBrowserRuntime, {
+      command: process.execPath,
+      cwd: process.cwd(),
+      baseUrl: `http://127.0.0.1:${String(await freePort())}`,
+      tokenFile: '/tmp/token',
+      startupTimeoutMs: 200,
+      requestTimeoutMs: 200,
+      healthPollMs: 10,
+      reconnectAttempts: 0,
+    })
+    await expect(ctx.browserRuntime.create({ profile: 'temporary' }))
+      .rejects.toMatchObject({ code: 'BROWSER_RUNTIME_UNAVAILABLE', message: /requires ctx.subprocess/ })
   })
 
   it('accepts every loopback hostname form and the default identity prefix', async () => {
@@ -268,10 +319,10 @@ describe('Tandem Browser Runtime public lifecycle', () => {
       target: identities,
     })
     const humanFirstRejected = humanFirst.find(result => result.status === 'rejected')
-    expect(humanFirstRejected?.status === 'rejected' ? humanFirstRejected.reason : undefined).toMatchObject({
-      code: 'BROWSER_REVISION_CONFLICT',
-      message: expect.stringMatching(/current 1; observe again before mutating/),
-    })
+    if (humanFirstRejected?.status !== 'rejected') throw new Error('expected a revision conflict')
+    if (!(humanFirstRejected.reason instanceof BrowserRuntimeError)) throw new Error('expected BrowserRuntimeError')
+    expect(humanFirstRejected.reason.code).toBe('BROWSER_REVISION_CONFLICT')
+    expect(humanFirstRejected.reason.message).toMatch(/current 1; observe again before mutating/)
     const afterHuman = await ctx.browserRuntime.observe({ target: created.target })
     expect(afterHuman).toMatchObject({
       status: 'open',

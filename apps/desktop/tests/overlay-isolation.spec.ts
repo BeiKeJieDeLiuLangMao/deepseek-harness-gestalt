@@ -14,13 +14,19 @@ describe('Desktop overlay isolation', () => {
     const web = readFileSync(join(repo, 'packages', 'bundle', 'web-app', 'cordis.patch.yml'), 'utf8')
     const desktop = readFileSync(join(here, '..', 'cordis.patch.yml'), 'utf8')
     expect(web).not.toMatch(/ui-desktop|dsh-client-ui-desktop|dsh-time-context|dsh-schedule/)
+    expect(web).not.toMatch(/browser-runtime-electron-http|DSH_ELECTRON_BROWSER/)
     expect(desktop).toMatch(/id: time-context/)
     expect(desktop).toMatch(/@deepseek-ai\/dsh-time-context/)
     expect(desktop).toMatch(/id: schedule/)
     expect(desktop).toMatch(/@deepseek-ai\/dsh-schedule/)
     expect(desktop).toMatch(/id: ui-desktop/)
     expect(desktop).toMatch(/@deepseek-ai\/dsh-client-ui-desktop/)
+    expect(desktop).toMatch(/id: browser-runtime-electron-http/)
+    expect(desktop).toMatch(/@deepseek-ai\/dsh-browser-runtime-tandem/)
+    expect(desktop).toMatch(/DSH_ELECTRON_BROWSER_ORIGIN/)
+    expect(desktop).toMatch(/id: browser-runtime-deterministic[\s\S]*disabled: true/)
     expect(desktop).not.toMatch(/directory-picker/)
+    expect(desktop).not.toMatch(/Tandem\.app/)
   })
 
   it('composes Schedule through the Desktop profile path after its required services', () => {
@@ -41,7 +47,7 @@ describe('Desktop overlay isolation', () => {
     }
     try {
       const web = run(['web', '--dump-default-config'])
-      expect(web).not.toMatch(/ui-desktop|dsh-client-ui-desktop|dsh-time-context|dsh-schedule/)
+      expect(web).not.toMatch(/ui-desktop|dsh-client-ui-desktop|dsh-time-context|dsh-schedule|browser-runtime-electron-http/)
       expect(web).toMatch(/@deepseek-ai\/dsh-host-directory-picker-auto/)
 
       const desktop = run(['web', '--patch', patch, '--dump-config'])
@@ -55,6 +61,8 @@ describe('Desktop overlay isolation', () => {
       expect(schedule).toBeGreaterThan(agents)
       expect(schedule).toBeGreaterThan(timeContext)
       expect(desktop).toMatch(/@deepseek-ai\/dsh-client-ui-desktop/)
+      expect(desktop).toMatch(/@deepseek-ai\/dsh-browser-runtime-tandem/)
+      expect(desktop).toMatch(/disabled: true/)
     } finally {
       rmSync(home, { recursive: true, force: true })
     }

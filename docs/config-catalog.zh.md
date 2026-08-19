@@ -431,51 +431,165 @@ export interface DeterministicBrowserPage {
 }
 ```
 
-来源：[`packages/browser/browser-runtime-deterministic/src/index.ts:59`](../packages/browser/browser-runtime-deterministic/src/index.ts)
+来源：[`packages/browser/browser-runtime-deterministic/src/index.ts:66`](../packages/browser/browser-runtime-deterministic/src/index.ts)
+
+<a id="deepseek-aidsh-browser-runtime-electron"></a>
+
+## `@deepseek-ai/dsh-browser-runtime-electron`
+
+```ts config-catalog
+/** Process and lifecycle configuration for one in-process Electron runtime. */
+export interface Config {
+  /** Prefix for DSH-owned opaque Profile, Workspace, and browser identities. */
+  idPrefix?: string
+  /** Hidden window width used for offscreen capture. */
+  viewportWidth?: number
+  /** Hidden window height used for offscreen capture. */
+  viewportHeight?: number
+  /** Bound on each Chromium navigation or content read. */
+  requestTimeoutMs?: number
+  /** Injected Electron APIs for tests; omitted in production. */
+  electron?: ElectronHost
+}
+
+/** Electron APIs required by this Provider. */
+export interface ElectronHost {
+  /** Hidden-window constructor. */
+  readonly BrowserWindow: ElectronBrowserWindowConstructor
+  /** Partitioned session factory. */
+  readonly session: ElectronSessionModule
+}
+
+/** Constructor for one hidden offscreen window. */
+export type ElectronBrowserWindowConstructor = new (options: ElectronBrowserWindowOptions) => ElectronBrowserWindow
+
+/** Electron `session` module used to isolate persist and ephemeral partitions. */
+export interface ElectronSessionModule {
+  /** Create or reuse the Chromium session for one partition string. */
+  fromPartition(partition: string): ElectronSession
+}
+
+/** Options for one hidden offscreen window. */
+export interface ElectronBrowserWindowOptions {
+  /** Keep the window hidden. */
+  readonly show: false
+  /** Capture width in CSS pixels. */
+  readonly width: number
+  /** Capture height in CSS pixels. */
+  readonly height: number
+  /** Paint the first frame before the window is shown. */
+  readonly paintWhenInitiallyHidden: true
+  /** Isolated Chromium preferences for this window. */
+  readonly webPreferences: {
+    /** Persist or ephemeral partition key. */
+    readonly partition: string
+    /** Render offscreen so the Dock stays a screenshot pane. */
+    readonly offscreen: true
+    /** Sandbox the renderer. */
+    readonly sandbox: true
+    /** Isolate the renderer world. */
+    readonly contextIsolation: true
+    /** Keep Node APIs out of the page. */
+    readonly nodeIntegration: false
+    /** Keep hidden pages painting. */
+    readonly backgroundThrottling: false
+  }
+}
+
+/** Hidden BrowserWindow that owns one offscreen `webContents`. */
+export interface ElectronBrowserWindow {
+  /** Page this window owns. */
+  readonly webContents: ElectronWebContents
+  /** True after the window was destroyed. */
+  isDestroyed(): boolean
+  /** Destroy the hidden window and its contents. */
+  destroy(): void
+}
+
+/** Isolated Chromium session that backs one persist or ephemeral partition. */
+export interface ElectronSession {
+  /** Persist cookies, cache, and service-worker state for a named Profile. */
+  flushStorageData(): Promise<void>
+  /** Clear ephemeral partition state when a temporary Profile closes. */
+  clearStorageData(): Promise<void>
+}
+
+/** Hidden page used for navigation, observation, and screenshots. */
+export interface ElectronWebContents {
+  /** Current document URL, including `about:blank`. */
+  getURL(): string
+  /** Document title reported by Chromium. */
+  getTitle(): string
+  /** Isolated session that owns this page. */
+  readonly session: ElectronSession
+  /** True after Chromium destroyed the contents. */
+  isDestroyed(): boolean
+  /** Navigate and resolve after the first successful document load. */
+  loadURL(url: string): Promise<void>
+  /** Focus the hidden contents so later Agent or human mutations address it. */
+  focus(): void
+  /** Capture the current page as a PNG. */
+  capturePage(): Promise<ElectronNativeImage>
+  /** Read model-visible page text from the isolated world. */
+  executeJavaScript(code: string): Promise<unknown>
+  /** Destroy the hidden contents. */
+  close(): void
+  /** Observe renderer-process loss. */
+  on(event: 'render-process-gone', listener: () => void): this
+  /** Remove one renderer-process-loss listener. */
+  off(event: 'render-process-gone', listener: () => void): this
+}
+
+/** Pixel buffer returned by `webContents.capturePage`. */
+export interface ElectronNativeImage {
+  /** Encode the captured page as PNG bytes. */
+  toPNG(): Uint8Array
+}
+```
+
+来源：[`packages/browser/browser-runtime-electron/src/index.ts:63`](../packages/browser/browser-runtime-electron/src/index.ts)
 
 <a id="deepseek-aidsh-browser-runtime-tandem"></a>
 
 ## `@deepseek-ai/dsh-browser-runtime-tandem`
 
-需要：`subprocess`
-
 ```ts config-catalog
-/** Process, HTTP, and lifecycle configuration for one managed Tandem runtime. */
+/** HTTP and optional fixture-process configuration for one Tandem-shaped runtime. */
 export interface Config {
-  /** Executable used to launch the pinned Tandem Browser checkout or package. */
-  command: string
-  /** Arguments passed without shell interpretation. */
+  /** Optional fixture executable used only by HTTP protocol tests. Production Desktop omits this. */
+  command?: string
+  /** Arguments passed without shell interpretation when `command` is set. */
   args?: string[]
-  /** Existing directory used as the Tandem child process working directory. */
-  cwd: string
+  /** Existing directory used as the optional fixture child working directory. */
+  cwd?: string
   /** Explicit environment layered over the subprocess service's credential-scrubbed parent environment. */
   env?: Record<string, string>
-  /** Loopback Tandem HTTP API origin, including its configured port. */
+  /** Loopback Tandem-shaped HTTP API origin, including its configured port. */
   baseUrl: string
-  /** Local file where Tandem writes its generated API token. */
+  /** Local file where the HTTP server writes its generated API token. */
   tokenFile: string
   /** Prefix for DSH-owned opaque Profile, Workspace, and browser identities. */
   idPrefix?: string
-  /** Bound on child startup and Tandem health verification. */
+  /** Bound on HTTP health verification. */
   startupTimeoutMs?: number
-  /** Bound on each Tandem HTTP operation. */
+  /** Bound on each Tandem-shaped HTTP operation. */
   requestTimeoutMs?: number
   /** Delay between startup health probes. */
   healthPollMs?: number
   /** Upper bound on upstream page-settle waiting for one content read. */
   pageSettleMs?: number
-  /** Number of child restarts after an unexpected exit. */
+  /** Number of fixture-child restarts after an unexpected exit. Ignored without `command`. */
   reconnectAttempts?: number
   /** Delay before each reconnect attempt. */
   reconnectDelayMs?: number
-  /** Subprocess tree SIGTERM-to-SIGKILL grace used for teardown. */
+  /** Subprocess tree SIGTERM-to-SIGKILL grace used for fixture teardown. */
   processGraceMs?: number
-  /** Maximum bytes accepted from one Tandem HTTP response. */
+  /** Maximum bytes accepted from one Tandem-shaped HTTP response. */
   maxResponseBytes?: number
 }
 ```
 
-来源：[`packages/browser/browser-runtime-tandem/src/index.ts:50`](../packages/browser/browser-runtime-tandem/src/index.ts)
+来源：[`packages/browser/browser-runtime-tandem/src/index.ts:54`](../packages/browser/browser-runtime-tandem/src/index.ts)
 
 <a id="deepseek-aidsh-client-connection"></a>
 

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-19-browser-dock.md
-2026-08-19-browser-dock.md: d42f58898f5cf9e73e1378c7730d20f99ef552ff
-2026-08-19-browser-dock.zh.md: 11015d45498746cb35772872cb7d54b343f7d68e
+2026-08-19-browser-dock.md: 985193c9479b446903ee6b1484a28dacb9b1a258
+2026-08-19-browser-dock.zh.md: 532e59e0ecfacf30b7c71526eabd57c701103bba

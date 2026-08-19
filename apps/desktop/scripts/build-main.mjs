@@ -14,7 +14,12 @@ await build({
   platform: 'node',
   format: 'esm',
   target: 'node22',
-  external: ['electron', 'electron-updater'],
+  external: [
+    'electron',
+    'electron-updater',
+    '@deepseek-ai/dsh-browser-runtime-electron',
+    '@deepseek-ai/cordis',
+  ],
   logLevel: 'info',
 })
 await cp(join(root, 'src', 'preload.cjs'), join(root, 'out', 'preload.cjs'))

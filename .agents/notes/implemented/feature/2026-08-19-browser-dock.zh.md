@@ -18,7 +18,7 @@ Dock 没有 Profile 切换或 Agent 状态行。标签页占据顶行，收起�
 
 占用方专用详情宽度范围为 420/640/960 px，来自 [#60](https://github.com/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/issues/60)。切换 Session 会从 [#67](https://github.com/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/issues/67) 持有的 Workspace 投影恢复该 Session 的可见性、宽度、实例、标签页与当前控制权所有者。
 
-Host 组合挂载 `dsh-browser-runtime-deterministic` 与 `dsh-browser-workspace`，使 Dock 拥有 Session 持有的 Runtime，而不需要第二个 Electron 进程。standard、code 与 cordis preset 挂载 `dsh-tool-browser`。Web 组合挂载 Dock 插件。
+Web 与 headless 组合挂载 `dsh-browser-runtime-deterministic` 与 `dsh-browser-workspace`，使 Dock 拥有 Session 持有的 Runtime，而不需要 Electron。Desktop Host 持有进程内 Electron `webContents` 与叠加层 HTTP 客户端；Dock 仍渲染截图、标题与文本，不嵌入第二个 BrowserView。standard、code 与 cordis preset 挂载 `dsh-tool-browser`。Web 组合挂载 Dock 插件。
 
 ## 考虑过的替代方案
 

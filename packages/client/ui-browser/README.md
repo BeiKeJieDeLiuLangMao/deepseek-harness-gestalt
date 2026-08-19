@@ -22,5 +22,5 @@ None; the package never assembles or sends provider requests.
 
 ## Known Limitations and Deferred Work
 
-- **Screenshot viewport, not a live WebContentsView** — the Dock renders observe and screenshot facts from the Session-owned Runtime; it does not embed a second Electron process.
-- **Keyless Host Runtime is deterministic** — the shipped Host composition uses `dsh-browser-runtime-deterministic` so the Dock and GIF can run without Tandem. A later ticket can swap that Provider.
+- **Screenshot viewport, not a live WebContentsView** — the Dock renders observe and screenshot facts from the Session-owned Runtime; it does not embed a second BrowserView.
+- **Keyless web and headless Runtimes stay deterministic** — browser `dsh web` and headless keep `dsh-browser-runtime-deterministic`. Desktop Host owns in-process Electron `webContents` and points the overlay HTTP client at that loopback origin.

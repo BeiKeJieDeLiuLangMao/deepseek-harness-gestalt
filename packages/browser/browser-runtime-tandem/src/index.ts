@@ -1,4 +1,4 @@
-/** Managed Tandem Browser HTTP Service Provider for the Browser Runtime capability. @module @deepseek-ai/dsh-browser-runtime-tandem */
+/** Tandem-shaped HTTP Service Provider for the Browser Runtime capability. @module @deepseek-ai/dsh-browser-runtime-tandem */
 
 import { Buffer } from 'node:buffer'
 import { readFile } from 'node:fs/promises'
@@ -50,45 +50,45 @@ export const TANDEM_UPSTREAM_VERSION = '1.11.4'
 
 const MAX_TIMER_DELAY_MS = 2_147_483_647
 
-/** Process, HTTP, and lifecycle configuration for one managed Tandem runtime. */
+/** HTTP and optional fixture-process configuration for one Tandem-shaped runtime. */
 export interface Config {
-  /** Executable used to launch the pinned Tandem Browser checkout or package. */
-  command: string
-  /** Arguments passed without shell interpretation. */
+  /** Optional fixture executable used only by HTTP protocol tests. Production Desktop omits this. */
+  command?: string
+  /** Arguments passed without shell interpretation when `command` is set. */
   args?: string[]
-  /** Existing directory used as the Tandem child process working directory. */
-  cwd: string
+  /** Existing directory used as the optional fixture child working directory. */
+  cwd?: string
   /** Explicit environment layered over the subprocess service's credential-scrubbed parent environment. */
   env?: Record<string, string>
-  /** Loopback Tandem HTTP API origin, including its configured port. */
+  /** Loopback Tandem-shaped HTTP API origin, including its configured port. */
   baseUrl: string
-  /** Local file where Tandem writes its generated API token. */
+  /** Local file where the HTTP server writes its generated API token. */
   tokenFile: string
   /** Prefix for DSH-owned opaque Profile, Workspace, and browser identities. */
   idPrefix?: string
-  /** Bound on child startup and Tandem health verification. */
+  /** Bound on HTTP health verification. */
   startupTimeoutMs?: number
-  /** Bound on each Tandem HTTP operation. */
+  /** Bound on each Tandem-shaped HTTP operation. */
   requestTimeoutMs?: number
   /** Delay between startup health probes. */
   healthPollMs?: number
   /** Upper bound on upstream page-settle waiting for one content read. */
   pageSettleMs?: number
-  /** Number of child restarts after an unexpected exit. */
+  /** Number of fixture-child restarts after an unexpected exit. Ignored without `command`. */
   reconnectAttempts?: number
   /** Delay before each reconnect attempt. */
   reconnectDelayMs?: number
-  /** Subprocess tree SIGTERM-to-SIGKILL grace used for teardown. */
+  /** Subprocess tree SIGTERM-to-SIGKILL grace used for fixture teardown. */
   processGraceMs?: number
-  /** Maximum bytes accepted from one Tandem HTTP response. */
+  /** Maximum bytes accepted from one Tandem-shaped HTTP response. */
   maxResponseBytes?: number
 }
 
-/** Runtime configuration schema for the managed Tandem Browser Provider. */
+/** Runtime configuration schema for the Tandem-shaped HTTP Browser Provider. */
 export const Config: z<Config> = z.object({
-  command: z.string().required(),
+  command: z.string(),
   args: z.array(z.string()).default([]),
-  cwd: z.string().required(),
+  cwd: z.string(),
   env: z.dict(z.string()).default({}),
   baseUrl: z.string().required(),
   tokenFile: z.string().required(),
@@ -103,7 +103,7 @@ export const Config: z<Config> = z.object({
   maxResponseBytes: z.number().default(10_000_000),
 })
 
-type ResolvedConfig = Required<Config>
+type ResolvedConfig = Config & Required<Omit<Config, 'command' | 'cwd'>>
 
 /** Fields the pinned Tandem tab inventory always carries; `title` and `url` may be empty while a page settles. */
 interface TandemTab {
@@ -228,7 +228,6 @@ function tandemTab(value: unknown, subject: string): TandemTab {
 /** Managed Tandem Browser Runtime for temporary and named persistent Profiles. */
 export class TandemBrowserRuntime extends BrowserRuntime {
   static Config = Config
-  static inject = ['subprocess']
 
   /** Package-private identity for this concrete Provider generation. */
   readonly [TANDEM_RUNTIME_STATE_OWNER]: TandemRuntimeStateOwner = Object.freeze({})
@@ -245,8 +244,11 @@ export class TandemBrowserRuntime extends BrowserRuntime {
   constructor(ctx: Context, config: Config) {
     super(ctx)
     const resolved = config as ResolvedConfig
-    assertNonEmpty('command', resolved.command)
-    assertNonEmpty('cwd', resolved.cwd)
+    if (resolved.command !== undefined) assertNonEmpty('command', resolved.command)
+    if (resolved.cwd !== undefined) assertNonEmpty('cwd', resolved.cwd)
+    if ((resolved.command === undefined) !== (resolved.cwd === undefined)) {
+      throw new Error('browser-runtime-tandem: command and cwd must both be set for a fixture child, or both omitted')
+    }
     assertNonEmpty('tokenFile', resolved.tokenFile)
     assertNonEmpty('idPrefix', resolved.idPrefix)
     assertDuration('startupTimeoutMs', resolved.startupTimeoutMs)
@@ -414,7 +416,7 @@ export class TandemBrowserRuntime extends BrowserRuntime {
     let lastError: unknown
     while (Date.now() < deadline) {
       assertBrowserNotAborted(signal)
-      if (this.process === undefined) {
+      if (this.process === undefined && this.config.command !== undefined) {
         throw new BrowserRuntimeError('Tandem child exited before startup health completed', 'BROWSER_RUNTIME_UNAVAILABLE')
       }
       try {
@@ -446,11 +448,22 @@ export class TandemBrowserRuntime extends BrowserRuntime {
     throw new BrowserRuntimeError(`Tandem startup health timed out: ${String(lastError)}`, 'BROWSER_RUNTIME_UNAVAILABLE')
   }
 
-  /** Spawn one credential-scrubbed Tandem process tree and wait for its pinned API. */
+  /** Spawn one optional fixture child and wait for the pinned Tandem-shaped API. */
   private async startProcess(signal: AbortSignal | undefined): Promise<void> {
-    const executable = await this.ctx.subprocess.resolveExecutable(this.config.command, this.config.env, signal)
+    if (this.config.command === undefined || this.config.cwd === undefined) {
+      await this.waitForHealth(signal)
+      return
+    }
+    const subprocess = this.ctx.get('subprocess')
+    if (subprocess === undefined) {
+      throw new BrowserRuntimeError(
+        'Tandem fixture command requires ctx.subprocess',
+        'BROWSER_RUNTIME_UNAVAILABLE',
+      )
+    }
+    const executable = await subprocess.resolveExecutable(this.config.command, this.config.env, signal)
     assertBrowserNotAborted(signal)
-    const handle = this.ctx.subprocess.spawn({
+    const handle = subprocess.spawn({
       argv: [executable, ...this.config.args],
       cwd: this.config.cwd,
       env: this.config.env,

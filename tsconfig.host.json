@@ -247,6 +247,7 @@
     { "path": "./packages/web/tool-web" },
     { "path": "./packages/browser/browser-runtime" },
     { "path": "./packages/browser/browser-runtime-deterministic" },
+    { "path": "./packages/browser/browser-runtime-electron" },
     { "path": "./packages/browser/browser-runtime-tandem" },
     { "path": "./packages/browser/browser-workspace" },
     { "path": "./packages/browser/tool-browser" },

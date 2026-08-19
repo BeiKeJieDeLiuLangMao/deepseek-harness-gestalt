@@ -18,7 +18,7 @@ The first Agent tab opens the Dock. After the human collapses it, later Agent ac
 
 The occupant-specific details range is 420/640/960 px from [#60](https://github.com/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/issues/60). Session switch restores per-Session visibility, width, instances, tabs, and current control owner from the Workspace projection owned by [#67](https://github.com/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/issues/67).
 
-The Host composition mounts `dsh-browser-runtime-deterministic` plus `dsh-browser-workspace` so the Dock has a Session-owned Runtime without a second Electron process. The standard, code, and cordis presets mount `dsh-tool-browser`. Web composition mounts the Dock plugin.
+Web and headless compositions mount `dsh-browser-runtime-deterministic` plus `dsh-browser-workspace` so the Dock has a Session-owned Runtime without Electron. Desktop Host owns in-process Electron `webContents` and the overlay HTTP client; the Dock still renders screenshot, title, and text and does not embed a second BrowserView. The standard, code, and cordis presets mount `dsh-tool-browser`. Web composition mounts the Dock plugin.
 
 ## Alternatives considered
 

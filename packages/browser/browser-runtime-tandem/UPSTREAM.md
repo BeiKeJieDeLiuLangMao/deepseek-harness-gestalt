@@ -4,7 +4,7 @@
 - Pinned source revision: `3b613cfd4c299609ca7ca415d638c1b71c6ba5de`
 - Upstream version at the pinned revision: 1.11.4
 - Upstream license: MIT — Copyright (c) 2026 Robin Waslander (full notice in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md))
-- Vendored source: none. This package is a protocol-only integration over Tandem's loopback HTTP API; it carries no upstream files and invokes the pinned revision as an external child process at runtime.
+- Vendored source: none. This package is a protocol-only integration over Tandem's loopback HTTP API; it carries no upstream files and never launches Tandem.app. Production Desktop points the HTTP client at the in-process Electron adapter in [`dsh-browser-runtime-electron`](../browser-runtime-electron).
 - Local modifications: none — no upstream source is carried, so nothing is modified.
 
 The pinned revision is exported as `TANDEM_UPSTREAM_REVISION` and `TANDEM_UPSTREAM_VERSION` from `src/index.ts`; the Provider rejects protocol responses that the pinned revision does not produce.

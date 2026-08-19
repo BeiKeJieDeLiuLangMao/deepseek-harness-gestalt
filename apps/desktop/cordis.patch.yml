@@ -8,3 +8,24 @@
 
     - id: ui-desktop
       name: '@deepseek-ai/dsh-client-ui-desktop'
+
+# The Desktop Host owns in-process Electron webContents and publishes Tandem's
+# HTTP vocabulary on a loopback origin. This overlay points the protocol client
+# at that origin and disables the keyless deterministic Provider.
+- id: browser-runtime-deterministic
+  disabled: true
+
+- insert:
+    - id: browser-runtime-electron-http
+      name: '@deepseek-ai/dsh-browser-runtime-tandem'
+      config:
+        baseUrl: !!js process.env.DSH_ELECTRON_BROWSER_ORIGIN
+        tokenFile: !!js process.env.DSH_ELECTRON_BROWSER_TOKEN_FILE
+        idPrefix: gestalt
+        startupTimeoutMs: 15000
+        requestTimeoutMs: 30000
+        healthPollMs: 50
+        pageSettleMs: 250
+        reconnectAttempts: 0
+        reconnectDelayMs: 500
+        processGraceMs: 1000

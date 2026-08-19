@@ -22,5 +22,5 @@ Session 持有的 Browser Dock 与收起后的标签页预览。当本 Session �
 
 ## 已知限制与延后工作
 
-- **截图视口，不是 live WebContentsView**——Dock 渲染 Session 持有 Runtime 的 observe 与 screenshot 事实；它不嵌入第二个 Electron 进程。
-- **无密钥 Host Runtime 是确定性的**——已交付的 Host 组合使用 `dsh-browser-runtime-deterministic`，使 Dock 与 GIF 无需 Tandem 即可运行。后续工单可以替换该 Provider。
+- **截图视口，不是 live WebContentsView**——Dock 渲染 Session 持有 Runtime 的 observe 与 screenshot 事实；它不嵌入第二个 BrowserView。
+- **无密钥 web 与 headless Runtime 仍是确定性的**——浏览器 `dsh web` 与 headless 继续使用 `dsh-browser-runtime-deterministic`。Desktop Host 持有进程内 Electron `webContents`，并把叠加层 HTTP 客户端指向该 loopback origin。
