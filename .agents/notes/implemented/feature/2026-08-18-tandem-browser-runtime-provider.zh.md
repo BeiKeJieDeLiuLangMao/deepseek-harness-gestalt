@@ -39,4 +39,4 @@ Provider 在一个托管子进程上接收临时与命名持久 Profile。每个
 - `pnpm vitest run packages/browser/browser-runtime-tandem` —— 基于仓库内 Tandem HTTP fixture 的生命周期、健康检查、崩溃/重连投影、协议拒绝与释放测试。
 - `pnpm run test:coverage packages/browser/browser-runtime-tandem` —— 针对该包源码的逐文件覆盖率门。
 - `pnpm run test:snapshot -t tandem` —— `browser-runtime-tandem` headless 快照场景（针对本地 Tandem HTTP fixture 执行 tool_search → browser_create → browser_navigate → browser_observe → browser_screenshot → browser_focus → browser_close）。
-- 真实 Tandem e2e 由 `DSH_TANDEM_CHECKOUT`（固定 revision 的 checkout）与 `DSH_TANDEM_BIN`（其中的 Tandem 可执行文件）门控；两者都未设置时跳过。
+- 真实 Tandem e2e 由 `DSH_TANDEM_CHECKOUT`（固定 revision 的 checkout）与 `DSH_TANDEM_BIN`（其中的 Tandem 可执行文件）门控；两者都未设置时跳过。具名 macOS 与 Windows 隔离、拒绝 Wine 以及失败措辞见 [Tandem macOS 与 Windows 验收 Agent Note](../testing/2026-08-19-tandem-macos-windows-qualification.md)。

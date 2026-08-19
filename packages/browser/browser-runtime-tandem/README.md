@@ -30,6 +30,10 @@ Operations enter one serialized queue. Mutations require the caller's last obser
 
 An unexpected child exit or a failed health check commits a `BrowserUnavailableState` with reason `crashed` or `unhealthy` and `reconnecting` set by configuration, then attempts up to `reconnectAttempts` child restarts; a restored runtime re-commits open page state at the next revision with the same target, and exhausted reconnects commit `reason: 'reconnect-failed'` with `reconnecting: false`. The projection is truthful: while unavailable, operations on the target reject with `BROWSER_RUNTIME_UNAVAILABLE` instead of reporting stale page facts. Malformed Tandem responses, oversized bodies, and failed field validation reject with `BROWSER_PROTOCOL`.
 
+## Qualification
+
+The env-gated suite `tests/runtime.e2e.ts` qualifies the real Tandem child on named macOS and Windows hosts. Set `DSH_TANDEM_CHECKOUT` to a checkout of the pinned revision and `DSH_TANDEM_BIN` to its Electron executable, then run `pnpm exec vitest run --config vitest.e2e.config.ts packages/browser/browser-runtime-tandem/tests/runtime.e2e.ts`. The suite launches Electron once into a scratch HOME and `--user-data-dir`, opens one temporary Profile, navigates, screenshots, and closes, then disposes the child. `isolateTandemHost` names the platform differences: macOS uses `HOME`, `~/.tandem`, and `Library/Application Support/Tandem Browser`; Windows uses `USERPROFILE`, `APPDATA` (`%APPDATA%/Tandem Browser`), `LOCALAPPDATA` (`%LOCALAPPDATA%/Tandem Browser`), `PATH`, `PATHEXT`, and `%LOCALAPPDATA%/Google/Chrome/User Data/NativeMessagingHosts`. Failures name the platform, command, and error. Linux is out of scope. Wine (`pnpm run check:windows-wine`) is diagnostic only and cannot satisfy this suite; native Windows CI owns the platform matrix. See the [Tandem macOS and Windows qualification Agent Note](../../../.agents/notes/implemented/testing/2026-08-19-tandem-macos-windows-qualification.md).
+
 ## Model Experience
 
 Indirectly, through dsh-tool-browser, which renders every page, screenshot, lifecycle, and availability fact.
@@ -41,5 +45,5 @@ The Provider itself contributes no request text; Consumer schemas and logged res
 ## Known Limitations and Deferred Work
 
 - One Tandem child process per Provider lifetime. A later create can attach another instance or tab to an already-open Profile.
-- Running against a real Tandem Browser requires a checkout of the pinned revision `3b613cfd4c299609ca7ca415d638c1b71c6ba5de`; unit tests run against the in-repository HTTP fixture.
+- Running against a real Tandem Browser requires a checkout of the pinned revision `3b613cfd4c299609ca7ca415d638c1b71c6ba5de` on macOS or native Windows; unit tests run against the in-repository HTTP fixture.
 - Upstream-contribution candidates — isolated-session security stack and extension loading, persisted session registry, close/forget/wipe storage erasure, MCP tool allowlist/profiles, an ownership/handoff event stream, and first-class Linux support — are listed in [UPSTREAM.md](UPSTREAM.md).

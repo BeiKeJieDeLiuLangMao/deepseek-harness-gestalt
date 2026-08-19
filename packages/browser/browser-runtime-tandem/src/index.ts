@@ -43,6 +43,17 @@ import {
   type TandemRuntimeStateOwner,
 } from './runtime-state.ts'
 
+export {
+  assertTandemQualificationHost,
+  isolateTandemHost,
+  tandemHostIsWine,
+  tandemQualificationFailure,
+  tandemQualificationPlatform,
+  withTandemLauncherPath,
+  type TandemHostIsolation,
+  type TandemQualificationPlatform,
+} from './host.ts'
+
 /** Pinned Tandem Browser source revision whose HTTP protocol this Provider implements. */
 export const TANDEM_UPSTREAM_REVISION = '3b613cfd4c299609ca7ca415d638c1b71c6ba5de'
 /** Tandem Browser version reported by the pinned source revision. */

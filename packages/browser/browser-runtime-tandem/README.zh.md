@@ -30,6 +30,10 @@
 
 子进程意外退出或健康检查失败会提交一个 reason 为 `crashed` 或 `unhealthy` 的 `BrowserUnavailableState`，其 `reconnecting` 由配置决定，随后最多尝试 `reconnectAttempts` 次子进程重启；恢复成功后以同一 target、下一修订号重新提交打开页面状态，重连耗尽则提交 `reason: 'reconnect-failed'` 且 `reconnecting: false`。该投影是真实的：不可用期间，针对该 target 的操作会以 `BROWSER_RUNTIME_UNAVAILABLE` 拒绝，而不是报告过期的页面事实。格式错误的 Tandem 响应、超限响应体与字段校验失败会以 `BROWSER_PROTOCOL` 拒绝。
 
+## 验收
+
+环境门控套件 `tests/runtime.e2e.ts` 在具名的 macOS 与 Windows 宿主上验收真实 Tandem 子进程。将 `DSH_TANDEM_CHECKOUT` 设为固定 revision 的 checkout，将 `DSH_TANDEM_BIN` 设为其 Electron 可执行文件，然后运行 `pnpm exec vitest run --config vitest.e2e.config.ts packages/browser/browser-runtime-tandem/tests/runtime.e2e.ts`。该套件把 Electron 一次性启动到 scratch HOME 与 `--user-data-dir`，打开一个临时 Profile，依次导航、截图并关闭，然后释放子进程。`isolateTandemHost` 点名平台差异：macOS 使用 `HOME`、`~/.tandem` 与 `Library/Application Support/Tandem Browser`；Windows 使用 `USERPROFILE`、`APPDATA`（`%APPDATA%/Tandem Browser`）、`LOCALAPPDATA`（`%LOCALAPPDATA%/Tandem Browser`）、`PATH`、`PATHEXT`，以及 `%LOCALAPPDATA%/Google/Chrome/User Data/NativeMessagingHosts`。失败会写明平台、命令与错误。Linux 不在范围内。Wine（`pnpm run check:windows-wine`）仅用于诊断，不能通过本套件；原生 Windows CI 负责平台矩阵。见 [Tandem macOS 与 Windows 验收 Agent Note](../../../.agents/notes/implemented/testing/2026-08-19-tandem-macos-windows-qualification.md)。
+
 ## 模型体验
 
 通过 dsh-tool-browser 间接影响模型；该 Consumer 会渲染全部页面、截图、生命周期与可用性事实。
@@ -41,5 +45,5 @@ Provider 自身不贡献请求文本；Consumer schema 与已记录结果决定�
 ## 已知限制与后续工作
 
 - 每个 Provider 生命周期只有一个 Tandem 子进程。后续 create 可以把另一个实例或标签页附加到已打开的 Profile。
-- 对真实 Tandem Browser 运行需要固定 revision `3b613cfd4c299609ca7ca415d638c1b71c6ba5de` 的 checkout；单元测试运行在仓库内 HTTP fixture 上。
+- 对真实 Tandem Browser 运行需要在 macOS 或原生 Windows 上使用固定 revision `3b613cfd4c299609ca7ca415d638c1b71c6ba5de` 的 checkout；单元测试运行在仓库内 HTTP fixture 上。
 - 上游贡献候选——隔离 session 的安全栈与扩展加载、可持久化的 session registry、close/forget/wipe 存储擦除、MCP 工具 allowlist/profile、page-content 稳定等待上限、默认绑定全部接口的 API、ownership/handoff 事件流，以及一线 Linux 支持——列于 [UPSTREAM.md](UPSTREAM.md)。

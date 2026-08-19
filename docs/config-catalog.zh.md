@@ -475,7 +475,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/browser/browser-runtime-tandem/src/index.ts:50`](../packages/browser/browser-runtime-tandem/src/index.ts)
+来源：[`packages/browser/browser-runtime-tandem/src/index.ts:65`](../packages/browser/browser-runtime-tandem/src/index.ts)
 
 <a id="deepseek-aidsh-client-connection"></a>
 

@@ -39,4 +39,4 @@ The capability seam has a live-browser Provider whose failure model is observabl
 - `pnpm vitest run packages/browser/browser-runtime-tandem` — lifecycle, health, crash/reconnect projection, protocol rejection, and teardown against the in-repository Tandem HTTP fixture.
 - `pnpm run test:coverage packages/browser/browser-runtime-tandem` — per-file coverage gate over the package source.
 - `pnpm run test:snapshot -t tandem` — the `browser-runtime-tandem` headless snapshot scenario (tool_search → browser_create → browser_navigate → browser_observe → browser_screenshot → browser_focus → browser_close against a local Tandem HTTP fixture).
-- Real-Tandem e2e is gated by `DSH_TANDEM_CHECKOUT` (checkout of the pinned revision) and `DSH_TANDEM_BIN` (Tandem executable inside it); both unset skips.
+- Real-Tandem e2e is gated by `DSH_TANDEM_CHECKOUT` (checkout of the pinned revision) and `DSH_TANDEM_BIN` (Tandem executable inside it); both unset skips. Named macOS and Windows isolation, Wine refusal, and failure wording live in the [Tandem macOS and Windows qualification Agent Note](../testing/2026-08-19-tandem-macos-windows-qualification.md).
