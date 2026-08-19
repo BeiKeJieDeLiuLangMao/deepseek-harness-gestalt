@@ -25,6 +25,10 @@
 - id: browser-runtime-deterministic
   disabled: true
 
+# Replay proxy for the host-plane tool-browser Consumer.
+- id: tool-browser
+  name: './snapshot-fixtures/tool-browser-proxy.mjs'
+
 - insert:
     - id: browser-runtime-tandem
       name: './snapshot-fixtures/browser-runtime-tandem-proxy.mjs'
@@ -43,9 +47,6 @@
         reconnectDelayMs: 10
         processGraceMs: 100
         pageSettleMs: 50
-
-    - id: tool-browser
-      name: './snapshot-fixtures/tool-browser-proxy.mjs'
 
     - id: llm-replay
       name: './snapshot-fixtures/llm-replay-proxy.mjs'

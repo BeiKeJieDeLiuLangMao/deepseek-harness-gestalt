@@ -97,7 +97,7 @@ export class BrowserWorkspaceBinder extends TypertRemoteService {
 
   constructor(ctx: Context) {
     super(ctx, 'browserWorkspace')
-    ctx.on('session/disposed', session => this.cleanup(session), { global: true })
+    ctx.on('session/disposed', (session) => { void this.cleanup(session) }, { global: true })
     ctx.inject(['sessionProjections'], (projectionCtx) => {
       projectionCtx.sessionProjections.register<'browserWorkspace', BrowserWorkspaceProjection>({
         key: 'browserWorkspace',

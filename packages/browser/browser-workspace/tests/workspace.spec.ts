@@ -351,4 +351,40 @@ describe('Session-owned Browser Workspace', () => {
     const replayed = foldBrowserWorkspace(session.events)
     expect(replayed.workspaces[0]?.browsers[0]?.tabs[0]?.controlOwner).toBe('agent')
   })
+
+  it('adapts Remote methods onto the Session-bound verbs', async () => {
+    const ctx = await harness()
+    const session = ctx.sessions.create(SessionId('session-remote'))
+    const created = await ctx.browserWorkspace.create({ session, profile: 'temporary' })
+    const binder = ctx.browserWorkspace
+    expect(binder.remoteSetDock(session.id, { open: true, width: 720 })).toMatchObject({
+      dockOpen: true, dockWidth: 720,
+    })
+    expect(binder.remoteSetDock(session.id, { open: false })).toMatchObject({ dockOpen: false })
+    const opened = await binder.remoteNavigate(
+      session.id, created.target, created.revision, 'https://alpha.test/',
+    )
+    await expect(binder.remoteObserve(session.id, created.target)).resolves.toMatchObject({ status: 'open' })
+    await expect(binder.remoteScreenshot(session.id, created.target)).resolves.toMatchObject({
+      target: created.target,
+    })
+    const focused = await binder.remoteFocus(session.id, created.target, opened.revision)
+    const navigated = await binder.remoteNavigate(
+      session.id, created.target, focused.revision, 'https://beta.test/',
+    )
+    expect(navigated.url).toBe('https://beta.test/')
+    const blank = await binder.remoteInput(session.id, created.target, navigated.revision, {})
+    const inputted = await binder.remoteInput(session.id, created.target, blank.revision, {
+      url: 'https://beta.test/',
+      text: 'typed',
+    })
+    expect(inputted.controlOwner).toBe('human')
+    const taken = await binder.remoteTakeover(session.id, created.target, inputted.revision)
+    const returned = await binder.remoteReturnControl(session.id, created.target, taken.revision)
+    expect(returned.controlOwner).toBe('agent')
+    await expect(binder.remoteClose(session.id, created.target, returned.revision))
+      .resolves.toMatchObject({ status: 'closed' })
+    expect(() => binder.remoteSetDock(SessionId('missing'), { open: true }))
+      .toThrow(/not owned by this Session/)
+  })
 })

@@ -967,13 +967,19 @@ describe('ChatView', () => {
       return opts?.fallback ?? null
     })
     render(<h.ChatView {...h.props} />)
-    expect(calls).toHaveLength(1)
-    expect(calls[0]).toMatchObject({
+    // Preview is requested in ChatView's own render; the node seat runs when
+    // the child ChatNodeSeat commits, so it is recorded second.
+    expect(calls.map(call => call.key)).toEqual([
+      'conversation.browser.preview',
+      'conversation.chat.node',
+    ])
+    expect(calls[0]).toEqual({ key: 'conversation.browser.preview', owner: {} })
+    expect(calls[1]).toMatchObject({
       key: 'conversation.chat.node',
       owner: { node: { kind: 'tool-call' }, selectedCallId: undefined },
       entryKey: 'tool-call',
     })
-    const owner = calls[0]?.owner as RoutedChatNodeOwner
+    const owner = calls[1]?.owner as RoutedChatNodeOwner
     expect((owner.node.data as { readonly root: ToolCallBlock }).root).toBe(block)
     expect(owner.openFile).toBe(h.openFile)
     expect(owner.inspectCall).toBe(h.inspectCall)

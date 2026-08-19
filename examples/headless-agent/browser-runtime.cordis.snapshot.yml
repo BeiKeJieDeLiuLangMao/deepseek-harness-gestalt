@@ -25,6 +25,10 @@
 - id: browser-runtime-deterministic
   disabled: true
 
+# Replay proxy for the host-plane tool-browser Consumer.
+- id: tool-browser
+  name: './snapshot-fixtures/tool-browser-proxy.mjs'
+
 - insert:
     - id: browser-runtime-trace
       name: './snapshot-fixtures/browser-runtime-deterministic-proxy.mjs'
@@ -35,9 +39,6 @@
             title: Example Domain
             text: A deterministic browser page.
             screenshotPngBase64: iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=
-
-    - id: tool-browser
-      name: './snapshot-fixtures/tool-browser-proxy.mjs'
 
     - id: llm-replay
       name: './snapshot-fixtures/llm-replay-proxy.mjs'

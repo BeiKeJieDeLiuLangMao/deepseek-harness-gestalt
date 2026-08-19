@@ -18,7 +18,9 @@ The first Agent tab opens the Dock. After the human collapses it, later Agent ac
 
 The occupant-specific details range is 420/640/960 px from [#60](https://github.com/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/issues/60). Session switch restores per-Session visibility, width, instances, tabs, and current control owner from the Workspace projection owned by [#67](https://github.com/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/issues/67).
 
-Web and headless compositions mount `dsh-browser-runtime-deterministic` plus `dsh-browser-workspace` so the Dock has a Session-owned Runtime without Electron. Desktop Host owns in-process Electron `webContents` and the overlay HTTP client; the Dock still renders screenshot, title, and text and does not embed a second BrowserView. The standard, code, and cordis presets mount `dsh-tool-browser`. Web composition mounts the Dock plugin.
+Web and headless compositions mount `dsh-browser-runtime-deterministic` plus `dsh-browser-workspace` so the Dock has a Session-owned Runtime without Electron. The Host composition also inserts `dsh-tool-browser`; Web composition disables that host-plane row so the standard, code, and cordis presets remount it, matching `tool-web`, and mounts the Dock plugin. Desktop Host owns in-process Electron `webContents` and the overlay HTTP client; the Dock still renders screenshot, title, and text and does not embed a second BrowserView.
+
+DetailsPanel (`id: 'tool'`) renders nothing when the chat store has no selection, so the details list stays empty unless a tool call is selected or the Dock is open. ChatView always requests `conversation.browser.preview`; the preview plugin hides itself while the Dock is visible. The Dock viewport rebinds the elevated scrollbar pair because it paints `--dsw-alias-bg-module-platform` and the page-text overlay scrolls inside it.
 
 ## Alternatives considered
 

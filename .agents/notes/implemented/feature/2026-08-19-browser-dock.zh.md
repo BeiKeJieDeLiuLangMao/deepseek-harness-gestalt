@@ -18,7 +18,9 @@ Dock 没有 Profile 切换或 Agent 状态行。标签页占据顶行，收起�
 
 占用方专用详情宽度范围为 420/640/960 px，来自 [#60](https://github.com/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/issues/60)。切换 Session 会从 [#67](https://github.com/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/issues/67) 持有的 Workspace 投影恢复该 Session 的可见性、宽度、实例、标签页与当前控制权所有者。
 
-Web 与 headless 组合挂载 `dsh-browser-runtime-deterministic` 与 `dsh-browser-workspace`，使 Dock 拥有 Session 持有的 Runtime，而不需要 Electron。Desktop Host 持有进程内 Electron `webContents` 与叠加层 HTTP 客户端；Dock 仍渲染截图、标题与文本，不嵌入第二个 BrowserView。standard、code 与 cordis preset 挂载 `dsh-tool-browser`。Web 组合挂载 Dock 插件。
+Web 与 headless 组合挂载 `dsh-browser-runtime-deterministic` 与 `dsh-browser-workspace`，使 Dock 拥有 Session 持有的 Runtime，而不需要 Electron。Host 组合同时插入 `dsh-tool-browser`；Web 组合会禁用该宿主平面行，让 standard、code 与 cordis preset 重新挂载它，行为与 `tool-web` 相同，并挂载 Dock 插件。Desktop Host 持有进程内 Electron `webContents` 与叠加层 HTTP 客户端；Dock 仍渲染截图、标题与文本，不嵌入第二个 BrowserView。
+
+当聊天 store 没有选中项时，DetailsPanel（`id: 'tool'`）不渲染任何内容，因此除非选中了工具调用或 Dock 已打开，详情列表保持为空。ChatView 总会请求 `conversation.browser.preview`；预览插件在 Dock 可见时自行隐藏。Dock 视口会重绑定升高滚动条配对，因为它绘制 `--dsw-alias-bg-module-platform`，且页面文本叠层在其中滚动。
 
 ## 考虑过的替代方案
 

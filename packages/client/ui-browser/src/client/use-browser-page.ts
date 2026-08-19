@@ -38,12 +38,13 @@ export function useBrowserPage(
       return
     }
     let cancelled = false
+    const wasCancelled = (): boolean => cancelled
     const load = async (): Promise<void> => {
       const state = await observe(target)
-      if (cancelled) return
+      if (wasCancelled()) return
       const nextPage = openPageOf(state)
       const nextShot = nextPage === undefined ? undefined : await screenshot(target)
-      if (cancelled) return
+      if (wasCancelled()) return
       setPage(nextPage)
       setShot(nextShot)
     }

@@ -132,6 +132,11 @@
   min-height: 0;
   overflow: hidden;
   background: var(--dsw-alias-bg-module-platform);
+  /* Elevated surface: `--dsw-alias-bg-module-platform` sits on the dark
+     layer-2 rung, and `.text` scrolls inside this viewport, so the thumb
+     takes the l2 elevation tokens. */
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }
 
 .screenshot {
