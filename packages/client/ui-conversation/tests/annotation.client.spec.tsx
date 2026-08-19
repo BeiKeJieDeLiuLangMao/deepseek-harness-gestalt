@@ -142,6 +142,13 @@ describe('text annotation mechanics', () => {
     fireEvent(document, new Event('selectionchange'))
 
     expect(view.getByRole('toolbar').textContent).toBe('添加注释复制')
+    selection.removeAllRanges()
+    fireEvent(document, new Event('selectionchange'))
+    expect(view.queryByRole('toolbar')).toBeNull()
+
+    selection.addRange(range)
+    fireEvent(document, new Event('selectionchange'))
+    expect(view.getByRole('toolbar').textContent).toBe('添加注释复制')
     fireEvent.click(view.getByRole('button', { name: '添加注释' }))
     const editor = view.getByPlaceholderText('添加说明（可选）')
     fireEvent.change(editor, { target: { value: 'Tighten this' } })
