@@ -11,8 +11,6 @@ import {
 import { filterIndexedFiles, PASTE_IGNORE_MARK } from './scan.ts'
 import { rankFiles, type WorkspacePathEntry } from './rank.ts'
 
-const MENU_LIMIT = 12
-
 /** Fetch the raw workspace index for one session. */
 export type WorkspaceIndexSearch = (
   sessionId: SessionId,
@@ -33,11 +31,13 @@ export type WorkspaceSettingsReader = () => WorkspaceReferenceSettings
  * Build the `workspace` `@` source over an injected index fetch.
  * @param search - session-addressed index RPC or test stub.
  * @param settings - live preference reader; omitted uses product defaults.
+ * @param menuLimit - maximum ranked picker rows (plugin Config default 12).
  * @returns the `workspace` `@` source.
  */
 export function createWorkspaceSource(
   search: WorkspaceIndexSearch,
   settings: WorkspaceSettingsReader = () => ({ ...DEFAULT_WORKSPACE_REFERENCE_SETTINGS }),
+  menuLimit = 12,
 ): InputTriggerSource {
   const fetches = new Map<SessionId, IndexCache>()
   const lexiconListeners = new Map<SessionId, Set<() => void>>()
@@ -92,7 +92,7 @@ export function createWorkspaceSource(
       const files = await fetchIndex(session.sessionId)
       if (signal.aborted) return []
       const filtered = filterIndexedFiles(files, prefs.exact, prefs.regex)
-      return rankFiles(filtered, query, MENU_LIMIT).map(file => ({
+      return rankFiles(filtered, query, menuLimit).map(file => ({
         name: file.relative,
         description: file.kind === 'dir' ? `${file.relative}/` : file.relative,
       }))

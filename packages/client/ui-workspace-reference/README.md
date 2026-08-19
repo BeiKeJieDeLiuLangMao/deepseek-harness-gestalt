@@ -2,7 +2,13 @@
 
 English | [中文](README.zh.md)
 
-Web `@` source named `workspace`. Candidates come from the host workspace-reference index Remote and are ranked in the browser. A pick inserts plain-text `@rel/path` (directories keep a trailing slash). ArrowRight on a directory replaces the token with `@path/` and keeps the menu open. Pasted `@` tokens receive a word joiner while paste ignore is on. The composer dock lists referenced paths. Settings expose enable, paste ignore, and Exact/Regex basename filters. The host pre-step injects the existence-only marker. Decision record: the [Workspace Reference Agent Note](../../../.agents/notes/implemented/feature/2026-08-19-workspace-reference.md).
+Web `@` source named `workspace`. Candidates come from the host workspace-reference index Remote and are ranked in the browser. A pick inserts plain-text `@rel/path` (directories keep a trailing slash). ArrowRight on a directory replaces the token with `@path/` and keeps the menu open. Pasted `@` tokens receive a word joiner while paste ignore is on. The composer dock lists referenced paths. Settings expose enable, paste ignore, and Exact/Regex basename filters. The host pre-step injects the existence-only marker. Picker ranking includes portions derived from [omdsh-dev/dsh-at-file](https://github.com/omdsh-dev/dsh-at-file) 0.6.3 (MIT); see [NOTICE](NOTICE). Decision record: the [Workspace Reference Agent Note](../../../.agents/notes/implemented/feature/2026-08-19-workspace-reference.md).
+
+## Configuration
+
+| Key | Default | Contract |
+|---|---:|---|
+| `menuLimit` | `12` | Maximum ranked picker rows shown after `@`. |
 
 ## Model Experience
 

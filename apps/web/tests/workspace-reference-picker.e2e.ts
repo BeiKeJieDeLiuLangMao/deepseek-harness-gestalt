@@ -58,6 +58,8 @@ describe('web e2e: workspace reference picker', () => {
     ).toBe(1)
     const snapshot = await captureStableAria(page, '[role="listbox"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(MENU_EXPECTED, snapshot, MODE)
+    await menu.getByRole('option', { name: new RegExp(MARKER) }).click()
+    await expect.poll(() => input.inputValue()).toBe(`@${MARKER} `)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
   })

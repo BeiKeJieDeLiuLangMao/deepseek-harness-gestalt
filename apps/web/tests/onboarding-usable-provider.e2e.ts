@@ -108,13 +108,13 @@ describe.skipIf(MODE === 'record')('web e2e: another usable provider ends first-
     ).toBe(0)
     expect(await page.locator('#root').evaluate(root => (root as HTMLElement).inert)).toBe(false)
 
-    // The Models page agrees: DeepSeek stays a row rather than reopening its
+    // The Models page agrees: a vacant official route does not reopen its
     // setup card over a user who already has somewhere to send a request.
     await page.getByRole('button', { name: '设置', exact: true }).click()
     await settings.waitFor({ timeout: 10_000 })
     await settings.getByRole('button', { name: '模型' }).click()
-    await settings.getByRole('button', { name: '编辑 DeepSeek (deepseek-official)' }).waitFor({ timeout: 10_000 })
     expect(await settings.getByRole('textbox', { name: 'API 密钥', exact: true }).count()).toBe(0)
+    expect(await settings.getByRole('button', { name: '编辑 DeepSeek (deepseek-official)' }).count()).toBe(0)
 
     expect((await page.content()).includes('sk-e2e-minimax')).toBe(false)
     expect(tripwire.pageErrors).toEqual([])

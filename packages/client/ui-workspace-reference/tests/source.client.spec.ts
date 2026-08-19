@@ -138,4 +138,14 @@ describe('createWorkspaceSource', () => {
     expect(filtered.map(item => item.name)).toEqual(['src/a.ts'])
     expect(source.pasteTransform?.('@README.md')).toBe('@\u2060README.md')
   })
+
+  it('caps ranked rows at the configured menuLimit', async () => {
+    const source = createWorkspaceSource(async () => FILES, undefined, 1)
+    const candidates = await source.candidates(SESSION, {
+      query: '',
+      position: 'leading',
+      signal: SIGNAL,
+    })
+    expect(candidates).toHaveLength(1)
+  })
 })

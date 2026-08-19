@@ -2,12 +2,12 @@
 
 [English](README.md) | 中文
 
-校验直接用户消息中的 `@path` token，并在 agent 步骤开始前注入仅表示存在性的工作区引用。本插件不读取文件字节，也不列出目录子项。决策记录：[工作区引用 Agent Note](../../../.agents/notes/implemented/feature/2026-08-19-workspace-reference.md)。
+校验直接用户消息中的 `@path` token，并在 agent 步骤开始前注入仅表示存在性的工作区引用。本插件不读取文件字节，也不列出目录子项。扫描、排序和内置忽略列表含有源自 [omdsh-dev/dsh-at-file](https://github.com/omdsh-dev/dsh-at-file) 0.6.3（MIT）的部分；见 [NOTICE](NOTICE)。决策记录：[工作区引用 Agent Note](../../../.agents/notes/implemented/feature/2026-08-19-workspace-reference.md)。
 
 ## Public API
 
-- `scanMentions(text)` 返回去重后的 `@path` token。`@[label](dsh-session:…)` 不是路径 token。
-- `expandMentions(messages, cwd, fileSystem, signal)` 用 `lstat` 校验 token，并返回带 source 的 `user/message` 注入。
+- `scanMentions(text)` 返回去重后的 `@path` token。`@[label](dsh-session:…)` 不是路径 token。紧跟在单词字符之后的 `@` 不是路径 token（`user@host.com`）。
+- `expandMentions(messages, cwd, fileSystem, signal)` 用 `path.resolve` / `path.relative` 约束每个 token，拒绝 realpath 离开工作区的路径（含中间段 symlink），用 `lstat` 拒绝末段 symlink，并返回带 source 的 `user/message` 注入。
 - `indexWorkspace(fileSystem, cwd, options, signal)` 按一层 `listDir` 遍历，跳过忽略基名和末段 symlink，并在目录 `FS_PERMISSION_DENIED` 时省略该子树。
 - `rankFiles(files, query, limit)` 为 picker 候选排序：基名查询、有序路径段查询，以及目录优先的浏览。
 - `workspaceReference.search` 是 picker Remote：返回被寻址会话的原始索引；浏览器按键排序。
@@ -47,3 +47,5 @@
 - **picker 索引是建议性的** — 超出 `maxIndexedFiles` 或位于被忽略目录内的路径，只要手打的 `@path` 真实存在于工作区内，仍可成为引用。
 - **没有 gitignore** — 只应用已配置的目录基名和设置里的 Exact/Regex 过滤。
 - **带粘贴标记的 token 会被跳过** — `@` 后面跟 U+2060 的不是工作区引用。
+- **空白后的邮箱式 `@host`** — `user@host.com` 不是路径 token，但行首或空格后的 `@host.com` 仍会扫描；注入仍要求该基名存在于工作区内。
+- **Windows 盘符相对路径 token** — `C:foo` 在每个平台都会被拒绝，包括作为 POSIX 文件名。

@@ -24,6 +24,8 @@ const PROMPT = 'Reply with the single word LIGHTHOUSE and stop.'
 async function openDesktopPage(browser: Browser, baseUrl: string, platform: 'darwin' | 'win32'): Promise<Page> {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 }, locale: 'en-US' })
   await page.addInitScript((desktopPlatform) => {
+    const idleAccount = { status: 'unavailable', privacyAccepted: false }
+    const idlePairing = { status: 'unavailable', enabled: false, pairings: [] }
     Object.defineProperty(window, 'dshDesktop', {
       configurable: true,
       value: {
@@ -36,6 +38,19 @@ async function openDesktopPage(browser: Browser, baseUrl: string, platform: 'dar
         windowMinimize: () => {},
         windowMaximize: () => {},
         windowClose: () => {},
+        accountGetSnapshot: async () => idleAccount,
+        accountAcceptPrivacy: async () => idleAccount,
+        accountBeginLogin: async () => idleAccount,
+        accountSignOut: async () => idleAccount,
+        onAccountSnapshot: () => () => {},
+        pairingGetSnapshot: async () => idlePairing,
+        pairingSetEnabled: async () => idlePairing,
+        pairingCreateChallenge: async () => idlePairing,
+        pairingCancelChallenge: async () => idlePairing,
+        pairingConfirm: async () => idlePairing,
+        pairingReject: async () => idlePairing,
+        pairingRevoke: async () => idlePairing,
+        onPairingSnapshot: () => () => {},
       },
     })
   }, platform)

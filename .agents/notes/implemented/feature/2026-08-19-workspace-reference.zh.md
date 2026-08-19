@@ -8,7 +8,7 @@ Status: implemented
 
 Web composer 没有第一方途径让用户指向一条工作区路径，并使模型把该路径当作经过校验的显式引用。用户只能凭记忆键入或粘贴路径。最接近的已交付能力在做别的事：[行内代码文件提及](../feature/2026-08-07-web-inline-file-mentions.md) 打开的是 assistant 已经产出的文件；[图片附件](../feature/2026-07-22-web-multimodal-image-input-and-durable-attachments.md) 持久化的是光栅字节而不是路径；[会话引用](../feature/2026-07-21-cross-session-references.md) 快照的是另一段对话；`AGENTS.md` 里的 `@path` import 被有意保持不解释。
 
-社区插件 [omdsh-dev/dsh-at-file](https://github.com/omdsh-dev/dsh-at-file) 已经在 Web 上补了这个缺口。它是非官方的树外组合包，不是 `vendor/` 候选，并且偏离第一方惯例（裸 `node:fs`、自定义 `at-file-mention` 来源、未 scoped 的包名、提交 `lib/`）。
+社区插件 [omdsh-dev/dsh-at-file](https://github.com/omdsh-dev/dsh-at-file) 已经在 Web 上补了这个缺口。它是非官方的树外组合包，不是 `vendor/` 候选，并且偏离第一方惯例（裸 `node:fs`、自定义 `at-file-mention` 来源、未 scoped 的包名、提交 `lib/`）。第一方的扫描、排序、忽略列表和约束含有源自 dsh-at-file 0.6.3（MIT）的部分；每个包在 `NOTICE` 中保留该版权声明。
 
 ## Decision
 
@@ -20,11 +20,11 @@ Web composer 没有第一方途径让用户指向一条工作区路径，并使�
 <workspace-reference path="docs/spec.pdf" kind="file" />
 ```
 
-`@deepseek-ai/dsh-workspace-reference` 在 `agent/pre-step` 用 `ctx.fs.lstat` 校验 token，拒绝绝对路径、`..` 段和末段 symlink，并且不为这条标记读取文件内容或列出目录子项。无法解析的 token 保持普通散文。
+`@deepseek-ai/dsh-workspace-reference` 在 `agent/pre-step` 用 `ctx.fs` 校验 token。它拒绝工作区越界：绝对路径、Windows 盘符相对路径 token（`C:foo`）、`path.relative` 结果离开 cwd、中间段 symlink 的 realpath 离开 cwd，以及末段 symlink。`foo..bar.ts` 这类基名不是越界的 `..` 段。不为这条标记读取文件内容或列出目录子项。无法解析的 token 保持普通散文。紧跟在单词字符之后的 `@` 不是路径 token（`user@host.com`）。
 
-Web 的 `@` 触发器保持共享。`@deepseek-ai/dsh-client-ui-workspace-reference` 通过 [`ctx.inputTriggers`](../architecture/2026-07-25-web-input-machine-and-slash-pipeline.md) 注册名为 `workspace` 的 `InputTriggerSource`。选中一项会插入纯文本 `@rel/path`（目录保留尾斜杠）外加一个尾随空格。在高亮目录上按 ArrowRight 会插入 `@path/` 并保持菜单打开。开启粘贴忽略时，粘贴的 `@` 会带上 U+2060，Host 扫描器会跳过它们；手打且存在的路径仍会变成标记。composer dock 列出已引用路径，并可打开或移除。设置提供启用、粘贴忽略和 Exact/Regex 文件名过滤；文案不出现 “File mentions”。浏览器对 `workspaceReference.search` 返回的会话索引做本地排序；Host 遍历用分层 `listDir`，并跳过内置忽略目录名和目录 `FS_PERMISSION_DENIED`。
+Web 的 `@` 触发器保持共享。`@deepseek-ai/dsh-client-ui-workspace-reference` 通过 [`ctx.inputTriggers`](../architecture/2026-07-25-web-input-machine-and-slash-pipeline.md) 注册名为 `workspace` 的 `InputTriggerSource`。选中一项会插入纯文本 `@rel/path`（目录保留尾斜杠）外加一个尾随空格。在高亮目录上按 ArrowRight 会插入 `@path/` 并保持菜单打开。开启粘贴忽略时，粘贴的 `@` 会带上 U+2060，Host 扫描器会跳过它们；手打且存在的路径仍会变成标记。composer dock 列出已引用路径，并可打开或移除。设置提供启用、粘贴忽略和 Exact/Regex 文件名过滤；文案不出现 “File mentions”。浏览器对 `workspaceReference.search` 返回的会话索引做本地排序，最多展示 `menuLimit` 行（默认 12）。Host 遍历用分层 `listDir`，并跳过内置忽略目录名和目录 `FS_PERMISSION_DENIED`。
 
-Markdown 形式的会话引用 `@[label](dsh-session:…)` 绝不是工作区引用。扫描器只匹配 `@[^\s@[\]]+`。持久化 source 是 `{ kind: 'workspace-reference', path, pathKind }`。transcript 来源信息用该路径做行标签。
+Markdown 形式的会话引用 `@[label](dsh-session:…)` 绝不是工作区引用。扫描器匹配的是紧前面不是单词字符的 `@`，然后是 `[^\s@[\]]+`。持久化 source 是 `{ kind: 'workspace-reference', path, pathKind }`，登记在 [docs/subsystems/workspace-reference.md](../../../../docs/subsystems/workspace-reference.md)。transcript 来源信息用该路径做行标签。
 
 web-app bundle 挂载这两个包。图片拖放仍是附件。第一方不检测也不拒绝社区插件；两者同时加载时会出现两组 `@` 路径候选。
 
@@ -58,10 +58,10 @@ dock、粘贴忽略、文件夹进入和设置的产品可见 Web GIF，在该�
 
 用户若继续安装社区插件，会看到两组 `@` 路径候选，直到自行移除。私有索引遍历仍可能在 `maxIndexedFiles` 之后漏路径，并可能与 `gitignore` 不一致。有人会期望 `@` 或拖放文件变成附件字节；标记正文和现有的不支持拖放路径避免它悄悄变成内容注入。
 
-headless Loader 组合钉住带 source 的标记。无密钥 Web snapshot 钉住 `@` picker 菜单、composer dock、粘贴忽略、文件夹进入和设置分区。
+headless Loader 组合钉住带 source 的标记。无密钥 Web snapshot 钉住 `@` picker 菜单、composer 插入（`@rel/path `）、composer dock、粘贴忽略、文件夹进入和设置分区。
 
 ## Testing
 
 - Host 扫描、排序、索引和浏览器 source 的包级单测覆盖。
 - `packages/context/workspace-reference/tests/workspace-reference.e2e.ts` 通过真实 Loader 组合发送 `@README.md` 并断言带 source 的标记。
-- `apps/web/tests/workspace-reference-picker.e2e.ts` 快照 Workspace `@` 菜单、dock、粘贴忽略、文件夹进入和设置分区。
+- `apps/web/tests/workspace-reference-picker.e2e.ts` 在键入已播种基名后快照 Workspace `@` 菜单，断言 composer 插入为 `@rel/path `，并快照 dock、粘贴忽略、文件夹进入和设置分区。

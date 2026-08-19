@@ -244,6 +244,41 @@ describe('ModelsSection', () => {
     expect(screen.getByText(en.add)).toBeTruthy()
   })
 
+  it('opens the official setup card when the user section is vacant and nothing else is usable', async () => {
+    const scripted = scriptedFace()
+    const namespaces = wireNamespaces().map(namespace =>
+      namespace.ns === 'llm-deepseek' ? { ...namespace, user: {} } : namespace)
+    scripted.face.llm.providers.mockResolvedValue(ok({
+      providers: [
+        { provider: 'deepseek-official', displayName: 'DeepSeek', settingsNs: 'llm-deepseek', settingsPath: [], active: true },
+        { provider: 'openai', displayName: 'openai', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'openai'], active: false },
+      ],
+    }))
+    scripted.face.settings.describe.mockResolvedValue(ok({
+      writable: true, hasDocument: false, namespaces,
+    }))
+    scripted.face.credentials.describe.mockImplementation((payload: { refs: string[] }) =>
+      Promise.resolve(ok({
+        credentials: Object.fromEntries(payload.refs.map(ref => [ref, { configured: false, writable: true }])),
+      })))
+    await mountFace(scripted)
+    expect(screen.getByText('DeepSeek')).toBeTruthy()
+    expect(screen.getByLabelText(en.keyInput)).toBeTruthy()
+  })
+
+  it('hides vacant official DeepSeek once another provider is already usable', async () => {
+    const namespaces = wireNamespaces().map(namespace =>
+      namespace.ns === 'llm-deepseek' ? { ...namespace, user: {} } : namespace)
+    const scripted = scriptedFace()
+    scripted.face.settings.describe.mockResolvedValue(ok({
+      writable: true, hasDocument: true, namespaces,
+    }))
+    await mountFace(scripted)
+    expect(screen.queryByText('DeepSeek')).toBeNull()
+    expect(screen.queryByLabelText(en.keyInput)).toBeNull()
+    expect(screen.getByText('openai')).toBeTruthy()
+  })
+
   it('leaves the unkeyed provider a plain row once another provider is usable', async () => {
     await mountSection()
     // openai's key is stored, so the user is not blocked and nothing on the

@@ -1,6 +1,9 @@
 /**
  * Workspace Reference browser half: registers the `@` `workspace` source,
  * the composer dock, and the settings section.
+ *
+ * Portions of picker ranking are derived from omdsh-dev/dsh-at-file 0.6.3 (MIT).
+ * Copyright (c) 2026 dsh-at-file contributors. See NOTICE.
  */
 import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import { createSnapshotStore, resolveWorkspacePath } from '@deepseek-ai/dsh-client-runtime/client'
@@ -9,6 +12,7 @@ import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
+import z from '@deepseek-ai/schemastery'
 import {
   DEFAULT_WORKSPACE_REFERENCE_SETTINGS,
   WORKSPACE_REFERENCE_SETTINGS_NAMESPACE,
@@ -26,6 +30,16 @@ import type { WorkspacePathEntry } from './rank.ts'
 export const inject = [
   'inputTriggers', 'remote', 'typert', 'slots', 'locale', 'settingsScope', 'sessions', 'workspaces',
 ]
+
+/** Browser plugin configuration, validated at load. */
+export interface Config {
+  /** Maximum ranked picker rows shown after `@`. */
+  menuLimit: number
+}
+
+export const Config = z.object({
+  menuLimit: z.natural().min(1).default(12),
+})
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
   interface TypertRemoteNamespaceMap {
@@ -47,8 +61,10 @@ const NS = 'workspace-reference'
 /**
  * Register the workspace `@` source, dock, and settings section.
  * @param ctx - client root context.
+ * @param config - optional plugin config; omitted fields use schema defaults.
  */
-export async function apply(ctx: ClientContext): Promise<void> {
+export async function apply(ctx: ClientContext, config?: Config): Promise<void> {
+  const resolved = Config(config ?? {})
   const disposeMount = await ctx.remote.$mount({
     package: '@deepseek-ai/dsh-workspace-reference',
     descriptors: WORKSPACE_REFERENCE_INVOCATIONS,
@@ -77,7 +93,7 @@ export async function apply(ctx: ClientContext): Promise<void> {
     const result = await workspaceReference.search(sessionId, signal)
     if (!result.ok) throw new Error(result.error.message)
     return result.value
-  }, settings)
+  }, settings, resolved.menuLimit)
   const inputTriggers = ctx.get('inputTriggers') as InputTriggerServiceContract
   ctx.effect(() => {
     const unregister = inputTriggers.registerSource(source)
