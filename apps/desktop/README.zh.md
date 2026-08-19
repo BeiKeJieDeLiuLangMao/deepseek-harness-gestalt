@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-DeepSeek Gestalt 的 Desktop Host。Electron 拥有窗口、菜单和 GitHub 自动更新。它启动捆绑的官方 Node 加上 `dsh web --host 127.0.0.1 --port 0 --patch ./cordis.patch.yml`，并打开该环回 URL。叠加层加入 Schedule、逐 step 时间上下文、GESTALT 次标、拖拽带和 Update Control；只有更新可操作或发现版本后发生错误时，控件才会出现。浏览器 `dsh web` 不加载这层。
+DeepSeek Gestalt 的 Desktop Host。Electron 拥有窗口、菜单和 GitHub 自动更新。它启动捆绑的官方 Node 加上 `dsh web --host 127.0.0.1 --port 0 --patch ./cordis.patch.yml`，并打开该环回 URL。叠加层加入 Schedule、GESTALT 次标、拖拽带和 Update Control；只有更新可操作或发现版本后发生错误时，控件才会出现。浏览器 `dsh web` 不加载这层。
 
 在所有平台关闭最后一个窗口时，会先以 `window-close` 原因排空 Relay；Ctrl+C、quit 与 smoke 测试结束都会取消尚未完成的启动，停止 Personal Pairing 与受生产 gate 保护的 Relay owner，停止 Web Host，并等待其工作排空后再终止 Electron。系统 sleep 会停止 Remote Access；resume 只为仍处于登录状态的账号重新加载。源码 Electron smoke 会在 sleep、关闭手机访问、关闭窗口与 quit 后读取各次 Relay owner 状态，再检查 Web Host 子进程 PID 已消失。首次启动或后续 Host 崩溃共允许一次重试，之后窗口才显示 Host 错误。不存在无窗口 daemon、后台 Host 或 remote wake 路径。
 
@@ -20,7 +20,7 @@ Dock / 开始菜单的 cwd 是 Launch Directory（Application Support / `%APPDAT
 
 ## Schedule 与能力默认值
 
-每个新 Desktop Session 都会提供 `schedule_create`、`schedule_list` 和 `schedule_delete`。浏览器的 IANA 时区会通过 time-context 进入模型上下文，但绝对时间 `schedule_create.at` 仍必须带显式偏移量或 `time_zone`。
+每个新 Desktop Session 都会提供 `schedule_create`、`schedule_list` 和 `schedule_delete`。绝对时间 `schedule_create.at` 必须带显式偏移量或 `time_zone`。Desktop 不挂载 `@deepseek-ai/dsh-time-context`；逐 step 时间读数仍由 Schedule Web overlay 注入。
 
 当前 Session 保留提醒时，会话标题栏会在后台任务之后紧接显示 Schedule 任务板。其计数包含等待中与待补跑提醒，但排除已暂停提醒。任务板读取独立 Session projection，并支持持久化暂停、恢复与行内二次确认删除；它没有创建表单，也不从工具 transcript 卡片推断状态。
 
