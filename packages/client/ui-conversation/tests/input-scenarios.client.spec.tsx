@@ -15,7 +15,7 @@ import {
   EMPTY_CHAT_SNAPSHOT, EMPTY_CONVERSATION_VIEWS, SessionRuntime,
 } from '@deepseek-ai/dsh-client-runtime/client'
 import { InputTriggerService } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
-import type { ClientSessionContext, CommandClaim, PickOutcome, SubmitOutcome } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
+import type { ClientSessionContext, CommandClaim, InputTriggerPick, PickOutcome, SubmitOutcome } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import { FakeApiClient, fakeRemote, ok } from '../../runtime/tests/fake-api.client.ts'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
@@ -336,7 +336,7 @@ describe('workspace paste rewrite', () => {
         trigger: '@', name: 'workspace',
         candidates: () => Promise.resolve([]),
         onPick: () => undefined,
-        pasteTransform: text => text.replaceAll('@', '@\u2060'),
+        pasteTransform: (text: string) => text.replaceAll('@', '@\u2060'),
       } as never)
     })
     expect(b.shell.transformPaste('@README.md')).toBe('@\u2060README.md')
@@ -348,7 +348,7 @@ describe('workspace paste rewrite', () => {
         trigger: '@', name: 'workspace',
         candidates: () => Promise.resolve([{ name: 'docs', description: 'docs/' }]),
         onPick: () => undefined,
-        onDescend: ({ candidate }) => (
+        onDescend: ({ candidate }: InputTriggerPick) => (
           candidate.description?.endsWith('/') ? { text: `@${candidate.name}/` } : undefined
         ),
       } as never)

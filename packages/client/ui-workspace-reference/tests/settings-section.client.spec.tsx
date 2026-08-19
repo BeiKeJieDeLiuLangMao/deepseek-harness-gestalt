@@ -1,20 +1,19 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, render } from '@testing-library/react'
-import { WorkspaceReferenceSettingsSection } from '../src/client/SettingsSection.tsx'
-import { DEFAULT_WORKSPACE_REFERENCE_SETTINGS } from '../src/settings.ts'
+import { WorkspaceReferenceSettingsSection, type WorkspaceReferenceSettingsProps } from '../src/client/SettingsSection.tsx'
+import { DEFAULT_WORKSPACE_REFERENCE_SETTINGS, type WorkspaceReferenceSettings } from '../src/settings.ts'
 
 describe('WorkspaceReferenceSettingsSection', () => {
   it('writes enable, paste ignore, and filter fields', () => {
     const setField = vi.fn()
+    const props = {
+      useStore: <T,>(select: (state: WorkspaceReferenceSettings) => T) => select(DEFAULT_WORKSPACE_REFERENCE_SETTINGS),
+      t: (key: string) => key,
+      setField,
+    }
     const view = render(
-      <WorkspaceReferenceSettingsSection
-        {...{
-          useStore: <T,>(select: (state: typeof DEFAULT_WORKSPACE_REFERENCE_SETTINGS) => T) => select(DEFAULT_WORKSPACE_REFERENCE_SETTINGS),
-          t: (key: string) => key,
-          setField,
-        } as never}
-      />,
+      <WorkspaceReferenceSettingsSection {...props as unknown as WorkspaceReferenceSettingsProps} />,
     )
     fireEvent.click(view.getByLabelText('settings.enable'))
     expect(setField).toHaveBeenCalledWith('enable', false)
