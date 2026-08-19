@@ -630,6 +630,8 @@ describe('WebSearchShell', () => {
     expect(listener).toHaveBeenCalledOnce()
     entries = [tabEntry('kimi', () => deepseek.inject(), { order: 20, label: 'Kimi' })]
     expect(face.hooks.providerTabs.getSnapshot()).toEqual([{ id: 'kimi', order: 20, label: 'Kimi' }])
+    entries = [{ options: {}, inject: () => deepseek.inject() }] as never
+    expect(face.hooks.providerTabs.getSnapshot()).toEqual([{ id: '', order: 0, label: '' }])
     stopTabs()
 
     face.edit('baseURL', 'https://other.test')

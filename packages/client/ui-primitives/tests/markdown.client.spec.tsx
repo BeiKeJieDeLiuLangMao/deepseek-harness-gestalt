@@ -273,6 +273,12 @@ describe('MarkdownText', () => {
     expect(selectionMapRef.current).toBeNull()
   })
 
+  it('does not publish a selection map while Markdown is still streaming', () => {
+    const selectionMapRef: { current: MarkdownSelectionMap | null } = { current: null }
+    render(<MarkdownText text="streaming paragraph" streaming selectionMapRef={selectionMapRef} />)
+    expect(selectionMapRef.current).toBeNull()
+  })
+
   it('forwards localized labels to fenced code blocks', () => {
     render(<MarkdownText text={'```ts\nconst answer = 42\n```'} codeLabels={{ copyLabel: 'Copy code', copiedLabel: 'Copied' }} />)
     expect(screen.getByRole('button', { name: 'Copy code' })).toBeTruthy()

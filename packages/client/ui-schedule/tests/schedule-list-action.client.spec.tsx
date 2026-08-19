@@ -62,6 +62,11 @@ describe('ScheduleListAction visibility and count', () => {
       expect.stringContaining('待补跑'),
       expect.stringContaining('已暂停'),
     ])
+    cleanup()
+
+    render(<ScheduleListAction {...props([schedule({ paused: true })])} />)
+    expect(screen.getByRole('button', { name: '0 个定时任务等待执行' })).toBeTruthy()
+    expect(document.querySelector('time')).toBeNull()
   })
 })
 
@@ -141,8 +146,12 @@ describe('ScheduleListAction mutations', () => {
     expect(screen.getByRole('list', { name: '定时任务' })).toBeTruthy()
     fireEvent.keyDown(trigger, { key: 'Escape' })
     expect(screen.queryByRole('list', { name: '定时任务' })).toBeNull()
+    fireEvent.keyDown(trigger, { key: 'Escape' })
+    expect(screen.queryByRole('list', { name: '定时任务' })).toBeNull()
 
     fireEvent.click(trigger)
+    fireEvent.pointerDown(trigger)
+    expect(screen.getByRole('list', { name: '定时任务' })).toBeTruthy()
     fireEvent.pointerDown(document.body)
     expect(screen.queryByRole('list', { name: '定时任务' })).toBeNull()
   })
