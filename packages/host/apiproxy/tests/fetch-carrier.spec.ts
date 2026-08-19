@@ -262,6 +262,9 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
       async mutate(request) {
         return { rpcId: request.rpcId, result: { ok: false, error: { code: 'settings-rejected', message: 'stub', details: { ns: request.payload.ns } } } }
       },
+      async testWebSearch(request) {
+        return { rpcId: request.rpcId, result: { ok: true, value: { count: 0 } } }
+      },
     },
     credentials: {
       async describe(request) {

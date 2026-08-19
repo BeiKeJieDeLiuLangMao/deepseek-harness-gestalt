@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-由 [DeepSeek](https://deepseek.com) 支持的 `WebSearchProvider`，用于 harness [web 能力 seam](../web/README.md)（`ctx.web`）。它调用 DeepSeek 的 **Anthropic 兼容 Messages API**（`POST {baseURL}/messages`），启用原生 `web_search_20250305` 服务器工具，并把 DeepSeek 返回的结构化 `web_search_tool_result` 块映射为 seam 规范化的 `WebSearchResult`。设置页为该提供方展示两张卡片：官方 DeepSeek，以及用于其他 Messages 基址（例如 Kimi coding）的通用 Anthropic 协议卡片。`backend` 字段决定下一次搜索读取哪张卡片。
+由 [DeepSeek](https://deepseek.com) 支持的 `WebSearchProvider`，用于 harness [web 能力 seam](../web/README.md)（`ctx.web`）。它调用 DeepSeek 的 **Anthropic 兼容 Messages API**（`POST {baseURL}/messages`），启用原生 `web_search_20250305` 服务器工具，并把 DeepSeek 返回的结构化 `web_search_tool_result` 块映射为 seam 规范化的 `WebSearchResult`。设置页为该提供方展示一张 Web Search 卡片，提供方 tab 会写入 `backend`：官方 DeepSeek、通用 Anthropic 协议，以及 Kimi Moonshot 搜索。其他插件可以向 `settings.plugin.web-search.provider` 再注册 tab。
 
 这是一个**实现**包：它向 `ctx.web` 注册提供方，通过可选的 `ctx.credentials` seam 为每次搜索解析凭据，若存在发起请求的 agent（智能体）会话，还会在其中记录该辅助请求，且不注册面向模型的工具。与 `@deepseek-ai/dsh-llm-deepseek` 一样，它是函数／命名空间插件（`inject: ['web']`）。Anthropic 协议格式（wire format）是提供方私有细节，并**不**使该提供方依赖 `ctx.llm`。
 
@@ -10,7 +10,7 @@
 
 Exa 和 Perplexity 提供专用搜索端点，DeepSeek 官方搜索则没有。在 DeepSeek Anthropic 基址上，该提供方会发起一次携带 `web_search` 服务器工具的**完整 Messages 模型调用**，因此一次搜索会产生完整模型轮次的延迟与 token 开销，比纯检索端点更重。DeepSeek 在服务器侧执行搜索，返回**结构化** `web_search_tool_result` 块；提供方解析这些块，**绝不会从模型文本中抓取 URL**。
 
-Kimi coding（`https://api.kimi.com/coding/v1`）使用同一套 Messages 约定，应放在 Anthropic 协议卡片上。Moonshot `POST /v1/search` 这类专用检索端点是另一种协议，属于另一个提供方。
+Kimi tab 使用 Moonshot 专用搜索：对配置的 URL（默认 `https://api.kimi.com/coding/v1/search`）发起 `POST`，请求体为 `{ "text_query" }`，鉴权为 `Authorization: Bearer`。它不调用 Messages，也不使用 `web_search_20250305`。密钥优先读 `KIMI_WEB_SEARCH_API_KEY`，没有则回退 `DEEPSEEK_API_KEY`。
 
 **严格模式**：如果响应不含 `web_search_tool_result` 块（未触发原生搜索），提供方会抛出 `WebError` `WEB_PROVIDER_ERROR`，而非降级为文本抓取。
 
@@ -20,7 +20,7 @@ Kimi coding（`https://api.kimi.com/coding/v1`）使用同一套 Messages 约定
 
 | 配置键 | 默认值 | 含义 |
 |---|---|---|
-| `backend` | `deepseek` | 下一次搜索读取哪张设置卡片：`deepseek` 或 `anthropic-messages`。 |
+| `backend` | `deepseek` | 下一次搜索读取哪个提供方 tab：`deepseek`、`anthropic-messages` 或 `kimi`。 |
 | `apiKey` | 未设置 | DeepSeek API 密钥字面值。优先使用 `apiKeyEnv`，避免密钥进入配置；非空字面值优先。 |
 | `apiKeyEnv` | `DEEPSEEK_API_KEY` | 每次搜索都会通过 `ctx.credentials` 解析该凭据引用；没有该 seam 时则从进程环境解析。值缺失时，调用以 `WEB_PROVIDER_CREDENTIAL_MISSING` 失败。 |
 | `baseURL` | `https://api.deepseek.com/anthropic/v1` | Anthropic 兼容端点基址；追加 `/messages`。在 `backend` 为 `deepseek` 时使用。缺省时回退到任一环境层中的 `$DEEPSEEK_SEARCH_BASE_URL`；禁止复用属于 chat-completions LLM 适配器的 `$DEEPSEEK_BASE_URL`。无法解析时提供方不可用。 |
@@ -39,7 +39,7 @@ Kimi coding（`https://api.kimi.com/coding/v1`）使用同一套 Messages 约定
 
 上面的条目是 `web-search-deepseek` Settings 段的 base 层：叠加其上的用户层会作用于**下一次**搜索，因为提供方是按次投影该段，而不是在注册时固化它。因此端点或模型变化时，seam 的提供方选择不会闪断。`apiKey` 带有 `role('secret')`，所以它在任何一层都不会出现在 `describe()` 响应中——配置表层只能知道 credentials 领域是否为 `apiKeyEnv` 所命名的引用持有值，而无从知道某一层是否带着字面密钥。
 
-Anthropic 协议卡片是第二个 Settings 段 `web-search-anthropic`，字段与 DeepSeek 段相同，但不含 `backend`。它没有 schema 默认值：当 `backend` 为 `anthropic-messages` 且缺少 `baseURL` 时，提供方不可用。未填写的 Anthropic `apiKey`、`model`、`apiVersion`、`maxTokens` 或 `maxUses` 会继承 DeepSeek 段，因此一张密钥可以服务两张卡片。残留的 DeepSeek `baseURL` 不会被读取。
+Anthropic 协议 tab 是第二个 Settings 段 `web-search-anthropic`，字段与 DeepSeek 段相同，但不含 `backend`。它没有 schema 默认值：当 `backend` 为 `anthropic-messages` 且缺少 `baseURL` 时，提供方不可用。Kimi tab 是 `web-search-kimi`，默认端点为 `https://api.kimi.com/coding/v1/search`。未填写的 tab `apiKey` 或 `maxUses` 会继承 DeepSeek 段，因此一张密钥可以服务每个 tab。残留的 DeepSeek `baseURL` 不会被读取。
 
 ## 映射
 

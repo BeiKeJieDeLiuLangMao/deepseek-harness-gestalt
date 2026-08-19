@@ -546,8 +546,8 @@ describe('WebSearchCardController', () => {
       'anthropic-messages',
       host.scope,
       {
-        titleKey: 'anthropicSearchTitle',
-        descriptionKey: 'anthropicSearchDescription',
+        titleKey: 'webSearchTitle',
+        descriptionKey: 'webSearchDescription',
         baseUrlHintKey: 'anthropicSearchBaseUrlHint',
         idPrefix: 'plugin-config-anthropic-search',
       },

@@ -532,3 +532,41 @@ describe('web-search-deepseek plugin registration', () => {
     }
   })
 })
+
+describe('Moonshot dedicated search', () => {
+  it('POSTs text_query to the configured URL with a Bearer token', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({
+      search_results: [
+        { url: 'https://a.test', title: 'A', snippet: 'excerpt', date: '2026-01-02' },
+        { url: 'https://b.test', title: 'B', content: 'body' },
+      ],
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+    const result = await searchProvider({
+      ...options,
+      protocol: 'moonshot-search',
+      baseURL: 'https://api.moonshot.cn/v1/search',
+    }).search({ query: 'deepseek harness' })
+    const [endpoint, init] = fetchMock.mock.calls[0] as unknown as [string, { headers: Record<string, string>; body: string }]
+    expect(endpoint).toBe('https://api.moonshot.cn/v1/search')
+    expect(init.headers.authorization).toBe('Bearer ds-key')
+    expect(init.headers['x-api-key']).toBeUndefined()
+    expect(JSON.parse(init.body)).toEqual({ text_query: 'deepseek harness' })
+    expect(result.sources).toEqual([
+      { url: 'https://a.test', title: 'A', snippet: 'excerpt', publishedAt: '2026-01-02' },
+      { url: 'https://b.test', title: 'B', snippet: 'body' },
+    ])
+  })
+
+  it('names a non-ASCII API key instead of throwing a ByteString error', async () => {
+    await expect(searchProvider({
+      ...options,
+      protocol: 'moonshot-search',
+      baseURL: 'https://api.moonshot.cn/v1/search',
+      apiKey: '密钥',
+    }).search({ query: 'q' })).rejects.toMatchObject({
+      code: 'WEB_PROVIDER_ERROR',
+      message: expect.stringContaining('header "authorization" is not ASCII'),
+    })
+  })
+})

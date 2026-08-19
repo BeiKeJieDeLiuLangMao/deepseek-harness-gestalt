@@ -8,7 +8,7 @@ The **Plugins** settings section and its **Plugin configuration** tab. The secti
 
 The configurable tab reads which settings namespaces the Host serves and dispatches one slot key per namespace, so what renders is the intersection of two ledgers: the namespaces a live Host plugin registered, and the cards registered under those keys. A served namespace no card claims renders nothing — another surface owns it, or this deployment ships no browser half for it — and a card whose namespace this deployment does not serve is never dispatched, so an uncomposed plugin leaves no trace and does not hold the tab back from its empty line. The empty line waits for the Host's first answer, so an unanswered read never reads as "this deployment configures no plugin". Cards appear in the order they registered, which is stable for the cards one package installs together and not stable across plugins: apply order between packages is unconstrained.
 
-The cards this package ships cover the shell executor (`bash`), the agent loop's tool-call parallelism (`agent-loop`), official DeepSeek search (`web-search-deepseek`), and Anthropic-protocol search (`web-search-anthropic`).
+The cards this package ships cover the shell executor (`bash`), the agent loop's tool-call parallelism (`agent-loop`), and one Web Search card (`web-search-deepseek`) whose provider tabs include DeepSeek, Anthropic protocol, and Kimi.
 
 ## Extension point
 
@@ -16,7 +16,7 @@ The section declares `settings.plugins.tab`, a root list slot whose labels becom
 
 ## Writes
 
-A card stages what the user types and writes it only when they save, except the two search cards' **Use this for web search** control, which writes `backend` immediately so the next `web_search` reads that card. Each other control renders staged text, so what is on screen is exactly what a save would store; **Discard** drops the drafts, and a card holding unsaved edits says so on its header even while collapsed. A reset stages the composed default rather than writing immediately, and a draft the field does not accept blocks the save instead of being dropped.
+A card stages what the user types and writes it only when they save, except the Web Search card's provider tabs, which write `backend` immediately so the next `web_search` reads that tab. Each other control renders staged text, so what is on screen is exactly what a save would store; **Discard** drops the drafts, and a card holding unsaved edits says so on its header even while collapsed. A reset stages the composed default rather than writing immediately, and a draft the field does not accept blocks the save instead of being dropped.
 
 Saving writes each staged field through the client settings scope, which fences every write with the namespace revision it read, so a form that has drifted from the document is refused rather than overwriting a concurrent change. The Host is the only authority on whether a value was accepted — its validators own the constraints no schema can express — so the card reads the section back afterwards and reports a save that did not land, keeping those drafts for the user to correct.
 
