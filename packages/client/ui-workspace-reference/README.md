@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-Web `@` source named `workspace`. Candidates come from the host workspace-reference index Remote and are ranked in the browser. A pick inserts plain-text `@rel/path` (directories keep a trailing slash). The host pre-step injects the existence-only marker. Decision record: the [Workspace Reference Agent Note](../../../.agents/notes/proposed/feature/2026-08-19-workspace-reference.md).
+Web `@` source named `workspace`. Candidates come from the host workspace-reference index Remote and are ranked in the browser. A pick inserts plain-text `@rel/path` (directories keep a trailing slash). The host pre-step injects the existence-only marker. Decision record: the [Workspace Reference Agent Note](../../../.agents/notes/implemented/feature/2026-08-19-workspace-reference.md).
 
 ## Model Experience
 

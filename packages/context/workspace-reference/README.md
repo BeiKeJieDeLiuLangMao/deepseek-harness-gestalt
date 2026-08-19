@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-Validates `@path` tokens in direct user messages and injects an existence-only Workspace Reference before the agent step. The plugin does not read file bytes or list directory children. Decision record: the [Workspace Reference Agent Note](../../../.agents/notes/proposed/feature/2026-08-19-workspace-reference.md).
+Validates `@path` tokens in direct user messages and injects an existence-only Workspace Reference before the agent step. The plugin does not read file bytes or list directory children. Decision record: the [Workspace Reference Agent Note](../../../.agents/notes/implemented/feature/2026-08-19-workspace-reference.md).
 
 ## Public API
 

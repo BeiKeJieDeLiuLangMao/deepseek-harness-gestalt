@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-校验直接用户消息中的 `@path` token，并在 agent 步骤开始前注入仅表示存在性的工作区引用。本插件不读取文件字节，也不列出目录子项。决策记录：[工作区引用 Agent Note](../../../.agents/notes/proposed/feature/2026-08-19-workspace-reference.md)。
+校验直接用户消息中的 `@path` token，并在 agent 步骤开始前注入仅表示存在性的工作区引用。本插件不读取文件字节，也不列出目录子项。决策记录：[工作区引用 Agent Note](../../../.agents/notes/implemented/feature/2026-08-19-workspace-reference.md)。
 
 ## Public API
 

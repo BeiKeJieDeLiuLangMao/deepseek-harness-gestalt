@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
+import { Context } from '@deepseek-ai/cordis'
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import { InputTriggerService } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import { apply } from '../src/client/index.ts'
 
 function stubCtx(options: {
@@ -63,5 +65,27 @@ describe('ui-workspace-reference apply', () => {
     await new Promise(resolve => setTimeout(resolve, 0))
     expect(thrown).toBeInstanceOf(Error)
     expect((thrown as Error).message).toBe('down')
+  })
+
+  it('registers the @ workspace source; disposal frees the name', async () => {
+    const ctx = new Context()
+    ctx.provide('sessions', {})
+    await ctx.plugin(InputTriggerService).await()
+    ctx.provide('remote', { $mount: async () => async () => {} })
+    ctx.provide('remote.workspaceReference', {
+      search: async () => ({ ok: true, value: [] }),
+    })
+    const fiber = ctx.plugin({ apply })
+    await fiber.await()
+    const inputTriggers = ctx.get('inputTriggers') as InputTriggerService
+    const rival = {
+      trigger: '@' as const,
+      name: 'workspace',
+      candidates: () => Promise.resolve([]),
+      onPick: () => undefined,
+    }
+    expect(() => inputTriggers.registerSource(rival)).toThrow(/already registered/)
+    await fiber.dispose()
+    expect(() => inputTriggers.registerSource(rival)).not.toThrow()
   })
 })

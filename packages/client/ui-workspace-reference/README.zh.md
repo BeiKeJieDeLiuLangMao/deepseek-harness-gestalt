@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-Web 上名为 `workspace` 的 `@` source。候选来自 Host 工作区引用索引 Remote，并在浏览器内排序。选中后插入纯文本 `@rel/path`（目录保留尾斜杠）。Host 的 pre-step 注入仅表示存在性的标记。决策记录：[工作区引用 Agent Note](../../../.agents/notes/proposed/feature/2026-08-19-workspace-reference.md)。
+Web 上名为 `workspace` 的 `@` source。候选来自 Host 工作区引用索引 Remote，并在浏览器内排序。选中后插入纯文本 `@rel/path`（目录保留尾斜杠）。Host 的 pre-step 注入仅表示存在性的标记。决策记录：[工作区引用 Agent Note](../../../.agents/notes/implemented/feature/2026-08-19-workspace-reference.md)。
 
 ## Model Experience
 

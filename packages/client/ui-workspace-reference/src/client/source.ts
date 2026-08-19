@@ -32,7 +32,13 @@ export function createWorkspaceSource(search: WorkspaceIndexSearch): InputTrigge
   const notify = (sessionId: SessionId): void => {
     const listeners = lexiconListeners.get(sessionId)
     if (listeners === undefined) return
-    for (const listener of listeners) listener()
+    for (const listener of listeners) {
+      try {
+        listener()
+      } catch (error) {
+        console.error('[ui-workspace-reference] lexicon listener failed:', error)
+      }
+    }
   }
 
   const fetchIndex = (sessionId: SessionId): Promise<readonly WorkspacePathEntry[]> => {
@@ -76,7 +82,9 @@ export function createWorkspaceSource(search: WorkspaceIndexSearch): InputTrigge
       }))
     },
     warm(session) {
-      fetchIndex(session.sessionId).catch(() => {})
+      fetchIndex(session.sessionId).catch(() => {
+        // Warm is fire-and-forget; the next candidates() call retries.
+      })
     },
     lexicon(session) {
       return fetches.get(session.sessionId)?.settled?.map(file => file.relative)

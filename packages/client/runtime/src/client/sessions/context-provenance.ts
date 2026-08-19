@@ -86,6 +86,8 @@ export function contextProvenance(source: unknown): ContextProvenanceView {
     // A user-explicit skill invocation names the skill it injected.
     case 'skill-invocation':
       return { role: 'inject', label: readString(record, 'name') ?? kind }
+    case 'workspace-reference':
+      return { role: 'inject', label: readString(record, 'path') ?? kind }
     // Documented default arm of the merge-extensible source map: an unknown
     // producer still identifies itself by its own durable kind.
     default:
