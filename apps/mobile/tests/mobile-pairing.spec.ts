@@ -18,6 +18,7 @@ describe('MobilePairing', () => {
       retryPairing: vi.fn(),
       activate: vi.fn().mockResolvedValue(undefined),
       deactivate: vi.fn().mockResolvedValue(undefined),
+      unpair: vi.fn().mockResolvedValue(undefined),
     }
     const { rerender } = render(createElement(MobilePairing, { actions }))
     const link = 'https://platform.example.com/pair?secret=complete-high-entropy-invitation'
@@ -46,6 +47,7 @@ describe('MobilePairing', () => {
       retryPairing,
       activate: vi.fn().mockResolvedValue(undefined),
       deactivate: vi.fn().mockResolvedValue(undefined),
+      unpair: vi.fn().mockResolvedValue(undefined),
     }
 
     render(createElement(MobilePairing, { actions }))
@@ -66,6 +68,7 @@ describe('MobilePairing', () => {
       retryPairing: vi.fn(),
       activate,
       deactivate,
+      unpair: vi.fn().mockResolvedValue(undefined),
     }
     const rendered = render(createElement(MobilePairing, { actions }))
     expect(activate).toHaveBeenCalledOnce()

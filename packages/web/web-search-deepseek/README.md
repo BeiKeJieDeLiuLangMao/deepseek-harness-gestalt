@@ -2,13 +2,15 @@
 
 English | [中文](README.zh.md)
 
-A [DeepSeek](https://deepseek.com)-backed `WebSearchProvider` for the harness [web capability seam](../web/README.md) (`ctx.web`). It calls DeepSeek's **Anthropic-compatible Messages API** (`POST {baseURL}/messages`) with the native `web_search_20250305` server tool enabled, and maps the structured `web_search_tool_result` blocks DeepSeek returns into the seam's normalized `WebSearchResult`.
+A [DeepSeek](https://deepseek.com)-backed `WebSearchProvider` for the harness [web capability seam](../web/README.md) (`ctx.web`). It calls DeepSeek's **Anthropic-compatible Messages API** (`POST {baseURL}/messages`) with the native `web_search_20250305` server tool enabled, and maps the structured `web_search_tool_result` blocks DeepSeek returns into the seam's normalized `WebSearchResult`. The settings page exposes one Web Search card whose provider tabs write `backend`: official DeepSeek, a generic Anthropic-protocol tab, and Kimi Moonshot search. Extra plugins can register more tabs into `settings.plugin.web-search.provider`.
 
 This is an **implementation** package: it registers a provider into `ctx.web`, resolves its credential for each search through the optional `ctx.credentials` seam, records the auxiliary request in the initiating Agent session when one exists, and does not register a model-facing tool. Like `@deepseek-ai/dsh-llm-deepseek`, it is a function/namespace plugin (`inject: ['web']`). The Anthropic wire shape is a provider-private detail — it does **not** make this provider depend on `ctx.llm`.
 
 ## How it differs from a dedicated search endpoint
 
-Exa and Perplexity expose dedicated search endpoints; DeepSeek does not. Instead this provider issues a **full Messages model call** carrying the `web_search` server tool, so one search costs a complete model turn in latency and tokens — heavier than a pure retrieval endpoint. DeepSeek runs the search server-side and returns **structured** `web_search_tool_result` blocks; the provider parses those blocks and **never scrapes URLs out of model prose**.
+Exa and Perplexity expose dedicated search endpoints; DeepSeek's official search does not. On a DeepSeek Anthropic base this provider issues a **full Messages model call** carrying the `web_search` server tool, so one search costs a complete model turn in latency and tokens — heavier than a pure retrieval endpoint. DeepSeek runs the search server-side and returns **structured** `web_search_tool_result` blocks; the provider parses those blocks and **never scrapes URLs out of model prose**.
+
+The Kimi tab is Moonshot's dedicated search: `POST` the configured URL (default `https://api.kimi.com/coding/v1/search`) with `{ "text_query" }` and `Authorization: Bearer`. It does not call Messages or `web_search_20250305`. The key is `KIMI_WEB_SEARCH_API_KEY`, falling back to `DEEPSEEK_API_KEY`.
 
 **Strict mode**: if the response carries no `web_search_tool_result` block (native search did not trigger), the provider throws `WebError` `WEB_PROVIDER_ERROR` rather than degrading to prose-scraping.
 
@@ -18,9 +20,10 @@ It reuses the `DEEPSEEK_API_KEY` credential reference (no new secret) but **not*
 
 | Key | Default | Meaning |
 |---|---|---|
+| `backend` | `deepseek` | Which provider tab the next search reads: `deepseek`, `anthropic-messages`, or `kimi`. |
 | `apiKey` | omitted | Literal DeepSeek API key. Prefer `apiKeyEnv` so no secret enters configuration; a non-empty literal wins. |
 | `apiKeyEnv` | `DEEPSEEK_API_KEY` | Credential reference resolved for each search through `ctx.credentials`, or from the process environment when that seam is absent. A missing value fails the call as `WEB_PROVIDER_CREDENTIAL_MISSING`. |
-| `baseURL` | `https://api.deepseek.com/anthropic/v1` | Anthropic-compatible endpoint base; `/messages` is appended. Falls back to `$DEEPSEEK_SEARCH_BASE_URL` from any environment layer; do not reuse `$DEEPSEEK_BASE_URL`, which belongs to the chat-completions LLM adapter. An unparseable value makes the provider unavailable. |
+| `baseURL` | `https://api.deepseek.com/anthropic/v1` | Anthropic-compatible endpoint base; `/messages` is appended. Used when `backend` is `deepseek`. Falls back to `$DEEPSEEK_SEARCH_BASE_URL` from any environment layer; do not reuse `$DEEPSEEK_BASE_URL`, which belongs to the chat-completions LLM adapter. An unparseable value makes the provider unavailable. |
 | `model` | `deepseek-v4-flash` | Anthropic-format model name. |
 | `apiVersion` | `2023-06-01` | `anthropic-version` header value. |
 | `maxTokens` | `4096` | Positive-integer upper bound on generated tokens for the Messages request. |
@@ -35,6 +38,8 @@ It reuses the `DEEPSEEK_API_KEY` credential reference (no new secret) but **not*
 ```
 
 The entry above is the base layer of the `web-search-deepseek` Settings section: a user layer over it reaches the NEXT search, because the provider projects the section per call rather than capturing it at registration. The seam's provider selection therefore never flickers when an endpoint or model changes. `apiKey` carries `role('secret')`, so it never rides a `describe()` response in any layer — a configuration surface learns only whether the credentials domain holds a value for the reference `apiKeyEnv` names, never whether a layer carries a literal key.
+
+The Anthropic-protocol tab is a second Settings section, `web-search-anthropic`, with the same optional fields except `backend`. It has no schema defaults: a missing `baseURL` while `backend` is `anthropic-messages` makes the provider unavailable. The Kimi tab is `web-search-kimi` and defaults to `https://api.kimi.com/coding/v1/search`. An omitted tab `apiKey` or `maxUses` inherits the DeepSeek section so one credential can serve every tab. The leftover DeepSeek `baseURL` is not read.
 
 ## Mapping
 

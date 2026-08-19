@@ -5,9 +5,11 @@
 // deepsuite `@deepseek/md` code blocks; token colors stay on `--shiki-*`.
 
 import { useCallback, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import type { ReactNode } from 'react'
 import clsx from 'clsx'
 import { writeClipboard } from '../clipboard.ts'
-import { grammarLoadCount, highlightToHtml, subscribeGrammarLoaded } from './highlight.ts'
+import { grammarLoadCount, highlightLines, highlightToHtml, subscribeGrammarLoaded } from './highlight.ts'
+import type { MarkdownTextContribution, MarkdownTextRun } from './selection-map.tsx'
 import css from './CodeBlock.module.css'
 
 export interface CodeBlockProps {
@@ -21,15 +23,26 @@ export interface CodeBlockProps {
   copyLabel?: string | undefined
   /** Copy-button label during the post-copy confirmation window. */
   copiedLabel?: string | undefined
+  /** Optional stable renderer-owned registration for this code contribution. */
+  textContribution?: MarkdownTextContribution | undefined
 }
 
-export function CodeBlock({ code, lang, className, copyLabel = '复制', copiedLabel = '复制成功' }: CodeBlockProps) {
+export function CodeBlock({
+  code, lang, className, copyLabel = '复制', copiedLabel = '复制成功', textContribution,
+}: CodeBlockProps) {
   const trimmed = code.endsWith('\n') ? code.slice(0, -1) : code
   // Re-render when a lazy grammar finishes loading, so a fence that showed plain
   // text while its language's grammar imported picks up highlighting. The
   // snapshot value is opaque; only its change across renders drives the memo.
   const loaded = useSyncExternalStore(subscribeGrammarLoaded, grammarLoadCount, grammarLoadCount)
-  const html = useMemo(() => highlightToHtml(trimmed, lang), [trimmed, lang, loaded])
+  const html = useMemo(
+    () => textContribution === undefined ? highlightToHtml(trimmed, lang) : undefined,
+    [trimmed, lang, loaded, textContribution],
+  )
+  const registeredLines = useMemo(
+    () => textContribution === undefined ? undefined : highlightLines(trimmed, lang),
+    [trimmed, lang, loaded, textContribution],
+  )
   const rootRef = useRef<HTMLDivElement>(null)
   const [copied, setCopied] = useState(false)
 
@@ -45,16 +58,50 @@ export function CodeBlock({ code, lang, className, copyLabel = '复制', copiedL
     })
   }, [copied, trimmed])
 
-  const body = html === undefined
-    ? (
-      <pre className={css.plain}><code>{trimmed}</code></pre>
+  let body: ReactNode
+  if (textContribution !== undefined && registeredLines !== undefined) {
+    const runs: MarkdownTextRun[] = []
+    const lineLengths: number[] = []
+    for (const [lineIndex, line] of registeredLines.entries()) {
+      lineLengths.push(line.length + (lineIndex < registeredLines.length - 1 ? 1 : 0))
+      for (const [tokenIndex, token] of line.entries()) {
+        runs.push({ value: token.text, key: `${lineIndex}:${tokenIndex}`, style: token.style })
+      }
+      if (lineIndex < registeredLines.length - 1) runs.push({ value: '\n', key: `${lineIndex}:newline` })
+    }
+    const registered = textContribution.render(runs)
+    let runIndex = 0
+    body = (
+      <pre
+        className="shiki css-variables"
+        style={{ backgroundColor: 'var(--shiki-background)', color: 'var(--shiki-foreground)' }}
+        tabIndex={0}
+      >
+        <code>
+          {lineLengths.map((length, lineIndex) => {
+            const line = registered.slice(runIndex, runIndex + length)
+            runIndex += length
+            return <span className="line" key={lineIndex}>{line}</span>
+          })}
+        </code>
+      </pre>
     )
-    : (
-  // shiki's output is a static span tree it generated from `code` (no user
-  // HTML passes through), the sanctioned innerHTML consumption path per
-  // shiki's own docs.
+  } else if (textContribution !== undefined) {
+    body = (
+      <pre className={css.plain}>
+        <code>{textContribution.render([{ value: trimmed, key: 'code' }])}</code>
+      </pre>
+    )
+  } else if (html === undefined) {
+    body = <pre className={css.plain}><code>{trimmed}</code></pre>
+  } else {
+    body = (
+    // shiki's output is a static span tree it generated from `code` (no user
+    // HTML passes through), the sanctioned innerHTML consumption path per
+    // shiki's own docs.
       <div dangerouslySetInnerHTML={{ __html: html }} />
     )
+  }
 
   return (
     <div ref={rootRef} className={clsx(css.block, 'md-code-block', className)}>

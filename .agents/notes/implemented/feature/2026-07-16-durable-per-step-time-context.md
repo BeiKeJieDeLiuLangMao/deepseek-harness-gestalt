@@ -12,7 +12,7 @@ A process-local refresh cache makes displayed time depend on state that cannot s
 
 ## Decision
 
-`@deepseek-ai/dsh-time-context` is a function plugin in `packages/context/time-context/`. The default browser-only and headless compositions leave its disclosure and token cost disabled. The Schedule Web overlay mounts it explicitly, and the DeepSeek Gestalt Desktop overlay mounts it by default, so the model can interpret otherwise-unqualified dates and times in the browser zone attached to the current request.
+`@deepseek-ai/dsh-time-context` is a function plugin in `packages/context/time-context/`. The default browser-only, headless, and DeepSeek Gestalt Desktop compositions leave its disclosure and token cost disabled. The Schedule Web overlay mounts it explicitly so the model can interpret otherwise-unqualified dates and times in the browser zone attached to the current request.
 
 The plugin prepends an `agent/pre-step` listener and delegates first. When the downstream decision enters and a reading is due, it combines that decision's final messages with durable user messages already in the open turn, derives browser-zone provenance from exact `user-rpc` sources, and appends one reading to the decision. Rejection, listener failure, or an already-aborted signal records nothing. Steering claimed after the current batch keeps ordinary next-step ownership and receives a fresh reading when that step enters.
 
@@ -24,7 +24,7 @@ The resolved browser zone also formats the reading's timestamp. Mixed or unavail
 
 Each reading uses the exact snapshot source `{ kind: 'plugin', plugin: 'time-context', form: 'snapshot', sections: [{ name: 'time-context', text: <same text> }] }`. The invariant companion checks the snapshot shape, re-derives current-turn browser provenance from the original user-rpc messages, and validates the rendered timestamp zone and elapsed baseline.
 
-The optional `refreshIntervalMs` config is a non-negative safe integer. Omission or `0` injects on every eligible entered step. A positive value scans raw Session events for the latest plugin reading and injects when none exists, wall time moved backward, or the event is old enough. The event timestamp governs after compaction and resume without a process-local cache. The Schedule Web and DeepSeek Gestalt Desktop overlays omit the interval so every request step gets current browser guidance.
+The optional `refreshIntervalMs` config is a non-negative safe integer. Omission or `0` injects on every eligible entered step. A positive value scans raw Session events for the latest plugin reading and injects when none exists, wall time moved backward, or the event is old enough. The event timestamp governs after compaction and resume without a process-local cache. The Schedule Web overlay omits the interval so every request step gets current browser guidance.
 
 ### Text and elapsed baselines
 
@@ -60,11 +60,11 @@ The plugin contributes nothing to system-prompt assembly or `request/header`. Re
 - **Let Schedule consume the reading implicitly** — rejected because prose context is not a stable typed default and would couple an absolute-time parser to AgentLoop history. The model instead passes an explicit offset or zone.
 - **Use only the process zone** — rejected because deployment locality cannot infer a remote user's zone. It remains a display fallback when request provenance is absent or mixed.
 - **Expose time only through a tool** — rejected because ordinary temporal reasoning would require an avoidable round trip and would not ensure a reading before each step.
-- **Mount time-context in every composition** — rejected because disclosure, freshness, and history cost remain composition policy. DeepSeek Gestalt selects it with Schedule; browser-only and headless defaults do not.
+- **Mount time-context in every composition** — rejected because disclosure, freshness, and history cost remain composition policy. The Schedule Web overlay selects it; DeepSeek Gestalt Desktop, browser-only, and headless defaults do not.
 
 ## Verification
 
-Unit and real-loop tests pin timestamp formatting, unique/mixed/missing browser derivation, fallback display, both elapsed baselines, interval boundaries, cross-turn and resumed scheduling, backward-clock behavior, steering ownership, cancellation, exact snapshot validation, and request reconstruction. Host/client tests pin browser sampling plus validation and canonicalization at prompt entry. The keyless assembled Schedule Web scenario sends a real browser prompt, observes the same zone in the model request, and verifies that the model supplies it explicitly to `schedule_create`; Desktop composition coverage requires the same plugin while the browser-only default omits it.
+Unit and real-loop tests pin timestamp formatting, unique/mixed/missing browser derivation, fallback display, both elapsed baselines, interval boundaries, cross-turn and resumed scheduling, backward-clock behavior, steering ownership, cancellation, exact snapshot validation, and request reconstruction. Host/client tests pin browser sampling plus validation and canonicalization at prompt entry. The keyless assembled Schedule Web scenario sends a real browser prompt, observes the same zone in the model request, and verifies that the model supplies it explicitly to `schedule_create`. Desktop composition coverage requires Schedule without time-context; the browser-only default omits both.
 
 ## Consequences
 

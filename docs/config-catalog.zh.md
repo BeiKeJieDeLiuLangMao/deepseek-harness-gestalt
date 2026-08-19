@@ -3258,6 +3258,12 @@ export interface Config {
 ```ts config-catalog
 /** Plugin config (all optional — `apply` fills env-var and constant defaults). */
 export interface Config {
+  /**
+   * Which provider tab the next search reads. `deepseek` uses this section's
+   * official DeepSeek endpoint; `anthropic-messages` uses the Anthropic tab;
+   * `kimi` uses Moonshot `POST /v1/search`.
+   */
+  backend?: WebSearchBackend
   /** Literal DeepSeek API key; prefer {@link apiKeyEnv} so no secret enters configuration files. */
   apiKey?: string
   /** Credential reference resolved for each search; defaults to `DEEPSEEK_API_KEY`. */
@@ -3273,9 +3279,12 @@ export interface Config {
   /** Maximum `web_search` server-tool uses per request. Defaults to 5. */
   maxUses?: number
 }
+
+/** Which provider tab the next search reads. */
+export type WebSearchBackend = 'deepseek' | 'anthropic-messages' | 'kimi'
 ```
 
-来源：[`packages/web/web-search-deepseek/src/index.ts:46`](../packages/web/web-search-deepseek/src/index.ts)
+来源：[`packages/web/web-search-deepseek/src/index.ts:51`](../packages/web/web-search-deepseek/src/index.ts)
 
 <a id="deepseek-aidsh-web-search-exa"></a>
 
@@ -3479,6 +3488,7 @@ export interface Config {
 - `@deepseek-ai/dsh-output-retention`（[`packages/util/output-retention/src/index.ts`](../packages/util/output-retention/src/index.ts)）
 - `@deepseek-ai/dsh-platform-account-client`（[`packages/platform/platform-account-client/src/index.ts`](../packages/platform/platform-account-client/src/index.ts)）
 - `@deepseek-ai/dsh-remote-access-client`（[`packages/platform/remote-access-client/src/index.ts`](../packages/platform/remote-access-client/src/index.ts)）
+- `@deepseek-ai/dsh-remote-access-redis`（[`packages/platform/remote-access-redis/src/index.ts`](../packages/platform/remote-access-redis/src/index.ts)）
 - `@deepseek-ai/dsh-remote-protocol`（[`packages/platform/remote-protocol/src/index.ts`](../packages/platform/remote-protocol/src/index.ts)）
 - `@deepseek-ai/dsh-sandbox-windows-acl`（[`packages/sandbox/sandbox-windows-acl/src/index.ts`](../packages/sandbox/sandbox-windows-acl/src/index.ts)）
 - `@deepseek-ai/dsh-scope`（[`packages/core/scope/src/index.ts`](../packages/core/scope/src/index.ts)）

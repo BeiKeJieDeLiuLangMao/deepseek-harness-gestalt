@@ -6,6 +6,7 @@
     { "path": "../../host/webserver" },
     { "path": "../../runtime-diagnostics/invariants" },
     { "path": "../platform-account" },
-    { "path": "../remote-access" }
+    { "path": "../remote-access" },
+    { "path": "../remote-protocol" }
   ]
 }

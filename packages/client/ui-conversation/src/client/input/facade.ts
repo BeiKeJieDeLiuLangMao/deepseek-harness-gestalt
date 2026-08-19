@@ -18,6 +18,18 @@ import type {
 } from './contract.ts'
 import type { InputSubmitMode } from '../contract/composer-submission.ts'
 import { InputMachine } from './machine.ts'
+import type {
+  AnnotationCompilerLabels, DraftAnnotation, PersistedAnnotationDraft, TextAnchor, TextAnnotationId,
+} from '../annotation/model.ts'
+import {
+  assembledRequestOverflows, compileAnnotationSubmission, TextAnnotationId as createTextAnnotationId,
+} from '../annotation/model.ts'
+
+/** One exact annotation snapshot whose object identity owns its settlement. */
+export interface AnnotationSubmissionReservation {
+  readonly restoreText: string
+  readonly ids: readonly TextAnnotationId[]
+}
 
 /** Popup face the shell needs (dismissal only; typed structurally to avoid a value import). */
 export interface PopupDismissFace {
@@ -45,7 +57,16 @@ export interface SessionInputDeps {
    */
   steerQueue?: (() => void) | undefined
   /** The plain-message sink (send choreography / materialize fork — the hub owns it). */
-  defaultSink(text: string, imageIds: readonly DraftAttachmentId[], mode: InputSubmitMode): void
+  defaultSink(
+    text: string,
+    imageIds: readonly DraftAttachmentId[],
+    mode: InputSubmitMode,
+    annotationDraft?: AnnotationSubmissionReservation,
+  ): void
+  /** Localized ordinary-prose fragments for Annotation Submission (the hub always supplies them). */
+  annotationLabels: AnnotationCompilerLabels
+  /** Advertised occupancy when the selected model reports a context window. */
+  contextCapacity?: () => { usedTokens: number; contextWindow: number } | undefined
 }
 
 /** Guard tier from the machine phase. */
@@ -58,6 +79,38 @@ function guardOf(phase: InputState['phase']): 'plain' | 'claimed' | 'frozen' {
 }
 
 const EMPTY_QUEUE: readonly QueuedMessage[] = []
+
+/**
+ * Structural check for one rehydrated Annotation Draft. localStorage JSON is
+ * a durable boundary: a value written by anything other than this store is
+ * dropped whole instead of partially adopted.
+ * @param value - parsed persisted value.
+ * @returns whether the value is a well-formed Annotation Draft.
+ */
+function isPersistedAnnotationDraft(value: unknown): value is PersistedAnnotationDraft {
+  if (typeof value !== 'object' || value === null) return false
+  const candidate = value as { annotations?: unknown; nextSeq?: unknown }
+  if (!Array.isArray(candidate.annotations) || typeof candidate.nextSeq !== 'number') return false
+  return candidate.annotations.every((item): item is DraftAnnotation => {
+    if (typeof item !== 'object' || item === null) return false
+    const annotation = item as Record<string, unknown>
+    if (typeof annotation.id !== 'string' || typeof annotation.note !== 'string') return false
+    if (annotation.kind === 'text') {
+      return typeof annotation.anchor === 'object' && annotation.anchor !== null
+        && typeof (annotation.anchor as Record<string, unknown>).sourceId === 'string'
+        && typeof (annotation.anchor as Record<string, unknown>).quote === 'string'
+        && typeof (annotation.anchor as Record<string, unknown>).prefix === 'string'
+        && typeof (annotation.anchor as Record<string, unknown>).suffix === 'string'
+    }
+    if (annotation.kind === 'image-pin') {
+      return typeof annotation.imageId === 'string' && typeof annotation.imageName === 'string'
+        && (annotation.source === 'composer' || annotation.source === 'history')
+        && typeof annotation.x === 'number' && typeof annotation.y === 'number'
+        && annotation.x >= 0 && annotation.x <= 100 && annotation.y >= 0 && annotation.y <= 100
+    }
+    return false
+  })
+}
 
 /** No-pipeline lexicon: zero text-ref decorations. */
 const EMPTY_LEXICON: ReadonlyMap<'/' | '@', readonly string[]> = new Map()
@@ -77,6 +130,13 @@ export class SessionInputShell implements SessionInput {
     addImages: ids => this.addImages(ids),
     removeImage: (id) => { this.removeImage(id) },
     pruneImages: (ids) => { this.pruneImages(ids) },
+    addTextAnnotation: (anchor, note) => this.addTextAnnotation(anchor, note),
+    updateTextAnnotation: (id, note) => { this.updateTextAnnotation(id, note) },
+    removeTextAnnotation: (id) => { this.removeTextAnnotation(id) },
+    discardTextAnnotations: () => { this.discardTextAnnotations() },
+    addImagePin: (imageId, imageName, x, y, note, source) => this.addImagePin(imageId, imageName, x, y, note, source),
+    updateImagePin: (id, patch) => { this.updateImagePin(id, patch) },
+    removeImagePin: (id) => { this.removeImagePin(id) },
     submit: () => { this.submit('queue') },
   }
 
@@ -86,9 +146,16 @@ export class SessionInputShell implements SessionInput {
   private noticeSeq = 0
   private lastDraft = ''
   private imageIds: readonly DraftAttachmentId[] = []
+  private annotations: readonly DraftAnnotation[] = []
+  private annotationSubmission: AnnotationSubmissionReservation | undefined
+  private annotationSeq = 0
   private disposed = false
   /** Draft persistence mirror (chat store write; receives the clipboard projection, never raw placeholders). */
   private mirrorFn: ((text: string) => void) | undefined
+  /** Annotation Draft persistence mirror (chat store write; null = no draft). */
+  private annotationMirrorFn: ((draft: PersistedAnnotationDraft | null) => void) | undefined
+  private lastAnnotations: readonly DraftAnnotation[] = []
+  private lastAnnotationSeq = 0
 
   constructor(private readonly deps: SessionInputDeps) {
     this.state = createSnapshotStore<InputState>(this.compose())
@@ -104,6 +171,7 @@ export class SessionInputShell implements SessionInput {
    * (narrows the machine's occurrence math; absent → diff scan).
    */
   setDraft(text: string, editRange?: EditRange): void {
+    if (this.annotationSubmission !== undefined) return
     this.run(this.core.dispatch({ type: 'draft-changed', draft: text, ...(editRange !== undefined ? { editRange } : {}) }))
   }
 
@@ -121,6 +189,7 @@ export class SessionInputShell implements SessionInput {
     const next = this.imageIds.filter(candidate => candidate !== id)
     if (next.length === this.imageIds.length) return
     this.imageIds = next
+    this.annotations = this.annotations.filter(item => item.kind !== 'image-pin' || item.imageId !== id)
     this.publish()
   }
 
@@ -133,6 +202,125 @@ export class SessionInputShell implements SessionInput {
     const next = this.imageIds.filter(id => keep.has(id))
     if (next.length === this.imageIds.length) return
     this.imageIds = next
+    this.publish()
+  }
+
+  /**
+   * Add one text annotation in creation order.
+   * @param anchor - Quoted source reference.
+   * @param note - Optional user-authored comment.
+   * @returns The stable draft identity.
+   */
+  addTextAnnotation(anchor: TextAnchor, note: string): TextAnnotationId {
+    this.annotationSeq += 1
+    const id = createTextAnnotationId(`annotation-${this.annotationSeq}`)
+    this.annotations = [...this.annotations, { id, kind: 'text', anchor, note }]
+    this.publish()
+    return id
+  }
+
+  /**
+   * Edit one note while preserving annotation identity and order.
+   * @param id - Annotation to edit.
+   * @param note - Replacement comment.
+   */
+  updateTextAnnotation(id: TextAnnotationId, note: string): void {
+    if (this.annotationSubmission !== undefined) return
+    const next = this.annotations.map(item => item.id === id ? { ...item, note } : item)
+    if (next.every((item, index) => item === this.annotations[index])) return
+    this.annotations = next
+    this.publish()
+  }
+
+  /**
+   * Delete one unsent annotation.
+   * @param id - Annotation to remove.
+   */
+  removeTextAnnotation(id: TextAnnotationId): void {
+    if (this.annotationSubmission !== undefined) return
+    const next = this.annotations.filter(item => item.id !== id)
+    if (next.length === this.annotations.length) return
+    this.annotations = next
+    this.publish()
+  }
+
+  /**
+   * Discard the complete Annotation Draft — every annotation and Draft Mark —
+   * in one action; the persisted draft mirrors out as null. Refused while a
+   * submission holds a reservation.
+   */
+  discardTextAnnotations(): void {
+    if (this.annotationSubmission !== undefined || this.annotations.length === 0) return
+    this.annotations = []
+    this.publish()
+  }
+
+  /**
+   * Add one image pin in the shared creation order.
+   * @param imageId - Staged Composer image id.
+   * @param imageName - Display name used in compiled prose.
+   * @param x - Displayed-raster X percent.
+   * @param y - Displayed-raster Y percent.
+   * @param note - Optional user-authored comment.
+   * @param source - Composer-staged image or durable history attachment.
+   * @returns The stable draft identity.
+   */
+  addImagePin(
+    imageId: DraftAttachmentId,
+    imageName: string,
+    x: number,
+    y: number,
+    note: string,
+    source: 'composer' | 'history' = 'composer',
+  ): TextAnnotationId {
+    this.annotationSeq += 1
+    const id = createTextAnnotationId(`annotation-${this.annotationSeq}`)
+    this.annotations = [...this.annotations, { id, kind: 'image-pin', imageId, source, imageName, x, y, note }]
+    this.publish()
+    return id
+  }
+
+  /**
+   * Edit one pin's note or position while preserving identity and order.
+   * @param id - Pin to edit.
+   * @param patch - Replacement fields.
+   */
+  updateImagePin(id: TextAnnotationId, patch: { note?: string; x?: number; y?: number }): void {
+    if (this.annotationSubmission !== undefined) return
+    const next = this.annotations.map((item) => {
+      if (item.id !== id || item.kind !== 'image-pin') return item
+      return {
+        ...item,
+        note: patch.note ?? item.note,
+        x: patch.x ?? item.x,
+        y: patch.y ?? item.y,
+      }
+    })
+    if (next.every((item, index) => item === this.annotations[index])) return
+    this.annotations = next
+    this.publish()
+  }
+
+  /**
+   * Delete one unsent image pin.
+   * @param id - Pin to remove.
+   */
+  removeImagePin(id: TextAnnotationId): void {
+    this.removeTextAnnotation(id)
+  }
+
+  /**
+   * Settle the owned annotation snapshot after Host admission.
+   * @param reservation - Exact object handed to the sink.
+   * @param admitted - Whether the Host accepted the compiled message.
+   */
+  settleAnnotationSubmission(reservation: AnnotationSubmissionReservation, admitted: boolean): void {
+    if (this.annotationSubmission !== reservation) return
+    this.annotationSubmission = undefined
+    if (admitted) {
+      const submitted = new Set(reservation.ids)
+      this.annotations = this.annotations.filter(item => !submitted.has(item.id))
+    }
     this.publish()
   }
 
@@ -196,8 +384,9 @@ export class SessionInputShell implements SessionInput {
    * dismisses and the menu tracks frozen.
    */
   submit(mode: InputSubmitMode = 'queue'): void {
-    if (this.snapshot.draft.trim() === '' && this.imageIds.length > 0) {
-      if (this.snapshot.phase === 'plain') this.deps.defaultSink('', [...this.imageIds], mode)
+    if (this.annotationSubmission !== undefined) return
+    if (this.snapshot.draft.trim() === '' && (this.imageIds.length > 0 || this.annotations.length > 0)) {
+      if (this.snapshot.phase === 'plain') this.sinkSerialized('', mode)
       return
     }
     this.run(this.core.dispatch({ type: 'enter', mode }))
@@ -375,6 +564,35 @@ export class SessionInputShell implements SessionInput {
     }
   }
 
+  /**
+   * Bind the Annotation Draft persistence mirror (chat store write). Every
+   * published annotation mutation mirrors out as one whole value; an emptied
+   * draft mirrors as null.
+   * @param write - store annotation-draft write.
+   * @returns the unbind disposer.
+   */
+  bindAnnotationMirror(write: (draft: PersistedAnnotationDraft | null) => void): () => void {
+    this.annotationMirrorFn = write
+    return () => {
+      if (this.annotationMirrorFn === write) this.annotationMirrorFn = undefined
+    }
+  }
+
+  /**
+   * Adopt a persisted Annotation Draft wholesale (remount/reload seeding).
+   * Ignored while annotations already exist or a submission is in flight, so
+   * a late restore can never clobber live or reserved state; malformed
+   * persisted values are dropped rather than adopted.
+   * @param persisted - rehydrated store value.
+   */
+  restoreAnnotationDraft(persisted: PersistedAnnotationDraft): void {
+    if (this.annotations.length > 0 || this.annotationSubmission !== undefined) return
+    if (!isPersistedAnnotationDraft(persisted)) return
+    this.annotations = persisted.annotations
+    this.annotationSeq = Math.max(this.annotationSeq, persisted.nextSeq - 1, 0)
+    this.publish()
+  }
+
   // ---- effect executor ----
 
   private run(effects: readonly InputEffect[]): void {
@@ -415,9 +633,20 @@ export class SessionInputShell implements SessionInput {
    */
   private sinkSerialized(draft: string, mode: InputSubmitMode): void {
     const imageIds = [...this.imageIds]
+    const annotations = [...this.annotations]
+    const annotationDraft = annotations.length === 0
+      ? undefined
+      : { restoreText: draft, ids: annotations.map(item => item.id) }
+    if (annotationDraft !== undefined) {
+      this.annotationSubmission = annotationDraft
+      this.publish()
+    }
     const occurrences = this.core.state.occurrences
     if (occurrences.length === 0) {
-      this.deps.defaultSink(draft.trim(), imageIds, mode)
+      const compiled = this.compile(draft, annotations)
+      if (this.rejectKnownOverflow(compiled, annotationDraft)) return
+      if (annotationDraft === undefined) this.deps.defaultSink(compiled, imageIds, mode)
+      else this.deps.defaultSink(compiled, imageIds, mode, annotationDraft)
       return
     }
     const inputTriggers = this.deps.inputTriggers?.()
@@ -437,11 +666,14 @@ export class SessionInputShell implements SessionInput {
           cursor = part.offset + 1
         }
         out += draft.slice(cursor)
-        this.deps.defaultSink(out.trim(), imageIds, mode)
+        const compiled = this.compile(out, annotations)
+        if (annotationDraft === undefined) this.deps.defaultSink(compiled, imageIds, mode)
+        else this.deps.defaultSink(compiled, imageIds, mode, annotationDraft)
       },
       (error: unknown) => {
         controller.abort()
         if (this.disposed) return
+        if (annotationDraft !== undefined) this.settleAnnotationSubmission(annotationDraft, false)
         const message = error instanceof Error ? error.message : String(error)
         this.notify('error', message)
       },
@@ -495,7 +727,35 @@ export class SessionInputShell implements SessionInput {
 
   private compose(): InputState {
     const core = this.core.state
-    return { ...core, imageIds: this.imageIds, queue: this.deps.queue?.getSnapshot() ?? EMPTY_QUEUE }
+    return {
+      ...core,
+      imageIds: this.imageIds,
+      annotations: this.annotations,
+      annotationSubmitting: this.annotationSubmission !== undefined,
+      queue: this.deps.queue?.getSnapshot() ?? EMPTY_QUEUE,
+    }
+  }
+
+  private compile(question: string, annotations: readonly DraftAnnotation[]): string {
+    return compileAnnotationSubmission(question, annotations, this.deps.annotationLabels)
+  }
+
+  /**
+   * Reject a known overflow before the sink. Unknown capacity is not this path.
+   * @param compiled - assembled request text.
+   * @param annotationDraft - in-flight reservation to release on overflow.
+   * @returns whether the request must not be sent.
+   */
+  private rejectKnownOverflow(
+    compiled: string,
+    annotationDraft: AnnotationSubmissionReservation | undefined,
+  ): boolean {
+    const capacity = this.deps.contextCapacity?.()
+    if (capacity === undefined) return false
+    if (!assembledRequestOverflows(compiled.length, capacity.usedTokens, capacity.contextWindow)) return false
+    if (annotationDraft !== undefined) this.settleAnnotationSubmission(annotationDraft, false)
+    this.notify('error', this.deps.annotationLabels.overflow)
+    return true
   }
 
   private publish(): void {
@@ -504,6 +764,15 @@ export class SessionInputShell implements SessionInput {
     if (next.draft !== this.lastDraft) {
       this.lastDraft = next.draft
       this.mirrorFn?.(next.draft)
+    }
+    if (this.annotations !== this.lastAnnotations || this.annotationSeq !== this.lastAnnotationSeq) {
+      this.lastAnnotations = this.annotations
+      this.lastAnnotationSeq = this.annotationSeq
+      this.annotationMirrorFn?.(
+        this.annotations.length === 0
+          ? null
+          : { annotations: this.annotations, nextSeq: this.annotationSeq + 1 },
+      )
     }
   }
 }

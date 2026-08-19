@@ -11,7 +11,9 @@ import type {
 import { JsonBlock, MessageText, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatNodeViewProps, ChatViewSlotProps } from '../contract/slots.ts'
 import { ImageGallery, type ImageLoader } from '@deepseek-ai/dsh-client-ui-attachment'
+import { useHistoryImagePinOverlay } from '../annotation/history-image-pins.tsx'
 import { messageImageLabels } from '../image-labels.ts'
+import type { InputActions, InputState } from '../input/contract.ts'
 import { CompactionItem } from './CompactionItem.tsx'
 import { ContextInjectionRow } from './ContextInjectionRow.tsx'
 import { MessageIconActions } from './MessageIconActions.tsx'
@@ -177,7 +179,7 @@ function projectUserText(text: string): ReactNode {
 
 /** Right-aligned bubble shared by user and steering rows. */
 function UserStyleBubble({
-  content, imageLoader, actions, pending = false, t,
+  content, imageLoader, actions, pending = false, t, annotations = [], addImagePin, updateImagePin,
 }: {
   content: readonly unknown[]
   imageLoader: ImageLoader
@@ -186,14 +188,30 @@ function UserStyleBubble({
   /** Whether this is the Host-authoritative pre-admission steering projection. */
   pending?: boolean
   t: ChatViewSlotProps['t']
+  annotations?: InputState['annotations']
+  addImagePin?: InputActions['addImagePin']
+  updateImagePin?: InputActions['updateImagePin']
 }): ReactNode {
   const { text, images, rest } = contentParts(content)
+  const historyPins = useHistoryImagePinOverlay(
+    annotations,
+    addImagePin === undefined || updateImagePin === undefined
+      ? undefined
+      : { addImagePin, updateImagePin },
+    t,
+  )
   const truncated = (total: number): string => t('json.truncated', { total })
   const showBubble = text !== '' || rest.length > 0
   return (
     <div className={css.userRow} data-pending-steering={pending || undefined} data-time-hover-root>
       <div className={css.userStack}>
-        <ImageGallery images={images} load={imageLoader} align="end" labels={messageImageLabels(t)} />
+        <ImageGallery
+          images={images}
+          load={imageLoader}
+          align="end"
+          labels={messageImageLabels(t)}
+          {...(historyPins.pinOverlayFor === undefined ? {} : { pinOverlayFor: historyPins.pinOverlayFor })}
+        />
         {showBubble && <div className={css.bubble}>
           {projectUserText(text)}
           {rest.map((block, i) => <JsonBlock key={i} label={t('message.extraBlock')} payload={block} truncatedLabel={truncated} />)}
@@ -236,14 +254,18 @@ export function PendingSteeringBubble({ content, loadImage, t }: {
 
 /** User and admitted-steering keyed Chat renderer. */
 export const UserMessageNodeView = memo(function UserMessageNodeView({
-  node, loadImage, t,
+  node, loadImage, t, useInput, inputActions,
 }: ChatNodeViewProps<'user' | 'steering'>) {
   const data = node.data
+  const annotations = useInput(state => state.annotations)
   return (
     <UserStyleBubble
       content={data.content}
       imageLoader={loadImage}
       t={t}
+      annotations={annotations}
+      addImagePin={inputActions.addImagePin}
+      updateImagePin={inputActions.updateImagePin}
       actions={text => (
         <MessageIconActions
           text={text}

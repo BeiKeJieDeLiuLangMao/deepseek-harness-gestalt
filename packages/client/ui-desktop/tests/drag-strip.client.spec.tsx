@@ -31,7 +31,7 @@ function bridge(platform: NodeJS.Platform): DesktopBridge {
     accountSignOut: vi.fn(),
     onAccountSnapshot: () => () => {},
     pairingGetSnapshot: vi.fn(), pairingSetEnabled: vi.fn(), pairingCreateChallenge: vi.fn(),
-    pairingCancelChallenge: vi.fn(), pairingConfirm: vi.fn(), pairingReject: vi.fn(),
+    pairingCancelChallenge: vi.fn(), pairingConfirm: vi.fn(), pairingReject: vi.fn(), pairingRevoke: vi.fn(),
     onPairingSnapshot: () => () => {},
   }
 }

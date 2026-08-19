@@ -1,14 +1,23 @@
 /** Desktop Host ownership for Settings-only Personal Pairing projection. */
 
 import type { DesktopPairingSnapshot } from '@deepseek-ai/dsh-client-ui-desktop/protocol'
-import type { PlatformAccountId } from '@deepseek-ai/dsh-platform-account'
+import { parsePlatformAccountId, type PlatformAccountId } from '@deepseek-ai/dsh-platform-account'
 import {
   parsePairingChallengeId,
   parsePairingRendezvousId,
   parsePendingPairingId,
+  parsePersonalPairingId,
   type PendingPairingId,
+  type PersonalPairingId,
 } from '@deepseek-ai/dsh-remote-access'
-import type { RemoteAccessTransport } from '@deepseek-ai/dsh-remote-access-client'
+import {
+  type DesktopRelayStopReason,
+  type RemoteAccessTransport,
+} from '@deepseek-ai/dsh-remote-access-client'
+import {
+  FailClosedDesktopRelayLifecycle,
+  type DesktopRelayLifecycle,
+} from '@deepseek-ai/dsh-remote-access-client/desktop-relay-lifecycle'
 import type { DesktopAccountActions } from './platform-account.ts'
 
 /** Host verbs exposed to the Mobile Pairing Settings section. */
@@ -25,20 +34,26 @@ export interface DesktopPairingActions {
   confirm(pendingPairingId: PendingPairingId): Promise<DesktopPairingSnapshot>
   /** Reject one pending handshake. */
   reject(pendingPairingId: PendingPairingId): Promise<DesktopPairingSnapshot>
+  /** Revoke one confirmed pairing. */
+  revoke(pairingId: PersonalPairingId): Promise<DesktopPairingSnapshot>
   /** Subscribe to Host-owned projection changes. */
   subscribe(listener: (snapshot: DesktopPairingSnapshot) => void): () => void
   /** Load Remote Access state after the Account installation has started. */
   start(): Promise<void>
   /** Stop polling and drain work when the current Account signs out. */
-  deactivate(): Promise<void>
+  deactivate(reason?: DesktopRelayStopReason): Promise<void>
   /** Drain lifecycle work during Desktop shutdown. */
   dispose(): Promise<void>
+  /** Read transport-only Relay ownership for Host lifecycle evidence. */
+  getRelayState(): { connected: boolean; stopReason?: DesktopRelayStopReason }
 }
 
 /** Real Settings controller construction inputs. */
 export interface DesktopPairingControllerOptions {
   account: Pick<DesktopAccountActions, 'authorizeCurrentInstallation' | 'getSnapshot'>
   transport: RemoteAccessTransport
+  /** Optional production-gated Relay lifecycle controlled by Mobile Access state. */
+  relay?: DesktopRelayLifecycle
   randomId?: () => string
   now?: () => number
   schedule?: (task: () => void, delayMs: number) => ReturnType<typeof setTimeout>
@@ -53,7 +68,10 @@ export class DesktopPairingController implements DesktopPairingActions {
   private readonly now: () => number
   private readonly schedule: (task: () => void, delayMs: number) => ReturnType<typeof setTimeout>
   private readonly pollIntervalMs: number
-  private serial: Promise<void> = Promise.resolve()
+  private serial: Promise<unknown> = Promise.resolve()
+  private currentOperation: Promise<unknown> | undefined
+  private lifecycleBarrier: Promise<void> = Promise.resolve()
+  private lifecycleGeneration = 0
   private active = false
   private closed = false
   private accountId: PlatformAccountId | undefined
@@ -72,6 +90,10 @@ export class DesktopPairingController implements DesktopPairingActions {
 
   getSnapshot(): DesktopPairingSnapshot { return this.snapshot }
 
+  getRelayState(): { connected: boolean; stopReason?: DesktopRelayStopReason } {
+    return this.options.relay?.getState?.() ?? { connected: false }
+  }
+
   subscribe(listener: (snapshot: DesktopPairingSnapshot) => void): () => void {
     this.listeners.add(listener)
     return () => { this.listeners.delete(listener) }
@@ -80,13 +102,37 @@ export class DesktopPairingController implements DesktopPairingActions {
   async setEnabled(enabled: boolean): Promise<DesktopPairingSnapshot> {
     return this.exclusive(async () => {
       this.assertActive()
-      const state = await this.options.transport.setMobileAccess({
-        authentication: await this.options.account.authorizeCurrentInstallation(),
-        enabled,
-      })
+      const authentication = await this.options.account.authorizeCurrentInstallation()
+      const stop = enabled ? Promise.resolve() : this.options.relay?.stop('mobile-access-disabled') ?? Promise.resolve()
+      const mutation = this.options.transport.setMobileAccess({ authentication, enabled })
+      const results = await Promise.allSettled([stop, mutation])
+      const stateResult = results[1]
+      if (stateResult.status === 'rejected') {
+        if (!enabled) this.publish({
+          status: 'failed', enabled: false, pairings: [],
+          error: stateResult.reason instanceof Error ? stateResult.reason.message : String(stateResult.reason),
+        })
+        const stopResult = results[0]
+        if (stopResult.status === 'rejected') {
+          throw new AggregateError(
+            [stopResult.reason, stateResult.reason],
+            'Desktop Mobile Access update failed',
+          )
+        }
+        throw stateResult.reason
+      }
+      const state = stateResult.value
       if (!state.enabled) {
         this.publish({ status: 'ready', enabled: false, pairings: [] })
+        throwSettled([results[0]])
         return this.snapshot
+      }
+      throwSettled([results[0]])
+      if (state.relay !== undefined) {
+        if (this.options.relay?.configure === undefined) {
+          throw new Error('Desktop Relay authority has no lifecycle owner')
+        }
+        await this.options.relay.configure(state.relay)
       }
       await this.refresh()
       return this.snapshot
@@ -159,42 +205,79 @@ export class DesktopPairingController implements DesktopPairingActions {
     })
   }
 
+  async revoke(pairingId: PersonalPairingId): Promise<DesktopPairingSnapshot> {
+    return this.exclusive(async () => {
+      this.assertActive()
+      await this.options.transport.revokePersonalPairing({
+        authentication: await this.options.account.authorizeCurrentInstallation(),
+        pairingId,
+      })
+      await this.refresh()
+      return this.snapshot
+    })
+  }
+
   async start(): Promise<void> {
     await this.exclusive(async () => {
+      await this.lifecycleBarrier
       if (this.closed) throw new Error('Desktop Personal Pairing is closed')
       const accountId = this.currentAccountId()
       if (this.accountId !== accountId) this.resetAccountScope()
       this.accountId = accountId
       this.active = true
-      await this.refresh()
+      await this.refresh(true)
     })
   }
 
-  async deactivate(): Promise<void> {
+  async deactivate(reason: DesktopRelayStopReason = 'quit'): Promise<void> {
+    const generation = ++this.lifecycleGeneration
     this.active = false
     this.resetAccountScope()
-    await this.serial
-    this.resetAccountScope()
+    const draining = this.currentOperation ?? this.serial
+    const stopping = this.options.relay?.stop(reason) ?? Promise.resolve()
+    const settled = Promise.allSettled([stopping, draining])
+    this.lifecycleBarrier = settled.then(() => {})
+    const results = await settled
+    if (this.lifecycleGeneration === generation) this.resetAccountScope()
+    throwSettled(results)
   }
 
   async dispose(): Promise<void> {
+    const generation = ++this.lifecycleGeneration
     this.closed = true
     this.active = false
     if (this.timer !== undefined) clearTimeout(this.timer)
     this.timer = undefined
-    await this.serial
+    const draining = this.currentOperation ?? this.serial
+    const stopping = this.options.relay?.stop('quit') ?? Promise.resolve()
+    const settled = Promise.allSettled([stopping, draining])
+    this.lifecycleBarrier = settled.then(() => {})
+    const results = await settled
+    if (this.lifecycleGeneration !== generation) return
     this.listeners.clear()
+    throwSettled(results)
   }
 
-  private async refresh(): Promise<void> {
+  private async refresh(reissueDesktopAuthority = false): Promise<void> {
     try {
       const state = await this.options.transport.getMobileAccessState(
         await this.options.account.authorizeCurrentInstallation(),
       )
       if (!state.enabled) {
+        await this.options.relay?.stop('mobile-access-disabled')
         this.publish({ status: 'ready', enabled: false, pairings: [] })
         return
       }
+      if (reissueDesktopAuthority && this.options.relay !== undefined) {
+        const recovered = await this.options.transport.reissueDesktopRelayAuthority(
+          await this.options.account.authorizeCurrentInstallation(),
+        )
+        if (recovered.relay === undefined) {
+          throw new Error('Enabled Desktop Remote Access did not return Relay authority')
+        }
+        await this.options.relay.configure(recovered.relay)
+      }
+      await this.options.relay?.start()
       const pending = await this.options.transport.listPendingPairings(
         await this.options.account.authorizeCurrentInstallation(),
       )
@@ -236,7 +319,7 @@ export class DesktopPairingController implements DesktopPairingActions {
     if (snapshot.status !== 'signed-in' || snapshot.account === undefined) {
       throw new Error('Desktop Personal Pairing requires a signed-in Platform Account')
     }
-    return snapshot.account.id
+    return parsePlatformAccountId(snapshot.account.id)
   }
 
   private async listPairings() {
@@ -248,6 +331,8 @@ export class DesktopPairingController implements DesktopPairingActions {
       deviceName: pairing.device.name,
       platform: pairing.device.platform,
       pairedAt: pairing.pairedAt,
+      lastAccessAt: pairing.lastAccessAt,
+      online: pairing.online,
     }))
   }
 
@@ -296,7 +381,12 @@ export class DesktopPairingController implements DesktopPairingActions {
 
   private exclusive<T>(operation: () => Promise<T>): Promise<T> {
     const result = this.serial.then(operation)
+    this.currentOperation = result
     this.serial = result.then(() => undefined, () => undefined)
+    const release = (): void => {
+      if (this.currentOperation === result) this.currentOperation = undefined
+    }
+    void result.then(release, release)
     return result
   }
 
@@ -305,31 +395,50 @@ export class DesktopPairingController implements DesktopPairingActions {
   }
 }
 
+function throwSettled(results: PromiseSettledResult<unknown>[]): void {
+  const errors: unknown[] = []
+  for (const result of results) {
+    if (result.status === 'rejected') errors.push(result.reason)
+  }
+  if (errors.length === 1) throw errorFromUnknown(errors[0])
+  if (errors.length > 1) throw new AggregateError(errors, 'Desktop Personal Pairing lifecycle failed')
+}
+
+function errorFromUnknown(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error), { cause: error })
+}
+
 /**
  * Fail-closed controller used until the independently reviewed Noise adapter is available.
  * Mobile Access remains disabled and no invitation capability is created.
  */
 export class UnavailableDesktopPairingController implements DesktopPairingActions {
   private readonly snapshot: DesktopPairingSnapshot
+  private readonly reason: string
 
   /** @param reason - exact unavailable reason shown only inside Settings. */
-  constructor(reason: string) {
+  constructor(reason: string, private readonly relay: DesktopRelayLifecycle = new FailClosedDesktopRelayLifecycle(reason)) {
+    this.reason = reason
     this.snapshot = { status: 'unavailable', enabled: false, pairings: [], error: reason }
   }
 
   getSnapshot(): DesktopPairingSnapshot { return this.snapshot }
+  getRelayState(): { connected: boolean; stopReason?: DesktopRelayStopReason } {
+    return this.relay.getState?.() ?? { connected: false }
+  }
   setEnabled(_enabled: boolean): Promise<DesktopPairingSnapshot> { return this.rejectUnavailable() }
   createChallenge(): Promise<DesktopPairingSnapshot> { return this.rejectUnavailable() }
   cancelChallenge(): Promise<DesktopPairingSnapshot> { return this.rejectUnavailable() }
   confirm(_pendingPairingId: PendingPairingId): Promise<DesktopPairingSnapshot> { return this.rejectUnavailable() }
   reject(_pendingPairingId: PendingPairingId): Promise<DesktopPairingSnapshot> { return this.rejectUnavailable() }
+  revoke(_pairingId: PersonalPairingId): Promise<DesktopPairingSnapshot> { return this.rejectUnavailable() }
   subscribe(_listener: (snapshot: DesktopPairingSnapshot) => void): () => void { return () => {} }
   start(): Promise<void> { return Promise.resolve() }
-  deactivate(): Promise<void> { return Promise.resolve() }
-  dispose(): Promise<void> { return Promise.resolve() }
+  deactivate(reason: DesktopRelayStopReason = 'quit'): Promise<void> { return this.relay.stop(reason) }
+  dispose(): Promise<void> { return this.relay.stop('quit') }
 
   private rejectUnavailable(): Promise<never> {
-    return Promise.reject(new Error(this.snapshot.error ?? 'Personal Pairing is unavailable'))
+    return Promise.reject(new Error(this.reason))
   }
 }
 
@@ -366,4 +475,12 @@ export function rejectPairingFromIpc(
   value: unknown,
 ): Promise<DesktopPairingSnapshot> {
   return actions.reject(parseDesktopPendingPairingId(value))
+}
+
+/** Validate an IPC id before invoking the Desktop revocation mutation. */
+export function revokePairingFromIpc(
+  actions: Pick<DesktopPairingActions, 'revoke'>,
+  value: unknown,
+): Promise<DesktopPairingSnapshot> {
+  return actions.revoke(parsePersonalPairingId(value))
 }

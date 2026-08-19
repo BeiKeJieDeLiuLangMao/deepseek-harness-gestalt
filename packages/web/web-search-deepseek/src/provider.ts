@@ -2,7 +2,9 @@
  * DeepSeek search through an Anthropic-compatible Messages model call with the native
  * `web_search_20250305` server tool. Each search costs a model turn, but returns structured
  * result blocks; absence of those blocks is an error rather than a prose-scraping fallback.
- * The wire format and native `fetch` client are provider-private and do not use `ctx.llm`.
+ * The same Messages contract serves the official DeepSeek endpoint and a separately
+ * configured Anthropic-compatible base. The wire format and native `fetch` client are
+ * provider-private and do not use `ctx.llm`.
  * @module @deepseek-ai/dsh-web-search-deepseek/provider
  */
 
@@ -103,6 +105,11 @@ export interface DeepSeekSearchProviderOptions {
   /** Maximum `web_search` server-tool uses per request. */
   maxUses: number
   /**
+   * Wire the next search uses. `moonshot-search` POSTs `{ text_query }` at the
+   * configured URL; omitted or `anthropic-messages` uses Messages + `web_search`.
+   */
+  protocol?: 'anthropic-messages' | 'moonshot-search'
+  /**
    * Record the exact secret-free request immediately before dispatch. A throw
    * prevents dispatch so model-visible auxiliary input cannot escape logging.
    */
@@ -188,7 +195,11 @@ export class DeepSeekSearchProvider implements WebSearchProvider {
 
   available(): boolean {
     const options = this.resolveOptions()
-    return ((options.apiKey?.length ?? 0) > 0 || options.resolveApiKey !== undefined)
+    const keyed = (options.apiKey?.length ?? 0) > 0 || options.resolveApiKey !== undefined
+    if (options.protocol === 'moonshot-search') {
+      return keyed && URL.canParse(options.baseURL)
+    }
+    return keyed
       && URL.canParse(options.baseURL)
       && isPositiveInteger(options.maxTokens)
       && isPositiveInteger(options.maxUses)
@@ -201,6 +212,9 @@ export class DeepSeekSearchProvider implements WebSearchProvider {
     const options = this.resolveOptions()
     const apiKey = await this.apiKey(options, signal)
     throwIfSearchAborted(signal)
+    if (options.protocol === 'moonshot-search') {
+      return this.moonshotSearch(request, options, apiKey, signal)
+    }
     const endpoint = `${options.baseURL}/messages`
     const body: DeepSeekSearchLlmRequest['body'] = {
       model: options.model,
@@ -222,7 +236,7 @@ export class DeepSeekSearchProvider implements WebSearchProvider {
       response = await fetch(endpoint, {
         method: 'POST',
         redirect: 'error',
-        headers: {
+        headers: asciiHeaders({
           // Official DeepSeek expects `x-api-key`; an Anthropic-compatible proxy
           // may expect `Authorization: Bearer` — send both so either resolves.
           'x-api-key': apiKey,
@@ -231,7 +245,7 @@ export class DeepSeekSearchProvider implements WebSearchProvider {
           'content-type': 'application/json',
           'accept': 'application/json',
           'user-agent': USER_AGENT,
-        },
+        }),
         body: JSON.stringify(body),
         ...signal !== undefined ? { signal } : {},
       })
@@ -266,6 +280,59 @@ export class DeepSeekSearchProvider implements WebSearchProvider {
       if (signal?.aborted === true || isAbortError(error)) throw searchAborted(signal, error)
       if (error instanceof WebError) throw error
       throw new WebError(`DeepSeek returned an unprocessable response body: ${String(error)}`, 'WEB_PROVIDER_ERROR', { cause: error })
+    }
+  }
+
+  /**
+   * Dedicated Moonshot `POST {baseURL}` search (`text_query` / `search_results`).
+   * The configured URL is the search endpoint itself; `/messages` is not appended.
+   */
+  private async moonshotSearch(
+    request: WebSearchRequest,
+    options: DeepSeekSearchProviderOptions,
+    apiKey: string,
+    signal?: AbortSignal,
+  ): Promise<WebSearchResult> {
+    const endpoint = options.baseURL
+    const body = { text_query: request.query }
+    throwIfSearchAborted(signal)
+    let response: Response
+    try {
+      response = await fetch(endpoint, {
+        method: 'POST',
+        redirect: 'error',
+        headers: asciiHeaders({
+          authorization: `Bearer ${apiKey}`,
+          'content-type': 'application/json',
+          accept: 'application/json',
+          'user-agent': USER_AGENT,
+        }),
+        body: JSON.stringify(body),
+        ...signal !== undefined ? { signal } : {},
+      })
+    } catch (error: unknown) {
+      if (signal?.aborted === true || isAbortError(error)) throw searchAborted(signal, error)
+      throw new WebError(`Kimi search request failed: ${String(error)}`, 'WEB_PROVIDER_ERROR', { cause: error })
+    }
+    if (!response.ok) {
+      const status = response.status
+      let message = `Kimi search API error (HTTP ${status})`
+      try {
+        const parsed = await response.json() as { error?: { message?: string } | string; message?: string }
+        const detail = typeof parsed.error === 'string' ? parsed.error : parsed.error?.message ?? parsed.message
+        if (detail !== undefined && detail.length > 0) message = detail
+      } catch (error: unknown) {
+        if (signal?.aborted === true || isAbortError(error)) throw searchAborted(signal, error)
+      }
+      throw new WebError(message, 'WEB_PROVIDER_ERROR')
+    }
+    try {
+      const payload = await response.json() as MoonshotSearchResponse
+      return mapMoonshotResponse(payload, request.maxResults ?? options.maxUses)
+    } catch (error: unknown) {
+      if (signal?.aborted === true || isAbortError(error)) throw searchAborted(signal, error)
+      if (error instanceof WebError) throw error
+      throw new WebError(`Kimi returned an unprocessable response body: ${String(error)}`, 'WEB_PROVIDER_ERROR', { cause: error })
     }
   }
 
@@ -344,4 +411,57 @@ function isAbortError(error: unknown): boolean {
 /** True for DeepSeek request limits that can be sent to the Messages API. */
 function isPositiveInteger(value: number): boolean {
   return Number.isInteger(value) && value > 0
+}
+
+/** Moonshot `POST /v1/search` response. */
+interface MoonshotSearchResponse {
+  search_results?: readonly {
+    url?: string
+    title?: string
+    snippet?: string
+    content?: string
+    date?: string
+  }[]
+}
+
+/**
+ * Map Moonshot `search_results` onto the seam's sources. Truncation here is a
+ * provider-side bound; the seam may truncate again for `maxResults`.
+ */
+function mapMoonshotResponse(payload: MoonshotSearchResponse, limit: number): WebSearchResult {
+  const seen = new Set<string>()
+  const sources: WebSearchSource[] = []
+  for (const item of payload.search_results ?? []) {
+    const url = item.url ?? ''
+    if (url.length === 0 || seen.has(url)) continue
+    seen.add(url)
+    const snippet = item.snippet ?? item.content
+    sources.push({
+      url,
+      ...item.title != null && item.title.length > 0 ? { title: item.title } : {},
+      ...snippet != null && snippet.length > 0 ? { snippet } : {},
+      ...item.date != null && item.date.length > 0 ? { publishedAt: item.date } : {},
+    })
+    if (sources.length >= limit) break
+  }
+  return { sources, truncated: (payload.search_results?.length ?? 0) > sources.length }
+}
+
+/**
+ * Fetch rejects header values outside Latin-1 as a ByteString error. Fail
+ * before dispatch so a non-ASCII key or version is named, not wrapped.
+ */
+function asciiHeaders(headers: Record<string, string>): Record<string, string> {
+  for (const [name, value] of Object.entries(headers)) {
+    for (let i = 0; i < value.length; i++) {
+      if (value.charCodeAt(i) > 255) {
+        throw new WebError(
+          `Search request header "${name}" is not ASCII (code ${String(value.charCodeAt(i))} at ${String(i)}). `
+          + 'Use an API key and endpoint that contain only Latin-1 characters.',
+          'WEB_PROVIDER_ERROR',
+        )
+      }
+    }
+  }
+  return headers
 }

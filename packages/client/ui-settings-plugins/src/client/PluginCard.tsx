@@ -35,6 +35,8 @@ export interface PluginCardProps {
   onSave: () => void
   /** Drop every staged edit. */
   onDiscard: () => void
+  /** Optional actions rendered at the start of the footer, before Discard. */
+  leadingActions?: ReactNode
   /** The plugin's controls. */
   children: ReactNode
 }
@@ -72,6 +74,7 @@ export function PluginCard(props: PluginCardProps) {
             {!state.writable ? <p className={css.readOnly} role="status">{props.t('readOnly')}</p> : null}
             {props.children}
             <div className={css.footer}>
+              {props.leadingActions}
               {state.failed ? <p className={css.failed} role="status">{props.t('saveFailed')}</p> : null}
               <button
                 type="button"

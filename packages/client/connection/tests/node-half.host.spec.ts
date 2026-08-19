@@ -171,6 +171,7 @@ describe('connection node half', () => {
     for (const method of [
       'host.pickDirectory', 'host.openPath',
       'settings.describe', 'settings.openDocument', 'settings.update', 'settings.replace', 'settings.mutate',
+      'settings.testWebSearch',
       'credentials.describe', 'credentials.set', 'credentials.unset',
       'llm.discoverModels',
       // A composition names the plugins a session runs: reading one is
@@ -465,6 +466,7 @@ describe('connection node half over a real HTTP server', () => {
       // configuration, and credentials.describe probes arbitrary env-var names.
       for (const method of [
         'settings.describe', 'settings.openDocument', 'settings.update', 'settings.replace', 'settings.mutate',
+        'settings.testWebSearch',
         'credentials.describe', 'credentials.set', 'credentials.unset',
         'host.pickDirectory', 'host.openPath',
         // Carries a draft credential and turns the host into a fetcher for a

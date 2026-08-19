@@ -5,6 +5,9 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { LlmCallConfig, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
+import type { Agent } from './runtime-types.ts'
+
+const liveSelections = new WeakMap<Context, ModelSelectionRef>()
 
 /** Complete provider, model, and optional reasoning effort selected for one live Agent. */
 export interface ModelSelection {
@@ -25,6 +28,15 @@ export interface ModelSelectionRef {
 }
 
 /**
+ * Read the live model selection that the next parent prompt would use.
+ * @param agent - the parent whose installed selection to inspect.
+ * @returns the current selection, or `undefined` when no selection is installed.
+ */
+export function liveModelSelection(agent: Agent): ModelSelection | undefined {
+  return liveSelections.get(agent.ctx)?.current
+}
+
+/**
  * Couple one mutable selection to Agent-scoped prompt assembly and request routing.
  * Prompt assembly snapshots the selected model before delegating, then applies
  * its provider/model pair and effort to request config so a
@@ -37,6 +49,7 @@ export interface ModelSelectionRef {
  * @returns Disposer for both scoped waterfall listeners.
  */
 export function installModelSelection(agentCtx: Context, selection: ModelSelectionRef): () => void {
+  liveSelections.set(agentCtx, selection)
   const disposeAssembly = agentCtx.on('system-prompt/assemble', async (_assembly, _context, next) => {
     const selected = selection.current
     const assembled = await next()
@@ -71,5 +84,6 @@ export function installModelSelection(agentCtx: Context, selection: ModelSelecti
   return () => {
     disposeAssembly()
     disposeRequest()
+    liveSelections.delete(agentCtx)
   }
 }

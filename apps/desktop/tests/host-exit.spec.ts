@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { planHostExit, startWithOneRetry } from '../src/host-exit.ts'
+import { planHostExit, shouldPreventQuit, startWithOneRetry } from '../src/host-exit.ts'
 
 describe('planHostExit', () => {
   it('ignores an exit after the window is gone, respawns once, then errors', () => {
@@ -26,6 +26,12 @@ describe('planHostExit', () => {
       throw new Error('start failed ' + String(attempts))
     })).rejects.toThrow('start failed 2')
     expect(attempts).toBe(2)
+  })
+
+  it('lets quitAndInstall finish instead of intercepting before-quit', () => {
+    expect(shouldPreventQuit({ shuttingDown: false, updaterState: 'installing' })).toBe(false)
+    expect(shouldPreventQuit({ shuttingDown: false, updaterState: 'downloaded' })).toBe(true)
+    expect(shouldPreventQuit({ shuttingDown: true, updaterState: 'installing' })).toBe(false)
   })
 
   it('does not retry a shutdown cancellation', async () => {

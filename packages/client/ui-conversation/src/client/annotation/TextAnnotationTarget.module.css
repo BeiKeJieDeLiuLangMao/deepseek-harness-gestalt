@@ -1,0 +1,44 @@
+.target { position: relative; }
+
+.floating {
+  position: fixed;
+  z-index: 1100;
+  left: var(--annotation-left);
+  top: var(--annotation-top);
+}
+
+.toolbar {
+  display: flex;
+  overflow: hidden;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 9px;
+  background: var(--dsw-alias-bg-base);
+  box-shadow: var(--dsw-shadow-lv2);
+}
+
+.toolbar button {
+  height: 34px;
+  padding: 0 12px;
+  border: 0;
+  border-right: 1px solid var(--dsw-alias-border-l1);
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.toolbar button:last-child { border-right: 0; }
+.toolbar button:hover { background: var(--dsw-alias-interactive-bg-hover); }
+
+.staleAnchor {
+  margin: 4px 0 0;
+  color: var(--dsw-alias-state-error-primary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+::highlight(annotation-draft-mark) {
+  background: var(--dsw-alias-state-business-tertiary);
+  text-decoration: underline var(--dsw-alias-state-business-primary) 2px;
+}

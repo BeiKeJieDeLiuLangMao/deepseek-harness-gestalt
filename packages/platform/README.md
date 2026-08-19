@@ -11,6 +11,9 @@ Platform packages own installation-independent identity and session behavior use
 | [`platform-account-http/`](platform-account-http/README.md) | `@deepseek-ai/dsh-platform-account-http` | Fixed callback and installation-session HTTP routes | Consumer |
 | [`platform-account-client/`](platform-account-client/README.md) | `@deepseek-ai/dsh-platform-account-client` | Desktop/Mobile proof, protected storage, and account-scoped namespace client | Consumer library |
 | [`remote-access/`](remote-access/README.md) | `@deepseek-ai/dsh-remote-access` | Mobile Access and Personal Pairing lifecycle, crypto adapter, and Companion-only Device Principals | `ctx.remoteAccess` |
+| [`remote-access-client/`](remote-access-client/README.md) | `@deepseek-ai/dsh-remote-access-client` | Pairing HTTP transport and reconnecting Mobile/Desktop Relay lifecycle | Consumer library |
+| [`remote-access-http/`](remote-access-http/README.md) | `@deepseek-ai/dsh-remote-access-http` | Pairing HTTP and Relay WSS Consumers | Consumer |
+| [`remote-access-redis/`](remote-access-redis/README.md) | `@deepseek-ai/dsh-remote-access-redis` | Expiring Relay directory, invalidation, and direct ciphertext Pub/Sub | Coordination adapter |
 | [`remote-protocol/`](remote-protocol/README.md) | `@deepseek-ai/dsh-remote-protocol` | Relay and encrypted Companion codecs, negotiation, errors, and limits | Pure protocol module |
 
 Deployment persistence, shared invalidation transport, secrets, and observability adapters belong to the Platform composition root. The packages here define and exercise their required interfaces without embedding deployment credentials.

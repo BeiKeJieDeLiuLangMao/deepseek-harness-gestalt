@@ -130,6 +130,9 @@ describe('render branch tails', () => {
           addImages: () => true,
           removeImage: () => {},
           pruneImages: () => {},
+          addTextAnnotation: () => { throw new Error('unused') },
+          updateTextAnnotation: () => {},
+          removeTextAnnotation: () => {}, discardTextAnnotations: () => {}, addImagePin: () => 'pin' as never, updateImagePin: () => {}, removeImagePin: () => {},
           submit: () => {},
         }}
         useStore={bindSnapshotSelector(chat)}
@@ -167,6 +170,9 @@ describe('render branch tails', () => {
           addImages: () => true,
           removeImage: () => {},
           pruneImages: () => {},
+          addTextAnnotation: () => { throw new Error('unused') },
+          updateTextAnnotation: () => {},
+          removeTextAnnotation: () => {}, discardTextAnnotations: () => {}, addImagePin: () => 'pin' as never, updateImagePin: () => {}, removeImagePin: () => {},
           submit: () => {},
         }}
         useStore={bindSnapshotSelector(chat)}
@@ -224,6 +230,9 @@ describe('render branch tails', () => {
           addImages: () => true,
           removeImage: () => {},
           pruneImages: () => {},
+          addTextAnnotation: () => { throw new Error('unused') },
+          updateTextAnnotation: () => {},
+          removeTextAnnotation: () => {}, discardTextAnnotations: () => {}, addImagePin: () => 'pin' as never, updateImagePin: () => {}, removeImagePin: () => {},
           submit: () => {},
         }}
         useStore={bindSnapshotSelector(chat)}
