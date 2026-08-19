@@ -63,8 +63,114 @@ class ResizeObserverStub {
   unobserve(): void {}
 }
 
+class MemoryIdbRequest<T> {
+  result: T | undefined
+  error: DOMException | null = null
+  onsuccess: (() => void) | null = null
+  onerror: (() => void) | null = null
+  onupgradeneeded: (() => void) | null = null
+}
+
+class MemoryObjectStore {
+  constructor(
+    readonly keyPath: string,
+    readonly rows = new Map<string, unknown>(),
+  ) {}
+
+  put(record: Record<string, unknown>): MemoryIdbRequest<unknown> {
+    const key = record[this.keyPath]
+    if (typeof key !== 'string') throw new Error('indexedDB put: keyPath is not a string')
+    this.rows.set(key, record)
+    return new MemoryIdbRequest()
+  }
+
+  get(key: string): MemoryIdbRequest<unknown> {
+    const request = new MemoryIdbRequest<unknown>()
+    queueMicrotask(() => {
+      request.result = this.rows.get(key)
+      request.onsuccess?.()
+    })
+    return request
+  }
+
+  delete(key: string): MemoryIdbRequest<undefined> {
+    this.rows.delete(key)
+    return new MemoryIdbRequest()
+  }
+}
+
+class MemoryTransaction {
+  error: DOMException | null = null
+  oncomplete: (() => void) | null = null
+  onerror: (() => void) | null = null
+
+  constructor(private readonly store: MemoryObjectStore) {
+    queueMicrotask(() => { this.oncomplete?.() })
+  }
+
+  objectStore(_name: string): MemoryObjectStore {
+    return this.store
+  }
+}
+
+class MemoryDatabase {
+  readonly objectStoreNames = {
+    contains: (name: string): boolean => this.stores.has(name),
+  }
+
+  constructor(
+    readonly name: string,
+    public version: number,
+    readonly stores = new Map<string, MemoryObjectStore>(),
+  ) {}
+
+  createObjectStore(name: string, options: { keyPath: string }): MemoryObjectStore {
+    const store = new MemoryObjectStore(options.keyPath)
+    this.stores.set(name, store)
+    return store
+  }
+
+  transaction(name: string, _mode: IDBTransactionMode): MemoryTransaction {
+    const store = this.stores.get(name)
+    if (store === undefined) throw new Error(`indexedDB transaction: missing store ${name}`)
+    return new MemoryTransaction(store)
+  }
+
+  close(): void {}
+}
+
+/** jsdom has no IndexedDB; Composer persist (`putStagedImage`) opens one after paste. */
+class MemoryIndexedDB {
+  readonly #dbs = new Map<string, MemoryDatabase>()
+
+  open(name: string, version = 1): MemoryIdbRequest<MemoryDatabase> {
+    const request = new MemoryIdbRequest<MemoryDatabase>()
+    queueMicrotask(() => {
+      let db = this.#dbs.get(name)
+      const upgrade = db === undefined || db.version < version
+      if (db === undefined) {
+        db = new MemoryDatabase(name, version)
+        this.#dbs.set(name, db)
+      } else if (db.version < version) {
+        db.version = version
+      }
+      request.result = db
+      if (upgrade) request.onupgradeneeded?.()
+      request.onsuccess?.()
+    })
+    return request
+  }
+}
+
 const win = window as FixtureWindow
 let unmount: (() => void) | undefined
+
+// File-scoped: `void putStagedImage` can open the database after afterEach
+// has already run `vi.unstubAllGlobals()`.
+Object.defineProperty(globalThis, 'indexedDB', {
+  configurable: true,
+  value: new MemoryIndexedDB(),
+})
 
 /**
  * Register the per-test jsdom setup and teardown the assembled boot needs:
