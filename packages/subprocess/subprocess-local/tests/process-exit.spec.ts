@@ -48,30 +48,6 @@ async function captureIdentities(inspector: ProcessInspector, state: TreeState):
   }, { interval: 10, timeout: scenarioTimeoutMs })
 }
 
-async function waitForHostReady(
-  child: PromiseLike<{ exitCode: number | null; signal?: NodeJS.Signals | null; stderr: string }> & {
-    readonly exitCode?: number | null
-  },
-  path: string,
-): Promise<void> {
-  const deadline = Date.now() + scenarioTimeoutMs
-  for (;;) {
-    if (typeof child.exitCode === 'number') {
-      const outcome = await child
-      throw new Error(
-        `host exited before ready: code=${String(outcome.exitCode)} signal=${String(outcome.signal)} stderr=${outcome.stderr}`,
-      )
-    }
-    try {
-      await readFile(path, 'utf8')
-      return
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT' || Date.now() >= deadline) throw error
-      await new Promise(resolve => setTimeout(resolve, 25))
-    }
-  }
-}
-
 async function waitForGone(state: TreeState): Promise<void> {
   await Promise.all([state.root, state.descendant].map(pid => vi.waitFor(() => {
     if (processExists(pid)) throw new Error(`managed pid ${pid} is still alive`)
@@ -125,6 +101,8 @@ async function runScenario(kind: ManagedKind, trigger: ExitTrigger) {
     reject: false,
     timeout: scenarioTimeoutMs,
   })
+  let hostOutcome: Awaited<typeof child> | undefined
+  void child.then((outcome) => { hostOutcome = outcome })
   let state: TreeState | undefined
   let identities: ProcessIdentity[] = []
   let settled = false
@@ -133,7 +111,22 @@ async function runScenario(kind: ManagedKind, trigger: ExitTrigger) {
     // `ready` is written only after spawn/spawnTerminal returns. The child can
     // publish tree.json while node-pty.spawn is still blocked in the host, so
     // waiting for the tree first then `ready` times out under coverage load.
-    await waitForHostReady(child, join(root, 'ready'))
+    const readyPath = join(root, 'ready')
+    const readyDeadline = Date.now() + scenarioTimeoutMs
+    for (;;) {
+      if (hostOutcome !== undefined) {
+        throw new Error(
+          `host exited before ready: code=${String(hostOutcome.exitCode)} signal=${String(hostOutcome.signal)} stderr=${hostOutcome.stderr}`,
+        )
+      }
+      try {
+        await readFile(readyPath, 'utf8')
+        break
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT' || Date.now() >= readyDeadline) throw error
+        await new Promise(resolve => setTimeout(resolve, 25))
+      }
+    }
     state = await readTree(join(root, 'tree.json'))
     if (process.platform !== 'win32') identities = await captureIdentities(createProcessInspector(), state)
     await writeFile(join(root, 'proceed'), 'proceed')
