@@ -136,7 +136,7 @@ export class WebCryptoCompanionCacheCipher implements CompanionCacheCipher {
 }
 
 /** Settlement state of one transmitted operation. */
-export type CompanionReceiptStatus = 'unknown' | 'committed' | 'not-submitted'
+type CompanionReceiptStatus = 'unknown' | 'committed' | 'not-submitted'
 
 /** Operation Receipt row stored only after transmission. */
 export interface CompanionOperationReceipt {
