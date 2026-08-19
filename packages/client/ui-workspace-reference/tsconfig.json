@@ -11,6 +11,7 @@
     { "path": "../runtime" },
     { "path": "../ui-input-trigger" },
     { "path": "../../typert/protocol" },
+    { "path": "../../typert/registry" },
     { "path": "../../runtime-diagnostics/invariants" }
   ]
 }

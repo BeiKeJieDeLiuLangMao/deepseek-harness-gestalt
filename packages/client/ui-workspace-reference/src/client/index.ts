@@ -10,7 +10,7 @@ import { WORKSPACE_REFERENCE_INVOCATIONS } from './invocations.ts'
 import { createWorkspaceSource } from './source.ts'
 import type { WorkspacePathEntry } from './rank.ts'
 
-export const inject = ['inputTriggers', 'remote']
+export const inject = ['inputTriggers', 'remote', 'typert']
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
   interface TypertRemoteNamespaceMap {
@@ -29,8 +29,11 @@ export async function apply(ctx: ClientContext): Promise<void> {
     package: '@deepseek-ai/dsh-workspace-reference',
     descriptors: WORKSPACE_REFERENCE_INVOCATIONS,
   })
+  const workspaceReference = ctx.get('remote.workspaceReference') as {
+    search(agentId: string, signal?: AbortSignal): Promise<RemoteResult<readonly WorkspacePathEntry[]>>
+  }
   const source = createWorkspaceSource(async (sessionId: SessionId, signal) => {
-    const result = await ctx.remote.workspaceReference.search(sessionId, signal)
+    const result = await workspaceReference.search(sessionId, signal)
     if (!result.ok) throw new Error(result.error.message)
     return result.value
   })
