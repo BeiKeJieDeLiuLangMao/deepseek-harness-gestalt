@@ -27,6 +27,7 @@ export interface WorkspaceIndex {
  * @param cwd - absolute session workspace.
  * @param options - cap and basename filters.
  * @param signal - caller lifetime.
+ * @returns indexed entries and whether the cap stopped the walk.
  */
 export async function indexWorkspace(
   fileSystem: FileSystem,

@@ -31,7 +31,11 @@ export function scanMentions(text: string): readonly string[] {
   return out
 }
 
-/** Escape one XML attribute without changing the referenced path identity. */
+/**
+ * Escape one XML attribute without changing the referenced path identity.
+ * @param value - raw attribute text.
+ * @returns XML-safe attribute text.
+ */
 export function escapeAttribute(value: string): string {
   return value
     .replaceAll('&', '&amp;')
@@ -106,6 +110,7 @@ export async function expandMentions(
  * @param messages - claimed user messages.
  * @param signal - caller lifetime.
  * @param next - downstream waterfall.
+ * @returns the downstream decision, possibly with appended markers.
  */
 export async function mentionPreStep(
   cwd: string | undefined,

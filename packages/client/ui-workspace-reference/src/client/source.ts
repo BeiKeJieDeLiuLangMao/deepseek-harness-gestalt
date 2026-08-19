@@ -24,6 +24,7 @@ interface IndexCache {
 /**
  * Build the `workspace` `@` source over an injected index fetch.
  * @param search - session-addressed index RPC or test stub.
+ * @returns the `workspace` `@` source.
  */
 export function createWorkspaceSource(search: WorkspaceIndexSearch): InputTriggerSource {
   const fetches = new Map<SessionId, IndexCache>()

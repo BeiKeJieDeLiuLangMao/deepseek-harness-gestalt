@@ -63,6 +63,7 @@ export const DEFAULT_IGNORE_DIRS = [
   'DerivedDataCache',
 ] as const
 
+/** Junk file basenames the picker walk skips. */
 export const DEFAULT_IGNORE_FILES = [
   'desktop.ini',
   'Thumbs.db',

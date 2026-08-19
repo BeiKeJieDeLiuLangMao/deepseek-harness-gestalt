@@ -12,6 +12,7 @@ export interface WorkspacePathEntry {
  * @param files - indexed workspace entries.
  * @param query - raw picker query after `@`.
  * @param limit - maximum results.
+ * @returns the top matching entries.
  */
 export function rankFiles(
   files: readonly WorkspacePathEntry[],

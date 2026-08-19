@@ -5,8 +5,10 @@
 import { z } from 'zod'
 import type { InvocationDescriptor } from '@deepseek-ai/dsh-typert-protocol'
 
+/** Session id lookup codec for the search Remote. */
 export const sessionIdSchema = z.string().min(1)
 
+/** One indexed workspace path on the picker wire. */
 export const workspacePathEntrySchema = z.object({
   relative: z.string().min(1),
   kind: z.enum(['file', 'dir']),

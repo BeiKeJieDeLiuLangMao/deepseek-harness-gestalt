@@ -25,13 +25,13 @@
 
 #### What the model sees
 
-每个经过校验的路径对应一条带 source 的 user 角色消息：
+每个经过校验的路径对应一条带 source 的 user 角色消息。路径是工作区相对路径。`kind` 为 `file` 或 `directory`。任务需要内容时，模型使用会话里已有的工具检查该路径。
 
-```xml
+##### Marker
+
+```markdown
 <workspace-reference path="docs/spec.pdf" kind="file" />
 ```
-
-路径是工作区相对路径。`kind` 为 `file` 或 `directory`。任务需要内容时，模型使用会话里已有的工具检查该路径。
 
 #### Token effect
 

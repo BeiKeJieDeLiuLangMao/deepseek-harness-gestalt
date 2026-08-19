@@ -6,7 +6,7 @@ Web `@` source named `workspace`. Candidates come from the host workspace-refere
 
 ## Model Experience
 
-None. The trigger pipeline is browser presentation. The model-visible marker is owned by `@deepseek-ai/dsh-workspace-reference`.
+None, as this package is browser presentation only.
 
 #### KV Cache effect
 

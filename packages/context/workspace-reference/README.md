@@ -25,13 +25,13 @@ Validates `@path` tokens in direct user messages and injects an existence-only W
 
 #### What the model sees
 
-One sourced user-role message per validated path:
+One sourced user-role message per validated path. The path is workspace-relative. `kind` is `file` or `directory`. The model inspects the path with the session's existing tools when the task requires contents.
 
-```xml
+##### Marker
+
+```markdown
 <workspace-reference path="docs/spec.pdf" kind="file" />
 ```
-
-The path is workspace-relative. `kind` is `file` or `directory`. The model inspects the path with the session's existing tools when the task requires contents.
 
 #### Token effect
 

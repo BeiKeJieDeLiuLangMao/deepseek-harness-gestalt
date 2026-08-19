@@ -547,6 +547,7 @@ export const TYPE_LINK_EXEMPTIONS: Readonly<Record<string, string>> = {
   ConsumeTokenRequest: 'event-local request contract is owned by packages/client/ui-input-trigger/src/types.ts',
   InsertTextRequest: 'event-local request contract is owned by packages/client/ui-input-trigger/src/types.ts',
   AgentHandle: 'agent ownership handle is owned by packages/core/agent/README.md',
+  PersonalPairingId: 'personal pairing identity is owned by packages/platform/remote-access/README.md',
   AgentPreset: 'discovered preset record is owned by packages/preset/agent-presets/README.md',
   PresetMetadata: 'preset display text is owned by packages/preset/agent-presets/README.md',
   BashEnvContributor: 'service-local extension type is owned by packages/shell/tool-bash/src/index.ts',

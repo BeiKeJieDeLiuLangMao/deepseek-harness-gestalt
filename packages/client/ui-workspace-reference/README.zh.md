@@ -6,7 +6,7 @@ Web 上名为 `workspace` 的 `@` source。候选来自 Host 工作区引用索�
 
 ## Model Experience
 
-无。触发流水线只是浏览器呈现。模型可见标记由 `@deepseek-ai/dsh-workspace-reference` 拥有。
+None, as this package is browser presentation only.
 
 #### KV Cache effect
 

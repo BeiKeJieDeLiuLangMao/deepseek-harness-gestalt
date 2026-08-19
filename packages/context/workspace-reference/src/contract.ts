@@ -11,8 +11,10 @@ export interface WorkspacePathEntryWire {
   readonly kind: 'file' | 'dir'
 }
 
+/** Session id lookup codec for the search Remote. */
 export const sessionIdSchema = z.string().min(1)
 
+/** One indexed workspace path on the picker wire. */
 export const workspacePathEntrySchema = z.object({
   relative: z.string().min(1),
   kind: z.enum(['file', 'dir']),
