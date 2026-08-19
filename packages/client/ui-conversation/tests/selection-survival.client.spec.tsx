@@ -26,7 +26,7 @@ async function bench() {
   }, (_p: { renderSlot?: unknown }) => null)
   runtime.slots.register({ name: 'conversation.session', store: chat }, () => null)
   runtime.slots.register({ name: 'conversation.session.header', store: chat }, () => null)
-  runtime.slots.register({ name: 'details', store: chat }, () => null)
+  runtime.slots.register({ name: 'details', id: 'tool', store: chat }, () => null)
   runtime.renderRoot() // materializes the host face storeOf resolves through
   return { runtime, chat }
 }
