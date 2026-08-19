@@ -4,9 +4,9 @@
  *
  * The section declares `settings.plugins.tab`; its own `configurable` tab then
  * declares `settings.plugin.item` and renders whatever cards were registered
- * into it. The four cards this package ships are the host-plane sections the
- * deployment already exposes; each binds its namespace through the client
- * settings scope, which keeps them unaware of one another and of other tabs.
+ * into it. The three cards this package ships are the host-plane sections the
+ * deployment already exposes; Web Search then declares a provider-tab slot so
+ * extra plugins can add search backends without a second top-level card.
  */
 
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
@@ -26,12 +26,13 @@ import { ConfigurablePluginsTab } from './ConfigurablePluginsTab.tsx'
 import { PluginsSettingsSection } from './PluginsSettingsSection.tsx'
 import type { PluginsSettingsSectionInjected, PluginsSettingsTabEntry } from './PluginsSettingsSection.tsx'
 import { WebSearchCard } from './WebSearchCard.tsx'
+import { WebSearchProviderPanel } from './WebSearchProviderPanel.tsx'
 import { AGENT_LOOP_NS, AgentLoopCardController } from './agent-loop-card-controller.ts'
 import { SHELL_NS, BashCardController } from './bash-card-controller.ts'
 import { ConfigurablePluginsTabController } from './tab-store.ts'
 import {
-  WEB_SEARCH_ANTHROPIC_NS, WEB_SEARCH_NS, WebSearchCardController,
-  type WebSearchSettings,
+  WEB_SEARCH_ANTHROPIC_NS, WEB_SEARCH_KIMI_NS, WEB_SEARCH_NS,
+  WebSearchCardController, WebSearchShell, type WebSearchSettings,
 } from './web-search-card-controller.ts'
 import { en, zh } from './locales.ts'
 
@@ -46,7 +47,9 @@ export type {
 } from './card-form.ts'
 export type { AgentLoopCardFace, AgentLoopCardState } from './agent-loop-card-controller.ts'
 export type { BashCardFace, BashCardState } from './bash-card-controller.ts'
-export type { WebSearchCardFace, WebSearchCardState } from './web-search-card-controller.ts'
+export type {
+  WebSearchCardFace, WebSearchCardState, WebSearchShellFace,
+} from './web-search-card-controller.ts'
 
 /** Dictionary namespace owned by this plugin. */
 const NS = 'settings.plugins'
@@ -78,11 +81,30 @@ export function apply(ctx: ClientContext): void {
     'anthropic-messages',
     deepseekScope,
     {
-      titleKey: 'anthropicSearchTitle',
-      descriptionKey: 'anthropicSearchDescription',
+      titleKey: 'webSearchTitle',
+      descriptionKey: 'webSearchDescription',
       baseUrlHintKey: 'anthropicSearchBaseUrlHint',
       idPrefix: 'plugin-config-anthropic-search',
     },
+  )
+  const kimiSearch = new WebSearchCardController(
+    ctx.settingsScope.bind<WebSearchSettings>({ namespace: WEB_SEARCH_KIMI_NS }),
+    api,
+    'kimi',
+    deepseekScope,
+    {
+      titleKey: 'webSearchTitle',
+      descriptionKey: 'webSearchDescription',
+      baseUrlHintKey: 'kimiSearchBaseUrlHint',
+      idPrefix: 'plugin-config-kimi-search',
+    },
+  )
+  const webSearchShell = new WebSearchShell(
+    deepseekScope,
+    () => ctx.slots.entries('settings.plugin.web-search.provider'),
+    { titleKey: 'webSearchTitle', descriptionKey: 'webSearchDescription' },
+    webSearch,
+    api,
   )
 
   // The credential a card reports is not part of any settings section, so its
@@ -92,6 +114,7 @@ export function apply(ctx: ClientContext): void {
     () => ctx.remote.$on('credentials/updated', (ref) => {
       webSearch.refreshCredential(ref)
       anthropicSearch.refreshCredential(ref)
+      kimiSearch.refreshCredential(ref)
     }),
     'ui-settings-plugins: credential invalidations',
   )
@@ -193,13 +216,44 @@ export function apply(ctx: ClientContext): void {
       name: 'settings.plugin.item',
       key: WEB_SEARCH_NS,
       locale: NS,
-      inject: () => webSearch.inject(),
-    }, WebSearchCard)
-    yield ctx.slots.register({
-      name: 'settings.plugin.item',
-      key: WEB_SEARCH_ANTHROPIC_NS,
-      locale: NS,
-      inject: () => anthropicSearch.inject(),
+      inject: () => webSearchShell.inject(),
+      children: { 'settings.plugin.web-search.provider': { kind: 'list', scope: 'root' } },
     }, WebSearchCard)
   })
+
+  // TODO(dead-panel): rows feed the tab ledger only; fields live on WebSearchCard.
+  ctx.slots.inject('settings.plugin.web-search.provider', function* () {
+    yield ctx.slots.register({
+      name: 'settings.plugin.web-search.provider',
+      id: 'deepseek',
+      order: 0,
+      label: () => t('providerDeepseek'),
+      locale: NS,
+      inject: () => webSearch.inject(),
+    }, WebSearchProviderPanel)
+    yield ctx.slots.register({
+      name: 'settings.plugin.web-search.provider',
+      id: 'anthropic-messages',
+      order: 10,
+      label: () => t('providerAnthropic'),
+      locale: NS,
+      inject: () => anthropicSearch.inject(),
+    }, WebSearchProviderPanel)
+    yield ctx.slots.register({
+      name: 'settings.plugin.web-search.provider',
+      id: 'kimi',
+      order: 20,
+      label: () => t('providerKimi'),
+      locale: NS,
+      inject: () => kimiSearch.inject(),
+    }, WebSearchProviderPanel)
+  })
+  webSearchShell.rewire()
+  ctx.effect(
+    () => ctx.slots.subscribe('settings.plugin.web-search.provider', () => {
+      webSearchShell.rewire()
+      webSearchShell.notifyTabs()
+    }),
+    'ui-settings-plugins: search-provider ledger',
+  )
 }

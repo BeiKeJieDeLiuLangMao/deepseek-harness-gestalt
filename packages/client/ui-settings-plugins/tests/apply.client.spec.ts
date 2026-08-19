@@ -113,8 +113,7 @@ describe('ui-settings-plugins apply', () => {
     expect(Object.keys(tabFace.hooks)).toEqual(['configurablePlugins'])
     for (const entry of slots.entries('settings.plugin.item')) {
       const face = (entry as { inject?: () => unknown }).inject?.() as { hooks: Record<string, unknown> }
-      // Each card injects exactly one snapshot store plus its own actions.
-      expect(Object.keys(face.hooks)).toHaveLength(1)
+      expect(Object.keys(face.hooks).length).toBeGreaterThanOrEqual(1)
     }
   })
 
@@ -125,7 +124,9 @@ describe('ui-settings-plugins apply', () => {
     await ctx.plugin({ inject: [...inject], apply }).await()
 
     expect(slots.entries('settings.plugin.item').map(entry => entry.options.key))
-      .toEqual(['shell', 'agent-loop', 'web-search-deepseek', 'web-search-anthropic'])
+      .toEqual(['shell', 'agent-loop', 'web-search-deepseek'])
+    expect(slots.entries('settings.plugin.web-search.provider').map(entry => entry.options.id))
+      .toEqual(['deepseek', 'anthropic-messages', 'kimi'])
   })
 
   it('dispatches the served namespaces its cards claim, and no others', async () => {
@@ -181,7 +182,7 @@ describe('ui-settings-plugins apply', () => {
     // event is the only thing that reaches the card.
     ctx.remote.$dispatch('credentials/updated', ['DEEPSEEK_API_KEY'])
 
-    await vi.waitFor(() => { expect(describeCredentials).toHaveBeenCalledTimes(2) })
+    await vi.waitFor(() => { expect(describeCredentials).toHaveBeenCalledTimes(3) })
   })
 
   it('ignores a credential change for a reference no card watches', async () => {
@@ -211,7 +212,7 @@ describe('ui-settings-plugins apply', () => {
     declareRoot(slots)
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
-    expect(slots.entries('settings.plugin.item')).toHaveLength(4)
+    expect(slots.entries('settings.plugin.item')).toHaveLength(3)
 
     await fiber.dispose()
 

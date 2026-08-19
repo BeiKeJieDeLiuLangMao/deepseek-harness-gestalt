@@ -81,8 +81,8 @@ describe('ModelsSettingsStore', () => {
     expect(seenRefs).toEqual([['DEEPSEEK_API_KEY', 'OPENAI_API_KEY']])
     const byProvider = new Map(state.rows.map(row => [row.entry.provider, row]))
     expect(byProvider.get('deepseek-official')).toMatchObject({
-      configured: true,
-      removable: false,
+      configured: false,
+      removable: true,
       apiKeyEnv: 'DEEPSEEK_API_KEY',
       credential: { configured: false, writable: true },
     })
@@ -96,6 +96,42 @@ describe('ModelsSettingsStore', () => {
     expect(byProvider.get('anthropic')?.apiKeyEnv).toBeUndefined()
     expect(byProvider.get('ghost')).toMatchObject({ configured: false, removable: false })
     expect(state.namespaces.get('llm-pi-ai')?.ns).toBe('llm-pi-ai')
+  })
+
+  it('does not treat an empty leftover DeepSeek user section as configured', async () => {
+    const { face } = api({
+      describeSettings: () => Promise.resolve(ok({
+        writable: true,
+        hasDocument: true,
+        namespaces: [{
+          ...NAMESPACES[0],
+          user: {},
+          secrets: [{ path: ['apiKey'], set: false }],
+        }, NAMESPACES[1]],
+      })),
+    })
+    const store = new ModelsSettingsStore(face)
+    await store.load()
+    expect(store.store.getSnapshot().rows.find(row => row.entry.provider === 'deepseek-official'))
+      .toMatchObject({ configured: false })
+  })
+
+  it('keeps official DeepSeek configured while a secret slot is set', async () => {
+    const { face } = api({
+      describeSettings: () => Promise.resolve(ok({
+        writable: true,
+        hasDocument: true,
+        namespaces: [{
+          ...NAMESPACES[0],
+          user: {},
+          secrets: [{ path: ['apiKey'], set: true }],
+        }, NAMESPACES[1]],
+      })),
+    })
+    const store = new ModelsSettingsStore(face)
+    await store.load()
+    expect(store.store.getSnapshot().rows.find(row => row.entry.provider === 'deepseek-official'))
+      .toMatchObject({ configured: true })
   })
 
   it('degrades the credential badge, not the page, when the credential domain fails', async () => {

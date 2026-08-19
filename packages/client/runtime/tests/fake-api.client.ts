@@ -266,6 +266,7 @@ export class FakeApiClient implements IApiClient {
     update: payload => this.record('settings.update', payload, Promise.resolve(ok({ ns: 'fake', schema: {}, value: {}, applies: 'live' as const, secrets: [], revision: 0 }))),
     replace: payload => this.record('settings.replace', payload, Promise.resolve(ok({ ns: 'fake', schema: {}, value: {}, applies: 'live' as const, secrets: [], revision: 0 }))),
     mutate: payload => this.record('settings.mutate', payload, Promise.resolve(ok({ ns: 'fake', schema: {}, value: {}, applies: 'live' as const, secrets: [], revision: 0 }))),
+    testWebSearch: payload => this.record('settings.testWebSearch', payload, Promise.resolve(ok({ count: 0 }))),
   }
 
   readonly credentials: IApiClient['credentials'] = {

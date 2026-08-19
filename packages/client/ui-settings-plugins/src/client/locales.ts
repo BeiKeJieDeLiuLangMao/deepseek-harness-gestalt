@@ -8,11 +8,12 @@ export type PluginsSettingsLocaleKey =
   | 'bashTitle' | 'bashDescription' | 'bashTimeoutMs' | 'bashTimeoutMsHint'
   | 'bashMaxOutputBytes' | 'bashMaxOutputBytesHint'
   | 'agentLoopTitle' | 'agentLoopDescription' | 'agentLoopMaxParallel' | 'agentLoopMaxParallelHint'
-  | 'webSearchTitle' | 'webSearchDescription'
-  | 'anthropicSearchTitle' | 'anthropicSearchDescription' | 'anthropicSearchBaseUrlHint'
+  | 'webSearchTitle' | 'webSearchDescription' | 'providerTabs'
+  | 'providerDeepseek' | 'providerAnthropic' | 'providerKimi'
+  | 'anthropicSearchBaseUrlHint' | 'kimiSearchBaseUrlHint'
   | 'webSearchApiKey' | 'webSearchApiKeyHint' | 'webSearchApiKeySet' | 'webSearchApiKeyUnset'
   | 'webSearchBaseUrl' | 'webSearchBaseUrlHint' | 'webSearchMaxUses' | 'webSearchMaxUsesHint'
-  | 'searchInUse' | 'useThisSearch'
+  | 'testSearch' | 'testSearchRunning' | 'testSearchOk' | 'testSearchEmpty' | 'testSearchFailed'
 
 /** English copy. */
 export const en: Record<PluginsSettingsLocaleKey, string> = {
@@ -43,11 +44,14 @@ export const en: Record<PluginsSettingsLocaleKey, string> = {
   agentLoopDescription: 'How the agent dispatches tool calls.',
   agentLoopMaxParallel: 'Parallel tool calls',
   agentLoopMaxParallelHint: 'Upper bound on parallel-safe calls running at once within one step.',
-  webSearchTitle: 'DeepSeek search',
-  webSearchDescription: 'Official DeepSeek search over Anthropic Messages and native web_search.',
-  anthropicSearchTitle: 'Anthropic-protocol search',
-  anthropicSearchDescription: 'Any Anthropic Messages + web_search endpoint, such as Kimi coding.',
-  anthropicSearchBaseUrlHint: 'Messages base, for example https://api.kimi.com/coding/v1. Do not append /messages.',
+  webSearchTitle: 'Web Search',
+  webSearchDescription: 'Choose a search provider and the Messages endpoint it uses.',
+  providerTabs: 'Search providers',
+  providerDeepseek: 'DeepSeek',
+  providerAnthropic: 'Anthropic',
+  providerKimi: 'Kimi',
+  anthropicSearchBaseUrlHint: 'Messages base. Do not append /messages.',
+  kimiSearchBaseUrlHint: 'Moonshot search URL. Leave blank for https://api.kimi.com/coding/v1/search.',
   webSearchApiKey: 'API key',
   webSearchApiKeyHint: 'Stored outside the settings file. Leave blank to keep the current key.',
   webSearchApiKeySet: 'A key is configured.',
@@ -56,8 +60,11 @@ export const en: Record<PluginsSettingsLocaleKey, string> = {
   webSearchBaseUrlHint: 'DeepSeek Anthropic base. Leave blank for https://api.deepseek.com/anthropic/v1.',
   webSearchMaxUses: 'Max searches per request',
   webSearchMaxUsesHint: 'How many times one request may search before it must answer.',
-  searchInUse: 'In use for web search.',
-  useThisSearch: 'Use this for web search',
+  testSearch: 'Test search',
+  testSearchRunning: 'Searching “deepseek harness”…',
+  testSearchOk: 'Search succeeded',
+  testSearchEmpty: 'Search returned no sources.',
+  testSearchFailed: 'Search failed',
 }
 
 /** Simplified Chinese copy. */
@@ -89,11 +96,14 @@ export const zh: Record<PluginsSettingsLocaleKey, string> = {
   agentLoopDescription: 'Agent 如何派发工具调用。',
   agentLoopMaxParallel: '并行工具调用数',
   agentLoopMaxParallelHint: '同一步内最多同时运行多少个可并行的调用。',
-  webSearchTitle: 'DeepSeek 搜索',
-  webSearchDescription: '官方 DeepSeek 搜索，走 Anthropic Messages 的原生 web_search。',
-  anthropicSearchTitle: 'Anthropic 协议搜索',
-  anthropicSearchDescription: '任意兼容 Anthropic Messages + web_search 的接口，例如 Kimi coding。',
-  anthropicSearchBaseUrlHint: '填写 Messages 基址，例如 https://api.kimi.com/coding/v1，不要带 /messages。',
+  webSearchTitle: 'Web Search',
+  webSearchDescription: '选择搜索提供方及其 Messages 接口。',
+  providerTabs: '搜索提供方',
+  providerDeepseek: 'DeepSeek',
+  providerAnthropic: 'Anthropic',
+  providerKimi: 'Kimi',
+  anthropicSearchBaseUrlHint: '填写 Messages 基址，不要带 /messages。',
+  kimiSearchBaseUrlHint: 'Moonshot 专用搜索端点。留空则为 https://api.kimi.com/coding/v1/search。',
   webSearchApiKey: 'API Key',
   webSearchApiKeyHint: '不写入设置文件。留空表示保持当前密钥。',
   webSearchApiKeySet: '已配置密钥。',
@@ -102,6 +112,9 @@ export const zh: Record<PluginsSettingsLocaleKey, string> = {
   webSearchBaseUrlHint: 'DeepSeek 的 Anthropic 基址。留空则为 https://api.deepseek.com/anthropic/v1。',
   webSearchMaxUses: '单次请求最多搜索次数',
   webSearchMaxUsesHint: '一次请求在必须作答前最多可以搜索多少次。',
-  searchInUse: '当前用于网页搜索。',
-  useThisSearch: '使用此搜索',
+  testSearch: '测试搜索',
+  testSearchRunning: '正在搜索 “deepseek harness”…',
+  testSearchOk: '搜索成功',
+  testSearchEmpty: '搜索没有返回结果。',
+  testSearchFailed: '搜索失败',
 }

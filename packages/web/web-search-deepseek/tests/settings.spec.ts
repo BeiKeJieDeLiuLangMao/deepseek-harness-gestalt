@@ -10,6 +10,7 @@ import * as deepseekPlugin from '@deepseek-ai/dsh-web-search-deepseek'
 import {
   WEB_SEARCH_ANTHROPIC_SETTINGS_NAMESPACE,
   WEB_SEARCH_DEEPSEEK_SETTINGS_NAMESPACE,
+  WEB_SEARCH_KIMI_SETTINGS_NAMESPACE,
 } from '@deepseek-ai/dsh-web-search-deepseek'
 
 /** The smallest real provider: one in-memory document, always writable. */
@@ -69,9 +70,18 @@ afterEach(() => {
  * @param ctx - context whose `ctx.web` serves the search.
  * @returns the URL the provider fetched.
  */
+const MOONSHOT_RESULT = {
+  search_results: [{ url: 'https://a.test', title: 'A', snippet: 'ok' }],
+}
+
 async function searchOnce(ctx: Context): Promise<string> {
   const fetchSpy = vi.spyOn(globalThis, 'fetch')
-    .mockImplementation(() => Promise.resolve(jsonResponse(ONE_RESULT)))
+    .mockImplementation((input) => {
+      const url = String(input)
+      return Promise.resolve(jsonResponse(
+        url.endsWith('/search') || url.includes('/v1/search') ? MOONSHOT_RESULT : ONE_RESULT,
+      ))
+    })
   fetchSpy.mockClear()
   await ctx.web.search({ query: 'anything' })
   return String((fetchSpy.mock.calls.at(-1)?.[0] as URL | string | undefined) ?? '')
@@ -120,11 +130,13 @@ describe('web-search-deepseek settings section', () => {
     const namespaces = bench.ctx.settings.describe().map(row => String(row.ns))
     expect(namespaces).toContain('web-search-deepseek')
     expect(namespaces).toContain('web-search-anthropic')
+    expect(namespaces).toContain('web-search-kimi')
 
     await bench.pluginFiber.dispose()
 
     expect(bench.ctx.settings.describe().map(row => String(row.ns))).not.toContain('web-search-deepseek')
     expect(bench.ctx.settings.describe().map(row => String(row.ns))).not.toContain('web-search-anthropic')
+    expect(bench.ctx.settings.describe().map(row => String(row.ns))).not.toContain('web-search-kimi')
     await bench.ctx.fiber.dispose()
   })
 
@@ -157,6 +169,27 @@ describe('web-search-deepseek settings section', () => {
       baseURL: 'https://search.leftover.test/v1',
     })
     await expect(searchOnce(bench.ctx)).rejects.toMatchObject({ code: 'WEB_PROVIDER_UNAVAILABLE' })
+    await bench.ctx.fiber.dispose()
+  })
+
+  it('uses the Moonshot search default when the Kimi tab is selected without a stored URL', async () => {
+    const bench = await boot()
+    await bench.ctx.settings.update(WEB_SEARCH_DEEPSEEK_SETTINGS_NAMESPACE, {
+      backend: 'kimi',
+    })
+    expect(await searchOnce(bench.ctx)).toBe('https://api.kimi.com/coding/v1/search')
+    await bench.ctx.fiber.dispose()
+  })
+
+  it('reads a stored Kimi endpoint as the search URL, without appending /messages', async () => {
+    const bench = await boot()
+    await bench.ctx.settings.update(WEB_SEARCH_KIMI_SETTINGS_NAMESPACE, {
+      baseURL: 'https://api.kimi.com/coding/v1/search',
+    })
+    await bench.ctx.settings.update(WEB_SEARCH_DEEPSEEK_SETTINGS_NAMESPACE, {
+      backend: 'kimi',
+    })
+    expect(await searchOnce(bench.ctx)).toBe('https://api.kimi.com/coding/v1/search')
     await bench.ctx.fiber.dispose()
   })
 })
