@@ -27,6 +27,40 @@ describe('CI workflow', () => {
     }
   })
 
+  it('fetches full history in every lane that executes the coverage inventory', () => {
+    const workflow = loadWorkflow('.github/workflows/ci.yml')
+    if (!isRecord(workflow.jobs)) throw new TypeError('CI workflow must define jobs')
+
+    // Each of these aggregates expands to coverageGates() in
+    // scripts/run-gates.ts. The release-notes test inside them resolves the
+    // pinned manifest range through the Git graph, which the default depth-1
+    // checkout cannot satisfy.
+    const coverageCommands = new Set([
+      'pnpm run check:ci',
+      'pnpm run check:ci:coverage',
+      'pnpm run check:ci:linux-primary',
+      'pnpm run check:ci:windows-complete',
+    ])
+    const coverageJobs = Object.entries(workflow.jobs).filter(([, job]) =>
+      isRecord(job) && Array.isArray(job.steps) && job.steps.some(
+        step => isRecord(step) && typeof step.run === 'string' && coverageCommands.has(step.run.trim()),
+      ))
+    expect(coverageJobs.length).toBeGreaterThan(0)
+    for (const [jobName, job] of coverageJobs) {
+      if (!isRecord(job) || !Array.isArray(job.steps)) throw new TypeError(`${jobName} must define steps`)
+      const checkouts = job.steps.filter(
+        step => isRecord(step) && typeof step.uses === 'string' && step.uses.startsWith('actions/checkout@'),
+      )
+      expect(checkouts.length, `${jobName} must check out the repository`).toBeGreaterThan(0)
+      for (const checkout of checkouts) {
+        expect(
+          checkout,
+          `${jobName} must fetch full history for the release-notes coverage test`,
+        ).toMatchObject({ with: { 'fetch-depth': 0 } })
+      }
+    }
+  })
+
   it('keeps a required Wine Windows job, a non-blocking native Windows job with failover, and a master-only standby', () => {
     const workflow = loadWorkflow('.github/workflows/ci.yml')
     if (!isRecord(workflow.jobs)
