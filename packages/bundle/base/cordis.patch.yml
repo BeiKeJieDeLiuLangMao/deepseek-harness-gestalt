@@ -436,6 +436,9 @@
     - id: browser-workspace
       name: '@deepseek-ai/dsh-browser-workspace'
 
+    - id: tool-browser
+      name: '@deepseek-ai/dsh-tool-browser'
+
     # ── rows every mode mounts, whose values each overlay may state ──────────────
 
     # The tool registry. Presentation mode is a deployment choice; omitting it here

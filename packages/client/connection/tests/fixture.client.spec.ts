@@ -136,8 +136,8 @@ describe('createFixtureApi', () => {
     // tail block still rides it — empty-log cut at -1, the host convention.
     const empty = await api.sessions.history(req({ sessionId: sid('no-such'), maxMessages: 10 }))
     if (!empty.result.ok) throw new Error('empty failed')
-    // Fixture composes the todos + plan units (host parallel when tool-todo
-    // and plan-mode are mounted): the empty-log values.
+    // Fixture composes the todos, plan, and browser-workspace units (host
+    // parallel when those plugins are mounted): the empty-log values.
     expect(empty.result.value).toEqual({
       events: [], hasMore: false, projections: { asOfSeq: -1, values: {
         todos: null,
@@ -151,6 +151,13 @@ describe('createFixtureApi', () => {
         },
         plan: { active: false, pending: false },
         goal: null,
+        browserWorkspace: {
+          dockOpen: false,
+          dockWidth: 640,
+          userCollapsed: false,
+          workspaces: [],
+          activeWorkspaceId: null,
+        },
         tokenUsage: {
           uncachedInputTokens: 0,
           outputTokens: 0,
@@ -364,7 +371,7 @@ describe('createFixtureApi', () => {
       const envelopes: RpcRequest<MuxFrame>[] = []
       for await (const envelope of api.events.mux(req({}), abort.signal)) {
         envelopes.push(envelope)
-        if (envelopes.length >= 13) abort.abort()
+        if (envelopes.length >= 14) abort.abort()
       }
       return envelopes
     }
@@ -378,23 +385,36 @@ describe('createFixtureApi', () => {
     expect(first[3]?.payload).toMatchObject({ type: 'session/projection', sessionId: 'fx-alpha', key: 'permissions' })
     expect(first[4]?.payload).toMatchObject({ type: 'session/projection', sessionId: 'fx-alpha', key: 'plan', value: { active: false, pending: false } })
     expect(first[5]?.payload).toMatchObject({ type: 'session/projection', sessionId: 'fx-alpha', key: 'goal', value: null })
-    expect(first[6]?.payload).toMatchObject({ type: 'session/projection', sessionId: 'fx-alpha', key: 'tokenUsage' })
-    expect(first[7]?.payload).toMatchObject({ type: 'session/projection', sessionId: 'fx-alpha', key: 'contextPressure' })
-    expect(first[8]?.payload).toMatchObject({
+    expect(first[6]?.payload).toMatchObject({
+      type: 'session/projection', sessionId: 'fx-alpha', key: 'browserWorkspace',
+      value: {
+        dockOpen: false, dockWidth: 720, userCollapsed: true, activeWorkspaceId: 'fx-workspace',
+        workspaces: [{
+          workspaceId: 'fx-workspace', profileId: 'fx-profile', activeBrowserId: 'fx-browser',
+          browsers: [{
+            browserId: 'fx-browser', activeTabId: 'fx-tab',
+            tabs: [{ tabId: 'fx-tab', controlOwner: 'agent' }],
+          }],
+        }],
+      },
+    })
+    expect(first[7]?.payload).toMatchObject({ type: 'session/projection', sessionId: 'fx-alpha', key: 'tokenUsage' })
+    expect(first[8]?.payload).toMatchObject({ type: 'session/projection', sessionId: 'fx-alpha', key: 'contextPressure' })
+    expect(first[9]?.payload).toMatchObject({
       type: 'session/projection', sessionId: 'fx-alpha', key: 'contextBreakdown',
       value: { systemTokens: 0, toolsTokens: 0 },
     })
-    expect((first[8]?.payload as { value: { messageTokens: number } }).value.messageTokens).toBeGreaterThan(0)
-    expect(first[9]?.payload).toMatchObject({ type: 'session/projection', sessionId: 'fx-alpha', key: 'sessionStats' })
-    expect((first[9]?.payload as { value: { turns: number; steps: number } }).value.steps).toBeGreaterThan(0)
-    expect(first[10]?.payload).toMatchObject({
+    expect((first[9]?.payload as { value: { messageTokens: number } }).value.messageTokens).toBeGreaterThan(0)
+    expect(first[10]?.payload).toMatchObject({ type: 'session/projection', sessionId: 'fx-alpha', key: 'sessionStats' })
+    expect((first[10]?.payload as { value: { turns: number; steps: number } }).value.steps).toBeGreaterThan(0)
+    expect(first[11]?.payload).toMatchObject({
       type: 'session/projection', sessionId: 'fx-alpha', key: 'imageLimits',
       value: { maxImagesPerMessage: 20, maxImageBytes: 5 * 1024 * 1024 },
     })
-    expect(first[11]?.payload).toMatchObject({ type: 'approval/requested', toolName: 'dangerous_tool' })
-    expect(second[11]?.rpcId).toBe(first[11]?.rpcId) // stable rpcId across replays (host replay semantics)
-    expect(first[12]?.payload).toMatchObject({ type: 'question/requested', sessionId: 'fx-alpha' })
-    expect(second[12]?.rpcId).toBe(first[12]?.rpcId)
+    expect(first[12]?.payload).toMatchObject({ type: 'approval/requested', toolName: 'dangerous_tool' })
+    expect(second[12]?.rpcId).toBe(first[12]?.rpcId) // stable rpcId across replays (host replay semantics)
+    expect(first[13]?.payload).toMatchObject({ type: 'question/requested', sessionId: 'fx-alpha' })
+    expect(second[13]?.rpcId).toBe(first[13]?.rpcId)
   })
 
   it('steer with no replay in flight falls through to a fresh queued turn; non-text blocks stringify empty', async () => {
