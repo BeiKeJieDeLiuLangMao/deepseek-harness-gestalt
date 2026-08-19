@@ -8,7 +8,7 @@ English | [中文](2026-08-19-workspace-reference.zh.md)
 
 The Web composer has no first-party way for a user to point at a workspace path so the model can treat that path as an explicit, validated reference. Users type or paste paths by memory. The closest shipped pieces do other jobs: [inline-code File Mentions](../feature/2026-08-07-web-inline-file-mentions.md) open files the assistant already produced; [image attachments](../feature/2026-07-22-web-multimodal-image-input-and-durable-attachments.md) persist raster bytes, not paths; [Session References](../feature/2026-07-21-cross-session-references.md) snapshot another conversation; `AGENTS.md` `@path` imports are deliberately not interpreted.
 
-The community plugin [omdsh-dev/dsh-at-file](https://github.com/omdsh-dev/dsh-at-file) already fills the gap on Web. It is an unofficial out-of-tree bundle, not a `vendor/` candidate, and it diverges from first-party conventions (raw `node:fs`, custom `at-file-mention` source, unscoped name, committed `lib/`).
+The community plugin [omdsh-dev/dsh-at-file](https://github.com/omdsh-dev/dsh-at-file) already fills the gap on Web. It is an unofficial out-of-tree bundle, not a `vendor/` candidate, and it diverges from first-party conventions (raw `node:fs`, custom `at-file-mention` source, unscoped name, committed `lib/`). First-party scan, ranking, ignore lists, and confinement include portions derived from dsh-at-file 0.6.3 (MIT); each package keeps that copyright in `NOTICE`.
 
 ## Decision
 
@@ -20,11 +20,11 @@ The model-visible payload is one sourced `user/message` whose text is:
 <workspace-reference path="docs/spec.pdf" kind="file" />
 ```
 
-`@deepseek-ai/dsh-workspace-reference` validates tokens at `agent/pre-step` with `ctx.fs.lstat`, rejects absolute paths, `..` segments, and a final-component symlink, and never reads file contents or lists directory children for the marker. Unknown tokens stay ordinary prose.
+`@deepseek-ai/dsh-workspace-reference` validates tokens at `agent/pre-step` with `ctx.fs`. It rejects workspace escape: absolute paths, Windows drive-relative tokens (`C:foo`), a `path.relative` result that leaves cwd, an intermediate-segment symlink whose realpath leaves cwd, and a final-component symlink. A basename such as `foo..bar.ts` is not an escaping `..` segment. It never reads file contents or lists directory children for the marker. Unknown tokens stay ordinary prose. An `@` immediately after a word character is not a path token (`user@host.com`).
 
-The Web `@` trigger stays shared. `@deepseek-ai/dsh-client-ui-workspace-reference` registers the `workspace` `InputTriggerSource` through [`ctx.inputTriggers`](../architecture/2026-07-25-web-input-machine-and-slash-pipeline.md). A pick inserts plain-text `@rel/path` (directories keep a trailing `/`) plus a trailing space. The browser ranks a session-scoped index from `workspaceReference.search`; the host walk uses layered `listDir` and skips built-in ignore directory names and a directory `FS_PERMISSION_DENIED`.
+The Web `@` trigger stays shared. `@deepseek-ai/dsh-client-ui-workspace-reference` registers the `workspace` `InputTriggerSource` through [`ctx.inputTriggers`](../architecture/2026-07-25-web-input-machine-and-slash-pipeline.md). A pick inserts plain-text `@rel/path` (directories keep a trailing `/`) plus a trailing space. The browser ranks a session-scoped index from `workspaceReference.search` and shows at most `menuLimit` rows (default 12). The host walk uses layered `listDir` and skips built-in ignore directory names and a directory `FS_PERMISSION_DENIED`.
 
-A Markdown Session Reference `@[label](dsh-session:…)` is never a Workspace Reference. The scanner matches only `@[^\s@[\]]+`. The durable source is `{ kind: 'workspace-reference', path, pathKind }`. Transcript provenance labels the row with the path.
+A Markdown Session Reference `@[label](dsh-session:…)` is never a Workspace Reference. The scanner matches `@` that is not immediately after a word character, then `[^\s@[\]]+`. The durable source is `{ kind: 'workspace-reference', path, pathKind }`, documented on [docs/subsystems/workspace-reference.md](../../../../docs/subsystems/workspace-reference.md). Transcript provenance labels the row with the path.
 
 The web-app bundle mounts both packages. Image drop stays an attachment. The community plugin is not detected or refused; two `@` path groups appear if both remain loaded.
 
@@ -58,10 +58,10 @@ Dock, ArrowRight directory descent, paste-ignore of `@` tokens, and Exact/Regex 
 
 Users who leave the community plugin installed see two `@` path groups until they remove it. The private index walk can omit paths beyond `maxIndexedFiles` and can disagree with `gitignore`. Some users will expect `@` or a file drop to attach bytes; the marker text and the existing unsupported-drop path keep that from becoming content injection.
 
-The headless Loader composition pins the sourced marker. The keyless Web snapshot pins the `@` picker menu. Dock, paste ignore, and folder descent are still unpinned.
+The headless Loader composition pins the sourced marker. The keyless Web snapshot pins the `@` picker menu and the composer insert (`@rel/path `). Dock, paste ignore, and folder descent are still unpinned.
 
 ## Testing
 
 - Package unit coverage on host scan, ranking, index, and the browser source.
 - `packages/context/workspace-reference/tests/workspace-reference.e2e.ts` sends `@README.md` through a real Loader composition and asserts the sourced marker.
-- `apps/web/tests/workspace-reference-picker.e2e.ts` snapshots the Workspace `@` menu after typing a seeded basename.
+- `apps/web/tests/workspace-reference-picker.e2e.ts` snapshots the Workspace `@` menu after typing a seeded basename and asserts the composer insert is `@rel/path `.

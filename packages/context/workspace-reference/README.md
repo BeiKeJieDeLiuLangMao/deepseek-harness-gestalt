@@ -2,12 +2,12 @@
 
 English | [中文](README.zh.md)
 
-Validates `@path` tokens in direct user messages and injects an existence-only Workspace Reference before the agent step. The plugin does not read file bytes or list directory children. Decision record: the [Workspace Reference Agent Note](../../../.agents/notes/implemented/feature/2026-08-19-workspace-reference.md).
+Validates `@path` tokens in direct user messages and injects an existence-only Workspace Reference before the agent step. The plugin does not read file bytes or list directory children. Scan, ranking, and the built-in ignore list include portions derived from [omdsh-dev/dsh-at-file](https://github.com/omdsh-dev/dsh-at-file) 0.6.3 (MIT); see [NOTICE](NOTICE). Decision record: the [Workspace Reference Agent Note](../../../.agents/notes/implemented/feature/2026-08-19-workspace-reference.md).
 
 ## Public API
 
-- `scanMentions(text)` returns unique `@path` tokens. `@[label](dsh-session:…)` is not a path token.
-- `expandMentions(messages, cwd, fileSystem, signal)` validates tokens with `lstat` and returns sourced `user/message` injections.
+- `scanMentions(text)` returns unique `@path` tokens. `@[label](dsh-session:…)` is not a path token. An `@` immediately after a word character is not a path token (`user@host.com`).
+- `expandMentions(messages, cwd, fileSystem, signal)` confines each token with `path.resolve` / `path.relative`, rejects a realpath that leaves the workspace (including an intermediate-segment symlink), rejects a final-component symlink with `lstat`, and returns sourced `user/message` injections.
 - `indexWorkspace(fileSystem, cwd, options, signal)` walks `listDir` one level at a time, skips ignore basenames and final-component symlinks, and omits a directory on `FS_PERMISSION_DENIED`.
 - `rankFiles(files, query, limit)` ranks picker candidates: basename queries, ordered path-segment queries, and directories-first browse.
 - `workspaceReference.search` is the picker Remote: it returns the raw index for the addressed session; the browser ranks per keystroke.
@@ -46,3 +46,5 @@ Append-only. A new reference changes only the new suffix.
 - **Web scanner only in the first landing** — other hosts can mount the same plugin later; ACP and SDK text are not scanned until they do.
 - **Picker index is advisory** — paths beyond `maxIndexedFiles` or inside ignored directories can still be referenced by a hand-typed `@path` that exists inside the workspace.
 - **No gitignore** — only configured directory basenames and later settings filters apply.
+- **Email-like `@host` after whitespace** — `user@host.com` is not a path token, but a leading or space-prefixed `@host.com` still scans; injection still requires that basename to exist inside the workspace.
+- **Windows drive-relative tokens** — `C:foo` is rejected on every platform, including as a POSIX filename.

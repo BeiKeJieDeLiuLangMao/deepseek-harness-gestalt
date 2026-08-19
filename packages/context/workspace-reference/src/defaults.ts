@@ -1,4 +1,9 @@
-/** Built-in picker exclusions. Profiles replace `ignoreDirs` entirely when set. */
+/**
+ * Built-in picker exclusions. Profiles replace `ignoreDirs` entirely when set.
+ *
+ * Portions derived from omdsh-dev/dsh-at-file 0.6.3 (MIT).
+ * Copyright (c) 2026 dsh-at-file contributors. See NOTICE.
+ */
 
 export const DEFAULT_IGNORE_DIRS = [
   '.git',

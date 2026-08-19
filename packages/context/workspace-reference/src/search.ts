@@ -2,6 +2,9 @@
  * Pure picker ranking. A plain query matches basenames only. A query
  * containing `/` matches path segments in order. An empty query is
  * directories-first alphabetical browse.
+ *
+ * Portions derived from omdsh-dev/dsh-at-file 0.6.3 (MIT).
+ * Copyright (c) 2026 dsh-at-file contributors. See NOTICE.
  */
 
 /** One indexed workspace path. Browser ranking shares this record. */

@@ -19,6 +19,7 @@ export const inject = ['agents', 'fs', 'typert']
 
 export { DEFAULT_IGNORE_DIRS, DEFAULT_IGNORE_FILES } from './defaults.ts'
 export {
+  confinedRelative,
   escapeAttribute,
   expandMentions,
   mentionPreStep,
@@ -46,6 +47,7 @@ export const Config = z.object({
 /**
  * Mount the pre-step Workspace Reference marker.
  * @param ctx - host Cordis context.
+ * @param config - optional plugin config; omitted fields use schema defaults.
  */
 export function apply(ctx: Context, config?: Config): void {
   const resolved = Config(config ?? {})

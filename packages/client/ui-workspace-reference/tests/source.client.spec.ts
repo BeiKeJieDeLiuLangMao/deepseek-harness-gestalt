@@ -112,4 +112,14 @@ describe('createWorkspaceSource', () => {
       span: { start: 0, end: 1, draftRev: 0 },
     })).toEqual({ text: '@plain ' })
   })
+
+  it('caps ranked rows at the configured menuLimit', async () => {
+    const source = createWorkspaceSource(async () => FILES, 1)
+    const candidates = await source.candidates(SESSION, {
+      query: '',
+      position: 'leading',
+      signal: SIGNAL,
+    })
+    expect(candidates).toHaveLength(1)
+  })
 })

@@ -6,8 +6,6 @@ import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import type { InputTriggerSource } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import { rankFiles, type WorkspacePathEntry } from './rank.ts'
 
-const MENU_LIMIT = 12
-
 /** Fetch the raw workspace index for one session. */
 export type WorkspaceIndexSearch = (
   sessionId: SessionId,
@@ -24,9 +22,13 @@ interface IndexCache {
 /**
  * Build the `workspace` `@` source over an injected index fetch.
  * @param search - session-addressed index RPC or test stub.
+ * @param menuLimit - maximum ranked picker rows (plugin Config default 12).
  * @returns the `workspace` `@` source.
  */
-export function createWorkspaceSource(search: WorkspaceIndexSearch): InputTriggerSource {
+export function createWorkspaceSource(
+  search: WorkspaceIndexSearch,
+  menuLimit = 12,
+): InputTriggerSource {
   const fetches = new Map<SessionId, IndexCache>()
   const lexiconListeners = new Map<SessionId, Set<() => void>>()
 
@@ -77,7 +79,7 @@ export function createWorkspaceSource(search: WorkspaceIndexSearch): InputTrigge
     async candidates(session, { query, signal }) {
       const files = await fetchIndex(session.sessionId)
       if (signal.aborted) return []
-      return rankFiles(files, query, MENU_LIMIT).map(file => ({
+      return rankFiles(files, query, menuLimit).map(file => ({
         name: file.relative,
         description: file.kind === 'dir' ? `${file.relative}/` : file.relative,
       }))
