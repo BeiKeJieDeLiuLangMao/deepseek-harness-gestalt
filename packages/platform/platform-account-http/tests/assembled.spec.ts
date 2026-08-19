@@ -148,8 +148,9 @@ describe('real Platform Account HTTP composition', () => {
     if (polled.status !== 'complete') throw new Error('assembled login remained pending')
     expect(installation.getSnapshot()).toMatchObject({ status: 'signed-in', account: { githubLogin: 'octocat' } })
 
+    const instance = requireSecondary(secondary)
     const close = vi.fn()
-    secondary?.trackConnection(polled.sessionId, close)
+    instance.trackConnection(polled.sessionId, close)
     const initialRefresh = polled.refreshToken
     now += ACCESS_TOKEN_TTL_MS + 1
     await installation.load()
@@ -214,12 +215,13 @@ describe('real Platform Account HTTP composition', () => {
     const port = loaded.webServer.port
     const networkFetch = environmentFetch(ENVIRONMENT, port)
     const transport = new PlatformAccountHttpTransport({ environment: ENVIRONMENT, fetch: networkFetch })
+    const desktopStore = new MemoryInstallationAccountStore()
     const desktop = new PlatformAccountInstallation({
       environment: ENVIRONMENT,
       installationId: parseInstallationId('two-installation-desktop'),
       installationKind: 'desktop',
       transport,
-      store: new MemoryInstallationAccountStore(),
+      store: desktopStore,
       systemBrowser: { open: () => {} },
       crypto: webcrypto as Crypto,
       now: () => now,
@@ -250,10 +252,14 @@ describe('real Platform Account HTTP composition', () => {
     expect(mobile.getSnapshot().account?.githubLogin).toBe('mona')
     expect(desktopFirst.sessionId).not.toBe(mobileFirst.sessionId)
 
+    desktopStore.setAccountMaterial(desktopFirst.account.id, 'pairing-key', 'octocat-pairing-key')
+    desktopStore.setAccountMaterial(desktopFirst.account.id, 'receipt', 'octocat-receipt')
+
+    const instance = requireSecondary(secondary)
     const desktopReplacedClosed = vi.fn()
     const mobileClosed = vi.fn()
-    secondary?.trackConnection(desktopFirst.sessionId, desktopReplacedClosed)
-    secondary?.trackConnection(mobileFirst.sessionId, mobileClosed)
+    instance.trackConnection(desktopFirst.sessionId, desktopReplacedClosed)
+    instance.trackConnection(mobileFirst.sessionId, mobileClosed)
 
     await desktop.beginLogin()
     await completeCallback(networkFetch, ENVIRONMENT, callbacks[2])
@@ -262,21 +268,26 @@ describe('real Platform Account HTTP composition', () => {
     expect(desktop.getSnapshot().account?.githubLogin).toBe('newman')
     expect(desktopReplacedClosed).toHaveBeenCalledOnce()
     expect(mobileClosed).not.toHaveBeenCalled()
-    expect(
-      accountStorageNamespace('development', desktopFirst.account.id)
-        !== accountStorageNamespace('development', desktopSecond.account.id),
-    ).toBe(true)
+    expect(accountStorageNamespace('development', desktopFirst.account.id))
+      .not.toBe(accountStorageNamespace('development', desktopSecond.account.id))
+    expect(desktopStore.getAccountMaterial(desktopFirst.account.id, 'pairing-key')).toBe('octocat-pairing-key')
+    expect(desktopStore.getAccountMaterial(desktopFirst.account.id, 'receipt')).toBe('octocat-receipt')
+    expect(desktopStore.getAccountMaterial(desktopSecond.account.id, 'pairing-key')).toBeUndefined()
+    expect(desktopStore.getAccountMaterial(desktopSecond.account.id, 'receipt')).toBeUndefined()
     now += ACCESS_TOKEN_TTL_MS + 1
     await mobile.load()
     expect(mobile.getSnapshot()).toMatchObject({ status: 'signed-in', account: { githubLogin: 'mona' } })
-    now -= ACCESS_TOKEN_TTL_MS + 1
+    await desktop.load()
+    expect(desktop.getSnapshot()).toMatchObject({ status: 'signed-in', account: { githubLogin: 'newman' } })
 
     const desktopSignedOutClosed = vi.fn()
-    secondary?.trackConnection(desktopSecond.sessionId, desktopSignedOutClosed)
+    instance.trackConnection(desktopSecond.sessionId, desktopSignedOutClosed)
     await desktop.signOut()
     expect(desktopSignedOutClosed).toHaveBeenCalledOnce()
     expect(mobileClosed).not.toHaveBeenCalled()
     expect(mobile.getSnapshot().status).toBe('signed-in')
+    expect(desktopStore.getAccountMaterial(desktopFirst.account.id, 'pairing-key')).toBe('octocat-pairing-key')
+    expect(desktopStore.getAccountMaterial(desktopFirst.account.id, 'receipt')).toBe('octocat-receipt')
     await mobile.signOut()
     expect(mobileClosed).toHaveBeenCalledOnce()
   })
@@ -303,7 +314,7 @@ describe('real Platform Account HTTP composition', () => {
           environment,
           clock: { now: () => now },
           config: {
-            tokenSigningKey: environment.environment === 'development' ? Buffer.alloc(32, 7) : Buffer.alloc(32, 11),
+            tokenSigningKey: Buffer.alloc(32, 7),
             pollingSigningKey: Buffer.alloc(32, 9),
           },
         })
@@ -336,16 +347,26 @@ describe('real Platform Account HTTP composition', () => {
       environment: PRODUCTION,
       fetch: environmentFetch(PRODUCTION, production.webServer.port),
     })
+    expect(PRODUCTION.origin).not.toBe(ENVIRONMENT.origin)
     expect(PRODUCTION.githubClientId).not.toBe(ENVIRONMENT.githubClientId)
     expect(PRODUCTION.callbackUrl).not.toBe(ENVIRONMENT.callbackUrl)
+    expect(PRODUCTION.credentialReference).not.toBe(ENVIRONMENT.credentialReference)
+    expect(PRODUCTION.databaseIdentity).not.toBe(ENVIRONMENT.databaseIdentity)
     expect(PRODUCTION.identityNamespace).not.toBe(ENVIRONMENT.identityNamespace)
 
     const authorization = await installation.authorizeCurrentInstallation()
     await expect(productionTransport.current(authorization)).rejects.toMatchObject({
       code: 'SESSION_REVOKED',
+      message: 'access token belongs to another identity namespace',
     } satisfies Partial<AccountError>)
   })
 })
+
+function requireSecondary(secondary: PlatformAccount | undefined): PlatformAccount {
+  expect(secondary).toBeDefined()
+  if (secondary === undefined) throw new Error('assembled provider did not install a secondary PlatformAccount')
+  return secondary
+}
 
 function environmentFetch(environment: SelectedPlatformEnvironment, port: number): typeof fetch {
   return async (input, init = {}) => {

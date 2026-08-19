@@ -4,7 +4,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Include from '@deepseek-ai/cordis-plugin-include'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
@@ -60,7 +60,13 @@ describe('Desktop Platform Account over a real HTTP Platform', () => {
       environment: ENVIRONMENT,
       authorizationUrl(input) {
         callback = { code: 'desktop-real-code', state: input.state }
-        return `https://github.com/login/oauth/authorize?state=${input.state}`
+        const url = new URL('https://github.com/login/oauth/authorize')
+        url.searchParams.set('client_id', ENVIRONMENT.githubClientId)
+        url.searchParams.set('redirect_uri', input.callbackUrl)
+        url.searchParams.set('state', input.state)
+        url.searchParams.set('code_challenge', input.codeChallenge)
+        url.searchParams.set('code_challenge_method', 'S256')
+        return url.href
       },
       async exchange() {
         return { providerSubject: 13994321, login: 'octocat', avatarUrl: 'https://avatars.example/octocat' }
@@ -83,11 +89,12 @@ describe('Desktop Platform Account over a real HTTP Platform', () => {
     const networkFetch = platformFetch(loaded.port)
     const transport = new PlatformAccountHttpTransport({ environment: ENVIRONMENT, fetch: networkFetch })
     const polls: Array<() => void> = []
+    const opened = vi.fn()
     const controller = new DesktopAccountController({
       environment: ENVIRONMENT,
       transport,
       store: new EncryptedDesktopAccountStore(join(loaded.root, 'platform-account.bin'), passthroughProtection),
-      systemBrowser: { open: () => {} },
+      systemBrowser: { open: opened },
       schedule: (task) => {
         polls.push(task)
         return { unref: () => {} } as ReturnType<typeof setTimeout>
@@ -101,10 +108,20 @@ describe('Desktop Platform Account over a real HTTP Platform', () => {
     controller.acceptPrivacy()
     await controller.beginLogin()
     expect(controller.getSnapshot()).toMatchObject({ status: 'polling' })
+    const openedUrl = new URL(opened.mock.calls[0]?.[0] as string)
+    expect(openedUrl.origin + openedUrl.pathname).toBe('https://github.com/login/oauth/authorize')
+    expect(openedUrl.searchParams.get('code_challenge_method')).toBe('S256')
+    expect(openedUrl.searchParams.has('scope')).toBe(false)
+    expect(openedUrl.searchParams.get('redirect_uri')).toBe(ENVIRONMENT.callbackUrl)
+    expect(openedUrl.searchParams.has('access_token')).toBe(false)
+    expect(openedUrl.searchParams.has('refresh_token')).toBe(false)
+    expect(openedUrl.searchParams.has('token')).toBe(false)
+    expect(openedUrl.hash).toBe('')
     if (callback === undefined) throw new Error('composition provider did not receive authorization input')
     const authorization = await networkFetch(`${ENVIRONMENT.callbackUrl}?${new URLSearchParams(callback)}`)
     expect(authorization.status).toBe(200)
-    await drainPolls(polls, () => controller.getSnapshot().status === 'signed-in')
+    polls.shift()?.()
+    await vi.waitFor(() => { expect(controller.getSnapshot().status).toBe('signed-in') }, { timeout: 10_000 })
     expect(controller.getSnapshot()).toMatchObject({
       status: 'signed-in',
       account: { githubLogin: 'octocat', githubId: 13994321 },
@@ -135,6 +152,7 @@ describe('Desktop Platform Account over a real HTTP Platform', () => {
     await restart.signOut()
     expect(restart.getSnapshot()).toMatchObject({ status: 'idle' })
     await expect(transport.current(rotated)).rejects.toMatchObject({ code: 'SESSION_REVOKED' })
+    await restart.dispose()
 
     const afterSignOut = new DesktopAccountController({
       environment: ENVIRONMENT,
@@ -152,15 +170,6 @@ describe('Desktop Platform Account over a real HTTP Platform', () => {
     await afterSignOut.dispose()
   })
 })
-
-/** Execute controller-scheduled polls until the stop condition holds. */
-async function drainPolls(polls: Array<() => void>, finished: () => boolean): Promise<void> {
-  for (let round = 0; round < 10 && !finished(); round += 1) {
-    const scheduled = polls.splice(0)
-    for (const poll of scheduled) poll()
-    await new Promise((resolve) => { setTimeout(resolve, 0) })
-  }
-}
 
 function platformFetch(port: number): typeof fetch {
   return async (input, init = {}) => {
