@@ -34,6 +34,11 @@ describe('scanMentions', () => {
   it('does not treat a Session Reference mention as a path', () => {
     expect(scanMentions('compare @[other](dsh-session:abc) with @README.md')).toEqual(['README.md'])
   })
+
+  it('escapes XML attribute characters in the marker', () => {
+    expect(referenceForm('a&b<"c">', 'file'))
+      .toBe('<workspace-reference path="a&amp;b&lt;&quot;c&quot;&gt;" kind="file" />')
+  })
 })
 
 describe('expandMentions', () => {

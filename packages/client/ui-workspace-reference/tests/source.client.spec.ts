@@ -47,4 +47,24 @@ describe('createWorkspaceSource', () => {
       span: { start: 0, end: 1, draftRev: 0 },
     })).toEqual({ text: '@src/a.ts ' })
   })
+
+  it('exposes a lexicon after the first fetch and ignores aborted candidate polls', async () => {
+    const source = createWorkspaceSource(async () => FILES)
+    const aborted = new AbortController()
+    aborted.abort()
+    expect(await source.candidates(SESSION, {
+      query: 'a.ts',
+      position: 'leading',
+      signal: aborted.signal,
+    })).toEqual([])
+    await source.candidates(SESSION, {
+      query: '',
+      position: 'leading',
+      signal: SIGNAL,
+    })
+    expect(source.lexicon?.(SESSION)).toEqual(['src/a.ts', 'docs'])
+    source.warm?.(SESSION)
+    const stop = source.subscribeLexicon?.(SESSION, () => {})
+    stop?.()
+  })
 })
