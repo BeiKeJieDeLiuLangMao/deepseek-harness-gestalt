@@ -17,7 +17,7 @@ import {
   commitBrowserRuntimeState,
   emitBrowserRuntimeState,
   EMPTY_BROWSER_PROFILE_STORAGE,
-  bindBrowserControlMutation,
+  requireExpectedBrowserRevision,
   resolveBrowserCreateAttach,
   resolveBrowserProfileCreate,
 } from '@deepseek-ai/dsh-browser-runtime'
@@ -290,13 +290,23 @@ export class TandemBrowserRuntime extends BrowserRuntime {
   }
 
   /** Resolve an open page or reject its terminal close receipt. */
-  private open(target: BrowserTarget): BrowserPageState {
+  protected override openPage(target: BrowserTarget): BrowserPageState {
     const state = this.addressed(target)
     if (state.status === 'unavailable') {
       throw new BrowserRuntimeError('Tandem browser runtime is unavailable', 'BROWSER_RUNTIME_UNAVAILABLE')
     }
     if (state.status !== 'open') throw new BrowserRuntimeError('browser target is closed', 'BROWSER_NOT_OPEN')
     return state
+  }
+
+  /** Enforce optimistic mutation ordering. */
+  protected override expectRevision(state: BrowserRuntimeState, revision: number): void {
+    requireExpectedBrowserRevision(state, revision)
+  }
+
+  /** Commit one next open page after a control-owner mutation. */
+  protected override commitPage(state: BrowserPageState): BrowserPageState {
+    return this.commit(state)
   }
 
   /** Resolve the open Tandem Profile for one addressed target. */
@@ -327,15 +337,7 @@ export class TandemBrowserRuntime extends BrowserRuntime {
     return [...this.states.values()].find((state): state is BrowserPageState => state.status === 'open')
   }
 
-  /** Enforce optimistic ordering for Agent and human mutations. */
-  private expected(state: BrowserRuntimeState, revision: number): void {
-    if (state.revision !== revision) {
-      throw new BrowserRuntimeError(
-        `browser revision conflict: expected ${String(revision)}, current ${String(state.revision)}`,
-        'BROWSER_REVISION_CONFLICT',
-      )
-    }
-  }
+
 
   /** Read the current Tandem bearer token after startup generated it. */
   private async token(): Promise<string> {
@@ -708,8 +710,8 @@ export class TandemBrowserRuntime extends BrowserRuntime {
     assertBrowserNotAborted(request.signal)
     return this.exclusive(async () => {
       assertBrowserNotAborted(request.signal)
-      const state = this.open(request.target)
-      this.expected(state, request.expectedRevision)
+      const state = this.openPage(request.target)
+      this.expectRevision(state, request.expectedRevision)
       await this.json('/navigate', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-session': this.sessionNameFor(request.target) },
@@ -741,7 +743,7 @@ export class TandemBrowserRuntime extends BrowserRuntime {
     assertBrowserNotAborted(request.signal)
     return this.exclusive(async () => {
       assertBrowserNotAborted(request.signal)
-      const state = this.open(request.target)
+      const state = this.openPage(request.target)
       const page = await this.page(state, request.signal)
       const { response, bytes } = await this.request('/screenshot', {
         method: 'GET',
@@ -765,8 +767,8 @@ export class TandemBrowserRuntime extends BrowserRuntime {
     assertBrowserNotAborted(request.signal)
     return this.exclusive(async () => {
       assertBrowserNotAborted(request.signal)
-      const state = this.open(request.target)
-      this.expected(state, request.expectedRevision)
+      const state = this.openPage(request.target)
+      this.expectRevision(state, request.expectedRevision)
       const response = objectValue(await this.json('/tabs/focus', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -777,32 +779,12 @@ export class TandemBrowserRuntime extends BrowserRuntime {
     })
   }
 
-  /* jscpd:ignore-start */
-  async takeover(request: BrowserMutationRequest): Promise<BrowserPageState> {
-    return bindBrowserControlMutation(
-      operation => this.exclusive(operation),
-      target => this.open(target),
-      (state, revision) => { this.expected(state, revision) },
-      state => this.commit(state),
-    )(request, 'human')
-  }
-
-  async returnControl(request: BrowserMutationRequest): Promise<BrowserPageState> {
-    return bindBrowserControlMutation(
-      operation => this.exclusive(operation),
-      target => this.open(target),
-      (state, revision) => { this.expected(state, revision) },
-      state => this.commit(state),
-    )(request, 'agent')
-  }
-  /* jscpd:ignore-end */
-
   async input(request: BrowserInputRequest): Promise<BrowserPageState> {
     assertBrowserNotAborted(request.signal)
     return this.exclusive(async () => {
       assertBrowserNotAborted(request.signal)
-      const state = this.open(request.target)
-      this.expected(state, request.expectedRevision)
+      const state = this.openPage(request.target)
+      this.expectRevision(state, request.expectedRevision)
       if (request.url !== undefined) {
         await this.json('/navigate', {
           method: 'POST',
@@ -825,7 +807,7 @@ export class TandemBrowserRuntime extends BrowserRuntime {
     return this.exclusive(async () => {
       assertBrowserNotAborted(request.signal)
       const state = this.addressed(request.target)
-      this.expected(state, request.expectedRevision)
+      this.expectRevision(state, request.expectedRevision)
       if (state.status === 'closed') throw new BrowserRuntimeError('browser target is closed', 'BROWSER_NOT_OPEN')
       const profile = this.openProfile(request.target)
       const sessionName = profile.sessionName

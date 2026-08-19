@@ -26,7 +26,7 @@
 
 `baseUrl` 必须是绝对的 loopback HTTP origin（主机为 `127.0.0.1`、`localhost` 或 `[::1]`，不含凭据、路径、查询或 fragment），否则插件加载失败。时长必须是正安全整数，`reconnectAttempts` 必须是非负安全整数。bearer token 从 `tokenFile` 读取，每次 HTTP 操作都携带它；启动健康检查在 `startupTimeoutMs` 内轮询 `GET /agent/version` 与 `GET /status`。
 
-所有操作进入同一个串行队列。写操作要求调用方提供最后观察到的 `expectedRevision`；读操作返回当前修订号且不递增。人工 `input` 与 `takeover` 会把 `controlOwner` 设为 `human`，并保持同一 Session、Profile、浏览器实例与标签页；`returnControl` 把控制权交回 `agent`。每个 Profile 映射到通过 `POST /sessions/create` 创建的一个 Tandem session 与一个 `persist:session-*` partition。命名 Profile 恢复该 partition；临时 Profile 使用唯一的 `tmp-N` session 名，且不留下可复用身份。同一命名 Profile 的第二个打开写入方会以 `BROWSER_PROFILE_BUSY` 拒绝。释放开始后的操作会以 `BROWSER_DISPOSED` 拒绝。释放阶段停止接收新操作、排空队列、通过 `POST /sessions/destroy` 销毁剩余 session，并在 `processGraceMs` 内 join 子进程树。
+所有操作进入同一个串行队列。写操作要求调用方提供最后观察到的 `expectedRevision`；读操作返回当前修订号且不递增。人工 `input` 与 `takeover` 会把报告的 `controlOwner` 设为 `human`，并保持同一 Session、Profile、浏览器实例与标签页；`returnControl` 记录 Agent 所有权。锁是修订号。每个 Profile 映射到通过 `POST /sessions/create` 创建的一个 Tandem session 与一个 `persist:session-*` partition。命名 Profile 恢复该 partition；临时 Profile 使用唯一的 `tmp-N` session 名，且不留下可复用身份。同一命名 Profile 的第二个打开写入方会以 `BROWSER_PROFILE_BUSY` 拒绝。释放开始后的操作会以 `BROWSER_DISPOSED` 拒绝。释放阶段停止接收新操作、排空队列、通过 `POST /sessions/destroy` 销毁剩余 session，并在 `processGraceMs` 内 join 子进程树。
 
 子进程意外退出或健康检查失败会提交一个 reason 为 `crashed` 或 `unhealthy` 的 `BrowserUnavailableState`，其 `reconnecting` 由配置决定，随后最多尝试 `reconnectAttempts` 次子进程重启；恢复成功后以同一 target、下一修订号重新提交打开页面状态，重连耗尽则提交 `reason: 'reconnect-failed'` 且 `reconnecting: false`。该投影是真实的：不可用期间，针对该 target 的操作会以 `BROWSER_RUNTIME_UNAVAILABLE` 拒绝，而不是报告过期的页面事实。格式错误的 Tandem 响应、超限响应体与字段校验失败会以 `BROWSER_PROTOCOL` 拒绝。
 

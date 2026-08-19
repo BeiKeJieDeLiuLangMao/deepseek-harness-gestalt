@@ -391,6 +391,23 @@ export function requireOpenBrowserPage(state: BrowserRuntimeState): BrowserPageS
 }
 
 /**
+ * Reject a stale mutation whose expected revision is not current.
+ * @param state - Current addressed state.
+ * @param revision - Caller-supplied expected revision.
+ */
+export function requireExpectedBrowserRevision(
+  state: BrowserRuntimeState,
+  revision: number,
+): void {
+  if (state.revision !== revision) {
+    throw new BrowserRuntimeError(
+      `browser revision conflict: expected ${String(revision)}, current ${String(state.revision)}`,
+      'BROWSER_REVISION_CONFLICT',
+    )
+  }
+}
+
+/**
  * Reject a stale mutation and return the addressed open page.
  * @param state - Current addressed state.
  * @param revision - Caller-supplied expected revision.
@@ -400,19 +417,14 @@ export function requireExpectedOpenBrowserPage(
   state: BrowserRuntimeState,
   revision: number,
 ): BrowserPageState {
-  if (state.revision !== revision) {
-    throw new BrowserRuntimeError(
-      `browser revision conflict: expected ${String(revision)}, current ${String(state.revision)}`,
-      'BROWSER_REVISION_CONFLICT',
-    )
-  }
+  requireExpectedBrowserRevision(state, revision)
   return requireOpenBrowserPage(state)
 }
 
 /**
- * Advance one open page to the next revision and assign its control owner.
+ * Advance one open page to the next revision and assign its reported control owner.
  * @param state - Current open page.
- * @param controlOwner - Next exclusive operator.
+ * @param controlOwner - Next reported operator.
  * @returns the next committed open-page facts.
  */
 export function withBrowserControlOwner(
@@ -429,18 +441,22 @@ export function withBrowserControlOwner(
  * @param expected - Enforces the caller's last observed revision.
  * @param commit - Commits the next open page.
  * @param request - Target, expected revision, and cancellation.
- * @param controlOwner - Next exclusive operator.
+ * @param controlOwner - Next reported operator.
  * @returns the committed open page.
  */
 export function mutateBrowserControlOwner(
   exclusive: <T>(operation: () => T | Promise<T>) => Promise<T>,
   open: (target: BrowserTarget) => BrowserPageState,
   expected: (state: BrowserRuntimeState, revision: number) => void,
-  commit: <T extends BrowserRuntimeState>(state: T) => T,
+  commit: (state: BrowserPageState) => BrowserPageState,
   request: BrowserMutationRequest,
   controlOwner: BrowserControlOwner,
 ): Promise<BrowserPageState> {
-  assertBrowserNotAborted(request.signal)
+  try {
+    assertBrowserNotAborted(request.signal)
+  } catch (error) {
+    return Promise.reject(error)
+  }
   return exclusive(() => {
     assertBrowserNotAborted(request.signal)
     const state = open(request.target)
@@ -461,7 +477,7 @@ export function bindBrowserControlMutation(
   exclusive: <T>(operation: () => T | Promise<T>) => Promise<T>,
   open: (target: BrowserTarget) => BrowserPageState,
   expected: (state: BrowserRuntimeState, revision: number) => void,
-  commit: <T extends BrowserRuntimeState>(state: T) => T,
+  commit: (state: BrowserPageState) => BrowserPageState,
 ): (request: BrowserMutationRequest, controlOwner: BrowserControlOwner) => Promise<BrowserPageState> {
   return (request, controlOwner) => mutateBrowserControlOwner(exclusive, open, expected, commit, request, controlOwner)
 }

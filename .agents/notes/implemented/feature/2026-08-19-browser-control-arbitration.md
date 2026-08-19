@@ -10,7 +10,7 @@ A user may need to type, click, solve a CAPTCHA, or confirm a login on the same 
 
 ## Decision
 
-Human pointer and keyboard input and Agent commands target the same Browser Workspace tab. Observable open and unavailable page state carry `controlOwner` (`agent` | `human`) plus the revision later mutations must match. `input` records one human mutation, advances the revision, and sets `controlOwner` to `human`. `takeover` gives the human exclusive control without changing page content. `returnControl` returns exclusive control to the Agent. Session, Profile, browser instance, and tab identities stay the same across takeover and return.
+Human pointer and keyboard input and Agent commands target the same Browser Workspace tab. Observable open and unavailable page state carry `controlOwner` (`agent` | `human`) plus the revision later mutations must match. `controlOwner` is reported ownership. The lock is the revision: after `observe`, an Agent `navigate` or `focus` that matches the current revision reclaims the tab without `returnControl`. `input` records one human mutation, advances the revision, and sets `controlOwner` to `human`. `takeover` records human ownership without changing page content. `returnControl` records Agent ownership. Session, Profile, browser instance, and tab identities stay the same across takeover and return.
 
 Providers serialize every mutation and reject a stale `expectedRevision` with `BROWSER_REVISION_CONFLICT`. After a rejected Agent mutation, the Agent must `observe` again. Agent `navigate` and `focus` set `controlOwner` to `agent`. Sensitive Browser actions continue to use the existing tool approval and permission path; this ticket adds no second approval channel.
 

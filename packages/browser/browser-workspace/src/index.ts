@@ -201,7 +201,7 @@ export class BrowserWorkspaceBinder extends Service {
   }
 
   /**
-   * Give the human exclusive control of one Session-owned tab.
+   * Record reported human ownership of one Session-owned tab.
    * @param request - Session-bound mutation request.
    * @returns the committed open page whose `controlOwner` is `human`.
    */
@@ -213,7 +213,7 @@ export class BrowserWorkspaceBinder extends Service {
   }
 
   /**
-   * Return exclusive control of one Session-owned tab to the Agent.
+   * Record reported Agent ownership of one Session-owned tab.
    * @param request - Session-bound mutation request.
    * @returns the committed open page whose `controlOwner` is `agent`.
    */

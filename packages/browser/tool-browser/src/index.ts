@@ -180,15 +180,6 @@ function revision(value: number): number {
 }
 
 /**
- * Route one Browser Runtime call through the Session binder when both are present.
- * @param ctx - Consumer context that may compose `browserWorkspace`.
- * @param exec - Tool execution carrying an optional calling Agent Session.
- * @param bound - Binder method to invoke when a Session is present.
- * @param unbound - Runtime method to invoke otherwise.
- * @param request - Operation request shared by both paths.
- * @returns the Runtime or Binder result.
- */
-/**
  * Convert validated tool arguments into a branded mutation request.
  * @param args - Target identities and expected revision from the model.
  * @param signal - Cooperative cancellation from the tool execution.
@@ -208,6 +199,15 @@ function mutationFrom(
   }
 }
 
+/**
+ * Route one Browser Runtime call through the Session binder when both are present.
+ * @param ctx - Consumer context that may compose `browserWorkspace`.
+ * @param exec - Tool execution carrying an optional calling Agent Session.
+ * @param bound - Binder method to invoke when a Session is present.
+ * @param unbound - Runtime method to invoke otherwise.
+ * @param request - Operation request shared by both paths.
+ * @returns the Runtime or Binder result.
+ */
 function routeBrowserCall<TRequest, TResult>(
   ctx: Context,
   exec: { agent?: { session?: Session } },
@@ -438,7 +438,7 @@ export function apply(ctx: Context, config: Config): void {
   ctx.tools.register({
     ...defineTool({
       name: 'browser_takeover',
-      description: 'Give the human exclusive control of one browser tab using its latest revision.',
+      description: 'Record reported human ownership of one browser tab using its latest revision. The lock is the revision; a later Agent mutation that observes the current revision may reclaim the tab.',
       timeoutMs,
       parameters: {
         target: TARGET_PARAMETER,
@@ -455,7 +455,7 @@ export function apply(ctx: Context, config: Config): void {
   ctx.tools.register({
     ...defineTool({
       name: 'browser_return_control',
-      description: 'Return exclusive control of one browser tab to the Agent using its latest revision.',
+      description: 'Record reported Agent ownership of one browser tab using its latest revision. The lock is the revision; this does not add a second lock.',
       timeoutMs,
       parameters: {
         target: TARGET_PARAMETER,

@@ -33,7 +33,7 @@ interface BrowserUnavailableState {
 
 ## 并发与生命周期
 
-Provider 串行执行操作。`create` 可以把新实例附加到已有 Workspace，或把新标签页附加到已有实例。`navigate`、`focus`、`input`、`takeover`、`returnControl` 与 `close` 要求最后观察到的修订号，并拒绝过期写入。人工 `input` 与 `takeover` 会把 `controlOwner` 设为 `human`；`returnControl` 与 Agent 写入会把它设为 `agent`。`observe` 与 `screenshot` 不递增修订号。命名持久 Profile 在关闭后恢复同一 `persist:session-*` partition。临时 Profile 获得唯一 partition，且不留下可复用身份。同一命名 Profile 的第二个独立写入方会以 `BROWSER_PROFILE_BUSY` 拒绝。释放阶段停止接收新操作、排空已接受操作，并关闭每个仍打开的 Profile。Session 本地所有权、Dock 事实、已持久化的控制权以及跨 Session 隔离见 [`dsh-browser-workspace`](../../packages/browser/browser-workspace)。
+Provider 串行执行操作。`create` 可以把新实例附加到已有 Workspace，或把新标签页附加到已有实例。`navigate`、`focus`、`input`、`takeover`、`returnControl` 与 `close` 要求最后观察到的修订号，并拒绝过期写入。`controlOwner` 是报告的所有权。锁是修订号：`observe` 之后，匹配当前修订号的 Agent `navigate` 或 `focus` 会在不调用 `returnControl` 的情况下收回该标签页。人工 `input` 与 `takeover` 会把 `controlOwner` 设为 `human`；`returnControl` 与 Agent 写入会把它设为 `agent`。`observe` 与 `screenshot` 不递增修订号。命名持久 Profile 在关闭后恢复同一 `persist:session-*` partition。临时 Profile 获得唯一 partition，且不留下可复用身份。同一命名 Profile 的第二个独立写入方会以 `BROWSER_PROFILE_BUSY` 拒绝。释放阶段停止接收新操作、排空已接受操作，并关闭每个仍打开的 Profile。Session 本地所有权、Dock 事实、已持久化的控制权以及跨 Session 隔离见 [`dsh-browser-workspace`](../../packages/browser/browser-workspace)。
 
 确定性 Provider 为每个 generation 分配独立 owner token。其 invariant 在首次加载与热重载时从该 generation 的当前权威 state 建立基线，随后为稳定身份、精确修订顺序与终态关闭注册同步 pre-commit validator。验证失败时，原 state 仍是权威来源。提交后，Provider 在 `browser/runtime-state` 上发布状态；每个普通 observer failure 都受到容纳，后续 observer 继续运行，且异步 observer 不会被等待。
 
@@ -133,26 +133,29 @@ abstract focus(request: BrowserMutationRequest): Promise<BrowserPageState>
 abstract input(request: BrowserInputRequest): Promise<BrowserPageState>
 
 /**
- * Give the human exclusive control of one open tab after checking its expected revision.
+ * Record reported human ownership after checking the expected revision. Identities stay
+ * the same. The lock is the revision: a later Agent mutation that observes the current
+ * revision may reclaim the tab without `returnControl`.
  * @param request - Target, expected revision, and cancellation signal.
- * @returns committed open page whose `controlOwner` is `human`. Identities stay the same.
+ * @returns committed open page whose `controlOwner` is `human`.
  * @throws `BrowserRuntimeError` with `BROWSER_ABORTED`, `BROWSER_DISPOSED`, `BROWSER_NOT_FOUND`,
  * `BROWSER_NOT_OPEN`, or `BROWSER_REVISION_CONFLICT` when the corresponding precondition fails
  * before commit, `BROWSER_PROTOCOL` when the upstream runtime breaks its response protocol, or
  * `BROWSER_RUNTIME_UNAVAILABLE` when it cannot be reached.
  */
-abstract takeover(request: BrowserMutationRequest): Promise<BrowserPageState>
+takeover(request: BrowserMutationRequest): Promise<BrowserPageState>
 
 /**
- * Return exclusive control of one open tab to the Agent after checking its expected revision.
+ * Record reported Agent ownership after checking the expected revision. Identities stay
+ * the same. The lock is the revision; this method does not add a second lock.
  * @param request - Target, expected revision, and cancellation signal.
- * @returns committed open page whose `controlOwner` is `agent`. Identities stay the same.
+ * @returns committed open page whose `controlOwner` is `agent`.
  * @throws `BrowserRuntimeError` with `BROWSER_ABORTED`, `BROWSER_DISPOSED`, `BROWSER_NOT_FOUND`,
  * `BROWSER_NOT_OPEN`, or `BROWSER_REVISION_CONFLICT` when the corresponding precondition fails
  * before commit, `BROWSER_PROTOCOL` when the upstream runtime breaks its response protocol, or
  * `BROWSER_RUNTIME_UNAVAILABLE` when it cannot be reached.
  */
-abstract returnControl(request: BrowserMutationRequest): Promise<BrowserPageState>
+returnControl(request: BrowserMutationRequest): Promise<BrowserPageState>
 
 /**
  * Close the addressed tab after checking its expected revision. Temporary Profiles discard
@@ -167,7 +170,7 @@ abstract returnControl(request: BrowserMutationRequest): Promise<BrowserPageStat
 abstract close(request: BrowserMutationRequest): Promise<BrowserClosedState>
 ```
 
-Source: [`packages/browser/browser-runtime/src/index.ts:102`](../../packages/browser/browser-runtime/src/index.ts)
+Source: [`packages/browser/browser-runtime/src/index.ts:104`](../../packages/browser/browser-runtime/src/index.ts)
 
 <a id="ctxbrowserworkspace--browserworkspacebinder"></a>
 
@@ -233,14 +236,14 @@ async focus(request: BrowserWorkspaceMutationRequest): Promise<BrowserPageState>
 async input(request: BrowserWorkspaceInputRequest): Promise<BrowserPageState>
 
 /**
- * Give the human exclusive control of one Session-owned tab.
+ * Record reported human ownership of one Session-owned tab.
  * @param request - Session-bound mutation request.
  * @returns the committed open page whose `controlOwner` is `human`.
  */
 async takeover(request: BrowserWorkspaceMutationRequest): Promise<BrowserPageState>
 
 /**
- * Return exclusive control of one Session-owned tab to the Agent.
+ * Record reported Agent ownership of one Session-owned tab.
  * @param request - Session-bound mutation request.
  * @returns the committed open page whose `controlOwner` is `agent`.
  */
@@ -285,5 +288,5 @@ Post-commit Browser Runtime lifecycle notification. Providers contain synchronou
 'browser/runtime-state'(state: BrowserRuntimeState): void
 ```
 
-Source: [`packages/browser/browser-runtime/src/index.ts:92`](../../packages/browser/browser-runtime/src/index.ts)
+Source: [`packages/browser/browser-runtime/src/index.ts:94`](../../packages/browser/browser-runtime/src/index.ts)
 <!-- END GENERATED cordis-surface -->

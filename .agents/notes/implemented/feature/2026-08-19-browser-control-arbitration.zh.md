@@ -10,7 +10,7 @@ Status: implemented
 
 ## 决策
 
-人工指针与键盘输入以及 Agent 命令都针对同一个 Browser Workspace 标签页。可观察的打开与不可用页面状态携带 `controlOwner`（`agent` | `human`）以及后续写入必须匹配的修订号。`input` 记录一次人工写入、递增修订号，并把 `controlOwner` 设为 `human`。`takeover` 在不改变页面内容的情况下把独占控制权交给人。`returnControl` 把独占控制权交回 Agent。接管与交还过程中，Session、Profile、浏览器实例与标签页身份保持不变。
+人工指针与键盘输入以及 Agent 命令都针对同一个 Browser Workspace 标签页。可观察的打开与不可用页面状态携带 `controlOwner`（`agent` | `human`）以及后续写入必须匹配的修订号。`controlOwner` 是报告的所有权。锁是修订号：`observe` 之后，匹配当前修订号的 Agent `navigate` 或 `focus` 会在不调用 `returnControl` 的情况下收回该标签页。`input` 记录一次人工写入、递增修订号，并把 `controlOwner` 设为 `human`。`takeover` 在不改变页面内容的情况下记录人工所有权。`returnControl` 记录 Agent 所有权。接管与交还过程中，Session、Profile、浏览器实例与标签页身份保持不变。
 
 Provider 串行执行每次写入，并以 `BROWSER_REVISION_CONFLICT` 拒绝过期的 `expectedRevision`。被拒绝的 Agent 写入之后，Agent 必须重新 `observe`。Agent 的 `navigate` 与 `focus` 会把 `controlOwner` 设为 `agent`。敏感 Browser 操作继续走现有工具审批与权限路径；本工单不增加第二条审批通道。
 

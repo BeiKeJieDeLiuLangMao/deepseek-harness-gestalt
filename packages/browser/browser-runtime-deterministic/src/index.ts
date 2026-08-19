@@ -18,7 +18,7 @@ import {
   commitBrowserRuntimeState,
   emitBrowserRuntimeState,
   EMPTY_BROWSER_PROFILE_STORAGE,
-  bindBrowserControlMutation,
+  requireExpectedBrowserRevision,
   requireOpenBrowserPage,
   resolveBrowserCreateAttach,
   resolveBrowserProfileCreate,
@@ -185,18 +185,18 @@ export class DeterministicBrowserRuntime extends BrowserRuntime {
   }
 
   /** Resolve an open page or reject a closed target. */
-  private open(target: BrowserTarget): BrowserPageState {
+  protected override openPage(target: BrowserTarget): BrowserPageState {
     return requireOpenBrowserPage(this.addressed(target))
   }
 
   /** Enforce optimistic mutation ordering. */
-  private expected(state: BrowserRuntimeState, revision: number): void {
-    if (state.revision !== revision) {
-      throw new BrowserRuntimeError(
-        `browser revision conflict: expected ${String(revision)}, current ${String(state.revision)}`,
-        'BROWSER_REVISION_CONFLICT',
-      )
-    }
+  protected override expectRevision(state: BrowserRuntimeState, revision: number): void {
+    requireExpectedBrowserRevision(state, revision)
+  }
+
+  /** Commit one next open page after a control-owner mutation. */
+  protected override commitPage(state: BrowserPageState): BrowserPageState {
+    return this.commit(state)
   }
 
   async create(request: BrowserCreateRequest): Promise<BrowserPageState> {
@@ -273,8 +273,8 @@ export class DeterministicBrowserRuntime extends BrowserRuntime {
     assertBrowserNotAborted(request.signal)
     return this.exclusive(() => {
       assertBrowserNotAborted(request.signal)
-      const state = this.open(request.target)
-      this.expected(state, request.expectedRevision)
+      const state = this.openPage(request.target)
+      this.expectRevision(state, request.expectedRevision)
       const page = this.pages.get(request.url)
       if (page === undefined) {
         throw new BrowserRuntimeError(`deterministic browser page is not configured: ${request.url}`, 'BROWSER_UNKNOWN_URL')
@@ -309,7 +309,7 @@ export class DeterministicBrowserRuntime extends BrowserRuntime {
     assertBrowserNotAborted(request.signal)
     return this.exclusive(() => {
       assertBrowserNotAborted(request.signal)
-      const state = this.open(request.target)
+      const state = this.openPage(request.target)
       const page = this.pages.get(state.url)
       if (page === undefined) {
         throw new BrowserRuntimeError(`deterministic browser page is not configured: ${state.url}`, 'BROWSER_UNKNOWN_URL')
@@ -329,8 +329,8 @@ export class DeterministicBrowserRuntime extends BrowserRuntime {
     assertBrowserNotAborted(request.signal)
     return this.exclusive(() => {
       assertBrowserNotAborted(request.signal)
-      const state = this.open(request.target)
-      this.expected(state, request.expectedRevision)
+      const state = this.openPage(request.target)
+      this.expectRevision(state, request.expectedRevision)
       return this.commit({ ...withBrowserControlOwner(state, 'agent'), focused: true })
     })
   }
@@ -339,8 +339,8 @@ export class DeterministicBrowserRuntime extends BrowserRuntime {
     assertBrowserNotAborted(request.signal)
     return this.exclusive(() => {
       assertBrowserNotAborted(request.signal)
-      const state = this.open(request.target)
-      this.expected(state, request.expectedRevision)
+      const state = this.openPage(request.target)
+      this.expectRevision(state, request.expectedRevision)
       const url = request.url ?? state.url
       const page = this.pages.get(url)
       if (request.url !== undefined && page === undefined) {
@@ -357,32 +357,12 @@ export class DeterministicBrowserRuntime extends BrowserRuntime {
     })
   }
 
-  /* jscpd:ignore-start */
-  async takeover(request: BrowserMutationRequest): Promise<BrowserPageState> {
-    return bindBrowserControlMutation(
-      operation => this.exclusive(operation),
-      target => this.open(target),
-      (state, revision) => { this.expected(state, revision) },
-      state => this.commit(state),
-    )(request, 'human')
-  }
-
-  async returnControl(request: BrowserMutationRequest): Promise<BrowserPageState> {
-    return bindBrowserControlMutation(
-      operation => this.exclusive(operation),
-      target => this.open(target),
-      (state, revision) => { this.expected(state, revision) },
-      state => this.commit(state),
-    )(request, 'agent')
-  }
-  /* jscpd:ignore-end */
-
   async close(request: BrowserMutationRequest): Promise<BrowserClosedState> {
     assertBrowserNotAborted(request.signal)
     return this.exclusive(() => {
       assertBrowserNotAborted(request.signal)
-      const state = this.open(request.target)
-      this.expected(state, request.expectedRevision)
+      const state = this.openPage(request.target)
+      this.expectRevision(state, request.expectedRevision)
       this.rememberPersistent(state)
       return this.commit({ status: 'closed', target: state.target, revision: state.revision + 1 })
     })

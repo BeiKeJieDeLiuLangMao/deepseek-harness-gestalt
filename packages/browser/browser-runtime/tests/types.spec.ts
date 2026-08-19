@@ -18,6 +18,7 @@ import {
   labeledBrowserProfileName,
   bindBrowserControlMutation,
   mutateBrowserControlOwner,
+  requireExpectedBrowserRevision,
   requireExpectedOpenBrowserPage,
   requireOpenBrowserPage,
   resolveBrowserProfileCreate,
@@ -213,6 +214,9 @@ describe('Browser Runtime shared Provider helpers', () => {
     expect(requireOpenBrowserPage(open)).toBe(open)
     expect(requireExpectedOpenBrowserPage(open, 0)).toBe(open)
     expect(() => {
+      requireExpectedBrowserRevision(open, 1)
+    }).toThrow(BrowserRuntimeError)
+    expect(() => {
       requireExpectedOpenBrowserPage(open, 1)
     }).toThrow(BrowserRuntimeError)
     expect(withBrowserControlOwner(open, 'human')).toMatchObject({ revision: 1, controlOwner: 'human' })
@@ -238,6 +242,16 @@ describe('Browser Runtime shared Provider helpers', () => {
       revision: 1,
       controlOwner: 'agent',
     })
+    const aborted = new AbortController()
+    aborted.abort('cancelled')
+    await expect(mutateBrowserControlOwner(
+      operation => Promise.resolve(operation()),
+      () => open,
+      () => undefined,
+      state => state,
+      { target, expectedRevision: 0, signal: aborted.signal },
+      'human',
+    )).rejects.toMatchObject({ code: 'BROWSER_ABORTED' })
     expect(() => {
       requireOpenBrowserPage({ status: 'closed', target, revision: 1 })
     }).toThrow(BrowserRuntimeError)

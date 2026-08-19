@@ -1,7 +1,7 @@
 /** Provider-neutral Service Definition for the Browser Runtime capability. @module @deepseek-ai/dsh-browser-runtime */
 
 import { Context, Service } from '@deepseek-ai/cordis'
-import { enqueueBrowserRuntimeOperation } from './helpers.ts'
+import { bindBrowserControlMutation, enqueueBrowserRuntimeOperation, requireExpectedOpenBrowserPage } from './helpers.ts'
 import { BrowserRuntimeError } from './types.ts'
 import type {
   BrowserClosedState,
@@ -13,6 +13,7 @@ import type {
   BrowserPageState,
   BrowserRuntimeState,
   BrowserScreenshot,
+  BrowserTarget,
 } from './types.ts'
 
 export {
@@ -33,6 +34,7 @@ export {
   labeledBrowserProfileName,
   bindBrowserControlMutation,
   mutateBrowserControlOwner,
+  requireExpectedBrowserRevision,
   requireExpectedOpenBrowserPage,
   requireOpenBrowserPage,
   resolveBrowserCreateAttach,
@@ -132,6 +134,45 @@ export abstract class BrowserRuntime extends Service {
   }
 
   /**
+   * Resolve the addressed open page or reject a closed or unavailable target.
+   * @param target - Opaque identities from the caller.
+   * @returns the current open page.
+   */
+  protected abstract openPage(target: BrowserTarget): BrowserPageState
+  /**
+   * Reject a mutation whose expected revision is not the current one.
+   * @param state - Current addressed state.
+   * @param revision - Caller-supplied expected revision.
+   */
+  protected abstract expectRevision(state: BrowserRuntimeState, revision: number): void
+  /**
+   * Commit one next open page after a control-owner mutation.
+   * @param state - Next open page to publish.
+   * @returns the frozen committed page.
+   */
+  protected abstract commitPage(state: BrowserPageState): BrowserPageState
+
+  /**
+   * Record reported human or Agent ownership after checking the expected revision.
+   * The lock is the revision: a later Agent mutation that observes the current
+   * revision may reclaim the tab without `returnControl`.
+   * @param request - Target, expected revision, and cancellation.
+   * @param controlOwner - Reported owner to persist on the next open page.
+   * @returns committed open page whose `controlOwner` is `controlOwner`.
+   */
+  protected assignControl(
+    request: BrowserMutationRequest,
+    controlOwner: BrowserPageState['controlOwner'],
+  ): Promise<BrowserPageState> {
+    return bindBrowserControlMutation(
+      operation => this.exclusive(operation),
+      target => this.openPage(target),
+      (state, revision) => { requireExpectedOpenBrowserPage(state, revision) },
+      state => this.commitPage(state),
+    )(request, controlOwner)
+  }
+
+  /**
    * Create one temporary or named persistent Profile tab. Omitting `attach` starts a new Workspace
    * and browser instance. Attaching to a Workspace starts another instance; attaching to a browser
    * instance starts another tab in that instance.
@@ -200,25 +241,32 @@ export abstract class BrowserRuntime extends Service {
    */
   abstract input(request: BrowserInputRequest): Promise<BrowserPageState>
   /**
-   * Give the human exclusive control of one open tab after checking its expected revision.
+   * Record reported human ownership after checking the expected revision. Identities stay
+   * the same. The lock is the revision: a later Agent mutation that observes the current
+   * revision may reclaim the tab without `returnControl`.
    * @param request - Target, expected revision, and cancellation signal.
-   * @returns committed open page whose `controlOwner` is `human`. Identities stay the same.
+   * @returns committed open page whose `controlOwner` is `human`.
    * @throws `BrowserRuntimeError` with `BROWSER_ABORTED`, `BROWSER_DISPOSED`, `BROWSER_NOT_FOUND`,
    * `BROWSER_NOT_OPEN`, or `BROWSER_REVISION_CONFLICT` when the corresponding precondition fails
    * before commit, `BROWSER_PROTOCOL` when the upstream runtime breaks its response protocol, or
    * `BROWSER_RUNTIME_UNAVAILABLE` when it cannot be reached.
    */
-  abstract takeover(request: BrowserMutationRequest): Promise<BrowserPageState>
+  takeover(request: BrowserMutationRequest): Promise<BrowserPageState> {
+    return this.assignControl(request, 'human')
+  }
   /**
-   * Return exclusive control of one open tab to the Agent after checking its expected revision.
+   * Record reported Agent ownership after checking the expected revision. Identities stay
+   * the same. The lock is the revision; this method does not add a second lock.
    * @param request - Target, expected revision, and cancellation signal.
-   * @returns committed open page whose `controlOwner` is `agent`. Identities stay the same.
+   * @returns committed open page whose `controlOwner` is `agent`.
    * @throws `BrowserRuntimeError` with `BROWSER_ABORTED`, `BROWSER_DISPOSED`, `BROWSER_NOT_FOUND`,
    * `BROWSER_NOT_OPEN`, or `BROWSER_REVISION_CONFLICT` when the corresponding precondition fails
    * before commit, `BROWSER_PROTOCOL` when the upstream runtime breaks its response protocol, or
    * `BROWSER_RUNTIME_UNAVAILABLE` when it cannot be reached.
    */
-  abstract returnControl(request: BrowserMutationRequest): Promise<BrowserPageState>
+  returnControl(request: BrowserMutationRequest): Promise<BrowserPageState> {
+    return this.assignControl(request, 'agent')
+  }
   /**
    * Close the addressed tab after checking its expected revision. Temporary Profiles discard
    * identity; persistent Profiles keep the named storage partition.

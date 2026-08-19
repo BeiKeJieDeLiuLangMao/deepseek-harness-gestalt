@@ -2147,7 +2147,7 @@ Source: [`packages/browser/tool-browser/src/index.ts`](../packages/browser/tool-
 
 ### `browser_return_control`
 
-Return exclusive control of one browser tab to the Agent using its latest revision.
+Record reported Agent ownership of one browser tab using its latest revision. The lock is the revision; this does not add a second lock.
 
 ```json
 {
@@ -2234,7 +2234,7 @@ Source: [`packages/browser/tool-browser/src/index.ts`](../packages/browser/tool-
 
 ### `browser_takeover`
 
-Give the human exclusive control of one browser tab using its latest revision.
+Record reported human ownership of one browser tab using its latest revision. The lock is the revision; a later Agent mutation that observes the current revision may reclaim the tab.
 
 ```json
 {

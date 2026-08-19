@@ -505,18 +505,26 @@ describe('Tandem Browser Runtime public lifecycle', () => {
     const target = { profileId: 'p' as never, workspaceId: 'w' as never, browserId: 'b' as never, tabId: 't' as never }
     await expect(ctx.browserRuntime.create({ profile: 'temporary', signal: controller.signal }))
       .rejects.toMatchObject({ code: 'BROWSER_ABORTED' })
-    for (const rejected of [
-      ctx.browserRuntime.navigate({ target, expectedRevision: 0, url: 'https://example.test/', signal: controller.signal }),
-      ctx.browserRuntime.observe({ target, signal: controller.signal }),
-      ctx.browserRuntime.screenshot({ target, signal: controller.signal }),
-      ctx.browserRuntime.focus({ target, expectedRevision: 0, signal: controller.signal }),
-      ctx.browserRuntime.input({ target, expectedRevision: 0, signal: controller.signal }),
-      ctx.browserRuntime.takeover({ target, expectedRevision: 0, signal: controller.signal }),
-      ctx.browserRuntime.returnControl({ target, expectedRevision: 0, signal: controller.signal }),
-      ctx.browserRuntime.close({ target, expectedRevision: 0, signal: controller.signal }),
-    ]) {
-      await expect(rejected).rejects.toMatchObject({ code: 'BROWSER_ABORTED' })
-    }
+    await expect(ctx.browserRuntime.navigate({
+      target,
+      expectedRevision: 0,
+      url: 'https://example.test/',
+      signal: controller.signal,
+    })).rejects.toMatchObject({ code: 'BROWSER_ABORTED' })
+    await expect(ctx.browserRuntime.observe({ target, signal: controller.signal }))
+      .rejects.toMatchObject({ code: 'BROWSER_ABORTED' })
+    await expect(ctx.browserRuntime.screenshot({ target, signal: controller.signal }))
+      .rejects.toMatchObject({ code: 'BROWSER_ABORTED' })
+    await expect(ctx.browserRuntime.focus({ target, expectedRevision: 0, signal: controller.signal }))
+      .rejects.toMatchObject({ code: 'BROWSER_ABORTED' })
+    await expect(ctx.browserRuntime.input({ target, expectedRevision: 0, signal: controller.signal }))
+      .rejects.toMatchObject({ code: 'BROWSER_ABORTED' })
+    await expect(ctx.browserRuntime.takeover({ target, expectedRevision: 0, signal: controller.signal }))
+      .rejects.toMatchObject({ code: 'BROWSER_ABORTED' })
+    await expect(ctx.browserRuntime.returnControl({ target, expectedRevision: 0, signal: controller.signal }))
+      .rejects.toMatchObject({ code: 'BROWSER_ABORTED' })
+    await expect(ctx.browserRuntime.close({ target, expectedRevision: 0, signal: controller.signal }))
+      .rejects.toMatchObject({ code: 'BROWSER_ABORTED' })
   })
 
   it('rejects operations once disposal begins', async () => {
