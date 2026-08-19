@@ -49,6 +49,8 @@ describe('session-log-download browser plugin', () => {
     expect(button?.component).toBe(SessionLogDownloadToolbarAction)
     expect(button?.options).toMatchObject({ id: 'session-log-download' })
     const injected = (button?.inject as unknown as () => import('../src/client/Dialog.tsx').SessionLogDownloadDialogInjected)()
+    const headerInjected = (dialog?.inject as unknown as () => import('../src/client/Dialog.tsx').SessionLogDownloadDialogInjected)()
+    expect(headerInjected.hooks.sessionLogDownload).toBe(injected.hooks.sessionLogDownload)
     await injected.request(SID)
     expect(b.ctx.sessionLogDownload.store.getSnapshot().bySession[SID]?.status).toBe('error')
     injected.dismiss(SID)

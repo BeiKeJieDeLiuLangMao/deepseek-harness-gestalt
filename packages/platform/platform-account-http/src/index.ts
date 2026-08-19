@@ -220,19 +220,24 @@ function requireMethod(req: IncomingMessage, method: string): void {
 }
 
 function answerJson(res: ServerResponse, status: number, value: unknown): void {
-  res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+  res.writeHead(status, {
+    'content-type': 'application/json; charset=utf-8',
+    'cache-control': 'no-store',
+  })
   res.end(JSON.stringify(value))
+}
+
+function errorPayload(code: string, message: string): { error: { code: string; message: string } } {
+  return { error: { code, message } }
 }
 
 function answerError(res: ServerResponse, error: unknown): void {
   if (error instanceof HttpError) {
-    answerJson(res, error.status, { error: { code: error.code, message: error.message } })
+    answerJson(res, error.status, errorPayload(error.code, error.message))
     return
   }
   if (error instanceof AccountError) {
-    answerJson(res, error.code.startsWith('SESSION_') ? 401 : 400, {
-      error: { code: error.code, message: error.message },
-    })
+    answerJson(res, error.code.startsWith('SESSION_') ? 401 : 400, errorPayload(error.code, error.message))
     return
   }
   answerJson(res, 500, { error: { code: 'INTERNAL', message: 'Platform Account request failed' } })

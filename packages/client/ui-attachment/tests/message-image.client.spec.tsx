@@ -130,6 +130,60 @@ describe('MessageImage', () => {
     reject?.(new Error('late failure'))
     await Promise.resolve()
   })
+
+  it('opens the pin overlay, toggles annotation, and restores the editor on close', async () => {
+    const load = vi.fn().mockResolvedValue('blob:history')
+    const onPlace = vi.fn()
+    const onSelect = vi.fn()
+    const onCloseEditor = vi.fn()
+    const view = render(
+      <MessageImage
+        attachment={attachment}
+        load={load}
+        variant="single"
+        labels={labels}
+        pinOverlay={{
+          pins: [{ id: 'pin-1', x: 10, y: 20, index: 1 }],
+          modeLabel: 'Annotate image',
+          exitLabel: 'Exit annotation',
+          refuse: 'Limit reached',
+          onPlace,
+          onSelect,
+          onCloseEditor,
+          editor: <p>note editor</p>,
+        }}
+      />,
+    )
+    await waitFor(() => { expect(view.getByAltText('history.png')).toBeTruthy() })
+    fireEvent.click(view.getByRole('button', { name: 'history.png，点击查看原图' }))
+    expect(view.getByText('note editor')).toBeTruthy()
+    fireEvent.click(view.getByRole('button', { name: 'Annotate image' }))
+    expect(view.getByRole('button', { name: 'Exit annotation' })).toBeTruthy()
+    fireEvent.click(view.getByRole('button', { name: '关闭原图预览' }))
+    expect(onCloseEditor).toHaveBeenCalledOnce()
+  })
+
+  it('opens a pin overlay that still accepts new marks', async () => {
+    const load = vi.fn().mockResolvedValue('blob:open')
+    const view = render(
+      <MessageImage
+        attachment={attachment}
+        load={load}
+        variant="single"
+        labels={labels}
+        pinOverlay={{
+          pins: [],
+          modeLabel: 'Annotate image',
+          exitLabel: 'Exit annotation',
+          onPlace: () => {},
+          onSelect: () => {},
+        }}
+      />,
+    )
+    await waitFor(() => { expect(view.getByAltText('history.png')).toBeTruthy() })
+    fireEvent.click(view.getByRole('button', { name: 'history.png，点击查看原图' }))
+    expect(view.getByRole('button', { name: 'Annotate image' })).toBeTruthy()
+  })
 })
 
 describe('ImageGallery', () => {
@@ -153,5 +207,28 @@ describe('ImageGallery', () => {
       <ImageGallery images={[{ attachment }, { attachment }, { attachment }]} load={load} align="end" labels={labels} />,
     )
     expect(several.container.querySelectorAll('[data-variant="tile"]')).toHaveLength(3)
+  })
+
+  it('forwards a pin overlay only for the attachments that own one', () => {
+    const load = vi.fn(() => new Promise<string>(() => {}))
+    const other = { ...attachment, attachmentId: AttachmentId(`sha256:${'b'.repeat(64)}`) }
+    render(
+      <ImageGallery
+        images={[{ attachment }, { attachment: other }]}
+        load={load}
+        align="start"
+        labels={labels}
+        pinOverlayFor={candidate => candidate === attachment
+          ? {
+            pins: [],
+            modeLabel: 'Annotate image',
+            exitLabel: 'Exit annotation',
+            onPlace: () => {},
+            onSelect: () => {},
+          }
+          : undefined}
+      />,
+    )
+    expect(load).toHaveBeenCalledTimes(2)
   })
 })

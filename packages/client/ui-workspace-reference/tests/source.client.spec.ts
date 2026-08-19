@@ -64,7 +64,14 @@ describe('createWorkspaceSource', () => {
     })
     expect(source.lexicon?.(SESSION)).toEqual(['src/a.ts', 'docs'])
     source.warm?.(SESSION)
-    const stop = source.subscribeLexicon?.(SESSION, () => {})
+    const errors: unknown[] = []
+    const original = console.error
+    console.error = (...args: unknown[]) => { errors.push(args) }
+    const stop = source.subscribeLexicon?.(SESSION, () => { throw new Error('lexicon boom') })
+    const withInvalidate = source as typeof source & { invalidate(id: SessionId): void }
+    withInvalidate.invalidate(SESSION.sessionId)
+    console.error = original
+    expect(errors[0]).toEqual(['[ui-workspace-reference] lexicon listener failed:', expect.any(Error)])
     stop?.()
   })
 

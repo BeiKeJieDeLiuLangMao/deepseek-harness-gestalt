@@ -39,6 +39,7 @@
       - img
     - button "Steer queued message" [disabled]:
       - img
+- button "Add images"
 - textbox "Message the agent"
 - button "Commands":
   - img

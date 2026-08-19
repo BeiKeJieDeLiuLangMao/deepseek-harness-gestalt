@@ -89,4 +89,71 @@ describe('ScheduleListAction mutations', () => {
     fireEvent.click(screen.getByRole('button', { name: '确认删除 检查 Desktop 发布 CI' }))
     expect(input.onDelete).toHaveBeenCalledWith('schedule-1')
   })
+
+  it('cancels an in-progress delete confirmation without calling the Host', () => {
+    const input = props([schedule()])
+    render(<ScheduleListAction {...input} />)
+    fireEvent.click(screen.getByRole('button', { name: '1 个定时任务等待执行' }))
+    fireEvent.click(screen.getByRole('button', { name: '删除 检查 Desktop 发布 CI' }))
+    fireEvent.click(screen.getByRole('button', { name: '取消删除 检查 Desktop 发布 CI' }))
+    expect(input.onDelete).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: '删除 检查 Desktop 发布 CI' })).toBeTruthy()
+  })
+
+  it('labels every-rules by days, hours, and minutes and reports Host and transport failures', async () => {
+    const input = props([
+      schedule({ id: 'schedule-day' as ScheduleProjectionItem['id'], kind: 'every', everySeconds: 86_400, prompt: '日报' }),
+      schedule({ id: 'schedule-hour' as ScheduleProjectionItem['id'], kind: 'every', everySeconds: 7_200, prompt: '心跳' }),
+      schedule({ id: 'schedule-minute' as ScheduleProjectionItem['id'], kind: 'every', everySeconds: 90, prompt: '轮询' }),
+    ])
+    input.onPause = vi.fn()
+      .mockResolvedValueOnce({ ok: false, error: { message: '' } })
+      .mockRejectedValueOnce('offline')
+      .mockRejectedValueOnce(new Error('network down'))
+    render(<ScheduleListAction {...input} />)
+    fireEvent.click(screen.getByRole('button', { name: '3 个定时任务等待执行' }))
+    expect(screen.getByText('每 1 天')).toBeTruthy()
+    expect(screen.getByText('每 2 小时')).toBeTruthy()
+    expect(screen.getByText('每 2 分钟')).toBeTruthy()
+
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '暂停 日报' })) })
+    expect(screen.getByRole('alert').textContent).toBe('操作失败')
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '暂停 心跳' })) })
+    expect(screen.getByRole('alert').textContent).toBe('操作失败')
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '暂停 轮询' })) })
+    expect(screen.getByRole('alert').textContent).toBe('network down')
+  })
+
+  it('ignores a second mutation while one is pending and closes on Escape or an outside pointer', async () => {
+    const hold = Promise.withResolvers<{ ok: true; value: undefined }>()
+    const input = props([schedule(), schedule({ id: 'schedule-2' as ScheduleProjectionItem['id'], prompt: '周报' })])
+    input.onPause = vi.fn().mockReturnValue(hold.promise)
+    render(<ScheduleListAction {...input} />)
+    const trigger = screen.getByRole('button', { name: '2 个定时任务等待执行' })
+    fireEvent.click(trigger)
+    fireEvent.click(screen.getByRole('button', { name: '暂停 检查 Desktop 发布 CI' }))
+    fireEvent.click(screen.getByRole('button', { name: '暂停 周报' }))
+    expect(input.onPause).toHaveBeenCalledTimes(1)
+    hold.resolve({ ok: true, value: undefined })
+    await act(async () => { await hold.promise })
+
+    fireEvent.keyDown(trigger, { key: 'a' })
+    expect(screen.getByRole('list', { name: '定时任务' })).toBeTruthy()
+    fireEvent.keyDown(trigger, { key: 'Escape' })
+    expect(screen.queryByRole('list', { name: '定时任务' })).toBeNull()
+
+    fireEvent.click(trigger)
+    fireEvent.pointerDown(document.body)
+    expect(screen.queryByRole('list', { name: '定时任务' })).toBeNull()
+  })
+
+  it('ticks while open and drops confirmation when the confirmed reminder leaves the projection', () => {
+    const input = props([schedule()])
+    const view = render(<ScheduleListAction {...input} />)
+    fireEvent.click(screen.getByRole('button', { name: '1 个定时任务等待执行' }))
+    fireEvent.click(screen.getByRole('button', { name: '删除 检查 Desktop 发布 CI' }))
+    act(() => { vi.advanceTimersByTime(30_000) })
+    view.rerender(<ScheduleListAction {...props([])} />)
+    expect(view.container.firstChild).toBeNull()
+  })
 })

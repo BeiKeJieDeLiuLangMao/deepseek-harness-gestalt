@@ -112,6 +112,7 @@ describe('version-1 Schedule decoding and folding', () => {
     { ...createData(), schedule: null },
     { ...atCreateData(), schedule: { ...atCreateData().schedule, kind: 'every' } },
     { ...atCreateData(), schedule: { ...atCreateData().schedule, kind: 'later' } },
+    { version: 1, operation: 'rename', id: 'schedule-1' },
   ])('rejects malformed durable data %#', (data) => {
     expect(() => decodeScheduleChange(data)).toThrow(ScheduleLogError)
   })

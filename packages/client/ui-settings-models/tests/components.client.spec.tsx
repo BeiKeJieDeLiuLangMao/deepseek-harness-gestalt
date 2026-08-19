@@ -1131,6 +1131,32 @@ describe('ModelsSection', () => {
     }) })
   })
 
+  it('occupies official DeepSeek from a named apiKeyEnv when neither draft nor fallback carries one', async () => {
+    const { face, mutate } = scriptedFace()
+    const emptyUser: SettingsNamespaceView = {
+      ...wireNamespaces()[0]!,
+      value: { defaultContextWindow: 1_000_000, maxTokens: 256_000, models: DEFAULT_DEEPSEEK_MODELS },
+      user: {},
+    }
+    const { ProviderEditor } = await import('../src/client/ProviderEditor.tsx')
+    render(<ProviderEditor
+      provider="deepseek-official"
+      displayName="DeepSeek"
+      namespace={emptyUser}
+      settingsPath={[]}
+      api={face as never}
+      t={t}
+      readOnly={false}
+      onClose={() => {}}
+    />)
+    fireEvent.click(screen.getByText(en.apply))
+    await waitFor(() => { expect(mutate).toHaveBeenCalledWith({
+      ns: 'llm-deepseek',
+      ops: [{ op: 'set', path: ['apiKeyEnv'], value: 'DEEPSEEK_API_KEY' }],
+      expectedRevision: 0,
+    }) })
+  })
+
   it('lets the official DeepSeek row be deleted like a user-added provider', async () => {
     const { mutate, unset } = await mountSection()
     fireEvent.click(screen.getByRole('button', { name: providerCopy(en.removeProvider, DEEPSEEK_TARGET) }))
