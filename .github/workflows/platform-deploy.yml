@@ -20,7 +20,6 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}/platform
 
 jobs:
   deploy:
@@ -39,7 +38,7 @@ jobs:
           TAG: ${{ inputs.image_tag }}
         run: |
           set -euo pipefail
-          image="${REGISTRY}/${IMAGE_NAME}:${TAG}"
+          image="${REGISTRY}/$(echo "${GITHUB_REPOSITORY}/platform" | tr '[:upper:]' '[:lower:]'):${TAG}"
           docker pull "$image"
           docker save "$image" | gzip > /tmp/platform.tar.gz
           echo "IMAGE=${image}" >> "$GITHUB_ENV"
