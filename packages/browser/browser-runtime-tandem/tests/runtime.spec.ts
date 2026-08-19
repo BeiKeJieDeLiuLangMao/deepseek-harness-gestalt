@@ -270,6 +270,7 @@ describe('Tandem Browser Runtime public lifecycle', () => {
     const humanFirstRejected = humanFirst.find(result => result.status === 'rejected')
     expect(humanFirstRejected?.status === 'rejected' ? humanFirstRejected.reason : undefined).toMatchObject({
       code: 'BROWSER_REVISION_CONFLICT',
+      message: expect.stringMatching(/current 1; observe again before mutating/),
     })
     const afterHuman = await ctx.browserRuntime.observe({ target: created.target })
     expect(afterHuman).toMatchObject({
@@ -326,6 +327,8 @@ describe('Tandem Browser Runtime public lifecycle', () => {
     expect(clickOnly).toMatchObject({
       revision: 5,
       url: 'https://login.test/',
+      title: 'Loaded page',
+      text: 'Signed in as .\nidentity=',
       controlOwner: 'human',
       target: identities,
     })

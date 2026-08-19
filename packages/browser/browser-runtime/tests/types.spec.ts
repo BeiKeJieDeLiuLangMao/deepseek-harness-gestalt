@@ -215,7 +215,7 @@ describe('Browser Runtime shared Provider helpers', () => {
     expect(requireExpectedOpenBrowserPage(open, 0)).toBe(open)
     expect(() => {
       requireExpectedBrowserRevision(open, 1)
-    }).toThrow(BrowserRuntimeError)
+    }).toThrow(/current 0; observe again before mutating/)
     expect(() => {
       requireExpectedOpenBrowserPage(open, 1)
     }).toThrow(BrowserRuntimeError)

@@ -12,7 +12,7 @@ Status: implemented
 
 人工指针与键盘输入以及 Agent 命令都针对同一个 Browser Workspace 标签页。可观察的打开与不可用页面状态携带 `controlOwner`（`agent` | `human`）以及后续写入必须匹配的修订号。`controlOwner` 是报告的所有权。锁是修订号：`observe` 之后，匹配当前修订号的 Agent `navigate` 或 `focus` 会在不调用 `returnControl` 的情况下收回该标签页。`input` 记录一次人工写入、递增修订号，并把 `controlOwner` 设为 `human`。`takeover` 在不改变页面内容的情况下记录人工所有权。`returnControl` 记录 Agent 所有权。接管与交还过程中，Session、Profile、浏览器实例与标签页身份保持不变。
 
-Provider 串行执行每次写入，并以 `BROWSER_REVISION_CONFLICT` 拒绝过期的 `expectedRevision`。被拒绝的 Agent 写入之后，Agent 必须重新 `observe`。Agent 的 `navigate` 与 `focus` 会把 `controlOwner` 设为 `agent`。敏感 Browser 操作继续走现有工具审批与权限路径；本工单不增加第二条审批通道。
+Provider 串行执行每次写入，并以 `BROWSER_REVISION_CONFLICT` 拒绝过期的 `expectedRevision`。冲突消息会写出当前修订号，并要求 Agent 重新 observe。Agent 的 `navigate` 与 `focus` 会把 `controlOwner` 设为 `agent`。Browser 工具不设置 `ask` 或权限分类器；本工单不增加审批产品。只有后续组合挂上现有审批与权限能力时，那些能力才会生效。
 
 `dsh-browser-workspace` 把每个标签页的当前控制权所有者持久化到 Session 的 `browser/workspace` 快照，供后续 Dock UI 在 Session 切换与重新加载后恢复。延迟 Consumer 把 `controlOwner` 渲染进普通工具结果，并新增 `browser_input`、`browser_takeover` 与 `browser_return_control`，不引入第二种工具卡格式。等待、运行、完成与连接丢失事实仍由现有工具结果和 `unavailable` 状态报告。
 

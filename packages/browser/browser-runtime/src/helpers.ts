@@ -401,7 +401,7 @@ export function requireExpectedBrowserRevision(
 ): void {
   if (state.revision !== revision) {
     throw new BrowserRuntimeError(
-      `browser revision conflict: expected ${String(revision)}, current ${String(state.revision)}`,
+      `browser revision conflict: expected ${String(revision)}, current ${String(state.revision)}; observe again before mutating`,
       'BROWSER_REVISION_CONFLICT',
     )
   }

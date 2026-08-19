@@ -792,7 +792,7 @@ export class TandemBrowserRuntime extends BrowserRuntime {
           body: JSON.stringify({ url: request.url, tabId: this.upstreamTabId(request.target) }),
         }, request.signal)
       }
-      const page = request.url === undefined ? state : await this.page(state, request.signal)
+      const page = await this.page(state, request.signal)
       return this.commit({
         ...page,
         revision: state.revision + 1,
