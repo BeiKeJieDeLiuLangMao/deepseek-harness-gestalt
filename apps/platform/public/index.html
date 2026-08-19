@@ -12,20 +12,25 @@
     background:#0a0a0a url("/images/hero-bg.png") center top / cover no-repeat;
   }
   .hero-bg:after {
-    content:""; position:absolute; inset:0;
-    background:linear-gradient(to bottom, transparent 55%, #0a0a0a 100%);
+    content:""; position:absolute; inset:auto 0 0 0; height:28%;
+    background:linear-gradient(to bottom, transparent, #0a0a0a);
   }
+  section.ds-hero-height { position: relative; overflow: hidden; }
   .wordmark { filter: brightness(0) invert(1); display:block; }
+#gh-head[hidden]{display:none!important}
 </style>
 </head>
 <body>
 <div class="relative w-full bg-ds-page">
   <div class="ds-header-wrapper">
-    <div class="ds-header-bar is-scrolled" style="max-width:1180px;padding-left:16px;padding-right:6px">
+    <div class="ds-header-bar" id="header-bar" style="max-width:1280px;padding-left:0;padding-right:0">
       <a class="flex items-center gap-[8px] min-w-0 text-[var(--ds-color-brand-medium-reverse)]" href="/">
         <span class="shrink-0 inline-flex"><img class="wordmark" src="/images/wordmark.svg" width="143" height="23" alt="DeepSeek"/></span>
         <span class="inline-flex items-center rounded-[8px] p-[1px]" style="background:linear-gradient(135deg, rgba(145,181,255,.56) 0%, rgba(145,181,255,.08) 40%, rgba(145,181,255,.28) 100%)">
           <span class="font-mono text-[11px] font-medium leading-none px-[9px] py-[5px] bg-black/25 text-white/95">Gestalt</span>
+        </span>
+        <span class="inline-flex items-center rounded-[8px] p-[1px] min-w-0" style="background:linear-gradient(135deg, rgba(145,181,255,.56) 0%, rgba(145,181,255,.08) 40%, rgba(145,181,255,.28) 100%)">
+          <span class="font-mono text-[11px] font-medium leading-none px-[8px] py-[5px] bg-[rgba(35,61,104,0.46)] text-[rgba(225,235,255,0.88)]" data-i="previewBadge">开发者预览版</span>
         </span>
       </a>
       <div class="hidden md:flex items-center gap-ds-4">
@@ -33,7 +38,7 @@
           <button type="button" id="zh" class="ds-locale-toggle-item is-active">中文</button>
           <button type="button" id="en" class="ds-locale-toggle-item">EN</button>
         </div>
-        <a class="ds-btn-primary ds-btn-xs min-w-[80px]" href="https://github.com/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt" target="_blank" rel="noopener noreferrer"><svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg>GitHub</a>
+        <a class="ds-btn-primary ds-btn-xs min-w-[80px]" id="gh-head" hidden href="https://github.com/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt" target="_blank" rel="noopener noreferrer"><svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg>GitHub</a>
       </div>
     </div>
   </div>
@@ -122,40 +127,57 @@
       </div>
     </section>
 
-    <section class="ds-container py-ds-10">
-      <div class="flex flex-col items-start gap-ds-3">
-        <span class="inline-flex items-center rounded-[8px] px-[9px] py-[6px] border border-ds-border-default text-[12px] text-ds-description" data-i="featChip">现有能力</span>
-        <h2 class="ds-text-heading1 text-ds-primary" data-i="featTitle">已经在跑，不是路线图</h2>
-      </div>
-      <div class="mt-ds-8 grid grid-cols-1 lg:grid-cols-2 gap-ds-8 items-start">
-        <div>
-          <article class="py-ds-5 border-t border-ds-border-default">
-            <h3 class="ds-text-title text-ds-primary mb-ds-2" data-i="f1">一切皆插件</h3>
-            <p class="ds-text-body text-ds-description" data-i="f1d">继承 DeepSeek Harness：模型、工具、技能、会话、沙箱、存储、循环、调度、UI 都是插件，配置层替换，不必改循环。</p>
-          </article>
-          <article class="py-ds-5 border-t border-ds-border-default">
-            <h3 class="ds-text-title text-ds-primary mb-ds-2" data-i="f2">会话可回放</h3>
-            <p class="ds-text-body text-ds-description" data-i="f2d">模型看见的内容写入仅追加会话日志。恢复、分叉、检索与 Trajectory 共用同一条事件流。</p>
-          </article>
-          <article class="py-ds-5 border-t border-ds-border-default">
-            <h3 class="ds-text-title text-ds-primary mb-ds-2" data-i="f3">桌面更新通道</h3>
-            <p class="ds-text-body text-ds-description" data-i="f3d">Personal Release Channel 发在本仓库 GitHub Releases。macOS 公证安装包，Windows NSIS 可更新。</p>
-          </article>
-          <article class="py-ds-5 border-t border-ds-border-default">
-            <h3 class="ds-text-title text-ds-primary mb-ds-2" data-i="f4">生产源已接通</h3>
-            <p class="ds-text-body text-ds-description" data-i="f4d">www.gestaltrun.com 经公网 ALB HTTPS 落到两台 ECS。探活、产品首页和后续 /v1 账号接口共用这个源。</p>
-          </article>
+        <section class="ds-container py-ds-10">
+      <div class="hidden md:block">
+        <span class="inline-flex items-center rounded-[8px] p-[1px]" style="background:linear-gradient(135deg, rgba(255,255,255,0.42) 0%, rgba(255,255,255,0.08) 35%, rgba(255,255,255,0.04) 65%, rgba(255,255,255,0.28) 100%);box-shadow:0 0 16px rgba(255,255,255,0.08), 0 0 32px rgba(255,255,255,0.04)">
+          <span class="px-[9px] pt-[6px] pb-[5px] rounded-[7px] bg-black/25 font-mono text-[12px] font-medium text-white/95 leading-none tracking-wider uppercase" data-i="featChip">现有能力</span>
+        </span>
+        <h2 class="ds-text-heading1 text-ds-primary mt-ds-4 mb-ds-9 max-w-[680px]" data-i="featTitle">已经在跑，不是路线图</h2>
+        <div class="grid grid-cols-[42fr_58fr] gap-ds-9 w-full">
+          <div class="flex flex-col">
+            <div class="flex flex-col justify-center gap-ds-4 min-h-[35vh] py-[11vh]">
+              <div class="flex items-center gap-ds-2">
+                <h3 class="ds-text-subtitle !text-[22px] !font-normal text-ds-primary" data-i="f1">一切皆插件</h3>
+              </div>
+              <p class="ds-text-body text-ds-description leading-[1.7]" data-i="f1d"></p>
+            </div>
+            <div class="flex flex-col justify-center gap-ds-4 min-h-[35vh] py-[11vh]">
+              <div class="flex items-center gap-ds-2">
+                <h3 class="ds-text-subtitle !text-[22px] !font-normal text-ds-primary" data-i="f2">会话可回放</h3>
+              </div>
+              <p class="ds-text-body text-ds-description leading-[1.7]" data-i="f2d"></p>
+            </div>
+            <div class="flex flex-col justify-center gap-ds-4 min-h-[35vh] py-[11vh]">
+              <div class="flex items-center gap-ds-2">
+                <h3 class="ds-text-subtitle !text-[22px] !font-normal text-ds-primary" data-i="f3">桌面更新通道</h3>
+              </div>
+              <p class="ds-text-body text-ds-description leading-[1.7]" data-i="f3d"></p>
+            </div>
+            <div class="flex flex-col justify-center gap-ds-4 min-h-[35vh] py-[11vh]">
+              <div class="flex items-center gap-ds-2">
+                <h3 class="ds-text-subtitle !text-[22px] !font-normal text-ds-primary" data-i="f4">生产源已接通</h3>
+              </div>
+              <p class="ds-text-body text-ds-description leading-[1.7]" data-i="f4d"></p>
+            </div>
+          </div>
+          <div class="hidden md:block sticky top-[120px] self-start">
+            <img class="rounded-ds-media border border-ds-border-default w-full" src="/images/feat-plugin.png" alt=""/>
+            <img class="rounded-ds-media border border-ds-border-default w-full mt-ds-5" src="/images/trajectory.png" alt=""/>
+          </div>
         </div>
+      </div>
+      <div class="md:hidden flex flex-col gap-ds-6">
+        <h2 class="ds-text-heading1 text-ds-primary" data-i="featTitle">已经在跑，不是路线图</h2>
+        <p class="ds-text-body text-ds-description" data-i="f1d"></p>
         <img class="rounded-ds-media border border-ds-border-default w-full" src="/images/trajectory.png" alt=""/>
       </div>
     </section>
-
-    <section class="ds-container py-ds-10">
+<section class="ds-container py-ds-10">
       <div class="flex flex-col items-center text-center">
         <span class="inline-flex items-center rounded-[8px] px-[9px] py-[6px] border border-ds-border-default text-[12px] text-ds-description" data-i="modeChip">运行面</span>
         <h2 class="ds-text-heading1 text-ds-primary mt-ds-3" data-i="modeTitle">桌面、网页，同一套模式</h2>
       </div>
-      <div class="mt-ds-8 grid grid-cols-1 md:grid-cols-2 gap-ds-5">
+      <div class="mt-ds-8 grid grid-cols-1 lg:grid-cols-2 gap-ds-6">
         <div class="bg-ds-surface-3 border border-ds-border-default rounded-ds-media p-ds-6"><h3 class="ds-text-title text-ds-primary mb-ds-2" data-i="m1">标准模式</h3><p class="ds-text-body text-ds-description" data-i="m1d">完整编码 Agent：文件编辑、Shell、检索、Skills、计划、目标、子代理与工作流。</p></div>
         <div class="bg-ds-surface-3 border border-ds-border-default rounded-ds-media p-ds-6"><h3 class="ds-text-title text-ds-primary mb-ds-2" data-i="m2">PTC 模式</h3><p class="ds-text-body text-ds-description" data-i="m2d">标准能力加上 Code Mode SDK，模型用一段 TypeScript 组合多步工具。</p></div>
         <div class="bg-ds-surface-3 border border-ds-border-default rounded-ds-media p-ds-6"><h3 class="ds-text-title text-ds-primary mb-ds-2" data-i="m3">极简模式</h3><p class="ds-text-body text-ds-description" data-i="m3d">只留持久 bash 与 str_replace_editor，给最小环境做模型基准。</p></div>
@@ -172,12 +194,12 @@
         <div class="bg-ds-surface-3 border border-ds-border-default rounded-ds-media p-ds-6">
           <h3 class="ds-text-title text-ds-primary mb-ds-2" data-i="s1">桌面版</h3>
           <p class="ds-text-body text-ds-description mb-ds-4" data-i="s1d">从 Gestalt Releases 安装 DeepSeek Gestalt。开发可在仓库里执行 pnpm gestalt:dev。</p>
-          <pre class="font-mono text-[13px] text-ds-primary bg-ds-code rounded-[8px] p-ds-4">https://github.com/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/releases</pre>
+          <div class="flex items-center justify-between gap-ds-3 rounded-[10px] bg-black/30 border border-ds-border-default px-ds-4 py-ds-3 font-mono text-[13px] text-ds-primary"><span>$ pnpm gestalt:dev</span></div>
         </div>
         <div class="bg-ds-surface-3 border border-ds-border-default rounded-ds-media p-ds-6">
           <h3 class="ds-text-title text-ds-primary mb-ds-2" data-i="s2">源码</h3>
           <p class="ds-text-body text-ds-description mb-ds-4" data-i="s2d">完整产品树在本仓库，含 Desktop、Mobile Companion 与 Platform 工作流。</p>
-          <pre class="font-mono text-[13px] text-ds-primary bg-ds-code rounded-[8px] p-ds-4">git clone https://github.com/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt.git</pre>
+          <div class="flex items-center justify-between gap-ds-3 rounded-[10px] bg-black/30 border border-ds-border-default px-ds-4 py-ds-3 font-mono text-[13px] text-ds-primary"><span>$ git clone https://github.com/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt.git</span></div>
         </div>
       </div>
     </section>
@@ -197,7 +219,7 @@ const clone = 'git clone https://github.com/BeiKeJieDeLiuLangMao/deepseek-harnes
 const use = 'pnpm gestalt:dev'
 const i18n = {
   zh: {
-    heroKicker: "DeepSeek Gestalt 开发者预览版", heroTitle: "桌面、手机、自有平台",
+    previewBadge: "开发者预览版", heroKicker: "DeepSeek Gestalt 开发者预览版", heroTitle: "桌面、手机、自有平台",
     heroLead: "同一条 DeepSeek Harness，装进可更新的桌面产品，并接到你自己的生产源。手机配对、GitHub 账号、双机 Platform 已经跑在 www.gestaltrun.com。",
     heroSub: "模型、工具、技能、会话、沙箱、存储、循环、调度、UI 仍由插件组合。Gestalt 加上桌面宿主、手机伴侣和自有源。",
     ctaGithub: "查看 GitHub", ctaDownload: "下载桌面版", tabUse: "一键使用", tabSrc: "源码安装", copy: "复制",
@@ -221,7 +243,7 @@ const i18n = {
     foot: "开源 · MIT · DeepSeek Gestalt"
   },
   en: {
-    heroKicker: "DeepSeek Gestalt developer preview", heroTitle: "Desktop, phone, your origin",
+    previewBadge: "Developer preview", heroKicker: "DeepSeek Gestalt developer preview", heroTitle: "Desktop, phone, your origin",
     heroLead: "The same DeepSeek Harness, shipped as an updatable desktop product on your machines, pointed at your production origin. Mobile pairing, GitHub accounts, and the two-node Platform already run at www.gestaltrun.com.",
     heroSub: "Models, tools, skills, sessions, sandboxes, storage, loops, schedules, and UI stay plugins. Gestalt adds the Desktop Host, Mobile Companion, and your own origin.",
     ctaGithub: "View GitHub", ctaDownload: "Download desktop", tabUse: "Quick start", tabSrc: "From source", copy: "Copy",
@@ -276,6 +298,17 @@ document.querySelector(".copy").onclick = async () => {
   try { await navigator.clipboard.writeText(tab === "use" ? use : clone) } catch {}
 }
 apply()
+const bar = document.getElementById("header-bar")
+const ghHead = document.getElementById("gh-head")
+function onScroll() {
+  const on = window.scrollY > 24
+  bar.classList.toggle("is-scrolled", on)
+  bar.style.paddingLeft = on ? "16px" : "0"
+  bar.style.paddingRight = on ? "6px" : "0"
+  ghHead.hidden = !on
+}
+window.addEventListener("scroll", onScroll, { passive: true })
+onScroll()
 </script>
 </body>
 </html>

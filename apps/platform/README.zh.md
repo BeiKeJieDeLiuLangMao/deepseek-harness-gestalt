@@ -4,7 +4,7 @@
 
 Platform 监听进程以容器发布。GitHub Actions 负责构建和推送镜像，ECS 拉取运行。密钥在部署时从 GitHub Environment `production` 注入，不会写入镜像层。
 
-`GET /` 提供 DeepSeek Gestalt 产品首页。在所需部署密钥齐备后，`GET /healthz` 与 `GET /readyz` 返回 `{ ok: true }`。缺失密钥会在监听前失败退出。本镜像尚未挂载 Account HTTP 与 Remote Relay 的 Cordis 组合。
+`GET /` 提供 DeepSeek Gestalt 产品首页。在所需部署密钥齐备后，`GET /healthz` 与 `GET /readyz` 返回 `{ ok: true }`。缺失密钥会在监听前失败退出。Account HTTP 挂在 `/v1/account/*`，持久化走 PostgreSQL 与 Redis。本镜像尚未挂载 Remote Relay。
 
 ```sh
 docker build -f apps/platform/Dockerfile -t dsh-platform .

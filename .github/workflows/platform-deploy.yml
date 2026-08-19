@@ -48,6 +48,7 @@ jobs:
           SSH_KEY: ${{ secrets.PLATFORM_ECS_SSH_KEY }}
           HOSTS: ${{ vars.PLATFORM_ECS_HOSTS }}
           PLATFORM_ORIGIN: ${{ vars.PLATFORM_ORIGIN }}
+          PLATFORM_GITHUB_CALLBACK: ${{ vars.PLATFORM_GITHUB_CALLBACK }}
           PLATFORM_GITHUB_CLIENT_ID: ${{ vars.PLATFORM_GITHUB_CLIENT_ID }}
           PLATFORM_GITHUB_CLIENT_SECRET: ${{ secrets.PLATFORM_GITHUB_CLIENT_SECRET }}
           PLATFORM_POSTGRES_HOST: ${{ vars.PLATFORM_POSTGRES_HOST }}
@@ -57,6 +58,8 @@ jobs:
           PLATFORM_REDIS_USER: ${{ secrets.PLATFORM_REDIS_USER }}
           PLATFORM_REDIS_PASSWORD: ${{ secrets.PLATFORM_REDIS_PASSWORD }}
           PLATFORM_REDIS_TLS: '1'
+          PLATFORM_TOKEN_SIGNING_KEY: ${{ secrets.PLATFORM_TOKEN_SIGNING_KEY }}
+          PLATFORM_POLLING_SIGNING_KEY: ${{ secrets.PLATFORM_POLLING_SIGNING_KEY }}
         run: |
           set -euo pipefail
           install -m 600 /dev/null /tmp/ecs.pem
@@ -70,16 +73,21 @@ jobs:
             gzip -dc /tmp/platform.tar.gz | ssh -i /tmp/ecs.pem -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o BatchMode=yes "root@${host}" 'docker load'
             ssh -i /tmp/ecs.pem -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o BatchMode=yes "root@${host}" \
               "docker rm -f dsh-platform >/dev/null 2>&1 || true; docker run -d --name dsh-platform --restart unless-stopped -p 80:8080 \
+                -e PLATFORM_ENVIRONMENT=production \
                 -e PLATFORM_ORIGIN=$(printf %q "$PLATFORM_ORIGIN") \
+                -e PLATFORM_GITHUB_CALLBACK=$(printf %q "$PLATFORM_GITHUB_CALLBACK") \
                 -e PLATFORM_GITHUB_CLIENT_ID=$(printf %q "$PLATFORM_GITHUB_CLIENT_ID") \
                 -e PLATFORM_GITHUB_CLIENT_SECRET=$(printf %q "$PLATFORM_GITHUB_CLIENT_SECRET") \
                 -e PLATFORM_POSTGRES_HOST=$(printf %q "$PLATFORM_POSTGRES_HOST") \
                 -e PLATFORM_POSTGRES_USER=$(printf %q "$PLATFORM_POSTGRES_USER") \
                 -e PLATFORM_POSTGRES_PASSWORD=$(printf %q "$PLATFORM_POSTGRES_PASSWORD") \
+                -e PLATFORM_POSTGRES_SSL=require \
                 -e PLATFORM_REDIS_HOST=$(printf %q "$PLATFORM_REDIS_HOST") \
                 -e PLATFORM_REDIS_USER=$(printf %q "$PLATFORM_REDIS_USER") \
                 -e PLATFORM_REDIS_PASSWORD=$(printf %q "$PLATFORM_REDIS_PASSWORD") \
                 -e PLATFORM_REDIS_TLS=1 \
+                -e PLATFORM_TOKEN_SIGNING_KEY=$(printf %q "$PLATFORM_TOKEN_SIGNING_KEY") \
+                -e PLATFORM_POLLING_SIGNING_KEY=$(printf %q "$PLATFORM_POLLING_SIGNING_KEY") \
                 ${IMAGE}"
           done
           rm -f /tmp/ecs.pem /tmp/platform.tar.gz
