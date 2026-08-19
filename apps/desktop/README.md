@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-DeepSeek Gestalt Desktop Host. Electron owns the window, menu, and GitHub auto-update. It starts bundled official Node plus `dsh web --host 127.0.0.1 --port 0 --patch ./cordis.patch.yml` and loads that loopback URL. The overlay adds Schedule, per-step time context, the GESTALT badge, drag strip, and Update Control; the control remains absent until an update is actionable or an error follows version discovery. Browser `dsh web` does not load the overlay.
+DeepSeek Gestalt Desktop Host. Electron owns the window, menu, and GitHub auto-update. It starts bundled official Node plus `dsh web --host 127.0.0.1 --port 0 --patch ./cordis.patch.yml` and loads that loopback URL. The overlay adds Schedule, the GESTALT badge, drag strip, and Update Control; the control remains absent until an update is actionable or an error follows version discovery. Browser `dsh web` does not load the overlay.
 
 Closing the last window on every platform first drains the Relay with the `window-close` reason; Ctrl+C, quit, and smoke-test completion cancel any pending start, stop the Personal Pairing and production-gated Relay owners, stop the Web Host, and wait for their work to drain before Electron terminates. System sleep stops Remote Access; resume reloads it only for the still-signed-in Account. The source Electron smoke reads each Relay owner state after sleep, disable, window close, and quit, then checks the Web Host child PID is gone. Startup or a later Host crash gets one retry before the window shows the Host error. There is no windowless daemon, background Host, or remote wake path.
 
@@ -20,7 +20,7 @@ Dock / Start Menu cwd is the Launch Directory (`defaultWorkspace` under Applicat
 
 ## Schedule and capability defaults
 
-Every new Desktop Session exposes `schedule_create`, `schedule_list`, and `schedule_delete`. The browser's IANA zone reaches the model through time-context, while an absolute `schedule_create.at` value must still carry an explicit offset or `time_zone`.
+Every new Desktop Session exposes `schedule_create`, `schedule_list`, and `schedule_delete`. An absolute `schedule_create.at` value must carry an explicit offset or `time_zone`. Desktop does not mount `@deepseek-ai/dsh-time-context`; the Schedule Web overlay remains the composition that injects per-step time readings.
 
 The conversation header places a Schedule task board immediately after background jobs whenever the current Session retains reminders. Its count includes waiting and overdue reminders but excludes paused ones. The board reads an independent Session projection and supports durable pause, resume, and two-step inline delete; it has no create form and does not infer state from tool transcript cards.
 
