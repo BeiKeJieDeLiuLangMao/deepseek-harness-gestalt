@@ -43,6 +43,8 @@ export function TextAnnotationTarget({ sourceId, selectionMapRef, annotations, a
   children: ReactNode
 }) {
   const root = useRef<HTMLDivElement | null>(null)
+  const floating = useRef<HTMLDivElement | null>(null)
+  const editingRef = useRef(false)
   const ranges = useRef(new Map<TextAnnotationId, Range>())
   const highlightOwner = useRef<object>({})
   const [pending, setPending] = useState<PendingSelection | null>(null)
@@ -77,13 +79,18 @@ export function TextAnnotationTarget({ sourceId, selectionMapRef, annotations, a
   const select = useCallback((): void => {
     const container = root.current
     const selection = window.getSelection()
-    if (container === null || selection === null || selection.isCollapsed) return
+    if (container === null || selection === null) return
     const dismiss = (): void => {
+      editingRef.current = false
       setPending(null)
       setEditing(false)
     }
-    if (selection.rangeCount !== 1) {
-      dismiss()
+    const keepEditor = editingRef.current
+      && floating.current !== null
+      && document.activeElement !== null
+      && floating.current.contains(document.activeElement)
+    if (selection.isCollapsed || selection.rangeCount !== 1) {
+      if (!keepEditor) dismiss()
       return
     }
     const range = selection.getRangeAt(0)
@@ -122,6 +129,19 @@ export function TextAnnotationTarget({ sourceId, selectionMapRef, annotations, a
   const pendingOpen = pending !== null
   useEffect(() => {
     if (!pendingOpen) return
+    const dismissOutside = (event: PointerEvent): void => {
+      const target = event.target
+      if (!(target instanceof Node)) return
+      if (floating.current?.contains(target) === true) return
+      editingRef.current = false
+      setPending(null)
+      setEditing(false)
+    }
+    document.addEventListener('pointerdown', dismissOutside, true)
+    return () => { document.removeEventListener('pointerdown', dismissOutside, true) }
+  }, [pendingOpen])
+  useEffect(() => {
+    if (!pendingOpen) return
     let frame = 0
     const follow = (): void => {
       if (frame !== 0) return
@@ -156,7 +176,7 @@ export function TextAnnotationTarget({ sourceId, selectionMapRef, annotations, a
         <p role="alert" className={css.staleAnchor}>{t('annotation.staleAnchor')}</p>
       )}
       {pending !== null && (
-        <div className={css.floating} style={style}>
+        <div ref={floating} className={css.floating} style={style}>
           {editing ? (
             <AnnotationEditor
               placeholder={t('annotation.notePlaceholder')}
@@ -164,15 +184,25 @@ export function TextAnnotationTarget({ sourceId, selectionMapRef, annotations, a
               onSave={(note) => {
                 const id = add(pending.anchor, note)
                 ranges.current.set(id, pending.range)
+                editingRef.current = false
+                setPending(null)
+                setEditing(false)
+              }}
+              onCancel={() => {
+                editingRef.current = false
                 setPending(null)
                 setEditing(false)
               }}
             />
           ) : (
             <div className={css.toolbar} role="toolbar">
-              <button type="button" onMouseDown={keepSelection} onClick={() => { setEditing(true) }}>{t('annotation.add')}</button>
+              <button type="button" onMouseDown={keepSelection} onClick={() => {
+                editingRef.current = true
+                setEditing(true)
+              }}>{t('annotation.add')}</button>
               <button type="button" onMouseDown={keepSelection} onClick={() => {
                 if ('clipboard' in navigator) void navigator.clipboard.writeText(pending.anchor.quote)
+                editingRef.current = false
                 setPending(null)
               }}>{t('annotation.copy')}</button>
             </div>

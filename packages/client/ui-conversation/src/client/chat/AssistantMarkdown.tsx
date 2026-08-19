@@ -16,6 +16,7 @@ import { JsonBlock, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { MarkdownFileMentions } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { MarkdownCodeLabels, MarkdownSelectionMap } from '@deepseek-ai/dsh-client-ui-primitives'
 import { ImageGallery, type ImageLoader } from '@deepseek-ai/dsh-client-ui-attachment'
+import { useHistoryImagePinOverlay } from '../annotation/history-image-pins.tsx'
 import type { ChatViewSlotProps } from '../contract/slots.ts'
 import { messageImageLabels } from '../image-labels.ts'
 import { ReasoningRow } from './ReasoningRow.tsx'
@@ -37,7 +38,7 @@ export interface AssistantMarkdownProps {
   /** Stable completed-message identity; absence keeps selection inert. */
   sourceId?: string | undefined
   annotations?: InputState['annotations'] | undefined
-  annotationActions?: (Pick<InputActions, 'addTextAnnotation'> & Partial<Pick<InputActions, 'addImagePin'>>) | undefined
+  annotationActions?: (Pick<InputActions, 'addTextAnnotation'> & Partial<Pick<InputActions, 'addImagePin' | 'updateImagePin'>>) | undefined
 }
 
 function AnnotatableAssistantText({
@@ -79,6 +80,13 @@ export const AssistantMarkdown = memo(function AssistantMarkdown({
   blocks, streaming, interrupted, loadImage, mentions, t, sourceId, annotations = [], annotationActions,
 }: AssistantMarkdownProps) {
   const imageLoader = loadImage ?? (() => Promise.reject(new Error(t('image.serviceUnavailable'))))
+  const historyPins = useHistoryImagePinOverlay(
+    annotations,
+    annotationActions?.addImagePin === undefined || annotationActions.updateImagePin === undefined
+      ? undefined
+      : { addImagePin: annotationActions.addImagePin, updateImagePin: annotationActions.updateImagePin },
+    t,
+  )
   // Stable per locale revision (t identity changes on switch): a fresh object
   // per render would rebuild MarkdownText's component table every chunk.
   const codeLabels = useMemo(() => ({ copyLabel: t('copy'), copiedLabel: t('copied') }), [t])
@@ -141,35 +149,16 @@ export const AssistantMarkdown = memo(function AssistantMarkdown({
           group.push(next)
           i += 1
         }
-        {
-          const addPin = annotationActions?.addImagePin
-          rendered.push(
-            <ImageGallery
-              key={start}
-              images={group}
-              load={imageLoader}
-              align="start"
-              labels={messageImageLabels(t)}
-              {...(addPin === undefined ? {} : {
-                pinOverlayFor: attachment => ({
-                  pins: annotations.flatMap((item, index) => (
-                    item.kind === 'image-pin' && item.source === 'history' && item.imageId === attachment.attachmentId
-                      ? [{ id: item.id, x: item.x, y: item.y, index: index + 1 }]
-                      : []
-                  )),
-                  modeLabel: t('annotation.pinMode'),
-                  exitLabel: t('annotation.pinModeExit'),
-                  onPlace: (x, y) => {
-                    addPin(
-                      attachment.attachmentId as never, attachment.name ?? t('image.original'), x, y, '', 'history',
-                    )
-                  },
-                  onSelect: () => {},
-                }),
-              })}
-            />,
-          )
-        }
+        rendered.push(
+          <ImageGallery
+            key={start}
+            images={group}
+            load={imageLoader}
+            align="start"
+            labels={messageImageLabels(t)}
+            {...(historyPins.pinOverlayFor === undefined ? {} : { pinOverlayFor: historyPins.pinOverlayFor })}
+          />,
+        )
         break
       }
       // Grouped into tool rows by ChatView; hasVisible above skips an empty shell.
