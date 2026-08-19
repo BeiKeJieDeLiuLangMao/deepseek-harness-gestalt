@@ -155,3 +155,13 @@ Docs accompany every code change: update affected README and JSDoc contracts tog
 ## Vendoring policy
 
 `vendor/` packages are pinned source copies (manifest with upstream SHAs in [vendor/README.md](vendor/README.md)). Update via the sync procedure there; re-apply or retire the logged local modifications; rerun `pnpm run test && pnpm run build`.
+
+## Cursor Cloud specific instructions
+
+Standard commands live in [Commands](#commands) and [docs/development.md](docs/development.md); the notes below only cover non-obvious cloud-VM caveats. The update script runs `CI=true pnpm install`; run `pnpm run build` once before any check that consumes built `lib/` or before booting `dsh web` (its frontend dist must exist).
+
+- **Node comes from nvm, not `/exec-daemon`.** The pre-seeded `~/.bashrc` prepends the nvm default (v24, CI's primary) ahead of the image's older `/exec-daemon/node` (v22.14, below the `^22.19` engine floor). A fresh login shell already resolves the right Node; a non-login shell must prepend `"$(nvm version default)"`'s bin itself. Node below 22.19 emits a `node:sqlite` `ExperimentalWarning` that fails snapshot suites asserting empty stderr.
+- **`CI=true` is exported in `~/.bashrc` on purpose.** Cursor owns `core.hooksPath` (its agent git hooks), so the `postinstall` lefthook installer refuses to run and fails; `CI=true` makes it no-op. Because pnpm re-verifies deps before every `pnpm run`, without it not just `pnpm install` but every script would fail. Its only other effect is skipping the coverage HTML report.
+- **The agent's `bash`/file tools need a sandbox backend.** bubblewrap is installed so `workspace-write` works; without it the shell tool refuses with `SANDBOX_UNAVAILABLE` rather than running unconfined. A booted `bwrap` functional probe must pass; the alternative is switching the consumer to `danger-full-access`.
+- **Keyless end-to-end run of the agent:** start the mock model with `pnpm mock:llm --port 8000 --api-key mock-key --sequence tool_call_success,success --tool-name bash --tool-arguments '{"command":"...","description":"..."}'`, then run `DEEPSEEK_API_KEY=mock-key DEEPSEEK_BASE_URL=http://127.0.0.1:8000/v1 pnpm dsh --profile headless "task"`. Real turns/demos instead need a real `DEEPSEEK_API_KEY`. Session logs under `~/.dsh/sessions/--workspace--/<id>/session.jsonl.zstd` are concatenated zstd frames — decode frame-by-frame (split on the `28 b5 2f fd` magic), not a single decompress.
+- **Pre-existing `master` state (not environment faults):** `pnpm run lint` reports type-aware errors and one `scripts/translation-prompt.snapshot.ts` snapshot mismatch (stale expected README) from recently merged PRs; both reproduce on a clean tree.
