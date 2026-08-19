@@ -166,7 +166,7 @@
 .annotationSummaryDetails {
   position: absolute;
   z-index: 20;
-  bottom: calc(100% + 4px);
+  bottom: calc(100% - 1px);
   left: 12px;
   display: none;
   width: 330px;
