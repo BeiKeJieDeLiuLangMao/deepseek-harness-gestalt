@@ -34,18 +34,28 @@ describe('CI workflow', () => {
     // Each of these aggregates expands to coverageGates() in
     // scripts/run-gates.ts. The release-notes test inside them resolves the
     // pinned manifest range through the Git graph, which the default depth-1
-    // checkout cannot satisfy.
+    // checkout cannot satisfy. Job ids are pinned so a renamed or
+    // wrapper-scripted lane cannot leave the full-history set unnoticed.
     const coverageCommands = new Set([
       'pnpm run check:ci',
       'pnpm run check:ci:coverage',
       'pnpm run check:ci:linux-primary',
       'pnpm run check:ci:windows-complete',
     ])
+    const coverageJobIds = [
+      'consolidated-runner-benchmark',
+      'node-24-coverage',
+      'serial-linux',
+      'serial-linux-selfhosted',
+      'serial-macos',
+      'serial-windows',
+      'windows-native',
+    ] as const
     const coverageJobs = Object.entries(workflow.jobs).filter(([, job]) =>
       isRecord(job) && Array.isArray(job.steps) && job.steps.some(
         step => isRecord(step) && typeof step.run === 'string' && coverageCommands.has(step.run.trim()),
       ))
-    expect(coverageJobs.length).toBeGreaterThan(0)
+    expect(coverageJobs.map(([jobName]) => jobName).sort()).toEqual([...coverageJobIds])
     for (const [jobName, job] of coverageJobs) {
       if (!isRecord(job) || !Array.isArray(job.steps)) throw new TypeError(`${jobName} must define steps`)
       const checkouts = job.steps.filter(
