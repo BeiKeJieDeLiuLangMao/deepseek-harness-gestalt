@@ -14,7 +14,7 @@ Status: implemented
 
 Provider 串行执行每次写入，并以 `BROWSER_REVISION_CONFLICT` 拒绝过期的 `expectedRevision`。冲突消息会写出当前修订号，并要求 Agent 重新 observe。Agent 的 `navigate` 与 `focus` 会把 `controlOwner` 设为 `agent`。Browser 工具不设置 `ask` 或权限分类器；本工单不增加审批产品。只有后续组合挂上现有审批与权限能力时，那些能力才会生效。
 
-`dsh-browser-workspace` 把每个标签页的当前控制权所有者持久化到 Session 的 `browser/workspace` 快照，供后续 Dock UI 在 Session 切换与重新加载后恢复。延迟 Consumer 把 `controlOwner` 渲染进普通工具结果，并新增 `browser_input`、`browser_takeover` 与 `browser_return_control`，不引入第二种工具卡格式。等待、运行、完成与连接丢失事实仍由现有工具结果和 `unavailable` 状态报告。
+`dsh-browser-workspace` 把每个标签页的当前控制权所有者持久化到 Session 的 `browser/workspace` 快照，供 Dock 在 Session 切换与重新加载后恢复。Dock 读取该所有者，并提供接管与交还智能体。延迟 Consumer 把 `controlOwner` 渲染进普通工具结果，并新增 `browser_input`、`browser_takeover` 与 `browser_return_control`，不引入第二种工具卡格式。等待、运行、完成与连接丢失事实仍由现有工具结果和 `unavailable` 状态报告。
 
 ## 考虑过的替代方案
 
@@ -26,7 +26,7 @@ Provider 串行执行每次写入，并以 `BROWSER_REVISION_CONFLICT` 拒绝过
 
 ## 后果
 
-人与 Agent 可以共享一个标签页而不丢失身份。过期的 Agent 写入会明确失败，并强制重新观察。Session 快照会持久化当前控制权所有者，供后续 Dock UI 使用。Dock chrome 与发布仍属于后续工单。
+人与 Agent 可以共享一个标签页而不丢失身份。过期的 Agent 写入会明确失败，并强制重新观察。Session 快照会持久化当前控制权所有者，供 Dock 使用。发布仍属于后续工单。
 
 ## 验证
 

@@ -518,8 +518,8 @@ const SERVICE_ROLES: ServiceRole[] = [
     pkg: 'browser',
     title: 'Session-owned Browser Workspace binder',
     mode: 'core',
-    consumers: ['tool-browser'],
-    note: 'Each Session independently owns Dock facts, instances, and tabs over ctx.browserRuntime identities; the deferred Consumer binds created tabs when a calling Agent Session is present.',
+    consumers: ['tool-browser', 'client-ui-browser'],
+    note: 'Each Session independently owns Dock facts, instances, and tabs over ctx.browserRuntime identities; the deferred Consumer binds created tabs when a calling Agent Session is present; the Dock reads the same snapshot.',
   },
   {
     key: 'web',

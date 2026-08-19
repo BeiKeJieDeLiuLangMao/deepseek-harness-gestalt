@@ -253,7 +253,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'browser/workspace': BrowserWorkspaceProjection
 ```
 
-来源：[`packages/browser/browser-workspace/src/types.ts:62`](../packages/browser/browser-workspace/src/types.ts)
+来源：[`packages/browser/browser-workspace/src/types.ts:73`](../packages/browser/browser-workspace/src/types.ts)
 
 ### `command/*`
 

@@ -154,6 +154,10 @@ flowchart LR
   cfg --> plugin_dsh_base_web_search_deepseek
   plugin_dsh_base_tool_web["tool-web<br/>@deepseek-ai/dsh-tool-web"]
   cfg --> plugin_dsh_base_tool_web
+  plugin_dsh_base_browser_runtime_deterministic["browser-runtime-deterministic<br/>@deepseek-ai/dsh-browser-runtime-deterministic"]
+  cfg --> plugin_dsh_base_browser_runtime_deterministic
+  plugin_dsh_base_browser_workspace["browser-workspace<br/>@deepseek-ai/dsh-browser-workspace"]
+  cfg --> plugin_dsh_base_browser_workspace
   plugin_dsh_base_tools["tools<br/>@deepseek-ai/dsh-tools"]
   cfg --> plugin_dsh_base_tools
   plugin_dsh_base_tool_eligibility["tool-eligibility<br/>@deepseek-ai/dsh-tools-eligibility"]
@@ -243,6 +247,8 @@ flowchart LR
 | `web` | `@deepseek-ai/dsh-web` |
 | `web-search-deepseek` | `@deepseek-ai/dsh-web-search-deepseek` |
 | `tool-web` | `@deepseek-ai/dsh-tool-web` |
+| `browser-runtime-deterministic` | `@deepseek-ai/dsh-browser-runtime-deterministic` |
+| `browser-workspace` | `@deepseek-ai/dsh-browser-workspace` |
 | `tools` | `@deepseek-ai/dsh-tools` |
 | `tool-eligibility` | `@deepseek-ai/dsh-tools-eligibility` |
 | `system-prompt` | `@deepseek-ai/dsh-system-prompt` |

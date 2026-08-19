@@ -20,6 +20,7 @@ function validateSnapshot(value: unknown, fail: InvariantFailure): void {
   if (!Number.isSafeInteger(snapshot.dockWidth) || snapshot.dockWidth < 1) {
     fail('browser/workspace dockWidth must be a positive safe integer')
   }
+  if (typeof snapshot.userCollapsed !== 'boolean') fail('browser/workspace userCollapsed must be a boolean')
   if (!Array.isArray(snapshot.workspaces)) fail('browser/workspace workspaces must be an array')
   const workspaceIds = new Set<string>()
   for (const rawWorkspace of snapshot.workspaces) {

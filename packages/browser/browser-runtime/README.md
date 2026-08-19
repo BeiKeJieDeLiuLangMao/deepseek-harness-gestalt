@@ -22,4 +22,4 @@ This package alone adds no model tokens and changes no request prefix.
 
 ## Known Limitations and Deferred Work
 
-- Dock chrome remains later work. Session-local Workspace ownership and persisted control-owner facts live in [`dsh-browser-workspace`](../browser-workspace/README.md).
+- Dock chrome lives in [`dsh-client-ui-browser`](../../client/ui-browser/README.md). Session-local Workspace ownership and persisted control-owner facts live in [`dsh-browser-workspace`](../browser-workspace/README.md).

@@ -1,3 +1,8 @@
+/**
+ * Provider-neutral Browser Runtime identities and page states.
+ * @module @deepseek-ai/dsh-browser-runtime/types
+ */
+
 import type { Branded } from '@deepseek-ai/dsh-brand'
 
 /** Opaque identity of a Browser Profile. */

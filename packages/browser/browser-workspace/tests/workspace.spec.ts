@@ -33,12 +33,37 @@ describe('Session-owned Browser Workspace', () => {
     expect(ctx.sessionProjections.snapshot(first).values.browserWorkspace).toEqual(EMPTY_BROWSER_WORKSPACE)
 
     const opened = ctx.browserWorkspace.setDock({ session: first, open: true, width: 720 })
-    expect(opened).toMatchObject({ dockOpen: true, dockWidth: 720 })
-    expect(ctx.browserWorkspace.setDock({ session: first, open: true })).toMatchObject({ dockWidth: 720 })
+    expect(opened).toMatchObject({ dockOpen: true, dockWidth: 720, userCollapsed: false })
+    expect(ctx.browserWorkspace.setDock({ session: first, open: true })).toMatchObject({ dockWidth: 720, userCollapsed: false })
     ctx.browserWorkspace.setDock({ session: second, open: false, width: 480 })
-    expect(ctx.browserWorkspace.snapshot(first)).toMatchObject({ dockOpen: true, dockWidth: 720 })
-    expect(ctx.browserWorkspace.snapshot(second)).toMatchObject({ dockOpen: false, dockWidth: 480 })
+    expect(ctx.browserWorkspace.snapshot(first)).toMatchObject({ dockOpen: true, dockWidth: 720, userCollapsed: false })
+    expect(ctx.browserWorkspace.snapshot(second)).toMatchObject({ dockOpen: false, dockWidth: 480, userCollapsed: true })
     expect(foldBrowserWorkspace(first.events)).toEqual(ctx.browserWorkspace.snapshot(first))
+  })
+
+  it('opens the Dock on the first Session tab and does not steal it open after collapse', async () => {
+    const ctx = await harness()
+    const session = ctx.sessions.create(SessionId('session-first-open'))
+    const created = await ctx.browserWorkspace.create({ session, profile: 'temporary' })
+    expect(ctx.browserWorkspace.snapshot(session)).toMatchObject({
+      dockOpen: true,
+      userCollapsed: false,
+      workspaces: [{ workspaceId: created.target.workspaceId }],
+    })
+    ctx.browserWorkspace.setDock({ session, open: false })
+    expect(ctx.browserWorkspace.snapshot(session)).toMatchObject({ dockOpen: false, userCollapsed: true })
+    await ctx.browserWorkspace.create({
+      session,
+      profile: 'temporary',
+      attach: { kind: 'browser', workspaceId: created.target.workspaceId, browserId: created.target.browserId },
+    })
+    expect(ctx.browserWorkspace.snapshot(session)).toMatchObject({ dockOpen: false, userCollapsed: true })
+    ctx.browserWorkspace.setDock({ session, open: true, width: 800 })
+    expect(ctx.browserWorkspace.snapshot(session)).toMatchObject({
+      dockOpen: true,
+      dockWidth: 800,
+      userCollapsed: false,
+    })
   })
 
   it('lets one Session own multiple Profiles, instances, and tabs without exposing another Session', async () => {
@@ -222,6 +247,7 @@ describe('Session-owned Browser Workspace', () => {
     failing.append('browser/workspace', {
       dockOpen: false,
       dockWidth: 640,
+      userCollapsed: false,
       activeWorkspaceId: live.target.workspaceId,
       workspaces: [{
         workspaceId: live.target.workspaceId,
@@ -241,6 +267,7 @@ describe('Session-owned Browser Workspace', () => {
     alreadyClosed.append('browser/workspace', {
       dockOpen: false,
       dockWidth: 640,
+      userCollapsed: false,
       activeWorkspaceId: live.target.workspaceId,
       workspaces: [{
         workspaceId: live.target.workspaceId,
