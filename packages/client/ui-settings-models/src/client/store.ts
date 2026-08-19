@@ -86,6 +86,16 @@ export function protocolChoices(namespace: SettingsNamespaceView | undefined): s
   return list.list.map(entry => entry.value).filter((value): value is string => typeof value === 'string')
 }
 
+/**
+ * Whether the user layer still occupies a whole-section provider. An empty
+ * object is the leftover of unsetting the section root and is not occupancy.
+ */
+export function userSectionOccupied(user: unknown): boolean {
+  if (user === undefined || user === null) return false
+  if (typeof user !== 'object' || Array.isArray(user)) return true
+  return Object.keys(user as Record<string, unknown>).length > 0
+}
+
 /** The credential reference a resolved profile names (its `apiKeyEnv` field). */
 function apiKeyEnvOf(namespace: SettingsNamespaceView | undefined, path: readonly string[]): string | undefined {
   if (namespace === undefined) return undefined
@@ -143,12 +153,20 @@ export class ModelsSettingsStore {
     const namespaces = new Map(views.map(view => [view.ns, view]))
     const rows: ProviderRow[] = providers.map((entry) => {
       const namespace = namespaces.get(entry.settingsNs)
-      const configured = namespace !== undefined
-        && (entry.settingsPath.length === 0 || getPath(namespace.value, entry.settingsPath) !== undefined)
-      const removable = namespace !== undefined
-        && entry.settingsPath.length > 0
-        && hasPath(namespace.user, entry.settingsPath)
-        && !hasPath(namespace.base, entry.settingsPath)
+      const configured = namespace !== undefined && (
+        entry.settingsPath.length === 0
+          ? userSectionOccupied(namespace.user)
+            || (namespace.secrets ?? []).some(slot => slot.set)
+          : getPath(namespace.value, entry.settingsPath) !== undefined
+      )
+      const removable = namespace !== undefined && (
+        (entry.provider === 'deepseek-official'
+          && entry.settingsNs === 'llm-deepseek'
+          && entry.settingsPath.length === 0)
+        || (entry.settingsPath.length > 0
+          && hasPath(namespace.user, entry.settingsPath)
+          && !hasPath(namespace.base, entry.settingsPath))
+      )
       return {
         entry,
         configured,

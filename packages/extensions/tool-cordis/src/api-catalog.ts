@@ -1076,6 +1076,11 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'only confirmed pairings; pending handshakes are excluded.',
       },
       {
+        signature: 'abstract revokePersonalPairing(input: { desktop: PairingAccountAuthentication pairingId: PersonalPairingId }): Promise<void>',
+        description: 'Revoke one confirmed pairing: destroy its key, drop Mobile Relay authority, and close live attachments.',
+        parameters: [{ name: 'input', description: 'Desktop authorization and pairing identity.' }],
+      },
+      {
         signature: 'abstract listPendingPairings(desktop: PairingAccountAuthentication): Promise<readonly PairingCompletionView[]>',
         description: 'List completed handshakes awaiting this Desktop Installation\'s decision.',
         parameters: [{ name: 'desktop', description: 'current Desktop authorization.' }],
@@ -1127,9 +1132,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'routeId', description: 'opaque route whose current authority becomes invalid.' }],
       },
       {
-        signature: 'abstract attach(input: { message: RelayAttachMessage deliver: (message: RelayCiphertextMessage) => Promise<void> close?: () => void | Promise<void> signal?: AbortSignal }): Promise<RemoteRelayAttachment>',
-        description: 'Authenticate and register one outbound Mobile or Desktop attachment.',
-        parameters: [{ name: 'input', description: 'attach frame plus the socket writer and optional close callback.' }],
+        signature: 'abstract attach(input: { message: RelayAttachMessage deliver: (message: RelayCiphertextMessage) => Promise<void> close?: () => void | Promise<void> signal?: AbortSignal announce?: () => Promise<void> }): Promise<RemoteRelayAttachment>',
+        description: 'Authenticate one outbound Mobile or Desktop attachment and register it only after `announce` flushes ready.',
+        parameters: [{ name: 'input', description: 'attach frame, socket writer, optional close callback, and optional ready flush.' }],
         returns: 'the admitted attachment receiving later frames from that socket.',
       },
     ],
@@ -3817,7 +3822,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'PersonalPairingView',
-    declaration: 'export interface PersonalPairingView {\n    id: PersonalPairingId;\n    devicePrincipal: {\n        id: DevicePrincipalId;\n        accountId: Branded<\'PlatformAccountId\'>;\n        installationId: InstallationId;\n        authority: \'companion-surface\';\n    };\n    device: PairingDeviceDescription;\n    pairedAt: number;\n}',
+    declaration: 'export interface PersonalPairingView {\n    id: PersonalPairingId;\n    devicePrincipal: {\n        id: DevicePrincipalId;\n        accountId: Branded<\'PlatformAccountId\'>;\n        installationId: InstallationId;\n        authority: \'companion-surface\';\n    };\n    device: PairingDeviceDescription;\n    pairedAt: number;\n    lastAccessAt: number;\n    online: boolean;\n}',
   },
   {
     name: 'PlatformAccountId',
@@ -3826,10 +3831,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'PlatformAccountView',
     declaration: 'export interface PlatformAccountView {\n    id: PlatformAccountId;\n    githubId: number;\n    githubLogin: string;\n    avatarUrl: string;\n}',
-  },
-  {
-    name: 'PlatformEnvironment',
-    declaration: 'export type PlatformEnvironment = \'development\' | \'production\';',
   },
   {
     name: 'PlatformEnvironmentIdentity',
