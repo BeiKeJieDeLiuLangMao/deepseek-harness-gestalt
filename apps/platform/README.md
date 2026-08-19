@@ -10,7 +10,7 @@ Platform listen process packaged as a container. GitHub Actions builds and publi
 docker build -f apps/platform/Dockerfile -t dsh-platform .
 ```
 
-Publish: Actions → Platform Image → Run workflow → set **push**. Deploy: Actions → Platform Deploy with the published tag. ECS SSH and runtime secrets live in Environment `production`.
+Publish: Actions → Platform Image → Run workflow → set **push**. Deploy: Actions → Platform Deploy with the published tag. ECS publishes host port 80 to the container listen port 8080 so ALB HTTPS:443 can forward to VPC:80. ECS SSH and runtime secrets live in Environment `production`.
 
 ## Known Limitations and Deferred Work
 

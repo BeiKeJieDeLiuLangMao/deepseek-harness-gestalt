@@ -10,7 +10,7 @@ Platform 监听进程以容器发布。GitHub Actions 负责构建和推送镜�
 docker build -f apps/platform/Dockerfile -t dsh-platform .
 ```
 
-发布：Actions → Platform Image → Run workflow → 勾选 **push**。部署：Actions → Platform Deploy，填写已发布的 tag。ECS SSH 与运行密钥放在 Environment `production`。
+发布：Actions → Platform Image → Run workflow → 勾选 **push**。部署：Actions → Platform Deploy，填写已发布的 tag。ECS 将主机 80 映射到容器 8080，供 ALB 443 转发到 VPC 80。ECS SSH 与运行密钥放在 Environment `production`。
 
 ## 已知限制与暂缓事项
 
