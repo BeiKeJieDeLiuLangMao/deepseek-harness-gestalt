@@ -10,6 +10,8 @@ Platform listen process packaged as a container. GitHub Actions builds and publi
 docker build -f apps/platform/Dockerfile -t dsh-platform .
 ```
 
+Publish: Actions → Platform Image → Run workflow → set **push**. Deploy: Actions → Platform Deploy with the published tag. ECS SSH and runtime secrets live in Environment `production`.
+
 ## Known Limitations and Deferred Work
 
 - The image does not yet boot the Account or Remote Access Cordis tree; it only proves the publish-and-run path.

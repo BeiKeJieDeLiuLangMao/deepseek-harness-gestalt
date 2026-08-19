@@ -1,0 +1,86 @@
+# Pull a published Platform image onto both ECS hosts. Does not build.
+name: Platform Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: GHCR tag to deploy (sha-... or latest)
+        required: true
+        type: string
+        default: latest
+
+concurrency:
+  group: platform-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: read
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}/platform
+
+jobs:
+  deploy:
+    name: Deploy to ECS
+    runs-on: ubuntu-24.04
+    environment: production
+    steps:
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull and save image
+        env:
+          TAG: ${{ inputs.image_tag }}
+        run: |
+          set -euo pipefail
+          image="${REGISTRY}/${IMAGE_NAME}:${TAG}"
+          docker pull "$image"
+          docker save "$image" | gzip > /tmp/platform.tar.gz
+          echo "IMAGE=${image}" >> "$GITHUB_ENV"
+
+      - name: Install Docker and run on ECS
+        env:
+          SSH_KEY: ${{ secrets.PLATFORM_ECS_SSH_KEY }}
+          HOSTS: ${{ vars.PLATFORM_ECS_HOSTS }}
+          PLATFORM_ORIGIN: ${{ vars.PLATFORM_ORIGIN }}
+          PLATFORM_GITHUB_CLIENT_ID: ${{ vars.PLATFORM_GITHUB_CLIENT_ID }}
+          PLATFORM_GITHUB_CLIENT_SECRET: ${{ secrets.PLATFORM_GITHUB_CLIENT_SECRET }}
+          PLATFORM_POSTGRES_HOST: ${{ vars.PLATFORM_POSTGRES_HOST }}
+          PLATFORM_POSTGRES_USER: ${{ secrets.PLATFORM_POSTGRES_USER }}
+          PLATFORM_POSTGRES_PASSWORD: ${{ secrets.PLATFORM_POSTGRES_PASSWORD }}
+          PLATFORM_REDIS_HOST: ${{ vars.PLATFORM_REDIS_HOST }}
+          PLATFORM_REDIS_USER: ${{ secrets.PLATFORM_REDIS_USER }}
+          PLATFORM_REDIS_PASSWORD: ${{ secrets.PLATFORM_REDIS_PASSWORD }}
+          PLATFORM_REDIS_TLS: '1'
+        run: |
+          set -euo pipefail
+          install -m 600 /dev/null /tmp/ecs.pem
+          printf '%s\n' "$SSH_KEY" > /tmp/ecs.pem
+          IFS=',' read -r -a hosts <<< "$HOSTS"
+          for host in "${hosts[@]}"; do
+            host="${host// /}"
+            echo "deploy ${host}"
+            ssh -i /tmp/ecs.pem -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o BatchMode=yes "root@${host}" \
+              'dnf -y install docker >/dev/null 2>&1 || yum -y install docker >/dev/null 2>&1; systemctl enable --now docker'
+            gzip -dc /tmp/platform.tar.gz | ssh -i /tmp/ecs.pem -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o BatchMode=yes "root@${host}" 'docker load'
+            ssh -i /tmp/ecs.pem -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o BatchMode=yes "root@${host}" \
+              "docker rm -f dsh-platform >/dev/null 2>&1 || true; docker run -d --name dsh-platform --restart unless-stopped -p 8080:8080 \
+                -e PLATFORM_ORIGIN=$(printf %q "$PLATFORM_ORIGIN") \
+                -e PLATFORM_GITHUB_CLIENT_ID=$(printf %q "$PLATFORM_GITHUB_CLIENT_ID") \
+                -e PLATFORM_GITHUB_CLIENT_SECRET=$(printf %q "$PLATFORM_GITHUB_CLIENT_SECRET") \
+                -e PLATFORM_POSTGRES_HOST=$(printf %q "$PLATFORM_POSTGRES_HOST") \
+                -e PLATFORM_POSTGRES_USER=$(printf %q "$PLATFORM_POSTGRES_USER") \
+                -e PLATFORM_POSTGRES_PASSWORD=$(printf %q "$PLATFORM_POSTGRES_PASSWORD") \
+                -e PLATFORM_REDIS_HOST=$(printf %q "$PLATFORM_REDIS_HOST") \
+                -e PLATFORM_REDIS_USER=$(printf %q "$PLATFORM_REDIS_USER") \
+                -e PLATFORM_REDIS_PASSWORD=$(printf %q "$PLATFORM_REDIS_PASSWORD") \
+                -e PLATFORM_REDIS_TLS=1 \
+                ${IMAGE}"
+          done
+          rm -f /tmp/ecs.pem /tmp/platform.tar.gz
