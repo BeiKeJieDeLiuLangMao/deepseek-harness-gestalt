@@ -2,7 +2,6 @@ import 'fake-indexeddb/auto'
 import { describe, expect, it } from 'vitest'
 import { parseCompanionOperationId, type CompanionConfirmedResult } from '@deepseek-ai/dsh-remote-protocol'
 import {
-  clearCompanionDesktopCache,
   companionCacheAdmits,
   companionMutationAllowed,
   CompanionCache,
@@ -12,7 +11,6 @@ import {
   parseCompanionDesktopId,
   WebCryptoCompanionCacheCipher,
   type CompanionCacheKeySource,
-  type CompanionCacheRecord,
   type CompanionMutationOutcome,
   type CompanionMutationRequest,
   type CompanionMutationTransport,
@@ -37,6 +35,39 @@ function confirmed(operationId: string): CompanionConfirmedResult {
   return { type: 'confirmed', operationId: parseCompanionOperationId(operationId), committedAt: 1_787_027_200_000, outcome: 'accepted' }
 }
 
+/** Pairing-key fixture in its own IndexedDB database, mirroring the pairing seam's separate store. */
+async function pairingKeyStore(databaseName: string, rows: Record<string, string>): Promise<{ read(): Promise<Record<string, string>> }> {
+  const database = await new Promise<IDBDatabase>((resolve, reject) => {
+    const request = indexedDB.open(databaseName, 1)
+    request.onupgradeneeded = () => { request.result.createObjectStore('pairing-keys') }
+    request.onsuccess = () => { resolve(request.result) }
+    request.onerror = () => { reject(request.error ?? new Error('pairing-key store open failed')) }
+  })
+  await new Promise<void>((resolve, reject) => {
+    const transaction = database.transaction('pairing-keys', 'readwrite')
+    for (const [desktopId, key] of Object.entries(rows)) {
+      transaction.objectStore('pairing-keys').put(key, desktopId)
+    }
+    transaction.oncomplete = () => { resolve() }
+    transaction.onerror = () => { reject(transaction.error ?? new Error('pairing-key write failed')) }
+  })
+  return {
+    read: () => new Promise((resolve, reject) => {
+      const transaction = database.transaction('pairing-keys', 'readonly')
+      const keysRequest = transaction.objectStore('pairing-keys').getAllKeys()
+      const valuesRequest = transaction.objectStore('pairing-keys').getAll()
+      keysRequest.onsuccess = () => {
+        valuesRequest.onsuccess = () => {
+          const keys = keysRequest.result as string[]
+          const values = valuesRequest.result as string[]
+          resolve(Object.fromEntries(keys.map((key, index): [string, string] => [key, values[index] ?? ''])))
+        }
+      }
+      keysRequest.onerror = () => { reject(keysRequest.error ?? new Error('pairing-key read failed')) }
+    }),
+  }
+}
+
 describe('Companion Cache', () => {
   it('encrypts opened metadata and transcripts at rest per Paired Desktop', async () => {
     const keys = { 'desktop-a': await freshKey(), 'desktop-b': await freshKey() }
@@ -50,6 +81,16 @@ describe('Companion Cache', () => {
 
     const withA = await cipherFor({ 'desktop-a': keys['desktop-a']! })
     expect(await withA.open(sealed)).toEqual(new TextEncoder().encode(plaintext))
+  })
+
+  it('refuses to decrypt one Desktop row under another Desktop key', async () => {
+    const keys = { 'desktop-a': await freshKey(), 'desktop-b': await freshKey() }
+    const sealedByA = await (await cipherFor({ 'desktop-a': keys['desktop-a']! })).seal(
+      desktopA,
+      new TextEncoder().encode('desktop-a transcript'),
+    )
+    const cipherOfB = await cipherFor({ 'desktop-b': keys['desktop-b']! })
+    await expect(cipherOfB.open(sealedByA)).rejects.toThrow()
   })
 
   it('never automatically caches attachment bytes, terminal content, spill files, or credentials', () => {
@@ -68,12 +109,14 @@ describe('Companion Cache', () => {
     )
   })
 
-  it('persists sealed rows through the IndexedDB store', async () => {
+  it('persists sealed rows through the IndexedDB store with metadata and transcript coexisting', async () => {
     const keys = { 'desktop-a': await freshKey() }
     const cache = new CompanionCache(new IndexedDbCompanionCacheStore('companion-cache-test-content'), await cipherFor(keys))
     await cache.saveOpenedContent(desktopA, 'session-metadata', JSON.stringify({ title: 'Cached' }))
-    expect(await cache.loadOpenedContent(desktopA)).toContain('Cached')
-    expect(await cache.loadOpenedContent(desktopB)).toBeUndefined()
+    await cache.saveOpenedContent(desktopA, 'transcript', 'user: continue')
+    expect(await cache.loadOpenedContent(desktopA, 'session-metadata')).toContain('Cached')
+    expect(await cache.loadOpenedContent(desktopA, 'transcript')).toBe('user: continue')
+    expect(await cache.loadOpenedContent(desktopB, 'session-metadata')).toBeUndefined()
   })
 
   it('allows cache reads offline but disables every mutation until Remote Online', async () => {
@@ -84,7 +127,7 @@ describe('Companion Cache', () => {
 
     const store = new InMemoryCompanionCacheStore()
     const cipher = await cipherFor({})
-    await store.saveContent(desktopA, await cipher.seal(desktopA, new TextEncoder().encode('cached')))
+    await store.saveContent(desktopA, 'transcript', await cipher.seal(desktopA, new TextEncoder().encode('cached')))
     const settlement = new CompanionUncertainOperationSettlement(store, desktopA)
     let sends = 0
     const transport = recordingTransport(() => { sends += 1 }, { known: true, result: confirmed('op-offline') })
@@ -96,7 +139,7 @@ describe('Companion Cache', () => {
     expect(sends).toBe(0)
     expect(await store.loadReceipts(desktopA)).toEqual([])
     const cache = new CompanionCache(store, cipher)
-    await expect(cache.loadOpenedContent(desktopA)).resolves.not.toBeUndefined()
+    await expect(cache.loadOpenedContent(desktopA, 'transcript')).resolves.not.toBeUndefined()
   })
 
   it('stores an Operation Receipt only after transmission', async () => {
@@ -122,6 +165,44 @@ describe('Companion Cache', () => {
     expect(receipt.status).toBe('unknown')
     expect(receiptsAtTransmission).toEqual([
       { operationId: parseCompanionOperationId('op-uncertain'), status: 'unknown' },
+    ])
+  })
+
+  it('stores no receipt when the send never left the device', async () => {
+    const store = new InMemoryCompanionCacheStore()
+    const settlement = new CompanionUncertainOperationSettlement(store, desktopA)
+    const neverTransmits: CompanionMutationTransport = {
+      async send() { return { known: false } },
+      async queryStatus() { return { committed: false } },
+    }
+    await expect(settlement.transmit(
+      { kind: 'prompt', operationId: parseCompanionOperationId('op-never-sent') },
+      neverTransmits,
+      true,
+    )).rejects.toThrow(/without acknowledging transmission/)
+    expect(await store.loadReceipts(desktopA)).toEqual([])
+  })
+
+  it('settles the transmission acknowledgment even when the send fails after transmitting', async () => {
+    const store = new InMemoryCompanionCacheStore()
+    const settlement = new CompanionUncertainOperationSettlement(store, desktopA)
+    let receiptObserved = false
+    const failsAfterTransmit: CompanionMutationTransport = {
+      async send(_mutation, onTransmitted) {
+        onTransmitted()
+        receiptObserved = (await store.loadReceipts(desktopA)).length === 1
+        throw new Error('relay dropped before the Desktop result arrived')
+      },
+      async queryStatus() { return { committed: false } },
+    }
+    await expect(settlement.transmit(
+      { kind: 'prompt', operationId: parseCompanionOperationId('op-dropped') },
+      failsAfterTransmit,
+      true,
+    )).rejects.toThrow(/relay dropped/)
+    expect(receiptObserved).toBe(true)
+    expect(await store.loadReceipts(desktopA)).toEqual([
+      { operationId: parseCompanionOperationId('op-dropped'), status: 'unknown' },
     ])
   })
 
@@ -166,21 +247,37 @@ describe('Companion Cache', () => {
 
   it('clears one Paired Desktop cache without destroying pairing-key records', async () => {
     const keys = { 'desktop-a': await freshKey(), 'desktop-b': await freshKey() }
-    const pairingKeys = new Map<string, string>([['desktop-a', 'pairing-key-a'], ['desktop-b', 'pairing-key-b']])
-    const cache = new CompanionCache(new InMemoryCompanionCacheStore(), await cipherFor(keys))
+    const pairingKeys = await pairingKeyStore('companion-cache-test-pairing-keys', {
+      'desktop-a': 'pairing-key-a',
+      'desktop-b': 'pairing-key-b',
+    })
+    const cache = new CompanionCache(new IndexedDbCompanionCacheStore('companion-cache-test-clear'), await cipherFor(keys))
     await cache.saveOpenedContent(desktopA, 'transcript', 'A transcript')
     await cache.saveOpenedContent(desktopB, 'transcript', 'B transcript')
 
     await cache.clearDesktopCache(desktopA)
-    expect(await cache.loadOpenedContent(desktopA)).toBeUndefined()
-    expect(await cache.loadOpenedContent(desktopB)).toContain('B transcript')
-    expect(pairingKeys.get('desktop-a')).toBe('pairing-key-a')
-    expect(pairingKeys.get('desktop-b')).toBe('pairing-key-b')
+    expect(await cache.loadOpenedContent(desktopA, 'transcript')).toBeUndefined()
+    expect(await cache.loadOpenedContent(desktopB, 'transcript')).toContain('B transcript')
+    expect(await pairingKeys.read()).toEqual({ 'desktop-a': 'pairing-key-a', 'desktop-b': 'pairing-key-b' })
+  })
 
-    const records = new Map<string, CompanionCacheRecord>([
-      ['desktop-a', { desktopId: desktopA, iv: new Uint8Array(12), ciphertext: new Uint8Array(4) }],
-    ])
-    expect(clearCompanionDesktopCache(records, 'desktop-a').has('desktop-a')).toBe(false)
+  it('keeps receipts of other Desktops when one Desktop is cleared through the IndexedDB store', async () => {
+    const store = new IndexedDbCompanionCacheStore('companion-cache-test-clear-receipts')
+    const a = new CompanionUncertainOperationSettlement(store, desktopA)
+    const b = new CompanionUncertainOperationSettlement(store, desktopB)
+    await a.transmit(
+      { kind: 'prompt', operationId: parseCompanionOperationId('op-a') },
+      outcomeTransport({ known: false }),
+      true,
+    )
+    await b.transmit(
+      { kind: 'prompt', operationId: parseCompanionOperationId('op-b') },
+      outcomeTransport({ known: false }),
+      true,
+    )
+    await store.clearDesktop(desktopA)
+    expect(await store.loadReceipts(desktopA)).toEqual([])
+    expect((await store.loadReceipts(desktopB)).map(row => row.status)).toEqual(['unknown'])
   })
 })
 

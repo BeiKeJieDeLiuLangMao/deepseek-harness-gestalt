@@ -1,9 +1,10 @@
 /** Per-Paired-Desktop Companion Cache and uncertain-operation recovery. */
 
+import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { CompanionConfirmedResult, CompanionOperationId } from '@deepseek-ai/dsh-remote-protocol'
 
 /** Opaque Paired Desktop identity injected by the Personal Pairing seam. */
-export type CompanionDesktopId = string & { readonly __companionDesktopId: unique symbol }
+export type CompanionDesktopId = Branded<'CompanionDesktopId'>
 
 const DESKTOP_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/
 
@@ -145,21 +146,36 @@ export interface CompanionOperationReceipt {
   original?: CompanionConfirmedResult
 }
 
-/** Durable cache and receipt rows, separate from pairing-key storage. */
+/**
+ * Durable cache and receipt rows, separate from pairing-key storage. Content
+ * rows are keyed by Paired Desktop and content kind, so metadata and a
+ * transcript of one Desktop coexist.
+ */
 export interface CompanionCacheStore {
-  /** @param desktopId - Paired Desktop whose row is written. @param record - sealed row. */
-  saveContent(desktopId: CompanionDesktopId, record: CompanionCacheRecord): Promise<void>
+  /**
+   * @param desktopId - Paired Desktop whose row is written.
+   * @param kind - admitted content kind of the row.
+   * @param record - sealed row.
+   */
+  saveContent(desktopId: CompanionDesktopId, kind: CompanionCacheContentKind, record: CompanionCacheRecord): Promise<void>
   /**
    * @param desktopId - Paired Desktop whose row is read.
+   * @param kind - admitted content kind of the row.
    * @returns sealed row, or `undefined` when nothing is cached.
    */
-  loadContent(desktopId: CompanionDesktopId): Promise<CompanionCacheRecord | undefined>
+  loadContent(
+    desktopId: CompanionDesktopId,
+    kind: CompanionCacheContentKind,
+  ): Promise<CompanionCacheRecord | undefined>
   /**
    * Drop one Paired Desktop's cached rows; pairing-key records stay untouched.
    * @param desktopId - Paired Desktop to clear.
    */
   clearDesktop(desktopId: CompanionDesktopId): Promise<void>
-  /** @param desktopId - owning Paired Desktop. @param receipt - receipt row. */
+  /**
+   * @param desktopId - owning Paired Desktop.
+   * @param receipt - receipt row.
+   */
   saveReceipt(desktopId: CompanionDesktopId, receipt: CompanionOperationReceipt): Promise<void>
   /**
    * @param desktopId - owning Paired Desktop.
@@ -168,33 +184,52 @@ export interface CompanionCacheStore {
   loadReceipts(desktopId: CompanionDesktopId): Promise<readonly CompanionOperationReceipt[]>
 }
 
+function contentKey(desktopId: CompanionDesktopId, kind: CompanionCacheContentKind): string {
+  return `${desktopId}::${kind}`
+}
+
+function desktopPrefix(desktopId: CompanionDesktopId): string {
+  return `${desktopId}::`
+}
+
 /** In-memory store for tests and keyless example compositions. */
 export class InMemoryCompanionCacheStore implements CompanionCacheStore {
   readonly #content = new Map<string, CompanionCacheRecord>()
-  readonly #receipts = new Map<string, CompanionOperationReceipt[]>()
+  readonly #receipts = new Map<string, CompanionOperationReceipt>()
 
-  async saveContent(desktopId: CompanionDesktopId, record: CompanionCacheRecord): Promise<void> {
-    this.#content.set(desktopId, record)
+  async saveContent(
+    desktopId: CompanionDesktopId,
+    kind: CompanionCacheContentKind,
+    record: CompanionCacheRecord,
+  ): Promise<void> {
+    this.#content.set(contentKey(desktopId, kind), record)
   }
 
-  async loadContent(desktopId: CompanionDesktopId): Promise<CompanionCacheRecord | undefined> {
-    return this.#content.get(desktopId)
+  async loadContent(
+    desktopId: CompanionDesktopId,
+    kind: CompanionCacheContentKind,
+  ): Promise<CompanionCacheRecord | undefined> {
+    return this.#content.get(contentKey(desktopId, kind))
   }
 
   async clearDesktop(desktopId: CompanionDesktopId): Promise<void> {
-    this.#content.delete(desktopId)
-    this.#receipts.delete(desktopId)
+    const prefix = desktopPrefix(desktopId)
+    for (const key of [...this.#content.keys(), ...this.#receipts.keys()]) {
+      if (!key.startsWith(prefix)) continue
+      this.#content.delete(key)
+      this.#receipts.delete(key)
+    }
   }
 
   async saveReceipt(desktopId: CompanionDesktopId, receipt: CompanionOperationReceipt): Promise<void> {
-    const rows = this.#receipts.get(desktopId) ?? []
-    const next = rows.filter(row => row.operationId !== receipt.operationId)
-    next.push(receipt)
-    this.#receipts.set(desktopId, next)
+    this.#receipts.set(`${desktopPrefix(desktopId)}${receipt.operationId}`, receipt)
   }
 
   async loadReceipts(desktopId: CompanionDesktopId): Promise<readonly CompanionOperationReceipt[]> {
-    return [...this.#receipts.get(desktopId) ?? []]
+    const prefix = desktopPrefix(desktopId)
+    return [...this.#receipts.entries()]
+      .filter(([key]) => key.startsWith(prefix))
+      .map(([, row]) => row)
   }
 }
 
@@ -215,26 +250,55 @@ export class IndexedDbCompanionCacheStore implements CompanionCacheStore {
     })
   }
 
-  async saveContent(desktopId: CompanionDesktopId, record: CompanionCacheRecord): Promise<void> {
-    await this.write('content', desktopId, record)
+  async saveContent(
+    desktopId: CompanionDesktopId,
+    kind: CompanionCacheContentKind,
+    record: CompanionCacheRecord,
+  ): Promise<void> {
+    await this.write('content', contentKey(desktopId, kind), record)
   }
 
-  async loadContent(desktopId: CompanionDesktopId): Promise<CompanionCacheRecord | undefined> {
-    return await this.read<CompanionCacheRecord>('content', desktopId)
+  async loadContent(
+    desktopId: CompanionDesktopId,
+    kind: CompanionCacheContentKind,
+  ): Promise<CompanionCacheRecord | undefined> {
+    return await this.read<CompanionCacheRecord>('content', contentKey(desktopId, kind))
   }
 
   async clearDesktop(desktopId: CompanionDesktopId): Promise<void> {
-    await this.clear('content', desktopId)
-    await this.clear('receipts', desktopId)
+    const database = await this.#database
+    await new Promise<void>((resolve, reject) => {
+      const transaction = database.transaction(['content', 'receipts'], 'readwrite')
+      const range = desktopRange(desktopId)
+      transaction.objectStore('content').delete(range)
+      transaction.objectStore('receipts').delete(range)
+      transaction.oncomplete = () => { resolve() }
+      transaction.onerror = () => { reject(transaction.error ?? new Error('Companion cache IndexedDB delete failed')) }
+    })
   }
 
   async saveReceipt(desktopId: CompanionDesktopId, receipt: CompanionOperationReceipt): Promise<void> {
-    const rows = await this.loadReceipts(desktopId)
-    await this.write('receipts', desktopId, [...rows.filter(row => row.operationId !== receipt.operationId), receipt])
+    const database = await this.#database
+    await new Promise<void>((resolve, reject) => {
+      const key = `${desktopPrefix(desktopId)}${receipt.operationId}`
+      // One readwrite transaction covers read-modify-write, so concurrent
+      // senders cannot interleave between the read and the put.
+      const transaction = database.transaction('receipts', 'readwrite')
+      const store = transaction.objectStore('receipts')
+      const existing = store.get(key)
+      existing.onsuccess = () => { store.put({ ...(existing.result as CompanionOperationReceipt | undefined), ...receipt }, key) }
+      transaction.oncomplete = () => { resolve() }
+      transaction.onerror = () => { reject(transaction.error ?? new Error('Companion cache IndexedDB write failed')) }
+    })
   }
 
   async loadReceipts(desktopId: CompanionDesktopId): Promise<readonly CompanionOperationReceipt[]> {
-    return await this.read<CompanionOperationReceipt[]>('receipts', desktopId) ?? []
+    const database = await this.#database
+    return new Promise((resolve, reject) => {
+      const request = database.transaction('receipts', 'readonly').objectStore('receipts').getAll(desktopRange(desktopId))
+      request.onsuccess = () => { resolve(request.result as CompanionOperationReceipt[]) }
+      request.onerror = () => { reject(request.error ?? new Error('Companion cache IndexedDB read failed')) }
+    })
   }
 
   private async read<T>(store: 'content' | 'receipts', key: string): Promise<T | undefined> {
@@ -255,16 +319,11 @@ export class IndexedDbCompanionCacheStore implements CompanionCacheStore {
       transaction.onerror = () => { reject(transaction.error ?? new Error('Companion cache IndexedDB write failed')) }
     })
   }
+}
 
-  private async clear(store: 'content' | 'receipts', key: string): Promise<void> {
-    const database = await this.#database
-    await new Promise<void>((resolve, reject) => {
-      const transaction = database.transaction(store, 'readwrite')
-      transaction.objectStore(store).delete(key)
-      transaction.oncomplete = () => { resolve() }
-      transaction.onerror = () => { reject(transaction.error ?? new Error('Companion cache IndexedDB delete failed')) }
-    })
-  }
+function desktopRange(desktopId: CompanionDesktopId): IDBKeyRange {
+  const prefix = desktopPrefix(desktopId)
+  return IDBKeyRange.bound(prefix, `${prefix}\u{10ffff}`, false, false)
 }
 
 /** Sealed Companion Cache for one installation; cache rows stay read-only authority. */
@@ -292,7 +351,7 @@ export class CompanionCache {
     if (!companionCacheAdmits(kind)) {
       throw new TypeError(`Companion Cache never automatically stores ${String(kind)}`)
     }
-    await this.#store.saveContent(desktopId, await this.#cipher.seal(
+    await this.#store.saveContent(desktopId, kind, await this.#cipher.seal(
       desktopId,
       new TextEncoder().encode(plaintext),
     ))
@@ -301,10 +360,14 @@ export class CompanionCache {
   /**
    * Read cached plaintext; Remote Offline permits this read.
    * @param desktopId - Paired Desktop whose cache is read.
+   * @param kind - admitted content kind of the row.
    * @returns Desktop-confirmed content, or `undefined` when nothing is cached.
    */
-  async loadOpenedContent(desktopId: CompanionDesktopId): Promise<string | undefined> {
-    const record = await this.#store.loadContent(desktopId)
+  async loadOpenedContent(
+    desktopId: CompanionDesktopId,
+    kind: CompanionCacheContentKind,
+  ): Promise<string | undefined> {
+    const record = await this.#store.loadContent(desktopId, kind)
     if (record === undefined) return undefined
     return new TextDecoder().decode(await this.#cipher.open(record))
   }
@@ -384,13 +447,24 @@ export class CompanionUncertainOperationSettlement {
       throw new Error(`Remote Offline disables Companion ${mutation.kind} mutations`)
     }
     let transmissionReceipt: Promise<void> | undefined
-    const outcome = await transport.send(mutation, () => {
-      transmissionReceipt = this.#store.saveReceipt(
-        this.#desktopId,
-        { operationId: mutation.operationId, status: 'unknown' },
-      )
-    })
+    let outcome: CompanionMutationOutcome
+    try {
+      outcome = await transport.send(mutation, () => {
+        transmissionReceipt = this.#store.saveReceipt(
+          this.#desktopId,
+          { operationId: mutation.operationId, status: 'unknown' },
+        )
+      })
+    } catch (error) {
+      // The transmission acknowledgment write must settle before its rejection
+      // escapes; otherwise the promise rejects unobserved.
+      await transmissionReceipt
+      throw error
+    }
     await transmissionReceipt
+    if (!outcome.known && transmissionReceipt === undefined) {
+      throw new Error('Companion transport reported an unknown outcome without acknowledging transmission')
+    }
     const receipt: CompanionOperationReceipt = outcome.known
       ? { operationId: mutation.operationId, status: 'committed', original: outcome.result }
       : { operationId: mutation.operationId, status: 'unknown' }
@@ -416,53 +490,4 @@ export class CompanionUncertainOperationSettlement {
     }
     return await this.#store.loadReceipts(this.#desktopId)
   }
-}
-
-/**
- * Store a receipt only after the mutation was transmitted.
- * @param receipts - current receipts.
- * @param operationId - transmitted operation.
- * @returns receipts with one unknown row.
- */
-export function recordCompanionTransmission(
-  receipts: ReadonlyMap<string, CompanionOperationReceipt>,
-  operationId: string,
-): ReadonlyMap<string, CompanionOperationReceipt> {
-  const next = new Map(receipts)
-  next.set(operationId, { operationId: operationId as CompanionOperationId, status: 'unknown' })
-  return next
-}
-
-/**
- * Apply Desktop's reconnect answer for one operation id. Never auto-replays.
- * @param receipts - current receipts.
- * @param operationId - queried id.
- * @param desktop - committed original result, or explicitly absent.
- * @returns receipts with the settled row.
- */
-export function recoverCompanionOperation(
-  receipts: ReadonlyMap<string, CompanionOperationReceipt>,
-  operationId: string,
-  desktop: 'committed' | 'absent',
-): ReadonlyMap<string, CompanionOperationReceipt> {
-  const next = new Map(receipts)
-  next.set(operationId, desktop === 'committed'
-    ? { operationId: operationId as CompanionOperationId, status: 'committed' }
-    : { operationId: operationId as CompanionOperationId, status: 'not-submitted' })
-  return next
-}
-
-/**
- * Drop one Paired Desktop's cache without touching other Desktops.
- * @param records - all sealed rows.
- * @param desktopId - Desktop to clear.
- * @returns rows without the cleared Desktop.
- */
-export function clearCompanionDesktopCache(
-  records: ReadonlyMap<string, CompanionCacheRecord>,
-  desktopId: string,
-): ReadonlyMap<string, CompanionCacheRecord> {
-  const next = new Map(records)
-  next.delete(desktopId)
-  return next
 }
