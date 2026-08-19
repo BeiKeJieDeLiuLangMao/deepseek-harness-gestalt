@@ -3440,9 +3440,6 @@ importers:
       '@deepseek-ai/dsh-workspace-reference':
         specifier: workspace:^
         version: link:../../context/workspace-reference
-      zod:
-        specifier: ^4.4.3
-        version: 4.4.3
 
   packages/client/web:
     dependencies:
