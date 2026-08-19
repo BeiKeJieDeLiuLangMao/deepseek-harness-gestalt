@@ -450,6 +450,14 @@ export class TandemBrowserRuntime extends BrowserRuntime {
 
   /** Spawn one optional fixture child and wait for the pinned Tandem-shaped API. */
   private async startProcess(signal: AbortSignal | undefined): Promise<void> {
+    const desktopOwnsElectron = process.env.DSH_TANDEM_BIN !== undefined
+      || process.env.DSH_ELECTRON_BROWSER_ORIGIN !== undefined
+    if (desktopOwnsElectron && this.config.command !== undefined) {
+      throw new BrowserRuntimeError(
+        'Tandem sidecar spawn is disabled when Desktop owns in-process Electron',
+        'BROWSER_RUNTIME_UNAVAILABLE',
+      )
+    }
     if (this.config.command === undefined || this.config.cwd === undefined) {
       await this.waitForHealth(signal)
       return
@@ -826,7 +834,10 @@ export class TandemBrowserRuntime extends BrowserRuntime {
       const sessionName = profile.sessionName
       profile.tabs.delete(state.target.tabId)
       const lastTab = profile.tabs.size === 0
-      if (lastTab && this.process !== undefined) {
+      // An unavailable target has no reachable runtime left to destroy; the
+      // close is a local receipt. Reachability, not child ownership, gates the
+      // HTTP destroy so the protocol-only client still cleans up its sessions.
+      if (lastTab && state.status === 'open') {
         const response = objectValue(await this.json('/sessions/destroy', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
@@ -847,8 +858,10 @@ export class TandemBrowserRuntime extends BrowserRuntime {
     await this.queue
     for (const state of [...this.states.values()]) {
       if (state.status !== 'open' && state.status !== 'unavailable') continue
-      try {
-        if (this.process !== undefined) {
+      // Unavailable targets have no reachable runtime; only open sessions get
+      // the best-effort HTTP destroy, whether or not a fixture child is owned.
+      if (state.status === 'open') {
+        try {
           const profile = this.profiles.get(state.target.profileId)
           if (profile !== undefined) {
             await this.json('/sessions/destroy', {
@@ -857,10 +870,10 @@ export class TandemBrowserRuntime extends BrowserRuntime {
               body: JSON.stringify({ name: profile.sessionName }),
             }, undefined)
           }
+        } catch (error) {
+          this.ctx.logger.warn('browser-runtime-tandem: session cleanup failed before process teardown')
+          this.ctx.logger.warn(error)
         }
-      } catch (error) {
-        this.ctx.logger.warn('browser-runtime-tandem: session cleanup failed before process teardown')
-        this.ctx.logger.warn(error)
       }
       this.commit({ status: 'closed', target: state.target, revision: state.revision + 1 })
     }

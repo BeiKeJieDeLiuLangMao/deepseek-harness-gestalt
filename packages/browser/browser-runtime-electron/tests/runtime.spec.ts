@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import ElectronBrowserRuntime, { isElectronProcess, requireElectronProcess } from '@deepseek-ai/dsh-browser-runtime-electron'
+import ElectronBrowserRuntime, { installElectronTestHost, isElectronProcess, requireElectronProcess } from '@deepseek-ai/dsh-browser-runtime-electron'
 import { BrowserProfileName, BrowserWorkspaceId } from '@deepseek-ai/dsh-browser-runtime'
 import { FakeElectronHost, PNG_1X1_BASE64 } from './fake-electron.ts'
 
@@ -29,11 +29,11 @@ async function setup(
   overrides: Record<string, unknown> = {},
 ): Promise<{ ctx: Context; host: FakeElectronHost }> {
   const host = new FakeElectronHost(options)
+  installElectronTestHost(host)
   const ctx = new Context()
   contexts.push(ctx)
   await ctx.plugin(ElectronBrowserRuntime, {
     idPrefix: 'electron-test',
-    electron: host,
     requestTimeoutMs: 200,
     ...overrides,
   })
@@ -42,6 +42,7 @@ async function setup(
 
 afterEach(async () => {
   await Promise.all(contexts.splice(0).map(context => context.fiber.dispose()))
+  installElectronTestHost(undefined)
 })
 
 describe('Electron Browser Runtime configuration', () => {
@@ -56,10 +57,8 @@ describe('Electron Browser Runtime configuration', () => {
     for (const [label, overrides, failure] of cases) {
       const ctx = new Context()
       contexts.push(ctx)
-      await expect(ctx.plugin(ElectronBrowserRuntime, {
-        electron: new FakeElectronHost(),
-        ...overrides,
-      }), label).rejects.toThrow(failure)
+      installElectronTestHost(new FakeElectronHost())
+      await expect(ctx.plugin(ElectronBrowserRuntime, overrides), label).rejects.toThrow(failure)
     }
   })
 
@@ -91,10 +90,10 @@ describe('Electron Browser Runtime public lifecycle', () => {
       title: 'New Tab',
       focused: false,
       controlOwner: 'agent',
-      chrome: { kind: 'temporary', partition: 'persist:session-electron-test-tmp-1' },
+      chrome: { kind: 'temporary', partition: 'session-electron-test-tmp-1' },
     })
     expect(created.chrome).not.toHaveProperty('name')
-    expect(host.sessions.has('persist:session-electron-test-tmp-1')).toBe(true)
+    expect(host.sessions.has('session-electron-test-tmp-1')).toBe(true)
 
     const navigated = await ctx.browserRuntime.navigate({
       target: created.target,
@@ -122,7 +121,7 @@ describe('Electron Browser Runtime public lifecycle', () => {
     const closed = await ctx.browserRuntime.close({ target: created.target, expectedRevision: 2 })
     expect(closed).toEqual({ status: 'closed', target: created.target, revision: 3 })
     await expect(ctx.browserRuntime.observe({ target: created.target })).resolves.toEqual(closed)
-    expect(host.sessions.get('persist:session-electron-test-tmp-1')?.cleared).toBe(1)
+    expect(host.sessions.get('session-electron-test-tmp-1')?.cleared).toBe(1)
     expect(host.windows.every(window => window.destroyed)).toBe(true)
   })
 
@@ -150,7 +149,7 @@ describe('Electron Browser Runtime public lifecycle', () => {
       status: 'open',
       revision: 1,
       url: 'https://example.test/',
-      text: 'typed by human',
+      text: 'An Electron protocol page.typed by human',
       controlOwner: 'human',
       target: identities,
     })

@@ -14,6 +14,7 @@ import {
   browserProfileStorage,
   BrowserRuntime,
   BrowserRuntimeError,
+  browserSessionNameFromPartition,
   browserTargetFor,
   commitBrowserRuntimeState,
   emitBrowserRuntimeState,
@@ -210,7 +211,7 @@ export class DeterministicBrowserRuntime extends BrowserRuntime {
           ? resolveBrowserProfileCreate(this.idPrefix, request, this.temporarySeq)
           : {
             profileId: attached.target.profileId,
-            sessionName: attached.chrome.partition.slice('persist:session-'.length),
+            sessionName: browserSessionNameFromPartition(attached.chrome.partition),
             chrome: attached.chrome,
           }
         const existing = [...this.states.values()].filter(state => (
@@ -371,7 +372,7 @@ export class DeterministicBrowserRuntime extends BrowserRuntime {
   /** Snapshot one named Profile so a later create can restore its identity. */
   private rememberPersistent(state: BrowserPageState): void {
     if (state.chrome.kind !== 'persistent') return
-    const sessionName = state.chrome.partition.slice('persist:session-'.length)
+    const sessionName = browserSessionNameFromPartition(state.chrome.partition)
     const previous = this.persisted.get(sessionName)
     this.persisted.set(sessionName, Object.freeze({
       url: state.url,

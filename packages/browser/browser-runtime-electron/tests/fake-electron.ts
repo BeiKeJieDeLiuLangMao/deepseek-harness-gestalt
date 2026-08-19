@@ -114,6 +114,9 @@ class FakeWebContents implements ElectronWebContents {
   focus(): void {
     this.focused = true
   }
+  sendInputEvent(event: { readonly type: 'char'; readonly keyCode: string }): void {
+    this.page.text += event.keyCode
+  }
   async capturePage(): Promise<ElectronNativeImage> {
     if (this.options.captureDelayMs !== undefined) {
       await new Promise(resolve => setTimeout(resolve, this.options.captureDelayMs))
@@ -121,9 +124,10 @@ class FakeWebContents implements ElectronWebContents {
     if (this.options.captureEmpty === true) return new FakeNativeImage(new Uint8Array())
     return new FakeNativeImage(PNG_1X1)
   }
-  async executeJavaScript(): Promise<unknown> {
+  async executeJavaScript(code?: string): Promise<unknown> {
     if (this.options.failExecute === true) throw new Error('execute failed')
     if (this.options.executeNonString === true) return 7
+    if (typeof code === 'string' && code.includes('(text) =>')) return undefined
     return this.page.text
   }
   close(): void {

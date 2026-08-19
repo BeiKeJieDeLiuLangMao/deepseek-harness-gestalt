@@ -152,7 +152,7 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   // the invariant companion through a hashed runtime chunk beside the lib; the
   // Tandem-shaped HTTP Provider also publishes its upstream provenance files.
   '@deepseek-ai/dsh-browser-runtime-deterministic': ['lib/runtime-state-*.js'],
-  '@deepseek-ai/dsh-browser-runtime-electron': ['lib/runtime-state-*.js', 'lib/http.js'],
+  '@deepseek-ai/dsh-browser-runtime-electron': ['lib/runtime-state-*.js'],
   '@deepseek-ai/dsh-browser-runtime-tandem': ['lib/runtime-state-*.js', 'THIRD_PARTY_NOTICES.md', 'UPSTREAM.md'],
 }
 

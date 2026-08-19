@@ -31,7 +31,7 @@ describe.skipIf(!electronAvailable)('Electron Browser Runtime real-runtime e2e',
     expect(created).toMatchObject({
       status: 'open',
       revision: 0,
-      chrome: { kind: 'temporary', partition: 'persist:session-electron-e2e-tmp-1' },
+      chrome: { kind: 'temporary', partition: 'session-electron-e2e-tmp-1' },
     })
     const navigated = await ctx.browserRuntime.navigate({
       target: created.target,

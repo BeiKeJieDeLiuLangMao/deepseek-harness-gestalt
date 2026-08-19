@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import ElectronBrowserRuntime, { listenElectronBrowserHttp } from '@deepseek-ai/dsh-browser-runtime-electron'
+import ElectronBrowserRuntime, { installElectronTestHost, listenElectronBrowserHttp } from '@deepseek-ai/dsh-browser-runtime-electron'
 import { FakeElectronHost, PNG_1X1_BASE64 } from './fake-electron.ts'
 
 const contexts: Context[] = []
@@ -14,6 +14,7 @@ afterEach(async () => {
   await Promise.all(servers.splice(0).map(server => server.close()))
   await Promise.all(contexts.splice(0).map(context => context.fiber.dispose()))
   await Promise.all(temps.splice(0).map(dir => rm(dir, { recursive: true, force: true })))
+  installElectronTestHost(undefined)
 })
 
 async function json(
@@ -32,9 +33,9 @@ describe('Electron Browser HTTP protocol', () => {
     const tokenFile = join(root, 'api-token')
     const ctx = new Context()
     contexts.push(ctx)
+    installElectronTestHost(new FakeElectronHost())
     await ctx.plugin(ElectronBrowserRuntime, {
       idPrefix: 'electron-http',
-      electron: new FakeElectronHost(),
     })
     const server = await listenElectronBrowserHttp({ runtime: ctx.browserRuntime, tokenFile })
     servers.push(server)
@@ -66,7 +67,7 @@ describe('Electron Browser HTTP protocol', () => {
     expect(createdBody.tab).toMatchObject({
       url: 'about:blank',
       title: 'New Tab',
-      partition: 'persist:session-electron-http-tmp-1',
+      partition: 'session-electron-http-tmp-1',
     })
     const tabId = createdBody.tab.id
 

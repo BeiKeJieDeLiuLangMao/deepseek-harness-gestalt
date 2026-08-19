@@ -31,6 +31,8 @@ export interface ElectronWebContents {
   loadURL(url: string): Promise<void>
   /** Focus the hidden contents so later Agent or human mutations address it. */
   focus(): void
+  /** Deliver one human input event into the hidden contents. */
+  sendInputEvent(event: { readonly type: 'char'; readonly keyCode: string }): void
   /** Capture the current page as a PNG. */
   capturePage(): Promise<ElectronNativeImage>
   /** Read model-visible page text from the isolated world. */

@@ -21,6 +21,10 @@
 - id: session-title-llm
   disabled: true
 
+# The base bundle's keyless Runtime yields to the Tandem-shaped HTTP client.
+- id: browser-runtime-deterministic
+  disabled: true
+
 - insert:
     - id: browser-runtime-tandem
       name: './snapshot-fixtures/browser-runtime-tandem-proxy.mjs'

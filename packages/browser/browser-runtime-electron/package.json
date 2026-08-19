@@ -22,17 +22,12 @@
       "types": "./lib/types/invariant.d.ts",
       "default": "./lib/invariant.js"
     },
-    "./http": {
-      "types": "./lib/types/http.d.ts",
-      "default": "./lib/http.js"
-    },
     "./package.json": "./package.json"
   },
   "files": [
     "lib/index.js",
     "lib/invariant.js",
     "lib/runtime-state-*.js",
-    "lib/http.js",
     "lib/types/**/*.d.ts"
   ],
   "license": "MIT",
@@ -51,6 +46,8 @@
     "@deepseek-ai/schemastery": "workspace:^"
   },
   "devDependencies": {
+    "@deepseek-ai/cordis-plugin-include": "workspace:^",
+    "@deepseek-ai/cordis-plugin-loader": "workspace:^",
     "@deepseek-ai/dsh-browser-runtime": "workspace:^",
     "@deepseek-ai/dsh-invariants": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^",

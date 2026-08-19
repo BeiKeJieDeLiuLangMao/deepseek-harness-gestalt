@@ -21,8 +21,12 @@
 - id: session-title-llm
   disabled: true
 
+# The base bundle's keyless Runtime yields to this tracer's replay proxy.
+- id: browser-runtime-deterministic
+  disabled: true
+
 - insert:
-    - id: browser-runtime-deterministic
+    - id: browser-runtime-trace
       name: './snapshot-fixtures/browser-runtime-deterministic-proxy.mjs'
       config:
         idPrefix: trace

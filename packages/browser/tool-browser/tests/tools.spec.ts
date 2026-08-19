@@ -98,7 +98,7 @@ describe('deferred Browser Runtime Consumer', () => {
           browserId: 'tool-tmp-1-browser-1',
           tabId: 'tool-tmp-1-tab-1',
         },
-        chrome: { kind: 'temporary', partition: 'persist:session-tool-tmp-1' },
+        chrome: { kind: 'temporary', partition: 'session-tool-tmp-1' },
         revision: 0,
         controlOwner: 'agent',
       },

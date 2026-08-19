@@ -8,7 +8,7 @@ import {
   browserTargetKey,
   BrowserWorkspaceId,
 } from '@deepseek-ai/dsh-browser-runtime'
-import ElectronBrowserRuntime from '@deepseek-ai/dsh-browser-runtime-electron'
+import ElectronBrowserRuntime, { installElectronTestHost } from '@deepseek-ai/dsh-browser-runtime-electron'
 import InvariantRegistry, { InvariantError } from '@deepseek-ai/dsh-invariants'
 import * as ElectronBrowserRuntimeInvariant from '../src/invariant.ts'
 import {
@@ -34,9 +34,9 @@ async function setup(): Promise<Context> {
   const ctx = new Context()
   contexts.push(ctx)
   await ctx.plugin(InvariantRegistry).await()
+  installElectronTestHost(new FakeElectronHost())
   await ctx.plugin(ElectronBrowserRuntime, {
     idPrefix: 'electron-invariant',
-    electron: new FakeElectronHost(),
   }).await()
   return ctx
 }
@@ -57,6 +57,7 @@ function ownerOf(ctx: Context): ElectronRuntimeStateOwner {
 
 afterEach(async () => {
   await Promise.all(contexts.splice(0).map(context => context.fiber.dispose()))
+  installElectronTestHost(undefined)
 })
 
 describe('Electron Browser Runtime invariant lifecycle', () => {
@@ -175,13 +176,12 @@ describe('Electron Browser Runtime invariant lifecycle', () => {
     await root.plugin(InvariantRegistry).await()
     const left = root.isolate('browserRuntime')
     const right = root.isolate('browserRuntime')
+    installElectronTestHost(new FakeElectronHost())
     const leftFiber = await left.plugin(ElectronBrowserRuntime, {
       idPrefix: 'left',
-      electron: new FakeElectronHost(),
     })
     const rightFiber = await right.plugin(ElectronBrowserRuntime, {
       idPrefix: 'right',
-      electron: new FakeElectronHost(),
     })
     const leftOwner = ownerOf(left)
     const rightOwner = ownerOf(right)

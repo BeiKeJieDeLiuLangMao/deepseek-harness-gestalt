@@ -38,12 +38,32 @@ export function assertBrowserProfileName(name: string): BrowserProfileName {
 }
 
 /**
- * Map one Provider-owned session name to Tandem's Electron persist partition.
- * @param sessionName - Exact Tandem session name the Provider created.
- * @returns the `persist:session-*` partition that stores that Profile's identity.
+ * Map one Provider-owned session name to an Electron persist partition.
+ * @param sessionName - Exact session name the Provider created.
+ * @returns the `persist:session-*` partition that stores that named Profile's identity.
  */
 export function browserSessionPartition(sessionName: string): string {
   return `persist:session-${sessionName}`
+}
+
+/**
+ * Map one temporary Profile to an ephemeral Electron partition with no persist prefix.
+ * @param sessionName - Exact session name the Provider created.
+ * @returns the `session-*` partition that Chromium must not persist to disk.
+ */
+export function browserTemporaryPartition(sessionName: string): string {
+  return `session-${sessionName}`
+}
+
+/**
+ * Recover the Provider-owned session name from a persist or ephemeral partition.
+ * @param partition - Committed chrome partition string.
+ * @returns the session name encoded in that partition.
+ */
+export function browserSessionNameFromPartition(partition: string): string {
+  if (partition.startsWith('persist:session-')) return partition.slice('persist:session-'.length)
+  if (partition.startsWith('session-')) return partition.slice('session-'.length)
+  throw new BrowserRuntimeError(`browser partition is not a session key: ${partition}`, 'BROWSER_PROTOCOL')
 }
 
 /**
@@ -52,9 +72,8 @@ export function browserSessionPartition(sessionName: string): string {
  * @returns chrome facts Dock can place near the address field without a second account concept.
  */
 export function browserProfileChrome(request: BrowserProfileChromeRequest): BrowserProfileChrome {
-  const partition = browserSessionPartition(request.sessionName)
   if (request.kind === 'temporary') {
-    return Object.freeze({ kind: 'temporary', partition })
+    return Object.freeze({ kind: 'temporary', partition: browserTemporaryPartition(request.sessionName) })
   }
   if (request.name === undefined) {
     throw new BrowserRuntimeError('a persistent Browser Profile requires a name', 'BROWSER_PROFILE_NAME')
@@ -62,7 +81,7 @@ export function browserProfileChrome(request: BrowserProfileChromeRequest): Brow
   return Object.freeze({
     kind: 'persistent',
     name: request.name,
-    partition,
+    partition: browserSessionPartition(request.sessionName),
   })
 }
 
@@ -444,7 +463,7 @@ export function withBrowserControlOwner(
  * @param controlOwner - Next reported operator.
  * @returns the committed open page.
  */
-export function mutateBrowserControlOwner(
+export async function mutateBrowserControlOwner(
   exclusive: <T>(operation: () => T | Promise<T>) => Promise<T>,
   open: (target: BrowserTarget) => BrowserPageState,
   expected: (state: BrowserRuntimeState, revision: number) => void,
@@ -452,11 +471,7 @@ export function mutateBrowserControlOwner(
   request: BrowserMutationRequest,
   controlOwner: BrowserControlOwner,
 ): Promise<BrowserPageState> {
-  try {
-    assertBrowserNotAborted(request.signal)
-  } catch (error) {
-    return Promise.reject(error)
-  }
+  assertBrowserNotAborted(request.signal)
   return exclusive(() => {
     assertBrowserNotAborted(request.signal)
     const state = open(request.target)

@@ -144,7 +144,8 @@ const server = createServer(async (request, response) => {
     const stored = persisted.get(sessionName)
     const initialUrl = stored?.url ?? input.url ?? 'about:blank'
     tabSeq += 1
-    const base = inventoryTab(`tandem-tab-${String(tabSeq)}`, initialUrl, titleFor(initialUrl), true, `persist:session-${sessionName}`)
+    const partition = /-tmp-\d+$/.test(sessionName) ? `session-${sessionName}` : `persist:session-${sessionName}`
+    const base = inventoryTab(`tandem-tab-${String(tabSeq)}`, initialUrl, titleFor(initialUrl), true, partition)
     const tab = faults.create === 'bad-tab-id'
       ? { ...base, id: '' }
       : faults.create === 'bad-title-type' ? { ...base, title: 7 } : base

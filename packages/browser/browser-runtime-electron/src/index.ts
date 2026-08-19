@@ -58,6 +58,24 @@ const PAGE_TEXT_SCRIPT = `(() => {
   const root = document.body ?? document.documentElement
   return root === null ? '' : (root.innerText ?? '')
 })()`
+const INSERT_TEXT_SCRIPT = `(text) => {
+  const active = document.activeElement
+  if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) {
+    const start = active.selectionStart ?? active.value.length
+    const end = active.selectionEnd ?? active.value.length
+    active.value = active.value.slice(0, start) + text + active.value.slice(end)
+    const cursor = start + text.length
+    active.setSelectionRange(cursor, cursor)
+    active.dispatchEvent(new Event('input', { bubbles: true }))
+    return
+  }
+  if (active instanceof HTMLElement && active.isContentEditable) {
+    active.textContent = (active.textContent ?? '') + text
+    return
+  }
+  const root = document.body ?? document.documentElement
+  if (root !== null) root.append(document.createTextNode(text))
+}`
 
 /** Process and lifecycle configuration for one in-process Electron runtime. */
 export interface Config {
@@ -69,8 +87,6 @@ export interface Config {
   viewportHeight?: number
   /** Bound on each Chromium navigation or content read. */
   requestTimeoutMs?: number
-  /** Injected Electron APIs for tests; omitted in production. */
-  electron?: ElectronHost
 }
 
 /** Runtime configuration schema for the in-process Electron Browser Provider. */
@@ -81,7 +97,7 @@ export const Config: z<Config> = z.object({
   requestTimeoutMs: z.number().default(30_000),
 })
 
-type ResolvedConfig = Required<Omit<Config, 'electron'>> & Pick<Config, 'electron'>
+type ResolvedConfig = Required<Config>
 
 /** One open Electron Profile lifecycle owned by this Provider. */
 interface OpenProfile {
@@ -123,9 +139,20 @@ function assertNonEmpty(name: string, value: string): void {
   if (value.trim().length === 0) throw new Error(`browser-runtime-electron: ${name} must be non-empty`)
 }
 
-/** Fail composition unless this process is Electron or a test injects Electron APIs. */
-function assertElectronAvailable(electron: ElectronHost | undefined): void {
-  if (electron !== undefined) return
+let testElectronHost: ElectronHost | undefined
+
+/**
+ * Install one package-private Electron host for Node unit tests.
+ * Production composition never calls this; Desktop loads the real Electron module.
+ * @param host - Injected BrowserWindow and session factories, or `undefined` to clear the seam.
+ */
+export function installElectronTestHost(host: ElectronHost | undefined): void {
+  testElectronHost = host
+}
+
+/** Fail composition unless this process is Electron or a test installed a host. */
+function assertElectronAvailable(): void {
+  if (testElectronHost !== undefined) return
   if (!isElectronProcess()) {
     throw new Error('browser-runtime-electron: process.versions.electron must be set; this Provider loads only inside Electron')
   }
@@ -165,9 +192,9 @@ export class ElectronBrowserRuntime extends BrowserRuntime {
     assertViewport('viewportWidth', resolved.viewportWidth)
     assertViewport('viewportHeight', resolved.viewportHeight)
     assertDuration('requestTimeoutMs', resolved.requestTimeoutMs)
-    assertElectronAvailable(resolved.electron)
+    assertElectronAvailable()
     this.config = resolved
-    this.host = resolved.electron
+    this.host = testElectronHost
     ctx.effect(
       () => registerElectronRuntimeStateReader(this[ELECTRON_RUNTIME_STATE_OWNER], () => this.states),
       'Electron Browser Runtime state reader',
@@ -599,16 +626,32 @@ export class ElectronBrowserRuntime extends BrowserRuntime {
       assertBrowserNotAborted(request.signal)
       const state = this.openPage(request.target)
       this.expectRevision(state, request.expectedRevision)
-      if (request.url !== undefined) {
-        await this.load(this.openTab(request.target).window, request.url, request.signal)
-      }
+      const window = this.openTab(request.target).window
+      if (request.url !== undefined) await this.load(window, request.url, request.signal)
+      window.webContents.focus()
+      if (request.text !== undefined) await this.typeIntoPage(window, request.text, request.signal)
       const page = await this.page(state, request.signal)
       return this.commit({
         ...page,
         revision: state.revision + 1,
-        text: request.text ?? page.text,
         controlOwner: 'human',
       })
+    })
+  }
+
+  /** Deliver human text into the hidden contents through Chromium input and page script. */
+  private async typeIntoPage(window: ElectronBrowserWindow, text: string, signal: AbortSignal | undefined): Promise<void> {
+    for (const keyCode of text) {
+      assertBrowserNotAborted(signal)
+      window.webContents.sendInputEvent({ type: 'char', keyCode })
+    }
+    await this.withTimeout(signal, async (combined) => {
+      const aborted = new Promise<never>((_, reject) => {
+        combined.addEventListener('abort', () => {
+          reject(new BrowserRuntimeError(`browser operation aborted: ${String(combined.reason)}`, 'BROWSER_ABORTED'))
+        }, { once: true })
+      })
+      await Promise.race([window.webContents.executeJavaScript(`(${INSERT_TEXT_SCRIPT})(${JSON.stringify(text)})`), aborted])
     })
   }
 
@@ -638,12 +681,12 @@ export class ElectronBrowserRuntime extends BrowserRuntime {
   private async teardown(): Promise<void> {
     this.closing = true
     await this.queue
+    for (const profile of this.profiles.values()) {
+      for (const tab of profile.tabs.values()) this.destroyTab(tab)
+      profile.tabs.clear()
+    }
     for (const state of [...this.states.values()]) {
       if (state.status !== 'open' && state.status !== 'unavailable') continue
-      const profile = this.profiles.get(state.target.profileId)
-      const tab = profile?.tabs.get(state.target.tabId)
-      if (tab !== undefined) this.destroyTab(tab)
-      profile?.tabs.delete(state.target.tabId)
       this.commit({ status: 'closed', target: state.target, revision: state.revision + 1 })
     }
     for (const profile of this.profiles.values()) {

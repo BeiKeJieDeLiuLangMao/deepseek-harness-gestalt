@@ -182,21 +182,29 @@ describe('Tandem Browser Runtime configuration', () => {
     })
     const ctx = new Context()
     contexts.push(ctx)
-    await ctx.plugin(TandemBrowserRuntime, {
-      baseUrl: `http://127.0.0.1:${String(port)}`,
-      tokenFile,
-      idPrefix: 'protocol-only',
-      startupTimeoutMs: 5_000,
-      requestTimeoutMs: 2_000,
-      healthPollMs: 10,
-      reconnectAttempts: 0,
-      processGraceMs: 100,
-    })
-    const created = await ctx.browserRuntime.create({ profile: 'temporary' })
-    expect(created.chrome.partition).toBe('persist:session-protocol-only-tmp-1')
-    await ctx.browserRuntime.close({ target: created.target, expectedRevision: 0 })
-    child.kill('SIGTERM')
-    await rm(root, { recursive: true, force: true })
+    // The Desktop overlay exports this origin; a spawn-free client accepts it.
+    const previous = process.env.DSH_ELECTRON_BROWSER_ORIGIN
+    process.env.DSH_ELECTRON_BROWSER_ORIGIN = `http://127.0.0.1:${String(port)}`
+    try {
+      await ctx.plugin(TandemBrowserRuntime, {
+        baseUrl: `http://127.0.0.1:${String(port)}`,
+        tokenFile,
+        idPrefix: 'protocol-only',
+        startupTimeoutMs: 5_000,
+        requestTimeoutMs: 2_000,
+        healthPollMs: 10,
+        reconnectAttempts: 0,
+        processGraceMs: 100,
+      })
+      const created = await ctx.browserRuntime.create({ profile: 'temporary' })
+      expect(created.chrome.partition).toBe('session-protocol-only-tmp-1')
+      await ctx.browserRuntime.close({ target: created.target, expectedRevision: 0 })
+    } finally {
+      if (previous === undefined) delete process.env.DSH_ELECTRON_BROWSER_ORIGIN
+      else process.env.DSH_ELECTRON_BROWSER_ORIGIN = previous
+      child.kill('SIGTERM')
+      await rm(root, { recursive: true, force: true })
+    }
   })
 
   it('rejects a fixture command when subprocess is not composed', async () => {
@@ -214,6 +222,31 @@ describe('Tandem Browser Runtime configuration', () => {
     })
     await expect(ctx.browserRuntime.create({ profile: 'temporary' }))
       .rejects.toMatchObject({ code: 'BROWSER_RUNTIME_UNAVAILABLE', message: /requires ctx.subprocess/ })
+  })
+
+  it.each([
+    ['DSH_ELECTRON_BROWSER_ORIGIN'],
+    ['DSH_TANDEM_BIN'],
+  ] as const)('refuses a sidecar spawn under %s when Desktop owns in-process Electron', async (name) => {
+    const ctx = new Context()
+    contexts.push(ctx)
+    vi.stubEnv(name, 'set-by-desktop-host')
+    try {
+      await ctx.plugin(TandemBrowserRuntime, {
+        command: process.execPath,
+        cwd: process.cwd(),
+        baseUrl: `http://127.0.0.1:${String(await freePort())}`,
+        tokenFile: '/tmp/token',
+        startupTimeoutMs: 200,
+        requestTimeoutMs: 200,
+        healthPollMs: 10,
+        reconnectAttempts: 0,
+      })
+      await expect(ctx.browserRuntime.create({ profile: 'temporary' }))
+        .rejects.toMatchObject({ code: 'BROWSER_RUNTIME_UNAVAILABLE', message: /sidecar spawn is disabled/ })
+    } finally {
+      vi.unstubAllEnvs()
+    }
   })
 
   it('accepts every loopback hostname form and the default identity prefix', async () => {
@@ -251,7 +284,7 @@ describe('Tandem Browser Runtime public lifecycle', () => {
       controlOwner: 'agent',
       chrome: {
         kind: 'temporary',
-        partition: 'persist:session-tandem-test-tmp-1',
+        partition: 'session-tandem-test-tmp-1',
       },
       storage: {
         cookies: '',

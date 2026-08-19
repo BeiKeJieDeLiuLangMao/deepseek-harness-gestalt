@@ -1,7 +1,8 @@
 /**
  * Loopback HTTP adapter that exposes Tandem's operation vocabulary over the
- * in-process Electron Browser Runtime.
- * @module @deepseek-ai/dsh-browser-runtime-electron/http
+ * in-process Electron Browser Runtime. The package root re-exports this
+ * module; it has no subpath export of its own.
+ * @module
  */
 
 import { Buffer } from 'node:buffer'

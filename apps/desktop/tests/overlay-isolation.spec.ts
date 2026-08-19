@@ -27,6 +27,9 @@ describe('Desktop overlay isolation', () => {
     expect(desktop).toMatch(/id: browser-runtime-deterministic[\s\S]*disabled: true/)
     expect(desktop).not.toMatch(/directory-picker/)
     expect(desktop).not.toMatch(/Tandem\.app/)
+    expect(desktop).not.toMatch(/^\s+command:/m)
+    expect(desktop).not.toMatch(/^\s+cwd:/m)
+    expect(desktop).not.toMatch(/DSH_TANDEM_BIN/)
   })
 
   it('composes Schedule through the Desktop profile path after its required services', () => {

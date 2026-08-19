@@ -6,7 +6,9 @@ import {
   assertBrowserNotAborted,
   assertBrowserProfileName,
   browserProfileChrome,
+  browserSessionNameFromPartition,
   browserSessionPartition,
+  browserTemporaryPartition,
   BrowserInstanceId,
   BrowserProfileId,
   BrowserProfileName,
@@ -72,9 +74,13 @@ describe('Browser Runtime public vocabulary', () => {
 
   it('omits the address-field label for a temporary Profile', () => {
     const chrome = browserProfileChrome({ kind: 'temporary', sessionName: 'tandem-tmp-1' })
+    expect(browserTemporaryPartition('tandem-tmp-1')).toBe('session-tandem-tmp-1')
+    expect(browserSessionNameFromPartition('persist:session-tandem-work')).toBe('tandem-work')
+    expect(browserSessionNameFromPartition('session-tandem-tmp-1')).toBe('tandem-tmp-1')
+    expect(() => browserSessionNameFromPartition('default')).toThrow(/not a session key/)
     expect(chrome).toEqual({
       kind: 'temporary',
-      partition: 'persist:session-tandem-tmp-1',
+      partition: 'session-tandem-tmp-1',
     })
     expect(labeledBrowserProfileName(chrome)).toBeUndefined()
     expect(chrome).not.toHaveProperty('name')
@@ -106,7 +112,7 @@ describe('Browser Runtime public vocabulary', () => {
     expect(resolveBrowserProfileCreate('tandem', { profile: 'temporary' }, 2)).toEqual({
       profileId: 'tandem-tmp-2',
       sessionName: 'tandem-tmp-2',
-      chrome: { kind: 'temporary', partition: 'persist:session-tandem-tmp-2' },
+      chrome: { kind: 'temporary', partition: 'session-tandem-tmp-2' },
     })
     expect(resolveBrowserProfileCreate('tandem', { profile: 'persistent', name: 'work' }, 9)).toEqual({
       profileId: 'tandem-profile-work',
@@ -145,7 +151,7 @@ describe('Browser Runtime public vocabulary', () => {
         text: '',
         focused: false,
         controlOwner: 'agent',
-        chrome: { kind: 'temporary', partition: 'persist:session-tandem-work' },
+        chrome: { kind: 'temporary', partition: 'session-tandem-work' },
         storage: browserProfileStorage(''),
       }], work.profileId, {
         kind: 'browser',
@@ -198,7 +204,7 @@ describe('Browser Runtime shared Provider helpers', () => {
       text: '',
       focused: false,
       controlOwner: 'agent' as const,
-      chrome: { kind: 'temporary' as const, partition: 'persist:session-tmp-1' },
+      chrome: { kind: 'temporary' as const, partition: 'session-tmp-1' },
       storage: {
         cookies: '',
         localStorage: '',

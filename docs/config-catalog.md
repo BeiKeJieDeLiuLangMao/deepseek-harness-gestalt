@@ -429,7 +429,7 @@ export interface DeterministicBrowserPage {
 }
 ```
 
-Source: [`packages/browser/browser-runtime-deterministic/src/index.ts:66`](../packages/browser/browser-runtime-deterministic/src/index.ts)
+Source: [`packages/browser/browser-runtime-deterministic/src/index.ts:67`](../packages/browser/browser-runtime-deterministic/src/index.ts)
 
 <a id="deepseek-aidsh-browser-runtime-electron"></a>
 
@@ -446,106 +446,10 @@ export interface Config {
   viewportHeight?: number
   /** Bound on each Chromium navigation or content read. */
   requestTimeoutMs?: number
-  /** Injected Electron APIs for tests; omitted in production. */
-  electron?: ElectronHost
-}
-
-/** Electron APIs required by this Provider. */
-export interface ElectronHost {
-  /** Hidden-window constructor. */
-  readonly BrowserWindow: ElectronBrowserWindowConstructor
-  /** Partitioned session factory. */
-  readonly session: ElectronSessionModule
-}
-
-/** Constructor for one hidden offscreen window. */
-export type ElectronBrowserWindowConstructor = new (options: ElectronBrowserWindowOptions) => ElectronBrowserWindow
-
-/** Electron `session` module used to isolate persist and ephemeral partitions. */
-export interface ElectronSessionModule {
-  /** Create or reuse the Chromium session for one partition string. */
-  fromPartition(partition: string): ElectronSession
-}
-
-/** Options for one hidden offscreen window. */
-export interface ElectronBrowserWindowOptions {
-  /** Keep the window hidden. */
-  readonly show: false
-  /** Capture width in CSS pixels. */
-  readonly width: number
-  /** Capture height in CSS pixels. */
-  readonly height: number
-  /** Paint the first frame before the window is shown. */
-  readonly paintWhenInitiallyHidden: true
-  /** Isolated Chromium preferences for this window. */
-  readonly webPreferences: {
-    /** Persist or ephemeral partition key. */
-    readonly partition: string
-    /** Render offscreen so the Dock stays a screenshot pane. */
-    readonly offscreen: true
-    /** Sandbox the renderer. */
-    readonly sandbox: true
-    /** Isolate the renderer world. */
-    readonly contextIsolation: true
-    /** Keep Node APIs out of the page. */
-    readonly nodeIntegration: false
-    /** Keep hidden pages painting. */
-    readonly backgroundThrottling: false
-  }
-}
-
-/** Hidden BrowserWindow that owns one offscreen `webContents`. */
-export interface ElectronBrowserWindow {
-  /** Page this window owns. */
-  readonly webContents: ElectronWebContents
-  /** True after the window was destroyed. */
-  isDestroyed(): boolean
-  /** Destroy the hidden window and its contents. */
-  destroy(): void
-}
-
-/** Isolated Chromium session that backs one persist or ephemeral partition. */
-export interface ElectronSession {
-  /** Persist cookies, cache, and service-worker state for a named Profile. */
-  flushStorageData(): Promise<void>
-  /** Clear ephemeral partition state when a temporary Profile closes. */
-  clearStorageData(): Promise<void>
-}
-
-/** Hidden page used for navigation, observation, and screenshots. */
-export interface ElectronWebContents {
-  /** Current document URL, including `about:blank`. */
-  getURL(): string
-  /** Document title reported by Chromium. */
-  getTitle(): string
-  /** Isolated session that owns this page. */
-  readonly session: ElectronSession
-  /** True after Chromium destroyed the contents. */
-  isDestroyed(): boolean
-  /** Navigate and resolve after the first successful document load. */
-  loadURL(url: string): Promise<void>
-  /** Focus the hidden contents so later Agent or human mutations address it. */
-  focus(): void
-  /** Capture the current page as a PNG. */
-  capturePage(): Promise<ElectronNativeImage>
-  /** Read model-visible page text from the isolated world. */
-  executeJavaScript(code: string): Promise<unknown>
-  /** Destroy the hidden contents. */
-  close(): void
-  /** Observe renderer-process loss. */
-  on(event: 'render-process-gone', listener: () => void): this
-  /** Remove one renderer-process-loss listener. */
-  off(event: 'render-process-gone', listener: () => void): this
-}
-
-/** Pixel buffer returned by `webContents.capturePage`. */
-export interface ElectronNativeImage {
-  /** Encode the captured page as PNG bytes. */
-  toPNG(): Uint8Array
 }
 ```
 
-Source: [`packages/browser/browser-runtime-electron/src/index.ts:63`](../packages/browser/browser-runtime-electron/src/index.ts)
+Source: [`packages/browser/browser-runtime-electron/src/index.ts:81`](../packages/browser/browser-runtime-electron/src/index.ts)
 
 <a id="deepseek-aidsh-browser-runtime-tandem"></a>
 
