@@ -2,7 +2,7 @@
 /**
  * Platform listen process. Secrets come from deployment injection.
  * Account and Relay composition is not mounted in this image yet.
- * GET / serves the packaged documentation site when `public/` is present.
+ * GET / serves the product homepage when `public/` is present.
  */
 import { createReadStream } from 'node:fs'
 import { stat } from 'node:fs/promises'

@@ -2,9 +2,162 @@
 <html lang="zh-CN">
   <head>
     <meta charset="utf-8" />
-    <title>DeepSeek Harness</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DeepSeek Gestalt</title>
+    <meta name="description" content="DeepSeek Gestalt：桌面会话与手机配对。同一条 harness，装在你自己的机器上。" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Figtree:wght@400;500;600&display=swap" rel="stylesheet" />
+    <style>
+      :root {
+        --ink: #162028;
+        --fog: #dfe6ee;
+        --paper: #f6f3ec;
+        --oxide: #1f6f68;
+        --ember: #b85a2a;
+        --line: color-mix(in srgb, var(--ink) 16%, transparent);
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; min-height: 100%; }
+      body {
+        color: var(--ink);
+        background: var(--paper);
+        font-family: Figtree, "PingFang SC", "Noto Sans SC", sans-serif;
+        line-height: 1.5;
+      }
+      .spine {
+        position: fixed;
+        inset: 0 auto 0 0;
+        width: 3.4rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        writing-mode: vertical-rl;
+        transform: rotate(180deg);
+        letter-spacing: 0.38em;
+        font-family: "Bricolage Grotesque", sans-serif;
+        font-weight: 700;
+        font-size: 0.78rem;
+        background: var(--ink);
+        color: var(--paper);
+      }
+      main {
+        margin-left: 3.4rem;
+        min-height: 100vh;
+        display: grid;
+        grid-template-columns: minmax(18rem, 1fr) minmax(16rem, 0.9fr);
+      }
+      .copy, .stage { padding: clamp(2rem, 6vw, 5rem); }
+      .copy { align-self: center; max-width: 36rem; }
+      .kicker {
+        margin: 0 0 1rem;
+        font-size: 0.78rem;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        color: var(--oxide);
+        font-weight: 600;
+      }
+      h1 {
+        margin: 0 0 1rem;
+        font-family: "Bricolage Grotesque", sans-serif;
+        font-size: clamp(2.6rem, 7vw, 5.2rem);
+        line-height: 0.92;
+        font-weight: 700;
+        letter-spacing: -0.04em;
+      }
+      h1 span { display: block; color: var(--ember); font-size: 0.42em; letter-spacing: 0.22em; margin-top: 0.45rem; }
+      .lead { margin: 0 0 2rem; font-size: 1.12rem; max-width: 28rem; }
+      .actions { display: flex; flex-wrap: wrap; gap: 0.75rem; }
+      a.btn {
+        display: inline-flex;
+        align-items: center;
+        padding: 0.85rem 1.15rem;
+        text-decoration: none;
+        border: 1px solid var(--ink);
+        color: var(--paper);
+        background: var(--ink);
+        font-weight: 600;
+      }
+      a.btn.ghost { background: transparent; color: var(--ink); }
+      a.btn:focus-visible { outline: 3px solid var(--oxide); outline-offset: 3px; }
+      .stage {
+        background:
+          linear-gradient(var(--line) 1px, transparent 1px) 0 0 / 28px 28px,
+          linear-gradient(90deg, var(--line) 1px, transparent 1px) 0 0 / 28px 28px,
+          var(--fog);
+        display: grid;
+        place-items: center;
+      }
+      .orbit {
+        width: min(22rem, 80%);
+        aspect-ratio: 1;
+        position: relative;
+      }
+      .ring {
+        position: absolute;
+        inset: 12%;
+        border: 1.5px dashed color-mix(in srgb, var(--oxide) 70%, var(--ink));
+        border-radius: 50%;
+        animation: spin 28s linear infinite;
+      }
+      .node {
+        position: absolute;
+        width: 6.6rem;
+        padding: 0.7rem 0.8rem 0.8rem;
+        background: var(--paper);
+        border: 1px solid var(--ink);
+        font-size: 0.82rem;
+      }
+      .node strong { display: block; font-family: "Bricolage Grotesque", sans-serif; font-size: 1rem; }
+      .desk { top: 8%; left: 6%; }
+      .phone { right: 4%; bottom: 10%; }
+      .dot {
+        position: absolute;
+        width: 0.7rem;
+        height: 0.7rem;
+        border-radius: 50%;
+        background: var(--ember);
+        top: 50%;
+        left: 50%;
+        translate: -50% -50%;
+      }
+      footer {
+        margin-top: 2.5rem;
+        font-size: 0.82rem;
+        color: color-mix(in srgb, var(--ink) 62%, var(--paper));
+      }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      @media (max-width: 800px) {
+        .spine { display: none; }
+        main { margin: 0; grid-template-columns: 1fr; }
+        .stage { min-height: 18rem; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .ring { animation: none; }
+      }
+    </style>
   </head>
   <body>
-    <p>Documentation site is packaged by the Platform Image workflow.</p>
+    <div class="spine" aria-hidden="true">DEEPSEEK GESTALT</div>
+    <main>
+      <section class="copy">
+        <p class="kicker">Desktop · Mobile Companion</p>
+        <h1>DeepSeek Gestalt<span>装在你自己的机器上</span></h1>
+        <p class="lead">桌面会话、手机配对、同一条 harness。打开本页，就是产品入口，不是文档库。</p>
+        <div class="actions">
+          <a class="btn" href="https://github.com/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/releases">下载桌面版</a>
+          <a class="btn ghost" href="https://github.com/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt">查看源码</a>
+        </div>
+        <footer>生产源 www.gestaltrun.com · 账号与配对接口走 /v1</footer>
+      </section>
+      <aside class="stage" aria-hidden="true">
+        <div class="orbit">
+          <div class="ring"></div>
+          <div class="dot"></div>
+          <div class="node desk"><strong>Desktop</strong>本机会话</div>
+          <div class="node phone"><strong>Phone</strong>配对进同一会话</div>
+        </div>
+      </aside>
+    </main>
   </body>
 </html>
