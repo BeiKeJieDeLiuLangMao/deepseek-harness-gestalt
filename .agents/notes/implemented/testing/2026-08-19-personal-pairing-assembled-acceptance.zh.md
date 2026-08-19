@@ -12,7 +12,7 @@ Status: implemented
 
 #31 的组装证据是无密钥且可在本地运行的。`DevelopmentKeylessPairingHandshakeProvider` 是该路径上唯一的握手适配器：每个对等端都用 SHA-256 从邀请密钥派生同一把 256 位密钥，生产组合永远不会选择它。Loader 示例与 `remote-access-http` 组装控制器测试启动真实 `cordis.yml`、环回 HTTP 消费方，以及 Host 拥有的 Desktop 与 Mobile 控制器。它们证明 Mobile Access 默认关闭、跨账号完成会在授予设备主体之前失败、QR 与完整一次性链接相同、两端显示同一组认证词、必须由 Desktop 确认、已确认配对持有 32 字节独立密钥且只有 `companion-surface` 权限、已结算挑战上的第二个 completion id 得到 `PAIRING_CHALLENGE_INVALID`、相同 completion id 幂等，以及完成在 `expiresAt - 1` 成功、在 `expiresAt` 失败。
 
-Desktop 放置证据把 `ui-settings-general` 的真实 Settings 外壳与 `ui-desktop` 一起挂载。在 `zh-CN` 下，导航文案是 `通用设置` 与 `手机配对`；Mobile Access 只出现在 `手机配对`；Session、approval、composer 与 offline slot 保持为空。
+Desktop 放置证据把 `ui-settings-general` 的真实 Settings 外壳与 `ui-desktop` 一起挂载。在 `zh-CN` 下，导航文案是 `通用设置` 与 `手机配对`；Mobile Access 只出现在 `手机配对`；`conversation`、`conversation.session`、`conversation.composer` 与 `sidebar.workspaces` 保持为空。
 
 ## Alternatives considered
 

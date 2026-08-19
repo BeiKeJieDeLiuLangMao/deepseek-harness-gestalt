@@ -12,7 +12,7 @@ Same-account Personal Pairing landed as product code, but #31 still lacked assem
 
 Assembled #31 evidence is keyless and locally runnable. `DevelopmentKeylessPairingHandshakeProvider` is the only handshake adapter in that path: every peer derives the same 256-bit key from the invitation secret by SHA-256, and production composition never selects it. The Loader example and `remote-access-http` assembled controller test boot a real `cordis.yml`, loopback HTTP Consumer, and the Host-owned Desktop and Mobile controllers. They prove Mobile Access starts disabled, a cross-account completion fails before a Device Principal exists, QR and the full one-time link are identical, both peers show the same authentication words, Desktop confirmation is required, the confirmed pairing holds a 32-byte independent key with only `companion-surface` authority, a second completion id on a settled challenge is `PAIRING_CHALLENGE_INVALID`, the identical completion id is idempotent, and completion succeeds at `expiresAt - 1` and fails at `expiresAt`.
 
-Desktop placement evidence mounts the real Settings shell from `ui-settings-general` together with `ui-desktop`. Under `zh-CN`, the nav labels are `通用设置` and `手机配对`; Mobile Access exists only on `手机配对`; Session, approval, composer, and offline slots stay empty.
+Desktop placement evidence mounts the real Settings shell from `ui-settings-general` together with `ui-desktop`. Under `zh-CN`, the nav labels are `通用设置` and `手机配对`; Mobile Access exists only on `手机配对`; `conversation`, `conversation.session`, `conversation.composer`, and `sidebar.workspaces` stay empty.
 
 ## Alternatives considered
 

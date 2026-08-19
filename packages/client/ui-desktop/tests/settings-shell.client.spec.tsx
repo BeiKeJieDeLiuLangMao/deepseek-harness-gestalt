@@ -33,10 +33,10 @@ describe('Desktop Settings shell Mobile Access placement', () => {
     expect(sectionIds).toEqual(['general', 'mobile-pairing'])
     expect(resolveSlotLabel(assembled.slots.entries('settings.section')[0]!.options.label)).toBe('通用设置')
     expect(resolveSlotLabel(assembled.slots.entries('settings.section')[1]!.options.label)).toBe('手机配对')
-    expect(assembled.slots.entries('session')).toEqual([])
-    expect(assembled.slots.entries('approval')).toEqual([])
-    expect(assembled.slots.entries('composer')).toEqual([])
-    expect(assembled.slots.entries('offline')).toEqual([])
+    expect(assembled.slots.entries('conversation').map(entry => entry.component)).not.toContain(AccountControl)
+    expect(assembled.slots.entries('conversation.session')).toEqual([])
+    expect(assembled.slots.entries('conversation.composer')).toEqual([])
+    expect(assembled.slots.entries('sidebar.workspaces')).toEqual([])
     expect(assembled.slots.entries('sidebar.brand').length).toBeGreaterThan(0)
     expect(assembled.slots.entries('sidebar.footer.action').map(entry => entry.options.id)).toContain('desktop-update')
 
@@ -60,12 +60,18 @@ describe('Desktop Settings shell Mobile Access placement', () => {
         useOnboardingSteps={select => select([])}
         useSections={select => select(assembled.shellInject().hooks.sections.getSnapshot())}
         renderSlot={(key, owner, opts) => {
-          if (key === 'settings.trigger') return <TriggerContent t={settingsT} wide />
-          if (key === 'settings.header') return <HeaderContent t={settingsT} />
-          if (key === 'settings.close') return <CloseLabel t={settingsT} />
+          if (key === 'settings.trigger') {
+            return <TriggerContent t={settingsT} wide useSessions={unused} useWorkspaces={unused} />
+          }
+          if (key === 'settings.header') {
+            return <HeaderContent t={settingsT} useSessions={unused} useWorkspaces={unused} />
+          }
+          if (key === 'settings.close') {
+            return <CloseLabel t={settingsT} useSessions={unused} useWorkspaces={unused} />
+          }
           if (key === 'settings.action') return null
           if (key === 'settings.section' && opts?.only === 'general') {
-            return <GeneralSection t={settingsT} useSessions={unused} useWorkspaces={unused} close={vi.fn()} renderSlot={() => null} />
+            return <GeneralSection useSessions={unused} useWorkspaces={unused} close={vi.fn()} renderSlot={() => null} />
           }
           if (key === 'settings.section' && opts?.only === 'mobile-pairing') {
             const hooks = assembled.pairingInject().hooks
@@ -142,10 +148,7 @@ async function assemble() {
       children: {
         sidebar: { kind: 'single', scope: 'root' },
         'sidebar.settings': { kind: 'single', scope: 'root' },
-        session: { kind: 'single', scope: 'root' },
-        approval: { kind: 'single', scope: 'root' },
-        composer: { kind: 'single', scope: 'root' },
-        offline: { kind: 'single', scope: 'root' },
+        conversation: { kind: 'single', scope: 'session-maybe' },
       },
     } as never,
     () => null,
@@ -157,6 +160,17 @@ async function assemble() {
         'sidebar.brand': { kind: 'chain', scope: 'root' },
         'sidebar.chrome.drag': { kind: 'list', scope: 'root' },
         'sidebar.footer.action': { kind: 'list', scope: 'root' },
+        'sidebar.workspaces': { kind: 'single', scope: 'root' },
+      },
+    } as never,
+    () => null,
+  )
+  slots.register(
+    {
+      name: 'conversation',
+      children: {
+        'conversation.session': { kind: 'single', scope: 'session' },
+        'conversation.composer': { kind: 'chain', scope: 'session' },
       },
     } as never,
     () => null,
