@@ -88,16 +88,20 @@ export function createWorkspaceSource(search: WorkspaceIndexSearch): InputTrigge
       })
     },
     lexicon(session) {
-      return fetches.get(session.sessionId)?.settled?.map(file => file.relative)
+      const settled = fetches.get(session.sessionId)?.settled
+      return settled?.map(entry => entry.relative)
     },
     subscribeLexicon(session, listener) {
-      const key = session.sessionId
-      const listeners = lexiconListeners.get(key) ?? new Set()
-      listeners.add(listener)
-      lexiconListeners.set(key, listeners)
+      const sessionId = session.sessionId
+      let bucket = lexiconListeners.get(sessionId)
+      if (bucket === undefined) {
+        bucket = new Set()
+        lexiconListeners.set(sessionId, bucket)
+      }
+      bucket.add(listener)
       return () => {
-        listeners.delete(listener)
-        if (listeners.size === 0) lexiconListeners.delete(key)
+        bucket.delete(listener)
+        if (bucket.size === 0) lexiconListeners.delete(sessionId)
       }
     },
     onPick({ candidate }) {
