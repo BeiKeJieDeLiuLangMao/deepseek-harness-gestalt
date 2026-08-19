@@ -223,13 +223,15 @@ function resolveOptions(
     },
     apiKeyEnv,
     baseURL: section.baseURL ?? fallbackBaseURL ?? '',
-    model: 'model' in section ? section.model ?? deepseek.model ?? DEEPSEEK_DEFAULT_MODEL : deepseek.model ?? DEEPSEEK_DEFAULT_MODEL,
-    apiVersion: 'apiVersion' in section
-      ? section.apiVersion ?? deepseek.apiVersion ?? DEEPSEEK_DEFAULT_API_VERSION
-      : deepseek.apiVersion ?? DEEPSEEK_DEFAULT_API_VERSION,
-    maxTokens: 'maxTokens' in section
-      ? section.maxTokens ?? deepseek.maxTokens ?? DEEPSEEK_DEFAULT_MAX_TOKENS
-      : deepseek.maxTokens ?? DEEPSEEK_DEFAULT_MAX_TOKENS,
+    model: backend === 'kimi'
+      ? (deepseek.model ?? DEEPSEEK_DEFAULT_MODEL)
+      : (section.model ?? deepseek.model ?? DEEPSEEK_DEFAULT_MODEL),
+    apiVersion: backend === 'kimi'
+      ? (deepseek.apiVersion ?? DEEPSEEK_DEFAULT_API_VERSION)
+      : (section.apiVersion ?? deepseek.apiVersion ?? DEEPSEEK_DEFAULT_API_VERSION),
+    maxTokens: backend === 'kimi'
+      ? (deepseek.maxTokens ?? DEEPSEEK_DEFAULT_MAX_TOKENS)
+      : (section.maxTokens ?? deepseek.maxTokens ?? DEEPSEEK_DEFAULT_MAX_TOKENS),
     maxUses: section.maxUses ?? deepseek.maxUses ?? DEEPSEEK_DEFAULT_MAX_USES,
     ...backend === 'kimi' ? { protocol: 'moonshot-search' as const } : {},
     recordRequest: (request) => {
