@@ -3169,8 +3169,9 @@ Requires: `web`
 /** Plugin config (all optional — `apply` fills env-var and constant defaults). */
 export interface Config {
   /**
-   * Which settings card the next search reads. `deepseek` uses this section's
-   * official DeepSeek endpoint; `anthropic-messages` uses the Anthropic card.
+   * Which provider tab the next search reads. `deepseek` uses this section's
+   * official DeepSeek endpoint; `anthropic-messages` uses the Anthropic tab;
+   * `kimi` uses Moonshot `POST /v1/search`.
    */
   backend?: WebSearchBackend
   /** Literal DeepSeek API key; prefer {@link apiKeyEnv} so no secret enters configuration files. */
@@ -3189,11 +3190,11 @@ export interface Config {
   maxUses?: number
 }
 
-/** Which settings card the next search reads. */
-export type WebSearchBackend = 'deepseek' | 'anthropic-messages'
+/** Which provider tab the next search reads. */
+export type WebSearchBackend = 'deepseek' | 'anthropic-messages' | 'kimi'
 ```
 
-Source: [`packages/web/web-search-deepseek/src/index.ts:52`](../packages/web/web-search-deepseek/src/index.ts)
+Source: [`packages/web/web-search-deepseek/src/index.ts:51`](../packages/web/web-search-deepseek/src/index.ts)
 
 <a id="deepseek-aidsh-web-search-exa"></a>
 
