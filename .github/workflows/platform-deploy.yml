@@ -69,7 +69,7 @@ jobs:
               'dnf -y install docker >/dev/null 2>&1 || yum -y install docker >/dev/null 2>&1; systemctl enable --now docker'
             gzip -dc /tmp/platform.tar.gz | ssh -i /tmp/ecs.pem -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o BatchMode=yes "root@${host}" 'docker load'
             ssh -i /tmp/ecs.pem -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o BatchMode=yes "root@${host}" \
-              "docker rm -f dsh-platform >/dev/null 2>&1 || true; docker run -d --name dsh-platform --restart unless-stopped -p 8080:8080 \
+              "docker rm -f dsh-platform >/dev/null 2>&1 || true; docker run -d --name dsh-platform --restart unless-stopped -p 80:8080 \
                 -e PLATFORM_ORIGIN=$(printf %q "$PLATFORM_ORIGIN") \
                 -e PLATFORM_GITHUB_CLIENT_ID=$(printf %q "$PLATFORM_GITHUB_CLIENT_ID") \
                 -e PLATFORM_GITHUB_CLIENT_SECRET=$(printf %q "$PLATFORM_GITHUB_CLIENT_SECRET") \
