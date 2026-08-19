@@ -8,7 +8,9 @@
 
 - `scanMentions(text)` 返回去重后的 `@path` token。`@[label](dsh-session:…)` 不是路径 token。
 - `expandMentions(messages, cwd, fileSystem, signal)` 用 `lstat` 校验 token，并返回带 source 的 `user/message` 注入。
+- `indexWorkspace(fileSystem, cwd, options, signal)` 按一层 `listDir` 遍历，跳过忽略基名和末段 symlink，并在目录 `FS_PERMISSION_DENIED` 时省略该子树。
 - `rankFiles(files, query, limit)` 为 picker 候选排序：基名查询、有序路径段查询，以及目录优先的浏览。
+- `workspaceReference.search` 是 picker Remote：返回被寻址会话的原始索引；浏览器按键排序。
 
 ## Configuration
 

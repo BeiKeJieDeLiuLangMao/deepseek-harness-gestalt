@@ -12,6 +12,10 @@
     { "path": "../../llm/llm" },
     { "path": "../../core/agent" },
     { "path": "../../fs/fs" },
+    { "path": "../../fs/fs-local" },
+    { "path": "../../core/session" },
+    { "path": "../../typert/protocol" },
+    { "path": "../../typert/registry" },
     { "path": "../../runtime-diagnostics/invariants" }
   ]
 }

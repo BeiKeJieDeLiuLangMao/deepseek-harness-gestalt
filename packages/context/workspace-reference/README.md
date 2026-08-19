@@ -8,7 +8,9 @@ Validates `@path` tokens in direct user messages and injects an existence-only W
 
 - `scanMentions(text)` returns unique `@path` tokens. `@[label](dsh-session:…)` is not a path token.
 - `expandMentions(messages, cwd, fileSystem, signal)` validates tokens with `lstat` and returns sourced `user/message` injections.
+- `indexWorkspace(fileSystem, cwd, options, signal)` walks `listDir` one level at a time, skips ignore basenames and final-component symlinks, and omits a directory on `FS_PERMISSION_DENIED`.
 - `rankFiles(files, query, limit)` ranks picker candidates: basename queries, ordered path-segment queries, and directories-first browse.
+- `workspaceReference.search` is the picker Remote: it returns the raw index for the addressed session; the browser ranks per keystroke.
 
 ## Configuration
 
