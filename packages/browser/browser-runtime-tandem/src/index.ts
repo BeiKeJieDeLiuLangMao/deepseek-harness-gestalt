@@ -682,6 +682,34 @@ export class TandemBrowserRuntime extends BrowserRuntime {
     })
   }
 
+  /**
+   * Re-read the page after a mutation response. A dead HTTP origin is not a
+   * failed mutation: keep the engine-committed fallback and let observe
+   * recover.
+   * @param state - Open page used to address the tab.
+   * @param signal - Caller abort signal forwarded to the content read.
+   * @param fallback - Engine-committed page used when the follow-up read dies.
+   * @returns the fresh page, or `fallback` when the HTTP origin is gone.
+   */
+  private async pageAfterMutation(
+    state: BrowserPageState,
+    signal: AbortSignal | undefined,
+    fallback: BrowserPageState,
+  ): Promise<BrowserPageState> {
+    try {
+      return await this.page(state, signal)
+    } catch (error) {
+      if (
+        error instanceof BrowserRuntimeError
+        && error.code === 'BROWSER_RUNTIME_UNAVAILABLE'
+        && /HTTP request failed/.test(error.message)
+      ) {
+        return fallback
+      }
+      throw error
+    }
+  }
+
   /** Re-read one open page without advancing its DSH revision. */
   private async page(state: BrowserPageState, signal: AbortSignal | undefined): Promise<BrowserPageState> {
     const tab = await this.readTab(this.upstreamTabId(state.target), signal)
@@ -771,10 +799,17 @@ export class TandemBrowserRuntime extends BrowserRuntime {
           expectedRevision: state.revision,
         }),
       }, request.signal), 'navigate')
-      const page = await this.page(state, request.signal)
+      const revision = numberField(response, 'revision', 'navigate')
+      const fallback = Object.freeze({
+        ...state,
+        revision,
+        url: stringField(response, 'url', 'navigate'),
+        controlOwner: 'agent' as const,
+      })
+      const page = await this.pageAfterMutation(state, request.signal, fallback)
       return this.commit({
         ...page,
-        revision: numberField(response, 'revision', 'navigate'),
+        revision,
         controlOwner: 'agent',
       })
     })
@@ -792,7 +827,8 @@ export class TandemBrowserRuntime extends BrowserRuntime {
         return page
       } catch (error) {
         if (error instanceof BrowserRuntimeError && error.code === 'BROWSER_RUNTIME_UNAVAILABLE') {
-          return this.scheduleRecovery('unhealthy', true) ?? this.states.get(browserTargetKey(request.target)) ?? state
+          const reason = /HTTP request failed/.test(error.message) ? 'crashed' : 'unhealthy'
+          return this.scheduleRecovery(reason, true) ?? this.states.get(browserTargetKey(request.target)) ?? state
         }
         throw error
       }

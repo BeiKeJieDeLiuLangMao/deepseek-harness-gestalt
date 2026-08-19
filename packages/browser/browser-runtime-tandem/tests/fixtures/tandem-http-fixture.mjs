@@ -29,6 +29,7 @@ if (pidFile !== undefined) writeFileSync(pidFile, `${process.pid}\n`, { mode: 0o
 const sessions = new Map()
 const persisted = new Map()
 let tabSeq = 0
+let pageContentReads = 0
 
 function inventoryTab(id, url, title, active, partition) {
   return {
@@ -234,6 +235,13 @@ const server = createServer(async (request, response) => {
     return
   }
   if (request.method === 'GET' && url.pathname === '/page-content') {
+    if (faults.pageContent === 'fail-after-first') {
+      pageContentReads += 1
+      if (pageContentReads > 1) {
+        response.destroy()
+        return
+      }
+    }
     if (faults.pageContent === 'non-object') {
       response.writeHead(200, { 'content-type': 'application/json' })
       response.end('"just a string"')

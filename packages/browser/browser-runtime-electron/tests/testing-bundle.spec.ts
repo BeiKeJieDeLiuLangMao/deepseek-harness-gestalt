@@ -7,14 +7,16 @@ import { describe, expect, it } from 'vitest'
 const here = dirname(fileURLToPath(import.meta.url))
 const pkg = join(here, '..')
 const repo = join(pkg, '..', '..', '..')
+const tsc = join(repo, 'node_modules/typescript/lib/tsc.js')
+const tsdown = join(repo, 'node_modules/tsdown/dist/run.mjs')
 
 describe('Electron test-host artifact seam', () => {
   it('shares one host-seam chunk between the index and testing bundles', () => {
-    execFileSync('pnpm', ['exec', 'tsc', '-b', join(pkg, 'tsconfig.json')], {
+    execFileSync(process.execPath, [tsc, '-b', join(pkg, 'tsconfig.json')], {
       cwd: repo,
       stdio: 'pipe',
     })
-    execFileSync('pnpm', ['exec', 'tsdown', '--config', join(pkg, 'tsdown.config.ts')], {
+    execFileSync(process.execPath, [tsdown, '--config', join(pkg, 'tsdown.config.ts')], {
       cwd: pkg,
       stdio: 'pipe',
     })

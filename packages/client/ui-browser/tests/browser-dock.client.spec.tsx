@@ -168,6 +168,14 @@ describe('BrowserDock occupancy', () => {
     vi.useRealTimers()
   })
 
+  it('keeps occupancy when observe rejects', async () => {
+    const input = props({ page: undefined })
+    input.observe = vi.fn().mockRejectedValue(new Error('no session undefined'))
+    render(<BrowserDock {...input} />)
+    await act(async () => { await Promise.resolve() })
+    expect(screen.getByText('没有打开的页面')).toBeTruthy()
+  })
+
   it('shows the empty viewport and ignores gestures before observe settles', () => {
     const input = props({ page: undefined, screenshot: undefined })
     input.observe = vi.fn().mockReturnValue(new Promise(() => {}))

@@ -3203,7 +3203,8 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       }
       const args = (payload as {
         args: {
-          agentId: SessionId
+          agentId?: SessionId
+          sessionId?: SessionId
           line?: string
           ref?: { id: string; revision: number }
           request?: { objective?: string; maxGoalRounds?: number; open?: boolean; width?: number }
@@ -3212,7 +3213,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
           url?: string
         }
       }).args
-      const sessionId = args.agentId
+      const sessionId = (args.agentId ?? args.sessionId ?? '') as SessionId
       switch (endpoint) {
         case 'commands/list': return Promise.resolve(commandRemotes.list(sessionId))
         case 'commands/execute': return Promise.resolve(commandRemotes.execute(sessionId, args.line as string))

@@ -13,7 +13,7 @@ const EXPECTED = join(process.cwd(), 'apps/web/tests/snapshots/browser-dock/fixt
 installAssembledBootEnv()
 
 function previewShape(root: Element): string {
-  const preview = root.querySelector('[data-browser-preview]')
+  const preview = root.matches('[data-browser-preview]') ? root : root.querySelector('[data-browser-preview]')
   if (preview === null) return 'preview=hidden'
   const layers = [...preview.querySelectorAll('button')].map(layer => ({
     label: layer.getAttribute('aria-label') ?? '',

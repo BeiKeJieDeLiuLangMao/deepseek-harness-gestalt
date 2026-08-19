@@ -815,6 +815,19 @@ describe('Tandem Browser Runtime protocol fidelity', () => {
     }
   })
 
+  it('keeps a mutation when the follow-up page read dies and projects a crashed observe', async () => {
+    const { ctx } = await setup({ pageContent: 'fail-after-first' })
+    const created = await ctx.browserRuntime.create({ profile: 'temporary' })
+    const navigated = await ctx.browserRuntime.navigate({
+      target: created.target,
+      expectedRevision: 0,
+      url: 'https://example.test/',
+    })
+    expect(navigated).toMatchObject({ status: 'open', revision: 1, url: 'https://example.test/' })
+    await expect(ctx.browserRuntime.observe({ target: created.target }))
+      .resolves.toMatchObject({ status: 'unavailable', reason: 'crashed' })
+  })
+
   it('surfaces an HTTP revision conflict and adopts the server revision on observe', async () => {
     const conflict = await setup({ input: 'revision-conflict' })
     const conflictCreated = await conflict.ctx.browserRuntime.create({ profile: 'temporary' })
