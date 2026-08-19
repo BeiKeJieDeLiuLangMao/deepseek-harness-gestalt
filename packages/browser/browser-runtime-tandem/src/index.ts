@@ -9,7 +9,6 @@ import {
   assertBrowserCreateAttach,
   assertBrowserNotAborted,
   assertBrowserProfileWriterAvailable,
-  browserProfileStorage,
   BrowserRuntime,
   BrowserRuntimeError,
   browserTargetFor,
@@ -82,6 +81,11 @@ export interface Config {
   processGraceMs?: number
   /** Maximum bytes accepted from one Tandem-shaped HTTP response. */
   maxResponseBytes?: number
+  /**
+   * When `false`, this client never spawns a fixture child and rejects
+   * `command`/`cwd` at plugin load. Production Desktop sets `false`.
+   */
+  sidecar?: boolean
 }
 
 /** Runtime configuration schema for the Tandem-shaped HTTP Browser Provider. */
@@ -101,6 +105,7 @@ export const Config: z<Config> = z.object({
   reconnectDelayMs: z.number().default(500),
   processGraceMs: z.number().default(5_000),
   maxResponseBytes: z.number().default(10_000_000),
+  sidecar: z.boolean().default(true),
 })
 
 type ResolvedConfig = Config & Required<Omit<Config, 'command' | 'cwd'>>
@@ -193,13 +198,18 @@ function textField(value: Record<string, unknown>, key: string, subject: string)
   return field
 }
 
-/** Choose restored or empty identity facts for one newly opened Profile. */
-function resolveCreateStorage(
-  content: TandemPageContent | undefined,
-  name: string | undefined,
-): BrowserProfileStorage {
-  if (content !== undefined && content.storage.localStorage.length > 0) return content.storage
-  return name === undefined ? EMPTY_BROWSER_PROFILE_STORAGE : browserProfileStorage(name)
+/** Read one required safe-integer field from an untrusted Tandem response. */
+function numberField(value: Record<string, unknown>, key: string, subject: string): number {
+  const field = value[key]
+  if (typeof field !== 'number' || !Number.isSafeInteger(field)) {
+    throw new BrowserRuntimeError(`Tandem ${subject} response field ${key} must be a safe integer`, 'BROWSER_PROTOCOL')
+  }
+  return field
+}
+
+/** Use observed page-content storage, or empty facts when the route omitted them. */
+function resolveCreateStorage(content: TandemPageContent | undefined): BrowserProfileStorage {
+  return content?.storage ?? EMPTY_BROWSER_PROFILE_STORAGE
 }
 
 /** Read optional partition-backed identity facts from a page-content response. */
@@ -248,6 +258,9 @@ export class TandemBrowserRuntime extends BrowserRuntime {
     if (resolved.cwd !== undefined) assertNonEmpty('cwd', resolved.cwd)
     if ((resolved.command === undefined) !== (resolved.cwd === undefined)) {
       throw new Error('browser-runtime-tandem: command and cwd must both be set for a fixture child, or both omitted')
+    }
+    if (!resolved.sidecar && (resolved.command !== undefined || resolved.cwd !== undefined)) {
+      throw new Error('browser-runtime-tandem: command and cwd must be omitted when sidecar is disabled')
     }
     assertNonEmpty('tokenFile', resolved.tokenFile)
     assertNonEmpty('idPrefix', resolved.idPrefix)
@@ -450,14 +463,6 @@ export class TandemBrowserRuntime extends BrowserRuntime {
 
   /** Spawn one optional fixture child and wait for the pinned Tandem-shaped API. */
   private async startProcess(signal: AbortSignal | undefined): Promise<void> {
-    const desktopOwnsElectron = process.env.DSH_TANDEM_BIN !== undefined
-      || process.env.DSH_ELECTRON_BROWSER_ORIGIN !== undefined
-    if (desktopOwnsElectron && this.config.command !== undefined) {
-      throw new BrowserRuntimeError(
-        'Tandem sidecar spawn is disabled when Desktop owns in-process Electron',
-        'BROWSER_RUNTIME_UNAVAILABLE',
-      )
-    }
     if (this.config.command === undefined || this.config.cwd === undefined) {
       await this.waitForHealth(signal)
       return
@@ -661,10 +666,13 @@ export class TandemBrowserRuntime extends BrowserRuntime {
   private async page(state: BrowserPageState, signal: AbortSignal | undefined): Promise<BrowserPageState> {
     const tab = await this.readTab(this.upstreamTabId(state.target), signal)
     const content = await this.readContent(tab.id, signal)
-    const storage = content.storage.localStorage.length === 0 && state.chrome.kind === 'persistent'
-      ? state.storage
-      : content.storage
-    return Object.freeze({ ...state, url: content.url, title: content.title, text: content.text, storage })
+    return Object.freeze({
+      ...state,
+      url: content.url,
+      title: content.title,
+      text: content.text,
+      storage: content.storage,
+    })
   }
 
   async create(request: BrowserCreateRequest): Promise<BrowserPageState> {
@@ -717,7 +725,7 @@ export class TandemBrowserRuntime extends BrowserRuntime {
           focused: false,
           controlOwner: 'agent',
           chrome: created.chrome,
-          storage: resolveCreateStorage(content, name),
+          storage: resolveCreateStorage(content),
         })
       } catch (error) {
         if (existing.length === 0) this.profiles.delete(created.profileId)
@@ -733,13 +741,21 @@ export class TandemBrowserRuntime extends BrowserRuntime {
       assertBrowserNotAborted(request.signal)
       const state = this.openPage(request.target)
       this.expectRevision(state, request.expectedRevision)
-      await this.json('/navigate', {
+      const response = objectValue(await this.json('/navigate', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-session': this.sessionNameFor(request.target) },
-        body: JSON.stringify({ url: request.url, tabId: this.upstreamTabId(request.target) }),
-      }, request.signal)
+        body: JSON.stringify({
+          url: request.url,
+          tabId: this.upstreamTabId(request.target),
+          expectedRevision: state.revision,
+        }),
+      }, request.signal), 'navigate')
       const page = await this.page(state, request.signal)
-      return this.commit({ ...page, revision: state.revision + 1, controlOwner: 'agent' })
+      return this.commit({
+        ...page,
+        revision: numberField(response, 'revision', 'navigate'),
+        controlOwner: 'agent',
+      })
     })
   }
 
@@ -793,10 +809,18 @@ export class TandemBrowserRuntime extends BrowserRuntime {
       const response = objectValue(await this.json('/tabs/focus', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ tabId: this.upstreamTabId(request.target) }),
+        body: JSON.stringify({
+          tabId: this.upstreamTabId(request.target),
+          expectedRevision: state.revision,
+        }),
       }, request.signal), 'tab focus')
       if (response.ok !== true) throw new BrowserRuntimeError('Tandem did not focus the addressed tab', 'BROWSER_PROTOCOL')
-      return this.commit({ ...state, revision: state.revision + 1, focused: true, controlOwner: 'agent' })
+      return this.commit({
+        ...state,
+        revision: numberField(response, 'revision', 'tab focus'),
+        focused: true,
+        controlOwner: 'agent',
+      })
     })
   }
 
@@ -806,18 +830,23 @@ export class TandemBrowserRuntime extends BrowserRuntime {
       assertBrowserNotAborted(request.signal)
       const state = this.openPage(request.target)
       this.expectRevision(state, request.expectedRevision)
-      if (request.url !== undefined) {
-        await this.json('/navigate', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json', 'x-session': this.sessionNameFor(request.target) },
-          body: JSON.stringify({ url: request.url, tabId: this.upstreamTabId(request.target) }),
-        }, request.signal)
-      }
-      const page = await this.page(state, request.signal)
+      const response = objectValue(await this.json('/input', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-session': this.sessionNameFor(request.target) },
+        body: JSON.stringify({
+          tabId: this.upstreamTabId(request.target),
+          expectedRevision: state.revision,
+          url: request.url,
+          text: request.text,
+        }),
+      }, request.signal), 'input')
+      if (response.ok !== true) throw new BrowserRuntimeError('Tandem did not apply input', 'BROWSER_PROTOCOL')
       return this.commit({
-        ...page,
-        revision: state.revision + 1,
-        text: request.text ?? page.text,
+        ...state,
+        revision: numberField(response, 'revision', 'input'),
+        url: stringField(response, 'url', 'input'),
+        title: textField(response, 'title', 'input'),
+        text: textField(response, 'text', 'input'),
         controlOwner: 'human',
       })
     })

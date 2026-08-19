@@ -8,7 +8,8 @@ import {
   browserTargetKey,
   BrowserWorkspaceId,
 } from '@deepseek-ai/dsh-browser-runtime'
-import ElectronBrowserRuntime, { installElectronTestHost } from '@deepseek-ai/dsh-browser-runtime-electron'
+import ElectronBrowserRuntime from '@deepseek-ai/dsh-browser-runtime-electron'
+import { installElectronTestHost } from '@deepseek-ai/dsh-browser-runtime-electron/testing'
 import InvariantRegistry, { InvariantError } from '@deepseek-ai/dsh-invariants'
 import * as ElectronBrowserRuntimeInvariant from '../src/invariant.ts'
 import {

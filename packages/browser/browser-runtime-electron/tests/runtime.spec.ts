@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import ElectronBrowserRuntime, { installElectronTestHost, isElectronProcess, requireElectronProcess } from '@deepseek-ai/dsh-browser-runtime-electron'
-import { BrowserProfileName, BrowserWorkspaceId } from '@deepseek-ai/dsh-browser-runtime'
+import ElectronBrowserRuntime, { isElectronProcess, requireElectronProcess } from '@deepseek-ai/dsh-browser-runtime-electron'
+import { installElectronTestHost } from '@deepseek-ai/dsh-browser-runtime-electron/testing'
+import { BrowserProfileName, BrowserWorkspaceId, browserTargetKey } from '@deepseek-ai/dsh-browser-runtime'
 import { FakeElectronHost, PNG_1X1_BASE64 } from './fake-electron.ts'
 
 const contexts: Context[] = []
@@ -9,7 +10,7 @@ const contexts: Context[] = []
 interface RuntimeInternals {
   profiles: Map<string, { tabs: Map<string, { window: { destroy(): void } }> }>
   closing: boolean
-  recoveryScheduled: boolean
+  recovering: Set<string>
   disposed: boolean
   states: Map<string, unknown>
   page(state: never, signal: AbortSignal | undefined): Promise<unknown>
@@ -60,6 +61,21 @@ describe('Electron Browser Runtime configuration', () => {
       installElectronTestHost(new FakeElectronHost())
       await expect(ctx.plugin(ElectronBrowserRuntime, overrides), label).rejects.toThrow(failure)
     }
+  })
+
+  it('clears the test host only when this installation is still current', async () => {
+    const first = new FakeElectronHost()
+    const second = new FakeElectronHost()
+    const disposeFirst = installElectronTestHost(first)
+    const disposeSecond = installElectronTestHost(second)
+    disposeFirst()
+    const ctx = new Context()
+    contexts.push(ctx)
+    await ctx.plugin(ElectronBrowserRuntime, { idPrefix: 'electron-test' })
+    await ctx.browserRuntime.create({ profile: 'temporary' })
+    expect(first.windows).toHaveLength(0)
+    expect(second.windows).toHaveLength(1)
+    disposeSecond()
   })
 
   it('fails loud when composed on Node without injected Electron APIs', async () => {
@@ -179,6 +195,29 @@ describe('Electron Browser Runtime public lifecycle', () => {
     expect(clickOnly).toMatchObject({ revision: 5, controlOwner: 'human', target: identities })
   })
 
+  it('types through one path and treats newline as U+000A', async () => {
+    const keys = await setup()
+    const created = await keys.ctx.browserRuntime.create({ profile: 'temporary' })
+    const typed = await keys.ctx.browserRuntime.input({
+      target: created.target,
+      expectedRevision: 0,
+      text: 'ab\n👍',
+    })
+    const keyContents = keys.host.windows[0]?.webContents
+    expect(keyContents?.inputEvents).toEqual(['a', 'b', '\n', '👍'])
+    expect(typed.text).toBe('ab\n👍')
+
+    const focused = await setup({ focusedEditable: true })
+    const page = await focused.ctx.browserRuntime.create({ profile: 'temporary' })
+    const inserted = await focused.ctx.browserRuntime.input({
+      target: page.target,
+      expectedRevision: 0,
+      text: 'line\n👍',
+    })
+    expect(focused.host.windows[0]?.webContents.inputEvents).toEqual([])
+    expect(inserted.text).toBe('line\n👍')
+  })
+
   it('restores a named Electron Profile through a stable persist partition and isolates two identities', async () => {
     const { ctx, host } = await setup()
     const work = await ctx.browserRuntime.create({ profile: 'persistent', name: BrowserProfileName('work') })
@@ -193,11 +232,11 @@ describe('Electron Browser Runtime public lifecycle', () => {
       url: 'https://login.test/',
     })
     expect(signedIn.storage).toEqual({
-      cookies: 'profile=work',
-      localStorage: 'work',
-      indexedDb: 'work',
-      cache: 'work',
-      serviceWorker: 'work',
+      cookies: '',
+      localStorage: '',
+      indexedDb: '',
+      cache: '',
+      serviceWorker: '',
     })
     expect(signedIn.text).toContain('identity=work')
     await ctx.browserRuntime.close({ target: work.target, expectedRevision: signedIn.revision })
@@ -211,20 +250,20 @@ describe('Electron Browser Runtime public lifecycle', () => {
       expectedRevision: 0,
       url: 'https://login.test/',
     })
-    expect(personalPage.storage.localStorage).toBe('personal')
+    expect(personalPage.storage).toEqual(signedIn.storage)
     expect(personalPage.text).toContain('identity=personal')
-    expect(personalPage.storage).not.toEqual(signedIn.storage)
+    expect(personalPage.chrome.partition).not.toBe(signedIn.chrome.partition)
     await ctx.browserRuntime.close({ target: personal.target, expectedRevision: personalPage.revision })
 
     const restored = await ctx.browserRuntime.create({ profile: 'persistent', name: BrowserProfileName('work') })
     expect(restored.chrome.partition).toBe(work.chrome.partition)
     expect(restored.target.profileId).toBe(work.target.profileId)
     expect(restored.storage).toEqual({
-      cookies: 'profile=work',
-      localStorage: 'work',
-      indexedDb: 'work',
-      cache: 'work',
-      serviceWorker: 'work',
+      cookies: '',
+      localStorage: '',
+      indexedDb: '',
+      cache: '',
+      serviceWorker: '',
     })
   })
 
@@ -398,6 +437,9 @@ describe('Electron Browser Runtime protocol and recovery', () => {
       url: 'https://example.test/',
       signal: controller.signal,
     })).rejects.toMatchObject({ code: 'BROWSER_ABORTED' })
+    const window = runtimeOf(ctx).profiles.get(created.target.profileId)?.tabs.get(created.target.tabId)?.window as
+      { webContents: { stopped: boolean } } | undefined
+    expect(window?.webContents.stopped).toBe(true)
   })
 
   it('bounds a hung Chromium operation', async () => {
@@ -418,6 +460,51 @@ describe('Electron Browser Runtime protocol and recovery', () => {
     const typed = await setup({ executeNonString: true })
     await expect(typed.ctx.browserRuntime.create({ profile: 'temporary' }))
       .rejects.toMatchObject({ code: 'BROWSER_PROTOCOL', message: /page text must be a string/ })
+  })
+
+  it('stops a raced load only while the hidden window still exists', async () => {
+    const { ctx, host } = await setup({ loadDelayMs: 400 }, { requestTimeoutMs: 5_000 })
+    const created = await ctx.browserRuntime.create({ profile: 'temporary' })
+    const controller = new AbortController()
+    setTimeout(() => {
+      host.windows[0]?.destroy()
+      controller.abort(new Error('cancelled after destroy'))
+    }, 20)
+    await expect(ctx.browserRuntime.navigate({
+      target: created.target,
+      expectedRevision: 0,
+      url: 'https://example.test/',
+      signal: controller.signal,
+    })).rejects.toMatchObject({ code: 'BROWSER_ABORTED' })
+  })
+
+  it('recovers one crashed tab without moving a sibling', async () => {
+    const { ctx } = await setup()
+    const first = await ctx.browserRuntime.create({ profile: 'temporary' })
+    const second = await ctx.browserRuntime.create({
+      profile: 'temporary',
+      attach: { kind: 'workspace', workspaceId: first.target.workspaceId },
+    })
+    await ctx.browserRuntime.navigate({
+      target: first.target,
+      expectedRevision: 0,
+      url: 'https://example.test/',
+    })
+    const firstWindow = runtimeOf(ctx).profiles.get(first.target.profileId)?.tabs.get(first.target.tabId)?.window as
+      { webContents: { emitCrash(): void } } | undefined
+    firstWindow?.webContents.emitCrash()
+    const deadline = Date.now() + 2_000
+    let crashed = await ctx.browserRuntime.observe({ target: first.target })
+    while (!(crashed.status === 'open' && crashed.revision >= 3) && Date.now() < deadline) {
+      await new Promise(resolve => setTimeout(resolve, 20))
+      crashed = await ctx.browserRuntime.observe({ target: first.target })
+    }
+    expect(crashed).toMatchObject({ status: 'open', target: first.target, url: 'https://example.test/' })
+    await expect(ctx.browserRuntime.observe({ target: second.target })).resolves.toMatchObject({
+      status: 'open',
+      revision: 0,
+      target: second.target,
+    })
   })
 
   it('projects a renderer crash as unavailable and recovers the same target', async () => {
@@ -461,6 +548,38 @@ describe('Electron Browser Runtime protocol and recovery', () => {
       state = await recovered.ctx.browserRuntime.observe({ target: open.target })
     }
     expect(state).toMatchObject({ status: 'unavailable', reason: 'reconnect-failed', reconnecting: false })
+    expect(runtime.profiles.get(open.target.profileId)?.tabs.has(open.target.tabId)).toBeFalsy()
+    const missing = await setup()
+    const missingOpen = await missing.ctx.browserRuntime.create({ profile: 'temporary' })
+    const missingRuntime = runtimeOf(missing.ctx)
+    missingRuntime.hostApis = async () => {
+      missingRuntime.profiles.clear()
+      throw new Error('no profile left')
+    }
+    missingRuntime.scheduleRecovery(missingOpen.target, 'crashed', true)
+    const missingDeadline = Date.now() + 2_000
+    let missingState = await missing.ctx.browserRuntime.observe({ target: missingOpen.target })
+    while (!(missingState.status === 'unavailable' && missingState.reason === 'reconnect-failed') && Date.now() < missingDeadline) {
+      await new Promise(resolve => setTimeout(resolve, 20))
+      missingState = await missing.ctx.browserRuntime.observe({ target: missingOpen.target })
+    }
+    expect(missingState).toMatchObject({ status: 'unavailable', reason: 'reconnect-failed' })
+    const kept = await setup()
+    const keptFirst = await kept.ctx.browserRuntime.create({ profile: 'temporary' })
+    const keptSecond = await kept.ctx.browserRuntime.create({
+      profile: 'temporary',
+      attach: { kind: 'workspace', workspaceId: keptFirst.target.workspaceId },
+    })
+    const keptRuntime = runtimeOf(kept.ctx)
+    keptRuntime.hostApis = async () => { throw new Error('sibling reconnect failed') }
+    keptRuntime.scheduleRecovery(keptFirst.target, 'crashed', true)
+    const keptDeadline = Date.now() + 2_000
+    let keptState = await kept.ctx.browserRuntime.observe({ target: keptFirst.target })
+    while (!(keptState.status === 'unavailable' && keptState.reason === 'reconnect-failed') && Date.now() < keptDeadline) {
+      await new Promise(resolve => setTimeout(resolve, 20))
+      keptState = await kept.ctx.browserRuntime.observe({ target: keptFirst.target })
+    }
+    expect(keptRuntime.profiles.get(keptSecond.target.profileId)?.tabs.has(keptSecond.target.tabId)).toBe(true)
   })
 
   it('reports an unhealthy observe as unavailable and recovers', async () => {
@@ -521,11 +640,11 @@ describe('Electron Browser Runtime protocol and recovery', () => {
     await expect(runtime.reconnect(created as never, undefined as never)).resolves.toBeUndefined()
     runtime.scheduleRecovery(created.target, 'crashed', true)
     await new Promise(resolve => setTimeout(resolve, 20))
-    runtime.recoveryScheduled = true
+    runtime.recovering.add(browserTargetKey(created.target))
     expect(runtime.scheduleRecovery(created.target, 'crashed', false)).toMatchObject({
       target: created.target,
     })
-    runtime.recoveryScheduled = false
+    runtime.recovering.clear()
     runtime.closing = false
     const current = await ctx.browserRuntime.observe({ target: created.target })
     if (current.status !== 'closed') {
@@ -536,6 +655,19 @@ describe('Electron Browser Runtime protocol and recovery', () => {
     expect(runtime.scheduleRecovery(created.target, 'crashed', false)).toBeUndefined()
     runtime.states.set('gone', { status: 'unavailable', target: created.target, revision: 1, reason: 'crashed', reconnecting: false, controlOwner: 'agent' })
     expect(runtime.scheduleRecovery(created.target, 'crashed', false)).toMatchObject({ status: 'unavailable' })
+    const sibling = await setup()
+    const first = await sibling.ctx.browserRuntime.create({ profile: 'temporary' })
+    const second = await sibling.ctx.browserRuntime.create({
+      profile: 'temporary',
+      attach: { kind: 'workspace', workspaceId: first.target.workspaceId },
+    })
+    const siblingRuntime = runtimeOf(sibling.ctx)
+    siblingRuntime.recovering.add(browserTargetKey(first.target))
+    siblingRuntime.states.delete(browserTargetKey(first.target))
+    expect(siblingRuntime.scheduleRecovery(first.target, 'crashed', false)).toMatchObject({
+      status: 'open',
+      target: second.target,
+    })
   })
 
   it('destroys leftover windows on teardown even when already closed', async () => {
@@ -634,11 +766,12 @@ describe('Electron Browser Runtime protocol and recovery', () => {
     expect(projected).toBeUndefined()
     const deadline = Date.now() + 2_000
     let state = await ctx.browserRuntime.observe({ target: created.target })
-    while (state.status === 'open' && Date.now() < deadline) {
+    while (!(state.status === 'open' && state.revision > created.revision) && Date.now() < deadline) {
       await new Promise(resolve => setTimeout(resolve, 20))
       state = await ctx.browserRuntime.observe({ target: created.target })
     }
-    expect(state.status === 'unavailable' || state.status === 'open').toBe(true)
+    expect(state).toMatchObject({ status: 'open', target: created.target })
+    expect(state.revision).toBeGreaterThan(created.revision)
   })
 
   it('covers missing-tab destroy and reconnect-failed skip helpers', async () => {

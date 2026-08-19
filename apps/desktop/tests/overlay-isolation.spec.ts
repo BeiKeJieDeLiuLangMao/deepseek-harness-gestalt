@@ -23,6 +23,7 @@ describe('Desktop overlay isolation', () => {
     expect(desktop).toMatch(/id: browser-runtime-electron-http/)
     expect(desktop).toMatch(/@deepseek-ai\/dsh-browser-runtime-tandem/)
     expect(desktop).toMatch(/DSH_ELECTRON_BROWSER_ORIGIN/)
+    expect(desktop).toMatch(/sidecar: false/)
     expect(desktop).toMatch(/id: browser-runtime-deterministic[\s\S]*disabled: true/)
     expect(desktop).not.toMatch(/directory-picker/)
     expect(desktop).not.toMatch(/Tandem\.app/)
@@ -63,6 +64,7 @@ describe('Desktop overlay isolation', () => {
       expect(schedule).toBeGreaterThan(persistence)
       expect(desktop).toMatch(/@deepseek-ai\/dsh-client-ui-desktop/)
       expect(desktop).toMatch(/@deepseek-ai\/dsh-browser-runtime-tandem/)
+      expect(desktop).toMatch(/sidecar: false/)
       expect(desktop).toMatch(/disabled: true/)
     } finally {
       rmSync(home, { recursive: true, force: true })

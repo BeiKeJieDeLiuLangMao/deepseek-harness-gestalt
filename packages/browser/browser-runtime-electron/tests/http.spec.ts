@@ -3,7 +3,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import ElectronBrowserRuntime, { installElectronTestHost, listenElectronBrowserHttp } from '@deepseek-ai/dsh-browser-runtime-electron'
+import ElectronBrowserRuntime, { listenElectronBrowserHttp } from '@deepseek-ai/dsh-browser-runtime-electron'
+import { installElectronTestHost } from '@deepseek-ai/dsh-browser-runtime-electron/testing'
+import { BrowserProfileName, type BrowserTarget } from '@deepseek-ai/dsh-browser-runtime'
 import { FakeElectronHost, PNG_1X1_BASE64 } from './fake-electron.ts'
 
 const contexts: Context[] = []
@@ -37,7 +39,11 @@ describe('Electron Browser HTTP protocol', () => {
     await ctx.plugin(ElectronBrowserRuntime, {
       idPrefix: 'electron-http',
     })
-    const server = await listenElectronBrowserHttp({ runtime: ctx.browserRuntime, tokenFile })
+    const server = await listenElectronBrowserHttp({
+      runtime: ctx.browserRuntime,
+      tokenFile,
+      idPrefix: 'electron-http',
+    })
     servers.push(server)
     const token = (await readFile(tokenFile, 'utf8')).trim()
     expect(token.length).toBeGreaterThanOrEqual(32)
@@ -106,7 +112,7 @@ describe('Electron Browser HTTP protocol', () => {
       headers,
       body: JSON.stringify({ tabId }),
     })
-    expect(focused).toEqual({ status: 200, body: { ok: true } })
+    expect(focused).toEqual({ status: 200, body: { ok: true, revision: 2 } })
 
     const missingName = await json(server.origin, '/sessions/create', {
       method: 'POST',
@@ -127,7 +133,7 @@ describe('Electron Browser HTTP protocol', () => {
       headers,
       body: '[]',
     })
-    expect(badJson.status).toBe(500)
+    expect(badJson.status).toBe(400)
 
     const tracked = await ctx.browserRuntime.observe({
       target: {
@@ -221,5 +227,224 @@ describe('Electron Browser HTTP protocol', () => {
     expect(closedThenDestroy.status).toBe(200)
     const statusEmpty = await json(server.origin, '/status')
     expect(statusEmpty).toMatchObject({ status: 200, body: { ready: true, url: 'about:blank', title: 'New Tab' } })
+  })
+
+  it('attaches a second tab by full session name and honors create url plus input revision', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-electron-http-attach-'))
+    temps.push(root)
+    const tokenFile = join(root, 'api-token')
+    const ctx = new Context()
+    contexts.push(ctx)
+    installElectronTestHost(new FakeElectronHost())
+    await ctx.plugin(ElectronBrowserRuntime, { idPrefix: 'electron-http' })
+    const server = await listenElectronBrowserHttp({
+      runtime: ctx.browserRuntime,
+      tokenFile,
+      idPrefix: 'electron-http',
+    })
+    servers.push(server)
+    const token = (await readFile(tokenFile, 'utf8')).trim()
+    const headers = { authorization: `Bearer ${token}`, 'content-type': 'application/json' }
+    const first = await json(server.origin, '/sessions/create', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ name: 'electron-http-gestalt-work-email', url: 'https://example.test/' }),
+    })
+    expect(first.status).toBe(200)
+    const firstBody = first.body as { tab: { id: string; url: string; partition: string }; revision: number }
+    expect(firstBody.tab).toMatchObject({
+      url: 'https://example.test/',
+      partition: 'persist:session-electron-http-gestalt-work-email',
+    })
+    const second = await json(server.origin, '/sessions/create', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ name: 'electron-http-gestalt-work-email' }),
+    })
+    expect(second.status).toBe(200)
+    const secondBody = second.body as { tab: { id: string } }
+    expect(secondBody.tab.id).not.toBe(firstBody.tab.id)
+    const listed = await json(server.origin, '/tabs/list', { headers: { authorization: `Bearer ${token}` } })
+    expect(listed).toMatchObject({ status: 200, body: { tabs: [{ id: firstBody.tab.id }, { id: secondBody.tab.id }] } })
+    const typed = await json(server.origin, '/input', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        tabId: firstBody.tab.id,
+        expectedRevision: firstBody.revision,
+        text: 'typed-over-http',
+      }),
+    })
+    expect(typed).toMatchObject({
+      status: 200,
+      body: { ok: true, text: 'An Electron protocol page.\nidentity=emailtyped-over-http', revision: firstBody.revision + 1 },
+    })
+    const typedBody = typed.body as { revision: number }
+    const again = await json(server.origin, '/input', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        tabId: firstBody.tab.id,
+        expectedRevision: typedBody.revision,
+        text: 'again',
+      }),
+    })
+    expect(again).toMatchObject({
+      status: 200,
+      body: { ok: true, revision: typedBody.revision + 1 },
+    })
+    const missingRevision = await json(server.origin, '/input', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ tabId: firstBody.tab.id, text: 'x' }),
+    })
+    expect(missingRevision.status).toBe(400)
+    const missingInputTab = await json(server.origin, '/input', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ tabId: 'missing', expectedRevision: 0, text: 'x' }),
+    })
+    expect(missingInputTab.status).toBe(404)
+    const invalidName = await json(server.origin, '/sessions/create', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ name: 'electron-http-tmp' }),
+    })
+    expect(invalidName.status).toBe(400)
+  })
+
+  it('covers default prefix, temporary attach, revision protocol, and mapped failures', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-electron-http-cover-'))
+    temps.push(root)
+    const tokenFile = join(root, 'api-token')
+    const ctx = new Context()
+    contexts.push(ctx)
+    installElectronTestHost(new FakeElectronHost())
+    await ctx.plugin(ElectronBrowserRuntime, { idPrefix: 'electron' })
+    const server = await listenElectronBrowserHttp({
+      runtime: ctx.browserRuntime,
+      tokenFile,
+    })
+    servers.push(server)
+    const token = (await readFile(tokenFile, 'utf8')).trim()
+    const headers = { authorization: `Bearer ${token}`, 'content-type': 'application/json' }
+    const opened = new Map<string, BrowserTarget>()
+    ctx.on('browser/runtime-state', (state) => {
+      if (state.status === 'open' && state.chrome.name !== undefined) opened.set(state.chrome.name, state.target)
+    })
+    const named = await json(server.origin, '/sessions/create', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ name: 'solo' }),
+    })
+    expect(named.status).toBe(200)
+    expect((named.body as { tab: { partition: string } }).tab.partition).toBe('persist:session-electron-solo')
+    const temp = await json(server.origin, '/sessions/create', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ name: 'electron-tmp-1' }),
+    })
+    expect(temp.status).toBe(200)
+    const tempAgain = await json(server.origin, '/sessions/create', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ name: 'electron-tmp-1' }),
+    })
+    expect(tempAgain.status).toBe(200)
+    expect((tempAgain.body as { tab: { id: string } }).tab.id)
+      .not.toBe((temp.body as { tab: { id: string } }).tab.id)
+    const tabId = (named.body as { tab: { id: string } }).tab.id
+    const badRevision = await json(server.origin, '/navigate', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ tabId, url: 'https://example.test/', expectedRevision: 1.5 }),
+    })
+    expect(badRevision.status).toBe(400)
+    const goodRevision = await json(server.origin, '/navigate', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ tabId, url: 'https://example.test/', expectedRevision: 0 }),
+    })
+    expect(goodRevision.status).toBe(200)
+    const typed = await json(server.origin, '/input', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        tabId,
+        expectedRevision: 0,
+        url: 'https://example.test/',
+        text: 'from-url',
+      }),
+    })
+    expect(typed.status).toBe(200)
+    const click = await json(server.origin, '/input', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ tabId, expectedRevision: 1 }),
+    })
+    expect(click.status).toBe(200)
+    const busy = await ctx.browserRuntime.create({ profile: 'persistent', name: BrowserProfileName('held') })
+    const busyHttp = await json(server.origin, '/sessions/create', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ name: 'held' }),
+    })
+    expect(busyHttp.status).toBe(409)
+    await ctx.browserRuntime.close({ target: busy.target, expectedRevision: busy.revision })
+    const soloTarget = opened.get('solo')
+    if (soloTarget === undefined) throw new Error('expected solo target')
+    const open = await ctx.browserRuntime.observe({ target: soloTarget })
+    if (open.status === 'open') {
+      await ctx.browserRuntime.close({ target: open.target, expectedRevision: open.revision })
+    }
+    const closedInput = await json(server.origin, '/input', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ tabId, expectedRevision: 2, text: 'closed' }),
+    })
+    expect(closedInput.status).toBe(404)
+    const originalCreate = ctx.browserRuntime.create.bind(ctx.browserRuntime)
+    ctx.browserRuntime.create = async () => {
+      throw new Error('raw listener failure')
+    }
+    const boom = await json(server.origin, '/sessions/create', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ name: 'boom-profile' }),
+    })
+    expect(boom.status).toBe(500)
+    ctx.browserRuntime.create = originalCreate
+    const missingTabType = await json(server.origin, '/input', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ expectedRevision: 0, tabId: 7, text: 'x' }),
+    })
+    expect(missingTabType.status).toBe(404)
+    const originalObserve = ctx.browserRuntime.observe.bind(ctx.browserRuntime)
+    ctx.browserRuntime.observe = async () => {
+      throw new (await import('@deepseek-ai/dsh-browser-runtime')).BrowserRuntimeError(
+        'gone',
+        'BROWSER_NOT_FOUND',
+      )
+    }
+    const notFound = await json(server.origin, '/navigate', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ tabId: (temp.body as { tab: { id: string } }).tab.id, url: 'https://example.test/' }),
+    })
+    expect(notFound.status).toBe(404)
+    ctx.browserRuntime.observe = async () => {
+      throw new (await import('@deepseek-ai/dsh-browser-runtime')).BrowserRuntimeError(
+        'aborted',
+        'BROWSER_ABORTED',
+      )
+    }
+    const aborted = await json(server.origin, '/navigate', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ tabId: (temp.body as { tab: { id: string } }).tab.id, url: 'https://example.test/' }),
+    })
+    expect(aborted.status).toBe(500)
+    ctx.browserRuntime.observe = originalObserve
   })
 })

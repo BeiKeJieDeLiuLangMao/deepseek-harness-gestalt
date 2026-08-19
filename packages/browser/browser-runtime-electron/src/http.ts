@@ -10,8 +10,15 @@ import { randomBytes } from 'node:crypto'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
-import { BrowserProfileName, BrowserRuntimeError } from '@deepseek-ai/dsh-browser-runtime'
-import type { BrowserPageState, BrowserRuntime, BrowserTarget } from '@deepseek-ai/dsh-browser-runtime'
+import {
+  assertBrowserProfileName,
+  BrowserRuntimeError,
+  type BrowserCreateRequest,
+  type BrowserPageState,
+  type BrowserProfileName,
+  type BrowserRuntime,
+  type BrowserTarget,
+} from '@deepseek-ai/dsh-browser-runtime'
 import { TANDEM_UPSTREAM_VERSION } from './protocol.ts'
 
 /** Bound loopback HTTP server that speaks Tandem's session/tab protocol. */
@@ -33,6 +40,7 @@ interface TabRecord {
 interface SessionRecord {
   readonly name: string
   readonly persistent: boolean
+  readonly profileName?: BrowserProfileName
   readonly tabs: Map<string, TabRecord>
 }
 
@@ -77,18 +85,85 @@ function inventoryTab(id: string, page: BrowserPageState, active: boolean) {
   }
 }
 
+/** True when the session name is this Provider's temporary Profile form. */
+function isTemporarySessionName(sessionName: string, idPrefix: string): boolean {
+  return sessionName.startsWith(`${idPrefix}-tmp-`) && /^.+-tmp-\d+$/.test(sessionName)
+}
+
+/**
+ * Recover the persistent Profile name from a Provider-owned session name.
+ * Named sessions are `${idPrefix}-${profileName}`; a name without the prefix
+ * is the Profile name itself.
+ */
+function persistentNameFromSession(sessionName: string, idPrefix: string): BrowserProfileName {
+  const prefix = `${idPrefix}-`
+  const profileName = sessionName.startsWith(prefix) ? sessionName.slice(prefix.length) : sessionName
+  return assertBrowserProfileName(profileName)
+}
+
+/** Read a required safe-integer revision from one mutation body. */
+function requiredRevision(input: JsonObject): number {
+  const value = input.expectedRevision
+  if (typeof value !== 'number' || !Number.isSafeInteger(value)) {
+    throw new BrowserRuntimeError('expectedRevision must be a safe integer', 'BROWSER_PROTOCOL')
+  }
+  return value
+}
+
+/** Read an optional safe-integer revision, or the HTTP tab's last committed value. */
+function optionalRevision(input: JsonObject, fallback: number): number {
+  const value = input.expectedRevision
+  if (value === undefined) return fallback
+  if (typeof value !== 'number' || !Number.isSafeInteger(value)) {
+    throw new BrowserRuntimeError('expectedRevision must be a safe integer', 'BROWSER_PROTOCOL')
+  }
+  return value
+}
+
+/** Drive one Electron mutation with Electron's current revision. */
+async function mutateOpenPage(
+  runtime: BrowserRuntime,
+  target: BrowserTarget,
+  operate: (expectedRevision: number) => Promise<BrowserPageState>,
+): Promise<BrowserPageState> {
+  const current = await runtime.observe({ target })
+  if (current.status !== 'open') {
+    throw new BrowserRuntimeError('tab is not open', 'BROWSER_NOT_OPEN')
+  }
+  return operate(current.revision)
+}
+
+/** Map a Browser Runtime failure onto an HTTP status. */
+function failureStatus(error: BrowserRuntimeError): number {
+  switch (error.code) {
+    case 'BROWSER_PROFILE_NAME':
+    case 'BROWSER_PROTOCOL':
+      return 400
+    case 'BROWSER_NOT_FOUND':
+    case 'BROWSER_NOT_OPEN':
+      return 404
+    case 'BROWSER_PROFILE_BUSY':
+    case 'BROWSER_REVISION_CONFLICT':
+      return 409
+    default:
+      return 500
+  }
+}
+
 /**
  * Bind one loopback HTTP server over an in-process Electron Browser Runtime.
- * @param options - Runtime, token file, and optional bind host and port.
+ * @param options - Runtime, token file, identity prefix, and optional bind host and port.
  * @returns origin, token file, and closer for the bound listener.
  */
 export async function listenElectronBrowserHttp(options: {
   readonly runtime: BrowserRuntime
   readonly tokenFile: string
+  readonly idPrefix?: string
   readonly host?: string
   readonly port?: number
 }): Promise<ElectronBrowserHttpServer> {
   const token = randomBytes(24).toString('hex')
+  const idPrefix = options.idPrefix ?? 'electron'
   await mkdir(dirname(options.tokenFile), { recursive: true })
   await writeFile(options.tokenFile, `${token}\n`, { mode: 0o600 })
   const sessions = new Map<string, SessionRecord>()
@@ -111,6 +186,52 @@ export async function listenElectronBrowserHttp(options: {
       }
     }
     return tabs
+  }
+
+  const createOrAttach = async (sessionName: string, url: string | undefined): Promise<{
+    session: SessionRecord
+    tab: TabRecord
+    page: BrowserPageState
+  }> => {
+    const existing = sessions.get(sessionName)
+    const firstTab = existing === undefined ? undefined : [...existing.tabs.values()][0]
+    let request: BrowserCreateRequest
+    if (existing !== undefined && firstTab !== undefined) {
+      request = existing.persistent && existing.profileName !== undefined
+        ? {
+          profile: 'persistent',
+          name: existing.profileName,
+          attach: { kind: 'workspace', workspaceId: firstTab.target.workspaceId },
+        }
+        : {
+          profile: 'temporary',
+          attach: { kind: 'workspace', workspaceId: firstTab.target.workspaceId },
+        }
+    } else if (isTemporarySessionName(sessionName, idPrefix)) {
+      request = { profile: 'temporary' }
+    } else {
+      request = { profile: 'persistent', name: persistentNameFromSession(sessionName, idPrefix) }
+    }
+    let page = await options.runtime.create(request)
+    if (url !== undefined && url !== page.url) {
+      page = await options.runtime.navigate({
+        target: page.target,
+        expectedRevision: page.revision,
+        url,
+      })
+    }
+    tabSeq += 1
+    const tabId = `electron-tab-${String(tabSeq)}`
+    const tab: TabRecord = { id: tabId, target: page.target, revision: page.revision }
+    const session = existing ?? {
+      name: sessionName,
+      persistent: request.profile === 'persistent',
+      ...(request.profile === 'persistent' ? { profileName: request.name } : {}),
+      tabs: new Map<string, TabRecord>(),
+    }
+    session.tabs.set(tabId, tab)
+    sessions.set(sessionName, session)
+    return { session, tab, page }
   }
 
   const handle = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
@@ -148,26 +269,14 @@ export async function listenElectronBrowserHttp(options: {
         json(response, 400, { error: 'name is required' })
         return
       }
-      const persistent = !/-tmp-\d+$/.test(name)
-      const marker = name.lastIndexOf('-')
-      const profileName = persistent ? name.slice(marker + 1) : undefined
-      const created = persistent && profileName !== undefined
-        ? await options.runtime.create({ profile: 'persistent', name: BrowserProfileName(profileName) })
-        : await options.runtime.create({ profile: 'temporary' })
-      tabSeq += 1
-      const tabId = `electron-tab-${String(tabSeq)}`
-      const session = sessions.get(name) ?? {
-        name,
-        persistent,
-        tabs: new Map<string, TabRecord>(),
-      }
-      session.tabs.set(tabId, { id: tabId, target: created.target, revision: created.revision })
-      sessions.set(name, session)
+      const requestedUrl = typeof input.url === 'string' && input.url.length > 0 ? input.url : undefined
+      const created = await createOrAttach(name, requestedUrl)
       json(response, 200, {
         ok: true,
         name,
-        partition: created.chrome.partition,
-        tab: inventoryTab(tabId, created, true),
+        partition: created.page.chrome.partition,
+        revision: created.page.revision,
+        tab: inventoryTab(created.tab.id, created.page, true),
       })
       return
     }
@@ -180,13 +289,49 @@ export async function listenElectronBrowserHttp(options: {
         json(response, 404, { error: `tab ${tabId} does not exist` })
         return
       }
-      const navigated = await options.runtime.navigate({
-        target: found.tab.target,
-        expectedRevision: found.tab.revision,
-        url: nextUrl,
+      const clientRevision = optionalRevision(input, found.tab.revision)
+      const navigated = await mutateOpenPage(options.runtime, found.tab.target, expectedRevision => (
+        options.runtime.navigate({
+          target: found.tab.target,
+          expectedRevision,
+          url: nextUrl,
+        })
+      ))
+      found.tab.revision = clientRevision + 1
+      json(response, 200, {
+        ok: true,
+        url: navigated.url,
+        tab: found.tab.id,
+        revision: found.tab.revision,
       })
-      found.tab.revision = navigated.revision
-      json(response, 200, { ok: true, url: navigated.url, tab: found.tab.id })
+      return
+    }
+    if (request.method === 'POST' && url.pathname === '/input') {
+      const input = await readJson(request)
+      const tabId = typeof input.tabId === 'string' ? input.tabId : ''
+      const found = findTab(tabId)
+      if (found === undefined) {
+        json(response, 404, { error: `tab ${tabId} does not exist` })
+        return
+      }
+      const clientRevision = requiredRevision(input)
+      const typed = await mutateOpenPage(options.runtime, found.tab.target, expectedRevision => (
+        options.runtime.input({
+          target: found.tab.target,
+          expectedRevision,
+          ...(typeof input.url === 'string' ? { url: input.url } : {}),
+          ...(typeof input.text === 'string' ? { text: input.text } : {}),
+        })
+      ))
+      found.tab.revision = clientRevision + 1
+      json(response, 200, {
+        ok: true,
+        revision: found.tab.revision,
+        url: typed.url,
+        title: typed.title,
+        text: typed.text,
+        tab: found.tab.id,
+      })
       return
     }
     if (request.method === 'GET' && url.pathname === '/tabs/list') {
@@ -212,6 +357,7 @@ export async function listenElectronBrowserHttp(options: {
         text: state.text,
         length: state.text.length,
         storage: state.storage,
+        revision: state.revision,
       })
       return
     }
@@ -235,12 +381,15 @@ export async function listenElectronBrowserHttp(options: {
         json(response, 404, { error: `tab ${tabId} does not exist` })
         return
       }
-      const focused = await options.runtime.focus({
-        target: found.tab.target,
-        expectedRevision: found.tab.revision,
-      })
-      found.tab.revision = focused.revision
-      json(response, 200, { ok: true })
+      const clientRevision = optionalRevision(input, found.tab.revision)
+      await mutateOpenPage(options.runtime, found.tab.target, expectedRevision => (
+        options.runtime.focus({
+          target: found.tab.target,
+          expectedRevision,
+        })
+      ))
+      found.tab.revision = clientRevision + 1
+      json(response, 200, { ok: true, revision: found.tab.revision })
       return
     }
     if (request.method === 'POST' && url.pathname === '/sessions/destroy') {
@@ -266,8 +415,11 @@ export async function listenElectronBrowserHttp(options: {
 
   const server: Server = createServer((request, response) => {
     void handle(request, response).catch((error: unknown) => {
-      const message = (error as Error).message
-      json(response, 500, { error: message })
+      if (error instanceof BrowserRuntimeError) {
+        json(response, failureStatus(error), { error: error.message })
+        return
+      }
+      json(response, 500, { error: (error as Error).message })
     })
   })
   await new Promise<void>((resolve, reject) => {

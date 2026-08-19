@@ -86,6 +86,15 @@ function isTemporary(sessionName) {
   return /-tmp-\d+$/.test(sessionName)
 }
 
+function nextRevision(input, session) {
+  if (typeof input.expectedRevision === 'number' && Number.isSafeInteger(input.expectedRevision)) {
+    session.revision = input.expectedRevision + 1
+    return session.revision
+  }
+  session.revision = (session.revision ?? 0) + 1
+  return session.revision
+}
+
 function json(response, status, value) {
   response.writeHead(status, { 'content-type': 'application/json' })
   response.end(JSON.stringify(value))
@@ -154,6 +163,7 @@ const server = createServer(async (request, response) => {
       tab: stored === undefined ? tab : { ...tab, url: stored.url, title: titleFor(stored.url) },
       storage: stored?.storage ?? emptyStorage(),
       text: stored?.text ?? '',
+      revision: 0,
     }
     sessions.set(sessionName, session)
     if (faults.create === 'no-tab') {
@@ -174,6 +184,11 @@ const server = createServer(async (request, response) => {
       json(response, 500, { error: 'internal fixture failure' })
       return
     }
+    if (faults.navigate === 'no-revision') {
+      const input = await body(request)
+      json(response, 200, { ok: true, url: input.url, tab: input.tabId })
+      return
+    }
     const input = await body(request)
     const session = [...sessions.values()].find(value => value.tab.id === input.tabId) ?? [...sessions.values()].at(-1)
     if (session !== undefined) {
@@ -183,7 +198,13 @@ const server = createServer(async (request, response) => {
       }
       if (input.url === 'https://forget.test/') sessions.delete(session.name)
     }
-    json(response, 200, { ok: true, url: input.url, tab: session?.tab.id ?? input.tabId })
+    const revision = session === undefined ? 1 : nextRevision(input, session)
+    json(response, 200, {
+      ok: true,
+      url: input.url,
+      tab: session?.tab.id ?? input.tabId,
+      revision,
+    })
     if (input.url === 'https://crash.test/' && crashMarker !== undefined && !existsSync(crashMarker)) {
       writeFileSync(crashMarker, 'crashed\n')
       setTimeout(() => process.exit(17), 20)
@@ -268,7 +289,44 @@ const server = createServer(async (request, response) => {
     return
   }
   if (request.method === 'POST' && url.pathname === '/tabs/focus') {
-    json(response, 200, { ok: faults.focus !== 'ok-false' })
+    const input = await body(request)
+    const session = [...sessions.values()].find(value => value.tab.id === input.tabId) ?? [...sessions.values()].at(-1)
+    const revision = session === undefined ? 1 : nextRevision(input, session)
+    json(response, 200, { ok: faults.focus !== 'ok-false', revision })
+    return
+  }
+  if (request.method === 'POST' && url.pathname === '/input') {
+    const input = await body(request)
+    if (faults.input === 'ok-false') {
+      json(response, 200, { ok: false, revision: 1, url: 'about:blank', title: '', text: '', tab: input.tabId })
+      return
+    }
+    const session = [...sessions.values()].find(value => value.tab.id === input.tabId) ?? [...sessions.values()].at(-1)
+    if (session === undefined) {
+      json(response, 404, { error: `tab ${input.tabId} does not exist` })
+      return
+    }
+    if (typeof input.url === 'string' && input.url.length > 0) {
+      session.tab = { ...session.tab, url: input.url, title: titleFor(input.url) }
+    }
+    if (typeof input.text === 'string') session.text = input.text
+    else {
+      const identity = session.storage.localStorage
+      session.text = session.tab.url === 'https://example.test/'
+        ? identity.length === 0 ? 'A real Tandem protocol page.' : `A real Tandem protocol page.\nidentity=${identity}`
+        : session.tab.url === 'https://login.test/'
+          ? `Signed in as ${identity}.\nidentity=${identity}`
+          : session.text
+    }
+    const revision = nextRevision(input, session)
+    json(response, 200, {
+      ok: true,
+      revision,
+      url: session.tab.url,
+      title: session.tab.title,
+      text: session.text,
+      tab: session.tab.id,
+    })
     return
   }
   if (request.method === 'POST' && url.pathname === '/sessions/destroy') {

@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-这是 Browser Runtime 能力的 Tandem 形态 HTTP Service Provider。它驱动 loopback HTTP API，操作包括 sessions、tabs、navigate、page-content、screenshot、focus 与 destroy，并通过 `ctx.browserRuntime` 暴露临时与命名持久 Browser Profile。Tandem 是协议来源，不是 sidecar 二进制：生产环境的 Desktop 把该客户端指向进程内 Electron HTTP 适配器。出处记录见 [UPSTREAM.md](UPSTREAM.md) 与 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)；本包不 vendor 任何上游源码，也从不启动 Tandem.app。
+这是 Browser Runtime 能力的 Tandem 形态 HTTP Service Provider。它驱动 loopback HTTP API，操作包括 sessions、tabs、navigate、input、page-content、screenshot、focus 与 destroy，并通过 `ctx.browserRuntime` 暴露临时与命名持久 Browser Profile。Tandem 是协议来源，不是 sidecar 二进制：生产环境的 Desktop 把该客户端指向进程内 Electron HTTP 适配器。出处记录见 [UPSTREAM.md](UPSTREAM.md) 与 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)；本包不 vendor 任何上游源码，也从不启动 Tandem.app。
 
 ## 配置
 
@@ -23,10 +23,11 @@
 | `reconnectDelayMs` | 每次重连尝试前的延迟 | `500` |
 | `processGraceMs` | fixture 释放时子进程树 SIGTERM 到 SIGKILL 的宽限 | `5000` |
 | `maxResponseBytes` | 单个 Tandem 形态 HTTP 响应接受的最大字节数 | `10000000` |
+| `sidecar` | 为 `false` 时在插件加载拒绝 `command`/`cwd`，且从不 spawn fixture 子进程 | `true` |
 
-`baseUrl` 必须是绝对的 loopback HTTP origin（主机为 `127.0.0.1`、`localhost` 或 `[::1]`，不含凭据、路径、查询或 fragment），否则插件加载失败。`command` 与 `cwd` 要么同时设置以启动 HTTP fixture 子进程，要么同时省略以连接已有 loopback 服务器。当 `DSH_ELECTRON_BROWSER_ORIGIN` 或 `DSH_TANDEM_BIN` 表明 Desktop 持有进程内 Electron 时，已配置的 `command` 会在第一次操作时以 `BROWSER_RUNTIME_UNAVAILABLE` 拒绝，而不是 spawn sidecar。时长必须是正安全整数，`reconnectAttempts` 必须是非负安全整数。bearer token 从 `tokenFile` 读取，每次 HTTP 操作都携带它；启动健康检查在 `startupTimeoutMs` 内轮询 `GET /agent/version` 与 `GET /status`。页面读取发送 Provider 自有的 `settleMs`、`timeout` 与 `minLength` 查询上限。
+`baseUrl` 必须是绝对的 loopback HTTP origin（主机为 `127.0.0.1`、`localhost` 或 `[::1]`，不含凭据、路径、查询或 fragment），否则插件加载失败。`command` 与 `cwd` 要么同时设置以启动 HTTP fixture 子进程，要么同时省略以连接已有 loopback 服务器。`sidecar: false` 在配置了 `command` 或 `cwd` 时于插件加载失败；生产环境的 Desktop 设为 `false` 并省略二者。时长必须是正安全整数，`reconnectAttempts` 必须是非负安全整数。bearer token 从 `tokenFile` 读取，每次 HTTP 操作都携带它；启动健康检查在 `startupTimeoutMs` 内轮询 `GET /agent/version` 与 `GET /status`。页面读取发送 Provider 自有的 `settleMs`、`timeout` 与 `minLength` 查询上限。
 
-所有操作进入同一个串行队列。写操作要求调用方提供最后观察到的 `expectedRevision`；读操作返回当前修订号且不递增。人工 `input` 与 `takeover` 会把报告的 `controlOwner` 设为 `human`，并保持同一 Session、Profile、浏览器实例与标签页；`returnControl` 记录 Agent 所有权。锁是修订号。每个 Profile 映射到通过 `POST /sessions/create` 创建的一个 HTTP session。命名 Profile 恢复 `persist:session-*` partition；临时 Profile 使用唯一的 `tmp-N` session 名与临时 `session-*` partition，且不留下可复用身份。同一命名 Profile 的第二个打开写入方会以 `BROWSER_PROFILE_BUSY` 拒绝。释放开始后的操作会以 `BROWSER_DISPOSED` 拒绝。释放阶段停止接收新操作、排空队列、无论是否存在 fixture 子进程都通过 `POST /sessions/destroy` 销毁剩余打开的 session，并在 `processGraceMs` 内 join 可选的 fixture 子进程。
+所有操作进入同一个串行队列。写操作要求调用方提供最后观察到的 `expectedRevision`；读操作返回当前修订号且不递增。人工 `input` 与 `takeover` 会把报告的 `controlOwner` 设为 `human`，并保持同一 Session、Profile、浏览器实例与标签页；`returnControl` 记录 Agent 所有权。锁是修订号。每个 Profile 映射到通过 `POST /sessions/create` 创建的一个 HTTP session。人工 `input` 调用 `POST /input`，携带客户端的 `expectedRevision`，并采纳已提交的页面与修订号。命名 Profile 恢复 `persist:session-*` partition；临时 Profile 使用唯一的 `tmp-N` session 名与临时 `session-*` partition，且不留下可复用身份。同一命名 Profile 的第二个打开写入方会以 `BROWSER_PROFILE_BUSY` 拒绝。释放开始后的操作会以 `BROWSER_DISPOSED` 拒绝。释放阶段停止接收新操作、排空队列、无论是否存在 fixture 子进程都通过 `POST /sessions/destroy` 销毁剩余打开的 session，并在 `processGraceMs` 内 join 可选的 fixture 子进程。
 
 fixture 子进程意外退出或健康检查失败会提交一个 reason 为 `crashed` 或 `unhealthy` 的 `BrowserUnavailableState`，其 `reconnecting` 由配置决定；存在 fixture 子进程时最多尝试 `reconnectAttempts` 次重启。恢复成功后以同一 target、下一修订号重新提交打开页面状态，重连耗尽则提交 `reason: 'reconnect-failed'` 且 `reconnecting: false`。该投影是真实的：不可用期间，针对该 target 的操作会以 `BROWSER_RUNTIME_UNAVAILABLE` 拒绝，而不是报告过期的页面事实。格式错误的 HTTP 响应、超限响应体与字段校验失败会以 `BROWSER_PROTOCOL` 拒绝。
 

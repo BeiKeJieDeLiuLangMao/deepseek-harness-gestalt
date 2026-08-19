@@ -12,7 +12,6 @@ import {
   assertBrowserCreateAttach,
   assertBrowserNotAborted,
   assertBrowserProfileWriterAvailable,
-  browserProfileStorage,
   BrowserRuntime,
   BrowserRuntimeError,
   browserTargetFor,
@@ -33,7 +32,6 @@ import type {
   BrowserObserveRequest,
   BrowserPageState,
   BrowserProfileChrome,
-  BrowserProfileStorage,
   BrowserRuntimeState,
   BrowserScreenshot,
   BrowserTarget,
@@ -46,6 +44,7 @@ import {
   type ElectronHost,
   type ElectronSession,
 } from './electron.ts'
+import { electronTestHost } from './host-seam.ts'
 import {
   ELECTRON_RUNTIME_STATE_OWNER,
   electronRuntimeStateValidator,
@@ -57,6 +56,12 @@ const MAX_TIMER_DELAY_MS = 2_147_483_647
 const PAGE_TEXT_SCRIPT = `(() => {
   const root = document.body ?? document.documentElement
   return root === null ? '' : (root.innerText ?? '')
+})()`
+const FOCUSED_EDITABLE_SCRIPT = `(() => {
+  const active = document.activeElement
+  return active instanceof HTMLInputElement
+    || active instanceof HTMLTextAreaElement
+    || (active instanceof HTMLElement && active.isContentEditable)
 })()`
 const INSERT_TEXT_SCRIPT = `(text) => {
   const active = document.activeElement
@@ -73,8 +78,6 @@ const INSERT_TEXT_SCRIPT = `(text) => {
     active.textContent = (active.textContent ?? '') + text
     return
   }
-  const root = document.body ?? document.documentElement
-  if (root !== null) root.append(document.createTextNode(text))
 }`
 
 /** Process and lifecycle configuration for one in-process Electron runtime. */
@@ -139,28 +142,12 @@ function assertNonEmpty(name: string, value: string): void {
   if (value.trim().length === 0) throw new Error(`browser-runtime-electron: ${name} must be non-empty`)
 }
 
-let testElectronHost: ElectronHost | undefined
-
-/**
- * Install one package-private Electron host for Node unit tests.
- * Production composition never calls this; Desktop loads the real Electron module.
- * @param host - Injected BrowserWindow and session factories, or `undefined` to clear the seam.
- */
-export function installElectronTestHost(host: ElectronHost | undefined): void {
-  testElectronHost = host
-}
-
 /** Fail composition unless this process is Electron or a test installed a host. */
 function assertElectronAvailable(): void {
-  if (testElectronHost !== undefined) return
+  if (electronTestHost() !== undefined) return
   if (!isElectronProcess()) {
     throw new Error('browser-runtime-electron: process.versions.electron must be set; this Provider loads only inside Electron')
   }
-}
-
-/** Choose restored or empty identity facts for one newly opened Profile. */
-function resolveCreateStorage(name: string | undefined): BrowserProfileStorage {
-  return name === undefined ? EMPTY_BROWSER_PROFILE_STORAGE : browserProfileStorage(name)
 }
 
 /** Read a string from untrusted Chromium script output. */
@@ -183,7 +170,7 @@ export class ElectronBrowserRuntime extends BrowserRuntime {
   private readonly profiles = new Map<string, OpenProfile>()
   private host: ElectronHost | undefined
   private temporarySeq = 0
-  private recoveryScheduled = false
+  private readonly recovering = new Set<string>()
 
   constructor(ctx: Context, config: Config) {
     super(ctx)
@@ -194,7 +181,7 @@ export class ElectronBrowserRuntime extends BrowserRuntime {
     assertDuration('requestTimeoutMs', resolved.requestTimeoutMs)
     assertElectronAvailable()
     this.config = resolved
-    this.host = testElectronHost
+    this.host = electronTestHost()
     ctx.effect(
       () => registerElectronRuntimeStateReader(this[ELECTRON_RUNTIME_STATE_OWNER], () => this.states),
       'Electron Browser Runtime state reader',
@@ -280,13 +267,20 @@ export class ElectronBrowserRuntime extends BrowserRuntime {
   }
 
   /** Bound one Chromium operation by requestTimeoutMs and the caller signal. */
-  private async withTimeout<T>(signal: AbortSignal | undefined, operation: (combined: AbortSignal) => Promise<T>): Promise<T> {
+  private async withTimeout<T>(
+    signal: AbortSignal | undefined,
+    window: ElectronBrowserWindow | undefined,
+    operation: (combined: AbortSignal) => Promise<T>,
+  ): Promise<T> {
     assertBrowserNotAborted(signal)
     const deadline = AbortSignal.timeout(this.config.requestTimeoutMs)
     const combined = signal === undefined ? deadline : AbortSignal.any([signal, deadline])
     try {
       return await operation(combined)
     } catch (error) {
+      if (window !== undefined && !window.isDestroyed() && !window.webContents.isDestroyed()) {
+        window.webContents.stop()
+      }
       if (signal?.aborted) assertBrowserNotAborted(signal)
       if (error instanceof BrowserRuntimeError) {
         if (error.code === 'BROWSER_ABORTED' && signal?.aborted !== true) {
@@ -295,6 +289,31 @@ export class ElectronBrowserRuntime extends BrowserRuntime {
         throw error
       }
       throw new BrowserRuntimeError(`Electron operation failed: ${String(error)}`, 'BROWSER_RUNTIME_UNAVAILABLE')
+    }
+  }
+
+  /**
+   * Race one webContents operation against abort, then stop Chromium and join
+   * the raced promise before the exclusive queue advances.
+   */
+  private async raceContents<T>(
+    window: ElectronBrowserWindow,
+    operation: Promise<T>,
+    combined: AbortSignal,
+  ): Promise<T> {
+    const aborted = new Promise<never>((_, reject) => {
+      combined.addEventListener('abort', () => {
+        reject(new BrowserRuntimeError(`browser operation aborted: ${String(combined.reason)}`, 'BROWSER_ABORTED'))
+      }, { once: true })
+    })
+    try {
+      return await Promise.race([operation, aborted])
+    } catch (error) {
+      if (!window.isDestroyed() && !window.webContents.isDestroyed()) {
+        window.webContents.stop()
+      }
+      await operation.then(() => undefined, () => undefined)
+      throw error
     }
   }
 
@@ -350,15 +369,8 @@ export class ElectronBrowserRuntime extends BrowserRuntime {
 
   /** Read URL, title, and visible text from one hidden contents. */
   private async observeContents(window: ElectronBrowserWindow, signal: AbortSignal | undefined): Promise<ObservedPage> {
-    return this.withTimeout(signal, async (combined) => {
-      const text = await Promise.race([
-        window.webContents.executeJavaScript(PAGE_TEXT_SCRIPT),
-        new Promise<never>((_, reject) => {
-          combined.addEventListener('abort', () => {
-            reject(new BrowserRuntimeError(`browser operation aborted: ${String(combined.reason)}`, 'BROWSER_ABORTED'))
-          }, { once: true })
-        }),
-      ])
+    return this.withTimeout(signal, window, async (combined) => {
+      const text = await this.raceContents(window, window.webContents.executeJavaScript(PAGE_TEXT_SCRIPT), combined)
       return Object.freeze({
         url: window.webContents.getURL(),
         title: window.webContents.getTitle(),
@@ -370,35 +382,26 @@ export class ElectronBrowserRuntime extends BrowserRuntime {
   /** Re-read one open page without advancing its DSH revision. */
   private async page(state: BrowserPageState, signal: AbortSignal | undefined): Promise<BrowserPageState> {
     const observed = await this.observeContents(this.openTab(state.target).window, signal)
-    const storage = state.chrome.kind === 'persistent' && state.chrome.name !== undefined
-      ? browserProfileStorage(state.chrome.name)
-      : EMPTY_BROWSER_PROFILE_STORAGE
-    return Object.freeze({ ...state, url: observed.url, title: observed.title, text: observed.text, storage })
+    return Object.freeze({
+      ...state,
+      url: observed.url,
+      title: observed.title,
+      text: observed.text,
+      storage: EMPTY_BROWSER_PROFILE_STORAGE,
+    })
   }
 
   /** Navigate one hidden contents and wait for the first successful load. */
   private async load(window: ElectronBrowserWindow, url: string, signal: AbortSignal | undefined): Promise<void> {
-    await this.withTimeout(signal, async (combined) => {
-      const aborted = new Promise<never>((_, reject) => {
-        combined.addEventListener('abort', () => {
-          reject(new BrowserRuntimeError(`browser operation aborted: ${String(combined.reason)}`, 'BROWSER_ABORTED'))
-        }, { once: true })
-      })
-      await Promise.race([window.webContents.loadURL(url), aborted])
+    await this.withTimeout(signal, window, async (combined) => {
+      await this.raceContents(window, window.webContents.loadURL(url), combined)
     })
   }
 
   /** Capture one PNG screenshot of the hidden contents. */
   private async capture(window: ElectronBrowserWindow, signal: AbortSignal | undefined): Promise<string> {
-    return this.withTimeout(signal, async (combined) => {
-      const image = await Promise.race([
-        window.webContents.capturePage(),
-        new Promise<never>((_, reject) => {
-          combined.addEventListener('abort', () => {
-            reject(new BrowserRuntimeError(`browser operation aborted: ${String(combined.reason)}`, 'BROWSER_ABORTED'))
-          }, { once: true })
-        }),
-      ])
+    return this.withTimeout(signal, window, async (combined) => {
+      const image = await this.raceContents(window, window.webContents.capturePage(), combined)
       const bytes = image.toPNG()
       if (bytes.byteLength === 0) {
         throw new BrowserRuntimeError('Electron screenshot response must be image/png', 'BROWSER_PROTOCOL')
@@ -426,13 +429,14 @@ export class ElectronBrowserRuntime extends BrowserRuntime {
     reason: 'crashed' | 'unhealthy',
     projectNow: boolean,
   ): BrowserRuntimeState | undefined {
-    if (this.recoveryScheduled || [...this.states.values()].every(state => state.status === 'closed')) {
-      return this.firstOpen() ?? [...this.states.values()].at(-1)
+    const key = browserTargetKey(target)
+    if (this.recovering.has(key) || [...this.states.values()].every(state => state.status === 'closed')) {
+      return this.states.get(key) ?? this.firstOpen() ?? [...this.states.values()].at(-1)
     }
-    const lastOpen = this.states.get(browserTargetKey(target))
-    const open = lastOpen !== undefined && lastOpen.status === 'open' ? lastOpen : this.firstOpen()
-    if (open === undefined) return this.firstOpen() ?? [...this.states.values()].at(-1)
-    this.recoveryScheduled = true
+    const lastOpen = this.states.get(key)
+    const open = lastOpen !== undefined && lastOpen.status === 'open' ? lastOpen : undefined
+    if (open === undefined) return lastOpen ?? [...this.states.values()].at(-1)
+    this.recovering.add(key)
     const projected = projectNow
       ? this.commit({
         status: 'unavailable' as const,
@@ -460,7 +464,7 @@ export class ElectronBrowserRuntime extends BrowserRuntime {
       this.ctx.logger.warn('browser-runtime-electron: reconnect transaction failed')
       this.ctx.logger.warn(error)
     })
-    void recovery.then(() => undefined, () => undefined).finally(() => { this.recoveryScheduled = false })
+    void recovery.then(() => undefined, () => undefined).finally(() => { this.recovering.delete(key) })
     return projected
   }
 
@@ -483,6 +487,12 @@ export class ElectronBrowserRuntime extends BrowserRuntime {
     } catch (error) {
       this.ctx.logger.warn('browser-runtime-electron: reconnect attempts exhausted')
       this.ctx.logger.warn(error)
+      const profile = this.profiles.get(lastOpen.target.profileId)
+      if (profile !== undefined) {
+        this.destroyExistingTab(profile, lastOpen.target.tabId)
+        profile.tabs.delete(lastOpen.target.tabId)
+        if (profile.tabs.size === 0) this.profiles.delete(lastOpen.target.profileId)
+      }
       this.commitReconnectFailed(unavailable.target)
     }
   }
@@ -536,7 +546,6 @@ export class ElectronBrowserRuntime extends BrowserRuntime {
       try {
         await this.load(window, 'about:blank', request.signal)
         const observed = await this.observeContents(window, request.signal)
-        const name = created.chrome.name
         return this.commit({
           status: 'open',
           target,
@@ -547,7 +556,7 @@ export class ElectronBrowserRuntime extends BrowserRuntime {
           focused: false,
           controlOwner: 'agent',
           chrome: created.chrome,
-          storage: resolveCreateStorage(name),
+          storage: EMPTY_BROWSER_PROFILE_STORAGE,
         })
       } catch (error) {
         this.destroyTab(tab)
@@ -639,20 +648,32 @@ export class ElectronBrowserRuntime extends BrowserRuntime {
     })
   }
 
-  /** Deliver human text into the hidden contents through Chromium input and page script. */
+  /**
+   * Deliver human text through one path: an insert script when an input,
+   * textarea, or contentEditable is focused; otherwise `char` input events.
+   * A newline is U+000A in a focused editable control. A focused single-line
+   * input receives that character only when the control accepts it. With no
+   * focused editable control, each newline is a `char` event whose keyCode is
+   * `\\n`.
+   */
   private async typeIntoPage(window: ElectronBrowserWindow, text: string, signal: AbortSignal | undefined): Promise<void> {
+    const focused = await this.withTimeout(signal, window, async combined => (
+      await this.raceContents(window, window.webContents.executeJavaScript(FOCUSED_EDITABLE_SCRIPT), combined)
+    ))
+    if (focused === true) {
+      await this.withTimeout(signal, window, async (combined) => {
+        await this.raceContents(
+          window,
+          window.webContents.executeJavaScript(`(${INSERT_TEXT_SCRIPT})(${JSON.stringify(text)})`),
+          combined,
+        )
+      })
+      return
+    }
     for (const keyCode of text) {
       assertBrowserNotAborted(signal)
       window.webContents.sendInputEvent({ type: 'char', keyCode })
     }
-    await this.withTimeout(signal, async (combined) => {
-      const aborted = new Promise<never>((_, reject) => {
-        combined.addEventListener('abort', () => {
-          reject(new BrowserRuntimeError(`browser operation aborted: ${String(combined.reason)}`, 'BROWSER_ABORTED'))
-        }, { once: true })
-      })
-      await Promise.race([window.webContents.executeJavaScript(`(${INSERT_TEXT_SCRIPT})(${JSON.stringify(text)})`), aborted])
-    })
   }
 
   async close(request: BrowserMutationRequest): Promise<BrowserClosedState> {

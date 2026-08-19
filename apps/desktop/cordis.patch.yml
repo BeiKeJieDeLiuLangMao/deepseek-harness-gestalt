@@ -26,4 +26,5 @@
         reconnectAttempts: 0
         reconnectDelayMs: 500
         processGraceMs: 1000
+        sidecar: false
         # Production Desktop never launches a second Electron. command/cwd stay unset.

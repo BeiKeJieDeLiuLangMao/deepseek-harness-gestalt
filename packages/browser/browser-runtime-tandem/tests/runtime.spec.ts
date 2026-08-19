@@ -182,14 +182,12 @@ describe('Tandem Browser Runtime configuration', () => {
     })
     const ctx = new Context()
     contexts.push(ctx)
-    // The Desktop overlay exports this origin; a spawn-free client accepts it.
-    const previous = process.env.DSH_ELECTRON_BROWSER_ORIGIN
-    process.env.DSH_ELECTRON_BROWSER_ORIGIN = `http://127.0.0.1:${String(port)}`
     try {
       await ctx.plugin(TandemBrowserRuntime, {
         baseUrl: `http://127.0.0.1:${String(port)}`,
         tokenFile,
         idPrefix: 'protocol-only',
+        sidecar: false,
         startupTimeoutMs: 5_000,
         requestTimeoutMs: 2_000,
         healthPollMs: 10,
@@ -200,8 +198,6 @@ describe('Tandem Browser Runtime configuration', () => {
       expect(created.chrome.partition).toBe('session-protocol-only-tmp-1')
       await ctx.browserRuntime.close({ target: created.target, expectedRevision: 0 })
     } finally {
-      if (previous === undefined) delete process.env.DSH_ELECTRON_BROWSER_ORIGIN
-      else process.env.DSH_ELECTRON_BROWSER_ORIGIN = previous
       child.kill('SIGTERM')
       await rm(root, { recursive: true, force: true })
     }
@@ -224,29 +220,20 @@ describe('Tandem Browser Runtime configuration', () => {
       .rejects.toMatchObject({ code: 'BROWSER_RUNTIME_UNAVAILABLE', message: /requires ctx.subprocess/ })
   })
 
-  it.each([
-    ['DSH_ELECTRON_BROWSER_ORIGIN'],
-    ['DSH_TANDEM_BIN'],
-  ] as const)('refuses a sidecar spawn under %s when Desktop owns in-process Electron', async (name) => {
+  it('rejects command and cwd at load when sidecar is disabled', async () => {
     const ctx = new Context()
     contexts.push(ctx)
-    vi.stubEnv(name, 'set-by-desktop-host')
-    try {
-      await ctx.plugin(TandemBrowserRuntime, {
-        command: process.execPath,
-        cwd: process.cwd(),
-        baseUrl: `http://127.0.0.1:${String(await freePort())}`,
-        tokenFile: '/tmp/token',
-        startupTimeoutMs: 200,
-        requestTimeoutMs: 200,
-        healthPollMs: 10,
-        reconnectAttempts: 0,
-      })
-      await expect(ctx.browserRuntime.create({ profile: 'temporary' }))
-        .rejects.toMatchObject({ code: 'BROWSER_RUNTIME_UNAVAILABLE', message: /sidecar spawn is disabled/ })
-    } finally {
-      vi.unstubAllEnvs()
-    }
+    await expect(ctx.plugin(TandemBrowserRuntime, {
+      command: process.execPath,
+      cwd: process.cwd(),
+      sidecar: false,
+      baseUrl: `http://127.0.0.1:${String(await freePort())}`,
+      tokenFile: '/tmp/token',
+      startupTimeoutMs: 200,
+      requestTimeoutMs: 200,
+      healthPollMs: 10,
+      reconnectAttempts: 0,
+    })).rejects.toThrow(/command and cwd must be omitted when sidecar is disabled/)
   })
 
   it('accepts every loopback hostname form and the default identity prefix', async () => {
@@ -456,7 +443,13 @@ describe('Tandem Browser Runtime public lifecycle', () => {
     const restored = await ctx.browserRuntime.create({ profile: 'persistent', name: BrowserProfileName('work') })
     expect(restored.chrome.partition).toBe(work.chrome.partition)
     expect(restored.target.profileId).toBe(work.target.profileId)
-    expect(restored.storage).toEqual(signedIn.storage)
+    expect(restored.storage).toEqual({
+      cookies: '',
+      localStorage: '',
+      indexedDb: '',
+      cache: '',
+      serviceWorker: '',
+    })
     expect(restored.text).toContain('identity=work')
   })
 
@@ -688,7 +681,13 @@ describe('Tandem Browser Runtime startup bounds', () => {
       .resolves.toMatchObject({
         status: 'open',
         chrome: { kind: 'persistent', name: 'work' },
-        storage: { localStorage: 'work' },
+        storage: {
+          cookies: '',
+          localStorage: '',
+          indexedDb: '',
+          cache: '',
+          serviceWorker: '',
+        },
         text: 'identity=work',
       })
     const seeded = await setup({ pageContent: 'seed-storage' })
@@ -777,6 +776,12 @@ describe('Tandem Browser Runtime protocol fidelity', () => {
       [{ navigate: 'status-500' }, (ctx, t) => ctx.browserRuntime.navigate({
         target: t as never, expectedRevision: 0, url: 'https://example.test/',
       }), /HTTP 500 .*internal fixture failure/],
+      [{ navigate: 'no-revision' }, (ctx, t) => ctx.browserRuntime.navigate({
+        target: t as never, expectedRevision: 0, url: 'https://example.test/',
+      }), /navigate response field revision must be a safe integer/],
+      [{ input: 'ok-false' }, (ctx, t) => ctx.browserRuntime.input({
+        target: t as never, expectedRevision: 0, text: 'x',
+      }), /did not apply input/],
       [{ tabsList: 'not-array' }, (ctx, t) => ctx.browserRuntime.observe({ target: t as never }), /tabs must be an array/],
       [{ tabsList: 'bad-tab-shape' }, (ctx, t) => ctx.browserRuntime.observe({ target: t as never }), /tabs list tab response must be an object/],
       [{ pageContent: 'non-object' }, (ctx, t) => ctx.browserRuntime.observe({ target: t as never }), /page content response must be an object/],

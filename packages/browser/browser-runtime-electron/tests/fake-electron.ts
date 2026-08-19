@@ -30,6 +30,7 @@ interface FakeOptions {
   readonly executeNonString?: boolean
   readonly failFlush?: boolean
   readonly failClear?: boolean
+  readonly focusedEditable?: boolean
 }
 
 function titleFor(url: string): string {
@@ -83,6 +84,9 @@ class FakeWebContents implements ElectronWebContents {
   private heading = 'New Tab'
   destroyed = false
   focused = false
+  stopped = false
+  readonly inputEvents: string[] = []
+  private loadWait: (() => void) | undefined
   private readonly listeners = new Set<() => void>()
   constructor(
     readonly session: FakeSession,
@@ -98,10 +102,18 @@ class FakeWebContents implements ElectronWebContents {
   isDestroyed(): boolean {
     return this.destroyed
   }
+  stop(): void {
+    this.stopped = true
+    this.loadWait?.()
+  }
   async loadURL(url: string): Promise<void> {
     if (this.options.failLoad === true) throw new Error('load failed')
     if (this.options.loadDelayMs !== undefined && url !== 'about:blank') {
-      await new Promise(resolve => setTimeout(resolve, this.options.loadDelayMs))
+      await new Promise<void>((resolve) => {
+        this.loadWait = resolve
+        setTimeout(resolve, this.options.loadDelayMs)
+      })
+      this.loadWait = undefined
     }
     const identity = identityFrom(this.session.partition)
     this.href = url
@@ -115,6 +127,7 @@ class FakeWebContents implements ElectronWebContents {
     this.focused = true
   }
   sendInputEvent(event: { readonly type: 'char'; readonly keyCode: string }): void {
+    this.inputEvents.push(event.keyCode)
     this.page.text += event.keyCode
   }
   async capturePage(): Promise<ElectronNativeImage> {
@@ -127,7 +140,21 @@ class FakeWebContents implements ElectronWebContents {
   async executeJavaScript(code?: string): Promise<unknown> {
     if (this.options.failExecute === true) throw new Error('execute failed')
     if (this.options.executeNonString === true) return 7
-    if (typeof code === 'string' && code.includes('(text) =>')) return undefined
+    if (typeof code === 'string' && code.includes('selectionStart')) {
+      const call = code.lastIndexOf(')(')
+      if (call !== -1 && code.endsWith(')')) {
+        try {
+          const text = JSON.parse(code.slice(call + 2, -1)) as unknown
+          if (typeof text === 'string') this.page.text += text
+        } catch {
+          // The insert script is invoked as (`script`)(`json`); anything else is not text.
+        }
+      }
+      return undefined
+    }
+    if (typeof code === 'string' && code.includes('isContentEditable')) {
+      return this.options.focusedEditable === true
+    }
     return this.page.text
   }
   close(): void {

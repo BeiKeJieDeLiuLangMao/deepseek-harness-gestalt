@@ -29,6 +29,8 @@ export interface ElectronWebContents {
   isDestroyed(): boolean
   /** Navigate and resolve after the first successful document load. */
   loadURL(url: string): Promise<void>
+  /** Stop in-flight navigation or script so abort and timeout can reach quiescence. */
+  stop(): void
   /** Focus the hidden contents so later Agent or human mutations address it. */
   focus(): void
   /** Deliver one human input event into the hidden contents. */

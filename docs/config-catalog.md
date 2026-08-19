@@ -449,7 +449,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/browser/browser-runtime-electron/src/index.ts:81`](../packages/browser/browser-runtime-electron/src/index.ts)
+Source: [`packages/browser/browser-runtime-electron/src/index.ts:84`](../packages/browser/browser-runtime-electron/src/index.ts)
 
 <a id="deepseek-aidsh-browser-runtime-tandem"></a>
 
@@ -488,10 +488,15 @@ export interface Config {
   processGraceMs?: number
   /** Maximum bytes accepted from one Tandem-shaped HTTP response. */
   maxResponseBytes?: number
+  /**
+   * When `false`, this client never spawns a fixture child and rejects
+   * `command`/`cwd` at plugin load. Production Desktop sets `false`.
+   */
+  sidecar?: boolean
 }
 ```
 
-Source: [`packages/browser/browser-runtime-tandem/src/index.ts:54`](../packages/browser/browser-runtime-tandem/src/index.ts)
+Source: [`packages/browser/browser-runtime-tandem/src/index.ts:53`](../packages/browser/browser-runtime-tandem/src/index.ts)
 
 <a id="deepseek-aidsh-client-connection"></a>
 

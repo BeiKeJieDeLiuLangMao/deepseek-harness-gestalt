@@ -7,7 +7,7 @@ import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include from '@deepseek-ai/cordis-plugin-include'
 import * as ElectronBrowserRuntime from '@deepseek-ai/dsh-browser-runtime-electron'
-import { installElectronTestHost } from '@deepseek-ai/dsh-browser-runtime-electron'
+import { installElectronTestHost } from '@deepseek-ai/dsh-browser-runtime-electron/testing'
 import { FakeElectronHost } from './fake-electron.ts'
 
 let root: string | undefined
