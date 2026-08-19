@@ -57,7 +57,7 @@ export async function deriveKeylessHandshakeHash(
 /**
  * Derive the independent 256-bit Personal Pairing key every keyless peer holds.
  * @param invitationSecret - 256-bit invitation capability.
- * @returns 32-byte HKDF input for pairing-scoped consumers.
+ * @returns 32-byte keyless pairing key derived from the invitation secret; not product HKDF and not a Noise handshake hash.
  */
 export async function deriveKeylessPairingKey(invitationSecret: Uint8Array): Promise<Uint8Array> {
   return await digestKeyless(PAIRING_KEY_DOMAIN, invitationSecret)

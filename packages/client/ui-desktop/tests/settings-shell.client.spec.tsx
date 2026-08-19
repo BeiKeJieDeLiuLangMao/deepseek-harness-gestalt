@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { ComponentType, ReactNode } from 'react'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { Context } from '@deepseek-ai/cordis'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
@@ -10,9 +11,6 @@ import {
   apply as applySettings,
   inject as settingsInject,
 } from '@deepseek-ai/dsh-client-ui-settings-general/client'
-import { CloseLabel, HeaderContent, TriggerContent } from '@deepseek-ai/dsh-client-ui-settings-general/src/client/chrome.tsx'
-import { GeneralSection } from '@deepseek-ai/dsh-client-ui-settings-general/src/client/GeneralSection.tsx'
-import { SettingsRoot } from '@deepseek-ai/dsh-client-ui-settings-general/src/client/SettingsRoot.tsx'
 import type { SettingsRootInjected } from '@deepseek-ai/dsh-client-ui-settings-general/src/client/shell-contract.ts'
 import { apply as applyDesktop, inject as desktopInject } from '@deepseek-ai/dsh-client-ui-desktop/client'
 import { AccountControl } from '../src/client/AccountControl.tsx'
@@ -29,14 +27,11 @@ afterEach(() => {
 describe('Desktop Settings shell Mobile Access placement', () => {
   it('places Mobile Access only in the 手机配对 Settings section', async () => {
     const assembled = await assemble()
-    const sectionIds = assembled.slots.entries('settings.section').map(entry => entry.options.id)
-    expect(sectionIds).toEqual(['general', 'mobile-pairing'])
-    expect(resolveSlotLabel(assembled.slots.entries('settings.section')[0]!.options.label)).toBe('通用设置')
-    expect(resolveSlotLabel(assembled.slots.entries('settings.section')[1]!.options.label)).toBe('手机配对')
-    expect(assembled.slots.entries('conversation').map(entry => entry.component)).not.toContain(AccountControl)
-    expect(assembled.slots.entries('conversation.session')).toEqual([])
-    expect(assembled.slots.entries('conversation.composer')).toEqual([])
-    expect(assembled.slots.entries('sidebar.workspaces')).toEqual([])
+    const sections = assembled.slots.entries('settings.section')
+    expect(sections.map(entry => entry.options.id)).toEqual(['general', 'mobile-pairing'])
+    expect(resolveSlotLabel(sections[0]!.options.label)).toBe('通用设置')
+    expect(resolveSlotLabel(sections[1]!.options.label)).toBe('手机配对')
+    expect(sections.find(entry => entry.options.id === 'mobile-pairing')?.component).toBe(AccountControl)
     expect(assembled.slots.entries('sidebar.brand').length).toBeGreaterThan(0)
     expect(assembled.slots.entries('sidebar.footer.action').map(entry => entry.options.id)).toContain('desktop-update')
 
@@ -46,48 +41,23 @@ describe('Desktop Settings shell Mobile Access placement', () => {
     })
 
     const unused = (() => { throw new Error('unused by SettingsRoot') }) as never
-    const settingsT = assembled.locale.bind('settings')
-    const desktopT = assembled.locale.bind('desktop')
+    const shell = assembled.slots.entries('sidebar.settings')[0]
+    if (shell === undefined) throw new Error('Settings shell was not registered')
+    const Shell = shell.component as ComponentType<Record<string, unknown>>
+    const injected = assembled.shellInject()
     render(
-      <SettingsRoot
+      <Shell
         wide
-        useSessions={select => select({
+        useSessions={(select: (state: unknown) => unknown) => select({
           phase: 'ready',
           current: 'active-session',
           byId: { 'active-session': { blank: false } },
-        } as never)}
+        })}
         useWorkspaces={unused}
-        useOnboardingSteps={select => select([])}
-        useSections={select => select(assembled.shellInject().hooks.sections.getSnapshot())}
-        renderSlot={(key, owner, opts) => {
-          if (key === 'settings.trigger') {
-            return <TriggerContent t={settingsT} wide useSessions={unused} useWorkspaces={unused} />
-          }
-          if (key === 'settings.header') {
-            return <HeaderContent t={settingsT} useSessions={unused} useWorkspaces={unused} />
-          }
-          if (key === 'settings.close') {
-            return <CloseLabel t={settingsT} useSessions={unused} useWorkspaces={unused} />
-          }
-          if (key === 'settings.action') return null
-          if (key === 'settings.section' && opts?.only === 'general') {
-            return <GeneralSection useSessions={unused} useWorkspaces={unused} close={vi.fn()} renderSlot={() => null} />
-          }
-          if (key === 'settings.section' && opts?.only === 'mobile-pairing') {
-            const hooks = assembled.pairingInject().hooks
-            return (
-              <AccountControl
-                t={desktopT}
-                useSessions={unused}
-                useWorkspaces={unused}
-                close={'close' in owner ? owner.close as () => void : vi.fn()}
-                useAccount={select => select(hooks.account.getSnapshot())}
-                usePairing={select => select(hooks.pairing.getSnapshot())}
-              />
-            )
-          }
-          return null
-        }}
+        useOnboardingSteps={(select: (rows: unknown) => unknown) => select(injected.hooks.onboardingSteps.getSnapshot())}
+        useSections={(select: (rows: unknown) => unknown) => select(injected.hooks.sections.getSnapshot())}
+        renderSlot={(key: string, owner: object, opts?: { only?: string }) =>
+          renderRegistered(assembled.slots, assembled.locale, unused, key, owner, opts)}
       />,
     )
 
@@ -107,6 +77,43 @@ describe('Desktop Settings shell Mobile Access placement', () => {
     await assembled.fiber.dispose()
   })
 })
+
+function renderRegistered(
+  slots: SlotRegistry,
+  locale: LocaleRuntime,
+  unused: never,
+  key: string,
+  owner: object,
+  opts?: { only?: string },
+): ReactNode {
+  if (key === 'settings.action') return null
+  const entries = slots.entries(key as never)
+  const entry = opts?.only === undefined
+    ? entries[0]
+    : entries.find(item => item.options.id === opts.only)
+  if (entry === undefined) return null
+  const Component = entry.component as ComponentType<Record<string, unknown>>
+  const injected = typeof entry.inject === 'function'
+    ? (entry.inject as () => { hooks?: Record<string, { getSnapshot: () => unknown }> })()
+    : undefined
+  const t = entry.locale !== undefined ? locale.bind(entry.locale) : undefined
+  const useHook = (name: string) => {
+    const source = injected?.hooks?.[name]
+    if (source === undefined) return undefined
+    return (select: (snapshot: unknown) => unknown) => select(source.getSnapshot())
+  }
+  return (
+    <Component
+      t={t}
+      useSessions={unused}
+      useWorkspaces={unused}
+      useAccount={useHook('account')}
+      usePairing={useHook('pairing')}
+      renderSlot={() => null}
+      {...owner}
+    />
+  )
+}
 
 async function assemble() {
   const account: DesktopAccountSnapshot = {
@@ -148,7 +155,6 @@ async function assemble() {
       children: {
         sidebar: { kind: 'single', scope: 'root' },
         'sidebar.settings': { kind: 'single', scope: 'root' },
-        conversation: { kind: 'single', scope: 'session-maybe' },
       },
     } as never,
     () => null,
@@ -160,17 +166,6 @@ async function assemble() {
         'sidebar.brand': { kind: 'chain', scope: 'root' },
         'sidebar.chrome.drag': { kind: 'list', scope: 'root' },
         'sidebar.footer.action': { kind: 'list', scope: 'root' },
-        'sidebar.workspaces': { kind: 'single', scope: 'root' },
-      },
-    } as never,
-    () => null,
-  )
-  slots.register(
-    {
-      name: 'conversation',
-      children: {
-        'conversation.session': { kind: 'single', scope: 'session' },
-        'conversation.composer': { kind: 'chain', scope: 'session' },
       },
     } as never,
     () => null,

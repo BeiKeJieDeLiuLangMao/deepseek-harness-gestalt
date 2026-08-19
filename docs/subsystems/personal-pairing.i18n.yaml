@@ -3,4 +3,4 @@
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/subsystems/personal-pairing.md
 personal-pairing.md: 30f18b71d4df098d0b870d4ae82409484e824da9
-personal-pairing.zh.md: 91b8bfedd678a66008eb53c1cd4e54b6047685fc
+personal-pairing.zh.md: 2dc0112a6a4bf8205ec51f09701b09f5fc57aea4

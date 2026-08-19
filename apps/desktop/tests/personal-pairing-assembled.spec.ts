@@ -21,7 +21,9 @@ import {
   PAIRING_CHALLENGE_TTL_MS,
   PersonalPairingProvider,
   RemoteAccessError,
+  deriveKeylessMobileHandshake,
   deriveKeylessPairingKey,
+  parsePairingCompletionId,
   parsePairingInvitationLink,
   type PairingAccountAuthentication,
 } from '@deepseek-ai/dsh-remote-access'
@@ -195,6 +197,16 @@ describe('Personal Pairing assembled controllers', () => {
     const expired = desktop.getSnapshot().challenge
     if (expired === undefined) throw new Error('deadline challenge was not created')
     clock.now = expired.expiresAt
+    const expiredInvitation = parsePairingInvitationLink(expired.oneTimeLink)
+    const expiredHandshake = await deriveKeylessMobileHandshake(expiredInvitation.invitationSecret)
+    expiredInvitation.invitationSecret.fill(0)
+    await expect(transport.completeChallenge({
+      authentication: authentication('mobile'),
+      completionId: parsePairingCompletionId('completion-expired'),
+      oneTimeLink: expired.oneTimeLink,
+      device: { name: 'Late phone', platform: 'android' },
+      mobileHandshake: expiredHandshake,
+    })).rejects.toMatchObject({ code: 'PAIRING_CHALLENGE_EXPIRED' } satisfies Partial<RemoteAccessError>)
     const expiredMobile = new MobilePairingController({
       installation: accountActions('mobile'),
       transport,

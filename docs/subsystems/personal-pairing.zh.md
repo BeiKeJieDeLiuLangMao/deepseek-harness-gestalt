@@ -20,7 +20,7 @@ Mobile 仅在完整链接与保留能力相符后消费邀请。跨账号尝试�
 
 `ctx.remoteRelay` 使用不透明 route id 与独立可轮换的 32 字节凭据鉴权 attachment，通过 `RelayRouteStore` 只持久化其 digest 与 revision，并将在线 attachment 注册到会过期的共享目录。`remote-access-redis` 只承载目录元数据、不含内容的失效通知与有界密文 Pub/Sub；它不创建离线 queue。位于另一 Platform Instance 的目标会收到同一个不透明 Relay frame，目标缺失则立即返回 `REMOTE_OFFLINE`。
 
-Mobile 与 Desktop 通过一个 non-sticky TLS endpoint 向外连接。实例丢失会建立新连接；Desktop 在 attachment 后发送权威加密 projection，不迁移在线 socket。关闭 Desktop 窗口会退出进程，sleep、quit、退出账号或关闭手机访问都会停止 Relay。在组装经过评审的产品密码能力前，生产保持 fail-closed。无密钥双实例 Loader 场景只证明 transport 组合，不会削弱该 gate。
+Mobile 与 Desktop 通过一个 non-sticky TLS endpoint 向外连接。实例丢失会建立新连接；Desktop 在 attachment 后发送权威加密 projection，不迁移在线 socket。关闭 Desktop 窗口会退出进程，sleep、quit、退出账号或关闭手机访问都会停止 Relay。在组装经过评审的产品密码学能力前，生产保持 fail-closed。无 Noise 握手 / SHA-256 开发派生双实例 Loader 场景只证明 transport 组合，不会削弱该 gate。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 

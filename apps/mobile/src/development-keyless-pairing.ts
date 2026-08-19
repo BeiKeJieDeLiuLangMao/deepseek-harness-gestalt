@@ -34,7 +34,7 @@ export class DevelopmentKeylessMobileHandshakeClient implements MobilePairingHan
     const secret = this.invitationSecret
     if (secret === undefined) throw new Error('Keyless Mobile Pairing has no prepared invitation')
     const expected = await deriveKeylessPairingKey(secret)
-    if (!bytesEqual(desktopHandshake, expected)) {
+    if (!bytesEqualConstantTime(desktopHandshake, expected)) {
       throw new TypeError('Keyless Desktop handshake does not match the invitation pairing key')
     }
     this.pairingKey = desktopHandshake.slice()
@@ -81,6 +81,11 @@ export class DevelopmentKeylessMobileHandshakeClient implements MobilePairingHan
   }
 }
 
-function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
-  return left.byteLength === right.byteLength && left.every((byte, index) => byte === right[index])
+function bytesEqualConstantTime(left: Uint8Array, right: Uint8Array): boolean {
+  if (left.byteLength !== right.byteLength) return false
+  let difference = 0
+  for (let index = 0; index < left.byteLength; index += 1) {
+    difference |= (left[index] as number) ^ (right[index] as number)
+  }
+  return difference === 0
 }

@@ -10,9 +10,9 @@ Same-account Personal Pairing landed as product code, but #31 still lacked assem
 
 ## Decision
 
-Assembled #31 evidence is keyless and locally runnable. `DevelopmentKeylessPairingHandshakeProvider` is the only handshake adapter in that path: every peer derives the same 256-bit key from the invitation secret by SHA-256, and production composition never selects it. The Loader example and `remote-access-http` assembled controller test boot a real `cordis.yml`, loopback HTTP Consumer, and the Host-owned Desktop and Mobile controllers. They prove Mobile Access starts disabled, a cross-account completion fails before a Device Principal exists, QR and the full one-time link are identical, both peers show the same authentication words, Desktop confirmation is required, the confirmed pairing holds a 32-byte independent key with only `companion-surface` authority, a second completion id on a settled challenge is `PAIRING_CHALLENGE_INVALID`, the identical completion id is idempotent, and completion succeeds at `expiresAt - 1` and fails at `expiresAt`.
+Assembled #31 evidence is a locally runnable SHA-256 development derivation with no Noise handshake. `DevelopmentKeylessPairingHandshakeProvider` is the only handshake adapter in that path: every peer derives the same 256-bit key from the invitation secret by SHA-256, and production composition never imports or selects it. The Loader example and the Desktop assembled controller test boot a real `cordis.yml`, loopback HTTP Consumer, and the Host-owned Desktop and Mobile controllers. They prove Mobile Access starts disabled, a cross-account completion fails before a Device Principal exists, QR and the full one-time link are identical, both peers show the same authentication words, Desktop confirmation is required, the confirmed pairing holds a 32-byte independent key with only `companion-surface` authority, a second completion id on a settled challenge is `PAIRING_CHALLENGE_INVALID`, the identical completion id is idempotent, completion succeeds at `expiresAt - 1`, the controller rejects a deadline link locally, and `transport.completeChallenge` at `expiresAt` is `PAIRING_CHALLENGE_EXPIRED`.
 
-Desktop placement evidence mounts the real Settings shell from `ui-settings-general` together with `ui-desktop`. Under `zh-CN`, the nav labels are `通用设置` and `手机配对`; Mobile Access exists only on `手机配对`; `conversation`, `conversation.session`, `conversation.composer`, and `sidebar.workspaces` stay empty.
+Desktop placement evidence mounts the real Settings shell from `ui-settings-general` together with `ui-desktop` and renders each Settings section through the slot registry's registered `entry.component`. Under `zh-CN`, the nav labels are `通用设置` and `手机配对`; `AccountControl` is registered solely on `settings.section` id `mobile-pairing`; Mobile Access exists only on that section. This test does not mount conversation or workspace plugins.
 
 ## Alternatives considered
 
@@ -20,7 +20,7 @@ Desktop placement evidence mounts the real Settings shell from `ui-settings-gene
 
 **Keep the all-zero stub handshake.** Controllers and HTTP would stay green while Desktop and Mobile could disagree on key material. The explicit SHA-256 adapter makes the key agreement observable.
 
-**Assert Mobile Access only on a standalone `AccountControl` render.** That misses the Settings-shell placement rule. The shell test occupies the real `settings.section` ledger and switches nav rows.
+**Assert Mobile Access only on a standalone `AccountControl` render.** That misses the Settings-shell placement rule. The shell test occupies the real `settings.section` ledger, instantiates each registered section component, and switches nav rows.
 
 ## Consequences
 
