@@ -416,6 +416,6 @@ export class WebSearchShell {
     const match = this.entries().find(entry => entry.options.id === id)
       ?? this.entries().find(entry => entry.options.id === 'deepseek')
     if (match === undefined) return this.fallback.inject()
-    return (match.inject as () => WebSearchCardFace)()
+    return (match.inject as unknown as () => WebSearchCardFace)()
   }
 }

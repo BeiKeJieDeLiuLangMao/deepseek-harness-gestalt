@@ -115,7 +115,7 @@ describe('ModelsSettingsStore', () => {
           user: {},
           secrets: [{ path: ['apiKey'], set: false }],
         }, PI_NS],
-      })),
+      })) as never,
     })
     const store = new ModelsSettingsStore(face)
     await store.load()
@@ -133,7 +133,7 @@ describe('ModelsSettingsStore', () => {
           user: {},
           secrets: [{ path: ['apiKey'], set: true }],
         }, PI_NS],
-      })),
+      })) as never,
     })
     const store = new ModelsSettingsStore(face)
     await store.load()
