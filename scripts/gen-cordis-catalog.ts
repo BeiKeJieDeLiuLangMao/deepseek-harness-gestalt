@@ -222,6 +222,7 @@ export const EVENT_WALK_EXEMPTIONS: Record<string, string> = {
 export const LINK_MAP: Readonly<Record<string, string>> = {
   BrowserClosedState: 'browser-runtime.md',
   BrowserCreateRequest: 'browser-runtime.md',
+  BrowserInputRequest: 'browser-runtime.md',
   BrowserInstanceId: 'browser-runtime.md',
   BrowserMutationRequest: 'browser-runtime.md',
   BrowserNavigateRequest: 'browser-runtime.md',
@@ -241,6 +242,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   BrowserWorkspaceCreateRequest: 'browser-runtime.md',
   BrowserWorkspaceDockRequest: 'browser-runtime.md',
   BrowserWorkspaceId: 'browser-runtime.md',
+  BrowserWorkspaceInputRequest: 'browser-runtime.md',
   BrowserWorkspaceMutationRequest: 'browser-runtime.md',
   BrowserWorkspaceNavigateRequest: 'browser-runtime.md',
   BrowserWorkspaceObserveRequest: 'browser-runtime.md',

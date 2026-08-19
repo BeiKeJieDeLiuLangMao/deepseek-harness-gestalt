@@ -51,6 +51,9 @@ function validateSnapshot(value: unknown, fail: InvariantFailure): void {
         if (typeof tab.tabId !== 'string' || tab.tabId.length === 0) {
           fail('browser/workspace tabId must be a non-empty string')
         }
+        if (tab.controlOwner !== 'agent' && tab.controlOwner !== 'human') {
+          fail('browser/workspace controlOwner must be agent or human')
+        }
         if (tabIds.has(tab.tabId)) fail('browser/workspace repeats a tabId')
         tabIds.add(tab.tabId)
       }

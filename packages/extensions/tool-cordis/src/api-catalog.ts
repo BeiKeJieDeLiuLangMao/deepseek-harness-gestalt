@@ -425,6 +425,27 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         throws: ['`BrowserRuntimeError` with `BROWSER_ABORTED`, `BROWSER_DISPOSED`, `BROWSER_NOT_FOUND`, `BROWSER_NOT_OPEN`, or `BROWSER_REVISION_CONFLICT` when the corresponding precondition fails before commit, `BROWSER_PROTOCOL` when the upstream runtime breaks its response protocol, or `BROWSER_RUNTIME_UNAVAILABLE` when it cannot be reached.'],
       },
       {
+        signature: 'abstract input(request: BrowserInputRequest): Promise<BrowserPageState>',
+        description: 'Record one human pointer or keyboard mutation after checking its expected revision.',
+        parameters: [{ name: 'request', description: 'Target, expected revision, optional URL or page text, and cancellation.' }],
+        returns: 'committed open page whose `controlOwner` is `human` and whose revision replaces the caller\'s prior revision. Session, Profile, browser instance, and tab identities stay the same. The Agent must observe again before a later mutation.',
+        throws: ['`BrowserRuntimeError` with `BROWSER_ABORTED`, `BROWSER_DISPOSED`, `BROWSER_NOT_FOUND`, `BROWSER_NOT_OPEN`, `BROWSER_REVISION_CONFLICT`, or `BROWSER_UNKNOWN_URL` when the corresponding precondition fails before commit, `BROWSER_PROTOCOL` when the upstream runtime breaks its response protocol, or `BROWSER_RUNTIME_UNAVAILABLE` when it cannot be reached.'],
+      },
+      {
+        signature: 'takeover(request: BrowserMutationRequest): Promise<BrowserPageState>',
+        description: 'Record reported human ownership after checking the expected revision. Identities stay the same. The lock is the revision: a later Agent mutation that observes the current revision may reclaim the tab without `returnControl`.',
+        parameters: [{ name: 'request', description: 'Target, expected revision, and cancellation signal.' }],
+        returns: 'committed open page whose `controlOwner` is `human`.',
+        throws: ['`BrowserRuntimeError` with `BROWSER_ABORTED`, `BROWSER_DISPOSED`, `BROWSER_NOT_FOUND`, `BROWSER_NOT_OPEN`, or `BROWSER_REVISION_CONFLICT` when the corresponding precondition fails before commit, `BROWSER_PROTOCOL` when the upstream runtime breaks its response protocol, or `BROWSER_RUNTIME_UNAVAILABLE` when it cannot be reached.'],
+      },
+      {
+        signature: 'returnControl(request: BrowserMutationRequest): Promise<BrowserPageState>',
+        description: 'Record reported Agent ownership after checking the expected revision. Identities stay the same. The lock is the revision; this method does not add a second lock.',
+        parameters: [{ name: 'request', description: 'Target, expected revision, and cancellation signal.' }],
+        returns: 'committed open page whose `controlOwner` is `agent`.',
+        throws: ['`BrowserRuntimeError` with `BROWSER_ABORTED`, `BROWSER_DISPOSED`, `BROWSER_NOT_FOUND`, `BROWSER_NOT_OPEN`, or `BROWSER_REVISION_CONFLICT` when the corresponding precondition fails before commit, `BROWSER_PROTOCOL` when the upstream runtime breaks its response protocol, or `BROWSER_RUNTIME_UNAVAILABLE` when it cannot be reached.'],
+      },
+      {
         signature: 'abstract close(request: BrowserMutationRequest): Promise<BrowserClosedState>',
         description: 'Close the addressed tab after checking its expected revision. Temporary Profiles discard identity; persistent Profiles keep the named storage partition.',
         parameters: [{ name: 'request', description: 'Target, expected revision, and cancellation signal.' }],
@@ -479,6 +500,24 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Focus one Session-owned tab and record it as the Session\'s active tab.',
         parameters: [{ name: 'request', description: 'Session-bound mutation request.' }],
         returns: 'the committed focused page.',
+      },
+      {
+        signature: 'async input(request: BrowserWorkspaceInputRequest): Promise<BrowserPageState>',
+        description: 'Record one human pointer or keyboard mutation on a Session-owned tab.',
+        parameters: [{ name: 'request', description: 'Session-bound input request.' }],
+        returns: 'the committed open page whose `controlOwner` is `human`.',
+      },
+      {
+        signature: 'async takeover(request: BrowserWorkspaceMutationRequest): Promise<BrowserPageState>',
+        description: 'Record reported human ownership of one Session-owned tab.',
+        parameters: [{ name: 'request', description: 'Session-bound mutation request.' }],
+        returns: 'the committed open page whose `controlOwner` is `human`.',
+      },
+      {
+        signature: 'async returnControl(request: BrowserWorkspaceMutationRequest): Promise<BrowserPageState>',
+        description: 'Record reported Agent ownership of one Session-owned tab.',
+        parameters: [{ name: 'request', description: 'Session-bound mutation request.' }],
+        returns: 'the committed open page whose `controlOwner` is `agent`.',
       },
       {
         signature: 'async close(request: BrowserWorkspaceMutationRequest): Promise<BrowserClosedState>',
@@ -3072,12 +3111,20 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface BrowserClosedState {\n    readonly status: \'closed\';\n    readonly target: BrowserTarget;\n    readonly revision: number;\n}',
   },
   {
+    name: 'BrowserControlOwner',
+    declaration: 'export type BrowserControlOwner = \'agent\' | \'human\';',
+  },
+  {
     name: 'BrowserCreateAttach',
     declaration: 'export type BrowserCreateAttach = {\n    readonly kind: \'workspace\';\n    readonly workspaceId: BrowserWorkspaceId;\n} | {\n    readonly kind: \'browser\';\n    readonly workspaceId: BrowserWorkspaceId;\n    readonly browserId: BrowserInstanceId;\n};',
   },
   {
     name: 'BrowserCreateRequest',
     declaration: 'export type BrowserCreateRequest = BrowserTemporaryCreateRequest | BrowserPersistentCreateRequest;',
+  },
+  {
+    name: 'BrowserInputRequest',
+    declaration: 'export interface BrowserInputRequest extends BrowserMutationRequest {\n    readonly url?: string;\n    readonly text?: string;\n}',
   },
   {
     name: 'BrowserInstanceId',
@@ -3097,7 +3144,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'BrowserPageState',
-    declaration: 'export interface BrowserPageState {\n    readonly status: \'open\';\n    readonly target: BrowserTarget;\n    readonly revision: number;\n    readonly url: string;\n    readonly title: string;\n    readonly text: string;\n    readonly focused: boolean;\n    readonly chrome: BrowserProfileChrome;\n    readonly storage: BrowserProfileStorage;\n}',
+    declaration: 'export interface BrowserPageState {\n    readonly status: \'open\';\n    readonly target: BrowserTarget;\n    readonly revision: number;\n    readonly url: string;\n    readonly title: string;\n    readonly text: string;\n    readonly focused: boolean;\n    readonly controlOwner: BrowserControlOwner;\n    readonly chrome: BrowserProfileChrome;\n    readonly storage: BrowserProfileStorage;\n}',
   },
   {
     name: 'BrowserPersistentCreateRequest',
@@ -3145,7 +3192,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'BrowserUnavailableState',
-    declaration: 'export interface BrowserUnavailableState {\n    readonly status: \'unavailable\';\n    readonly target: BrowserTarget;\n    readonly revision: number;\n    readonly reason: \'crashed\' | \'unhealthy\' | \'reconnect-failed\';\n    readonly reconnecting: boolean;\n}',
+    declaration: 'export interface BrowserUnavailableState {\n    readonly status: \'unavailable\';\n    readonly target: BrowserTarget;\n    readonly revision: number;\n    readonly reason: \'crashed\' | \'unhealthy\' | \'reconnect-failed\';\n    readonly reconnecting: boolean;\n    readonly controlOwner: BrowserControlOwner;\n}',
   },
   {
     name: 'BrowserWorkspaceCreateRequest',
@@ -3158,6 +3205,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'BrowserWorkspaceId',
     declaration: 'export type BrowserWorkspaceId = Branded<\'BrowserWorkspaceId\'>;',
+  },
+  {
+    name: 'BrowserWorkspaceInputRequest',
+    declaration: 'export type BrowserWorkspaceInputRequest = BrowserInputRequest & BrowserWorkspaceSessionRequest;',
   },
   {
     name: 'BrowserWorkspaceInstanceRecord',
@@ -3189,7 +3240,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'BrowserWorkspaceTabRecord',
-    declaration: 'export interface BrowserWorkspaceTabRecord {\n    readonly tabId: BrowserTabId;\n}',
+    declaration: 'export interface BrowserWorkspaceTabRecord {\n    readonly tabId: BrowserTabId;\n    readonly controlOwner: BrowserControlOwner;\n}',
   },
   {
     name: 'CancelOptions',

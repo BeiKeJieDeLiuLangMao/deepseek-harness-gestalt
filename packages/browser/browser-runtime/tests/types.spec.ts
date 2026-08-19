@@ -16,6 +16,10 @@ import {
   emitBrowserRuntimeState,
   enqueueBrowserRuntimeOperation,
   labeledBrowserProfileName,
+  bindBrowserControlMutation,
+  mutateBrowserControlOwner,
+  requireExpectedBrowserRevision,
+  requireExpectedOpenBrowserPage,
   requireOpenBrowserPage,
   resolveBrowserProfileCreate,
   sameBrowserInstance,
@@ -24,6 +28,7 @@ import {
   sameBrowserWorkspace,
   browserProfileStorage,
   browserTargetFor,
+  withBrowserControlOwner,
 } from '@deepseek-ai/dsh-browser-runtime'
 
 describe('Browser Runtime public vocabulary', () => {
@@ -139,6 +144,7 @@ describe('Browser Runtime public vocabulary', () => {
         title: 'New Tab',
         text: '',
         focused: false,
+        controlOwner: 'agent',
         chrome: { kind: 'temporary', partition: 'persist:session-tandem-work' },
         storage: browserProfileStorage(''),
       }], work.profileId, {
@@ -191,6 +197,7 @@ describe('Browser Runtime shared Provider helpers', () => {
       title: '',
       text: '',
       focused: false,
+      controlOwner: 'agent' as const,
       chrome: { kind: 'temporary' as const, partition: 'persist:session-tmp-1' },
       storage: {
         cookies: '',
@@ -205,6 +212,46 @@ describe('Browser Runtime shared Provider helpers', () => {
       addressedBrowserRuntimeState(undefined, target)
     }).toThrow(BrowserRuntimeError)
     expect(requireOpenBrowserPage(open)).toBe(open)
+    expect(requireExpectedOpenBrowserPage(open, 0)).toBe(open)
+    expect(() => {
+      requireExpectedBrowserRevision(open, 1)
+    }).toThrow(/current 0; observe again before mutating/)
+    expect(() => {
+      requireExpectedOpenBrowserPage(open, 1)
+    }).toThrow(BrowserRuntimeError)
+    expect(withBrowserControlOwner(open, 'human')).toMatchObject({ revision: 1, controlOwner: 'human' })
+    await expect(mutateBrowserControlOwner(
+      operation => Promise.resolve(operation()),
+      () => open,
+      (state, revision) => {
+        if (state.revision !== revision) throw new BrowserRuntimeError('stale', 'BROWSER_REVISION_CONFLICT')
+      },
+      state => state,
+      { target, expectedRevision: 0 },
+      'human',
+    )).resolves.toMatchObject({ revision: 1, controlOwner: 'human' })
+    const assign = bindBrowserControlMutation(
+      operation => Promise.resolve(operation()),
+      () => open,
+      (state, revision) => {
+        if (state.revision !== revision) throw new BrowserRuntimeError('stale', 'BROWSER_REVISION_CONFLICT')
+      },
+      state => state,
+    )
+    await expect(assign({ target, expectedRevision: 0 }, 'agent')).resolves.toMatchObject({
+      revision: 1,
+      controlOwner: 'agent',
+    })
+    const aborted = new AbortController()
+    aborted.abort('cancelled')
+    await expect(mutateBrowserControlOwner(
+      operation => Promise.resolve(operation()),
+      () => open,
+      () => undefined,
+      state => state,
+      { target, expectedRevision: 0, signal: aborted.signal },
+      'human',
+    )).rejects.toMatchObject({ code: 'BROWSER_ABORTED' })
     expect(() => {
       requireOpenBrowserPage({ status: 'closed', target, revision: 1 })
     }).toThrow(BrowserRuntimeError)

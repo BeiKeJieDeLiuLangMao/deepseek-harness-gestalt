@@ -18,15 +18,18 @@ import {
   commitBrowserRuntimeState,
   emitBrowserRuntimeState,
   EMPTY_BROWSER_PROFILE_STORAGE,
+  requireExpectedBrowserRevision,
   requireOpenBrowserPage,
   resolveBrowserCreateAttach,
   resolveBrowserProfileCreate,
+  withBrowserControlOwner,
 } from '@deepseek-ai/dsh-browser-runtime'
 import type {
   BrowserClosedState,
   BrowserCreateAttach,
   BrowserCreateRequest,
   ResolvedBrowserProfileCreate,
+  BrowserInputRequest,
   BrowserMutationRequest,
   BrowserNavigateRequest,
   BrowserObserveRequest,
@@ -182,18 +185,18 @@ export class DeterministicBrowserRuntime extends BrowserRuntime {
   }
 
   /** Resolve an open page or reject a closed target. */
-  private open(target: BrowserTarget): BrowserPageState {
+  protected override openPage(target: BrowserTarget): BrowserPageState {
     return requireOpenBrowserPage(this.addressed(target))
   }
 
   /** Enforce optimistic mutation ordering. */
-  private expected(state: BrowserRuntimeState, revision: number): void {
-    if (state.revision !== revision) {
-      throw new BrowserRuntimeError(
-        `browser revision conflict: expected ${String(revision)}, current ${String(state.revision)}`,
-        'BROWSER_REVISION_CONFLICT',
-      )
-    }
+  protected override expectRevision(state: BrowserRuntimeState, revision: number): void {
+    requireExpectedBrowserRevision(state, revision)
+  }
+
+  /** Commit one next open page after a control-owner mutation. */
+  protected override commitPage(state: BrowserPageState): BrowserPageState {
+    return this.commit(state)
   }
 
   async create(request: BrowserCreateRequest): Promise<BrowserPageState> {
@@ -237,6 +240,7 @@ export class DeterministicBrowserRuntime extends BrowserRuntime {
           title: stored.title,
           text: stored.text,
           focused: false,
+          controlOwner: 'agent',
           chrome: stored.chrome,
           storage: stored.storage,
         })
@@ -259,6 +263,7 @@ export class DeterministicBrowserRuntime extends BrowserRuntime {
       title: 'New Tab',
       text: '',
       focused: false,
+      controlOwner: 'agent',
       chrome: created.chrome,
       storage: EMPTY_BROWSER_PROFILE_STORAGE,
     })
@@ -268,8 +273,8 @@ export class DeterministicBrowserRuntime extends BrowserRuntime {
     assertBrowserNotAborted(request.signal)
     return this.exclusive(() => {
       assertBrowserNotAborted(request.signal)
-      const state = this.open(request.target)
-      this.expected(state, request.expectedRevision)
+      const state = this.openPage(request.target)
+      this.expectRevision(state, request.expectedRevision)
       const page = this.pages.get(request.url)
       if (page === undefined) {
         throw new BrowserRuntimeError(`deterministic browser page is not configured: ${request.url}`, 'BROWSER_UNKNOWN_URL')
@@ -285,6 +290,7 @@ export class DeterministicBrowserRuntime extends BrowserRuntime {
         title: page.title,
         text: page.text,
         focused: state.focused,
+        controlOwner: 'agent',
         chrome: state.chrome,
         storage,
       })
@@ -303,7 +309,7 @@ export class DeterministicBrowserRuntime extends BrowserRuntime {
     assertBrowserNotAborted(request.signal)
     return this.exclusive(() => {
       assertBrowserNotAborted(request.signal)
-      const state = this.open(request.target)
+      const state = this.openPage(request.target)
       const page = this.pages.get(state.url)
       if (page === undefined) {
         throw new BrowserRuntimeError(`deterministic browser page is not configured: ${state.url}`, 'BROWSER_UNKNOWN_URL')
@@ -323,9 +329,31 @@ export class DeterministicBrowserRuntime extends BrowserRuntime {
     assertBrowserNotAborted(request.signal)
     return this.exclusive(() => {
       assertBrowserNotAborted(request.signal)
-      const state = this.open(request.target)
-      this.expected(state, request.expectedRevision)
-      return this.commit({ ...state, revision: state.revision + 1, focused: true })
+      const state = this.openPage(request.target)
+      this.expectRevision(state, request.expectedRevision)
+      return this.commit({ ...withBrowserControlOwner(state, 'agent'), focused: true })
+    })
+  }
+
+  async input(request: BrowserInputRequest): Promise<BrowserPageState> {
+    assertBrowserNotAborted(request.signal)
+    return this.exclusive(() => {
+      assertBrowserNotAborted(request.signal)
+      const state = this.openPage(request.target)
+      this.expectRevision(state, request.expectedRevision)
+      const url = request.url ?? state.url
+      const page = this.pages.get(url)
+      if (request.url !== undefined && page === undefined) {
+        throw new BrowserRuntimeError(`deterministic browser page is not configured: ${url}`, 'BROWSER_UNKNOWN_URL')
+      }
+      return this.commit({
+        ...state,
+        revision: state.revision + 1,
+        url,
+        title: page?.title ?? state.title,
+        text: request.text ?? page?.text ?? state.text,
+        controlOwner: 'human',
+      })
     })
   }
 
@@ -333,8 +361,8 @@ export class DeterministicBrowserRuntime extends BrowserRuntime {
     assertBrowserNotAborted(request.signal)
     return this.exclusive(() => {
       assertBrowserNotAborted(request.signal)
-      const state = this.open(request.target)
-      this.expected(state, request.expectedRevision)
+      const state = this.openPage(request.target)
+      this.expectRevision(state, request.expectedRevision)
       this.rememberPersistent(state)
       return this.commit({ status: 'closed', target: state.target, revision: state.revision + 1 })
     })

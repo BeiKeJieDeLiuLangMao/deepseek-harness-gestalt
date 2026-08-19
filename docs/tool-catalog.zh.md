@@ -40,7 +40,7 @@
 | `@deepseek-ai/dsh-tool-jobs` | `job_kill`、`job_list`、`job_output` | `ctx.tools`、`ctx.jobs`、`ctx.systemPrompt` | `tool/call`、`tool/result`、`user/message via agent.inject() for background completion notices` | - | 与任务种类无关的后台任务控制器：后台 bash 命令、PTY 发送和 subagent 都通过相同的 3 个工具读取、列出和终止。加载该插件会挂接控制器，从而启用生产方的 `ctx.jobs.start()`。 |
 | `@deepseek-ai/dsh-tool-todo` | `todo_write` | `ctx.tools`、`owning Agent session` | `tool/call`、`todo/write`、`tool/result` | - | todo_write 是会话所有的状态；UI 将最新的 todo/write 事件渲染为检查清单。`allowParallelInProgress` 是没有默认值的必填项，因此本目录明确选择 `true`，对应描述允许同时存在多个 `in_progress` 项。选择 `false` 的部署会获得同一工具，但描述会要求只能有 1 个活动任务。 |
 | `@deepseek-ai/dsh-tool-workflow` | `workflow` | `ctx.tools`、`ctx.workflowEngine`、`ctx.systemPrompt`、`a calling Agent (exec.agent parents the script children)` | `tool/call`、`tool/result` | - | - |
-| `@deepseek-ai/dsh-tool-browser` | `browser_close`、`browser_create`、`browser_focus`、`browser_navigate`、`browser_observe`、`browser_screenshot` | `ctx.tools`、`ctx.browserRuntime` | `tool/call`、`tool/result` | - | 所有 Browser 工具均为 deferred：tool_search 返回其 schema 而不激活工具，当前 eligibility 继续作为权威。 |
+| `@deepseek-ai/dsh-tool-browser` | `browser_close`、`browser_create`、`browser_focus`、`browser_input`、`browser_navigate`、`browser_observe`、`browser_return_control`、`browser_screenshot`、`browser_takeover` | `ctx.tools`、`ctx.browserRuntime` | `tool/call`、`tool/result` | - | 所有 Browser 工具均为 deferred：tool_search 返回其 schema 而不激活工具，当前 eligibility 继续作为权威。 |
 | `@deepseek-ai/dsh-tool-web` | `web_fetch`、`web_search` | `ctx.tools`、`ctx.web`、`ctx.systemPrompt` | `tool/call`、`tool/result` | - | web_search 和 web_fetch 将提供方选择置于 ctx.web 之后，使模型可见 schema 在更换后端时保持稳定。 |
 
 <a id="deepseek-aidsh-tool-ask-user"></a>
@@ -2004,6 +2004,60 @@ todo_write 是会话所有的状态；UI 将最新的 todo/write 事件渲染为
 
 来源：[`packages/browser/tool-browser/src/index.ts`](../packages/browser/tool-browser/src/index.ts)
 
+### `browser_input`
+
+记录一次人工指针或键盘写入，并使用该标签页的最新修订号。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profileId": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "type": "string"
+        },
+        "browserId": {
+          "type": "string"
+        },
+        "tabId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "profileId",
+        "workspaceId",
+        "browserId",
+        "tabId"
+      ]
+    },
+    "expectedRevision": {
+      "type": "integer",
+      "description": "Latest revision returned by a browser operation."
+    },
+    "url": {
+      "type": "string",
+      "description": "Optional URL produced by the human mutation."
+    },
+    "text": {
+      "type": "string",
+      "description": "Optional page text produced by the human mutation."
+    }
+  },
+  "required": [
+    "target",
+    "expectedRevision"
+  ]
+}
+```
+
+来源：[`packages/browser/tool-browser/src/index.ts`](../packages/browser/tool-browser/src/index.ts)
+
 ### `browser_navigate`
 
 使用最新修订号把一个浏览器标签页导航到 URL。
@@ -2096,6 +2150,52 @@ todo_write 是会话所有的状态；UI 将最新的 todo/write 事件渲染为
 
 来源：[`packages/browser/tool-browser/src/index.ts`](../packages/browser/tool-browser/src/index.ts)
 
+### `browser_return_control`
+
+使用最新修订号记录一个浏览器标签页的报告 Agent 所有权。锁是修订号；本操作不增加第二把锁。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profileId": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "type": "string"
+        },
+        "browserId": {
+          "type": "string"
+        },
+        "tabId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "profileId",
+        "workspaceId",
+        "browserId",
+        "tabId"
+      ]
+    },
+    "expectedRevision": {
+      "type": "integer",
+      "description": "Latest revision returned by a browser operation."
+    }
+  },
+  "required": [
+    "target",
+    "expectedRevision"
+  ]
+}
+```
+
+来源：[`packages/browser/tool-browser/src/index.ts`](../packages/browser/tool-browser/src/index.ts)
+
 ### `browser_screenshot`
 
 捕获一个浏览器标签页的确定性 PNG 截图事实。
@@ -2131,6 +2231,52 @@ todo_write 是会话所有的状态；UI 将最新的 todo/write 事件渲染为
   },
   "required": [
     "target"
+  ]
+}
+```
+
+来源：[`packages/browser/tool-browser/src/index.ts`](../packages/browser/tool-browser/src/index.ts)
+
+### `browser_takeover`
+
+使用最新修订号记录一个浏览器标签页的报告人工所有权。锁是修订号；之后观察到当前修订号的 Agent 写入可以收回该标签页。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profileId": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "type": "string"
+        },
+        "browserId": {
+          "type": "string"
+        },
+        "tabId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "profileId",
+        "workspaceId",
+        "browserId",
+        "tabId"
+      ]
+    },
+    "expectedRevision": {
+      "type": "integer",
+      "description": "Latest revision returned by a browser operation."
+    }
+  },
+  "required": [
+    "target",
+    "expectedRevision"
   ]
 }
 ```

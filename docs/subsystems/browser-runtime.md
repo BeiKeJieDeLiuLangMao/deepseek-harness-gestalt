@@ -6,9 +6,9 @@ The Browser Runtime capability separates the provider-neutral [`ctx.browserRunti
 
 ## Identity and state
 
-A `BrowserTarget` contains four opaque branded identities: Profile, Workspace, browser instance, and tab. Callers carry the complete target returned by `create`; none of its string values have caller-visible structure. Open state contains URL, title, text, focus, revision, address-field `chrome`, and partition-backed `storage`. Temporary chrome omits a label. Closed state is a terminal receipt retaining the target and revision.
+A `BrowserTarget` contains four opaque branded identities: Profile, Workspace, browser instance, and tab. Callers carry the complete target returned by `create`; none of its string values have caller-visible structure. Open state contains URL, title, text, focus, revision, `controlOwner`, address-field `chrome`, and partition-backed `storage`. Temporary chrome omits a label. Closed state is a terminal receipt retaining the target and revision.
 
-An `unavailable` state is the truthful projection of Provider availability loss for an existing target: the managed Tandem Provider commits it when its child process crashes or fails health checks, keeps the target and last revision, names the loss reason, and flags an in-flight reconnect. It is not the terminal closed receipt; a successful reconnect re-commits open page state for the same target at the next revision, and exhausted reconnects commit `reconnect-failed`.
+An `unavailable` state is the truthful projection of Provider availability loss for an existing target: the managed Tandem Provider commits it when its child process crashes or fails health checks, keeps the target, last revision, and current control owner, names the loss reason, and flags an in-flight reconnect. It is not the terminal closed receipt; a successful reconnect re-commits open page state for the same target at the next revision, and exhausted reconnects commit `reconnect-failed`.
 
 ```ts type-equiv
 /** Address-field chrome facts for one committed Browser Profile. Temporary Profiles omit a label. */
@@ -27,12 +27,13 @@ interface BrowserUnavailableState {
   readonly revision: number
   readonly reason: 'crashed' | 'unhealthy' | 'reconnect-failed'
   readonly reconnecting: boolean
+  readonly controlOwner: BrowserControlOwner
 }
 ```
 
 ## Concurrency and lifecycle
 
-Providers serialize operations. `create` may attach a new instance to an existing Workspace or a new tab to an existing instance. `navigate`, `focus`, and `close` require the last observed revision and reject stale mutations. `observe` and `screenshot` do not advance the revision. A named persistent Profile restores the same `persist:session-*` partition after close. Temporary Profiles receive unique partitions and leave no reusable identity. A second independent writer of the same named Profile rejects with `BROWSER_PROFILE_BUSY`. Teardown stops new admission, drains accepted operations, and closes every open Profile. Session-local ownership, Dock facts, and cross-Session isolation live in [`dsh-browser-workspace`](../../packages/browser/browser-workspace).
+Providers serialize operations. `create` may attach a new instance to an existing Workspace or a new tab to an existing instance. `navigate`, `focus`, `input`, `takeover`, `returnControl`, and `close` require the last observed revision and reject stale mutations. `controlOwner` is reported ownership. The lock is the revision: after `observe`, an Agent `navigate` or `focus` that matches the current revision reclaims the tab without `returnControl`. Human `input` and `takeover` set `controlOwner` to `human`; `returnControl` and Agent mutations set it to `agent`. `observe` and `screenshot` do not advance the revision. A named persistent Profile restores the same `persist:session-*` partition after close. Temporary Profiles receive unique partitions and leave no reusable identity. A second independent writer of the same named Profile rejects with `BROWSER_PROFILE_BUSY`. Teardown stops new admission, drains accepted operations, and closes every open Profile. Session-local ownership, Dock facts, persisted control ownership, and cross-Session isolation live in [`dsh-browser-workspace`](../../packages/browser/browser-workspace).
 
 The deterministic Provider gives each generation an independent owner token. Its invariant seeds from that generation's authoritative current state on initial load and hot reload, then registers a synchronous pre-commit validator for stable identity, exact revision succession, and terminal closure. A validation failure leaves the previous state authoritative. After commit, the Provider publishes on `browser/runtime-state`; each ordinary observer failure is contained, later observers still run, and asynchronous observers are not awaited.
 
@@ -40,7 +41,7 @@ The tandem Provider owns one managed Tandem Browser child process at the pinned 
 
 ## Discovery and replay
 
-The Consumer registers six deferred ordinary tools. `tool_search` returns schemas without activating tools, and current eligibility remains authoritative. Every operation renders complete Browser facts into the durable ordinary tool result. When a calling Agent Session is present and the Workspace binder is composed, created tabs also become Session-owned Workspace facts. Together with logged request headers and `browser/workspace` snapshots, the Session can reconstruct model-visible Browser facts and Session-local Workspace ownership.
+The Consumer registers nine deferred ordinary tools. `tool_search` returns schemas without activating tools, and current eligibility remains authoritative. Every operation renders complete Browser facts, including current control ownership, into the durable ordinary tool result. When a calling Agent Session is present and the Workspace binder is composed, created tabs also become Session-owned Workspace facts. Together with logged request headers and `browser/workspace` snapshots, the Session can reconstruct model-visible Browser facts and Session-local Workspace ownership.
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -119,6 +120,44 @@ abstract screenshot(request: BrowserObserveRequest): Promise<BrowserScreenshot>
 abstract focus(request: BrowserMutationRequest): Promise<BrowserPageState>
 
 /**
+ * Record one human pointer or keyboard mutation after checking its expected revision.
+ * @param request - Target, expected revision, optional URL or page text, and cancellation.
+ * @returns committed open page whose `controlOwner` is `human` and whose revision replaces
+ * the caller's prior revision. Session, Profile, browser instance, and tab identities stay
+ * the same. The Agent must observe again before a later mutation.
+ * @throws `BrowserRuntimeError` with `BROWSER_ABORTED`, `BROWSER_DISPOSED`, `BROWSER_NOT_FOUND`,
+ * `BROWSER_NOT_OPEN`, `BROWSER_REVISION_CONFLICT`, or `BROWSER_UNKNOWN_URL` when the
+ * corresponding precondition fails before commit, `BROWSER_PROTOCOL` when the upstream runtime
+ * breaks its response protocol, or `BROWSER_RUNTIME_UNAVAILABLE` when it cannot be reached.
+ */
+abstract input(request: BrowserInputRequest): Promise<BrowserPageState>
+
+/**
+ * Record reported human ownership after checking the expected revision. Identities stay
+ * the same. The lock is the revision: a later Agent mutation that observes the current
+ * revision may reclaim the tab without `returnControl`.
+ * @param request - Target, expected revision, and cancellation signal.
+ * @returns committed open page whose `controlOwner` is `human`.
+ * @throws `BrowserRuntimeError` with `BROWSER_ABORTED`, `BROWSER_DISPOSED`, `BROWSER_NOT_FOUND`,
+ * `BROWSER_NOT_OPEN`, or `BROWSER_REVISION_CONFLICT` when the corresponding precondition fails
+ * before commit, `BROWSER_PROTOCOL` when the upstream runtime breaks its response protocol, or
+ * `BROWSER_RUNTIME_UNAVAILABLE` when it cannot be reached.
+ */
+takeover(request: BrowserMutationRequest): Promise<BrowserPageState>
+
+/**
+ * Record reported Agent ownership after checking the expected revision. Identities stay
+ * the same. The lock is the revision; this method does not add a second lock.
+ * @param request - Target, expected revision, and cancellation signal.
+ * @returns committed open page whose `controlOwner` is `agent`.
+ * @throws `BrowserRuntimeError` with `BROWSER_ABORTED`, `BROWSER_DISPOSED`, `BROWSER_NOT_FOUND`,
+ * `BROWSER_NOT_OPEN`, or `BROWSER_REVISION_CONFLICT` when the corresponding precondition fails
+ * before commit, `BROWSER_PROTOCOL` when the upstream runtime breaks its response protocol, or
+ * `BROWSER_RUNTIME_UNAVAILABLE` when it cannot be reached.
+ */
+returnControl(request: BrowserMutationRequest): Promise<BrowserPageState>
+
+/**
  * Close the addressed tab after checking its expected revision. Temporary Profiles discard
  * identity; persistent Profiles keep the named storage partition.
  * @param request - Target, expected revision, and cancellation signal.
@@ -131,7 +170,7 @@ abstract focus(request: BrowserMutationRequest): Promise<BrowserPageState>
 abstract close(request: BrowserMutationRequest): Promise<BrowserClosedState>
 ```
 
-Source: [`packages/browser/browser-runtime/src/index.ts:95`](../../packages/browser/browser-runtime/src/index.ts)
+Source: [`packages/browser/browser-runtime/src/index.ts:104`](../../packages/browser/browser-runtime/src/index.ts)
 
 <a id="ctxbrowserworkspace--browserworkspacebinder"></a>
 
@@ -190,6 +229,27 @@ async screenshot(request: BrowserWorkspaceObserveRequest): Promise<BrowserScreen
 async focus(request: BrowserWorkspaceMutationRequest): Promise<BrowserPageState>
 
 /**
+ * Record one human pointer or keyboard mutation on a Session-owned tab.
+ * @param request - Session-bound input request.
+ * @returns the committed open page whose `controlOwner` is `human`.
+ */
+async input(request: BrowserWorkspaceInputRequest): Promise<BrowserPageState>
+
+/**
+ * Record reported human ownership of one Session-owned tab.
+ * @param request - Session-bound mutation request.
+ * @returns the committed open page whose `controlOwner` is `human`.
+ */
+async takeover(request: BrowserWorkspaceMutationRequest): Promise<BrowserPageState>
+
+/**
+ * Record reported Agent ownership of one Session-owned tab.
+ * @param request - Session-bound mutation request.
+ * @returns the committed open page whose `controlOwner` is `agent`.
+ */
+async returnControl(request: BrowserWorkspaceMutationRequest): Promise<BrowserPageState>
+
+/**
  * Close one Session-owned tab and drop it from the Session Workspace.
  * @param request - Session-bound mutation request.
  * @returns the terminal close receipt.
@@ -205,7 +265,7 @@ async cleanup(session: Session): Promise<void>
 
 Types: [Session](session.md)
 
-Source: [`packages/browser/browser-workspace/src/index.ts:85`](../../packages/browser/browser-workspace/src/index.ts)
+Source: [`packages/browser/browser-workspace/src/index.ts:92`](../../packages/browser/browser-workspace/src/index.ts)
 
 <a id="browser-events"></a>
 
@@ -228,5 +288,5 @@ Post-commit Browser Runtime lifecycle notification. Providers contain synchronou
 'browser/runtime-state'(state: BrowserRuntimeState): void
 ```
 
-Source: [`packages/browser/browser-runtime/src/index.ts:85`](../../packages/browser/browser-runtime/src/index.ts)
+Source: [`packages/browser/browser-runtime/src/index.ts:94`](../../packages/browser/browser-runtime/src/index.ts)
 <!-- END GENERATED cordis-surface -->
