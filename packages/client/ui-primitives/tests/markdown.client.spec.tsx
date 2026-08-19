@@ -256,6 +256,29 @@ describe('MarkdownText', () => {
     expect(map.inspect(range)).toBeNull()
   })
 
+  it('does not overwrite a later Markdown selection map when an earlier one unmounts', () => {
+    const selectionMapRef: { current: MarkdownSelectionMap | null } = { current: null }
+    const first = render(
+      <MarkdownText text="first paragraph" selectionMapRef={selectionMapRef} />,
+    )
+    const firstMap = selectionMapRef.current
+    const second = render(
+      <MarkdownText text="second paragraph" selectionMapRef={selectionMapRef} />,
+    )
+    const secondMap = selectionMapRef.current
+    expect(secondMap).not.toBe(firstMap)
+    first.unmount()
+    expect(selectionMapRef.current).toBe(secondMap)
+    second.unmount()
+    expect(selectionMapRef.current).toBeNull()
+  })
+
+  it('does not publish a selection map while Markdown is still streaming', () => {
+    const selectionMapRef: { current: MarkdownSelectionMap | null } = { current: null }
+    render(<MarkdownText text="streaming paragraph" streaming selectionMapRef={selectionMapRef} />)
+    expect(selectionMapRef.current).toBeNull()
+  })
+
   it('forwards localized labels to fenced code blocks', () => {
     render(<MarkdownText text={'```ts\nconst answer = 42\n```'} codeLabels={{ copyLabel: 'Copy code', copiedLabel: 'Copied' }} />)
     expect(screen.getByRole('button', { name: 'Copy code' })).toBeTruthy()

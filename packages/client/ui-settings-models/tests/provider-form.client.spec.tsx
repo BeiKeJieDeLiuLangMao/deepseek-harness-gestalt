@@ -355,6 +355,21 @@ describe('model list editing', () => {
     })
   })
 
+  it('omits route defaultInput when the last modality is cleared', async () => {
+    const { mutate } = await mountSection({
+      providers: { openai: { baseURL: 'https://proxy.example/v1', defaultInput: ['image'] } },
+    })
+    openEditor('openai')
+    fireEvent.click(screen.getByLabelText(`${en.defaultInput} ${en.modalityImage}`))
+    fireEvent.click(screen.getByText(en.apply))
+
+    await waitFor(() => { expect(mutate).toHaveBeenCalled() })
+    expect(firstMutate(mutate)).toMatchObject({
+      ns: 'llm-pi-ai',
+      ops: [{ op: 'unset', path: ['providers', 'openai', 'defaultInput'] }],
+    })
+  })
+
   it('names a duplicate model id in the edit flow too', async () => {
     const { mutate } = await mountSection({
       providers: { openai: { baseURL: 'https://proxy.example/v1', models: [{ id: 'dup' }] } },

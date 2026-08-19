@@ -3271,6 +3271,37 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       update: request => settingsWrite(request, request.payload.ns, 'update', request.payload.patch, request.payload.expectedRevision),
       replace: request => settingsWrite(request, request.payload.ns, 'replace', request.payload.section, request.payload.expectedRevision),
       mutate: request => settingsWrite(request, request.payload.ns, 'mutate', request.payload.ops, request.payload.expectedRevision),
+      async testWebSearch(request, signal) {
+        const web = ctx.get('web') as {
+          search(
+            request: { query: string },
+            signal?: AbortSignal,
+          ): Promise<{ sources: readonly { title?: string; url?: string }[] }>
+        } | undefined
+        if (web === undefined) {
+          return err(request, {
+            code: 'internal',
+            message: 'web capability is absent: this deployment does not mount @deepseek-ai/dsh-web',
+            details: {},
+          })
+        }
+        const query = request.payload.query ?? 'deepseek harness'
+        try {
+          const result = await web.search({ query }, signal)
+          const first = result.sources[0]
+          return ok(request, {
+            count: result.sources.length,
+            ...first?.title === undefined ? {} : { title: first.title },
+            ...first?.url === undefined ? {} : { url: first.url },
+          })
+        } catch (error: unknown) {
+          return err(request, {
+            code: 'internal',
+            message: error instanceof Error ? error.message : String(error),
+            details: {},
+          })
+        }
+      },
     },
 
     credentials: {

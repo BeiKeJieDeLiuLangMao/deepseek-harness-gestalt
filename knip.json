@@ -19,10 +19,7 @@
     "where.exe"
   ],
   "ignore": [
-    "scripts/noise-security-path/pkg/*.d.ts",
-    "apps/mobile/src/companion-cache.ts",
-    "apps/mobile/src/companion-push.ts",
-    "apps/mobile/src/companion-release.ts"
+    "scripts/noise-security-path/pkg/*.d.ts"
   ],
   "ignoreWorkspaces": [
     "vendor/*",

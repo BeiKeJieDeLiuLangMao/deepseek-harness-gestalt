@@ -70,4 +70,39 @@ describe('createUpdaterSource', () => {
     expect(report).not.toHaveBeenCalled()
     expect(unsubscribe).toHaveBeenCalledOnce()
   })
+
+  it('reports subscriber and initial-read failures through the default diagnostics', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const source = createUpdaterSource()
+    source.subscribe(() => { throw new Error('subscriber gone') })
+    source.set(INITIAL_UPDATER_STATUS)
+    bindDesktopUpdater(source, {
+      getStatus: () => Promise.reject(new Error('ipc gone')),
+      onStatus: () => () => {},
+    })
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(error).toHaveBeenCalledTimes(2)
+    error.mockRestore()
+  })
+
+  it('applies an initial read when no push wins and reports a live read failure', async () => {
+    const source = createUpdaterSource()
+    bindDesktopUpdater(source, {
+      getStatus: async () => ({ state: 'available', lastCheckedAt: 1, newVersion: '0.1.1' }),
+      onStatus: () => () => {},
+    })
+    await Promise.resolve()
+    expect(source.getSnapshot().state).toBe('available')
+
+    const liveReport = vi.fn()
+    bindDesktopUpdater(createUpdaterSource(), {
+      getStatus: () => Promise.reject(new Error('live ipc gone')),
+      onStatus: () => () => {},
+    }, liveReport)
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(liveReport).toHaveBeenCalledOnce()
+  })
 })

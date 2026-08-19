@@ -112,6 +112,7 @@ const PRIVILEGED_METHODS = new Set([
   'settings.update',
   'settings.replace',
   'settings.mutate',
+  'settings.testWebSearch',
   'credentials.describe',
   'credentials.set',
   'credentials.unset',

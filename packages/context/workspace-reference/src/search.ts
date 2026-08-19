@@ -3,7 +3,13 @@
  * containing `/` matches path segments in order. An empty query is
  * directories-first alphabetical browse.
  */
-import type { WorkspacePathEntry } from './types.ts'
+
+/** One indexed workspace path. Browser ranking shares this record. */
+export interface WorkspacePathEntry {
+  /** Workspace-relative path using `/` separators. */
+  readonly relative: string
+  readonly kind: 'file' | 'dir'
+}
 
 /**
  * Rank the top `limit` paths matching `query`.

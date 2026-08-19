@@ -235,6 +235,7 @@ describe('Remote Access HTTP assembled flow', () => {
     const remoteAccess = {
       getMobileAccessState: vi.fn(async () => ({ enabled: true })),
       setMobileAccess: vi.fn(async () => ({ enabled: true })),
+      reissueDesktopRelayAuthority: vi.fn(async () => ({ enabled: true })),
       createChallenge: vi.fn(async () => ({ challengeId: 'challenge-one' })),
       cancelChallenge: vi.fn(),
       listPendingPairings: vi.fn(async () => []),
@@ -261,7 +262,9 @@ describe('Remote Access HTTP assembled flow', () => {
     }
 
     expect((await request({ operation: 'get-mobile-access' })).status).toBe(200)
+    expect((await request({ operation: 'reissue-desktop-relay' })).status).toBe(200)
     expect((await request({ operation: 'cancel-challenge', challengeId: 'challenge-one' })).status).toBe(200)
+    expect((await request({ operation: 'revoke-pairing', pairingId: 'pairing-one' })).status).toBe(200)
     expect((await request({ operation: 'reject-pairing', pendingPairingId: 'pending-one' })).status).toBe(200)
     remoteAccess.getMobilePairingStatus.mockResolvedValueOnce({
       status: 'paired', pairingId: parsePersonalPairingId('pairing-one'), sealedRelayAuthority: Uint8Array.of(1, 2),

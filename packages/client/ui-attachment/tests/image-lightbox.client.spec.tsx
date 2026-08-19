@@ -77,4 +77,80 @@ describe('ImageLightbox', () => {
     fireEvent.click(view.getByRole('img', { name: 'shot.png' }), { clientX: 25, clientY: 40 })
     expect(onPlace).toHaveBeenCalled()
   })
+
+  it('pins a click, refuses a new mark, and keeps pin selection on the overlay', () => {
+    const onPlace = vi.fn()
+    const onSelect = vi.fn()
+    const view = render(
+      <ImageLightbox
+        src="blob:original"
+        alt="shot.png"
+        labels={labels}
+        onClose={vi.fn()}
+        annotation={{
+          mode: true,
+          pins: [{ id: 'pin-1', x: 20, y: 30, index: 1 }],
+          modeLabel: 'Annotate image',
+          exitLabel: 'Exit annotation',
+          refuse: 'Cannot add another pin',
+          onToggleMode: () => {},
+          onPlace,
+          onSelect,
+        }}
+      />,
+    )
+    const image = view.getByRole('img', { name: 'shot.png' })
+    vi.spyOn(image, 'getBoundingClientRect').mockReturnValue({
+      width: 0, height: 0, top: 0, left: 0, bottom: 0, right: 0, x: 0, y: 0, toJSON: () => ({}),
+    })
+    fireEvent.click(image, { clientX: 10, clientY: 10 })
+    expect(onPlace).not.toHaveBeenCalled()
+    expect(view.getByRole('alert').textContent).toBe('Cannot add another pin')
+
+    const pin = view.getByRole('button', { name: 'Pin 1' })
+    fireEvent.pointerDown(pin)
+    fireEvent.click(pin)
+    expect(onSelect).toHaveBeenCalledWith('pin-1')
+  })
+
+  it('places a pin at 0% when the displayed raster has no size', () => {
+    const onPlace = vi.fn()
+    const view = render(
+      <ImageLightbox
+        src="blob:original"
+        alt="shot.png"
+        labels={labels}
+        onClose={vi.fn()}
+        annotation={{
+          mode: true,
+          pins: [],
+          modeLabel: 'Annotate image',
+          exitLabel: 'Exit annotation',
+          onToggleMode: () => {},
+          onPlace,
+          onSelect: () => {},
+        }}
+      />,
+    )
+    const image = view.getByRole('img', { name: 'shot.png' })
+    vi.spyOn(image, 'getBoundingClientRect').mockReturnValue({
+      width: 0, height: 10, top: 0, left: 0, bottom: 10, right: 0, x: 0, y: 0, toJSON: () => ({}),
+    })
+    fireEvent.click(image, { clientX: 4, clientY: 6 })
+    expect(onPlace).toHaveBeenCalledWith(0, 0)
+
+    onPlace.mockClear()
+    vi.spyOn(image, 'getBoundingClientRect').mockReturnValue({
+      width: 20, height: 0, top: 0, left: 0, bottom: 0, right: 20, x: 0, y: 0, toJSON: () => ({}),
+    })
+    fireEvent.click(image, { clientX: 4, clientY: 6 })
+    expect(onPlace).toHaveBeenCalledWith(0, 0)
+
+    onPlace.mockClear()
+    vi.spyOn(image, 'getBoundingClientRect').mockReturnValue({
+      width: 100, height: 50, top: 0, left: 0, bottom: 50, right: 100, x: 0, y: 0, toJSON: () => ({}),
+    })
+    fireEvent.click(image, { clientX: 25, clientY: 10 })
+    expect(onPlace).toHaveBeenCalledWith(25, 20)
+  })
 })

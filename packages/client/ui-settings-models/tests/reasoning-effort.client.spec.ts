@@ -20,6 +20,11 @@ describe('declaredEfforts', () => {
     expect(stored).toEqual({ high: 'ultra' })
     expect(declared).toEqual({ high: 'ultra', low: 'low' })
   })
+
+  it('copies only null or string wire values from a stored dict', () => {
+    expect(declaredEfforts({ high: 'high', off: null, nested: { extra: true }, count: 1 }))
+      .toEqual({ high: 'high', off: null })
+  })
 })
 
 describe('toggleEffort', () => {

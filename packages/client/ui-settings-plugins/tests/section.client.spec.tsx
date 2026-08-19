@@ -19,11 +19,13 @@ import { PluginsSettingsSection } from '../src/client/PluginsSettingsSection.tsx
 import type { PluginsSettingsSectionProps, PluginsSettingsTabEntry } from '../src/client/PluginsSettingsSection.tsx'
 import { WebSearchCard } from '../src/client/WebSearchCard.tsx'
 import type { WebSearchCardProps } from '../src/client/WebSearchCard.tsx'
+import { WebSearchProviderPanel } from '../src/client/WebSearchProviderPanel.tsx'
+import type { WebSearchProviderPanelProps } from '../src/client/WebSearchProviderPanel.tsx'
 import type { AgentLoopCardState } from '../src/client/agent-loop-card-controller.ts'
 import type { BashCardState } from '../src/client/bash-card-controller.ts'
 import type { CardFieldState, CardShell } from '../src/client/card-form.ts'
 import type { ConfigurablePluginsTabState } from '../src/client/tab-store.ts'
-import type { WebSearchCardState } from '../src/client/web-search-card-controller.ts'
+import type { WebSearchCardState, WebSearchProbe } from '../src/client/web-search-card-controller.ts'
 import { en } from '../src/client/locales.ts'
 
 afterEach(cleanup)
@@ -358,58 +360,194 @@ describe('WebSearchCard', () => {
       apiKey: field(''),
       apiKeyConfigured: false,
       apiKeyWritable: true,
+      active: true,
+      selectedProvider: 'deepseek',
       ...state,
     })
-    const actions = cardActions()
-    const props = { ...actions, t, useWebSearchCard: bindSnapshotSelector(store) } as unknown as WebSearchCardProps
+    const tabs = createSnapshotStore([
+      { id: 'deepseek', order: 0, label: en.providerDeepseek },
+      { id: 'anthropic-messages', order: 10, label: en.providerAnthropic },
+      { id: 'kimi', order: 20, label: en.providerKimi },
+    ])
+    const actions = {
+      ...cardActions(),
+      selectProvider: vi.fn(),
+      renderSlot: vi.fn(),
+      testSearch: vi.fn(async (): Promise<WebSearchProbe> => ({ status: 'ok', count: 2, title: 'DeepSeek Harness' })),
+    }
+    const props = {
+      ...actions,
+      t,
+      useWebSearchCard: bindSnapshotSelector(store),
+      useProviderTabs: bindSnapshotSelector(tabs),
+      titleKey: 'webSearchTitle',
+      descriptionKey: 'webSearchDescription',
+    } as unknown as WebSearchCardProps
     render(<WebSearchCard {...props} />)
     return actions
   }
 
-  it('reports whether a key is configured without ever showing one', () => {
-    renderWebSearch({ apiKeyConfigured: true })
+  it('selects a provider tab immediately', () => {
+    const actions = renderWebSearch()
     fireEvent.click(screen.getByText(en.webSearchTitle))
+    fireEvent.click(screen.getByRole('tab', { name: en.providerKimi }))
+    expect(actions.selectProvider).toHaveBeenCalledWith('kimi')
+  })
 
+  it('always shows the Web Search chrome even before a provider publishes', () => {
+    renderWebSearch({ available: false })
+    expect(screen.getByText(en.webSearchTitle)).toBeTruthy()
+  })
+
+  it('fills max uses with 5 when the section has no number', () => {
+    renderWebSearch({ maxUses: field('') })
+    fireEvent.click(screen.getByText(en.webSearchTitle))
+    expect(screen.getByLabelText(en.webSearchMaxUses)).toHaveProperty('value', '5')
+  })
+
+  it('probes the selected provider with a test search', async () => {
+    const actions = renderWebSearch()
+    fireEvent.click(screen.getByText(en.webSearchTitle))
+    fireEvent.click(screen.getByRole('button', { name: en.testSearch }))
+    expect(actions.testSearch).toHaveBeenCalledOnce()
+    expect(await screen.findByText(`${en.testSearchOk} · 2 · DeepSeek Harness`)).toBeTruthy()
+  })
+
+  it('stages the key, endpoint, and search budget from the selected tab', () => {
+    const actions = renderWebSearch({
+      apiKeyConfigured: true,
+      baseURL: field('https://search.test/v1', { overridden: true }),
+      maxUses: field('3', { overridden: true }),
+    })
+    fireEvent.click(screen.getByText(en.webSearchTitle))
+    fireEvent.change(screen.getByLabelText(en.webSearchApiKey), { target: { value: 'ds-secret' } })
+    fireEvent.change(screen.getByLabelText(en.webSearchBaseUrl), { target: { value: 'https://other.test' } })
+    fireEvent.change(screen.getByLabelText(en.webSearchMaxUses), { target: { value: '4' } })
+    for (const reset of screen.getAllByRole('button', { name: en.reset })) fireEvent.click(reset)
+    expect(actions.edit.mock.calls).toEqual([
+      ['apiKey', 'ds-secret'],
+      ['baseURL', 'https://other.test'],
+      ['maxUses', '4'],
+    ])
+    expect(actions.resetField.mock.calls).toEqual([['baseURL'], ['maxUses']])
+  })
+
+  it('falls back to the first tab and its DeepSeek endpoint hint', () => {
+    renderWebSearch({ selectedProvider: 'missing' })
+    fireEvent.click(screen.getByText(en.webSearchTitle))
+    expect(screen.getByText(en.webSearchBaseUrlHint)).toBeTruthy()
+  })
+
+  it('uses Anthropic and Kimi endpoint hints and reports empty or failed probes', async () => {
+    const anthropic = renderWebSearch({ selectedProvider: 'anthropic-messages' })
+    fireEvent.click(screen.getByText(en.webSearchTitle))
+    expect(screen.getByText(en.anthropicSearchBaseUrlHint)).toBeTruthy()
+    anthropic.testSearch.mockResolvedValueOnce({ status: 'ok', count: 0 })
+    fireEvent.click(screen.getByRole('button', { name: en.testSearch }))
+    expect(await screen.findByText(en.testSearchEmpty)).toBeTruthy()
+    cleanup()
+
+    const kimi = renderWebSearch({ selectedProvider: 'kimi' })
+    fireEvent.click(screen.getByText(en.webSearchTitle))
+    expect(screen.getByText(en.kimiSearchBaseUrlHint)).toBeTruthy()
+    kimi.testSearch.mockResolvedValueOnce({ status: 'ok', count: 1 })
+    fireEvent.click(screen.getByRole('button', { name: en.testSearch }))
+    expect(await screen.findByText(`${en.testSearchOk} · 1`)).toBeTruthy()
+    cleanup()
+
+    const failed = renderWebSearch()
+    failed.testSearch.mockResolvedValueOnce({ status: 'error', message: 'offline' })
+    fireEvent.click(screen.getByText(en.webSearchTitle))
+    fireEvent.click(screen.getByRole('button', { name: en.testSearch }))
+    expect(await screen.findByText(`${en.testSearchFailed}: offline`)).toBeTruthy()
+  })
+
+  it('renders without provider tabs when none are registered', () => {
+    const store = createSnapshotStore<WebSearchCardState>({
+      ...settled,
+      baseURL: field(''),
+      maxUses: field('5'),
+      apiKey: field(''),
+      apiKeyConfigured: false,
+      apiKeyWritable: true,
+      active: true,
+      selectedProvider: 'deepseek',
+    })
+    const props = {
+      ...cardActions(),
+      t,
+      selectProvider: vi.fn(),
+      renderSlot: vi.fn(),
+      testSearch: vi.fn(async () => ({ status: 'ok' as const, count: 0 })),
+      useWebSearchCard: bindSnapshotSelector(store),
+      useProviderTabs: () => [],
+      titleKey: 'webSearchTitle',
+      descriptionKey: 'webSearchDescription',
+    } as unknown as WebSearchCardProps
+    render(<WebSearchCard {...props} />)
+    expect(screen.queryByRole('tablist')).toBeNull()
+  })
+})
+
+describe('WebSearchProviderPanel', () => {
+  function renderPanel(state: Partial<WebSearchCardState> = {}) {
+    const store = createSnapshotStore<WebSearchCardState>({
+      ...settled,
+      baseURL: field(''),
+      maxUses: field('5'),
+      apiKey: field(''),
+      apiKeyConfigured: false,
+      apiKeyWritable: true,
+      active: true,
+      selectedProvider: 'deepseek',
+      ...state,
+    })
+    const actions = cardActions()
+    const props = {
+      ...actions,
+      t,
+      useWebSearchCard: bindSnapshotSelector(store),
+      titleKey: 'webSearchTitle',
+      descriptionKey: 'webSearchDescription',
+      baseUrlHintKey: 'webSearchBaseUrlHint',
+      idPrefix: 'plugin-config-web-search',
+      useThis: vi.fn(),
+    } as unknown as WebSearchProviderPanelProps
+    render(<WebSearchProviderPanel {...props} />)
+    return actions
+  }
+
+  it('reports whether a key is configured without ever showing one', () => {
+    renderPanel({ apiKeyConfigured: true })
     expect(screen.getByText(en.webSearchApiKeySet)).toBeTruthy()
     expect(screen.getByLabelText(en.webSearchApiKey)).toHaveProperty('type', 'password')
   })
 
   it('keeps the key control usable while the settings document is read-only', () => {
-    const actions = renderWebSearch({ writable: false })
-    fireEvent.click(screen.getByText(en.webSearchTitle))
-
+    const actions = renderPanel({ writable: false })
     const key = screen.getByLabelText(en.webSearchApiKey)
     expect(key).toHaveProperty('disabled', false)
     expect(screen.getByLabelText(en.webSearchBaseUrl)).toHaveProperty('disabled', true)
-
     fireEvent.change(key, { target: { value: 'ds-secret' } })
-
     expect(actions.edit).toHaveBeenCalledWith('apiKey', 'ds-secret')
   })
 
   it('disables the key control when the reference itself is not writable', () => {
-    // A key coming from the process environment: the settings document is
-    // writable, the credential is not.
-    renderWebSearch({ apiKeyConfigured: true, apiKeyWritable: false })
-    fireEvent.click(screen.getByText(en.webSearchTitle))
-
+    renderPanel({ apiKeyConfigured: true, apiKeyWritable: false })
     expect(screen.getByLabelText(en.webSearchApiKey)).toHaveProperty('disabled', true)
     expect(screen.getByLabelText(en.webSearchBaseUrl)).toHaveProperty('disabled', false)
   })
 
   it('stages the endpoint, the search budget, and their resets', () => {
-    const actions = renderWebSearch({
+    const actions = renderPanel({
       baseURL: field('https://search.test/v1', { overridden: true }),
       maxUses: field('3', { overridden: true }),
     })
-    fireEvent.click(screen.getByText(en.webSearchTitle))
-
     fireEvent.change(screen.getByLabelText(en.webSearchBaseUrl), { target: { value: 'https://other.test' } })
     fireEvent.change(screen.getByLabelText(en.webSearchMaxUses), { target: { value: '4' } })
     const resets = screen.getAllByRole('button', { name: en.reset })
     expect(resets).toHaveLength(2)
     for (const reset of resets) fireEvent.click(reset)
-
     expect(actions.edit.mock.calls).toEqual([
       ['baseURL', 'https://other.test'],
       ['maxUses', '4'],

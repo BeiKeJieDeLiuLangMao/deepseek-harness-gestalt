@@ -975,6 +975,24 @@ describe('ModelsSection', () => {
     expect(set).toHaveBeenLastCalledWith({ ref: 'ANTHROPIC_API_KEY', value: 'sk-ant' })
   })
 
+  it('does not offer official DeepSeek in the add-provider list', async () => {
+    const namespaces = wireNamespaces().map(namespace =>
+      namespace.ns === 'llm-deepseek' ? { ...namespace, user: {} } : namespace)
+    const { face } = scriptedFace()
+    face.settings.describe.mockResolvedValue(ok({ writable: true, hasDocument: true, namespaces }))
+    const controller = new ModelsSettingsStore(face as unknown as WireFace)
+    await controller.load()
+    render(<ModelsSection
+      controller={controller}
+      useSnapshot={bindSnapshotSelector(controller.store)}
+      api={face as never}
+      t={t}
+    />)
+    fireEvent.click(screen.getByText(en.add))
+    const pick = screen.getByLabelText<HTMLSelectElement>(en.provider)
+    expect([...pick.options].map(option => option.value)).not.toContain('deepseek-official')
+  })
+
   it('switches the add card target and degrades unknown or broken targets loudly', async () => {
     await mountSection()
     fireEvent.click(screen.getByText(en.add))
@@ -1086,6 +1104,69 @@ describe('ModelsSection', () => {
     fireEvent.change(editorKey, { target: { value: 'sk-live' } })
     fireEvent.click(screen.getByText(en.apply))
     await waitFor(() => { expect(set).toHaveBeenCalledTimes(1) })
+  })
+
+  it('occupies the official DeepSeek user section when applying with no field edits', async () => {
+    const { face, mutate } = scriptedFace()
+    const emptyUser: SettingsNamespaceView = {
+      ...wireNamespaces()[0]!,
+      user: {},
+    }
+    const { ProviderEditor } = await import('../src/client/ProviderEditor.tsx')
+    render(<ProviderEditor
+      provider="deepseek-official"
+      displayName="DeepSeek"
+      namespace={emptyUser}
+      settingsPath={[]}
+      api={face as never}
+      t={t}
+      readOnly={false}
+      onClose={() => {}}
+    />)
+    fireEvent.click(screen.getByText(en.apply))
+    await waitFor(() => { expect(mutate).toHaveBeenCalledWith({
+      ns: 'llm-deepseek',
+      ops: [{ op: 'set', path: ['apiKeyEnv'], value: 'DEEPSEEK_API_KEY' }],
+      expectedRevision: 0,
+    }) })
+  })
+
+  it('occupies official DeepSeek from a named apiKeyEnv when neither draft nor fallback carries one', async () => {
+    const { face, mutate } = scriptedFace()
+    const emptyUser: SettingsNamespaceView = {
+      ...wireNamespaces()[0]!,
+      value: { defaultContextWindow: 1_000_000, maxTokens: 256_000, models: DEFAULT_DEEPSEEK_MODELS },
+      user: {},
+    }
+    const { ProviderEditor } = await import('../src/client/ProviderEditor.tsx')
+    render(<ProviderEditor
+      provider="deepseek-official"
+      displayName="DeepSeek"
+      namespace={emptyUser}
+      settingsPath={[]}
+      api={face as never}
+      t={t}
+      readOnly={false}
+      onClose={() => {}}
+    />)
+    fireEvent.click(screen.getByText(en.apply))
+    await waitFor(() => { expect(mutate).toHaveBeenCalledWith({
+      ns: 'llm-deepseek',
+      ops: [{ op: 'set', path: ['apiKeyEnv'], value: 'DEEPSEEK_API_KEY' }],
+      expectedRevision: 0,
+    }) })
+  })
+
+  it('lets the official DeepSeek row be deleted like a user-added provider', async () => {
+    const { mutate, unset } = await mountSection()
+    fireEvent.click(screen.getByRole('button', { name: providerCopy(en.removeProvider, DEEPSEEK_TARGET) }))
+    const dialog = screen.getByRole('dialog', { name: providerCopy(en.deleteTitle, DEEPSEEK_TARGET) })
+    fireEvent.click(within(dialog).getByRole('button', { name: providerCopy(en.deleteConfirm, DEEPSEEK_TARGET) }))
+    await waitFor(() => { expect(mutate).toHaveBeenCalledWith({
+      ns: 'llm-deepseek',
+      ops: [{ op: 'unset', path: [] }],
+    }) })
+    expect(unset).not.toHaveBeenCalled()
   })
 
   it('requires confirmation before removing a user-added provider', async () => {

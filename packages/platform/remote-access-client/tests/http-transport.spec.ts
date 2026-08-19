@@ -6,6 +6,7 @@ import {
   parsePairingCompletionId,
   parsePairingRendezvousId,
   parsePendingPairingId,
+  parsePersonalPairingId,
 } from '@deepseek-ai/dsh-remote-access'
 import { RemoteAccessHttpTransport } from '../src/index.ts'
 
@@ -81,7 +82,7 @@ describe('RemoteAccessHttpTransport', () => {
         relay: {
           routeId: 'route-one', endpoint: 'desktop', credential: 'AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE', revision: 2,
         },
-      }, challenge, {}, [completion], [pairing], pairing, {}, completion,
+      }, challenge, {}, [completion], [pairing], pairing, {}, {}, completion,
       { status: 'pending' }, { status: 'rejected' }, {
         status: 'paired', pairingId: 'pairing-one', sealedRelayAuthority: 'AQI',
       },
@@ -112,6 +113,9 @@ describe('RemoteAccessHttpTransport', () => {
     }])
     await expect(client.listPersonalPairings(authentication)).resolves.toMatchObject([pairing])
     await expect(client.confirmPairing({ authentication, pendingPairingId })).resolves.toMatchObject(pairing)
+    await expect(client.revokePersonalPairing({
+      authentication, pairingId: parsePersonalPairingId('pairing-one'),
+    })).resolves.toBeUndefined()
     await expect(client.rejectPairing({ authentication, pendingPairingId })).resolves.toBeUndefined()
     await expect(client.completeChallenge({
       authentication,
@@ -126,7 +130,7 @@ describe('RemoteAccessHttpTransport', () => {
       status: 'paired', pairingId: 'pairing-one', sealedRelayAuthority: Uint8Array.of(1, 2),
     })
 
-    expect(fetch).toHaveBeenCalledTimes(13)
+    expect(fetch).toHaveBeenCalledTimes(14)
     const first = vi.mocked(fetch).mock.calls[0]
     expect(first?.[0]).toBe('https://platform.example/v1/remote-access/personal-pairing')
     expect(first?.[1]).toMatchObject({
@@ -138,7 +142,7 @@ describe('RemoteAccessHttpTransport', () => {
         'X-Gestalt-Proof-Signature': 'signature',
       },
     })
-    const completionBody = vi.mocked(fetch).mock.calls[9]?.[1]?.body
+    const completionBody = vi.mocked(fetch).mock.calls[10]?.[1]?.body
     if (typeof completionBody !== 'string') throw new TypeError('completion request body must be a string')
     expect(JSON.parse(completionBody)).toMatchObject({
       operation: 'complete-challenge', mobileHandshake: 'AQI',
@@ -180,6 +184,15 @@ describe('RemoteAccessHttpTransport', () => {
     await expect(transport(value).client.getMobileAccessState(authentication)).rejects.toThrow(message)
   })
 
+  it('rejects an enabled Mobile Access grant whose Relay endpoint is neither mobile nor desktop', async () => {
+    await expect(transport({
+      enabled: true,
+      relay: {
+        routeId: 'route-one', endpoint: 'relay', credential: 'AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE', revision: 1,
+      },
+    }).client.getMobileAccessState(authentication)).rejects.toThrow('must be mobile or desktop')
+  })
+
   it.each([
     [null, 'Mobile Pairing status response must be an object'],
     [{ status: 'paired', pairingId: '' }, 'Personal Pairing id'],
@@ -188,6 +201,14 @@ describe('RemoteAccessHttpTransport', () => {
     await expect(transport(value).client.getMobilePairingStatus({
       authentication, pendingPairingId: parsePendingPairingId('pending-one'),
     })).rejects.toThrow(message)
+  })
+
+  it('accepts a paired Mobile status without sealed Relay authority', async () => {
+    await expect(transport({
+      status: 'paired', pairingId: 'pairing-one',
+    }).client.getMobilePairingStatus({
+      authentication, pendingPairingId: parsePendingPairingId('pending-one'),
+    })).resolves.toEqual({ status: 'paired', pairingId: 'pairing-one' })
   })
 
   it.each([
@@ -232,6 +253,7 @@ describe('RemoteAccessHttpTransport', () => {
     [{ ...pairing, devicePrincipal: { ...pairing.devicePrincipal, accountId: '' } }, 'Platform Account id'],
     [{ ...pairing, devicePrincipal: { ...pairing.devicePrincipal, installationId: '' } }, 'installationId'],
     [{ ...pairing, pairedAt: 0 }, 'positive integer'],
+    [{ ...pairing, online: 'yes' }, 'must be a boolean'],
   ])('rejects an invalid Personal Pairing response %#', async (value, message) => {
     await expect(transport([value]).client.listPersonalPairings(authentication)).rejects.toThrow(message)
   })

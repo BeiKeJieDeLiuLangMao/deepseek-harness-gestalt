@@ -115,6 +115,7 @@ function scriptedApi(overrides: {
       update: err,
       replace: err,
       mutate: err,
+      testWebSearch: r => ok(r, { count: 0 }),
       ...overrides.settings,
     },
     credentials: {
@@ -421,6 +422,11 @@ describe('unary round trip', () => {
       sessions: { list: r => Promise.resolve({ rpcId: r.rpcId, result: { ok: true, value: { items: 'not-an-array' } } }) as never },
     })
     await expect(client(api).sessions.list({})).rejects.toThrow()
+  })
+
+  it('round-trips session.toolEligibility through the wire form', async () => {
+    const response = await client(scriptedApi()).sessions.toolEligibility({ sessionId: sid('s1') })
+    expect(response.result).toEqual({ ok: true, value: { tools: [] } })
   })
 })
 
@@ -744,6 +750,7 @@ describe('config unary surface', () => {
         update: record('settings.update', r => ok(r, view)),
         replace: record('settings.replace', r => ok(r, view)),
         mutate: record('settings.mutate', r => ok(r, view)),
+        testWebSearch: record('settings.testWebSearch', r => ok(r, { count: 0 })),
       },
       credentials: {
         describe: record('credentials.describe', r => ok(r, { credentials: { OPENAI_API_KEY: { configured: true, source: 'file', writable: true } } })),
@@ -804,6 +811,19 @@ describe('config unary surface', () => {
       api: 'openai-completions',
       apiKey: 'probe-key',
     })
+  })
+
+  it('round-trips settings.testWebSearch without the default unary timeout', async () => {
+    const seen: { method: string; payload: unknown }[] = []
+    const record = recorderInto(seen)
+    const api = scriptedApi({
+      settings: {
+        testWebSearch: record('settings.testWebSearch', r => ok(r, { count: 2, title: 'A', url: 'https://a.test' })),
+      },
+    })
+    const response = await client(api, 1).settings.testWebSearch({ query: 'ping' })
+    expect(response.result).toEqual({ ok: true, value: { count: 2, title: 'A', url: 'https://a.test' } })
+    expect(seen).toEqual([{ method: 'settings.testWebSearch', payload: { query: 'ping' } }])
   })
 
   it('rejects an invalid credential reference name at the carrier boundary', async () => {

@@ -6,7 +6,7 @@ import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import LocalCredentialProvider from '@deepseek-ai/dsh-credentials-local'
-import WebRuntime from '@deepseek-ai/dsh-web'
+import WebRuntime, { WebError } from '@deepseek-ai/dsh-web'
 import {
   DeepSeekSearchProvider,
   DEEPSEEK_PROVIDER_ID,
@@ -530,5 +530,154 @@ describe('web-search-deepseek plugin registration', () => {
     } finally {
       if (prev !== undefined) process.env.DEEPSEEK_API_KEY = prev
     }
+  })
+})
+
+describe('Moonshot dedicated search', () => {
+  it('POSTs text_query to the configured URL with a Bearer token', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({
+      search_results: [
+        { url: 'https://a.test', title: 'A', snippet: 'excerpt', date: '2026-01-02' },
+        { url: 'https://b.test', title: 'B', content: 'body' },
+      ],
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+    const result = await searchProvider({
+      ...options,
+      protocol: 'moonshot-search',
+      baseURL: 'https://api.moonshot.cn/v1/search',
+    }).search({ query: 'deepseek harness' })
+    const [endpoint, init] = fetchMock.mock.calls[0] as unknown as [string, { headers: Record<string, string>; body: string }]
+    expect(endpoint).toBe('https://api.moonshot.cn/v1/search')
+    expect(init.headers.authorization).toBe('Bearer ds-key')
+    expect(init.headers['x-api-key']).toBeUndefined()
+    expect(JSON.parse(init.body)).toEqual({ text_query: 'deepseek harness' })
+    expect(result.sources).toEqual([
+      { url: 'https://a.test', title: 'A', snippet: 'excerpt', publishedAt: '2026-01-02' },
+      { url: 'https://b.test', title: 'B', snippet: 'body' },
+    ])
+  })
+
+  it('names a non-ASCII API key instead of throwing a ByteString error', async () => {
+    await expect(searchProvider({
+      ...options,
+      protocol: 'moonshot-search',
+      baseURL: 'https://api.moonshot.cn/v1/search',
+      apiKey: '密钥',
+    }).search({ query: 'q' })).rejects.toSatisfy((error: unknown) => {
+      if (!(error instanceof Error)) return false
+      const record = error as Error & { code?: string }
+      return record.code === 'WEB_PROVIDER_ERROR'
+        && record.message.includes('header "authorization" is not ASCII')
+    })
+  })
+
+  it('forwards the abort signal on a Moonshot request', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ search_results: [] }))
+    vi.stubGlobal('fetch', fetchMock)
+    const controller = new AbortController()
+    await searchProvider({
+      ...options,
+      protocol: 'moonshot-search',
+      baseURL: 'https://api.moonshot.cn/v1/search',
+    }).search({ query: 'q' }, controller.signal)
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(init.signal).toBe(controller.signal)
+  })
+
+  it('maps a Kimi HTTP error to WEB_PROVIDER_ERROR with the provider message', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ error: { message: 'quota exceeded' } }, { status: 429 })))
+    await expect(searchProvider({
+      ...options,
+      protocol: 'moonshot-search',
+      baseURL: 'https://api.moonshot.cn/v1/search',
+    }).search({ query: 'q' })).rejects.toThrow('quota exceeded')
+  })
+
+  it('keeps a Kimi status-line message when the error body is not JSON', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('upstream error', { status: 503 })))
+    await expect(searchProvider({
+      ...options,
+      protocol: 'moonshot-search',
+      baseURL: 'https://api.moonshot.cn/v1/search',
+    }).search({ query: 'q' })).rejects.toThrow('Kimi search API error (HTTP 503)')
+  })
+
+  it('surfaces an abort during a Kimi error-body parse as WEB_ABORTED', async () => {
+    const body = { json: () => Promise.reject(new DOMException('aborted', 'AbortError')), ok: false, status: 500 }
+    vi.stubGlobal('fetch', vi.fn(async () => body as unknown as Response))
+    await expect(searchProvider({
+      ...options,
+      protocol: 'moonshot-search',
+      baseURL: 'https://api.moonshot.cn/v1/search',
+    }).search({ query: 'q' })).rejects.toThrow(expect.objectContaining({ code: 'WEB_ABORTED' }))
+  })
+
+  it('maps an unparseable Kimi success body to WEB_PROVIDER_ERROR', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('not json', { status: 200 })))
+    await expect(searchProvider({
+      ...options,
+      protocol: 'moonshot-search',
+      baseURL: 'https://api.moonshot.cn/v1/search',
+    }).search({ query: 'q' })).rejects.toThrow('Kimi returned an unprocessable response body')
+  })
+
+  it('surfaces an abort during a Kimi success-body parse as WEB_ABORTED', async () => {
+    const body = { json: () => Promise.reject(new DOMException('aborted', 'AbortError')), ok: true, status: 200 }
+    vi.stubGlobal('fetch', vi.fn(async () => body as unknown as Response))
+    await expect(searchProvider({
+      ...options,
+      protocol: 'moonshot-search',
+      baseURL: 'https://api.moonshot.cn/v1/search',
+    }).search({ query: 'q' })).rejects.toThrow(expect.objectContaining({ code: 'WEB_ABORTED' }))
+  })
+
+  it('rethrows a WebError from mapping a Kimi success body', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: () => Promise.reject(new WebError('mapped kimi failure', 'WEB_PROVIDER_ERROR')),
+    } as unknown as Response)))
+    await expect(searchProvider({
+      ...options,
+      protocol: 'moonshot-search',
+      baseURL: 'https://api.moonshot.cn/v1/search',
+    }).search({ query: 'q' })).rejects.toThrow('mapped kimi failure')
+  })
+
+  it('skips empty and duplicate Moonshot urls, omits empty optional fields, and truncates at the limit', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({
+      search_results: [
+        { title: 'missing url' },
+        { url: '', title: 'empty' },
+        { url: 'https://a.test', title: '', snippet: '', date: '' },
+        { url: 'https://a.test', title: 'second' },
+        { url: 'https://b.test', title: 'B', content: 'body' },
+        { url: 'https://c.test', title: 'C' },
+      ],
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+    const result = await searchProvider({
+      ...options,
+      protocol: 'moonshot-search',
+      baseURL: 'https://api.moonshot.cn/v1/search',
+      maxUses: 2,
+    }).search({ query: 'q' })
+    expect(result).toEqual({
+      sources: [
+        { url: 'https://a.test' },
+        { url: 'https://b.test', title: 'B', snippet: 'body' },
+      ],
+      truncated: true,
+    })
+  })
+
+  it('treats a missing Moonshot search_results array as an empty result', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({})))
+    await expect(searchProvider({
+      ...options,
+      protocol: 'moonshot-search',
+      baseURL: 'https://api.moonshot.cn/v1/search',
+    }).search({ query: 'q' })).resolves.toEqual({ sources: [], truncated: false })
   })
 })

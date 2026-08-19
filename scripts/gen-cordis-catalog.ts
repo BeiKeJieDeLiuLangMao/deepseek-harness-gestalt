@@ -286,6 +286,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   PairingDeviceDescription: 'personal-pairing.md',
   PairingRendezvousId: 'personal-pairing.md',
   PendingPairingId: 'personal-pairing.md',
+  PersonalPairingId: 'personal-pairing.md',
   PersonalPairingView: 'personal-pairing.md',
   RelayAttachMessage: 'personal-pairing.md',
   RelayCiphertextMessage: 'personal-pairing.md',

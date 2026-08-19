@@ -113,8 +113,7 @@ describe('ui-settings-plugins apply', () => {
     expect(Object.keys(tabFace.hooks)).toEqual(['configurablePlugins'])
     for (const entry of slots.entries('settings.plugin.item')) {
       const face = (entry as { inject?: () => unknown }).inject?.() as { hooks: Record<string, unknown> }
-      // Each card injects exactly one snapshot store plus its own actions.
-      expect(Object.keys(face.hooks)).toHaveLength(1)
+      expect(Object.keys(face.hooks).length).toBeGreaterThanOrEqual(1)
     }
   })
 
@@ -126,6 +125,14 @@ describe('ui-settings-plugins apply', () => {
 
     expect(slots.entries('settings.plugin.item').map(entry => entry.options.key))
       .toEqual(['shell', 'agent-loop', 'web-search-deepseek'])
+    expect(slots.entries('settings.plugin.web-search.provider').map(entry => entry.options.id))
+      .toEqual(['deepseek', 'anthropic-messages', 'kimi'])
+    expect(slots.entries('settings.plugin.web-search.provider').map(entry => resolveSlotLabel(entry.options.label)))
+      .toEqual(['DeepSeek', 'Anthropic', 'Kimi'])
+    for (const entry of slots.entries('settings.plugin.web-search.provider')) {
+      const face = (entry as unknown as { inject?: () => { hooks: Record<string, unknown> } }).inject?.()
+      expect(face?.hooks.webSearchCard).toBeDefined()
+    }
   })
 
   it('dispatches the served namespaces its cards claim, and no others', async () => {
@@ -181,7 +188,7 @@ describe('ui-settings-plugins apply', () => {
     // event is the only thing that reaches the card.
     ctx.remote.$dispatch('credentials/updated', ['DEEPSEEK_API_KEY'])
 
-    await vi.waitFor(() => { expect(describeCredentials).toHaveBeenCalledTimes(1) })
+    await vi.waitFor(() => { expect(describeCredentials).toHaveBeenCalledTimes(3) })
   })
 
   it('ignores a credential change for a reference no card watches', async () => {

@@ -158,22 +158,22 @@ function parseDevice(value: unknown): { name: string; platform: 'ios' | 'android
 }
 
 async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
-  let bytes = 0
   const chunks: Buffer[] = []
-  for await (const chunk of req) {
-    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array)
-    bytes += buffer.byteLength
-    if (bytes > MAX_JSON_BYTES) throw new HttpError(413, 'BODY_TOO_LARGE', 'Remote Access body is too large')
-    chunks.push(buffer)
+  let total = 0
+  for await (const piece of req) {
+    const next = Buffer.isBuffer(piece) ? piece : Buffer.from(piece as Uint8Array)
+    total += next.byteLength
+    if (total > MAX_JSON_BYTES) throw new HttpError(413, 'BODY_TOO_LARGE', 'Remote Access body is too large')
+    chunks.push(next)
   }
-  let value: unknown
+  let parsed: unknown
   try {
-    value = JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown
+    parsed = JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown
   } catch {
     throw new HttpError(400, 'BODY_INVALID', 'Remote Access body must be JSON')
   }
-  if (!isRecord(value)) throw new HttpError(400, 'BODY_INVALID', 'Remote Access body must be an object')
-  return value
+  if (!isRecord(parsed)) throw new HttpError(400, 'BODY_INVALID', 'Remote Access body must be an object')
+  return parsed
 }
 
 function handleCors(req: IncomingMessage, res: ServerResponse, allowedOrigin: string): boolean {
@@ -204,7 +204,10 @@ function handleCors(req: IncomingMessage, res: ServerResponse, allowedOrigin: st
 }
 
 function answerJson(res: ServerResponse, status: number, value: unknown): void {
-  res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+  res.writeHead(status, {
+    'content-type': 'application/json; charset=utf-8',
+    'cache-control': 'no-store',
+  })
   res.end(JSON.stringify(value))
 }
 
@@ -214,7 +217,8 @@ function answerError(res: ServerResponse, error: unknown): void {
     return
   }
   if (error instanceof RemoteAccessError) {
-    answerJson(res, 409, { error: { code: error.code, message: error.message } })
+    const body = { error: { code: error.code, message: error.message } }
+    answerJson(res, 409, body)
     return
   }
   answerJson(res, 500, { error: { code: 'INTERNAL_ERROR', message: 'Remote Access request failed' } })

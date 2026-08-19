@@ -37,7 +37,7 @@ export function parsePlatformEnvironment(value: string): PlatformEnvironment {
 /**
  * Surfaces that must not be shared across environments.
  * @param environment - isolated environment.
- * @returns surfaces that must stay isolated.
+ * @returns origin and store namespaces for that environment.
  */
 export function platformEnvironmentSurfaces(environment: PlatformEnvironment): PlatformEnvironmentSurfaces {
   if (environment === 'development') {
@@ -64,7 +64,7 @@ export function platformEnvironmentSurfaces(environment: PlatformEnvironment): P
  * Read a deployment-managed secret reference. Missing required secrets fail closed.
  * @param references - deployment-managed map.
  * @param name - required capability secret.
- * @returns the secret reference value.
+ * @returns the secret value for that capability.
  */
 export function requirePlatformSecret(
   references: ReadonlyMap<string, string>,

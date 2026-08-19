@@ -17,6 +17,7 @@
     { "path": "../../settings/settings" },
     { "path": "../../typert/protocol" },
     { "path": "../../typert/registry" },
+    { "path": "../../context/workspace-reference" },
     { "path": "../../runtime-diagnostics/invariants" }
   ]
 }

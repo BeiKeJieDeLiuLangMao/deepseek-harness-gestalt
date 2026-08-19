@@ -25,6 +25,7 @@
       - img
     - button "Steer queued message":
       - img
+- button "Add images"
 - textbox "Cmd/Ctrl+Enter steers all queued messages"
 - button "Commands":
   - img

@@ -1,7 +1,7 @@
 /** Page-store join: directory × namespaces × credentials, with last-good rows on failure. */
 import { describe, expect, it } from 'vitest'
 import type { RpcResponse } from '@deepseek-ai/dsh-api-remotes/client'
-import { messageOf, ModelsSettingsStore } from '../src/client/store.ts'
+import { messageOf, ModelsSettingsStore, userSectionOccupied } from '../src/client/store.ts'
 
 let nextRpc = 0
 function ok<T>(value: T): RpcResponse<T> {
@@ -38,6 +38,13 @@ const NAMESPACES = [
     revision: 0,
   },
 ]
+
+function fixtureNs<T>(value: T | undefined, name: string): T {
+  if (value === undefined) throw new Error(`missing ${name} fixture`)
+  return value
+}
+const DEEPSEEK_NS = fixtureNs(NAMESPACES[0], 'llm-deepseek')
+const PI_NS = fixtureNs(NAMESPACES[1], 'llm-pi-ai')
 
 function api(overrides: {
   providers?: () => Promise<RpcResponse<{ providers: typeof DIRECTORY }>>
@@ -81,8 +88,8 @@ describe('ModelsSettingsStore', () => {
     expect(seenRefs).toEqual([['DEEPSEEK_API_KEY', 'OPENAI_API_KEY']])
     const byProvider = new Map(state.rows.map(row => [row.entry.provider, row]))
     expect(byProvider.get('deepseek-official')).toMatchObject({
-      configured: true,
-      removable: false,
+      configured: false,
+      removable: true,
       apiKeyEnv: 'DEEPSEEK_API_KEY',
       credential: { configured: false, writable: true },
     })
@@ -96,6 +103,42 @@ describe('ModelsSettingsStore', () => {
     expect(byProvider.get('anthropic')?.apiKeyEnv).toBeUndefined()
     expect(byProvider.get('ghost')).toMatchObject({ configured: false, removable: false })
     expect(state.namespaces.get('llm-pi-ai')?.ns).toBe('llm-pi-ai')
+  })
+
+  it('does not treat an empty leftover DeepSeek user section as configured', async () => {
+    const { face } = api({
+      describeSettings: () => Promise.resolve(ok({
+        writable: true,
+        hasDocument: true,
+        namespaces: [{
+          ...DEEPSEEK_NS,
+          user: {},
+          secrets: [{ path: ['apiKey'], set: false }],
+        }, PI_NS],
+      })) as never,
+    })
+    const store = new ModelsSettingsStore(face)
+    await store.load()
+    expect(store.store.getSnapshot().rows.find(row => row.entry.provider === 'deepseek-official'))
+      .toMatchObject({ configured: false })
+  })
+
+  it('keeps official DeepSeek configured while a secret slot is set', async () => {
+    const { face } = api({
+      describeSettings: () => Promise.resolve(ok({
+        writable: true,
+        hasDocument: true,
+        namespaces: [{
+          ...DEEPSEEK_NS,
+          user: {},
+          secrets: [{ path: ['apiKey'], set: true }],
+        }, PI_NS],
+      })) as never,
+    })
+    const store = new ModelsSettingsStore(face)
+    await store.load()
+    expect(store.store.getSnapshot().rows.find(row => row.entry.provider === 'deepseek-official'))
+      .toMatchObject({ configured: true })
   })
 
   it('degrades the credential badge, not the page, when the credential domain fails', async () => {
@@ -261,5 +304,19 @@ describe('messageOf', () => {
     expect(messageOf(new Error('connection lost'))).toBe('connection lost')
     expect(messageOf('the host refused')).toBe('the host refused')
     expect(messageOf(undefined)).toBe('undefined')
+  })
+})
+
+describe('userSectionOccupied', () => {
+  it('treats missing, empty, and leftover empty objects as vacant', () => {
+    expect(userSectionOccupied(undefined)).toBe(false)
+    expect(userSectionOccupied(null)).toBe(false)
+    expect(userSectionOccupied({})).toBe(false)
+  })
+
+  it('treats a scalar, array, or populated object as occupancy', () => {
+    expect(userSectionOccupied('set')).toBe(true)
+    expect(userSectionOccupied(['row'])).toBe(true)
+    expect(userSectionOccupied({ apiKeyEnv: 'X' })).toBe(true)
   })
 })

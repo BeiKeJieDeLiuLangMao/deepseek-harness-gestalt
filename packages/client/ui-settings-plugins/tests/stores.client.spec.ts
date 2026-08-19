@@ -9,7 +9,23 @@ import { CardForm, numberField, textField } from '../src/client/card-form.ts'
 import { AgentLoopCardController, type AgentLoopSettings } from '../src/client/agent-loop-card-controller.ts'
 import { BashCardController, type BashSettings } from '../src/client/bash-card-controller.ts'
 import { ConfigurablePluginsTabController } from '../src/client/tab-store.ts'
-import { WebSearchCardController, type WebSearchSettings } from '../src/client/web-search-card-controller.ts'
+import {
+  WebSearchCardController, WebSearchShell, type WebSearchCardFace, type WebSearchSettings,
+} from '../src/client/web-search-card-controller.ts'
+
+const deepseekCopy = {
+  titleKey: 'webSearchTitle',
+  descriptionKey: 'webSearchDescription',
+  baseUrlHintKey: 'webSearchBaseUrlHint',
+  idPrefix: 'plugin-config-web-search',
+} as const
+
+function searchCard(
+  scope: ConstructorParameters<typeof WebSearchCardController>[0],
+  api: ConstructorParameters<typeof WebSearchCardController>[1],
+): WebSearchCardController {
+  return new WebSearchCardController(scope, api, 'deepseek', scope, deepseekCopy)
+}
 
 /** Make the stub behave like a Host that accepts every write. */
 function acceptWrites<T>(host: StubSettingsScope<T>): void {
@@ -384,7 +400,7 @@ describe('WebSearchCardController', () => {
   it('reads the credential state for the reference the tab names', async () => {
     const host = stubSettingsScope<WebSearchSettings>()
     const credentials = credentialsApi(true)
-    const controller = new WebSearchCardController(host.scope, credentials.api)
+    const controller = searchCard(host.scope, credentials.api)
     const state = () => controller.inject().hooks.webSearchCard.getSnapshot()
     await vi.waitFor(() => { expect(credentials.describe).toHaveBeenCalled() })
 
@@ -400,7 +416,7 @@ describe('WebSearchCardController', () => {
   it('writes the staged key through the credentials domain, never the settings section', async () => {
     const host = stubSettingsScope<WebSearchSettings>()
     const credentials = credentialsApi(false)
-    const controller = new WebSearchCardController(host.scope, credentials.api)
+    const controller = searchCard(host.scope, credentials.api)
     host.publish({ status: 'ready', writable: true, value: {}, user: {} })
     const face = controller.inject()
 
@@ -425,7 +441,7 @@ describe('WebSearchCardController', () => {
   it('keeps the stored key when the draft is left blank', () => {
     const host = stubSettingsScope<WebSearchSettings>()
     const credentials = credentialsApi(true)
-    const controller = new WebSearchCardController(host.scope, credentials.api)
+    const controller = searchCard(host.scope, credentials.api)
     host.publish({ status: 'ready', writable: true, value: {}, user: {} })
     const face = controller.inject()
 
@@ -440,7 +456,7 @@ describe('WebSearchCardController', () => {
   it('re-reads when the Host reports the watched reference changed', async () => {
     const host = stubSettingsScope<WebSearchSettings>()
     const credentials = credentialsApi(false)
-    const controller = new WebSearchCardController(host.scope, credentials.api)
+    const controller = searchCard(host.scope, credentials.api)
     host.publish({ status: 'ready', writable: true, value: {}, user: {} })
     await vi.waitFor(() => { expect(credentials.describe).toHaveBeenCalled() })
     credentials.describe.mockClear()
@@ -464,7 +480,7 @@ describe('WebSearchCardController', () => {
   it('addresses the reference the tab declares rather than the default', async () => {
     const host = stubSettingsScope<WebSearchSettings>()
     const credentials = credentialsApi(false)
-    const controller = new WebSearchCardController(host.scope, credentials.api)
+    const controller = searchCard(host.scope, credentials.api)
     host.publish({ status: 'ready', writable: true, value: { apiKeyEnv: 'SEARCH_KEY' }, user: {} })
     const face = controller.inject()
 
@@ -478,7 +494,7 @@ describe('WebSearchCardController', () => {
   it('reports a key the Host did not store as a failed save', async () => {
     const host = stubSettingsScope<WebSearchSettings>()
     const credentials = credentialsApi(false)
-    const controller = new WebSearchCardController(host.scope, credentials.api)
+    const controller = searchCard(host.scope, credentials.api)
     host.publish({ status: 'ready', writable: true, value: {}, user: {} })
     const face = controller.inject()
 
@@ -494,7 +510,7 @@ describe('WebSearchCardController', () => {
     const host = stubSettingsScope<WebSearchSettings>()
     const describe = vi.fn(() => Promise.reject(new Error('offline')))
     const set = vi.fn(() => Promise.reject(new Error('offline')))
-    const controller = new WebSearchCardController(host.scope, { credentials: { describe, set } } as never)
+    const controller = searchCard(host.scope, { credentials: { describe, set } } as never)
     const face = controller.inject()
     await vi.waitFor(() => { expect(describe).toHaveBeenCalled() })
 
@@ -516,17 +532,40 @@ describe('WebSearchCardController', () => {
       rpcId: 'c-1' as never,
       result: { ok: false as const, error: { code: 'credentials-unavailable', message: 'no provider' } },
     }))
-    const controller = new WebSearchCardController(host.scope, { credentials: { describe, set: vi.fn() } } as never)
+    const controller = searchCard(host.scope, { credentials: { describe, set: vi.fn() } } as never)
     await vi.waitFor(() => { expect(describe).toHaveBeenCalled() })
 
     expect(controller.inject().hooks.webSearchCard.getSnapshot().apiKeyConfigured).toBe(false)
+  })
+
+  it('selects this card by writing backend on the DeepSeek section', async () => {
+    const host = stubSettingsScope<WebSearchSettings>()
+    acceptWrites(host)
+    const credentials = credentialsApi(true)
+    const controller = new WebSearchCardController(
+      host.scope,
+      credentials.api,
+      'anthropic-messages',
+      host.scope,
+      {
+        titleKey: 'webSearchTitle',
+        descriptionKey: 'webSearchDescription',
+        baseUrlHintKey: 'anthropicSearchBaseUrlHint',
+        idPrefix: 'plugin-config-anthropic-search',
+      },
+    )
+    host.publish({ status: 'ready', writable: true, value: { backend: 'deepseek' }, user: {} })
+    expect(controller.inject().hooks.webSearchCard.getSnapshot().active).toBe(false)
+
+    controller.inject().useThis()
+    await vi.waitFor(() => { expect(host.set).toHaveBeenCalledWith('backend', 'anthropic-messages') })
   })
 
   it('saves the endpoint and the search budget together', async () => {
     const host = stubSettingsScope<WebSearchSettings>()
     acceptWrites(host)
     const credentials = credentialsApi(true)
-    const controller = new WebSearchCardController(host.scope, credentials.api)
+    const controller = searchCard(host.scope, credentials.api)
     host.publish({ status: 'ready', writable: true, value: {}, base: {}, user: {} })
     const face = controller.inject()
 
@@ -537,6 +576,104 @@ describe('WebSearchCardController', () => {
 
     expect(host.set.mock.calls).toEqual([['baseURL', 'https://other.test'], ['maxUses', 3]])
     expect(credentials.set).not.toHaveBeenCalled()
+  })
+})
+
+describe('WebSearchShell', () => {
+  function tabEntry(id: string, inject: () => WebSearchCardFace, extras: { order?: number; label?: string } = {}) {
+    return {
+      options: { id, order: extras.order ?? 0, label: extras.label ?? id },
+      inject,
+    }
+  }
+
+  it('projects the selected provider form, tab ledger, and probe outcomes', async () => {
+    const host = stubSettingsScope<WebSearchSettings>()
+    acceptWrites(host)
+    host.publish({ status: 'ready', writable: true, value: { backend: 'deepseek' }, user: {} })
+    const credentials = credentialsApi(true)
+    const deepseek = new WebSearchCardController(host.scope, credentials.api, 'deepseek', host.scope, deepseekCopy)
+    const anthropic = new WebSearchCardController(host.scope, credentials.api, 'anthropic-messages', host.scope, {
+      titleKey: 'webSearchTitle',
+      descriptionKey: 'webSearchDescription',
+      baseUrlHintKey: 'anthropicSearchBaseUrlHint',
+      idPrefix: 'plugin-config-anthropic-search',
+    })
+    const testWebSearch = vi.fn()
+      .mockResolvedValueOnce({ result: { ok: true, value: { count: 2, title: 'DeepSeek Harness' } } })
+      .mockResolvedValueOnce({ result: { ok: true, value: { count: 0 } } })
+      .mockResolvedValueOnce({ result: { ok: false, error: { message: 'quota' } } })
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockRejectedValueOnce('transport')
+    let entries = [
+      tabEntry('deepseek', () => deepseek.inject(), { label: 'DeepSeek' }),
+      tabEntry('anthropic-messages', () => anthropic.inject(), { order: 10, label: 'Anthropic' }),
+    ]
+    const shell = new WebSearchShell(
+      host.scope,
+      () => entries as never,
+      { titleKey: 'webSearchTitle', descriptionKey: 'webSearchDescription' },
+      deepseek,
+      { settings: { testWebSearch }, credentials: { describe: credentials.describe, set: credentials.set } } as never,
+    )
+    shell.rewire()
+    const face = shell.inject()
+    expect(face.hooks.providerTabs.getSnapshot()).toEqual([
+      { id: 'deepseek', order: 0, label: 'DeepSeek' },
+      { id: 'anthropic-messages', order: 10, label: 'Anthropic' },
+    ])
+    expect(face.hooks.providerTabs.getSnapshot()).toBe(face.hooks.providerTabs.getSnapshot())
+
+    const listener = vi.fn()
+    const stopTabs = face.hooks.providerTabs.subscribe(listener)
+    shell.notifyTabs()
+    expect(listener).toHaveBeenCalledOnce()
+    entries = [tabEntry('kimi', () => deepseek.inject(), { order: 20, label: 'Kimi' })]
+    expect(face.hooks.providerTabs.getSnapshot()).toEqual([{ id: 'kimi', order: 20, label: 'Kimi' }])
+    entries = [{ options: {}, inject: () => deepseek.inject() }] as never
+    expect(face.hooks.providerTabs.getSnapshot()).toEqual([{ id: '', order: 0, label: '' }])
+    stopTabs()
+
+    face.edit('baseURL', 'https://other.test')
+    face.resetField('maxUses')
+    face.save()
+    face.discard()
+    face.selectProvider('anthropic-messages')
+    await vi.waitFor(() => { expect(host.set).toHaveBeenCalledWith('backend', 'anthropic-messages') })
+    shell.rewire()
+
+    await expect(face.testSearch()).resolves.toEqual({ status: 'ok', count: 2, title: 'DeepSeek Harness' })
+    await expect(face.testSearch()).resolves.toEqual({ status: 'ok', count: 0 })
+    await expect(face.testSearch()).resolves.toEqual({ status: 'error', message: 'quota' })
+    await expect(face.testSearch()).resolves.toEqual({ status: 'error', message: 'offline' })
+    await expect(face.testSearch()).resolves.toEqual({ status: 'error', message: 'transport' })
+  })
+
+  it('falls back to the official DeepSeek tab, then the constructed controller', () => {
+    const host = stubSettingsScope<WebSearchSettings>()
+    host.publish({ status: 'ready', writable: true, value: { backend: 'kimi' }, user: {} })
+    const credentials = credentialsApi(true)
+    const fallback = new WebSearchCardController(host.scope, credentials.api, 'deepseek', host.scope, deepseekCopy)
+    const deepseek = new WebSearchCardController(host.scope, credentials.api, 'deepseek', host.scope, deepseekCopy)
+    const withDeepseek = new WebSearchShell(
+      host.scope,
+      () => [tabEntry('deepseek', () => deepseek.inject())] as never,
+      { titleKey: 'webSearchTitle', descriptionKey: 'webSearchDescription' },
+      fallback,
+      { settings: { testWebSearch: vi.fn() }, credentials: { describe: credentials.describe, set: credentials.set } } as never,
+    )
+    withDeepseek.rewire()
+    expect(withDeepseek.inject().hooks.webSearchCard.getSnapshot().selectedProvider).toBe('kimi')
+
+    const empty = new WebSearchShell(
+      host.scope,
+      () => [],
+      { titleKey: 'webSearchTitle', descriptionKey: 'webSearchDescription' },
+      fallback,
+      { settings: { testWebSearch: vi.fn() }, credentials: { describe: credentials.describe, set: credentials.set } } as never,
+    )
+    empty.rewire()
+    expect(empty.inject().hooks.webSearchCard.getSnapshot().selectedProvider).toBe('kimi')
   })
 })
 
