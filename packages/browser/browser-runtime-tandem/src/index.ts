@@ -17,12 +17,14 @@ import {
   commitBrowserRuntimeState,
   emitBrowserRuntimeState,
   EMPTY_BROWSER_PROFILE_STORAGE,
+  bindBrowserControlMutation,
   resolveBrowserCreateAttach,
   resolveBrowserProfileCreate,
 } from '@deepseek-ai/dsh-browser-runtime'
 import type {
   BrowserClosedState,
   BrowserCreateRequest,
+  BrowserInputRequest,
   BrowserMutationRequest,
   BrowserNavigateRequest,
   BrowserObserveRequest,
@@ -525,6 +527,7 @@ export class TandemBrowserRuntime extends BrowserRuntime {
         revision: lastOpen.revision + 1,
         reason,
         reconnecting: this.config.reconnectAttempts > 0,
+        controlOwner: lastOpen.controlOwner,
       })
       : undefined
     const recovery = this.queue.then(async () => {
@@ -536,6 +539,7 @@ export class TandemBrowserRuntime extends BrowserRuntime {
         revision: current.revision + 1,
         reason,
         reconnecting: this.config.reconnectAttempts > 0,
+        controlOwner: lastOpen.controlOwner,
       })
       await this.reconnect(lastOpen, unavailable)
     })
@@ -563,7 +567,7 @@ export class TandemBrowserRuntime extends BrowserRuntime {
         const tab = await this.createSession(restoredProfile.sessionName, undefined, lastOpen.url)
         restoredProfile.tabs.set(lastOpen.target.tabId, tab.id)
         const restored = await this.page(lastOpen, undefined)
-        this.commit({ ...restored, revision: unavailable.revision + 1, focused: false })
+        this.commit({ ...restored, revision: unavailable.revision + 1, focused: false, controlOwner: lastOpen.controlOwner })
         return
       } catch (error) {
         lastError = error
@@ -688,6 +692,7 @@ export class TandemBrowserRuntime extends BrowserRuntime {
           title: content?.title || tab.title,
           text: content?.text || (name === undefined ? '' : `identity=${name}`),
           focused: false,
+          controlOwner: 'agent',
           chrome: created.chrome,
           storage: resolveCreateStorage(content, name),
         })
@@ -711,7 +716,7 @@ export class TandemBrowserRuntime extends BrowserRuntime {
         body: JSON.stringify({ url: request.url, tabId: this.upstreamTabId(request.target) }),
       }, request.signal)
       const page = await this.page(state, request.signal)
-      return this.commit({ ...page, revision: state.revision + 1 })
+      return this.commit({ ...page, revision: state.revision + 1, controlOwner: 'agent' })
     })
   }
 
@@ -768,7 +773,50 @@ export class TandemBrowserRuntime extends BrowserRuntime {
         body: JSON.stringify({ tabId: this.upstreamTabId(request.target) }),
       }, request.signal), 'tab focus')
       if (response.ok !== true) throw new BrowserRuntimeError('Tandem did not focus the addressed tab', 'BROWSER_PROTOCOL')
-      return this.commit({ ...state, revision: state.revision + 1, focused: true })
+      return this.commit({ ...state, revision: state.revision + 1, focused: true, controlOwner: 'agent' })
+    })
+  }
+
+  /* jscpd:ignore-start */
+  async takeover(request: BrowserMutationRequest): Promise<BrowserPageState> {
+    return bindBrowserControlMutation(
+      operation => this.exclusive(operation),
+      target => this.open(target),
+      (state, revision) => { this.expected(state, revision) },
+      state => this.commit(state),
+    )(request, 'human')
+  }
+
+  async returnControl(request: BrowserMutationRequest): Promise<BrowserPageState> {
+    return bindBrowserControlMutation(
+      operation => this.exclusive(operation),
+      target => this.open(target),
+      (state, revision) => { this.expected(state, revision) },
+      state => this.commit(state),
+    )(request, 'agent')
+  }
+  /* jscpd:ignore-end */
+
+  async input(request: BrowserInputRequest): Promise<BrowserPageState> {
+    assertBrowserNotAborted(request.signal)
+    return this.exclusive(async () => {
+      assertBrowserNotAborted(request.signal)
+      const state = this.open(request.target)
+      this.expected(state, request.expectedRevision)
+      if (request.url !== undefined) {
+        await this.json('/navigate', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-session': this.sessionNameFor(request.target) },
+          body: JSON.stringify({ url: request.url, tabId: this.upstreamTabId(request.target) }),
+        }, request.signal)
+      }
+      const page = request.url === undefined ? state : await this.page(state, request.signal)
+      return this.commit({
+        ...page,
+        revision: state.revision + 1,
+        text: request.text ?? page.text,
+        controlOwner: 'human',
+      })
     })
   }
 

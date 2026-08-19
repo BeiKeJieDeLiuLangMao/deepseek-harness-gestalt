@@ -2,7 +2,9 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { BrowserInstanceId, BrowserProfileId, BrowserProfileName, BrowserRuntimeError, BrowserTabId, BrowserWorkspaceId } from './types.ts'
 import type {
+  BrowserControlOwner,
   BrowserCreateAttach,
+  BrowserMutationRequest,
   BrowserPageState,
   BrowserProfileChrome,
   BrowserProfileKind,
@@ -386,4 +388,80 @@ export function requireOpenBrowserPage(state: BrowserRuntimeState): BrowserPageS
     throw new BrowserRuntimeError('browser target is closed', 'BROWSER_NOT_OPEN')
   }
   return state
+}
+
+/**
+ * Reject a stale mutation and return the addressed open page.
+ * @param state - Current addressed state.
+ * @param revision - Caller-supplied expected revision.
+ * @returns the open page when the revision matches.
+ */
+export function requireExpectedOpenBrowserPage(
+  state: BrowserRuntimeState,
+  revision: number,
+): BrowserPageState {
+  if (state.revision !== revision) {
+    throw new BrowserRuntimeError(
+      `browser revision conflict: expected ${String(revision)}, current ${String(state.revision)}`,
+      'BROWSER_REVISION_CONFLICT',
+    )
+  }
+  return requireOpenBrowserPage(state)
+}
+
+/**
+ * Advance one open page to the next revision and assign its control owner.
+ * @param state - Current open page.
+ * @param controlOwner - Next exclusive operator.
+ * @returns the next committed open-page facts.
+ */
+export function withBrowserControlOwner(
+  state: BrowserPageState,
+  controlOwner: BrowserControlOwner,
+): BrowserPageState {
+  return { ...state, revision: state.revision + 1, controlOwner }
+}
+
+/**
+ * Run one serialized mutation that only changes control ownership.
+ * @param exclusive - Provider queue that serializes accepted work.
+ * @param open - Resolves the addressed open page.
+ * @param expected - Enforces the caller's last observed revision.
+ * @param commit - Commits the next open page.
+ * @param request - Target, expected revision, and cancellation.
+ * @param controlOwner - Next exclusive operator.
+ * @returns the committed open page.
+ */
+export function mutateBrowserControlOwner(
+  exclusive: <T>(operation: () => T | Promise<T>) => Promise<T>,
+  open: (target: BrowserTarget) => BrowserPageState,
+  expected: (state: BrowserRuntimeState, revision: number) => void,
+  commit: <T extends BrowserRuntimeState>(state: T) => T,
+  request: BrowserMutationRequest,
+  controlOwner: BrowserControlOwner,
+): Promise<BrowserPageState> {
+  assertBrowserNotAborted(request.signal)
+  return exclusive(() => {
+    assertBrowserNotAborted(request.signal)
+    const state = open(request.target)
+    expected(state, request.expectedRevision)
+    return commit(withBrowserControlOwner(state, controlOwner))
+  })
+}
+
+/**
+ * Bind one Provider's serialized queue to a control-owner mutation.
+ * @param exclusive - Provider queue that serializes accepted work.
+ * @param open - Resolves the addressed open page.
+ * @param expected - Enforces the caller's last observed revision.
+ * @param commit - Commits the next open page.
+ * @returns a function that assigns one control owner.
+ */
+export function bindBrowserControlMutation(
+  exclusive: <T>(operation: () => T | Promise<T>) => Promise<T>,
+  open: (target: BrowserTarget) => BrowserPageState,
+  expected: (state: BrowserRuntimeState, revision: number) => void,
+  commit: <T extends BrowserRuntimeState>(state: T) => T,
+): (request: BrowserMutationRequest, controlOwner: BrowserControlOwner) => Promise<BrowserPageState> {
+  return (request, controlOwner) => mutateBrowserControlOwner(exclusive, open, expected, commit, request, controlOwner)
 }

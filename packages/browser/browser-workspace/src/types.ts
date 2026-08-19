@@ -5,6 +5,7 @@
  */
 
 import type {
+  BrowserControlOwner,
   BrowserInstanceId,
   BrowserProfileId,
   BrowserTabId,
@@ -14,6 +15,7 @@ import type {
 /** One open tab retained by a Session-owned browser instance. */
 export interface BrowserWorkspaceTabRecord {
   readonly tabId: BrowserTabId
+  readonly controlOwner: BrowserControlOwner
 }
 
 /** One browser instance retained by a Session-owned Browser Workspace. */
@@ -53,9 +55,9 @@ declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
     /**
      * Whole Session-owned Browser Workspace snapshot. Log-only, last-wins.
-     * Carries dock visibility and width plus every owned instance and tab so
-     * Session switch, reload, and replay restore the same Workspace without
-     * exposing another Session's tabs.
+     * Carries dock visibility and width plus every owned instance, tab, and
+     * current control owner so Session switch, reload, and replay restore the
+     * same Workspace without exposing another Session's tabs.
      */
     'browser/workspace': BrowserWorkspaceProjection
   }

@@ -17,7 +17,7 @@ pnpm dsh --profile headless "fix the failing test in this workspace"
 
 快照套件通过 [`tests/fixtures/headless-driver.ts`](tests/fixtures/headless-driver.ts) 运行本目录的配置。这个未导出且仅供测试使用的进程会在结果记录之前，以 JSONL 发出规范会话事件。该事件流属于测试基础设施，不是受支持的 CLI（命令行界面）输出格式。子会话只通过父会话的工具事件和结果对外显示。[`deferred-tool-search.cordis.snapshot.yml`](deferred-tool-search.cordis.snapshot.yml) 把随仓交付的 headless 主干与真实 deferred MCP 服务器组装起来；其快照会在同一 JSONL Session 上释放并重新加载 Loader 树，以证明发现、续轮、执行与请求重建。
 
-[`browser-runtime.cordis.snapshot.yml`](browser-runtime.cordis.snapshot.yml) 是无密钥可运行 Browser Runtime tracer。它发现六个 deferred Browser 工具，创建一个临时 Profile 与标签页，依次导航、观察、截图、聚焦与关闭，然后重新加载同一个 Session，以证明 schema 与已渲染 Browser 事实可以重建。
+[`browser-runtime.cordis.snapshot.yml`](browser-runtime.cordis.snapshot.yml) 是无密钥可运行 Browser Runtime tracer。它发现九个 deferred Browser 工具，创建一个临时 Profile 与标签页，依次导航、观察、截图、聚焦与关闭，然后重新加载同一个 Session，以证明 schema 与已渲染 Browser 事实（含控制权所有者）可以重建。
 
 `browser-runtime-tandem.cordis.snapshot.yml` 以托管式 Tandem Provider 和本地 Tandem HTTP fixture 运行同一条 Browser 工具路径——`tool_search` → `browser_create` → `browser_navigate` → `browser_observe` → `browser_screenshot` → `browser_focus` → `browser_close`。
 

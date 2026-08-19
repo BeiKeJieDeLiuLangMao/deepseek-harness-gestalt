@@ -791,9 +791,12 @@ describe('headless stream-json snapshots', () => {
           'browser_close',
           'browser_create',
           'browser_focus',
+          'browser_input',
           'browser_navigate',
           'browser_observe',
+          'browser_return_control',
           'browser_screenshot',
+          'browser_takeover',
         ])
         const browserValues = resultBlocks.slice(1).map((block) => {
           const content = Array.isArray(block.content) ? block.content as JsonObject[] : []
@@ -804,6 +807,7 @@ describe('headless stream-json snapshots', () => {
         expect(browserValues.map(value => value.revision)).toEqual([0, 1, 1, 1, 2, 3])
         expect(browserValues[0]).toMatchObject({
           chrome: { kind: 'temporary', partition: 'persist:session-trace-tmp-1' },
+          controlOwner: 'agent',
         })
         expect(browserValues[0]).not.toHaveProperty('chrome.name')
         expect(browserValues[1]).toMatchObject({
@@ -811,6 +815,7 @@ describe('headless stream-json snapshots', () => {
           title: 'Example Domain',
           text: 'A deterministic browser page.',
           chrome: { kind: 'temporary' },
+          controlOwner: 'agent',
         })
         expect(browserValues[3]).toMatchObject({ mediaType: 'image/png' })
         expect(browserValues[4]).toMatchObject({ focused: true })
@@ -838,6 +843,9 @@ describe('headless stream-json snapshots', () => {
             'browser_observe',
             'browser_screenshot',
             'browser_focus',
+            'browser_input',
+            'browser_takeover',
+            'browser_return_control',
             'browser_close',
           ]))
         }
@@ -921,9 +929,12 @@ describe('headless stream-json snapshots', () => {
           'browser_close',
           'browser_create',
           'browser_focus',
+          'browser_input',
           'browser_navigate',
           'browser_observe',
+          'browser_return_control',
           'browser_screenshot',
+          'browser_takeover',
         ])
         const browserValues = resultBlocks.slice(1).map((block) => {
           const content = Array.isArray(block.content) ? block.content as JsonObject[] : []
@@ -934,12 +945,14 @@ describe('headless stream-json snapshots', () => {
         expect(browserValues.map(value => value.revision)).toEqual([0, 1, 1, 1, 2, 3])
         expect(browserValues[0]).toMatchObject({
           chrome: { kind: 'temporary', partition: 'persist:session-tandem-tmp-1' },
+          controlOwner: 'agent',
         })
         expect(browserValues[1]).toMatchObject({
           url: 'https://example.test/',
           title: 'Example Domain',
           text: 'A real Tandem protocol page.',
           chrome: { kind: 'temporary' },
+          controlOwner: 'agent',
         })
         expect(browserValues[3]).toMatchObject({ mediaType: 'image/png' })
         expect(browserValues[4]).toMatchObject({ focused: true })
@@ -967,6 +980,9 @@ describe('headless stream-json snapshots', () => {
             'browser_observe',
             'browser_screenshot',
             'browser_focus',
+            'browser_input',
+            'browser_takeover',
+            'browser_return_control',
             'browser_close',
           ]))
         }

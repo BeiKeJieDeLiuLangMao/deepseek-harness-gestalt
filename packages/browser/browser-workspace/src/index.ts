@@ -1,8 +1,8 @@
 /**
  * Session-owned Browser Workspace binder. Each Session independently owns
  * zero or more Workspaces; each Workspace uses one Browser Profile and
- * contains multiple browser instances and tabs. Dock visibility and width
- * are Session facts for later Dock UI.
+ * contains multiple browser instances and tabs. Dock visibility, width, and
+ * each tab's current control owner are Session facts for later Dock UI.
  * @module @deepseek-ai/dsh-browser-workspace
  */
 
@@ -12,8 +12,10 @@ import type { ZodType } from 'zod'
 import { BrowserRuntimeError } from '@deepseek-ai/dsh-browser-runtime'
 import type {
   BrowserClosedState,
+  BrowserControlOwner,
   BrowserCreateAttach,
   BrowserCreateRequest,
+  BrowserInputRequest,
   BrowserMutationRequest,
   BrowserNavigateRequest,
   BrowserObserveRequest,
@@ -49,7 +51,10 @@ const workspaceProjectionSchema = zod.object({
     profileId: zod.string().min(1),
     browsers: zod.array(zod.object({
       browserId: zod.string().min(1),
-      tabs: zod.array(zod.object({ tabId: zod.string().min(1) })),
+      tabs: zod.array(zod.object({
+        tabId: zod.string().min(1),
+        controlOwner: zod.enum(['agent', 'human']),
+      })),
       activeTabId: zod.string().min(1).nullable(),
     })),
     activeBrowserId: zod.string().min(1).nullable(),
@@ -68,6 +73,8 @@ export type BrowserWorkspaceCreateRequest = BrowserCreateRequest & BrowserWorksp
 export type BrowserWorkspaceMutationRequest = BrowserMutationRequest & BrowserWorkspaceSessionRequest
 /** Navigate request bound to one Session. */
 export type BrowserWorkspaceNavigateRequest = BrowserNavigateRequest & BrowserWorkspaceSessionRequest
+/** Human input request bound to one Session. */
+export type BrowserWorkspaceInputRequest = BrowserInputRequest & BrowserWorkspaceSessionRequest
 /** Observe request bound to one Session. */
 export type BrowserWorkspaceObserveRequest = BrowserObserveRequest & BrowserWorkspaceSessionRequest
 
@@ -132,7 +139,7 @@ export class BrowserWorkspaceBinder extends Service {
   async create(request: BrowserWorkspaceCreateRequest): Promise<BrowserPageState> {
     this.assertCreateAttach(request.session, request.attach)
     const created = await this.ctx.browserRuntime.create(request)
-    this.adopt(request.session, created.target)
+    this.adopt(request.session, created.target, created.controlOwner)
     return created
   }
 
@@ -143,7 +150,9 @@ export class BrowserWorkspaceBinder extends Service {
    */
   async navigate(request: BrowserWorkspaceNavigateRequest): Promise<BrowserPageState> {
     this.assertOwned(request.session, request.target)
-    return this.ctx.browserRuntime.navigate(request)
+    const navigated = await this.ctx.browserRuntime.navigate(request)
+    this.recordControl(request.session, navigated.target, navigated.controlOwner)
+    return navigated
   }
 
   /**
@@ -174,8 +183,45 @@ export class BrowserWorkspaceBinder extends Service {
   async focus(request: BrowserWorkspaceMutationRequest): Promise<BrowserPageState> {
     this.assertOwned(request.session, request.target)
     const focused = await this.ctx.browserRuntime.focus(request)
+    this.recordControl(request.session, focused.target, focused.controlOwner)
     this.activate(request.session, focused.target)
     return focused
+  }
+
+  /**
+   * Record one human pointer or keyboard mutation on a Session-owned tab.
+   * @param request - Session-bound input request.
+   * @returns the committed open page whose `controlOwner` is `human`.
+   */
+  async input(request: BrowserWorkspaceInputRequest): Promise<BrowserPageState> {
+    this.assertOwned(request.session, request.target)
+    const inputted = await this.ctx.browserRuntime.input(request)
+    this.recordControl(request.session, inputted.target, inputted.controlOwner)
+    return inputted
+  }
+
+  /**
+   * Give the human exclusive control of one Session-owned tab.
+   * @param request - Session-bound mutation request.
+   * @returns the committed open page whose `controlOwner` is `human`.
+   */
+  async takeover(request: BrowserWorkspaceMutationRequest): Promise<BrowserPageState> {
+    this.assertOwned(request.session, request.target)
+    const taken = await this.ctx.browserRuntime.takeover(request)
+    this.recordControl(request.session, taken.target, taken.controlOwner)
+    return taken
+  }
+
+  /**
+   * Return exclusive control of one Session-owned tab to the Agent.
+   * @param request - Session-bound mutation request.
+   * @returns the committed open page whose `controlOwner` is `agent`.
+   */
+  async returnControl(request: BrowserWorkspaceMutationRequest): Promise<BrowserPageState> {
+    this.assertOwned(request.session, request.target)
+    const returned = await this.ctx.browserRuntime.returnControl(request)
+    this.recordControl(request.session, returned.target, returned.controlOwner)
+    return returned
   }
 
   /**
@@ -251,9 +297,15 @@ export class BrowserWorkspaceBinder extends Service {
   }
 
   /** Record a newly created tab on the owning Session. */
-  private adopt(session: Session, target: BrowserTarget): void {
+  private adopt(session: Session, target: BrowserTarget, controlOwner: BrowserControlOwner): void {
     const current = this.snapshot(session)
-    this.commit(session, adoptTarget(current, target))
+    this.commit(session, adoptTarget(current, target, controlOwner))
+  }
+
+  /** Persist the current control owner for one already-owned tab. */
+  private recordControl(session: Session, target: BrowserTarget, controlOwner: BrowserControlOwner): void {
+    const current = this.snapshot(session)
+    this.commit(session, recordControlOwner(current, target, controlOwner))
   }
 
   /** Record the focused tab as the Session's active tab. */
@@ -294,7 +346,11 @@ function ownsAttach(snapshot: BrowserWorkspaceProjection, attach: BrowserCreateA
 }
 
 /** Add one target to the Session snapshot, creating Workspace and instance rows as needed. */
-function adoptTarget(snapshot: BrowserWorkspaceProjection, target: BrowserTarget): BrowserWorkspaceProjection {
+function adoptTarget(
+  snapshot: BrowserWorkspaceProjection,
+  target: BrowserTarget,
+  controlOwner: BrowserControlOwner,
+): BrowserWorkspaceProjection {
   const workspaces = snapshot.workspaces.map(workspace => ({
     ...workspace,
     browsers: workspace.browsers.map(browser => ({
@@ -317,13 +373,39 @@ function adoptTarget(snapshot: BrowserWorkspaceProjection, target: BrowserTarget
     browser = { browserId: target.browserId, tabs: [], activeTabId: target.tabId }
     workspace.browsers.push(browser)
   }
-  browser.tabs.push({ tabId: target.tabId })
+  browser.tabs.push({ tabId: target.tabId, controlOwner })
   workspace.activeBrowserId = target.browserId
   browser.activeTabId = target.tabId
   return {
     ...snapshot,
     workspaces,
     activeWorkspaceId: target.workspaceId,
+  }
+}
+
+/** Persist the current control owner for one already-owned tab. */
+function recordControlOwner(
+  snapshot: BrowserWorkspaceProjection,
+  target: BrowserTarget,
+  controlOwner: BrowserControlOwner,
+): BrowserWorkspaceProjection {
+  return {
+    ...snapshot,
+    workspaces: snapshot.workspaces.map((workspace) => {
+      if (workspace.workspaceId !== target.workspaceId) return workspace
+      return {
+        ...workspace,
+        browsers: workspace.browsers.map((browser) => {
+          if (browser.browserId !== target.browserId) return browser
+          return {
+            ...browser,
+            tabs: browser.tabs.map(tab => (
+              tab.tabId === target.tabId ? { ...tab, controlOwner } : tab
+            )),
+          }
+        }),
+      }
+    }),
   }
 }
 
@@ -399,7 +481,10 @@ function freezeSnapshot(snapshot: BrowserWorkspaceProjection): BrowserWorkspaceP
       browsers: Object.freeze(workspace.browsers.map(browser => Object.freeze({
         browserId: browser.browserId,
         activeTabId: browser.activeTabId,
-        tabs: Object.freeze(browser.tabs.map(tab => Object.freeze({ tabId: tab.tabId } satisfies BrowserWorkspaceTabRecord))),
+        tabs: Object.freeze(browser.tabs.map(tab => Object.freeze({
+          tabId: tab.tabId,
+          controlOwner: tab.controlOwner,
+        } satisfies BrowserWorkspaceTabRecord))),
       }))),
     }))),
   })

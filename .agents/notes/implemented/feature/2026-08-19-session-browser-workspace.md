@@ -16,7 +16,7 @@ Runtime `create` may attach a new instance to an existing Workspace or a new tab
 
 Headless Browser Runtime snapshots stay Binder-free because they prove Consumer discovery and rendered Runtime facts, not Session isolation. Session-local ownership is claimed only where the Binder is composed.
 
-Dock UI and human handoff remain later work. Dock open and width are Session facts now so later projection can restore them.
+Dock UI remains later work. Dock open, width, and each tab's current control owner are Session facts so later projection can restore them. Human and Agent control of one tab lives in the [browser control arbitration Agent Note](2026-08-19-browser-control-arbitration.md).
 
 ## Alternatives considered
 
@@ -28,7 +28,7 @@ Dock UI and human handoff remain later work. Dock open and width are Session fac
 
 ## Consequences
 
-Two Sessions can own isolated Workspaces over the same Runtime. Reload reconstructs Dock and tab ownership from the Session log. Named Profiles remain isolated identities. Dock UI, handoff, and release remain later tickets.
+Two Sessions can own isolated Workspaces over the same Runtime. Reload reconstructs Dock, tab ownership, and current control owner from the Session log. Named Profiles remain isolated identities. Dock UI and release remain later tickets.
 
 ## Verification
 

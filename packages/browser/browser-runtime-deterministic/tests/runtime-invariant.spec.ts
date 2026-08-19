@@ -127,6 +127,7 @@ describe('deterministic Browser Runtime invariant lifecycle', () => {
         revision: 1,
         reason: 'crashed',
         reconnecting: false,
+        controlOwner: 'agent',
       })
     }).toThrow(/cannot publish an unavailable state/)
 

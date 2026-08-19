@@ -6,6 +6,7 @@ import { BrowserRuntimeError } from './types.ts'
 import type {
   BrowserClosedState,
   BrowserCreateRequest,
+  BrowserInputRequest,
   BrowserMutationRequest,
   BrowserNavigateRequest,
   BrowserObserveRequest,
@@ -30,6 +31,9 @@ export {
   emitBrowserRuntimeState,
   enqueueBrowserRuntimeOperation,
   labeledBrowserProfileName,
+  bindBrowserControlMutation,
+  mutateBrowserControlOwner,
+  requireExpectedOpenBrowserPage,
   requireOpenBrowserPage,
   resolveBrowserCreateAttach,
   resolveBrowserProfileCreate,
@@ -37,6 +41,7 @@ export {
   sameBrowserProfile,
   sameBrowserTarget,
   sameBrowserWorkspace,
+  withBrowserControlOwner,
 } from './helpers.ts'
 export { EMPTY_BROWSER_PROFILE_STORAGE } from './helpers.ts'
 export type { BrowserProfileChromeRequest, ResolvedBrowserProfileCreate } from './helpers.ts'
@@ -51,8 +56,10 @@ export {
 export type {
   BrowserClosedState,
   BrowserCreateAttach,
+  BrowserControlOwner,
   BrowserCreateRequest,
   BrowserDockWidth,
+  BrowserInputRequest,
   BrowserMutationRequest,
   BrowserNavigateRequest,
   BrowserObserveRequest,
@@ -180,6 +187,38 @@ export abstract class BrowserRuntime extends Service {
    * `BROWSER_RUNTIME_UNAVAILABLE` when it cannot be reached.
    */
   abstract focus(request: BrowserMutationRequest): Promise<BrowserPageState>
+  /**
+   * Record one human pointer or keyboard mutation after checking its expected revision.
+   * @param request - Target, expected revision, optional URL or page text, and cancellation.
+   * @returns committed open page whose `controlOwner` is `human` and whose revision replaces
+   * the caller's prior revision. Session, Profile, browser instance, and tab identities stay
+   * the same. The Agent must observe again before a later mutation.
+   * @throws `BrowserRuntimeError` with `BROWSER_ABORTED`, `BROWSER_DISPOSED`, `BROWSER_NOT_FOUND`,
+   * `BROWSER_NOT_OPEN`, `BROWSER_REVISION_CONFLICT`, or `BROWSER_UNKNOWN_URL` when the
+   * corresponding precondition fails before commit, `BROWSER_PROTOCOL` when the upstream runtime
+   * breaks its response protocol, or `BROWSER_RUNTIME_UNAVAILABLE` when it cannot be reached.
+   */
+  abstract input(request: BrowserInputRequest): Promise<BrowserPageState>
+  /**
+   * Give the human exclusive control of one open tab after checking its expected revision.
+   * @param request - Target, expected revision, and cancellation signal.
+   * @returns committed open page whose `controlOwner` is `human`. Identities stay the same.
+   * @throws `BrowserRuntimeError` with `BROWSER_ABORTED`, `BROWSER_DISPOSED`, `BROWSER_NOT_FOUND`,
+   * `BROWSER_NOT_OPEN`, or `BROWSER_REVISION_CONFLICT` when the corresponding precondition fails
+   * before commit, `BROWSER_PROTOCOL` when the upstream runtime breaks its response protocol, or
+   * `BROWSER_RUNTIME_UNAVAILABLE` when it cannot be reached.
+   */
+  abstract takeover(request: BrowserMutationRequest): Promise<BrowserPageState>
+  /**
+   * Return exclusive control of one open tab to the Agent after checking its expected revision.
+   * @param request - Target, expected revision, and cancellation signal.
+   * @returns committed open page whose `controlOwner` is `agent`. Identities stay the same.
+   * @throws `BrowserRuntimeError` with `BROWSER_ABORTED`, `BROWSER_DISPOSED`, `BROWSER_NOT_FOUND`,
+   * `BROWSER_NOT_OPEN`, or `BROWSER_REVISION_CONFLICT` when the corresponding precondition fails
+   * before commit, `BROWSER_PROTOCOL` when the upstream runtime breaks its response protocol, or
+   * `BROWSER_RUNTIME_UNAVAILABLE` when it cannot be reached.
+   */
+  abstract returnControl(request: BrowserMutationRequest): Promise<BrowserPageState>
   /**
    * Close the addressed tab after checking its expected revision. Temporary Profiles discard
    * identity; persistent Profiles keep the named storage partition.

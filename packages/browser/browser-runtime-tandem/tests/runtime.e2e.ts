@@ -99,9 +99,38 @@ describe.skipIf(tandemCheckout === undefined || tandemBin === undefined)('Tandem
     expect(shot).toMatchObject({ revision: 1, url: REAL_PAGE, mediaType: 'image/png' })
     expect(shot.data.length).toBeGreaterThan(0)
     const focused = await ctx.browserRuntime.focus({ target: created.target, expectedRevision: 1 })
-    expect(focused).toMatchObject({ revision: 2, focused: true })
-    const closed = await ctx.browserRuntime.close({ target: created.target, expectedRevision: 2 })
-    expect(closed).toEqual({ status: 'closed', target: created.target, revision: 3 })
+    expect(focused).toMatchObject({ revision: 2, focused: true, controlOwner: 'agent' })
+    const taken = await ctx.browserRuntime.takeover({ target: created.target, expectedRevision: 2 })
+    expect(taken).toMatchObject({ revision: 3, controlOwner: 'human', target: created.target })
+    const humanFirst = await Promise.allSettled([
+      ctx.browserRuntime.input({ target: created.target, expectedRevision: 3, text: 'human typed' }),
+      ctx.browserRuntime.navigate({ target: created.target, expectedRevision: 3, url: REAL_PAGE }),
+    ])
+    expect(humanFirst.filter(result => result.status === 'fulfilled')).toHaveLength(1)
+    const humanFirstRejected = humanFirst.find(result => result.status === 'rejected')
+    expect(humanFirstRejected?.status === 'rejected' ? humanFirstRejected.reason : undefined).toMatchObject({
+      code: 'BROWSER_REVISION_CONFLICT',
+    })
+    const afterHuman = await ctx.browserRuntime.observe({ target: created.target })
+    expect(afterHuman).toMatchObject({ revision: 4, controlOwner: 'human', target: created.target })
+    const returned = await ctx.browserRuntime.returnControl({
+      target: created.target,
+      expectedRevision: afterHuman.revision,
+    })
+    expect(returned).toMatchObject({ revision: 5, controlOwner: 'agent', target: created.target })
+    const agentFirst = await Promise.allSettled([
+      ctx.browserRuntime.focus({ target: created.target, expectedRevision: 5 }),
+      ctx.browserRuntime.input({ target: created.target, expectedRevision: 5 }),
+    ])
+    expect(agentFirst.filter(result => result.status === 'fulfilled')).toHaveLength(1)
+    const agentFirstRejected = agentFirst.find(result => result.status === 'rejected')
+    expect(agentFirstRejected?.status === 'rejected' ? agentFirstRejected.reason : undefined).toMatchObject({
+      code: 'BROWSER_REVISION_CONFLICT',
+    })
+    const afterAgentFirst = await ctx.browserRuntime.observe({ target: created.target })
+    expect(afterAgentFirst).toMatchObject({ revision: 6, target: created.target })
+    const closed = await ctx.browserRuntime.close({ target: created.target, expectedRevision: afterAgentFirst.revision })
+    expect(closed).toEqual({ status: 'closed', target: created.target, revision: 7 })
     await rm(home, { recursive: true, force: true })
   }, 120_000)
 })

@@ -15,7 +15,7 @@ const SNAPSHOT: BrowserWorkspaceProjection = {
     browsers: [{
       browserId: BrowserInstanceId('browser-1'),
       activeTabId: BrowserTabId('tab-1'),
-      tabs: [{ tabId: BrowserTabId('tab-1') }],
+      tabs: [{ tabId: BrowserTabId('tab-1'), controlOwner: 'agent' }],
     }],
   }],
 }

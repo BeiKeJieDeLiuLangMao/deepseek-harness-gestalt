@@ -429,7 +429,7 @@ export interface DeterministicBrowserPage {
 }
 ```
 
-Source: [`packages/browser/browser-runtime-deterministic/src/index.ts:63`](../packages/browser/browser-runtime-deterministic/src/index.ts)
+Source: [`packages/browser/browser-runtime-deterministic/src/index.ts:66`](../packages/browser/browser-runtime-deterministic/src/index.ts)
 
 <a id="deepseek-aidsh-browser-runtime-tandem"></a>
 
@@ -473,7 +473,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/browser/browser-runtime-tandem/src/index.ts:52`](../packages/browser/browser-runtime-tandem/src/index.ts)
+Source: [`packages/browser/browser-runtime-tandem/src/index.ts:54`](../packages/browser/browser-runtime-tandem/src/index.ts)
 
 <a id="deepseek-aidsh-client-connection"></a>
 

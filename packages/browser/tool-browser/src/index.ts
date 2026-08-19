@@ -9,7 +9,7 @@ import {
   BrowserTabId,
   BrowserWorkspaceId,
 } from '@deepseek-ai/dsh-browser-runtime'
-import type { BrowserCreateAttach, BrowserTarget } from '@deepseek-ai/dsh-browser-runtime'
+import type { BrowserCreateAttach, BrowserMutationRequest, BrowserPageState, BrowserTarget } from '@deepseek-ai/dsh-browser-runtime'
 import type { BrowserWorkspaceBinder } from '@deepseek-ai/dsh-browser-workspace'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { defineTool } from '@deepseek-ai/dsh-tools'
@@ -77,6 +77,7 @@ const OPEN_STATE_SCHEMA = {
     title: { type: 'string', required: true },
     text: { type: 'string', required: true },
     focused: { type: 'boolean', required: true },
+    controlOwner: { type: 'string', required: true, enum: ['agent', 'human'] },
     chrome: { ...CHROME_SCHEMA, required: true },
     storage: { ...STORAGE_SCHEMA, required: true },
   },
@@ -101,6 +102,7 @@ const UNAVAILABLE_STATE_SCHEMA = {
     revision: { type: 'integer', required: true },
     reason: { type: 'string', required: true, enum: ['crashed', 'unhealthy', 'reconnect-failed'] },
     reconnecting: { type: 'boolean', required: true },
+    controlOwner: { type: 'string', required: true, enum: ['agent', 'human'] },
   },
 } as const
 
@@ -186,6 +188,26 @@ function revision(value: number): number {
  * @param request - Operation request shared by both paths.
  * @returns the Runtime or Binder result.
  */
+/**
+ * Convert validated tool arguments into a branded mutation request.
+ * @param args - Target identities and expected revision from the model.
+ * @param signal - Cooperative cancellation from the tool execution.
+ * @returns the Runtime mutation request.
+ */
+function mutationFrom(
+  args: {
+    target: { profileId: string; workspaceId: string; browserId: string; tabId: string }
+    expectedRevision: number
+  },
+  signal: AbortSignal,
+): BrowserMutationRequest {
+  return {
+    target: targetFrom(args.target),
+    expectedRevision: revision(args.expectedRevision),
+    signal,
+  }
+}
+
 function routeBrowserCall<TRequest, TResult>(
   ctx: Context,
   exec: { agent?: { session?: Session } },
@@ -200,7 +222,30 @@ function routeBrowserCall<TRequest, TResult>(
 }
 
 /**
- * Register six deferred Browser Runtime operations without presentation-specific cards.
+ * Route one control-owner mutation through the Session binder when both are present.
+ * @param ctx - Consumer context that may compose `browserWorkspace`.
+ * @param exec - Tool execution carrying an optional calling Agent Session.
+ * @param method - Runtime and Binder method to invoke.
+ * @param args - Target identities and expected revision from the model.
+ * @returns the committed open page.
+ */
+function routeMutation(
+  ctx: Context,
+  exec: { agent?: { session?: Session }; signal: AbortSignal },
+  method: 'takeover' | 'returnControl',
+  args: { target: { profileId: string; workspaceId: string; browserId: string; tabId: string }; expectedRevision: number },
+): Promise<BrowserPageState> {
+  return routeBrowserCall(
+    ctx,
+    exec,
+    (workspace, request) => workspace[method](request),
+    request => ctx.browserRuntime[method](request),
+    mutationFrom(args, exec.signal),
+  )
+}
+
+/**
+ * Register nine deferred Browser Runtime operations without presentation-specific cards.
  * @param ctx - Consumer context with Browser Runtime and tool registry services.
  * @param config - Per-call timeout configuration.
  */
@@ -351,12 +396,74 @@ export function apply(ctx: Context, config: Config): void {
           exec,
           (workspace, request) => workspace.focus(request),
           request => ctx.browserRuntime.focus(request),
+          mutationFrom(args, exec.signal),
+        )
+      },
+    }),
+    deferLoading: true,
+  })
+
+  ctx.tools.register({
+    ...defineTool({
+      name: 'browser_input',
+      description: 'Record one human pointer or keyboard mutation on a browser tab using its latest revision.',
+      timeoutMs,
+      parameters: {
+        target: TARGET_PARAMETER,
+        expectedRevision: { type: 'integer', required: true, description: 'Latest revision returned by a browser operation.' },
+        url: { type: 'string', description: 'Optional URL produced by the human mutation.' },
+        text: { type: 'string', description: 'Optional page text produced by the human mutation.' },
+      },
+      output: { schema: OPEN_STATE_SCHEMA, render: renderValue },
+      execute: async (args, exec) => {
+        if (args.url !== undefined && args.url.trim().length === 0) throw new Error('url must be non-empty')
+        return routeBrowserCall(
+          ctx,
+          exec,
+          (workspace, request) => workspace.input(request),
+          request => ctx.browserRuntime.input(request),
           {
             target: targetFrom(args.target),
             expectedRevision: revision(args.expectedRevision),
+            ...args.url === undefined ? {} : { url: args.url },
+            ...args.text === undefined ? {} : { text: args.text },
             signal: exec.signal,
           },
         )
+      },
+    }),
+    deferLoading: true,
+  })
+
+  ctx.tools.register({
+    ...defineTool({
+      name: 'browser_takeover',
+      description: 'Give the human exclusive control of one browser tab using its latest revision.',
+      timeoutMs,
+      parameters: {
+        target: TARGET_PARAMETER,
+        expectedRevision: { type: 'integer', required: true, description: 'Latest revision returned by a browser operation.' },
+      },
+      output: { schema: OPEN_STATE_SCHEMA, render: renderValue },
+      execute: async (args, exec) => {
+        return routeMutation(ctx, exec, 'takeover', args)
+      },
+    }),
+    deferLoading: true,
+  })
+
+  ctx.tools.register({
+    ...defineTool({
+      name: 'browser_return_control',
+      description: 'Return exclusive control of one browser tab to the Agent using its latest revision.',
+      timeoutMs,
+      parameters: {
+        target: TARGET_PARAMETER,
+        expectedRevision: { type: 'integer', required: true, description: 'Latest revision returned by a browser operation.' },
+      },
+      output: { schema: OPEN_STATE_SCHEMA, render: renderValue },
+      execute: async (args, exec) => {
+        return routeMutation(ctx, exec, 'returnControl', args)
       },
     }),
     deferLoading: true,
@@ -378,11 +485,7 @@ export function apply(ctx: Context, config: Config): void {
           exec,
           (workspace, request) => workspace.close(request),
           request => ctx.browserRuntime.close(request),
-          {
-            target: targetFrom(args.target),
-            expectedRevision: revision(args.expectedRevision),
-            signal: exec.signal,
-          },
+          mutationFrom(args, exec.signal),
         )
       },
     }),

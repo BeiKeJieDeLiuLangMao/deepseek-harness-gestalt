@@ -16,7 +16,7 @@ Runtime `create` 可以把新实例附加到已有 Workspace，或把新标签�
 
 无密钥 Browser Runtime 快照保持不含 Binder，因为它们证明 Consumer 发现与已渲染 Runtime 事实，而不是 Session 隔离。只有组合了 Binder 的路径才宣称 Session 本地所有权。
 
-Dock UI 与人工接管仍属于后续工作。现在就把 Dock 打开状态与宽度作为 Session 事实记录，供后续投影恢复。
+Dock UI 仍属于后续工作。现在就把 Dock 打开状态、宽度以及每个标签页的当前控制权所有者作为 Session 事实记录，供后续投影恢复。同一标签页上的人工与 Agent 控制权见 [浏览器控制权仲裁 Agent Note](2026-08-19-browser-control-arbitration.md)。
 
 ## 考虑过的替代方案
 
@@ -28,7 +28,7 @@ Dock UI 与人工接管仍属于后续工作。现在就把 Dock 打开状态与
 
 ## 后果
 
-两个 Session 可以在同一 Runtime 上拥有隔离 Workspace。重新加载从 Session 日志重建 Dock 与标签页所有权。命名 Profile 仍是隔离身份。Dock UI、handoff 与发布仍属于后续工单。
+两个 Session 可以在同一 Runtime 上拥有隔离 Workspace。重新加载从 Session 日志重建 Dock、标签页所有权与当前控制权所有者。命名 Profile 仍是隔离身份。Dock UI 与发布仍属于后续工单。
 
 ## 验证
 
