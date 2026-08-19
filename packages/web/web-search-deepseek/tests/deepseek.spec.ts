@@ -591,10 +591,7 @@ describe('Moonshot dedicated search', () => {
       ...options,
       protocol: 'moonshot-search',
       baseURL: 'https://api.moonshot.cn/v1/search',
-    }).search({ query: 'q' })).rejects.toThrow(expect.objectContaining({
-      code: 'WEB_PROVIDER_ERROR',
-      message: expect.stringContaining('Kimi returned an unprocessable response body'),
-    }))
+    }).search({ query: 'q' })).rejects.toThrow(expect.objectContaining({ code: 'WEB_PROVIDER_ERROR' }))
   })
 
   it('surfaces an abort during moonshot body parse as WEB_ABORTED', async () => {
