@@ -12,7 +12,7 @@ Remote Access 的纯 codec 与协商器。本包拥有两个独立版本化的�
 
 Companion major 2 和 1 是当前及紧邻的前一应用版本。双方 endpoint 必须在所选 major 上声明已认证加密、配对密钥隔离与重放保护。协商不受 offer 数组顺序影响，始终选择最高的安全共同 major，因此不安全的共同 major 只能降级到安全的紧邻前一 major。每条逻辑 endpoint 连接拥有一个 negotiation channel。在该 channel 上开始新协商时，会在求值 offer 前让此前的应用 codec token 失效；失败的协商会让 channel 保持未激活，而其他 channel 仍然有效。不存在安全版本交集时，会在编码应用明文前失败，并指出必须更新的 endpoint。
 
-已实现 catalog 包含有界 transcript page projection、prompt 提交 operation、重连用的 `query-operation-status` operation，以及 Desktop 应答：`confirmed` mutation 结果，加上 `status` 应答——为被查询的 operation id 返回原始 committed 结果，或显式声明其未提交任何内容。每个标识符由本协议自行品牌化，不从 Harness 领域包导入。解码时会拒绝不支持的 operation 与 projection 字段，且 `status` 应答必须内嵌自身 operation id 的 confirmed 结果。
+已实现 catalog 包含有界 transcript page projection、prompt 提交 operation、重连用的 `query-operation-status` operation，以及 Desktop 应答：`confirmed` mutation 结果，加上 `status` 应答——为被查询的 operation id 返回原始 committed 结果，或显式声明其未提交任何内容。每个标识符由本协议自行品牌化，不从 Harness 领域包导入。解码时会拒绝不支持的 operation 与 projection 字段。committed 的 `status` 应答内嵌同一 operation id 的 confirmed 结果；absent 应答仅为 `{ absent: true }`。
 
 ## Wire 限制与错误
 

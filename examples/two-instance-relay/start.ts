@@ -199,12 +199,15 @@ export async function apply(_ctx: Context, config: Config): Promise<void> {
       onCiphertext: async (ciphertext, sourceAttachmentId) => {
         const message = decodeCompanionMessage(desktopProtocol, cipher.open(ciphertext))
         if (message.type !== 'operation') return
+        const result = message.operation.type === 'query-operation-status'
+          ? { type: 'status' as const, operationId: message.operation.operationId, absent: true as const }
+          : {
+            type: 'confirmed' as const, operationId: message.operation.operationId,
+            committedAt: 1_787_027_200_000, outcome: 'accepted' as const,
+          }
         await desktopLifecycle.sendCiphertext(sourceAttachmentId, cipher.seal(encodeCompanionMessage(desktopProtocol, {
           type: 'result',
-          result: {
-            type: 'confirmed', operationId: message.operation.operationId,
-            committedAt: 1_787_027_200_000, outcome: 'accepted',
-          },
+          result,
         })))
       },
     })

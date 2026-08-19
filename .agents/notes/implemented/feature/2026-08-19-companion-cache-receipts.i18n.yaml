@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-19-companion-cache-receipts.md
-2026-08-19-companion-cache-receipts.md: 2433a736cecde1a02aa60a9014e8ee2ec3835892
-2026-08-19-companion-cache-receipts.zh.md: df66e142df19d1dd8b6a6ccda1de5593ce2de8b3
+2026-08-19-companion-cache-receipts.md: fb97759fe7da5ec3aeabb27d13b538f39609fa16
+2026-08-19-companion-cache-receipts.zh.md: 70194797ab6921bf157d655e7e27744dc53e3590

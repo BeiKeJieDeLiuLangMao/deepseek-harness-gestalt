@@ -1,12 +1,22 @@
 /** Per-Paired-Desktop Companion Cache and uncertain-operation recovery. */
 
 import type { Branded } from '@deepseek-ai/dsh-brand'
-import type { CompanionConfirmedResult, CompanionOperationId } from '@deepseek-ai/dsh-remote-protocol'
+import type { PlatformAccountId, PlatformEnvironment } from '@deepseek-ai/dsh-platform-account'
+import { accountStorageNamespace } from '@deepseek-ai/dsh-platform-account-client'
+import {
+  parseCompanionOperationId,
+  REMOTE_PROTOCOL_LIMITS,
+  type CompanionConfirmedResult,
+  type CompanionOperationId,
+} from '@deepseek-ai/dsh-remote-protocol'
 
 /** Opaque Paired Desktop identity injected by the Personal Pairing seam. */
 export type CompanionDesktopId = Branded<'CompanionDesktopId'>
 
 const DESKTOP_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/
+
+/** Maximum Operation Receipts retained for one Paired Desktop. */
+const COMPANION_CACHE_RECEIPT_LIMIT = REMOTE_PROTOCOL_LIMITS.containerValues
 
 /**
  * Parse a Paired Desktop identity arriving from the Personal Pairing seam.
@@ -18,6 +28,19 @@ export function parseCompanionDesktopId(value: unknown): CompanionDesktopId {
     throw new TypeError('Companion desktop id must be 1-128 base64url characters')
   }
   return value as CompanionDesktopId
+}
+
+/**
+ * Build the account-scoped IndexedDB name for Companion Cache rows.
+ * @param environment - deployment environment owning the cache.
+ * @param accountId - Platform Account owning the cache.
+ * @returns `${accountStorageNamespace(environment, accountId)}:companion-cache`.
+ */
+export function companionCacheDatabaseName(
+  environment: PlatformEnvironment,
+  accountId: PlatformAccountId,
+): string {
+  return `${accountStorageNamespace(environment, accountId)}:companion-cache`
 }
 
 /** Content kinds the Companion Cache may automatically seal. */
@@ -93,17 +116,32 @@ export interface CompanionCacheKeySource {
 export interface CompanionCacheCipher {
   /**
    * Encrypt one cache row.
-   * @param desktopId - Paired Desktop identity owning the key.
+   * @param desktopId - Paired Desktop identity owning the key and AAD.
+   * @param kind - admitted content kind bound as AAD.
    * @param plaintext - opened metadata or transcript bytes.
    * @returns sealed row with a fresh per-record IV.
    */
-  seal(desktopId: CompanionDesktopId, plaintext: Uint8Array): Promise<CompanionCacheRecord>
+  seal(
+    desktopId: CompanionDesktopId,
+    kind: CompanionCacheContentKind,
+    plaintext: Uint8Array,
+  ): Promise<CompanionCacheRecord>
   /**
    * Decrypt one cache row.
+   * @param desktopId - caller-supplied Paired Desktop identity selecting the key and AAD.
+   * @param kind - admitted content kind bound as AAD.
    * @param record - sealed row.
    * @returns opened metadata or transcript bytes.
    */
-  open(record: CompanionCacheRecord): Promise<Uint8Array>
+  open(
+    desktopId: CompanionDesktopId,
+    kind: CompanionCacheContentKind,
+    record: CompanionCacheRecord,
+  ): Promise<Uint8Array>
+}
+
+function cacheAad(desktopId: CompanionDesktopId, kind: CompanionCacheContentKind): Uint8Array<ArrayBuffer> {
+  return new Uint8Array(new TextEncoder().encode(`${desktopId}\0${kind}`))
 }
 
 /** WebCrypto AES-GCM cipher over per-desktop keys from the pairing seam. */
@@ -115,21 +153,29 @@ export class WebCryptoCompanionCacheCipher implements CompanionCacheCipher {
     this.#keys = keys
   }
 
-  async seal(desktopId: CompanionDesktopId, plaintext: Uint8Array): Promise<CompanionCacheRecord> {
+  async seal(
+    desktopId: CompanionDesktopId,
+    kind: CompanionCacheContentKind,
+    plaintext: Uint8Array,
+  ): Promise<CompanionCacheRecord> {
     const iv = crypto.getRandomValues(new Uint8Array(12))
     const bytes = new Uint8Array(plaintext)
     const ciphertext = new Uint8Array(await crypto.subtle.encrypt(
-      { name: 'AES-GCM', iv },
+      { name: 'AES-GCM', iv, additionalData: cacheAad(desktopId, kind) },
       await this.#keys.keyFor(desktopId),
       bytes,
     ))
     return { desktopId, iv, ciphertext }
   }
 
-  async open(record: CompanionCacheRecord): Promise<Uint8Array> {
+  async open(
+    desktopId: CompanionDesktopId,
+    kind: CompanionCacheContentKind,
+    record: CompanionCacheRecord,
+  ): Promise<Uint8Array> {
     return new Uint8Array(await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv: record.iv },
-      await this.#keys.keyFor(record.desktopId),
+      { name: 'AES-GCM', iv: record.iv, additionalData: cacheAad(desktopId, kind) },
+      await this.#keys.keyFor(desktopId),
       record.ciphertext,
     ))
   }
@@ -192,6 +238,102 @@ function desktopPrefix(desktopId: CompanionDesktopId): string {
   return `${desktopId}::`
 }
 
+function openedContentByteLimit(kind: CompanionCacheContentKind): number {
+  return kind === 'transcript'
+    ? REMOTE_PROTOCOL_LIMITS.transcriptPageBytes
+    : REMOTE_PROTOCOL_LIMITS.companionMessageBytes
+}
+
+function requireReceiptCapacity(existingCount: number, replacing: boolean): void {
+  if (!replacing && existingCount >= COMPANION_CACHE_RECEIPT_LIMIT) {
+    throw new Error(`Companion Cache receipt count exceeds the ${String(COMPANION_CACHE_RECEIPT_LIMIT)}-row ceiling`)
+  }
+}
+
+function requireReceiptCount(count: number): void {
+  if (count > COMPANION_CACHE_RECEIPT_LIMIT) {
+    throw new Error(`Companion Cache receipt count exceeds the ${String(COMPANION_CACHE_RECEIPT_LIMIT)}-row ceiling`)
+  }
+}
+
+function durableRecord(value: unknown, name: string): Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new TypeError(`${name} must be an object`)
+  }
+  return value as Record<string, unknown>
+}
+
+function parseUint8Array(value: unknown, name: string, exactLength?: number): Uint8Array<ArrayBuffer> {
+  if (!(value instanceof Uint8Array) || (exactLength !== undefined && value.byteLength !== exactLength)) {
+    throw new TypeError(
+      exactLength === undefined
+        ? `${name} must be a Uint8Array`
+        : `${name} must be a ${String(exactLength)}-byte Uint8Array`,
+    )
+  }
+  return value as Uint8Array<ArrayBuffer>
+}
+
+function parseCompanionCacheRecord(value: unknown): CompanionCacheRecord {
+  const record = durableRecord(value, 'Companion Cache content row')
+  return {
+    desktopId: parseCompanionDesktopId(record.desktopId),
+    iv: parseUint8Array(record.iv, 'Companion Cache iv', 12),
+    ciphertext: parseUint8Array(record.ciphertext, 'Companion Cache ciphertext'),
+  }
+}
+
+function parseCompanionConfirmedResult(value: unknown): CompanionConfirmedResult {
+  const record = durableRecord(value, 'Companion confirmed result')
+  if (record.type !== 'confirmed' || record.outcome !== 'accepted') {
+    throw new TypeError('Companion confirmed result type is unsupported')
+  }
+  if (typeof record.committedAt !== 'number' || !Number.isSafeInteger(record.committedAt) || record.committedAt <= 0) {
+    throw new TypeError('Companion committedAt must be a positive safe integer')
+  }
+  return {
+    type: 'confirmed',
+    operationId: parseCompanionOperationId(record.operationId),
+    committedAt: record.committedAt,
+    outcome: 'accepted',
+  }
+}
+
+function parseReceiptStatus(value: unknown): CompanionReceiptStatus {
+  if (value === 'unknown' || value === 'committed' || value === 'not-submitted') return value
+  throw new TypeError('Companion receipt status is unsupported')
+}
+
+function parseCompanionOperationReceipt(value: unknown): CompanionOperationReceipt {
+  const record = durableRecord(value, 'Companion Operation Receipt')
+  const operationId = parseCompanionOperationId(record.operationId)
+  const status = parseReceiptStatus(record.status)
+  if (status === 'committed') {
+    if (record.original === undefined) {
+      throw new TypeError('Companion committed receipt must embed its original result')
+    }
+    const original = parseCompanionConfirmedResult(record.original)
+    if (original.operationId !== operationId) {
+      throw new TypeError('Companion committed receipt original must name the same operation id')
+    }
+    return { operationId, status, original }
+  }
+  if (record.original !== undefined) {
+    throw new TypeError('Companion uncommitted receipt cannot embed an original result')
+  }
+  return { operationId, status }
+}
+
+function assertRecordDesktop(
+  record: CompanionCacheRecord,
+  desktopId: CompanionDesktopId,
+): CompanionCacheRecord {
+  if (record.desktopId !== desktopId) {
+    throw new TypeError('Companion Cache content row desktop id does not match the requested desktop')
+  }
+  return record
+}
+
 /** In-memory store for tests and keyless example compositions. */
 export class InMemoryCompanionCacheStore implements CompanionCacheStore {
   readonly #content = new Map<string, CompanionCacheRecord>()
@@ -222,14 +364,21 @@ export class InMemoryCompanionCacheStore implements CompanionCacheStore {
   }
 
   async saveReceipt(desktopId: CompanionDesktopId, receipt: CompanionOperationReceipt): Promise<void> {
-    this.#receipts.set(`${desktopPrefix(desktopId)}${receipt.operationId}`, receipt)
+    const key = `${desktopPrefix(desktopId)}${receipt.operationId}`
+    requireReceiptCapacity(
+      [...this.#receipts.keys()].filter(row => row.startsWith(desktopPrefix(desktopId))).length,
+      this.#receipts.has(key),
+    )
+    this.#receipts.set(key, receipt)
   }
 
   async loadReceipts(desktopId: CompanionDesktopId): Promise<readonly CompanionOperationReceipt[]> {
     const prefix = desktopPrefix(desktopId)
-    return [...this.#receipts.entries()]
+    const rows = [...this.#receipts.entries()]
       .filter(([key]) => key.startsWith(prefix))
       .map(([, row]) => row)
+    requireReceiptCount(rows.length)
+    return rows
   }
 }
 
@@ -237,8 +386,14 @@ export class InMemoryCompanionCacheStore implements CompanionCacheStore {
 export class IndexedDbCompanionCacheStore implements CompanionCacheStore {
   readonly #database: Promise<IDBDatabase>
 
-  /** @param databaseName - application-owned database; defaults to the Gestalt companion cache. */
-  constructor(databaseName = 'deepseek-gestalt-companion-cache') {
+  /**
+   * @param databaseName - account-scoped name from `companionCacheDatabaseName`;
+   *   there is no installation-global default.
+   */
+  constructor(databaseName: string) {
+    if (databaseName.length === 0) {
+      throw new TypeError('Companion Cache IndexedDB name must come from companionCacheDatabaseName')
+    }
     this.#database = new Promise((resolve, reject) => {
       const request = indexedDB.open(databaseName, 1)
       request.onupgradeneeded = () => {
@@ -262,7 +417,8 @@ export class IndexedDbCompanionCacheStore implements CompanionCacheStore {
     desktopId: CompanionDesktopId,
     kind: CompanionCacheContentKind,
   ): Promise<CompanionCacheRecord | undefined> {
-    return await this.read<CompanionCacheRecord>('content', contentKey(desktopId, kind))
+    const value = await this.read('content', contentKey(desktopId, kind))
+    return value === undefined ? undefined : assertRecordDesktop(parseCompanionCacheRecord(value), desktopId)
   }
 
   async clearDesktop(desktopId: CompanionDesktopId): Promise<void> {
@@ -281,14 +437,30 @@ export class IndexedDbCompanionCacheStore implements CompanionCacheStore {
     const database = await this.#database
     await new Promise<void>((resolve, reject) => {
       const key = `${desktopPrefix(desktopId)}${receipt.operationId}`
-      // One readwrite transaction covers read-modify-write, so concurrent
-      // senders cannot interleave between the read and the put.
+      let limitError: Error | undefined
+      // One readwrite transaction covers the count and put, so concurrent
+      // senders cannot interleave past the receipt ceiling.
       const transaction = database.transaction('receipts', 'readwrite')
       const store = transaction.objectStore('receipts')
-      const existing = store.get(key)
-      existing.onsuccess = () => { store.put({ ...(existing.result as CompanionOperationReceipt | undefined), ...receipt }, key) }
+      const keysRequest = store.getAllKeys(desktopRange(desktopId))
+      keysRequest.onsuccess = () => {
+        const keys = keysRequest.result
+        try {
+          requireReceiptCapacity(keys.length, keys.includes(key))
+        } catch (error) {
+          limitError = error instanceof Error ? error : new Error(String(error))
+          transaction.abort()
+          return
+        }
+        store.put(receipt, key)
+      }
       transaction.oncomplete = () => { resolve() }
-      transaction.onerror = () => { reject(transaction.error ?? new Error('Companion cache IndexedDB write failed')) }
+      transaction.onabort = () => {
+        reject(limitError ?? transaction.error ?? new Error('Companion cache IndexedDB write failed'))
+      }
+      transaction.onerror = () => {
+        reject(limitError ?? transaction.error ?? new Error('Companion cache IndexedDB write failed'))
+      }
     })
   }
 
@@ -296,16 +468,27 @@ export class IndexedDbCompanionCacheStore implements CompanionCacheStore {
     const database = await this.#database
     return new Promise((resolve, reject) => {
       const request = database.transaction('receipts', 'readonly').objectStore('receipts').getAll(desktopRange(desktopId))
-      request.onsuccess = () => { resolve(request.result as CompanionOperationReceipt[]) }
+      request.onsuccess = () => {
+        try {
+          const rows = request.result
+          if (!Array.isArray(rows)) {
+            throw new TypeError('Companion Cache receipts must be an array')
+          }
+          requireReceiptCount(rows.length)
+          resolve(rows.map(row => parseCompanionOperationReceipt(row)))
+        } catch (error) {
+          reject(error instanceof Error ? error : new Error(String(error), { cause: error }))
+        }
+      }
       request.onerror = () => { reject(request.error ?? new Error('Companion cache IndexedDB read failed')) }
     })
   }
 
-  private async read<T>(store: 'content' | 'receipts', key: string): Promise<T | undefined> {
+  private async read(store: 'content' | 'receipts', key: string): Promise<unknown> {
     const database = await this.#database
     return new Promise((resolve, reject) => {
       const request = database.transaction(store, 'readonly').objectStore(store).get(key)
-      request.onsuccess = () => { resolve(request.result as T | undefined) }
+      request.onsuccess = () => { resolve(request.result) }
       request.onerror = () => { reject(request.error ?? new Error('Companion cache IndexedDB read failed')) }
     })
   }
@@ -351,15 +534,17 @@ export class CompanionCache {
     if (!companionCacheAdmits(kind)) {
       throw new TypeError(`Companion Cache never automatically stores ${String(kind)}`)
     }
-    await this.#store.saveContent(desktopId, kind, await this.#cipher.seal(
-      desktopId,
-      new TextEncoder().encode(plaintext),
-    ))
+    const bytes = new TextEncoder().encode(plaintext)
+    const limit = openedContentByteLimit(kind)
+    if (bytes.byteLength > limit) {
+      throw new TypeError(`Companion Cache ${kind} exceeds the ${String(limit)}-byte ceiling`)
+    }
+    await this.#store.saveContent(desktopId, kind, await this.#cipher.seal(desktopId, kind, bytes))
   }
 
   /**
    * Read cached plaintext; Remote Offline permits this read.
-   * @param desktopId - Paired Desktop whose cache is read.
+   * @param desktopId - Paired Desktop whose cache is read; selects the key and AAD.
    * @param kind - admitted content kind of the row.
    * @returns Desktop-confirmed content, or `undefined` when nothing is cached.
    */
@@ -369,7 +554,8 @@ export class CompanionCache {
   ): Promise<string | undefined> {
     const record = await this.#store.loadContent(desktopId, kind)
     if (record === undefined) return undefined
-    return new TextDecoder().decode(await this.#cipher.open(record))
+    assertRecordDesktop(record, desktopId)
+    return new TextDecoder().decode(await this.#cipher.open(desktopId, kind, record))
   }
 
   /**
@@ -398,18 +584,21 @@ export type CompanionMutationOutcome =
   | { readonly known: true; readonly result: CompanionConfirmedResult }
   | { readonly known: false }
 
+/** Hook invoked after a mutation left this device and before `send` returns. */
+export type CompanionTransmissionAck = () => void | Promise<void>
+
 /** Relay-backed transport the settlement controller drives. */
 export interface CompanionMutationTransport {
   /**
-   * Transmit one mutation; call `onTransmitted` exactly once after the request
-   * left this device and before settling.
+   * Transmit one mutation; await `onTransmitted` exactly once after the request
+   * left this device and before returning or rejecting.
    * @param mutation - proposed mutation.
    * @param onTransmitted - transmission acknowledgment hook.
    * @returns the Desktop result, or an explicitly unknown outcome.
    */
   send(
     mutation: CompanionMutationRequest,
-    onTransmitted: () => void,
+    onTransmitted: CompanionTransmissionAck,
   ): Promise<CompanionMutationOutcome>
   /**
    * Query Desktop for the authoritative outcome of one transmitted operation.
@@ -432,7 +621,9 @@ export class CompanionUncertainOperationSettlement {
 
   /**
    * Transmit one mutation, storing an Operation Receipt only after the request
-   * left this device. Offline proposals never reach the transport.
+   * left this device. Offline proposals never reach the transport. An existing
+   * `unknown` receipt must be reconciled first; a `committed` receipt is
+   * returned without resending.
    * @param mutation - proposed mutation.
    * @param transport - Relay-backed transport.
    * @param online - whether Remote is currently Online.
@@ -446,6 +637,16 @@ export class CompanionUncertainOperationSettlement {
     if (!companionMutationAllowed(online, mutation.kind)) {
       throw new Error(`Remote Offline disables Companion ${mutation.kind} mutations`)
     }
+    const existing = (await this.#store.loadReceipts(this.#desktopId))
+      .find(row => row.operationId === mutation.operationId)
+    if (existing?.status === 'unknown') {
+      throw new Error(
+        `Companion operation ${mutation.operationId} is unknown and must be reconciled before another transmit`,
+      )
+    }
+    if (existing?.status === 'committed') {
+      return existing
+    }
     let transmissionReceipt: Promise<void> | undefined
     let outcome: CompanionMutationOutcome
     try {
@@ -454,6 +655,7 @@ export class CompanionUncertainOperationSettlement {
           this.#desktopId,
           { operationId: mutation.operationId, status: 'unknown' },
         )
+        return transmissionReceipt
       })
     } catch (error) {
       // The transmission acknowledgment write must settle before its rejection
