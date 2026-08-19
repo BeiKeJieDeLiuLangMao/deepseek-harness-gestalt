@@ -77,5 +77,17 @@ export const settingsMutateRequestSchema = z.object({
 /** settings.mutate response value: the namespace's new redacted view. */
 export const settingsMutateValueSchema = settingsNamespaceViewSchema satisfies z.ZodType<Wire<ResponseValue<'settings.mutate'>>>
 
+/** settings.testWebSearch request payload. */
+export const settingsTestWebSearchRequestSchema = z.object({
+  query: z.string().min(1).optional(),
+}) satisfies z.ZodType<Wire<RequestPayload<'settings.testWebSearch'>>>
+
+/** settings.testWebSearch response value. */
+export const settingsTestWebSearchValueSchema = z.object({
+  count: z.number(),
+  title: z.string().optional(),
+  url: z.string().optional(),
+}) satisfies z.ZodType<Wire<ResponseValue<'settings.testWebSearch'>>>
+
 /** settings.replace response value. */
 export const settingsReplaceValueSchema = settingsNamespaceViewSchema satisfies z.ZodType<Wire<ResponseValue<'settings.replace'>>>

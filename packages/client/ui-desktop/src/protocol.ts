@@ -48,6 +48,8 @@ export const PAIRING_CANCEL_CHALLENGE = 'pairing:cancelChallenge'
 export const PAIRING_CONFIRM = 'pairing:confirm'
 /** IPC / preload channel rejecting a pending handshake. */
 export const PAIRING_REJECT = 'pairing:reject'
+/** IPC / preload channel revoking one confirmed pairing. */
+export const PAIRING_REVOKE = 'pairing:revoke'
 /** IPC event pushed for every Mobile Access or pairing transition. */
 export const PAIRING_SNAPSHOT_CHANGED = 'pairing:snapshot-changed'
 
@@ -58,6 +60,7 @@ export type UpdaterPhase =
   | 'checking'
   | 'available'
   | 'downloading'
+  | 'preparing'
   | 'downloaded'
   | 'installing'
   | 'error'
@@ -113,6 +116,8 @@ export interface DesktopPersonalPairing {
   readonly deviceName: string
   readonly platform: 'ios' | 'android'
   readonly pairedAt: number
+  readonly lastAccessAt: number
+  readonly online: boolean
 }
 
 /** Desktop Host-owned Mobile Access and Personal Pairing lifecycle. */
@@ -171,6 +176,8 @@ export interface DesktopBridge {
   readonly pairingConfirm: (pendingPairingId: PendingPairingId) => Promise<DesktopPairingSnapshot>
   /** Reject a pending handshake and destroy its pending key. */
   readonly pairingReject: (pendingPairingId: PendingPairingId) => Promise<DesktopPairingSnapshot>
+  /** Revoke one confirmed pairing and drop its Relay authority. */
+  readonly pairingRevoke: (pairingId: PersonalPairingId) => Promise<DesktopPairingSnapshot>
   /** Subscribe to Mobile Access and Personal Pairing transitions. */
   readonly onPairingSnapshot: (listener: (snapshot: DesktopPairingSnapshot) => void) => () => void
 }

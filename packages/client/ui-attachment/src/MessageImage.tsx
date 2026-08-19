@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import type { ReactNode } from 'react'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { ImageLightbox } from './ImageLightbox.tsx'
-import type { ImageLightboxLabels } from './ImageLightbox.tsx'
+import type { ImageLightboxLabels, ImageLightboxPin } from './ImageLightbox.tsx'
 import css from './MessageImage.module.css'
 
 /** Loads a session-authorized durable image URL. */
@@ -51,20 +52,35 @@ function singleFit(attachment: ImageAttachmentRef): { width: number; height: num
  * @param props.labels - resolved strings (tooltip, loading, retry, lightbox).
  * @returns the bounded thumbnail button, or the retry control on failure.
  */
-export function MessageImage({ attachment, load, variant, labels }: {
+export function MessageImage({ attachment, load, variant, labels, pinOverlay }: {
   attachment: ImageAttachmentRef
   load: ImageLoader
   variant: 'single' | 'tile'
   labels: MessageImageLabels
+  pinOverlay?: {
+    pins: readonly ImageLightboxPin[]
+    modeLabel: string
+    exitLabel: string
+    refuse?: string
+    onPlace: (x: number, y: number) => void
+    onSelect: (id: string) => void
+    onCloseEditor?: () => void
+    editor?: ReactNode
+  }
 }) {
   const [src, setSrc] = useState<string | null>(null)
   const [error, setError] = useState(false)
   const [open, setOpen] = useState(false)
+  const [pinMode, setPinMode] = useState(false)
   // Retry re-arms the one load effect below, so every attempt — first load or
   // retry — runs under the same liveness guard and the same reset.
   const [attempt, setAttempt] = useState(0)
   const request = useCallback(() => { setAttempt(a => a + 1) }, [])
-  const close = useCallback(() => { setOpen(false) }, [])
+  const close = useCallback(() => {
+    setOpen(false)
+    setPinMode(false)
+    pinOverlay?.onCloseEditor?.()
+  }, [pinOverlay])
   const fit = useMemo(
     () => (variant === 'single' ? singleFit(attachment) : undefined),
     [attachment, variant],
@@ -95,26 +111,64 @@ export function MessageImage({ attachment, load, variant, labels }: {
           ? <span className={css.loading}>{labels.loading}</span>
           : <img src={src} alt={label} style={fit === undefined ? undefined : { objectPosition: fit.objectPosition }} />}
       </button>
-      {open && src !== null && <ImageLightbox src={src} alt={label} labels={labels.lightbox} onClose={close} />}
+      {open && src !== null && (
+        <ImageLightbox
+          src={src}
+          alt={label}
+          labels={labels.lightbox}
+          onClose={close}
+          {...(pinOverlay === undefined ? {} : { annotation: {
+            mode: pinMode,
+            pins: pinOverlay.pins,
+            modeLabel: pinOverlay.modeLabel,
+            exitLabel: pinOverlay.exitLabel,
+            ...(pinOverlay.refuse === undefined ? {} : { refuse: pinOverlay.refuse }),
+            onToggleMode: () => { setPinMode(current => !current) },
+            onPlace: pinOverlay.onPlace,
+            onSelect: pinOverlay.onSelect,
+          } })}
+          {...(pinOverlay?.editor === undefined ? {} : { editor: pinOverlay.editor })}
+        />
+      )}
     </>
   )
 }
 
 /** Wrapping image group shared by user and assistant history: a lone image
  * renders large, several render as 64px square tiles (DeepSeek Chat rule). */
-export function ImageGallery({ images, load, align, labels }: {
+export function ImageGallery({ images, load, align, labels, pinOverlayFor }: {
   images: readonly { attachment: ImageAttachmentRef }[]
   load: ImageLoader
   align: 'start' | 'end'
   labels: MessageImageLabels
+  pinOverlayFor?: (attachment: ImageAttachmentRef) => {
+    pins: readonly ImageLightboxPin[]
+    modeLabel: string
+    exitLabel: string
+    refuse?: string
+    onPlace: (x: number, y: number) => void
+    onSelect: (id: string) => void
+    onCloseEditor?: () => void
+    editor?: ReactNode
+  } | undefined
 }) {
   if (images.length === 0) return null
   const variant = images.length === 1 ? 'single' : 'tile'
   return (
     <div className={css.gallery} data-align={align}>
-      {images.map((image, index) => (
-        <MessageImage key={`${image.attachment.attachmentId}:${index}`} {...image} load={load} variant={variant} labels={labels} />
-      ))}
+      {images.map((image, index) => {
+        const pinOverlay = pinOverlayFor?.(image.attachment)
+        return (
+          <MessageImage
+            key={`${image.attachment.attachmentId}:${index}`}
+            {...image}
+            load={load}
+            variant={variant}
+            labels={labels}
+            {...(pinOverlay === undefined ? {} : { pinOverlay })}
+          />
+        )
+      })}
     </div>
   )
 }

@@ -136,6 +136,11 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   '@deepseek-ai/dsh-web-app': ['cordis.patch.yml'],
   '@deepseek-ai/dsh-headless': ['cordis.patch.yml'],
   '@deepseek-ai/dsh-client-ui-theme': ['lib/styles'],
+  // Remote Access keeps browser-safe public protocol surfaces separate from
+  // host-only provider and Node WebSocket adapters.
+  '@deepseek-ai/dsh-remote-access': ['lib/relay-provider.js'],
+  '@deepseek-ai/dsh-remote-access-client': ['lib/desktop-relay-lifecycle.js', 'lib/node-relay-socket.js'],
+  '@deepseek-ai/dsh-remote-access-http': ['lib/relay.js'],
   // Desktop bridge types are shared by Electron and the browser overlay through
   // a runtime subpath, so the protocol is bundled separately from the UI client.
   '@deepseek-ai/dsh-client-ui-desktop': ['lib/protocol.js'],

@@ -10,6 +10,7 @@ import {
   parsePairingCompletionId,
   parsePairingRendezvousId,
   parsePendingPairingId,
+  parsePersonalPairingId,
   type PairingAccountAuthentication,
   type PairingCompletionView,
 } from '@deepseek-ai/dsh-remote-access'
@@ -59,6 +60,7 @@ async function dispatch(
     case 'get-mobile-access': return ctx.remoteAccess.getMobileAccessState(authentication)
     case 'set-mobile-access':
       return ctx.remoteAccess.setMobileAccess({ desktop: authentication, enabled: requiredBoolean(body.enabled, 'enabled') })
+    case 'reissue-desktop-relay': return ctx.remoteAccess.reissueDesktopRelayAuthority(authentication)
     case 'create-challenge':
       return ctx.remoteAccess.createChallenge({
         desktop: authentication,
@@ -72,11 +74,17 @@ async function dispatch(
       return { completed: true }
     case 'list-pending': return (await ctx.remoteAccess.listPendingPairings(authentication)).map(completionWire)
     case 'list-pairings': return ctx.remoteAccess.listPersonalPairings(authentication)
+    case 'revoke-pairing':
+      await ctx.remoteAccess.revokePersonalPairing({
+        desktop: authentication,
+        pairingId: parsePersonalPairingId(body.pairingId),
+      })
+      return { completed: true }
     case 'get-mobile-pairing-status':
-      return ctx.remoteAccess.getMobilePairingStatus({
+      return mobilePairingStatusWire(await ctx.remoteAccess.getMobilePairingStatus({
         mobile: authentication,
         pendingPairingId: parsePendingPairingId(body.pendingPairingId),
-      })
+      }))
     case 'confirm-pairing':
       return ctx.remoteAccess.confirmPairing({
         desktop: authentication,
@@ -102,6 +110,11 @@ async function dispatch(
 
 function completionWire(value: PairingCompletionView): unknown {
   return { ...value, desktopHandshake: encodeBytes(value.desktopHandshake) }
+}
+
+function mobilePairingStatusWire(value: Awaited<ReturnType<Context['remoteAccess']['getMobilePairingStatus']>>): unknown {
+  if (value.status !== 'paired' || value.sealedRelayAuthority === undefined) return value
+  return { ...value, sealedRelayAuthority: encodeBytes(value.sealedRelayAuthority) }
 }
 
 function authenticationFromHeaders(req: IncomingMessage): PairingAccountAuthentication {
@@ -239,3 +252,5 @@ function decodeBytes(value: unknown, name: string): Uint8Array {
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
+
+export { RelayWebSocketConsumer } from './relay.ts'

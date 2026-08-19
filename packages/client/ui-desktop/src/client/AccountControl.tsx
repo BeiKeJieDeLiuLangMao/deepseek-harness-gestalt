@@ -97,7 +97,12 @@ function PairingPanel({ desktop, snapshot, t }: {
         </div>
       )}
       {snapshot.pairings.map(pairing => (
-        <div className={css.device} key={pairing.id}><strong>{pairing.deviceName}</strong><span>{pairing.platform}</span></div>
+        <div className={css.device} key={pairing.id}>
+          <strong>{pairing.deviceName}</strong>
+          <span>{pairing.platform}</span>
+          <span>{pairing.online ? 'online' : 'offline'}</span>
+          <Button variant="outline" onClick={() => { void desktop.pairingRevoke(pairing.id) }}>{t('pairing.revoke')}</Button>
+        </div>
       ))}
     </div>
   )

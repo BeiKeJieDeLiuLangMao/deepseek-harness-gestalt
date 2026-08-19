@@ -1,0 +1,36 @@
+{
+  "version": "0.1.2",
+  "tag": "gestalt-v0.1.2",
+  "source": {
+    "baselineKind": "previous-release",
+    "baselineRepository": "BeiKeJieDeLiuLangMao/deepseek-harness-gestalt",
+    "releaseRepository": "BeiKeJieDeLiuLangMao/deepseek-harness-gestalt",
+    "baselineCommit": "a7482b9709e4631d624f6b471ef2aeec249baf7d"
+  },
+  "content": {
+    "zh": {
+      "intro": "DeepSeek Gestalt 0.1.2 收录上一版本之后的 {{commitCount}} 个提交。",
+      "sections": [
+        {
+          "heading": "更新",
+          "items": [
+            "Update Control 的下载进度只显示整数百分比。",
+            "安装并重启不再拦截 Electron 的 quit，macOS 会在下载后把更新预取进 Squirrel，以便替换正在运行的应用。"
+          ]
+        }
+      ]
+    },
+    "en": {
+      "intro": "DeepSeek Gestalt 0.1.2 contains the {{commitCount}} commits after the previous Desktop Bundle.",
+      "sections": [
+        {
+          "heading": "Updates",
+          "items": [
+            "The Update Control shows a truncated integer download percent.",
+            "Install and restart no longer cancels Electron quit; macOS prefetches the update into Squirrel after download so the running application can be replaced."
+          ]
+        }
+      ]
+    }
+  }
+}

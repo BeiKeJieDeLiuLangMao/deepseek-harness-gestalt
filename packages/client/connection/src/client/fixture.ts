@@ -3125,6 +3125,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         message: 'fixture: no settings namespaces are registered',
         details: { ns: request.payload.ns },
       }),
+      testWebSearch: request => ok(request, { count: 0 }),
     },
     credentials: {
       describe: request => ok(request, {
@@ -3335,6 +3336,7 @@ export class FixtureApiClient extends AbstractApiClient {
       case 'settings.update': return this.api.settings.update(request)
       case 'settings.replace': return this.api.settings.replace(request)
       case 'settings.mutate': return this.api.settings.mutate(request)
+      case 'settings.testWebSearch': return this.api.settings.testWebSearch(request, signal)
       case 'credentials.describe': return this.api.credentials.describe(request)
       case 'credentials.set': return this.api.credentials.set(request)
       case 'credentials.unset': return this.api.credentials.unset(request)

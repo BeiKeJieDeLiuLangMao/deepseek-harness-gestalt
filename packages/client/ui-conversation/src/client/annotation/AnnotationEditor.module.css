@@ -1,0 +1,59 @@
+.root {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  box-sizing: border-box;
+  width: min(360px, calc(100vw - 32px));
+  padding: 8px 8px 8px 14px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 18px;
+  background: var(--dsw-alias-bg-base);
+  box-shadow: var(--dsw-shadow-lv3);
+  color: var(--dsw-alias-label-primary);
+}
+
+.portal {
+  position: fixed;
+  z-index: 1100;
+  left: 50%;
+  bottom: 40px;
+  transform: translateX(-50%);
+}
+
+.root textarea {
+  flex: 1;
+  min-height: 36px;
+  max-height: 96px;
+  margin: 0;
+  padding: 8px 0;
+  resize: none;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  caret-color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.root textarea::placeholder {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.root button {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--dsw-alias-button-info-fill);
+  color: #fff;
+  cursor: pointer;
+}
+
+.root button:hover {
+  background: var(--dsw-alias-button-info-hover);
+}

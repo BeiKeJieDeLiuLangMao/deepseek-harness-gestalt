@@ -103,4 +103,13 @@ export interface SettingsApi {
   mutate(
     request: RpcRequest<{ ns: string; ops: SettingsPathOpView[]; expectedRevision?: number }>,
   ): Promise<RpcResponse<SettingsNamespaceView>>
+
+  /**
+   * Run one `ctx.web.search` with the currently selected search backend so
+   * the Plugins card can probe a provider without opening a Session.
+   */
+  testWebSearch(
+    request: RpcRequest<{ query?: string }>,
+    signal: AbortSignal,
+  ): Promise<RpcResponse<{ count: number; title?: string; url?: string }>>
 }

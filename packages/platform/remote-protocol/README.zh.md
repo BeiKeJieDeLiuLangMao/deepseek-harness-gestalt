@@ -6,7 +6,7 @@ Remote Access 的纯 codec 与协商器。本包拥有两个独立版本化的�
 
 ## Relay Transport Protocol
 
-版本 1 只暴露路由 attachment、不透明密文转发、心跳、撤销、稳定 transport 错误与 transport 版本协商。Relay 标识符是协议原生的品牌化值。解码会拒绝未知消息类型和额外字段，因此完整 Host 请求不能夹带在 transport 元数据旁。
+版本 1 只暴露路由 attachment、不透明密文转发、心跳、撤销、稳定 transport 错误与 transport 版本协商。Attach 携带独立品牌化的规范 32 字节凭据；route id 永远不是 attachment 权限。Relay 标识符是协议原生的品牌化值。`REMOTE_OFFLINE` 报告在线目标缺失，但不表示存在排队投递。解码会拒绝未知消息类型和额外字段，因此完整 Host 请求不能夹带在 transport 元数据旁。
 
 ## Encrypted Companion Protocol
 
@@ -43,4 +43,4 @@ Companion major 2 和 1 是当前及紧邻的前一应用版本。双方 endpoin
 ## 已知限制与延后工作
 
 - 当前 Companion catalog 只证明一个 mutation 与一个 projection；discovery、creation、interaction、attachment、cancellation 和 operation receipt 消息必须在后续协议扩展中加入，adapter 才能暴露它们。
-- 配对 handshake、路由凭据、challenge lifecycle、加密 blob capability 与生产加密属于后续经评审的集成，不属于这些 codec。
+- 配对 handshake、凭据持久化、challenge lifecycle、加密 blob capability 与生产加密属于服务或经评审的 endpoint 集成，不属于这些 codec。

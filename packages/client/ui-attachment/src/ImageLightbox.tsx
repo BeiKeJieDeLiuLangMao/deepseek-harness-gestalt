@@ -1,7 +1,16 @@
 import { useEffect, useRef } from 'react'
+import type { MouseEvent, ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { IconCloseOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import css from './ImageLightbox.module.css'
+
+function pinPercent(clientX: number, clientY: number, rect: DOMRect): { x: number; y: number } {
+  if (rect.width <= 0 || rect.height <= 0) return { x: 0, y: 0 }
+  return {
+    x: Math.min(100, Math.max(0, ((clientX - rect.left) / rect.width) * 100)),
+    y: Math.min(100, Math.max(0, ((clientY - rect.top) / rect.height) * 100)),
+  }
+}
 
 /** Lightbox strings the owner resolves from its own locale namespace. */
 export interface ImageLightboxLabels {
@@ -9,6 +18,26 @@ export interface ImageLightboxLabels {
   dialog: string
   /** Accessible label of the close control. */
   close: string
+}
+
+/** One displayed pin mark in displayed-raster percentages. */
+export interface ImageLightboxPin {
+  readonly id: string
+  readonly x: number
+  readonly y: number
+  readonly index: number
+}
+
+/** Optional Composer annotation overlay for staged-image pins. */
+export interface ImageLightboxAnnotation {
+  readonly mode: boolean
+  readonly pins: readonly ImageLightboxPin[]
+  readonly modeLabel: string
+  readonly exitLabel: string
+  readonly refuse?: string
+  readonly onToggleMode: () => void
+  readonly onPlace: (x: number, y: number) => void
+  readonly onSelect: (id: string) => void
 }
 
 /**
@@ -22,17 +51,22 @@ export interface ImageLightboxLabels {
  * @param props.alt - the image's alt text.
  * @param props.labels - dialog and close-control strings.
  * @param props.onClose - dismiss callback owned by the opener.
+ * @param props.annotation - optional pin overlay for Composer drafts.
+ * @param props.editor - optional note editor rendered in this preview portal.
  * @returns the modal preview dialog.
  */
-export function ImageLightbox({ src, alt, labels, onClose }: {
+export function ImageLightbox({ src, alt, labels, onClose, annotation, editor }: {
   src: string
   alt: string
   labels: ImageLightboxLabels
   onClose: () => void
+  annotation?: ImageLightboxAnnotation
+  editor?: ReactNode
 }) {
   const closeRef = useRef<HTMLButtonElement | null>(null)
   const restoreRef = useRef<HTMLElement | null>(null)
-
+  const annotationRef = useRef(annotation)
+  annotationRef.current = annotation
   useEffect(() => {
     restoreRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
     closeRef.current?.focus()
@@ -46,6 +80,14 @@ export function ImageLightbox({ src, alt, labels, onClose }: {
     }
   }, [onClose])
 
+  const onImageClick = (event: MouseEvent<HTMLImageElement>): void => {
+    const live = annotationRef.current
+    if (live === undefined || !live.mode || live.refuse !== undefined) return
+    const rect = event.currentTarget.getBoundingClientRect()
+    const point = pinPercent(event.clientX, event.clientY, rect)
+    live.onPlace(point.x, point.y)
+  }
+
   return createPortal(
     <div
       className={css.backdrop}
@@ -54,10 +96,51 @@ export function ImageLightbox({ src, alt, labels, onClose }: {
       aria-label={labels.dialog}
     >
       <div className={css.mask} aria-hidden="true" onMouseDown={onClose} />
-      <img className={css.image} src={src} alt={alt} />
-      <button ref={closeRef} type="button" className={css.close} aria-label={labels.close} onClick={onClose}>
-        <IconCloseOutline16 size={16} />
-      </button>
+      <div className={css.stage}>
+        <img
+          className={css.image}
+          src={src}
+          alt={alt}
+          onClick={onImageClick}
+        />
+        {annotation?.pins.map(pin => (
+          <button
+            key={pin.id}
+            type="button"
+            className={css.pin}
+            data-annotation-pin={pin.id}
+            style={{ left: `${pin.x}%`, top: `${pin.y}%` }}
+            aria-label={`Pin ${pin.index}`}
+            onPointerDown={(event) => { event.stopPropagation() }}
+            onClick={(event) => {
+              event.stopPropagation()
+              annotation.onSelect(pin.id)
+            }}
+          >
+            {pin.index}
+          </button>
+        ))}
+      </div>
+      {annotation?.refuse !== undefined && (
+        <p className={css.refuse} role="alert">{annotation.refuse}</p>
+      )}
+      <div className={css.chrome}>
+        {annotation !== undefined && (
+          <button
+            type="button"
+            className={css.annotate}
+            aria-pressed={annotation.mode}
+            aria-label={annotation.mode ? annotation.exitLabel : annotation.modeLabel}
+            onClick={annotation.onToggleMode}
+          >
+            {annotation.mode ? annotation.exitLabel : annotation.modeLabel}
+          </button>
+        )}
+        <button ref={closeRef} type="button" className={css.close} aria-label={labels.close} onClick={onClose}>
+          <IconCloseOutline16 size={16} />
+        </button>
+      </div>
+      {editor}
     </div>,
     document.body,
   )

@@ -68,6 +68,20 @@ describe('Mobile Platform Account entry', () => {
     expect(document.getElementById('root')?.childElementCount).toBe(0)
     expect(fetch).not.toHaveBeenCalled()
   })
+
+  it('validates the development Relay bundle before rendering or network acquisition', async () => {
+    configureEnvironment()
+    configureRelayEnvironment()
+    vi.stubEnv('VITE_REMOTE_RELAY_INBOUND_MAX_BYTES', '1')
+    document.body.innerHTML = '<div id="root"></div>'
+    const fetch = vi.fn()
+    vi.stubGlobal('fetch', fetch)
+
+    await expect(import('../src/main.tsx')).rejects.toThrow('must admit one maximum Relay message')
+
+    expect(document.getElementById('root')?.childElementCount).toBe(0)
+    expect(fetch).not.toHaveBeenCalled()
+  })
 })
 
 function configureEnvironment(): void {
@@ -85,6 +99,19 @@ function configureEnvironment(): void {
     VITE_PLATFORM_PRODUCTION_CREDENTIAL_REFERENCE: 'credentials://production',
     VITE_PLATFORM_PRODUCTION_DATABASE_IDENTITY: 'database-production',
     VITE_PLATFORM_PRODUCTION_IDENTITY_NAMESPACE: 'namespace-production',
+  }
+  for (const [key, value] of Object.entries(fields)) vi.stubEnv(key, value)
+}
+
+function configureRelayEnvironment(): void {
+  const fields: Record<string, string> = {
+    VITE_PERSONAL_PAIRING_KEYLESS: '1',
+    VITE_REMOTE_RELAY_WSS_URL: 'wss://relay.example/v1/remote-access/relay',
+    VITE_REMOTE_RELAY_INBOUND_MAX_BYTES: '9999999',
+    VITE_REMOTE_RELAY_INBOUND_MAX_MESSAGES: '8',
+    VITE_REMOTE_RELAY_ATTACH_TIMEOUT_MS: '1000',
+    VITE_REMOTE_RELAY_HEARTBEAT_INTERVAL_MS: '5000',
+    VITE_REMOTE_RELAY_RECONNECT_DELAY_MS: '100',
   }
   for (const [key, value] of Object.entries(fields)) vi.stubEnv(key, value)
 }

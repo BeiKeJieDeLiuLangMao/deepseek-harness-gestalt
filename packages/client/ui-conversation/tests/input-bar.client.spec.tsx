@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // InputBar behavior over the machine wiring: Enter-send semantics (IME guard,
 // Shift newline, busy Enter policy, Ctrl/Meta steering, repeat suppression), running
-// semantics (input stays free; continuable children keep Send beside Stop), the machine pending lock,
+// semantics (input stays free; continuable children share the primary Send/Stop toggle), the machine pending lock,
 // decoration backdrop, error/notice strips, and the focus-keeping mousedown.
 
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
@@ -16,9 +16,19 @@ import type { ClientContext, ConversationSnapshot, SessionId } from '@deepseek-a
 import { SessionInputShell } from '../src/client/input/facade.ts'
 import type { ComposerAttachment } from '../src/client/contract/slots.ts'
 import type { DraftAttachmentId } from '../src/client/input/contract.ts'
+import { createTextAnchor } from '../src/client/annotation/model.ts'
 import { InputBar } from '../src/client/skeleton/InputBar.tsx'
 import type { InputBarProps } from '../src/client/skeleton/InputBar.tsx'
 import { zh } from '../src/client/locales.ts'
+
+/** Compiler labels required by every shell construction (the hub always supplies them). */
+const TEST_LABELS = {
+  heading: (index: number) => `Annotation ${index}`,
+  quote: (value: string) => `Quoted text: \u201c${value}\u201d`,
+  note: (value: string) => `Note: ${value}`,
+  image: (name: string, x: number, y: number) => `Image “${name}” at ${x.toFixed(1)}%, ${y.toFixed(1)}%`,
+  overflow: 'Request exceeds context capacity',
+}
 
 afterEach(cleanup)
 
@@ -114,6 +124,7 @@ function bench(over?: BenchOptions) {
   const shell = new SessionInputShell({
     actx: SCTX,
     defaultSink: sink,
+    annotationLabels: TEST_LABELS,
     queue: {
       getSnapshot: () => session.getSnapshot().queue,
       subscribe: fn => session.subscribe(fn),
@@ -192,7 +203,7 @@ function bench(over?: BenchOptions) {
   }
   const view = render(<InputBar {...props} />)
   const textarea = view.container.querySelector('textarea')!
-  const primaryStops = over?.running === true && over.subagent === undefined
+  const primaryStops = over?.running === true && over.subagent?.address.mode !== 'one-shot'
   const button = view.container.querySelector<HTMLButtonElement>(
     `button[aria-label="${primaryStops ? '停止生成' : '发送消息'}"]`,
   )!
@@ -220,6 +231,16 @@ describe('image draft rail', () => {
     })
     expect(addImages).toHaveBeenCalledWith([image])
     expect(shell.snapshot.draft).toBe('同时粘贴的文字')
+  })
+
+  it('intakes files through the named Add images control', () => {
+    const addImages = vi.fn(() => null)
+    const { view } = bench({ addImages })
+    const input = view.getByLabelText('添加图片') as HTMLInputElement
+    expect(input.type).toBe('file')
+    const image = new File([Uint8Array.of(1, 2, 3)], 'pixel.png', { type: 'image/png' })
+    fireEvent.change(input, { target: { files: [image] } })
+    expect(addImages).toHaveBeenCalledWith([image])
   })
 
   it('accepts a drop anywhere on the page under the full-page overlay', () => {
@@ -374,6 +395,19 @@ describe('image draft rail', () => {
     expect(sink).toHaveBeenCalledWith('', ['draft-1'], 'queue')
     fireEvent.click(view.getByRole('button', { name: '移除图片 pixel.png' }))
     expect(removeImage).toHaveBeenCalledWith('draft-1')
+  })
+
+  it('places a Composer pin after entering annotation mode', async () => {
+    const file = new File([Uint8Array.of(1)], 'pixel.png', { type: 'image/png' })
+    const attachment = { kind: 'image' as const, id: 'draft-1' as DraftAttachmentId, file, previewUrl: 'blob:draft-1' }
+    const { view, shell } = bench({ attachments: [attachment] })
+    fireEvent.click(view.getByTitle('查看原图'))
+    fireEvent.click(view.getByRole('button', { name: '标注图片' }))
+    await view.findByRole('button', { name: '退出标注' })
+    const preview = view.getByRole('dialog', { name: '原图预览' })
+    fireEvent.click(preview.querySelector('img')!, { clientX: 20, clientY: 16 })
+    expect(shell.snapshot.annotations).toHaveLength(1)
+    expect(view.getAllByRole('button', { name: '保存注释' }).length).toBeGreaterThan(0)
   })
 
   it('opens the original image on a single click and closes it with Escape', () => {
@@ -617,6 +651,21 @@ describe('Enter semantics', () => {
 })
 
 describe('running and lock semantics', () => {
+  it('locks the ordinary Composer while an annotation submission is awaiting settlement', () => {
+    const { textarea, button, view, shell } = bench({ draft: 'Please revise this.' })
+    shell.actions.addTextAnnotation(
+      createTextAnchor('message-1', 'Exact quotation', 'Exact quotation', 0),
+      '',
+    )
+
+    fireEvent.click(button)
+
+    expect(shell.snapshot.annotationSubmitting).toBe(true)
+    expect(textarea.readOnly).toBe(true)
+    expect(button.disabled).toBe(true)
+    expect((view.getByLabelText('删除注释') as HTMLButtonElement).disabled).toBe(true)
+  })
+
   it('running keeps the input free (typing + Enter queue) while the primary turns stop', () => {
     const { textarea, button, stop, sink } = bench({ running: true, draft: '排队消息' })
     expect(textarea.disabled).toBe(false)
@@ -644,8 +693,8 @@ describe('running and lock semantics', () => {
     expect(ctrl.sink).toHaveBeenCalledWith('also queue', [], 'queue')
   })
 
-  it('running continuable subagent keeps Send beside an independent Stop', () => {
-    const { button, interruptButton, textarea, sink, stop } = bench({
+  it('running continuable subagent turns the primary into Stop like an ordinary session', () => {
+    const { button, textarea, sink, stop, view } = bench({
       running: true,
       draft: '后续消息',
       subagent: {
@@ -657,17 +706,18 @@ describe('running and lock semantics', () => {
         parentAvailable: true,
       },
     })
-    expect(button.getAttribute('aria-label')).toBe('发送消息')
-    expect(interruptButton).not.toBeNull()
+    expect(button.getAttribute('aria-label')).toBe('停止生成')
+    expect(view.getAllByRole('button', { name: '停止生成' })).toHaveLength(1)
+    expect(view.queryByRole('button', { name: '发送消息' })).toBeNull()
     expect(textarea.disabled).toBe(false)
-    fireEvent.click(button)
+    fireEvent.keyDown(textarea, { key: 'Enter' })
     expect(sink).toHaveBeenCalledWith('后续消息', [], 'queue')
-    fireEvent.click(interruptButton!)
+    fireEvent.click(button)
     expect(stop).toHaveBeenCalledTimes(1)
   })
 
-  it('parent-offline running continuable locks Send but keeps independent Stop usable', () => {
-    const { button, interruptButton, textarea, stop, view } = bench({
+  it('parent-offline running continuable locks input but keeps the primary Stop usable', () => {
+    const { button, textarea, stop, view } = bench({
       running: true,
       draft: '',
       subagent: {
@@ -682,10 +732,10 @@ describe('running and lock semantics', () => {
     expect(textarea.disabled).toBe(true)
     expect(textarea.placeholder).toBe('父会话已离线，无法继续发送；仍可停止当前运行')
     expect((view.getByLabelText('命令') as HTMLButtonElement).disabled).toBe(true)
-    expect(button.getAttribute('aria-label')).toBe('发送消息')
-    expect(button.disabled).toBe(true)
-    expect(interruptButton?.disabled).toBe(false)
-    fireEvent.click(interruptButton!)
+    expect(button.getAttribute('aria-label')).toBe('停止生成')
+    expect(button.disabled).toBe(false)
+    expect(view.queryByRole('button', { name: '发送消息' })).toBeNull()
+    fireEvent.click(button)
     expect(stop).toHaveBeenCalledTimes(1)
   })
 

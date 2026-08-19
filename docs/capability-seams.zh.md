@@ -75,6 +75,7 @@ flowchart LR
   pkg_remote_access["remote-access"]
   svc_remoteAccess["ctx.remoteAccess<br/>Personal Pairing lifecycle seam"]
   pkg_remote_access_http["remote-access-http"]
+  svc_remoteRelay["ctx.remoteRelay<br/>Stateless multi-instance Remote Relay seam"]
   svc_workspaceRegistry["ctx.workspaceRegistry<br/>Workspace entity registry"]
   svc_sessionQuery["ctx.sessionQuery<br/>Session reads, traces, filters, and search"]
   pkg_session_reference["session-reference"]
@@ -270,6 +271,7 @@ flowchart LR
   pkg_platform_account_core --> svc_platformAccount
   pkg_pwsh_local --> svc_shell
   pkg_remote_access --> svc_remoteAccess
+  pkg_remote_access --> svc_remoteRelay
   pkg_sandbox --> svc_sandbox
   pkg_sandbox_local --> svc_sandbox
   pkg_sandbox_policy --> svc_sandboxPolicy
@@ -368,6 +370,7 @@ flowchart LR
   svc_platformAccount --> pkg_platform_account_client
   svc_platformAccount --> pkg_platform_account_http
   svc_remoteAccess --> pkg_remote_access_http
+  svc_remoteRelay --> pkg_remote_access_http
   svc_sandbox --> pkg_bash_sandbox
   svc_sandbox --> pkg_terminal_bash
   svc_sandboxPolicy --> pkg_bash_sandbox
@@ -472,6 +475,7 @@ flowchart LR
 | `ctx.messageFeedback` | `core` | [`message-feedback`](../packages/feedback/message-feedback) | - | - | - | 拥有本地逐 assistant 消息反馈、生命周期与目标校验、逐条目 compare-and-set 及 Host 一元 Remote 契约，且不进入 Session 历史或遥测。 |
 | `ctx.platformAccount` | `seam` | [`platform-account`](../packages/platform/platform-account) | [`platform-account-core`](../packages/platform/platform-account-core) | [`platform-account-http`](../packages/platform/platform-account-http), [`platform-account-client`](../packages/platform/platform-account-client) | - | 拥有 GitHub 公开身份与持有证明安装会话；HTTP 和 Desktop/Mobile 客户端通过签名轮询完成登录，不接收提供方凭证。 |
 | `ctx.remoteAccess` | `seam` | [`remote-access`](../packages/platform/remote-access) | [`remote-access`](../packages/platform/remote-access) | [`remote-access-http`](../packages/platform/remote-access-http) | - | HTTP 消费方把生命周期暴露给 Desktop 设置与 Mobile 使用的共用校验传输；生产环境在组装经过独立评审的握手提供方前保持 fail-closed。 |
+| `ctx.remoteRelay` | `seam` | [`remote-access`](../packages/platform/remote-access) | [`remote-access`](../packages/platform/remote-access) | [`remote-access-http`](../packages/platform/remote-access-http) | - | 拥有由凭据鉴权的在线 attachment 和只含密文的转发；会过期的 Redis 目录与直达 Pub/Sub 协调非 sticky Platform Instance，且不建立离线 queue。 |
 | `ctx.workspaceRegistry` | `core` | [`workspace`](../packages/workspace/workspace) | - | `apiproxy` | - | 通过领域设施拥有带 WorkspaceId 品牌类型的记录；稳定的 sessionIds 账户驱动 Host RPC 与 GUI 投影。 |
 | `ctx.sessionQuery` | `seam` | [`session-query`](../packages/session-query/session-query) | [`session-query-sqlite`](../packages/session-query/session-query-sqlite) | [`session-reference`](../packages/context/session-reference), [`tool-session-query`](../packages/session-query/tool-session-query) | - | 该接口提供精确读取、过滤和追踪；具体后端还提供全文协调、排序、摘要片段和游标世代，而模型消费方负责工作区权限与不含游标的渲染。 |
 | `ctx.sessionReferenceResolver` | `core` | [`session-reference`](../packages/context/session-reference) | - | - | - | 将当前表层中有界的对话快照投影为持久但不可信的消息上下文；Host 适配器负责提及语法。 |

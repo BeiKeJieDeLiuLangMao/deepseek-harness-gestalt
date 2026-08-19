@@ -20,7 +20,7 @@ import type {
 import type { createChatStore } from '../stores.ts'
 import type { ComposerSubmitGesture, InputSubmitMode } from './composer-submission.ts'
 import type { ChatNode, ChatNodeKind } from './chat-nodes.ts'
-import type { CallId, SelectionTarget, ViewTab } from './views.ts'
+import type { CallId, ChatStoreState, SelectionTarget, ViewTab } from './views.ts'
 
 /** Browser-owned image that has not crossed the durable host boundary. */
 export interface ComposerAttachment {
@@ -442,6 +442,10 @@ export interface ConversationSessionInjected {
   releaseSessionImages: (sessionId: SessionId) => void
   /** Bind the input machine's draft persistence mirror to the session store. */
   bindDraftMirror: (write: (text: string) => void) => () => void
+  /** Bind the Annotation Draft persistence mirror to the session store. */
+  bindAnnotationMirror: (write: (draft: ChatStoreState['annotationDraft']) => void) => () => void
+  /** Seed the shell from a rehydrated Annotation Draft (remount/reload path). */
+  restoreAnnotationDraft: (draft: ChatStoreState['annotationDraft']) => void
 }
 
 /** Business callbacks injected into the strict session header seat. */

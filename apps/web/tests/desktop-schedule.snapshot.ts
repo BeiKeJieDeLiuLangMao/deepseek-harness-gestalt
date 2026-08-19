@@ -12,13 +12,6 @@ const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/desktop-schedule', impor
 const FIXTURE = join(SNAPSHOT_DIR, 'session.jsonl')
 const PROMPT = 'List the reminders in this Desktop Session, then reply exactly NO_REMINDERS and stop.'
 
-/** Replace clock readings while retaining their model-visible turn, step, zone, and baseline semantics. */
-function stableTimeContext(text: string): string {
-  return text
-    .replace(/^(Time sampled while preparing turn \d+, step \d+: ).+$/m, '$1{{timestamp}}')
-    .replace(/^(Elapsed since the preceding [^:]+: ).+\.$/m, '$1{{elapsed}}.')
-}
-
 /** Extract text from one durable assistant message. */
 function assistantText(event: SessionEvent<'assistant/message'>): string {
   return event.data.message.content
@@ -52,7 +45,7 @@ describe('Desktop default Schedule turn', () => {
     if (failures.length > 1) throw new AggregateError(failures, 'Desktop Schedule snapshot teardown failed')
   })
 
-  it('records time context, the Schedule call and result, and the final answer', async () => {
+  it('records the Schedule call and result, and the final answer', async () => {
     agentHandle.agent.followup(createUserMessage({
       content: [{ type: 'text', text: PROMPT }],
       source: { kind: 'user' },
@@ -60,15 +53,10 @@ describe('Desktop default Schedule turn', () => {
     await agentHandle.agent.whenIdle()
 
     const events = agentHandle.agent.session.events
-    const timeContexts = events.flatMap(event => (
+    expect(events.some(event =>
       event.type === 'user/message'
       && event.data.source.kind === 'plugin'
-      && event.data.source.plugin === 'time-context'
-        ? event.data.content
-          .filter(block => block.type === 'text')
-          .map(block => stableTimeContext(block.text))
-        : []
-    ))
+      && event.data.source.plugin === 'time-context')).toBe(false)
     const scheduleCalls = events.filter(
       (event): event is SessionEvent<'tool/call'> => event.type === 'tool/call'
         && event.data.name.startsWith('schedule_'),
@@ -87,7 +75,6 @@ describe('Desktop default Schedule turn', () => {
 
     expect({
       prompt: PROMPT,
-      timeContexts,
       scheduleTools: requestHeader.tools
         ?.map(tool => tool.name)
         .filter(name => name.startsWith('schedule_'))
@@ -106,14 +93,6 @@ describe('Desktop default Schedule turn', () => {
           "schedule_create",
           "schedule_delete",
           "schedule_list",
-        ],
-        "timeContexts": [
-          "Time sampled while preparing turn 1, step 1: {{timestamp}}
-      Browser time zone for this request: unavailable. Ask the user to clarify otherwise-unqualified dates and times.
-      Elapsed since the preceding model-visible message: {{elapsed}}.",
-          "Time sampled while preparing turn 1, step 2: {{timestamp}}
-      Browser time zone for this request: unavailable. Ask the user to clarify otherwise-unqualified dates and times.
-      Elapsed since the preceding step context: {{elapsed}}.",
         ],
         "toolCall": {
           "arguments": "{}",

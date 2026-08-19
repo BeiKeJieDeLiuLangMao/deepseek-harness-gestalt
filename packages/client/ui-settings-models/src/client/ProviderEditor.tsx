@@ -34,7 +34,7 @@ import { apiKeyFailure } from './apiKey.ts'
 import { EditorFooter } from './EditorFooter.tsx'
 import { InputModalityTags } from './InputModalityTags.tsx'
 import { ModelListEditor } from './ModelListEditor.tsx'
-import { deriveKeyRef, messageOf, protocolChoices } from './store.ts'
+import { deriveKeyRef, messageOf, protocolChoices, userSectionOccupied } from './store.ts'
 import type { en } from './locales.ts'
 import styles from './ModelsSection.module.css'
 
@@ -268,6 +268,18 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
       : materializesNativeProfile
         ? [{ op: 'set', path: [...settingsPath], value: {} }]
         : pathOps(settingsPath, committedOriginal, next)
+    // Adopting official DeepSeek with no field edits still needs a user-layer
+    // occupancy; an empty leftover `{}` is how delete hides the row.
+    if (
+      ops.length === 0
+      && settingsPath.length === 0
+      && layout === 'deepseek'
+      && props.credentialOnly !== true
+      && !userSectionOccupied(committedOriginal)
+    ) {
+      const env = stringAt(next, 'apiKeyEnv') ?? stringAt(fallback, 'apiKeyEnv') ?? 'DEEPSEEK_API_KEY'
+      ops.push({ op: 'set', path: ['apiKeyEnv'], value: env })
+    }
     if (ops.length > 0) {
       const response = await api.settings.mutate({ ns, ops, expectedRevision })
       if (!response.result.ok) {

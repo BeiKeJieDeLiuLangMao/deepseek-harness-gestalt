@@ -6,7 +6,7 @@
  * region-slot content) ride the owner props. Session facts
  * (running/removed/promptError) are self-selected via useSession. */
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, KeyboardEvent, MouseEvent, ReactNode } from 'react'
 import clsx from 'clsx'
 import {
@@ -33,6 +33,10 @@ import { ContextMeter } from './ContextMeter.tsx'
 import { PermissionSelect } from './PermissionSelect.tsx'
 import { isSafariBrowser, repairSafariTextareaLayout } from './safari.ts'
 import css from './InputBar.module.css'
+import a11y from '../chat/accessibility.module.css'
+import { AnnotationEditor } from '../annotation/AnnotationEditor.tsx'
+import { isAnimatedGif } from '../annotation/model.ts'
+import type { ImagePinAnnotation } from '../annotation/model.ts'
 
 /** Decoration product of the no-session state (no machine, empty draft). */
 const INERT_DECORATIONS: DraftDecorations = { token: null, chips: [], textRefs: [], hint: null }
@@ -52,6 +56,7 @@ export function InputBar({
   workspacePickerOpen = false, onRequestWorkspace,
   placeholder, accessory, overlay, leftItems, rightItems, footer,
 }: InputBarProps) {
+  const annotationDetailsId = useId()
   const input = useInput(s => s)
   const notice = useNotices(s => s)
   const lexicon = useLexicon(s => s)
@@ -73,7 +78,14 @@ export function InputBar({
     () => input === undefined || draftImages === undefined ? [] : draftImages(input.imageIds),
     [draftImages, input?.imageIds],
   )
-  const empty = draft.trim() === '' && attachments.length === 0
+  const annotations = input?.annotations ?? []
+  const [editingAnnotation, setEditingAnnotation] = useState<string | null>(null)
+  const editingPin = annotations.find((item): item is ImagePinAnnotation => (
+    item.kind === 'image-pin' && item.id === editingAnnotation
+  ))
+  const empty = draft.trim() === '' && attachments.length === 0 && annotations.length === 0
+  const [pinMode, setPinMode] = useState(false)
+  const [gifRefuse, setGifRefuse] = useState(false)
   const [preview, setPreview] = useState<ComposerAttachment | null>(null)
   const [dragActive, setDragActive] = useState(false)
   // Transient error banner (image-intake rejections and prompt failures): the
@@ -126,7 +138,7 @@ export function InputBar({
   const permissions = useProjection('permissions')
 
   // A continuable child without its live parent cannot accept human input,
-  // but its independent Stop below stays available while it runs.
+  // but its primary Stop stays available while it runs.
   const continuable = subagent?.address.mode === 'continuable'
   const parentOffline = continuable && !subagent.parentAvailable
   // Running input stays free; locked = session removed, the
@@ -140,7 +152,10 @@ export function InputBar({
   // the composer asking for the only thing it prevents. The other reasons to
   // be disabled do lock it — there is no session to choose a model for.
   const modelSeatLocked = removed || inert || !live
-  const machineBusy = input?.phase === 'adjudicating' || input?.phase === 'submitting'
+  const annotationBusy = input?.annotationSubmitting === true
+  const machineBusy = input?.phase === 'adjudicating' || input?.phase === 'submitting' || annotationBusy
+  // Locale plural pattern: one vs other, keyed by the draft annotation count.
+  const annotationSummaryKey = annotations.length === 1 ? 'annotation.summary.one' : 'annotation.summary.other'
   // The no-workspace textarea remains the resident DOM node but acts as the
   // existing picker trigger. Message controls stay locked until a Session
   // exists; the trigger itself is read-only rather than disabled so pointer
@@ -172,6 +187,35 @@ export function InputBar({
   useEffect(() => {
     if (preview !== null && !attachments.some(attachment => attachment.id === preview.id)) setPreview(null)
   }, [attachments, preview])
+
+  useEffect(() => {
+    if (annotationBusy) setEditingAnnotation(null)
+  }, [annotationBusy])
+
+  useEffect(() => {
+    if (editingAnnotation !== null && !annotations.some(item => item.id === editingAnnotation)) {
+      setEditingAnnotation(null)
+    }
+  }, [annotations, editingAnnotation])
+
+  useEffect(() => {
+    if (editingAnnotation === null) return
+    const dismiss = (event: PointerEvent): void => {
+      const target = event.target
+      if (!(target instanceof Element)) return
+      if (target.closest('[data-annotation-editor]') !== null) return
+      if (target.closest('[data-annotation-pin]') !== null) return
+      setEditingAnnotation(null)
+    }
+    // Attach after the opening click so the same pointerdown cannot close it.
+    const timer = window.setTimeout(() => {
+      document.addEventListener('pointerdown', dismiss, true)
+    }, 0)
+    return () => {
+      window.clearTimeout(timer)
+      document.removeEventListener('pointerdown', dismiss, true)
+    }
+  }, [editingAnnotation])
 
   // Scroll the draft scrollport the minimum that brings `caret` into view — the
   // browser's own behavior for typing, performed for the paths where it does
@@ -521,7 +565,14 @@ export function InputBar({
     }
   }, [canAcceptDrop, intakeImages])
 
-  const closePreview = useCallback(() => { setPreview(null) }, [])
+  const closePreview = useCallback(() => {
+    setPreview(null)
+    setPinMode(false)
+    setGifRefuse(false)
+    setEditingAnnotation(null)
+    setPinMode(false)
+    setGifRefuse(false)
+  }, [])
 
   // Rail thumbnails with their strings resolved here: the attachment atoms are
   // zero-cordis and read no locale.
@@ -554,11 +605,9 @@ export function InputBar({
     if (el !== null) toggleCommandMenu?.(selectionOf(el))
   }
 
-  // Ordinary sessions retain their primary Send/Stop toggle. A continuable
-  // child keeps Send as the primary action and exposes Stop independently so
-  // pointer users can queue follow-ups while its current turn is running.
-  const primaryStops = running && subagent === null
-  const interruptible = running && continuable
+  // Ordinary and continuable sessions share one primary Send/Stop toggle.
+  // One-shot children stay send-only because they are uncancellable.
+  const primaryStops = running && subagent?.address.mode !== 'one-shot'
   const primaryLabel = primaryStops ? t('input.stop') : t('input.send')
   const onPrimary = (): void => {
     if (primaryStops) {
@@ -692,6 +741,19 @@ export function InputBar({
       >
         {overlay !== undefined && <div className={css.overlayAnchor}>{overlay}</div>}
         {accessory !== undefined && <div className={css.accessory}>{accessory}</div>}
+        <input
+          type="file"
+          className={a11y.visuallyHidden}
+          aria-label={t('image.add')}
+          accept="image/png,image/jpeg,image/webp,image/gif"
+          multiple
+          disabled={locked || machineBusy || addImages === undefined}
+          onChange={(event) => {
+            const files = [...(event.currentTarget.files ?? [])]
+            event.currentTarget.value = ''
+            intakeImages(files)
+          }}
+        />
         {railItems.length > 0 && (
           <div className={css.attachments}>
             <AttachmentRail
@@ -700,6 +762,78 @@ export function InputBar({
               onOpen={(item) => { setPreview(item.attachment) }}
               onRemove={(item) => { removeImage?.(item.attachment.id) }}
             />
+          </div>
+        )}
+        {annotations.length > 0 && inputActions !== undefined && (
+          <div className={css.annotationSummary}>
+            <button
+              type="button"
+              className={css.annotationSummaryTrigger}
+              aria-controls={annotationDetailsId}
+            >
+              {t(annotationSummaryKey, { count: annotations.length })}
+            </button>
+            <button
+              type="button"
+              className={css.annotationDiscard}
+              disabled={annotationBusy}
+              aria-label={t('annotation.discard')}
+              onClick={() => { inputActions.discardTextAnnotations() }}
+            >
+              ×
+            </button>
+            <div
+              id={annotationDetailsId}
+              role="region"
+              aria-label={t(annotationSummaryKey, { count: annotations.length })}
+              className={css.annotationSummaryDetails}
+            >
+              {annotations.map((annotation, index) => {
+                const label = annotation.kind === 'text'
+                  ? annotation.anchor.quote
+                  : `${annotation.imageName} (${annotation.x.toFixed(1)}%, ${annotation.y.toFixed(1)}%)`
+                return (
+                  <div className={css.annotationSummaryItem} key={annotation.id}>
+                    <button
+                      type="button"
+                      disabled={annotationBusy}
+                      onClick={() => { setEditingAnnotation(annotation.id) }}
+                      aria-label={t('annotation.item', { index: index + 1, quote: label })}
+                    >
+                      <strong>{index + 1}. {label}</strong>
+                      <small>{annotation.note}</small>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={annotationBusy}
+                      aria-label={t('annotation.delete')}
+                      onClick={() => {
+                        if (annotation.kind === 'image-pin') inputActions.removeImagePin(annotation.id)
+                        else inputActions.removeTextAnnotation(annotation.id)
+                      }}
+                    >×</button>
+                  </div>
+                )
+              })}
+            </div>
+            {editingAnnotation !== null && (() => {
+              const annotation = annotations.find(item => item.id === editingAnnotation)
+              return annotation === undefined || annotation.kind === 'image-pin' ? null : (
+                <div className={css.annotationEditPopover}>
+                  <AnnotationEditor
+                    key={annotation.id}
+                    initialNote={annotation.note}
+                    placeholder={t('annotation.notePlaceholder')}
+                    saveLabel={t('annotation.save')}
+                    onSave={(note) => {
+                      inputActions.updateTextAnnotation(annotation.id, note)
+                      setEditingAnnotation(null)
+                    }}
+                    onCancel={() => { setEditingAnnotation(null) }}
+                  />
+                </div>
+              )
+            })()}
           </div>
         )}
         {/* One scrollport, two text layers. The hidden mirror renders draft+'\n' and stretches the
@@ -771,22 +905,6 @@ export function InputBar({
             {rightItems}
             {renderSlot('conversation.input.model', { locked: modelSeatLocked })}
             <ContextMeter useProjection={useProjection} t={t} />
-            {interruptible && (
-              <Tooltip label={t('input.stop')} side="top" delayMs={500}>
-                <button
-                  type="button"
-                  className={css.primary}
-                  aria-label={t('input.stop')}
-                  disabled={stop === undefined}
-                  onMouseDown={keepFocus}
-                  onClick={stop}
-                >
-                  <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden>
-                    <rect x="3" y="3" width="10" height="10" rx="3" fill="currentColor" />
-                  </svg>
-                </button>
-              </Tooltip>
-            )}
             <Tooltip label={primaryLabel} side="top" delayMs={500}>
               <button
                 type="button"
@@ -816,6 +934,56 @@ export function InputBar({
           alt={preview.file.name || t('image.original')}
           labels={lightboxLabels(t)}
           onClose={closePreview}
+          {...(editingPin !== undefined && inputActions !== undefined ? {
+            editor: (
+              <AnnotationEditor
+                initialNote={editingPin.note}
+                placeholder={t('annotation.notePlaceholder')}
+                saveLabel={t('annotation.save')}
+                overlay
+                onSave={(note) => {
+                  inputActions.updateImagePin(editingPin.id, { note })
+                  setEditingAnnotation(null)
+                }}
+                onCancel={() => { setEditingAnnotation(null) }}
+              />
+            ),
+          } : {})}
+          {...(inputActions === undefined ? {} : { annotation: {
+            mode: pinMode,
+            pins: annotations.flatMap((item, index) => (
+              item.kind === 'image-pin' && item.imageId === preview.id
+                ? [{ id: item.id, x: item.x, y: item.y, index: index + 1 }]
+                : []
+            )),
+            modeLabel: t('annotation.pinMode'),
+            exitLabel: t('annotation.pinModeExit'),
+            ...(gifRefuse ? { refuse: t('annotation.gifRefuse') } : {}),
+            onToggleMode: () => {
+              if (pinMode) {
+                setPinMode(false)
+                return
+              }
+              void preview.file.arrayBuffer().then((buffer) => {
+                if (isAnimatedGif(new Uint8Array(buffer))) {
+                  setGifRefuse(true)
+                  return
+                }
+                setGifRefuse(false)
+                setPinMode(true)
+              })
+            },
+            onPlace: (x, y) => {
+              const id = inputActions.addImagePin(
+                preview.id, preview.file.name || t('image.original'), x, y, '',
+              )
+              setEditingAnnotation(id)
+            },
+            onSelect: (id) => {
+              setPinMode(true)
+              setEditingAnnotation(id)
+            },
+          } })}
         />
       )}
       {footer}
