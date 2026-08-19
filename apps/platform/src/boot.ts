@@ -79,19 +79,20 @@ const postgres = new pg.Pool({
 })
 
 const redisUser = process.env.PLATFORM_REDIS_USER
-const redisAuth = redisUser === undefined || redisUser === ''
-  ? required('PLATFORM_REDIS_PASSWORD')
-  : `${redisUser}:${required('PLATFORM_REDIS_PASSWORD')}`
-const redisScheme = process.env.PLATFORM_REDIS_TLS === '0' ? 'redis' : 'rediss'
-const redisUrl = `${redisScheme}://${redisAuth}@${required('PLATFORM_REDIS_HOST')}:6379`
+const redisOptions = {
+  host: required('PLATFORM_REDIS_HOST'),
+  password: required('PLATFORM_REDIS_PASSWORD'),
+  tls: process.env.PLATFORM_REDIS_TLS !== '0',
+  ...(redisUser === undefined || redisUser === '' ? {} : { username: redisUser }),
+}
 
 const publicRoot = join(dirname(fileURLToPath(import.meta.url)), '..', 'public')
 
 const backend = new PostgresAccountBackend(environment.databaseIdentity, postgres)
 await backend.migrate()
 
-const publisher = await connectRedis(redisUrl)
-const subscriber = await connectRedis(redisUrl)
+const publisher = await connectRedis(redisOptions)
+const subscriber = await connectRedis(redisOptions)
 const invalidation = new RedisAccountInvalidationBus(publisher, subscriber)
 await invalidation.listen()
 
