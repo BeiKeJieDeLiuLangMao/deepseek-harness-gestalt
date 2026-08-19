@@ -63,8 +63,8 @@ class ResizeObserverStub {
   unobserve(): void {}
 }
 
-class MemoryIdbRequest<T> {
-  result: T | undefined
+class MemoryIdbRequest {
+  result: unknown
   error: DOMException | null = null
   onsuccess: (() => void) | null = null
   onerror: (() => void) | null = null
@@ -77,15 +77,15 @@ class MemoryObjectStore {
     readonly rows = new Map<string, unknown>(),
   ) {}
 
-  put(record: Record<string, unknown>): MemoryIdbRequest<unknown> {
+  put(record: Record<string, unknown>): MemoryIdbRequest {
     const key = record[this.keyPath]
     if (typeof key !== 'string') throw new Error('indexedDB put: keyPath is not a string')
     this.rows.set(key, record)
     return new MemoryIdbRequest()
   }
 
-  get(key: string): MemoryIdbRequest<unknown> {
-    const request = new MemoryIdbRequest<unknown>()
+  get(key: string): MemoryIdbRequest {
+    const request = new MemoryIdbRequest()
     queueMicrotask(() => {
       request.result = this.rows.get(key)
       request.onsuccess?.()
@@ -93,7 +93,7 @@ class MemoryObjectStore {
     return request
   }
 
-  delete(key: string): MemoryIdbRequest<undefined> {
+  delete(key: string): MemoryIdbRequest {
     this.rows.delete(key)
     return new MemoryIdbRequest()
   }
@@ -143,8 +143,8 @@ class MemoryDatabase {
 class MemoryIndexedDB {
   readonly #dbs = new Map<string, MemoryDatabase>()
 
-  open(name: string, version = 1): MemoryIdbRequest<MemoryDatabase> {
-    const request = new MemoryIdbRequest<MemoryDatabase>()
+  open(name: string, version = 1): MemoryIdbRequest {
+    const request = new MemoryIdbRequest()
     queueMicrotask(() => {
       let db = this.#dbs.get(name)
       const upgrade = db === undefined || db.version < version

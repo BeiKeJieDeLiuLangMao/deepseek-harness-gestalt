@@ -15,7 +15,7 @@ interface TreeState { root: number; descendant: number }
 
 const repoRoot = fileURLToPath(new URL('../../../../', import.meta.url))
 const hostScript = fileURLToPath(new URL('./fixtures/process-exit-host.ts', import.meta.url))
-const scenarioTimeoutMs = 30_000
+const scenarioTimeoutMs = 45_000
 
 function processExists(pid: number): boolean {
   try {
@@ -46,6 +46,25 @@ async function captureIdentities(inspector: ProcessInspector, state: TreeState):
     if (identities.length !== expected.size) throw new Error('managed tree is not fully observable yet')
     return identities
   }, { interval: 10, timeout: scenarioTimeoutMs })
+}
+
+async function waitForHostReady(child: ReturnType<typeof execa>, path: string): Promise<void> {
+  const deadline = Date.now() + scenarioTimeoutMs
+  for (;;) {
+    if (typeof child.exitCode === 'number') {
+      const outcome = await child
+      throw new Error(
+        `host exited before ready: code=${String(outcome.exitCode)} signal=${String(outcome.signal)} stderr=${outcome.stderr}`,
+      )
+    }
+    try {
+      await readFile(path, 'utf8')
+      return
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT' || Date.now() >= deadline) throw error
+      await new Promise(resolve => setTimeout(resolve, 25))
+    }
+  }
 }
 
 async function waitForGone(state: TreeState): Promise<void> {
@@ -106,11 +125,11 @@ async function runScenario(kind: ManagedKind, trigger: ExitTrigger) {
   let settled = false
   let treeGone = false
   try {
+    // `ready` is written only after spawn/spawnTerminal returns. The child can
+    // publish tree.json while node-pty.spawn is still blocked in the host, so
+    // waiting for the tree first then `ready` times out under coverage load.
+    await waitForHostReady(child, join(root, 'ready'))
     state = await readTree(join(root, 'tree.json'))
-    await vi.waitFor(() => readFile(join(root, 'ready'), 'utf8'), {
-      interval: 10,
-      timeout: scenarioTimeoutMs,
-    })
     if (process.platform !== 'win32') identities = await captureIdentities(createProcessInspector(), state)
     await writeFile(join(root, 'proceed'), 'proceed')
     const outcome = await child
@@ -143,7 +162,7 @@ describe('synchronous cleanup on host exit', () => {
     { trigger: 'direct' as const, expectedCode: 23, diagnostic: undefined },
     { trigger: 'uncaught-exception' as const, expectedCode: 1, diagnostic: 'host-exit-uncaught-exception' },
     { trigger: 'unhandled-rejection' as const, expectedCode: 1, diagnostic: 'host-exit-unhandled-rejection' },
-  ])('removes an ordinary managed tree after $trigger', { timeout: 45_000 }, async ({
+  ])('removes an ordinary managed tree after $trigger', { timeout: 60_000 }, async ({
     trigger,
     expectedCode,
     diagnostic,
@@ -156,7 +175,7 @@ describe('synchronous cleanup on host exit', () => {
 
   it.skipIf(process.platform === 'win32')(
     'removes a terminal root and descendant after direct exit',
-    { timeout: 45_000 },
+    { timeout: 60_000 },
     async () => {
       const { outcome } = await runScenario('terminal', 'direct')
       expect(outcome.exitCode).toBe(23)
@@ -164,7 +183,7 @@ describe('synchronous cleanup on host exit', () => {
     },
   )
 
-  it('preserves normal terminate-and-join disposal and removes the exit listener', { timeout: 45_000 }, async () => {
+  it('preserves normal terminate-and-join disposal and removes the exit listener', { timeout: 60_000 }, async () => {
     const { outcome, disposeCounts } = await runScenario('ordinary', 'dispose')
     expect(outcome.exitCode).toBe(0)
     expect(disposeCounts?.listenersAfterLoad).toBe((disposeCounts?.listenersBefore ?? 0) + 1)
