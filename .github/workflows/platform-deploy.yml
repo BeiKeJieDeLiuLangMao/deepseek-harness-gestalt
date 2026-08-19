@@ -82,6 +82,7 @@ jobs:
                 -e PLATFORM_POSTGRES_USER=$(printf %q "$PLATFORM_POSTGRES_USER") \
                 -e PLATFORM_POSTGRES_PASSWORD=$(printf %q "$PLATFORM_POSTGRES_PASSWORD") \
                 -e PLATFORM_POSTGRES_SSL=require \
+                -e PLATFORM_POSTGRES_DATABASE=gestalt \
                 -e PLATFORM_REDIS_HOST=$(printf %q "$PLATFORM_REDIS_HOST") \
                 -e PLATFORM_REDIS_USER=$(printf %q "$PLATFORM_REDIS_USER") \
                 -e PLATFORM_REDIS_PASSWORD=$(printf %q "$PLATFORM_REDIS_PASSWORD") \
