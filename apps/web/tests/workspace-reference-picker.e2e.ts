@@ -30,8 +30,9 @@ describe('web e2e: workspace reference picker', () => {
 
   beforeAll(async () => {
     scaffold = await launchWebScaffold({})
-    await mkdir(join(scaffold.workspaceCwd, 'workspace'), { recursive: true })
+    await mkdir(join(scaffold.workspaceCwd, 'workspace', 'docs'), { recursive: true })
     await writeFile(join(scaffold.workspaceCwd, 'workspace', MARKER), 'export {}\n')
+    await writeFile(join(scaffold.workspaceCwd, 'workspace', 'docs', 'guide.md'), '# guide\n')
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
     tripwire = watchConsole(page)
@@ -59,6 +60,77 @@ describe('web e2e: workspace reference picker', () => {
     await compareOrRefreshGolden(MENU_EXPECTED, snapshot, MODE)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
-    await assertFixtureInventory(SNAPSHOT_DIR, ['menu.expected.md'])
+  })
+
+  it('lists a picked path on the composer dock and can remove it', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-workspace-reference-dock'))
+    const input = page.locator('textarea:enabled').last()
+    await input.click()
+    await input.fill('')
+    await input.pressSequentially(`@${MARKER} `, { delay: 20 })
+    const chip = page.locator(`[data-workspace-reference-chip="${MARKER}"]`)
+    await expect.poll(() => chip.count(), { timeout: 10_000 }).toBe(1)
+    const snapshot = await captureStableAria(page, '[data-workspace-reference-dock]', scaffold.workspaceCwd)
+    await compareOrRefreshGolden(join(SNAPSHOT_DIR, 'dock.expected.md'), snapshot, MODE)
+    await chip.getByRole('button', { name: 'Remove' }).click()
+    await expect.poll(() => page.locator('[data-workspace-reference-dock]').count()).toBe(0)
+  })
+
+  it('ignores a pasted @path while still accepting a typed one', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-workspace-reference-paste'))
+    const input = page.locator('textarea:enabled').last()
+    await input.click()
+    await input.fill('')
+    await input.evaluate((el, text) => {
+      const data = new DataTransfer()
+      data.setData('text/plain', text)
+      el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }))
+    }, `@${MARKER}`)
+    await expect.poll(() => page.locator('[data-workspace-reference-dock]').count(), { timeout: 5_000 }).toBe(0)
+    const snapshot = await captureStableAria(page, 'textarea:enabled', scaffold.workspaceCwd)
+    await compareOrRefreshGolden(join(SNAPSHOT_DIR, 'paste-ignore.expected.md'), snapshot, MODE)
+  })
+
+  it('ArrowRight on a directory keeps the menu open at @path/', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-workspace-reference-folder'))
+    const input = page.locator('textarea:enabled').last()
+    await input.click()
+    await input.fill('')
+    await input.pressSequentially('@doc', { delay: 30 })
+    const menu = page.getByRole('listbox', { name: 'Trigger suggestions' })
+    await expect.poll(
+      () => menu.getByRole('option', { name: /docs/ }).count(),
+      { timeout: 15_000 },
+    ).toBeGreaterThan(0)
+    await page.keyboard.press('ArrowRight')
+    await expect.poll(() => input.inputValue(), { timeout: 10_000 }).toMatch(/@docs\//)
+    await expect.poll(() => menu.count(), { timeout: 5_000 }).toBe(1)
+    const snapshot = await captureStableAria(page, '[role="listbox"]', scaffold.workspaceCwd)
+    await compareOrRefreshGolden(join(SNAPSHOT_DIR, 'folder.expected.md'), snapshot, MODE)
+  })
+
+  it('exposes enable, paste ignore, and basename filters without File mentions', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-workspace-reference-settings'))
+    await page.getByRole('button', { name: 'Settings', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: 'Settings' })
+    await dialog.waitFor({ timeout: 10_000 })
+    await dialog.getByRole('button', { name: 'Workspace Reference' }).click()
+    const section = page.locator('[data-workspace-reference-settings]')
+    await section.waitFor({ timeout: 10_000 })
+    await expect.poll(() => section.getByText('Enable Workspace References').count()).toBe(1)
+    await expect.poll(() => section.getByText('Ignore @ paths on paste').count()).toBe(1)
+    await expect.poll(() => section.getByText('Exact filter (basename contains)').count()).toBe(1)
+    await expect.poll(() => section.getByText('Regex filter (basename)').count()).toBe(1)
+    expect(await dialog.getByText('File mentions').count()).toBe(0)
+    const snapshot = await captureStableAria(page, '[data-workspace-reference-settings]', scaffold.workspaceCwd)
+    await compareOrRefreshGolden(join(SNAPSHOT_DIR, 'settings.expected.md'), snapshot, MODE)
+    await page.keyboard.press('Escape')
+    await assertFixtureInventory(SNAPSHOT_DIR, [
+      'menu.expected.md',
+      'dock.expected.md',
+      'paste-ignore.expected.md',
+      'folder.expected.md',
+      'settings.expected.md',
+    ])
   })
 })

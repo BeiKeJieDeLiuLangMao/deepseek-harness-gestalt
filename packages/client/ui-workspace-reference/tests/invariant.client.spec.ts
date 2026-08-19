@@ -10,9 +10,14 @@ describe('invariant companion', () => {
     await expect(ctx.plugin(WorkspaceInvariant).await()).resolves.toBeDefined()
   })
 
-  it('node-half apply is a no-op host placeholder', async () => {
+  it('node-half apply registers the settings namespace when settings is present', async () => {
     const { apply } = await import('../src/index.ts')
-    apply()
-    expect(true).toBe(true)
+    const registered: string[] = []
+    apply({
+      inject: (_deps: string[], fn: (ctx: { settings: { register: (ns: string) => void } }) => void) => {
+        fn({ settings: { register: (ns: string) => { registered.push(String(ns)) } } })
+      },
+    } as never)
+    expect(registered).toEqual(['workspace-reference'])
   })
 })

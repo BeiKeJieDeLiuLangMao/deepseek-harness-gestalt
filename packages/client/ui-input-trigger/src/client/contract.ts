@@ -22,4 +22,9 @@ export interface InputTriggerServiceContract {
    * @returns controller that dies with that scope.
    */
   sessionOf(actx: ClientContext): InputTriggerController
+  /**
+   * Fold every source `pasteTransform` over pasted plain text.
+   * @param text - clipboard plain text.
+   */
+  transformPaste(text: string): string
 }

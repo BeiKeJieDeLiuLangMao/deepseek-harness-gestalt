@@ -364,6 +364,10 @@ export class SessionInputShell implements SessionInput {
    * @param components - sync-matched reference components (disjoint, inside `text`).
    * @param generation - projection generation for late async-upgrade guards.
    */
+  transformPaste(text: string): string {
+    return this.deps.inputTriggers?.()?.transformPaste(text) ?? text
+  }
+
   pasteBegin(text: string, selection: EditSelection, components?: readonly PasteComponent[], generation?: number): void {
     this.run(this.core.dispatch({
       type: 'paste-begin', text, selection,

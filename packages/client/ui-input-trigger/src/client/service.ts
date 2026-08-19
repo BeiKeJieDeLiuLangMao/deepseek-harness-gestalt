@@ -99,6 +99,19 @@ export class InputTriggerService extends Service implements InputTriggerServiceC
     return controller
   }
 
+  /**
+   * Fold every source `pasteTransform` over pasted plain text.
+   * @param text - clipboard plain text.
+   */
+  transformPaste(text: string): string {
+    let next = text
+    for (const src of this.live.sources) {
+      if (src.pasteTransform === undefined) continue
+      next = src.pasteTransform(next)
+    }
+    return next
+  }
+
   private sessions(): ISessions {
     const sessions = this.ctx.get('sessions')
     if (sessions === undefined) throw new Error('ui-input-trigger: sessions service unavailable')

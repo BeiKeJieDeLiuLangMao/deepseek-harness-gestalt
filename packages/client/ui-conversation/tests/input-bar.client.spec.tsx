@@ -58,6 +58,8 @@ function snapshotOf(overrides: Partial<ConversationSnapshot> = {}): Conversation
   }
 }
 
+const EMPTY_LEXICON = new Map<'/' | '@', readonly string[]>()
+
 interface BenchOptions {
   planEntry?: React.ReactNode
   /** The `plan` projection value the standard-kit useProjection serves. */
@@ -65,6 +67,8 @@ interface BenchOptions {
   modelEntry?: React.ReactNode
   /** Hot text-ref lexicon (injects a minimal slash stub exposing only lexicon()). */
   lexicon?: ReadonlyMap<'/' | '@', readonly string[]>
+  /** Rewrite clipboard plain text before pasteBegin. */
+  transformPaste?: (text: string) => string
   permissions?: { options: { value: string; name: string; description?: string }[]; currentValue: string }
   /** The `imageLimits` projection value (absent = no attachment service). */
   imageLimits?: {
@@ -132,10 +136,12 @@ function bench(over?: BenchOptions) {
     ...(over?.steerQueue !== undefined ? { steerQueue: over.steerQueue } : {}),
     // Lexicon-only stub: adjudication untouched (undefined slash methods are
     // never reached — these benches drive plain-draft flows only).
-    ...(lex !== undefined
+    ...(lex !== undefined || over?.transformPaste !== undefined
       ? {
         inputTriggers: (() => ({
-          lexicon: { getSnapshot: () => lex, subscribe: () => () => {} },
+          lexicon: { getSnapshot: () => lex ?? EMPTY_LEXICON, subscribe: () => () => {} },
+          transformPaste: over?.transformPaste ?? ((text: string) => text),
+          track: () => {},
         })) as unknown as NonNullable<ShellDeps['inputTriggers']>,
       }
       : {}),
@@ -231,6 +237,17 @@ describe('image draft rail', () => {
     })
     expect(addImages).toHaveBeenCalledWith([image])
     expect(shell.snapshot.draft).toBe('同时粘贴的文字')
+  })
+
+  it('rewrites pasted @ tokens through the trigger pipeline', () => {
+    const { textarea, shell } = bench({
+      transformPaste: text => text.replaceAll('@', '@\u2060'),
+    })
+    fireEvent.paste(textarea, {
+      clipboardData: { items: [], getData: () => '@README.md' },
+    })
+    expect(shell.snapshot.draft).toBe('@\u2060README.md')
+    expect(textarea.selectionStart).toBe('@\u2060README.md'.length)
   })
 
   it('intakes files through the named Add images control', () => {

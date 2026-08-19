@@ -121,6 +121,7 @@ async function scopedBench(register?: (inputTriggers: InputTriggerService) => vo
   actx.on('slash/input-begin-command', req => shell.beginCommand(req.claim, req.span) ? true : undefined)
   actx.on('slash/input-insert-reference', req => shell.insertReference(req.reference, req.span) ? true : undefined)
   actx.on('slash/input-consume-token', req => shell.consumeToken(req.guard) ? true : undefined)
+  actx.on('slash/input-insert-text', req => shell.insertText(req.text, req.span) ? true : undefined)
   const wiring = shell
   const sessionStore = createSnapshotStore<ConversationSnapshot>({
     sessionId, views: EMPTY_CONVERSATION_VIEWS, chat: EMPTY_CHAT_SNAPSHOT,
@@ -325,5 +326,37 @@ describe('scenario I: unknown /xyz + enter', () => {
     // Never a silent downgrade: draft retained, sink untouched.
     expect(b.textarea.value).toBe('/plan 上线')
     expect(b.sink).not.toHaveBeenCalled()
+  })
+})
+
+describe('workspace paste rewrite', () => {
+  it('folds source pasteTransform through the keyboard face', async () => {
+    const b = await scopedBench((inputTriggers) => {
+      inputTriggers.registerSource({
+        trigger: '@', name: 'workspace',
+        candidates: () => Promise.resolve([]),
+        onPick: () => undefined,
+        pasteTransform: text => text.replaceAll('@', '@\u2060'),
+      } as never)
+    })
+    expect(b.shell.transformPaste('@README.md')).toBe('@\u2060README.md')
+  })
+
+  it('ArrowRight on a directory inserts @path/ and keeps the menu open', async () => {
+    const b = await scopedBench((inputTriggers) => {
+      inputTriggers.registerSource({
+        trigger: '@', name: 'workspace',
+        candidates: () => Promise.resolve([{ name: 'docs', description: 'docs/' }]),
+        onPick: () => undefined,
+        onDescend: ({ candidate }) => (
+          candidate.description?.endsWith('/') ? { text: `@${candidate.name}/` } : undefined
+        ),
+      } as never)
+    })
+    b.type('@d')
+    await vi.waitFor(() => { expect(b.controller.menu.getSnapshot().open).toBe(true) })
+    fireEvent.keyDown(b.textarea, { key: 'ArrowRight' })
+    expect(b.shell.snapshot.draft).toBe('@docs/')
+    expect(b.controller.menu.getSnapshot().open).toBe(true)
   })
 })

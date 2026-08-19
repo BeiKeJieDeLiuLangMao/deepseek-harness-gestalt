@@ -95,6 +95,21 @@ describe('createWorkspaceSource', () => {
     const extra = source.subscribeLexicon?.(SESSION, () => {})
     extra?.()
     stop?.()
+    expect(source.pasteTransform?.('@README.md')).toBe('@\u2060README.md')
+    expect(source.onDescend?.({
+      candidate: { name: 'docs', description: 'docs/' },
+      session: SESSION,
+      position: 'leading',
+      via: 'menu',
+      span: { start: 0, end: 1, draftRev: 0 },
+    })).toEqual({ text: '@docs/' })
+    expect(source.onDescend?.({
+      candidate: { name: 'src/a.ts', description: 'src/a.ts' },
+      session: SESSION,
+      position: 'leading',
+      via: 'menu',
+      span: { start: 0, end: 1, draftRev: 0 },
+    })).toBeUndefined()
     expect(source.codec?.clipboardText('src/a.ts')).toBe('@src/a.ts')
     await expect(source.codec?.serialize('src/a.ts', SIGNAL)).resolves.toBe('@src/a.ts')
     expect(source.onPick({
@@ -104,5 +119,16 @@ describe('createWorkspaceSource', () => {
       via: 'menu',
       span: { start: 0, end: 1, draftRev: 0 },
     })).toEqual({ text: '@plain ' })
+  })
+
+  it('honors enable, paste ignore, and basename filters', async () => {
+    let prefs = { enable: false, pasteIgnore: false, exact: '', regex: '' }
+    const source = createWorkspaceSource(async () => FILES, () => prefs)
+    expect(await source.candidates(SESSION, { query: '', position: 'leading', signal: SIGNAL })).toEqual([])
+    expect(source.pasteTransform?.('@README.md')).toBe('@README.md')
+    prefs = { enable: true, pasteIgnore: true, exact: '.ts', regex: '' }
+    const filtered = await source.candidates(SESSION, { query: '', position: 'leading', signal: SIGNAL })
+    expect(filtered.map(item => item.name)).toEqual(['src/a.ts'])
+    expect(source.pasteTransform?.('@README.md')).toBe('@\u2060README.md')
   })
 })

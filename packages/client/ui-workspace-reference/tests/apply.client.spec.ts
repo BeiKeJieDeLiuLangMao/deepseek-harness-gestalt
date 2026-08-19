@@ -13,7 +13,7 @@ function stubCtx(options: {
       req: { query: string; signal: AbortSignal },
     ) => Promise<unknown>
   }) => () => void
-  onEffect?: (fn: () => () => void) => void
+  onEffect?: (fn: () => () => void | Promise<void>) => void
   onDisposeMount?: () => void
 }): ClientContext {
   return {
@@ -24,7 +24,12 @@ function stubCtx(options: {
       if (key === 'remote.workspaceReference') return { search: options.search }
       return { registerSource: options.onSource }
     },
-    effect: (fn: () => () => void) => { options.onEffect?.(fn) },
+    effect: (fn: () => () => void | Promise<void>) => { options.onEffect?.(fn) },
+    settingsScope: { bind: () => ({ getSnapshot: () => ({ value: undefined }), subscribe: () => () => {}, set: async () => {} }) },
+    locale: { register: () => () => {}, bind: () => (key: string) => key },
+    slots: { inject: () => {} },
+    sessions: { list: { getSnapshot: () => ({ byId: {} }) } },
+    workspaces: { openPath: async () => {} },
   } as unknown as ClientContext
 }
 
@@ -32,7 +37,7 @@ describe('ui-workspace-reference apply', () => {
   it('mounts the search Remote and registers the workspace source', async () => {
     const sources: string[] = []
     let disposed = false
-    let disposeEffect: (() => void) | undefined
+    const disposers: Array<(() => void | Promise<void>) | undefined> = []
     await apply(stubCtx({
       search: async () => ({ ok: true, value: [] }),
       onSource: (source) => {
@@ -40,12 +45,12 @@ describe('ui-workspace-reference apply', () => {
         void source.candidates({ sessionId: 's1' }, { query: '', signal: new AbortController().signal })
         return () => {}
       },
-      onEffect: (fn) => { disposeEffect = fn() },
+      onEffect: (fn) => { disposers.push(fn()) },
       onDisposeMount: () => { disposed = true },
     }))
     expect(sources).toEqual(['workspace'])
     expect(disposed).toBe(false)
-    disposeEffect?.()
+    for (const dispose of disposers) void dispose?.()
     expect(disposed).toBe(true)
   })
 
@@ -69,7 +74,13 @@ describe('ui-workspace-reference apply', () => {
 
   it('registers the @ workspace source; disposal frees the name', async () => {
     const ctx = new Context()
-    ctx.provide('sessions', {})
+    ctx.provide('sessions', { list: { getSnapshot: () => ({ byId: {} }) } })
+    ctx.provide('workspaces', { openPath: async () => {} })
+    ctx.provide('settingsScope', {
+      bind: () => ({ getSnapshot: () => ({ value: undefined }), subscribe: () => () => {}, set: async () => {} }),
+    })
+    ctx.provide('locale', { register: () => () => {}, bind: () => (key: string) => key })
+    ctx.provide('slots', { inject: () => {} })
     await ctx.plugin(InputTriggerService).await()
     ctx.provide('remote', { $mount: async () => async () => {} })
     ctx.provide('remote.workspaceReference', {

@@ -225,6 +225,18 @@ describe('sessionOf', () => {
     expect(ca.menu.getSnapshot().groups[0]!.items).toEqual([{ name: 'goal' }])
     expect(cb.menu.getSnapshot().open).toBe(false)
   })
+
+  it('folds source pasteTransform hooks in registration order', async () => {
+    const { inputTriggers, mint } = await serviceBench()
+    const first = readySource('@', 'one', []).source
+    first.pasteTransform = text => text.replaceAll('@', '@1')
+    const second = readySource('@', 'two', []).source
+    second.pasteTransform = text => `${text}!`
+    inputTriggers.registerSource(first)
+    inputTriggers.registerSource(second)
+    expect(inputTriggers.transformPaste('@path')).toBe('@1path!')
+    expect(inputTriggers.sessionOf(mint('a').actx).transformPaste('@path')).toBe('@1path!')
+  })
 })
 
 describe('track', () => {
@@ -685,7 +697,7 @@ describe('arbitrate', () => {
 
   it('IME composition passes every key untouched', async () => {
     const { controller } = await menuBench()
-    for (const key of ['up', 'down', 'enter', 'escape'] as const) {
+    for (const key of ['up', 'down', 'enter', 'escape', 'right'] as const) {
       expect(controller.arbitrate(key, true)).toBe('pass')
     }
     expect(controller.menu.getSnapshot().open).toBe(true)
@@ -698,6 +710,29 @@ describe('arbitrate', () => {
     // Open with the only group still pending: nothing to pick yet.
     controller.track('/g', 2, { tier: 'plain' }, 1)
     expect(controller.arbitrate('enter', false)).toBe('pass')
+  })
+
+  it('right descends a directory candidate and leaves files to the textarea', async () => {
+    const dir = readySource('@', 'workspace', [{ name: 'docs', description: 'docs/' }], () => undefined)
+    dir.source.onDescend = ({ candidate }) => (
+      candidate.description?.endsWith('/') ? { text: `@${candidate.name}/` } : undefined
+    )
+    const { controller, actx } = controllerBench([dir.source])
+    const texts: string[] = []
+    actx.on('slash/input-insert-text', (req) => {
+      texts.push(req.text)
+      return true
+    })
+    controller.track('@d', 2, { tier: 'plain' }, 1)
+    await tick()
+    expect(controller.arbitrate('right', false)).toBe('consumed')
+    expect(texts).toEqual(['@docs/'])
+    expect(controller.menu.getSnapshot().open).toBe(true)
+    const file = readySource('@', 'files', [{ name: 'a.ts', description: 'a.ts' }])
+    const fileBench = controllerBench([file.source])
+    fileBench.controller.track('@a', 2, { tier: 'plain' }, 1)
+    await tick()
+    expect(fileBench.controller.arbitrate('right', false)).toBe('pass')
   })
 })
 
