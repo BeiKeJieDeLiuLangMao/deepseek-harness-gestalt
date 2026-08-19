@@ -4,7 +4,7 @@ English | [中文](README.zh.md)
 
 Platform listen process packaged as a container. GitHub Actions builds and publishes the image; ECS pulls it. Secrets come from GitHub Environment `production` at deploy time and are never stored in image layers.
 
-`GET /` serves the packaged VitePress documentation site. `GET /healthz` and `GET /readyz` answer `{ ok: true }` after required deployment secrets are present. Missing secrets fail the process before listen. Account HTTP and Remote Relay composition are not mounted in this image yet.
+`GET /` serves the DeepSeek Gestalt product homepage. `GET /healthz` and `GET /readyz` answer `{ ok: true }` after required deployment secrets are present. Missing secrets fail the process before listen. Account HTTP and Remote Relay composition are not mounted in this image yet.
 
 ```sh
 docker build -f apps/platform/Dockerfile -t dsh-platform .
