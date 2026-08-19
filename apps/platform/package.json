@@ -1,0 +1,32 @@
+{
+  "name": "@deepseek-ai/dsh-platform",
+  "private": true,
+  "version": "0.1.0-rc.7",
+  "license": "MIT",
+  "type": "module",
+  "description": "Platform composition image: Account HTTP and product homepage packaged by GitHub Actions",
+  "files": [
+    "dist",
+    "public"
+  ],
+  "bin": {
+    "dsh-platform": "./dist/boot.mjs"
+  },
+  "scripts": {
+    "build": "tsdown"
+  },
+  "dependencies": {
+    "@deepseek-ai/cordis": "workspace:^",
+    "@deepseek-ai/dsh-host-frontend-static": "workspace:^",
+    "@deepseek-ai/dsh-host-webserver": "workspace:^",
+    "@deepseek-ai/dsh-platform-account": "workspace:^",
+    "@deepseek-ai/dsh-platform-account-core": "workspace:^",
+    "@deepseek-ai/dsh-platform-account-http": "workspace:^",
+    "pg": "^8.16.3",
+    "redis": "^6.2.1"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.15.5",
+    "tsdown": "^0.22.2"
+  }
+}

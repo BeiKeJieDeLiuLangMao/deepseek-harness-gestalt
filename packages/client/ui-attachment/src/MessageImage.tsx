@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import type { ReactNode } from 'react'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { ImageLightbox } from './ImageLightbox.tsx'
 import type { ImageLightboxLabels, ImageLightboxPin } from './ImageLightbox.tsx'
@@ -63,6 +64,8 @@ export function MessageImage({ attachment, load, variant, labels, pinOverlay }: 
     refuse?: string
     onPlace: (x: number, y: number) => void
     onSelect: (id: string) => void
+    onCloseEditor?: () => void
+    editor?: ReactNode
   }
 }) {
   const [src, setSrc] = useState<string | null>(null)
@@ -73,7 +76,11 @@ export function MessageImage({ attachment, load, variant, labels, pinOverlay }: 
   // retry — runs under the same liveness guard and the same reset.
   const [attempt, setAttempt] = useState(0)
   const request = useCallback(() => { setAttempt(a => a + 1) }, [])
-  const close = useCallback(() => { setOpen(false) }, [])
+  const close = useCallback(() => {
+    setOpen(false)
+    setPinMode(false)
+    pinOverlay?.onCloseEditor?.()
+  }, [pinOverlay])
   const fit = useMemo(
     () => (variant === 'single' ? singleFit(attachment) : undefined),
     [attachment, variant],
@@ -120,6 +127,7 @@ export function MessageImage({ attachment, load, variant, labels, pinOverlay }: 
             onPlace: pinOverlay.onPlace,
             onSelect: pinOverlay.onSelect,
           } })}
+          {...(pinOverlay?.editor === undefined ? {} : { editor: pinOverlay.editor })}
         />
       )}
     </>
@@ -140,6 +148,8 @@ export function ImageGallery({ images, load, align, labels, pinOverlayFor }: {
     refuse?: string
     onPlace: (x: number, y: number) => void
     onSelect: (id: string) => void
+    onCloseEditor?: () => void
+    editor?: ReactNode
   } | undefined
 }) {
   if (images.length === 0) return null
