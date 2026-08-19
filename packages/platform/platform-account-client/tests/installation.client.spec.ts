@@ -630,6 +630,7 @@ describe('PlatformAccountHttpTransport', () => {
       { body: JSON.stringify({ error: { code: 1, message: 'bad' } }), contentType: 'application/json', expected: 'Platform Account request failed with HTTP 502' },
       { body: JSON.stringify({ error: { code: 'BAD', message: 1 } }), contentType: 'application/json', expected: 'Platform Account request failed with HTTP 502' },
       { body: JSON.stringify({ error: { code: 'BAD', message: 'bad request' } }), contentType: 'application/json', expected: 'BAD: bad request' },
+      { body: JSON.stringify({ error: { code: 'QUOTA', message: 'full', retryAfter: 1.5 } }), contentType: 'application/json', expected: 'Platform Account request failed with HTTP 502' },
     ]
     for (const item of bodies) {
       const transport = new PlatformAccountHttpTransport({
@@ -640,6 +641,19 @@ describe('PlatformAccountHttpTransport', () => {
       })
       await expect(transport.current({ accessToken: 'access', proof })).rejects.toThrow(item.expected)
     }
+  })
+
+  it('preserves quota and capacity retry timing', async () => {
+    const transport = new PlatformAccountHttpTransport({
+      environment: DEVELOPMENT,
+      fetch: vi.fn().mockResolvedValue(new Response(JSON.stringify({
+        error: { code: 'QUOTA', message: 'full', retryAfter: 60 },
+      }), { status: 429, headers: { 'content-type': 'application/json' } })),
+    })
+    await expect(transport.current({ accessToken: 'access', proof })).rejects.toMatchObject({
+      code: 'QUOTA',
+      retryAfter: 60,
+    })
   })
 
   it('retains the global fetch default without crossing environments', () => {

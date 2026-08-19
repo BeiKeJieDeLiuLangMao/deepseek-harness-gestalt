@@ -6,8 +6,14 @@ import type {
   AccountSessionId,
   LoginAttemptId,
   PlatformAccountId,
+  PlatformCapacityState,
 } from '@deepseek-ai/dsh-platform-account'
 import {
+  ACCOUNT_CONCURRENT_CONNECTION_LIMIT,
+  ACCOUNT_DESKTOP_INSTALLATION_LIMIT,
+  ACCOUNT_MOBILE_INSTALLATION_LIMIT,
+  AccountError,
+  OPEN_REGISTRATION_HARD_CAP_RETRY_AFTER_SECONDS,
   parseAccountProofJti,
   parseInstallationId,
   parseLoginAttemptId,
@@ -102,17 +108,19 @@ function accountHarness(options: {
   provider?: GitHubIdentityProvider
   clock?: { now(): number }
   config?: PlatformAccountConfig
+  capacity?: PlatformCapacityState
 } = {}) {
   const backend = options.backend ?? new MemoryAccountBackend(ENVIRONMENT.databaseIdentity)
   const invalidation = options.invalidation ?? new MemoryAccountInvalidationBus()
   const provider = options.provider ?? github()
   const clock = options.clock ?? { now: () => NOW }
   const config = options.config ?? CONFIG
+  const capacity = options.capacity
   const first = new PlatformAccount(new Context(), {
-    backend, invalidation, github: provider, environment: ENVIRONMENT, clock, config,
+    backend, invalidation, github: provider, environment: ENVIRONMENT, clock, config, capacity,
   })
   const second = new PlatformAccount(new Context(), {
-    backend, invalidation, github: provider, environment: ENVIRONMENT, clock, config,
+    backend, invalidation, github: provider, environment: ENVIRONMENT, clock, config, capacity,
   })
   return { backend, invalidation, provider, clock, config, first, second }
 }
@@ -121,8 +129,9 @@ async function login(
   account: PlatformAccount,
   key = installationKey(),
   installationId = parseInstallationId('installation-1'),
+  installationKind: 'desktop' | 'mobile' = 'desktop',
 ): Promise<{ key: ReturnType<typeof installationKey>; session: Extract<Awaited<ReturnType<PlatformAccount['pollLogin']>>, { status: 'complete' }> }> {
-  const attempt = await account.beginLogin({ installationId, installationKind: 'desktop', publicKey: key.publicKey })
+  const attempt = await account.beginLogin({ installationId, installationKind, publicKey: key.publicKey })
   await account.completeGitHubCallback({ code: 'code', state: attempt.state })
   const result = await account.pollLogin({
     attemptId: attempt.id,
@@ -700,5 +709,167 @@ describe('PlatformAccount', () => {
       github: github(), environment: ENVIRONMENT, config: CONFIG,
     })
     await ctx.fiber.dispose()
+  })
+
+  it('accepts the tenth Desktop and Mobile installation and rejects the eleventh with retry timing', async () => {
+    const { first } = accountHarness()
+    for (let index = 0; index < ACCOUNT_DESKTOP_INSTALLATION_LIMIT; index += 1) {
+      await login(first, installationKey(), parseInstallationId(`desktop-${String(index)}`))
+    }
+    await expect(login(first, installationKey(), parseInstallationId('desktop-over')))
+      .rejects.toMatchObject({
+        code: 'QUOTA',
+        retryAfter: OPEN_REGISTRATION_HARD_CAP_RETRY_AFTER_SECONDS,
+      })
+    await login(first, installationKey(), parseInstallationId('desktop-0'))
+    for (let index = 0; index < ACCOUNT_MOBILE_INSTALLATION_LIMIT; index += 1) {
+      await login(first, installationKey(), parseInstallationId(`mobile-${String(index)}`), 'mobile')
+    }
+    await expect(login(first, installationKey(), parseInstallationId('mobile-over'), 'mobile'))
+      .rejects.toMatchObject({
+        code: 'QUOTA',
+        retryAfter: OPEN_REGISTRATION_HARD_CAP_RETRY_AFTER_SECONDS,
+      })
+  })
+
+  it('accepts twenty tracked connections and rejects the next while leaving established closers registered', async () => {
+    const { first } = accountHarness()
+    const { session } = await login(first)
+    const established = vi.fn()
+    const stop = first.trackConnection(session.sessionId, established)
+    for (let index = 1; index < ACCOUNT_CONCURRENT_CONNECTION_LIMIT; index += 1) {
+      first.trackConnection(session.sessionId, vi.fn())
+    }
+    expect(established).not.toHaveBeenCalled()
+    let quotaFailure: unknown
+    try {
+      first.trackConnection(session.sessionId, vi.fn())
+    } catch (error) {
+      quotaFailure = error
+    }
+    expect(quotaFailure).toMatchObject({
+      code: 'QUOTA',
+      retryAfter: OPEN_REGISTRATION_HARD_CAP_RETRY_AFTER_SECONDS,
+    })
+    stop()
+    expect(established).not.toHaveBeenCalled()
+    first.trackConnection(session.sessionId, vi.fn())
+  })
+
+  it('sheds new login at capacity and leaves an established session usable', async () => {
+    const capacity = { shedding: false, retryAfterSeconds: 45 }
+    const { first } = accountHarness({ capacity })
+    const { key, session } = await login(first)
+    capacity.shedding = true
+    await expect(first.beginLogin({
+      installationId: parseInstallationId('capacity-desktop'),
+      installationKind: 'desktop',
+      publicKey: installationKey().publicKey,
+    })).rejects.toMatchObject({ code: 'PLATFORM_CAPACITY', retryAfter: 45 })
+    expect(await first.current({
+      accessToken: session.accessToken,
+      proof: key.proof('current', hashAccountToken(session.accessToken)),
+    })).toMatchObject({ githubLogin: 'octocat' })
+  })
+
+  it('registers a second GitHub identity with no account-count ceiling', async () => {
+    let subject = 13994321
+    const provider = github()
+    provider.exchange = async (code, verifier) => {
+      provider.exchanges.push({ code, verifier })
+      return subject === 13994321
+        ? { providerSubject: 13994321, login: 'octocat', avatarUrl: 'https://avatars.example/octocat' }
+        : { providerSubject: subject, login: 'second', avatarUrl: 'https://avatars.example/second' }
+    }
+    const { first } = accountHarness({ provider })
+    const firstLogin = await login(first)
+    expect(firstLogin.session.account.githubLogin).toBe('octocat')
+    subject = 7
+    const secondLogin = await login(first, installationKey(), parseInstallationId('second-desktop'))
+    expect(secondLogin.session.account).toMatchObject({ githubId: 7, githubLogin: 'second' })
+    expect(secondLogin.session.account.id).not.toBe(firstLogin.session.account.id)
+  })
+
+  it('counts only the owning Account when other sessions are already tracked', async () => {
+    let subject = 13994321
+    const provider = github()
+    provider.exchange = async (code, verifier) => {
+      provider.exchanges.push({ code, verifier })
+      return subject === 13994321
+        ? { providerSubject: 13994321, login: 'octocat', avatarUrl: 'https://avatars.example/octocat' }
+        : { providerSubject: subject, login: 'second', avatarUrl: 'https://avatars.example/second' }
+    }
+    const { first } = accountHarness({ provider })
+    const firstLogin = await login(first)
+    subject = 7
+    const secondLogin = await login(first, installationKey(), parseInstallationId('second-desktop'))
+    first.trackConnection(firstLogin.session.sessionId, vi.fn())
+    first.trackConnection(secondLogin.session.sessionId, vi.fn())
+    for (let index = 1; index < ACCOUNT_CONCURRENT_CONNECTION_LIMIT; index += 1) {
+      first.trackConnection(firstLogin.session.sessionId, vi.fn())
+    }
+    let quotaFailure: unknown
+    try {
+      first.trackConnection(firstLogin.session.sessionId, vi.fn())
+    } catch (error) {
+      quotaFailure = error
+    }
+    expect(quotaFailure).toMatchObject({ code: 'QUOTA' })
+    first.trackConnection(secondLogin.session.sessionId, vi.fn())
+  })
+
+  it('treats a missing indexed session as inactive when counting a replacement Installation', async () => {
+    const backend = new MemoryAccountBackend(ENVIRONMENT.databaseIdentity)
+    const internals = backend as unknown as { installationIndex: Map<string, string> }
+    internals.installationIndex.set(`${ENVIRONMENT.identityNamespace}:ghost`, 'missing-session')
+    expect(await backend.findActiveSessionByInstallation(
+      ENVIRONMENT.identityNamespace,
+      parseInstallationId('ghost'),
+    )).toBeUndefined()
+  })
+
+  it('skips installation quota when an authorized attempt has not bound a GitHub identity', async () => {
+    const harness = accountHarness()
+    const key = installationKey()
+    const attempt = await harness.first.beginLogin({
+      installationId: parseInstallationId('identity-less'),
+      installationKind: 'desktop',
+      publicKey: key.publicKey,
+    })
+    await harness.first.completeGitHubCallback({ code: 'code', state: attempt.state })
+    const proxied = accountHarness({
+      backend: proxyBackend(harness.backend, {
+        async getAttempt(id) {
+          const record = await harness.backend.getAttempt(id)
+          return record === undefined ? undefined : { ...record, identity: undefined, status: 'authorized' }
+        },
+        consumeAuthorizedAttempt: async () => {
+          throw new AccountError('LOGIN_ATTEMPT_INVALID', 'login attempt is not authorized')
+        },
+      }),
+    }).first
+    await expect(proxied.pollLogin({
+      attemptId: attempt.id,
+      pollingToken: attempt.pollingToken,
+      proof: key.proof('login-poll', `${attempt.id}:${hashAccountToken(attempt.pollingToken)}`),
+    })).rejects.toMatchObject({ code: 'LOGIN_ATTEMPT_INVALID' })
+  })
+
+  it('sheds a completing login at capacity after GitHub authorization', async () => {
+    const capacity = { shedding: false, retryAfterSeconds: 12 }
+    const { first } = accountHarness({ capacity })
+    const key = installationKey()
+    const attempt = await first.beginLogin({
+      installationId: parseInstallationId('capacity-poll'),
+      installationKind: 'desktop',
+      publicKey: key.publicKey,
+    })
+    await first.completeGitHubCallback({ code: 'code', state: attempt.state })
+    capacity.shedding = true
+    await expect(first.pollLogin({
+      attemptId: attempt.id,
+      pollingToken: attempt.pollingToken,
+      proof: key.proof('login-poll', `${attempt.id}:${hashAccountToken(attempt.pollingToken)}`),
+    })).rejects.toMatchObject({ code: 'PLATFORM_CAPACITY', retryAfter: 12 })
   })
 })

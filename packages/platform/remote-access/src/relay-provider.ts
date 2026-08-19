@@ -39,6 +39,7 @@ interface LocalAttachment {
   unregistered: boolean
   writerDrained: boolean
   socketClosed: boolean
+  capacityHeld: boolean
 }
 
 interface PendingDelivery {
@@ -71,6 +72,7 @@ export class RemoteRelayProvider extends RemoteRelayService {
     deliveryId?: () => RelayDeliveryId
     clock?: { now(): number }
     schedule?: (task: () => void, delayMs: number) => ReturnType<typeof setTimeout>
+    capacity?: { tryAcquire(): boolean; release(): void; retryAfterMs: number }
   }) {
     super(ctx)
     this.config = validateRemoteRelayConfig(options.config)
@@ -144,11 +146,24 @@ export class RemoteRelayProvider extends RemoteRelayService {
     this.assertOpen()
     const key = attachmentKey(input.message.routeId, input.message.attachmentId)
     const replacing = this.attachments.has(key)
+    let capacityHeld = false
+    if (!replacing && this.options.capacity !== undefined) {
+      if (!this.options.capacity.tryAcquire()) {
+        throw new RemoteRelayError(
+          'PLATFORM_CAPACITY',
+          'Platform Instance has reached its Relay attachment limit',
+          this.options.capacity.retryAfterMs,
+        )
+      }
+      capacityHeld = true
+    }
     if (this.attachmentReservations.has(key)
       || (!replacing && this.attachments.size + this.attachmentReservations.size >= this.config.maxConnections)) {
+      if (capacityHeld) this.options.capacity?.release()
       throw new RemoteRelayError('PLATFORM_CAPACITY', 'Platform Instance has reached its Relay attachment limit', this.config.capacityRetryAfterMs)
     }
     this.attachmentReservations.add(key)
+    let local: LocalAttachment | undefined
     try {
       const digest = credentialDigest(input.message.credential)
       let revision: number | undefined
@@ -176,10 +191,16 @@ export class RemoteRelayProvider extends RemoteRelayService {
         expiresAt: this.now() + this.config.directoryTtlMs,
       }
       const existing = this.attachments.get(key)
-      if (existing !== undefined) await this.closeAndDrain(existing)
+      if (existing !== undefined) {
+        if (existing.capacityHeld) {
+          existing.capacityHeld = false
+          capacityHeld = true
+        }
+        await this.closeAndDrain(existing)
+      }
       this.assertOpen()
       throwIfAborted(signal)
-      const local: LocalAttachment = {
+      local = {
         entry,
         deliver: input.deliver,
         credentialDigest: digest,
@@ -192,6 +213,7 @@ export class RemoteRelayProvider extends RemoteRelayService {
         unregistered: false,
         writerDrained: false,
         socketClosed: input.close === undefined,
+        capacityHeld,
       }
       this.attachments.set(key, local)
       try {
@@ -219,6 +241,9 @@ export class RemoteRelayProvider extends RemoteRelayService {
         },
         close: async () => { await this.closeAndDrain(local) },
       }
+    } catch (error) {
+      if (local === undefined && capacityHeld) this.options.capacity?.release()
+      throw error
     } finally {
       this.attachmentReservations.delete(key)
     }
@@ -410,6 +435,10 @@ export class RemoteRelayProvider extends RemoteRelayService {
     if (errors.length > 0) throw new AggregateError(errors, 'Relay attachment drain failed')
     const key = attachmentKey(local.entry.routeId, local.entry.attachmentId)
     if (this.attachments.get(key) === local) this.attachments.delete(key)
+    if (local.capacityHeld) {
+      local.capacityHeld = false
+      this.options.capacity?.release()
+    }
   }
 
   private connectionToken(): RelayConnectionToken {

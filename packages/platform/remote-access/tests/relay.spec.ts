@@ -7,6 +7,7 @@ import {
 } from '@deepseek-ai/dsh-remote-protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  MemoryPlatformCapacityGate,
   RemoteRelayError,
   parseRelayConnectionToken,
   parseRelayDeliveryId,
@@ -1240,6 +1241,128 @@ describe('RemoteRelayProvider', () => {
     await disposeEffect?.()
     await expect(platform.rotateCredential(parseRelayRouteId('route-effect')))
       .rejects.toMatchObject({ code: 'REMOTE_OFFLINE' })
+  })
+
+  it('sheds new attachments through a shared capacity gate while an established attachment stays up', async () => {
+    const gate = new MemoryPlatformCapacityGate(1, 2_500)
+    const routeStore = new SharedRouteStore()
+    const coordinator = new SharedCoordinator()
+    const platform = new RemoteRelayProvider(new Context(), {
+      instanceId: parseRelayInstanceId('platform-shared-gate'),
+      routeStore, coordinator, config: CONFIG, randomBytes: uniqueRandomBytes(201), capacity: gate,
+    })
+    const routeId = parseRelayRouteId('route-shared-gate')
+    const grant = await platform.rotateCredential(routeId)
+    const established = await platform.attach({
+      message: {
+        type: 'attach', transportVersion: 1, routeId,
+        attachmentId: parseRelayAttachmentId('desktop-established'), endpoint: 'desktop', credential: grant.credential,
+      },
+      deliver: async () => {},
+    })
+    expect(gate.shedding).toBe(true)
+    await expect(platform.attach({
+      message: {
+        type: 'attach', transportVersion: 1, routeId,
+        attachmentId: parseRelayAttachmentId('mobile-new'), endpoint: 'mobile', credential: grant.credential,
+      },
+      deliver: async () => {},
+    })).rejects.toEqual(expect.objectContaining<Partial<RemoteRelayError>>({
+      code: 'PLATFORM_CAPACITY', retryAfterMs: 2_500,
+    }))
+    await expect(established.receive(ciphertext(
+      routeId, 'desktop-established', 'mobile-missing', Uint8Array.of(1),
+    ))).rejects.toEqual(expect.objectContaining<Partial<RemoteRelayError>>({ code: 'REMOTE_OFFLINE' }))
+    await established.close()
+    expect(gate.shedding).toBe(false)
+    const recovered = await platform.attach({
+      message: {
+        type: 'attach', transportVersion: 1, routeId,
+        attachmentId: parseRelayAttachmentId('desktop-recovered'), endpoint: 'desktop', credential: grant.credential,
+      },
+      deliver: async () => {},
+    })
+    await recovered.close()
+    await platform.dispose()
+  })
+
+  it('releases a shared capacity gate when maxConnections rejects after acquire', async () => {
+    const gate = new MemoryPlatformCapacityGate(4, 1_500)
+    const platform = new RemoteRelayProvider(new Context(), {
+      instanceId: parseRelayInstanceId('platform-gate-max'),
+      routeStore: new SharedRouteStore(), coordinator: new SharedCoordinator(),
+      config: { ...CONFIG, maxConnections: 1 }, randomBytes: uniqueRandomBytes(205), capacity: gate,
+    })
+    const routeId = parseRelayRouteId('route-gate-max')
+    const grant = await platform.rotateCredential(routeId)
+    const first = await platform.attach({
+      message: {
+        type: 'attach', transportVersion: 1, routeId,
+        attachmentId: parseRelayAttachmentId('desktop-first'), endpoint: 'desktop', credential: grant.credential,
+      },
+      deliver: async () => {},
+    })
+    await expect(platform.attach({
+      message: {
+        type: 'attach', transportVersion: 1, routeId,
+        attachmentId: parseRelayAttachmentId('mobile-second'), endpoint: 'mobile', credential: grant.credential,
+      },
+      deliver: async () => {},
+    })).rejects.toMatchObject({ code: 'PLATFORM_CAPACITY', retryAfterMs: CONFIG.capacityRetryAfterMs })
+    expect(gate.shedding).toBe(false)
+    await first.close()
+    await platform.dispose()
+  })
+
+  it('transfers a shared capacity hold when replacing an attachment', async () => {
+    const gate = new MemoryPlatformCapacityGate(1, 1_000)
+    const platform = new RemoteRelayProvider(new Context(), {
+      instanceId: parseRelayInstanceId('platform-gate-replace'),
+      routeStore: new SharedRouteStore(), coordinator: new SharedCoordinator(),
+      config: CONFIG, randomBytes: uniqueRandomBytes(207), capacity: gate,
+    })
+    const routeId = parseRelayRouteId('route-gate-replace')
+    const grant = await platform.rotateCredential(routeId)
+    const first = await platform.attach({
+      message: {
+        type: 'attach', transportVersion: 1, routeId,
+        attachmentId: parseRelayAttachmentId('desktop-replace'), endpoint: 'desktop', credential: grant.credential,
+      },
+      deliver: async () => {},
+    })
+    const replacement = await platform.attach({
+      message: {
+        type: 'attach', transportVersion: 1, routeId,
+        attachmentId: parseRelayAttachmentId('desktop-replace'), endpoint: 'desktop', credential: grant.credential,
+      },
+      deliver: async () => {},
+    })
+    expect(gate.shedding).toBe(true)
+    await first.close()
+    expect(gate.shedding).toBe(true)
+    await replacement.close()
+    expect(gate.shedding).toBe(false)
+    await platform.revokeCredential(grant)
+    await platform.dispose()
+  })
+
+  it('releases a shared capacity gate when attach authorization fails', async () => {
+    const gate = new MemoryPlatformCapacityGate(1, 1_000)
+    const platform = new RemoteRelayProvider(new Context(), {
+      instanceId: parseRelayInstanceId('platform-gate-release'),
+      routeStore: new SharedRouteStore(), coordinator: new SharedCoordinator(),
+      config: CONFIG, randomBytes: uniqueRandomBytes(203), capacity: gate,
+    })
+    await expect(platform.attach({
+      message: {
+        type: 'attach', transportVersion: 1, routeId: parseRelayRouteId('route-missing'),
+        attachmentId: parseRelayAttachmentId('desktop-missing'), endpoint: 'desktop',
+        credential: parseRelayCredential('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'),
+      },
+      deliver: async () => {},
+    })).rejects.toMatchObject({ code: 'RELAY_ATTACHMENT_REJECTED' })
+    expect(gate.shedding).toBe(false)
+    await platform.dispose()
   })
 })
 

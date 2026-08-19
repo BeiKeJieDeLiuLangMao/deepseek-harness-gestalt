@@ -36,7 +36,7 @@ Desktop Host 拥有私钥、会话令牌、Electron `shell.openExternal` 调用�
 
 ## Consequences
 
-Platform 部署必须提供原子账号持久化、分布式失效、OAuth 凭证、签名密钥、限流、审计保留和 HTTPS edge 行为。内存后端和总线只用于验收与开发，不是生产持久性。原生 Mobile 打包必须提供稳定 WebView origin；Mobile composition 自己拥有 Capacitor Browser 适配器。账号删除、会话列表、远程退出、全部退出、恢复、身份关联、个人配对与远程访问仍是独立能力。
+Platform 部署必须提供原子账号持久化、分布式失效、OAuth 凭证、签名密钥、审计保留和 HTTPS edge 行为。规格固定的开放注册安装与连接上限由账号提供方执行（[开放注册配额](2026-08-19-open-registration-quotas-capacity.md)）。内存后端和总线只用于验收与开发，不是生产持久性。原生 Mobile 打包必须提供稳定 WebView origin；Mobile composition 自己拥有 Capacitor Browser 适配器。账号删除、会话列表、远程退出、全部退出、恢复、身份关联、个人配对与远程访问仍是独立能力。
 
 ## Testing
 

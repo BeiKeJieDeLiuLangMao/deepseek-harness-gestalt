@@ -7,8 +7,10 @@ import {
   MAX_ACTIVE_PAIRING_CHALLENGES_PER_INSTALLATION,
   MAX_PENDING_PAIRINGS_PER_INSTALLATION,
   MAX_RETAINED_PAIRING_RECORDS_PER_INSTALLATION,
+  OPEN_REGISTRATION_QUOTAS,
   PERSONAL_PAIRING_PROTOCOL_MAJOR,
   PAIRING_CHALLENGE_TTL_MS,
+  PAIRING_CHALLENGE_QUOTA_WINDOW_MS,
   PAIRING_REPLAY_RETENTION_MS,
   MemoryPersonalPairingAuthorityStore,
   PersonalPairingProvider,
@@ -69,6 +71,12 @@ describe('PersonalPairingProvider', () => {
       ...sealed, sealedRelayAuthority: Uint8Array.of(1, 3),
     })).rejects.toMatchObject({ code: 'PAIRING_ID_COLLISION' })
     expect(await authority.getMobilePairing(pendingPairingId)).toEqual(first)
+    await authority.revokeMobilePairing(parsePersonalPairingId('pairing-missing'))
+    expect(await authority.getMobilePairing(pendingPairingId)).toEqual(first)
+    await expect(authority.runPairingTransaction(async () => {
+      throw new Error('transaction rejected')
+    })).rejects.toThrow('transaction rejected')
+    await expect(authority.runPairingTransaction(async () => 'recovered')).resolves.toBe('recovered')
   })
 
   it('shares Desktop access and pairing authority across Platform providers', async () => {
@@ -192,7 +200,240 @@ describe('PersonalPairingProvider', () => {
     expect(relay.revokeCredential).toHaveBeenCalledOnce()
     expect(relay.revokeRoute).not.toHaveBeenCalled()
     expect(await provider.getMobileAccessState(desktop)).toEqual({ enabled: true })
+    await expect(provider.reissueDesktopRelayAuthority(desktop)).resolves.toMatchObject({
+      enabled: true, relay: { routeId: parseRelayRouteId('route-revoke'), endpoint: 'desktop' },
+    })
+    await expect(provider.revokePersonalPairing({
+      desktop, pairingId: parsePersonalPairingId('pairing-missing'),
+    })).rejects.toMatchObject({ code: 'PAIRING_PENDING_INVALID' })
     await provider.dispose()
+  })
+
+  it('reissues Desktop Relay authority and keeps pairings on another Installation when disabling', async () => {
+    const handshake = handshakeProvider()
+    const provider = uniquePairingProvider(handshake)
+    const desktop = authentication('desktop-one')
+    const other = authentication('desktop-two')
+    await provider.setMobileAccess({ desktop, enabled: true })
+    await provider.setMobileAccess({ desktop: other, enabled: true })
+    await expect(provider.reissueDesktopRelayAuthority(desktop)).resolves.toEqual({ enabled: true })
+    const challenge = await provider.createChallenge({ desktop, rendezvousId: parsePairingRendezvousId('keep-other') })
+    const pending = await completeAs(provider, challenge.oneTimeLink, 'keep-other', 'mobile-one', 'account-one')
+    await provider.confirmPairing({ desktop, pendingPairingId: pending.pendingPairingId })
+    await provider.setMobileAccess({ desktop: other, enabled: false })
+    expect(await provider.listPersonalPairings(desktop)).toHaveLength(1)
+    await provider.setMobileAccess({ desktop, enabled: false })
+    expect(await provider.listPersonalPairings(desktop)).toEqual([])
+    await expect(provider.reissueDesktopRelayAuthority(desktop)).rejects.toMatchObject({
+      code: 'MOBILE_ACCESS_DISABLED',
+    })
+    const owned = new PersonalPairingProvider(new Context(), {
+      account: { currentInstallation: vi.fn(async ({ accessToken }: { accessToken: string }) => authenticated(accessToken)) },
+      handshake: handshakeProvider(),
+      authority: new MemoryPersonalPairingAuthorityStore(),
+      pairingLinkOrigin: 'https://platform.example.com/pair',
+    })
+    ;(owned as unknown as { localChallengeIds: Set<string> }).localChallengeIds.add('ghost-challenge')
+    await owned.dispose()
+    const idle = pairingProvider(handshakeProvider())
+    expect(() => (idle as unknown as { requireTransactions(): unknown }).requireTransactions())
+      .toThrow('transaction state is not owned')
+    const revokeOnly = uniquePairingProvider(handshakeProvider())
+    const revokeDesktop = authentication('desktop-revoke-only')
+    await revokeOnly.setMobileAccess({ desktop: revokeDesktop, enabled: true })
+    const revokeChallenge = await revokeOnly.createChallenge({
+      desktop: revokeDesktop, rendezvousId: parsePairingRendezvousId('revoke-only'),
+    })
+    const revokePending = await completeAs(
+      revokeOnly, revokeChallenge.oneTimeLink, 'revoke-only', 'mobile-revoke-only', 'account-one',
+    )
+    const revokePairing = await revokeOnly.confirmPairing({
+      desktop: revokeDesktop, pendingPairingId: revokePending.pendingPairingId,
+    })
+    await revokeOnly.revokePersonalPairing({ desktop: revokeDesktop, pairingId: revokePairing.id })
+    expect(await revokeOnly.listPersonalPairings(revokeDesktop)).toEqual([])
+  })
+
+  it('rolls back a Mobile grant when sealing or committing pairing authority fails', async () => {
+    const authority = new MemoryPersonalPairingAuthorityStore()
+    const routeId = parseRelayRouteId('route-seal-rollback')
+    const seal = vi.fn(async () => { throw new Error('seal failed') })
+    const relay = {
+      rotateCredential: vi.fn(async () => ({
+        routeId, endpoint: 'desktop' as const,
+        credential: parseRelayCredential('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'), revision: 1,
+      })),
+      issueCredential: vi.fn(async () => ({
+        routeId, endpoint: 'mobile' as const,
+        credential: parseRelayCredential('AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE'), revision: 1,
+      })),
+      revokeCredential: vi.fn(async () => { throw new Error('revoke failed') }),
+      revokeRoute: vi.fn(async () => {}),
+    }
+    const provider = new PersonalPairingProvider(new Context(), {
+      account: { currentInstallation: vi.fn(async ({ accessToken }: { accessToken: string }) => authenticated(accessToken)) },
+      handshake: { ...handshakeProvider(), sealMobileRelayAuthority: seal },
+      relay,
+      authority,
+      randomBytes: size => new Uint8Array(size),
+      randomId: kind => kind === 'relay-route' ? routeId : `${kind}-seal-rollback`,
+      pairingLinkOrigin: 'https://platform.example.com/pair',
+    })
+    const desktop = authentication('desktop-installation')
+    await provider.setMobileAccess({ desktop, enabled: true })
+    const challenge = await provider.createChallenge({
+      desktop, rendezvousId: parsePairingRendezvousId('seal-rollback'),
+    })
+    const pending = await complete(provider, challenge.oneTimeLink, 'seal-rollback')
+    await expect(provider.confirmPairing({
+      desktop, pendingPairingId: pending.pendingPairingId,
+    })).rejects.toThrow('rollback failed')
+
+    const sealOnly = {
+      rotateCredential: vi.fn(async () => ({
+        routeId, endpoint: 'desktop' as const,
+        credential: parseRelayCredential('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'), revision: 3,
+      })),
+      issueCredential: vi.fn(async () => ({
+        routeId, endpoint: 'mobile' as const,
+        credential: parseRelayCredential('AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE'), revision: 3,
+      })),
+      revokeCredential: vi.fn(async () => {}),
+      revokeRoute: vi.fn(async () => {}),
+    }
+    const sealOnlyProvider = new PersonalPairingProvider(new Context(), {
+      account: { currentInstallation: vi.fn(async ({ accessToken }: { accessToken: string }) => authenticated(accessToken)) },
+      handshake: { ...handshakeProvider(), sealMobileRelayAuthority: vi.fn(async () => { throw new Error('seal only') }) },
+      relay: sealOnly,
+      authority: new MemoryPersonalPairingAuthorityStore(),
+      randomBytes: size => new Uint8Array(size),
+      randomId: kind => kind === 'relay-route' ? routeId : `${kind}-seal-only`,
+      pairingLinkOrigin: 'https://platform.example.com/pair',
+    })
+    await sealOnlyProvider.setMobileAccess({ desktop, enabled: true })
+    const sealOnlyChallenge = await sealOnlyProvider.createChallenge({
+      desktop, rendezvousId: parsePairingRendezvousId('seal-only'),
+    })
+    const sealOnlyPending = await complete(sealOnlyProvider, sealOnlyChallenge.oneTimeLink, 'seal-only')
+    await expect(sealOnlyProvider.confirmPairing({
+      desktop, pendingPairingId: sealOnlyPending.pendingPairingId,
+    })).rejects.toThrow('seal only')
+    expect(sealOnly.revokeCredential).toHaveBeenCalledOnce()
+
+    const commitRelay = {
+      rotateCredential: vi.fn(async () => ({
+        routeId, endpoint: 'desktop' as const,
+        credential: parseRelayCredential('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'), revision: 2,
+      })),
+      issueCredential: vi.fn(async () => ({
+        routeId, endpoint: 'mobile' as const,
+        credential: parseRelayCredential('AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE'), revision: 2,
+      })),
+      revokeCredential: vi.fn(async () => {}),
+      revokeRoute: vi.fn(async () => {}),
+    }
+    const commitStore = new MemoryPersonalPairingAuthorityStore()
+    const commitAuthority = {
+      runPairingTransaction: commitStore.runPairingTransaction.bind(commitStore),
+      getDesktop: commitStore.getDesktop.bind(commitStore),
+      enableDesktop: commitStore.enableDesktop.bind(commitStore),
+      disableDesktop: commitStore.disableDesktop.bind(commitStore),
+      completeRouteRevocation: commitStore.completeRouteRevocation.bind(commitStore),
+      getMobilePairing: commitStore.getMobilePairing.bind(commitStore),
+      revokeMobilePairing: commitStore.revokeMobilePairing.bind(commitStore),
+      confirmMobilePairing: vi.fn(async () => { throw new Error('commit failed') }),
+    }
+    const commitProvider = new PersonalPairingProvider(new Context(), {
+      account: { currentInstallation: vi.fn(async ({ accessToken }: { accessToken: string }) => authenticated(accessToken)) },
+      handshake: {
+        ...handshakeProvider(),
+        sealMobileRelayAuthority: vi.fn(async () => Uint8Array.of(1)),
+      },
+      relay: commitRelay,
+      authority: commitAuthority,
+      randomBytes: size => new Uint8Array(size),
+      randomId: kind => kind === 'relay-route' ? routeId : `${kind}-commit-rollback`,
+      pairingLinkOrigin: 'https://platform.example.com/pair',
+    })
+    await commitProvider.setMobileAccess({ desktop, enabled: true })
+    const commitChallenge = await commitProvider.createChallenge({
+      desktop, rendezvousId: parsePairingRendezvousId('commit-rollback'),
+    })
+    const commitPending = await complete(commitProvider, commitChallenge.oneTimeLink, 'commit-rollback')
+    await expect(commitProvider.confirmPairing({
+      desktop, pendingPairingId: commitPending.pendingPairingId,
+    })).rejects.toThrow('commit failed')
+    expect(commitRelay.revokeCredential).toHaveBeenCalledOnce()
+
+    const failedCleanup = {
+      rotateCredential: vi.fn(async () => ({
+        routeId, endpoint: 'desktop' as const,
+        credential: parseRelayCredential('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'), revision: 4,
+      })),
+      issueCredential: vi.fn(async () => ({
+        routeId, endpoint: 'mobile' as const,
+        credential: parseRelayCredential('AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE'), revision: 4,
+      })),
+      revokeCredential: vi.fn(async () => { throw new Error('commit revoke failed') }),
+      revokeRoute: vi.fn(async () => {}),
+    }
+    const failedCleanupStore = new MemoryPersonalPairingAuthorityStore()
+    const failedCleanupProvider = new PersonalPairingProvider(new Context(), {
+      account: { currentInstallation: vi.fn(async ({ accessToken }: { accessToken: string }) => authenticated(accessToken)) },
+      handshake: {
+        ...handshakeProvider(),
+        sealMobileRelayAuthority: vi.fn(async () => Uint8Array.of(1)),
+      },
+      relay: failedCleanup,
+      authority: {
+        runPairingTransaction: failedCleanupStore.runPairingTransaction.bind(failedCleanupStore),
+        getDesktop: failedCleanupStore.getDesktop.bind(failedCleanupStore),
+        enableDesktop: failedCleanupStore.enableDesktop.bind(failedCleanupStore),
+        disableDesktop: failedCleanupStore.disableDesktop.bind(failedCleanupStore),
+        completeRouteRevocation: failedCleanupStore.completeRouteRevocation.bind(failedCleanupStore),
+        getMobilePairing: failedCleanupStore.getMobilePairing.bind(failedCleanupStore),
+        revokeMobilePairing: failedCleanupStore.revokeMobilePairing.bind(failedCleanupStore),
+        confirmMobilePairing: vi.fn(async () => { throw new Error('commit failed') }),
+      },
+      randomBytes: size => new Uint8Array(size),
+      randomId: kind => kind === 'relay-route' ? routeId : `${kind}-commit-cleanup`,
+      pairingLinkOrigin: 'https://platform.example.com/pair',
+    })
+    await failedCleanupProvider.setMobileAccess({ desktop, enabled: true })
+    const failedCleanupChallenge = await failedCleanupProvider.createChallenge({
+      desktop, rendezvousId: parsePairingRendezvousId('commit-cleanup'),
+    })
+    const failedCleanupPending = await complete(
+      failedCleanupProvider, failedCleanupChallenge.oneTimeLink, 'commit-cleanup',
+    )
+    await expect(failedCleanupProvider.confirmPairing({
+      desktop, pendingPairingId: failedCleanupPending.pendingPairingId,
+    })).rejects.toThrow('commit rollback failed')
+
+    const noRelayStore = new MemoryPersonalPairingAuthorityStore()
+    const noRelayProvider = new PersonalPairingProvider(new Context(), {
+      account: { currentInstallation: vi.fn(async ({ accessToken }: { accessToken: string }) => authenticated(accessToken)) },
+      handshake: handshakeProvider(),
+      authority: {
+        runPairingTransaction: noRelayStore.runPairingTransaction.bind(noRelayStore),
+        getDesktop: noRelayStore.getDesktop.bind(noRelayStore),
+        enableDesktop: noRelayStore.enableDesktop.bind(noRelayStore),
+        disableDesktop: noRelayStore.disableDesktop.bind(noRelayStore),
+        completeRouteRevocation: noRelayStore.completeRouteRevocation.bind(noRelayStore),
+        getMobilePairing: noRelayStore.getMobilePairing.bind(noRelayStore),
+        revokeMobilePairing: noRelayStore.revokeMobilePairing.bind(noRelayStore),
+        confirmMobilePairing: vi.fn(async () => { throw new Error('no-relay commit failed') }),
+      },
+      pairingLinkOrigin: 'https://platform.example.com/pair',
+    })
+    await noRelayProvider.setMobileAccess({ desktop, enabled: true })
+    const noRelayChallenge = await noRelayProvider.createChallenge({
+      desktop, rendezvousId: parsePairingRendezvousId('no-relay-commit'),
+    })
+    const noRelayPending = await complete(noRelayProvider, noRelayChallenge.oneTimeLink, 'no-relay-commit')
+    await expect(noRelayProvider.confirmPairing({
+      desktop, pendingPairingId: noRelayPending.pendingPairingId,
+    })).rejects.toThrow('no-relay commit failed')
   })
 
   it('reads an unsealed shared pairing result on a replacement Platform provider', async () => {
@@ -213,6 +454,28 @@ describe('PersonalPairingProvider', () => {
     expect(await provider.getMobilePairingStatus({
       mobile: authentication('mobile-installation'), pendingPairingId,
     })).toEqual({ status: 'paired', pairingId: 'pairing-unsealed-replacement' })
+  })
+
+  it('reads a sealed shared pairing result on a replacement Platform provider', async () => {
+    const authority = new MemoryPersonalPairingAuthorityStore()
+    const pendingPairingId = parsePendingPairingId('pending-sealed-replacement')
+    await authority.confirmMobilePairing({
+      accountId: 'account-one' as never,
+      desktopInstallationId: parseInstallationId('desktop-installation'),
+      mobileInstallationId: parseInstallationId('mobile-installation'),
+      pendingPairingId,
+      pairingId: parsePersonalPairingId('pairing-sealed-replacement'),
+      sealedRelayAuthority: Uint8Array.of(1, 2),
+    })
+    const provider = new PersonalPairingProvider(new Context(), {
+      account: { currentInstallation: vi.fn(async ({ accessToken }: { accessToken: string }) => authenticated(accessToken)) },
+      handshake: handshakeProvider(), authority, pairingLinkOrigin: 'https://platform.example.com/pair',
+    })
+    expect(await provider.getMobilePairingStatus({
+      mobile: authentication('mobile-installation'), pendingPairingId,
+    })).toEqual({
+      status: 'paired', pairingId: 'pairing-sealed-replacement', sealedRelayAuthority: Uint8Array.of(1, 2),
+    })
   })
 
   it.each(['route-disabled', 'missing-sealer'] as const)(
@@ -846,6 +1109,9 @@ describe('PersonalPairingProvider', () => {
     await provider.setMobileAccess({ desktop: otherDesktop, enabled: true })
     const retained = []
     for (let index = 0; index < MAX_RETAINED_PAIRING_RECORDS_PER_INSTALLATION; index += 1) {
+      if (index > 0 && index % OPEN_REGISTRATION_QUOTAS.pairingChallengesPerAccountPerHour === 0) {
+        now.value += PAIRING_CHALLENGE_QUOTA_WINDOW_MS + 1
+      }
       const challenge = await provider.createChallenge({
         desktop, rendezvousId: parsePairingRendezvousId(`retained-${String(index)}`),
       })
@@ -881,7 +1147,7 @@ describe('PersonalPairingProvider', () => {
     const provider = uniquePairingProvider(handshakeProvider(), now)
     const desktop = authentication('desktop-installation')
     await provider.setMobileAccess({ desktop, enabled: true })
-    for (let index = 0; index < MAX_RETAINED_PAIRING_RECORDS_PER_INSTALLATION; index += 1) {
+    for (let index = 0; index < OPEN_REGISTRATION_QUOTAS.pairingChallengesPerAccountPerHour; index += 1) {
       const challenge = await provider.createChallenge({
         desktop, rendezvousId: parsePairingRendezvousId(`cleaned-${String(index)}`),
       })
@@ -889,10 +1155,14 @@ describe('PersonalPairingProvider', () => {
     }
     await expect(provider.createChallenge({
       desktop, rendezvousId: parsePairingRendezvousId('cleaned-over-limit'),
-    })).rejects.toEqual(expect.objectContaining<Partial<RemoteAccessError>>({ code: 'PAIRING_RESOURCE_LIMIT' }))
+    })).rejects.toEqual(expect.objectContaining<Partial<RemoteAccessError>>({ code: 'QUOTA' }))
     now.value += PAIRING_REPLAY_RETENTION_MS
     await expect(provider.createChallenge({
-      desktop, rendezvousId: parsePairingRendezvousId('cleaned-after-retention'),
+      desktop, rendezvousId: parsePairingRendezvousId('cleaned-after-retention-still-hourly'),
+    })).rejects.toEqual(expect.objectContaining<Partial<RemoteAccessError>>({ code: 'QUOTA' }))
+    now.value += PAIRING_CHALLENGE_QUOTA_WINDOW_MS
+    await expect(provider.createChallenge({
+      desktop, rendezvousId: parsePairingRendezvousId('cleaned-after-hourly'),
     })).resolves.toBeDefined()
   })
 
@@ -920,6 +1190,9 @@ describe('PersonalPairingProvider', () => {
 
     let blockedChallenge: Awaited<ReturnType<typeof provider.createChallenge>> | undefined
     for (let index = 0; index < MAX_RETAINED_PAIRING_RECORDS_PER_INSTALLATION; index += 1) {
+      if (index > 0 && index % OPEN_REGISTRATION_QUOTAS.pairingChallengesPerAccountPerHour === 0) {
+        now.value += PAIRING_CHALLENGE_QUOTA_WINDOW_MS + 1
+      }
       const challenge = await provider.createChallenge({
         desktop,
         rendezvousId: parsePairingRendezvousId(`orphan-capacity-${String(index)}`),

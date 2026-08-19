@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-19-open-registration-quotas-capacity.md
+2026-08-19-open-registration-quotas-capacity.md: bea5872627b9f52c40372a15dba9037eeed6cf83
+2026-08-19-open-registration-quotas-capacity.zh.md: 8f496e601a09d401a0dddd2093160bdf3936926b

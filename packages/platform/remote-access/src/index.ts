@@ -10,6 +10,7 @@ import type {
   AccountService,
   AuthenticatedInstallationView,
   InstallationId,
+  PlatformCapacityState,
 } from '@deepseek-ai/dsh-platform-account'
 import { parseRelayRouteId, type RelayRouteId } from '@deepseek-ai/dsh-remote-protocol'
 import type { RelayCredentialGrant, RemoteRelayService } from './relay.ts'
@@ -17,6 +18,15 @@ import type { RelayCredentialGrant, RemoteRelayService } from './relay.ts'
 export * from './relay.ts'
 export * from './open-registration-quotas.ts'
 export * from './platform-operations.ts'
+
+import {
+  ACCOUNT_DAILY_QUOTA_WINDOW_MS,
+  OPEN_REGISTRATION_HARD_CAP_RETRY_AFTER_SECONDS,
+  OPEN_REGISTRATION_QUOTAS,
+  PAIRING_CHALLENGE_QUOTA_WINDOW_MS,
+  PLATFORM_CAPACITY,
+  retryAfterSecondsUntil,
+} from './open-registration-quotas.ts'
 
 /** Fixed lifetime of one Personal Pairing invitation. */
 export const PAIRING_CHALLENGE_TTL_MS = 2 * 60 * 1000
@@ -165,6 +175,8 @@ export interface PersonalPairingProviderOptions {
   schedule?: (task: () => void, delayMs: number) => ReturnType<typeof setTimeout>
   /** HTTPS origin and path used by both QR and full-link flows. */
   pairingLinkOrigin: string
+  /** Shared two-instance capacity watermark; omitted compositions never shed pairing. */
+  capacity?: PlatformCapacityState
 }
 
 /** Stable Personal Pairing failure categories safe for client branching. */
@@ -178,17 +190,26 @@ export type RemoteAccessErrorCode =
   | 'PAIRING_PENDING_INVALID'
   | 'PAIRING_ID_COLLISION'
   | 'PAIRING_RESOURCE_LIMIT'
+  | 'QUOTA'
+  | 'PLATFORM_CAPACITY'
 
 /** Personal Pairing failure with a content-free stable code. */
 export class RemoteAccessError extends Error {
   /** Stable machine-readable failure category. */
   readonly code: RemoteAccessErrorCode
+  /** Retry delay in seconds present on quota and capacity failures. */
+  readonly retryAfter?: number
 
-  /** @param code - stable category. @param message - credential-free diagnostic. */
-  constructor(code: RemoteAccessErrorCode, message: string) {
+  /**
+   * @param code - stable category.
+   * @param message - credential-free diagnostic.
+   * @param retryAfter - retry delay in seconds for quota and capacity failures.
+   */
+  constructor(code: RemoteAccessErrorCode, message: string, retryAfter?: number) {
     super(message)
     this.name = 'RemoteAccessError'
     this.code = code
+    if (retryAfter !== undefined) this.retryAfter = retryAfter
   }
 }
 
@@ -315,10 +336,7 @@ export class MemoryPersonalPairingAuthorityStore implements PersonalPairingAutho
   private pairingSerial: Promise<void> = Promise.resolve()
 
   runPairingTransaction<T>(operation: (state: PersonalPairingTransactionState) => Promise<T>): Promise<T> {
-    const result = this.pairingSerial.then(
-      () => operation(this.pairingTransactions),
-      () => operation(this.pairingTransactions),
-    )
+    const result = this.pairingSerial.then(() => operation(this.pairingTransactions))
     this.pairingSerial = result.then(() => undefined, () => undefined)
     return result
   }
@@ -398,12 +416,14 @@ export abstract class RemoteAccessService extends Service {
 
   /**
    * Create one two-minute invitation for a signed-in Desktop Installation.
-   * @param input - Desktop authorization and opaque rendezvous identity.
+   * @param input - Desktop authorization, opaque rendezvous identity, and optional client IP for the hourly IP quota.
    * @returns complete QR/link projection; no low-entropy fallback exists.
+   * @throws RemoteAccessError `QUOTA` or `PLATFORM_CAPACITY` with `retryAfter` seconds.
    */
   abstract createChallenge(input: {
     desktop: PairingAccountAuthentication
     rendezvousId: PairingRendezvousId
+    clientIp?: string
   }): Promise<PairingChallengeView>
 
   /**
@@ -478,8 +498,10 @@ export abstract class RemoteAccessService extends Service {
 
   /**
    * Activate one pending pairing after the Desktop user compares authentication words.
+   * Rejected at the fifty-first live Personal Pairing for the Account, before handshake activation.
    * @param input - confirming Desktop and pending identity.
    * @returns independently keyed Companion-only Device Principal.
+   * @throws RemoteAccessError `QUOTA` with a 60-second `retryAfter` when the Account pairing ceiling is full.
    */
   abstract confirmPairing(input: {
     desktop: PairingAccountAuthentication
@@ -503,6 +525,36 @@ export abstract class RemoteAccessService extends Service {
     desktop: PairingAccountAuthentication
     pendingPairingId: PendingPairingId
   }): Promise<void>
+
+  /**
+   * Reserve one expiring ciphertext blob against the open-registration ceilings.
+   * @param input - current-installation authorization and declared ciphertext size.
+   * @returns opaque reservation id released by {@link releaseAttachmentBlob}.
+   * @throws RemoteAccessError `QUOTA` or `PLATFORM_CAPACITY` with `retryAfter` seconds.
+   * @throws TypeError when `bytes` is not a non-negative integer.
+   */
+  abstract admitAttachmentBlob(input: {
+    owner: PairingAccountAuthentication
+    bytes: number
+  }): Promise<{ reservationId: string }>
+
+  /**
+   * Release one blob reservation after receipt, expiry, or revocation.
+   * @param input - current-installation authorization and reservation id.
+   * @throws TypeError when the reservation is missing or owned by another Account.
+   */
+  abstract releaseAttachmentBlob(input: {
+    owner: PairingAccountAuthentication
+    reservationId: string
+  }): Promise<void>
+
+  /**
+   * Admit one content-free push hint against the daily account ceiling.
+   * Capacity shedding does not reject push hints.
+   * @param owner - current-installation authorization.
+   * @throws RemoteAccessError `QUOTA` with remaining-window `retryAfter` seconds.
+   */
+  abstract emitPushHint(owner: PairingAccountAuthentication): Promise<void>
 }
 
 /** Durable ownership tombstone for provider-private crypto material. */
@@ -586,6 +638,12 @@ export class PersonalPairingProvider extends RemoteAccessService {
   private readonly authority: PersonalPairingAuthorityStore
   private readonly ownsAuthority: boolean
   private readonly localChallengeIds = new Set<PairingChallengeId>()
+  private readonly accountChallengeAt = new Map<string, number[]>()
+  private readonly ipChallengeAt = new Map<string, number[]>()
+  private readonly blobs = new Map<string, { accountId: string; bytes: number }>()
+  private readonly blobUploads = new Map<string, Array<{ at: number; bytes: number }>>()
+  private readonly pushHintsAt = new Map<string, number[]>()
+  private blobSequence = 0
 
   /** @param ctx - Platform context. @param options - Account, crypto, time, random, and link adapters. */
   constructor(ctx: Context, private readonly options: PersonalPairingProviderOptions) {
@@ -608,10 +666,13 @@ export class PersonalPairingProvider extends RemoteAccessService {
   async createChallenge(input: {
     desktop: PairingAccountAuthentication
     rendezvousId: PairingRendezvousId
+    clientIp?: string
   }): Promise<PairingChallengeView> {
     return this.exclusive(async () => {
       const { account, installation } = await this.authenticate(input.desktop, 'desktop')
       this.evictExpiredRecords()
+      this.assertCapacity()
+      this.assertPairingChallengeQuota(account.id, input.clientIp)
       if (!(await this.authority.getDesktop(account.id, installation.id)).enabled) {
         throw new RemoteAccessError('MOBILE_ACCESS_DISABLED', 'Mobile Access is disabled for this Desktop Installation')
       }
@@ -655,6 +716,7 @@ export class PersonalPairingProvider extends RemoteAccessService {
         }
         this.challenges.set(challengeId, record)
         this.localChallengeIds.add(challengeId)
+        this.recordChallengeQuota(account.id, input.clientIp)
         return { ...withoutSecret(invitation), oneTimeLink, qrPayload: oneTimeLink }
       } catch (error) {
         await this.cleanupChallenge(cleanup)
@@ -989,6 +1051,13 @@ export class PersonalPairingProvider extends RemoteAccessService {
         return clonePairing(settled.view)
       }
       const record = this.requirePending(pendingPairingId, account.id, installation.id)
+      if (this.countAccountPairings(account.id) >= OPEN_REGISTRATION_QUOTAS.personalPairings) {
+        throw new RemoteAccessError(
+          'QUOTA',
+          'Platform Account has reached its Personal Pairing limit',
+          OPEN_REGISTRATION_HARD_CAP_RETRY_AFTER_SECONDS,
+        )
+      }
       await this.cleanupPendingActivation(record)
       const activation = await this.options.handshake.activatePairing({
         pendingPairingKey: record.cleanup.resource as PendingPairingKey,
@@ -1139,6 +1208,72 @@ export class PersonalPairingProvider extends RemoteAccessService {
       const record = this.requirePending(pendingPairingId, account.id, installation.id)
       const settled = this.settlePending(pendingPairingId, record, 'rejected')
       await this.cleanupPending(settled.cleanup)
+    })
+  }
+
+  async admitAttachmentBlob(input: {
+    owner: PairingAccountAuthentication
+    bytes: number
+  }): Promise<{ reservationId: string }> {
+    return this.exclusive(async () => {
+      const { account } = await this.authenticateOwner(input.owner)
+      this.assertCapacity()
+      if (!Number.isSafeInteger(input.bytes) || input.bytes < 0) {
+        throw new TypeError('Attachment blob size must be a non-negative integer')
+      }
+      const now = this.clock.now()
+      const uploads = this.pruneUploads(this.blobUploads.get(account.id) ?? [], now)
+      const concurrent = [...this.blobs.values()].filter(blob => blob.accountId === account.id).length
+      const bytesToday = uploads.reduce((total, upload) => total + upload.bytes, 0)
+      if (input.bytes > OPEN_REGISTRATION_QUOTAS.blobBytes
+        || concurrent >= OPEN_REGISTRATION_QUOTAS.concurrentBlobs
+        || bytesToday + input.bytes > OPEN_REGISTRATION_QUOTAS.blobBytesPerAccountPerDay) {
+        const oldest = uploads[0]?.at
+        throw new RemoteAccessError(
+          'QUOTA',
+          'Platform Account has reached its attachment blob limit',
+          oldest === undefined
+            ? OPEN_REGISTRATION_HARD_CAP_RETRY_AFTER_SECONDS
+            : retryAfterSecondsUntil(oldest, ACCOUNT_DAILY_QUOTA_WINDOW_MS, now),
+        )
+      }
+      this.blobSequence += 1
+      const reservationId = `blob-${String(this.blobSequence)}`
+      this.blobs.set(reservationId, { accountId: account.id, bytes: input.bytes })
+      uploads.push({ at: now, bytes: input.bytes })
+      this.blobUploads.set(account.id, uploads)
+      return { reservationId }
+    })
+  }
+
+  async releaseAttachmentBlob(input: {
+    owner: PairingAccountAuthentication
+    reservationId: string
+  }): Promise<void> {
+    await this.exclusive(async () => {
+      const { account } = await this.authenticateOwner(input.owner)
+      const blob = this.blobs.get(input.reservationId)
+      if (blob === undefined || blob.accountId !== account.id) {
+        throw new TypeError('Attachment blob reservation is invalid')
+      }
+      this.blobs.delete(input.reservationId)
+    })
+  }
+
+  async emitPushHint(owner: PairingAccountAuthentication): Promise<void> {
+    await this.exclusive(async () => {
+      const { account } = await this.authenticateOwner(owner)
+      const now = this.clock.now()
+      const emitted = this.pruneWindow(this.pushHintsAt.get(account.id) ?? [], now, ACCOUNT_DAILY_QUOTA_WINDOW_MS)
+      if (emitted.length >= OPEN_REGISTRATION_QUOTAS.pushHintsPerAccountPerDay) {
+        throw new RemoteAccessError(
+          'QUOTA',
+          'Platform Account has reached its daily push hint limit',
+          retryAfterSecondsUntil(emitted[0] as number, ACCOUNT_DAILY_QUOTA_WINDOW_MS, now),
+        )
+      }
+      emitted.push(now)
+      this.pushHintsAt.set(account.id, emitted)
     })
   }
 
@@ -1318,6 +1453,70 @@ export class PersonalPairingProvider extends RemoteAccessService {
     }
   }
 
+  private assertCapacity(): void {
+    if (this.options.capacity?.shedding !== true) return
+    throw new RemoteAccessError(
+      PLATFORM_CAPACITY,
+      'Platform has reached capacity',
+      this.options.capacity.retryAfterSeconds,
+    )
+  }
+
+  private assertPairingChallengeQuota(accountId: string, clientIp: string | undefined): void {
+    const now = this.clock.now()
+    const accountTimes = this.pruneWindow(this.accountChallengeAt.get(accountId) ?? [], now, PAIRING_CHALLENGE_QUOTA_WINDOW_MS)
+    this.accountChallengeAt.set(accountId, accountTimes)
+    if (accountTimes.length >= OPEN_REGISTRATION_QUOTAS.pairingChallengesPerAccountPerHour) {
+      throw new RemoteAccessError(
+        'QUOTA',
+        'Platform Account has reached its hourly Pairing Challenge limit',
+        retryAfterSecondsUntil(accountTimes[0] as number, PAIRING_CHALLENGE_QUOTA_WINDOW_MS, now),
+      )
+    }
+    if (clientIp === undefined) return
+    const ipTimes = this.pruneWindow(this.ipChallengeAt.get(clientIp) ?? [], now, PAIRING_CHALLENGE_QUOTA_WINDOW_MS)
+    this.ipChallengeAt.set(clientIp, ipTimes)
+    if (ipTimes.length >= OPEN_REGISTRATION_QUOTAS.pairingChallengesPerIpPerHour) {
+      throw new RemoteAccessError(
+        'QUOTA',
+        'This IP has reached its hourly Pairing Challenge limit',
+        retryAfterSecondsUntil(ipTimes[0] as number, PAIRING_CHALLENGE_QUOTA_WINDOW_MS, now),
+      )
+    }
+  }
+
+  private recordChallengeQuota(accountId: string, clientIp: string | undefined): void {
+    const now = this.clock.now()
+    const accountTimes = this.accountChallengeAt.get(accountId)
+    /* v8 ignore next 3 -- assertPairingChallengeQuota always inserts the account window first */
+    if (accountTimes === undefined) {
+      throw new Error('Pairing Challenge account window was not prepared')
+    }
+    accountTimes.push(now)
+    if (clientIp === undefined) return
+    const ipTimes = this.ipChallengeAt.get(clientIp)
+    /* v8 ignore next 3 -- assertPairingChallengeQuota always inserts the IP window first */
+    if (ipTimes === undefined) {
+      throw new Error('Pairing Challenge IP window was not prepared')
+    }
+    ipTimes.push(now)
+  }
+
+  private countAccountPairings(accountId: string): number {
+    return [...this.pairings.values()].filter(pairing => pairing.devicePrincipal.accountId === accountId).length
+  }
+
+  private pruneWindow(timestamps: readonly number[], now: number, windowMs: number): number[] {
+    return timestamps.filter(timestamp => now - timestamp < windowMs)
+  }
+
+  private pruneUploads(
+    uploads: ReadonlyArray<{ at: number; bytes: number }>,
+    now: number,
+  ): Array<{ at: number; bytes: number }> {
+    return uploads.filter(upload => now - upload.at < ACCOUNT_DAILY_QUOTA_WINDOW_MS)
+  }
+
   private evictExpiredRecords(): void {
     const cutoff = this.clock.now() - PAIRING_REPLAY_RETENTION_MS
     for (const [id, record] of this.settledChallenges) {
@@ -1363,10 +1562,7 @@ export class PersonalPairingProvider extends RemoteAccessService {
     authentication: PairingAccountAuthentication,
     expectedKind: 'desktop' | 'mobile',
   ): Promise<AuthenticatedInstallationView> {
-    const authenticated = await this.options.account.currentInstallation({
-      accessToken: authentication.accessToken,
-      proof: authentication.proof,
-    })
+    const authenticated = await this.authenticateOwner(authentication)
     if (authenticated.installation.kind !== expectedKind) {
       throw new RemoteAccessError(
         'PAIRING_INSTALLATION_KIND_INVALID',
@@ -1374,6 +1570,15 @@ export class PersonalPairingProvider extends RemoteAccessService {
       )
     }
     return authenticated
+  }
+
+  private async authenticateOwner(
+    authentication: PairingAccountAuthentication,
+  ): Promise<AuthenticatedInstallationView> {
+    return this.options.account.currentInstallation({
+      accessToken: authentication.accessToken,
+      proof: authentication.proof,
+    })
   }
 
   private exclusive<T>(operation: () => Promise<T>): Promise<T> {

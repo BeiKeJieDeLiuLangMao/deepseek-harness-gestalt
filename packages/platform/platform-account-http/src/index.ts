@@ -230,8 +230,16 @@ function answerError(res: ServerResponse, error: unknown): void {
     return
   }
   if (error instanceof AccountError) {
-    answerJson(res, error.code.startsWith('SESSION_') ? 401 : 400, {
-      error: { code: error.code, message: error.message },
+    if (error.retryAfter !== undefined) res.setHeader('retry-after', String(error.retryAfter))
+    const status = error.code === 'QUOTA' || error.code === 'PLATFORM_CAPACITY'
+      ? 429
+      : error.code.startsWith('SESSION_') ? 401 : 400
+    answerJson(res, status, {
+      error: {
+        code: error.code,
+        message: error.message,
+        ...(error.retryAfter === undefined ? {} : { retryAfter: error.retryAfter }),
+      },
     })
     return
   }

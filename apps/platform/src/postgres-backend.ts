@@ -9,6 +9,7 @@ import {
   parsePlatformAccountId,
   type AccountProofJti,
   type AccountSessionId,
+  type InstallationId,
   type InstallationKind,
   type LoginAttemptId,
   type PlatformAccountId,
@@ -269,6 +270,36 @@ export class PostgresAccountBackend implements AccountBackend {
       [jti, expiresAt],
     )
     return result.rowCount === 1
+  }
+
+  async countActiveInstallations(accountId: PlatformAccountId, kind: InstallationKind): Promise<number> {
+    const result = await this.pool.query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count
+         FROM account_sessions
+        WHERE account_id = $1 AND installation_kind = $2 AND active = TRUE`,
+      [accountId, kind],
+    )
+    return Number(result.rows[0]?.count ?? 0)
+  }
+
+  async findAccountByIdentity(identityNamespace: string, providerSubject: number): Promise<AccountRecord | undefined> {
+    const result = await this.pool.query<AccountRow>(
+      'SELECT * FROM account_accounts WHERE identity_namespace = $1 AND github_id = $2',
+      [identityNamespace, providerSubject],
+    )
+    return result.rows[0] === undefined ? undefined : accountFromRow(result.rows[0])
+  }
+
+  async findActiveSessionByInstallation(
+    identityNamespace: string,
+    installationId: InstallationId,
+  ): Promise<SessionRecord | undefined> {
+    const result = await this.pool.query<SessionRow>(
+      `SELECT * FROM account_sessions
+        WHERE identity_namespace = $1 AND installation_id = $2 AND active = TRUE`,
+      [identityNamespace, installationId],
+    )
+    return result.rows[0] === undefined ? undefined : sessionFromRow(result.rows[0])
   }
 }
 
