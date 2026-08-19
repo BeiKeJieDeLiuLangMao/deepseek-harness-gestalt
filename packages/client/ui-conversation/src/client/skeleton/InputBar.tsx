@@ -198,6 +198,25 @@ export function InputBar({
     }
   }, [annotations, editingAnnotation])
 
+  useEffect(() => {
+    if (editingAnnotation === null) return
+    const dismiss = (event: PointerEvent): void => {
+      const target = event.target
+      if (!(target instanceof Element)) return
+      if (target.closest('[data-annotation-editor]') !== null) return
+      if (target.closest('[data-annotation-pin]') !== null) return
+      setEditingAnnotation(null)
+    }
+    // Attach after the opening click so the same pointerdown cannot close it.
+    const timer = window.setTimeout(() => {
+      document.addEventListener('pointerdown', dismiss, true)
+    }, 0)
+    return () => {
+      window.clearTimeout(timer)
+      document.removeEventListener('pointerdown', dismiss, true)
+    }
+  }, [editingAnnotation])
+
   // Scroll the draft scrollport the minimum that brings `caret` into view — the
   // browser's own behavior for typing, performed for the paths where it does
   // not act.
@@ -550,6 +569,9 @@ export function InputBar({
     setPreview(null)
     setPinMode(false)
     setGifRefuse(false)
+    setEditingAnnotation(null)
+    setPinMode(false)
+    setGifRefuse(false)
   }, [])
 
   // Rail thumbnails with their strings resolved here: the attachment atoms are
@@ -796,7 +818,7 @@ export function InputBar({
             </div>
             {editingAnnotation !== null && (() => {
               const annotation = annotations.find(item => item.id === editingAnnotation)
-              return annotation === undefined ? null : (
+              return annotation === undefined || annotation.kind === 'image-pin' ? null : (
                 <div className={css.annotationEditPopover}>
                   <AnnotationEditor
                     key={annotation.id}
@@ -807,6 +829,7 @@ export function InputBar({
                       inputActions.updateTextAnnotation(annotation.id, note)
                       setEditingAnnotation(null)
                     }}
+                    onCancel={() => { setEditingAnnotation(null) }}
                   />
                 </div>
               )
@@ -911,6 +934,21 @@ export function InputBar({
           alt={preview.file.name || t('image.original')}
           labels={lightboxLabels(t)}
           onClose={closePreview}
+          {...(editingPin !== undefined && inputActions !== undefined ? {
+            editor: (
+              <AnnotationEditor
+                initialNote={editingPin.note}
+                placeholder={t('annotation.notePlaceholder')}
+                saveLabel={t('annotation.save')}
+                overlay
+                onSave={(note) => {
+                  inputActions.updateImagePin(editingPin.id, { note })
+                  setEditingAnnotation(null)
+                }}
+                onCancel={() => { setEditingAnnotation(null) }}
+              />
+            ),
+          } : {})}
           {...(inputActions === undefined ? {} : { annotation: {
             mode: pinMode,
             pins: annotations.flatMap((item, index) => (
@@ -946,17 +984,6 @@ export function InputBar({
               setEditingAnnotation(id)
             },
           } })}
-        />
-      )}
-      {editingPin !== undefined && editingPin !== null && inputActions !== undefined && (
-        <AnnotationEditor
-          initialNote={editingPin.note}
-          placeholder={t('annotation.notePlaceholder')}
-          saveLabel={t('annotation.save')}
-          onSave={(note) => {
-            inputActions.updateImagePin(editingPin.id, { note })
-            setEditingAnnotation(null)
-          }}
         />
       )}
       {footer}

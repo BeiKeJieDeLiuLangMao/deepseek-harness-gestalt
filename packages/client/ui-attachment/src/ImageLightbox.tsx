@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import type { MouseEvent } from 'react'
+import type { MouseEvent, ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { IconCloseOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import css from './ImageLightbox.module.css'
@@ -52,14 +52,16 @@ export interface ImageLightboxAnnotation {
  * @param props.labels - dialog and close-control strings.
  * @param props.onClose - dismiss callback owned by the opener.
  * @param props.annotation - optional pin overlay for Composer drafts.
+ * @param props.editor - optional note editor rendered in this preview portal.
  * @returns the modal preview dialog.
  */
-export function ImageLightbox({ src, alt, labels, onClose, annotation }: {
+export function ImageLightbox({ src, alt, labels, onClose, annotation, editor }: {
   src: string
   alt: string
   labels: ImageLightboxLabels
   onClose: () => void
   annotation?: ImageLightboxAnnotation
+  editor?: ReactNode
 }) {
   const closeRef = useRef<HTMLButtonElement | null>(null)
   const restoreRef = useRef<HTMLElement | null>(null)
@@ -106,8 +108,10 @@ export function ImageLightbox({ src, alt, labels, onClose, annotation }: {
             key={pin.id}
             type="button"
             className={css.pin}
+            data-annotation-pin={pin.id}
             style={{ left: `${pin.x}%`, top: `${pin.y}%` }}
             aria-label={`Pin ${pin.index}`}
+            onPointerDown={(event) => { event.stopPropagation() }}
             onClick={(event) => {
               event.stopPropagation()
               annotation.onSelect(pin.id)
@@ -117,23 +121,26 @@ export function ImageLightbox({ src, alt, labels, onClose, annotation }: {
           </button>
         ))}
       </div>
-      {annotation !== undefined && (
-        <button
-          type="button"
-          className={css.annotate}
-          aria-pressed={annotation.mode}
-          aria-label={annotation.mode ? annotation.exitLabel : annotation.modeLabel}
-          onClick={annotation.onToggleMode}
-        >
-          {annotation.mode ? annotation.exitLabel : annotation.modeLabel}
-        </button>
-      )}
       {annotation?.refuse !== undefined && (
         <p className={css.refuse} role="alert">{annotation.refuse}</p>
       )}
-      <button ref={closeRef} type="button" className={css.close} aria-label={labels.close} onClick={onClose}>
-        <IconCloseOutline16 size={16} />
-      </button>
+      <div className={css.chrome}>
+        {annotation !== undefined && (
+          <button
+            type="button"
+            className={css.annotate}
+            aria-pressed={annotation.mode}
+            aria-label={annotation.mode ? annotation.exitLabel : annotation.modeLabel}
+            onClick={annotation.onToggleMode}
+          >
+            {annotation.mode ? annotation.exitLabel : annotation.modeLabel}
+          </button>
+        )}
+        <button ref={closeRef} type="button" className={css.close} aria-label={labels.close} onClick={onClose}>
+          <IconCloseOutline16 size={16} />
+        </button>
+      </div>
+      {editor}
     </div>,
     document.body,
   )

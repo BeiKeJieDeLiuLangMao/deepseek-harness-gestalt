@@ -36,27 +36,57 @@
 .pin {
   position: absolute;
   z-index: 1;
-  width: 22px;
-  height: 22px;
-  margin: -11px 0 0 -11px;
-  border: 0;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  width: 32px;
+  height: 32px;
+  /* Tail tip sits on the clicked point: 32px body + 8px tail. */
+  margin: -40px 0 0 -16px;
+  border: 2px solid #fff;
   border-radius: 999px;
-  background: var(--dsw-alias-interactive-bg-brand);
-  color: var(--dsw-alias-label-on-color);
-  font-size: 11px;
+  background: var(--dsw-alias-button-info-fill);
+  box-shadow: var(--dsw-shadow-lv2);
+  color: #fff;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.pin::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -7px;
+  width: 10px;
+  height: 10px;
+  margin-left: -5px;
+  border-right: 2px solid #fff;
+  border-bottom: 2px solid #fff;
+  background: var(--dsw-alias-button-info-fill);
+  transform: rotate(45deg);
+  pointer-events: none;
+}
+
+.chrome {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .annotate {
-  position: fixed;
-  top: 20px;
-  left: 20px;
-  z-index: 1;
-  height: 32px;
+  height: 36px;
   padding: 0 12px;
   border: 1px solid var(--dsw-alias-border-l2-darkmode-thin);
   border-radius: 999px;
   background: var(--dsw-specific-input-major);
   color: var(--dsw-alias-label-primary);
+  cursor: pointer;
 }
 
 .refuse {
@@ -73,10 +103,6 @@
 }
 
 .close {
-  position: fixed;
-  top: 20px;
-  right: 20px;
-  z-index: 1;
   display: grid;
   place-items: center;
   width: 36px;

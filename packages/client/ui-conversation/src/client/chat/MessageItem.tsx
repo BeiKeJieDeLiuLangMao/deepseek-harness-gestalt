@@ -11,6 +11,7 @@ import type {
 import { JsonBlock, MessageText, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatNodeViewProps, ChatViewSlotProps } from '../contract/slots.ts'
 import { ImageGallery, type ImageLoader } from '@deepseek-ai/dsh-client-ui-attachment'
+import { useHistoryImagePinOverlay } from '../annotation/history-image-pins.tsx'
 import { messageImageLabels } from '../image-labels.ts'
 import type { InputActions, InputState } from '../input/contract.ts'
 import { CompactionItem } from './CompactionItem.tsx'
@@ -178,7 +179,7 @@ function projectUserText(text: string): ReactNode {
 
 /** Right-aligned bubble shared by user and steering rows. */
 function UserStyleBubble({
-  content, imageLoader, actions, pending = false, t, annotations = [], addImagePin,
+  content, imageLoader, actions, pending = false, t, annotations = [], addImagePin, updateImagePin,
 }: {
   content: readonly unknown[]
   imageLoader: ImageLoader
@@ -189,8 +190,16 @@ function UserStyleBubble({
   t: ChatViewSlotProps['t']
   annotations?: InputState['annotations']
   addImagePin?: InputActions['addImagePin']
+  updateImagePin?: InputActions['updateImagePin']
 }): ReactNode {
   const { text, images, rest } = contentParts(content)
+  const historyPins = useHistoryImagePinOverlay(
+    annotations,
+    addImagePin === undefined || updateImagePin === undefined
+      ? undefined
+      : { addImagePin, updateImagePin },
+    t,
+  )
   const truncated = (total: number): string => t('json.truncated', { total })
   const showBubble = text !== '' || rest.length > 0
   return (
@@ -201,23 +210,7 @@ function UserStyleBubble({
           load={imageLoader}
           align="end"
           labels={messageImageLabels(t)}
-          {...(addImagePin === undefined ? {} : {
-            pinOverlayFor: attachment => ({
-              pins: annotations.flatMap((item, index) => (
-                item.kind === 'image-pin' && item.source === 'history' && item.imageId === attachment.attachmentId
-                  ? [{ id: item.id, x: item.x, y: item.y, index: index + 1 }]
-                  : []
-              )),
-              modeLabel: t('annotation.pinMode'),
-              exitLabel: t('annotation.pinModeExit'),
-              onPlace: (x, y) => {
-                addImagePin(
-                  attachment.attachmentId as never, attachment.name ?? t('image.original'), x, y, '', 'history',
-                )
-              },
-              onSelect: () => {},
-            }),
-          })}
+          {...(historyPins.pinOverlayFor === undefined ? {} : { pinOverlayFor: historyPins.pinOverlayFor })}
         />
         {showBubble && <div className={css.bubble}>
           {projectUserText(text)}
@@ -272,6 +265,7 @@ export const UserMessageNodeView = memo(function UserMessageNodeView({
       t={t}
       annotations={annotations}
       addImagePin={inputActions.addImagePin}
+      updateImagePin={inputActions.updateImagePin}
       actions={text => (
         <MessageIconActions
           text={text}

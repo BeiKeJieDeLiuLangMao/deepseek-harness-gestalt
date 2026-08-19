@@ -2,7 +2,7 @@
 
 .floating {
   position: fixed;
-  z-index: 90;
+  z-index: 1100;
   left: var(--annotation-left);
   top: var(--annotation-top);
 }
