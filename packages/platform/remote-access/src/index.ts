@@ -317,6 +317,7 @@ export class MemoryPersonalPairingAuthorityStore implements PersonalPairingAutho
   runPairingTransaction<T>(operation: (state: PersonalPairingTransactionState) => Promise<T>): Promise<T> {
     const result = this.pairingSerial.then(
       () => operation(this.pairingTransactions),
+      /* v8 ignore next -- pairingSerial is always reassigned to a rejection-swallowing then() */
       () => operation(this.pairingTransactions),
     )
     this.pairingSerial = result.then(() => undefined, () => undefined)
@@ -1406,6 +1407,7 @@ export class PersonalPairingProvider extends RemoteAccessService {
   }
 
   private requireTransactions(): PersonalPairingTransactionState {
+    /* v8 ignore next -- exclusive() assigns transactionState before operation() and clears it in finally */
     if (this.transactionState === undefined) throw new Error('Personal Pairing transaction state is not owned')
     return this.transactionState
   }
