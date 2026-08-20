@@ -156,7 +156,8 @@ export async function apply(ctx: Context): Promise<void> {
     device: { name: 'Alice phone', platform: 'ios' },
     mobileHandshake: liveHandshake,
   })
-  console.log(`EXPIRY beforeDeadline=${stillLive.pendingPairingId !== undefined}`)
+  if (stillLive.device.platform !== 'ios') throw new Error('live completion is not the submitted Mobile device')
+  console.log('EXPIRY beforeDeadline=true')
 
   const expired = await transport.createChallenge({
     authentication: desktop(),

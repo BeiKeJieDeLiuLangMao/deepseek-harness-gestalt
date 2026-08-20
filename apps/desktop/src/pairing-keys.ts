@@ -6,7 +6,7 @@ import type { PendingPairingId, PersonalPairingId } from '@deepseek-ai/dsh-remot
 export const MAX_RETAINED_DESKTOP_PAIRING_KEYS = 16
 
 /** Read seam for independent pairing key material retained on this Desktop installation. */
-export interface DesktopPairingKeyAccess {
+interface DesktopPairingKeyAccess {
   /**
    * Read the independent key material of one confirmed Personal Pairing.
    * @param pairingId - confirmed Personal Pairing identity.

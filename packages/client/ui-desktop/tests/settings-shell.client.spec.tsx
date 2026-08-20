@@ -78,6 +78,18 @@ describe('Desktop Settings shell Mobile Access placement', () => {
   })
 })
 
+function snapshotSource(
+  injected: Record<string, unknown> | undefined,
+  name: string,
+): { getSnapshot: () => unknown } | undefined {
+  if (injected === undefined || !('hooks' in injected) || typeof injected.hooks !== 'object' || injected.hooks === null) {
+    return undefined
+  }
+  const source = (injected.hooks as Record<string, { getSnapshot?: () => unknown } | undefined>)[name]
+  if (typeof source?.getSnapshot !== 'function') return undefined
+  return { getSnapshot: source.getSnapshot }
+}
+
 function renderRegistered(
   slots: SlotRegistry,
   locale: LocaleRuntime,
@@ -93,12 +105,10 @@ function renderRegistered(
     : entries.find(item => item.options.id === opts.only)
   if (entry === undefined) return null
   const Component = entry.component as ComponentType<Record<string, unknown>>
-  const injected = typeof entry.inject === 'function'
-    ? (entry.inject as () => { hooks?: Record<string, { getSnapshot: () => unknown }> })()
-    : undefined
+  const injected = entry.inject?.()
   const t = entry.locale !== undefined ? locale.bind(entry.locale) : undefined
   const useHook = (name: string) => {
-    const source = injected?.hooks?.[name]
+    const source = snapshotSource(injected, name)
     if (source === undefined) return undefined
     return (select: (snapshot: unknown) => unknown) => select(source.getSnapshot())
   }

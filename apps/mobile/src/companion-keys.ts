@@ -1,12 +1,13 @@
 /** Mobile retention of keyless Personal Pairing key material. */
 
 import type { PersonalPairingId } from '@deepseek-ai/dsh-remote-access'
+import type { MobilePairingKeyRetention } from './personal-pairing.ts'
 
 /** Maximum Personal Pairings whose key material one Mobile installation retains. */
 export const MAX_RETAINED_PAIRING_KEYS = 16
 
 /** Retained independent pairing keys for confirmed Personal Pairings. */
-export class PairingCompanionKeyVault {
+export class PairingCompanionKeyVault implements MobilePairingKeyRetention {
   private readonly materials = new Map<string, Uint8Array>()
 
   /**
