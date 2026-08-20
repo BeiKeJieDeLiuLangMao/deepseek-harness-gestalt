@@ -72,6 +72,7 @@ let pairing: MobilePairingActions = {
 }
 if (environment.environment === 'development' && import.meta.env.VITE_PERSONAL_PAIRING_KEYLESS === '1') {
   const { DevelopmentKeylessMobileHandshakeClient } = await import('./development-keyless-pairing.ts')
+  const { PairingCompanionKeyVault } = await import('./companion-keys.ts')
   const relayUrl = requiredWss(import.meta.env.VITE_REMOTE_RELAY_WSS_URL)
   const inboundMaxBytes = positiveInteger(import.meta.env.VITE_REMOTE_RELAY_INBOUND_MAX_BYTES, 'inbound bytes')
   const inboundMaxMessages = positiveInteger(import.meta.env.VITE_REMOTE_RELAY_INBOUND_MAX_MESSAGES, 'inbound messages')
@@ -94,6 +95,7 @@ if (environment.environment === 'development' && import.meta.env.VITE_PERSONAL_P
     handshake: new DevelopmentKeylessMobileHandshakeClient(),
     scanner: new NativeMobilePairingQrScanner(),
     relay,
+    pairingKeys: new PairingCompanionKeyVault(),
     device: {
       name: navigator.userAgent.includes('Android') ? 'Android phone' : 'iPhone',
       platform: navigator.userAgent.includes('Android') ? 'android' : 'ios',
