@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-19-inherited-ci-baseline-reds.md
-2026-08-19-inherited-ci-baseline-reds.md: 4df43e19bcbea74c5a7dcaeb987dce3336001df3
-2026-08-19-inherited-ci-baseline-reds.zh.md: e53413547e7ebb9a671991d6e9f335723b6ba8c5
+2026-08-19-inherited-ci-baseline-reds.md: cfbb74f6ecdb19cc72dddd678f46724cc26a759e
+2026-08-19-inherited-ci-baseline-reds.zh.md: 8b9b71626009b7de8f2e3eef012ba67be9601d0a

@@ -14,7 +14,13 @@ import {
   type PairingAccountAuthentication,
   type PairingCompletionView,
 } from '@deepseek-ai/dsh-remote-access'
-import type {} from '@deepseek-ai/dsh-host-webserver'
+import {
+  HttpError,
+  readJsonObject,
+  writeHttpError,
+  writeJson,
+  writeRetryAfterError,
+} from '@deepseek-ai/dsh-host-webserver'
 
 const MAX_JSON_BYTES = 64 * 1024
 
@@ -41,9 +47,14 @@ export function apply(ctx: Context, config: Config): void {
         if (handleCors(req, res, origin)) return
         if (req.method !== 'POST') throw new HttpError(405, 'METHOD_NOT_ALLOWED', 'Remote Access route requires POST')
         const authentication = authenticationFromHeaders(req)
-        const body = await readJson(req)
+        const body = await readJsonObject(req, {
+          maxBytes: MAX_JSON_BYTES,
+          tooLarge: { status: 413, code: 'BODY_TOO_LARGE', message: 'Remote Access body is too large' },
+          invalidJson: { status: 400, code: 'BODY_INVALID', message: 'Remote Access body must be JSON' },
+          notObject: { status: 400, code: 'BODY_INVALID', message: 'Remote Access body must be an object' },
+        })
         const result = await dispatch(ctx, authentication, body, () => requestClientIp(req))
-        answerJson(res, 200, result)
+        writeJson(res, 200, result)
       } catch (error) {
         answerError(res, error)
       }
@@ -173,26 +184,6 @@ function parseDevice(value: unknown): { name: string; platform: 'ios' | 'android
   return { name: requiredString(value.name, 'device.name'), platform }
 }
 
-/* jscpd:ignore-start */
-async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
-  let bytes = 0
-  const chunks: Buffer[] = []
-  for await (const chunk of req) {
-    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array)
-    bytes += buffer.byteLength
-    if (bytes > MAX_JSON_BYTES) throw new HttpError(413, 'BODY_TOO_LARGE', 'Remote Access body is too large')
-    chunks.push(buffer)
-  }
-  let value: unknown
-  try {
-    value = JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown
-  } catch {
-    throw new HttpError(400, 'BODY_INVALID', 'Remote Access body must be JSON')
-  }
-  if (!isRecord(value)) throw new HttpError(400, 'BODY_INVALID', 'Remote Access body must be an object')
-  return value
-}
-
 function handleCors(req: IncomingMessage, res: ServerResponse, allowedOrigin: string): boolean {
   const requestOrigin = req.headers.origin
   if (requestOrigin !== undefined) {
@@ -220,37 +211,20 @@ function handleCors(req: IncomingMessage, res: ServerResponse, allowedOrigin: st
   return true
 }
 
-function answerJson(res: ServerResponse, status: number, value: unknown): void {
-  res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
-  res.end(JSON.stringify(value))
-}
-
 function answerError(res: ServerResponse, error: unknown): void {
   if (error instanceof HttpError) {
-    answerJson(res, error.status, { error: { code: error.code, message: error.message } })
+    writeHttpError(res, error)
     return
   }
   if (error instanceof RemoteAccessError) {
-    if (error.retryAfter !== undefined) res.setHeader('retry-after', String(error.retryAfter))
-    const status = error.code === 'QUOTA' || error.code === 'PLATFORM_CAPACITY' ? 429 : 409
-    answerJson(res, status, {
-      error: {
-        code: error.code,
-        message: error.message,
-        ...(error.retryAfter === undefined ? {} : { retryAfter: error.retryAfter }),
-      },
-    })
+    writeRetryAfterError(
+      res,
+      error,
+      error.code === 'QUOTA' || error.code === 'PLATFORM_CAPACITY' ? 429 : 409,
+    )
     return
   }
-  answerJson(res, 500, { error: { code: 'INTERNAL_ERROR', message: 'Remote Access request failed' } })
-}
-/* jscpd:ignore-end */
-
-class HttpError extends Error {
-  constructor(readonly status: number, readonly code: string, message: string) {
-    super(message)
-    this.name = 'HttpError'
-  }
+  writeJson(res, 500, { error: { code: 'INTERNAL_ERROR', message: 'Remote Access request failed' } })
 }
 
 function requiredString(value: unknown, name: string): string {
