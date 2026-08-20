@@ -63,6 +63,8 @@ describe('Desktop application icons', () => {
     const dockIcons: string[] = []
     const setDockIcon = (path: string): void => { dockIcons.push(path) }
 
+    // The product joins paths with the host separator; expectations follow
+    // the same platform path semantics instead of hardcoding `/`.
     expect(desktopIconOptions({
       platform: 'darwin',
       packaged: false,
@@ -70,7 +72,7 @@ describe('Desktop application icons', () => {
       resourcesPath: '/resources',
       setDockIcon,
     })).toEqual({})
-    expect(dockIcons).toEqual(['/desktop/build/icon.png'])
+    expect(dockIcons).toEqual([join('/desktop', 'build', 'icon.png')])
 
     expect(desktopIconOptions({
       platform: 'darwin',
@@ -87,13 +89,13 @@ describe('Desktop application icons', () => {
       appPath: '/desktop',
       resourcesPath: '/resources',
       setDockIcon,
-    })).toEqual({ icon: '/resources/icon.png' })
+    })).toEqual({ icon: join('/resources', 'icon.png') })
     expect(desktopIconOptions({
       platform: 'win32',
       packaged: false,
       appPath: '/desktop',
       resourcesPath: '/resources',
       setDockIcon,
-    })).toEqual({ icon: '/desktop/build/icon.png' })
+    })).toEqual({ icon: join('/desktop', 'build', 'icon.png') })
   })
 })
