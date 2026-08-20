@@ -12,13 +12,14 @@
 // The inject APIs are read off the ledger entries deliberately (typed at
 // this spec's own contract): these cases pin factory choreography the UI
 // guards would mask. Rendering-path acceptance lives in
-// chat-toolview-slot.spec.tsx.
+// chat-toolview-slot.spec.tsx. openDetails also focuses a listed browser
+// tab without writing dockOpen.
 
 import { describe, expect, it, vi } from 'vitest'
 import { SlotTestRuntime, usePinnedBrowserLanguages, stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SessionBehaviorOverrides } from '@deepseek-ai/dsh-client-test-runtime'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
-import type { ISession, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ConversationSnapshot, ISession, SessionId, ToolResultNode } from '@deepseek-ai/dsh-client-runtime/client'
 import { apply, inject } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {
   ChatViewInjected, ComposerBarInjected, ConversationInjected, ConversationSessionHeaderInjected,
@@ -45,17 +46,24 @@ function sessionFakeFor() {
   } satisfies SessionBehaviorOverrides
 }
 
-async function bench() {
+async function bench(options: {
+  snapshot?: Partial<Omit<ConversationSnapshot, 'sessionId'>>
+  remotes?: Record<string, unknown>
+} = {}) {
   const runtime = await SlotTestRuntime.create()
   runtime.provide('connection', { api: { settings: {} }, isLoopback: false })
   // The plugin injects both; these specs exercise no settings path.
-  runtime.provide('remote', { $on: () => () => {} })
+  runtime.provide('remote', { $on: () => () => {}, ...options.remotes })
+  if (options.remotes?.browserWorkspace !== undefined) {
+    runtime.provide('remote.browserWorkspace', options.remotes.browserWorkspace)
+  }
   runtime.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
   const sessionFake = sessionFakeFor()
   await runtime.sessions.add({
     id: ROOT,
     summary: { title: 'R', displayTitle: 'R', cwd: '/proj' },
     session: sessionFake,
+    ...options.snapshot === undefined ? {} : { snapshot: options.snapshot },
   })
   const layoutFake = { openDetails: vi.fn(), closeDetails: vi.fn() }
   runtime.provide('layout', layoutFake)
@@ -227,6 +235,127 @@ describe('conversation slot inject API', () => {
     // writes land where the skeleton and details read.
     const conv = b.conversationApi(ROOT)
     expect(conv.instance).toBe(instance)
+    await b.runtime.dispose()
+  })
+
+  it('openDetails focuses a listed browser_navigate tab and skips focus when the tab is gone', async () => {
+    const target = {
+      profileId: 'profile-1',
+      workspaceId: 'ws-1',
+      browserId: 'br-1',
+      tabId: 'tab-1',
+    }
+    const focus = vi.fn(() => Promise.resolve({ ok: true, value: {} }))
+    const setDock = vi.fn(() => Promise.resolve({ ok: true, value: {} }))
+    const node: ToolResultNode = {
+      kind: 'tool-result',
+      seq: 5,
+      time: 5_000,
+      callId: 'nav-1',
+      call: {
+        name: 'browser_navigate',
+        argsRaw: JSON.stringify({ target, expectedRevision: 1, url: 'https://example.test/' }),
+      },
+      callTime: 4_000,
+      content: [{
+        type: 'text',
+        text: JSON.stringify({ status: 'open', target, revision: 2 }, null, 2),
+      }],
+      isError: false,
+      callView: null,
+      resultView: null,
+      subCalls: [],
+    }
+    const view = {
+      key: `tool:${node.callId}`,
+      kind: 'tool-call' as const,
+      id: node.callId,
+      target: 'chat' as const,
+      anchorSeq: node.seq,
+      location: { kind: 'session' as const },
+      visibility: 'visible' as const,
+      data: { root: node },
+    }
+    const b = await bench({
+      remotes: { browserWorkspace: { focus, setDock } },
+      snapshot: {
+        chat: {
+          order: [view.key],
+          nodes: {
+            get: (key: string) => key === view.key ? view : undefined,
+            values: () => [view],
+          },
+          locations: { getTurn: () => [], getStep: () => [] },
+          timeline: { turnOrder: [], turns: new Map() },
+          legacy: {
+            nodes: [node],
+            runningCalls: [],
+            partial: null,
+            turnTimings: new Map(),
+            turnEnds: new Map(),
+          },
+        },
+      },
+    })
+    const session = b.runtime.sessions.binding(ROOT)?.session
+    session?.projections.set('browserWorkspace', {
+      dockOpen: false,
+      dockWidth: 720,
+      userCollapsed: true,
+      activeWorkspaceId: target.workspaceId,
+      workspaces: [{
+        workspaceId: target.workspaceId,
+        profileId: target.profileId,
+        activeBrowserId: target.browserId,
+        browsers: [{
+          browserId: target.browserId,
+          activeTabId: target.tabId,
+          tabs: [{ tabId: target.tabId, controlOwner: 'agent', revision: 7 }],
+        }],
+      }],
+    })
+    const { instance, injected } = b.chatViewApi(ROOT)
+    injected.openDetails({ turnSeq: 4, callId: 'nav-1', toolName: 'browser_navigate' })
+    expect(instance.store.getSnapshot().selection).toEqual({
+      turnSeq: 4, callId: 'nav-1', toolName: 'browser_navigate',
+    })
+    expect(b.layoutFake.openDetails).toHaveBeenCalledTimes(1)
+    expect(focus).toHaveBeenCalledWith(ROOT, target, 7)
+    expect(setDock).not.toHaveBeenCalled()
+
+    focus.mockClear()
+    session?.projections.set('browserWorkspace', {
+      dockOpen: true,
+      dockWidth: 720,
+      userCollapsed: false,
+      activeWorkspaceId: target.workspaceId,
+      workspaces: [{
+        workspaceId: target.workspaceId,
+        profileId: target.profileId,
+        activeBrowserId: target.browserId,
+        browsers: [{
+          browserId: target.browserId,
+          activeTabId: 'other',
+          tabs: [{ tabId: 'other', controlOwner: 'agent', revision: 1 }],
+        }],
+      }],
+    })
+    injected.openDetails({ turnSeq: 4, callId: 'nav-1', toolName: 'browser_navigate' })
+    expect(b.layoutFake.openDetails).toHaveBeenCalledTimes(2)
+    expect(focus).not.toHaveBeenCalled()
+    expect(setDock).not.toHaveBeenCalled()
+    await b.runtime.dispose()
+  })
+
+  it('openDetails still opens details when the Session binding is gone', async () => {
+    const focus = vi.fn(() => Promise.resolve({ ok: true, value: {} }))
+    const b = await bench({ remotes: { browserWorkspace: { focus } } })
+    const { instance, injected } = b.chatViewApi(ROOT)
+    vi.spyOn(b.runtime.sessions, 'binding').mockReturnValue(undefined)
+    injected.openDetails({ turnSeq: 1, callId: 'c1' })
+    expect(instance.store.getSnapshot().selection).toEqual({ turnSeq: 1, callId: 'c1' })
+    expect(b.layoutFake.openDetails).toHaveBeenCalledTimes(1)
+    expect(focus).not.toHaveBeenCalled()
     await b.runtime.dispose()
   })
 

@@ -28,6 +28,7 @@ import { InputBar } from './skeleton/InputBar.tsx'
 import { EnterBehaviorRow } from './settings/EnterBehaviorRow.tsx'
 import type { EnterBehaviorRowInjected } from './settings/EnterBehaviorRow.tsx'
 import { ChatView } from './chat/ChatView.tsx'
+import { focusListedBrowserTab } from './chat/browser-tab-focus.ts'
 import { StatsLine } from './chat/StatsLine.tsx'
 import { ApprovalPanel } from './skeleton/ApprovalPanel.tsx'
 import { todoDockEntry } from './skeleton/TodoPanel.tsx'
@@ -403,6 +404,24 @@ export function apply(ctx: Context): void {
         openDetails: (target) => {
           actions.select(target)
           layout.openDetails()
+          const session = sessions.binding(sessionId)?.session
+          if (session === undefined) return
+          const remote = ctx.get('remote.browserWorkspace') as {
+            focus?(
+              id: SessionId,
+              tab: { profileId: string; workspaceId: string; browserId: string; tabId: string },
+              expectedRevision: number,
+            ): Promise<unknown>
+          } | undefined
+          const remoteFocus = remote?.focus
+          focusListedBrowserTab({
+            snapshot: session.getSnapshot(),
+            listing: session.projections.faceOf('browserWorkspace').getSnapshot(),
+            callId: target.callId,
+            focus: remoteFocus === undefined
+              ? undefined
+              : (tab, revision) => remoteFocus(sessionId, tab, revision),
+          })
         },
         fileMentions: owner => ctx.get('chatFileMentions')?.forClosing(owner),
         openFile: (path) => {

@@ -367,6 +367,11 @@ export interface ChatNodeOwnerProps {
   openFile: (path: string) => void
   inspectCall: (callId: CallId) => void
   forkAt: (seq: number) => void
+  /**
+   * Select a Tool call and open details. `browser_*` rows call this on click
+   * so the matching Dock tab can focus from the listing revision.
+   */
+  selectCall?: (callId: CallId, toolName?: string) => void
   /** Resolve a session-authorized historical image for inline display. */
   loadImage: (attachment: ImageAttachmentRef) => Promise<string>
   fileMentions: (owner: TurnTailOwnerProps) => MarkdownFileMentions | undefined
@@ -683,7 +688,11 @@ export interface ChatScrollPosition {
  * outside the view (layout orchestration; the session object layer).
  */
 export interface ChatViewInjected {
-  /** Selection write + details panel opening in one gesture (store action + layout orchestration). */
+  /**
+   * Selection write + details panel opening in one gesture. A `browser_*`
+   * call whose tab is still listed also focuses that Dock tab with the
+   * listing revision and does not change `dockOpen`.
+   */
   openDetails: (target: SelectionTarget) => void
   /**
    * Open a tool-arg filesystem path with the host OS default application
