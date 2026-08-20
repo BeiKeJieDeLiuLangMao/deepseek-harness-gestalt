@@ -39,6 +39,9 @@
         "scripts/**/*.ts",
         "scripts/**/*.mjs",
         "scripts/**/*.cjs"
+      ],
+      "ignoreDependencies": [
+        "electron"
       ]
     },
     "examples": {
@@ -277,7 +280,8 @@
     "packages/browser/browser-runtime-electron": {
       "entry": [
         "tests/**/*.spec.ts",
-        "tests/**/*.e2e.ts"
+        "tests/**/*.e2e.ts",
+        "tests/**/*.e2e.cases.ts"
       ],
       "project": [
         "src/**/*.ts",

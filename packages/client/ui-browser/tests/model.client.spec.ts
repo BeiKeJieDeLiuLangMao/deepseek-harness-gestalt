@@ -124,10 +124,13 @@ describe('Browser Dock occupancy helpers', () => {
     expect(browserTabTitle(page(), 'Untitled')).toBe('Alpha')
     expect(browserTabTitle(page({ title: '   ' }), 'Untitled')).toBe('alpha.test')
     expect(browserTabTitle(undefined, 'Untitled')).toBe('Untitled')
-    expect(persistentProfileLabel(page())).toBeUndefined()
+    expect(persistentProfileLabel(page(), 'Shared identity')).toBeUndefined()
     expect(persistentProfileLabel(page({
       chrome: { kind: 'persistent', name: 'work' as never, partition: 'persist:work' },
-    }))).toBe('work')
+    }), 'Shared identity')).toBe('work')
+    expect(persistentProfileLabel(page({
+      chrome: { kind: 'shared', name: 'shared' as never, partition: 'persist:shared' },
+    }), 'Shared identity')).toBe('Shared identity')
     const shot: BrowserScreenshot = {
       target: TARGET,
       revision: 2,

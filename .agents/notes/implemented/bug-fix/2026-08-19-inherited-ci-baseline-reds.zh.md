@@ -12,7 +12,7 @@ Status: implemented
 
 **coverage lane 拉取完整历史。** `ci.yml` 中每个运行包含 coverage 门禁的聚合的 lane 都以 `fetch-depth: 0` 检出；workflow 契约测试钉死这些 job id（`node-24-coverage`、`windows-native` 及其余 coverage 聚合 job）并拒绝浅检出，使改名或包一层脚本的 job 无法悄悄离开完整历史集合。release-notes CLI 保持离线：验证仍然只读本地 Git 图谱。
 
-**fixture 跟随产品；行为缺陷则修复。** composer 的图片接入按钮是已发布的产品界面，因此通过受认可的 refresh 模式重新录制金标，并逐行审阅 diff。同一次 aria refresh 还录下两行 `删除 DeepSeek (deepseek-official)`，这是 ticket #120 的 occupancy / `removable` 语义为官方 DeepSeek 路由露出的操作。两条未设闸门的 scroll-contract 流从 120/240 个 paced chunk 增至 960 个，使流的持续时间超过最慢的 CI 交互间隙，而不再依赖时序运气。Desktop chrome 的 mock 现在实现完整的 `DesktopBridge` preload 面，account 与 pairing 均返回惰性的 `unavailable` 快照。Models 设置页再次列出所有已挂载的 whole-section provider——首启形态下渲染为打开的 setup 卡片，其余情况渲染为普通行——因为 `configured` 现在的含义是用户层占用该 section，而这在首启卡片必须渲染时恰好为 false。
+**fixture 跟随产品；行为缺陷则修复。** composer 的图片接入按钮是已发布的产品界面，因此通过受认可的 refresh 模式重新录制金标，并逐行审阅 diff。同一次 aria refresh 还录下两行 `删除 DeepSeek (deepseek-official)`，这是 ticket #120 的 occupancy / `removable` 语义为官方 DeepSeek 路由露出的操作。两条未设闸门的 scroll-contract 流从 120/240 个 paced chunk 增至 960 个，使流的持续时间超过最慢的 CI 交互间隙，而不再依赖时序运气。Desktop chrome e2e 安装 `installDesktopBridgeFixture`（[带类型的 DesktopBridge fixture](../testing/2026-08-21-typed-desktop-bridge-e2e-fixture.md)），它实现完整的 `DesktopBridge` preload 面，account 与 pairing 均返回惰性的 `unavailable` 快照。Models 设置页再次列出所有已挂载的 whole-section provider——首启形态下渲染为打开的 setup 卡片，其余情况渲染为普通行——因为 `configured` 现在的含义是用户层占用该 section，而这在首启卡片必须渲染时恰好为 false。
 
 **Desktop 测试断言平台语义。** 图标与运行时路径的期望改为按主机平台拼接路径，并在 Windows 上期望 `node.exe`；copy-tree 测试比较解析后的链接指向，而非某一平台的 `readlink` 写法；owner-only 权限位只在暴露 POSIX mode 语义的平台上断言。teardown 失败的观察窗口放宽到其同类断言已在使用的十秒。
 

@@ -15,42 +15,19 @@ import {
 import * as PlatformAccountHttp from '@deepseek-ai/dsh-platform-account-http'
 import pg from 'pg'
 import { PostgresAccountBackend } from './postgres-backend.ts'
+import {
+  assertOperatedPlatformEnvironment,
+  readPlatformSigningKey,
+  requiredPlatformEnv,
+} from './production-env.ts'
 import { RedisAccountInvalidationBus, connectRedis } from './redis-bus.ts'
 
-const REQUIRED = [
-  'PLATFORM_ORIGIN',
-  'PLATFORM_GITHUB_CLIENT_ID',
-  'PLATFORM_GITHUB_CLIENT_SECRET',
-  'PLATFORM_GITHUB_CALLBACK',
-  'PLATFORM_POSTGRES_HOST',
-  'PLATFORM_POSTGRES_USER',
-  'PLATFORM_POSTGRES_PASSWORD',
-  'PLATFORM_REDIS_HOST',
-  'PLATFORM_REDIS_PASSWORD',
-  'PLATFORM_TOKEN_SIGNING_KEY',
-  'PLATFORM_POLLING_SIGNING_KEY',
-] as const
-
-function required(name: (typeof REQUIRED)[number]): string {
-  const value = process.env[name]
-  if (value === undefined || value === '') {
-    throw new Error(`platform: missing deployment secrets: ${name}`)
-  }
-  return value
-}
-
-function hexKey(name: 'PLATFORM_TOKEN_SIGNING_KEY' | 'PLATFORM_POLLING_SIGNING_KEY'): Uint8Array {
-  const hex = required(name)
-  if (!/^[0-9a-fA-F]{64}$/.test(hex)) {
-    throw new TypeError(`${name} must be 32 bytes of hex`)
-  }
-  return Uint8Array.from(Buffer.from(hex, 'hex'))
-}
-
-const origin = required('PLATFORM_ORIGIN')
-const callback = required('PLATFORM_GITHUB_CALLBACK')
+const operated = assertOperatedPlatformEnvironment(process.env.PLATFORM_ENVIRONMENT)
+const origin = requiredPlatformEnv('PLATFORM_ORIGIN')
+const callback = requiredPlatformEnv('PLATFORM_GITHUB_CALLBACK')
 const environment = loadPlatformEnvironment({
-  selection: process.env.PLATFORM_ENVIRONMENT ?? 'production',
+  selection: operated,
+  // Pair member only: the listen process never selects development.
   development: {
     origin: 'https://dev.gestaltrun.invalid',
     callbackUrl: 'https://dev.gestaltrun.invalid/v1/account/oauth/github/callback',
@@ -62,7 +39,7 @@ const environment = loadPlatformEnvironment({
   production: {
     origin,
     callbackUrl: callback,
-    githubClientId: required('PLATFORM_GITHUB_CLIENT_ID'),
+    githubClientId: requiredPlatformEnv('PLATFORM_GITHUB_CLIENT_ID'),
     credentialReference: process.env.PLATFORM_GITHUB_CREDENTIAL_REFERENCE ?? 'credentials://github-oauth/production',
     databaseIdentity: process.env.PLATFORM_POSTGRES_DATABASE ?? 'gestalt',
     identityNamespace: process.env.PLATFORM_IDENTITY_NAMESPACE ?? 'gestalt-production',
@@ -70,18 +47,18 @@ const environment = loadPlatformEnvironment({
 })
 
 const postgres = new pg.Pool({
-  host: required('PLATFORM_POSTGRES_HOST'),
+  host: requiredPlatformEnv('PLATFORM_POSTGRES_HOST'),
   port: Number(process.env.PLATFORM_POSTGRES_PORT ?? '5432'),
-  user: required('PLATFORM_POSTGRES_USER'),
-  password: required('PLATFORM_POSTGRES_PASSWORD'),
+  user: requiredPlatformEnv('PLATFORM_POSTGRES_USER'),
+  password: requiredPlatformEnv('PLATFORM_POSTGRES_PASSWORD'),
   database: process.env.PLATFORM_POSTGRES_DATABASE ?? 'gestalt',
   ssl: process.env.PLATFORM_POSTGRES_SSL === 'disable' ? false : { rejectUnauthorized: false },
 })
 
 const redisUser = process.env.PLATFORM_REDIS_USER
 const redisOptions = {
-  host: required('PLATFORM_REDIS_HOST'),
-  password: required('PLATFORM_REDIS_PASSWORD'),
+  host: requiredPlatformEnv('PLATFORM_REDIS_HOST'),
+  password: requiredPlatformEnv('PLATFORM_REDIS_PASSWORD'),
   tls: process.env.PLATFORM_REDIS_TLS !== '0',
   ...(redisUser === undefined || redisUser === '' ? {} : { username: redisUser }),
 }
@@ -100,7 +77,7 @@ const github = new GitHubOAuthIdentityProvider({
   environment,
   credential: {
     reference: environment.credentialReference,
-    secret: required('PLATFORM_GITHUB_CLIENT_SECRET'),
+    secret: requiredPlatformEnv('PLATFORM_GITHUB_CLIENT_SECRET'),
   },
 })
 
@@ -118,8 +95,8 @@ await ctx.plugin({
       github,
       environment,
       config: {
-        tokenSigningKey: hexKey('PLATFORM_TOKEN_SIGNING_KEY'),
-        pollingSigningKey: hexKey('PLATFORM_POLLING_SIGNING_KEY'),
+        tokenSigningKey: readPlatformSigningKey('PLATFORM_TOKEN_SIGNING_KEY'),
+        pollingSigningKey: readPlatformSigningKey('PLATFORM_POLLING_SIGNING_KEY'),
       },
     })
   },

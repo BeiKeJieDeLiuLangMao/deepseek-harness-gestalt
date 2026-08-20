@@ -323,6 +323,21 @@ describe('Electron Browser Runtime public lifecycle', () => {
     })
   })
 
+  it('reuses one shared Electron Profile without a second-writer rejection', async () => {
+    const { ctx } = await setup()
+    const first = await ctx.browserRuntime.create({ profile: 'shared' })
+    const second = await ctx.browserRuntime.create({ profile: 'shared' })
+    expect(first.chrome).toMatchObject({
+      kind: 'shared',
+      partition: 'persist:session-electron-test-shared',
+    })
+    expect(second.target.profileId).toBe(first.target.profileId)
+    expect(second.target.workspaceId).not.toBe(first.target.workspaceId)
+    expect(second.chrome.partition).toBe(first.chrome.partition)
+    await ctx.browserRuntime.close({ target: second.target, expectedRevision: 0 })
+    await ctx.browserRuntime.close({ target: first.target, expectedRevision: 0 })
+  })
+
   it('rejects operations on absent, foreign, closed, and revision-mismatched state', async () => {
     const { ctx } = await setup()
     await expect(ctx.browserRuntime.observe({
@@ -412,8 +427,7 @@ describe('Electron Browser Runtime public lifecycle', () => {
     const { ctx } = await setup()
     const observed: number[] = []
     ctx.on('browser/runtime-state', () => { throw new Error('ordinary observer failed') })
-    // oxlint-disable-next-line typescript/no-misused-promises -- this listener exercises rejected post-commit observation
-    ctx.on('browser/runtime-state', async () => { throw new Error('async observer failed') })
+    ctx.on('browser/runtime-state', (): unknown => Promise.reject(new Error('async observer failed')))
     ctx.on('browser/runtime-state', (state: { revision: number }) => { observed.push(state.revision) })
     const created = await ctx.browserRuntime.create({ profile: 'temporary' })
     const navigated = await ctx.browserRuntime.navigate({

@@ -5,8 +5,8 @@
 {"type":"assistant/chunk","seq":3,"time":1787001000004,"data":{"turn":1,"step":1,"chunk":{"type":"usage","usage":{"inputTokens":1,"outputTokens":1}}}}
 {"type":"assistant/chunk","seq":4,"time":1787001000005,"data":{"turn":1,"step":1,"chunk":{"type":"finish","reason":{"kind":"tool-calls"}}}}
 {"type":"assistant/chunk","seq":5,"time":1787001000006,"data":{"turn":1,"step":2,"chunk":{"type":"block-start","index":0,"blockType":"tool-call"}}}
-{"type":"assistant/chunk","seq":6,"time":1787001000007,"data":{"turn":1,"step":2,"chunk":{"type":"tool-call-delta","index":0,"id":"browser-create","name":"browser_create","argumentsDelta":"{}"}}}
-{"type":"assistant/chunk","seq":7,"time":1787001000008,"data":{"turn":1,"step":2,"chunk":{"type":"block-end","index":0,"block":{"type":"tool-call","id":"browser-create","name":"browser_create","arguments":"{}"}}}}
+{"type":"assistant/chunk","seq":6,"time":1787001000007,"data":{"turn":1,"step":2,"chunk":{"type":"tool-call-delta","index":0,"id":"browser-create","name":"browser_create","argumentsDelta":"{\"profile\":\"temporary\"}"}}}
+{"type":"assistant/chunk","seq":7,"time":1787001000008,"data":{"turn":1,"step":2,"chunk":{"type":"block-end","index":0,"block":{"type":"tool-call","id":"browser-create","name":"browser_create","arguments":"{\"profile\":\"temporary\"}"}}}}
 {"type":"assistant/chunk","seq":8,"time":1787001000009,"data":{"turn":1,"step":2,"chunk":{"type":"usage","usage":{"inputTokens":1,"outputTokens":1}}}}
 {"type":"assistant/chunk","seq":9,"time":1787001000010,"data":{"turn":1,"step":2,"chunk":{"type":"finish","reason":{"kind":"tool-calls"}}}}
 {"type":"assistant/chunk","seq":10,"time":1787001000011,"data":{"turn":1,"step":3,"chunk":{"type":"block-start","index":0,"blockType":"tool-call"}}}

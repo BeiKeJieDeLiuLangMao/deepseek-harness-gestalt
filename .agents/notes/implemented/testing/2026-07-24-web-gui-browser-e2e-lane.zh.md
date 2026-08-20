@@ -32,7 +32,7 @@ Web GUI 以一条真实组装链交付——chromium 页面 → client 插件 bu
 
 ### 预期输出
 
-具有稳定所属区域的场景会为每个不同的用户可见状态提交一份规范化的 `ariaSnapshot()`；跨区域的工作区管理状态则使用语义 DOM 断言和权威的 host 状态检查。UUID、cwd、工作区目录名与时长等易变内容会归一为稳定 token；采集过程持续轮询，直到连续两次规范化读取结果相同。组装后的 web 组合会挂载 Browser Dock（`ui-browser`）；因此活跃 composer 会把隐藏文件输入暴露为 aria 的 `Add images` 按钮，会话区域 golden 记录该控件。Desktop overlay e2e mock 实现完整的 `window.dshDesktop` 账户与配对订阅；只绘制 updater 与窗口控件的桩会让插件 apply 失败。Role 与文本锚点继续充当可评审预期输出周围的语义防线，并直接覆盖跨区域状态。世界状态断言使用根上下文的会话事件，而不是第二份提交的日志预期输出，因为 ACP、headless 与 TUI 套件已经通过同一循环和持久化钉住持久化日志表面。`refresh` 是预期输出的唯一写入者；回放模式下缺少预期输出时，测试会连同重新生成命令一起失败。
+具有稳定所属区域的场景会为每个不同的用户可见状态提交一份规范化的 `ariaSnapshot()`；跨区域的工作区管理状态则使用语义 DOM 断言和权威的 host 状态检查。UUID、cwd、工作区目录名与时长等易变内容会归一为稳定 token；采集过程持续轮询，直到连续两次规范化读取结果相同。组装后的 web 组合会挂载 Browser Dock（`ui-browser`）；因此活跃 composer 会把隐藏文件输入暴露为 aria 的 `Add images` 按钮，会话区域 golden 记录该控件。Desktop overlay e2e 安装 `installDesktopBridgeFixture`（[带类型的 DesktopBridge fixture](2026-08-21-typed-desktop-bridge-e2e-fixture.md)）；只绘制 updater 与窗口控件的桩会让插件 apply 失败。Role 与文本锚点继续充当可评审预期输出周围的语义防线，并直接覆盖跨区域状态。世界状态断言使用根上下文的会话事件，而不是第二份提交的日志预期输出，因为 ACP、headless 与 TUI 套件已经通过同一循环和持久化钉住持久化日志表面。`refresh` 是预期输出的唯一写入者；回放模式下缺少预期输出时，测试会连同重新生成命令一起失败。
 
 类型检查平面切分是结构性的：host scaffold、其支持模块，以及每个启动或检查 host 组合的 web spec 都会从注册在 client 侧的 `apps/web` 工程中排除，并逐文件纳入 `tsconfig.host.json`。一个程序不能同时持有 Cordis `Context` 合并的两侧。
 

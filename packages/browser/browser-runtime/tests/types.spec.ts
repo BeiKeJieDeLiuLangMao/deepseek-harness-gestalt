@@ -5,6 +5,7 @@ import {
   assertBrowserCreateAttach,
   assertBrowserNotAborted,
   assertBrowserProfileName,
+  assertUnattachedPersistentWriterAvailable,
   browserProfileChrome,
   browserSessionNameFromPartition,
   browserSessionPartition,
@@ -18,12 +19,15 @@ import {
   emitBrowserRuntimeState,
   enqueueBrowserRuntimeOperation,
   labeledBrowserProfileName,
+  openBrowserPagesForProfile,
   bindBrowserControlMutation,
   mutateBrowserControlOwner,
   requireExpectedBrowserRevision,
   requireExpectedOpenBrowserPage,
   requireOpenBrowserPage,
   resolveBrowserProfileCreate,
+  browserProfileRetainsIdentity,
+  browserSharedWorkspaceSeq,
   sameBrowserInstance,
   sameBrowserProfile,
   sameBrowserTarget,
@@ -97,6 +101,7 @@ describe('Browser Runtime public vocabulary', () => {
       ['control character', 'work\nname'],
       ['leading hyphen', '-work'],
       ['reserved temporary marker', 'tmp-1'],
+      ['reserved shared Profile', 'shared'],
     ] as const) {
       expect(() => assertBrowserProfileName(name), label).toThrow(BrowserRuntimeError)
       try {
@@ -119,6 +124,44 @@ describe('Browser Runtime public vocabulary', () => {
       sessionName: 'tandem-work',
       chrome: { kind: 'persistent', name: 'work', partition: 'persist:session-tandem-work' },
     })
+    expect(resolveBrowserProfileCreate('tandem', { profile: 'shared' }, 9)).toEqual({
+      profileId: 'tandem-profile-shared',
+      sessionName: 'tandem-shared',
+      chrome: { kind: 'shared', name: 'shared', partition: 'persist:session-tandem-shared' },
+    })
+    expect(browserProfileChrome({ kind: 'shared', sessionName: 'tandem-shared' })).toEqual({
+      kind: 'shared',
+      name: 'shared',
+      partition: 'persist:session-tandem-shared',
+    })
+    const sharedFirst = browserTargetFor(BrowserProfileId('tandem-profile-shared'), 'tandem-shared', 1, undefined, 1)
+    const sharedSecond = browserTargetFor(BrowserProfileId('tandem-profile-shared'), 'tandem-shared', 2, undefined, 2)
+    expect(sharedFirst.workspaceId).toBe('tandem-shared-workspace-1')
+    expect(sharedSecond.workspaceId).toBe('tandem-shared-workspace-2')
+    expect(sameBrowserProfile(sharedFirst, sharedSecond)).toBe(true)
+    expect(sameBrowserWorkspace(sharedFirst, sharedSecond)).toBe(false)
+    expect(labeledBrowserProfileName(browserProfileChrome({ kind: 'shared', sessionName: 'tandem-shared' })))
+      .toBe('shared')
+    expect(browserProfileRetainsIdentity('shared')).toBe(true)
+    expect(browserProfileRetainsIdentity('persistent')).toBe(true)
+    expect(browserProfileRetainsIdentity('temporary')).toBe(false)
+    expect(browserSharedWorkspaceSeq([], BrowserProfileId('tandem-profile-shared'), undefined)).toBe(1)
+    expect(browserSharedWorkspaceSeq([{
+      status: 'open',
+      target: sharedFirst,
+      revision: 0,
+      url: 'about:blank',
+      title: '',
+      text: '',
+      focused: false,
+      controlOwner: 'agent',
+      chrome: { kind: 'shared', name: BrowserProfileName('shared'), partition: 'persist:session-tandem-shared' },
+      storage: { cookies: '', localStorage: '', indexedDb: '', cache: '', serviceWorker: '' },
+    }], BrowserProfileId('tandem-profile-shared'), undefined)).toBe(2)
+    expect(browserSharedWorkspaceSeq([], BrowserProfileId('tandem-profile-shared'), {
+      kind: 'workspace',
+      workspaceId: sharedFirst.workspaceId,
+    })).toBeUndefined()
     const work = browserTargetFor(BrowserProfileId('tandem-profile-work'), 'tandem-work', 1)
     expect(work).toEqual({
       profileId: 'tandem-profile-work',
@@ -191,6 +234,45 @@ describe('Browser Runtime shared Provider helpers', () => {
     const signal = AbortSignal.abort('stop')
     expect(() => {
       assertBrowserNotAborted(signal)
+    }).toThrow(BrowserRuntimeError)
+  })
+
+  it('lists open pages and rejects a second unattached named persistent writer', () => {
+    const open = Object.freeze({
+      status: 'open' as const,
+      target,
+      revision: 0,
+      url: 'about:blank',
+      title: '',
+      text: '',
+      focused: false,
+      controlOwner: 'agent' as const,
+      chrome: {
+        kind: 'persistent' as const,
+        name: BrowserProfileName('work'),
+        partition: 'persist:session-work',
+      },
+      storage: browserProfileStorage('work'),
+    })
+    const closed = Object.freeze({ status: 'closed' as const, target, revision: 1 })
+    expect(openBrowserPagesForProfile([open, closed], target.profileId)).toEqual([open])
+    expect(openBrowserPagesForProfile([open], BrowserProfileId('other'))).toEqual([])
+    assertUnattachedPersistentWriterAvailable([open], { profile: 'temporary' }, 'persist:session-work')
+    assertUnattachedPersistentWriterAvailable([], { profile: 'shared' }, 'persist:session-work')
+    assertUnattachedPersistentWriterAvailable([], {
+      profile: 'persistent',
+      name: BrowserProfileName('work'),
+    }, 'persist:session-work')
+    assertUnattachedPersistentWriterAvailable([open], {
+      profile: 'persistent',
+      name: BrowserProfileName('work'),
+      attach: { kind: 'workspace', workspaceId: target.workspaceId },
+    }, 'persist:session-work')
+    expect(() => {
+      assertUnattachedPersistentWriterAvailable([open], {
+        profile: 'persistent',
+        name: BrowserProfileName('work'),
+      }, 'persist:session-work')
     }).toThrow(BrowserRuntimeError)
   })
 
@@ -274,8 +356,7 @@ describe('Browser Runtime shared Provider helpers', () => {
     const ctx = new Context()
     const warnings: unknown[] = []
     ctx.on('browser/runtime-state', () => { throw new Error('sync') })
-    // oxlint-disable-next-line typescript/no-misused-promises -- exercises rejected post-commit observation
-    ctx.on('browser/runtime-state', async () => { throw new Error('async') })
+    ctx.on('browser/runtime-state', (): unknown => Promise.reject(new Error('async')))
     emitBrowserRuntimeState(ctx, { status: 'closed', target, revision: 0 }, (error) => {
       warnings.push(error)
     })

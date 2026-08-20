@@ -48,7 +48,7 @@ const CHROME_SCHEMA = {
   type: 'object',
   additionalProperties: false,
   properties: {
-    kind: { type: 'string', required: true, enum: ['temporary', 'persistent'] },
+    kind: { type: 'string', required: true, enum: ['temporary', 'persistent', 'shared'] },
     name: { type: 'string' },
     partition: { type: 'string', required: true },
   },
@@ -131,6 +131,18 @@ const TARGET_PARAMETER = {
 /** Complete Browser facts are rendered into the durable ordinary tool result. */
 function renderValue(_args: unknown, value: unknown): ContentBlock[] {
   return [{ type: 'text', text: JSON.stringify(value, null, 2) }]
+}
+
+/** Model-facing `browser_create` profile identities after schema validation. */
+type BrowserCreateProfile = 'temporary' | 'persistent' | 'shared'
+
+/**
+ * Map an omitted or explicit profile argument onto one create identity.
+ * @param profile - Schema-validated model argument, or undefined when omitted.
+ * @returns the named create identity.
+ */
+function resolveBrowserCreateProfile(profile: BrowserCreateProfile | undefined): BrowserCreateProfile {
+  return profile === undefined ? 'shared' : profile
 }
 
 /** Convert an optional attach object into a branded Browser Runtime attach request. */
@@ -258,10 +270,10 @@ export function apply(ctx: Context, config: Config): void {
   ctx.tools.register({
     ...defineTool({
       name: 'browser_create',
-      description: 'Create one temporary or named persistent Browser Profile, Browser Workspace, browser instance, and tab.',
+      description: 'Create one shared, temporary, or named persistent Browser Profile, Browser Workspace, browser instance, and tab. Omit profile to reuse the shared installation-wide identity.',
       timeoutMs,
       parameters: {
-        profile: { type: 'string', enum: ['temporary', 'persistent'], description: 'temporary discards identity; persistent restores a named Profile.' },
+        profile: { type: 'string', enum: ['temporary', 'persistent', 'shared'], description: 'Omit or shared reuses one identity across Sessions. persistent restores a named isolated Profile. temporary discards identity.' },
         name: { type: 'string', description: 'Named persistent Browser Profile. Required when profile is persistent.' },
         attach: {
           type: 'object',
@@ -276,8 +288,9 @@ export function apply(ctx: Context, config: Config): void {
       },
       output: { schema: OPEN_STATE_SCHEMA, render: renderValue },
       execute: async (args, exec) => {
+        const profile = resolveBrowserCreateProfile(args.profile)
         const attach = attachFrom(args.attach)
-        if (args.profile === 'persistent') {
+        if (profile === 'persistent') {
           if (typeof args.name !== 'string' || args.name.trim().length === 0) {
             throw new Error('name must be a non-empty Browser Profile name')
           }
@@ -294,13 +307,26 @@ export function apply(ctx: Context, config: Config): void {
             },
           )
         }
+        if (profile === 'temporary') {
+          return routeBrowserCall(
+            ctx,
+            exec,
+            (workspace, request) => workspace.create(request),
+            request => ctx.browserRuntime.create(request),
+            {
+              profile: 'temporary' as const,
+              ...attach === undefined ? {} : { attach },
+              signal: exec.signal,
+            },
+          )
+        }
         return routeBrowserCall(
           ctx,
           exec,
           (workspace, request) => workspace.create(request),
           request => ctx.browserRuntime.create(request),
           {
-            profile: 'temporary' as const,
+            profile: 'shared' as const,
             ...attach === undefined ? {} : { attach },
             signal: exec.signal,
           },

@@ -23,8 +23,11 @@ export {
   assertBrowserNotAborted,
   assertBrowserProfileName,
   assertBrowserProfileWriterAvailable,
+  assertUnattachedPersistentWriterAvailable,
   browserProfileChrome,
+  browserProfileRetainsIdentity,
   browserProfileStorage,
+  browserSharedWorkspaceSeq,
   browserSessionNameFromPartition,
   browserSessionPartition,
   browserTemporaryPartition,
@@ -34,6 +37,7 @@ export {
   emitBrowserRuntimeState,
   enqueueBrowserRuntimeOperation,
   labeledBrowserProfileName,
+  openBrowserPagesForProfile,
   bindBrowserControlMutation,
   mutateBrowserControlOwner,
   requireExpectedBrowserRevision,
@@ -41,6 +45,7 @@ export {
   requireOpenBrowserPage,
   resolveBrowserCreateAttach,
   resolveBrowserProfileCreate,
+  SHARED_BROWSER_PROFILE_NAME,
   sameBrowserInstance,
   sameBrowserProfile,
   sameBrowserTarget,
@@ -69,6 +74,7 @@ export type {
   BrowserObserveRequest,
   BrowserPageState,
   BrowserPersistentCreateRequest,
+  BrowserSharedCreateRequest,
   BrowserProfileChrome,
   BrowserProfileKind,
   BrowserProfileStorage,
@@ -175,18 +181,21 @@ export abstract class BrowserRuntime extends Service {
   }
 
   /**
-   * Create one temporary or named persistent Profile tab. Omitting `attach` starts a new Workspace
-   * and browser instance. Attaching to a Workspace starts another instance; attaching to a browser
-   * instance starts another tab in that instance.
-   * @param request - Temporary or named persistent Profile request, optional attach, and cancellation.
+   * Create one temporary, named persistent, or shared Profile tab. Omitting `attach` starts a new
+   * Workspace and browser instance. Attaching to a Workspace starts another instance; attaching to a
+   * browser instance starts another tab in that instance.
+   * @param request - Temporary, named persistent, or shared Profile request, optional attach, and
+   * cancellation.
    * @returns initial open page state at revision zero; its target addresses every later operation in
-   * this lifecycle. Persistent Profiles restore the same storage partition on later creates.
+   * this lifecycle. Persistent and shared Profiles restore the same storage partition on later
+   * creates. Shared creates from different Sessions reuse one partition and do not take
+   * `BROWSER_PROFILE_BUSY`.
    * @throws `BrowserRuntimeError` with `BROWSER_ABORTED` when cancellation wins, `BROWSER_DISPOSED`
    * after teardown starts, `BROWSER_NOT_FOUND` when `attach` names a missing hierarchy,
-   * `BROWSER_PROFILE_BUSY` when the named Profile already has a writer, `BROWSER_PROFILE_NAME` when
-   * the name cannot be a stable partition key, `BROWSER_PROTOCOL` when the upstream runtime breaks
-   * its response protocol, or `BROWSER_RUNTIME_UNAVAILABLE` when the upstream runtime cannot be
-   * reached or starts unhealthy.
+   * `BROWSER_PROFILE_BUSY` when the named persistent Profile already has a writer,
+   * `BROWSER_PROFILE_NAME` when the name cannot be a stable partition key, `BROWSER_PROTOCOL` when
+   * the upstream runtime breaks its response protocol, or `BROWSER_RUNTIME_UNAVAILABLE` when the
+   * upstream runtime cannot be reached or starts unhealthy.
    */
   abstract create(request: BrowserCreateRequest): Promise<BrowserPageState>
   /**
