@@ -329,11 +329,79 @@ describe('Session-owned Browser Workspace', () => {
       attach: { kind: 'browser', workspaceId: first.target.workspaceId, browserId: first.target.browserId },
     })
     await ctx.browserRuntime.close({ target: leftover.target, expectedRevision: leftover.revision })
+    expect(ctx.browserWorkspace.snapshot(session).workspaces[0]?.browsers[0]?.tabs.some(
+      tab => tab.tabId === leftover.target.tabId,
+    )).toBe(true)
     await expect(ctx.browserWorkspace.observe({ session, target: leftover.target }))
       .resolves.toMatchObject({ status: 'closed', revision: leftover.revision + 1 })
     expect(ctx.browserWorkspace.snapshot(session).workspaces[0]?.browsers[0]?.tabs.some(
       tab => tab.tabId === leftover.target.tabId,
-    )).toBe(true)
+    )).toBe(false)
+  })
+
+  it('records a Runtime-internal revision bump on an owned unclosed tab', async () => {
+    const ctx = await harness()
+    const session = ctx.sessions.create(SessionId('session-runtime-bump'))
+    const first = await ctx.browserWorkspace.create({ session, profile: 'temporary' })
+    const second = await ctx.browserWorkspace.create({
+      session,
+      profile: 'temporary',
+      attach: { kind: 'browser', workspaceId: first.target.workspaceId, browserId: first.target.browserId },
+    })
+    const bumped = await ctx.browserRuntime.navigate({
+      target: first.target,
+      expectedRevision: 0,
+      url: 'https://alpha.test/',
+    })
+    expect(bumped.revision).toBe(1)
+    const listed = ctx.browserWorkspace.snapshot(session).workspaces[0]?.browsers[0]?.tabs
+    expect(listed).toEqual([
+      { tabId: first.target.tabId, controlOwner: 'agent', revision: 1 },
+      { tabId: second.target.tabId, controlOwner: 'agent', revision: 0 },
+    ])
+    const firstRevision = listed?.[0]?.revision
+    const secondRevision = listed?.[1]?.revision
+    if (firstRevision === undefined || secondRevision === undefined) {
+      throw new Error('expected listed per-tab revisions')
+    }
+    await expect(ctx.browserWorkspace.focus({
+      session, target: first.target, expectedRevision: firstRevision,
+    })).resolves.toMatchObject({ revision: 2, focused: true })
+    await expect(ctx.browserWorkspace.close({
+      session, target: second.target, expectedRevision: secondRevision,
+    })).resolves.toMatchObject({ status: 'closed', revision: 1 })
+  })
+
+  it('ignores Runtime-state for unowned or already-closed tabs', async () => {
+    const ctx = await harness()
+    const session = ctx.sessions.create(SessionId('session-runtime-state-filter'))
+    const owned = await ctx.browserWorkspace.create({ session, profile: 'temporary' })
+    const orphan = await ctx.browserRuntime.create({ profile: 'temporary' })
+    ctx.emit('browser/runtime-state', {
+      status: 'unavailable',
+      target: owned.target,
+      revision: 3,
+      reason: 'crashed',
+      reconnecting: true,
+      controlOwner: 'human',
+    })
+    ctx.emit('browser/runtime-state', {
+      status: 'closed',
+      target: owned.target,
+      revision: 4,
+    })
+    ctx.emit('browser/runtime-state', {
+      status: 'unavailable',
+      target: orphan.target,
+      revision: 1,
+      reason: 'reconnect-failed',
+      reconnecting: false,
+      controlOwner: 'agent',
+    })
+    expect(ctx.browserWorkspace.snapshot(session).workspaces[0]?.browsers[0]?.tabs).toEqual([
+      { tabId: owned.target.tabId, controlOwner: 'human', revision: 3 },
+    ])
+    expect(JSON.stringify(ctx.browserWorkspace.snapshot(session))).not.toContain(orphan.target.tabId)
   })
 
   it('rejects an invalid Dock width and disposes its invariant companion', async () => {

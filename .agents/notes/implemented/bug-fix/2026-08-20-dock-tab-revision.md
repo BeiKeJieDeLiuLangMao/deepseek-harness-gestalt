@@ -10,11 +10,11 @@ Browser Runtime mutations require `expectedRevision` of the addressed tab and re
 
 ## Decision
 
-`BrowserWorkspaceTabRecord` carries the last Runtime revision the Binder committed for that tab. `create`, `navigate`, `focus`, `input`, `takeover`, `returnControl`, and `observe` of a non-closed tab persist that revision on the `browser/workspace` snapshot. The Dock and preview send the addressed listing row's `revision` with `focus` and `close`. They do not observe every tab. Refresh, takeover, and return-to-Agent still use the observed page revision, which is the current revision of the active tab those verbs address. Refresh observes immediately before navigate so it does not reuse a stale `about:blank` URL from an earlier observe of the same tab.
+`BrowserWorkspaceTabRecord` carries the last Runtime revision the Binder committed for that tab. `create`, `navigate`, `focus`, `input`, `takeover`, `returnControl`, `observe` of a non-closed tab, and `browser/runtime-state` for an owned unclosed tab persist that revision on the `browser/workspace` snapshot. `observe` of a closed tab forgets the row. The Dock and preview send the addressed listing row's `revision` with `focus` and `close`. They do not observe every tab. Refresh, takeover, and return-to-Agent still use the observed page revision, which is the current revision of the active tab those verbs address. Refresh observes immediately before navigate so it does not reuse a stale `about:blank` URL from an earlier observe of the same tab.
 
 The listing is Session state, not a new model-visible input. Logged Workspace snapshots still do not enter derived model history. The `browserWorkspace` projection uses `stateVersion` 2 so a cached row without per-tab revision is discarded.
 
-This extends the Session-owned listing in the [Session-owned Browser Workspace Agent Note](../feature/2026-08-19-session-browser-workspace.md) and the Dock chrome in the [Native Browser Dock Agent Note](../feature/2026-08-19-browser-dock.md). The revision lock itself stays in the [browser control arbitration Agent Note](../feature/2026-08-19-browser-control-arbitration.md).
+This extends the Session-owned listing in the [Session-owned Browser Workspace Agent Note](../feature/2026-08-19-session-browser-workspace.md) and the Dock chrome in the [Native Browser Dock Agent Note](../feature/2026-08-19-browser-dock.md). Runtime-internal bumps and observe-of-closed forgetting are owned by the [Dock listing stale Agent Note](2026-08-20-dock-listing-stale.md). The revision lock itself stays in the [browser control arbitration Agent Note](../feature/2026-08-19-browser-control-arbitration.md).
 
 ## Alternatives considered
 

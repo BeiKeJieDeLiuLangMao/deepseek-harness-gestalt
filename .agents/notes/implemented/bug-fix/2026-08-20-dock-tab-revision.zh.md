@@ -10,11 +10,11 @@ Browser Runtime 写入要求被操作标签页的 `expectedRevision`，不匹配
 
 ## 决策
 
-`BrowserWorkspaceTabRecord` 携带 Binder 为该标签页提交的最近一次 Runtime 修订号。`create`、`navigate`、`focus`、`input`、`takeover`、`returnControl` 以及对未关闭标签页的 `observe` 会把该修订号持久化到 `browser/workspace` 快照。Dock 与预览在 `focus` 与 `close` 时发送被操作列表行的 `revision`。它们不会观察每一个标签页。刷新、接管与交还智能体仍使用观察到的页面修订号，那是这些动词所针对的活动标签页的当前修订号。刷新会在 navigate 前立即观察，因此不会复用同一标签页更早一次 observe 留下的过期 `about:blank` URL。
+`BrowserWorkspaceTabRecord` 携带 Binder 为该标签页提交的最近一次 Runtime 修订号。`create`、`navigate`、`focus`、`input`、`takeover`、`returnControl`、对未关闭标签页的 `observe`，以及对已持有且未关闭标签页的 `browser/runtime-state`，会把该修订号持久化到 `browser/workspace` 快照。对已关闭标签页的 `observe` 会遗忘该行。Dock 与预览在 `focus` 与 `close` 时发送被操作列表行的 `revision`。它们不会观察每一个标签页。刷新、接管与交还智能体仍使用观察到的页面修订号，那是这些动词所针对的活动标签页的当前修订号。刷新会在 navigate 前立即观察，因此不会复用同一标签页更早一次 observe 留下的过期 `about:blank` URL。
 
 该列表是 Session 状态，不是新的模型可见输入。已记录的 Workspace 快照仍不进入派生模型历史。`browserWorkspace` 投影使用 `stateVersion` 2，因此不含每标签页修订号的缓存行会被丢弃。
 
-这扩展了 [Session 持有的 Browser Workspace Agent Note](../feature/2026-08-19-session-browser-workspace.md) 中的 Session 持有列表，以及 [原生 Browser Dock Agent Note](../feature/2026-08-19-browser-dock.md) 中的 Dock chrome。修订号锁本身仍由 [浏览器控制权仲裁 Agent Note](../feature/2026-08-19-browser-control-arbitration.md) 持有。
+这扩展了 [Session 持有的 Browser Workspace Agent Note](../feature/2026-08-19-session-browser-workspace.md) 中的 Session 持有列表，以及 [原生 Browser Dock Agent Note](../feature/2026-08-19-browser-dock.md) 中的 Dock chrome。Runtime 内部前进与对已关闭标签页的 observe 遗忘由 [Dock 列表过期 Agent Note](2026-08-20-dock-listing-stale.md) 持有。修订号锁本身仍由 [浏览器控制权仲裁 Agent Note](../feature/2026-08-19-browser-control-arbitration.md) 持有。
 
 ## 考虑过的替代方案
 

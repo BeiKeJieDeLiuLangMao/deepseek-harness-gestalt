@@ -207,7 +207,8 @@ setDock(request: BrowserWorkspaceDockRequest): BrowserWorkspaceProjection
  * Observe one Session-owned tab named on the wire.
  * @param sessionId - Owning Session identity.
  * @param target - Complete tab identity.
- * @returns the current open, unavailable, or closed state.
+ * @returns the current open, unavailable, or closed state. A closed result
+ *   forgets the listing row.
  */
 @Remote('observe') remoteObserve(sessionId: SessionId, target: BrowserTarget): Promise<BrowserRuntimeState>
 
@@ -292,7 +293,8 @@ async navigate(request: BrowserWorkspaceNavigateRequest): Promise<BrowserPageSta
 /**
  * Observe one Session-owned tab.
  * @param request - Session-bound observe request.
- * @returns the current open, unavailable, or closed state.
+ * @returns the current open, unavailable, or closed state. A closed result
+ *   forgets the listing row.
  */
 async observe(request: BrowserWorkspaceObserveRequest): Promise<BrowserRuntimeState>
 
@@ -347,7 +349,7 @@ async cleanup(session: Session): Promise<void>
 
 Types: [Session](session.md) · [SessionId](core.md)
 
-Source: [`packages/browser/browser-workspace/src/index.ts:97`](../../packages/browser/browser-workspace/src/index.ts)
+Source: [`packages/browser/browser-workspace/src/index.ts:98`](../../packages/browser/browser-workspace/src/index.ts)
 
 <a id="browser-events"></a>
 

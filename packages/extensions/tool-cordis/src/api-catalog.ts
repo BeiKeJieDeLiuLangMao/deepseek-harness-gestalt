@@ -481,7 +481,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         signature: '@Remote(\'observe\') remoteObserve(sessionId: SessionId, target: BrowserTarget): Promise<BrowserRuntimeState>',
         description: 'Observe one Session-owned tab named on the wire.',
         parameters: [{ name: 'sessionId', description: 'Owning Session identity.' }, { name: 'target', description: 'Complete tab identity.' }],
-        returns: 'the current open, unavailable, or closed state.',
+        returns: 'the current open, unavailable, or closed state. A closed result forgets the listing row.',
       },
       {
         signature: '@Remote(\'screenshot\') remoteScreenshot(sessionId: SessionId, target: BrowserTarget): Promise<BrowserScreenshot>',
@@ -541,7 +541,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         signature: 'async observe(request: BrowserWorkspaceObserveRequest): Promise<BrowserRuntimeState>',
         description: 'Observe one Session-owned tab.',
         parameters: [{ name: 'request', description: 'Session-bound observe request.' }],
-        returns: 'the current open, unavailable, or closed state.',
+        returns: 'the current open, unavailable, or closed state. A closed result forgets the listing row.',
       },
       {
         signature: 'async screenshot(request: BrowserWorkspaceObserveRequest): Promise<BrowserScreenshot>',
