@@ -1,7 +1,10 @@
 /** Non-production Mobile handshake driver for local keyless controller-flow evidence. */
 
 import {
+  deriveKeylessMobileHandshake,
+  deriveKeylessPairingKey,
   parsePairingCompletionId,
+  parsePairingInvitationLink,
   type PairingCompletionId,
   type RelayCredentialGrant,
 } from '@deepseek-ai/dsh-remote-access'
@@ -10,14 +13,43 @@ import type { MobilePairingHandshakeClient } from './personal-pairing.ts'
 
 /** Explicit development-only handshake driver; it provides no cryptographic security. */
 export class DevelopmentKeylessMobileHandshakeClient implements MobilePairingHandshakeClient {
-  begin(_oneTimeLink: string): Promise<{ completionId: PairingCompletionId; mobileHandshake: Uint8Array }> {
-    return Promise.resolve({
-      completionId: parsePairingCompletionId(`development-${crypto.randomUUID()}`),
-      mobileHandshake: Uint8Array.of(0),
-    })
+  private invitationSecret: Uint8Array | undefined
+  private pairingKey: Uint8Array | undefined
+
+  async begin(oneTimeLink: string): Promise<{ completionId: PairingCompletionId; mobileHandshake: Uint8Array }> {
+    this.clearMaterial()
+    const invitation = parsePairingInvitationLink(oneTimeLink)
+    try {
+      this.invitationSecret = invitation.invitationSecret.slice()
+      return {
+        completionId: parsePairingCompletionId(`development-${crypto.randomUUID()}`),
+        mobileHandshake: await deriveKeylessMobileHandshake(invitation.invitationSecret),
+      }
+    } finally {
+      invitation.invitationSecret.fill(0)
+    }
   }
 
-  acceptDesktopHandshake(_desktopHandshake: Uint8Array): Promise<void> { return Promise.resolve() }
+  async acceptDesktopHandshake(desktopHandshake: Uint8Array): Promise<void> {
+    const secret = this.invitationSecret
+    if (secret === undefined) throw new Error('Keyless Mobile Pairing has no prepared invitation')
+    const expected = await deriveKeylessPairingKey(secret)
+    if (!bytesEqualConstantTime(desktopHandshake, expected)) {
+      throw new TypeError('Keyless Desktop handshake does not match the invitation pairing key')
+    }
+    this.pairingKey = desktopHandshake.slice()
+    secret.fill(0)
+    this.invitationSecret = undefined
+  }
+
+  /** @returns copy of the retained 256-bit pairing key, or undefined before activation. */
+  exportPairingKeyMaterial(): Uint8Array | undefined {
+    return this.pairingKey?.slice()
+  }
+
+  wipe(): void {
+    this.clearMaterial()
+  }
 
   openRelayAuthority(sealedAuthority: Uint8Array): Promise<RelayCredentialGrant> {
     return Promise.resolve().then(() => {
@@ -40,4 +72,20 @@ export class DevelopmentKeylessMobileHandshakeClient implements MobilePairingHan
       }
     })
   }
+
+  private clearMaterial(): void {
+    this.invitationSecret?.fill(0)
+    this.invitationSecret = undefined
+    this.pairingKey?.fill(0)
+    this.pairingKey = undefined
+  }
+}
+
+function bytesEqualConstantTime(left: Uint8Array, right: Uint8Array): boolean {
+  if (left.byteLength !== right.byteLength) return false
+  let difference = 0
+  for (let index = 0; index < left.byteLength; index += 1) {
+    difference |= (left[index] as number) ^ (right[index] as number)
+  }
+  return difference === 0
 }
