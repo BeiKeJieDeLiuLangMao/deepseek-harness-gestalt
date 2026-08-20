@@ -12,7 +12,7 @@ Version 1 exposes only route attachment, opaque ciphertext forwarding, heartbeat
 
 Companion majors 2 and 1 are the current and immediately preceding application versions. Both endpoints must advertise authenticated encryption, pairing-key separation, and replay protection at the selected major. Negotiation selects the highest safe shared major regardless of offer-array order, so an unsafe shared major can fall back only to a safe immediately preceding major. Each logical endpoint connection owns a negotiation channel. Starting a negotiation on that channel invalidates its prior application-codec token before the offers are evaluated; a failed attempt leaves the channel inactive, while other channels remain valid. No safe version overlap fails with an endpoint-specific update requirement before application plaintext can be encoded.
 
-The implemented catalog contains a bounded transcript-page projection, a prompt-submission operation, and a Desktop-confirmed result. Every identifier is branded by this protocol rather than imported from a Harness domain package. Unsupported operations and projection fields fail during decoding.
+The implemented catalog contains a bounded transcript-page projection, a prompt-submission operation, a reconnect `query-operation-status` operation, and Desktop answers: a `confirmed` mutation result plus `status` answers that return the original committed result for a queried operation id or state explicitly that it committed nothing. Every identifier is branded by this protocol rather than imported from a Harness domain package. Unsupported operations and projection fields fail during decoding. A committed `status` answer embeds the confirmed result of the same operation id; an absent answer is only `{ absent: true }`.
 
 ## Wire limits and errors
 
@@ -42,5 +42,5 @@ None.
 
 ## Known Limitations and Deferred Work
 
-- The current Companion catalog proves one mutation and one projection; discovery, creation, interaction, attachment, cancellation, and operation-receipt messages require later protocol additions before their adapters can expose them.
+- The current Companion catalog proves one mutation, one projection, and the operation-status query; discovery, creation, interaction, attachment, and cancellation messages require later protocol additions before their adapters can expose them.
 - Pairing handshakes, credential persistence, challenge lifecycle, encrypted blob capabilities, and production encryption belong to service or reviewed endpoint integrations, not these codecs.
