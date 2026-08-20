@@ -47,6 +47,12 @@ afterEach(() => {
 })
 
 describe('Mobile Platform Account entry', () => {
+  it('fails loud when the browsing context cannot create an Installation id', async () => {
+    configureEnvironment()
+    vi.stubGlobal('crypto', { getRandomValues: crypto.getRandomValues.bind(crypto) })
+    await expect(import('../src/main.tsx')).rejects.toThrow(/secure browsing context/)
+  })
+
   it('opens the prepared GitHub URL through Capacitor from the user click and polls over HTTPS', async () => {
     configureEnvironment()
     document.body.innerHTML = '<div id="root"></div>'
