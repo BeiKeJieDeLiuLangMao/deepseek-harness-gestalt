@@ -164,7 +164,7 @@ describe('unwrapRemote', () => {
     await expect(unwrapRemote(Promise.resolve({
       ok: false as const,
       error: { code: 'internal', message: 'stale revision', details: {} },
-    }))).rejects.toThrow('stale revision')
+    }))).rejects.toMatchObject({ message: 'stale revision', code: 'internal' })
   })
 })
 

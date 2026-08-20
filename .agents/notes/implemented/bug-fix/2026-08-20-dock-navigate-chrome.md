@@ -22,11 +22,11 @@ This extends the chrome in the [Native Browser Dock Agent Note](../feature/2026-
 
 **Apply only Dock `refresh` / `navigate` RPC results into React state.** Rejected because Agent `browser_navigate` never goes through Dock verbs. The listing revision is the Session signal that those page facts changed.
 
-**Subscribe the Dock to `browser/runtime-state`.** Rejected for this ticket because Binder-mediated navigate already commits the listing. Runtime-internal revision bumps without Binder remain [#184](https://github.com/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/issues/184).
+**Subscribe the Dock to `browser/runtime-state`.** Rejected for this ticket because Binder-mediated navigate already commits the listing. Runtime-internal revision bumps without a Binder verb are owned by the [Dock listing stale Agent Note](2026-08-20-dock-listing-stale.md).
 
 ## Consequences
 
-Active-tab chrome tracks Binder-committed pages after navigate and after Refresh. Background-tab listing after crash recovery still does not self-heal; that stays #184. Refresh adds one observe RPC before navigate.
+Active-tab chrome tracks Binder-committed pages after navigate and after Refresh. Background-tab listing after a Runtime-internal revision bump is owned by the [Dock listing stale Agent Note](2026-08-20-dock-listing-stale.md). Refresh adds one observe RPC before navigate.
 
 ## Testing
 

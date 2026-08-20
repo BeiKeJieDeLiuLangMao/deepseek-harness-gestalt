@@ -16,7 +16,7 @@ import type {
 export interface BrowserWorkspaceTabRecord {
   readonly tabId: BrowserTabId
   readonly controlOwner: BrowserControlOwner
-  /** Last Runtime revision the Binder committed for this tab. */
+  /** Last Runtime revision the Binder committed for this tab, including Runtime-internal bumps. */
   readonly revision: number
 }
 
