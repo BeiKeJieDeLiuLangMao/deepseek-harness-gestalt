@@ -13,6 +13,7 @@ import type { Context } from '@deepseek-ai/cordis'
 // error, so scope resolution goes through the sessions service (scopeOf
 // method) instead of the standalone helper.
 import type { ISessions, SessionFace, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SubmitImageAttachment, SubmitOutcome } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import type { ImageAttachmentRef, ImageMediaType } from '@deepseek-ai/dsh-attachment'
 import type { ComposerAttachment } from './contract/slots.ts'
 import type { QueueAction, QueueItemId } from './contract/queue.ts'
@@ -139,19 +140,18 @@ export class ConversationController extends Service implements IConversation {
    * @param text - serialized prompt text.
    * @param imageIds - ordered draft-local attachment ids.
    * @param mode - queue or steer delivery selected by composer policy.
-   * @param historyImageIds - durable attachment ids to reattach with pin prose.
-   * @returns whether the Host admitted the complete request. A rejected
-   * prompt resolves false (the failure is already mirrored into the session
-   * snapshot's promptError); local failures (missing drafts, upload errors)
-   * reject.
+   * @param signal - optional cancellation for the complete Host admission.
+   * @param historyImageIds - durable history attachments referenced by image pins.
+   * @returns the Host admission outcome; local attachment preparation failures reject.
    */
   async sendSession(
     session: SessionFace,
     text: string,
     imageIds: readonly DraftAttachmentId[],
     mode: InputSubmitMode,
+    signal?: AbortSignal,
     historyImageIds: readonly string[] = [],
-  ): Promise<boolean> {
+  ): Promise<SubmitOutcome> {
     const attachments = this.draftImages(imageIds)
     if (attachments.length !== imageIds.length) {
       throw new Error('conversation.sendSession: one or more draft images are no longer available')
@@ -161,10 +161,10 @@ export class ConversationController extends Service implements IConversation {
       ? []
       : await this.serializeHistoryImages(session, historyImageIds)
     const content = [...history, ...uploaded, ...(text === '' ? [] : [{ type: 'text' as const, text }])]
-    const result = await session.prompt(content, mode)
-    if (!result.ok) return false
+    const result = await session.prompt(content, mode, signal)
+    if (!result.ok) return { kind: 'error' }
     this.releaseDraftImages(attachments)
-    return true
+    return { kind: 'success' }
   }
 
   /**
@@ -231,6 +231,21 @@ export class ConversationController extends Service implements IConversation {
       if (attachment !== undefined) attachments.push(attachment)
     }
     return attachments
+  }
+
+  /**
+   * Serialize ordered draft images to command-submit wire payloads without
+   * sending or releasing them (the composer releases only after the command
+   * settles successfully).
+   * @param imageIds - ordered draft-local attachment ids.
+   * @returns base64 payloads in id order.
+   */
+  async serializeDraftImages(imageIds: readonly DraftAttachmentId[]): Promise<readonly SubmitImageAttachment[]> {
+    const attachments = this.draftImages(imageIds)
+    if (attachments.length !== imageIds.length) {
+      throw new Error('conversation.serializeDraftImages: one or more draft images are no longer available')
+    }
+    return Promise.all(attachments.map(attachment => this.encodeImage(attachment.file)))
   }
 
   /**
@@ -362,12 +377,6 @@ export class ConversationController extends Service implements IConversation {
     return sessions
   }
 
-  /**
-   * Reattach durable history images by their content-addressed ids.
-   * @param session - owning session.
-   * @param historyImageIds - attachment ids referenced by history pins.
-   * @returns image prompt parts, or throws when a referenced image is missing.
-   */
   private async serializeHistoryImages(
     session: SessionFace,
     historyImageIds: readonly string[],
@@ -390,12 +399,16 @@ export class ConversationController extends Service implements IConversation {
 
   /** Convert browser files to canonical base64 prompt parts. */
   private serializeImages(images: readonly File[]): Promise<Parameters<SessionFace['prompt']>[0]> {
-    return Promise.all(images.map(async file => ({
-      type: 'image' as const,
+    return Promise.all(images.map(async file => ({ type: 'image' as const, ...await this.encodeImage(file) })))
+  }
+
+  /** Canonical base64 wire form of one browser image file. */
+  private async encodeImage(file: File): Promise<SubmitImageAttachment> {
+    return {
       mediaType: imageMediaType(file.type),
       data: bytesToBase64(new Uint8Array(await file.arrayBuffer())),
       ...(file.name === '' ? {} : { name: file.name }),
-    })))
+    }
   }
 }
 

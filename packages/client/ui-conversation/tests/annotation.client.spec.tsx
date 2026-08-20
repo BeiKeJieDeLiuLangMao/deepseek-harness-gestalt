@@ -15,7 +15,8 @@ import { zh } from '../src/client/locales.ts'
 import {
   removeDraftHighlightOwner, replaceDraftHighlightRanges,
 } from '../src/client/annotation/draft-highlights.ts'
-import type { AnnotationSubmissionReservation, SessionInputDeps } from '../src/client/input/facade.ts'
+import type { SessionInputDeps } from '../src/client/input/facade.ts'
+
 import { SessionInputShell } from '../src/client/input/facade.ts'
 
 function firstTextNode(node: Node): Text {
@@ -622,10 +623,7 @@ describe('text annotation mechanics', () => {
   })
 
   it('submits annotation-only prose through one owned reservation and clears only after admission', () => {
-    const reservations: AnnotationSubmissionReservation[] = []
-    const sink = vi.fn<SessionInputDeps['defaultSink']>((...args) => {
-      if (args[3] !== undefined) reservations.push(args[3])
-    })
+    const sink = vi.fn<SessionInputDeps['defaultSink']>(() => new Promise(() => {}))
     const shell = new SessionInputShell({
       actx: {} as ClientContext,
       defaultSink: sink,
@@ -634,12 +632,15 @@ describe('text annotation mechanics', () => {
     const anchor = createTextAnchor('message-1', 'Exact quotation', 'Exact quotation', 0)
     const id = shell.actions.addTextAnnotation(anchor, '')
     shell.submit()
-    expect(sink).toHaveBeenCalledWith('Annotation 1\nQuoted text: “Exact quotation”', [], 'queue', {
-      restoreText: '', ids: [id],
-    })
+    expect(sink).toHaveBeenCalledWith(
+      'Annotation 1\nQuoted text: “Exact quotation”',
+      [],
+      'queue',
+      expect.any(AbortSignal),
+    )
     expect(shell.snapshot.annotations).toHaveLength(1)
-    const reservation = reservations[0]
-    expect(reservation).toBeDefined()
+    const reservation = shell.annotationReservation
+    expect(reservation).toEqual({ restoreText: '', ids: [id] })
     if (reservation === undefined) throw new Error('annotation submission was not reserved')
     expect(shell.snapshot.annotationSubmitting).toBe(true)
     shell.submit()
@@ -652,24 +653,24 @@ describe('text annotation mechanics', () => {
     expect(shell.snapshot.annotationSubmitting).toBe(false)
   })
 
-  it('failure releases the reservation without deleting its annotations', () => {
-    const reservations: AnnotationSubmissionReservation[] = []
-    const sink = vi.fn<SessionInputDeps['defaultSink']>((...args) => {
-      if (args[3] !== undefined) reservations.push(args[3])
-    })
+  it('failure releases the reservation without deleting its annotations', async () => {
+    const sink = vi.fn<SessionInputDeps['defaultSink']>()
+      .mockImplementationOnce(() => Promise.resolve({ kind: 'error' }))
+      .mockImplementation(() => new Promise(() => {}))
     const shell = new SessionInputShell({ actx: {} as ClientContext, defaultSink: sink, annotationLabels: LABELS })
     shell.setDraft('Please revise this.')
     const anchor = createTextAnchor('message-1', 'Exact quotation', 'Exact quotation', 0)
     const id = shell.actions.addTextAnnotation(anchor, 'Original note')
 
     shell.submit()
-    const reservation = reservations[0]
-    expect(reservation).toBeDefined()
+    const reservation = shell.annotationReservation
+    expect(reservation).toEqual({ restoreText: 'Please revise this.', ids: [id] })
     if (reservation === undefined) throw new Error('annotation submission was not reserved')
     shell.submit()
     shell.setDraft('A later edit must not enter the admitted snapshot.')
     expect(sink).toHaveBeenCalledTimes(1)
     expect(shell.snapshot.draft).toBe('Please revise this.')
+    await vi.waitFor(() => { expect(shell.snapshot.phase).toBe('plain') })
     shell.settleAnnotationSubmission(reservation, false)
 
     expect(shell.snapshot.annotationSubmitting).toBe(false)
@@ -677,7 +678,7 @@ describe('text annotation mechanics', () => {
     shell.actions.updateTextAnnotation(id, 'Retry note')
     shell.submit()
     expect(sink).toHaveBeenCalledTimes(2)
-    const retry = reservations[1]
+    const retry = shell.annotationReservation
     expect(retry).toBeDefined()
     if (retry === undefined) throw new Error('annotation retry was not reserved')
     shell.settleAnnotationSubmission(reservation, true)
@@ -688,7 +689,11 @@ describe('text annotation mechanics', () => {
   })
 
   it('edits and deletes an unsent annotation through the Composer actions', () => {
-    const shell = new SessionInputShell({ actx: {} as ClientContext, defaultSink: vi.fn(), annotationLabels: LABELS })
+    const shell = new SessionInputShell({
+      actx: {} as ClientContext,
+      defaultSink: () => Promise.resolve({ kind: 'success' }),
+      annotationLabels: LABELS,
+    })
     const anchor = createTextAnchor('message-1', 'Exact quotation', 'Exact quotation', 0)
     const id = shell.actions.addTextAnnotation(anchor, '')
 

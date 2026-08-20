@@ -3,8 +3,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import { AttachmentId } from '@deepseek-ai/dsh-attachment'
+import type { MessageImagesProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { ImageGallery, MessageImage } from '../src/MessageImage.tsx'
 import type { MessageImageLabels } from '../src/MessageImage.tsx'
+import { MessageImages } from '../src/client/MessageImages.tsx'
 
 afterEach(cleanup)
 
@@ -130,60 +132,6 @@ describe('MessageImage', () => {
     reject?.(new Error('late failure'))
     await Promise.resolve()
   })
-
-  it('opens the pin overlay, toggles annotation, and restores the editor on close', async () => {
-    const load = vi.fn().mockResolvedValue('blob:history')
-    const onPlace = vi.fn()
-    const onSelect = vi.fn()
-    const onCloseEditor = vi.fn()
-    const view = render(
-      <MessageImage
-        attachment={attachment}
-        load={load}
-        variant="single"
-        labels={labels}
-        pinOverlay={{
-          pins: [{ id: 'pin-1', x: 10, y: 20, index: 1 }],
-          modeLabel: 'Annotate image',
-          exitLabel: 'Exit annotation',
-          refuse: 'Limit reached',
-          onPlace,
-          onSelect,
-          onCloseEditor,
-          editor: <p>note editor</p>,
-        }}
-      />,
-    )
-    await waitFor(() => { expect(view.getByAltText('history.png')).toBeTruthy() })
-    fireEvent.click(view.getByRole('button', { name: 'history.png，点击查看原图' }))
-    expect(view.getByText('note editor')).toBeTruthy()
-    fireEvent.click(view.getByRole('button', { name: 'Annotate image' }))
-    expect(view.getByRole('button', { name: 'Exit annotation' })).toBeTruthy()
-    fireEvent.click(view.getByRole('button', { name: '关闭原图预览' }))
-    expect(onCloseEditor).toHaveBeenCalledOnce()
-  })
-
-  it('opens a pin overlay that still accepts new marks', async () => {
-    const load = vi.fn().mockResolvedValue('blob:open')
-    const view = render(
-      <MessageImage
-        attachment={attachment}
-        load={load}
-        variant="single"
-        labels={labels}
-        pinOverlay={{
-          pins: [],
-          modeLabel: 'Annotate image',
-          exitLabel: 'Exit annotation',
-          onPlace: () => {},
-          onSelect: () => {},
-        }}
-      />,
-    )
-    await waitFor(() => { expect(view.getByAltText('history.png')).toBeTruthy() })
-    fireEvent.click(view.getByRole('button', { name: 'history.png，点击查看原图' }))
-    expect(view.getByRole('button', { name: 'Annotate image' })).toBeTruthy()
-  })
 })
 
 describe('ImageGallery', () => {
@@ -209,26 +157,64 @@ describe('ImageGallery', () => {
     expect(several.container.querySelectorAll('[data-variant="tile"]')).toHaveLength(3)
   })
 
-  it('forwards a pin overlay only for the attachments that own one', () => {
-    const load = vi.fn(() => new Promise<string>(() => {}))
-    const other = { ...attachment, attachmentId: AttachmentId(`sha256:${'b'.repeat(64)}`) }
-    render(
-      <ImageGallery
-        images={[{ attachment }, { attachment: other }]}
-        load={load}
-        align="start"
-        labels={labels}
-        pinOverlayFor={candidate => candidate === attachment
-          ? {
-            pins: [],
-            modeLabel: 'Annotate image',
-            exitLabel: 'Exit annotation',
-            onPlace: () => {},
-            onSelect: () => {},
-          }
-          : undefined}
-      />,
-    )
-    expect(load).toHaveBeenCalledTimes(2)
+  it('renders the conversation slot entry with translated labels', async () => {
+    const t = ((key: string, params?: Readonly<Record<string, unknown>>) => {
+      const translated: Record<string, string> = {
+        'image.label': '图片',
+        'image.openOriginal': '查看原图',
+        'image.loading': '图片加载中…',
+        'image.loadFailed': '图片加载失败，点击重试',
+        'image.preview': '原图预览',
+        'image.closePreview': '关闭原图预览',
+      }
+      if (key === 'image.openOriginalLabel') {
+        const label = params?.label
+        return `${typeof label === 'string' ? label : ''}，点击查看原图`
+      }
+      return translated[key] ?? key
+    }) as MessageImagesProps['t']
+    const loadImage = vi.fn().mockResolvedValue('blob:slot-image')
+    const useSession: MessageImagesProps['useSession'] = () => {
+      throw new Error('MessageImages does not read the session snapshot')
+    }
+    const useInput: MessageImagesProps['useInput'] = () => {
+      throw new Error('MessageImages does not read the input snapshot')
+    }
+    const useSessions: MessageImagesProps['useSessions'] = () => {
+      throw new Error('MessageImages does not read the session list snapshot')
+    }
+    const useWorkspaces: MessageImagesProps['useWorkspaces'] = () => {
+      throw new Error('MessageImages does not read the workspace list snapshot')
+    }
+    const props: MessageImagesProps = {
+      sessionId: 'message-images-test' as MessageImagesProps['sessionId'],
+      useSession,
+      useSessions,
+      useWorkspaces,
+      useProjection: () => undefined,
+      useInput,
+      inputActions: {
+        setDraft: vi.fn(),
+        addImages: vi.fn(() => true),
+        removeImage: vi.fn(),
+        pruneImages: vi.fn(),
+        addTextAnnotation: vi.fn(),
+        updateTextAnnotation: vi.fn(),
+        removeTextAnnotation: vi.fn(),
+        discardTextAnnotations: vi.fn(),
+        addImagePin: vi.fn(),
+        updateImagePin: vi.fn(),
+        removeImagePin: vi.fn(),
+        submit: vi.fn(),
+      },
+      images: [{ attachment }],
+      loadImage,
+      align: 'end',
+      t,
+    }
+    const view = render(<MessageImages {...props} />)
+    await waitFor(() => { expect(view.getByAltText('history.png')).toBeTruthy() })
+    expect(view.getByRole('button', { name: 'history.png，点击查看原图' })).toBeTruthy()
+    expect(view.container.querySelector('[data-align="end"]')).not.toBeNull()
   })
 })

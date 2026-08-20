@@ -25,7 +25,6 @@ One page per subsystem of the DeepSeek Harness: what it is, the data structures 
 | [personal-pairing.md](personal-pairing.md) | Settings-owned Mobile Access, same-account Pairing Challenges, authentication words, and Companion-only Device Principals |
 | [session-title.md](session-title.md) | durable title snapshots, cited source-message seqs, and the asynchronous provider contract |
 | [session-reference.md](session-reference.md) | structured cross-session references: `SessionReferenceInput`/`Candidate`, prepared message contexts, the stable error taxonomy |
-| [workspace-reference.md](workspace-reference.md) | existence-only workspace path markers: `WorkspaceReferenceSource` (`path`, `pathKind`) |
 | [system-prompt.md](system-prompt.md) | per-assembly context, tool-provider results, prompt sections, and cooperative assembly |
 | [tools.md](tools.md) | `ToolDefinition` full fields, the schema DSL, `ToolExecution`/`ToolResult`, tool-presentation UI types, and the guarded execution pipeline |
 | [user-questions.md](user-questions.md) | the UI-backed human question/answer seam: `AskUserQuestionRequest`, answer/options vocabulary, provider API, error taxonomy |
@@ -42,6 +41,7 @@ One page per subsystem of the DeepSeek Harness: what it is, the data structures 
 | [skills.md](skills.md) | the skill service: discovery priority, `SkillSummary`/`SkillDefinition`, session-prefix catalog, model-facing `skill` loading |
 | [compaction.md](compaction.md) | the compaction seam: the `compaction/*` session events, `CompactionResult`, the `CompactionEngine` interface |
 | [subagent.md](subagent.md) | the subagent seam: the named-provider registry, `SubagentStartRequest`/`Result`/`Run`, the start-time-vs-runtime capability split |
+| [agent-team.md](agent-team.md) | Agent Teams: implicit Lead identity, named continuable teammates, durable peer mailbox, and shared task DAG |
 | [web.md](web.md) | the web access seam: `WebSearchRequest`/`Result`, `WebFetchRequest`/`Result`, `WebFetchBody`, provider availability, `WebError` |
 | [browser-runtime.md](browser-runtime.md) | the Browser Runtime seam: opaque Profile/Workspace/browser/tab identities, revision-guarded operations, Session-owned Workspace binder, deterministic Provider, and deferred tool Consumer |
 | [spill.md](spill.md) | the spill storage seam: `SaveTextSpill`, `SpillOwner`/`SpillSource`, `SpillRef`, the branded `SpillLocator` |

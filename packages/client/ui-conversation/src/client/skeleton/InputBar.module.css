@@ -1,11 +1,3 @@
-/* One-glyph font: maps ONLY U+FFFC to a blank zero-advance glyph (every other
-   codepoint falls through to the next family). The chip run is this marker
-   plus the label glyphs, so the textarea, mirror, and backdrop share the
-   same advance — the label width — by construction. */
-@font-face {
-  font-family: 'DshChipCell';
-  src: url('data:font/ttf;base64,AAEAAAAKAIAAAwAgT1MvMkT8SmIAAAEoAAAAYGNtYXAADQBPAAABkAAAADRnbHlmAAAAAAAAAcwAAAABaGVhZCxOSAYAAACsAAAANmhoZWEDIgEvAAAA5AAAACRobXR4AfQAAAAAAYgAAAAIbG9jYQAAAAAAAAHEAAAABm1heHAAAwACAAABCAAAACBuYW1lvljk2gAAAdAAAABscG9zdNNweNQAAAI8AAAALQABAAAAAQAAlSS51V8PPPUAAwPoAAAAAOaLfcUAAAAA5qyJYQAAAAAAAAAAAAAAAwACAAAAAAAAAAEAAAMg/zgAAAH0AAAAAAAAAAEAAAAAAAAAAAAAAAAAAAACAAEAAAACAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAAAAAwjKAZAABQAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAPz8/PwAA//z//AMg/zgAAAMgAMgAAAAAAAAAAAAAAAAAAAAgAAAB9AAAAAAAAAAAAAIAAAADAAAAFAADAAEAAAAUAAQAIAAAAAQABAABAAD//P//AAD//P//AAUAAQAAAAAAAAAAAAAAAAAAAAAAAAAEADYAAQAAAAAAAQALAAAAAQAAAAAAAgAHAAsAAwABBAkAAQAWABIAAwABBAkAAgAOAChEc2hDaGlwQ2VsbFJlZ3VsYXIARABzAGgAQwBoAGkAcABDAGUAbABsAFIAZQBnAHUAbABhAHIAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAABAgZvYmpyZXAAAAA=') format('truetype');
-}
 
 /* Floating capsule input (figma Input_Bottom 75:8208): card floats above the
    viewport bottom inside the centered message column; textarea on top, action
@@ -23,7 +15,7 @@
   /* Side pads ride the shared clearance (figma Input_Bottom drew L32/R32/B8;
      the sides narrow with the shared width axis); the bottom gradient mask
      is owned by the chat scroller. No top pad: the composer stack's gap owns
-     the space above; error/status strips still carry their own margin. */
+     the space above; the status strip still carries its own margin. */
   padding: 0 var(--dsh-composer-side-clearance) 8px;
 }
 
@@ -44,11 +36,6 @@
   color: var(--dsw-alias-label-secondary);
   font-size: 12px;
   line-height: 18px;
-}
-
-.noticeError {
-  background: var(--dsw-alias-interactive-bg-hover-danger);
-  color: var(--dsw-alias-state-error-primary);
 }
 
 .card {
@@ -121,107 +108,6 @@
   padding: 10px 12px 0;
 }
 
-/* Rail seat: the card's top padding (10px) plus this 4px matches DeepSeek
-   Chat's spacing above the thumbnails; the card's 12px flex gap owns the space
-   below. The rail itself (arrows, hidden scrollbar, card geometry) is the
-   ui-attachment atom's. */
-.attachments {
-  min-width: 0;
-  padding: 4px 12px 0;
-}
-
-.annotationSummary {
-  position: relative;
-  width: max-content;
-  padding: 0 12px;
-}
-
-.annotationSummaryTrigger {
-  height: 30px;
-  padding: 0 11px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 999px;
-  background: var(--dsw-alias-bg-base);
-  color: var(--dsw-alias-label-primary);
-  font-size: 12px;
-  line-height: 18px;
-}
-
-.annotationDiscard {
-  height: 30px;
-  margin-left: 4px;
-  padding: 0 8px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 999px;
-  background: var(--dsw-alias-bg-base);
-  color: var(--dsw-alias-label-secondary);
-  font-size: 12px;
-  line-height: 18px;
-}
-
-.annotationDiscard:hover:enabled { background: var(--dsw-alias-interactive-bg-hover-danger); }
-.annotationDiscard:disabled { opacity: 0.5; }
-
-.annotationSummaryDetails {
-  position: absolute;
-  z-index: 20;
-  bottom: calc(100% - 1px);
-  left: 12px;
-  display: none;
-  width: 330px;
-  max-height: 240px;
-  padding: 8px;
-  overflow: auto;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 13px;
-  background: var(--dsw-alias-bg-base);
-  box-shadow: var(--dsw-shadow-lv3);
-}
-
-.annotationSummary:hover .annotationSummaryDetails,
-.annotationSummary:focus-within .annotationSummaryDetails {
-  display: grid;
-  gap: 4px;
-}
-
-.annotationSummaryItem {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 28px;
-  gap: 4px;
-  border-radius: 9px;
-  background: var(--dsw-alias-bg-module-platform);
-}
-
-.annotationSummaryItem button {
-  min-width: 0;
-  padding: 7px 8px;
-  border: 0;
-  background: transparent;
-  color: var(--dsw-alias-label-primary);
-  text-align: left;
-}
-
-.annotationSummaryItem strong,
-.annotationSummaryItem small {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.annotationSummaryItem small {
-  color: var(--dsw-alias-label-caption);
-  font-size: 11px;
-  line-height: 16px;
-}
-
-.annotationEditPopover {
-  position: absolute;
-  z-index: 21;
-  bottom: calc(100% + 4px);
-  left: 12px;
-}
-
 /* Floating overlay anchor (menu / popupSelect shell): entries position
    themselves against the card (bottom: 100% + gap); closed entries render null. */
 .overlayAnchor {
@@ -250,15 +136,20 @@
   position: relative;
 }
 
-/* Decoration backdrop: same metrics as the textarea, transparent glyphs; only
-   the highlight backgrounds and the ghost hint show through the transparent
-   textarea background above it. */
+/* Decoration backdrop: same metrics as the transparent-text textarea. It owns
+   every visible glyph plus the range colors and ghost hint; the textarea above
+   retains the native selection and caret. */
 .backdrop {
   position: absolute;
   inset: 0;
   overflow: hidden;
   color: var(--dsw-alias-label-primary);
   pointer-events: none;
+}
+
+.backdropDisabled,
+.backdropDisabled :is(.hlToken, .hint, .textRef, .chip, .chipInvalid) {
+  color: var(--dsw-alias-label-tertiary);
 }
 
 .hlToken {
@@ -305,6 +196,7 @@
   outline: none;
   background: transparent;
   color: transparent;
+  -webkit-text-fill-color: transparent;
   /* Business blue, not brand-primary: that token resolves to ink in this sheet. */
   caret-color: var(--dsw-alias-state-business-primary);
 }
@@ -319,10 +211,7 @@
   /* figma .InputText 34:10434: pl 16 / pr 12 / pt 4. Backdrop MUST share these
      metrics or the highlight ranges drift off the glyphs. */
   padding: 4px 12px 0 16px;
-  /* DshChipCell first: ONLY U+FFFC resolves there (zero-advance marker);
-     the label glyphs fall through to the app stack. All three layers share
-     the stack, so placeholder advances agree by construction. */
-  font-family: 'DshChipCell', var(--dsw-font-family);
+  font-family: var(--dsw-font-family);
   font-size: inherit;
   /* Three consumers, not two: the mirror sizes the stack, the layers must break
      lines identically, and the caret reveal parses this value to step one line
@@ -347,12 +236,15 @@
 /* figma 34:10434: #ADB2B8 light / #81858C dark — the caption pair exactly. */
 .input::placeholder {
   color: var(--dsw-alias-label-caption);
+  -webkit-text-fill-color: var(--dsw-alias-label-caption);
   user-select: none;
 }
 
-/* Running lock: grayed but the draft stays visible; the turn ending re-enables. */
+/* The backdrop owns disabled draft color; the textarea remains caret-only so
+   its marker glyphs cannot cover the reference icons beneath it. */
 .input:disabled {
-  color: var(--dsw-alias-label-tertiary);
+  color: transparent;
+  -webkit-text-fill-color: transparent;
   cursor: not-allowed;
 }
 
@@ -375,6 +267,7 @@
    (figma Input_Bottom chrome). */
 .row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
@@ -411,6 +304,12 @@
 
 .trailing {
   flex: none;
+  /* Wrap keeps the left mode chips and the right controls apart when the card
+     runs out of row width: the trailing group (model + send) moves to its own
+     line instead of the left group shrinking until its chip overlaps the
+     model trigger (external:107). The auto margin re-anchors it right on the
+     wrapped line; on a single line space-between already pins it right. */
+  margin-left: auto;
   gap: 12px;
 }
 
@@ -525,23 +424,50 @@
   display: none;
 }
 
-/* Reference chip: in-flow label whose advance is the draft run
-   (zero-width U+FFFC + label). No box, no clip — color is the projection. */
+.textRefTrigger {
+  position: relative;
+}
+
+.textRefTriggerGlyph {
+  color: transparent;
+}
+
+.textRefIcon {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+/* Structured references use the same inline-backdrop technique as /skill:
+   their complete display text remains in the textarea, so wrapping and caret
+   geometry come from the browser's native glyph metrics. The leading marker
+   reserves the icon's advance while the backdrop paints the domain glyph. */
 .chip {
+  position: relative;
   color: var(--dsw-alias-state-business-primary);
-  white-space: nowrap;
+  background: transparent;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
 }
 
-.chip::before {
-  content: '\FFFC';
+.chipTrigger {
+  position: relative;
 }
 
-.chipLabel {
-  white-space: nowrap;
+.chipTriggerGlyph {
+  color: transparent;
+}
+
+.chipIcon {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
 }
 
 .chipInvalid {
-  color: var(--dsw-alias-state-error-primary);
   text-decoration: line-through;
   opacity: 0.7;
+  color: var(--dsw-alias-state-error-primary);
 }

@@ -1,3 +1,0 @@
-- listbox "Trigger suggestions":
-  - text: Workspace
-  - option "docs/guide.md docs/guide.md" [selected]

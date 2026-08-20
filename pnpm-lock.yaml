@@ -1005,9 +1005,6 @@ importers:
       '@deepseek-ai/dsh-workflow-worker-thread':
         specifier: workspace:*
         version: link:../packages/workflow/workflow-worker-thread
-      '@deepseek-ai/dsh-workspace-reference':
-        specifier: workspace:*
-        version: link:../packages/context/workspace-reference
       '@deepseek-ai/schemastery':
         specifier: link:../vendor/schemastery
         version: link:../vendor/schemastery
@@ -1817,9 +1814,6 @@ importers:
       '@deepseek-ai/dsh-client-ui-workspace':
         specifier: workspace:^
         version: link:../../client/ui-workspace
-      '@deepseek-ai/dsh-client-ui-workspace-reference':
-        specifier: workspace:^
-        version: link:../../client/ui-workspace-reference
       '@deepseek-ai/dsh-cmdline':
         specifier: workspace:^
         version: link:../../boot/cmdline
@@ -1880,9 +1874,6 @@ importers:
       '@deepseek-ai/dsh-workspace':
         specifier: workspace:^
         version: link:../../workspace/workspace
-      '@deepseek-ai/dsh-workspace-reference':
-        specifier: workspace:^
-        version: link:../../context/workspace-reference
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
         version: link:../../../vendor/schemastery
@@ -2093,18 +2084,6 @@ importers:
         specifier: ~18.3.1
         version: 18.3.31
 
-  packages/client/schema-form:
-    dependencies:
-      '@deepseek-ai/schemastery':
-        specifier: link:../../../vendor/schemastery
-        version: link:../../../vendor/schemastery
-    devDependencies:
-      '@deepseek-ai/cordis':
-        specifier: workspace:^
-        version: link:../../../vendor/cordis
-      '@deepseek-ai/dsh-invariants':
-        specifier: workspace:^
-        version: link:../../runtime-diagnostics/invariants
 
   packages/client/ui-agent-preset:
     devDependencies:
@@ -2803,9 +2782,6 @@ importers:
       '@deepseek-ai/dsh-client-runtime':
         specifier: workspace:^
         version: link:../runtime
-      '@deepseek-ai/dsh-client-schema-form':
-        specifier: workspace:^
-        version: link:../schema-form
       '@deepseek-ai/dsh-client-test-runtime':
         specifier: workspace:^
         version: link:../../test-support/client-runtime
@@ -3024,9 +3000,6 @@ importers:
       '@deepseek-ai/dsh-client-runtime':
         specifier: workspace:^
         version: link:../runtime
-      '@deepseek-ai/dsh-client-schema-form':
-        specifier: workspace:^
-        version: link:../schema-form
       '@deepseek-ai/dsh-client-test-runtime':
         specifier: workspace:^
         version: link:../../test-support/client-runtime
@@ -3118,9 +3091,6 @@ importers:
       '@deepseek-ai/dsh-client-runtime':
         specifier: workspace:^
         version: link:../runtime
-      '@deepseek-ai/dsh-client-schema-form':
-        specifier: workspace:^
-        version: link:../schema-form
       '@deepseek-ai/dsh-client-test-runtime':
         specifier: workspace:^
         version: link:../../test-support/client-runtime
@@ -3668,60 +3638,12 @@ importers:
         specifier: ^18.2.0
         version: 18.3.1
 
-  packages/client/ui-workspace-reference:
-    dependencies:
-      '@deepseek-ai/dsh-settings':
-        specifier: workspace:^
-        version: link:../../settings/settings
-      '@deepseek-ai/schemastery':
-        specifier: link:../../../vendor/schemastery
-        version: link:../../../vendor/schemastery
-    devDependencies:
-      '@deepseek-ai/cordis':
-        specifier: workspace:^
-        version: link:../../../vendor/cordis
-      '@deepseek-ai/dsh-client-locale':
-        specifier: workspace:^
-        version: link:../locale
-      '@deepseek-ai/dsh-client-runtime':
-        specifier: workspace:^
-        version: link:../runtime
-      '@deepseek-ai/dsh-client-ui-input-trigger':
-        specifier: workspace:^
-        version: link:../ui-input-trigger
-      '@deepseek-ai/dsh-client-ui-settings':
-        specifier: workspace:^
-        version: link:../ui-settings
-      '@deepseek-ai/dsh-client-ui-slots':
-        specifier: workspace:^
-        version: link:../ui-slots
-      '@deepseek-ai/dsh-invariants':
-        specifier: workspace:^
-        version: link:../../runtime-diagnostics/invariants
-      '@deepseek-ai/dsh-typert-protocol':
-        specifier: workspace:^
-        version: link:../../typert/protocol
-      '@deepseek-ai/dsh-typert-registry':
-        specifier: workspace:^
-        version: link:../../typert/registry
-      '@deepseek-ai/dsh-workspace-reference':
-        specifier: workspace:^
-        version: link:../../context/workspace-reference
-      '@types/react':
-        specifier: ~18.3.1
-        version: 18.3.31
-      react:
-        specifier: ^18.2.0
-        version: 18.3.1
 
   packages/client/web:
     dependencies:
       '@deepseek-ai/dsh-client-modules':
         specifier: workspace:^
         version: link:../modules
-      '@deepseek-ai/dsh-client-schema-form':
-        specifier: workspace:^
-        version: link:../schema-form
       '@deepseek-ai/dsh-client-ui-attachment':
         specifier: workspace:^
         version: link:../ui-attachment
@@ -4101,42 +4023,6 @@ importers:
         specifier: workspace:^
         version: link:../../core/system-prompt
 
-  packages/context/workspace-reference:
-    dependencies:
-      '@deepseek-ai/schemastery':
-        specifier: link:../../../vendor/schemastery
-        version: link:../../../vendor/schemastery
-      zod:
-        specifier: ^4.4.3
-        version: 4.4.3
-    devDependencies:
-      '@deepseek-ai/cordis':
-        specifier: workspace:^
-        version: link:../../../vendor/cordis
-      '@deepseek-ai/dsh-agent':
-        specifier: workspace:^
-        version: link:../../core/agent
-      '@deepseek-ai/dsh-fs':
-        specifier: workspace:^
-        version: link:../../fs/fs
-      '@deepseek-ai/dsh-fs-local':
-        specifier: workspace:^
-        version: link:../../fs/fs-local
-      '@deepseek-ai/dsh-invariants':
-        specifier: workspace:^
-        version: link:../../runtime-diagnostics/invariants
-      '@deepseek-ai/dsh-llm':
-        specifier: workspace:^
-        version: link:../../llm/llm
-      '@deepseek-ai/dsh-session':
-        specifier: workspace:^
-        version: link:../../core/session
-      '@deepseek-ai/dsh-typert-protocol':
-        specifier: workspace:^
-        version: link:../../typert/protocol
-      '@deepseek-ai/dsh-typert-registry':
-        specifier: workspace:^
-        version: link:../../typert/registry
 
   packages/core/agent:
     devDependencies:

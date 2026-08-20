@@ -38,6 +38,7 @@ apps/desktop/out/
 apps/desktop/release/
 apps/desktop/resources/
 .artifacts/
+.dsh-build/
 /scripts/noise-security-path/target/
 /scripts/noise-security-path/runtimes/android/.gradle/
 .playwright-mcp/
