@@ -10,7 +10,7 @@ The native Windows complete inventory runs forty-five gates, including the full 
 
 ## Decision
 
-`windows-native` sets `DSH_GATE_CONCURRENCY` to `2` on hosted `windows-latest` and on the `dsh-win-ci` failover pool. Hosted `DSH_COVERAGE_MAX_WORKERS` stays `1`, so the coverage pair still receives one Vitest worker each when they overlap. Both coverage gates `needs: ['build']` so instrumented Vitest does not load `lib/` while tsdown is still writing it. Production site and Electron runtime e2e may overlap the build. Instrumented Vitest fan-out on Windows remains the bound in the [native Windows pull-request CI](2026-08-08-native-windows-pull-request-ci.md) note. The required Wine job and the `all-checks-passed` graph are unchanged.
+`windows-native` sets `DSH_GATE_CONCURRENCY` to `2` on hosted `windows-latest` and on the `dsh-win-ci` failover pool. Hosted `DSH_COVERAGE_MAX_WORKERS` stays `1`, so the coverage pair still receives one Vitest worker each when they overlap. Both coverage gates `needs: ['build']` so instrumented Vitest does not load `lib/` while tsdown is still writing it. Production site and Electron runtime e2e may overlap the build. Exempt-heavy cases must not set a shorter per-test timeout than `DSH_COVERAGE_TEST_TIMEOUT_MS`; a 20s `change-scope` budget timed out on the first overlapping hosted run after #210. Instrumented Vitest fan-out on Windows remains the bound in the [native Windows pull-request CI](2026-08-08-native-windows-pull-request-ci.md) note. The required Wine job and the `all-checks-passed` graph are unchanged.
 
 ## Alternatives considered
 
