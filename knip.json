@@ -86,6 +86,8 @@
         "local-companion-platform/start.ts",
         "local-companion-platform/src/listen.ts",
         "local-companion-platform/tests/fixtures/listen-driver.ts",
+        "local-companion-platform/tests/fixtures/desktop-challenge.ts",
+        "local-companion-platform/tests/fixtures/desktop-confirm.ts",
         "*/tests/**/*.e2e.ts",
         "*/tests/**/*.snapshot.ts"
       ],

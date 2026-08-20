@@ -45,6 +45,29 @@ describe('local companion Platform keyless assembled path', () => {
     }
   })
 
+  it('rewrites the Vite page origin onto the selected HTTPS origin for Account CORS', async () => {
+    const pageOrigin = 'http://127.0.0.1:4173'
+    const platform = await startLocalCompanionPlatform({
+      ...LOCAL_COMPANION_LISTEN_CONFIG,
+      port: 0,
+      pageOrigin,
+      entropy: 'sequential',
+    })
+    try {
+      const preflight = await platform.fetch(`${platform.origin}/v1/account/login-attempts`, {
+        method: 'OPTIONS',
+        headers: {
+          origin: pageOrigin,
+          'access-control-request-method': 'POST',
+        },
+      })
+      expect(preflight.status).toBe(204)
+      expect(preflight.headers.get('access-control-allow-origin')).toBe(pageOrigin)
+    } finally {
+      await platform.close()
+    }
+  })
+
   it('boots the Loader and completes same-account pairing plus an encrypted Relay round trip', async () => {
     const result = await runLoaderSmoke({
       label: 'local-companion-platform',

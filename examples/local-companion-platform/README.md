@@ -11,7 +11,7 @@ LOCAL_COMPANION_PORT=8443 LOCAL_COMPANION_PAGE_ORIGIN=http://127.0.0.1:5174 \
   node --import tsx/esm examples/local-companion-platform/tests/fixtures/listen-driver.ts
 ```
 
-Mobile selects `VITE_PLATFORM_ENV=development` with `VITE_PLATFORM_DEVELOPMENT_ORIGIN=https://127.0.0.1:8443`, the matching callback and unused-distinct production pair, `VITE_PERSONAL_PAIRING_KEYLESS=1`, and `VITE_REMOTE_RELAY_WSS_URL=wss://127.0.0.1:8443/v1/remote-access/relay` plus the required Relay bounds. Desktop uses the same identities under `DSH_PLATFORM_*` and `DSH_PERSONAL_PAIRING_KEYLESS=1`. Simulators must accept the loopback certificate and open the TLS origin, not the Vite port.
+Mobile selects `VITE_PLATFORM_ENV=development` with `VITE_PLATFORM_DEVELOPMENT_ORIGIN=https://127.0.0.1:8443`, the matching callback and unused-distinct production pair, `VITE_PERSONAL_PAIRING_KEYLESS=1`, and `VITE_REMOTE_RELAY_WSS_URL=wss://127.0.0.1:8443/v1/remote-access/relay` plus the required Relay bounds. Desktop uses the same identities under `DSH_PLATFORM_*` and `DSH_PERSONAL_PAIRING_KEYLESS=1`. Simulators must accept the loopback certificate and open the TLS origin, not the Vite port. An Android WebView that cannot trust the bundled certificate may open `LOCAL_COMPANION_PAGE_ORIGIN` on `http://127.0.0.1`; the TLS front rewrites that page origin onto the selected HTTPS origin for Account and pairing CORS.
 
 The Loader scenario boots [`cordis.yml`](cordis.yml) and proves same-account login, disabled-by-default Mobile Access, confirmed pairing, and one encrypted Relay round trip. It is not a product cryptographic implementation.
 

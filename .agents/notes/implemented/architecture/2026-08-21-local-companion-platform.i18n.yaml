@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-21-local-companion-platform.md
-2026-08-21-local-companion-platform.md: 7fdf2ecbe83610dfe0ef503246545cc03cd69d78
-2026-08-21-local-companion-platform.zh.md: 40d1a7c7f893e17f8d34cd6754c9cec61fa2833d
+2026-08-21-local-companion-platform.md: 6147fe3dad3f78460edda509b6c45c9ec8f0f50f
+2026-08-21-local-companion-platform.zh.md: eca8aaf56faa3b631f5f05a36f31c6d26b552f34

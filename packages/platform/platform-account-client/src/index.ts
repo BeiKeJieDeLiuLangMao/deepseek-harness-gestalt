@@ -60,7 +60,7 @@ export class PlatformAccountHttpTransport implements PlatformAccountTransport {
   constructor(options: PlatformAccountHttpTransportOptions) {
     this.environment = options.environment
     this.origin = options.environment.origin
-    this.fetch = options.fetch ?? globalThis.fetch
+    this.fetch = options.fetch ?? globalThis.fetch.bind(globalThis)
   }
 
   beginLogin(input: {

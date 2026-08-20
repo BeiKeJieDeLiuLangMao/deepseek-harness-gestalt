@@ -179,7 +179,10 @@ export async function startLocalCompanionPlatform(
         return
       }
       acquired.push(selected.id)
-      proxyHttp(req, res, selected.port)
+      proxyHttp(req, res, selected.port, '127.0.0.1', page === undefined ? undefined : {
+        from: page.origin,
+        to: environment.origin,
+      })
       return
     }
     if (page !== undefined) {
@@ -224,7 +227,8 @@ export async function startLocalCompanionPlatform(
   }
 }
 
-function createInsecureHttpsFetch(): typeof fetch {
+/** Fetch that accepts the bundled loopback certificate and follows HTTPS redirects. */
+export function createInsecureHttpsFetch(): typeof fetch {
   const fetchHttps = async (input: RequestInfo | URL, init?: RequestInit, redirects = 0): Promise<Response> => {
     const request = input instanceof Request ? input : new Request(input, init)
     const url = new URL(request.url)
@@ -251,10 +255,11 @@ function createInsecureHttpsFetch(): typeof fetch {
             if (typeof value === 'string') responseHeaders.set(key, value)
             else if (Array.isArray(value)) responseHeaders.set(key, value.join(', '))
           }
-          resolve(new Response(Buffer.concat(chunks), {
-            status: incoming.statusCode ?? 502,
-            headers: responseHeaders,
-          }))
+          const status = incoming.statusCode ?? 502
+          resolve(new Response(
+            status === 204 || status === 205 || status === 304 ? null : Buffer.concat(chunks),
+            { status, headers: responseHeaders },
+          ))
         })
       })
       upstream.on('error', reject)
@@ -488,9 +493,16 @@ class MemoryRelayBus {
   }
 }
 
-function proxyHttp(req: IncomingMessage, res: ServerResponse, port: number, hostname = '127.0.0.1'): void {
+function proxyHttp(
+  req: IncomingMessage,
+  res: ServerResponse,
+  port: number,
+  hostname = '127.0.0.1',
+  cors?: { from: string; to: string },
+): void {
   const headers = { ...req.headers }
   delete headers.connection
+  if (cors !== undefined && headers.origin === cors.from) headers.origin = cors.to
   const options: RequestOptions = {
     hostname,
     port,
@@ -499,7 +511,11 @@ function proxyHttp(req: IncomingMessage, res: ServerResponse, port: number, host
     headers,
   }
   const upstream = httpRequest(options, (incoming) => {
-    res.writeHead(incoming.statusCode ?? 502, incoming.headers)
+    const incomingHeaders = { ...incoming.headers }
+    if (cors !== undefined && incomingHeaders['access-control-allow-origin'] === cors.to) {
+      incomingHeaders['access-control-allow-origin'] = cors.from
+    }
+    res.writeHead(incoming.statusCode ?? 502, incomingHeaders)
     incoming.pipe(res)
   })
   upstream.on('error', () => {

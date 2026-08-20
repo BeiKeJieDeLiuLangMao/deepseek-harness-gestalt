@@ -635,6 +635,22 @@ describe('AccountLifecycleTransitions', () => {
 describe('PlatformAccountHttpTransport', () => {
   const proof = { jti: parseAccountProofJti('proof'), issuedAt: 123, signature: 'signature' }
 
+  it('keeps the default Fetch implementation callable after method extraction', async () => {
+    const impl = {
+      async fetch(this: unknown) {
+        if (this == null) throw new TypeError('Illegal invocation')
+        return new Response(JSON.stringify(ATTEMPT), { status: 200, headers: { 'content-type': 'application/json' } })
+      },
+    }
+    vi.stubGlobal('fetch', impl.fetch)
+    const transport = new PlatformAccountHttpTransport({ environment: DEVELOPMENT })
+    await expect(transport.beginLogin({
+      installationId: parseInstallationId('mobile-1'),
+      installationKind: 'mobile',
+      publicKey: {},
+    })).resolves.toEqual(ATTEMPT)
+  })
+
   it('routes every operation to the selected environment with JSON and proof headers', async () => {
     const calls: Array<[string, RequestInit]> = []
     const fetch = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {

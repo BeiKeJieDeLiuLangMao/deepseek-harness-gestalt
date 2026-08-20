@@ -10,9 +10,9 @@ Status: implemented
 
 ## Decision
 
-[`examples/local-companion-platform`](../../../../examples/local-companion-platform/README.md) 是长期运行的开发监听。它绑定一个 `127.0.0.1` TLS 端点，把 `/v1/*` 和 Relay 升级在两个进程内实例间轮换，并共享内存中的 Account、配对权威和 Relay 路由存储。所选开发身份就是该 TLS origin；生产身份仍是已运营的 `www.gestaltrun.com` 对，以便客户端成对校验拒绝共享身份。该组成里的 GitHub 授权是同一 origin 上的 `/v1/account/oauth/github/development-complete`，并始终给出 `octocat` 公开身份。`LOCAL_COMPANION_PAGE_ORIGIN` 把非 `/v1` 路径反代到 Mobile Vite，使 CORS 与 `loadPlatformEnvironment` 看到同一个 HTTPS origin。[`apps/platform/src/boot.ts`](../../../../apps/platform/src/boot.ts) 不导入该示例，也不导入 `DevelopmentKeylessPairingHandshakeProvider`。
+[`examples/local-companion-platform`](../../../../examples/local-companion-platform/README.md) 是长期运行的开发监听。它绑定一个 `127.0.0.1` TLS 端点，把 `/v1/*` 和 Relay 升级在两个进程内实例间轮换，并共享内存中的 Account、配对权威和 Relay 路由存储。所选开发身份就是该 TLS origin；生产身份仍是已运营的 `www.gestaltrun.com` 对，以便客户端成对校验拒绝共享身份。该组成里的 GitHub 授权是同一 origin 上的 `/v1/account/oauth/github/development-complete`，并始终给出 `octocat` 公开身份。`LOCAL_COMPANION_PAGE_ORIGIN` 把非 `/v1` 路径反代到 Mobile Vite，使浏览上下文可以共享 TLS origin；当 WebView 无法信任捆绑证书时，TLS 前端会把该 Vite origin 改写为所选 HTTPS origin，以满足 Account 与配对 CORS。[`apps/platform/src/boot.ts`](../../../../apps/platform/src/boot.ts) 不导入该示例，也不导入 `DevelopmentKeylessPairingHandshakeProvider`。
 
-当没有会话时，`PlatformAccountInstallation.load()` 会把仍有效的待完成登录恢复为轮询，并清除过期的待完成尝试，因此在 Capacitor 不可用时 Mobile 入口可以对已准备的授权 URL 执行 `location.assign`，并在用户返回后继续。入口仍然没有 `window.open`、弹窗或携带令牌的自定义 URL 回退。
+当没有会话时，`PlatformAccountInstallation.load()` 会把仍有效的待完成登录恢复为轮询，并清除过期的待完成尝试。非原生 Mobile 入口会对已准备的授权 URL 执行 `location.assign`，以便返回后由 `load()` 继续；只有打包后的 Capacitor WebView 才使用 `Browser.open`。入口仍然没有 `window.open`、弹窗或携带令牌的自定义 URL 回退。Account 与 Remote Access 的默认 Fetch 实现绑定到全局，以便浏览器调用。
 
 Loader 场景使用顺序熵，以及真实的 Desktop/Mobile Account 客户端与 Remote Access HTTP/WSS 客户端，证明同账号登录、默认关闭的手机访问、确认后的配对，以及一次加密 Relay 往返。
 

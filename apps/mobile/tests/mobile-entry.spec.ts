@@ -11,6 +11,7 @@ Object.defineProperty(globalThis, 'indexedDB', {
 })
 
 const browserOpen = vi.hoisted(() => vi.fn<(options: { url: string }) => Promise<void>>())
+const nativePlatform = vi.hoisted(() => vi.fn(() => true))
 const relayLifecycle = vi.hoisted(() => ({
   configure: vi.fn(),
   start: vi.fn(async () => {}),
@@ -20,6 +21,10 @@ const relayLifecycle = vi.hoisted(() => ({
 }))
 
 vi.mock('@capacitor/browser', () => ({ Browser: { open: browserOpen } }))
+vi.mock('@capacitor/core', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@capacitor/core')>()
+  return { ...actual, Capacitor: { ...actual.Capacitor, isNativePlatform: () => nativePlatform() } }
+})
 vi.mock('@deepseek-ai/dsh-remote-access-client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@deepseek-ai/dsh-remote-access-client')>()
   return {
@@ -39,6 +44,8 @@ vi.mock('@deepseek-ai/dsh-remote-access-client', async (importOriginal) => {
 afterEach(() => {
   cleanup()
   browserOpen.mockReset()
+  nativePlatform.mockReset()
+  nativePlatform.mockReturnValue(true)
   relayLifecycle.configure.mockReset()
   relayLifecycle.start.mockReset()
   relayLifecycle.stop.mockReset()
@@ -100,7 +107,7 @@ describe('Mobile Platform Account entry', () => {
   it('navigates the current browsing context when Capacitor Browser is unavailable', async () => {
     configureEnvironment()
     document.body.innerHTML = '<div id="root"></div>'
-    browserOpen.mockRejectedValueOnce(new Error('Capacitor Browser is unavailable'))
+    nativePlatform.mockReturnValue(false)
     const assign = vi.fn()
     vi.stubGlobal('location', { assign, href: 'http://localhost/', origin: 'http://localhost' })
     vi.stubGlobal('fetch', vi.fn(async (input: string | URL | Request) => {
@@ -124,6 +131,7 @@ describe('Mobile Platform Account entry', () => {
     fireEvent.click(button)
 
     await waitFor(() => { expect(assign).toHaveBeenCalledOnce() })
+    expect(browserOpen).not.toHaveBeenCalled()
     expect(String(assign.mock.calls[0]?.[0])).toContain('/v1/account/oauth/github/development-complete')
   })
 
