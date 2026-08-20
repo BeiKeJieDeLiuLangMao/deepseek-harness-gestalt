@@ -257,6 +257,44 @@ describe('Remote attachment HTTP assembled transfer', () => {
     expect(store.observe()).toHaveLength(0)
   })
 
+  it('leaves a finished consume body intact when delete-after-finish fails, so a later consume still delivers the blob', async () => {
+    const { routes, store } = await start()
+    const sealed = await mobileSeal(pairingKey, Uint8Array.of(4, 5, 6))
+    const uploadRoute = routes.get('/v1/remote-attachments')
+    if (uploadRoute === undefined) throw new Error('upload route was not registered')
+    const uploadResponse = stubResponse()
+    await uploadRoute.handler(
+      streamingRequest({ 'x-test-pairing': 'pairing-a' }, [new Uint8Array(sealed.ciphertext)]),
+      uploadResponse.res,
+    )
+    const grant = JSON.parse(new TextDecoder().decode(concatBytes(uploadResponse.body))) as { capability: string }
+    const consumeRoute = routes.get('/v1/remote-attachments/consume')
+    if (consumeRoute === undefined) throw new Error('consume route was not registered')
+    vi.spyOn(store, 'revoke').mockRejectedValueOnce(new Error('delete after finish failed'))
+    const first = stubResponse()
+    await consumeRoute.handler(
+      streamingRequest(
+        { 'x-test-pairing': 'pairing-a' },
+        [new TextEncoder().encode(JSON.stringify({ capability: grant.capability }))],
+      ),
+      first.res,
+    )
+    expect(first.status).toBe(200)
+    expect(concatBytes(first.body)).toEqual(sealed.ciphertext)
+    expect(store.observe()).toHaveLength(1)
+    const retry = stubResponse()
+    await consumeRoute.handler(
+      streamingRequest(
+        { 'x-test-pairing': 'pairing-a' },
+        [new TextEncoder().encode(JSON.stringify({ capability: grant.capability }))],
+      ),
+      retry.res,
+    )
+    expect(retry.status).toBe(200)
+    expect(concatBytes(retry.body)).toEqual(sealed.ciphertext)
+    expect(store.observe()).toHaveLength(0)
+  })
+
   it('keeps a foreign pairing key unable to open another pairing seal', async () => {
     const key = await deriveCompanionAttachmentKey(pairingKey)
     const sealed = await sealCompanionAttachment(key, new TextEncoder().encode('pairing secret'))
@@ -440,44 +478,45 @@ function stubResponse(): { res: ServerResponse; status: number; body: Uint8Array
   }
   const state = { headersSent: false, writableFinished: false }
   const emitter = new EventEmitter()
-  holder.res = Object.assign(emitter, {
-    get headersSent() { return state.headersSent },
-    get writableFinished() { return state.writableFinished },
+  Object.assign(emitter, {
     writeHead(status: number) {
       holder.status = status
       state.headersSent = true
-      return holder.res
+      return emitter
     },
-    setHeader() { return holder.res },
+    setHeader() { return emitter },
     end(chunk?: unknown) {
       if (typeof chunk === 'string') holder.body.push(new TextEncoder().encode(chunk))
       else if (chunk instanceof Uint8Array) holder.body.push(chunk)
       state.writableFinished = true
       queueMicrotask(() => { emitter.emit('finish') })
-      return holder.res
+      return emitter
     },
-  }) as unknown as ServerResponse
+  })
+  Object.defineProperty(emitter, 'headersSent', { get() { return state.headersSent } })
+  Object.defineProperty(emitter, 'writableFinished', { get() { return state.writableFinished } })
+  holder.res = emitter as unknown as ServerResponse
   return holder
 }
 
 function failingResponse(failure: unknown = new Error('mid-write failure')): { res: ServerResponse } {
   const state = { headersSent: false, ended: false }
   const emitter = new EventEmitter()
-  const res = Object.assign(emitter, {
-    get headersSent() { return state.headersSent },
+  Object.assign(emitter, {
     writableFinished: false,
     writeHead() {
       state.headersSent = true
-      return res
+      return emitter
     },
-    setHeader() { return res },
+    setHeader() { return emitter },
     end() {
-      if (state.ended) return res
+      if (state.ended) return emitter
       state.ended = true
       throw failure
     },
-  }) as unknown as ServerResponse
-  return { res }
+  })
+  Object.defineProperty(emitter, 'headersSent', { get() { return state.headersSent } })
+  return { res: emitter as unknown as ServerResponse }
 }
 
 function concatBytes(chunks: Uint8Array[]): Uint8Array {
