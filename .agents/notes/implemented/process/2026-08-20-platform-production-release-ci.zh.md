@@ -28,7 +28,7 @@ Desktop 与 Mobile 仍解析完整环境对（[账号安装会话](../feature/20
 
 ## 后果
 
-缺少生产名称时校验失败，且不会打印值。设置 `PLATFORM_ENVIRONMENT=development` 会使监听进程失败。镜像发布和 ECS 应用仍是手动、受 Environment 保护的步骤。监听进程把启动和错误行写到容器 stdout/stderr；Docker `json-file` 轮转（`20m` × `3` 个文件）限制每台 ECS 上的体积。应用步骤还会以用户自定义标识 `gestalt-platform` 启动 LoongCollector，把这些行送到 SLS 项目 `gestalt` 的 Logstore `application`。在挂载相应能力之前，APNs、FCM、OSS blob、CloudMonitor 和 Remote Relay composition 都不在本工作流内。
+缺少生产名称时校验失败，且不会打印值。设置 `PLATFORM_ENVIRONMENT=development` 会使监听进程失败。镜像发布和 ECS 应用仍是手动、受 Environment 保护的步骤。监听进程把启动和错误行写到容器 stdout/stderr；Docker `json-file` 轮转（`20m` × `3` 个文件）限制每台 ECS 上的体积。应用步骤还会以用户自定义标识 `gestalt-platform` 启动 LoongCollector，把这些行送到 SLS 项目 `gestalt` 的 Logstore `application`。采集器从加固模式 ECS 元数据 `100.100.100.200` 读取阿里云账号 ID，元数据为空时回退到 Environment `production` 的 `PLATFORM_SLS_ACCOUNT_ID`。在挂载相应能力之前，APNs、FCM、OSS blob、CloudMonitor 和 Remote Relay composition 都不在本工作流内。
 
 ## 测试
 

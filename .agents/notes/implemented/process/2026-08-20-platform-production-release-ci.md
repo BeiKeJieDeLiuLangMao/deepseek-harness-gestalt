@@ -28,7 +28,7 @@ Desktop and Mobile continue to parse a complete pair ([Account installation sess
 
 ## Consequences
 
-A missing production name fails validation without printing values. Setting `PLATFORM_ENVIRONMENT=development` fails the listen process. Image publication and ECS apply remain manual, Environment-protected steps. The listen process writes startup and error lines to container stdout/stderr; Docker `json-file` rotation (`20m` × `3` files) bounds that volume on each ECS host. The apply step also starts LoongCollector with user-defined id `gestalt-platform` so those lines can reach SLS project `gestalt` logstore `application`. APNs, FCM, OSS blobs, CloudMonitor, and Remote Relay composition stay outside this workflow until those capabilities are mounted.
+A missing production name fails validation without printing values. Setting `PLATFORM_ENVIRONMENT=development` fails the listen process. Image publication and ECS apply remain manual, Environment-protected steps. The listen process writes startup and error lines to container stdout/stderr; Docker `json-file` rotation (`20m` × `3` files) bounds that volume on each ECS host. The apply step also starts LoongCollector with user-defined id `gestalt-platform` so those lines can reach SLS project `gestalt` logstore `application`. The collector reads the Aliyun account id from hardened ECS metadata at `100.100.100.200`, and falls back to Environment `production` `PLATFORM_SLS_ACCOUNT_ID` when metadata is empty. APNs, FCM, OSS blobs, CloudMonitor, and Remote Relay composition stay outside this workflow until those capabilities are mounted.
 
 ## Testing
 
