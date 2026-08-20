@@ -142,7 +142,10 @@ describe('web e2e: annotation drafts persist per session and recover after reloa
     await secondSettled
     expect(userTexts(events)).toEqual([OPENING_PROMPT, COMPILED])
     await compareOrRefreshGolden(MODEL_EXPECTED, COMPILED, MODE)
-    await expect(page.getByRole('button', { name: '1 annotation' }).count()).resolves.toBe(0)
+    await expect.poll(
+      () => page.getByRole('button', { name: '1 annotation' }).count(),
+      { timeout: 10_000 },
+    ).toBe(0)
     expect(await page.evaluate(() => CSS.highlights?.has('annotation-draft-mark') ?? false)).toBe(false)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])

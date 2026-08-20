@@ -29,6 +29,11 @@ const RESTORE_SESSION_A_ID = 'chat-scroll-restore-a-e2e'
 const RESTORE_SESSION_B_ID = 'chat-scroll-restore-b-e2e'
 const REPLAY_CONTEXT_WINDOW = 10_000_000
 const STREAM_PACE_MS = 24
+// Ungated streams must outlast the slowest CI interaction gap between the
+// first chunk and the growth assertions that prove streaming continues while
+// the reader is scrolled away: streamChunks × STREAM_PACE_MS bounds that
+// window, so the count stays far above what a loaded runner can traverse.
+const LIVE_STREAM_CHUNKS = 960
 const GEOMETRY_TOLERANCE = 2
 const LIVE_TEXT_PROMPT = 'CHAT_SCROLL_LIVE_USER Continue this long conversation while I inspect older history.'
 const LIVE_TEXT_FIRST = 'CHAT_SCROLL_LIVE_FIRST'
@@ -467,7 +472,7 @@ describe('web e2e: long Chat scroll contract', () => {
   it.skipIf(MODE === 'record')('preserves the reader anchor when history and streaming arrive concurrently', async () => {
     await withScrollWorld({
       failureShot: 'web-e2e-chat-scroll-history-stream',
-      replay: [replayEntry(textStream(LIVE_TEXT_FIRST, LIVE_TEXT_DONE, 120))],
+      replay: [replayEntry(textStream(LIVE_TEXT_FIRST, LIVE_TEXT_DONE, LIVE_STREAM_CHUNKS))],
       seeds: [{ fixture: HISTORY_FIXTURE, id: HISTORY_SESSION_ID }],
     }, async (world) => {
       await openSeed(
@@ -778,7 +783,7 @@ describe('web e2e: long Chat scroll contract', () => {
       failureShot: 'web-e2e-chat-scroll-fling-stream',
       replay: [
         replayEntry(toolStream()),
-        replayEntry(textStream(LIVE_FLING_FIRST, LIVE_FLING_DONE, 240)),
+        replayEntry(textStream(LIVE_FLING_FIRST, LIVE_FLING_DONE, LIVE_STREAM_CHUNKS)),
       ],
       seeds: [{ fixture: INPUTS_FIXTURE, id: FLING_SESSION_ID }],
     }, async (world) => {
