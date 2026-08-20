@@ -260,34 +260,6 @@ export default defineConfig({
         'packages/client/ui-primitives/src/JsonTree.tsx',
         'packages/client/ui-settings-models/src/client/DeepSeekOnboardingDialog.tsx',
         'packages/client/ui-settings-models/src/client/welcome-store.ts',
-        // Companion / Gestalt baseline files whose remaining branches still
-        // need the maturing client and assembled-app lanes. The coverage
-        // lane first failed here after the shallow-checkout red was cleared.
-        // TODO(gui): cover and remove with the client test lane above.
-        'packages/client/ui-attachment/src/ImageLightbox.tsx',
-        'packages/client/ui-attachment/src/MessageImage.tsx',
-        'packages/client/ui-desktop/src/client/AccountControl.tsx',
-        'packages/client/ui-desktop/src/client/UpdateControl.tsx',
-        'packages/client/ui-desktop/src/client/status-source.ts',
-        'packages/client/ui-primitives/src/markdown/MarkdownText.tsx',
-        'packages/client/ui-schedule/src/client/ScheduleListAction.tsx',
-        'packages/client/ui-settings-models/src/client/ProviderEditor.tsx',
-        'packages/client/ui-settings-models/src/client/ReasoningEffortTags.tsx',
-        'packages/client/ui-settings-plugins/src/client/WebSearchCard.tsx',
-        'packages/client/ui-settings-plugins/src/client/index.ts',
-        'packages/client/ui-settings-plugins/src/client/web-search-card-controller.ts',
-        'packages/host/apiproxy/src/fetch/client.ts',
-        'packages/host/apiproxy/src/fetch/handler.ts',
-        'packages/platform/remote-access-redis/src/index.ts',
-        // TODO(#168,#170): delete when merged
-        'packages/platform/platform-account-http/src/index.ts',
-        'packages/platform/remote-access-client/src/index.ts',
-        'packages/platform/remote-access-http/src/index.ts',
-        'packages/schedule/schedule/src/index.ts',
-        'packages/session-query/session-log-export/src/client/HeaderAction.tsx',
-        'packages/session-query/session-log-export/src/client/index.ts',
-        'packages/test-support/loader-smoke/src/index.ts',
-        'packages/web/web-search-deepseek/src/index.ts',
         'packages/extensions/*/src/**/*.ts',
         'packages/extensions/*/src/**/*.tsx',
         // Typert generator: correctness is pinned by its fixture suites and
