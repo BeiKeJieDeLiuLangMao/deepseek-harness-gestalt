@@ -1,13 +1,13 @@
 /** Observable Personal Pairing snapshot for Desktop Settings. */
 
 import type { DesktopBridge, DesktopPairingSnapshot } from '../protocol.ts'
+import {
+  createDesktopSnapshotSource,
+  type DesktopSnapshotSource,
+} from './snapshot-source.ts'
 
 /** Renderer-side Personal Pairing source. */
-export interface DesktopPairingSource {
-  readonly getSnapshot: () => DesktopPairingSnapshot
-  readonly subscribe: (listener: () => void) => () => void
-  readonly set: (snapshot: DesktopPairingSnapshot) => void
-}
+export type DesktopPairingSource = DesktopSnapshotSource<DesktopPairingSnapshot>
 
 /** Initial disabled state before the Desktop Host answers. */
 export const INITIAL_PAIRING_SNAPSHOT: DesktopPairingSnapshot = Object.freeze({
@@ -24,25 +24,7 @@ export function createDesktopPairingSource(
     console.error('pairing subscriber failed', error)
   },
 ): DesktopPairingSource {
-  let snapshot = INITIAL_PAIRING_SNAPSHOT
-  const listeners = new Set<() => void>()
-  return {
-    getSnapshot: () => snapshot,
-    subscribe: (listener) => {
-      listeners.add(listener)
-      return () => { listeners.delete(listener) }
-    },
-    set: (next) => {
-      snapshot = next
-      for (const listener of listeners) {
-        try {
-          listener()
-        } catch (error) {
-          onListenerError(error)
-        }
-      }
-    },
-  }
+  return createDesktopSnapshotSource(INITIAL_PAIRING_SNAPSHOT, onListenerError)
 }
 
 /**

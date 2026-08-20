@@ -1068,6 +1068,27 @@ function changedWorkspaceView(workspaceId: string, value: unknown): WorkspaceVie
   }
 }
 
+/** Optional web-search face used by the Plugins probe. */
+interface WebSearchProbeRuntime {
+  search(request: { query: string }, signal?: AbortSignal): Promise<{
+    sources: ReadonlyArray<{ title?: string; url?: string }>
+  }>
+}
+
+/**
+ * Narrow an optional `ctx.get('web')` without importing the web seam into this
+ * Host program (the seam is optional at composition time).
+ * @param value - `ctx.get('web')`.
+ * @returns the search face, or undefined when the capability is absent.
+ */
+function optionalWebSearch(value: unknown): WebSearchProbeRuntime | undefined {
+  if (value === undefined || value === null || typeof value !== 'object') return undefined
+  if (!('search' in value)) return undefined
+  const candidate = value as { search?: unknown }
+  if (typeof candidate.search !== 'function') return undefined
+  return value as WebSearchProbeRuntime
+}
+
 /**
  * Implement ApiProxy over a composed host context.
  * @param ctx - a context with the Host spine and Workspace registry mounted.
@@ -3272,7 +3293,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       replace: request => settingsWrite(request, request.payload.ns, 'replace', request.payload.section, request.payload.expectedRevision),
       mutate: request => settingsWrite(request, request.payload.ns, 'mutate', request.payload.ops, request.payload.expectedRevision),
       async testWebSearch(request, signal) {
-        const web = ctx.get('web')
+        const web = optionalWebSearch(ctx.get('web') as unknown)
         if (web === undefined) {
           return err(request, {
             code: 'internal',

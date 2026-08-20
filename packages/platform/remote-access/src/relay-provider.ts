@@ -14,16 +14,18 @@ import {
 import {
   RemoteRelayError,
   RemoteRelayService,
-  type RelayConnectionToken,
-  type RelayCoordinationEvent,
-  type RelayCoordinator,
-  type RelayCredentialGrant,
-  type RelayDeliveryId,
-  type RelayDirectoryEntry,
-  type RelayInstanceId,
-  type RelayRouteStore,
-  type RemoteRelayAttachment,
-  type RemoteRelayConfig,
+} from '@deepseek-ai/dsh-remote-access'
+import type {
+  RelayConnectionToken,
+  RelayCoordinationEvent,
+  RelayCoordinator,
+  RelayCredentialGrant,
+  RelayDeliveryId,
+  RelayDirectoryEntry,
+  RelayInstanceId,
+  RelayRouteStore,
+  RemoteRelayAttachment,
+  RemoteRelayConfig,
 } from './relay.ts'
 
 interface LocalAttachment {

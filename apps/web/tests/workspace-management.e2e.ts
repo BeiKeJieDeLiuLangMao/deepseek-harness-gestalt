@@ -109,6 +109,7 @@ describe('web e2e: workspace management (create / rename / flat view / hover aff
       await row.hover()
       return await button.isVisible()
     }, { timeout: 10_000 }).toBe(true)
+    await row.hover()
     await button.click()
   }
 

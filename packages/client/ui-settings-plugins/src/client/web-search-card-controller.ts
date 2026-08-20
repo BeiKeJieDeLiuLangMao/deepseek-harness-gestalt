@@ -16,7 +16,7 @@ import {
   type SettingsScope, type SettingsScopeSnapshot, type SnapshotStore,
 } from '@deepseek-ai/dsh-client-runtime/client'
 import type { HostObservable, StoredEntry } from '@deepseek-ai/dsh-client-ui-slots'
-import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
+import { labeledSlotTab } from './slot-tab.ts'
 import {
   CardForm, numberField, textField,
   type CardActions, type CardFieldState, type CardShell,
@@ -351,11 +351,7 @@ export class WebSearchShell {
         providerTabs: {
           getSnapshot: () => {
             const next = this.entries()
-              .map(entry => ({
-                id: entry.options.id ?? '',
-                order: entry.options.order ?? 0,
-                label: resolveSlotLabel(entry.options.label) ?? '',
-              }))
+              .map(labeledSlotTab)
               .sort((a, b) => a.order - b.order)
             const prev = this.tabSnapshot
             if (prev.length === next.length
@@ -386,7 +382,7 @@ export class WebSearchShell {
       resetField: (field) => { this.selectedFace().resetField(field) },
       save: () => { this.selectedFace().save() },
       discard: () => { this.selectedFace().discard() },
-      selectProvider: (id) => { void this.selectionScope.set('backend', id as WebSearchBackend) },
+      selectProvider: (id) => { void this.selectionScope.set('backend', id) },
       testSearch: async () => {
         await this.selectedFace().persist()
         let response: Awaited<ReturnType<IApiClient['settings']['testWebSearch']>>
