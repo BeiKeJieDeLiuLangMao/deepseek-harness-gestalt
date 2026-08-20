@@ -642,7 +642,7 @@ describe('PlatformAccountHttpTransport', () => {
         return new Response(JSON.stringify(ATTEMPT), { status: 200, headers: { 'content-type': 'application/json' } })
       },
     }
-    vi.stubGlobal('fetch', impl.fetch)
+    vi.stubGlobal('fetch', impl.fetch.bind(impl))
     const transport = new PlatformAccountHttpTransport({ environment: DEVELOPMENT })
     await expect(transport.beginLogin({
       installationId: parseInstallationId('mobile-1'),
