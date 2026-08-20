@@ -82,6 +82,7 @@ describe('ui-schedule browser plugin', () => {
 
   it('registers complete bilingual dictionaries and releases them with the fiber', async () => {
     const b = await bench()
+    b.ctx.locale.setLocale('zh')
     const translate = b.ctx.locale.bind(NS)
     expect(translate('list.title')).toBe(zh['list.title'])
     b.ctx.locale.setLocale('en')

@@ -343,7 +343,6 @@
 - text: 7/25 {{clock}} Ran for {{duration}}
 - button "Back to bottom":
   - img
-- button "Add images"
 - textbox "Message the agent"
 - button "Commands":
   - img

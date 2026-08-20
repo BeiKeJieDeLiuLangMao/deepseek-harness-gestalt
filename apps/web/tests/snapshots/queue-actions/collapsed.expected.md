@@ -16,7 +16,6 @@
 - paragraph: partial
 - status: Deep diving...
 - button "2 queued messages"
-- button "Add images"
 - textbox "Cmd/Ctrl+Enter steers all queued messages"
 - button "Commands":
   - img

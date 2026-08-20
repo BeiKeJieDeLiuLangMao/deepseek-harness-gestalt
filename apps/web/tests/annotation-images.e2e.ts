@@ -55,7 +55,13 @@ function userImageBlocks(events: readonly SessionEvent[]): Array<{
 }
 
 async function attachNamedFile(page: Page, name: string, mimeType: string, bytes: Buffer): Promise<void> {
-  await page.getByLabel('Add images').setInputFiles({ name, mimeType, buffer: bytes })
+  await page.evaluate(({ fileName, type, payload }) => {
+    const binary = Uint8Array.from(atob(payload), char => char.charCodeAt(0))
+    const file = new File([binary], fileName, { type })
+    const transfer = new DataTransfer()
+    transfer.items.add(file)
+    document.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer }))
+  }, { fileName: name, type: mimeType, payload: bytes.toString('base64') })
   await page.getByRole('group', { name: 'Pending images' }).getByAltText(name).waitFor({ timeout: 10_000 })
 }
 

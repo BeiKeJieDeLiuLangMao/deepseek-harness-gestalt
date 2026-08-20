@@ -32,7 +32,6 @@
     - tooltip "Save queued message"
     - button "Cancel editing":
       - img
-- button "Add images"
 - textbox "Cmd/Ctrl+Enter steers all queued messages"
 - button "Commands":
   - img
