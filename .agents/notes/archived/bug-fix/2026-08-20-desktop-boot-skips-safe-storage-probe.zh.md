@@ -1,6 +1,7 @@
 # Agent Note: Desktop 启动跳过 Keychain 加密探测
 
 Status: implemented
+Archived: 2026-08-20
 
 [English](2026-08-20-desktop-boot-skips-safe-storage-probe.md) | 中文
 

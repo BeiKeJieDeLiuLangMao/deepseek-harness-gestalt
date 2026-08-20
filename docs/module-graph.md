@@ -259,6 +259,7 @@ flowchart TD
     pkg_remote_access_client["remote-access-client"]
     pkg_remote_access_http["remote-access-http"]
     pkg_remote_access_redis["remote-access-redis"]
+    pkg_remote_attachments["remote-attachments"]
     pkg_remote_protocol["remote-protocol"]
   end
   subgraph group_preset["packages/preset"]
@@ -500,6 +501,10 @@ flowchart TD
   pkg_remote_access_redis --> pkg_invariants
   pkg_remote_access_redis --> pkg_remote_access
   pkg_remote_access_redis --> pkg_remote_protocol
+  pkg_remote_attachments --> pkg_host_webserver
+  pkg_remote_attachments --> pkg_invariants
+  pkg_remote_attachments --> pkg_remote_access
+  pkg_remote_attachments --> pkg_remote_protocol
   pkg_agent --> pkg_invariants
   pkg_agent --> pkg_llm
   pkg_agent --> pkg_scope
@@ -1617,6 +1622,7 @@ flowchart TD
 | [`remote-access-client`](../packages/platform/remote-access-client) | `platform` | [`invariants`](../packages/runtime-diagnostics/invariants), [`platform-account`](../packages/platform/platform-account), [`remote-access`](../packages/platform/remote-access), [`remote-protocol`](../packages/platform/remote-protocol) |
 | [`remote-access-http`](../packages/platform/remote-access-http) | `platform` | [`host-webserver`](../packages/host/webserver), [`invariants`](../packages/runtime-diagnostics/invariants), [`platform-account`](../packages/platform/platform-account), [`remote-access`](../packages/platform/remote-access), [`remote-protocol`](../packages/platform/remote-protocol) |
 | [`remote-access-redis`](../packages/platform/remote-access-redis) | `platform` | [`invariants`](../packages/runtime-diagnostics/invariants), [`remote-access`](../packages/platform/remote-access), [`remote-protocol`](../packages/platform/remote-protocol) |
+| [`remote-attachments`](../packages/platform/remote-attachments) | `platform` | [`host-webserver`](../packages/host/webserver), [`invariants`](../packages/runtime-diagnostics/invariants), [`remote-access`](../packages/platform/remote-access), [`remote-protocol`](../packages/platform/remote-protocol) |
 | [`agent`](../packages/core/agent) | `core` | [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`scope`](../packages/core/scope), [`session`](../packages/core/session), [`system-prompt`](../packages/core/system-prompt), [`typert-protocol`](../packages/typert/protocol) |
 | [`skill-badge`](../packages/skill/skill-badge) | `skill` | [`invariants`](../packages/runtime-diagnostics/invariants), [`skill`](../packages/skill/skill) |
 | [`web-fetch-http`](../packages/web/web-fetch-http) | `web` | [`invariants`](../packages/runtime-diagnostics/invariants), [`timeout`](../packages/util/timeout), [`web`](../packages/web/web) |

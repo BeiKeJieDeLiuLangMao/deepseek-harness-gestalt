@@ -146,31 +146,43 @@ interface DeepSeekDefaultsServer {
   close(): Promise<void>
 }
 
+/** Idle budget SSE comments must rearm. Must match `streamIdleTimeoutMs` in deepseek-defaults.cordis.yml. */
+const DEEPSEEK_DEFAULTS_STREAM_IDLE_TIMEOUT_MS = 5_000
+/** Gap between keep-alive comments. Stays well below the idle budget under CI scheduling jitter. */
+const DEEPSEEK_DEFAULTS_COMMENT_INTERVAL_MS = 2_000
+/** Payload arrives after more than one idle budget, so a missing comment pulse would TIMEOUT. */
+const DEEPSEEK_DEFAULTS_PAYLOAD_AFTER_MS =
+  DEEPSEEK_DEFAULTS_STREAM_IDLE_TIMEOUT_MS + DEEPSEEK_DEFAULTS_COMMENT_INTERVAL_MS
+
+const DEEPSEEK_DEFAULTS_SSE_PAYLOAD = [
+  'data: {"choices":[{"delta":{"content":"DEFAULTS_OK"}}]}',
+  'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":1}}',
+  'data: [DONE]',
+  '',
+].join('\n\n')
+
 /** Serve one deterministic DeepSeek-compatible response while retaining its request body. */
 async function deepseekDefaultsServer(): Promise<DeepSeekDefaultsServer> {
   const requests: JsonObject[] = []
   const server = createServer((request: IncomingMessage, response: ServerResponse) => {
+    // First comment leaves with the headers so `fetch` unblocks inside the
+    // idle budget. Later comments rearm the watchdog; the payload is delayed
+    // past one full idle budget so keep-alive is the assembled one-shot path,
+    // not only the fake-clock adapter unit test.
+    const opened = Date.now()
+    const at = (ms: number, write: () => void): void => {
+      setTimeout(write, Math.max(0, ms - (Date.now() - opened)))
+    }
+    response.writeHead(200, { 'content-type': 'text/event-stream' })
+    response.write(': keep-alive\n\n')
     let body = ''
     request.setEncoding('utf8')
     request.on('data', (chunk: string) => { body += chunk })
     request.on('end', () => {
       requests.push(JSON.parse(body) as JsonObject)
-      response.writeHead(200, { 'content-type': 'text/event-stream' })
-      let keepAlives = 3
-      const write = (): void => {
-        if (keepAlives-- > 0) {
-          response.write(': keep-alive\n\n')
-          setTimeout(write, 20)
-          return
-        }
-        response.end([
-          'data: {"choices":[{"delta":{"content":"DEFAULTS_OK"}}]}',
-          'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":1}}',
-          'data: [DONE]',
-          '',
-        ].join('\n\n'))
-      }
-      write()
+      at(DEEPSEEK_DEFAULTS_COMMENT_INTERVAL_MS, () => { response.write(': keep-alive\n\n') })
+      at(DEEPSEEK_DEFAULTS_COMMENT_INTERVAL_MS * 2, () => { response.write(': keep-alive\n\n') })
+      at(DEEPSEEK_DEFAULTS_PAYLOAD_AFTER_MS, () => { response.end(DEEPSEEK_DEFAULTS_SSE_PAYLOAD) })
     })
   })
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))

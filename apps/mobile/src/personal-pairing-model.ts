@@ -29,6 +29,6 @@ export interface MobilePairingActions {
   activate(): Promise<void>
   /** Stop timers and drain in-flight work on sign-out or unmount. */
   deactivate(): Promise<void>
-  /** Unpair this installation: wipe local handshake material and stop Relay. */
+  /** Unpair this installation: clear the local push token, unregister it when reachable, wipe handshake material, and stop Relay. */
   unpair(): Promise<void>
 }

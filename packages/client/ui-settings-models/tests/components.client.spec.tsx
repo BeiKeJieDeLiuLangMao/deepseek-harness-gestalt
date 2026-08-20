@@ -6,7 +6,8 @@ import Schema from '@deepseek-ai/schemastery'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-web-react'
 import type { RpcResponse, SettingsNamespaceView } from '@deepseek-ai/dsh-api-remotes/client'
 import {
-  ModelsSection, needsSetup, providerCopy, providerTargetLabel, removeProviderProfile,
+  listedProviderRows, ModelsSection, needsSetup, providerCopy, providerTargetLabel,
+  removeProviderProfile,
 } from '../src/client/ModelsSection.tsx'
 import type { ModelsSectionInjected, ModelsSectionProps } from '../src/client/ModelsSection.tsx'
 import { pathOps } from '../src/client/ProviderEditor.tsx'
@@ -82,6 +83,12 @@ const DEFAULT_DEEPSEEK_MODELS = [
   },
   { id: 'deepseek-v4-pro', name: 'DeepSeek-V4-Pro', contextWindow: 1_000_000 },
 ]
+
+/** First-run `llm-deepseek`: the user layer was never written. */
+function withoutUser(namespace: SettingsNamespaceView): SettingsNamespaceView {
+  const { user: _user, ...rest } = namespace
+  return rest
+}
 
 function wireNamespaces(): SettingsNamespaceView[] {
   return [
@@ -244,10 +251,10 @@ describe('ModelsSection', () => {
     expect(screen.getByText(en.add)).toBeTruthy()
   })
 
-  it('opens the official setup card when the user section is vacant and nothing else is usable', async () => {
+  it('opens the official setup card when the user layer is absent and nothing else is usable', async () => {
     const scripted = scriptedFace()
     const namespaces = wireNamespaces().map(namespace =>
-      namespace.ns === 'llm-deepseek' ? { ...namespace, user: {} } : namespace)
+      namespace.ns === 'llm-deepseek' ? withoutUser(namespace) : namespace)
     scripted.face.llm.providers.mockResolvedValue(ok({
       providers: [
         { provider: 'deepseek-official', displayName: 'DeepSeek', settingsNs: 'llm-deepseek', settingsPath: [], active: true },
@@ -264,6 +271,28 @@ describe('ModelsSection', () => {
     await mountFace(scripted)
     expect(screen.getByText('DeepSeek')).toBeTruthy()
     expect(screen.getByLabelText(en.keyInput)).toBeTruthy()
+  })
+
+  it('leaves official DeepSeek off the list after delete when only the leftover empty user section remains', async () => {
+    const scripted = scriptedFace()
+    const namespaces = wireNamespaces().map(namespace =>
+      namespace.ns === 'llm-deepseek' ? { ...namespace, user: {} } : namespace)
+    scripted.face.llm.providers.mockResolvedValue(ok({
+      providers: [
+        { provider: 'deepseek-official', displayName: 'DeepSeek', settingsNs: 'llm-deepseek', settingsPath: [], active: true },
+        { provider: 'openai', displayName: 'openai', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'openai'], active: false },
+      ],
+    }))
+    scripted.face.settings.describe.mockResolvedValue(ok({
+      writable: true, hasDocument: true, namespaces,
+    }))
+    scripted.face.credentials.describe.mockImplementation((payload: { refs: string[] }) =>
+      Promise.resolve(ok({
+        credentials: Object.fromEntries(payload.refs.map(ref => [ref, { configured: false, writable: true }])),
+      })))
+    await mountFace(scripted)
+    expect(screen.queryByText('DeepSeek')).toBeNull()
+    expect(screen.queryByLabelText(en.keyInput)).toBeNull()
   })
 
   it('hides vacant official DeepSeek once another provider is already usable', async () => {
@@ -334,6 +363,50 @@ describe('ModelsSection', () => {
     // Now a row with an Edit button, not an open card.
     expect(screen.getAllByText(en.edit).length).toBeGreaterThan(1)
     expect(screen.queryByLabelText(en.keyInput)).toBeNull()
+  })
+
+  it('lists never-occupied official DeepSeek for first-run setup and hides the delete leftover', () => {
+    const official: ProviderRow = {
+      entry: {
+        provider: 'deepseek-official',
+        displayName: 'DeepSeek',
+        settingsNs: 'llm-deepseek',
+        settingsPath: [],
+        active: true,
+      },
+      configured: false,
+      removable: true,
+      apiKeyEnv: 'DEEPSEEK_API_KEY',
+      credential: { configured: false, writable: true },
+    }
+    const other: ProviderRow = {
+      entry: {
+        provider: 'minimax-cn',
+        displayName: 'minimax-cn',
+        settingsNs: 'llm-pi-ai',
+        settingsPath: ['providers', 'minimax-cn'],
+        active: true,
+      },
+      configured: false,
+      removable: true,
+      apiKeyEnv: 'MINIMAX_CN_API_KEY',
+      credential: { configured: false, writable: true },
+    }
+    const firstRun = new Map<string, SettingsNamespaceView>([
+      ['llm-deepseek', withoutUser(wireNamespaces()[0]!)],
+    ])
+    const leftover = new Map<string, SettingsNamespaceView>([
+      ['llm-deepseek', { ...wireNamespaces()[0]!, user: {} }],
+    ])
+    expect(listedProviderRows([official, other], firstRun, false, new Set()).map(row => row.entry.provider))
+      .toEqual(['deepseek-official'])
+    expect(listedProviderRows([official, other], leftover, false, new Set())).toEqual([])
+    expect(listedProviderRows([official, other], firstRun, true, new Set())).toEqual([])
+    expect(listedProviderRows([{ ...official, configured: true }, other], leftover, true, new Set()).map(row => row.entry.provider))
+      .toEqual(['deepseek-official'])
+    expect(listedProviderRows([official], firstRun, false, new Set(['deepseek-official'])).map(row => row.entry.provider))
+      .toEqual(['deepseek-official'])
+    expect(listedProviderRows([official], new Map(), false, new Set())).toEqual([])
   })
 
   it('decides setup need from the joined credential state and the first-run posture', () => {

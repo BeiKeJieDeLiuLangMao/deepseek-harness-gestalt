@@ -2,9 +2,9 @@
 
 English | [中文](README.zh.md)
 
-Authenticated Desktop and Mobile HTTP transport for the public Remote Access service. It forwards one current-Installation Account proof per operation and validates every JSON response before exposing branded Personal Pairing identifiers.
+Authenticated Desktop and Mobile HTTP transport for the public Remote Access service. It forwards one current-Installation Account proof per operation and validates every JSON response before exposing branded Personal Pairing identifiers. `QUOTA` and `PLATFORM_CAPACITY` responses preserve integer `retryAfter` seconds on the thrown `RemoteAccessError`.
 
-The client does not implement a handshake or store pairing keys. Product controllers supply signed-in Account authorization and use the independently reviewed server-side handshake provider selected by the Platform deployment. After confirmation, the Mobile pairing controller opens its sealed endpoint-specific Relay authority through the crypto adapter and configures `MobileRelayEndpointLifecycle`; it never receives the Desktop credential.
+The client does not implement a handshake or store pairing keys. Product controllers supply signed-in Account authorization and use the independently reviewed server-side handshake provider selected by the Platform deployment. After confirmation, the Mobile pairing controller opens its sealed endpoint-specific Relay authority through the crypto adapter and configures `MobileRelayEndpointLifecycle`; `unpair()` calls `configure(undefined)` so the lifecycle has no authority. The controller never receives the Desktop credential.
 
 `RemoteRelayEndpointController` owns one outbound Mobile or Desktop WSS lifecycle through the deployment's single non-sticky Platform endpoint. Every physical connection obtains a fresh attachment id and authenticates with the current opaque route id plus rotatable high-entropy credential. The controller waits for the matching Platform ready acknowledgement before resynchronizing, cancels credential and DNS/TLS acquisition during stop, and observes socket plus heartbeat teardown through all-settled cleanup. Socket loss starts a new connection after the validated retry delay; Desktop emits its authoritative encrypted resynchronization after every attachment. Sends fail with `REMOTE_OFFLINE` while disconnected and are never retained or replayed.
 

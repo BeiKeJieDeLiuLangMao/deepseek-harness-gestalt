@@ -76,69 +76,114 @@ class ResizeObserverStub {
   unobserve(): void {}
 }
 
-/** jsdom has no IndexedDB; Composer image staging writes through it after paste. */
-function createIndexedDbStub(): IDBFactory {
-  const stores = new Map<string, Map<string, { key: string }>>()
+class MemoryIdbRequest {
+  result: unknown
+  error: DOMException | null = null
+  onsuccess: (() => void) | null = null
+  onerror: (() => void) | null = null
+  onupgradeneeded: (() => void) | null = null
+}
 
-  const objectStoreNames = {
-    contains: (name: string): boolean => stores.has(name),
+class MemoryObjectStore {
+  constructor(
+    readonly keyPath: string,
+    readonly rows = new Map<string, unknown>(),
+  ) {}
+
+  put(record: Record<string, unknown>): MemoryIdbRequest {
+    const key = record[this.keyPath]
+    if (typeof key !== 'string') throw new Error('indexedDB put: keyPath is not a string')
+    this.rows.set(key, record)
+    return new MemoryIdbRequest()
   }
 
-  const db = {
-    objectStoreNames,
-    createObjectStore(name: string): void {
-      stores.set(name, new Map())
-    },
-    transaction(name: string): IDBTransaction {
-      const rows = stores.get(name) ?? new Map()
-      stores.set(name, rows)
-      const tx = {
-        error: null,
-        oncomplete: null as ((this: IDBTransaction, ev: Event) => unknown) | null,
-        onerror: null as ((this: IDBTransaction, ev: Event) => unknown) | null,
-        objectStore() {
-          return {
-            put(record: { key: string }) { rows.set(record.key, record) },
-            delete(key: string) { rows.delete(key) },
-            get(key: string) {
-              const request = {
-                result: rows.get(key),
-                error: null,
-                onsuccess: null as ((this: IDBRequest, ev: Event) => unknown) | null,
-                onerror: null as ((this: IDBRequest, ev: Event) => unknown) | null,
-              }
-              queueMicrotask(() => { request.onsuccess?.call(request as unknown as IDBRequest, new Event('success')) })
-              return request
-            },
-          }
-        },
-      }
-      queueMicrotask(() => { tx.oncomplete?.call(tx as unknown as IDBTransaction, new Event('complete')) })
-      return tx as unknown as IDBTransaction
-    },
-    close(): void {},
+  get(key: string): MemoryIdbRequest {
+    const request = new MemoryIdbRequest()
+    queueMicrotask(() => {
+      request.result = this.rows.get(key)
+      request.onsuccess?.()
+    })
+    return request
   }
 
-  return {
-    open() {
-      const request = {
-        result: db,
-        error: null,
-        onupgradeneeded: null as ((this: IDBOpenDBRequest, ev: IDBVersionChangeEvent) => unknown) | null,
-        onsuccess: null as ((this: IDBOpenDBRequest, ev: Event) => unknown) | null,
-        onerror: null as ((this: IDBOpenDBRequest, ev: Event) => unknown) | null,
+  delete(key: string): MemoryIdbRequest {
+    this.rows.delete(key)
+    return new MemoryIdbRequest()
+  }
+}
+
+class MemoryTransaction {
+  error: DOMException | null = null
+  oncomplete: (() => void) | null = null
+  onerror: (() => void) | null = null
+
+  constructor(private readonly store: MemoryObjectStore) {
+    queueMicrotask(() => { this.oncomplete?.() })
+  }
+
+  objectStore(_name: string): MemoryObjectStore {
+    return this.store
+  }
+}
+
+class MemoryDatabase {
+  readonly objectStoreNames = {
+    contains: (name: string): boolean => this.stores.has(name),
+  }
+
+  constructor(
+    readonly name: string,
+    public version: number,
+    readonly stores = new Map<string, MemoryObjectStore>(),
+  ) {}
+
+  createObjectStore(name: string, options: { keyPath: string }): MemoryObjectStore {
+    const store = new MemoryObjectStore(options.keyPath)
+    this.stores.set(name, store)
+    return store
+  }
+
+  transaction(name: string, _mode: IDBTransactionMode): MemoryTransaction {
+    const store = this.stores.get(name)
+    if (store === undefined) throw new Error(`indexedDB transaction: missing store ${name}`)
+    return new MemoryTransaction(store)
+  }
+
+  close(): void {}
+}
+
+/** jsdom has no IndexedDB; Composer persist (`putStagedImage`) opens one after paste. */
+class MemoryIndexedDB {
+  readonly #dbs = new Map<string, MemoryDatabase>()
+
+  open(name: string, version = 1): MemoryIdbRequest {
+    const request = new MemoryIdbRequest()
+    queueMicrotask(() => {
+      let db = this.#dbs.get(name)
+      const upgrade = db === undefined || db.version < version
+      if (db === undefined) {
+        db = new MemoryDatabase(name, version)
+        this.#dbs.set(name, db)
+      } else if (db.version < version) {
+        db.version = version
       }
-      queueMicrotask(() => {
-        request.onupgradeneeded?.call(request as unknown as IDBOpenDBRequest, new Event('upgradeneeded') as IDBVersionChangeEvent)
-        request.onsuccess?.call(request as unknown as IDBOpenDBRequest, new Event('success'))
-      })
-      return request as unknown as IDBOpenDBRequest
-    },
-  } as unknown as IDBFactory
+      request.result = db
+      if (upgrade) request.onupgradeneeded?.()
+      request.onsuccess?.()
+    })
+    return request
+  }
 }
 
 const win = window as FixtureWindow
 let unmount: (() => void) | undefined
+
+// File-scoped: `void putStagedImage` can open the database after afterEach
+// has already run `vi.unstubAllGlobals()`.
+Object.defineProperty(globalThis, 'indexedDB', {
+  configurable: true,
+  value: new MemoryIndexedDB(),
+})
 
 /**
  * Register the per-test jsdom setup and teardown the assembled boot needs:
@@ -158,7 +203,6 @@ export function installAssembledBootEnv(): void {
     Object.defineProperty(navigator, 'language', { value: 'en-US', configurable: true })
     document.title = 'DeepSeek Harness'
     vi.stubGlobal('ResizeObserver', ResizeObserverStub)
-    vi.stubGlobal('indexedDB', createIndexedDbStub())
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) =>
       setTimeout(() => { callback(0) }, 0) as unknown as number)
     vi.stubGlobal('cancelAnimationFrame', (id: number) => { clearTimeout(id) })

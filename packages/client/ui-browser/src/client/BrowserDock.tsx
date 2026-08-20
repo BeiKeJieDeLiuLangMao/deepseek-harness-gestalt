@@ -1,20 +1,24 @@
 /**
  * Expanded Browser Dock: tab strip, refresh plus address chrome, and the
  * screenshot-plus-text viewport. Live Workspace facts arrive through
- * `useProjection('browserWorkspace')`; verbs are the injected face.
+ * `useProjection('browserWorkspace')`; the active tab re-observes when its
+ * listed revision advances. A background chip that hits
+ * `BROWSER_REVISION_CONFLICT` observes once and retries. Verbs are the
+ * injected face.
  */
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import {
   IconCloseOutline16, IconPanelLeftOutline16, IconRefreshOutline16,
 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { BrowserWorkspaceProjection } from '@deepseek-ai/dsh-browser-workspace/client'
+import type { BrowserTarget, BrowserWorkspaceProjection } from '@deepseek-ai/dsh-browser-workspace/client'
 import type { BrowserDockActions } from './slots.ts'
 import {
-  browserAddressHost, browserTabTitle, hasBrowserTabs,
+  browserAddressHost, browserTabTitle, hasBrowserTabs, openPageOf,
   persistentProfileLabel, screenshotDataUrl, selectBrowserDock,
 } from './model.ts'
 import { useBrowserPage } from './use-browser-page.ts'
+import { recoverListedMutation } from './listed-mutation.ts'
 import css from './BrowserDock.module.css'
 
 /** Complete details-slot props for the expanded Dock. */
@@ -43,9 +47,22 @@ export function BrowserDock({
   const snapshot = useProjection('browserWorkspace') as BrowserWorkspaceProjection | null | undefined
   const selection = selectBrowserDock(snapshot)
   const active = selection?.activeTab
-  const { page, screenshot: shot } = useBrowserPage(active?.target, observe, screenshot)
+  const { page, screenshot: shot } = useBrowserPage(
+    active?.target, observe, screenshot, active?.revision,
+  )
   const persistWidth = useRef<number | undefined>(undefined)
   const rootRef = useRef<HTMLDivElement | null>(null)
+  const [actionError, setActionError] = useState<string | undefined>(undefined)
+
+  const runListed = (
+    mutate: (target: BrowserTarget, expectedRevision: number) => Promise<unknown>,
+    target: BrowserTarget,
+    revision: number,
+  ) => {
+    void recoverListedMutation(mutate, observe, target, revision)
+      .then(() => { setActionError(undefined) })
+      .catch(() => { setActionError(t('dock.actionFailed')) })
+  }
 
   useEffect(() => {
     if (!hasBrowserTabs(snapshot) || snapshot?.dockOpen !== true) return
@@ -91,7 +108,7 @@ export function BrowserDock({
             data-active={tab.active || undefined}
             aria-selected={tab.active}
             onClick={() => {
-              void focus(tab.target, tab.revision)
+              runListed(focus, tab.target, tab.revision)
             }}
           >
             <span className={css.tabTitle}>
@@ -103,7 +120,7 @@ export function BrowserDock({
               aria-label={t('dock.closeTab')}
               onClick={(event) => {
                 event.stopPropagation()
-                void close(tab.target, tab.revision)
+                runListed(close, tab.target, tab.revision)
               }}
             >
               <IconCloseOutline16 size={12} />
@@ -123,6 +140,7 @@ export function BrowserDock({
           <IconPanelLeftOutline16 />
         </button>
       </div>
+      {actionError !== undefined && <div className={css.actionError} role="alert">{actionError}</div>}
       <div className={css.toolbar}>
         <button
           type="button"
@@ -132,7 +150,18 @@ export function BrowserDock({
           onClick={() => {
             /* v8 ignore next -- the button is disabled until observe returns an open page. */
             if (page === undefined || active === undefined) return
-            void refresh(active.target, page.revision, page.url)
+            const target = active.target
+            void (async () => {
+              try {
+                const current = openPageOf(await observe(target))
+                if (current === undefined) return
+                await refresh(target, current.revision, current.url)
+              } catch {
+                // Observe/refresh can reject when the Session binding dropped
+                // or the Runtime closed the tab; occupancy stays on the last
+                // committed chrome until the listing revision changes.
+              }
+            })()
           }}
         >
           <IconRefreshOutline16 />

@@ -5,6 +5,7 @@ import {
   pageCompanionHistory,
   type CompanionSessionSummary,
 } from './companion-history.ts'
+import type { CompanionPushState } from './companion-push.ts'
 import { MobileConversation } from './MobileConversation.tsx'
 import css from './MobileBrowse.module.css'
 
@@ -18,10 +19,12 @@ export interface MobileBrowseProps {
   sessions: readonly CompanionSessionSummary[]
   /** Optional create handler used by Workspace and global create actions. */
   onCreate?: (input: { workspace?: string }) => void
+  /** Process visibility required before conversation settlement. */
+  companionState?: CompanionPushState
 }
 
 /** Phone-sized Workspace/Session browse without Desktop columns. */
-export function MobileBrowse({ desktopName, connection, sessions, onCreate }: MobileBrowseProps): ReactNode {
+export function MobileBrowse({ desktopName, connection, sessions, onCreate, companionState }: MobileBrowseProps): ReactNode {
   const [openId, setOpenId] = useState<string>()
   const [page, setPage] = useState(0)
   const paged = useMemo(
@@ -33,7 +36,14 @@ export function MobileBrowse({ desktopName, connection, sessions, onCreate }: Mo
 
   if (open !== undefined) {
     if (open.blocks !== undefined) {
-      return <MobileConversation title={open.title} onBack={() => { setOpenId(undefined) }} blocks={open.blocks} />
+      return (
+        <MobileConversation
+          title={open.title}
+          onBack={() => { setOpenId(undefined) }}
+          blocks={open.blocks}
+          {...(companionState === undefined ? {} : { companionState })}
+        />
+      )
     }
     return (
       <section className={css.page} data-mobile-browse="conversation">

@@ -296,7 +296,11 @@ describe('EncryptedDesktopAccountStore', () => {
 
     expect(await readFile(victim, 'utf8')).toBe('untouched')
     expect((await lstat(path)).isSymbolicLink()).toBe(false)
-    expect((await stat(path)).mode & 0o777).toBe(0o600)
+    // Windows synthesizes mode bits from DACLs; owner-only 0600 is a POSIX
+    // semantic and only holds where the platform exposes POSIX modes.
+    if (process.platform !== 'win32') {
+      expect((await stat(path)).mode & 0o777).toBe(0o600)
+    }
     await expect(store.load()).resolves.toEqual({ installationId: 'desktop-atomic' })
   })
 

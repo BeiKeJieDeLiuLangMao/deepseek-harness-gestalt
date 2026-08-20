@@ -24,6 +24,7 @@ import {
   parseRelayCredential,
   parseRelayRouteId,
 } from '@deepseek-ai/dsh-remote-protocol'
+import { DesktopPairingKeyVault } from '../src/pairing-keys.ts'
 import {
   DesktopPairingController,
   UnavailableDesktopPairingController,
@@ -175,6 +176,42 @@ describe('DesktopPairingController', () => {
     await controller.confirm(parsePendingPairingId('pending-one'))
     expect(transport.confirmPairing).toHaveBeenCalledOnce()
     expect(authorizeCurrentInstallation).toHaveBeenCalled()
+  })
+
+  it('retains independent keyless pairing material only after Desktop confirmation', async () => {
+    const transport = transportFixture()
+    const material = Uint8Array.from({ length: 32 }, (_, index) => index + 9)
+    const vault = new DesktopPairingKeyVault()
+    transport.listPendingPairings.mockResolvedValue([{
+      pendingPairingId: parsePendingPairingId('pending-key'),
+      authenticationWords: ['amber', 'binary', 'cedar', 'delta', 'ember', 'frost'],
+      desktopHandshake: material,
+      device: { name: 'Alice phone', platform: 'ios' },
+    }])
+    transport.confirmPairing.mockResolvedValue({
+      id: parsePersonalPairingId('pairing-key'),
+      devicePrincipal: {
+        id: 'principal-key' as never,
+        accountId: 'account-one' as never,
+        installationId: 'mobile-one' as never,
+        authority: 'companion-surface',
+      },
+      device: { name: 'Alice phone', platform: 'ios' },
+      pairedAt: 1,
+      lastAccessAt: 1,
+      online: false,
+    })
+    const controller = new DesktopPairingController({
+      account: accountFixture(),
+      transport,
+      pairingKeys: vault,
+    })
+    await controller.start()
+    await controller.setEnabled(true)
+    await controller.confirm(parsePendingPairingId('pending-key'))
+    expect(vault.pairingKeyMaterial(parsePersonalPairingId('pairing-key'))).toEqual(material)
+    await controller.deactivate()
+    expect(vault.pairingKeyMaterial(parsePersonalPairingId('pairing-key'))).toBeUndefined()
   })
 
   it('deactivation drains an in-flight poll and rejects work after sign-out or close', async () => {
@@ -640,6 +677,7 @@ function transportFixture() {
     revokePersonalPairing: vi.fn(),
     completeChallenge: vi.fn(),
     getMobilePairingStatus: vi.fn(),
+    unregisterPushToken: vi.fn(),
   } satisfies RemoteAccessTransport
 }
 

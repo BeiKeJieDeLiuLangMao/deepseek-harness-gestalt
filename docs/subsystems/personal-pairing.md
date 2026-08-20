@@ -10,11 +10,11 @@ Mobile Access is false for each Desktop Installation until the Desktop Settings 
 
 The Mobile completion consumes the invitation only after its complete link matches the retained capability. A cross-account attempt destroys that invitation before the crypto adapter runs. A valid same-account handshake produces a pending key and handshake hash; the six derived authentication words appear on both installations, but active pairing lists remain empty until Desktop confirmation. Confirmation activates one unique provider-owned key reference and grants a branded Device Principal whose authority is exactly `companion-surface`.
 
-Mutations are serialized. Expiry, cancellation, rejection, disablement, and one successful completion commit terminal state before another mutation can observe the capability. Crypto-resource destruction is independently retryable: a failed cleanup never repeats handshake completion or pairing activation, and provider disposal attempts every challenge, pending key, active key, and cleanup record. Challenge expiry is scheduled at creation rather than waiting for another completion request. Opaque generated ids and activated key references are checked before insertion, so a collision cannot replace an existing record or abandon a newly allocated key.
+Mutations are serialized. Expiry, cancellation, rejection, disablement, and one successful completion commit terminal state before another mutation can observe the capability. When a push store is composed, `registerPushToken` accepts a `PushTokenRegistration`, `publishPushHint` returns a `CompanionPushReport`, individual revocation deletes that Mobile Installation's tokens on the Desktop route, and disablement deletes every token of the revoked routes. Crypto-resource destruction is independently retryable: a failed cleanup never repeats handshake completion or pairing activation, and provider disposal attempts every challenge, pending key, active key, and cleanup record. Challenge expiry is scheduled at creation rather than waiting for another completion request. Opaque generated ids and activated key references are checked before insertion, so a collision cannot replace an existing record or abandon a newly allocated key.
 
 ## Cryptographic adapter
 
-`PairingHandshakeProvider` prepares, completes, activates, and destroys provider-private handshake state. Remote Access never implements Noise transitions or cryptographic primitives. `remote-access-http` consumes `ctx.remoteAccess`, while `remote-access-client` validates the wire values used by the real Desktop Settings and Mobile controllers. The assembled Loader scenario runs the provider, HTTP Consumer, and shared transport through a real loopback server with an explicitly unreviewed keyless provider. Desktop and Mobile development entrypoints select their real controllers only through explicit flags. Production composition stays unavailable until the independent Noise review admits a reviewed provider; the development proof is never selected by the production path.
+`PairingHandshakeProvider` prepares, completes, activates, and destroys provider-private handshake state. Remote Access never implements Noise transitions or cryptographic primitives. `remote-access-http` consumes `ctx.remoteAccess`, while `remote-access-client` validates the wire values used by the real Desktop Settings and Mobile controllers. The assembled Loader scenario runs the provider, HTTP Consumer, and shared transport through a real loopback server with `DevelopmentKeylessPairingHandshakeProvider`. Desktop and Mobile development entrypoints select their real controllers only through explicit flags. Production composition stays unavailable until the independent Noise review admits a reviewed provider; the development proof is never selected by the production path.
 
 ## Multi-instance Relay
 
@@ -39,10 +39,12 @@ Remote Access capability owning the complete Personal Pairing lifecycle.
 ```ts cordis-catalog
 /**
  * Create one two-minute invitation for a signed-in Desktop Installation.
- * @param input - Desktop authorization and opaque rendezvous identity.
+ * @param input - Desktop authorization, opaque rendezvous identity, and the client IP counted toward the hourly IP quota.
  * @returns complete QR/link projection; no low-entropy fallback exists.
+ * @throws RemoteAccessError `QUOTA` or `PLATFORM_CAPACITY` with `retryAfter` seconds.
+ * @throws TypeError when `clientIp` is empty.
  */
-abstract createChallenge(input: { desktop: PairingAccountAuthentication rendezvousId: PairingRendezvousId }): Promise<PairingChallengeView>
+abstract createChallenge(input: { desktop: PairingAccountAuthentication rendezvousId: PairingRendezvousId clientIp: string }): Promise<PairingChallengeView>
 
 /**
  * Read the current Desktop Installation's Mobile Access state.
@@ -101,8 +103,10 @@ abstract listPendingPairings(desktop: PairingAccountAuthentication): Promise<rea
 
 /**
  * Activate one pending pairing after the Desktop user compares authentication words.
+ * Rejected at the fifty-first live Personal Pairing for the Account, before handshake activation.
  * @param input - confirming Desktop and pending identity.
  * @returns independently keyed Companion-only Device Principal.
+ * @throws RemoteAccessError `QUOTA` with a 60-second `retryAfter` when the Account pairing ceiling is full.
  */
 abstract confirmPairing(input: { desktop: PairingAccountAuthentication pendingPairingId: PendingPairingId }): Promise<PersonalPairingView>
 
@@ -117,9 +121,115 @@ abstract cancelChallenge(input: { desktop: PairingAccountAuthentication challeng
  * @param input - owning Desktop authorization and pending identity.
  */
 abstract rejectPairing(input: { desktop: PairingAccountAuthentication pendingPairingId: PendingPairingId }): Promise<void>
+
+/**
+ * Bind one device push token to the Mobile Installation's confirmed pairing route.
+ * @param input - Mobile authorization and the registration.
+ */
+abstract registerPushToken(input: { mobile: PairingAccountAuthentication registration: PushTokenRegistration }): Promise<void>
+
+/**
+ * Drop exactly one device push token, as on Mobile unpair.
+ * @param input - Mobile authorization, route, and exact token.
+ */
+abstract unregisterPushToken(input: { mobile: PairingAccountAuthentication routeId: RelayRouteId token: CompanionPushToken }): Promise<void>
+
+/**
+ * Fan one Desktop-confirmed content-free hint out to the route's live tokens.
+ * @param input - Desktop authorization and the generic hint.
+ * @returns delivery and pruning counts.
+ */
+abstract publishPushHint(input: { desktop: PairingAccountAuthentication hint: CompanionPushHint }): Promise<CompanionPushReport>
+
+/**
+ * Reserve one expiring ciphertext blob against the open-registration ceilings.
+ * @param input - current-installation authorization and declared ciphertext size.
+ * @returns opaque reservation id released by {@link releaseAttachmentBlob}.
+ * @throws RemoteAccessError `QUOTA` or `PLATFORM_CAPACITY` with `retryAfter` seconds.
+ * @throws TypeError when `bytes` is not a non-negative integer.
+ */
+abstract admitAttachmentBlob(input: { owner: PairingAccountAuthentication bytes: number }): Promise<{ reservationId: string }>
+
+/**
+ * Release one blob reservation after receipt, expiry, or revocation.
+ * @param input - current-installation authorization and reservation id.
+ * @throws TypeError when the reservation is missing or owned by another Account.
+ */
+abstract releaseAttachmentBlob(input: { owner: PairingAccountAuthentication reservationId: string }): Promise<void>
+
+/**
+ * Admit one content-free push hint against the daily account ceiling.
+ * Capacity shedding does not reject push hints.
+ * @param owner - current-installation authorization.
+ * @throws RemoteAccessError `QUOTA` with remaining-window `retryAfter` seconds.
+ */
+abstract emitPushHint(owner: PairingAccountAuthentication): Promise<void>
 ```
 
-Source: [`packages/platform/remote-access/src/index.ts:394`](../../packages/platform/remote-access/src/index.ts)
+Types: [CompanionPushHint](remote-protocol.md) · [CompanionPushToken](remote-protocol.md)
+
+Source: [`packages/platform/remote-access/src/index.ts:449`](../../packages/platform/remote-access/src/index.ts)
+
+<a id="ctxremoteattachmentauthority--remoteattachmentauthority"></a>
+
+### `ctx.remoteAttachmentAuthority` — `RemoteAttachmentAuthority`
+
+Pairing scope seam: the Personal Pairing layer authenticates one HTTPS request to exactly one Personal Pairing. Implementations never see attachment bytes.
+
+```ts cordis-catalog
+/**
+ * Authenticate one attachment request to its owning Personal Pairing.
+ * @param input - complete untrusted request headers.
+ * @returns the Personal Pairing whose scope governs the capability.
+ */
+authenticate(input: { headers: IncomingHttpHeaders }): Promise<PersonalPairingId>
+```
+
+Source: [`packages/platform/remote-attachments/src/http.ts:29`](../../packages/platform/remote-attachments/src/http.ts)
+
+<a id="ctxremoteattachments--remoteattachmentstoreservice-abstract-seam"></a>
+
+### `ctx.remoteAttachments` — `RemoteAttachmentStoreService` (abstract seam)
+
+Platform attachment blob store: retains ciphertext and metadata only, bounded per blob and in total, scoped to exactly one Personal Pairing, single-use, and expiring.
+
+```ts cordis-catalog
+/**
+ * Retain one pairing-scoped ciphertext blob and issue its one-time capability.
+ * @param input - owning Personal Pairing, endpoint-encrypted ciphertext, and current time.
+ * @returns the capability grant Mobile forwards to Desktop.
+ */
+abstract publish(input: { pairingId: PersonalPairingId; ciphertext: Uint8Array; now: number }): Promise<RemoteAttachmentGrant>
+
+/**
+ * Return a copy of one retained ciphertext without consuming the capability.
+ * @param input - requesting Personal Pairing, one-time capability, and current time.
+ * @returns a copy of the retained ciphertext bytes.
+ */
+abstract inspect(input: { pairingId: PersonalPairingId; capability: AttachmentCapability; now: number }): Promise<Uint8Array>
+
+/**
+ * Exchange one capability for its ciphertext exactly once, then remove both.
+ * @param input - requesting Personal Pairing, one-time capability, and current time.
+ * @returns a copy of the retained ciphertext bytes.
+ */
+abstract consume(input: { pairingId: PersonalPairingId; capability: AttachmentCapability; now: number }): Promise<Uint8Array>
+
+/**
+ * Remove one blob and its capability regardless of remaining lifetime.
+ * @param input - owning Personal Pairing and the capability whose blob is revoked.
+ * A pairing mismatch fails explicitly; an unknown capability is a no-op.
+ */
+abstract revoke(input: { pairingId: PersonalPairingId; capability: AttachmentCapability }): Promise<void>
+
+/**
+ * Project every retained blob for Platform-side operations.
+ * @returns copies of ciphertext and metadata only; no plaintext exists on this side of the boundary.
+ */
+abstract observe(): readonly RemoteAttachmentBlob[]
+```
+
+Source: [`packages/platform/remote-attachments/src/index.ts:59`](../../packages/platform/remote-attachments/src/index.ts)
 
 <a id="ctxremoterelay--remoterelayservice-abstract-seam"></a>
 
@@ -164,5 +274,5 @@ abstract revokeRoute(routeId: RelayRouteId): Promise<void>
 abstract attach(input: { message: RelayAttachMessage deliver: (message: RelayCiphertextMessage) => Promise<void> close?: () => void | Promise<void> signal?: AbortSignal announce?: () => Promise<void> }): Promise<RemoteRelayAttachment>
 ```
 
-Source: [`packages/platform/remote-access/src/relay.ts:141`](../../packages/platform/remote-access/src/relay.ts)
+Source: [`packages/platform/remote-access/src/relay.ts:143`](../../packages/platform/remote-access/src/relay.ts)
 <!-- END GENERATED cordis-surface -->

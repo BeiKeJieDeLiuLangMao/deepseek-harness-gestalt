@@ -14,16 +14,18 @@ import {
 import {
   RemoteRelayError,
   RemoteRelayService,
-  type RelayConnectionToken,
-  type RelayCoordinationEvent,
-  type RelayCoordinator,
-  type RelayCredentialGrant,
-  type RelayDeliveryId,
-  type RelayDirectoryEntry,
-  type RelayInstanceId,
-  type RelayRouteStore,
-  type RemoteRelayAttachment,
-  type RemoteRelayConfig,
+} from '@deepseek-ai/dsh-remote-access'
+import type {
+  RelayConnectionToken,
+  RelayCoordinationEvent,
+  RelayCoordinator,
+  RelayCredentialGrant,
+  RelayDeliveryId,
+  RelayDirectoryEntry,
+  RelayInstanceId,
+  RelayRouteStore,
+  RemoteRelayAttachment,
+  RemoteRelayConfig,
 } from './relay.ts'
 
 interface LocalAttachment {
@@ -39,6 +41,7 @@ interface LocalAttachment {
   unregistered: boolean
   writerDrained: boolean
   socketClosed: boolean
+  capacityHeld: boolean
 }
 
 interface PendingDelivery {
@@ -71,6 +74,7 @@ export class RemoteRelayProvider extends RemoteRelayService {
     deliveryId?: () => RelayDeliveryId
     clock?: { now(): number }
     schedule?: (task: () => void, delayMs: number) => ReturnType<typeof setTimeout>
+    capacity?: { tryAcquire(): boolean; release(): void; retryAfterMs: number }
   }) {
     super(ctx)
     this.config = validateRemoteRelayConfig(options.config)
@@ -144,11 +148,24 @@ export class RemoteRelayProvider extends RemoteRelayService {
     this.assertOpen()
     const key = attachmentKey(input.message.routeId, input.message.attachmentId)
     const replacing = this.attachments.has(key)
+    let capacityHeld = false
+    if (!replacing && this.options.capacity !== undefined) {
+      if (!this.options.capacity.tryAcquire()) {
+        throw new RemoteRelayError(
+          'PLATFORM_CAPACITY',
+          'Platform Instance has reached its Relay attachment limit',
+          this.options.capacity.retryAfterMs,
+        )
+      }
+      capacityHeld = true
+    }
     if (this.attachmentReservations.has(key)
       || (!replacing && this.attachments.size + this.attachmentReservations.size >= this.config.maxConnections)) {
+      if (capacityHeld) this.options.capacity?.release()
       throw new RemoteRelayError('PLATFORM_CAPACITY', 'Platform Instance has reached its Relay attachment limit', this.config.capacityRetryAfterMs)
     }
     this.attachmentReservations.add(key)
+    let local: LocalAttachment | undefined
     try {
       const digest = credentialDigest(input.message.credential)
       let revision: number | undefined
@@ -176,10 +193,16 @@ export class RemoteRelayProvider extends RemoteRelayService {
         expiresAt: this.now() + this.config.directoryTtlMs,
       }
       const existing = this.attachments.get(key)
-      if (existing !== undefined) await this.closeAndDrain(existing)
+      if (existing !== undefined) {
+        if (existing.capacityHeld) {
+          existing.capacityHeld = false
+          capacityHeld = true
+        }
+        await this.closeAndDrain(existing)
+      }
       this.assertOpen()
       throwIfAborted(signal)
-      const local: LocalAttachment = {
+      const attached: LocalAttachment = {
         entry,
         deliver: input.deliver,
         credentialDigest: digest,
@@ -192,8 +215,10 @@ export class RemoteRelayProvider extends RemoteRelayService {
         unregistered: false,
         writerDrained: false,
         socketClosed: input.close === undefined,
+        capacityHeld,
       }
-      this.attachments.set(key, local)
+      local = attached
+      this.attachments.set(key, attached)
       try {
         if (input.announce !== undefined) await input.announce()
         throwIfAborted(signal)
@@ -201,24 +226,27 @@ export class RemoteRelayProvider extends RemoteRelayService {
         throwIfAborted(signal)
         const currentRevision = await this.options.routeStore.authorize(entry.routeId, entry.endpoint, digest, signal)
         if (this.disposed || currentRevision !== entry.revision) {
-          await this.closeAndDrain(local)
+          await this.closeAndDrain(attached)
           throw new RemoteRelayError(
             this.disposed ? 'REMOTE_OFFLINE' : 'RELAY_ATTACHMENT_REJECTED',
             this.disposed ? 'Platform Instance is offline' : 'Relay credential was superseded during attachment',
           )
         }
-        this.armHeartbeat(local)
+        this.armHeartbeat(attached)
       } catch (error) {
-        if (!local.closed) await this.closeAndDrain(local)
+        if (!attached.closed) await this.closeAndDrain(attached)
         throw error
       }
       return {
         receive: async (message) => {
-          if (message.type === 'heartbeat') await this.heartbeat(local, message)
-          else await this.forward(local, message)
+          if (message.type === 'heartbeat') await this.heartbeat(attached, message)
+          else await this.forward(attached, message)
         },
-        close: async () => { await this.closeAndDrain(local) },
+        close: async () => { await this.closeAndDrain(attached) },
       }
+    } catch (error) {
+      if (local === undefined && capacityHeld) this.options.capacity?.release()
+      throw error
     } finally {
       this.attachmentReservations.delete(key)
     }
@@ -410,6 +438,10 @@ export class RemoteRelayProvider extends RemoteRelayService {
     if (errors.length > 0) throw new AggregateError(errors, 'Relay attachment drain failed')
     const key = attachmentKey(local.entry.routeId, local.entry.attachmentId)
     if (this.attachments.get(key) === local) this.attachments.delete(key)
+    if (local.capacityHeld) {
+      local.capacityHeld = false
+      this.options.capacity?.release()
+    }
   }
 
   private connectionToken(): RelayConnectionToken {

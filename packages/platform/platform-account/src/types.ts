@@ -97,3 +97,5 @@ export type AccountErrorCode =
   | 'PROOF_REPLAYED'
   | 'SESSION_EXPIRED'
   | 'SESSION_REVOKED'
+  | 'QUOTA'
+  | 'PLATFORM_CAPACITY'

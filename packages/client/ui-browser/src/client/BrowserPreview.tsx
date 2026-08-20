@@ -2,6 +2,7 @@
  * Collapsed Browser Dock preview: bare offset tab layers in the message
  * region, with no outer shell or footer. Hidden while the Dock is visible.
  */
+import { useState } from 'react'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { BrowserWorkspaceProjection } from '@deepseek-ai/dsh-browser-workspace/client'
 import type { BrowserPreviewActions } from './slots.ts'
@@ -10,6 +11,7 @@ import {
   stackedBrowserTabs,
 } from './model.ts'
 import { useBrowserPage } from './use-browser-page.ts'
+import { recoverListedMutation } from './listed-mutation.ts'
 import css from './BrowserPreview.module.css'
 
 /** Complete preview-slot props. */
@@ -21,7 +23,9 @@ export type BrowserPreviewProps =
 /**
  * Layered tab preview shown while this Session owns Browser tabs and the Dock
  * is collapsed. A back layer focuses that tab with its listed revision; the
- * current layer opens the Dock.
+ * current layer opens the Dock. A back-layer `BROWSER_REVISION_CONFLICT`
+ * observes once and retries. The current layer re-observes when that listed
+ * revision advances.
  */
 export function BrowserPreview({
   useProjection, openDock, focus, observe, screenshot, t,
@@ -29,7 +33,10 @@ export function BrowserPreview({
   const snapshot = useProjection('browserWorkspace') as BrowserWorkspaceProjection | null | undefined
   const selection = selectBrowserDock(snapshot)
   const active = selection?.activeTab
-  const { page, screenshot: shot } = useBrowserPage(active?.target, observe, screenshot)
+  const { page, screenshot: shot } = useBrowserPage(
+    active?.target, observe, screenshot, active?.revision,
+  )
+  const [actionError, setActionError] = useState<string | undefined>(undefined)
 
   if (!hasBrowserTabs(snapshot) || snapshot?.dockOpen === true || selection === undefined) return null
 
@@ -56,7 +63,9 @@ export function BrowserPreview({
                 void openDock()
                 return
               }
-              void focus(tab.target, tab.revision)
+              void recoverListedMutation(focus, observe, tab.target, tab.revision)
+                .then(() => { setActionError(undefined) })
+                .catch(() => { setActionError(t('dock.actionFailed')) })
             }}
           >
             {image !== undefined && <img className={css.shot} src={image} alt="" />}
@@ -64,6 +73,7 @@ export function BrowserPreview({
           </button>
         )
       })}
+      {actionError !== undefined && <div className={css.actionError} role="alert">{actionError}</div>}
     </div>
   )
 }

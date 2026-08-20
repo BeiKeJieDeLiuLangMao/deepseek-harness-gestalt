@@ -52,6 +52,30 @@ describe('RemoteRelayEndpointController', () => {
     expect(lifecycle.isConnected()).toBe(false)
   })
 
+  it('drops pairing-delivered authority so a later start cannot attach', async () => {
+    const clearedError = vi.fn()
+    const cleared = new MobileRelayEndpointLifecycle({
+      attachmentId: () => parseRelayAttachmentId('mobile-cleared'),
+      connect: async () => new FakeSocket(),
+      attachTimeoutMs: 20,
+      heartbeatIntervalMs: 30_000,
+      reconnectDelayMs: 1,
+      onTransportError: clearedError,
+    })
+    cleared.configure({
+      endpoint: 'mobile',
+      routeId: parseRelayRouteId('route-cleared'),
+      credential: parseRelayCredential('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'),
+      revision: 1,
+    })
+    cleared.configure(undefined)
+    const clearedStart = cleared.start()
+    void clearedStart.catch(() => {})
+    await vi.waitFor(() => { expect(clearedError).toHaveBeenCalled() })
+    await cleared.stop()
+    await expect(clearedStart).rejects.toMatchObject({ code: 'REMOTE_OFFLINE' })
+  })
+
   it('rejects invalid lifecycle configuration and Desktop without authoritative resync', () => {
     const base = {
       endpoint: 'mobile' as const,

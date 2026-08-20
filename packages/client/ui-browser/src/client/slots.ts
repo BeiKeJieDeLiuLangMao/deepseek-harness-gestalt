@@ -19,7 +19,7 @@ export interface BrowserDockActions {
   setDock: (open: boolean, width?: number) => Promise<BrowserWorkspaceProjection>
   /** Focus one Session-owned tab. */
   focus: (target: BrowserTarget, expectedRevision: number) => Promise<BrowserPageState>
-  /** Reload the current tab by navigating to its last observed URL. */
+  /** Reload the current tab by navigating to the Runtime's current URL. */
   refresh: (target: BrowserTarget, expectedRevision: number, url: string) => Promise<BrowserPageState>
   /** Observe one Session-owned tab. */
   observe: (target: BrowserTarget) => Promise<BrowserRuntimeState>
@@ -35,12 +35,17 @@ export interface BrowserDockActions {
 
 /**
  * Unwrap one generated Remote result or throw the reported failure.
+ * The thrown `Error` copies `RemoteFailure.code` onto `code`. Gateway maps a
+ * Host `BrowserRuntimeError` to `internal` and keeps the revision-conflict
+ * wording on `message`.
  * @param result - Settling Remote result from a generated namespace method.
  * @returns the success value.
  */
 export async function unwrapRemote<T>(result: Promise<RemoteResult<T>>): Promise<T> {
   const settled = await result
-  if (!settled.ok) throw new Error(settled.error.message)
+  if (!settled.ok) {
+    throw Object.assign(new Error(settled.error.message), { code: settled.error.code })
+  }
   return settled.value
 }
 

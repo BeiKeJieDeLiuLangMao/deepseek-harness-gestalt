@@ -4,9 +4,11 @@
  * card at a time. Rows expose only confirmed API-key state through accessible
  * solid configured or missing dots. A whole-section provider without a
  * configured key renders as its open setup card instead of a row, but only in
- * the first-run posture — no provider on the page can serve requests yet — and
- * only until the user closes that card; the add flow is a card carrying the
- * dormant-provider select. Each card kind owns its own open state, so closing
+ * the first-run posture — the user layer was never written and no provider on
+ * the page can serve requests yet — and only until the user closes that card.
+ * A leftover empty user object after delete stays off the list. The add flow
+ * is a card carrying the dormant-provider select. Each card kind owns its own
+ * open state, so closing
  * one never discards a draft in another. Every mutation writes through the
  * wire, while a provider removal first requires confirmation; the page
  * re-renders from pushed invalidations or the post-apply reload.
@@ -14,7 +16,7 @@
 
 import { useState } from 'react'
 import type { ReactNode } from 'react'
-import type { IApiClient } from '@deepseek-ai/dsh-api-remotes/client'
+import type { IApiClient, SettingsNamespaceView } from '@deepseek-ai/dsh-api-remotes/client'
 import { Button, IconPlusOutline16, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-web-react'
 import { CustomProviderCard } from './CustomProviderCard.tsx'
@@ -129,6 +131,34 @@ export function needsSetup(row: ProviderRow, anyUsable: boolean): boolean {
   if (anyUsable) return false
   if (row.entry.settingsPath.length > 0) return false
   return row.credential?.configured !== true
+}
+
+/**
+ * Rows the Models list paints. A whole-section provider is `configured` only
+ * when the user layer is occupied or a `role('secret')` slot is set. Official
+ * DeepSeek names its key through a credential-ref, so a never-written first-run
+ * section is unconfigured; the list still includes that row while no other
+ * provider can serve requests so the setup card can open. Unsetting the
+ * section root leaves `user: {}`, which is not first-run and stays off the
+ * list.
+ * @param rows - joined provider rows.
+ * @param namespaces - settings namespaces from the same join.
+ * @param anyUsable - whether any joined row can already serve requests.
+ * @param dismissed - providers whose setup card the user closed this session.
+ * @returns rows that appear in the list.
+ */
+export function listedProviderRows(
+  rows: readonly ProviderRow[],
+  namespaces: ReadonlyMap<string, SettingsNamespaceView>,
+  anyUsable: boolean,
+  dismissed: ReadonlySet<string>,
+): ProviderRow[] {
+  return rows.filter((row) => {
+    if (row.configured || dismissed.has(row.entry.provider)) return true
+    if (!needsSetup(row, anyUsable)) return false
+    const namespace = namespaces.get(row.entry.settingsNs)
+    return namespace !== undefined && namespace.user === undefined
+  })
 }
 
 function targetOf(row: ProviderRow): EditorTarget {
@@ -267,14 +297,7 @@ function Loaded({ injected }: { injected: ModelsSectionInjected }): ReactNode {
   // One fact decides both first-run postures on this page and the onboarding
   // step: whether the user already has a provider to talk to.
   const anyUsable = state.rows.some(providerUsable)
-  // Official DeepSeek's empty-path join is unconfigured until the user section
-  // or a secret slot occupies it. First-run still lists that row so the setup
-  // card can open; dismissal keeps it as a row for this session; a vacant
-  // official route with another usable provider stays off the list.
-  const listed = state.rows.filter(row =>
-    row.configured
-    || needsSetup(row, anyUsable)
-    || dismissedSetup.has(row.entry.provider))
+  const listed = listedProviderRows(state.rows, state.namespaces, anyUsable, dismissedSetup)
   const addable = state.rows.filter(row =>
     !row.configured
     && row.entry.settingsNs !== ''
@@ -302,7 +325,7 @@ function Loaded({ injected }: { injected: ModelsSectionInjected }): ReactNode {
         {listed.map((row) => {
           const target = targetOf(row)
           const namespace = state.namespaces.get(target.settingsNs)
-          /* v8 ignore next -- the join marks a row configured only when its namespace resolved */
+          /* v8 ignore next -- a listed row's settings namespace is mounted with its provider */
           if (namespace === undefined) return null
           if (needsSetup(row, anyUsable) && !dismissedSetup.has(row.entry.provider)) {
             // First-run posture: the provider exists but has no key — the

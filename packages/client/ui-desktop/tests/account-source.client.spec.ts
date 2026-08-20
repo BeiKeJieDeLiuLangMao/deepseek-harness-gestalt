@@ -9,8 +9,8 @@ describe('createDesktopAccountSource', () => {
     expect(source.getSnapshot()).toEqual(INITIAL_ACCOUNT_SNAPSHOT)
     const listener = vi.fn()
     const stop = source.subscribe(listener)
-    source.set({ status: 'idle', privacyAccepted: true })
-    expect(source.getSnapshot()).toEqual({ status: 'idle', privacyAccepted: true })
+    source.set({ status: 'signed-in', privacyAccepted: true })
+    expect(source.getSnapshot()).toEqual({ status: 'signed-in', privacyAccepted: true })
     expect(listener).toHaveBeenCalledOnce()
     stop()
     source.set(INITIAL_ACCOUNT_SNAPSHOT)
@@ -57,23 +57,25 @@ describe('createDesktopAccountSource', () => {
         return vi.fn()
       },
     })
-    push?.({ status: 'idle', privacyAccepted: true })
+    push?.({ status: 'failed', privacyAccepted: false, error: 'review pending' })
     resolveInitial?.(INITIAL_ACCOUNT_SNAPSHOT)
     await Promise.resolve()
 
-    expect(source.getSnapshot()).toEqual({ status: 'idle', privacyAccepted: true })
+    expect(source.getSnapshot()).toEqual({
+      status: 'failed', privacyAccepted: false, error: 'review pending',
+    })
     stop()
   })
 
   it('applies an initial read when no push wins', async () => {
     const source = createDesktopAccountSource()
     bindDesktopAccount(source, {
-      accountGetSnapshot: async () => ({ status: 'idle', privacyAccepted: false }),
+      accountGetSnapshot: async () => ({ status: 'idle', privacyAccepted: true }),
       onAccountSnapshot: () => () => {},
     })
     await Promise.resolve()
 
-    expect(source.getSnapshot()).toEqual({ status: 'idle', privacyAccepted: false })
+    expect(source.getSnapshot()).toEqual({ status: 'idle', privacyAccepted: true })
   })
 
   it('reports a live initial read failure and ignores writes after disposal', async () => {

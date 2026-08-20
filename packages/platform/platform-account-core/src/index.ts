@@ -16,6 +16,10 @@ import {
 import type { Context } from '@deepseek-ai/cordis'
 import AccountService, {
   AccountError,
+  ACCOUNT_CONCURRENT_CONNECTION_LIMIT,
+  ACCOUNT_DESKTOP_INSTALLATION_LIMIT,
+  ACCOUNT_MOBILE_INSTALLATION_LIMIT,
+  OPEN_REGISTRATION_HARD_CAP_RETRY_AFTER_SECONDS,
   type AccountProof,
   type AuthenticatedInstallationView,
   type AccountProofJti,
@@ -28,6 +32,7 @@ import AccountService, {
   type LoginPollResult,
   type PlatformAccountId,
   type PlatformAccountView,
+  type PlatformCapacityState,
   type PlatformEnvironment,
   type SelectedPlatformEnvironment,
 } from '@deepseek-ai/dsh-platform-account'
@@ -227,7 +232,7 @@ export interface AccountBackend {
   getAttempt(id: LoginAttemptId): Promise<LoginAttemptRecord | undefined>
   /** Attach public provider identity after a valid callback. */
   authorizeAttempt(id: LoginAttemptId, identity: GitHubIdentity): Promise<void>
-  /** Atomically consume authorization and replace the installation session. */
+  /** Atomically consume authorization, enforce the installation quota, and replace the installation session. */
   consumeAuthorizedAttempt(id: LoginAttemptId, refreshHash: string, refreshExpiresAt: number): Promise<CreatedSession>
   /** Find a session by the hash of its current refresh token. */
   getSessionByRefreshHash(hash: string): Promise<SessionRecord | undefined>
@@ -241,6 +246,15 @@ export interface AccountBackend {
   revokeSession(sessionId: AccountSessionId): Promise<boolean>
   /** Atomically reject replayed proof ids inside their validity window. */
   consumeProof(jti: AccountProofJti, expiresAt: number, now: number): Promise<boolean>
+  /** Count live installations of one kind for an Account. */
+  countActiveInstallations(accountId: PlatformAccountId, kind: InstallationKind): Promise<number>
+  /** Read the Account bound to one GitHub subject inside an identity namespace. */
+  findAccountByIdentity(identityNamespace: string, providerSubject: number): Promise<AccountRecord | undefined>
+  /** Read the live session bound to one installation, when present. */
+  findActiveSessionByInstallation(
+    identityNamespace: string,
+    installationId: InstallationId,
+  ): Promise<SessionRecord | undefined>
 }
 
 /** Shared invalidation channel used by every Platform Instance. */
@@ -323,7 +337,11 @@ export class MemoryAccountBackend implements AccountBackend {
 
     const installationKey = `${attempt.identityNamespace}:${attempt.installationId}`
     const replacedSessionId = this.installationIndex.get(installationKey)
-    if (replacedSessionId !== undefined) this.revoke(replacedSessionId)
+    if (replacedSessionId !== undefined) {
+      this.revoke(replacedSessionId)
+    } else if (this.activeInstallationCount(accountId, attempt.installationKind) >= installationLimit(attempt.installationKind)) {
+      return Promise.reject(installationQuotaError(attempt.installationKind))
+    }
     const session: SessionRecord = {
       id: randomUUID() as AccountSessionId,
       identityNamespace: attempt.identityNamespace,
@@ -392,6 +410,34 @@ export class MemoryAccountBackend implements AccountBackend {
     return Promise.resolve(true)
   }
 
+  countActiveInstallations(accountId: PlatformAccountId, kind: InstallationKind): Promise<number> {
+    return Promise.resolve(this.activeInstallationCount(accountId, kind))
+  }
+
+  private activeInstallationCount(accountId: PlatformAccountId, kind: InstallationKind): number {
+    let count = 0
+    for (const session of this.sessions.values()) {
+      if (session.active && session.accountId === accountId && session.installationKind === kind) count += 1
+    }
+    return count
+  }
+
+  findAccountByIdentity(identityNamespace: string, providerSubject: number): Promise<AccountRecord | undefined> {
+    const accountId = this.accountIndex.get(`${identityNamespace}:${providerSubject}`)
+    return Promise.resolve(accountId === undefined ? undefined : structuredClone(this.accounts.get(accountId)))
+  }
+
+  findActiveSessionByInstallation(
+    identityNamespace: string,
+    installationId: InstallationId,
+  ): Promise<SessionRecord | undefined> {
+    const sessionId = this.installationIndex.get(`${identityNamespace}:${installationId}`)
+    if (sessionId === undefined) return Promise.resolve(undefined)
+    const session = this.sessions.get(sessionId)
+    if (session?.active !== true) return Promise.resolve(undefined)
+    return Promise.resolve(this.cloneSession(session))
+  }
+
   private revoke(sessionId: AccountSessionId): void {
     const session = this.sessions.get(sessionId)
     if (session === undefined || !session.active) return
@@ -455,6 +501,8 @@ export interface PlatformAccountOptions {
   config: PlatformAccountConfig
   /** Optional deterministic time source. */
   clock?: AccountClock
+  /** Shared two-instance capacity watermark; omitted compositions never shed login. */
+  capacity?: PlatformCapacityState
 }
 
 interface SignedAccessPayload {
@@ -506,6 +554,8 @@ export class PlatformAccount extends AccountService {
   readonly environment: SelectedPlatformEnvironment
   private readonly config: PlatformAccountConfig
   private readonly clock: AccountClock
+  private readonly capacity: PlatformCapacityState | undefined
+  private readonly sessionAccounts = new Map<AccountSessionId, PlatformAccountId>()
   private readonly connections = new Map<AccountSessionId, Set<() => void | Promise<void>>>()
   private readonly stopInvalidation: () => void
 
@@ -527,6 +577,7 @@ export class PlatformAccount extends AccountService {
     }
     this.config = validateConfig(options.config)
     this.clock = options.clock ?? { now: Date.now }
+    this.capacity = options.capacity
     this.stopInvalidation = this.invalidation.subscribe(async (sessionId) => { await this.closeConnections(sessionId) })
     ctx.effect(() => async () => { await this.dispose() }, 'platform-account: invalidation subscription')
   }
@@ -536,6 +587,7 @@ export class PlatformAccount extends AccountService {
     installationKind: InstallationKind
     publicKey: JsonWebKey
   }): Promise<LoginAttemptView> {
+    this.assertCapacity()
     validateP256PublicKey(input.publicKey)
     const now = this.clock.now()
     const id = randomUUID() as LoginAttemptId
@@ -606,13 +658,19 @@ export class PlatformAccount extends AccountService {
       input.proof,
     )
     if (attempt.status === 'pending') return { status: 'pending' }
+    this.assertCapacity()
+    await this.assertInstallationQuota(attempt)
     const refreshToken = randomBytes(32).toString('base64url')
     const created = await this.backend.consumeAuthorizedAttempt(
       attempt.id,
       hashAccountToken(refreshToken),
       now + MAX_REFRESH_TOKEN_TTL_MS,
     )
-    if (created.replacedSessionId !== undefined) await this.invalidation.publish(created.replacedSessionId)
+    if (created.replacedSessionId !== undefined) {
+      this.sessionAccounts.delete(created.replacedSessionId)
+      await this.invalidation.publish(created.replacedSessionId)
+    }
+    this.sessionAccounts.set(created.session.id, created.account.id)
     return { status: 'complete', ...this.issueSession(created.session, created.account, refreshToken, now) }
   }
 
@@ -660,7 +718,23 @@ export class PlatformAccount extends AccountService {
     await this.revoke(session.id)
   }
 
-  trackConnection(sessionId: AccountSessionId, close: () => void | Promise<void>): () => void {
+  async trackConnection(sessionId: AccountSessionId, close: () => void | Promise<void>): Promise<() => void> {
+    let accountId = this.sessionAccounts.get(sessionId)
+    if (accountId === undefined) {
+      const session = await this.backend.getSession(sessionId)
+      if (session === undefined || !session.active) {
+        throw new AccountError('SESSION_REVOKED', 'Account Session is unavailable')
+      }
+      accountId = session.accountId
+      this.sessionAccounts.set(sessionId, accountId)
+    }
+    if (this.countAccountConnections(accountId) >= ACCOUNT_CONCURRENT_CONNECTION_LIMIT) {
+      throw new AccountError(
+        'QUOTA',
+        'Platform Account has reached its concurrent connection limit',
+        OPEN_REGISTRATION_HARD_CAP_RETRY_AFTER_SECONDS,
+      )
+    }
     let set = this.connections.get(sessionId)
     if (set === undefined) {
       set = new Set()
@@ -701,6 +775,7 @@ export class PlatformAccount extends AccountService {
     if (session === undefined || !session.active || session.revision !== payload.revision) {
       throw new AccountError('SESSION_REVOKED', 'Account Session is revoked')
     }
+    this.sessionAccounts.set(session.id, session.accountId)
     return { payload, session }
   }
 
@@ -748,12 +823,14 @@ export class PlatformAccount extends AccountService {
   }
 
   private async revoke(sessionId: AccountSessionId): Promise<void> {
+    this.sessionAccounts.delete(sessionId)
     if (await this.backend.revokeSession(sessionId)) await this.invalidation.publish(sessionId)
   }
 
   private async closeConnections(sessionId: AccountSessionId): Promise<void> {
     const connections = this.connections.get(sessionId)
     this.connections.delete(sessionId)
+    this.sessionAccounts.delete(sessionId)
     if (connections === undefined) return
     const errors: Error[] = []
     for (const close of connections) {
@@ -773,6 +850,39 @@ export class PlatformAccount extends AccountService {
     if (account === undefined) throw new AccountError('SESSION_REVOKED', 'Account Session account is unavailable')
     return account
   }
+
+  private assertCapacity(): void {
+    if (this.capacity?.shedding !== true) return
+    throw new AccountError(
+      'PLATFORM_CAPACITY',
+      'Platform has reached capacity',
+      this.capacity.retryAfterSeconds,
+    )
+  }
+
+  private async assertInstallationQuota(attempt: LoginAttemptRecord): Promise<void> {
+    const existing = await this.backend.findActiveSessionByInstallation(
+      attempt.identityNamespace,
+      attempt.installationId,
+    )
+    if (existing !== undefined) return
+    const identity = attempt.identity
+    if (identity === undefined) return
+    const account = await this.backend.findAccountByIdentity(attempt.identityNamespace, identity.providerSubject)
+    if (account === undefined) return
+    const count = await this.backend.countActiveInstallations(account.id, attempt.installationKind)
+    if (count >= installationLimit(attempt.installationKind)) {
+      throw installationQuotaError(attempt.installationKind)
+    }
+  }
+
+  private countAccountConnections(accountId: PlatformAccountId): number {
+    let count = 0
+    for (const [sessionId, closers] of this.connections) {
+      if (this.sessionAccounts.get(sessionId) === accountId) count += closers.size
+    }
+    return count
+  }
 }
 
 function accountView(account: AccountRecord): PlatformAccountView {
@@ -782,6 +892,18 @@ function accountView(account: AccountRecord): PlatformAccountView {
     githubLogin: account.githubLogin,
     avatarUrl: account.avatarUrl,
   }
+}
+
+function installationLimit(kind: InstallationKind): number {
+  return kind === 'desktop' ? ACCOUNT_DESKTOP_INSTALLATION_LIMIT : ACCOUNT_MOBILE_INSTALLATION_LIMIT
+}
+
+function installationQuotaError(kind: InstallationKind): AccountError {
+  return new AccountError(
+    'QUOTA',
+    `Platform Account has reached its ${kind} installation limit`,
+    OPEN_REGISTRATION_HARD_CAP_RETRY_AFTER_SECONDS,
+  )
 }
 
 function validateConfig(config: PlatformAccountConfig): PlatformAccountConfig {

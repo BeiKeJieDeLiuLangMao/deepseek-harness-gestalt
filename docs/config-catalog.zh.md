@@ -1508,6 +1508,8 @@ export interface PlatformAccountOptions {
   config: PlatformAccountConfig
   /** Optional deterministic time source. */
   clock?: AccountClock
+  /** Shared two-instance capacity watermark; omitted compositions never shed login. */
+  capacity?: PlatformCapacityState
 }
 
 /** Persistence operations requiring atomic compare-and-mutate behavior. */
@@ -1522,7 +1524,7 @@ export interface AccountBackend {
   getAttempt(id: LoginAttemptId): Promise<LoginAttemptRecord | undefined>
   /** Attach public provider identity after a valid callback. */
   authorizeAttempt(id: LoginAttemptId, identity: GitHubIdentity): Promise<void>
-  /** Atomically consume authorization and replace the installation session. */
+  /** Atomically consume authorization, enforce the installation quota, and replace the installation session. */
   consumeAuthorizedAttempt(id: LoginAttemptId, refreshHash: string, refreshExpiresAt: number): Promise<CreatedSession>
   /** Find a session by the hash of its current refresh token. */
   getSessionByRefreshHash(hash: string): Promise<SessionRecord | undefined>
@@ -1536,6 +1538,15 @@ export interface AccountBackend {
   revokeSession(sessionId: AccountSessionId): Promise<boolean>
   /** Atomically reject replayed proof ids inside their validity window. */
   consumeProof(jti: AccountProofJti, expiresAt: number, now: number): Promise<boolean>
+  /** Count live installations of one kind for an Account. */
+  countActiveInstallations(accountId: PlatformAccountId, kind: InstallationKind): Promise<number>
+  /** Read the Account bound to one GitHub subject inside an identity namespace. */
+  findAccountByIdentity(identityNamespace: string, providerSubject: number): Promise<AccountRecord | undefined>
+  /** Read the live session bound to one installation, when present. */
+  findActiveSessionByInstallation(
+    identityNamespace: string,
+    installationId: InstallationId,
+  ): Promise<SessionRecord | undefined>
 }
 
 /** Shared invalidation channel used by every Platform Instance. */
@@ -1647,9 +1658,9 @@ export interface AccountRecord extends PlatformAccountView {
 }
 ```
 
-依赖： [`AccountProofJti`](../packages/platform/platform-account/src/index.ts) · [`AccountSessionId`](subsystems/platform-account.md) · [`InstallationId`](subsystems/platform-account.md) · [`InstallationKind`](../packages/platform/platform-account/src/index.ts) · [`LoginAttemptId`](subsystems/platform-account.md) · [`PlatformAccountId`](../packages/platform/platform-account/src/index.ts) · [`PlatformAccountView`](subsystems/platform-account.md) · [`PlatformEnvironment`](../packages/platform/platform-account/src/index.ts) · [`SelectedPlatformEnvironment`](../packages/platform/platform-account/src/index.ts)
+依赖： [`AccountProofJti`](../packages/platform/platform-account/src/index.ts) · [`AccountSessionId`](subsystems/platform-account.md) · [`InstallationId`](subsystems/platform-account.md) · [`InstallationKind`](../packages/platform/platform-account/src/index.ts) · [`LoginAttemptId`](subsystems/platform-account.md) · [`PlatformAccountId`](../packages/platform/platform-account/src/index.ts) · [`PlatformAccountView`](subsystems/platform-account.md) · [`PlatformCapacityState`](../packages/platform/platform-account/src/index.ts) · [`PlatformEnvironment`](../packages/platform/platform-account/src/index.ts) · [`SelectedPlatformEnvironment`](../packages/platform/platform-account/src/index.ts)
 
-来源： [`packages/platform/platform-account-core/src/index.ts:444`](../packages/platform/platform-account-core/src/index.ts)
+来源： [`packages/platform/platform-account-core/src/index.ts:491`](../packages/platform/platform-account-core/src/index.ts)
 
 <a id="deepseek-aidsh-platform-account-http"></a>
 
@@ -1736,7 +1747,27 @@ export interface Config {
 }
 ```
 
-来源：[`packages/platform/remote-access-http/src/index.ts:21`](../packages/platform/remote-access-http/src/index.ts)
+来源：[`packages/platform/remote-access-http/src/index.ts:22`](../packages/platform/remote-access-http/src/index.ts)
+
+<a id="deepseek-aidsh-remote-attachments"></a>
+
+## `@deepseek-ai/dsh-remote-attachments`
+
+```ts config-catalog
+/** Deployment bounds for the in-process store, reachable from cordis.yml. */
+export interface Config {
+  /** Per-blob ciphertext ceiling; defaults to the accepted protocol ceiling. */
+  maxBlobBytes?: number
+  /** Capability lifetime; defaults to the accepted fifteen-minute default. */
+  capabilityLifetimeMs?: number
+  /** Maximum simultaneously retained blobs; capacity failures are explicit. */
+  maxRetainedBlobs: number
+  /** Interval removing expired blobs in the background. */
+  sweepIntervalMs: number
+}
+```
+
+来源：[`packages/platform/remote-attachments/src/index.ts:111`](../packages/platform/remote-attachments/src/index.ts)
 
 <a id="deepseek-aidsh-repeat-tool-reminder"></a>
 

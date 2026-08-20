@@ -18,4 +18,10 @@ export const REMOTE_PROTOCOL_LIMITS = {
   transcriptPageBytes: 48 * 1_024,
   /** Maximum transcript entries in one approved Companion projection. */
   transcriptPageEntries: 50,
+  /** Maximum ciphertext bytes retained by the Platform for one Companion attachment blob. */
+  attachmentBlobBytes: 100 * 1_024 * 1_024,
+  /** Default lifetime of one Companion attachment capability and its retained blob. */
+  attachmentCapabilityLifetimeMs: 15 * 60 * 1000,
+  /** Maximum UTF-8 bytes in one Companion attachment file name. */
+  attachmentFileNameBytes: 255,
 } as const

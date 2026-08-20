@@ -178,6 +178,7 @@ function makeHarness(init?: Partial<ConversationSnapshot>) {
     selectedCallId: string | undefined
     openFile: ChatNodeOwnerProps['openFile']
     inspectCall: ChatNodeOwnerProps['inspectCall']
+    selectCall: ChatNodeOwnerProps['selectCall']
   }> = []
   const renderCommandSlot = ((_key: string, _owner: object, opts?: { fallback?: React.ReactNode }) =>
     opts?.fallback ?? null) as unknown as React.ComponentProps<typeof CommandNodeView>['renderSlot']
@@ -248,6 +249,7 @@ function makeHarness(init?: Partial<ConversationSnapshot>) {
           selectedCallId: nodeOwner.selectedCallId,
           openFile: nodeOwner.openFile,
           inspectCall: nodeOwner.inspectCall,
+          selectCall: nodeOwner.selectCall,
         }
         toolOwners.push(tool)
         return (
@@ -876,6 +878,17 @@ describe('ChatView', () => {
     expect(h.toolOwners.at(-1)?.selectedCallId).toBeUndefined()
     act(() => { h.setSelection({ turnSeq: 3, callId: 'a', toolName: 'bash' }) })
     expect(h.toolOwners.at(-1)?.selectedCallId).toBe('a')
+  })
+
+  it('selectCall on a tool seat opens details for that call', () => {
+    const h = makeHarness({ nodes: [toolResult(3, 'a', 'browser_navigate')] })
+    render(<h.ChatView {...h.props} />)
+    h.toolOwners.at(-1)?.selectCall?.('a', 'browser_navigate')
+    expect(h.openDetails).toHaveBeenCalledWith({
+      turnSeq: 0, callId: 'a', toolName: 'browser_navigate',
+    })
+    h.toolOwners.at(-1)?.selectCall?.('a')
+    expect(h.openDetails).toHaveBeenCalledWith({ turnSeq: 0, callId: 'a' })
   })
 
   it('hands running calls to a live Tool group', () => {
