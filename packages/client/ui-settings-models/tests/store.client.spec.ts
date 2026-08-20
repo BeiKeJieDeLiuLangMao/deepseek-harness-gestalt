@@ -105,6 +105,33 @@ describe('ModelsSettingsStore', () => {
     expect(state.namespaces.get('llm-pi-ai')?.ns).toBe('llm-pi-ai')
   })
 
+  it('leaves official DeepSeek unconfigured when the user layer is absent and no secret slot is set', async () => {
+    const { face } = api({
+      describeSettings: () => Promise.resolve(ok({
+        writable: true,
+        hasDocument: false,
+        namespaces: [{
+          ns: 'llm-deepseek',
+          schema: {},
+          value: { apiKeyEnv: 'DEEPSEEK_API_KEY', baseURL: 'https://base' },
+          base: { baseURL: 'https://base' },
+          applies: 'live' as const,
+          secrets: [],
+          revision: 0,
+        }, PI_NS],
+      })) as never,
+    })
+    const store = new ModelsSettingsStore(face)
+    await store.load()
+    expect(store.store.getSnapshot().rows.find(row => row.entry.provider === 'deepseek-official'))
+      .toMatchObject({
+        configured: false,
+        removable: true,
+        apiKeyEnv: 'DEEPSEEK_API_KEY',
+        credential: { configured: false, writable: true },
+      })
+  })
+
   it('does not treat an empty leftover DeepSeek user section as configured', async () => {
     const { face } = api({
       describeSettings: () => Promise.resolve(ok({
