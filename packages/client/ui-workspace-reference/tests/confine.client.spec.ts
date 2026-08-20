@@ -20,7 +20,7 @@ const BOTH_REJECT = [
 const BOTH_ACCEPT = [
   'src/a.ts',
   'foo..bar.ts',
-  'docs/guide.md',
+  'nested/file.md',
   '.',
 ] as const
 
