@@ -25,6 +25,11 @@ import { MobileAccount } from './MobileAccount.tsx'
 import type { MobilePairingActions } from './MobilePairing.tsx'
 import { MobilePairingController, NativeMobilePairingQrScanner } from './personal-pairing.ts'
 import { mobileSystemBrowser } from './system-browser.ts'
+import {
+  createLoopbackPageFetch,
+  rewriteLoopbackPlatformUrl,
+  rewriteLoopbackRelayUrl,
+} from './loopback-page-origin.ts'
 import './root.css'
 
 const environment = loadPlatformEnvironment({
@@ -56,13 +61,19 @@ if (installationId === null) {
   localStorage.setItem(installationIdKey, installationId)
 }
 const parsedInstallationId = parseInstallationId(installationId)
+const pageOrigin = window.location.origin
+const fetch = createLoopbackPageFetch(pageOrigin, environment.origin)
 const installation = new PlatformAccountInstallation({
   environment,
   installationId: parsedInstallationId,
   installationKind: 'mobile',
-  transport: new PlatformAccountHttpTransport({ environment }),
+  transport: new PlatformAccountHttpTransport({ environment, fetch }),
   store: new IndexedDbInstallationAccountStore(`deepseek-gestalt-platform-account:${environment.databaseIdentity}`),
-  systemBrowser: mobileSystemBrowser,
+  systemBrowser: {
+    open(url) {
+      return mobileSystemBrowser.open(rewriteLoopbackPlatformUrl(url, pageOrigin, environment.origin))
+    },
+  },
 })
 let companionVisibilityDisposer: (() => Promise<void>) | undefined
 
@@ -92,7 +103,11 @@ let pairing: MobilePairingActions = {
 if (environment.environment === 'development' && import.meta.env.VITE_PERSONAL_PAIRING_KEYLESS === '1') {
   const { DevelopmentKeylessMobileHandshakeClient } = await import('./development-keyless-pairing.ts')
   const { PairingCompanionKeyVault } = await import('./companion-keys.ts')
-  const relayUrl = requiredWss(import.meta.env.VITE_REMOTE_RELAY_WSS_URL)
+  const relayUrl = rewriteLoopbackRelayUrl(
+    requiredWss(import.meta.env.VITE_REMOTE_RELAY_WSS_URL),
+    pageOrigin,
+    environment.origin,
+  )
   const inboundMaxBytes = positiveInteger(import.meta.env.VITE_REMOTE_RELAY_INBOUND_MAX_BYTES, 'inbound bytes')
   const inboundMaxMessages = positiveInteger(import.meta.env.VITE_REMOTE_RELAY_INBOUND_MAX_MESSAGES, 'inbound messages')
   if (inboundMaxBytes < REMOTE_PROTOCOL_LIMITS.relayMessageBytes) {
@@ -114,7 +129,7 @@ if (environment.environment === 'development' && import.meta.env.VITE_PERSONAL_P
   companionVisibilityDisposer = bindCompanionProcessVisibility(companion)
   pairing = new MobilePairingController({
     installation,
-    transport: new RemoteAccessHttpTransport({ environment }),
+    transport: new RemoteAccessHttpTransport({ environment, fetch }),
     handshake: new DevelopmentKeylessMobileHandshakeClient(),
     scanner: new NativeMobilePairingQrScanner(),
     relay: companion,

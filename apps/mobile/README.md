@@ -15,7 +15,7 @@ pnpm --filter @deepseek-ai/dsh-mobile build
 pnpm --filter @deepseek-ai/dsh-mobile exec vite --host
 ```
 
-Vite resolves workspace packages through [`tsconfig.base.json`](../../tsconfig.base.json) paths so those commands run on the source plane. An Android emulator must `adb reverse` the Vite port and open `http://127.0.0.1`; `10.0.2.2` is not a secure context and cannot create an Installation id. For same-origin Account CORS during local pairing, open the TLS origin from [`examples/local-companion-platform`](../../examples/local-companion-platform/README.md).
+Vite resolves workspace packages through [`tsconfig.base.json`](../../tsconfig.base.json) paths so those commands run on the source plane. Dev-server `/v1` (including Relay WebSocket) proxies to `VITE_PLATFORM_DEVELOPMENT_ORIGIN` without verifying the listen certificate. An Android emulator must `adb reverse` the Vite port and open `http://127.0.0.1`; `10.0.2.2` is not a secure context and cannot create an Installation id. A WebView that cannot trust the bundled listen certificate stays on that Vite origin; the entry rewrites Account, pairing, authorization, and Relay URLs onto it while pairing links keep the HTTPS listen origin from [`examples/local-companion-platform`](../../examples/local-companion-platform/README.md).
 
 ## Known Limitations and Deferred Work
 
