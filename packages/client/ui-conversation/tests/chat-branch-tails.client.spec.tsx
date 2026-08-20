@@ -93,7 +93,11 @@ function MessageItem({ node, t: translate, referenceLabels }: MessageItemProps) 
     renderMessageImages,
     useInput: bindSnapshotSelector(emptyInput),
     inputActions: unusedInputActions,
-  } as ChatNodeViewProps
+    openFile: () => {},
+    inspectCall: () => {},
+    forkAt: () => {},
+    fileMentions: () => undefined,
+  } as unknown as ChatNodeViewProps
   switch (node.kind) {
     case 'user':
     case 'steering':
