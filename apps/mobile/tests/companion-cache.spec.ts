@@ -92,7 +92,7 @@ describe('Companion Cache', () => {
     expect(new TextDecoder().decode(sealed.ciphertext)).not.toContain('hello')
     expect(new TextDecoder().decode(await cipher.open(desktopA, 'transcript', sealed))).toBe(plaintext)
 
-    const withA = await cipherFor({ 'desktop-a': keys['desktop-a']! })
+    const withA = await cipherFor({ 'desktop-a': keys['desktop-a'] })
     expect(await withA.open(desktopA, 'transcript', sealed)).toEqual(new TextEncoder().encode(plaintext))
   })
 
@@ -105,16 +105,16 @@ describe('Companion Cache', () => {
 
   it('refuses to decrypt one Desktop row under another Desktop key', async () => {
     const keys = { 'desktop-a': await freshKey(), 'desktop-b': await freshKey() }
-    const sealedByA = await (await cipherFor({ 'desktop-a': keys['desktop-a']! })).seal(
+    const sealedByA = await (await cipherFor({ 'desktop-a': keys['desktop-a'] })).seal(
       desktopA,
       'transcript',
       new TextEncoder().encode('desktop-a transcript'),
     )
     const cipherUsingBForAnyDesktop = new WebCryptoCompanionCacheCipher({
-      keyFor: async () => keys['desktop-b']!,
+      keyFor: async () => keys['desktop-b'],
     })
     await expect(cipherUsingBForAnyDesktop.open(desktopA, 'transcript', sealedByA)).rejects.toThrow()
-    const cipherOfA = await cipherFor({ 'desktop-a': keys['desktop-a']! })
+    const cipherOfA = await cipherFor({ 'desktop-a': keys['desktop-a'] })
     await expect(cipherOfA.open(desktopA, 'session-metadata', sealedByA)).rejects.toThrow()
   })
 

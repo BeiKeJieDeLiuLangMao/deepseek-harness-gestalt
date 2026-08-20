@@ -339,46 +339,49 @@ export class InMemoryCompanionCacheStore implements CompanionCacheStore {
   readonly #content = new Map<string, CompanionCacheRecord>()
   readonly #receipts = new Map<string, CompanionOperationReceipt>()
 
-  async saveContent(
+  saveContent(
     desktopId: CompanionDesktopId,
     kind: CompanionCacheContentKind,
     record: CompanionCacheRecord,
   ): Promise<void> {
     this.#content.set(contentKey(desktopId, kind), record)
+    return Promise.resolve()
   }
 
-  async loadContent(
+  loadContent(
     desktopId: CompanionDesktopId,
     kind: CompanionCacheContentKind,
   ): Promise<CompanionCacheRecord | undefined> {
-    return this.#content.get(contentKey(desktopId, kind))
+    return Promise.resolve(this.#content.get(contentKey(desktopId, kind)))
   }
 
-  async clearDesktop(desktopId: CompanionDesktopId): Promise<void> {
+  clearDesktop(desktopId: CompanionDesktopId): Promise<void> {
     const prefix = desktopPrefix(desktopId)
     for (const key of [...this.#content.keys(), ...this.#receipts.keys()]) {
       if (!key.startsWith(prefix)) continue
       this.#content.delete(key)
       this.#receipts.delete(key)
     }
+    return Promise.resolve()
   }
 
-  async saveReceipt(desktopId: CompanionDesktopId, receipt: CompanionOperationReceipt): Promise<void> {
+  saveReceipt(desktopId: CompanionDesktopId, receipt: CompanionOperationReceipt): Promise<void> {
     const key = `${desktopPrefix(desktopId)}${receipt.operationId}`
     requireReceiptCapacity(
       [...this.#receipts.keys()].filter(row => row.startsWith(desktopPrefix(desktopId))).length,
       this.#receipts.has(key),
     )
     this.#receipts.set(key, receipt)
+    return Promise.resolve()
   }
 
-  async loadReceipts(desktopId: CompanionDesktopId): Promise<readonly CompanionOperationReceipt[]> {
+  loadReceipts(desktopId: CompanionDesktopId): Promise<readonly CompanionOperationReceipt[]> {
     const prefix = desktopPrefix(desktopId)
     const rows = [...this.#receipts.entries()]
       .filter(([key]) => key.startsWith(prefix))
       .map(([, row]) => row)
     requireReceiptCount(rows.length)
-    return rows
+    return Promise.resolve(rows)
   }
 }
 
@@ -528,11 +531,11 @@ export class CompanionCache {
    */
   async saveOpenedContent(
     desktopId: CompanionDesktopId,
-    kind: CompanionCacheContentKind | CompanionCacheExcludedKind | string,
+    kind: string,
     plaintext: string,
   ): Promise<void> {
     if (!companionCacheAdmits(kind)) {
-      throw new TypeError(`Companion Cache never automatically stores ${String(kind)}`)
+      throw new TypeError(`Companion Cache never automatically stores ${kind}`)
     }
     const bytes = new TextEncoder().encode(plaintext)
     const limit = openedContentByteLimit(kind)
