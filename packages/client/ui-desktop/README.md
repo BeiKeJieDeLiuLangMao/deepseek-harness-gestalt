@@ -17,4 +17,5 @@ None; this package neither assembles nor sends a provider request.
 ## Known Limitations and Deferred Work
 
 - **The plugin is a no-op without `window.dshDesktop`** — Mobile Pairing Account state, Update Control, and Window Chrome render nothing; their sources stay in initial states.
+- **Assembled Desktop Web E2E installs `installDesktopBridgeFixture`** — a required preload member missing from that fixture fails typecheck instead of a browser timeout ([typed DesktopBridge fixture](../../../.agents/notes/implemented/testing/2026-08-21-typed-desktop-bridge-e2e-fixture.md)).
 - **Product pairing remains fail-closed** — the Host reports Mobile Access unavailable until the independent Noise review admits a reviewed handshake adapter.
