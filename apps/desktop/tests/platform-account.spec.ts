@@ -106,6 +106,11 @@ describe('DesktopAccountController', () => {
     expect(controller.getSnapshot()).toEqual({ status: 'idle', privacyAccepted: false })
   })
 
+  it('does not probe Keychain availability while composing Desktop Host Account', async () => {
+    const source = await readFile(join(import.meta.dirname, '../src/main.ts'), 'utf8')
+    expect(source).not.toContain('isEncryptionAvailable')
+  })
+
   it('contains a throwing subscriber and still notifies later subscribers', async () => {
     const reported = vi.spyOn(console, 'error').mockImplementation(() => {})
     const controller = new DesktopAccountController({

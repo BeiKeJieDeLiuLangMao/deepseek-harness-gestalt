@@ -47,8 +47,14 @@ export interface CompanionSubmitPromptOperation {
   text: string
 }
 
-/** Operations in the first implemented Companion codec slice. */
-export type CompanionOperation = CompanionSubmitPromptOperation
+/** Reconnect query for the Desktop-authoritative outcome of one transmitted operation. */
+export interface CompanionQueryOperationStatusOperation {
+  type: 'query-operation-status'
+  operationId: CompanionOperationId
+}
+
+/** Operations in the implemented Companion codec slices. */
+export type CompanionOperation = CompanionSubmitPromptOperation | CompanionQueryOperationStatusOperation
 
 /** Desktop-authoritative mutation result. */
 export interface CompanionConfirmedResult {
@@ -58,8 +64,25 @@ export interface CompanionConfirmedResult {
   outcome: 'accepted'
 }
 
-/** Results in the first implemented Companion codec slice. */
-export type CompanionResult = CompanionConfirmedResult
+/** Reconnect answer returning the original committed result for one operation id. */
+export interface CompanionCommittedStatusResult {
+  type: 'status'
+  operationId: CompanionOperationId
+  committed: CompanionConfirmedResult
+}
+
+/** Reconnect answer stating the queried operation id committed nothing. */
+export interface CompanionAbsentStatusResult {
+  type: 'status'
+  operationId: CompanionOperationId
+  absent: true
+}
+
+/** Results in the implemented Companion codec slices. */
+export type CompanionResult =
+  | CompanionConfirmedResult
+  | CompanionCommittedStatusResult
+  | CompanionAbsentStatusResult
 
 /** Bounded plain-text transcript entry approved for Mobile presentation. */
 export interface CompanionTextTranscriptEntry {

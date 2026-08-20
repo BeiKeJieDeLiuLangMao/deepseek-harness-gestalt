@@ -248,6 +248,13 @@ export function decodeCompanionMessage(
 
 function parseOperation(value: unknown): CompanionOperation {
   const record = object(value, 'Companion operation')
+  if (record.type === 'query-operation-status') {
+    exactKeys(record, ['type', 'operationId'], 'Companion query-operation-status operation')
+    return {
+      type: 'query-operation-status',
+      operationId: parseCompanionOperationId(record.operationId),
+    }
+  }
   if (record.type !== 'submit-prompt') invalid('Companion operation type is unsupported')
   exactKeys(record, ['type', 'operationId', 'sessionId', 'text'], 'Companion submit-prompt operation')
   if (typeof record.text !== 'string' || record.text.length === 0) invalid('Companion prompt text must be non-empty')
@@ -261,6 +268,7 @@ function parseOperation(value: unknown): CompanionOperation {
 
 function parseResult(value: unknown): CompanionResult {
   const record = object(value, 'Companion result')
+  if (record.type === 'status') return parseStatusResult(record)
   if (record.type !== 'confirmed') invalid('Companion result type is unsupported')
   exactKeys(record, ['type', 'operationId', 'committedAt', 'outcome'], 'Companion confirmed result')
   if (record.outcome !== 'accepted') invalid('Companion confirmed outcome is unsupported')
@@ -270,6 +278,24 @@ function parseResult(value: unknown): CompanionResult {
     committedAt: positiveSafeInteger(record.committedAt, 'Companion committedAt'),
     outcome: 'accepted',
   }
+}
+
+function parseStatusResult(record: Record<string, unknown>): CompanionResult {
+  const operationId = parseCompanionOperationId(record.operationId)
+  if (record.committed !== undefined && record.absent !== undefined) {
+    invalid('Companion status result cannot be both committed and absent')
+  }
+  if (record.absent !== undefined) {
+    exactKeys(record, ['type', 'operationId', 'absent'], 'Companion absent status result')
+    if (record.absent !== true) invalid('Companion absent status must be literal true')
+    return { type: 'status', operationId, absent: true }
+  }
+  exactKeys(record, ['type', 'operationId', 'committed'], 'Companion committed status result')
+  const confirmed = parseResult(record.committed)
+  if (confirmed.type !== 'confirmed' || confirmed.operationId !== operationId) {
+    invalid('Companion committed status must embed its own confirmed result')
+  }
+  return { type: 'status', operationId, committed: confirmed }
 }
 
 function parseProjection(value: unknown): CompanionProjection {

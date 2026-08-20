@@ -236,18 +236,22 @@ describe('Remote Access HTTP assembled flow', () => {
     const remoteAccess = {
       getMobileAccessState: vi.fn(async () => ({ enabled: true })),
       setMobileAccess: vi.fn(async () => ({ enabled: true })),
-      createChallenge: vi.fn(async () => ({ challengeId: 'challenge-one' })),
+      createChallenge: vi.fn(async (_input: { clientIp: string }) => ({ challengeId: 'challenge-one' })),
       cancelChallenge: vi.fn(),
       listPendingPairings: vi.fn(async () => []),
       listPersonalPairings: vi.fn(async () => []),
       getMobilePairingStatus: vi.fn(async (): Promise<MobilePairingStatus> => ({ status: 'pending' })),
       confirmPairing: vi.fn(async () => ({ id: 'pairing-one' })),
       rejectPairing: vi.fn(),
+      reissueDesktopRelayAuthority: vi.fn(async () => ({ enabled: true })),
       revokePersonalPairing: vi.fn(),
       completeChallenge: vi.fn(async () => ({
         pendingPairingId: 'pending-one', authenticationWords: [], desktopHandshake: Uint8Array.of(1),
         device: { name: 'phone', platform: 'ios' },
       })),
+      admitAttachmentBlob: vi.fn(async () => ({ reservationId: 'blob-1' })),
+      releaseAttachmentBlob: vi.fn(),
+      emitPushHint: vi.fn(),
     }
     const server = await start(remoteAccess as never)
     const auth = authentication('account-one:desktop:desktop-one')
@@ -262,7 +266,24 @@ describe('Remote Access HTTP assembled flow', () => {
     }
 
     expect((await request({ operation: 'get-mobile-access' })).status).toBe(200)
+    expect((await request({ operation: 'reissue-desktop-relay' })).status).toBe(200)
+    expect((await request({ operation: 'revoke-pairing', pairingId: 'pairing-one' })).status).toBe(200)
     expect((await request({ operation: 'cancel-challenge', challengeId: 'challenge-one' })).status).toBe(200)
+    expect((await request({ operation: 'admit-blob', bytes: 4 })).status).toBe(200)
+    expect(remoteAccess.admitAttachmentBlob).toHaveBeenCalledWith(expect.objectContaining({ bytes: 4 }))
+    expect((await request({ operation: 'admit-blob', bytes: 'x' })).status).toBe(400)
+    expect((await request({ operation: 'admit-blob', bytes: -1 })).status).toBe(400)
+    expect((await request({ operation: 'release-blob', reservationId: 'blob-1' })).status).toBe(200)
+    expect((await request({ operation: 'release-blob', reservationId: '' })).status).toBe(400)
+    expect((await request({ operation: 'emit-push-hint' })).status).toBe(200)
+    expect((await request({ operation: 'create-challenge', rendezvousId: 'rendezvous-one' })).status).toBe(200)
+    expect(remoteAccess.createChallenge.mock.calls.at(-1)?.[0].clientIp).toMatch(/127\.0\.0\.1|::1/u)
+    expect((await request({ operation: 'create-challenge', rendezvousId: 'forwarded' }, {
+      headers: { 'x-forwarded-for': '203.0.113.10, 10.0.0.1' },
+    })).status).toBe(200)
+    expect(remoteAccess.createChallenge.mock.calls.at(-1)?.[0].clientIp).toMatch(/127\.0\.0\.1|::1/u)
+    expect((await request({ operation: 'reissue-desktop-relay' })).status).toBe(200)
+    expect((await request({ operation: 'revoke-pairing', pairingId: 'pairing-one' })).status).toBe(200)
     expect((await request({ operation: 'reject-pairing', pendingPairingId: 'pending-one' })).status).toBe(200)
     remoteAccess.getMobilePairingStatus.mockResolvedValueOnce({
       status: 'paired', pairingId: parsePersonalPairingId('pairing-one'), sealedRelayAuthority: Uint8Array.of(1, 2),
@@ -342,6 +363,13 @@ describe('Remote Access HTTP assembled flow', () => {
       new RemoteAccessError('PAIRING_CHALLENGE_USED', 'used'),
     )
     expect((await request({ operation: 'get-mobile-access' })).status).toBe(409)
+    remoteAccess.getMobileAccessState.mockRejectedValueOnce(
+      new RemoteAccessError('QUOTA', 'full', 60),
+    )
+    const quota = await request({ operation: 'get-mobile-access' })
+    expect(quota.status).toBe(429)
+    expect(quota.headers.get('retry-after')).toBe('60')
+    await expect(quota.json()).resolves.toMatchObject({ error: { code: 'QUOTA', retryAfter: 60 } })
     remoteAccess.getMobileAccessState.mockRejectedValueOnce(new Error('boom'))
     const internal = await request({ operation: 'get-mobile-access' })
     expect(internal.status).toBe(500)
@@ -370,6 +398,39 @@ describe('Remote Access HTTP assembled flow', () => {
     if (route === undefined) throw new Error('Remote Access route was not registered')
     await route.handler(request as never, response as never)
     expect(response.writeHead).toHaveBeenCalledWith(200, expect.any(Object))
+  })
+
+  it('rejects a Pairing Challenge when the TCP socket has no client IP', async () => {
+    let route: RegisteredRoute | undefined
+    const createChallenge = vi.fn()
+    const ctx = {
+      remoteAccess: { createChallenge },
+      webServer: { register(value: RegisteredRoute) { route = value; return () => {} } },
+      effect(register: () => () => void) { register() },
+    } as unknown as Context
+    apply(ctx, { origin: 'https://mobile.example' })
+    const chunks: Buffer[] = []
+    const response = {
+      writeHead: vi.fn(),
+      end: (value?: string) => { if (value !== undefined) chunks.push(Buffer.from(value)) },
+      setHeader: vi.fn(),
+    }
+    const body = new TextEncoder().encode(JSON.stringify({
+      operation: 'create-challenge', rendezvousId: 'rendezvous-one',
+    }))
+    const request = {
+      method: 'POST',
+      headers: proofHeaders(authentication('account-one:desktop:desktop-one')),
+      socket: {},
+      async *[Symbol.asyncIterator]() { yield body },
+    }
+    if (route === undefined) throw new Error('Remote Access route was not registered')
+    await route.handler(request as never, response as never)
+    expect(response.writeHead).toHaveBeenCalledWith(400, expect.any(Object))
+    expect(JSON.parse(Buffer.concat(chunks).toString('utf8'))).toMatchObject({
+      error: { code: 'CLIENT_IP_REQUIRED' },
+    })
+    expect(createChallenge).not.toHaveBeenCalled()
   })
 })
 

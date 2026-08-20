@@ -27,6 +27,7 @@ packages/    @deepseek-ai/dsh-<pkg> workspaces at packages/<group>/<pkg>/
   lsp/         language-server capability
   skill/       skill provider registry + local impl + catalog/loader tool
   web/         web capability: Service Definition + search/fetch providers + tool Consumer
+  browser/     Browser Runtime capability: Providers + deferred tools
   compaction/     compaction capability + basic provider
   context/     request-context plugins
   subagent/    subagent capability: Service Definition + providers + delegation Consumers
@@ -65,7 +66,7 @@ Package groups: [packages/README.md](packages/README.md).
 
 ```sh
 pnpm install            # pnpm workspaces, node ^22.19 || >=24
-pnpm run clean           # remove build outputs and safe residue from deleted packages
+pnpm run clean           # remove build outputs and deleted-package residue
 pnpm run test           # vitest unit tests
 pnpm run test:coverage  # CI coverage gate: per-file 100% on packages/*/*/src
 pnpm run test:e2e       # real-API tests; self-skip without DEEPSEEK_API_KEY
@@ -76,7 +77,7 @@ pnpm run lint
 pnpm run duplication    # cross-file TypeScript clone detection
 pnpm run build          # tsc emits lib/types, tsdown bundles runtime
 pnpm run hygiene        # knip + publint + workspace constraints + NodeNext consumer check
-pnpm run check:windows-wine  # ONLY when diagnosing a known Windows failure (needs wine); CI owns this signal
+pnpm run check:windows-wine  # ONLY to diagnose a known Windows failure (needs wine); CI owns this signal
 pnpm run doc-sync       # all documentation gates; leaf list in scripts/run-gates.ts
 pnpm run website:build  # VitePress build (doubles as dead-link check)
 pnpm dsh --profile headless "task"  # run one task from source (needs DEEPSEEK_API_KEY)
@@ -150,7 +151,7 @@ Docs accompany every code change: update affected README and JSDoc contracts tog
 
 ## Editing these instructions
 
-`CLAUDE.md` symlinks `AGENTS.md` at root, `packages/`, and `examples/`; edit the real file. Keep each rule self-contained while linking high-level docs. Condense when clarity survives; raise a `verify-doc-budgets` ceiling when the required content genuinely needs more space.
+`CLAUDE.md` symlinks `AGENTS.md` at root, `packages/`, and `examples/`; edit the real file. Keep each rule self-contained while linking high-level docs. Condense when clarity survives; raise a `verify-doc-budgets` ceiling when required content genuinely needs more space.
 
 ## Vendoring policy
 

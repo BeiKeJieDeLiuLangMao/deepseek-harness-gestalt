@@ -378,6 +378,7 @@ async function pair(
   const challenge = await provider.createChallenge({
     desktop,
     rendezvousId: parsePairingRendezvousId(`${label}-rendezvous`),
+    clientIp: '192.0.2.1',
   })
   const pending = await provider.completeChallenge({
     mobile,

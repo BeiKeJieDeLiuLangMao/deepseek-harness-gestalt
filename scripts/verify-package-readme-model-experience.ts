@@ -42,6 +42,11 @@ const NO_MODEL_EXPERIENCE_SECTION: Readonly<Record<string, string>> = {
  * blocks. A package moves on or off this list with its context behavior.
  */
 const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
+  'packages/browser/browser-runtime': { kind: 'indirect', reason: 'The Service Definition delegates model rendering to dsh-tool-browser.' },
+  'packages/browser/browser-runtime-deterministic': { kind: 'indirect', reason: 'The deterministic Provider delegates model rendering to dsh-tool-browser.' },
+  'packages/browser/browser-runtime-electron': { kind: 'indirect', reason: 'The in-process Electron Provider delegates model rendering to dsh-tool-browser.' },
+  'packages/browser/browser-runtime-tandem': { kind: 'indirect', reason: 'The Tandem-shaped HTTP Provider delegates model rendering to dsh-tool-browser.' },
+  'packages/browser/browser-workspace': { kind: 'indirect', reason: 'The Session binder delegates model rendering to dsh-tool-browser.' },
   'packages/attachment/attachment': { kind: 'indirect', reason: 'The storage seam delegates model request rendering to provider adapters.' },
   'packages/attachment/attachment-local': { kind: 'indirect', reason: 'The local backend delegates model request rendering to provider adapters.' },
   'packages/shell/shell': { kind: 'indirect', reason: 'The service interface delegates all model rendering to dsh-tool-bash.' },
@@ -85,6 +90,7 @@ const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
   'packages/client/ui-tool': { kind: 'none', reason: 'Browser-side Tool presentation layer; renders logged calls without changing model context.' },
   'packages/client/ui-jobs': { kind: 'none', reason: 'Browser-side read-only projection of ctx.jobs records; dsh-tool-jobs owns the model-facing behavior.' },
   'packages/client/ui-schedule': { kind: 'none', reason: 'Browser-side current-state projection and human controls; dsh-schedule owns model-facing reminder behavior.' },
+  'packages/client/ui-browser': { kind: 'none', reason: 'Browser-side Dock chrome over Session-owned Browser Workspace facts; dsh-tool-browser owns model-facing page operations.' },
   'packages/client/ui-workflow-run': { kind: 'none', reason: 'Browser-side UI plugin layer; renders durable workflow records without changing model context.' },
   'packages/client/ui-input-trigger': { kind: 'none', reason: 'Browser-side UI plugin layer; registers nothing model-facing.' },
   'packages/client/ui-commands': { kind: 'indirect', reason: 'The dispatch paths trigger the host command.execute RPC; each command handler\'s host package owns any model-visible effect.' },

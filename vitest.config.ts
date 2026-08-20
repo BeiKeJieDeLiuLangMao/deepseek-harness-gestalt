@@ -65,7 +65,14 @@ const windowsOnlyCoverageExclusions = process.platform !== 'win32'
 // never measures child processes. Its behavior is pinned end-to-end by
 // tests/runner.spec.ts, which spawns the real entry through tsx.
 const windowsRunnerCoverageExclusions = process.platform === 'win32'
-  ? ['packages/sandbox/sandbox-windows-acl/src/runner.ts']
+  ? [
+      'packages/sandbox/sandbox-windows-acl/src/runner.ts',
+      // Worker-thread execution is not attributed back to these files by
+      // Windows v8 coverage. session.spec.ts still runs and passes; Linux
+      // coverage keeps the per-file 100% bar.
+      'packages/workflow/workflow-worker-thread/src/index.ts',
+      'packages/workflow/workflow-worker-thread/src/host.ts',
+    ]
   : []
 
 // pwsh-local's run/start/lifecycle suites self-skip without a real pwsh
@@ -272,11 +279,10 @@ export default defineConfig({
         'packages/host/apiproxy/src/fetch/client.ts',
         'packages/host/apiproxy/src/fetch/handler.ts',
         'packages/platform/remote-access-redis/src/index.ts',
-        // TODO(#168,#170,#171): delete when merged
+        // TODO(#168,#170): delete when merged
         'packages/platform/platform-account-http/src/index.ts',
         'packages/platform/remote-access-client/src/index.ts',
         'packages/platform/remote-access-http/src/index.ts',
-        'packages/platform/remote-access/src/index.ts',
         'packages/schedule/schedule/src/index.ts',
         'packages/session-query/session-log-export/src/client/HeaderAction.tsx',
         'packages/session-query/session-log-export/src/client/index.ts',

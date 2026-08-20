@@ -17,6 +17,10 @@ The product command is [`dsh --profile headless`](../../apps/cli/README.md): it 
 
 Snapshot suites run this directory's configuration through [`tests/fixtures/headless-driver.ts`](tests/fixtures/headless-driver.ts), an unexported test-only process that emits canonical session events as JSONL before its result record. That stream is test infrastructure, not a supported CLI output format. Child sessions surface only through parent tool events and results. [`deferred-tool-search.cordis.snapshot.yml`](deferred-tool-search.cordis.snapshot.yml) mounts the shipped headless spine with a real deferred MCP server; its snapshot disposes and reloads the Loader tree over the same JSONL Session to prove discovery, continuation, execution, and request reconstruction.
 
+[`browser-runtime.cordis.snapshot.yml`](browser-runtime.cordis.snapshot.yml) is the keyless runnable Browser Runtime tracer. It discovers nine deferred Browser tools, creates one temporary Profile and tab, navigates, observes, screenshots, focuses, records human input and reported ownership, returns ownership to the Agent, closes, then reloads the same Session to prove that schemas and rendered Browser facts, including control ownership, are reconstructable.
+
+`browser-runtime-tandem.cordis.snapshot.yml` runs the same Browser tool path — `tool_search` → `browser_create` → `browser_navigate` → `browser_observe` → `browser_screenshot` → `browser_focus` → `browser_input` → `browser_takeover` → `browser_return_control` → `browser_close` — against the Tandem-shaped HTTP Provider and a local HTTP fixture.
+
 ## E2B POC overlay
 
 [`e2b.cordis.yml`](e2b.cordis.yml) replaces the local filesystem and subprocess providers with one shared E2B sandbox while retaining `dsh-bash-local` and the same model-facing tools. Put `E2B_API_KEY` beside `DEEPSEEK_API_KEY` in the gitignored root `.env`, then run the credential-gated live composition, which drives FS, Bash, PTY, and LSP in one sandbox and proves final deletion:

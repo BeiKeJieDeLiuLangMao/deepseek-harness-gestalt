@@ -37,6 +37,16 @@ afterEach(async () => {
 })
 
 describe('Platform Account HTTP consumer', () => {
+  it('rejects a missing or mismatched HTTP origin before registering routes', () => {
+    const ctx = {
+      platformAccount: { environment: ENVIRONMENT },
+      webServer: { register() { return () => {} } },
+      effect(register: () => () => void) { register() },
+    } as unknown as Context
+    expect(() => { apply(ctx, {} as never) }).toThrow('origin configuration is required')
+    expect(() => { apply(ctx, { origin: 'https://other.example' }) }).toThrow('does not match the selected Platform environment')
+  })
+
   it('serves the complete lifecycle and bilingual fixed callback with exact CORS', async () => {
     const account = accountService()
     const server = await start(account)
@@ -113,6 +123,7 @@ describe('Platform Account HTTP consumer', () => {
   it('returns stable validation, account, and internal error envelopes', async () => {
     const account = accountService()
     vi.mocked(account.pollLogin).mockRejectedValueOnce(new AccountError('LOGIN_ATTEMPT_EXPIRED', 'expired'))
+    vi.mocked(account.beginLogin).mockRejectedValueOnce(new AccountError('PLATFORM_CAPACITY', 'full', 45))
     vi.mocked(account.refresh).mockRejectedValueOnce(new AccountError('SESSION_REVOKED', 'revoked'))
     vi.mocked(account.current).mockRejectedValueOnce(new Error('database unavailable'))
     const server = await start(account)
@@ -131,6 +142,12 @@ describe('Platform Account HTTP consumer', () => {
       attemptId: 'attempt', pollingToken: 'poll', proof: { jti: 'jti', issuedAt: 1, signature: 'sig' },
     })
     expect(await error(expired)).toEqual([400, 'LOGIN_ATTEMPT_EXPIRED'])
+    const capacity = await post(server.origin, '/v1/account/login-attempts', {
+      installationId: 'desktop-1', installationKind: 'desktop', publicKey: { kty: 'EC', crv: 'P-256', x: 'x', y: 'y' },
+    })
+    expect(capacity.status).toBe(429)
+    expect(capacity.headers.get('retry-after')).toBe('45')
+    expect(await capacity.json()).toMatchObject({ error: { code: 'PLATFORM_CAPACITY', retryAfter: 45 } })
     const revoked = await post(server.origin, '/v1/account/session/refresh', {
       refreshToken: 'refresh', proof: { jti: 'jti', issuedAt: 1, signature: 'sig' },
     })
@@ -220,6 +237,16 @@ describe('Platform Account HTTP consumer', () => {
     })
     const callback = await fetch(`${missingUrl.origin}/v1/account/oauth/github/callback?code=code&state=state`)
     expect(await error(callback)).toEqual([400, 'INVALID_REQUEST'])
+  })
+
+  it('rejects a missing or mismatched Account HTTP origin at load', () => {
+    const ctx = {
+      platformAccount: { environment: ENVIRONMENT },
+      webServer: { register() { return () => {} } },
+      effect(register: () => () => void) { register() },
+    } as unknown as Context
+    expect(() => { apply(ctx, null as never) }).toThrow('origin configuration is required')
+    expect(() => { apply(ctx, { origin: 'https://other.example' }) }).toThrow('does not match')
   })
 })
 

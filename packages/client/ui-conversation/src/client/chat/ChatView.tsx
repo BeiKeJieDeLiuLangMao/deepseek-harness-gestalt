@@ -1,7 +1,8 @@
 // ChatView: the default conversation view — one stable keyed parent list over
-// final business Nodes, plus paging, pending steering and bottom-follow.
-// Each row dispatches through 'conversation.chat.node'; ui-tool owns the
-// tool-call renderer and its recursive root/subcall composition.
+// final business Nodes, plus paging, pending steering, the collapsed Browser
+// Dock preview, and bottom-follow. Each row dispatches through
+// 'conversation.chat.node'; ui-tool owns the tool-call renderer and its
+// recursive root/subcall composition.
 //
 // Scroll: when nested under `[data-conversation-scroll]` (active conversation
 // column), that host is the scrollport and this view is flow content; when
@@ -404,6 +405,7 @@ export function ChatView({
           {pendingSteering.map(item => (
             <PendingSteeringBubble key={item.id} content={item.content} loadImage={loadImage} t={t} />
           ))}
+          {renderSlot('conversation.browser.preview', {})}
         </div>
         {!atBottom && (
           <div className={css.toBottomSlot}>

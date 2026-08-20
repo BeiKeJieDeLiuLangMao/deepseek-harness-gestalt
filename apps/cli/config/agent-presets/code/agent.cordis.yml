@@ -251,6 +251,11 @@
     fetch: false
     searchTimeoutMs: 60000
 
+# The Browser Runtime and Session Workspace binder stay in the host composition;
+# only the model-facing tools are per-session.
+- id: tool-browser
+  name: '@deepseek-ai/dsh-tool-browser'
+
 # ── presentation ────────────────────────────────────────────────────────────
 
 # Code Mode for this agent alone. The row waits for the host's `codeRuntime`

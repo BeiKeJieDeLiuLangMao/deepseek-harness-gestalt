@@ -1,0 +1,66 @@
+# Keyless Tandem-shaped HTTP Browser tracer over the shipped base + headless profile.
+- id: agent-loop
+  # Restart requires persistence before the fixed Session identity is restored.
+  inject: [sessionPersistence]
+  config:
+    agents:
+      - id: main
+        sessionId: browser-runtime-tandem-snapshot
+        provider: snapshot
+        model: snapshot
+        cwd: !!js process.cwd()
+
+- id: system-prompt
+  config:
+    persona: |
+      Follow the replayed Tandem Browser tracer exactly.
+
+- id: headless-runner
+  disabled: true
+
+- id: session-title-llm
+  disabled: true
+
+# The base bundle's keyless Runtime yields to the Tandem-shaped HTTP client.
+- id: browser-runtime-deterministic
+  disabled: true
+
+# Replay proxy for the host-plane tool-browser Consumer.
+- id: tool-browser
+  name: './snapshot-fixtures/tool-browser-proxy.mjs'
+
+- insert:
+    - id: browser-runtime-tandem
+      name: './snapshot-fixtures/browser-runtime-tandem-proxy.mjs'
+      config:
+        command: !!js process.execPath
+        args: !!js "[process.env.DSH_TANDEM_FIXTURE_PATH]"
+        cwd: !!js process.cwd()
+        env: !!js "({ TANDEM_FIXTURE_PORT: process.env.DSH_TANDEM_FIXTURE_PORT, TANDEM_FIXTURE_TOKEN_FILE: process.env.DSH_TANDEM_TOKEN_FILE })"
+        baseUrl: !!js "`http://127.0.0.1:${process.env.DSH_TANDEM_FIXTURE_PORT}`"
+        tokenFile: !!js process.env.DSH_TANDEM_TOKEN_FILE
+        idPrefix: tandem
+        startupTimeoutMs: 5000
+        requestTimeoutMs: 2000
+        healthPollMs: 10
+        reconnectAttempts: 1
+        reconnectDelayMs: 10
+        processGraceMs: 100
+        pageSettleMs: 50
+
+    - id: llm-replay
+      name: './snapshot-fixtures/llm-replay-proxy.mjs'
+      config:
+        file: !!js process.env.DSH_SNAPSHOT_FILE
+        providers:
+          - id: snapshot
+            models:
+              - id: snapshot
+                contextWindow: 128000
+
+    # The same restart driver emits canonical Session events for this tracer.
+    - id: browser-runtime-tandem-snapshot-runner
+      name: './snapshot-fixtures/deferred-tool-search-runner.ts'
+      inject: [headlessStartup]
+      config:
+        task: !!js ctx.headlessStartup.task

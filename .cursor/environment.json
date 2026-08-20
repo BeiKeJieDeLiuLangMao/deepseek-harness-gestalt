@@ -1,0 +1,10 @@
+{
+  "name": "DeepSeek Gestalt (deepseek-harness)",
+  "install": "bash -lc 'export NVM_DIR=$HOME/.nvm; [ -s $NVM_DIR/nvm.sh ] && . $NVM_DIR/nvm.sh; nvm install 24 >/dev/null 2>&1; nvm alias default 24 >/dev/null 2>&1; corepack enable 2>/dev/null || true; CI=true pnpm install'",
+  "terminals": [
+    {
+      "name": "gha-runner",
+      "command": "bash -lc 'if [ -x $HOME/actions-runner/run.sh ]; then cd $HOME/actions-runner && exec ./run.sh; else echo gha-runner:no-runner-configured-under-~/actions-runner-skipping; sleep infinity; fi'"
+    }
+  ]
+}

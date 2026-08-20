@@ -89,8 +89,8 @@ export function protocolChoices(namespace: SettingsNamespaceView | undefined): s
 /**
  * Whether the user layer still occupies a whole-section provider. An empty
  * object is the leftover of unsetting the section root and is not occupancy.
- * @param user - stored user-layer value for one whole-section provider.
- * @returns whether the stored value counts as occupancy.
+ * @param user - the user-layer section value.
+ * @returns true when that layer still occupies a whole-section provider.
  */
 export function userSectionOccupied(user: unknown): boolean {
   if (user === undefined || user === null) return false

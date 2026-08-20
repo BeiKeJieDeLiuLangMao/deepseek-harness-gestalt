@@ -224,7 +224,6 @@ function answerJson(res: ServerResponse, status: number, value: unknown): void {
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
   res.end(JSON.stringify(value))
 }
-/* jscpd:ignore-end */
 
 function answerError(res: ServerResponse, error: unknown): void {
   if (error instanceof HttpError) {
@@ -232,13 +231,22 @@ function answerError(res: ServerResponse, error: unknown): void {
     return
   }
   if (error instanceof AccountError) {
-    answerJson(res, error.code.startsWith('SESSION_') ? 401 : 400, {
-      error: { code: error.code, message: error.message },
+    if (error.retryAfter !== undefined) res.setHeader('retry-after', String(error.retryAfter))
+    const status = error.code === 'QUOTA' || error.code === 'PLATFORM_CAPACITY'
+      ? 429
+      : error.code.startsWith('SESSION_') ? 401 : 400
+    answerJson(res, status, {
+      error: {
+        code: error.code,
+        message: error.message,
+        ...(error.retryAfter === undefined ? {} : { retryAfter: error.retryAfter }),
+      },
     })
     return
   }
   answerJson(res, 500, { error: { code: 'INTERNAL', message: 'Platform Account request failed' } })
 }
+/* jscpd:ignore-end */
 
 class HttpError extends Error {
   constructor(readonly status: number, readonly code: string, message: string) {
