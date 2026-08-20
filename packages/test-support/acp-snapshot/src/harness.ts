@@ -50,8 +50,10 @@ const WAIT_POLL_INTERVAL_MS = 10
  * behind the same marker.
  * `promptAndWaitForAgentMessage` arms an exact text-chunk waiter before sending
  * the prompt, then keeps the application live until that later update arrives.
- * `waitForTurnStart` waits for an open durable turn, optionally at or beyond a
- * specified turn number. `waitForTurnEnd` holds the subprocess open until the
+ * `waitForTurnStart` waits for a durable `turn/start`. Without `minimumTurn`
+ * it requires that turn still to be open. With `minimumTurn` it succeeds once
+ * a start at or beyond that number has been persisted, including after the
+ * turn has closed. `waitForTurnEnd` holds the subprocess open until the
  * selected session's latest complete raw-JSONL turn boundary is `turn/end`.
  * `waitForGoalPhase` waits for the latest durable goal snapshot to reach one phase.
  * `waitForInboxMessage` waits for inserted inbox text containing a scenario marker.
@@ -523,7 +525,7 @@ async function runStep(
   }
 }
 
-/** Wait until persistence exposes an open turn for the selected session. */
+/** Wait until persistence exposes the requested durable turn start. */
 async function waitForPersistedTurnStart(
   root: string,
   sessionId: string,
@@ -533,9 +535,9 @@ async function waitForPersistedTurnStart(
   let invalidRecord: { error: unknown } | undefined
   await vi.waitFor(async () => {
     const log = (await harvestSessionLogs(root)).find(candidate => candidate.id === sessionId)
-    let openTurn: number | undefined
+    let started: { turn: number; open: boolean } | undefined
     try {
-      openTurn = log === undefined ? undefined : latestOpenTurn(log.content)
+      started = log === undefined ? undefined : latestTurnStart(log.content)
     } catch (error) {
       // A malformed persisted record is a scenario bug, not a not-yet state:
       // vi.waitFor retries every callback throw, so capture the validation
@@ -543,7 +545,9 @@ async function waitForPersistedTurnStart(
       invalidRecord = { error }
       return
     }
-    if (openTurn === undefined || (minimumTurn !== undefined && openTurn < minimumTurn)) {
+    const reached = started !== undefined
+      && (minimumTurn === undefined ? started.open : started.turn >= minimumTurn)
+    if (!reached) {
       const detail = minimumTurn === undefined ? 'turn/start' : `turn/start at or beyond turn ${minimumTurn}`
       throw new Error(`snapshot-harness: session "${sessionId}" did not persist ${detail} within ${timeoutMs}ms`)
     }
@@ -723,18 +727,21 @@ function latestEventFollowsTurnEnd(content: string, type: string): boolean {
   return turnEnd >= 0 && complete.lastIndexOf(`\n{"type":"${type}",`) > turnEnd
 }
 
-/** Return the latest open turn number, validating the persisted boundary record. */
-function latestOpenTurn(content: string): number | undefined {
+/** Return the latest persisted turn/start number and whether that turn is still open. */
+function latestTurnStart(content: string): { turn: number; open: boolean } | undefined {
   const complete = content.slice(0, content.lastIndexOf('\n') + 1)
   const start = complete.lastIndexOf('\n{"type":"turn/start",')
-  if (start <= complete.lastIndexOf('\n{"type":"turn/end",')) return undefined
+  if (start < 0) return undefined
   const end = complete.indexOf('\n', start + 1)
   const record = JSON.parse(complete.slice(start + 1, end)) as { data?: { turn?: unknown } | null }
   const turn = record.data?.turn
   if (!Number.isSafeInteger(turn) || (turn as number) < 1) {
     throw new Error('snapshot-harness: invalid persisted turn/start record')
   }
-  return turn as number
+  return {
+    turn: turn as number,
+    open: start > complete.lastIndexOf('\n{"type":"turn/end",'),
+  }
 }
 
 /**
