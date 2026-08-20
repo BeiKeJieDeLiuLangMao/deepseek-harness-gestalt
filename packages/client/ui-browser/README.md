@@ -4,7 +4,7 @@ English | [中文](README.zh.md)
 
 Session-owned Browser Dock and collapsed tab preview. The plugin occupies `details` as `id: 'browser'` at order 10 while this Session owns tabs and `dockOpen` is true, and occupies `conversation.browser.preview` otherwise. Live Workspace facts arrive through `useProjection('browserWorkspace')`. Mutations go through the generated `remote.browserWorkspace` namespace.
 
-The expanded Dock has no Profile switch or Agent-status row. Tabs occupy the top row and the collapse control stays at its right edge. The toolbar shows refresh, the persistent Profile label next to the address field, and take-control or return-to-Agent for the current tab. The viewport shows the latest screenshot and page text. The first Agent tab opens the Dock; later Agent activity does not reopen it after the human collapses it.
+The expanded Dock has no Profile switch or Agent-status row. Tabs occupy the top row and the collapse control stays at its right edge. The toolbar shows refresh, the persistent Profile label next to the address field, and take-control or return-to-Agent for the current tab. The viewport shows the latest screenshot and page text. The active tab's label, address, and screenshot follow the Binder-committed page after `navigate` and after Refresh. A still-blank first tab can remain `about:blank` until that navigate. The first Agent tab opens the Dock; later Agent activity does not reopen it after the human collapses it.
 
 The collapsed preview is a one-line layered summary of the same Dock, not a second Dock. It has no outer shell or footer. Clicking a back layer selects that tab; clicking the current layer opens the Dock. The preview is hidden while the Dock is visible. Ordinary MCP tool rows stay in conversation history.
 

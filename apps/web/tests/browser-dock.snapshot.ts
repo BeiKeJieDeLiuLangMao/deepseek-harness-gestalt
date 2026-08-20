@@ -1,14 +1,16 @@
 // @vitest-environment jsdom
 // Assembled Browser Dock snapshot: boots the real built client bundles against
 // the keyless FixtureApiClient and pins the collapsed preview the fixture
-// Session's last `browser/workspace` snapshot restores.
+// Session's last `browser/workspace` snapshot restores, then the expanded Dock
+// chrome after open and after Refresh (navigate of the committed page).
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { installAssembledBootEnv, mountAssembledApp, REFRESHING_GOLDEN } from './assembled-boot.ts'
 
-const EXPECTED = join(process.cwd(), 'apps/web/tests/snapshots/browser-dock/fixture.expected.txt')
+const PREVIEW_EXPECTED = join(process.cwd(), 'apps/web/tests/snapshots/browser-dock/fixture.expected.txt')
+const DOCK_EXPECTED = join(process.cwd(), 'apps/web/tests/snapshots/browser-dock/dock-chrome.expected.txt')
 
 installAssembledBootEnv()
 
@@ -25,11 +27,31 @@ function previewShape(root: Element): string {
   ].join('\n')
 }
 
+function dockShape(root: Document | Element): string {
+  const dock = root.querySelector('[data-browser-dock]')
+  if (dock === null) return 'dock=hidden'
+  const tabs = [...dock.querySelectorAll('[role="tab"]')].map(tab => (
+    `tab=${tab.getAttribute('aria-selected') === 'true' ? 'current' : 'back'} ${tab.textContent?.trim() ?? ''}`
+  ))
+  const address = dock.querySelector('input')
+  const img = dock.querySelector('img')
+  return [
+    'dock=shown',
+    ...tabs,
+    `address=${address instanceof HTMLInputElement ? address.value : ''}`,
+    `screenshot=${img?.getAttribute('alt') ?? 'none'}`,
+  ].join('\n')
+}
+
+async function openFixtureSession(): Promise<void> {
+  const tree = await screen.findByRole('tree', { name: 'Sessions' }, { timeout: 10_000 })
+  fireEvent.click(await within(tree).findByText('Fixture 历史会话'))
+}
+
 describe('assembled Browser Dock preview', () => {
   it('restores the collapsed layered preview from the fixture Session Workspace', async () => {
     mountAssembledApp()
-    const tree = await screen.findByRole('tree', { name: 'Sessions' }, { timeout: 10_000 })
-    fireEvent.click(await within(tree).findByText('Fixture 历史会话'))
+    await openFixtureSession()
     const preview = await waitFor(() => {
       const found = document.querySelector('[data-browser-preview]')
       expect(found).not.toBeNull()
@@ -37,9 +59,34 @@ describe('assembled Browser Dock preview', () => {
     }, { timeout: 10_000 })
     const shape = previewShape(preview)
     if (REFRESHING_GOLDEN) {
-      mkdirSync(dirname(EXPECTED), { recursive: true })
-      writeFileSync(EXPECTED, shape)
+      mkdirSync(dirname(PREVIEW_EXPECTED), { recursive: true })
+      writeFileSync(PREVIEW_EXPECTED, shape)
     }
-    await expect(shape).toMatchFileSnapshot(EXPECTED)
+    await expect(shape).toMatchFileSnapshot(PREVIEW_EXPECTED)
+  })
+
+  it('keeps Dock chrome on the committed page after open and Refresh, not about:blank', async () => {
+    mountAssembledApp()
+    await openFixtureSession()
+    fireEvent.click(await screen.findByRole('button', { name: 'Expand Example Domain' }, { timeout: 10_000 }))
+    const opened = await waitFor(() => {
+      const shape = dockShape(document)
+      expect(shape).not.toBe('dock=hidden')
+      expect(shape).not.toContain('about:blank')
+      return shape
+    }, { timeout: 10_000 })
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+    const refreshed = await waitFor(() => {
+      const shape = dockShape(document)
+      expect(shape).toContain('address=example.test')
+      expect(shape).not.toContain('about:blank')
+      return shape
+    }, { timeout: 10_000 })
+    const shape = ['after-open', opened, 'after-refresh', refreshed].join('\n')
+    if (REFRESHING_GOLDEN) {
+      mkdirSync(dirname(DOCK_EXPECTED), { recursive: true })
+      writeFileSync(DOCK_EXPECTED, shape)
+    }
+    await expect(shape).toMatchFileSnapshot(DOCK_EXPECTED)
   })
 })
