@@ -1,8 +1,5 @@
 /** Production-only listen-process and deploy Environment names. */
 
-import { resolve } from 'node:path'
-import { pathToFileURL } from 'node:url'
-
 /** Names the listen process must receive from Environment `production`. */
 export const PLATFORM_PRODUCTION_REQUIRED_ENV = [
   'PLATFORM_ORIGIN',
@@ -136,11 +133,4 @@ export function runPlatformProductionEnvCli(env: NodeJS.Dict<string> = process.e
     return 1
   }
   return 0
-}
-
-const invokedPath = process.argv[1]
-const isMain = invokedPath !== undefined && invokedPath !== ''
-  && import.meta.url === pathToFileURL(resolve(invokedPath)).href
-if (isMain) {
-  process.exit(runPlatformProductionEnvCli())
 }

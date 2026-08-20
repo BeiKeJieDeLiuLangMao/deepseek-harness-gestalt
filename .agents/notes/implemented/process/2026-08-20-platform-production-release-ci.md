@@ -12,7 +12,7 @@ The Platform listen process and its GitHub Actions workflows need one operated e
 
 The operated Platform is production only. [`apps/platform/src/production-env.ts`](../../../../apps/platform/src/production-env.ts) names the listen-process secrets, treats an unset `PLATFORM_ENVIRONMENT` as production, and refuses any other selection before `loadPlatformEnvironment` runs. Dummy development identities remain in [`boot.ts`](../../../../apps/platform/src/boot.ts) so the client pair validator still rejects a shared identity; they are not a second listen process.
 
-GitHub Actions uses Environment `production` only. [Platform Image](../../../../.github/workflows/platform-image.yml) builds on pull requests and matching master pushes, and pushes to GHCR only on `workflow_dispatch` with `inputs.push`. [Platform Deploy](../../../../.github/workflows/platform-deploy.yml) always validates the production and ECS names through the same TypeScript entry (`node --experimental-strip-types apps/platform/src/production-env.ts`) and SSHes only when `inputs.deploy` is true.
+GitHub Actions uses Environment `production` only. [Platform Image](../../../../.github/workflows/platform-image.yml) builds on pull requests and matching master pushes, and pushes to GHCR only on `workflow_dispatch` with `inputs.push`. [Platform Deploy](../../../../.github/workflows/platform-deploy.yml) always validates the production and ECS names through [`production-env-cli.ts`](../../../../apps/platform/src/production-env-cli.ts) (`node --experimental-strip-types`) and SSHes only when `inputs.deploy` is true. The CLI entry is not bundled into `boot.mjs`.
 
 Desktop and Mobile continue to parse a complete pair ([Account installation sessions](../feature/2026-08-17-platform-account-installation-sessions.md)). That pair-isolation rule does not require a live development Platform.
 
@@ -32,4 +32,4 @@ A missing production name fails validation without printing values. Setting `PLA
 
 ## Testing
 
-[`apps/platform/tests/production-env.spec.ts`](../../../../apps/platform/tests/production-env.spec.ts) pins operated-environment selection, missing-name order, hex-key rejection, CLI stderr that lists names without values, `boot.ts` calling `assertOperatedPlatformEnvironment`, the Deploy workflow's validate-then-`inputs.deploy` split, and Platform Image's master-push build without GHCR push.
+[`apps/platform/tests/production-env.spec.ts`](../../../../apps/platform/tests/production-env.spec.ts) pins operated-environment selection, missing-name order, hex-key rejection, CLI stderr that lists names without values, `boot.ts` calling `assertOperatedPlatformEnvironment` without importing the CLI entry, the Deploy workflow's validate-then-`inputs.deploy` split, and Platform Image's master-push build without GHCR push.

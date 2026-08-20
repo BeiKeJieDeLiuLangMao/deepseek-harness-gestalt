@@ -17,7 +17,7 @@ import {
 
 const HEX = 'ab'.repeat(32)
 const DISTINCTIVE_SECRET = 'super-secret-token-value-do-not-print'
-const script = fileURLToPath(new URL('../src/production-env.ts', import.meta.url))
+const script = fileURLToPath(new URL('../src/production-env-cli.ts', import.meta.url))
 const bootSource = readFileSync(new URL('../src/boot.ts', import.meta.url), 'utf8')
 const repoRoot = resolve(import.meta.dirname, '../../..')
 
@@ -172,8 +172,11 @@ describe('runPlatformProductionEnvCli', () => {
 
 describe('operated Platform composition', () => {
   it('selects production before loading the pair and keeps dummy development on an invalid origin', () => {
+    const envSource = readFileSync(new URL('../src/production-env.ts', import.meta.url), 'utf8')
     expect(bootSource).toContain('assertOperatedPlatformEnvironment')
     expect(bootSource).toContain('https://dev.gestaltrun.invalid')
+    expect(bootSource).not.toContain('production-env-cli')
+    expect(envSource).not.toContain('process.exit')
   })
 })
 
@@ -194,7 +197,7 @@ describe('Platform release workflows', () => {
     expect(deploy.needs).toBe('validate')
     expect(deploy.if).toBe('${{ inputs.deploy }}')
     const validateStep = steps(validate).find(step => typeof step.run === 'string'
-      && step.run.includes('apps/platform/src/production-env.ts'))
+      && step.run.includes('apps/platform/src/production-env-cli.ts'))
     if (validateStep === undefined) throw new TypeError('validate job must run production-env.ts')
     expect(String(validateStep.run)).toContain('--experimental-strip-types')
     if (!isRecord(validateStep.env)) throw new TypeError('validate step must define env')

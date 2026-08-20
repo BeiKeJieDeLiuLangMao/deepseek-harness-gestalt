@@ -12,7 +12,7 @@ Platform 监听进程及其 GitHub Actions 工作流只需要一套实际运行�
 
 实际运行的 Platform 只有生产环境。[`apps/platform/src/production-env.ts`](../../../../apps/platform/src/production-env.ts) 列出监听进程所需密钥，将未设置的 `PLATFORM_ENVIRONMENT` 视为 production，并在 `loadPlatformEnvironment` 运行前拒绝任何其他选择。[`boot.ts`](../../../../apps/platform/src/boot.ts) 仍保留虚假的 development 身份，以便客户端成对校验拒绝共享身份；它们不是第二套监听进程。
 
-GitHub Actions 只使用 Environment `production`。[Platform Image](../../../../.github/workflows/platform-image.yml) 会在拉取请求和匹配的 master 推送上构建，仅在 `workflow_dispatch` 且 `inputs.push` 为真时推送到 GHCR。[Platform Deploy](../../../../.github/workflows/platform-deploy.yml) 始终通过同一 TypeScript 入口（`node --experimental-strip-types apps/platform/src/production-env.ts`）校验生产和 ECS 名称，仅在 `inputs.deploy` 为真时 SSH。
+GitHub Actions 只使用 Environment `production`。[Platform Image](../../../../.github/workflows/platform-image.yml) 会在拉取请求和匹配的 master 推送上构建，仅在 `workflow_dispatch` 且 `inputs.push` 为真时推送到 GHCR。[Platform Deploy](../../../../.github/workflows/platform-deploy.yml) 始终通过 [`production-env-cli.ts`](../../../../apps/platform/src/production-env-cli.ts)（`node --experimental-strip-types`）校验生产和 ECS 名称，仅在 `inputs.deploy` 为真时 SSH。该 CLI 入口不会打进 `boot.mjs`。
 
 Desktop 与 Mobile 仍解析完整环境对（[账号安装会话](../feature/2026-08-17-platform-account-installation-sessions.md)）。这条成对隔离规则并不要求存在一套在线的 development Platform。
 
@@ -32,4 +32,4 @@ Desktop 与 Mobile 仍解析完整环境对（[账号安装会话](../feature/20
 
 ## 测试
 
-[`apps/platform/tests/production-env.spec.ts`](../../../../apps/platform/tests/production-env.spec.ts) 钉住运行环境选择、缺失名称顺序、十六进制密钥拒绝、只列出名称不打印值的 CLI stderr、`boot.ts` 调用 `assertOperatedPlatformEnvironment`、Deploy 工作流的先校验再按 `inputs.deploy` 应用，以及 Platform Image 在 master 推送上构建但不推送到 GHCR。
+[`apps/platform/tests/production-env.spec.ts`](../../../../apps/platform/tests/production-env.spec.ts) 钉住运行环境选择、缺失名称顺序、十六进制密钥拒绝、只列出名称不打印值的 CLI stderr、`boot.ts` 调用 `assertOperatedPlatformEnvironment` 且不导入 CLI 入口、Deploy 工作流的先校验再按 `inputs.deploy` 应用，以及 Platform Image 在 master 推送上构建但不推送到 GHCR。
