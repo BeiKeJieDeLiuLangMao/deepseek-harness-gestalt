@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-remote-attachments",
   "description": "Pairing-scoped encrypted attachment blob store with expiring one-time capabilities",
-  "version": "0.1.0-rc.7",
+  "version": "0.1.0-rc.8",
   "publishConfig": { "access": "public" },
   "repository": {
     "type": "git",

@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-browser-runtime-tandem",
   "description": "Tandem-shaped HTTP Service Provider for the Browser Runtime capability",
-  "version": "0.1.0-rc.7",
+  "version": "0.1.0-rc.8",
   "publishConfig": {
     "access": "public"
   },

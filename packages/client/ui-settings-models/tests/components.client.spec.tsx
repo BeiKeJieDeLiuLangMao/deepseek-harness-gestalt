@@ -1111,6 +1111,7 @@ describe('ModelsSection', () => {
       controller={controller}
       useSnapshot={bindSnapshotSelector(controller.store)}
       api={face as never}
+      schema={settingsSchema}
       t={t}
     />)
     fireEvent.click(screen.getByText(en.add))

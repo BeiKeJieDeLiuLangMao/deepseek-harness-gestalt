@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-client-ui-browser",
   "description": "Session-owned Browser Dock and collapsed tab preview for the dsh web GUI",
-  "version": "0.1.0-rc.7",
+  "version": "0.1.0-rc.8",
   "publishConfig": {
     "access": "public"
   },

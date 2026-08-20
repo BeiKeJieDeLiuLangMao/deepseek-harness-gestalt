@@ -108,7 +108,7 @@ describe('SidebarRoot shell', () => {
       renderSlotChain={((_key, _owner, opts) => opts?.fallback ?? null) as SidebarRootComponentProps['renderSlotChain']}
     />)
 
-    expect(screen.getByText('DSH Local Build')).toBeTruthy()
+    expect(screen.getByText('DSH Gestalt')).toBeTruthy()
     expect(screen.getByText('0123456')).toBeTruthy()
     expect(container.querySelector('svg')).not.toBeNull()
   })

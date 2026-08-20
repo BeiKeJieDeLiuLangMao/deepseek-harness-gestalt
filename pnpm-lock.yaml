@@ -9596,6 +9596,9 @@ importers:
       '@deepseek-ai/dsh-brand':
         specifier: workspace:^
         version: link:../../packages/util/brand
+      '@deepseek-ai/dsh-browser-runtime':
+        specifier: workspace:^
+        version: link:../../packages/browser/browser-runtime
       '@deepseek-ai/dsh-code-runtime':
         specifier: workspace:^
         version: link:../../packages/code-runtime/code-runtime
@@ -9815,6 +9818,9 @@ importers:
       '@deepseek-ai/dsh-tool-bash-persistent':
         specifier: workspace:^
         version: link:../../packages/shell/tool-bash-persistent
+      '@deepseek-ai/dsh-tool-browser':
+        specifier: workspace:^
+        version: link:../../packages/browser/tool-browser
       '@deepseek-ai/dsh-tool-call-timeout-policy':
         specifier: workspace:^
         version: link:../../packages/guard/timeout-policy

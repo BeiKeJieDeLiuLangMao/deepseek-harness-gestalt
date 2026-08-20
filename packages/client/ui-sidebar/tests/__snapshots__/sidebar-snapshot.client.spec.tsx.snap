@@ -164,7 +164,7 @@ exports[`sidebar shell snapshots > renders the expanded column (wordmark, capsul
                 <span
                   class="fallbackBrandName"
                 >
-                  DSH Local Build
+                  DSH Gestalt
                 </span>
                 <span
                   class="buildRevision"
@@ -307,7 +307,7 @@ exports[`sidebar shell snapshots > renders the expanded column in the default lo
                 <span
                   class="fallbackBrandName"
                 >
-                  DSH Local Build
+                  DSH Gestalt
                 </span>
                 <span
                   class="buildRevision"

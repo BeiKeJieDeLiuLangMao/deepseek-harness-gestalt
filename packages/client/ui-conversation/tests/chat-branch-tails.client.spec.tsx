@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import type {
   ChatConversationViewNode, ConversationNode,
@@ -43,6 +44,24 @@ afterEach(() => {
 // Mirrors the real lookup chain (conversation namespace, then common).
 const t: ChatNodeViewProps['t'] = makeTranslate(zh, commonZh)
 const renderMessageImages: AssistantMarkdownProps['renderMessageImages'] = () => null
+const emptyInput = createSnapshotStore({
+  draft: '', imageIds: [], annotations: [], annotationSubmitting: false, draftRev: 0,
+  phase: 'plain' as const, occurrences: [], queue: [],
+})
+const unusedInputActions: ChatNodeViewProps['inputActions'] = {
+  setDraft: () => {},
+  addImages: () => true,
+  removeImage: () => {},
+  pruneImages: () => {},
+  addTextAnnotation: () => { throw new Error('unused') },
+  updateTextAnnotation: () => {},
+  removeTextAnnotation: () => {},
+  discardTextAnnotations: () => {},
+  addImagePin: () => 'pin' as never,
+  updateImagePin: () => {},
+  removeImagePin: () => {},
+  submit: () => {},
+}
 const RETRY_ID = 'retry-fixture' as Extract<ConversationNode, { kind: 'model-retry' }>['retryId']
 
 interface MessageItemProps {
@@ -68,7 +87,13 @@ function MessageItem({ node, t: translate, referenceLabels }: MessageItemProps) 
         ? { ...node, referenceLabels }
         : node,
   }
-  const props = { node: viewNode, t: translate, renderMessageImages } as ChatNodeViewProps
+  const props = {
+    node: viewNode,
+    t: translate,
+    renderMessageImages,
+    useInput: bindSnapshotSelector(emptyInput),
+    inputActions: unusedInputActions,
+  } as ChatNodeViewProps
   switch (node.kind) {
     case 'user':
     case 'steering':
