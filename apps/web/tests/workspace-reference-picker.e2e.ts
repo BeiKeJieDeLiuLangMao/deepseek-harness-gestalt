@@ -72,6 +72,13 @@ describe('web e2e: workspace reference picker', () => {
     await input.pressSequentially(`@${MARKER} `, { delay: 20 })
     const chip = page.locator(`[data-workspace-reference-chip="${MARKER}"]`)
     await expect.poll(() => chip.count(), { timeout: 10_000 }).toBe(1)
+    const dockBox = await page.locator('[data-workspace-reference-dock]').boundingBox()
+    const inputBox = await input.boundingBox()
+    expect(dockBox).toBeTruthy()
+    expect(inputBox).toBeTruthy()
+    // The dock shares the composer card column. On the 1680px snapshot
+    // viewport a missing max-width parks the chips near x=24.
+    expect(Math.abs((dockBox?.x ?? 0) - (inputBox?.x ?? 0))).toBeLessThan(24)
     const snapshot = await captureStableAria(page, '[data-workspace-reference-dock]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(join(SNAPSHOT_DIR, 'dock.expected.md'), snapshot, MODE)
     const openPath = vi.spyOn(scaffold.ctx.apiProxy.host, 'openPath')
