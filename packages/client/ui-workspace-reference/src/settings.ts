@@ -17,7 +17,7 @@ export const DEFAULT_WORKSPACE_REFERENCE_SETTINGS = {
 
 /** Durable Workspace Reference section. */
 export interface WorkspaceReferenceSettings {
-  /** When false, the picker, dock, and paste rewrite stay off. */
+  /** When false, the picker and paste rewrite stay off. */
   enable: boolean
   /** When true, pasted `@` tokens receive a word joiner so they are not scanned. */
   pasteIgnore: boolean

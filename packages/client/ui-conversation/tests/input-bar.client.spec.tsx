@@ -1257,7 +1257,7 @@ describe('decorations', () => {
     expect(chip?.textContent).toBe('@w1')
     expect(shell.snapshot.occurrences).toHaveLength(1)
     // The draft carries exactly one placeholder char where the token was.
-    expect(shell.snapshot.draft).toBe('参考 \uFFFC 内容')
+    expect(shell.snapshot.draft).toBe('参考 \uFFFC@w1 内容')
   })
 
   it('a lexicon-matched plain token renders the text-ref mark', () => {

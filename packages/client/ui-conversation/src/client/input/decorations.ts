@@ -16,9 +16,11 @@ export interface TokenRange {
 export interface ChipRender {
   /** Stable render key (same-labeled chips stay independent). */
   readonly occurrenceId: number
-  /** Placeholder offset in the draft (the chip occupies [offset, offset+1)). */
+  /** Placeholder offset in the draft (the run occupies [offset, offset+1+label.length)). */
   readonly offset: number
   readonly label: string
+  /** Clipboard/send form shown on hover (never the placeholder). */
+  readonly title: string
   /** Owner-resolution failure styling bit. */
   readonly invalid: boolean
 }
@@ -98,6 +100,7 @@ export function deriveDecorations(
     occurrenceId: o.occurrenceId,
     offset: o.offset,
     label: o.label,
+    title: o.clipboardText,
     invalid: o.invalid === true,
   }))
   const hint = claimActive && claim.hint !== undefined && draft.slice(claim.token.length).trim() === ''

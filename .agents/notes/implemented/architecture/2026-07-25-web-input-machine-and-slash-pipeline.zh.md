@@ -41,10 +41,10 @@ Status: implemented
 
 occurrence 表与 chip 三投影：
 
-- 每颗引用在 draft 中占一个 `U+FFFC`；表项 `{occurrenceId, source, ref, offset, label, clipboardText, invalid?}`；同名 chip 因 occurrenceId 独立。
-- 一切编辑同 transaction 更新 draft 与表：区间平移；与占位符相交的删除/替换作用于整颗。
-- 单字符占位使键盘原子性大半原生成立（caret 无内部位；Backspace/方向键/Shift 扩选原生即整颗）；鼠标点 chip 由 backdrop 命中 → 整颗 setSelectionRange。
-- 视觉投影 = label：backdrop 在占位符 offset 渲染 chip（textarea 字形不可见），invalid 走失效样式。
+- 每颗引用在 draft 中占一段 `U+FFFC` + label（label 字形让占位与可见投影同宽）；表项 `{occurrenceId, source, ref, offset, label, clipboardText, invalid?}`；同名 chip 因 occurrenceId 独立。
+- 一切编辑同 transaction 更新 draft 与表：区间平移；与占位段相交的删除/替换作用于整颗并清掉剩余占位字形。
+- 落在 label 内部的 caret 会吸到较近的段边界；在段内任一字形上 Backspace 会删掉整颗。
+- 视觉投影 = label：backdrop 在占位 offset 把 chip 画成无边框、靠字体颜色区分的文字（textarea 字形不可见），invalid 走失效样式。
 - 剪贴板/持久化投影 = clipboardText：copy/cut 把选区内占位符展开；draft 持久化 mirror 写同一投影（chat store 里永远是普通文本，刷新 seed 语义 = 全选复制→重开→粘贴，chip 跨刷新降级为文本）。
 - 模型投影 = submit 时经 source `codec.serialize` 逐颗生成（归 submit attempt 的 signal 与陈旧守卫；owner 缺失/失败/取消则不发送，不降级为 `/name`）。
 

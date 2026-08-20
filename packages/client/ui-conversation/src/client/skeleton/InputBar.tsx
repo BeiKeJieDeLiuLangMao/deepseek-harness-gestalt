@@ -24,6 +24,7 @@ import type {} from '@deepseek-ai/dsh-goal/client'
 // api-remotes import already places it in every client program.
 import type { Translate } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ComposerAttachment, ComposerBarProps } from '../contract/slots.ts'
+import { occurrenceEnd, placeholderSpan, snapSelection } from '../input/machine.ts'
 import { deriveDecorations } from '../input/decorations.ts'
 import type { DraftDecorations } from '../input/decorations.ts'
 import {
@@ -419,13 +420,10 @@ export function InputBar({
   }
 
   // ---- chip atomicity (DOM layer; the machine sees only transactions) ----
-  // Placeholders occupy exactly one char, so caret positions are always
-  // BETWEEN them — what needs normalizing is deletion (whole chip per
-  // Backspace/Delete via native single-char semantics, which U+FFFC already
-  // gives us) and selection endpoints: Shift-extension snapping is native
-  // too (one char = one step). Mouse selection of a chip is handled in the
-  // backdrop click handler below. Undo/redo must NOT reach the browser: the
-  // machine owns the transaction log.
+  // A chip run is U+FFFC plus the label glyphs, so a caret can land inside
+  // the label. onSelect snaps endpoints to run boundaries; the machine
+  // expands a partial delete to the whole run. Undo/redo must NOT reach the
+  // browser: the machine owns the transaction log.
   // selectionStart/End are number|null in lib.dom; the type-aware lint program narrows them.
   /* oxlint-disable typescript/no-unnecessary-condition */
   const selectionOf = (el: HTMLTextAreaElement) => ({
@@ -440,15 +438,16 @@ export function InputBar({
     const { start, end } = selectionOf(el)
     if (start === end) return
     const slice = draft.slice(start, end)
-    const touched = input.occurrences.filter(o => o.offset >= start && o.offset < end)
+    const touched = input.occurrences.filter(o => o.offset < end && occurrenceEnd(o) > start)
     if (touched.length === 0 && !cut) return // plain copy of plain text: native path is fine
     e.preventDefault()
     // Expand placeholders to their owner clipboard projections.
     let text = ''
     let cursor = start
     for (const o of touched) {
-      text += draft.slice(cursor, o.offset) + o.clipboardText
-      cursor = o.offset + 1
+      if (o.offset > cursor) text += draft.slice(cursor, o.offset)
+      text += o.clipboardText
+      cursor = Math.max(cursor, occurrenceEnd(o))
     }
     text += draft.slice(cursor, end)
     e.clipboardData.setData('text/plain', text)
@@ -598,7 +597,11 @@ export function InputBar({
     // Any caret/selection gesture ends a live paste attempt (the machine
     // cannot observe DOM selection). Cheap no-op when none is live.
     if (keyboard !== undefined && keyboard.snapshot.paste !== undefined) keyboard.invalidatePaste()
-    void e
+    if (input === undefined) return
+    const el = e.currentTarget
+    const { start, end } = selectionOf(el)
+    const next = snapSelection(start, end, input.occurrences)
+    if (next.start !== start || next.end !== end) el.setSelectionRange(next.start, next.end)
   }
 
   // Button presses steal focus from the textarea; suppress at mousedown so
@@ -673,21 +676,20 @@ export function InputBar({
       if (b.kind === 'chip') {
         const chip = b.chip
         backdrop.push(
-          // The cell's ::before renders U+FFFC itself so its advance equals the
-          // textarea's placeholder exactly (same char, same font); the label is
-          // a clipped overlay that never affects layout.
+          // ::before emits the same U+FFFC the textarea holds (zero advance);
+          // the label sits in flow so the run matches the draft glyphs.
           <span
             key={`chip-${chip.occurrenceId}`}
             className={clsx(css.chip, chip.invalid && css.chipInvalid)}
             data-decoration="chip"
             data-occurrence={chip.occurrenceId}
             data-invalid={chip.invalid || undefined}
-            title={chip.label}
+            title={chip.title}
           >
             <span className={css.chipLabel}>{chip.label}</span>
           </span>,
         )
-        cursor = chip.offset + 1 // the placeholder char the chip stands for
+        cursor = chip.offset + placeholderSpan(chip.label)
       } else {
         // Plain-range highlight: the glyphs stay the
         // textarea's (advance untouched); the mark paints the chip look.

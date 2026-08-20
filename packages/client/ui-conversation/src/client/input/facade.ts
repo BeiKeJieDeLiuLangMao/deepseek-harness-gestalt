@@ -17,7 +17,7 @@ import type {
   PasteComponent, QueuedMessage, SessionInput, SubmitAttempt,
 } from './contract.ts'
 import type { InputSubmitMode } from '../contract/composer-submission.ts'
-import { InputMachine } from './machine.ts'
+import { InputMachine, occurrenceEnd } from './machine.ts'
 import type {
   AnnotationCompilerLabels, DraftAnnotation, PersistedAnnotationDraft, TextAnchor, TextAnnotationId,
 } from '../annotation/model.ts'
@@ -670,9 +670,11 @@ export class SessionInputShell implements SessionInput {
         // parts arrive offset-sorted since the table is).
         let out = ''
         let cursor = 0
-        for (const part of parts) {
+        for (const [i, part] of parts.entries()) {
+          const occurrence = occurrences[i]
+          if (occurrence === undefined) break
           out += draft.slice(cursor, part.offset) + part.text
-          cursor = part.offset + 1
+          cursor = occurrenceEnd(occurrence)
         }
         out += draft.slice(cursor)
         const compiled = this.compile(out, annotations)

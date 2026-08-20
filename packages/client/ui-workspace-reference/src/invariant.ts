@@ -17,7 +17,7 @@ export const inject = ['invariants']
 /**
  * No runtime invariant: the node half registers the `workspace-reference`
  * settings namespace, and the browser snapshot mirrors that durable document.
- * Slot conflicts fail loud in the slot core. Picker, dock, and paste rewrite
+ * Slot conflicts fail loud in the slot core. Picker and paste rewrite
  * are presentational over typed RPC and the snapshot, covered by component
  * tests rather than a Cordis runtime relationship.
  */
