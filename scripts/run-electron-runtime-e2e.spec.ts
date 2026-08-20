@@ -24,13 +24,13 @@ describe('declared Electron runtime e2e launcher', () => {
   })
 
   it('fails loud when the electron package is missing', () => {
-    expect(() => resolveElectronBinary((() => {
+    expect(() => resolveElectronBinary(((() => {
       throw new Error('Cannot find module')
-    }) as NodeRequire)).toThrow(/electron package did not resolve to a binary/)
+    }) as unknown) as NodeRequire)).toThrow(/electron package did not resolve to a binary/)
   })
 
   it('fails loud when the electron package does not expose a path', () => {
-    expect(() => resolveElectronBinary((() => undefined) as NodeRequire))
+    expect(() => resolveElectronBinary(((() => undefined) as unknown) as NodeRequire))
       .toThrow(/electron package did not resolve to a binary/)
   })
 
