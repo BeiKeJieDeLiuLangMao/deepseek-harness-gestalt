@@ -14,7 +14,7 @@ process-exit 的宿主退出套件会先等 `ready` 再读 `tree.json`，但宿�
 
 ## Decision
 
-**默认值快照 mock 在请求到达时就写出第一条 SSE 注释。** 响应头和 `: keep-alive` 在请求体读完之前离开套接字，因此 `fetch` 会解锁，注释在已配置的空闲预算内给 150ms 看门狗续期。`end` 之后，mock 记录请求体，并在同一轮写完剩余注释和确定性载荷——不再使用 `setTimeout`。延迟注释保活仍由适配器单元测试负责（`keeps an idle provider read alive through SSE comments`）；本快照负责 one-shot 默认值和可容忍注释的 SSE 分帧。
+**默认值快照 mock 在请求到达时就写出第一条 SSE 注释。** 响应头和 `: keep-alive` 在请求体读完之前离开套接字，因此 `fetch` 会解锁。真正在这条路径上证明 keep-alive 的空闲预算和后续注释/载荷时间表见 [CI 可承受的空闲保活笔记](2026-08-20-headless-defaults-idle-keep-alive.md)。
 
 **managed-tree fixture 原子发布 `tree.json`，宿主等待合法 JSON。** 子进程写入同级 `.tmp` 再 `rename` 到 `tree.json`。宿主重复 `readFile` + `JSON.parse`，直到 `root` 与 `descendant` 都是安全整数，并把 `ENOENT` 与 `SyntaxError` 视为尚未发布。`access()` 不是载荷就绪信号。
 
@@ -32,4 +32,4 @@ process-exit 的宿主退出套件会先等 `ready` 再读 `tree.json`，但宿�
 
 ## Consequences
 
-走到 `test:snapshot` 的票级 PR 不再从该 mock 继承 one-shot 重试 flake。coverage 车道不再从该握手继承截断 `tree.json` 造成的宿主崩溃。票级自有的 oxlint、目录、knip 和覆盖率阈值失败仍留在那些 PR 上。
+请求到达即写第一条注释的握手仍是必需的，这样 `fetch` 才能在空闲预算内解锁。它本身不能在负载 runner 上把 150ms 看门狗续住；[CI 可承受的空闲保活笔记](2026-08-20-headless-defaults-idle-keep-alive.md) 拥有那张时间表。coverage 车道不再从该握手继承截断 `tree.json` 造成的宿主崩溃。票级自有的 oxlint、目录、knip 和覆盖率阈值失败仍留在那些 PR 上。

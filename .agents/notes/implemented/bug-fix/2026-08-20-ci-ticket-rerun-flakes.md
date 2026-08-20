@@ -14,7 +14,7 @@ The process-exit host-exit suite waits for `ready` before reading `tree.json`, b
 
 ## Decision
 
-**The defaults snapshot mock writes the first SSE comment when the request arrives.** Headers and `: keep-alive` leave the socket before the body is fully read, so `fetch` unblocks and the comment pulses the 150ms watchdog inside the configured idle budget. After `end`, the mock records the body and finishes the remaining comments plus the deterministic payload in the same turn — no `setTimeout`. Delayed-comment keep-alive remains the adapter unit test's contract (`keeps an idle provider read alive through SSE comments`); this snapshot owns one-shot defaults and comment-tolerant SSE framing.
+**The defaults snapshot mock writes the first SSE comment when the request arrives.** Headers and `: keep-alive` leave the socket before the body is fully read so `fetch` unblocks. The idle budget and later comment/payload schedule that actually prove keep-alive on this path are in [the CI-safe idle keep-alive note](2026-08-20-headless-defaults-idle-keep-alive.md).
 
 **The managed-tree fixture publishes `tree.json` atomically, and the host waits for valid JSON.** The child writes a sibling `.tmp` file and `rename`s it onto `tree.json`. The host retries `readFile` + `JSON.parse` until `root` and `descendant` are safe integers, treating `ENOENT` and `SyntaxError` as not-yet-published. `access()` is not a payload-ready signal.
 
@@ -32,4 +32,4 @@ The process-exit host-exit suite waits for `ready` before reading `tree.json`, b
 
 ## Consequences
 
-Ticket PRs that reach `test:snapshot` no longer inherit a one-shot retry flake from this mock. Coverage lanes no longer inherit a truncated-`tree.json` host crash from this handshake. Ticket-owned oxlint, catalog, knip, and coverage-threshold failures stay on those PRs.
+The first-comment-on-arrival handshake is still required so `fetch` unblocks inside the idle budget. It does not by itself keep a 150ms watchdog alive on a loaded runner; [the CI-safe idle keep-alive note](2026-08-20-headless-defaults-idle-keep-alive.md) owns that schedule. Coverage lanes no longer inherit a truncated-`tree.json` host crash from this handshake. Ticket-owned oxlint, catalog, knip, and coverage-threshold failures stay on those PRs.
