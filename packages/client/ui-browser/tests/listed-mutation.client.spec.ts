@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { BrowserRuntimeState, BrowserTarget } from '@deepseek-ai/dsh-browser-workspace/client'
+import type { BrowserTarget } from '@deepseek-ai/dsh-browser-workspace/client'
 import { isBrowserRevisionConflict, recoverListedMutation } from '../src/client/listed-mutation.ts'
 
 const TARGET: BrowserTarget = {
@@ -36,7 +36,7 @@ describe('listed-tab mutation recovery', () => {
       .mockResolvedValueOnce('healed')
     const observe = vi.fn().mockResolvedValue({
       status: 'open', target: TARGET, revision: 4,
-    } satisfies BrowserRuntimeState)
+    })
     await expect(recoverListedMutation(mutate, observe, TARGET, 2)).resolves.toBe('healed')
     expect(observe).toHaveBeenCalledWith(TARGET)
     expect(mutate).toHaveBeenNthCalledWith(1, TARGET, 2)
@@ -54,7 +54,7 @@ describe('listed-tab mutation recovery', () => {
       reason: 'crashed',
       reconnecting: true,
       controlOwner: 'agent',
-    } satisfies BrowserRuntimeState)
+    })
     await expect(recoverListedMutation(mutate, observe, TARGET, 2)).resolves.toBe('retried')
     expect(mutate).toHaveBeenLastCalledWith(TARGET, 5)
   })
@@ -63,7 +63,7 @@ describe('listed-tab mutation recovery', () => {
     const mutate = vi.fn().mockRejectedValue(conflict())
     const observe = vi.fn().mockResolvedValue({
       status: 'closed', target: TARGET, revision: 3,
-    } satisfies BrowserRuntimeState)
+    })
     await expect(recoverListedMutation(mutate, observe, TARGET, 2)).resolves.toBeUndefined()
     expect(mutate).toHaveBeenCalledTimes(1)
   })
@@ -89,7 +89,7 @@ describe('listed-tab mutation recovery', () => {
       .mockRejectedValueOnce(new Error('still stale'))
     await expect(recoverListedMutation(
       retryFails,
-      vi.fn().mockResolvedValue({ status: 'open', target: TARGET, revision: 4 } satisfies BrowserRuntimeState),
+      vi.fn().mockResolvedValue({ status: 'open', target: TARGET, revision: 4 }),
       TARGET,
       2,
     )).rejects.toThrow('still stale')
