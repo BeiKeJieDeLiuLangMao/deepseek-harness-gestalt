@@ -93,7 +93,8 @@ function lastNonEmptyLine(text: string): string {
   const lines = text.replaceAll('\r\n', '\n').replaceAll('\r', '\n').split('\n')
   for (let i = lines.length - 1; i >= 0; i -= 1) {
     const line = lines[i]
-    if (line !== undefined && line.length > 0) return line
+    // A PSReadLine cursor row can be spaces only; that is not the prompt.
+    if (line !== undefined && line.trim() !== '') return line
   }
   return ''
 }
@@ -157,7 +158,10 @@ async function startupSession(
       if (result.waitReason === 'timeout') throw new Error('PTY shell did not reach readiness before startup timeout')
       viewport = result.viewport
       const scrollback = session.read({ offset: 0, count: 20 }).text
-      if (showsInstalledControlledPrompt(viewport, scrollback)) break
+      // stdin_read already required the OSC marker plus CONTROLLED_PROMPT
+      // tail; a later space-only cursor row must not undo that. inferred_idle
+      // still needs the last non-whitespace line to be exactly the prompt.
+      if (result.waitReason === 'stdin_read' || showsInstalledControlledPrompt(viewport, scrollback)) break
       if (Date.now() - started >= timeoutMs) {
         throw new Error('PTY shell did not reach readiness before startup timeout')
       }

@@ -312,6 +312,18 @@ describe('ModelsSection', () => {
     expect(screen.getByText('openai')).toBeTruthy()
   })
 
+  it('keeps never-written official DeepSeek as a row when another provider is usable', async () => {
+    const scripted = scriptedFace()
+    const namespaces = wireNamespaces().map(namespace =>
+      namespace.ns === 'llm-deepseek' ? withoutUser(namespace) : namespace)
+    scripted.face.settings.describe.mockResolvedValue(ok({
+      writable: true, hasDocument: false, namespaces,
+    }))
+    await mountFace(scripted)
+    expect(screen.queryByLabelText(en.keyInput)).toBeNull()
+    expect(screen.getByRole('button', { name: deepSeekCopy(en.editProvider) })).toBeTruthy()
+  })
+
   it('leaves the unkeyed provider a plain row once another provider is usable', async () => {
     await mountSection()
     // openai's key is stored, so the user is not blocked and nothing on the
@@ -404,15 +416,19 @@ describe('ModelsSection', () => {
     const leftover = new Map<string, SettingsNamespaceView>([
       ['llm-deepseek', { ...wireNamespaces()[0]!, user: {} }],
     ])
-    expect(listedProviderRows([official, other], firstRun, false, new Set()).map(row => row.entry.provider))
+    expect(listedProviderRows([official, other], firstRun, new Set()).map(row => row.entry.provider))
       .toEqual(['deepseek-official'])
-    expect(listedProviderRows([official, other], leftover, false, new Set())).toEqual([])
-    expect(listedProviderRows([official, other], firstRun, true, new Set())).toEqual([])
-    expect(listedProviderRows([{ ...official, configured: true }, other], leftover, true, new Set()).map(row => row.entry.provider))
+    expect(listedProviderRows([official, other], leftover, new Set())).toEqual([])
+    expect(listedProviderRows(
+      [{ ...official, credential: { configured: true, writable: true } }, other],
+      leftover,
+      new Set(),
+    ).map(row => row.entry.provider)).toEqual(['deepseek-official'])
+    expect(listedProviderRows([{ ...official, configured: true }, other], leftover, new Set()).map(row => row.entry.provider))
       .toEqual(['deepseek-official'])
-    expect(listedProviderRows([official], firstRun, false, new Set(['deepseek-official'])).map(row => row.entry.provider))
+    expect(listedProviderRows([official], firstRun, new Set(['deepseek-official'])).map(row => row.entry.provider))
       .toEqual(['deepseek-official'])
-    expect(listedProviderRows([official], new Map(), false, new Set())).toEqual([])
+    expect(listedProviderRows([official], new Map(), new Set())).toEqual([])
   })
 
   it('decides setup need from the joined credential state and the first-run posture', () => {

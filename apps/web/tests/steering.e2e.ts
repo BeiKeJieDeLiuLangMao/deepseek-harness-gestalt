@@ -331,6 +331,10 @@ describe('web e2e: empty-draft Cmd+Enter steers the whole queue', () => {
     // first replay window, before the question composer replaces the textarea.
     await input.fill(PROMPT)
     await input.press('Enter')
+    // Official InputBar drops Enter while the first submit is still
+    // adjudicating. Wait until the ordinary session is running so the next
+    // two Enters queue instead of vanishing.
+    await page.getByRole('button', { name: 'Stop generating' }).waitFor({ timeout: 10_000 })
     await input.fill(STEER_ONE)
     await input.press('Enter')
     await input.fill(STEER_TWO)

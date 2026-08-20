@@ -22,3 +22,4 @@
   - img
 - 'button "Access mode, current: Custom" [disabled]': Custom
 - button "Stop generating"
+- button "Send message" [disabled]

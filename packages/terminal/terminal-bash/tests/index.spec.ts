@@ -447,6 +447,58 @@ describe('BashTerminalBackend startup rollback', () => {
     expect(session.motd).toBe('dsh> ')
   })
 
+  it('ignores a trailing space-only cursor row after the installed prompt', async () => {
+    const ctx = new Context()
+    await ctx.plugin(EmptySandbox)
+    await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access', workspaceRoot: '/workspace' })
+    const session = {
+      motd: '',
+      startSend: () => ({
+        done: Promise.resolve({
+          viewport: 'PowerShell\ndsh> \n ', waitReason: 'inferred_idle' as const,
+          sessionStatus: { kind: 'running' as const }, truncated: false,
+        }),
+        readOutput: () => ({ delta: '', truncated: false }),
+        cancel: () => false,
+      }),
+      read: () => ({ text: '', totalLines: 0, lineBegin: 0, lineEnd: 0, truncated: false }),
+    } as unknown as LocalPtySession
+    const backend = new BashTerminalBackend(
+      ctx,
+      { ...config(), shellDialect: 'pwsh', shellPath: 'pwsh' },
+      async () => terminalHandle(),
+      () => session,
+    )
+    expect(await backend.spawn(spec(agent(ctx)))).toBe(session)
+    expect(session.motd).toBe('PowerShell\ndsh> \n ')
+  })
+
+  it('treats a prompt-confirmed stdin_read as ready even when later text follows', async () => {
+    const ctx = new Context()
+    await ctx.plugin(EmptySandbox)
+    await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access', workspaceRoot: '/workspace' })
+    const session = {
+      motd: '',
+      startSend: () => ({
+        done: Promise.resolve({
+          viewport: 'dsh> extra', waitReason: 'stdin_read' as const,
+          sessionStatus: { kind: 'running' as const }, truncated: false,
+        }),
+        readOutput: () => ({ delta: '', truncated: false }),
+        cancel: () => false,
+      }),
+      read: () => ({ text: '', totalLines: 0, lineBegin: 0, lineEnd: 0, truncated: false }),
+    } as unknown as LocalPtySession
+    const backend = new BashTerminalBackend(
+      ctx,
+      { ...config(), shellDialect: 'pwsh', shellPath: 'pwsh' },
+      async () => terminalHandle(),
+      () => session,
+    )
+    expect(await backend.spawn(spec(agent(ctx)))).toBe(session)
+    expect(session.motd).toBe('dsh> extra')
+  })
+
   it('accepts a last-line prompt retained only in scrollback', async () => {
     const ctx = new Context()
     await ctx.plugin(EmptySandbox)
@@ -455,7 +507,7 @@ describe('BashTerminalBackend startup rollback', () => {
       motd: '',
       startSend: () => ({
         done: Promise.resolve({
-          viewport: '\r\n\r', waitReason: 'stdin_read' as const,
+          viewport: '\r\n\r', waitReason: 'inferred_idle' as const,
           sessionStatus: { kind: 'running' as const }, truncated: false,
         }),
         readOutput: () => ({ delta: '', truncated: false }),

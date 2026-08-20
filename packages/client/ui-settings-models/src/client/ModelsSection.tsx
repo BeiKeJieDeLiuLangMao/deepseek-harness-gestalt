@@ -6,9 +6,9 @@
  * configured key renders as its open setup card instead of a row, but only in
  * the first-run posture — the user layer was never written and no provider on
  * the page can serve requests yet — and only until the user closes that card.
- * A leftover empty user object after delete stays off the list. The add flow
- * is a card carrying the dormant-provider select. Each card kind owns its own
- * open state, so closing
+ * A leftover empty user object after delete stays off the list unless a
+ * described credential is already stored. The add flow is a card carrying the
+ * dormant-provider select. Each card kind owns its own open state, so closing
  * one never discards a draft in another. Every mutation writes through the
  * wire, while a provider removal first requires confirmation; the page
  * re-renders from pushed invalidations or the post-apply reload.
@@ -143,26 +143,30 @@ export function needsSetup(row: ProviderRow, anyUsable: boolean): boolean {
 /**
  * Rows the Models list paints. A whole-section provider is `configured` only
  * when the user layer is occupied or a `role('secret')` slot is set. Official
- * DeepSeek names its key through a credential-ref, so a never-written first-run
- * section is unconfigured; the list still includes that row while no other
- * provider can serve requests so the setup card can open. Unsetting the
- * section root leaves `user: {}`, which is not first-run and stays off the
- * list.
+ * DeepSeek names its key through a credential-ref, so occupancy can stay false
+ * after the onboarding dialog stores that ref. A described configured
+ * credential still lists the row. A never-written section (`user` absent)
+ * stays on the list so first-run can open the setup card, or so an already
+ * usable page can show an ordinary row. Unsetting the section root leaves
+ * `user: {}`, which is not first-run and stays off the list unless a
+ * credential is already stored.
  * @param rows - joined provider rows.
  * @param namespaces - settings namespaces from the same join.
- * @param anyUsable - whether any joined row can already serve requests.
  * @param dismissed - providers whose setup card the user closed this session.
  * @returns rows that appear in the list.
  */
 export function listedProviderRows(
   rows: readonly ProviderRow[],
   namespaces: ReadonlyMap<string, SettingsNamespaceView>,
-  anyUsable: boolean,
   dismissed: ReadonlySet<string>,
 ): ProviderRow[] {
   return rows.filter((row) => {
-    if (row.configured || dismissed.has(row.entry.provider)) return true
-    if (!needsSetup(row, anyUsable)) return false
+    if (
+      row.configured
+      || row.credential?.configured === true
+      || dismissed.has(row.entry.provider)
+    ) return true
+    if (row.entry.settingsPath.length > 0) return false
     const namespace = namespaces.get(row.entry.settingsNs)
     return namespace !== undefined && namespace.user === undefined
   })
@@ -307,7 +311,7 @@ function Loaded({ injected }: { injected: ModelsSectionFace }): ReactNode {
   // One fact decides both first-run postures on this page and the onboarding
   // step: whether the user already has a provider to talk to.
   const anyUsable = state.rows.some(providerUsable)
-  const listed = listedProviderRows(state.rows, state.namespaces, anyUsable, dismissedSetup)
+  const listed = listedProviderRows(state.rows, state.namespaces, dismissedSetup)
   const addable = state.rows.filter(row =>
     !row.configured
     && row.entry.settingsNs !== ''
