@@ -15,7 +15,7 @@
 | `viewportHeight` | 用于离屏截图的隐藏窗口高度 | `800` |
 | `requestTimeoutMs` | 每次 Chromium 导航或内容读取的上限 | `30000` |
 
-时长与视口尺寸必须是正安全整数。所有操作进入同一个串行队列。写操作要求调用方提供最后观察到的 `expectedRevision`。人工 `input` 与 `takeover` 会把报告的 `controlOwner` 设为 `human`；`returnControl` 与 Agent 写入会把它设为 `agent`。人工 `input` 走单一路径：聚焦 input、textarea 或 contentEditable 时使用插入脚本，否则发送 `char` 输入事件。换行在聚焦可编辑控件中是 U+000A；没有聚焦可编辑控件时，每个换行是 keyCode 为 `\\n` 的 `char` 事件。同一命名 Profile 的第二个打开写入方会以 `BROWSER_PROFILE_BUSY` 拒绝。释放开始后的操作会以 `BROWSER_DISPOSED` 拒绝。释放阶段排空队列并销毁剩余隐藏窗口。
+时长与视口尺寸必须是正安全整数。所有操作进入同一个串行队列。写操作要求调用方提供最后观察到的 `expectedRevision`。人工 `input` 与 `takeover` 会把报告的 `controlOwner` 设为 `human`；`returnControl` 与 Agent 写入会把它设为 `agent`。人工 `input` 走单一路径：聚焦 input、textarea 或 contentEditable 时使用插入脚本，否则发送 `char` 输入事件。换行在聚焦可编辑控件中是 U+000A；没有聚焦可编辑控件时，每个换行是 keyCode 为 `\\n` 的 `char` 事件。同一命名 Profile 的第二个打开写入方会以 `BROWSER_PROFILE_BUSY` 拒绝。共享 create 复用共享 partition，且不占用 `BROWSER_PROFILE_BUSY`。释放开始后的操作会以 `BROWSER_DISPOSED` 拒绝。释放阶段排空队列并销毁剩余隐藏窗口。
 
 渲染进程崩溃会提交 reason 为 `crashed` 的 `BrowserUnavailableState`，并为同一 target 重建隐藏窗口。恢复耗尽则提交 `reason: 'reconnect-failed'`。格式错误的 Chromium 结果会以 `BROWSER_PROTOCOL` 拒绝。
 

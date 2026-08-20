@@ -238,6 +238,14 @@ describe('deferred Browser Runtime Consumer', () => {
       signal,
     })
 
+    const unknownProfile = await ctx.tools.execute({
+      callId: CallId('unknown-profile'),
+      name: 'browser_create',
+      arguments: { profile: 'unknown' },
+      signal,
+    })
+    expect(unknownProfile).toMatchObject({ isError: true })
+
     const missingName = await ctx.tools.execute({
       callId: CallId('missing-name'),
       name: 'browser_create',

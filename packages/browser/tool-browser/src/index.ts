@@ -133,6 +133,18 @@ function renderValue(_args: unknown, value: unknown): ContentBlock[] {
   return [{ type: 'text', text: JSON.stringify(value, null, 2) }]
 }
 
+/** Model-facing `browser_create` profile identities after schema validation. */
+type BrowserCreateProfile = 'temporary' | 'persistent' | 'shared'
+
+/**
+ * Map an omitted or explicit profile argument onto one create identity.
+ * @param profile - Schema-validated model argument, or undefined when omitted.
+ * @returns the named create identity.
+ */
+function resolveBrowserCreateProfile(profile: BrowserCreateProfile | undefined): BrowserCreateProfile {
+  return profile === undefined ? 'shared' : profile
+}
+
 /** Convert an optional attach object into a branded Browser Runtime attach request. */
 function attachFrom(raw: unknown): BrowserCreateAttach | undefined {
   if (raw === undefined) return undefined
@@ -276,8 +288,9 @@ export function apply(ctx: Context, config: Config): void {
       },
       output: { schema: OPEN_STATE_SCHEMA, render: renderValue },
       execute: async (args, exec) => {
+        const profile = resolveBrowserCreateProfile(args.profile)
         const attach = attachFrom(args.attach)
-        if (args.profile === 'persistent') {
+        if (profile === 'persistent') {
           if (typeof args.name !== 'string' || args.name.trim().length === 0) {
             throw new Error('name must be a non-empty Browser Profile name')
           }
@@ -294,7 +307,7 @@ export function apply(ctx: Context, config: Config): void {
             },
           )
         }
-        if (args.profile === 'temporary') {
+        if (profile === 'temporary') {
           return routeBrowserCall(
             ctx,
             exec,

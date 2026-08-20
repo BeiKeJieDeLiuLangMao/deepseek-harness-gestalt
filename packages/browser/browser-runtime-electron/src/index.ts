@@ -412,7 +412,7 @@ export class ElectronBrowserRuntime extends BrowserRuntime {
     })
   }
 
-  /** Persist named Profile storage; temporary partitions stay in memory. */
+  /** Persist identity-retaining Profile storage; temporary partitions stay in memory. */
   private async flush(profile: OpenProfile): Promise<void> {
     if (!browserProfileRetainsIdentity(profile.chrome.kind)) return
     await profile.session.flushStorageData()

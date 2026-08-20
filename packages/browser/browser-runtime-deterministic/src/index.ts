@@ -396,7 +396,7 @@ export class DeterministicBrowserRuntime extends BrowserRuntime {
     })
   }
 
-  /** Snapshot one named Profile so a later create can restore its identity. */
+  /** Snapshot one identity-retaining Profile so a later create can restore it. */
   private rememberPersistent(state: BrowserPageState): void {
     if (!browserProfileRetainsIdentity(state.chrome.kind)) return
     const sessionName = browserSessionNameFromPartition(state.chrome.partition)
