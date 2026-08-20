@@ -52,6 +52,20 @@ const deferredToolSearchDisabledConfigPath = fileURLToPath(
   new URL('./fixtures/deferred-tool-search-disabled.cordis.yml', import.meta.url),
 )
 const deferredToolSearchRunnerPath = fileURLToPath(new URL('./fixtures/deferred-tool-search-runner.ts', import.meta.url))
+const browserRuntimeScenarioDir = join(snapshotsDir, 'browser-runtime')
+const browserRuntimeSessionFixture = join(browserRuntimeScenarioDir, 'session.jsonl')
+const browserRuntimeResumeFixture = join(browserRuntimeScenarioDir, 'resume.jsonl')
+const browserRuntimeStreamExpected = join(browserRuntimeScenarioDir, 'stream-json.expected.jsonl')
+const browserRuntimeConfigPath = fileURLToPath(new URL('../browser-runtime.cordis.snapshot.yml', import.meta.url))
+const browserRuntimeTandemScenarioDir = join(snapshotsDir, 'browser-runtime-tandem')
+const browserRuntimeTandemSessionFixture = join(browserRuntimeTandemScenarioDir, 'session.jsonl')
+const browserRuntimeTandemResumeFixture = join(browserRuntimeTandemScenarioDir, 'resume.jsonl')
+const browserRuntimeTandemStreamExpected = join(browserRuntimeTandemScenarioDir, 'stream-json.expected.jsonl')
+const browserRuntimeTandemConfigPath = fileURLToPath(new URL('../browser-runtime-tandem.cordis.snapshot.yml', import.meta.url))
+const tandemHttpFixturePath = fileURLToPath(new URL(
+  '../../../packages/browser/browser-runtime-tandem/tests/fixtures/tandem-http-fixture.mjs',
+  import.meta.url,
+))
 const mcpServerEverythingEntry = fileURLToPath(new URL(
   './dist/index.js',
   import.meta.resolve('@modelcontextprotocol/server-everything/package.json'),
@@ -59,12 +73,45 @@ const mcpServerEverythingEntry = fileURLToPath(new URL(
 const llmReplayEntry = process.env.DSH_EXAMPLE_MODE === 'lib'
   ? fileURLToPath(new URL(import.meta.resolve('@deepseek-ai/dsh-llm-replay')))
   : fileURLToPath(new URL('../../../packages/test-support/llm-replay/src/index.ts', import.meta.url))
+const browserRuntimeDeterministicEntry = process.env.DSH_EXAMPLE_MODE === 'lib'
+  ? fileURLToPath(new URL(import.meta.resolve('@deepseek-ai/dsh-browser-runtime-deterministic')))
+  : fileURLToPath(new URL('../../../packages/browser/browser-runtime-deterministic/src/index.ts', import.meta.url))
+const browserRuntimeTandemEntry = process.env.DSH_EXAMPLE_MODE === 'lib'
+  ? fileURLToPath(new URL(import.meta.resolve('@deepseek-ai/dsh-browser-runtime-tandem')))
+  : fileURLToPath(new URL('../../../packages/browser/browser-runtime-tandem/src/index.ts', import.meta.url))
+const toolBrowserEntry = process.env.DSH_EXAMPLE_MODE === 'lib'
+  ? fileURLToPath(new URL(import.meta.resolve('@deepseek-ai/dsh-tool-browser')))
+  : fileURLToPath(new URL('../../../packages/browser/tool-browser/src/index.ts', import.meta.url))
 const llmReplayProxy = [
   'const entry = process.env.DSH_LLM_REPLAY_ENTRY',
   'if (!entry) throw new Error(\'deferred snapshot requires DSH_LLM_REPLAY_ENTRY\')',
   'const replay = await import(entry)',
   'export const inject = replay.inject',
   'export const apply = replay.apply',
+  '',
+].join('\n')
+const browserRuntimeDeterministicProxy = [
+  'const entry = process.env.DSH_BROWSER_RUNTIME_DETERMINISTIC_ENTRY',
+  'if (!entry) throw new Error(\'browser snapshot requires DSH_BROWSER_RUNTIME_DETERMINISTIC_ENTRY\')',
+  'const plugin = await import(entry)',
+  'export default plugin.default',
+  '',
+].join('\n')
+const browserRuntimeTandemProxy = [
+  'const entry = process.env.DSH_BROWSER_RUNTIME_TANDEM_ENTRY',
+  'if (!entry) throw new Error(\'browser snapshot requires DSH_BROWSER_RUNTIME_TANDEM_ENTRY\')',
+  'const plugin = await import(entry)',
+  'export default plugin.default',
+  '',
+].join('\n')
+const toolBrowserProxy = [
+  'const entry = process.env.DSH_TOOL_BROWSER_ENTRY',
+  'if (!entry) throw new Error(\'browser snapshot requires DSH_TOOL_BROWSER_ENTRY\')',
+  'const plugin = await import(entry)',
+  'export const name = plugin.name',
+  'export const inject = plugin.inject',
+  'export const Config = plugin.Config',
+  'export const apply = plugin.apply',
   '',
 ].join('\n')
 const ralphScenarioDir = join(snapshotsDir, 'ralph-loop')
@@ -99,15 +146,33 @@ interface DeepSeekDefaultsServer {
   close(): Promise<void>
 }
 
+/** Idle budget SSE comments must rearm. Must match `streamIdleTimeoutMs` in deepseek-defaults.cordis.yml. */
+const DEEPSEEK_DEFAULTS_STREAM_IDLE_TIMEOUT_MS = 5_000
+/** Gap between keep-alive comments. Stays well below the idle budget under CI scheduling jitter. */
+const DEEPSEEK_DEFAULTS_COMMENT_INTERVAL_MS = 2_000
+/** Payload arrives after more than one idle budget, so a missing comment pulse would TIMEOUT. */
+const DEEPSEEK_DEFAULTS_PAYLOAD_AFTER_MS =
+  DEEPSEEK_DEFAULTS_STREAM_IDLE_TIMEOUT_MS + DEEPSEEK_DEFAULTS_COMMENT_INTERVAL_MS
+
+const DEEPSEEK_DEFAULTS_SSE_PAYLOAD = [
+  'data: {"choices":[{"delta":{"content":"DEFAULTS_OK"}}]}',
+  'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":1}}',
+  'data: [DONE]',
+  '',
+].join('\n\n')
+
 /** Serve one deterministic DeepSeek-compatible response while retaining its request body. */
 async function deepseekDefaultsServer(): Promise<DeepSeekDefaultsServer> {
   const requests: JsonObject[] = []
   const server = createServer((request: IncomingMessage, response: ServerResponse) => {
-    // Headers and the first SSE comment leave the socket as soon as the
-    // request arrives. `streamIdleTimeoutMs: 150` arms when `stream()` waits
-    // for the first iterator value, which is after `fetch` sees these bytes;
-    // writing only on `end` lets a loaded event loop miss that window, abort
-    // as TIMEOUT, and llm-retry a second POST.
+    // First comment leaves with the headers so `fetch` unblocks inside the
+    // idle budget. Later comments rearm the watchdog; the payload is delayed
+    // past one full idle budget so keep-alive is the assembled one-shot path,
+    // not only the fake-clock adapter unit test.
+    const opened = Date.now()
+    const at = (ms: number, write: () => void): void => {
+      setTimeout(write, Math.max(0, ms - (Date.now() - opened)))
+    }
     response.writeHead(200, { 'content-type': 'text/event-stream' })
     response.write(': keep-alive\n\n')
     let body = ''
@@ -115,14 +180,9 @@ async function deepseekDefaultsServer(): Promise<DeepSeekDefaultsServer> {
     request.on('data', (chunk: string) => { body += chunk })
     request.on('end', () => {
       requests.push(JSON.parse(body) as JsonObject)
-      response.write(': keep-alive\n\n')
-      response.write(': keep-alive\n\n')
-      response.end([
-        'data: {"choices":[{"delta":{"content":"DEFAULTS_OK"}}]}',
-        'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":1}}',
-        'data: [DONE]',
-        '',
-      ].join('\n\n'))
+      at(DEEPSEEK_DEFAULTS_COMMENT_INTERVAL_MS, () => { response.write(': keep-alive\n\n') })
+      at(DEEPSEEK_DEFAULTS_COMMENT_INTERVAL_MS * 2, () => { response.write(': keep-alive\n\n') })
+      at(DEEPSEEK_DEFAULTS_PAYLOAD_AFTER_MS, () => { response.end(DEEPSEEK_DEFAULTS_SSE_PAYLOAD) })
     })
   })
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
@@ -247,6 +307,54 @@ async function prepareDeferredToolSearchFixture(cwd: string): Promise<void> {
   await mkdir(fixtureDir, { recursive: true })
   await Promise.all([
     copyFile(deferredToolSearchRunnerPath, join(fixtureDir, 'deferred-tool-search-runner.ts')),
+    writeFile(join(fixtureDir, 'llm-replay-proxy.mjs'), llmReplayProxy),
+    writeFile(join(fixtureDir, 'package.json'), '{"type":"module"}\n'),
+  ])
+}
+
+/** Install Browser Runtime source/lib proxies and the restart driver into the temporary profile. */
+async function prepareBrowserRuntimeFixture(cwd: string): Promise<void> {
+  const fixtureDir = join(cwd, '.dsh', 'profiles', 'headless', 'snapshot-fixtures')
+  await mkdir(fixtureDir, { recursive: true })
+  await Promise.all([
+    copyFile(deferredToolSearchRunnerPath, join(fixtureDir, 'deferred-tool-search-runner.ts')),
+    writeFile(join(fixtureDir, 'browser-runtime-deterministic-proxy.mjs'), browserRuntimeDeterministicProxy),
+    writeFile(join(fixtureDir, 'tool-browser-proxy.mjs'), toolBrowserProxy),
+    writeFile(join(fixtureDir, 'llm-replay-proxy.mjs'), llmReplayProxy),
+    writeFile(join(fixtureDir, 'package.json'), '{"type":"module"}\n'),
+  ])
+}
+
+/**
+ * Reserve one loopback TCP port for the spawned Tandem fixture child.
+ *
+ * @returns A port number the kernel reported free at reservation time.
+ */
+async function freePort(): Promise<number> {
+  const server = createServer()
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', resolve)
+  })
+  const address = server.address()
+  if (address === null || typeof address === 'string') throw new Error('tandem snapshot has no TCP test port')
+  await new Promise<void>((resolve, reject) => {
+    server.close((error) => {
+      if (error === undefined) resolve()
+      else reject(error)
+    })
+  })
+  return address.port
+}
+
+/** Install the Tandem-shaped HTTP provider proxy and driver into the temporary profile. */
+async function prepareBrowserRuntimeTandemFixture(cwd: string): Promise<void> {
+  const fixtureDir = join(cwd, '.dsh', 'profiles', 'headless', 'snapshot-fixtures')
+  await mkdir(fixtureDir, { recursive: true })
+  await Promise.all([
+    copyFile(deferredToolSearchRunnerPath, join(fixtureDir, 'deferred-tool-search-runner.ts')),
+    writeFile(join(fixtureDir, 'browser-runtime-tandem-proxy.mjs'), browserRuntimeTandemProxy),
+    writeFile(join(fixtureDir, 'tool-browser-proxy.mjs'), toolBrowserProxy),
     writeFile(join(fixtureDir, 'llm-replay-proxy.mjs'), llmReplayProxy),
     writeFile(join(fixtureDir, 'package.json'), '{"type":"module"}\n'),
   ])
@@ -629,6 +737,289 @@ describe('headless stream-json snapshots', () => {
     expect(JSON.parse(results[1]?.stdout.trim().split('\n').at(-1) ?? '{}')).toMatchObject({
       type: 'result',
       output: 'DEFERRED_TOOL_SEARCH_RESUMED',
+    })
+  }, LOADER_SMOKE_TEST_TIMEOUT_MS)
+
+  it('runs one temporary Browser Profile through deferred discovery and reload', async () => {
+    const prompt = await scenarioPrompt(browserRuntimeScenarioDir, 'browser-runtime')
+    let runCwd = ''
+    const results = await runLoaderSmokeSequence({
+      label: 'browser runtime headless stream-json snapshot',
+      tempDirPrefix: 'headless-snapshot-browser-runtime-',
+      binScript: dshBinScript,
+      configPath: browserRuntimeConfigPath,
+      tsconfigPath,
+      env: {
+        DSH_SNAPSHOT: 'replay',
+        DSH_LLM_REPLAY_ENTRY: llmReplayEntry,
+        DSH_BROWSER_RUNTIME_DETERMINISTIC_ENTRY: browserRuntimeDeterministicEntry,
+        DSH_TOOL_BROWSER_ENTRY: toolBrowserEntry,
+        DSH_TELEMETRY_DISABLED: '1',
+        NODE_OPTIONS: [process.env.NODE_OPTIONS, '--disable-warning=ExperimentalWarning'].filter(Boolean).join(' '),
+      },
+      invocations: [
+        {
+          binArgs: ['--profile', 'headless', '--patch', browserRuntimeConfigPath, prompt],
+          env: { DSH_SNAPSHOT_FILE: browserRuntimeSessionFixture },
+        },
+        {
+          binArgs: [
+            '--profile', 'headless', '--patch', browserRuntimeConfigPath,
+            'Confirm that the browser schemas were reconstructed from the persisted discovery result.',
+          ],
+          env: { DSH_SNAPSHOT_FILE: browserRuntimeResumeFixture },
+        },
+      ],
+      prepare: async (cwd) => {
+        runCwd = cwd
+        await prepareBrowserRuntimeFixture(cwd)
+      },
+      inspect: async (cwd) => {
+        const logs = await persistedLogs(cwd, join(cwd, '.dsh', 'sessions'))
+        expect(logs).toHaveLength(1)
+        const records = parseJsonl(logs[0]?.content ?? '')
+        const calls = records
+          .filter(record => record.type === 'tool/call')
+          .map(record => (record.data as JsonObject | undefined)?.name)
+        expect(calls).toEqual([
+          'tool_search',
+          'browser_create',
+          'browser_navigate',
+          'browser_observe',
+          'browser_screenshot',
+          'browser_focus',
+          'browser_input',
+          'browser_takeover',
+          'browser_return_control',
+          'browser_close',
+        ])
+
+        const resultBlocks = records
+          .filter(record => record.type === 'tool/result')
+          .flatMap((record) => {
+            const data = record.data as JsonObject | undefined
+            const message = data?.message as JsonObject | undefined
+            return Array.isArray(message?.content) ? message.content as JsonObject[] : []
+          })
+        const discovery = resultBlocks.find(block => Array.isArray(block.loadedTools))
+        expect((discovery?.loadedTools as JsonObject[] | undefined)?.map(schema => schema.name).sort()).toEqual([
+          'browser_close',
+          'browser_create',
+          'browser_focus',
+          'browser_input',
+          'browser_navigate',
+          'browser_observe',
+          'browser_return_control',
+          'browser_screenshot',
+          'browser_takeover',
+        ])
+        const browserValues = resultBlocks.slice(1).map((block) => {
+          const content = Array.isArray(block.content) ? block.content as JsonObject[] : []
+          const text = content.find(item => item.type === 'text')?.text
+          if (typeof text !== 'string') throw new Error('browser result did not retain rendered text')
+          return JSON.parse(text) as JsonObject
+        })
+        expect(browserValues.map(value => value.revision)).toEqual([0, 1, 1, 1, 2, 3, 4, 5, 6])
+        expect(browserValues[0]).toMatchObject({
+          chrome: { kind: 'temporary', partition: 'session-trace-tmp-1' },
+          controlOwner: 'agent',
+        })
+        expect(browserValues[0]).not.toHaveProperty('chrome.name')
+        expect(browserValues[1]).toMatchObject({
+          url: 'https://example.test/',
+          title: 'Example Domain',
+          text: 'A deterministic browser page.',
+          chrome: { kind: 'temporary' },
+          controlOwner: 'agent',
+        })
+        expect(browserValues[3]).toMatchObject({ mediaType: 'image/png' })
+        expect(browserValues[4]).toMatchObject({ focused: true, controlOwner: 'agent' })
+        expect(browserValues[5]).toMatchObject({ controlOwner: 'human', text: 'human typed' })
+        expect(browserValues[6]).toMatchObject({ controlOwner: 'human' })
+        expect(browserValues[7]).toMatchObject({ controlOwner: 'agent' })
+        expect(browserValues[8]).toMatchObject({ status: 'closed' })
+        const renderedFacts = JSON.stringify(browserValues)
+        for (const identity of ['trace-tmp-1', 'trace-tmp-1-workspace', 'trace-tmp-1-browser-1', 'trace-tmp-1-tab-1']) {
+          expect(renderedFacts).toContain(identity)
+        }
+
+        const headers = records
+          .filter(record => record.type === 'request/header')
+          .map((record) => {
+            const data = record.data as JsonObject
+            const header = data.header as JsonObject
+            const tools = Array.isArray(header.tools) ? header.tools as JsonObject[] : []
+            return { reason: data.reason, tools: tools.map(tool => tool.name) }
+          })
+        expect(headers.map(header => header.reason)).toEqual(['initial', 'change', 'resume'])
+        expect(headers[0]?.tools).toContain('tool_search')
+        expect(headers[0]?.tools.some(name => typeof name === 'string' && name.startsWith('browser_'))).toBe(false)
+        for (const header of headers.slice(1)) {
+          expect(header.tools).toEqual(expect.arrayContaining([
+            'browser_create',
+            'browser_navigate',
+            'browser_observe',
+            'browser_screenshot',
+            'browser_focus',
+            'browser_input',
+            'browser_takeover',
+            'browser_return_control',
+            'browser_close',
+          ]))
+        }
+      },
+    })
+
+    expect(results.map(result => result.stderr)).toEqual(['', ''])
+    const normalized = results.map(result => normalizeHeadlessStream(result.stdout, runCwd)).join('')
+    if (refreshing) await writeFile(browserRuntimeStreamExpected, normalized)
+    expect(normalized).toBe(await readFile(browserRuntimeStreamExpected, 'utf8'))
+    expect(JSON.parse(results[1]?.stdout.trim().split('\n').at(-1) ?? '{}')).toMatchObject({
+      type: 'result',
+      output: 'BROWSER_RUNTIME_RESUMED',
+    })
+  }, LOADER_SMOKE_TEST_TIMEOUT_MS)
+
+  it('runs one temporary Tandem Browser Profile through deferred discovery and reload', async () => {
+    const prompt = await scenarioPrompt(browserRuntimeTandemScenarioDir, 'browser-runtime-tandem')
+    const port = await freePort()
+    let runCwd = ''
+    const results = await runLoaderSmokeSequence({
+      label: 'tandem browser runtime headless stream-json snapshot',
+      tempDirPrefix: 'headless-snapshot-browser-runtime-tandem-',
+      binScript: dshBinScript,
+      configPath: browserRuntimeTandemConfigPath,
+      tsconfigPath,
+      env: {
+        DSH_SNAPSHOT: 'replay',
+        DSH_LLM_REPLAY_ENTRY: llmReplayEntry,
+        DSH_BROWSER_RUNTIME_TANDEM_ENTRY: browserRuntimeTandemEntry,
+        DSH_TOOL_BROWSER_ENTRY: toolBrowserEntry,
+        DSH_TANDEM_FIXTURE_PORT: String(port),
+        DSH_TANDEM_TOKEN_FILE: 'tandem-api-token',
+        DSH_TANDEM_FIXTURE_PATH: tandemHttpFixturePath,
+        DSH_TELEMETRY_DISABLED: '1',
+        NODE_OPTIONS: [process.env.NODE_OPTIONS, '--disable-warning=ExperimentalWarning'].filter(Boolean).join(' '),
+      },
+      invocations: [
+        {
+          binArgs: ['--profile', 'headless', '--patch', browserRuntimeTandemConfigPath, prompt],
+          env: { DSH_SNAPSHOT_FILE: browserRuntimeTandemSessionFixture },
+        },
+        {
+          binArgs: [
+            '--profile', 'headless', '--patch', browserRuntimeTandemConfigPath,
+            'Confirm that the browser schemas were reconstructed from the persisted discovery result.',
+          ],
+          env: { DSH_SNAPSHOT_FILE: browserRuntimeTandemResumeFixture },
+        },
+      ],
+      prepare: async (cwd) => {
+        runCwd = cwd
+        await prepareBrowserRuntimeTandemFixture(cwd)
+      },
+      inspect: async (cwd) => {
+        const logs = await persistedLogs(cwd, join(cwd, '.dsh', 'sessions'))
+        expect(logs).toHaveLength(1)
+        const records = parseJsonl(logs[0]?.content ?? '')
+        const calls = records
+          .filter(record => record.type === 'tool/call')
+          .map(record => (record.data as JsonObject | undefined)?.name)
+        expect(calls).toEqual([
+          'tool_search',
+          'browser_create',
+          'browser_navigate',
+          'browser_observe',
+          'browser_screenshot',
+          'browser_focus',
+          'browser_input',
+          'browser_takeover',
+          'browser_return_control',
+          'browser_close',
+        ])
+
+        const resultBlocks = records
+          .filter(record => record.type === 'tool/result')
+          .flatMap((record) => {
+            const data = record.data as JsonObject | undefined
+            const message = data?.message as JsonObject | undefined
+            return Array.isArray(message?.content) ? message.content as JsonObject[] : []
+          })
+        const discovery = resultBlocks.find(block => Array.isArray(block.loadedTools))
+        expect((discovery?.loadedTools as JsonObject[] | undefined)?.map(schema => schema.name).sort()).toEqual([
+          'browser_close',
+          'browser_create',
+          'browser_focus',
+          'browser_input',
+          'browser_navigate',
+          'browser_observe',
+          'browser_return_control',
+          'browser_screenshot',
+          'browser_takeover',
+        ])
+        const browserValues = resultBlocks.slice(1).map((block) => {
+          const content = Array.isArray(block.content) ? block.content as JsonObject[] : []
+          const text = content.find(item => item.type === 'text')?.text
+          if (typeof text !== 'string') throw new Error('browser result did not retain rendered text')
+          return JSON.parse(text) as JsonObject
+        })
+        expect(browserValues.map(value => value.revision)).toEqual([0, 1, 1, 1, 2, 3, 4, 5, 6])
+        expect(browserValues[0]).toMatchObject({
+          chrome: { kind: 'temporary', partition: 'session-tandem-tmp-1' },
+          controlOwner: 'agent',
+        })
+        expect(browserValues[1]).toMatchObject({
+          url: 'https://example.test/',
+          title: 'Example Domain',
+          text: 'A real Tandem protocol page.',
+          chrome: { kind: 'temporary' },
+          controlOwner: 'agent',
+        })
+        expect(browserValues[3]).toMatchObject({ mediaType: 'image/png' })
+        expect(browserValues[4]).toMatchObject({ focused: true, controlOwner: 'agent' })
+        expect(browserValues[5]).toMatchObject({ controlOwner: 'human', text: 'human typed' })
+        expect(browserValues[6]).toMatchObject({ controlOwner: 'human' })
+        expect(browserValues[7]).toMatchObject({ controlOwner: 'agent' })
+        expect(browserValues[8]).toMatchObject({ status: 'closed' })
+        const renderedFacts = JSON.stringify(browserValues)
+        for (const identity of ['tandem-tmp-1', 'tandem-tmp-1-workspace', 'tandem-tmp-1-browser-1', 'tandem-tmp-1-tab-1']) {
+          expect(renderedFacts).toContain(identity)
+        }
+
+        const headers = records
+          .filter(record => record.type === 'request/header')
+          .map((record) => {
+            const data = record.data as JsonObject
+            const header = data.header as JsonObject
+            const tools = Array.isArray(header.tools) ? header.tools as JsonObject[] : []
+            return { reason: data.reason, tools: tools.map(tool => tool.name) }
+          })
+        expect(headers.map(header => header.reason)).toEqual(['initial', 'change', 'resume'])
+        expect(headers[0]?.tools).toContain('tool_search')
+        expect(headers[0]?.tools.some(name => typeof name === 'string' && name.startsWith('browser_'))).toBe(false)
+        for (const header of headers.slice(1)) {
+          expect(header.tools).toEqual(expect.arrayContaining([
+            'browser_create',
+            'browser_navigate',
+            'browser_observe',
+            'browser_screenshot',
+            'browser_focus',
+            'browser_input',
+            'browser_takeover',
+            'browser_return_control',
+            'browser_close',
+          ]))
+        }
+      },
+    })
+
+    expect(results.map(result => result.stderr)).toEqual(['', ''])
+    const normalized = results.map(result => normalizeHeadlessStream(result.stdout, runCwd)).join('')
+    if (refreshing) await writeFile(browserRuntimeTandemStreamExpected, normalized)
+    expect(normalized).toBe(await readFile(browserRuntimeTandemStreamExpected, 'utf8'))
+    expect(JSON.parse(results[1]?.stdout.trim().split('\n').at(-1) ?? '{}')).toMatchObject({
+      type: 'result',
+      output: 'TANDEM_BROWSER_RESUMED',
     })
   }, LOADER_SMOKE_TEST_TIMEOUT_MS)
 

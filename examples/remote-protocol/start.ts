@@ -72,7 +72,9 @@ export async function apply(_ctx: Context): Promise<void> {
     cipher.seal(operationPlaintext),
   )
   const received = decodeCompanionMessage(desktopProtocol, cipher.open(relayOperation))
-  if (received.type !== 'operation') throw new Error('Desktop did not receive the Mobile operation')
+  if (received.type !== 'operation' || received.operation.type !== 'submit-prompt') {
+    throw new Error('Desktop did not receive the Mobile operation')
+  }
   const relayPlaintext = new TextDecoder().decode(encodeRelayMessage({
     type: 'ciphertext',
     transportVersion,
@@ -98,8 +100,8 @@ export async function apply(_ctx: Context): Promise<void> {
     mobileAttachment,
     cipher.seal(encodeCompanionMessage(desktopProtocol, confirmed)),
   )))
-  if (mobileResult.type !== 'result') throw new Error('Mobile did not receive the Desktop result')
-  console.log(`DESKTOP_RESPONSE confirmed=true outcome=${mobileResult.result.type === 'confirmed' ? mobileResult.result.outcome : mobileResult.result.type}`)
+  if (mobileResult.type !== 'result' || mobileResult.result.type !== 'confirmed') throw new Error('Mobile did not receive the Desktop result')
+  console.log(`DESKTOP_RESPONSE confirmed=true outcome=${mobileResult.result.outcome}`)
 
   const attachmentKey = await deriveCompanionAttachmentKey(Buffer.alloc(32, 31))
   const attachmentPlaintext = new TextEncoder().encode('attachment plaintext owned by endpoints')
@@ -152,6 +154,67 @@ export async function apply(_ctx: Context): Promise<void> {
   )))
   if (mobileRejection.type !== 'result') throw new Error('Mobile did not receive the rejection')
   console.log(`ATTACHMENT platformPlaintext=${String(includesPlaintext)} hashVerified=${String(verified)} submitted=${String(submitted)} controlFrameBytes=${String(offerFrame.byteLength)} rejectionReason=${mobileRejection.result.type === 'attachment-rejected' ? mobileRejection.result.reason : 'unknown'}`)
+
+  const statusQuery = {
+    type: 'operation',
+    operation: {
+      type: 'query-operation-status',
+      operationId: received.operation.operationId,
+    },
+  } as const
+  const queryPlaintext = encodeCompanionMessage(mobileProtocol, statusQuery)
+  const relayQuery = forward(
+    routeId,
+    mobileAttachment,
+    desktopAttachment,
+    cipher.seal(queryPlaintext),
+  )
+  const receivedQuery = decodeCompanionMessage(desktopProtocol, cipher.open(relayQuery))
+  if (receivedQuery.type !== 'operation' || receivedQuery.operation.type !== 'query-operation-status') {
+    throw new Error('Desktop did not receive the operation-status query')
+  }
+  const committedStatus = {
+    type: 'result',
+    result: {
+      type: 'status',
+      operationId: receivedQuery.operation.operationId,
+      committed: {
+        type: 'confirmed',
+        operationId: receivedQuery.operation.operationId,
+        committedAt: 1_787_027_200_000,
+        outcome: 'accepted',
+      },
+    },
+  } as const
+  const mobileStatus = decodeCompanionMessage(mobileProtocol, cipher.open(forward(
+    routeId,
+    desktopAttachment,
+    mobileAttachment,
+    cipher.seal(encodeCompanionMessage(desktopProtocol, committedStatus)),
+  )))
+  if (mobileStatus.type !== 'result' || mobileStatus.result.type !== 'status' || !('committed' in mobileStatus.result)) {
+    throw new Error('Mobile did not receive the Desktop status answer')
+  }
+  console.log(`RECONNECT_QUERY operationId=${mobileStatus.result.operationId} committed=true original=${mobileStatus.result.committed.outcome}`)
+
+  const absentStatus = {
+    type: 'result',
+    result: {
+      type: 'status',
+      operationId: parseCompanionOperationId('operation-never-submitted'),
+      absent: true,
+    },
+  } as const
+  const mobileAbsent = decodeCompanionMessage(mobileProtocol, cipher.open(forward(
+    routeId,
+    desktopAttachment,
+    mobileAttachment,
+    cipher.seal(encodeCompanionMessage(desktopProtocol, absentStatus)),
+  )))
+  if (mobileAbsent.type !== 'result' || mobileAbsent.result.type !== 'status' || !('absent' in mobileAbsent.result)) {
+    throw new Error('Mobile did not receive the explicit absent answer')
+  }
+  console.log(`RECONNECT_QUERY operationId=${mobileAbsent.result.operationId} committed=false notSubmitted=true`)
 
   let applicationPlaintextSent = false
   try {

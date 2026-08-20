@@ -88,6 +88,8 @@ export interface SubagentCapabilities {
   readonly depthLimit: boolean
   readonly toolFilter: boolean
   readonly persona: boolean
+  /** Whether the backend applies `request.agentOptions` to the child LLM route. */
+  readonly agentOptions: boolean
 }
 
 /**
@@ -116,6 +118,12 @@ export interface SubagentStartRequest {
    * remaining turn work when it fires afterward.
    */
   readonly signal: AbortSignal
+  /**
+   * Optional child LLM route and output-token cap. Requires
+   * {@link SubagentCapabilities.agentOptions}; rejected at start otherwise.
+   * In-process backends treat explicit fields as overrides of the inherited
+   * parent route.
+   */
   readonly agentOptions?: AgentOptions
   /**
    * Object-rooted JSON Schema within `assertObjectJsonSchema`'s enforced subset. Start rejects

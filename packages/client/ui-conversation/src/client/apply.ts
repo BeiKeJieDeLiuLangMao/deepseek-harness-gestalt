@@ -393,6 +393,7 @@ export function apply(ctx: Context): void {
     locale: NS,
     children: {
       'conversation.chat.node': { kind: 'keyed', scope: 'session', inject: CHAT_NODE_INJECT },
+      'conversation.browser.preview': { kind: 'single', scope: 'session' },
     },
     store: chatStore,
     inject: (sessionId: SessionId, actions: BoundActions<typeof chatStore>): ChatViewInjected => {
@@ -455,6 +456,8 @@ export function apply(ctx: Context): void {
 
   slots.register({
     name: 'details',
+    id: 'tool',
+    order: 0,
     locale: NS,
     children: {
       'conversation.details.tool': { kind: 'single', scope: 'session' },

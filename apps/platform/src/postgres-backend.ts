@@ -3,12 +3,16 @@
 import { randomUUID } from 'node:crypto'
 import type { Pool, PoolClient } from 'pg'
 import {
+  ACCOUNT_DESKTOP_INSTALLATION_LIMIT,
+  ACCOUNT_MOBILE_INSTALLATION_LIMIT,
   AccountError,
+  OPEN_REGISTRATION_HARD_CAP_RETRY_AFTER_SECONDS,
   parseInstallationId,
   parseLoginAttemptId,
   parsePlatformAccountId,
   type AccountProofJti,
   type AccountSessionId,
+  type InstallationId,
   type InstallationKind,
   type LoginAttemptId,
   type PlatformAccountId,
@@ -175,6 +179,7 @@ export class PostgresAccountBackend implements AccountBackend {
       }
       const identity = attemptRow.identity
       const account = await upsertAccount(client, attemptRow.identity_namespace, identity)
+      await client.query('SELECT id FROM account_accounts WHERE id = $1 FOR UPDATE', [account.id])
       const replaced = await client.query<SessionRow>(
         `UPDATE account_sessions
             SET active = FALSE, revision = revision + 1, refresh_hash = NULL
@@ -182,6 +187,24 @@ export class PostgresAccountBackend implements AccountBackend {
           RETURNING *`,
         [attemptRow.identity_namespace, attemptRow.installation_id],
       )
+      if (replaced.rows[0] === undefined) {
+        const kind = attemptRow.installation_kind as InstallationKind
+        const countResult = await client.query<{ count: string }>(
+          `SELECT COUNT(*)::text AS count
+             FROM account_sessions
+            WHERE account_id = $1 AND installation_kind = $2 AND active = TRUE`,
+          [account.id, kind],
+        )
+        const count = Number(countResult.rows[0]?.count ?? 0)
+        const limit = kind === 'desktop' ? ACCOUNT_DESKTOP_INSTALLATION_LIMIT : ACCOUNT_MOBILE_INSTALLATION_LIMIT
+        if (count >= limit) {
+          throw new AccountError(
+            'QUOTA',
+            `Platform Account has reached its ${kind} installation limit`,
+            OPEN_REGISTRATION_HARD_CAP_RETRY_AFTER_SECONDS,
+          )
+        }
+      }
       const sessionId = randomUUID() as AccountSessionId
       const sessionResult = await client.query<SessionRow>(
         `INSERT INTO account_sessions (
@@ -269,6 +292,36 @@ export class PostgresAccountBackend implements AccountBackend {
       [jti, expiresAt],
     )
     return result.rowCount === 1
+  }
+
+  async countActiveInstallations(accountId: PlatformAccountId, kind: InstallationKind): Promise<number> {
+    const result = await this.pool.query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count
+         FROM account_sessions
+        WHERE account_id = $1 AND installation_kind = $2 AND active = TRUE`,
+      [accountId, kind],
+    )
+    return Number(result.rows[0]?.count ?? 0)
+  }
+
+  async findAccountByIdentity(identityNamespace: string, providerSubject: number): Promise<AccountRecord | undefined> {
+    const result = await this.pool.query<AccountRow>(
+      'SELECT * FROM account_accounts WHERE identity_namespace = $1 AND github_id = $2',
+      [identityNamespace, providerSubject],
+    )
+    return result.rows[0] === undefined ? undefined : accountFromRow(result.rows[0])
+  }
+
+  async findActiveSessionByInstallation(
+    identityNamespace: string,
+    installationId: InstallationId,
+  ): Promise<SessionRecord | undefined> {
+    const result = await this.pool.query<SessionRow>(
+      `SELECT * FROM account_sessions
+        WHERE identity_namespace = $1 AND installation_id = $2 AND active = TRUE`,
+      [identityNamespace, installationId],
+    )
+    return result.rows[0] === undefined ? undefined : sessionFromRow(result.rows[0])
   }
 }
 

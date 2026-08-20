@@ -14,13 +14,13 @@ Mobile 仅在完整链接与保留能力相符后消费邀请。跨账号尝试�
 
 ## 密码适配器
 
-`PairingHandshakeProvider` 准备、完成、激活并销毁提供方私有握手状态。远程访问从不实现 Noise 状态迁移或密码原语。`remote-access-http` 消费 `ctx.remoteAccess`，`remote-access-client` 则校验真实 Desktop 设置与 Mobile 控制器使用的协议值。组装后的 loader 场景使用明确标记为未评审的 keyless 提供方，让提供方、HTTP 消费方和共享传输通过真实环回服务器运行。Desktop 与 Mobile 开发入口只能通过显式标志选择各自的真实控制器。生产组合在独立 Noise 评审接纳经过评审的提供方前保持不可用；开发证明永远不会由生产路径选择。
+`PairingHandshakeProvider` 准备、完成、激活并销毁提供方私有握手状态。远程访问从不实现 Noise 状态迁移或密码原语。`remote-access-http` 消费 `ctx.remoteAccess`，`remote-access-client` 则校验真实 Desktop 设置与 Mobile 控制器使用的协议值。组装后的 loader 场景使用 `DevelopmentKeylessPairingHandshakeProvider`，让提供方、HTTP 消费方和共享传输通过真实环回服务器运行。Desktop 与 Mobile 开发入口只能通过显式标志选择各自的真实控制器。生产组合在独立 Noise 评审接纳经过评审的提供方前保持不可用；开发证明永远不会由生产路径选择。
 
 ## 多实例 Relay
 
 `ctx.remoteRelay` 使用不透明 route id 与独立可轮换的 32 字节凭据鉴权 attachment，通过 `RelayRouteStore` 只持久化其 digest 与 revision，并将在线 attachment 注册到会过期的共享目录。`remote-access-redis` 只承载目录元数据、不含内容的失效通知与有界密文 Pub/Sub；它不创建离线 queue。位于另一 Platform Instance 的目标会收到同一个不透明 Relay frame，目标缺失则立即返回 `REMOTE_OFFLINE`。
 
-Mobile 与 Desktop 通过一个 non-sticky TLS endpoint 向外连接。实例丢失会建立新连接；Desktop 在 attachment 后发送权威加密 projection，不迁移在线 socket。关闭 Desktop 窗口会退出进程，sleep、quit、退出账号或关闭手机访问都会停止 Relay。在组装经过评审的产品密码能力前，生产保持 fail-closed。无密钥双实例 Loader 场景只证明 transport 组合，不会削弱该 gate。
+Mobile 与 Desktop 通过一个 non-sticky TLS endpoint 向外连接。实例丢失会建立新连接；Desktop 在 attachment 后发送权威加密 projection，不迁移在线 socket。关闭 Desktop 窗口会退出进程，sleep、quit、退出账号或关闭手机访问都会停止 Relay。在组装经过评审的产品密码学能力前，生产保持 fail-closed。无 Noise 握手 / SHA-256 开发派生双实例 Loader 场景只证明 transport 组合，不会削弱该 gate。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -39,10 +39,12 @@ Remote Access capability owning the complete Personal Pairing lifecycle.
 ```ts cordis-catalog
 /**
  * Create one two-minute invitation for a signed-in Desktop Installation.
- * @param input - Desktop authorization and opaque rendezvous identity.
+ * @param input - Desktop authorization, opaque rendezvous identity, and the client IP counted toward the hourly IP quota.
  * @returns complete QR/link projection; no low-entropy fallback exists.
+ * @throws RemoteAccessError `QUOTA` or `PLATFORM_CAPACITY` with `retryAfter` seconds.
+ * @throws TypeError when `clientIp` is empty.
  */
-abstract createChallenge(input: { desktop: PairingAccountAuthentication rendezvousId: PairingRendezvousId }): Promise<PairingChallengeView>
+abstract createChallenge(input: { desktop: PairingAccountAuthentication rendezvousId: PairingRendezvousId clientIp: string }): Promise<PairingChallengeView>
 
 /**
  * Read the current Desktop Installation's Mobile Access state.
@@ -101,8 +103,10 @@ abstract listPendingPairings(desktop: PairingAccountAuthentication): Promise<rea
 
 /**
  * Activate one pending pairing after the Desktop user compares authentication words.
+ * Rejected at the fifty-first live Personal Pairing for the Account, before handshake activation.
  * @param input - confirming Desktop and pending identity.
  * @returns independently keyed Companion-only Device Principal.
+ * @throws RemoteAccessError `QUOTA` with a 60-second `retryAfter` when the Account pairing ceiling is full.
  */
 abstract confirmPairing(input: { desktop: PairingAccountAuthentication pendingPairingId: PendingPairingId }): Promise<PersonalPairingView>
 
@@ -117,9 +121,33 @@ abstract cancelChallenge(input: { desktop: PairingAccountAuthentication challeng
  * @param input - owning Desktop authorization and pending identity.
  */
 abstract rejectPairing(input: { desktop: PairingAccountAuthentication pendingPairingId: PendingPairingId }): Promise<void>
+
+/**
+ * Reserve one expiring ciphertext blob against the open-registration ceilings.
+ * @param input - current-installation authorization and declared ciphertext size.
+ * @returns opaque reservation id released by {@link releaseAttachmentBlob}.
+ * @throws RemoteAccessError `QUOTA` or `PLATFORM_CAPACITY` with `retryAfter` seconds.
+ * @throws TypeError when `bytes` is not a non-negative integer.
+ */
+abstract admitAttachmentBlob(input: { owner: PairingAccountAuthentication bytes: number }): Promise<{ reservationId: string }>
+
+/**
+ * Release one blob reservation after receipt, expiry, or revocation.
+ * @param input - current-installation authorization and reservation id.
+ * @throws TypeError when the reservation is missing or owned by another Account.
+ */
+abstract releaseAttachmentBlob(input: { owner: PairingAccountAuthentication reservationId: string }): Promise<void>
+
+/**
+ * Admit one content-free push hint against the daily account ceiling.
+ * Capacity shedding does not reject push hints.
+ * @param owner - current-installation authorization.
+ * @throws RemoteAccessError `QUOTA` with remaining-window `retryAfter` seconds.
+ */
+abstract emitPushHint(owner: PairingAccountAuthentication): Promise<void>
 ```
 
-Source: [`packages/platform/remote-access/src/index.ts:393`](../../packages/platform/remote-access/src/index.ts)
+Source: [`packages/platform/remote-access/src/index.ts:424`](../../packages/platform/remote-access/src/index.ts)
 
 <a id="ctxremoteattachmentauthority--remoteattachmentauthority"></a>
 

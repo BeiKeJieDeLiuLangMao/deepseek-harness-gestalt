@@ -47,9 +47,6 @@ export interface CompanionSubmitPromptOperation {
   text: string
 }
 
-/** Operations in the implemented Companion codec slice. */
-export type CompanionOperation = CompanionSubmitPromptOperation | CompanionOfferAttachmentOperation
-
 /** Bounded Mobile control message pointing Desktop at one Platform-retained encrypted blob. */
 export interface CompanionOfferAttachmentOperation {
   type: 'offer-attachment'
@@ -81,6 +78,18 @@ export type CompanionAttachmentRejectionReason =
   | 'transfer-interrupted'
   | 'limit-exceeded'
 
+/** Reconnect query for the Desktop-authoritative outcome of one transmitted operation. */
+export interface CompanionQueryOperationStatusOperation {
+  type: 'query-operation-status'
+  operationId: CompanionOperationId
+}
+
+/** Operations in the implemented Companion codec slices. */
+export type CompanionOperation =
+  | CompanionSubmitPromptOperation
+  | CompanionOfferAttachmentOperation
+  | CompanionQueryOperationStatusOperation
+
 /** Desktop-authoritative mutation result. */
 export interface CompanionConfirmedResult {
   type: 'confirmed'
@@ -96,8 +105,26 @@ export interface CompanionAttachmentRejectedResult {
   reason: CompanionAttachmentRejectionReason
 }
 
-/** Results in the implemented Companion codec slice. */
-export type CompanionResult = CompanionConfirmedResult | CompanionAttachmentRejectedResult
+/** Reconnect answer returning the original committed result for one operation id. */
+export interface CompanionCommittedStatusResult {
+  type: 'status'
+  operationId: CompanionOperationId
+  committed: CompanionConfirmedResult
+}
+
+/** Reconnect answer stating the queried operation id committed nothing. */
+export interface CompanionAbsentStatusResult {
+  type: 'status'
+  operationId: CompanionOperationId
+  absent: true
+}
+
+/** Results in the implemented Companion codec slices. */
+export type CompanionResult =
+  | CompanionConfirmedResult
+  | CompanionAttachmentRejectedResult
+  | CompanionCommittedStatusResult
+  | CompanionAbsentStatusResult
 
 /** Bounded plain-text transcript entry approved for Mobile presentation. */
 export interface CompanionTextTranscriptEntry {

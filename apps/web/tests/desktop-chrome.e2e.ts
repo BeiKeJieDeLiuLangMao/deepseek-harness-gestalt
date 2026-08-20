@@ -26,8 +26,8 @@ async function openDesktopPage(browser: Browser, baseUrl: string, platform: 'dar
   await page.addInitScript((desktopPlatform) => {
     // The inert bridge covers the complete preload surface; account and
     // pairing stay in their pre-answer `unavailable` snapshots.
-    const accountSnapshot = { status: 'unavailable', privacyAccepted: false }
-    const pairingSnapshot = { status: 'unavailable', enabled: false, pairings: [] }
+    const unavailableAccount = { status: 'unavailable', privacyAccepted: false }
+    const unavailablePairing = { status: 'unavailable', enabled: false, pairings: [] }
     Object.defineProperty(window, 'dshDesktop', {
       configurable: true,
       value: {
@@ -40,18 +40,18 @@ async function openDesktopPage(browser: Browser, baseUrl: string, platform: 'dar
         windowMinimize: () => {},
         windowMaximize: () => {},
         windowClose: () => {},
-        accountGetSnapshot: async () => accountSnapshot,
-        accountAcceptPrivacy: async () => accountSnapshot,
-        accountBeginLogin: async () => accountSnapshot,
-        accountSignOut: async () => accountSnapshot,
+        accountGetSnapshot: async () => unavailableAccount,
+        accountAcceptPrivacy: async () => unavailableAccount,
+        accountBeginLogin: async () => unavailableAccount,
+        accountSignOut: async () => unavailableAccount,
         onAccountSnapshot: () => () => {},
-        pairingGetSnapshot: async () => pairingSnapshot,
-        pairingSetEnabled: async () => pairingSnapshot,
-        pairingCreateChallenge: async () => pairingSnapshot,
-        pairingCancelChallenge: async () => pairingSnapshot,
-        pairingConfirm: async () => pairingSnapshot,
-        pairingReject: async () => pairingSnapshot,
-        pairingRevoke: async () => pairingSnapshot,
+        pairingGetSnapshot: async () => unavailablePairing,
+        pairingSetEnabled: async () => unavailablePairing,
+        pairingCreateChallenge: async () => unavailablePairing,
+        pairingCancelChallenge: async () => unavailablePairing,
+        pairingConfirm: async () => unavailablePairing,
+        pairingReject: async () => unavailablePairing,
+        pairingRevoke: async () => unavailablePairing,
         onPairingSnapshot: () => () => {},
       },
     })

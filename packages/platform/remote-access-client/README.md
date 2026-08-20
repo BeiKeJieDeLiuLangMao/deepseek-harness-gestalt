@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-Authenticated Desktop and Mobile HTTP transport for the public Remote Access service. It forwards one current-Installation Account proof per operation and validates every JSON response before exposing branded Personal Pairing identifiers.
+Authenticated Desktop and Mobile HTTP transport for the public Remote Access service. It forwards one current-Installation Account proof per operation and validates every JSON response before exposing branded Personal Pairing identifiers. `QUOTA` and `PLATFORM_CAPACITY` responses preserve integer `retryAfter` seconds on the thrown `RemoteAccessError`.
 
 The client does not implement a handshake or store pairing keys. Product controllers supply signed-in Account authorization and use the independently reviewed server-side handshake provider selected by the Platform deployment. After confirmation, the Mobile pairing controller opens its sealed endpoint-specific Relay authority through the crypto adapter and configures `MobileRelayEndpointLifecycle`; it never receives the Desktop credential.
 

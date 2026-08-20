@@ -468,7 +468,16 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       // Never the derived harness-home root: a developer's own presets must not
       // be able to change a golden, whatever roots a scenario asks for.
       : [{ id: 'agent-presets', config: { ...options.agentPresets, includeUserRoot: false } }],
-    ...options.toolsMode === undefined ? [] : [{ id: 'tools', config: { mode: options.toolsMode } }],
+    // A patch replaces the tools row's complete config. Restate the composed
+    // toolSearch block so `mode: code` cannot disable deferred Browser tools
+    // that the standard preset mounts with `deferLoading`.
+    ...options.toolsMode === undefined ? [] : [{
+      id: 'tools',
+      config: {
+        ...(composedRows.find(row => row.id === 'tools')?.config as object | undefined),
+        mode: options.toolsMode,
+      },
+    }],
     // The shipped Web bundle already owns both runners and the Cordis UI. This
     // scenario adds only the model-facing tools that exercise those services.
     ...options.cordisTools === true
