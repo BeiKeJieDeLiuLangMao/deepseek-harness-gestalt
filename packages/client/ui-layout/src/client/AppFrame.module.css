@@ -42,9 +42,24 @@
 }
 
 .detailsCol {
+  position: relative;
   min-width: 0;
   overflow: hidden;
   border-left: 1px solid var(--dsw-alias-border-l2);
+}
+
+.detailsCol > [data-slot] {
+  position: absolute;
+  inset: 0;
+}
+
+.detailsCol > [data-slot] > * {
+  position: absolute;
+  inset: 0;
+}
+
+.detailsCol > [data-slot] > :last-child {
+  z-index: 1;
 }
 
 /* The details subtree stays mounted at zero width, so its border must not paint

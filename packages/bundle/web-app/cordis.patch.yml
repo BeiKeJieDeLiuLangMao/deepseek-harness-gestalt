@@ -249,6 +249,10 @@
     - id: ui-schedule
       name: '@deepseek-ai/dsh-client-ui-schedule'
 
+    # Browser Dock: expanded details occupant plus collapsed layered preview.
+    - id: ui-browser
+      name: '@deepseek-ai/dsh-client-ui-browser'
+
     # Goal surface: GoalBar in the input dock over the goal session projection.
     - id: ui-goal
       name: '@deepseek-ai/dsh-client-ui-goal'
@@ -417,6 +421,9 @@
   disabled: true
 
 - id: tool-web
+  disabled: true
+
+- id: tool-browser
   disabled: true
 
 # The preset roster. `config/agent-presets/` ships with the deployment and is

@@ -38,6 +38,7 @@ This table connects model-visible tool names to the plugin package and service s
 | `@deepseek-ai/dsh-tool-jobs` | `job_kill`, `job_list`, `job_output` | `ctx.tools`, `ctx.jobs`, `ctx.systemPrompt` | `tool/call`, `tool/result`, `user/message via agent.inject() for background completion notices` | - | The kind-agnostic background-job controller: background bash commands, PTY sends, and subagents are read, listed, and killed through the same three tools. Loading the plugin attaches the controller that arms producers' `ctx.jobs.start()`. |
 | `@deepseek-ai/dsh-tool-todo` | `todo_write` | `ctx.tools`, `owning Agent session` | `tool/call`, `todo/write`, `tool/result` | - | todo_write is session-owned state; UIs render the latest todo/write event as a checklist. `allowParallelInProgress` is required with no default, so the catalog states its choice: `true`, whose description invites several `in_progress` items. A deployment choosing `false` receives the same tool with a description asking for exactly one active task. |
 | `@deepseek-ai/dsh-tool-workflow` | `workflow` | `ctx.tools`, `ctx.workflowEngine`, `ctx.systemPrompt`, `a calling Agent (exec.agent parents the script children)` | `tool/call`, `tool/result` | - | - |
+| `@deepseek-ai/dsh-tool-browser` | `browser_close`, `browser_create`, `browser_focus`, `browser_input`, `browser_navigate`, `browser_observe`, `browser_return_control`, `browser_screenshot`, `browser_takeover` | `ctx.tools`, `ctx.browserRuntime` | `tool/call`, `tool/result` | - | All Browser tools are deferred: tool_search returns their schemas without activating them, and current eligibility remains authoritative. |
 | `@deepseek-ai/dsh-tool-web` | `web_fetch`, `web_search` | `ctx.tools`, `ctx.web`, `ctx.systemPrompt` | `tool/call`, `tool/result` | - | web_search and web_fetch keep provider selection behind ctx.web so model-visible schemas stay stable across backend swaps. |
 
 <a id="deepseek-aidsh-tool-ask-user"></a>
@@ -1860,6 +1861,432 @@ Constraints: concurrency and total-agent caps apply; no filesystem, network, tim
 ```
 
 Source: [`packages/workflow/tool-workflow/src/index.ts`](../packages/workflow/tool-workflow/src/index.ts)
+
+<a id="deepseek-aidsh-tool-browser"></a>
+
+## `@deepseek-ai/dsh-tool-browser`
+
+### `browser_close`
+
+Close one browser tab using the latest revision. Temporary Profiles discard identity; named Profiles keep the persist partition.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profileId": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "type": "string"
+        },
+        "browserId": {
+          "type": "string"
+        },
+        "tabId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "profileId",
+        "workspaceId",
+        "browserId",
+        "tabId"
+      ]
+    },
+    "expectedRevision": {
+      "type": "integer",
+      "description": "Latest revision returned by a browser operation."
+    }
+  },
+  "required": [
+    "target",
+    "expectedRevision"
+  ]
+}
+```
+
+Source: [`packages/browser/tool-browser/src/index.ts`](../packages/browser/tool-browser/src/index.ts)
+
+### `browser_create`
+
+Create one temporary or named persistent Browser Profile, Browser Workspace, browser instance, and tab.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "profile": {
+      "type": "string",
+      "description": "temporary discards identity; persistent restores a named Profile.",
+      "enum": [
+        "temporary",
+        "persistent"
+      ]
+    },
+    "name": {
+      "type": "string",
+      "description": "Named persistent Browser Profile. Required when profile is persistent."
+    },
+    "attach": {
+      "type": "object",
+      "description": "Attach a new instance or tab to an existing Session-owned hierarchy.",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "type": "string",
+          "description": "workspace starts another instance; browser starts another tab.",
+          "enum": [
+            "workspace",
+            "browser"
+          ]
+        },
+        "workspaceId": {
+          "type": "string",
+          "description": "Existing Browser Workspace to reuse."
+        },
+        "browserId": {
+          "type": "string",
+          "description": "Existing browser instance to reuse when kind is browser."
+        }
+      }
+    }
+  }
+}
+```
+
+Source: [`packages/browser/tool-browser/src/index.ts`](../packages/browser/tool-browser/src/index.ts)
+
+### `browser_focus`
+
+Focus one browser tab using its latest revision.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profileId": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "type": "string"
+        },
+        "browserId": {
+          "type": "string"
+        },
+        "tabId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "profileId",
+        "workspaceId",
+        "browserId",
+        "tabId"
+      ]
+    },
+    "expectedRevision": {
+      "type": "integer",
+      "description": "Latest revision returned by a browser operation."
+    }
+  },
+  "required": [
+    "target",
+    "expectedRevision"
+  ]
+}
+```
+
+Source: [`packages/browser/tool-browser/src/index.ts`](../packages/browser/tool-browser/src/index.ts)
+
+### `browser_input`
+
+Record one human pointer or keyboard mutation on a browser tab using its latest revision.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profileId": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "type": "string"
+        },
+        "browserId": {
+          "type": "string"
+        },
+        "tabId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "profileId",
+        "workspaceId",
+        "browserId",
+        "tabId"
+      ]
+    },
+    "expectedRevision": {
+      "type": "integer",
+      "description": "Latest revision returned by a browser operation."
+    },
+    "url": {
+      "type": "string",
+      "description": "Optional URL produced by the human mutation."
+    },
+    "text": {
+      "type": "string",
+      "description": "Optional page text produced by the human mutation."
+    }
+  },
+  "required": [
+    "target",
+    "expectedRevision"
+  ]
+}
+```
+
+Source: [`packages/browser/tool-browser/src/index.ts`](../packages/browser/tool-browser/src/index.ts)
+
+### `browser_navigate`
+
+Navigate one browser tab to a URL using its latest revision.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profileId": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "type": "string"
+        },
+        "browserId": {
+          "type": "string"
+        },
+        "tabId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "profileId",
+        "workspaceId",
+        "browserId",
+        "tabId"
+      ]
+    },
+    "expectedRevision": {
+      "type": "integer",
+      "description": "Latest revision returned by a browser operation."
+    },
+    "url": {
+      "type": "string",
+      "description": "URL to open in the browser tab."
+    }
+  },
+  "required": [
+    "target",
+    "expectedRevision",
+    "url"
+  ]
+}
+```
+
+Source: [`packages/browser/tool-browser/src/index.ts`](../packages/browser/tool-browser/src/index.ts)
+
+### `browser_observe`
+
+Observe the latest facts for one browser tab, including a closed receipt.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profileId": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "type": "string"
+        },
+        "browserId": {
+          "type": "string"
+        },
+        "tabId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "profileId",
+        "workspaceId",
+        "browserId",
+        "tabId"
+      ]
+    }
+  },
+  "required": [
+    "target"
+  ]
+}
+```
+
+Source: [`packages/browser/tool-browser/src/index.ts`](../packages/browser/tool-browser/src/index.ts)
+
+### `browser_return_control`
+
+Record reported Agent ownership of one browser tab using its latest revision. The lock is the revision; this does not add a second lock.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profileId": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "type": "string"
+        },
+        "browserId": {
+          "type": "string"
+        },
+        "tabId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "profileId",
+        "workspaceId",
+        "browserId",
+        "tabId"
+      ]
+    },
+    "expectedRevision": {
+      "type": "integer",
+      "description": "Latest revision returned by a browser operation."
+    }
+  },
+  "required": [
+    "target",
+    "expectedRevision"
+  ]
+}
+```
+
+Source: [`packages/browser/tool-browser/src/index.ts`](../packages/browser/tool-browser/src/index.ts)
+
+### `browser_screenshot`
+
+Capture the deterministic PNG screenshot facts for one browser tab.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profileId": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "type": "string"
+        },
+        "browserId": {
+          "type": "string"
+        },
+        "tabId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "profileId",
+        "workspaceId",
+        "browserId",
+        "tabId"
+      ]
+    }
+  },
+  "required": [
+    "target"
+  ]
+}
+```
+
+Source: [`packages/browser/tool-browser/src/index.ts`](../packages/browser/tool-browser/src/index.ts)
+
+### `browser_takeover`
+
+Record reported human ownership of one browser tab using its latest revision. The lock is the revision; a later Agent mutation that observes the current revision may reclaim the tab.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profileId": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "type": "string"
+        },
+        "browserId": {
+          "type": "string"
+        },
+        "tabId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "profileId",
+        "workspaceId",
+        "browserId",
+        "tabId"
+      ]
+    },
+    "expectedRevision": {
+      "type": "integer",
+      "description": "Latest revision returned by a browser operation."
+    }
+  },
+  "required": [
+    "target",
+    "expectedRevision"
+  ]
+}
+```
+
+Source: [`packages/browser/tool-browser/src/index.ts`](../packages/browser/tool-browser/src/index.ts)
+
+All Browser tools are deferred: tool_search returns their schemas without activating them, and current eligibility remains authoritative.
 
 <a id="deepseek-aidsh-tool-web"></a>
 

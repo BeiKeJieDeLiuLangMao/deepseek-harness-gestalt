@@ -26,11 +26,11 @@ const FILE_REFERENCE_PROMPT = fileURLToPath(new URL(
 
 /**
  * The catalog the shipped Web composition puts in front of the model, minus the
- * ripgrep-dependent pair below. The absences are deliberate, not incidental
- * gaps: the `cordis_*` toolset executes model-written JavaScript that no
- * sandbox row confines, `web_fetch` chooses its own request target, and
- * `mcp_*` servers spawn outside `ctx.shell`. The composition Agent Note owns the
- * rationale and its sources.
+ * ripgrep-dependent pair below. `tool_search` is reserved discovery for
+ * deferred tools. The other absences are deliberate: the `cordis_*` toolset
+ * executes model-written JavaScript that no sandbox row confines, `web_fetch`
+ * chooses its own request target, and `mcp_*` servers spawn outside `ctx.shell`.
+ * The composition Agent Note owns the rationale and its sources.
  */
 const EXPECTED_TOOLS = [
   'ask_user_question',
@@ -77,9 +77,9 @@ afterEach(async () => {
 it('assembles the shipped Web catalog, file-reference guidance, and confined access default', async () => {
   scaffold = await launchWebScaffold()
   const ctx = scaffold.ctx
-  // Preset-owned tools stay off the process layer. The shipped Web tools row
-  // enables deferred discovery, so the reserved tool_search schema is visible
-  // without naming an agent.
+  // End tools live on the mounted agent preset. The reserved `tool_search`
+  // discovery tool is process-global because the shipped tools row enables
+  // `toolSearch` (deferred Browser tools reuse that configuration).
   expect(ctx.tools.schemas().map(schema => schema.name)).toEqual(['tool_search'])
   const handle = await ctx.agents.create({
     sessionId: SessionId('shipped-composition'),

@@ -27,13 +27,14 @@ describe('LayoutController', () => {
 
     service.toggleSidebar()
     service.openDetails()
+    service.setDetails(720)
     service.closeDetails()
 
     expect(panels.toggleSidebar).toHaveBeenCalledTimes(1)
     expect(panels.openDetails).toHaveBeenCalledTimes(1)
+    expect(panels.setDetails).toHaveBeenCalledWith(720)
     expect(panels.closeDetails).toHaveBeenCalledTimes(1)
     expect(panels.setSidebar).not.toHaveBeenCalled()
-    expect(panels.setDetails).not.toHaveBeenCalled()
   })
 
   it('forwards an occupant-specific details width range', () => {
@@ -51,6 +52,7 @@ describe('LayoutController', () => {
     const service = new LayoutController()
     expect(() => { service.toggleSidebar() }).toThrow(/panel actions not wired/)
     expect(() => { service.openDetails() }).toThrow(/panel actions not wired/)
+    expect(() => { service.setDetails(640) }).toThrow(/panel actions not wired/)
     expect(() => { service.closeDetails() }).toThrow(/panel actions not wired/)
   })
 

@@ -403,6 +403,101 @@ Depends on: [`LocalConfig`](#deepseek-aidsh-bash-local)
 
 Source: [`packages/shell/bash-sandbox/src/index.ts:35`](../packages/shell/bash-sandbox/src/index.ts)
 
+<a id="deepseek-aidsh-browser-runtime-deterministic"></a>
+
+## `@deepseek-ai/dsh-browser-runtime-deterministic`
+
+```ts config-catalog
+/** Deterministic Provider configuration. */
+export interface Config {
+  /** Prefix used for the four stable opaque identities. */
+  idPrefix?: string
+  /** Complete pages this keyless Provider can navigate to. */
+  pages: DeterministicBrowserPage[]
+}
+
+/** One URL and its deterministic observable and screenshot facts. */
+export interface DeterministicBrowserPage {
+  /** Exact URL accepted by `navigate`. */
+  url: string
+  /** Page title returned by observations. */
+  title: string
+  /** Page text returned by observations. */
+  text: string
+  /** Non-empty canonical base64 whose decoded bytes start with the PNG signature. */
+  screenshotPngBase64: string
+}
+```
+
+Source: [`packages/browser/browser-runtime-deterministic/src/index.ts:67`](../packages/browser/browser-runtime-deterministic/src/index.ts)
+
+<a id="deepseek-aidsh-browser-runtime-electron"></a>
+
+## `@deepseek-ai/dsh-browser-runtime-electron`
+
+```ts config-catalog
+/** Process and lifecycle configuration for one in-process Electron runtime. */
+export interface Config {
+  /** Prefix for DSH-owned opaque Profile, Workspace, and browser identities. */
+  idPrefix?: string
+  /** Hidden window width used for offscreen capture. */
+  viewportWidth?: number
+  /** Hidden window height used for offscreen capture. */
+  viewportHeight?: number
+  /** Bound on each Chromium navigation or content read. */
+  requestTimeoutMs?: number
+}
+```
+
+Source: [`packages/browser/browser-runtime-electron/src/index.ts:84`](../packages/browser/browser-runtime-electron/src/index.ts)
+
+<a id="deepseek-aidsh-browser-runtime-tandem"></a>
+
+## `@deepseek-ai/dsh-browser-runtime-tandem`
+
+```ts config-catalog
+/** HTTP and optional fixture-process configuration for one Tandem-shaped runtime. */
+export interface Config {
+  /** Optional fixture executable used only by HTTP protocol tests. Production Desktop omits this. */
+  command?: string
+  /** Arguments passed without shell interpretation when `command` is set. */
+  args?: string[]
+  /** Existing directory used as the optional fixture child working directory. */
+  cwd?: string
+  /** Explicit environment layered over the subprocess service's credential-scrubbed parent environment. */
+  env?: Record<string, string>
+  /** Loopback Tandem-shaped HTTP API origin, including its configured port. */
+  baseUrl: string
+  /** Local file where the HTTP server writes its generated API token. */
+  tokenFile: string
+  /** Prefix for DSH-owned opaque Profile, Workspace, and browser identities. */
+  idPrefix?: string
+  /** Bound on HTTP health verification. */
+  startupTimeoutMs?: number
+  /** Bound on each Tandem-shaped HTTP operation. */
+  requestTimeoutMs?: number
+  /** Delay between startup health probes. */
+  healthPollMs?: number
+  /** Upper bound on upstream page-settle waiting for one content read. */
+  pageSettleMs?: number
+  /** Number of fixture-child restarts after an unexpected exit. Ignored without `command`. */
+  reconnectAttempts?: number
+  /** Delay before each reconnect attempt. */
+  reconnectDelayMs?: number
+  /** Subprocess tree SIGTERM-to-SIGKILL grace used for fixture teardown. */
+  processGraceMs?: number
+  /** Maximum bytes accepted from one Tandem-shaped HTTP response. */
+  maxResponseBytes?: number
+  /**
+   * When `false`, this client never spawns a fixture child and rejects
+   * `command`/`cwd` at plugin load. Production Desktop sets `false`.
+   */
+  sidecar?: boolean
+}
+```
+
+Source: [`packages/browser/browser-runtime-tandem/src/index.ts:53`](../packages/browser/browser-runtime-tandem/src/index.ts)
+
 <a id="deepseek-aidsh-client-connection"></a>
 
 ## `@deepseek-ai/dsh-client-connection`
@@ -2586,6 +2681,22 @@ export interface Config {
 
 Source: [`packages/shell/tool-bash-persistent/src/index.ts:400`](../packages/shell/tool-bash-persistent/src/index.ts)
 
+<a id="deepseek-aidsh-tool-browser"></a>
+
+## `@deepseek-ai/dsh-tool-browser`
+
+Requires: `browserRuntime` · `tools`
+
+```ts config-catalog
+/** Model-facing Browser tool configuration. */
+export interface Config {
+  /** Cooperative timeout budget in milliseconds for each Browser Runtime call. */
+  readonly timeoutMs?: number
+}
+```
+
+Source: [`packages/browser/tool-browser/src/index.ts:24`](../packages/browser/tool-browser/src/index.ts)
+
 <a id="deepseek-aidsh-tool-fs"></a>
 
 ## `@deepseek-ai/dsh-tool-fs`
@@ -3301,10 +3412,12 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-agent` ([`packages/core/agent/src/index.ts`](../packages/core/agent/src/index.ts))
 - `@deepseek-ai/dsh-api-gateway` — requires `typert` ([`packages/api/gateway/src/index.ts`](../packages/api/gateway/src/index.ts))
 - `@deepseek-ai/dsh-api-remotes` ([`packages/api/remotes/src/index.ts`](../packages/api/remotes/src/index.ts))
+- `@deepseek-ai/dsh-browser-workspace` — requires `browserRuntime` · `sessions` ([`packages/browser/browser-workspace/src/index.ts`](../packages/browser/browser-workspace/src/index.ts))
 - `@deepseek-ai/dsh-client-locale` ([`packages/client/locale/src/index.ts`](../packages/client/locale/src/index.ts))
 - `@deepseek-ai/dsh-client-modules` — requires `webServer` · `loader` ([`packages/client/modules/src/index.ts`](../packages/client/modules/src/index.ts))
 - `@deepseek-ai/dsh-client-runtime` ([`packages/client/runtime/src/index.ts`](../packages/client/runtime/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-agent-preset` ([`packages/client/ui-agent-preset/src/index.ts`](../packages/client/ui-agent-preset/src/index.ts))
+- `@deepseek-ai/dsh-client-ui-browser` ([`packages/client/ui-browser/src/index.ts`](../packages/client/ui-browser/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-commands` ([`packages/client/ui-commands/src/index.ts`](../packages/client/ui-commands/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-conversation` ([`packages/client/ui-conversation/src/index.ts`](../packages/client/ui-conversation/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-cordis` ([`packages/extensions/ui-cordis/src/index.ts`](../packages/extensions/ui-cordis/src/index.ts))
@@ -3372,6 +3485,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 Abstract service classes — a deployment loads a concrete implementation package instead ([capability seams](../.agents/notes/implemented/architecture/2026-06-13-capability-seams.md)).
 
 - `@deepseek-ai/dsh-attachment` — abstract `AttachmentStore` ([`packages/attachment/attachment/src/index.ts`](../packages/attachment/attachment/src/index.ts))
+- `@deepseek-ai/dsh-browser-runtime` — abstract `BrowserRuntime` ([`packages/browser/browser-runtime/src/index.ts`](../packages/browser/browser-runtime/src/index.ts))
 - `@deepseek-ai/dsh-code-runtime` — abstract `CodeRuntime` ([`packages/code-runtime/code-runtime/src/index.ts`](../packages/code-runtime/code-runtime/src/index.ts))
 - `@deepseek-ai/dsh-compaction` — abstract `CompactionEngine` ([`packages/compaction/compaction/src/index.ts`](../packages/compaction/compaction/src/index.ts))
 - `@deepseek-ai/dsh-credentials` — abstract `CredentialProvider` ([`packages/credentials/credentials/src/index.ts`](../packages/credentials/credentials/src/index.ts))
