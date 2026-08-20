@@ -149,6 +149,67 @@ abstract emitPushHint(owner: PairingAccountAuthentication): Promise<void>
 
 Source: [`packages/platform/remote-access/src/index.ts:424`](../../packages/platform/remote-access/src/index.ts)
 
+<a id="ctxremoteattachmentauthority--remoteattachmentauthority"></a>
+
+### `ctx.remoteAttachmentAuthority` — `RemoteAttachmentAuthority`
+
+Pairing scope seam: the Personal Pairing layer authenticates one HTTPS request to exactly one Personal Pairing. Implementations never see attachment bytes.
+
+```ts cordis-catalog
+/**
+ * Authenticate one attachment request to its owning Personal Pairing.
+ * @param input - complete untrusted request headers.
+ * @returns the Personal Pairing whose scope governs the capability.
+ */
+authenticate(input: { headers: IncomingHttpHeaders }): Promise<PersonalPairingId>
+```
+
+Source: [`packages/platform/remote-attachments/src/http.ts:29`](../../packages/platform/remote-attachments/src/http.ts)
+
+<a id="ctxremoteattachments--remoteattachmentstoreservice-abstract-seam"></a>
+
+### `ctx.remoteAttachments` — `RemoteAttachmentStoreService` (abstract seam)
+
+Platform attachment blob store: retains ciphertext and metadata only, bounded per blob and in total, scoped to exactly one Personal Pairing, single-use, and expiring.
+
+```ts cordis-catalog
+/**
+ * Retain one pairing-scoped ciphertext blob and issue its one-time capability.
+ * @param input - owning Personal Pairing, endpoint-encrypted ciphertext, and current time.
+ * @returns the capability grant Mobile forwards to Desktop.
+ */
+abstract publish(input: { pairingId: PersonalPairingId; ciphertext: Uint8Array; now: number }): Promise<RemoteAttachmentGrant>
+
+/**
+ * Return a copy of one retained ciphertext without consuming the capability.
+ * @param input - requesting Personal Pairing, one-time capability, and current time.
+ * @returns a copy of the retained ciphertext bytes.
+ */
+abstract inspect(input: { pairingId: PersonalPairingId; capability: AttachmentCapability; now: number }): Promise<Uint8Array>
+
+/**
+ * Exchange one capability for its ciphertext exactly once, then remove both.
+ * @param input - requesting Personal Pairing, one-time capability, and current time.
+ * @returns a copy of the retained ciphertext bytes.
+ */
+abstract consume(input: { pairingId: PersonalPairingId; capability: AttachmentCapability; now: number }): Promise<Uint8Array>
+
+/**
+ * Remove one blob and its capability regardless of remaining lifetime.
+ * @param input - owning Personal Pairing and the capability whose blob is revoked.
+ * A pairing mismatch fails explicitly; an unknown capability is a no-op.
+ */
+abstract revoke(input: { pairingId: PersonalPairingId; capability: AttachmentCapability }): Promise<void>
+
+/**
+ * Project every retained blob for Platform-side operations.
+ * @returns copies of ciphertext and metadata only; no plaintext exists on this side of the boundary.
+ */
+abstract observe(): readonly RemoteAttachmentBlob[]
+```
+
+Source: [`packages/platform/remote-attachments/src/index.ts:59`](../../packages/platform/remote-attachments/src/index.ts)
+
 <a id="ctxremoterelay--remoterelayservice-abstract-seam"></a>
 
 ### `ctx.remoteRelay` — `RemoteRelayService` (abstract seam)
