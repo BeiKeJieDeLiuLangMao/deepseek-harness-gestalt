@@ -6,13 +6,16 @@ Mobile account and Personal Pairing shell for the current Installation. It shows
 
 The entry validates the complete development and production identity pair before rendering: each side supplies `ORIGIN`, `CALLBACK_URL`, `GITHUB_CLIENT_ID`, `CREDENTIAL_REFERENCE`, `DATABASE_IDENTITY`, and `IDENTITY_NAMESPACE` under its `VITE_PLATFORM_DEVELOPMENT_*` or `VITE_PLATFORM_PRODUCTION_*` prefix, and `VITE_PLATFORM_ENV` explicitly selects one side. Every paired field must differ. Missing, unknown, shared, non-HTTPS, or callback-mismatched configuration fails before rendering or network traffic.
 
-The shared Mobile entry includes the `@capacitor/browser` adapter and calls it directly from the prepared authorization button's user activation. It has no `window.open`, popup, or custom-URL token fallback. `IndexedDbInstallationAccountStore` uses the selected database identity in its database name; native packaging supplies the stable WebView origin.
+The shared Mobile entry includes the `@capacitor/browser` adapter and calls it directly from the prepared authorization button's user activation. It has no `window.open`, popup, or custom-URL token fallback. When Capacitor Browser is unavailable, the current browsing context navigates to the prepared authorization URL and `load()` resumes a still-valid pending login. `IndexedDbInstallationAccountStore` uses the selected database identity in its database name; native packaging supplies the stable WebView origin. A missing `crypto.randomUUID` fails before render because Installation id creation requires a secure browsing context (`https:` or `http://127.0.0.1`). The loopback two-instance development listen is [`examples/local-companion-platform`](../../examples/local-companion-platform/README.md).
 
 `apps/mobile/src/companion-cache.ts` is an unwired library: it seals opened Workspace/Session metadata and transcripts at rest per Paired Desktop with AES-GCM keys injected through the Personal Pairing seam, and stores rows in an IndexedDB database named by `companionCacheDatabaseName` (`${accountStorageNamespace(environment, accountId)}:companion-cache`) so account switch isolates caches and receipts from the pairing-key store. Attachment bytes, terminal content, spill files, and credentials never enter the cache. `CompanionUncertainOperationSettlement` stores an Operation Receipt only after a mutation left the device, consults existing receipts before send, reconciles unknown receipts through `query-operation-status`, and never replays an operation.
 
 ```sh
 pnpm --filter @deepseek-ai/dsh-mobile build
+pnpm --filter @deepseek-ai/dsh-mobile exec vite --host
 ```
+
+Vite resolves workspace packages through [`tsconfig.base.json`](../../tsconfig.base.json) paths so those commands run on the source plane. An Android emulator must `adb reverse` the Vite port and open `http://127.0.0.1`; `10.0.2.2` is not a secure context and cannot create an Installation id. For same-origin Account CORS during local pairing, open the TLS origin from [`examples/local-companion-platform`](../../examples/local-companion-platform/README.md).
 
 ## Known Limitations and Deferred Work
 

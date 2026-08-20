@@ -49,6 +49,9 @@ const environment = loadPlatformEnvironment({
 const installationIdKey = `deepseek-gestalt:${environment.identityNamespace}:mobile-installation-id`
 let installationId = localStorage.getItem(installationIdKey)
 if (installationId === null) {
+  if (typeof crypto.randomUUID !== 'function') {
+    throw new TypeError('Mobile requires a secure browsing context (HTTPS or http://127.0.0.1) to create an Installation id')
+  }
   installationId = crypto.randomUUID()
   localStorage.setItem(installationIdKey, installationId)
 }

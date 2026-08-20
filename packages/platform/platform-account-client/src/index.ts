@@ -468,14 +468,23 @@ export class PlatformAccountInstallation {
     this.publish({ ...withoutError(this.snapshot), privacyAccepted: true })
   }
 
-  /** Restore a current installation session from protected local storage. */
+  /** Restore a current-installation session, or resume a still-valid pending login. */
   async load(): Promise<void> {
     await this.transitions.run(async () => { await this.loadTransition() })
   }
 
   private async loadTransition(): Promise<void> {
     const stored = await this.options.store.loadSession(this.options.environment.environment)
-    if (stored === undefined) return
+    if (stored === undefined) {
+      const pending = await this.options.store.loadPending(this.options.environment.environment)
+      if (pending === undefined) return
+      if (pending.attempt.expiresAt <= this.now()) {
+        await this.options.store.clearPending(this.options.environment.environment)
+        return
+      }
+      this.publish({ status: 'polling', privacyAccepted: true })
+      return
+    }
     if (stored.session.refreshExpiresAt <= this.now()) {
       await this.options.store.clearSession(this.options.environment.environment)
       return

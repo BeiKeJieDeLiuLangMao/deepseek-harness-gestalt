@@ -1,8 +1,14 @@
 // @vitest-environment jsdom
-import 'fake-indexeddb/auto'
+import { IDBFactory } from 'fake-indexeddb'
 import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react'
 import { parseRelayCredential, parseRelayRouteId } from '@deepseek-ai/dsh-remote-protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+
+Object.defineProperty(globalThis, 'indexedDB', {
+  configurable: true,
+  writable: true,
+  value: new IDBFactory(),
+})
 
 const browserOpen = vi.hoisted(() => vi.fn<(options: { url: string }) => Promise<void>>())
 const relayLifecycle = vi.hoisted(() => ({
@@ -40,6 +46,11 @@ afterEach(() => {
   relayLifecycle.isConnected.mockReturnValue(false)
   relayLifecycle.onCiphertext = undefined
   localStorage.clear()
+  Object.defineProperty(globalThis, 'indexedDB', {
+    configurable: true,
+    writable: true,
+    value: new IDBFactory(),
+  })
   vi.unstubAllEnvs()
   vi.unstubAllGlobals()
   document.body.replaceChildren()
@@ -84,6 +95,45 @@ describe('Mobile Platform Account entry', () => {
     expect(windowOpen).not.toHaveBeenCalled()
     await waitFor(() => { expect(calls.some(call => call.url.endsWith('/login-poll'))).toBe(true) })
     expect(calls.every(call => call.url.startsWith('https://dev.example/'))).toBe(true)
+  })
+
+  it('navigates the current browsing context when Capacitor Browser is unavailable', async () => {
+    configureEnvironment()
+    document.body.innerHTML = '<div id="root"></div>'
+    browserOpen.mockRejectedValueOnce(new Error('Capacitor Browser is unavailable'))
+    const assign = vi.fn()
+    vi.stubGlobal('location', { assign, href: 'http://localhost/', origin: 'http://localhost' })
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL | Request) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+      if (url.endsWith('/login-attempts')) {
+        return json({
+          id: 'attempt-web-fallback',
+          state: 'state-web-fallback',
+          authorizationUrl: 'https://127.0.0.1:8443/v1/account/oauth/github/development-complete?state=state-web-fallback',
+          pollingToken: 'signed-polling-token',
+          expiresAt: Date.now() + 300_000,
+        })
+      }
+      return json({ status: 'pending' })
+    }))
+
+    await import('../src/main.tsx')
+    fireEvent.click(await screen.findByRole('checkbox'))
+    const button = screen.getByRole('button', { name: '使用 GitHub 继续' })
+    await waitFor(() => { expect(button.hasAttribute('disabled')).toBe(false) })
+    fireEvent.click(button)
+
+    await waitFor(() => { expect(assign).toHaveBeenCalledOnce() })
+    expect(String(assign.mock.calls[0]?.[0])).toContain('/v1/account/oauth/github/development-complete')
+  })
+
+  it('fails before rendering when Installation id creation is not a secure context', async () => {
+    configureEnvironment()
+    document.body.innerHTML = '<div id="root"></div>'
+    vi.stubGlobal('crypto', { randomUUID: undefined })
+
+    await expect(import('../src/main.tsx')).rejects.toThrow('secure browsing context')
+    expect(document.getElementById('root')?.childElementCount).toBe(0)
   })
 
   it('fails before rendering or traffic when deployment selection is missing', async () => {
