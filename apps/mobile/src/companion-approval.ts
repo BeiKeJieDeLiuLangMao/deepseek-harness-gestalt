@@ -1,5 +1,7 @@
 /** Mobile settlement of Desktop-authorized approvals and Ask User questions. */
 
+import { companionMayMutate, type CompanionPushState } from './companion-push.ts'
+
 /** One Desktop-authorized interaction presented on Mobile. */
 export interface CompanionInteraction {
   /** Idempotency key. */
@@ -21,15 +23,20 @@ export interface CompanionInteraction {
 }
 
 /**
- * Apply a Mobile decision only after Desktop acceptance and only if unset.
+ * Apply a Mobile decision only after foreground reconnect, Desktop-authoritative
+ * sync, and Desktop acceptance, and only if unset. Notification chrome cannot
+ * satisfy the gate.
  * @param interaction - current interaction.
  * @param input - Mobile decision.
+ * @param state - process visibility and synchronization required to mutate.
  * @returns the Desktop-authoritative interaction.
  */
 export function settleCompanionInteraction(
   interaction: CompanionInteraction,
   input: { accepted: boolean; decision: string; persistent?: boolean; stale?: boolean },
+  state: CompanionPushState,
 ): CompanionInteraction {
+  if (!companionMayMutate(state)) return interaction
   if (interaction.settled !== undefined) return interaction
   if (!input.accepted || input.stale === true) return interaction
   return {

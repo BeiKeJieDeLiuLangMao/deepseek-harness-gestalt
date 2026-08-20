@@ -39,6 +39,10 @@ Companion major 2 和 1 是当前及紧邻的前一应用版本。双方 endpoin
 
 本包不加密 Companion 消息流量。Mobile 与 Desktop 提供经过独立评审的端到端通道，再在 Relay 转发前加密版本 offer 和已编码 Companion 消息。[无密钥 assembled example](../../../examples/remote-protocol/start.ts)使用仅限示例的 AES-GCM adapter，证明 composition 与 Relay 仅见密文；它不是产品密码实现或安全评审结论。产品集成仍受[独立 Noise 评审](../../../docs/security/noise-cross-runtime-proof.md)约束。
 
+## 无内容推送提示
+
+Companion 推送提示只携带通用类别（`approval`、`question`、`turn-complete` 或 `failure`）以及不透明的 `routeId` 与可选 `sessionRef`。token 与 `sessionRef` 上限按 UTF-8 字节计（4096 与 128）。流式分片没有类别，也不会产生提示。线解析会拒绝未知类别、畸形标识符和额外字段，因此 Session 文本不能夹带在提示旁。`buildApnsPushPayload` 与 `buildFcmPushMessage` 把同一对字段投影到厂商 JSON 正文；标题只重复类别，不含 transcript、交互内容、设备名或凭据。
+
 ## 模型体验
 
 无，因为 Remote Protocol 元数据与设备来源永不进入模型请求。
@@ -50,4 +54,4 @@ Companion major 2 和 1 是当前及紧邻的前一应用版本。双方 endpoin
 ## 已知限制与延后工作
 
 - 当前 Companion catalog 只证明 prompt 提交、attachment offer、operation-status 查询、transcript projection，以及 confirmed、attachment-rejected 与 status 三种 result；discovery、creation、interaction 和 cancellation 消息必须在后续协议扩展中加入，adapter 才能暴露它们。
-- 配对 handshake、凭据持久化、challenge lifecycle 与生产 Companion 消息加密属于服务或经评审的 endpoint 集成，不属于这些 codec。
+- 配对 handshake、凭据持久化、challenge lifecycle、token 分发与生产 Companion 消息加密属于服务或经评审的 endpoint 集成，不属于这些 codec。
