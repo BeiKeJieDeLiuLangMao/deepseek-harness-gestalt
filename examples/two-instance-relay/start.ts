@@ -201,12 +201,15 @@ export async function apply(_ctx: Context, config: Config): Promise<void> {
       onCiphertext: async (ciphertext, sourceAttachmentId) => {
         const message = decodeCompanionMessage(desktopProtocol, cipher.open(ciphertext))
         if (message.type !== 'operation') return
+        const result = message.operation.type === 'query-operation-status'
+          ? { type: 'status' as const, operationId: message.operation.operationId, absent: true as const }
+          : {
+            type: 'confirmed' as const, operationId: message.operation.operationId,
+            committedAt: 1_787_027_200_000, outcome: 'accepted' as const,
+          }
         await desktopLifecycle.sendCiphertext(sourceAttachmentId, cipher.seal(encodeCompanionMessage(desktopProtocol, {
           type: 'result',
-          result: {
-            type: 'confirmed', operationId: message.operation.operationId,
-            committedAt: 1_787_027_200_000, outcome: 'accepted',
-          },
+          result,
         })))
       },
     })
@@ -220,7 +223,7 @@ export async function apply(_ctx: Context, config: Config): Promise<void> {
       reconnectDelayMs: config.reconnectDelayMs,
       onCiphertext: async (ciphertext) => {
         const message = decodeCompanionMessage(mobileProtocol, cipher.open(ciphertext))
-        if (message.type === 'result') result.resolve(message.result.outcome)
+        if (message.type === 'result' && message.result.type === 'confirmed') result.resolve(message.result.outcome)
         if (message.type === 'projection') {
           const entry = message.projection.entries[0]
           if (entry?.type === 'text') {

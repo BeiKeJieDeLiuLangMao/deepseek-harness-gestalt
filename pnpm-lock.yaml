@@ -456,6 +456,9 @@ importers:
       '@deepseek-ai/dsh-platform-account-core':
         specifier: workspace:^
         version: link:../../packages/platform/platform-account-core
+      '@deepseek-ai/dsh-platform-account-http':
+        specifier: workspace:^
+        version: link:../../packages/platform/platform-account-http
       '@deepseek-ai/dsh-remote-access-http':
         specifier: workspace:^
         version: link:../../packages/platform/remote-access-http
@@ -477,6 +480,9 @@ importers:
       '@capacitor/core':
         specifier: ^8.5.0
         version: 8.5.0
+      '@deepseek-ai/dsh-brand':
+        specifier: workspace:^
+        version: link:../../packages/util/brand
       '@deepseek-ai/dsh-client-ui-theme':
         specifier: workspace:^
         version: link:../../packages/client/ui-theme
