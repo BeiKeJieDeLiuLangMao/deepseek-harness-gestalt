@@ -3272,7 +3272,12 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       replace: request => settingsWrite(request, request.payload.ns, 'replace', request.payload.section, request.payload.expectedRevision),
       mutate: request => settingsWrite(request, request.payload.ns, 'mutate', request.payload.ops, request.payload.expectedRevision),
       async testWebSearch(request, signal) {
-        const web = ctx.get('web')
+        const web = ctx.get('web') as {
+          search(
+            request: { query: string },
+            signal?: AbortSignal,
+          ): Promise<{ sources: readonly { title?: string; url?: string }[] }>
+        } | undefined
         if (web === undefined) {
           return err(request, {
             code: 'internal',

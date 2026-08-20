@@ -13,6 +13,9 @@
     - button "Agent 预设":
       - img
       - text: Agent 预设
+    - button "工作区引用":
+      - img
+      - text: 工作区引用
   - button "打开配置文件"
   - button "关闭":
     - img
@@ -24,6 +27,7 @@
       - text: DeepSeek
       - img "API 密钥已配置"
       - button "编辑 DeepSeek (deepseek-official)": 编辑
+      - button "删除 DeepSeek (deepseek-official)": 删除
       - text: DeepSeek deepseek-official API 密钥
       - textbox "API 密钥":
         - /placeholder: 已配置——输入新值可替换

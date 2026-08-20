@@ -351,12 +351,15 @@ export class WebSearchShell {
         providerTabs: {
           getSnapshot: () => {
             const next = this.entries()
-              .map(entry => ({
-                id: entry.options.id ?? '',
-                order: entry.options.order ?? 0,
-                label: resolveSlotLabel(entry.options.label) ?? '',
-              }))
-              .sort((a, b) => a.order - b.order)
+              .map((entry) => {
+                const options = entry.options
+                return {
+                  id: options.id ?? '',
+                  order: options.order ?? 0,
+                  label: resolveSlotLabel(options.label) ?? '',
+                }
+              })
+              .toSorted((left, right) => left.order - right.order)
             const prev = this.tabSnapshot
             if (prev.length === next.length
               && prev.every((tab, index) => {
@@ -386,7 +389,7 @@ export class WebSearchShell {
       resetField: (field) => { this.selectedFace().resetField(field) },
       save: () => { this.selectedFace().save() },
       discard: () => { this.selectedFace().discard() },
-      selectProvider: (id) => { void this.selectionScope.set('backend', id as WebSearchBackend) },
+      selectProvider: (id) => { void this.selectionScope.set('backend', id) },
       testSearch: async () => {
         await this.selectedFace().persist()
         let response: Awaited<ReturnType<IApiClient['settings']['testWebSearch']>>

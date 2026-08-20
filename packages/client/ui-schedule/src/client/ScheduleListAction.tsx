@@ -133,15 +133,16 @@ export function ScheduleListAction({
   if (schedules === undefined || schedules.length === 0) return null
 
   const countLabel = t(active.length === 1 ? 'count.active.one' : 'count.active.other', { count: active.length })
-  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
-    if (event.key !== 'Escape' || !open) return
+  const closeOnEscape = (event: KeyboardEvent<HTMLDivElement>): void => {
+    if (event.key !== 'Escape') return
+    if (!open) return
     event.preventDefault()
     setOpen(false)
     triggerRef.current?.focus()
   }
 
   return (
-    <div ref={rootRef} className={css.root} onKeyDown={onKeyDown}>
+    <div ref={rootRef} className={css.root} onKeyDown={closeOnEscape}>
       <button
         ref={triggerRef}
         type="button"

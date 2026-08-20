@@ -3387,6 +3387,24 @@ export interface Config {
 
 Source: [`packages/workflow/workflow-worker-thread/src/index.ts:32`](../packages/workflow/workflow-worker-thread/src/index.ts)
 
+<a id="deepseek-aidsh-workspace-reference"></a>
+
+## `@deepseek-ai/dsh-workspace-reference`
+
+Requires: `agents` · `fs` · `typert`
+
+```ts config-catalog
+/** Host plugin configuration, validated at load. */
+export interface Config {
+  /** Hard cap on indexed workspace entries for the picker walk. */
+  maxIndexedFiles: number
+  /** Directory basenames the picker walk skips. */
+  ignoreDirs: string[]
+}
+```
+
+Source: [`packages/context/workspace-reference/src/index.ts:36`](../packages/context/workspace-reference/src/index.ts)
+
 ## Loadable plugins with no config
 
 These load from a `cordis.yml` entry with no `config:` block; they declare no configuration API.
@@ -3430,6 +3448,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-client-ui-user-questions` ([`packages/client/ui-user-questions/src/index.ts`](../packages/client/ui-user-questions/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-workflow-run` ([`packages/client/ui-workflow-run/src/index.ts`](../packages/client/ui-workflow-run/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-workspace` ([`packages/client/ui-workspace/src/index.ts`](../packages/client/ui-workspace/src/index.ts))
+- `@deepseek-ai/dsh-client-ui-workspace-reference` ([`packages/client/ui-workspace-reference/src/index.ts`](../packages/client/ui-workspace-reference/src/index.ts))
 - `@deepseek-ai/dsh-command-compact` — requires `commands` · `compaction` ([`packages/compaction/command-compact/src/index.ts`](../packages/compaction/command-compact/src/index.ts))
 - `@deepseek-ai/dsh-command-feedback` — requires `commands` ([`packages/feedback/command-feedback/src/index.ts`](../packages/feedback/command-feedback/src/index.ts))
 - `@deepseek-ai/dsh-command-goal` — requires `commands` · `goals` ([`packages/goal/command-goal/src/index.ts`](../packages/goal/command-goal/src/index.ts))

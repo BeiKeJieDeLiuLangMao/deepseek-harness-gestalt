@@ -76,6 +76,67 @@ class ResizeObserverStub {
   unobserve(): void {}
 }
 
+/** jsdom has no IndexedDB; Composer image staging writes through it after paste. */
+function createIndexedDbStub(): IDBFactory {
+  const stores = new Map<string, Map<string, { key: string }>>()
+
+  const objectStoreNames = {
+    contains: (name: string): boolean => stores.has(name),
+  }
+
+  const db = {
+    objectStoreNames,
+    createObjectStore(name: string): void {
+      stores.set(name, new Map())
+    },
+    transaction(name: string): IDBTransaction {
+      const rows = stores.get(name) ?? new Map()
+      stores.set(name, rows)
+      const tx = {
+        error: null,
+        oncomplete: null as ((this: IDBTransaction, ev: Event) => unknown) | null,
+        onerror: null as ((this: IDBTransaction, ev: Event) => unknown) | null,
+        objectStore() {
+          return {
+            put(record: { key: string }) { rows.set(record.key, record) },
+            delete(key: string) { rows.delete(key) },
+            get(key: string) {
+              const request = {
+                result: rows.get(key),
+                error: null,
+                onsuccess: null as ((this: IDBRequest, ev: Event) => unknown) | null,
+                onerror: null as ((this: IDBRequest, ev: Event) => unknown) | null,
+              }
+              queueMicrotask(() => { request.onsuccess?.call(request as unknown as IDBRequest, new Event('success')) })
+              return request
+            },
+          }
+        },
+      }
+      queueMicrotask(() => { tx.oncomplete?.call(tx as unknown as IDBTransaction, new Event('complete')) })
+      return tx as unknown as IDBTransaction
+    },
+    close(): void {},
+  }
+
+  return {
+    open() {
+      const request = {
+        result: db,
+        error: null,
+        onupgradeneeded: null as ((this: IDBOpenDBRequest, ev: IDBVersionChangeEvent) => unknown) | null,
+        onsuccess: null as ((this: IDBOpenDBRequest, ev: Event) => unknown) | null,
+        onerror: null as ((this: IDBOpenDBRequest, ev: Event) => unknown) | null,
+      }
+      queueMicrotask(() => {
+        request.onupgradeneeded?.call(request as unknown as IDBOpenDBRequest, new Event('upgradeneeded') as IDBVersionChangeEvent)
+        request.onsuccess?.call(request as unknown as IDBOpenDBRequest, new Event('success'))
+      })
+      return request as unknown as IDBOpenDBRequest
+    },
+  } as unknown as IDBFactory
+}
+
 const win = window as FixtureWindow
 let unmount: (() => void) | undefined
 
@@ -97,6 +158,7 @@ export function installAssembledBootEnv(): void {
     Object.defineProperty(navigator, 'language', { value: 'en-US', configurable: true })
     document.title = 'DeepSeek Harness'
     vi.stubGlobal('ResizeObserver', ResizeObserverStub)
+    vi.stubGlobal('indexedDB', createIndexedDbStub())
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) =>
       setTimeout(() => { callback(0) }, 0) as unknown as number)
     vi.stubGlobal('cancelAnimationFrame', (id: number) => { clearTimeout(id) })

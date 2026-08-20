@@ -177,6 +177,16 @@ describe('Desktop release notes', () => {
     expect(body).toContain('4bbbf74a07799fb681e033288fb55b3b16fc08c0...gestalt-v0.1.3')
   })
 
+  it('rejects a CLI invocation without version, target, and output path', () => {
+    const result = spawnSync(
+      process.execPath,
+      ['apps/desktop/scripts/render-release-notes.mjs'],
+      { cwd: process.cwd(), encoding: 'utf8' },
+    )
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toContain('usage: render-release-notes.mjs')
+  })
+
   it('renders the 0.1.4 previous-release changelog from its tracked manifest', () => {
     const body = renderReleaseNotes({
       manifest: loadReleaseNotesManifest('0.1.4'),

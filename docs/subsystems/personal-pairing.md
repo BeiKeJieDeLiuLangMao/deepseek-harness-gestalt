@@ -119,7 +119,7 @@ abstract cancelChallenge(input: { desktop: PairingAccountAuthentication challeng
 abstract rejectPairing(input: { desktop: PairingAccountAuthentication pendingPairingId: PendingPairingId }): Promise<void>
 ```
 
-Source: [`packages/platform/remote-access/src/index.ts:393`](../../packages/platform/remote-access/src/index.ts)
+Source: [`packages/platform/remote-access/src/index.ts:394`](../../packages/platform/remote-access/src/index.ts)
 
 <a id="ctxremoterelay--remoterelayservice-abstract-seam"></a>
 

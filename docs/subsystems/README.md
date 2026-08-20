@@ -25,6 +25,7 @@ One page per subsystem of the DeepSeek Harness: what it is, the data structures 
 | [personal-pairing.md](personal-pairing.md) | Settings-owned Mobile Access, same-account Pairing Challenges, authentication words, and Companion-only Device Principals |
 | [session-title.md](session-title.md) | durable title snapshots, cited source-message seqs, and the asynchronous provider contract |
 | [session-reference.md](session-reference.md) | structured cross-session references: `SessionReferenceInput`/`Candidate`, prepared message contexts, the stable error taxonomy |
+| [workspace-reference.md](workspace-reference.md) | existence-only workspace path markers: `WorkspaceReferenceSource` (`path`, `pathKind`) |
 | [system-prompt.md](system-prompt.md) | per-assembly context, tool-provider results, prompt sections, and cooperative assembly |
 | [tools.md](tools.md) | `ToolDefinition` full fields, the schema DSL, `ToolExecution`/`ToolResult`, tool-presentation UI types, and the guarded execution pipeline |
 | [user-questions.md](user-questions.md) | the UI-backed human question/answer seam: `AskUserQuestionRequest`, answer/options vocabulary, provider API, error taxonomy |

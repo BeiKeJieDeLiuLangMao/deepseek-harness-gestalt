@@ -180,6 +180,16 @@ export interface InputTriggerSource {
   subscribeLexicon?(session: ClientSessionContext, listener: () => void): () => void
   /** Reference codec; required for sources producing insert outcomes. */
   readonly codec?: ReferenceCodec
+  /**
+   * Rewrite pasted plain text before it lands in the draft. Implementing IS
+   * the participation claim. Sources run in registration order.
+   */
+  pasteTransform?(text: string): string
+  /**
+   * ArrowRight on the highlighted candidate while the menu is open.
+   * `undefined` leaves the key to the textarea.
+   */
+  onDescend?(pick: InputTriggerPick): PickOutcome | undefined
 }
 
 /** Trigger availability tier, derived from the input phase by the wiring layer. */
@@ -189,7 +199,7 @@ export interface TriggerGuard {
 }
 
 /** Keys the menu intercepts while open (all behind the IME composition guard). */
-export type ArbitrateKey = 'up' | 'down' | 'enter' | 'escape'
+export type ArbitrateKey = 'up' | 'down' | 'enter' | 'escape' | 'right'
 
 /** consumed = key handled; pick-highlighted = enter picked the highlight; pass = let the input see it. */
 export type ArbitrateOutcome = 'consumed' | 'pick-highlighted' | 'pass'

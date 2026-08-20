@@ -146,4 +146,38 @@ describe('runLoaderSmokeSequence', () => {
     expect(canonicalTempPath(inspected)).toBe(canonicalTempPath(outputs[0]?.cwd ?? ''))
     expect(existsSync(inspected)).toBe(false)
   }, LOADER_SMOKE_TEST_TIMEOUT_MS)
+
+  it('rejects an empty invocation list and keeps sequence defaults when an invocation omits argv and exit', async () => {
+    await expect(runLoaderSmokeSequence({
+      label: 'empty sequence',
+      tempDirPrefix: 'loader-smoke-empty-',
+      binScript: fixture('success'),
+      configPath,
+      tsconfigPath,
+      invocations: [],
+    })).rejects.toThrow('at least one invocation')
+
+    const results = await runLoaderSmokeSequence({
+      label: 'default invocation',
+      tempDirPrefix: 'loader-smoke-default-invocation-',
+      binScript: fixture('success'),
+      libBinScript: fixture('success'),
+      configPath,
+      tsconfigPath,
+      invocations: [{}],
+    })
+    const output = JSON.parse(results[0]!.stdout) as { args: string[] }
+    expect(output.args).toEqual([configPath])
+
+    const declared = await runLoaderSmokeSequence({
+      label: 'declared sequence failure',
+      tempDirPrefix: 'loader-smoke-sequence-fail-',
+      binScript: fixture('fail'),
+      libBinScript: fixture('fail'),
+      configPath,
+      tsconfigPath,
+      invocations: [{ expectedExitCode: 7 }],
+    })
+    expect(declared[0]?.stderr).toBe('fixture failed\n')
+  }, LOADER_SMOKE_TEST_TIMEOUT_MS)
 })

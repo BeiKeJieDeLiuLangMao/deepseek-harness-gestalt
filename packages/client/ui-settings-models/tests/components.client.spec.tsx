@@ -244,6 +244,41 @@ describe('ModelsSection', () => {
     expect(screen.getByText(en.add)).toBeTruthy()
   })
 
+  it('opens the official setup card when the user section is vacant and nothing else is usable', async () => {
+    const scripted = scriptedFace()
+    const namespaces = wireNamespaces().map(namespace =>
+      namespace.ns === 'llm-deepseek' ? { ...namespace, user: {} } : namespace)
+    scripted.face.llm.providers.mockResolvedValue(ok({
+      providers: [
+        { provider: 'deepseek-official', displayName: 'DeepSeek', settingsNs: 'llm-deepseek', settingsPath: [], active: true },
+        { provider: 'openai', displayName: 'openai', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'openai'], active: false },
+      ],
+    }))
+    scripted.face.settings.describe.mockResolvedValue(ok({
+      writable: true, hasDocument: false, namespaces,
+    }))
+    scripted.face.credentials.describe.mockImplementation((payload: { refs: string[] }) =>
+      Promise.resolve(ok({
+        credentials: Object.fromEntries(payload.refs.map(ref => [ref, { configured: false, writable: true }])),
+      })))
+    await mountFace(scripted)
+    expect(screen.getByText('DeepSeek')).toBeTruthy()
+    expect(screen.getByLabelText(en.keyInput)).toBeTruthy()
+  })
+
+  it('hides vacant official DeepSeek once another provider is already usable', async () => {
+    const namespaces = wireNamespaces().map(namespace =>
+      namespace.ns === 'llm-deepseek' ? { ...namespace, user: {} } : namespace)
+    const scripted = scriptedFace()
+    scripted.face.settings.describe.mockResolvedValue(ok({
+      writable: true, hasDocument: true, namespaces,
+    }))
+    await mountFace(scripted)
+    expect(screen.queryByText('DeepSeek')).toBeNull()
+    expect(screen.queryByLabelText(en.keyInput)).toBeNull()
+    expect(screen.getByText('openai')).toBeTruthy()
+  })
+
   it('leaves the unkeyed provider a plain row once another provider is usable', async () => {
     await mountSection()
     // openai's key is stored, so the user is not blocked and nothing on the
@@ -1110,6 +1145,32 @@ describe('ModelsSection', () => {
     const { face, mutate } = scriptedFace()
     const emptyUser: SettingsNamespaceView = {
       ...wireNamespaces()[0]!,
+      user: {},
+    }
+    const { ProviderEditor } = await import('../src/client/ProviderEditor.tsx')
+    render(<ProviderEditor
+      provider="deepseek-official"
+      displayName="DeepSeek"
+      namespace={emptyUser}
+      settingsPath={[]}
+      api={face as never}
+      t={t}
+      readOnly={false}
+      onClose={() => {}}
+    />)
+    fireEvent.click(screen.getByText(en.apply))
+    await waitFor(() => { expect(mutate).toHaveBeenCalledWith({
+      ns: 'llm-deepseek',
+      ops: [{ op: 'set', path: ['apiKeyEnv'], value: 'DEEPSEEK_API_KEY' }],
+      expectedRevision: 0,
+    }) })
+  })
+
+  it('occupies official DeepSeek from a named apiKeyEnv when neither draft nor fallback carries one', async () => {
+    const { face, mutate } = scriptedFace()
+    const emptyUser: SettingsNamespaceView = {
+      ...wireNamespaces()[0]!,
+      value: { defaultContextWindow: 1_000_000, maxTokens: 256_000, models: DEFAULT_DEEPSEEK_MODELS },
       user: {},
     }
     const { ProviderEditor } = await import('../src/client/ProviderEditor.tsx')

@@ -423,6 +423,11 @@ describe('unary round trip', () => {
     })
     await expect(client(api).sessions.list({})).rejects.toThrow()
   })
+
+  it('round-trips session.toolEligibility through the wire form', async () => {
+    const response = await client(scriptedApi()).sessions.toolEligibility({ sessionId: sid('s1') })
+    expect(response.result).toEqual({ ok: true, value: { tools: [] } })
+  })
 })
 
 describe('workspace domain round trip', () => {
@@ -806,6 +811,19 @@ describe('config unary surface', () => {
       api: 'openai-completions',
       apiKey: 'probe-key',
     })
+  })
+
+  it('round-trips settings.testWebSearch without the default unary timeout', async () => {
+    const seen: { method: string; payload: unknown }[] = []
+    const record = recorderInto(seen)
+    const api = scriptedApi({
+      settings: {
+        testWebSearch: record('settings.testWebSearch', r => ok(r, { count: 2, title: 'A', url: 'https://a.test' })),
+      },
+    })
+    const response = await client(api, 1).settings.testWebSearch({ query: 'ping' })
+    expect(response.result).toEqual({ ok: true, value: { count: 2, title: 'A', url: 'https://a.test' } })
+    expect(seen).toEqual([{ method: 'settings.testWebSearch', payload: { query: 'ping' } }])
   })
 
   it('rejects an invalid credential reference name at the carrier boundary', async () => {

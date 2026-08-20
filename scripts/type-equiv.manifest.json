@@ -701,6 +701,11 @@
       "source": "packages/context/session-reference/src/config.ts"
     },
     {
+      "doc": "docs/subsystems/workspace-reference.md",
+      "symbol": "WorkspaceReferenceSource",
+      "source": "packages/context/workspace-reference/src/types.ts"
+    },
+    {
       "doc": "docs/subsystems/tools.md",
       "symbol": "ToolOutputDefinition",
       "source": "packages/core/tools/src/index.ts"

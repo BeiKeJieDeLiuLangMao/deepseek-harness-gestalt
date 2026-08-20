@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useSyncExternalStore } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import { SessionLogDownloadController } from '../src/client/controller.ts'
+import type { SessionLogDownloadDialogProps } from '../src/client/Dialog.tsx'
+import { SessionLogDownloadHeaderAction } from '../src/client/HeaderAction.tsx'
 import { SessionLogDownloadToolbarAction } from '../src/client/ToolbarAction.tsx'
 import type { SessionLogDownloadToolbarActionProps } from '../src/client/ToolbarAction.tsx'
 import { en } from '../src/client/locales.ts'
@@ -67,5 +69,30 @@ describe('Session export Trajectory toolbar action', () => {
     release(new Response('zip'))
     await download
     await waitFor(() => { expect(button.getAttribute('aria-busy')).toBe('false') })
+  })
+})
+
+describe('Session export Header dialog host', () => {
+  it('mounts the shared download dialog on an inner dialog node', async () => {
+    const controller = new SessionLogDownloadController(async () => new Response('zip'), vi.fn())
+    const dismiss = vi.fn((sessionId: SessionId) => { controller.dismiss(sessionId) })
+    const useSessionLogDownload = bindSessionExport(controller)
+    const view = render(<SessionLogDownloadHeaderAction {...({
+      sessionId: SID,
+      useSessionLogDownload,
+      request: (sessionId: SessionId) => controller.download(sessionId),
+      dismiss,
+      t: (key: keyof typeof en): string => en[key],
+    } as unknown as SessionLogDownloadDialogProps)} />)
+
+    act(() => {
+      controller.store.set({
+        bySession: { [SID]: { open: true, status: 'error', error: 'header failed' } },
+      })
+    })
+
+    const dialog = await view.findByRole('dialog', { name: 'Session export failed' })
+    expect(dialog.textContent).toContain('header failed')
+    expect(dialog.parentElement?.getAttribute('role')).toBe('presentation')
   })
 })

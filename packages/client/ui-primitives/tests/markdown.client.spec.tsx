@@ -256,6 +256,29 @@ describe('MarkdownText', () => {
     expect(map.inspect(range)).toBeNull()
   })
 
+  it('does not overwrite a later Markdown selection map when an earlier one unmounts', () => {
+    const selectionMapRef: { current: MarkdownSelectionMap | null } = { current: null }
+    const first = render(
+      <MarkdownText text="first paragraph" selectionMapRef={selectionMapRef} />,
+    )
+    const firstMap = selectionMapRef.current
+    const second = render(
+      <MarkdownText text="second paragraph" selectionMapRef={selectionMapRef} />,
+    )
+    const secondMap = selectionMapRef.current
+    expect(secondMap).not.toBe(firstMap)
+    first.unmount()
+    expect(selectionMapRef.current).toBe(secondMap)
+    second.unmount()
+    expect(selectionMapRef.current).toBeNull()
+  })
+
+  it('does not publish a selection map while Markdown is still streaming', () => {
+    const selectionMapRef: { current: MarkdownSelectionMap | null } = { current: null }
+    render(<MarkdownText text="streaming paragraph" streaming selectionMapRef={selectionMapRef} />)
+    expect(selectionMapRef.current).toBeNull()
+  })
+
   it('forwards localized labels to fenced code blocks', () => {
     render(<MarkdownText text={'```ts\nconst answer = 42\n```'} codeLabels={{ copyLabel: 'Copy code', copiedLabel: 'Copied' }} />)
     expect(screen.getByRole('button', { name: 'Copy code' })).toBeTruthy()
@@ -501,6 +524,36 @@ describe('MarkdownText', () => {
     expect(live.container.querySelectorAll('.katex')).toHaveLength(1)
     expect(live.container.querySelectorAll('.katex-display')).toHaveLength(1)
     expect(live.container.querySelector('.katex-error')).toBeNull()
+  })
+
+  it('appends the footnote section on settled and streaming renders', () => {
+    const source = 'See the note.[^1]\n\n[^1]: Footnote body.'
+    const settled = render(<MarkdownText text={source} />)
+    expect(settled.container.textContent).toContain('Footnote body.')
+    const live = render(<MarkdownText text={source} streaming />)
+    expect(live.container.textContent).toContain('Footnote body.')
+    live.rerender(<MarkdownText text={source} streaming />)
+    expect(live.container.textContent).toContain('Footnote body.')
+  })
+
+  it('rebuilds the streaming renderer when fence labels change identity', () => {
+    const fence = '```ts\nconst answer = 42\n```'
+    const first = { copyLabel: 'Copy code', copiedLabel: 'Copied' }
+    const second = { copyLabel: '复制代码', copiedLabel: '已复制' }
+    const live = render(<MarkdownText text={fence} streaming codeLabels={first} />)
+    expect(screen.getByRole('button', { name: 'Copy code' })).toBeTruthy()
+    live.rerender(<MarkdownText text={fence} streaming codeLabels={second} />)
+    expect(screen.getByRole('button', { name: '复制代码' })).toBeTruthy()
+  })
+
+  it('reuses the streaming renderer across chunks and an identical text replay', () => {
+    const labels = { copyLabel: 'Copy code', copiedLabel: 'Copied' }
+    const mentions = { resolve: () => undefined }
+    const live = render(<MarkdownText text="Hello" streaming codeLabels={labels} />)
+    live.rerender(<MarkdownText text="Hello world" streaming codeLabels={labels} />)
+    expect(live.container.textContent).toContain('Hello world')
+    live.rerender(<MarkdownText text="Hello world" streaming codeLabels={labels} fileMentions={mentions} />)
+    expect(live.container.textContent).toContain('Hello world')
   })
 })
 
