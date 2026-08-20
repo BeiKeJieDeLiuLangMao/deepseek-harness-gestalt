@@ -24,6 +24,7 @@
 - text: "Interjection: include the word ORANGE in your final reply."
 - button "Copy":
   - img
+- button "Add images"
 - textbox "Message the agent"
 - button "Commands":
   - img

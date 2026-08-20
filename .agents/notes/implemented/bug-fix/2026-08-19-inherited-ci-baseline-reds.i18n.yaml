@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-19-inherited-ci-baseline-reds.md
+2026-08-19-inherited-ci-baseline-reds.md: d986c4d87920cb70c680353e637ddbe47ae5a63a
+2026-08-19-inherited-ci-baseline-reds.zh.md: 1a47651eaeea37ca90da9d498efb51f44b9c0abc

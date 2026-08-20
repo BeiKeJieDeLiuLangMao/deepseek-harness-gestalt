@@ -109,7 +109,10 @@ async function deepseekDefaultsServer(): Promise<DeepSeekDefaultsServer> {
     request.on('end', () => {
       requests.push(JSON.parse(body) as JsonObject)
       response.writeHead(200, { 'content-type': 'text/event-stream' })
-      let keepAlives = 3
+      // First comment is written immediately so a loaded CI event loop cannot
+      // miss the first-byte window and retry the one-shot request.
+      response.write(': keep-alive\n\n')
+      let keepAlives = 2
       const write = (): void => {
         if (keepAlives-- > 0) {
           response.write(': keep-alive\n\n')

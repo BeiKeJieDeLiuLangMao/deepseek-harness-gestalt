@@ -56,5 +56,53 @@ describe('Schedule session projection', () => {
       key: 'schedules',
       eventScope: 'owned-suffix',
     })
+    expect(scheduleProjectionDefinition.init()).toEqual(emptyScheduleProjectionState())
+  })
+
+  it('rejects reused ids and illegal pause, resume, and dispatch transitions', () => {
+    const created = applyScheduleProjection(emptyScheduleProjectionState(), change(create, 0))
+    expect(() => applyScheduleProjection(created, change(create, 1))).toThrow(/was reused/)
+
+    const paused = applyScheduleProjection(created, change({ version: 1, operation: 'pause', id: 'schedule-1' }, 1))
+    expect(() => applyScheduleProjection(paused, change({ version: 1, operation: 'pause', id: 'schedule-1' }, 2)))
+      .toThrow(/pause targets/)
+    expect(() => applyScheduleProjection(created, change({ version: 1, operation: 'resume', id: 'schedule-1' }, 2)))
+      .toThrow(/resume targets/)
+    expect(() => applyScheduleProjection(paused, change({ version: 1, operation: 'dispatch', id: 'schedule-1' }, 2)))
+      .toThrow(/dispatch targets/)
+  })
+
+  it('advances an Every record and removes a terminal one-shot on dispatch', () => {
+    const every = {
+      version: 1,
+      operation: 'create',
+      schedule: {
+        id: 'schedule-every',
+        kind: 'every',
+        prompt: 'check metrics',
+        everySeconds: 300,
+        scheduledAt: '2026-08-18T01:00:00.000Z',
+      },
+    } as const
+    const advanced = applyScheduleProjection(
+      applyScheduleProjection(emptyScheduleProjectionState(), change(every, 0)),
+      change({
+        version: 1,
+        operation: 'dispatch',
+        id: 'schedule-every',
+        acceptedAt: '2026-08-18T01:07:00.000Z',
+      }, 1),
+    )
+    expect(scheduleProjectionDefinition.view(advanced)).toEqual([{
+      ...every.schedule,
+      scheduledAt: '2026-08-18T01:10:00.000Z',
+      paused: false,
+    }])
+
+    const terminal = applyScheduleProjection(
+      applyScheduleProjection(emptyScheduleProjectionState(), change(create, 0)),
+      change({ version: 1, operation: 'dispatch', id: 'schedule-1' }, 1),
+    )
+    expect(scheduleProjectionDefinition.view(terminal)).toEqual([])
   })
 })

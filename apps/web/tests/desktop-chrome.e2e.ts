@@ -24,6 +24,10 @@ const PROMPT = 'Reply with the single word LIGHTHOUSE and stop.'
 async function openDesktopPage(browser: Browser, baseUrl: string, platform: 'darwin' | 'win32'): Promise<Page> {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 }, locale: 'en-US' })
   await page.addInitScript((desktopPlatform) => {
+    // The inert bridge covers the complete preload surface; account and
+    // pairing stay in their pre-answer `unavailable` snapshots.
+    const accountSnapshot = { status: 'unavailable', privacyAccepted: false }
+    const pairingSnapshot = { status: 'unavailable', enabled: false, pairings: [] }
     Object.defineProperty(window, 'dshDesktop', {
       configurable: true,
       value: {
@@ -36,6 +40,19 @@ async function openDesktopPage(browser: Browser, baseUrl: string, platform: 'dar
         windowMinimize: () => {},
         windowMaximize: () => {},
         windowClose: () => {},
+        accountGetSnapshot: async () => accountSnapshot,
+        accountAcceptPrivacy: async () => accountSnapshot,
+        accountBeginLogin: async () => accountSnapshot,
+        accountSignOut: async () => accountSnapshot,
+        onAccountSnapshot: () => () => {},
+        pairingGetSnapshot: async () => pairingSnapshot,
+        pairingSetEnabled: async () => pairingSnapshot,
+        pairingCreateChallenge: async () => pairingSnapshot,
+        pairingCancelChallenge: async () => pairingSnapshot,
+        pairingConfirm: async () => pairingSnapshot,
+        pairingReject: async () => pairingSnapshot,
+        pairingRevoke: async () => pairingSnapshot,
+        onPairingSnapshot: () => () => {},
       },
     })
   }, platform)

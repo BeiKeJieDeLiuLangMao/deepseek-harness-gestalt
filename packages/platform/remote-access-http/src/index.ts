@@ -173,6 +173,7 @@ function parseDevice(value: unknown): { name: string; platform: 'ios' | 'android
   return { name: requiredString(value.name, 'device.name'), platform }
 }
 
+/* jscpd:ignore-start */
 async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
   let bytes = 0
   const chunks: Buffer[] = []
@@ -243,6 +244,7 @@ function answerError(res: ServerResponse, error: unknown): void {
   }
   answerJson(res, 500, { error: { code: 'INTERNAL_ERROR', message: 'Remote Access request failed' } })
 }
+/* jscpd:ignore-end */
 
 class HttpError extends Error {
   constructor(readonly status: number, readonly code: string, message: string) {

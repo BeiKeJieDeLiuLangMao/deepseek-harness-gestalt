@@ -9,6 +9,11 @@ import {
 } from '../src/companion-cache.ts'
 
 describe('Companion Cache', () => {
+  it('round-trips non-ASCII metadata through the cache', () => {
+    const sealed = sealCompanionCache('desktop-zh', JSON.stringify({ title: '会话' }))
+    expect(JSON.parse(openCompanionCache(sealed))).toEqual({ title: '会话' })
+  })
+
   it('seals metadata/transcripts per Desktop and omits automatic attachment or credential cache', () => {
     const sealed = sealCompanionCache('desktop-a', JSON.stringify({ title: 'S', transcript: ['hi'] }))
     expect(sealed.desktopId).toBe('desktop-a')

@@ -6,7 +6,7 @@ import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import LocalCredentialProvider from '@deepseek-ai/dsh-credentials-local'
-import WebRuntime from '@deepseek-ai/dsh-web'
+import WebRuntime, { WebError } from '@deepseek-ai/dsh-web'
 import {
   DeepSeekSearchProvider,
   DEEPSEEK_PROVIDER_ID,
@@ -163,6 +163,21 @@ describe('DeepSeekSearchProvider availability', () => {
     expect(searchProvider({ ...options, maxTokens: 0 }).available()).toBe(false)
     expect(searchProvider({ ...options, maxUses: 0 }).available()).toBe(false)
     expect(searchProvider({ ...options, maxUses: 1.5 }).available()).toBe(false)
+  })
+
+  it('is available for moonshot-search when a key and parseable URL are present', () => {
+    expect(searchProvider({
+      ...options,
+      protocol: 'moonshot-search',
+      resolveApiKey: async () => 'resolved',
+      apiKey: '',
+      baseURL: 'https://api.moonshot.cn/v1/search',
+    }).available()).toBe(true)
+    expect(searchProvider({
+      ...options,
+      protocol: 'moonshot-search',
+      baseURL: 'not a url',
+    }).available()).toBe(false)
   })
 })
 
@@ -558,15 +573,116 @@ describe('Moonshot dedicated search', () => {
     ])
   })
 
-  it('names a non-ASCII API key instead of throwing a ByteString error', async () => {
+  it('maps a moonshot HTTP error to WEB_PROVIDER_ERROR', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ error: { message: 'quota' } }, { status: 429 })))
     await expect(searchProvider({
       ...options,
       protocol: 'moonshot-search',
       baseURL: 'https://api.moonshot.cn/v1/search',
-      apiKey: '密钥',
-    }).search({ query: 'q' })).rejects.toMatchObject({
+    }).search({ query: 'q' })).rejects.toThrow(expect.objectContaining({
       code: 'WEB_PROVIDER_ERROR',
-      message: expect.stringContaining('header "authorization" is not ASCII'),
+      message: 'quota',
+    }))
+  })
+
+  it('maps an unparseable moonshot body to WEB_PROVIDER_ERROR', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('not json', { status: 200 })))
+    await expect(searchProvider({
+      ...options,
+      protocol: 'moonshot-search',
+      baseURL: 'https://api.moonshot.cn/v1/search',
+    }).search({ query: 'q' })).rejects.toThrow(expect.objectContaining({ code: 'WEB_PROVIDER_ERROR' }))
+  })
+
+  it('surfaces an abort during moonshot body parse as WEB_ABORTED', async () => {
+    const body = { json: () => Promise.reject(new DOMException('aborted', 'AbortError')), ok: true, status: 200 }
+    vi.stubGlobal('fetch', vi.fn(async () => body as unknown as Response))
+    await expect(searchProvider({
+      ...options,
+      protocol: 'moonshot-search',
+      baseURL: 'https://api.moonshot.cn/v1/search',
+    }).search({ query: 'q' })).rejects.toThrow(expect.objectContaining({ code: 'WEB_ABORTED' }))
+  })
+
+  it('rethrows a WebError raised while reading a moonshot success body', async () => {
+    const body = {
+      json: () => Promise.reject(new WebError('moonshot mapped', 'WEB_PROVIDER_ERROR')),
+      ok: true,
+      status: 200,
+    }
+    vi.stubGlobal('fetch', vi.fn(async () => body as unknown as Response))
+    await expect(searchProvider({
+      ...options,
+      protocol: 'moonshot-search',
+      baseURL: 'https://api.moonshot.cn/v1/search',
+    }).search({ query: 'q' })).rejects.toThrow(expect.objectContaining({
+      code: 'WEB_PROVIDER_ERROR',
+      message: 'moonshot mapped',
+    }))
+  })
+
+  it('dedupes, truncates, and prefers snippets for moonshot results', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({
+      search_results: [
+        { url: '', title: 'drop' },
+        { url: 'https://a.test', title: '', snippet: '', date: '' },
+        { url: 'https://a.test', title: 'second' },
+        { url: 'https://b.test', title: 'B', content: 'body', date: '2026-03-01' },
+        { url: 'https://c.test', title: 'C', snippet: 'kept' },
+      ],
+    })))
+    const result = await searchProvider({
+      ...options,
+      protocol: 'moonshot-search',
+      baseURL: 'https://api.moonshot.cn/v1/search',
+      maxUses: 5,
+    }).search({ query: 'q', maxResults: 2 })
+    expect(result).toEqual({
+      sources: [
+        { url: 'https://a.test' },
+        { url: 'https://b.test', title: 'B', snippet: 'body', publishedAt: '2026-03-01' },
+      ],
+      truncated: true,
     })
+  })
+
+  it('treats a missing moonshot result list as empty rather than truncated', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({})))
+    await expect(searchProvider({
+      ...options,
+      protocol: 'moonshot-search',
+      baseURL: 'https://api.moonshot.cn/v1/search',
+    }).search({ query: 'q' })).resolves.toEqual({ sources: [], truncated: false })
+  })
+
+  it('skips a moonshot item that omits url', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({
+      search_results: [{ title: 'no url' }, { url: 'https://ok.test', title: 'ok' }],
+    })))
+    await expect(searchProvider({
+      ...options,
+      protocol: 'moonshot-search',
+      baseURL: 'https://api.moonshot.cn/v1/search',
+    }).search({ query: 'q' })).resolves.toEqual({
+      sources: [{ url: 'https://ok.test', title: 'ok' }],
+      truncated: true,
+    })
+  })
+
+  it('names a non-ASCII API key instead of throwing a ByteString error', async () => {
+    try {
+      await searchProvider({
+        ...options,
+        protocol: 'moonshot-search',
+        baseURL: 'https://api.moonshot.cn/v1/search',
+        apiKey: '密钥',
+      }).search({ query: 'q' })
+      expect.unreachable('expected a WebError')
+    } catch (error) {
+      expect(error).toBeInstanceOf(WebError)
+      if (!(error instanceof WebError)) return
+      expect(error.code).toBe('WEB_PROVIDER_ERROR')
+      expect(error.message).toContain('header "authorization" is not ASCII')
+    }
   })
 })
