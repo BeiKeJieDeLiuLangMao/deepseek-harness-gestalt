@@ -96,6 +96,13 @@ describe('Companion Cache', () => {
     expect(await withA.open(desktopA, 'transcript', sealed)).toEqual(new TextEncoder().encode(plaintext))
   })
 
+  it('round-trips non-ASCII metadata through the cache', async () => {
+    const cache = new CompanionCache(new InMemoryCompanionCacheStore(), await cipherFor({}))
+    const plaintext = JSON.stringify({ title: '会话' })
+    await cache.saveOpenedContent(desktopA, 'session-metadata', plaintext)
+    expect(JSON.parse(await cache.loadOpenedContent(desktopA, 'session-metadata') ?? '')).toEqual({ title: '会话' })
+  })
+
   it('refuses to decrypt one Desktop row under another Desktop key', async () => {
     const keys = { 'desktop-a': await freshKey(), 'desktop-b': await freshKey() }
     const sealedByA = await (await cipherFor({ 'desktop-a': keys['desktop-a']! })).seal(

@@ -6,7 +6,7 @@ I can already run the DeepSeek Harness Session Surface in a browser with `dsh we
 
 ## Solution
 
-Ship **DeepSeek Gestalt**, a Desktop Host: an Electron window that starts a bundled official Node plus a locked `dsh web` Web Host on loopback and loads that URL. The existing Session Surface stays in one window with many Workspaces in the sidebar. Its Desktop-only overlay adds per-step time context, Session-local Schedule tools, a window frame, a GESTALT badge, a drag strip, and an Update Control next to Settings. Reminders run only while their original Session is live, retry overdue work when that Session reopens, and do not send operating-system or external notifications. Browser-only `dsh web` is unchanged. Updates come from GitHub Releases on the personal fork, after the user confirms download.
+Ship **DeepSeek Gestalt**, a Desktop Host: an Electron window that starts a bundled official Node plus a locked `dsh web` Web Host on loopback and loads that URL. The existing Session Surface stays in one window with many Workspaces in the sidebar. Its Desktop-only overlay adds Session-local Schedule tools, a window frame, a GESTALT badge, a drag strip, and an Update Control next to Settings. Reminders run only while their original Session is live, retry overdue work when that Session reopens, and do not send operating-system or external notifications. Browser-only `dsh web` is unchanged. Updates come from GitHub Releases on the personal fork, after the user confirms download.
 
 ## User Stories
 
@@ -46,7 +46,7 @@ Ship **DeepSeek Gestalt**, a Desktop Host: an Electron window that starts a bund
 34. As a Desktop user, I want the update feed to stay on the personal GitHub fork, so that already-installed apps do not lose their channel.
 35. As a macOS Desktop user, I want an Apple Events entitlement so the existing osascript picker still works under Hardened Runtime.
 36. As someone using Ungrouped sessions, I want those rows to keep meaning "session with no Workspace registration", so that Dock cwd is not "solved" by stuffing a fake project into Ungrouped.
-37. As a Desktop user, I want every new Session to know the current request time and expose Schedule tools, so that reminders work without editing a profile.
+37. As a Desktop user, I want every new Session to expose Schedule tools, so that reminders work without editing a profile.
 38. As a Desktop user, I want reminder delivery to remain inside the original live Session, so that closing the app never implies an operating-system or external notification will arrive.
 
 ## Implementation Decisions
@@ -57,7 +57,7 @@ Ship **DeepSeek Gestalt**, a Desktop Host: an Electron window that starts a bund
 - Session Surface is unchanged: many Workspaces and Sessions in one sidebar. A Workspace is not a window.
 - User data stays in `$DSH_HOME` / `~/.dsh` and the existing web profile. Desktop does not create a second home or a `gestalt` profile.
 - Dock / Start Menu cwd is the Launch Directory: `~/Library/Application Support/DeepSeek Gestalt/defaultWorkspace` on macOS, `%APPDATA%\DeepSeek Gestalt\defaultWorkspace` on Windows. Create it empty if missing. Do not register it as a Workspace.
-- Browser-only `dsh web` keeps its existing capability set. The Desktop overlay intentionally mounts time-context and Schedule after their required persistence and Agent services, while the native directory picker stays unchanged. Desktop adds the Apple Events entitlement for notarized macOS.
+- Browser-only `dsh web` keeps its existing capability set. The Desktop overlay mounts Schedule after its required persistence and Agent services and does not mount time-context, while the native directory picker stays unchanged. Desktop adds the Apple Events entitlement for notarized macOS.
 - Window Chrome: no system title bar. macOS traffic lights sit on a Desktop-only drag strip above the logo row. Windows paints its own caption buttons. No back/forward.
 - Wordmark: Desktop elects GESTALT via the existing sidebar brand chain; browser fallback remains HARNESS.
 - Update Control occupies the existing sidebar footer-action list on the same row as Settings (right when wide). It is not a Settings page.
@@ -90,7 +90,7 @@ A good test observes user-visible behavior at the Desktop Host boundary: the win
 
 Primary seam: **Desktop Host around the existing `dsh web:` announcement**. If the child prints a loopback URL and the window loads a page with `window.__DSH_BOOT__`, the wrap is correct. Secondary existing seams: sidebar brand chain, sidebar footer-action list, `window.dshDesktop` protocol. Do not add a new Host HTTP updater API.
 
-Modules under test: Desktop Host spawn/URL discovery, Launch Directory, updater state machine, Desktop overlay chrome (badge, drag strip, Update Control), sidebar foot layout (Settings and footer actions on one row), and the guarantee that browser composition does not mount the overlay. A keyless runnable Web composition plus the Desktop overlay drives a replayed model turn and snapshots both time-context messages, the Schedule catalog and call/result, and the final assistant reply.
+Modules under test: Desktop Host spawn/URL discovery, Launch Directory, updater state machine, Desktop overlay chrome (badge, drag strip, Update Control), sidebar foot layout (Settings and footer actions on one row), and the guarantee that browser composition does not mount the overlay. A keyless runnable Web composition plus the Desktop overlay drives a replayed model turn and snapshots the Schedule catalog and call/result plus the final assistant reply, and asserts that the turn records no time-context message.
 
 Prior art: CLI tests that wait for `dsh web: http://127.0.0.1:<port>`; sidebar apply/root/snapshot tests; client plugin tests that register into declared slots; keyless web snapshots when assembled GUI output changes.
 

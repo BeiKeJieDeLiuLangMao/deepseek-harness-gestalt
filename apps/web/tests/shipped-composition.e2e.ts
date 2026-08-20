@@ -52,6 +52,7 @@ const EXPECTED_TOOLS = [
   'subagent',
   'subagent_fork',
   'todo_write',
+  'tool_search',
   'update_goal',
   'web_search',
   'workflow',
@@ -77,11 +78,13 @@ it('assembles the shipped Web catalog, file-reference guidance, and confined acc
   scaffold = await launchWebScaffold()
   const ctx = scaffold.ctx
   // The catalog belongs to an AGENT, not to the process: every model-facing row
-  // now lives in a preset mounted under one session's scope, so the global
-  // layer holds nothing and a caller must name the agent to see anything. This
-  // composes from the deployment default — what a session that names no preset
-  // gets — which is the shape this test has always been about.
-  expect(ctx.tools.schemas().map(schema => schema.name)).toEqual([])
+  // lives in a preset mounted under one session's scope. The process-wide layer
+  // holds only the reserved discovery tool — the base bundle enables deferred
+  // tool search, and `tool_search` must stay visible before any agent exists so
+  // every scope can discover its dormant tools. This composes from the
+  // deployment default — what a session that names no preset gets — which is
+  // the shape this test has always been about.
+  expect(ctx.tools.schemas().map(schema => schema.name)).toEqual(['tool_search'])
   const handle = await ctx.agents.create({
     sessionId: SessionId('shipped-composition'),
     setup: agentCtx => ctx.agentPresets.mount(agentCtx).then(() => undefined),
