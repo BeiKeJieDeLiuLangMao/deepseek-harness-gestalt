@@ -13,6 +13,9 @@ import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import type { PreStepDecision } from '@deepseek-ai/dsh-agent'
 import type { MentionFileSystem, WorkspaceReferenceSource } from './types.ts'
 
+/** Word joiner inserted after `@` on paste so the token is not a Workspace Reference. */
+export const PASTE_IGNORE_MARK = '\u2060'
+
 /** `@` then a path with no whitespace, `@`, or `[` (so `@[label](uri)` stays a Session Reference). */
 const MENTION_PATTERN = /(?<![A-Za-z0-9._-])@([^\s@[\]]+)/g
 
@@ -31,6 +34,7 @@ export function scanMentions(text: string): readonly string[] {
   const out: string[] = []
   for (const match of text.matchAll(MENTION_PATTERN)) {
     const raw = match[1] as string
+    if (raw.includes(PASTE_IGNORE_MARK)) continue
     const relativePath = raw.endsWith('/') ? raw.slice(0, -1) : raw
     if (relativePath === '' || seen.has(relativePath)) continue
     seen.add(relativePath)

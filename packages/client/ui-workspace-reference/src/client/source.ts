@@ -4,6 +4,11 @@
  */
 import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import type { InputTriggerSource } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
+import {
+  DEFAULT_WORKSPACE_REFERENCE_SETTINGS,
+  type WorkspaceReferenceSettings,
+} from '../settings.ts'
+import { filterIndexedFiles, PASTE_IGNORE_MARK } from './scan.ts'
 import { rankFiles, type WorkspacePathEntry } from './rank.ts'
 
 /** Fetch the raw workspace index for one session. */
@@ -19,14 +24,19 @@ interface IndexCache {
   settled?: readonly WorkspacePathEntry[]
 }
 
+/** Live preference reader used by the picker and paste rewrite. */
+export type WorkspaceSettingsReader = () => WorkspaceReferenceSettings
+
 /**
  * Build the `workspace` `@` source over an injected index fetch.
  * @param search - session-addressed index RPC or test stub.
+ * @param settings - live preference reader; omitted uses product defaults.
  * @param menuLimit - maximum ranked picker rows (plugin Config default 12).
  * @returns the `workspace` `@` source.
  */
 export function createWorkspaceSource(
   search: WorkspaceIndexSearch,
+  settings: WorkspaceSettingsReader = () => ({ ...DEFAULT_WORKSPACE_REFERENCE_SETTINGS }),
   menuLimit = 12,
 ): InputTriggerSource {
   const fetches = new Map<SessionId, IndexCache>()
@@ -77,9 +87,12 @@ export function createWorkspaceSource(
     name: 'workspace',
     order: 1,
     async candidates(session, { query, signal }) {
+      const prefs = settings()
+      if (!prefs.enable) return []
       const files = await fetchIndex(session.sessionId)
       if (signal.aborted) return []
-      return rankFiles(files, query, menuLimit).map(file => ({
+      const filtered = filterIndexedFiles(files, prefs.exact, prefs.regex)
+      return rankFiles(filtered, query, menuLimit).map(file => ({
         name: file.relative,
         description: file.kind === 'dir' ? `${file.relative}/` : file.relative,
       }))
@@ -111,6 +124,15 @@ export function createWorkspaceSource(
         ? `${candidate.name}/`
         : candidate.name
       return { text: `@${token} ` }
+    },
+    onDescend({ candidate }) {
+      if (!candidate.description?.endsWith('/')) return undefined
+      return { text: `@${candidate.name}/` }
+    },
+    pasteTransform(text) {
+      const prefs = settings()
+      if (!prefs.enable || !prefs.pasteIgnore) return text
+      return text.replaceAll('@', `@${PASTE_IGNORE_MARK}`)
     },
     codec: {
       clipboardText: ref => `@${ref}`,

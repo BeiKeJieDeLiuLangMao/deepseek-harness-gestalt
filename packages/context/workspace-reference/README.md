@@ -45,6 +45,7 @@ Append-only. A new reference changes only the new suffix.
 
 - **Web scanner only in the first landing** — other hosts can mount the same plugin later; ACP and SDK text are not scanned until they do.
 - **Picker index is advisory** — paths beyond `maxIndexedFiles` or inside ignored directories can still be referenced by a hand-typed `@path` that exists inside the workspace.
-- **No gitignore** — only configured directory basenames and later settings filters apply.
+- **No gitignore** — the host walk skips only configured directory basenames. Exact/Regex basename filters apply in the browser picker, not the host walk.
+- **Paste-marked tokens are skipped** — a `@` followed by U+2060 is not a Workspace Reference.
 - **Email-like `@host` after whitespace** — `user@host.com` is not a path token, but a leading or space-prefixed `@host.com` still scans; injection still requires that basename to exist inside the workspace.
 - **Windows drive-relative tokens** — `C:foo` is rejected on every platform, including as a POSIX filename.

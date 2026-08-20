@@ -3290,7 +3290,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/context/workspace-reference/src/index.ts:35`](../packages/context/workspace-reference/src/index.ts)
+Source: [`packages/context/workspace-reference/src/index.ts:36`](../packages/context/workspace-reference/src/index.ts)
 
 ## Loadable plugins with no config
 

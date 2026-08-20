@@ -357,6 +357,15 @@ export class SessionInputShell implements SessionInput {
   }
 
   /**
+   * Fold trigger-source paste rewrites over clipboard plain text.
+   * @param text - clipboard plain text.
+   * @returns the rewritten text; unchanged without a trigger roster.
+   */
+  transformPaste(text: string): string {
+    return this.deps.inputTriggers?.()?.transformPaste(text) ?? text
+  }
+
+  /**
    * Paste text over the selection in one transaction, with any hot-snapshot
    * sync matches componentized inside it.
    * @param text - pasted plain text.

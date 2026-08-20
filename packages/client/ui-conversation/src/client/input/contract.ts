@@ -127,6 +127,8 @@ export interface ComposerKeyboard {
   steerQueue(): void
   undo(): void
   redo(): void
+  /** Fold trigger-source paste rewrites over clipboard plain text. */
+  transformPaste(text: string): string
   /** Paste over the selection (sync components ride the same transaction). */
   pasteBegin(text: string, selection: EditSelection, components?: readonly PasteComponent[], generation?: number): void
   /** Caret/selection gestures the machine cannot observe end the paste attempt. */

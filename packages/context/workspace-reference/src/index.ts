@@ -25,6 +25,7 @@ export {
   mentionPreStep,
   referenceForm,
   scanMentions,
+  PASTE_IGNORE_MARK,
 } from './mention.ts'
 export { rankFiles } from './search.ts'
 export { indexWorkspace } from './files.ts'

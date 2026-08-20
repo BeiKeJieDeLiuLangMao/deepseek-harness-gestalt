@@ -55,6 +55,10 @@ describe('scanMentions', () => {
     expect(scanMentions('compare @[other](dsh-session:abc) with @README.md')).toEqual(['README.md'])
   })
 
+  it('ignores paste-marked @ tokens', () => {
+    expect(scanMentions('see @\u2060README.md and @src/a.ts')).toEqual(['src/a.ts'])
+  })
+
   it('does not treat an email-like user@host.com as a path token', () => {
     expect(scanMentions('ping user@host.com then @src/a.ts')).toEqual(['src/a.ts'])
   })
