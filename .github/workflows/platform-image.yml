@@ -9,6 +9,14 @@ on:
       - 'packages/platform/**'
       - 'packages/host/webserver/**'
       - 'packages/host/frontend-static/**'
+  push:
+    branches: [master]
+    paths:
+      - 'apps/platform/**'
+      - '.github/workflows/platform-image.yml'
+      - 'packages/platform/**'
+      - 'packages/host/webserver/**'
+      - 'packages/host/frontend-static/**'
   workflow_dispatch:
     inputs:
       push:
