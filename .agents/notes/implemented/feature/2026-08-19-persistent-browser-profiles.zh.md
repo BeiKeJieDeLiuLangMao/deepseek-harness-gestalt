@@ -10,13 +10,13 @@ Status: implemented
 
 ## 决策
 
-`ctx.browserRuntime.create` 接收临时 Profile 或命名持久 Browser Profile。持久 Profile 复用稳定的 Tandem `persist:session-${idPrefix}-${name}` partition 与同一 `BrowserProfileId`。无密钥测试用带名称的存储 token 证明隔离，而不是真实 Electron cookie jar。临时 Profile 获得唯一的 `tmp-N` session 名、空存储，且没有地址栏标签。
+`ctx.browserRuntime.create` 接收临时 Profile 或命名持久 Browser Profile。持久 Profile 复用稳定的 `persist:session-${idPrefix}-${name}` partition 与同一 `BrowserProfileId`。无密钥测试用带名称的存储 token 证明隔离。当本进程是 Electron 时，按 Electron 门控的 e2e 证明两个 partition 的 cookie 隔离。临时 Profile 获得唯一的 `tmp-N` session 名、空存储，且没有地址栏标签。
 
 产品词汇只有 Browser Profile。打开页面状态携带供 Dock 放在地址栏旁的 `chrome`，以及作为模型可见身份证明的 `storage`。临时 chrome 省略 `name`。Dock 页眉、页脚与账号选择器均不存在。
 
 Provider 串行执行操作，并以 `BROWSER_PROFILE_BUSY` 拒绝同一命名 Profile 的第二个打开写入方。写操作仍要求 `expectedRevision`，并以 `BROWSER_REVISION_CONFLICT` 拒绝过期写入。close 丢弃临时身份并保留命名 partition。无效名称以 `BROWSER_PROFILE_NAME` 拒绝。
 
-确定性 Provider 是持久化、隔离、清理与单写入方测试的无密钥存储。Tandem Provider 把这些事实映射到一个托管子进程与固定 HTTP session 协议。Consumer 可以创建任一种 Profile；模型省略 `profile` 时，`browser_create` 仍默认创建临时 Profile。
+确定性 Provider 是持久化、隔离、清理与单写入方测试的无密钥存储。Electron Provider 把这些事实映射到本 Desktop Host 进程的 `session.fromPartition`。Tandem 形态 HTTP 客户端把同一 partition 方案映射到 Desktop 发布的 loopback 引擎，且从不启动 Tandem.app。Consumer 可以创建任一种 Profile；模型省略 `profile` 时，`browser_create` 仍默认创建临时 Profile。
 
 ## 考虑过的替代方案
 
@@ -30,11 +30,11 @@ Provider 串行执行操作，并以 `BROWSER_PROFILE_BUSY` 拒绝同一命名 P
 
 ## 后果
 
-命名 Profile 可在没有账号选择器的情况下恢复隔离身份。临时 Profile 仍可丢弃且无标签。并发写入方会明确失败。持久化、清理、修订冲突与带名称 token 的隔离在公开运行时 seam 上测试。Tandem fixture 记录 `persist:session-*` partition；有 checkout 时，按环境门控的真实 Electron e2e 才能证明 cookie 隔离。
+命名 Profile 可在没有账号选择器的情况下恢复隔离身份。临时 Profile 仍可丢弃且无标签。并发写入方会明确失败。持久化、清理、修订冲突与带名称 token 的隔离在公开运行时 seam 上测试。Electron 与 Tandem HTTP fixture 记录 `persist:session-*` partition。当本进程是 Electron 时，按 Electron 门控的 e2e 证明 cookie 隔离。
 
 ## 验证
 
-- `pnpm exec vitest run packages/browser/browser-runtime packages/browser/browser-runtime-deterministic packages/browser/browser-runtime-tandem packages/browser/tool-browser`
-- `pnpm exec vitest run packages/browser/browser-runtime packages/browser/browser-runtime-deterministic packages/browser/browser-runtime-tandem packages/browser/tool-browser --coverage --coverage.include='packages/browser/browser-runtime/src/**/*.ts' --coverage.include='packages/browser/browser-runtime-deterministic/src/**/*.ts' --coverage.include='packages/browser/browser-runtime-tandem/src/**/*.ts' --coverage.include='packages/browser/tool-browser/src/**/*.ts'`
+- `pnpm exec vitest run packages/browser/browser-runtime packages/browser/browser-runtime-deterministic packages/browser/browser-runtime-electron packages/browser/browser-runtime-tandem packages/browser/tool-browser`
+- `pnpm exec vitest run packages/browser/browser-runtime packages/browser/browser-runtime-deterministic packages/browser/browser-runtime-electron packages/browser/browser-runtime-tandem packages/browser/tool-browser --coverage --coverage.include='packages/browser/browser-runtime/src/**/*.ts' --coverage.include='packages/browser/browser-runtime-deterministic/src/**/*.ts' --coverage.include='packages/browser/browser-runtime-electron/src/**/*.ts' --coverage.include='packages/browser/browser-runtime-tandem/src/**/*.ts' --coverage.include='packages/browser/tool-browser/src/**/*.ts'`
 - `pnpm run test:snapshot -t 'Browser Profile'`
-- 真实 Tandem e2e 仍由 `DSH_TANDEM_CHECKOUT` 与 `DSH_TANDEM_BIN` 门控。
+- `packages/browser/browser-runtime-electron/tests/runtime.e2e.ts` 中按 Electron 门控的 e2e 在 Node 上会自行跳过。生产环境从不启动 Tandem.app。

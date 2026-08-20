@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-本能力族定义与 Provider 无关的浏览器控制接口、确定性无密钥 Provider、进程内 Electron Provider、Tandem 形态 HTTP 协议客户端、Session 持有的 Workspace binder，以及延迟加载的模型工具。
+本能力族定义与 Provider 无关的浏览器控制接口、确定性无密钥 Provider、进程内 Electron Provider、Tandem 形态 HTTP 协议客户端、Session 持有的 Workspace binder，以及延迟加载的模型工具。Desktop Host 在 macOS 与 Windows 上交付 Electron Provider。Linux 不在支持范围内。
 
 | 包 | 角色 | ctx 键 |
 |---|---|---|

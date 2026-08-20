@@ -10,13 +10,13 @@ A user can sign in inside a real browser, but the Browser Runtime tracer only ad
 
 ## Decision
 
-`ctx.browserRuntime.create` accepts a temporary Profile or a named persistent Browser Profile. Persistent Profiles reuse a stable Tandem `persist:session-${idPrefix}-${name}` partition and the same `BrowserProfileId`. Keyless tests prove isolation with name-stamped storage tokens, not a live Electron cookie jar. Temporary Profiles receive a unique `tmp-N` session name, empty storage, and no address-field label.
+`ctx.browserRuntime.create` accepts a temporary Profile or a named persistent Browser Profile. Persistent Profiles reuse a stable `persist:session-${idPrefix}-${name}` partition and the same `BrowserProfileId`. Keyless tests prove isolation with name-stamped storage tokens. Electron-gated e2e proves two-partition cookie isolation when this process is Electron. Temporary Profiles receive a unique `tmp-N` session name, empty storage, and no address-field label.
 
 The product vocabulary is Browser Profiles only. Open page state carries `chrome` for Dock to place one label near the address field and `storage` as the model-visible identity proof. Temporary chrome omits `name`. Dock headers, footers, and an account picker are absent.
 
 Providers serialize operations and reject a second open writer of the same named Profile with `BROWSER_PROFILE_BUSY`. Mutations still require `expectedRevision` and reject `BROWSER_REVISION_CONFLICT`. Close discards a temporary identity and retains a named partition. Invalid names reject with `BROWSER_PROFILE_NAME`.
 
-The deterministic Provider is the keyless store for persistence, isolation, cleanup, and single-writer tests. The Tandem Provider maps those facts onto one managed child and the pinned HTTP session protocol. The Consumer may create either kind of Profile; `browser_create` still defaults to temporary when the model omits `profile`.
+The deterministic Provider is the keyless store for persistence, isolation, cleanup, and single-writer tests. The Electron Provider maps those facts onto `session.fromPartition` in this Desktop Host process. The Tandem-shaped HTTP client maps the same partition scheme onto the loopback engine Desktop publishes and never launches Tandem.app. The Consumer may create either kind of Profile; `browser_create` still defaults to temporary when the model omits `profile`.
 
 ## Alternatives considered
 
@@ -30,11 +30,11 @@ The deterministic Provider is the keyless store for persistence, isolation, clea
 
 ## Consequences
 
-Named Profiles restore isolated identities without an account picker. Temporary Profiles remain disposable and unlabeled. Concurrent writers fail loudly. Persistence, cleanup, revision conflict, and name-stamped isolation are tested at the public runtime seam. The Tandem fixture records the `persist:session-*` partition; env-gated real Electron e2e can prove cookie isolation when a checkout is present.
+Named Profiles restore isolated identities without an account picker. Temporary Profiles remain disposable and unlabeled. Concurrent writers fail loudly. Persistence, cleanup, revision conflict, and name-stamped isolation are tested at the public runtime seam. Electron and Tandem HTTP fixtures record the `persist:session-*` partition. Electron-gated e2e proves cookie isolation when this process is Electron.
 
 ## Verification
 
-- `pnpm exec vitest run packages/browser/browser-runtime packages/browser/browser-runtime-deterministic packages/browser/browser-runtime-tandem packages/browser/tool-browser`
-- `pnpm exec vitest run packages/browser/browser-runtime packages/browser/browser-runtime-deterministic packages/browser/browser-runtime-tandem packages/browser/tool-browser --coverage --coverage.include='packages/browser/browser-runtime/src/**/*.ts' --coverage.include='packages/browser/browser-runtime-deterministic/src/**/*.ts' --coverage.include='packages/browser/browser-runtime-tandem/src/**/*.ts' --coverage.include='packages/browser/tool-browser/src/**/*.ts'`
+- `pnpm exec vitest run packages/browser/browser-runtime packages/browser/browser-runtime-deterministic packages/browser/browser-runtime-electron packages/browser/browser-runtime-tandem packages/browser/tool-browser`
+- `pnpm exec vitest run packages/browser/browser-runtime packages/browser/browser-runtime-deterministic packages/browser/browser-runtime-electron packages/browser/browser-runtime-tandem packages/browser/tool-browser --coverage --coverage.include='packages/browser/browser-runtime/src/**/*.ts' --coverage.include='packages/browser/browser-runtime-deterministic/src/**/*.ts' --coverage.include='packages/browser/browser-runtime-electron/src/**/*.ts' --coverage.include='packages/browser/browser-runtime-tandem/src/**/*.ts' --coverage.include='packages/browser/tool-browser/src/**/*.ts'`
 - `pnpm run test:snapshot -t 'Browser Profile'`
-- Real Tandem e2e remains gated by `DSH_TANDEM_CHECKOUT` and `DSH_TANDEM_BIN`.
+- Electron-gated e2e in `packages/browser/browser-runtime-electron/tests/runtime.e2e.ts` self-skips on Node. Production never launches Tandem.app.

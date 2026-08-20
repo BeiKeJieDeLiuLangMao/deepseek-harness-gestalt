@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-19-persistent-browser-profiles.md
-2026-08-19-persistent-browser-profiles.md: 8d265a27676b92bb15b629d16eea949451725f8b
-2026-08-19-persistent-browser-profiles.zh.md: 744b41564b92ac4b9e64a9d34fdbe5bb8bcb70c1
+2026-08-19-persistent-browser-profiles.md: 8faafbcf04d4eaffb8076d77a4cbdd697863e266
+2026-08-19-persistent-browser-profiles.zh.md: e5e1586574d783471a456d5b71cbf96f494749c9
