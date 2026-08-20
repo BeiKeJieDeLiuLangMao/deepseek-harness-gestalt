@@ -2,13 +2,13 @@
 
 [English](browser-runtime.md) | 中文
 
-Browser Runtime 能力把与 Provider 无关的 [`ctx.browserRuntime`](../../packages/browser/browser-runtime) 服务、无密钥 [`dsh-browser-runtime-deterministic`](../../packages/browser/browser-runtime-deterministic) Provider、托管式 Tandem Browser 的 [`dsh-browser-runtime-tandem`](../../packages/browser/browser-runtime-tandem) Provider、Session 持有的 [`dsh-browser-workspace`](../../packages/browser/browser-workspace) binder 与延迟 [`dsh-tool-browser`](../../packages/browser/tool-browser) Consumer 分离开来。它是 Agent loop 之外的可选能力。
+Browser Runtime 能力把与 Provider 无关的 [`ctx.browserRuntime`](../../packages/browser/browser-runtime) 服务、无密钥 [`dsh-browser-runtime-deterministic`](../../packages/browser/browser-runtime-deterministic) Provider、进程内 Electron 的 [`dsh-browser-runtime-electron`](../../packages/browser/browser-runtime-electron) Provider、Tandem 形态 HTTP 的 [`dsh-browser-runtime-tandem`](../../packages/browser/browser-runtime-tandem) 客户端、Session 持有的 [`dsh-browser-workspace`](../../packages/browser/browser-workspace) binder 与延迟 [`dsh-tool-browser`](../../packages/browser/tool-browser) Consumer 分离开来。它是 Agent loop 之外的可选能力。
 
 ## 身份与状态
 
-`BrowserTarget` 包含四个不透明品牌身份：Profile、Workspace、浏览器实例与标签页。调用方携带 `create` 返回的完整 target；这些字符串值没有调用方可见结构。打开状态包含 URL、标题、文本、焦点、修订号、`controlOwner`、地址栏 `chrome` 与 partition 存储的 `storage`。临时 chrome 不带标签。关闭状态是保留 target 与修订号的终态回执。
+`BrowserTarget` 包含四个不透明品牌身份：Profile、Workspace、浏览器实例与标签页。调用方携带 `create` 返回的完整 target；这些字符串值没有调用方可见结构。打开状态包含 URL、标题、文本、焦点、修订号、`controlOwner`、地址栏 `chrome` 与 `storage`。存储隔离来自 `chrome.partition` 上的 Chromium partition；除非 Provider 观察到这些字段，否则它们保持为空。临时 chrome 不带标签。关闭状态是保留 target 与修订号的终态回执。
 
-`unavailable` 状态是对既有 target 的 Provider 可用性丢失的真实投影：托管式 Tandem Provider 在其子进程崩溃或健康检查失败时提交它，保留 target、最后修订号与当前控制权所有者，说明丢失原因，并标记进行中的重连。它不是终态关闭回执；重连成功后会以同一 target、下一修订号重新提交打开页面状态，重连耗尽则提交 `reconnect-failed`。
+`unavailable` 状态是对既有 target 的 Provider 可用性丢失的真实投影：Electron Provider 在渲染进程崩溃时提交它，Tandem 形态 HTTP 客户端在其 loopback 服务器或可选 fixture 子进程健康检查失败时提交它。两者都保留 target、最后修订号与当前控制权所有者，说明丢失原因，并标记进行中的重连。它不是终态关闭回执；重连成功后会以同一 target、下一修订号重新提交打开页面状态，重连耗尽则提交 `reconnect-failed`。
 
 ```ts type-equiv
 /** Address-field chrome facts for one committed Browser Profile. Temporary Profiles omit a label. */
@@ -33,11 +33,13 @@ interface BrowserUnavailableState {
 
 ## 并发与生命周期
 
-Provider 串行执行操作。`create` 可以把新实例附加到已有 Workspace，或把新标签页附加到已有实例。`navigate`、`focus`、`input`、`takeover`、`returnControl` 与 `close` 要求最后观察到的修订号，并拒绝过期写入。`controlOwner` 是报告的所有权。锁是修订号：`observe` 之后，匹配当前修订号的 Agent `navigate` 或 `focus` 会在不调用 `returnControl` 的情况下收回该标签页。人工 `input` 与 `takeover` 会把 `controlOwner` 设为 `human`；`returnControl` 与 Agent 写入会把它设为 `agent`。`observe` 与 `screenshot` 不递增修订号。命名持久 Profile 在关闭后恢复同一 `persist:session-*` partition。临时 Profile 获得唯一 partition，且不留下可复用身份。同一命名 Profile 的第二个独立写入方会以 `BROWSER_PROFILE_BUSY` 拒绝。释放阶段停止接收新操作、排空已接受操作，并关闭每个仍打开的 Profile。Session 本地所有权、Dock 事实、已持久化的控制权以及跨 Session 隔离见 [`dsh-browser-workspace`](../../packages/browser/browser-workspace)。
+Provider 串行执行操作。`create` 可以把新实例附加到已有 Workspace，或把新标签页附加到已有实例。`navigate`、`focus`、`input`、`takeover`、`returnControl` 与 `close` 要求最后观察到的修订号，并拒绝过期写入。`controlOwner` 是报告的所有权。锁是修订号：`observe` 之后，匹配当前修订号的 Agent `navigate` 或 `focus` 会在不调用 `returnControl` 的情况下收回该标签页。人工 `input` 与 `takeover` 会把 `controlOwner` 设为 `human`；`returnControl` 与 Agent 写入会把它设为 `agent`。`observe` 与 `screenshot` 不递增修订号。命名持久 Profile 在关闭后恢复同一 `persist:session-*` partition。临时 Profile 获得临时 `session-*` partition，且不留下可复用身份。同一命名 Profile 的第二个独立写入方会以 `BROWSER_PROFILE_BUSY` 拒绝。释放阶段停止接收新操作、排空已接受操作，并关闭每个仍打开的 Profile。Session 本地所有权、Dock 事实、已持久化的控制权以及跨 Session 隔离见 [`dsh-browser-workspace`](../../packages/browser/browser-workspace)。
 
 确定性 Provider 为每个 generation 分配独立 owner token。其 invariant 在首次加载与热重载时从该 generation 的当前权威 state 建立基线，随后为稳定身份、精确修订顺序与终态关闭注册同步 pre-commit validator。验证失败时，原 state 仍是权威来源。提交后，Provider 在 `browser/runtime-state` 上发布状态；每个普通 observer failure 都受到容纳，后续 observer 继续运行，且异步 observer 不会被等待。
 
-tandem Provider 持有一个固定上游 revision `3b613cfd4c299609ca7ca415d638c1b71c6ba5de` 的托管 Tandem Browser 子进程。它通过 subprocess 服务解析可执行文件并以脱敏环境 spawn，把 `baseUrl` 约束为绝对的 loopback HTTP origin，从 `tokenFile` 读取 bearer token，并在接收任何操作之前于 `startupTimeoutMs` 内轮询 `GET /agent/version` 与 `GET /status`。每个 Profile 创建一个 Tandem session（`POST /sessions/create`）与一个 `persist:session-*` partition，把 DSH 持有的不透明身份投影到 Tandem tab id 之上。子进程崩溃或健康探测失败会提交 `unavailable` 状态，并最多尝试 `reconnectAttempts` 次子进程重启，成功后以同一 target 重新提交打开页面状态。释放阶段排空操作队列、销毁剩余 session（`POST /sessions/destroy`）并 join 进程树。格式错误的 Tandem 响应以 `BROWSER_PROTOCOL` 拒绝；丢失或不可达的运行时以 `BROWSER_RUNTIME_UNAVAILABLE` 拒绝。出处与上游贡献候选见包内 [UPSTREAM.md](../../packages/browser/browser-runtime-tandem/UPSTREAM.md)。
+Electron Provider 在本进程中持有隐藏的离屏 `webContents`。它仅在 `process.versions.electron` 已设置时加载，为命名 Profile 创建 `persist:session-*` partition、为临时 Profile 创建临时 `session-*` partition，用 `webContents.capturePage` 捕获 PNG 字节，用 `executeJavaScript` 读取页面文本，并通过单一插入或按键路径送达人工文本。Chromium persist partition 位于 Electron `userData/Partitions/<name>`。渲染进程崩溃会提交 `unavailable`，并为同一 target 重建隐藏窗口。Desktop Host 还会在该引擎上绑定 Tandem 的 HTTP 词汇，使 Node Web Host 可以驱动它。
+
+tandem 包是该词汇在固定 revision `3b613cfd4c299609ca7ca415d638c1b71c6ba5de` 上的协议专用 HTTP 客户端。它把 `baseUrl` 约束为绝对的 loopback HTTP origin，从 `tokenFile` 读取 bearer token，并在接收任何操作之前于 `startupTimeoutMs` 内轮询 `GET /agent/version` 与 `GET /status`。每个 Profile 在 `persist:session-*` 或临时 `session-*` partition 上创建一个 HTTP session（`POST /sessions/create`），把 DSH 持有的不透明身份投影到 tab id 之上。人工 `input` 使用携带客户端 `expectedRevision` 的 `POST /input`。生产环境的 Desktop 从不启动 Tandem.app；可选 fixture 子进程仅用于 HTTP 协议测试，且 `sidecar: false` 在插件加载拒绝 `command`/`cwd`。格式错误的响应以 `BROWSER_PROTOCOL` 拒绝；丢失或不可达的运行时以 `BROWSER_RUNTIME_UNAVAILABLE` 拒绝。出处与上游贡献候选见包内 [UPSTREAM.md](../../packages/browser/browser-runtime-tandem/UPSTREAM.md)。
 
 ## 发现与重放
 
@@ -170,7 +172,7 @@ returnControl(request: BrowserMutationRequest): Promise<BrowserPageState>
 abstract close(request: BrowserMutationRequest): Promise<BrowserClosedState>
 ```
 
-Source: [`packages/browser/browser-runtime/src/index.ts:104`](../../packages/browser/browser-runtime/src/index.ts)
+Source: [`packages/browser/browser-runtime/src/index.ts:106`](../../packages/browser/browser-runtime/src/index.ts)
 
 <a id="ctxbrowserworkspace--browserworkspacebinder"></a>
 
@@ -368,5 +370,5 @@ Post-commit Browser Runtime lifecycle notification. Providers contain synchronou
 'browser/runtime-state'(state: BrowserRuntimeState): void
 ```
 
-Source: [`packages/browser/browser-runtime/src/index.ts:94`](../../packages/browser/browser-runtime/src/index.ts)
+Source: [`packages/browser/browser-runtime/src/index.ts:96`](../../packages/browser/browser-runtime/src/index.ts)
 <!-- END GENERATED cordis-surface -->

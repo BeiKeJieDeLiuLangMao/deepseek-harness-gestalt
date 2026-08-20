@@ -67,6 +67,13 @@ describe('createFixtureFaces browserWorkspace remotes', () => {
     expect(afterClose.status).toBe('closed')
   })
 
+  it('accepts the generated sessionId wire name for observe', async () => {
+    const { rpc } = createFixtureFaces()
+    const observed = await callRemote<{ status: string; title: string }>(
+      rpc, 'browserWorkspace/observe', { sessionId: sid('fx-alpha'), target: TARGET })
+    expect(observed).toMatchObject({ status: 'open', title: 'Example Domain' })
+  })
+
   it('rejects an unknown Session', async () => {
     const { rpc } = createFixtureFaces()
     const missing = await rpc.call('/api', 'browserWorkspace/observe', {

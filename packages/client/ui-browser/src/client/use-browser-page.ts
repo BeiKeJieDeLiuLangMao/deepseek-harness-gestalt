@@ -40,13 +40,19 @@ export function useBrowserPage(
     let cancelled = false
     const wasCancelled = (): boolean => cancelled
     const load = async (): Promise<void> => {
-      const state = await observe(target)
-      if (wasCancelled()) return
-      const nextPage = openPageOf(state)
-      const nextShot = nextPage === undefined ? undefined : await screenshot(target)
-      if (wasCancelled()) return
-      setPage(nextPage)
-      setShot(nextShot)
+      try {
+        const state = await observe(target)
+        if (wasCancelled()) return
+        const nextPage = openPageOf(state)
+        const nextShot = nextPage === undefined ? undefined : await screenshot(target)
+        if (wasCancelled()) return
+        setPage(nextPage)
+        setShot(nextShot)
+      } catch {
+        // Observe/screenshot can reject when the Session binding is not yet
+        // on the Remote (fixture restore, or a closed Session). The collapsed
+        // layer stays Untitled until the next tab-identity change retries.
+      }
     }
     void load()
     return () => { cancelled = true }

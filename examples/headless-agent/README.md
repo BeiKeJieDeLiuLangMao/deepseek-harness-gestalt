@@ -19,7 +19,7 @@ Snapshot suites run this directory's configuration through [`tests/fixtures/head
 
 [`browser-runtime.cordis.snapshot.yml`](browser-runtime.cordis.snapshot.yml) is the keyless runnable Browser Runtime tracer. It discovers nine deferred Browser tools, creates one temporary Profile and tab, navigates, observes, screenshots, focuses, records human input and reported ownership, returns ownership to the Agent, closes, then reloads the same Session to prove that schemas and rendered Browser facts, including control ownership, are reconstructable.
 
-`browser-runtime-tandem.cordis.snapshot.yml` runs the same Browser tool path — `tool_search` → `browser_create` → `browser_navigate` → `browser_observe` → `browser_screenshot` → `browser_focus` → `browser_input` → `browser_takeover` → `browser_return_control` → `browser_close` — against the managed Tandem Provider and a local Tandem HTTP fixture.
+`browser-runtime-tandem.cordis.snapshot.yml` runs the same Browser tool path — `tool_search` → `browser_create` → `browser_navigate` → `browser_observe` → `browser_screenshot` → `browser_focus` → `browser_input` → `browser_takeover` → `browser_return_control` → `browser_close` — against the Tandem-shaped HTTP Provider and a local HTTP fixture.
 
 ## E2B POC overlay
 

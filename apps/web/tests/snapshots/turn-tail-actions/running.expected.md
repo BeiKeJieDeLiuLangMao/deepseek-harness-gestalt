@@ -25,6 +25,7 @@
   - text: Bash Print alpha to stdout
 - paragraph: partial
 - status: Deep diving...
+- button "Add images"
 - textbox "Message the agent"
 - button "Commands":
   - img

@@ -1,3 +1,4 @@
+import { spawn, type ChildProcess } from 'node:child_process'
 import { createServer } from 'node:net'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -96,6 +97,44 @@ async function setup(faults: Record<string, unknown> = {}, overrides: Record<str
   return { ctx, root, tokenFile, pidFile, crashMarker }
 }
 
+const RM_RETRY_LIMIT = 10
+const RM_RETRY_DELAY_MS = 50
+
+function retryableRmError(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException | null)?.code
+  return code === 'EACCES' || code === 'EBUSY' || code === 'EPERM'
+}
+
+/** Remove a temp tree after every handle has dropped; retry Windows linger codes. */
+async function rmWhenIdle(path: string): Promise<void> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await rm(path, { recursive: true, force: true })
+      return
+    } catch (error) {
+      if (attempt >= RM_RETRY_LIMIT || !retryableRmError(error)) throw error
+      await new Promise(resolve => setTimeout(resolve, RM_RETRY_DELAY_MS))
+    }
+  }
+}
+
+/** Kill a directly spawned fixture and await its exit before directory removal. */
+async function joinSpawnedChild(child: ChildProcess): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null) return
+  const exited = new Promise<void>((resolve, reject) => {
+    child.once('exit', () => { resolve() })
+    child.once('error', reject)
+    if (child.exitCode !== null || child.signalCode !== null) resolve()
+  })
+  child.kill('SIGTERM')
+  const timer = setTimeout(() => { child.kill('SIGKILL') }, 1_000)
+  try {
+    await exited
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 /** Poll until the recorded fixture child pid is no longer schedulable. */
 async function assertJoined(pidFile: string): Promise<void> {
   let pid = 0
@@ -130,6 +169,7 @@ describe('Tandem Browser Runtime configuration', () => {
     const cases: Array<[string, Record<string, unknown>, RegExp]> = [
       ['empty command', { command: '' }, /command must be non-empty/],
       ['blank cwd', { cwd: ' ' }, /cwd must be non-empty/],
+      ['command without cwd', { command: process.execPath, cwd: undefined }, /command and cwd must both be set/],
       ['empty tokenFile', { tokenFile: '' }, /tokenFile must be non-empty/],
       ['blank idPrefix', { idPrefix: ' \t' }, /idPrefix must be non-empty/],
       ['zero startupTimeoutMs', { startupTimeoutMs: 0 }, /startupTimeoutMs/],
@@ -163,6 +203,78 @@ describe('Tandem Browser Runtime configuration', () => {
         ...overrides,
       }), label).rejects.toThrow(failure)
     }
+  })
+
+  it('loads as a protocol-only HTTP client without a fixture child', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-tandem-protocol-'))
+    const port = await freePort()
+    const tokenFile = join(root, 'api-token')
+    const child = spawn(process.execPath, [FIXTURE], {
+      cwd: root,
+      env: {
+        ...process.env,
+        TANDEM_FIXTURE_PORT: String(port),
+        TANDEM_FIXTURE_TOKEN_FILE: tokenFile,
+      },
+      stdio: 'ignore',
+    })
+    const ctx = new Context()
+    contexts.push(ctx)
+    try {
+      await ctx.plugin(TandemBrowserRuntime, {
+        baseUrl: `http://127.0.0.1:${String(port)}`,
+        tokenFile,
+        idPrefix: 'protocol-only',
+        sidecar: false,
+        startupTimeoutMs: 5_000,
+        requestTimeoutMs: 2_000,
+        healthPollMs: 10,
+        reconnectAttempts: 0,
+        processGraceMs: 100,
+      })
+      const created = await ctx.browserRuntime.create({ profile: 'temporary' })
+      expect(created.chrome.partition).toBe('session-protocol-only-tmp-1')
+      await ctx.browserRuntime.close({ target: created.target, expectedRevision: 0 })
+    } finally {
+      const index = contexts.indexOf(ctx)
+      if (index !== -1) contexts.splice(index, 1)
+      await ctx.fiber.dispose()
+      await joinSpawnedChild(child)
+      await rmWhenIdle(root)
+    }
+  })
+
+  it('rejects a fixture command when subprocess is not composed', async () => {
+    const ctx = new Context()
+    contexts.push(ctx)
+    await ctx.plugin(TandemBrowserRuntime, {
+      command: process.execPath,
+      cwd: process.cwd(),
+      baseUrl: `http://127.0.0.1:${String(await freePort())}`,
+      tokenFile: '/tmp/token',
+      startupTimeoutMs: 200,
+      requestTimeoutMs: 200,
+      healthPollMs: 10,
+      reconnectAttempts: 0,
+    })
+    await expect(ctx.browserRuntime.create({ profile: 'temporary' }))
+      .rejects.toMatchObject({ code: 'BROWSER_RUNTIME_UNAVAILABLE', message: /requires ctx.subprocess/ })
+  })
+
+  it('rejects command and cwd at load when sidecar is disabled', async () => {
+    const ctx = new Context()
+    contexts.push(ctx)
+    await expect(ctx.plugin(TandemBrowserRuntime, {
+      command: process.execPath,
+      cwd: process.cwd(),
+      sidecar: false,
+      baseUrl: `http://127.0.0.1:${String(await freePort())}`,
+      tokenFile: '/tmp/token',
+      startupTimeoutMs: 200,
+      requestTimeoutMs: 200,
+      healthPollMs: 10,
+      reconnectAttempts: 0,
+    })).rejects.toThrow(/command and cwd must be omitted when sidecar is disabled/)
   })
 
   it('accepts every loopback hostname form and the default identity prefix', async () => {
@@ -200,7 +312,7 @@ describe('Tandem Browser Runtime public lifecycle', () => {
       controlOwner: 'agent',
       chrome: {
         kind: 'temporary',
-        partition: 'persist:session-tandem-test-tmp-1',
+        partition: 'session-tandem-test-tmp-1',
       },
       storage: {
         cookies: '',
@@ -268,10 +380,10 @@ describe('Tandem Browser Runtime public lifecycle', () => {
       target: identities,
     })
     const humanFirstRejected = humanFirst.find(result => result.status === 'rejected')
-    expect(humanFirstRejected?.status === 'rejected' ? humanFirstRejected.reason : undefined).toMatchObject({
-      code: 'BROWSER_REVISION_CONFLICT',
-      message: expect.stringMatching(/current 1; observe again before mutating/),
-    })
+    if (humanFirstRejected?.status !== 'rejected') throw new Error('expected a revision conflict')
+    if (!(humanFirstRejected.reason instanceof BrowserRuntimeError)) throw new Error('expected BrowserRuntimeError')
+    expect(humanFirstRejected.reason.code).toBe('BROWSER_REVISION_CONFLICT')
+    expect(humanFirstRejected.reason.message).toMatch(/current 1; observe again before mutating/)
     const afterHuman = await ctx.browserRuntime.observe({ target: created.target })
     expect(afterHuman).toMatchObject({
       status: 'open',
@@ -294,15 +406,24 @@ describe('Tandem Browser Runtime public lifecycle', () => {
     })
     expect(returned).toMatchObject({ revision: 3, controlOwner: 'agent', target: identities })
 
+    const resynced = await ctx.browserRuntime.observe({ target: created.target })
+    expect(resynced).toMatchObject({
+      status: 'open',
+      revision: 1,
+      url: 'https://example.test/',
+      controlOwner: 'agent',
+      target: identities,
+    })
+
     const agentFirst = await Promise.allSettled([
       ctx.browserRuntime.navigate({
         target: created.target,
-        expectedRevision: returned.revision,
+        expectedRevision: resynced.revision,
         url: 'https://login.test/',
       }),
       ctx.browserRuntime.input({
         target: created.target,
-        expectedRevision: returned.revision,
+        expectedRevision: resynced.revision,
         text: 'later human',
       }),
     ])
@@ -314,7 +435,7 @@ describe('Tandem Browser Runtime public lifecycle', () => {
     const afterAgentFirst = await ctx.browserRuntime.observe({ target: created.target })
     expect(afterAgentFirst).toMatchObject({
       status: 'open',
-      revision: 4,
+      revision: 2,
       url: 'https://login.test/',
       controlOwner: 'agent',
       target: identities,
@@ -325,7 +446,7 @@ describe('Tandem Browser Runtime public lifecycle', () => {
       expectedRevision: afterAgentFirst.revision,
     })
     expect(clickOnly).toMatchObject({
-      revision: 5,
+      revision: 3,
       url: 'https://login.test/',
       title: 'Loaded page',
       text: 'Signed in as .\nidentity=',
@@ -372,7 +493,13 @@ describe('Tandem Browser Runtime public lifecycle', () => {
     const restored = await ctx.browserRuntime.create({ profile: 'persistent', name: BrowserProfileName('work') })
     expect(restored.chrome.partition).toBe(work.chrome.partition)
     expect(restored.target.profileId).toBe(work.target.profileId)
-    expect(restored.storage).toEqual(signedIn.storage)
+    expect(restored.storage).toEqual({
+      cookies: '',
+      localStorage: '',
+      indexedDb: '',
+      cache: '',
+      serviceWorker: '',
+    })
     expect(restored.text).toContain('identity=work')
   })
 
@@ -604,7 +731,13 @@ describe('Tandem Browser Runtime startup bounds', () => {
       .resolves.toMatchObject({
         status: 'open',
         chrome: { kind: 'persistent', name: 'work' },
-        storage: { localStorage: 'work' },
+        storage: {
+          cookies: '',
+          localStorage: '',
+          indexedDb: '',
+          cache: '',
+          serviceWorker: '',
+        },
         text: 'identity=work',
       })
     const seeded = await setup({ pageContent: 'seed-storage' })
@@ -693,6 +826,15 @@ describe('Tandem Browser Runtime protocol fidelity', () => {
       [{ navigate: 'status-500' }, (ctx, t) => ctx.browserRuntime.navigate({
         target: t as never, expectedRevision: 0, url: 'https://example.test/',
       }), /HTTP 500 .*internal fixture failure/],
+      [{ navigate: 'no-revision' }, (ctx, t) => ctx.browserRuntime.navigate({
+        target: t as never, expectedRevision: 0, url: 'https://example.test/',
+      }), /navigate response field revision must be a safe integer/],
+      [{ input: 'ok-false' }, (ctx, t) => ctx.browserRuntime.input({
+        target: t as never, expectedRevision: 0, text: 'x',
+      }), /did not apply input/],
+      [{ input: 'revision-conflict-non-json' }, (ctx, t) => ctx.browserRuntime.input({
+        target: t as never, expectedRevision: 0, text: 'x',
+      }), /HTTP 409 .*not-json/],
       [{ tabsList: 'not-array' }, (ctx, t) => ctx.browserRuntime.observe({ target: t as never }), /tabs must be an array/],
       [{ tabsList: 'bad-tab-shape' }, (ctx, t) => ctx.browserRuntime.observe({ target: t as never }), /tabs list tab response must be an object/],
       [{ pageContent: 'non-object' }, (ctx, t) => ctx.browserRuntime.observe({ target: t as never }), /page content response must be an object/],
@@ -712,6 +854,60 @@ describe('Tandem Browser Runtime protocol fidelity', () => {
       await expect(operate(ctx, created.target), JSON.stringify(faults))
         .rejects.toMatchObject({ code: 'BROWSER_PROTOCOL', message: failure })
     }
+  })
+
+  it('keeps a mutation when the follow-up page read dies and projects a crashed observe', async () => {
+    const { ctx } = await setup({ pageContent: 'fail-after-first' })
+    const created = await ctx.browserRuntime.create({ profile: 'temporary' })
+    const navigated = await ctx.browserRuntime.navigate({
+      target: created.target,
+      expectedRevision: 0,
+      url: 'https://example.test/',
+    })
+    expect(navigated).toMatchObject({ status: 'open', revision: 1, url: 'https://example.test/' })
+    await expect(ctx.browserRuntime.observe({ target: created.target }))
+      .resolves.toMatchObject({ status: 'unavailable', reason: 'crashed' })
+  })
+
+  it('surfaces an HTTP revision conflict and adopts the server revision on observe', async () => {
+    const conflict = await setup({ input: 'revision-conflict' })
+    const conflictCreated = await conflict.ctx.browserRuntime.create({ profile: 'temporary' })
+    await expect(conflict.ctx.browserRuntime.input({
+      target: conflictCreated.target,
+      expectedRevision: 0,
+      text: 'x',
+    })).rejects.toMatchObject({
+      code: 'BROWSER_REVISION_CONFLICT',
+      message: /observe again before mutating/,
+    })
+
+    const noMessage = await setup({ input: 'revision-conflict-no-message' })
+    const noMessageCreated = await noMessage.ctx.browserRuntime.create({ profile: 'temporary' })
+    await expect(noMessage.ctx.browserRuntime.input({
+      target: noMessageCreated.target,
+      expectedRevision: 0,
+      text: 'x',
+    })).rejects.toMatchObject({
+      code: 'BROWSER_REVISION_CONFLICT',
+      message: /BROWSER_REVISION_CONFLICT/,
+    })
+
+    const omitted = await setup({ pageContent: 'omit-revision' })
+    const omittedCreated = await omitted.ctx.browserRuntime.create({ profile: 'temporary' })
+    await expect(omitted.ctx.browserRuntime.observe({ target: omittedCreated.target }))
+      .resolves.toMatchObject({ status: 'open', revision: 0 })
+
+    const ahead = await setup({ pageContent: 'ahead-revision' })
+    const created = await ahead.ctx.browserRuntime.create({ profile: 'temporary' })
+    expect(created.revision).toBe(0)
+    const observed = await ahead.ctx.browserRuntime.observe({ target: created.target })
+    expect(observed).toMatchObject({ status: 'open', revision: 4 })
+    const typed = await ahead.ctx.browserRuntime.input({
+      target: created.target,
+      expectedRevision: 4,
+      text: 'after-observe',
+    })
+    expect(typed).toMatchObject({ revision: 5, text: 'after-observe' })
   })
 
   it('bounds every HTTP request in time and reports caller aborts promptly', async () => {
@@ -761,13 +957,26 @@ describe('Tandem Browser Runtime failure projection', () => {
     expect(recovered).toMatchObject({
       status: 'open',
       target: created.target,
-      revision: 3,
+      revision: 0,
       url: 'https://crash.test/',
       title: 'Loaded page',
       text: 'Recovered crash page.',
     })
-    const closed = await ctx.browserRuntime.close({ target: created.target, expectedRevision: 3 })
-    expect(closed).toEqual({ status: 'closed', target: created.target, revision: 4 })
+    await expect(ctx.browserRuntime.input({
+      target: created.target,
+      expectedRevision: 1,
+      text: 'stale',
+    })).rejects.toMatchObject({ code: 'BROWSER_REVISION_CONFLICT' })
+    const afterObserve = await ctx.browserRuntime.observe({ target: created.target })
+    expect(afterObserve).toMatchObject({ status: 'open', revision: 0 })
+    const resumed = await ctx.browserRuntime.input({
+      target: created.target,
+      expectedRevision: afterObserve.revision,
+      text: 'after-observe',
+    })
+    expect(resumed).toMatchObject({ revision: 1, text: 'after-observe' })
+    const closed = await ctx.browserRuntime.close({ target: created.target, expectedRevision: resumed.revision })
+    expect(closed).toEqual({ status: 'closed', target: created.target, revision: 2 })
     await assertJoined(pidFile)
   })
 
@@ -826,7 +1035,7 @@ describe('Tandem Browser Runtime failure projection', () => {
     expect(state).toMatchObject({
       status: 'open',
       target: created.target,
-      revision: 2,
+      revision: 0,
       url: 'about:blank',
     })
     expect(projections).toContainEqual({ status: 'unavailable', reason: 'unhealthy', revision: 1, reconnecting: true })

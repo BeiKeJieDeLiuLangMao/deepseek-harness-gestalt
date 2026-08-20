@@ -76,7 +76,10 @@ export interface BrowserProfileChrome {
   readonly partition: string
 }
 
-/** Partition-backed identity restored with a named Browser Profile. */
+/**
+ * Partition-backed identity facts. Isolation is the Chromium partition on
+ * `chrome.partition`. Fields stay empty unless a Provider observed them.
+ */
 export interface BrowserProfileStorage {
   readonly cookies: string
   readonly localStorage: string

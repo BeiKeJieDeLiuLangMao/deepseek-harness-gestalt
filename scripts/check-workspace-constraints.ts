@@ -155,8 +155,9 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   '@deepseek-ai/dsh-subprocess-local': ['scripts/ensure-spawn-helper.mjs'],
   // Browser Runtime Providers share their authoritative-state registry with
   // the invariant companion through a hashed runtime chunk beside the lib; the
-  // managed Tandem Provider also publishes its upstream provenance files.
+  // Tandem-shaped HTTP Provider also publishes its upstream provenance files.
   '@deepseek-ai/dsh-browser-runtime-deterministic': ['lib/runtime-state-*.js'],
+  '@deepseek-ai/dsh-browser-runtime-electron': ['lib/runtime-state-*.js', 'lib/testing.js', 'lib/host-seam.js'],
   '@deepseek-ai/dsh-browser-runtime-tandem': ['lib/runtime-state-*.js', 'THIRD_PARTY_NOTICES.md', 'UPSTREAM.md'],
 }
 

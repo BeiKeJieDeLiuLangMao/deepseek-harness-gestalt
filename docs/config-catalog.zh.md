@@ -431,51 +431,74 @@ export interface DeterministicBrowserPage {
 }
 ```
 
-来源：[`packages/browser/browser-runtime-deterministic/src/index.ts:59`](../packages/browser/browser-runtime-deterministic/src/index.ts)
+来源：[`packages/browser/browser-runtime-deterministic/src/index.ts:67`](../packages/browser/browser-runtime-deterministic/src/index.ts)
+
+<a id="deepseek-aidsh-browser-runtime-electron"></a>
+
+## `@deepseek-ai/dsh-browser-runtime-electron`
+
+```ts config-catalog
+/** Process and lifecycle configuration for one in-process Electron runtime. */
+export interface Config {
+  /** Prefix for DSH-owned opaque Profile, Workspace, and browser identities. */
+  idPrefix?: string
+  /** Hidden window width used for offscreen capture. */
+  viewportWidth?: number
+  /** Hidden window height used for offscreen capture. */
+  viewportHeight?: number
+  /** Bound on each Chromium navigation or content read. */
+  requestTimeoutMs?: number
+}
+```
+
+来源：[`packages/browser/browser-runtime-electron/src/index.ts:84`](../packages/browser/browser-runtime-electron/src/index.ts)
 
 <a id="deepseek-aidsh-browser-runtime-tandem"></a>
 
 ## `@deepseek-ai/dsh-browser-runtime-tandem`
 
-需要：`subprocess`
-
 ```ts config-catalog
-/** Process, HTTP, and lifecycle configuration for one managed Tandem runtime. */
+/** HTTP and optional fixture-process configuration for one Tandem-shaped runtime. */
 export interface Config {
-  /** Executable used to launch the pinned Tandem Browser checkout or package. */
-  command: string
-  /** Arguments passed without shell interpretation. */
+  /** Optional fixture executable used only by HTTP protocol tests. Production Desktop omits this. */
+  command?: string
+  /** Arguments passed without shell interpretation when `command` is set. */
   args?: string[]
-  /** Existing directory used as the Tandem child process working directory. */
-  cwd: string
+  /** Existing directory used as the optional fixture child working directory. */
+  cwd?: string
   /** Explicit environment layered over the subprocess service's credential-scrubbed parent environment. */
   env?: Record<string, string>
-  /** Loopback Tandem HTTP API origin, including its configured port. */
+  /** Loopback Tandem-shaped HTTP API origin, including its configured port. */
   baseUrl: string
-  /** Local file where Tandem writes its generated API token. */
+  /** Local file where the HTTP server writes its generated API token. */
   tokenFile: string
   /** Prefix for DSH-owned opaque Profile, Workspace, and browser identities. */
   idPrefix?: string
-  /** Bound on child startup and Tandem health verification. */
+  /** Bound on HTTP health verification. */
   startupTimeoutMs?: number
-  /** Bound on each Tandem HTTP operation. */
+  /** Bound on each Tandem-shaped HTTP operation. */
   requestTimeoutMs?: number
   /** Delay between startup health probes. */
   healthPollMs?: number
   /** Upper bound on upstream page-settle waiting for one content read. */
   pageSettleMs?: number
-  /** Number of child restarts after an unexpected exit. */
+  /** Number of fixture-child restarts after an unexpected exit. Ignored without `command`. */
   reconnectAttempts?: number
   /** Delay before each reconnect attempt. */
   reconnectDelayMs?: number
-  /** Subprocess tree SIGTERM-to-SIGKILL grace used for teardown. */
+  /** Subprocess tree SIGTERM-to-SIGKILL grace used for fixture teardown. */
   processGraceMs?: number
-  /** Maximum bytes accepted from one Tandem HTTP response. */
+  /** Maximum bytes accepted from one Tandem-shaped HTTP response. */
   maxResponseBytes?: number
+  /**
+   * When `false`, this client never spawns a fixture child and rejects
+   * `command`/`cwd` at plugin load. Production Desktop sets `false`.
+   */
+  sidecar?: boolean
 }
 ```
 
-来源：[`packages/browser/browser-runtime-tandem/src/index.ts:50`](../packages/browser/browser-runtime-tandem/src/index.ts)
+来源：[`packages/browser/browser-runtime-tandem/src/index.ts:53`](../packages/browser/browser-runtime-tandem/src/index.ts)
 
 <a id="deepseek-aidsh-client-connection"></a>
 

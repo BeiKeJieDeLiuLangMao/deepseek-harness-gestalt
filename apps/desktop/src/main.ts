@@ -48,6 +48,7 @@ import {
   type DesktopPairingActions,
 } from './personal-pairing.ts'
 import { disposeDesktopOwners } from './shutdown.ts'
+import { startDesktopBrowserRuntime, type DesktopBrowserRuntime } from './browser-runtime.ts'
 import { createDesktopRemoteRelay } from './remote-relay.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -60,6 +61,7 @@ function smokeLog(line: string): void {
 }
 
 let host: RunningWebHost | undefined
+let browserRuntime: DesktopBrowserRuntime | undefined
 let window: BrowserWindow | undefined
 let updater: AutoUpdaterLifecycle | undefined
 let respawned = false
@@ -292,11 +294,16 @@ async function startHost(): Promise<RunningWebHost> {
   if (!app.isPackaged && isElectronExecutable(paths.node)) {
     throw new Error('Desktop Host needs a real Node executable; set DSH_NODE or run via pnpm gestalt:dev')
   }
+  browserRuntime ??= await startDesktopBrowserRuntime(app.getPath('userData'))
   const pending = spawnWebHost({
     node: paths.node,
     args: paths.args,
     cwd: app.isPackaged ? ensureLaunchDirectory() : (paths.workspaceRoot ?? ensureLaunchDirectory()),
-    env: { DSH_DESKTOP: '1' },
+    env: {
+      DSH_DESKTOP: '1',
+      DSH_ELECTRON_BROWSER_ORIGIN: browserRuntime.origin,
+      DSH_ELECTRON_BROWSER_TOKEN_FILE: browserRuntime.tokenFile,
+    },
     signal: hostStartController.signal,
   })
   pendingHost = pending
@@ -443,6 +450,9 @@ function requestShutdown(exitCode: number, mode: 'exit' | 'allow-quit' = 'exit')
       const started = await starting?.catch(() => undefined)
       if (started !== running) await started?.stop()
       await running?.stop()
+      const runtime = browserRuntime
+      browserRuntime = undefined
+      await runtime?.dispose()
       if (mode === 'exit') app.exit(exitCode)
     } catch (error) {
       console.error('dsh desktop: shutdown failed', error)

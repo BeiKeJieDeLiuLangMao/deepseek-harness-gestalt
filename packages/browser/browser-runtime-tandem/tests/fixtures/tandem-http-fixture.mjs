@@ -29,6 +29,7 @@ if (pidFile !== undefined) writeFileSync(pidFile, `${process.pid}\n`, { mode: 0o
 const sessions = new Map()
 const persisted = new Map()
 let tabSeq = 0
+let pageContentReads = 0
 
 function inventoryTab(id, url, title, active, partition) {
   return {
@@ -84,6 +85,20 @@ function identityToken(sessionName) {
 
 function isTemporary(sessionName) {
   return /-tmp-\d+$/.test(sessionName)
+}
+
+function applyRevision(input, session, response) {
+  const current = session.revision ?? 0
+  if (typeof input.expectedRevision === 'number' && Number.isSafeInteger(input.expectedRevision)
+    && input.expectedRevision !== current) {
+    json(response, 409, {
+      error: `browser revision conflict: expected ${String(input.expectedRevision)}, current ${String(current)}; observe again before mutating`,
+      code: 'BROWSER_REVISION_CONFLICT',
+    })
+    return undefined
+  }
+  session.revision = current + 1
+  return session.revision
 }
 
 function json(response, status, value) {
@@ -144,7 +159,8 @@ const server = createServer(async (request, response) => {
     const stored = persisted.get(sessionName)
     const initialUrl = stored?.url ?? input.url ?? 'about:blank'
     tabSeq += 1
-    const base = inventoryTab(`tandem-tab-${String(tabSeq)}`, initialUrl, titleFor(initialUrl), true, `persist:session-${sessionName}`)
+    const partition = /-tmp-\d+$/.test(sessionName) ? `session-${sessionName}` : `persist:session-${sessionName}`
+    const base = inventoryTab(`tandem-tab-${String(tabSeq)}`, initialUrl, titleFor(initialUrl), true, partition)
     const tab = faults.create === 'bad-tab-id'
       ? { ...base, id: '' }
       : faults.create === 'bad-title-type' ? { ...base, title: 7 } : base
@@ -153,6 +169,7 @@ const server = createServer(async (request, response) => {
       tab: stored === undefined ? tab : { ...tab, url: stored.url, title: titleFor(stored.url) },
       storage: stored?.storage ?? emptyStorage(),
       text: stored?.text ?? '',
+      revision: 0,
     }
     sessions.set(sessionName, session)
     if (faults.create === 'no-tab') {
@@ -173,6 +190,11 @@ const server = createServer(async (request, response) => {
       json(response, 500, { error: 'internal fixture failure' })
       return
     }
+    if (faults.navigate === 'no-revision') {
+      const input = await body(request)
+      json(response, 200, { ok: true, url: input.url, tab: input.tabId })
+      return
+    }
     const input = await body(request)
     const session = [...sessions.values()].find(value => value.tab.id === input.tabId) ?? [...sessions.values()].at(-1)
     if (session !== undefined) {
@@ -182,7 +204,14 @@ const server = createServer(async (request, response) => {
       }
       if (input.url === 'https://forget.test/') sessions.delete(session.name)
     }
-    json(response, 200, { ok: true, url: input.url, tab: session?.tab.id ?? input.tabId })
+    const revision = session === undefined ? 1 : applyRevision(input, session, response)
+    if (revision === undefined) return
+    json(response, 200, {
+      ok: true,
+      url: input.url,
+      tab: session?.tab.id ?? input.tabId,
+      revision,
+    })
     if (input.url === 'https://crash.test/' && crashMarker !== undefined && !existsSync(crashMarker)) {
       writeFileSync(crashMarker, 'crashed\n')
       setTimeout(() => process.exit(17), 20)
@@ -206,6 +235,13 @@ const server = createServer(async (request, response) => {
     return
   }
   if (request.method === 'GET' && url.pathname === '/page-content') {
+    if (faults.pageContent === 'fail-after-first') {
+      pageContentReads += 1
+      if (pageContentReads > 1) {
+        response.destroy()
+        return
+      }
+    }
     if (faults.pageContent === 'non-object') {
       response.writeHead(200, { 'content-type': 'application/json' })
       response.end('"just a string"')
@@ -231,12 +267,16 @@ const server = createServer(async (request, response) => {
           ? 'Recovered crash page.'
           : session?.text || (identity.length === 0 ? '' : `identity=${identity}`)
     if (session !== undefined) session.text = text
+    if (faults.pageContent === 'ahead-revision' && session !== undefined) session.revision = 4
     const body = {
       title: tab?.title ?? '',
       url: tab?.url ?? '',
       description: '',
       text,
       length: text.length,
+      ...(faults.pageContent === 'omit-revision'
+        ? {}
+        : { revision: faults.pageContent === 'ahead-revision' ? 4 : session?.revision ?? 0 }),
     }
     if (faults.pageContent === 'seed-storage') {
       body.storage = storageFor('seeded')
@@ -267,7 +307,62 @@ const server = createServer(async (request, response) => {
     return
   }
   if (request.method === 'POST' && url.pathname === '/tabs/focus') {
-    json(response, 200, { ok: faults.focus !== 'ok-false' })
+    const input = await body(request)
+    const session = [...sessions.values()].find(value => value.tab.id === input.tabId) ?? [...sessions.values()].at(-1)
+    const revision = session === undefined ? 1 : applyRevision(input, session, response)
+    if (revision === undefined) return
+    json(response, 200, { ok: faults.focus !== 'ok-false', revision })
+    return
+  }
+  if (request.method === 'POST' && url.pathname === '/input') {
+    const input = await body(request)
+    if (faults.input === 'ok-false') {
+      json(response, 200, { ok: false, revision: 1, url: 'about:blank', title: '', text: '', tab: input.tabId })
+      return
+    }
+    if (faults.input === 'revision-conflict') {
+      json(response, 409, {
+        error: 'browser revision conflict: expected 0, current 2; observe again before mutating',
+        code: 'BROWSER_REVISION_CONFLICT',
+      })
+      return
+    }
+    if (faults.input === 'revision-conflict-no-message') {
+      json(response, 409, { code: 'BROWSER_REVISION_CONFLICT', error: 7 })
+      return
+    }
+    if (faults.input === 'revision-conflict-non-json') {
+      response.writeHead(409, { 'content-type': 'application/json' })
+      response.end('not-json')
+      return
+    }
+    const session = [...sessions.values()].find(value => value.tab.id === input.tabId) ?? [...sessions.values()].at(-1)
+    if (session === undefined) {
+      json(response, 404, { error: `tab ${input.tabId} does not exist` })
+      return
+    }
+    if (typeof input.url === 'string' && input.url.length > 0) {
+      session.tab = { ...session.tab, url: input.url, title: titleFor(input.url) }
+    }
+    if (typeof input.text === 'string') session.text = input.text
+    else {
+      const identity = session.storage.localStorage
+      session.text = session.tab.url === 'https://example.test/'
+        ? identity.length === 0 ? 'A real Tandem protocol page.' : `A real Tandem protocol page.\nidentity=${identity}`
+        : session.tab.url === 'https://login.test/'
+          ? `Signed in as ${identity}.\nidentity=${identity}`
+          : session.text
+    }
+    const revision = applyRevision(input, session, response)
+    if (revision === undefined) return
+    json(response, 200, {
+      ok: true,
+      revision,
+      url: session.tab.url,
+      title: session.tab.title,
+      text: session.text,
+      tab: session.tab.id,
+    })
     return
   }
   if (request.method === 'POST' && url.pathname === '/sessions/destroy') {

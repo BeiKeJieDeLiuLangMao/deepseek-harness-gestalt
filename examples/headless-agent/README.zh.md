@@ -19,7 +19,7 @@ pnpm dsh --profile headless "fix the failing test in this workspace"
 
 [`browser-runtime.cordis.snapshot.yml`](browser-runtime.cordis.snapshot.yml) 是无密钥可运行 Browser Runtime tracer。它发现九个 deferred Browser 工具，创建一个临时 Profile 与标签页，依次导航、观察、截图、聚焦、记录人工输入与报告所有权、把所有权交回 Agent、关闭，然后重新加载同一个 Session，以证明 schema 与已渲染 Browser 事实（含控制权所有者）可以重建。
 
-`browser-runtime-tandem.cordis.snapshot.yml` 以托管式 Tandem Provider 和本地 Tandem HTTP fixture 运行同一条 Browser 工具路径——`tool_search` → `browser_create` → `browser_navigate` → `browser_observe` → `browser_screenshot` → `browser_focus` → `browser_input` → `browser_takeover` → `browser_return_control` → `browser_close`。
+`browser-runtime-tandem.cordis.snapshot.yml` 以 Tandem 形态 HTTP Provider 和本地 HTTP fixture 运行同一条 Browser 工具路径——`tool_search` → `browser_create` → `browser_navigate` → `browser_observe` → `browser_screenshot` → `browser_focus` → `browser_input` → `browser_takeover` → `browser_return_control` → `browser_close`。
 
 ## E2B POC overlay
 

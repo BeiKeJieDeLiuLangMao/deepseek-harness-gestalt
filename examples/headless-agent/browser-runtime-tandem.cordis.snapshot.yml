@@ -1,4 +1,4 @@
-# Keyless managed Tandem Browser tracer over the shipped base + headless profile.
+# Keyless Tandem-shaped HTTP Browser tracer over the shipped base + headless profile.
 - id: agent-loop
   # Restart requires persistence before the fixed Session identity is restored.
   inject: [sessionPersistence]
@@ -21,6 +21,14 @@
 - id: session-title-llm
   disabled: true
 
+# The base bundle's keyless Runtime yields to the Tandem-shaped HTTP client.
+- id: browser-runtime-deterministic
+  disabled: true
+
+# Replay proxy for the host-plane tool-browser Consumer.
+- id: tool-browser
+  name: './snapshot-fixtures/tool-browser-proxy.mjs'
+
 - insert:
     - id: browser-runtime-tandem
       name: './snapshot-fixtures/browser-runtime-tandem-proxy.mjs'
@@ -39,9 +47,6 @@
         reconnectDelayMs: 10
         processGraceMs: 100
         pageSettleMs: 50
-
-    - id: tool-browser
-      name: './snapshot-fixtures/tool-browser-proxy.mjs'
 
     - id: llm-replay
       name: './snapshot-fixtures/llm-replay-proxy.mjs'

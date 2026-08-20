@@ -160,7 +160,7 @@ async function deepseekDefaultsServer(): Promise<DeepSeekDefaultsServer> {
       const write = (): void => {
         if (keepAlives-- > 0) {
           response.write(': keep-alive\n\n')
-          setTimeout(write, 60)
+          setTimeout(write, 20)
           return
         }
         response.end([
@@ -170,7 +170,7 @@ async function deepseekDefaultsServer(): Promise<DeepSeekDefaultsServer> {
           '',
         ].join('\n\n'))
       }
-      setTimeout(write, 60)
+      write()
     })
   })
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
@@ -335,7 +335,7 @@ async function freePort(): Promise<number> {
   return address.port
 }
 
-/** Install the managed Tandem provider proxy and driver into the temporary profile. */
+/** Install the Tandem-shaped HTTP provider proxy and driver into the temporary profile. */
 async function prepareBrowserRuntimeTandemFixture(cwd: string): Promise<void> {
   const fixtureDir = join(cwd, '.dsh', 'profiles', 'headless', 'snapshot-fixtures')
   await mkdir(fixtureDir, { recursive: true })
@@ -809,7 +809,7 @@ describe('headless stream-json snapshots', () => {
         })
         expect(browserValues.map(value => value.revision)).toEqual([0, 1, 1, 1, 2, 3, 4, 5, 6])
         expect(browserValues[0]).toMatchObject({
-          chrome: { kind: 'temporary', partition: 'persist:session-trace-tmp-1' },
+          chrome: { kind: 'temporary', partition: 'session-trace-tmp-1' },
           controlOwner: 'agent',
         })
         expect(browserValues[0]).not.toHaveProperty('chrome.name')
@@ -953,7 +953,7 @@ describe('headless stream-json snapshots', () => {
         })
         expect(browserValues.map(value => value.revision)).toEqual([0, 1, 1, 1, 2, 3, 4, 5, 6])
         expect(browserValues[0]).toMatchObject({
-          chrome: { kind: 'temporary', partition: 'persist:session-tandem-tmp-1' },
+          chrome: { kind: 'temporary', partition: 'session-tandem-tmp-1' },
           controlOwner: 'agent',
         })
         expect(browserValues[1]).toMatchObject({

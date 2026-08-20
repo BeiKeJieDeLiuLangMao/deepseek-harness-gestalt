@@ -518,7 +518,7 @@ const SERVICE_ROLES: ServiceRole[] = [
     pkg: 'browser',
     title: 'Browser Runtime capability',
     mode: 'seam',
-    implementations: ['browser-runtime-deterministic', 'browser-runtime-tandem'],
+    implementations: ['browser-runtime-deterministic', 'browser-runtime-electron', 'browser-runtime-tandem'],
     consumers: ['tool-browser', 'browser-workspace'],
     note: 'Opaque Profile, Workspace, browser, and tab identities stay behind ctx.browserRuntime; the deferred Consumer uses ordinary discovery, results, and presentation.',
   },

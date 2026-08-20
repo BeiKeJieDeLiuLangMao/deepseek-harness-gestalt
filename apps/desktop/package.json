@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@deepseek-ai/dsh-atomic-write": "workspace:^",
+    "@deepseek-ai/dsh-browser-runtime-electron": "workspace:^",
     "@deepseek-ai/dsh-client-ui-desktop": "workspace:^",
     "@deepseek-ai/dsh-platform-account": "workspace:^",
     "@deepseek-ai/dsh-platform-account-client": "workspace:^",

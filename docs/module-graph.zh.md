@@ -119,6 +119,7 @@ flowchart TD
   subgraph group_browser["packages/browser"]
     pkg_browser_runtime["browser-runtime"]
     pkg_browser_runtime_deterministic["browser-runtime-deterministic"]
+    pkg_browser_runtime_electron["browser-runtime-electron"]
     pkg_browser_runtime_tandem["browser-runtime-tandem"]
     pkg_browser_workspace["browser-workspace"]
     pkg_tool_browser["tool-browser"]
@@ -432,6 +433,8 @@ flowchart TD
   pkg_attachment_local --> pkg_invariants
   pkg_browser_runtime_deterministic --> pkg_browser_runtime
   pkg_browser_runtime_deterministic --> pkg_invariants
+  pkg_browser_runtime_electron --> pkg_browser_runtime
+  pkg_browser_runtime_electron --> pkg_invariants
   pkg_browser_runtime_tandem --> pkg_browser_runtime
   pkg_browser_runtime_tandem --> pkg_invariants
   pkg_browser_runtime_tandem --> pkg_subprocess
@@ -1580,6 +1583,7 @@ flowchart TD
 | [`api-gateway`](../packages/api/gateway) | `api` | [`client-connection`](../packages/client/connection), [`invariants`](../packages/runtime-diagnostics/invariants), [`typert-registry`](../packages/typert/registry) |
 | [`attachment-local`](../packages/attachment/attachment-local) | `attachment` | [`attachment`](../packages/attachment/attachment), [`home-paths`](../packages/util/home-paths), [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`browser-runtime-deterministic`](../packages/browser/browser-runtime-deterministic) | `browser` | [`browser-runtime`](../packages/browser/browser-runtime), [`invariants`](../packages/runtime-diagnostics/invariants) |
+| [`browser-runtime-electron`](../packages/browser/browser-runtime-electron) | `browser` | [`browser-runtime`](../packages/browser/browser-runtime), [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`browser-runtime-tandem`](../packages/browser/browser-runtime-tandem) | `browser` | [`browser-runtime`](../packages/browser/browser-runtime), [`invariants`](../packages/runtime-diagnostics/invariants), [`subprocess`](../packages/subprocess/subprocess) |
 | [`credentials-local`](../packages/credentials/credentials-local) | `credentials` | [`atomic-write`](../packages/util/atomic-write), [`credentials`](../packages/credentials/credentials), [`home-paths`](../packages/util/home-paths), [`invariants`](../packages/runtime-diagnostics/invariants), [`launch-environment`](../packages/util/launch-environment) |
 | [`platform-account-client`](../packages/platform/platform-account-client) | `platform` | [`invariants`](../packages/runtime-diagnostics/invariants), [`platform-account`](../packages/platform/platform-account) |

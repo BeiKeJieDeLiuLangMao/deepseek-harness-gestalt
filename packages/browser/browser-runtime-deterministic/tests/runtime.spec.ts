@@ -43,7 +43,7 @@ describe('deterministic Browser Runtime public lifecycle', () => {
       controlOwner: 'agent',
       chrome: {
         kind: 'temporary',
-        partition: 'persist:session-trace-tmp-1',
+        partition: 'session-trace-tmp-1',
       },
       storage: {
         cookies: '',
@@ -300,7 +300,7 @@ describe('deterministic Browser Runtime public lifecycle', () => {
     const first = await ctx.browserRuntime.create({ profile: 'temporary' })
     expect(first.chrome).toEqual({
       kind: 'temporary',
-      partition: 'persist:session-ephemeral-tmp-1',
+      partition: 'session-ephemeral-tmp-1',
     })
     expect(first.chrome).not.toHaveProperty('name')
     await ctx.browserRuntime.navigate({
@@ -342,6 +342,22 @@ describe('deterministic Browser Runtime public lifecycle', () => {
       profile: 'temporary',
       attach: { kind: 'workspace', workspaceId: BrowserWorkspaceId('missing') },
     })).rejects.toMatchObject({ code: 'BROWSER_NOT_FOUND' })
+  })
+
+  it('attaches a second tab to an open named Profile without a second-writer rejection', async () => {
+    const ctx = new Context()
+    await ctx.plugin(BrowserRuntimeDeterministic, {
+      idPrefix: 'attach-named',
+      pages: [{ url: 'https://one.test/', title: 'One', text: 'one', screenshotPngBase64: PNG_1X1 }],
+    })
+    const first = await ctx.browserRuntime.create({ profile: 'persistent', name: BrowserProfileName('work') })
+    const second = await ctx.browserRuntime.create({
+      profile: 'persistent',
+      name: BrowserProfileName('work'),
+      attach: { kind: 'browser', workspaceId: first.target.workspaceId, browserId: first.target.browserId },
+    })
+    expect(second.target.profileId).toBe(first.target.profileId)
+    expect(second.target.tabId).not.toBe(first.target.tabId)
   })
 
   it('rejects a second writer of the same named Profile without corrupting stored identity', async () => {
