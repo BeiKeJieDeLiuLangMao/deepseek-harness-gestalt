@@ -52,11 +52,17 @@ describe('createFixtureFaces browserWorkspace remotes', () => {
       rpc, 'browserWorkspace/focus', { agentId: sid('fx-alpha'), target: TARGET, expectedRevision: 3 })
     expect(focused).toMatchObject({ focused: true, revision: 4 })
 
-    const navigated = await callRemote<{ url: string }>(
+    const navigated = await callRemote<{ url: string; status: string; revision: number }>(
       rpc, 'browserWorkspace/navigate', {
         agentId: sid('fx-alpha'), target: TARGET, expectedRevision: 4, url: 'https://login.test/',
       })
-    expect(navigated.url).toBe('https://login.test/')
+    expect(navigated).toMatchObject({ status: 'open', url: 'https://login.test/', revision: 5 })
+    const afterNavigate = await callRemote<{ url: string; title: string; status: string }>(
+      rpc, 'browserWorkspace/observe', { agentId: sid('fx-alpha'), target: TARGET })
+    expect(afterNavigate).toMatchObject({ status: 'open', url: 'https://login.test/', title: 'login.test' })
+    const shotAfterNavigate = await callRemote<{ url: string; title: string }>(
+      rpc, 'browserWorkspace/screenshot', { agentId: sid('fx-alpha'), target: TARGET })
+    expect(shotAfterNavigate).toMatchObject({ url: 'https://login.test/', title: 'login.test' })
 
     const closed = await callRemote<{ status: string }>(
       rpc, 'browserWorkspace/close', { agentId: sid('fx-alpha'), target: TARGET, expectedRevision: 5 })
@@ -65,6 +71,28 @@ describe('createFixtureFaces browserWorkspace remotes', () => {
     const afterClose = await callRemote<{ status: string }>(
       rpc, 'browserWorkspace/observe', { agentId: sid('fx-alpha'), target: TARGET })
     expect(afterClose.status).toBe('closed')
+  })
+
+  it('observes about:blank and unparseable URLs committed by navigate', async () => {
+    const { rpc } = createFixtureFaces()
+    const blank = await callRemote<{ url: string; title: string; status: string }>(
+      rpc, 'browserWorkspace/navigate', {
+        agentId: sid('fx-alpha'), target: TARGET, expectedRevision: 1, url: 'about:blank',
+      })
+    expect(blank).toMatchObject({ status: 'open', url: 'about:blank', title: 'New Tab' })
+    const observedBlank = await callRemote<{ url: string; title: string }>(
+      rpc, 'browserWorkspace/observe', { agentId: sid('fx-alpha'), target: TARGET })
+    expect(observedBlank).toMatchObject({ url: 'about:blank', title: 'New Tab' })
+    const fileUrl = await callRemote<{ url: string; title: string }>(
+      rpc, 'browserWorkspace/navigate', {
+        agentId: sid('fx-alpha'), target: TARGET, expectedRevision: 2, url: 'file:///tmp/page.html',
+      })
+    expect(fileUrl).toMatchObject({ url: 'file:///tmp/page.html', title: 'file:///tmp/page.html' })
+    const junk = await callRemote<{ url: string; title: string }>(
+      rpc, 'browserWorkspace/navigate', {
+        agentId: sid('fx-alpha'), target: TARGET, expectedRevision: 3, url: 'not a url',
+      })
+    expect(junk).toMatchObject({ url: 'not a url', title: 'not a url' })
   })
 
   it('accepts the generated sessionId wire name for observe', async () => {

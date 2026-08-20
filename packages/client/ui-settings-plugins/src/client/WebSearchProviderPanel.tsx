@@ -39,7 +39,8 @@ export interface WebSearchFieldsProps {
  */
 export function WebSearchFields(props: WebSearchFieldsProps) {
   const { t, state } = props
-  const disabled = !state.writable
+  const fieldsLocked = !state.writable
+  const keySet = state.apiKeyConfigured
   return (
     <>
       <SecretField
@@ -48,8 +49,8 @@ export function WebSearchFields(props: WebSearchFieldsProps) {
         hint={t('webSearchApiKeyHint')}
         disabled={!state.apiKeyWritable}
         text={state.apiKey.text}
-        configured={state.apiKeyConfigured}
-        stateLabel={state.apiKeyConfigured ? t('webSearchApiKeySet') : t('webSearchApiKeyUnset')}
+        configured={keySet}
+        stateLabel={keySet ? t('webSearchApiKeySet') : t('webSearchApiKeyUnset')}
         onEdit={(text) => { props.edit('apiKey', text) }}
       />
       <ValueField
@@ -59,7 +60,7 @@ export function WebSearchFields(props: WebSearchFieldsProps) {
         overriddenLabel={t('overridden')}
         resetLabel={t('reset')}
         invalidLabel={t('invalidNumber')}
-        disabled={disabled}
+        disabled={fieldsLocked}
         {...state.baseURL}
         onEdit={(text) => { props.edit('baseURL', text) }}
         onReset={() => { props.resetField('baseURL') }}
@@ -72,7 +73,7 @@ export function WebSearchFields(props: WebSearchFieldsProps) {
         resetLabel={t('reset')}
         invalidLabel={t('invalidNumber')}
         numeric
-        disabled={disabled}
+        disabled={fieldsLocked}
         {...state.maxUses}
         text={state.maxUses.text === '' ? '5' : state.maxUses.text}
         onEdit={(text) => { props.edit('maxUses', text) }}

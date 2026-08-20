@@ -51,6 +51,8 @@ describe.skipIf(MODE === 'record')('web e2e: Desktop Session Schedule board', ()
     await page.goto(scaffold.baseUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
     await openSeed(page)
+    expect(await page.evaluate(() => Intl.DateTimeFormat().resolvedOptions().timeZone))
+      .toBe(SCHEDULE_SNAPSHOT_TIMEZONE)
   }, 120_000)
 
   afterAll(async () => {

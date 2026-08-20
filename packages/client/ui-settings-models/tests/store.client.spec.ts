@@ -105,6 +105,33 @@ describe('ModelsSettingsStore', () => {
     expect(state.namespaces.get('llm-pi-ai')?.ns).toBe('llm-pi-ai')
   })
 
+  it('leaves official DeepSeek unconfigured when the user layer is absent and no secret slot is set', async () => {
+    const { face } = api({
+      describeSettings: () => Promise.resolve(ok({
+        writable: true,
+        hasDocument: false,
+        namespaces: [{
+          ns: 'llm-deepseek',
+          schema: {},
+          value: { apiKeyEnv: 'DEEPSEEK_API_KEY', baseURL: 'https://base' },
+          base: { baseURL: 'https://base' },
+          applies: 'live' as const,
+          secrets: [],
+          revision: 0,
+        }, PI_NS],
+      })) as never,
+    })
+    const store = new ModelsSettingsStore(face)
+    await store.load()
+    expect(store.store.getSnapshot().rows.find(row => row.entry.provider === 'deepseek-official'))
+      .toMatchObject({
+        configured: false,
+        removable: true,
+        apiKeyEnv: 'DEEPSEEK_API_KEY',
+        credential: { configured: false, writable: true },
+      })
+  })
+
   it('does not treat an empty leftover DeepSeek user section as configured', async () => {
     const { face } = api({
       describeSettings: () => Promise.resolve(ok({
@@ -333,5 +360,19 @@ describe('messageOf', () => {
     expect(messageOf(new Error('connection lost'))).toBe('connection lost')
     expect(messageOf('the host refused')).toBe('the host refused')
     expect(messageOf(undefined)).toBe('undefined')
+  })
+})
+
+describe('userSectionOccupied', () => {
+  it('treats missing, empty, and leftover empty objects as vacant', () => {
+    expect(userSectionOccupied(undefined)).toBe(false)
+    expect(userSectionOccupied(null)).toBe(false)
+    expect(userSectionOccupied({})).toBe(false)
+  })
+
+  it('treats a scalar, array, or populated object as occupancy', () => {
+    expect(userSectionOccupied('set')).toBe(true)
+    expect(userSectionOccupied(['row'])).toBe(true)
+    expect(userSectionOccupied({ apiKeyEnv: 'X' })).toBe(true)
   })
 })

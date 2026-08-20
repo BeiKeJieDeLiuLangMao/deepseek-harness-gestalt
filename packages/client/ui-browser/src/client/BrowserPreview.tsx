@@ -21,7 +21,8 @@ export type BrowserPreviewProps =
 /**
  * Layered tab preview shown while this Session owns Browser tabs and the Dock
  * is collapsed. A back layer focuses that tab with its listed revision; the
- * current layer opens the Dock.
+ * current layer opens the Dock. The current layer re-observes when that
+ * listed revision advances.
  */
 export function BrowserPreview({
   useProjection, openDock, focus, observe, screenshot, t,
@@ -29,7 +30,9 @@ export function BrowserPreview({
   const snapshot = useProjection('browserWorkspace') as BrowserWorkspaceProjection | null | undefined
   const selection = selectBrowserDock(snapshot)
   const active = selection?.activeTab
-  const { page, screenshot: shot } = useBrowserPage(active?.target, observe, screenshot)
+  const { page, screenshot: shot } = useBrowserPage(
+    active?.target, observe, screenshot, active?.revision,
+  )
 
   if (!hasBrowserTabs(snapshot) || snapshot?.dockOpen === true || selection === undefined) return null
 

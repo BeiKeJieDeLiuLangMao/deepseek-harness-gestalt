@@ -4,6 +4,8 @@
  * a push and one failing listener cannot skip the rest.
  */
 
+import { createSnapshotHub } from './snapshot-hub.ts'
+
 /** Renderer-side snapshot source consumed through a slot hook compartment. */
 export interface DesktopSnapshotSource<T> {
   readonly getSnapshot: () => T
@@ -21,23 +23,5 @@ export function createDesktopSnapshotSource<T>(
   initial: T,
   onListenerError: (error: unknown) => void,
 ): DesktopSnapshotSource<T> {
-  let snapshot = initial
-  const listeners = new Set<() => void>()
-  return {
-    getSnapshot: () => snapshot,
-    subscribe: (listener) => {
-      listeners.add(listener)
-      return () => { listeners.delete(listener) }
-    },
-    set: (next) => {
-      snapshot = next
-      for (const listener of listeners) {
-        try {
-          listener()
-        } catch (error) {
-          onListenerError(error)
-        }
-      }
-    },
-  }
+  return createSnapshotHub(initial, onListenerError)
 }

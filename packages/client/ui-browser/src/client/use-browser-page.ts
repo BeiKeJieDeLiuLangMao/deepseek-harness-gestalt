@@ -14,16 +14,19 @@ export interface BrowserPageFacts {
 }
 
 /**
- * Observe and capture one tab whenever its identity changes.
+ * Observe and capture one tab whenever its identity or listed revision changes.
  * @param target - Complete tab identity, or undefined while none is selected.
  * @param observe - Session-bound observe remote.
  * @param screenshot - Session-bound screenshot remote.
+ * @param listedRevision - Binder-committed revision for this tab, or undefined
+ *   while none is selected. A later revision re-observes the same tab.
  * @returns the latest open page and screenshot, if any.
  */
 export function useBrowserPage(
   target: BrowserTarget | undefined,
   observe: (target: BrowserTarget) => Promise<BrowserRuntimeState>,
   screenshot: (target: BrowserTarget) => Promise<BrowserScreenshot>,
+  listedRevision?: number,
 ): BrowserPageFacts {
   const [page, setPage] = useState<BrowserPageState | undefined>()
   const [shot, setShot] = useState<BrowserScreenshot | undefined>()
@@ -51,12 +54,13 @@ export function useBrowserPage(
       } catch {
         // Observe/screenshot can reject when the Session binding is not yet
         // on the Remote (fixture restore, or a closed Session). The collapsed
-        // layer stays Untitled until the next tab-identity change retries.
+        // layer stays Untitled until the next tab-identity or listed-revision
+        // change retries.
       }
     }
     void load()
     return () => { cancelled = true }
-  }, [observe, screenshot, tabKey])
+  }, [observe, screenshot, tabKey, listedRevision])
 
   return { page, screenshot: shot }
 }

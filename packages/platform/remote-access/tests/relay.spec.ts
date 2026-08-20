@@ -49,6 +49,7 @@ describe('RemoteRelayProvider', () => {
     expect(mobile.credential).not.toBe(desktop.credential)
     await platform.revokeRoute(routeId)
     await expect(platform.issueCredential(routeId)).rejects.toMatchObject({ code: 'RELAY_ROUTE_REVOKED' })
+    await platform.revokeCredential(desktop)
     await platform.dispose()
   })
 

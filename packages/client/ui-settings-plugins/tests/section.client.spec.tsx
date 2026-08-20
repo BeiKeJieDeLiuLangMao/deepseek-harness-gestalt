@@ -25,7 +25,7 @@ import type { AgentLoopCardState } from '../src/client/agent-loop-card-controlle
 import type { BashCardState } from '../src/client/bash-card-controller.ts'
 import type { CardFieldState, CardShell } from '../src/client/card-form.ts'
 import type { ConfigurablePluginsTabState } from '../src/client/tab-store.ts'
-import type { WebSearchCardState } from '../src/client/web-search-card-controller.ts'
+import type { WebSearchCardState, WebSearchProbe } from '../src/client/web-search-card-controller.ts'
 import { en } from '../src/client/locales.ts'
 
 afterEach(cleanup)
@@ -373,7 +373,7 @@ describe('WebSearchCard', () => {
       ...cardActions(),
       selectProvider: vi.fn(),
       renderSlot: vi.fn(),
-      testSearch: vi.fn(async () => ({ status: 'ok' as const, count: 2, title: 'DeepSeek Harness' })),
+      testSearch: vi.fn(async (): Promise<WebSearchProbe> => ({ status: 'ok', count: 2, title: 'DeepSeek Harness' })),
     }
     const props = {
       ...actions,
@@ -411,6 +411,81 @@ describe('WebSearchCard', () => {
     fireEvent.click(screen.getByRole('button', { name: en.testSearch }))
     expect(actions.testSearch).toHaveBeenCalledOnce()
     expect(await screen.findByText(`${en.testSearchOk} · 2 · DeepSeek Harness`)).toBeTruthy()
+  })
+
+  it('stages the key, endpoint, and search budget from the selected tab', () => {
+    const actions = renderWebSearch({
+      apiKeyConfigured: true,
+      baseURL: field('https://search.test/v1', { overridden: true }),
+      maxUses: field('3', { overridden: true }),
+    })
+    fireEvent.click(screen.getByText(en.webSearchTitle))
+    fireEvent.change(screen.getByLabelText(en.webSearchApiKey), { target: { value: 'ds-secret' } })
+    fireEvent.change(screen.getByLabelText(en.webSearchBaseUrl), { target: { value: 'https://other.test' } })
+    fireEvent.change(screen.getByLabelText(en.webSearchMaxUses), { target: { value: '4' } })
+    for (const reset of screen.getAllByRole('button', { name: en.reset })) fireEvent.click(reset)
+    expect(actions.edit.mock.calls).toEqual([
+      ['apiKey', 'ds-secret'],
+      ['baseURL', 'https://other.test'],
+      ['maxUses', '4'],
+    ])
+    expect(actions.resetField.mock.calls).toEqual([['baseURL'], ['maxUses']])
+  })
+
+  it('falls back to the first tab and its DeepSeek endpoint hint', () => {
+    renderWebSearch({ selectedProvider: 'missing' })
+    fireEvent.click(screen.getByText(en.webSearchTitle))
+    expect(screen.getByText(en.webSearchBaseUrlHint)).toBeTruthy()
+  })
+
+  it('uses Anthropic and Kimi endpoint hints and reports empty or failed probes', async () => {
+    const anthropic = renderWebSearch({ selectedProvider: 'anthropic-messages' })
+    fireEvent.click(screen.getByText(en.webSearchTitle))
+    expect(screen.getByText(en.anthropicSearchBaseUrlHint)).toBeTruthy()
+    anthropic.testSearch.mockResolvedValueOnce({ status: 'ok', count: 0 })
+    fireEvent.click(screen.getByRole('button', { name: en.testSearch }))
+    expect(await screen.findByText(en.testSearchEmpty)).toBeTruthy()
+    cleanup()
+
+    const kimi = renderWebSearch({ selectedProvider: 'kimi' })
+    fireEvent.click(screen.getByText(en.webSearchTitle))
+    expect(screen.getByText(en.kimiSearchBaseUrlHint)).toBeTruthy()
+    kimi.testSearch.mockResolvedValueOnce({ status: 'ok', count: 1 })
+    fireEvent.click(screen.getByRole('button', { name: en.testSearch }))
+    expect(await screen.findByText(`${en.testSearchOk} · 1`)).toBeTruthy()
+    cleanup()
+
+    const failed = renderWebSearch()
+    failed.testSearch.mockResolvedValueOnce({ status: 'error', message: 'offline' })
+    fireEvent.click(screen.getByText(en.webSearchTitle))
+    fireEvent.click(screen.getByRole('button', { name: en.testSearch }))
+    expect(await screen.findByText(`${en.testSearchFailed}: offline`)).toBeTruthy()
+  })
+
+  it('renders without provider tabs when none are registered', () => {
+    const store = createSnapshotStore<WebSearchCardState>({
+      ...settled,
+      baseURL: field(''),
+      maxUses: field('5'),
+      apiKey: field(''),
+      apiKeyConfigured: false,
+      apiKeyWritable: true,
+      active: true,
+      selectedProvider: 'deepseek',
+    })
+    const props = {
+      ...cardActions(),
+      t,
+      selectProvider: vi.fn(),
+      renderSlot: vi.fn(),
+      testSearch: vi.fn(async () => ({ status: 'ok' as const, count: 0 })),
+      useWebSearchCard: bindSnapshotSelector(store),
+      useProviderTabs: () => [],
+      titleKey: 'webSearchTitle',
+      descriptionKey: 'webSearchDescription',
+    } as unknown as WebSearchCardProps
+    render(<WebSearchCard {...props} />)
+    expect(screen.queryByRole('tablist')).toBeNull()
   })
 })
 

@@ -19,7 +19,7 @@ export interface BrowserDockActions {
   setDock: (open: boolean, width?: number) => Promise<BrowserWorkspaceProjection>
   /** Focus one Session-owned tab. */
   focus: (target: BrowserTarget, expectedRevision: number) => Promise<BrowserPageState>
-  /** Reload the current tab by navigating to its last observed URL. */
+  /** Reload the current tab by navigating to the Runtime's current URL. */
   refresh: (target: BrowserTarget, expectedRevision: number, url: string) => Promise<BrowserPageState>
   /** Observe one Session-owned tab. */
   observe: (target: BrowserTarget) => Promise<BrowserRuntimeState>

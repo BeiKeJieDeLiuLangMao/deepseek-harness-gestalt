@@ -172,6 +172,20 @@ export class InputTriggerController {
   }
 
   /**
+   * Fold every source `pasteTransform` over pasted plain text.
+   * @param text - clipboard plain text.
+   * @returns the rewritten text (registration order; unchanged without claimants).
+   */
+  transformPaste(text: string): string {
+    let next = text
+    for (const src of this.deps.roster.all()) {
+      if (src.pasteTransform === undefined) continue
+      next = src.pasteTransform(next)
+    }
+    return next
+  }
+
+  /**
    * Keyboard arbitration while the menu is open.
    * @param key - intercepted key.
    * @param composing - inside IME composition: everything passes.
@@ -200,7 +214,36 @@ export class InputTriggerController {
         this.pick(state.highlight.source, state.highlight.index)
         return 'pick-highlighted'
       }
+      case 'right': {
+        if (state.highlight === null) return 'pass'
+        return this.descend(state.highlight.source, state.highlight.index)
+      }
     }
+  }
+
+  /**
+   * ArrowRight on the highlighted candidate: a source that claims the
+   * directory inserts `@path/` and leaves the menu to re-query children.
+   */
+  private descend(source: string, index: number): ArbitrateOutcome {
+    const state = this.menu.getSnapshot()
+    const hit = this.hit
+    if (this.disposed || !state.open || hit === null) return 'pass'
+    const group = state.groups.find(g => g.source === source)
+    const candidate = group !== undefined && group.status === 'ready' ? group.items[index] : undefined
+    if (candidate === undefined) return 'pass'
+    const src = this.deps.roster.sources(hit.trigger).find(item => item.name === source)
+    if (src?.onDescend === undefined) return 'pass'
+    const outcome = src.onDescend({
+      candidate,
+      session: this.project(),
+      position: hit.position,
+      via: 'menu',
+      span: hit.span,
+    })
+    if (outcome === undefined) return 'pass'
+    this.execute(outcome, hit.span)
+    return 'consumed'
   }
 
   /**

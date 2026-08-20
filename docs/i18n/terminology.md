@@ -101,6 +101,7 @@
 | capability seam | 能力 seam | | 功能 seam、能力接缝 | 本仓库 Service Definition、Service Provider 与 Consumer 三种角色组成完整可替换能力的命名架构概念；普通 `seam` 仍按其词条处理 |
 | feature | 功能 | | 能力 | SDK 产品与工程模型中的可管理产品单元 |
 | feature option | 功能选项 | | variant | 一项 SDK 功能内有限、可选择的实现或配置 |
+| File Mention | 文件提及 | | 工作区引用、@file | assistant 收尾正文里对产出文件的行内代码链接；不要用来称呼 Workspace Reference |
 | checkpoint | 检查点 | | | |
 | chunk | 分片 | | | |
 | compaction | 压缩 | 压缩（compaction） | | |
@@ -184,6 +185,7 @@
 | serving interface | 对外服务接口 | | | |
 | session | 会话 | | | |
 | session event | 会话事件 | | | |
+| Session Reference | 会话引用 | 会话引用（Session Reference） | 工作区引用 | 另一会话当前表层的有界只读快照 | |
 | setup card | 设置卡片 | | | 首次运行时代替行卡直接展开的配置卡 |
 | sidecar file | 伴随文件 | | | 指与文档同目录的普通伴随文件 |
 | sidecar record | 伴随记录 | | 旁挂记录 | 指与文档同目录的伴随记录文件 |
@@ -210,5 +212,6 @@
 | vocabulary | 词汇 | | | |
 | wire format | 协议格式 | 协议格式（wire format） | | |
 | workflow | 工作流 | | | |
+| Workspace Reference | 工作区引用 | 工作区引用（Workspace Reference） | 文件提及、@file、附件 | 用户书写的、指向当前会话工作区内一条真实路径的指针；不携带文件字节或目录子项 | |
 | wrapper | 包装层 | | | 软件层或 SDK 包装层 |
 | wrapper script | 包装脚本 | | | 可执行脚本包装层 |

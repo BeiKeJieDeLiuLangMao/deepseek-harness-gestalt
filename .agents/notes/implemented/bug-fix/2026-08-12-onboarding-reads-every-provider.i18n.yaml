@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-12-onboarding-reads-every-provider.md
-2026-08-12-onboarding-reads-every-provider.md: 1f247a6c93257c24052f55eb4297ec3c9c3df06d
-2026-08-12-onboarding-reads-every-provider.zh.md: fc6e43195a46eaea881f8b4bee3219b5e583b284
+2026-08-12-onboarding-reads-every-provider.md: cd6a0737d4ebaa6501eb4b1bcb878370361552a1
+2026-08-12-onboarding-reads-every-provider.zh.md: 9e59a6394f64e2ea4f5e11b3ffc188f76eadaf1c

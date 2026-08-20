@@ -347,6 +347,15 @@ export function InputBar({
       if (keyboard.arbitrate(e.key === 'ArrowUp' ? 'up' : 'down', composing) === 'consumed') e.preventDefault()
       return
     }
+    if (e.key === 'ArrowRight') {
+      if (keyboard.arbitrate('right', composing) === 'consumed') {
+        e.preventDefault()
+        const draft = keyboard.snapshot.draft
+        restoreCaret(e.currentTarget, draft.length)
+        keyboard.track(draft, draft.length)
+      }
+      return
+    }
     if (e.key === 'Escape') {
       // Escape layering: an open overlay closes; claimed without an overlay
       // does NOT release (backspacing the token is the only exit gesture).
@@ -466,12 +475,13 @@ export function InputBar({
     e.preventDefault()
     const el = e.currentTarget
     const sel = selectionOf(el)
+    const transformed = keyboard.transformPaste(text)
     // Sync components stay empty at this layer: hot-snapshot matching needs
     // the Slash roster, which lives behind keyboard.track — the paste attempt
     // opens in the machine and the controller upgrades tokens as matches
     // land (paste-upgrade). The DOM layer only starts the transaction.
-    keyboard.pasteBegin(text, sel)
-    const caret = sel.start + text.length
+    keyboard.pasteBegin(transformed, sel)
+    const caret = sel.start + transformed.length
     restoreCaret(el, caret)
     keyboard.track(keyboard.snapshot.draft, caret)
   }

@@ -1,0 +1,41 @@
+# Test-only composition: exercise the Workspace Reference host plugin through
+# a real Loader path without the Web picker.
+- id: workspace-reference-mock-llm
+  name: './mock-llm.ts'
+
+- id: subprocess
+  name: '@deepseek-ai/dsh-subprocess-local'
+
+- id: bash
+  name: '@deepseek-ai/dsh-bash-local'
+
+- id: typert
+  name: '@deepseek-ai/dsh-typert-registry'
+
+- id: fs-local
+  name: '@deepseek-ai/dsh-fs-local'
+  config:
+    cwd: !!js process.cwd()
+
+- id: workspace-reference
+  name: '@deepseek-ai/dsh-workspace-reference'
+
+- id: agent-spine
+  name: '@deepseek-ai/dsh-agent-spine-demo'
+  config:
+    agents:
+      - id: main
+        provider: workspace-reference-mock
+        model: workspace-reference-mock
+        cwd: !!js process.cwd()
+    persona: 'Test the workspace-reference plugin.'
+    workspaceContext: false
+
+- id: persistence
+  name: '@deepseek-ai/dsh-session-persistence-jsonl'
+  config:
+    root: './.sessions'
+    compression: 'none'
+
+- id: checkpoint-policy
+  name: '@deepseek-ai/dsh-session-checkpoint-policy'

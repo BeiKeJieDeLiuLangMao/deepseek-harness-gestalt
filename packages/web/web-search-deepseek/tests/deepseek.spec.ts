@@ -685,4 +685,36 @@ describe('Moonshot dedicated search', () => {
       expect(error.message).toContain('header "authorization" is not ASCII')
     }
   })
+
+  it('forwards the abort signal on a Moonshot request', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ search_results: [] }))
+    vi.stubGlobal('fetch', fetchMock)
+    const controller = new AbortController()
+    await searchProvider({
+      ...options,
+      protocol: 'moonshot-search',
+      baseURL: 'https://api.moonshot.cn/v1/search',
+    }).search({ query: 'q' }, controller.signal)
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(init.signal).toBe(controller.signal)
+  })
+
+  it('keeps a Kimi status-line message when the error body is not JSON', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('upstream error', { status: 503 })))
+    await expect(searchProvider({
+      ...options,
+      protocol: 'moonshot-search',
+      baseURL: 'https://api.moonshot.cn/v1/search',
+    }).search({ query: 'q' })).rejects.toThrow('Kimi search API error (HTTP 503)')
+  })
+
+  it('surfaces an abort during a Kimi error-body parse as WEB_ABORTED', async () => {
+    const body = { json: () => Promise.reject(new DOMException('aborted', 'AbortError')), ok: false, status: 500 }
+    vi.stubGlobal('fetch', vi.fn(async () => body as unknown as Response))
+    await expect(searchProvider({
+      ...options,
+      protocol: 'moonshot-search',
+      baseURL: 'https://api.moonshot.cn/v1/search',
+    }).search({ query: 'q' })).rejects.toThrow(expect.objectContaining({ code: 'WEB_ABORTED' }))
+  })
 })

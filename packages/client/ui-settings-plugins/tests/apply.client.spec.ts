@@ -127,6 +127,12 @@ describe('ui-settings-plugins apply', () => {
       .toEqual(['shell', 'agent-loop', 'web-search-deepseek'])
     expect(slots.entries('settings.plugin.web-search.provider').map(entry => entry.options.id))
       .toEqual(['deepseek', 'anthropic-messages', 'kimi'])
+    expect(slots.entries('settings.plugin.web-search.provider').map(entry => resolveSlotLabel(entry.options.label)))
+      .toEqual(['DeepSeek', 'Anthropic', 'Kimi'])
+    for (const entry of slots.entries('settings.plugin.web-search.provider')) {
+      const face = (entry as unknown as { inject?: () => { hooks: Record<string, unknown> } }).inject?.()
+      expect(face?.hooks.webSearchCard).toBeDefined()
+    }
   })
 
   it('dispatches the served namespaces its cards claim, and no others', async () => {

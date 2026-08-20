@@ -352,7 +352,7 @@ export class WebSearchShell {
           getSnapshot: () => {
             const next = this.entries()
               .map(labeledSlotTab)
-              .sort((a, b) => a.order - b.order)
+              .toSorted((left, right) => left.order - right.order)
             const prev = this.tabSnapshot
             if (prev.length === next.length
               && prev.every((tab, index) => {

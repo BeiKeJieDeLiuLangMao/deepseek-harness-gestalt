@@ -1,0 +1,10 @@
+after-open
+dock=shown
+tab=current Example Domain
+address=example.test
+screenshot=Example Domain
+after-refresh
+dock=shown
+tab=current Example Domain
+address=example.test
+screenshot=Example Domain

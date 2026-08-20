@@ -18,7 +18,7 @@ const TARGET: BrowserTarget = {
   tabId: 'tab-1' as BrowserTarget['tabId'],
 }
 
-function page(): BrowserPageState {
+function page(overrides: Partial<BrowserPageState> = {}): BrowserPageState {
   return {
     status: 'open',
     target: TARGET,
@@ -32,18 +32,21 @@ function page(): BrowserPageState {
     storage: {
       cookies: 'c', localStorage: 'l', indexedDb: 'i', cache: 'k', serviceWorker: 's',
     },
+    ...overrides,
   }
 }
 
 function Probe(props: {
   target?: BrowserTarget
+  listedRevision?: number
   observe: (target: BrowserTarget) => Promise<BrowserRuntimeState>
   screenshot: (target: BrowserTarget) => Promise<BrowserScreenshot>
 }) {
-  const facts = useBrowserPage(props.target, props.observe, props.screenshot)
+  const facts = useBrowserPage(props.target, props.observe, props.screenshot, props.listedRevision)
   return (
     <div>
       <span data-testid="title">{facts.page?.title ?? 'none'}</span>
+      <span data-testid="url">{facts.page?.url ?? 'none'}</span>
       <span data-testid="shot">{facts.screenshot === undefined ? 'none' : 'yes'}</span>
     </div>
   )
@@ -93,6 +96,31 @@ describe('useBrowserPage', () => {
     })
     await Promise.resolve()
     expect(view.queryByTestId('title')).toBeNull()
+  })
+
+  it('re-observes when the listing revision advances on the same tab', async () => {
+    const observe = vi.fn()
+      .mockResolvedValueOnce(page({ revision: 0, url: 'about:blank', title: 'New Tab' }))
+      .mockResolvedValueOnce(page())
+    const screenshot = vi.fn()
+      .mockResolvedValueOnce({
+        target: TARGET, revision: 0, url: 'about:blank', title: 'New Tab',
+        mediaType: 'image/png' as const, data: 'blank',
+      })
+      .mockResolvedValueOnce({
+        target: TARGET, revision: 1, url: 'https://alpha.test/', title: 'Alpha',
+        mediaType: 'image/png' as const, data: 'abc',
+      })
+    const view = render(
+      <Probe target={TARGET} listedRevision={0} observe={observe} screenshot={screenshot} />,
+    )
+    await waitFor(() => { expect(view.getByTestId('url').textContent).toBe('about:blank') })
+    view.rerender(
+      <Probe target={TARGET} listedRevision={1} observe={observe} screenshot={screenshot} />,
+    )
+    await waitFor(() => { expect(view.getByTestId('url').textContent).toBe('https://alpha.test/') })
+    expect(view.getByTestId('title').textContent).toBe('Alpha')
+    expect(observe).toHaveBeenCalledTimes(2)
   })
 
   it('skips the screenshot when the tab is closed', async () => {

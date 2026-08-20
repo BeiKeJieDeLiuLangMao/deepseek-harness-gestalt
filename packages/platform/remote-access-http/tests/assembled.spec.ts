@@ -267,7 +267,6 @@ describe('Remote Access HTTP assembled flow', () => {
 
     expect((await request({ operation: 'get-mobile-access' })).status).toBe(200)
     expect((await request({ operation: 'reissue-desktop-relay' })).status).toBe(200)
-    expect((await request({ operation: 'revoke-pairing', pairingId: 'pairing-one' })).status).toBe(200)
     expect((await request({ operation: 'cancel-challenge', challengeId: 'challenge-one' })).status).toBe(200)
     expect((await request({ operation: 'admit-blob', bytes: 4 })).status).toBe(200)
     expect(remoteAccess.admitAttachmentBlob).toHaveBeenCalledWith(expect.objectContaining({ bytes: 4 }))
@@ -282,7 +281,6 @@ describe('Remote Access HTTP assembled flow', () => {
       headers: { 'x-forwarded-for': '203.0.113.10, 10.0.0.1' },
     })).status).toBe(200)
     expect(remoteAccess.createChallenge.mock.calls.at(-1)?.[0].clientIp).toMatch(/127\.0\.0\.1|::1/u)
-    expect((await request({ operation: 'reissue-desktop-relay' })).status).toBe(200)
     expect((await request({ operation: 'revoke-pairing', pairingId: 'pairing-one' })).status).toBe(200)
     expect((await request({ operation: 'reject-pairing', pendingPairingId: 'pending-one' })).status).toBe(200)
     remoteAccess.getMobilePairingStatus.mockResolvedValueOnce({

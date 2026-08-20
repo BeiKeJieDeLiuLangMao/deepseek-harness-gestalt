@@ -44,6 +44,8 @@ describe('Platform Account HTTP consumer', () => {
       effect(register: () => () => void) { register() },
     } as unknown as Context
     expect(() => { apply(ctx, {} as never) }).toThrow('origin configuration is required')
+    expect(() => apply(ctx, null as never)).toThrow('origin configuration is required')
+    expect(() => apply(ctx, { origin: 1 } as never)).toThrow('origin configuration is required')
     expect(() => { apply(ctx, { origin: 'https://other.example' }) }).toThrow('does not match the selected Platform environment')
   })
 
