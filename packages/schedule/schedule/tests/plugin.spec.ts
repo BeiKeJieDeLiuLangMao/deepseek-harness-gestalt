@@ -5,7 +5,7 @@ import { agentEvents } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
 import { CallId } from '@deepseek-ai/dsh-llm'
-import SessionStore, { SessionId, SessionPreparation } from '@deepseek-ai/dsh-session'
+import SessionStore, { Session, SessionId, SessionPreparation } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import { remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
 import * as scheduleDomain from '../src/domain.ts'
@@ -189,7 +189,7 @@ describe('Schedule plugin composition', () => {
     const plugin = await ctx.plugin(ScheduleService)
     const missingId = SessionId('schedule-cold-delete-missing')
     const retainedId = SessionId('schedule-cold-delete-retained')
-    ctx.sessionPersistence.prepare = vi.fn(async (sessionId) => {
+    ctx.sessionPersistence.prepare = vi.fn(async (sessionId: SessionId) => {
       const prepared = ctx.sessions.prepare(sessionId, {
         meta: { cwd: '/tmp' },
         ...sessionId === retainedId
@@ -241,7 +241,7 @@ describe('Schedule plugin composition', () => {
     const unused = ctx.sessions.prepare(SessionId('schedule-delete-enter-unused'), { meta: { cwd: '/tmp' } })
     let raced: Awaited<ReturnType<typeof ctx.agents.create>> | undefined
     const enter = ctx.sessions.enter.bind(ctx.sessions)
-    ctx.sessions.enter = vi.fn((session) => {
+    ctx.sessions.enter = vi.fn((session: Session) => {
       if (session.id === unused.id) throw new Error('already attached to a store')
       return enter(session)
     })

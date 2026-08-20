@@ -22,6 +22,11 @@ const MENU_EXPECTED = join(SNAPSHOT_DIR, 'menu.expected.md')
 const MODE = webSnapshotMode()
 const MARKER = 'wsref-marker.ts'
 
+type HostOpenPath = (
+  request: { rpcId: string; payload: { path: string } },
+  signal?: AbortSignal,
+) => Promise<{ rpcId: string; result: { ok: true; value: { opened: true } } }>
+
 describe('web e2e: workspace reference picker', () => {
   let scaffold: WebScaffold
   let browser: Browser
@@ -74,7 +79,10 @@ describe('web e2e: workspace reference picker', () => {
     await expect.poll(() => chip.count(), { timeout: 10_000 }).toBe(1)
     const snapshot = await captureStableAria(page, '[data-workspace-reference-dock]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(join(SNAPSHOT_DIR, 'dock.expected.md'), snapshot, MODE)
-    const openPath = vi.spyOn(scaffold.ctx.apiProxy.host, 'openPath')
+    const openPath = vi.spyOn(
+      (scaffold.ctx as unknown as { apiProxy: { host: { openPath: HostOpenPath } } }).apiProxy.host,
+      'openPath',
+    )
       .mockImplementation(async (request, _signal) => ({
         rpcId: request.rpcId,
         result: { ok: true, value: { opened: true as const } },
@@ -86,7 +94,7 @@ describe('web e2e: workspace reference picker', () => {
       ])
       expect(response.status()).toBe(200)
       expect(openPath).toHaveBeenCalledTimes(1)
-      expect(openPath.mock.calls[0]![0].payload).toEqual({
+      expect(openPath.mock.calls[0][0].payload).toEqual({
         path: `${scaffold.workspaceCwd}/workspace/${MARKER}`,
       })
     } finally {

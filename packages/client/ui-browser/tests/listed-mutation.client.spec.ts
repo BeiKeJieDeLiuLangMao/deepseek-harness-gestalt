@@ -36,7 +36,7 @@ describe('listed-tab mutation recovery', () => {
       .mockResolvedValueOnce('healed')
     const observe = vi.fn().mockResolvedValue({
       status: 'open', target: TARGET, revision: 4,
-    } as BrowserRuntimeState)
+    } satisfies BrowserRuntimeState)
     await expect(recoverListedMutation(mutate, observe, TARGET, 2)).resolves.toBe('healed')
     expect(observe).toHaveBeenCalledWith(TARGET)
     expect(mutate).toHaveBeenNthCalledWith(1, TARGET, 2)
@@ -54,7 +54,7 @@ describe('listed-tab mutation recovery', () => {
       reason: 'crashed',
       reconnecting: true,
       controlOwner: 'agent',
-    } as BrowserRuntimeState)
+    } satisfies BrowserRuntimeState)
     await expect(recoverListedMutation(mutate, observe, TARGET, 2)).resolves.toBe('retried')
     expect(mutate).toHaveBeenLastCalledWith(TARGET, 5)
   })
@@ -63,7 +63,7 @@ describe('listed-tab mutation recovery', () => {
     const mutate = vi.fn().mockRejectedValue(conflict())
     const observe = vi.fn().mockResolvedValue({
       status: 'closed', target: TARGET, revision: 3,
-    } as BrowserRuntimeState)
+    } satisfies BrowserRuntimeState)
     await expect(recoverListedMutation(mutate, observe, TARGET, 2)).resolves.toBeUndefined()
     expect(mutate).toHaveBeenCalledTimes(1)
   })
@@ -89,7 +89,7 @@ describe('listed-tab mutation recovery', () => {
       .mockRejectedValueOnce(new Error('still stale'))
     await expect(recoverListedMutation(
       retryFails,
-      vi.fn().mockResolvedValue({ status: 'open', target: TARGET, revision: 4 } as BrowserRuntimeState),
+      vi.fn().mockResolvedValue({ status: 'open', target: TARGET, revision: 4 } satisfies BrowserRuntimeState),
       TARGET,
       2,
     )).rejects.toThrow('still stale')

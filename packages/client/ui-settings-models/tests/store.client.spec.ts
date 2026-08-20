@@ -119,7 +119,7 @@ describe('ModelsSettingsStore', () => {
           secrets: [],
           revision: 0,
         }, PI_NS],
-      })) as never,
+      })),
     })
     const store = new ModelsSettingsStore(face)
     await store.load()
