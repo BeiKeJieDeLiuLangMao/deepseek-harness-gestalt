@@ -1,8 +1,9 @@
 /**
  * Session-owned Browser Workspace binder. Each Session independently owns
  * zero or more Workspaces; each Workspace uses one Browser Profile and
- * contains multiple browser instances and tabs. Dock visibility, width, and
- * each tab's current control owner are Session facts for the Dock UI.
+ * contains multiple browser instances and tabs. Dock visibility, width,
+ * each tab's current control owner, and each tab's last committed revision
+ * are Session facts for the Dock UI.
  * @module @deepseek-ai/dsh-browser-workspace
  */
 
@@ -57,6 +58,7 @@ const workspaceProjectionSchema = zod.object({
       tabs: zod.array(zod.object({
         tabId: zod.string().min(1),
         controlOwner: zod.enum(['agent', 'human']),
+        revision: zod.number().int().nonnegative(),
       })),
       activeTabId: zod.string().min(1).nullable(),
     })),
@@ -105,7 +107,7 @@ export class BrowserWorkspaceBinder extends TypertRemoteService {
         init: () => EMPTY_BROWSER_WORKSPACE,
         apply: applyBrowserWorkspaceProjection,
         view: state => state,
-        stateVersion: 1,
+        stateVersion: 2,
       })
     })
   }
@@ -282,7 +284,7 @@ export class BrowserWorkspaceBinder extends TypertRemoteService {
   async create(request: BrowserWorkspaceCreateRequest): Promise<BrowserPageState> {
     this.assertCreateAttach(request.session, request.attach)
     const created = await this.ctx.browserRuntime.create(request)
-    this.adopt(request.session, created.target, created.controlOwner)
+    this.adopt(request.session, created.target, created.controlOwner, created.revision)
     return created
   }
 
@@ -294,7 +296,7 @@ export class BrowserWorkspaceBinder extends TypertRemoteService {
   async navigate(request: BrowserWorkspaceNavigateRequest): Promise<BrowserPageState> {
     this.assertOwned(request.session, request.target)
     const navigated = await this.ctx.browserRuntime.navigate(request)
-    this.recordControl(request.session, navigated.target, navigated.controlOwner)
+    this.recordFacts(request.session, navigated.target, navigated.controlOwner, navigated.revision)
     return navigated
   }
 
@@ -305,7 +307,11 @@ export class BrowserWorkspaceBinder extends TypertRemoteService {
    */
   async observe(request: BrowserWorkspaceObserveRequest): Promise<BrowserRuntimeState> {
     this.assertOwned(request.session, request.target)
-    return this.ctx.browserRuntime.observe(request)
+    const state = await this.ctx.browserRuntime.observe(request)
+    if (state.status !== 'closed') {
+      this.recordFacts(request.session, state.target, state.controlOwner, state.revision)
+    }
+    return state
   }
 
   /**
@@ -326,7 +332,7 @@ export class BrowserWorkspaceBinder extends TypertRemoteService {
   async focus(request: BrowserWorkspaceMutationRequest): Promise<BrowserPageState> {
     this.assertOwned(request.session, request.target)
     const focused = await this.ctx.browserRuntime.focus(request)
-    this.recordControl(request.session, focused.target, focused.controlOwner)
+    this.recordFacts(request.session, focused.target, focused.controlOwner, focused.revision)
     this.activate(request.session, focused.target)
     return focused
   }
@@ -339,7 +345,7 @@ export class BrowserWorkspaceBinder extends TypertRemoteService {
   async input(request: BrowserWorkspaceInputRequest): Promise<BrowserPageState> {
     this.assertOwned(request.session, request.target)
     const inputted = await this.ctx.browserRuntime.input(request)
-    this.recordControl(request.session, inputted.target, inputted.controlOwner)
+    this.recordFacts(request.session, inputted.target, inputted.controlOwner, inputted.revision)
     return inputted
   }
 
@@ -351,7 +357,7 @@ export class BrowserWorkspaceBinder extends TypertRemoteService {
   async takeover(request: BrowserWorkspaceMutationRequest): Promise<BrowserPageState> {
     this.assertOwned(request.session, request.target)
     const taken = await this.ctx.browserRuntime.takeover(request)
-    this.recordControl(request.session, taken.target, taken.controlOwner)
+    this.recordFacts(request.session, taken.target, taken.controlOwner, taken.revision)
     return taken
   }
 
@@ -363,7 +369,7 @@ export class BrowserWorkspaceBinder extends TypertRemoteService {
   async returnControl(request: BrowserWorkspaceMutationRequest): Promise<BrowserPageState> {
     this.assertOwned(request.session, request.target)
     const returned = await this.ctx.browserRuntime.returnControl(request)
-    this.recordControl(request.session, returned.target, returned.controlOwner)
+    this.recordFacts(request.session, returned.target, returned.controlOwner, returned.revision)
     return returned
   }
 
@@ -449,18 +455,28 @@ export class BrowserWorkspaceBinder extends TypertRemoteService {
   }
 
   /** Record a newly created tab on the owning Session. */
-  private adopt(session: Session, target: BrowserTarget, controlOwner: BrowserControlOwner): void {
+  private adopt(
+    session: Session,
+    target: BrowserTarget,
+    controlOwner: BrowserControlOwner,
+    revision: number,
+  ): void {
     const current = this.snapshot(session)
-    const adopted = adoptTarget(current, target, controlOwner)
+    const adopted = adoptTarget(current, target, controlOwner, revision)
     this.commit(session, current.workspaces.length === 0 && !current.userCollapsed
       ? { ...adopted, dockOpen: true }
       : adopted)
   }
 
-  /** Persist the current control owner for one already-owned tab. */
-  private recordControl(session: Session, target: BrowserTarget, controlOwner: BrowserControlOwner): void {
+  /** Persist the current control owner and revision for one already-owned tab. */
+  private recordFacts(
+    session: Session,
+    target: BrowserTarget,
+    controlOwner: BrowserControlOwner,
+    revision: number,
+  ): void {
     const current = this.snapshot(session)
-    this.commit(session, recordControlOwner(current, target, controlOwner))
+    this.commit(session, recordTabFacts(current, target, controlOwner, revision))
   }
 
   /** Record the focused tab as the Session's active tab. */
@@ -505,6 +521,7 @@ function adoptTarget(
   snapshot: BrowserWorkspaceProjection,
   target: BrowserTarget,
   controlOwner: BrowserControlOwner,
+  revision: number,
 ): BrowserWorkspaceProjection {
   const workspaces = snapshot.workspaces.map(workspace => ({
     ...workspace,
@@ -528,7 +545,7 @@ function adoptTarget(
     browser = { browserId: target.browserId, tabs: [], activeTabId: target.tabId }
     workspace.browsers.push(browser)
   }
-  browser.tabs.push({ tabId: target.tabId, controlOwner })
+  browser.tabs.push({ tabId: target.tabId, controlOwner, revision })
   workspace.activeBrowserId = target.browserId
   browser.activeTabId = target.tabId
   return {
@@ -538,11 +555,12 @@ function adoptTarget(
   }
 }
 
-/** Persist the current control owner for one already-owned tab. */
-function recordControlOwner(
+/** Persist the current control owner and revision for one already-owned tab. */
+function recordTabFacts(
   snapshot: BrowserWorkspaceProjection,
   target: BrowserTarget,
   controlOwner: BrowserControlOwner,
+  revision: number,
 ): BrowserWorkspaceProjection {
   return {
     ...snapshot,
@@ -555,7 +573,7 @@ function recordControlOwner(
           return {
             ...browser,
             tabs: browser.tabs.map(tab => (
-              tab.tabId === target.tabId ? { ...tab, controlOwner } : tab
+              tab.tabId === target.tabId ? { ...tab, controlOwner, revision } : tab
             )),
           }
         }),
@@ -640,6 +658,7 @@ function freezeSnapshot(snapshot: BrowserWorkspaceProjection): BrowserWorkspaceP
         tabs: Object.freeze(browser.tabs.map(tab => Object.freeze({
           tabId: tab.tabId,
           controlOwner: tab.controlOwner,
+          revision: tab.revision,
         } satisfies BrowserWorkspaceTabRecord))),
       }))),
     }))),

@@ -138,7 +138,9 @@ describe('Session-owned Browser Workspace', () => {
 
     const secondSnapshot = ctx.browserWorkspace.snapshot(second)
     expect(secondSnapshot.workspaces).toHaveLength(1)
-    expect(secondSnapshot.workspaces[0]?.browsers[0]?.tabs).toEqual([{ tabId: other.target.tabId, controlOwner: 'agent' }])
+    expect(secondSnapshot.workspaces[0]?.browsers[0]?.tabs).toEqual([
+      { tabId: other.target.tabId, controlOwner: 'agent', revision: 1 },
+    ])
     expect(JSON.stringify(secondSnapshot)).not.toContain(work.target.tabId)
 
     await expect(ctx.browserWorkspace.observe({ session: second, target: work.target }))
@@ -168,7 +170,9 @@ describe('Session-owned Browser Workspace', () => {
     await ctx.browserWorkspace.close({ session: first, target: work.target, expectedRevision: 1 })
     const afterInactiveClose = ctx.browserWorkspace.snapshot(first)
     const remainingWork = afterInactiveClose.workspaces.find(item => item.workspaceId === work.target.workspaceId)
-    expect(remainingWork?.browsers[0]?.tabs).toEqual([{ tabId: secondTab.target.tabId, controlOwner: 'agent' }])
+    expect(remainingWork?.browsers[0]?.tabs).toEqual([
+      { tabId: secondTab.target.tabId, controlOwner: 'agent', revision: 3 },
+    ])
     expect(remainingWork?.browsers[0]?.activeTabId).toBe(secondTab.target.tabId)
     await ctx.browserWorkspace.close({ session: first, target: secondTab.target, expectedRevision: focused.revision + 1 })
     const afterBrowserClose = ctx.browserWorkspace.snapshot(first)
@@ -217,7 +221,9 @@ describe('Session-owned Browser Workspace', () => {
     await ctx.browserWorkspace.focus({ session: first, target: extra.target, expectedRevision: 1 })
     await ctx.browserWorkspace.close({ session: first, target: extra.target, expectedRevision: 2 })
     const afterClose = ctx.browserWorkspace.snapshot(first)
-    expect(afterClose.workspaces[0]?.browsers[0]?.tabs).toEqual([{ tabId: created.target.tabId, controlOwner: 'agent' }])
+    expect(afterClose.workspaces[0]?.browsers[0]?.tabs).toEqual([
+      { tabId: created.target.tabId, controlOwner: 'agent', revision: 0 },
+    ])
     expect(afterClose.workspaces[0]?.browsers[0]?.activeTabId).toBe(created.target.tabId)
     await ctx.browserWorkspace.close({ session: first, target: sibling.target, expectedRevision: 0 })
     await ctx.browserWorkspace.close({ session: first, target: created.target, expectedRevision: 0 })
@@ -256,7 +262,7 @@ describe('Session-owned Browser Workspace', () => {
         browsers: [{
           browserId: live.target.browserId,
           activeTabId: live.target.tabId,
-          tabs: [{ tabId: live.target.tabId, controlOwner: 'agent' }],
+          tabs: [{ tabId: live.target.tabId, controlOwner: 'agent', revision: 0 }],
         }],
       }],
     })
@@ -276,12 +282,58 @@ describe('Session-owned Browser Workspace', () => {
         browsers: [{
           browserId: live.target.browserId,
           activeTabId: live.target.tabId,
-          tabs: [{ tabId: live.target.tabId, controlOwner: 'agent' }],
+          tabs: [{ tabId: live.target.tabId, controlOwner: 'agent', revision: 0 }],
         }],
       }],
     })
     await ctx.browserWorkspace.cleanup(alreadyClosed)
     expect(ctx.browserWorkspace.snapshot(alreadyClosed).workspaces).toEqual([])
+  })
+
+  it('focuses and closes a background tab with that tab\'s listed revision', async () => {
+    const ctx = await harness()
+    const session = ctx.sessions.create(SessionId('session-tab-revision'))
+    const first = await ctx.browserWorkspace.create({ session, profile: 'temporary' })
+    const second = await ctx.browserWorkspace.create({
+      session,
+      profile: 'temporary',
+      attach: { kind: 'browser', workspaceId: first.target.workspaceId, browserId: first.target.browserId },
+    })
+    await ctx.browserWorkspace.navigate({
+      session, target: first.target, expectedRevision: 0, url: 'https://alpha.test/',
+    })
+    await ctx.browserWorkspace.navigate({
+      session, target: second.target, expectedRevision: 0, url: 'https://beta.test/',
+    })
+    const listed = ctx.browserWorkspace.snapshot(session).workspaces[0]?.browsers[0]?.tabs
+    expect(listed).toEqual([
+      { tabId: first.target.tabId, controlOwner: 'agent', revision: 1 },
+      { tabId: second.target.tabId, controlOwner: 'agent', revision: 1 },
+    ])
+    const firstRevision = listed?.[0]?.revision
+    const secondRevision = listed?.[1]?.revision
+    if (firstRevision === undefined || secondRevision === undefined) {
+      throw new Error('expected listed per-tab revisions')
+    }
+    const focused = await ctx.browserWorkspace.focus({
+      session, target: first.target, expectedRevision: firstRevision,
+    })
+    expect(focused.revision).toBe(2)
+    await expect(ctx.browserWorkspace.close({
+      session, target: second.target, expectedRevision: secondRevision,
+    })).resolves.toMatchObject({ status: 'closed', revision: 2 })
+
+    const leftover = await ctx.browserWorkspace.create({
+      session,
+      profile: 'temporary',
+      attach: { kind: 'browser', workspaceId: first.target.workspaceId, browserId: first.target.browserId },
+    })
+    await ctx.browserRuntime.close({ target: leftover.target, expectedRevision: leftover.revision })
+    await expect(ctx.browserWorkspace.observe({ session, target: leftover.target }))
+      .resolves.toMatchObject({ status: 'closed', revision: leftover.revision + 1 })
+    expect(ctx.browserWorkspace.snapshot(session).workspaces[0]?.browsers[0]?.tabs.some(
+      tab => tab.tabId === leftover.target.tabId,
+    )).toBe(true)
   })
 
   it('rejects an invalid Dock width and disposes its invariant companion', async () => {
@@ -306,7 +358,7 @@ describe('Session-owned Browser Workspace', () => {
     })
     expect(navigated.controlOwner).toBe('agent')
     expect(ctx.browserWorkspace.snapshot(session).workspaces[0]?.browsers[0]?.tabs).toEqual([
-      { tabId: created.target.tabId, controlOwner: 'agent' },
+      { tabId: created.target.tabId, controlOwner: 'agent', revision: 1 },
     ])
 
     const inputted = await ctx.browserWorkspace.input({
@@ -321,7 +373,7 @@ describe('Session-owned Browser Workspace', () => {
       target: created.target,
     })
     expect(ctx.browserWorkspace.snapshot(session).workspaces[0]?.browsers[0]?.tabs).toEqual([
-      { tabId: created.target.tabId, controlOwner: 'human' },
+      { tabId: created.target.tabId, controlOwner: 'human', revision: 2 },
     ])
     await expect(ctx.browserWorkspace.navigate({
       session,
@@ -346,7 +398,7 @@ describe('Session-owned Browser Workspace', () => {
       target: created.target,
     })
     expect(ctx.browserWorkspace.snapshot(session).workspaces[0]?.browsers[0]?.tabs).toEqual([
-      { tabId: created.target.tabId, controlOwner: 'agent' },
+      { tabId: created.target.tabId, controlOwner: 'agent', revision: 4 },
     ])
     const replayed = foldBrowserWorkspace(session.events)
     expect(replayed.workspaces[0]?.browsers[0]?.tabs[0]?.controlOwner).toBe('agent')

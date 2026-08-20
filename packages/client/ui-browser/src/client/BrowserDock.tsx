@@ -91,8 +91,7 @@ export function BrowserDock({
             data-active={tab.active || undefined}
             aria-selected={tab.active}
             onClick={() => {
-              if (page === undefined) return
-              void focus(tab.target, page.revision)
+              void focus(tab.target, tab.revision)
             }}
           >
             <span className={css.tabTitle}>
@@ -104,8 +103,7 @@ export function BrowserDock({
               aria-label={t('dock.closeTab')}
               onClick={(event) => {
                 event.stopPropagation()
-                if (page === undefined) return
-                void close(tab.target, page.revision)
+                void close(tab.target, tab.revision)
               }}
             >
               <IconCloseOutline16 size={12} />

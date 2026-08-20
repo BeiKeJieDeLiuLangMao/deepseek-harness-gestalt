@@ -10,13 +10,13 @@ Session 可以打开 Browser Profile，但 Runtime 仍把 Workspace、实例与�
 
 ## 决策
 
-`dsh-browser-workspace` 把 Browser Runtime 身份绑定到一条 Session 日志。每个 Session 独立拥有零个或多个 Workspace。每个 Workspace 使用一个 Browser Profile，并包含多个浏览器实例与标签页。`browser/workspace` 是仅日志、后写覆盖的完整值 Session 事件。折叠会在 Session 切换与重新加载后恢复 Dock 打开/宽度、实例、活动实例、标签页与活动标签页。
+`dsh-browser-workspace` 把 Browser Runtime 身份绑定到一条 Session 日志。每个 Session 独立拥有零个或多个 Workspace。每个 Workspace 使用一个 Browser Profile，并包含多个浏览器实例与标签页。`browser/workspace` 是仅日志、后写覆盖的完整值 Session 事件。折叠会在 Session 切换与重新加载后恢复 Dock 打开/宽度、实例、活动实例、标签页、每个标签页最近一次提交的修订号与活动标签页。
 
 Runtime `create` 可以把新实例附加到已有 Workspace，或把新标签页附加到已有实例。命名 Profile 仍以 `BROWSER_PROFILE_BUSY` 拒绝第二个独立写入方；附加到已打开的命名 Profile 属于同一写入方再增加实例或标签页。当调用 Agent Session 存在且 Binder 已组合时，Consumer 经 Binder 路由。跨 Session 页面转移以 `BROWSER_TRANSFER_UNSUPPORTED` 拒绝。附加到另一 live Session 的 Workspace 或实例同样是 `BROWSER_TRANSFER_UNSUPPORTED`；附加到本 Session 未知的层级是 `BROWSER_SESSION_MISMATCH`。Session 释放会返回遗留标签页清理，并从 Session 快照中遗忘这些标签页。
 
 无密钥 Browser Runtime 快照保持不含 Binder，因为它们证明 Consumer 发现与已渲染 Runtime 事实，而不是 Session 隔离。只有组合了 Binder 的路径才宣称 Session 本地所有权。
 
-Dock chrome 见 `dsh-client-ui-browser`。Dock 打开状态、宽度、`userCollapsed` 以及每个标签页的当前控制权所有者是 Session 事实，供投影恢复。同一标签页上的人工与 Agent 控制权见 [浏览器控制权仲裁 Agent Note](2026-08-19-browser-control-arbitration.md)。第一个 Agent 标签页会打开 Dock；人工收起后，后续 Agent 活动不会再次打开它。
+Dock chrome 见 `dsh-client-ui-browser`。Dock 打开状态、宽度、`userCollapsed`、每个标签页的当前控制权所有者以及每个标签页最近一次提交的修订号是 Session 事实，供投影恢复。列表上的每标签页修订号由 [Dock 标签页修订号 Agent Note](../bug-fix/2026-08-20-dock-tab-revision.md) 持有。同一标签页上的人工与 Agent 控制权见 [浏览器控制权仲裁 Agent Note](2026-08-19-browser-control-arbitration.md)。第一个 Agent 标签页会打开 Dock；人工收起后，后续 Agent 活动不会再次打开它。
 
 ## 考虑过的替代方案
 
@@ -28,7 +28,7 @@ Dock chrome 见 `dsh-client-ui-browser`。Dock 打开状态、宽度、`userColl
 
 ## 后果
 
-两个 Session 可以在同一 Runtime 上拥有隔离 Workspace。重新加载从 Session 日志重建 Dock、标签页所有权与当前控制权所有者。命名 Profile 仍是隔离身份。发布仍属于后续工单。
+两个 Session 可以在同一 Runtime 上拥有隔离 Workspace。重新加载从 Session 日志重建 Dock、标签页所有权、当前控制权所有者以及每个标签页最近一次提交的修订号。命名 Profile 仍是隔离身份。发布仍属于后续工单。
 
 ## 验证
 

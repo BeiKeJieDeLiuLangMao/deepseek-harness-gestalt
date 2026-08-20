@@ -393,7 +393,7 @@ describe('createFixtureApi', () => {
           workspaceId: 'fx-workspace', profileId: 'fx-profile', activeBrowserId: 'fx-browser',
           browsers: [{
             browserId: 'fx-browser', activeTabId: 'fx-tab',
-            tabs: [{ tabId: 'fx-tab', controlOwner: 'agent' }],
+            tabs: [{ tabId: 'fx-tab', controlOwner: 'agent', revision: 1 }],
           }],
         }],
       },

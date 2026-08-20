@@ -25,6 +25,7 @@ export const BROWSER_DOCK_WIDTH_RANGE = {
 export interface BrowserDockTab {
   readonly target: BrowserTarget
   readonly controlOwner: BrowserWorkspaceTabRecord['controlOwner']
+  readonly revision: number
   readonly active: boolean
 }
 
@@ -64,6 +65,7 @@ export function selectBrowserDock(snapshot: BrowserWorkspaceProjection | null | 
       tabId: tab.tabId,
     } satisfies BrowserTarget,
     controlOwner: tab.controlOwner,
+    revision: tab.revision,
     active: tab.tabId === instance.activeTabId,
   }))
   return {

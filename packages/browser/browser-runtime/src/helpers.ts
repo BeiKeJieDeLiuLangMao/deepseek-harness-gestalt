@@ -113,7 +113,7 @@ export const EMPTY_BROWSER_PROFILE_STORAGE: BrowserProfileStorage = Object.freez
 /**
  * Build one Profile hierarchy around a session name and tab sequence.
  * @param profileId - Opaque Profile identity.
- * @param sessionName - Provider-owned Tandem session name.
+ * @param sessionName - Provider-owned partition identifier.
  * @param tabSeq - Positive sequence that distinguishes one open tab lifecycle.
  * @param attach - Optional existing Workspace or browser instance to reuse.
  * @returns the frozen target for that open lifecycle.
@@ -222,7 +222,7 @@ export function browserProfileStorage(token: string): BrowserProfileStorage {
 }
 
 /**
- * Resolve opaque Profile identity, Tandem session name, and chrome for one create request.
+ * Resolve opaque Profile identity, partition identifier, and chrome for one create request.
  * @param prefix - Provider-owned identity prefix.
  * @param request - Temporary or named persistent create request.
  * @param temporarySeq - Positive sequence used only for a temporary Profile.

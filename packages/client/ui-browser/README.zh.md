@@ -8,7 +8,7 @@ Session 持有的 Browser Dock 与收起后的标签页预览。当本 Session �
 
 收起预览是同一 Dock 的单行分层摘要，不是第二个 Dock。它没有外壳或页脚。点击后层会选中该标签页；点击当前层会打开 Dock。Dock 可见时预览隐藏。普通 MCP 工具行仍留在对话历史中。
 
-占用方专用详情宽度范围为 420/640/960 px。切换 Session 会从 Workspace 投影恢复该 Session 的可见性、宽度、实例、标签页与当前控制权所有者。
+占用方专用详情宽度范围为 420/640/960 px。切换 Session 会从 Workspace 投影恢复该 Session 的可见性、宽度、实例、标签页、当前控制权所有者以及每个标签页最近一次提交的修订号。聚焦与关闭会把被操作标签页在列表中的修订号一并发送。
 
 行为由 [Browser Dock Agent Note](../../../.agents/notes/implemented/feature/2026-08-19-browser-dock.md) 规定。
 

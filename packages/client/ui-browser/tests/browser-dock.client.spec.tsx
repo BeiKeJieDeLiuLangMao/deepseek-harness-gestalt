@@ -73,8 +73,8 @@ function snapshot(overrides: Partial<BrowserWorkspaceProjection> = {}): BrowserW
         browserId: TARGET.browserId,
         activeTabId: TARGET.tabId,
         tabs: [
-          { tabId: BACK.tabId, controlOwner: 'human' },
-          { tabId: TARGET.tabId, controlOwner: 'agent' },
+          { tabId: BACK.tabId, controlOwner: 'human', revision: 2 },
+          { tabId: TARGET.tabId, controlOwner: 'agent', revision: 4 },
         ],
       }],
     }],
@@ -143,7 +143,9 @@ describe('BrowserDock occupancy', () => {
     expect(input.setDock).toHaveBeenCalledWith(false, 720)
     expect(input.closeDetails).toHaveBeenCalled()
     fireEvent.click(screen.getByRole('tab', { selected: false }))
-    expect(input.focus).toHaveBeenCalledWith(BACK, 4)
+    expect(input.focus).toHaveBeenCalledWith(BACK, 2)
+    fireEvent.click(screen.getAllByRole('button', { name: '关闭标签页' })[0]!)
+    expect(input.close).toHaveBeenCalledWith(BACK, 2)
     fireEvent.click(screen.getAllByRole('button', { name: '关闭标签页' })[1]!)
     expect(input.close).toHaveBeenCalledWith(TARGET, 4)
     fireEvent.click(screen.getByRole('button', { name: '刷新' }))
@@ -176,16 +178,16 @@ describe('BrowserDock occupancy', () => {
     expect(screen.getByText('没有打开的页面')).toBeTruthy()
   })
 
-  it('shows the empty viewport and ignores gestures before observe settles', () => {
+  it('focuses and closes from the listing revision before observe settles', () => {
     const input = props({ page: undefined, screenshot: undefined })
     input.observe = vi.fn().mockReturnValue(new Promise(() => {}))
     render(<BrowserDock {...input} />)
     expect(screen.getByText('没有打开的页面')).toBeTruthy()
-    fireEvent.click(screen.getByRole('tab', { selected: true }))
-    fireEvent.click(screen.getAllByRole('button', { name: '关闭标签页' })[1]!)
+    fireEvent.click(screen.getByRole('tab', { selected: false }))
+    expect(input.focus).toHaveBeenCalledWith(BACK, 2)
+    fireEvent.click(screen.getAllByRole('button', { name: '关闭标签页' })[0]!)
+    expect(input.close).toHaveBeenCalledWith(BACK, 2)
     fireEvent.click(screen.getByRole('button', { name: '刷新' }))
-    expect(input.focus).not.toHaveBeenCalled()
-    expect(input.close).not.toHaveBeenCalled()
     expect(input.refresh).not.toHaveBeenCalled()
   })
 
