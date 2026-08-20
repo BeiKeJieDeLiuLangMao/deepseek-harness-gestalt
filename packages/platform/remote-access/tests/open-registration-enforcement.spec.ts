@@ -43,15 +43,16 @@ describe('open-registration enforcement', () => {
       clientIp: '203.0.113.10',
     })).rejects.toMatchObject({
       code: 'QUOTA',
-      retryAfter: expect.any(Number),
+      retryAfter: Math.ceil(PAIRING_CHALLENGE_QUOTA_WINDOW_MS / 1_000),
     })
     const isolated = authentication('desktop-account-e', 'account-e')
     await provider.setMobileAccess({ desktop: isolated, enabled: true })
-    await expect(provider.createChallenge({
+    const otherIp = await provider.createChallenge({
       desktop: isolated,
       rendezvousId: parsePairingRendezvousId('other-ip'),
       clientIp: '198.51.100.8',
-    })).resolves.toMatchObject({ challengeId: expect.any(String) })
+    })
+    expect(otherIp.challengeId.length).toBeGreaterThan(0)
   })
 
   it('rejects the eleventh hourly challenge for one account and still lists an established pairing', async () => {
@@ -91,11 +92,12 @@ describe('open-registration enforcement', () => {
     })
     expect(await provider.listPersonalPairings(desktop)).toMatchObject([{ id: pairing.id }])
     now.value += PAIRING_CHALLENGE_QUOTA_WINDOW_MS + 1
-    await expect(provider.createChallenge({
+    const restored = await provider.createChallenge({
       desktop,
       rendezvousId: parsePairingRendezvousId('hourly-restored'),
       clientIp: '192.0.2.13',
-    })).resolves.toMatchObject({ challengeId: expect.any(String) })
+    })
+    expect(restored.challengeId.length).toBeGreaterThan(0)
   })
 
   it('accepts fifty Personal Pairings and rejects the fifty-first', async () => {
@@ -156,10 +158,11 @@ describe('open-registration enforcement', () => {
       retryAfter: OPEN_REGISTRATION_HARD_CAP_RETRY_AFTER_SECONDS,
     })
     await provider.releaseAttachmentBlob({ owner, reservationId: held[0] as string })
-    await expect(provider.admitAttachmentBlob({
+    const exactLimit = await provider.admitAttachmentBlob({
       owner,
       bytes: OPEN_REGISTRATION_QUOTAS.blobBytes,
-    })).resolves.toMatchObject({ reservationId: expect.any(String) })
+    })
+    expect(exactLimit.reservationId.length).toBeGreaterThan(0)
     await expect(provider.admitAttachmentBlob({
       owner,
       bytes: OPEN_REGISTRATION_QUOTAS.blobBytes + 1,
@@ -197,9 +200,8 @@ describe('open-registration enforcement', () => {
       retryAfter: retryAfterSecondsUntil(NOW, ACCOUNT_DAILY_QUOTA_WINDOW_MS, now.value),
     })
     now.value += ACCOUNT_DAILY_QUOTA_WINDOW_MS + 1
-    await expect(daily.admitAttachmentBlob({ owner, bytes: 1 })).resolves.toMatchObject({
-      reservationId: expect.any(String),
-    })
+    const afterDailyWindow = await daily.admitAttachmentBlob({ owner, bytes: 1 })
+    expect(afterDailyWindow.reservationId.length).toBeGreaterThan(0)
     await expect(daily.admitAttachmentBlob({ owner, bytes: -1 })).rejects.toBeInstanceOf(TypeError)
     await expect(daily.releaseAttachmentBlob({ owner, reservationId: 'missing' })).rejects.toBeInstanceOf(TypeError)
 

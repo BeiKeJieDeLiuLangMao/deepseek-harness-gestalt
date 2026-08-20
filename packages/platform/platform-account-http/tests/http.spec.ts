@@ -43,8 +43,8 @@ describe('Platform Account HTTP consumer', () => {
       webServer: { register() { return () => {} } },
       effect(register: () => () => void) { register() },
     } as unknown as Context
-    expect(() => apply(ctx, {} as never)).toThrow('origin configuration is required')
-    expect(() => apply(ctx, { origin: 'https://other.example' })).toThrow('does not match the selected Platform environment')
+    expect(() => { apply(ctx, {} as never) }).toThrow('origin configuration is required')
+    expect(() => { apply(ctx, { origin: 'https://other.example' }) }).toThrow('does not match the selected Platform environment')
   })
 
   it('serves the complete lifecycle and bilingual fixed callback with exact CORS', async () => {
@@ -245,8 +245,8 @@ describe('Platform Account HTTP consumer', () => {
       webServer: { register() { return () => {} } },
       effect(register: () => () => void) { register() },
     } as unknown as Context
-    expect(() => apply(ctx, null as never)).toThrow('origin configuration is required')
-    expect(() => apply(ctx, { origin: 'https://other.example' })).toThrow('does not match')
+    expect(() => { apply(ctx, null as never) }).toThrow('origin configuration is required')
+    expect(() => { apply(ctx, { origin: 'https://other.example' }) }).toThrow('does not match')
   })
 })
 

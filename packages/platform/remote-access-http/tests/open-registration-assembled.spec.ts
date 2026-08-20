@@ -106,7 +106,7 @@ describe('assembled open-registration Remote Access quotas', () => {
     }
     const concurrentOver = await request(server.origin, desktop, { operation: 'admit-blob', bytes: 1 })
     expect(concurrentOver.status).toBe(429)
-    await request(server.origin, desktop, { operation: 'release-blob', reservationId: held[0] as string })
+    await request(server.origin, desktop, { operation: 'release-blob', reservationId: held[0] })
     expect((await request(server.origin, desktop, {
       operation: 'admit-blob',
       bytes: OPEN_REGISTRATION_QUOTAS.blobBytes,
