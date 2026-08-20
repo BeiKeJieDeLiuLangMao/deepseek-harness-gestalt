@@ -65,7 +65,7 @@ interface MobileRow {
 }
 
 /** Result rows returned by `pg.Pool` and the in-process SQL stand-in. */
-export interface PlatformSqlQueryResult {
+interface PlatformSqlQueryResult {
   rows: Array<Record<string, unknown>>
   rowCount: number | null
 }
