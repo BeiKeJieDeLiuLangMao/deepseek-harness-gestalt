@@ -12,7 +12,10 @@ The shared Mobile entry includes the `@capacitor/browser` adapter and calls it d
 
 ```sh
 pnpm --filter @deepseek-ai/dsh-mobile build
+pnpm --filter @deepseek-ai/dsh-mobile exec vite --host
 ```
+
+Vite resolves workspace packages through [`tsconfig.base.json`](../../tsconfig.base.json) paths so those commands run on the source plane. An Android emulator must `adb reverse` the Vite port and open `http://127.0.0.1`; `10.0.2.2` is not a secure context and cannot create an Installation id.
 
 ## Known Limitations and Deferred Work
 

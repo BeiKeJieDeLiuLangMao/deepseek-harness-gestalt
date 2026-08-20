@@ -12,7 +12,10 @@
 
 ```sh
 pnpm --filter @deepseek-ai/dsh-mobile build
+pnpm --filter @deepseek-ai/dsh-mobile exec vite --host
 ```
+
+Vite 通过 [`tsconfig.base.json`](../../tsconfig.base.json) 的 paths 解析工作区包，因此这些命令在源码平面上运行。Android 模拟器必须对 Vite 端口做 `adb reverse` 并打开 `http://127.0.0.1`；`10.0.2.2` 不是安全上下文，无法创建 Installation id。
 
 ## 已知限制与暂缓事项
 
