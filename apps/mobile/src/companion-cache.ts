@@ -46,16 +46,16 @@ export function companionCacheDatabaseName(
 /** Content kinds the Companion Cache may automatically seal. */
 export type CompanionCacheContentKind = 'workspace-metadata' | 'session-metadata' | 'transcript'
 
+/** Content kind that must never be automatically cached. */
+type CompanionCacheExcludedKind = 'attachment-bytes' | 'terminal-content' | 'spill-file' | 'credential'
+
 /** Content kinds that must never be automatically cached. */
-const COMPANION_CACHE_EXCLUDED_KINDS = [
+const COMPANION_CACHE_EXCLUDED_KINDS: readonly CompanionCacheExcludedKind[] = [
   'attachment-bytes',
   'terminal-content',
   'spill-file',
   'credential',
-] as const
-
-/** Content kind outside the automatic-cache allowlist. */
-export type CompanionCacheExcludedKind = (typeof COMPANION_CACHE_EXCLUDED_KINDS)[number]
+]
 
 const ADMITTED_CONTENT_KINDS: readonly CompanionCacheContentKind[] = [
   'workspace-metadata',
@@ -70,6 +70,7 @@ const ADMITTED_CONTENT_KINDS: readonly CompanionCacheContentKind[] = [
  * @returns whether the kind may be sealed automatically.
  */
 export function companionCacheAdmits(kind: string): kind is CompanionCacheContentKind {
+  if ((COMPANION_CACHE_EXCLUDED_KINDS as readonly string[]).includes(kind)) return false
   return (ADMITTED_CONTENT_KINDS as readonly string[]).includes(kind)
 }
 
