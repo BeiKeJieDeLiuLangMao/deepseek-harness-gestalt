@@ -12,8 +12,8 @@ function callName(node: ToolCallBlock): string {
 
 /** One atomic call dispatched through the Tool-owned keyed slot. */
 const ToolCall = memo(function ToolCall({
-  renderSlot, callId, toolName, block, openFile, selected, cwd, inspectCall, t, children,
-}: Pick<ToolTreeProps, 'renderSlot' | 'openFile' | 'cwd' | 'inspectCall' | 't'> & {
+  renderSlot, callId, toolName, block, openFile, selected, cwd, inspectCall, selectCall, t, children,
+}: Pick<ToolTreeProps, 'renderSlot' | 'openFile' | 'cwd' | 'inspectCall' | 'selectCall' | 't'> & {
   callId: string
   toolName: string
   block: ToolCallBlock
@@ -34,6 +34,9 @@ const ToolCall = memo(function ToolCall({
       data-chat-anchor-key={`call:${callId}`}
       data-chat-call-id={callId}
       data-selected={selected || undefined}
+      onClick={toolName.startsWith('browser_') && selectCall !== undefined
+        ? () => { selectCall(callId, toolName) }
+        : undefined}
     >
       {renderSlot('tool.call.toolview', owner, {
         entryKey: toolName,
@@ -45,8 +48,8 @@ const ToolCall = memo(function ToolCall({
 })
 
 const ToolCallBranch = memo(function ToolCallBranch({
-  renderSlot, block, selectedCallId, cwd, openFile, inspectCall, t,
-}: Pick<ToolTreeProps, 'renderSlot' | 'selectedCallId' | 'cwd' | 'openFile' | 'inspectCall' | 't'> & {
+  renderSlot, block, selectedCallId, cwd, openFile, inspectCall, selectCall, t,
+}: Pick<ToolTreeProps, 'renderSlot' | 'selectedCallId' | 'cwd' | 'openFile' | 'inspectCall' | 'selectCall' | 't'> & {
   block: ToolCallBlock
 }) {
   return (
@@ -59,6 +62,7 @@ const ToolCallBranch = memo(function ToolCallBranch({
       selected={block.callId === selectedCallId}
       cwd={cwd}
       inspectCall={inspectCall}
+      selectCall={selectCall}
       t={t}
     >
       {block.subCalls.length > 0 ? (
@@ -72,6 +76,7 @@ const ToolCallBranch = memo(function ToolCallBranch({
               cwd={cwd}
               openFile={openFile}
               inspectCall={inspectCall}
+              selectCall={selectCall}
               t={t}
             />
           ))}
@@ -83,12 +88,12 @@ const ToolCallBranch = memo(function ToolCallBranch({
 
 /**
  * Render one root Tool call and its recursive children through the same
- * atomic keyed dispatch.
+ * atomic keyed dispatch. A `browser_*` row calls `selectCall` on click.
  * @param props - whole-Tool owner data and the Tool-owned child-slot share.
  * @returns the Tool call tree.
  */
 export function ToolCallTree({
-  renderSlot, node, selectedCallId, cwd, openFile, inspectCall, t,
+  renderSlot, node, selectedCallId, cwd, openFile, inspectCall, selectCall, t,
 }: ToolTreeProps) {
   const block = node.data.root
   return (
@@ -99,6 +104,7 @@ export function ToolCallTree({
       cwd={cwd}
       openFile={openFile}
       inspectCall={inspectCall}
+      selectCall={selectCall}
       t={t}
     />
   )

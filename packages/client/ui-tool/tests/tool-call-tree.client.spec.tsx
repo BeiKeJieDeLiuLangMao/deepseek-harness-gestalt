@@ -44,6 +44,7 @@ function props(
     inspectCall: vi.fn(),
     forkAt: vi.fn(),
     fileMentions: vi.fn(),
+    selectCall: vi.fn(),
     t,
   } as unknown as ToolTreeProps
 }
@@ -77,5 +78,39 @@ describe('ToolCallTree', () => {
     expect(view.container.querySelector('[data-chat-call-id="parent:code:1"]')?.hasAttribute('data-selected')).toBe(false)
     expect(view.container.querySelector('[data-chat-call-id="parent:code:1:code:1"]')?.getAttribute('data-selected')).toBe('true')
     expect(nests).toHaveLength(2)
+  })
+
+  it('selects a browser_navigate card and leaves ordinary tool rows inert', () => {
+    const browser = root('nav-1', {
+      name: 'browser_navigate',
+      argsRaw: '{"target":{"profileId":"p","workspaceId":"w","browserId":"b","tabId":"t"},"expectedRevision":1,"url":"https://example.test/"}',
+    })
+    const input = props(browser)
+    const view = render(<ToolCallTree {...input} />)
+    view.container.querySelector('[data-chat-call-id="nav-1"]')?.dispatchEvent(
+      new MouseEvent('click', { bubbles: true }),
+    )
+    expect(input.selectCall).toHaveBeenCalledWith('nav-1', 'browser_navigate')
+    cleanup()
+    const bash = root('bash-1', { name: 'bash', argsRaw: '{"command":"ls"}' })
+    const bashInput = props(bash)
+    const bashView = render(<ToolCallTree {...bashInput} />)
+    bashView.container.querySelector('[data-chat-call-id="bash-1"]')?.dispatchEvent(
+      new MouseEvent('click', { bubbles: true }),
+    )
+    expect(bashInput.selectCall).not.toHaveBeenCalled()
+  })
+
+  it('leaves a browser row inert when selectCall is absent', () => {
+    const browser = root('nav-2', {
+      name: 'browser_navigate',
+      argsRaw: '{"target":{"profileId":"p","workspaceId":"w","browserId":"b","tabId":"t"}}',
+    })
+    const input = { ...props(browser), selectCall: undefined }
+    const view = render(<ToolCallTree {...input} />)
+    view.container.querySelector('[data-chat-call-id="nav-2"]')?.dispatchEvent(
+      new MouseEvent('click', { bubbles: true }),
+    )
+    expect(input.selectCall).toBeUndefined()
   })
 })
