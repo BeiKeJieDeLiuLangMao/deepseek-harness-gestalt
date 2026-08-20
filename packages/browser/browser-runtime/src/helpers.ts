@@ -4,6 +4,7 @@ import { BrowserInstanceId, BrowserProfileId, BrowserProfileName, BrowserRuntime
 import type {
   BrowserControlOwner,
   BrowserCreateAttach,
+  BrowserCreateRequest,
   BrowserMutationRequest,
   BrowserPageState,
   BrowserProfileChrome,
@@ -452,6 +453,36 @@ export function assertBrowserProfileWriterAvailable(
       )
     }
   }
+}
+
+/**
+ * Open pages currently written on one Profile.
+ * @param states - Current Provider states.
+ * @param profileId - Profile identity to collect.
+ * @returns the open pages owned by that Profile.
+ */
+export function openBrowserPagesForProfile(
+  states: Iterable<BrowserRuntimeState>,
+  profileId: BrowserProfileId,
+): BrowserPageState[] {
+  return [...states].filter((state): state is BrowserPageState => (
+    state.status === 'open' && state.target.profileId === profileId
+  ))
+}
+
+/**
+ * Reject a second unattached writer of a named persistent Profile.
+ * @param states - Current Provider states.
+ * @param request - Incoming create request.
+ * @param partition - Persist partition claimed by the incoming named Profile.
+ */
+export function assertUnattachedPersistentWriterAvailable(
+  states: Iterable<BrowserRuntimeState>,
+  request: BrowserCreateRequest,
+  partition: string,
+): void {
+  if (request.profile !== 'persistent' || request.attach !== undefined) return
+  assertBrowserProfileWriterAvailable(states, partition, request.name)
 }
 
 /**

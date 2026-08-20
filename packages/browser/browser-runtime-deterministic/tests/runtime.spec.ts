@@ -566,7 +566,7 @@ describe('deterministic Browser Runtime public lifecycle', () => {
     const created = await ctx.browserRuntime.create({ profile: 'temporary' })
     const observed: number[] = []
     ctx.on('browser/runtime-state', () => { throw new Error('ordinary observer failed') })
-    ctx.on('browser/runtime-state', async () => { throw new Error('async observer failed') })
+    ctx.on('browser/runtime-state', (): unknown => Promise.reject(new Error('async observer failed')))
     ctx.on('browser/runtime-state', (state) => { observed.push(state.revision) })
 
     const navigated = await ctx.browserRuntime.navigate({

@@ -8,7 +8,7 @@ import {
   addressedBrowserRuntimeStateFrom,
   assertBrowserCreateAttach,
   assertBrowserNotAborted,
-  assertBrowserProfileWriterAvailable,
+  assertUnattachedPersistentWriterAvailable,
   BrowserRuntime,
   BrowserRuntimeError,
   browserTargetFor,
@@ -16,6 +16,7 @@ import {
   commitBrowserRuntimeState,
   emitBrowserRuntimeState,
   EMPTY_BROWSER_PROFILE_STORAGE,
+  openBrowserPagesForProfile,
   requireExpectedBrowserRevision,
   resolveBrowserCreateAttach,
   resolveBrowserProfileCreate,
@@ -738,12 +739,8 @@ export class TandemBrowserRuntime extends BrowserRuntime {
           sessionName: this.openProfile(attached.target).sessionName,
           chrome: attached.chrome,
         }
-      const existing = [...this.states.values()].filter(state => (
-        state.status === 'open' && state.target.profileId === created.profileId
-      ))
-      if (request.profile === 'persistent' && request.attach === undefined) {
-        assertBrowserProfileWriterAvailable(this.states.values(), created.chrome.partition, request.name)
-      }
+      const existing = openBrowserPagesForProfile(this.states.values(), created.profileId)
+      assertUnattachedPersistentWriterAvailable(this.states.values(), request, created.chrome.partition)
       assertBrowserCreateAttach(this.states.values(), created.profileId, request.attach)
       if (this.process === undefined) await this.startProcess(request.signal)
       try {

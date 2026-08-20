@@ -11,7 +11,7 @@ import {
   addressedBrowserRuntimeStateFrom,
   assertBrowserCreateAttach,
   assertBrowserNotAborted,
-  assertBrowserProfileWriterAvailable,
+  assertUnattachedPersistentWriterAvailable,
   BrowserRuntime,
   BrowserRuntimeError,
   browserTargetFor,
@@ -526,9 +526,7 @@ export class ElectronBrowserRuntime extends BrowserRuntime {
           sessionName: this.openProfile(attached.target).sessionName,
           chrome: attached.chrome,
         }
-      if (request.profile === 'persistent' && request.attach === undefined) {
-        assertBrowserProfileWriterAvailable(this.states.values(), created.chrome.partition, request.name)
-      }
+      assertUnattachedPersistentWriterAvailable(this.states.values(), request, created.chrome.partition)
       assertBrowserCreateAttach(this.states.values(), created.profileId, request.attach)
       const host = await this.hostApis()
       const existing = this.profiles.get(created.profileId)

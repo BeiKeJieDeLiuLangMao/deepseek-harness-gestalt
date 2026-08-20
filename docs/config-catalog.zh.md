@@ -431,7 +431,7 @@ export interface DeterministicBrowserPage {
 }
 ```
 
-来源：[`packages/browser/browser-runtime-deterministic/src/index.ts:69`](../packages/browser/browser-runtime-deterministic/src/index.ts)
+来源：[`packages/browser/browser-runtime-deterministic/src/index.ts:70`](../packages/browser/browser-runtime-deterministic/src/index.ts)
 
 <a id="deepseek-aidsh-browser-runtime-electron"></a>
 
@@ -498,7 +498,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/browser/browser-runtime-tandem/src/index.ts:54`](../packages/browser/browser-runtime-tandem/src/index.ts)
+来源：[`packages/browser/browser-runtime-tandem/src/index.ts:55`](../packages/browser/browser-runtime-tandem/src/index.ts)
 
 <a id="deepseek-aidsh-client-connection"></a>
 

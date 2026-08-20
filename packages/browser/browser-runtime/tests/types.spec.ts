@@ -5,6 +5,7 @@ import {
   assertBrowserCreateAttach,
   assertBrowserNotAborted,
   assertBrowserProfileName,
+  assertUnattachedPersistentWriterAvailable,
   browserProfileChrome,
   browserSessionNameFromPartition,
   browserSessionPartition,
@@ -18,6 +19,7 @@ import {
   emitBrowserRuntimeState,
   enqueueBrowserRuntimeOperation,
   labeledBrowserProfileName,
+  openBrowserPagesForProfile,
   bindBrowserControlMutation,
   mutateBrowserControlOwner,
   requireExpectedBrowserRevision,
@@ -235,6 +237,45 @@ describe('Browser Runtime shared Provider helpers', () => {
     }).toThrow(BrowserRuntimeError)
   })
 
+  it('lists open pages and rejects a second unattached named persistent writer', () => {
+    const open = Object.freeze({
+      status: 'open' as const,
+      target,
+      revision: 0,
+      url: 'about:blank',
+      title: '',
+      text: '',
+      focused: false,
+      controlOwner: 'agent' as const,
+      chrome: {
+        kind: 'persistent' as const,
+        name: BrowserProfileName('work'),
+        partition: 'persist:session-work',
+      },
+      storage: browserProfileStorage('work'),
+    })
+    const closed = Object.freeze({ status: 'closed' as const, target, revision: 1 })
+    expect(openBrowserPagesForProfile([open, closed], target.profileId)).toEqual([open])
+    expect(openBrowserPagesForProfile([open], BrowserProfileId('other'))).toEqual([])
+    assertUnattachedPersistentWriterAvailable([open], { profile: 'temporary' }, 'persist:session-work')
+    assertUnattachedPersistentWriterAvailable([], { profile: 'shared' }, 'persist:session-work')
+    assertUnattachedPersistentWriterAvailable([], {
+      profile: 'persistent',
+      name: BrowserProfileName('work'),
+    }, 'persist:session-work')
+    assertUnattachedPersistentWriterAvailable([open], {
+      profile: 'persistent',
+      name: BrowserProfileName('work'),
+      attach: { kind: 'workspace', workspaceId: target.workspaceId },
+    }, 'persist:session-work')
+    expect(() => {
+      assertUnattachedPersistentWriterAvailable([open], {
+        profile: 'persistent',
+        name: BrowserProfileName('work'),
+      }, 'persist:session-work')
+    }).toThrow(BrowserRuntimeError)
+  })
+
   it('addresses open state and serializes one queued operation', async () => {
     const open = Object.freeze({
       status: 'open' as const,
@@ -315,7 +356,7 @@ describe('Browser Runtime shared Provider helpers', () => {
     const ctx = new Context()
     const warnings: unknown[] = []
     ctx.on('browser/runtime-state', () => { throw new Error('sync') })
-    ctx.on('browser/runtime-state', async () => { throw new Error('async') })
+    ctx.on('browser/runtime-state', (): unknown => Promise.reject(new Error('async')))
     emitBrowserRuntimeState(ctx, { status: 'closed', target, revision: 0 }, (error) => {
       warnings.push(error)
     })

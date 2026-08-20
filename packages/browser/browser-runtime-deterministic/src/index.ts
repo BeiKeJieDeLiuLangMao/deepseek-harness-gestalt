@@ -10,7 +10,7 @@ import {
   addressedBrowserRuntimeStateFrom,
   assertBrowserCreateAttach,
   assertBrowserNotAborted,
-  assertBrowserProfileWriterAvailable,
+  assertUnattachedPersistentWriterAvailable,
   browserProfileStorage,
   BrowserRuntime,
   BrowserRuntimeError,
@@ -19,6 +19,7 @@ import {
   commitBrowserRuntimeState,
   emitBrowserRuntimeState,
   EMPTY_BROWSER_PROFILE_STORAGE,
+  openBrowserPagesForProfile,
   requireExpectedBrowserRevision,
   requireOpenBrowserPage,
   resolveBrowserCreateAttach,
@@ -216,20 +217,14 @@ export class DeterministicBrowserRuntime extends BrowserRuntime {
             sessionName: browserSessionNameFromPartition(attached.chrome.partition),
             chrome: attached.chrome,
           }
-        const existing = [...this.states.values()].filter(state => (
-          state.status === 'open' && state.target.profileId === created.profileId
-        ))
+        const existing = openBrowserPagesForProfile(this.states.values(), created.profileId)
         const tabSeq = existing.length + 1
         assertBrowserCreateAttach(this.states.values(), created.profileId, request.attach)
         return this.commitBlank(created, tabSeq, request.attach)
       }
       const created = resolveBrowserProfileCreate(this.idPrefix, request, this.temporarySeq)
-      const existing = [...this.states.values()].filter(state => (
-        state.status === 'open' && state.target.profileId === created.profileId
-      ))
-      if (request.profile === 'persistent' && request.attach === undefined) {
-        assertBrowserProfileWriterAvailable(this.states.values(), created.chrome.partition, request.name)
-      }
+      const existing = openBrowserPagesForProfile(this.states.values(), created.profileId)
+      assertUnattachedPersistentWriterAvailable(this.states.values(), request, created.chrome.partition)
       assertBrowserCreateAttach(this.states.values(), created.profileId, request.attach)
       const stored = this.persisted.get(created.sessionName)
       const historical = [...this.states.values()].filter(state => state.target.profileId === created.profileId)
@@ -237,9 +232,7 @@ export class DeterministicBrowserRuntime extends BrowserRuntime {
       const workspaceSeq = request.profile === 'shared'
         ? browserSharedWorkspaceSeq(this.states.values(), created.profileId, request.attach)
         : undefined
-      const sibling = existing.find((state): state is BrowserPageState => (
-        state.status === 'open' && state.storage.cookies !== ''
-      ))
+      const sibling = existing.find(state => state.storage.cookies !== '')
       if (stored !== undefined) {
         return this.commit({
           status: 'open',
