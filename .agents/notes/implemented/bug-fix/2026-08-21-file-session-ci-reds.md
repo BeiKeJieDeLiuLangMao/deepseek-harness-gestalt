@@ -10,7 +10,7 @@ The File/Session Reference sync against official Host `@path` / `file-reference-
 
 ## Decision
 
-**pwsh readiness ignores echoed setup source.** `terminal-bash` strips `ENCODING_PREAMBLE` and `PWSH_PROMPT_SETUP` before testing for `CONTROLLED_PROMPT`. The prompt-function source already contains the marker string; visibility after that strip is the installed prompt. ACP and loader composition keep a longer `idleSilenceMs` (and `handoffGraceMs` where the session hands off) so banner-to-prompt idle does not win the race. The [persistent pwsh note](../architecture/2026-08-11-pwsh-persistent-pty.md) still owns the two-layer prompt install.
+**pwsh readiness is a last-line exact match plus a spawn wall.** `terminal-bash` treats the latest non-empty viewport line (or scrollback when the viewport is empty) as installed only when it equals `CONTROLLED_PROMPT`. Substring `includes()` after stripping the setup source still accepted `setup-echo dsh> ` and, when the real prompt had not printed, each follow-up `startSend` reset its own deadline so `inferred_idle` starved `timeout`. The spawn `timeoutMs` now bounds the whole loop. ACP and loader composition keep a longer `idleSilenceMs` (and `handoffGraceMs` where the session hands off) so banner-to-prompt idle does not win the race. The [persistent pwsh note](../architecture/2026-08-11-pwsh-persistent-pty.md) still owns the two-layer prompt install.
 
 **Relay payload-size uses the default first-frame deadline.** The idle-timeout assertion still starts a 10 ms server. The oversized-frame assertion starts a separate server at the default 1000 ms so attach-timeout cannot pre-empt the 1009 close.
 
@@ -18,7 +18,7 @@ The File/Session Reference sync against official Host `@path` / `file-reference-
 
 **Settings goldens drop the deleted Workspace-reference row.** The nav item is absent after `ui-workspace-reference` was removed; the expected trees no longer include `工作区引用`.
 
-**Composer previews restore the official pin overlay.** `InputBar` passes `useComposerImagePinOverlay` through `pinOverlayFor`. `ComposerAttachments` owns pin-mode state and sets `annotation.gifRefuse` only when the user toggles annotate on `image/gif`. Opening a preview does not show that alert. History pins keep `source: 'history'`; Composer pins keep the default `composer` source.
+**Composer previews restore the official pin overlay, and InputBar keeps the Gestalt annotation chip.** `InputBar` passes `useComposerImagePinOverlay` through `pinOverlayFor`. `ComposerAttachments` owns pin-mode state and sets `annotation.gifRefuse` only when the user toggles annotate on `image/gif`. Opening a preview does not show that alert. History pins keep `source: 'history'`; Composer pins keep the default `composer` source. Taking official `InputBar` dropped the `{count} annotation` summary and discard control the Web e2e uses; the chip, per-item edit/delete, and annotation-only send enablement stay on the composer card.
 
 ## Alternatives considered
 
@@ -36,8 +36,8 @@ The File/Session Reference sync against official Host `@path` / `file-reference-
 
 ## Consequences
 
-Official File/Session Reference stays the only `@` file source. Persistent pwsh on a loaded host waits for the installed prompt instead of the setup echo. Relay, publint, settings goldens, and Composer pin e2e exercise the repaired paths. The deleted Workspace-reference picker goldens stay deleted.
+Official File/Session Reference stays the only `@` file source. Persistent pwsh on a loaded host waits for a last-line installed prompt instead of a substring echo, and a stuck banner loop fails at `timeoutMs` instead of hanging the coverage worker. Relay, publint, settings goldens, Composer pin e2e, and the annotation-count chip exercise the repaired paths. The deleted Workspace-reference picker goldens stay deleted.
 
 ## Testing
 
-`packages/terminal/terminal-bash/tests/index.spec.ts` rejects an echoed prompt-function viewport as ready. `packages/platform/remote-access-http/tests/relay.spec.ts` still closes idle at 1008 and oversized at 1009 on separate servers. `packages/client/ui-attachment/tests/composer-attachments.client.spec.tsx` and `packages/client/ui-conversation/tests/composer-image-pins.client.spec.tsx` cover annotate, GIF refuse-on-toggle, and the composer overlay factory. Web settings goldens no longer list `工作区引用`. `pnpm exec tsx scripts/gen-client-catalog.ts --check` owns the `ComposerAttachmentsOwnerProps.pinOverlayFor` catalog text.
+`packages/terminal/terminal-bash/tests/index.spec.ts` rejects a last line that only contains the prompt marker and bounds a never-ready idle loop with `timeoutMs`. `packages/platform/remote-access-http/tests/relay.spec.ts` still closes idle at 1008 and oversized at 1009 on separate servers. `packages/client/ui-attachment/tests/composer-attachments.client.spec.tsx` and `packages/client/ui-conversation/tests/composer-image-pins.client.spec.tsx` cover annotate, GIF refuse-on-toggle, and the composer overlay factory. `packages/client/ui-conversation/tests/input-bar.client.spec.tsx` covers the annotation-count chip, discard, per-kind delete, and in-flight lock. Web settings goldens no longer list `工作区引用`. `pnpm exec tsx scripts/gen-client-catalog.ts --check` owns the `ComposerAttachmentsOwnerProps.pinOverlayFor` catalog text.

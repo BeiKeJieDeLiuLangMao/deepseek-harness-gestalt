@@ -313,7 +313,7 @@ describe.skipIf(!hasPwsh)('terminal-bash pwsh real shell', () => {
       if (previous === undefined) delete process.env.DSH_TEST_SECRET
       else process.env.DSH_TEST_SECRET = previous
     }
-  }, 30_000)
+  }, 45_000)
 
   it('pins UTF-8 output encoding so non-ASCII output survives the byte decode', async () => {
     const { ctx, root, agent } = await harness('danger-full-access', {
@@ -340,5 +340,5 @@ describe.skipIf(!hasPwsh)('terminal-bash pwsh real shell', () => {
     const result = await sent.done
     expect(result.viewport).toContain('中文 encoding-ok')
     await ctx.terminals.kill(agent, created.sessionId)
-  }, 30_000)
+  }, 45_000)
 })

@@ -19,9 +19,18 @@ import type {
   ComposerAttachment, ComposerAttachmentsOwnerProps,
 } from '../src/client/contract/slots.ts'
 import type { DraftAttachmentId } from '../src/client/input/contract.ts'
+import { createTextAnchor } from '../src/client/annotation/model.ts'
 import { InputBar } from '../src/client/skeleton/InputBar.tsx'
 import type { InputBarProps } from '../src/client/skeleton/InputBar.tsx'
 import { zh } from '../src/client/locales.ts'
+
+const TEST_LABELS = {
+  heading: (index: number) => `Annotation ${index}`,
+  quote: (value: string) => `Quoted text: “${value}”`,
+  note: (value: string) => `Note: ${value}`,
+  image: (name: string, x: number, y: number) => `Image “${name}” at ${x.toFixed(1)}%, ${y.toFixed(1)}%`,
+  overflow: 'Request exceeds context capacity',
+}
 
 afterEach(cleanup)
 
@@ -93,6 +102,8 @@ interface BenchOptions {
   commandMenuOpen?: boolean
   busyEnter?: 'queue' | 'steer'
   toggleCommandMenu?: (selection: { start: number; end: number }) => void
+  /** Leave the default sink unsettled so annotation submission stays in flight. */
+  holdSink?: boolean
 }
 
 /** One pending queue row (the runtime snapshot shape, as the dock tests build it). */
@@ -105,12 +116,15 @@ function row(id: string): ConversationSnapshot['queue'][number] {
 
 /** Real machine behind the bar entry: sink spy, no slash pipeline (plain text goes straight to the sink). */
 function bench(over?: BenchOptions) {
+  const held = Promise.withResolvers<SubmitOutcome>()
   const sink = vi.fn<(
     text: string,
     imageIds: readonly DraftAttachmentId[],
     mode: 'queue' | 'steer',
     signal: AbortSignal,
-  ) => Promise<SubmitOutcome>>(() => Promise.resolve({ kind: 'success' }))
+  ) => Promise<SubmitOutcome>>(() => (
+    over?.holdSink === true ? held.promise : Promise.resolve({ kind: 'success' })
+  ))
   const lex = over?.lexicon
   const session = createSnapshotStore<ConversationSnapshot>(snapshotOf({
     running: over?.running ?? false,
@@ -123,6 +137,7 @@ function bench(over?: BenchOptions) {
   const shell = new SessionInputShell({
     actx: SCTX,
     defaultSink: sink,
+    annotationLabels: TEST_LABELS,
     commandImages: { serialize: () => Promise.resolve([]), release: () => {}, unsupportedNotice: (token: string) => `${token.trim()} images-unsupported` },
     queue: {
       getSnapshot: () => session.getSnapshot().queue,
@@ -399,6 +414,106 @@ describe('image draft rail', () => {
       ])
     })
     expect(result.view.getByRole('alert').textContent).toContain('图片读取服务不可用')
+  })
+})
+
+describe('annotation draft summary', () => {
+  it('shows a count chip, enables send on annotation-only drafts, and discards the draft', () => {
+    const { view, button, shell } = bench()
+    expect(button.disabled).toBe(true)
+    act(() => {
+      shell.actions.addTextAnnotation(
+        createTextAnchor('message-1', 'Exact quotation', 'Exact quotation', 0),
+        'keep',
+      )
+    })
+    expect(view.getByRole('button', { name: '1 条注释' })).toBeTruthy()
+    expect(button.disabled).toBe(false)
+    fireEvent.click(view.getByLabelText('丢弃注释草稿'))
+    expect(view.queryByRole('button', { name: '1 条注释' })).toBeNull()
+    expect(shell.snapshot.annotations).toEqual([])
+  })
+
+  it('lists text and image-pin items, edits a text note, and deletes by kind', () => {
+    const { view, shell } = bench()
+    act(() => {
+      shell.actions.addTextAnnotation(
+        createTextAnchor('message-1', 'Exact quotation', 'Exact quotation', 0),
+        'old',
+      )
+      shell.actions.addImagePin('img-1' as DraftAttachmentId, 'pin-target.png', 25, 40, 'corner')
+    })
+    expect(view.getByRole('button', { name: '2 条注释' })).toBeTruthy()
+    fireEvent.click(view.getByLabelText('注释 1：Exact quotation'))
+    fireEvent.change(view.getByPlaceholderText('添加说明（可选）'), { target: { value: 'new' } })
+    fireEvent.click(view.getByLabelText('保存注释'))
+    expect(shell.snapshot.annotations[0]?.note).toBe('new')
+
+    fireEvent.click(view.getByLabelText('注释 2：pin-target.png (25.0%, 40.0%)'))
+    expect(view.queryByPlaceholderText('添加说明（可选）')).toBeNull()
+
+    fireEvent.click(view.getAllByLabelText('删除注释')[1]!)
+    expect(shell.snapshot.annotations).toHaveLength(1)
+    expect(shell.snapshot.annotations[0]?.kind).toBe('text')
+
+    fireEvent.click(view.getByLabelText('注释 1：Exact quotation'))
+    fireEvent.click(view.getByLabelText('删除注释'))
+    expect(view.queryByPlaceholderText('添加说明（可选）')).toBeNull()
+    expect(shell.snapshot.annotations).toEqual([])
+
+    act(() => {
+      shell.actions.addTextAnnotation(
+        createTextAnchor('message-2', 'Kept quotation', 'Kept quotation', 0),
+        '',
+      )
+      shell.actions.addTextAnnotation(
+        createTextAnchor('message-3', 'Removed quotation', 'Removed quotation', 0),
+        '',
+      )
+    })
+    fireEvent.click(view.getByLabelText('注释 2：Removed quotation'))
+    fireEvent.click(view.getAllByLabelText('删除注释')[1]!)
+    expect(view.queryByPlaceholderText('添加说明（可选）')).toBeNull()
+    expect(shell.snapshot.annotations).toHaveLength(1)
+  })
+
+  it('closes the text editor on cancel and when the draft is discarded', () => {
+    const { view, shell } = bench()
+    act(() => {
+      shell.actions.addTextAnnotation(
+        createTextAnchor('message-1', 'Exact quotation', 'Exact quotation', 0),
+        '',
+      )
+    })
+    fireEvent.click(view.getByLabelText('注释 1：Exact quotation'))
+    expect(view.getByPlaceholderText('添加说明（可选）')).toBeTruthy()
+    fireEvent.keyDown(view.getByPlaceholderText('添加说明（可选）'), { key: 'Escape' })
+    expect(view.queryByPlaceholderText('添加说明（可选）')).toBeNull()
+
+    fireEvent.click(view.getByLabelText('注释 1：Exact quotation'))
+    fireEvent.click(view.getByLabelText('丢弃注释草稿'))
+    expect(view.queryByPlaceholderText('添加说明（可选）')).toBeNull()
+  })
+
+  it('locks chrome and closes the editor while annotation submission is in flight', () => {
+    const { textarea, button, view, shell } = bench({
+      draft: 'Please revise this.',
+      holdSink: true,
+    })
+    act(() => {
+      shell.actions.addTextAnnotation(
+        createTextAnchor('message-1', 'Exact quotation', 'Exact quotation', 0),
+        '',
+      )
+    })
+    fireEvent.click(view.getByLabelText('注释 1：Exact quotation'))
+    expect(view.getByPlaceholderText('添加说明（可选）')).toBeTruthy()
+    fireEvent.click(button)
+    expect(shell.snapshot.annotationSubmitting).toBe(true)
+    expect(textarea.readOnly).toBe(true)
+    expect(button.disabled).toBe(true)
+    expect((view.getByLabelText('删除注释') as HTMLButtonElement).disabled).toBe(true)
+    expect(view.queryByPlaceholderText('添加说明（可选）')).toBeNull()
   })
 })
 

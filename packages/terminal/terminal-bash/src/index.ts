@@ -89,12 +89,20 @@ function childEnvironment(spec: TerminalBackendSpawnSpec, dialect: ShellDialect)
 export const PWSH_PROMPT_SETUP =
   "function prompt { [Console]::Write([char]27 + ']133;D;' + [int]$LASTEXITCODE + [char]7); '" + CONTROLLED_PROMPT + "' }"
 
-/** True when the installed prompt is visible, not merely echoed setup source. */
+function lastNonEmptyLine(text: string): string {
+  const lines = text.replaceAll('\r\n', '\n').replaceAll('\r', '\n').split('\n')
+  for (let i = lines.length - 1; i >= 0; i -= 1) {
+    const line = lines[i]
+    if (line !== undefined && line.length > 0) return line
+  }
+  return ''
+}
+
+/** True when the latest printed line is the installed prompt, not setup echo. */
 function showsInstalledControlledPrompt(viewport: string, scrollback: string): boolean {
-  const visible = `${viewport}\n${scrollback}`
-    .replaceAll(ENCODING_PREAMBLE, '')
-    .replaceAll(PWSH_PROMPT_SETUP, '')
-  return visible.includes(CONTROLLED_PROMPT)
+  const latest = lastNonEmptyLine(viewport)
+  if (latest !== '') return latest === CONTROLLED_PROMPT
+  return lastNonEmptyLine(scrollback) === CONTROLLED_PROMPT
 }
 
 function spawnArgv(ctx: Context, config: ResolvedConfig, policy: SandboxExecutionPolicy): string[] {
@@ -114,6 +122,7 @@ function spawnArgv(ctx: Context, config: ResolvedConfig, policy: SandboxExecutio
 async function startupSession(
   session: LocalPtySession,
   dialect: ShellDialect,
+  timeoutMs: number,
   signal?: AbortSignal,
 ): Promise<void> {
   const start = async (): Promise<void> => {
@@ -128,10 +137,13 @@ async function startupSession(
     // before anything runs: the session decode path treats PTY bytes as
     // UTF-8, and an un-pinned console writes its host code page for
     // non-ASCII output. The banner-to-prompt gap can outlast the silence
-    // bound, so the wait loops over follow-up sends until the controlled
-    // prompt is actually visible after stripping the echoed setup source
-    // (in the viewport or the retained scrollback when it landed between
-    // sends), bounded by the send deadline.
+    // bound, so the wait loops over follow-up sends until the latest printed
+    // line is exactly the controlled prompt. Setup echo contains that
+    // marker as a substring (`setup-echo dsh> ` or the prompt-function
+    // source) and must not count. Each startSend resets its own deadline,
+    // so inferred_idle can starve `timeout`; the spawn `timeoutMs` is the
+    // wall for the whole loop.
+    const started = Date.now()
     let viewport = ''
     for (;;) {
       const first = viewport.length === 0
@@ -146,6 +158,9 @@ async function startupSession(
       viewport = result.viewport
       const scrollback = session.read({ offset: 0, count: 20 }).text
       if (showsInstalledControlledPrompt(viewport, scrollback)) break
+      if (Date.now() - started >= timeoutMs) {
+        throw new Error('PTY shell did not reach readiness before startup timeout')
+      }
     }
     session.motd = viewport
   }
@@ -199,7 +214,7 @@ export class BashTerminalBackend implements TerminalBackend {
     })
     const session = this.createSession(terminal, this.config)
     try {
-      await startupSession(session, this.config.shellDialect, spec.signal)
+      await startupSession(session, this.config.shellDialect, this.config.timeoutMs, spec.signal)
       return session
     } catch (error) {
       try {

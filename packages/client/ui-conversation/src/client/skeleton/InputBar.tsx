@@ -6,7 +6,7 @@
  * region-slot content) ride the owner props. Session facts
  * (running/removed/promptError) are self-selected via useSession. */
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, KeyboardEvent, MouseEvent, ReactNode } from 'react'
 import clsx from 'clsx'
 import {
@@ -26,6 +26,7 @@ import { deriveDecorations } from '../input/decorations.ts'
 import type { DraftDecorations } from '../input/decorations.ts'
 import { attachmentErrorText, imageSizeText } from '../image-labels.ts'
 import { ReferenceIcon } from '../reference/ReferenceIcon.tsx'
+import { AnnotationEditor } from '../annotation/AnnotationEditor.tsx'
 import { useComposerImagePinOverlay } from '../annotation/composer-image-pins.tsx'
 import { ContextMeter } from './ContextMeter.tsx'
 import { PermissionSelect } from './PermissionSelect.tsx'
@@ -45,6 +46,7 @@ export function InputBar({
   workspacePickerOpen = false, onRequestWorkspace,
   placeholder, accessory, overlay, leftItems, rightItems, footer,
 }: InputBarProps) {
+  const annotationDetailsId = useId()
   const input = useInput(s => s)
   const notice = useNotices(s => s)
   const lexicon = useLexicon(s => s)
@@ -66,8 +68,10 @@ export function InputBar({
     () => input === undefined || draftImages === undefined ? [] : draftImages(input.imageIds),
     [draftImages, input?.imageIds],
   )
+  const annotations = input?.annotations ?? []
   const composerPinOverlay = useComposerImagePinOverlay(input?.annotations, inputActions, t)
-  const empty = draft.trim() === '' && attachments.length === 0
+  const empty = draft.trim() === '' && attachments.length === 0 && annotations.length === 0
+  const [editingAnnotation, setEditingAnnotation] = useState<string | null>(null)
   // Transient error banner (machine notices, image-intake rejections, and
   // prompt failures): the seq keys the Toast so an identical repeated message
   // restarts the hold-then-fade cycle instead of reusing the faded one.
@@ -134,7 +138,9 @@ export function InputBar({
   // the composer asking for the only thing it prevents. The other reasons to
   // be disabled do lock it — there is no session to choose a model for.
   const modelSeatLocked = removed || inert || !live
-  const machineBusy = input?.phase === 'adjudicating' || input?.phase === 'submitting'
+  const annotationBusy = input?.annotationSubmitting === true
+  const machineBusy = input?.phase === 'adjudicating' || input?.phase === 'submitting' || annotationBusy
+  const annotationSummaryKey = annotations.length === 1 ? 'annotation.summary.one' : 'annotation.summary.other'
   // The no-workspace textarea remains the resident DOM node but acts as the
   // existing picker trigger. Message controls stay locked until a Session
   // exists; the trigger itself is read-only rather than disabled so pointer
@@ -150,6 +156,16 @@ export function InputBar({
       inputActions.pruneImages(attachments.map(attachment => attachment.id))
     }
   }, [attachments, input?.imageIds, inputActions])
+
+  useEffect(() => {
+    if (annotationBusy) setEditingAnnotation(null)
+  }, [annotationBusy])
+
+  useEffect(() => {
+    if (editingAnnotation !== null && !annotations.some(item => item.id === editingAnnotation)) {
+      setEditingAnnotation(null)
+    }
+  }, [annotations, editingAnnotation])
 
   // A native Safari edit that shortens the draft may leave the previous
   // soft-wrap layout behind after the mirror shrinks. The native-change signal
@@ -645,6 +661,78 @@ export function InputBar({
           },
           ...composerPinOverlay,
         })}
+        {annotations.length > 0 && inputActions !== undefined && (
+          <div className={css.annotationSummary}>
+            <button
+              type="button"
+              className={css.annotationSummaryTrigger}
+              aria-controls={annotationDetailsId}
+            >
+              {t(annotationSummaryKey, { count: annotations.length })}
+            </button>
+            <button
+              type="button"
+              className={css.annotationDiscard}
+              disabled={annotationBusy}
+              aria-label={t('annotation.discard')}
+              onClick={() => { inputActions.discardTextAnnotations() }}
+            >
+              ×
+            </button>
+            <div
+              id={annotationDetailsId}
+              role="region"
+              aria-label={t(annotationSummaryKey, { count: annotations.length })}
+              className={css.annotationSummaryDetails}
+            >
+              {annotations.map((annotation, index) => {
+                const label = annotation.kind === 'text'
+                  ? annotation.anchor.quote
+                  : `${annotation.imageName} (${annotation.x.toFixed(1)}%, ${annotation.y.toFixed(1)}%)`
+                return (
+                  <div className={css.annotationSummaryItem} key={annotation.id}>
+                    <button
+                      type="button"
+                      disabled={annotationBusy}
+                      onClick={() => { setEditingAnnotation(annotation.id) }}
+                      aria-label={t('annotation.item', { index: index + 1, quote: label })}
+                    >
+                      <strong>{index + 1}. {label}</strong>
+                      <small>{annotation.note}</small>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={annotationBusy}
+                      aria-label={t('annotation.delete')}
+                      onClick={() => {
+                        if (annotation.kind === 'image-pin') inputActions.removeImagePin(annotation.id)
+                        else inputActions.removeTextAnnotation(annotation.id)
+                      }}
+                    >×</button>
+                  </div>
+                )
+              })}
+            </div>
+            {editingAnnotation !== null && (() => {
+              const annotation = annotations.find(item => item.id === editingAnnotation)
+              return annotation === undefined || annotation.kind === 'image-pin' ? null : (
+                <div className={css.annotationEditPopover}>
+                  <AnnotationEditor
+                    key={annotation.id}
+                    initialNote={annotation.note}
+                    placeholder={t('annotation.notePlaceholder')}
+                    saveLabel={t('annotation.save')}
+                    onSave={(note) => {
+                      inputActions.updateTextAnnotation(annotation.id, note)
+                      setEditingAnnotation(null)
+                    }}
+                    onCancel={() => { setEditingAnnotation(null) }}
+                  />
+                </div>
+              )
+            })()}
+          </div>
+        )}
         {/* One scrollport, two text layers. The hidden mirror renders draft+'\n' and stretches the
             stack to the draft's FULL height (counting rows by '\n' cannot see soft wraps); the
             absolutely-positioned backdrop and textarea ride that height, and .scroll — capped at 14

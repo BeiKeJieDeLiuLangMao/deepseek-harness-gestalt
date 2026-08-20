@@ -10,7 +10,7 @@ File/Session Reference 同步到官方 Host `@path` / `file-reference-local` 与
 
 ## Decision
 
-**pwsh 就绪忽略回显的 setup 源码。** `terminal-bash` 在检测 `CONTROLLED_PROMPT` 之前剥掉 `ENCODING_PREAMBLE` 与 `PWSH_PROMPT_SETUP`。prompt 函数源码本身含有标记字符串；剥完之后仍可见才是已安装提示符。ACP 与 loader 组合把 `idleSilenceMs`（以及会话交接处的 `handoffGraceMs`）加长，避免横幅到提示符的静默抢先结束。[persistent pwsh 笔记](../architecture/2026-08-11-pwsh-persistent-pty.md) 仍拥有双层 prompt 安装。
+**pwsh 就绪是末行精确匹配，外加 spawn 墙。** `terminal-bash` 只把视口（视口为空时用 scrollback）最新非空行等于 `CONTROLLED_PROMPT` 当作已安装。剥掉 setup 源码后再 `includes()` 仍会接受 `setup-echo dsh> `；真实提示符还没打出时，每次 follow-up `startSend` 会重置自己的期限，于是 `inferred_idle` 饿死 `timeout`。现在由 spawn 的 `timeoutMs` 约束整个循环。ACP 与 loader 组合把 `idleSilenceMs`（以及会话交接处的 `handoffGraceMs`）加长，避免横幅到提示符的静默抢先结束。[persistent pwsh 笔记](../architecture/2026-08-11-pwsh-persistent-pty.md) 仍拥有双层 prompt 安装。
 
 **Relay 的载荷尺寸检查使用默认 first-frame 期限。** 空闲超时断言仍启动 10 ms 服务器。oversized 帧断言另启默认 1000 ms 的服务器，避免 attach-timeout 抢在 1009 关闭之前。
 
@@ -18,7 +18,7 @@ File/Session Reference 同步到官方 Host `@path` / `file-reference-local` 与
 
 **设置金标去掉已删除的工作区引用行。** `ui-workspace-reference` 删除后导航不再有该项；期望树不再包含 `工作区引用`。
 
-**Composer 预览恢复官方 pin overlay。** `InputBar` 通过 `pinOverlayFor` 传入 `useComposerImagePinOverlay`。`ComposerAttachments` 自管 pin-mode，仅在用户对 `image/gif` 切换标注时设置 `annotation.gifRefuse`。打开预览本身不显示该警告。历史 pin 保持 `source: 'history'`；Composer pin 使用默认 `composer` source。
+**Composer 预览恢复官方 pin overlay，InputBar 保留 Gestalt 注释计数。** `InputBar` 通过 `pinOverlayFor` 传入 `useComposerImagePinOverlay`。`ComposerAttachments` 自管 pin-mode，仅在用户对 `image/gif` 切换标注时设置 `annotation.gifRefuse`。打开预览本身不显示该警告。历史 pin 保持 `source: 'history'`；Composer pin 使用默认 `composer` source。整份取官方 `InputBar` 丢掉了 Web e2e 依赖的 `{count} annotation` 摘要与丢弃控件；计数芯片、逐条编辑/删除，以及仅有注释时启用发送，仍留在 composer 卡片上。
 
 ## Alternatives considered
 
@@ -36,8 +36,8 @@ File/Session Reference 同步到官方 Host `@path` / `file-reference-local` 与
 
 ## Consequences
 
-官方 File/Session Reference 仍是唯一的 `@` 文件源。负载下的 persistent pwsh 等待已安装提示符，而不是 setup 回显。Relay、publint、设置金标与 Composer pin e2e 走修复后的路径。已删除的工作区引用 picker 金标保持删除。
+官方 File/Session Reference 仍是唯一的 `@` 文件源。负载下的 persistent pwsh 等末行已安装提示符，而不是子串回显；卡住的横幅循环在 `timeoutMs` 失败，而不是挂住 coverage worker。Relay、publint、设置金标、Composer pin e2e 与注释计数芯片走修复后的路径。已删除的工作区引用 picker 金标保持删除。
 
 ## Testing
 
-`packages/terminal/terminal-bash/tests/index.spec.ts` 拒绝把回显的 prompt 函数视口当成就绪。`packages/platform/remote-access-http/tests/relay.spec.ts` 仍在独立服务器上分别以 1008 关闭空闲、以 1009 关闭 oversized。`packages/client/ui-attachment/tests/composer-attachments.client.spec.tsx` 与 `packages/client/ui-conversation/tests/composer-image-pins.client.spec.tsx` 覆盖标注、GIF 仅在切换时拒绝，以及 composer overlay 工厂。Web 设置金标不再列出 `工作区引用`。`pnpm exec tsx scripts/gen-client-catalog.ts --check` 拥有 `ComposerAttachmentsOwnerProps.pinOverlayFor` 的目录正文。
+`packages/terminal/terminal-bash/tests/index.spec.ts` 拒绝只是包含提示符标记的末行，并用 `timeoutMs` 约束永不就绪的空闲循环。`packages/platform/remote-access-http/tests/relay.spec.ts` 仍在独立服务器上分别以 1008 关闭空闲、以 1009 关闭 oversized。`packages/client/ui-attachment/tests/composer-attachments.client.spec.tsx` 与 `packages/client/ui-conversation/tests/composer-image-pins.client.spec.tsx` 覆盖标注、GIF 仅在切换时拒绝，以及 composer overlay 工厂。`packages/client/ui-conversation/tests/input-bar.client.spec.tsx` 覆盖注释计数芯片、丢弃、按 kind 删除与提交中锁定。Web 设置金标不再列出 `工作区引用`。`pnpm exec tsx scripts/gen-client-catalog.ts --check` 拥有 `ComposerAttachmentsOwnerProps.pinOverlayFor` 的目录正文。
