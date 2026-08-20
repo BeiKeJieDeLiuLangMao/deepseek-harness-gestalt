@@ -556,6 +556,12 @@ importers:
       '@deepseek-ai/dsh-platform-account-http':
         specifier: workspace:^
         version: link:../../packages/platform/platform-account-http
+      '@deepseek-ai/dsh-remote-access':
+        specifier: workspace:^
+        version: link:../../packages/platform/remote-access
+      '@deepseek-ai/dsh-remote-protocol':
+        specifier: workspace:^
+        version: link:../../packages/platform/remote-protocol
       pg:
         specifier: ^8.16.3
         version: 8.23.0
