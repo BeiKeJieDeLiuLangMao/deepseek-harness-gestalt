@@ -106,10 +106,18 @@ const FORBIDDEN_REDIS_APIS = [
   'xadd', 'xread', 'xreadgroup', 'xgroup', 'xack', 'xdel', 'xrange', 'xrevrange', 'xlen',
 ] as const
 
+function rejectedReasons(results: PromiseSettledResult<unknown>[]): unknown[] {
+  const errors: unknown[] = []
+  for (const result of results) {
+    if (result.status === 'rejected') errors.push(result.reason as unknown)
+  }
+  return errors
+}
+
 const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => {
   const results = await Promise.allSettled(cleanups.splice(0).reverse().map(async (close) => { await close() }))
-  const errors = results.flatMap(result => result.status === 'rejected' ? [result.reason] : [])
+  const errors = rejectedReasons(results)
   if (errors.length > 0) throw new AggregateError(errors, 'two-instance assembled cleanup failed')
 }, 30_000)
 
@@ -410,7 +418,7 @@ async function loadInstance(id: string, shared: SharedAdapters, entropy: number)
         context.fiber.dispose(),
         rm(root, { recursive: true, force: true }),
       ])
-      const errors = results.flatMap(result => result.status === 'rejected' ? [result.reason] : [])
+      const errors = rejectedReasons(results)
       if (errors.length > 0) throw new AggregateError(errors, `${id} assembled instance dispose failed`)
     },
   }
