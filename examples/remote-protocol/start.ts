@@ -82,7 +82,7 @@ export async function apply(_ctx: Context): Promise<void> {
     sourceAttachmentId: mobileAttachment,
     targetAttachmentId: desktopAttachment,
     ciphertext: relayOperation,
-  })).includes(received.operation.type === 'submit-prompt' ? received.operation.text : received.operation.type)
+  })).includes(received.operation.text)
   console.log(`MOBILE_REQUEST encrypted=${String(!bytesEqual(operationPlaintext, relayOperation))} relayPlaintext=${String(relayPlaintext)} type=${received.operation.type}`)
 
   const confirmed = {
