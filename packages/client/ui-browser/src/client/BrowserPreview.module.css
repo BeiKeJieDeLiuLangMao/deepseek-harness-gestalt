@@ -42,3 +42,17 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.actionError {
+  position: absolute;
+  right: 8px;
+  bottom: 4px;
+  left: 8px;
+  z-index: 3;
+  overflow: hidden;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--dsw-alias-label-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
