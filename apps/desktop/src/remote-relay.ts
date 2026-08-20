@@ -14,6 +14,7 @@ import {
   type DesktopRelayLifecycle,
 } from '@deepseek-ai/dsh-remote-access-client/desktop-relay-lifecycle'
 import { NodeRelayEndpointSocket } from '@deepseek-ai/dsh-remote-access-client/node-relay-socket'
+import { isLoopbackListenUrl } from './loopback-listen-trust.ts'
 
 const CRYPTO_GATE = 'Personal Pairing requires an independently reviewed handshake and Relay crypto provider.'
 
@@ -73,6 +74,7 @@ export function createDesktopRemoteRelay(options: DesktopRemoteRelayOptions): De
     config.url,
     signal,
     { maxBytes: config.inboundMaxBytes, maxMessages: config.inboundMaxMessages },
+    isLoopbackListenUrl(config.url) ? { rejectUnauthorized: false } : undefined,
   ))
   return new DesktopRelayEndpointLifecycle({
     attachmentId: () => parseRelayAttachmentId(`desktop-${randomUUID()}`),

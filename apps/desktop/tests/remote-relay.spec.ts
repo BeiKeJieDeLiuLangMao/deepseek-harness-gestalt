@@ -112,6 +112,7 @@ describe('Desktop Remote Relay composition', () => {
     })
 
     await relay.start()
+    expect(connect.mock.calls[0]?.[3]).toBeUndefined()
     expect(relay.getState?.()).toEqual({ connected: true })
     const attachmentId = first.attachmentId
     if (attachmentId === undefined) throw new Error('fixture did not observe attach')
@@ -125,6 +126,24 @@ describe('Desktop Remote Relay composition', () => {
     await vi.waitFor(() => { expect(connect).toHaveBeenCalledTimes(2) })
     await relay.stop('quit')
     expect(relay.getState?.()).toEqual({ connected: false, stopReason: 'quit' })
+    connect.mockRestore()
+  })
+
+  it('accepts the bundled certificate on a loopback development WSS listen', async () => {
+    const socket = new ReadySocket()
+    const connect = vi.spyOn(NodeRelayEndpointSocket, 'connect').mockResolvedValueOnce(socket as never)
+    const relay = createDesktopRemoteRelay({
+      environment: DEVELOPMENT,
+      source: { ...SOURCE, DSH_REMOTE_RELAY_WSS_URL: 'wss://127.0.0.1:8443/v1/remote-access/relay' },
+    })
+    await relay.configure?.({
+      routeId: parseRelayRouteId('route-loopback'),
+      credential: parseRelayCredential('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'),
+      revision: 1,
+    })
+    await relay.start()
+    expect(connect.mock.calls[0]?.[3]).toEqual({ rejectUnauthorized: false })
+    await relay.stop('quit')
     connect.mockRestore()
   })
 })
