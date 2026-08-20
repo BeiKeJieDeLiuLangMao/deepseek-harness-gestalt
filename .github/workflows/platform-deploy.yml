@@ -1,4 +1,4 @@
-# Pull a published Platform image onto both ECS hosts. Does not build.
+# Validate Environment production, then optionally pull a published image onto both ECS hosts.
 name: Platform Deploy
 
 on:
@@ -9,6 +9,11 @@ on:
         required: true
         type: string
         default: latest
+      deploy:
+        description: Apply the image on both ECS hosts
+        required: true
+        type: boolean
+        default: false
 
 concurrency:
   group: platform-deploy
@@ -22,8 +27,41 @@ env:
   REGISTRY: ghcr.io
 
 jobs:
+  validate:
+    name: Validate production Environment
+    runs-on: ubuntu-24.04
+    environment: production
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Fail on missing production names
+        env:
+          PLATFORM_ENVIRONMENT: production
+          PLATFORM_ORIGIN: ${{ vars.PLATFORM_ORIGIN }}
+          PLATFORM_GITHUB_CALLBACK: ${{ vars.PLATFORM_GITHUB_CALLBACK }}
+          PLATFORM_GITHUB_CLIENT_ID: ${{ vars.PLATFORM_GITHUB_CLIENT_ID }}
+          PLATFORM_GITHUB_CLIENT_SECRET: ${{ secrets.PLATFORM_GITHUB_CLIENT_SECRET }}
+          PLATFORM_POSTGRES_HOST: ${{ vars.PLATFORM_POSTGRES_HOST }}
+          PLATFORM_POSTGRES_USER: ${{ secrets.PLATFORM_POSTGRES_USER }}
+          PLATFORM_POSTGRES_PASSWORD: ${{ secrets.PLATFORM_POSTGRES_PASSWORD }}
+          PLATFORM_REDIS_HOST: ${{ vars.PLATFORM_REDIS_HOST }}
+          PLATFORM_REDIS_PASSWORD: ${{ secrets.PLATFORM_REDIS_PASSWORD }}
+          PLATFORM_TOKEN_SIGNING_KEY: ${{ secrets.PLATFORM_TOKEN_SIGNING_KEY }}
+          PLATFORM_POLLING_SIGNING_KEY: ${{ secrets.PLATFORM_POLLING_SIGNING_KEY }}
+          PLATFORM_ECS_SSH_KEY: ${{ secrets.PLATFORM_ECS_SSH_KEY }}
+          PLATFORM_ECS_HOSTS: ${{ vars.PLATFORM_ECS_HOSTS }}
+        run: node --experimental-strip-types apps/platform/src/production-env-cli.ts
+
   deploy:
     name: Deploy to ECS
+    needs: validate
+    if: ${{ inputs.deploy }}
     runs-on: ubuntu-24.04
     environment: production
     steps:
@@ -60,6 +98,7 @@ jobs:
           PLATFORM_REDIS_TLS: '1'
           PLATFORM_TOKEN_SIGNING_KEY: ${{ secrets.PLATFORM_TOKEN_SIGNING_KEY }}
           PLATFORM_POLLING_SIGNING_KEY: ${{ secrets.PLATFORM_POLLING_SIGNING_KEY }}
+          PLATFORM_SLS_ACCOUNT_ID: ${{ vars.PLATFORM_SLS_ACCOUNT_ID }}
         run: |
           set -euo pipefail
           install -m 600 /dev/null /tmp/ecs.pem
@@ -72,7 +111,9 @@ jobs:
               'dnf -y install docker >/dev/null 2>&1 || yum -y install docker >/dev/null 2>&1; systemctl enable --now docker'
             gzip -dc /tmp/platform.tar.gz | ssh -i /tmp/ecs.pem -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o BatchMode=yes "root@${host}" 'docker load'
             ssh -i /tmp/ecs.pem -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o BatchMode=yes "root@${host}" \
-              "docker rm -f dsh-platform >/dev/null 2>&1 || true; docker run -d --name dsh-platform --restart unless-stopped -p 80:8080 \
+              "docker rm -f dsh-platform >/dev/null 2>&1 || true; docker run -d --name dsh-platform --restart unless-stopped \
+                --log-driver json-file --log-opt max-size=20m --log-opt max-file=3 \
+                -p 80:8080 \
                 -e PLATFORM_ENVIRONMENT=production \
                 -e PLATFORM_ORIGIN=$(printf %q "$PLATFORM_ORIGIN") \
                 -e PLATFORM_GITHUB_CALLBACK=$(printf %q "$PLATFORM_GITHUB_CALLBACK") \
@@ -90,5 +131,23 @@ jobs:
                 -e PLATFORM_TOKEN_SIGNING_KEY=$(printf %q "$PLATFORM_TOKEN_SIGNING_KEY") \
                 -e PLATFORM_POLLING_SIGNING_KEY=$(printf %q "$PLATFORM_POLLING_SIGNING_KEY") \
                 ${IMAGE}"
+            ssh -i /tmp/ecs.pem -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o BatchMode=yes "root@${host}" \
+              "set -euo pipefail
+               token=\$(curl -fsS --max-time 5 -X PUT http://100.100.100.200/latest/api/token -H 'X-aliyun-ecs-metadata-token-ttl-seconds:60' || true)
+               account=
+               if [ -n \"\$token\" ]; then
+                 account=\$(curl -fsS --max-time 5 -H \"X-aliyun-ecs-metadata-token: \$token\" http://100.100.100.200/latest/meta-data/owner-account-id || true)
+               fi
+               account=\${account:-$(printf %q "${PLATFORM_SLS_ACCOUNT_ID:-}")}
+               test -n \"\$account\"
+               docker rm -f dsh-loongcollector >/dev/null 2>&1 || true
+               docker pull aliyun-observability-release-registry.cn-hangzhou.cr.aliyuncs.com/loongcollector/loongcollector:v3.0.12.0-25723a1-aliyun
+               docker run -d --name dsh-loongcollector --restart unless-stopped \\
+                 -v /:/logtail_host:ro \\
+                 -v /var/run/docker.sock:/var/run/docker.sock \\
+                 --env ALIYUN_LOGTAIL_CONFIG=/etc/ilogtail/conf/cn-hangzhou/ilogtail_config.json \\
+                 --env ALIYUN_LOGTAIL_USER_ID=\"\$account\" \\
+                 --env ALIYUN_LOGTAIL_USER_DEFINED_ID=gestalt-platform \\
+                 aliyun-observability-release-registry.cn-hangzhou.cr.aliyuncs.com/loongcollector/loongcollector:v3.0.12.0-25723a1-aliyun"
           done
           rm -f /tmp/ecs.pem /tmp/platform.tar.gz

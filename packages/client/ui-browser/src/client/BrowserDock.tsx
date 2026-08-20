@@ -92,7 +92,7 @@ export function BrowserDock({
   if (!hasBrowserTabs(snapshot) || snapshot?.dockOpen !== true || selection === undefined) return null
 
   const title = browserTabTitle(page, t('page.untitled'))
-  const profile = persistentProfileLabel(page)
+  const profile = persistentProfileLabel(page, t('dock.sharedProfile'))
   const address = page === undefined ? '' : browserAddressHost(page.url)
   const image = screenshotDataUrl(shot)
 

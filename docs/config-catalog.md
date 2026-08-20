@@ -294,6 +294,22 @@ Depends on: [`AgentLoopConfig`](#deepseek-aidsh-agent-loop) · [`GoalDomainConfi
 
 Source: [`packages/examples/agent-spine-demo/src/index.ts:92`](../packages/examples/agent-spine-demo/src/index.ts)
 
+<a id="deepseek-aidsh-agent-tool-eligibility"></a>
+
+## `@deepseek-ai/dsh-agent-tool-eligibility`
+
+Requires: `tools`
+
+```ts config-catalog
+/** Positive allow-only preset configuration. */
+export interface Config {
+  /** Exact public tool names this preset makes eligible. Empty allows none. */
+  allow: string[]
+}
+```
+
+Source: [`packages/core/agent-tool-eligibility/src/index.ts:20`](../packages/core/agent-tool-eligibility/src/index.ts)
+
 <a id="deepseek-aidsh-agent-tool-presentation"></a>
 
 ## `@deepseek-ai/dsh-agent-tool-presentation`
@@ -388,6 +404,101 @@ export type Config = LocalConfig
 Depends on: [`LocalConfig`](#deepseek-aidsh-bash-local)
 
 Source: [`packages/shell/bash-sandbox/src/index.ts:35`](../packages/shell/bash-sandbox/src/index.ts)
+
+<a id="deepseek-aidsh-browser-runtime-deterministic"></a>
+
+## `@deepseek-ai/dsh-browser-runtime-deterministic`
+
+```ts config-catalog
+/** Deterministic Provider configuration. */
+export interface Config {
+  /** Prefix used for the four stable opaque identities. */
+  idPrefix?: string
+  /** Complete pages this keyless Provider can navigate to. */
+  pages: DeterministicBrowserPage[]
+}
+
+/** One URL and its deterministic observable and screenshot facts. */
+export interface DeterministicBrowserPage {
+  /** Exact URL accepted by `navigate`. */
+  url: string
+  /** Page title returned by observations. */
+  title: string
+  /** Page text returned by observations. */
+  text: string
+  /** Non-empty canonical base64 whose decoded bytes start with the PNG signature. */
+  screenshotPngBase64: string
+}
+```
+
+Source: [`packages/browser/browser-runtime-deterministic/src/index.ts:70`](../packages/browser/browser-runtime-deterministic/src/index.ts)
+
+<a id="deepseek-aidsh-browser-runtime-electron"></a>
+
+## `@deepseek-ai/dsh-browser-runtime-electron`
+
+```ts config-catalog
+/** Process and lifecycle configuration for one in-process Electron runtime. */
+export interface Config {
+  /** Prefix for DSH-owned opaque Profile, Workspace, and browser identities. */
+  idPrefix?: string
+  /** Hidden window width used for offscreen capture. */
+  viewportWidth?: number
+  /** Hidden window height used for offscreen capture. */
+  viewportHeight?: number
+  /** Bound on each Chromium navigation or content read. */
+  requestTimeoutMs?: number
+}
+```
+
+Source: [`packages/browser/browser-runtime-electron/src/index.ts:86`](../packages/browser/browser-runtime-electron/src/index.ts)
+
+<a id="deepseek-aidsh-browser-runtime-tandem"></a>
+
+## `@deepseek-ai/dsh-browser-runtime-tandem`
+
+```ts config-catalog
+/** HTTP and optional fixture-process configuration for one Tandem-shaped runtime. */
+export interface Config {
+  /** Optional fixture executable used only by HTTP protocol tests. Production Desktop omits this. */
+  command?: string
+  /** Arguments passed without shell interpretation when `command` is set. */
+  args?: string[]
+  /** Existing directory used as the optional fixture child working directory. */
+  cwd?: string
+  /** Explicit environment layered over the subprocess service's credential-scrubbed parent environment. */
+  env?: Record<string, string>
+  /** Loopback Tandem-shaped HTTP API origin, including its configured port. */
+  baseUrl: string
+  /** Local file where the HTTP server writes its generated API token. */
+  tokenFile: string
+  /** Prefix for DSH-owned opaque Profile, Workspace, and browser identities. */
+  idPrefix?: string
+  /** Bound on HTTP health verification. */
+  startupTimeoutMs?: number
+  /** Bound on each Tandem-shaped HTTP operation. */
+  requestTimeoutMs?: number
+  /** Delay between startup health probes. */
+  healthPollMs?: number
+  /** Upper bound on upstream page-settle waiting for one content read. */
+  pageSettleMs?: number
+  /** Number of fixture-child restarts after an unexpected exit. Ignored without `command`. */
+  reconnectAttempts?: number
+  /** Delay before each reconnect attempt. */
+  reconnectDelayMs?: number
+  /** Subprocess tree SIGTERM-to-SIGKILL grace used for fixture teardown. */
+  processGraceMs?: number
+  /** Maximum bytes accepted from one Tandem-shaped HTTP response. */
+  maxResponseBytes?: number
+  /**
+   * When `false`, this client never spawns a fixture child and rejects
+   * `command`/`cwd` at plugin load. Production Desktop sets `false`.
+   */
+  sidecar?: boolean
+}
+```
+
+Source: [`packages/browser/browser-runtime-tandem/src/index.ts:55`](../packages/browser/browser-runtime-tandem/src/index.ts)
 
 <a id="deepseek-aidsh-client-connection"></a>
 
@@ -1364,6 +1475,8 @@ export interface StdioConfig {
   toolCallTimeoutMs: number
   /** Fail plugin activation when the initial connection or tool synchronization fails. */
   failOnStartupError: boolean
+  /** Publish this server's schemas through `tool_search` instead of the initial request. */
+  deferLoading?: boolean
   /** Automatic reconnect policy after a lost connection; omission uses the defaults. */
   reconnect?: ReconnectConfig
 }
@@ -1386,6 +1499,8 @@ export interface StreamableHttpConfig {
   toolCallTimeoutMs: number
   /** Fail plugin activation when the initial connection or tool synchronization fails. */
   failOnStartupError: boolean
+  /** Publish this server's schemas through `tool_search` instead of the initial request. */
+  deferLoading?: boolean
   /** Automatic reconnect policy after a lost connection; omission uses the defaults. */
   reconnect?: ReconnectConfig
 }
@@ -1403,7 +1518,7 @@ export interface ReconnectConfig {
 }
 ```
 
-Source: [`packages/mcp/mcp-client/src/index.ts:98`](../packages/mcp/mcp-client/src/index.ts)
+Source: [`packages/mcp/mcp-client/src/index.ts:103`](../packages/mcp/mcp-client/src/index.ts)
 
 <a id="deepseek-aidsh-message-feedback"></a>
 
@@ -1500,6 +1615,195 @@ export interface PlanModeConfig {
 
 Source: [`packages/plan/plan-mode/src/index.ts:71`](../packages/plan/plan-mode/src/index.ts)
 
+<a id="deepseek-aidsh-platform-account-core"></a>
+
+## `@deepseek-ai/dsh-platform-account-core`
+
+```ts config-catalog
+/** Construction dependencies for one Platform Account instance. */
+export interface PlatformAccountOptions {
+  /** Durable atomic persistence shared by Platform Instances. */
+  backend: AccountBackend
+  /** Cross-instance channel carrying committed session invalidations. */
+  invalidation: AccountInvalidationBus
+  /** GitHub public-identity adapter for the selected environment. */
+  github: GitHubIdentityProvider
+  /** Identity selected from a validated development/production pair. */
+  environment: SelectedPlatformEnvironment
+  /** Secret signing material for the selected environment. */
+  config: PlatformAccountConfig
+  /** Optional deterministic time source. */
+  clock?: AccountClock
+  /** Shared two-instance capacity watermark; omitted compositions never shed login. */
+  capacity?: PlatformCapacityState
+}
+
+/** Persistence operations requiring atomic compare-and-mutate behavior. */
+export interface AccountBackend {
+  /** Durable database identity selected for this deployment. */
+  readonly databaseIdentity: string
+  /** Persist a new Login Attempt. */
+  createAttempt(record: LoginAttemptRecord): Promise<void>
+  /** Find the Login Attempt bound to one OAuth state. */
+  findAttemptByState(state: string): Promise<LoginAttemptRecord | undefined>
+  /** Read one Login Attempt by id. */
+  getAttempt(id: LoginAttemptId): Promise<LoginAttemptRecord | undefined>
+  /** Attach public provider identity after a valid callback. */
+  authorizeAttempt(id: LoginAttemptId, identity: GitHubIdentity): Promise<void>
+  /** Atomically consume authorization, enforce the installation quota, and replace the installation session. */
+  consumeAuthorizedAttempt(id: LoginAttemptId, refreshHash: string, refreshExpiresAt: number): Promise<CreatedSession>
+  /** Find a session by the hash of its current refresh token. */
+  getSessionByRefreshHash(hash: string): Promise<SessionRecord | undefined>
+  /** Read one session by id. */
+  getSession(id: AccountSessionId): Promise<SessionRecord | undefined>
+  /** Read one Platform Account by id. */
+  getAccount(id: PlatformAccountId): Promise<AccountRecord | undefined>
+  /** Atomically rotate the matching refresh token generation. */
+  rotateRefresh(sessionId: AccountSessionId, expectedHash: string, replacementHash: string): Promise<SessionRecord | undefined>
+  /** Revoke one session and report whether it was active. */
+  revokeSession(sessionId: AccountSessionId): Promise<boolean>
+  /** Atomically reject replayed proof ids inside their validity window. */
+  consumeProof(jti: AccountProofJti, expiresAt: number, now: number): Promise<boolean>
+  /** Count live installations of one kind for an Account. */
+  countActiveInstallations(accountId: PlatformAccountId, kind: InstallationKind): Promise<number>
+  /** Read the Account bound to one GitHub subject inside an identity namespace. */
+  findAccountByIdentity(identityNamespace: string, providerSubject: number): Promise<AccountRecord | undefined>
+  /** Read the live session bound to one installation, when present. */
+  findActiveSessionByInstallation(
+    identityNamespace: string,
+    installationId: InstallationId,
+  ): Promise<SessionRecord | undefined>
+}
+
+/** Shared invalidation channel used by every Platform Instance. */
+export interface AccountInvalidationBus {
+  /** Publish one committed Account Session invalidation after every subscriber settles. */
+  publish(sessionId: AccountSessionId): Promise<void>
+  /** Subscribe to committed Account Session invalidations. */
+  subscribe(listener: (sessionId: AccountSessionId) => void | Promise<void>): () => void
+}
+
+/** GitHub OAuth adapter used by the Account provider. */
+export interface GitHubIdentityProvider {
+  /** Validated deployment identity owning the OAuth App and callback. */
+  readonly environment: SelectedPlatformEnvironment
+  /** Build the system-browser authorization URL with S256 PKCE and no scope parameter. */
+  authorizationUrl(input: { callbackUrl: string; state: string; codeChallenge: string }): string
+  /** Exchange one callback code and return only the public identity retained by Platform. */
+  exchange(code: string, verifier: string): Promise<GitHubIdentity>
+}
+
+/** Secret signing material for one Platform Account provider. */
+export interface PlatformAccountConfig {
+  /** Shared secret used to sign short-lived access tokens. */
+  tokenSigningKey: Uint8Array
+  /** Shared secret used to sign five-minute polling tokens. */
+  pollingSigningKey: Uint8Array
+}
+
+/** Clock adapter for expiry and deterministic keyless scenarios. */
+export interface AccountClock {
+  /** @returns current Unix epoch milliseconds. */
+  now(): number
+}
+
+/** Durable Login Attempt state owned by an {@link AccountBackend}. */
+export interface LoginAttemptRecord {
+  /** Opaque Login Attempt id. */
+  id: LoginAttemptId
+  /** Deployment environment that owns the attempt. */
+  environment: PlatformEnvironment
+  /** Provider identity namespace for the selected environment. */
+  identityNamespace: string
+  /** Stable id of the requesting installation. */
+  installationId: InstallationId
+  /** Desktop or Mobile installation class. */
+  installationKind: InstallationKind
+  /** Installation P-256 public key. */
+  publicKey: JsonWebKey
+  /** Random OAuth state bound to the attempt. */
+  state: string
+  /** PKCE verifier retained until the provider callback. */
+  codeVerifier: string
+  /** Unix epoch milliseconds after which the attempt is invalid. */
+  expiresAt: number
+  /** Single-use attempt lifecycle state. */
+  status: 'pending' | 'authorized' | 'used'
+  /** Public GitHub identity present only after callback authorization. */
+  identity?: GitHubIdentity
+}
+
+/** GitHub public identity retained after the provider token is discarded. */
+export interface GitHubIdentity {
+  /** Immutable numeric GitHub user id. */
+  providerSubject: number
+  /** Current public GitHub login. */
+  login: string
+  /** Current public GitHub avatar URL. */
+  avatarUrl: string
+}
+
+/** Atomic result of consuming an authorized Login Attempt. */
+export interface CreatedSession {
+  /** Newly created session. */
+  session: SessionRecord
+  /** Platform Account selected or created for the GitHub identity. */
+  account: AccountRecord
+  /** Earlier session replaced for the same installation, when present. */
+  replacedSessionId?: AccountSessionId
+}
+
+/** Durable proof-of-possession Account Session state. */
+export interface SessionRecord {
+  /** Opaque Account Session id. */
+  id: AccountSessionId
+  /** Provider identity namespace that owns the session. */
+  identityNamespace: string
+  /** Platform Account authorized by the session. */
+  accountId: PlatformAccountId
+  /** Stable id of the authorized installation. */
+  installationId: InstallationId
+  /** Desktop or Mobile installation class. */
+  installationKind: InstallationKind
+  /** Installation P-256 public key. */
+  publicKey: JsonWebKey
+  /** Monotonic refresh-token generation. */
+  revision: number
+  /** Whether the session still authorizes requests. */
+  active: boolean
+  /** Hash of the current rotating refresh token. */
+  refreshHash: string
+  /** Unix epoch milliseconds after which refresh is forbidden. */
+  refreshExpiresAt: number
+}
+
+/** Environment-scoped durable Platform Account record. */
+export interface AccountRecord extends PlatformAccountView {
+  /** Provider identity namespace that owns the account. */
+  identityNamespace: string
+}
+```
+
+Depends on: [`AccountProofJti`](../packages/platform/platform-account/src/index.ts) · [`AccountSessionId`](subsystems/platform-account.md) · [`InstallationId`](subsystems/platform-account.md) · [`InstallationKind`](../packages/platform/platform-account/src/index.ts) · [`LoginAttemptId`](subsystems/platform-account.md) · [`PlatformAccountId`](../packages/platform/platform-account/src/index.ts) · [`PlatformAccountView`](subsystems/platform-account.md) · [`PlatformCapacityState`](../packages/platform/platform-account/src/index.ts) · [`PlatformEnvironment`](../packages/platform/platform-account/src/index.ts) · [`SelectedPlatformEnvironment`](../packages/platform/platform-account/src/index.ts)
+
+Source: [`packages/platform/platform-account-core/src/index.ts:491`](../packages/platform/platform-account-core/src/index.ts)
+
+<a id="deepseek-aidsh-platform-account-http"></a>
+
+## `@deepseek-ai/dsh-platform-account-http`
+
+Requires: `platformAccount` · `webServer`
+
+```ts config-catalog
+/** HTTP consumer configuration. */
+export interface Config {
+  /** Selected Platform environment origin allowed to call Account routes. */
+  origin: string
+}
+```
+
+Source: [`packages/platform/platform-account-http/src/index.ts:22`](../packages/platform/platform-account-http/src/index.ts)
+
 <a id="deepseek-aidsh-pwsh-local"></a>
 
 ## `@deepseek-ai/dsh-pwsh-local`
@@ -1554,6 +1858,42 @@ export type Config = LocalConfig
 Depends on: [`LocalConfig`](#deepseek-aidsh-pwsh-local)
 
 Source: [`packages/shell/pwsh-sandbox/src/index.ts:40`](../packages/shell/pwsh-sandbox/src/index.ts)
+
+<a id="deepseek-aidsh-remote-access-http"></a>
+
+## `@deepseek-ai/dsh-remote-access-http`
+
+Requires: `remoteAccess` · `webServer`
+
+```ts config-catalog
+/** HTTP Consumer configuration. */
+export interface Config {
+  /** Trusted browser origin allowed to call the route. */
+  origin: string
+}
+```
+
+Source: [`packages/platform/remote-access-http/src/index.ts:22`](../packages/platform/remote-access-http/src/index.ts)
+
+<a id="deepseek-aidsh-remote-attachments"></a>
+
+## `@deepseek-ai/dsh-remote-attachments`
+
+```ts config-catalog
+/** Deployment bounds for the in-process store, reachable from cordis.yml. */
+export interface Config {
+  /** Per-blob ciphertext ceiling; defaults to the accepted protocol ceiling. */
+  maxBlobBytes?: number
+  /** Capability lifetime; defaults to the accepted fifteen-minute default. */
+  capabilityLifetimeMs?: number
+  /** Maximum simultaneously retained blobs; capacity failures are explicit. */
+  maxRetainedBlobs: number
+  /** Interval removing expired blobs in the background. */
+  sweepIntervalMs: number
+}
+```
+
+Source: [`packages/platform/remote-attachments/src/index.ts:111`](../packages/platform/remote-attachments/src/index.ts)
 
 <a id="deepseek-aidsh-repeat-tool-reminder"></a>
 
@@ -1748,8 +2088,8 @@ Requires: `storageDomain` · `sessionProjections` · `sessionPersistence` · `se
 /**
  * Plugin config. Both throttle triggers are deployment choices with no
  * universally correct value, so the composition states them explicitly
- * (cordis.yml); the two mandatory write points (`turn/end` and session
- * disposal) are policy, not tunables, and always fire.
+ * (cordis.yml); the two mandatory write points (`turn/end` and Session
+ * detachment) are policy, not tunables, and always fire.
  */
 export interface Config {
   /** Committed events per session that force a durable checkpoint write between mandatory points. */
@@ -2509,6 +2849,22 @@ export interface Config {
 
 Source: [`packages/shell/tool-bash-persistent/src/index.ts:432`](../packages/shell/tool-bash-persistent/src/index.ts)
 
+<a id="deepseek-aidsh-tool-browser"></a>
+
+## `@deepseek-ai/dsh-tool-browser`
+
+Requires: `browserRuntime` · `tools`
+
+```ts config-catalog
+/** Model-facing Browser tool configuration. */
+export interface Config {
+  /** Cooperative timeout budget in milliseconds for each Browser Runtime call. */
+  readonly timeoutMs?: number
+}
+```
+
+Source: [`packages/browser/tool-browser/src/index.ts:24`](../packages/browser/tool-browser/src/index.ts)
+
 <a id="deepseek-aidsh-tool-fs"></a>
 
 ## `@deepseek-ai/dsh-tool-fs`
@@ -2777,7 +3133,9 @@ export interface Config {
    */
   backgroundMode?: 'one-shot' | 'continuable'
   /**
-   * Agent options applied to every child; omitted fields use child-loop defaults.
+   * Default child LLM route and output-token cap. Per-call `provider`/`model`
+   * override these fields. Requires the provider's `agentOptions` capability;
+   * omission leaves inheritance to the backend.
    */
   agentOptions?: AgentOptions
   /**
@@ -2949,13 +3307,43 @@ export interface Config {
    * restores strictly serial dispatch. Must be a positive integer.
    */
   maxParallelSubCalls?: number
+  /**
+   * Enable the reserved `tool_search` discovery tool. `false` (default)
+   * rejects deferred registrations; an object configures result limits.
+   */
+  toolSearch?: false | {
+    /** Results returned when the model omits `limit`. */
+    defaultLimit?: number
+    /** Highest accepted `limit`. */
+    maxResults?: number
+    /** Maximum UTF-8 bytes in a complete fresh, composite, or reconstructed durable discovery result block. */
+    maxResultBytes: number
+  }
 }
 
 /** How the registry presents its tools to the model (see {@link Config.mode}). */
 export type ToolPresentationMode = 'native' | 'code' | 'both'
 ```
 
-Source: [`packages/core/tools/src/index.ts:654`](../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:716`](../packages/core/tools/src/index.ts)
+
+<a id="deepseek-aidsh-tools-eligibility"></a>
+
+## `@deepseek-ai/dsh-tools-eligibility`
+
+Requires: `agents` · `tools`
+
+```ts config-catalog
+/** Positive user configuration layered above preset allowances. */
+export interface Config {
+  /** Tool names added for every session in the Workspace keyed by its stable id. */
+  workspaces: Record<string, string[]>
+  /** Tool names added for the Session keyed by its durable id. */
+  sessions: Record<string, string[]>
+}
+```
+
+Source: [`packages/core/tools-eligibility/src/index.ts:28`](../packages/core/tools-eligibility/src/index.ts)
 
 <a id="deepseek-aidsh-typert-loader"></a>
 
@@ -3087,6 +3475,12 @@ Requires: `web`
 ```ts config-catalog
 /** Plugin config (all optional — `apply` fills env-var and constant defaults). */
 export interface Config {
+  /**
+   * Which provider tab the next search reads. `deepseek` uses this section's
+   * official DeepSeek endpoint; `anthropic-messages` uses the Anthropic tab;
+   * `kimi` uses Moonshot `POST /v1/search`.
+   */
+  backend?: WebSearchBackend
   /** Literal DeepSeek API key; prefer {@link apiKeyEnv} so no secret enters configuration files. */
   apiKey?: string
   /** Credential reference resolved for each search; defaults to `DEEPSEEK_API_KEY`. */
@@ -3102,9 +3496,12 @@ export interface Config {
   /** Maximum `web_search` server-tool uses per request. Defaults to 5. */
   maxUses?: number
 }
+
+/** Which provider tab the next search reads. */
+export type WebSearchBackend = 'deepseek' | 'anthropic-messages' | 'kimi'
 ```
 
-Source: [`packages/web/web-search-deepseek/src/index.ts:46`](../packages/web/web-search-deepseek/src/index.ts)
+Source: [`packages/web/web-search-deepseek/src/index.ts:51`](../packages/web/web-search-deepseek/src/index.ts)
 
 <a id="deepseek-aidsh-web-search-exa"></a>
 
@@ -3191,16 +3588,19 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-agent` ([`packages/core/agent/src/index.ts`](../packages/core/agent/src/index.ts))
 - `@deepseek-ai/dsh-api-gateway` — requires `typert` ([`packages/api/gateway/src/index.ts`](../packages/api/gateway/src/index.ts))
 - `@deepseek-ai/dsh-api-remotes` ([`packages/api/remotes/src/index.ts`](../packages/api/remotes/src/index.ts))
+- `@deepseek-ai/dsh-browser-workspace` — requires `browserRuntime` · `sessions` ([`packages/browser/browser-workspace/src/index.ts`](../packages/browser/browser-workspace/src/index.ts))
 - `@deepseek-ai/dsh-client-locale` ([`packages/client/locale/src/index.ts`](../packages/client/locale/src/index.ts))
 - `@deepseek-ai/dsh-client-modules` — requires `webServer` · `loader` ([`packages/client/modules/src/index.ts`](../packages/client/modules/src/index.ts))
 - `@deepseek-ai/dsh-client-runtime` ([`packages/client/runtime/src/index.ts`](../packages/client/runtime/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-agent-preset` ([`packages/client/ui-agent-preset/src/index.ts`](../packages/client/ui-agent-preset/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-attachment` ([`packages/client/ui-attachment/src/index.ts`](../packages/client/ui-attachment/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-brand-official` ([`packages/client/ui-brand-official/src/index.ts`](../packages/client/ui-brand-official/src/index.ts))
+- `@deepseek-ai/dsh-client-ui-browser` ([`packages/client/ui-browser/src/index.ts`](../packages/client/ui-browser/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-commands` ([`packages/client/ui-commands/src/index.ts`](../packages/client/ui-commands/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-conversation` ([`packages/client/ui-conversation/src/index.ts`](../packages/client/ui-conversation/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-cordis` ([`packages/extensions/ui-cordis/src/index.ts`](../packages/extensions/ui-cordis/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-deliverables` — requires `systemPrompt` ([`packages/client/ui-deliverables/src/index.ts`](../packages/client/ui-deliverables/src/index.ts))
+- `@deepseek-ai/dsh-client-ui-desktop` ([`packages/client/ui-desktop/src/index.ts`](../packages/client/ui-desktop/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-directory-picker-browse` ([`packages/client/ui-directory-picker-browse/src/index.ts`](../packages/client/ui-directory-picker-browse/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-directory-picker-native` ([`packages/client/ui-directory-picker-native/src/index.ts`](../packages/client/ui-directory-picker-native/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-goal` ([`packages/client/ui-goal/src/index.ts`](../packages/client/ui-goal/src/index.ts))
@@ -3213,6 +3613,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-client-ui-plan` ([`packages/client/ui-plan/src/index.ts`](../packages/client/ui-plan/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-reference` ([`packages/client/ui-reference/src/index.ts`](../packages/client/ui-reference/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-renderer` ([`packages/client/ui-renderer/src/index.ts`](../packages/client/ui-renderer/src/index.ts))
+- `@deepseek-ai/dsh-client-ui-schedule` ([`packages/client/ui-schedule/src/index.ts`](../packages/client/ui-schedule/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-settings` ([`packages/client/ui-settings/src/index.ts`](../packages/client/ui-settings/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-settings-general` ([`packages/client/ui-settings-general/src/index.ts`](../packages/client/ui-settings-general/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-settings-models` ([`packages/client/ui-settings-models/src/index.ts`](../packages/client/ui-settings-models/src/index.ts))
@@ -3263,6 +3664,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 Abstract service classes — a deployment loads a concrete implementation package instead ([capability seams](../.agents/notes/implemented/architecture/2026-06-13-capability-seams.md)).
 
 - `@deepseek-ai/dsh-attachment` — abstract `AttachmentStore` ([`packages/attachment/attachment/src/index.ts`](../packages/attachment/attachment/src/index.ts))
+- `@deepseek-ai/dsh-browser-runtime` — abstract `BrowserRuntime` ([`packages/browser/browser-runtime/src/index.ts`](../packages/browser/browser-runtime/src/index.ts))
 - `@deepseek-ai/dsh-code-runtime` — abstract `CodeRuntime` ([`packages/code-runtime/code-runtime/src/index.ts`](../packages/code-runtime/code-runtime/src/index.ts))
 - `@deepseek-ai/dsh-compaction` — abstract `CompactionEngine` ([`packages/compaction/compaction/src/index.ts`](../packages/compaction/compaction/src/index.ts))
 - `@deepseek-ai/dsh-credentials` — abstract `CredentialProvider` ([`packages/credentials/credentials/src/index.ts`](../packages/credentials/credentials/src/index.ts))
@@ -3270,6 +3672,8 @@ Abstract service classes — a deployment loads a concrete implementation packag
 - `@deepseek-ai/dsh-fs` — abstract `FileSystem` ([`packages/fs/fs/src/index.ts`](../packages/fs/fs/src/index.ts))
 - `@deepseek-ai/dsh-host-directory-picker` — abstract `DirectoryPicker` ([`packages/host/directory-picker/src/index.ts`](../packages/host/directory-picker/src/index.ts))
 - `@deepseek-ai/dsh-jobs` — abstract `JobRegistry` ([`packages/jobs/jobs/src/index.ts`](../packages/jobs/jobs/src/index.ts))
+- `@deepseek-ai/dsh-platform-account` — abstract `AccountService` ([`packages/platform/platform-account/src/index.ts`](../packages/platform/platform-account/src/index.ts))
+- `@deepseek-ai/dsh-remote-access` — abstract `RemoteAccessService` ([`packages/platform/remote-access/src/index.ts`](../packages/platform/remote-access/src/index.ts))
 - `@deepseek-ai/dsh-sandbox` — abstract `SandboxProvider` ([`packages/sandbox/sandbox/src/index.ts`](../packages/sandbox/sandbox/src/index.ts))
 - `@deepseek-ai/dsh-session-persistence` — abstract `SessionPersistence` ([`packages/session/session-persistence/src/index.ts`](../packages/session/session-persistence/src/index.ts))
 - `@deepseek-ai/dsh-session-query` — abstract `SessionQueryEngine` ([`packages/session-query/session-query/src/index.ts`](../packages/session-query/session-query/src/index.ts))
@@ -3303,6 +3707,10 @@ Imported as libraries by other packages; a `cordis.yml` cannot load them.
 - `@deepseek-ai/dsh-loader-smoke` ([`packages/test-support/loader-smoke/src/index.ts`](../packages/test-support/loader-smoke/src/index.ts))
 - `@deepseek-ai/dsh-native-command` ([`packages/util/native-command/src/index.ts`](../packages/util/native-command/src/index.ts))
 - `@deepseek-ai/dsh-output-retention` ([`packages/util/output-retention/src/index.ts`](../packages/util/output-retention/src/index.ts))
+- `@deepseek-ai/dsh-platform-account-client` ([`packages/platform/platform-account-client/src/index.ts`](../packages/platform/platform-account-client/src/index.ts))
+- `@deepseek-ai/dsh-remote-access-client` ([`packages/platform/remote-access-client/src/index.ts`](../packages/platform/remote-access-client/src/index.ts))
+- `@deepseek-ai/dsh-remote-access-redis` ([`packages/platform/remote-access-redis/src/index.ts`](../packages/platform/remote-access-redis/src/index.ts))
+- `@deepseek-ai/dsh-remote-protocol` ([`packages/platform/remote-protocol/src/index.ts`](../packages/platform/remote-protocol/src/index.ts))
 - `@deepseek-ai/dsh-sandbox-windows-acl` ([`packages/sandbox/sandbox-windows-acl/src/index.ts`](../packages/sandbox/sandbox-windows-acl/src/index.ts))
 - `@deepseek-ai/dsh-scope` ([`packages/core/scope/src/index.ts`](../packages/core/scope/src/index.ts))
 - `@deepseek-ai/dsh-sdk-client` ([`packages/sdk/client/src/index.ts`](../packages/sdk/client/src/index.ts))

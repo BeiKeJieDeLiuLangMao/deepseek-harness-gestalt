@@ -464,10 +464,10 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     methods: [
       {
         signature: 'abstract create(request: BrowserCreateRequest): Promise<BrowserPageState>',
-        description: 'Create one temporary or named persistent Profile tab. Omitting `attach` starts a new Workspace and browser instance. Attaching to a Workspace starts another instance; attaching to a browser instance starts another tab in that instance.',
-        parameters: [{ name: 'request', description: 'Temporary or named persistent Profile request, optional attach, and cancellation.' }],
-        returns: 'initial open page state at revision zero; its target addresses every later operation in this lifecycle. Persistent Profiles restore the same storage partition on later creates.',
-        throws: ['`BrowserRuntimeError` with `BROWSER_ABORTED` when cancellation wins, `BROWSER_DISPOSED` after teardown starts, `BROWSER_NOT_FOUND` when `attach` names a missing hierarchy, `BROWSER_PROFILE_BUSY` when the named Profile already has a writer, `BROWSER_PROFILE_NAME` when the name cannot be a stable partition key, `BROWSER_PROTOCOL` when the upstream runtime breaks its response protocol, or `BROWSER_RUNTIME_UNAVAILABLE` when the upstream runtime cannot be reached or starts unhealthy.'],
+        description: 'Create one temporary, named persistent, or shared Profile tab. Omitting `attach` starts a new Workspace and browser instance. Attaching to a Workspace starts another instance; attaching to a browser instance starts another tab in that instance.',
+        parameters: [{ name: 'request', description: 'Temporary, named persistent, or shared Profile request, optional attach, and cancellation.' }],
+        returns: 'initial open page state at revision zero; its target addresses every later operation in this lifecycle. Persistent and shared Profiles restore the same storage partition on later creates. Shared creates from different Sessions reuse one partition and do not take `BROWSER_PROFILE_BUSY`.',
+        throws: ['`BrowserRuntimeError` with `BROWSER_ABORTED` when cancellation wins, `BROWSER_DISPOSED` after teardown starts, `BROWSER_NOT_FOUND` when `attach` names a missing hierarchy, `BROWSER_PROFILE_BUSY` when the named persistent Profile already has a writer, `BROWSER_PROFILE_NAME` when the name cannot be a stable partition key, `BROWSER_PROTOCOL` when the upstream runtime breaks its response protocol, or `BROWSER_RUNTIME_UNAVAILABLE` when the upstream runtime cannot be reached or starts unhealthy.'],
       },
       {
         signature: 'abstract navigate(request: BrowserNavigateRequest): Promise<BrowserPageState>',
@@ -3428,7 +3428,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'BrowserCreateRequest',
-    declaration: 'export type BrowserCreateRequest = BrowserTemporaryCreateRequest | BrowserPersistentCreateRequest;',
+    declaration: 'export type BrowserCreateRequest = BrowserTemporaryCreateRequest | BrowserPersistentCreateRequest | BrowserSharedCreateRequest;',
   },
   {
     name: 'BrowserInputRequest',
@@ -3468,7 +3468,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'BrowserProfileKind',
-    declaration: 'export type BrowserProfileKind = \'temporary\' | \'persistent\';',
+    declaration: 'export type BrowserProfileKind = \'temporary\' | \'persistent\' | \'shared\';',
   },
   {
     name: 'BrowserProfileName',
@@ -3485,6 +3485,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'BrowserScreenshot',
     declaration: 'export interface BrowserScreenshot {\n    readonly target: BrowserTarget;\n    readonly revision: number;\n    readonly url: string;\n    readonly title: string;\n    readonly mediaType: \'image/png\';\n    readonly data: string;\n}',
+  },
+  {
+    name: 'BrowserSharedCreateRequest',
+    declaration: 'export interface BrowserSharedCreateRequest {\n    readonly profile: \'shared\';\n    readonly attach?: BrowserCreateAttach;\n    readonly signal?: AbortSignal;\n}',
   },
   {
     name: 'BrowserTabId',

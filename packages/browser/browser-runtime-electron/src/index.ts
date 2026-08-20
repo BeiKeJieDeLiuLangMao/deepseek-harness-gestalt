@@ -1,5 +1,5 @@
 /**
- * In-process Electron Browser Runtime for temporary and named persistent Profiles.
+ * In-process Electron Browser Runtime for temporary, named persistent, and shared Profiles.
  * @module @deepseek-ai/dsh-browser-runtime-electron
  */
 
@@ -11,7 +11,7 @@ import {
   addressedBrowserRuntimeStateFrom,
   assertBrowserCreateAttach,
   assertBrowserNotAborted,
-  assertBrowserProfileWriterAvailable,
+  assertUnattachedPersistentWriterAvailable,
   BrowserRuntime,
   BrowserRuntimeError,
   browserTargetFor,
@@ -22,6 +22,8 @@ import {
   requireExpectedBrowserRevision,
   resolveBrowserCreateAttach,
   resolveBrowserProfileCreate,
+  browserProfileRetainsIdentity,
+  browserSharedWorkspaceSeq,
 } from '@deepseek-ai/dsh-browser-runtime'
 import type {
   BrowserClosedState,
@@ -410,9 +412,9 @@ export class ElectronBrowserRuntime extends BrowserRuntime {
     })
   }
 
-  /** Persist named Profile storage; temporary partitions stay in memory. */
+  /** Persist identity-retaining Profile storage; temporary partitions stay in memory. */
   private async flush(profile: OpenProfile): Promise<void> {
-    if (profile.chrome.kind !== 'persistent') return
+    if (!browserProfileRetainsIdentity(profile.chrome.kind)) return
     await profile.session.flushStorageData()
   }
 
@@ -524,9 +526,7 @@ export class ElectronBrowserRuntime extends BrowserRuntime {
           sessionName: this.openProfile(attached.target).sessionName,
           chrome: attached.chrome,
         }
-      if (request.profile === 'persistent' && request.attach === undefined) {
-        assertBrowserProfileWriterAvailable(this.states.values(), created.chrome.partition, request.name)
-      }
+      assertUnattachedPersistentWriterAvailable(this.states.values(), request, created.chrome.partition)
       assertBrowserCreateAttach(this.states.values(), created.profileId, request.attach)
       const host = await this.hostApis()
       const existing = this.profiles.get(created.profileId)
@@ -538,7 +538,12 @@ export class ElectronBrowserRuntime extends BrowserRuntime {
       }
       const historical = [...this.states.values()].filter(state => state.target.profileId === created.profileId)
       const tabSeq = historical.length + 1
-      const target = browserTargetFor(created.profileId, created.sessionName, tabSeq, request.attach)
+      const workspaceSeq = request.profile === 'shared'
+        ? browserSharedWorkspaceSeq(this.states.values(), created.profileId, request.attach)
+        : undefined
+      const target = browserTargetFor(
+        created.profileId, created.sessionName, tabSeq, request.attach, workspaceSeq,
+      )
       const window = this.createWindow(profile, host)
       const tab: OpenTab = { window, stopCrashWatch: this.watchCrash(target, window) }
       profile.tabs.set(target.tabId, tab)

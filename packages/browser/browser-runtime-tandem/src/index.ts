@@ -8,7 +8,7 @@ import {
   addressedBrowserRuntimeStateFrom,
   assertBrowserCreateAttach,
   assertBrowserNotAborted,
-  assertBrowserProfileWriterAvailable,
+  assertUnattachedPersistentWriterAvailable,
   BrowserRuntime,
   BrowserRuntimeError,
   browserTargetFor,
@@ -16,9 +16,11 @@ import {
   commitBrowserRuntimeState,
   emitBrowserRuntimeState,
   EMPTY_BROWSER_PROFILE_STORAGE,
+  openBrowserPagesForProfile,
   requireExpectedBrowserRevision,
   resolveBrowserCreateAttach,
   resolveBrowserProfileCreate,
+  browserSharedWorkspaceSeq,
 } from '@deepseek-ai/dsh-browser-runtime'
 import type {
   BrowserClosedState,
@@ -737,12 +739,8 @@ export class TandemBrowserRuntime extends BrowserRuntime {
           sessionName: this.openProfile(attached.target).sessionName,
           chrome: attached.chrome,
         }
-      const existing = [...this.states.values()].filter(state => (
-        state.status === 'open' && state.target.profileId === created.profileId
-      ))
-      if (request.profile === 'persistent' && request.attach === undefined) {
-        assertBrowserProfileWriterAvailable(this.states.values(), created.chrome.partition, request.name)
-      }
+      const existing = openBrowserPagesForProfile(this.states.values(), created.profileId)
+      assertUnattachedPersistentWriterAvailable(this.states.values(), request, created.chrome.partition)
       assertBrowserCreateAttach(this.states.values(), created.profileId, request.attach)
       if (this.process === undefined) await this.startProcess(request.signal)
       try {
@@ -754,7 +752,12 @@ export class TandemBrowserRuntime extends BrowserRuntime {
         }
         const historical = [...this.states.values()].filter(state => state.target.profileId === created.profileId)
         const tabSeq = historical.length + 1
-        const target = browserTargetFor(created.profileId, created.sessionName, tabSeq, request.attach)
+        const workspaceSeq = request.profile === 'shared'
+          ? browserSharedWorkspaceSeq(this.states.values(), created.profileId, request.attach)
+          : undefined
+        const target = browserTargetFor(
+          created.profileId, created.sessionName, tabSeq, request.attach, workspaceSeq,
+        )
         profile.tabs.set(target.tabId, tab.id)
         this.profiles.set(created.profileId, profile)
         let content: TandemPageContent | undefined

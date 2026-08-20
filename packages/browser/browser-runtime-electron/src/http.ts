@@ -41,6 +41,7 @@ interface TabRecord {
 interface SessionRecord {
   readonly name: string
   readonly persistent: boolean
+  readonly shared: boolean
   readonly profileName?: BrowserProfileName
   readonly tabs: Map<string, TabRecord>
 }
@@ -89,6 +90,10 @@ function inventoryTab(id: string, page: BrowserPageState, active: boolean) {
 /** True when the session name is this Provider's temporary Profile form. */
 function isTemporarySessionName(sessionName: string, idPrefix: string): boolean {
   return sessionName.startsWith(`${idPrefix}-tmp-`) && /^.+-tmp-\d+$/.test(sessionName)
+}
+
+function isSharedSessionName(sessionName: string, idPrefix: string): boolean {
+  return sessionName === `${idPrefix}-shared`
 }
 
 /**
@@ -209,18 +214,25 @@ export async function listenElectronBrowserHttp(options: {
     const firstTab = existing === undefined ? undefined : [...existing.tabs.values()][0]
     let request: BrowserCreateRequest
     if (existing !== undefined && firstTab !== undefined) {
-      request = existing.persistent && existing.profileName !== undefined
+      request = existing.shared
         ? {
-          profile: 'persistent',
-          name: existing.profileName,
+          profile: 'shared',
           attach: { kind: 'workspace', workspaceId: firstTab.target.workspaceId },
         }
-        : {
-          profile: 'temporary',
-          attach: { kind: 'workspace', workspaceId: firstTab.target.workspaceId },
-        }
+        : existing.persistent && existing.profileName !== undefined
+          ? {
+            profile: 'persistent',
+            name: existing.profileName,
+            attach: { kind: 'workspace', workspaceId: firstTab.target.workspaceId },
+          }
+          : {
+            profile: 'temporary',
+            attach: { kind: 'workspace', workspaceId: firstTab.target.workspaceId },
+          }
     } else if (isTemporarySessionName(sessionName, idPrefix)) {
       request = { profile: 'temporary' }
+    } else if (isSharedSessionName(sessionName, idPrefix)) {
+      request = { profile: 'shared' }
     } else {
       request = { profile: 'persistent', name: persistentNameFromSession(sessionName, idPrefix) }
     }
@@ -237,7 +249,8 @@ export async function listenElectronBrowserHttp(options: {
     const tab: TabRecord = { id: tabId, target: page.target, revision: page.revision }
     const session = existing ?? {
       name: sessionName,
-      persistent: request.profile === 'persistent',
+      persistent: request.profile !== 'temporary',
+      shared: request.profile === 'shared',
       ...(request.profile === 'persistent' ? { profileName: request.name } : {}),
       tabs: new Map<string, TabRecord>(),
     }

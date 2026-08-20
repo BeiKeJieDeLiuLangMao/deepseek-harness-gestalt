@@ -2263,7 +2263,7 @@ todo_write 是会话所有的状态；UI 将最新的 todo/write 事件渲染为
 
 ### `browser_create`
 
-创建一个临时或命名持久 Browser Profile、Browser Workspace、浏览器实例与标签页。
+创建一个共享、临时或命名持久 Browser Profile、Browser Workspace、浏览器实例与标签页。省略 profile 会复用安装范围内的共享身份。
 
 ```json
 {
@@ -2271,10 +2271,11 @@ todo_write 是会话所有的状态；UI 将最新的 todo/write 事件渲染为
   "properties": {
     "profile": {
       "type": "string",
-      "description": "temporary discards identity; persistent restores a named Profile.",
+      "description": "Omit or shared reuses one identity across Sessions. persistent restores a named isolated Profile. temporary discards identity.",
       "enum": [
         "temporary",
-        "persistent"
+        "persistent",
+        "shared"
       ]
     },
     "name": {
