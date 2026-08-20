@@ -208,6 +208,12 @@ describe('Platform release workflows', () => {
     if (apply === undefined) throw new TypeError('deploy job must run docker')
     expect(String(apply.run)).toContain('--log-opt max-size=20m')
     expect(String(apply.run)).toContain('--log-opt max-file=3')
+    expect(String(apply.run)).toContain('dsh-loongcollector')
+    expect(String(apply.run)).toContain('gestalt-platform')
+    expect(String(apply.run)).toContain('owner-account-id')
+    expect(String(apply.run)).toContain('loongcollector:v3.0.12.0-25723a1-aliyun')
+    expect(String(apply.run)).toContain('/var/run/docker.sock')
+    expect(String(apply.run)).toContain('/etc/ilogtail/conf/cn-hangzhou/ilogtail_config.json')
     if (!isRecord(workflow.jobs)) throw new TypeError('deploy workflow must define jobs')
     for (const [name, value] of Object.entries(workflow.jobs)) {
       if (!isRecord(value)) throw new TypeError(`${name} must be a job`)
