@@ -20,6 +20,8 @@ One predicate answers what both surfaces actually need. `providerUsable(row)` is
 
 `needsSetup(row, anyUsable)` takes the same fact, so the setup card is the first-run posture alone. With another provider reachable, DeepSeek is an ordinary row carrying the missing-key dot, one Edit click from the same card.
 
+`listedProviderRows` is the list the Models page paints. Official DeepSeek with only composition defaults is not `configured` — that flag is user occupancy or a `role('secret')` slot, and `apiKeyEnv` is a credential-ref — but the mounted adapter still owns a row. Without this filter the official route vanished from both the setup-card list and Add a provider (which already excludes it), so first-run had no key field.
+
 Each card kind now owns its own close handler. `closeSetup` records the provider in a component-local `dismissedSetup` set and touches nothing else; `closeEditor` keeps clearing the three states its cards own. Both route the post-save reload through one `announceSaved` helper. Dismissal is viewing state, like the open editor and the add card: a reload restores the first-run posture for a user still in it.
 
 ## Alternatives considered
@@ -35,4 +37,4 @@ Onboarding now ends for reasons the DeepSeek route knows nothing about, so the s
 
 ## Testing
 
-Package tests pin `providerUsable` over the four join states and `onboardingReadiness` over both the new gate and every surviving diagnostic; the section tests cover the first-run posture, the plain-row posture, and the cancel that collapses the setup card while the add card keeps its draft. The `onboarding-usable-provider` web e2e lane replays the whole scenario through the real wire: cancel with both cards open, configure `minimax-cn` instead, reload, and find no takeover — with one aria golden of the dismissed state.
+Package tests pin `providerUsable` over the four join states and `onboardingReadiness` over both the new gate and every surviving diagnostic; the section tests cover the first-run posture, the plain-row posture, `listedProviderRows` for an unoccupied official DeepSeek user layer, and the cancel that collapses the setup card while the add card keeps its draft. The `onboarding-usable-provider` web e2e lane replays the whole scenario through the real wire: cancel with both cards open, configure `minimax-cn` instead, reload, and find no takeover — with one aria golden of the dismissed state.

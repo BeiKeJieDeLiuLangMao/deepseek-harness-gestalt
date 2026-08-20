@@ -20,6 +20,8 @@ Status: implemented
 
 `needsSetup(row, anyUsable)` 接受同一个事实，因此设置卡片仅代表首次运行姿态。当另有可触达的提供方时，DeepSeek 就是一行带缺失密钥点的普通行，距离同一张卡片只有一次「编辑」点击。
 
+`listedProviderRows` 是 Models 页实际画出的行表。仅有组合默认值的官方 DeepSeek 不算 `configured`——该标志只看用户层占用或 `role('secret')` 槽，而 `apiKeyEnv` 是 credential-ref——但已挂载的适配器仍拥有一行。没有这道过滤时，官方路由会同时从设置卡片列表和「添加提供方」（本就排除它）中消失，首次运行便没有密钥输入框。
+
 现在每一类卡片各自拥有自己的关闭回调。`closeSetup` 把该提供方记入组件本地的 `dismissedSetup` 集合，别的一概不碰；`closeEditor` 继续清空它那些卡片所拥有的三个状态。两者都经由同一个 `announceSaved` 助手完成保存后的重载。关闭状态属于查看态，与展开的编辑卡和新增卡一样：对仍处于首次运行姿态的用户，重载会恢复该姿态。
 
 ## Alternatives considered
@@ -35,4 +37,4 @@ Status: implemented
 
 ## Testing
 
-包内测试针对四种联接状态钉住 `providerUsable`，并针对新门槛与每一个存留的诊断钉住 `onboardingReadiness`；分区测试覆盖首次运行姿态、普通行姿态，以及在新增卡保住草稿的同时折叠设置卡片的那次取消。`onboarding-usable-provider` web e2e 泳道通过真实协议重放整个场景：两张卡片都开着时取消、改配 `minimax-cn`、重载，然后不再出现接管——并附一份关闭后状态的 aria golden。
+包内测试针对四种联接状态钉住 `providerUsable`，并针对新门槛与每一个存留的诊断钉住 `onboardingReadiness`；分区测试覆盖首次运行姿态、普通行姿态、用户层为空的官方 DeepSeek 的 `listedProviderRows`，以及在新增卡保住草稿的同时折叠设置卡片的那次取消。`onboarding-usable-provider` web e2e 泳道通过真实协议重放整个场景：两张卡片都开着时取消、改配 `minimax-cn`、重载，然后不再出现接管——并附一份关闭后状态的 aria golden。

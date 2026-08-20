@@ -131,6 +131,24 @@ export function needsSetup(row: ProviderRow, anyUsable: boolean): boolean {
   return row.credential?.configured !== true
 }
 
+/**
+ * Rows the Models list paints. Official DeepSeek with only composition
+ * defaults is not `configured` (no user occupancy and no `role('secret')`
+ * slot), but the mounted adapter still owns a list row — and the first-run
+ * setup card while no other provider can serve requests.
+ * @param rows - joined provider rows.
+ * @returns rows that appear in the list.
+ */
+export function listedProviderRows(rows: readonly ProviderRow[]): ProviderRow[] {
+  return rows.filter(row =>
+    row.configured
+    || (
+      row.entry.provider === 'deepseek-official'
+      && row.entry.settingsNs !== ''
+      && row.entry.settingsPath.length === 0
+    ))
+}
+
 function targetOf(row: ProviderRow): EditorTarget {
   const managedRef = deriveKeyRef(row.entry.provider)
   const keyRef = row.apiKeyEnv === managedRef
@@ -267,7 +285,7 @@ function Loaded({ injected }: { injected: ModelsSectionInjected }): ReactNode {
   // One fact decides both first-run postures on this page and the onboarding
   // step: whether the user already has a provider to talk to.
   const anyUsable = state.rows.some(providerUsable)
-  const configured = state.rows.filter(row => row.configured)
+  const configured = listedProviderRows(state.rows)
   const addable = state.rows.filter(row =>
     !row.configured
     && row.entry.settingsNs !== ''

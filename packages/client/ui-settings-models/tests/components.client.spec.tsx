@@ -6,7 +6,7 @@ import Schema from '@deepseek-ai/schemastery'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-web-react'
 import type { RpcResponse, SettingsNamespaceView } from '@deepseek-ai/dsh-api-remotes/client'
 import {
-  ModelsSection, needsSetup, providerCopy, providerTargetLabel, removeProviderProfile,
+  ModelsSection, listedProviderRows, needsSetup, providerCopy, providerTargetLabel, removeProviderProfile,
 } from '../src/client/ModelsSection.tsx'
 import type { ModelsSectionInjected, ModelsSectionProps } from '../src/client/ModelsSection.tsx'
 import { pathOps } from '../src/client/ProviderEditor.tsx'
@@ -317,6 +317,39 @@ describe('ModelsSection', () => {
     // A user who can already reach some provider is not in the first-run
     // posture, so nothing on the page opens itself.
     expect(needsSetup(row(undefined), true)).toBe(false)
+  })
+
+  it('lists official DeepSeek on first run even when the user layer is empty', () => {
+    const official: ProviderRow = {
+      entry: {
+        provider: 'deepseek-official',
+        displayName: 'DeepSeek',
+        settingsNs: 'llm-deepseek',
+        settingsPath: [],
+        active: true,
+      },
+      configured: false,
+      removable: true,
+      apiKeyEnv: 'DEEPSEEK_API_KEY',
+      credential: { configured: false, writable: true },
+    }
+    const other: ProviderRow = {
+      entry: {
+        provider: 'minimax-cn',
+        displayName: 'minimax-cn',
+        settingsNs: 'llm-pi-ai',
+        settingsPath: ['providers', 'minimax-cn'],
+        active: true,
+      },
+      configured: false,
+      removable: true,
+      apiKeyEnv: 'MINIMAX_CN_API_KEY',
+      credential: { configured: false, writable: true },
+    }
+    expect(listedProviderRows([official, other])).toEqual([official])
+    expect(listedProviderRows([{ ...official, configured: true }, other])).toEqual([
+      { ...official, configured: true },
+    ])
   })
 
   it('derives conventional credential references from route ids', () => {
