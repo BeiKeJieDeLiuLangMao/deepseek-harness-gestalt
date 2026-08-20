@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -14,6 +14,10 @@ import {
 } from './scaffold.ts'
 import { connectFreshWorkspace } from './support.ts'
 
+const DESKTOP_BRIDGE_FIXTURE = fileURLToPath(
+  new URL('../../../packages/client/ui-desktop/tests/desktop-bridge-fixture.client.ts', import.meta.url),
+)
+
 const OVERLAY = fileURLToPath(new URL('../../desktop/cordis.patch.yml', import.meta.url))
 const FIXTURE = fileURLToPath(new URL('./snapshots/lifecycle-chrome/session.jsonl', import.meta.url))
 const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/desktop-chrome', import.meta.url))
@@ -23,39 +27,11 @@ const PROMPT = 'Reply with the single word LIGHTHOUSE and stop.'
 
 async function openDesktopPage(browser: Browser, baseUrl: string, platform: 'darwin' | 'win32'): Promise<Page> {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 }, locale: 'en-US' })
-  await page.addInitScript((desktopPlatform) => {
-    // The inert bridge covers the complete preload surface; account and
-    // pairing stay in their pre-answer `unavailable` snapshots.
-    const unavailableAccount = { status: 'unavailable', privacyAccepted: false }
-    const unavailablePairing = { status: 'unavailable', enabled: false, pairings: [] }
-    Object.defineProperty(window, 'dshDesktop', {
-      configurable: true,
-      value: {
-        platform: desktopPlatform,
-        getStatus: async () => ({ state: 'disabled', lastCheckedAt: null }),
-        checkNow: () => {},
-        downloadNow: () => {},
-        quitAndInstall: () => {},
-        onStatus: () => () => {},
-        windowMinimize: () => {},
-        windowMaximize: () => {},
-        windowClose: () => {},
-        accountGetSnapshot: async () => unavailableAccount,
-        accountAcceptPrivacy: async () => unavailableAccount,
-        accountBeginLogin: async () => unavailableAccount,
-        accountSignOut: async () => unavailableAccount,
-        onAccountSnapshot: () => () => {},
-        pairingGetSnapshot: async () => unavailablePairing,
-        pairingSetEnabled: async () => unavailablePairing,
-        pairingCreateChallenge: async () => unavailablePairing,
-        pairingCancelChallenge: async () => unavailablePairing,
-        pairingConfirm: async () => unavailablePairing,
-        pairingReject: async () => unavailablePairing,
-        pairingRevoke: async () => unavailablePairing,
-        onPairingSnapshot: () => () => {},
-      },
-    })
-  }, platform)
+  // Dynamic import keeps this host-plane spec from loading packages/client/*/src.
+  const { installDesktopBridgeFixture } = await import(pathToFileURL(DESKTOP_BRIDGE_FIXTURE).href) as {
+    installDesktopBridgeFixture: (platform: 'darwin' | 'win32') => void
+  }
+  await page.addInitScript(installDesktopBridgeFixture, platform)
   await page.goto(baseUrl, { waitUntil: 'load' })
   await page.waitForSelector(`[data-desktop-chrome="${platform === 'darwin' ? 'mac' : 'win'}"]`, {
     timeout: 30_000,
