@@ -43,6 +43,7 @@ e2e 断言应重新运行命令或从外部重新读取文件；对 agent 自身
 - CI 与已有构建产物的测试通道通过共享双模式启动器，从构建后的 `lib/` 运行每个示例或 Cordis 配置子进程。不要为这些子进程手写 `--import tsx`。
 - 不加载 Cordis 的协议与操作系统 fixture 直接通过 Node 运行使用可擦除语法的 `.ts` 文件，不经过 tsx 或根路径映射。
 - 只有测试对象本身是源码路径解析时，才可以选择 `src`；在测试中写明这一约定。
+- 真实 Chromium Browser Runtime e2e 只通过 `pnpm run test:electron-runtime-e2e` 运行。不要设置 `ELECTRON_RUN_AS_NODE`。Node 上的 `test:e2e` 保留具名跳过（[启动器说明](../.agents/notes/implemented/testing/2026-08-20-electron-runtime-e2e-launcher.md)）。
 
 ## 何时需要快照测试
 

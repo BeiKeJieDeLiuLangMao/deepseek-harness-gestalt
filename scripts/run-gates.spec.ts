@@ -110,6 +110,9 @@ describe('gate graph validation', () => {
     expect(byId.get('coverage')?.allowFailure).not.toBe(true)
     expect(byId.get('coverage-exempt-heavy')?.allowFailure).not.toBe(true)
     expect(byId.get('coverage-exempt-heavy')?.needs).toContain('build')
+    expect(byId.get('electron-runtime-e2e')?.allowFailure).not.toBe(true)
+    expect(byId.get('electron-runtime-e2e')?.displayCommand).toBe('pnpm run test:electron-runtime-e2e')
+    expect(byId.get('duplication')?.allowFailure).toBe(true)
     expect(observational).not.toHaveLength(0)
     for (const gate of observational) {
       const completeGate = byId.get(gate.id)

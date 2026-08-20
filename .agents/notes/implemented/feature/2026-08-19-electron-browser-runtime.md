@@ -28,7 +28,7 @@ The Dock stays a native pane of screenshot, title, and text. It does not embed a
 
 ## Consequences
 
-Desktop owns real pages without a second Electron application. Web and headless stay keyless and deterministic. The Dock continues to render Runtime facts rather than a live view. Real Chromium e2e runs only when this process is Electron; Node coverage uses an injected Electron host and the HTTP fixture.
+Desktop owns real pages without a second Electron application. Web and headless stay keyless and deterministic. The Dock continues to render Runtime facts rather than a live view. Real Chromium e2e runs through `pnpm run test:electron-runtime-e2e` ([launcher note](../testing/2026-08-20-electron-runtime-e2e-launcher.md)); Node coverage uses an injected Electron host and the HTTP fixture.
 
 ## Verification
 
@@ -36,4 +36,4 @@ Desktop owns real pages without a second Electron application. Web and headless 
 - `pnpm exec vitest run apps/desktop/tests/browser-runtime.spec.ts apps/desktop/tests/overlay-isolation.spec.ts packages/browser/tool-browser`
 - `pnpm run test:snapshot` (browser-runtime and browser-runtime-tandem headless transcripts)
 - `pnpm run typecheck`, `pnpm run build`, `pnpm run publint`, `pnpm run constraints`, `pnpm run doc-sync`
-- Electron-gated e2e in `packages/browser/browser-runtime-electron/tests/runtime.e2e.ts` self-skips on Node with the named reason that this process is not Electron and must not spawn Tandem.app.
+- `pnpm run test:electron-runtime-e2e` runs `packages/browser/browser-runtime-electron/tests/runtime.e2e.ts` inside Electron; Node `pnpm run test:e2e` keeps the named skip that this process is not Electron and must not spawn Tandem.app.

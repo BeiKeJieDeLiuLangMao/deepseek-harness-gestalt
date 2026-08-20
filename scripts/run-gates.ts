@@ -484,6 +484,9 @@ function ciWindowsCompleteGates(): Gate[] {
   return [
     ciBuildGate(),
     pnpmScript('windows-site', 'docs:build', { label: 'production site' }),
+    pnpmScript('electron-runtime-e2e', 'test:electron-runtime-e2e', {
+      label: 'electron runtime e2e',
+    }),
     ...coverage,
     ...observational,
   ]
