@@ -105,7 +105,7 @@ describe('Desktop Platform Account over a real HTTP Platform', () => {
     await controller.start()
     expect(controller.getSnapshot()).toMatchObject({ status: 'idle', privacyAccepted: false })
     await expect(controller.beginLogin()).rejects.toThrow('privacy notice must be accepted before authorization')
-    controller.acceptPrivacy()
+    await controller.acceptPrivacy()
     await controller.beginLogin()
     expect(controller.getSnapshot()).toMatchObject({ status: 'polling' })
     const openedUrl = new URL(opened.mock.calls[0]?.[0] as string)
