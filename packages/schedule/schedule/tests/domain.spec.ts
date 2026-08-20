@@ -137,6 +137,20 @@ describe('version-1 Schedule decoding and folding', () => {
     expect(() => foldScheduleEvents([
       scheduleEvent({ version: 1, operation: 'dispatch', id: 'missing' }),
     ])).toThrow(/inactive id/)
+    const noise = { type: 'turn/start', seq: 3, time: 3, data: { turn: 1 } } as SessionEvent
+    expect(foldScheduleEvents([first, noise, second, removed]).active.map(record => record.id))
+      .toEqual(['second'])
+  })
+
+  it('terminates a one-shot record on a dispatch that carries no acceptedAt', () => {
+    const created = scheduleEvent(createData('one-shot'), 0)
+    const dispatched = scheduleEvent({ version: 1, operation: 'dispatch', id: 'one-shot' }, 1)
+    expect(foldScheduleEvents([created, dispatched])).toEqual({
+      active: [],
+      paused: [],
+      schedules: [],
+      seenIds: ['one-shot'],
+    })
   })
 
   it('pauses and resumes durable records without changing creation order', () => {

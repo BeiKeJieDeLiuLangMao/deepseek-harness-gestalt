@@ -21,7 +21,12 @@ import type {
   RelayCredentialGrant,
   RemoteAccessErrorCode,
 } from '@deepseek-ai/dsh-remote-access'
-import { parseRelayCredential, parseRelayRouteId } from '@deepseek-ai/dsh-remote-protocol'
+import {
+  parseRelayCredential,
+  parseRelayRouteId,
+  type CompanionPushToken,
+  type RelayRouteId,
+} from '@deepseek-ai/dsh-remote-protocol'
 
 export * from './relay.ts'
 export * from './browser-relay-socket.ts'
@@ -87,6 +92,12 @@ export interface RemoteAccessTransport {
     authentication: PairingAccountAuthentication
     pendingPairingId: PendingPairingId
   }): Promise<MobilePairingStatus>
+  /** Drop the current device token after Mobile unpair when the route still exists. */
+  unregisterPushToken(input: {
+    authentication: PairingAccountAuthentication
+    routeId: RelayRouteId
+    token: CompanionPushToken
+  }): Promise<void>
 }
 
 /** HTTP transport construction inputs. */
@@ -196,6 +207,18 @@ export class RemoteAccessHttpTransport implements RemoteAccessTransport {
     }))
   }
 
+  async unregisterPushToken(input: {
+    authentication: PairingAccountAuthentication
+    routeId: RelayRouteId
+    token: CompanionPushToken
+  }): Promise<void> {
+    await this.call(input.authentication, {
+      operation: 'unregister-push-token',
+      routeId: input.routeId,
+      token: input.token,
+    })
+  }
+
   private async call(authentication: PairingAccountAuthentication, body: Record<string, unknown>): Promise<unknown> {
     const response = await this.fetch(this.endpoint, {
       method: 'POST',
@@ -218,7 +241,14 @@ export class RemoteAccessHttpTransport implements RemoteAccessTransport {
     if (isRecord(value) && isRecord(value.error)
       && typeof value.error.code === 'string' && typeof value.error.message === 'string') {
       const code = parseRemoteAccessErrorCode(value.error.code)
-      if (code !== undefined) throw new RemoteAccessError(code, value.error.message)
+      const retryAfter = value.error.retryAfter
+      if (code !== undefined) {
+        throw new RemoteAccessError(
+          code,
+          value.error.message,
+          Number.isSafeInteger(retryAfter) ? retryAfter as number : undefined,
+        )
+      }
     }
     throw new Error(`Remote Access request failed with HTTP ${response.status}`)
   }
@@ -346,6 +376,8 @@ const REMOTE_ACCESS_ERROR_CODES: ReadonlySet<RemoteAccessErrorCode> = new Set([
   'PAIRING_PENDING_INVALID',
   'PAIRING_ID_COLLISION',
   'PAIRING_RESOURCE_LIMIT',
+  'QUOTA',
+  'PLATFORM_CAPACITY',
 ])
 
 function parseRemoteAccessErrorCode(value: string): RemoteAccessErrorCode | undefined {

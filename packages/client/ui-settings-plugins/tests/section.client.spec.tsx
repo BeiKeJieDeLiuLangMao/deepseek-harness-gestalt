@@ -538,6 +538,11 @@ describe('WebSearchProviderPanel', () => {
     expect(screen.getByLabelText(en.webSearchBaseUrl)).toHaveProperty('disabled', false)
   })
 
+  it('shows the default search budget when the staged field is empty', () => {
+    renderPanel({ maxUses: field('') })
+    expect(screen.getByLabelText(en.webSearchMaxUses)).toHaveProperty('value', '5')
+  })
+
   it('stages the endpoint, the search budget, and their resets', () => {
     const actions = renderPanel({
       baseURL: field('https://search.test/v1', { overridden: true }),

@@ -1,16 +1,29 @@
 import { describe, expect, it, vi } from 'vitest'
+import { deriveKeylessMobileHandshake, deriveKeylessPairingKey } from '@deepseek-ai/dsh-remote-access'
 import { DevelopmentKeylessMobileHandshakeClient } from '../src/development-keyless-pairing.ts'
 
+const SECRET = new Uint8Array(32)
+const LINK = invitationLink(SECRET)
+
 describe('DevelopmentKeylessMobileHandshakeClient', () => {
-  it('provides explicit keyless handshake bytes and opens a product-delivered Relay grant', async () => {
+  it('derives handshake bytes from the invitation and retains the pairing key after Desktop match', async () => {
     vi.spyOn(crypto, 'randomUUID').mockReturnValue('00000000-0000-4000-8000-000000000001')
     const client = new DevelopmentKeylessMobileHandshakeClient()
+    const mobileHandshake = await deriveKeylessMobileHandshake(SECRET)
+    const pairingKey = await deriveKeylessPairingKey(SECRET)
 
-    await expect(client.begin('https://platform.example/pair')).resolves.toEqual({
+    await expect(client.begin(LINK)).resolves.toEqual({
       completionId: 'development-00000000-0000-4000-8000-000000000001',
-      mobileHandshake: Uint8Array.of(0),
+      mobileHandshake,
     })
-    await expect(client.acceptDesktopHandshake(Uint8Array.of(1))).resolves.toBeUndefined()
+    await expect(client.acceptDesktopHandshake(Uint8Array.of(1))).rejects.toThrow('does not match')
+    await expect(client.acceptDesktopHandshake(pairingKey)).resolves.toBeUndefined()
+    expect(client.exportPairingKeyMaterial()).toEqual(pairingKey)
+    expect(client.exportPairingKeyMaterial()).not.toBe(client.exportPairingKeyMaterial())
+    client.wipe()
+    expect(client.exportPairingKeyMaterial()).toBeUndefined()
+    await expect(client.acceptDesktopHandshake(pairingKey)).rejects.toThrow('no prepared invitation')
+
     await expect(client.openRelayAuthority(new TextEncoder().encode(JSON.stringify({
       endpoint: 'mobile',
       routeId: 'route-mobile',
@@ -38,3 +51,13 @@ describe('DevelopmentKeylessMobileHandshakeClient', () => {
     await expect(client.openRelayAuthority(new TextEncoder().encode(encoded))).rejects.toThrow(message)
   })
 })
+
+function invitationLink(secret: Uint8Array): string {
+  return `https://platform.example/pair?challenge=challenge-one&secret=${encodeBase64Url(secret)}&fingerprint=desktop-fingerprint&rendezvous=rendezvous-one&expires=1&protocol=1`
+}
+
+function encodeBase64Url(bytes: Uint8Array): string {
+  let binary = ''
+  for (const byte of bytes) binary += String.fromCharCode(byte)
+  return btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/u, '')
+}

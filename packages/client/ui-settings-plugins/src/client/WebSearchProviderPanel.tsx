@@ -5,7 +5,9 @@
 
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { SecretField, ValueField } from './fields.tsx'
-import type { WebSearchCardFace } from './web-search-card-controller.ts'
+import type { CardActions } from './card-form.ts'
+import type { PluginsSettingsLocaleKey } from './locales.ts'
+import type { WebSearchCardFace, WebSearchCardState } from './web-search-card-controller.ts'
 import type {} from './slot-contract.ts'
 
 /** Props the renderer binds for one provider tab. */
@@ -14,14 +16,29 @@ export type WebSearchProviderPanelProps =
   & PropsLocale<'settings.plugins'>
   & InjectFace<WebSearchCardFace>
 
+/** Shared key / endpoint / budget fields for the card and each provider tab. */
+export interface WebSearchFieldsProps {
+  /** Locale copy. */
+  t: WebSearchProviderPanelProps['t']
+  /** Prefix for control ids so two cards on one page do not collide. */
+  idPrefix: string
+  /** Locale key of the endpoint hint. */
+  baseUrlHintKey: PluginsSettingsLocaleKey
+  /** Selected provider snapshot. */
+  state: WebSearchCardState
+  /** Stage draft text for one field. */
+  edit: CardActions['edit']
+  /** Stage a clear so saving re-inherits the composition layer. */
+  resetField: CardActions['resetField']
+}
+
 /**
- * Render the selected provider's fields.
+ * Render the selected provider's key, endpoint, and budget fields.
  * @param props - locale copy, the provider snapshot, and its form actions.
  * @returns the fields.
  */
-export function WebSearchProviderPanel(props: WebSearchProviderPanelProps) {
-  const { t } = props
-  const state = props.useWebSearchCard(snapshot => snapshot)
+export function WebSearchFields(props: WebSearchFieldsProps) {
+  const { t, state } = props
   const fieldsLocked = !state.writable
   const keySet = state.apiKeyConfigured
   return (
@@ -58,9 +75,29 @@ export function WebSearchProviderPanel(props: WebSearchProviderPanelProps) {
         numeric
         disabled={fieldsLocked}
         {...state.maxUses}
+        text={state.maxUses.text === '' ? '5' : state.maxUses.text}
         onEdit={(text) => { props.edit('maxUses', text) }}
         onReset={() => { props.resetField('maxUses') }}
       />
     </>
+  )
+}
+
+/**
+ * Render the selected provider's fields.
+ * @param props - locale copy, the provider snapshot, and its form actions.
+ * @returns the fields.
+ */
+export function WebSearchProviderPanel(props: WebSearchProviderPanelProps) {
+  const state = props.useWebSearchCard(snapshot => snapshot)
+  return (
+    <WebSearchFields
+      t={props.t}
+      idPrefix={props.idPrefix}
+      baseUrlHintKey={props.baseUrlHintKey}
+      state={state}
+      edit={props.edit}
+      resetField={props.resetField}
+    />
   )
 }

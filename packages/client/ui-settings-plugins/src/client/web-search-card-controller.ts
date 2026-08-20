@@ -16,7 +16,7 @@ import {
   type SettingsScope, type SettingsScopeSnapshot, type SnapshotStore,
 } from '@deepseek-ai/dsh-client-runtime/client'
 import type { HostObservable, StoredEntry } from '@deepseek-ai/dsh-client-ui-slots'
-import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
+import { labeledSlotTab } from './slot-tab.ts'
 import {
   CardForm, numberField, textField,
   type CardActions, type CardFieldState, type CardShell,
@@ -351,14 +351,7 @@ export class WebSearchShell {
         providerTabs: {
           getSnapshot: () => {
             const next = this.entries()
-              .map((entry) => {
-                const options = entry.options
-                return {
-                  id: options.id ?? '',
-                  order: options.order ?? 0,
-                  label: resolveSlotLabel(options.label) ?? '',
-                }
-              })
+              .map(labeledSlotTab)
               .toSorted((left, right) => left.order - right.order)
             const prev = this.tabSnapshot
             if (prev.length === next.length

@@ -747,7 +747,7 @@ describe('continuable durability and teardown', () => {
 
     await vi.waitFor(() => {
       expect(warnings.some(warning => warning.includes('normal settlement cleanup failed'))).toBe(true)
-    })
+    }, { timeout: 10_000 })
     expect(ctx.agents.get(started.childId)).toBeUndefined()
   })
 

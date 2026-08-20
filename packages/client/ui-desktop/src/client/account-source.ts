@@ -1,14 +1,13 @@
 /** Observable Desktop Account snapshot for the Mobile Pairing Settings section. */
 
 import type { DesktopAccountSnapshot, DesktopBridge } from '../protocol.ts'
-import { createSnapshotHub } from './snapshot-hub.ts'
+import {
+  createDesktopSnapshotSource,
+  type DesktopSnapshotSource,
+} from './snapshot-source.ts'
 
 /** Renderer-side Account source. */
-export interface DesktopAccountSource {
-  readonly getSnapshot: () => DesktopAccountSnapshot
-  readonly subscribe: (listener: () => void) => () => void
-  readonly set: (snapshot: DesktopAccountSnapshot) => void
-}
+export type DesktopAccountSource = DesktopSnapshotSource<DesktopAccountSnapshot>
 
 /** Initial state before the Desktop Host answers. */
 export const INITIAL_ACCOUNT_SNAPSHOT: DesktopAccountSnapshot = Object.freeze({
@@ -24,7 +23,7 @@ export const INITIAL_ACCOUNT_SNAPSHOT: DesktopAccountSnapshot = Object.freeze({
 export function createDesktopAccountSource(
   onListenerError: (error: unknown) => void = (error) => { console.error('account subscriber failed', error) },
 ): DesktopAccountSource {
-  return createSnapshotHub(INITIAL_ACCOUNT_SNAPSHOT, onListenerError)
+  return createDesktopSnapshotSource(INITIAL_ACCOUNT_SNAPSHOT, onListenerError)
 }
 
 /**

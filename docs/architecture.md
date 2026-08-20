@@ -54,6 +54,7 @@ Here are some core packages that contribute to the Cordis tree.
 | [`platform/remote-access`](../packages/platform/remote-access/README.md) | Settings-owned Personal Pairing lifecycle and Companion-only Device Principals | `ctx.remoteAccess` |
 | [`platform/remote-access`](../packages/platform/remote-access/README.md) | Stateless multi-instance Relay lifecycle and route authority seam | `ctx.remoteRelay` |
 | [`platform/remote-access-redis`](../packages/platform/remote-access-redis/README.md) | Expiring Relay directory and direct ciphertext Pub/Sub | adapter, no key |
+| [`platform/remote-attachments`](../packages/platform/remote-attachments/README.md) | Pairing-scoped encrypted attachment blob store with one-time capabilities | `ctx.remoteAttachments` |
 
 ## Events
 

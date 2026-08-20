@@ -784,12 +784,22 @@ export class TandemBrowserRuntime extends BrowserRuntime {
     })
   }
 
-  async navigate(request: BrowserNavigateRequest): Promise<BrowserPageState> {
+  /** Serialize one revision-checked mutation against an open page. */
+  private mutateOpenPage<T>(
+    request: BrowserMutationRequest,
+    mutate: (state: BrowserPageState) => Promise<T>,
+  ): Promise<T> {
     assertBrowserNotAborted(request.signal)
     return this.exclusive(async () => {
       assertBrowserNotAborted(request.signal)
       const state = this.openPage(request.target)
       this.expectRevision(state, request.expectedRevision)
+      return mutate(state)
+    })
+  }
+
+  async navigate(request: BrowserNavigateRequest): Promise<BrowserPageState> {
+    return this.mutateOpenPage(request, async (state) => {
       const response = objectValue(await this.json('/navigate', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-session': this.sessionNameFor(request.target) },
@@ -860,11 +870,7 @@ export class TandemBrowserRuntime extends BrowserRuntime {
   }
 
   async focus(request: BrowserMutationRequest): Promise<BrowserPageState> {
-    assertBrowserNotAborted(request.signal)
-    return this.exclusive(async () => {
-      assertBrowserNotAborted(request.signal)
-      const state = this.openPage(request.target)
-      this.expectRevision(state, request.expectedRevision)
+    return this.mutateOpenPage(request, async (state) => {
       const response = objectValue(await this.json('/tabs/focus', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -884,11 +890,7 @@ export class TandemBrowserRuntime extends BrowserRuntime {
   }
 
   async input(request: BrowserInputRequest): Promise<BrowserPageState> {
-    assertBrowserNotAborted(request.signal)
-    return this.exclusive(async () => {
-      assertBrowserNotAborted(request.signal)
-      const state = this.openPage(request.target)
-      this.expectRevision(state, request.expectedRevision)
+    return this.mutateOpenPage(request, async (state) => {
       const response = objectValue(await this.json('/input', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-session': this.sessionNameFor(request.target) },

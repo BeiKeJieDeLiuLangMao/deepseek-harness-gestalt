@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { createElement } from 'react'
-import { cleanup, render, screen } from '@testing-library/react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { MobileConversation } from '../src/MobileConversation.tsx'
 import { MOBILE_TERMINAL_PREVIEW_LINES, previewTerminalLines } from '../src/mobile-content.ts'
 
@@ -30,6 +30,22 @@ describe('Mobile conversation renderer', () => {
     expect(screen.getByText('Allow write')).toBeTruthy()
     expect(screen.getByText('Continue?')).toBeTruthy()
     expect(screen.queryByRole('textbox')).toBeNull()
+    expect(screen.queryByRole('button', { name: '允许' })).toBeNull()
+  })
+
+  it('disables settlement until foreground reconnect and Desktop-authoritative sync', () => {
+    const onSettled = vi.fn()
+    render(createElement(MobileConversation, {
+      title: 'Safe',
+      onBack: () => {},
+      companionState: { token: 'tok', foreground: true, socketOpen: true, synchronized: false },
+      onSettled,
+      blocks: [{ kind: 'approval', summary: 'Allow write' }],
+    }))
+    const button = screen.getByRole('button', { name: '允许' })
+    expect(button.hasAttribute('disabled')).toBe(true)
+    fireEvent.click(button)
+    expect(onSettled).not.toHaveBeenCalled()
   })
 
   it('renders unknown tools as a generic read-only card and bounds terminal output', () => {

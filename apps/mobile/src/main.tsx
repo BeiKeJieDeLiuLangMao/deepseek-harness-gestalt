@@ -15,6 +15,12 @@ import { parseRelayAttachmentId, REMOTE_PROTOCOL_LIMITS } from '@deepseek-ai/dsh
 import '@deepseek-ai/dsh-client-ui-theme/src/styles/base.css'
 import '@deepseek-ai/dsh-client-ui-theme/src/styles/design-platform.css'
 import '@deepseek-ai/dsh-client-ui-theme/src/styles/gradient-shadow-text.css'
+import {
+  bindCompanionProcessVisibility,
+  CompanionForegroundRuntime,
+  companionRuntime,
+  installCompanionRuntime,
+} from './companion-push.ts'
 import { MobileAccount } from './MobileAccount.tsx'
 import type { MobilePairingActions } from './MobilePairing.tsx'
 import { MobilePairingController, NativeMobilePairingQrScanner } from './personal-pairing.ts'
@@ -55,6 +61,16 @@ const installation = new PlatformAccountInstallation({
   store: new IndexedDbInstallationAccountStore(`deepseek-gestalt-platform-account:${environment.databaseIdentity}`),
   systemBrowser: mobileSystemBrowser,
 })
+let companionVisibilityDisposer: (() => Promise<void>) | undefined
+
+/**
+ * Remove the process-lifetime visibility listeners bound by the Mobile entry.
+ * @returns settled after document listeners and a pending Capacitor handle are removed.
+ */
+export function disposeCompanionVisibility(): Promise<void> {
+  return companionVisibilityDisposer?.() ?? Promise.resolve()
+}
+
 const unavailablePairing = {
   status: 'unavailable',
   error: 'Personal Pairing waits for the independent Noise security review.',
@@ -72,6 +88,7 @@ let pairing: MobilePairingActions = {
 }
 if (environment.environment === 'development' && import.meta.env.VITE_PERSONAL_PAIRING_KEYLESS === '1') {
   const { DevelopmentKeylessMobileHandshakeClient } = await import('./development-keyless-pairing.ts')
+  const { PairingCompanionKeyVault } = await import('./companion-keys.ts')
   const relayUrl = requiredWss(import.meta.env.VITE_REMOTE_RELAY_WSS_URL)
   const inboundMaxBytes = positiveInteger(import.meta.env.VITE_REMOTE_RELAY_INBOUND_MAX_BYTES, 'inbound bytes')
   const inboundMaxMessages = positiveInteger(import.meta.env.VITE_REMOTE_RELAY_INBOUND_MAX_MESSAGES, 'inbound messages')
@@ -87,13 +104,19 @@ if (environment.environment === 'development' && import.meta.env.VITE_PERSONAL_P
     attachTimeoutMs: positiveInteger(import.meta.env.VITE_REMOTE_RELAY_ATTACH_TIMEOUT_MS, 'attach timeout'),
     heartbeatIntervalMs: positiveInteger(import.meta.env.VITE_REMOTE_RELAY_HEARTBEAT_INTERVAL_MS, 'heartbeat interval'),
     reconnectDelayMs: positiveInteger(import.meta.env.VITE_REMOTE_RELAY_RECONNECT_DELAY_MS, 'reconnect delay'),
+    onCiphertext: () => { companionRuntime()?.synchronize() },
   })
+  const companion = new CompanionForegroundRuntime({ relay })
+  installCompanionRuntime(companion)
+  companionVisibilityDisposer = bindCompanionProcessVisibility(companion)
   pairing = new MobilePairingController({
     installation,
     transport: new RemoteAccessHttpTransport({ environment }),
     handshake: new DevelopmentKeylessMobileHandshakeClient(),
     scanner: new NativeMobilePairingQrScanner(),
-    relay,
+    relay: companion,
+    companion,
+    pairingKeys: new PairingCompanionKeyVault(),
     device: {
       name: navigator.userAgent.includes('Android') ? 'Android phone' : 'iPhone',
       platform: navigator.userAgent.includes('Android') ? 'android' : 'ios',

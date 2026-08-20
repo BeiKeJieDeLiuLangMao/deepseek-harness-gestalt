@@ -18,10 +18,11 @@ export class MobileRelayEndpointLifecycle {
     })
   }
 
-  /** Configure the endpoint with Mobile-specific authority opened by the pairing crypto adapter.
-   * @param grant - Mobile-specific authority opened by the pairing crypto adapter.
+  /**
+   * Set or drop pairing-delivered Mobile authority.
+   * @param grant - Mobile-specific authority, or `undefined` to drop it.
    */
-  configure(grant: RelayCredentialGrant): void { this.grant = grant }
+  configure(grant?: RelayCredentialGrant): void { this.grant = grant }
   /** Attach after pairing confirmation. */
   async start(): Promise<void> { await this.endpoint.start() }
   /** Stop and drain the current Mobile attachment. */

@@ -7,12 +7,16 @@ import {
   MAX_ACTIVE_PAIRING_CHALLENGES_PER_INSTALLATION,
   MAX_PENDING_PAIRINGS_PER_INSTALLATION,
   MAX_RETAINED_PAIRING_RECORDS_PER_INSTALLATION,
+  OPEN_REGISTRATION_QUOTAS,
   PERSONAL_PAIRING_PROTOCOL_MAJOR,
   PAIRING_CHALLENGE_TTL_MS,
+  PAIRING_CHALLENGE_QUOTA_WINDOW_MS,
   PAIRING_REPLAY_RETENTION_MS,
   MemoryPersonalPairingAuthorityStore,
   PersonalPairingProvider,
   RemoteAccessError,
+  type PersonalPairingAuthorityStore,
+  type PersonalPairingProviderOptions,
   deriveAuthenticationWords,
   parseDevicePrincipalId,
   parsePairingChallengeId,
@@ -71,6 +75,10 @@ describe('PersonalPairingProvider', () => {
     expect(await authority.getMobilePairing(pendingPairingId)).toEqual(first)
     await authority.revokeMobilePairing(parsePersonalPairingId('pairing-missing'))
     expect(await authority.getMobilePairing(pendingPairingId)).toEqual(first)
+    await expect(authority.runPairingTransaction(async () => {
+      throw new Error('transaction rejected')
+    })).rejects.toThrow('transaction rejected')
+    await expect(authority.runPairingTransaction(async () => 'recovered')).resolves.toBe('recovered')
     expect(await authority.getMobilePairing(sealed.pendingPairingId)).toEqual(sealed)
     await authority.revokeMobilePairing(first.pairingId)
     expect(await authority.getMobilePairing(pendingPairingId)).toBeUndefined()
@@ -113,6 +121,7 @@ describe('PersonalPairingProvider', () => {
     const challenge = await platformA.createChallenge({
       desktop,
       rendezvousId: parsePairingRendezvousId('shared-authority'),
+      clientIp: '192.0.2.1',
     })
     const pending = await platformA.completeChallenge({
       mobile,
@@ -137,6 +146,7 @@ describe('PersonalPairingProvider', () => {
     await expect(platformA.createChallenge({
       desktop,
       rendezvousId: parsePairingRendezvousId('disabled-on-other-instance'),
+      clientIp: '192.0.2.1',
     })).rejects.toMatchObject({ code: 'MOBILE_ACCESS_DISABLED' })
     await expect(platformB.getMobilePairingStatus({ mobile, pendingPairingId: pending.pendingPairingId }))
       .resolves.toEqual({ status: 'rejected' })
@@ -179,7 +189,9 @@ describe('PersonalPairingProvider', () => {
     })
     const desktop = authentication('desktop-installation', 'account-one')
     await provider.setMobileAccess({ desktop, enabled: true })
-    const challenge = await provider.createChallenge({ desktop, rendezvousId: parsePairingRendezvousId('revoke-one') })
+    const challenge = await provider.createChallenge({ desktop, rendezvousId: parsePairingRendezvousId('revoke-one'),
+      clientIp: '192.0.2.1',
+    })
     const pending = await provider.completeChallenge({
       mobile: authentication('mobile-installation', 'account-one'),
       completionId: parsePairingCompletionId('revoke-one'),
@@ -197,27 +209,156 @@ describe('PersonalPairingProvider', () => {
     expect(relay.revokeCredential).toHaveBeenCalledOnce()
     expect(relay.revokeRoute).not.toHaveBeenCalled()
     expect(await provider.getMobileAccessState(desktop)).toEqual({ enabled: true })
+    await expect(provider.reissueDesktopRelayAuthority(desktop)).resolves.toMatchObject({
+      enabled: true, relay: { routeId: parseRelayRouteId('route-revoke'), endpoint: 'desktop' },
+    })
+    await expect(provider.revokePersonalPairing({
+      desktop, pairingId: parsePersonalPairingId('pairing-missing'),
+    })).rejects.toMatchObject({ code: 'PAIRING_PENDING_INVALID' })
     await provider.dispose()
   })
 
-  it('reads an unsealed shared pairing result on a replacement Platform provider', async () => {
-    const authority = new MemoryPersonalPairingAuthorityStore()
-    const pendingPairingId = parsePendingPairingId('pending-unsealed-replacement')
-    await authority.confirmMobilePairing({
-      accountId: 'account-one' as never,
-      desktopInstallationId: parseInstallationId('desktop-installation'),
-      mobileInstallationId: parseInstallationId('mobile-installation'),
-      pendingPairingId,
-      pairingId: parsePersonalPairingId('pairing-unsealed-replacement'),
+  it('reissues Desktop Relay authority and keeps pairings on another Installation when disabling', async () => {
+    const handshake = handshakeProvider()
+    const provider = uniquePairingProvider(handshake)
+    const desktop = authentication('desktop-one')
+    const other = authentication('desktop-two')
+    await provider.setMobileAccess({ desktop, enabled: true })
+    await provider.setMobileAccess({ desktop: other, enabled: true })
+    await expect(provider.reissueDesktopRelayAuthority(desktop)).resolves.toEqual({ enabled: true })
+    const challenge = await createChallengeFor(provider, desktop, 'keep-other')
+    const pending = await completeAs(provider, challenge.oneTimeLink, 'keep-other', 'mobile-one', 'account-one')
+    await provider.confirmPairing({ desktop, pendingPairingId: pending.pendingPairingId })
+    await provider.setMobileAccess({ desktop: other, enabled: false })
+    expect(await provider.listPersonalPairings(desktop)).toHaveLength(1)
+    await provider.setMobileAccess({ desktop, enabled: false })
+    expect(await provider.listPersonalPairings(desktop)).toEqual([])
+    await expect(provider.reissueDesktopRelayAuthority(desktop)).rejects.toMatchObject({
+      code: 'MOBILE_ACCESS_DISABLED',
     })
-    const provider = new PersonalPairingProvider(new Context(), {
-      account: { currentInstallation: vi.fn(async ({ accessToken }: { accessToken: string }) => authenticated(accessToken)) },
-      handshake: handshakeProvider(), authority, pairingLinkOrigin: 'https://platform.example.com/pair',
+    const owned = configuredProvider({ authority: new MemoryPersonalPairingAuthorityStore() })
+    ;(owned as unknown as { localChallengeIds: Set<string> }).localChallengeIds.add('ghost-challenge')
+    await owned.dispose()
+    const idle = pairingProvider(handshakeProvider())
+    expect(() => (idle as unknown as { requireTransactions(): unknown }).requireTransactions())
+      .toThrow('transaction state is not owned')
+    const revokeOnly = uniquePairingProvider(handshakeProvider())
+    const revokeDesktop = authentication('desktop-revoke-only')
+    await revokeOnly.setMobileAccess({ desktop: revokeDesktop, enabled: true })
+    const revokeChallenge = await createChallengeFor(revokeOnly, revokeDesktop, 'revoke-only')
+    const revokePending = await completeAs(
+      revokeOnly, revokeChallenge.oneTimeLink, 'revoke-only', 'mobile-revoke-only', 'account-one',
+    )
+    const revokePairing = await revokeOnly.confirmPairing({
+      desktop: revokeDesktop, pendingPairingId: revokePending.pendingPairingId,
     })
+    await revokeOnly.revokePersonalPairing({ desktop: revokeDesktop, pairingId: revokePairing.id })
+    expect(await revokeOnly.listPersonalPairings(revokeDesktop)).toEqual([])
+  })
 
+  it('rolls back a Mobile grant when sealing or committing pairing authority fails', async () => {
+    const routeId = parseRelayRouteId('route-seal-rollback')
+    const desktop = authentication('desktop-installation')
+    const relay = relayStub(routeId, 1, async () => { throw new Error('revoke failed') })
+    const provider = configuredProvider({
+      handshake: { ...handshakeProvider(), sealMobileRelayAuthority: vi.fn(async () => { throw new Error('seal failed') }) },
+      relay,
+      authority: new MemoryPersonalPairingAuthorityStore(),
+      randomBytes: size => new Uint8Array(size),
+      randomId: kind => kind === 'relay-route' ? routeId : `${kind}-seal-rollback`,
+    })
+    await provider.setMobileAccess({ desktop, enabled: true })
+    const challenge = await createChallengeFor(provider, desktop, 'seal-rollback')
+    const pending = await complete(provider, challenge.oneTimeLink, 'seal-rollback')
+    await expect(provider.confirmPairing({
+      desktop, pendingPairingId: pending.pendingPairingId,
+    })).rejects.toThrow('rollback failed')
+
+    const sealOnly = relayStub(routeId, 3)
+    const sealOnlyProvider = configuredProvider({
+      handshake: { ...handshakeProvider(), sealMobileRelayAuthority: vi.fn(async () => { throw new Error('seal only') }) },
+      relay: sealOnly,
+      authority: new MemoryPersonalPairingAuthorityStore(),
+      randomBytes: size => new Uint8Array(size),
+      randomId: kind => kind === 'relay-route' ? routeId : `${kind}-seal-only`,
+    })
+    await sealOnlyProvider.setMobileAccess({ desktop, enabled: true })
+    const sealOnlyChallenge = await createChallengeFor(sealOnlyProvider, desktop, 'seal-only')
+    const sealOnlyPending = await complete(sealOnlyProvider, sealOnlyChallenge.oneTimeLink, 'seal-only')
+    await expect(sealOnlyProvider.confirmPairing({
+      desktop, pendingPairingId: sealOnlyPending.pendingPairingId,
+    })).rejects.toThrow('seal only')
+    expect(sealOnly.revokeCredential).toHaveBeenCalledOnce()
+
+    const commitRelay = relayStub(routeId, 2)
+    const commitProvider = configuredProvider({
+      handshake: {
+        ...handshakeProvider(),
+        sealMobileRelayAuthority: vi.fn(async () => Uint8Array.of(1)),
+      },
+      relay: commitRelay,
+      authority: authorityRejectingConfirm(new MemoryPersonalPairingAuthorityStore(), 'commit failed'),
+      randomBytes: size => new Uint8Array(size),
+      randomId: kind => kind === 'relay-route' ? routeId : `${kind}-commit-rollback`,
+    })
+    await commitProvider.setMobileAccess({ desktop, enabled: true })
+    const commitChallenge = await createChallengeFor(commitProvider, desktop, 'commit-rollback')
+    const commitPending = await complete(commitProvider, commitChallenge.oneTimeLink, 'commit-rollback')
+    await expect(commitProvider.confirmPairing({
+      desktop, pendingPairingId: commitPending.pendingPairingId,
+    })).rejects.toThrow('commit failed')
+    expect(commitRelay.revokeCredential).toHaveBeenCalledOnce()
+
+    const failedCleanup = relayStub(routeId, 4, async () => { throw new Error('commit revoke failed') })
+    const failedCleanupProvider = configuredProvider({
+      handshake: {
+        ...handshakeProvider(),
+        sealMobileRelayAuthority: vi.fn(async () => Uint8Array.of(1)),
+      },
+      relay: failedCleanup,
+      authority: authorityRejectingConfirm(new MemoryPersonalPairingAuthorityStore(), 'commit failed'),
+      randomBytes: size => new Uint8Array(size),
+      randomId: kind => kind === 'relay-route' ? routeId : `${kind}-commit-cleanup`,
+    })
+    await failedCleanupProvider.setMobileAccess({ desktop, enabled: true })
+    const failedCleanupChallenge = await createChallengeFor(failedCleanupProvider, desktop, 'commit-cleanup')
+    const failedCleanupPending = await complete(
+      failedCleanupProvider, failedCleanupChallenge.oneTimeLink, 'commit-cleanup',
+    )
+    await expect(failedCleanupProvider.confirmPairing({
+      desktop, pendingPairingId: failedCleanupPending.pendingPairingId,
+    })).rejects.toThrow('commit rollback failed')
+
+    const noRelayProvider = configuredProvider({
+      authority: authorityRejectingConfirm(new MemoryPersonalPairingAuthorityStore(), 'no-relay commit failed'),
+    })
+    await noRelayProvider.setMobileAccess({ desktop, enabled: true })
+    const noRelayChallenge = await createChallengeFor(noRelayProvider, desktop, 'no-relay-commit')
+    const noRelayPending = await complete(noRelayProvider, noRelayChallenge.oneTimeLink, 'no-relay-commit')
+    await expect(noRelayProvider.confirmPairing({
+      desktop, pendingPairingId: noRelayPending.pendingPairingId,
+    })).rejects.toThrow('no-relay commit failed')
+  })
+
+  it('reads an unsealed shared pairing result on a replacement Platform provider', async () => {
+    const { authority, pendingPairingId } = await seedSharedPairing('unsealed-replacement')
+    const provider = configuredProvider({ authority })
     expect(await provider.getMobilePairingStatus({
       mobile: authentication('mobile-installation'), pendingPairingId,
     })).toEqual({ status: 'paired', pairingId: 'pairing-unsealed-replacement' })
+  })
+
+  it('reads a sealed shared pairing result on a replacement Platform provider', async () => {
+    const { authority, pendingPairingId } = await seedSharedPairing(
+      'sealed-replacement',
+      Uint8Array.of(1, 2),
+    )
+    const provider = configuredProvider({ authority })
+    expect(await provider.getMobilePairingStatus({
+      mobile: authentication('mobile-installation'), pendingPairingId,
+    })).toEqual({
+      status: 'paired', pairingId: 'pairing-sealed-replacement', sealedRelayAuthority: Uint8Array.of(1, 2),
+    })
   })
 
   it.each(['route-disabled', 'missing-sealer'] as const)(
@@ -231,32 +372,16 @@ describe('PersonalPairingProvider', () => {
           ? {}
           : { sealMobileRelayAuthority: vi.fn(async () => Uint8Array.of(1)) }),
       }
-      const relay = {
-        rotateCredential: vi.fn(async () => ({
-          routeId, endpoint: 'desktop' as const,
-          credential: parseRelayCredential('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'), revision: 1,
-        })),
-        issueCredential: vi.fn(async () => ({
-          routeId, endpoint: 'mobile' as const,
-          credential: parseRelayCredential('AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE'), revision: 1,
-        })),
-        revokeCredential: vi.fn(async () => {}),
-        revokeRoute: vi.fn(),
-      }
-      const provider = new PersonalPairingProvider(new Context(), {
-        account: { currentInstallation: vi.fn(async ({ accessToken }: { accessToken: string }) => authenticated(accessToken)) },
+      const provider = configuredProvider({
         handshake,
-        relay,
+        relay: relayStub(routeId, 1),
         authority,
         randomBytes: size => new Uint8Array(size),
         randomId: kind => kind === 'relay-route' ? routeId : `${kind}-${failure}`,
-        pairingLinkOrigin: 'https://platform.example.com/pair',
       })
       const desktop = authentication('desktop-installation')
       await provider.setMobileAccess({ desktop, enabled: true })
-      const challenge = await provider.createChallenge({
-        desktop, rendezvousId: parsePairingRendezvousId(`rendezvous-${failure}`),
-      })
+      const challenge = await createChallengeFor(provider, desktop, `rendezvous-${failure}`)
       const pending = await complete(provider, challenge.oneTimeLink, failure)
       if (failure === 'route-disabled') {
         await authority.disableDesktop('account-one' as never, parseInstallationId('desktop-installation'))
@@ -275,13 +400,17 @@ describe('PersonalPairingProvider', () => {
     const desktop = authentication('desktop-installation', 'account-one')
 
     expect(await provider.getMobileAccessState(desktop)).toEqual({ enabled: false })
-    await expect(provider.createChallenge({ desktop, rendezvousId: 'disabled' as never })).rejects.toEqual(
+    await expect(provider.createChallenge({ desktop, rendezvousId: 'disabled' as never,
+      clientIp: '192.0.2.1',
+    })).rejects.toEqual(
       expect.objectContaining<Partial<RemoteAccessError>>({ code: 'MOBILE_ACCESS_DISABLED' }),
     )
     expect(handshake.createChallenge).not.toHaveBeenCalled()
 
     expect(await provider.setMobileAccess({ desktop, enabled: true })).toEqual({ enabled: true })
-    await expect(provider.createChallenge({ desktop, rendezvousId: 'enabled' as never })).resolves.toBeDefined()
+    await expect(provider.createChallenge({ desktop, rendezvousId: 'enabled' as never,
+      clientIp: '192.0.2.1',
+    })).resolves.toBeDefined()
   })
 
   it('rejects Relay composition without a deployment-owned shared authority store', () => {
@@ -482,6 +611,7 @@ describe('PersonalPairingProvider', () => {
       (_, index) => creator.createChallenge({
         desktop,
         rendezvousId: parsePairingRendezvousId(`shared-dispose-${String(index)}`),
+        clientIp: '192.0.2.1',
       }),
     ))
     await creator.dispose()
@@ -493,6 +623,7 @@ describe('PersonalPairingProvider', () => {
     const challenge = await successor.createChallenge({
       desktop,
       rendezvousId: parsePairingRendezvousId('after-shared-dispose'),
+      clientIp: '192.0.2.1',
     })
     expect(typeof challenge.challengeId).toBe('string')
     expect(challenge.challengeId.length).toBeGreaterThan(0)
@@ -516,6 +647,7 @@ describe('PersonalPairingProvider', () => {
     const challenge = await provider.createChallenge({
       desktop,
       rendezvousId: parsePairingRendezvousId('authenticated-installation'),
+      clientIp: '192.0.2.1',
     })
     await expect(provider.completeChallenge({
       mobile: authentication('other-desktop', 'account-one'),
@@ -557,6 +689,7 @@ describe('PersonalPairingProvider', () => {
     const challenge = await provider.createChallenge({
       desktop: authentication('desktop-installation'),
       rendezvousId: 'rendezvous-id' as never,
+      clientIp: '192.0.2.1',
     })
 
     expect(challenge.expiresAt).toBe(NOW + PAIRING_CHALLENGE_TTL_MS)
@@ -582,6 +715,7 @@ describe('PersonalPairingProvider', () => {
     const challenge = await provider.createChallenge({
       desktop: authentication('desktop-installation', 'account-one'),
       rendezvousId: 'rendezvous-id' as never,
+      clientIp: '192.0.2.1',
     })
 
     const first = await provider.completeChallenge({
@@ -613,6 +747,7 @@ describe('PersonalPairingProvider', () => {
     const challenge = await provider.createChallenge({
       desktop: authentication('desktop-installation', 'account-one'),
       rendezvousId: 'rendezvous-id' as never,
+      clientIp: '192.0.2.1',
     })
 
     await expect(provider.completeChallenge({
@@ -646,7 +781,9 @@ describe('PersonalPairingProvider', () => {
     const provider = pairingProvider(handshake)
     const desktop = authentication('desktop-installation', 'account-one')
     await provider.setMobileAccess({ desktop, enabled: true })
-    const challenge = await provider.createChallenge({ desktop, rendezvousId: 'rendezvous-id' as never })
+    const challenge = await provider.createChallenge({ desktop, rendezvousId: 'rendezvous-id' as never,
+      clientIp: '192.0.2.1',
+    })
     const completion = await provider.completeChallenge({
       mobile: authentication('mobile-installation', 'account-one'),
       completionId: parsePairingCompletionId('completion-confirm'),
@@ -690,6 +827,30 @@ describe('PersonalPairingProvider', () => {
     expect(handshake.destroyPendingPairing).toHaveBeenCalledOnce()
   })
 
+  it('accepts completion one millisecond before expiry and rejects at the deadline', async () => {
+    const now = { value: NOW }
+    const handshake = handshakeProvider()
+    const provider = uniquePairingProvider(handshake, now)
+    const desktop = authentication('desktop-installation', 'account-one')
+    await provider.setMobileAccess({ desktop, enabled: true })
+
+    const live = await provider.createChallenge({
+      desktop, rendezvousId: parsePairingRendezvousId('live-bound'), clientIp: '192.0.2.1',
+    })
+    now.value += PAIRING_CHALLENGE_TTL_MS - 1
+    await expect(complete(provider, live.oneTimeLink, 'live-bound')).resolves.toMatchObject({
+      device: { name: 'Alice phone' },
+    })
+
+    const expired = await provider.createChallenge({
+      desktop, rendezvousId: parsePairingRendezvousId('deadline'), clientIp: '192.0.2.1',
+    })
+    now.value += PAIRING_CHALLENGE_TTL_MS
+    await expect(complete(provider, expired.oneTimeLink, 'deadline')).rejects.toEqual(
+      expect.objectContaining<Partial<RemoteAccessError>>({ code: 'PAIRING_CHALLENGE_EXPIRED' }),
+    )
+  })
+
   it('destroys expiry, cancellation, rejection, and successful-use capabilities', async () => {
     const now = { value: NOW }
     const handshake = handshakeProvider()
@@ -697,20 +858,26 @@ describe('PersonalPairingProvider', () => {
     const desktop = authentication('desktop-installation', 'account-one')
     await provider.setMobileAccess({ desktop, enabled: true })
 
-    const expired = await provider.createChallenge({ desktop, rendezvousId: 'expired' as never })
+    const expired = await provider.createChallenge({ desktop, rendezvousId: 'expired' as never,
+      clientIp: '192.0.2.1',
+    })
     now.value += PAIRING_CHALLENGE_TTL_MS
     await expect(complete(provider, expired.oneTimeLink, 'expired')).rejects.toEqual(
       expect.objectContaining<Partial<RemoteAccessError>>({ code: 'PAIRING_CHALLENGE_EXPIRED' }),
     )
 
-    const cancelled = await provider.createChallenge({ desktop, rendezvousId: 'cancelled' as never })
+    const cancelled = await provider.createChallenge({ desktop, rendezvousId: 'cancelled' as never,
+      clientIp: '192.0.2.1',
+    })
     await provider.cancelChallenge({ desktop, challengeId: cancelled.challengeId })
     await provider.cancelChallenge({ desktop, challengeId: cancelled.challengeId })
     await expect(complete(provider, cancelled.oneTimeLink, 'cancelled')).rejects.toEqual(
       expect.objectContaining<Partial<RemoteAccessError>>({ code: 'PAIRING_CHALLENGE_INVALID' }),
     )
 
-    const rejected = await provider.createChallenge({ desktop, rendezvousId: 'rejected' as never })
+    const rejected = await provider.createChallenge({ desktop, rendezvousId: 'rejected' as never,
+      clientIp: '192.0.2.1',
+    })
     const pending = await complete(provider, rejected.oneTimeLink, 'rejected')
     await provider.rejectPairing({ desktop, pendingPairingId: pending.pendingPairingId })
     await provider.rejectPairing({ desktop, pendingPairingId: pending.pendingPairingId })
@@ -722,7 +889,9 @@ describe('PersonalPairingProvider', () => {
       expect.objectContaining<Partial<RemoteAccessError>>({ code: 'PAIRING_PENDING_INVALID' }),
     )
 
-    const used = await provider.createChallenge({ desktop, rendezvousId: 'used' as never })
+    const used = await provider.createChallenge({ desktop, rendezvousId: 'used' as never,
+      clientIp: '192.0.2.1',
+    })
     await complete(provider, used.oneTimeLink, 'used-first')
     await expect(complete(provider, used.oneTimeLink, 'used-second')).rejects.toEqual(
       expect.objectContaining<Partial<RemoteAccessError>>({ code: 'PAIRING_CHALLENGE_INVALID' }),
@@ -737,7 +906,9 @@ describe('PersonalPairingProvider', () => {
     const provider = pairingProvider(handshake)
     const desktop = authentication('desktop-installation', 'account-one')
     await provider.setMobileAccess({ desktop, enabled: true })
-    const challenge = await provider.createChallenge({ desktop, rendezvousId: 'concurrent' as never })
+    const challenge = await provider.createChallenge({ desktop, rendezvousId: 'concurrent' as never,
+      clientIp: '192.0.2.1',
+    })
 
     const results = await Promise.allSettled([
       complete(provider, challenge.oneTimeLink, 'concurrent-one'),
@@ -760,11 +931,13 @@ describe('PersonalPairingProvider', () => {
       (_, index) => provider.createChallenge({
         desktop,
         rendezvousId: parsePairingRendezvousId(`bounded-${String(index)}`),
+        clientIp: '192.0.2.1',
       }),
     ))
     await expect(provider.createChallenge({
       desktop,
       rendezvousId: parsePairingRendezvousId('over-challenge-limit'),
+      clientIp: '192.0.2.1',
     })).rejects.toEqual(expect.objectContaining<Partial<RemoteAccessError>>({ code: 'PAIRING_RESOURCE_LIMIT' }))
     expect(handshake.createChallenge).toHaveBeenCalledTimes(MAX_ACTIVE_PAIRING_CHALLENGES_PER_INSTALLATION)
 
@@ -772,11 +945,14 @@ describe('PersonalPairingProvider', () => {
     const replacement = await provider.createChallenge({
       desktop,
       rendezvousId: parsePairingRendezvousId('replacement'),
+      clientIp: '192.0.2.1',
     })
     for (const challenge of [...challenges.slice(1), replacement]) {
       await complete(provider, challenge.oneTimeLink, challenge.challengeId)
     }
-    const next = await provider.createChallenge({ desktop, rendezvousId: parsePairingRendezvousId('pending-limit') })
+    const next = await provider.createChallenge({ desktop, rendezvousId: parsePairingRendezvousId('pending-limit'),
+      clientIp: '192.0.2.1',
+    })
     await expect(complete(provider, next.oneTimeLink, 'over-pending-limit')).rejects.toEqual(
       expect.objectContaining<Partial<RemoteAccessError>>({ code: 'PAIRING_RESOURCE_LIMIT' }),
     )
@@ -790,7 +966,9 @@ describe('PersonalPairingProvider', () => {
     const desktop = authentication('desktop-installation')
     const mobile = authentication('mobile-installation')
     await provider.setMobileAccess({ desktop, enabled: true })
-    const challenge = await provider.createChallenge({ desktop, rendezvousId: parsePairingRendezvousId('retention') })
+    const challenge = await provider.createChallenge({ desktop, rendezvousId: parsePairingRendezvousId('retention'),
+      clientIp: '192.0.2.1',
+    })
     const input = {
       mobile,
       completionId: parsePairingCompletionId('retained-completion'),
@@ -826,7 +1004,9 @@ describe('PersonalPairingProvider', () => {
     const provider = uniquePairingProvider(handshake, now)
     const desktop = authentication('desktop-installation')
     await provider.setMobileAccess({ desktop, enabled: true })
-    const challenge = await provider.createChallenge({ desktop, rendezvousId: parsePairingRendezvousId('cleanup-retention') })
+    const challenge = await provider.createChallenge({ desktop, rendezvousId: parsePairingRendezvousId('cleanup-retention'),
+      clientIp: '192.0.2.1',
+    })
     const input = {
       mobile: authentication('mobile-installation'),
       completionId: parsePairingCompletionId('cleanup-retention'),
@@ -853,8 +1033,12 @@ describe('PersonalPairingProvider', () => {
     await provider.setMobileAccess({ desktop: otherDesktop, enabled: true })
     const retained = []
     for (let index = 0; index < MAX_RETAINED_PAIRING_RECORDS_PER_INSTALLATION; index += 1) {
+      if (index > 0 && index % OPEN_REGISTRATION_QUOTAS.pairingChallengesPerAccountPerHour === 0) {
+        now.value += PAIRING_CHALLENGE_QUOTA_WINDOW_MS + 1
+      }
       const challenge = await provider.createChallenge({
         desktop, rendezvousId: parsePairingRendezvousId(`retained-${String(index)}`),
+        clientIp: '192.0.2.1',
       })
       retained.push(challenge)
       await expect(provider.cancelChallenge({ desktop, challengeId: challenge.challengeId }))
@@ -863,14 +1047,17 @@ describe('PersonalPairingProvider', () => {
 
     await expect(provider.createChallenge({
       desktop, rendezvousId: parsePairingRendezvousId('retained-over-limit'),
+      clientIp: '192.0.2.1',
     })).rejects.toEqual(expect.objectContaining<Partial<RemoteAccessError>>({ code: 'PAIRING_RESOURCE_LIMIT' }))
     await expect(provider.createChallenge({
       desktop: otherDesktop, rendezvousId: parsePairingRendezvousId('isolated-installation'),
+      clientIp: '192.0.2.1',
     })).resolves.toBeDefined()
 
     now.value += PAIRING_REPLAY_RETENTION_MS
     await expect(provider.createChallenge({
       desktop, rendezvousId: parsePairingRendezvousId('cleanup-still-retained'),
+      clientIp: '192.0.2.1',
     })).rejects.toEqual(expect.objectContaining<Partial<RemoteAccessError>>({ code: 'PAIRING_RESOURCE_LIMIT' }))
 
     handshake.destroyChallenge.mockResolvedValue(undefined)
@@ -880,6 +1067,7 @@ describe('PersonalPairingProvider', () => {
     await provider.getMobileAccessState(desktop)
     await expect(provider.createChallenge({
       desktop, rendezvousId: parsePairingRendezvousId('capacity-released'),
+      clientIp: '192.0.2.1',
     })).resolves.toBeDefined()
   })
 
@@ -888,18 +1076,26 @@ describe('PersonalPairingProvider', () => {
     const provider = uniquePairingProvider(handshakeProvider(), now)
     const desktop = authentication('desktop-installation')
     await provider.setMobileAccess({ desktop, enabled: true })
-    for (let index = 0; index < MAX_RETAINED_PAIRING_RECORDS_PER_INSTALLATION; index += 1) {
+    for (let index = 0; index < OPEN_REGISTRATION_QUOTAS.pairingChallengesPerAccountPerHour; index += 1) {
       const challenge = await provider.createChallenge({
         desktop, rendezvousId: parsePairingRendezvousId(`cleaned-${String(index)}`),
+        clientIp: '192.0.2.1',
       })
       await provider.cancelChallenge({ desktop, challengeId: challenge.challengeId })
     }
     await expect(provider.createChallenge({
       desktop, rendezvousId: parsePairingRendezvousId('cleaned-over-limit'),
-    })).rejects.toEqual(expect.objectContaining<Partial<RemoteAccessError>>({ code: 'PAIRING_RESOURCE_LIMIT' }))
+      clientIp: '192.0.2.1',
+    })).rejects.toEqual(expect.objectContaining<Partial<RemoteAccessError>>({ code: 'QUOTA' }))
     now.value += PAIRING_REPLAY_RETENTION_MS
     await expect(provider.createChallenge({
-      desktop, rendezvousId: parsePairingRendezvousId('cleaned-after-retention'),
+      desktop, rendezvousId: parsePairingRendezvousId('cleaned-after-retention-still-hourly'),
+      clientIp: '192.0.2.1',
+    })).rejects.toEqual(expect.objectContaining<Partial<RemoteAccessError>>({ code: 'QUOTA' }))
+    now.value += PAIRING_CHALLENGE_QUOTA_WINDOW_MS
+    await expect(provider.createChallenge({
+      desktop, rendezvousId: parsePairingRendezvousId('cleaned-after-hourly'),
+      clientIp: '192.0.2.1',
     })).resolves.toBeDefined()
   })
 
@@ -927,9 +1123,13 @@ describe('PersonalPairingProvider', () => {
 
     let blockedChallenge: Awaited<ReturnType<typeof provider.createChallenge>> | undefined
     for (let index = 0; index < MAX_RETAINED_PAIRING_RECORDS_PER_INSTALLATION; index += 1) {
+      if (index > 0 && index % OPEN_REGISTRATION_QUOTAS.pairingChallengesPerAccountPerHour === 0) {
+        now.value += PAIRING_CHALLENGE_QUOTA_WINDOW_MS + 1
+      }
       const challenge = await provider.createChallenge({
         desktop,
         rendezvousId: parsePairingRendezvousId(`orphan-capacity-${String(index)}`),
+        clientIp: '192.0.2.1',
       })
       const allocationCount = handshake.completeChallenge.mock.calls.length
       const result = await provider.completeChallenge({
@@ -957,6 +1157,7 @@ describe('PersonalPairingProvider', () => {
     const stillBlockedChallenge = await provider.createChallenge({
       desktop,
       rendezvousId: parsePairingRendezvousId('orphan-capacity-still-blocked'),
+      clientIp: '192.0.2.1',
     })
     await expect(provider.completeChallenge({
       mobile,
@@ -971,6 +1172,7 @@ describe('PersonalPairingProvider', () => {
     const isolatedChallenge = await provider.createChallenge({
       desktop: otherDesktop,
       rendezvousId: parsePairingRendezvousId('orphan-capacity-isolated'),
+      clientIp: '192.0.2.1',
     })
     await expect(completeAs(
       provider,
@@ -985,6 +1187,7 @@ describe('PersonalPairingProvider', () => {
     await expect(provider.createChallenge({
       desktop,
       rendezvousId: parsePairingRendezvousId('orphan-capacity-cross-owner-cleanup'),
+      clientIp: '192.0.2.1',
     })).rejects.toEqual(expect.objectContaining<Partial<RemoteAccessError>>({ code: 'PAIRING_RESOURCE_LIMIT' }))
 
     handshake.destroyPendingPairing.mockResolvedValue(undefined)
@@ -993,6 +1196,7 @@ describe('PersonalPairingProvider', () => {
     await expect(provider.createChallenge({
       desktop,
       rendezvousId: parsePairingRendezvousId('orphan-capacity-released'),
+      clientIp: '192.0.2.1',
     })).resolves.toBeDefined()
   })
 
@@ -1006,6 +1210,7 @@ describe('PersonalPairingProvider', () => {
     const challenge = await provider.createChallenge({
       desktop,
       rendezvousId: parsePairingRendezvousId('cleanup-retry'),
+      clientIp: '192.0.2.1',
     })
     const input = {
       mobile: authentication('mobile-installation'),
@@ -1040,6 +1245,7 @@ describe('PersonalPairingProvider', () => {
     const cancelled = await provider.createChallenge({
       desktop,
       rendezvousId: parsePairingRendezvousId('cancel-cleanup'),
+      clientIp: '192.0.2.1',
     })
     handshake.destroyChallenge.mockRejectedValueOnce(new Error('cancel cleanup failed'))
     const cancellations = await Promise.allSettled([
@@ -1051,6 +1257,7 @@ describe('PersonalPairingProvider', () => {
     const challenge = await provider.createChallenge({
       desktop,
       rendezvousId: parsePairingRendezvousId('reject-cleanup'),
+      clientIp: '192.0.2.1',
     })
     const pending = await complete(provider, challenge.oneTimeLink, 'reject-cleanup')
     handshake.destroyPendingPairing.mockRejectedValueOnce(new Error('reject cleanup failed'))
@@ -1071,7 +1278,9 @@ describe('PersonalPairingProvider', () => {
     })
     const desktop = authentication('desktop-installation')
     await provider.setMobileAccess({ desktop, enabled: true })
-    await provider.createChallenge({ desktop, rendezvousId: parsePairingRendezvousId('eager-expiry') })
+    await provider.createChallenge({ desktop, rendezvousId: parsePairingRendezvousId('eager-expiry'),
+      clientIp: '192.0.2.1',
+    })
     now.value += PAIRING_CHALLENGE_TTL_MS
     scheduled.shift()?.()
     await vi.waitFor(() => { expect(handshake.destroyChallenge).toHaveBeenCalledOnce() })
@@ -1079,15 +1288,18 @@ describe('PersonalPairingProvider', () => {
     const pendingChallenge = await provider.createChallenge({
       desktop,
       rendezvousId: parsePairingRendezvousId('dispose-pending'),
+      clientIp: '192.0.2.1',
     })
     const pending = await complete(provider, pendingChallenge.oneTimeLink, 'dispose-pending')
     const activeChallenge = await provider.createChallenge({
       desktop,
       rendezvousId: parsePairingRendezvousId('dispose-active'),
+      clientIp: '192.0.2.1',
     })
     const livePendingChallenge = await provider.createChallenge({
       desktop,
       rendezvousId: parsePairingRendezvousId('dispose-live-pending'),
+      clientIp: '192.0.2.1',
     })
     await complete(provider, livePendingChallenge.oneTimeLink, 'dispose-live-pending')
     expect(activeChallenge).toBeDefined()
@@ -1112,9 +1324,13 @@ describe('PersonalPairingProvider', () => {
     })
     const desktop = authentication('desktop-installation')
     await provider.setMobileAccess({ desktop, enabled: true })
-    const first = await provider.createChallenge({ desktop, rendezvousId: parsePairingRendezvousId('orphan-first') })
+    const first = await provider.createChallenge({ desktop, rendezvousId: parsePairingRendezvousId('orphan-first'),
+      clientIp: '192.0.2.1',
+    })
     await complete(provider, first.oneTimeLink, 'orphan-first')
-    const second = await provider.createChallenge({ desktop, rendezvousId: parsePairingRendezvousId('orphan-second') })
+    const second = await provider.createChallenge({ desktop, rendezvousId: parsePairingRendezvousId('orphan-second'),
+      clientIp: '192.0.2.1',
+    })
     handshake.destroyPendingPairing.mockRejectedValueOnce(new Error('orphan cleanup failed'))
     await expect(complete(provider, second.oneTimeLink, 'orphan-second')).rejects.toThrow(AggregateError)
 
@@ -1134,9 +1350,13 @@ describe('PersonalPairingProvider', () => {
     })
     const desktop = authentication('desktop-installation')
     await provider.setMobileAccess({ desktop, enabled: true })
-    const firstChallenge = await provider.createChallenge({ desktop, rendezvousId: parsePairingRendezvousId('first') })
+    const firstChallenge = await provider.createChallenge({ desktop, rendezvousId: parsePairingRendezvousId('first'),
+      clientIp: '192.0.2.1',
+    })
     const firstPending = await complete(provider, firstChallenge.oneTimeLink, 'first-collision')
-    const secondChallenge = await provider.createChallenge({ desktop, rendezvousId: parsePairingRendezvousId('second') })
+    const secondChallenge = await provider.createChallenge({ desktop, rendezvousId: parsePairingRendezvousId('second'),
+      clientIp: '192.0.2.1',
+    })
     await expect(complete(provider, secondChallenge.oneTimeLink, 'second-collision'))
       .rejects.toEqual(expect.objectContaining<Partial<RemoteAccessError>>({ code: 'PAIRING_ID_COLLISION' }))
     expect(handshake.destroyPendingPairing).toHaveBeenCalledOnce()
@@ -1159,12 +1379,14 @@ describe('PersonalPairingProvider', () => {
     const firstChallenge = await provider.createChallenge({
       desktop,
       rendezvousId: parsePairingRendezvousId('first-key-reference'),
+      clientIp: '192.0.2.1',
     })
     const firstPending = await complete(provider, firstChallenge.oneTimeLink, 'first-key-reference')
     const firstPairing = await provider.confirmPairing({ desktop, pendingPairingId: firstPending.pendingPairingId })
     const secondChallenge = await provider.createChallenge({
       desktop,
       rendezvousId: parsePairingRendezvousId('second-key-reference'),
+      clientIp: '192.0.2.1',
     })
     const secondPending = await complete(provider, secondChallenge.oneTimeLink, 'second-key-reference')
 
@@ -1217,6 +1439,7 @@ describe('PersonalPairingProvider', () => {
     await provider.setMobileAccess({ desktop, enabled: true })
     const challenge = await provider.createChallenge({
       desktop, rendezvousId: parsePairingRendezvousId(`activation-${label}`),
+      clientIp: '192.0.2.1',
     })
     const pending = await complete(provider, challenge.oneTimeLink, `activation-${label}`)
 
@@ -1239,6 +1462,7 @@ describe('PersonalPairingProvider', () => {
     const challenge = await provider.createChallenge({
       desktop,
       rendezvousId: parsePairingRendezvousId('activation-cleanup-retry'),
+      clientIp: '192.0.2.1',
     })
     const pending = await complete(provider, challenge.oneTimeLink, 'activation-cleanup-retry')
 
@@ -1266,6 +1490,7 @@ describe('PersonalPairingProvider', () => {
     const firstChallenge = await provider.createChallenge({
       desktop,
       rendezvousId: parsePairingRendezvousId('first-generated-collision'),
+      clientIp: '192.0.2.1',
     })
     const first = await complete(provider, firstChallenge.oneTimeLink, 'first-generated-collision')
     await provider.confirmPairing({ desktop, pendingPairingId: first.pendingPairingId })
@@ -1273,6 +1498,7 @@ describe('PersonalPairingProvider', () => {
     const secondChallenge = await provider.createChallenge({
       desktop,
       rendezvousId: parsePairingRendezvousId('second-generated-collision'),
+      clientIp: '192.0.2.1',
     })
     const second = await complete(provider, secondChallenge.oneTimeLink, 'second-generated-collision')
     handshake.destroyPairing.mockRejectedValueOnce(new Error('active collision cleanup failed'))
@@ -1298,10 +1524,14 @@ describe('PersonalPairingProvider', () => {
     )
     const desktop = authentication('desktop-installation')
     await provider.setMobileAccess({ desktop, enabled: true })
-    const firstChallenge = await provider.createChallenge({ desktop, rendezvousId: parsePairingRendezvousId('direct-first') })
+    const firstChallenge = await provider.createChallenge({ desktop, rendezvousId: parsePairingRendezvousId('direct-first'),
+      clientIp: '192.0.2.1',
+    })
     const first = await complete(provider, firstChallenge.oneTimeLink, 'direct-first')
     await provider.confirmPairing({ desktop, pendingPairingId: first.pendingPairingId })
-    const secondChallenge = await provider.createChallenge({ desktop, rendezvousId: parsePairingRendezvousId('direct-second') })
+    const secondChallenge = await provider.createChallenge({ desktop, rendezvousId: parsePairingRendezvousId('direct-second'),
+      clientIp: '192.0.2.1',
+    })
     const second = await complete(provider, secondChallenge.oneTimeLink, 'direct-second')
     await expect(provider.confirmPairing({ desktop, pendingPairingId: second.pendingPairingId }))
       .rejects.toEqual(expect.objectContaining<Partial<RemoteAccessError>>({ code: 'PAIRING_ID_COLLISION' }))
@@ -1312,8 +1542,12 @@ describe('PersonalPairingProvider', () => {
     const provider = uniquePairingProvider(handshake)
     const desktop = authentication('desktop-installation')
     await provider.setMobileAccess({ desktop, enabled: true })
-    const first = await provider.createChallenge({ desktop, rendezvousId: parsePairingRendezvousId('first') })
-    const second = await provider.createChallenge({ desktop, rendezvousId: parsePairingRendezvousId('second') })
+    const first = await provider.createChallenge({ desktop, rendezvousId: parsePairingRendezvousId('first'),
+      clientIp: '192.0.2.1',
+    })
+    const second = await provider.createChallenge({ desktop, rendezvousId: parsePairingRendezvousId('second'),
+      clientIp: '192.0.2.1',
+    })
     const completionId = parsePairingCompletionId('completion-collision')
     await provider.completeChallenge({
       mobile: authentication('mobile-installation'), completionId, oneTimeLink: first.oneTimeLink,
@@ -1337,7 +1571,9 @@ describe('PersonalPairingProvider', () => {
     })
     const desktop = authentication('desktop-installation')
     await provider.setMobileAccess({ desktop, enabled: true })
-    const challenge = await provider.createChallenge({ desktop, rendezvousId: parsePairingRendezvousId('expiry-retry') })
+    const challenge = await provider.createChallenge({ desktop, rendezvousId: parsePairingRendezvousId('expiry-retry'),
+      clientIp: '192.0.2.1',
+    })
     const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {})
     now.value += PAIRING_CHALLENGE_TTL_MS
     scheduled.shift()?.()
@@ -1356,7 +1592,9 @@ describe('PersonalPairingProvider', () => {
     const desktop = authentication('desktop-installation', 'account-one')
     await provider.setMobileAccess({ desktop, enabled: true })
 
-    const creating = provider.createChallenge({ desktop, rendezvousId: parsePairingRendezvousId('concurrent-disable') })
+    const creating = provider.createChallenge({ desktop, rendezvousId: parsePairingRendezvousId('concurrent-disable'),
+      clientIp: '192.0.2.1',
+    })
     await vi.waitFor(() => { expect(handshake.createChallenge).toHaveBeenCalledOnce() })
     let disabled = false
     const disabling = provider.setMobileAccess({ desktop, enabled: false }).then((state) => {
@@ -1391,7 +1629,9 @@ describe('PersonalPairingProvider', () => {
     })
     const desktop = authentication('desktop-installation')
     await defaults.setMobileAccess({ desktop, enabled: true })
-    const challenge = await defaults.createChallenge({ desktop, rendezvousId: parsePairingRendezvousId('defaults') })
+    const challenge = await defaults.createChallenge({ desktop, rendezvousId: parsePairingRendezvousId('defaults'),
+      clientIp: '192.0.2.1',
+    })
     expect(parsePairingInvitationLink(challenge.oneTimeLink).invitationSecret).toHaveLength(32)
     expect(challenge.challengeId).toMatch(/^challenge-/u)
 
@@ -1402,19 +1642,27 @@ describe('PersonalPairingProvider', () => {
       pairingLinkOrigin: 'https://platform.example.com/pair',
     })
     await badRandom.setMobileAccess({ desktop, enabled: true })
-    await expect(badRandom.createChallenge({ desktop, rendezvousId: parsePairingRendezvousId('bad-random') }))
+    await expect(badRandom.createChallenge({ desktop, rendezvousId: parsePairingRendezvousId('bad-random'),
+      clientIp: '192.0.2.1',
+    }))
       .rejects.toThrow('must return 32 bytes')
 
     handshake.createChallenge.mockResolvedValueOnce({ desktopFingerprint: '', state: Uint8Array.of(2) })
-    await expect(defaults.createChallenge({ desktop, rendezvousId: parsePairingRendezvousId('bad-fingerprint') }))
+    await expect(defaults.createChallenge({ desktop, rendezvousId: parsePairingRendezvousId('bad-fingerprint'),
+      clientIp: '192.0.2.1',
+    }))
       .rejects.toThrow('Desktop fingerprint must be non-empty')
     expect(handshake.destroyChallenge).toHaveBeenCalledWith(Uint8Array.of(2))
 
     const collisionHandshake = handshakeProvider()
     const collision = pairingProvider(collisionHandshake)
     await collision.setMobileAccess({ desktop, enabled: true })
-    await collision.createChallenge({ desktop, rendezvousId: parsePairingRendezvousId('first-id') })
-    await expect(collision.createChallenge({ desktop, rendezvousId: parsePairingRendezvousId('reused-id') }))
+    await collision.createChallenge({ desktop, rendezvousId: parsePairingRendezvousId('first-id'),
+      clientIp: '192.0.2.1',
+    })
+    await expect(collision.createChallenge({ desktop, rendezvousId: parsePairingRendezvousId('reused-id'),
+      clientIp: '192.0.2.1',
+    }))
       .rejects.toEqual(expect.objectContaining<Partial<RemoteAccessError>>({ code: 'PAIRING_ID_COLLISION' }))
     expect(collisionHandshake.destroyChallenge).toHaveBeenCalledOnce()
   })
@@ -1427,17 +1675,26 @@ describe('PersonalPairingProvider', () => {
     await provider.setMobileAccess({ desktop: desktopOne, enabled: true })
     await provider.setMobileAccess({ desktop: desktopTwo, enabled: true })
 
-    const challengeOne = await provider.createChallenge({ desktop: desktopOne, rendezvousId: parsePairingRendezvousId('one') })
+    const challengeOne = await provider.createChallenge({ desktop: desktopOne, rendezvousId: parsePairingRendezvousId('one'),
+      clientIp: '192.0.2.1',
+    })
     const pendingOne = await completeAs(provider, challengeOne.oneTimeLink, 'one', 'mobile-one', 'account-one')
-    const challengeTwo = await provider.createChallenge({ desktop: desktopTwo, rendezvousId: parsePairingRendezvousId('two') })
+    const challengeTwo = await provider.createChallenge({ desktop: desktopTwo, rendezvousId: parsePairingRendezvousId('two'),
+      clientIp: '192.0.2.1',
+    })
     const pendingTwo = await completeAs(provider, challengeTwo.oneTimeLink, 'two', 'mobile-two', 'account-one')
     const settledTwoChallenge = await provider.createChallenge({
       desktop: desktopTwo, rendezvousId: parsePairingRendezvousId('settled-two'),
+      clientIp: '192.0.2.1',
     })
     const settledTwo = await completeAs(provider, settledTwoChallenge.oneTimeLink, 'settled-two', 'mobile-four', 'account-one')
     await provider.rejectPairing({ desktop: desktopTwo, pendingPairingId: settledTwo.pendingPairingId })
-    const activeOne = await provider.createChallenge({ desktop: desktopOne, rendezvousId: parsePairingRendezvousId('active-one') })
-    const activeTwo = await provider.createChallenge({ desktop: desktopTwo, rendezvousId: parsePairingRendezvousId('active-two') })
+    const activeOne = await provider.createChallenge({ desktop: desktopOne, rendezvousId: parsePairingRendezvousId('active-one'),
+      clientIp: '192.0.2.1',
+    })
+    const activeTwo = await provider.createChallenge({ desktop: desktopTwo, rendezvousId: parsePairingRendezvousId('active-two'),
+      clientIp: '192.0.2.1',
+    })
 
     await expect(provider.completeChallenge({
       mobile: authentication('other-mobile', 'account-one'),
@@ -1479,7 +1736,9 @@ describe('PersonalPairingProvider', () => {
     const desktop = authentication('desktop-one')
     const otherDesktop = authentication('desktop-two')
     await provider.setMobileAccess({ desktop, enabled: true })
-    const challenge = await provider.createChallenge({ desktop, rendezvousId: parsePairingRendezvousId('mismatch') })
+    const challenge = await provider.createChallenge({ desktop, rendezvousId: parsePairingRendezvousId('mismatch'),
+      clientIp: '192.0.2.1',
+    })
     const changed = new URL(challenge.oneTimeLink)
     changed.searchParams.set('rendezvous', 'different')
     changed.searchParams.set('secret', 'A'.repeat(43))
@@ -1495,12 +1754,16 @@ describe('PersonalPairingProvider', () => {
     await expect(complete(provider, missing.toString(), 'missing'))
       .rejects.toEqual(expect.objectContaining<Partial<RemoteAccessError>>({ code: 'PAIRING_CHALLENGE_INVALID' }))
 
-    const cancelled = await provider.createChallenge({ desktop, rendezvousId: parsePairingRendezvousId('cancel-owner') })
+    const cancelled = await provider.createChallenge({ desktop, rendezvousId: parsePairingRendezvousId('cancel-owner'),
+      clientIp: '192.0.2.1',
+    })
     await provider.cancelChallenge({ desktop, challengeId: cancelled.challengeId })
     await expect(provider.cancelChallenge({ desktop: otherDesktop, challengeId: cancelled.challengeId }))
       .rejects.toEqual(expect.objectContaining<Partial<RemoteAccessError>>({ code: 'PAIRING_CHALLENGE_INVALID' }))
 
-    const used = await provider.createChallenge({ desktop, rendezvousId: parsePairingRendezvousId('used-terminal') })
+    const used = await provider.createChallenge({ desktop, rendezvousId: parsePairingRendezvousId('used-terminal'),
+      clientIp: '192.0.2.1',
+    })
     const confirmed = await complete(provider, used.oneTimeLink, 'used-terminal')
     await provider.confirmPairing({ desktop, pendingPairingId: confirmed.pendingPairingId })
     await expect(provider.cancelChallenge({ desktop, challengeId: used.challengeId }))
@@ -1508,7 +1771,9 @@ describe('PersonalPairingProvider', () => {
     await expect(provider.rejectPairing({ desktop, pendingPairingId: confirmed.pendingPairingId }))
       .rejects.toEqual(expect.objectContaining<Partial<RemoteAccessError>>({ code: 'PAIRING_PENDING_INVALID' }))
 
-    const rejected = await provider.createChallenge({ desktop, rendezvousId: parsePairingRendezvousId('reject-owner') })
+    const rejected = await provider.createChallenge({ desktop, rendezvousId: parsePairingRendezvousId('reject-owner'),
+      clientIp: '192.0.2.1',
+    })
     const rejectedPending = await complete(provider, rejected.oneTimeLink, 'reject-owner')
     await provider.rejectPairing({ desktop, pendingPairingId: rejectedPending.pendingPairingId })
     await expect(provider.rejectPairing({ desktop: otherDesktop, pendingPairingId: rejectedPending.pendingPairingId }))
@@ -1524,7 +1789,9 @@ describe('PersonalPairingProvider', () => {
     })
     const desktop = authentication('desktop-installation')
     await provider.setMobileAccess({ desktop, enabled: true })
-    const challenge = await provider.createChallenge({ desktop, rendezvousId: parsePairingRendezvousId('early-timer') })
+    const challenge = await provider.createChallenge({ desktop, rendezvousId: parsePairingRendezvousId('early-timer'),
+      clientIp: '192.0.2.1',
+    })
     scheduled[0]?.()
     await Promise.resolve()
     expect(handshake.destroyChallenge).not.toHaveBeenCalled()
@@ -1537,12 +1804,16 @@ describe('PersonalPairingProvider', () => {
     const desktop = authentication('desktop-one')
     await provider.setMobileAccess({ desktop, enabled: true })
 
-    const firstChallenge = await provider.createChallenge({ desktop, rendezvousId: parsePairingRendezvousId('first') })
+    const firstChallenge = await provider.createChallenge({ desktop, rendezvousId: parsePairingRendezvousId('first'),
+      clientIp: '192.0.2.1',
+    })
     const firstPending = await completeAs(provider, firstChallenge.oneTimeLink, 'first', 'mobile-one', 'account-one')
     await provider.confirmPairing({ desktop, pendingPairingId: firstPending.pendingPairingId })
     expect(await provider.listPersonalPairings(authentication('desktop-two'))).toEqual([])
 
-    const secondChallenge = await provider.createChallenge({ desktop, rendezvousId: parsePairingRendezvousId('second') })
+    const secondChallenge = await provider.createChallenge({ desktop, rendezvousId: parsePairingRendezvousId('second'),
+      clientIp: '192.0.2.1',
+    })
     const secondPending = await completeAs(provider, secondChallenge.oneTimeLink, 'second', 'mobile-two', 'account-one')
     await expect(provider.confirmPairing({ desktop, pendingPairingId: secondPending.pendingPairingId }))
       .rejects.toEqual(expect.objectContaining<Partial<RemoteAccessError>>({ code: 'PAIRING_ID_COLLISION' }))
@@ -1564,7 +1835,9 @@ describe('PersonalPairingProvider', () => {
     const provider = uniquePairingProvider(handshake)
     const desktop = authentication('desktop-one')
     await provider.setMobileAccess({ desktop, enabled: true })
-    const challenge = await provider.createChallenge({ desktop, rendezvousId: parsePairingRendezvousId('wire') })
+    const challenge = await provider.createChallenge({ desktop, rendezvousId: parsePairingRendezvousId('wire'),
+      clientIp: '192.0.2.1',
+    })
     const valid = new URL(challenge.oneTimeLink)
     const invalidLinks = [
       'http' + challenge.oneTimeLink.slice('https'.length),
@@ -1597,6 +1870,7 @@ describe('PersonalPairingProvider', () => {
       const next = await provider.createChallenge({
         desktop,
         rendezvousId: parsePairingRendezvousId(`bad-device-${String(index)}`),
+        clientIp: '192.0.2.1',
       })
       await expect(provider.completeChallenge({
         mobile: authentication('mobile-one'),
@@ -1662,12 +1936,14 @@ describe('PersonalPairingProvider', () => {
 
     const keepChallenge = await provider.createChallenge({
       desktop: otherDesktop, rendezvousId: parsePairingRendezvousId('keyless-keep'),
+      clientIp: '192.0.2.1',
     })
     const keepPending = await completeAs(provider, keepChallenge.oneTimeLink, 'keyless-keep', 'other-mobile', 'account-one')
     const keep = await provider.confirmPairing({ desktop: otherDesktop, pendingPairingId: keepPending.pendingPairingId })
 
     const revokeChallenge = await provider.createChallenge({
       desktop, rendezvousId: parsePairingRendezvousId('keyless-revoke'),
+      clientIp: '192.0.2.1',
     })
     const revokePending = await complete(provider, revokeChallenge.oneTimeLink, 'keyless-revoke')
     const revoked = await provider.confirmPairing({ desktop, pendingPairingId: revokePending.pendingPairingId })
@@ -1676,6 +1952,7 @@ describe('PersonalPairingProvider', () => {
 
     const disableChallenge = await provider.createChallenge({
       desktop, rendezvousId: parsePairingRendezvousId('keyless-disable'),
+      clientIp: '192.0.2.1',
     })
     const disablePending = await completeAs(
       provider, disableChallenge.oneTimeLink, 'keyless-disable', 'mobile-disable', 'account-one',
@@ -1688,29 +1965,6 @@ describe('PersonalPairingProvider', () => {
 
     expect(await provider.listPersonalPairings(desktop)).toEqual([])
     expect(await provider.listPersonalPairings(otherDesktop)).toEqual([keep])
-  })
-
-  it('reads a sealed shared pairing result on a replacement Platform provider', async () => {
-    const authority = new MemoryPersonalPairingAuthorityStore()
-    const pendingPairingId = parsePendingPairingId('pending-sealed-replacement')
-    await authority.confirmMobilePairing({
-      accountId: 'account-one' as never,
-      desktopInstallationId: parseInstallationId('desktop-installation'),
-      mobileInstallationId: parseInstallationId('mobile-installation'),
-      pendingPairingId,
-      pairingId: parsePersonalPairingId('pairing-sealed-replacement'),
-      sealedRelayAuthority: Uint8Array.of(9, 8),
-    })
-    const provider = new PersonalPairingProvider(new Context(), {
-      account: { currentInstallation: vi.fn(async ({ accessToken }: { accessToken: string }) => authenticated(accessToken)) },
-      handshake: handshakeProvider(), authority, pairingLinkOrigin: 'https://platform.example.com/pair',
-    })
-
-    expect(await provider.getMobilePairingStatus({
-      mobile: authentication('mobile-installation'), pendingPairingId,
-    })).toEqual({
-      status: 'paired', pairingId: 'pairing-sealed-replacement', sealedRelayAuthority: Uint8Array.of(9, 8),
-    })
   })
 
   it('rolls back a failed Mobile Relay seal and reports cleanup failure', async () => {
@@ -1742,6 +1996,7 @@ describe('PersonalPairingProvider', () => {
     await provider.setMobileAccess({ desktop, enabled: true })
     const challenge = await provider.createChallenge({
       desktop, rendezvousId: parsePairingRendezvousId('seal-rollback'),
+      clientIp: '192.0.2.1',
     })
     const pending = await complete(provider, challenge.oneTimeLink, 'seal-rollback')
 
@@ -1778,6 +2033,7 @@ describe('PersonalPairingProvider', () => {
     await provider.setMobileAccess({ desktop, enabled: true })
     const challenge = await provider.createChallenge({
       desktop, rendezvousId: parsePairingRendezvousId('seal-success-rollback'),
+      clientIp: '192.0.2.1',
     })
     const pending = await complete(provider, challenge.oneTimeLink, 'seal-success-rollback')
 
@@ -1818,6 +2074,7 @@ describe('PersonalPairingProvider', () => {
     await provider.setMobileAccess({ desktop, enabled: true })
     const challenge = await provider.createChallenge({
       desktop, rendezvousId: parsePairingRendezvousId('commit-rollback'),
+      clientIp: '192.0.2.1',
     })
     const pending = await complete(provider, challenge.oneTimeLink, 'commit-rollback')
     vi.spyOn(authority, 'confirmMobilePairing')
@@ -1852,6 +2109,7 @@ describe('PersonalPairingProvider', () => {
     await provider.setMobileAccess({ desktop, enabled: true })
     const challenge = await provider.createChallenge({
       desktop, rendezvousId: parsePairingRendezvousId('keyless-commit'),
+      clientIp: '192.0.2.1',
     })
     const pending = await complete(provider, challenge.oneTimeLink, 'keyless-commit')
     expect(pending.pendingPairingId).toBe(pendingPairingId)
@@ -1882,7 +2140,9 @@ describe('PersonalPairingProvider', () => {
     })
     const desktop = authentication('desktop-installation')
     await creator.setMobileAccess({ desktop, enabled: true })
-    await creator.createChallenge({ desktop, rendezvousId: parsePairingRendezvousId('forget-local') })
+    await creator.createChallenge({
+      desktop, rendezvousId: parsePairingRendezvousId('forget-local'), clientIp: '192.0.2.1',
+    })
     await other.setMobileAccess({ desktop, enabled: false })
     await creator.dispose()
     expect(handshake.destroyChallenge).toHaveBeenCalledOnce()
@@ -1939,16 +2199,87 @@ function handshakeProvider() {
 }
 
 function pairingProvider(handshake: PairingHandshakeProvider, now = { value: NOW }) {
-  return new PersonalPairingProvider(new Context(), {
-    account: {
-      currentInstallation: vi.fn(async ({ accessToken }: { accessToken: string }) => authenticated(accessToken)),
-    },
+  return configuredProvider({
     handshake,
     clock: { now: () => now.value },
     randomBytes: size => Uint8Array.from({ length: size }, (_, index) => index),
     randomId: kind => `${kind}-id`,
-    pairingLinkOrigin: 'https://platform.example.com/pair',
   })
+}
+
+function configuredProvider(
+  config: Omit<Partial<PersonalPairingProviderOptions>, 'account' | 'pairingLinkOrigin'> = {},
+) {
+  return new PersonalPairingProvider(new Context(), {
+    account: {
+      currentInstallation: vi.fn(async ({ accessToken }: { accessToken: string }) => authenticated(accessToken)),
+    },
+    handshake: handshakeProvider(),
+    pairingLinkOrigin: 'https://platform.example.com/pair',
+    ...config,
+  })
+}
+
+function createChallengeFor(
+  provider: PersonalPairingProvider,
+  desktop: ReturnType<typeof authentication>,
+  rendezvousId: string,
+  clientIp = '192.0.2.1',
+) {
+  return provider.createChallenge({
+    desktop,
+    rendezvousId: parsePairingRendezvousId(rendezvousId),
+    clientIp,
+  })
+}
+
+function relayStub(
+  routeId: ReturnType<typeof parseRelayRouteId>,
+  revision: number,
+  revokeCredential: () => Promise<void> = async () => {},
+) {
+  return {
+    rotateCredential: vi.fn(async () => ({
+      routeId, endpoint: 'desktop' as const,
+      credential: parseRelayCredential('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'), revision,
+    })),
+    issueCredential: vi.fn(async () => ({
+      routeId, endpoint: 'mobile' as const,
+      credential: parseRelayCredential('AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE'), revision,
+    })),
+    revokeCredential: vi.fn(revokeCredential),
+    revokeRoute: vi.fn(async () => {}),
+  }
+}
+
+function authorityRejectingConfirm(
+  store: MemoryPersonalPairingAuthorityStore,
+  message: string,
+): PersonalPairingAuthorityStore {
+  return {
+    runPairingTransaction: store.runPairingTransaction.bind(store),
+    getDesktop: store.getDesktop.bind(store),
+    enableDesktop: store.enableDesktop.bind(store),
+    disableDesktop: store.disableDesktop.bind(store),
+    completeRouteRevocation: store.completeRouteRevocation.bind(store),
+    getMobilePairing: store.getMobilePairing.bind(store),
+    revokeMobilePairing: store.revokeMobilePairing.bind(store),
+    confirmMobilePairing: vi.fn(async () => { throw new Error(message) }),
+  }
+}
+
+async function seedSharedPairing(suffix: string, sealedRelayAuthority?: Uint8Array) {
+  const authority = new MemoryPersonalPairingAuthorityStore()
+  const pendingPairingId = parsePendingPairingId(`pending-${suffix}`)
+  await authority.confirmMobilePairing({
+    accountId: 'account-one' as never,
+    desktopInstallationId: parseInstallationId('desktop-installation'),
+    mobileInstallationId: parseInstallationId('mobile-installation'),
+    pendingPairingId,
+    pairingId: parsePersonalPairingId(`pairing-${suffix}`),
+    ...(sealedRelayAuthority === undefined ? {} : { sealedRelayAuthority }),
+  })
+  return { authority, pendingPairingId }
 }
 
 function complete(provider: PersonalPairingProvider, oneTimeLink: string, id: string) {

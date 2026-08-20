@@ -114,7 +114,9 @@ export interface RelayCredentialGrant {
   revision: number
 }
 
-/** Stable, content-free Relay lifecycle failure. */
+/** Stable, content-free Relay Transport failure.
+ *  HTTP Consumers map this class by `instanceof`; the host provider bundle
+ *  imports it from the public package entry so both sides share one constructor. */
 export class RemoteRelayError extends Error {
   /** @param code - Relay Transport failure category. @param retryAfterMs - optional capacity retry delay. */
   constructor(readonly code: RelayErrorCode, message: string, readonly retryAfterMs?: number) {

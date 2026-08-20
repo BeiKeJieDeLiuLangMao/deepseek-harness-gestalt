@@ -24,6 +24,8 @@ const PROMPT = 'Reply with the single word LIGHTHOUSE and stop.'
 async function openDesktopPage(browser: Browser, baseUrl: string, platform: 'darwin' | 'win32'): Promise<Page> {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 }, locale: 'en-US' })
   await page.addInitScript((desktopPlatform) => {
+    // The inert bridge covers the complete preload surface; account and
+    // pairing stay in their pre-answer `unavailable` snapshots.
     const unavailableAccount = { status: 'unavailable', privacyAccepted: false }
     const unavailablePairing = { status: 'unavailable', enabled: false, pairings: [] }
     Object.defineProperty(window, 'dshDesktop', {
