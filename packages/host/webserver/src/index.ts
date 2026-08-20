@@ -263,4 +263,13 @@ export class WebServer extends Service {
   }
 }
 
+export {
+  HttpError,
+  readJsonObject,
+  writeHttpError,
+  writeJson,
+  writeRetryAfterError,
+} from './http-json.ts'
+export type { JsonBodyFailure, JsonBodyLimits } from './http-json.ts'
+
 export default WebServer
