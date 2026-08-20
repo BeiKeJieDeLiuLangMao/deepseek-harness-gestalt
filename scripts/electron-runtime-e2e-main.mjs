@@ -34,6 +34,15 @@ app.on('window-all-closed', () => {
 })
 app.setPath('userData', userData)
 
+function removeUserData() {
+  try {
+    rmSync(userData, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+  } catch (error) {
+    // Chromium can keep LevelDB files open after the cases already settled.
+    console.error('electron-runtime-e2e: leftover userData', error)
+  }
+}
+
 void app.whenReady().then(async () => {
   process.chdir(repoRoot)
   app.dock?.hide()
@@ -41,10 +50,10 @@ void app.whenReady().then(async () => {
   const { runElectronRuntimeE2eCases } = await import(pathToFileURL(casesPath).href)
   await runElectronRuntimeE2eCases()
   console.error('electron-runtime-e2e: cases passed')
-  rmSync(userData, { recursive: true, force: true })
+  removeUserData()
   app.exit(0)
 }).catch((error) => {
   console.error(error)
-  rmSync(userData, { recursive: true, force: true })
+  removeUserData()
   app.exit(1)
 })
