@@ -14,7 +14,7 @@ import {
   compareOrRefreshGolden, launchWebScaffold, seedSession, watchConsole,
   webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
-import { newEnglishPage, REPO_ROOT, saveFailureShot } from './support.ts'
+import { newEnglishPage, REPO_ROOT, SCHEDULE_SNAPSHOT_TIMEZONE, saveFailureShot } from './support.ts'
 
 const OVERLAY = fileURLToPath(new URL('../../desktop/cordis.patch.yml', import.meta.url))
 const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/schedule-board', import.meta.url))
@@ -42,7 +42,7 @@ describe.skipIf(MODE === 'record')('web e2e: Desktop Session Schedule board', ()
     scaffold = await launchWebScaffold({ extraOverlayPath: OVERLAY })
     await seedSession(scaffold, await readFile(FIXTURE, 'utf8'), SEED_ID)
     browser = await chromium.launch()
-    page = await newEnglishPage(browser)
+    page = await newEnglishPage(browser, 1000, SCHEDULE_SNAPSHOT_TIMEZONE)
     await page.addInitScript(() => {
       const browserNow = Date.parse('2100-01-01T12:00:00.000Z')
       Date.now = () => browserNow

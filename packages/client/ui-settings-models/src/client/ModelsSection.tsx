@@ -267,11 +267,17 @@ function Loaded({ injected }: { injected: ModelsSectionInjected }): ReactNode {
   // One fact decides both first-run postures on this page and the onboarding
   // step: whether the user already has a provider to talk to.
   const anyUsable = state.rows.some(providerUsable)
-  const configured = state.rows.filter(row => row.configured)
   const addable = state.rows.filter(row =>
     !row.configured
     && row.entry.settingsNs !== ''
     && !(row.entry.provider === 'deepseek-official' && row.entry.settingsPath.length === 0))
+  // Whole-section providers are mounted routes, not dormant catalog entries,
+  // so they stay listed even before their first key: as the open setup card
+  // in the first-run posture, and as a plain row once the user can reach some
+  // provider or dismissed the card.
+  const listed = state.rows.filter(row =>
+    row.configured
+    || (row.entry.settingsPath.length === 0 && state.namespaces.has(row.entry.settingsNs)))
   const addTarget = adding ? editing : undefined
   const addNamespace = addTarget === undefined ? undefined : state.namespaces.get(addTarget.settingsNs)
   // Hand-declared routes live in the pi-ai namespace, which is also the only
@@ -292,10 +298,10 @@ function Loaded({ injected }: { injected: ModelsSectionInjected }): ReactNode {
           </p>
         )}
       <ul className={styles['rows']}>
-        {configured.map((row) => {
+        {listed.map((row) => {
           const target = targetOf(row)
           const namespace = state.namespaces.get(target.settingsNs)
-          /* v8 ignore next -- the join marks a row configured only when its namespace resolved */
+          /* v8 ignore next -- a listed row's settings namespace is mounted with its provider */
           if (namespace === undefined) return null
           if (needsSetup(row, anyUsable) && !dismissedSetup.has(row.entry.provider)) {
             // First-run posture: the provider exists but has no key — the

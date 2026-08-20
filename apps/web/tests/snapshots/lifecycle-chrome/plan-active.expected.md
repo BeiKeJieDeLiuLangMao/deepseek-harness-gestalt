@@ -29,6 +29,7 @@
   - img
   - text: Standard mode
   - img
+- button "Add images"
 - textbox "Describe what you want to build"
 - button "Commands":
   - img

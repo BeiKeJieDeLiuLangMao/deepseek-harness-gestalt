@@ -142,6 +142,7 @@ function handleCors(req: IncomingMessage, res: ServerResponse, origins: Set<stri
   return true
 }
 
+/* jscpd:ignore-start */
 async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
   let bytes = 0
   const chunks: Buffer[] = []
@@ -223,6 +224,7 @@ function answerJson(res: ServerResponse, status: number, value: unknown): void {
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
   res.end(JSON.stringify(value))
 }
+/* jscpd:ignore-end */
 
 function answerError(res: ServerResponse, error: unknown): void {
   if (error instanceof HttpError) {

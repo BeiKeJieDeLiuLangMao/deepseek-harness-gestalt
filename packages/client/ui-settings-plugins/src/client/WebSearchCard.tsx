@@ -5,8 +5,8 @@
 
 import { useId, useState } from 'react'
 import type { InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import { SecretField, ValueField } from './fields.tsx'
 import { PluginCard } from './PluginCard.tsx'
+import { WebSearchFields } from './WebSearchProviderPanel.tsx'
 import cardCss from './PluginCard.module.css'
 import type { WebSearchProbe, WebSearchShellFace } from './web-search-card-controller.ts'
 import type {} from './slot-contract.ts'
@@ -38,7 +38,6 @@ export function WebSearchCard(props: WebSearchCardProps) {
     : backend === 'anthropic-messages'
       ? 'anthropicSearchBaseUrlHint'
       : 'webSearchBaseUrlHint'
-  const disabled = !state.writable
 
   return (
     <PluginCard
@@ -101,41 +100,13 @@ export function WebSearchCard(props: WebSearchCardProps) {
           </div>
         )
         : null}
-      <SecretField
-        id="plugin-config-web-search-key"
-        label={t('webSearchApiKey')}
-        hint={t('webSearchApiKeyHint')}
-        disabled={!state.apiKeyWritable}
-        text={state.apiKey.text}
-        configured={state.apiKeyConfigured}
-        stateLabel={state.apiKeyConfigured ? t('webSearchApiKeySet') : t('webSearchApiKeyUnset')}
-        onEdit={(text) => { props.edit('apiKey', text) }}
-      />
-      <ValueField
-        id="plugin-config-web-search-endpoint"
-        label={t('webSearchBaseUrl')}
-        hint={t(hintKey)}
-        overriddenLabel={t('overridden')}
-        resetLabel={t('reset')}
-        invalidLabel={t('invalidNumber')}
-        disabled={disabled}
-        {...state.baseURL}
-        onEdit={(text) => { props.edit('baseURL', text) }}
-        onReset={() => { props.resetField('baseURL') }}
-      />
-      <ValueField
-        id="plugin-config-web-search-max-uses"
-        label={t('webSearchMaxUses')}
-        hint={t('webSearchMaxUsesHint')}
-        overriddenLabel={t('overridden')}
-        resetLabel={t('reset')}
-        invalidLabel={t('invalidNumber')}
-        numeric
-        disabled={disabled}
-        {...state.maxUses}
-        text={state.maxUses.text === '' ? '5' : state.maxUses.text}
-        onEdit={(text) => { props.edit('maxUses', text) }}
-        onReset={() => { props.resetField('maxUses') }}
+      <WebSearchFields
+        t={t}
+        idPrefix="plugin-config-web-search"
+        baseUrlHintKey={hintKey}
+        state={state}
+        edit={props.edit}
+        resetField={props.resetField}
       />
     </PluginCard>
   )

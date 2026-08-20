@@ -1,4 +1,4 @@
-import { mkdir, readFile, readlink, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readlink, realpath, symlink, writeFile } from 'node:fs/promises'
 import { mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -38,7 +38,9 @@ describe('copyTree', () => {
 
     await copyTree(src, dest)
 
-    expect(await readlink(join(dest, 'absolute-link'))).toBe('target')
+    // Windows junctions read back an absolute target; compare the resolved
+    // referent instead of one platform's readlink spelling.
+    expect(await realpath(join(dest, 'absolute-link'))).toBe(await realpath(join(dest, 'target')))
     expect(await readFile(join(dest, 'absolute-link', 'payload.txt'), 'utf8')).toBe('payload')
   })
 
