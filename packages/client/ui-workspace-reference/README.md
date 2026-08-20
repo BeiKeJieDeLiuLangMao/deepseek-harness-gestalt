@@ -1,0 +1,24 @@
+# `@deepseek-ai/dsh-client-ui-workspace-reference`
+
+English | [中文](README.zh.md)
+
+Web `@` source named `workspace`. Candidates come from the host workspace-reference index Remote and are ranked in the browser. A pick inserts plain-text `@rel/path` (directories keep a trailing slash). The host pre-step injects the existence-only marker. Picker ranking includes portions derived from [omdsh-dev/dsh-at-file](https://github.com/omdsh-dev/dsh-at-file) 0.6.3 (MIT); see [NOTICE](NOTICE). Decision record: the [Workspace Reference Agent Note](../../../.agents/notes/implemented/feature/2026-08-19-workspace-reference.md).
+
+## Configuration
+
+| Key | Default | Contract |
+|---|---:|---|
+| `menuLimit` | `12` | Maximum ranked picker rows shown after `@`. |
+
+## Model Experience
+
+None, as this package is browser presentation only.
+
+#### KV Cache effect
+
+None; this package neither assembles nor sends a provider request.
+
+## Known Limitations and Deferred Work
+
+- **Index is one RPC per session** — keystroke ranking is local; workspace mutation is not watched until the next session scope or an explicit invalidate.
+- **Dock, paste ignore, folder descent, and settings filters** belong to the parity ticket, not this package's first landing.

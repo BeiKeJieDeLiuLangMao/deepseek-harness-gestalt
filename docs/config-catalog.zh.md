@@ -3171,8 +3171,9 @@ export interface Config {
 /** Plugin config (all optional — `apply` fills env-var and constant defaults). */
 export interface Config {
   /**
-   * Which settings card the next search reads. `deepseek` uses this section's
-   * official DeepSeek endpoint; `anthropic-messages` uses the Anthropic card.
+   * Which provider tab the next search reads. `deepseek` uses this section's
+   * official DeepSeek endpoint; `anthropic-messages` uses the Anthropic tab;
+   * `kimi` uses Moonshot `POST /v1/search`.
    */
   backend?: WebSearchBackend
   /** Literal DeepSeek API key; prefer {@link apiKeyEnv} so no secret enters configuration files. */
@@ -3191,11 +3192,11 @@ export interface Config {
   maxUses?: number
 }
 
-/** Which settings card the next search reads. */
-export type WebSearchBackend = 'deepseek' | 'anthropic-messages'
+/** Which provider tab the next search reads. */
+export type WebSearchBackend = 'deepseek' | 'anthropic-messages' | 'kimi'
 ```
 
-来源：[`packages/web/web-search-deepseek/src/index.ts:52`](../packages/web/web-search-deepseek/src/index.ts)
+来源：[`packages/web/web-search-deepseek/src/index.ts:51`](../packages/web/web-search-deepseek/src/index.ts)
 
 <a id="deepseek-aidsh-web-search-exa"></a>
 
@@ -3275,6 +3276,24 @@ export interface Config {
 
 来源：[`packages/workflow/workflow-worker-thread/src/index.ts:32`](../packages/workflow/workflow-worker-thread/src/index.ts)
 
+<a id="deepseek-aidsh-workspace-reference"></a>
+
+## `@deepseek-ai/dsh-workspace-reference`
+
+需要：`agents` · `fs` · `typert`
+
+```ts config-catalog
+/** Host plugin configuration, validated at load. */
+export interface Config {
+  /** Hard cap on indexed workspace entries for the picker walk. */
+  maxIndexedFiles: number
+  /** Directory basenames the picker walk skips. */
+  ignoreDirs: string[]
+}
+```
+
+来源：[`packages/context/workspace-reference/src/index.ts:35`](../packages/context/workspace-reference/src/index.ts)
+
 ## 无配置的可加载插件
 
 这些插件通过 `cordis.yml` 中不含 `config:` 块的条目加载；它们未声明任何配置接口。
@@ -3316,6 +3335,7 @@ export interface Config {
 - `@deepseek-ai/dsh-client-ui-user-questions`（[`packages/client/ui-user-questions/src/index.ts`](../packages/client/ui-user-questions/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-workflow-run`（[`packages/client/ui-workflow-run/src/index.ts`](../packages/client/ui-workflow-run/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-workspace`（[`packages/client/ui-workspace/src/index.ts`](../packages/client/ui-workspace/src/index.ts)）
+- `@deepseek-ai/dsh-client-ui-workspace-reference`（[`packages/client/ui-workspace-reference/src/index.ts`](../packages/client/ui-workspace-reference/src/index.ts)）
 - `@deepseek-ai/dsh-command-compact` — 需要 `commands` · `compact`（[`packages/compaction/command-compact/src/index.ts`](../packages/compaction/command-compact/src/index.ts)）
 - `@deepseek-ai/dsh-command-feedback` — 需要 `commands`（[`packages/feedback/command-feedback/src/index.ts`](../packages/feedback/command-feedback/src/index.ts)）
 - `@deepseek-ai/dsh-command-goal` — 需要 `commands` · `goals`（[`packages/goal/command-goal/src/index.ts`](../packages/goal/command-goal/src/index.ts)）

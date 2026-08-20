@@ -77,7 +77,11 @@ const MOONSHOT_RESULT = {
 async function searchOnce(ctx: Context): Promise<string> {
   const fetchSpy = vi.spyOn(globalThis, 'fetch')
     .mockImplementation((input) => {
-      const url = String(input)
+      const url = typeof input === 'string'
+        ? input
+        : input instanceof URL
+          ? input.href
+          : input.url
       return Promise.resolve(jsonResponse(
         url.endsWith('/search') || url.includes('/v1/search') ? MOONSHOT_RESULT : ONE_RESULT,
       ))
@@ -191,5 +195,139 @@ describe('web-search-deepseek settings section', () => {
     })
     expect(await searchOnce(bench.ctx)).toBe('https://api.kimi.com/coding/v1/search')
     await bench.ctx.fiber.dispose()
+  })
+
+  it('inherits the DeepSeek credential when the Anthropic tab names a different missing ref', async () => {
+    const previous = process.env.DEEPSEEK_API_KEY
+    process.env.DEEPSEEK_API_KEY = 'inherited-deepseek-key'
+    const ctx = new Context()
+    try {
+      await ctx.plugin(WebRuntime, {})
+      const settingsFiber = ctx.plugin(MemorySettings)
+      await settingsFiber.await()
+      const pluginFiber = ctx.plugin(deepseekPlugin, { baseURL: 'https://search.entry.test/v1' })
+      await pluginFiber.await()
+      await ctx.settings.update(WEB_SEARCH_ANTHROPIC_SETTINGS_NAMESPACE, {
+        baseURL: 'https://api.anthropic.test/v1',
+        apiKeyEnv: 'ANTHROPIC_API_KEY',
+      })
+      await ctx.settings.update(WEB_SEARCH_DEEPSEEK_SETTINGS_NAMESPACE, {
+        backend: 'anthropic-messages',
+      })
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(() => Promise.resolve(jsonResponse(ONE_RESULT)))
+      await ctx.web.search({ query: 'anything' })
+      const init = fetchSpy.mock.calls.at(-1)?.[1] as RequestInit
+      expect((init.headers as Record<string, string>)['x-api-key']).toBe('inherited-deepseek-key')
+      await ctx.fiber.dispose()
+    } finally {
+      if (previous === undefined) delete process.env.DEEPSEEK_API_KEY
+      else process.env.DEEPSEEK_API_KEY = previous
+    }
+  })
+
+  it('falls back to the Kimi credential when Anthropic has neither its own key nor a DeepSeek inherit', async () => {
+    const previousDeepseek = process.env.DEEPSEEK_API_KEY
+    const previousKimi = process.env.KIMI_WEB_SEARCH_API_KEY
+    delete process.env.DEEPSEEK_API_KEY
+    process.env.KIMI_WEB_SEARCH_API_KEY = 'kimi-only-key'
+    const ctx = new Context()
+    try {
+      await ctx.plugin(WebRuntime, {})
+      const settingsFiber = ctx.plugin(MemorySettings)
+      await settingsFiber.await()
+      const pluginFiber = ctx.plugin(deepseekPlugin, { baseURL: 'https://search.entry.test/v1' })
+      await pluginFiber.await()
+      await ctx.settings.update(WEB_SEARCH_ANTHROPIC_SETTINGS_NAMESPACE, {
+        baseURL: 'https://api.anthropic.test/v1',
+      })
+      await ctx.settings.update(WEB_SEARCH_DEEPSEEK_SETTINGS_NAMESPACE, {
+        backend: 'anthropic-messages',
+      })
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(() => Promise.resolve(jsonResponse(ONE_RESULT)))
+      await ctx.web.search({ query: 'anything' })
+      const init = fetchSpy.mock.calls.at(-1)?.[1] as RequestInit
+      expect((init.headers as Record<string, string>)['x-api-key']).toBe('kimi-only-key')
+      await ctx.fiber.dispose()
+    } finally {
+      if (previousDeepseek === undefined) delete process.env.DEEPSEEK_API_KEY
+      else process.env.DEEPSEEK_API_KEY = previousDeepseek
+      if (previousKimi === undefined) delete process.env.KIMI_WEB_SEARCH_API_KEY
+      else process.env.KIMI_WEB_SEARCH_API_KEY = previousKimi
+    }
+  })
+
+  it('does not retry the Kimi ref after the Kimi tab already named it', async () => {
+    const previousDeepseek = process.env.DEEPSEEK_API_KEY
+    const previousKimi = process.env.KIMI_WEB_SEARCH_API_KEY
+    delete process.env.DEEPSEEK_API_KEY
+    delete process.env.KIMI_WEB_SEARCH_API_KEY
+    const ctx = new Context()
+    try {
+      await ctx.plugin(WebRuntime, {})
+      const settingsFiber = ctx.plugin(MemorySettings)
+      await settingsFiber.await()
+      const pluginFiber = ctx.plugin(deepseekPlugin, { baseURL: 'https://search.entry.test/v1' })
+      await pluginFiber.await()
+      await ctx.settings.update(WEB_SEARCH_DEEPSEEK_SETTINGS_NAMESPACE, {
+        backend: 'kimi',
+      })
+      await expect(ctx.web.search({ query: 'anything' }))
+        .rejects.toMatchObject({ code: 'WEB_PROVIDER_CREDENTIAL_MISSING' })
+      await ctx.fiber.dispose()
+    } finally {
+      if (previousDeepseek === undefined) delete process.env.DEEPSEEK_API_KEY
+      else process.env.DEEPSEEK_API_KEY = previousDeepseek
+      if (previousKimi === undefined) delete process.env.KIMI_WEB_SEARCH_API_KEY
+      else process.env.KIMI_WEB_SEARCH_API_KEY = previousKimi
+    }
+  })
+
+  it('does not invent a Kimi key when Anthropic and DeepSeek refs are both empty', async () => {
+    const previousDeepseek = process.env.DEEPSEEK_API_KEY
+    const previousKimi = process.env.KIMI_WEB_SEARCH_API_KEY
+    delete process.env.DEEPSEEK_API_KEY
+    delete process.env.KIMI_WEB_SEARCH_API_KEY
+    const ctx = new Context()
+    try {
+      await ctx.plugin(WebRuntime, {})
+      const settingsFiber = ctx.plugin(MemorySettings)
+      await settingsFiber.await()
+      const pluginFiber = ctx.plugin(deepseekPlugin, { baseURL: 'https://search.entry.test/v1' })
+      await pluginFiber.await()
+      await ctx.settings.update(WEB_SEARCH_ANTHROPIC_SETTINGS_NAMESPACE, {
+        baseURL: 'https://api.anthropic.test/v1',
+      })
+      await ctx.settings.update(WEB_SEARCH_DEEPSEEK_SETTINGS_NAMESPACE, {
+        backend: 'anthropic-messages',
+      })
+      await expect(ctx.web.search({ query: 'anything' }))
+        .rejects.toMatchObject({ code: 'WEB_PROVIDER_CREDENTIAL_MISSING' })
+      await ctx.fiber.dispose()
+    } finally {
+      if (previousDeepseek === undefined) delete process.env.DEEPSEEK_API_KEY
+      else process.env.DEEPSEEK_API_KEY = previousDeepseek
+      if (previousKimi === undefined) delete process.env.KIMI_WEB_SEARCH_API_KEY
+      else process.env.KIMI_WEB_SEARCH_API_KEY = previousKimi
+    }
+  })
+
+  it('drops a non-ASCII stored API key instead of sending it as a header', async () => {
+    const previous = process.env.DEEPSEEK_API_KEY
+    delete process.env.DEEPSEEK_API_KEY
+    const ctx = new Context()
+    try {
+      await ctx.plugin(WebRuntime, {})
+      const settingsFiber = ctx.plugin(MemorySettings)
+      await settingsFiber.await()
+      const pluginFiber = ctx.plugin(deepseekPlugin, { baseURL: 'https://search.entry.test/v1' })
+      await pluginFiber.await()
+      await ctx.settings.update(WEB_SEARCH_DEEPSEEK_SETTINGS_NAMESPACE, { apiKey: '密钥' })
+      await expect(ctx.web.search({ query: 'anything' }))
+        .rejects.toMatchObject({ code: 'WEB_PROVIDER_CREDENTIAL_MISSING' })
+      await ctx.fiber.dispose()
+    } finally {
+      if (previous === undefined) delete process.env.DEEPSEEK_API_KEY
+      else process.env.DEEPSEEK_API_KEY = previous
+    }
   })
 })

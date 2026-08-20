@@ -22,7 +22,8 @@ export type WebSearchProviderPanelProps =
 export function WebSearchProviderPanel(props: WebSearchProviderPanelProps) {
   const { t } = props
   const state = props.useWebSearchCard(snapshot => snapshot)
-  const disabled = !state.writable
+  const fieldsLocked = !state.writable
+  const keySet = state.apiKeyConfigured
   return (
     <>
       <SecretField
@@ -31,8 +32,8 @@ export function WebSearchProviderPanel(props: WebSearchProviderPanelProps) {
         hint={t('webSearchApiKeyHint')}
         disabled={!state.apiKeyWritable}
         text={state.apiKey.text}
-        configured={state.apiKeyConfigured}
-        stateLabel={state.apiKeyConfigured ? t('webSearchApiKeySet') : t('webSearchApiKeyUnset')}
+        configured={keySet}
+        stateLabel={keySet ? t('webSearchApiKeySet') : t('webSearchApiKeyUnset')}
         onEdit={(text) => { props.edit('apiKey', text) }}
       />
       <ValueField
@@ -42,7 +43,7 @@ export function WebSearchProviderPanel(props: WebSearchProviderPanelProps) {
         overriddenLabel={t('overridden')}
         resetLabel={t('reset')}
         invalidLabel={t('invalidNumber')}
-        disabled={disabled}
+        disabled={fieldsLocked}
         {...state.baseURL}
         onEdit={(text) => { props.edit('baseURL', text) }}
         onReset={() => { props.resetField('baseURL') }}
@@ -55,7 +56,7 @@ export function WebSearchProviderPanel(props: WebSearchProviderPanelProps) {
         resetLabel={t('reset')}
         invalidLabel={t('invalidNumber')}
         numeric
-        disabled={disabled}
+        disabled={fieldsLocked}
         {...state.maxUses}
         onEdit={(text) => { props.edit('maxUses', text) }}
         onReset={() => { props.resetField('maxUses') }}

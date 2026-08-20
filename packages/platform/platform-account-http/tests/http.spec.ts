@@ -37,6 +37,13 @@ afterEach(async () => {
 })
 
 describe('Platform Account HTTP consumer', () => {
+  it('refuses to start without a matching Platform origin', () => {
+    const ctx = { platformAccount: { environment: ENVIRONMENT }, webServer: { register: vi.fn() }, effect: vi.fn() } as unknown as Context
+    expect(() => apply(ctx, null as never)).toThrow('origin configuration is required')
+    expect(() => apply(ctx, { origin: 1 } as never)).toThrow('origin configuration is required')
+    expect(() => apply(ctx, { origin: 'https://attacker.example' })).toThrow('does not match the selected Platform environment')
+  })
+
   it('serves the complete lifecycle and bilingual fixed callback with exact CORS', async () => {
     const account = accountService()
     const server = await start(account)

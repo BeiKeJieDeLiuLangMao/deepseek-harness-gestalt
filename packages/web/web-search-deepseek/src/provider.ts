@@ -250,17 +250,14 @@ export class DeepSeekSearchProvider implements WebSearchProvider {
         ...signal !== undefined ? { signal } : {},
       })
     } catch (error: unknown) {
-      if (signal?.aborted === true || isAbortError(error)) throw searchAborted(signal, error)
-      throw new WebError(`DeepSeek search request failed: ${String(error)}`, 'WEB_PROVIDER_ERROR', { cause: error })
+      rethrowSearchTransport('DeepSeek search', error, signal)
     }
 
     if (!response.ok) {
       const status = response.status
       let message = `DeepSeek API error (HTTP ${status})`
       try {
-        const parsed = await response.json() as AnthropicError
-        const detail = typeof parsed.error === 'string' ? parsed.error : parsed.error?.message ?? parsed.message
-        if (detail !== undefined && detail.length > 0) message = detail
+        message = httpErrorMessage(await response.json() as AnthropicError, message)
       } catch (error: unknown) {
         // An abort fired mid-body must surface as WEB_ABORTED, not be swallowed
         // into a generic HTTP-error message — cancellation is not a provider
@@ -311,16 +308,16 @@ export class DeepSeekSearchProvider implements WebSearchProvider {
         ...signal !== undefined ? { signal } : {},
       })
     } catch (error: unknown) {
-      if (signal?.aborted === true || isAbortError(error)) throw searchAborted(signal, error)
-      throw new WebError(`Kimi search request failed: ${String(error)}`, 'WEB_PROVIDER_ERROR', { cause: error })
+      rethrowSearchTransport('Kimi search', error, signal)
     }
     if (!response.ok) {
       const status = response.status
       let message = `Kimi search API error (HTTP ${status})`
       try {
-        const parsed = await response.json() as { error?: { message?: string } | string; message?: string }
-        const detail = typeof parsed.error === 'string' ? parsed.error : parsed.error?.message ?? parsed.message
-        if (detail !== undefined && detail.length > 0) message = detail
+        message = httpErrorMessage(
+          await response.json() as { error?: { message?: string } | string; message?: string },
+          message,
+        )
       } catch (error: unknown) {
         if (signal?.aborted === true || isAbortError(error)) throw searchAborted(signal, error)
       }
@@ -406,6 +403,21 @@ function searchAborted(signal?: AbortSignal, fallback?: unknown): WebError {
 /** True for a fetch/`AbortSignal` abort, surfaced as `WEB_ABORTED`. */
 function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === 'AbortError'
+}
+
+/** Map a transport throw to WEB_ABORTED or a labeled WEB_PROVIDER_ERROR. */
+function rethrowSearchTransport(label: string, error: unknown, signal?: AbortSignal): never {
+  if (signal?.aborted === true || isAbortError(error)) throw searchAborted(signal, error)
+  throw new WebError(`${label} request failed: ${String(error)}`, 'WEB_PROVIDER_ERROR', { cause: error })
+}
+
+/** Prefer a provider error body message when one is present. */
+function httpErrorMessage(
+  parsed: { error?: { message?: string } | string; message?: string },
+  fallback: string,
+): string {
+  const detail = typeof parsed.error === 'string' ? parsed.error : parsed.error?.message ?? parsed.message
+  return detail !== undefined && detail.length > 0 ? detail : fallback
 }
 
 /** True for DeepSeek request limits that can be sent to the Messages API. */

@@ -9,7 +9,9 @@ import { CardForm, numberField, textField } from '../src/client/card-form.ts'
 import { AgentLoopCardController, type AgentLoopSettings } from '../src/client/agent-loop-card-controller.ts'
 import { BashCardController, type BashSettings } from '../src/client/bash-card-controller.ts'
 import { ConfigurablePluginsTabController } from '../src/client/tab-store.ts'
-import { WebSearchCardController, type WebSearchSettings } from '../src/client/web-search-card-controller.ts'
+import {
+  WebSearchCardController, WebSearchShell, type WebSearchCardFace, type WebSearchSettings,
+} from '../src/client/web-search-card-controller.ts'
 
 const deepseekCopy = {
   titleKey: 'webSearchTitle',
@@ -574,6 +576,104 @@ describe('WebSearchCardController', () => {
 
     expect(host.set.mock.calls).toEqual([['baseURL', 'https://other.test'], ['maxUses', 3]])
     expect(credentials.set).not.toHaveBeenCalled()
+  })
+})
+
+describe('WebSearchShell', () => {
+  function tabEntry(id: string, inject: () => WebSearchCardFace, extras: { order?: number; label?: string } = {}) {
+    return {
+      options: { id, order: extras.order ?? 0, label: extras.label ?? id },
+      inject,
+    }
+  }
+
+  it('projects the selected provider form, tab ledger, and probe outcomes', async () => {
+    const host = stubSettingsScope<WebSearchSettings>()
+    acceptWrites(host)
+    host.publish({ status: 'ready', writable: true, value: { backend: 'deepseek' }, user: {} })
+    const credentials = credentialsApi(true)
+    const deepseek = new WebSearchCardController(host.scope, credentials.api, 'deepseek', host.scope, deepseekCopy)
+    const anthropic = new WebSearchCardController(host.scope, credentials.api, 'anthropic-messages', host.scope, {
+      titleKey: 'webSearchTitle',
+      descriptionKey: 'webSearchDescription',
+      baseUrlHintKey: 'anthropicSearchBaseUrlHint',
+      idPrefix: 'plugin-config-anthropic-search',
+    })
+    const testWebSearch = vi.fn()
+      .mockResolvedValueOnce({ result: { ok: true, value: { count: 2, title: 'DeepSeek Harness' } } })
+      .mockResolvedValueOnce({ result: { ok: true, value: { count: 0 } } })
+      .mockResolvedValueOnce({ result: { ok: false, error: { message: 'quota' } } })
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockRejectedValueOnce('transport')
+    let entries = [
+      tabEntry('deepseek', () => deepseek.inject(), { label: 'DeepSeek' }),
+      tabEntry('anthropic-messages', () => anthropic.inject(), { order: 10, label: 'Anthropic' }),
+    ]
+    const shell = new WebSearchShell(
+      host.scope,
+      () => entries as never,
+      { titleKey: 'webSearchTitle', descriptionKey: 'webSearchDescription' },
+      deepseek,
+      { settings: { testWebSearch }, credentials: { describe: credentials.describe, set: credentials.set } } as never,
+    )
+    shell.rewire()
+    const face = shell.inject()
+    expect(face.hooks.providerTabs.getSnapshot()).toEqual([
+      { id: 'deepseek', order: 0, label: 'DeepSeek' },
+      { id: 'anthropic-messages', order: 10, label: 'Anthropic' },
+    ])
+    expect(face.hooks.providerTabs.getSnapshot()).toBe(face.hooks.providerTabs.getSnapshot())
+
+    const listener = vi.fn()
+    const stopTabs = face.hooks.providerTabs.subscribe(listener)
+    shell.notifyTabs()
+    expect(listener).toHaveBeenCalledOnce()
+    entries = [tabEntry('kimi', () => deepseek.inject(), { order: 20, label: 'Kimi' })]
+    expect(face.hooks.providerTabs.getSnapshot()).toEqual([{ id: 'kimi', order: 20, label: 'Kimi' }])
+    entries = [{ options: {}, inject: () => deepseek.inject() }] as never
+    expect(face.hooks.providerTabs.getSnapshot()).toEqual([{ id: '', order: 0, label: '' }])
+    stopTabs()
+
+    face.edit('baseURL', 'https://other.test')
+    face.resetField('maxUses')
+    face.save()
+    face.discard()
+    face.selectProvider('anthropic-messages')
+    await vi.waitFor(() => { expect(host.set).toHaveBeenCalledWith('backend', 'anthropic-messages') })
+    shell.rewire()
+
+    await expect(face.testSearch()).resolves.toEqual({ status: 'ok', count: 2, title: 'DeepSeek Harness' })
+    await expect(face.testSearch()).resolves.toEqual({ status: 'ok', count: 0 })
+    await expect(face.testSearch()).resolves.toEqual({ status: 'error', message: 'quota' })
+    await expect(face.testSearch()).resolves.toEqual({ status: 'error', message: 'offline' })
+    await expect(face.testSearch()).resolves.toEqual({ status: 'error', message: 'transport' })
+  })
+
+  it('falls back to the official DeepSeek tab, then the constructed controller', () => {
+    const host = stubSettingsScope<WebSearchSettings>()
+    host.publish({ status: 'ready', writable: true, value: { backend: 'kimi' }, user: {} })
+    const credentials = credentialsApi(true)
+    const fallback = new WebSearchCardController(host.scope, credentials.api, 'deepseek', host.scope, deepseekCopy)
+    const deepseek = new WebSearchCardController(host.scope, credentials.api, 'deepseek', host.scope, deepseekCopy)
+    const withDeepseek = new WebSearchShell(
+      host.scope,
+      () => [tabEntry('deepseek', () => deepseek.inject())] as never,
+      { titleKey: 'webSearchTitle', descriptionKey: 'webSearchDescription' },
+      fallback,
+      { settings: { testWebSearch: vi.fn() }, credentials: { describe: credentials.describe, set: credentials.set } } as never,
+    )
+    withDeepseek.rewire()
+    expect(withDeepseek.inject().hooks.webSearchCard.getSnapshot().selectedProvider).toBe('kimi')
+
+    const empty = new WebSearchShell(
+      host.scope,
+      () => [],
+      { titleKey: 'webSearchTitle', descriptionKey: 'webSearchDescription' },
+      fallback,
+      { settings: { testWebSearch: vi.fn() }, credentials: { describe: credentials.describe, set: credentials.set } } as never,
+    )
+    empty.rewire()
+    expect(empty.inject().hooks.webSearchCard.getSnapshot().selectedProvider).toBe('kimi')
   })
 })
 

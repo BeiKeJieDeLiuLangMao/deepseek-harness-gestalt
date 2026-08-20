@@ -1,12 +1,12 @@
 /** Runnable keyless snapshot for the assembled translation request and consumed response. */
 
-import { execFile } from 'node:child_process'
+import { execFile as execFileCallback } from 'node:child_process'
 import { access, mkdir, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { describe, expect, it } from 'vitest'
 
-const execFileAsync = promisify(execFile)
+const execFileAsync = promisify(execFileCallback)
 const root = resolve(import.meta.dirname, '..')
 const expected = join(root, 'scripts/snapshots/translation-prompt-v4/request-response.expected.json')
 const refreshing = process.env.DSH_SNAPSHOT === 'record' || process.env.DSH_SNAPSHOT === 'refresh'

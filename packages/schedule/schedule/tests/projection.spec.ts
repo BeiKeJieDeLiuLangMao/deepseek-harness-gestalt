@@ -49,6 +49,47 @@ describe('Schedule session projection', () => {
       .toThrow(ScheduleLogError)
     expect(() => applyScheduleProjection(empty, change({ version: 1, operation: 'pause', id: '' }, 2)))
       .toThrow(ScheduleLogError)
+    const created = applyScheduleProjection(empty, change(create, 0))
+    expect(() => applyScheduleProjection(created, change(create, 1))).toThrow(/was reused/)
+    expect(() => applyScheduleProjection(created, change({ version: 1, operation: 'pause', id: 'schedule-1' }, 2)))
+      .not.toThrow()
+    const paused = applyScheduleProjection(created, change({ version: 1, operation: 'pause', id: 'schedule-1' }, 3))
+    expect(() => applyScheduleProjection(paused, change({ version: 1, operation: 'pause', id: 'schedule-1' }, 4)))
+      .toThrow(/paused/)
+    expect(() => applyScheduleProjection(created, change({ version: 1, operation: 'resume', id: 'schedule-1' }, 5)))
+      .toThrow(/active/)
+    expect(() => applyScheduleProjection(paused, change({ version: 1, operation: 'dispatch', id: 'schedule-1' }, 6)))
+      .toThrow(/inactive/)
+  })
+
+  it('advances a fixed-rate dispatch and drops a one-shot after it fires', () => {
+    const every = {
+      version: 1,
+      operation: 'create',
+      schedule: {
+        id: 'schedule-every',
+        kind: 'every',
+        prompt: 'check metrics',
+        everySeconds: 300,
+        scheduledAt: '2026-08-18T01:00:00.000Z',
+      },
+    } as const
+    const created = applyScheduleProjection(emptyScheduleProjectionState(), change(every, 0))
+    const advanced = applyScheduleProjection(created, change({
+      version: 1,
+      operation: 'dispatch',
+      id: 'schedule-every',
+      acceptedAt: '2026-08-18T01:00:00.000Z',
+    }, 1))
+    expect(scheduleProjectionDefinition.view(advanced)).toEqual([{
+      ...every.schedule,
+      scheduledAt: '2026-08-18T01:05:00.000Z',
+      paused: false,
+    }])
+
+    const oneShot = applyScheduleProjection(emptyScheduleProjectionState(), change(create, 0))
+    const dispatched = applyScheduleProjection(oneShot, change({ version: 1, operation: 'dispatch', id: 'schedule-1' }, 1))
+    expect(scheduleProjectionDefinition.view(dispatched)).toEqual([])
   })
 
   it('declares fork-owned event scope for standard Session projection transport', () => {

@@ -3169,8 +3169,9 @@ Requires: `web`
 /** Plugin config (all optional — `apply` fills env-var and constant defaults). */
 export interface Config {
   /**
-   * Which settings card the next search reads. `deepseek` uses this section's
-   * official DeepSeek endpoint; `anthropic-messages` uses the Anthropic card.
+   * Which provider tab the next search reads. `deepseek` uses this section's
+   * official DeepSeek endpoint; `anthropic-messages` uses the Anthropic tab;
+   * `kimi` uses Moonshot `POST /v1/search`.
    */
   backend?: WebSearchBackend
   /** Literal DeepSeek API key; prefer {@link apiKeyEnv} so no secret enters configuration files. */
@@ -3189,11 +3190,11 @@ export interface Config {
   maxUses?: number
 }
 
-/** Which settings card the next search reads. */
-export type WebSearchBackend = 'deepseek' | 'anthropic-messages'
+/** Which provider tab the next search reads. */
+export type WebSearchBackend = 'deepseek' | 'anthropic-messages' | 'kimi'
 ```
 
-Source: [`packages/web/web-search-deepseek/src/index.ts:52`](../packages/web/web-search-deepseek/src/index.ts)
+Source: [`packages/web/web-search-deepseek/src/index.ts:51`](../packages/web/web-search-deepseek/src/index.ts)
 
 <a id="deepseek-aidsh-web-search-exa"></a>
 
@@ -3273,6 +3274,24 @@ export interface Config {
 
 Source: [`packages/workflow/workflow-worker-thread/src/index.ts:32`](../packages/workflow/workflow-worker-thread/src/index.ts)
 
+<a id="deepseek-aidsh-workspace-reference"></a>
+
+## `@deepseek-ai/dsh-workspace-reference`
+
+Requires: `agents` · `fs` · `typert`
+
+```ts config-catalog
+/** Host plugin configuration, validated at load. */
+export interface Config {
+  /** Hard cap on indexed workspace entries for the picker walk. */
+  maxIndexedFiles: number
+  /** Directory basenames the picker walk skips. */
+  ignoreDirs: string[]
+}
+```
+
+Source: [`packages/context/workspace-reference/src/index.ts:35`](../packages/context/workspace-reference/src/index.ts)
+
 ## Loadable plugins with no config
 
 These load from a `cordis.yml` entry with no `config:` block; they declare no configuration API.
@@ -3314,6 +3333,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-client-ui-user-questions` ([`packages/client/ui-user-questions/src/index.ts`](../packages/client/ui-user-questions/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-workflow-run` ([`packages/client/ui-workflow-run/src/index.ts`](../packages/client/ui-workflow-run/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-workspace` ([`packages/client/ui-workspace/src/index.ts`](../packages/client/ui-workspace/src/index.ts))
+- `@deepseek-ai/dsh-client-ui-workspace-reference` ([`packages/client/ui-workspace-reference/src/index.ts`](../packages/client/ui-workspace-reference/src/index.ts))
 - `@deepseek-ai/dsh-command-compact` — requires `commands` · `compaction` ([`packages/compaction/command-compact/src/index.ts`](../packages/compaction/command-compact/src/index.ts))
 - `@deepseek-ai/dsh-command-feedback` — requires `commands` ([`packages/feedback/command-feedback/src/index.ts`](../packages/feedback/command-feedback/src/index.ts))
 - `@deepseek-ai/dsh-command-goal` — requires `commands` · `goals` ([`packages/goal/command-goal/src/index.ts`](../packages/goal/command-goal/src/index.ts))

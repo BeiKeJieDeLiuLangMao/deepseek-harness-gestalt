@@ -276,6 +276,55 @@ describe('RedisRelayCoordinator', () => {
       url: 'redis://localhost:6379', keyPrefix: 'dsh:relay',
     })).rejects.toThrow('clients failed to connect')
   })
+
+  it('drops coordination events after listen shutdown starts', async () => {
+    const subscriber = clientFixture()
+    let instanceListener: ((message: string) => void) | undefined
+    subscriber.subscribe.mockImplementation(async (_channel, listener) => {
+      instanceListener ??= listener
+    })
+    let releaseUnsubscribe: (() => void) | undefined
+    const unsubscribed = new Promise<void>((resolve) => { releaseUnsubscribe = resolve })
+    subscriber.unsubscribe.mockImplementation(async () => { await unsubscribed })
+    const coordinator = new RedisRelayCoordinator({
+      command: clientFixture(), subscriber, keyPrefix: 'dsh:relay',
+    })
+    const listener = vi.fn(async () => {})
+    const stop = await coordinator.listen(parseRelayInstanceId('platform-a'), listener)
+
+    const stopping = stop()
+    instanceListener?.('{"type":"delivered","deliveryId":"delivery-late"}')
+    releaseUnsubscribe?.()
+    await stopping
+
+    expect(listener).not.toHaveBeenCalled()
+  })
+
+  it('aggregates subscribe and unsubscribe failures during listen acquisition', async () => {
+    const subscriber = clientFixture()
+    subscriber.subscribe.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('subscribe failed'))
+    subscriber.unsubscribe.mockRejectedValueOnce(new Error('unsubscribe failed'))
+    const coordinator = new RedisRelayCoordinator({
+      command: clientFixture(), subscriber, keyPrefix: 'dsh:relay',
+    })
+
+    await expect(coordinator.listen(parseRelayInstanceId('platform-a'), async () => {}))
+      .rejects.toThrow('subscription acquisition rollback failed')
+  })
+
+  it('rethrows a single Redis connect failure after successful client cleanup', async () => {
+    const command = redisClientFixture()
+    const subscriber = redisClientFixture()
+    command.duplicate.mockReturnValue(subscriber)
+    command.connect.mockRejectedValue(new Error('only command connect failed'))
+    vi.mocked(createClient).mockReturnValue(command as never)
+
+    await expect(connectRedisRelayCoordinator({
+      url: 'redis://localhost:6379', keyPrefix: 'dsh:relay',
+    })).rejects.toThrow('only command connect failed')
+    expect(command.close).toHaveBeenCalled()
+    expect(subscriber.close).toHaveBeenCalled()
+  })
 })
 
 class FakeRedisBus {

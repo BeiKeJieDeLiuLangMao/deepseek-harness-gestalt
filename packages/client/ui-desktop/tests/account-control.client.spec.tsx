@@ -117,6 +117,17 @@ describe('AccountControl', () => {
     })
     expect(screen.getByText('Alice phone')).toBeTruthy()
     expect(screen.getByRole('alert').textContent).toBe('temporary warning')
+    fireEvent.click(screen.getByRole('button', { name: 'Revoke pairing' }))
+    expect(desktop.pairingRevoke).toHaveBeenCalledWith('pairing-1')
+
+    cleanup()
+    renderControl(signedIn, {
+      status: 'ready', enabled: true,
+      pairings: [{
+        id: parsePersonalPairingId('pairing-2'), deviceName: 'Bob tablet', platform: 'android', pairedAt: 1, lastAccessAt: 1, online: true,
+      }],
+    })
+    expect(screen.getByText('online')).toBeTruthy()
   })
 
   it('projects every Account state and renders nothing without the Desktop bridge', () => {

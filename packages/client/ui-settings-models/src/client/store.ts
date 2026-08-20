@@ -89,11 +89,13 @@ export function protocolChoices(namespace: SettingsNamespaceView | undefined): s
 /**
  * Whether the user layer still occupies a whole-section provider. An empty
  * object is the leftover of unsetting the section root and is not occupancy.
+ * @param user - redacted user-section value, or absent.
+ * @returns true when the user layer still occupies the section.
  */
 export function userSectionOccupied(user: unknown): boolean {
   if (user === undefined || user === null) return false
   if (typeof user !== 'object' || Array.isArray(user)) return true
-  return Object.keys(user as Record<string, unknown>).length > 0
+  return Object.keys(user).length > 0
 }
 
 /** The credential reference a resolved profile names (its `apiKeyEnv` field). */
@@ -156,7 +158,7 @@ export class ModelsSettingsStore {
       const configured = namespace !== undefined && (
         entry.settingsPath.length === 0
           ? userSectionOccupied(namespace.user)
-            || (namespace.secrets ?? []).some(slot => slot.set)
+            || namespace.secrets.some(slot => slot.set)
           : getPath(namespace.value, entry.settingsPath) !== undefined
       )
       const removable = namespace !== undefined && (

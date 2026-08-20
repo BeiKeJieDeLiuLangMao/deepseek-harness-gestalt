@@ -1,7 +1,7 @@
 /** Page-store join: directory × namespaces × credentials, with last-good rows on failure. */
 import { describe, expect, it } from 'vitest'
 import type { RpcResponse } from '@deepseek-ai/dsh-api-remotes/client'
-import { messageOf, ModelsSettingsStore } from '../src/client/store.ts'
+import { messageOf, ModelsSettingsStore, userSectionOccupied } from '../src/client/store.ts'
 
 let nextRpc = 0
 function ok<T>(value: T): RpcResponse<T> {
@@ -304,5 +304,19 @@ describe('messageOf', () => {
     expect(messageOf(new Error('connection lost'))).toBe('connection lost')
     expect(messageOf('the host refused')).toBe('the host refused')
     expect(messageOf(undefined)).toBe('undefined')
+  })
+})
+
+describe('userSectionOccupied', () => {
+  it('treats missing, empty, and leftover empty objects as vacant', () => {
+    expect(userSectionOccupied(undefined)).toBe(false)
+    expect(userSectionOccupied(null)).toBe(false)
+    expect(userSectionOccupied({})).toBe(false)
+  })
+
+  it('treats a scalar, array, or populated object as occupancy', () => {
+    expect(userSectionOccupied('set')).toBe(true)
+    expect(userSectionOccupied(['row'])).toBe(true)
+    expect(userSectionOccupied({ apiKeyEnv: 'X' })).toBe(true)
   })
 })

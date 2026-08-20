@@ -8,6 +8,7 @@ import { CallId } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId, SessionPreparation } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import { remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
+import * as scheduleDomain from '../src/domain.ts'
 import ScheduleService, { ScheduleId } from '../src/index.ts'
 
 class PersistenceProbe extends Service {
@@ -113,6 +114,167 @@ describe('Schedule plugin composition', () => {
     await plugin.dispose()
     expect('schedules' in ctx.sessionProjections.snapshot(root.agent.session).values).toBe(false)
     await root.dispose()
+    await ctx.fiber.dispose()
+  })
+
+  it('rejects Host mutations that are missing, stale, child-owned, or corrupt', async () => {
+    const ctx = await harness()
+    const plugin = await ctx.plugin(ScheduleService)
+    const root = await ctx.agents.create({ sessionId: SessionId('schedule-mutation-errors') })
+    root.agent.session.append('schedule/change', {
+      version: 1,
+      operation: 'create',
+      schedule: {
+        id: ScheduleId('schedule-1'),
+        kind: 'after',
+        prompt: 'check logs',
+        afterSeconds: 3_600,
+        scheduledAt: new Date(Date.now() + 3_600_000).toISOString(),
+      },
+    })
+
+    await expect(ctx.schedules.pause(root.agent.id, ScheduleId('')))
+      .rejects.toMatchObject({ name: 'ScheduleMutationError', code: 'schedule_not_found' })
+    await expect(ctx.schedules.delete(root.agent.id, ScheduleId(' schedule-1')))
+      .rejects.toMatchObject({ name: 'ScheduleMutationError', code: 'schedule_not_found' })
+    await expect(ctx.schedules.pause(root.agent.id, ScheduleId('missing')))
+      .rejects.toMatchObject({ name: 'ScheduleMutationError', code: 'schedule_not_found' })
+    await expect(ctx.schedules.delete(root.agent.id, ScheduleId('missing')))
+      .rejects.toMatchObject({ name: 'ScheduleMutationError', code: 'schedule_not_found' })
+    await expect(ctx.schedules.resume(root.agent.id, ScheduleId('schedule-1')))
+      .rejects.toMatchObject({ name: 'ScheduleMutationError', code: 'invalid_transition' })
+    await ctx.schedules.pause(root.agent.id, ScheduleId('schedule-1'))
+    await expect(ctx.schedules.pause(root.agent.id, ScheduleId('schedule-1')))
+      .rejects.toMatchObject({ name: 'ScheduleMutationError', code: 'invalid_transition' })
+
+    const child = await root.agent.ctx.agents.create({ sessionId: SessionId('schedule-mutation-child') })
+    await expect(ctx.schedules.pause(child.agent.id, ScheduleId('schedule-1')))
+      .rejects.toMatchObject({ name: 'ScheduleMutationError', code: 'schedule_not_found' })
+
+    const unexpected = await ctx.agents.create({ sessionId: SessionId('schedule-mutation-unexpected') })
+    unexpected.agent.session.append('schedule/change', {
+      version: 1,
+      operation: 'create',
+      schedule: {
+        id: ScheduleId('schedule-1'),
+        kind: 'after',
+        prompt: 'unexpected',
+        afterSeconds: 3_600,
+        scheduledAt: new Date(Date.now() + 3_600_000).toISOString(),
+      },
+    })
+    const corrupt = vi.spyOn(scheduleDomain, 'foldScheduleEvents').mockImplementation(() => {
+      throw new scheduleDomain.ScheduleLogError('schedule delete targets inactive id')
+    })
+    await expect(ctx.schedules.pause(unexpected.agent.id, ScheduleId('schedule-1')))
+      .rejects.toMatchObject({ name: 'ScheduleMutationError', code: 'corrupt_schedule_log' })
+    corrupt.mockRestore()
+
+    const spy = vi.spyOn(scheduleDomain, 'foldScheduleEvents').mockImplementation(() => {
+      throw new TypeError('fold exploded')
+    })
+    await expect(ctx.schedules.pause(unexpected.agent.id, ScheduleId('schedule-1')))
+      .rejects.toThrow('fold exploded')
+    spy.mockRestore()
+
+    await child.dispose()
+    await unexpected.dispose()
+    await plugin.dispose()
+    await root.dispose()
+    await ctx.fiber.dispose()
+  })
+
+  it('deletes a cold retained reminder and reports a missing unpublished id', async () => {
+    const ctx = await harness()
+    const plugin = await ctx.plugin(ScheduleService)
+    const missingId = SessionId('schedule-cold-delete-missing')
+    const retainedId = SessionId('schedule-cold-delete-retained')
+    ctx.sessionPersistence.prepare = vi.fn(async (sessionId) => {
+      const prepared = ctx.sessions.prepare(sessionId, {
+        meta: { cwd: '/tmp' },
+        ...sessionId === retainedId
+          ? {
+            seed: [{
+              type: 'schedule/change', seq: 0, time: 1,
+              data: {
+                version: 1,
+                operation: 'create',
+                schedule: {
+                  id: ScheduleId('schedule-1'), kind: 'after', prompt: 'cold delete', afterSeconds: 3_600,
+                  scheduledAt: new Date(Date.now() + 3_600_000).toISOString(),
+                },
+              },
+            }],
+          }
+          : {},
+      })
+      return SessionPreparation.create(prepared)
+    })
+
+    await expect(ctx.schedules.delete(missingId, ScheduleId('schedule-1')))
+      .rejects.toMatchObject({ name: 'ScheduleMutationError', code: 'schedule_not_found' })
+    await expect(ctx.schedules.delete(retainedId, ScheduleId('schedule-1')))
+      .resolves.toEqual({ id: 'schedule-1', deleted: true })
+
+    await plugin.dispose()
+    await ctx.fiber.dispose()
+  })
+
+  it('propagates a cold preparation failure when no live root exists', async () => {
+    const ctx = await harness()
+    const plugin = await ctx.plugin(ScheduleService)
+    ctx.sessionPersistence.prepare = vi.fn(async () => {
+      throw new Error('artifact missing')
+    })
+
+    await expect(ctx.schedules.delete(SessionId('schedule-missing-artifact'), ScheduleId('schedule-1')))
+      .rejects.toThrow('artifact missing')
+
+    await plugin.dispose()
+    await ctx.fiber.dispose()
+  })
+
+  it('deletes through the live root when Session entry loses the publication race', async () => {
+    const ctx = await harness()
+    const plugin = await ctx.plugin(ScheduleService)
+    const sessionId = SessionId('schedule-delete-enter-race')
+    const unused = ctx.sessions.prepare(SessionId('schedule-delete-enter-unused'), { meta: { cwd: '/tmp' } })
+    let raced: Awaited<ReturnType<typeof ctx.agents.create>> | undefined
+    const enter = ctx.sessions.enter.bind(ctx.sessions)
+    ctx.sessions.enter = vi.fn((session) => {
+      if (session.id === unused.id) throw new Error('already attached to a store')
+      return enter(session)
+    })
+    ctx.sessionPersistence.prepare = vi.fn(async () => {
+      raced = await ctx.agents.create({ sessionId })
+      raced.agent.session.append('schedule/change', {
+        version: 1,
+        operation: 'create',
+        schedule: {
+          id: ScheduleId('schedule-1'),
+          kind: 'after',
+          prompt: 'raced delete',
+          afterSeconds: 3_600,
+          scheduledAt: new Date(Date.now() + 3_600_000).toISOString(),
+        },
+      })
+      return SessionPreparation.create(unused)
+    })
+
+    await expect(ctx.schedules.delete(sessionId, ScheduleId('schedule-1')))
+      .resolves.toEqual({ id: 'schedule-1', deleted: true })
+    expect(raced).toBeDefined()
+    expect(raced?.agent.session.events.filter(event =>
+      event.type === 'schedule/change' && event.data.operation === 'delete')).toHaveLength(1)
+    expect(raced?.agent.session.events.filter(event => event.type === 'schedule/change'
+      && event.data.operation === 'delete')[0]?.data).toEqual({
+      version: 1,
+      operation: 'delete',
+      id: 'schedule-1',
+    })
+
+    await plugin.dispose()
+    await raced?.dispose()
     await ctx.fiber.dispose()
   })
 
