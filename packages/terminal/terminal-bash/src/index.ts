@@ -101,9 +101,10 @@ function lastNonEmptyLine(text: string): string {
 
 /** True when the latest printed line is the installed prompt, not setup echo. */
 function showsInstalledControlledPrompt(viewport: string, scrollback: string): boolean {
-  const latest = lastNonEmptyLine(viewport)
-  if (latest !== '') return latest === CONTROLLED_PROMPT
-  return lastNonEmptyLine(scrollback) === CONTROLLED_PROMPT
+  // A send viewport can still end on setup echo after acceptsStdinWait;
+  // scrollback is the session's last printed line and must still count.
+  return lastNonEmptyLine(viewport) === CONTROLLED_PROMPT
+    || lastNonEmptyLine(scrollback) === CONTROLLED_PROMPT
 }
 
 function spawnArgv(ctx: Context, config: ResolvedConfig, policy: SandboxExecutionPolicy): string[] {

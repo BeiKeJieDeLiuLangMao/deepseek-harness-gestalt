@@ -499,6 +499,36 @@ describe('BashTerminalBackend startup rollback', () => {
     await expect(backend.spawn(spec(agent(ctx)))).rejects.toThrow('did not reach readiness before startup timeout')
   })
 
+  it('accepts a last-line prompt in scrollback when the send viewport still ends on setup echo', async () => {
+    const ctx = new Context()
+    await ctx.plugin(EmptySandbox)
+    await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access', workspaceRoot: '/workspace' })
+    const session = {
+      motd: '',
+      startSend: () => ({
+        done: Promise.resolve({
+          viewport: ENCODING_PREAMBLE + PWSH_PROMPT_SETUP,
+          waitReason: 'stdin_read' as const,
+          sessionStatus: { kind: 'running' as const }, truncated: false,
+        }),
+        readOutput: () => ({ delta: '', truncated: false }),
+        cancel: () => false,
+      }),
+      read: () => ({
+        text: `${ENCODING_PREAMBLE + PWSH_PROMPT_SETUP}\ndsh> `,
+        totalLines: 2, lineBegin: 0, lineEnd: 2, truncated: false,
+      }),
+    } as unknown as LocalPtySession
+    const backend = new BashTerminalBackend(
+      ctx,
+      { ...config(), shellDialect: 'pwsh', shellPath: 'pwsh' },
+      async () => terminalHandle(),
+      () => session,
+    )
+    expect(await backend.spawn(spec(agent(ctx)))).toBe(session)
+    expect(session.motd).toBe(ENCODING_PREAMBLE + PWSH_PROMPT_SETUP)
+  })
+
   it('accepts a last-line prompt retained only in scrollback', async () => {
     const ctx = new Context()
     await ctx.plugin(EmptySandbox)

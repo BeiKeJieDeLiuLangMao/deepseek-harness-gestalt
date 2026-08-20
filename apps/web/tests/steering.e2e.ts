@@ -334,14 +334,15 @@ describe('web e2e: empty-draft Cmd+Enter steers the whole queue', () => {
     // Official InputBar drops Enter while the first submit is still
     // adjudicating. Leave that window before the two queue Enters, but do
     // not wait for Stop generating: the question composer then replaces
-    // the textarea and the second fill cannot land.
-    await expect.poll(
-      () => input.getAttribute('data-phase'),
-      { timeout: 10_000 },
-    ).not.toMatch(/^(?:submitting|adjudicating)$/)
+    // the textarea. `plain` also labels the leftover hidden node, so require
+    // visibility; force the second fill if the composer wins the race.
+    await expect.poll(async () => {
+      const phase = await input.getAttribute('data-phase')
+      return await input.isVisible() && phase !== null && !/^(?:submitting|adjudicating)$/.test(phase)
+    }, { timeout: 10_000, interval: 20 }).toBe(true)
     await input.fill(STEER_ONE)
     await input.press('Enter')
-    await input.fill(STEER_TWO)
+    await input.fill(STEER_TWO, { force: true })
     await input.press('Enter')
     const dock = page.locator('[data-queue-dock]')
     // Both messages queued: the two-row dock shows a collapsed count header,
