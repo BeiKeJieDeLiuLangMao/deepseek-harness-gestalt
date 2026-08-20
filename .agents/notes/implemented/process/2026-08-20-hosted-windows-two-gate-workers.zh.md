@@ -10,7 +10,7 @@ Status: implemented
 
 ## 决策
 
-`windows-native` 在托管的 `windows-latest` 和故障切换池 `dsh-win-ci` 上都把 `DSH_GATE_CONCURRENCY` 设为 `2`。托管路径的 `DSH_COVERAGE_MAX_WORKERS` 仍为 `1`，因此这两项覆盖率门禁重叠时各自仍只有 1 个 Vitest 工作进程。两项覆盖率门禁都 `needs: ['build']`，避免插桩 Vitest 在 tsdown 仍在写 `lib/` 时加载它。生产站点与 Electron runtime e2e 可以和 build 重叠。Windows 上的插桩 Vitest 扇出上限仍由 [原生 Windows 拉取请求 CI](2026-08-08-native-windows-pull-request-ci.md) 约束。必需的 Wine 作业和 `all-checks-passed` 图保持不变。
+`windows-native` 在托管的 `windows-latest` 和故障切换池 `dsh-win-ci` 上都把 `DSH_GATE_CONCURRENCY` 设为 `2`。托管路径的 `DSH_COVERAGE_MAX_WORKERS` 仍为 `1`，因此这两项覆盖率门禁重叠时各自仍只有 1 个 Vitest 工作进程。两项覆盖率门禁都 `needs: ['build']`，避免插桩 Vitest 在 tsdown 仍在写 `lib/` 时加载它。生产站点与 Electron runtime e2e 可以和 build 重叠。免覆盖率较重用例不得设置短于 `DSH_COVERAGE_TEST_TIMEOUT_MS` 的单测超时；#210 之后首次重叠的托管运行里，20 秒的 `change-scope` 预算超时了。Windows 上的插桩 Vitest 扇出上限仍由 [原生 Windows 拉取请求 CI](2026-08-08-native-windows-pull-request-ci.md) 约束。必需的 Wine 作业和 `all-checks-passed` 图保持不变。
 
 ## 考虑过的替代方案
 

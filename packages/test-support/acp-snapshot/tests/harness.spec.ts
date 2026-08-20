@@ -702,11 +702,58 @@ describe('runScenario', () => {
     expect(result.sessionLogs[0]?.content).toContain('"turn":3')
   })
 
+  it('waitForTurnStart with minimumTurn accepts a later turn that has already closed', { timeout: 20_000 }, async () => {
+    const { fixtureFile } = await scenario({
+      prompt: 'hang-until-cancel',
+      persistLogsOnCancel: true,
+      logs: [{
+        file: 'project/main/session.jsonl',
+        lines: [
+          { type: 'session', version: 0, id: '{{SID}}', createdAt: 1, delegationDepth: 0 },
+          { type: 'turn/start', seq: 0, time: 1, data: { turn: 2 } },
+          { type: 'turn/end', seq: 1, time: 2, data: { turn: 2, reason: { kind: 'completed' } } },
+        ],
+      }],
+    })
+    const result = await runScenario(
+      {
+        steps: [
+          ...boot,
+          { op: 'promptAndCancel', text: 'hang' },
+          { op: 'waitForTurnStart', minimumTurn: 2 },
+        ],
+      },
+      { agent: AGENT, mode: 'replay', fixtureFile },
+    )
+    expect(result.sessionLogs[0]?.content).toMatch(/"turn\/start"[\s\S]*"turn":2[\s\S]*"turn\/end"/)
+  })
+
   it('waitForTurnStart rejects missing, earlier, and malformed durable turns', { timeout: 20_000 }, async () => {
     const missing = await scenario({})
     await expect(runScenario(
       { steps: [...boot, { op: 'waitForTurnStart', timeoutMs: 20 }] },
       { agent: AGENT, mode: 'replay', fixtureFile: missing.fixtureFile },
+    )).rejects.toThrow(/did not persist turn\/start within 20ms/)
+
+    const headerOnly = await scenario({
+      prompt: 'hang-until-cancel',
+      persistLogsOnCancel: true,
+      logs: [{
+        file: 'project/main/session.jsonl',
+        lines: [
+          { type: 'session', version: 0, id: '{{SID}}', createdAt: 1, delegationDepth: 0 },
+        ],
+      }],
+    })
+    await expect(runScenario(
+      {
+        steps: [
+          ...boot,
+          { op: 'promptAndCancel', text: 'hang' },
+          { op: 'waitForTurnStart', timeoutMs: 20 },
+        ],
+      },
+      { agent: AGENT, mode: 'replay', fixtureFile: headerOnly.fixtureFile },
     )).rejects.toThrow(/did not persist turn\/start within 20ms/)
 
     const earlier = await scenario({
