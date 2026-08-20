@@ -1,4 +1,4 @@
-/** Production Platform composition: Account HTTP + static homepage. */
+/** Production Platform composition: Account HTTP, homepage, and Remote Access tables. */
 
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
@@ -15,6 +15,8 @@ import {
 import * as PlatformAccountHttp from '@deepseek-ai/dsh-platform-account-http'
 import pg from 'pg'
 import { PostgresAccountBackend } from './postgres-backend.ts'
+import { PostgresPersonalPairingAuthorityStore } from './postgres-pairing-store.ts'
+import { PostgresRelayRouteStore } from './postgres-route-store.ts'
 import {
   assertOperatedPlatformEnvironment,
   readPlatformSigningKey,
@@ -67,6 +69,8 @@ const publicRoot = join(dirname(fileURLToPath(import.meta.url)), '..', 'public')
 
 const backend = new PostgresAccountBackend(environment.databaseIdentity, postgres)
 await backend.migrate()
+await new PostgresPersonalPairingAuthorityStore(environment.databaseIdentity, postgres).migrate()
+await new PostgresRelayRouteStore(environment.databaseIdentity, postgres).migrate()
 
 const publisher = await connectRedis(redisOptions)
 const subscriber = await connectRedis(redisOptions)
