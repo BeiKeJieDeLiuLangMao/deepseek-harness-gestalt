@@ -8,6 +8,9 @@
           baseURL: !!js process.env.DSH_SNAPSHOT_BASE_URL
           thinking: enabled
           reasoningEffort: low
+          # 150ms is the idle budget comments must rearm. The snapshot mock
+          # writes the first SSE comment before the request body ends so
+          # fetch unblocks inside this window.
           streamIdleTimeoutMs: 150
       - id: agent-spine
         config:

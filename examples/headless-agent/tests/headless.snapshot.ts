@@ -103,30 +103,26 @@ interface DeepSeekDefaultsServer {
 async function deepseekDefaultsServer(): Promise<DeepSeekDefaultsServer> {
   const requests: JsonObject[] = []
   const server = createServer((request: IncomingMessage, response: ServerResponse) => {
+    // Headers and the first SSE comment leave the socket as soon as the
+    // request arrives. `streamIdleTimeoutMs: 150` arms when `stream()` waits
+    // for the first iterator value, which is after `fetch` sees these bytes;
+    // writing only on `end` lets a loaded event loop miss that window, abort
+    // as TIMEOUT, and llm-retry a second POST.
+    response.writeHead(200, { 'content-type': 'text/event-stream' })
+    response.write(': keep-alive\n\n')
     let body = ''
     request.setEncoding('utf8')
     request.on('data', (chunk: string) => { body += chunk })
     request.on('end', () => {
       requests.push(JSON.parse(body) as JsonObject)
-      response.writeHead(200, { 'content-type': 'text/event-stream' })
-      // First comment is written immediately so a loaded CI event loop cannot
-      // miss the first-byte window and retry the one-shot request.
       response.write(': keep-alive\n\n')
-      let keepAlives = 2
-      const write = (): void => {
-        if (keepAlives-- > 0) {
-          response.write(': keep-alive\n\n')
-          setTimeout(write, 60)
-          return
-        }
-        response.end([
-          'data: {"choices":[{"delta":{"content":"DEFAULTS_OK"}}]}',
-          'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":1}}',
-          'data: [DONE]',
-          '',
-        ].join('\n\n'))
-      }
-      setTimeout(write, 60)
+      response.write(': keep-alive\n\n')
+      response.end([
+        'data: {"choices":[{"delta":{"content":"DEFAULTS_OK"}}]}',
+        'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":1}}',
+        'data: [DONE]',
+        '',
+      ].join('\n\n'))
     })
   })
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
