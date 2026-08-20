@@ -1,46 +1,10 @@
 /**
- * Draft-side Workspace Reference token scan. Matches the host scanner:
- * `@path` without whitespace, `@`, or `[`. Paste-marked tokens are ignored.
+ * Picker filters and the paste-ignore mark. Host scan still owns `@path`
+ * token recognition on submit.
  */
 
 /** Word joiner inserted after `@` on paste so the token is not a Workspace Reference. */
 export const PASTE_IGNORE_MARK = '\u2060'
-
-const MENTION_PATTERN = /@([^\s@[\]]+)/g
-
-/**
- * Unique `@path` tokens in first-seen order. A trailing slash is stripped.
- * @param text - composer draft.
- * @returns workspace-relative tokens without the leading `@`.
- */
-export function scanDraftMentions(text: string): readonly string[] {
-  /* jscpd:ignore-start */
-  // Host `scanMentions` uses a different lookbehind; the collect loop stays
-  // parallel so paste-ignore and slash-strip cannot drift.
-  const seen = new Set<string>()
-  const out: string[] = []
-  for (const match of text.matchAll(MENTION_PATTERN)) {
-    const raw = match[1] as string
-    if (raw.includes(PASTE_IGNORE_MARK)) continue
-    const relative = raw.endsWith('/') ? raw.slice(0, -1) : raw
-    if (relative === '' || seen.has(relative)) continue
-    seen.add(relative)
-    out.push(relative)
-  }
-  return out
-  /* jscpd:ignore-end */
-}
-
-/**
- * Remove one `@path` occurrence, including an optional trailing slash and space.
- * @param text - composer draft.
- * @param path - workspace-relative token without a leading `@`.
- * @returns the draft without that occurrence.
- */
-export function removeDraftMention(text: string, path: string): string {
-  const escaped = path.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  return text.replace(new RegExp(`@${escaped}/? ?`), '')
-}
 
 /**
  * Keep indexed paths that pass Exact/Regex basename filters.

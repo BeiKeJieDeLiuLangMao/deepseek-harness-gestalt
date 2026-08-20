@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
-import { afterAll, beforeAll, describe, expect, it, onTestFailed, vi } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import {
   assertFixtureInventory,
   captureStableAria,
@@ -21,11 +21,6 @@ const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/workspace-reference-pick
 const MENU_EXPECTED = join(SNAPSHOT_DIR, 'menu.expected.md')
 const MODE = webSnapshotMode()
 const MARKER = 'wsref-marker.ts'
-
-type HostOpenPath = (
-  request: { rpcId: string; payload: { path: string } },
-  signal?: AbortSignal,
-) => Promise<{ rpcId: string; result: { ok: true; value: { opened: true } } }>
 
 describe('web e2e: workspace reference picker', () => {
   let scaffold: WebScaffold
@@ -64,44 +59,31 @@ describe('web e2e: workspace reference picker', () => {
     const snapshot = await captureStableAria(page, '[role="listbox"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(MENU_EXPECTED, snapshot, MODE)
     await menu.getByRole('option', { name: new RegExp(MARKER) }).click()
-    await expect.poll(() => input.inputValue()).toBe(`@${MARKER} `)
+    await expect.poll(() => input.inputValue()).toBe(`\uFFFC${MARKER} `)
+    await expect.poll(() => page.locator('[data-decoration="chip"]').innerText()).toBe(MARKER)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
   })
 
-  it('lists a picked path on the composer dock and can remove it', async () => {
-    onTestFailed(() => saveFailureShot(page, 'web-e2e-workspace-reference-dock'))
+  it('replaces a picked nested path with a basename chip', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-workspace-reference-chip'))
     const input = page.locator('textarea:enabled').last()
     await input.click()
     await input.fill('')
-    await input.pressSequentially(`@${MARKER} `, { delay: 20 })
-    const chip = page.locator(`[data-workspace-reference-chip="${MARKER}"]`)
-    await expect.poll(() => chip.count(), { timeout: 10_000 }).toBe(1)
-    const snapshot = await captureStableAria(page, '[data-workspace-reference-dock]', scaffold.workspaceCwd)
-    await compareOrRefreshGolden(join(SNAPSHOT_DIR, 'dock.expected.md'), snapshot, MODE)
-    const openPath = vi.spyOn(
-      (scaffold.ctx as unknown as { apiProxy: { host: { openPath: HostOpenPath } } }).apiProxy.host,
-      'openPath',
-    )
-      .mockImplementation(async (request, _signal) => ({
-        rpcId: request.rpcId,
-        result: { ok: true, value: { opened: true as const } },
-      }))
-    try {
-      const [response] = await Promise.all([
-        page.waitForResponse(response => new URL(response.url()).pathname === '/api/host.openPath'),
-        chip.getByRole('button', { name: 'Open' }).click(),
-      ])
-      expect(response.status()).toBe(200)
-      expect(openPath).toHaveBeenCalledTimes(1)
-      expect(openPath.mock.calls[0][0].payload).toEqual({
-        path: `${scaffold.workspaceCwd}/workspace/${MARKER}`,
-      })
-    } finally {
-      openPath.mockRestore()
-    }
-    await chip.getByRole('button', { name: 'Remove' }).click()
-    await expect.poll(() => page.locator('[data-workspace-reference-dock]').count()).toBe(0)
+    await input.pressSequentially('@guide', { delay: 30 })
+    const menu = page.getByRole('listbox', { name: 'Trigger suggestions' })
+    await expect.poll(
+      () => menu.getByRole('option', { name: /guide\.md/ }).count(),
+      { timeout: 15_000 },
+    ).toBe(1)
+    await menu.getByRole('option', { name: /guide\.md/ }).click()
+    await expect.poll(() => input.inputValue()).toBe('\uFFFCguide.md ')
+    const chip = page.locator('[data-decoration="chip"]')
+    await expect.poll(() => chip.innerText()).toBe('guide.md')
+    await expect.poll(() => chip.getAttribute('title')).toBe('@docs/guide.md')
+    await input.press('Backspace')
+    await input.press('Backspace')
+    await expect.poll(() => page.locator('[data-decoration="chip"]').count()).toBe(0)
   })
 
   it('ignores a pasted @path while still accepting a typed one', async () => {
@@ -114,12 +96,18 @@ describe('web e2e: workspace reference picker', () => {
       data.setData('text/plain', text)
       el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }))
     }, `@${MARKER}`)
-    await expect.poll(() => page.locator('[data-workspace-reference-dock]').count(), { timeout: 5_000 }).toBe(0)
+    await expect.poll(() => page.locator('[data-decoration="chip"]').count(), { timeout: 5_000 }).toBe(0)
     const snapshot = await captureStableAria(page, 'textarea:enabled', scaffold.workspaceCwd)
     await compareOrRefreshGolden(join(SNAPSHOT_DIR, 'paste-ignore.expected.md'), snapshot, MODE)
     await input.fill('')
-    await input.pressSequentially(`@${MARKER} `, { delay: 20 })
-    await expect.poll(() => page.locator(`[data-workspace-reference-chip="${MARKER}"]`).count(), { timeout: 10_000 }).toBe(1)
+    await input.pressSequentially(`@${MARKER}`, { delay: 20 })
+    const typedMenu = page.getByRole('listbox', { name: 'Trigger suggestions' })
+    await expect.poll(
+      () => typedMenu.getByRole('option', { name: new RegExp(MARKER) }).count(),
+      { timeout: 15_000 },
+    ).toBe(1)
+    await typedMenu.getByRole('option', { name: new RegExp(MARKER) }).click()
+    await expect.poll(() => page.locator('[data-decoration="chip"]').count(), { timeout: 10_000 }).toBe(1)
   })
 
   it('ArrowRight on a directory keeps the menu open at @path/', async () => {
@@ -158,7 +146,6 @@ describe('web e2e: workspace reference picker', () => {
     await page.keyboard.press('Escape')
     await assertFixtureInventory(SNAPSHOT_DIR, [
       'menu.expected.md',
-      'dock.expected.md',
       'paste-ignore.expected.md',
       'folder.expected.md',
       'settings.expected.md',

@@ -4,7 +4,8 @@
  * clock. Package-private — the SessionInput shell is the only caller and the
  * sole executor of the returned effects.
  *
- * Draft truth: the draft string holds one U+FFFC placeholder per chip; the
+ * Draft truth: each chip is a U+FFFC marker plus its cached label, so the
+ * placeholder run has the same advance as the visible projection; the
  * occurrence table carries identity and the owner's cached projections. Every
  * draft mutation is one transaction — draft edit, occurrence reconciliation,
  * and undo-log push are atomic inside dispatch() — and bumps draftRev, which
@@ -20,8 +21,102 @@ import type {
   InputState, Occurrence, PasteAttemptState, PasteComponent, SubmitAttempt,
 } from './contract.ts'
 
-/** The object-replacement character backing every chip occurrence in the draft. */
+/** The object-replacement character that opens every chip run in the draft. */
 export const PLACEHOLDER = '￼'
+
+/**
+ * Draft length of one chip: the U+FFFC marker plus the cached label glyphs
+ * that give the placeholder the same advance as the visible projection.
+ * @param label - insert-time chip label.
+ * @returns marker plus label length.
+ */
+export function placeholderSpan(label: string): number {
+  return 1 + label.length
+}
+
+/**
+ * Exclusive end offset of an occurrence's placeholder run.
+ * @param occurrence - table entry with draft offset and cached label.
+ * @returns first index after the run.
+ */
+export function occurrenceEnd(occurrence: Pick<Occurrence, 'offset' | 'label'>): number {
+  return occurrence.offset + placeholderSpan(occurrence.label)
+}
+
+/**
+ * Snap a caret that landed inside a chip to the nearer run boundary.
+ * @param pos - draft caret index.
+ * @param occurrences - offset-sorted occurrence table.
+ * @returns a boundary index when `pos` is interior; otherwise `pos`.
+ */
+export function snapCaret(
+  pos: number, occurrences: readonly Pick<Occurrence, 'offset' | 'label'>[],
+): number {
+  for (const o of occurrences) {
+    const end = occurrenceEnd(o)
+    if (pos > o.offset && pos < end) {
+      return pos - o.offset <= end - pos ? o.offset : end
+    }
+  }
+  return pos
+}
+
+/**
+ * Snap a selection so it never splits a chip: a collapsed caret uses
+ * {@link snapCaret}; a range that intersects a run expands to the whole run.
+ * @param start - selection start.
+ * @param end - selection end.
+ * @param occurrences - offset-sorted occurrence table.
+ * @returns snapped selection.
+ */
+export function snapSelection(
+  start: number,
+  end: number,
+  occurrences: readonly Pick<Occurrence, 'offset' | 'label'>[],
+): EditSelection {
+  if (start === end) {
+    const pos = snapCaret(start, occurrences)
+    return { start: pos, end: pos }
+  }
+  let a = start
+  let b = end
+  for (const o of occurrences) {
+    const chipEnd = occurrenceEnd(o)
+    if (a < chipEnd && b > o.offset) {
+      if (a > o.offset) a = o.offset
+      if (b < chipEnd) b = chipEnd
+    }
+  }
+  return { start: a, end: b }
+}
+
+/** Build the draft run for one insert (marker plus cached label). */
+function chipInsert(reference: ReferenceInsert): string {
+  return PLACEHOLDER + reference.label
+}
+
+/**
+ * Grow an edit so a partial hit on a chip covers the whole run.
+ * @param range - edit in old-draft coordinates.
+ * @param occurrences - table before the edit.
+ * @returns the same range, or one expanded to chip boundaries.
+ */
+function expandRangeOverChips(
+  range: EditRange, occurrences: readonly Occurrence[],
+): EditRange {
+  let start = range.start
+  let end = range.end
+  for (const o of occurrences) {
+    const chipEnd = occurrenceEnd(o)
+    if (start < chipEnd && end > o.offset) {
+      if (o.offset < start) start = o.offset
+      if (chipEnd > end) end = chipEnd
+    }
+  }
+  return start === range.start && end === range.end
+    ? range
+    : { start, end, insertedLength: range.insertedLength }
+}
 
 /** The machine never writes the queue; the wiring layer overlays the queue store's projection. */
 const EMPTY_QUEUE: InputState['queue'] = []
@@ -81,7 +176,7 @@ export function projectClipboard(state: Pick<InputState, 'draft' | 'occurrences'
   let cursor = 0
   for (const o of occurrences) {
     out += draft.slice(cursor, o.offset) + o.clipboardText
-    cursor = o.offset + 1
+    cursor = occurrenceEnd(o)
   }
   return out + draft.slice(cursor)
 }
@@ -197,14 +292,15 @@ export class InputMachine {
   /**
    * Reconcile the occurrence table with one edit (old-draft coordinates):
    * entries past the range shift by the length delta; entries whose
-   * placeholder sits inside the replaced range go away whole (a
+   * placeholder run intersects the replaced range go away whole (a
    * deletion/replacement intersecting a placeholder acts on the whole chip).
    */
   private reconcile(range: EditRange): void {
     const delta = range.insertedLength - (range.end - range.start)
     const kept: Occurrence[] = []
     for (const o of this.occurrences) {
-      if (o.offset < range.start) kept.push(o)
+      const chipEnd = occurrenceEnd(o)
+      if (chipEnd <= range.start) kept.push(o)
       else if (o.offset >= range.end) kept.push(delta === 0 ? o : { ...o, offset: o.offset + delta })
     }
     this.occurrences = kept
@@ -241,7 +337,13 @@ export class InputMachine {
 
   private onDraftChanged(draft: string, editRange?: EditRange): InputEffect[] {
     if (draft === this.draft) return []
-    const range = editRange ?? diffEdit(this.draft, draft)
+    const raw = editRange ?? diffEdit(this.draft, draft)
+    const inserted = draft.slice(raw.start, raw.start + raw.insertedLength)
+    const range = expandRangeOverChips(raw, this.occurrences)
+    if (range.start !== raw.start || range.end !== raw.end) {
+      draft = this.draft.slice(0, range.start) + inserted + this.draft.slice(range.end)
+      if (draft === this.draft) return []
+    }
     // Single-char typing coalesces into the open run while contiguous and
     // inside the merge window; anything else opens its own transaction.
     const typing = range.start === range.end && range.insertedLength === 1
@@ -288,16 +390,16 @@ export class InputMachine {
 
   /**
    * Shared chip-insertion transaction: replace [span) with one placeholder
-   * occurrence (insert-ref and paste-upgrade both land here). A separating
+   * run (insert-ref and paste-upgrade both land here). A separating
    * space follows the chip unless one is already next.
-   * @returns the inserted length (placeholder plus optional gap).
+   * @returns the inserted length (placeholder run plus optional gap).
    */
   private replaceSpanWithChip(reference: ReferenceInsert, span: TokenSpan): number {
     this.pushTxn()
     this.typingRun = undefined
     const tail = this.draft.slice(span.end)
     const gap = tail.length === 0 || tail[0] !== ' ' ? ' ' : ''
-    const inserted = PLACEHOLDER + gap
+    const inserted = chipInsert(reference) + gap
     this.reconcile({ start: span.start, end: span.end, insertedLength: inserted.length })
     this.withMinted([this.mint(reference, span.start)])
     this.adopt(this.draft.slice(0, span.start) + inserted + tail)
@@ -409,7 +511,7 @@ export class InputMachine {
     for (const c of sorted) {
       inserted += text.slice(cursor, c.start)
       minted.push(this.mint(c.reference, start + inserted.length))
-      inserted += PLACEHOLDER
+      inserted += chipInsert(c.reference)
       cursor = c.end
     }
     inserted += text.slice(cursor)

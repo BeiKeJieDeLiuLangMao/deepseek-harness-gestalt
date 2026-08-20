@@ -1,6 +1,6 @@
 /**
- * `@` InputTriggerSource for workspace paths. The draft carries plain
- * `@rel/path`; the host pre-step validates and injects the marker.
+ * `@` InputTriggerSource for workspace paths. A pick inserts a basename
+ * chip; submit serializes `@rel/path` for the host pre-step.
  */
 import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import type { InputTriggerSource } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
@@ -26,6 +26,17 @@ interface IndexCache {
 
 /** Live preference reader used by the picker and paste rewrite. */
 export type WorkspaceSettingsReader = () => WorkspaceReferenceSettings
+
+/**
+ * Chip label: the last path segment of a workspace-relative token.
+ * @param path - workspace-relative token; a trailing slash is ignored.
+ * @returns basename.
+ */
+export function chipLabel(path: string): string {
+  const trimmed = path.endsWith('/') ? path.slice(0, -1) : path
+  const slash = trimmed.lastIndexOf('/')
+  return slash === -1 ? trimmed : trimmed.slice(slash + 1)
+}
 
 /**
  * Build the `workspace` `@` source over an injected index fetch.
@@ -123,7 +134,14 @@ export function createWorkspaceSource(
       const token = candidate.description?.endsWith('/')
         ? `${candidate.name}/`
         : candidate.name
-      return { text: `@${token} ` }
+      return {
+        insert: {
+          source: 'workspace',
+          ref: token,
+          label: chipLabel(token),
+          clipboardText: `@${token}`,
+        },
+      }
     },
     onDescend({ candidate }) {
       if (!candidate.description?.endsWith('/')) return undefined

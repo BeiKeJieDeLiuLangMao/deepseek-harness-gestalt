@@ -96,9 +96,8 @@ describe('ui-workspace-reference apply', () => {
     expect((thrown as Error).message).toBe('down')
   })
 
-  it('feeds one preference snapshot to both faces and routes dock opens and settings writes', async () => {
+  it('feeds one preference snapshot to the settings face', async () => {
     const faces = new Map<string, CapturedRegistration>()
-    const opened: string[] = []
     const writes: Array<[string, unknown]> = []
     const scopeState: { stored?: object; notify?: () => void } = {}
     await apply(stubCtx({
@@ -114,25 +113,7 @@ describe('ui-workspace-reference apply', () => {
         },
         set: async (field, value) => { writes.push([field, value]) },
       },
-      sessions: { list: { getSnapshot: () => ({ byId: { s1: { cwd: '/ws' } } }) } },
-      workspaces: {
-        // Rejection exercises the swallowed Host/OS open failure.
-        openPath: async (path) => {
-          opened.push(path)
-          throw new Error('native open failed')
-        },
-      },
     }))
-
-    const dock = faces.get('conversation.input.dock')?.inject('s1' as never) as {
-      hooks: { settings: { getSnapshot: () => { enable: boolean } } }
-      openPath: (path: string) => void
-    }
-    dock.openPath('../secret')
-    dock.openPath('/etc/passwd')
-    dock.openPath('README.md')
-    await new Promise(resolve => setTimeout(resolve, 0))
-    expect(opened).toEqual(['/ws/README.md'])
 
     const section = faces.get('settings.section')
     expect(section?.label?.()).toBe('nav')
@@ -140,21 +121,17 @@ describe('ui-workspace-reference apply', () => {
       hooks: { settings: { getSnapshot: () => { enable: boolean } } }
       setField: (field: string, value: boolean | string) => void
     }
+    expect(face.hooks.settings.getSnapshot().enable).toBe(true)
     face.setField('enable', false)
     expect(writes).toEqual([['enable', false]])
-
-    // Both faces read the same live snapshot; a scope change moves them together.
-    expect(dock.hooks.settings.getSnapshot().enable).toBe(true)
     scopeState.stored = { enable: false }
     scopeState.notify?.()
-    expect(dock.hooks.settings.getSnapshot().enable).toBe(false)
     expect(face.hooks.settings.getSnapshot().enable).toBe(false)
   })
 
   it('registers the @ workspace source; disposal frees the name', async () => {
     const ctx = new Context()
     ctx.provide('sessions', { list: { getSnapshot: () => ({ byId: {} }) } })
-    ctx.provide('workspaces', { openPath: async () => {} })
     ctx.provide('settingsScope', {
       bind: () => ({ getSnapshot: () => ({ value: undefined }), subscribe: () => () => {}, set: async () => {} }),
     })
