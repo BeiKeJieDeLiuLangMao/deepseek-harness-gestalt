@@ -8,7 +8,7 @@ The expanded Dock has no Profile switch or Agent-status row. Tabs occupy the top
 
 The collapsed preview is a one-line layered summary of the same Dock, not a second Dock. It has no outer shell or footer. Clicking a back layer selects that tab; clicking the current layer opens the Dock. The preview is hidden while the Dock is visible. Ordinary MCP tool rows stay in conversation history.
 
-The occupant-specific details range is 420/640/960 px. Session switch restores per-Session visibility, width, instances, tabs, and current control owner from the Workspace projection.
+The occupant-specific details range is 420/640/960 px. Session switch restores per-Session visibility, width, instances, tabs, current control owner, and each tab's last committed revision from the Workspace projection. Focus and close send that listed revision for the addressed tab.
 
 The behavior is specified by the [Browser Dock Agent Note](../../../.agents/notes/implemented/feature/2026-08-19-browser-dock.md).
 

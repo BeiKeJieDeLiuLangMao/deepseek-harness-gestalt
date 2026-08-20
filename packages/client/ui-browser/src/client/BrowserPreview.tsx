@@ -20,7 +20,8 @@ export type BrowserPreviewProps =
 
 /**
  * Layered tab preview shown while this Session owns Browser tabs and the Dock
- * is collapsed. A back layer selects that tab; the current layer opens the Dock.
+ * is collapsed. A back layer focuses that tab with its listed revision; the
+ * current layer opens the Dock.
  */
 export function BrowserPreview({
   useProjection, openDock, focus, observe, screenshot, t,
@@ -55,9 +56,7 @@ export function BrowserPreview({
                 void openDock()
                 return
               }
-              /* v8 ignore next -- a back layer is inert until the current page has a revision. */
-              if (page === undefined) return
-              void focus(tab.target, page.revision)
+              void focus(tab.target, tab.revision)
             }}
           >
             {image !== undefined && <img className={css.shot} src={image} alt="" />}

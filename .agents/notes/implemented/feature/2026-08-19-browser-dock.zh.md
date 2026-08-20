@@ -14,9 +14,9 @@ Session 可以拥有 Browser Workspace、实例、标签页、Dock 几何与当�
 
 Dock 没有 Profile 切换或 Agent 状态行。标签页占据顶行，收起控件留在右缘。持久 Profile 名称只出现在地址栏旁。刷新会重新打开最近一次观察到的 URL。接管与交还智能体会写入 Workspace 快照已经持久化的同一个 `controlOwner`。视口显示最近一次截图与页面文本；它不嵌入第二个进程。
 
-第一个 Agent 标签页会打开 Dock。人工收起后，后续 Agent 活动不会再次打开它。收起预览是同一 Dock 的单行分层摘要。点击后层会选中该标签页；点击当前层会打开 Dock。Dock 可见时预览隐藏。普通 MCP 工具行仍留在对话历史中。
+第一个 Agent 标签页会打开 Dock。人工收起后，后续 Agent 活动不会再次打开它。收起预览是同一 Dock 的单行分层摘要。点击后层会用该标签页在列表中的修订号聚焦它；点击当前层会打开 Dock。Dock 可见时预览隐藏。普通 MCP 工具行仍留在对话历史中。
 
-占用方专用详情宽度范围为 420/640/960 px，来自 [#60](https://github.com/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/issues/60)。切换 Session 会从 [#67](https://github.com/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/issues/67) 持有的 Workspace 投影恢复该 Session 的可见性、宽度、实例、标签页与当前控制权所有者。
+占用方专用详情宽度范围为 420/640/960 px，来自 [#60](https://github.com/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/issues/60)。切换 Session 会从 [#67](https://github.com/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/issues/67) 持有的 Workspace 投影恢复该 Session 的可见性、宽度、实例、标签页、当前控制权所有者以及每个标签页最近一次提交的修订号。聚焦与关闭发送被操作标签页在列表中的修订号；该约定由 [Dock 标签页修订号 Agent Note](../bug-fix/2026-08-20-dock-tab-revision.md) 持有。
 
 Web 与 headless 组合挂载 `dsh-browser-runtime-deterministic` 与 `dsh-browser-workspace`，使 Dock 拥有 Session 持有的 Runtime，而不需要 Electron。Host 组合同时插入 `dsh-tool-browser`；Web 组合会禁用该宿主平面行，让 standard、code 与 cordis preset 重新挂载它，行为与 `tool-web` 相同，并挂载 Dock 插件。Desktop Host 持有进程内 Electron `webContents` 与叠加层 HTTP 客户端；Dock 仍渲染截图、标题与文本，不嵌入第二个 BrowserView。
 

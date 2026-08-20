@@ -58,8 +58,8 @@ function snapshot(overrides: Partial<BrowserWorkspaceProjection> = {}): BrowserW
         browserId: TARGET.browserId,
         activeTabId: TARGET.tabId,
         tabs: [
-          { tabId: BACK.tabId, controlOwner: 'human' },
-          { tabId: TARGET.tabId, controlOwner: 'agent' },
+          { tabId: BACK.tabId, controlOwner: 'human', revision: 2 },
+          { tabId: TARGET.tabId, controlOwner: 'agent', revision: 3 },
         ],
       }],
     }],
@@ -98,14 +98,14 @@ describe('BrowserPreview occupancy', () => {
     fireEvent.click(screen.getByRole('button', { name: '展开 Alpha' }))
     expect(input.openDock).toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: '切换到 Alpha' }))
-    expect(input.focus).toHaveBeenCalledWith(BACK, 3)
+    expect(input.focus).toHaveBeenCalledWith(BACK, 2)
   })
 
-  it('ignores a back-layer click before observe settles', () => {
+  it('focuses a back layer from the listing revision before observe settles', () => {
     const input = props()
     input.observe = vi.fn().mockReturnValue(new Promise(() => {}))
     render(<BrowserPreview {...input} />)
     fireEvent.click(screen.getByRole('button', { name: '切换到 无标题' }))
-    expect(input.focus).not.toHaveBeenCalled()
+    expect(input.focus).toHaveBeenCalledWith(BACK, 2)
   })
 })

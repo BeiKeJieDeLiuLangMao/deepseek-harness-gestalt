@@ -3344,7 +3344,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'BrowserWorkspaceTabRecord',
-    declaration: 'export interface BrowserWorkspaceTabRecord {\n    readonly tabId: BrowserTabId;\n    readonly controlOwner: BrowserControlOwner;\n}',
+    declaration: 'export interface BrowserWorkspaceTabRecord {\n    readonly tabId: BrowserTabId;\n    readonly controlOwner: BrowserControlOwner;\n    readonly revision: number;\n}',
   },
   {
     name: 'CancelOptions',

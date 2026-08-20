@@ -62,8 +62,8 @@ function snapshot(overrides: Partial<BrowserWorkspaceProjection> = {}): BrowserW
         browserId: TARGET.browserId,
         activeTabId: TARGET.tabId,
         tabs: [
-          { tabId: 'tab-0' as BrowserTarget['tabId'], controlOwner: 'human' },
-          { tabId: TARGET.tabId, controlOwner: 'agent' },
+          { tabId: 'tab-0' as BrowserTarget['tabId'], controlOwner: 'human', revision: 1 },
+          { tabId: TARGET.tabId, controlOwner: 'agent', revision: 2 },
         ],
       }],
     }],
@@ -82,6 +82,7 @@ describe('Browser Dock occupancy helpers', () => {
   it('selects the named Workspace, instance, and active tab, falling back to the last of each', () => {
     const named = selectBrowserDock(snapshot())
     expect(named?.activeTab?.target).toEqual(TARGET)
+    expect(named?.tabs.map(tab => tab.revision)).toEqual([1, 2])
     expect(named?.tabs.map(tab => tab.active)).toEqual([false, true])
 
     const unnamed = selectBrowserDock(snapshot({
@@ -93,7 +94,7 @@ describe('Browser Dock occupancy helpers', () => {
         browsers: [{
           browserId: TARGET.browserId,
           activeTabId: null,
-          tabs: [{ tabId: TARGET.tabId, controlOwner: 'agent' }],
+          tabs: [{ tabId: TARGET.tabId, controlOwner: 'agent', revision: 2 }],
         }],
       }],
     }))

@@ -609,7 +609,7 @@ function buildAlphaLog(): SessionEvent[] {
         browsers: [{
           browserId: FX_BROWSER_TARGET.browserId,
           activeTabId: FX_BROWSER_TARGET.tabId,
-          tabs: [{ tabId: FX_BROWSER_TARGET.tabId, controlOwner: 'agent' }],
+          tabs: [{ tabId: FX_BROWSER_TARGET.tabId, controlOwner: 'agent', revision: 1 }],
         }],
       }],
     },
@@ -1423,7 +1423,7 @@ interface FxBrowserWorkspace {
     readonly browsers: readonly {
       readonly browserId: string
       readonly activeTabId: string | null
-      readonly tabs: readonly { readonly tabId: string; readonly controlOwner: 'agent' | 'human' }[]
+      readonly tabs: readonly { readonly tabId: string; readonly controlOwner: 'agent' | 'human'; readonly revision: number }[]
     }[]
   }[]
   readonly activeWorkspaceId: string | null
@@ -2002,7 +2002,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
           ...workspace,
           browsers: [{
             ...instance,
-            tabs: [{ tabId: FX_BROWSER_TARGET.tabId, controlOwner }],
+            tabs: [{ tabId: FX_BROWSER_TARGET.tabId, controlOwner, revision: expectedRevision + 1 }],
           }],
         }],
       })
