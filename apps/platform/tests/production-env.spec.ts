@@ -204,6 +204,20 @@ describe('Platform release workflows', () => {
     for (const name of PLATFORM_DEPLOY_REQUIRED_ENV) {
       expect(validateStep.env, name).toHaveProperty(name)
     }
+    const apply = steps(deploy).find(step => typeof step.run === 'string' && step.run.includes('docker run'))
+    if (apply === undefined) throw new TypeError('deploy job must run docker')
+    expect(String(apply.run)).toContain('--log-opt max-size=20m')
+    expect(String(apply.run)).toContain('--log-opt max-file=3')
+    expect(String(apply.run)).toContain('dsh-loongcollector')
+    expect(String(apply.run)).toContain('gestalt-platform')
+    if (!isRecord(apply.env)) throw new TypeError('deploy apply step must define env')
+    expect(apply.env).toHaveProperty('PLATFORM_SLS_ACCOUNT_ID')
+    expect(String(apply.run)).toContain('100.100.100.200')
+    expect(String(apply.run)).toContain('X-aliyun-ecs-metadata-token')
+    expect(String(apply.run)).toContain('PLATFORM_SLS_ACCOUNT_ID')
+    expect(String(apply.run)).toContain('loongcollector:v3.0.12.0-25723a1-aliyun')
+    expect(String(apply.run)).toContain('/var/run/docker.sock')
+    expect(String(apply.run)).toContain('/etc/ilogtail/conf/cn-hangzhou/ilogtail_config.json')
     if (!isRecord(workflow.jobs)) throw new TypeError('deploy workflow must define jobs')
     for (const [name, value] of Object.entries(workflow.jobs)) {
       if (!isRecord(value)) throw new TypeError(`${name} must be a job`)
