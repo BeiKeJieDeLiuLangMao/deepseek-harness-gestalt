@@ -110,7 +110,9 @@ jobs:
               'dnf -y install docker >/dev/null 2>&1 || yum -y install docker >/dev/null 2>&1; systemctl enable --now docker'
             gzip -dc /tmp/platform.tar.gz | ssh -i /tmp/ecs.pem -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o BatchMode=yes "root@${host}" 'docker load'
             ssh -i /tmp/ecs.pem -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o BatchMode=yes "root@${host}" \
-              "docker rm -f dsh-platform >/dev/null 2>&1 || true; docker run -d --name dsh-platform --restart unless-stopped -p 80:8080 \
+              "docker rm -f dsh-platform >/dev/null 2>&1 || true; docker run -d --name dsh-platform --restart unless-stopped \
+                --log-driver json-file --log-opt max-size=20m --log-opt max-file=3 \
+                -p 80:8080 \
                 -e PLATFORM_ENVIRONMENT=production \
                 -e PLATFORM_ORIGIN=$(printf %q "$PLATFORM_ORIGIN") \
                 -e PLATFORM_GITHUB_CALLBACK=$(printf %q "$PLATFORM_GITHUB_CALLBACK") \

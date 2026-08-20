@@ -12,7 +12,7 @@ The operated listen process accepts only `PLATFORM_ENVIRONMENT=production`. Clie
 docker build -f apps/platform/Dockerfile -t dsh-platform .
 ```
 
-Publish: Actions → Platform Image → Run workflow → set **push**. Deploy: Actions → Platform Deploy; the workflow validates Environment `production` names first, and applies the image on both ECS hosts only when **deploy** is set. ECS publishes host port 80 to the container listen port 8080 so ALB HTTPS:443 can forward to VPC:80. ECS SSH and runtime secrets live in Environment `production`.
+Publish: Actions → Platform Image → Run workflow → set **push**. Deploy: Actions → Platform Deploy; the workflow validates Environment `production` names first, and applies the image on both ECS hosts only when **deploy** is set. ECS publishes host port 80 to the container listen port 8080 so ALB HTTPS:443 can forward to VPC:80. The apply step uses Docker `json-file` rotation (`20m` × `3` files) so container stdout/stderr cannot fill the host disk. ECS SSH and runtime secrets live in Environment `production`.
 
 ## Known Limitations and Deferred Work
 

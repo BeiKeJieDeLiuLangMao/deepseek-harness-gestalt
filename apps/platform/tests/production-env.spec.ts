@@ -204,6 +204,10 @@ describe('Platform release workflows', () => {
     for (const name of PLATFORM_DEPLOY_REQUIRED_ENV) {
       expect(validateStep.env, name).toHaveProperty(name)
     }
+    const apply = steps(deploy).find(step => typeof step.run === 'string' && step.run.includes('docker run'))
+    if (apply === undefined) throw new TypeError('deploy job must run docker')
+    expect(String(apply.run)).toContain('--log-opt max-size=20m')
+    expect(String(apply.run)).toContain('--log-opt max-file=3')
     if (!isRecord(workflow.jobs)) throw new TypeError('deploy workflow must define jobs')
     for (const [name, value] of Object.entries(workflow.jobs)) {
       if (!isRecord(value)) throw new TypeError(`${name} must be a job`)
