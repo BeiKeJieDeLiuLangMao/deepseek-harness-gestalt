@@ -1155,6 +1155,54 @@ describe('Tandem Browser Runtime teardown ownership', () => {
     expect(live).toBeDefined()
   })
 
+  it('schedules unexpected-exit recovery on the live handle and logs a rejected reconnect', async () => {
+    // Call the recovery methods on the test thread so Windows v8 attributes
+    // them. Child `done` callbacks already reach the same methods on Linux
+    // and are not measured on win32.
+    async function waitForReconnectFailure(warnings: string[]): Promise<void> {
+      const deadline = Date.now() + 3_000
+      while (!warnings.some(message => message.includes('reconnect transaction failed')) && Date.now() < deadline) {
+        await new Promise(resolve => setTimeout(resolve, 20))
+      }
+      expect(warnings.some(message => message.includes('reconnect transaction failed'))).toBe(true)
+    }
+
+    const unexpected = await setup({}, { reconnectAttempts: 1, reconnectDelayMs: 10 })
+    const unexpectedRuntime = runtimeOf(unexpected.ctx)
+    await unexpected.ctx.browserRuntime.create({ profile: 'temporary' })
+    const unexpectedWarnings: string[] = []
+    const unexpectedWarn = vi.spyOn(unexpected.ctx.logger, 'warn').mockImplementation((message: unknown) => {
+      unexpectedWarnings.push(String(message))
+    })
+    unexpectedRuntime.reconnect = async () => {
+      throw new Error('forced reconnect failure')
+    }
+    const live = unexpectedRuntime.process
+    expect(live).toBeDefined()
+    unexpectedRuntime.processExited(live, 'forced unexpected exit')
+    expect(unexpectedWarnings.some(message => message.includes('managed child exited unexpectedly (forced unexpected exit)'))).toBe(true)
+    await waitForReconnectFailure(unexpectedWarnings)
+    unexpectedWarn.mockRestore()
+
+    const projected = await setup({}, { reconnectAttempts: 1, reconnectDelayMs: 10 })
+    const projectedRuntime = runtimeOf(projected.ctx)
+    await projected.ctx.browserRuntime.create({ profile: 'temporary' })
+    const projectedWarnings: string[] = []
+    const projectedWarn = vi.spyOn(projected.ctx.logger, 'warn').mockImplementation((message: unknown) => {
+      projectedWarnings.push(String(message))
+    })
+    projectedRuntime.reconnect = async () => {
+      throw new Error('forced reconnect failure')
+    }
+    expect(projectedRuntime.scheduleRecovery('unhealthy', true)).toMatchObject({
+      status: 'unavailable',
+      reason: 'unhealthy',
+      reconnecting: true,
+    })
+    await waitForReconnectFailure(projectedWarnings)
+    projectedWarn.mockRestore()
+  })
+
   it('rethrows a non-protocol page-content failure during create', async () => {
     const { ctx } = await setup()
     const runtime = runtimeOf(ctx)

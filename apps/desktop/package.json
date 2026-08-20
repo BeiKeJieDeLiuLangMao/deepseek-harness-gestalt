@@ -26,11 +26,16 @@
     "@deepseek-ai/dsh-platform-account-client": "workspace:^",
     "@deepseek-ai/dsh-remote-access": "workspace:^",
     "@deepseek-ai/dsh-remote-access-client": "workspace:^",
-    "electron-updater": "^6.8.3"
+    "electron-updater": "^6.8.3",
+    "@deepseek-ai/dsh-remote-protocol": "workspace:^"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
+    "@deepseek-ai/cordis-plugin-include": "workspace:^",
+    "@deepseek-ai/cordis-plugin-loader": "workspace:^",
+    "@deepseek-ai/dsh-host-webserver": "workspace:^",
     "@deepseek-ai/dsh-platform-account-core": "workspace:^",
+    "@deepseek-ai/dsh-platform-account-http": "workspace:^",
     "@deepseek-ai/dsh-remote-access-http": "workspace:^",
     "electron": "41.2.1",
     "electron-builder": "^26.8.1",
@@ -52,9 +57,18 @@
     ],
     "afterPack": "./scripts/after-pack.mjs",
     "extraResources": [
-      { "from": "cordis.patch.yml", "to": "cordis.patch.yml" },
-      { "from": "build/icon.png", "to": "icon.png" },
-      { "from": "resources/node", "to": "node" }
+      {
+        "from": "cordis.patch.yml",
+        "to": "cordis.patch.yml"
+      },
+      {
+        "from": "build/icon.png",
+        "to": "icon.png"
+      },
+      {
+        "from": "resources/node",
+        "to": "node"
+      }
     ],
     "asar": true,
     "publish": [
@@ -66,7 +80,10 @@
     ],
     "mac": {
       "icon": "build/icon.icns",
-      "target": ["zip", "dmg"],
+      "target": [
+        "zip",
+        "dmg"
+      ],
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
       "entitlements": "build/entitlements.mac.plist",
@@ -77,7 +94,12 @@
     "win": {
       "icon": "build/icon.ico",
       "target": [
-        { "target": "nsis", "arch": ["x64"] }
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
       "signExecutable": false,
       "artifactName": "DeepSeekGestalt-Setup-${version}-${arch}.${ext}"

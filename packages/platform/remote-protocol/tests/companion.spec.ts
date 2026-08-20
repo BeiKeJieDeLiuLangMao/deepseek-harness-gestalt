@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  parseAttachmentCapability,
   createCompanionNegotiationChannel,
   createCompanionVersionOffer,
   decodeCompanionMessage,
@@ -12,6 +13,7 @@ import {
   parseCompanionTranscriptEntryId,
   REMOTE_PROTOCOL_LIMITS,
   RemoteProtocolError,
+  type CompanionOfferAttachmentOperation,
 } from '../src/index.ts'
 
 describe('Encrypted Companion Protocol codec', () => {
@@ -45,6 +47,67 @@ describe('Encrypted Companion Protocol codec', () => {
       },
     } as const
     expect(decodeCompanionMessage(negotiated, encodeCompanionMessage(negotiated, result))).toEqual(result)
+  })
+
+  it('round-trips a reconnect operation-status query and its committed or absent answer', () => {
+    const negotiated = negotiateFresh(
+      createCompanionVersionOffer('mobile'),
+      createCompanionVersionOffer('desktop'),
+    )
+    const operationId = parseCompanionOperationId('operation-uncertain')
+    const query = {
+      type: 'operation',
+      operation: { type: 'query-operation-status', operationId },
+    } as const
+    expect(decodeCompanionMessage(negotiated, encodeCompanionMessage(negotiated, query))).toEqual(query)
+
+    const committed = {
+      type: 'result',
+      result: {
+        type: 'status',
+        operationId,
+        committed: {
+          type: 'confirmed',
+          operationId,
+          committedAt: 1_787_027_200_000,
+          outcome: 'accepted',
+        },
+      },
+    } as const
+    expect(decodeCompanionMessage(negotiated, encodeCompanionMessage(negotiated, committed))).toEqual(committed)
+
+    const absent = {
+      type: 'result',
+      result: { type: 'status', operationId, absent: true },
+    } as const
+    expect(decodeCompanionMessage(negotiated, encodeCompanionMessage(negotiated, absent))).toEqual(absent)
+  })
+
+  it('rejects forged operation-status answers that misstate the queried operation', () => {
+    const negotiated = negotiateFresh(
+      createCompanionVersionOffer('mobile'),
+      createCompanionVersionOffer('desktop'),
+    )
+    const queried = parseCompanionOperationId('operation-queried')
+    const other = parseCompanionOperationId('operation-other')
+    const original = {
+      type: 'confirmed',
+      operationId: other,
+      committedAt: 1_787_027_200_000,
+      outcome: 'accepted',
+    } as const
+    const forged = [
+      { applicationVersion: 2, type: 'result', result: { type: 'status', operationId: queried, committed: original } },
+      { applicationVersion: 2, type: 'result', result: { type: 'status', operationId: queried, absent: false } },
+      { applicationVersion: 2, type: 'result', result: { type: 'status', operationId: queried } },
+      { applicationVersion: 2, type: 'result', result: { type: 'status', operationId: queried, committed: original, absent: true } },
+      { applicationVersion: 2, type: 'result', result: { type: 'status', operationId: queried, committed: { type: 'confirmed', operationId: queried, committedAt: 0, outcome: 'accepted' } } },
+    ]
+    for (const message of forged) {
+      expect(() => decodeCompanionMessage(negotiated, json(message))).toThrow(
+        expect.objectContaining<Partial<RemoteProtocolError>>({ code: 'REMOTE_PROTOCOL_INVALID_MESSAGE' }),
+      )
+    }
   })
 
   it('negotiates the immediately preceding major only with every required security capability', () => {
@@ -448,7 +511,137 @@ describe('Encrypted Companion Protocol codec', () => {
       )
     }
   })
+
+  it('round-trips one bounded offer-attachment control message', () => {
+    const negotiated = negotiateFresh(
+      createCompanionVersionOffer('mobile', [1, 2]),
+      createCompanionVersionOffer('desktop', [1, 2]),
+    )
+    const message = {
+      type: 'operation' as const,
+      operation: {
+        type: 'offer-attachment' as const,
+        operationId: parseCompanionOperationId('operation-attachment'),
+        sessionId: parseCompanionSessionId('session-attachment'),
+        capability: 'A'.repeat(43) as never,
+        ciphertextSha256: '0'.repeat(64),
+        byteLength: 4_096,
+        expiresAt: 1_787_027_200_000,
+        fileName: 'notes.txt',
+      },
+    }
+    const encoded = encodeCompanionMessage(negotiated, message)
+    expect(encoded.byteLength).toBeLessThanOrEqual(REMOTE_PROTOCOL_LIMITS.companionMessageBytes)
+    expect(decodeCompanionMessage(negotiated, encoded)).toEqual(message)
+  })
+
+  it('rejects malformed offer-attachment control messages', () => {
+    const negotiated = negotiateFresh(
+      createCompanionVersionOffer('mobile', [1, 2]),
+      createCompanionVersionOffer('desktop', [1, 2]),
+    )
+    const base: Record<string, unknown> = {
+      applicationVersion: 2,
+      type: 'operation',
+      operation: {
+        type: 'offer-attachment',
+        operationId: 'operation-attachment',
+        sessionId: 'session-attachment',
+        capability: 'A'.repeat(43),
+        ciphertextSha256: '0'.repeat(64),
+        byteLength: 4_096,
+        expiresAt: 1_787_027_200_000,
+        fileName: 'notes.txt',
+      },
+    }
+    const invalid = (mutate: (operation: Record<string, unknown>) => void): Uint8Array => {
+      const record = structuredClone(base)
+      mutate(record.operation as Record<string, unknown>)
+      return json(record)
+    }
+    expect(() => decodeCompanionMessage(negotiated, invalid((operation) => {
+      operation.ciphertextSha256 = 'XYZ'.repeat(16) + 'z'
+    }))).toThrow(expect.objectContaining<Partial<RemoteProtocolError>>({ code: 'REMOTE_PROTOCOL_INVALID_MESSAGE' }))
+    expect(() => decodeCompanionMessage(negotiated, invalid((operation) => {
+      operation.capability = 'A'.repeat(42)
+    }))).toThrow(expect.objectContaining<Partial<RemoteProtocolError>>({ code: 'REMOTE_PROTOCOL_INVALID_MESSAGE' }))
+    expect(() => decodeCompanionMessage(negotiated, invalid((operation) => {
+      operation.byteLength = 0
+    }))).toThrow(expect.objectContaining<Partial<RemoteProtocolError>>({ code: 'REMOTE_PROTOCOL_INVALID_MESSAGE' }))
+    expect(() => decodeCompanionMessage(negotiated, invalid((operation) => {
+      operation.byteLength = REMOTE_PROTOCOL_LIMITS.attachmentBlobBytes + 1
+    }))).toThrow(expect.objectContaining<Partial<RemoteProtocolError>>({ code: 'REMOTE_PROTOCOL_LIMIT_EXCEEDED' }))
+    expect(() => decodeCompanionMessage(negotiated, invalid((operation) => {
+      operation.fileName = ''
+    }))).toThrow(expect.objectContaining<Partial<RemoteProtocolError>>({ code: 'REMOTE_PROTOCOL_INVALID_MESSAGE' }))
+    expect(() => decodeCompanionMessage(negotiated, invalid((operation) => {
+      operation.extra = 'unsupported'
+    }))).toThrow(expect.objectContaining<Partial<RemoteProtocolError>>({ code: 'REMOTE_PROTOCOL_INVALID_MESSAGE' }))
+  })
+
+  it('bounds the offer file name on complete UTF-8 bytes including multibyte characters', () => {
+    const negotiated = negotiateFresh(
+      createCompanionVersionOffer('mobile', [1, 2]),
+      createCompanionVersionOffer('desktop', [1, 2]),
+    )
+    const exactAscii = 'a'.repeat(REMOTE_PROTOCOL_LIMITS.attachmentFileNameBytes)
+    expect(decodeCompanionMessage(negotiated, encodeCompanionMessage(negotiated, {
+      type: 'operation',
+      operation: attachmentOffer({ fileName: exactAscii }),
+    }))).toEqual({
+      type: 'operation',
+      operation: attachmentOffer({ fileName: exactAscii }),
+    })
+    const multibyteExact = '文'.repeat(Math.floor(REMOTE_PROTOCOL_LIMITS.attachmentFileNameBytes / 3))
+    expect(decodeCompanionMessage(negotiated, encodeCompanionMessage(negotiated, {
+      type: 'operation',
+      operation: attachmentOffer({ fileName: multibyteExact }),
+    }))).toEqual({
+      type: 'operation',
+      operation: attachmentOffer({ fileName: multibyteExact }),
+    })
+    const multibyteOverflow = `${'文'.repeat(Math.floor(REMOTE_PROTOCOL_LIMITS.attachmentFileNameBytes / 3))}x`
+    expect(() => decodeCompanionMessage(negotiated, json({
+      applicationVersion: 2,
+      type: 'operation',
+      operation: attachmentOffer({ fileName: multibyteOverflow }),
+    }))).toThrow(expect.objectContaining<Partial<RemoteProtocolError>>({ code: 'REMOTE_PROTOCOL_INVALID_MESSAGE' }))
+  })
+
+  it('round-trips and bounds one attachment-rejected result', () => {
+    const negotiated = negotiateFresh(
+      createCompanionVersionOffer('mobile', [1, 2]),
+      createCompanionVersionOffer('desktop', [1, 2]),
+    )
+    const message = {
+      type: 'result' as const,
+      result: {
+        type: 'attachment-rejected' as const,
+        operationId: parseCompanionOperationId('operation-attachment'),
+        reason: 'hash-mismatch' as const,
+      },
+    }
+    expect(decodeCompanionMessage(negotiated, encodeCompanionMessage(negotiated, message))).toEqual(message)
+    expect(() => decodeCompanionMessage(negotiated, json({
+      applicationVersion: 2,
+      type: 'result',
+      result: { type: 'attachment-rejected', operationId: 'operation-attachment', reason: 'unknown' },
+    }))).toThrow(expect.objectContaining<Partial<RemoteProtocolError>>({ code: 'REMOTE_PROTOCOL_INVALID_MESSAGE' }))
+  })
 })
+
+function attachmentOffer(overrides: { fileName: string }): CompanionOfferAttachmentOperation {
+  return {
+    type: 'offer-attachment',
+    operationId: parseCompanionOperationId('operation-attachment'),
+    sessionId: parseCompanionSessionId('session-attachment'),
+    capability: parseAttachmentCapability('A'.repeat(43)),
+    ciphertextSha256: '0'.repeat(64),
+    byteLength: 4_096,
+    expiresAt: 1_787_027_200_000,
+    fileName: overrides.fileName,
+  }
+}
 
 function json(value: unknown): Uint8Array {
   return new TextEncoder().encode(JSON.stringify(value))

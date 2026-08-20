@@ -9,6 +9,9 @@ export type RelayAttachmentId = Branded<'RelayAttachmentId'>
 /** Exactly 256 bits of transport attachment authority in canonical base64url form. */
 export type RelayCredential = Branded<'RelayCredential'>
 
+/** Exactly 256 bits of one-time attachment blob authority in canonical base64url form. */
+export type AttachmentCapability = Branded<'AttachmentCapability'>
+
 /** Protocol-native identifier for one Desktop-authoritative operation. */
 export type CompanionOperationId = Branded<'CompanionOperationId'>
 
@@ -17,6 +20,9 @@ export type CompanionSessionId = Branded<'CompanionSessionId'>
 
 /** Protocol-native identifier for one ordered transcript projection entry. */
 export type CompanionTranscriptEntryId = Branded<'CompanionTranscriptEntryId'>
+
+/** Opaque APNs or FCM device registration token; it routes pushes to one device and carries no account identity. */
+export type CompanionPushToken = Branded<'CompanionPushToken'>
 
 /** Security property required for a Companion major to remain negotiable. */
 export type CompanionSecurityCapability =
@@ -44,8 +50,48 @@ export interface CompanionSubmitPromptOperation {
   text: string
 }
 
-/** Operations in the first implemented Companion codec slice. */
-export type CompanionOperation = CompanionSubmitPromptOperation
+/** Bounded Mobile control message pointing Desktop at one Platform-retained encrypted blob. */
+export interface CompanionOfferAttachmentOperation {
+  type: 'offer-attachment'
+  operationId: CompanionOperationId
+  sessionId: CompanionSessionId
+  /** One-time HTTPS capability issued by the Platform attachment blob store. */
+  capability: AttachmentCapability
+  /** Lowercase hex SHA-256 of the retained ciphertext; Desktop verifies it before decrypting. */
+  ciphertextSha256: string
+  /** Exact ciphertext byte count Desktop must re-hash before decrypting. */
+  byteLength: number
+  /** Unix epoch milliseconds after which the capability and its blob are removed. */
+  expiresAt: number
+  /** File name submitted with the decrypted attachment into the Session path. */
+  fileName: string
+}
+
+/**
+ * Stable explicit Companion attachment rejection reasons; never carry application data.
+ *
+ * `hash-mismatch` covers a ciphertext SHA-256 or byte-count mismatch and a post-hash
+ * AES-GCM authentication failure (wrong pairing key) after the hash already matched.
+ */
+export type CompanionAttachmentRejectionReason =
+  | 'cross-pairing'
+  | 'hash-mismatch'
+  | 'expired'
+  | 'absent'
+  | 'transfer-interrupted'
+  | 'limit-exceeded'
+
+/** Reconnect query for the Desktop-authoritative outcome of one transmitted operation. */
+export interface CompanionQueryOperationStatusOperation {
+  type: 'query-operation-status'
+  operationId: CompanionOperationId
+}
+
+/** Operations in the implemented Companion codec slices. */
+export type CompanionOperation =
+  | CompanionSubmitPromptOperation
+  | CompanionOfferAttachmentOperation
+  | CompanionQueryOperationStatusOperation
 
 /** Desktop-authoritative mutation result. */
 export interface CompanionConfirmedResult {
@@ -55,8 +101,33 @@ export interface CompanionConfirmedResult {
   outcome: 'accepted'
 }
 
-/** Results in the first implemented Companion codec slice. */
-export type CompanionResult = CompanionConfirmedResult
+/** Explicit Desktop rejection of one offered attachment. */
+export interface CompanionAttachmentRejectedResult {
+  type: 'attachment-rejected'
+  operationId: CompanionOperationId
+  reason: CompanionAttachmentRejectionReason
+}
+
+/** Reconnect answer returning the original committed result for one operation id. */
+export interface CompanionCommittedStatusResult {
+  type: 'status'
+  operationId: CompanionOperationId
+  committed: CompanionConfirmedResult
+}
+
+/** Reconnect answer stating the queried operation id committed nothing. */
+export interface CompanionAbsentStatusResult {
+  type: 'status'
+  operationId: CompanionOperationId
+  absent: true
+}
+
+/** Results in the implemented Companion codec slices. */
+export type CompanionResult =
+  | CompanionConfirmedResult
+  | CompanionAttachmentRejectedResult
+  | CompanionCommittedStatusResult
+  | CompanionAbsentStatusResult
 
 /** Bounded plain-text transcript entry approved for Mobile presentation. */
 export interface CompanionTextTranscriptEntry {

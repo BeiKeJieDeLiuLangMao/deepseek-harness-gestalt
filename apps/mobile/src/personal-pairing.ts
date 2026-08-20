@@ -7,12 +7,22 @@ import {
   type PairingCompletionId,
   type PairingCompletionView,
   type PendingPairingId,
+  type PersonalPairingId,
   type RelayCredentialGrant,
 } from '@deepseek-ai/dsh-remote-access'
 import type { PlatformAccountId } from '@deepseek-ai/dsh-platform-account'
 import type { PlatformAccountInstallation } from '@deepseek-ai/dsh-platform-account-client'
 import type { RemoteAccessTransport } from '@deepseek-ai/dsh-remote-access-client'
+import { parseCompanionPushToken, type RelayRouteId } from '@deepseek-ai/dsh-remote-protocol'
 import type { MobilePairingActions, MobilePairingSnapshot } from './personal-pairing-model.ts'
+
+/** Local push-token owner cleared on unpair; implemented by CompanionForegroundRuntime. */
+interface MobilePairingPushOwner {
+  getState(): { token: string | undefined }
+  clearToken(): void
+  forgetConnection(): void
+  releasePairing(): Promise<void>
+}
 
 /** Mobile handshake half selected by the reviewed product composition. */
 export interface MobilePairingHandshakeClient {
@@ -22,8 +32,25 @@ export interface MobilePairingHandshakeClient {
   acceptDesktopHandshake(desktopHandshake: Uint8Array): Promise<void>
   /** Open Mobile-specific Relay authority sealed to this Personal Pairing. */
   openRelayAuthority?(sealedAuthority: Uint8Array): Promise<RelayCredentialGrant>
+  /**
+   * Export the independent pairing key retained after the Desktop handshake.
+   * @returns copy of at least 32 bytes, or undefined before activation.
+   */
+  exportPairingKeyMaterial?(): Uint8Array | undefined
   /** Wipe any retained pairing key material on this installation. */
   wipe?(): void | Promise<void>
+}
+
+/** Retention sink for confirmed Personal Pairing key material. */
+export interface MobilePairingKeyRetention {
+  /**
+   * Retain the independent key material of one confirmed Personal Pairing.
+   * @param pairingId - confirmed Personal Pairing identity.
+   * @param material - at least 32 bytes of pairing key material.
+   */
+  retain(pairingId: PersonalPairingId, material: Uint8Array): void
+  /** Zero every retained pairing key. */
+  wipe(): void
 }
 
 /** Native QR scanner returning the exact full invitation payload. */
@@ -69,7 +96,15 @@ export interface MobilePairingControllerOptions {
   scanner: MobilePairingQrScanner
   device: { name: string; platform: 'ios' | 'android' }
   /** Product Relay lifecycle receiving only Mobile-specific authority. */
-  relay?: { configure(grant: RelayCredentialGrant): void | Promise<void>; start(): Promise<void>; stop(): Promise<void> }
+  relay?: {
+    configure(grant?: RelayCredentialGrant): void | Promise<void>
+    start(): Promise<void>
+    stop(): Promise<void>
+  }
+  /** Process-owned push token owner cleared on unpair. */
+  companion?: MobilePairingPushOwner
+  /** Optional retention sink receiving confirmed pairing key material for pairing-scoped consumers. */
+  pairingKeys?: MobilePairingKeyRetention
   schedule?: (task: () => void, delayMs: number) => ReturnType<typeof setTimeout>
   pollIntervalMs?: number
   now?: () => number
@@ -88,6 +123,7 @@ export class MobilePairingController implements MobilePairingActions {
   private accountId: PlatformAccountId | undefined
   private active = true
   private lifecycleBarrier: Promise<void> = Promise.resolve()
+  private pairedRouteId: RelayRouteId | undefined
 
   /** @param options - Account authority, Remote Access transport, reviewed handshake, and QR scanner. */
   constructor(private readonly options: MobilePairingControllerOptions) {
@@ -120,8 +156,16 @@ export class MobilePairingController implements MobilePairingActions {
       this.assertActiveAccount()
       this.attempt?.mobileHandshake.fill(0)
       this.clearAttempt()
+      await this.clearPushToken()
       await this.options.handshake.wipe?.()
-      await this.options.relay?.stop()
+      this.options.pairingKeys?.wipe()
+      if (this.options.companion !== undefined) {
+        await this.options.companion.releasePairing()
+      }
+      if (this.options.relay !== this.options.companion) {
+        await this.options.relay?.configure(undefined)
+        await this.options.relay?.stop()
+      }
       this.publish({ status: 'ready' })
     })
   }
@@ -251,8 +295,34 @@ export class MobilePairingController implements MobilePairingActions {
     })()
   }
 
+  private async clearPushToken(): Promise<void> {
+    const token = this.options.companion?.getState().token
+    const routeId = this.pairedRouteId
+    this.pairedRouteId = undefined
+    this.options.companion?.clearToken()
+    if (token === undefined || routeId === undefined) return
+    try {
+      await this.options.transport.unregisterPushToken({
+        authentication: await this.options.installation.authorizeCurrentInstallation(),
+        routeId,
+        token: parseCompanionPushToken(token),
+      })
+    } catch {
+      // Local token is already cleared; an unreachable or deferred HTTP route must not block unpair.
+    }
+  }
+
   private resetAccountScope(): void {
     this.clearAttempt()
+    this.pairedRouteId = undefined
+    this.options.companion?.clearToken()
+    this.options.companion?.forgetConnection()
+    if (this.options.companion !== undefined) {
+      void this.options.companion.releasePairing()
+    }
+    if (this.options.relay !== this.options.companion) {
+      void this.options.relay?.configure(undefined)
+    }
     this.accountId = undefined
     this.snapshot = { status: 'ready' }
   }
@@ -299,12 +369,24 @@ export class MobilePairingController implements MobilePairingActions {
           if (status.status === 'pending') {
             this.scheduleStatus(pendingPairingId)
           } else if (status.status === 'paired') {
+            if (this.options.pairingKeys !== undefined) {
+              if (this.options.handshake.exportPairingKeyMaterial === undefined) {
+                throw new Error('Mobile Pairing handshake cannot export pairing key material')
+              }
+              const material = this.options.handshake.exportPairingKeyMaterial()
+              if (material === undefined) {
+                throw new Error('Mobile Pairing handshake exported no pairing key material')
+              }
+              this.options.pairingKeys.retain(status.pairingId, material)
+              material.fill(0)
+            }
             if (status.sealedRelayAuthority !== undefined) {
               if (this.options.handshake.openRelayAuthority === undefined || this.options.relay === undefined) {
                 throw new Error('Mobile Relay authority has no product lifecycle owner')
               }
               const grant = await this.options.handshake.openRelayAuthority(status.sealedRelayAuthority)
               this.assertActiveAccount()
+              this.pairedRouteId = grant.routeId
               await this.options.relay.configure(grant)
               this.assertActiveAccount()
               await this.options.relay.start()

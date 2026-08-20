@@ -2,9 +2,9 @@
 
 [English](README.md) | 中文
 
-面向公开远程访问服务的 Desktop 与 Mobile 鉴权 HTTP 传输。每次操作转发一份当前安装的账号证明，并在暴露带品牌的个人配对标识符前校验所有 JSON 响应。
+面向公开远程访问服务的 Desktop 与 Mobile 鉴权 HTTP 传输。每次操作转发一份当前安装的账号证明，并在暴露带品牌的个人配对标识符前校验所有 JSON 响应。`QUOTA` 与 `PLATFORM_CAPACITY` 会把整数秒 `retryAfter` 保留在抛出的 `RemoteAccessError` 上。
 
-客户端不实现握手，也不存储配对密钥。产品控制器提供已登录账号的鉴权信息，并使用平台部署选择、已经独立评审的服务端握手提供方。确认后，Mobile pairing controller 通过密码 adapter 打开封装的 endpoint 专属 Relay authority，并配置 `MobileRelayEndpointLifecycle`；它不会收到 Desktop credential。
+客户端不实现握手，也不存储配对密钥。产品控制器提供已登录账号的鉴权信息，并使用平台部署选择、已经独立评审的服务端握手提供方。确认后，Mobile pairing controller 通过密码 adapter 打开封装的 endpoint 专属 Relay authority，并配置 `MobileRelayEndpointLifecycle`；`unpair()` 会调用 `configure(undefined)`，因此该生命周期不再持有 authority。控制器不会收到 Desktop credential。
 
 `RemoteRelayEndpointController` 通过部署的单个 non-sticky Platform endpoint，拥有一条出站 Mobile 或 Desktop WSS 生命周期。每条物理连接都取得新的 attachment id，并使用当前不透明 route id 与可轮换高熵凭据完成鉴权。控制器会等待匹配的 Platform ready acknowledgement，再执行 resync；stop 会取消凭据获取与 DNS/TLS 建连，并通过 all-settled 清理观察 socket 与 heartbeat teardown。socket 丢失后会在已校验的重试延迟后建立新连接；Desktop 在每次 attachment 后发送权威加密 resync。断开期间发送会以 `REMOTE_OFFLINE` 失败，且绝不保留或重放。
 

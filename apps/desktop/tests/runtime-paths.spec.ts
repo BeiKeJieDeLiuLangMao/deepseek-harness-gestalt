@@ -1,3 +1,4 @@
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { isElectronExecutable, resolveDesktopRuntime } from '../src/runtime-paths.ts'
 
@@ -8,8 +9,12 @@ describe('resolveDesktopRuntime', () => {
       resourcesPath: '/App/Resources',
       moduleUrl: 'file:///unused/main.ts',
     })
-    expect(paths.node).toBe('/App/Resources/node/bin/node')
-    expect(paths.args[0]).toBe('/App/Resources/dsh/lib/bin.js')
+    // Windows extraResources carry a bare node.exe; POSIX carries bin/node.
+    const nodeExecutable = process.platform === 'win32'
+      ? join('/App/Resources', 'node', 'node.exe')
+      : join('/App/Resources', 'node', 'bin', 'node')
+    expect(paths.node).toBe(nodeExecutable)
+    expect(paths.args[0]).toBe(join('/App/Resources', 'dsh', 'lib', 'bin.js'))
     expect(paths.args).toContain('--host')
     expect(paths.args).toContain('127.0.0.1')
     expect(paths.args).toContain('--port')

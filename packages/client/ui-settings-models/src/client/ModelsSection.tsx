@@ -325,7 +325,7 @@ function Loaded({ injected }: { injected: ModelsSectionInjected }): ReactNode {
         {listed.map((row) => {
           const target = targetOf(row)
           const namespace = state.namespaces.get(target.settingsNs)
-          /* v8 ignore next -- the join marks a row configured only when its namespace resolved */
+          /* v8 ignore next -- a listed row's settings namespace is mounted with its provider */
           if (namespace === undefined) return null
           if (needsSetup(row, anyUsable) && !dismissedSetup.has(row.entry.provider)) {
             // First-run posture: the provider exists but has no key — the

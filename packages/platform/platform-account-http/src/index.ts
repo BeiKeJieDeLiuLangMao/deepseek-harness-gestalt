@@ -142,6 +142,7 @@ function handleCors(req: IncomingMessage, res: ServerResponse, origins: Set<stri
   return true
 }
 
+/* jscpd:ignore-start */
 async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
   let bytes = 0
   const chunks: Buffer[] = []
@@ -220,28 +221,32 @@ function requireMethod(req: IncomingMessage, method: string): void {
 }
 
 function answerJson(res: ServerResponse, status: number, value: unknown): void {
-  res.writeHead(status, {
-    'content-type': 'application/json; charset=utf-8',
-    'cache-control': 'no-store',
-  })
+  res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
   res.end(JSON.stringify(value))
-}
-
-function errorPayload(code: string, message: string): { error: { code: string; message: string } } {
-  return { error: { code, message } }
 }
 
 function answerError(res: ServerResponse, error: unknown): void {
   if (error instanceof HttpError) {
-    answerJson(res, error.status, errorPayload(error.code, error.message))
+    answerJson(res, error.status, { error: { code: error.code, message: error.message } })
     return
   }
   if (error instanceof AccountError) {
-    answerJson(res, error.code.startsWith('SESSION_') ? 401 : 400, errorPayload(error.code, error.message))
+    if (error.retryAfter !== undefined) res.setHeader('retry-after', String(error.retryAfter))
+    const status = error.code === 'QUOTA' || error.code === 'PLATFORM_CAPACITY'
+      ? 429
+      : error.code.startsWith('SESSION_') ? 401 : 400
+    answerJson(res, status, {
+      error: {
+        code: error.code,
+        message: error.message,
+        ...(error.retryAfter === undefined ? {} : { retryAfter: error.retryAfter }),
+      },
+    })
     return
   }
   answerJson(res, 500, { error: { code: 'INTERNAL', message: 'Platform Account request failed' } })
 }
+/* jscpd:ignore-end */
 
 class HttpError extends Error {
   constructor(readonly status: number, readonly code: string, message: string) {

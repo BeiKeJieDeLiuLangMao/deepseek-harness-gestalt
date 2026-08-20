@@ -17,7 +17,7 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 // through the service, never a value import (client bundle purity gate).
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
-import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
+import { labeledSlotTab } from './slot-tab.ts'
 // Type-only: the ctx.remote Context merge and the forwarded-event key face.
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import { AgentLoopCard } from './AgentLoopCard.tsx'
@@ -153,12 +153,7 @@ export function apply(ctx: ClientContext): void {
             tabsVersion = version
             tabsRevision = revision
             tabs = ctx.slots.entries('settings.plugins.tab')
-              .map(entry => ({
-                /* v8 ignore next -- list-slot registration requires id */
-                id: entry.options.id ?? '',
-                order: entry.options.order ?? 0,
-                label: resolveSlotLabel(entry.options.label) ?? '',
-              }))
+              .map(labeledSlotTab)
               .sort((a, b) => a.order - b.order)
           }
           return tabs

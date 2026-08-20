@@ -35,6 +35,7 @@ Platform Account capability. Providers own OAuth, installation-key binding, toke
  * Start one GitHub Authorization Code attempt for an installation key.
  * @param input - installation identity, kind, and public P-256 JWK.
  * @returns the system-browser URL and signed polling capability.
+ * @throws AccountError `PLATFORM_CAPACITY` with `retryAfter` when the shared watermark is shedding.
  */
 abstract beginLogin(input: { installationId: InstallationId installationKind: 'desktop' | 'mobile' publicKey: JsonWebKey }): Promise<LoginAttemptView>
 
@@ -47,8 +48,10 @@ abstract completeGitHubCallback(input: { code: string; state: string }): Promise
 
 /**
  * Poll one attempt using both its signed polling token and installation proof.
+ * Completing a new Installation is rejected at the tenth-plus-one live Desktop or Mobile session for that Account.
  * @param input - attempt binding and one-use proof.
  * @returns pending or the newly created Account Session.
+ * @throws AccountError `QUOTA` or `PLATFORM_CAPACITY` with `retryAfter` seconds.
  */
 abstract pollLogin(input: { attemptId: LoginAttemptId pollingToken: string proof: AccountProof }): Promise<LoginPollResult>
 
@@ -81,12 +84,15 @@ abstract signOut(input: { accessToken: string; proof: AccountProof }): Promise<v
 
 /**
  * Track a Platform connection so cross-instance session invalidation closes it.
+ * Unbound session ids are resolved through the Account backend; missing or inactive sessions are rejected.
  * @param sessionId - Account Session owning the connection.
  * @param close - idempotent close callback.
  * @returns disposer removing the tracked connection.
+ * @throws AccountError `QUOTA` with a 60-second `retryAfter` when the Account already has twenty tracked closers.
+ * @throws AccountError `SESSION_REVOKED` when the session is missing or inactive.
  */
-abstract trackConnection(sessionId: AccountSessionId, close: () => void | Promise<void>): () => void
+abstract trackConnection(sessionId: AccountSessionId, close: () => void | Promise<void>): Promise<() => void>
 ```
 
-Source: [`packages/platform/platform-account/src/index.ts:36`](../../packages/platform/platform-account/src/index.ts)
+Source: [`packages/platform/platform-account/src/index.ts:37`](../../packages/platform/platform-account/src/index.ts)
 <!-- END GENERATED cordis-surface -->

@@ -119,7 +119,7 @@ describe('ModelsSettingsStore', () => {
           secrets: [],
           revision: 0,
         }, PI_NS],
-      })) as never,
+      })),
     })
     const store = new ModelsSettingsStore(face)
     await store.load()
@@ -148,6 +148,24 @@ describe('ModelsSettingsStore', () => {
     await store.load()
     expect(store.store.getSnapshot().rows.find(row => row.entry.provider === 'deepseek-official'))
       .toMatchObject({ configured: false })
+  })
+
+  it('treats a non-empty user section as occupancy even without a secret', async () => {
+    const { face } = api({
+      describeSettings: () => Promise.resolve(ok({
+        writable: true,
+        hasDocument: true,
+        namespaces: [{
+          ...DEEPSEEK_NS,
+          user: { apiKeyEnv: 'DEEPSEEK_API_KEY' },
+          secrets: [{ path: ['apiKey'], set: false }],
+        }, PI_NS],
+      })) as never,
+    })
+    const store = new ModelsSettingsStore(face)
+    await store.load()
+    expect(store.store.getSnapshot().rows.find(row => row.entry.provider === 'deepseek-official'))
+      .toMatchObject({ configured: true })
   })
 
   it('keeps official DeepSeek configured while a secret slot is set', async () => {
@@ -321,6 +339,17 @@ describe('edge joins', () => {
     await first
     // The stale empty directory never overwrote the newer join.
     expect(store.store.getSnapshot().rows).toHaveLength(4)
+  })
+})
+
+describe('userSectionOccupied', () => {
+  it('counts leftover empty objects as vacant and every other stored value as occupancy', () => {
+    expect(userSectionOccupied(undefined)).toBe(false)
+    expect(userSectionOccupied(null)).toBe(false)
+    expect(userSectionOccupied({})).toBe(false)
+    expect(userSectionOccupied({ apiKeyEnv: 'DEEPSEEK_API_KEY' })).toBe(true)
+    expect(userSectionOccupied([])).toBe(true)
+    expect(userSectionOccupied('literal')).toBe(true)
   })
 })
 

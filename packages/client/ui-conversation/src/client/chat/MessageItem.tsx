@@ -264,8 +264,9 @@ export const UserMessageNodeView = memo(function UserMessageNodeView({
       imageLoader={loadImage}
       t={t}
       annotations={annotations}
-      addImagePin={(...args) => { return inputActions.addImagePin(...args) }}
-      updateImagePin={(...args) => { inputActions.updateImagePin(...args) }}
+      addImagePin={(imageId, imageName, x, y, note, source) =>
+        inputActions.addImagePin(imageId, imageName, x, y, note, source)}
+      updateImagePin={(id, patch) => { inputActions.updateImagePin(id, patch) }}
       actions={text => (
         <MessageIconActions
           text={text}

@@ -1186,6 +1186,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Start one GitHub Authorization Code attempt for an installation key.',
         parameters: [{ name: 'input', description: 'installation identity, kind, and public P-256 JWK.' }],
         returns: 'the system-browser URL and signed polling capability.',
+        throws: ['AccountError `PLATFORM_CAPACITY` with `retryAfter` when the shared watermark is shedding.'],
       },
       {
         signature: 'abstract completeGitHubCallback(input: { code: string; state: string }): Promise<{ completed: true }>',
@@ -1195,9 +1196,10 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'abstract pollLogin(input: { attemptId: LoginAttemptId pollingToken: string proof: AccountProof }): Promise<LoginPollResult>',
-        description: 'Poll one attempt using both its signed polling token and installation proof.',
+        description: 'Poll one attempt using both its signed polling token and installation proof. Completing a new Installation is rejected at the tenth-plus-one live Desktop or Mobile session for that Account.',
         parameters: [{ name: 'input', description: 'attempt binding and one-use proof.' }],
         returns: 'pending or the newly created Account Session.',
+        throws: ['AccountError `QUOTA` or `PLATFORM_CAPACITY` with `retryAfter` seconds.'],
       },
       {
         signature: 'abstract refresh(input: { refreshToken: string; proof: AccountProof }): Promise<AccountSessionView>',
@@ -1223,10 +1225,11 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'input', description: 'access token and installation proof.' }],
       },
       {
-        signature: 'abstract trackConnection(sessionId: AccountSessionId, close: () => void | Promise<void>): () => void',
-        description: 'Track a Platform connection so cross-instance session invalidation closes it.',
+        signature: 'abstract trackConnection(sessionId: AccountSessionId, close: () => void | Promise<void>): Promise<() => void>',
+        description: 'Track a Platform connection so cross-instance session invalidation closes it. Unbound session ids are resolved through the Account backend; missing or inactive sessions are rejected.',
         parameters: [{ name: 'sessionId', description: 'Account Session owning the connection.' }, { name: 'close', description: 'idempotent close callback.' }],
         returns: 'disposer removing the tracked connection.',
+        throws: ['AccountError `QUOTA` with a 60-second `retryAfter` when the Account already has twenty tracked closers.', 'AccountError `SESSION_REVOKED` when the session is missing or inactive.'],
       },
     ],
   },
@@ -1236,10 +1239,11 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Remote Access capability owning the complete Personal Pairing lifecycle.',
     methods: [
       {
-        signature: 'abstract createChallenge(input: { desktop: PairingAccountAuthentication rendezvousId: PairingRendezvousId }): Promise<PairingChallengeView>',
+        signature: 'abstract createChallenge(input: { desktop: PairingAccountAuthentication rendezvousId: PairingRendezvousId clientIp: string }): Promise<PairingChallengeView>',
         description: 'Create one two-minute invitation for a signed-in Desktop Installation.',
-        parameters: [{ name: 'input', description: 'Desktop authorization and opaque rendezvous identity.' }],
+        parameters: [{ name: 'input', description: 'Desktop authorization, opaque rendezvous identity, and the client IP counted toward the hourly IP quota.' }],
         returns: 'complete QR/link projection; no low-entropy fallback exists.',
+        throws: ['RemoteAccessError `QUOTA` or `PLATFORM_CAPACITY` with `retryAfter` seconds.', 'TypeError when `clientIp` is empty.'],
       },
       {
         signature: 'abstract getMobileAccessState(desktop: PairingAccountAuthentication): Promise<MobileAccessState>',
@@ -1290,9 +1294,10 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'abstract confirmPairing(input: { desktop: PairingAccountAuthentication pendingPairingId: PendingPairingId }): Promise<PersonalPairingView>',
-        description: 'Activate one pending pairing after the Desktop user compares authentication words.',
+        description: 'Activate one pending pairing after the Desktop user compares authentication words. Rejected at the fifty-first live Personal Pairing for the Account, before handshake activation.',
         parameters: [{ name: 'input', description: 'confirming Desktop and pending identity.' }],
         returns: 'independently keyed Companion-only Device Principal.',
+        throws: ['RemoteAccessError `QUOTA` with a 60-second `retryAfter` when the Account pairing ceiling is full.'],
       },
       {
         signature: 'abstract cancelChallenge(input: { desktop: PairingAccountAuthentication challengeId: PairingChallengeId }): Promise<void>',
@@ -1303,6 +1308,100 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         signature: 'abstract rejectPairing(input: { desktop: PairingAccountAuthentication pendingPairingId: PendingPairingId }): Promise<void>',
         description: 'Reject one pending handshake; repeated rejection is a no-op.',
         parameters: [{ name: 'input', description: 'owning Desktop authorization and pending identity.' }],
+      },
+      {
+        signature: 'abstract registerPushToken(input: { mobile: PairingAccountAuthentication registration: PushTokenRegistration }): Promise<void>',
+        description: 'Bind one device push token to the Mobile Installation\'s confirmed pairing route.',
+        parameters: [{ name: 'input', description: 'Mobile authorization and the registration.' }],
+      },
+      {
+        signature: 'abstract unregisterPushToken(input: { mobile: PairingAccountAuthentication routeId: RelayRouteId token: CompanionPushToken }): Promise<void>',
+        description: 'Drop exactly one device push token, as on Mobile unpair.',
+        parameters: [{ name: 'input', description: 'Mobile authorization, route, and exact token.' }],
+      },
+      {
+        signature: 'abstract publishPushHint(input: { desktop: PairingAccountAuthentication hint: CompanionPushHint }): Promise<CompanionPushReport>',
+        description: 'Fan one Desktop-confirmed content-free hint out to the route\'s live tokens.',
+        parameters: [{ name: 'input', description: 'Desktop authorization and the generic hint.' }],
+        returns: 'delivery and pruning counts.',
+      },
+      {
+        signature: 'abstract admitAttachmentBlob(input: { owner: PairingAccountAuthentication bytes: number }): Promise<{ reservationId: string }>',
+        description: 'Reserve one expiring ciphertext blob against the open-registration ceilings.',
+        parameters: [{ name: 'input', description: 'current-installation authorization and declared ciphertext size.' }],
+        returns: 'opaque reservation id released by {@link releaseAttachmentBlob}.',
+        throws: ['RemoteAccessError `QUOTA` or `PLATFORM_CAPACITY` with `retryAfter` seconds.', 'TypeError when `bytes` is not a non-negative integer.'],
+      },
+      {
+        signature: 'abstract releaseAttachmentBlob(input: { owner: PairingAccountAuthentication reservationId: string }): Promise<void>',
+        description: 'Release one blob reservation after receipt, expiry, or revocation.',
+        parameters: [{ name: 'input', description: 'current-installation authorization and reservation id.' }],
+        throws: ['TypeError when the reservation is missing or owned by another Account.'],
+      },
+      {
+        signature: 'abstract emitPushHint(owner: PairingAccountAuthentication): Promise<void>',
+        description: 'Admit one content-free push hint against the daily account ceiling. Capacity shedding does not reject push hints.',
+        parameters: [{ name: 'owner', description: 'current-installation authorization.' }],
+        throws: ['RemoteAccessError `QUOTA` with remaining-window `retryAfter` seconds.'],
+      },
+    ],
+  },
+  {
+    key: 'remoteAttachmentAuthority',
+    summary: 'Pairing scope seam: the Personal Pairing layer authenticates one HTTPS request to exactly one Personal Pairing.',
+    description: 'Pairing scope seam: the Personal Pairing layer authenticates one HTTPS request to exactly one Personal Pairing. Implementations never see attachment bytes.',
+    methods: [
+      {
+        signature: 'authenticate(input: { headers: IncomingHttpHeaders }): Promise<PersonalPairingId>',
+        description: 'Authenticate one attachment request to its owning Personal Pairing.',
+        parameters: [{ name: 'input', description: 'complete untrusted request headers.' }],
+        returns: 'the Personal Pairing whose scope governs the capability.',
+      },
+    ],
+  },
+  {
+    key: 'remoteAttachments',
+    summary: 'Platform attachment blob store: retains ciphertext and metadata only, bounded per blob and in total, scoped to exactly one Personal Pairing, single-use, and expiring.',
+    description: 'Platform attachment blob store: retains ciphertext and metadata only, bounded per blob and in total, scoped to exactly one Personal Pairing, single-use, and expiring.',
+    methods: [
+      {
+        signature: 'abstract readonly maxBlobBytes: number',
+        description: 'Per-blob ciphertext ceiling this deployment enforces; never above the protocol ceiling.',
+        parameters: [],
+      },
+      {
+        signature: 'abstract readonly capabilityLifetimeMs: number',
+        description: 'Capability and blob lifetime this deployment enforces; never above the protocol default.',
+        parameters: [],
+      },
+      {
+        signature: 'abstract publish(input: { pairingId: PersonalPairingId; ciphertext: Uint8Array; now: number }): Promise<RemoteAttachmentGrant>',
+        description: 'Retain one pairing-scoped ciphertext blob and issue its one-time capability.',
+        parameters: [{ name: 'input', description: 'owning Personal Pairing, endpoint-encrypted ciphertext, and current time.' }],
+        returns: 'the capability grant Mobile forwards to Desktop.',
+      },
+      {
+        signature: 'abstract inspect(input: { pairingId: PersonalPairingId; capability: AttachmentCapability; now: number }): Promise<Uint8Array>',
+        description: 'Return a copy of one retained ciphertext without consuming the capability.',
+        parameters: [{ name: 'input', description: 'requesting Personal Pairing, one-time capability, and current time.' }],
+        returns: 'a copy of the retained ciphertext bytes.',
+      },
+      {
+        signature: 'abstract consume(input: { pairingId: PersonalPairingId; capability: AttachmentCapability; now: number }): Promise<Uint8Array>',
+        description: 'Exchange one capability for its ciphertext exactly once, then remove both.',
+        parameters: [{ name: 'input', description: 'requesting Personal Pairing, one-time capability, and current time.' }],
+        returns: 'a copy of the retained ciphertext bytes.',
+      },
+      {
+        signature: 'abstract revoke(input: { pairingId: PersonalPairingId; capability: AttachmentCapability }): Promise<void>',
+        description: 'Remove one blob and its capability regardless of remaining lifetime.',
+        parameters: [{ name: 'input', description: 'owning Personal Pairing and the capability whose blob is revoked. A pairing mismatch fails explicitly; an unknown capability is a no-op.' }],
+      },
+      {
+        signature: 'abstract observe(): readonly RemoteAttachmentBlob[]',
+        description: 'Project every retained blob for Platform-side operations.',
+        parameters: [],
+        returns: 'copies of ciphertext and metadata only; no plaintext exists on this side of the boundary.',
       },
     ],
   },
@@ -3179,6 +3278,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface AtScheduleRecord {\n    readonly id: ScheduleId;\n    readonly kind: \'at\';\n    readonly prompt: string;\n    readonly scheduledAt: string;\n}',
   },
   {
+    name: 'AttachmentCapability',
+    declaration: 'export type AttachmentCapability = Branded<\'AttachmentCapability\'>;',
+  },
+  {
     name: 'AttachmentId',
     declaration: 'export type AttachmentId = Branded<\'AttachmentId\'>;',
   },
@@ -3437,6 +3540,22 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'CompactionTrigger',
     declaration: 'export type CompactionTrigger = \'pressure\' | \'context-overflow\';',
+  },
+  {
+    name: 'CompanionPushCategory',
+    declaration: 'export type CompanionPushCategory = (typeof COMPANION_PUSH_CATEGORIES)[number];',
+  },
+  {
+    name: 'CompanionPushHint',
+    declaration: 'export interface CompanionPushHint {\n    category: CompanionPushCategory;\n    routeId: RelayRouteId;\n    sessionRef?: string;\n}',
+  },
+  {
+    name: 'CompanionPushReport',
+    declaration: 'export interface CompanionPushReport {\n    delivered: number;\n    pruned: number;\n}',
+  },
+  {
+    name: 'CompanionPushToken',
+    declaration: 'export type CompanionPushToken = Branded<\'CompanionPushToken\'>;',
   },
   {
     name: 'ConfinedArgv',
@@ -4271,6 +4390,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface PruneResult {\n    readonly pruned: readonly PrunedEntry[];\n    readonly charsRemoved: number;\n}',
   },
   {
+    name: 'PushPlatform',
+    declaration: 'export type PushPlatform = \'ios\' | \'android\';',
+  },
+  {
+    name: 'PushTokenRegistration',
+    declaration: 'export interface PushTokenRegistration {\n    routeId: RelayRouteId;\n    platform: PushPlatform;\n    token: CompanionPushToken;\n}',
+  },
+  {
     name: 'ReadFileLine',
     declaration: 'export interface ReadFileLine {\n    number: number;\n    text: string;\n}',
   },
@@ -4317,6 +4444,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'RelayRouteId',
     declaration: 'export type RelayRouteId = Branded<\'RelayRouteId\'>;',
+  },
+  {
+    name: 'RemoteAttachmentBlob',
+    declaration: 'export interface RemoteAttachmentBlob {\n    capability: AttachmentCapability;\n    pairingId: PersonalPairingId;\n    ciphertext: Uint8Array;\n    expiresAt: number;\n}',
+  },
+  {
+    name: 'RemoteAttachmentGrant',
+    declaration: 'export interface RemoteAttachmentGrant {\n    capability: AttachmentCapability;\n    byteLength: number;\n    expiresAt: number;\n}',
   },
   {
     name: 'RemoteRelayAttachment',

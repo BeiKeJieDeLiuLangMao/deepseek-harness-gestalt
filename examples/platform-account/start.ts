@@ -94,7 +94,7 @@ export async function apply(ctx: Context): Promise<void> {
   console.log(`ACCOUNT githubId=${String(session.account.githubId)} login=${session.account.githubLogin}`)
   console.log(`SESSION accessMinutes=${String((session.accessExpiresAt - now) / 60_000)} refreshDays=${String((session.refreshExpiresAt - now) / 86_400_000)}`)
   let closed = false
-  second.trackConnection(session.sessionId, () => { closed = true })
+  await second.trackConnection(session.sessionId, () => { closed = true })
   await first.signOut({
     accessToken: session.accessToken,
     proof: proof(pair.privateKey, 'sign-out', hash(session.accessToken), now),

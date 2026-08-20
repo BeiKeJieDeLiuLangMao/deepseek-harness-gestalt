@@ -413,14 +413,14 @@ export function apply(ctx: Context): void {
               expectedRevision: number,
             ): Promise<unknown>
           } | undefined
-          const remoteFocus = remote?.focus
+          const listedFocus = remote?.focus?.bind(remote)
           focusListedBrowserTab({
             snapshot: session.getSnapshot(),
             listing: session.projections.faceOf('browserWorkspace').getSnapshot(),
             callId: target.callId,
-            focus: remoteFocus === undefined
+            focus: listedFocus === undefined
               ? undefined
-              : (tab, revision) => remoteFocus(sessionId, tab, revision),
+              : (tab, revision) => listedFocus(sessionId, tab, revision),
           })
         },
         fileMentions: owner => ctx.get('chatFileMentions')?.forClosing(owner),

@@ -15,7 +15,7 @@ describe('invariant companion', () => {
     const registered: string[] = []
     apply({
       inject: (_deps: string[], fn: (ctx: { settings: { register: (ns: string) => void } }) => void) => {
-        fn({ settings: { register: (ns: string) => { registered.push(String(ns)) } } })
+        fn({ settings: { register: (ns: string) => { registered.push(ns) } } })
       },
     } as never)
     expect(registered).toEqual(['workspace-reference'])
