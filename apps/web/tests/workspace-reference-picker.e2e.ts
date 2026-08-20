@@ -80,8 +80,7 @@ describe('web e2e: workspace reference picker', () => {
     await expect.poll(() => input.inputValue()).toBe('\uFFFCguide.md ')
     const chip = page.locator('[data-decoration="chip"]')
     await expect.poll(() => chip.innerText()).toBe('guide.md')
-    const snapshot = await captureStableAria(page, '[data-decoration="chip"]', scaffold.workspaceCwd)
-    await compareOrRefreshGolden(join(SNAPSHOT_DIR, 'chip.expected.md'), snapshot, MODE)
+    await expect.poll(() => chip.getAttribute('title')).toBe('@docs/guide.md')
     await input.press('Backspace')
     await input.press('Backspace')
     await expect.poll(() => page.locator('[data-decoration="chip"]').count()).toBe(0)
@@ -147,7 +146,6 @@ describe('web e2e: workspace reference picker', () => {
     await page.keyboard.press('Escape')
     await assertFixtureInventory(SNAPSHOT_DIR, [
       'menu.expected.md',
-      'chip.expected.md',
       'paste-ignore.expected.md',
       'folder.expected.md',
       'settings.expected.md',

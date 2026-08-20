@@ -685,6 +685,7 @@ export function InputBar({
             data-occurrence={chip.occurrenceId}
             data-invalid={chip.invalid || undefined}
             title={chip.title}
+            aria-label={chip.title}
           >
             <span className={css.chipLabel}>{chip.label}</span>
           </span>,
