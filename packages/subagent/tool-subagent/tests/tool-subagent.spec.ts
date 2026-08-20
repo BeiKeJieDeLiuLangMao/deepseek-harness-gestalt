@@ -399,11 +399,16 @@ describe('dsh-tool-subagent', () => {
     expect(text(result)).toContain('cannot apply a child LLM route')
   })
 
-  it.each(['', '   '])('rejects an empty LLM route field %j before start', async (value) => {
+  it.each([
+    ['provider', '', 'adapter route'],
+    ['provider', '   ', 'adapter route'],
+    ['model', '', 'model id'],
+    ['model', '   ', 'model id'],
+  ] as const)('rejects an empty LLM %s %j before start', async (field, value, kind) => {
     const ctx = await setup({ provider: 'mock' })
-    const result = await callSubagent(ctx, { description: 'd', prompt: 'p', model: value })
+    const result = await callSubagent(ctx, { description: 'd', prompt: 'p', [field]: value })
     expect(result.isError).toBe(true)
-    expect(text(result)).toContain('non-empty')
+    expect(text(result)).toContain(`${field} must be a non-empty LLM ${kind}`)
   })
 
   it('defaults toolName and omits agentOptions when apply() is called directly (schema bypass)', async () => {
