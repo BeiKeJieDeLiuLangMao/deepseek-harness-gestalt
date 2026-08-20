@@ -153,7 +153,7 @@ describe.skipIf(MODE === 'record')('web e2e: durable workflow run in Chat', () =
       document.body.removeAttribute('data-ds-dark-theme')
     })
     await page.setViewportSize({ width: 1280, height: 800 })
-
+    await member.waitFor({ timeout: 15_000 })
     await member.click()
     await page.getByText(CHILD_PROMPT, { exact: true }).waitFor({ timeout: 15_000 })
 

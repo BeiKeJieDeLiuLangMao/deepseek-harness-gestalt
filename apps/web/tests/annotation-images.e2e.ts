@@ -204,7 +204,10 @@ describe('web e2e: composer and history image annotation pins', () => {
     expect(userImageBlocks(events)).toEqual([
       { name: PNG_NAME, mediaType: 'image/png', bytes: PNG_BYTES.byteLength },
     ])
-    await expect(page.getByRole('button', { name: '1 annotation' }).count()).resolves.toBe(0)
+    await expect.poll(
+      () => page.getByRole('button', { name: '1 annotation' }).count(),
+      { timeout: 5_000 },
+    ).toBe(0)
 
     const historyImage = page.getByRole('button', { name: `${PNG_NAME}, click to view original` }).last()
     await historyImage.waitFor({ timeout: 10_000 })

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, waitFor, within } from '@testing-library/react'
 import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import type { MessageImagesProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { ImageGallery, MessageImage } from '../src/MessageImage.tsx'
@@ -132,6 +132,71 @@ describe('MessageImage', () => {
     reject?.(new Error('late failure'))
     await Promise.resolve()
   })
+
+  it('forwards a pin overlay into the original-image preview', async () => {
+    const onPlace = vi.fn()
+    const onSelect = vi.fn()
+    const onCloseEditor = vi.fn()
+    const load = vi.fn().mockResolvedValue('blob:pinned')
+    const view = render(
+      <MessageImage
+        attachment={attachment}
+        load={load}
+        variant="single"
+        labels={labels}
+        pinOverlay={{
+          pins: [{ id: 'pin-1', x: 20, y: 30, index: 1 }],
+          modeLabel: '标注图片',
+          exitLabel: '退出标注',
+          refuse: '动画 GIF 不能放置标注点',
+          onPlace,
+          onSelect,
+          onCloseEditor,
+          editor: <span>note editor</span>,
+        }}
+      />,
+    )
+    await waitFor(() => { expect(view.getByAltText('history.png')).toBeTruthy() })
+    fireEvent.click(view.getByRole('button', { name: 'history.png，点击查看原图' }))
+    expect(view.getByText('note editor')).toBeTruthy()
+    expect(view.getByRole('alert').textContent).toBe('动画 GIF 不能放置标注点')
+    fireEvent.click(view.getByRole('button', { name: '标注图片' }))
+    expect(view.getByRole('button', { name: '退出标注' })).toBeTruthy()
+    fireEvent.click(view.getByRole('button', { name: 'Pin 1' }))
+    expect(onSelect).toHaveBeenCalledWith('pin-1')
+    fireEvent.click(view.getByRole('button', { name: '关闭原图预览' }))
+    expect(onCloseEditor).toHaveBeenCalled()
+  })
+
+  it('places a pin when annotate mode is on and no refuse is set', async () => {
+    const onPlace = vi.fn()
+    const load = vi.fn().mockResolvedValue('blob:place')
+    const view = render(
+      <MessageImage
+        attachment={attachment}
+        load={load}
+        variant="single"
+        labels={labels}
+        pinOverlay={{
+          pins: [],
+          modeLabel: '标注图片',
+          exitLabel: '退出标注',
+          onPlace,
+          onSelect: vi.fn(),
+        }}
+      />,
+    )
+    await waitFor(() => { expect(view.getByAltText('history.png')).toBeTruthy() })
+    fireEvent.click(view.getByRole('button', { name: 'history.png，点击查看原图' }))
+    fireEvent.click(view.getByRole('button', { name: '标注图片' }))
+    const preview = view.getByRole('dialog', { name: '原图预览' })
+    const image = within(preview).getByRole('img', { name: 'history.png' })
+    vi.spyOn(image, 'getBoundingClientRect').mockReturnValue({
+      width: 100, height: 100, top: 0, left: 0, bottom: 100, right: 100, x: 0, y: 0, toJSON: () => ({}),
+    })
+    fireEvent.click(image, { clientX: 25, clientY: 40 })
+    expect(onPlace).toHaveBeenCalled()
+  })
 })
 
 describe('ImageGallery', () => {
@@ -155,6 +220,36 @@ describe('ImageGallery', () => {
       <ImageGallery images={[{ attachment }, { attachment }, { attachment }]} load={load} align="end" labels={labels} />,
     )
     expect(several.container.querySelectorAll('[data-variant="tile"]')).toHaveLength(3)
+  })
+
+  it('forwards a pin overlay only for images that have one', async () => {
+    const load = vi.fn().mockResolvedValue('blob:gallery-pin')
+    const other = { ...attachment, name: 'other.png' }
+    const view = render(
+      <ImageGallery
+        images={[{ attachment }, { attachment: other }]}
+        load={load}
+        align="start"
+        labels={labels}
+        pinOverlayFor={item => (
+          item.name === 'history.png'
+            ? {
+              pins: [],
+              modeLabel: '标注图片',
+              exitLabel: '退出标注',
+              onPlace: () => {},
+              onSelect: () => {},
+            }
+            : undefined
+        )}
+      />,
+    )
+    await waitFor(() => { expect(view.getAllByAltText(/png$/)).toHaveLength(2) })
+    fireEvent.click(view.getByRole('button', { name: 'history.png，点击查看原图' }))
+    expect(view.getByRole('button', { name: '标注图片' })).toBeTruthy()
+    fireEvent.click(view.getByRole('button', { name: '关闭原图预览' }))
+    fireEvent.click(view.getByRole('button', { name: 'other.png，点击查看原图' }))
+    expect(view.queryByRole('button', { name: '标注图片' })).toBeNull()
   })
 
   it('renders the conversation slot entry with translated labels', async () => {
@@ -216,5 +311,21 @@ describe('ImageGallery', () => {
     await waitFor(() => { expect(view.getByAltText('history.png')).toBeTruthy() })
     expect(view.getByRole('button', { name: 'history.png，点击查看原图' })).toBeTruthy()
     expect(view.container.querySelector('[data-align="end"]')).not.toBeNull()
+    view.unmount()
+    const withOverlay = render(
+      <MessageImages
+        {...props}
+        pinOverlayFor={() => ({
+          pins: [],
+          modeLabel: '标注图片',
+          exitLabel: '退出标注',
+          onPlace: () => {},
+          onSelect: () => {},
+        })}
+      />,
+    )
+    await waitFor(() => { expect(withOverlay.getByAltText('history.png')).toBeTruthy() })
+    fireEvent.click(withOverlay.getByRole('button', { name: 'history.png，点击查看原图' }))
+    expect(withOverlay.getByRole('button', { name: '标注图片' })).toBeTruthy()
   })
 })

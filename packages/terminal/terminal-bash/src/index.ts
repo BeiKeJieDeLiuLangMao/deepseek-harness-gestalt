@@ -158,10 +158,9 @@ async function startupSession(
       if (result.waitReason === 'timeout') throw new Error('PTY shell did not reach readiness before startup timeout')
       viewport = result.viewport
       const scrollback = session.read({ offset: 0, count: 20 }).text
-      // stdin_read already required the OSC marker plus CONTROLLED_PROMPT
-      // tail; a later space-only cursor row must not undo that. inferred_idle
-      // still needs the last non-whitespace line to be exactly the prompt.
-      if (result.waitReason === 'stdin_read' || showsInstalledControlledPrompt(viewport, scrollback)) break
+      // stdin_read can also come from acceptsStdinWait before the prompt
+      // function is installed; only a last-line exact match is ready.
+      if (showsInstalledControlledPrompt(viewport, scrollback)) break
       if (Date.now() - started >= timeoutMs) {
         throw new Error('PTY shell did not reach readiness before startup timeout')
       }

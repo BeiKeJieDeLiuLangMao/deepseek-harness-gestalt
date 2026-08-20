@@ -332,9 +332,13 @@ describe('web e2e: empty-draft Cmd+Enter steers the whole queue', () => {
     await input.fill(PROMPT)
     await input.press('Enter')
     // Official InputBar drops Enter while the first submit is still
-    // adjudicating. Wait until the ordinary session is running so the next
-    // two Enters queue instead of vanishing.
-    await page.getByRole('button', { name: 'Stop generating' }).waitFor({ timeout: 10_000 })
+    // adjudicating. Leave that window before the two queue Enters, but do
+    // not wait for Stop generating: the question composer then replaces
+    // the textarea and the second fill cannot land.
+    await expect.poll(
+      () => input.getAttribute('data-phase'),
+      { timeout: 10_000 },
+    ).not.toMatch(/^(?:submitting|adjudicating)$/)
     await input.fill(STEER_ONE)
     await input.press('Enter')
     await input.fill(STEER_TWO)

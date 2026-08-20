@@ -10,7 +10,7 @@ File/Session Reference 同步到官方 Host `@path` / `file-reference-local` 与
 
 ## Decision
 
-**pwsh 就绪是末行精确匹配，外加 spawn 墙。** `terminal-bash` 只把视口（视口为空时用 scrollback）最新非空白行等于 `CONTROLLED_PROMPT` 当作已安装。PSReadLine 只含空格的光标行不是提示符。`stdin_read` 已经要求 OSC 标记加上该尾，后面多出来的行不得推翻它。剥掉 setup 源码后再 `includes()` 仍会接受 `setup-echo dsh> `；真实提示符还没打出时，每次 follow-up `startSend` 会重置自己的期限，于是 `inferred_idle` 饿死 `timeout`。现在由 spawn 的 `timeoutMs` 约束整个循环。ACP 与 loader 组合把 `idleSilenceMs`（以及会话交接处的 `handoffGraceMs`）加长，避免横幅到提示符的静默抢先结束。[persistent pwsh 笔记](../architecture/2026-08-11-pwsh-persistent-pty.md) 仍拥有双层 prompt 安装。
+**pwsh 就绪是末行精确匹配，外加 spawn 墙。** `terminal-bash` 只把视口（视口为空时用 scrollback）最新非空白行等于 `CONTROLLED_PROMPT` 当作已安装。PSReadLine 只含空格的光标行不是提示符。`stdin_read` 不是启动捷径：`acceptsStdinWait` 可以在 prompt 函数装好之前就以该原因结束，把它当就绪会把 setup 残片留在 scrollback，后续 `pwsh` 调用于是返回被截断的第一条命令。剥掉 setup 源码后再 `includes()` 仍会接受 `setup-echo dsh> `；真实提示符还没打出时，每次 follow-up `startSend` 会重置自己的期限，于是 `inferred_idle` 饿死 `timeout`。现在由 spawn 的 `timeoutMs` 约束整个循环。ACP 与 loader 组合把 `idleSilenceMs`（以及会话交接处的 `handoffGraceMs`）加长，避免横幅到提示符的静默抢先结束。[persistent pwsh 笔记](../architecture/2026-08-11-pwsh-persistent-pty.md) 仍拥有双层 prompt 安装。
 
 **Relay 的载荷尺寸检查使用默认 first-frame 期限。** 空闲超时断言仍启动 10 ms 服务器。oversized 帧断言另启默认 1000 ms 的服务器，避免 attach-timeout 抢在 1009 关闭之前。
 
@@ -18,7 +18,7 @@ File/Session Reference 同步到官方 Host `@path` / `file-reference-local` 与
 
 **设置金标去掉已删除的工作区引用行。** `ui-workspace-reference` 删除后导航不再有该项；期望树不再包含 `工作区引用`。
 
-**Composer 预览恢复官方 pin overlay，InputBar 保留 Gestalt 注释计数。** `InputBar` 通过 `pinOverlayFor` 传入 `useComposerImagePinOverlay`。`ComposerAttachments` 自管 pin-mode，仅在用户对 `image/gif` 切换标注时设置 `annotation.gifRefuse`。打开预览本身不显示该警告。历史 pin 保持 `source: 'history'`；Composer pin 使用默认 `composer` source。两个 overlay hook 共用 `useImagePinOverlay`，避免 jscpd 把 Composer 恢复当成 history hook 的克隆。整份取官方 `InputBar` 丢掉了 Web e2e 依赖的 `{count} annotation` 摘要与丢弃控件；计数芯片、逐条编辑/删除，以及仅有注释时启用发送，仍留在 composer 卡片上。父会话离线的 continuable 子会话在独立 Stop 旁边保留禁用的 Send。空草稿插话会等到第一次提交离开 `submitting`，之后的 Enter 才入队。
+**Composer 预览恢复官方 pin overlay，InputBar 保留 Gestalt 注释计数。** `InputBar` 通过 `pinOverlayFor` 传入 `useComposerImagePinOverlay`。`ComposerAttachments` 自管 pin-mode，仅在用户对 `image/gif` 切换标注时设置 `annotation.gifRefuse`。打开预览本身不显示该警告。历史 pin 保持 `source: 'history'`；Composer pin 使用默认 `composer` source。两个 overlay hook 共用 `useImagePinOverlay`，避免 jscpd 把 Composer 恢复当成 history hook 的克隆。整份取官方 `InputBar` 丢掉了 Web e2e 依赖的 `{count} annotation` 摘要与丢弃控件；计数芯片、逐条编辑/删除，以及仅有注释时启用发送，仍留在 composer 卡片上。父会话离线的 continuable 子会话在独立 Stop 旁边保留禁用的 Send。空草稿插话会等到 `data-phase` 离开 `submitting`/`adjudicating`，之后的 Enter 才入队，且赶在提问 composer 藏掉 textarea 之前。
 
 ## Alternatives considered
 
@@ -42,4 +42,4 @@ File/Session Reference 同步到官方 Host `@path` / `file-reference-local` 与
 
 ## Testing
 
-`packages/terminal/terminal-bash/tests/index.spec.ts` 拒绝只是包含提示符标记的末行，忽略末尾只含空格的光标行，接受额外文本之后的 `stdin_read`，并用 `timeoutMs` 约束永不就绪的空闲循环。`packages/platform/remote-access-http/tests/relay.spec.ts` 仍在独立服务器上分别以 1008 关闭空闲、以 1009 关闭 oversized。`packages/client/ui-attachment/tests/composer-attachments.client.spec.tsx` 与 `packages/client/ui-conversation/tests/composer-image-pins.client.spec.tsx` 覆盖标注、GIF 仅在切换时拒绝，以及 composer overlay 工厂。`pnpm run duplication` 拥有共享的 `useImagePinOverlay` 抽取。`packages/client/ui-conversation/tests/input-bar.client.spec.tsx` 覆盖注释计数芯片、丢弃、按 kind 删除与提交中锁定。Web 设置金标不再列出 `工作区引用`。`pnpm exec tsx scripts/gen-client-catalog.ts --check` 拥有 `ComposerAttachmentsOwnerProps.pinOverlayFor` 的目录正文。
+`packages/terminal/terminal-bash/tests/index.spec.ts` 拒绝只是包含提示符标记的末行，忽略末尾只含空格的光标行，在末行不是提示符时拒绝 `stdin_read`，并用 `timeoutMs` 约束永不就绪的空闲循环。`packages/client/ui-attachment/tests/message-image.client.spec.tsx` 覆盖历史 pin overlay、拒绝与落点。空草稿插话等到 `data-phase` 离开 `submitting`/`adjudicating`，而不是等 Stop generating，这样两条入队填充会在提问 composer 藏掉 textarea 之前落地。`packages/platform/remote-access-http/tests/relay.spec.ts` 仍在独立服务器上分别以 1008 关闭空闲、以 1009 关闭 oversized。`packages/client/ui-attachment/tests/composer-attachments.client.spec.tsx` 与 `packages/client/ui-conversation/tests/composer-image-pins.client.spec.tsx` 覆盖标注、GIF 仅在切换时拒绝，以及 composer overlay 工厂。`pnpm run duplication` 拥有共享的 `useImagePinOverlay` 抽取。`packages/client/ui-conversation/tests/input-bar.client.spec.tsx` 覆盖注释计数芯片、丢弃、按 kind 删除与提交中锁定。Web 设置金标不再列出 `工作区引用`。`pnpm exec tsx scripts/gen-client-catalog.ts --check` 拥有 `ComposerAttachmentsOwnerProps.pinOverlayFor` 的目录正文。
