@@ -106,11 +106,11 @@ describe('ToolCallTree', () => {
       name: 'browser_navigate',
       argsRaw: '{"target":{"profileId":"p","workspaceId":"w","browserId":"b","tabId":"t"}}',
     })
-    const input = { ...props(browser), selectCall: undefined }
+    const { selectCall: _absent, ...input } = props(browser)
+    void _absent
     const view = render(<ToolCallTree {...input} />)
     view.container.querySelector('[data-chat-call-id="nav-2"]')?.dispatchEvent(
       new MouseEvent('click', { bubbles: true }),
     )
-    expect(input.selectCall).toBeUndefined()
   })
 })

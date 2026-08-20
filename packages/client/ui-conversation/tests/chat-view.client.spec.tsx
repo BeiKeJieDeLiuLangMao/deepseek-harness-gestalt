@@ -887,6 +887,8 @@ describe('ChatView', () => {
     expect(h.openDetails).toHaveBeenCalledWith({
       turnSeq: 0, callId: 'a', toolName: 'browser_navigate',
     })
+    h.toolOwners.at(-1)?.selectCall?.('a')
+    expect(h.openDetails).toHaveBeenCalledWith({ turnSeq: 0, callId: 'a' })
   })
 
   it('hands running calls to a live Tool group', () => {

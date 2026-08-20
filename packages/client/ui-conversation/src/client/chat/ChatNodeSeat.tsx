@@ -39,7 +39,7 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
       loadImage,
       fileMentions,
       selectCall: (callId, toolName) => {
-        openDetails({ turnSeq, callId, toolName })
+        openDetails(toolName === undefined ? { turnSeq, callId } : { turnSeq, callId, toolName })
       },
     }
   }, [node, selectedCallId, cwd, openDetails, openFile, inspectCall, forkAt, loadImage, fileMentions])

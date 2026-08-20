@@ -13,11 +13,12 @@ function callName(node: ToolCallBlock): string {
 /** One atomic call dispatched through the Tool-owned keyed slot. */
 const ToolCall = memo(function ToolCall({
   renderSlot, callId, toolName, block, openFile, selected, cwd, inspectCall, selectCall, t, children,
-}: Pick<ToolTreeProps, 'renderSlot' | 'openFile' | 'cwd' | 'inspectCall' | 'selectCall' | 't'> & {
+}: Pick<ToolTreeProps, 'renderSlot' | 'openFile' | 'cwd' | 'inspectCall' | 't'> & {
   callId: string
   toolName: string
   block: ToolCallBlock
   selected: boolean
+  selectCall?: ToolTreeProps['selectCall'] | undefined
   children?: ReactNode
 }) {
   const owner: ToolCallOwnerProps = useMemo(() => ({
@@ -49,8 +50,9 @@ const ToolCall = memo(function ToolCall({
 
 const ToolCallBranch = memo(function ToolCallBranch({
   renderSlot, block, selectedCallId, cwd, openFile, inspectCall, selectCall, t,
-}: Pick<ToolTreeProps, 'renderSlot' | 'selectedCallId' | 'cwd' | 'openFile' | 'inspectCall' | 'selectCall' | 't'> & {
+}: Pick<ToolTreeProps, 'renderSlot' | 'selectedCallId' | 'cwd' | 'openFile' | 'inspectCall' | 't'> & {
   block: ToolCallBlock
+  selectCall?: ToolTreeProps['selectCall'] | undefined
 }) {
   return (
     <ToolCall
