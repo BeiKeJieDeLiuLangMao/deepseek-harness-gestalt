@@ -28,8 +28,7 @@
   "files": [
     "lib/index.js",
     "lib/invariant.js",
-    "lib/types/**/*.d.ts",
-    "NOTICE"
+    "lib/types/**/*.d.ts"
   ],
   "license": "MIT",
   "dependencies": {
