@@ -1,4 +1,5 @@
-import { readFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { describe, expect, it } from 'vitest'
@@ -184,5 +185,41 @@ describe('Desktop release notes', () => {
     )
     expect(result.status).not.toBe(0)
     expect(result.stderr).toContain('usage: render-release-notes.mjs')
+  })
+
+  it('renders the 0.1.4 previous-release changelog from its tracked manifest', () => {
+    const body = renderReleaseNotes({
+      manifest: loadReleaseNotesManifest('0.1.4'),
+      requestedVersion: '0.1.4',
+      releaseTarget,
+      isAncestor: () => true,
+      countCommits: () => 154,
+    })
+    expect(body).toContain('DeepSeek Gestalt 0.1.4 收录上一版本之后的 154 个提交。')
+    expect(body).toContain('DeepSeek Gestalt 0.1.4 contains the 154 commits after the previous Desktop Bundle.')
+    expect(body).toContain('gestalt-v0.1.4')
+    expect(body).toContain('f5d133a9c00138b1a3e7ce180118b8262f38399a...gestalt-v0.1.4')
+  })
+
+  it('writes the verified body through the release CLI', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'dsh-release-notes-'))
+    const output = join(directory, 'notes.md')
+    try {
+      const result = spawnSync(
+        process.execPath,
+        ['apps/desktop/scripts/render-release-notes.mjs', '0.1.0', releaseTarget, output],
+        { cwd: process.cwd(), encoding: 'utf8' },
+      )
+      expect(result.stderr).toBe('')
+      expect(result.status).toBe(0)
+      expect(readFileSync(output, 'utf8')).toBe(
+        readFileSync(
+          join(process.cwd(), 'apps/desktop/tests/fixtures/release-notes-0.1.0.expected.md'),
+          'utf8',
+        ),
+      )
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
   })
 })

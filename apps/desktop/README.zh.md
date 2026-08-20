@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-DeepSeek Gestalt 的 Desktop Host。Electron 拥有窗口、菜单和 GitHub 自动更新。它启动捆绑的官方 Node 加上 `dsh web --host 127.0.0.1 --port 0 --patch ./cordis.patch.yml`，并打开该环回 URL。叠加层加入 Schedule、逐 step 时间上下文、GESTALT 次标、拖拽带和 Update Control；只有更新可操作或发现版本后发生错误时，控件才会出现。浏览器 `dsh web` 不加载这层。
+DeepSeek Gestalt 的 Desktop Host。Electron 拥有窗口、菜单和 GitHub 自动更新。它启动捆绑的官方 Node 加上 `dsh web --host 127.0.0.1 --port 0 --patch ./cordis.patch.yml`，并打开该环回 URL。叠加层加入 Schedule、GESTALT 次标、拖拽带和 Update Control；只有更新可操作或发现版本后发生错误时，控件才会出现。浏览器 `dsh web` 不加载这层。
 
 在所有平台关闭最后一个窗口时，会先以 `window-close` 原因排空 Relay；Ctrl+C、quit 与 smoke 测试结束都会取消尚未完成的启动，停止 Personal Pairing 与受生产 gate 保护的 Relay owner，停止 Web Host，并等待其工作排空后再终止 Electron。系统 sleep 会停止 Remote Access；resume 只为仍处于登录状态的账号重新加载。源码 Electron smoke 会在 sleep、关闭手机访问、关闭窗口与 quit 后读取各次 Relay owner 状态，再检查 Web Host 子进程 PID 已消失。首次启动或后续 Host 崩溃共允许一次重试，之后窗口才显示 Host 错误。不存在无窗口 daemon、后台 Host 或 remote wake 路径。
 
@@ -20,7 +20,7 @@ Dock / 开始菜单的 cwd 是 Launch Directory（Application Support / `%APPDAT
 
 ## Schedule 与能力默认值
 
-每个新 Desktop Session 都会提供 `schedule_create`、`schedule_list` 和 `schedule_delete`。浏览器的 IANA 时区会通过 time-context 进入模型上下文，但绝对时间 `schedule_create.at` 仍必须带显式偏移量或 `time_zone`。
+每个新 Desktop Session 都会提供 `schedule_create`、`schedule_list` 和 `schedule_delete`。绝对时间 `schedule_create.at` 必须带显式偏移量或 `time_zone`。Desktop 不挂载 `@deepseek-ai/dsh-time-context`；逐 step 时间读数仍由 Schedule Web overlay 注入。
 
 当前 Session 保留提醒时，会话标题栏会在后台任务之后紧接显示 Schedule 任务板。其计数包含等待中与待补跑提醒，但排除已暂停提醒。任务板读取独立 Session projection，并支持持久化暂停、恢复与行内二次确认删除；它没有创建表单，也不从工具 transcript 卡片推断状态。
 
@@ -41,7 +41,7 @@ pnpm gestalt:dev
 
 从 `master` 运行 `Desktop Release` workflow，填写包版本并选择 `publish`。macOS arm64 与 x64 会先在匹配架构的 GitHub runner 上安装依赖；发布构建通过 `desktop-release` environment 完成签名和公证，dry run 不接收发布凭据。Windows NSIS 未签名但仍更新。workflow 会校验每个官方 Node 归档、启动每个打包目标、通过 Desktop bridge 往返读取 disabled 更新状态、等待 renderer 应用该状态、要求未激活的 Update Control 保持缺席、检查 Mac app 的签名和已装订公证票据，在已测试提交上创建 `gestalt-v<version>` 标签与 draft Release，上传并核验精确的安装包、blockmap 与更新 feed 集合，然后发布 Release。交接失败或中断时，workflow 会删除本次运行拥有的标签和 draft。macOS 在 zip 落地后由 Squirrel 把包拷到临时目录，Update Control 显示“正在准备更新”；该阶段结束后才出现“安装并重启”。普通退出仍不会安装。
 
-每个发布版本都必须在 `release-notes/` 下提供双语 manifest（元数据清单），并显式指定基线类型、仓库和提交。创建标签前，工作流会校验 manifest 版本及其派生标签，确认该基线是受测提交的祖先，从 Git 计算提交数，并把 draft 正文渲染到 notes file。`0.1.0` manifest 使用 `official-upstream` 基线 `deepseek-ai/deepseek-harness@47f943859bef60e4160492346772ded9b24f765a`；正文链接从该提交到 `gestalt-v0.1.0` 的完整比较。`0.1.1` manifest 使用 `previous-release` 基线 `BeiKeJieDeLiuLangMao/deepseek-harness-gestalt@de2610c9590f2e5b33ab366eb338f7c42058b11b`（`gestalt-v0.1.0`）。`0.1.2` manifest 使用 `previous-release` 基线 `BeiKeJieDeLiuLangMao/deepseek-harness-gestalt@a7482b9709e4631d624f6b471ef2aeec249baf7d`（`gestalt-v0.1.1`）。`0.1.3` manifest 使用 `previous-release` 基线 `BeiKeJieDeLiuLangMao/deepseek-harness-gestalt@4bbbf74a07799fb681e033288fb55b3b16fc08c0`（`gestalt-v0.1.2`）。
+每个发布版本都必须在 `release-notes/` 下提供双语 manifest（元数据清单），并显式指定基线类型、仓库和提交。创建标签前，工作流会校验 manifest 版本及其派生标签，确认该基线是受测提交的祖先，从 Git 计算提交数，并把 draft 正文渲染到 notes file。`0.1.0` manifest 使用 `official-upstream` 基线 `deepseek-ai/deepseek-harness@47f943859bef60e4160492346772ded9b24f765a`；正文链接从该提交到 `gestalt-v0.1.0` 的完整比较。`0.1.1` manifest 使用 `previous-release` 基线 `BeiKeJieDeLiuLangMao/deepseek-harness-gestalt@de2610c9590f2e5b33ab366eb338f7c42058b11b`（`gestalt-v0.1.0`）。`0.1.2` manifest 使用 `previous-release` 基线 `BeiKeJieDeLiuLangMao/deepseek-harness-gestalt@a7482b9709e4631d624f6b471ef2aeec249baf7d`（`gestalt-v0.1.1`）。`0.1.3` manifest 使用 `previous-release` 基线 `BeiKeJieDeLiuLangMao/deepseek-harness-gestalt@4bbbf74a07799fb681e033288fb55b3b16fc08c0`（`gestalt-v0.1.2`）。`0.1.4` manifest 使用 `previous-release` 基线 `BeiKeJieDeLiuLangMao/deepseek-harness-gestalt@f5d133a9c00138b1a3e7ce180118b8262f38399a`（`gestalt-v0.1.3`）。
 
 本机未签名 arm64 排练（不做公证）：
 

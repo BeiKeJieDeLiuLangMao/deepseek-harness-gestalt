@@ -47,7 +47,9 @@ export interface Config {
    */
   backgroundMode?: 'one-shot' | 'continuable'
   /**
-   * Agent options applied to every child; omitted fields use child-loop defaults.
+   * Default child LLM route and output-token cap. Per-call `provider`/`model`
+   * override these fields. Requires the provider's `agentOptions` capability;
+   * omission leaves inheritance to the backend.
    */
   agentOptions?: AgentOptions
   /**
@@ -239,6 +241,48 @@ function providerWording(inheritsConversation: boolean): { description: string; 
 
 interface DelegationRunRequest {
   readonly run_in_background?: boolean
+  readonly provider?: unknown
+  readonly model?: unknown
+}
+
+interface DelegationRouteSpec {
+  readonly agentOptions?: AgentOptions
+}
+
+/**
+ * Resolve the model's optional LLM route onto deployment `agentOptions`.
+ * Call values override config; omitted fields keep config or leave inheritance
+ * to the backend. Empty strings fail before start. An incapable backend
+ * rejects undeclared extra keys the same way disabled `run_in_background` does.
+ */
+function resolveDelegationRoute(
+  request: DelegationRunRequest,
+  configured: AgentOptions | undefined,
+  capable: boolean,
+): DelegationRouteSpec {
+  if (!capable) {
+    if (request.provider !== undefined || request.model !== undefined) {
+      throw new Error('provider and model are disabled for this tool instance (backend cannot apply a child LLM route)')
+    }
+    return {}
+  }
+  const provider = requireRouteField(request.provider, 'provider')
+  const model = requireRouteField(request.model, 'model')
+  const agentOptions: AgentOptions = {
+    ...configured,
+    ...provider !== undefined ? { provider } : {},
+    ...model !== undefined ? { model } : {},
+  }
+  return Object.keys(agentOptions).length > 0 ? { agentOptions } : {}
+}
+
+/** Reject empty or whitespace-only LLM route fields; omit absent ones. */
+function requireRouteField(value: unknown, field: 'provider' | 'model'): string | undefined {
+  if (value === undefined) return undefined
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new Error(`${field} must be a non-empty LLM ${field === 'provider' ? 'adapter route' : 'model id'}`)
+  }
+  return value.trim()
 }
 
 interface DelegationRunSpec {
@@ -290,6 +334,12 @@ export function apply(ctx: Context, config: Config): void {
         + 'set maxDepth: \'provider-managed\' to leave the recursion budget to the provider',
       )
     }
+    if (config.agentOptions !== undefined && !provider.capabilities.agentOptions) {
+      throw new Error(
+        `tool-subagent: provider "${provider.name}" cannot apply agentOptions (no agentOptions capability) — `
+        + 'omit agentOptions or bind a backend that honors the child LLM route',
+      )
+    }
     const wording = providerWording(provider.inheritsParentContext)
     if (continuable && provider.prepareContinuable === undefined) {
       throw new Error(
@@ -317,6 +367,20 @@ export function apply(ctx: Context, config: Config): void {
           required: true,
           description: wording.promptDescription,
         },
+        ...provider.capabilities.agentOptions ? {
+          provider: {
+            type: 'string' as const,
+            description:
+              'LLM adapter route for the child (for example deepseek-official). This is not the subagent backend '
+              + '(spawn/fork/acp). Omit to inherit the parent session route; may be set without model.',
+          },
+          model: {
+            type: 'string' as const,
+            description:
+              'LLM model id for the child (for example deepseek-v4-pro). Omit to inherit the parent session model; '
+              + 'may be set without provider.',
+          },
+        } : {},
         ...backgroundEnabled ? {
           run_in_background: {
             type: 'boolean' as const,
@@ -376,11 +440,12 @@ export function apply(ctx: Context, config: Config): void {
         }
 
         const maxDepth = typeof config.maxDepth === 'number' ? config.maxDepth : undefined
+        const route = resolveDelegationRoute(args, config.agentOptions, provider.capabilities.agentOptions)
         const request = {
           label: args.description,
           prompt: [{ type: 'text', text: args.prompt }] as ContentBlock[],
           parent,
-          ...config.agentOptions !== undefined ? { agentOptions: config.agentOptions } : {},
+          ...route,
           ...config.persona !== undefined ? { persona: config.persona } : {},
           ...config.toolFilter !== undefined ? { toolFilter: config.toolFilter } : {},
           ...maxDepth !== undefined ? { maxDepth } : {},

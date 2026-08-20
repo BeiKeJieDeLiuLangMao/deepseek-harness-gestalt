@@ -2832,7 +2832,9 @@ export interface Config {
    */
   backgroundMode?: 'one-shot' | 'continuable'
   /**
-   * Agent options applied to every child; omitted fields use child-loop defaults.
+   * Default child LLM route and output-token cap. Per-call `provider`/`model`
+   * override these fields. Requires the provider's `agentOptions` capability;
+   * omission leaves inheritance to the backend.
    */
   agentOptions?: AgentOptions
   /**

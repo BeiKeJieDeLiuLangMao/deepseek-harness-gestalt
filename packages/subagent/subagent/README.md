@@ -39,6 +39,7 @@ Start-time features are advertised in `provider.capabilities` because the servic
 - `depthLimit` — enforce `maxDepth`.
 - `toolFilter` — apply the requested child tool restriction.
 - `persona` — apply a per-child persona.
+- `agentOptions` — apply `request.agentOptions` as the child LLM route.
 
 Every in-process child is composed by one call, `applyChildComposition(childCtx, parent, composition)`, which joins the parent's agent-preset composition before applying the child's own persona and tool filter. The join is what gives the child its capabilities: with every model-facing row on the agent plane, a child that joined nothing would reach the model with an empty tool registry ([`dsh-agent-presets`](../../preset/agent-presets/README.md)). Taking the parent as a parameter is deliberate — it makes composing a child WITHOUT that join unrepresentable at the call sites, which is the defect the one call exists to prevent. A deployment composing no preset roster joins nothing and needs nothing: its model-facing rows sit in the host composition, where the child already resolves them through the tool registry's global layer.
 

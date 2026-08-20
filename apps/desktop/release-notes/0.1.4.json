@@ -1,0 +1,48 @@
+{
+  "version": "0.1.4",
+  "tag": "gestalt-v0.1.4",
+  "source": {
+    "baselineKind": "previous-release",
+    "baselineRepository": "BeiKeJieDeLiuLangMao/deepseek-harness-gestalt",
+    "releaseRepository": "BeiKeJieDeLiuLangMao/deepseek-harness-gestalt",
+    "baselineCommit": "f5d133a9c00138b1a3e7ce180118b8262f38399a"
+  },
+  "content": {
+    "zh": {
+      "intro": "DeepSeek Gestalt 0.1.4 收录上一版本之后的 {{commitCount}} 个提交。",
+      "sections": [
+        {
+          "heading": "模型与子代理",
+          "items": [
+            "具备能力的 subagent 调用可以按次指定 LLM provider 和 model；省略则继续继承主会话当前路由。"
+          ]
+        },
+        {
+          "heading": "搜索与桌面默认",
+          "items": [
+            "Web Search 收成一张卡片，按提供方分页，并可移除官方 DeepSeek。",
+            "Desktop 默认 overlay 不再注入 time-context。"
+          ]
+        }
+      ]
+    },
+    "en": {
+      "intro": "DeepSeek Gestalt 0.1.4 contains the {{commitCount}} commits after the previous Desktop Bundle.",
+      "sections": [
+        {
+          "heading": "Models and subagents",
+          "items": [
+            "A capable subagent call can set LLM provider and model per delegation; omitted fields still inherit the parent session route."
+          ]
+        },
+        {
+          "heading": "Search and Desktop defaults",
+          "items": [
+            "Web Search is one card with provider tabs, and official DeepSeek can be removed.",
+            "The Desktop default overlay no longer injects time-context."
+          ]
+        }
+      ]
+    }
+  }
+}

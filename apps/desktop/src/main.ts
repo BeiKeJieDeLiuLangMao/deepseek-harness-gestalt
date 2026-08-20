@@ -532,9 +532,6 @@ function pushPairingSnapshot(snapshot: ReturnType<DesktopPairingActions['getSnap
 }
 
 function createDesktopAccount(environment: SelectedPlatformEnvironment): DesktopAccountActions {
-  if (!safeStorage.isEncryptionAvailable()) {
-    return new UnavailableDesktopAccountController('Secure operating-system storage is unavailable')
-  }
   const transport = new PlatformAccountHttpTransport({ environment })
   const store = new EncryptedDesktopAccountStore(
     join(app.getPath('userData'), `platform-account-${environment.databaseIdentity}.bin`),

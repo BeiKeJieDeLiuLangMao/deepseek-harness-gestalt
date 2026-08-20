@@ -8017,18 +8017,24 @@ importers:
       '@deepseek-ai/dsh-bash-local':
         specifier: workspace:^
         version: link:../../shell/bash-local
+      '@deepseek-ai/dsh-credentials-local':
+        specifier: workspace:^
+        version: link:../../credentials/credentials-local
       '@deepseek-ai/dsh-invariants':
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants
       '@deepseek-ai/dsh-llm':
         specifier: workspace:^
         version: link:../../llm/llm
-      '@deepseek-ai/dsh-llm-deepseek':
+      '@deepseek-ai/dsh-llm-pi-ai':
         specifier: workspace:^
-        version: link:../../llm/llm-deepseek
+        version: link:../../llm/llm-pi-ai
       '@deepseek-ai/dsh-session':
         specifier: workspace:^
         version: link:../../core/session
+      '@deepseek-ai/dsh-settings-file':
+        specifier: workspace:^
+        version: link:../../settings/settings-file
       '@deepseek-ai/dsh-subagent':
         specifier: workspace:^
         version: link:../subagent
