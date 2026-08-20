@@ -1676,7 +1676,7 @@ export interface Config {
 }
 ```
 
-来源： [`packages/platform/platform-account-http/src/index.ts:22`](../packages/platform/platform-account-http/src/index.ts)
+来源： [`packages/platform/platform-account-http/src/index.ts:28`](../packages/platform/platform-account-http/src/index.ts)
 
 <a id="deepseek-aidsh-pwsh-local"></a>
 
@@ -1747,7 +1747,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/platform/remote-access-http/src/index.ts:22`](../packages/platform/remote-access-http/src/index.ts)
+来源：[`packages/platform/remote-access-http/src/index.ts:28`](../packages/platform/remote-access-http/src/index.ts)
 
 <a id="deepseek-aidsh-remote-attachments"></a>
 

@@ -14,7 +14,13 @@ import {
   parseLoginAttemptId,
   type AccountProof,
 } from '@deepseek-ai/dsh-platform-account'
-import type {} from '@deepseek-ai/dsh-host-webserver'
+import {
+  HttpError,
+  readJsonObject,
+  writeHttpError,
+  writeJson,
+  writeRetryAfterError,
+} from '@deepseek-ai/dsh-host-webserver'
 
 const MAX_JSON_BYTES = 64 * 1024
 
@@ -68,7 +74,7 @@ export function apply(ctx: Context, config: Config): void {
       installationKind: requiredKind(body.installationKind),
       publicKey: requiredObject(body, 'publicKey'),
     })
-    answerJson(res, 201, attempt)
+    writeJson(res, 201, attempt)
   })
 
   route('/v1/account/oauth/github/callback', async (req, res) => {
@@ -85,7 +91,7 @@ export function apply(ctx: Context, config: Config): void {
   route('/v1/account/login-poll', async (req, res) => {
     requireMethod(req, 'POST')
     const body = await readJson(req)
-    answerJson(res, 200, await ctx.platformAccount.pollLogin({
+    writeJson(res, 200, await ctx.platformAccount.pollLogin({
       attemptId: parseLoginAttemptId(requiredString(body, 'attemptId')),
       pollingToken: requiredString(body, 'pollingToken'),
       proof: requiredProof(body.proof),
@@ -95,7 +101,7 @@ export function apply(ctx: Context, config: Config): void {
   route('/v1/account/session/refresh', async (req, res) => {
     requireMethod(req, 'POST')
     const body = await readJson(req)
-    answerJson(res, 200, await ctx.platformAccount.refresh({
+    writeJson(res, 200, await ctx.platformAccount.refresh({
       refreshToken: requiredString(body, 'refreshToken'),
       proof: requiredProof(body.proof),
     }))
@@ -103,7 +109,7 @@ export function apply(ctx: Context, config: Config): void {
 
   route('/v1/account/session', async (req, res) => {
     if (req.method === 'GET') {
-      answerJson(res, 200, await ctx.platformAccount.current({
+      writeJson(res, 200, await ctx.platformAccount.current({
         accessToken: bearer(req),
         proof: proofHeaders(req),
       }))
@@ -142,24 +148,15 @@ function handleCors(req: IncomingMessage, res: ServerResponse, origins: Set<stri
   return true
 }
 
-/* jscpd:ignore-start */
-async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
-  let bytes = 0
-  const chunks: Buffer[] = []
-  for await (const chunk of req) {
-    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array)
-    bytes += buffer.byteLength
-    if (bytes > MAX_JSON_BYTES) throw new HttpError(413, 'REQUEST_TOO_LARGE', 'Account request exceeds 65536 bytes')
-    chunks.push(buffer)
-  }
-  let value: unknown
-  try {
-    value = JSON.parse(Buffer.concat(chunks).toString('utf8'))
-  } catch {
-    throw new HttpError(400, 'INVALID_JSON', 'Account request body is not valid JSON')
-  }
-  if (!isRecord(value)) throw new HttpError(400, 'INVALID_JSON', 'Account request body must be an object')
-  return value
+const ACCOUNT_JSON_BODY = {
+  maxBytes: MAX_JSON_BYTES,
+  tooLarge: { status: 413, code: 'REQUEST_TOO_LARGE', message: 'Account request exceeds 65536 bytes' },
+  invalidJson: { status: 400, code: 'INVALID_JSON', message: 'Account request body is not valid JSON' },
+  notObject: { status: 400, code: 'INVALID_JSON', message: 'Account request body must be an object' },
+} as const
+
+function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
+  return readJsonObject(req, ACCOUNT_JSON_BODY)
 }
 
 function requiredString(record: Record<string, unknown>, key: string): string {
@@ -220,38 +217,22 @@ function requireMethod(req: IncomingMessage, method: string): void {
   if (req.method !== method) throw new HttpError(405, 'METHOD_NOT_ALLOWED', `Account route requires ${method}`)
 }
 
-function answerJson(res: ServerResponse, status: number, value: unknown): void {
-  res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
-  res.end(JSON.stringify(value))
-}
-
 function answerError(res: ServerResponse, error: unknown): void {
   if (error instanceof HttpError) {
-    answerJson(res, error.status, { error: { code: error.code, message: error.message } })
+    writeHttpError(res, error)
     return
   }
   if (error instanceof AccountError) {
-    if (error.retryAfter !== undefined) res.setHeader('retry-after', String(error.retryAfter))
-    const status = error.code === 'QUOTA' || error.code === 'PLATFORM_CAPACITY'
-      ? 429
-      : error.code.startsWith('SESSION_') ? 401 : 400
-    answerJson(res, status, {
-      error: {
-        code: error.code,
-        message: error.message,
-        ...(error.retryAfter === undefined ? {} : { retryAfter: error.retryAfter }),
-      },
-    })
+    writeRetryAfterError(
+      res,
+      error,
+      error.code === 'QUOTA' || error.code === 'PLATFORM_CAPACITY'
+        ? 429
+        : error.code.startsWith('SESSION_') ? 401 : 400,
+    )
     return
   }
-  answerJson(res, 500, { error: { code: 'INTERNAL', message: 'Platform Account request failed' } })
-}
-/* jscpd:ignore-end */
-
-class HttpError extends Error {
-  constructor(readonly status: number, readonly code: string, message: string) {
-    super(message)
-  }
+  writeJson(res, 500, { error: { code: 'INTERNAL', message: 'Platform Account request failed' } })
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

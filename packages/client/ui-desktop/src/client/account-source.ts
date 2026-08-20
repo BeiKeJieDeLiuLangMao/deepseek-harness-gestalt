@@ -2,6 +2,7 @@
 
 import type { DesktopAccountSnapshot, DesktopBridge } from '../protocol.ts'
 import {
+  bindDesktopSnapshot,
   createDesktopSnapshotSource,
   type DesktopSnapshotSource,
 } from './snapshot-source.ts'
@@ -38,20 +39,10 @@ export function bindDesktopAccount(
   desktop: Pick<DesktopBridge, 'accountGetSnapshot' | 'onAccountSnapshot'>,
   onError: (error: unknown) => void = (error) => { console.error('failed to read account status', error) },
 ): () => void {
-  let active = true
-  let pushSeen = false
-  const unsubscribe = desktop.onAccountSnapshot((snapshot) => {
-    if (!active) return
-    pushSeen = true
-    source.set(snapshot)
-  })
-  void desktop.accountGetSnapshot().then((snapshot) => {
-    if (active && !pushSeen) source.set(snapshot)
-  }).catch((error: unknown) => {
-    if (active) onError(error)
-  })
-  return () => {
-    active = false
-    unsubscribe()
-  }
+  return bindDesktopSnapshot(
+    source,
+    listener => desktop.onAccountSnapshot(listener),
+    () => desktop.accountGetSnapshot(),
+    onError,
+  )
 }

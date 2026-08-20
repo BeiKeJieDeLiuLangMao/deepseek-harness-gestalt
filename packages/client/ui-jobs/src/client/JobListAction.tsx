@@ -124,7 +124,6 @@ export function JobListAction({ sessionId, useSessions, t }: JobListActionProps)
     : (jobs.length === 1 ? 'count.idle.one' : 'count.idle.other')
   const countLabel = t(countKey, { count: liveCount > 0 ? liveCount : jobs.length })
 
-  /* jscpd:ignore-start */
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
     if (event.key !== 'Escape' || !open) return
     event.preventDefault()
@@ -132,7 +131,6 @@ export function JobListAction({ sessionId, useSessions, t }: JobListActionProps)
     triggerRef.current?.focus()
   }
   const listRoot = { ref: rootRef, className: css.root, onKeyDown }
-  /* jscpd:ignore-end */
 
   return (
     <div {...listRoot}>
