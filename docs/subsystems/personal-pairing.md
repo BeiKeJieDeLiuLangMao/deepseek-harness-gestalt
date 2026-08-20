@@ -168,7 +168,7 @@ abstract emitPushHint(owner: PairingAccountAuthentication): Promise<void>
 
 Types: [CompanionPushHint](remote-protocol.md) · [CompanionPushToken](remote-protocol.md)
 
-Source: [`packages/platform/remote-access/src/index.ts:445`](../../packages/platform/remote-access/src/index.ts)
+Source: [`packages/platform/remote-access/src/index.ts:449`](../../packages/platform/remote-access/src/index.ts)
 
 <a id="ctxremoteattachmentauthority--remoteattachmentauthority"></a>
 
