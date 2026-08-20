@@ -468,9 +468,7 @@ function ciWindowsBlockingGates(): Gate[] {
 }
 
 function ciWindowsCompleteGates(): Gate[] {
-  const coverage = coverageGates().map(gate => gate.id === 'coverage-exempt-heavy'
-    ? { ...gate, needs: [...new Set(['build', ...(gate.needs ?? [])])] }
-    : gate)
+  const coverage = coverageGates(['build'])
   const coverageAfter = coverage.map(gate => gate.id)
   const observational = ciWindowsObservationalGates()
     // The required production site replaces the observational MPA build; both
@@ -550,10 +548,11 @@ function coverageWorkerArgs(): { instrumented: string[]; exempt: string[] } {
   }
 }
 
-function coverageGates(): Gate[] {
+function coverageGates(needs?: string[]): Gate[] {
   const workers = coverageWorkerArgs()
   const timeouts = coverageTestTimeoutArgs(process.env[COVERAGE_TEST_TIMEOUT_ENV])
   const partitions = parseCoveragePartitionCount(process.env[COVERAGE_PARTITIONS_ENV])
+  const dependency = needs === undefined ? {} : { needs }
   const instrumented = partitions === undefined
     ? pnpmExec('coverage', [
       'vitest',
@@ -564,12 +563,14 @@ function coverageGates(): Gate[] {
     ], {
       label: 'test:coverage',
       env: { [COVERAGE_EXEMPT_ENV]: '1' },
+      ...dependency,
     })
     : pnpmScript('coverage', 'test:coverage:partitioned', {
       label: 'test:coverage',
       displayCommand: `${COVERAGE_PARTITIONS_ENV}=${partitions} pnpm run test:coverage:partitioned`,
       env: { [COVERAGE_EXEMPT_ENV]: '1' },
       streamOutput: true,
+      ...dependency,
     })
   return [
     instrumented,
@@ -581,6 +582,7 @@ function coverageGates(): Gate[] {
       ...timeouts,
     ], {
       label: 'test:coverage-exempt-heavy',
+      ...dependency,
     }),
   ]
 }

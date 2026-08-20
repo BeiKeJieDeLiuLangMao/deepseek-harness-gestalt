@@ -109,7 +109,8 @@ describe('gate graph validation', () => {
 
     expect(byId.get('coverage')?.allowFailure).not.toBe(true)
     expect(byId.get('coverage-exempt-heavy')?.allowFailure).not.toBe(true)
-    expect(byId.get('coverage-exempt-heavy')?.needs).toContain('build')
+    expect(byId.get('coverage')?.needs).toEqual(['build'])
+    expect(byId.get('coverage-exempt-heavy')?.needs).toEqual(['build'])
     expect(byId.get('electron-runtime-e2e')?.allowFailure).not.toBe(true)
     expect(byId.get('electron-runtime-e2e')?.displayCommand).toBe('pnpm run test:electron-runtime-e2e')
     expect(byId.get('duplication')?.allowFailure).toBe(true)
@@ -124,6 +125,16 @@ describe('gate graph validation', () => {
       expect(completeGate?.needs).toEqual(gate.needs)
     }
   })
+
+  it.each(['ci-coverage', 'ci-primary'] as const)(
+    'keeps %s coverage free of a workspace-build dependency',
+    (mode) => {
+      const gates = withPnpmEntrypoint(() => gatesForMode(mode))
+      for (const id of ['coverage', 'coverage-exempt-heavy']) {
+        expect(gates.find(subject => subject.id === id)?.needs).toBeUndefined()
+      }
+    },
+  )
 
   it('applies one configured test and polling timeout to both coverage gates', () => {
     const gates = withEnv('DSH_COVERAGE_TEST_TIMEOUT_MS', '15000', () =>
