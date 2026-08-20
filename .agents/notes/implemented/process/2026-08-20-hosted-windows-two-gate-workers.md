@@ -10,7 +10,7 @@ The native Windows complete inventory runs forty-five gates, including the full 
 
 ## Decision
 
-`windows-native` sets `DSH_GATE_CONCURRENCY` to `2` on hosted `windows-latest` and on the `dsh-win-ci` failover pool. Hosted `DSH_COVERAGE_MAX_WORKERS` stays `1`, so the coverage pair still receives one Vitest worker each when they overlap. Instrumented Vitest fan-out on Windows remains the bound in the [native Windows pull-request CI](2026-08-08-native-windows-pull-request-ci.md) note. The required Wine job and the `all-checks-passed` graph are unchanged.
+`windows-native` sets `DSH_GATE_CONCURRENCY` to `2` on hosted `windows-latest` and on the `dsh-win-ci` failover pool. Hosted `DSH_COVERAGE_MAX_WORKERS` stays `1`, so the coverage pair still receives one Vitest worker each when they overlap. Both coverage gates `needs: ['build']` so instrumented Vitest does not load `lib/` while tsdown is still writing it. Production site and Electron runtime e2e may overlap the build. Instrumented Vitest fan-out on Windows remains the bound in the [native Windows pull-request CI](2026-08-08-native-windows-pull-request-ci.md) note. The required Wine job and the `all-checks-passed` graph are unchanged.
 
 ## Alternatives considered
 
@@ -20,6 +20,8 @@ The native Windows complete inventory runs forty-five gates, including the full 
 
 **Keep one top-level worker on hosted Windows.** This preserves the serial 32-minute complete run. The failover pool already overlapped the same gates at two top-level workers.
 
+**Leave coverage unsynchronized with build.** Rejected: the first hosted concurrency=2 run started instrumented coverage while tsdown still held `lib/`, and a Vitest worker then exited unexpectedly.
+
 ## Consequences
 
-Ready gates overlap on both pools. The long instrumented coverage gate can hide later ready work, including the exempt-heavy gate, instead of adding its full duration. The supported-source 100% inventory, per-test 30-second budgets, and one hosted instrumented Vitest worker are unchanged. [Standard hosted primary CI](2026-08-18-standard-hosted-primary-ci.md) still owns the `windows-latest` selector.
+Ready gates overlap on both pools after their declared dependencies. Coverage waits for `build`; the two coverage gates may then overlap each other and hide later observational work. The supported-source 100% inventory, per-test 30-second budgets, and one hosted instrumented Vitest worker are unchanged. [Standard hosted primary CI](2026-08-18-standard-hosted-primary-ci.md) still owns the `windows-latest` selector.

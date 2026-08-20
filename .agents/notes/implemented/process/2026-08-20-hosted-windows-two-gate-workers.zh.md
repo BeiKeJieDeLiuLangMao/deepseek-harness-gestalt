@@ -10,7 +10,7 @@ Status: implemented
 
 ## 决策
 
-`windows-native` 在托管的 `windows-latest` 和故障切换池 `dsh-win-ci` 上都把 `DSH_GATE_CONCURRENCY` 设为 `2`。托管路径的 `DSH_COVERAGE_MAX_WORKERS` 仍为 `1`，因此这两项覆盖率门禁重叠时各自仍只有 1 个 Vitest 工作进程。Windows 上的插桩 Vitest 扇出上限仍由 [原生 Windows 拉取请求 CI](2026-08-08-native-windows-pull-request-ci.md) 约束。必需的 Wine 作业和 `all-checks-passed` 图保持不变。
+`windows-native` 在托管的 `windows-latest` 和故障切换池 `dsh-win-ci` 上都把 `DSH_GATE_CONCURRENCY` 设为 `2`。托管路径的 `DSH_COVERAGE_MAX_WORKERS` 仍为 `1`，因此这两项覆盖率门禁重叠时各自仍只有 1 个 Vitest 工作进程。两项覆盖率门禁都 `needs: ['build']`，避免插桩 Vitest 在 tsdown 仍在写 `lib/` 时加载它。生产站点与 Electron runtime e2e 可以和 build 重叠。Windows 上的插桩 Vitest 扇出上限仍由 [原生 Windows 拉取请求 CI](2026-08-08-native-windows-pull-request-ci.md) 约束。必需的 Wine 作业和 `all-checks-passed` 图保持不变。
 
 ## 考虑过的替代方案
 
@@ -20,6 +20,8 @@ Status: implemented
 
 **托管 Windows 继续使用 1 个顶层工作进程。** 这会保留完整通道约 32 分钟的串行运行。故障切换池已经在 2 个顶层工作进程下重叠过同一组门禁。
 
+**让覆盖率与 build 不同步。** 否决：首次托管 concurrency=2 运行在 tsdown 仍占用 `lib/` 时启动了插桩覆盖率，随后一个 Vitest 工作进程意外退出。
+
 ## 后果
 
-两个运行器池上的就绪门禁都会重叠。较长的插桩覆盖率门禁可以掩盖其后就绪的工作（包括免覆盖率较重门禁），而不再把后者的完整时长累加进去。受支持源码 100% 清单、单测试 30 秒预算，以及托管路径上 1 个插桩 Vitest 工作进程均不变。[标准托管主 CI](2026-08-18-standard-hosted-primary-ci.md) 仍负责 `windows-latest` 选择器。
+两个运行器池上的就绪门禁在声明的依赖满足后才会重叠。覆盖率等待 `build`；两项覆盖率门禁随后可以互相重叠，并掩盖其后的观察性工作。受支持源码 100% 清单、单测试 30 秒预算，以及托管路径上 1 个插桩 Vitest 工作进程均不变。[标准托管主 CI](2026-08-18-standard-hosted-primary-ci.md) 仍负责 `windows-latest` 选择器。

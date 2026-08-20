@@ -441,7 +441,7 @@ function ciWindowsCompleteGates(): Gate[] {
     pnpmScript('electron-runtime-e2e', 'test:electron-runtime-e2e', {
       label: 'electron runtime e2e',
     }),
-    ...coverageGates(),
+    ...coverageGates(['build']),
     ...observational,
   ]
 }
@@ -510,9 +510,10 @@ function coverageTimeoutArgs(): string[] {
   ]
 }
 
-function coverageGates(): Gate[] {
+function coverageGates(needs?: string[]): Gate[] {
   const workers = coverageWorkerArgs()
   const timeouts = coverageTimeoutArgs()
+  const dependency = needs === undefined ? {} : { needs }
   return [
     pnpmExec('coverage', [
       'vitest',
@@ -523,6 +524,7 @@ function coverageGates(): Gate[] {
     ], {
       label: 'test:coverage',
       env: { [COVERAGE_EXEMPT_ENV]: '1' },
+      ...dependency,
     }),
     pnpmExec('coverage-exempt-heavy', [
       'vitest',
@@ -532,6 +534,7 @@ function coverageGates(): Gate[] {
       ...timeouts,
     ], {
       label: 'test:coverage-exempt-heavy',
+      ...dependency,
     }),
   ]
 }
