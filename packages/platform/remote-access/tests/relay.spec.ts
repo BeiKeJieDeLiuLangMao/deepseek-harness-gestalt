@@ -51,6 +51,28 @@ describe('RemoteRelayProvider', () => {
     await platform.dispose()
   })
 
+  it('revokes one endpoint credential and publishes an invalidate', async () => {
+    const coordinator = new SharedCoordinator()
+    const invalidate = vi.spyOn(coordinator, 'invalidate')
+    const platform = new RemoteRelayProvider(new Context(), {
+      instanceId: parseRelayInstanceId('platform-revoke-credential'),
+      routeStore: new SharedRouteStore(),
+      coordinator,
+      config: CONFIG,
+      randomBytes: size => new Uint8Array(size).fill(9),
+    })
+    const routeId = parseRelayRouteId('route-revoke-credential')
+    await platform.rotateCredential(routeId, 'desktop')
+    const mobile = await platform.issueCredential(routeId, 'mobile')
+    await platform.revokeCredential(mobile)
+    expect(invalidate).toHaveBeenCalledWith({
+      type: 'invalidate',
+      routeId,
+      revision: mobile.revision + 1,
+    })
+    await platform.dispose()
+  })
+
   it('does not publish a directory entry until announce flushes ready', async () => {
     const routeStore = new SharedRouteStore()
     const coordinator = new SharedCoordinator()
