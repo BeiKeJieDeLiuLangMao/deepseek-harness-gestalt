@@ -1,5 +1,6 @@
 /** Runnable keyless snapshot for the selected cross-runtime Noise security path. */
 
+/* jscpd:ignore-start */
 import { execFile } from 'node:child_process'
 import { access, mkdir, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
@@ -7,6 +8,7 @@ import { promisify } from 'node:util'
 import { describe, expect, it } from 'vitest'
 
 const execFileAsync = promisify(execFile)
+/* jscpd:ignore-end */
 const root = resolve(import.meta.dirname, '..')
 const runner = join(root, 'scripts/noise-security-path/run-node.mjs')
 const expected = join(root, 'scripts/snapshots/noise-security-path/report.expected.json')

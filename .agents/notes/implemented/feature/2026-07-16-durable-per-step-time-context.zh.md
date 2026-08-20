@@ -12,7 +12,7 @@ Status: implemented
 
 ## 决策
 
-`@deepseek-ai/dsh-time-context` 是位于 `packages/context/time-context/` 的函数插件。纯浏览器 Web 与 headless 的默认组合不启用其披露内容与 token 成本。Schedule Web overlay 会显式挂载它，DeepSeek Gestalt Desktop overlay 则默认挂载，使模型能够按附加到当前请求的浏览器时区解释未明确限定时区的日期和时间。
+`@deepseek-ai/dsh-time-context` 是位于 `packages/context/time-context/` 的函数插件。纯浏览器 Web、headless 与 DeepSeek Gestalt Desktop 的默认组合不启用其披露内容与 token 成本。Schedule Web overlay 会显式挂载它，使模型能够按附加到当前请求的浏览器时区解释未明确限定时区的日期和时间。
 
 该插件会前置一个 `agent/pre-step` 监听器，并先行委托下游。当下游决策进入步骤且需要生成读数时，插件会把该决策的最终消息与开放轮次中已有的持久用户消息合并，从确切的 user-rpc 来源派生浏览器时区来源信息，并向该决策追加一条读数。决策被拒绝、监听器失败或信号已经中止时，不会记录任何内容。在当前批次之后被认领的 steering（中途引导）仍归属于普通的下一步骤，并在该步骤进入时获得新读数。
 
@@ -24,7 +24,7 @@ Status: implemented
 
 每个读数都使用确切的快照来源 `{ kind: 'plugin', plugin: 'time-context', form: 'snapshot', sections: [{ name: 'time-context', text: <same text> }] }`。不变式配套模块会校验快照形状，从原始 user-rpc 消息重新派生当前轮次的浏览器来源信息，并校验渲染的时间戳时区与经过时长基线。
 
-可选配置 `refreshIntervalMs` 必须是非负安全整数。省略或设为 `0` 时，每个符合条件且已进入的步骤都会注入。设为正数时，插件会扫描原始会话事件，查找最新的插件读数；不存在读数、挂钟时间倒退或事件已达到相应时长时执行注入。事件时间戳在压缩和恢复后仍是判断依据，无需进程本地缓存。Schedule Web 与 DeepSeek Gestalt Desktop overlay 都省略该间隔，使每个请求步骤都获得当前浏览器时区指导。
+可选配置 `refreshIntervalMs` 必须是非负安全整数。省略或设为 `0` 时，每个符合条件且已进入的步骤都会注入。设为正数时，插件会扫描原始会话事件，查找最新的插件读数；不存在读数、挂钟时间倒退或事件已达到相应时长时执行注入。事件时间戳在压缩和恢复后仍是判断依据，无需进程本地缓存。Schedule Web overlay 省略该间隔，使每个请求步骤都获得当前浏览器时区指导。
 
 ### 文本与时长基线
 
@@ -60,11 +60,11 @@ Elapsed since the preceding step context: <duration-or-unavailable>.
 - **让 Schedule 隐式消费读数**：不予采纳，因为自然语言上下文不是稳定的类型化默认值，而且这会把绝对时间解析器耦合到 AgentLoop 历史。模型会改为传入显式偏移量或时区。
 - **只使用进程时区**：不予采纳，因为部署所在地无法推断远程用户的时区。请求来源信息缺失或混杂时，它仍可作为显示回退值。
 - **只通过工具提供时间**：不予采纳，因为普通时间推理会产生本可避免的往返，也无法确保每个步骤之前都有读数。
-- **在所有组合中挂载 time-context**：不予采纳，因为披露内容、新鲜度与历史成本仍属于组合策略。DeepSeek Gestalt 会把它与 Schedule 一起选用；纯浏览器 Web 与 headless 默认组合不启用它。
+- **在所有组合中挂载 time-context**：不予采纳，因为披露内容、新鲜度与历史成本仍属于组合策略。Schedule Web overlay 会选用它；DeepSeek Gestalt Desktop、纯浏览器 Web 与 headless 默认组合不启用它。
 
 ## 验证
 
-单元测试和真实 agent loop（智能体循环）测试固定时间戳格式化、唯一／混杂／缺失浏览器时区的派生、回退显示、两种经过时长基线、间隔边界、跨轮次与恢复后的调度、挂钟倒退行为、steering 归属、取消、精确快照校验和请求重建。Host/client 测试固定浏览器采样，以及提示词进入时的校验与规范化。无密钥的组装 Schedule Web 场景发送一条真实浏览器提示词，在模型请求中观察到同一时区，并验证模型把该时区显式传给 `schedule_create`；Desktop 组合覆盖要求同一插件存在，并要求纯浏览器默认组合不含它。
+单元测试和真实 agent loop（智能体循环）测试固定时间戳格式化、唯一／混杂／缺失浏览器时区的派生、回退显示、两种经过时长基线、间隔边界、跨轮次与恢复后的调度、挂钟倒退行为、steering 归属、取消、精确快照校验和请求重建。Host/client 测试固定浏览器采样，以及提示词进入时的校验与规范化。无密钥的组装 Schedule Web 场景发送一条真实浏览器提示词，在模型请求中观察到同一时区，并验证模型把该时区显式传给 `schedule_create`。Desktop 组合覆盖要求挂载 Schedule 且不含 time-context；纯浏览器默认组合两者都不含。
 
 ## 后果
 
