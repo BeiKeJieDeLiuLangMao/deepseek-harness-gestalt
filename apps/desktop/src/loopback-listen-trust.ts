@@ -17,6 +17,26 @@ export function createLoopbackListenFetch(origin: string): typeof fetch | undefi
   return createInsecureHttpsFetch()
 }
 
+/**
+ * Complete a loopback authorization URL in-process; otherwise open the system browser.
+ * @param url - GitHub or local-companion authorization URL.
+ * @param openExternal - system-browser opener for non-loopback URLs.
+ */
+export async function openDesktopAuthorizationUrl(
+  url: string,
+  openExternal: (url: string) => Promise<void>,
+): Promise<void> {
+  const fetch = createLoopbackListenFetch(new URL(url).origin)
+  if (fetch === undefined) {
+    await openExternal(url)
+    return
+  }
+  const response = await fetch(url)
+  if (response.status >= 400) {
+    throw new Error(`loopback authorization returned ${String(response.status)}`)
+  }
+}
+
 function createInsecureHttpsFetch(): typeof fetch {
   const fetchHttps = async (input: RequestInfo | URL, init?: RequestInit, redirects = 0): Promise<Response> => {
     const request = input instanceof Request ? input : new Request(input, init)

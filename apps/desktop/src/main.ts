@@ -51,7 +51,7 @@ import { DesktopPairingKeyVault } from './pairing-keys.ts'
 import { disposeDesktopOwners } from './shutdown.ts'
 import { startDesktopBrowserRuntime, type DesktopBrowserRuntime } from './browser-runtime.ts'
 import { createDesktopRemoteRelay } from './remote-relay.ts'
-import { createLoopbackListenFetch } from './loopback-listen-trust.ts'
+import { createLoopbackListenFetch, openDesktopAuthorizationUrl } from './loopback-listen-trust.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const PRELOAD = join(here, 'preload.cjs')
@@ -560,7 +560,11 @@ function createDesktopAccount(environment: SelectedPlatformEnvironment): Desktop
     environment,
     transport,
     store,
-    systemBrowser: { open: async (url) => { await shell.openExternal(url) } },
+    systemBrowser: {
+      open: async (url) => {
+        await openDesktopAuthorizationUrl(url, async (target) => { await shell.openExternal(target) })
+      },
+    },
   })
 }
 

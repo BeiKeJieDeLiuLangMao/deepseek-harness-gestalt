@@ -2,7 +2,11 @@ import { readFileSync } from 'node:fs'
 import { createServer } from 'node:https'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { createLoopbackListenFetch, isLoopbackListenUrl } from '../src/loopback-listen-trust.ts'
+import {
+  createLoopbackListenFetch,
+  isLoopbackListenUrl,
+  openDesktopAuthorizationUrl,
+} from '../src/loopback-listen-trust.ts'
 
 const certDir = fileURLToPath(new URL('../../../examples/two-instance-relay/fixtures/', import.meta.url))
 
@@ -34,6 +38,11 @@ describe('loopback listen trust', () => {
         res.end()
         return
       }
+      if (req.url === '/missing') {
+        res.writeHead(404)
+        res.end()
+        return
+      }
       res.writeHead(200, { 'content-type': 'application/json' })
       res.end('{"ok":true}')
     })
@@ -53,6 +62,11 @@ describe('loopback listen trust', () => {
       expect(await redirected.json()).toEqual({ ok: true })
       const posted = await fetch(new Request(`${origin}/ok`, { method: 'POST', body: '{}' }))
       expect(posted.status).toBe(200)
+      const opened: string[] = []
+      await openDesktopAuthorizationUrl(`${origin}/redirect`, async (url) => { opened.push(url) })
+      await openDesktopAuthorizationUrl('https://github.com/login', async (url) => { opened.push(url) })
+      expect(opened).toEqual(['https://github.com/login'])
+      await expect(openDesktopAuthorizationUrl(`${origin}/missing`, async () => {})).rejects.toThrow('loopback authorization')
     } finally {
       await new Promise<void>((resolve, reject) => {
         server.close((error) => { if (error === undefined) resolve(); else reject(error) })
