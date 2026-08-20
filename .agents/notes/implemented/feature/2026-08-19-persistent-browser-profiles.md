@@ -10,7 +10,7 @@ A user can sign in inside a real browser, but the Browser Runtime tracer only ad
 
 ## Decision
 
-`ctx.browserRuntime.create` accepts a temporary, named persistent, or shared Browser Profile. Persistent Profiles reuse a stable `persist:session-${idPrefix}-${name}` partition and the same `BrowserProfileId`. Keyless tests prove isolation with name-stamped storage tokens. Electron-gated e2e proves two-partition cookie isolation when this process is Electron. Temporary Profiles receive a unique `tmp-N` session name, empty storage, and no address-field label.
+`ctx.browserRuntime.create` accepts a temporary, named persistent, or shared Browser Profile. Persistent Profiles reuse a stable `persist:session-${idPrefix}-${name}` partition and the same `BrowserProfileId`. Keyless tests prove isolation with name-stamped storage tokens. `pnpm run test:electron-runtime-e2e` proves two-partition cookie isolation inside Electron ([launcher note](../testing/2026-08-20-electron-runtime-e2e-launcher.md)). Temporary Profiles receive a unique `tmp-N` session name, empty storage, and no address-field label.
 
 The product vocabulary is Browser Profiles only. Open page state carries `chrome` for Dock to place one label near the address field and `storage` as the model-visible identity proof. Temporary chrome omits `name`. Dock headers, footers, and an account picker are absent.
 
@@ -30,11 +30,11 @@ The deterministic Provider is the keyless store for persistence, isolation, clea
 
 ## Consequences
 
-Named Profiles restore isolated identities without an account picker. Temporary Profiles remain disposable and unlabeled. Concurrent writers fail loudly. Persistence, cleanup, revision conflict, and name-stamped isolation are tested at the public runtime seam. Electron and Tandem HTTP fixtures record the `persist:session-*` partition. Electron-gated e2e proves cookie isolation when this process is Electron.
+Named Profiles restore isolated identities without an account picker. Temporary Profiles remain disposable and unlabeled. Concurrent writers fail loudly. Persistence, cleanup, revision conflict, and name-stamped isolation are tested at the public runtime seam. Electron and Tandem HTTP fixtures record the `persist:session-*` partition. `pnpm run test:electron-runtime-e2e` proves cookie isolation inside Electron.
 
 ## Verification
 
 - `pnpm exec vitest run packages/browser/browser-runtime packages/browser/browser-runtime-deterministic packages/browser/browser-runtime-electron packages/browser/browser-runtime-tandem packages/browser/tool-browser`
 - `pnpm exec vitest run packages/browser/browser-runtime packages/browser/browser-runtime-deterministic packages/browser/browser-runtime-electron packages/browser/browser-runtime-tandem packages/browser/tool-browser --coverage --coverage.include='packages/browser/browser-runtime/src/**/*.ts' --coverage.include='packages/browser/browser-runtime-deterministic/src/**/*.ts' --coverage.include='packages/browser/browser-runtime-electron/src/**/*.ts' --coverage.include='packages/browser/browser-runtime-tandem/src/**/*.ts' --coverage.include='packages/browser/tool-browser/src/**/*.ts'`
 - `pnpm run test:snapshot -t 'Browser Profile'`
-- Electron-gated e2e in `packages/browser/browser-runtime-electron/tests/runtime.e2e.ts` self-skips on Node. Production never launches Tandem.app.
+- `pnpm run test:electron-runtime-e2e` runs `packages/browser/browser-runtime-electron/tests/runtime.e2e.ts` inside Electron; Node `test:e2e` keeps the named skip. Production never launches Tandem.app.

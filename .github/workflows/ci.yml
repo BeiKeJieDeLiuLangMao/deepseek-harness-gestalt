@@ -496,6 +496,34 @@ jobs:
         shell: pwsh
         run: pnpm run check:ci:windows-complete
 
+  # macOS PR owner for the declared Electron Browser Runtime e2e. serial-macos
+  # is disabled; this job runs only the cookie-isolation launcher so the lane
+  # is green or red without the full serial aggregate. Absent from
+  # all-checks-passed.needs, matching windows-native.
+  electron-runtime-e2e-macos:
+    if: github.event_name == 'pull_request'
+    runs-on: macos-latest
+    name: macos electron runtime e2e
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4
+        with:
+          dest: ${{ runner.temp }}/setup-pnpm
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.PRIMARY_NODE_VERSION }}
+
+      - name: Install (immutable)
+        run: pnpm install --frozen-lockfile
+
+      - name: Run Electron runtime e2e
+        run: pnpm run test:electron-runtime-e2e
+
   # The hosted reference jobs below are temporarily disabled; the self-hosted
   # standby remains active. Each enabled host executes the complete, unsharded
   # primary Node aggregate with one gate worker, giving reviewers a simple
