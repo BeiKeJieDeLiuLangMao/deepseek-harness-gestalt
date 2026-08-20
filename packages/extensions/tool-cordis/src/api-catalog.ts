@@ -984,6 +984,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Start one GitHub Authorization Code attempt for an installation key.',
         parameters: [{ name: 'input', description: 'installation identity, kind, and public P-256 JWK.' }],
         returns: 'the system-browser URL and signed polling capability.',
+        throws: ['AccountError `PLATFORM_CAPACITY` with `retryAfter` when the shared watermark is shedding.'],
       },
       {
         signature: 'abstract completeGitHubCallback(input: { code: string; state: string }): Promise<{ completed: true }>',
@@ -993,9 +994,10 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'abstract pollLogin(input: { attemptId: LoginAttemptId pollingToken: string proof: AccountProof }): Promise<LoginPollResult>',
-        description: 'Poll one attempt using both its signed polling token and installation proof.',
+        description: 'Poll one attempt using both its signed polling token and installation proof. Completing a new Installation is rejected at the tenth-plus-one live Desktop or Mobile session for that Account.',
         parameters: [{ name: 'input', description: 'attempt binding and one-use proof.' }],
         returns: 'pending or the newly created Account Session.',
+        throws: ['AccountError `QUOTA` or `PLATFORM_CAPACITY` with `retryAfter` seconds.'],
       },
       {
         signature: 'abstract refresh(input: { refreshToken: string; proof: AccountProof }): Promise<AccountSessionView>',
@@ -1021,10 +1023,11 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'input', description: 'access token and installation proof.' }],
       },
       {
-        signature: 'abstract trackConnection(sessionId: AccountSessionId, close: () => void | Promise<void>): () => void',
-        description: 'Track a Platform connection so cross-instance session invalidation closes it.',
+        signature: 'abstract trackConnection(sessionId: AccountSessionId, close: () => void | Promise<void>): Promise<() => void>',
+        description: 'Track a Platform connection so cross-instance session invalidation closes it. Unbound session ids are resolved through the Account backend; missing or inactive sessions are rejected.',
         parameters: [{ name: 'sessionId', description: 'Account Session owning the connection.' }, { name: 'close', description: 'idempotent close callback.' }],
         returns: 'disposer removing the tracked connection.',
+        throws: ['AccountError `QUOTA` with a 60-second `retryAfter` when the Account already has twenty tracked closers.', 'AccountError `SESSION_REVOKED` when the session is missing or inactive.'],
       },
     ],
   },
@@ -1034,10 +1037,11 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Remote Access capability owning the complete Personal Pairing lifecycle.',
     methods: [
       {
-        signature: 'abstract createChallenge(input: { desktop: PairingAccountAuthentication rendezvousId: PairingRendezvousId }): Promise<PairingChallengeView>',
+        signature: 'abstract createChallenge(input: { desktop: PairingAccountAuthentication rendezvousId: PairingRendezvousId clientIp: string }): Promise<PairingChallengeView>',
         description: 'Create one two-minute invitation for a signed-in Desktop Installation.',
-        parameters: [{ name: 'input', description: 'Desktop authorization and opaque rendezvous identity.' }],
+        parameters: [{ name: 'input', description: 'Desktop authorization, opaque rendezvous identity, and the client IP counted toward the hourly IP quota.' }],
         returns: 'complete QR/link projection; no low-entropy fallback exists.',
+        throws: ['RemoteAccessError `QUOTA` or `PLATFORM_CAPACITY` with `retryAfter` seconds.', 'TypeError when `clientIp` is empty.'],
       },
       {
         signature: 'abstract getMobileAccessState(desktop: PairingAccountAuthentication): Promise<MobileAccessState>',
@@ -1088,9 +1092,10 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'abstract confirmPairing(input: { desktop: PairingAccountAuthentication pendingPairingId: PendingPairingId }): Promise<PersonalPairingView>',
-        description: 'Activate one pending pairing after the Desktop user compares authentication words.',
+        description: 'Activate one pending pairing after the Desktop user compares authentication words. Rejected at the fifty-first live Personal Pairing for the Account, before handshake activation.',
         parameters: [{ name: 'input', description: 'confirming Desktop and pending identity.' }],
         returns: 'independently keyed Companion-only Device Principal.',
+        throws: ['RemoteAccessError `QUOTA` with a 60-second `retryAfter` when the Account pairing ceiling is full.'],
       },
       {
         signature: 'abstract cancelChallenge(input: { desktop: PairingAccountAuthentication challengeId: PairingChallengeId }): Promise<void>',
@@ -1101,6 +1106,25 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         signature: 'abstract rejectPairing(input: { desktop: PairingAccountAuthentication pendingPairingId: PendingPairingId }): Promise<void>',
         description: 'Reject one pending handshake; repeated rejection is a no-op.',
         parameters: [{ name: 'input', description: 'owning Desktop authorization and pending identity.' }],
+      },
+      {
+        signature: 'abstract admitAttachmentBlob(input: { owner: PairingAccountAuthentication bytes: number }): Promise<{ reservationId: string }>',
+        description: 'Reserve one expiring ciphertext blob against the open-registration ceilings.',
+        parameters: [{ name: 'input', description: 'current-installation authorization and declared ciphertext size.' }],
+        returns: 'opaque reservation id released by {@link releaseAttachmentBlob}.',
+        throws: ['RemoteAccessError `QUOTA` or `PLATFORM_CAPACITY` with `retryAfter` seconds.', 'TypeError when `bytes` is not a non-negative integer.'],
+      },
+      {
+        signature: 'abstract releaseAttachmentBlob(input: { owner: PairingAccountAuthentication reservationId: string }): Promise<void>',
+        description: 'Release one blob reservation after receipt, expiry, or revocation.',
+        parameters: [{ name: 'input', description: 'current-installation authorization and reservation id.' }],
+        throws: ['TypeError when the reservation is missing or owned by another Account.'],
+      },
+      {
+        signature: 'abstract emitPushHint(owner: PairingAccountAuthentication): Promise<void>',
+        description: 'Admit one content-free push hint against the daily account ceiling. Capacity shedding does not reject push hints.',
+        parameters: [{ name: 'owner', description: 'current-installation authorization.' }],
+        throws: ['RemoteAccessError `QUOTA` with remaining-window `retryAfter` seconds.'],
       },
     ],
   },

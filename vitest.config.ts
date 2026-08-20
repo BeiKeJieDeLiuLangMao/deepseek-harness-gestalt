@@ -272,11 +272,10 @@ export default defineConfig({
         'packages/host/apiproxy/src/fetch/client.ts',
         'packages/host/apiproxy/src/fetch/handler.ts',
         'packages/platform/remote-access-redis/src/index.ts',
-        // TODO(#168,#170,#171): delete when merged
+        // TODO(#168,#170): delete when merged
         'packages/platform/platform-account-http/src/index.ts',
         'packages/platform/remote-access-client/src/index.ts',
         'packages/platform/remote-access-http/src/index.ts',
-        'packages/platform/remote-access/src/index.ts',
         'packages/schedule/schedule/src/index.ts',
         'packages/session-query/session-log-export/src/client/HeaderAction.tsx',
         'packages/session-query/session-log-export/src/client/index.ts',

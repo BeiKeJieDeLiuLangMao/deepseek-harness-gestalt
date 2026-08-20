@@ -42,7 +42,7 @@ export function apply(ctx: Context, config: Config): void {
         if (req.method !== 'POST') throw new HttpError(405, 'METHOD_NOT_ALLOWED', 'Remote Access route requires POST')
         const authentication = authenticationFromHeaders(req)
         const body = await readJson(req)
-        const result = await dispatch(ctx, authentication, body)
+        const result = await dispatch(ctx, authentication, body, () => requestClientIp(req))
         answerJson(res, 200, result)
       } catch (error) {
         answerError(res, error)
@@ -55,6 +55,7 @@ async function dispatch(
   ctx: Context,
   authentication: PairingAccountAuthentication,
   body: Record<string, unknown>,
+  clientIp: () => string,
 ): Promise<unknown> {
   switch (requiredString(body.operation, 'operation')) {
     case 'get-mobile-access': return ctx.remoteAccess.getMobileAccessState(authentication)
@@ -65,6 +66,7 @@ async function dispatch(
       return ctx.remoteAccess.createChallenge({
         desktop: authentication,
         rendezvousId: parsePairingRendezvousId(body.rendezvousId),
+        clientIp: clientIp(),
       })
     case 'cancel-challenge':
       await ctx.remoteAccess.cancelChallenge({
@@ -104,6 +106,20 @@ async function dispatch(
         device: parseDevice(body.device),
         mobileHandshake: decodeBytes(body.mobileHandshake, 'mobileHandshake'),
       }))
+    case 'admit-blob':
+      return ctx.remoteAccess.admitAttachmentBlob({
+        owner: authentication,
+        bytes: requiredNonNegativeSafeInteger(body.bytes, 'bytes'),
+      })
+    case 'release-blob':
+      await ctx.remoteAccess.releaseAttachmentBlob({
+        owner: authentication,
+        reservationId: requiredString(body.reservationId, 'reservationId'),
+      })
+      return { completed: true }
+    case 'emit-push-hint':
+      await ctx.remoteAccess.emitPushHint(authentication)
+      return { completed: true }
     default: throw new HttpError(400, 'OPERATION_INVALID', 'Remote Access operation is invalid')
   }
 }
@@ -208,7 +224,6 @@ function answerJson(res: ServerResponse, status: number, value: unknown): void {
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
   res.end(JSON.stringify(value))
 }
-/* jscpd:ignore-end */
 
 function answerError(res: ServerResponse, error: unknown): void {
   if (error instanceof HttpError) {
@@ -216,11 +231,20 @@ function answerError(res: ServerResponse, error: unknown): void {
     return
   }
   if (error instanceof RemoteAccessError) {
-    answerJson(res, 409, { error: { code: error.code, message: error.message } })
+    if (error.retryAfter !== undefined) res.setHeader('retry-after', String(error.retryAfter))
+    const status = error.code === 'QUOTA' || error.code === 'PLATFORM_CAPACITY' ? 429 : 409
+    answerJson(res, status, {
+      error: {
+        code: error.code,
+        message: error.message,
+        ...(error.retryAfter === undefined ? {} : { retryAfter: error.retryAfter }),
+      },
+    })
     return
   }
   answerJson(res, 500, { error: { code: 'INTERNAL_ERROR', message: 'Remote Access request failed' } })
 }
+/* jscpd:ignore-end */
 
 class HttpError extends Error {
   constructor(readonly status: number, readonly code: string, message: string) {
@@ -237,6 +261,26 @@ function requiredString(value: unknown, name: string): string {
 function requiredBoolean(value: unknown, name: string): boolean {
   if (typeof value !== 'boolean') throw new HttpError(400, 'BODY_INVALID', `${name} must be boolean`)
   return value
+}
+
+function requiredSafeInteger(value: unknown, name: string): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value)) {
+    throw new HttpError(400, 'BODY_INVALID', `${name} must be a safe integer`)
+  }
+  return value
+}
+
+function requiredNonNegativeSafeInteger(value: unknown, name: string): number {
+  const integer = requiredSafeInteger(value, name)
+  if (integer < 0) throw new HttpError(400, 'BODY_INVALID', `${name} must be a non-negative integer`)
+  return integer
+}
+
+/** TCP peer address. Forwarded headers are not used for the per-IP hourly quota. */
+function requestClientIp(req: IncomingMessage): string {
+  const address = req.socket.remoteAddress
+  if (typeof address === 'string' && address !== '') return address
+  throw new HttpError(400, 'CLIENT_IP_REQUIRED', 'Pairing Challenge requires a client IP')
 }
 
 function encodeBytes(value: Uint8Array): string { return Buffer.from(value).toString('base64url') }

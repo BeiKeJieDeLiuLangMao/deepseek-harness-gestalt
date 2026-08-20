@@ -218,7 +218,14 @@ export class RemoteAccessHttpTransport implements RemoteAccessTransport {
     if (isRecord(value) && isRecord(value.error)
       && typeof value.error.code === 'string' && typeof value.error.message === 'string') {
       const code = parseRemoteAccessErrorCode(value.error.code)
-      if (code !== undefined) throw new RemoteAccessError(code, value.error.message)
+      const retryAfter = value.error.retryAfter
+      if (code !== undefined) {
+        throw new RemoteAccessError(
+          code,
+          value.error.message,
+          Number.isSafeInteger(retryAfter) ? retryAfter as number : undefined,
+        )
+      }
     }
     throw new Error(`Remote Access request failed with HTTP ${response.status}`)
   }
@@ -346,6 +353,8 @@ const REMOTE_ACCESS_ERROR_CODES: ReadonlySet<RemoteAccessErrorCode> = new Set([
   'PAIRING_PENDING_INVALID',
   'PAIRING_ID_COLLISION',
   'PAIRING_RESOURCE_LIMIT',
+  'QUOTA',
+  'PLATFORM_CAPACITY',
 ])
 
 function parseRemoteAccessErrorCode(value: string): RemoteAccessErrorCode | undefined {

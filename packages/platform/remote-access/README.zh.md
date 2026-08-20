@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-远程访问 Service Definition 与个人配对 Service Provider。`ctx.remoteAccess` 对每个 Desktop 安装默认关闭手机访问，直到用户在设置中开启；它创建两分钟单次邀请，通过 `AccountService.currentInstallation()` 鉴别每个账号会话的安装 id 与类型，要求两个安装解析到同一账号，并且仅在 Desktop 明确确认后授予设备主体。调用方不能自行声明安装身份或类型。开放注册配额限制安装、配对、附件与推送提示；容量水位会以 `PLATFORM_CAPACITY` 和 `retryAfter` 拒绝新的登录、配对、附件或 WSS 接入，已建立的密文流继续。开发与生产使用独立的 origin、OAuth App、回调、凭据、数据库与身份命名空间；密钥只来自部署托管引用，缺失则该能力失败关闭。`PersonalPairingAuthorityStore` 原子持有共享的 Desktop access-to-route 关联与已确认 Mobile 配对结果；内存适配器只用于无密钥测试，部署必须向每个 Platform Instance 提供同一个持久适配器。
+远程访问 Service Definition 与个人配对 Service Provider。`ctx.remoteAccess` 对每个 Desktop 安装默认关闭手机访问，直到用户在设置中开启；它创建两分钟单次邀请，通过 `AccountService.currentInstallation()` 鉴别每个账号会话的安装 id 与类型，要求两个安装解析到同一账号，并且仅在 Desktop 明确确认后授予设备主体。调用方不能自行声明安装身份或类型。开放注册配额限制安装、配对、附件与推送提示；容量水位会以 `PLATFORM_CAPACITY` 和 `retryAfter` 拒绝新的登录、配对、附件或 WSS 接入，已建立的密文流继续。`createChallenge` 要求非空客户端 IP；配对挑战 HTTP 使用 TCP 对端地址并忽略 `x-forwarded-for`。每小时挑战、并发附件、每日上传和每日推送窗口位于共享配对事务状态中，因此共用一个 `PersonalPairingAuthorityStore` 的两个提供方执行同一份账号完整上限。硬上限返回 60 秒 `retryAfter`；滑动窗口返回剩余窗口秒数。`admitAttachmentBlob` / `releaseAttachmentBlob` 与 `emitPushHint` 按声明大小执行附件和推送上限，不存储密文。开发与生产使用独立的 origin、OAuth App、回调、凭据、数据库与身份命名空间；密钥只来自部署托管引用，缺失则该能力失败关闭。`PersonalPairingAuthorityStore` 原子持有共享的 Desktop access-to-route 关联、已确认 Mobile 配对结果以及这些配额窗口；内存适配器只用于无密钥测试，部署必须向每个 Platform Instance 提供同一个持久适配器。
 
 QR 载荷与完整的一次性 HTTPS 链接完全相同，携带 256 位邀请密钥、Desktop 指纹、rendezvous id、过期时间与协议主版本。握手完成后保持待确认，两个安装显示由握手哈希派生的同一组六个认证词。过期、取消、账号不匹配、拒绝、一次成功完成与关闭手机访问都会销毁对应的密码提供方能力。完成 id 与确认 id 保证重试幂等，串行变更保证并发完成只有一个获得邀请。
 

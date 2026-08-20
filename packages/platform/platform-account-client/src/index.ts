@@ -111,7 +111,9 @@ export class PlatformAccountHttpTransport implements PlatformAccountTransport {
       // A non-JSON proxy failure has no stable Platform error body.
     }
     if (isErrorBody(body)) {
-      if (isAccountErrorCode(body.error.code)) throw new AccountError(body.error.code, body.error.message)
+      if (isAccountErrorCode(body.error.code)) {
+        throw new AccountError(body.error.code, body.error.message, body.error.retryAfter)
+      }
       message = `${body.error.code}: ${body.error.message}`
     }
     throw new Error(message)
@@ -675,12 +677,16 @@ function proofHeaders(accessToken: string, proof: AccountProof): HeadersInit {
   }
 }
 
-function isErrorBody(value: unknown): value is { error: { code: string; message: string } } {
+function isErrorBody(value: unknown): value is { error: { code: string; message: string; retryAfter?: number } } {
   if (typeof value !== 'object' || value === null || !('error' in value)) return false
   const error = value.error
-  return typeof error === 'object' && error !== null
-    && 'code' in error && typeof error.code === 'string'
-    && 'message' in error && typeof error.message === 'string'
+  if (typeof error !== 'object' || error === null
+    || !('code' in error) || typeof error.code !== 'string'
+    || !('message' in error) || typeof error.message !== 'string') {
+    return false
+  }
+  if ('retryAfter' in error && error.retryAfter !== undefined && !Number.isSafeInteger(error.retryAfter)) return false
+  return true
 }
 
 function isAccountErrorCode(value: string): value is AccountErrorCode {
@@ -693,6 +699,8 @@ function isAccountErrorCode(value: string): value is AccountErrorCode {
     'PROOF_REPLAYED',
     'SESSION_EXPIRED',
     'SESSION_REVOKED',
+    'QUOTA',
+    'PLATFORM_CAPACITY',
   ].includes(value)
 }
 

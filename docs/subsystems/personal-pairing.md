@@ -39,10 +39,12 @@ Remote Access capability owning the complete Personal Pairing lifecycle.
 ```ts cordis-catalog
 /**
  * Create one two-minute invitation for a signed-in Desktop Installation.
- * @param input - Desktop authorization and opaque rendezvous identity.
+ * @param input - Desktop authorization, opaque rendezvous identity, and the client IP counted toward the hourly IP quota.
  * @returns complete QR/link projection; no low-entropy fallback exists.
+ * @throws RemoteAccessError `QUOTA` or `PLATFORM_CAPACITY` with `retryAfter` seconds.
+ * @throws TypeError when `clientIp` is empty.
  */
-abstract createChallenge(input: { desktop: PairingAccountAuthentication rendezvousId: PairingRendezvousId }): Promise<PairingChallengeView>
+abstract createChallenge(input: { desktop: PairingAccountAuthentication rendezvousId: PairingRendezvousId clientIp: string }): Promise<PairingChallengeView>
 
 /**
  * Read the current Desktop Installation's Mobile Access state.
@@ -101,8 +103,10 @@ abstract listPendingPairings(desktop: PairingAccountAuthentication): Promise<rea
 
 /**
  * Activate one pending pairing after the Desktop user compares authentication words.
+ * Rejected at the fifty-first live Personal Pairing for the Account, before handshake activation.
  * @param input - confirming Desktop and pending identity.
  * @returns independently keyed Companion-only Device Principal.
+ * @throws RemoteAccessError `QUOTA` with a 60-second `retryAfter` when the Account pairing ceiling is full.
  */
 abstract confirmPairing(input: { desktop: PairingAccountAuthentication pendingPairingId: PendingPairingId }): Promise<PersonalPairingView>
 
@@ -117,9 +121,33 @@ abstract cancelChallenge(input: { desktop: PairingAccountAuthentication challeng
  * @param input - owning Desktop authorization and pending identity.
  */
 abstract rejectPairing(input: { desktop: PairingAccountAuthentication pendingPairingId: PendingPairingId }): Promise<void>
+
+/**
+ * Reserve one expiring ciphertext blob against the open-registration ceilings.
+ * @param input - current-installation authorization and declared ciphertext size.
+ * @returns opaque reservation id released by {@link releaseAttachmentBlob}.
+ * @throws RemoteAccessError `QUOTA` or `PLATFORM_CAPACITY` with `retryAfter` seconds.
+ * @throws TypeError when `bytes` is not a non-negative integer.
+ */
+abstract admitAttachmentBlob(input: { owner: PairingAccountAuthentication bytes: number }): Promise<{ reservationId: string }>
+
+/**
+ * Release one blob reservation after receipt, expiry, or revocation.
+ * @param input - current-installation authorization and reservation id.
+ * @throws TypeError when the reservation is missing or owned by another Account.
+ */
+abstract releaseAttachmentBlob(input: { owner: PairingAccountAuthentication reservationId: string }): Promise<void>
+
+/**
+ * Admit one content-free push hint against the daily account ceiling.
+ * Capacity shedding does not reject push hints.
+ * @param owner - current-installation authorization.
+ * @throws RemoteAccessError `QUOTA` with remaining-window `retryAfter` seconds.
+ */
+abstract emitPushHint(owner: PairingAccountAuthentication): Promise<void>
 ```
 
-Source: [`packages/platform/remote-access/src/index.ts:400`](../../packages/platform/remote-access/src/index.ts)
+Source: [`packages/platform/remote-access/src/index.ts:424`](../../packages/platform/remote-access/src/index.ts)
 
 <a id="ctxremoterelay--remoterelayservice-abstract-seam"></a>
 

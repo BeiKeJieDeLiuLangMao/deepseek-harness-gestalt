@@ -6,6 +6,7 @@ import {
   parsePairingCompletionId,
   parsePairingRendezvousId,
   parsePendingPairingId,
+  parsePersonalPairingId,
 } from '@deepseek-ai/dsh-remote-access'
 import { RemoteAccessHttpTransport } from '../src/index.ts'
 
@@ -81,7 +82,7 @@ describe('RemoteAccessHttpTransport', () => {
         relay: {
           routeId: 'route-one', endpoint: 'desktop', credential: 'AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE', revision: 2,
         },
-      }, challenge, {}, [completion], [pairing], pairing, {}, completion,
+      }, challenge, {}, [completion], [pairing], {}, pairing, {}, completion,
       { status: 'pending' }, { status: 'rejected' }, {
         status: 'paired', pairingId: 'pairing-one', sealedRelayAuthority: 'AQI',
       },
@@ -111,6 +112,9 @@ describe('RemoteAccessHttpTransport', () => {
       pendingPairingId: 'pending-one', desktopHandshake: Uint8Array.of(1, 2),
     }])
     await expect(client.listPersonalPairings(authentication)).resolves.toMatchObject([pairing])
+    await expect(client.revokePersonalPairing({
+      authentication, pairingId: parsePersonalPairingId('pairing-one'),
+    })).resolves.toBeUndefined()
     await expect(client.confirmPairing({ authentication, pendingPairingId })).resolves.toMatchObject(pairing)
     await expect(client.rejectPairing({ authentication, pendingPairingId })).resolves.toBeUndefined()
     await expect(client.completeChallenge({
@@ -126,7 +130,7 @@ describe('RemoteAccessHttpTransport', () => {
       status: 'paired', pairingId: 'pairing-one', sealedRelayAuthority: Uint8Array.of(1, 2),
     })
 
-    expect(fetch).toHaveBeenCalledTimes(13)
+    expect(fetch).toHaveBeenCalledTimes(14)
     const first = vi.mocked(fetch).mock.calls[0]
     expect(first?.[0]).toBe('https://platform.example/v1/remote-access/personal-pairing')
     expect(first?.[1]).toMatchObject({
@@ -138,7 +142,7 @@ describe('RemoteAccessHttpTransport', () => {
         'X-Gestalt-Proof-Signature': 'signature',
       },
     })
-    const completionBody = vi.mocked(fetch).mock.calls[9]?.[1]?.body
+    const completionBody = vi.mocked(fetch).mock.calls[10]?.[1]?.body
     if (typeof completionBody !== 'string') throw new TypeError('completion request body must be a string')
     expect(JSON.parse(completionBody)).toMatchObject({
       operation: 'complete-challenge', mobileHandshake: 'AQI',
@@ -150,6 +154,29 @@ describe('RemoteAccessHttpTransport', () => {
     await expect(known.getMobileAccessState(authentication)).rejects.toEqual(
       new RemoteAccessError('PAIRING_CHALLENGE_USED', 'used'),
     )
+    const quota = transport({ error: { code: 'QUOTA', message: 'full', retryAfter: 60 } }, 429).client
+    await expect(quota.getMobileAccessState(authentication)).rejects.toMatchObject({
+      code: 'QUOTA', retryAfter: 60,
+    })
+    const capacity = transport(
+      { error: { code: 'PLATFORM_CAPACITY', message: 'shed', retryAfter: 5 } },
+      429,
+    ).client
+    await expect(capacity.getMobileAccessState(authentication)).rejects.toMatchObject({
+      code: 'PLATFORM_CAPACITY', retryAfter: 5,
+    })
+    const invalidRetry = transport({ error: { code: 'QUOTA', message: 'full', retryAfter: 1.5 } }, 429).client
+    await expect(invalidRetry.getMobileAccessState(authentication)).rejects.toMatchObject({
+      code: 'QUOTA', retryAfter: undefined,
+    })
+    await expect(transport({
+      enabled: true,
+      relay: {
+        routeId: 'route-one', endpoint: 'other', credential: 'AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE', revision: 1,
+      },
+    }).client.setMobileAccess({ authentication, enabled: true })).rejects.toThrow('must be mobile or desktop')
+    await expect(transport([{ ...pairing, online: 1 }]).client.listPersonalPairings(authentication))
+      .rejects.toThrow('must be a boolean')
 
     for (const body of [
       { error: { code: 'UNKNOWN', message: 'no' } },

@@ -150,7 +150,7 @@ describe('real Platform Account HTTP composition', () => {
 
     const instance = requireSecondary(secondary)
     const close = vi.fn()
-    instance.trackConnection(polled.sessionId, close)
+    await instance.trackConnection(polled.sessionId, close)
     const initialRefresh = polled.refreshToken
     now += ACCESS_TOKEN_TTL_MS + 1
     await installation.load()
@@ -258,8 +258,8 @@ describe('real Platform Account HTTP composition', () => {
     const instance = requireSecondary(secondary)
     const desktopReplacedClosed = vi.fn()
     const mobileClosed = vi.fn()
-    instance.trackConnection(desktopFirst.sessionId, desktopReplacedClosed)
-    instance.trackConnection(mobileFirst.sessionId, mobileClosed)
+    await instance.trackConnection(desktopFirst.sessionId, desktopReplacedClosed)
+    await instance.trackConnection(mobileFirst.sessionId, mobileClosed)
 
     await desktop.beginLogin()
     await completeCallback(networkFetch, ENVIRONMENT, callbacks[2])
@@ -281,7 +281,7 @@ describe('real Platform Account HTTP composition', () => {
     expect(desktop.getSnapshot()).toMatchObject({ status: 'signed-in', account: { githubLogin: 'newman' } })
 
     const desktopSignedOutClosed = vi.fn()
-    instance.trackConnection(desktopSecond.sessionId, desktopSignedOutClosed)
+    await instance.trackConnection(desktopSecond.sessionId, desktopSignedOutClosed)
     await desktop.signOut()
     expect(desktopSignedOutClosed).toHaveBeenCalledOnce()
     expect(mobileClosed).not.toHaveBeenCalled()
