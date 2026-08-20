@@ -1,0 +1,233 @@
+import { spawnSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import * as yaml from 'js-yaml'
+import { describe, expect, it } from 'vitest'
+import {
+  PLATFORM_DEPLOY_REQUIRED_ENV,
+  PLATFORM_PRODUCTION_REQUIRED_ENV,
+  assertOperatedPlatformEnvironment,
+  missingPlatformDeployEnv,
+  missingPlatformProductionEnv,
+  readPlatformSigningKey,
+  requiredPlatformEnv,
+  runPlatformProductionEnvCli,
+} from '../src/production-env.ts'
+
+const HEX = 'ab'.repeat(32)
+const DISTINCTIVE_SECRET = 'super-secret-token-value-do-not-print'
+const script = fileURLToPath(new URL('../src/production-env.ts', import.meta.url))
+const bootSource = readFileSync(new URL('../src/boot.ts', import.meta.url), 'utf8')
+const repoRoot = resolve(import.meta.dirname, '../../..')
+
+function completeDeployEnv(): NodeJS.Dict<string> {
+  return {
+    PLATFORM_ORIGIN: 'https://platform.example.test',
+    PLATFORM_GITHUB_CLIENT_ID: 'client',
+    PLATFORM_GITHUB_CLIENT_SECRET: DISTINCTIVE_SECRET,
+    PLATFORM_GITHUB_CALLBACK: 'https://platform.example.test/v1/account/oauth/github/callback',
+    PLATFORM_POSTGRES_HOST: 'postgres.example.test',
+    PLATFORM_POSTGRES_USER: 'gestalt',
+    PLATFORM_POSTGRES_PASSWORD: DISTINCTIVE_SECRET,
+    PLATFORM_REDIS_HOST: 'redis.example.test',
+    PLATFORM_REDIS_PASSWORD: DISTINCTIVE_SECRET,
+    PLATFORM_TOKEN_SIGNING_KEY: HEX,
+    PLATFORM_POLLING_SIGNING_KEY: HEX,
+    PLATFORM_ECS_SSH_KEY: '-----BEGIN DISTINCTIVE KEY-----',
+    PLATFORM_ECS_HOSTS: '10.0.0.1,10.0.0.2',
+  }
+}
+
+function spawnCli(env: NodeJS.Dict<string>) {
+  return spawnSync(process.execPath, ['--experimental-strip-types', script], {
+    encoding: 'utf8',
+    env: {
+      PATH: process.env.PATH,
+      ...(process.platform === 'win32'
+        ? {
+          SYSTEMROOT: process.env.SYSTEMROOT,
+          PATHEXT: process.env.PATHEXT,
+          COMSPEC: process.env.COMSPEC,
+        }
+        : {}),
+      ...env,
+    },
+  })
+}
+
+function loadWorkflow(path: string): Record<string, unknown> {
+  const workflow: unknown = yaml.load(readFileSync(resolve(repoRoot, path), 'utf8'))
+  if (!isRecord(workflow)) throw new TypeError(`${path} must define a workflow`)
+  return workflow
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function job(workflow: Record<string, unknown>, name: string): Record<string, unknown> {
+  if (!isRecord(workflow.jobs) || !isRecord(workflow.jobs[name])) {
+    throw new TypeError(`workflow must define the ${name} job`)
+  }
+  return workflow.jobs[name]
+}
+
+function steps(jobValue: Record<string, unknown>): Record<string, unknown>[] {
+  if (!Array.isArray(jobValue.steps)) throw new TypeError('job must define steps')
+  return jobValue.steps.filter(isRecord)
+}
+
+describe('assertOperatedPlatformEnvironment', () => {
+  it('treats unset and empty as production and refuses every other selection', () => {
+    expect(assertOperatedPlatformEnvironment(undefined)).toBe('production')
+    expect(assertOperatedPlatformEnvironment('')).toBe('production')
+    expect(assertOperatedPlatformEnvironment('production')).toBe('production')
+    expect(() => assertOperatedPlatformEnvironment('development')).toThrow(/only production/)
+    expect(() => assertOperatedPlatformEnvironment('staging')).toThrow(/only production/)
+    expect(() => assertOperatedPlatformEnvironment('Production')).toThrow(/only production/)
+  })
+})
+
+describe('production and deploy names', () => {
+  it('lists listen-process names before the ECS apply names', () => {
+    expect(PLATFORM_DEPLOY_REQUIRED_ENV.slice(0, PLATFORM_PRODUCTION_REQUIRED_ENV.length))
+      .toEqual([...PLATFORM_PRODUCTION_REQUIRED_ENV])
+    expect(PLATFORM_DEPLOY_REQUIRED_ENV.slice(PLATFORM_PRODUCTION_REQUIRED_ENV.length))
+      .toEqual(['PLATFORM_ECS_SSH_KEY', 'PLATFORM_ECS_HOSTS'])
+  })
+
+  it('reports missing names in declaration order and reads present values', () => {
+    expect(missingPlatformProductionEnv({})).toEqual([...PLATFORM_PRODUCTION_REQUIRED_ENV])
+    expect(missingPlatformDeployEnv({
+      PLATFORM_ORIGIN: 'https://platform.example.test',
+      PLATFORM_REDIS_HOST: 'redis.example.test',
+    })).toEqual([
+      'PLATFORM_GITHUB_CLIENT_ID',
+      'PLATFORM_GITHUB_CLIENT_SECRET',
+      'PLATFORM_GITHUB_CALLBACK',
+      'PLATFORM_POSTGRES_HOST',
+      'PLATFORM_POSTGRES_USER',
+      'PLATFORM_POSTGRES_PASSWORD',
+      'PLATFORM_REDIS_PASSWORD',
+      'PLATFORM_TOKEN_SIGNING_KEY',
+      'PLATFORM_POLLING_SIGNING_KEY',
+      'PLATFORM_ECS_SSH_KEY',
+      'PLATFORM_ECS_HOSTS',
+    ])
+    expect(requiredPlatformEnv('PLATFORM_ORIGIN', completeDeployEnv())).toBe('https://platform.example.test')
+    expect(() => requiredPlatformEnv('PLATFORM_ORIGIN', {})).toThrow('PLATFORM_ORIGIN')
+    expect(readPlatformSigningKey('PLATFORM_TOKEN_SIGNING_KEY', completeDeployEnv())).toEqual(
+      Uint8Array.from(Buffer.from(HEX, 'hex')),
+    )
+    expect(() => readPlatformSigningKey('PLATFORM_TOKEN_SIGNING_KEY', {
+      ...completeDeployEnv(),
+      PLATFORM_TOKEN_SIGNING_KEY: 'zz',
+    })).toThrow(/32 bytes of hex/)
+  })
+})
+
+describe('runPlatformProductionEnvCli', () => {
+  it('prints missing names without values and accepts a complete production set', () => {
+    const stderr: string[] = []
+    const write = console.error
+    console.error = (line: unknown) => {
+      stderr.push(String(line))
+    }
+    try {
+      expect(runPlatformProductionEnvCli({
+        ...completeDeployEnv(),
+        PLATFORM_GITHUB_CLIENT_SECRET: DISTINCTIVE_SECRET,
+        PLATFORM_ECS_SSH_KEY: '',
+      })).toBe(1)
+      expect(runPlatformProductionEnvCli({
+        ...completeDeployEnv(),
+        PLATFORM_ENVIRONMENT: 'development',
+      })).toBe(1)
+      expect(runPlatformProductionEnvCli(completeDeployEnv())).toBe(0)
+    } finally {
+      console.error = write
+    }
+    expect(stderr.join('\n')).toContain('PLATFORM_ECS_SSH_KEY')
+    expect(stderr.join('\n')).toContain('only production')
+    expect(stderr.join('\n')).not.toContain(DISTINCTIVE_SECRET)
+  })
+
+  it('exits nonzero from the source entry without printing secret values', () => {
+    const missing = spawnCli({})
+    expect(missing.status).toBe(1)
+    expect(missing.stderr).toContain('PLATFORM_ORIGIN')
+    expect(missing.stderr).toContain('PLATFORM_ECS_HOSTS')
+    const refused = spawnCli({
+      ...completeDeployEnv(),
+      PLATFORM_ENVIRONMENT: 'development',
+    })
+    expect(refused.status).toBe(1)
+    expect(`${refused.stdout}${refused.stderr}`).not.toContain(DISTINCTIVE_SECRET)
+    const ok = spawnCli(completeDeployEnv())
+    expect(ok.status).toBe(0)
+    expect(`${ok.stdout}${ok.stderr}`).not.toContain(DISTINCTIVE_SECRET)
+  })
+})
+
+describe('operated Platform composition', () => {
+  it('selects production before loading the pair and keeps dummy development on an invalid origin', () => {
+    expect(bootSource).toContain('assertOperatedPlatformEnvironment')
+    expect(bootSource).toContain('https://dev.gestaltrun.invalid')
+  })
+})
+
+describe('Platform release workflows', () => {
+  it('validates Environment production without applying ECS unless deploy is set', () => {
+    const workflow = loadWorkflow('.github/workflows/platform-deploy.yml')
+    expect(workflow.on).toMatchObject({
+      workflow_dispatch: {
+        inputs: {
+          deploy: { type: 'boolean', default: false },
+        },
+      },
+    })
+    const validate = job(workflow, 'validate')
+    const deploy = job(workflow, 'deploy')
+    expect(validate.environment).toBe('production')
+    expect(deploy.environment).toBe('production')
+    expect(deploy.needs).toBe('validate')
+    expect(deploy.if).toBe('${{ inputs.deploy }}')
+    const validateStep = steps(validate).find(step => typeof step.run === 'string'
+      && step.run.includes('apps/platform/src/production-env.ts'))
+    if (validateStep === undefined) throw new TypeError('validate job must run production-env.ts')
+    expect(String(validateStep.run)).toContain('--experimental-strip-types')
+    if (!isRecord(validateStep.env)) throw new TypeError('validate step must define env')
+    for (const name of PLATFORM_DEPLOY_REQUIRED_ENV) {
+      expect(validateStep.env, name).toHaveProperty(name)
+    }
+    if (!isRecord(workflow.jobs)) throw new TypeError('deploy workflow must define jobs')
+    for (const [name, value] of Object.entries(workflow.jobs)) {
+      if (!isRecord(value)) throw new TypeError(`${name} must be a job`)
+      expect(value.environment, name).toBe('production')
+    }
+  })
+
+  it('builds the image on master path changes without publishing to GHCR', () => {
+    const workflow = loadWorkflow('.github/workflows/platform-image.yml')
+    if (!isRecord(workflow.on) || !isRecord(workflow.on.push) || !isRecord(workflow.on.pull_request)) {
+      throw new TypeError('image workflow must define push and pull_request')
+    }
+    expect(workflow.on.push.branches).toEqual(['master'])
+    expect(workflow.on.push.paths).toEqual(workflow.on.pull_request.paths)
+    const build = job(workflow, 'build')
+    const buildPush = steps(build).find(step => typeof step.uses === 'string'
+      && step.uses.startsWith('docker/build-push-action@'))
+    if (buildPush === undefined || !isRecord(buildPush.with)) {
+      throw new TypeError('image workflow must define docker/build-push-action')
+    }
+    expect(buildPush.with.push).not.toBe(true)
+    expect(String(buildPush.with.push)).toContain('workflow_dispatch')
+    expect(String(buildPush.with.push)).toContain('inputs.push')
+    const login = steps(build).find(step => typeof step.uses === 'string'
+      && step.uses.startsWith('docker/login-action@'))
+    if (login === undefined) throw new TypeError('image workflow must define docker/login-action')
+    expect(String(login.if)).toContain('workflow_dispatch')
+    expect(String(login.if)).toContain('inputs.push')
+  })
+})

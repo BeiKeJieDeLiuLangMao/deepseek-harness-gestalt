@@ -1,4 +1,4 @@
-# Pull a published Platform image onto both ECS hosts. Does not build.
+# Validate Environment production, then optionally pull a published image onto both ECS hosts.
 name: Platform Deploy
 
 on:
@@ -9,6 +9,11 @@ on:
         required: true
         type: string
         default: latest
+      deploy:
+        description: Apply the image on both ECS hosts
+        required: true
+        type: boolean
+        default: false
 
 concurrency:
   group: platform-deploy
@@ -22,8 +27,41 @@ env:
   REGISTRY: ghcr.io
 
 jobs:
+  validate:
+    name: Validate production Environment
+    runs-on: ubuntu-24.04
+    environment: production
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Fail on missing production names
+        env:
+          PLATFORM_ENVIRONMENT: production
+          PLATFORM_ORIGIN: ${{ vars.PLATFORM_ORIGIN }}
+          PLATFORM_GITHUB_CALLBACK: ${{ vars.PLATFORM_GITHUB_CALLBACK }}
+          PLATFORM_GITHUB_CLIENT_ID: ${{ vars.PLATFORM_GITHUB_CLIENT_ID }}
+          PLATFORM_GITHUB_CLIENT_SECRET: ${{ secrets.PLATFORM_GITHUB_CLIENT_SECRET }}
+          PLATFORM_POSTGRES_HOST: ${{ vars.PLATFORM_POSTGRES_HOST }}
+          PLATFORM_POSTGRES_USER: ${{ secrets.PLATFORM_POSTGRES_USER }}
+          PLATFORM_POSTGRES_PASSWORD: ${{ secrets.PLATFORM_POSTGRES_PASSWORD }}
+          PLATFORM_REDIS_HOST: ${{ vars.PLATFORM_REDIS_HOST }}
+          PLATFORM_REDIS_PASSWORD: ${{ secrets.PLATFORM_REDIS_PASSWORD }}
+          PLATFORM_TOKEN_SIGNING_KEY: ${{ secrets.PLATFORM_TOKEN_SIGNING_KEY }}
+          PLATFORM_POLLING_SIGNING_KEY: ${{ secrets.PLATFORM_POLLING_SIGNING_KEY }}
+          PLATFORM_ECS_SSH_KEY: ${{ secrets.PLATFORM_ECS_SSH_KEY }}
+          PLATFORM_ECS_HOSTS: ${{ vars.PLATFORM_ECS_HOSTS }}
+        run: node --experimental-strip-types apps/platform/src/production-env.ts
+
   deploy:
     name: Deploy to ECS
+    needs: validate
+    if: ${{ inputs.deploy }}
     runs-on: ubuntu-24.04
     environment: production
     steps:
