@@ -146,6 +146,19 @@ describe('CI workflow', () => {
     expect(aggregate.needs).toContain('windows')
     expect(aggregate.needs).not.toContain('windows-native')
     expect(aggregate.needs).not.toContain('serial-windows')
+    expect(aggregate.needs).not.toContain('electron-runtime-e2e-macos')
+
+    const macosElectron = workflow.jobs['electron-runtime-e2e-macos']
+    if (!isRecord(macosElectron) || !Array.isArray(macosElectron.steps)) {
+      throw new TypeError('CI workflow must define electron-runtime-e2e-macos')
+    }
+    expect(macosElectron.if).toBe("github.event_name == 'pull_request'")
+    expect(macosElectron['runs-on']).toBe('macos-latest')
+    expect(macosElectron.name).toBe('macos electron runtime e2e')
+    const macosCommands = macosElectron.steps.filter((step): step is Record<string, unknown> & { run: string } => (
+      isRecord(step) && typeof step.run === 'string'
+    ))
+    expect(macosCommands.map(step => step.run)).toContain('pnpm run test:electron-runtime-e2e')
 
     // Linux failover is a separate switch: the three required Linux workers
     // and the verdict job resolve their pool through DSH_CI_FAILOVER_LINUX,

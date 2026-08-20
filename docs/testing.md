@@ -43,6 +43,7 @@ An e2e assertion re-runs the command or re-reads the file externally; a keyword 
 - CI and build-having test lanes run every example or Cordis-config subprocess from built `lib/` through the shared dual-mode launcher. Do not hand-write `--import tsx` for these subprocesses.
 - Protocol and operating-system fixtures that do not load Cordis run erasable `.ts` directly with Node, without tsx or the root paths map.
 - Only a test whose subject is source-path resolution may select `src`; state that contract in the test.
+- Real Chromium Browser Runtime e2e runs only through `pnpm run test:electron-runtime-e2e`. Do not set `ELECTRON_RUN_AS_NODE`. Node `test:e2e` keeps the named skip ([launcher note](../.agents/notes/implemented/testing/2026-08-20-electron-runtime-e2e-launcher.md)).
 
 ## When a snapshot test is required
 

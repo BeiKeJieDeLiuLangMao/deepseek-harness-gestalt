@@ -28,7 +28,7 @@ Dock 仍是截图、标题与文本的原生窗格。它不嵌入第二个 Brows
 
 ## 结果
 
-Desktop 拥有真实页面，而不再使用第二个 Electron 应用。Web 与 headless 保持无密钥且确定性。Dock 继续渲染 Runtime 事实，而不是 live 视图。真实 Chromium e2e 仅在本进程是 Electron 时运行；Node 覆盖使用注入的 Electron host 与 HTTP fixture。
+Desktop 拥有真实页面，而不再使用第二个 Electron 应用。Web 与 headless 保持无密钥且确定性。Dock 继续渲染 Runtime 事实，而不是 live 视图。真实 Chromium e2e 通过 `pnpm run test:electron-runtime-e2e` 运行（[启动器说明](../testing/2026-08-20-electron-runtime-e2e-launcher.md)）；Node 覆盖使用注入的 Electron host 与 HTTP fixture。
 
 ## 验证
 
@@ -36,4 +36,4 @@ Desktop 拥有真实页面，而不再使用第二个 Electron 应用。Web 与 
 - `pnpm exec vitest run apps/desktop/tests/browser-runtime.spec.ts apps/desktop/tests/overlay-isolation.spec.ts packages/browser/tool-browser`
 - `pnpm run test:snapshot`（browser-runtime 与 browser-runtime-tandem 的 headless transcript）
 - `pnpm run typecheck`、`pnpm run build`、`pnpm run publint`、`pnpm run constraints`、`pnpm run doc-sync`
-- `packages/browser/browser-runtime-electron/tests/runtime.e2e.ts` 中的 Electron 门控 e2e 在 Node 上以具名原因自跳过：本进程不是 Electron，且不得 spawn Tandem.app。
+- `pnpm run test:electron-runtime-e2e` 在 Electron 内运行 `packages/browser/browser-runtime-electron/tests/runtime.e2e.ts`；Node 上的 `pnpm run test:e2e` 保留具名跳过：本进程不是 Electron，且不得 spawn Tandem.app。

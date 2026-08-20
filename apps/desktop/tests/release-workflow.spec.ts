@@ -81,6 +81,23 @@ describe('Desktop release workflow', () => {
     expect(winPackage?.run).toContain('"-c.compression=$compression"')
   })
 
+  it('runs the declared Electron runtime e2e after install on both pack jobs', () => {
+    const mac = steps('pack-mac')
+    const win = steps('pack-win')
+    const macE2e = mac.findIndex(step => step.name === 'Electron cookie-isolation e2e')
+    const winE2e = win.findIndex(step => step.name === 'Electron cookie-isolation e2e')
+    const macInstall = mac.findIndex(step => step.name === 'Install (immutable)')
+    const winInstall = win.findIndex(step => step.name === 'Install (immutable)')
+    const macBuild = mac.findIndex(step => step.name === 'Build')
+    const winBuild = win.findIndex(step => step.name === 'Build')
+    expect(mac[macE2e]?.run).toBe('pnpm run test:electron-runtime-e2e')
+    expect(win[winE2e]?.run).toBe('pnpm run test:electron-runtime-e2e')
+    expect(macInstall).toBeLessThan(macE2e)
+    expect(macE2e).toBeLessThan(macBuild)
+    expect(winInstall).toBeLessThan(winE2e)
+    expect(winE2e).toBeLessThan(winBuild)
+  })
+
   it('smokes every packaged app before artifact upload', () => {
     expect(workflow.match(/electron-smoke-packaged\.spec\.ts/g)).toHaveLength(2)
     expect(workflow.match(/DSH_PACKAGED_APP_BIN/g)).toHaveLength(2)
