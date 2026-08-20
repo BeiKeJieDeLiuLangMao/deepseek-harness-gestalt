@@ -10,10 +10,13 @@
 import { describe, expect, it } from 'vitest'
 import type { CommandClaim, ReferenceInsert, TokenSpan } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import type { InputEffect, SubmitAttempt } from '../src/client/input/contract.ts'
-import { InputMachine, PLACEHOLDER, projectClipboard } from '../src/client/input/machine.ts'
+import {
+  InputMachine, PLACEHOLDER, occurrenceEnd, placeholderSpan, projectClipboard, snapCaret, snapSelection,
+} from '../src/client/input/machine.ts'
 import { deriveDecorations, scanTextRefs } from '../src/client/input/decorations.ts'
 
 const P = PLACEHOLDER
+const chip = (label: string): string => `${P}${label}`
 
 function claimOf(name: string, hint?: string): CommandClaim {
   return {
@@ -253,7 +256,7 @@ describe('input-machine: insert-ref and the occurrence table', () => {
     m.dispatch({ type: 'draft-changed', draft: 'see @wor now' })
     const fx = m.dispatch({ type: 'insert-ref', reference: refOf('worker-1', 'subagent'), span: spanOf(m, 4, 8) })
     expect(fx).toEqual([])
-    expect(m.state.draft).toBe(`see ${P} now`)
+    expect(m.state.draft).toBe(`see ${chip('worker-1')} now`)
     expect(m.state.occurrences).toEqual([{
       occurrenceId: 1, source: 'subagent', ref: 'worker-1', offset: 4,
       label: 'worker-1', clipboardText: '/worker-1',
@@ -265,12 +268,12 @@ describe('input-machine: insert-ref and the occurrence table', () => {
     const m = new InputMachine()
     m.dispatch({ type: 'draft-changed', draft: '/alp' })
     m.dispatch({ type: 'insert-ref', reference: refOf('alpha'), span: spanOf(m, 0, 4) })
-    m.dispatch({ type: 'draft-changed', draft: `${P} and /alp`, editRange: { start: 1, end: 1, insertedLength: 9 } })
-    m.dispatch({ type: 'insert-ref', reference: refOf('alpha'), span: spanOf(m, 6, 10) })
-    expect(m.state.draft).toBe(`${P} and ${P} `)
+    m.dispatch({ type: 'draft-changed', draft: `${chip('alpha')} and /alp`, editRange: { start: 6, end: 6, insertedLength: 9 } })
+    m.dispatch({ type: 'insert-ref', reference: refOf('alpha'), span: spanOf(m, 11, 15) })
+    expect(m.state.draft).toBe(`${chip('alpha')} and ${chip('alpha')} `)
     expect(m.state.occurrences.map(o => o.occurrenceId)).toEqual([1, 2])
     // Delete the first chip whole; the second survives with its own identity.
-    m.dispatch({ type: 'draft-changed', draft: ` and ${P} `, editRange: { start: 0, end: 1, insertedLength: 0 } })
+    m.dispatch({ type: 'draft-changed', draft: ` and ${chip('alpha')} `, editRange: { start: 0, end: 1, insertedLength: 0 } })
     expect(m.state.occurrences).toEqual([expect.objectContaining({ occurrenceId: 2, offset: 5 })])
   })
 
@@ -280,7 +283,7 @@ describe('input-machine: insert-ref and the occurrence table', () => {
     m.dispatch({ type: 'begin-command', claim: claimOf('goal'), span: spanOf(m, 0, 3) })
     m.dispatch({ type: 'draft-changed', draft: '/goal ask @wor' })
     m.dispatch({ type: 'insert-ref', reference: refOf('worker-1', 'subagent'), span: spanOf(m, 10, 14) })
-    expect(m.state.draft).toBe(`/goal ask ${P} `)
+    expect(m.state.draft).toBe(`/goal ask ${chip('worker-1')} `)
     expect(m.state.phase).toBe('claimed')
     expect(m.state.occurrences).toHaveLength(1)
   })
@@ -296,7 +299,7 @@ describe('input-machine: insert-ref and the occurrence table', () => {
 })
 
 describe('input-machine: occurrence reconciliation on draft edits', () => {
-  /** Machine with one chip at offset 4 inside `see ${P} now`. */
+  /** Machine with one chip at offset 4 inside `see ${chip('worker-1')} now`. */
   function withChip(): InputMachine {
     const m = new InputMachine()
     m.dispatch({ type: 'draft-changed', draft: 'see @wor now' })
@@ -306,16 +309,23 @@ describe('input-machine: occurrence reconciliation on draft edits', () => {
 
   it('an edit before the placeholder shifts the offset by the length delta (explicit editRange)', () => {
     const m = withChip()
-    m.dispatch({ type: 'draft-changed', draft: `I see ${P} now`, editRange: { start: 0, end: 0, insertedLength: 2 } })
+    m.dispatch({ type: 'draft-changed', draft: `I see ${chip('worker-1')} now`, editRange: { start: 0, end: 0, insertedLength: 2 } })
     expect(m.state.occurrences[0]?.offset).toBe(6)
-    m.dispatch({ type: 'draft-changed', draft: `see ${P} now`, editRange: { start: 0, end: 2, insertedLength: 0 } })
+    m.dispatch({ type: 'draft-changed', draft: `see ${chip('worker-1')} now`, editRange: { start: 0, end: 2, insertedLength: 0 } })
     expect(m.state.occurrences[0]?.offset).toBe(4)
   })
 
   it('an edit after the placeholder leaves the offset alone', () => {
     const m = withChip()
-    m.dispatch({ type: 'draft-changed', draft: `see ${P} later`, editRange: { start: 6, end: 9, insertedLength: 5 } })
+    m.dispatch({ type: 'draft-changed', draft: `see ${chip('worker-1')} later`, editRange: { start: 14, end: 17, insertedLength: 5 } })
     expect(m.state.occurrences[0]?.offset).toBe(4)
+  })
+
+  it('a deletion of one label glyph removes the whole occurrence and leftover run', () => {
+    const m = withChip()
+    m.dispatch({ type: 'draft-changed', draft: 'see \uFFFCworker- now', editRange: { start: 12, end: 13, insertedLength: 0 } })
+    expect(m.state.occurrences).toEqual([])
+    expect(m.state.draft).toBe('see  now')
   })
 
   it('a deletion covering the placeholder removes the whole occurrence', () => {
@@ -333,7 +343,7 @@ describe('input-machine: occurrence reconciliation on draft edits', () => {
 
   it('without editRange the prefix/suffix diff scan recovers the edit (shift path)', () => {
     const m = withChip()
-    m.dispatch({ type: 'draft-changed', draft: `see there ${P} now` })
+    m.dispatch({ type: 'draft-changed', draft: `see there ${chip('worker-1')} now` })
     expect(m.state.occurrences[0]?.offset).toBe(10)
   })
 
@@ -392,7 +402,7 @@ describe('input-machine: consume-token guards', () => {
     m.dispatch({ type: 'draft-changed', draft: '/model @wor' })
     m.dispatch({ type: 'insert-ref', reference: refOf('w'), span: spanOf(m, 7, 11) })
     m.dispatch({ type: 'consume-token', guard: { kind: 'span', span: spanOf(m, 0, 7) } })
-    expect(m.state.draft).toBe(`${P} `)
+    expect(m.state.draft).toBe(`${chip('w')} `)
     expect(m.state.occurrences[0]?.offset).toBe(0)
   })
 })
@@ -472,7 +482,7 @@ describe('input-machine: undo / redo', () => {
     m.dispatch({ type: 'draft-changed', draft: '', editRange: { start: 0, end: 1, insertedLength: 0 } })
     expect(m.state.occurrences).toEqual([])
     m.dispatch({ type: 'undo' })
-    expect(m.state.draft).toBe(`${P} `)
+    expect(m.state.draft).toBe(`${chip('w')} `)
     expect(m.state.occurrences).toHaveLength(1)
   })
 
@@ -511,9 +521,9 @@ describe('input-machine: paste plane', () => {
       type: 'paste-begin', text: '/alpha x', selection: { start: 3, end: 3 },
       components: [{ start: 0, end: 6, reference: refOf('alpha') }],
     })
-    expect(m.state.draft).toBe(`hi ${P} x`)
+    expect(m.state.draft).toBe(`hi ${chip('alpha')} x`)
     expect(m.state.occurrences).toEqual([expect.objectContaining({ ref: 'alpha', offset: 3 })])
-    expect(m.state.paste?.insertedRange).toEqual({ start: 3, end: 6 })
+    expect(m.state.paste?.insertedRange).toEqual({ start: 3, end: 11 })
     m.dispatch({ type: 'undo' })
     expect(m.state).toMatchObject({ draft: 'hi ', occurrences: [] })
   })
@@ -523,7 +533,7 @@ describe('input-machine: paste plane', () => {
     m.dispatch({ type: 'paste-begin', text: '/alpha rest', selection: { start: 0, end: 0 } })
     expect(m.state.paste?.attemptId).toBe(1)
     m.dispatch({ type: 'paste-upgrade', attemptId: 1, span: spanOf(m, 0, 6), reference: refOf('alpha') })
-    expect(m.state.draft).toBe(`${P} rest`)
+    expect(m.state.draft).toBe(`${chip('alpha')} rest`)
     expect(m.state.occurrences).toHaveLength(1)
     m.dispatch({ type: 'undo' })
     expect(m.state).toMatchObject({ draft: '/alpha rest', occurrences: [] })
@@ -535,11 +545,11 @@ describe('input-machine: paste plane', () => {
     const m = new InputMachine()
     m.dispatch({ type: 'paste-begin', text: '/alpha /beta', selection: { start: 0, end: 0 } })
     m.dispatch({ type: 'paste-upgrade', attemptId: 1, span: spanOf(m, 0, 6), reference: refOf('alpha') })
-    expect(m.state.paste?.insertedRange).toEqual({ start: 0, end: 7 })
-    m.dispatch({ type: 'paste-upgrade', attemptId: 1, span: spanOf(m, 2, 7), reference: refOf('beta') })
-    expect(m.state.draft).toBe(`${P} ${P} `)
+    expect(m.state.paste?.insertedRange).toEqual({ start: 0, end: 12 })
+    m.dispatch({ type: 'paste-upgrade', attemptId: 1, span: spanOf(m, 7, 12), reference: refOf('beta') })
+    expect(m.state.draft).toBe(`${chip('alpha')} ${chip('beta')} `)
     expect(m.state.occurrences.map(o => o.ref)).toEqual(['alpha', 'beta'])
-    expect(m.state.paste?.insertedRange).toEqual({ start: 0, end: 4 })
+    expect(m.state.paste?.insertedRange).toEqual({ start: 0, end: 13 })
   })
 
   it('a stale span CAS drops one upgrade without ending the attempt', () => {
@@ -588,8 +598,8 @@ describe('input-machine: set-invalid styling bits', () => {
     const m = new InputMachine()
     m.dispatch({ type: 'draft-changed', draft: '/alp' })
     m.dispatch({ type: 'insert-ref', reference: refOf('alpha'), span: spanOf(m, 0, 4) })
-    m.dispatch({ type: 'draft-changed', draft: `${P} /bet`, editRange: { start: 1, end: 1, insertedLength: 5 } })
-    m.dispatch({ type: 'insert-ref', reference: refOf('beta'), span: spanOf(m, 2, 6) })
+    m.dispatch({ type: 'draft-changed', draft: `${chip('alpha')} /bet`, editRange: { start: 6, end: 6, insertedLength: 5 } })
+    m.dispatch({ type: 'insert-ref', reference: refOf('beta'), span: spanOf(m, 7, 11) })
     const rev = m.state.draftRev
     m.dispatch({ type: 'set-invalid', invalidIds: [1] })
     expect(m.state.draftRev).toBe(rev)
@@ -614,14 +624,35 @@ describe('input-machine: projectClipboard', () => {
     const m = new InputMachine()
     m.dispatch({ type: 'draft-changed', draft: 'use /alp' })
     m.dispatch({ type: 'insert-ref', reference: refOf('alpha'), span: spanOf(m, 4, 8) })
-    m.dispatch({ type: 'draft-changed', draft: `use ${P} then /bet`, editRange: { start: 5, end: 5, insertedLength: 10 } })
-    m.dispatch({ type: 'insert-ref', reference: refOf('beta'), span: spanOf(m, 11, 15) })
-    expect(m.state.draft).toBe(`use ${P} then ${P} `)
+    m.dispatch({ type: 'draft-changed', draft: `use ${chip('alpha')} then /bet`, editRange: { start: 10, end: 10, insertedLength: 10 } })
+    m.dispatch({ type: 'insert-ref', reference: refOf('beta'), span: spanOf(m, 16, 20) })
+    expect(m.state.draft).toBe(`use ${chip('alpha')} then ${chip('beta')} `)
     expect(projectClipboard(m.state)).toBe('use /alpha then /beta ')
   })
 
   it('is the identity on a chip-free draft', () => {
     expect(projectClipboard({ draft: 'plain text', occurrences: [] })).toBe('plain text')
+  })
+})
+
+describe('input-machine: placeholder run geometry', () => {
+  const o = { offset: 4, label: 'feature' }
+
+  it('counts the marker plus the label glyphs', () => {
+    expect(placeholderSpan('feature')).toBe(8)
+    expect(occurrenceEnd(o)).toBe(12)
+  })
+
+  it('snaps an interior caret to the nearer run boundary', () => {
+    expect(snapCaret(4, [o])).toBe(4)
+    expect(snapCaret(12, [o])).toBe(12)
+    expect(snapCaret(6, [o])).toBe(4)
+    expect(snapCaret(10, [o])).toBe(12)
+  })
+
+  it('expands a range that splits a run to the whole run', () => {
+    expect(snapSelection(6, 8, [o])).toEqual({ start: 4, end: 12 })
+    expect(snapSelection(0, 2, [o])).toEqual({ start: 0, end: 2 })
   })
 })
 
@@ -674,7 +705,7 @@ describe('input-machine: decorations', () => {
     m.dispatch({ type: 'set-invalid', invalidIds: [1] })
     expect(deriveDecorations(m.state)).toEqual({
       token: null,
-      chips: [{ occurrenceId: 1, offset: 0, label: 'alpha', invalid: true }],
+      chips: [{ occurrenceId: 1, offset: 0, label: 'alpha', title: '/alpha', invalid: true }],
       textRefs: [],
       hint: null,
     })
@@ -746,7 +777,7 @@ describe('input-machine: submitting transaction', () => {
     const m = new InputMachine()
     m.dispatch({ type: 'draft-changed', draft: '@wor' })
     m.dispatch({ type: 'insert-ref', reference: refOf('worker-1', 'subagent'), span: spanOf(m, 0, 4) })
-    m.dispatch({ type: 'draft-changed', draft: `${P}/go`, editRange: { start: 1, end: 1, insertedLength: 3 } })
+    m.dispatch({ type: 'draft-changed', draft: `${chip('worker-1')}/go`, editRange: { start: 9, end: 9, insertedLength: 3 } })
     m.dispatch({ type: 'draft-changed', draft: '/go', editRange: { start: 0, end: 1, insertedLength: 0 } })
     m.dispatch({ type: 'begin-command', claim: claimOf('goal'), span: spanOf(m, 0, 3) })
     m.dispatch({ type: 'draft-changed', draft: '/goal go' })

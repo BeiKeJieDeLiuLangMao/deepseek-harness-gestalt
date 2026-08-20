@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ClientSessionContext } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
-import { createWorkspaceSource } from '../src/client/source.ts'
+import { chipLabel, createWorkspaceSource } from '../src/client/source.ts'
 import type { WorkspacePathEntry } from '../src/client/rank.ts'
 
 const SIGNAL = new AbortController().signal
@@ -11,6 +11,14 @@ const FILES: readonly WorkspacePathEntry[] = [
   { relative: 'src/a.ts', kind: 'file' },
   { relative: 'docs', kind: 'dir' },
 ]
+
+describe('chipLabel', () => {
+  it('uses the last path segment and ignores a trailing slash', () => {
+    expect(chipLabel('.agents/notes/archived/feature/')).toBe('feature')
+    expect(chipLabel('src/a.ts')).toBe('a.ts')
+    expect(chipLabel('AGENT.md')).toBe('AGENT.md')
+  })
+})
 
 describe('createWorkspaceSource', () => {
   it('ranks the fetched index and inserts a trailing-slash directory token', async () => {
@@ -29,7 +37,14 @@ describe('createWorkspaceSource', () => {
       position: 'leading',
       via: 'menu',
       span: { start: 0, end: 1, draftRev: 0 },
-    })).toEqual({ text: '@docs/ ' })
+    })).toEqual({
+      insert: {
+        source: 'workspace',
+        ref: 'docs/',
+        label: 'docs',
+        clipboardText: '@docs/',
+      },
+    })
   })
 
   it('inserts a file path without a trailing slash', async () => {
@@ -45,7 +60,14 @@ describe('createWorkspaceSource', () => {
       position: 'leading',
       via: 'menu',
       span: { start: 0, end: 1, draftRev: 0 },
-    })).toEqual({ text: '@src/a.ts ' })
+    })).toEqual({
+      insert: {
+        source: 'workspace',
+        ref: 'src/a.ts',
+        label: 'a.ts',
+        clipboardText: '@src/a.ts',
+      },
+    })
   })
 
   it('exposes a lexicon after the first fetch and ignores aborted candidate polls', async () => {
@@ -125,7 +147,14 @@ describe('createWorkspaceSource', () => {
       position: 'leading',
       via: 'menu',
       span: { start: 0, end: 1, draftRev: 0 },
-    })).toEqual({ text: '@plain ' })
+    })).toEqual({
+      insert: {
+        source: 'workspace',
+        ref: 'plain',
+        label: 'plain',
+        clipboardText: '@plain',
+      },
+    })
   })
 
   it('honors enable, paste ignore, and basename filters', async () => {

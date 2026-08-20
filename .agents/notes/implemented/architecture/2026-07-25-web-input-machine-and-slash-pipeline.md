@@ -41,10 +41,10 @@ The effect surface (executed by the shell): `adjudicate` (calls InputTriggerCont
 
 The occurrence table and the chip's three projections:
 
-- Each reference occupies one `U+FFFC` in the draft; a table entry is `{occurrenceId, source, ref, offset, label, clipboardText, invalid?}`; same-named chips stay independent through occurrenceId.
-- Every edit updates the draft and the table in one transaction: ranges shift; a deletion/replacement intersecting a placeholder acts on the whole chip.
-- The single-character placeholder makes keyboard atomicity mostly hold natively (the caret has no interior position; Backspace / arrow keys / Shift extension natively take the whole chip); a mouse click on a chip goes backdrop hit → whole-chip setSelectionRange.
-- The visual projection = label: the backdrop renders the chip at the placeholder offset (the textarea glyph is invisible), with invalid taking the invalid style.
+- Each reference occupies a `U+FFFC` + label run in the draft (the label glyphs give the placeholder the same advance as the visible projection); a table entry is `{occurrenceId, source, ref, offset, label, clipboardText, invalid?}`; same-named chips stay independent through occurrenceId.
+- Every edit updates the draft and the table in one transaction: ranges shift; a deletion/replacement intersecting a placeholder run acts on the whole chip and drops leftover run glyphs.
+- A caret inside the label snaps to the nearer run boundary; Backspace on any run glyph removes the whole chip.
+- The visual projection = label: the backdrop renders the chip as borderless, color-differentiated text at the placeholder offset (the textarea glyph is invisible), with invalid taking the invalid style.
 - The clipboard/persistence projection = clipboardText: copy/cut expands placeholders inside the selection; the draft-persistence mirror writes the same projection (the chat store always holds plain text; the refresh seed semantics = select-all copy → reopen → paste, with chips degrading to text across a refresh).
 - The model projection = generated per chip at submit through the source's `codec.serialize` (owned by the submit attempt's signal and stale guard; a missing owner / failure / cancel means no send, never a downgrade to `/name`).
 
