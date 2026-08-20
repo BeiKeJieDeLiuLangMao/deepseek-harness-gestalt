@@ -14,6 +14,9 @@ const MENTION_PATTERN = /@([^\s@[\]]+)/g
  * @returns workspace-relative tokens without the leading `@`.
  */
 export function scanDraftMentions(text: string): readonly string[] {
+  /* jscpd:ignore-start */
+  // Host `scanMentions` uses a different lookbehind; the collect loop stays
+  // parallel so paste-ignore and slash-strip cannot drift.
   const seen = new Set<string>()
   const out: string[] = []
   for (const match of text.matchAll(MENTION_PATTERN)) {
@@ -25,6 +28,7 @@ export function scanDraftMentions(text: string): readonly string[] {
     out.push(relative)
   }
   return out
+  /* jscpd:ignore-end */
 }
 
 /**
