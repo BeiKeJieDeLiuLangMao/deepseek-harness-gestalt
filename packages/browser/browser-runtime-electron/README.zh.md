@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-这是服务临时与命名持久 Profile 的进程内 Electron Browser Runtime Provider。它用本进程的 `session.fromPartition` 与隐藏的离屏 `webContents` 实现 `ctx.browserRuntime`。截图使用 `webContents.capturePage`；页面文本使用 `executeJavaScript`。命名 Profile 恢复 `persist:session-*` partition；临时 Profile 使用没有 `persist:` 前缀的临时 `session-*` partition，Chromium 只在内存中保存其身份，磁盘上不留任何可复用内容。Chromium persist partition 位于 Electron `userData/Partitions/<name>`，绝不写入 `~/Library/Application Support/Tandem Browser`。
+这是服务临时、命名持久与共享 Profile 的进程内 Electron Browser Runtime Provider。它用本进程的 `session.fromPartition` 与隐藏的离屏 `webContents` 实现 `ctx.browserRuntime`。截图使用 `webContents.capturePage`；页面文本使用 `executeJavaScript`。命名与共享 Profile 恢复 `persist:session-*` partition；临时 Profile 使用没有 `persist:` 前缀的临时 `session-*` partition，Chromium 只在内存中保存其身份，磁盘上不留任何可复用内容。Chromium persist partition 位于 Electron `userData/Partitions/<name>`，绝不写入 `~/Library/Application Support/Tandem Browser`。
 
 插件仅在 `process.versions.electron` 已设置，或 Node 测试通过 `@deepseek-ai/dsh-browser-runtime-electron/testing` 安装 host 时加载。在普通 Node 上组合会在加载时失败。Desktop Host 持有隐藏窗口；Dock 仍是截图、标题与文本的原生窗格，不嵌入第二个 BrowserView。
 
@@ -15,7 +15,7 @@
 | `viewportHeight` | 用于离屏截图的隐藏窗口高度 | `800` |
 | `requestTimeoutMs` | 每次 Chromium 导航或内容读取的上限 | `30000` |
 
-时长与视口尺寸必须是正安全整数。所有操作进入同一个串行队列。写操作要求调用方提供最后观察到的 `expectedRevision`。人工 `input` 与 `takeover` 会把报告的 `controlOwner` 设为 `human`；`returnControl` 与 Agent 写入会把它设为 `agent`。人工 `input` 走单一路径：聚焦 input、textarea 或 contentEditable 时使用插入脚本，否则发送 `char` 输入事件。换行在聚焦可编辑控件中是 U+000A；没有聚焦可编辑控件时，每个换行是 keyCode 为 `\\n` 的 `char` 事件。同一命名 Profile 的第二个打开写入方会以 `BROWSER_PROFILE_BUSY` 拒绝。释放开始后的操作会以 `BROWSER_DISPOSED` 拒绝。释放阶段排空队列并销毁剩余隐藏窗口。
+时长与视口尺寸必须是正安全整数。所有操作进入同一个串行队列。写操作要求调用方提供最后观察到的 `expectedRevision`。人工 `input` 与 `takeover` 会把报告的 `controlOwner` 设为 `human`；`returnControl` 与 Agent 写入会把它设为 `agent`。人工 `input` 走单一路径：聚焦 input、textarea 或 contentEditable 时使用插入脚本，否则发送 `char` 输入事件。换行在聚焦可编辑控件中是 U+000A；没有聚焦可编辑控件时，每个换行是 keyCode 为 `\\n` 的 `char` 事件。同一命名 Profile 的第二个打开写入方会以 `BROWSER_PROFILE_BUSY` 拒绝。共享 create 复用共享 partition，且不占用 `BROWSER_PROFILE_BUSY`。释放开始后的操作会以 `BROWSER_DISPOSED` 拒绝。释放阶段排空队列并销毁剩余隐藏窗口。
 
 渲染进程崩溃会提交 reason 为 `crashed` 的 `BrowserUnavailableState`，并为同一 target 重建隐藏窗口。恢复耗尽则提交 `reason: 'reconnect-failed'`。格式错误的 Chromium 结果会以 `BROWSER_PROTOCOL` 拒绝。
 

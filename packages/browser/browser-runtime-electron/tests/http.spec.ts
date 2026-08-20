@@ -353,6 +353,22 @@ describe('Electron Browser HTTP protocol', () => {
     expect(tempAgain.status).toBe(200)
     expect((tempAgain.body as { tab: { id: string } }).tab.id)
       .not.toBe((temp.body as { tab: { id: string } }).tab.id)
+    const shared = await json(server.origin, '/sessions/create', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ name: 'electron-shared' }),
+    })
+    expect(shared.status).toBe(200)
+    expect((shared.body as { partition: string }).partition).toBe('persist:session-electron-shared')
+    const sharedAgain = await json(server.origin, '/sessions/create', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ name: 'electron-shared' }),
+    })
+    expect(sharedAgain.status).toBe(200)
+    expect((sharedAgain.body as { tab: { id: string } }).tab.id)
+      .not.toBe((shared.body as { tab: { id: string } }).tab.id)
+    expect((sharedAgain.body as { partition: string }).partition).toBe('persist:session-electron-shared')
     const tabId = (named.body as { tab: { id: string } }).tab.id
     const badRevision = await json(server.origin, '/navigate', {
       method: 'POST',

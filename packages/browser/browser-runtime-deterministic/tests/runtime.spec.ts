@@ -383,6 +383,31 @@ describe('deterministic Browser Runtime public lifecycle', () => {
     })
   })
 
+  it('reuses one shared Profile partition across two independent creates', async () => {
+    const ctx = new Context()
+    await ctx.plugin(BrowserRuntimeDeterministic, {
+      idPrefix: 'shared',
+      pages: [{ url: 'https://login.test/', title: 'Login', text: 'login', screenshotPngBase64: PNG_1X1 }],
+    })
+    const first = await ctx.browserRuntime.create({ profile: 'shared' })
+    expect(first.chrome).toMatchObject({
+      kind: 'shared',
+      name: 'shared',
+      partition: 'persist:session-shared-shared',
+    })
+    const navigated = await ctx.browserRuntime.navigate({
+      target: first.target,
+      expectedRevision: 0,
+      url: 'https://login.test/',
+    })
+    const second = await ctx.browserRuntime.create({ profile: 'shared' })
+    expect(second.target.profileId).toBe(first.target.profileId)
+    expect(second.target.workspaceId).not.toBe(first.target.workspaceId)
+    expect(second.chrome.partition).toBe(first.chrome.partition)
+    expect(second.storage).toEqual(navigated.storage)
+    expect(second.storage.cookies).toBe('profile=shared')
+  })
+
   it('keeps a closed target closed after a later temporary Profile opens', async () => {
     const ctx = new Context()
     await ctx.plugin(BrowserRuntimeDeterministic, {
@@ -541,8 +566,7 @@ describe('deterministic Browser Runtime public lifecycle', () => {
     const created = await ctx.browserRuntime.create({ profile: 'temporary' })
     const observed: number[] = []
     ctx.on('browser/runtime-state', () => { throw new Error('ordinary observer failed') })
-    // oxlint-disable-next-line typescript/no-misused-promises -- this listener exercises rejected post-commit observation
-    ctx.on('browser/runtime-state', async () => { throw new Error('async observer failed') })
+    ctx.on('browser/runtime-state', (): unknown => Promise.reject(new Error('async observer failed')))
     ctx.on('browser/runtime-state', (state) => { observed.push(state.revision) })
 
     const navigated = await ctx.browserRuntime.navigate({
