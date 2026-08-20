@@ -303,14 +303,6 @@ export class FcmCompanionPushDelivery implements CompanionPushDelivery {
 }
 
 /**
- * Fan one content-free hint out to every live token of its route and prune dead tokens.
- * @param store - token persistence.
- * @param delivery - vendor or keyless adapter.
- * @param accountId - authenticated Account owning the route.
- * @param hint - generic hint; never enriched.
- * @returns delivery and pruning counts.
- */
-/**
  * Desktop Session or Companion event that may become a hint after a durable commit.
  * Streaming is discarded at this layer even when `committed` is true.
  */
@@ -381,6 +373,14 @@ export function parsePushTokenRegistration(value: unknown): PushTokenRegistratio
   }
 }
 
+/**
+ * Fan one content-free hint out to every live token of its route and prune dead tokens.
+ * @param store - token persistence.
+ * @param delivery - vendor or keyless adapter.
+ * @param accountId - authenticated Account owning the route.
+ * @param hint - generic hint; never enriched.
+ * @returns delivery and pruning counts.
+ */
 export async function publishCompanionPushHint(
   store: PushTokenStore,
   delivery: CompanionPushDelivery,

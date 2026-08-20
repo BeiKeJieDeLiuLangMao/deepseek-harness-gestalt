@@ -1102,6 +1102,22 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Reject one pending handshake; repeated rejection is a no-op.',
         parameters: [{ name: 'input', description: 'owning Desktop authorization and pending identity.' }],
       },
+      {
+        signature: 'abstract registerPushToken(input: { mobile: PairingAccountAuthentication registration: PushTokenRegistration }): Promise<void>',
+        description: 'Bind one device push token to the Mobile Installation\'s confirmed pairing route.',
+        parameters: [{ name: 'input', description: 'Mobile authorization and the registration.' }],
+      },
+      {
+        signature: 'abstract unregisterPushToken(input: { mobile: PairingAccountAuthentication routeId: RelayRouteId token: CompanionPushToken }): Promise<void>',
+        description: 'Drop exactly one device push token, as on Mobile unpair.',
+        parameters: [{ name: 'input', description: 'Mobile authorization, route, and exact token.' }],
+      },
+      {
+        signature: 'abstract publishPushHint(input: { desktop: PairingAccountAuthentication hint: CompanionPushHint }): Promise<CompanionPushReport>',
+        description: 'Fan one Desktop-confirmed content-free hint out to the route\'s live tokens.',
+        parameters: [{ name: 'input', description: 'Desktop authorization and the generic hint.' }],
+        returns: 'delivery and pruning counts.',
+      },
     ],
   },
   {
@@ -3085,6 +3101,22 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type CompactionTrigger = \'pressure\' | \'context-overflow\';',
   },
   {
+    name: 'CompanionPushCategory',
+    declaration: 'export type CompanionPushCategory = (typeof COMPANION_PUSH_CATEGORIES)[number];',
+  },
+  {
+    name: 'CompanionPushHint',
+    declaration: 'export interface CompanionPushHint {\n    category: CompanionPushCategory;\n    routeId: RelayRouteId;\n    sessionRef?: string;\n}',
+  },
+  {
+    name: 'CompanionPushReport',
+    declaration: 'export interface CompanionPushReport {\n    delivered: number;\n    pruned: number;\n}',
+  },
+  {
+    name: 'CompanionPushToken',
+    declaration: 'export type CompanionPushToken = Branded<\'CompanionPushToken\'>;',
+  },
+  {
     name: 'ConfinedArgv',
     declaration: 'export interface ConfinedArgv {\n    argv: string[];\n    enforcement: SandboxEnforcement;\n    denialSignatures: readonly string[];\n    runnerFailureRules: readonly RunnerFailureRule[];\n}',
   },
@@ -3915,6 +3947,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'PruneResult',
     declaration: 'export interface PruneResult {\n    readonly pruned: readonly PrunedEntry[];\n    readonly charsRemoved: number;\n}',
+  },
+  {
+    name: 'PushPlatform',
+    declaration: 'export type PushPlatform = \'ios\' | \'android\';',
+  },
+  {
+    name: 'PushTokenRegistration',
+    declaration: 'export interface PushTokenRegistration {\n    routeId: RelayRouteId;\n    platform: PushPlatform;\n    token: CompanionPushToken;\n}',
   },
   {
     name: 'ReadFileLine',

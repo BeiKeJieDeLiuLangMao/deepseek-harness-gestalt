@@ -124,7 +124,9 @@ describe('Companion push hint vocabulary', () => {
     const forbidden = new Set(['body', 'subtitle', 'text', 'message', 'summary', 'reason', 'arguments', 'prompt'])
     const collect = (value: unknown, keys: string[]): string[] => {
       if (typeof value !== 'object' || value === null) return keys
-      if (Array.isArray(value)) return value.reduce((all, item) => collect(item, all), keys)
+      if (Array.isArray(value)) {
+        return (value as unknown[]).reduce<string[]>((all, item) => collect(item, all), keys)
+      }
       return Object.entries(value as Record<string, unknown>).reduce(
         (all, [key, item]) => collect(item, [...all, key]),
         keys,

@@ -18,4 +18,4 @@ Relay route/attachment id 与 Companion operation、Session projection、transcr
 
 ## 无内容推送提示
 
-`CompanionPushHint` 是协议原生记录：通用类别（`approval`、`question`、`turn-complete` 或 `failure`）、带品牌的 `routeId`，以及可选的不透明 `sessionRef`。流式分片没有类别，`companionPushHintForEvent` 返回 `undefined`。解析器拒绝额外字段。APNs 与 FCM 投影只复制该字段对以及重复类别的标题；它们不携带 transcript、交互、设备或凭据值。Token 扇出与厂商凭据属于远程访问。
+`CompanionPushHint` 是协议原生记录：通用类别（`approval`、`question`、`turn-complete` 或 `failure`）、带品牌的 `routeId`，以及可选的不透明 `sessionRef`。`CompanionPushToken` 是带品牌的 APNs 或 FCM 登记 token。流式分片没有类别，`companionPushHintForEvent` 返回 `undefined`。解析器拒绝额外字段。APNs 与 FCM 投影只复制该字段对以及重复类别的标题；它们不携带 transcript、交互、设备或凭据值。Token 扇出与厂商凭据属于远程访问。

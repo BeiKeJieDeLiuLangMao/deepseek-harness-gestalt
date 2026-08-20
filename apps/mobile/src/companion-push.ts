@@ -4,11 +4,10 @@ import { registerPlugin } from '@capacitor/core'
 import type { RelayCredentialGrant } from '@deepseek-ai/dsh-remote-access'
 import {
   parseCompanionPushHint,
-  type CompanionPushCategory,
   type CompanionPushHint,
 } from '@deepseek-ai/dsh-remote-protocol'
 
-export type { CompanionPushCategory, CompanionPushHint }
+export type { CompanionPushHint }
 
 /** Process visibility and synchronization required before any Companion mutation. */
 export interface CompanionPushState {
@@ -117,7 +116,7 @@ export function companionMayMutate(state: CompanionPushState): boolean {
  * Drop the matching push token on unpair or revocation.
  * @param state - current process state.
  */
-export function clearCompanionPushToken(state: CompanionPushState): CompanionPushState {
+function clearCompanionPushToken(state: CompanionPushState): CompanionPushState {
   return { ...state, token: undefined }
 }
 
@@ -250,10 +249,14 @@ export class CompanionForegroundRuntime {
     await this.startOwned()
   }
 
+  private pairingIsLive(): boolean {
+    return this.granted && this.state.foreground
+  }
+
   private async startOwned(): Promise<void> {
-    if (this.relay === undefined || !this.granted || !this.state.foreground) return
+    if (this.relay === undefined || !this.pairingIsLive()) return
     await this.relay.start()
-    if (!this.granted || !this.state.foreground) {
+    if (!this.pairingIsLive()) {
       await this.relay.stop()
       return
     }

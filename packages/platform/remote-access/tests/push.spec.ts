@@ -20,6 +20,7 @@ import {
   PersonalPairingProvider,
   parsePairingCompletionId,
   parsePairingRendezvousId,
+  parsePushTokenRegistration,
   publishCompanionPushHint,
   type NativePushTransport,
   type PairingHandshakeProvider,
@@ -301,6 +302,19 @@ describe('Remote Access content-free push', () => {
       .rejects.toThrow('unsupported fields')
     expect(delivery.outbox).toEqual([])
     expect(sent).toEqual([])
+  })
+
+  it('rejects a non-object, extra-field, or unsupported-platform registration at the executor', () => {
+    expect(() => parsePushTokenRegistration(null)).toThrow('Push token registration must be an object')
+    expect(() => parsePushTokenRegistration([{ routeId, platform: 'ios', token }]))
+      .toThrow('Push token registration must be an object')
+    expect(() => parsePushTokenRegistration({
+      routeId, platform: 'ios', token, text: 'secret',
+    })).toThrow('unsupported fields')
+    expect(() => parsePushTokenRegistration({ routeId, platform: 'web', token }))
+      .toThrow('Push token platform is unsupported')
+    expect(parsePushTokenRegistration({ routeId, platform: 'android', token }))
+      .toEqual({ routeId, platform: 'android', token })
   })
 
   it('publishes hints only after a durable pending commit and never for streaming', async () => {

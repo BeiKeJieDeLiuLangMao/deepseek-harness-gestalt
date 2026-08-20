@@ -16,7 +16,7 @@ import { parseCompanionPushToken, type RelayRouteId } from '@deepseek-ai/dsh-rem
 import type { MobilePairingActions, MobilePairingSnapshot } from './personal-pairing-model.ts'
 
 /** Local push-token owner cleared on unpair; implemented by CompanionForegroundRuntime. */
-export interface MobilePairingPushOwner {
+interface MobilePairingPushOwner {
   getState(): { token: string | undefined }
   clearToken(): void
   forgetConnection(): void
