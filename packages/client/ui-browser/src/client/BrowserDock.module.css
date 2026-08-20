@@ -80,6 +80,13 @@
   margin-left: auto;
 }
 
+.actionError {
+  padding: 0 10px 6px;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--dsw-alias-label-secondary);
+}
+
 .toolbar {
   display: flex;
   align-items: center;

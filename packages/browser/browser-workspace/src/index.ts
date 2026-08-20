@@ -3,7 +3,8 @@
  * zero or more Workspaces; each Workspace uses one Browser Profile and
  * contains multiple browser instances and tabs. Dock visibility, width,
  * each tab's current control owner, and each tab's last committed revision
- * are Session facts for the Dock UI.
+ * are Session facts for the Dock UI. `browser/runtime-state` also writes
+ * those facts for an owned, unclosed tab.
  * @module @deepseek-ai/dsh-browser-workspace
  */
 
@@ -100,6 +101,7 @@ export class BrowserWorkspaceBinder extends TypertRemoteService {
   constructor(ctx: Context) {
     super(ctx, 'browserWorkspace')
     ctx.on('session/disposed', (session) => { void this.cleanup(session) }, { global: true })
+    ctx.on('browser/runtime-state', (state) => { this.syncRuntimeState(state) }, { global: true })
     ctx.inject(['sessionProjections'], (projectionCtx) => {
       projectionCtx.sessionProjections.register<'browserWorkspace', BrowserWorkspaceProjection>({
         key: 'browserWorkspace',
@@ -164,7 +166,8 @@ export class BrowserWorkspaceBinder extends TypertRemoteService {
    * Observe one Session-owned tab named on the wire.
    * @param sessionId - Owning Session identity.
    * @param target - Complete tab identity.
-   * @returns the current open, unavailable, or closed state.
+   * @returns the current open, unavailable, or closed state. A closed result
+   *   forgets the listing row.
    */
   @Remote('observe')
   remoteObserve(sessionId: SessionId, target: BrowserTarget): Promise<BrowserRuntimeState> {
@@ -303,12 +306,15 @@ export class BrowserWorkspaceBinder extends TypertRemoteService {
   /**
    * Observe one Session-owned tab.
    * @param request - Session-bound observe request.
-   * @returns the current open, unavailable, or closed state.
+   * @returns the current open, unavailable, or closed state. A closed result
+   *   forgets the listing row.
    */
   async observe(request: BrowserWorkspaceObserveRequest): Promise<BrowserRuntimeState> {
     this.assertOwned(request.session, request.target)
     const state = await this.ctx.browserRuntime.observe(request)
-    if (state.status !== 'closed') {
+    if (state.status === 'closed') {
+      this.forget(request.session, state.target)
+    } else {
       this.recordFacts(request.session, state.target, state.controlOwner, state.revision)
     }
     return state
@@ -466,6 +472,18 @@ export class BrowserWorkspaceBinder extends TypertRemoteService {
     this.commit(session, current.workspaces.length === 0 && !current.userCollapsed
       ? { ...adopted, dockOpen: true }
       : adopted)
+  }
+
+  /**
+   * Write listing facts for an owned, unclosed Runtime commit, including
+   * revision bumps that never entered a Binder verb.
+   * @param state - Committed Runtime state after any Provider operation.
+   */
+  private syncRuntimeState(state: BrowserRuntimeState): void {
+    if (state.status === 'closed') return
+    const session = this.ctx.sessions.list().find(item => ownsTarget(this.snapshot(item), state.target))
+    if (session === undefined) return
+    this.recordFacts(session, state.target, state.controlOwner, state.revision)
   }
 
   /** Persist the current control owner and revision for one already-owned tab. */

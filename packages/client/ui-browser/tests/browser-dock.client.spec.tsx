@@ -324,6 +324,85 @@ describe('BrowserDock occupancy', () => {
     expect(closed.refresh).not.toHaveBeenCalled()
   })
 
+  it('observes once and retries focus after a listed-revision conflict', async () => {
+    const input = props()
+    const healed = page({ revision: 5, target: BACK, focused: true })
+    input.focus = vi.fn()
+      .mockRejectedValueOnce(Object.assign(new Error('browser revision conflict: expected 2, current 5'), {
+        code: 'BROWSER_REVISION_CONFLICT',
+      }))
+      .mockResolvedValueOnce(healed)
+    input.observe = vi.fn().mockResolvedValue(healed)
+    render(<BrowserDock {...input} />)
+    fireEvent.click(screen.getByRole('tab', { selected: false }))
+    await waitFor(() => {
+      expect(input.observe).toHaveBeenCalledWith(BACK)
+    })
+    expect(input.focus).toHaveBeenNthCalledWith(1, BACK, 2)
+    expect(input.focus).toHaveBeenNthCalledWith(2, BACK, 5)
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('observes once and retries close after a listed-revision conflict', async () => {
+    const input = props()
+    input.close = vi.fn()
+      .mockRejectedValueOnce(Object.assign(new Error('BROWSER_REVISION_CONFLICT'), {
+        code: 'BROWSER_REVISION_CONFLICT',
+      }))
+      .mockResolvedValueOnce({ status: 'closed', target: BACK, revision: 3 })
+    input.observe = vi.fn().mockResolvedValue(page({ revision: 3, target: BACK }))
+    render(<BrowserDock {...input} />)
+    fireEvent.click(screen.getAllByRole('button', { name: '关闭标签页' })[0]!)
+    await waitFor(() => {
+      expect(input.close).toHaveBeenCalledTimes(2)
+    })
+    expect(input.observe).toHaveBeenCalledWith(BACK)
+    expect(input.close).toHaveBeenLastCalledWith(BACK, 3)
+  })
+
+  it('does not retry close after observe reports the tab closed', async () => {
+    const input = props()
+    input.close = vi.fn().mockRejectedValue(Object.assign(
+      new Error('browser revision conflict: expected 2, current 3'),
+      { code: 'BROWSER_REVISION_CONFLICT' },
+    ))
+    input.observe = vi.fn().mockResolvedValue({ status: 'closed', target: BACK, revision: 3 })
+    render(<BrowserDock {...input} />)
+    fireEvent.click(screen.getAllByRole('button', { name: '关闭标签页' })[0]!)
+    await waitFor(() => {
+      expect(input.observe).toHaveBeenCalledWith(BACK)
+    })
+    expect(input.close).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('surfaces a listed mutation that is not a recoverable revision conflict', async () => {
+    const input = props()
+    input.focus = vi.fn().mockRejectedValue(new Error('tab closed'))
+    render(<BrowserDock {...input} />)
+    fireEvent.click(screen.getByRole('tab', { selected: false }))
+    await waitFor(() => {
+      expect(screen.getByRole('alert').textContent).toBe('无法完成该操作')
+    })
+    expect(input.observe).not.toHaveBeenCalledWith(BACK)
+  })
+
+  it('surfaces a revision conflict that stays failed after observe and retry', async () => {
+    const input = props()
+    input.focus = vi.fn()
+      .mockRejectedValueOnce(Object.assign(new Error('browser revision conflict: expected 2, current 5'), {
+        code: 'BROWSER_REVISION_CONFLICT',
+      }))
+      .mockRejectedValueOnce(new Error('still stale'))
+    input.observe = vi.fn().mockResolvedValue(page({ revision: 5, target: BACK }))
+    render(<BrowserDock {...input} />)
+    fireEvent.click(screen.getByRole('tab', { selected: false }))
+    await waitFor(() => {
+      expect(screen.getByRole('alert').textContent).toBe('无法完成该操作')
+    })
+    expect(input.focus).toHaveBeenCalledTimes(2)
+  })
+
   it('ignores a zero-width resize observation', async () => {
     vi.useFakeTimers()
     const input = props()

@@ -22,11 +22,11 @@ Dock 与收起预览把活动标签页的列表修订号传入 `useBrowserPage`�
 
 **只把 Dock 的 `refresh` / `navigate` RPC 结果写入 React 状态。** 否决，因为 Agent 的 `browser_navigate` 从不经过 Dock 动词。列表修订号才是这些页面事实已变化的 Session 信号。
 
-**让 Dock 订阅 `browser/runtime-state`。** 本工单否决，因为经 Binder 的 navigate 已经提交列表。没有 Binder 的 Runtime 内部修订号前进仍属于 [#184](https://github.com/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/issues/184)。
+**让 Dock 订阅 `browser/runtime-state`。** 本工单否决，因为经 Binder 的 navigate 已经提交列表。没有 Binder 动词的 Runtime 内部修订号前进由 [Dock 列表过期 Agent Note](2026-08-20-dock-listing-stale.md) 持有。
 
 ## 后果
 
-活动标签页界面在 navigate 与刷新之后跟踪 Binder 已提交的页面。崩溃恢复后的后台标签页列表仍不会自愈；那仍是 #184。刷新在 navigate 前增加一次 observe RPC。
+活动标签页界面在 navigate 与刷新之后跟踪 Binder 已提交的页面。Runtime 内部修订号前进后的后台标签页列表由 [Dock 列表过期 Agent Note](2026-08-20-dock-listing-stale.md) 持有。刷新在 navigate 前增加一次 observe RPC。
 
 ## 测试
 
