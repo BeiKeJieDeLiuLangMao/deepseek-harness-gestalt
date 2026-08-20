@@ -20,6 +20,7 @@ import { ZH_BROWSER_LOCALE, connectFreshWorkspaceZh, saveFailureShot } from './s
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/onboarding-deepseek-config', import.meta.url))
 const WELCOME_EXPECTED = join(SNAPSHOT_DIR, 'welcome.expected.md')
+const MISSING_EXPECTED = join(SNAPSHOT_DIR, 'missing.expected.md')
 const MODELS_EXPECTED = join(SNAPSHOT_DIR, 'models.expected.md')
 const MODE = webSnapshotMode()
 
@@ -70,20 +71,18 @@ describe.skipIf(MODE === 'record')('web e2e: first-run DeepSeek credential setup
     await welcome.getByRole('button', { name: WELCOME_NOTICE_COPY.zh.continueLabel }).click()
     await welcome.waitFor({ state: 'detached', timeout: 15_000 })
 
-    expect(await page.getByRole('dialog', { name: '添加一个 API Key 开始使用' }).count()).toBe(0)
-    expect(await page.locator('#root').evaluate(root => (root as HTMLElement).inert)).toBe(false)
+    const credentialStep = page.getByRole('dialog', { name: '添加一个 API Key 开始使用' })
+    await credentialStep.waitFor({ timeout: 15_000 })
+    const keyInput = credentialStep.getByLabel('API 密钥', { exact: true })
+    await keyInput.waitFor({ timeout: 10_000 })
+    const initial = await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd)
+    await compareOrRefreshGolden(MISSING_EXPECTED, initial, MODE)
 
     const secret = `dsh_onboarding_${randomBytes(12).toString('hex')}`
-    await page.getByRole('button', { name: '设置', exact: true }).click()
-    const settingsForKey = page.getByRole('dialog', { name: '设置' })
-    await settingsForKey.waitFor({ timeout: 10_000 })
-    await settingsForKey.getByRole('button', { name: '模型' }).click()
-    const keyInput = settingsForKey.getByLabel('API 密钥', { exact: true })
-    await keyInput.waitFor({ timeout: 10_000 })
     await keyInput.fill(secret)
-    await settingsForKey.getByRole('button', { name: '保存', exact: true }).click()
-    await settingsForKey.getByRole('button', { name: '关闭' }).click()
-    await settingsForKey.waitFor({ state: 'detached', timeout: 10_000 })
+    await credentialStep.getByRole('button', { name: '保存并继续' }).click()
+    await credentialStep.waitFor({ state: 'detached', timeout: 15_000 })
+    expect(await page.locator('#root').evaluate(root => (root as HTMLElement).inert)).toBe(false)
 
     const stored = await readFile(join(scaffold.harnessHome, '.credentials.yaml'), 'utf8')
     expect(stored.includes(`DEEPSEEK_API_KEY: ${secret}`)).toBe(true)

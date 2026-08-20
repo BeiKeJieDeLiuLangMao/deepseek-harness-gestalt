@@ -44,7 +44,10 @@ describe.skipIf(MODE === 'record')('web e2e: another usable provider ends first-
 
   it('closes the setup card without discarding the add card beside it', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-onboarding-setup-card-cancel'))
-    expect(await page.getByRole('dialog', { name: CREDENTIAL_STEP }).count()).toBe(0)
+    const credentialStep = page.getByRole('dialog', { name: CREDENTIAL_STEP })
+    await credentialStep.waitFor({ timeout: 15_000 })
+    await credentialStep.getByRole('button', { name: '稍后配置' }).click()
+    await credentialStep.waitFor({ state: 'detached', timeout: 15_000 })
 
     await page.getByRole('button', { name: '设置', exact: true }).click()
     const settings = page.getByRole('dialog', { name: '设置' })
@@ -108,13 +111,13 @@ describe.skipIf(MODE === 'record')('web e2e: another usable provider ends first-
     ).toBe(0)
     expect(await page.locator('#root').evaluate(root => (root as HTMLElement).inert)).toBe(false)
 
-    // The Models page agrees: a vacant official route does not reopen its
+    // The Models page agrees: DeepSeek stays a row rather than reopening its
     // setup card over a user who already has somewhere to send a request.
     await page.getByRole('button', { name: '设置', exact: true }).click()
     await settings.waitFor({ timeout: 10_000 })
     await settings.getByRole('button', { name: '模型' }).click()
+    await settings.getByRole('button', { name: '编辑 DeepSeek (deepseek-official)' }).waitFor({ timeout: 10_000 })
     expect(await settings.getByRole('textbox', { name: 'API 密钥', exact: true }).count()).toBe(0)
-    expect(await settings.getByRole('button', { name: '编辑 DeepSeek (deepseek-official)' }).count()).toBe(0)
 
     expect((await page.content()).includes('sk-e2e-minimax')).toBe(false)
     expect(tripwire.pageErrors).toEqual([])
