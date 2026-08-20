@@ -7,7 +7,9 @@
  * `BrowserWindow` stay available to the in-process Provider.
  */
 import { spawn } from 'node:child_process'
+import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { createRequire } from 'node:module'
+import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -15,6 +17,10 @@ const here = dirname(fileURLToPath(import.meta.url))
 const repoRoot = join(here, '..')
 const electronPackageJson = join(repoRoot, 'packages/browser/browser-runtime-electron/package.json')
 const electronMain = join(here, 'electron-runtime-e2e-main.mjs')
+const electronRuntimeE2eCasesEntry = join(
+  repoRoot,
+  'packages/browser/browser-runtime-electron/tests/runtime.e2e.cases.ts',
+)
 
 const ELECTRON_MISSING = [
   'run-electron-runtime-e2e: the electron package did not resolve to a binary.',
@@ -48,7 +54,7 @@ export function resolveElectronBinary(
 
 /**
  * Chromium switches that must precede the application entry.
- * @param platform - Host platform; `--no-sandbox` is omitted on darwin.
+ * @param platform - Host platform that selects Linux or Windows Chromium switches.
  * @returns argv after the Electron binary, ending with the declared main.
  */
 export function electronRuntimeE2eMainArgs(platform: NodeJS.Platform = process.platform): string[] {
@@ -60,37 +66,88 @@ export function electronRuntimeE2eMainArgs(platform: NodeJS.Platform = process.p
 }
 
 /**
- * Spawn Electron as an application and wait for the runtime e2e exit status.
- * @returns The Electron process exit code.
+ * Environment for the Electron application child.
+ * @param source - Parent environment; `NODE_OPTIONS` is dropped so a tsx
+ *   `--import` from `pnpm run` does not become Electron argv.
+ * @returns Isolated spawn environment.
  */
-export async function runElectronRuntimeE2e(): Promise<number> {
-  const runAsNode = process.env.ELECTRON_RUN_AS_NODE
+export function electronRuntimeE2eChildEnv(
+  source: NodeJS.ProcessEnv = process.env,
+): NodeJS.ProcessEnv {
+  const runAsNode = source.ELECTRON_RUN_AS_NODE
   if (runAsNode !== undefined && runAsNode !== '') {
     throw new Error(ELECTRON_RUN_AS_NODE_SET)
   }
-  const electronBin = resolveElectronBinary()
   const env = {
-    ...process.env,
+    ...source,
     ELECTRON_ENABLE_LOGGING: '1',
     DSH_ELECTRON_RUNTIME_E2E: '1',
   }
   Reflect.deleteProperty(env, 'ELECTRON_RUN_AS_NODE')
-  return await new Promise<number>((resolveExit, reject) => {
-    const child = spawn(electronBin, electronRuntimeE2eMainArgs(), {
-      cwd: repoRoot,
-      env,
-      stdio: 'inherit',
-      windowsHide: true,
-    })
-    child.once('error', reject)
-    child.once('exit', (code, signal) => {
-      if (signal !== null) {
-        reject(new Error(`run-electron-runtime-e2e: Electron exited from ${signal}`))
-        return
-      }
-      resolveExit(code ?? 1)
-    })
+  Reflect.deleteProperty(env, 'NODE_OPTIONS')
+  return env
+}
+
+/**
+ * Bundle the TypeScript cases for Electron so tsx load hooks never run there.
+ * `electron` stays external; workspace packages resolve through `tsconfig.base.json`.
+ * @param outfile - Absolute ESM path the Electron main will import.
+ */
+export async function bundleElectronRuntimeE2eCases(outfile: string): Promise<void> {
+  const requireFromTsx = createRequire(realpathSync(join(repoRoot, 'node_modules/tsx/package.json')))
+  const esbuild = requireFromTsx('esbuild') as {
+    build(options: Record<string, unknown>): Promise<{ errors: readonly { text: string }[] }>
+  }
+  const result = await esbuild.build({
+    absWorkingDir: repoRoot,
+    entryPoints: [electronRuntimeE2eCasesEntry],
+    outfile,
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    target: 'esnext',
+    tsconfig: join(repoRoot, 'tsconfig.base.json'),
+    external: ['electron'],
+    write: true,
   })
+  if (result.errors.length > 0) {
+    throw new Error(
+      `run-electron-runtime-e2e: esbuild failed: ${result.errors.map(error => error.text).join('; ')}`,
+    )
+  }
+}
+
+/**
+ * Spawn Electron as an application and wait for the runtime e2e exit status.
+ * @returns The Electron process exit code.
+ */
+export async function runElectronRuntimeE2e(): Promise<number> {
+  const env = electronRuntimeE2eChildEnv()
+  const electronBin = resolveElectronBinary()
+  const bundleDir = mkdtempSync(join(tmpdir(), 'dsh-electron-runtime-e2e-bundle-'))
+  const casesPath = join(bundleDir, 'runtime.e2e.cases.mjs')
+  try {
+    await bundleElectronRuntimeE2eCases(casesPath)
+    env.DSH_ELECTRON_RUNTIME_E2E_CASES = casesPath
+    return await new Promise<number>((resolveExit, reject) => {
+      const child = spawn(electronBin, electronRuntimeE2eMainArgs(), {
+        cwd: repoRoot,
+        env,
+        stdio: 'inherit',
+        windowsHide: true,
+      })
+      child.once('error', reject)
+      child.once('exit', (code, signal) => {
+        if (signal !== null) {
+          reject(new Error(`run-electron-runtime-e2e: Electron exited from ${signal}`))
+          return
+        }
+        resolveExit(code ?? 1)
+      })
+    })
+  } finally {
+    rmSync(bundleDir, { recursive: true, force: true })
+  }
 }
 
 if (process.argv[1] !== undefined && import.meta.filename === resolve(process.argv[1])) {

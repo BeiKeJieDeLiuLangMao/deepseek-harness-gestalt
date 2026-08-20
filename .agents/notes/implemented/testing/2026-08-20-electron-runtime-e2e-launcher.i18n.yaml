@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/testing/2026-08-20-electron-runtime-e2e-launcher.md
-2026-08-20-electron-runtime-e2e-launcher.md: 52a4d4c8bc7b8d280ef9bc6436cca7dcf6ff0d97
-2026-08-20-electron-runtime-e2e-launcher.zh.md: 0f7fbd52fa7b1be496588f53c85eebc66a01d213
+2026-08-20-electron-runtime-e2e-launcher.md: 24e2be9861d26f3ea97563865e103fe0aca64cf0
+2026-08-20-electron-runtime-e2e-launcher.zh.md: 438dbc6e52e14a7600dafd45fce28db30c0dee8b
