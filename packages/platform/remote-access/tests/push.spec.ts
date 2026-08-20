@@ -227,6 +227,26 @@ describe('Remote Access content-free push', () => {
     expect(withRelay.relay.revokeRoute).toHaveBeenCalled()
   })
 
+  it('skips another confirmed pairing when one Mobile registers or unregisters a token', async () => {
+    const { provider, store } = pushProvider()
+    const desktop = authentication('desktop-installation')
+    const firstMobile = authentication('mobile-first')
+    const secondMobile = authentication('mobile-second')
+    await pair(provider, desktop, firstMobile, 'first-route-owner')
+    await pair(provider, desktop, secondMobile, 'second-route-owner')
+    await provider.registerPushToken({
+      mobile: secondMobile,
+      registration: { routeId, platform: 'ios', token },
+    })
+    expect(await store.list('account-one' as never, routeId)).toEqual([{
+      routeId, platform: 'ios', token,
+      installationId: parseInstallationId('mobile-second'),
+      registeredAt: NOW,
+    }])
+    await provider.unregisterPushToken({ mobile: secondMobile, routeId, token })
+    expect(await store.list('account-one' as never, routeId)).toEqual([])
+  })
+
   it('rejects uncomposed push, unpaired routes, and the wrong Installation kind', async () => {
     const bare = uniquePairingProvider(handshakeProvider())
     const desktop = authentication('desktop-installation')
