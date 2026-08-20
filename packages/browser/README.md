@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-This family defines provider-neutral browser control, a deterministic keyless Provider, an in-process Electron Provider, a Tandem-shaped HTTP protocol client, a Session-owned Workspace binder, and deferred model-facing tools.
+This family defines provider-neutral browser control, a deterministic keyless Provider, an in-process Electron Provider, a Tandem-shaped HTTP protocol client, a Session-owned Workspace binder, and deferred model-facing tools. Desktop Host ships the Electron Provider on macOS and Windows. Linux is out of scope.
 
 | Package | Role | ctx key |
 |---|---|---|

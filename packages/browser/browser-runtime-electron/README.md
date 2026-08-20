@@ -33,3 +33,4 @@ The Provider itself contributes no request text; Consumer schemas and logged res
 
 - Hidden offscreen `webContents` are not shown in the Dock; the Dock still renders screenshot, title, and text facts.
 - Real Chromium e2e runs only when `process.versions.electron` is set; Node unit tests install a fake host via `@deepseek-ai/dsh-browser-runtime-electron/testing` and never spawn Tandem.app.
+- Desktop Host ships this Provider on macOS and Windows. Linux is out of scope.
