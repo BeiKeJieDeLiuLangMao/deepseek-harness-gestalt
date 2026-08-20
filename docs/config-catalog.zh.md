@@ -1747,7 +1747,27 @@ export interface Config {
 }
 ```
 
-来源：[`packages/platform/remote-access-http/src/index.ts:21`](../packages/platform/remote-access-http/src/index.ts)
+来源：[`packages/platform/remote-access-http/src/index.ts:22`](../packages/platform/remote-access-http/src/index.ts)
+
+<a id="deepseek-aidsh-remote-attachments"></a>
+
+## `@deepseek-ai/dsh-remote-attachments`
+
+```ts config-catalog
+/** Deployment bounds for the in-process store, reachable from cordis.yml. */
+export interface Config {
+  /** Per-blob ciphertext ceiling; defaults to the accepted protocol ceiling. */
+  maxBlobBytes?: number
+  /** Capability lifetime; defaults to the accepted fifteen-minute default. */
+  capabilityLifetimeMs?: number
+  /** Maximum simultaneously retained blobs; capacity failures are explicit. */
+  maxRetainedBlobs: number
+  /** Interval removing expired blobs in the background. */
+  sweepIntervalMs: number
+}
+```
+
+来源：[`packages/platform/remote-attachments/src/index.ts:111`](../packages/platform/remote-attachments/src/index.ts)
 
 <a id="deepseek-aidsh-repeat-tool-reminder"></a>
 

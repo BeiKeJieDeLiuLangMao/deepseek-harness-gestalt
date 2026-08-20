@@ -171,7 +171,7 @@ export async function apply(_ctx: Context, config: Config): Promise<void> {
     let projectionRevision = 0
     let mobileProjection: { revision: number; text: string } | undefined
     const failoverProjection = deferred<void>()
-    const result = deferred<'accepted'>()
+    const result = deferred<'accepted' | 'attachment-rejected'>()
     const offline = deferred<string>()
     const transportErrors: string[] = []
     const desktopLifecycle = new DesktopRelayEndpointLifecycle({

@@ -7,6 +7,7 @@ import {
 import { RemoteProtocolError } from './errors.ts'
 import { REMOTE_PROTOCOL_LIMITS } from './limits.ts'
 import type {
+  AttachmentCapability,
   RelayAttachmentId,
   RelayCredential,
   RelayErrorCode,
@@ -46,6 +47,19 @@ export function parseRelayCredential(value: unknown): RelayCredential {
   }
   decodeProtocolBase64Url(value, 32, 'Relay credential')
   return value as RelayCredential
+}
+
+/**
+ * Parse a canonical 256-bit one-time attachment capability at a wire boundary.
+ * @param value - untrusted capability string.
+ * @returns branded one-time blob capability.
+ */
+export function parseAttachmentCapability(value: unknown): AttachmentCapability {
+  if (typeof value !== 'string' || value.length !== 43 || !IDENTIFIER_PATTERN.test(value)) {
+    invalid('Attachment capability must be exactly 43 canonical base64url characters')
+  }
+  decodeProtocolBase64Url(value, 32, 'Attachment capability')
+  return value as AttachmentCapability
 }
 
 /**

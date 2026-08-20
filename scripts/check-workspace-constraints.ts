@@ -141,6 +141,9 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   '@deepseek-ai/dsh-remote-access': ['lib/relay-provider.js'],
   '@deepseek-ai/dsh-remote-access-client': ['lib/desktop-relay-lifecycle.js', 'lib/node-relay-socket.js'],
   '@deepseek-ai/dsh-remote-access-http': ['lib/relay.js'],
+  // Remote Attachments ships its HTTPS route plugin as its own bundle beside
+  // the blob store entry, mirroring the Remote Access HTTP split.
+  '@deepseek-ai/dsh-remote-attachments': ['lib/http.js'],
   // Desktop bridge types are shared by Electron and the browser overlay through
   // a runtime subpath, so the protocol is bundled separately from the UI client.
   '@deepseek-ai/dsh-client-ui-desktop': ['lib/protocol.js'],
