@@ -14,7 +14,7 @@ Session 可以拥有 Browser Workspace、实例、标签页、Dock 几何与当�
 
 Dock 没有 Profile 切换或 Agent 状态行。标签页占据顶行，收起控件留在右缘。持久 Profile 名称只出现在地址栏旁。活动标签页的标题、地址栏与截图会在该标签页的列表修订号前进时重新观察，因此 Binder 已提交的 navigate 会替换仍为空白的 `about:blank` 界面。刷新会先观察 Runtime 的当前 URL，再导航到该 URL。接管与交还智能体会写入 Workspace 快照已经持久化的同一个 `controlOwner`。视口显示最近一次截图与页面文本；它不嵌入第二个进程。
 
-第一个 Agent 标签页会打开 Dock。人工收起后，后续 Agent 活动不会再次打开它。收起预览是同一 Dock 的单行分层摘要。点击后层会用该标签页在列表中的修订号聚焦它；点击当前层会打开 Dock。后台标签页上的列表修订号冲突会 observe 一次并重试，或展示失败；该恢复由 [Dock 列表过期 Agent Note](../bug-fix/2026-08-20-dock-listing-stale.md) 持有。Dock 可见时预览隐藏。普通 MCP 工具行仍留在对话历史中。
+第一个 Agent 标签页会打开 Dock。人工收起后，后续 Agent 活动不会再次打开它。收起预览是同一 Dock 的单行分层摘要。点击后层会用该标签页在列表中的修订号聚焦它；点击当前层会打开 Dock。后台标签页上的列表修订号冲突会 observe 一次并重试，或展示失败；该恢复由 [Dock 列表过期 Agent Note](../bug-fix/2026-08-20-dock-listing-stale.md) 持有。Dock 可见时预览隐藏。普通 MCP 工具行仍留在对话历史中。选中 `browser_*` 工具行会聚焦列表中的标签页，且不写入 `dockOpen`；该路径由 [对话浏览器工具聚焦 Agent Note](2026-08-20-chat-browser-tool-focus-dock.md) 持有。
 
 占用方专用详情宽度范围为 420/640/960 px，来自 [#60](https://github.com/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/issues/60)。切换 Session 会从 [#67](https://github.com/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/issues/67) 持有的 Workspace 投影恢复该 Session 的可见性、宽度、实例、标签页、当前控制权所有者以及每个标签页最近一次提交的修订号。聚焦与关闭发送被操作标签页在列表中的修订号；该约定由 [Dock 标签页修订号 Agent Note](../bug-fix/2026-08-20-dock-tab-revision.md) 持有。
 

@@ -62,11 +62,14 @@ const LAYOUT_CHILDREN = {
  * service boundaries only, the package apply on its own
  * fiber, and the test AppFrame occupying 'root'.
  */
-async function bench(nodes: ToolResultNode[]) {
+async function bench(nodes: ToolResultNode[], remotes?: Record<string, unknown>) {
   const runtime = await SlotTestRuntime.create()
   runtime.provide('connection', { api: { settings: {} }, isLoopback: false })
   // ui-theme's Appearance row binds a durable scope through these two.
-  runtime.provide('remote', { $on: () => () => {} })
+  runtime.provide('remote', { $on: () => () => {}, ...remotes })
+  if (remotes?.browserWorkspace !== undefined) {
+    runtime.provide('remote.browserWorkspace', remotes.browserWorkspace)
+  }
   runtime.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
   const layout = { openDetails: vi.fn(), closeDetails: vi.fn() }
   runtime.provide('layout', layout)
@@ -145,6 +148,92 @@ describe('keyed toolview hole through the real machinery', () => {
     view.getByText('Build').click()
     expect(b.layout.openDetails).not.toHaveBeenCalled()
     expect(b.runtime.workspaces.calls.some(c => c.method === 'openPath')).toBe(false)
+    await b.runtime.dispose()
+  })
+
+  it('selecting a browser_navigate card focuses the listed tab revision', async () => {
+    const target = {
+      profileId: 'profile-1',
+      workspaceId: 'ws-1',
+      browserId: 'br-1',
+      tabId: 'tab-1',
+    }
+    const focus = vi.fn(() => Promise.resolve({ ok: true, value: {} }))
+    const setDock = vi.fn(() => Promise.resolve({ ok: true, value: {} }))
+    const args = JSON.stringify({
+      target,
+      expectedRevision: 1,
+      url: 'https://example.test/',
+    })
+    const b = await bench(
+      [toolResult(3, 'nav-1', 'browser_navigate', args)],
+      { browserWorkspace: { focus, setDock } },
+    )
+    b.runtime.sessions.binding(SID)?.session.projections.set('browserWorkspace', {
+      dockOpen: false,
+      dockWidth: 720,
+      userCollapsed: true,
+      activeWorkspaceId: target.workspaceId,
+      workspaces: [{
+        workspaceId: target.workspaceId,
+        profileId: target.profileId,
+        activeBrowserId: target.browserId,
+        browsers: [{
+          browserId: target.browserId,
+          activeTabId: target.tabId,
+          tabs: [{ tabId: target.tabId, controlOwner: 'agent', revision: 7 }],
+        }],
+      }],
+    })
+    const view = b.runtime.renderRoot()
+    view.container.querySelector('[data-chat-call-id="nav-1"]')?.dispatchEvent(
+      new MouseEvent('click', { bubbles: true }),
+    )
+    expect(b.layout.openDetails).toHaveBeenCalledTimes(1)
+    expect(focus).toHaveBeenCalledWith(SID, target, 7)
+    expect(setDock).not.toHaveBeenCalled()
+    await b.runtime.dispose()
+  })
+
+  it('selecting a browser_navigate card does not focus a gone tab', async () => {
+    const target = {
+      profileId: 'profile-1',
+      workspaceId: 'ws-1',
+      browserId: 'br-1',
+      tabId: 'tab-1',
+    }
+    const focus = vi.fn(() => Promise.resolve({ ok: true, value: {} }))
+    const args = JSON.stringify({
+      target,
+      expectedRevision: 1,
+      url: 'https://example.test/',
+    })
+    const b = await bench(
+      [toolResult(3, 'nav-1', 'browser_navigate', args)],
+      { browserWorkspace: { focus } },
+    )
+    b.runtime.sessions.binding(SID)?.session.projections.set('browserWorkspace', {
+      dockOpen: true,
+      dockWidth: 720,
+      userCollapsed: false,
+      activeWorkspaceId: target.workspaceId,
+      workspaces: [{
+        workspaceId: target.workspaceId,
+        profileId: target.profileId,
+        activeBrowserId: target.browserId,
+        browsers: [{
+          browserId: target.browserId,
+          activeTabId: 'other',
+          tabs: [{ tabId: 'other', controlOwner: 'agent', revision: 1 }],
+        }],
+      }],
+    })
+    const view = b.runtime.renderRoot()
+    view.container.querySelector('[data-chat-call-id="nav-1"]')?.dispatchEvent(
+      new MouseEvent('click', { bubbles: true }),
+    )
+    expect(b.layout.openDetails).toHaveBeenCalledTimes(1)
+    expect(focus).not.toHaveBeenCalled()
     await b.runtime.dispose()
   })
 

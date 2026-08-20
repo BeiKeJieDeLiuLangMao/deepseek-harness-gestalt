@@ -6,7 +6,7 @@ Session 持有的 Browser Dock 与收起后的标签页预览。当本 Session �
 
 展开的 Dock 没有 Profile 切换或 Agent 状态行。标签页占据顶行，收起控件留在右缘。工具栏显示刷新、地址栏旁的持久 Profile 标签，以及对当前标签页的接管或交还智能体。视口显示最近一次截图与页面文本。活动标签页的标题、地址栏与截图在 `navigate` 与 Refresh 之后跟随 Binder 已提交的页面。仍为空白的第一个标签页可以保持 `about:blank`，直到这次 navigate。第一个 Agent 标签页会打开 Dock；人工收起后，后续 Agent 活动不会再次打开它。
 
-收起预览是同一 Dock 的单行分层摘要，不是第二个 Dock。它没有外壳或页脚。点击后层会带着该标签页在列表中的修订号聚焦它；点击当前层会打开 Dock。后台标签页上的列表修订号 `BROWSER_REVISION_CONFLICT` 会对该标签页 observe 一次并重试，或展示失败。Dock 可见时预览隐藏。普通 MCP 工具行仍留在对话历史中。
+收起预览是同一 Dock 的单行分层摘要，不是第二个 Dock。它没有外壳或页脚。点击后层会带着该标签页在列表中的修订号聚焦它；点击当前层会打开 Dock。后台标签页上的列表修订号 `BROWSER_REVISION_CONFLICT` 会对该标签页 observe 一次并重试，或展示失败。Dock 可见时预览隐藏。普通 MCP 工具行仍留在对话历史中。在对话里选中 `browser_*` 工具行会聚焦列表中的标签页，且不改变 `dockOpen`（[决策](../../../.agents/notes/implemented/feature/2026-08-20-chat-browser-tool-focus-dock.md)）。
 
 占用方专用详情宽度范围为 420/640/960 px。切换 Session 会从 Workspace 投影恢复该 Session 的可见性、宽度、实例、标签页、当前控制权所有者以及每个标签页最近一次提交的修订号。聚焦与关闭会把被操作标签页在列表中的修订号一并发送。该行上的 `BROWSER_REVISION_CONFLICT` 会对该标签页 observe 一次并重试，或展示失败。
 
