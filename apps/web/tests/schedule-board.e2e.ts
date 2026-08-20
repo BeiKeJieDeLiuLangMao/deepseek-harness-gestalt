@@ -22,6 +22,7 @@ const FIXTURE = join(SNAPSHOT_DIR, 'session.jsonl')
 const BOARD_EXPECTED = join(SNAPSHOT_DIR, 'board.expected.md')
 const MODE = webSnapshotMode()
 const SEED_ID = 'schedule-board-web-e2e'
+const BOARD_BROWSER_ZONE = 'Asia/Shanghai'
 
 async function openSeed(page: Page): Promise<void> {
   const groupRow = page.locator('[role="treeitem"]').first()
@@ -42,12 +43,13 @@ describe.skipIf(MODE === 'record')('web e2e: Desktop Session Schedule board', ()
     scaffold = await launchWebScaffold({ extraOverlayPath: OVERLAY })
     await seedSession(scaffold, await readFile(FIXTURE, 'utf8'), SEED_ID)
     browser = await chromium.launch()
-    // Pin the browser zone so scheduledAt instants keep the same AM/PM as the
-    // golden on UTC CI runners and on developer hosts.
+    // The board formats scheduledAt with the browser zone; pin that zone so the
+    // golden's AM/PM does not follow the runner TZ. Product formatting stays
+    // local-time and is not forced to UTC.
     page = await browser.newPage({
       viewport: { width: 1680, height: 1000 },
       locale: 'en-US',
-      timezoneId: 'Asia/Shanghai',
+      timezoneId: BOARD_BROWSER_ZONE,
     })
     await page.addInitScript(() => {
       const browserNow = Date.parse('2100-01-01T12:00:00.000Z')
@@ -57,6 +59,8 @@ describe.skipIf(MODE === 'record')('web e2e: Desktop Session Schedule board', ()
     await page.goto(scaffold.baseUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
     await openSeed(page)
+    expect(await page.evaluate(() => Intl.DateTimeFormat().resolvedOptions().timeZone))
+      .toBe(BOARD_BROWSER_ZONE)
   }, 120_000)
 
   afterAll(async () => {
