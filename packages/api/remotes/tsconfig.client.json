@@ -34,6 +34,9 @@
       "path": "../../schedule/schedule"
     },
     {
+      "path": "../../browser/browser-workspace"
+    },
+    {
       "path": "../../feedback/message-feedback"
     },
     {

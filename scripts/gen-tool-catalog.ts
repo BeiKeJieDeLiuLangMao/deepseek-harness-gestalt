@@ -61,6 +61,8 @@ import * as ToolTasks from '@deepseek-ai/dsh-tool-jobs'
 import * as ToolTodo from '@deepseek-ai/dsh-tool-todo'
 import * as ToolSubagent from '@deepseek-ai/dsh-tool-subagent'
 import * as ToolWeb from '@deepseek-ai/dsh-tool-web'
+import DeterministicBrowserRuntime from '@deepseek-ai/dsh-browser-runtime-deterministic'
+import * as ToolBrowser from '@deepseek-ai/dsh-tool-browser'
 import VmWorkflowEngine from '@deepseek-ai/dsh-workflow-worker-thread'
 import * as ToolRalph from '@deepseek-ai/dsh-tool-ralph'
 import * as ToolWorkflow from '@deepseek-ai/dsh-tool-workflow'
@@ -537,6 +539,27 @@ const TOOL_PACKAGES: ToolPackage[] = [
       await ctx.plugin(VmWorkflowEngine, { provider: 'mock' })
       await ctx.plugin(ToolWorkflow)
     },
+  },
+  {
+    pkg: '@deepseek-ai/dsh-tool-browser',
+    dir: 'tool-browser',
+    source: 'packages/browser/tool-browser/src/index.ts',
+    requires: ['ctx.tools', 'ctx.browserRuntime'],
+    writes: ['tool/call', 'tool/result'],
+    toolsConfig: { toolSearch: { maxResultBytes: 65_536 } },
+    async mount(ctx) {
+      await ctx.plugin(DeterministicBrowserRuntime, {
+        pages: [{
+          url: 'https://example.test/',
+          title: 'Example Domain',
+          text: 'Catalog fixture.',
+          screenshotPngBase64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+        }],
+      })
+      await ctx.plugin(ToolBrowser)
+    },
+    note:
+      'All Browser tools are deferred: tool_search returns their schemas without activating them, and current eligibility remains authoritative.',
   },
   {
     pkg: '@deepseek-ai/dsh-tool-web',

@@ -105,6 +105,45 @@ describe('render branch tails', () => {
     expect(view.container.querySelector('[data-state="running"]')).not.toBeNull()
   })
 
+  it('DetailsPanel renders nothing without a selected call', () => {
+    localStorage.clear()
+    const snap = snapshotBase()
+    const chat = createChatStore().create()
+    const emptyList = createSnapshotStore<SessionListState>(
+      { ids: [], byId: {}, current: undefined, phase: 'ready', subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined })
+    const emptyWorkspaces = createSnapshotStore<WorkspaceListState>({
+      items: [], archivedSessionIds: [], state: 'idle', phase: 'ready', error: null,
+      baselinesReady: true, recentWorkspaceId: undefined,
+    })
+    const view = render(
+      <DetailsPanel
+        SessionProvider={SessionProviderStub}
+        renderSlot={renderToolDetailsProbe()}
+        sessionId={SID}
+        useSession={bindSnapshotSelector({ getSnapshot: () => snap, subscribe: () => () => {} })}
+        useSessions={bindSnapshotSelector(emptyList)}
+        useWorkspaces={bindSnapshotSelector(emptyWorkspaces)}
+        useProjection={(() => undefined)}
+        useInput={(() => { throw new Error('unused') })}
+        inputActions={{
+          setDraft: () => {},
+          addImages: () => true,
+          removeImage: () => {},
+          pruneImages: () => {},
+          addTextAnnotation: () => { throw new Error('unused') },
+          updateTextAnnotation: () => {},
+          removeTextAnnotation: () => {}, discardTextAnnotations: () => {}, addImagePin: () => 'pin' as never, updateImagePin: () => {}, removeImagePin: () => {},
+          submit: () => {},
+        }}
+        useStore={bindSnapshotSelector(chat)}
+        actions={chat.actions}
+        closeDetails={vi.fn()}
+        t={t}
+      />,
+    )
+    expect(view.container.firstChild).toBeNull()
+  })
+
   it('DetailsPanel title falls to 详情 when the selection has no toolName and no material', () => {
     localStorage.clear()
     const snap = snapshotBase()

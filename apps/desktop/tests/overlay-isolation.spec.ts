@@ -14,12 +14,23 @@ describe('Desktop overlay isolation', () => {
     const web = readFileSync(join(repo, 'packages', 'bundle', 'web-app', 'cordis.patch.yml'), 'utf8')
     const desktop = readFileSync(join(here, '..', 'cordis.patch.yml'), 'utf8')
     expect(web).not.toMatch(/ui-desktop|dsh-client-ui-desktop|dsh-time-context|dsh-schedule/)
+    expect(web).not.toMatch(/browser-runtime-electron-http|DSH_ELECTRON_BROWSER/)
     expect(desktop).not.toMatch(/id: time-context|dsh-time-context/)
     expect(desktop).toMatch(/id: schedule/)
     expect(desktop).toMatch(/@deepseek-ai\/dsh-schedule/)
     expect(desktop).toMatch(/id: ui-desktop/)
     expect(desktop).toMatch(/@deepseek-ai\/dsh-client-ui-desktop/)
+    expect(desktop).toMatch(/id: browser-runtime-electron-http/)
+    expect(desktop).toMatch(/@deepseek-ai\/dsh-browser-runtime-tandem/)
+    expect(desktop).toMatch(/DSH_ELECTRON_BROWSER_ORIGIN/)
+    expect(desktop).toMatch(/sidecar: false/)
+    expect(desktop).toMatch(/id: browser-runtime-deterministic[\s\S]*disabled: !!js process\.env\.DSH_ELECTRON_BROWSER_ORIGIN/)
+    expect(desktop).toMatch(/id: browser-runtime-electron-http[\s\S]*disabled: !!js process\.env\.DSH_ELECTRON_BROWSER_ORIGIN == null/)
     expect(desktop).not.toMatch(/directory-picker/)
+    expect(desktop).not.toMatch(/Tandem\.app/)
+    expect(desktop).not.toMatch(/^\s+command:/m)
+    expect(desktop).not.toMatch(/^\s+cwd:/m)
+    expect(desktop).not.toMatch(/DSH_TANDEM_BIN/)
   })
 
   it('composes Schedule through the Desktop profile path after its required services', () => {
@@ -40,7 +51,7 @@ describe('Desktop overlay isolation', () => {
     }
     try {
       const web = run(['web', '--dump-default-config'])
-      expect(web).not.toMatch(/ui-desktop|dsh-client-ui-desktop|dsh-time-context|dsh-schedule/)
+      expect(web).not.toMatch(/ui-desktop|dsh-client-ui-desktop|dsh-time-context|dsh-schedule|browser-runtime-electron-http/)
       expect(web).toMatch(/@deepseek-ai\/dsh-host-directory-picker-auto/)
 
       const desktop = run(['web', '--patch', patch, '--dump-config'])
@@ -53,6 +64,10 @@ describe('Desktop overlay isolation', () => {
       expect(schedule).toBeGreaterThan(agents)
       expect(schedule).toBeGreaterThan(persistence)
       expect(desktop).toMatch(/@deepseek-ai\/dsh-client-ui-desktop/)
+      expect(desktop).toMatch(/@deepseek-ai\/dsh-browser-runtime-deterministic/)
+      expect(desktop).toMatch(/@deepseek-ai\/dsh-browser-runtime-tandem/)
+      expect(desktop).toMatch(/sidecar: false/)
+      expect(desktop).toMatch(/disabled: true/)
     } finally {
       rmSync(home, { recursive: true, force: true })
     }
