@@ -29,6 +29,9 @@
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
+    "@deepseek-ai/cordis-plugin-include": "workspace:^",
+    "@deepseek-ai/cordis-plugin-loader": "workspace:^",
+    "@deepseek-ai/dsh-host-webserver": "workspace:^",
     "@deepseek-ai/dsh-platform-account-core": "workspace:^",
     "@deepseek-ai/dsh-remote-access-http": "workspace:^",
     "electron": "41.2.1",

@@ -47,6 +47,7 @@ import {
   setPairingEnabledFromIpc,
   type DesktopPairingActions,
 } from './personal-pairing.ts'
+import { DesktopPairingKeyVault } from './pairing-keys.ts'
 import { disposeDesktopOwners } from './shutdown.ts'
 import { createDesktopRemoteRelay } from './remote-relay.ts'
 
@@ -564,6 +565,7 @@ function createDesktopPairing(
     account: currentAccount,
     transport: new RemoteAccessHttpTransport({ environment }),
     relay,
+    pairingKeys: new DesktopPairingKeyVault(),
   })
 }
 

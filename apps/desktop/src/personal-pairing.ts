@@ -19,6 +19,7 @@ import {
   type DesktopRelayLifecycle,
 } from '@deepseek-ai/dsh-remote-access-client/desktop-relay-lifecycle'
 import type { DesktopAccountActions } from './platform-account.ts'
+import type { DesktopPairingKeyVault } from './pairing-keys.ts'
 
 /** Host verbs exposed to the Mobile Pairing Settings section. */
 export interface DesktopPairingActions {
@@ -54,6 +55,11 @@ export interface DesktopPairingControllerOptions {
   transport: RemoteAccessTransport
   /** Optional production-gated Relay lifecycle controlled by Mobile Access state. */
   relay?: DesktopRelayLifecycle
+  /**
+   * Optional keyless-proof key vault wired only by the explicit development composition.
+   * Production compositions must omit it so no Noise message bytes are retained as key material.
+   */
+  pairingKeys?: DesktopPairingKeyVault
   randomId?: () => string
   now?: () => number
   schedule?: (task: () => void, delayMs: number) => ReturnType<typeof setTimeout>
@@ -184,10 +190,11 @@ export class DesktopPairingController implements DesktopPairingActions {
   async confirm(pendingPairingId: PendingPairingId): Promise<DesktopPairingSnapshot> {
     return this.exclusive(async () => {
       this.assertActive()
-      await this.options.transport.confirmPairing({
+      const pairing = await this.options.transport.confirmPairing({
         authentication: await this.options.account.authorizeCurrentInstallation(),
         pendingPairingId,
       })
+      this.options.pairingKeys?.activate(pendingPairingId, pairing.id)
       await this.refresh()
       return this.snapshot
     })
@@ -200,6 +207,7 @@ export class DesktopPairingController implements DesktopPairingActions {
         authentication: await this.options.account.authorizeCurrentInstallation(),
         pendingPairingId,
       })
+      this.options.pairingKeys?.dropPending(pendingPairingId)
       await this.refresh()
       return this.snapshot
     })
@@ -212,6 +220,7 @@ export class DesktopPairingController implements DesktopPairingActions {
         authentication: await this.options.account.authorizeCurrentInstallation(),
         pairingId,
       })
+      this.options.pairingKeys?.release(pairingId)
       await this.refresh()
       return this.snapshot
     })
@@ -265,6 +274,7 @@ export class DesktopPairingController implements DesktopPairingActions {
       )
       if (!state.enabled) {
         await this.options.relay?.stop('mobile-access-disabled')
+        this.options.pairingKeys?.clear()
         this.publish({ status: 'ready', enabled: false, pairings: [] })
         return
       }
@@ -281,6 +291,11 @@ export class DesktopPairingController implements DesktopPairingActions {
       const pending = await this.options.transport.listPendingPairings(
         await this.options.account.authorizeCurrentInstallation(),
       )
+      const vault = this.options.pairingKeys
+      if (vault !== undefined) {
+        vault.prunePending(new Set(pending.map(record => record.pendingPairingId)))
+        for (const record of pending) vault.capturePending(record.pendingPairingId, record.desktopHandshake)
+      }
       const pairings = await this.listPairings()
       const first = pending[0]
       const challenge = this.snapshot.challenge
@@ -308,6 +323,7 @@ export class DesktopPairingController implements DesktopPairingActions {
     if (this.timer !== undefined) clearTimeout(this.timer)
     this.timer = undefined
     this.accountId = undefined
+    this.options.pairingKeys?.clear()
     if (this.snapshot.status === 'ready' && !this.snapshot.enabled && this.snapshot.pairings.length === 0) return
     const snapshot: DesktopPairingSnapshot = { status: 'ready', enabled: false, pairings: [] }
     this.snapshot = snapshot
