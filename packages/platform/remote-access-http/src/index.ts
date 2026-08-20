@@ -278,7 +278,7 @@ function requiredNonNegativeSafeInteger(value: unknown, name: string): number {
 
 /** TCP peer address. Forwarded headers are not used for the per-IP hourly quota. */
 function requestClientIp(req: IncomingMessage): string {
-  const address = req.socket?.remoteAddress
+  const address = req.socket.remoteAddress
   if (typeof address === 'string' && address !== '') return address
   throw new HttpError(400, 'CLIENT_IP_REQUIRED', 'Pairing Challenge requires a client IP')
 }

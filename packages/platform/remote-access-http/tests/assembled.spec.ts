@@ -235,7 +235,7 @@ describe('Remote Access HTTP assembled flow', () => {
     const remoteAccess = {
       getMobileAccessState: vi.fn(async () => ({ enabled: true })),
       setMobileAccess: vi.fn(async () => ({ enabled: true })),
-      createChallenge: vi.fn(async () => ({ challengeId: 'challenge-one' })),
+      createChallenge: vi.fn(async (_input: { clientIp: string }) => ({ challengeId: 'challenge-one' })),
       cancelChallenge: vi.fn(),
       listPendingPairings: vi.fn(async () => []),
       listPersonalPairings: vi.fn(async () => []),
@@ -276,15 +276,11 @@ describe('Remote Access HTTP assembled flow', () => {
     expect((await request({ operation: 'release-blob', reservationId: '' })).status).toBe(400)
     expect((await request({ operation: 'emit-push-hint' })).status).toBe(200)
     expect((await request({ operation: 'create-challenge', rendezvousId: 'rendezvous-one' })).status).toBe(200)
-    expect(remoteAccess.createChallenge).toHaveBeenCalledWith(expect.objectContaining({
-      clientIp: expect.stringMatching(/127\.0\.0\.1|::1/u),
-    }))
+    expect(remoteAccess.createChallenge.mock.calls.at(-1)?.[0].clientIp).toMatch(/127\.0\.0\.1|::1/u)
     expect((await request({ operation: 'create-challenge', rendezvousId: 'forwarded' }, {
       headers: { 'x-forwarded-for': '203.0.113.10, 10.0.0.1' },
     })).status).toBe(200)
-    expect(remoteAccess.createChallenge).toHaveBeenLastCalledWith(expect.objectContaining({
-      clientIp: expect.stringMatching(/127\.0\.0\.1|::1/u),
-    }))
+    expect(remoteAccess.createChallenge.mock.calls.at(-1)?.[0].clientIp).toMatch(/127\.0\.0\.1|::1/u)
     expect((await request({ operation: 'reissue-desktop-relay' })).status).toBe(200)
     expect((await request({ operation: 'revoke-pairing', pairingId: 'pairing-one' })).status).toBe(200)
     expect((await request({ operation: 'reject-pairing', pendingPairingId: 'pending-one' })).status).toBe(200)
