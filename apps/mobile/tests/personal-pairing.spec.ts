@@ -4,9 +4,11 @@ import {
   PAIRING_REPLAY_RETENTION_MS,
   parsePairingCompletionId,
   parsePendingPairingId,
+  parsePersonalPairingId,
 } from '@deepseek-ai/dsh-remote-access'
 import { parseRelayCredential, parseRelayRouteId } from '@deepseek-ai/dsh-remote-protocol'
 import type { RemoteAccessTransport } from '@deepseek-ai/dsh-remote-access-client'
+import { PairingCompanionKeyVault } from '../src/companion-keys.ts'
 import { companionMayMutate, CompanionForegroundRuntime } from '../src/companion-push.ts'
 import { MobilePairingController } from '../src/personal-pairing.ts'
 
@@ -48,6 +50,37 @@ describe('MobilePairingController', () => {
     expect(relay.start).toHaveBeenCalledOnce()
     await controller.deactivate()
     expect(relay.stop).toHaveBeenCalled()
+  })
+
+  it('retains independent pairing key material only after Desktop confirmation', async () => {
+    const scheduled: Array<() => void> = []
+    const transport = transportFixture()
+    const material = Uint8Array.from({ length: 32 }, (_, index) => index + 5)
+    const vault = new PairingCompanionKeyVault()
+    transport.getMobilePairingStatus.mockResolvedValueOnce({
+      status: 'paired', pairingId: parsePersonalPairingId('pairing-key'),
+    })
+    const handshake = {
+      begin: vi.fn(async () => ({
+        completionId: parsePairingCompletionId('retain-key'), mobileHandshake: Uint8Array.of(9),
+      })),
+      acceptDesktopHandshake: vi.fn(),
+      exportPairingKeyMaterial: vi.fn(() => material.slice()),
+    }
+    const controller = new MobilePairingController({
+      installation: installationFixture(), transport, handshake,
+      scanner: { scan: vi.fn() }, device: { name: 'Alice phone', platform: 'ios' },
+      pairingKeys: vault,
+      schedule: (task) => { scheduled.push(task); return { unref: vi.fn() } as never },
+      now: () => Date.parse('2026-08-18T10:01:00.000Z'),
+    })
+    await controller.completeLink(pairingLink(Date.parse('2026-08-18T10:02:00.000Z')))
+    expect(vault.pairingKeyMaterial(parsePersonalPairingId('pairing-key'))).toBeUndefined()
+    scheduled.shift()?.()
+    await vi.waitFor(() => { expect(controller.getSnapshot()).toEqual({ status: 'paired' }) })
+    expect(vault.pairingKeyMaterial(parsePersonalPairingId('pairing-key'))).toEqual(material)
+    await controller.unpair()
+    expect(vault.pairingKeyMaterial(parsePersonalPairingId('pairing-key'))).toBeUndefined()
   })
 
   it('unpairs by wiping local handshake material and stopping Relay', async () => {

@@ -33,6 +33,7 @@ export * from './relay.ts'
 export * from './open-registration-quotas.ts'
 export * from './platform-operations.ts'
 export * from './push.ts'
+export * from './keyless-handshake.ts'
 
 /** Fixed lifetime of one Personal Pairing invitation. */
 export const PAIRING_CHALLENGE_TTL_MS = 2 * 60 * 1000
@@ -153,6 +154,12 @@ export interface PairingHandshakeProvider {
     activePairingKey: ActivePairingKey
     grant: RelayCredentialGrant
   }): Promise<Uint8Array>
+  /**
+   * Export the independent key material of one activated pairing for pairing-scoped consumers.
+   * @param activePairingKey - provider-private allocation handle held by the confirmed pairing.
+   * @returns copy of at least 32 bytes; endpoints use it only as HKDF input.
+   */
+  exportPairingKeyMaterial?(activePairingKey: ActivePairingKey): Uint8Array | Promise<Uint8Array>
   /** @param state - provider-private invitation state to destroy. */
   destroyChallenge(state: PairingChallengeState): void | Promise<void>
   /** @param state - provider-private pending key state to destroy. */

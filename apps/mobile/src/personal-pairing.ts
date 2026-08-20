@@ -7,6 +7,7 @@ import {
   type PairingCompletionId,
   type PairingCompletionView,
   type PendingPairingId,
+  type PersonalPairingId,
   type RelayCredentialGrant,
 } from '@deepseek-ai/dsh-remote-access'
 import type { PlatformAccountId } from '@deepseek-ai/dsh-platform-account'
@@ -31,8 +32,25 @@ export interface MobilePairingHandshakeClient {
   acceptDesktopHandshake(desktopHandshake: Uint8Array): Promise<void>
   /** Open Mobile-specific Relay authority sealed to this Personal Pairing. */
   openRelayAuthority?(sealedAuthority: Uint8Array): Promise<RelayCredentialGrant>
+  /**
+   * Export the independent pairing key retained after the Desktop handshake.
+   * @returns copy of at least 32 bytes, or undefined before activation.
+   */
+  exportPairingKeyMaterial?(): Uint8Array | undefined
   /** Wipe any retained pairing key material on this installation. */
   wipe?(): void | Promise<void>
+}
+
+/** Retention sink for confirmed Personal Pairing key material. */
+export interface MobilePairingKeyRetention {
+  /**
+   * Retain the independent key material of one confirmed Personal Pairing.
+   * @param pairingId - confirmed Personal Pairing identity.
+   * @param material - at least 32 bytes of pairing key material.
+   */
+  retain(pairingId: PersonalPairingId, material: Uint8Array): void
+  /** Zero every retained pairing key. */
+  wipe(): void
 }
 
 /** Native QR scanner returning the exact full invitation payload. */
@@ -85,6 +103,8 @@ export interface MobilePairingControllerOptions {
   }
   /** Process-owned push token owner cleared on unpair. */
   companion?: MobilePairingPushOwner
+  /** Optional retention sink receiving confirmed pairing key material for pairing-scoped consumers. */
+  pairingKeys?: MobilePairingKeyRetention
   schedule?: (task: () => void, delayMs: number) => ReturnType<typeof setTimeout>
   pollIntervalMs?: number
   now?: () => number
@@ -138,6 +158,7 @@ export class MobilePairingController implements MobilePairingActions {
       this.clearAttempt()
       await this.clearPushToken()
       await this.options.handshake.wipe?.()
+      this.options.pairingKeys?.wipe()
       if (this.options.companion !== undefined) {
         await this.options.companion.releasePairing()
       }
@@ -348,6 +369,17 @@ export class MobilePairingController implements MobilePairingActions {
           if (status.status === 'pending') {
             this.scheduleStatus(pendingPairingId)
           } else if (status.status === 'paired') {
+            if (this.options.pairingKeys !== undefined) {
+              if (this.options.handshake.exportPairingKeyMaterial === undefined) {
+                throw new Error('Mobile Pairing handshake cannot export pairing key material')
+              }
+              const material = this.options.handshake.exportPairingKeyMaterial()
+              if (material === undefined) {
+                throw new Error('Mobile Pairing handshake exported no pairing key material')
+              }
+              this.options.pairingKeys.retain(status.pairingId, material)
+              material.fill(0)
+            }
             if (status.sealedRelayAuthority !== undefined) {
               if (this.options.handshake.openRelayAuthority === undefined || this.options.relay === undefined) {
                 throw new Error('Mobile Relay authority has no product lifecycle owner')
