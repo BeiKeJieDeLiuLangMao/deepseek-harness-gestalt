@@ -141,6 +141,44 @@ describe('Mobile Platform Account entry', () => {
     expect(String(assign.mock.calls[0]?.[0])).toContain('/v1/account/oauth/github/development-complete')
   })
 
+  it('rewrites loopback HTTPS Account and authorization URLs onto the Vite page origin', async () => {
+    configureEnvironment({
+      VITE_PLATFORM_DEVELOPMENT_ORIGIN: 'https://127.0.0.1:8443',
+      VITE_PLATFORM_DEVELOPMENT_CALLBACK_URL: 'https://127.0.0.1:8443/v1/account/oauth/github/callback',
+    })
+    document.body.innerHTML = '<div id="root"></div>'
+    nativePlatform.mockReturnValue(false)
+    const assign = vi.fn()
+    vi.stubGlobal('location', { assign, href: 'http://127.0.0.1:5174/', origin: 'http://127.0.0.1:5174' })
+    const calls: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL | Request) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+      calls.push(url)
+      if (url.endsWith('/login-attempts')) {
+        return json({
+          id: 'attempt-loopback-page',
+          state: 'state-loopback-page',
+          authorizationUrl: 'https://127.0.0.1:8443/v1/account/oauth/github/development-complete?state=state-loopback-page',
+          pollingToken: 'signed-polling-token',
+          expiresAt: Date.now() + 300_000,
+        })
+      }
+      return json({ status: 'pending' })
+    }))
+
+    await import('../src/main.tsx')
+    fireEvent.click(await screen.findByRole('checkbox'))
+    const button = screen.getByRole('button', { name: '使用 GitHub 继续' })
+    await waitFor(() => { expect(button.hasAttribute('disabled')).toBe(false) })
+    fireEvent.click(button)
+
+    await waitFor(() => { expect(assign).toHaveBeenCalledOnce() })
+    expect(calls.every(url => url.startsWith('http://127.0.0.1:5174/'))).toBe(true)
+    expect(String(assign.mock.calls[0]?.[0])).toBe(
+      'http://127.0.0.1:5174/v1/account/oauth/github/development-complete?state=state-loopback-page',
+    )
+  })
+
   it('fails before rendering when Installation id creation is not a secure context', async () => {
     configureEnvironment()
     document.body.innerHTML = '<div id="root"></div>'
@@ -234,7 +272,7 @@ describe('Mobile Platform Account entry', () => {
   })
 })
 
-function configureEnvironment(): void {
+function configureEnvironment(overrides: Record<string, string> = {}): void {
   const fields: Record<string, string> = {
     VITE_PLATFORM_ENV: 'development',
     VITE_PLATFORM_DEVELOPMENT_ORIGIN: 'https://dev.example',
@@ -249,6 +287,7 @@ function configureEnvironment(): void {
     VITE_PLATFORM_PRODUCTION_CREDENTIAL_REFERENCE: 'credentials://production',
     VITE_PLATFORM_PRODUCTION_DATABASE_IDENTITY: 'database-production',
     VITE_PLATFORM_PRODUCTION_IDENTITY_NAMESPACE: 'namespace-production',
+    ...overrides,
   }
   for (const [key, value] of Object.entries(fields)) vi.stubEnv(key, value)
 }

@@ -10,7 +10,7 @@ Status: implemented
 
 ## Decision
 
-[`examples/local-companion-platform`](../../../../examples/local-companion-platform/README.md) 是长期运行的开发监听。它绑定一个 `127.0.0.1` TLS 端点，把 `/v1/*` 和 Relay 升级在两个进程内实例间轮换，并共享内存中的 Account、配对权威和 Relay 路由存储。所选开发身份就是该 TLS origin；生产身份仍是已运营的 `www.gestaltrun.com` 对，以便客户端成对校验拒绝共享身份。该组成里的 GitHub 授权是同一 origin 上的 `/v1/account/oauth/github/development-complete`，并始终给出 `octocat` 公开身份。`LOCAL_COMPANION_PAGE_ORIGIN` 把非 `/v1` 路径反代到 Mobile Vite，使浏览上下文可以共享 TLS origin；当 WebView 无法信任捆绑证书时，TLS 前端会把该 Vite origin 改写为所选 HTTPS origin，以满足 Account 与配对 CORS。[`apps/platform/src/boot.ts`](../../../../apps/platform/src/boot.ts) 不导入该示例，也不导入 `DevelopmentKeylessPairingHandshakeProvider`。
+[`examples/local-companion-platform`](../../../../examples/local-companion-platform/README.md) 是长期运行的开发监听。它绑定一个 `127.0.0.1` TLS 端点，把 `/v1/*` 和 Relay 升级在两个进程内实例间轮换，并共享内存中的 Account、配对权威和 Relay 路由存储。所选开发身份就是该 TLS origin；生产身份仍是已运营的 `www.gestaltrun.com` 对，以便客户端成对校验拒绝共享身份。该组成里的 GitHub 授权是同一 origin 上的 `/v1/account/oauth/github/development-complete`，并始终给出 `octocat` 公开身份。`LOCAL_COMPANION_PAGE_ORIGIN` 把非 `/v1` 路径反代到 Mobile Vite，使浏览上下文可以共享 TLS origin；当客户端能够出示捆绑证书时，TLS 前端会把该 Vite origin 改写为所选 HTTPS origin，以满足 Account 与配对 CORS。无法对该证书完成 TLS 的 Android WebView 改为打开 Vite origin：Mobile Vite 在关闭证书校验的情况下把 `/v1`（含 Relay WebSocket）代理到监听，Mobile 入口再把 Account、配对、授权与 Relay URL 改写到该页面 origin。配对链接仍打印所选 HTTPS origin。[`apps/platform/src/boot.ts`](../../../../apps/platform/src/boot.ts) 不导入该示例，也不导入 `DevelopmentKeylessPairingHandshakeProvider`。
 
 当没有会话时，`PlatformAccountInstallation.load()` 会把仍有效的待完成登录恢复为轮询，并清除过期的待完成尝试。非原生 Mobile 入口会对已准备的授权 URL 执行 `location.assign`，以便返回后由 `load()` 继续；只有打包后的 Capacitor WebView 才使用 `Browser.open`。入口仍然没有 `window.open`、弹窗或携带令牌的自定义 URL 回退。Account 与 Remote Access 的默认 Fetch 实现绑定到全局，以便浏览器调用。
 
@@ -20,7 +20,7 @@ Loader 场景使用顺序熵，以及真实的 Desktop/Mobile Account 客户端�
 
 **在生产监听上挂载配对和 Relay。** 这会把未经评审的握手送到已运营 origin。生产进程保持 fail-closed。
 
-**让 Mobile 指向 `http://127.0.0.1` 并改写 fetch。** Account 与 Remote Access HTTP 只允许所选 HTTPS origin。TLS 前端加上同 origin 页面反代，才能让 CORS 和配对链接保持诚实。
+**把所选 Platform origin 改成 `http://127.0.0.1`。** Account 与 Remote Access HTTP 只允许所选 HTTPS origin，配对链接也必须保持 `https:`。所选身份仍是 TLS 监听；只有页面 origin 上的流量会经 Vite 改写。
 
 **只把待完成登录留在进程内存。** 同一窗口授权会丢掉五分钟尝试。恢复持久的待完成状态是产品恢复路径，而不是测试钩子。
 
@@ -30,4 +30,4 @@ Loader 场景使用顺序熵，以及真实的 Desktop/Mobile Account 客户端�
 
 ## 测试
 
-[`examples/local-companion-platform/tests/local-companion-platform.spec.ts`](../../../../examples/local-companion-platform/tests/local-companion-platform.spec.ts) 通过 Loader 启动真实 `cordis.yml`，并断言组装后的 transcript 以及对生产监听隔离的 grep。[`packages/platform/platform-account-client/tests/installation.client.spec.ts`](../../../../packages/platform/platform-account-client/tests/installation.client.spec.ts) 恢复或清除持久的待完成登录。[`apps/mobile/tests/mobile-entry.spec.ts`](../../../../apps/mobile/tests/mobile-entry.spec.ts) 在 Capacitor Browser 不可用时导航当前浏览上下文。
+[`examples/local-companion-platform/tests/local-companion-platform.spec.ts`](../../../../examples/local-companion-platform/tests/local-companion-platform.spec.ts) 通过 Loader 启动真实 `cordis.yml`，并断言组装后的 transcript 以及对生产监听隔离的 grep。[`packages/platform/platform-account-client/tests/installation.client.spec.ts`](../../../../packages/platform/platform-account-client/tests/installation.client.spec.ts) 恢复或清除持久的待完成登录。[`apps/mobile/tests/mobile-entry.spec.ts`](../../../../apps/mobile/tests/mobile-entry.spec.ts) 在 Capacitor Browser 不可用时导航当前浏览上下文，并把环回 HTTPS Account URL 改写到 Vite 页面 origin。

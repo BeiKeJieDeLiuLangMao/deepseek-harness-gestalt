@@ -69,7 +69,7 @@ const challenge = await remote.createChallenge({
   rendezvousId: parsePairingRendezvousId('rendezvous-sim'),
 })
 console.log(`DESKTOP_CHALLENGE link=${challenge.oneTimeLink}`)
-const confirmBy = Date.now() + 60_000
+const confirmBy = Date.now() + 180_000
 while (Date.now() < confirmBy) {
   const pending = await remote.listPendingPairings(await desktop.authorizeCurrentInstallation())
   const first = pending[0]

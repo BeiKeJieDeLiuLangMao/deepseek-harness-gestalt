@@ -11,7 +11,7 @@ LOCAL_COMPANION_PORT=8443 LOCAL_COMPANION_PAGE_ORIGIN=http://127.0.0.1:5174 \
   node --import tsx/esm examples/local-companion-platform/tests/fixtures/listen-driver.ts
 ```
 
-Mobile 选择 `VITE_PLATFORM_ENV=development`，设置 `VITE_PLATFORM_DEVELOPMENT_ORIGIN=https://127.0.0.1:8443`、匹配的回调以及互不相同的生产身份对，并打开 `VITE_PERSONAL_PAIRING_KEYLESS=1` 与 `VITE_REMOTE_RELAY_WSS_URL=wss://127.0.0.1:8443/v1/remote-access/relay` 及所需 Relay 边界。Desktop 在 `DSH_PLATFORM_*` 与 `DSH_PERSONAL_PAIRING_KEYLESS=1` 下使用同一组身份。模拟器必须接受环回证书并打开 TLS origin，而不是 Vite 端口。无法信任捆绑证书的 Android WebView 可以打开 `http://127.0.0.1` 上的 `LOCAL_COMPANION_PAGE_ORIGIN`；TLS 前端会把该页面 origin 改写为所选 HTTPS origin，以满足 Account 与配对 CORS。
+Mobile 选择 `VITE_PLATFORM_ENV=development`，设置 `VITE_PLATFORM_DEVELOPMENT_ORIGIN=https://127.0.0.1:8443`、匹配的回调以及互不相同的生产身份对，并打开 `VITE_PERSONAL_PAIRING_KEYLESS=1` 与 `VITE_REMOTE_RELAY_WSS_URL=wss://127.0.0.1:8443/v1/remote-access/relay` 及所需 Relay 边界。Desktop 在 `DSH_PLATFORM_*` 与 `DSH_PERSONAL_PAIRING_KEYLESS=1` 下使用同一组身份。能够出示环回证书的客户端打开 TLS origin。无法信任捆绑证书的 Android WebView 打开 `http://127.0.0.1` 上的 `LOCAL_COMPANION_PAGE_ORIGIN`；Mobile Vite 把 `/v1` 代理到监听，Mobile 入口再把 Account、配对、授权与 Relay 改写到该页面 origin。配对链接仍使用 HTTPS 监听 origin。
 
 Loader 场景启动 [`cordis.yml`](cordis.yml)，证明同账号登录、默认关闭的手机访问、确认后的配对，以及一次加密 Relay 往返。它不是产品密码学实现。
 

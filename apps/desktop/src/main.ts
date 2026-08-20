@@ -51,6 +51,7 @@ import { DesktopPairingKeyVault } from './pairing-keys.ts'
 import { disposeDesktopOwners } from './shutdown.ts'
 import { startDesktopBrowserRuntime, type DesktopBrowserRuntime } from './browser-runtime.ts'
 import { createDesktopRemoteRelay } from './remote-relay.ts'
+import { createLoopbackListenFetch } from './loopback-listen-trust.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const PRELOAD = join(here, 'preload.cjs')
@@ -543,7 +544,11 @@ function pushPairingSnapshot(snapshot: ReturnType<DesktopPairingActions['getSnap
 }
 
 function createDesktopAccount(environment: SelectedPlatformEnvironment): DesktopAccountActions {
-  const transport = new PlatformAccountHttpTransport({ environment })
+  const fetch = createLoopbackListenFetch(environment.origin)
+  const transport = new PlatformAccountHttpTransport({
+    environment,
+    ...(fetch === undefined ? {} : { fetch }),
+  })
   const store = new EncryptedDesktopAccountStore(
     join(app.getPath('userData'), `platform-account-${environment.databaseIdentity}.bin`),
     {
@@ -568,9 +573,13 @@ function createDesktopPairing(
   if (environment.environment !== 'development' || process.env.DSH_PERSONAL_PAIRING_KEYLESS !== '1') {
     return new UnavailableDesktopPairingController(`${unavailableReason} Development proof mode is disabled.`, relay)
   }
+  const fetch = createLoopbackListenFetch(environment.origin)
   return new DesktopPairingController({
     account: currentAccount,
-    transport: new RemoteAccessHttpTransport({ environment }),
+    transport: new RemoteAccessHttpTransport({
+      environment,
+      ...(fetch === undefined ? {} : { fetch }),
+    }),
     relay,
     pairingKeys: new DesktopPairingKeyVault(),
   })
