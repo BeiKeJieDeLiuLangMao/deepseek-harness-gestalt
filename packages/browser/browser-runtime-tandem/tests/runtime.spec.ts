@@ -1,3 +1,4 @@
+import { spawn, type ChildProcess } from 'node:child_process'
 import { createServer } from 'node:net'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -96,6 +97,44 @@ async function setup(faults: Record<string, unknown> = {}, overrides: Record<str
   return { ctx, root, tokenFile, pidFile, crashMarker }
 }
 
+const RM_RETRY_LIMIT = 10
+const RM_RETRY_DELAY_MS = 50
+
+function retryableRmError(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException | null)?.code
+  return code === 'EACCES' || code === 'EBUSY' || code === 'EPERM'
+}
+
+/** Remove a temp tree after every handle has dropped; retry Windows linger codes. */
+async function rmWhenIdle(path: string): Promise<void> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await rm(path, { recursive: true, force: true })
+      return
+    } catch (error) {
+      if (attempt >= RM_RETRY_LIMIT || !retryableRmError(error)) throw error
+      await new Promise(resolve => setTimeout(resolve, RM_RETRY_DELAY_MS))
+    }
+  }
+}
+
+/** Kill a directly spawned fixture and await its exit before directory removal. */
+async function joinSpawnedChild(child: ChildProcess): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null) return
+  const exited = new Promise<void>((resolve, reject) => {
+    child.once('exit', () => { resolve() })
+    child.once('error', reject)
+    if (child.exitCode !== null || child.signalCode !== null) resolve()
+  })
+  child.kill('SIGTERM')
+  const timer = setTimeout(() => { child.kill('SIGKILL') }, 1_000)
+  try {
+    await exited
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 /** Poll until the recorded fixture child pid is no longer schedulable. */
 async function assertJoined(pidFile: string): Promise<void> {
   let pid = 0
@@ -170,7 +209,6 @@ describe('Tandem Browser Runtime configuration', () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-tandem-protocol-'))
     const port = await freePort()
     const tokenFile = join(root, 'api-token')
-    const { spawn } = await import('node:child_process')
     const child = spawn(process.execPath, [FIXTURE], {
       cwd: root,
       env: {
@@ -198,8 +236,11 @@ describe('Tandem Browser Runtime configuration', () => {
       expect(created.chrome.partition).toBe('session-protocol-only-tmp-1')
       await ctx.browserRuntime.close({ target: created.target, expectedRevision: 0 })
     } finally {
-      child.kill('SIGTERM')
-      await rm(root, { recursive: true, force: true })
+      const index = contexts.indexOf(ctx)
+      if (index !== -1) contexts.splice(index, 1)
+      await ctx.fiber.dispose()
+      await joinSpawnedChild(child)
+      await rmWhenIdle(root)
     }
   })
 

@@ -254,9 +254,9 @@ describe('Tandem Browser Runtime invariant lifecycle', () => {
       url: 'https://crash.test/',
     })
 
-    const deadline = Date.now() + 5_000
+    const deadline = Date.now() + 10_000
     let state = await ctx.browserRuntime.observe({ target: created.target })
-    while (state.status === 'open' && Date.now() < deadline) {
+    while (!(state.status === 'unavailable' && !state.reconnecting) && Date.now() < deadline) {
       await new Promise(resolve => setTimeout(resolve, 20))
       state = await ctx.browserRuntime.observe({ target: created.target })
     }
