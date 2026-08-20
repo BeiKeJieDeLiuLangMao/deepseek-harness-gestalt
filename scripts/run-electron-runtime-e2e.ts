@@ -38,7 +38,7 @@ const ELECTRON_RUN_AS_NODE_SET = [
  * @returns Absolute path to the Electron binary.
  */
 export function resolveElectronBinary(
-  requireFromPackage: NodeRequire = createRequire(electronPackageJson),
+  requireFromPackage: NodeJS.Require = createRequire(electronPackageJson),
 ): string {
   let resolved: unknown
   try {
