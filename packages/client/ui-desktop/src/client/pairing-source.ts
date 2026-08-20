@@ -2,6 +2,7 @@
 
 import type { DesktopBridge, DesktopPairingSnapshot } from '../protocol.ts'
 import {
+  bindDesktopSnapshot,
   createDesktopSnapshotSource,
   type DesktopSnapshotSource,
 } from './snapshot-source.ts'
@@ -41,20 +42,10 @@ export function bindDesktopPairing(
     console.error('failed to read pairing status', error)
   },
 ): () => void {
-  let active = true
-  let pushSeen = false
-  const unsubscribe = desktop.onPairingSnapshot((snapshot) => {
-    if (!active) return
-    pushSeen = true
-    source.set(snapshot)
-  })
-  void desktop.pairingGetSnapshot().then((snapshot) => {
-    if (active && !pushSeen) source.set(snapshot)
-  }).catch((error: unknown) => {
-    if (active) onError(error)
-  })
-  return () => {
-    active = false
-    unsubscribe()
-  }
+  return bindDesktopSnapshot(
+    source,
+    listener => desktop.onPairingSnapshot(listener),
+    () => desktop.pairingGetSnapshot(),
+    onError,
+  )
 }
