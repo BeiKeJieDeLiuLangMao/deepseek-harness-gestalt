@@ -42,6 +42,8 @@ export interface ComposerAttachmentsOwnerProps {
   onRemoveImage: (id: DraftAttachmentId) => void
   /** Display-ready limits for the drop invitation. */
   dropLimits?: { readonly count: number; readonly size: string } | undefined
+  /** Optional Composer preview pin overlay for one draft image. */
+  pinOverlayFor?: (attachment: ComposerAttachment) => MessageImagePinOverlay | undefined
 }
 
 /** Pin overlay for one historical image in the message gallery. */

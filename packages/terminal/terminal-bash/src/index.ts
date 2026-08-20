@@ -89,6 +89,14 @@ function childEnvironment(spec: TerminalBackendSpawnSpec, dialect: ShellDialect)
 export const PWSH_PROMPT_SETUP =
   "function prompt { [Console]::Write([char]27 + ']133;D;' + [int]$LASTEXITCODE + [char]7); '" + CONTROLLED_PROMPT + "' }"
 
+/** True when the installed prompt is visible, not merely echoed setup source. */
+function showsInstalledControlledPrompt(viewport: string, scrollback: string): boolean {
+  const visible = `${viewport}\n${scrollback}`
+    .replaceAll(ENCODING_PREAMBLE, '')
+    .replaceAll(PWSH_PROMPT_SETUP, '')
+  return visible.includes(CONTROLLED_PROMPT)
+}
+
 function spawnArgv(ctx: Context, config: ResolvedConfig, policy: SandboxExecutionPolicy): string[] {
   const argv = [config.shellPath, ...config.shellArgs]
   if (policy.mode === 'danger-full-access') return argv
@@ -121,8 +129,9 @@ async function startupSession(
     // UTF-8, and an un-pinned console writes its host code page for
     // non-ASCII output. The banner-to-prompt gap can outlast the silence
     // bound, so the wait loops over follow-up sends until the controlled
-    // prompt is actually visible (in the viewport or the retained scrollback
-    // when it landed between sends), bounded by the send deadline.
+    // prompt is actually visible after stripping the echoed setup source
+    // (in the viewport or the retained scrollback when it landed between
+    // sends), bounded by the send deadline.
     let viewport = ''
     for (;;) {
       const first = viewport.length === 0
@@ -136,7 +145,7 @@ async function startupSession(
       if (result.waitReason === 'timeout') throw new Error('PTY shell did not reach readiness before startup timeout')
       viewport = result.viewport
       const scrollback = session.read({ offset: 0, count: 20 }).text
-      if (viewport.includes(CONTROLLED_PROMPT) || scrollback.includes(CONTROLLED_PROMPT)) break
+      if (showsInstalledControlledPrompt(viewport, scrollback)) break
     }
     session.motd = viewport
   }

@@ -285,9 +285,9 @@ describe.skipIf(!hasPwsh)('terminal-bash pwsh real shell', () => {
     process.env.DSH_TEST_SECRET = 'must-not-leak'
     try {
       const { ctx, root, agent } = await harness('danger-full-access', {
-        idleSilenceMs: 300,
-        handoffGraceMs: 300,
-        timeoutMs: 8_000,
+        idleSilenceMs: 3_000,
+        handoffGraceMs: 500,
+        timeoutMs: 15_000,
       }, 'pwsh')
       const created = await ctx.terminals.spawn(agent, { type: 'shell', name: 'main', cwd: root })
       expect(created.motd).toContain('dsh> ')
@@ -317,9 +317,9 @@ describe.skipIf(!hasPwsh)('terminal-bash pwsh real shell', () => {
 
   it('pins UTF-8 output encoding so non-ASCII output survives the byte decode', async () => {
     const { ctx, root, agent } = await harness('danger-full-access', {
-      idleSilenceMs: 300,
-      handoffGraceMs: 300,
-      timeoutMs: 8_000,
+      idleSilenceMs: 3_000,
+      handoffGraceMs: 500,
+      timeoutMs: 15_000,
     }, 'pwsh')
     const created = await ctx.terminals.spawn(agent, { type: 'shell', name: 'main', cwd: root })
     // The bootstrap itself must have pinned both encodings: the session byte

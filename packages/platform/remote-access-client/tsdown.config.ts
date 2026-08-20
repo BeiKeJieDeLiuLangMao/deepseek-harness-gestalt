@@ -5,11 +5,11 @@ export default defineConfig([
   {
     entry: ['lib/types/index.js', 'lib/types/invariant.js', 'lib/types/desktop-relay-lifecycle.js'],
     outDir: 'lib', format: ['esm'], platform: 'browser', target: 'es2024',
-    fixedExtension: false, dts: false, clean: false,
+    fixedExtension: false, outputOptions: { codeSplitting: false }, dts: false, clean: false,
   },
   {
     entry: ['lib/types/node-relay-socket.js'],
     outDir: 'lib', format: ['esm'], platform: 'node', target: 'es2024',
-    fixedExtension: false, dts: false, clean: false,
+    fixedExtension: false, outputOptions: { codeSplitting: false }, dts: false, clean: false,
   },
 ])

@@ -24,6 +24,8 @@
   name: '@deepseek-ai/dsh-terminal-bash'
   config:
     shellDialect: pwsh
+    idleSilenceMs: 8000
+    handoffGraceMs: 500
     timeoutMs: 30000
 
 - id: acp-agent

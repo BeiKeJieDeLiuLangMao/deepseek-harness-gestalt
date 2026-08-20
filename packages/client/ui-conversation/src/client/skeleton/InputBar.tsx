@@ -26,6 +26,7 @@ import { deriveDecorations } from '../input/decorations.ts'
 import type { DraftDecorations } from '../input/decorations.ts'
 import { attachmentErrorText, imageSizeText } from '../image-labels.ts'
 import { ReferenceIcon } from '../reference/ReferenceIcon.tsx'
+import { useComposerImagePinOverlay } from '../annotation/composer-image-pins.tsx'
 import { ContextMeter } from './ContextMeter.tsx'
 import { PermissionSelect } from './PermissionSelect.tsx'
 import { isSafariBrowser, repairSafariTextareaLayout } from './safari.ts'
@@ -65,6 +66,7 @@ export function InputBar({
     () => input === undefined || draftImages === undefined ? [] : draftImages(input.imageIds),
     [draftImages, input?.imageIds],
   )
+  const composerPinOverlay = useComposerImagePinOverlay(input?.annotations, inputActions, t)
   const empty = draft.trim() === '' && attachments.length === 0
   // Transient error banner (machine notices, image-intake rejections, and
   // prompt failures): the seq keys the Toast so an identical repeated message
@@ -641,6 +643,7 @@ export function InputBar({
             count: imageLimits.maxImagesPerMessage,
             size: imageSizeText(imageLimits.maxImageBytes),
           },
+          ...composerPinOverlay,
         })}
         {/* One scrollport, two text layers. The hidden mirror renders draft+'\n' and stretches the
             stack to the draft's FULL height (counting rows by '\n' cannot see soft wraps); the
