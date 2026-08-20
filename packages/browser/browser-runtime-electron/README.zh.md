@@ -32,5 +32,5 @@ Provider 自身不贡献请求文本；Consumer schema 与已记录结果决定�
 ## 已知限制与后续工作
 
 - 隐藏的离屏 `webContents` 不会显示在 Dock 中；Dock 仍渲染截图、标题与文本事实。
-- 真实 Chromium e2e 仅在 `process.versions.electron` 已设置时运行；Node 单元测试通过 `@deepseek-ai/dsh-browser-runtime-electron/testing` 安装假 host，且从不 spawn Tandem.app。
+- 真实 Chromium e2e 通过 `pnpm run test:electron-runtime-e2e` 运行。Node 上的 `test:e2e` 记录具名跳过；单元测试通过 `@deepseek-ai/dsh-browser-runtime-electron/testing` 安装假 host，且从不 spawn Tandem.app。
 - Desktop Host 在 macOS 与 Windows 上交付本 Provider。Linux 不在支持范围内。
