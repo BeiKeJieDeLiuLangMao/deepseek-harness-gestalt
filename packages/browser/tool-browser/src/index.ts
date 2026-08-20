@@ -48,7 +48,7 @@ const CHROME_SCHEMA = {
   type: 'object',
   additionalProperties: false,
   properties: {
-    kind: { type: 'string', required: true, enum: ['temporary', 'persistent'] },
+    kind: { type: 'string', required: true, enum: ['temporary', 'persistent', 'shared'] },
     name: { type: 'string' },
     partition: { type: 'string', required: true },
   },
@@ -258,10 +258,10 @@ export function apply(ctx: Context, config: Config): void {
   ctx.tools.register({
     ...defineTool({
       name: 'browser_create',
-      description: 'Create one temporary or named persistent Browser Profile, Browser Workspace, browser instance, and tab.',
+      description: 'Create one shared, temporary, or named persistent Browser Profile, Browser Workspace, browser instance, and tab. Omit profile to reuse the shared installation-wide identity.',
       timeoutMs,
       parameters: {
-        profile: { type: 'string', enum: ['temporary', 'persistent'], description: 'temporary discards identity; persistent restores a named Profile.' },
+        profile: { type: 'string', enum: ['temporary', 'persistent', 'shared'], description: 'Omit or shared reuses one identity across Sessions. persistent restores a named isolated Profile. temporary discards identity.' },
         name: { type: 'string', description: 'Named persistent Browser Profile. Required when profile is persistent.' },
         attach: {
           type: 'object',
@@ -294,13 +294,26 @@ export function apply(ctx: Context, config: Config): void {
             },
           )
         }
+        if (args.profile === 'temporary') {
+          return routeBrowserCall(
+            ctx,
+            exec,
+            (workspace, request) => workspace.create(request),
+            request => ctx.browserRuntime.create(request),
+            {
+              profile: 'temporary' as const,
+              ...attach === undefined ? {} : { attach },
+              signal: exec.signal,
+            },
+          )
+        }
         return routeBrowserCall(
           ctx,
           exec,
           (workspace, request) => workspace.create(request),
           request => ctx.browserRuntime.create(request),
           {
-            profile: 'temporary' as const,
+            profile: 'shared' as const,
             ...attach === undefined ? {} : { attach },
             signal: exec.signal,
           },

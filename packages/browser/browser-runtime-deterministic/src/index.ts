@@ -1,5 +1,5 @@
 /**
- * Deterministic keyless Browser Runtime Provider for temporary and named persistent Profiles.
+ * Deterministic keyless Browser Runtime Provider for temporary, named persistent, and shared Profiles.
  * @module @deepseek-ai/dsh-browser-runtime-deterministic
  */
 
@@ -23,6 +23,8 @@ import {
   requireOpenBrowserPage,
   resolveBrowserCreateAttach,
   resolveBrowserProfileCreate,
+  browserProfileRetainsIdentity,
+  browserSharedWorkspaceSeq,
   withBrowserControlOwner,
 } from '@deepseek-ai/dsh-browser-runtime'
 import type {
@@ -225,17 +227,25 @@ export class DeterministicBrowserRuntime extends BrowserRuntime {
       const existing = [...this.states.values()].filter(state => (
         state.status === 'open' && state.target.profileId === created.profileId
       ))
-      if (request.attach === undefined) {
+      if (request.profile === 'persistent' && request.attach === undefined) {
         assertBrowserProfileWriterAvailable(this.states.values(), created.chrome.partition, request.name)
       }
       assertBrowserCreateAttach(this.states.values(), created.profileId, request.attach)
       const stored = this.persisted.get(created.sessionName)
       const historical = [...this.states.values()].filter(state => state.target.profileId === created.profileId)
       const tabSeq = stored === undefined ? historical.length + 1 : stored.tabSeq + existing.length + 1
+      const workspaceSeq = request.profile === 'shared'
+        ? browserSharedWorkspaceSeq(this.states.values(), created.profileId, request.attach)
+        : undefined
+      const sibling = existing.find((state): state is BrowserPageState => (
+        state.status === 'open' && state.storage.cookies !== ''
+      ))
       if (stored !== undefined) {
         return this.commit({
           status: 'open',
-          target: browserTargetFor(created.profileId, created.sessionName, tabSeq, request.attach),
+          target: browserTargetFor(
+            created.profileId, created.sessionName, tabSeq, request.attach, workspaceSeq,
+          ),
           revision: 0,
           url: stored.url,
           title: stored.title,
@@ -246,7 +256,23 @@ export class DeterministicBrowserRuntime extends BrowserRuntime {
           storage: stored.storage,
         })
       }
-      return this.commitBlank(created, tabSeq, request.attach)
+      if (sibling !== undefined) {
+        return this.commit({
+          status: 'open',
+          target: browserTargetFor(
+            created.profileId, created.sessionName, tabSeq, request.attach, workspaceSeq,
+          ),
+          revision: 0,
+          url: sibling.url,
+          title: sibling.title,
+          text: sibling.text,
+          focused: false,
+          controlOwner: 'agent',
+          chrome: sibling.chrome,
+          storage: sibling.storage,
+        })
+      }
+      return this.commitBlank(created, tabSeq, request.attach, workspaceSeq)
     })
   }
 
@@ -255,10 +281,11 @@ export class DeterministicBrowserRuntime extends BrowserRuntime {
     created: ResolvedBrowserProfileCreate,
     tabSeq: number,
     attach: BrowserCreateAttach | undefined,
+    workspaceSeq?: number,
   ): BrowserPageState {
     return this.commit({
       status: 'open',
-      target: browserTargetFor(created.profileId, created.sessionName, tabSeq, attach),
+      target: browserTargetFor(created.profileId, created.sessionName, tabSeq, attach, workspaceSeq),
       revision: 0,
       url: 'about:blank',
       title: 'New Tab',
@@ -280,7 +307,7 @@ export class DeterministicBrowserRuntime extends BrowserRuntime {
       if (page === undefined) {
         throw new BrowserRuntimeError(`deterministic browser page is not configured: ${request.url}`, 'BROWSER_UNKNOWN_URL')
       }
-      const storage = state.chrome.kind === 'persistent' && state.chrome.name !== undefined
+      const storage = browserProfileRetainsIdentity(state.chrome.kind) && state.chrome.name !== undefined
         ? browserProfileStorage(state.chrome.name)
         : EMPTY_BROWSER_PROFILE_STORAGE
       return this.commit({
@@ -371,7 +398,7 @@ export class DeterministicBrowserRuntime extends BrowserRuntime {
 
   /** Snapshot one named Profile so a later create can restore its identity. */
   private rememberPersistent(state: BrowserPageState): void {
-    if (state.chrome.kind !== 'persistent') return
+    if (!browserProfileRetainsIdentity(state.chrome.kind)) return
     const sessionName = browserSessionNameFromPartition(state.chrome.partition)
     const previous = this.persisted.get(sessionName)
     this.persisted.set(sessionName, Object.freeze({

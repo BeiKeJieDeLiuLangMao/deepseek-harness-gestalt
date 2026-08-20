@@ -16,7 +16,7 @@ Model-facing Consumer for `ctx.browserRuntime`. It registers `browser_create`, `
 
 #### What the model sees
 
-The initial tool list omits all nine Browser tools and includes the ordinary `tool_search` schema. A search for browser capabilities returns the exact schemas in a durable result. Later requests revalidate those names against current eligible deferred definitions. Every operation result renders all Profile, Workspace, browser, tab, revision, page, screenshot, focus, close, availability, control ownership, chrome, and storage facts — including unlabeled temporary Profiles and `unavailable` states with their reason, reconnect flag, and current control owner — as JSON text.
+The initial tool list omits all nine Browser tools and includes the ordinary `tool_search` schema. A search for browser capabilities returns the exact schemas in a durable result. Later requests revalidate those names against current eligible deferred definitions. Every operation result renders all Profile, Workspace, browser, tab, revision, page, screenshot, focus, close, availability, control ownership, chrome, and storage facts — including unlabeled temporary Profiles, the reserved shared Profile, and `unavailable` states with their reason, reconnect flag, and current control owner — as JSON text. Omitting `profile` on `browser_create` opens that shared Profile.
 
 #### Token effect
 
@@ -28,4 +28,4 @@ The first request keeps the large Browser schemas out of the prefix. Discovery c
 
 ## Known Limitations and Deferred Work
 
-- The Consumer exposes temporary and named persistent Browser Profiles and adds no account picker or browser-specific conversation card. Persistent chrome is a runtime fact, not a Dock header. Session-local Workspace ownership lives in [`dsh-browser-workspace`](../browser-workspace/README.md). Dock chrome lives in [`dsh-client-ui-browser`](../../client/ui-browser/README.md). Headless Browser Runtime snapshots stay Binder-free because they prove discovery and rendered Runtime facts, not Session isolation.
+- The Consumer exposes temporary, named persistent, and shared Browser Profiles and adds no account picker or browser-specific conversation card. Persistent and shared chrome are runtime facts, not a Dock header. Session-local Workspace ownership lives in [`dsh-browser-workspace`](../browser-workspace/README.md). Dock chrome lives in [`dsh-client-ui-browser`](../../client/ui-browser/README.md). Headless Browser Runtime snapshots stay Binder-free because they prove discovery and rendered Runtime facts, not Session isolation.

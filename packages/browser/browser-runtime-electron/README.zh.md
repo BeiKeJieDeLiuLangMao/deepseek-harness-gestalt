@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-这是服务临时与命名持久 Profile 的进程内 Electron Browser Runtime Provider。它用本进程的 `session.fromPartition` 与隐藏的离屏 `webContents` 实现 `ctx.browserRuntime`。截图使用 `webContents.capturePage`；页面文本使用 `executeJavaScript`。命名 Profile 恢复 `persist:session-*` partition；临时 Profile 使用没有 `persist:` 前缀的临时 `session-*` partition，Chromium 只在内存中保存其身份，磁盘上不留任何可复用内容。Chromium persist partition 位于 Electron `userData/Partitions/<name>`，绝不写入 `~/Library/Application Support/Tandem Browser`。
+这是服务临时、命名持久与共享 Profile 的进程内 Electron Browser Runtime Provider。它用本进程的 `session.fromPartition` 与隐藏的离屏 `webContents` 实现 `ctx.browserRuntime`。截图使用 `webContents.capturePage`；页面文本使用 `executeJavaScript`。命名与共享 Profile 恢复 `persist:session-*` partition；临时 Profile 使用没有 `persist:` 前缀的临时 `session-*` partition，Chromium 只在内存中保存其身份，磁盘上不留任何可复用内容。Chromium persist partition 位于 Electron `userData/Partitions/<name>`，绝不写入 `~/Library/Application Support/Tandem Browser`。
 
 插件仅在 `process.versions.electron` 已设置，或 Node 测试通过 `@deepseek-ai/dsh-browser-runtime-electron/testing` 安装 host 时加载。在普通 Node 上组合会在加载时失败。Desktop Host 持有隐藏窗口；Dock 仍是截图、标题与文本的原生窗格，不嵌入第二个 BrowserView。
 

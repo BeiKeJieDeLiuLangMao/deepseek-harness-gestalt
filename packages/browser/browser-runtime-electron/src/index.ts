@@ -1,5 +1,5 @@
 /**
- * In-process Electron Browser Runtime for temporary and named persistent Profiles.
+ * In-process Electron Browser Runtime for temporary, named persistent, and shared Profiles.
  * @module @deepseek-ai/dsh-browser-runtime-electron
  */
 
@@ -22,6 +22,8 @@ import {
   requireExpectedBrowserRevision,
   resolveBrowserCreateAttach,
   resolveBrowserProfileCreate,
+  browserProfileRetainsIdentity,
+  browserSharedWorkspaceSeq,
 } from '@deepseek-ai/dsh-browser-runtime'
 import type {
   BrowserClosedState,
@@ -412,7 +414,7 @@ export class ElectronBrowserRuntime extends BrowserRuntime {
 
   /** Persist named Profile storage; temporary partitions stay in memory. */
   private async flush(profile: OpenProfile): Promise<void> {
-    if (profile.chrome.kind !== 'persistent') return
+    if (!browserProfileRetainsIdentity(profile.chrome.kind)) return
     await profile.session.flushStorageData()
   }
 
@@ -538,7 +540,12 @@ export class ElectronBrowserRuntime extends BrowserRuntime {
       }
       const historical = [...this.states.values()].filter(state => state.target.profileId === created.profileId)
       const tabSeq = historical.length + 1
-      const target = browserTargetFor(created.profileId, created.sessionName, tabSeq, request.attach)
+      const workspaceSeq = request.profile === 'shared'
+        ? browserSharedWorkspaceSeq(this.states.values(), created.profileId, request.attach)
+        : undefined
+      const target = browserTargetFor(
+        created.profileId, created.sessionName, tabSeq, request.attach, workspaceSeq,
+      )
       const window = this.createWindow(profile, host)
       const tab: OpenTab = { window, stopCrashWatch: this.watchCrash(target, window) }
       profile.tabs.set(target.tabId, tab)

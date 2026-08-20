@@ -115,11 +115,16 @@ export function browserTabTitle(page: BrowserPageState | undefined, untitled: st
 }
 
 /**
- * Persistent Profile label placed near the address field, if any.
+ * Address-field Profile label, if any.
  * @param page - Observed open page.
- * @returns the named persistent Profile, or undefined for a temporary Profile.
+ * @param sharedLabel - Chrome copy for the installation-wide shared Profile.
+ * @returns the named persistent Profile, the shared-identity label, or undefined for a temporary Profile.
  */
-export function persistentProfileLabel(page: BrowserPageState | undefined): string | undefined {
+export function persistentProfileLabel(
+  page: BrowserPageState | undefined,
+  sharedLabel = 'Shared identity',
+): string | undefined {
+  if (page?.chrome.kind === 'shared') return sharedLabel
   return page?.chrome.kind === 'persistent' ? page.chrome.name : undefined
 }
 

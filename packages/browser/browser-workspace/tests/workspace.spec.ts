@@ -181,6 +181,29 @@ describe('Session-owned Browser Workspace', () => {
     expect(remainingAfterBrowser?.activeBrowserId).toBe(secondBrowser.target.browserId)
   })
 
+  it('reuses the shared Profile across Sessions without isolating storage', async () => {
+    const ctx = await harness()
+    const first = ctx.sessions.create(SessionId('session-shared-a'))
+    const second = ctx.sessions.create(SessionId('session-shared-b'))
+    const a = await ctx.browserWorkspace.create({ session: first, profile: 'shared' })
+    await ctx.browserWorkspace.navigate({
+      session: first,
+      target: a.target,
+      expectedRevision: 0,
+      url: 'https://alpha.test/',
+    })
+    const b = await ctx.browserWorkspace.create({ session: second, profile: 'shared' })
+    expect(b.target.profileId).toBe(a.target.profileId)
+    expect(b.target.workspaceId).not.toBe(a.target.workspaceId)
+    expect(b.chrome).toMatchObject({
+      kind: 'shared',
+      partition: a.chrome.partition,
+    })
+    expect(b.storage.cookies).toBe('profile=shared')
+    expect(ctx.browserWorkspace.snapshot(first).workspaces[0]?.profileId).toBe(a.target.profileId)
+    expect(ctx.browserWorkspace.snapshot(second).workspaces[0]?.profileId).toBe(a.target.profileId)
+  })
+
   it('restores one Session Workspace after reload and closes leftover tabs on Session disposal', async () => {
     const ctx = await harness()
     const first = ctx.sessions.create(SessionId('session-a'))

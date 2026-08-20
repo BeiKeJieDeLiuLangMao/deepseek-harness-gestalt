@@ -13,7 +13,10 @@ import type {
   BrowserTarget,
 } from './types.ts'
 
-const PROFILE_NAME = /^(?!tmp(?:-|$))[A-Za-z0-9][A-Za-z0-9._-]{0,62}$/
+const PROFILE_NAME = /^(?!tmp(?:-|$)|shared$)[A-Za-z0-9][A-Za-z0-9._-]{0,62}$/
+
+/** Reserved name of the installation-wide shared Browser Profile. */
+export const SHARED_BROWSER_PROFILE_NAME = BrowserProfileName('shared')
 
 /** Facts a Provider uses to project address-field chrome for one Profile. */
 export interface BrowserProfileChromeRequest {
@@ -75,6 +78,13 @@ export function browserProfileChrome(request: BrowserProfileChromeRequest): Brow
   if (request.kind === 'temporary') {
     return Object.freeze({ kind: 'temporary', partition: browserTemporaryPartition(request.sessionName) })
   }
+  if (request.kind === 'shared') {
+    return Object.freeze({
+      kind: 'shared',
+      name: SHARED_BROWSER_PROFILE_NAME,
+      partition: browserSessionPartition(request.sessionName),
+    })
+  }
   if (request.name === undefined) {
     throw new BrowserRuntimeError('a persistent Browser Profile requires a name', 'BROWSER_PROFILE_NAME')
   }
@@ -88,13 +98,22 @@ export function browserProfileChrome(request: BrowserProfileChromeRequest): Brow
 /**
  * Read the address-field label for one Profile, if any.
  * @param chrome - Committed chrome facts.
- * @returns the persistent Profile name, or `undefined` for a temporary Profile.
+ * @returns the persistent or shared Profile name, or `undefined` for a temporary Profile.
  */
 export function labeledBrowserProfileName(chrome: BrowserProfileChrome): BrowserProfileName | undefined {
-  return chrome.kind === 'persistent' ? chrome.name : undefined
+  return chrome.kind === 'persistent' || chrome.kind === 'shared' ? chrome.name : undefined
 }
 
-/** Resolved create facts for one temporary or named persistent Profile. */
+/**
+ * Whether this Profile kind retains partition-backed identity after close.
+ * @param kind - Committed chrome kind.
+ * @returns true for named persistent and shared Profiles.
+ */
+export function browserProfileRetainsIdentity(kind: BrowserProfileKind): boolean {
+  return kind === 'persistent' || kind === 'shared'
+}
+
+/** Resolved create facts for one temporary, named persistent, or shared Profile. */
 export interface ResolvedBrowserProfileCreate {
   readonly profileId: BrowserProfileId
   readonly sessionName: string
@@ -116,6 +135,7 @@ export const EMPTY_BROWSER_PROFILE_STORAGE: BrowserProfileStorage = Object.freez
  * @param sessionName - Provider-owned partition identifier.
  * @param tabSeq - Positive sequence that distinguishes one open tab lifecycle.
  * @param attach - Optional existing Workspace or browser instance to reuse.
+ * @param workspaceSeq - Distinct Workspace sequence for a shared Profile without attach.
  * @returns the frozen target for that open lifecycle.
  */
 export function browserTargetFor(
@@ -123,15 +143,41 @@ export function browserTargetFor(
   sessionName: string,
   tabSeq: number,
   attach?: BrowserCreateAttach,
+  workspaceSeq?: number,
 ): BrowserTarget {
   return Object.freeze({
     profileId,
-    workspaceId: attach?.workspaceId ?? BrowserWorkspaceId(`${sessionName}-workspace`),
+    workspaceId: attach?.workspaceId ?? BrowserWorkspaceId(
+      workspaceSeq === undefined
+        ? `${sessionName}-workspace`
+        : `${sessionName}-workspace-${String(workspaceSeq)}`,
+    ),
     browserId: attach?.kind === 'browser'
       ? attach.browserId
       : BrowserInstanceId(`${sessionName}-browser-${String(tabSeq)}`),
     tabId: BrowserTabId(`${sessionName}-tab-${String(tabSeq)}`),
   })
+}
+
+/**
+ * Allocate a Workspace sequence when opening another shared-Profile Workspace.
+ * @param states - Current Provider states.
+ * @param profileId - Shared Profile identity.
+ * @param attach - Existing hierarchy, when the caller named one.
+ * @returns a positive sequence for a new Workspace, or undefined when attach is set.
+ */
+export function browserSharedWorkspaceSeq(
+  states: Iterable<BrowserRuntimeState>,
+  profileId: BrowserProfileId,
+  attach: BrowserCreateAttach | undefined,
+): number | undefined {
+  if (attach !== undefined) return undefined
+  const workspaces = new Set(
+    [...states]
+      .filter(state => state.target.profileId === profileId)
+      .map(state => state.target.workspaceId),
+  )
+  return workspaces.size + 1
 }
 
 /**
@@ -224,13 +270,16 @@ export function browserProfileStorage(token: string): BrowserProfileStorage {
 /**
  * Resolve opaque Profile identity, partition identifier, and chrome for one create request.
  * @param prefix - Provider-owned identity prefix.
- * @param request - Temporary or named persistent create request.
+ * @param request - Temporary, named persistent, or shared create request.
  * @param temporarySeq - Positive sequence used only for a temporary Profile.
- * @returns stable named-Profile facts, or unique disposable facts for a temporary Profile.
+ * @returns stable named-Profile facts, unique disposable facts, or the shared Profile facts.
  */
 export function resolveBrowserProfileCreate(
   prefix: string,
-  request: { readonly profile: 'temporary' } | { readonly profile: 'persistent'; readonly name: string },
+  request:
+    | { readonly profile: 'temporary' }
+    | { readonly profile: 'persistent'; readonly name: string }
+    | { readonly profile: 'shared' },
   temporarySeq: number,
 ): ResolvedBrowserProfileCreate {
   if (request.profile === 'temporary') {
@@ -239,6 +288,14 @@ export function resolveBrowserProfileCreate(
       profileId: BrowserProfileId(sessionName),
       sessionName,
       chrome: browserProfileChrome({ kind: 'temporary', sessionName }),
+    })
+  }
+  if (request.profile === 'shared') {
+    const sessionName = `${prefix}-shared`
+    return Object.freeze({
+      profileId: BrowserProfileId(`${prefix}-profile-shared`),
+      sessionName,
+      chrome: browserProfileChrome({ kind: 'shared', sessionName }),
     })
   }
   const name = assertBrowserProfileName(request.name)

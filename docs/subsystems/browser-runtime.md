@@ -6,12 +6,12 @@ The Browser Runtime capability separates the provider-neutral [`ctx.browserRunti
 
 ## Identity and state
 
-A `BrowserTarget` contains four opaque branded identities: Profile, Workspace, browser instance, and tab. Callers carry the complete target returned by `create`; none of its string values have caller-visible structure. Open state contains URL, title, text, focus, revision, `controlOwner`, address-field `chrome`, and `storage`. Storage isolation is the Chromium partition named on `chrome.partition`; storage fields stay empty unless a Provider observed them. Temporary chrome omits a label. Closed state is a terminal receipt retaining the target and revision.
+A `BrowserTarget` contains four opaque branded identities: Profile, Workspace, browser instance, and tab. Callers carry the complete target returned by `create`; none of its string values have caller-visible structure. Open state contains URL, title, text, focus, revision, `controlOwner`, address-field `chrome`, and `storage`. Storage isolation is the Chromium partition named on `chrome.partition`; storage fields stay empty unless a Provider observed them. Temporary chrome omits a label. Shared chrome names the reserved installation-wide identity and must not claim isolation. Closed state is a terminal receipt retaining the target and revision.
 
 An `unavailable` state is the truthful projection of Provider availability loss for an existing target: the Electron Provider commits it when a renderer process crashes, and the Tandem-shaped HTTP client commits it when its loopback server or optional fixture child fails health checks. Both keep the target, last revision, and current control owner, name the loss reason, and flag an in-flight reconnect. It is not the terminal closed receipt; a successful reconnect re-commits open page state for the same target at the next revision, and exhausted reconnects commit `reconnect-failed`.
 
 ```ts type-equiv
-/** Address-field chrome facts for one committed Browser Profile. Temporary Profiles omit a label. */
+/** Address-field chrome. Temporary Profiles omit a label. Shared chrome names the shared identity and must not claim isolation. */
 interface BrowserProfileChrome {
   readonly kind: BrowserProfileKind
   readonly name?: BrowserProfileName
@@ -33,11 +33,11 @@ interface BrowserUnavailableState {
 
 ## Concurrency and lifecycle
 
-Providers serialize operations. `create` may attach a new instance to an existing Workspace or a new tab to an existing instance. `navigate`, `focus`, `input`, `takeover`, `returnControl`, and `close` require the last observed revision and reject stale mutations. `controlOwner` is reported ownership. The lock is the revision: after `observe`, an Agent `navigate` or `focus` that matches the current revision reclaims the tab without `returnControl`. Human `input` and `takeover` set `controlOwner` to `human`; `returnControl` and Agent mutations set it to `agent`. `observe` and `screenshot` do not advance the revision. A named persistent Profile restores the same `persist:session-*` partition after close. Temporary Profiles receive ephemeral `session-*` partitions and leave no reusable identity. A second independent writer of the same named Profile rejects with `BROWSER_PROFILE_BUSY`. Teardown stops new admission, drains accepted operations, and closes every open Profile. Session-local ownership, Dock facts, persisted control ownership, and cross-Session isolation live in [`dsh-browser-workspace`](../../packages/browser/browser-workspace).
+Providers serialize operations. `create` may attach a new instance to an existing Workspace or a new tab to an existing instance. `navigate`, `focus`, `input`, `takeover`, `returnControl`, and `close` require the last observed revision and reject stale mutations. `controlOwner` is reported ownership. The lock is the revision: after `observe`, an Agent `navigate` or `focus` that matches the current revision reclaims the tab without `returnControl`. Human `input` and `takeover` set `controlOwner` to `human`; `returnControl` and Agent mutations set it to `agent`. `observe` and `screenshot` do not advance the revision. A named persistent Profile restores the same `persist:session-*` partition after close. A shared Profile restores `persist:session-*-shared` and does not take `BROWSER_PROFILE_BUSY`. Temporary Profiles receive ephemeral `session-*` partitions and leave no reusable identity. A second independent writer of the same named Profile rejects with `BROWSER_PROFILE_BUSY`. Teardown stops new admission, drains accepted operations, and closes every open Profile. Session-local ownership, Dock facts, persisted control ownership, and cross-Session isolation live in [`dsh-browser-workspace`](../../packages/browser/browser-workspace).
 
 The deterministic Provider gives each generation an independent owner token. Its invariant seeds from that generation's authoritative current state on initial load and hot reload, then registers a synchronous pre-commit validator for stable identity, exact revision succession, and terminal closure. A validation failure leaves the previous state authoritative. After commit, the Provider publishes on `browser/runtime-state`; each ordinary observer failure is contained, later observers still run, and asynchronous observers are not awaited.
 
-The Electron Provider owns hidden offscreen `webContents` in this process. It loads only when `process.versions.electron` is set, creates `persist:session-*` partitions for named Profiles and ephemeral `session-*` partitions for temporary Profiles, captures PNG bytes with `webContents.capturePage`, reads page text with `executeJavaScript`, and delivers human text through one insert-or-key path. Chromium persist partitions live at Electron `userData/Partitions/<name>`. A renderer crash commits `unavailable` and recreates the hidden window for the same target. The Desktop Host also binds Tandem's HTTP vocabulary over that engine so the Node Web Host can drive it.
+The Electron Provider owns hidden offscreen `webContents` in this process. It loads only when `process.versions.electron` is set, creates `persist:session-*` partitions for named and shared Profiles and ephemeral `session-*` partitions for temporary Profiles, captures PNG bytes with `webContents.capturePage`, reads page text with `executeJavaScript`, and delivers human text through one insert-or-key path. Chromium persist partitions live at Electron `userData/Partitions/<name>`. A renderer crash commits `unavailable` and recreates the hidden window for the same target. The Desktop Host also binds Tandem's HTTP vocabulary over that engine so the Node Web Host can drive it.
 
 The tandem package is a protocol-only HTTP client for that vocabulary at pinned revision `3b613cfd4c299609ca7ca415d638c1b71c6ba5de`. It constrains `baseUrl` to an absolute loopback HTTP origin, reads the bearer token from `tokenFile`, and polls `GET /agent/version` and `GET /status` under `startupTimeoutMs` before admitting work. Each Profile creates one HTTP session (`POST /sessions/create`) on a `persist:session-*` or ephemeral `session-*` partition, projecting DSH-owned opaque identities around tab ids. Human `input` uses `POST /input` with the client's `expectedRevision`. Production Desktop never launches Tandem.app; an optional fixture child exists only for HTTP protocol tests, and `sidecar: false` rejects `command`/`cwd` at plugin load. Malformed responses reject with `BROWSER_PROTOCOL`; a lost or unreachable runtime rejects with `BROWSER_RUNTIME_UNAVAILABLE`. Provenance and upstream-contribution candidates live in the package's [UPSTREAM.md](../../packages/browser/browser-runtime-tandem/UPSTREAM.md).
 
@@ -61,18 +61,21 @@ Browser Runtime Service Definition. Providers serialize every operation, own tar
 
 ```ts cordis-catalog
 /**
- * Create one temporary or named persistent Profile tab. Omitting `attach` starts a new Workspace
- * and browser instance. Attaching to a Workspace starts another instance; attaching to a browser
- * instance starts another tab in that instance.
- * @param request - Temporary or named persistent Profile request, optional attach, and cancellation.
+ * Create one temporary, named persistent, or shared Profile tab. Omitting `attach` starts a new
+ * Workspace and browser instance. Attaching to a Workspace starts another instance; attaching to a
+ * browser instance starts another tab in that instance.
+ * @param request - Temporary, named persistent, or shared Profile request, optional attach, and
+ * cancellation.
  * @returns initial open page state at revision zero; its target addresses every later operation in
- * this lifecycle. Persistent Profiles restore the same storage partition on later creates.
+ * this lifecycle. Persistent and shared Profiles restore the same storage partition on later
+ * creates. Shared creates from different Sessions reuse one partition and do not take
+ * `BROWSER_PROFILE_BUSY`.
  * @throws `BrowserRuntimeError` with `BROWSER_ABORTED` when cancellation wins, `BROWSER_DISPOSED`
  * after teardown starts, `BROWSER_NOT_FOUND` when `attach` names a missing hierarchy,
- * `BROWSER_PROFILE_BUSY` when the named Profile already has a writer, `BROWSER_PROFILE_NAME` when
- * the name cannot be a stable partition key, `BROWSER_PROTOCOL` when the upstream runtime breaks
- * its response protocol, or `BROWSER_RUNTIME_UNAVAILABLE` when the upstream runtime cannot be
- * reached or starts unhealthy.
+ * `BROWSER_PROFILE_BUSY` when the named persistent Profile already has a writer,
+ * `BROWSER_PROFILE_NAME` when the name cannot be a stable partition key, `BROWSER_PROTOCOL` when
+ * the upstream runtime breaks its response protocol, or `BROWSER_RUNTIME_UNAVAILABLE` when the
+ * upstream runtime cannot be reached or starts unhealthy.
  */
 abstract create(request: BrowserCreateRequest): Promise<BrowserPageState>
 
@@ -172,7 +175,7 @@ returnControl(request: BrowserMutationRequest): Promise<BrowserPageState>
 abstract close(request: BrowserMutationRequest): Promise<BrowserClosedState>
 ```
 
-Source: [`packages/browser/browser-runtime/src/index.ts:106`](../../packages/browser/browser-runtime/src/index.ts)
+Source: [`packages/browser/browser-runtime/src/index.ts:110`](../../packages/browser/browser-runtime/src/index.ts)
 
 <a id="ctxbrowserworkspace--browserworkspacebinder"></a>
 
@@ -372,5 +375,5 @@ Post-commit Browser Runtime lifecycle notification. Providers contain synchronou
 'browser/runtime-state'(state: BrowserRuntimeState): void
 ```
 
-Source: [`packages/browser/browser-runtime/src/index.ts:96`](../../packages/browser/browser-runtime/src/index.ts)
+Source: [`packages/browser/browser-runtime/src/index.ts:100`](../../packages/browser/browser-runtime/src/index.ts)
 <!-- END GENERATED cordis-surface -->

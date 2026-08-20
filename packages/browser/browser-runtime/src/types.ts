@@ -64,12 +64,12 @@ export type BrowserCreateAttach =
 export type BrowserDockWidth = number
 
 /** Kind of Browser Profile storage a Provider committed. */
-export type BrowserProfileKind = 'temporary' | 'persistent'
+export type BrowserProfileKind = 'temporary' | 'persistent' | 'shared'
 
 /** Who last recorded ownership of one open or unavailable Browser Workspace tab. The lock is the revision, not this field. */
 export type BrowserControlOwner = 'agent' | 'human'
 
-/** Address-field chrome facts for one committed Browser Profile. Temporary Profiles omit a label. */
+/** Address-field chrome. Temporary Profiles omit a label. Shared chrome names the shared identity and must not claim isolation. */
 export interface BrowserProfileChrome {
   readonly kind: BrowserProfileKind
   readonly name?: BrowserProfileName
@@ -147,8 +147,18 @@ export interface BrowserPersistentCreateRequest {
   readonly signal?: AbortSignal
 }
 
-/** Request to create a temporary or named persistent Browser Profile. */
-export type BrowserCreateRequest = BrowserTemporaryCreateRequest | BrowserPersistentCreateRequest
+/** Request to open a tab on the installation-wide shared Browser Profile. */
+export interface BrowserSharedCreateRequest {
+  readonly profile: 'shared'
+  readonly attach?: BrowserCreateAttach
+  readonly signal?: AbortSignal
+}
+
+/** Request to create a temporary, named persistent, or shared Browser Profile. */
+export type BrowserCreateRequest =
+  | BrowserTemporaryCreateRequest
+  | BrowserPersistentCreateRequest
+  | BrowserSharedCreateRequest
 
 /** Mutation request guarded by the caller's last observed revision. */
 export interface BrowserMutationRequest {

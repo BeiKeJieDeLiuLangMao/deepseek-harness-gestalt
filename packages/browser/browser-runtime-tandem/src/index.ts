@@ -19,6 +19,7 @@ import {
   requireExpectedBrowserRevision,
   resolveBrowserCreateAttach,
   resolveBrowserProfileCreate,
+  browserSharedWorkspaceSeq,
 } from '@deepseek-ai/dsh-browser-runtime'
 import type {
   BrowserClosedState,
@@ -754,7 +755,12 @@ export class TandemBrowserRuntime extends BrowserRuntime {
         }
         const historical = [...this.states.values()].filter(state => state.target.profileId === created.profileId)
         const tabSeq = historical.length + 1
-        const target = browserTargetFor(created.profileId, created.sessionName, tabSeq, request.attach)
+        const workspaceSeq = request.profile === 'shared'
+          ? browserSharedWorkspaceSeq(this.states.values(), created.profileId, request.attach)
+          : undefined
+        const target = browserTargetFor(
+          created.profileId, created.sessionName, tabSeq, request.attach, workspaceSeq,
+        )
         profile.tabs.set(target.tabId, tab.id)
         this.profiles.set(created.profileId, profile)
         let content: TandemPageContent | undefined

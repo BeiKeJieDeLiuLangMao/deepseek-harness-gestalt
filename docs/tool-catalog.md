@@ -1914,7 +1914,7 @@ Source: [`packages/browser/tool-browser/src/index.ts`](../packages/browser/tool-
 
 ### `browser_create`
 
-Create one temporary or named persistent Browser Profile, Browser Workspace, browser instance, and tab.
+Create one shared, temporary, or named persistent Browser Profile, Browser Workspace, browser instance, and tab. Omit profile to reuse the shared installation-wide identity.
 
 ```json
 {
@@ -1922,10 +1922,11 @@ Create one temporary or named persistent Browser Profile, Browser Workspace, bro
   "properties": {
     "profile": {
       "type": "string",
-      "description": "temporary discards identity; persistent restores a named Profile.",
+      "description": "Omit or shared reuses one identity across Sessions. persistent restores a named isolated Profile. temporary discards identity.",
       "enum": [
         "temporary",
-        "persistent"
+        "persistent",
+        "shared"
       ]
     },
     "name": {

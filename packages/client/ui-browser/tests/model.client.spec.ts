@@ -128,6 +128,9 @@ describe('Browser Dock occupancy helpers', () => {
     expect(persistentProfileLabel(page({
       chrome: { kind: 'persistent', name: 'work' as never, partition: 'persist:work' },
     }))).toBe('work')
+    expect(persistentProfileLabel(page({
+      chrome: { kind: 'shared', name: 'shared' as never, partition: 'persist:shared' },
+    }), 'Shared identity')).toBe('Shared identity')
     const shot: BrowserScreenshot = {
       target: TARGET,
       revision: 2,

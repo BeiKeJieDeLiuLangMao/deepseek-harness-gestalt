@@ -569,6 +569,19 @@ describe('Tandem Browser Runtime public lifecycle', () => {
     })
   })
 
+  it('reuses one shared Tandem Profile without a second-writer rejection', async () => {
+    const { ctx } = await setup()
+    const first = await ctx.browserRuntime.create({ profile: 'shared' })
+    const second = await ctx.browserRuntime.create({ profile: 'shared' })
+    expect(first.chrome).toMatchObject({
+      kind: 'shared',
+      partition: 'persist:session-tandem-test-shared',
+    })
+    expect(second.target.profileId).toBe(first.target.profileId)
+    expect(second.target.workspaceId).not.toBe(first.target.workspaceId)
+    expect(second.chrome.partition).toBe(first.chrome.partition)
+  })
+
   it('keeps the shared Tandem child alive when a later create fails', async () => {
     const { ctx, pidFile } = await setup()
     const first = await ctx.browserRuntime.create({ profile: 'persistent', name: BrowserProfileName('work') })
@@ -670,7 +683,6 @@ describe('Tandem Browser Runtime public lifecycle', () => {
     const { ctx } = await setup()
     const observed: number[] = []
     ctx.on('browser/runtime-state', () => { throw new Error('ordinary observer failed') })
-    // oxlint-disable-next-line typescript/no-misused-promises -- this listener exercises rejected post-commit observation
     ctx.on('browser/runtime-state', async () => { throw new Error('async observer failed') })
     ctx.on('browser/runtime-state', (state: { revision: number }) => { observed.push(state.revision) })
     const created = await ctx.browserRuntime.create({ profile: 'temporary' })

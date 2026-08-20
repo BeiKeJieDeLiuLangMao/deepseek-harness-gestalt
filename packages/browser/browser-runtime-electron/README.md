@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-In-process Electron Browser Runtime Provider for temporary and named persistent Profiles. It implements `ctx.browserRuntime` with this process's `session.fromPartition` and hidden offscreen `webContents`. Screenshots use `webContents.capturePage`; page text uses `executeJavaScript`. Named Profiles restore `persist:session-*` partitions; temporary Profiles use ephemeral `session-*` partitions without the `persist:` prefix, so Chromium keeps their identity in memory and leaves nothing reusable on disk. Chromium persist partitions live at Electron `userData/Partitions/<name>` and never write `~/Library/Application Support/Tandem Browser`.
+In-process Electron Browser Runtime Provider for temporary, named persistent, and shared Profiles. It implements `ctx.browserRuntime` with this process's `session.fromPartition` and hidden offscreen `webContents`. Screenshots use `webContents.capturePage`; page text uses `executeJavaScript`. Named and shared Profiles restore `persist:session-*` partitions; temporary Profiles use ephemeral `session-*` partitions without the `persist:` prefix, so Chromium keeps their identity in memory and leaves nothing reusable on disk. Chromium persist partitions live at Electron `userData/Partitions/<name>` and never write `~/Library/Application Support/Tandem Browser`.
 
 The plugin loads only when `process.versions.electron` is set or a Node test installs a host through `@deepseek-ai/dsh-browser-runtime-electron/testing`. Composing it on plain Node fails at load. Desktop Host owns the hidden windows; the Dock remains a native pane of screenshot, title, and text and does not embed a second BrowserView.
 

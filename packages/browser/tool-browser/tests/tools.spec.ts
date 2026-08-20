@@ -85,7 +85,7 @@ describe('deferred Browser Runtime Consumer', () => {
     const created = await ctx.tools.execute({
       callId: CallId('browser-create'),
       name: 'browser_create',
-      arguments: {},
+      arguments: { profile: 'temporary' },
       signal,
     })
     expect(created).toMatchObject({
@@ -187,6 +187,42 @@ describe('deferred Browser Runtime Consumer', () => {
     expect(closed).toMatchObject({ isError: false, value: { status: 'closed', revision: 6 } })
   })
 
+  it('defaults omitted profile to the shared installation-wide identity', async () => {
+    const ctx = await harness()
+    const created = await ctx.tools.execute({
+      callId: CallId('shared-default'),
+      name: 'browser_create',
+      arguments: {},
+      signal,
+    })
+    expect(created).toMatchObject({
+      isError: false,
+      value: {
+        chrome: {
+          kind: 'shared',
+          name: 'shared',
+          partition: 'persist:session-tool-shared',
+        },
+        target: { profileId: 'tool-profile-shared' },
+      },
+    })
+    const explicit = await ctx.tools.execute({
+      callId: CallId('shared-explicit'),
+      name: 'browser_create',
+      arguments: { profile: 'shared' },
+      signal,
+    })
+    const createdTarget = created.isError ? undefined : created.value as { target: { workspaceId: string } }
+    const explicitTarget = explicit.isError ? undefined : explicit.value as {
+      chrome: { partition: string }
+      target: { profileId: string; workspaceId: string }
+    }
+    expect(explicit).toMatchObject({ isError: false })
+    expect(explicitTarget?.target.profileId).toBe('tool-profile-shared')
+    expect(explicitTarget?.target.workspaceId).not.toBe(createdTarget?.target.workspaceId)
+    expect(explicitTarget?.chrome.partition).toBe('persist:session-tool-shared')
+  })
+
   it('rejects invalid Consumer arguments and timeout configuration at their owning boundaries', async () => {
     const ctx = await harness()
     const target = {
@@ -195,7 +231,12 @@ describe('deferred Browser Runtime Consumer', () => {
       browserId: 'tool-tmp-1-browser-1',
       tabId: 'tool-tmp-1-tab-1',
     }
-    await ctx.tools.execute({ callId: CallId('create'), name: 'browser_create', arguments: {}, signal })
+    await ctx.tools.execute({
+      callId: CallId('create'),
+      name: 'browser_create',
+      arguments: { profile: 'temporary' },
+      signal,
+    })
 
     const missingName = await ctx.tools.execute({
       callId: CallId('missing-name'),
@@ -434,6 +475,27 @@ describe('deferred Browser Runtime Consumer', () => {
     })
     expect(named).toMatchObject({ isError: false })
     const namedTarget = named.isError ? undefined : (named.value as { target: { workspaceId: string; browserId: string } }).target
+    const temporary = await ctx.tools.execute({
+      callId: CallId('bound-temporary'),
+      name: 'browser_create',
+      arguments: { profile: 'temporary' },
+      signal,
+      agent,
+    })
+    expect(temporary).toMatchObject({ isError: false, value: { chrome: { kind: 'temporary' } } })
+    const temporaryTarget = temporary.isError
+      ? undefined
+      : (temporary.value as { target: { workspaceId: string; browserId: string } }).target
+    await expect(ctx.tools.execute({
+      callId: CallId('bound-temporary-attach'),
+      name: 'browser_create',
+      arguments: {
+        profile: 'temporary',
+        attach: { kind: 'browser', workspaceId: temporaryTarget?.workspaceId, browserId: temporaryTarget?.browserId },
+      },
+      signal,
+      agent,
+    })).resolves.toMatchObject({ isError: false, value: { chrome: { kind: 'temporary' } } })
     await expect(ctx.tools.execute({
       callId: CallId('bound-named-attach'),
       name: 'browser_create',
