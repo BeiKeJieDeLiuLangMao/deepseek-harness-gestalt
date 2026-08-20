@@ -127,8 +127,9 @@ jobs:
       DSH_COVERAGE_MAX_WORKERS: ${{ vars.DSH_CI_FAILOVER_LINUX == 'selfhosted' && github.event.pull_request.user.login != 'dependabot[bot]' && '8' || '2' }}
       DSH_GATE_CONCURRENCY: ${{ vars.DSH_CI_FAILOVER_LINUX == 'selfhosted' && github.event.pull_request.user.login != 'dependabot[bot]' && '3' || '2' }}
     steps:
-      # Full history: the coverage inventory includes the release-notes test,
-      # which resolves the pinned manifest range through the Git graph.
+      # Fetch complete history: the Desktop release-notes CLI test inspects
+      # real release ancestry with `git merge-base`, which needs the tagged
+      # release baselines absent from a shallow checkout.
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0

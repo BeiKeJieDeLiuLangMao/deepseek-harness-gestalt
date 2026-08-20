@@ -33,6 +33,11 @@ export interface ILayout {
    * @param range - occupant-specific minimum, default, and maximum widths.
    */
   openDetails(range?: DetailsWidthRange): void
+  /**
+   * Write the open details width without changing the occupant range.
+   * @param px - preferred width in px, clamped to the active range.
+   */
+  setDetails(px: number): void
   /** Close the details panel. */
   closeDetails(): void
 }
@@ -63,6 +68,14 @@ export class LayoutController implements ILayout {
    */
   openDetails(range?: DetailsWidthRange): void {
     this.#require().openDetails(range)
+  }
+
+  /**
+   * Write the open details width without changing the occupant range.
+   * @param px - preferred width in px, clamped to the active range.
+   */
+  setDetails(px: number): void {
+    this.#require().setDetails(px)
   }
 
   /** Close the details panel. */

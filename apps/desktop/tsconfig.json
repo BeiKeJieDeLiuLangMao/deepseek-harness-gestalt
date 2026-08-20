@@ -10,8 +10,10 @@
   },
   "include": ["src", "tests", "scripts"],
   "references": [
+    { "path": "../../packages/browser/browser-runtime-electron" },
     { "path": "../../packages/client/ui-desktop" },
     { "path": "../../packages/host/webserver" },
+    { "path": "../../vendor/cordis" },
     { "path": "../../packages/platform/platform-account" },
     { "path": "../../packages/platform/platform-account-client" },
     { "path": "../../packages/platform/platform-account-core" },

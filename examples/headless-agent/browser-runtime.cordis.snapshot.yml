@@ -1,0 +1,58 @@
+# Keyless Browser Runtime tracer over the shipped base + headless profile.
+- id: agent-loop
+  # Restart requires persistence before the fixed Session identity is restored.
+  inject: [sessionPersistence]
+  config:
+    agents:
+      - id: main
+        sessionId: browser-runtime-snapshot
+        provider: snapshot
+        model: snapshot
+        cwd: !!js process.cwd()
+
+- id: system-prompt
+  config:
+    persona: |
+      Follow the replayed Browser Runtime tracer exactly.
+
+- id: headless-runner
+  disabled: true
+
+- id: session-title-llm
+  disabled: true
+
+# The base bundle's keyless Runtime yields to this tracer's replay proxy.
+- id: browser-runtime-deterministic
+  disabled: true
+
+# Replay proxy for the host-plane tool-browser Consumer.
+- id: tool-browser
+  name: './snapshot-fixtures/tool-browser-proxy.mjs'
+
+- insert:
+    - id: browser-runtime-trace
+      name: './snapshot-fixtures/browser-runtime-deterministic-proxy.mjs'
+      config:
+        idPrefix: trace
+        pages:
+          - url: https://example.test/
+            title: Example Domain
+            text: A deterministic browser page.
+            screenshotPngBase64: iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=
+
+    - id: llm-replay
+      name: './snapshot-fixtures/llm-replay-proxy.mjs'
+      config:
+        file: !!js process.env.DSH_SNAPSHOT_FILE
+        providers:
+          - id: snapshot
+            models:
+              - id: snapshot
+                contextWindow: 128000
+
+    # The same restart driver emits canonical Session events for this tracer.
+    - id: browser-runtime-snapshot-runner
+      name: './snapshot-fixtures/deferred-tool-search-runner.ts'
+      inject: [headlessStartup]
+      config:
+        task: !!js ctx.headlessStartup.task

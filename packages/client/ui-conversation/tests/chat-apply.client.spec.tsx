@@ -37,7 +37,7 @@ async function bench() {
   // them here so the contributions land.
   await runtime.root.declare({
     'conversation': { kind: 'single', scope: 'session-maybe' },
-    'details': { kind: 'single', scope: 'session' },
+    'details': { kind: 'list', scope: 'session' },
     'settings.general.item': { kind: 'list', scope: 'root' },
   }, (_p: { renderSlot?: unknown }) => null)
 
@@ -69,6 +69,7 @@ describe('apply wiring', () => {
     const nodeSlot = b.slots.spec('conversation.chat.node')
     expect(nodeSlot).toMatchObject({ kind: 'keyed', scope: 'session' })
     expect(nodeSlot?.inject?.hooks?.turnData).toBeTypeOf('function')
+    expect(b.slots.spec('conversation.browser.preview')).toEqual({ kind: 'single', scope: 'session' })
     await b.runtime.dispose()
   })
 
