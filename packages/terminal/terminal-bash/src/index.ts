@@ -89,12 +89,21 @@ function childEnvironment(spec: TerminalBackendSpawnSpec, dialect: ShellDialect)
 export const PWSH_PROMPT_SETUP =
   "function prompt { [Console]::Write([char]27 + ']133;D;' + [int]$LASTEXITCODE + [char]7); '" + CONTROLLED_PROMPT + "' }"
 
+/** Marker written by the pwsh spawn handshake after prompt setup. */
+export const PWSH_READY_MARK = '__DSH_PWSH_READY__'
+/** Command that prints {@link PWSH_READY_MARK} once the setup send has finished. */
+export const PWSH_READY_PROBE = `Write-Output "${PWSH_READY_MARK}"`
+
 /** True when the latest printed line is the installed prompt, not setup echo. */
 function showsInstalledControlledPrompt(viewport: string, scrollback: string): boolean {
   // A send viewport can still end on setup echo after acceptsStdinWait;
   // scrollback is the session's last printed line and must still count.
   return lastNonEmptyLine(viewport) === CONTROLLED_PROMPT
     || lastNonEmptyLine(scrollback) === CONTROLLED_PROMPT
+}
+
+function showsPwshReadyMark(viewport: string, scrollback: string): boolean {
+  return viewport.includes(PWSH_READY_MARK) || scrollback.includes(PWSH_READY_MARK)
 }
 
 function spawnArgv(ctx: Context, config: ResolvedConfig, policy: SandboxExecutionPolicy): string[] {
@@ -123,26 +132,20 @@ async function startupSession(
       return
     }
     // pwsh cannot install its prompt from the environment: write the prompt
-    // function through the session and wait for the first marker prompt,
-    // which is also the readiness contract of the bash initialize path. The
-    // first send also pins UTF-8 output (the shared pwsh-local preamble)
-    // before anything runs: the session decode path treats PTY bytes as
-    // UTF-8, and an un-pinned console writes its host code page for
-    // non-ASCII output. The banner-to-prompt gap can outlast the silence
-    // bound, so the wait loops over follow-up sends until the latest printed
-    // line is exactly the controlled prompt. Setup echo contains that
-    // marker as a substring (`setup-echo dsh> ` or the prompt-function
-    // source) and must not count. An empty follow-up viewport is not a
-    // reason to submit setup again. Each startSend resets its own deadline,
-    // so inferred_idle can starve `timeout`; the spawn `timeoutMs` is the
-    // wall for the whole loop.
+    // function, then a ready probe. Linux reprints `PS>` only on the next
+    // write, so setup echo plus silence is not spawn-ready — leftover setup
+    // still lands on the first real send. The probe must print its marker
+    // (or the last printed line must be exactly `dsh> `) before spawn
+    // returns. Each startSend resets its own deadline; the spawn
+    // `timeoutMs` is the wall for the whole loop.
     const started = Date.now()
     let viewport = ''
     let sentSetup = false
     for (;;) {
       const operation = session.startSend({
-        text: sentSetup ? '' : ENCODING_PREAMBLE + PWSH_PROMPT_SETUP,
-        submit: !sentSetup,
+        text: sentSetup ? PWSH_READY_PROBE : ENCODING_PREAMBLE + PWSH_PROMPT_SETUP,
+        submit: true,
+        bootstrap: true,
         ...signal !== undefined ? { signal } : {},
       })
       sentSetup = true
@@ -151,14 +154,13 @@ async function startupSession(
       if (result.waitReason === 'timeout') throw new Error('PTY shell did not reach readiness before startup timeout')
       viewport = result.viewport
       const scrollback = session.read({ offset: 0, count: 20 }).text
-      // stdin_read is a prompt-line wait. Banner silence is not ready.
-      // Setup echo plus inferred_idle means the install line finished even
-      // when Linux reprints `PS>` only on the next write.
       if (
         result.waitReason === 'stdin_read'
         || showsInstalledControlledPrompt(viewport, scrollback)
-        || (result.waitReason === 'inferred_idle' && viewport.includes(PWSH_PROMPT_SETUP))
-      ) break
+        || showsPwshReadyMark(viewport, scrollback)
+      ) {
+        break
+      }
       if (Date.now() - started >= timeoutMs) {
         throw new Error('PTY shell did not reach readiness before startup timeout')
       }

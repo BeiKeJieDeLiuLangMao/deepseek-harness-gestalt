@@ -263,10 +263,55 @@ describe('LocalPtySession readiness and output', () => {
     void operation.done.then(() => { settled = true })
     await vi.advanceTimersByTimeAsync(80)
     expect(settled).toBe(false)
-    terminal.emitData('keep=ok\n')
+    terminal.emitData('keep=ok\n\ndsh> ')
     await vi.advanceTimersByTimeAsync(80)
     expect((await operation.done).waitReason).toBe('inferred_idle')
     expect((await operation.done).viewport).toContain('keep=ok')
+  })
+
+  it('does not infer pwsh idle from a default PS prompt reprint', async () => {
+    vi.useFakeTimers()
+    const terminal = new FakeTerminal()
+    const inspector = new FakeInspector()
+    const session = makeSession(terminal, inspector, config({
+      shellDialect: 'pwsh',
+      shellPath: 'pwsh',
+      timeoutMs: 500,
+    }))
+    await initialize(session, terminal)
+    inspector.waiting = false
+    const operation = session.startSend({ text: 'Write-Output keep=ok', submit: true })
+    let settled = false
+    void operation.done.then(() => { settled = true })
+    terminal.emitData('PS /tmp/dsh-pty> \n\nPS /tmp/dsh-pty> ')
+    await vi.advanceTimersByTimeAsync(80)
+    expect(settled).toBe(false)
+    terminal.emitData('keep=ok\nPS /tmp/dsh-pty> ')
+    await vi.advanceTimersByTimeAsync(80)
+    expect((await operation.done).waitReason).toBe('inferred_idle')
+    expect((await operation.done).viewport).toContain('keep=ok')
+  })
+
+  it('lets a pwsh bootstrap send settle idle on output without a prompt line', async () => {
+    vi.useFakeTimers()
+    const terminal = new FakeTerminal()
+    const inspector = new FakeInspector()
+    const session = makeSession(terminal, inspector, config({
+      shellDialect: 'pwsh',
+      shellPath: 'pwsh',
+      timeoutMs: 500,
+    }))
+    await initialize(session, terminal)
+    inspector.waiting = false
+    const operation = session.startSend({
+      text: 'Write-Output "__DSH_PWSH_READY__"',
+      submit: true,
+      bootstrap: true,
+    })
+    terminal.emitData('__DSH_PWSH_READY__\n')
+    await vi.advanceTimersByTimeAsync(80)
+    expect((await operation.done).waitReason).toBe('inferred_idle')
+    expect((await operation.done).viewport).toContain('__DSH_PWSH_READY__')
   })
 
   it('treats the persistent-tool pwsh prompt as an installed prompt', async () => {

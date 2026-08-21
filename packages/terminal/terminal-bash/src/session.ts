@@ -26,6 +26,10 @@ import { CONTROLLED_PROMPT, lastNonEmptyLine, TerminalSanitizer } from './saniti
 /** Prompt installed by tool-pwsh-persistent after the backend `dsh> ` prompt. */
 const TOOL_PWSH_PROMPT = '__DSH_PERSISTENT_PWSH_PROMPT__ '
 
+function isPwshReadyPromptLine(line: string): boolean {
+  return line === CONTROLLED_PROMPT || line === TOOL_PWSH_PROMPT || /^PS .+> $/.test(line)
+}
+
 function utf8Tail(text: string, maxBytes: number): { text: string; truncated: boolean } {
   if (Buffer.byteLength(text) <= maxBytes) return { text, truncated: false }
   const chars = Array.from(text)
@@ -88,6 +92,7 @@ class LocalSendOperation implements TerminalSendOperation {
   constructor(
     maxBytes: number,
     readonly startedAt: number,
+    readonly bootstrap: boolean,
     private readonly onCancel: () => void,
   ) {
     this.output = new BoundedTextBuffer(maxBytes)
@@ -118,6 +123,18 @@ class LocalSendOperation implements TerminalSendOperation {
   hasPromptLine(): boolean {
     const line = lastNonEmptyLine(this.output.snapshot().text)
     return line === CONTROLLED_PROMPT || line === TOOL_PWSH_PROMPT
+  }
+
+  /** True when this send printed a prompt after at least one non-prompt line. */
+  hasCompletedCommand(): boolean {
+    const text = this.output.snapshot().text
+    const line = lastNonEmptyLine(text)
+    if (!isPwshReadyPromptLine(line)) return false
+    for (const candidate of text.replaceAll('\r\n', '\n').replaceAll('\r', '\n').split('\n')) {
+      if (candidate.trim() === '') continue
+      if (!isPwshReadyPromptLine(candidate)) return true
+    }
+    return false
   }
 
   settle(waitReason: TerminalWaitReason, sessionStatus: TerminalSessionStatus, inheritedTruncation: boolean): void {
@@ -250,6 +267,7 @@ export class LocalPtySession implements TerminalBackendSession {
     const operation = new LocalSendOperation(
       this.config.maxReadBytes,
       Date.now(),
+      request.bootstrap === true,
       () => { this.interrupt(operation) },
     )
     this.active = operation
@@ -477,8 +495,11 @@ export class LocalPtySession implements TerminalBackendSession {
       // on waiting for shell ownership instead of letting a child marker suppress
       // readiness until the absolute timeout.
       const handoffGrace = this.promptSeen ? this.config.handoffGraceMs : 0
+      const pwshIdleReady = this.initializing || operation.bootstrap
+        ? operation.hasOutput()
+        : operation.hasCompletedCommand()
       if (startupHasOutput && idleFor >= this.config.idleSilenceMs + handoffGrace
-        && (this.config.shellDialect !== 'pwsh' || operation.hasOutput())) {
+        && (this.config.shellDialect !== 'pwsh' || pwshIdleReady)) {
         this.settleActive('inferred_idle')
       }
     } catch (error: unknown) {
