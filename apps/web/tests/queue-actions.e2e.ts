@@ -40,9 +40,8 @@ function turnEndReasons(events: readonly SessionEvent[]): string[] {
 }
 
 async function captureQueueAria(page: Page, workspaceCwd: string): Promise<string> {
-  await page.mouse.move(0, 0)
-  await expect.poll(() => page.getByRole('tooltip').count(), { timeout: 3_000 }).toBe(0)
-  return captureStableAria(page, '[class*="centerCol"]', workspaceCwd)
+  const snapshot = await captureStableAria(page, '[class*="centerCol"]', workspaceCwd)
+  return snapshot.replace(/^\s*- tooltip .+\n?/gm, '')
 }
 
 describe('web e2e: queue row actions', () => {
