@@ -120,16 +120,20 @@ async function startupSession(
       await session.initialize(signal)
       return
     }
-    // pwsh cannot install its prompt from the environment: write the prompt
-    // function through the session. The first send also pins UTF-8 output
-    // (the shared pwsh-local preamble) before anything runs: the session
-    // decode path treats PTY bytes as UTF-8, and an un-pinned console writes
-    // its host code page for non-ASCII output. A Linux PTY often never
-    // reprints CONTROLLED_PROMPT after that function runs, so spawn waits
-    // for PWSH_SETUP_DONE from the trailing Write-Output instead. The banner
-    // gap can outlast the first send's silence bound, so follow-ups continue
-    // until that token is visible. session_exit, per-send timeout, and the
-    // spawn-wall timeoutMs reject.
+    // pwsh cannot install its prompt from the environment: wait for the
+    // default prompt to own the TTY, then write the prompt function.
+    // A write during banner lands on the PTY as echo and never executes
+    // (Linux CI 32462089006: scrollback is the setup source plus
+    // `PS /tmp/…>`). The first send also pins UTF-8 output (the shared
+    // pwsh-local preamble) before anything runs: the session decode path
+    // treats PTY bytes as UTF-8, and an un-pinned console writes its host
+    // code page for non-ASCII output. A Linux PTY often never reprints
+    // CONTROLLED_PROMPT after that function runs, so spawn waits for
+    // PWSH_SETUP_DONE from the trailing Write-Output instead. The
+    // banner-to-setup gap can outlast the first send's silence bound, so
+    // follow-ups continue until that token is visible. session_exit,
+    // per-send timeout, and the spawn-wall timeoutMs reject.
+    await session.initialize(signal)
     const startedAt = Date.now()
     let written = false
     let viewport = ''

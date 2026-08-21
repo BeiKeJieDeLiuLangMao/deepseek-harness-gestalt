@@ -349,8 +349,10 @@ describe('BashTerminalBackend startup rollback', () => {
     await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access', workspaceRoot: '/workspace' })
     let spawned: SubprocessTerminalSpawnSpec | undefined
     let sent: TerminalSendRequest | undefined
+    let initialized = false
     const session = {
       motd: '',
+      initialize: async () => { initialized = true },
       startSend: (request: TerminalSendRequest) => {
         sent = request
         return {
@@ -371,6 +373,7 @@ describe('BashTerminalBackend startup rollback', () => {
       () => session,
     )
     expect(await backend.spawn(spec(agent(ctx)))).toBe(session)
+    expect(initialized).toBe(true)
     expect(sent).toMatchObject({ text: ENCODING_PREAMBLE + PWSH_PROMPT_SETUP, submit: true })
     expect(session.motd).toBe(`setup-echo ${PWSH_SETUP_DONE}`)
     expect(PWSH_PROMPT_SETUP).not.toContain(CONTROLLED_PROMPT)
@@ -391,6 +394,7 @@ describe('BashTerminalBackend startup rollback', () => {
     const sends: TerminalSendRequest[] = []
     const session = {
       motd: '',
+      initialize: async () => {},
       startSend: (request: TerminalSendRequest) => {
         sends.push(request)
         const second = sends.length > 1
@@ -425,6 +429,7 @@ describe('BashTerminalBackend startup rollback', () => {
     const sends: TerminalSendRequest[] = []
     const session = {
       motd: '',
+      initialize: async () => {},
       startSend: (request: TerminalSendRequest) => {
         sends.push(request)
         return {
@@ -463,6 +468,7 @@ describe('BashTerminalBackend startup rollback', () => {
     await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access', workspaceRoot: '/workspace' })
     const session = {
       motd: '',
+      initialize: async () => {},
       startSend: () => ({
         done: Promise.resolve({
           viewport: 'PowerShell 7.6.4\n',
@@ -493,6 +499,7 @@ describe('BashTerminalBackend startup rollback', () => {
     await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access', workspaceRoot: '/workspace' })
     const session = {
       motd: '',
+      initialize: async () => {},
       startSend: (request: TerminalSendRequest) => ({
         done: Promise.resolve({
           viewport: request.text,
@@ -519,6 +526,7 @@ describe('BashTerminalBackend startup rollback', () => {
     await ctx.plugin(EmptySandbox)
     await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access', workspaceRoot: '/workspace' })
     const sessionFor = (waitReason: TerminalWaitReason): LocalPtySession => ({
+      initialize: async () => {},
       startSend: () => ({
         done: Promise.resolve({
           viewport: 'no-prompt', waitReason,
@@ -541,8 +549,10 @@ describe('BashTerminalBackend startup rollback', () => {
     await ctx.plugin(EmptySandbox)
     await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access', workspaceRoot: '/workspace' })
     const sends: TerminalSendRequest[] = []
+    let initializedWith: AbortSignal | undefined
     const session = {
       motd: '',
+      initialize: async (signal?: AbortSignal) => { initializedWith = signal },
       startSend: (request: TerminalSendRequest) => {
         sends.push(request)
         return {
@@ -565,8 +575,32 @@ describe('BashTerminalBackend startup rollback', () => {
     const signal = new AbortController().signal
     const spawned = await backend.spawn({ ...spec(agent(ctx)), signal })
     expect(spawned.motd).toBe(PWSH_SETUP_DONE)
+    expect(initializedWith).toBe(signal)
     expect(sends).toHaveLength(1)
     expect(sends[0]?.signal).toBe(signal)
+  })
+
+  it('rejects when the default prompt never appears before setup', async () => {
+    const ctx = new Context()
+    await ctx.plugin(EmptySandbox)
+    await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access', workspaceRoot: '/workspace' })
+    const session = {
+      initialize: async () => {
+        throw new Error('PTY shell did not reach readiness before startup timeout')
+      },
+      startSend: () => {
+        throw new Error('setup must not run before the default prompt')
+      },
+      read: () => ({ text: '', totalLines: 0, lineBegin: 0, lineEnd: 0, truncated: false }),
+      close: () => Promise.resolve(),
+    } as unknown as LocalPtySession
+    const backend = new BashTerminalBackend(
+      ctx,
+      { ...config(), shellDialect: 'pwsh', shellPath: 'pwsh' },
+      async () => terminalHandle(),
+      () => session,
+    )
+    await expect(backend.spawn(spec(agent(ctx)))).rejects.toThrow('did not reach readiness before startup timeout')
   })
 })
 

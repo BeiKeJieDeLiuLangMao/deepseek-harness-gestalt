@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { PassThrough } from 'node:stream'
-import { LocalPtySession } from '@deepseek-ai/dsh-terminal-bash/src/session.ts'
+import { LocalPtySession, pwshSubmitTerminator } from '@deepseek-ai/dsh-terminal-bash/src/session.ts'
 import type { ResolvedConfig } from '@deepseek-ai/dsh-terminal-bash/src/config.ts'
 import type { TerminalSendOperation, TerminalSessionStatus, TerminalSignal } from '@deepseek-ai/dsh-terminal'
 import type {
@@ -224,12 +224,16 @@ describe('LocalPtySession readiness and output', () => {
     const operation = session.startSend({ text: 'Get-Location', submit: true })
     await Promise.resolve()
     await Promise.resolve()
-    expect(terminal.writes).toEqual([
-      process.platform === 'win32' ? 'Get-Location\r' : 'Get-Location\n',
-    ])
+    expect(terminal.writes).toEqual([`Get-Location${pwshSubmitTerminator(process.platform)}`])
     terminal.emitData('ok\n')
     await vi.advanceTimersByTimeAsync(50)
     expect((await operation.done).waitReason).toBe('inferred_idle')
+  })
+
+  it('uses CR on Windows and LF on Unix for pwsh submit', () => {
+    expect(pwshSubmitTerminator('win32')).toBe('\r')
+    expect(pwshSubmitTerminator('linux')).toBe('\n')
+    expect(pwshSubmitTerminator('darwin')).toBe('\n')
   })
 
   it('does not reuse a pre-write stdin wait as post-write readiness', async () => {
