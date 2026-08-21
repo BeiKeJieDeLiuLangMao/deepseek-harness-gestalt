@@ -622,7 +622,7 @@ describe('BashTerminalBackend startup rollback', () => {
     expect(session.motd).toBe(PWSH_SETUP_DONE)
   })
 
-  it('does not write setup when a default prompt settles on stdin_read', async () => {
+  it('does not write setup until idleSilenceMs after the default prompt', async () => {
     const ctx = new Context()
     await ctx.plugin(EmptySandbox)
     await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access', workspaceRoot: '/workspace' })

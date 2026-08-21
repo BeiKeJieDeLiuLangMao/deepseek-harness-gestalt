@@ -109,10 +109,18 @@ function spawnArgv(ctx: Context, config: ResolvedConfig, policy: SandboxExecutio
 // TODO(pty-initialize-race-home): Fold this outer abort race into
 // LocalPtySession.initialize when the send-state consolidation lands; the
 // session already owns the send lifecycle the race protects.
+function startupTimeoutError(viewport: string, scrollback?: string): Error {
+  const scrollbackPart = scrollback === undefined ? '' : `; scrollback=${JSON.stringify(scrollback.slice(-400))}`
+  return new Error(
+    `PTY shell did not reach readiness before startup timeout; viewport=${JSON.stringify(viewport.slice(-400))}${scrollbackPart}`,
+  )
+}
+
 async function startupSession(
   session: LocalPtySession,
   dialect: ShellDialect,
   timeoutMs: number,
+  idleSilenceMs: number,
   signal?: AbortSignal,
 ): Promise<void> {
   const start = async (): Promise<void> => {
@@ -120,16 +128,15 @@ async function startupSession(
       await session.initialize(signal)
       return
     }
-    // pwsh cannot install its prompt from the environment: wait until the
-    // default `PS …>` prompt is visible and the wait settled on
-    // inferred_idle, then write the prompt function. `initialize` or a
-    // 150 ms stdin_wait can write while PSReadLine is still drawing
-    // reverse-video CSI (Linux CI 32466566587: binary after `PS /tmp/…>`;
-    // 32463876213: session_exit). A write during banner never executes
-    // (32462089006). The first submitted send also pins UTF-8 output.
-    // Spawn then waits for PWSH_SETUP_DONE. Follow-ups continue until
-    // that token is visible. session_exit, per-send timeout, and the
-    // spawn-wall timeoutMs reject.
+    // pwsh cannot install its prompt from the environment: wait until a
+    // default `PS …>` line is visible, then wait idleSilenceMs without
+    // writing (pwsh stdin_wait settles at exactProbeAfterMs, so
+    // inferred_idle never arrives — Linux CI 32467952709). Writing on
+    // that first stdin_wait dumps binary (32466566587) or session_exit
+    // (32463876213). A write during banner never executes (32462089006).
+    // Then write the prompt function and pin UTF-8. Spawn waits for
+    // PWSH_SETUP_DONE. Follow-ups continue until that token is visible.
+    // session_exit, per-send timeout, and the spawn-wall timeoutMs reject.
     const startedAt = Date.now()
     let readyToSetup = false
     let written = false
@@ -143,29 +150,23 @@ async function startupSession(
       if (readyToSetup) written = true
       const result = await operation.done
       if (result.waitReason === 'session_exit') throw new Error('PTY shell exited during startup')
-      if (result.waitReason === 'timeout') {
-        throw new Error(
-          `PTY shell did not reach readiness before startup timeout; viewport=${JSON.stringify(result.viewport.slice(-400))}`,
-        )
-      }
+      if (result.waitReason === 'timeout') throw startupTimeoutError(result.viewport)
       viewport = result.viewport
       const scrollback = session.read({ offset: 0, count: 20 }).text
       if (!readyToSetup) {
-        if (
-          result.waitReason === 'inferred_idle'
-          && (hasDefaultPwshPrompt(viewport) || hasDefaultPwshPrompt(scrollback))
-        ) {
+        if (hasDefaultPwshPrompt(viewport) || hasDefaultPwshPrompt(scrollback)) {
+          const remaining = timeoutMs - (Date.now() - startedAt)
+          await new Promise<void>((resolve) => {
+            setTimeout(resolve, Math.max(0, Math.min(idleSilenceMs, remaining)))
+          })
+          if (Date.now() - startedAt >= timeoutMs) throw startupTimeoutError(viewport, scrollback)
           readyToSetup = true
         }
       } else if (viewport.includes(PWSH_SETUP_DONE) || scrollback.includes(PWSH_SETUP_DONE)) {
         session.motd = viewport.includes(PWSH_SETUP_DONE) ? viewport : scrollback
         break
       }
-      if (Date.now() - startedAt >= timeoutMs) {
-        throw new Error(
-          `PTY shell did not reach readiness before startup timeout; viewport=${JSON.stringify(viewport.slice(-400))}; scrollback=${JSON.stringify(scrollback.slice(-400))}`,
-        )
-      }
+      if (Date.now() - startedAt >= timeoutMs) throw startupTimeoutError(viewport, scrollback)
     }
   }
   if (signal === undefined) {
@@ -218,7 +219,13 @@ export class BashTerminalBackend implements TerminalBackend {
     })
     const session = this.createSession(terminal, this.config)
     try {
-      await startupSession(session, this.config.shellDialect, this.config.timeoutMs, spec.signal)
+      await startupSession(
+        session,
+        this.config.shellDialect,
+        this.config.timeoutMs,
+        this.config.idleSilenceMs,
+        spec.signal,
+      )
       return session
     } catch (error) {
       try {
