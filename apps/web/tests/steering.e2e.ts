@@ -344,9 +344,10 @@ describe('web e2e: empty-draft Cmd+Enter steers the whole queue', () => {
     scaffold = await launchWebScaffold({
       replayFixture: STEER_ALL_FIXTURE,
       replayOverride: STEER_ALL_OVERRIDE,
-      // Call 0's question-tool stream replaces InputBar; 80 ms keeps both
-      // queue rows inside that window on CI.
-      paceMs: 80,
+      // Call 0's question-tool stream replaces InputBar; 120 ms keeps both
+      // queue rows inside that window on CI (80 ms missed STEER_TWO on
+      // 32467952709).
+      paceMs: 120,
     })
     scaffold.ctx.on('session/event', (_session, event) => { sessionEvents.push(event) })
     browser = await chromium.launch()
