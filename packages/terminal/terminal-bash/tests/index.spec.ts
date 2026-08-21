@@ -386,6 +386,12 @@ describe('BashTerminalBackend startup rollback', () => {
       'utf8',
     )
     expect(profile).toContain(PWSH_CONSOLE_READLINE)
+    expect(profile).not.toContain('Remove-Module')
+    const stub = await readFile(
+      join(spawned!.env!.HOME!, '.local/share/powershell/Modules/PSReadLine/PSReadLine.psd1'),
+      'utf8',
+    )
+    expect(stub).toContain("ModuleVersion = '9.9.9'")
     expect(spawned?.env?.USERPROFILE).toBe(spawned?.env?.HOME)
     expect(spawned?.env?.XDG_CONFIG_HOME).toBe(`${spawned?.env?.HOME}/.config`)
     expect(spawned?.env).toMatchObject({
