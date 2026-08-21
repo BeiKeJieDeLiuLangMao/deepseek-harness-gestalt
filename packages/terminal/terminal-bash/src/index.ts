@@ -12,12 +12,11 @@ import type { TerminalBackend, TerminalBackendSpawnSpec } from '@deepseek-ai/dsh
 import type { SubprocessTerminalHandle, SubprocessTerminalSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import type { SandboxExecutionPolicy } from '@deepseek-ai/dsh-sandbox'
 import { effectiveSandboxMode } from '@deepseek-ai/dsh-sandbox-policy'
-import { ENCODING_PREAMBLE } from '@deepseek-ai/dsh-pwsh-local'
 import { type Config, type ResolvedConfig, resolveConfig, type ShellDialect, validateConfig } from './config.ts'
 import { LocalPtySession } from './session.ts'
-import { CONTROLLED_PROMPT, lastNonEmptyLine } from './sanitize.ts'
+import { CONTROLLED_PROMPT } from './sanitize.ts'
 
-export { Config } from './config.ts'
+export { Config, PWSH_PROMPT_SETUP } from './config.ts'
 export type { Config as TerminalLocalConfig } from './config.ts'
 
 /** Cordis plugin name. */
@@ -65,8 +64,8 @@ function childEnvironment(spec: TerminalBackendSpawnSpec, dialect: ShellDialect)
     DSH_PTY_SESSION_ID: spec.sessionId,
   }
   if (dialect === 'pwsh') {
-    // pwsh ignores PS1/PROMPT_COMMAND; its prompt is installed by the startup
-    // bootstrap instead, and NO_COLOR keeps the renderer quiet.
+    // pwsh ignores PS1/PROMPT_COMMAND; its prompt is installed by `-Command`
+    // in the dialect argv, and NO_COLOR keeps the renderer quiet.
     return { ...common, NO_COLOR: '1' }
   }
   return {
@@ -78,32 +77,6 @@ function childEnvironment(spec: TerminalBackendSpawnSpec, dialect: ShellDialect)
     PROMPT_COMMAND: `printf "\\033]133;D;%s\\007" "$?"; PS1='${CONTROLLED_PROMPT}'`,
     BASH_SILENCE_DEPRECATION_WARNING: '1',
   }
-}
-
-/**
- * The pwsh prompt function that emits the shared OSC `133;D;` + BEL marker
- * before every prompt, mirroring bash's PROMPT_COMMAND. `[char]27`/`[char]7`
- * build the control bytes at runtime because raw ESC characters in submitted
- * input are unreliable under PSReadLine.
- */
-export const PWSH_PROMPT_SETUP =
-  "function prompt { [Console]::Write([char]27 + ']133;D;' + [int]$LASTEXITCODE + [char]7); '" + CONTROLLED_PROMPT + "' }"
-
-/** Marker written by the pwsh spawn handshake after prompt setup. */
-export const PWSH_READY_MARK = '__DSH_PWSH_READY__'
-/** Command that prints {@link PWSH_READY_MARK} once the setup send has finished. */
-export const PWSH_READY_PROBE = `Write-Output "${PWSH_READY_MARK}"`
-
-/** True when the latest printed line is the installed prompt, not setup echo. */
-function showsInstalledControlledPrompt(viewport: string, scrollback: string): boolean {
-  // A send viewport can still end on setup echo after acceptsStdinWait;
-  // scrollback is the session's last printed line and must still count.
-  return lastNonEmptyLine(viewport) === CONTROLLED_PROMPT
-    || lastNonEmptyLine(scrollback) === CONTROLLED_PROMPT
-}
-
-function showsPwshReadyMark(viewport: string, scrollback: string): boolean {
-  return viewport.includes(PWSH_READY_MARK) || scrollback.includes(PWSH_READY_MARK)
 }
 
 function spawnArgv(ctx: Context, config: ResolvedConfig, policy: SandboxExecutionPolicy): string[] {
@@ -122,50 +95,10 @@ function spawnArgv(ctx: Context, config: ResolvedConfig, policy: SandboxExecutio
 // session already owns the send lifecycle the race protects.
 async function startupSession(
   session: LocalPtySession,
-  dialect: ShellDialect,
-  timeoutMs: number,
   signal?: AbortSignal,
 ): Promise<void> {
   const start = async (): Promise<void> => {
-    if (dialect === 'bash') {
-      await session.initialize(signal)
-      return
-    }
-    // pwsh cannot install its prompt from the environment: write the prompt
-    // function, then a ready probe. Linux reprints `PS>` only on the next
-    // write, so setup echo plus silence is not spawn-ready — leftover setup
-    // still lands on the first real send. The probe must print its marker
-    // (or the last printed line must be exactly `dsh> `) before spawn
-    // returns. Each startSend resets its own deadline; the spawn
-    // `timeoutMs` is the wall for the whole loop.
-    const started = Date.now()
-    let viewport = ''
-    let sentSetup = false
-    for (;;) {
-      const operation = session.startSend({
-        text: sentSetup ? PWSH_READY_PROBE : ENCODING_PREAMBLE + PWSH_PROMPT_SETUP,
-        submit: true,
-        bootstrap: true,
-        ...signal !== undefined ? { signal } : {},
-      })
-      sentSetup = true
-      const result = await operation.done
-      if (result.waitReason === 'session_exit') throw new Error('PTY shell exited during startup')
-      if (result.waitReason === 'timeout') throw new Error('PTY shell did not reach readiness before startup timeout')
-      viewport = result.viewport
-      const scrollback = session.read({ offset: 0, count: 20 }).text
-      if (
-        result.waitReason === 'stdin_read'
-        || showsInstalledControlledPrompt(viewport, scrollback)
-        || showsPwshReadyMark(viewport, scrollback)
-      ) {
-        break
-      }
-      if (Date.now() - started >= timeoutMs) {
-        throw new Error('PTY shell did not reach readiness before startup timeout')
-      }
-    }
-    session.motd = viewport
+    await session.initialize(signal)
   }
   if (signal === undefined) {
     await start()
@@ -217,7 +150,7 @@ export class BashTerminalBackend implements TerminalBackend {
     })
     const session = this.createSession(terminal, this.config)
     try {
-      await startupSession(session, this.config.shellDialect, this.config.timeoutMs, spec.signal)
+      await startupSession(session, spec.signal)
       return session
     } catch (error) {
       try {

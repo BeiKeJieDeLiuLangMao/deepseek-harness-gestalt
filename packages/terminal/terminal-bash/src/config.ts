@@ -1,7 +1,8 @@
 /** Validated configuration for the local PTY backend. */
 
 import z from '@deepseek-ai/schemastery'
-import { resolvePwshPath } from '@deepseek-ai/dsh-pwsh-local'
+import { ENCODING_PREAMBLE, resolvePwshPath } from '@deepseek-ai/dsh-pwsh-local'
+import { CONTROLLED_PROMPT } from './sanitize.ts'
 
 /** One supported interactive shell dialect. */
 export type ShellDialect = 'bash' | 'pwsh'
@@ -14,7 +15,10 @@ export interface Config {
   shellDialect?: ShellDialect
   /** Interactive shell executable (default per dialect: `/bin/bash`, or the resolved pwsh). */
   shellPath?: string
-  /** Shell arguments (default per dialect: bash `--noprofile --norc -i`, pwsh `-NoLogo -NoProfile`). */
+  /**
+   * Shell arguments (default per dialect: bash `--noprofile --norc -i`;
+   * pwsh `-NoLogo -NoProfile -NoExit -Command` plus encoding pin and prompt).
+   */
   shellArgs?: string[]
   /** Terminal rows. */
   rows?: number
@@ -54,8 +58,23 @@ export type ResolvedConfig = Omit<Required<Config>, 'shellDialect' | 'shellPath'
 export const DEFAULT_BASH_SHELL = '/bin/bash'
 /** Bash dialect default arguments (interactive, profile-free). */
 export const DEFAULT_BASH_ARGS = ['--noprofile', '--norc', '-i']
-/** Pwsh dialect default arguments (interactive host, profile-free). */
-export const DEFAULT_PWSH_ARGS = ['-NoLogo', '-NoProfile']
+/**
+ * The pwsh prompt function that emits the shared OSC `133;D;` + BEL marker
+ * before every prompt. Installed through `-Command` so Linux does not need an
+ * interactive setup send. `[char]27`/`[char]7` build the control bytes at
+ * runtime because raw ESC characters in startup argv are unreliable.
+ */
+export const PWSH_PROMPT_SETUP =
+  "function prompt { [Console]::Write([char]27 + ']133;D;' + [int]$LASTEXITCODE + [char]7); '" + CONTROLLED_PROMPT + "' }"
+
+/** Pwsh dialect default arguments (interactive host, profile-free, prompt preinstalled). */
+export const DEFAULT_PWSH_ARGS = [
+  '-NoLogo',
+  '-NoProfile',
+  '-NoExit',
+  '-Command',
+  ENCODING_PREAMBLE + PWSH_PROMPT_SETUP,
+]
 
 /**
  * Resolve the effective per-dialect shell specification. Defaulting is this
