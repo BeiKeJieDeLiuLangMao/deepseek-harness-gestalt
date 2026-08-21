@@ -111,29 +111,19 @@ const PWSH_SETUP_DONE_TAIL = PWSH_SETUP_DONE.slice(PWSH_SETUP_DONE_HEAD.length)
  */
 export const PWSH_PROMPT_SETUP =
   `function prompt { [Console]::Write([char]27 + ']133;D;' + [int]$LASTEXITCODE + [char]7); ('${PWSH_PROMPT_HEAD}' + '${PWSH_PROMPT_TAIL}') }; Write-Output ('${PWSH_SETUP_DONE_HEAD}' + '${PWSH_SETUP_DONE_TAIL}')`
+const PWSH_INPUT_ENCODING =
+  '[Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)'
 /**
- * Isolated-profile replacement for PSReadLine. Keeping HOME until close still
- * left later PTY writes empty or aborted (`32474124270`). `Remove-Module`
- * during profile load dumped UTF-16 `Stop` / PerfTrack text and hid the
- * token (`32479597008`). The console host calls this function when it
- * exists and the real PSReadLine module is not loaded.
+ * Profile-owned stdin loop. `PSConsoleHostReadLine` and a stub PSReadLine
+ * module both dumped UTF-16 `Stop` / PerfTrack text (`32479597008`,
+ * `32480892916`). `[Console]::In.ReadLine` consumes a submitted LF line
+ * without handing the TTY to the console host.
  */
-export const PWSH_CONSOLE_READLINE =
-  'function global:PSConsoleHostReadLine { [Console]::ReadLine() }'
-const PWSH_READLINE_STUB_MANIFEST = [
-  '@{',
-  "  ModuleVersion = '9.9.9'",
-  "  GUID = 'a1111111-1111-4111-8111-111111111111'",
-  "  RootModule = 'PSReadLine.psm1'",
-  '  FunctionsToExport = @()',
-  '  CmdletsToExport = @()',
-  '  AliasesToExport = @()',
-  '}',
-  '',
-].join('\n')
+export const PWSH_STDIN_REPL =
+  'while ($true) { [Console]::Write((prompt)); $__dshLine = [Console]::In.ReadLine(); if ($null -eq $__dshLine) { break }; try { Invoke-Expression $__dshLine } catch { Write-Host $_ } }'
 async function writePwshIsolatedHome(): Promise<string> {
   const home = join(tmpdir(), `dsh-pwsh-home-${randomUUID()}`)
-  const body = `${ENCODING_PREAMBLE}\n${PWSH_PROMPT_SETUP}\n${PWSH_CONSOLE_READLINE}\n`
+  const body = `${ENCODING_PREAMBLE}\n${PWSH_INPUT_ENCODING}\n${PWSH_PROMPT_SETUP}\n${PWSH_STDIN_REPL}\n`
   const profiles = [
     join(home, '.config', 'powershell', 'Microsoft.PowerShell_profile.ps1'),
     join(home, 'Documents', 'PowerShell', 'Microsoft.PowerShell_profile.ps1'),
@@ -141,15 +131,6 @@ async function writePwshIsolatedHome(): Promise<string> {
   for (const profile of profiles) {
     await mkdir(dirname(profile), { recursive: true })
     await writeFile(profile, body)
-  }
-  const stubs = [
-    join(home, '.local', 'share', 'powershell', 'Modules', 'PSReadLine'),
-    join(home, 'Documents', 'PowerShell', 'Modules', 'PSReadLine'),
-  ]
-  for (const dir of stubs) {
-    await mkdir(dir, { recursive: true })
-    await writeFile(join(dir, 'PSReadLine.psd1'), PWSH_READLINE_STUB_MANIFEST)
-    await writeFile(join(dir, 'PSReadLine.psm1'), '\n')
   }
   return home
 }
@@ -195,15 +176,13 @@ async function startupSession(
       return
     }
     // pwsh cannot install its prompt from the environment. Interactive
-    // writes after `PS …>` never execute on Linux CI: `-NoExit -File`
-    // (32470697182) and an isolated HOME that still used PSReadLine
-    // (32474124270) printed the token then dropped later sends.
-    // Remove-Module in the profile dumped UTF-16 Stop/PerfTrack text
-    // (32479597008). The isolated home therefore shadows PSReadLine
-    // with an empty 9.9.9 module and defines PSConsoleHostReadLine.
-    // Wait for PWSH_SETUP_DONE and CONTROLLED_PROMPT, and keep the home
-    // until session close. session_exit, per-send timeout, and the
-    // spawn-wall timeoutMs reject.
+    // writes after `PS …>` never execute on Linux CI. Isolated HOME plus
+    // PSReadLine (`32474124270`), PSConsoleHostReadLine (`32479597008`),
+    // and a stub PSReadLine module (`32480892916`) all failed. The
+    // isolated profile therefore runs PWSH_STDIN_REPL. Wait for
+    // PWSH_SETUP_DONE and CONTROLLED_PROMPT, and keep the home until
+    // session close. session_exit, per-send timeout, and the spawn-wall
+    // timeoutMs reject.
     const startedAt = Date.now()
     let viewport = ''
     let sawToken = false
