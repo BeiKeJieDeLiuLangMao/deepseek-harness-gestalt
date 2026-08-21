@@ -224,7 +224,7 @@ export async function apply(_ctx: Context, config: Config): Promise<void> {
       onCiphertext: async (ciphertext) => {
         const message = decodeCompanionMessage(mobileProtocol, cipher.open(ciphertext))
         if (message.type === 'result' && message.result.type === 'confirmed') result.resolve(message.result.outcome)
-        if (message.type === 'projection') {
+        if (message.type === 'projection' && message.projection.type === 'transcript-page') {
           const entry = message.projection.entries[0]
           if (entry?.type === 'text') {
             const revision = Number(entry.entryId.replace('resync-', ''))

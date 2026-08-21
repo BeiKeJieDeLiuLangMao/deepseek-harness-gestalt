@@ -274,7 +274,7 @@ describe('two Loader-booted Platform Instances', () => {
         if (message.type === 'result' && message.result.type === 'confirmed') {
           accepted.resolve(message.result.outcome)
         }
-        if (message.type === 'projection') {
+        if (message.type === 'projection' && message.projection.type === 'transcript-page') {
           const entry = message.projection.entries[0]
           if (entry?.type === 'text') {
             const revision = Number(entry.entryId.replace('resync-', ''))
