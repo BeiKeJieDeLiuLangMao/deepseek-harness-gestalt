@@ -39,6 +39,11 @@ export interface MobilePairingHandshakeClient {
   exportPairingKeyMaterial?(): Uint8Array | undefined
   /** Wipe any retained pairing key material on this installation. */
   wipe?(): void | Promise<void>
+  /**
+   * Export the follow-up handshake message after Desktop's response.
+   * @returns copy of the finish message, or undefined when the adapter is one-round.
+   */
+  exportFinishMessage?(): Uint8Array | undefined
 }
 
 /** Retention sink for confirmed Personal Pairing key material. */
@@ -238,12 +243,22 @@ export class MobilePairingController implements MobilePairingActions {
       attempt.transmission = 'pending'
       await this.options.handshake.acceptDesktopHandshake(completion.desktopHandshake)
       this.assertActiveAccount()
+      const finish = this.options.handshake.exportFinishMessage?.()
+      const finished = finish === undefined
+        ? completion
+        : await this.options.transport.finishChallenge({
+          authentication,
+          pendingPairingId: completion.pendingPairingId,
+          mobileFinish: finish,
+        })
+      this.assertActiveAccount()
+      attempt.pendingProjection = finished
       this.publish({
         status: 'pending',
         deviceName: this.options.device.name,
-        authenticationWords: completion.authenticationWords,
+        authenticationWords: finished.authenticationWords,
       })
-      this.scheduleStatus(completion.pendingPairingId)
+      this.scheduleStatus(finished.pendingPairingId)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       if (this.isTerminal(error, attempt)) {

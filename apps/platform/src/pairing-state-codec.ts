@@ -184,6 +184,7 @@ function encodePending(record: PendingPairingRecord): unknown {
     ...encodeCompletion(record) as Record<string, unknown>,
     cleanup: encodeCleanup(record.cleanup),
     ...(record.activationCleanup === undefined ? {} : { activationCleanup: encodeCleanup(record.activationCleanup) }),
+    ...(record.awaitingFinish === true ? { awaitingFinish: true } : {}),
   }
 }
 
@@ -193,6 +194,7 @@ function decodePending(value: unknown): PendingPairingRecord {
     ...decodeCompletion(record),
     cleanup: decodeCleanup(record.cleanup),
     ...(record.activationCleanup === undefined ? {} : { activationCleanup: decodeCleanup(record.activationCleanup) }),
+    ...(record.awaitingFinish === true ? { awaitingFinish: true } : {}),
   }
 }
 
@@ -273,6 +275,9 @@ function encodeInvitation(invitation: ChallengeRecord['invitation']): unknown {
     challengeId: invitation.challengeId,
     invitationSecret: encodeBytes(invitation.invitationSecret),
     desktopFingerprint: invitation.desktopFingerprint,
+    ...(invitation.desktopStaticPublicKey === undefined
+      ? {}
+      : { desktopStaticPublicKey: encodeBytes(invitation.desktopStaticPublicKey) }),
     rendezvousId: invitation.rendezvousId,
     expiresAt: invitation.expiresAt,
     protocolMajor: invitation.protocolMajor,
@@ -289,6 +294,9 @@ function decodeInvitation(value: unknown): ChallengeRecord['invitation'] {
     challengeId: parsePairingChallengeId(record.challengeId),
     invitationSecret: decodeBytes(record.invitationSecret, 'invitationSecret'),
     desktopFingerprint: asPlainString(record.desktopFingerprint, 'desktopFingerprint'),
+    ...(record.desktopStaticPublicKey === undefined
+      ? {}
+      : { desktopStaticPublicKey: decodeBytes(record.desktopStaticPublicKey, 'desktopStaticPublicKey') }),
     rendezvousId: parsePairingRendezvousId(record.rendezvousId),
     expiresAt: asSafeInteger(record.expiresAt, 'invitation.expiresAt'),
     protocolMajor: PERSONAL_PAIRING_PROTOCOL_MAJOR,

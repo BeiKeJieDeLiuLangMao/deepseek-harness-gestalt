@@ -34,6 +34,14 @@ function completeDeployEnv(): NodeJS.Dict<string> {
     PLATFORM_REDIS_PASSWORD: DISTINCTIVE_SECRET,
     PLATFORM_TOKEN_SIGNING_KEY: HEX,
     PLATFORM_POLLING_SIGNING_KEY: HEX,
+    PLATFORM_RELAY_ATTACH_TIMEOUT_MS: '10000',
+    PLATFORM_RELAY_CAPACITY_RETRY_AFTER_MS: '1000',
+    PLATFORM_RELAY_DELIVERY_ACK_TIMEOUT_MS: '5000',
+    PLATFORM_RELAY_DIRECTORY_TTL_MS: '30000',
+    PLATFORM_RELAY_HEARTBEAT_TIMEOUT_MS: '20000',
+    PLATFORM_RELAY_MAX_BUFFERED_CIPHERTEXT_BYTES: '131070',
+    PLATFORM_RELAY_MAX_CONNECTIONS: '32',
+    PLATFORM_RELAY_MAX_PENDING_DELIVERIES: '32',
     PLATFORM_ECS_SSH_KEY: '-----BEGIN DISTINCTIVE KEY-----',
     PLATFORM_ECS_HOSTS: '10.0.0.1,10.0.0.2',
   }
@@ -112,6 +120,14 @@ describe('production and deploy names', () => {
       'PLATFORM_REDIS_PASSWORD',
       'PLATFORM_TOKEN_SIGNING_KEY',
       'PLATFORM_POLLING_SIGNING_KEY',
+      'PLATFORM_RELAY_ATTACH_TIMEOUT_MS',
+      'PLATFORM_RELAY_CAPACITY_RETRY_AFTER_MS',
+      'PLATFORM_RELAY_DELIVERY_ACK_TIMEOUT_MS',
+      'PLATFORM_RELAY_DIRECTORY_TTL_MS',
+      'PLATFORM_RELAY_HEARTBEAT_TIMEOUT_MS',
+      'PLATFORM_RELAY_MAX_BUFFERED_CIPHERTEXT_BYTES',
+      'PLATFORM_RELAY_MAX_CONNECTIONS',
+      'PLATFORM_RELAY_MAX_PENDING_DELIVERIES',
       'PLATFORM_ECS_SSH_KEY',
       'PLATFORM_ECS_HOSTS',
     ])
@@ -177,9 +193,12 @@ describe('operated Platform composition', () => {
     expect(bootSource).toContain('https://dev.gestaltrun.invalid')
     expect(bootSource).toContain('PostgresPersonalPairingAuthorityStore')
     expect(bootSource).toContain('PostgresRelayRouteStore')
-    expect(bootSource).not.toContain('PersonalPairingProvider')
+    expect(bootSource).toContain('PersonalPairingProvider')
+    expect(bootSource).toContain('SnowPairingHandshakeProvider')
+    expect(bootSource).toContain('RemoteRelayProvider')
     expect(bootSource).not.toContain('DevelopmentKeylessPairingHandshakeProvider')
-    expect(bootSource).not.toContain('RemoteRelayProvider')
+    expect(readFileSync(new URL('../tsdown.config.ts', import.meta.url), 'utf8'))
+      .toContain('dsh_noise_channel_bg.wasm')
     expect(bootSource).not.toContain('production-env-cli')
     expect(envSource).not.toContain('process.exit')
   })

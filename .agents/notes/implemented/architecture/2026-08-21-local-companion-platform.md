@@ -6,7 +6,7 @@ English | [中文](2026-08-21-local-companion-platform.zh.md)
 
 ## Problem
 
-Production Platform listen mounts Account HTTP and migrates Remote Access tables, but pairing HTTP and Relay WSS stay unmounted until independent Noise review. Assembled keyless fixtures already prove pairing and two-instance Relay in process, yet Mobile and Desktop product entries have no loopback composition that shares one trusted HTTPS origin, real Account sessions, and a non-sticky TLS front. Simulator browsers also cannot complete GitHub login when Capacitor Browser is absent unless a still-valid pending attempt can resume after navigating the current browsing context.
+Production Platform listen mounts Account HTTP, Snow Personal Pairing, and Relay WSS; see [product Snow handshake](2026-08-21-snow-product-handshake.md). Assembled keyless fixtures already prove pairing and two-instance Relay in process, yet Mobile and Desktop product entries have no loopback composition that shares one trusted HTTPS origin, real Account sessions, and a non-sticky TLS front. Simulator browsers also cannot complete GitHub login when Capacitor Browser is absent unless a still-valid pending attempt can resume after navigating the current browsing context.
 
 ## Decision
 
@@ -20,7 +20,7 @@ Keyless product Desktop and Mobile share the Relay attachment ids `desktop-devel
 
 ## Alternatives considered
 
-**Mount pairing and Relay on production listen.** That would ship an unreviewed handshake on the operated origin. The production process stays fail-closed.
+**Mount keyless pairing on production listen.** Rejected: production uses the Snow provider. See [product Snow handshake](2026-08-21-snow-product-handshake.md).
 
 **Change the selected Platform origin to `http://127.0.0.1`.** Account and Remote Access HTTP allow only the selected HTTPS origin, and pairing links must stay `https:`. The selected identity remains the TLS listen; only page-origin traffic is rewritten through Vite.
 

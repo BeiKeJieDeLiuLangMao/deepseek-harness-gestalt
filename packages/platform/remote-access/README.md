@@ -26,7 +26,7 @@ None.
 
 ## Known Limitations and Deferred Work
 
-- Production activation remains fail-closed until an independent reviewer accepts the Snow proof and a reviewed `PairingHandshakeProvider` is assembled.
+- Production listen mounts `SnowPairingHandshakeProvider`; Companion application frames still use the development AES-GCM seal until pairing-key HKDF is wired.
 - Personal Pairing challenge and pending-handshake records still use the checked-in single-process provider. Confirmed pairing-to-route/access authority and the Relay route store are deployment-owned seams; this repository does not provision PostgreSQL, Redis, TLS, or cloud instances.
-- Relay transport availability does not approve product encryption. Production Desktop composition remains fail-closed until the independent Noise gate admits a reviewed handshake and Companion channel provider.
+- Relay transport availability does not approve product encryption. Companion frames still use the development AES-GCM seal; IK reconnect is not assembled on WSS attach.
 - Push token register, unregister, and hint publish are `RemoteAccessService` methods. The pairing HTTP Consumer does not yet expose register or publish. The HTTP client already sends `unregister-push-token`; the Platform register and publish routes remain deferred, and Desktop does not yet listen for session events to call `DesktopCompanionPushPublisher`. Native APNs/FCM credentials and real-device delivery remain deployment-owned.

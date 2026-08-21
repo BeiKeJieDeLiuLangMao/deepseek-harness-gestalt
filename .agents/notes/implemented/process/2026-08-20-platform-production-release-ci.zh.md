@@ -28,8 +28,8 @@ Desktop 与 Mobile 仍解析完整环境对（[账号安装会话](../feature/20
 
 ## 后果
 
-缺少生产名称时校验失败，且不会打印值。设置 `PLATFORM_ENVIRONMENT=development` 会使监听进程失败。镜像发布和 ECS 应用仍是手动、受 Environment 保护的步骤。监听进程把启动和错误行写到容器 stdout/stderr；Docker `json-file` 轮转（`20m` × `3` 个文件）限制每台 ECS 上的体积。应用步骤还会以用户自定义标识 `gestalt-platform` 启动 LoongCollector，把这些行送到 SLS 项目 `gestalt` 的 Logstore `application`。采集器从加固模式 ECS 元数据 `100.100.100.200` 读取阿里云账号 ID，元数据为空时回退到 Environment `production` 的 `PLATFORM_SLS_ACCOUNT_ID`。在挂载相应能力之前，APNs、FCM、OSS blob、CloudMonitor 以及配对/Relay HTTP 都不在本工作流内。监听进程会迁移共享的 pairing-authority 与 route 表，但不挂载配对 HTTP 或 Relay WSS。
+缺少生产名称时校验失败，且不会打印值。设置 `PLATFORM_ENVIRONMENT=development` 会使监听进程失败。镜像发布和 ECS 应用仍是手动、受 Environment 保护的步骤。监听进程把启动和错误行写到容器 stdout/stderr；Docker `json-file` 轮转（`20m` × `3` 个文件）限制每台 ECS 上的体积。应用步骤还会以用户自定义标识 `gestalt-platform` 启动 LoongCollector，把这些行送到 SLS 项目 `gestalt` 的 Logstore `application`。采集器从加固模式 ECS 元数据 `100.100.100.200` 读取阿里云账号 ID，元数据为空时回退到 Environment `production` 的 `PLATFORM_SLS_ACCOUNT_ID`。APNs、FCM、OSS blob 和 CloudMonitor 仍不在本工作流内。监听进程挂载 Snow 配对 HTTP 与 Relay WSS，并要求 `PLATFORM_RELAY_*` 可调项。见[产品 Snow 握手](../architecture/2026-08-21-snow-product-handshake.md)。
 
 ## 测试
 
-[`apps/platform/tests/production-env.spec.ts`](../../../../apps/platform/tests/production-env.spec.ts) 钉住运行环境选择、缺失名称顺序、十六进制密钥拒绝、只列出名称不打印值的 CLI stderr、`boot.ts` 调用 `assertOperatedPlatformEnvironment` 且不导入 CLI 入口、监听进程迁移 pairing 与 route store 且不导入配对或 Relay provider、Deploy 工作流的先校验再按 `inputs.deploy` 应用、`json-file` 轮转选项以及 LoongCollector 向 SLS `gestalt`/`application` 的注册，以及 Platform Image 在 master 推送上构建但不推送到 GHCR。
+[`apps/platform/tests/production-env.spec.ts`](../../../../apps/platform/tests/production-env.spec.ts) 钉住运行环境选择、缺失名称顺序、十六进制密钥拒绝、只列出名称不打印值的 CLI stderr、`boot.ts` 调用 `assertOperatedPlatformEnvironment` 且不导入 CLI 入口、监听进程迁移 pairing 与 route store 并导入 Snow 而非 keyless handshake、Deploy 工作流的先校验再按 `inputs.deploy` 应用、`json-file` 轮转选项以及 LoongCollector 向 SLS `gestalt`/`application` 的注册，以及 Platform Image 在 master 推送上构建但不推送到 GHCR。

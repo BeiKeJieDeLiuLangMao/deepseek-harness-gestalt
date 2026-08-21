@@ -88,6 +88,12 @@ export interface RemoteAccessTransport {
     device: PairingDeviceDescription
     mobileHandshake: Uint8Array
   }): Promise<PairingCompletionView>
+  /** @param input - current Mobile authorization, pending id, and finish message. @returns finished pending pairing. */
+  finishChallenge(input: {
+    authentication: PairingAccountAuthentication
+    pendingPairingId: PendingPairingId
+    mobileFinish: Uint8Array
+  }): Promise<PairingCompletionView>
   /** @param input - current Mobile authorization and pending id. @returns Desktop decision state. */
   getMobilePairingStatus(input: {
     authentication: PairingAccountAuthentication
@@ -195,6 +201,18 @@ export class RemoteAccessHttpTransport implements RemoteAccessTransport {
       oneTimeLink: input.oneTimeLink,
       device: input.device,
       mobileHandshake: encodeBytes(input.mobileHandshake),
+    }))
+  }
+
+  async finishChallenge(input: {
+    authentication: PairingAccountAuthentication
+    pendingPairingId: PendingPairingId
+    mobileFinish: Uint8Array
+  }): Promise<PairingCompletionView> {
+    return parseCompletion(await this.call(input.authentication, {
+      operation: 'finish-challenge',
+      pendingPairingId: input.pendingPairingId,
+      mobileFinish: encodeBytes(input.mobileFinish),
     }))
   }
 

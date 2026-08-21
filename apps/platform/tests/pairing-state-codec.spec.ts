@@ -36,6 +36,7 @@ describe('pairing transaction codec', () => {
         challengeId: parsePairingChallengeId('challenge-one'),
         invitationSecret: Uint8Array.from({ length: 32 }, (_, index) => index),
         desktopFingerprint: 'fp',
+        desktopStaticPublicKey: Uint8Array.from({ length: 32 }, (_, index) => 32 - index),
         rendezvousId: parsePairingRendezvousId('rendezvous-one'),
         expiresAt: 1_787_027_200_000,
         protocolMajor: 1,
@@ -53,11 +54,29 @@ describe('pairing transaction codec', () => {
     state.accountChallengeAt.set('account-one', [10, 20])
     state.blobs.set('blob-1', { accountId: 'account-one', bytes: 32 })
     state.blobSequence.next = 4
+    state.pending.set(parsePendingPairingId('pending-open'), {
+      accountId: 'account-one',
+      desktopInstallationId: parseInstallationId('desktop-one'),
+      mobileInstallationId: parseInstallationId('mobile-one'),
+      challengeId: parsePairingChallengeId('challenge-one'),
+      challengeCleanup: {},
+      view: {
+        pendingPairingId: parsePendingPairingId('pending-open'),
+        authenticationWords: ['amber', 'binary', 'cedar', 'delta', 'ember', 'frost'],
+        desktopHandshake: Uint8Array.of(1),
+        device: { name: 'Phone', platform: 'ios' },
+      },
+      completedAt: 5,
+      cleanup: { resource: Uint8Array.of(2) },
+      awaitingFinish: true,
+    })
     const decoded = decodePairingTransactionState(
       JSON.parse(JSON.stringify(encodePairingTransactionState(state))) as unknown,
     )
     const challenge = decoded.challenges.get(parsePairingChallengeId('challenge-one'))
     expect(challenge?.invitation.invitationSecret).toEqual(Uint8Array.from({ length: 32 }, (_, index) => index))
+    expect(challenge?.invitation.desktopStaticPublicKey).toEqual(Uint8Array.from({ length: 32 }, (_, index) => 32 - index))
+    expect(decoded.pending.get(parsePendingPairingId('pending-open'))?.awaitingFinish).toBe(true)
     const [orphanCleanup, orphan] = [...decoded.orphanPendingCleanups][0] ?? []
     expect(orphanCleanup).toBe(orphan?.cleanup)
     expect(decoded.accountChallengeAt.get('account-one')).toEqual([10, 20])

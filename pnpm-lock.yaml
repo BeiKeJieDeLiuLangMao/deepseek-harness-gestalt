@@ -498,6 +498,9 @@ importers:
       '@deepseek-ai/dsh-client-ui-theme':
         specifier: workspace:^
         version: link:../../packages/client/ui-theme
+      '@deepseek-ai/dsh-noise-channel':
+        specifier: workspace:^
+        version: link:../../packages/platform/noise-channel
       '@deepseek-ai/dsh-platform-account':
         specifier: workspace:^
         version: link:../../packages/platform/platform-account
@@ -550,6 +553,9 @@ importers:
       '@deepseek-ai/dsh-host-webserver':
         specifier: workspace:^
         version: link:../../packages/host/webserver
+      '@deepseek-ai/dsh-noise-channel':
+        specifier: workspace:^
+        version: link:../../packages/platform/noise-channel
       '@deepseek-ai/dsh-platform-account':
         specifier: workspace:^
         version: link:../../packages/platform/platform-account
@@ -562,6 +568,12 @@ importers:
       '@deepseek-ai/dsh-remote-access':
         specifier: workspace:^
         version: link:../../packages/platform/remote-access
+      '@deepseek-ai/dsh-remote-access-http':
+        specifier: workspace:^
+        version: link:../../packages/platform/remote-access-http
+      '@deepseek-ai/dsh-remote-access-redis':
+        specifier: workspace:^
+        version: link:../../packages/platform/remote-access-redis
       '@deepseek-ai/dsh-remote-protocol':
         specifier: workspace:^
         version: link:../../packages/platform/remote-protocol
@@ -6335,6 +6347,21 @@ importers:
       '@deepseek-ai/dsh-user-questions':
         specifier: workspace:^
         version: link:../../interaction/user-questions
+
+  packages/platform/noise-channel:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-invariants':
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+      '@deepseek-ai/dsh-remote-access':
+        specifier: workspace:^
+        version: link:../remote-access
+      '@deepseek-ai/dsh-remote-protocol':
+        specifier: workspace:^
+        version: link:../remote-protocol
 
   packages/platform/platform-account:
     devDependencies:

@@ -26,7 +26,7 @@ QR 载荷与完整的一次性 HTTPS 链接完全相同，携带 256 位邀请�
 
 ## Known Limitations and Deferred Work
 
-- 在独立评审者接受 Snow 证明且组装经过评审的 `PairingHandshakeProvider` 之前，产品激活保持 fail-closed。
+- 生产 listen 挂载 `SnowPairingHandshakeProvider`；Companion 应用帧在接入配对密钥 HKDF 之前仍使用开发 AES-GCM 封装。
 - 个人配对 challenge 与待确认握手记录仍使用随附的单进程提供方。已确认的 pairing-to-route/access 权限与 Relay route store 都是部署拥有的 seam；本仓库不供应 PostgreSQL、Redis、TLS 或云实例。
-- Relay transport 可用不等于产品加密获批。在独立 Noise gate 接纳经过评审的握手与 Companion channel provider 之前，生产 Desktop 组合保持 fail-closed。
+- Relay transport 可用不等于产品加密获批。Companion 帧仍使用开发 AES-GCM 封装；WSS 附着尚未组装 IK 重连。
 - 推送 token 登记、注销与提示发布是 `RemoteAccessService` 方法。配对 HTTP 消费方尚未暴露登记或发布。HTTP 客户端已发送 `unregister-push-token`；Platform 登记与发布路由仍暂缓，Desktop 也尚未监听 session 事件去调用 `DesktopCompanionPushPublisher`。原生 APNs/FCM 凭据与真机投递仍由部署拥有。

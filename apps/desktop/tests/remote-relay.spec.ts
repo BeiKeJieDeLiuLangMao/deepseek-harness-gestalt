@@ -59,7 +59,7 @@ describe('Desktop Remote Relay composition', () => {
     }
   })
 
-  it('keeps production fail-closed and assembles a cancellable development endpoint', async () => {
+  it('assembles production Relay and keeps development fail-closed without the keyless flag', async () => {
     const connect = vi.fn(async (signal: AbortSignal) => await new Promise<never>((_resolve, reject) => {
       signal.addEventListener('abort', () => { reject(new Error('cancelled')) }, { once: true })
     }))
@@ -68,8 +68,16 @@ describe('Desktop Remote Relay composition', () => {
       source: SOURCE,
       connect,
     })
-    await expect(production.start()).rejects.toThrow('independently reviewed')
-    expect(connect).not.toHaveBeenCalled()
+    await production.configure?.({
+      routeId: parseRelayRouteId('route-production'),
+      credential: parseRelayCredential('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'),
+      revision: 1,
+    })
+    const productionStarting = production.start()
+    await vi.waitFor(() => { expect(connect).toHaveBeenCalledOnce() })
+    await production.stop('window-close')
+    await productionStarting.catch(() => undefined)
+    connect.mockClear()
     const disabled = createDesktopRemoteRelay({
       environment: DEVELOPMENT, source: { ...SOURCE, DSH_PERSONAL_PAIRING_KEYLESS: '0' }, connect,
     })
@@ -81,10 +89,10 @@ describe('Desktop Remote Relay composition', () => {
       credential: parseRelayCredential('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'),
       revision: 1,
     })
-    const starting = development.start()
+    const developmentStarting = development.start()
     await vi.waitFor(() => { expect(connect).toHaveBeenCalledOnce() })
     const stopping = development.stop('window-close')
-    await expect(Promise.allSettled([starting, stopping])).resolves.toHaveLength(2)
+    await expect(Promise.allSettled([developmentStarting, stopping])).resolves.toHaveLength(2)
     expect(connect.mock.calls[0]?.[0]).toBeInstanceOf(AbortSignal)
   })
 

@@ -10,7 +10,7 @@ The selected implementation is [Snow 0.10.0](https://github.com/mcginty/snow/tre
 
 The proof admits exactly `Noise_XKpsk3_25519_ChaChaPoly_SHA256` for first pairing and `Noise_IK_25519_ChaChaPoly_SHA256` for reconnect. Both use the `dsh-mobile-companion-v1` prologue. The protocol names, handshake roles, PSK position, maximum message size, and downgrade allowlist are constants in the reviewed adapter.
 
-This decision is eligible for product integration only after an independent security reviewer records the review outcome described below. Integration still needs separate product work for relay framing, challenge state, session lifecycle, native secret storage, and release gates.
+Product owner authorization to mount this path is recorded in [the product Snow handshake note](../../.agents/notes/implemented/architecture/2026-08-21-snow-product-handshake.md). That record is not the independent-reviewer form below. Companion frames, IK reconnect, and native key wrapping remain separate product work.
 
 ## Evidence inventory
 

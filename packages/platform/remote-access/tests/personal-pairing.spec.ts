@@ -15,6 +15,7 @@ import {
   MemoryPersonalPairingAuthorityStore,
   PersonalPairingProvider,
   RemoteAccessError,
+  RemoteAccessService,
   type PersonalPairingAuthorityStore,
   type PersonalPairingProviderOptions,
   deriveAuthenticationWords,
@@ -1850,8 +1851,18 @@ describe('PersonalPairingProvider', () => {
       mutateLink(valid, (url) => { url.searchParams.set('expires', '0') }),
       mutateLink(valid, (url) => { url.searchParams.set('expires', 'not-a-number') }),
       mutateLink(valid, (url) => { url.searchParams.set('protocol', '2') }),
+      mutateLink(valid, (url) => { url.searchParams.append('spk', 'AA'); url.searchParams.append('spk', 'AA') }),
+      mutateLink(valid, (url) => { url.searchParams.set('spk', 'AA') }),
     ]
     for (const link of invalidLinks) expect(() => parsePairingInvitationLink(link)).toThrow()
+
+    await expect(RemoteAccessService.prototype.finishChallenge.call({} as never, {
+      mobile: authentication('mobile-one'),
+      pendingPairingId: parsePendingPairingId('pending-default'),
+      mobileFinish: Uint8Array.of(1),
+    })).rejects.toEqual(expect.objectContaining<Partial<RemoteAccessError>>({
+      code: 'PAIRING_PENDING_INVALID',
+    }))
 
     await expect(provider.revokePersonalPairing({
       desktop,
@@ -2146,6 +2157,59 @@ describe('PersonalPairingProvider', () => {
     await other.setMobileAccess({ desktop, enabled: false })
     await creator.dispose()
     expect(handshake.destroyChallenge).toHaveBeenCalledOnce()
+  })
+
+  it('hides unfinished Snow pairings until finishChallenge publishes the handshake hash', async () => {
+    const handshake = handshakeProvider()
+    const publicKey = Uint8Array.from({ length: 32 }, (_, index) => index + 1)
+    const finishedHash = Uint8Array.from({ length: 32 }, (_, index) => index + 9)
+    handshake.createChallenge = vi.fn().mockResolvedValue({
+      desktopFingerprint: 'desktop-fingerprint',
+      desktopStaticPublicKey: publicKey,
+      state: Uint8Array.of(1),
+    })
+    const snow = handshake as typeof handshake & {
+      finishChallenge?: PairingHandshakeProvider['finishChallenge']
+    }
+    snow.finishChallenge = vi.fn().mockResolvedValue({
+      handshakeHash: finishedHash,
+      pendingPairingKey: Uint8Array.of(4),
+    })
+    const provider = uniquePairingProvider(handshake)
+    const desktop = authentication('desktop-installation')
+    await provider.setMobileAccess({ desktop, enabled: true })
+    const challenge = await provider.createChallenge({
+      desktop, rendezvousId: parsePairingRendezvousId('snow-finish'), clientIp: '192.0.2.1',
+    })
+    expect(parsePairingInvitationLink(challenge.oneTimeLink).desktopStaticPublicKey).toEqual(publicKey)
+    const pending = await complete(provider, challenge.oneTimeLink, 'snow-finish')
+    expect(pending.desktopHandshake).toEqual(Uint8Array.of(8))
+    expect(await provider.listPendingPairings(desktop)).toEqual([])
+    await expect(provider.confirmPairing({ desktop, pendingPairingId: pending.pendingPairingId }))
+      .rejects.toEqual(expect.objectContaining<Partial<RemoteAccessError>>({ code: 'PAIRING_PENDING_INVALID' }))
+    await expect(provider.finishChallenge({
+      mobile: authentication('other-mobile'),
+      pendingPairingId: pending.pendingPairingId,
+      mobileFinish: Uint8Array.of(3),
+    })).rejects.toEqual(expect.objectContaining<Partial<RemoteAccessError>>({ code: 'PAIRING_PENDING_INVALID' }))
+    const secondChallenge = await provider.createChallenge({
+      desktop, rendezvousId: parsePairingRendezvousId('snow-missing-finish'), clientIp: '192.0.2.1',
+    })
+    const open = await complete(provider, secondChallenge.oneTimeLink, 'snow-missing-finish')
+    const finished = await provider.finishChallenge({
+      mobile: authentication('mobile-installation'),
+      pendingPairingId: pending.pendingPairingId,
+      mobileFinish: Uint8Array.of(3),
+    })
+    expect(finished.desktopHandshake).toEqual(finishedHash)
+    expect(finished.authenticationWords).toEqual(deriveAuthenticationWords(finishedHash))
+    expect(await provider.listPendingPairings(desktop)).toEqual([finished])
+    delete snow.finishChallenge
+    await expect(provider.finishChallenge({
+      mobile: authentication('mobile-installation'),
+      pendingPairingId: open.pendingPairingId,
+      mobileFinish: Uint8Array.of(3),
+    })).rejects.toEqual(expect.objectContaining<Partial<RemoteAccessError>>({ code: 'PAIRING_PENDING_INVALID' }))
   })
 })
 

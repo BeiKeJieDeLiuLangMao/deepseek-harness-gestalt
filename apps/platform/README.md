@@ -6,7 +6,7 @@ Platform listen process packaged as a container. GitHub Actions builds the image
 
 The operated listen process accepts only `PLATFORM_ENVIRONMENT=production`. Client packaging may still parse a development/production pair so a mis-selected origin fails before traffic. There is no staging selector and no second operated Platform.
 
-`GET /` serves the DeepSeek Gestalt product homepage. `GET /healthz` and `GET /readyz` answer `{ ok: true }` after required deployment secrets are present. Missing secrets fail the process before listen. Account HTTP is mounted on `/v1/account/*` against PostgreSQL and Redis. Listen also migrates the shared Personal Pairing authority and Relay route tables. Pairing HTTP and Relay WSS stay unmounted until a reviewed Noise handshake is approved.
+`GET /` serves the DeepSeek Gestalt product homepage. `GET /healthz` and `GET /readyz` answer `{ ok: true }` after required deployment secrets are present. Missing secrets fail the process before listen. Account HTTP is mounted on `/v1/account/*` against PostgreSQL and Redis. Listen migrates the shared Personal Pairing authority and Relay route tables, then mounts Snow pairing HTTP and Relay WSS at `/v1/remote-access/relay`. `DevelopmentKeylessPairingHandshakeProvider` is never imported. The listen bundle copies `dsh_noise_channel_bg.wasm` next to `dist/boot.mjs`. Relay tunables are required `PLATFORM_RELAY_*` Environment names.
 
 ```sh
 docker build -f apps/platform/Dockerfile -t dsh-platform .
@@ -16,5 +16,5 @@ Publish: Actions → Platform Image → Run workflow → set **push**. Deploy: A
 
 ## Known Limitations and Deferred Work
 
-- Pairing HTTP and Remote Relay WSS are not mounted in this image.
+- Companion application frames still use the development AES-GCM seal until pairing-key HKDF is wired. Image publication and ECS apply remain explicit.
 - Redis uses TLS (`PLATFORM_REDIS_TLS=1`). PostgreSQL uses `sslmode=require` when the RDS instance has SSL enabled.

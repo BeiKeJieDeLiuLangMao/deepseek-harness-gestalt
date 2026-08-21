@@ -6,7 +6,7 @@ Status: implemented
 
 ## Problem
 
-生产 Platform 监听挂载 Account HTTP 并迁移 Remote Access 表，但配对 HTTP 与 Relay WSS 在独立 Noise 评审完成前保持未挂载。已有的无密钥组装夹具能在进程内证明配对和双实例 Relay，可 Mobile 与 Desktop 产品入口仍缺少一个共享受信任 HTTPS origin、真实 Account 会话和非粘性 TLS 前端的环回组成。当 Capacitor Browser 不存在时，模拟器浏览器也无法完成 GitHub 登录，除非仍有效的待完成登录能在当前浏览上下文导航后恢复。
+生产 Platform 监听挂载 Account HTTP、Snow 个人配对和 Relay WSS；见[产品 Snow 握手](2026-08-21-snow-product-handshake.md)。已有的无密钥组装夹具能在进程内证明配对和双实例 Relay，可 Mobile 与 Desktop 产品入口仍缺少一个共享受信任 HTTPS origin、真实 Account 会话和非粘性 TLS 前端的环回组成。当 Capacitor Browser 不存在时，模拟器浏览器也无法完成 GitHub 登录，除非仍有效的待完成登录能在当前浏览上下文导航后恢复。
 
 ## Decision
 
@@ -20,7 +20,7 @@ Loader 场景使用顺序熵，以及真实的 Desktop/Mobile Account 客户端�
 
 ## Alternatives considered
 
-**在生产监听上挂载配对和 Relay。** 这会把未经评审的握手送到已运营 origin。生产进程保持 fail-closed。
+**在生产监听上挂载无密钥配对。** 否决：生产使用 Snow 提供方。见[产品 Snow 握手](2026-08-21-snow-product-handshake.md)。
 
 **把所选 Platform origin 改成 `http://127.0.0.1`。** Account 与 Remote Access HTTP 只允许所选 HTTPS origin，配对链接也必须保持 `https:`。所选身份仍是 TLS 监听；只有页面 origin 上的流量会经 Vite 改写。
 

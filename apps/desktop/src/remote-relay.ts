@@ -75,8 +75,9 @@ export function loadDesktopRemoteRelayConfig(
  * @returns Desktop-owned Relay lifecycle injected into Settings.
  */
 export function createDesktopRemoteRelay(options: DesktopRemoteRelayOptions): DesktopRelayLifecycle {
-  if (options.environment.environment !== 'development'
-    || options.source.DSH_PERSONAL_PAIRING_KEYLESS !== '1') {
+  if (options.environment.environment !== 'production'
+    && (options.environment.environment !== 'development'
+      || options.source.DSH_PERSONAL_PAIRING_KEYLESS !== '1')) {
     return new FailClosedDesktopRelayLifecycle(CRYPTO_GATE)
   }
   const config = loadDesktopRemoteRelayConfig(options.source)
