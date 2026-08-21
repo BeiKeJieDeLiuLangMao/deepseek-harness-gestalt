@@ -51,6 +51,8 @@ jobs:
     name: Pack macOS ${{ matrix.arch }}
     needs: prepare
     runs-on: ${{ matrix.runner }}
+    env:
+      NODE_OPTIONS: --max-old-space-size=8192
     environment:
       name: ${{ inputs.publish && 'desktop-release' || 'desktop-dry-run' }}
     strategy:
@@ -163,6 +165,8 @@ jobs:
     name: Pack Windows x64
     needs: prepare
     runs-on: windows-2025
+    env:
+      NODE_OPTIONS: --max-old-space-size=8192
     steps:
       - uses: actions/checkout@v6
         with:
