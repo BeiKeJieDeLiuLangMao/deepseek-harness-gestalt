@@ -448,7 +448,8 @@ export class LocalPtySession implements TerminalBackendSession {
         this.shellPgid = foreground.processGroupId
       }
       if (this.promptSeen && this.promptTextSeen && idleFor >= this.config.pollIntervalMs
-        && foreground?.processGroupId === this.shellPgid) {
+        && foreground?.processGroupId === this.shellPgid
+        && (this.config.shellDialect !== 'pwsh' || operation.hasOutput())) {
         this.settleActive('stdin_read')
         return
       }
@@ -468,7 +469,8 @@ export class LocalPtySession implements TerminalBackendSession {
       // on waiting for shell ownership instead of letting a child marker suppress
       // readiness until the absolute timeout.
       const handoffGrace = this.promptSeen ? this.config.handoffGraceMs : 0
-      if (startupHasOutput && idleFor >= this.config.idleSilenceMs + handoffGrace) {
+      if (startupHasOutput && idleFor >= this.config.idleSilenceMs + handoffGrace
+        && (this.config.shellDialect !== 'pwsh' || operation.hasOutput())) {
         this.settleActive('inferred_idle')
       }
     } catch (error: unknown) {

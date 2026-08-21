@@ -242,6 +242,28 @@ describe('LocalPtySession readiness and output', () => {
     expect((await operation.done).viewport).toContain('hi')
   })
 
+  it('does not infer pwsh idle before the send has output', async () => {
+    vi.useFakeTimers()
+    const terminal = new FakeTerminal()
+    const inspector = new FakeInspector()
+    const session = makeSession(terminal, inspector, config({
+      shellDialect: 'pwsh',
+      shellPath: 'pwsh',
+      timeoutMs: 500,
+    }))
+    await initialize(session, terminal)
+    inspector.waiting = false
+    const operation = session.startSend({ text: 'Write-Output keep=ok', submit: true })
+    let settled = false
+    void operation.done.then(() => { settled = true })
+    await vi.advanceTimersByTimeAsync(80)
+    expect(settled).toBe(false)
+    terminal.emitData('keep=ok\n')
+    await vi.advanceTimersByTimeAsync(80)
+    expect((await operation.done).waitReason).toBe('inferred_idle')
+    expect((await operation.done).viewport).toContain('keep=ok')
+  })
+
   it('does not reuse a pre-write stdin wait as post-write readiness', async () => {
     vi.useFakeTimers()
     const terminal = new FakeTerminal()

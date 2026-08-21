@@ -342,6 +342,7 @@ describe('web e2e: empty-draft Cmd+Enter steers the whole queue', () => {
     }, { timeout: 10_000, interval: 20 }).toBe(true)
     await input.fill(STEER_ONE)
     await input.press('Enter')
+    await page.getByRole('button', { name: '1 queued messages' }).waitFor({ state: 'attached', timeout: 10_000 })
     await input.fill(STEER_TWO, { force: true })
     await input.evaluate((node) => {
       const textarea = node as HTMLTextAreaElement
@@ -356,10 +357,9 @@ describe('web e2e: empty-draft Cmd+Enter steers the whole queue', () => {
     const dock = page.locator('[data-queue-dock]')
     // Both messages queued: the two-row dock shows a collapsed count header,
     // and Playwright text matching skips the hidden rows — expand the list,
-    // then assert each row's content.
+    // then assert each row's content. `attached` sees the hidden count.
     const queueHeader = dock.getByRole('button', { name: '2 queued messages' })
-    await expect.poll(() => queueHeader.getAttribute('aria-expanded'), { timeout: 10_000 })
-      .not.toBeNull()
+    await queueHeader.waitFor({ state: 'attached', timeout: 10_000 })
     await queueHeader.click({ force: true })
     await dock.getByText(STEER_ONE, { exact: true }).waitFor({ timeout: 10_000 })
     await dock.getByText(STEER_TWO, { exact: true }).waitFor({ timeout: 10_000 })
