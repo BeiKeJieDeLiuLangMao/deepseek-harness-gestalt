@@ -168,13 +168,14 @@ async function startupSession(
     // pwsh cannot install its prompt from the environment. Interactive
     // writes after `PS …>` never execute on Linux CI, and `-NoExit -File`
     // printed the token but left a host that dropped later sends
-    // (32470697182: empty `keep=ok`, `PTY send aborted before write`).
-    // Spawn therefore loads an isolated HOME profile (no `-NoProfile`, no
-    // `-File`) so the normal interactive host starts, then waits for
-    // PWSH_SETUP_DONE. Follow-ups continue until that token is visible.
+    // (32470697182). An isolated HOME profile is the normal interactive
+    // host, but deleting that home at spawn return also dropped later
+    // sends (32472737736: empty `keep=ok`). Wait for PWSH_SETUP_DONE
+    // and CONTROLLED_PROMPT, and keep the home until session close.
     // session_exit, per-send timeout, and the spawn-wall timeoutMs reject.
     const startedAt = Date.now()
     let viewport = ''
+    let sawToken = false
     for (;;) {
       const operation = session.startSend({
         text: '',
@@ -187,8 +188,11 @@ async function startupSession(
       viewport = result.viewport
       const scrollback = session.read({ offset: 0, count: 20 }).text
       if (viewport.includes(PWSH_SETUP_DONE) || scrollback.includes(PWSH_SETUP_DONE)) {
-        session.motd = viewport.includes(PWSH_SETUP_DONE) ? viewport : scrollback
-        break
+        if (!sawToken) {
+          session.motd = viewport.includes(PWSH_SETUP_DONE) ? viewport : scrollback
+          sawToken = true
+        }
+        if (viewport.includes(CONTROLLED_PROMPT) || scrollback.includes(CONTROLLED_PROMPT)) break
       }
       if (Date.now() - startedAt >= timeoutMs) throw startupTimeoutError(viewport, scrollback)
     }
@@ -233,6 +237,7 @@ export class BashTerminalBackend implements TerminalBackend {
     const pwshHome = this.config.shellDialect === 'pwsh' ? await writePwshIsolatedHome() : undefined
     const argv = spawnArgv(this.ctx, this.config, policy, pwshHome)
     if (argv[0] === undefined) throw new Error('terminal-bash: sandbox returned empty argv')
+    let session: LocalPtySession | undefined
     try {
       const terminal = await this.spawnTerminal({
         argv,
@@ -243,20 +248,30 @@ export class BashTerminalBackend implements TerminalBackend {
         graceMs: this.config.disposeGraceMs,
         signal: spec.signal,
       })
-      const session = this.createSession(terminal, this.config)
-      try {
-        await startupSession(session, this.config.shellDialect, this.config.timeoutMs, spec.signal)
-        return session
-      } catch (error) {
+      session = this.createSession(terminal, this.config)
+      if (pwshHome !== undefined) {
+        const previousClose = session.close
+        session.close = async (reason: string) => {
+          try {
+            if (typeof previousClose === 'function') await previousClose.call(session, reason)
+          } finally {
+            await rm(pwshHome, { recursive: true, force: true })
+          }
+        }
+      }
+      await startupSession(session, this.config.shellDialect, this.config.timeoutMs, spec.signal)
+      return session
+    } catch (error) {
+      if (session !== undefined) {
         try {
           await session.close('PTY startup failed')
         } catch (closeError: unknown) {
           throw new TerminalBackendCleanupError(error, closeError)
         }
-        throw error
+      } else if (pwshHome !== undefined) {
+        await rm(pwshHome, { recursive: true, force: true })
       }
-    } finally {
-      if (pwshHome !== undefined) await rm(pwshHome, { recursive: true, force: true })
+      throw error
     }
   }
 }

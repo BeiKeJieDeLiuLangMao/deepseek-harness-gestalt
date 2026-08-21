@@ -355,7 +355,7 @@ describe('BashTerminalBackend startup rollback', () => {
         sends.push(request)
         return {
           done: Promise.resolve({
-            viewport: `setup-echo ${PWSH_SETUP_DONE}`,
+            viewport: `setup-echo ${PWSH_SETUP_DONE}\n${CONTROLLED_PROMPT}`,
             waitReason: 'inferred_idle' as const,
             sessionStatus: { kind: 'running' as const }, truncated: false,
           }),
@@ -373,7 +373,7 @@ describe('BashTerminalBackend startup rollback', () => {
     )
     expect(await backend.spawn(spec(agent(ctx)))).toBe(session)
     expect(sends).toEqual([expect.objectContaining({ text: '', submit: false })])
-    expect(session.motd).toBe(`setup-echo ${PWSH_SETUP_DONE}`)
+    expect(session.motd).toBe(`setup-echo ${PWSH_SETUP_DONE}\n${CONTROLLED_PROMPT}`)
     expect(PWSH_PROMPT_SETUP).not.toContain(CONTROLLED_PROMPT)
     expect(PWSH_PROMPT_SETUP).not.toContain(PWSH_SETUP_DONE)
     expect(ENCODING_PREAMBLE + PWSH_PROMPT_SETUP).not.toContain(CONTROLLED_PROMPT)
@@ -387,6 +387,7 @@ describe('BashTerminalBackend startup rollback', () => {
     })
     expect(spawned?.env?.PS1).toBeUndefined()
     expect(spawned?.env?.PROMPT_COMMAND).toBeUndefined()
+    await session.close('test complete')
   })
 
   it('keeps waiting for the done token when the first send is only the banner', async () => {
@@ -400,7 +401,7 @@ describe('BashTerminalBackend startup rollback', () => {
         sends.push(request)
         return {
           done: Promise.resolve({
-            viewport: sends.length === 1 ? 'PowerShell 7.6.4\n' : PWSH_SETUP_DONE,
+            viewport: sends.length === 1 ? PWSH_SETUP_DONE : `${PWSH_SETUP_DONE}\n${CONTROLLED_PROMPT}`,
             waitReason: 'inferred_idle' as const,
             sessionStatus: { kind: 'running' as const }, truncated: false,
           }),
@@ -438,7 +439,7 @@ describe('BashTerminalBackend startup rollback', () => {
         cancel: () => false,
       }),
       read: () => ({
-        text: `banner\n${PWSH_SETUP_DONE}`,
+        text: `banner\n${PWSH_SETUP_DONE}\n${CONTROLLED_PROMPT}`,
         totalLines: 2, lineBegin: 0, lineEnd: 2, truncated: false,
       }),
     } as unknown as LocalPtySession
@@ -449,7 +450,20 @@ describe('BashTerminalBackend startup rollback', () => {
       () => session,
     )
     await backend.spawn(spec(agent(ctx)))
-    expect(session.motd).toBe(`banner\n${PWSH_SETUP_DONE}`)
+    expect(session.motd).toBe(`banner\n${PWSH_SETUP_DONE}\n${CONTROLLED_PROMPT}`)
+  })
+
+  it('removes the isolated home when terminal allocation fails', async () => {
+    const ctx = new Context()
+    await ctx.plugin(EmptySandbox)
+    await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access', workspaceRoot: '/workspace' })
+    const backend = new BashTerminalBackend(
+      ctx,
+      { ...config(), shellDialect: 'pwsh', shellPath: 'pwsh', shellArgs: DEFAULT_PWSH_ARGS },
+      async () => { throw new Error('alloc failed') },
+      () => { throw new Error('unused session') },
+    )
+    await expect(backend.spawn(spec(agent(ctx)))).rejects.toThrow('alloc failed')
   })
 
   it('rejects a pwsh bootstrap whose isolated profile never prints the done token', async () => {
@@ -512,7 +526,7 @@ describe('BashTerminalBackend startup rollback', () => {
         sends.push(request)
         return {
           done: Promise.resolve({
-            viewport: PWSH_SETUP_DONE,
+            viewport: `${PWSH_SETUP_DONE}\n${CONTROLLED_PROMPT}`,
             waitReason: 'inferred_idle' as const,
             sessionStatus: { kind: 'running' as const }, truncated: false,
           }),
@@ -530,7 +544,7 @@ describe('BashTerminalBackend startup rollback', () => {
     )
     const signal = new AbortController().signal
     const spawned = await backend.spawn({ ...spec(agent(ctx)), signal })
-    expect(spawned.motd).toBe(PWSH_SETUP_DONE)
+    expect(spawned.motd).toBe(`${PWSH_SETUP_DONE}\n${CONTROLLED_PROMPT}`)
     expect(sends).toEqual([expect.objectContaining({ text: '', submit: false, signal })])
   })
 
@@ -543,7 +557,7 @@ describe('BashTerminalBackend startup rollback', () => {
       initialize: async () => {},
       startSend: () => ({
         done: Promise.resolve({
-          viewport: PWSH_SETUP_DONE,
+          viewport: `${PWSH_SETUP_DONE}\n${CONTROLLED_PROMPT}`,
           waitReason: 'inferred_idle' as const,
           sessionStatus: { kind: 'running' as const }, truncated: false,
         }),
