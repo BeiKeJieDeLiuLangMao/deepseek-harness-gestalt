@@ -10,7 +10,7 @@ File/Session Reference 同步到官方 Host `@path` / `file-reference-local` 与
 
 ## Decision
 
-**pwsh spawn 提交 CRLF，并等待拆开的 `Write-Output` 完成标记，而不是重打的 `dsh> `。** 把官方 Host 的 `'dsh> '` 写回 `PWSH_PROMPT_SETUP` 后，Linux coverage 和 ACP `persistent-pwsh-tool-turn` 快照再次变红：PTY 在函数运行前就回显这段源码，spawn 返回，下一条写入叠上去。末行 / 连续 ready-probe / `-NoExit -Command` 也失败：Linux 常常不再打印末行 `dsh> `，出现在源码里的 probe 仍是假就绪，`-Command` 则把二进制倒进 PTY。空转到 `includes('dsh> ')` 会超时（`32456229621`），因为源码拆分后该文本不再重打。把一次空 follow-up 当成就绪（`32457685533`）会发布空 motd，loader 停在默认 `PS>`，第一条命令超时。只用 CR 提交去等 `__DSH_PWSH_SETUP_DONE__` 仍超时（`32459139618`）：Linux 上的 PSReadLine 把 CR 当成光标回行首，setup 行回显但不执行。因此提交的 pwsh 行使用 CRLF。setup 在运行时拼接提示符与 `__DSH_PWSH_SETUP_DONE__`，再 follow-up 直到 viewport 或 scrollback `includes` 拼好的标记。工具层同样等待 `__DSH_PWSH_TOOL_SETUP_DONE__`。`session_exit`、单次 send 的 `timeout` 与 spawn 墙 `timeoutMs` 仍拒绝。官方 inferred-idle 仍没有额外末行门槛。[persistent pwsh 笔记](../architecture/2026-08-11-pwsh-persistent-pty.md) 仍拥有双层 prompt 安装。
+**pwsh spawn 在 Unix 上提交 LF、在 Windows 上提交 CR，并等待拆开的 `Write-Output` 完成标记，而不是重打的 `dsh> `。** 把官方 Host 的 `'dsh> '` 写回 `PWSH_PROMPT_SETUP` 后，Linux coverage 和 ACP `persistent-pwsh-tool-turn` 快照再次变红：PTY 在函数运行前就回显这段源码，spawn 返回，下一条写入叠上去。末行 / 连续 ready-probe / `-NoExit -Command` 也失败：Linux 常常不再打印末行 `dsh> `，出现在源码里的 probe 仍是假就绪，`-Command` 则把二进制倒进 PTY。空转到 `includes('dsh> ')` 会超时（`32456229621`），因为源码拆分后该文本不再重打。把一次空 follow-up 当成就绪（`32457685533`）会发布空 motd，loader 停在默认 `PS>`，第一条命令超时。只用 CR 提交去等 `__DSH_PWSH_SETUP_DONE__` 仍超时（`32459139618`）：Linux 上的 PSReadLine 把 CR 当成光标回行首，setup 行回显但不执行。提交 CRLF 仍超时（`32460394471`）：CR 仍会先回行，setup 行仍不执行。因此提交的 pwsh 行在 Unix 上用 LF、在 Windows 上用 CR。setup 在运行时拼接提示符与 `__DSH_PWSH_SETUP_DONE__`，再 follow-up 直到 viewport 或 scrollback `includes` 拼好的标记。工具层同样等待 `__DSH_PWSH_TOOL_SETUP_DONE__`。`session_exit`、单次 send 的 `timeout` 与 spawn 墙 `timeoutMs` 仍拒绝。官方 inferred-idle 仍没有额外末行门槛。[persistent pwsh 笔记](../architecture/2026-08-11-pwsh-persistent-pty.md) 仍拥有双层 prompt 安装。
 
 **Relay 的载荷尺寸检查使用默认 first-frame 期限。** 空闲超时断言仍启动 10 ms 服务器。oversized 帧断言另启默认 1000 ms 的服务器，避免 attach-timeout 抢在 1009 关闭之前。
 
@@ -30,6 +30,8 @@ File/Session Reference 同步到官方 Host `@path` / `file-reference-local` 与
 
 **仍用单独 CR 提交，只等待拆开的完成标记。** 否决：Linux 上的 PSReadLine 不执行 setup 行，标记不会出现（coverage run `32459139618`）。
 
+**提交 pwsh 行时使用 CRLF。** 否决：coverage run `32460394471` 仍在 15 s 撞上 spawn 超时；CR 仍会先回行，setup 行仍不执行。
+
 **要求末行 `dsh> `、`__DSH_PWSH_READY__` probe，或用 `pwsh -NoExit -Command` 预装提示符。** 否决：Linux 常常不再打印末行提示符，出现在源码里的 probe 仍是假就绪，`-Command` 则把二进制写入 PTY。
 
 **把 `persistent-pwsh-tool-turn` 刷新成截断的 bootstrap 转录。** 否决：那是把假就绪失败记成成功。工具仍须在真正的第二次 prompt 安装之后抽出 `PWSH_OK`。
@@ -48,8 +50,8 @@ File/Session Reference 同步到官方 Host `@path` / `file-reference-local` 与
 
 ## Consequences
 
-官方 File/Session Reference 仍是唯一的 `@` 文件源。persistent pwsh 提交 CRLF 并等待拆开的 `Write-Output` 标记，因此 Linux coverage 和 ACP pwsh 快照在两个函数都跑完之后抽出 `PWSH_OK`，不再等待重打的 `dsh> `。Relay、publint、设置金标、Composer pin e2e 与注释计数芯片走修复后的路径。已删除的工作区引用 picker 金标保持删除。
+官方 File/Session Reference 仍是唯一的 `@` 文件源。persistent pwsh 在 Unix 上提交 LF、在 Windows 上提交 CR，并等待拆开的 `Write-Output` 标记，因此 Linux coverage 和 ACP pwsh 快照在两个函数都跑完之后抽出 `PWSH_OK`，不再等待重打的 `dsh> `。Relay、publint、设置金标、Composer pin e2e 与注释计数芯片走修复后的路径。已删除的工作区引用 picker 金标保持删除。
 
 ## Testing
 
-`packages/terminal/terminal-bash/tests/session.spec.ts` 钉住 pwsh 提交写 CRLF，bash 提交仍写 CR。`packages/terminal/terminal-bash/tests/index.spec.ts` 钉住 `PWSH_PROMPT_SETUP` 既不含 `dsh> ` 也不含 `__DSH_PWSH_SETUP_DONE__`、仅有源码回显的首次 send 会继续等待，以及回显始终打不出该标记时 spawn 命中 `timeoutMs`。`local.spec.ts` 在 PATH 上有 `pwsh` 时要求 motd 含该标记，并且真实 spawn 之后出现 `keep=ok`。`packages/shell/tool-pwsh-persistent/tests/tools.spec.ts` 会越过 setup 源码回显，等待 `__DSH_PWSH_TOOL_SETUP_DONE__`。`packages/client/ui-attachment/tests/message-image.client.spec.tsx` 覆盖历史 pin overlay、拒绝与落点。空草稿插话对可见 InputBar 重试 `fill` 加 `Enter`，直到第一行文本或两条时的计数头挂上，然后在提问 composer 藏掉 textarea 之前用 Cmd+Enter 冲刷。steer-all 中段金标与同目录另一份 steering 中段金标一样保留 `Ask question waiting` 工具行。`packages/platform/remote-access-http/tests/relay.spec.ts` 仍在独立服务器上分别以 1008 关闭空闲、以 1009 关闭 oversized。`packages/client/ui-attachment/tests/composer-attachments.client.spec.tsx` 与 `packages/client/ui-conversation/tests/composer-image-pins.client.spec.tsx` 覆盖标注、GIF 仅在切换时拒绝，以及 composer overlay 工厂。`pnpm run duplication` 拥有共享的 `useImagePinOverlay` 抽取。`packages/client/ui-conversation/tests/input-bar.client.spec.tsx` 覆盖注释计数芯片、丢弃、按 kind 删除与提交中锁定。Web 设置金标不再列出 `工作区引用`。`pnpm exec tsx scripts/gen-client-catalog.ts --check` 拥有 `ComposerAttachmentsOwnerProps.pinOverlayFor` 的目录正文。
+`packages/terminal/terminal-bash/tests/session.spec.ts` 钉住 pwsh 提交在 Unix 上写 LF、在 Windows 上写 CR，bash 提交仍写 CR。`packages/terminal/terminal-bash/tests/index.spec.ts` 钉住 `PWSH_PROMPT_SETUP` 既不含 `dsh> ` 也不含 `__DSH_PWSH_SETUP_DONE__`、仅有源码回显的首次 send 会继续等待，以及回显始终打不出该标记时 spawn 命中 `timeoutMs`。`local.spec.ts` 在 PATH 上有 `pwsh` 时要求 motd 含该标记，并且真实 spawn 之后出现 `keep=ok`。`packages/shell/tool-pwsh-persistent/tests/tools.spec.ts` 会越过 setup 源码回显，等待 `__DSH_PWSH_TOOL_SETUP_DONE__`。`packages/client/ui-attachment/tests/message-image.client.spec.tsx` 覆盖历史 pin overlay、拒绝与落点。空草稿插话先入队第一行，再立刻在同一可见 InputBar 上发送第二行，让两行都在提问 composer 替换 textarea 之前挂上，然后用 Cmd+Enter 冲刷。steer-all 中段金标与同目录另一份 steering 中段金标一样保留 `Ask question waiting` 工具行。`packages/platform/remote-access-http/tests/relay.spec.ts` 仍在独立服务器上分别以 1008 关闭空闲、以 1009 关闭 oversized。`packages/client/ui-attachment/tests/composer-attachments.client.spec.tsx` 与 `packages/client/ui-conversation/tests/composer-image-pins.client.spec.tsx` 覆盖标注、GIF 仅在切换时拒绝，以及 composer overlay 工厂。`pnpm run duplication` 拥有共享的 `useImagePinOverlay` 抽取。`packages/client/ui-conversation/tests/input-bar.client.spec.tsx` 覆盖注释计数芯片、丢弃、按 kind 删除与提交中锁定。Web 设置金标不再列出 `工作区引用`。`pnpm exec tsx scripts/gen-client-catalog.ts --check` 拥有 `ComposerAttachmentsOwnerProps.pinOverlayFor` 的目录正文。

@@ -142,7 +142,11 @@ async function startupSession(
       written = true
       const result = await operation.done
       if (result.waitReason === 'session_exit') throw new Error('PTY shell exited during startup')
-      if (result.waitReason === 'timeout') throw new Error('PTY shell did not reach readiness before startup timeout')
+      if (result.waitReason === 'timeout') {
+        throw new Error(
+          `PTY shell did not reach readiness before startup timeout; viewport=${JSON.stringify(result.viewport.slice(-400))}`,
+        )
+      }
       viewport = result.viewport
       const scrollback = session.read({ offset: 0, count: 20 }).text
       if (viewport.includes(PWSH_SETUP_DONE) || scrollback.includes(PWSH_SETUP_DONE)) {
@@ -150,7 +154,9 @@ async function startupSession(
         break
       }
       if (Date.now() - startedAt >= timeoutMs) {
-        throw new Error('PTY shell did not reach readiness before startup timeout')
+        throw new Error(
+          `PTY shell did not reach readiness before startup timeout; viewport=${JSON.stringify(viewport.slice(-400))}; scrollback=${JSON.stringify(scrollback.slice(-400))}`,
+        )
       }
     }
   }

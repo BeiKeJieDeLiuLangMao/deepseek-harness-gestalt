@@ -276,9 +276,14 @@ export class LocalPtySession implements TerminalBackendSession {
     try {
       if (this.active !== operation || this.closing || this.interrupting === operation) return
       operation.setInitialForeground(foreground)
-      // Linux pwsh/PSReadLine treats a lone CR as cursor-home, so the line is
-      // echoed and never executed; CRLF is Enter on both ConPTY and Linux PTYs.
-      const input = `${request.text}${request.submit ? (this.config.shellDialect === 'pwsh' ? '\r\n' : '\r') : ''}`
+      // Linux/macOS pwsh PSReadLine treats CR as cursor-home; CRLF still
+      // homes first, so the setup line echoes and never runs. Unix Enter is
+      // LF. Windows ConPTY still uses CR.
+      const input = `${request.text}${request.submit
+        ? (this.config.shellDialect === 'pwsh'
+          ? (process.platform === 'win32' ? '\r' : '\n')
+          : '\r')
+        : ''}`
       if (input.length > 0 && !operation.cancelRequested) {
         this.resetReadinessEvidence()
         const write = this.terminal.write(input)

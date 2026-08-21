@@ -344,7 +344,9 @@ describe('web e2e: empty-draft Cmd+Enter steers the whole queue', () => {
     scaffold = await launchWebScaffold({
       replayFixture: STEER_ALL_FIXTURE,
       replayOverride: STEER_ALL_OVERRIDE,
-      paceMs: REPLAY_PACE_MS,
+      // Call 0's question-tool stream replaces InputBar; 80 ms keeps both
+      // queue rows inside that window on CI.
+      paceMs: 80,
     })
     scaffold.ctx.on('session/event', (_session, event) => { sessionEvents.push(event) })
     browser = await chromium.launch()
@@ -372,14 +374,17 @@ describe('web e2e: empty-draft Cmd+Enter steers the whole queue', () => {
     await input.fill(PROMPT)
     await input.press('Enter')
     const dock = page.locator('[data-queue-dock]')
+    // Both rows must land in one composer window. A second poll loop is
+    // slower than the question-tool stream on CI, so send STEER_TWO on the
+    // same InputBar immediately after STEER_ONE attaches.
     await queueVisibleDraft(page, STEER_ONE, dock.getByText(STEER_ONE, { exact: true }))
-    // Two rows collapse to a count header; the row text is hidden, so do not
-    // wait for it. Flush immediately — the question composer then hides InputBar.
-    await queueVisibleDraft(
-      page,
-      STEER_TWO,
-      dock.getByRole('button', { name: '2 queued messages' }),
-    )
+    const still = visibleComposer(page)
+    await still.last().fill(STEER_TWO)
+    await still.last().press('Enter')
+    await dock.getByRole('button', { name: '2 queued messages' }).waitFor({
+      state: 'attached',
+      timeout: 8_000,
+    })
     expect(await page.locator('[data-pending-steering]').count()).toBe(0)
 
     // Empty draft + Cmd+Enter: both queued rows steer in FIFO order, the dock

@@ -216,7 +216,7 @@ describe('LocalPtySession readiness and output', () => {
     expect(operation.cancel()).toBe(false)
   })
 
-  it('submits pwsh lines with CRLF so Linux PSReadLine executes them', async () => {
+  it('submits pwsh lines with the host Enter so PSReadLine executes them', async () => {
     vi.useFakeTimers()
     const terminal = new FakeTerminal()
     const inspector = new FakeInspector()
@@ -224,7 +224,9 @@ describe('LocalPtySession readiness and output', () => {
     const operation = session.startSend({ text: 'Get-Location', submit: true })
     await Promise.resolve()
     await Promise.resolve()
-    expect(terminal.writes).toEqual(['Get-Location\r\n'])
+    expect(terminal.writes).toEqual([
+      process.platform === 'win32' ? 'Get-Location\r' : 'Get-Location\n',
+    ])
     terminal.emitData('ok\n')
     await vi.advanceTimersByTimeAsync(50)
     expect((await operation.done).waitReason).toBe('inferred_idle')
