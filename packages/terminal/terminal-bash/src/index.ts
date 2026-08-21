@@ -111,9 +111,17 @@ const PWSH_SETUP_DONE_TAIL = PWSH_SETUP_DONE.slice(PWSH_SETUP_DONE_HEAD.length)
  */
 export const PWSH_PROMPT_SETUP =
   `function prompt { [Console]::Write([char]27 + ']133;D;' + [int]$LASTEXITCODE + [char]7); ('${PWSH_PROMPT_HEAD}' + '${PWSH_PROMPT_TAIL}') }; Write-Output ('${PWSH_SETUP_DONE_HEAD}' + '${PWSH_SETUP_DONE_TAIL}')`
+/**
+ * Isolated-profile replacement for PSReadLine. Keeping HOME until close still
+ * left later PTY writes empty or aborted (`32474124270`: empty `keep=ok`,
+ * `PTY send aborted before write`). The console host calls this function when
+ * it exists, so a submitted line reaches `[Console]::ReadLine`.
+ */
+export const PWSH_CONSOLE_READLINE =
+  'Remove-Module PSReadLine -Force -ErrorAction SilentlyContinue; function global:PSConsoleHostReadLine { [Console]::ReadLine() }'
 async function writePwshIsolatedHome(): Promise<string> {
   const home = join(tmpdir(), `dsh-pwsh-home-${randomUUID()}`)
-  const body = `${ENCODING_PREAMBLE}\n${PWSH_PROMPT_SETUP}\n`
+  const body = `${ENCODING_PREAMBLE}\n${PWSH_PROMPT_SETUP}\n${PWSH_CONSOLE_READLINE}\n`
   const profiles = [
     join(home, '.config', 'powershell', 'Microsoft.PowerShell_profile.ps1'),
     join(home, 'Documents', 'PowerShell', 'Microsoft.PowerShell_profile.ps1'),
@@ -166,12 +174,12 @@ async function startupSession(
       return
     }
     // pwsh cannot install its prompt from the environment. Interactive
-    // writes after `PS …>` never execute on Linux CI, and `-NoExit -File`
-    // printed the token but left a host that dropped later sends
-    // (32470697182). An isolated HOME profile is the normal interactive
-    // host, but deleting that home at spawn return also dropped later
-    // sends (32472737736: empty `keep=ok`). Wait for PWSH_SETUP_DONE
-    // and CONTROLLED_PROMPT, and keep the home until session close.
+    // writes after `PS …>` never execute on Linux CI: `-NoExit -File`
+    // (32470697182) and an isolated HOME that still used PSReadLine
+    // (32474124270) printed the token then dropped later sends. The
+    // isolated profile therefore replaces PSReadLine with
+    // PSConsoleHostReadLine. Wait for PWSH_SETUP_DONE and
+    // CONTROLLED_PROMPT, and keep the home until session close.
     // session_exit, per-send timeout, and the spawn-wall timeoutMs reject.
     const startedAt = Date.now()
     let viewport = ''

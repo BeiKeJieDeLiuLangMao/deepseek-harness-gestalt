@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { PassThrough } from 'node:stream'
-import { resolve } from 'node:path'
+import { readFile } from 'node:fs/promises'
+import { join, resolve } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import SessionStore, { Session, SessionId } from '@deepseek-ai/dsh-session'
@@ -10,7 +11,7 @@ import type { ConfinedArgv, SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
 import SandboxPolicyService, { setSandboxMode } from '@deepseek-ai/dsh-sandbox-policy'
 import TerminalSessionService, { TerminalBackendCleanupError, TerminalSessionId } from '@deepseek-ai/dsh-terminal'
 import type { TerminalSendRequest, TerminalWaitReason } from '@deepseek-ai/dsh-terminal'
-import { BashTerminalBackend, PWSH_PROMPT_SETUP, PWSH_SETUP_DONE } from '@deepseek-ai/dsh-terminal-bash'
+import { BashTerminalBackend, PWSH_CONSOLE_READLINE, PWSH_PROMPT_SETUP, PWSH_SETUP_DONE } from '@deepseek-ai/dsh-terminal-bash'
 import { CONTROLLED_PROMPT } from '@deepseek-ai/dsh-terminal-bash/src/sanitize.ts'
 import { ENCODING_PREAMBLE } from '@deepseek-ai/dsh-pwsh-local'
 import * as ptyLocal from '@deepseek-ai/dsh-terminal-bash'
@@ -376,10 +377,15 @@ describe('BashTerminalBackend startup rollback', () => {
     expect(session.motd).toBe(`setup-echo ${PWSH_SETUP_DONE}\n${CONTROLLED_PROMPT}`)
     expect(PWSH_PROMPT_SETUP).not.toContain(CONTROLLED_PROMPT)
     expect(PWSH_PROMPT_SETUP).not.toContain(PWSH_SETUP_DONE)
-    expect(ENCODING_PREAMBLE + PWSH_PROMPT_SETUP).not.toContain(CONTROLLED_PROMPT)
-    expect(ENCODING_PREAMBLE + PWSH_PROMPT_SETUP).not.toContain(PWSH_SETUP_DONE)
+    expect(ENCODING_PREAMBLE + PWSH_PROMPT_SETUP + PWSH_CONSOLE_READLINE).not.toContain(CONTROLLED_PROMPT)
+    expect(ENCODING_PREAMBLE + PWSH_PROMPT_SETUP + PWSH_CONSOLE_READLINE).not.toContain(PWSH_SETUP_DONE)
     expect(spawned?.argv).toEqual(['pwsh', '-NoLogo'])
     expect(spawned?.env?.HOME).toMatch(/dsh-pwsh-home-/)
+    const profile = await readFile(
+      join(spawned!.env!.HOME!, '.config/powershell/Microsoft.PowerShell_profile.ps1'),
+      'utf8',
+    )
+    expect(profile).toContain(PWSH_CONSOLE_READLINE)
     expect(spawned?.env?.USERPROFILE).toBe(spawned?.env?.HOME)
     expect(spawned?.env?.XDG_CONFIG_HOME).toBe(`${spawned?.env?.HOME}/.config`)
     expect(spawned?.env).toMatchObject({
