@@ -190,16 +190,32 @@ function SettlementActions({
   onSettled?: (interaction: CompanionInteraction) => void
 }): ReactNode {
   const mayMutate = companionMayMutate(companionState)
+  const decisions = interaction.authorized.length > 0 ? interaction.authorized : ['once']
   return (
-    <button
-      type="button"
-      disabled={!mayMutate}
-      onClick={() => {
-        const next = settleCompanionInteraction(interaction, { accepted: true, decision: interaction.authorized[0] ?? 'once' }, companionState)
-        onSettled?.(next)
-      }}
-    >
-      允许
-    </button>
+    <>
+      {decisions.map(decision => (
+        <button
+          key={decision}
+          type="button"
+          disabled={!mayMutate}
+          onClick={() => {
+            const next = settleCompanionInteraction(interaction, {
+              accepted: true,
+              decision,
+              ...(decision === 'always' ? { persistent: true } : {}),
+            }, companionState)
+            onSettled?.(next)
+          }}
+        >
+          {settlementLabel(interaction.kind, decision)}
+        </button>
+      ))}
+    </>
   )
+}
+
+function settlementLabel(kind: CompanionInteraction['kind'], decision: string): string {
+  if (kind === 'approval' && decision === 'once') return '允许'
+  if (kind === 'approval' && decision === 'always') return '始终允许'
+  return decision
 }

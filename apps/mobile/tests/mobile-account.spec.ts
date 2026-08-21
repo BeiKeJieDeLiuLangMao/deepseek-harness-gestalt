@@ -216,6 +216,10 @@ describe('MobileAccount', () => {
       expect(screen.queryByText('Ungrouped Session')).toBeNull()
       fireEvent.click(screen.getByRole('button', { name: '新建 Ungrouped Session' }))
       await waitFor(() => { expect(screen.getByText('Ungrouped Session')).toBeTruthy() })
+      fireEvent.change(screen.getByLabelText('Workspace 名称'), { target: { value: 'Docs' } })
+      fireEvent.click(screen.getByRole('button', { name: '在新 Workspace 新建 Session' }))
+      await waitFor(() => { expect(screen.getByText('Docs')).toBeTruthy() })
+      expect(screen.getByRole('button', { name: '在 Docs 新建 Session' })).toBeTruthy()
     } finally {
       disposeClient()
       disposeRuntime()

@@ -60,12 +60,48 @@ describe('Mobile conversation renderer', () => {
       onBack: () => {},
       companionState: { token: 'tok', foreground: true, socketOpen: true, synchronized: false },
       onSettled,
-      blocks: [{ kind: 'approval', summary: 'Allow write' }],
+      blocks: [{ kind: 'approval', summary: 'Allow write', authorized: ['once', 'always'] }],
     }))
     const button = screen.getByRole('button', { name: '允许' })
     expect(button.hasAttribute('disabled')).toBe(true)
+    expect(screen.getByRole('button', { name: '始终允许' }).hasAttribute('disabled')).toBe(true)
     fireEvent.click(button)
     expect(onSettled).not.toHaveBeenCalled()
+  })
+
+  it('offers Desktop-authorized Ask User answers and hides cancel unless streaming', () => {
+    const onSettled = vi.fn()
+    const onCancel = vi.fn()
+    const { rerender } = render(createElement(MobileConversation, {
+      title: 'Ask',
+      onBack: () => {},
+      companionState: { token: 'tok', foreground: true, socketOpen: true, synchronized: true },
+      onSubmit: () => {},
+      onCancel,
+      onSettled,
+      blocks: [{
+        kind: 'ask-user',
+        question: 'Which Desktop path?',
+        interactionId: 'question-1',
+        authorized: ['A', 'B'],
+      }],
+    }))
+    expect(screen.queryByRole('button', { name: '取消' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'B' }))
+    expect(onSettled).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'ask-user',
+      settled: { decision: 'B' },
+    }))
+    rerender(createElement(MobileConversation, {
+      title: 'Ask',
+      onBack: () => {},
+      streaming: true,
+      onSubmit: () => {},
+      onCancel,
+      blocks: [{ kind: 'markdown', text: 'streaming' }],
+    }))
+    fireEvent.click(screen.getByRole('button', { name: '取消' }))
+    expect(onCancel).toHaveBeenCalledOnce()
   })
 
   it('renders unknown tools as a generic read-only card and bounds terminal output', () => {

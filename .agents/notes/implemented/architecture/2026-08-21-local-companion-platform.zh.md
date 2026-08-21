@@ -16,7 +16,7 @@ Status: implemented
 
 Loader 场景使用顺序熵，以及真实的 Desktop/Mobile Account 客户端与 Remote Access HTTP/WSS 客户端，证明同账号登录、默认关闭的手机访问、确认后的配对，以及一次加密 Relay 往返。
 
-无密钥产品 Desktop 与 Mobile 共用 Relay 附着 id `desktop-development-keyless` 和 `mobile-development-keyless`。一字节入站帧是开发同步宣告；更长的帧是密封的 Encrypted Companion 消息。Desktop 由进程内开发权威确认 `create-session`、`submit-prompt`、`cancel-prompt`、`offer-attachment`、`settle-approval`、`answer-ask-user` 和 `query-operation-status`。prompt 先投影带 `streaming: true` 的用户行，再在两秒后投影助手行以及待结算的审批与 Ask User 卡片，除非先取消。Mobile 只在该确认或投影之后更新浏览列表与会话，可以命名第一个 Workspace，在 Remote Offline 时拒绝作曲器 mutation，并从 Companion Cache 恢复 Desktop 已确认的 Session 元数据。Mobile 浏览连接标签跟随 `companionMayMutate`。
+无密钥产品 Desktop 与 Mobile 共用 Relay 附着 id `desktop-development-keyless` 和 `mobile-development-keyless`。一字节入站帧是开发同步宣告；更长的帧是密封的 Encrypted Companion 消息。Desktop 由进程内开发权威确认 `create-session`、`submit-prompt`、`cancel-prompt`、`offer-attachment`、`settle-approval`、`answer-ask-user` 和 `query-operation-status`。prompt 先投影带 `streaming: true` 的用户行，再在两秒后投影助手行以及待结算的审批与 Ask User 卡片，除非先取消。Mobile 只在该确认或投影之后更新浏览列表与会话，可以命名第一个 Workspace，在 Remote Offline 时拒绝作曲器 mutation，从 Companion Cache 恢复 Desktop 已确认的 Session 元数据，并提供 Desktop 已授权的每一个结算选项。Mobile 浏览连接标签跟随 `companionMayMutate`。
 
 ## Alternatives considered
 
