@@ -5,7 +5,7 @@
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
-import type { Browser, Page } from 'playwright'
+import type { Browser, Locator, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import { parseSessionLog } from '@deepseek-ai/dsh-llm-replay'
@@ -55,6 +55,23 @@ function assistantText(events: SessionEvent[]): string {
       return chunk.type === 'text-delta' ? chunk.text ?? '' : ''
     })
     .join('')
+}
+
+/** Queue through a leftover hidden textarea the question composer may cover. */
+async function queueHiddenDraft(input: Locator, text: string): Promise<void> {
+  await input.fill(text, { force: true })
+  await input.evaluate((node, value) => {
+    const textarea = node as HTMLTextAreaElement
+    const descriptor = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')
+    descriptor?.set?.call(textarea, value)
+    textarea.dispatchEvent(new InputEvent('input', { bubbles: true }))
+    textarea.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'Enter',
+      code: 'Enter',
+      bubbles: true,
+      cancelable: true,
+    }))
+  }, text)
 }
 
 /** Claimed user messages whose payload contains the exact scenario text. */
@@ -340,24 +357,10 @@ describe('web e2e: empty-draft Cmd+Enter steers the whole queue', () => {
       const phase = await input.getAttribute('data-phase')
       return await input.isVisible() && phase !== null && !/^(?:submitting|adjudicating)$/.test(phase)
     }, { timeout: 10_000, interval: 20 }).toBe(true)
-    await input.fill(STEER_ONE)
-    await input.press('Enter')
+    await queueHiddenDraft(input, STEER_ONE)
     // One queued row has no count header; the dock renders that row directly.
     await page.locator('[data-queue-dock]').getByText(STEER_ONE, { exact: true }).waitFor({ timeout: 10_000 })
-    await input.fill(STEER_TWO, { force: true })
-    await input.evaluate((node, text) => {
-      const textarea = node as HTMLTextAreaElement
-      const descriptor = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')
-      descriptor?.set?.call(textarea, text)
-      textarea.dispatchEvent(new InputEvent('input', { bubbles: true }))
-      textarea.dispatchEvent(new KeyboardEvent('keydown', {
-        key: 'Enter',
-        code: 'Enter',
-        keyCode: 13,
-        bubbles: true,
-        cancelable: true,
-      }))
-    }, STEER_TWO)
+    await queueHiddenDraft(input, STEER_TWO)
     const dock = page.locator('[data-queue-dock]')
     // Both messages queued: the two-row dock shows a collapsed count header,
     // and Playwright text matching skips the hidden rows — expand the list,

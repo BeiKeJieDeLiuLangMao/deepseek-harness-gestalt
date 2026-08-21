@@ -241,7 +241,7 @@ describe('LocalPtySession readiness and output', () => {
     inspector.waiting = true
     await vi.advanceTimersByTimeAsync(20)
     expect(settled).toBe(false)
-    terminal.emitData('PS /tmp/dsh-pty-local> ')
+    terminal.emitData('dsh> ')
     await vi.advanceTimersByTimeAsync(20)
     expect((await operation.done).waitReason).toBe('stdin_read')
     expect((await operation.done).viewport).toContain('hi')

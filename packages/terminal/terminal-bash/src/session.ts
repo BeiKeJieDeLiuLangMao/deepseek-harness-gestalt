@@ -117,7 +117,7 @@ class LocalSendOperation implements TerminalSendOperation {
 
   hasPromptLine(): boolean {
     const line = lastNonEmptyLine(this.output.snapshot().text)
-    return line === CONTROLLED_PROMPT || line === TOOL_PWSH_PROMPT || /^PS .+> $/.test(line)
+    return line === CONTROLLED_PROMPT || line === TOOL_PWSH_PROMPT
   }
 
   settle(waitReason: TerminalWaitReason, sessionStatus: TerminalSessionStatus, inheritedTruncation: boolean): void {
