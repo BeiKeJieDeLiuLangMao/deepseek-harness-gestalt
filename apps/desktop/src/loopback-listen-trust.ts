@@ -10,12 +10,15 @@ export function isLoopbackListenUrl(url: string): boolean {
     && (parsed.hostname === '127.0.0.1' || parsed.hostname === 'localhost' || parsed.hostname === '[::1]')
 }
 
+/** Fetch face used by Account and Remote Access transports. */
+export type LoopbackListenFetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>
+
 /**
  * Fetch that accepts the bundled loopback listen certificate.
  * @param origin - selected Platform environment origin.
  * @returns a Fetch implementation, or `undefined` when the origin is not loopback HTTPS.
  */
-export function createLoopbackListenFetch(origin: string): typeof fetch | undefined {
+export function createLoopbackListenFetch(origin: string): LoopbackListenFetch | undefined {
   if (!isLoopbackListenUrl(origin)) return undefined
   return createInsecureHttpsFetch()
 }
@@ -40,14 +43,18 @@ export async function openDesktopAuthorizationUrl(
   }
 }
 
-function createInsecureHttpsFetch(): typeof fetch {
-  const fetchHttps = async (input: RequestInfo | URL, init?: RequestInit, redirects = 0): Promise<Response> => {
-    if (input instanceof Request) {
-      throw new TypeError('loopback Fetch expects a URL, not a Chromium Request')
-    }
-    const url = new URL(String(input))
-    const method = init?.method ?? 'GET'
-    const response = await requestLoopback(url, method, headerRecord(init?.headers), bodyBuffer(method, init?.body))
+function createInsecureHttpsFetch(): LoopbackListenFetch {
+  const fetchHttps = async (
+    input: string | URL | Request,
+    init?: RequestInit,
+    redirects = 0,
+  ): Promise<Response> => {
+    const request = typeof Request === 'function' && input instanceof Request ? input : undefined
+    const url = request === undefined ? new URL(String(input)) : new URL(request.url)
+    const method = request === undefined ? (init?.method ?? 'GET') : request.method
+    const headers = request === undefined ? headerRecord(init?.headers) : headerRecord(request.headers)
+    const body = request === undefined ? bodyBuffer(method, init?.body) : await requestBody(method, request)
+    const response = await requestLoopback(url, method, headers, body)
     const location = response.headers.get('location')
     if (location === null || redirects >= 5 || ![301, 302, 303, 307, 308].includes(response.status)) {
       return response
@@ -137,6 +144,11 @@ class LoopbackResponse {
   async text(): Promise<string> {
     return (this.body ?? Buffer.alloc(0)).toString('utf8')
   }
+}
+
+async function requestBody(method: string, request: Request): Promise<Buffer | undefined> {
+  if (method === 'GET' || method === 'HEAD') return undefined
+  return Buffer.from(await request.arrayBuffer())
 }
 
 function bodyBuffer(method: string, body: BodyInit | null | undefined): Buffer | undefined {

@@ -78,7 +78,7 @@ describe('RemoteAccessHttpTransport', () => {
         return new Response(JSON.stringify({ enabled: false }))
       },
     }
-    vi.stubGlobal('fetch', impl.fetch)
+    vi.stubGlobal('fetch', impl.fetch.bind(impl))
     const client = new RemoteAccessHttpTransport({
       environment: { environment: 'development', origin: 'https://platform.example' } as never,
     })

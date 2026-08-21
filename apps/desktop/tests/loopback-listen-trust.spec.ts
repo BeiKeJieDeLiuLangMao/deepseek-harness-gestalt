@@ -70,7 +70,8 @@ describe('loopback listen trust', () => {
       expect(await redirected.json()).toEqual({ ok: true })
       const posted = await fetch(`${origin}/ok`, { method: 'POST', body: '{}' })
       expect(posted.status).toBe(200)
-      await expect(fetch(new Request(`${origin}/ok`, { method: 'POST', body: '{}' }))).rejects.toThrow('URL, not a Chromium Request')
+      const postedRequest = await fetch(new Request(`${origin}/ok`, { method: 'POST', body: '{}' }))
+      expect(postedRequest.status).toBe(200)
       const opened: string[] = []
       await openDesktopAuthorizationUrl(`${origin}/complete`, async (url) => { opened.push(url) })
       await openDesktopAuthorizationUrl('https://github.com/login', async (url) => { opened.push(url) })
