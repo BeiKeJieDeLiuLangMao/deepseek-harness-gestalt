@@ -151,10 +151,14 @@ async function startupSession(
       if (result.waitReason === 'timeout') throw new Error('PTY shell did not reach readiness before startup timeout')
       viewport = result.viewport
       const scrollback = session.read({ offset: 0, count: 20 }).text
-      // stdin_read means the shell is accepting input (OSC+tail or a
-      // post-output acceptsStdinWait). inferred_idle still needs a last-line
-      // exact match so banner silence does not count.
-      if (result.waitReason === 'stdin_read' || showsInstalledControlledPrompt(viewport, scrollback)) break
+      // stdin_read is a prompt-line wait. Banner silence is not ready.
+      // Setup echo plus inferred_idle means the install line finished even
+      // when Linux reprints `PS>` only on the next write.
+      if (
+        result.waitReason === 'stdin_read'
+        || showsInstalledControlledPrompt(viewport, scrollback)
+        || (result.waitReason === 'inferred_idle' && viewport.includes(PWSH_PROMPT_SETUP))
+      ) break
       if (Date.now() - started >= timeoutMs) {
         throw new Error('PTY shell did not reach readiness before startup timeout')
       }

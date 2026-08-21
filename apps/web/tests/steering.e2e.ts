@@ -345,16 +345,19 @@ describe('web e2e: empty-draft Cmd+Enter steers the whole queue', () => {
     // One queued row has no count header; the dock renders that row directly.
     await page.locator('[data-queue-dock]').getByText(STEER_ONE, { exact: true }).waitFor({ timeout: 10_000 })
     await input.fill(STEER_TWO, { force: true })
-    await input.evaluate((node) => {
+    await input.evaluate((node, text) => {
       const textarea = node as HTMLTextAreaElement
-      textarea.focus()
+      const descriptor = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')
+      descriptor?.set?.call(textarea, text)
+      textarea.dispatchEvent(new InputEvent('input', { bubbles: true }))
       textarea.dispatchEvent(new KeyboardEvent('keydown', {
         key: 'Enter',
         code: 'Enter',
+        keyCode: 13,
         bubbles: true,
         cancelable: true,
       }))
-    })
+    }, STEER_TWO)
     const dock = page.locator('[data-queue-dock]')
     // Both messages queued: the two-row dock shows a collapsed count header,
     // and Playwright text matching skips the hidden rows — expand the list,

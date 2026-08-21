@@ -449,7 +449,7 @@ describe('BashTerminalBackend startup rollback', () => {
     expect(session.motd).toBe('dsh> ')
   })
 
-  it('does not treat the echoed prompt-function source as the installed prompt', async () => {
+  it('treats setup echo plus silence as spawn-ready when the prompt is not reprinted', async () => {
     const ctx = new Context()
     await ctx.plugin(EmptySandbox)
     await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access', workspaceRoot: '/workspace' })
@@ -458,18 +458,17 @@ describe('BashTerminalBackend startup rollback', () => {
       motd: '',
       startSend: (request: TerminalSendRequest) => {
         sends.push(request)
-        const second = sends.length > 1
         return {
           done: Promise.resolve({
-            viewport: second ? 'dsh> ' : ENCODING_PREAMBLE + PWSH_PROMPT_SETUP,
-            waitReason: second ? 'stdin_read' as const : 'inferred_idle' as const,
+            viewport: ENCODING_PREAMBLE + PWSH_PROMPT_SETUP,
+            waitReason: 'inferred_idle' as const,
             sessionStatus: { kind: 'running' as const }, truncated: false,
           }),
           readOutput: () => ({ delta: '', truncated: false }),
           cancel: () => false,
         }
       },
-      read: () => ({ text: '', totalLines: 0, lineBegin: 0, lineEnd: 0, truncated: false }),
+      read: () => ({ text: ENCODING_PREAMBLE + PWSH_PROMPT_SETUP, totalLines: 1, lineBegin: 0, lineEnd: 1, truncated: false }),
     } as unknown as LocalPtySession
     const backend = new BashTerminalBackend(
       ctx,
@@ -478,9 +477,9 @@ describe('BashTerminalBackend startup rollback', () => {
       () => session,
     )
     await backend.spawn(spec(agent(ctx)))
-    expect(sends).toHaveLength(2)
-    expect(sends[1]).toMatchObject({ text: '', submit: false })
-    expect(session.motd).toBe('dsh> ')
+    expect(sends).toHaveLength(1)
+    expect(sends[0]).toMatchObject({ text: ENCODING_PREAMBLE + PWSH_PROMPT_SETUP, submit: true })
+    expect(session.motd).toBe(ENCODING_PREAMBLE + PWSH_PROMPT_SETUP)
   })
 
   it('ignores a trailing space-only cursor row after the installed prompt', async () => {

@@ -111,9 +111,13 @@ class LocalSendOperation implements TerminalSendOperation {
     if (!this.finished) this.output.append(text)
   }
 
-  hasInstalledPrompt(): boolean {
+  hasOutput(): boolean {
+    return this.output.snapshot().text.length > 0
+  }
+
+  hasPromptLine(): boolean {
     const line = lastNonEmptyLine(this.output.snapshot().text)
-    return line === CONTROLLED_PROMPT || line === TOOL_PWSH_PROMPT
+    return line === CONTROLLED_PROMPT || line === TOOL_PWSH_PROMPT || /^PS .+> $/.test(line)
   }
 
   settle(waitReason: TerminalWaitReason, sessionStatus: TerminalSessionStatus, inheritedTruncation: boolean): void {
@@ -453,7 +457,7 @@ export class LocalPtySession implements TerminalBackendSession {
       }
       if (this.promptSeen && this.promptTextSeen && idleFor >= this.config.pollIntervalMs
         && foreground?.processGroupId === this.shellPgid
-        && (this.config.shellDialect !== 'pwsh' || operation.hasInstalledPrompt())) {
+        && (this.config.shellDialect !== 'pwsh' || operation.hasPromptLine())) {
         this.settleActive('stdin_read')
         return
       }
@@ -461,9 +465,10 @@ export class LocalPtySession implements TerminalBackendSession {
       const startupHasOutput = !this.initializing || this.scrollback.snapshot().text.length > 0
       const acceptsStdinWait = startupHasOutput && foreground !== undefined
         && operation.acceptsStdinWait(foreground.processGroupId, foreground.inputWaiting)
-      // Setup echo and the default `PS>` line are output, not readiness.
+      // A leftover stdin wait plus setup echo is not a prompt. Silence after
+      // output still ends the send when Linux never reprints `dsh> `.
       if (elapsed >= this.config.exactProbeAfterMs && acceptsStdinWait
-        && (this.config.shellDialect !== 'pwsh' || operation.hasInstalledPrompt())) {
+        && (this.config.shellDialect !== 'pwsh' || operation.hasPromptLine())) {
         this.settleActive('stdin_read')
         return
       }
@@ -473,7 +478,7 @@ export class LocalPtySession implements TerminalBackendSession {
       // readiness until the absolute timeout.
       const handoffGrace = this.promptSeen ? this.config.handoffGraceMs : 0
       if (startupHasOutput && idleFor >= this.config.idleSilenceMs + handoffGrace
-        && (this.config.shellDialect !== 'pwsh' || operation.hasInstalledPrompt())) {
+        && (this.config.shellDialect !== 'pwsh' || operation.hasOutput())) {
         this.settleActive('inferred_idle')
       }
     } catch (error: unknown) {
