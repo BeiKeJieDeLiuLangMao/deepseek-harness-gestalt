@@ -108,6 +108,10 @@ class LocalSendOperation implements TerminalSendOperation {
     if (!this.finished) this.output.append(text)
   }
 
+  hasOutput(): boolean {
+    return this.output.snapshot().text.length > 0
+  }
+
   settle(waitReason: TerminalWaitReason, sessionStatus: TerminalSessionStatus, inheritedTruncation: boolean): void {
     if (this.finished) return
     this.finished = true
@@ -452,11 +456,10 @@ export class LocalPtySession implements TerminalBackendSession {
       const startupHasOutput = !this.initializing || this.scrollback.snapshot().text.length > 0
       const acceptsStdinWait = startupHasOutput && foreground !== undefined
         && operation.acceptsStdinWait(foreground.processGroupId, foreground.inputWaiting)
-      // pwsh reports inputWaiting at the default prompt before the controlled
-      // prompt function runs; treating that wait as ready returns an empty
-      // viewport and clips the first command. OSC+tail or inferred_idle only.
+      // pwsh reports inputWaiting at the default prompt before the line
+      // runs; an empty viewport here is leftover wait, not command output.
       if (elapsed >= this.config.exactProbeAfterMs && acceptsStdinWait
-        && this.config.shellDialect !== 'pwsh') {
+        && (this.config.shellDialect !== 'pwsh' || operation.hasOutput())) {
         this.settleActive('stdin_read')
         return
       }

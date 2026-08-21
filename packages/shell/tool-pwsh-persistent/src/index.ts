@@ -307,24 +307,16 @@ function persistentShells(ctx: Context, config: ResolvedConfig): PersistentShell
             live.delete(owner)
           }, 'tool-pwsh-persistent owner cache cleanup')
         }
-        const started = Date.now()
-        let sentSetup = false
-        for (;;) {
-          const setup = ctx.terminals.startSend(owner, spawned.sessionId, {
-            text: sentSetup ? '' : PWSH_PROMPT_SETUP,
-            submit: !sentSetup,
-            signal: combinedSignal,
-          })
-          sentSetup = true
-          const result = await setup.done
-          if (result.sessionStatus.kind === 'exited' || result.waitReason === 'timeout') {
-            throw new Error('persistent pwsh shell did not accept initialization')
-          }
-          if (promptCompleted(result)) return spawned.sessionId
-          if (Date.now() - started >= config.timeoutMs) {
-            throw new Error('persistent pwsh shell did not accept initialization')
-          }
+        const setup = ctx.terminals.startSend(owner, spawned.sessionId, {
+          text: PWSH_PROMPT_SETUP,
+          submit: true,
+          signal: combinedSignal,
+        })
+        const result = await setup.done
+        if (result.sessionStatus.kind === 'exited' || result.waitReason === 'timeout') {
+          throw new Error('persistent pwsh shell did not accept initialization')
         }
+        return spawned.sessionId
       } catch (error: unknown) {
         await reset(owner, 'persistent pwsh initialization failed')
         throw error

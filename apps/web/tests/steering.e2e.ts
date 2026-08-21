@@ -377,6 +377,11 @@ describe('web e2e: empty-draft Cmd+Enter steers the whole queue', () => {
     // for the block to settle so the mid snapshot does not race its transient
     // visually-hidden Running label while the question keeps the turn open.
     await page.locator('[data-variant="think"][data-state="ok"]').first().waitFor({ timeout: 10_000 })
+    await page.locator('[data-question-key]').waitFor({ timeout: 10_000 })
+    await expect.poll(
+      () => page.getByRole('button', { name: 'Ask question waiting' }).count(),
+      { timeout: 10_000 },
+    ).toBe(0)
     const mid = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(STEER_ALL_MID, mid, MODE)
 

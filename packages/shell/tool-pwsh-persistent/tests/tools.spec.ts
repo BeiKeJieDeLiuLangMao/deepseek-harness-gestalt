@@ -92,9 +92,6 @@ type StubMode =
   | 'end-only'
   | 'init-exit'
   | 'init-timeout'
-  | 'init-deferred-prompt'
-  | 'init-prompt-ready'
-  | 'init-never-prompt'
   | 'spawn-error'
   | 'send-error'
   | 'prompt-after-idle'
@@ -134,20 +131,6 @@ class StubTerminalSession implements TerminalBackendSession {
       if (this.mode === 'init-timeout') {
         return this.operation(Promise.resolve(this.result('', 'timeout')))
       }
-      if (this.mode === 'init-deferred-prompt') {
-        this.mode = 'init-prompt-ready'
-        return this.operation(Promise.resolve(this.result('setup-echo', 'inferred_idle')))
-      }
-      if (this.mode === 'init-never-prompt') {
-        return this.operation(Promise.resolve(this.result('setup-echo', 'inferred_idle')))
-      }
-      return this.operation(Promise.resolve(this.result(this.motd, 'stdin_read')))
-    }
-    if (this.mode === 'init-never-prompt') {
-      return this.operation(Promise.resolve(this.result('setup-echo', 'inferred_idle')))
-    }
-    if (this.mode === 'init-prompt-ready' && request.text.length === 0) {
-      this.mode = 'normal'
       return this.operation(Promise.resolve(this.result(this.motd, 'stdin_read')))
     }
     if (this.mode === 'send-error') throw new Error('stub send failed')
@@ -578,18 +561,6 @@ describe('tool-pwsh-persistent', () => {
       expect(stub.sessions[0]?.closed).toContain('persistent pwsh initialization failed')
     },
   )
-
-  it('waits through a silent init send until the tool prompt appears', async () => {
-    const { ctx, owner, stub } = await setup({ backendType: 'stub' }, 'init-deferred-prompt')
-    expect(text(await call(ctx, owner, 'Write-Output one'))).toBe('hello from stub')
-    expect(stub.sessions[0]?.sends).toBe(3)
-  })
-
-  it('fails initialization when the tool prompt never appears', async () => {
-    const { ctx, owner, stub } = await setup({ backendType: 'stub', timeoutMs: 30 }, 'init-never-prompt')
-    expect((await call(ctx, owner, 'pwd')).isError).toBe(true)
-    expect(stub.sessions[0]?.closed).toContain('persistent pwsh initialization failed')
-  })
 
   it('clears a failed spawn without trying to close an unpublished shell', async () => {
     const { ctx, owner, stub } = await setup({ backendType: 'stub' }, 'spawn-error')
