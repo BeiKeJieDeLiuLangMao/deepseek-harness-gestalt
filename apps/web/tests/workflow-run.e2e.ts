@@ -155,9 +155,20 @@ describe.skipIf(MODE === 'record')('web e2e: durable workflow run in Chat', () =
       document.body.removeAttribute('data-ds-dark-theme')
     })
     await page.setViewportSize({ width: 1280, height: 800 })
-    const memberAfterRestore = page.getByRole('button', { name: /^Open Reply with exactly the word/ })
-    await memberAfterRestore.waitFor({ timeout: 10_000 })
-    await memberAfterRestore.click({ force: true })
+    const phaseAfterRestore = page.locator('[data-workflow-run] [data-disclosure-row]').nth(1)
+    await phaseAfterRestore.waitFor({ timeout: 15_000 })
+    if (await phaseAfterRestore.getAttribute('aria-expanded') === 'false') {
+      await phaseAfterRestore.click()
+    }
+    await expect.poll(
+      () => page.getByRole('button', { name: /^Open Reply with exactly the word/ }).count(),
+      { timeout: 15_000 },
+    ).toBeGreaterThan(0)
+    await page.locator('[data-member-label]').evaluate((label) => {
+      const button = label.closest('button')
+      if (button === null) throw new Error('workflow member button missing after viewport restore')
+      button.click()
+    })
     await page.getByText(CHILD_PROMPT, { exact: true }).waitFor({ timeout: 15_000 })
 
     const sessions = page.getByRole('tree', { name: 'Sessions' })
