@@ -792,9 +792,15 @@ importers:
       '@deepseek-ai/dsh-platform-account':
         specifier: workspace:*
         version: link:../packages/platform/platform-account
+      '@deepseek-ai/dsh-platform-account-client':
+        specifier: workspace:*
+        version: link:../packages/platform/platform-account-client
       '@deepseek-ai/dsh-platform-account-core':
         specifier: workspace:*
         version: link:../packages/platform/platform-account-core
+      '@deepseek-ai/dsh-platform-account-http':
+        specifier: workspace:*
+        version: link:../packages/platform/platform-account-http
       '@deepseek-ai/dsh-pwsh-local':
         specifier: workspace:*
         version: link:../packages/shell/pwsh-local
