@@ -52,6 +52,38 @@ describe('MobilePairingController', () => {
     expect(relay.stop).toHaveBeenCalled()
   })
 
+  it('sends finish-challenge after Desktop message 2 when the handshake exports a finish message', async () => {
+    const transport = transportFixture()
+    const finishedWords = ['quartz', 'raven', 'silver', 'timber', 'ultra', 'velvet'] as const
+    transport.finishChallenge.mockResolvedValue({
+      pendingPairingId: parsePendingPairingId('pending-finished'),
+      authenticationWords: [...finishedWords],
+      desktopHandshake: Uint8Array.of(3),
+      device: { name: 'Alice phone', platform: 'ios' },
+    })
+    const handshake = {
+      begin: vi.fn(async () => ({
+        completionId: parsePairingCompletionId('finish-message'), mobileHandshake: Uint8Array.of(9),
+      })),
+      acceptDesktopHandshake: vi.fn(),
+      exportFinishMessage: vi.fn(() => Uint8Array.of(4)),
+    }
+    const controller = new MobilePairingController({
+      installation: installationFixture(), transport, handshake,
+      scanner: { scan: vi.fn() }, device: { name: 'Alice phone', platform: 'ios' },
+      now: () => Date.parse('2026-08-18T10:01:00.000Z'),
+    })
+    await controller.completeLink(pairingLink(Date.parse('2026-08-18T10:02:00.000Z')))
+    expect(transport.finishChallenge).toHaveBeenCalledWith(expect.objectContaining({
+      pendingPairingId: parsePendingPairingId('pending-one'),
+      mobileFinish: Uint8Array.of(4),
+    }))
+    expect(controller.getSnapshot()).toMatchObject({
+      status: 'pending',
+      authenticationWords: [...finishedWords],
+    })
+  })
+
   it('retains independent pairing key material only after Desktop confirmation', async () => {
     const scheduled: Array<() => void> = []
     const transport = transportFixture()
@@ -524,6 +556,12 @@ function transportFixture() {
     rejectPairing: vi.fn(),
     revokePersonalPairing: vi.fn(),
     completeChallenge: vi.fn<RemoteAccessTransport['completeChallenge']>().mockResolvedValue({
+      pendingPairingId: parsePendingPairingId('pending-one'),
+      authenticationWords: ['amber', 'binary', 'cedar', 'delta', 'ember', 'frost'],
+      desktopHandshake: Uint8Array.of(8),
+      device: { name: 'Alice phone', platform: 'ios' },
+    }),
+    finishChallenge: vi.fn<RemoteAccessTransport['finishChallenge']>().mockResolvedValue({
       pendingPairingId: parsePendingPairingId('pending-one'),
       authenticationWords: ['amber', 'binary', 'cedar', 'delta', 'ember', 'frost'],
       desktopHandshake: Uint8Array.of(8),

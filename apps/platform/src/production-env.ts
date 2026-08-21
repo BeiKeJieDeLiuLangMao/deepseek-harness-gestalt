@@ -13,6 +13,14 @@ export const PLATFORM_PRODUCTION_REQUIRED_ENV = [
   'PLATFORM_REDIS_PASSWORD',
   'PLATFORM_TOKEN_SIGNING_KEY',
   'PLATFORM_POLLING_SIGNING_KEY',
+  'PLATFORM_RELAY_ATTACH_TIMEOUT_MS',
+  'PLATFORM_RELAY_CAPACITY_RETRY_AFTER_MS',
+  'PLATFORM_RELAY_DELIVERY_ACK_TIMEOUT_MS',
+  'PLATFORM_RELAY_DIRECTORY_TTL_MS',
+  'PLATFORM_RELAY_HEARTBEAT_TIMEOUT_MS',
+  'PLATFORM_RELAY_MAX_BUFFERED_CIPHERTEXT_BYTES',
+  'PLATFORM_RELAY_MAX_CONNECTIONS',
+  'PLATFORM_RELAY_MAX_PENDING_DELIVERIES',
 ] as const
 
 /** Listen-process names plus the ECS apply names. */
@@ -96,6 +104,24 @@ export function readPlatformSigningKey(
     throw new TypeError(`${name} must be 32 bytes of hex`)
   }
   return Uint8Array.from(Buffer.from(hex, 'hex'))
+}
+
+/**
+ * Reads one required positive integer name.
+ * @param name - Relay tunable name
+ * @param env - Process environment to inspect
+ * @returns the positive integer
+ */
+export function readPositiveIntegerPlatformEnv(
+  name: PlatformDeployEnvName,
+  env: NodeJS.Dict<string> = process.env,
+): number {
+  const raw = requiredPlatformEnv(name, env)
+  const value = Number(raw)
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new TypeError(`${name} must be a positive integer`)
+  }
+  return value
 }
 
 /**

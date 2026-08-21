@@ -584,7 +584,8 @@ function createDesktopPairing(
   relay: DesktopRelayLifecycle,
 ): DesktopPairingActions {
   const unavailableReason = 'Personal Pairing requires an independently reviewed handshake and Relay crypto provider.'
-  if (environment.environment !== 'development' || process.env.DSH_PERSONAL_PAIRING_KEYLESS !== '1') {
+  if (environment.environment !== 'production'
+    && (environment.environment !== 'development' || process.env.DSH_PERSONAL_PAIRING_KEYLESS !== '1')) {
     return new UnavailableDesktopPairingController(`${unavailableReason} Development proof mode is disabled.`, relay)
   }
   const fetch = createLoopbackListenFetch(environment.origin)

@@ -249,6 +249,10 @@ describe('Remote Access HTTP assembled flow', () => {
         pendingPairingId: 'pending-one', authenticationWords: [], desktopHandshake: Uint8Array.of(1),
         device: { name: 'phone', platform: 'ios' },
       })),
+      finishChallenge: vi.fn(async () => ({
+        pendingPairingId: 'pending-one', authenticationWords: [], desktopHandshake: Uint8Array.of(1),
+        device: { name: 'phone', platform: 'ios' },
+      })),
       admitAttachmentBlob: vi.fn(async () => ({ reservationId: 'blob-1' })),
       releaseAttachmentBlob: vi.fn(),
       emitPushHint: vi.fn(),
@@ -347,6 +351,21 @@ describe('Remote Access HTTP assembled flow', () => {
     expect((await complete({ mobileHandshake: '' })).status).toBe(400)
     expect((await complete({ mobileHandshake: '*' })).status).toBe(400)
     expect((await complete({ mobileHandshake: 'A' })).status).toBe(400)
+    expect((await request({
+      operation: 'finish-challenge',
+      pendingPairingId: 'pending-one',
+      mobileFinish: 'AQ',
+    })).status).toBe(200)
+    expect((await request({
+      operation: 'finish-challenge',
+      pendingPairingId: '',
+      mobileFinish: 'AQ',
+    })).status).toBe(500)
+    expect((await request({
+      operation: 'finish-challenge',
+      pendingPairingId: 'pending-one',
+      mobileFinish: '',
+    })).status).toBe(400)
     expect((await complete({ mobileHandshake: 'AB' })).status).toBe(400)
     expect((await complete({})).status).toBe(200)
     expect(remoteAccess.completeChallenge).toHaveBeenCalledWith(expect.objectContaining({

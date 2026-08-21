@@ -6,7 +6,7 @@ Platform 监听进程以容器发布。GitHub Actions 会为触及 Platform 树�
 
 实际运行的监听进程只接受 `PLATFORM_ENVIRONMENT=production`。客户端打包仍可解析开发／生产环境对，以便选错 origin 时在产生流量前失败。不存在 staging 选择器，也不运行第二套 Platform。
 
-`GET /` 提供 DeepSeek Gestalt 产品首页。在所需部署密钥齐备后，`GET /healthz` 与 `GET /readyz` 返回 `{ ok: true }`。缺失密钥会在监听前失败退出。Account HTTP 挂在 `/v1/account/*`，持久化走 PostgreSQL 与 Redis。监听进程还会迁移共享的 Personal Pairing 权威表和 Relay route 表。在通过已评审的 Noise handshake 之前，不挂载配对 HTTP 和 Relay WSS。
+`GET /` 提供 DeepSeek Gestalt 产品首页。在所需部署密钥齐备后，`GET /healthz` 与 `GET /readyz` 返回 `{ ok: true }`。缺失密钥会在监听前失败退出。Account HTTP 挂在 `/v1/account/*`，持久化走 PostgreSQL 与 Redis。监听进程会迁移共享的 Personal Pairing 权威表和 Relay route 表，然后在 `/v1/remote-access/relay` 挂载 Snow 配对 HTTP 与 Relay WSS。永不导入 `DevelopmentKeylessPairingHandshakeProvider`。监听打包会把 `dsh_noise_channel_bg.wasm` 复制到 `dist/boot.mjs` 旁。Relay 可调项是必需的 `PLATFORM_RELAY_*` Environment 名。
 
 ```sh
 docker build -f apps/platform/Dockerfile -t dsh-platform .
@@ -16,5 +16,5 @@ docker build -f apps/platform/Dockerfile -t dsh-platform .
 
 ## 已知限制与暂缓事项
 
-- 本镜像不挂载配对 HTTP 和 Remote Relay WSS。
+- Companion 应用帧在接入配对密钥 HKDF 之前仍使用开发 AES-GCM 封装。镜像发布和 ECS 应用仍须显式批准。
 - Redis 使用 TLS（`PLATFORM_REDIS_TLS=1`）。RDS 开启 SSL 后 PostgreSQL 使用 `sslmode=require`。

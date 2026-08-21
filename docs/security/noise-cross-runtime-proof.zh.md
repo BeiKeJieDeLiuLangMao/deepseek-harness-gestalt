@@ -10,7 +10,7 @@
 
 证明只允许首次配对使用 `Noise_XKpsk3_25519_ChaChaPoly_SHA256`，重连使用 `Noise_IK_25519_ChaChaPoly_SHA256`。两者都使用 `dsh-mobile-companion-v1` prologue。协议名、握手角色、PSK 位置、最大消息大小与降级允许列表都是已评审适配层中的常量。
 
-只有独立安全评审者记录下述评审结论后，这项决策才具备进入产品集成的条件。集成仍需另行实现中继分帧、挑战状态、会话生命周期、原生密钥存储与发布门禁。
+产品负责人授权挂载该路径的记录见[产品 Snow 握手笔记](../../.agents/notes/implemented/architecture/2026-08-21-snow-product-handshake.md)。该记录不是下文的独立评审表单。Companion 帧、IK 重连与原生密钥封装仍是单独的产品工作。
 
 ## 证据清单
 

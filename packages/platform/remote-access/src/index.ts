@@ -95,6 +95,8 @@ export interface PairingInvitation {
   invitationSecret: Uint8Array
   /** Fingerprint of the Desktop pairing key. */
   desktopFingerprint: string
+  /** Desktop static public key carried by a Snow invitation; keyless invitations omit it. */
+  desktopStaticPublicKey?: Uint8Array
   /** Opaque rendezvous identity. */
   rendezvousId: PairingRendezvousId
   /** Unix epoch milliseconds after which the invitation is invalid. */
@@ -115,6 +117,8 @@ export interface PairingChallengeView extends Omit<PairingInvitation, 'invitatio
 export interface PairingHandshakeChallenge {
   /** Human-readable fingerprint bound into the invitation. */
   desktopFingerprint: string
+  /** Desktop static public key bound into the invitation `spk` query when present. */
+  desktopStaticPublicKey?: Uint8Array
   /** Provider-private challenge state destroyed at every terminal outcome. */
   state: PairingChallengeState
 }
@@ -170,6 +174,15 @@ export interface PairingHandshakeProvider {
    * @returns copy of at least 32 bytes; endpoints use it only as HKDF input.
    */
   exportPairingKeyMaterial?(activePairingKey: ActivePairingKey): Uint8Array | Promise<Uint8Array>
+  /**
+   * Finish a multi-message handshake after Mobile reads the Desktop response.
+   * @param input - open pending key and Mobile finish message.
+   * @returns finished handshake hash and replacement pending key.
+   */
+  finishChallenge?(input: {
+    pendingPairingKey: PendingPairingKey
+    mobileFinish: Uint8Array
+  }): Promise<{ handshakeHash: Uint8Array; pendingPairingKey: PendingPairingKey }>
   /** @param state - provider-private invitation state to destroy. */
   destroyChallenge(state: PairingChallengeState): void | Promise<void>
   /** @param state - provider-private pending key state to destroy. */
@@ -503,6 +516,23 @@ export abstract class RemoteAccessService extends Service {
   }): Promise<PairingCompletionView>
 
   /**
+   * Finish a multi-message handshake after Mobile reads the Desktop response.
+   * @param input - Mobile authorization, pending id, and finish message.
+   * @returns pending result with finished authentication words.
+   */
+  finishChallenge(input: {
+    mobile: PairingAccountAuthentication
+    pendingPairingId: PendingPairingId
+    mobileFinish: Uint8Array
+  }): Promise<PairingCompletionView> {
+    void input
+    return Promise.reject(new RemoteAccessError(
+      'PAIRING_PENDING_INVALID',
+      'Pending Pairing does not require a finish message',
+    ))
+  }
+
+  /**
    * Read the decision for one pairing completed by the current Mobile Installation.
    * @param input - current Mobile authorization and pending identity.
    * @returns pending, paired, or rejected without exposing Desktop authority.
@@ -670,6 +700,8 @@ export interface CompletionReplayRecord {
 export interface PendingPairingRecord extends CompletionReplayRecord {
   cleanup: CleanupRecord<PendingPairingKey>
   activationCleanup?: CleanupRecord<ActivePairingKey>
+  /** True until `finishChallenge` replaces the open handshake; Desktop lists omit these rows. */
+  awaitingFinish?: boolean
 }
 
 /** Terminal pending-handshake outcome retained for bounded replay. */
@@ -760,6 +792,9 @@ export class PersonalPairingProvider extends RemoteAccessService {
           challengeId,
           invitationSecret: invitationSecret.slice(),
           desktopFingerprint: nonEmpty(cryptoChallenge.desktopFingerprint, 'Desktop fingerprint'),
+          ...(cryptoChallenge.desktopStaticPublicKey === undefined
+            ? {}
+            : { desktopStaticPublicKey: cryptoChallenge.desktopStaticPublicKey.slice() }),
           rendezvousId: parsePairingRendezvousId(input.rendezvousId),
           expiresAt,
           protocolMajor: PERSONAL_PAIRING_PROTOCOL_MAJOR,
@@ -993,9 +1028,48 @@ export class PersonalPairingProvider extends RemoteAccessService {
         ...replay,
         desktopInstallationId: challenge.desktopInstallationId,
         cleanup: pendingCleanup,
+        ...(this.options.handshake.finishChallenge === undefined ? {} : { awaitingFinish: true }),
       })
       await this.cleanupChallenge(settled.cleanup)
       return cloneCompletion(view)
+    })
+  }
+
+  async finishChallenge(input: {
+    mobile: PairingAccountAuthentication
+    pendingPairingId: PendingPairingId
+    mobileFinish: Uint8Array
+  }): Promise<PairingCompletionView> {
+    return this.exclusive(async () => {
+      const { account, installation } = await this.authenticate(input.mobile, 'mobile')
+      this.evictExpiredRecords()
+      const pendingPairingId = parsePendingPairingId(input.pendingPairingId)
+      const pending = this.pending.get(pendingPairingId)
+      if (
+        pending === undefined
+        || pending.accountId !== account.id
+        || pending.mobileInstallationId !== installation.id
+        || pending.awaitingFinish !== true
+      ) {
+        throw new RemoteAccessError('PAIRING_PENDING_INVALID', 'Pending Pairing is invalid or unavailable')
+      }
+      const finish = this.options.handshake.finishChallenge
+      if (finish === undefined) {
+        throw new RemoteAccessError('PAIRING_PENDING_INVALID', 'Pending Pairing does not require a finish message')
+      }
+      const finished = await finish({
+        pendingPairingKey: pending.cleanup.resource,
+        mobileFinish: input.mobileFinish,
+      })
+      pending.cleanup.resource.fill(0)
+      pending.cleanup.resource = finished.pendingPairingKey
+      pending.awaitingFinish = undefined
+      pending.view = {
+        ...pending.view,
+        authenticationWords: deriveAuthenticationWords(finished.handshakeHash),
+        desktopHandshake: finished.handshakeHash.slice(),
+      }
+      return cloneCompletion(pending.view)
     })
   }
 
@@ -1095,7 +1169,9 @@ export class PersonalPairingProvider extends RemoteAccessService {
       const { account, installation } = await this.authenticate(desktop, 'desktop')
       this.evictExpiredRecords()
       return [...this.pending.values()]
-        .filter(record => record.accountId === account.id && record.desktopInstallationId === installation.id)
+        .filter(record => record.accountId === account.id
+          && record.desktopInstallationId === installation.id
+          && record.awaitingFinish !== true)
         .map(record => cloneCompletion(record.view))
     })
   }
@@ -1123,6 +1199,9 @@ export class PersonalPairingProvider extends RemoteAccessService {
         return clonePairing(settled.view)
       }
       const record = this.requirePending(pendingPairingId, account.id, installation.id)
+      if (record.awaitingFinish === true) {
+        throw new RemoteAccessError('PAIRING_PENDING_INVALID', 'Pending Pairing is invalid or unavailable')
+      }
       if (this.countAccountPairings(account.id) >= OPEN_REGISTRATION_QUOTAS.personalPairings) {
         throw new RemoteAccessError(
           'QUOTA',
@@ -1913,10 +1992,19 @@ export function parsePairingInvitationLink(value: unknown): PairingInvitation {
   if (!Number.isSafeInteger(expiresAt) || expiresAt <= 0) throw new TypeError('Pairing invitation expiry must be a positive epoch')
   const protocolMajor = Number(exact('protocol'))
   if (protocolMajor !== PERSONAL_PAIRING_PROTOCOL_MAJOR) throw new TypeError('Pairing invitation protocol major is unsupported')
+  const publicKey = url.searchParams.getAll('spk')
+  if (publicKey.length > 1) throw new TypeError('Pairing invitation spk must occur once')
+  const desktopStaticPublicKey = publicKey[0] === undefined || publicKey[0] === ''
+    ? undefined
+    : decodeBase64Url(publicKey[0])
+  if (desktopStaticPublicKey !== undefined && desktopStaticPublicKey.byteLength !== 32) {
+    throw new TypeError('Pairing invitation Desktop public key must contain exactly 256 bits')
+  }
   return {
     challengeId: parsePairingChallengeId(exact('challenge')),
     invitationSecret: secret,
     desktopFingerprint: nonEmpty(exact('fingerprint'), 'Desktop fingerprint'),
+    ...(desktopStaticPublicKey === undefined ? {} : { desktopStaticPublicKey }),
     rendezvousId: parsePairingRendezvousId(exact('rendezvous')),
     expiresAt,
     protocolMajor,
@@ -1928,6 +2016,9 @@ function encodePairingInvitationLink(origin: string, invitation: PairingInvitati
   url.searchParams.set('challenge', invitation.challengeId)
   url.searchParams.set('secret', encodeBase64Url(invitation.invitationSecret))
   url.searchParams.set('fingerprint', invitation.desktopFingerprint)
+  if (invitation.desktopStaticPublicKey !== undefined) {
+    url.searchParams.set('spk', encodeBase64Url(invitation.desktopStaticPublicKey))
+  }
   url.searchParams.set('rendezvous', invitation.rendezvousId)
   url.searchParams.set('expires', String(invitation.expiresAt))
   url.searchParams.set('protocol', String(invitation.protocolMajor))
@@ -1971,6 +2062,11 @@ function sameInvitation(left: PairingInvitation, right: PairingInvitation): bool
     && left.rendezvousId === right.rendezvousId
     && left.expiresAt === right.expiresAt
     && encodeBase64Url(left.invitationSecret) === encodeBase64Url(right.invitationSecret)
+    && encodeOptionalKey(left.desktopStaticPublicKey) === encodeOptionalKey(right.desktopStaticPublicKey)
+}
+
+function encodeOptionalKey(value: Uint8Array | undefined): string {
+  return value === undefined ? '' : encodeBase64Url(value)
 }
 
 function parseDevice(value: unknown): PairingDeviceDescription {

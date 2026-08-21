@@ -117,6 +117,12 @@ async function dispatch(
         device: parseDevice(body.device),
         mobileHandshake: decodeBytes(body.mobileHandshake, 'mobileHandshake'),
       }))
+    case 'finish-challenge':
+      return completionWire(await ctx.remoteAccess.finishChallenge({
+        mobile: authentication,
+        pendingPairingId: parsePendingPairingId(body.pendingPairingId),
+        mobileFinish: decodeBytes(body.mobileFinish, 'mobileFinish'),
+      }))
     case 'admit-blob':
       return ctx.remoteAccess.admitAttachmentBlob({
         owner: authentication,

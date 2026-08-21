@@ -177,6 +177,7 @@
     { "path": "./packages/platform/platform-account-core" },
     { "path": "./packages/platform/platform-account-http" },
     { "path": "./packages/platform/remote-protocol" },
+    { "path": "./packages/platform/noise-channel" },
     { "path": "./packages/platform/remote-access" },
     { "path": "./packages/platform/remote-access-redis" },
     { "path": "./packages/platform/remote-access-client" },

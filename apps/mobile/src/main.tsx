@@ -111,8 +111,13 @@ let pairing: MobilePairingActions = {
   deactivate: () => Promise.resolve(),
   unpair: pairingUnavailable,
 }
-if (environment.environment === 'development' && import.meta.env.VITE_PERSONAL_PAIRING_KEYLESS === '1') {
-  const { DevelopmentKeylessMobileHandshakeClient } = await import('./development-keyless-pairing.ts')
+const enableDevelopmentKeyless = environment.environment === 'development'
+  && import.meta.env.VITE_PERSONAL_PAIRING_KEYLESS === '1'
+const enableProductionSnow = environment.environment === 'production'
+if (enableDevelopmentKeyless || enableProductionSnow) {
+  const handshake = enableProductionSnow
+    ? new (await import('@deepseek-ai/dsh-noise-channel')).SnowMobileHandshakeClient()
+    : new (await import('./development-keyless-pairing.ts')).DevelopmentKeylessMobileHandshakeClient()
   const { PairingCompanionKeyVault } = await import('./companion-keys.ts')
   const relayUrl = rewriteLoopbackRelayUrl(
     requiredWss(import.meta.env.VITE_REMOTE_RELAY_WSS_URL),
@@ -175,7 +180,7 @@ if (environment.environment === 'development' && import.meta.env.VITE_PERSONAL_P
   pairing = new MobilePairingController({
     installation,
     transport: new RemoteAccessHttpTransport({ environment, fetch }),
-    handshake: new DevelopmentKeylessMobileHandshakeClient(),
+    handshake,
     scanner: new NativeMobilePairingQrScanner(),
     relay: companion,
     companion,

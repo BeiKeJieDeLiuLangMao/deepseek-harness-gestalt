@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/security/noise-cross-runtime-proof.md
-noise-cross-runtime-proof.md: bbf025baa47c926b5e363aa800057f476b805920
-noise-cross-runtime-proof.zh.md: bb97ea195dba9d7d9811b5e544403db69639fa21
+noise-cross-runtime-proof.md: f48f4a6fa3f6d6f10c995ea8da237376157ec0bb
+noise-cross-runtime-proof.zh.md: 7688092ec92f800571304eb0867e67f9ea227606

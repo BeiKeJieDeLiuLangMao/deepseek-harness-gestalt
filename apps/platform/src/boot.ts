@@ -1,10 +1,12 @@
-/** Production Platform composition: Account HTTP, homepage, and Remote Access tables. */
+/** Production Platform composition: Account HTTP, Snow Personal Pairing, and Relay WSS. */
 
+import { hostname } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import WebServer from '@deepseek-ai/dsh-host-webserver'
 import * as FrontendStatic from '@deepseek-ai/dsh-host-frontend-static'
+import { SnowPairingHandshakeProvider } from '@deepseek-ai/dsh-noise-channel'
 import {
   loadPlatformEnvironment,
 } from '@deepseek-ai/dsh-platform-account'
@@ -13,6 +15,14 @@ import {
   PlatformAccount,
 } from '@deepseek-ai/dsh-platform-account-core'
 import * as PlatformAccountHttp from '@deepseek-ai/dsh-platform-account-http'
+import {
+  PersonalPairingProvider,
+  parseRelayInstanceId,
+} from '@deepseek-ai/dsh-remote-access'
+import { RemoteRelayProvider } from '@deepseek-ai/dsh-remote-access/relay-provider'
+import * as RemoteAccessHttp from '@deepseek-ai/dsh-remote-access-http'
+import * as RemoteAccessRelay from '@deepseek-ai/dsh-remote-access-http/relay'
+import { RedisRelayCoordinator, type RelayRedisClient } from '@deepseek-ai/dsh-remote-access-redis'
 import pg from 'pg'
 import { PostgresAccountBackend } from './postgres-backend.ts'
 import { PostgresPersonalPairingAuthorityStore } from './postgres-pairing-store.ts'
@@ -20,6 +30,7 @@ import { PostgresRelayRouteStore } from './postgres-route-store.ts'
 import {
   assertOperatedPlatformEnvironment,
   readPlatformSigningKey,
+  readPositiveIntegerPlatformEnv,
   requiredPlatformEnv,
 } from './production-env.ts'
 import { RedisAccountInvalidationBus, connectRedis } from './redis-bus.ts'
@@ -68,12 +79,16 @@ const redisOptions = {
 const publicRoot = join(dirname(fileURLToPath(import.meta.url)), '..', 'public')
 
 const backend = new PostgresAccountBackend(environment.databaseIdentity, postgres)
+const pairingStore = new PostgresPersonalPairingAuthorityStore(environment.databaseIdentity, postgres)
+const routeStore = new PostgresRelayRouteStore(environment.databaseIdentity, postgres)
 await backend.migrate()
-await new PostgresPersonalPairingAuthorityStore(environment.databaseIdentity, postgres).migrate()
-await new PostgresRelayRouteStore(environment.databaseIdentity, postgres).migrate()
+await pairingStore.migrate()
+await routeStore.migrate()
 
 const publisher = await connectRedis(redisOptions)
 const subscriber = await connectRedis(redisOptions)
+const relayCommand = await connectRedis(redisOptions)
+const relaySubscriber = await connectRedis(redisOptions)
 const invalidation = new RedisAccountInvalidationBus(publisher, subscriber)
 await invalidation.listen()
 
@@ -90,10 +105,11 @@ await ctx.plugin(WebServer, {
   host: process.env.PLATFORM_LISTEN_HOST === '127.0.0.1' ? '127.0.0.1' : '0.0.0.0',
   port: Number(process.env.PORT ?? '8080'),
 })
+const accountHolder: { account?: PlatformAccount } = {}
 await ctx.plugin({
   name: 'platform-account-provider',
   apply(inner: Context) {
-    new PlatformAccount(inner, {
+    accountHolder.account = new PlatformAccount(inner, {
       backend,
       invalidation,
       github,
@@ -105,7 +121,39 @@ await ctx.plugin({
     })
   },
 })
+if (accountHolder.account === undefined) throw new TypeError('platform: Account service failed to start')
+const coordinator = new RedisRelayCoordinator({
+  command: asRelayRedis(relayCommand),
+  subscriber: asRelayRedis(relaySubscriber),
+  keyPrefix: 'dsh:gestalt:relay',
+})
+const relay = new RemoteRelayProvider(ctx, {
+  instanceId: parseRelayInstanceId(relayInstanceId()),
+  routeStore,
+  coordinator,
+  config: {
+    capacityRetryAfterMs: readPositiveIntegerPlatformEnv('PLATFORM_RELAY_CAPACITY_RETRY_AFTER_MS'),
+    deliveryAckTimeoutMs: readPositiveIntegerPlatformEnv('PLATFORM_RELAY_DELIVERY_ACK_TIMEOUT_MS'),
+    directoryTtlMs: readPositiveIntegerPlatformEnv('PLATFORM_RELAY_DIRECTORY_TTL_MS'),
+    heartbeatTimeoutMs: readPositiveIntegerPlatformEnv('PLATFORM_RELAY_HEARTBEAT_TIMEOUT_MS'),
+    maxBufferedCiphertextBytes: readPositiveIntegerPlatformEnv('PLATFORM_RELAY_MAX_BUFFERED_CIPHERTEXT_BYTES'),
+    maxConnections: readPositiveIntegerPlatformEnv('PLATFORM_RELAY_MAX_CONNECTIONS'),
+    maxPendingDeliveries: readPositiveIntegerPlatformEnv('PLATFORM_RELAY_MAX_PENDING_DELIVERIES'),
+  },
+})
+new PersonalPairingProvider(ctx, {
+  account: accountHolder.account,
+  handshake: new SnowPairingHandshakeProvider(),
+  relay,
+  authority: pairingStore,
+  pairingLinkOrigin: `${environment.origin}/pair`,
+})
 await ctx.plugin(PlatformAccountHttp, { origin: environment.origin })
+await ctx.plugin(RemoteAccessHttp, { origin: environment.origin })
+await ctx.plugin(RemoteAccessRelay, {
+  path: '/v1/remote-access/relay',
+  attachTimeoutMs: readPositiveIntegerPlatformEnv('PLATFORM_RELAY_ATTACH_TIMEOUT_MS'),
+})
 ctx.webServer.register({
   kind: 'exact',
   path: '/healthz',
@@ -124,3 +172,42 @@ ctx.webServer.register({
 })
 await ctx.plugin(FrontendStatic, { distIndex: join(publicRoot, 'index.html') })
 console.error(`platform: listening on ${ctx.webServer.host}:${String(ctx.webServer.port)}`)
+
+function relayInstanceId(): string {
+  const raw = process.env.PLATFORM_RELAY_INSTANCE_ID ?? hostname()
+  const id = raw.replace(/[^A-Za-z0-9_-]/g, '-').replace(/^-+/, '').slice(0, 128)
+  return id === '' ? 'platform' : id
+}
+
+function asRelayRedis(client: {
+  get(key: string): Promise<string | null>
+  set(key: string, value: string, options: { PX: number }): Promise<unknown>
+  eval(script: string, options: { keys: string[]; arguments: string[] }): Promise<unknown>
+  publish(channel: string, message: string): Promise<number>
+  subscribe(channel: string, listener: (message: string) => void): Promise<unknown>
+  unsubscribe(channel: string, listener: (message: string) => void): Promise<unknown>
+}): RelayRedisClient {
+  const wrap = (signal?: AbortSignal): RelayRedisClient => ({
+    get: key => withOptionalAbort(signal, () => client.get(key)),
+    set: (key, value, options) => withOptionalAbort(signal, () => client.set(key, value, options)),
+    eval: (script, options) => withOptionalAbort(signal, () => client.eval(script, options)),
+    publish: (channel, message) => withOptionalAbort(signal, () => client.publish(channel, message)),
+    subscribe: (channel, listener) => withOptionalAbort(signal, () => client.subscribe(channel, listener)),
+    unsubscribe: (channel, listener) => withOptionalAbort(signal, () => client.unsubscribe(channel, listener)),
+    withAbortSignal: inner => wrap(inner),
+  })
+  return wrap()
+}
+
+async function withOptionalAbort<T>(signal: AbortSignal | undefined, operation: () => Promise<T>): Promise<T> {
+  if (signal === undefined) return await operation()
+  signal.throwIfAborted()
+  return await Promise.race([
+    operation(),
+    new Promise<never>((_resolve, reject) => {
+      signal.addEventListener('abort', () => {
+        reject(signal.reason instanceof Error ? signal.reason : new Error('Relay Redis command aborted'))
+      }, { once: true })
+    }),
+  ])
+}

@@ -20,5 +20,6 @@ export default defineConfig({
       },
     },
   },
+  assetsInclude: ['**/*.wasm'],
   build: { outDir: 'dist', emptyOutDir: true },
 })
