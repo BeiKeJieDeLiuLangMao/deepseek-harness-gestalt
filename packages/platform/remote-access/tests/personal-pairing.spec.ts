@@ -2168,7 +2168,10 @@ describe('PersonalPairingProvider', () => {
       desktopStaticPublicKey: publicKey,
       state: Uint8Array.of(1),
     })
-    handshake.finishChallenge = vi.fn().mockResolvedValue({
+    const snow = handshake as typeof handshake & {
+      finishChallenge?: PairingHandshakeProvider['finishChallenge']
+    }
+    snow.finishChallenge = vi.fn().mockResolvedValue({
       handshakeHash: finishedHash,
       pendingPairingKey: Uint8Array.of(4),
     })
@@ -2201,7 +2204,7 @@ describe('PersonalPairingProvider', () => {
     expect(finished.desktopHandshake).toEqual(finishedHash)
     expect(finished.authenticationWords).toEqual(deriveAuthenticationWords(finishedHash))
     expect(await provider.listPendingPairings(desktop)).toEqual([finished])
-    handshake.finishChallenge = undefined
+    delete snow.finishChallenge
     await expect(provider.finishChallenge({
       mobile: authentication('mobile-installation'),
       pendingPairingId: open.pendingPairingId,

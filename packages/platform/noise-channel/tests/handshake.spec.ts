@@ -120,7 +120,7 @@ async function sealJson(key: Uint8Array, value: unknown): Promise<Uint8Array> {
   const iv = new Uint8Array(12)
   const sealed = new Uint8Array(await crypto.subtle.encrypt(
     { name: 'AES-GCM', iv },
-    await crypto.subtle.importKey('raw', key, 'AES-GCM', false, ['encrypt']),
+    await crypto.subtle.importKey('raw', new Uint8Array(key), 'AES-GCM', false, ['encrypt']),
     new TextEncoder().encode(JSON.stringify(value)),
   ))
   const out = new Uint8Array(12 + sealed.byteLength)

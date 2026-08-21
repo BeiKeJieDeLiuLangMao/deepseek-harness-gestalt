@@ -181,6 +181,7 @@ describe('Remote Access HTTP assembled flow', () => {
       revokePersonalPairing: http.revokePersonalPairing.bind(http),
       getMobilePairingStatus: http.getMobilePairingStatus.bind(http),
       unregisterPushToken: http.unregisterPushToken.bind(http),
+      finishChallenge: http.finishChallenge.bind(http),
       completeChallenge: async (request) => {
         requests.push(request)
         const result = await http.completeChallenge(request)

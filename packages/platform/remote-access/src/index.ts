@@ -1035,7 +1035,7 @@ export class PersonalPairingProvider extends RemoteAccessService {
     })
   }
 
-  async finishChallenge(input: {
+  override async finishChallenge(input: {
     mobile: PairingAccountAuthentication
     pendingPairingId: PendingPairingId
     mobileFinish: Uint8Array
@@ -1057,13 +1057,14 @@ export class PersonalPairingProvider extends RemoteAccessService {
       if (finish === undefined) {
         throw new RemoteAccessError('PAIRING_PENDING_INVALID', 'Pending Pairing does not require a finish message')
       }
+      const pendingPairingKey = pending.cleanup.resource as PendingPairingKey
       const finished = await finish({
-        pendingPairingKey: pending.cleanup.resource,
+        pendingPairingKey,
         mobileFinish: input.mobileFinish,
       })
-      pending.cleanup.resource.fill(0)
+      pendingPairingKey.fill(0)
       pending.cleanup.resource = finished.pendingPairingKey
-      pending.awaitingFinish = undefined
+      delete pending.awaitingFinish
       pending.view = {
         ...pending.view,
         authenticationWords: deriveAuthenticationWords(finished.handshakeHash),

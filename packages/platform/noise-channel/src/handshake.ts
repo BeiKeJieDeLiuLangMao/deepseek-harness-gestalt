@@ -109,7 +109,7 @@ export class SnowPairingHandshakeProvider implements PairingHandshakeProvider {
     pendingPairingKey: PendingPairingKey
   }): Promise<{ keyReference: PersonalPairingKeyReference; activePairingKey: ActivePairingKey }> {
     const pairingKey = decodeActiveKey(input.pendingPairingKey)
-    const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', pairingKey))
+    const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', localBytes(pairingKey)))
     return {
       keyReference: `snow-${hex(digest, 8)}` as PersonalPairingKeyReference,
       activePairingKey: pairingKey as ActivePairingKey,
@@ -244,7 +244,11 @@ function assertPsk(value: Uint8Array): void {
 
 async function aesKey(raw: Uint8Array): Promise<CryptoKey> {
   if (raw.byteLength !== KEY_BYTES) throw new TypeError('Snow pairing key must contain 32 bytes')
-  return await crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt', 'decrypt'])
+  return await crypto.subtle.importKey('raw', localBytes(raw), 'AES-GCM', false, ['encrypt', 'decrypt'])
+}
+
+function localBytes(bytes: Uint8Array): Uint8Array<ArrayBuffer> {
+  return new Uint8Array(bytes)
 }
 
 function hex(bytes: Uint8Array, length: number): string {
