@@ -1,10 +1,17 @@
-.page {
+.page,
+.companion {
   box-sizing: border-box;
   min-height: 100dvh;
   max-width: 560px;
   margin: 0 auto;
   padding: max(32px, env(safe-area-inset-top)) 22px max(24px, env(safe-area-inset-bottom));
   color: var(--dsw-alias-label-primary);
+}
+
+.companion {
+  max-width: 430px;
+  padding: 0 0 env(safe-area-inset-bottom);
+  background: var(--dsw-alias-bg-base);
 }
 
 .header {
@@ -160,7 +167,8 @@
   font: var(--dsw-font-s-14);
 }
 
-.accountCard {
+.accountCard,
+.identityBar {
   display: grid;
   grid-template-columns: 48px minmax(0, 1fr) auto;
   align-items: center;
@@ -168,10 +176,28 @@
   padding: 18px;
 }
 
-.accountCard img {
+.identityBar {
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  gap: 10px;
+  margin: 0 16px;
+  padding: calc(10px + env(safe-area-inset-top)) 0 12px;
+  border: 0;
+  border-bottom: 1px solid var(--dsw-alias-border-l4);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.accountCard img,
+.identityBar img {
   width: 48px;
   height: 48px;
   border-radius: 50%;
+}
+
+.identityBar img {
+  width: 36px;
+  height: 36px;
 }
 
 .identity {
@@ -207,11 +233,67 @@
   background: transparent;
 }
 
+.identityBar .secondary {
+  min-height: 36px;
+  margin-top: 4px;
+  font: var(--dsw-font-s-14);
+}
+
 .page footer {
   padding: 24px 8px 0;
   color: var(--dsw-alias-label-tertiary);
   font: var(--dsw-font-xxs-12);
   text-align: center;
+}
+
+.accountPage {
+  display: grid;
+  justify-items: start;
+  gap: 12px;
+  padding: calc(16px + env(safe-area-inset-top)) 22px 24px;
+}
+
+.accountPage header {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) 64px;
+  align-items: center;
+  width: 100%;
+}
+
+.accountPage h1 {
+  margin: 0;
+  text-align: center;
+  font: var(--dsw-font-m-16);
+}
+
+.accountPage img {
+  width: 64px;
+  height: 64px;
+  margin-top: 12px;
+  border-radius: 50%;
+}
+
+.accountPage .secondary {
+  width: 100%;
+}
+
+.sheetClose {
+  min-height: 40px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-s-14);
+  text-align: left;
+}
+
+.banner {
+  margin: calc(10px + env(safe-area-inset-top)) 16px 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--dsw-alias-state-warn-tertiary);
+  color: var(--dsw-alias-state-warn-primary);
+  font: var(--dsw-font-s-13);
 }
 
 @media (min-width: 480px) {

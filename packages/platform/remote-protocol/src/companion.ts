@@ -15,6 +15,7 @@ import type {
   CompanionProjection,
   CompanionResult,
   CompanionSecurityCapability,
+  CompanionSessionCatalogRow,
   CompanionSessionId,
   CompanionSettleApprovalOperation,
   CompanionTranscriptEntry,
@@ -215,16 +216,25 @@ export function encodeCompanionMessage(
   message: CompanionMessage,
 ): Uint8Array {
   requireNegotiated(protocol)
-  if (message.type === 'projection'
+  if (message.type === 'projection' && message.projection.type === 'transcript-page'
     && message.projection.entries.length > REMOTE_PROTOCOL_LIMITS.transcriptPageEntries) {
     throw new RemoteProtocolError('REMOTE_PROTOCOL_LIMIT_EXCEEDED', 'Companion transcript page exceeds its entry ceiling')
+  }
+  if (message.type === 'projection' && message.projection.type === 'session-catalog'
+    && message.projection.sessions.length > REMOTE_PROTOCOL_LIMITS.sessionCatalogEntries) {
+    throw new RemoteProtocolError('REMOTE_PROTOCOL_LIMIT_EXCEEDED', 'Companion session catalog exceeds its entry ceiling')
+  }
+  if (message.type === 'projection' && message.projection.type === 'session-search'
+    && message.projection.sessions.length > REMOTE_PROTOCOL_LIMITS.sessionSearchEntries) {
+    throw new RemoteProtocolError('REMOTE_PROTOCOL_LIMIT_EXCEEDED', 'Companion session search exceeds its entry ceiling')
   }
   const encoded = encodeProtocolJson(
     { applicationVersion: protocol.major, ...message },
     REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
     'Companion message',
   )
-  if (message.type === 'projection' && encoded.byteLength > REMOTE_PROTOCOL_LIMITS.transcriptPageBytes) {
+  if (message.type === 'projection' && message.projection.type === 'transcript-page'
+    && encoded.byteLength > REMOTE_PROTOCOL_LIMITS.transcriptPageBytes) {
     throw new RemoteProtocolError('REMOTE_PROTOCOL_LIMIT_EXCEEDED', 'Companion transcript page exceeds its byte ceiling')
   }
   return encoded
@@ -252,10 +262,7 @@ export function decodeCompanionMessage(
       return { type: 'operation', operation: parseOperation(record.operation) }
     case 'projection':
       exactKeys(record, ['applicationVersion', 'type', 'projection'], 'Companion projection message')
-      if (encoded.byteLength > REMOTE_PROTOCOL_LIMITS.transcriptPageBytes) {
-        throw new RemoteProtocolError('REMOTE_PROTOCOL_LIMIT_EXCEEDED', 'Companion transcript page exceeds its byte ceiling')
-      }
-      return { type: 'projection', projection: parseProjection(record.projection) }
+      return { type: 'projection', projection: parseProjection(record.projection, encoded.byteLength) }
     case 'result':
       exactKeys(record, ['applicationVersion', 'type', 'result'], 'Companion result message')
       return { type: 'result', result: parseResult(record.result) }
@@ -314,6 +321,15 @@ function parseOperation(value: unknown): CompanionOperation {
   }
   if (record.type === 'settle-approval') return parseSettleApproval(record)
   if (record.type === 'answer-ask-user') return parseAnswerAskUser(record)
+  if (record.type === 'open-session') {
+    exactKeys(record, ['type', 'operationId', 'sessionId'], 'Companion open-session operation')
+    return {
+      type: 'open-session',
+      operationId: parseCompanionOperationId(record.operationId),
+      sessionId: parseCompanionSessionId(record.sessionId),
+    }
+  }
+  if (record.type === 'search-sessions') return parseSearchSessions(record)
   if (record.type !== 'submit-prompt') invalid('Companion operation type is unsupported')
   exactKeys(record, ['type', 'operationId', 'sessionId', 'text'], 'Companion submit-prompt operation')
   if (typeof record.text !== 'string' || record.text.length === 0) invalid('Companion prompt text must be non-empty')
@@ -357,6 +373,22 @@ function parseAnswerAskUser(record: Record<string, unknown>): CompanionAnswerAsk
   }
 }
 
+function parseSearchSessions(record: Record<string, unknown>): CompanionOperation {
+  exactKeys(record, ['type', 'operationId', 'query'], 'Companion search-sessions operation')
+  if (typeof record.query !== 'string' || record.query.trim() === '') {
+    invalid('Companion search-sessions query must be a non-empty string')
+  }
+  if (record.query.includes('\0')) invalid('Companion search-sessions query must not contain NUL')
+  if (record.query.length > REMOTE_PROTOCOL_LIMITS.sessionSearchQueryCharacters) {
+    throw new RemoteProtocolError('REMOTE_PROTOCOL_LIMIT_EXCEEDED', 'Companion search-sessions query exceeds its character ceiling')
+  }
+  return {
+    type: 'search-sessions',
+    operationId: parseCompanionOperationId(record.operationId),
+    query: record.query,
+  }
+}
+
 function parseCreateSession(record: Record<string, unknown>): CompanionOperation {
   if (record.workspace === undefined) {
     exactKeys(record, ['type', 'operationId', 'sessionId', 'title'], 'Companion create-session operation')
@@ -393,6 +425,17 @@ function parseResult(value: unknown): CompanionResult {
     }
   }
   if (record.type === 'status') return parseStatusResult(record)
+  if (record.type === 'rejected') {
+    exactKeys(record, ['type', 'operationId', 'reason'], 'Companion rejected result')
+    if (record.reason !== 'host-unavailable' && record.reason !== 'host-rejected') {
+      invalid('Companion rejected reason is unsupported')
+    }
+    return {
+      type: 'rejected',
+      operationId: parseCompanionOperationId(record.operationId),
+      reason: record.reason,
+    }
+  }
   if (record.type !== 'confirmed') invalid('Companion result type is unsupported')
   exactKeys(record, ['type', 'operationId', 'committedAt', 'outcome'], 'Companion confirmed result')
   if (record.outcome !== 'accepted') invalid('Companion confirmed outcome is unsupported')
@@ -422,9 +465,14 @@ function parseStatusResult(record: Record<string, unknown>): CompanionResult {
   return { type: 'status', operationId, committed: confirmed }
 }
 
-function parseProjection(value: unknown): CompanionProjection {
+function parseProjection(value: unknown, encodedBytes: number): CompanionProjection {
   const record = object(value, 'Companion projection')
+  if (record.type === 'session-catalog') return parseSessionCatalog(record)
+  if (record.type === 'session-search') return parseSessionSearch(record)
   if (record.type !== 'transcript-page') invalid('Companion projection type is unsupported')
+  if (encodedBytes > REMOTE_PROTOCOL_LIMITS.transcriptPageBytes) {
+    throw new RemoteProtocolError('REMOTE_PROTOCOL_LIMIT_EXCEEDED', 'Companion transcript page exceeds its byte ceiling')
+  }
   exactKeysAllowing(record, ['type', 'sessionId', 'entries'], ['streaming'], 'Companion transcript-page projection')
   if (!Array.isArray(record.entries)) invalid('Companion transcript entries must be an array')
   if (record.entries.length > REMOTE_PROTOCOL_LIMITS.transcriptPageEntries) {
@@ -438,6 +486,67 @@ function parseProjection(value: unknown): CompanionProjection {
     sessionId: parseCompanionSessionId(record.sessionId),
     entries: record.entries.map(parseTranscriptEntry),
     ...(record.streaming === undefined ? {} : { streaming: record.streaming }),
+  }
+}
+
+function parseSessionCatalog(record: Record<string, unknown>): CompanionProjection {
+  exactKeys(record, ['type', 'sessions'], 'Companion session-catalog projection')
+  if (!Array.isArray(record.sessions)) invalid('Companion session catalog must be an array')
+  if (record.sessions.length > REMOTE_PROTOCOL_LIMITS.sessionCatalogEntries) {
+    throw new RemoteProtocolError('REMOTE_PROTOCOL_LIMIT_EXCEEDED', 'Companion session catalog exceeds its entry ceiling')
+  }
+  return {
+    type: 'session-catalog',
+    sessions: record.sessions.map(parseSessionCatalogRow),
+  }
+}
+
+function parseSessionSearch(record: Record<string, unknown>): CompanionProjection {
+  exactKeys(record, ['type', 'query', 'sessions'], 'Companion session-search projection')
+  if (typeof record.query !== 'string' || record.query.trim() === '') {
+    invalid('Companion session-search query must be a non-empty string')
+  }
+  if (!Array.isArray(record.sessions)) invalid('Companion session search must be an array')
+  if (record.sessions.length > REMOTE_PROTOCOL_LIMITS.sessionSearchEntries) {
+    throw new RemoteProtocolError('REMOTE_PROTOCOL_LIMIT_EXCEEDED', 'Companion session search exceeds its entry ceiling')
+  }
+  return {
+    type: 'session-search',
+    query: record.query,
+    sessions: record.sessions.map(parseSessionCatalogRow),
+  }
+}
+
+function parseSessionCatalogRow(value: unknown): CompanionSessionCatalogRow {
+  const record = object(value, 'Companion session catalog row')
+  exactKeysAllowing(
+    record,
+    ['sessionId', 'title', 'summary'],
+    ['workspace', 'live', 'snippet'],
+    'Companion session catalog row',
+  )
+  if (typeof record.title !== 'string' || record.title.length === 0) {
+    invalid('Companion session catalog title must be a non-empty string')
+  }
+  if (typeof record.summary !== 'string' || record.summary.length === 0) {
+    invalid('Companion session catalog summary must be a non-empty string')
+  }
+  if (record.workspace !== undefined && (typeof record.workspace !== 'string' || record.workspace.length === 0)) {
+    invalid('Companion session catalog workspace must be a non-empty string')
+  }
+  if (record.live !== undefined && record.live !== true && record.live !== false) {
+    invalid('Companion session catalog live must be a boolean')
+  }
+  if (record.snippet !== undefined && (typeof record.snippet !== 'string' || record.snippet.length === 0)) {
+    invalid('Companion session catalog snippet must be a non-empty string')
+  }
+  return {
+    sessionId: parseCompanionSessionId(record.sessionId),
+    title: record.title,
+    summary: record.summary,
+    ...(record.workspace === undefined ? {} : { workspace: record.workspace }),
+    ...(record.live === undefined ? {} : { live: record.live }),
+    ...(record.snippet === undefined ? {} : { snippet: record.snippet }),
   }
 }
 

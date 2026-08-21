@@ -20,6 +20,8 @@ export interface CompanionSessionSummary {
   transcript?: readonly string[]
   /** Structured conversation blocks for the Mobile renderer. */
   blocks?: readonly MobileContentBlock[]
+  /** Desktop content-search excerpt when this row is a search hit. */
+  snippet?: string
 }
 
 /** Grouped Mobile list: named Workspace/project buckets plus Ungrouped. */
@@ -75,6 +77,56 @@ export function pageCompanionHistory(
   const visible = sessions.slice(start, start + ceiling)
   const remaining = Math.max(0, sessions.length - start - visible.length)
   return { visible, spilled: remaining }
+}
+
+/**
+ * Reveal successive history pages without dropping earlier rows.
+ * @param sessions - ordered history.
+ * @param pages - number of ceilings already revealed, starting at 1.
+ * @param ceiling - maximum rows added by one reveal.
+ * @returns visible prefix and the count still hidden.
+ */
+export function revealCompanionHistory(
+  sessions: readonly CompanionSessionSummary[],
+  pages: number,
+  ceiling: number = COMPANION_HISTORY_PAGE_SIZE,
+): { visible: readonly CompanionSessionSummary[]; spilled: number } {
+  if (!Number.isSafeInteger(pages) || pages < 1) throw new TypeError('Companion history reveal pages must be a positive integer')
+  if (!Number.isSafeInteger(ceiling) || ceiling <= 0) throw new TypeError('Companion history ceiling must be a positive integer')
+  const visible = sessions.slice(0, pages * ceiling)
+  return { visible, spilled: Math.max(0, sessions.length - visible.length) }
+}
+
+/**
+ * Filter Session rows by title, summary, or Workspace.
+ * @param sessions - Desktop-confirmed rows.
+ * @param query - user search text.
+ * @returns matching rows, or the original list when the query is empty.
+ */
+export function filterCompanionSessions(
+  sessions: readonly CompanionSessionSummary[],
+  query: string,
+): readonly CompanionSessionSummary[] {
+  const needle = query.trim().toLowerCase()
+  if (needle === '') return sessions
+  return sessions.filter(session => (
+    session.title.toLowerCase().includes(needle)
+    || session.summary.toLowerCase().includes(needle)
+    || (session.workspace?.toLowerCase().includes(needle) ?? false)
+    || (session.project?.toLowerCase().includes(needle) ?? false)
+    || (session.snippet?.toLowerCase().includes(needle) ?? false)
+  ))
+}
+
+/**
+ * Whether a hidden Session still has an unsettled Desktop interaction.
+ * @param session - Desktop-confirmed row.
+ * @returns true when an approval or Ask User card is still open.
+ */
+export function companionSessionPending(session: CompanionSessionSummary): boolean {
+  return session.blocks?.some(block => (
+    (block.kind === 'approval' || block.kind === 'ask-user') && block.settled === undefined
+  )) ?? false
 }
 
 /**

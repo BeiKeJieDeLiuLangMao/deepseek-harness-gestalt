@@ -15,6 +15,7 @@ import type { PlatformAccountInstallation } from '@deepseek-ai/dsh-platform-acco
 import type { RemoteAccessTransport } from '@deepseek-ai/dsh-remote-access-client'
 import { parseCompanionPushToken, type RelayRouteId } from '@deepseek-ai/dsh-remote-protocol'
 import type { MobilePairingActions, MobilePairingSnapshot } from './personal-pairing-model.ts'
+import type { MobilePairingSessionStore } from './pairing-session-store.ts'
 
 /** Local push-token owner cleared on unpair; implemented by CompanionForegroundRuntime. */
 interface MobilePairingPushOwner {
@@ -105,6 +106,8 @@ export interface MobilePairingControllerOptions {
   companion?: MobilePairingPushOwner
   /** Optional retention sink receiving confirmed pairing key material for pairing-scoped consumers. */
   pairingKeys?: MobilePairingKeyRetention
+  /** Optional durable Mobile Relay grant restored after refresh or remount. */
+  sessionStore?: MobilePairingSessionStore
   schedule?: (task: () => void, delayMs: number) => ReturnType<typeof setTimeout>
   pollIntervalMs?: number
   now?: () => number
@@ -149,6 +152,7 @@ export class MobilePairingController implements MobilePairingActions {
     if (this.accountId !== accountId) this.resetAccountScope()
     this.accountId = accountId
     this.active = true
+    await this.restoreGrant(accountId)
   }
 
   async unpair(): Promise<void> {
@@ -159,6 +163,7 @@ export class MobilePairingController implements MobilePairingActions {
       await this.clearPushToken()
       await this.options.handshake.wipe?.()
       this.options.pairingKeys?.wipe()
+      if (this.accountId !== undefined) this.options.sessionStore?.clear(this.accountId)
       if (this.options.companion !== undefined) {
         await this.options.companion.releasePairing()
       }
@@ -172,11 +177,12 @@ export class MobilePairingController implements MobilePairingActions {
 
   async deactivate(): Promise<void> {
     this.active = false
-    this.resetAccountScope()
+    this.clearAttempt()
+    if (this.snapshot.status !== 'paired') this.snapshot = { status: 'ready' }
+    this.options.companion?.forgetConnection()
     const transaction = (async () => {
       const first = await Promise.allSettled([this.options.relay?.stop() ?? Promise.resolve(), this.serial])
       const final = await Promise.allSettled([this.options.relay?.stop() ?? Promise.resolve()])
-      this.resetAccountScope()
       throwRejected([...first, ...final], 'Mobile Personal Pairing deactivation failed')
     })()
     this.lifecycleBarrier = transaction.then(() => undefined, () => undefined)
@@ -312,6 +318,18 @@ export class MobilePairingController implements MobilePairingActions {
     }
   }
 
+  private async restoreGrant(accountId: PlatformAccountId): Promise<void> {
+    if (this.options.relay === undefined) return
+    const grant = this.options.sessionStore?.load(accountId)
+    if (grant === undefined) return
+    this.pairedRouteId = grant.routeId
+    await this.options.relay.configure(grant)
+    this.assertActiveAccount()
+    await this.options.relay.start()
+    this.assertActiveAccount()
+    this.publish({ status: 'paired' })
+  }
+
   private resetAccountScope(): void {
     this.clearAttempt()
     this.pairedRouteId = undefined
@@ -387,6 +405,7 @@ export class MobilePairingController implements MobilePairingActions {
               const grant = await this.options.handshake.openRelayAuthority(status.sealedRelayAuthority)
               this.assertActiveAccount()
               this.pairedRouteId = grant.routeId
+              this.options.sessionStore?.save(this.requireAccountId(), grant)
               await this.options.relay.configure(grant)
               this.assertActiveAccount()
               await this.options.relay.start()

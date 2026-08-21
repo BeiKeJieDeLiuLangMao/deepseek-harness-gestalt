@@ -5,7 +5,7 @@ export const MOBILE_TERMINAL_PREVIEW_LINES = 8
 
 /** One Desktop-confirmed content block projected for Mobile. */
 export type MobileContentBlock =
-  | { kind: 'markdown'; text: string }
+  | { kind: 'markdown'; text: string; role?: 'user' | 'assistant' }
   | { kind: 'code'; language: string; text: string }
   | { kind: 'image'; alt: string; src: string }
   | { kind: 'tool'; name: string; args: unknown; result?: unknown }
@@ -15,6 +15,9 @@ export type MobileContentBlock =
     summary: string
     interactionId?: string
     authorized?: readonly string[]
+    cwd?: string
+    diff?: string
+    terminal?: string
     settled?: { decision: string; persistent?: boolean }
   }
   | {

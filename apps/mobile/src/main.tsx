@@ -31,6 +31,7 @@ import {
   createDevelopmentCompanionCache,
   installDevelopmentCompanionClient,
 } from './development-keyless-companion.ts'
+import { createLocalStoragePairingSessionStore } from './pairing-session-store.ts'
 import { mobileSystemBrowser } from './system-browser.ts'
 import {
   createLoopbackPageFetch,
@@ -180,6 +181,7 @@ if (environment.environment === 'development' && import.meta.env.VITE_PERSONAL_P
     relay: companion,
     companion,
     pairingKeys: new PairingCompanionKeyVault(),
+    sessionStore: createLocalStoragePairingSessionStore(environment.identityNamespace),
     device: {
       name: navigator.userAgent.includes('Android') ? 'Android phone' : 'iPhone',
       platform: navigator.userAgent.includes('Android') ? 'android' : 'ios',

@@ -9,6 +9,7 @@ import {
 import {
   parseCompanionInteractionId,
   parseCompanionTranscriptEntryId,
+  REMOTE_PROTOCOL_LIMITS,
   type CompanionApprovalTranscriptEntry,
   type CompanionAskUserTranscriptEntry,
   type CompanionConfirmedResult,
@@ -82,6 +83,8 @@ export class DevelopmentKeylessCompanionAuthority {
     switch (operation.type) {
       case 'create-session':
         return [this.confirm(this.createSession(operation))]
+      case 'open-session':
+        return [this.confirm(operation.operationId), this.transcript(operation.sessionId)]
       case 'submit-prompt': {
         const confirmed = this.confirm(this.submitPrompt(operation))
         return [confirmed, this.transcript(operation.sessionId)]
@@ -90,6 +93,8 @@ export class DevelopmentKeylessCompanionAuthority {
         const confirmed = this.confirm(this.cancelPrompt(operation))
         return [confirmed, this.transcript(operation.sessionId)]
       }
+      case 'search-sessions':
+        return [this.confirm(operation.operationId), this.search(operation.query)]
       case 'query-operation-status': {
         const committed = this.committed.get(operation.operationId)
         return [{
@@ -263,6 +268,31 @@ export class DevelopmentKeylessCompanionAuthority {
     }
     this.committed.set(operationId, result)
     return { type: 'result', result }
+  }
+
+  private search(query: string): CompanionMessage {
+    const needle = query.trim().toLowerCase()
+    const sessions = [...this.sessions.values()]
+      .filter(session => (
+        session.title.toLowerCase().includes(needle)
+        || (session.workspace?.toLowerCase().includes(needle) ?? false)
+        || session.entries.some(entry => entry.type === 'text' && entry.text.toLowerCase().includes(needle))
+      ))
+      .slice(0, REMOTE_PROTOCOL_LIMITS.sessionSearchEntries)
+    return {
+      type: 'projection',
+      projection: {
+        type: 'session-search',
+        query,
+        sessions: sessions.map(session => ({
+          sessionId: session.sessionId,
+          title: session.title,
+          summary: session.title,
+          ...(session.workspace === undefined ? {} : { workspace: session.workspace }),
+          ...(session.streaming ? { live: true } : {}),
+        })),
+      },
+    }
   }
 
   private transcript(sessionId: CompanionSessionId): CompanionMessage {

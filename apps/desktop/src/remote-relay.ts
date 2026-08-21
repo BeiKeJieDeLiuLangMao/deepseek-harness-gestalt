@@ -13,10 +13,8 @@ import {
   type DesktopRelayLifecycle,
 } from '@deepseek-ai/dsh-remote-access-client/desktop-relay-lifecycle'
 import { NodeRelayEndpointSocket } from '@deepseek-ai/dsh-remote-access-client/node-relay-socket'
-import {
-  DEVELOPMENT_COMPANION_STREAM_DELAY_MS,
-  DevelopmentKeylessCompanionAuthority,
-} from './development-keyless-companion.ts'
+import { HostCompanionAuthority } from './host-companion-authority.ts'
+import type { DesktopHostRpc } from './host-rpc.ts'
 import { isLoopbackListenUrl } from './loopback-listen-trust.ts'
 
 const CRYPTO_GATE = 'Personal Pairing requires an independently reviewed handshake and Relay crypto provider.'
@@ -36,6 +34,16 @@ export interface DesktopRemoteRelayConfig {
   reconnectDelayMs: number
   inboundMaxBytes: number
   inboundMaxMessages: number
+}
+
+/** Desktop Relay lifecycle plus the Host Session binding used by Companion. */
+export type DesktopRemoteRelay = DesktopRelayLifecycle & {
+  /**
+   * Bind the current Web Host loopback RPC after spawn or respawn.
+   * @param rpc - Node HTTP client for that Host URL.
+   * @param options - Web Host cwd used to adopt a named Workspace.
+   */
+  bindHost(rpc: DesktopHostRpc, options?: { cwd?: string }): void
 }
 
 /** Product composition dependencies for a Desktop Relay lifecycle. */
@@ -74,10 +82,11 @@ export function loadDesktopRemoteRelayConfig(
  * @param options - Platform environment, process configuration, and optional socket adapter.
  * @returns Desktop-owned Relay lifecycle injected into Settings.
  */
-export function createDesktopRemoteRelay(options: DesktopRemoteRelayOptions): DesktopRelayLifecycle {
+export function createDesktopRemoteRelay(options: DesktopRemoteRelayOptions): DesktopRemoteRelay {
   if (options.environment.environment !== 'development'
     || options.source.DSH_PERSONAL_PAIRING_KEYLESS !== '1') {
-    return new FailClosedDesktopRelayLifecycle(CRYPTO_GATE)
+    const lifecycle = new FailClosedDesktopRelayLifecycle(CRYPTO_GATE)
+    return Object.assign(lifecycle, { bindHost(_rpc?: DesktopHostRpc, _options?: { cwd?: string }) {} })
   }
   const config = loadDesktopRemoteRelayConfig(options.source)
   const connect = options.connect ?? (async (signal: AbortSignal) => await NodeRelayEndpointSocket.connect(
@@ -87,14 +96,13 @@ export function createDesktopRemoteRelay(options: DesktopRemoteRelayOptions): De
     isLoopbackListenUrl(config.url) ? { rejectUnauthorized: false } : undefined,
   ))
   let lastSourceAttachmentId = DEVELOPMENT_KEYLESS_MOBILE_ATTACHMENT_ID
-  const relay: { lifecycle?: DesktopRelayLifecycle } = {}
-  const authority = new DevelopmentKeylessCompanionAuthority({
-    streamDelayMs: DEVELOPMENT_COMPANION_STREAM_DELAY_MS,
+  const relay: { lifecycle?: DesktopRelayEndpointLifecycle } = {}
+  const authority = new HostCompanionAuthority({
     emit: async (frames) => {
-      const lifecycle = relay.lifecycle
-      if (lifecycle === undefined) return
+      const current = relay.lifecycle
+      if (current === undefined) return
       for (const frame of frames) {
-        await ignoreRemoteOffline(lifecycle.sendCiphertext(lastSourceAttachmentId, frame))
+        await ignoreRemoteOffline(current.sendCiphertext(lastSourceAttachmentId, frame))
       }
     },
   })
@@ -115,7 +123,9 @@ export function createDesktopRemoteRelay(options: DesktopRemoteRelayOptions): De
     },
   })
   relay.lifecycle = lifecycle
-  return lifecycle
+  return Object.assign(lifecycle, {
+    bindHost(rpc: DesktopHostRpc, options?: { cwd?: string }) { authority.bindHost(rpc, options) },
+  })
 }
 
 async function ignoreRemoteOffline(operation: Promise<void>): Promise<void> {

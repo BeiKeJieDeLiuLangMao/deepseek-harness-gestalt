@@ -15,8 +15,13 @@ import type { CompanionSessionSummary } from './companion-history.ts'
 import { developmentCompanionClient } from './development-keyless-companion.ts'
 import { MobileBrowse } from './MobileBrowse.tsx'
 import { MobilePairing, type MobilePairingActions } from './MobilePairing.tsx'
+import type { MobilePairingSnapshot } from './personal-pairing-model.ts'
 
 const EMPTY_SESSIONS: readonly CompanionSessionSummary[] = []
+const EMPTY_SEARCH = { query: '', status: 'idle' as const, hits: EMPTY_SESSIONS }
+
+/** Signed-in Mobile surface after Platform Account login. */
+type SignedInScreen = 'home' | 'account' | 'pairing'
 
 /** Mobile Account page props. */
 export interface MobileAccountProps {
@@ -37,11 +42,20 @@ export function MobileAccount({ installation, pairing }: MobileAccountProps): Re
     listener => companion?.subscribe(listener) ?? (() => {}),
     () => companion?.getState(),
   )
+  const pairingSnapshot = useSyncExternalStore(
+    listener => pairing?.subscribe(listener) ?? (() => {}),
+    () => pairing?.getSnapshot(),
+  )
   const [accepted, setAccepted] = useState(false)
+  const [screen, setScreen] = useState<SignedInScreen>('home')
   const companionClient = developmentCompanionClient()
   const sessions = useSyncExternalStore(
     listener => companionClient?.sessions().subscribe(listener) ?? (() => {}),
     () => companionClient?.sessions().getSnapshot() ?? EMPTY_SESSIONS,
+  )
+  const search = useSyncExternalStore(
+    listener => companionClient?.sessions().subscribe(listener) ?? (() => {}),
+    () => companionClient?.sessions().getSearchSnapshot() ?? EMPTY_SEARCH,
   )
 
   useEffect(() => { void installation.load() }, [installation])
@@ -59,131 +73,239 @@ export function MobileAccount({ installation, pairing }: MobileAccountProps): Re
     void poll()
     return () => { stopped = true }
   }, [installation, snapshot.status])
+  useEffect(() => {
+    if (snapshot.status !== 'signed-in' || pairing === undefined) return
+    void pairing.activate()
+    return () => { void pairing.deactivate() }
+  }, [pairing, snapshot.status])
+  useEffect(() => {
+    if (pairingSnapshot?.status === 'paired') setScreen(current => current === 'pairing' ? 'home' : current)
+  }, [pairingSnapshot?.status])
 
-  const signedIn = snapshot.status === 'signed-in' && snapshot.account !== undefined
-  return (
-    <main className={css.page} data-mobile-platform-account={snapshot.status}>
-      <header className={css.header}>
-        <div className={css.mark} aria-hidden="true">深</div>
-        <div>
-          <p className={css.product}>DeepSeek Gestalt</p>
-          <h1>{signedIn ? 'Platform Account' : '连接你的 Platform Account'}</h1>
-        </div>
-      </header>
+  const account = snapshot.status === 'signed-in' ? snapshot.account : undefined
+  const signedIn = account !== undefined
+  const signOut = (): void => {
+    setAccepted(false)
+    setScreen('home')
+    void installation.signOut()
+  }
 
-      {signedIn ? (
-        <section className={css.accountCard} aria-label="当前安装账号">
-          <img src={snapshot.account?.avatarUrl} alt="" />
-          <div className={css.identity}>
-            <strong>@{snapshot.account?.githubLogin}</strong>
-            <span>GitHub ID {snapshot.account?.githubId}</span>
+  if (!signedIn) {
+    return (
+      <main className={css.page} data-mobile-platform-account={snapshot.status}>
+        <header className={css.header}>
+          <div className={css.mark} aria-hidden="true">深</div>
+          <div>
+            <p className={css.product}>DeepSeek Gestalt</p>
+            <h1>连接你的 Platform Account</h1>
           </div>
-          <span className={css.status}>当前安装</span>
-          <button type="button" className={css.secondary} onClick={() => { setAccepted(false); void installation.signOut() }}>
-            退出此安装
-          </button>
+        </header>
+        <section className={css.notice} aria-labelledby="privacy-title">
+          <div className={css.noticeHead}>
+            <span>授权前必读</span>
+            <h2 id="privacy-title">隐私说明 / Privacy notice</h2>
+          </div>
+          <div className={css.languages}>
+            <p lang="zh-CN">{ACCOUNT_PRIVACY_NOTICE.zh}</p>
+            <p lang="en">{ACCOUNT_PRIVACY_NOTICE.en}</p>
+          </div>
+          <dl className={css.retention}>
+            <div><dt>GitHub 权限</dt><dd>公开身份 · 无 OAuth scope</dd></div>
+            <div><dt>保留期</dt><dd>IP ≤ 7 天 · 安全事件 ≤ 30 天</dd></div>
+            <div><dt>账号删除</dt><dd>首个版本暂不提供</dd></div>
+          </dl>
         </section>
-      ) : (
-        <>
-          <section className={css.notice} aria-labelledby="privacy-title">
-            <div className={css.noticeHead}>
-              <span>授权前必读</span>
-              <h2 id="privacy-title">隐私说明 / Privacy notice</h2>
-            </div>
-            <div className={css.languages}>
-              <p lang="zh-CN">{ACCOUNT_PRIVACY_NOTICE.zh}</p>
-              <p lang="en">{ACCOUNT_PRIVACY_NOTICE.en}</p>
-            </div>
-            <dl className={css.retention}>
-              <div><dt>GitHub 权限</dt><dd>公开身份 · 无 OAuth scope</dd></div>
-              <div><dt>保留期</dt><dd>IP ≤ 7 天 · 安全事件 ≤ 30 天</dd></div>
-              <div><dt>账号删除</dt><dd>首个版本暂不提供</dd></div>
-            </dl>
-          </section>
-          <label className={css.consent}>
-            <input
-              type="checkbox"
-              checked={accepted}
-              onChange={(event) => {
-                setAccepted(event.target.checked)
-                if (event.target.checked) {
-                  installation.acceptPrivacy()
-                  void installation.prepareLogin()
-                }
-              }}
-            />
-            <span>我已阅读中英文隐私说明</span>
-          </label>
-          <button
-            type="button"
-            className={css.primary}
-            disabled={!accepted || snapshot.status !== 'ready'}
-            onClick={() => { installation.openLogin() }}
-          >
-            {snapshot.status === 'preparing'
-              ? '准备安全授权…'
-              : snapshot.status === 'polling'
-                ? '等待 GitHub 授权…'
-                : '使用 GitHub 继续'}
-          </button>
-        </>
+        <label className={css.consent}>
+          <input
+            type="checkbox"
+            checked={accepted}
+            onChange={(event) => {
+              setAccepted(event.target.checked)
+              if (event.target.checked) {
+                installation.acceptPrivacy()
+                void installation.prepareLogin()
+              }
+            }}
+          />
+          <span>我已阅读中英文隐私说明</span>
+        </label>
+        <button
+          type="button"
+          className={css.primary}
+          disabled={!accepted || snapshot.status !== 'ready'}
+          onClick={() => { installation.openLogin() }}
+        >
+          {snapshot.status === 'preparing'
+            ? '准备安全授权…'
+            : snapshot.status === 'polling'
+              ? '等待 GitHub 授权…'
+              : '使用 GitHub 继续'}
+        </button>
+        {snapshot.error !== undefined && <p className={css.error} role="alert">{snapshot.error}</p>}
+        <footer>此账号仅识别你的安装；它不会授予任何 Desktop 访问权限。</footer>
+      </main>
+    )
+  }
+
+  if (screen === 'account') {
+    return (
+      <main className={css.companion} data-mobile-platform-account={snapshot.status}>
+        <AccountView
+          login={account.githubLogin}
+          githubId={account.githubId}
+          avatarUrl={account.avatarUrl}
+          pairing={pairingSnapshot}
+          onBack={() => { setScreen('home') }}
+          onSignOut={signOut}
+          {...(pairing === undefined || pairingSnapshot?.status !== 'paired'
+            ? {}
+            : { onUnpair: () => { void pairing.unpair() } })}
+          {...(companionClient === undefined
+            ? {}
+            : { onClearCache: () => { void companionClient.clearOpenedCache() } })}
+        />
+      </main>
+    )
+  }
+
+  if (screen === 'pairing' && pairing !== undefined) {
+    return (
+      <main className={css.companion} data-mobile-platform-account={snapshot.status}>
+        <MobilePairing
+          actions={pairing}
+          manageLifecycle={false}
+          onBack={() => { setScreen('home') }}
+        />
+      </main>
+    )
+  }
+
+  return (
+    <main className={css.companion} data-mobile-platform-account={snapshot.status}>
+      {pairingSnapshot?.status === 'unavailable' && (
+        <p className={css.banner} role="alert">{pairingSnapshot.error}</p>
       )}
       {snapshot.error !== undefined && <p className={css.error} role="alert">{snapshot.error}</p>}
-      {signedIn && pairing !== undefined && <MobilePairing actions={pairing} />}
-      {signedIn && (
-        <MobileBrowse
-          desktopName="Paired Desktop"
-          connection={companionState !== undefined && companionMayMutate(companionState) ? 'online' : 'offline'}
-          sessions={sessions}
-          {...(companionState === undefined ? {} : { companionState })}
-          {...(companionClient !== undefined
-            ? {
-              onCreate: (input: { workspace?: string }) => {
-                if (companionState === undefined || !companionMayMutate(companionState)) return
-                const title = input.workspace === undefined ? 'Ungrouped Session' : 'Workspace Session'
-                ignoreUnconfirmedCompanion(companionClient.createSession({
-                  operationId: crypto.randomUUID(),
-                  sessionId: crypto.randomUUID(),
-                  title,
-                  ...(input.workspace === undefined ? {} : { workspace: input.workspace }),
-                }))
-              },
-              onSubmit: (sessionId: string, text: string) => {
-                if (companionState === undefined || !companionMayMutate(companionState)) return
-                ignoreUnconfirmedCompanion(companionClient.submitPrompt({
-                  operationId: crypto.randomUUID(),
-                  sessionId,
-                  text,
-                }))
-              },
-              onCancel: (sessionId: string) => {
-                if (companionState === undefined || !companionMayMutate(companionState)) return
-                ignoreUnconfirmedCompanion(companionClient.cancelPrompt({
-                  operationId: crypto.randomUUID(),
-                  sessionId,
-                }))
-              },
-              onAttach: (sessionId: string, file: File) => {
-                if (companionState === undefined || !companionMayMutate(companionState)) return
-                ignoreUnconfirmedCompanion(offerDevelopmentAttachment(companionClient, sessionId, file))
-              },
-              onSettled: (sessionId: string, interaction: CompanionInteraction) => {
-                if (companionState === undefined || !companionMayMutate(companionState)) return
-                ignoreUnconfirmedCompanion(settleDevelopmentInteraction(companionClient, sessionId, interaction))
-              },
-            }
-            : {})}
-        />
-      )}
-      <footer>此账号仅识别你的安装；它不会授予任何 Desktop 访问权限。</footer>
+      <MobileBrowse
+        desktopName="Paired Desktop"
+        connection={homeConnection(pairingSnapshot, companionState !== undefined && companionMayMutate(companionState))}
+        sessions={sessions}
+        accountLogin={account.githubLogin}
+        accountAvatarUrl={account.avatarUrl}
+        onOpenAccount={() => { setScreen('account') }}
+        {...(companion === undefined ? {} : { onRecover: () => { companion.synchronize() } })}
+        {...(pairing === undefined || pairingSnapshot?.status === 'paired' || pairingSnapshot?.status === 'unavailable'
+          ? {}
+          : { onScanPairing: () => { setScreen('pairing') } })}
+        {...(companionState === undefined ? {} : { companionState })}
+        {...(companionClient !== undefined
+          ? {
+            onOpenSession: (sessionId: string) => {
+              companionClient.sessions().clearError()
+              ignoreUnconfirmedCompanion(companionClient.openSession(sessionId), companionClient)
+            },
+            onSearch: (query: string) => {
+              ignoreUnconfirmedCompanion(companionClient.searchSessions(query), companionClient)
+            },
+            searchHits: search.hits,
+            searchStatus: search.status,
+            ...(search.error === undefined ? {} : { searchError: search.error }),
+            onCreate: (input: { workspace?: string }) => {
+              if (companionState === undefined || !companionMayMutate(companionState)) return
+              const title = input.workspace === undefined ? 'Ungrouped Session' : 'Workspace Session'
+              ignoreUnconfirmedCompanion(companionClient.createSession({
+                operationId: crypto.randomUUID(),
+                sessionId: crypto.randomUUID(),
+                title,
+                ...(input.workspace === undefined ? {} : { workspace: input.workspace }),
+              }), companionClient)
+            },
+            onSubmit: (sessionId: string, text: string) => {
+              if (companionState === undefined || !companionMayMutate(companionState)) return
+              ignoreUnconfirmedCompanion(companionClient.submitPrompt({
+                operationId: crypto.randomUUID(),
+                sessionId,
+                text,
+              }), companionClient)
+            },
+            onCancel: (sessionId: string) => {
+              if (companionState === undefined || !companionMayMutate(companionState)) return
+              ignoreUnconfirmedCompanion(companionClient.cancelPrompt({
+                operationId: crypto.randomUUID(),
+                sessionId,
+              }), companionClient)
+            },
+            onAttach: (sessionId: string, file: File) => {
+              if (companionState === undefined || !companionMayMutate(companionState)) return
+              ignoreUnconfirmedCompanion(offerDevelopmentAttachment(companionClient, sessionId, file), companionClient)
+            },
+            onSettled: (sessionId: string, interaction: CompanionInteraction) => {
+              if (companionState === undefined || !companionMayMutate(companionState)) return
+              ignoreUnconfirmedCompanion(settleDevelopmentInteraction(companionClient, sessionId, interaction), companionClient)
+            },
+          }
+          : {})}
+      />
     </main>
   )
 }
 
-function ignoreUnconfirmedCompanion(operation: Promise<unknown>): void {
+function homeConnection(
+  pairing: MobilePairingSnapshot | undefined,
+  online: boolean,
+): 'unpaired' | 'online' | 'offline' {
+  if (pairing?.status !== 'paired') return 'unpaired'
+  return online ? 'online' : 'offline'
+}
+
+function AccountView({
+  login,
+  githubId,
+  avatarUrl,
+  pairing,
+  onBack,
+  onSignOut,
+  onUnpair,
+  onClearCache,
+}: {
+  login: string
+  githubId: number
+  avatarUrl: string
+  pairing: MobilePairingSnapshot | undefined
+  onBack: () => void
+  onSignOut: () => void
+  onUnpair?: () => void
+  onClearCache?: () => void
+}): ReactNode {
+  return (
+    <section className={css.accountPage} aria-label="当前安装账号">
+      <header>
+        <button type="button" className={css.sheetClose} onClick={onBack}>返回</button>
+        <h1>账号</h1>
+      </header>
+      <img src={avatarUrl} alt="" />
+      <div className={css.identity}>
+        <strong>@{login}</strong>
+        <span>GitHub ID {githubId}</span>
+      </div>
+      <span className={css.status}>当前安装</span>
+      {onUnpair !== undefined && pairing?.status === 'paired' && (
+        <button type="button" className={css.secondary} onClick={onUnpair}>解除配对</button>
+      )}
+      {onClearCache !== undefined && (
+        <button type="button" className={css.secondary} onClick={onClearCache}>清除此 Desktop 缓存</button>
+      )}
+      <button type="button" className={css.secondary} onClick={onSignOut}>退出登录</button>
+    </section>
+  )
+}
+
+function ignoreUnconfirmedCompanion(
+  operation: Promise<unknown>,
+  client?: NonNullable<ReturnType<typeof developmentCompanionClient>>,
+): void {
   void operation.catch((error: unknown) => {
-    // Unconfirmed or offline mutations must not invent Session rows.
-    void error
+    client?.sessions().applyError(error instanceof Error ? error.message : 'Desktop 未确认这次操作')
   })
 }
 

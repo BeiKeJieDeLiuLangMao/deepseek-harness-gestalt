@@ -29,6 +29,8 @@ export interface RunningWebHost {
   readonly stop: () => Promise<void>
   /** Loopback URL including the assigned port. */
   readonly url: string
+  /** Process cwd the Host Session store keys against. */
+  readonly cwd: string
 }
 
 /**
@@ -87,7 +89,7 @@ export function spawnWebHost(
       if (url === undefined || settled) return
       settled = true
       clearTimeout(timer)
-      resolve({ child, exited, stop, url })
+      resolve({ child, exited, stop, url, cwd: command.cwd })
     }
     child.stdout.on('data', onData)
     child.stderr.on('data', onData)

@@ -18,6 +18,12 @@ export const REMOTE_PROTOCOL_LIMITS = {
   transcriptPageBytes: 48 * 1_024,
   /** Maximum transcript entries in one approved Companion projection. */
   transcriptPageEntries: 50,
+  /** Maximum Session rows in one Desktop-authoritative Companion catalog. */
+  sessionCatalogEntries: 256,
+  /** Maximum Session rows in one Desktop-authoritative Companion search page. */
+  sessionSearchEntries: 20,
+  /** Maximum UTF-16 code units in one Companion search-sessions query. */
+  sessionSearchQueryCharacters: 500,
   /** Maximum ciphertext bytes retained by the Platform for one Companion attachment blob. */
   attachmentBlobBytes: 100 * 1_024 * 1_024,
   /** Default lifetime of one Companion attachment capability and its retained blob. */

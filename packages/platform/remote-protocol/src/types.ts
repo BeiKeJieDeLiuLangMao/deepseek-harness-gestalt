@@ -54,6 +54,13 @@ export interface CompanionCreateSessionOperation {
   workspace?: string
 }
 
+/** Mobile request that Desktop project one Session transcript for the open conversation. */
+export interface CompanionOpenSessionOperation {
+  type: 'open-session'
+  operationId: CompanionOperationId
+  sessionId: CompanionSessionId
+}
+
 /** Approved prompt submission to one opaque Companion Session target. */
 export interface CompanionSubmitPromptOperation {
   type: 'submit-prompt'
@@ -67,6 +74,13 @@ export interface CompanionCancelPromptOperation {
   type: 'cancel-prompt'
   operationId: CompanionOperationId
   sessionId: CompanionSessionId
+}
+
+/** Mobile request that Desktop search Host Session titles, workspaces, and summaries. */
+export interface CompanionSearchSessionsOperation {
+  type: 'search-sessions'
+  operationId: CompanionOperationId
+  query: string
 }
 
 /** Bounded Mobile control message pointing Desktop at one Platform-retained encrypted blob. */
@@ -128,8 +142,10 @@ export interface CompanionAnswerAskUserOperation {
 /** Operations in the implemented Companion codec slices. */
 export type CompanionOperation =
   | CompanionCreateSessionOperation
+  | CompanionOpenSessionOperation
   | CompanionSubmitPromptOperation
   | CompanionCancelPromptOperation
+  | CompanionSearchSessionsOperation
   | CompanionOfferAttachmentOperation
   | CompanionQueryOperationStatusOperation
   | CompanionSettleApprovalOperation
@@ -150,6 +166,16 @@ export interface CompanionAttachmentRejectedResult {
   reason: CompanionAttachmentRejectionReason
 }
 
+/** Stable Host-side rejection of one Companion mutation or search. */
+export type CompanionRejectedReason = 'host-unavailable' | 'host-rejected'
+
+/** Desktop rejection when the Paired Desktop Host cannot accept the operation. */
+export interface CompanionRejectedResult {
+  type: 'rejected'
+  operationId: CompanionOperationId
+  reason: CompanionRejectedReason
+}
+
 /** Reconnect answer returning the original committed result for one operation id. */
 export interface CompanionCommittedStatusResult {
   type: 'status'
@@ -168,6 +194,7 @@ export interface CompanionAbsentStatusResult {
 export type CompanionResult =
   | CompanionConfirmedResult
   | CompanionAttachmentRejectedResult
+  | CompanionRejectedResult
   | CompanionCommittedStatusResult
   | CompanionAbsentStatusResult
 
@@ -231,8 +258,34 @@ export interface CompanionTranscriptPageProjection {
   streaming?: boolean
 }
 
+/** One Desktop-owned Session row in the first Companion catalog. */
+export interface CompanionSessionCatalogRow {
+  sessionId: CompanionSessionId
+  title: string
+  summary: string
+  workspace?: string
+  live?: boolean
+  snippet?: string
+}
+
+/** Desktop-authoritative Session list projected after sync or Host mutation. */
+export interface CompanionSessionCatalogProjection {
+  type: 'session-catalog'
+  sessions: readonly CompanionSessionCatalogRow[]
+}
+
+/** Desktop-authoritative search hits for one Mobile query. */
+export interface CompanionSessionSearchProjection {
+  type: 'session-search'
+  query: string
+  sessions: readonly CompanionSessionCatalogRow[]
+}
+
 /** Projections in the first implemented Companion codec slice. */
-export type CompanionProjection = CompanionTranscriptPageProjection
+export type CompanionProjection =
+  | CompanionTranscriptPageProjection
+  | CompanionSessionCatalogProjection
+  | CompanionSessionSearchProjection
 
 /** Version-tagged encrypted application plaintext before endpoint encryption. */
 export type CompanionMessage =

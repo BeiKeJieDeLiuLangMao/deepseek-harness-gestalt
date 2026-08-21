@@ -2,7 +2,7 @@
  * DeepSeek Gestalt Desktop Host: one window, one Web Host child, GitHub updates.
  * @module @deepseek-ai/dsh-desktop/main
  */
-import { appendFileSync } from 'node:fs'
+import { appendFileSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
@@ -23,7 +23,7 @@ import { PlatformAccountHttpTransport } from '@deepseek-ai/dsh-platform-account-
 import { RemoteAccessHttpTransport } from '@deepseek-ai/dsh-remote-access-client'
 import type { DesktopRelayLifecycle } from '@deepseek-ai/dsh-remote-access-client/desktop-relay-lifecycle'
 import type { SelectedPlatformEnvironment } from '@deepseek-ai/dsh-platform-account'
-import { ensureLaunchDirectory } from './launch-directory.ts'
+import { resolveWebHostCwd } from './launch-directory.ts'
 import { isElectronExecutable, resolveDesktopRuntime } from './runtime-paths.ts'
 import { planHostExit, shouldPreventQuit, startWithOneRetry } from './host-exit.ts'
 import { classifyNavigation } from './navigation-policy.ts'
@@ -50,7 +50,8 @@ import {
 import { DesktopPairingKeyVault } from './pairing-keys.ts'
 import { disposeDesktopOwners } from './shutdown.ts'
 import { startDesktopBrowserRuntime, type DesktopBrowserRuntime } from './browser-runtime.ts'
-import { createDesktopRemoteRelay } from './remote-relay.ts'
+import { createDesktopHostRpc } from './host-rpc.ts'
+import { createDesktopRemoteRelay, type DesktopRemoteRelay } from './remote-relay.ts'
 import { createLoopbackListenFetch, isLoopbackListenUrl, openDesktopAuthorizationUrl } from './loopback-listen-trust.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -79,6 +80,7 @@ let stopPairingEvents: (() => void) | undefined
 let accountSignedIn = false
 const hostStartController = new AbortController()
 let pendingHost: Promise<RunningWebHost> | undefined
+let remoteRelay: DesktopRemoteRelay | undefined
 
 smokeLog('main loaded')
 const gotLock = app.requestSingleInstanceLock()
@@ -121,7 +123,7 @@ async function boot(): Promise<void> {
     account = new UnavailableDesktopAccountController('Platform environment is not configured')
     pairing = new UnavailableDesktopPairingController('Platform environment is not configured')
   } else {
-    const relay = createDesktopRemoteRelay({ environment: accountEnvironment, source: process.env })
+    remoteRelay = createDesktopRemoteRelay({ environment: accountEnvironment, source: process.env })
     account = createDesktopAccount(accountEnvironment)
     let accountReady = true
     try {
@@ -138,7 +140,7 @@ async function boot(): Promise<void> {
       })
     }
     if (accountReady) smokeLog('account ready')
-    pairing = createDesktopPairing(accountEnvironment, account, relay)
+    pairing = createDesktopPairing(accountEnvironment, account, remoteRelay)
     accountSignedIn = account.getSnapshot().status === 'signed-in'
     if (accountSignedIn) {
       await pairing.start().catch((error: unknown) => {
@@ -159,6 +161,7 @@ async function boot(): Promise<void> {
       )
     host = started.value
     observeHostExit(host)
+    remoteRelay?.bindHost(createDesktopHostRpc(host.url), { cwd: host.cwd })
     smokeLog('host ' + host.url + ' pid ' + String(host.child.pid))
     await window.loadURL(host.url)
     if (process.env.DSH_DESKTOP_SMOKE === '1') {
@@ -297,10 +300,16 @@ async function startHost(): Promise<RunningWebHost> {
     throw new Error('Desktop Host needs a real Node executable; set DSH_NODE or run via pnpm gestalt:dev')
   }
   browserRuntime ??= await startDesktopBrowserRuntime(app.getPath('userData'))
+  const cwd = resolveWebHostCwd({
+    packaged: app.isPackaged,
+    ...(paths.workspaceRoot === undefined ? {} : { workspaceRoot: paths.workspaceRoot }),
+    source: process.env,
+  })
+  mkdirSync(cwd, { recursive: true })
   const pending = spawnWebHost({
     node: paths.node,
     args: paths.args,
-    cwd: app.isPackaged ? ensureLaunchDirectory() : (paths.workspaceRoot ?? ensureLaunchDirectory()),
+    cwd,
     env: {
       DSH_DESKTOP: '1',
       DSH_ELECTRON_BROWSER_ORIGIN: browserRuntime.origin,
@@ -330,6 +339,7 @@ async function onHostExit(exited: RunningWebHost): Promise<void> {
     try {
       host = await startHost()
       observeHostExit(host)
+      remoteRelay?.bindHost(createDesktopHostRpc(host.url), { cwd: host.cwd })
       await window.loadURL(host.url)
     } catch (error) {
       await showError(window, error)

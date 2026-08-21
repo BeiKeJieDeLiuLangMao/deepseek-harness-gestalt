@@ -7,7 +7,7 @@
 
   背景:
     假如 Desktop 与 Mobile 已配对且 Remote Online
-    而且 Desktop 开发权威确认 create-session、submit-prompt、cancel-prompt、query-operation-status
+    而且 Desktop 通过 Host Session 确认 create-session、open-session、submit-prompt、cancel-prompt、query-operation-status
 
   @live
   场景: 新建 Ungrouped Session 仅在 Desktop 确认后出现
@@ -29,9 +29,9 @@
     假如 已打开一个 Desktop 确认的 Ungrouped Session
     当 Mobile 提交提示 "hello from Android via real Platform relay"
     那么 对话出现用户原文
-    而且 对话随后出现 "Desktop accepted: hello from Android via real Platform relay"
+    而且 对话随后出现 Host Session 的助手原文
     而且 该投影来自 Relay 转发的 Encrypted Companion transcript-page
-    # 注意: 开发权威延迟 echo，不是 Host Session 或模型流式回复
+    # 注意: 配对通道仍是开发无密钥 cipher；投影内容来自 Paired Desktop Host Session
 
   @live
   场景: 流式输出期间取消提示
@@ -40,6 +40,15 @@
     那么 Mobile 发送 cancel-prompt
     而且 Desktop 确认后投影 cancelled 并停止流式
     而且 取消按钮仅在 streaming 为真时可见
+
+  @live
+  场景: 搜索聊天记录走 Desktop Host
+    假如 Desktop Host 已有标题或摘要含 "hello" 的 Session
+    当 Mobile 在搜索框输入 hello
+    那么 Mobile 发送 search-sessions
+    而且 列表只展示 Desktop 确认的 session-search 命中
+    而且 命中行展示 Host snippet 或摘要
+    而且 打开命中后对话来自 open-session 的 Host history
 
   @live
   场景: 离线时拒绝发送提示

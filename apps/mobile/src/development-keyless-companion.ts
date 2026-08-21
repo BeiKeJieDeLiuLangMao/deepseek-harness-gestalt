@@ -15,6 +15,7 @@ import {
   type CompanionMessage,
   type CompanionOperation,
   type CompanionResult,
+  type CompanionSessionCatalogRow,
   type CompanionTranscriptEntry,
 } from '@deepseek-ai/dsh-remote-protocol'
 import { companionRuntime } from './companion-push.ts'
@@ -36,13 +37,29 @@ import type { MobileContentBlock } from './mobile-content.ts'
 
 const OPERATION_TIMEOUT_MS = 15_000
 const DEVELOPMENT_CACHE_DESKTOP_ID = parseCompanionDesktopId('desktop-development-keyless')
+let installedCache: CompanionCache | undefined
 
 /** Placeholder `src` for Desktop-projected image metadata that carries no Relay bytes. */
 export const COMPANION_PROJECTED_IMAGE_SRC = 'data:image/gif;base64,R0lGODlhAQABAAAAACw='
 
+/** Desktop-authoritative search page owned by the development Companion client. */
+export interface CompanionSearchSnapshot {
+  /** Last query sent to Desktop. */
+  query: string
+  /** Host search progress. */
+  status: 'idle' | 'loading' | 'ready' | 'error'
+  /** Desktop-confirmed hits for the last ready query. */
+  hits: readonly CompanionSessionSummary[]
+  /** Last Host or transport failure, when present. */
+  error?: string
+}
+
+const EMPTY_SEARCH: CompanionSearchSnapshot = { query: '', status: 'idle', hits: [] }
+
 /** Desktop-confirmed Session list owned by the development Companion client. */
 export class DevelopmentCompanionSessionStore {
   private sessions: readonly CompanionSessionSummary[] = []
+  private search: CompanionSearchSnapshot = EMPTY_SEARCH
   private readonly committed = new Set<string>()
   private readonly listeners = new Set<() => void>()
 
@@ -61,6 +78,11 @@ export class DevelopmentCompanionSessionStore {
     return this.sessions
   }
 
+  /** @returns current Desktop-authoritative search page. */
+  getSearchSnapshot(): CompanionSearchSnapshot {
+    return this.search
+  }
+
   /**
    * Replace an empty list with cached Desktop-confirmed rows.
    * @param sessions - opened metadata restored from Companion Cache.
@@ -68,6 +90,13 @@ export class DevelopmentCompanionSessionStore {
   hydrate(sessions: readonly CompanionSessionSummary[]): void {
     if (this.sessions.length > 0 || sessions.length === 0) return
     this.sessions = sessions
+    this.emit()
+  }
+
+  /** Drop every Desktop-confirmed row after the operator clears this Desktop cache. */
+  reset(): void {
+    this.sessions = []
+    this.search = EMPTY_SEARCH
     this.emit()
   }
 
@@ -93,6 +122,89 @@ export class DevelopmentCompanionSessionStore {
   }
 
   /**
+   * Replace the list with Desktop-authoritative catalog rows and keep local transcripts.
+   * @param rows - Host Session catalog projected by Desktop.
+   */
+  applyCatalog(rows: readonly CompanionSessionCatalogRow[]): void {
+    const previous = new Map(this.sessions.map(session => [session.id, session]))
+    this.sessions = rows.map((row) => {
+      const existing = previous.get(row.sessionId)
+      return {
+        id: row.sessionId,
+        title: row.title,
+        summary: existing?.summary ?? row.summary,
+        ...(row.workspace === undefined ? {} : { workspace: row.workspace }),
+        ...(row.live === true ? { live: true } : {}),
+        ...(existing?.transcript === undefined ? {} : { transcript: existing.transcript }),
+        ...(existing?.blocks === undefined ? { blocks: [] } : { blocks: existing.blocks }),
+        ...(existing?.snippet === undefined ? {} : { snippet: existing.snippet }),
+      }
+    })
+    this.emit()
+  }
+
+  /**
+   * Mark a Host search in flight so Mobile can show pending local title matches.
+   * @param query - Mobile search text already sent to Desktop.
+   */
+  beginSearch(query: string): void {
+    this.search = { query, status: 'loading', hits: this.search.query === query ? this.search.hits : [] }
+    this.emit()
+  }
+
+  /**
+   * Replace the search page with Desktop-authoritative hits.
+   * @param query - query Desktop searched.
+   * @param rows - Host search catalog rows.
+   */
+  applySearch(query: string, rows: readonly CompanionSessionCatalogRow[]): void {
+    if (query.trim() === '') {
+      this.search = EMPTY_SEARCH
+      this.emit()
+      return
+    }
+    const previous = new Map(this.sessions.map(session => [session.id, session]))
+    this.search = {
+      query,
+      status: 'ready',
+      hits: rows.map((row) => {
+        const existing = previous.get(row.sessionId)
+        return {
+          id: row.sessionId,
+          title: row.title,
+          summary: row.summary,
+          ...(row.workspace === undefined ? {} : { workspace: row.workspace }),
+          ...(row.live === true ? { live: true } : {}),
+          ...(existing?.transcript === undefined ? {} : { transcript: existing.transcript }),
+          ...(existing?.blocks === undefined ? { blocks: [] } : { blocks: existing.blocks }),
+          ...(row.snippet === undefined ? {} : { snippet: row.snippet }),
+        }
+      }),
+    }
+    this.emit()
+  }
+
+  /**
+   * Record a Host or transport failure without inventing Session rows.
+   * @param error - stable failure text for the Mobile banner.
+   */
+  applyError(error: string): void {
+    this.search = { ...this.search, status: this.search.query === '' ? 'idle' : 'error', error }
+    this.emit()
+  }
+
+  /** Clear the last Host or transport failure. */
+  clearError(): void {
+    if (this.search.error === undefined && this.search.status !== 'error') return
+    this.search = {
+      query: this.search.query,
+      status: this.search.query === '' ? 'idle' : 'ready',
+      hits: this.search.hits,
+    }
+    this.emit()
+  }
+
+  /**
    * Replace one Session transcript from a Desktop projection.
    * @param sessionId - Companion Session target.
    * @param entries - Desktop-approved transcript entries.
@@ -110,6 +222,7 @@ export class DevelopmentCompanionSessionStore {
           : [entry.summary]
     ))
     const existing = this.sessions.find(session => session.id === sessionId)
+      ?? this.search.hits.find(session => session.id === sessionId)
     const summary = transcript.at(-1) ?? existing?.summary ?? 'New Session'
     const row: CompanionSessionSummary = {
       id: sessionId,
@@ -134,7 +247,7 @@ export class DevelopmentCompanionSessionStore {
 function projectCompanionBlock(entry: CompanionTranscriptEntry): MobileContentBlock {
   switch (entry.type) {
     case 'text':
-      return { kind: 'markdown', text: entry.text }
+      return { kind: 'markdown', text: entry.text, role: entry.role }
     case 'image':
       return { kind: 'image', alt: entry.alt, src: COMPANION_PROJECTED_IMAGE_SRC }
     case 'approval':
@@ -143,6 +256,9 @@ function projectCompanionBlock(entry: CompanionTranscriptEntry): MobileContentBl
         summary: entry.summary,
         interactionId: entry.interactionId,
         authorized: entry.authorized,
+        ...(entry.cwd === undefined ? {} : { cwd: entry.cwd }),
+        ...(entry.diff === undefined ? {} : { diff: entry.diff }),
+        ...(entry.terminal === undefined ? {} : { terminal: entry.terminal }),
         ...(entry.settled === undefined ? {} : { settled: entry.settled }),
       }
     case 'ask-user':
@@ -180,6 +296,17 @@ export class DevelopmentCompanionClient {
   }
 
   /**
+   * Drop this Paired Desktop's Companion Cache and forget the in-memory catalog.
+   * Pairing-key records stay in the pairing seam.
+   */
+  async clearOpenedCache(): Promise<void> {
+    if (installedCache !== undefined) {
+      await installedCache.clearDesktopCache(DEVELOPMENT_CACHE_DESKTOP_ID)
+    }
+    this.store.reset()
+  }
+
+  /**
    * Open a one-byte sync or a sealed Companion reply.
    * @param ciphertext - inbound Desktop frame, or omitted when a test injects resync.
    */
@@ -197,6 +324,19 @@ export class DevelopmentCompanionClient {
    * @param input - Mobile-proposed identifiers and title.
    * @returns Desktop result.
    */
+  /**
+   * Ask Desktop to project the open Session transcript from Host history.
+   * @param sessionId - Companion Session target.
+   * @returns Desktop result.
+   */
+  async openSession(sessionId: string): Promise<CompanionResult> {
+    return await this.request({
+      type: 'open-session',
+      operationId: parseCompanionOperationId(`open-${sessionId}`.replace(/[^A-Za-z0-9_-]/gu, '-').slice(0, 128)),
+      sessionId: parseCompanionSessionId(sessionId),
+    })
+  }
+
   async createSession(input: {
     operationId: string
     sessionId: string
@@ -225,6 +365,30 @@ export class DevelopmentCompanionClient {
       operationId: parseCompanionOperationId(input.operationId),
       sessionId: parseCompanionSessionId(input.sessionId),
       text: input.text,
+    })
+  }
+
+  /**
+   * Ask Desktop to search Host Session titles, workspaces, summaries, and content.
+   * @param query - Mobile search text.
+   * @returns Desktop result.
+   */
+  async searchSessions(query: string): Promise<CompanionResult> {
+    const trimmed = query.trim()
+    if (trimmed === '') {
+      this.store.applySearch('', [])
+      return {
+        type: 'confirmed',
+        operationId: parseCompanionOperationId('search-clear'),
+        committedAt: Date.now(),
+        outcome: 'accepted',
+      }
+    }
+    this.store.beginSearch(trimmed)
+    return await this.request({
+      type: 'search-sessions',
+      operationId: parseCompanionOperationId(`search-${crypto.randomUUID()}`),
+      query: trimmed,
     })
   }
 
@@ -297,13 +461,20 @@ export class DevelopmentCompanionClient {
       this.pending.get(message.result.operationId)?.resolve(message.result)
       return
     }
-    if (message.type === 'projection' && message.projection.type === 'transcript-page') {
-      this.store.applyTranscript(
-        message.projection.sessionId,
-        message.projection.entries,
-        message.projection.streaming === true,
-      )
+    if (message.type !== 'projection') return
+    if (message.projection.type === 'session-catalog') {
+      this.store.applyCatalog(message.projection.sessions)
+      return
     }
+    if (message.projection.type === 'session-search') {
+      this.store.applySearch(message.projection.query, message.projection.sessions)
+      return
+    }
+    this.store.applyTranscript(
+      message.projection.sessionId,
+      message.projection.entries,
+      message.projection.streaming === true,
+    )
   }
 
   private async request(operation: CompanionOperation): Promise<CompanionResult> {
@@ -311,12 +482,18 @@ export class DevelopmentCompanionClient {
     const result = new Promise<CompanionResult>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(operationId)
+        this.store.applyError('Desktop 未在时限内确认这次操作')
         reject(new Error('Desktop did not confirm the Companion operation'))
       }, OPERATION_TIMEOUT_MS)
       this.pending.set(operationId, {
         resolve: (value) => {
           clearTimeout(timer)
           this.pending.delete(operationId)
+          if (value.type === 'rejected') {
+            this.store.applyError(value.reason === 'host-unavailable'
+              ? 'Desktop Host 未就绪，无法完成这次操作'
+              : 'Desktop Host 拒绝了这次操作')
+          }
           resolve(value)
         },
         reject: (error) => {
@@ -397,6 +574,7 @@ export async function bindDevelopmentCompanionCache(
   sessions: DevelopmentCompanionSessionStore,
   cache: CompanionCache,
 ): Promise<() => void> {
+  installedCache = cache
   const cached = await cache.loadOpenedContent(DEVELOPMENT_CACHE_DESKTOP_ID, 'session-metadata')
   if (cached !== undefined) sessions.hydrate(parseCachedSessions(cached))
   const persist = async (): Promise<void> => {
@@ -417,7 +595,11 @@ export async function bindDevelopmentCompanionCache(
     )
   }
   await persist()
-  return sessions.subscribe(() => { void persist() })
+  const unsubscribe = sessions.subscribe(() => { void persist() })
+  return () => {
+    unsubscribe()
+    if (installedCache === cache) installedCache = undefined
+  }
 }
 
 /**

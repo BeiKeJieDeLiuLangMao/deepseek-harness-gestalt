@@ -10,13 +10,13 @@
     假如 作曲器提供选图或选文件
     当 Mobile 封装明文并发送 offer-attachment
     那么 Desktop 对未过期 capability 确认
-    而且 图片文件名投影为 image 块
-    而且 非图片文件名投影为 Attached: 文本
+    而且 Desktop 通过 Host session.prompt 排队 Attached: 文件名
+    而且 打开的 transcript 显示 Host 投影的用户行
     # 开发路径不把附件明文字节放进 Relay；过期 capability 返回 attachment-rejected
 
   @live
   场景: 结算 Desktop 授权的审批
-    假如 Desktop 在 prompt 完成后投影了 approval 块且 companionMayMutate
+    假如 Desktop 从 Host 审批帧投影了 approval 块且 companionMayMutate
     当 Mobile 点击允许
     那么 结算通过 Encrypted Companion settle-approval 发回 Desktop
     而且 仅在 Desktop 接受后卡片变为已结算

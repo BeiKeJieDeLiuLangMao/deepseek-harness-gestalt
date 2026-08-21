@@ -11,6 +11,7 @@ import type { RemoteAccessTransport } from '@deepseek-ai/dsh-remote-access-clien
 import { PairingCompanionKeyVault } from '../src/companion-keys.ts'
 import { companionMayMutate, CompanionForegroundRuntime } from '../src/companion-push.ts'
 import { MobilePairingController } from '../src/personal-pairing.ts'
+import type { MobilePairingSessionStore } from '../src/pairing-session-store.ts'
 
 describe('MobilePairingController', () => {
   it('opens pairing-delivered Mobile authority and starts Relay without a Desktop secret', async () => {
@@ -50,6 +51,56 @@ describe('MobilePairingController', () => {
     expect(relay.start).toHaveBeenCalledOnce()
     await controller.deactivate()
     expect(relay.stop).toHaveBeenCalled()
+  })
+
+  it('restores a saved Relay grant after deactivate and activate', async () => {
+    const grants = new Map<string, ReturnType<MobilePairingSessionStore['load']>>()
+    const sessionStore: MobilePairingSessionStore = {
+      load: accountId => grants.get(accountId),
+      save: (accountId, grant) => { grants.set(accountId, grant) },
+      clear: (accountId) => { grants.delete(accountId) },
+    }
+    const scheduled: Array<() => void> = []
+    const transport = transportFixture()
+    const mobileGrant = {
+      routeId: parseRelayRouteId('mobile-route-restore'),
+      endpoint: 'mobile' as const,
+      credential: parseRelayCredential('AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE'),
+      revision: 2,
+    }
+    transport.getMobilePairingStatus.mockResolvedValueOnce({
+      status: 'paired', pairingId: 'pairing-restore', sealedRelayAuthority: Uint8Array.of(1),
+    })
+    const relay = { configure: vi.fn(), start: vi.fn(), stop: vi.fn() }
+    const controller = new MobilePairingController({
+      installation: installationFixture(),
+      transport,
+      handshake: {
+        begin: vi.fn(async () => ({
+          completionId: parsePairingCompletionId('restore-grant'), mobileHandshake: Uint8Array.of(9),
+        })),
+        acceptDesktopHandshake: vi.fn(),
+        openRelayAuthority: vi.fn(async () => mobileGrant),
+      },
+      relay,
+      sessionStore,
+      scanner: { scan: vi.fn() },
+      device: { name: 'Alice phone', platform: 'ios' },
+      schedule: (task) => { scheduled.push(task); return { unref: vi.fn() } as never },
+      now: () => Date.parse('2026-08-18T10:01:00.000Z'),
+    })
+
+    await controller.completeLink(pairingLink(Date.parse('2026-08-18T10:02:00.000Z')))
+    scheduled.shift()?.()
+    await vi.waitFor(() => { expect(controller.getSnapshot()).toEqual({ status: 'paired' }) })
+    await controller.deactivate()
+    expect(controller.getSnapshot()).toEqual({ status: 'paired' })
+    expect(grants.get('account-mobile')).toEqual(mobileGrant)
+
+    await controller.activate()
+    expect(relay.configure).toHaveBeenLastCalledWith(mobileGrant)
+    expect(relay.start).toHaveBeenCalledTimes(2)
+    expect(controller.getSnapshot()).toEqual({ status: 'paired' })
   })
 
   it('retains independent pairing key material only after Desktop confirmation', async () => {

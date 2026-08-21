@@ -95,6 +95,107 @@ describe('Encrypted Companion Protocol codec', () => {
     }))).toThrow(expect.objectContaining<Partial<RemoteProtocolError>>({ code: 'REMOTE_PROTOCOL_INVALID_MESSAGE' }))
   })
 
+  it('round-trips open-session and a Desktop session-catalog projection', () => {
+    const negotiated = negotiateFresh(
+      createCompanionVersionOffer('mobile'),
+      createCompanionVersionOffer('desktop'),
+    )
+    const open = {
+      type: 'operation',
+      operation: {
+        type: 'open-session',
+        operationId: parseCompanionOperationId('operation-open'),
+        sessionId: parseCompanionSessionId('session-open'),
+      },
+    } as const
+    const catalog = {
+      type: 'projection',
+      projection: {
+        type: 'session-catalog',
+        sessions: [{
+          sessionId: parseCompanionSessionId('session-open'),
+          title: 'Docs Session',
+          summary: 'hello',
+          workspace: 'Docs',
+          live: true,
+        }],
+      },
+    } as const
+    expect(decodeCompanionMessage(negotiated, encodeCompanionMessage(negotiated, open))).toEqual(open)
+    expect(decodeCompanionMessage(negotiated, encodeCompanionMessage(negotiated, catalog))).toEqual(catalog)
+    expect(() => decodeCompanionMessage(negotiated, json({
+      applicationVersion: 2,
+      type: 'operation',
+      operation: { type: 'open-session', operationId: 'operation-open' },
+    }))).toThrow(expect.objectContaining<Partial<RemoteProtocolError>>({ code: 'REMOTE_PROTOCOL_INVALID_MESSAGE' }))
+    expect(() => decodeCompanionMessage(negotiated, json({
+      applicationVersion: 2,
+      type: 'projection',
+      projection: { type: 'session-catalog', sessions: [{ sessionId: 'session-open', title: '', summary: 'x' }] },
+    }))).toThrow(expect.objectContaining<Partial<RemoteProtocolError>>({ code: 'REMOTE_PROTOCOL_INVALID_MESSAGE' }))
+    expect(() => encodeCompanionMessage(negotiated, {
+      type: 'projection',
+      projection: {
+        type: 'session-catalog',
+        sessions: Array.from({ length: REMOTE_PROTOCOL_LIMITS.sessionCatalogEntries + 1 }, (_, index) => ({
+          sessionId: parseCompanionSessionId(`session-${String(index)}`),
+          title: 'Session',
+          summary: 'summary',
+        })),
+      },
+    })).toThrow(expect.objectContaining<Partial<RemoteProtocolError>>({ code: 'REMOTE_PROTOCOL_LIMIT_EXCEEDED' }))
+  })
+
+  it('round-trips search-sessions, a session-search projection, and a Host rejected result', () => {
+    const negotiated = negotiateFresh(
+      createCompanionVersionOffer('mobile'),
+      createCompanionVersionOffer('desktop'),
+    )
+    const search = {
+      type: 'operation',
+      operation: {
+        type: 'search-sessions',
+        operationId: parseCompanionOperationId('operation-search'),
+        query: 'hello',
+      },
+    } as const
+    const hits = {
+      type: 'projection',
+      projection: {
+        type: 'session-search',
+        query: 'hello',
+        sessions: [{
+          sessionId: parseCompanionSessionId('session-hit'),
+          title: 'Docs Session',
+          summary: 'hello world',
+          workspace: 'Docs',
+          snippet: 'user said hello',
+        }],
+      },
+    } as const
+    const rejected = {
+      type: 'result',
+      result: {
+        type: 'rejected',
+        operationId: parseCompanionOperationId('operation-search'),
+        reason: 'host-rejected',
+      },
+    } as const
+    expect(decodeCompanionMessage(negotiated, encodeCompanionMessage(negotiated, search))).toEqual(search)
+    expect(decodeCompanionMessage(negotiated, encodeCompanionMessage(negotiated, hits))).toEqual(hits)
+    expect(decodeCompanionMessage(negotiated, encodeCompanionMessage(negotiated, rejected))).toEqual(rejected)
+    expect(() => decodeCompanionMessage(negotiated, json({
+      applicationVersion: 2,
+      type: 'operation',
+      operation: { type: 'search-sessions', operationId: 'operation-search', query: '' },
+    }))).toThrow(expect.objectContaining<Partial<RemoteProtocolError>>({ code: 'REMOTE_PROTOCOL_INVALID_MESSAGE' }))
+    expect(() => decodeCompanionMessage(negotiated, json({
+      applicationVersion: 2,
+      type: 'result',
+      result: { type: 'rejected', operationId: 'operation-search', reason: 'timeout' },
+    }))).toThrow(expect.objectContaining<Partial<RemoteProtocolError>>({ code: 'REMOTE_PROTOCOL_INVALID_MESSAGE' }))
+  })
+
   it('round-trips a prompt cancellation targeting one Session', () => {
     const negotiated = negotiateFresh(
       createCompanionVersionOffer('mobile'),

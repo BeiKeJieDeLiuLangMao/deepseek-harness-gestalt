@@ -48,3 +48,24 @@ export function ensureLaunchDirectory(
   mkdirSync(dir, { recursive: true })
   return dir
 }
+
+/**
+ * Choose the Web Host cwd: explicit override, packaged Launch Directory, or the unpackaged workspace.
+ * @param input - packaging, optional repo workspace, and process environment.
+ * @returns absolute directory the Host Session store keys against.
+ */
+export function resolveWebHostCwd(input: {
+  packaged: boolean
+  workspaceRoot?: string
+  source?: NodeJS.ProcessEnv
+  home?: string
+  platform?: NodeJS.Platform
+  appData?: string
+}): string {
+  const explicit = input.source?.DSH_DESKTOP_CWD
+  if (explicit !== undefined && explicit.trim() !== '') return explicit
+  if (input.packaged || input.source?.DSH_DESKTOP_USE_LAUNCH_DIRECTORY === '1') {
+    return launchDirectory(input.home, input.platform, input.appData)
+  }
+  return input.workspaceRoot ?? launchDirectory(input.home, input.platform, input.appData)
+}

@@ -110,15 +110,46 @@ describe('MobileAccount', () => {
     fireEvent.click(screen.getByRole('checkbox'))
     await waitFor(() => { expect(screen.getByRole('button', { name: '使用 GitHub 继续' }).hasAttribute('disabled')).toBe(false) })
     fireEvent.click(screen.getByRole('button', { name: '使用 GitHub 继续' }))
-    await screen.findByText('@octocat')
-    expect(screen.getByText('当前安装')).toBeTruthy()
+    expect(await screen.findByText('未连接')).toBeTruthy()
+    expect(screen.getByText('@octocat')).toBeTruthy()
     expect(screen.getByText('independent review pending')).toBeTruthy()
-    expect(screen.getByText('Remote Offline')).toBeTruthy()
+    expect(screen.queryByText('连接到你的 Desktop')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '查看账号' }))
+    expect(await screen.findByText('当前安装')).toBeTruthy()
 
-    fireEvent.click(screen.getByRole('button', { name: '退出此安装' }))
+    fireEvent.click(screen.getByRole('button', { name: '退出登录' }))
     await waitFor(() => { expect(api.signOut).toHaveBeenCalledOnce() })
     await screen.findByRole('button', { name: '使用 GitHub 继续' })
     expect(deactivate).toHaveBeenCalledOnce()
+  })
+
+  it('opens pairing from home scan and returns to the unpaired home', async () => {
+    const { installation } = fixture()
+    const ready = { status: 'ready' } as const
+    const pairing: MobilePairingActions = {
+      getSnapshot: () => ready,
+      subscribe: () => () => {},
+      completeLink: vi.fn(),
+      scanQr: vi.fn(),
+      retryPairing: vi.fn(),
+      activate: vi.fn().mockResolvedValue(undefined),
+      deactivate: vi.fn().mockResolvedValue(undefined),
+      unpair: vi.fn().mockResolvedValue(undefined),
+    }
+    render(createElement(MobileAccount, { installation, pairing }))
+    fireEvent.click(screen.getByRole('checkbox'))
+    await waitFor(() => { expect(screen.getByRole('button', { name: '使用 GitHub 继续' }).hasAttribute('disabled')).toBe(false) })
+    fireEvent.click(screen.getByRole('button', { name: '使用 GitHub 继续' }))
+    expect(await screen.findByText('未连接')).toBeTruthy()
+    expect(screen.getByText('@octocat')).toBeTruthy()
+    expect(screen.getByText('扫码连接 Desktop 后即可查看 Session')).toBeTruthy()
+    expect(screen.queryByText('项目')).toBeNull()
+    expect(screen.queryByText('连接到你的 Desktop')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '扫描配对' }))
+    expect(await screen.findByText('连接到你的 Desktop')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '返回' }))
+    expect(await screen.findByText('未连接')).toBeTruthy()
+    expect(screen.queryByText('项目')).toBeNull()
   })
 
   it('labels Remote Online only after Desktop-authoritative companion sync', async () => {
@@ -155,8 +186,8 @@ describe('MobileAccount', () => {
       fireEvent.click(screen.getByRole('checkbox'))
       await waitFor(() => { expect(screen.getByRole('button', { name: '使用 GitHub 继续' }).hasAttribute('disabled')).toBe(false) })
       fireEvent.click(screen.getByRole('button', { name: '使用 GitHub 继续' }))
-      await screen.findByText('@octocat')
-      expect(screen.getByText('Remote Online')).toBeTruthy()
+      expect(await screen.findByText('Remote Online')).toBeTruthy()
+      expect(screen.getByText('@octocat')).toBeTruthy()
     } finally {
       dispose()
     }
@@ -212,10 +243,11 @@ describe('MobileAccount', () => {
       fireEvent.click(screen.getByRole('checkbox'))
       await waitFor(() => { expect(screen.getByRole('button', { name: '使用 GitHub 继续' }).hasAttribute('disabled')).toBe(false) })
       fireEvent.click(screen.getByRole('button', { name: '使用 GitHub 继续' }))
-      await screen.findByText('@octocat')
+      expect(await screen.findByText('@octocat')).toBeTruthy()
       expect(screen.queryByText('Ungrouped Session')).toBeNull()
       fireEvent.click(screen.getByRole('button', { name: '新建 Ungrouped Session' }))
       await waitFor(() => { expect(screen.getByText('Ungrouped Session')).toBeTruthy() })
+      fireEvent.click(screen.getByRole('button', { name: '新建 Workspace' }))
       fireEvent.change(screen.getByLabelText('Workspace 名称'), { target: { value: 'Docs' } })
       fireEvent.click(screen.getByRole('button', { name: '在新 Workspace 新建 Session' }))
       await waitFor(() => { expect(screen.getByText('Docs')).toBeTruthy() })

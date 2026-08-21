@@ -79,11 +79,13 @@
     那么 配对设备列表的 online 字段可以仍是 false
     # 目录尚未从 Relay 目录更新
 
-  @observed
-  场景: Mobile 整页刷新后配对不持久
+  @live
+  场景: Mobile 整页刷新后恢复已确认配对
     假如 Mobile 已配对
-    当 页面 ignoreCache 刷新
-    那么 需要重新粘贴一次性链接完成配对
+    当 页面刷新
+    那么 仍显示已配对
+    而且 用保存的 Mobile Relay grant 重新附着
+    而且 不必再粘贴一次性链接
 
   @live
   场景: 关闭 Desktop 窗口后 Remote Offline

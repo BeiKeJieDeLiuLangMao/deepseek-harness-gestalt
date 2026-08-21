@@ -10,6 +10,8 @@
   "dependencies": {
     "@capacitor/browser": "^8.0.4",
     "@capacitor/core": "^8.5.0",
+    "@deepseek-ai/dsh-client-ui-conversation": "workspace:^",
+    "@deepseek-ai/dsh-client-ui-primitives": "workspace:^",
     "@deepseek-ai/dsh-client-ui-theme": "workspace:^",
     "@deepseek-ai/dsh-brand": "workspace:^",
     "@deepseek-ai/dsh-platform-account": "workspace:^",

@@ -97,6 +97,43 @@ describe('Development keyless Companion client', () => {
       await client.cancelPrompt({ operationId: 'operation-cancel', sessionId: 'session-create' })
       await client.receive()
       await client.receive(Uint8Array.of(1))
+      await client.receive(await sealDevelopmentCompanionMessage(desktop, {
+        type: 'projection',
+        projection: {
+          type: 'session-catalog',
+          sessions: [{
+            sessionId: 'session-desktop' as never,
+            title: 'Desktop Session',
+            summary: 'from Host',
+            workspace: 'Docs',
+          }],
+        },
+      }))
+      expect(store.getSnapshot()).toEqual([
+        expect.objectContaining({ id: 'session-desktop', title: 'Desktop Session', workspace: 'Docs' }),
+      ])
+      await client.receive(await sealDevelopmentCompanionMessage(desktop, {
+        type: 'projection',
+        projection: {
+          type: 'session-search',
+          query: 'Desktop',
+          sessions: [{
+            sessionId: 'session-desktop' as never,
+            title: 'Desktop Session',
+            summary: 'from Host',
+            workspace: 'Docs',
+            snippet: 'hello from the Host transcript',
+          }],
+        },
+      }))
+      expect(store.getSearchSnapshot()).toEqual({
+        query: 'Desktop',
+        status: 'ready',
+        hits: [expect.objectContaining({
+          id: 'session-desktop',
+          snippet: 'hello from the Host transcript',
+        })],
+      })
     } finally {
       dispose()
     }
