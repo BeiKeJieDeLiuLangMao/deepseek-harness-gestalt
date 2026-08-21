@@ -343,8 +343,16 @@ describe('web e2e: empty-draft Cmd+Enter steers the whole queue', () => {
     await input.fill(STEER_ONE)
     await input.press('Enter')
     await input.fill(STEER_TWO, { force: true })
-    await input.focus({ force: true })
-    await page.keyboard.press('Enter')
+    await input.evaluate((node) => {
+      const textarea = node as HTMLTextAreaElement
+      textarea.focus()
+      textarea.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Enter',
+        code: 'Enter',
+        bubbles: true,
+        cancelable: true,
+      }))
+    })
     const dock = page.locator('[data-queue-dock]')
     // Both messages queued: the two-row dock shows a collapsed count header,
     // and Playwright text matching skips the hidden rows — expand the list,
