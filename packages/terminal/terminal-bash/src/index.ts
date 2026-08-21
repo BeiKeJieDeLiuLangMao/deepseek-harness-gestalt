@@ -262,10 +262,10 @@ export class BashTerminalBackend implements TerminalBackend {
       })
       session = this.createSession(terminal, this.config)
       if (pwshHome !== undefined) {
-        const previousClose = session.close
+        const previousClose = typeof session.close === 'function' ? session.close.bind(session) : undefined
         session.close = async (reason: string) => {
           try {
-            if (typeof previousClose === 'function') await previousClose.call(session, reason)
+            if (previousClose !== undefined) await previousClose(reason)
           } finally {
             await rm(pwshHome, { recursive: true, force: true })
           }

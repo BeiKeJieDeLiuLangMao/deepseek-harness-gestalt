@@ -429,7 +429,7 @@ describe('BashTerminalBackend startup rollback', () => {
     )
     await backend.spawn(spec(agent(ctx)))
     expect(sends).toHaveLength(2)
-    expect(sends.every(send => send.submit !== true)).toBe(true)
+    expect(sends.every(send => !send.submit)).toBe(true)
     expect(session.motd).toBe(PWSH_SETUP_DONE)
   })
 
