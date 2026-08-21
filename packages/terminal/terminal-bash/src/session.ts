@@ -276,7 +276,9 @@ export class LocalPtySession implements TerminalBackendSession {
     try {
       if (this.active !== operation || this.closing || this.interrupting === operation) return
       operation.setInitialForeground(foreground)
-      const input = `${request.text}${request.submit ? '\r' : ''}`
+      // Linux pwsh/PSReadLine treats a lone CR as cursor-home, so the line is
+      // echoed and never executed; CRLF is Enter on both ConPTY and Linux PTYs.
+      const input = `${request.text}${request.submit ? (this.config.shellDialect === 'pwsh' ? '\r\n' : '\r') : ''}`
       if (input.length > 0 && !operation.cancelRequested) {
         this.resetReadinessEvidence()
         const write = this.terminal.write(input)

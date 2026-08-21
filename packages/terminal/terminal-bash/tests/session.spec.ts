@@ -216,6 +216,20 @@ describe('LocalPtySession readiness and output', () => {
     expect(operation.cancel()).toBe(false)
   })
 
+  it('submits pwsh lines with CRLF so Linux PSReadLine executes them', async () => {
+    vi.useFakeTimers()
+    const terminal = new FakeTerminal()
+    const inspector = new FakeInspector()
+    const session = makeSession(terminal, inspector, config({ shellDialect: 'pwsh', shellPath: 'pwsh' }))
+    const operation = session.startSend({ text: 'Get-Location', submit: true })
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(terminal.writes).toEqual(['Get-Location\r\n'])
+    terminal.emitData('ok\n')
+    await vi.advanceTimersByTimeAsync(50)
+    expect((await operation.done).waitReason).toBe('inferred_idle')
+  })
+
   it('does not reuse a pre-write stdin wait as post-write readiness', async () => {
     vi.useFakeTimers()
     const terminal = new FakeTerminal()
