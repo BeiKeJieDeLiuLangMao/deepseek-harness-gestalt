@@ -356,7 +356,7 @@ describe('BashTerminalBackend startup rollback', () => {
         return {
           done: Promise.resolve({
             viewport: request.submit ? `setup-echo ${PWSH_SETUP_DONE}` : 'PS /tmp/ws> ',
-            waitReason: 'stdin_read' as const,
+            waitReason: request.submit ? 'stdin_read' as const : 'inferred_idle' as const,
             sessionStatus: { kind: 'running' as const }, truncated: false,
           }),
           readOutput: () => ({ delta: '', truncated: false }),
@@ -438,7 +438,7 @@ describe('BashTerminalBackend startup rollback', () => {
             viewport: request.submit
               ? request.text
               : sends.some(send => send.submit) ? PWSH_SETUP_DONE : 'PS /tmp/ws> ',
-            waitReason: 'stdin_read' as const,
+            waitReason: request.submit ? 'stdin_read' as const : 'inferred_idle' as const,
             sessionStatus: { kind: 'running' as const }, truncated: false,
           }),
           readOutput: () => ({ delta: '', truncated: false }),
@@ -563,7 +563,7 @@ describe('BashTerminalBackend startup rollback', () => {
         return {
           done: Promise.resolve({
             viewport: request.submit ? PWSH_SETUP_DONE : 'PS /tmp/ws> ',
-            waitReason: 'stdin_read' as const,
+            waitReason: request.submit ? 'stdin_read' as const : 'inferred_idle' as const,
             sessionStatus: { kind: 'running' as const }, truncated: false,
           }),
           readOutput: () => ({ delta: '', truncated: false }),
@@ -620,6 +620,38 @@ describe('BashTerminalBackend startup rollback', () => {
     expect(sends[0]).toMatchObject({ text: '', submit: false })
     expect(sends[1]).toMatchObject({ text: ENCODING_PREAMBLE + PWSH_PROMPT_SETUP, submit: true })
     expect(session.motd).toBe(PWSH_SETUP_DONE)
+  })
+
+  it('does not write setup when a default prompt settles on stdin_read', async () => {
+    const ctx = new Context()
+    await ctx.plugin(EmptySandbox)
+    await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access', workspaceRoot: '/workspace' })
+    const sends: TerminalSendRequest[] = []
+    const session = {
+      motd: '',
+      startSend: (request: TerminalSendRequest) => {
+        sends.push(request)
+        return {
+          done: Promise.resolve({
+            viewport: 'PS /tmp/ws> ',
+            waitReason: 'stdin_read' as const,
+            sessionStatus: { kind: 'running' as const }, truncated: false,
+          }),
+          readOutput: () => ({ delta: '', truncated: false }),
+          cancel: () => false,
+        }
+      },
+      read: () => ({ text: 'PS /tmp/ws> ', totalLines: 1, lineBegin: 0, lineEnd: 1, truncated: false }),
+      close: () => Promise.resolve(),
+    } as unknown as LocalPtySession
+    const backend = new BashTerminalBackend(
+      ctx,
+      { ...config(), shellDialect: 'pwsh', shellPath: 'pwsh', timeoutMs: 50 },
+      async () => terminalHandle(),
+      () => session,
+    )
+    await expect(backend.spawn(spec(agent(ctx)))).rejects.toThrow('did not reach readiness before startup timeout')
+    expect(sends.every(send => send.submit !== true)).toBe(true)
   })
 
   it('rejects when the default prompt never appears before setup', async () => {

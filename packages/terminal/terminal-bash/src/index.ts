@@ -121,17 +121,15 @@ async function startupSession(
       return
     }
     // pwsh cannot install its prompt from the environment: wait until the
-    // last line is the default `PS …>` prompt, then write the prompt
-    // function. `initialize` can settle on stdin_wait at 150 ms and write
-    // too early (Linux CI 32463876213: setup send got session_exit). A
-    // write during banner lands on the PTY as echo and never executes
-    // (Linux CI 32462089006: scrollback is the setup source plus
-    // `PS /tmp/…>`). The first submitted send also pins UTF-8 output (the
-    // shared pwsh-local preamble) before anything runs. A Linux PTY often
-    // never reprints CONTROLLED_PROMPT after that function runs, so spawn
-    // waits for PWSH_SETUP_DONE from the trailing Write-Output instead.
-    // Follow-ups continue until that token is visible. session_exit,
-    // per-send timeout, and the spawn-wall timeoutMs reject.
+    // default `PS …>` prompt is visible and the wait settled on
+    // inferred_idle, then write the prompt function. `initialize` or a
+    // 150 ms stdin_wait can write while PSReadLine is still drawing
+    // reverse-video CSI (Linux CI 32466566587: binary after `PS /tmp/…>`;
+    // 32463876213: session_exit). A write during banner never executes
+    // (32462089006). The first submitted send also pins UTF-8 output.
+    // Spawn then waits for PWSH_SETUP_DONE. Follow-ups continue until
+    // that token is visible. session_exit, per-send timeout, and the
+    // spawn-wall timeoutMs reject.
     const startedAt = Date.now()
     let readyToSetup = false
     let written = false
@@ -153,7 +151,12 @@ async function startupSession(
       viewport = result.viewport
       const scrollback = session.read({ offset: 0, count: 20 }).text
       if (!readyToSetup) {
-        if (hasDefaultPwshPrompt(viewport) || hasDefaultPwshPrompt(scrollback)) readyToSetup = true
+        if (
+          result.waitReason === 'inferred_idle'
+          && (hasDefaultPwshPrompt(viewport) || hasDefaultPwshPrompt(scrollback))
+        ) {
+          readyToSetup = true
+        }
       } else if (viewport.includes(PWSH_SETUP_DONE) || scrollback.includes(PWSH_SETUP_DONE)) {
         session.motd = viewport.includes(PWSH_SETUP_DONE) ? viewport : scrollback
         break
