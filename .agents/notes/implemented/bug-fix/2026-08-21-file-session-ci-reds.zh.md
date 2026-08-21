@@ -10,7 +10,7 @@ File/Session Reference 同步到官方 Host `@path` / `file-reference-local` 与
 
 ## Decision
 
-**pwsh spawn 仍走官方 `includes` 循环，但 setup 源码不得包含已安装提示符。** 把官方 Host 的 `'dsh> '` 写回 `PWSH_PROMPT_SETUP` 后，Linux coverage 和 ACP `persistent-pwsh-tool-turn` 快照再次变红：PTY 在函数运行前就回显这段源码，spawn 返回，下一条写入叠上去。末行 / ready-probe / `-NoExit -Command` 也失败：Linux 常常不再打印末行 `dsh> `，源码里的 probe 仍是假就绪，`-Command` 则把二进制倒进 PTY。因此 setup 在运行时拼接提示符（`'dsh' + '> '`，工具层提示符同样处理），再空转 follow-up，直到 viewport 或 scrollback `includes` 已安装文本。因静默结算但尚未出现该文本的 follow-up 不算就绪；`timeoutMs` 约束等待。官方 inferred-idle 仍没有额外末行门槛。[persistent pwsh 笔记](../architecture/2026-08-11-pwsh-persistent-pty.md) 仍拥有双层 prompt 安装。
+**pwsh spawn 写一次官方 setup，然后最多一次空 follow-up；setup 源码不得包含已安装提示符。** 把官方 Host 的 `'dsh> '` 写回 `PWSH_PROMPT_SETUP` 后，Linux coverage 和 ACP `persistent-pwsh-tool-turn` 快照再次变红：PTY 在函数运行前就回显这段源码，spawn 返回，下一条写入叠上去。末行 / ready-probe / `-NoExit -Command` 也失败：Linux 常常不再打印末行 `dsh> `，源码里的 probe 仍是假就绪，`-Command` 则把二进制倒进 PTY。空转 follow-up 直到 `includes` 已安装文本会在 Linux coverage（`32456229621`）超时：源码拆分后该文本不再出现，空 send 以 `stdin_read` 结算直到 `timeoutMs`。因此 setup 在运行时拼接提示符（`'dsh' + '> '`，工具层提示符同样处理）。当首次 send 没有该文本时，一次空 follow-up 吸收横幅到 setup 的间隙；即使 Linux 不再打印 `dsh> `，这次 follow-up 结算即就绪。`session_exit` 与单次 send 的 `timeout` 仍拒绝。官方 inferred-idle 仍没有额外末行门槛。[persistent pwsh 笔记](../architecture/2026-08-11-pwsh-persistent-pty.md) 仍拥有双层 prompt 安装。
 
 **Relay 的载荷尺寸检查使用默认 first-frame 期限。** 空闲超时断言仍启动 10 ms 服务器。oversized 帧断言另启默认 1000 ms 的服务器，避免 attach-timeout 抢在 1009 关闭之前。
 
@@ -23,6 +23,8 @@ File/Session Reference 同步到官方 Host `@path` / `file-reference-local` 与
 ## Alternatives considered
 
 **把 `dsh> ` 嵌进 `PWSH_PROMPT_SETUP`，并按官方 Host 那样用 `includes`。** 否决：Linux PTY 在函数运行前就回显这段源码，spawn 返回后下一条写入会叠上去。
+
+**空转 follow-up 直到 viewport 或 scrollback `includes` 已安装提示符。** 否决：源码拆分后 Linux PTY 不再打印 `dsh> `，循环会撞上 `timeoutMs`（coverage run `32456229621`）。
 
 **要求末行 `dsh> `、`__DSH_PWSH_READY__` probe，或用 `pwsh -NoExit -Command` 预装提示符。** 否决：Linux 常常不再打印末行提示符，出现在源码里的 probe 仍是假就绪，`-Command` 则把二进制写入 PTY。
 
@@ -42,8 +44,8 @@ File/Session Reference 同步到官方 Host `@path` / `file-reference-local` 与
 
 ## Consequences
 
-官方 File/Session Reference 仍是唯一的 `@` 文件源。persistent pwsh spawn 仍走官方 `includes` follow-up 循环，但 setup 源码不能靠回显满足等待，因此 Linux coverage 和 ACP pwsh 快照在两次 prompt 安装之后抽出 `PWSH_OK`。Relay、publint、设置金标、Composer pin e2e 与注释计数芯片走修复后的路径。已删除的工作区引用 picker 金标保持删除。
+官方 File/Session Reference 仍是唯一的 `@` 文件源。persistent pwsh spawn 写一次 setup，并在回显不是已安装提示符时再发一次空 follow-up；Linux coverage 和 ACP pwsh 快照在两次 prompt 安装之后抽出 `PWSH_OK`，不再等待重打的 `dsh> `。Relay、publint、设置金标、Composer pin e2e 与注释计数芯片走修复后的路径。已删除的工作区引用 picker 金标保持删除。
 
 ## Testing
 
-`packages/terminal/terminal-bash/tests/index.spec.ts` 钉住 `PWSH_PROMPT_SETUP` 不含 `dsh> `、仅有源码回显的首次 send 会继续等待，以及回显始终变不成已安装提示符时 spawn 命中 `timeoutMs`。`local.spec.ts` 在 PATH 上有 `pwsh` 时仍要求真实 spawn 之后出现 `keep=ok`。`packages/shell/tool-pwsh-persistent/tests/tools.spec.ts` 会越过 setup 源码回显，才接受 `__DSH_PERSISTENT_PWSH_PROMPT__ `。`packages/client/ui-attachment/tests/message-image.client.spec.tsx` 覆盖历史 pin overlay、拒绝与落点。空草稿插话对可见 InputBar 重试 `fill` 加 `Enter`，直到第一行文本或两条时的计数头挂上，然后在提问 composer 藏掉 textarea 之前用 Cmd+Enter 冲刷。steer-all 中段金标与同目录另一份 steering 中段金标一样保留 `Ask question waiting` 工具行。`packages/platform/remote-access-http/tests/relay.spec.ts` 仍在独立服务器上分别以 1008 关闭空闲、以 1009 关闭 oversized。`packages/client/ui-attachment/tests/composer-attachments.client.spec.tsx` 与 `packages/client/ui-conversation/tests/composer-image-pins.client.spec.tsx` 覆盖标注、GIF 仅在切换时拒绝，以及 composer overlay 工厂。`pnpm run duplication` 拥有共享的 `useImagePinOverlay` 抽取。`packages/client/ui-conversation/tests/input-bar.client.spec.tsx` 覆盖注释计数芯片、丢弃、按 kind 删除与提交中锁定。Web 设置金标不再列出 `工作区引用`。`pnpm exec tsx scripts/gen-client-catalog.ts --check` 拥有 `ComposerAttachmentsOwnerProps.pinOverlayFor` 的目录正文。
+`packages/terminal/terminal-bash/tests/index.spec.ts` 钉住 `PWSH_PROMPT_SETUP` 不含 `dsh> `、仅有源码回显的首次 send 会再发一次 follow-up，以及回显始终变不成已安装提示符时 spawn 仍在该 follow-up 之后发布。`local.spec.ts` 在 PATH 上有 `pwsh` 时仍要求真实 spawn 之后出现 `keep=ok`。`packages/shell/tool-pwsh-persistent/tests/tools.spec.ts` 会越过 setup 源码回显，并在工具提示符始终不出现时仍接受初始化。`packages/client/ui-attachment/tests/message-image.client.spec.tsx` 覆盖历史 pin overlay、拒绝与落点。空草稿插话对可见 InputBar 重试 `fill` 加 `Enter`，直到第一行文本或两条时的计数头挂上，然后在提问 composer 藏掉 textarea 之前用 Cmd+Enter 冲刷。steer-all 中段金标与同目录另一份 steering 中段金标一样保留 `Ask question waiting` 工具行。`packages/platform/remote-access-http/tests/relay.spec.ts` 仍在独立服务器上分别以 1008 关闭空闲、以 1009 关闭 oversized。`packages/client/ui-attachment/tests/composer-attachments.client.spec.tsx` 与 `packages/client/ui-conversation/tests/composer-image-pins.client.spec.tsx` 覆盖标注、GIF 仅在切换时拒绝，以及 composer overlay 工厂。`pnpm run duplication` 拥有共享的 `useImagePinOverlay` 抽取。`packages/client/ui-conversation/tests/input-bar.client.spec.tsx` 覆盖注释计数芯片、丢弃、按 kind 删除与提交中锁定。Web 设置金标不再列出 `工作区引用`。`pnpm exec tsx scripts/gen-client-catalog.ts --check` 拥有 `ComposerAttachmentsOwnerProps.pinOverlayFor` 的目录正文。

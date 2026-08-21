@@ -454,21 +454,25 @@ describe('BashTerminalBackend startup rollback', () => {
     expect(session.motd).toBe('dsh> ')
   })
 
-  it('rejects a pwsh bootstrap whose setup echo never becomes the installed prompt', async () => {
+  it('publishes a pwsh session after one follow-up even when the installed prompt never appears', async () => {
     const ctx = new Context()
     await ctx.plugin(EmptySandbox)
     await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access', workspaceRoot: '/workspace' })
+    const sends: TerminalSendRequest[] = []
     const session = {
       motd: '',
-      startSend: (request: TerminalSendRequest) => ({
-        done: Promise.resolve({
-          viewport: request.text,
-          waitReason: 'inferred_idle' as const,
-          sessionStatus: { kind: 'running' as const }, truncated: false,
-        }),
-        readOutput: () => ({ delta: '', truncated: false }),
-        cancel: () => false,
-      }),
+      startSend: (request: TerminalSendRequest) => {
+        sends.push(request)
+        return {
+          done: Promise.resolve({
+            viewport: request.text,
+            waitReason: 'inferred_idle' as const,
+            sessionStatus: { kind: 'running' as const }, truncated: false,
+          }),
+          readOutput: () => ({ delta: '', truncated: false }),
+          cancel: () => false,
+        }
+      },
       read: () => ({ text: 'PowerShell 7.6.4\n', totalLines: 1, lineBegin: 0, lineEnd: 1, truncated: false }),
       close: () => Promise.resolve(),
     } as unknown as LocalPtySession
@@ -478,7 +482,10 @@ describe('BashTerminalBackend startup rollback', () => {
       async () => terminalHandle(),
       () => session,
     )
-    await expect(backend.spawn(spec(agent(ctx)))).rejects.toThrow('did not reach readiness before startup timeout')
+    expect(await backend.spawn(spec(agent(ctx)))).toBe(session)
+    expect(sends).toHaveLength(2)
+    expect(sends[1]).toMatchObject({ text: '', submit: false })
+    expect(session.motd).toBe('')
   })
 
   it('rejects a pwsh bootstrap whose shell exits or times out', async () => {

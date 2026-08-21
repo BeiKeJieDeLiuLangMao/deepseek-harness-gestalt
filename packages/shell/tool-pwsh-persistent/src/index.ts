@@ -257,7 +257,8 @@ async function respondToSessionExit(
  * this tool's own prompt. `[char]27`/`[char]7` build the OSC bytes at runtime
  * because raw ESC characters in submitted input are unreliable under
  * PSReadLine. The printable prompt is two concatenated literals so a PTY
- * echo of this source cannot satisfy the initialization `includes(SHELL_PROMPT)` wait.
+ * echo of this source cannot match the installed tool prompt and skip the
+ * follow-up send.
  */
 const PWSH_PROMPT_HEAD = SHELL_PROMPT.slice(0, Math.ceil(SHELL_PROMPT.length / 2))
 const PWSH_PROMPT_TAIL = SHELL_PROMPT.slice(PWSH_PROMPT_HEAD.length)
@@ -310,24 +311,22 @@ function persistentShells(ctx: Context, config: ResolvedConfig): PersistentShell
             live.delete(owner)
           }, 'tool-pwsh-persistent owner cache cleanup')
         }
-        const startedAt = Date.now()
-        let written = false
-        for (;;) {
+        const bootstrap = async (text: string, submit: boolean) => {
           const setup = ctx.terminals.startSend(owner, spawned.sessionId, {
-            text: written ? '' : PWSH_PROMPT_SETUP,
-            submit: !written,
+            text,
+            submit,
             signal: combinedSignal,
           })
-          written = true
           const result = await setup.done
           if (result.sessionStatus.kind === 'exited' || result.waitReason === 'timeout') {
             throw new Error('persistent pwsh shell did not accept initialization')
           }
-          const scrollback = ctx.terminals.read(owner, spawned.sessionId, { offset: 0, count: 20 }).text
-          if (result.viewport.includes(SHELL_PROMPT) || scrollback.includes(SHELL_PROMPT)) break
-          if (Date.now() - startedAt >= config.timeoutMs) {
-            throw new Error('persistent pwsh shell did not accept initialization')
-          }
+          return result
+        }
+        const first = await bootstrap(PWSH_PROMPT_SETUP, true)
+        const scrollback = ctx.terminals.read(owner, spawned.sessionId, { offset: 0, count: 20 }).text
+        if (!first.viewport.includes(SHELL_PROMPT) && !scrollback.includes(SHELL_PROMPT)) {
+          await bootstrap('', false)
         }
         return spawned.sessionId
       } catch (error: unknown) {

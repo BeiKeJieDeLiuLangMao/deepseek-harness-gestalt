@@ -577,10 +577,11 @@ describe('tool-pwsh-persistent', () => {
     expect(stub.sessions[0]?.promptSetups[0]).not.toContain('__DSH_PERSISTENT_PWSH_PROMPT__ ')
   })
 
-  it('fails initialization when the setup echo never becomes the installed tool prompt', async () => {
-    const { ctx, owner, stub } = await setup({ backendType: 'stub', timeoutMs: 50 }, 'init-echo-stuck')
-    expect((await call(ctx, owner, 'pwd')).isError).toBe(true)
-    expect(stub.sessions[0]?.closed).toContain('persistent pwsh initialization failed')
+  it('accepts initialization after one follow-up even when the installed tool prompt never appears', async () => {
+    const { ctx, owner, stub } = await setup({ backendType: 'stub' }, 'init-echo-stuck')
+    expect(text(await call(ctx, owner, 'Write-Output one'))).toBe('hello from stub')
+    expect(stub.sessions[0]?.sends).toBe(3)
+    expect(stub.sessions[0]?.promptSetups[0]).not.toContain('__DSH_PERSISTENT_PWSH_PROMPT__ ')
   })
 
   it.each(['init-exit', 'init-timeout'] as const)(
