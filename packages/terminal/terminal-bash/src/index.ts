@@ -161,9 +161,11 @@ async function startupSession(
       if (result.waitReason === 'timeout') throw new Error('PTY shell did not reach readiness before startup timeout')
       viewport = result.viewport
       const scrollback = session.read({ offset: 0, count: 20 }).text
-      // stdin_read can also come from acceptsStdinWait before the prompt
-      // function is installed; only a last-line exact match is ready.
-      if (showsInstalledControlledPrompt(viewport, scrollback)) break
+      // stdin_read means the shell is accepting input (OSC+tail or
+      // acceptsStdinWait). The persistent tool then installs its own prompt.
+      // inferred_idle still needs a last-line exact match so banner silence
+      // does not count as the installed prompt.
+      if (result.waitReason === 'stdin_read' || showsInstalledControlledPrompt(viewport, scrollback)) break
       if (Date.now() - started >= timeoutMs) {
         throw new Error('PTY shell did not reach readiness before startup timeout')
       }

@@ -358,7 +358,7 @@ describe('web e2e: empty-draft Cmd+Enter steers the whole queue', () => {
     // and Playwright text matching skips the hidden rows — expand the list,
     // then assert each row's content.
     await dock.getByText('2 queued messages').waitFor({ timeout: 10_000 })
-    await dock.getByRole('button').click()
+    await dock.getByRole('button', { name: '2 queued messages' }).click({ force: true })
     await dock.getByText(STEER_ONE, { exact: true }).waitFor({ timeout: 10_000 })
     await dock.getByText(STEER_TWO, { exact: true }).waitFor({ timeout: 10_000 })
     expect(await page.locator('[data-pending-steering]').count()).toBe(0)

@@ -509,7 +509,7 @@ describe('BashTerminalBackend startup rollback', () => {
     expect(session.motd).toBe('PowerShell\ndsh> \n ')
   })
 
-  it('does not treat stdin_read as ready when the last line is not the prompt', async () => {
+  it('treats stdin_read as ready so the persistent tool can install its own prompt', async () => {
     const ctx = new Context()
     await ctx.plugin(EmptySandbox)
     await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access', workspaceRoot: '/workspace' })
@@ -524,15 +524,15 @@ describe('BashTerminalBackend startup rollback', () => {
         cancel: () => false,
       }),
       read: () => ({ text: '', totalLines: 0, lineBegin: 0, lineEnd: 0, truncated: false }),
-      close: () => Promise.resolve(),
     } as unknown as LocalPtySession
     const backend = new BashTerminalBackend(
       ctx,
-      { ...config(), shellDialect: 'pwsh', shellPath: 'pwsh', timeoutMs: 30 },
+      { ...config(), shellDialect: 'pwsh', shellPath: 'pwsh' },
       async () => terminalHandle(),
       () => session,
     )
-    await expect(backend.spawn(spec(agent(ctx)))).rejects.toThrow('did not reach readiness before startup timeout')
+    expect(await backend.spawn(spec(agent(ctx)))).toBe(session)
+    expect(session.motd).toBe('dsh> extra')
   })
 
   it('accepts a last-line prompt in scrollback when the send viewport still ends on setup echo', async () => {
