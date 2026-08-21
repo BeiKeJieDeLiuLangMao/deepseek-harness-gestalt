@@ -51,7 +51,7 @@ import { DesktopPairingKeyVault } from './pairing-keys.ts'
 import { disposeDesktopOwners } from './shutdown.ts'
 import { startDesktopBrowserRuntime, type DesktopBrowserRuntime } from './browser-runtime.ts'
 import { createDesktopRemoteRelay } from './remote-relay.ts'
-import { createLoopbackListenFetch, openDesktopAuthorizationUrl } from './loopback-listen-trust.ts'
+import { createLoopbackListenFetch, isLoopbackListenUrl, openDesktopAuthorizationUrl } from './loopback-listen-trust.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const PRELOAD = join(here, 'preload.cjs')
@@ -477,7 +477,12 @@ function installIpc(): void {
   ipcMain.on(WINDOW_CLOSE, (_event: IpcMainEvent) => { window?.close() })
   ipcMain.handle(ACCOUNT_GET_SNAPSHOT, () => account.getSnapshot())
   ipcMain.handle(ACCOUNT_ACCEPT_PRIVACY, () => account.acceptPrivacy())
-  ipcMain.handle(ACCOUNT_BEGIN_LOGIN, () => account.beginLogin())
+  ipcMain.handle(ACCOUNT_BEGIN_LOGIN, () => {
+    void account.beginLogin().catch((error: unknown) => {
+      console.error('[desktop-account] beginLogin failed:', error)
+    })
+    return account.getSnapshot()
+  })
   ipcMain.handle(ACCOUNT_SIGN_OUT, async () => {
     const snapshot = await account.signOut()
     await pairing.deactivate('mobile-access-disabled')
@@ -551,10 +556,15 @@ function createDesktopAccount(environment: SelectedPlatformEnvironment): Desktop
   })
   const store = new EncryptedDesktopAccountStore(
     join(app.getPath('userData'), `platform-account-${environment.databaseIdentity}.bin`),
-    {
-      encrypt: value => safeStorage.encryptString(value),
-      decrypt: value => safeStorage.decryptString(Buffer.from(value)),
-    },
+    isLoopbackListenUrl(environment.origin)
+      ? {
+        encrypt: value => Buffer.from(value),
+        decrypt: value => Buffer.from(value).toString('utf8'),
+      }
+      : {
+        encrypt: value => safeStorage.encryptString(value),
+        decrypt: value => safeStorage.decryptString(Buffer.from(value)),
+      },
   )
   return new DesktopAccountController({
     environment,

@@ -99,8 +99,8 @@ export class PlatformAccountHttpTransport implements PlatformAccountTransport {
   }
 
   private async request(path: string, init: RequestInit): Promise<Response> {
-    const headers = new Headers(init.headers)
-    if (init.body !== undefined) headers.set('content-type', 'application/json')
+    const headers = headerRecord(init.headers)
+    if (init.body !== undefined) headers['content-type'] = 'application/json'
     const response = await this.fetch(`${this.origin}${path}`, { ...init, headers })
     if (response.ok) return response
     let message = `Platform Account request failed with HTTP ${response.status}`
@@ -675,6 +675,19 @@ function base64url(bytes: Uint8Array): string {
   let binary = ''
   for (const byte of bytes) binary += String.fromCharCode(byte)
   return btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/u, '')
+}
+
+function headerRecord(headers?: HeadersInit): Record<string, string> {
+  const record: Record<string, string> = {}
+  if (headers === undefined) return record
+  if (Array.isArray(headers)) {
+    for (const [key, value] of headers) record[key] = value
+    return record
+  }
+  for (const [key, value] of Object.entries(headers)) {
+    if (typeof value === 'string') record[key] = value
+  }
+  return record
 }
 
 function proofHeaders(accessToken: string, proof: AccountProof): HeadersInit {

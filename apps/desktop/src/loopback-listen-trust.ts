@@ -1,5 +1,8 @@
 import { request as httpsRequest } from 'node:https'
 
+/** Hang bound for loopback HTTPS in the Electron main process. */
+const LOOPBACK_REQUEST_TIMEOUT_MS = 10_000
+
 /** True when the URL names a loopback HTTPS listen that presents a bundled test certificate. */
 export function isLoopbackListenUrl(url: string): boolean {
   const parsed = new URL(url)
@@ -18,7 +21,8 @@ export function createLoopbackListenFetch(origin: string): typeof fetch | undefi
 }
 
 /**
- * Complete a loopback authorization URL in-process; otherwise open the system browser.
+ * Complete a loopback authorization URL in-process without following the browser return Location;
+ * otherwise open the system browser.
  * @param url - GitHub or local-companion authorization URL.
  * @param openExternal - system-browser opener for non-loopback URLs.
  */
@@ -26,12 +30,11 @@ export async function openDesktopAuthorizationUrl(
   url: string,
   openExternal: (url: string) => Promise<void>,
 ): Promise<void> {
-  const fetch = createLoopbackListenFetch(new URL(url).origin)
-  if (fetch === undefined) {
+  if (!isLoopbackListenUrl(url)) {
     await openExternal(url)
     return
   }
-  const response = await fetch(url)
+  const response = await requestLoopback(new URL(url), 'GET')
   if (response.status >= 400) {
     throw new Error(`loopback authorization returned ${String(response.status)}`)
   }
@@ -39,47 +42,106 @@ export async function openDesktopAuthorizationUrl(
 
 function createInsecureHttpsFetch(): typeof fetch {
   const fetchHttps = async (input: RequestInfo | URL, init?: RequestInit, redirects = 0): Promise<Response> => {
-    const request = input instanceof Request ? input : new Request(input, init)
-    const url = new URL(request.url)
-    const body = request.method === 'GET' || request.method === 'HEAD'
-      ? undefined
-      : Buffer.from(await request.arrayBuffer())
-    const headers: Record<string, string> = {}
-    request.headers.forEach((value, key) => { headers[key] = value })
-    const response = await new Promise<Response>((resolve, reject) => {
-      const upstream = httpsRequest({
-        protocol: url.protocol,
-        hostname: url.hostname,
-        port: url.port,
-        path: `${url.pathname}${url.search}`,
-        method: request.method,
-        headers,
-        rejectUnauthorized: false,
-      }, (incoming) => {
-        const chunks: Buffer[] = []
-        incoming.on('data', (chunk) => { chunks.push(chunk as Buffer) })
-        incoming.on('end', () => {
-          const responseHeaders = new Headers()
-          for (const [key, value] of Object.entries(incoming.headers)) {
-            if (typeof value === 'string') responseHeaders.set(key, value)
-            else if (Array.isArray(value)) responseHeaders.set(key, value.join(', '))
-          }
-          const status = incoming.statusCode ?? 502
-          resolve(new Response(
-            status === 204 || status === 205 || status === 304 ? null : Buffer.concat(chunks),
-            { status, headers: responseHeaders },
-          ))
-        })
-      })
-      upstream.on('error', reject)
-      if (body !== undefined) upstream.write(body)
-      upstream.end()
-    })
+    if (input instanceof Request) {
+      throw new TypeError('loopback Fetch expects a URL, not a Chromium Request')
+    }
+    const url = new URL(String(input))
+    const method = init?.method ?? 'GET'
+    const response = await requestLoopback(url, method, headerRecord(init?.headers), bodyBuffer(method, init?.body))
     const location = response.headers.get('location')
     if (location === null || redirects >= 5 || ![301, 302, 303, 307, 308].includes(response.status)) {
       return response
     }
-    return await fetchHttps(new URL(location, request.url), { method: 'GET' }, redirects + 1)
+    return await fetchHttps(new URL(location, url), { method: 'GET' }, redirects + 1)
   }
   return (input, init) => fetchHttps(input, init)
+}
+
+function requestLoopback(
+  url: URL,
+  method: string,
+  headers: Record<string, string> = {},
+  body?: Buffer,
+): Promise<Response> {
+  return new Promise((resolve, reject) => {
+    const upstream = httpsRequest({
+      protocol: url.protocol,
+      hostname: url.hostname,
+      port: url.port,
+      path: `${url.pathname}${url.search}`,
+      method,
+      headers: body === undefined ? headers : { ...headers, 'content-length': String(body.length) },
+      rejectUnauthorized: false,
+      timeout: LOOPBACK_REQUEST_TIMEOUT_MS,
+    }, (incoming) => {
+      const chunks: Buffer[] = []
+      incoming.on('data', (chunk) => { chunks.push(chunk as Buffer) })
+      incoming.on('end', () => {
+        const headers: Record<string, string> = {}
+        for (const [key, value] of Object.entries(incoming.headers)) {
+          if (typeof value === 'string') headers[key] = value
+          else if (Array.isArray(value)) headers[key] = value.join(', ')
+        }
+        const status = incoming.statusCode ?? 502
+        resolve(new LoopbackResponse(
+          status,
+          headers,
+          status === 204 || status === 205 || status === 304 ? null : Buffer.concat(chunks),
+        ) as Response)
+      })
+    })
+    upstream.on('timeout', () => {
+      upstream.destroy()
+      reject(new Error('loopback HTTPS request timed out'))
+    })
+    upstream.on('error', reject)
+    if (body !== undefined) upstream.write(body)
+    upstream.end()
+  })
+}
+
+function headerRecord(headers?: HeadersInit): Record<string, string> {
+  const record: Record<string, string> = {}
+  if (headers === undefined) return record
+  if (typeof Headers === 'function' && headers instanceof Headers) {
+    headers.forEach((value, key) => { record[key] = value })
+    return record
+  }
+  if (Array.isArray(headers)) {
+    for (const [key, value] of headers) record[key] = value
+    return record
+  }
+  return { ...headers as Record<string, string> }
+}
+
+/** In-memory Response so Electron main never constructs a Chromium Body. */
+class LoopbackResponse {
+  readonly status: number
+  readonly ok: boolean
+  readonly headers: { get(name: string): string | null }
+  private readonly body: Buffer | null
+
+  constructor(status: number, headers: Record<string, string>, body: Buffer | null) {
+    this.status = status
+    this.ok = status >= 200 && status < 300
+    const normalized: Record<string, string> = {}
+    for (const [key, value] of Object.entries(headers)) normalized[key.toLowerCase()] = value
+    this.headers = { get: name => normalized[name.toLowerCase()] ?? null }
+    this.body = body
+  }
+
+  async json(): Promise<unknown> {
+    return JSON.parse((this.body ?? Buffer.alloc(0)).toString('utf8')) as unknown
+  }
+
+  async text(): Promise<string> {
+    return (this.body ?? Buffer.alloc(0)).toString('utf8')
+  }
+}
+
+function bodyBuffer(method: string, body: BodyInit | null | undefined): Buffer | undefined {
+  if (method === 'GET' || method === 'HEAD' || body == null) return undefined
+  if (typeof body === 'string') return Buffer.from(body)
+  if (body instanceof Uint8Array) return Buffer.from(body)
+  throw new TypeError('loopback Fetch body must be a string or bytes')
 }

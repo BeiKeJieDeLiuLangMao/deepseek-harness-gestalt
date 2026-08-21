@@ -17,6 +17,7 @@ const relayLifecycle = vi.hoisted(() => ({
   start: vi.fn(async () => {}),
   stop: vi.fn(async () => {}),
   isConnected: vi.fn(() => false),
+  sendCiphertext: vi.fn(async () => {}),
   onCiphertext: undefined as (() => void) | undefined,
 }))
 
@@ -37,6 +38,7 @@ vi.mock('@deepseek-ai/dsh-remote-access-client', async (importOriginal) => {
       start = relayLifecycle.start
       stop = relayLifecycle.stop
       isConnected = relayLifecycle.isConnected
+      sendCiphertext = relayLifecycle.sendCiphertext
     },
   }
 })
@@ -51,6 +53,7 @@ afterEach(() => {
   relayLifecycle.stop.mockReset()
   relayLifecycle.isConnected.mockReset()
   relayLifecycle.isConnected.mockReturnValue(false)
+  relayLifecycle.sendCiphertext.mockReset()
   relayLifecycle.onCiphertext = undefined
   localStorage.clear()
   Object.defineProperty(globalThis, 'indexedDB', {
@@ -250,6 +253,9 @@ describe('Mobile Platform Account entry', () => {
     hidden = false
     document.dispatchEvent(new Event('visibilitychange'))
     await waitFor(() => { expect(relayLifecycle.start).toHaveBeenCalled() })
+    await waitFor(() => {
+      expect(relayLifecycle.sendCiphertext).toHaveBeenCalledWith('desktop-development-keyless', Uint8Array.of(1))
+    })
     expect(runtime.getState().socketOpen).toBe(true)
     expect(runtime.getState().synchronized).toBe(false)
     expect(companionMayMutate(runtime.getState())).toBe(false)

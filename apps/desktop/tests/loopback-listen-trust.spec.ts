@@ -38,6 +38,14 @@ describe('loopback listen trust', () => {
         res.end()
         return
       }
+      if (req.url === '/complete') {
+        res.writeHead(303, { location: '/hang' })
+        res.end()
+        return
+      }
+      if (req.url === '/hang') {
+        return
+      }
       if (req.url === '/missing') {
         res.writeHead(404)
         res.end()
@@ -60,10 +68,11 @@ describe('loopback listen trust', () => {
       const redirected = await fetch(`${origin}/redirect`)
       expect(redirected.status).toBe(200)
       expect(await redirected.json()).toEqual({ ok: true })
-      const posted = await fetch(new Request(`${origin}/ok`, { method: 'POST', body: '{}' }))
+      const posted = await fetch(`${origin}/ok`, { method: 'POST', body: '{}' })
       expect(posted.status).toBe(200)
+      await expect(fetch(new Request(`${origin}/ok`, { method: 'POST', body: '{}' }))).rejects.toThrow('URL, not a Chromium Request')
       const opened: string[] = []
-      await openDesktopAuthorizationUrl(`${origin}/redirect`, async (url) => { opened.push(url) })
+      await openDesktopAuthorizationUrl(`${origin}/complete`, async (url) => { opened.push(url) })
       await openDesktopAuthorizationUrl('https://github.com/login', async (url) => { opened.push(url) })
       expect(opened).toEqual(['https://github.com/login'])
       await expect(openDesktopAuthorizationUrl(`${origin}/missing`, async () => {})).rejects.toThrow('loopback authorization')

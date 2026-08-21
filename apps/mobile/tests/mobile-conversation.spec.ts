@@ -33,6 +33,26 @@ describe('Mobile conversation renderer', () => {
     expect(screen.queryByRole('button', { name: '允许' })).toBeNull()
   })
 
+  it('refuses composer mutations while Remote Offline', () => {
+    const onSubmit = vi.fn()
+    const onAttach = vi.fn()
+    render(createElement(MobileConversation, {
+      title: 'Offline',
+      onBack: () => {},
+      companionState: { token: 'tok', foreground: true, socketOpen: false, synchronized: false },
+      onSubmit,
+      onAttach,
+      blocks: [{ kind: 'markdown', text: 'cached' }],
+    }))
+    expect(screen.getByRole('alert').textContent).toBe('Remote Offline 拒绝发送')
+    expect(screen.getByLabelText('继续会话').hasAttribute('disabled')).toBe(true)
+    expect(screen.getByLabelText('添加附件').hasAttribute('disabled')).toBe(true)
+    fireEvent.change(screen.getByLabelText('继续会话'), { target: { value: 'nope' } })
+    fireEvent.submit(screen.getByLabelText('继续会话').closest('form')!)
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(onAttach).not.toHaveBeenCalled()
+  })
+
   it('disables settlement until foreground reconnect and Desktop-authoritative sync', () => {
     const onSettled = vi.fn()
     render(createElement(MobileConversation, {

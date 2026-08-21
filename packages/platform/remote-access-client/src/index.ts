@@ -32,6 +32,7 @@ export * from './relay.ts'
 export * from './browser-relay-socket.ts'
 export * from './relay-queue.ts'
 export * from './mobile-relay-lifecycle.ts'
+export * from './development-keyless-companion.ts'
 import {
   PERSONAL_PAIRING_PROTOCOL_MAJOR,
   RemoteAccessError,
