@@ -5,9 +5,9 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { unlink, writeFile } from 'node:fs/promises'
+import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
@@ -57,7 +57,11 @@ function ensureSandboxModeFence(ctx: Context, owner: Agent): void {
   }, { global: true })
 }
 
-function childEnvironment(spec: TerminalBackendSpawnSpec, dialect: ShellDialect): Record<string, string> {
+function childEnvironment(
+  spec: TerminalBackendSpawnSpec,
+  dialect: ShellDialect,
+  pwshHome: string | undefined,
+): Record<string, string> {
   // The subprocess provider supplies its own scrubbed ambient base; these are
   // deliberate terminal-specific overrides layered after it.
   const common = {
@@ -69,9 +73,17 @@ function childEnvironment(spec: TerminalBackendSpawnSpec, dialect: ShellDialect)
     DSH_PTY_SESSION_ID: spec.sessionId,
   }
   if (dialect === 'pwsh') {
-    // pwsh ignores PS1/PROMPT_COMMAND; its prompt is installed by the startup
-    // bootstrap instead, and NO_COLOR keeps the renderer quiet.
-    return { ...common, NO_COLOR: '1' }
+    // Spawn writes pwshHome before this call. pwsh ignores PS1/PROMPT_COMMAND;
+    // the isolated profile under that home installs the prompt. NO_COLOR
+    // keeps the renderer quiet.
+    const home = pwshHome as string
+    return {
+      ...common,
+      NO_COLOR: '1',
+      HOME: home,
+      USERPROFILE: home,
+      XDG_CONFIG_HOME: join(home, '.config'),
+    }
   }
   return {
     ...common,
@@ -99,21 +111,30 @@ const PWSH_SETUP_DONE_TAIL = PWSH_SETUP_DONE.slice(PWSH_SETUP_DONE_HEAD.length)
  */
 export const PWSH_PROMPT_SETUP =
   `function prompt { [Console]::Write([char]27 + ']133;D;' + [int]$LASTEXITCODE + [char]7); ('${PWSH_PROMPT_HEAD}' + '${PWSH_PROMPT_TAIL}') }; Write-Output ('${PWSH_SETUP_DONE_HEAD}' + '${PWSH_SETUP_DONE_TAIL}')`
-async function writePwshSetupScript(): Promise<string> {
-  const setupPath = join(tmpdir(), `dsh-pwsh-setup-${randomUUID()}.ps1`)
-  await writeFile(setupPath, `${ENCODING_PREAMBLE}\n${PWSH_PROMPT_SETUP}\n`)
-  return setupPath
+async function writePwshIsolatedHome(): Promise<string> {
+  const home = join(tmpdir(), `dsh-pwsh-home-${randomUUID()}`)
+  const body = `${ENCODING_PREAMBLE}\n${PWSH_PROMPT_SETUP}\n`
+  const profiles = [
+    join(home, '.config', 'powershell', 'Microsoft.PowerShell_profile.ps1'),
+    join(home, 'Documents', 'PowerShell', 'Microsoft.PowerShell_profile.ps1'),
+  ]
+  for (const profile of profiles) {
+    await mkdir(dirname(profile), { recursive: true })
+    await writeFile(profile, body)
+  }
+  return home
 }
 
 function spawnArgv(
   ctx: Context,
   config: ResolvedConfig,
   policy: SandboxExecutionPolicy,
-  setupPath?: string,
+  pwshHome?: string,
 ): string[] {
-  const argv = setupPath === undefined
-    ? [config.shellPath, ...config.shellArgs]
-    : [config.shellPath, ...config.shellArgs, '-NoExit', '-File', setupPath]
+  const shellArgs = pwshHome === undefined
+    ? config.shellArgs
+    : config.shellArgs.filter(arg => arg !== '-NoProfile')
+  const argv = [config.shellPath, ...shellArgs]
   if (policy.mode === 'danger-full-access') return argv
   const sandbox = ctx.get('sandbox')
   if (sandbox === undefined) {
@@ -145,10 +166,11 @@ async function startupSession(
       return
     }
     // pwsh cannot install its prompt from the environment. Interactive
-    // writes after `PS …>` never execute on Linux CI (idle hold
-    // 32469299678; early stdin_wait 32466566587; banner 32462089006).
-    // Spawn therefore runs the prompt function and UTF-8 pin through
-    // `-NoExit -File` before PSReadLine starts, then waits for
+    // writes after `PS …>` never execute on Linux CI, and `-NoExit -File`
+    // printed the token but left a host that dropped later sends
+    // (32470697182: empty `keep=ok`, `PTY send aborted before write`).
+    // Spawn therefore loads an isolated HOME profile (no `-NoProfile`, no
+    // `-File`) so the normal interactive host starts, then waits for
     // PWSH_SETUP_DONE. Follow-ups continue until that token is visible.
     // session_exit, per-send timeout, and the spawn-wall timeoutMs reject.
     const startedAt = Date.now()
@@ -208,14 +230,14 @@ export class BashTerminalBackend implements TerminalBackend {
     spec.signal?.throwIfAborted()
     ensureSandboxModeFence(this.ctx, spec.owner)
     const policy = this.ctx.sandboxPolicy.resolve({ session: spec.owner.session })
-    const setupPath = this.config.shellDialect === 'pwsh' ? await writePwshSetupScript() : undefined
-    const argv = spawnArgv(this.ctx, this.config, policy, setupPath)
+    const pwshHome = this.config.shellDialect === 'pwsh' ? await writePwshIsolatedHome() : undefined
+    const argv = spawnArgv(this.ctx, this.config, policy, pwshHome)
     if (argv[0] === undefined) throw new Error('terminal-bash: sandbox returned empty argv')
     try {
       const terminal = await this.spawnTerminal({
         argv,
         cwd: spec.cwd ?? policy.workspaceRoot,
-        env: childEnvironment(spec, this.config.shellDialect),
+        env: childEnvironment(spec, this.config.shellDialect, pwshHome),
         rows: this.config.rows,
         cols: this.config.cols,
         graceMs: this.config.disposeGraceMs,
@@ -234,7 +256,7 @@ export class BashTerminalBackend implements TerminalBackend {
         throw error
       }
     } finally {
-      if (setupPath !== undefined) await unlink(setupPath)
+      if (pwshHome !== undefined) await rm(pwshHome, { recursive: true, force: true })
     }
   }
 }

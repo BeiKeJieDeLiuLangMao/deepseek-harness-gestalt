@@ -343,7 +343,7 @@ describe('BashTerminalBackend startup rollback', () => {
     await session.close('test complete')
   })
 
-  it('bootstraps a pwsh dialect through -NoExit -File and scrubs bash-only env', async () => {
+  it('bootstraps a pwsh dialect through an isolated HOME profile and scrubs bash-only env', async () => {
     const ctx = new Context()
     await ctx.plugin(EmptySandbox)
     await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access', workspaceRoot: '/workspace' })
@@ -378,9 +378,10 @@ describe('BashTerminalBackend startup rollback', () => {
     expect(PWSH_PROMPT_SETUP).not.toContain(PWSH_SETUP_DONE)
     expect(ENCODING_PREAMBLE + PWSH_PROMPT_SETUP).not.toContain(CONTROLLED_PROMPT)
     expect(ENCODING_PREAMBLE + PWSH_PROMPT_SETUP).not.toContain(PWSH_SETUP_DONE)
-    expect(spawned?.argv?.slice(0, 3)).toEqual(['pwsh', '-NoLogo', '-NoProfile'])
-    expect(spawned?.argv?.slice(-3, -1)).toEqual(['-NoExit', '-File'])
-    expect(spawned?.argv?.at(-1)).toMatch(/dsh-pwsh-setup-.*\.ps1$/)
+    expect(spawned?.argv).toEqual(['pwsh', '-NoLogo'])
+    expect(spawned?.env?.HOME).toMatch(/dsh-pwsh-home-/)
+    expect(spawned?.env?.USERPROFILE).toBe(spawned?.env?.HOME)
+    expect(spawned?.env?.XDG_CONFIG_HOME).toBe(`${spawned?.env?.HOME}/.config`)
     expect(spawned?.env).toMatchObject({
       TERM: 'dumb', NO_COLOR: '1', DSH_SHELL: '1', DSH_SESSION_ID: 'agent', DSH_PTY_SESSION_ID: 'pty-1',
     })
@@ -451,7 +452,7 @@ describe('BashTerminalBackend startup rollback', () => {
     expect(session.motd).toBe(`banner\n${PWSH_SETUP_DONE}`)
   })
 
-  it('rejects a pwsh bootstrap whose -File run never prints the done token', async () => {
+  it('rejects a pwsh bootstrap whose isolated profile never prints the done token', async () => {
     const ctx = new Context()
     await ctx.plugin(EmptySandbox)
     await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access', workspaceRoot: '/workspace' })
@@ -533,7 +534,7 @@ describe('BashTerminalBackend startup rollback', () => {
     expect(sends).toEqual([expect.objectContaining({ text: '', submit: false, signal })])
   })
 
-  it('wraps the pwsh -File setup argv through the sandbox', async () => {
+  it('wraps the pwsh isolated-home argv through the sandbox', async () => {
     const ctx = new Context()
     await ctx.plugin(RecordingSandbox)
     await ctx.plugin(SandboxPolicyService, { mode: 'workspace-write', workspaceRoot: '/workspace' })
@@ -562,9 +563,8 @@ describe('BashTerminalBackend startup rollback', () => {
       () => session,
     )
     await backend.spawn(spec(agent(ctx)))
-    expect(confined?.slice(0, 3)).toEqual(['/sandbox', '--', 'pwsh'])
-    expect(confined?.slice(-3, -1)).toEqual(['-NoExit', '-File'])
-    expect((ctx.sandbox as RecordingSandbox).calls[0]?.argv.slice(-2, -1)).toEqual(['-File'])
+    expect(confined).toEqual(['/sandbox', '--', 'pwsh', '-NoLogo'])
+    expect((ctx.sandbox as RecordingSandbox).calls[0]?.argv).toEqual(['pwsh', '-NoLogo'])
   })
 })
 
