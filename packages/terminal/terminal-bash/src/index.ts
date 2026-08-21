@@ -142,18 +142,20 @@ async function startupSession(
     // bound, so the wait loops over follow-up sends until the latest printed
     // line is exactly the controlled prompt. Setup echo contains that
     // marker as a substring (`setup-echo dsh> ` or the prompt-function
-    // source) and must not count. Each startSend resets its own deadline,
+    // source) and must not count. An empty follow-up viewport is not a
+    // reason to submit setup again. Each startSend resets its own deadline,
     // so inferred_idle can starve `timeout`; the spawn `timeoutMs` is the
     // wall for the whole loop.
     const started = Date.now()
     let viewport = ''
+    let sentSetup = false
     for (;;) {
-      const first = viewport.length === 0
       const operation = session.startSend({
-        text: first ? ENCODING_PREAMBLE + PWSH_PROMPT_SETUP : '',
-        submit: first,
+        text: sentSetup ? '' : ENCODING_PREAMBLE + PWSH_PROMPT_SETUP,
+        submit: !sentSetup,
         ...signal !== undefined ? { signal } : {},
       })
+      sentSetup = true
       const result = await operation.done
       if (result.waitReason === 'session_exit') throw new Error('PTY shell exited during startup')
       if (result.waitReason === 'timeout') throw new Error('PTY shell did not reach readiness before startup timeout')

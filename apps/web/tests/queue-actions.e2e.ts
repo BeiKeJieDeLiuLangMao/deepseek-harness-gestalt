@@ -240,11 +240,17 @@ describe('web e2e: queue row actions', () => {
     await expectAlignedContextPanels()
     await page.setViewportSize({ width: 640, height: 1000 })
     await expect.poll(async () => {
+      const queueBox = await page.locator('[data-queue-dock] > div').boundingBox()
       const todoBox = await page.locator('[data-testid="todo-panel"]').boundingBox()
       const goalBox = await page.locator('[data-goal-bar] > div').boundingBox()
-      if (todoBox === null || goalBox === null) return Number.POSITIVE_INFINITY
-      return Math.abs(todoBox.x - goalBox.x)
-    }, { timeout: 5_000 }).toBeLessThan(1)
+      if (queueBox === null || todoBox === null || goalBox === null) return Number.POSITIVE_INFINITY
+      return Math.max(
+        Math.abs(todoBox.x - goalBox.x),
+        Math.abs(todoBox.x - queueBox.x),
+        Math.abs(todoBox.width - goalBox.width),
+        Math.abs(todoBox.width - queueBox.width),
+      )
+    }, { timeout: 8_000 }).toBeLessThan(1)
     await expectAlignedContextPanels()
     await page.setViewportSize({ width: 1680, height: 1000 })
 
