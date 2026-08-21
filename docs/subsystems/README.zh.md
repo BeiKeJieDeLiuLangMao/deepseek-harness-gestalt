@@ -25,7 +25,6 @@
 | [personal-pairing.md](personal-pairing.md) | Settings-owned Mobile Access、同账号 Pairing Challenge、authentication words 与 Companion-only Device Principal |
 | [session-title.md](session-title.md) | 持久标题快照、被引用的来源消息 seq 与异步提供方约定 |
 | [session-reference.md](session-reference.md) | 结构化跨会话引用：`SessionReferenceInput`/`Candidate`、prepared 消息上下文、稳定错误分类 |
-| [workspace-reference.md](workspace-reference.md) | 仅表示存在性的工作区路径标记：`WorkspaceReferenceSource`（`path`、`pathKind`） |
 | [system-prompt.md](system-prompt.md) | 逐次组装的上下文、工具提供方结果、提示词段落与协作式组装 |
 | [tools.md](tools.md) | `ToolDefinition` 完整字段、schema DSL、`ToolExecution`/`ToolResult`、工具展示 UI 类型，以及受保护的执行流水线 |
 | [user-questions.md](user-questions.md) | UI 支持的人工问答 seam：`AskUserQuestionRequest`、answer/options 词汇、提供方 API、错误分类体系 |
@@ -42,6 +41,7 @@
 | [skills.md](skills.md) | skill（技能）服务：发现优先级、`SkillSummary`/`SkillDefinition`、会话前缀目录、面向模型的 `skill` 加载 |
 | [compaction.md](compaction.md) | 压缩（compaction）seam：`compaction/*` 会话事件、`CompactionResult`、`CompactionEngine` 接口 |
 | [subagent.md](subagent.md) | subagent seam：命名提供方注册表、`SubagentStartRequest`/`Result`/`Run`、启动时与运行时能力拆分 |
+| [agent-team.md](agent-team.md) | Agent Teams：隐式 Lead 身份、具名 continuable teammate、持久 peer mailbox 与共享任务 DAG |
 | [web.md](web.md) | Web 访问 seam：`WebSearchRequest`/`Result`、`WebFetchRequest`/`Result`、`WebFetchBody`、提供方可用性、`WebError` |
 | [browser-runtime.md](browser-runtime.md) | Browser Runtime seam：不透明 Profile/Workspace/浏览器/标签页身份、修订保护操作、Session 持有的 Workspace binder、确定性 Provider 与 deferred 工具 Consumer |
 | [spill.md](spill.md) | spill 存储 seam：`SaveTextSpill`、`SpillOwner`/`SpillSource`、`SpillRef`、品牌类型 `SpillLocator` |

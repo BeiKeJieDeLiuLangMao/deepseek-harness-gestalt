@@ -12,8 +12,6 @@ import clsx from 'clsx'
 import {
   IconPlusOutline16, IconWarningOutline16, Toast, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
-import { AttachmentRail, DropOverlay, ImageLightbox } from '@deepseek-ai/dsh-client-ui-attachment'
-import type { AttachmentRailItem } from '@deepseek-ai/dsh-client-ui-attachment'
 // Type-only: the `plan` projection key merge (the TodoDock posture — the
 // composer reads a host-computed value; the domain owns the key).
 import type {} from '@deepseek-ai/dsh-plan-mode/client'
@@ -23,29 +21,20 @@ import type {} from '@deepseek-ai/dsh-goal/client'
 // wire types: apiproxy's sessions contract declares it, and client-runtime's
 // api-remotes import already places it in every client program.
 import type { Translate } from '@deepseek-ai/dsh-client-ui-slots'
-import type { ComposerAttachment, ComposerBarProps } from '../contract/slots.ts'
-import { occurrenceEnd, placeholderSpan, snapSelection } from '../input/machine.ts'
+import type { ComposerBarProps } from '../contract/slots.ts'
 import { deriveDecorations } from '../input/decorations.ts'
 import type { DraftDecorations } from '../input/decorations.ts'
-import {
-  attachmentErrorText, attachmentRailLabels, dropOverlayLabels, imageSizeText, lightboxLabels,
-} from '../image-labels.ts'
+import { attachmentErrorText, imageSizeText } from '../image-labels.ts'
+import { ReferenceIcon } from '../reference/ReferenceIcon.tsx'
+import { AnnotationEditor } from '../annotation/AnnotationEditor.tsx'
+import { useComposerImagePinOverlay } from '../annotation/composer-image-pins.tsx'
 import { ContextMeter } from './ContextMeter.tsx'
 import { PermissionSelect } from './PermissionSelect.tsx'
 import { isSafariBrowser, repairSafariTextareaLayout } from './safari.ts'
 import css from './InputBar.module.css'
-import a11y from '../chat/accessibility.module.css'
-import { AnnotationEditor } from '../annotation/AnnotationEditor.tsx'
-import { isAnimatedGif } from '../annotation/model.ts'
-import type { ImagePinAnnotation } from '../annotation/model.ts'
 
 /** Decoration product of the no-session state (no machine, empty draft). */
 const INERT_DECORATIONS: DraftDecorations = { token: null, chips: [], textRefs: [], hint: null }
-
-/** Rail thumbnail carrying its source attachment for the open/remove callbacks. */
-interface ComposerRailItem extends AttachmentRailItem {
-  attachment: ComposerAttachment
-}
 
 export type InputBarProps = ComposerBarProps
 
@@ -80,18 +69,12 @@ export function InputBar({
     [draftImages, input?.imageIds],
   )
   const annotations = input?.annotations ?? []
-  const [editingAnnotation, setEditingAnnotation] = useState<string | null>(null)
-  const editingPin = annotations.find((item): item is ImagePinAnnotation => (
-    item.kind === 'image-pin' && item.id === editingAnnotation
-  ))
+  const composerPinOverlay = useComposerImagePinOverlay(input?.annotations, inputActions, t)
   const empty = draft.trim() === '' && attachments.length === 0 && annotations.length === 0
-  const [pinMode, setPinMode] = useState(false)
-  const [gifRefuse, setGifRefuse] = useState(false)
-  const [preview, setPreview] = useState<ComposerAttachment | null>(null)
-  const [dragActive, setDragActive] = useState(false)
-  // Transient error banner (image-intake rejections and prompt failures): the
-  // seq keys the Toast so an identical repeated message restarts the
-  // hold-then-fade cycle instead of silently reusing the faded one.
+  const [editingAnnotation, setEditingAnnotation] = useState<string | null>(null)
+  // Transient error banner (machine notices, image-intake rejections, and
+  // prompt failures): the seq keys the Toast so an identical repeated message
+  // restarts the hold-then-fade cycle instead of reusing the faded one.
   const [toast, setToast] = useState<{ seq: number; text: string } | null>(null)
   const toastSeq = useRef(0)
   const showToast = useCallback((text: string) => {
@@ -115,9 +98,11 @@ export function InputBar({
       ? attachmentErrorText(t, promptError.error.details.reason, imageLimits)
       : `${promptError.error.message} (${promptError.error.code})`)
   }, [promptError, showToast, t, imageLimits])
+  useEffect(() => {
+    if (notice?.level === 'error') showToast(notice.text)
+  }, [notice, showToast])
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
   const cardRef = useRef<HTMLDivElement | null>(null)
-  const dragDepthRef = useRef(0)
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const mirrorRef = useRef<HTMLDivElement | null>(null)
   const safari = useMemo(() => isSafariBrowser(navigator), [])
@@ -139,7 +124,7 @@ export function InputBar({
   const permissions = useProjection('permissions')
 
   // A continuable child without its live parent cannot accept human input,
-  // but its primary Stop stays available while it runs.
+  // but its independent Stop below stays available while it runs.
   const continuable = subagent?.address.mode === 'continuable'
   const parentOffline = continuable && !subagent.parentAvailable
   // Running input stays free; locked = session removed, the
@@ -155,7 +140,6 @@ export function InputBar({
   const modelSeatLocked = removed || inert || !live
   const annotationBusy = input?.annotationSubmitting === true
   const machineBusy = input?.phase === 'adjudicating' || input?.phase === 'submitting' || annotationBusy
-  // Locale plural pattern: one vs other, keyed by the draft annotation count.
   const annotationSummaryKey = annotations.length === 1 ? 'annotation.summary.one' : 'annotation.summary.other'
   // The no-workspace textarea remains the resident DOM node but acts as the
   // existing picker trigger. Message controls stay locked until a Session
@@ -173,6 +157,16 @@ export function InputBar({
     }
   }, [attachments, input?.imageIds, inputActions])
 
+  useEffect(() => {
+    if (annotationBusy) setEditingAnnotation(null)
+  }, [annotationBusy])
+
+  useEffect(() => {
+    if (editingAnnotation !== null && !annotations.some(item => item.id === editingAnnotation)) {
+      setEditingAnnotation(null)
+    }
+  }, [annotations, editingAnnotation])
+
   // A native Safari edit that shortens the draft may leave the previous
   // soft-wrap layout behind after the mirror shrinks. The native-change signal
   // keeps ordinary typing and programmatic draft updates from reading layout;
@@ -184,40 +178,6 @@ export function InputBar({
     safariNativeShrinkRef.current = false
     if (safari && nativeShrink) repairSafariTextareaLayout(inputRef.current)
   }, [draft, safari])
-
-  useEffect(() => {
-    if (preview !== null && !attachments.some(attachment => attachment.id === preview.id)) setPreview(null)
-  }, [attachments, preview])
-
-  useEffect(() => {
-    if (annotationBusy) setEditingAnnotation(null)
-  }, [annotationBusy])
-
-  useEffect(() => {
-    if (editingAnnotation !== null && !annotations.some(item => item.id === editingAnnotation)) {
-      setEditingAnnotation(null)
-    }
-  }, [annotations, editingAnnotation])
-
-  useEffect(() => {
-    if (editingAnnotation === null) return
-    const dismiss = (event: PointerEvent): void => {
-      const target = event.target
-      if (!(target instanceof Element)) return
-      if (target.closest('[data-annotation-editor]') !== null) return
-      if (target.closest('[data-annotation-pin]') !== null) return
-      setEditingAnnotation(null)
-    }
-    // Attach after the opening click so the same pointerdown cannot close it.
-    const timer = window.setTimeout(() => {
-      document.addEventListener('pointerdown', dismiss, true)
-    }, 0)
-    return () => {
-      window.clearTimeout(timer)
-      document.removeEventListener('pointerdown', dismiss, true)
-    }
-  }, [editingAnnotation])
-
   // Scroll the draft scrollport the minimum that brings `caret` into view — the
   // browser's own behavior for typing, performed for the paths where it does
   // not act.
@@ -327,6 +287,14 @@ export function InputBar({
     return () => { el.removeEventListener('wheel', onWheel) }
   }, [])
 
+  // selectionStart/End are number|null in lib.dom; the type-aware lint program narrows them.
+  /* oxlint-disable typescript/no-unnecessary-condition */
+  const selectionOf = (el: HTMLTextAreaElement) => ({
+    start: el.selectionStart ?? 0,
+    end: el.selectionEnd ?? el.selectionStart ?? 0,
+  })
+  /* oxlint-enable typescript/no-unnecessary-condition */
+
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>): void => {
     if (workspaceTrigger) {
       if (e.key === 'Enter' || e.key === ' ') {
@@ -337,24 +305,33 @@ export function InputBar({
     }
     // Absent machine without a Workspace recovery action stays disabled; the
     // guard narrows the faces for the paths below.
-    if (keyboard === undefined || inputActions === undefined) return
+    if (input === undefined || keyboard === undefined || inputActions === undefined) return
     // Shift+Enter is the native newline UNCONDITIONALLY — decided before the
     // IME guard so a composition-closing Shift+Enter still breaks the line.
     if (e.key === 'Enter' && e.shiftKey) return
     // keyCode 229 is the legacy IME-composition signal engines emit without isComposing.
     // oxlint-disable-next-line typescript/no-deprecated
     const composing = composingRef.current || e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229
+    if (!composing && !machineBusy && !locked
+      && (e.key === 'Backspace' || e.key === 'Delete')) {
+      const selection = selectionOf(e.currentTarget)
+      if (selection.start === selection.end) {
+        const occurrence = input.occurrences.find(o => e.key === 'Backspace'
+          ? o.offset + o.length === selection.start
+          : o.offset === selection.start)
+        if (occurrence !== undefined) {
+          e.preventDefault()
+          const start = occurrence.offset
+          const end = occurrence.offset + occurrence.length
+          keyboard.setDraft(draft.slice(0, start) + draft.slice(end), { start, end, insertedLength: 0 })
+          restoreCaret(e.currentTarget, start)
+          keyboard.track(keyboard.snapshot.draft, start)
+          return
+        }
+      }
+    }
     if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
       if (keyboard.arbitrate(e.key === 'ArrowUp' ? 'up' : 'down', composing) === 'consumed') e.preventDefault()
-      return
-    }
-    if (e.key === 'ArrowRight') {
-      if (keyboard.arbitrate('right', composing) === 'consumed') {
-        e.preventDefault()
-        const draft = keyboard.snapshot.draft
-        restoreCaret(e.currentTarget, draft.length)
-        keyboard.track(draft, draft.length)
-      }
       return
     }
     if (e.key === 'Escape') {
@@ -419,43 +396,32 @@ export function InputBar({
     keyboard.track(next, e.target.selectionStart ?? next.length)
   }
 
-  // ---- chip atomicity (DOM layer; the machine sees only transactions) ----
-  // A chip run is U+FFFC plus the label glyphs, so a caret can land inside
-  // the label. onSelect snaps endpoints to run boundaries; the machine
-  // expands a partial delete to the whole run. Undo/redo must NOT reach the
-  // browser: the machine owns the transaction log.
-  // selectionStart/End are number|null in lib.dom; the type-aware lint program narrows them.
-  /* oxlint-disable typescript/no-unnecessary-condition */
-  const selectionOf = (el: HTMLTextAreaElement) => ({
-    start: el.selectionStart ?? 0,
-    end: el.selectionEnd ?? el.selectionStart ?? 0,
-  })
-  /* oxlint-enable typescript/no-unnecessary-condition */
-
   const onCopyOrCut = (e: React.ClipboardEvent<HTMLTextAreaElement>, cut: boolean): void => {
     if (input === undefined || keyboard === undefined) return // absent machine: no draft can be copied or cut
     const el = e.currentTarget
     const { start, end } = selectionOf(el)
     if (start === end) return
-    const slice = draft.slice(start, end)
-    const touched = input.occurrences.filter(o => o.offset < end && occurrenceEnd(o) > start)
+    const touched = input.occurrences.filter(o => o.offset < end && o.offset + o.length > start)
     if (touched.length === 0 && !cut) return // plain copy of plain text: native path is fine
     e.preventDefault()
-    // Expand placeholders to their owner clipboard projections.
+    const copyStart = touched.reduce((value, o) => Math.min(value, o.offset), start)
+    const copyEnd = touched.reduce((value, o) => Math.max(value, o.offset + o.length), end)
+    // Expand structured ranges to their owner clipboard projections.
     let text = ''
-    let cursor = start
+    let cursor = copyStart
     for (const o of touched) {
-      if (o.offset > cursor) text += draft.slice(cursor, o.offset)
-      text += o.clipboardText
-      cursor = Math.max(cursor, occurrenceEnd(o))
+      text += draft.slice(cursor, o.offset) + o.clipboardText
+      cursor = o.offset + o.length
     }
-    text += draft.slice(cursor, end)
+    text += draft.slice(cursor, copyEnd)
     e.clipboardData.setData('text/plain', text)
     if (cut && !machineBusy && !locked) {
-      keyboard.setDraft(draft.slice(0, start) + draft.slice(end), { start, end, insertedLength: 0 })
-      restoreCaret(el, start)
+      keyboard.setDraft(
+        draft.slice(0, copyStart) + draft.slice(copyEnd),
+        { start: copyStart, end: copyEnd, insertedLength: 0 },
+      )
+      restoreCaret(el, copyStart)
     }
-    void slice
   }
 
   const onPaste = (e: React.ClipboardEvent<HTMLTextAreaElement>): void => {
@@ -474,13 +440,12 @@ export function InputBar({
     e.preventDefault()
     const el = e.currentTarget
     const sel = selectionOf(el)
-    const transformed = keyboard.transformPaste(text)
     // Sync components stay empty at this layer: hot-snapshot matching needs
     // the Slash roster, which lives behind keyboard.track — the paste attempt
     // opens in the machine and the controller upgrades tokens as matches
     // land (paste-upgrade). The DOM layer only starts the transaction.
-    keyboard.pasteBegin(transformed, sel)
-    const caret = sel.start + transformed.length
+    keyboard.pasteBegin(text, sel)
+    const caret = sel.start + text.length
     restoreCaret(el, caret)
     keyboard.track(keyboard.snapshot.draft, caret)
   }
@@ -517,91 +482,13 @@ export function InputBar({
     if (rejected !== null) showToast(rejected)
   }, [addImages, attachments, imageLimits, showToast, t])
 
-  // Whole-page file-drop intake (DeepSeek Chat behavior): the listeners live
-  // on the document so a drop anywhere over the window adds images, not only
-  // over the composer card. Safe as document-level state: the composer-bar
-  // slot is `kind: 'single'`, so at most one bar is mounted to bind these.
-  // Text drags carry no 'Files' type and pass through untouched, keeping the
-  // native drop-text-into-textarea path. The overlay layer itself is
-  // pointer-inert, so it never disturbs the enter/leave count.
   const canAcceptDrop = !locked && !machineBusy && addImages !== undefined
-  useEffect(() => {
-    const hasFiles = (event: globalThis.DragEvent): boolean =>
-      event.dataTransfer?.types.includes('Files') ?? false
-    const reset = (): void => {
-      dragDepthRef.current = 0
-      setDragActive(false)
-    }
-    const onDragEnter = (event: globalThis.DragEvent): void => {
-      if (!hasFiles(event)) return
-      event.preventDefault()
-      dragDepthRef.current += 1
-      setDragActive(true)
-    }
-    const onDragOver = (event: globalThis.DragEvent): void => {
-      if (!hasFiles(event) || event.dataTransfer === null) return
-      event.preventDefault()
-      event.dataTransfer.dropEffect = canAcceptDrop ? 'copy' : 'none'
-    }
-    const onDragLeave = (event: globalThis.DragEvent): void => {
-      if (!hasFiles(event)) return
-      dragDepthRef.current = Math.max(0, dragDepthRef.current - 1)
-      if (dragDepthRef.current === 0) setDragActive(false)
-      // Leaving through the viewport edge does not balance the count on every
-      // engine; a page-root leave at the border means the drag left the window.
-      const leavingViewport = event.clientX <= 0 || event.clientY <= 0
-        || event.clientX >= window.innerWidth || event.clientY >= window.innerHeight
-      if ((event.target === document.documentElement || event.target === document.body) && leavingViewport) reset()
-    }
-    const onDrop = (event: globalThis.DragEvent): void => {
-      if (!hasFiles(event)) return
-      event.preventDefault()
-      reset()
-      if (!canAcceptDrop) return
-      intakeImages([...(event.dataTransfer?.files ?? [])])
-    }
-    document.addEventListener('dragenter', onDragEnter)
-    document.addEventListener('dragover', onDragOver)
-    document.addEventListener('dragleave', onDragLeave)
-    document.addEventListener('drop', onDrop)
-    window.addEventListener('dragend', reset)
-    return () => {
-      document.removeEventListener('dragenter', onDragEnter)
-      document.removeEventListener('dragover', onDragOver)
-      document.removeEventListener('dragleave', onDragLeave)
-      document.removeEventListener('drop', onDrop)
-      window.removeEventListener('dragend', reset)
-    }
-  }, [canAcceptDrop, intakeImages])
-
-  const closePreview = useCallback(() => {
-    setPreview(null)
-    setPinMode(false)
-    setGifRefuse(false)
-    setEditingAnnotation(null)
-    setPinMode(false)
-    setGifRefuse(false)
-  }, [])
-
-  // Rail thumbnails with their strings resolved here: the attachment atoms are
-  // zero-cordis and read no locale.
-  const railItems = useMemo<ComposerRailItem[]>(() => attachments.map(attachment => ({
-    id: attachment.id,
-    previewUrl: attachment.previewUrl,
-    alt: attachment.file.name || t('image.pending'),
-    removeLabel: t('image.remove', { name: attachment.file.name }),
-    attachment,
-  })), [attachments, t])
 
   const onSelect = (e: React.SyntheticEvent<HTMLTextAreaElement>): void => {
     // Any caret/selection gesture ends a live paste attempt (the machine
     // cannot observe DOM selection). Cheap no-op when none is live.
     if (keyboard !== undefined && keyboard.snapshot.paste !== undefined) keyboard.invalidatePaste()
-    if (input === undefined) return
-    const el = e.currentTarget
-    const { start, end } = selectionOf(el)
-    const next = snapSelection(start, end, input.occurrences)
-    if (next.start !== start || next.end !== end) el.setSelectionRange(next.start, next.end)
+    void e
   }
 
   // Button presses steal focus from the textarea; suppress at mousedown so
@@ -618,9 +505,11 @@ export function InputBar({
     if (el !== null) toggleCommandMenu?.(selectionOf(el))
   }
 
-  // Ordinary and continuable sessions share one primary Send/Stop toggle.
-  // One-shot children stay send-only because they are uncancellable.
-  const primaryStops = running && subagent?.address.mode !== 'one-shot'
+  // Ordinary sessions retain their primary Send/Stop toggle. A continuable
+  // child keeps Send as the primary action and exposes Stop independently so
+  // pointer users can queue follow-ups while its current turn is running.
+  const primaryStops = running && subagent === null
+  const interruptible = running && continuable
   const primaryLabel = primaryStops ? t('input.stop') : t('input.send')
   const onPrimary = (): void => {
     if (primaryStops) {
@@ -639,16 +528,15 @@ export function InputBar({
     ? null
     : <PermissionSelect key={sessionId} value={permissions} locked={locked} command={command} t={t} />
 
-  // Mirror-layer decorations: a visible backdrop with transparent text. The
-  // claim token highlights through behind the textarea glyphs; each U+FFFC
-  // placeholder renders as a chip (the textarea's own glyph is invisible, the
-  // backdrop chip supplies the visual); the claim hint is ghost text.
+  // Mirror-layer decorations: a visible backdrop with transparent textarea
+  // text. Claim tokens and references retain the draft's own glyph metrics,
+  // so their decoration cannot drift from wrapping, selection, or the caret.
   const deco = input === undefined ? INERT_DECORATIONS : deriveDecorations(input, lexicon)
   const backdrop: ReactNode[] = []
   {
-    // Segment boundaries: the token range end, every chip offset, and every
-    // text-ref range — merged in draft order (the sources never
-    // overlap: chips sit on placeholders, text-refs on plain tokens, the
+    // Segment boundaries: the token range end, every structured-reference
+    // offset, and every text-ref range — merged in draft order (the sources never
+    // overlap: structured references own their ranges, text-refs own plain tokens, the
     // claim token only leads).
     let cursor = 0
     const pushPlain = (upTo: number): void => {
@@ -676,27 +564,44 @@ export function InputBar({
       if (b.kind === 'chip') {
         const chip = b.chip
         backdrop.push(
-          // ::before emits the same U+FFFC the textarea holds (zero advance);
-          // the label sits in flow so the run matches the draft glyphs.
           <span
             key={`chip-${chip.occurrenceId}`}
             className={clsx(css.chip, chip.invalid && css.chipInvalid)}
             data-decoration="chip"
+            data-reference-appearance={chip.appearance}
             data-occurrence={chip.occurrenceId}
             data-invalid={chip.invalid || undefined}
-            title={chip.title}
-            aria-label={chip.title}
+            title={chip.label}
           >
-            <span className={css.chipLabel}>{chip.label}</span>
+            {chip.appearance === undefined
+              ? chip.text[0]
+              : (
+                <span className={css.chipTrigger}>
+                  <span className={css.chipTriggerGlyph}>{chip.text[0]}</span>
+                  <ReferenceIcon kind={chip.appearance} size={16} className={css.chipIcon} />
+                </span>
+              )}
+            <span>{chip.text.slice(1)}</span>
           </span>,
         )
-        cursor = chip.offset + placeholderSpan(chip.label)
+        cursor = chip.offset + chip.length
       } else {
         // Plain-range highlight: the glyphs stay the
         // textarea's (advance untouched); the mark paints the chip look.
+        const text = draft.slice(b.ref.start, b.ref.end)
         backdrop.push(
           <mark key={`ref-${b.ref.start}`} className={css.textRef} data-decoration="text-ref">
-            {draft.slice(b.ref.start, b.ref.end)}
+            {b.ref.appearance === 'folder'
+              ? (
+                <>
+                  <span className={css.textRefTrigger}>
+                    <span className={css.textRefTriggerGlyph}>{text[0]}</span>
+                    <ReferenceIcon kind="folder" size={16} className={css.textRefIcon} />
+                  </span>
+                  {text.slice(1)}
+                </>
+              )
+              : text}
           </mark>,
         )
         cursor = b.ref.end
@@ -717,15 +622,6 @@ export function InputBar({
 
   return (
     <div className={clsx(css.root, variant === 'hero' && css.hero)}>
-      {dragActive && (
-        <DropOverlay
-          disabled={!canAcceptDrop}
-          labels={dropOverlayLabels(t, canAcceptDrop, imageLimits === undefined ? undefined : {
-            count: imageLimits.maxImagesPerMessage,
-            size: imageSizeText(imageLimits.maxImageBytes),
-          })}
-        />
-      )}
       {toast !== null && (
         <Toast
           key={toast.seq}
@@ -735,8 +631,8 @@ export function InputBar({
           onDone={dismissToast}
         />
       )}
-      {notice !== null && (
-        <div className={clsx(css.notice, notice.level === 'error' && css.noticeError)} role="status">
+      {notice?.level === 'info' && (
+        <div className={css.notice} role="status">
           {notice.text}
         </div>
       )}
@@ -754,29 +650,17 @@ export function InputBar({
       >
         {overlay !== undefined && <div className={css.overlayAnchor}>{overlay}</div>}
         {accessory !== undefined && <div className={css.accessory}>{accessory}</div>}
-        <input
-          type="file"
-          className={a11y.visuallyHidden}
-          aria-label={t('image.add')}
-          accept="image/png,image/jpeg,image/webp,image/gif"
-          multiple
-          disabled={locked || machineBusy || addImages === undefined}
-          onChange={(event) => {
-            const files = [...(event.currentTarget.files ?? [])]
-            event.currentTarget.value = ''
-            intakeImages(files)
-          }}
-        />
-        {railItems.length > 0 && (
-          <div className={css.attachments}>
-            <AttachmentRail
-              items={railItems}
-              labels={attachmentRailLabels(t)}
-              onOpen={(item) => { setPreview(item.attachment) }}
-              onRemove={(item) => { removeImage?.(item.attachment.id) }}
-            />
-          </div>
-        )}
+        {renderSlot('conversation.input.attachments', {
+          attachments,
+          canAcceptDrop,
+          onAddImages: intakeImages,
+          onRemoveImage: (id) => { removeImage?.(id) },
+          dropLimits: imageLimits === undefined ? undefined : {
+            count: imageLimits.maxImagesPerMessage,
+            size: imageSizeText(imageLimits.maxImageBytes),
+          },
+          ...composerPinOverlay,
+        })}
         {annotations.length > 0 && inputActions !== undefined && (
           <div className={css.annotationSummary}>
             <button
@@ -858,7 +742,14 @@ export function InputBar({
             which a compositor-driven gesture outruns and leaves the words trailing the caret. */}
         <div ref={scrollRef} className={css.scroll} data-input-scroll>
           <div className={css.grow}>
-            <div aria-hidden className={css.backdrop} data-input-backdrop>{backdrop}</div>
+            <div
+              aria-hidden
+              className={clsx(css.backdrop, textareaDisabled && css.backdropDisabled)}
+              data-input-backdrop
+              data-disabled={textareaDisabled || undefined}
+            >
+              {backdrop}
+            </div>
             <textarea
               ref={inputRef}
               className={css.input}
@@ -918,6 +809,22 @@ export function InputBar({
             {rightItems}
             {renderSlot('conversation.input.model', { locked: modelSeatLocked })}
             <ContextMeter useProjection={useProjection} t={t} />
+            {interruptible && (
+              <Tooltip label={t('input.stop')} side="top" delayMs={500}>
+                <button
+                  type="button"
+                  className={css.primary}
+                  aria-label={t('input.stop')}
+                  disabled={stop === undefined}
+                  onMouseDown={keepFocus}
+                  onClick={stop}
+                >
+                  <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden>
+                    <rect x="3" y="3" width="10" height="10" rx="3" fill="currentColor" />
+                  </svg>
+                </button>
+              </Tooltip>
+            )}
             <Tooltip label={primaryLabel} side="top" delayMs={500}>
               <button
                 type="button"
@@ -941,64 +848,6 @@ export function InputBar({
           </div>
         </div>
       </div>
-      {preview !== null && (
-        <ImageLightbox
-          src={preview.previewUrl}
-          alt={preview.file.name || t('image.original')}
-          labels={lightboxLabels(t)}
-          onClose={closePreview}
-          {...(editingPin !== undefined && inputActions !== undefined ? {
-            editor: (
-              <AnnotationEditor
-                initialNote={editingPin.note}
-                placeholder={t('annotation.notePlaceholder')}
-                saveLabel={t('annotation.save')}
-                overlay
-                onSave={(note) => {
-                  inputActions.updateImagePin(editingPin.id, { note })
-                  setEditingAnnotation(null)
-                }}
-                onCancel={() => { setEditingAnnotation(null) }}
-              />
-            ),
-          } : {})}
-          {...(inputActions === undefined ? {} : { annotation: {
-            mode: pinMode,
-            pins: annotations.flatMap((item, index) => (
-              item.kind === 'image-pin' && item.imageId === preview.id
-                ? [{ id: item.id, x: item.x, y: item.y, index: index + 1 }]
-                : []
-            )),
-            modeLabel: t('annotation.pinMode'),
-            exitLabel: t('annotation.pinModeExit'),
-            ...(gifRefuse ? { refuse: t('annotation.gifRefuse') } : {}),
-            onToggleMode: () => {
-              if (pinMode) {
-                setPinMode(false)
-                return
-              }
-              void preview.file.arrayBuffer().then((buffer) => {
-                if (isAnimatedGif(new Uint8Array(buffer))) {
-                  setGifRefuse(true)
-                  return
-                }
-                setGifRefuse(false)
-                setPinMode(true)
-              })
-            },
-            onPlace: (x, y) => {
-              const id = inputActions.addImagePin(
-                preview.id, preview.file.name || t('image.original'), x, y, '',
-              )
-              setEditingAnnotation(id)
-            },
-            onSelect: (id) => {
-              setPinMode(true)
-              setEditingAnnotation(id)
-            },
-          } })}
-        />
-      )}
       {footer}
     </div>
   )

@@ -148,6 +148,7 @@ describe('ui-browser browser plugin', () => {
 
   it('registers complete bilingual dictionaries and releases them with the fiber', async () => {
     const b = await bench()
+    b.ctx.locale.setLocale('zh')
     const translate = b.ctx.locale.bind(NS)
     expect(translate('dock.collapse')).toBe(zh['dock.collapse'])
     b.ctx.locale.setLocale('en')

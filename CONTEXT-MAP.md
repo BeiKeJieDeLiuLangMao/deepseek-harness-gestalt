@@ -8,7 +8,7 @@ Read the context documents relevant to the requested work.
 | DeepSeek Gestalt | [apps/desktop/CONTEXT.md](apps/desktop/CONTEXT.md) | Desktop Host, Desktop Bundle, Window Chrome, Update Control, Personal Release Channel, Launch Directory, and Desktop-specific Session Surface projection |
 | Mobile Companion | [apps/mobile/CONTEXT.md](apps/mobile/CONTEXT.md) | Human-operated mobile access, Personal Pairing, Paired Desktop, Remote Online state, Companion Cache, and Companion Surface authority |
 | Platform identity | [packages/platform/CONTEXT.md](packages/platform/CONTEXT.md) | Platform Account, Installation, Account Session, Login Attempt, Platform Instance, Pairing Challenge, Personal Pairing, and Device Principal boundaries |
-| Request context | [packages/context/CONTEXT.md](packages/context/CONTEXT.md) | Workspace Reference, Session Reference, and other model-visible request-context terms that are not tool results or the user's own words |
+| Request context | [packages/context/CONTEXT.md](packages/context/CONTEXT.md) | File Reference, Session Reference, and other model-visible request-context terms that are not tool results or the user's own words |
 
 Add a context only when the repository has durable terminology or ownership that cannot be expressed by an existing entry.
 

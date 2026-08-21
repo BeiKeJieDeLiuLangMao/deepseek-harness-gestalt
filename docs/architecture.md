@@ -109,6 +109,8 @@ Seams are why one provider swap changes the whole product. Filesystem and subpro
 
 The [Browser Runtime seam](subsystems/browser-runtime.md) keeps opaque Profile, Workspace, browser-instance, and tab identities behind `ctx.browserRuntime`. Session-local Workspace ownership lives in `ctx.browserWorkspace`. Its first deterministic Provider proves serialized revision-guarded operations and teardown, while the deferred Consumer stays on the ordinary tool and generic presentation paths.
 
+[Experimental Agent Teams](subsystems/agent-team.md) is a private opt-in coordination seam on `ctx.agentTeams`, with a durable roster, task board, and mailbox layered over continuable subagents.
+
 ## Where new behavior goes
 
 New behavior attaches to a documented extension point. Changing the loop itself updates this map.

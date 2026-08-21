@@ -9,7 +9,7 @@
  * real host entity, so the sink is one unconditional prompt path.
  */
 import type { ClientContext, ISessions, SessionBinding, SessionFace, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
-import type { InputTriggerController } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
+import type { InputTriggerController, SubmitImageAttachment, SubmitOutcome } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import { queueReadFaceOf } from '../queue/store.ts'
 import type { ComposerKeyboard, DraftAttachmentId, SessionInputResolver, SessionInput } from './contract.ts'
@@ -24,18 +24,15 @@ interface CommandFace {
 
 /** Attachment-send face resolved lazily to keep hub/service construction acyclic. */
 interface ConversationAttachmentFace {
-  /**
-   * Submit one complete request through the Host.
-   * @returns whether the Host admitted the request; false = rejected (mirrored
-   * into promptError), while local failures reject.
-   */
   sendSession(
     session: SessionFace,
     text: string,
     imageIds: readonly DraftAttachmentId[],
     mode: InputSubmitMode,
+    signal?: AbortSignal,
     historyImageIds?: readonly string[],
-  ): Promise<boolean>
+  ): Promise<SubmitOutcome>
+  serializeDraftImages(imageIds: readonly DraftAttachmentId[]): Promise<readonly SubmitImageAttachment[]>
   releaseDraftImage(id: DraftAttachmentId): void
 }
 
@@ -81,9 +78,7 @@ export class InputHub implements SessionInputResolver {
       inputTriggers: () => this.controller(actx),
       popup: () => this.popup(actx),
       queue: queueReadFaceOf(session),
-      defaultSink: (text, imageIds, mode, annotationDraft) => {
-        this.sink(session, text, imageIds, mode, annotationDraft)
-      },
+      defaultSink: (text, imageIds, mode, signal) => this.sink(session, text, imageIds, mode, signal),
       annotationLabels: {
         heading: index => this.t('annotation.compiled.heading', { index }),
         quote: value => this.t('annotation.compiled.quote', { value }),
@@ -94,6 +89,20 @@ export class InputHub implements SessionInputResolver {
         overflow: this.t('annotation.overflow'),
       },
       steerQueue: () => { void this.steerQueue(session, shell) },
+      commandImages: {
+        serialize: ids => this.conversation().serializeDraftImages(ids),
+        // Asymmetric with serialize on purpose: release settles AFTER the
+        // submit RPC, where session teardown may already have unloaded the
+        // conversation service (the same tolerance as the scope disposer
+        // above); leaked preview URLs then die with the document.
+        release: (ids) => {
+          const conversation = this.rootCtx.get('conversation') as ConversationAttachmentFace | undefined
+          for (const imageId of ids) conversation?.releaseDraftImage(imageId)
+        },
+        unsupportedNotice: token => this.t('command.imagesUnsupported', {
+          command: token.trim().replace(/^\//u, ''),
+        }),
+      },
     })
     this.shells.set(id, shell)
     // The one teardown axis: listeners, shell, and map entries all ride the
@@ -107,7 +116,7 @@ export class InputHub implements SessionInputResolver {
         actx.on('slash/input-consume-token', req =>
           shell.consumeToken(req.guard) ? true : undefined),
         actx.on('slash/input-insert-text', req =>
-          shell.insertText(req.text, req.span) ? true : undefined),
+          shell.insertText(req.text, req.span, req.continue === true) ? true : undefined),
       ]
       return () => {
         for (const off of offs) off()
@@ -158,46 +167,48 @@ export class InputHub implements SessionInputResolver {
   }
 
   /**
-   * Default sink: optimistic clear + prompt. The session is always a real
-   * host entity (materialized when its workspace was picked), so there is
-   * exactly one path; the annotation reservation settles only on the Host's
-   * admission of the complete request (the prompt acceptance the ordinary
-   * path checks), never on mere promise resolution — a send that resolves
-   * without admission restores the full draft.
+   * Default sink: Host admission of the compiled request. The session is
+   * always a real host entity (materialized when its workspace was picked),
+   * so there is exactly one path. Annotations clear only after a success
+   * outcome; a rejected or failed send restores the draft while it is still
+   * empty and releases the reservation without deleting its items.
    */
   private sink(
     session: SessionFace,
     text: string,
     imageIds: readonly DraftAttachmentId[],
     mode: InputSubmitMode,
-    annotationDraft?: AnnotationSubmissionReservation,
-  ): void {
+    signal: AbortSignal,
+  ): Promise<SubmitOutcome> {
     const shell = this.shells.get(session.sessionId)
+    const reservation = shell?.annotationReservation
     const historyImageIds = [...new Set(
       (shell?.snapshot.annotations ?? [])
         .flatMap(item => item.kind === 'image-pin' && item.source === 'history' ? [item.imageId] : []),
     )]
-    if (text === '' && imageIds.length === 0 && historyImageIds.length === 0) return
-    // Commit, not an editable clear: undo must not resurrect sent content.
-    shell?.commitSend(imageIds)
-    void this.conversation().sendSession(session, text, imageIds, mode, historyImageIds).then(
-      (admitted) => {
+    if (text === '' && imageIds.length === 0 && historyImageIds.length === 0) {
+      return Promise.resolve({ kind: 'success' })
+    }
+    return this.conversation().sendSession(session, text, imageIds, mode, signal, historyImageIds).then(
+      (outcome) => {
         if (this.shells.get(session.sessionId) !== shell) {
-          if (!admitted) this.releaseOrphanedImages(imageIds)
-          return
+          if (outcome.kind !== 'success') this.releaseOrphanedImages(imageIds)
+          return outcome
         }
-        if (admitted) {
-          if (annotationDraft !== undefined) shell?.settleAnnotationSubmission(annotationDraft, true)
-          return
+        if (outcome.kind === 'success') {
+          if (reservation !== undefined) shell?.settleAnnotationSubmission(reservation, true)
+          return outcome
         }
-        this.restoreFailedSend(shell, text, imageIds, annotationDraft)
+        this.restoreFailedSend(shell, text, imageIds, reservation)
+        return outcome
       },
-      () => {
+      (error: unknown) => {
         if (this.shells.get(session.sessionId) === shell) {
-          this.restoreFailedSend(shell, text, imageIds, annotationDraft)
-          return
+          this.restoreFailedSend(shell, text, imageIds, reservation)
+        } else {
+          this.releaseOrphanedImages(imageIds)
         }
-        this.releaseOrphanedImages(imageIds)
+        throw error
       },
     )
   }

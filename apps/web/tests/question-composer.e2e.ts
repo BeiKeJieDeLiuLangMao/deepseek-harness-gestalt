@@ -164,6 +164,11 @@ describe('web e2e: resident question composer round trip', () => {
     expect(await page.locator('[data-question-key]').count()).toBe(0)
     expect(await selectedRow.locator('[data-state="warning"]').count()).toBe(0)
     await expect.poll(() => page.locator('textarea').first().isEnabled(), { timeout: 10_000 }).toBe(true)
+    await page.locator('[data-conversation-scroll]').evaluate((host) => { host.scrollTop = host.scrollHeight })
+    await expect.poll(
+      () => page.getByRole('button', { name: 'Back to bottom', exact: true }).count(),
+      { timeout: 10_000 },
+    ).toBe(0)
     // Golden of the answered transcript: the ask_user_question round trip
     // rendered as history (question tool row + DONE), composer takeover gone.
     const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)

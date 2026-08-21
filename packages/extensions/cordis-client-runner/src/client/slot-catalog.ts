@@ -137,7 +137,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.browser.preview\', () => ctx.slots.register(\n      { name: \'conversation.browser.preview\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-conversation/src/client/contract/slots.ts:91',
+    source: 'packages/client/ui-conversation/src/client/contract/slots.ts:136',
   },
   {
     key: 'conversation.chat.assistant-actions',
@@ -189,7 +189,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.chat.assistant-actions\', () => ctx.slots.register(\n      { name: \'conversation.chat.assistant-actions\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-conversation/src/client/contract/slots.ts:115',
+    source: 'packages/client/ui-conversation/src/client/contract/slots.ts:160',
   },
   {
     key: 'conversation.chat.commandview',
@@ -228,7 +228,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     occupants: [],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.chat.commandview\', () => ctx.slots.register(\n      { name: \'conversation.chat.commandview\', key: \'<one key the owner dispatches>\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-conversation/src/client/contract/slots.ts:100',
+    source: 'packages/client/ui-conversation/src/client/contract/slots.ts:145',
   },
   {
     key: 'conversation.chat.node',
@@ -245,11 +245,11 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       },
     ],
     ownerProps: [
-      '/** Stable owner currency delivered to one keyed Chat business renderer. */\nexport interface ChatNodeOwnerProps {\n  /** Selected Tool call, when the shared details store names one. */\n  selectedCallId?: CallId | undefined\n  /** Session workspace root; Tool summaries display paths relative to it. */\n  cwd?: string | undefined\n  openFile: (path: string) => void\n  inspectCall: (callId: CallId) => void\n  forkAt: (seq: number) => void\n  /**\n   * Select a Tool call and open details. `browser_*` rows call this on click\n   * so the matching Dock tab can focus from the listing revision.\n   */\n  selectCall?: (callId: CallId, toolName?: string) => void\n  /** Resolve a session-authorized historical image for inline display. */\n  loadImage: (attachment: ImageAttachmentRef) => Promise<string>\n  fileMentions: (owner: TurnTailOwnerProps) => MarkdownFileMentions | undefined\n}',
+      '/** Stable owner currency delivered to one keyed Chat business renderer. */\nexport interface ChatNodeOwnerProps {\n  /** Selected Tool call, when the shared details store names one. */\n  selectedCallId?: CallId | undefined\n  /** Session workspace root; Tool summaries display paths relative to it. */\n  cwd?: string | undefined\n  openFile: (path: string) => void\n  inspectCall: (callId: CallId) => void\n  forkAt: (seq: number) => void\n  /**\n   * Select a Tool call and open details. `browser_*` rows call this on click\n   * so the matching Dock tab can focus from the listing revision.\n   */\n  selectCall?: (callId: CallId, toolName?: string) => void\n  /** Render a historical image group through the attachment slot. */\n  renderMessageImages: RenderMessageImages\n  fileMentions: (owner: TurnTailOwnerProps) => MarkdownFileMentions | undefined\n}',
     ],
     ownerPropsReferences: [
-      'ImageAttachmentRef',
       'MarkdownFileMentions',
+      'RenderMessageImages',
       'TurnTailOwnerProps',
     ],
     standardProps: [
@@ -284,7 +284,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.chat.node\', () => ctx.slots.register(\n      { name: \'conversation.chat.node\', key: \'<one key the owner dispatches>\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-conversation/src/client/contract/slots.ts:78',
+    source: 'packages/client/ui-conversation/src/client/contract/slots.ts:121',
   },
   {
     key: 'conversation.chat.turnTail',
@@ -324,7 +324,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.chat.turnTail\', () => ctx.slots.register(\n      { name: \'conversation.chat.turnTail\', select: owner => null },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-conversation/src/client/contract/slots.ts:107',
+    source: 'packages/client/ui-conversation/src/client/contract/slots.ts:152',
   },
   {
     key: 'conversation.composer',
@@ -367,7 +367,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.composer\', () => ctx.slots.register(\n      { name: \'conversation.composer\', select: owner => null },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-conversation/src/client/contract/slots.ts:138',
+    source: 'packages/client/ui-conversation/src/client/contract/slots.ts:183',
   },
   {
     key: 'conversation.composer.bar',
@@ -400,7 +400,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.composer.bar\', () => ctx.slots.register(\n      { name: \'conversation.composer.bar\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-conversation/src/client/contract/slots.ts:207',
+    source: 'packages/client/ui-conversation/src/client/contract/slots.ts:257',
   },
   {
     key: 'conversation.composer.dock',
@@ -453,7 +453,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.composer.dock\', () => ctx.slots.register(\n      { name: \'conversation.composer.dock\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-conversation/src/client/contract/slots.ts:176',
+    source: 'packages/client/ui-conversation/src/client/contract/slots.ts:226',
   },
   {
     key: 'conversation.details.tool',
@@ -484,7 +484,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.details.tool\', () => ctx.slots.register(\n      { name: \'conversation.details.tool\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-conversation/src/client/contract/slots.ts:130',
+    source: 'packages/client/ui-conversation/src/client/contract/slots.ts:175',
   },
   {
     key: 'conversation.hero.agentPreset',
@@ -510,7 +510,33 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.hero.agentPreset\', () => ctx.slots.register(\n      { name: \'conversation.hero.agentPreset\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-conversation/src/client/contract/slots.ts:151',
+    source: 'packages/client/ui-conversation/src/client/contract/slots.ts:201',
+  },
+  {
+    key: 'conversation.hero.brand.mark',
+    kind: 'single',
+    scope: 'root',
+    summary: 'Brand mark leading the blank-session headline.',
+    doc: 'Brand mark leading the blank-session headline. Declared by this\npackage\'s `conversation` entry; the shell supplies a fish fallback.',
+    registerOptions: [],
+    ownerProps: [
+      '/** Presentation props supplied to the blank-session brand-mark occupant. */\nexport interface HeroBrandMarkOwnerProps {\n  /** Requested square edge in pixels. */\n  size: number\n  /** Host CSS class for preserving the default hero mark color and hover motion. */\n  className?: string | undefined\n}',
+    ],
+    ownerPropsReferences: [],
+    standardProps: [
+      'useSessions: SnapshotSelectorHook<SessionListState>',
+      'useWorkspaces: SnapshotSelectorHook<import(\'./workspaces/service.ts\').WorkspaceListState>',
+    ],
+    keyDomain: '',
+    hookContext: '',
+    slotInject: '',
+    declaredBy: 'an entry in \'conversation\' (client-ui-conversation), so it exists while that entry is mounted',
+    occupants: [
+      'client-ui-brand-official OfficialBrandMark',
+    ],
+    replaceRisk: 'shadows-shipped-ui',
+    example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.hero.brand.mark\', () => ctx.slots.register(\n      { name: \'conversation.hero.brand.mark\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
+    source: 'packages/client/ui-conversation/src/client/contract/slots.ts:195',
   },
   {
     key: 'conversation.hero.workspace',
@@ -538,7 +564,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.hero.workspace\', () => ctx.slots.register(\n      { name: \'conversation.hero.workspace\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-conversation/src/client/contract/slots.ts:145',
+    source: 'packages/client/ui-conversation/src/client/contract/slots.ts:190',
   },
   {
     key: 'conversation.hero.workspace.directoryFlow',
@@ -565,7 +591,42 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.hero.workspace.directoryFlow\', () => ctx.slots.register(\n      { name: \'conversation.hero.workspace.directoryFlow\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-workspace/src/client/contract/slots.ts:56',
+    source: 'packages/client/ui-workspace/src/client/contract/slots.ts:57',
+  },
+  {
+    key: 'conversation.input.attachments',
+    kind: 'single',
+    scope: 'session-maybe',
+    summary: 'Optional draft-image rail, drop target, and preview surface inside the composer.',
+    doc: 'Optional draft-image rail, drop target, and preview surface inside the composer.',
+    registerOptions: [],
+    ownerProps: [
+      '/** Input state handed to the optional attachment presentation plugin. */\nexport interface ComposerAttachmentsOwnerProps {\n  /** Browser-owned draft images in input order. */\n  attachments: readonly ComposerAttachment[]\n  /** Whether a document-level file drop may add images now. */\n  canAcceptDrop: boolean\n  /** Add one dropped batch through the composer\'s validation path. */\n  onAddImages: (files: readonly File[]) => void\n  /** Remove one draft image through the conversation service. */\n  onRemoveImage: (id: DraftAttachmentId) => void\n  /** Display-ready limits for the drop invitation. */\n  dropLimits?: { readonly count: number; readonly size: string } | undefined\n  /** Optional Composer preview pin overlay for one draft image. */\n  pinOverlayFor?: (attachment: ComposerAttachment) => MessageImagePinOverlay | undefined\n}',
+    ],
+    ownerPropsReferences: [
+      'ComposerAttachment',
+      'DraftAttachmentId',
+      'MessageImagePinOverlay',
+    ],
+    standardProps: [
+      'useSessions: SnapshotSelectorHook<SessionListState>',
+      'useWorkspaces: SnapshotSelectorHook<import(\'./workspaces/service.ts\').WorkspaceListState>',
+      'useSession: MaybeSnapshotSelectorHook<ConversationSnapshot>',
+      'sessionId: SessionId | undefined',
+      'useProjection: UseProjection',
+      'useInput: MaybeSnapshotSelectorHook<InputState>',
+      'inputActions: InputActions | undefined',
+    ],
+    keyDomain: '',
+    hookContext: '',
+    slotInject: '',
+    declaredBy: 'an entry in \'conversation.composer.bar\' (client-ui-conversation), so it exists while that entry is mounted',
+    occupants: [
+      'client-ui-attachment ComposerAttachments',
+    ],
+    replaceRisk: 'shadows-shipped-ui',
+    example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.input.attachments\', () => ctx.slots.register(\n      { name: \'conversation.input.attachments\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
+    source: 'packages/client/ui-conversation/src/client/contract/slots.ts:259',
   },
   {
     key: 'conversation.input.dock',
@@ -620,7 +681,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.input.dock\', () => ctx.slots.register(\n      { name: \'conversation.input.dock\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-conversation/src/client/contract/slots.ts:167',
+    source: 'packages/client/ui-conversation/src/client/contract/slots.ts:217',
   },
   {
     key: 'conversation.input.left',
@@ -671,7 +732,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     occupants: [],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.input.left\', () => ctx.slots.register(\n      { name: \'conversation.input.left\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-conversation/src/client/contract/slots.ts:185',
+    source: 'packages/client/ui-conversation/src/client/contract/slots.ts:235',
   },
   {
     key: 'conversation.input.model',
@@ -702,7 +763,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.input.model\', () => ctx.slots.register(\n      { name: \'conversation.input.model\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-conversation/src/client/contract/slots.ts:227',
+    source: 'packages/client/ui-conversation/src/client/contract/slots.ts:283',
   },
   {
     key: 'conversation.input.overlay',
@@ -782,7 +843,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.input.plan\', () => ctx.slots.register(\n      { name: \'conversation.input.plan\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-conversation/src/client/contract/slots.ts:217',
+    source: 'packages/client/ui-conversation/src/client/contract/slots.ts:273',
   },
   {
     key: 'conversation.input.right',
@@ -833,7 +894,42 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     occupants: [],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.input.right\', () => ctx.slots.register(\n      { name: \'conversation.input.right\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-conversation/src/client/contract/slots.ts:193',
+    source: 'packages/client/ui-conversation/src/client/contract/slots.ts:243',
+  },
+  {
+    key: 'conversation.message.images',
+    kind: 'single',
+    scope: 'session',
+    summary: 'Optional renderer for one consecutive group of durable message images.',
+    doc: 'Optional renderer for one consecutive group of durable message images.',
+    registerOptions: [],
+    ownerProps: [
+      '/** Historical image group handed to the optional attachment presentation plugin. */\nexport interface MessageImagesOwnerProps {\n  /** Consecutive image blocks rendered as one gallery. */\n  images: readonly { readonly attachment: ImageAttachmentRef }[]\n  /** Session-authorized durable image loader. */\n  loadImage: (attachment: ImageAttachmentRef) => Promise<string>\n  /** Message-side alignment. */\n  align: \'start\' | \'end\'\n  /** Optional history-image pin overlay for one attachment. */\n  pinOverlayFor?: (attachment: ImageAttachmentRef) => MessageImagePinOverlay | undefined\n}',
+    ],
+    ownerPropsReferences: [
+      'ImageAttachmentRef',
+      'Message',
+      'MessageImagePinOverlay',
+    ],
+    standardProps: [
+      'useSessions: SnapshotSelectorHook<SessionListState>',
+      'useWorkspaces: SnapshotSelectorHook<import(\'./workspaces/service.ts\').WorkspaceListState>',
+      'useSession: SnapshotSelectorHook<ConversationSnapshot>',
+      'sessionId: SessionId',
+      'useProjection: UseProjection',
+      'useInput: SnapshotSelectorHook<InputState>',
+      'inputActions: InputActions',
+    ],
+    keyDomain: '',
+    hookContext: '',
+    slotInject: '',
+    declaredBy: 'an entry in \'conversation.view\' (client-ui-conversation), so it exists while that entry is mounted',
+    occupants: [
+      'client-ui-attachment MessageImages',
+    ],
+    replaceRisk: 'shadows-shipped-ui',
+    example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.message.images\', () => ctx.slots.register(\n      { name: \'conversation.message.images\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
+    source: 'packages/client/ui-conversation/src/client/contract/slots.ts:130',
   },
   {
     key: 'conversation.session',
@@ -862,7 +958,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.session\', () => ctx.slots.register(\n      { name: \'conversation.session\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-conversation/src/client/contract/slots.ts:44',
+    source: 'packages/client/ui-conversation/src/client/contract/slots.ts:87',
   },
   {
     key: 'conversation.session.header',
@@ -891,7 +987,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.session.header\', () => ctx.slots.register(\n      { name: \'conversation.session.header\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-conversation/src/client/contract/slots.ts:52',
+    source: 'packages/client/ui-conversation/src/client/contract/slots.ts:95',
   },
   {
     key: 'conversation.session.header.actions',
@@ -944,7 +1040,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.session.header.actions\', () => ctx.slots.register(\n      { name: \'conversation.session.header.actions\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-conversation/src/client/contract/slots.ts:63',
+    source: 'packages/client/ui-conversation/src/client/contract/slots.ts:106',
   },
   {
     key: 'conversation.session.header.utilities',
@@ -994,7 +1090,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.session.header.utilities\', () => ctx.slots.register(\n      { name: \'conversation.session.header.utilities\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-conversation/src/client/contract/slots.ts:68',
+    source: 'packages/client/ui-conversation/src/client/contract/slots.ts:111',
   },
   {
     key: 'conversation.trajectory.toolbar.utilities',
@@ -1095,7 +1191,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.view\', () => ctx.slots.register(\n      { name: \'conversation.view\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-conversation/src/client/contract/slots.ts:76',
+    source: 'packages/client/ui-conversation/src/client/contract/slots.ts:119',
   },
   {
     key: 'details',
@@ -1360,6 +1456,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     declaredBy: 'an entry in \'sidebar.settings\' (client-ui-settings-general), so it exists while that entry is mounted',
     occupants: [
       'client-ui-settings-models WelcomeNotice id \'welcome-notice\'',
+      'client-ui-settings-models DeepSeekOnboardingDialog id \'deepseek-official\'',
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'settings.onboarding\', () => ctx.slots.register(\n      { name: \'settings.onboarding\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
@@ -1537,7 +1634,6 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       'client-ui-settings-general GeneralSection id \'general\'',
       'client-ui-settings-models ModelsSection id \'models\'',
       'client-ui-settings-plugins PluginsSettingsSection id \'plugins\'',
-      'client-ui-workspace-reference WorkspaceReferenceSettingsSection id \'workspace-reference\'',
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'settings.section\', () => ctx.slots.register(\n      { name: \'settings.section\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
@@ -1667,7 +1763,59 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.brand\', () => ctx.slots.register(\n      { name: \'sidebar.brand\', select: owner => null },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-sidebar/src/client/contract/slots.ts:46',
+    source: 'packages/client/ui-sidebar/src/client/contract/slots.ts:57',
+  },
+  {
+    key: 'sidebar.brand.mark',
+    kind: 'single',
+    scope: 'root',
+    summary: 'Brand mark rendered in the expanded brand row and collapsed rail.',
+    doc: 'Brand mark rendered in the expanded brand row and collapsed rail.\nDeclared by this package\'s `sidebar` entry; deployments may replace\nthe shell\'s fish fallback without replacing the surrounding controls.',
+    registerOptions: [],
+    ownerProps: [
+      '/** Geometry supplied to the sidebar brand-mark occupant. */\nexport interface SidebarBrandMarkOwnerProps {\n  /** Requested square edge in pixels. */\n  size: number\n}',
+    ],
+    ownerPropsReferences: [],
+    standardProps: [
+      'useSessions: SnapshotSelectorHook<SessionListState>',
+      'useWorkspaces: SnapshotSelectorHook<import(\'./workspaces/service.ts\').WorkspaceListState>',
+    ],
+    keyDomain: '',
+    hookContext: '',
+    slotInject: '',
+    declaredBy: 'an entry in \'sidebar\' (client-ui-sidebar), so it exists while that entry is mounted',
+    occupants: [
+      'client-ui-brand-official OfficialBrandMark',
+    ],
+    replaceRisk: 'shadows-shipped-ui',
+    example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.brand.mark\', () => ctx.slots.register(\n      { name: \'sidebar.brand.mark\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
+    source: 'packages/client/ui-sidebar/src/client/contract/slots.ts:24',
+  },
+  {
+    key: 'sidebar.brand.name',
+    kind: 'single',
+    scope: 'root',
+    summary: 'Brand name rendered beside the expanded mark.',
+    doc: 'Brand name rendered beside the expanded mark. Declared by this\npackage\'s `sidebar` entry; the shell supplies a generic text fallback.',
+    registerOptions: [],
+    ownerProps: [
+      '/** Empty owner share for the sidebar brand-name occupant. */\nexport interface SidebarBrandNameOwnerProps {\n  /** Marker field: the occupant owns its own content and width. */\n  children?: never\n}',
+    ],
+    ownerPropsReferences: [],
+    standardProps: [
+      'useSessions: SnapshotSelectorHook<SessionListState>',
+      'useWorkspaces: SnapshotSelectorHook<import(\'./workspaces/service.ts\').WorkspaceListState>',
+    ],
+    keyDomain: '',
+    hookContext: '',
+    slotInject: '',
+    declaredBy: 'an entry in \'sidebar\' (client-ui-sidebar), so it exists while that entry is mounted',
+    occupants: [
+      'client-ui-brand-official OfficialBrandName',
+    ],
+    replaceRisk: 'shadows-shipped-ui',
+    example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.brand.name\', () => ctx.slots.register(\n      { name: \'sidebar.brand.name\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
+    source: 'packages/client/ui-sidebar/src/client/contract/slots.ts:29',
   },
   {
     key: 'sidebar.chrome.drag',
@@ -1712,7 +1860,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.chrome.drag\', () => ctx.slots.register(\n      { name: \'sidebar.chrome.drag\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-sidebar/src/client/contract/slots.ts:41',
+    source: 'packages/client/ui-sidebar/src/client/contract/slots.ts:52',
   },
   {
     key: 'sidebar.footer.action',
@@ -1758,7 +1906,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.footer.action\', () => ctx.slots.register(\n      { name: \'sidebar.footer.action\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-sidebar/src/client/contract/slots.ts:37',
+    source: 'packages/client/ui-sidebar/src/client/contract/slots.ts:48',
   },
   {
     key: 'sidebar.settings',
@@ -1784,7 +1932,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.settings\', () => ctx.slots.register(\n      { name: \'sidebar.settings\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-sidebar/src/client/contract/slots.ts:31',
+    source: 'packages/client/ui-sidebar/src/client/contract/slots.ts:42',
   },
   {
     key: 'sidebar.workspaces',
@@ -1810,7 +1958,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.workspaces\', () => ctx.slots.register(\n      { name: \'sidebar.workspaces\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-sidebar/src/client/contract/slots.ts:25',
+    source: 'packages/client/ui-sidebar/src/client/contract/slots.ts:36',
   },
   {
     key: 'sidebar.workspaces.directoryFlow',
@@ -1837,7 +1985,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.workspaces.directoryFlow\', () => ctx.slots.register(\n      { name: \'sidebar.workspaces.directoryFlow\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-workspace/src/client/contract/slots.ts:58',
+    source: 'packages/client/ui-workspace/src/client/contract/slots.ts:59',
   },
   {
     key: 'tool.call.toolview',
@@ -1854,7 +2002,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       },
     ],
     ownerProps: [
-      '/** Standard owner currency supplied to every atomic Tool view. */\nexport interface ToolCallOwnerProps {\n  /** Tool call identity, stable across running and settled forms. */\n  callId: string\n  /** Wire Tool name and keyed dispatch value. */\n  toolName: string\n  /** Frozen running call or settled result node. */\n  block: ToolCallBlock\n  /** Session workspace root for relative summaries. */\n  cwd?: string | undefined\n  /** Open a Tool argument path through the Host. */\n  openFile: (path: string) => void\n  /** Inspect this call in the trajectory view when available. */\n  inspect?: (() => void) | undefined\n}',
+      '/** Standard owner currency supplied to every atomic Tool view. */\nexport interface ToolCallOwnerProps {\n  /** Tool call identity, stable across running and settled forms. */\n  callId: string\n  /** Wire Tool name and keyed dispatch value. */\n  toolName: string\n  /** Frozen running call or settled result node. */\n  block: ToolCallBlock\n  /** Session workspace root for relative summaries. */\n  cwd?: string | undefined\n  /** Host account home; POSIX home-rooted summaries display as `~`. */\n  home?: string | undefined\n  /** Open a Tool argument path through the Host. */\n  openFile: (path: string) => void\n  /** Inspect this call in the trajectory view when available. */\n  inspect?: (() => void) | undefined\n}',
     ],
     ownerPropsReferences: [
       'Wire',
@@ -1891,7 +2039,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'tool.call.toolview\', () => ctx.slots.register(\n      { name: \'tool.call.toolview\', key: \'<one key the owner dispatches>\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-tool/src/client/contract/slots.ts:23',
+    source: 'packages/client/ui-tool/src/client/contract/slots.ts:24',
   },
   {
     key: 'tool.view.cordis',

@@ -55,7 +55,13 @@ function userImageBlocks(events: readonly SessionEvent[]): Array<{
 }
 
 async function attachNamedFile(page: Page, name: string, mimeType: string, bytes: Buffer): Promise<void> {
-  await page.getByLabel('Add images').setInputFiles({ name, mimeType, buffer: bytes })
+  await page.evaluate(({ fileName, type, payload }) => {
+    const binary = Uint8Array.from(atob(payload), char => char.charCodeAt(0))
+    const file = new File([binary], fileName, { type })
+    const transfer = new DataTransfer()
+    transfer.items.add(file)
+    document.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer }))
+  }, { fileName: name, type: mimeType, payload: bytes.toString('base64') })
   await page.getByRole('group', { name: 'Pending images' }).getByAltText(name).waitFor({ timeout: 10_000 })
 }
 
@@ -198,7 +204,10 @@ describe('web e2e: composer and history image annotation pins', () => {
     expect(userImageBlocks(events)).toEqual([
       { name: PNG_NAME, mediaType: 'image/png', bytes: PNG_BYTES.byteLength },
     ])
-    await expect(page.getByRole('button', { name: '1 annotation' }).count()).resolves.toBe(0)
+    await expect.poll(
+      () => page.getByRole('button', { name: '1 annotation' }).count(),
+      { timeout: 5_000 },
+    ).toBe(0)
 
     const historyImage = page.getByRole('button', { name: `${PNG_NAME}, click to view original` }).last()
     await historyImage.waitFor({ timeout: 10_000 })

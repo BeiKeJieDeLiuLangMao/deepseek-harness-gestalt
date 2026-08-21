@@ -6,9 +6,9 @@
  * configured key renders as its open setup card instead of a row, but only in
  * the first-run posture — the user layer was never written and no provider on
  * the page can serve requests yet — and only until the user closes that card.
- * A leftover empty user object after delete stays off the list. The add flow
- * is a card carrying the dormant-provider select. Each card kind owns its own
- * open state, so closing
+ * A leftover empty user object after delete stays off the list unless a
+ * described credential is already stored. The add flow is a card carrying the
+ * dormant-provider select. Each card kind owns its own open state, so closing
  * one never discards a draft in another. Every mutation writes through the
  * wire, while a provider removal first requires confirmation; the page
  * re-renders from pushed invalidations or the post-apply reload.
@@ -18,10 +18,11 @@ import { useState } from 'react'
 import type { ReactNode } from 'react'
 import type { IApiClient, SettingsNamespaceView } from '@deepseek-ai/dsh-api-remotes/client'
 import { Button, IconPlusOutline16, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-web-react'
+import type { InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
 import { CustomProviderCard } from './CustomProviderCard.tsx'
 import { deriveKeyRef, messageOf, protocolChoices, providerUsable } from './store.ts'
-import type { ModelsSettingsState, ModelsSettingsStore, ProviderRow } from './store.ts'
+import type { ModelsSettingsStore, ProviderRow } from './store.ts'
+import type { SettingsSchemaOperations } from './schema-operations.ts'
 import { ProviderEditor, type ProviderEditorProps } from './ProviderEditor.tsx'
 import type { en } from './locales.ts'
 import styles from './ModelsSection.module.css'
@@ -30,10 +31,14 @@ import styles from './ModelsSection.module.css'
 export interface ModelsSectionInjected {
   /** The page store (loaded on mount, refreshed on pushed invalidations). */
   controller: ModelsSettingsStore
-  /** uSES subscription hook bound to the store. */
-  useSnapshot: SnapshotSelectorHook<ModelsSettingsState>
+  hooks: {
+    /** Page snapshot bound by the UI renderer as useSnapshot. */
+    snapshot: ModelsSettingsStore['store']
+  }
   /** Wire faces the editor writes through. */
   api: Pick<IApiClient, 'settings' | 'credentials' | 'llm'>
+  /** Settings schema and immutable path callbacks. */
+  schema: SettingsSchemaOperations
   /** Section copy. */
   t: (key: keyof typeof en) => string
 }
@@ -42,7 +47,9 @@ export interface ModelsSectionInjected {
  * Props delivered by the slot outlet: the inject face spread flat (the
  * renderer erases the share boundary at the render call).
  */
-export type ModelsSectionProps = Partial<ModelsSectionInjected>
+export type ModelsSectionProps = Partial<InjectFace<ModelsSectionInjected>>
+
+type ModelsSectionFace = InjectFace<ModelsSectionInjected>
 
 /** Provider identity shared by row actions and confirmation copy. */
 export interface ProviderIdentity {
@@ -65,7 +72,7 @@ interface EditorTarget extends ProviderIdentity {
 /** Values that vary around the shared provider-editor rendering. */
 interface ProviderEditorRenderProps extends Pick<
   ProviderEditorProps,
-  'namespace' | 'api' | 't' | 'readOnly' | 'onClose'
+  'namespace' | 'schema' | 'api' | 't' | 'readOnly' | 'onClose'
 > {
   target: EditorTarget
 }
@@ -136,26 +143,30 @@ export function needsSetup(row: ProviderRow, anyUsable: boolean): boolean {
 /**
  * Rows the Models list paints. A whole-section provider is `configured` only
  * when the user layer is occupied or a `role('secret')` slot is set. Official
- * DeepSeek names its key through a credential-ref, so a never-written first-run
- * section is unconfigured; the list still includes that row while no other
- * provider can serve requests so the setup card can open. Unsetting the
- * section root leaves `user: {}`, which is not first-run and stays off the
- * list.
+ * DeepSeek names its key through a credential-ref, so occupancy can stay false
+ * after the onboarding dialog stores that ref. A described configured
+ * credential still lists the row. A never-written section (`user` absent)
+ * stays on the list so first-run can open the setup card, or so an already
+ * usable page can show an ordinary row. Unsetting the section root leaves
+ * `user: {}`, which is not first-run and stays off the list unless a
+ * credential is already stored.
  * @param rows - joined provider rows.
  * @param namespaces - settings namespaces from the same join.
- * @param anyUsable - whether any joined row can already serve requests.
  * @param dismissed - providers whose setup card the user closed this session.
  * @returns rows that appear in the list.
  */
 export function listedProviderRows(
   rows: readonly ProviderRow[],
   namespaces: ReadonlyMap<string, SettingsNamespaceView>,
-  anyUsable: boolean,
   dismissed: ReadonlySet<string>,
 ): ProviderRow[] {
   return rows.filter((row) => {
-    if (row.configured || dismissed.has(row.entry.provider)) return true
-    if (!needsSetup(row, anyUsable)) return false
+    if (
+      row.configured
+      || row.credential?.configured === true
+      || dismissed.has(row.entry.provider)
+    ) return true
+    if (row.entry.settingsPath.length > 0) return false
     const namespace = namespaces.get(row.entry.settingsNs)
     return namespace !== undefined && namespace.user === undefined
   })
@@ -204,13 +215,16 @@ export function providerCopy(template: string, target: ProviderIdentity): string
  * @returns the section, or null while the shell has not injected yet.
  */
 export function ModelsSection(props: ModelsSectionProps): ReactNode {
-  const { controller, useSnapshot, api, t } = props
-  if (controller === undefined || useSnapshot === undefined || api === undefined || t === undefined) return null
-  return <Loaded injected={{ controller, useSnapshot, api, t }} />
+  const { controller, useSnapshot, api, schema, t } = props
+  if (
+    controller === undefined || useSnapshot === undefined || api === undefined
+    || schema === undefined || t === undefined
+  ) return null
+  return <Loaded injected={{ controller, useSnapshot, api, schema, t }} />
 }
 
-function Loaded({ injected }: { injected: ModelsSectionInjected }): ReactNode {
-  const { controller, api, t } = injected
+function Loaded({ injected }: { injected: ModelsSectionFace }): ReactNode {
+  const { controller, api, schema, t } = injected
   const state = injected.useSnapshot(snapshot => snapshot)
   const [editing, setEditing] = useState<EditorTarget | undefined>(undefined)
   const [adding, setAdding] = useState(false)
@@ -297,7 +311,7 @@ function Loaded({ injected }: { injected: ModelsSectionInjected }): ReactNode {
   // One fact decides both first-run postures on this page and the onboarding
   // step: whether the user already has a provider to talk to.
   const anyUsable = state.rows.some(providerUsable)
-  const listed = listedProviderRows(state.rows, state.namespaces, anyUsable, dismissedSetup)
+  const listed = listedProviderRows(state.rows, state.namespaces, dismissedSetup)
   const addable = state.rows.filter(row =>
     !row.configured
     && row.entry.settingsNs !== ''
@@ -307,7 +321,7 @@ function Loaded({ injected }: { injected: ModelsSectionInjected }): ReactNode {
   // Hand-declared routes live in the pi-ai namespace, which is also the only
   // one whose schema names the protocols one may speak; without it mounted
   // there is nothing to declare and the entry point stays disabled.
-  const protocols = protocolChoices(state.namespaces.get('llm-pi-ai'))
+  const protocols = protocolChoices(state.namespaces.get('llm-pi-ai'), schema)
 
   return (
     <div className={styles['section']}>
@@ -335,6 +349,7 @@ function Loaded({ injected }: { injected: ModelsSectionInjected }): ReactNode {
                 {renderProviderEditor({
                   target,
                   namespace,
+                  schema,
                   api,
                   t,
                   readOnly: !state.writable,
@@ -419,6 +434,7 @@ function Loaded({ injected }: { injected: ModelsSectionInjected }): ReactNode {
                 ? renderProviderEditor({
                   target,
                   namespace,
+                  schema,
                   api,
                   t,
                   readOnly: !state.writable,
@@ -457,6 +473,7 @@ function Loaded({ injected }: { injected: ModelsSectionInjected }): ReactNode {
                 displayName={addTarget.displayName}
                 hideTitle
                 namespace={addNamespace}
+                schema={schema}
                 settingsPath={addTarget.settingsPath}
                 api={api}
                 t={t}

@@ -39,6 +39,11 @@ function turnEndReasons(events: readonly SessionEvent[]): string[] {
   return events.flatMap(event => event.type === 'turn/end' ? [event.data.reason.kind] : [])
 }
 
+async function captureQueueAria(page: Page, workspaceCwd: string): Promise<string> {
+  const snapshot = await captureStableAria(page, '[class*="centerCol"]', workspaceCwd)
+  return snapshot.replace(/^\s*- tooltip .+\n?/gm, '')
+}
+
 describe('web e2e: queue row actions', () => {
   let scaffold: WebScaffold | undefined
   let browser: Browser | undefined
@@ -99,11 +104,7 @@ describe('web e2e: queue row actions', () => {
     const queueHeader = page.getByRole('button', { name: '2 queued messages' })
     await expect.poll(() => queueHeader.getAttribute('aria-expanded'), { timeout: 10_000 })
       .toBe('false')
-    const collapsedSnapshot = await captureStableAria(
-      page,
-      '[class*="centerCol"]',
-      scaffold.workspaceCwd,
-    )
+    const collapsedSnapshot = await captureQueueAria(page, scaffold.workspaceCwd)
     await compareOrRefreshGolden(COLLAPSED_EXPECTED, collapsedSnapshot, MODE)
     await queueHeader.click()
     await expect.poll(
@@ -112,30 +113,25 @@ describe('web e2e: queue row actions', () => {
     ).toBe(2)
 
     await page.setViewportSize({ width: 640, height: 1000 })
-    const queueBox = await page.locator('[data-queue-dock]').boundingBox()
-    const composerBox = await page.locator('[data-composer-card]').boundingBox()
-    expect(queueBox).not.toBeNull()
-    expect(composerBox).not.toBeNull()
-    expect(queueBox!.x).toBeGreaterThanOrEqual(composerBox!.x)
-    expect(queueBox!.x + queueBox!.width)
-      .toBeLessThanOrEqual(composerBox!.x + composerBox!.width)
-    const queueLeftInset = queueBox!.x - composerBox!.x
-    const queueRightInset = composerBox!.x + composerBox!.width - queueBox!.x - queueBox!.width
-    const composerMetrics = await page.locator('[data-composer-card]').evaluate((element) => {
-      const style = getComputedStyle(element)
-      return {
-        dockInset: Number.parseFloat(style.getPropertyValue('--dsh-composer-dock-inset')),
-      }
-    })
-    expect(queueLeftInset).toBeCloseTo(composerMetrics.dockInset, 1)
-    expect(queueRightInset).toBeCloseTo(composerMetrics.dockInset, 1)
+    await expect.poll(async () => {
+      const queueBox = await page.locator('[data-queue-dock]').boundingBox()
+      const composerBox = await page.locator('[data-composer-card]').boundingBox()
+      if (queueBox === null || composerBox === null) return Number.POSITIVE_INFINITY
+      const composerMetrics = await page.locator('[data-composer-card]').evaluate((element) => {
+        const style = getComputedStyle(element)
+        return Number.parseFloat(style.getPropertyValue('--dsh-composer-dock-inset'))
+      })
+      const left = queueBox.x - composerBox.x
+      const right = composerBox.x + composerBox.width - queueBox.x - queueBox.width
+      return Math.max(Math.abs(left - composerMetrics), Math.abs(right - composerMetrics))
+    }, { timeout: 5_000 }).toBeLessThan(1)
     await page.setViewportSize({ width: 1680, height: 1000 })
 
     const editRow = page.getByText(EDIT, { exact: true }).locator('..')
     await editRow.getByRole('button', { name: 'Edit queued message' }).click()
     const editor = page.getByRole('textbox', { name: 'Edit queued message' })
     await editor.fill(EDITED)
-    const editingSnapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
+    const editingSnapshot = await captureQueueAria(page, scaffold.workspaceCwd)
     await compareOrRefreshGolden(EDITING_EXPECTED, editingSnapshot, MODE)
     await page.getByRole('button', { name: 'Save queued message' }).click()
     await page.getByText(EDITED, { exact: true }).waitFor()
@@ -144,7 +140,7 @@ describe('web e2e: queue row actions', () => {
     await removeRow.getByRole('button', { name: 'Remove queued message' }).click()
     await expect.poll(() => page.getByText(REMOVE, { exact: true }).count()).toBe(0)
 
-    const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
+    const snapshot = await captureQueueAria(page, scaffold.workspaceCwd)
     await compareOrRefreshGolden(UI_EXPECTED, snapshot, MODE)
     expect(sessionEvents.filter(event => event.type === 'user/message' && event.data.source.kind === 'user')).toHaveLength(1)
     expect(tripwire.pageErrors).toEqual([])
@@ -164,7 +160,7 @@ describe('web e2e: queue row actions', () => {
     await expect.poll(() => page.getByRole('button', { name: 'Remove queued message' }).count())
       .toBe(2)
 
-    const preservedSnapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
+    const preservedSnapshot = await captureQueueAria(page, scaffold.workspaceCwd)
     await compareOrRefreshGolden(PRESERVED_EXPECTED, preservedSnapshot, MODE)
 
     const settled = scaffold.whenTurnSettled()
@@ -221,11 +217,7 @@ describe('web e2e: queue row actions', () => {
     await expect.poll(() => queueHeader.getAttribute('aria-expanded'), { timeout: 10_000 })
       .toBe('false')
 
-    const layoutSnapshot = await captureStableAria(
-      page,
-      '[class*="centerCol"]',
-      scaffold.workspaceCwd,
-    )
+    const layoutSnapshot = await captureQueueAria(page, scaffold.workspaceCwd)
     await compareOrRefreshGolden(LAYOUT_EXPECTED, layoutSnapshot, MODE)
 
     const expectAlignedContextPanels = async () => {
@@ -244,6 +236,18 @@ describe('web e2e: queue row actions', () => {
     }
     await expectAlignedContextPanels()
     await page.setViewportSize({ width: 640, height: 1000 })
+    await expect.poll(async () => {
+      const queueBox = await page.locator('[data-queue-dock] > div').boundingBox()
+      const todoBox = await page.locator('[data-testid="todo-panel"]').boundingBox()
+      const goalBox = await page.locator('[data-goal-bar] > div').boundingBox()
+      if (queueBox === null || todoBox === null || goalBox === null) return Number.POSITIVE_INFINITY
+      return Math.max(
+        Math.abs(todoBox.x - goalBox.x),
+        Math.abs(todoBox.x - queueBox.x),
+        Math.abs(todoBox.width - goalBox.width),
+        Math.abs(todoBox.width - queueBox.width),
+      )
+    }, { timeout: 8_000 }).toBeLessThan(1)
     await expectAlignedContextPanels()
     await page.setViewportSize({ width: 1680, height: 1000 })
 

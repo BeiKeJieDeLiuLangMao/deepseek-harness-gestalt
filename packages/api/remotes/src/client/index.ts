@@ -6,18 +6,22 @@ import goalsRemote from '@deepseek-ai/dsh-goal/remote'
 import schedulesRemote from '@deepseek-ai/dsh-schedule/remote'
 import browserWorkspaceRemote from '@deepseek-ai/dsh-browser-workspace/remote'
 import dynamicRemote from '@deepseek-ai/dsh-cordis-host-runner/remote'
+import fileReferencesRemote from '@deepseek-ai/dsh-file-reference/remote'
 import pluginInventoryRemote from '@deepseek-ai/dsh-host-plugin-inventory/remote'
 import messageFeedbackRemote from '@deepseek-ai/dsh-message-feedback/remote'
+import sessionReferencesRemote from '@deepseek-ai/dsh-session-reference/remote'
 import type { TypertClientRemote } from '@deepseek-ai/dsh-typert-protocol'
 
 export type { TypertClientRemote as ClientRemote } from '@deepseek-ai/dsh-typert-protocol'
 export type { PluginInventorySnapshot } from '@deepseek-ai/dsh-host-plugin-inventory/types'
 export type {} from '@deepseek-ai/dsh-commands/remote'
+export type {} from '@deepseek-ai/dsh-file-reference/remote'
 export type {} from '@deepseek-ai/dsh-goal/remote'
 export type {} from '@deepseek-ai/dsh-schedule/remote'
 export type {} from '@deepseek-ai/dsh-browser-workspace/remote'
 export type {} from '@deepseek-ai/dsh-host-plugin-inventory/remote'
 export type {} from '@deepseek-ai/dsh-message-feedback/remote'
+export type {} from '@deepseek-ai/dsh-session-reference/remote'
 // The forwarded-event allowlist's selection seat: without it in the consumer's
 // compilation face `TypertRemoteEvent` is `never` and every `$on` call fails.
 export type { ApiRemoteForwardedEvent } from '../types.ts'
@@ -90,6 +94,10 @@ export type {
 // reason: a Client contribution names what it sends without importing a Host
 // package, and this assembly is where both planes legitimately meet.
 export type { JsonValue } from '@deepseek-ai/dsh-session/types'
+// Reference-discovery result vocabulary for the fileReferences and
+// sessionReferenceResolver namespaces.
+export type { FileReferenceCandidate } from '@deepseek-ai/dsh-file-reference/types'
+export type { SessionReferenceMentionCandidate } from '@deepseek-ai/dsh-session-reference/types'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -110,7 +118,8 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   const disposers: Array<() => Promise<void>> = []
   try {
     for (const contribution of [
-      commandsRemote, goalsRemote, schedulesRemote, browserWorkspaceRemote, dynamicRemote, pluginInventoryRemote, messageFeedbackRemote,
+      commandsRemote, goalsRemote, schedulesRemote, browserWorkspaceRemote, dynamicRemote,
+      fileReferencesRemote, pluginInventoryRemote, messageFeedbackRemote, sessionReferencesRemote,
     ]) {
       disposers.push(await ctx.remote.$mount(contribution))
     }

@@ -1,0 +1,36 @@
+{
+  "version": "0.1.5",
+  "tag": "gestalt-v0.1.5",
+  "source": {
+    "baselineKind": "previous-release",
+    "baselineRepository": "BeiKeJieDeLiuLangMao/deepseek-harness-gestalt",
+    "releaseRepository": "BeiKeJieDeLiuLangMao/deepseek-harness-gestalt",
+    "baselineCommit": "a2a4c245c7a177891bdbf7238279136e63625a34"
+  },
+  "content": {
+    "zh": {
+      "intro": "DeepSeek Gestalt 0.1.5 收录上一版本之后的 {{commitCount}} 个提交。",
+      "sections": [
+        {
+          "heading": "文件与会话引用",
+          "items": [
+            "Web 输入区与 Host 跟随上游 File/Session Reference：草稿写 `@path` 与 `@[title](dsh-session:…)`，不再注入 `<workspace-reference>` XML，也不再走 Gestalt 自有的存在性预检。",
+            "未设置 `DSH_CLIENT_TITLE`、且品牌名 slot 无人占位时，标签页与侧栏回退为 DSH Gestalt。"
+          ]
+        }
+      ]
+    },
+    "en": {
+      "intro": "DeepSeek Gestalt 0.1.5 contains the {{commitCount}} commits after the previous Desktop Bundle.",
+      "sections": [
+        {
+          "heading": "File and session references",
+          "items": [
+            "Web composer and Host follow upstream File/Session Reference: drafts write `@path` and `@[title](dsh-session:…)`, and no longer inject `<workspace-reference>` XML or run Gestalt's existence preflight.",
+            "When `DSH_CLIENT_TITLE` is unset and no occupant fills the brand-name slot, the tab and sidebar fall back to DSH Gestalt."
+          ]
+        }
+      ]
+    }
+  }
+}

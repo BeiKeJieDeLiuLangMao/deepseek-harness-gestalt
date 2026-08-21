@@ -243,9 +243,13 @@ describe('InputHub annotation settlement (Host admission)', () => {
       text: string,
       _imageIds: readonly DraftAttachmentId[],
       mode: InputSubmitMode,
-    ): Promise<boolean> {
+    ): Promise<{ kind: 'success' } | { kind: 'error' }> {
       this.sent.push({ text, mode })
-      return this.admitted
+      return this.admitted ? { kind: 'success' } : { kind: 'error' }
+    }
+
+    serializeDraftImages() {
+      return Promise.resolve([])
     }
 
     releaseDraftImage(_id: DraftAttachmentId): void {}

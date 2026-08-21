@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { PassThrough } from 'node:stream'
-import { LocalPtySession } from '@deepseek-ai/dsh-terminal-bash/src/session.ts'
+import { LocalPtySession, pwshSubmitTerminator } from '@deepseek-ai/dsh-terminal-bash/src/session.ts'
 import type { ResolvedConfig } from '@deepseek-ai/dsh-terminal-bash/src/config.ts'
 import type { TerminalSendOperation, TerminalSessionStatus, TerminalSignal } from '@deepseek-ai/dsh-terminal'
 import type {
@@ -130,7 +130,7 @@ function makeSession(
 
 function config(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
   return {
-    backendType: 'shell', shellPath: '/bin/bash', shellArgs: [], rows: 24, cols: 80,
+    backendType: 'shell', shellDialect: 'bash', shellPath: '/bin/bash', shellArgs: [], rows: 24, cols: 80,
     scrollbackLines: 10, scrollbackMaxBytes: 128, maxReadBytes: 64,
     pollIntervalMs: 10, exactProbeAfterMs: 20, idleSilenceMs: 50, handoffGraceMs: 10, timeoutMs: 100,
     disposeGraceMs: 20,
@@ -214,6 +214,26 @@ describe('LocalPtySession readiness and output', () => {
     await vi.advanceTimersByTimeAsync(20)
     expect(await operation.done).toMatchObject({ waitReason: 'stdin_read', viewport: 'Python\n>>> ', sessionStatus: { kind: 'running' } })
     expect(operation.cancel()).toBe(false)
+  })
+
+  it('submits pwsh lines with the host Enter so PSReadLine executes them', async () => {
+    vi.useFakeTimers()
+    const terminal = new FakeTerminal()
+    const inspector = new FakeInspector()
+    const session = makeSession(terminal, inspector, config({ shellDialect: 'pwsh', shellPath: 'pwsh' }))
+    const operation = session.startSend({ text: 'Get-Location', submit: true })
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(terminal.writes).toEqual([`Get-Location${pwshSubmitTerminator(process.platform)}`])
+    terminal.emitData('ok\n')
+    await vi.advanceTimersByTimeAsync(50)
+    expect((await operation.done).waitReason).toBe('inferred_idle')
+  })
+
+  it('uses CR on Windows and LF on Unix for pwsh submit', () => {
+    expect(pwshSubmitTerminator('win32')).toBe('\r')
+    expect(pwshSubmitTerminator('linux')).toBe('\n')
+    expect(pwshSubmitTerminator('darwin')).toBe('\n')
   })
 
   it('does not reuse a pre-write stdin wait as post-write readiness', async () => {

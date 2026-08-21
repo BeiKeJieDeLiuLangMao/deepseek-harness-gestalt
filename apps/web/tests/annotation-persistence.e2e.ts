@@ -125,8 +125,12 @@ describe('web e2e: annotation drafts persist per session and recover after reloa
       () => page.locator('[role="treeitem"][aria-selected="true"]').count(),
       { timeout: 10_000 },
     ).toBe(1)
+    await expect.poll(
+      () => page.locator('[role="treeitem"][aria-selected="true"]').textContent(),
+      { timeout: 10_000 },
+    ).not.toBe(parentRowText)
     await composer.waitFor({ timeout: 10_000 })
-    await expect(composer.inputValue()).resolves.toBe('')
+    await expect.poll(() => composer.inputValue(), { timeout: 10_000 }).toBe('')
     await expect(page.getByRole('button', { name: '1 annotation' }).count()).resolves.toBe(0)
     expect(await page.evaluate(() => CSS.highlights?.has('annotation-draft-mark') ?? false)).toBe(false)
 

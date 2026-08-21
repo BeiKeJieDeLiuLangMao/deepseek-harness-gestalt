@@ -185,7 +185,8 @@ describe('RelayWebSocketConsumer', () => {
     expect(idleCode).toBe(1008)
     expect(String(idleReason)).toBe('attach timeout')
 
-    const oversized = await connect(endpoint.url)
+    const sized = await start(relay)
+    const oversized = await connect(sized.url)
     oversized.send(new Uint8Array(100_000))
     const [oversizedCode] = await once(oversized, 'close') as [number]
     expect(oversizedCode).toBe(1009)

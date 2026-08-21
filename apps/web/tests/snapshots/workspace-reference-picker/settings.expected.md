@@ -1,7 +1,0 @@
-- checkbox "Enable Workspace References" [checked]
-- text: Enable Workspace References
-- checkbox "Ignore @ paths on paste" [checked]
-- text: Ignore @ paths on paste Exact filter (basename contains)
-- textbox "Exact filter (basename contains)"
-- text: Regex filter (basename)
-- textbox "Regex filter (basename)"

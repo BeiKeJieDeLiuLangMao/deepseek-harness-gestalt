@@ -5,8 +5,12 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { Context } from '@deepseek-ai/cordis'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
-import { usePinnedBrowserLanguages } from '@deepseek-ai/dsh-client-test-runtime'
+import { TestRemote, usePinnedBrowserLanguages } from '@deepseek-ai/dsh-client-test-runtime'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
+import {
+  apply as applySettingsBase,
+  inject as settingsBaseInject,
+} from '@deepseek-ai/dsh-client-ui-settings/client'
 import {
   apply as applySettings,
   inject as settingsInject,
@@ -158,6 +162,8 @@ async function assemble() {
     },
     isLoopback: true,
   } as never)
+  new TestRemote(ctx)
+  await ctx.plugin({ inject: [...settingsBaseInject], apply: applySettingsBase }).await()
   const slots = ctx.get('slots') as SlotRegistry
   slots.register(
     {
