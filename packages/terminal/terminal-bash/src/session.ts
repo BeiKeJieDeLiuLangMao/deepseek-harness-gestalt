@@ -21,7 +21,10 @@ import type {
   TerminalWaitReason,
 } from '@deepseek-ai/dsh-terminal'
 import type { ResolvedConfig } from './config.ts'
-import { CONTROLLED_PROMPT, TerminalSanitizer } from './sanitize.ts'
+import { CONTROLLED_PROMPT, lastNonEmptyLine, TerminalSanitizer } from './sanitize.ts'
+
+/** Prompt installed by tool-pwsh-persistent after the backend `dsh> ` prompt. */
+const TOOL_PWSH_PROMPT = '__DSH_PERSISTENT_PWSH_PROMPT__ '
 
 function utf8Tail(text: string, maxBytes: number): { text: string; truncated: boolean } {
   if (Buffer.byteLength(text) <= maxBytes) return { text, truncated: false }
@@ -108,8 +111,9 @@ class LocalSendOperation implements TerminalSendOperation {
     if (!this.finished) this.output.append(text)
   }
 
-  hasOutput(): boolean {
-    return this.output.snapshot().text.length > 0
+  hasInstalledPrompt(): boolean {
+    const line = lastNonEmptyLine(this.output.snapshot().text)
+    return line === CONTROLLED_PROMPT || line === TOOL_PWSH_PROMPT
   }
 
   settle(waitReason: TerminalWaitReason, sessionStatus: TerminalSessionStatus, inheritedTruncation: boolean): void {
@@ -449,7 +453,7 @@ export class LocalPtySession implements TerminalBackendSession {
       }
       if (this.promptSeen && this.promptTextSeen && idleFor >= this.config.pollIntervalMs
         && foreground?.processGroupId === this.shellPgid
-        && (this.config.shellDialect !== 'pwsh' || operation.hasOutput())) {
+        && (this.config.shellDialect !== 'pwsh' || operation.hasInstalledPrompt())) {
         this.settleActive('stdin_read')
         return
       }
@@ -457,10 +461,9 @@ export class LocalPtySession implements TerminalBackendSession {
       const startupHasOutput = !this.initializing || this.scrollback.snapshot().text.length > 0
       const acceptsStdinWait = startupHasOutput && foreground !== undefined
         && operation.acceptsStdinWait(foreground.processGroupId, foreground.inputWaiting)
-      // pwsh reports inputWaiting at the default prompt before the line
-      // runs; an empty viewport here is leftover wait, not command output.
+      // Setup echo and the default `PS>` line are output, not readiness.
       if (elapsed >= this.config.exactProbeAfterMs && acceptsStdinWait
-        && (this.config.shellDialect !== 'pwsh' || operation.hasOutput())) {
+        && (this.config.shellDialect !== 'pwsh' || operation.hasInstalledPrompt())) {
         this.settleActive('stdin_read')
         return
       }
@@ -470,7 +473,7 @@ export class LocalPtySession implements TerminalBackendSession {
       // readiness until the absolute timeout.
       const handoffGrace = this.promptSeen ? this.config.handoffGraceMs : 0
       if (startupHasOutput && idleFor >= this.config.idleSilenceMs + handoffGrace
-        && (this.config.shellDialect !== 'pwsh' || operation.hasOutput())) {
+        && (this.config.shellDialect !== 'pwsh' || operation.hasInstalledPrompt())) {
         this.settleActive('inferred_idle')
       }
     } catch (error: unknown) {

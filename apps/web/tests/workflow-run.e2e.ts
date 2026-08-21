@@ -155,7 +155,9 @@ describe.skipIf(MODE === 'record')('web e2e: durable workflow run in Chat', () =
       document.body.removeAttribute('data-ds-dark-theme')
     })
     await page.setViewportSize({ width: 1280, height: 800 })
-    await member.click()
+    const memberAfterRestore = page.getByRole('button', { name: /^Open Reply with exactly the word/ })
+    await memberAfterRestore.waitFor({ timeout: 10_000 })
+    await memberAfterRestore.click({ force: true })
     await page.getByText(CHILD_PROMPT, { exact: true }).waitFor({ timeout: 15_000 })
 
     const sessions = page.getByRole('tree', { name: 'Sessions' })

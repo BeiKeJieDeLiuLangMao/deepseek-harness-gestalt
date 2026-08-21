@@ -15,7 +15,7 @@ import { effectiveSandboxMode } from '@deepseek-ai/dsh-sandbox-policy'
 import { ENCODING_PREAMBLE } from '@deepseek-ai/dsh-pwsh-local'
 import { type Config, type ResolvedConfig, resolveConfig, type ShellDialect, validateConfig } from './config.ts'
 import { LocalPtySession } from './session.ts'
-import { CONTROLLED_PROMPT } from './sanitize.ts'
+import { CONTROLLED_PROMPT, lastNonEmptyLine } from './sanitize.ts'
 
 export { Config } from './config.ts'
 export type { Config as TerminalLocalConfig } from './config.ts'
@@ -88,16 +88,6 @@ function childEnvironment(spec: TerminalBackendSpawnSpec, dialect: ShellDialect)
  */
 export const PWSH_PROMPT_SETUP =
   "function prompt { [Console]::Write([char]27 + ']133;D;' + [int]$LASTEXITCODE + [char]7); '" + CONTROLLED_PROMPT + "' }"
-
-function lastNonEmptyLine(text: string): string {
-  const lines = text.replaceAll('\r\n', '\n').replaceAll('\r', '\n').split('\n')
-  for (let i = lines.length - 1; i >= 0; i -= 1) {
-    const line = lines[i]
-    // A PSReadLine cursor row can be spaces only; that is not the prompt.
-    if (line !== undefined && line.trim() !== '') return line
-  }
-  return ''
-}
 
 /** True when the latest printed line is the installed prompt, not setup echo. */
 function showsInstalledControlledPrompt(viewport: string, scrollback: string): boolean {

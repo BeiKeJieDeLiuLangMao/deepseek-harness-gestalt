@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { normalizeTerminalText, TerminalSanitizer } from '@deepseek-ai/dsh-terminal-bash/src/sanitize.ts'
+import {
+  lastNonEmptyLine, normalizeTerminalText, TerminalSanitizer,
+} from '@deepseek-ai/dsh-terminal-bash/src/sanitize.ts'
 
 describe('TerminalSanitizer', () => {
   it('removes split CSI and owned OSC prompt markers', () => {
@@ -72,5 +74,14 @@ describe('TerminalSanitizer', () => {
     flushed.push(`\x1b]0;${'x'.repeat(16)}`)
     expect(flushed.flush()).toBe('')
     expect(flushed.push('text')).toEqual({ text: 'text', prompt: false })
+  })
+})
+
+describe('lastNonEmptyLine', () => {
+  it('returns the last non-whitespace line and skips a space-only cursor row', () => {
+    expect(lastNonEmptyLine('')).toBe('')
+    expect(lastNonEmptyLine('   \n  ')).toBe('')
+    expect(lastNonEmptyLine('keep=ok\ndsh> \n   ')).toBe('dsh> ')
+    expect(lastNonEmptyLine('one\r\ntwo\rthree')).toBe('three')
   })
 })

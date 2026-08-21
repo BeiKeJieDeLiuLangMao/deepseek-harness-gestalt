@@ -342,7 +342,8 @@ describe('web e2e: empty-draft Cmd+Enter steers the whole queue', () => {
     }, { timeout: 10_000, interval: 20 }).toBe(true)
     await input.fill(STEER_ONE)
     await input.press('Enter')
-    await page.getByRole('button', { name: '1 queued messages' }).waitFor({ state: 'attached', timeout: 10_000 })
+    // One queued row has no count header; the dock renders that row directly.
+    await page.locator('[data-queue-dock]').getByText(STEER_ONE, { exact: true }).waitFor({ timeout: 10_000 })
     await input.fill(STEER_TWO, { force: true })
     await input.evaluate((node) => {
       const textarea = node as HTMLTextAreaElement
