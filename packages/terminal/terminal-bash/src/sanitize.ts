@@ -23,13 +23,21 @@ export function lastNonEmptyLine(text: string): string {
   return ''
 }
 
+/** Strip CSI/SGR so a reverse-video `PS …>` last line still matches. */
+function stripSgr(text: string): string {
+  return text.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, '')
+}
+
 /**
- * Whether sanitized text ends on the default interactive pwsh prompt.
+ * Whether sanitized text contains the default interactive pwsh prompt.
+ * Linux PSReadLine leaves reverse-video CSI around the path; that is not a
+ * last-line-only `PS …>` after sanitizer leftovers.
  * @param text - sanitized viewport or scrollback.
- * @returns `true` when the last non-empty line is `PS>` or `PS <path>>`.
+ * @returns `true` when a `PS>` or `PS <path>>` line is present.
  */
 export function hasDefaultPwshPrompt(text: string): boolean {
-  return /^PS(?:\s+\S.*)?>\s*$/.test(lastNonEmptyLine(text))
+  const printable = stripSgr(normalizeTerminalText(text))
+  return /(?:^|\n)PS(?:\s+\S.*)?>\s*(?:\n|$)/.test(printable)
 }
 
 /** One sanitized chunk plus whether it contained the owned prompt marker. */

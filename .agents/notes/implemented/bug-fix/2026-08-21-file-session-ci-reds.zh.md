@@ -10,7 +10,7 @@ File/Session Reference 同步到官方 Host `@path` / `file-reference-local` 与
 
 ## Decision
 
-**pwsh spawn 等到末行是默认 `PS …>` 提示符后，再在 Unix 上提交 LF、在 Windows 上提交 CR，并等待拆开的 `Write-Output` 完成标记，而不是重打的 `dsh> `。** 把官方 Host 的 `'dsh> '` 写回 `PWSH_PROMPT_SETUP` 后，Linux coverage 和 ACP `persistent-pwsh-tool-turn` 快照再次变红：PTY 在函数运行前就回显这段源码，spawn 返回，下一条写入叠上去。末行 / 连续 ready-probe / `-NoExit -Command` 也失败：Linux 常常不再打印末行 `dsh> `，出现在源码里的 probe 仍是假就绪，`-Command` 则把二进制倒进 PTY。空转到 `includes('dsh> ')` 会超时（`32456229621`），因为源码拆分后该文本不再重打。把一次空 follow-up 当成就绪（`32457685533`）会发布空 motd，loader 停在默认 `PS>`，第一条命令超时。只用 CR 提交去等 `__DSH_PWSH_SETUP_DONE__` 仍超时（`32459139618`）：Linux 上的 PSReadLine 把 CR 当成光标回行首，setup 行回显但不执行。提交 CRLF 仍超时（`32460394471`）：CR 仍会先回行，setup 行仍不执行。立即提交 LF 仍超时（`32462089006`）：scrollback 是 setup 源码加上第一道 `PS /tmp/…>`，写入落在横幅期间，从未执行。先 `initialize` 再写 setup 得到 `session_exit`（`32463876213`）：stdin-wait 可能在 150 ms 就 settle，此时提示符还没占住 TTY。因此 spawn 等到末行是默认 `PS …>` 提示符后，再在 Unix 上提交 LF、在 Windows 上提交 CR。setup 在运行时拼接提示符与 `__DSH_PWSH_SETUP_DONE__`，再 follow-up 直到 viewport 或 scrollback `includes` 拼好的标记。工具层同样等待 `__DSH_PWSH_TOOL_SETUP_DONE__`。`session_exit`、单次 send 的 `timeout` 与 spawn 墙 `timeoutMs` 仍拒绝。官方 inferred-idle 仍没有额外末行门槛。[persistent pwsh 笔记](../architecture/2026-08-11-pwsh-persistent-pty.md) 仍拥有双层 prompt 安装。
+**pwsh spawn 等到末行是默认 `PS …>` 提示符后，再在 Unix 上提交 LF、在 Windows 上提交 CR，并等待拆开的 `Write-Output` 完成标记，而不是重打的 `dsh> `。** 把官方 Host 的 `'dsh> '` 写回 `PWSH_PROMPT_SETUP` 后，Linux coverage 和 ACP `persistent-pwsh-tool-turn` 快照再次变红：PTY 在函数运行前就回显这段源码，spawn 返回，下一条写入叠上去。末行 / 连续 ready-probe / `-NoExit -Command` 也失败：Linux 常常不再打印末行 `dsh> `，出现在源码里的 probe 仍是假就绪，`-Command` 则把二进制倒进 PTY。空转到 `includes('dsh> ')` 会超时（`32456229621`），因为源码拆分后该文本不再重打。把一次空 follow-up 当成就绪（`32457685533`）会发布空 motd，loader 停在默认 `PS>`，第一条命令超时。只用 CR 提交去等 `__DSH_PWSH_SETUP_DONE__` 仍超时（`32459139618`）：Linux 上的 PSReadLine 把 CR 当成光标回行首，setup 行回显但不执行。提交 CRLF 仍超时（`32460394471`）：CR 仍会先回行，setup 行仍不执行。立即提交 LF 仍超时（`32462089006`）：scrollback 是 setup 源码加上第一道 `PS /tmp/…>`，写入落在横幅期间，从未执行。先 `initialize` 再写 setup 得到 `session_exit`（`32463876213`）：stdin-wait 可能在 150 ms 就 settle，此时提示符还没占住 TTY。只认末行 `PS …>` 时，scrollback 里已有提示符仍超时（`32465320155`）：Linux 上的 PSReadLine 会在路径两侧留下反色 CSI。因此 spawn 去掉 SGR 后再匹配 `PS …>` 行，然后在 Unix 上提交 LF、在 Windows 上提交 CR。setup 在运行时拼接提示符与 `__DSH_PWSH_SETUP_DONE__`，再 follow-up 直到 viewport 或 scrollback `includes` 拼好的标记。工具层同样等待 `__DSH_PWSH_TOOL_SETUP_DONE__`。`session_exit`、单次 send 的 `timeout` 与 spawn 墙 `timeoutMs` 仍拒绝。官方 inferred-idle 仍没有额外末行门槛。[persistent pwsh 笔记](../architecture/2026-08-11-pwsh-persistent-pty.md) 仍拥有双层 prompt 安装。
 
 **Relay 的载荷尺寸检查使用默认 first-frame 期限。** 空闲超时断言仍启动 10 ms 服务器。oversized 帧断言另启默认 1000 ms 的服务器，避免 attach-timeout 抢在 1009 关闭之前。
 
@@ -35,6 +35,8 @@ File/Session Reference 同步到官方 Host `@path` / `file-reference-local` 与
 **spawn 后立即提交 LF。** 否决：coverage run `32462089006` 打出 setup 源码和第一道 `PS /tmp/…>`，没有标记；写入落在横幅期间，从未执行。
 
 **先 `initialize` 再写 setup。** 否决：coverage run `32463876213` 在 setup 发送时 `session_exit`；stdin-wait 可能在 150 ms 就 settle，默认提示符还没占住 TTY。
+
+**只认未去 SGR 的精确末行 `PS …>`。** 否决：coverage run `32465320155` 在 scrollback 已有 `PS /tmp/…>` 时仍超时；Linux 上的 PSReadLine 用反色 CSI 包住路径。
 
 **要求末行 `dsh> `、`__DSH_PWSH_READY__` probe，或用 `pwsh -NoExit -Command` 预装提示符。** 否决：Linux 常常不再打印末行提示符，出现在源码里的 probe 仍是假就绪，`-Command` 则把二进制写入 PTY。
 

@@ -90,6 +90,8 @@ describe('hasDefaultPwshPrompt', () => {
   it('accepts the default interactive prompt and rejects setup echo or dsh> ', () => {
     expect(hasDefaultPwshPrompt('PS>')).toBe(true)
     expect(hasDefaultPwshPrompt('banner\nPS /tmp/ws> ')).toBe(true)
+    expect(hasDefaultPwshPrompt('PS \x1b[27m/tmp/dsh-pty-local-5ayIEJ\x1b[7m> ')).toBe(true)
+    expect(hasDefaultPwshPrompt('PS /tmp/ws>\x1b[0m')).toBe(true)
     expect(hasDefaultPwshPrompt('dsh> ')).toBe(false)
     expect(hasDefaultPwshPrompt('function prompt { }\n')).toBe(false)
   })
