@@ -12,13 +12,13 @@ import css from './MobileAccount.module.css'
 import { sealCompanionAttachment, buildCompanionAttachmentOffer } from './companion-attachment.ts'
 import type { CompanionInteraction } from './companion-approval.ts'
 import type { CompanionSessionSummary } from './companion-history.ts'
-import { developmentCompanionClient } from './development-keyless-companion.ts'
+import { developmentCompanionClient, type CompanionSearchSnapshot } from './development-keyless-companion.ts'
 import { MobileBrowse } from './MobileBrowse.tsx'
 import { MobilePairing, type MobilePairingActions } from './MobilePairing.tsx'
 import type { MobilePairingSnapshot } from './personal-pairing-model.ts'
 
 const EMPTY_SESSIONS: readonly CompanionSessionSummary[] = []
-const EMPTY_SEARCH = { query: '', status: 'idle' as const, hits: EMPTY_SESSIONS }
+const EMPTY_SEARCH: CompanionSearchSnapshot = { query: '', status: 'idle', hits: EMPTY_SESSIONS }
 
 /** Signed-in Mobile surface after Platform Account login. */
 type SignedInScreen = 'home' | 'account' | 'pairing'
