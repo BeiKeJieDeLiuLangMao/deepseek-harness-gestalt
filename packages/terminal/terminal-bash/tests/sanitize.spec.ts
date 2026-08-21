@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  lastNonEmptyLine, normalizeTerminalText, TerminalSanitizer,
+  hasDefaultPwshPrompt, lastNonEmptyLine, normalizeTerminalText, TerminalSanitizer,
 } from '@deepseek-ai/dsh-terminal-bash/src/sanitize.ts'
 
 describe('TerminalSanitizer', () => {
@@ -83,5 +83,14 @@ describe('lastNonEmptyLine', () => {
     expect(lastNonEmptyLine('   \n  ')).toBe('')
     expect(lastNonEmptyLine('keep=ok\ndsh> \n   ')).toBe('dsh> ')
     expect(lastNonEmptyLine('one\r\ntwo\rthree')).toBe('three')
+  })
+})
+
+describe('hasDefaultPwshPrompt', () => {
+  it('accepts the default interactive prompt and rejects setup echo or dsh> ', () => {
+    expect(hasDefaultPwshPrompt('PS>')).toBe(true)
+    expect(hasDefaultPwshPrompt('banner\nPS /tmp/ws> ')).toBe(true)
+    expect(hasDefaultPwshPrompt('dsh> ')).toBe(false)
+    expect(hasDefaultPwshPrompt('function prompt { }\n')).toBe(false)
   })
 })

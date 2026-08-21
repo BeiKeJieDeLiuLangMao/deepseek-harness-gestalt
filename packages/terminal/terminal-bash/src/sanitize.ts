@@ -23,6 +23,15 @@ export function lastNonEmptyLine(text: string): string {
   return ''
 }
 
+/**
+ * Whether sanitized text ends on the default interactive pwsh prompt.
+ * @param text - sanitized viewport or scrollback.
+ * @returns `true` when the last non-empty line is `PS>` or `PS <path>>`.
+ */
+export function hasDefaultPwshPrompt(text: string): boolean {
+  return /^PS(?:\s+\S.*)?>\s*$/.test(lastNonEmptyLine(text))
+}
+
 /** One sanitized chunk plus whether it contained the owned prompt marker. */
 export interface SanitizedChunk {
   text: string

@@ -15,7 +15,7 @@ import { effectiveSandboxMode } from '@deepseek-ai/dsh-sandbox-policy'
 import { ENCODING_PREAMBLE } from '@deepseek-ai/dsh-pwsh-local'
 import { type Config, type ResolvedConfig, resolveConfig, type ShellDialect, validateConfig } from './config.ts'
 import { LocalPtySession } from './session.ts'
-import { CONTROLLED_PROMPT } from './sanitize.ts'
+import { CONTROLLED_PROMPT, hasDefaultPwshPrompt } from './sanitize.ts'
 
 export { Config } from './config.ts'
 export type { Config as TerminalLocalConfig } from './config.ts'
@@ -120,30 +120,29 @@ async function startupSession(
       await session.initialize(signal)
       return
     }
-    // pwsh cannot install its prompt from the environment: wait for the
-    // default prompt to own the TTY, then write the prompt function.
-    // A write during banner lands on the PTY as echo and never executes
+    // pwsh cannot install its prompt from the environment: wait until the
+    // last line is the default `PS …>` prompt, then write the prompt
+    // function. `initialize` can settle on stdin_wait at 150 ms and write
+    // too early (Linux CI 32463876213: setup send got session_exit). A
+    // write during banner lands on the PTY as echo and never executes
     // (Linux CI 32462089006: scrollback is the setup source plus
-    // `PS /tmp/…>`). The first send also pins UTF-8 output (the shared
-    // pwsh-local preamble) before anything runs: the session decode path
-    // treats PTY bytes as UTF-8, and an un-pinned console writes its host
-    // code page for non-ASCII output. A Linux PTY often never reprints
-    // CONTROLLED_PROMPT after that function runs, so spawn waits for
-    // PWSH_SETUP_DONE from the trailing Write-Output instead. The
-    // banner-to-setup gap can outlast the first send's silence bound, so
-    // follow-ups continue until that token is visible. session_exit,
+    // `PS /tmp/…>`). The first submitted send also pins UTF-8 output (the
+    // shared pwsh-local preamble) before anything runs. A Linux PTY often
+    // never reprints CONTROLLED_PROMPT after that function runs, so spawn
+    // waits for PWSH_SETUP_DONE from the trailing Write-Output instead.
+    // Follow-ups continue until that token is visible. session_exit,
     // per-send timeout, and the spawn-wall timeoutMs reject.
-    await session.initialize(signal)
     const startedAt = Date.now()
+    let readyToSetup = false
     let written = false
     let viewport = ''
     for (;;) {
       const operation = session.startSend({
-        text: written ? '' : ENCODING_PREAMBLE + PWSH_PROMPT_SETUP,
-        submit: !written,
+        text: written || !readyToSetup ? '' : ENCODING_PREAMBLE + PWSH_PROMPT_SETUP,
+        submit: readyToSetup && !written,
         ...signal !== undefined ? { signal } : {},
       })
-      written = true
+      if (readyToSetup) written = true
       const result = await operation.done
       if (result.waitReason === 'session_exit') throw new Error('PTY shell exited during startup')
       if (result.waitReason === 'timeout') {
@@ -153,7 +152,9 @@ async function startupSession(
       }
       viewport = result.viewport
       const scrollback = session.read({ offset: 0, count: 20 }).text
-      if (viewport.includes(PWSH_SETUP_DONE) || scrollback.includes(PWSH_SETUP_DONE)) {
+      if (!readyToSetup) {
+        if (hasDefaultPwshPrompt(viewport) || hasDefaultPwshPrompt(scrollback)) readyToSetup = true
+      } else if (viewport.includes(PWSH_SETUP_DONE) || scrollback.includes(PWSH_SETUP_DONE)) {
         session.motd = viewport.includes(PWSH_SETUP_DONE) ? viewport : scrollback
         break
       }
