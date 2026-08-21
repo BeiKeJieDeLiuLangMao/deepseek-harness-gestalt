@@ -82,15 +82,19 @@ function childEnvironment(spec: TerminalBackendSpawnSpec, dialect: ShellDialect)
 
 const PWSH_PROMPT_HEAD = CONTROLLED_PROMPT.slice(0, Math.ceil(CONTROLLED_PROMPT.length / 2))
 const PWSH_PROMPT_TAIL = CONTROLLED_PROMPT.slice(PWSH_PROMPT_HEAD.length)
+/** Text `Write-Output` prints after the spawn `prompt` function is defined. */
+export const PWSH_SETUP_DONE = '__DSH_PWSH_SETUP_DONE__'
+const PWSH_SETUP_DONE_HEAD = PWSH_SETUP_DONE.slice(0, Math.ceil(PWSH_SETUP_DONE.length / 2))
+const PWSH_SETUP_DONE_TAIL = PWSH_SETUP_DONE.slice(PWSH_SETUP_DONE_HEAD.length)
 /**
- * pwsh `prompt` function written at spawn. OSC `133;D;` + BEL is built with
- * `[char]27`/`[char]7` because raw ESC in submitted input is unreliable under
- * PSReadLine. The printable prompt is two concatenated literals so a PTY echo
- * of this source cannot match the installed `dsh> ` prompt.
+ * pwsh `prompt` function written at spawn, then a `Write-Output` of
+ * {@link PWSH_SETUP_DONE}. OSC `133;D;` + BEL is built with `[char]27` /
+ * `[char]7` because raw ESC in submitted input is unreliable under
+ * PSReadLine. The printable prompt and the done token are each two
+ * concatenated literals so a PTY echo of this source cannot match either.
  */
 export const PWSH_PROMPT_SETUP =
-  `function prompt { [Console]::Write([char]27 + ']133;D;' + [int]$LASTEXITCODE + [char]7); ('${PWSH_PROMPT_HEAD}' + '${PWSH_PROMPT_TAIL}') }`
-
+  `function prompt { [Console]::Write([char]27 + ']133;D;' + [int]$LASTEXITCODE + [char]7); ('${PWSH_PROMPT_HEAD}' + '${PWSH_PROMPT_TAIL}') }; Write-Output ('${PWSH_SETUP_DONE_HEAD}' + '${PWSH_SETUP_DONE_TAIL}')`
 function spawnArgv(ctx: Context, config: ResolvedConfig, policy: SandboxExecutionPolicy): string[] {
   const argv = [config.shellPath, ...config.shellArgs]
   if (policy.mode === 'danger-full-access') return argv
@@ -108,6 +112,7 @@ function spawnArgv(ctx: Context, config: ResolvedConfig, policy: SandboxExecutio
 async function startupSession(
   session: LocalPtySession,
   dialect: ShellDialect,
+  timeoutMs: number,
   signal?: AbortSignal,
 ): Promise<void> {
   const start = async (): Promise<void> => {
@@ -120,28 +125,34 @@ async function startupSession(
     // (the shared pwsh-local preamble) before anything runs: the session
     // decode path treats PTY bytes as UTF-8, and an un-pinned console writes
     // its host code page for non-ASCII output. A Linux PTY often never
-    // reprints CONTROLLED_PROMPT after that function runs, so spawn cannot
-    // wait for includes. One empty follow-up absorbs a banner-to-setup gap
-    // that outlasted the first send's silence bound; that follow-up settling
-    // is readiness even when the installed prompt is absent. session_exit
-    // and per-send timeout still reject.
-    const bootstrap = async (text: string, submit: boolean) => {
+    // reprints CONTROLLED_PROMPT after that function runs, so spawn waits
+    // for PWSH_SETUP_DONE from the trailing Write-Output instead. The banner
+    // gap can outlast the first send's silence bound, so follow-ups continue
+    // until that token is visible. session_exit, per-send timeout, and the
+    // spawn-wall timeoutMs reject.
+    const startedAt = Date.now()
+    let written = false
+    let viewport = ''
+    for (;;) {
       const operation = session.startSend({
-        text,
-        submit,
+        text: written ? '' : ENCODING_PREAMBLE + PWSH_PROMPT_SETUP,
+        submit: !written,
         ...signal !== undefined ? { signal } : {},
       })
+      written = true
       const result = await operation.done
       if (result.waitReason === 'session_exit') throw new Error('PTY shell exited during startup')
       if (result.waitReason === 'timeout') throw new Error('PTY shell did not reach readiness before startup timeout')
-      return result
+      viewport = result.viewport
+      const scrollback = session.read({ offset: 0, count: 20 }).text
+      if (viewport.includes(PWSH_SETUP_DONE) || scrollback.includes(PWSH_SETUP_DONE)) {
+        session.motd = viewport.includes(PWSH_SETUP_DONE) ? viewport : scrollback
+        break
+      }
+      if (Date.now() - startedAt >= timeoutMs) {
+        throw new Error('PTY shell did not reach readiness before startup timeout')
+      }
     }
-    let viewport = (await bootstrap(ENCODING_PREAMBLE + PWSH_PROMPT_SETUP, true)).viewport
-    const scrollback = session.read({ offset: 0, count: 20 }).text
-    if (!viewport.includes(CONTROLLED_PROMPT) && !scrollback.includes(CONTROLLED_PROMPT)) {
-      viewport = (await bootstrap('', false)).viewport
-    }
-    session.motd = viewport
   }
   if (signal === undefined) {
     await start()
@@ -193,7 +204,7 @@ export class BashTerminalBackend implements TerminalBackend {
     })
     const session = this.createSession(terminal, this.config)
     try {
-      await startupSession(session, this.config.shellDialect, spec.signal)
+      await startupSession(session, this.config.shellDialect, this.config.timeoutMs, spec.signal)
       return session
     } catch (error) {
       try {

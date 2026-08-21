@@ -290,7 +290,7 @@ describe.skipIf(!hasPwsh)('terminal-bash pwsh real shell', () => {
         timeoutMs: 15_000,
       }, 'pwsh')
       const created = await ctx.terminals.spawn(agent, { type: 'shell', name: 'main', cwd: root })
-      expect(created.motd).toContain('dsh> ')
+      expect(created.motd).toContain(ptyLocal.PWSH_SETUP_DONE)
 
       const first = ctx.terminals.startSend(agent, created.sessionId, {
         text: '$env:KEEP = "ok"; Set-Location /',

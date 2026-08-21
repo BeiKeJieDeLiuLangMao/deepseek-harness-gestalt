@@ -139,11 +139,12 @@ class StubTerminalSession implements TerminalBackendSession {
       if (this.mode === 'init-source-echo' || this.mode === 'init-echo-stuck') {
         return this.operation(Promise.resolve(this.result(request.text, 'stdin_read')))
       }
-      return this.operation(Promise.resolve(this.result(this.motd, 'stdin_read')))
+      return this.operation(Promise.resolve(this.result(`${this.motd}__DSH_PWSH_TOOL_SETUP_DONE__`, 'stdin_read')))
     }
     if (request.text.length === 0 && this.mode === 'init-source-echo') {
-      this.scrollback += this.motd
-      return this.operation(Promise.resolve(this.result(this.motd, 'stdin_read')))
+      const ready = `${this.motd}__DSH_PWSH_TOOL_SETUP_DONE__`
+      this.scrollback += ready
+      return this.operation(Promise.resolve(this.result(ready, 'stdin_read')))
     }
     if (request.text.length === 0 && this.mode === 'init-echo-stuck') {
       return this.operation(Promise.resolve(this.result('', 'inferred_idle')))
@@ -575,13 +576,13 @@ describe('tool-pwsh-persistent', () => {
     expect(text(await call(ctx, owner, 'Write-Output one'))).toBe('hello from stub')
     expect(stub.sessions[0]?.sends).toBe(3)
     expect(stub.sessions[0]?.promptSetups[0]).not.toContain('__DSH_PERSISTENT_PWSH_PROMPT__ ')
+    expect(stub.sessions[0]?.promptSetups[0]).not.toContain('__DSH_PWSH_TOOL_SETUP_DONE__')
   })
 
-  it('accepts initialization after one follow-up even when the installed tool prompt never appears', async () => {
-    const { ctx, owner, stub } = await setup({ backendType: 'stub' }, 'init-echo-stuck')
-    expect(text(await call(ctx, owner, 'Write-Output one'))).toBe('hello from stub')
-    expect(stub.sessions[0]?.sends).toBe(3)
-    expect(stub.sessions[0]?.promptSetups[0]).not.toContain('__DSH_PERSISTENT_PWSH_PROMPT__ ')
+  it('fails initialization when the setup echo never prints the tool done token', async () => {
+    const { ctx, owner, stub } = await setup({ backendType: 'stub', timeoutMs: 50 }, 'init-echo-stuck')
+    expect((await call(ctx, owner, 'pwd')).isError).toBe(true)
+    expect(stub.sessions[0]?.closed).toContain('persistent pwsh initialization failed')
   })
 
   it.each(['init-exit', 'init-timeout'] as const)(

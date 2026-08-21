@@ -10,7 +10,7 @@ import type { ConfinedArgv, SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
 import SandboxPolicyService, { setSandboxMode } from '@deepseek-ai/dsh-sandbox-policy'
 import TerminalSessionService, { TerminalBackendCleanupError, TerminalSessionId } from '@deepseek-ai/dsh-terminal'
 import type { TerminalSendRequest, TerminalWaitReason } from '@deepseek-ai/dsh-terminal'
-import { BashTerminalBackend, PWSH_PROMPT_SETUP } from '@deepseek-ai/dsh-terminal-bash'
+import { BashTerminalBackend, PWSH_PROMPT_SETUP, PWSH_SETUP_DONE } from '@deepseek-ai/dsh-terminal-bash'
 import { CONTROLLED_PROMPT } from '@deepseek-ai/dsh-terminal-bash/src/sanitize.ts'
 import { ENCODING_PREAMBLE } from '@deepseek-ai/dsh-pwsh-local'
 import * as ptyLocal from '@deepseek-ai/dsh-terminal-bash'
@@ -355,7 +355,7 @@ describe('BashTerminalBackend startup rollback', () => {
         sent = request
         return {
           done: Promise.resolve({
-            viewport: 'setup-echo dsh> ', waitReason: 'stdin_read' as const,
+            viewport: `setup-echo ${PWSH_SETUP_DONE}`, waitReason: 'stdin_read' as const,
             sessionStatus: { kind: 'running' as const }, truncated: false,
           }),
           readOutput: () => ({ delta: '', truncated: false }),
@@ -372,9 +372,11 @@ describe('BashTerminalBackend startup rollback', () => {
     )
     expect(await backend.spawn(spec(agent(ctx)))).toBe(session)
     expect(sent).toMatchObject({ text: ENCODING_PREAMBLE + PWSH_PROMPT_SETUP, submit: true })
-    expect(session.motd).toBe('setup-echo dsh> ')
+    expect(session.motd).toBe(`setup-echo ${PWSH_SETUP_DONE}`)
     expect(PWSH_PROMPT_SETUP).not.toContain(CONTROLLED_PROMPT)
+    expect(PWSH_PROMPT_SETUP).not.toContain(PWSH_SETUP_DONE)
     expect(ENCODING_PREAMBLE + PWSH_PROMPT_SETUP).not.toContain(CONTROLLED_PROMPT)
+    expect(ENCODING_PREAMBLE + PWSH_PROMPT_SETUP).not.toContain(PWSH_SETUP_DONE)
     expect(spawned?.env).toMatchObject({
       TERM: 'dumb', NO_COLOR: '1', DSH_SHELL: '1', DSH_SESSION_ID: 'agent', DSH_PTY_SESSION_ID: 'pty-1',
     })
@@ -394,7 +396,7 @@ describe('BashTerminalBackend startup rollback', () => {
         const second = sends.length > 1
         return {
           done: Promise.resolve({
-            viewport: second ? 'dsh> ' : 'PowerShell 7.6.4\n',
+            viewport: second ? PWSH_SETUP_DONE : 'PowerShell 7.6.4\n',
             waitReason: 'inferred_idle' as const,
             sessionStatus: { kind: 'running' as const }, truncated: false,
           }),
@@ -413,7 +415,7 @@ describe('BashTerminalBackend startup rollback', () => {
     await backend.spawn(spec(agent(ctx)))
     expect(sends).toHaveLength(2)
     expect(sends[1]).toMatchObject({ text: '', submit: false })
-    expect(session.motd).toBe('dsh> ')
+    expect(session.motd).toBe(PWSH_SETUP_DONE)
   })
 
   it('keeps waiting when the first send only echoes the setup source', async () => {
@@ -427,7 +429,7 @@ describe('BashTerminalBackend startup rollback', () => {
         sends.push(request)
         return {
           done: Promise.resolve({
-            viewport: request.text.length > 0 ? request.text : 'dsh> ',
+            viewport: request.text.length > 0 ? request.text : PWSH_SETUP_DONE,
             waitReason: 'stdin_read' as const,
             sessionStatus: { kind: 'running' as const }, truncated: false,
           }),
@@ -436,7 +438,7 @@ describe('BashTerminalBackend startup rollback', () => {
         }
       },
       read: () => ({
-        text: sends.some(send => send.text.length === 0) ? 'dsh> ' : 'PowerShell 7.6.4\n',
+        text: sends.some(send => send.text.length === 0) ? PWSH_SETUP_DONE : 'PowerShell 7.6.4\n',
         totalLines: 1, lineBegin: 0, lineEnd: 1, truncated: false,
       }),
     } as unknown as LocalPtySession
@@ -450,31 +452,30 @@ describe('BashTerminalBackend startup rollback', () => {
     expect(sends).toHaveLength(2)
     expect(sends[0]?.text).toBe(ENCODING_PREAMBLE + PWSH_PROMPT_SETUP)
     expect(sends[0]?.text).not.toContain(CONTROLLED_PROMPT)
+    expect(sends[0]?.text).not.toContain(PWSH_SETUP_DONE)
     expect(sends[1]).toMatchObject({ text: '', submit: false })
-    expect(session.motd).toBe('dsh> ')
+    expect(session.motd).toBe(PWSH_SETUP_DONE)
   })
 
-  it('publishes a pwsh session after one follow-up even when the installed prompt never appears', async () => {
+  it('publishes motd from scrollback when the done token is not in the send viewport', async () => {
     const ctx = new Context()
     await ctx.plugin(EmptySandbox)
     await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access', workspaceRoot: '/workspace' })
-    const sends: TerminalSendRequest[] = []
     const session = {
       motd: '',
-      startSend: (request: TerminalSendRequest) => {
-        sends.push(request)
-        return {
-          done: Promise.resolve({
-            viewport: request.text,
-            waitReason: 'inferred_idle' as const,
-            sessionStatus: { kind: 'running' as const }, truncated: false,
-          }),
-          readOutput: () => ({ delta: '', truncated: false }),
-          cancel: () => false,
-        }
-      },
-      read: () => ({ text: 'PowerShell 7.6.4\n', totalLines: 1, lineBegin: 0, lineEnd: 1, truncated: false }),
-      close: () => Promise.resolve(),
+      startSend: () => ({
+        done: Promise.resolve({
+          viewport: 'PowerShell 7.6.4\n',
+          waitReason: 'inferred_idle' as const,
+          sessionStatus: { kind: 'running' as const }, truncated: false,
+        }),
+        readOutput: () => ({ delta: '', truncated: false }),
+        cancel: () => false,
+      }),
+      read: () => ({
+        text: `banner\n${PWSH_SETUP_DONE}`,
+        totalLines: 2, lineBegin: 0, lineEnd: 2, truncated: false,
+      }),
     } as unknown as LocalPtySession
     const backend = new BashTerminalBackend(
       ctx,
@@ -482,10 +483,35 @@ describe('BashTerminalBackend startup rollback', () => {
       async () => terminalHandle(),
       () => session,
     )
-    expect(await backend.spawn(spec(agent(ctx)))).toBe(session)
-    expect(sends).toHaveLength(2)
-    expect(sends[1]).toMatchObject({ text: '', submit: false })
-    expect(session.motd).toBe('')
+    await backend.spawn(spec(agent(ctx)))
+    expect(session.motd).toBe(`banner\n${PWSH_SETUP_DONE}`)
+  })
+
+  it('rejects a pwsh bootstrap whose setup echo never prints the done token', async () => {
+    const ctx = new Context()
+    await ctx.plugin(EmptySandbox)
+    await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access', workspaceRoot: '/workspace' })
+    const session = {
+      motd: '',
+      startSend: (request: TerminalSendRequest) => ({
+        done: Promise.resolve({
+          viewport: request.text,
+          waitReason: 'inferred_idle' as const,
+          sessionStatus: { kind: 'running' as const }, truncated: false,
+        }),
+        readOutput: () => ({ delta: '', truncated: false }),
+        cancel: () => false,
+      }),
+      read: () => ({ text: 'PowerShell 7.6.4\n', totalLines: 1, lineBegin: 0, lineEnd: 1, truncated: false }),
+      close: () => Promise.resolve(),
+    } as unknown as LocalPtySession
+    const backend = new BashTerminalBackend(
+      ctx,
+      { ...config(), shellDialect: 'pwsh', shellPath: 'pwsh', timeoutMs: 50 },
+      async () => terminalHandle(),
+      () => session,
+    )
+    await expect(backend.spawn(spec(agent(ctx)))).rejects.toThrow('did not reach readiness before startup timeout')
   })
 
   it('rejects a pwsh bootstrap whose shell exits or times out', async () => {
@@ -521,7 +547,7 @@ describe('BashTerminalBackend startup rollback', () => {
         sends.push(request)
         return {
           done: Promise.resolve({
-            viewport: 'dsh> ', waitReason: 'stdin_read' as const,
+            viewport: PWSH_SETUP_DONE, waitReason: 'stdin_read' as const,
             sessionStatus: { kind: 'running' as const }, truncated: false,
           }),
           readOutput: () => ({ delta: '', truncated: false }),
@@ -538,7 +564,7 @@ describe('BashTerminalBackend startup rollback', () => {
     )
     const signal = new AbortController().signal
     const spawned = await backend.spawn({ ...spec(agent(ctx)), signal })
-    expect(spawned.motd).toBe('dsh> ')
+    expect(spawned.motd).toBe(PWSH_SETUP_DONE)
     expect(sends).toHaveLength(1)
     expect(sends[0]?.signal).toBe(signal)
   })
