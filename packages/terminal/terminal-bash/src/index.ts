@@ -84,10 +84,14 @@ function childEnvironment(spec: TerminalBackendSpawnSpec, dialect: ShellDialect)
  * The pwsh prompt function that emits the shared OSC `133;D;` + BEL marker
  * before every prompt, mirroring bash's PROMPT_COMMAND. `[char]27`/`[char]7`
  * build the control bytes at runtime because raw ESC characters in submitted
- * input are unreliable under PSReadLine.
+ * input are unreliable under PSReadLine. The printable prompt is two
+ * concatenated literals so a PTY echo of this source cannot satisfy the
+ * spawn `includes(CONTROLLED_PROMPT)` wait.
  */
+const PWSH_PROMPT_HEAD = CONTROLLED_PROMPT.slice(0, Math.ceil(CONTROLLED_PROMPT.length / 2))
+const PWSH_PROMPT_TAIL = CONTROLLED_PROMPT.slice(PWSH_PROMPT_HEAD.length)
 export const PWSH_PROMPT_SETUP =
-  "function prompt { [Console]::Write([char]27 + ']133;D;' + [int]$LASTEXITCODE + [char]7); '" + CONTROLLED_PROMPT + "' }"
+  `function prompt { [Console]::Write([char]27 + ']133;D;' + [int]$LASTEXITCODE + [char]7); ('${PWSH_PROMPT_HEAD}' + '${PWSH_PROMPT_TAIL}') }`
 
 function spawnArgv(ctx: Context, config: ResolvedConfig, policy: SandboxExecutionPolicy): string[] {
   const argv = [config.shellPath, ...config.shellArgs]
@@ -106,6 +110,7 @@ function spawnArgv(ctx: Context, config: ResolvedConfig, policy: SandboxExecutio
 async function startupSession(
   session: LocalPtySession,
   dialect: ShellDialect,
+  timeoutMs: number,
   signal?: AbortSignal,
 ): Promise<void> {
   const start = async (): Promise<void> => {
@@ -122,21 +127,28 @@ async function startupSession(
     // non-ASCII output. The banner-to-prompt gap can outlast the silence
     // bound, so the wait loops over follow-up sends until the controlled
     // prompt is actually visible (in the viewport or the retained scrollback
-    // when it landed between sends), bounded by the send deadline.
+    // when it landed between sends), bounded by `timeoutMs`. inferred_idle
+    // can settle a follow-up before that wall clock, so each settled send
+    // that still lacks the installed prompt is not readiness.
+    const startedAt = Date.now()
+    let written = false
     let viewport = ''
     for (;;) {
-      const first = viewport.length === 0
       const operation = session.startSend({
-        text: first ? ENCODING_PREAMBLE + PWSH_PROMPT_SETUP : '',
-        submit: first,
+        text: written ? '' : ENCODING_PREAMBLE + PWSH_PROMPT_SETUP,
+        submit: !written,
         ...signal !== undefined ? { signal } : {},
       })
+      written = true
       const result = await operation.done
       if (result.waitReason === 'session_exit') throw new Error('PTY shell exited during startup')
       if (result.waitReason === 'timeout') throw new Error('PTY shell did not reach readiness before startup timeout')
       viewport = result.viewport
       const scrollback = session.read({ offset: 0, count: 20 }).text
       if (viewport.includes(CONTROLLED_PROMPT) || scrollback.includes(CONTROLLED_PROMPT)) break
+      if (Date.now() - startedAt >= timeoutMs) {
+        throw new Error('PTY shell did not reach readiness before startup timeout')
+      }
     }
     session.motd = viewport
   }
@@ -190,7 +202,7 @@ export class BashTerminalBackend implements TerminalBackend {
     })
     const session = this.createSession(terminal, this.config)
     try {
-      await startupSession(session, this.config.shellDialect, spec.signal)
+      await startupSession(session, this.config.shellDialect, this.config.timeoutMs, spec.signal)
       return session
     } catch (error) {
       try {

@@ -256,10 +256,13 @@ async function respondToSessionExit(
  * The pwsh prompt function that overrides the backend bootstrap value with
  * this tool's own prompt. `[char]27`/`[char]7` build the OSC bytes at runtime
  * because raw ESC characters in submitted input are unreliable under
- * PSReadLine.
+ * PSReadLine. The printable prompt is two concatenated literals so a PTY
+ * echo of this source cannot satisfy the initialization `includes(SHELL_PROMPT)` wait.
  */
+const PWSH_PROMPT_HEAD = SHELL_PROMPT.slice(0, Math.ceil(SHELL_PROMPT.length / 2))
+const PWSH_PROMPT_TAIL = SHELL_PROMPT.slice(PWSH_PROMPT_HEAD.length)
 const PWSH_PROMPT_SETUP =
-  "function prompt { [Console]::Write([char]27 + ']133;D;' + [int]$LASTEXITCODE + [char]7); '" + SHELL_PROMPT + "' }"
+  `function prompt { [Console]::Write([char]27 + ']133;D;' + [int]$LASTEXITCODE + [char]7); ('${PWSH_PROMPT_HEAD}' + '${PWSH_PROMPT_TAIL}') }`
 
 function persistentShells(ctx: Context, config: ResolvedConfig): PersistentShells {
   const pending = new WeakMap<Agent, Promise<TerminalSessionId>>()
@@ -307,14 +310,24 @@ function persistentShells(ctx: Context, config: ResolvedConfig): PersistentShell
             live.delete(owner)
           }, 'tool-pwsh-persistent owner cache cleanup')
         }
-        const setup = ctx.terminals.startSend(owner, spawned.sessionId, {
-          text: PWSH_PROMPT_SETUP,
-          submit: true,
-          signal: combinedSignal,
-        })
-        const result = await setup.done
-        if (result.sessionStatus.kind === 'exited' || result.waitReason === 'timeout') {
-          throw new Error('persistent pwsh shell did not accept initialization')
+        const startedAt = Date.now()
+        let written = false
+        for (;;) {
+          const setup = ctx.terminals.startSend(owner, spawned.sessionId, {
+            text: written ? '' : PWSH_PROMPT_SETUP,
+            submit: !written,
+            signal: combinedSignal,
+          })
+          written = true
+          const result = await setup.done
+          if (result.sessionStatus.kind === 'exited' || result.waitReason === 'timeout') {
+            throw new Error('persistent pwsh shell did not accept initialization')
+          }
+          const scrollback = ctx.terminals.read(owner, spawned.sessionId, { offset: 0, count: 20 }).text
+          if (result.viewport.includes(SHELL_PROMPT) || scrollback.includes(SHELL_PROMPT)) break
+          if (Date.now() - startedAt >= config.timeoutMs) {
+            throw new Error('persistent pwsh shell did not accept initialization')
+          }
         }
         return spawned.sessionId
       } catch (error: unknown) {
