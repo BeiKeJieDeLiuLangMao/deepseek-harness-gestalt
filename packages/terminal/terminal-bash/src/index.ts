@@ -117,10 +117,12 @@ const PWSH_INPUT_ENCODING =
  * Profile-owned stdin loop. `PSConsoleHostReadLine` and a stub PSReadLine
  * module both dumped UTF-16 `Stop` / PerfTrack text (`32479597008`,
  * `32480892916`). `[Console]::In.ReadLine` consumes a submitted LF line
- * without handing the TTY to the console host.
+ * without handing the TTY to the console host. `exit` inside
+ * `Invoke-Expression` leaves the profile script; `finally` then exits
+ * the process so the tool can reset (`32482201265`).
  */
 export const PWSH_STDIN_REPL =
-  'while ($true) { [Console]::Write((prompt)); $__dshLine = [Console]::In.ReadLine(); if ($null -eq $__dshLine) { break }; try { Invoke-Expression $__dshLine } catch { Write-Host $_ } }'
+  'try { while ($true) { [Console]::Write((prompt)); $__dshLine = [Console]::In.ReadLine(); if ($null -eq $__dshLine) { break }; try { Invoke-Expression $__dshLine } catch { Write-Host $_ } } } finally { [Environment]::Exit($(if ($null -ne $LASTEXITCODE) { [int]$LASTEXITCODE } else { 0 })) }'
 async function writePwshIsolatedHome(): Promise<string> {
   const home = join(tmpdir(), `dsh-pwsh-home-${randomUUID()}`)
   const body = `${ENCODING_PREAMBLE}\n${PWSH_INPUT_ENCODING}\n${PWSH_PROMPT_SETUP}\n${PWSH_STDIN_REPL}\n`

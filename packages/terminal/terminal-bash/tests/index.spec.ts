@@ -386,6 +386,7 @@ describe('BashTerminalBackend startup rollback', () => {
       'utf8',
     )
     expect(profile).toContain(PWSH_STDIN_REPL)
+    expect(profile).toContain('[Environment]::Exit')
     expect(profile).toContain('InputEncoding')
     expect(profile).not.toContain('PSConsoleHostReadLine')
     expect(profile).not.toContain('Remove-Module')
