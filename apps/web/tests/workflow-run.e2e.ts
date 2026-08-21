@@ -155,26 +155,9 @@ describe.skipIf(MODE === 'record')('web e2e: durable workflow run in Chat', () =
       document.body.removeAttribute('data-ds-dark-theme')
     })
     await page.setViewportSize({ width: 1280, height: 800 })
-    const runAfterRestore = page.locator('[data-workflow-run] [data-disclosure-row]').nth(0)
-    const phaseAfterRestore = page.locator('[data-workflow-run] [data-disclosure-row]').nth(1)
-    await runAfterRestore.waitFor({ timeout: 15_000 })
-    if (await runAfterRestore.getAttribute('aria-expanded') === 'false') {
-      await runAfterRestore.click()
-    }
-    await phaseAfterRestore.waitFor({ timeout: 15_000 })
-    if (await phaseAfterRestore.getAttribute('aria-expanded') === 'false') {
-      await phaseAfterRestore.click()
-    }
-    const memberLabel = page.locator('[data-member-label]')
-    await memberLabel.waitFor({ timeout: 15_000 })
-    await memberLabel.evaluate((label) => {
-      const button = label.closest('button')
-      if (button === null) throw new Error('workflow member button missing after viewport restore')
-      button.click()
-    })
-    await page.getByText(CHILD_PROMPT, { exact: true }).waitFor({ timeout: 15_000 })
-
     const sessions = page.getByRole('tree', { name: 'Sessions' })
+    await sessions.getByRole('treeitem', { name: /Reply with exactly the word/ }).click()
+    await page.getByText(CHILD_PROMPT, { exact: true }).waitFor({ timeout: 15_000 })
     await sessions.getByRole('treeitem', { name: /Use the workflow tool exactly/ }).click()
     await settled
     await page.locator('[data-workflow-run][data-run-status="completed"]').waitFor()
