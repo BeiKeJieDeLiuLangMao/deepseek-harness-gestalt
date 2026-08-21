@@ -216,6 +216,26 @@ describe('LocalPtySession readiness and output', () => {
     expect(operation.cancel()).toBe(false)
   })
 
+  it('does not treat a pwsh stdin wait as ready before the controlled prompt', async () => {
+    vi.useFakeTimers()
+    const terminal = new FakeTerminal()
+    const inspector = new FakeInspector()
+    const session = makeSession(terminal, inspector, config({
+      shellDialect: 'pwsh',
+      shellPath: 'pwsh',
+    }))
+    inspector.waiting = true
+    const operation = session.startSend({ text: 'Write-Output hi', submit: true })
+    let settled = false
+    void operation.done.then(() => { settled = true })
+    await vi.advanceTimersByTimeAsync(30)
+    expect(settled).toBe(false)
+    terminal.emitData('hi\n')
+    await vi.advanceTimersByTimeAsync(60)
+    expect((await operation.done).waitReason).toBe('inferred_idle')
+    expect((await operation.done).viewport).toContain('hi')
+  })
+
   it('does not reuse a pre-write stdin wait as post-write readiness', async () => {
     vi.useFakeTimers()
     const terminal = new FakeTerminal()

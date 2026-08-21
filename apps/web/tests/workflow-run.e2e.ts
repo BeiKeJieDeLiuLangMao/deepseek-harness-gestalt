@@ -108,8 +108,9 @@ describe.skipIf(MODE === 'record')('web e2e: durable workflow run in Chat', () =
     const lightColor = await member.locator('[data-member-label]').evaluate(element => getComputedStyle(element).color)
     await page.setViewportSize({ width: 560, height: 800 })
     await page.evaluate(() => { document.body.setAttribute('data-ds-dark-theme', '') })
-    await member.focus()
     const darkNarrow = await page.locator('[data-workflow-run]').evaluate((element) => {
+      const memberButton = element.querySelector('[data-member-label]')?.closest('button')
+      memberButton?.focus()
       const panel = element as HTMLElement
       panel.style.width = '356px'
       const label = element.querySelector('[data-member-label]')

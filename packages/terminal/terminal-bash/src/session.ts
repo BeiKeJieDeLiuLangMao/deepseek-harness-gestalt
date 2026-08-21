@@ -452,7 +452,11 @@ export class LocalPtySession implements TerminalBackendSession {
       const startupHasOutput = !this.initializing || this.scrollback.snapshot().text.length > 0
       const acceptsStdinWait = startupHasOutput && foreground !== undefined
         && operation.acceptsStdinWait(foreground.processGroupId, foreground.inputWaiting)
-      if (elapsed >= this.config.exactProbeAfterMs && acceptsStdinWait) {
+      // pwsh reports inputWaiting at the default prompt before the controlled
+      // prompt function runs; treating that wait as ready returns an empty
+      // viewport and clips the first command. OSC+tail or inferred_idle only.
+      if (elapsed >= this.config.exactProbeAfterMs && acceptsStdinWait
+        && this.config.shellDialect !== 'pwsh') {
         this.settleActive('stdin_read')
         return
       }
