@@ -4,6 +4,10 @@
  * @module @deepseek-ai/dsh-terminal-bash
  */
 
+import { randomUUID } from 'node:crypto'
+import { unlink, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
@@ -15,7 +19,7 @@ import { effectiveSandboxMode } from '@deepseek-ai/dsh-sandbox-policy'
 import { ENCODING_PREAMBLE } from '@deepseek-ai/dsh-pwsh-local'
 import { type Config, type ResolvedConfig, resolveConfig, type ShellDialect, validateConfig } from './config.ts'
 import { LocalPtySession } from './session.ts'
-import { CONTROLLED_PROMPT, hasDefaultPwshPrompt } from './sanitize.ts'
+import { CONTROLLED_PROMPT } from './sanitize.ts'
 
 export { Config } from './config.ts'
 export type { Config as TerminalLocalConfig } from './config.ts'
@@ -95,8 +99,21 @@ const PWSH_SETUP_DONE_TAIL = PWSH_SETUP_DONE.slice(PWSH_SETUP_DONE_HEAD.length)
  */
 export const PWSH_PROMPT_SETUP =
   `function prompt { [Console]::Write([char]27 + ']133;D;' + [int]$LASTEXITCODE + [char]7); ('${PWSH_PROMPT_HEAD}' + '${PWSH_PROMPT_TAIL}') }; Write-Output ('${PWSH_SETUP_DONE_HEAD}' + '${PWSH_SETUP_DONE_TAIL}')`
-function spawnArgv(ctx: Context, config: ResolvedConfig, policy: SandboxExecutionPolicy): string[] {
-  const argv = [config.shellPath, ...config.shellArgs]
+async function writePwshSetupScript(): Promise<string> {
+  const setupPath = join(tmpdir(), `dsh-pwsh-setup-${randomUUID()}.ps1`)
+  await writeFile(setupPath, `${ENCODING_PREAMBLE}\n${PWSH_PROMPT_SETUP}\n`)
+  return setupPath
+}
+
+function spawnArgv(
+  ctx: Context,
+  config: ResolvedConfig,
+  policy: SandboxExecutionPolicy,
+  setupPath?: string,
+): string[] {
+  const argv = setupPath === undefined
+    ? [config.shellPath, ...config.shellArgs]
+    : [config.shellPath, ...config.shellArgs, '-NoExit', '-File', setupPath]
   if (policy.mode === 'danger-full-access') return argv
   const sandbox = ctx.get('sandbox')
   if (sandbox === undefined) {
@@ -120,7 +137,6 @@ async function startupSession(
   session: LocalPtySession,
   dialect: ShellDialect,
   timeoutMs: number,
-  idleSilenceMs: number,
   signal?: AbortSignal,
 ): Promise<void> {
   const start = async (): Promise<void> => {
@@ -128,41 +144,27 @@ async function startupSession(
       await session.initialize(signal)
       return
     }
-    // pwsh cannot install its prompt from the environment: wait until a
-    // default `PS …>` line is visible, then wait idleSilenceMs without
-    // writing (pwsh stdin_wait settles at exactProbeAfterMs, so
-    // inferred_idle never arrives — Linux CI 32467952709). Writing on
-    // that first stdin_wait dumps binary (32466566587) or session_exit
-    // (32463876213). A write during banner never executes (32462089006).
-    // Then write the prompt function and pin UTF-8. Spawn waits for
+    // pwsh cannot install its prompt from the environment. Interactive
+    // writes after `PS …>` never execute on Linux CI (idle hold
+    // 32469299678; early stdin_wait 32466566587; banner 32462089006).
+    // Spawn therefore runs the prompt function and UTF-8 pin through
+    // `-NoExit -File` before PSReadLine starts, then waits for
     // PWSH_SETUP_DONE. Follow-ups continue until that token is visible.
     // session_exit, per-send timeout, and the spawn-wall timeoutMs reject.
     const startedAt = Date.now()
-    let readyToSetup = false
-    let written = false
     let viewport = ''
     for (;;) {
       const operation = session.startSend({
-        text: written || !readyToSetup ? '' : ENCODING_PREAMBLE + PWSH_PROMPT_SETUP,
-        submit: readyToSetup && !written,
+        text: '',
+        submit: false,
         ...signal !== undefined ? { signal } : {},
       })
-      if (readyToSetup) written = true
       const result = await operation.done
       if (result.waitReason === 'session_exit') throw new Error('PTY shell exited during startup')
       if (result.waitReason === 'timeout') throw startupTimeoutError(result.viewport)
       viewport = result.viewport
       const scrollback = session.read({ offset: 0, count: 20 }).text
-      if (!readyToSetup) {
-        if (hasDefaultPwshPrompt(viewport) || hasDefaultPwshPrompt(scrollback)) {
-          const remaining = timeoutMs - (Date.now() - startedAt)
-          await new Promise<void>((resolve) => {
-            setTimeout(resolve, Math.max(0, Math.min(idleSilenceMs, remaining)))
-          })
-          if (Date.now() - startedAt >= timeoutMs) throw startupTimeoutError(viewport, scrollback)
-          readyToSetup = true
-        }
-      } else if (viewport.includes(PWSH_SETUP_DONE) || scrollback.includes(PWSH_SETUP_DONE)) {
+      if (viewport.includes(PWSH_SETUP_DONE) || scrollback.includes(PWSH_SETUP_DONE)) {
         session.motd = viewport.includes(PWSH_SETUP_DONE) ? viewport : scrollback
         break
       }
@@ -206,34 +208,33 @@ export class BashTerminalBackend implements TerminalBackend {
     spec.signal?.throwIfAborted()
     ensureSandboxModeFence(this.ctx, spec.owner)
     const policy = this.ctx.sandboxPolicy.resolve({ session: spec.owner.session })
-    const argv = spawnArgv(this.ctx, this.config, policy)
+    const setupPath = this.config.shellDialect === 'pwsh' ? await writePwshSetupScript() : undefined
+    const argv = spawnArgv(this.ctx, this.config, policy, setupPath)
     if (argv[0] === undefined) throw new Error('terminal-bash: sandbox returned empty argv')
-    const terminal = await this.spawnTerminal({
-      argv,
-      cwd: spec.cwd ?? policy.workspaceRoot,
-      env: childEnvironment(spec, this.config.shellDialect),
-      rows: this.config.rows,
-      cols: this.config.cols,
-      graceMs: this.config.disposeGraceMs,
-      signal: spec.signal,
-    })
-    const session = this.createSession(terminal, this.config)
     try {
-      await startupSession(
-        session,
-        this.config.shellDialect,
-        this.config.timeoutMs,
-        this.config.idleSilenceMs,
-        spec.signal,
-      )
-      return session
-    } catch (error) {
+      const terminal = await this.spawnTerminal({
+        argv,
+        cwd: spec.cwd ?? policy.workspaceRoot,
+        env: childEnvironment(spec, this.config.shellDialect),
+        rows: this.config.rows,
+        cols: this.config.cols,
+        graceMs: this.config.disposeGraceMs,
+        signal: spec.signal,
+      })
+      const session = this.createSession(terminal, this.config)
       try {
-        await session.close('PTY startup failed')
-      } catch (closeError: unknown) {
-        throw new TerminalBackendCleanupError(error, closeError)
+        await startupSession(session, this.config.shellDialect, this.config.timeoutMs, spec.signal)
+        return session
+      } catch (error) {
+        try {
+          await session.close('PTY startup failed')
+        } catch (closeError: unknown) {
+          throw new TerminalBackendCleanupError(error, closeError)
+        }
+        throw error
       }
-      throw error
+    } finally {
+      if (setupPath !== undefined) await unlink(setupPath)
     }
   }
 }

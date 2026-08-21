@@ -14,7 +14,7 @@ import { BashTerminalBackend, PWSH_PROMPT_SETUP, PWSH_SETUP_DONE } from '@deepse
 import { CONTROLLED_PROMPT } from '@deepseek-ai/dsh-terminal-bash/src/sanitize.ts'
 import { ENCODING_PREAMBLE } from '@deepseek-ai/dsh-pwsh-local'
 import * as ptyLocal from '@deepseek-ai/dsh-terminal-bash'
-import type { ResolvedConfig } from '@deepseek-ai/dsh-terminal-bash/src/config.ts'
+import { DEFAULT_PWSH_ARGS, type ResolvedConfig } from '@deepseek-ai/dsh-terminal-bash/src/config.ts'
 import type { LocalPtySession } from '@deepseek-ai/dsh-terminal-bash/src/session.ts'
 import { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import type {
@@ -343,7 +343,7 @@ describe('BashTerminalBackend startup rollback', () => {
     await session.close('test complete')
   })
 
-  it('bootstraps a pwsh dialect through the prompt function and scrubs bash-only env', async () => {
+  it('bootstraps a pwsh dialect through -NoExit -File and scrubs bash-only env', async () => {
     const ctx = new Context()
     await ctx.plugin(EmptySandbox)
     await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access', workspaceRoot: '/workspace' })
@@ -355,8 +355,8 @@ describe('BashTerminalBackend startup rollback', () => {
         sends.push(request)
         return {
           done: Promise.resolve({
-            viewport: request.submit ? `setup-echo ${PWSH_SETUP_DONE}` : 'PS /tmp/ws> ',
-            waitReason: request.submit ? 'stdin_read' as const : 'inferred_idle' as const,
+            viewport: `setup-echo ${PWSH_SETUP_DONE}`,
+            waitReason: 'inferred_idle' as const,
             sessionStatus: { kind: 'running' as const }, truncated: false,
           }),
           readOutput: () => ({ delta: '', truncated: false }),
@@ -367,18 +367,20 @@ describe('BashTerminalBackend startup rollback', () => {
     } as unknown as LocalPtySession
     const backend = new BashTerminalBackend(
       ctx,
-      { ...config(), shellDialect: 'pwsh', shellPath: 'pwsh' },
+      { ...config(), shellDialect: 'pwsh', shellPath: 'pwsh', shellArgs: DEFAULT_PWSH_ARGS },
       async (spec) => { spawned = spec; return terminalHandle() },
       () => session,
     )
     expect(await backend.spawn(spec(agent(ctx)))).toBe(session)
-    expect(sends[0]).toMatchObject({ text: '', submit: false })
-    expect(sends[1]).toMatchObject({ text: ENCODING_PREAMBLE + PWSH_PROMPT_SETUP, submit: true })
+    expect(sends).toEqual([expect.objectContaining({ text: '', submit: false })])
     expect(session.motd).toBe(`setup-echo ${PWSH_SETUP_DONE}`)
     expect(PWSH_PROMPT_SETUP).not.toContain(CONTROLLED_PROMPT)
     expect(PWSH_PROMPT_SETUP).not.toContain(PWSH_SETUP_DONE)
     expect(ENCODING_PREAMBLE + PWSH_PROMPT_SETUP).not.toContain(CONTROLLED_PROMPT)
     expect(ENCODING_PREAMBLE + PWSH_PROMPT_SETUP).not.toContain(PWSH_SETUP_DONE)
+    expect(spawned?.argv?.slice(0, 3)).toEqual(['pwsh', '-NoLogo', '-NoProfile'])
+    expect(spawned?.argv?.slice(-3, -1)).toEqual(['-NoExit', '-File'])
+    expect(spawned?.argv?.at(-1)).toMatch(/dsh-pwsh-setup-.*\.ps1$/)
     expect(spawned?.env).toMatchObject({
       TERM: 'dumb', NO_COLOR: '1', DSH_SHELL: '1', DSH_SESSION_ID: 'agent', DSH_PTY_SESSION_ID: 'pty-1',
     })
@@ -386,7 +388,7 @@ describe('BashTerminalBackend startup rollback', () => {
     expect(spawned?.env?.PROMPT_COMMAND).toBeUndefined()
   })
 
-  it('keeps waiting for the marker prompt when the first send settles on silence', async () => {
+  it('keeps waiting for the done token when the first send is only the banner', async () => {
     const ctx = new Context()
     await ctx.plugin(EmptySandbox)
     await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access', workspaceRoot: '/workspace' })
@@ -395,12 +397,9 @@ describe('BashTerminalBackend startup rollback', () => {
       motd: '',
       startSend: (request: TerminalSendRequest) => {
         sends.push(request)
-        const viewport = request.submit
-          ? 'PowerShell 7.6.4\n'
-          : sends.some(send => send.submit) ? PWSH_SETUP_DONE : 'PS /tmp/ws> '
         return {
           done: Promise.resolve({
-            viewport,
+            viewport: sends.length === 1 ? 'PowerShell 7.6.4\n' : PWSH_SETUP_DONE,
             waitReason: 'inferred_idle' as const,
             sessionStatus: { kind: 'running' as const }, truncated: false,
           }),
@@ -417,54 +416,8 @@ describe('BashTerminalBackend startup rollback', () => {
       () => session,
     )
     await backend.spawn(spec(agent(ctx)))
-    expect(sends).toHaveLength(3)
-    expect(sends[0]).toMatchObject({ text: '', submit: false })
-    expect(sends[1]).toMatchObject({ text: ENCODING_PREAMBLE + PWSH_PROMPT_SETUP, submit: true })
-    expect(sends[2]).toMatchObject({ text: '', submit: false })
-    expect(session.motd).toBe(PWSH_SETUP_DONE)
-  })
-
-  it('keeps waiting when the first send only echoes the setup source', async () => {
-    const ctx = new Context()
-    await ctx.plugin(EmptySandbox)
-    await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access', workspaceRoot: '/workspace' })
-    const sends: TerminalSendRequest[] = []
-    const session = {
-      motd: '',
-      startSend: (request: TerminalSendRequest) => {
-        sends.push(request)
-        return {
-          done: Promise.resolve({
-            viewport: request.submit
-              ? request.text
-              : sends.some(send => send.submit) ? PWSH_SETUP_DONE : 'PS /tmp/ws> ',
-            waitReason: request.submit ? 'stdin_read' as const : 'inferred_idle' as const,
-            sessionStatus: { kind: 'running' as const }, truncated: false,
-          }),
-          readOutput: () => ({ delta: '', truncated: false }),
-          cancel: () => false,
-        }
-      },
-      read: () => ({
-        text: sends.some(send => send.submit) && sends.at(-1)?.submit === false
-          ? PWSH_SETUP_DONE
-          : sends.some(send => send.submit) ? 'PowerShell 7.6.4\n' : 'PS /tmp/ws> ',
-        totalLines: 1, lineBegin: 0, lineEnd: 1, truncated: false,
-      }),
-    } as unknown as LocalPtySession
-    const backend = new BashTerminalBackend(
-      ctx,
-      { ...config(), shellDialect: 'pwsh', shellPath: 'pwsh' },
-      async () => terminalHandle(),
-      () => session,
-    )
-    await backend.spawn(spec(agent(ctx)))
-    expect(sends).toHaveLength(3)
-    expect(sends[0]).toMatchObject({ text: '', submit: false })
-    expect(sends[1]?.text).toBe(ENCODING_PREAMBLE + PWSH_PROMPT_SETUP)
-    expect(sends[1]?.text).not.toContain(CONTROLLED_PROMPT)
-    expect(sends[1]?.text).not.toContain(PWSH_SETUP_DONE)
-    expect(sends[2]).toMatchObject({ text: '', submit: false })
+    expect(sends).toHaveLength(2)
+    expect(sends.every(send => send.submit !== true)).toBe(true)
     expect(session.motd).toBe(PWSH_SETUP_DONE)
   })
 
@@ -472,23 +425,19 @@ describe('BashTerminalBackend startup rollback', () => {
     const ctx = new Context()
     await ctx.plugin(EmptySandbox)
     await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access', workspaceRoot: '/workspace' })
-    const sends: TerminalSendRequest[] = []
     const session = {
       motd: '',
-      startSend: (request: TerminalSendRequest) => {
-        sends.push(request)
-        return {
-          done: Promise.resolve({
-            viewport: request.submit ? 'PowerShell 7.6.4\n' : 'PS /tmp/ws> ',
-            waitReason: 'inferred_idle' as const,
-            sessionStatus: { kind: 'running' as const }, truncated: false,
-          }),
-          readOutput: () => ({ delta: '', truncated: false }),
-          cancel: () => false,
-        }
-      },
+      startSend: () => ({
+        done: Promise.resolve({
+          viewport: 'PowerShell 7.6.4\n',
+          waitReason: 'inferred_idle' as const,
+          sessionStatus: { kind: 'running' as const }, truncated: false,
+        }),
+        readOutput: () => ({ delta: '', truncated: false }),
+        cancel: () => false,
+      }),
       read: () => ({
-        text: sends.some(send => send.submit) ? `banner\n${PWSH_SETUP_DONE}` : 'PS /tmp/ws> ',
+        text: `banner\n${PWSH_SETUP_DONE}`,
         totalLines: 2, lineBegin: 0, lineEnd: 2, truncated: false,
       }),
     } as unknown as LocalPtySession
@@ -502,15 +451,15 @@ describe('BashTerminalBackend startup rollback', () => {
     expect(session.motd).toBe(`banner\n${PWSH_SETUP_DONE}`)
   })
 
-  it('rejects a pwsh bootstrap whose setup echo never prints the done token', async () => {
+  it('rejects a pwsh bootstrap whose -File run never prints the done token', async () => {
     const ctx = new Context()
     await ctx.plugin(EmptySandbox)
     await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access', workspaceRoot: '/workspace' })
     const session = {
       motd: '',
-      startSend: (request: TerminalSendRequest) => ({
+      startSend: () => ({
         done: Promise.resolve({
-          viewport: request.submit ? request.text : 'PS /tmp/ws> ',
+          viewport: 'PS /tmp/ws> ',
           waitReason: 'inferred_idle' as const,
           sessionStatus: { kind: 'running' as const }, truncated: false,
         }),
@@ -562,8 +511,8 @@ describe('BashTerminalBackend startup rollback', () => {
         sends.push(request)
         return {
           done: Promise.resolve({
-            viewport: request.submit ? PWSH_SETUP_DONE : 'PS /tmp/ws> ',
-            waitReason: request.submit ? 'stdin_read' as const : 'inferred_idle' as const,
+            viewport: PWSH_SETUP_DONE,
+            waitReason: 'inferred_idle' as const,
             sessionStatus: { kind: 'running' as const }, truncated: false,
           }),
           readOutput: () => ({ delta: '', truncated: false }),
@@ -581,103 +530,41 @@ describe('BashTerminalBackend startup rollback', () => {
     const signal = new AbortController().signal
     const spawned = await backend.spawn({ ...spec(agent(ctx)), signal })
     expect(spawned.motd).toBe(PWSH_SETUP_DONE)
-    expect(sends).toHaveLength(2)
-    expect(sends[0]).toMatchObject({ text: '', submit: false, signal })
-    expect(sends[1]).toMatchObject({ text: ENCODING_PREAMBLE + PWSH_PROMPT_SETUP, submit: true, signal })
+    expect(sends).toEqual([expect.objectContaining({ text: '', submit: false, signal })])
   })
 
-  it('writes setup after a default prompt that appears only in scrollback', async () => {
+  it('wraps the pwsh -File setup argv through the sandbox', async () => {
     const ctx = new Context()
-    await ctx.plugin(EmptySandbox)
-    await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access', workspaceRoot: '/workspace' })
-    const sends: TerminalSendRequest[] = []
+    await ctx.plugin(RecordingSandbox)
+    await ctx.plugin(SandboxPolicyService, { mode: 'workspace-write', workspaceRoot: '/workspace' })
     const session = {
       motd: '',
-      startSend: (request: TerminalSendRequest) => {
-        sends.push(request)
-        return {
-          done: Promise.resolve({
-            viewport: request.submit ? PWSH_SETUP_DONE : 'PowerShell 7.6.4\n',
-            waitReason: 'inferred_idle' as const,
-            sessionStatus: { kind: 'running' as const }, truncated: false,
-          }),
-          readOutput: () => ({ delta: '', truncated: false }),
-          cancel: () => false,
-        }
-      },
-      read: () => ({
-        text: sends.some(send => send.submit) ? PWSH_SETUP_DONE : 'PowerShell 7.6.4\nPS /tmp/ws> ',
-        totalLines: 2, lineBegin: 0, lineEnd: 2, truncated: false,
-      }),
-    } as unknown as LocalPtySession
-    const backend = new BashTerminalBackend(
-      ctx,
-      { ...config(), shellDialect: 'pwsh', shellPath: 'pwsh' },
-      async () => terminalHandle(),
-      () => session,
-    )
-    await backend.spawn(spec(agent(ctx)))
-    expect(sends[0]).toMatchObject({ text: '', submit: false })
-    expect(sends[1]).toMatchObject({ text: ENCODING_PREAMBLE + PWSH_PROMPT_SETUP, submit: true })
-    expect(session.motd).toBe(PWSH_SETUP_DONE)
-  })
-
-  it('does not write setup until idleSilenceMs after the default prompt', async () => {
-    const ctx = new Context()
-    await ctx.plugin(EmptySandbox)
-    await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access', workspaceRoot: '/workspace' })
-    const sends: TerminalSendRequest[] = []
-    const session = {
-      motd: '',
-      startSend: (request: TerminalSendRequest) => {
-        sends.push(request)
-        return {
-          done: Promise.resolve({
-            viewport: 'PS /tmp/ws> ',
-            waitReason: 'stdin_read' as const,
-            sessionStatus: { kind: 'running' as const }, truncated: false,
-          }),
-          readOutput: () => ({ delta: '', truncated: false }),
-          cancel: () => false,
-        }
-      },
-      read: () => ({ text: 'PS /tmp/ws> ', totalLines: 1, lineBegin: 0, lineEnd: 1, truncated: false }),
-      close: () => Promise.resolve(),
-    } as unknown as LocalPtySession
-    const backend = new BashTerminalBackend(
-      ctx,
-      { ...config(), shellDialect: 'pwsh', shellPath: 'pwsh', timeoutMs: 50 },
-      async () => terminalHandle(),
-      () => session,
-    )
-    await expect(backend.spawn(spec(agent(ctx)))).rejects.toThrow('did not reach readiness before startup timeout')
-    expect(sends.every(send => send.submit !== true)).toBe(true)
-  })
-
-  it('rejects when the default prompt never appears before setup', async () => {
-    const ctx = new Context()
-    await ctx.plugin(EmptySandbox)
-    await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access', workspaceRoot: '/workspace' })
-    const session = {
+      initialize: async () => {},
       startSend: () => ({
         done: Promise.resolve({
-          viewport: 'PowerShell 7.6.4\n',
+          viewport: PWSH_SETUP_DONE,
           waitReason: 'inferred_idle' as const,
           sessionStatus: { kind: 'running' as const }, truncated: false,
         }),
         readOutput: () => ({ delta: '', truncated: false }),
         cancel: () => false,
       }),
-      read: () => ({ text: 'PowerShell 7.6.4\n', totalLines: 1, lineBegin: 0, lineEnd: 1, truncated: false }),
-      close: () => Promise.resolve(),
+      read: () => ({ text: PWSH_SETUP_DONE, totalLines: 1, lineBegin: 0, lineEnd: 1, truncated: false }),
     } as unknown as LocalPtySession
+    let confined: readonly string[] | undefined
     const backend = new BashTerminalBackend(
       ctx,
-      { ...config(), shellDialect: 'pwsh', shellPath: 'pwsh', timeoutMs: 50 },
-      async () => terminalHandle(),
+      { ...config(), shellDialect: 'pwsh', shellPath: 'pwsh', shellArgs: DEFAULT_PWSH_ARGS },
+      async (spawned) => {
+        confined = spawned.argv
+        return terminalHandle()
+      },
       () => session,
     )
-    await expect(backend.spawn(spec(agent(ctx)))).rejects.toThrow('did not reach readiness before startup timeout')
+    await backend.spawn(spec(agent(ctx)))
+    expect(confined?.slice(0, 3)).toEqual(['/sandbox', '--', 'pwsh'])
+    expect(confined?.slice(-3, -1)).toEqual(['-NoExit', '-File'])
+    expect((ctx.sandbox as RecordingSandbox).calls[0]?.argv.slice(-2, -1)).toEqual(['-File'])
   })
 })
 
