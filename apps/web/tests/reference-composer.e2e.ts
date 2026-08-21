@@ -177,6 +177,10 @@ describe.skipIf(MODE === 'record')('web e2e: file and session references through
     await target.waitFor({ timeout: 15_000 })
     await target.click()
     await page.getByRole('button', { name: /^Session recall\s*Research notes$/ }).waitFor({ timeout: 15_000 })
+    await expect.poll(
+      () => page.getByRole('button', { name: /Select model, current DeepSeek-V4-Flash/ }).count(),
+      { timeout: 10_000 },
+    ).toBeGreaterThan(0)
 
     const snapshot = (await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd))
       .split(TARGET_SESSION_ID).join('{{targetId}}')

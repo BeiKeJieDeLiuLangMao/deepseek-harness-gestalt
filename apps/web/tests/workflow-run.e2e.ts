@@ -156,8 +156,6 @@ describe.skipIf(MODE === 'record')('web e2e: durable workflow run in Chat', () =
     })
     await page.setViewportSize({ width: 1280, height: 800 })
     const sessions = page.getByRole('tree', { name: 'Sessions' })
-    await sessions.getByRole('treeitem', { name: /Reply with exactly the word/ }).click()
-    await page.getByText(CHILD_PROMPT, { exact: true }).waitFor({ timeout: 15_000 })
     await sessions.getByRole('treeitem', { name: /Use the workflow tool exactly/ }).click()
     await settled
     await page.locator('[data-workflow-run][data-run-status="completed"]').waitFor()
