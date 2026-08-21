@@ -237,7 +237,7 @@ export class TerminalSessionService extends Service {
    * Start one exclusive interactive send.
    * @param owner - exact session owner.
    * @param id - target PTY identity.
-   * @param request - explicit text, submit behavior, optional bootstrap idle, and cancellation.
+   * @param request - explicit text, submit behavior, and cancellation.
    * @returns live operation handle for foreground await or task registration.
    */
   startSend(owner: Agent, id: TerminalSessionId, request: TerminalSendRequest): TerminalSendOperation {

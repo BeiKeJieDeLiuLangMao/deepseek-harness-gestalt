@@ -66,12 +66,6 @@ export interface TerminalSendRequest {
   text: string
   /** Whether to write the backend's Enter sequence after {@link text}. */
   submit: boolean
-  /**
-   * When true, a pwsh send may settle idle on any output. Setup and ready-probe
-   * writes use this; ordinary commands leave it unset so a default `PS>` reprint
-   * cannot settle before the command runs.
-   */
-  bootstrap?: boolean
   /** Cancellation for the wait; backends also interrupt the foreground command. */
   signal?: AbortSignal
 }

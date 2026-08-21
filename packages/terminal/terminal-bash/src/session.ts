@@ -21,14 +21,7 @@ import type {
   TerminalWaitReason,
 } from '@deepseek-ai/dsh-terminal'
 import type { ResolvedConfig } from './config.ts'
-import { CONTROLLED_PROMPT, lastNonEmptyLine, TerminalSanitizer } from './sanitize.ts'
-
-/** Prompt installed by tool-pwsh-persistent after the backend `dsh> ` prompt. */
-const TOOL_PWSH_PROMPT = '__DSH_PERSISTENT_PWSH_PROMPT__ '
-
-function isPwshReadyPromptLine(line: string): boolean {
-  return line === CONTROLLED_PROMPT || line === TOOL_PWSH_PROMPT || /^PS .+> $/.test(line)
-}
+import { CONTROLLED_PROMPT, TerminalSanitizer } from './sanitize.ts'
 
 function utf8Tail(text: string, maxBytes: number): { text: string; truncated: boolean } {
   if (Buffer.byteLength(text) <= maxBytes) return { text, truncated: false }
@@ -92,7 +85,6 @@ class LocalSendOperation implements TerminalSendOperation {
   constructor(
     maxBytes: number,
     readonly startedAt: number,
-    readonly bootstrap: boolean,
     private readonly onCancel: () => void,
   ) {
     this.output = new BoundedTextBuffer(maxBytes)
@@ -114,27 +106,6 @@ class LocalSendOperation implements TerminalSendOperation {
 
   append(text: string): void {
     if (!this.finished) this.output.append(text)
-  }
-
-  hasOutput(): boolean {
-    return this.output.snapshot().text.length > 0
-  }
-
-  hasPromptLine(): boolean {
-    const line = lastNonEmptyLine(this.output.snapshot().text)
-    return line === CONTROLLED_PROMPT || line === TOOL_PWSH_PROMPT
-  }
-
-  /** True when this send printed a prompt after at least one non-prompt line. */
-  hasCompletedCommand(): boolean {
-    const text = this.output.snapshot().text
-    const line = lastNonEmptyLine(text)
-    if (!isPwshReadyPromptLine(line)) return false
-    for (const candidate of text.replaceAll('\r\n', '\n').replaceAll('\r', '\n').split('\n')) {
-      if (candidate.trim() === '') continue
-      if (!isPwshReadyPromptLine(candidate)) return true
-    }
-    return false
   }
 
   settle(waitReason: TerminalWaitReason, sessionStatus: TerminalSessionStatus, inheritedTruncation: boolean): void {
@@ -267,7 +238,6 @@ export class LocalPtySession implements TerminalBackendSession {
     const operation = new LocalSendOperation(
       this.config.maxReadBytes,
       Date.now(),
-      request.bootstrap === true,
       () => { this.interrupt(operation) },
     )
     this.active = operation
@@ -474,8 +444,7 @@ export class LocalPtySession implements TerminalBackendSession {
         this.shellPgid = foreground.processGroupId
       }
       if (this.promptSeen && this.promptTextSeen && idleFor >= this.config.pollIntervalMs
-        && foreground?.processGroupId === this.shellPgid
-        && (this.config.shellDialect !== 'pwsh' || operation.hasPromptLine())) {
+        && foreground?.processGroupId === this.shellPgid) {
         this.settleActive('stdin_read')
         return
       }
@@ -483,10 +452,7 @@ export class LocalPtySession implements TerminalBackendSession {
       const startupHasOutput = !this.initializing || this.scrollback.snapshot().text.length > 0
       const acceptsStdinWait = startupHasOutput && foreground !== undefined
         && operation.acceptsStdinWait(foreground.processGroupId, foreground.inputWaiting)
-      // A leftover stdin wait plus setup echo is not a prompt. Silence after
-      // output still ends the send when Linux never reprints `dsh> `.
-      if (elapsed >= this.config.exactProbeAfterMs && acceptsStdinWait
-        && (this.config.shellDialect !== 'pwsh' || operation.hasPromptLine())) {
+      if (elapsed >= this.config.exactProbeAfterMs && acceptsStdinWait) {
         this.settleActive('stdin_read')
         return
       }
@@ -495,11 +461,7 @@ export class LocalPtySession implements TerminalBackendSession {
       // on waiting for shell ownership instead of letting a child marker suppress
       // readiness until the absolute timeout.
       const handoffGrace = this.promptSeen ? this.config.handoffGraceMs : 0
-      const pwshIdleReady = this.initializing || operation.bootstrap
-        ? operation.hasOutput()
-        : operation.hasCompletedCommand()
-      if (startupHasOutput && idleFor >= this.config.idleSilenceMs + handoffGrace
-        && (this.config.shellDialect !== 'pwsh' || pwshIdleReady)) {
+      if (startupHasOutput && idleFor >= this.config.idleSilenceMs + handoffGrace) {
         this.settleActive('inferred_idle')
       }
     } catch (error: unknown) {

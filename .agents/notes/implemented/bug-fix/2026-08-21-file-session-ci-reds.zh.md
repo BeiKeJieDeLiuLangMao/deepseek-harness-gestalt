@@ -10,7 +10,7 @@ File/Session Reference 同步到官方 Host `@path` / `file-reference-local` 与
 
 ## Decision
 
-**pwsh 在 argv 上安装提示符；命令 idle 要等输出之后的提示符。** 交互式 setup send 在 Linux 上会竞态：默认提示符就报告 `inputWaiting`，setup 回显算输出，`PS …>` 会在行跑完前重打。因此方言默认 argv 是 `-NoLogo -NoProfile -NoExit -Command` 加上编码钉和 `prompt` 函数，spawn 与 bash 一样做空的 `initialize()` 等待。pwsh 的 `acceptsStdinWait` 和 OSC `stdin_read` 仍只在当前 send 的最新非空白行是 `CONTROLLED_PROMPT`（`dsh> `）或工具层提示符后 settle。setup 类发送（持久化工具的第二次 prompt 安装）设置 `bootstrap: true`，让 `inferred_idle` 可以在任意输出上 settle。普通命令发送不设 `bootstrap`，只在提示符行加上至少一行非提示符之后才 idle settle。[persistent pwsh 笔记](../architecture/2026-08-11-pwsh-persistent-pty.md) 仍拥有双层 prompt 安装。
+**pwsh 就绪跟官方 Host。** Gestalt 自加的末行 / ready-probe / `-NoExit -Command` 检查让 Linux coverage 和 ACP `persistent-pwsh-tool-turn` 快照变红：spawn 要么在 setup 回显上返回并叠上下一条写入，要么死等 Linux 打不出来的 `dsh> ` 行，要么把 `-Command` 二进制倒进 PTY。官方 spawn 写入编码钉和 `prompt` 函数，再空转 follow-up，直到 viewport 或 scrollback `includes` `dsh> `（setup 源码也算）。官方 inferred-idle 没有额外的 pwsh 提示符行门槛，因此命令 send 可以在残留 setup 加命令之后结束。[persistent pwsh 笔记](../architecture/2026-08-11-pwsh-persistent-pty.md) 仍拥有双层 prompt 安装。
 
 **Relay 的载荷尺寸检查使用默认 first-frame 期限。** 空闲超时断言仍启动 10 ms 服务器。oversized 帧断言另启默认 1000 ms 的服务器，避免 attach-timeout 抢在 1009 关闭之前。
 
@@ -38,8 +38,8 @@ File/Session Reference 同步到官方 Host `@path` / `file-reference-local` 与
 
 ## Consequences
 
-官方 File/Session Reference 仍是唯一的 `@` 文件源。persistent pwsh 的 spawn 在 argv 上安装提示符并走 bash 的 `initialize()` 等待；普通命令 idle 等输出之后的提示符。Relay、publint、设置金标、Composer pin e2e 与注释计数芯片走修复后的路径。已删除的工作区引用 picker 金标保持删除。
+官方 File/Session Reference 仍是唯一的 `@` 文件源。persistent pwsh 的 spawn 与 send 就绪跟官方 Host，让 Linux coverage 和 ACP pwsh 快照能按官方 CI 同一套方式 settle。Relay、publint、设置金标、Composer pin e2e 与注释计数芯片走修复后的路径。已删除的工作区引用 picker 金标保持删除。
 
 ## Testing
 
-`packages/terminal/terminal-bash/tests/session.spec.ts` 保证 pwsh 的 stdin-wait 不会在命令回显上 settle，接受 `dsh> ` 或工具层提示符，让 inferred idle 在输出加提示符行后 settle，并拒绝单独的 `PS …>` 重打。`packages/terminal/terminal-bash/tests/index.spec.ts` 与 `config.spec.ts` 钉住 pwsh 默认 argv 为 `-NoExit -Command` 加上 prompt 函数，且 spawn 与 bash 一样走 `initialize()`。`packages/client/ui-attachment/tests/message-image.client.spec.tsx` 覆盖历史 pin overlay、拒绝与落点。空草稿插话等单条入队行文本——计数头只在两条及以上才出现——然后用 Playwright 的 `fill` 加 `Enter` 入队第二行。`packages/platform/remote-access-http/tests/relay.spec.ts` 仍在独立服务器上分别以 1008 关闭空闲、以 1009 关闭 oversized。`packages/client/ui-attachment/tests/composer-attachments.client.spec.tsx` 与 `packages/client/ui-conversation/tests/composer-image-pins.client.spec.tsx` 覆盖标注、GIF 仅在切换时拒绝，以及 composer overlay 工厂。`pnpm run duplication` 拥有共享的 `useImagePinOverlay` 抽取。`packages/client/ui-conversation/tests/input-bar.client.spec.tsx` 覆盖注释计数芯片、丢弃、按 kind 删除与提交中锁定。Web 设置金标不再列出 `工作区引用`。`pnpm exec tsx scripts/gen-client-catalog.ts --check` 拥有 `ComposerAttachmentsOwnerProps.pinOverlayFor` 的目录正文。
+`packages/terminal/terminal-bash/tests/index.spec.ts` 与 `session.spec.ts` 跟官方 Host 的 pwsh bootstrap 与就绪。`local.spec.ts` 在 PATH 上有 `pwsh` 时仍要求真实 spawn 之后出现 `keep=ok`。`packages/client/ui-attachment/tests/message-image.client.spec.tsx` 覆盖历史 pin overlay、拒绝与落点。空草稿插话等单条入队行文本——计数头只在两条及以上才出现——然后用 Playwright 的 `fill` 加 `Enter` 入队第二行。`packages/platform/remote-access-http/tests/relay.spec.ts` 仍在独立服务器上分别以 1008 关闭空闲、以 1009 关闭 oversized。`packages/client/ui-attachment/tests/composer-attachments.client.spec.tsx` 与 `packages/client/ui-conversation/tests/composer-image-pins.client.spec.tsx` 覆盖标注、GIF 仅在切换时拒绝，以及 composer overlay 工厂。`pnpm run duplication` 拥有共享的 `useImagePinOverlay` 抽取。`packages/client/ui-conversation/tests/input-bar.client.spec.tsx` 覆盖注释计数芯片、丢弃、按 kind 删除与提交中锁定。Web 设置金标不再列出 `工作区引用`。`pnpm exec tsx scripts/gen-client-catalog.ts --check` 拥有 `ComposerAttachmentsOwnerProps.pinOverlayFor` 的目录正文。

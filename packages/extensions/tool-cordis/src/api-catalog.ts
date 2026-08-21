@@ -2375,7 +2375,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       {
         signature: 'startSend(owner: Agent, id: TerminalSessionId, request: TerminalSendRequest): TerminalSendOperation',
         description: 'Start one exclusive interactive send.',
-        parameters: [{ name: 'owner', description: 'exact session owner.' }, { name: 'id', description: 'target PTY identity.' }, { name: 'request', description: 'explicit text, submit behavior, optional bootstrap idle, and cancellation.' }],
+        parameters: [{ name: 'owner', description: 'exact session owner.' }, { name: 'id', description: 'target PTY identity.' }, { name: 'request', description: 'explicit text, submit behavior, and cancellation.' }],
         returns: 'live operation handle for foreground await or task registration.',
       },
       {
@@ -5360,7 +5360,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'TerminalSendRequest',
-    declaration: 'export interface TerminalSendRequest {\n    text: string;\n    submit: boolean;\n    bootstrap?: boolean;\n    signal?: AbortSignal;\n}',
+    declaration: 'export interface TerminalSendRequest {\n    text: string;\n    submit: boolean;\n    signal?: AbortSignal;\n}',
   },
   {
     name: 'TerminalSendResult',

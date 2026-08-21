@@ -9,9 +9,11 @@ import SandboxProvider from '@deepseek-ai/dsh-sandbox'
 import type { ConfinedArgv, SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
 import SandboxPolicyService, { setSandboxMode } from '@deepseek-ai/dsh-sandbox-policy'
 import TerminalSessionService, { TerminalBackendCleanupError, TerminalSessionId } from '@deepseek-ai/dsh-terminal'
-import { BashTerminalBackend } from '@deepseek-ai/dsh-terminal-bash'
+import type { TerminalSendRequest, TerminalWaitReason } from '@deepseek-ai/dsh-terminal'
+import { BashTerminalBackend, PWSH_PROMPT_SETUP } from '@deepseek-ai/dsh-terminal-bash'
+import { ENCODING_PREAMBLE } from '@deepseek-ai/dsh-pwsh-local'
 import * as ptyLocal from '@deepseek-ai/dsh-terminal-bash'
-import { DEFAULT_PWSH_ARGS, type ResolvedConfig } from '@deepseek-ai/dsh-terminal-bash/src/config.ts'
+import type { ResolvedConfig } from '@deepseek-ai/dsh-terminal-bash/src/config.ts'
 import type { LocalPtySession } from '@deepseek-ai/dsh-terminal-bash/src/session.ts'
 import { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import type {
@@ -87,7 +89,7 @@ function spec(owner: Agent, signal?: AbortSignal) {
   }
 }
 
-function stubLocalSession(initialize: (signal?: AbortSignal) => Promise<void> = () => Promise.resolve()): LocalPtySession {
+function stubLocalSession(initialize: () => Promise<void> = () => Promise.resolve()): LocalPtySession {
   return {
     motd: '',
     initialize,
@@ -340,49 +342,130 @@ describe('BashTerminalBackend startup rollback', () => {
     await session.close('test complete')
   })
 
-  it('bootstraps a pwsh dialect through -Command and scrubs bash-only env', async () => {
+  it('bootstraps a pwsh dialect through the prompt function and scrubs bash-only env', async () => {
     const ctx = new Context()
     await ctx.plugin(EmptySandbox)
     await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access', workspaceRoot: '/workspace' })
     let spawned: SubprocessTerminalSpawnSpec | undefined
-    const signals: Array<AbortSignal | undefined> = []
-    const session = stubLocalSession(async (signal) => {
-      signals.push(signal)
-      session.motd = 'PowerShell\ndsh> '
-    })
+    let sent: TerminalSendRequest | undefined
+    const session = {
+      motd: '',
+      startSend: (request: TerminalSendRequest) => {
+        sent = request
+        return {
+          done: Promise.resolve({
+            viewport: 'setup-echo dsh> ', waitReason: 'stdin_read' as const,
+            sessionStatus: { kind: 'running' as const }, truncated: false,
+          }),
+          readOutput: () => ({ delta: '', truncated: false }),
+          cancel: () => false,
+        }
+      },
+      read: () => ({ text: '', totalLines: 0, lineBegin: 0, lineEnd: 0, truncated: false }),
+    } as unknown as LocalPtySession
     const backend = new BashTerminalBackend(
       ctx,
-      { ...config(), shellDialect: 'pwsh', shellPath: 'pwsh', shellArgs: DEFAULT_PWSH_ARGS },
+      { ...config(), shellDialect: 'pwsh', shellPath: 'pwsh' },
       async (spec) => { spawned = spec; return terminalHandle() },
       () => session,
     )
     expect(await backend.spawn(spec(agent(ctx)))).toBe(session)
-    expect(spawned?.argv).toEqual(['pwsh', ...DEFAULT_PWSH_ARGS])
-    expect(spawned?.argv?.join(' ')).toContain('function prompt')
-    expect(session.motd).toBe('PowerShell\ndsh> ')
+    expect(sent).toMatchObject({ text: ENCODING_PREAMBLE + PWSH_PROMPT_SETUP, submit: true })
+    expect(session.motd).toBe('setup-echo dsh> ')
     expect(spawned?.env).toMatchObject({
       TERM: 'dumb', NO_COLOR: '1', DSH_SHELL: '1', DSH_SESSION_ID: 'agent', DSH_PTY_SESSION_ID: 'pty-1',
     })
     expect(spawned?.env?.PS1).toBeUndefined()
     expect(spawned?.env?.PROMPT_COMMAND).toBeUndefined()
-    const signal = new AbortController().signal
-    await backend.spawn({ ...spec(agent(ctx)), signal })
-    expect(signals.at(-1)).toBe(signal)
   })
 
-  it('rejects a pwsh bootstrap whose initialize fails', async () => {
+  it('keeps waiting for the marker prompt when the first send settles on silence', async () => {
     const ctx = new Context()
     await ctx.plugin(EmptySandbox)
     await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access', workspaceRoot: '/workspace' })
-    const failed = stubLocalSession(() => Promise.reject(new Error('PTY shell exited during startup')))
-    failed.close = () => Promise.resolve()
+    const sends: TerminalSendRequest[] = []
+    const session = {
+      motd: '',
+      startSend: (request: TerminalSendRequest) => {
+        sends.push(request)
+        const second = sends.length > 1
+        return {
+          done: Promise.resolve({
+            viewport: second ? 'dsh> ' : 'PowerShell 7.6.4\n',
+            waitReason: 'inferred_idle' as const,
+            sessionStatus: { kind: 'running' as const }, truncated: false,
+          }),
+          readOutput: () => ({ delta: '', truncated: false }),
+          cancel: () => false,
+        }
+      },
+      read: () => ({ text: '', totalLines: 0, lineBegin: 0, lineEnd: 0, truncated: false }),
+    } as unknown as LocalPtySession
     const backend = new BashTerminalBackend(
       ctx,
-      { ...config(), shellDialect: 'pwsh', shellPath: 'pwsh', shellArgs: DEFAULT_PWSH_ARGS },
+      { ...config(), shellDialect: 'pwsh', shellPath: 'pwsh' },
       async () => terminalHandle(),
-      () => failed,
+      () => session,
     )
-    await expect(backend.spawn(spec(agent(ctx)))).rejects.toThrow('PTY shell exited during startup')
+    await backend.spawn(spec(agent(ctx)))
+    expect(sends).toHaveLength(2)
+    expect(sends[1]).toMatchObject({ text: '', submit: false })
+    expect(session.motd).toBe('dsh> ')
+  })
+
+  it('rejects a pwsh bootstrap whose shell exits or times out', async () => {
+    const ctx = new Context()
+    await ctx.plugin(EmptySandbox)
+    await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access', workspaceRoot: '/workspace' })
+    const sessionFor = (waitReason: TerminalWaitReason): LocalPtySession => ({
+      startSend: () => ({
+        done: Promise.resolve({
+          viewport: 'no-prompt', waitReason,
+          sessionStatus: { kind: 'running' as const }, truncated: false,
+        }),
+        readOutput: () => ({ delta: '', truncated: false }),
+        cancel: () => false,
+      }),
+      read: () => ({ text: '', totalLines: 0, lineBegin: 0, lineEnd: 0, truncated: false }),
+      close: () => Promise.resolve(),
+    }) as unknown as LocalPtySession
+    const exited = new BashTerminalBackend(ctx, { ...config(), shellDialect: 'pwsh' }, async () => terminalHandle(), () => sessionFor('session_exit'))
+    await expect(exited.spawn(spec(agent(ctx)))).rejects.toThrow('PTY shell exited during startup')
+    const timedOut = new BashTerminalBackend(ctx, { ...config(), shellDialect: 'pwsh' }, async () => terminalHandle(), () => sessionFor('timeout'))
+    await expect(timedOut.spawn(spec(agent(ctx)))).rejects.toThrow('did not reach readiness before startup timeout')
+  })
+
+  it('forwards the spawn signal into the pwsh bootstrap sends', async () => {
+    const ctx = new Context()
+    await ctx.plugin(EmptySandbox)
+    await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access', workspaceRoot: '/workspace' })
+    const sends: TerminalSendRequest[] = []
+    const session = {
+      motd: '',
+      startSend: (request: TerminalSendRequest) => {
+        sends.push(request)
+        return {
+          done: Promise.resolve({
+            viewport: 'dsh> ', waitReason: 'stdin_read' as const,
+            sessionStatus: { kind: 'running' as const }, truncated: false,
+          }),
+          readOutput: () => ({ delta: '', truncated: false }),
+          cancel: () => false,
+        }
+      },
+      read: () => ({ text: '', totalLines: 0, lineBegin: 0, lineEnd: 0, truncated: false }),
+    } as unknown as LocalPtySession
+    const backend = new BashTerminalBackend(
+      ctx,
+      { ...config(), shellDialect: 'pwsh', shellPath: 'pwsh' },
+      async () => terminalHandle(),
+      () => session,
+    )
+    const signal = new AbortController().signal
+    const spawned = await backend.spawn({ ...spec(agent(ctx)), signal })
+    expect(spawned.motd).toBe('dsh> ')
+    expect(sends).toHaveLength(1)
+    expect(sends[0]?.signal).toBe(signal)
   })
 })
 

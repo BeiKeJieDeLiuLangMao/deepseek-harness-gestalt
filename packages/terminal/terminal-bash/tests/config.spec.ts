@@ -43,8 +43,7 @@ describe('terminal-bash dialect resolution', () => {
     const resolved = resolveConfig({ backendType: 'shell', shellDialect: 'pwsh', rows: 24, cols: 80 })
     expect(resolved.shellDialect).toBe('pwsh')
     expect(resolved.shellPath.length).toBeGreaterThan(0)
-    expect(resolved.shellArgs).toEqual(expect.arrayContaining(['-NoLogo', '-NoProfile', '-NoExit', '-Command']))
-    expect(resolved.shellArgs.at(-1)).toContain('function prompt')
+    expect(resolved.shellArgs).toEqual(['-NoLogo', '-NoProfile'])
   })
 
   it('lets an explicit shell specification win over the dialect defaults', () => {
