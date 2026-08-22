@@ -5,6 +5,18 @@ import { parseRelayCredential, parseRelayRouteId } from '@deepseek-ai/dsh-remote
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const browserOpen = vi.hoisted(() => vi.fn<(options: { url: string }) => Promise<void>>())
+const developmentPresentation = vi.hoisted(() => vi.fn(() => ({
+  desktopName: 'Development Desktop',
+  connection: 'offline' as const,
+  sessions: {
+    ids: [], byId: {}, current: undefined, phase: 'ready' as const,
+    subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined,
+  },
+  workspaces: [],
+  conversations: {},
+  loadImage: () => Promise.reject(new Error('unused')),
+  canMutate: false,
+})))
 const relayLifecycle = vi.hoisted(() => ({
   configure: vi.fn(),
   start: vi.fn(async () => {}),
@@ -17,6 +29,9 @@ const relayLifecycle = vi.hoisted(() => ({
 }))
 
 vi.mock('@capacitor/browser', () => ({ Browser: { open: browserOpen } }))
+vi.mock('../src/development-companion-presentation.ts', () => ({
+  developmentCompanionPresentation: developmentPresentation,
+}))
 vi.mock('@deepseek-ai/dsh-remote-access-client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@deepseek-ai/dsh-remote-access-client')>()
   return {
@@ -44,6 +59,7 @@ vi.mock('@deepseek-ai/dsh-remote-access-client', async (importOriginal) => {
 afterEach(() => {
   cleanup()
   browserOpen.mockReset()
+  developmentPresentation.mockClear()
   relayLifecycle.configure.mockReset()
   relayLifecycle.start.mockReset()
   relayLifecycle.stop.mockReset()
@@ -61,6 +77,18 @@ afterEach(() => {
 })
 
 describe('Mobile Platform Account entry', () => {
+  it('never loads keyless presentation evidence in the production environment', async () => {
+    configureEnvironment()
+    vi.stubEnv('VITE_PLATFORM_ENV', 'production')
+    vi.stubEnv('VITE_MOBILE_PRESENTATION_EXAMPLE', '1')
+    document.body.innerHTML = '<div id="root"></div>'
+    vi.stubGlobal('fetch', vi.fn(async () => json({ status: 'pending' })))
+
+    await import('../src/main.tsx')
+
+    expect(developmentPresentation).not.toHaveBeenCalled()
+  })
+
   it('fails loud when the browsing context cannot create an Installation id', async () => {
     configureEnvironment()
     vi.stubGlobal('crypto', { getRandomValues: crypto.getRandomValues.bind(crypto) })

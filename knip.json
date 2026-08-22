@@ -816,7 +816,16 @@
     },
     "apps/mobile": {
       "entry": [
+        "tests/**/*.spec.ts",
         "tests/**/*.snapshot.ts"
+      ],
+      "project": [
+        "src/**/*.ts",
+        "src/**/*.tsx",
+        "tests/**/*.ts"
+      ],
+      "ignoreDependencies": [
+        "@deepseek-ai/dsh-client-ui-primitives"
       ]
     },
     "packages/client/modules": {

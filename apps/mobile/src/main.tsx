@@ -10,9 +10,11 @@ import {
   RemoteAccessHttpTransport,
 } from '@deepseek-ai/dsh-remote-access-client'
 import { parseRelayAttachmentId, REMOTE_PROTOCOL_LIMITS } from '@deepseek-ai/dsh-remote-protocol'
-import '@deepseek-ai/dsh-client-ui-theme/src/styles/base.css'
-import '@deepseek-ai/dsh-client-ui-theme/src/styles/design-platform.css'
-import '@deepseek-ai/dsh-client-ui-theme/src/styles/gradient-shadow-text.css'
+import '@deepseek-ai/dsh-client-ui-theme/styles/base.css'
+import '@deepseek-ai/dsh-client-ui-theme/styles/design-platform.css'
+import '@deepseek-ai/dsh-client-ui-theme/styles/scrollbar.css'
+import '@deepseek-ai/dsh-client-ui-theme/styles/gradient-shadow-text.css'
+import '@deepseek-ai/dsh-client-ui-theme/styles/shiki.css'
 import {
   bindCompanionProcessVisibility,
   CompanionForegroundRuntime,
@@ -20,6 +22,7 @@ import {
   installCompanionRuntime,
 } from './companion-lifecycle.ts'
 import { mountMobileEntry } from './mobile-entry.tsx'
+import { fixedMobilePresentationClock } from './mobile-clock.ts'
 import type { MobilePairingActions } from './MobilePairing.tsx'
 import { MobilePairingController, NativeMobilePairingQrScanner } from './personal-pairing.ts'
 import { mobileSystemBrowser } from './system-browser.ts'
@@ -58,7 +61,10 @@ const installation = new PlatformAccountInstallation({
   environment,
   installationId: parsedInstallationId,
   installationKind: 'mobile',
-  transport: new PlatformAccountHttpTransport({ environment }),
+  transport: new PlatformAccountHttpTransport({
+    environment,
+    fetch: (input, init) => globalThis.fetch(input, init),
+  }),
   store: new IndexedDbInstallationAccountStore(`deepseek-gestalt-platform-account:${environment.databaseIdentity}`),
   systemBrowser: mobileSystemBrowser,
 })
@@ -144,4 +150,18 @@ function requiredWss(value: unknown): string {
 
 const root = document.getElementById('root')
 if (root === null) throw new Error('mobile app: missing #root')
-mountMobileEntry(root, { installation, pairing, companion })
+
+async function mountMobileProduct(container: HTMLElement): Promise<void> {
+  const presentation = environment.environment === 'development' && import.meta.env.VITE_MOBILE_PRESENTATION_EXAMPLE === '1'
+    ? (await import('./development-companion-presentation.ts')).developmentCompanionPresentation()
+    : undefined
+  mountMobileEntry(container, {
+    installation,
+    pairing,
+    companion,
+    presentation,
+    ...(presentation === undefined ? {} : { clock: fixedMobilePresentationClock(10_000) }),
+  })
+}
+
+void mountMobileProduct(root)

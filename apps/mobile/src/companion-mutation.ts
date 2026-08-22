@@ -15,6 +15,7 @@ export type CompanionMutationName =
   | 'approval'
   | 'question'
   | 'attachment'
+  | 'history'
   | 'other-mutation'
 
 /**

@@ -1,0 +1,22 @@
+Back
+Shared Web presentation
+Shared narrow conversation overflow-overflow-overflow-overflow-overflow-overflow-overflow-overflow-overflow-overflow-overflow-overflow-overflow-overflow-overflow-overflow-overflow-overflow-overflow-overflow-overflow-overflow-overflow-overflow-
+
+Shared Markdown
+
+ts
+Copy
+const mobile = "desktop-web"
+Edit
+src/shared-presentation.ts
+复制
+src/shared-presentation.ts
+const shared = false
+const shared = true
+└ +1 -1 · 1 file
+Bash
+Run focused tests
+Tool call
+future_tool · unknown fallback
+This turn failedHost rejected request
+HOST_400
