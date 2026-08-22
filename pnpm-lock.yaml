@@ -525,9 +525,6 @@ importers:
       '@deepseek-ai/dsh-client-ui-conversation':
         specifier: workspace:^
         version: link:../../packages/client/ui-conversation
-      '@deepseek-ai/dsh-client-ui-primitives':
-        specifier: workspace:^
-        version: link:../../packages/client/ui-primitives
       '@deepseek-ai/dsh-client-ui-theme':
         specifier: workspace:^
         version: link:../../packages/client/ui-theme
