@@ -1,8 +1,9 @@
 import {
   decodeRelayMessage,
   encodeRelayMessage,
+  generateRelayCredential,
+  parseRelayAttachChallengeId,
   parseRelayAttachmentId,
-  parseRelayCredential,
   parseRelayPairingSelector,
   parseRelayRouteId,
 } from '@deepseek-ai/dsh-remote-protocol'
@@ -13,6 +14,9 @@ import {
   RemoteRelayEndpointController,
   type RelayEndpointSocket,
 } from '../src/index.ts'
+
+const TEST_RELAY_CREDENTIAL = await generateRelayCredential()
+const parseRelayCredential = (_value: string): typeof TEST_RELAY_CREDENTIAL => TEST_RELAY_CREDENTIAL
 
 describe('RemoteRelayEndpointController', () => {
   it('starts Mobile only after pairing-delivered authority configures its lifecycle', async () => {
@@ -48,7 +52,8 @@ describe('RemoteRelayEndpointController', () => {
 
     await lifecycle.start()
     expect(lifecycle.isConnected()).toBe(true)
-    expect(socket.decoded()[0]).toMatchObject({ type: 'attach', endpoint: 'mobile', routeId: 'route-product' })
+    expect(socket.decoded()[0]).toMatchObject({ type: 'attach-challenge', endpoint: 'mobile', routeId: 'route-product' })
+    expect(socket.decoded()[1]).toMatchObject({ type: 'attach', endpoint: 'mobile', routeId: 'route-product' })
     await lifecycle.stop()
     expect(lifecycle.isConnected()).toBe(false)
   })
@@ -131,12 +136,12 @@ describe('RemoteRelayEndpointController', () => {
     expect(controller.isConnected()).toBe(true)
     expect(resynchronize).toHaveBeenCalledTimes(1)
     expect(connectionEvents).toEqual(['ready:desktop-1'])
-    expect(first.decoded().map(message => message.type)).toEqual(['attach', 'ciphertext'])
+    expect(first.decoded().map(message => message.type)).toEqual(['attach-challenge', 'attach', 'ciphertext'])
     first.end()
     await vi.waitFor(() => { expect(resynchronize).toHaveBeenCalledTimes(2) })
     expect(connectionEvents).toEqual(['ready:desktop-1', 'lost:desktop-1', 'ready:desktop-2'])
-    expect(replacement.decoded().map(message => message.type)).toEqual(['attach', 'ciphertext'])
-    expect(first.decoded()).toHaveLength(2)
+    expect(replacement.decoded().map(message => message.type)).toEqual(['attach-challenge', 'attach', 'ciphertext'])
+    expect(first.decoded()).toHaveLength(3)
 
     await controller.stop()
     expect(connectionEvents).toEqual(['ready:desktop-1', 'lost:desktop-1', 'ready:desktop-2', 'lost:desktop-2'])
@@ -248,9 +253,8 @@ describe('RemoteRelayEndpointController', () => {
     }))
     await vi.waitFor(() => { expect(routeCalls).toBeGreaterThanOrEqual(3) })
     secondSocket.receive(encodeRelayMessage({
-      type: 'attach', transportVersion: 1, routeId: parseRelayRouteId('route-one'),
-      attachmentId: parseRelayAttachmentId('desktop-invalid'), endpoint: 'desktop',
-      credential: parseRelayCredential('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'),
+      type: 'heartbeat', transportVersion: 1,
+      attachmentId: parseRelayAttachmentId('desktop-invalid'), sentAt: Date.now(),
     }))
     await vi.waitFor(() => { expect(onTransportError).toHaveBeenCalledWith(
       expect.objectContaining({ code: 'RELAY_ATTACHMENT_REJECTED' }),
@@ -380,7 +384,9 @@ describe('RemoteRelayEndpointController', () => {
     expect(secondResolved).not.toHaveBeenCalled()
     expect(resynchronize).not.toHaveBeenCalled()
 
-    const attach = socket.decoded()[0]
+    respondToChallenge(socket)
+    await vi.waitFor(() => { expect(socket.decoded()).toHaveLength(2) })
+    const attach = socket.decoded()[1]
     if (attach?.type !== 'attach') throw new Error('expected attach')
     socket.receive(encodeRelayMessage({
       type: 'ready', transportVersion: 1, routeId: attach.routeId,
@@ -627,7 +633,7 @@ describe('RemoteRelayEndpointController', () => {
       type: 'error', transportVersion: 1, code: 'RELAY_ROUTE_REVOKED',
     }))
 
-    await vi.waitFor(() => { expect(second.decoded()).toHaveLength(1) })
+    await vi.waitFor(() => { expect(second.decoded()).toHaveLength(2) })
     expect(onTransportError).toHaveBeenCalledOnce()
     await controller.stop()
   })
@@ -679,6 +685,16 @@ function desktopController(overrides: Partial<ConstructorParameters<typeof Remot
   })
 }
 
+function respondToChallenge(socket: FakeSocket): void {
+  const request = socket.decoded().at(-1)
+  if (request?.type !== 'attach-challenge') throw new Error('expected attach challenge')
+  socket.receive(encodeRelayMessage({
+    ...request, type: 'attach-challenge-response',
+    challengeId: parseRelayAttachChallengeId(`challenge-${String(socket.sent.length)}`),
+    nonce: new Uint8Array(32).fill(4), expiresAt: Date.now() + 10_000,
+  }))
+}
+
 class FakeSocket implements RelayEndpointSocket {
   readonly sent: Uint8Array[] = []
   closed = false
@@ -690,7 +706,13 @@ class FakeSocket implements RelayEndpointSocket {
     if (this.closed) throw new Error('socket closed')
     this.sent.push(value)
     const message = decodeRelayMessage(value)
-    if (this.autoReady && message.type === 'attach') {
+    if (this.autoReady && message.type === 'attach-challenge') {
+      this.receive(encodeRelayMessage({
+        ...message, type: 'attach-challenge-response',
+        challengeId: parseRelayAttachChallengeId('challenge-test'),
+        nonce: new Uint8Array(32).fill(9), expiresAt: Date.now() + 10_000,
+      }))
+    } else if (this.autoReady && message.type === 'attach') {
       this.receive(encodeRelayMessage({
         type: 'ready', transportVersion: 1, routeId: message.routeId,
         attachmentId: message.attachmentId, peers: [],
@@ -785,7 +807,7 @@ class DualFailureSocket extends RejectingCloseSocket {
 
   override async send(value: Uint8Array): Promise<void> {
     this.sends += 1
-    if (this.sends > 1) throw new Error('heartbeat failed')
+    if (this.sends > 2) throw new Error('heartbeat failed')
     await super.send(value)
   }
 }

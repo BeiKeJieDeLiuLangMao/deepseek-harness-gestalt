@@ -2,16 +2,21 @@
 
 import type { IncomingMessage } from 'node:http'
 import type { Duplex } from 'node:stream'
+import { randomBytes, randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import { RemoteRelayError, type RemoteRelayAttachment } from '@deepseek-ai/dsh-remote-access'
 import {
   decodeRelayMessage,
   encodeRelayMessage,
+  parseRelayAttachChallengeId,
+  relayAttachmentProofMatches,
   REMOTE_PROTOCOL_LIMITS,
   RemoteProtocolError,
   type RelayErrorCode,
   type RelayErrorMessage,
+  type RelayAttachChallengeMessage,
+  type RelayAttachChallengeRequestMessage,
 } from '@deepseek-ai/dsh-remote-protocol'
 import z from '@deepseek-ai/schemastery'
 import WebSocket, { WebSocketServer, type RawData } from 'ws'
@@ -91,6 +96,8 @@ export class RelayWebSocketConsumer {
 
   private accept(socket: WebSocket): void {
     let attachment: RemoteRelayAttachment | undefined
+    let challengeRequest: RelayAttachChallengeRequestMessage | undefined
+    let challenge: RelayAttachChallengeMessage | undefined
     let failed = false
     let serial = Promise.resolve()
     const attachmentAbort = new AbortController()
@@ -116,8 +123,26 @@ export class RelayWebSocketConsumer {
           if (failed) return
           const message = decodeRelayMessage(bytes(data))
           if (attachment === undefined) {
-            if (message.type !== 'attach') {
-              throw new RemoteProtocolError('REMOTE_PROTOCOL_INVALID_MESSAGE', 'Relay connection requires attach first')
+            if (challenge === undefined) {
+              if (message.type !== 'attach-challenge') {
+                throw new RemoteProtocolError('REMOTE_PROTOCOL_INVALID_MESSAGE', 'Relay connection requires attachment challenge first')
+              }
+              challengeRequest = message
+              challenge = {
+                type: 'attach-challenge-response', transportVersion: 1,
+                routeId: message.routeId, attachmentId: message.attachmentId, endpoint: message.endpoint,
+                credentialPublicKey: message.credentialPublicKey,
+                challengeId: parseRelayAttachChallengeId(randomUUID()),
+                nonce: randomBytes(32),
+                expiresAt: Date.now() + this.attachTimeoutMs,
+              }
+              await send(socket, encodeRelayMessage(challenge))
+              return
+            }
+            if (message.type !== 'attach' || challengeRequest === undefined
+              || !relayAttachmentProofMatches(challengeRequest, challenge, message)
+              || Date.now() > challenge.expiresAt) {
+              throw new RemoteProtocolError('REMOTE_PROTOCOL_INVALID_MESSAGE', 'Relay attachment proof does not match its live challenge')
             }
             attachment = await this.ctx.remoteRelay.attach({
               message,

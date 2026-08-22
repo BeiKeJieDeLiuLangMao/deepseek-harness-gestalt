@@ -1,12 +1,18 @@
 import { Context } from '@deepseek-ai/cordis'
 import {
+  deriveRelayCredentialPublicKey,
+  generateRelayCredential,
   parseRelayAttachmentId,
+  parseRelayAttachChallengeId,
   parseRelayCredential,
   parseRelayPairingSelector,
   parseRelayRouteId,
   type RelayCiphertextMessage,
+  type RelayAttachMessage,
+  type RelayCredential,
   type RelayPairingSelector,
   type RelayReadyMessage,
+  signRelayAttachmentChallenge,
 } from '@deepseek-ai/dsh-remote-protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -20,7 +26,44 @@ import {
   type RelayDirectoryEntry,
   type RelayRouteStore,
 } from '../src/index.ts'
-import { RemoteRelayProvider } from '../src/relay-provider.ts'
+import { RemoteRelayProvider as ProductRemoteRelayProvider } from '../src/relay-provider.ts'
+
+type LegacyAttachMessage = Omit<RelayAttachMessage, 'credentialPublicKey' | 'challengeId' | 'nonce' | 'expiresAt' | 'signature'> & {
+  credential: RelayCredential
+}
+type TestRemoteRelayProvider = Omit<ProductRemoteRelayProvider, 'attach'> & {
+  attach(input: Omit<Parameters<ProductRemoteRelayProvider['attach']>[0], 'message'> & {
+    message: RelayAttachMessage | LegacyAttachMessage
+  }): ReturnType<ProductRemoteRelayProvider['attach']>
+}
+const RemoteRelayProvider = ProductRemoteRelayProvider as unknown as {
+  new (...input: ConstructorParameters<typeof ProductRemoteRelayProvider>): TestRemoteRelayProvider
+  prototype: TestRemoteRelayProvider
+}
+
+const providerAttach = RemoteRelayProvider.prototype.attach
+const INVALID_TEST_CREDENTIAL = await generateRelayCredential()
+RemoteRelayProvider.prototype.attach = async function (input) {
+  const suppliedCredential = Reflect.get(input.message, 'credential') as RelayCredential | undefined
+  if (suppliedCredential === undefined) return await providerAttach.call(this, input)
+  let credential = suppliedCredential
+  let credentialPublicKey
+  try { credentialPublicKey = await deriveRelayCredentialPublicKey(credential) } catch {
+    credential = INVALID_TEST_CREDENTIAL
+    credentialPublicKey = await deriveRelayCredentialPublicKey(credential)
+  }
+  const challenge = {
+    type: 'attach-challenge-response' as const, transportVersion: 1 as const,
+    routeId: input.message.routeId, attachmentId: input.message.attachmentId,
+    endpoint: input.message.endpoint, credentialPublicKey,
+    challengeId: parseRelayAttachChallengeId(`challenge-${input.message.attachmentId}`),
+    nonce: new Uint8Array(32).fill(6), expiresAt: Number.MAX_SAFE_INTEGER,
+  }
+  return await providerAttach.call(this, {
+    ...input,
+    message: await signRelayAttachmentChallenge(credential, challenge),
+  })
+}
 
 const CONFIG = {
   capacityRetryAfterMs: 1_000,
@@ -923,7 +966,7 @@ describe('RemoteRelayProvider', () => {
     const badDelivery = new RemoteRelayProvider(new Context(), {
       instanceId: parseRelayInstanceId('platform-bad-delivery'), routeStore: new SharedRouteStore(),
       coordinator: badCoordinator, config: CONFIG,
-      randomBytes: size => new Uint8Array(++entropyCalls === 3 ? 15 : size).fill(74),
+      randomBytes: size => new Uint8Array(++entropyCalls === 2 ? 15 : size).fill(74),
     })
     const badRoute = parseRelayRouteId('route-bad-delivery')
     const badGrant = await badDelivery.rotateCredential(badRoute, 'mobile')
@@ -1086,17 +1129,16 @@ describe('RemoteRelayProvider', () => {
     const routeStore = new SharedRouteStore()
     const coordinator = new SharedCoordinator()
     const routeId = parseRelayRouteId('route-errors')
-    const badCredentialEntropy = new RemoteRelayProvider(new Context(), {
+    const credentialEntropyIsEndpointOwned = new RemoteRelayProvider(new Context(), {
       instanceId: parseRelayInstanceId('platform-a'), routeStore, coordinator, config: CONFIG,
       randomBytes: () => new Uint8Array(31),
     })
-    await expect(badCredentialEntropy.rotateCredential(routeId)).rejects.toThrow('must return 32 bytes')
-    await badCredentialEntropy.dispose()
+    await expect(credentialEntropyIsEndpointOwned.rotateCredential(routeId)).resolves.toMatchObject({ endpoint: 'desktop' })
+    await credentialEntropyIsEndpointOwned.dispose()
 
-    let call = 0
     const badTokenEntropy = new RemoteRelayProvider(new Context(), {
       instanceId: parseRelayInstanceId('platform-b'), routeStore, coordinator, config: CONFIG,
-      randomBytes: size => new Uint8Array(call++ === 0 ? size : 15).fill(1),
+      randomBytes: () => new Uint8Array(15).fill(1),
     })
     const grant = await badTokenEntropy.rotateCredential(routeId)
     await expect(badTokenEntropy.attach({
@@ -1552,7 +1594,7 @@ function provider(
   routeStore: RelayRouteStore,
   coordinator: RelayCoordinator,
   randomByte: number,
-): RemoteRelayProvider {
+): TestRemoteRelayProvider {
   return new RemoteRelayProvider(new Context(), {
     instanceId: parseRelayInstanceId(id),
     routeStore,

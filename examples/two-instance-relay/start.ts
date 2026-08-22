@@ -25,10 +25,10 @@ import { RelayWebSocketConsumer } from '@deepseek-ai/dsh-remote-access-http/rela
 import { RedisRelayCoordinator, type RelayRedisClient } from '@deepseek-ai/dsh-remote-access-redis'
 import {
   deriveRelayCredentialDigest,
+  generateRelayCredential,
   parseCompanionOperationId,
   parseCompanionSessionId,
   parseRelayAttachmentId,
-  parseRelayCredential,
   parseRelayPairingSelector,
   REMOTE_PROTOCOL_LIMITS,
   type RelayAttachmentId,
@@ -155,7 +155,7 @@ export async function apply(_ctx: Context, config: Config): Promise<void> {
     const message3 = mobilePairing.exportFinishMessage()
     await pairingA.submitEndpointMessage3({ mobile: mobileAuthentication, completionId, message3 })
     await desktopPairing.finishMessage3(message3)
-    const mobileCredential = parseRelayCredential(Buffer.alloc(32, 43).toString('base64url'))
+    const mobileCredential = await generateRelayCredential()
     const confirmation = await pairingA.confirmEndpointPairing({
       desktop: desktopAuthentication,
       pendingPairingId: pending.pendingPairingId,

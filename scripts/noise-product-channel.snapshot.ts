@@ -25,15 +25,34 @@ import {
 } from '@deepseek-ai/dsh-noise-channel'
 import {
   deriveRelayCredentialDigest,
+  deriveRelayCredentialPublicKey,
+  generateRelayCredential,
+  parseRelayAttachChallengeId,
   parseRelayAttachmentId,
-  parseRelayCredential,
   parseRelayPairingSelector,
   type RelayPairingSelector,
   type RelayReadyMessage,
   type RelayRouteId,
+  type RelayCredential,
+  type RelayAttachmentId,
+  signRelayAttachmentChallenge,
 } from '@deepseek-ai/dsh-remote-protocol'
 
 const expected = new URL('./snapshots/noise-product-channel/report.expected.json', import.meta.url)
+
+async function attachmentProof(
+  credential: RelayCredential,
+  routeId: RelayRouteId,
+  attachmentId: RelayAttachmentId,
+  endpoint: 'mobile' | 'desktop',
+) {
+  return await signRelayAttachmentChallenge(credential, {
+    type: 'attach-challenge-response', transportVersion: 1, routeId, attachmentId, endpoint,
+    credentialPublicKey: await deriveRelayCredentialPublicKey(credential),
+    challengeId: parseRelayAttachChallengeId(`challenge-${attachmentId}`),
+    nonce: new Uint8Array(32).fill(5), expiresAt: Number.MAX_SAFE_INTEGER,
+  })
+}
 
 describe('Snow product channel runnable snapshot', () => {
   it('executes endpoint mailbox pairing, sealed authority, real Relay attach, IK, and authenticated sync', async () => {
@@ -106,7 +125,7 @@ describe('Snow product channel runnable snapshot', () => {
     await pairing.submitEndpointMessage3({ mobile: mobileAuthentication, completionId, message3 })
     await desktop.finishMessage3(message3)
 
-    const credential = parseRelayCredential(Buffer.alloc(32, 2).toString('base64url'))
+    const credential = await generateRelayCredential()
     const credentialDigest = await deriveRelayCredentialDigest(credential)
     const confirmation = await pairing.confirmEndpointPairing({
       desktop: desktopAuthentication,
@@ -134,18 +153,12 @@ describe('Snow product channel runnable snapshot', () => {
     const desktopAttachmentId = parseRelayAttachmentId('desktop-snapshot')
     let livePeerUpdate = false
     const mobileAttachment = await relay.attach({
-      message: {
-        type: 'attach', transportVersion: 1, routeId: openedGrant.routeId,
-        attachmentId: mobileAttachmentId, endpoint: 'mobile', credential: openedGrant.credential,
-      },
+      message: await attachmentProof(openedGrant.credential, openedGrant.routeId, mobileAttachmentId, 'mobile'),
       deliver: (message) => { livePeerUpdate = message.type === 'peer-update'; return Promise.resolve() },
     })
     const desktopReady = deferred<RelayReadyMessage>()
     const desktopAttachment = await relay.attach({
-      message: {
-        type: 'attach', transportVersion: 1, routeId: desktopAccess.relay.routeId,
-        attachmentId: desktopAttachmentId, endpoint: 'desktop', credential: desktopAccess.relay.credential,
-      },
+      message: await attachmentProof(desktopAccess.relay.credential, desktopAccess.relay.routeId, desktopAttachmentId, 'desktop'),
       deliver: () => Promise.resolve(),
       announce: (message) => { desktopReady.resolve(message); return Promise.resolve() },
     })

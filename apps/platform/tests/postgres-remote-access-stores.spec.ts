@@ -7,7 +7,7 @@ import {
 } from '@deepseek-ai/dsh-remote-access'
 import { parseRelayPairingSelector, parseRelayRouteId } from '@deepseek-ai/dsh-remote-protocol'
 import { describe, expect, it } from 'vitest'
-import { PostgresPersonalPairingAuthorityStore } from '../src/postgres-pairing-store.ts'
+import { PostgresPersonalPairingAuthorityStore, type PlatformSqlPool } from '../src/postgres-pairing-store.ts'
 import { PostgresRelayRouteStore } from '../src/postgres-route-store.ts'
 import { createMemoryPlatformSqlPool } from './memory-sql.ts'
 
@@ -105,6 +105,35 @@ describe('PostgresPersonalPairingAuthorityStore', () => {
     await store.runPairingTransaction(async (state) => {
       expect(state.principalIds.size).toBe(0)
       expect(state.challenges.size).toBe(1)
+    })
+  })
+
+  it('rolls back the prepared document when the final database commit fails', async () => {
+    const underlying = createMemoryPlatformSqlPool()
+    let failCommit = true
+    const pool: PlatformSqlPool = {
+      query: async (sql, values) => await underlying.query(sql, values),
+      async connect() {
+        const client = await underlying.connect()
+        return {
+          release: () => { client.release() },
+          query: async (sql, values) => {
+            if (failCommit && sql.trim().toLowerCase() === 'commit') {
+              failCommit = false
+              throw new Error('final commit failed')
+            }
+            return await client.query(sql, values)
+          },
+        }
+      },
+    }
+    const store = new PostgresPersonalPairingAuthorityStore('gestalt', pool)
+    await store.migrate()
+    await expect(store.runPairingTransaction(async (state) => {
+      state.principalIds.add('principal-uncommitted' as never)
+    })).rejects.toThrow('final commit failed')
+    await store.runPairingTransaction(async (state) => {
+      expect(state.principalIds.has('principal-uncommitted' as never)).toBe(false)
     })
   })
 })

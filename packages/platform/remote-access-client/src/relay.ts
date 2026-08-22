@@ -3,10 +3,13 @@
 import { RemoteRelayError } from '@deepseek-ai/dsh-remote-access'
 import {
   decodeRelayMessage,
+  deriveRelayCredentialPublicKey,
   encodeRelayMessage,
+  signRelayAttachmentChallenge,
   type RelayAttachmentId,
   type RelayCredential,
   type RelayReadyMessage,
+  type RelayAttachChallengeMessage,
   type RelayPeerUpdateMessage,
   type RelayRouteId,
 } from '@deepseek-ai/dsh-remote-protocol'
@@ -208,13 +211,16 @@ export class RemoteRelayEndpointController {
     let attached = false
     const heartbeatAbort = new AbortController()
     try {
+      const credentialPublicKey = await deriveRelayCredentialPublicKey(route.credential)
       await socket.send(encodeRelayMessage({
-        type: 'attach', transportVersion: 1,
+        type: 'attach-challenge', transportVersion: 1,
         routeId: route.routeId,
         attachmentId: connection.attachmentId,
         endpoint: this.options.endpoint,
-        credential: route.credential,
+        credentialPublicKey,
       }))
+      const challenge = await this.awaitAttachChallenge(connection, credentialPublicKey, iterator, signal)
+      await socket.send(encodeRelayMessage(await signRelayAttachmentChallenge(route.credential, challenge)))
       const ready = await this.awaitReady(connection, iterator, signal)
       /* v8 ignore next -- stop can win only in the microtask gap after the acknowledged wait settles. */
       if (isAborted(signal)) return
@@ -268,6 +274,26 @@ export class RemoteRelayEndpointController {
     if (message.type !== 'ready' || message.routeId !== connection.routeId
       || message.attachmentId !== connection.attachmentId) {
       throw new RemoteRelayError('RELAY_ATTACHMENT_REJECTED', 'Relay endpoint received an invalid attachment acknowledgement')
+    }
+    return message
+  }
+
+  private async awaitAttachChallenge(
+    connection: ActiveConnection,
+    credentialPublicKey: Awaited<ReturnType<typeof deriveRelayCredentialPublicKey>>,
+    iterator: AsyncIterator<Uint8Array>,
+    signal: AbortSignal,
+  ): Promise<RelayAttachChallengeMessage> {
+    const next = await withTimeout(iterator.next(), this.options.attachTimeoutMs, signal,
+      () => new RemoteRelayError('REMOTE_OFFLINE', 'Platform did not issue a Relay attachment challenge'))
+    if (next.done) throw new RemoteRelayError('REMOTE_OFFLINE', 'Relay socket closed before attachment challenge')
+    const message = decodeRelayMessage(next.value)
+    if (message.type === 'error') throw new RemoteRelayError(message.code, `Remote Relay returned ${message.code}`, message.retryAfterMs)
+    if (message.type !== 'attach-challenge-response' || message.routeId !== connection.routeId
+      || message.attachmentId !== connection.attachmentId || message.endpoint !== this.options.endpoint
+      || message.credentialPublicKey !== credentialPublicKey
+      || message.expiresAt <= (this.options.clock?.now() ?? Date.now())) {
+      throw new RemoteRelayError('RELAY_ATTACHMENT_REJECTED', 'Relay endpoint received an invalid attachment challenge')
     }
     return message
   }

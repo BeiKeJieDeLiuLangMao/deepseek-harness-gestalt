@@ -12,7 +12,7 @@ import {
 } from '@deepseek-ai/dsh-remote-access'
 import {
   deriveRelayCredentialDigest,
-  parseRelayCredential,
+  generateRelayCredential,
   parseRelayPairingSelector,
   type RelayCredential,
   type RelayPairingSelector,
@@ -145,9 +145,7 @@ export class DesktopSnowPairingVault {
     if (!this.pending.has(pendingPairingId)) throw new Error('Desktop Snow pairing has no pending endpoint owner')
     let transaction = this.confirmations.get(pendingPairingId)
     if (transaction === undefined) {
-      const credentialBytes = crypto.getRandomValues(new Uint8Array(32))
-      const credential = parseRelayCredential(Buffer.from(credentialBytes).toString('base64url'))
-      credentialBytes.fill(0)
+      const credential = await generateRelayCredential()
       transaction = {
         credential,
         credentialDigest: await deriveRelayCredentialDigest(credential),

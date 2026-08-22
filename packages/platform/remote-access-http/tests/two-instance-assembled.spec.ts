@@ -44,8 +44,10 @@ import {
   createCompanionVersionOffer,
   decodeCompanionMessage,
   decodeRelayMessage,
+  deriveRelayCredentialPublicKey,
   encodeCompanionMessage,
   encodeRelayMessage,
+  generateRelayCredential,
   negotiateCompanionProtocol,
   parseCompanionOperationId,
   parseCompanionSessionId,
@@ -58,6 +60,7 @@ import {
   type RelayCiphertextMessage,
   type RelayPairingSelector,
   type RelayRouteId,
+  signRelayAttachmentChallenge,
 } from '@deepseek-ai/dsh-remote-protocol'
 import WebSocket from 'ws'
 import * as RemoteAccessHttp from '../src/index.ts'
@@ -183,7 +186,7 @@ describe('two Loader-booted Platform Instances', () => {
       routeId,
       parseRelayAttachmentId('intruder-assembled'),
       'desktop',
-      parseRelayCredential('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'),
+      await generateRelayCredential(),
     ))
     expect(rejected).toMatchObject({ type: 'error', code: 'RELAY_ATTACHMENT_REJECTED' })
     const direct = await withPhase('direct WebServer attach', attachWithCredential(
@@ -191,7 +194,7 @@ describe('two Loader-booted Platform Instances', () => {
       routeId,
       parseRelayAttachmentId('direct-assembled'),
       'desktop',
-      parseRelayCredential('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'),
+      await generateRelayCredential(),
     ))
     expect(direct).toMatchObject({ type: 'error', code: 'RELAY_ATTACHMENT_REJECTED' })
     acquired.length = 0
@@ -567,10 +570,16 @@ async function attachWithCredential(
 ): Promise<ReturnType<typeof decodeRelayMessage>> {
   const socket = new WebSocket(url, url.startsWith('wss:') ? { rejectUnauthorized: false } : undefined)
   await once(socket, 'open')
-  const received = once(socket, 'message') as Promise<[WebSocket.RawData]>
+  const challengeMessage = once(socket, 'message') as Promise<[WebSocket.RawData]>
   socket.send(encodeRelayMessage({
-    type: 'attach', transportVersion: 1, routeId, attachmentId, endpoint, credential,
+    type: 'attach-challenge', transportVersion: 1, routeId, attachmentId, endpoint,
+    credentialPublicKey: await deriveRelayCredentialPublicKey(credential),
   }))
+  const [challengeData] = await challengeMessage
+  const challenge = decodeRelayMessage(bytes(challengeData))
+  if (challenge.type !== 'attach-challenge-response') throw new Error('Relay did not issue an attach challenge')
+  const received = once(socket, 'message') as Promise<[WebSocket.RawData]>
+  socket.send(encodeRelayMessage(await signRelayAttachmentChallenge(credential, challenge)))
   const [data] = await received
   socket.close()
   return decodeRelayMessage(bytes(data))
