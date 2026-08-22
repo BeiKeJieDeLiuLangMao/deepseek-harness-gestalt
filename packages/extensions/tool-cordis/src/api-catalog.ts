@@ -1377,7 +1377,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'input', description: 'Mobile ownership, completion identity, and opaque finish.' }],
       },
       {
-        signature: 'abstract confirmEndpointPairing(input: { desktop: PairingAccountAuthentication pendingPairingId: PendingPairingId mobileCredentialDigest: Uint8Array }): Promise<EndpointPairingConfirmation>',
+        signature: 'abstract confirmEndpointPairing(input: { desktop: PairingAccountAuthentication pendingPairingId: PendingPairingId desktopCredentialDigest: Uint8Array mobileCredentialDigest: Uint8Array }): Promise<EndpointPairingConfirmation>',
         description: 'Record that Desktop authenticated message 3 locally.',
         parameters: [{ name: 'input', description: 'Desktop ownership and pending identity.' }],
         returns: 'confirmed pairing and digest-registered Relay route metadata.',
@@ -1542,16 +1542,10 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Public Remote Access Relay capability used by the WSS Consumer.',
     methods: [
       {
-        signature: 'abstract rotateCredential(routeId: RelayRouteId, endpoint?: \'mobile\' | \'desktop\'): Promise<RelayCredentialGrant>',
-        description: 'Rotate one route to fresh authority and invalidate older attachments.',
-        parameters: [{ name: 'routeId', description: 'opaque route receiving new attachment authority.' }, { name: 'endpoint', description: 'endpoint whose same-endpoint credentials the rotation replaces; defaults to desktop.' }],
-        returns: 'the one-time credential grant and its persistent revision.',
-      },
-      {
-        signature: 'abstract issueCredential( routeId: RelayRouteId, endpoint?: \'mobile\' | \'desktop\', pairingSelector?: RelayPairingSelector, ): Promise<RelayCredentialGrant>',
-        description: 'Issue distinct endpoint authority without invalidating other credentials on the active route.',
-        parameters: [{ name: 'routeId', description: 'active route receiving another independently revocable bearer.' }, { name: 'endpoint', description: 'endpoint the new credential authorizes; defaults to mobile.' }, { name: 'pairingSelector', description: 'non-secret Mobile pairing selector retained beside the credential digest.' }],
-        returns: 'a fresh credential at the current route revision.',
+        signature: 'abstract activateCredentialDigest( routeId: RelayRouteId, endpoint: \'mobile\' | \'desktop\', credentialDigest: Uint8Array, pairingSelector?: RelayPairingSelector, ): Promise<number>',
+        description: 'Activate one endpoint-generated digest and replace same-endpoint authority.',
+        parameters: [{ name: 'routeId', description: 'route receiving endpoint-owned authority.' }, { name: 'endpoint', description: 'endpoint kind bound to the digest.' }, { name: 'credentialDigest', description: 'SHA-256 digest of the endpoint-owned public key.' }, { name: 'pairingSelector', description: 'optional non-secret Personal Pairing selector.' }],
+        returns: 'new route revision.',
       },
       {
         signature: 'abstract registerCredentialDigest( routeId: RelayRouteId, endpoint: \'mobile\' | \'desktop\', credentialDigest: Uint8Array, pairingSelector?: RelayPairingSelector, ): Promise<number>',
@@ -1560,14 +1554,15 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'current active route revision.',
       },
       {
+        signature: 'abstract registerPairingCredentialDigests( routeId: RelayRouteId, pairingSelector: RelayPairingSelector, desktopCredentialDigest: Uint8Array, mobileCredentialDigest: Uint8Array, ): Promise<number>',
+        description: 'Register one pairing\'s endpoint-owned Desktop and Mobile digests atomically.',
+        parameters: [{ name: 'routeId', description: 'route allocated to the authenticated Desktop installation.' }, { name: 'pairingSelector', description: 'non-secret Personal Pairing selector.' }, { name: 'desktopCredentialDigest', description: 'digest of the Desktop-owned signing credential.' }, { name: 'mobileCredentialDigest', description: 'digest of the Mobile-owned signing credential.' }],
+        returns: 'active route revision shared by both endpoint authorities.',
+      },
+      {
         signature: 'abstract revokeCredentialDigest( routeId: RelayRouteId, endpoint: \'mobile\' | \'desktop\', credentialDigest: Uint8Array, ): Promise<void>',
         description: 'Remove endpoint-generated authority by its retained digest.',
         parameters: [{ name: 'routeId', description: 'route owning the authority.' }, { name: 'endpoint', description: 'endpoint kind bound to the digest.' }, { name: 'credentialDigest', description: 'exact retained SHA-256 digest.' }],
-      },
-      {
-        signature: 'abstract revokeCredential(grant: RelayCredentialGrant): Promise<void>',
-        description: 'Remove one issued endpoint credential without revoking its route peers.',
-        parameters: [{ name: 'grant', description: 'exact issued authority whose ownership did not commit.' }],
       },
       {
         signature: 'abstract revokeRoute(routeId: RelayRouteId): Promise<void>',

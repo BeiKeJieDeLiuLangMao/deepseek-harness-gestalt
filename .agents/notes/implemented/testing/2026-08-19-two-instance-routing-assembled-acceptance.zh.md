@@ -12,7 +12,7 @@ Issue #32 要求 Mobile 与已配对 Desktop 即使分别接到不同的 Platfor
 
 不改动任何生产接缝，在 HTTP/WSS Consumer 上补一条 REAL 组合验收测试：
 
-`packages/platform/remote-access-http/tests/two-instance-assembled.spec.ts` 启动两个同进程 Loader 组合。每个组合挂载 `WebServer`、`PersonalPairingProvider`、`RemoteRelayProvider`、个人配对 HTTP 与已发布的 Relay WSS Consumer。两个组合共享 `MemoryPersonalPairingAuthorityStore`、内存 `RelayRouteStore`，以及一条测试 Redis 总线上的 `RedisRelayCoordinator`。本地 TLS 监听器终止 TLS 后，把每次 HTTP Upgrade 代理到 `127.0.0.1:${instance.port}`，因此 attach 走 `webServer.registerUpgrade`。Desktop 在实例 A 开启手机访问并确认配对；Mobile 从实例 B 读取封装后的授权。仅凭 route id 与非当前凭据 attach，在 TLS endpoint 和对实例 A 已发布路由的直接 `ws:` attach 上都会返回 `RELAY_ATTACHMENT_REJECTED`。随后 Mobile 与 Desktop 经 TLS endpoint attach，完成一次 AES-GCM Companion 往返，且已发布的协调 frame 解码为 `ciphertext`、其载荷不是含该 prompt 的 Companion JSON；在销毁 Desktop 所在组合后以 Desktop 权威 resynchronization 恢复；并在 window-close、sleep、关闭手机访问与 quit 之后观察到 `REMOTE_OFFLINE`。记录的 `set`/`eval` 值不含密文 frame；Redis mock 对 List 与 Stream API 抛错。
+`examples/two-instance-relay/tests/two-instance-relay.snapshot.ts` 启动两个同进程 Loader 组合。每个组合挂载 `WebServer`、`PersonalPairingProvider`、`RemoteRelayProvider`、个人配对 HTTP 与已发布的 Relay WSS Consumer。两个组合共享 `MemoryPersonalPairingAuthorityStore`、内存 `RelayRouteStore`，以及一条测试 Redis 总线上的 `RedisRelayCoordinator`。本地 TLS 监听器终止 TLS 后，把每次 HTTP Upgrade 代理到 `127.0.0.1:${instance.port}`，因此 attach 走 `webServer.registerUpgrade`。Desktop 在实例 A 开启手机访问并确认配对；Mobile 从实例 B 读取封装后的授权。仅凭 route id 与非当前凭据 attach，在 TLS endpoint 和对实例 A 已发布路由的直接 `ws:` attach 上都会返回 `RELAY_ATTACHMENT_REJECTED`。随后 Mobile 与 Desktop 经 TLS endpoint attach，完成一次 AES-GCM Companion 往返，且已发布的协调 frame 解码为 `ciphertext`、其载荷不是含该 prompt 的 Companion JSON；在销毁 Desktop 所在组合后以 Desktop 权威 resynchronization 恢复；并在 window-close、sleep、关闭手机访问与 quit 之后观察到 `REMOTE_OFFLINE`。记录的 `set`/`eval` 值不含密文 frame；Redis mock 对 List 与 Stream API 抛错。
 
 阿里云 TLS 负载均衡、托管 PostgreSQL/Redis/OSS、公网 DNS、在 `apps/platform` 挂载 Remote Relay、经过评审的产品密码，以及工单 #38 的 blob 传输仍是部署证据。测试适配器只代替这些存储，并不声称生产数据平面。
 
@@ -32,7 +32,7 @@ Issue #32 的可本地运行标准在本基线上有了已执行证据：两个�
 
 ## Testing
 
-`pnpm exec vitest run packages/platform/remote-access-http/tests/two-instance-assembled.spec.ts`——一条组装用例，针对回环 TLS 上两个同进程 Loader 组合，使用内存配对权限与 route-store 适配器以及测试 Redis coordinator。既有无密钥示例快照与包单元套件仍覆盖更低层。
+`pnpm exec vitest run examples/two-instance-relay/tests/two-instance-relay.snapshot.ts`——一条组装用例，针对回环 TLS 上两个同进程 Loader 组合，使用内存配对权限与 route-store 适配器以及测试 Redis coordinator。既有无密钥示例快照与包单元套件仍覆盖更低层。
 
 ## Related
 

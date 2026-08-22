@@ -114,6 +114,7 @@ export class DesktopRelayEndpointLifecycle implements DesktopRelayLifecycle {
 
   /**
    * Send encrypted Companion Protocol bytes through the owned live attachment.
+   * @param pairingSelector - pairing-scoped Desktop authority choosing the physical controller.
    * @param targetAttachmentId - live Mobile attachment.
    * @param ciphertext - bounded encrypted frame.
    */

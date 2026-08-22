@@ -89,7 +89,7 @@ abstract submitEndpointMessage3(input: { mobile: PairingAccountAuthentication co
  * @param input - Desktop ownership and pending identity.
  * @returns confirmed pairing and digest-registered Relay route metadata.
  */
-abstract confirmEndpointPairing(input: { desktop: PairingAccountAuthentication pendingPairingId: PendingPairingId mobileCredentialDigest: Uint8Array }): Promise<EndpointPairingConfirmation>
+abstract confirmEndpointPairing(input: { desktop: PairingAccountAuthentication pendingPairingId: PendingPairingId desktopCredentialDigest: Uint8Array mobileCredentialDigest: Uint8Array }): Promise<EndpointPairingConfirmation>
 
 /** Reject one endpoint-owned pending handshake.
  * @param input - authenticated Desktop ownership and pending identity.
@@ -201,7 +201,7 @@ abstract admitAttachmentBlob(input: { owner: PairingAccountAuthentication bytes:
 abstract releaseAttachmentBlob(input: { owner: PairingAccountAuthentication reservationId: string }): Promise<void>
 ```
 
-Source: [`packages/platform/remote-access/src/index.ts:473`](../../packages/platform/remote-access/src/index.ts)
+Source: [`packages/platform/remote-access/src/index.ts:484`](../../packages/platform/remote-access/src/index.ts)
 
 <a id="ctxremoteattachmentauthority--remoteattachmentauthority"></a>
 
@@ -271,22 +271,14 @@ Source: [`packages/platform/remote-attachments/src/index.ts:59`](../../packages/
 Public Remote Access Relay capability used by the WSS Consumer.
 
 ```ts cordis-catalog
-/**
- * Rotate one route to fresh authority and invalidate older attachments.
- * @param routeId - opaque route receiving new attachment authority.
- * @param endpoint - endpoint whose same-endpoint credentials the rotation replaces; defaults to desktop.
- * @returns the one-time credential grant and its persistent revision.
+/** Activate one endpoint-generated digest and replace same-endpoint authority.
+ * @param routeId - route receiving endpoint-owned authority.
+ * @param endpoint - endpoint kind bound to the digest.
+ * @param credentialDigest - SHA-256 digest of the endpoint-owned public key.
+ * @param pairingSelector - optional non-secret Personal Pairing selector.
+ * @returns new route revision.
  */
-abstract rotateCredential(routeId: RelayRouteId, endpoint?: 'mobile' | 'desktop'): Promise<RelayCredentialGrant>
-
-/**
- * Issue distinct endpoint authority without invalidating other credentials on the active route.
- * @param routeId - active route receiving another independently revocable bearer.
- * @param endpoint - endpoint the new credential authorizes; defaults to mobile.
- * @param pairingSelector - non-secret Mobile pairing selector retained beside the credential digest.
- * @returns a fresh credential at the current route revision.
- */
-abstract issueCredential( routeId: RelayRouteId, endpoint?: 'mobile' | 'desktop', pairingSelector?: RelayPairingSelector, ): Promise<RelayCredentialGrant>
+abstract activateCredentialDigest( routeId: RelayRouteId, endpoint: 'mobile' | 'desktop', credentialDigest: Uint8Array, pairingSelector?: RelayPairingSelector, ): Promise<number>
 
 /**
  * Register endpoint-generated authority without receiving its bearer credential.
@@ -298,18 +290,21 @@ abstract issueCredential( routeId: RelayRouteId, endpoint?: 'mobile' | 'desktop'
  */
 abstract registerCredentialDigest( routeId: RelayRouteId, endpoint: 'mobile' | 'desktop', credentialDigest: Uint8Array, pairingSelector?: RelayPairingSelector, ): Promise<number>
 
+/** Register one pairing's endpoint-owned Desktop and Mobile digests atomically.
+ * @param routeId - route allocated to the authenticated Desktop installation.
+ * @param pairingSelector - non-secret Personal Pairing selector.
+ * @param desktopCredentialDigest - digest of the Desktop-owned signing credential.
+ * @param mobileCredentialDigest - digest of the Mobile-owned signing credential.
+ * @returns active route revision shared by both endpoint authorities.
+ */
+abstract registerPairingCredentialDigests( routeId: RelayRouteId, pairingSelector: RelayPairingSelector, desktopCredentialDigest: Uint8Array, mobileCredentialDigest: Uint8Array, ): Promise<number>
+
 /** Remove endpoint-generated authority by its retained digest.
  * @param routeId - route owning the authority.
  * @param endpoint - endpoint kind bound to the digest.
  * @param credentialDigest - exact retained SHA-256 digest.
  */
 abstract revokeCredentialDigest( routeId: RelayRouteId, endpoint: 'mobile' | 'desktop', credentialDigest: Uint8Array, ): Promise<void>
-
-/**
- * Remove one issued endpoint credential without revoking its route peers.
- * @param grant - exact issued authority whose ownership did not commit.
- */
-abstract revokeCredential(grant: RelayCredentialGrant): Promise<void>
 
 /**
  * Revoke one route and close its attachments across Platform Instances.
@@ -325,5 +320,5 @@ abstract revokeRoute(routeId: RelayRouteId): Promise<void>
 abstract attach(input: { message: RelayAttachMessage deliver: (message: RelayCiphertextMessage | RelayPeerUpdateMessage) => Promise<void> close?: () => void | Promise<void> signal?: AbortSignal announce?: (message: RelayReadyMessage) => Promise<void> }): Promise<RemoteRelayAttachment>
 ```
 
-Source: [`packages/platform/remote-access/src/relay.ts:167`](../../packages/platform/remote-access/src/relay.ts)
+Source: [`packages/platform/remote-access/src/relay.ts:174`](../../packages/platform/remote-access/src/relay.ts)
 <!-- END GENERATED cordis-surface -->
