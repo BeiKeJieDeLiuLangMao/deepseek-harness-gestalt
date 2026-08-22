@@ -141,6 +141,14 @@ function requestJson(url: URL, body: unknown, timeoutMs: number, responseMaxByte
         'content-length': String(Buffer.byteLength(encoded)),
       },
     }, (incoming) => {
+      incoming.on('error', () => { settle({ kind: 'transport' }) })
+      const status = incoming.statusCode ?? 500
+      if (status < 200 || status >= 300) {
+        settle({ kind: 'response', status, text: '' })
+        incoming.destroy()
+        upstream.destroy()
+        return
+      }
       const chunks: Buffer[] = []
       let receivedBytes = 0
       incoming.on('data', (chunk) => {
@@ -159,11 +167,10 @@ function requestJson(url: URL, body: unknown, timeoutMs: number, responseMaxByte
         if (settled) return
         settle({
           kind: 'response',
-          status: incoming.statusCode ?? 500,
+          status,
           text: Buffer.concat(chunks).toString('utf8'),
         })
       })
-      incoming.on('error', () => { settle({ kind: 'transport' }) })
     })
     const deadline = setTimeout(() => {
       settle({ kind: 'timeout' })

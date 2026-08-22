@@ -146,6 +146,52 @@ describe('Desktop Host RPC', () => {
     await expect(overflow.call('session.search', { query: 'overflow' })).resolves.toEqual(limitFailure)
     await expect(flood.call('session.search', { query: 'fast-flood' })).resolves.toEqual(limitFailure)
   })
+
+  it('preserves non-2xx status before an oversized or never-ending response body', async () => {
+    const closedResponses = new Set<string>()
+    const server = createServer((request, response) => {
+      const chunks: Buffer[] = []
+      request.on('data', chunk => chunks.push(chunk as Buffer))
+      request.on('end', () => {
+        const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as {
+          payload: { query: string }
+        }
+        const query = body.payload.query
+        response.on('close', () => { closedResponses.add(query) })
+        response.on('error', () => {})
+        response.writeHead(400)
+        response.flushHeaders()
+        if (query === 'oversized') {
+          response.end(Buffer.alloc(2_048, 120))
+          return
+        }
+        response.write('partial')
+      })
+    })
+    await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
+    closeServers.push(async () => {
+      server.closeAllConnections()
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => { if (error === undefined) resolve(); else reject(error) })
+      })
+    })
+    const address = server.address()
+    if (address === null || typeof address === 'string') throw new Error('expected TCP address')
+    const rpc = createDesktopHostRpc(`http://127.0.0.1:${String(address.port)}`, {
+      timeoutMs: 50,
+      responseMaxBytes: 1_024,
+    })
+    const httpFailure = {
+      ok: false,
+      failure: { kind: 'http', code: 'HOST_HTTP_STATUS', message: 'Desktop Host returned HTTP 400', status: 400 },
+    } as const
+
+    await expect(Promise.all([
+      rpc.call('session.search', { query: 'oversized' }),
+      rpc.call('session.search', { query: 'never-ending' }),
+    ])).resolves.toEqual([httpFailure, httpFailure])
+    await expect.poll(() => closedResponses.size).toBe(2)
+  })
 })
 
 function successResponse(rpcId: string, padding: string): string {
