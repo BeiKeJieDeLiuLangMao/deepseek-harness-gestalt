@@ -281,7 +281,7 @@ export async function apply(_ctx: Context, config: Config): Promise<void> {
 
     await mobile.start()
     await waitForDirectory(backendA.coordinator, routeId, mobileAttachmentId)
-    desktopLifecycle.configure(desktopGrant)
+    await desktopLifecycle.configure(desktopGrant)
     await desktopLifecycle.start()
     await waitForDirectory(backendA.coordinator, routeId, desktopAttachmentId)
     await synchronized.promise

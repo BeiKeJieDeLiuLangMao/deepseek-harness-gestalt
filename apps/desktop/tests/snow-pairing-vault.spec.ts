@@ -2,10 +2,10 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { parsePairingChallengeId, parsePendingPairingId, parsePersonalPairingId } from '@deepseek-ai/dsh-remote-access'
 import { initializeSnowChannel, SnowMobileHandshakeClient } from '@deepseek-ai/dsh-noise-channel'
-import { parseRelayRouteId } from '@deepseek-ai/dsh-remote-protocol'
+import { parseRelayCredential, parseRelayPairingSelector, parseRelayRouteId } from '@deepseek-ai/dsh-remote-protocol'
 import {
   DesktopSnowPairingVault,
   EncryptedDesktopSnowPairingStore,
@@ -15,6 +15,32 @@ const directories: string[] = []
 afterEach(async () => { await Promise.all(directories.splice(0).map(path => rm(path, { recursive: true }))) })
 
 describe('DesktopSnowPairingVault', () => {
+  it('rejects a seventeenth retained pairing before any external publication can begin', async () => {
+    initializeSnowChannel(readFileSync(new URL(
+      '../../../packages/platform/noise-channel/pkg/dsh_noise_channel_bg.wasm', import.meta.url,
+    )))
+    const save = vi.fn(async () => {})
+    const active = Array.from({ length: 16 }, (_, index) => ({
+      pairingId: parsePersonalPairingId(`pairing-${String(index)}`),
+      reconnectState: new Uint8Array(96).fill(index + 1),
+      desktopGrant: {
+        routeId: parseRelayRouteId(`route-${String(index)}`), endpoint: 'desktop' as const,
+        credential: parseRelayCredential('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'),
+        revision: 1, pairingSelector: parseRelayPairingSelector(`pairing-${String(index)}`),
+      },
+    }))
+    const vault = await DesktopSnowPairingVault.load({
+      load: async () => ({ active, challenges: [], pending: [], confirmations: [] }), save,
+    })
+
+    await expect(vault.createInvitation(Date.now() + 60_000)).rejects.toThrow('limit reached')
+    expect(save).not.toHaveBeenCalled()
+    await expect(DesktopSnowPairingVault.load({
+      load: async () => ({ active: [...active, active[0]], challenges: [], pending: [], confirmations: [] }),
+      save,
+    })).rejects.toThrow('retained state limit')
+  })
+
   it('recovers every Desktop-owned handshake and confirmation commit point from protected state', async () => {
     initializeSnowChannel(readFileSync(new URL(
       '../../../packages/platform/noise-channel/pkg/dsh_noise_channel_bg.wasm', import.meta.url,

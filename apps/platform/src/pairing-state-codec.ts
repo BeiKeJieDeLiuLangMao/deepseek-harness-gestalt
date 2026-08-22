@@ -16,6 +16,7 @@ import {
   type CompletionReplayRecord,
   type EndpointOwnedPairingMailboxState,
   type EndpointPairingPublication,
+  type EndpointPairingRevocation,
   type OrphanPendingCleanupRecord,
   type PendingOutcome,
   type PendingPairingRecord,
@@ -25,10 +26,7 @@ import {
   type SettledPendingRecord,
   type StoredPersonalPairing,
 } from '@deepseek-ai/dsh-remote-access'
-import type { RelayCredentialGrant } from '@deepseek-ai/dsh-remote-access'
 import {
-  parseRelayCredential,
-  parseRelayPairingSelector,
   parseRelayRouteId,
 } from '@deepseek-ai/dsh-remote-protocol'
 
@@ -44,6 +42,7 @@ export function emptyPairingTransactionState(): PersonalPairingTransactionState 
   return {
     endpointMailbox: { challenges: [], pending: [] },
     endpointPublications: new Map(),
+    endpointPublicationRevocations: new Map(),
     endpointAccessGenerations: new Map(),
     challenges: new Map(),
     settledChallenges: new Map(),
@@ -70,6 +69,8 @@ export function encodePairingTransactionState(state: PersonalPairingTransactionS
   return {
     endpointMailbox: encodeEndpointMailbox(state.endpointMailbox),
     endpointPublications: [...state.endpointPublications].map(([id, publication]) => [id, encodeEndpointPublication(publication)]),
+    endpointPublicationRevocations: [...state.endpointPublicationRevocations]
+      .map(([id, revocation]) => [id, encodeEndpointRevocation(revocation)]),
     endpointAccessGenerations: [...state.endpointAccessGenerations],
     challenges: [...state.challenges].map(([id, record]) => [id, encodeChallenge(record)]),
     settledChallenges: [...state.settledChallenges].map(([id, record]) => [id, encodeSettledChallenge(record)]),
@@ -104,6 +105,10 @@ export function decodePairingTransactionState(value: unknown): PersonalPairingTr
     endpointMailbox: decodeEndpointMailbox(record.endpointMailbox),
     endpointPublications: decodeMap(
       record.endpointPublications, 'endpointPublications', parsePendingPairingId, decodeEndpointPublication,
+    ),
+    endpointPublicationRevocations: decodeMap(
+      record.endpointPublicationRevocations, 'endpointPublicationRevocations',
+      parsePendingPairingId, decodeEndpointRevocation,
     ),
     endpointAccessGenerations: decodeEndpointAccessGenerations(record.endpointAccessGenerations),
     challenges: decodeMap(record.challenges, 'challenges', parsePairingChallengeId, decodeChallenge),
@@ -154,6 +159,52 @@ function decodeEndpointPublication(value: unknown): EndpointPairingPublication {
     credentialDigest: decodeFixedBytes(record.credentialDigest, 'endpoint publication credential digest', 32),
     pairing: decodeStoredPairing(record.pairing),
     accessGeneration: positiveSafeInteger(record.accessGeneration, 'endpoint publication access generation'),
+  }
+}
+
+function encodeEndpointRevocation(revocation: EndpointPairingRevocation): unknown {
+  return {
+    accountId: revocation.accountId,
+    desktopInstallationId: revocation.desktopInstallationId,
+    mobileInstallationId: revocation.mobileInstallationId,
+    pendingPairingId: revocation.pendingPairingId,
+    pairingId: revocation.pairingId,
+    routeId: revocation.routeId,
+    desktopCredentialDigest: encodeBytes(revocation.desktopCredentialDigest),
+    credentialDigest: encodeBytes(revocation.credentialDigest),
+    desktopRevoked: revocation.desktopRevoked,
+    mobileRevoked: revocation.mobileRevoked,
+    authorityRevoked: revocation.authorityRevoked,
+  }
+}
+
+function decodeEndpointRevocation(value: unknown): EndpointPairingRevocation {
+  const record = asRecord(value, 'endpoint publication revocation')
+  rejectUnsupportedKeys(record, [
+    'accountId', 'desktopInstallationId', 'mobileInstallationId', 'pendingPairingId',
+    'pairingId', 'routeId', 'desktopCredentialDigest', 'credentialDigest',
+    'desktopRevoked', 'mobileRevoked', 'authorityRevoked',
+  ], 'endpoint publication revocation')
+  if (typeof record.desktopRevoked !== 'boolean' || typeof record.mobileRevoked !== 'boolean'
+    || typeof record.authorityRevoked !== 'boolean') {
+    throw new TypeError('endpoint publication revocation completion flags are invalid')
+  }
+  return {
+    accountId: parsePlatformAccountId(record.accountId),
+    desktopInstallationId: parseInstallationId(record.desktopInstallationId),
+    mobileInstallationId: parseInstallationId(record.mobileInstallationId),
+    pendingPairingId: parsePendingPairingId(record.pendingPairingId),
+    pairingId: parsePersonalPairingId(record.pairingId),
+    routeId: parseRelayRouteId(record.routeId),
+    desktopCredentialDigest: decodeFixedBytes(
+      record.desktopCredentialDigest, 'endpoint publication revocation Desktop credential digest', 32,
+    ),
+    credentialDigest: decodeFixedBytes(
+      record.credentialDigest, 'endpoint publication revocation credential digest', 32,
+    ),
+    desktopRevoked: record.desktopRevoked,
+    mobileRevoked: record.mobileRevoked,
+    authorityRevoked: record.authorityRevoked,
   }
 }
 
@@ -386,7 +437,6 @@ function encodeStoredPairing(record: StoredPersonalPairing): unknown {
     desktopInstallationId: record.desktopInstallationId,
     ...(record.keyReference === undefined ? {} : { keyReference: record.keyReference }),
     ...(record.cleanup === undefined ? {} : { cleanup: encodeCleanup(record.cleanup) }),
-    ...(record.mobileGrant === undefined ? {} : { mobileGrant: encodeGrant(record.mobileGrant) }),
     ...(record.endpointPendingPairingId === undefined ? {} : { endpointPendingPairingId: record.endpointPendingPairingId }),
     ...(record.endpointRouteId === undefined ? {} : { endpointRouteId: record.endpointRouteId }),
     ...(record.endpointCredentialDigest === undefined ? {} : { endpointCredentialDigest: encodeBytes(record.endpointCredentialDigest) }),
@@ -399,12 +449,17 @@ function encodeStoredPairing(record: StoredPersonalPairing): unknown {
 
 function decodeStoredPairing(value: unknown): StoredPersonalPairing {
   const record = asRecord(value, 'stored pairing')
+  rejectUnsupportedKeys(record, [
+    'id', 'devicePrincipal', 'device', 'pairedAt', 'lastAccessAt', 'online',
+    'desktopInstallationId', 'keyReference', 'cleanup', 'endpointPendingPairingId',
+    'endpointRouteId', 'endpointCredentialDigest', 'endpointDesktopCredentialDigest',
+    'endpointRelayRevision',
+  ], 'stored pairing')
   return {
     ...decodePairingView(record),
     desktopInstallationId: parseInstallationId(record.desktopInstallationId),
     ...(record.keyReference === undefined ? {} : { keyReference: parsePersonalPairingKeyReference(record.keyReference) }),
     ...(record.cleanup === undefined ? {} : { cleanup: decodeCleanup(record.cleanup) }),
-    ...(record.mobileGrant === undefined ? {} : { mobileGrant: decodeGrant(record.mobileGrant) }),
     ...(record.endpointPendingPairingId === undefined
       ? {}
       : { endpointPendingPairingId: parsePendingPairingId(record.endpointPendingPairingId) }),
@@ -537,32 +592,6 @@ function decodeDevice(value: unknown): CompletionReplayRecord['view']['device'] 
   return {
     name: asPlainString(record.name, 'pairing device name'),
     platform: record.platform,
-  }
-}
-
-function encodeGrant(grant: RelayCredentialGrant): unknown {
-  return {
-    routeId: grant.routeId,
-    endpoint: grant.endpoint,
-    credential: grant.credential,
-    revision: grant.revision,
-    ...(grant.pairingSelector === undefined ? {} : { pairingSelector: grant.pairingSelector }),
-  }
-}
-
-function decodeGrant(value: unknown): RelayCredentialGrant {
-  const record = asRecord(value, 'relay grant')
-  if (record.endpoint !== 'mobile' && record.endpoint !== 'desktop') {
-    throw new TypeError('relay grant endpoint is invalid')
-  }
-  return {
-    routeId: parseRelayRouteId(record.routeId),
-    endpoint: record.endpoint,
-    credential: parseRelayCredential(record.credential),
-    revision: asSafeInteger(record.revision, 'relay grant revision'),
-    ...(record.pairingSelector === undefined
-      ? {}
-      : { pairingSelector: parseRelayPairingSelector(record.pairingSelector) }),
   }
 }
 

@@ -356,6 +356,7 @@ export interface PersonalPairingAuthorityStore {
 export interface PersonalPairingTransactionState {
   endpointMailbox: EndpointOwnedPairingMailboxState
   endpointPublications: Map<PendingPairingId, EndpointPairingPublication>
+  endpointPublicationRevocations: Map<PendingPairingId, EndpointPairingRevocation>
   endpointAccessGenerations: Map<string, EndpointAccessGeneration>
   challenges: Map<PairingChallengeId, ChallengeRecord>
   settledChallenges: Map<PairingChallengeId, SettledChallengeRecord>
@@ -383,6 +384,21 @@ export interface EndpointPairingPublication {
   credentialDigest: Uint8Array
   pairing: StoredPersonalPairing
   accessGeneration: number
+}
+
+/** Durable compensating work for a publication that may have reached external authority stores. */
+export interface EndpointPairingRevocation {
+  accountId: Branded<'PlatformAccountId'>
+  desktopInstallationId: InstallationId
+  mobileInstallationId: InstallationId
+  pendingPairingId: PendingPairingId
+  pairingId: PersonalPairingId
+  routeId: RelayRouteId
+  desktopCredentialDigest: Uint8Array
+  credentialDigest: Uint8Array
+  desktopRevoked: boolean
+  mobileRevoked: boolean
+  authorityRevoked: boolean
 }
 
 /** Durable route phase used to cancel stale endpoint authority publication. */
@@ -803,7 +819,6 @@ export type StoredPersonalPairing = PersonalPairingView & {
   desktopInstallationId: InstallationId
   keyReference?: PersonalPairingKeyReference
   cleanup?: CleanupRecord<ActivePairingKey>
-  mobileGrant?: RelayCredentialGrant
   endpointPendingPairingId?: PendingPairingId
   endpointRouteId?: RelayRouteId
   endpointDesktopCredentialDigest?: Uint8Array
@@ -1114,6 +1129,9 @@ export class PersonalPairingProvider extends RemoteAccessService {
       if (input.mobileCredentialDigest.byteLength !== 32 || input.desktopCredentialDigest.byteLength !== 32) {
         throw new TypeError('Endpoint Relay credential digests must contain 32 bytes')
       }
+      if (bytesEqual(input.mobileCredentialDigest, input.desktopCredentialDigest)) {
+        throw new TypeError('Endpoint Relay credential digests must be distinct')
+      }
       const existing = [...this.pairings.values()].find(
         pairing => pairing.endpointPendingPairingId === input.pendingPairingId,
       )
@@ -1259,21 +1277,9 @@ export class PersonalPairingProvider extends RemoteAccessService {
         return { pairing: clonePairing(pairing), routeId: retained.routeId, relayRevision }
       })
     } catch (error) {
-      const cleanup = await Promise.allSettled([
-        ...(authorityPublished ? [this.authority.revokeMobilePairing(publication.pairing.id)] : []),
-        ...(registered ? [
-          this.options.relay?.revokeCredentialDigest?.(
-            publication.routeId, 'desktop', publication.desktopCredentialDigest,
-          ) ?? Promise.resolve(),
-          this.options.relay?.revokeCredentialDigest?.(
-            publication.routeId, 'mobile', publication.credentialDigest,
-          ) ?? Promise.resolve(),
-        ] : []),
-      ])
-      const cleanupErrors = cleanup.filter(result => result.status === 'rejected')
-        .map(result => result.reason as unknown)
-      if (cleanupErrors.length > 0) {
-        throw new AggregateError([error, ...cleanupErrors], 'Endpoint Pairing publication rollback failed')
+      if (registered || authorityPublished) await this.retainEndpointPublicationRevocation(publication)
+      try { await this.reconcileEndpointPublicationRevocations() } catch (cleanupError) {
+        throw new AggregateError([error, cleanupError], 'Endpoint Pairing publication rollback failed')
       }
       throw error
     }
@@ -1312,7 +1318,8 @@ export class PersonalPairingProvider extends RemoteAccessService {
         desktopInstallationId: installation.id,
         now: this.clock.now(),
       })
-      this.requireTransactions().endpointPublications.delete(input.pendingPairingId)
+      const publication = this.requireTransactions().endpointPublications.get(input.pendingPairingId)
+      if (publication !== undefined) this.stageEndpointPublicationRevocation(this.requireTransactions(), publication)
       this.commitEndpointMailbox(mailbox)
     })
   }
@@ -1348,9 +1355,9 @@ export class PersonalPairingProvider extends RemoteAccessService {
       this.requireTransactions().endpointAccessGenerations.set(accessKeyValue, {
         generation: (retainedAccess?.generation ?? 0) + 1, phase: 'disabled',
       })
-      for (const [pendingPairingId, publication] of this.requireTransactions().endpointPublications) {
+      for (const publication of this.requireTransactions().endpointPublications.values()) {
         if (publication.accountId === account.id && publication.desktopInstallationId === installation.id) {
-          this.requireTransactions().endpointPublications.delete(pendingPairingId)
+          this.stageEndpointPublicationRevocation(this.requireTransactions(), publication)
         }
       }
       if (this.options.relay !== undefined) {
@@ -2122,11 +2129,9 @@ export class PersonalPairingProvider extends RemoteAccessService {
     endpointMailbox.evict(this.clock.now(), PAIRING_REPLAY_RETENTION_MS)
     this.commitEndpointMailbox(endpointMailbox)
     const retainedEndpointIds = new Set(this.requireTransactions().endpointMailbox.pending.map(record => record.pendingPairingId))
-    for (const [pendingPairingId, publication] of this.requireTransactions().endpointPublications) {
-      if (retainedEndpointIds.has(pendingPairingId)) continue
-      publication.desktopCredentialDigest.fill(0)
-      publication.credentialDigest.fill(0)
-      this.requireTransactions().endpointPublications.delete(pendingPairingId)
+    for (const publication of this.requireTransactions().endpointPublications.values()) {
+      if (retainedEndpointIds.has(publication.pendingPairingId)) continue
+      this.stageEndpointPublicationRevocation(this.requireTransactions(), publication)
     }
     const cutoff = this.clock.now() - PAIRING_REPLAY_RETENTION_MS
     for (const [id, record] of this.settledChallenges) {
@@ -2160,7 +2165,12 @@ export class PersonalPairingProvider extends RemoteAccessService {
       record.accountId === accountId && (kind === 'desktop'
         ? record.desktopInstallationId === installationId
         : record.mobileInstallationId === installationId)).length
-    if (pending + challenges + publications + additionalRecords > MAX_RETAINED_PAIRING_RECORDS_PER_INSTALLATION) {
+    const revocations = [...this.requireTransactions().endpointPublicationRevocations.values()].filter(record =>
+      record.accountId === accountId && (kind === 'desktop'
+        ? record.desktopInstallationId === installationId
+        : record.mobileInstallationId === installationId)).length
+    if (pending + challenges + publications + revocations + additionalRecords
+      > MAX_RETAINED_PAIRING_RECORDS_PER_INSTALLATION) {
       throw new RemoteAccessError('PAIRING_RESOURCE_LIMIT', `This ${kind} Installation has reached its retained endpoint pairing record limit`)
     }
   }
@@ -2216,17 +2226,104 @@ export class PersonalPairingProvider extends RemoteAccessService {
   }
 
   private exclusive<T>(operation: () => T | Promise<T>): Promise<T> {
-    const owned = async (): Promise<T> => await this.authority.runPairingTransaction(async (state) => {
-      this.transactionState = state
+    const owned = async (): Promise<T> => {
+      await this.reconcileEndpointPublicationRevocations()
       try {
-        return await operation()
+        return await this.authority.runPairingTransaction(async (state) => {
+          this.transactionState = state
+          try {
+            return await operation()
+          } finally {
+            this.transactionState = undefined
+          }
+        })
       } finally {
-        this.transactionState = undefined
+        await this.reconcileEndpointPublicationRevocations()
       }
-    })
+    }
     const result = this.serial.then(owned, owned)
     this.serial = result.then(() => undefined, () => undefined)
     return result
+  }
+
+  private stageEndpointPublicationRevocation(
+    state: PersonalPairingTransactionState,
+    publication: EndpointPairingPublication,
+  ): void {
+    if (!state.endpointPublicationRevocations.has(publication.pendingPairingId)) {
+      state.endpointPublicationRevocations.set(publication.pendingPairingId, {
+        accountId: publication.accountId,
+        desktopInstallationId: publication.desktopInstallationId,
+        mobileInstallationId: publication.mobileInstallationId,
+        pendingPairingId: publication.pendingPairingId,
+        pairingId: publication.pairing.id,
+        routeId: publication.routeId,
+        desktopCredentialDigest: publication.desktopCredentialDigest.slice(),
+        credentialDigest: publication.credentialDigest.slice(),
+        desktopRevoked: false,
+        mobileRevoked: false,
+        authorityRevoked: false,
+      })
+    }
+    state.endpointPublications.delete(publication.pendingPairingId)
+    publication.desktopCredentialDigest.fill(0)
+    publication.credentialDigest.fill(0)
+  }
+
+  private async retainEndpointPublicationRevocation(publication: EndpointPairingPublication): Promise<void> {
+    await this.authority.runPairingTransaction((state) => {
+      const retained = state.endpointPublications.get(publication.pendingPairingId) ?? publication
+      this.stageEndpointPublicationRevocation(state, retained)
+      return Promise.resolve()
+    })
+  }
+
+  private async reconcileEndpointPublicationRevocations(): Promise<void> {
+    while (true) {
+      const revocation = await this.authority.runPairingTransaction((state) => {
+        const next = state.endpointPublicationRevocations.values().next()
+        return Promise.resolve(next.done ? undefined : cloneEndpointRevocation(next.value))
+      })
+      if (revocation === undefined) return
+      if (!revocation.desktopRevoked) {
+        await (this.options.relay?.revokeCredentialDigest?.(
+          revocation.routeId, 'desktop', revocation.desktopCredentialDigest,
+        ) ?? Promise.resolve())
+        await this.completeEndpointRevocationStep(revocation.pendingPairingId, 'desktopRevoked')
+        continue
+      }
+      if (!revocation.mobileRevoked) {
+        await (this.options.relay?.revokeCredentialDigest?.(
+          revocation.routeId, 'mobile', revocation.credentialDigest,
+        ) ?? Promise.resolve())
+        await this.completeEndpointRevocationStep(revocation.pendingPairingId, 'mobileRevoked')
+        continue
+      }
+      if (!revocation.authorityRevoked) {
+        await this.authority.revokeMobilePairing(revocation.pairingId)
+        await this.completeEndpointRevocationStep(revocation.pendingPairingId, 'authorityRevoked')
+        continue
+      }
+      await this.authority.runPairingTransaction((state) => {
+        const retained = state.endpointPublicationRevocations.get(revocation.pendingPairingId)
+        if (retained !== undefined && sameEndpointRevocation(retained, revocation)) {
+          wipeEndpointRevocation(retained)
+          state.endpointPublicationRevocations.delete(revocation.pendingPairingId)
+        }
+        return Promise.resolve()
+      })
+    }
+  }
+
+  private async completeEndpointRevocationStep(
+    pendingPairingId: PendingPairingId,
+    step: 'desktopRevoked' | 'mobileRevoked' | 'authorityRevoked',
+  ): Promise<void> {
+    await this.authority.runPairingTransaction((state) => {
+      const retained = state.endpointPublicationRevocations.get(pendingPairingId)
+      if (retained !== undefined) retained[step] = true
+      return Promise.resolve()
+    })
   }
 
   private requireEndpointAccessGeneration(
@@ -2315,6 +2412,7 @@ function createPairingTransactionState(): PersonalPairingTransactionState {
   return {
     endpointMailbox: { challenges: [], pending: [] },
     endpointPublications: new Map(),
+    endpointPublicationRevocations: new Map(),
     endpointAccessGenerations: new Map(),
     challenges: new Map(),
     settledChallenges: new Map(),
@@ -2330,6 +2428,30 @@ function createPairingTransactionState(): PersonalPairingTransactionState {
     blobUploads: new Map(),
     blobSequence: { next: 0 },
   }
+}
+
+function cloneEndpointRevocation(revocation: EndpointPairingRevocation): EndpointPairingRevocation {
+  return {
+    ...revocation,
+    desktopCredentialDigest: revocation.desktopCredentialDigest.slice(),
+    credentialDigest: revocation.credentialDigest.slice(),
+  }
+}
+
+function sameEndpointRevocation(left: EndpointPairingRevocation, right: EndpointPairingRevocation): boolean {
+  return left.pendingPairingId === right.pendingPairingId
+    && left.pairingId === right.pairingId
+    && left.routeId === right.routeId
+    && left.desktopRevoked === right.desktopRevoked
+    && left.mobileRevoked === right.mobileRevoked
+    && left.authorityRevoked === right.authorityRevoked
+    && bytesEqual(left.desktopCredentialDigest, right.desktopCredentialDigest)
+    && bytesEqual(left.credentialDigest, right.credentialDigest)
+}
+
+function wipeEndpointRevocation(revocation: EndpointPairingRevocation): void {
+  revocation.desktopCredentialDigest.fill(0)
+  revocation.credentialDigest.fill(0)
 }
 
 function cloneEndpointPublication(publication: EndpointPairingPublication): EndpointPairingPublication {

@@ -8,7 +8,7 @@ import {
   parsePersonalPairingId,
   parsePersonalPairingKeyReference,
 } from '@deepseek-ai/dsh-remote-access'
-import { parseRelayCredential, parseRelayRouteId } from '@deepseek-ai/dsh-remote-protocol'
+import { parseRelayRouteId } from '@deepseek-ai/dsh-remote-protocol'
 import { describe, expect, it } from 'vitest'
 import {
   decodePairingTransactionState,
@@ -26,6 +26,29 @@ describe('pairing transaction codec', () => {
       ...encodePairingTransactionState(empty) as object,
       settledChallenges: [['id', { outcome: 'unknown' }]],
     })).toThrow(/outcome/)
+  })
+
+  it('persists publication compensation progress without retaining plaintext authority', () => {
+    const state = emptyPairingTransactionState()
+    const pendingPairingId = parsePendingPairingId('pending-revocation')
+    state.endpointPublicationRevocations.set(pendingPairingId, {
+      accountId: parsePlatformAccountId('account-one'),
+      desktopInstallationId: parseInstallationId('desktop-one'),
+      mobileInstallationId: parseInstallationId('mobile-one'),
+      pendingPairingId,
+      pairingId: parsePersonalPairingId('pairing-one'),
+      routeId: parseRelayRouteId('route-one'),
+      desktopCredentialDigest: new Uint8Array(32).fill(1),
+      credentialDigest: new Uint8Array(32).fill(2),
+      desktopRevoked: true,
+      mobileRevoked: false,
+      authorityRevoked: false,
+    })
+
+    const encoded = encodePairingTransactionState(state)
+    expect(JSON.stringify(encoded)).not.toContain('relayCredential')
+    expect(decodePairingTransactionState(encoded).endpointPublicationRevocations.get(pendingPairingId))
+      .toMatchObject({ desktopRevoked: true, mobileRevoked: false, authorityRevoked: false })
   })
 
   it('preserves bytes, orphan cleanup identity, and quota windows', () => {
@@ -116,7 +139,7 @@ describe('pairing transaction codec', () => {
     expect(() => decodePairingTransactionState(leaked)).toThrow('unsupported fields')
   })
 
-  it('round-trips a confirmed pairing and Relay grant', () => {
+  it('round-trips a confirmed pairing and rejects the removed Platform bearer grant field', () => {
     const state = emptyPairingTransactionState()
     state.pairings.set(parsePersonalPairingId('pairing-one'), {
       id: parsePersonalPairingId('pairing-one'),
@@ -133,12 +156,6 @@ describe('pairing transaction codec', () => {
       desktopInstallationId: parseInstallationId('desktop-one'),
       keyReference: parsePersonalPairingKeyReference('key-one'),
       cleanup: { resource: Uint8Array.of(1) },
-      mobileGrant: {
-        routeId: parseRelayRouteId('route-one'),
-        endpoint: 'mobile',
-        credential: parseRelayCredential('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'),
-        revision: 2,
-      },
     })
     state.completions.set(parsePairingCompletionId('completion-one'), {
       accountId: 'account-one',
@@ -162,8 +179,16 @@ describe('pairing transaction codec', () => {
       awaitingFinish: true,
       finishDigest: new Uint8Array(32).fill(8),
     })
-    const decoded = decodePairingTransactionState(encodePairingTransactionState(state))
-    expect(decoded.pairings.get(parsePersonalPairingId('pairing-one'))?.mobileGrant?.revision).toBe(2)
+    const encoded = encodePairingTransactionState(state)
+    const decoded = decodePairingTransactionState(encoded)
+    const legacy = structuredClone(encoded)
+    if (typeof legacy !== 'object' || legacy === null || Array.isArray(legacy)) {
+      throw new Error('encoded pairing state fixture is invalid')
+    }
+    const pairings = (legacy as Record<string, unknown>).pairings
+    if (!Array.isArray(pairings) || !Array.isArray(pairings[0])) throw new Error('encoded pairing fixture is invalid')
+    Reflect.set(pairings[0][1] as object, 'mobileGrant', { credential: 'legacy-bearer' })
+    expect(() => decodePairingTransactionState(legacy)).toThrow('unsupported fields')
     expect(decoded.completions.get(parsePairingCompletionId('completion-one'))?.view.device.platform).toBe('android')
     expect(decoded.pending.get(parsePendingPairingId('pending-one'))).toMatchObject({
       awaitingFinish: true,

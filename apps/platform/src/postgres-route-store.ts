@@ -24,6 +24,8 @@ CREATE TABLE IF NOT EXISTS remote_access_route_authorities (
   pairing_selector text,
   PRIMARY KEY (database_identity, route_id, endpoint, digest)
 );
+CREATE UNIQUE INDEX IF NOT EXISTS remote_access_route_authority_digest_owner
+  ON remote_access_route_authorities (database_identity, route_id, digest);
 `
 
 interface RouteRow {
@@ -86,6 +88,9 @@ export class PostgresRelayRouteStore implements RelayRouteStore {
     desktopCredentialDigest: Uint8Array,
     mobileCredentialDigest: Uint8Array,
   ): Promise<number> {
+    if (equalBytes(desktopCredentialDigest, mobileCredentialDigest)) {
+      throw new TypeError('Relay credential digests must be distinct')
+    }
     return await this.transact(async (client) => {
       const current = await this.loadRoute(client, routeId)
       const revision = current === undefined || current.revoked ? (current?.revision ?? 0) + 1 : current.revision
@@ -210,14 +215,28 @@ export class PostgresRelayRouteStore implements RelayRouteStore {
     credentialDigest: Uint8Array,
     pairingSelector?: RelayPairingSelector,
   ): Promise<void> {
+    const existing = await client.query(
+      `SELECT endpoint, pairing_selector
+         FROM remote_access_route_authorities
+        WHERE database_identity = $1 AND route_id = $2 AND digest = $3`,
+      [this.databaseIdentity, routeId, Buffer.from(credentialDigest)],
+    )
+    const owner = existing.rows[0]
+    if (owner !== undefined) {
+      if (owner.endpoint === endpoint && owner.pairing_selector === (pairingSelector ?? null)) return
+      throw new Error('Relay credential digest already belongs to another Personal Pairing')
+    }
     await client.query(
       `INSERT INTO remote_access_route_authorities
          (database_identity, route_id, endpoint, digest, pairing_selector)
-       VALUES ($1,$2,$3,$4,$5)
-       ON CONFLICT (database_identity, route_id, endpoint, digest) DO NOTHING`,
+       VALUES ($1,$2,$3,$4,$5)`,
       [this.databaseIdentity, routeId, endpoint, Buffer.from(credentialDigest), pairingSelector ?? null],
     )
   }
+}
+
+function equalBytes(left: Uint8Array, right: Uint8Array): boolean {
+  return left.byteLength === right.byteLength && left.every((byte, index) => byte === right[index])
 }
 
 function asRouteRow(value: Record<string, unknown> | undefined): RouteRow | undefined {

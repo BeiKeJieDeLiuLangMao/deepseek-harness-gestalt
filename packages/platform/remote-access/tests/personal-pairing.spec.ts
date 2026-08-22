@@ -33,10 +33,12 @@ describe('PersonalPairingProvider', () => {
   it('cancels an in-flight endpoint publication when its route generation is disabled', async () => {
     const routeId = parseRelayRouteId('relay-route-generation')
     const relay = relayStub(routeId, 1)
+    relay.revokeCredentialDigest.mockRejectedValueOnce(new Error('compensating revoke interrupted'))
     const registration = deferred<number>()
     relay.registerPairingCredentialDigests.mockImplementationOnce(async () => await registration.promise)
+    const authority = new MemoryPersonalPairingAuthorityStore()
     const provider = configuredProvider({
-      handshake: handshakeProvider(), relay, authority: new MemoryPersonalPairingAuthorityStore(),
+      handshake: handshakeProvider(), relay, authority,
       clock: { now: () => NOW }, randomId: kind => kind === 'relay-route' ? routeId : `${kind}-generation`,
     })
     const desktop = authentication('desktop-installation')
@@ -55,16 +57,36 @@ describe('PersonalPairingProvider', () => {
       desktop, pendingPairingId: pending.pendingPairingId, message2: Uint8Array.of(2),
     })
     await provider.submitEndpointMessage3({ mobile, completionId, message3: Uint8Array.of(3) })
+    await expect(provider.confirmEndpointPairing({
+      desktop, pendingPairingId: pending.pendingPairingId,
+      desktopCredentialDigest: new Uint8Array(32).fill(4),
+      mobileCredentialDigest: new Uint8Array(32).fill(4),
+    })).rejects.toThrow('must be distinct')
+    expect(relay.registerPairingCredentialDigests).not.toHaveBeenCalled()
     const confirming = provider.confirmEndpointPairing({
       desktop, pendingPairingId: pending.pendingPairingId,
       desktopCredentialDigest: new Uint8Array(32).fill(4),
       mobileCredentialDigest: new Uint8Array(32).fill(5),
     })
     await vi.waitFor(() => { expect(relay.registerPairingCredentialDigests).toHaveBeenCalledOnce() })
-    await provider.setMobileAccess({ desktop, enabled: false })
+    await expect(provider.setMobileAccess({ desktop, enabled: false }))
+      .rejects.toThrow('compensating revoke interrupted')
+    await authority.runPairingTransaction((state) => {
+      expect(state.endpointPublicationRevocations.size).toBe(1)
+      return Promise.resolve()
+    })
+    const recovered = configuredProvider({
+      handshake: handshakeProvider(), relay, authority,
+      clock: { now: () => NOW }, randomId: kind => `${kind}-recovered-generation`,
+    })
+    expect(await recovered.listPersonalPairings(desktop)).toEqual([])
+    await authority.runPairingTransaction((state) => {
+      expect(state.endpointPublicationRevocations.size).toBe(0)
+      return Promise.resolve()
+    })
     registration.resolve(1)
     await expect(confirming).rejects.toMatchObject({ code: 'PAIRING_PENDING_INVALID' })
-    expect(relay.revokeCredentialDigest).toHaveBeenCalledTimes(2)
+    expect(relay.revokeCredentialDigest).toHaveBeenCalledTimes(5)
     expect(await provider.listPersonalPairings(desktop)).toEqual([])
     await provider.setMobileAccess({ desktop, enabled: true })
     expect(await provider.listPersonalPairings(desktop)).toEqual([])
@@ -135,7 +157,7 @@ describe('PersonalPairingProvider', () => {
       clock: { now: () => NOW }, randomId: kind => `${kind}-replacement`,
     })
     await expect(recovered.getEndpointPairingStatus({ mobile, completionId })).resolves.toMatchObject({
-      stage: 'awaiting-authority', pendingPairingId: completion.pendingPairingId,
+      stage: 'message2', pendingPairingId: completion.pendingPairingId,
     })
     const confirmation = await recovered.confirmEndpointPairing({
       desktop, pendingPairingId: completion.pendingPairingId,

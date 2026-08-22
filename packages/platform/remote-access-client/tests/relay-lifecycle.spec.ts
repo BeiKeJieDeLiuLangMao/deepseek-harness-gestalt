@@ -14,6 +14,7 @@ import {
   RemoteRelayEndpointController,
   type RelayEndpointSocket,
 } from '../src/index.ts'
+import { DesktopRelayEndpointLifecycle } from '../src/desktop-relay-lifecycle.ts'
 
 const TEST_RELAY_CREDENTIAL = await generateRelayCredential()
 const parseRelayCredential = (_value: string): typeof TEST_RELAY_CREDENTIAL => TEST_RELAY_CREDENTIAL
@@ -660,6 +661,92 @@ describe('RemoteRelayEndpointController', () => {
   })
 })
 
+describe('DesktopRelayEndpointLifecycle', () => {
+  it('keeps an identical pairing grant on one physical attachment across Settings polls', async () => {
+    const socket = new FakeSocket()
+    const connect = vi.fn(async () => socket)
+    const lifecycle = new DesktopRelayEndpointLifecycle({
+      ...desktopOptions(connect),
+      onPeerAttachments: vi.fn(),
+    })
+    const grant = desktopGrant('route-one', 'pairing-one', 1)
+
+    await lifecycle.configure(grant)
+    await lifecycle.start()
+    await lifecycle.configure({ ...grant })
+    await lifecycle.synchronize([{ ...grant }])
+
+    expect(connect).toHaveBeenCalledOnce()
+    expect(socket.closed).toBe(false)
+    await lifecycle.stop()
+  })
+
+  it('quiesces a replaced or revoked grant and ignores callbacks from its retired attachment', async () => {
+    const releaseClose = deferred<undefined>()
+    const first = new BlockingCloseSocket(releaseClose.promise)
+    const second = new FakeSocket()
+    const sockets: RelayEndpointSocket[] = [first, second]
+    const connect = vi.fn(async () => {
+      const socket = sockets.shift()
+      if (socket === undefined) throw new Error('unexpected connection')
+      return socket
+    })
+    const onCiphertext = vi.fn()
+    const lifecycle = new DesktopRelayEndpointLifecycle({
+      ...desktopOptions(connect),
+      onCiphertext,
+    })
+    await lifecycle.configure(desktopGrant('route-one', 'pairing-one', 1))
+    await lifecycle.start()
+
+    const replacing = lifecycle.configure(desktopGrant('route-two', 'pairing-one', 2))
+    await first.closeStarted.promise
+    first.receive(encodeRelayMessage({
+      type: 'ciphertext', transportVersion: 1, routeId: parseRelayRouteId('route-one'),
+      sourceAttachmentId: parseRelayAttachmentId('mobile-old'),
+      targetAttachmentId: parseRelayAttachmentId('desktop-test'), ciphertext: Uint8Array.of(7),
+    }))
+    await Promise.resolve()
+    expect(onCiphertext).not.toHaveBeenCalled()
+    expect(connect).toHaveBeenCalledOnce()
+
+    releaseClose.resolve(undefined)
+    await replacing
+    expect(connect).toHaveBeenCalledTimes(2)
+    expect(first.closed).toBe(true)
+
+    await lifecycle.synchronize([])
+    expect(second.closed).toBe(true)
+    expect(lifecycle.getState()).toMatchObject({ connected: false })
+  })
+
+  it('serializes concurrent replacement and deactivation without exposing an overlapping attachment', async () => {
+    const releaseClose = deferred<undefined>()
+    const first = new BlockingCloseSocket(releaseClose.promise)
+    const second = new FakeSocket()
+    const sockets: RelayEndpointSocket[] = [first, second]
+    const connect = vi.fn(async () => {
+      const socket = sockets.shift()
+      if (socket === undefined) throw new Error('unexpected connection')
+      return socket
+    })
+    const lifecycle = new DesktopRelayEndpointLifecycle(desktopOptions(connect))
+    await lifecycle.configure(desktopGrant('route-one', 'pairing-one', 1))
+    await lifecycle.start()
+
+    const replacing = lifecycle.configure(desktopGrant('route-two', 'pairing-one', 2))
+    const deactivating = lifecycle.stop('sleep')
+    await first.closeStarted.promise
+    expect(connect).toHaveBeenCalledOnce()
+    releaseClose.resolve(undefined)
+    await Promise.all([replacing, deactivating])
+
+    expect(connect).toHaveBeenCalledTimes(2)
+    expect(second.closed).toBe(true)
+    expect(lifecycle.getState()).toEqual({ connected: false, stopReason: 'sleep' })
+  })
+})
+
 function mobileOptions(connect: (signal: AbortSignal) => Promise<RelayEndpointSocket>) {
   return {
     endpoint: 'mobile' as const,
@@ -743,6 +830,18 @@ class DeferredCloseSocket extends FakeSocket {
     this.end()
     this.closeStarted.resolve(undefined)
     await this.releaseClose
+  }
+}
+
+class BlockingCloseSocket extends FakeSocket {
+  readonly closeStarted = deferred<undefined>()
+
+  constructor(private readonly releaseClose: Promise<undefined>) { super() }
+
+  override async close(): Promise<void> {
+    this.closeStarted.resolve(undefined)
+    await this.releaseClose
+    this.end()
   }
 }
 
@@ -845,4 +944,25 @@ function deferred<T>() {
   let reject!: (error: unknown) => void
   const promise = new Promise<T>((onResolve, onReject) => { resolve = onResolve; reject = onReject })
   return { promise, resolve, reject }
+}
+
+function desktopOptions(connect: (signal: AbortSignal) => Promise<RelayEndpointSocket>) {
+  return {
+    attachmentId: () => parseRelayAttachmentId('desktop-test'),
+    connect,
+    attachTimeoutMs: 20,
+    heartbeatIntervalMs: 30_000,
+    reconnectDelayMs: 1,
+    resynchronize: async () => {},
+  }
+}
+
+function desktopGrant(routeId: string, pairingSelector: string, revision: number) {
+  return {
+    endpoint: 'desktop' as const,
+    routeId: parseRelayRouteId(routeId),
+    credential: TEST_RELAY_CREDENTIAL,
+    pairingSelector: parseRelayPairingSelector(pairingSelector),
+    revision,
+  }
 }

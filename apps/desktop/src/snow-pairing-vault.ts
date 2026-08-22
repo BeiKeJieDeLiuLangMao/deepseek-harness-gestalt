@@ -123,10 +123,9 @@ export class EncryptedDesktopSnowPairingStore {
         transaction: decodeConfirmation(record.transaction),
       }
     })
-    if (active.length + challenges.length + pending.length + confirmations.length > MAX_PAIRING_STATES * 2) {
-      throw new TypeError('Desktop Snow pairing store exceeds its retained state limit')
-    }
-    return { active, challenges, pending, confirmations }
+    const state = { active, challenges, pending, confirmations }
+    assertVaultCapacity(state)
+    return state
   }
 
   async save(state: DesktopSnowVaultState): Promise<void> {
@@ -166,6 +165,7 @@ export class DesktopSnowPairingVault {
   static async load(store?: DesktopSnowPairingStore): Promise<DesktopSnowPairingVault> {
     const vault = new DesktopSnowPairingVault(store)
     const state = await store?.load() ?? emptyVaultState()
+    assertVaultCapacity(state)
     for (const record of state.active) vault.active.set(record.pairingId, {
       reconnectState: record.reconnectState.slice(), desktopGrant: { ...record.desktopGrant },
     })
@@ -187,7 +187,7 @@ export class DesktopSnowPairingVault {
     invitationPayload: Uint8Array
     desktopFingerprint: string
   }> {
-    if (this.challenges.size + this.pending.size >= MAX_PAIRING_STATES) {
+    if (this.retainedPairingCount() >= MAX_PAIRING_STATES) {
       throw new Error('Desktop Snow pending pairing limit reached')
     }
     const owner = new SnowDesktopEndpointPairingOwner()
@@ -198,6 +198,9 @@ export class DesktopSnowPairingVault {
   retainChallenge(challengeId: PairingChallengeId, owner: SnowDesktopEndpointPairingOwner): void {
     const previous = this.challenges.get(challengeId)
     if (previous !== undefined && previous !== owner) throw new Error('Desktop Snow challenge id collided')
+    if (previous === undefined && this.retainedPairingCount() >= MAX_PAIRING_STATES) {
+      throw new Error('Desktop Snow pending pairing limit reached')
+    }
     this.challenges.set(challengeId, owner)
     this.persist()
   }
@@ -410,9 +413,14 @@ export class DesktopSnowPairingVault {
           pendingPairingId, transaction: cloneConfirmation(transaction),
         })),
     }
+    assertVaultCapacity(state)
     this.persistence = this.persistence.catch(() => {}).then(async () => {
       try { await this.store?.save(state) } finally { wipeVaultState(state) }
     })
+  }
+
+  private retainedPairingCount(): number {
+    return this.active.size + this.challenges.size + this.pending.size
   }
 }
 
@@ -425,6 +433,16 @@ function boundedArray(value: unknown, name: string): unknown[] {
     throw new TypeError(`Desktop Snow pairing store ${name} must be a bounded array`)
   }
   return value
+}
+
+function assertVaultCapacity(state: DesktopSnowVaultState): void {
+  if (state.active.length + state.challenges.length + state.pending.length > MAX_PAIRING_STATES) {
+    throw new TypeError('Desktop Snow pairing store exceeds its retained state limit')
+  }
+  const pendingIds = new Set(state.pending.map(record => record.pendingPairingId))
+  if (state.confirmations.some(record => !pendingIds.has(record.pendingPairingId))) {
+    throw new TypeError('Desktop Snow confirmation has no retained pending owner')
+  }
 }
 
 function recordValue(value: unknown, name: string): Record<string, unknown> {

@@ -134,6 +134,9 @@ export class RemoteRelayProvider extends RemoteRelayService {
     if (desktopCredentialDigest.byteLength !== 32 || mobileCredentialDigest.byteLength !== 32) {
       throw new TypeError('Relay credential digests must each contain 32 bytes')
     }
+    if (desktopCredentialDigest.every((byte, index) => byte === mobileCredentialDigest[index])) {
+      throw new TypeError('Relay credential digests must be distinct')
+    }
     return await this.options.routeStore.registerPairing(
       routeId, pairingSelector, desktopCredentialDigest.slice(), mobileCredentialDigest.slice(),
     )

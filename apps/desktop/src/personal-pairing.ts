@@ -342,13 +342,17 @@ export class DesktopPairingController implements DesktopPairingActions {
   async deactivate(reason: DesktopRelayStopReason = 'quit'): Promise<void> {
     const generation = ++this.lifecycleGeneration
     this.active = false
-    this.resetAccountScope()
+    const resetsAccountScope = reason === 'mobile-access-disabled'
+    this.suspendProjection()
     const draining = this.currentOperation ?? this.serial
     const stopping = this.options.relay?.stop(reason) ?? Promise.resolve()
     const settled = Promise.allSettled([stopping, draining])
     this.lifecycleBarrier = settled.then(() => {})
     const results = await settled
-    if (this.lifecycleGeneration === generation) this.resetAccountScope()
+    if (this.lifecycleGeneration === generation) {
+      if (resetsAccountScope) this.resetAccountScope()
+      else this.suspendProjection()
+    }
     await this.options.snowPairingVault?.flush()
     throwSettled(results)
   }
@@ -383,8 +387,11 @@ export class DesktopPairingController implements DesktopPairingActions {
         this.publish({ status: 'ready', enabled: false, pairings: [] })
         return
       }
-      for (const grant of this.options.snowPairingVault?.desktopRelayGrants() ?? []) {
-        await this.options.relay?.configure?.(grant)
+      const grants = this.options.snowPairingVault?.desktopRelayGrants() ?? []
+      if (this.options.relay?.synchronize !== undefined && this.options.snowPairingVault !== undefined) {
+        await this.options.relay.synchronize(grants)
+      } else {
+        for (const grant of grants) await this.options.relay?.configure?.(grant)
       }
       await this.options.relay?.start()
       if (this.options.snowPairingVault !== undefined) {
@@ -470,11 +477,15 @@ export class DesktopPairingController implements DesktopPairingActions {
   }
 
   private resetAccountScope(): void {
-    if (this.timer !== undefined) clearTimeout(this.timer)
-    this.timer = undefined
+    this.suspendProjection()
     this.accountId = undefined
     this.options.pairingKeys?.clear()
     this.options.snowPairingVault?.clear()
+  }
+
+  private suspendProjection(): void {
+    if (this.timer !== undefined) clearTimeout(this.timer)
+    this.timer = undefined
     if (this.snapshot.status === 'ready' && !this.snapshot.enabled && this.snapshot.pairings.length === 0) return
     const snapshot: DesktopPairingSnapshot = { status: 'ready', enabled: false, pairings: [] }
     this.snapshot = snapshot

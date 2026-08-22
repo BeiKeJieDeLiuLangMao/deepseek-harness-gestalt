@@ -189,6 +189,26 @@ describe('PostgresRelayRouteStore', () => {
     expect(await store.authorize(routeId, 'mobile', mobileTwo)).toEqual({
       revision: 1, pairingSelector: 'pairing-two',
     })
+
+    const reusedPeer = new Uint8Array(32).fill(5)
+    await expect(store.registerPairing(
+      routeId, parseRelayPairingSelector('pairing-reuse'), desktopOne, reusedPeer,
+    )).rejects.toThrow('already belongs to another Personal Pairing')
+    expect(await store.authorize(routeId, 'mobile', reusedPeer)).toBeUndefined()
+    await expect(store.registerPairing(
+      routeId, parseRelayPairingSelector('pairing-equal'), reusedPeer, reusedPeer,
+    )).rejects.toThrow('must be distinct')
+
+    const shared = new Uint8Array(32).fill(6)
+    const concurrent = await Promise.allSettled([
+      store.registerPairing(
+        routeId, parseRelayPairingSelector('pairing-concurrent-a'), shared, new Uint8Array(32).fill(7),
+      ),
+      store.registerPairing(
+        routeId, parseRelayPairingSelector('pairing-concurrent-b'), shared, new Uint8Array(32).fill(8),
+      ),
+    ])
+    expect(concurrent.map(result => result.status).sort()).toEqual(['fulfilled', 'rejected'])
   })
 
   it('rotates, issues, authorizes, and revokes endpoint credentials', async () => {

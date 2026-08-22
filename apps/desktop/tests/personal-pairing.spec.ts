@@ -23,6 +23,7 @@ import {
 } from '../../../packages/client/ui-desktop/src/client/pairing-source.ts'
 import {
   parseRelayCredential,
+  parseRelayPairingSelector,
   parseRelayRouteId,
 } from '@deepseek-ai/dsh-remote-protocol'
 import { DesktopPairingKeyVault } from '../src/pairing-keys.ts'
@@ -74,6 +75,88 @@ describe('UnavailableDesktopPairingController', () => {
 })
 
 describe('DesktopPairingController', () => {
+  it('preserves durable pairing authority across suspend and wipes it only on account-scope reset', async () => {
+    const transport = transportFixture()
+    transport.getMobileAccessState.mockReset()
+    transport.getMobileAccessState.mockResolvedValue({ enabled: true })
+    transport.listEndpointPending.mockResolvedValue([])
+    const clear = vi.fn()
+    const flush = vi.fn(async () => {})
+    const grant = {
+      endpoint: 'desktop' as const,
+      routeId: parseRelayRouteId('route-retained'),
+      credential: parseRelayCredential('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'),
+      pairingSelector: 'pairing-retained' as never,
+      revision: 1,
+    }
+    const vault = {
+      desktopRelayGrants: () => [grant],
+      clear,
+      flush,
+    } as unknown as DesktopSnowPairingVault
+    const synchronize = vi.fn(async () => {})
+    const relay = { synchronize, start: vi.fn(async () => {}), stop: vi.fn(async () => {}) }
+    const controller = new DesktopPairingController({
+      account: accountFixture(), transport, relay, snowPairingVault: vault,
+    })
+
+    await controller.start()
+    for (const reason of ['sleep', 'window-close', 'quit'] as const) {
+      await controller.deactivate(reason)
+      expect(clear).not.toHaveBeenCalled()
+      await controller.start()
+    }
+    expect(synchronize).toHaveBeenCalledWith([grant])
+
+    await controller.deactivate('mobile-access-disabled')
+    expect(clear).toHaveBeenCalledOnce()
+    expect(flush).toHaveBeenCalled()
+  })
+
+  it('restores the same pairing-scoped Relay grant after a full controller and vault restart', async () => {
+    const grant = {
+      endpoint: 'desktop' as const,
+      routeId: parseRelayRouteId('route-restart'),
+      credential: parseRelayCredential('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'),
+      pairingSelector: parseRelayPairingSelector('pairing-restart'),
+      revision: 3,
+    }
+    const state = {
+      active: [{
+        pairingId: parsePersonalPairingId('pairing-restart'),
+        reconnectState: new Uint8Array(96).fill(9), desktopGrant: grant,
+      }],
+      challenges: [], pending: [], confirmations: [],
+    }
+    const store = { load: vi.fn(async () => state), save: vi.fn(async () => {}) }
+    const transport = transportFixture()
+    transport.getMobileAccessState.mockReset()
+    transport.getMobileAccessState.mockResolvedValue({ enabled: true })
+    transport.listEndpointPending.mockResolvedValue([])
+    const firstSynchronize = vi.fn(async () => {})
+    const first = new DesktopPairingController({
+      account: accountFixture(), transport,
+      relay: { synchronize: firstSynchronize, start: vi.fn(async () => {}), stop: vi.fn(async () => {}) },
+      snowPairingVault: await DesktopSnowPairingVault.load(store),
+    })
+    await first.start()
+    await first.deactivate('window-close')
+    await first.dispose()
+
+    const secondSynchronize = vi.fn(async () => {})
+    const second = new DesktopPairingController({
+      account: accountFixture(), transport,
+      relay: { synchronize: secondSynchronize, start: vi.fn(async () => {}), stop: vi.fn(async () => {}) },
+      snowPairingVault: await DesktopSnowPairingVault.load(store),
+    })
+    await second.start()
+
+    expect(firstSynchronize).toHaveBeenCalledWith([grant])
+    expect(secondSynchronize).toHaveBeenCalledWith([grant])
+    expect(store.save).not.toHaveBeenCalled()
+    await second.dispose()
+  })
+
   it('settles Platform-retained endpoint work after Desktop invitation state was wiped', async () => {
     const transport = transportFixture()
     transport.listEndpointPending.mockResolvedValue([{
@@ -340,7 +423,7 @@ describe('DesktopPairingController', () => {
     await controller.setEnabled(true)
     await controller.confirm(parsePendingPairingId('pending-key'))
     expect(vault.pairingKeyMaterial(parsePersonalPairingId('pairing-key'))).toEqual(material)
-    await controller.deactivate()
+    await controller.deactivate('mobile-access-disabled')
     expect(vault.pairingKeyMaterial(parsePersonalPairingId('pairing-key'))).toBeUndefined()
   })
 

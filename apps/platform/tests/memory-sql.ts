@@ -219,6 +219,16 @@ function dispatch(
     )
     return { rows: [], rowCount: 1 }
   }
+  if (text.includes('select endpoint, pairing_selector from remote_access_route_authorities')) {
+    const prefix = `${routeKey(values[0], values[1])}\n`
+    const digest = digestKey(values[2])
+    const authority = [...live.authorities.entries()].find(
+      ([key, record]) => key.startsWith(prefix) && record.digest === digest,
+    )?.[1]
+    return authority === undefined
+      ? { rows: [], rowCount: 0 }
+      : { rows: [{ endpoint: authority.endpoint, pairing_selector: authority.pairing_selector }], rowCount: 1 }
+  }
   if (text.includes('select pairing_selector from remote_access_route_authorities')) {
     const key = `${routeKey(values[0], values[1])}\n${asString(values[2], 'endpoint')}\n${digestKey(values[3])}`
     const authority = live.authorities.get(key)

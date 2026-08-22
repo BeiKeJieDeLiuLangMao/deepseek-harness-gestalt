@@ -10,6 +10,8 @@ import {
 export interface DesktopRelayLifecycle {
   /** Install fresh endpoint-owned authority returned by a successful Settings enable. */
   configure?(grant: RelayCredentialGrant): void | Promise<void>
+  /** Reconcile the complete durable grant set, retiring selectors absent from it. */
+  synchronize?(grants: readonly RelayCredentialGrant[]): Promise<void>
   /** Attach and resynchronize through the selected Platform endpoint. */
   start(): Promise<void>
   /** Make the route Remote Offline for one Desktop lifecycle reason. */
@@ -40,8 +42,10 @@ export class FailClosedDesktopRelayLifecycle implements DesktopRelayLifecycle {
 
 /** Real Desktop endpoint composition that owns its current route grant. */
 export class DesktopRelayEndpointLifecycle implements DesktopRelayLifecycle {
-  private readonly endpoints = new Map<RelayPairingSelector, RemoteRelayEndpointController>()
+  private readonly endpoints = new Map<RelayPairingSelector, DesktopRelayEndpointRecord>()
   private stopReason: DesktopRelayStopReason | undefined
+  private serial: Promise<unknown> = Promise.resolve()
+  private running = false
   private readonly options: Omit<RemoteRelayEndpointOptions, 'endpoint' | 'route' | 'onCiphertext' | 'onPeerAttachments'> & {
     onPeerAttachments?: (
       message: RelayReadyMessage | RelayPeerUpdateMessage,
@@ -71,43 +75,72 @@ export class DesktopRelayEndpointLifecycle implements DesktopRelayLifecycle {
     this.options = options
   }
 
-  configure(grant: RelayCredentialGrant): void {
-    if (grant.endpoint !== 'desktop' || grant.pairingSelector === undefined) {
-      throw new TypeError('Desktop Relay grant must belong to one Personal Pairing')
-    }
+  configure(grant: RelayCredentialGrant): Promise<void> {
+    const ownedGrant = cloneDesktopGrant(grant)
+    return this.exclusive(async () => { await this.applyGrant(ownedGrant) })
+  }
+
+  /** @param grants - complete endpoint-owned grants currently retained by the Desktop vault. */
+  synchronize(grants: readonly RelayCredentialGrant[]): Promise<void> {
+    const ownedGrants = grants.map(cloneDesktopGrant)
+    const selectors = new Set(ownedGrants.map(grant => grant.pairingSelector))
+    if (selectors.size !== ownedGrants.length) throw new TypeError('Desktop Relay grant selectors must be unique')
+    return this.exclusive(async () => {
+      for (const [selector, record] of this.endpoints) {
+        if (selectors.has(selector)) continue
+        await this.retire(selector, record, 'mobile-access-disabled')
+      }
+      for (const grant of ownedGrants) await this.applyGrant(grant)
+    })
+  }
+
+  private async applyGrant(grant: DesktopRelayGrant): Promise<void> {
     const selector = grant.pairingSelector
+    const previous = this.endpoints.get(selector)
+    if (previous !== undefined && sameGrant(previous.grant, grant)) return
+    if (previous !== undefined) await this.retire(selector, previous, 'mobile-access-disabled')
     let localAttachmentId: RelayAttachmentId | undefined
-    const endpoint = new RemoteRelayEndpointController({
+    const token = { retired: false }
+    const controller = new RemoteRelayEndpointController({
       ...this.options,
       endpoint: 'desktop',
       route: () => Promise.resolve(grant),
       onPeerAttachments: async (message: RelayReadyMessage | RelayPeerUpdateMessage) => {
+        if (token.retired || this.endpoints.get(selector)?.token !== token) return
         localAttachmentId = message.attachmentId
         await this.options.onPeerAttachments?.(message, selector)
       },
       onCiphertext: async (ciphertext, sourceAttachmentId) => {
+        if (token.retired || this.endpoints.get(selector)?.token !== token) return
         if (localAttachmentId === undefined) throw new Error('Desktop Relay has no local attachment identity')
         await this.options.onCiphertext?.(ciphertext, sourceAttachmentId, localAttachmentId, selector)
       },
     })
-    const previous = this.endpoints.get(selector)
-    this.endpoints.set(selector, endpoint)
-    if (previous !== undefined) void previous.stop('mobile-access-disabled')
+    const record = { controller, grant, token }
+    this.endpoints.set(selector, record)
+    if (this.running) await controller.start()
   }
+
   async start(): Promise<void> {
-    await Promise.all([...this.endpoints.values()].map(async (endpoint) => { await endpoint.start() }))
-    this.stopReason = undefined
+    await this.exclusive(async () => {
+      this.running = true
+      await Promise.all([...this.endpoints.values()].map(async ({ controller }) => { await controller.start() }))
+      this.stopReason = undefined
+    })
   }
   async stop(reason: DesktopRelayStopReason = 'quit'): Promise<void> {
-    try {
-      await Promise.all([...this.endpoints.values()].map(async (endpoint) => { await endpoint.stop(reason) }))
-    } finally { this.stopReason = reason }
+    await this.exclusive(async () => {
+      this.running = false
+      try {
+        await Promise.all([...this.endpoints.values()].map(async ({ controller }) => { await controller.stop(reason) }))
+      } finally { this.stopReason = reason }
+    })
   }
 
   /** @returns observed attachment ownership and the last completed stop reason. */
   getState(): { connected: boolean; stopReason?: DesktopRelayStopReason } {
     return {
-      connected: [...this.endpoints.values()].some(endpoint => endpoint.isConnected()),
+      connected: [...this.endpoints.values()].some(({ controller }) => controller.isConnected()),
       ...(this.stopReason === undefined ? {} : { stopReason: this.stopReason }),
     }
   }
@@ -123,8 +156,50 @@ export class DesktopRelayEndpointLifecycle implements DesktopRelayLifecycle {
     targetAttachmentId: RelayAttachmentId,
     ciphertext: Uint8Array,
   ): Promise<void> {
-    const endpoint = this.endpoints.get(pairingSelector)
-    if (endpoint === undefined) throw new Error('Desktop Relay pairing authority is unavailable')
-    await endpoint.sendCiphertext(targetAttachmentId, ciphertext)
+    await this.exclusive(async () => {
+      const record = this.endpoints.get(pairingSelector)
+      if (record === undefined || record.token.retired) throw new Error('Desktop Relay pairing authority is unavailable')
+      await record.controller.sendCiphertext(targetAttachmentId, ciphertext)
+    })
   }
+  private async retire(
+    selector: RelayPairingSelector,
+    record: DesktopRelayEndpointRecord,
+    reason: DesktopRelayStopReason,
+  ): Promise<void> {
+    record.token.retired = true
+    if (this.endpoints.get(selector) === record) this.endpoints.delete(selector)
+    await record.controller.stop(reason)
+  }
+
+  private exclusive<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.serial.then(operation)
+    this.serial = result.then(() => undefined, () => undefined)
+    return result
+  }
+}
+
+type DesktopRelayGrant = RelayCredentialGrant & {
+  endpoint: 'desktop'
+  pairingSelector: RelayPairingSelector
+}
+
+interface DesktopRelayEndpointRecord {
+  controller: RemoteRelayEndpointController
+  grant: DesktopRelayGrant
+  token: { retired: boolean }
+}
+
+function cloneDesktopGrant(grant: RelayCredentialGrant): DesktopRelayGrant {
+  if (grant.endpoint !== 'desktop' || grant.pairingSelector === undefined) {
+    throw new TypeError('Desktop Relay grant must belong to one Personal Pairing')
+  }
+  return { ...grant, endpoint: 'desktop', pairingSelector: grant.pairingSelector }
+}
+
+function sameGrant(left: DesktopRelayGrant, right: DesktopRelayGrant): boolean {
+  return left.routeId === right.routeId
+    && left.credential === right.credential
+    && left.revision === right.revision
+    && left.pairingSelector === right.pairingSelector
 }
