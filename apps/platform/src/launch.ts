@@ -49,6 +49,7 @@ export async function launchOperatedPlatform(
   const env = options.env ?? process.env
   const config = loadOperatedPlatformConfig(env)
   const environment = loadOperatedPlatformEnvironment(config.environment)
+  const listen = loadListenConfig(env)
   const createPostgres = options.adapters?.createPostgres ?? (value => new pg.Pool(value))
   const connect = options.adapters?.connectRedis ?? connectRedis
   const postgres = createPostgres(config.postgres)
@@ -60,8 +61,8 @@ export async function launchOperatedPlatform(
     if (!resourcesOwned) return
     resourcesOwned = false
     const results = await Promise.allSettled([
-      subscriber?.quit(),
-      publisher?.quit(),
+      subscriber?.close(),
+      publisher?.close(),
       postgres.end(),
     ])
     const errors: unknown[] = []
@@ -75,13 +76,13 @@ export async function launchOperatedPlatform(
     await backend.migrate()
     publisher = await connect(config.redis)
     subscriber = await connect(config.redis)
-    const invalidation = new RedisAccountInvalidationBus(publisher, subscriber)
+    const invalidation = new RedisAccountInvalidationBus(publisher.client, subscriber.client)
     await invalidation.listen()
     const remoteAccess = new OperatedRemoteAccessResources({
       databaseIdentity: environment.databaseIdentity,
       postgres,
-      redisCommand: publisher,
-      redisSubscriber: subscriber,
+      redisCommand: publisher.client,
+      redisSubscriber: subscriber.client,
       redisKeyPrefix: config.relayRedisKeyPrefix,
     })
     await remoteAccess.migrate()
@@ -91,10 +92,7 @@ export async function launchOperatedPlatform(
       ...(options.adapters?.githubFetch === undefined ? {} : { fetch: options.adapters.githubFetch }),
     })
     context.effect(() => closeResources, 'platform: durable process resources')
-    await context.plugin(WebServer, {
-      host: env.PLATFORM_LISTEN_HOST === '127.0.0.1' ? '127.0.0.1' : '0.0.0.0',
-      port: listenPort(env.PORT),
-    })
+    await context.plugin(WebServer, listen)
     await context.plugin({
       name: 'platform-account-provider',
       apply(inner: Context) {
@@ -151,9 +149,23 @@ function registerHealth(context: Context): void {
 
 function listenPort(value: string | undefined): number {
   if (value === undefined || value === '') return 8080
+  if (!/^\d+$/u.test(value)) {
+    throw new TypeError('PORT must be an integer from 0 through 65535')
+  }
   const port = Number(value)
   if (!Number.isSafeInteger(port) || port < 0 || port > 65_535) {
     throw new TypeError('PORT must be an integer from 0 through 65535')
   }
   return port
+}
+
+function loadListenConfig(env: NodeJS.Dict<string>): { host: '0.0.0.0' | '127.0.0.1'; port: number } {
+  const value = env.PLATFORM_LISTEN_HOST
+  if (value !== undefined && value !== '' && value !== '0.0.0.0' && value !== '127.0.0.1') {
+    throw new TypeError('PLATFORM_LISTEN_HOST accepts only 0.0.0.0 or 127.0.0.1')
+  }
+  return {
+    host: value === '127.0.0.1' ? value : '0.0.0.0',
+    port: listenPort(env.PORT),
+  }
 }

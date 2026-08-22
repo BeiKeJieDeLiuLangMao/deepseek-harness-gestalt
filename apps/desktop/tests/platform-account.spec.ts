@@ -273,6 +273,8 @@ describe('Desktop Platform environment composition', () => {
     })
     expect(() => loadDesktopPlatformEnvironment({ ...source, origin: undefined }))
       .toThrow('production origin is required')
+    expect(() => loadDesktopPlatformEnvironment({ ...source, environment: undefined }))
+      .toThrow('environment must be production')
     expect(() => loadDesktopPlatformEnvironment({
       ...source,
       origin: 'https://localhost',
@@ -375,6 +377,7 @@ function deferred<T>(): { promise: Promise<T>; resolve(value: T): void } {
 
 function desktopEnvironmentSource(): Record<string, string> {
   return {
+    environment: 'production',
     origin: 'https://platform.example.com',
     callbackUrl: 'https://platform.example.com/v1/account/oauth/github/callback',
     githubClientId: 'desktop-production',

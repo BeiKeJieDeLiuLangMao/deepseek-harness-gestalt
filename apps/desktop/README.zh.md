@@ -10,7 +10,7 @@ DeepSeek Gestalt 的 Desktop Host。Electron 拥有窗口、菜单、GitHub 自�
 
 个人配对只在真实的 `手机配对` 设置区中配置。preload 暴露手机访问、挑战、待确认决策与已配对设备操作，不会向普通 Session 标题栏、侧栏、审批、输入框或离线视图增加状态。在经过评审的握手与 Companion channel provider 接入前，产品 Host 会让这些操作与 Relay 保持 fail-closed；产品入口没有开发或 keyless 选择。keyless 控制器证据只导入 `tests/` 下的 fixture，`main.ts` 无法触达。
 
-Desktop Platform 账号从打包 main 入口旁的 `operated-platform.json` 读取一套实际运行的生产身份。构建必须显式指定源文件并把它复制进应用 archive；发布 workflow 根据 Platform 部署的公开 origin、回调、GitHub client id、credential reference、PostgreSQL database identity 和 identity namespace 生成该文件，不会嵌入 OAuth secret。字段缺失、localhost、非 HTTPS origin 或回调不匹配会在 Electron 创建窗口、启动 Web Host、读取账号存储或发送流量之前使模块启动失败。操作系统加密不可用仍会作为明确的能力失败显示。加密记录通过 `dsh-atomic-write` 的随机独占同级文件、仅所有者权限、符号链接安全 rename 与失败清理完成替换。
+Desktop Platform 账号从打包 main 入口旁的 `operated-platform.json` 读取一套实际运行的生产身份。构建必须显式指定源文件，拒绝缺失或未知字段，并根据 `production` 标记与公开 origin、回调、GitHub client id、credential reference、PostgreSQL database identity 和 identity namespace 重建应用 archive 中的产物；它绝不复制调用方提供的 JSON，也不会嵌入 OAuth secret。localhost、非 HTTPS origin 或回调不匹配会在 Electron 创建窗口、启动 Web Host、读取账号存储或发送流量之前使模块启动失败。操作系统加密不可用仍会作为明确的能力失败显示。加密记录通过 `dsh-atomic-write` 的随机独占同级文件、仅所有者权限、符号链接安全 rename 与失败清理完成替换。
 
 在 macOS 上，28px 顶部间距让未改动的 DSH 侧栏标题行避开 traffic lights。Windows 使用覆盖整个窗口的 36px 拖拽行，最小化、最大化和关闭按钮各占 46px。未支持平台的开发运行保留系统窗口框架。
 
@@ -35,7 +35,7 @@ pnpm install
 DSH_DESKTOP_OPERATED_PLATFORM_CONFIG=/absolute/path/to/operated-platform.json pnpm gestalt:dev
 ```
 
-配置文件包含上文所述六个公开身份字段，不包含 OAuth secret。进程还需要 `DSH_NODE` 或 `npm_node_execpath` 上的真正 Node（pnpm 会设置后者）。不要让 Electron 用自己的 execPath 去跑 `dsh`。
+配置文件包含 `production` 标记与上文所述六个公开身份字段；它不包含其他字段或 OAuth secret。进程还需要 `DSH_NODE` 或 `npm_node_execpath` 上的真正 Node（pnpm 会设置后者）。不要让 Electron 用自己的 execPath 去跑 `dsh`。
 
 ## 发布
 

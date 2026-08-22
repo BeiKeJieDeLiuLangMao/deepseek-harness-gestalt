@@ -66,11 +66,20 @@ export interface RedisConnectOptions {
   tls: boolean
 }
 
+/** Connected Redis client plus the listener-safe process resource owner. */
+export interface RedisConnection {
+  /** Client used by Platform adapters while the owner is open. */
+  readonly client: RedisClientType
+  /** Quit the client and detach its process error listener exactly once. */
+  close(): Promise<void>
+}
+
 /**
  * Open a Redis command client without putting the password in a URL.
  * @param options - host, credentials, and TLS.
+ * @returns connected client and its quiescent close owner.
  */
-export async function connectRedis(options: RedisConnectOptions): Promise<RedisClientType> {
+export async function connectRedis(options: RedisConnectOptions): Promise<RedisConnection> {
   const client = createClient({
     ...(options.username === undefined ? {} : { username: options.username }),
     password: options.password,
@@ -80,6 +89,40 @@ export async function connectRedis(options: RedisConnectOptions): Promise<RedisC
       ...(options.tls ? { tls: true, rejectUnauthorized: true } : {}),
     },
   }) as RedisClientType
-  await client.connect()
-  return client
+  const handleError = (): void => {
+    console.error('platform: Redis client reported an error')
+  }
+  client.on('error', handleError)
+  try {
+    await client.connect()
+  } catch (error) {
+    let cleanupError: unknown
+    try {
+      client.destroy()
+    } catch (failure) {
+      cleanupError = failure
+    } finally {
+      client.removeListener('error', handleError)
+    }
+    if (cleanupError !== undefined) {
+      throw new AggregateError([error, cleanupError], 'Redis connection and cleanup failed')
+    }
+    throw error
+  }
+  let closed = false
+  return {
+    client,
+    async close(): Promise<void> {
+      if (closed) return
+      closed = true
+      try {
+        await client.quit()
+      } catch (error) {
+        client.destroy()
+        throw error
+      } finally {
+        client.removeListener('error', handleError)
+      }
+    },
+  }
 }

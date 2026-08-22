@@ -11,7 +11,7 @@ export function readDesktopPlatformEnvironment(path: string): SelectedPlatformEn
 export function loadDesktopPlatformEnvironment(source: unknown): SelectedPlatformEnvironment {
   if (!isRecord(source)) throw new TypeError('Desktop operated Platform configuration must be an object')
   return loadOperatedPlatformEnvironment({
-    environment: 'production',
+    environment: source.environment,
     origin: source.origin,
     callbackUrl: source.callbackUrl,
     githubClientId: source.githubClientId,

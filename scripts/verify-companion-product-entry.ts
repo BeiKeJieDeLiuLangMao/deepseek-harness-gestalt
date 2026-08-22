@@ -100,6 +100,7 @@ function analyzeModule(
   const imports = new Map<string, { specifier: string; imported?: string }>()
   const declarations = new Map<string, ts.Statement>()
   const reexports = new Map<string, ModuleDependency>()
+  const localExports = new Map<string, string>()
   const dependencies: ModuleDependency[] = []
   const effectStatements: ts.Statement[] = []
   for (const statement of sourceFile.statements) {
@@ -118,6 +119,16 @@ function analyzeModule(
           if (!element.isTypeOnly) {
             imports.set(element.name.text, { specifier, imported: element.propertyName?.text ?? element.name.text })
           }
+        }
+      }
+      continue
+    }
+    if (ts.isExportDeclaration(statement) && !statement.isTypeOnly
+      && statement.moduleSpecifier === undefined && statement.exportClause !== undefined
+      && ts.isNamedExports(statement.exportClause)) {
+      for (const element of statement.exportClause.elements) {
+        if (!element.isTypeOnly) {
+          localExports.set(element.name.text, element.propertyName?.text ?? element.name.text)
         }
       }
       continue
@@ -165,6 +176,7 @@ function analyzeModule(
   }
   const statements = new Set<ts.Statement>(effectStatements)
   const names = [...selection]
+  const resolvedNames = new Set<string>()
   const identifiers = new Set<string>()
   for (const statement of effectStatements) collectIdentifiers(statement, identifiers)
   for (const identifier of identifiers) {
@@ -172,10 +184,24 @@ function analyzeModule(
   }
   while (names.length > 0) {
     const name = names.pop()
-    if (name === undefined) continue
+    if (name === undefined || resolvedNames.has(name)) continue
+    resolvedNames.add(name)
     const reexport = reexports.get(name)
     if (reexport !== undefined) {
       dependencies.push(reexport)
+      continue
+    }
+    const localExport = localExports.get(name)
+    if (localExport !== undefined && localExport !== name) {
+      names.push(localExport)
+      continue
+    }
+    const imported = imports.get(name)
+    if (imported !== undefined) {
+      dependencies.push({
+        specifier: imported.specifier,
+        ...(imported.imported === undefined ? {} : { exports: new Set([imported.imported]) }),
+      })
       continue
     }
     const statement = declarations.get(name)

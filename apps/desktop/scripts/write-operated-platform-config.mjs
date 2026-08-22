@@ -8,6 +8,7 @@ if (output === undefined || output.trim() === '') {
 }
 
 const config = {
+  environment: 'production',
   origin: required('PLATFORM_ORIGIN'),
   callbackUrl: required('PLATFORM_GITHUB_CALLBACK'),
   githubClientId: required('PLATFORM_GITHUB_CLIENT_ID'),

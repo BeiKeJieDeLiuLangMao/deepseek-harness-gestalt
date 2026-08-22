@@ -88,6 +88,26 @@ describe('Companion product-entry purity gate', () => {
     ])
   })
 
+  it('follows local import and export aliases through cyclic barrels', () => {
+    const root = fixtureRoot({
+      'apps/desktop/src/main.ts': "import { productBackend } from './barrel.ts'\nvoid productBackend\n",
+      'apps/desktop/src/barrel.ts': [
+        "import { createMemoryBackend as selectedBackend } from './memory.ts'",
+        'export { selectedBackend as productBackend }',
+        "export * from './cycle.ts'",
+        '',
+      ].join('\n'),
+      'apps/desktop/src/cycle.ts': "export * from './barrel.ts'\n",
+      'apps/desktop/src/memory.ts': 'export function createMemoryBackend() { return new MemoryAccountBackend() }\n',
+      'apps/mobile/src/main.tsx': '',
+      'apps/platform/src/boot.ts': '',
+    })
+
+    expect(collectCompanionProductEntryResidue(root)).toEqual([
+      'apps/desktop/src/memory.ts:1: contains an in-memory product authority.',
+    ])
+  })
+
   it(
     'finds no proof-only provider reachable from repository product entries',
     () => {

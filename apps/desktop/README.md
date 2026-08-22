@@ -10,7 +10,7 @@ The main window accepts navigation only within the active loopback Host origin. 
 
 Personal Pairing is configured only in the real `手机配对` Settings section. The preload exposes Mobile Access, challenge, pending-confirmation, and paired-device verbs without adding status to the normal Session header, sidebar, approval, composer, or offline views. The product Host keeps those operations and Relay fail-closed until the reviewed handshake and Companion channel providers are composed; it has no development or keyless selection. Keyless controller evidence imports fixtures under `tests/` and is unreachable from `main.ts`.
 
-Desktop Platform Account reads one operated production identity from `operated-platform.json` beside the packaged main entry. The build requires an explicit source file and copies it into the application archive; the release workflow generates it from the Platform deployment's public origin, callback, GitHub client id, credential reference, PostgreSQL database identity, and identity namespace without embedding the OAuth secret. Missing fields, localhost, non-HTTPS origins, and callback mismatch fail module startup before Electron creates a window, starts the Web Host, reads Account storage, or sends traffic. Unavailable operating-system encryption remains a visible capability failure. The encrypted record is replaced through `dsh-atomic-write` with a random exclusive sibling, owner-only permissions, symlink-safe rename, and failure cleanup.
+Desktop Platform Account reads one operated production identity from `operated-platform.json` beside the packaged main entry. The build requires an explicit source file, rejects missing or unknown fields, and reconstructs the application-archive artifact from the `production` marker plus the public origin, callback, GitHub client id, credential reference, PostgreSQL database identity, and identity namespace; it never copies caller-supplied JSON or embeds the OAuth secret. Localhost, non-HTTPS origins, and callback mismatch fail module startup before Electron creates a window, starts the Web Host, reads Account storage, or sends traffic. Unavailable operating-system encryption remains a visible capability failure. The encrypted record is replaced through `dsh-atomic-write` with a random exclusive sibling, owner-only permissions, symlink-safe rename, and failure cleanup.
 
 On macOS, a 28px top inset keeps the unchanged DSH sidebar header below the traffic lights. Windows uses a full-window 36px drag row with 46px minimize, maximize, and close targets. Unsupported development platforms keep the system frame.
 
@@ -35,7 +35,7 @@ pnpm install
 DSH_DESKTOP_OPERATED_PLATFORM_CONFIG=/absolute/path/to/operated-platform.json pnpm gestalt:dev
 ```
 
-The config file contains the six public identity fields documented above; it contains no OAuth secret. The process also needs a real Node on `DSH_NODE` or `npm_node_execpath` (pnpm sets the latter). Do not point Electron at its own execPath.
+The config file contains the `production` marker and six public identity fields documented above; it contains no other field or OAuth secret. The process also needs a real Node on `DSH_NODE` or `npm_node_execpath` (pnpm sets the latter). Do not point Electron at its own execPath.
 
 ## Release
 
