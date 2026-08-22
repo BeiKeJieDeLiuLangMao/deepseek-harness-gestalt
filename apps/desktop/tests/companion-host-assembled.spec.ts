@@ -13,6 +13,7 @@ import {
 import { DesktopCompanionProductOwner } from '../src/companion-product.ts'
 import { createDesktopHostRpc } from '../src/host-rpc.ts'
 import { spawnWebHost, type RunningWebHost } from '../src/spawn-web-host.ts'
+import { runHost400CodecProbe } from './host-400-codec-probe.ts'
 import { startKeylessDesktopProvider } from './keyless-provider.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -49,6 +50,10 @@ describe('assembled Desktop Companion Host search', () => {
       hasMore: false,
     })
   }, 45_000)
+
+  it('encodes a real Host HTTP 400 as one Companion result', async () => {
+    await expect(runHost400CodecProbe()).resolves.toBeInstanceOf(Uint8Array)
+  })
 
   it.each(['disabled', 'index-failure'] as const)(
     'projects a real Desktop %s search-provider failure',

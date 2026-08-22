@@ -78,7 +78,7 @@ export type MobileCompanionAttachmentSnapshot =
   }
 
 /** One selected-file transfer started by the encrypted Companion channel. */
-export interface MobileCompanionAttachmentSubmission {
+interface MobileCompanionAttachmentSubmission {
   /** Operation id used by Desktop results and reconnect reconciliation. */
   readonly operationId: CompanionOperationId
   /** Settles after the control message send, or rejects with a pre-send or uncertain-delivery failure. */
