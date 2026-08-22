@@ -271,16 +271,13 @@ describe('Desktop Platform environment composition', () => {
       origin: 'https://platform.example.com',
       callbackUrl: 'https://platform.example.com/v1/account/oauth/github/callback',
     })
-    expect(() => loadDesktopPlatformEnvironment({ ...source, DSH_PLATFORM_ORIGIN: undefined }))
+    expect(() => loadDesktopPlatformEnvironment({ ...source, origin: undefined }))
       .toThrow('production origin is required')
     expect(() => loadDesktopPlatformEnvironment({
       ...source,
-      DSH_PLATFORM_ORIGIN: 'https://localhost',
+      origin: 'https://localhost',
     })).toThrow('must not use a local host')
-    expect(() => loadDesktopPlatformEnvironment({
-      ...source,
-      DSH_PLATFORM_ENV: 'development',
-    })).toThrow('legacy environment selection is not accepted')
+    expect(() => loadDesktopPlatformEnvironment([])).toThrow('must be an object')
   })
 })
 
@@ -376,13 +373,13 @@ function deferred<T>(): { promise: Promise<T>; resolve(value: T): void } {
   return { promise, resolve }
 }
 
-function desktopEnvironmentSource(): NodeJS.ProcessEnv {
+function desktopEnvironmentSource(): Record<string, string> {
   return {
-    DSH_PLATFORM_ORIGIN: 'https://platform.example.com',
-    DSH_PLATFORM_CALLBACK_URL: 'https://platform.example.com/v1/account/oauth/github/callback',
-    DSH_PLATFORM_GITHUB_CLIENT_ID: 'desktop-production',
-    DSH_PLATFORM_CREDENTIAL_REFERENCE: 'credentials://production',
-    DSH_PLATFORM_DATABASE_IDENTITY: 'database-production',
-    DSH_PLATFORM_IDENTITY_NAMESPACE: 'gestalt-production',
+    origin: 'https://platform.example.com',
+    callbackUrl: 'https://platform.example.com/v1/account/oauth/github/callback',
+    githubClientId: 'desktop-production',
+    credentialReference: 'credentials://production',
+    databaseIdentity: 'database-production',
+    identityNamespace: 'gestalt-production',
   }
 }

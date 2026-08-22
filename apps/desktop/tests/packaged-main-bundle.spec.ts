@@ -8,8 +8,21 @@ const here = dirname(fileURLToPath(import.meta.url))
 const desktop = join(here, '..')
 
 describe('packaged Desktop main bundle', () => {
+  it('requires a complete operated Platform config artifact at build time', () => {
+    const env = { ...process.env }
+    delete env.DSH_DESKTOP_OPERATED_PLATFORM_CONFIG
+    expect(() => execFileSync(process.execPath, [join(desktop, 'scripts', 'build-main.mjs')], {
+      cwd: desktop,
+      env,
+      stdio: 'pipe',
+    })).toThrow()
+  })
+
   it('inlines workspace packages and leaves only Electron externals', () => {
-    execFileSync(process.execPath, [join(desktop, 'scripts', 'build-main.mjs')], {
+    execFileSync(process.execPath, [
+      join(desktop, 'scripts', 'build-main.mjs'),
+      join(desktop, 'tests', 'fixtures', 'operated-platform.json'),
+    ], {
       cwd: desktop,
       stdio: 'pipe',
     })
@@ -19,5 +32,8 @@ describe('packaged Desktop main bundle', () => {
     expect(source).toMatch(/from\s+['"]electron['"]/)
     expect(source).toMatch(/import\s*\(\s*['"]electron-updater['"]\s*\)/)
     expect(source).not.toMatch(/from\s+['"]ws['"]/)
+    expect(source).not.toContain('DSH_PLATFORM_ORIGIN')
+    expect(JSON.parse(readFileSync(join(desktop, 'out', 'operated-platform.json'), 'utf8')))
+      .toMatchObject({ origin: 'https://platform.fixture.example' })
   })
 })

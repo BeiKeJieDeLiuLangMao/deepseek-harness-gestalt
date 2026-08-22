@@ -18,16 +18,10 @@ describe.skipIf(process.env.DSH_DESKTOP_SMOKE !== '1')('Desktop Host smoke', () 
     const child = spawn(electronBin, ['out/main.mjs'], {
       cwd: desktopRoot,
       env: {
-        ...process.env,
+        ...withoutRuntimePlatformEnvironment(process.env),
         DSH_DESKTOP_SMOKE: '1',
         DSH_DESKTOP_SMOKE_FILE: log,
         DSH_NODE: process.execPath,
-        DSH_PLATFORM_ORIGIN: 'https://platform.invalid',
-        DSH_PLATFORM_CALLBACK_URL: 'https://platform.invalid/v1/account/oauth/github/callback',
-        DSH_PLATFORM_GITHUB_CLIENT_ID: 'desktop-smoke',
-        DSH_PLATFORM_CREDENTIAL_REFERENCE: 'credentials://desktop-smoke',
-        DSH_PLATFORM_DATABASE_IDENTITY: 'desktop-smoke',
-        DSH_PLATFORM_IDENTITY_NAMESPACE: 'desktop-smoke',
         ELECTRON_ENABLE_LOGGING: '1',
       },
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -79,4 +73,10 @@ function processExists(pid: number): boolean {
   } catch {
     return false
   }
+}
+
+function withoutRuntimePlatformEnvironment(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return Object.fromEntries(
+    Object.entries(source).filter(([name]) => !name.startsWith('DSH_PLATFORM_')),
+  )
 }

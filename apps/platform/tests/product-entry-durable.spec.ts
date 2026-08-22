@@ -1,4 +1,5 @@
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
+import { generateKeyPairSync } from 'node:crypto'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -7,10 +8,9 @@ import { parseInstallationId, parsePlatformAccountId } from '@deepseek-ai/dsh-pl
 import { parseRelayConnectionToken, parseRelayInstanceId } from '@deepseek-ai/dsh-remote-access'
 import { parseRelayAttachmentId, parseRelayRouteId } from '@deepseek-ai/dsh-remote-protocol'
 import pg from 'pg'
-import { afterEach, describe, expect, it } from 'vitest'
-import { PostgresAccountBackend } from '../src/postgres-backend.ts'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { connectRedis } from '../src/redis-bus.ts'
-import { OperatedRemoteAccessResources } from '../src/remote-access-resources.ts'
+import { launchOperatedPlatform } from '../src/launch.ts'
 
 const durableProgramsAvailable = commandAvailable('initdb')
   && commandAvailable('postgres')
@@ -27,41 +27,80 @@ afterEach(async () => {
 })
 
 describe.skipIf(!durableProgramsAvailable)('operated Platform resource entry with disposable durable fixtures', () => {
-  it('migrates Account, pairing, and route authority in PostgreSQL and coordinates Relay through Redis', async () => {
+  it('launches the product composition with GitHub OAuth, PostgreSQL authority, and Redis coordination', async () => {
     const postgres = await startPostgresFixture()
     const redis = await startRedisFixture()
     const pool = new pg.Pool({ host: '127.0.0.1', port: postgres.port, user: 'fixture', database: 'postgres' })
-    cleanups.push(async () => { await pool.end() })
-    const publisher = await connectRedis({
-      host: '127.0.0.1', port: redis.port, username: 'fixture', password: 'fixture-secret', tls: false,
+    const postgresConfigs: unknown[] = []
+    const redisConfigs: unknown[] = []
+    const githubFetch = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(json({ access_token: 'github-fixture-token', scope: '' }))
+      .mockResolvedValueOnce(json({
+        id: 298347,
+        login: 'durable-fixture-account',
+        avatar_url: 'https://avatars.example/durable-fixture-account',
+      }))
+    const running = await launchOperatedPlatform({
+      env: operatedFixtureEnv(),
+      publicIndex: join(import.meta.dirname, '..', 'public', 'index.html'),
+      adapters: {
+        createPostgres(config) {
+          postgresConfigs.push(config)
+          return pool
+        },
+        async connectRedis(config) {
+          redisConfigs.push(config)
+          return await connectRedis({
+            host: '127.0.0.1', port: redis.port,
+            username: 'fixture', password: 'fixture-secret', tls: false,
+          })
+        },
+        githubFetch,
+      },
     })
-    const subscriber = await connectRedis({
-      host: '127.0.0.1', port: redis.port, username: 'fixture', password: 'fixture-secret', tls: false,
-    })
-    cleanups.push(async () => {
-      await Promise.all([publisher.quit(), subscriber.quit()])
-    })
+    cleanups.push(running.close)
+    expect(postgresConfigs).toEqual([expect.objectContaining({ ssl: { rejectUnauthorized: true } })])
+    expect(redisConfigs).toHaveLength(2)
+    expect(redisConfigs).toEqual(expect.arrayContaining([
+      expect.objectContaining({ tls: true, username: 'fixture' }),
+    ]))
 
-    const account = new PostgresAccountBackend('product-entry-fixture', pool)
-    await account.migrate()
-    const remoteAccess = new OperatedRemoteAccessResources({
-      databaseIdentity: 'product-entry-fixture',
-      postgres: pool,
-      redisCommand: publisher,
-      redisSubscriber: subscriber,
-      redisKeyPrefix: 'gestalt:relay:fixture',
+    const publicKey = generateKeyPairSync('ec', { namedCurve: 'P-256' }).publicKey.export({ format: 'jwk' })
+    const attempt = await running.context.platformAccount.beginLogin({
+      installationId: parseInstallationId('desktop-oauth-fixture'),
+      installationKind: 'desktop',
+      publicKey,
     })
-    await remoteAccess.migrate()
+    const authorization = new URL(attempt.authorizationUrl)
+    expect(authorization.origin + authorization.pathname).toBe('https://github.com/login/oauth/authorize')
+    expect(authorization.searchParams.get('client_id')).toBe('github-client-fixture')
+    expect(authorization.searchParams.get('redirect_uri'))
+      .toBe('https://platform.fixture.example/v1/account/oauth/github/callback')
+    await running.context.platformAccount.completeGitHubCallback({
+      code: 'github-code-fixture',
+      state: authorization.searchParams.get('state') ?? '',
+    })
+    expect(githubFetch).toHaveBeenCalledTimes(2)
+    const storedAttempt = await pool.query<{ identity: { login: string; providerSubject: number } }>(
+      'SELECT identity FROM account_attempts WHERE id = $1',
+      [attempt.id],
+    )
+    expect(storedAttempt.rows[0]?.identity).toEqual(expect.objectContaining({
+      login: 'durable-fixture-account', providerSubject: 298347,
+    }))
 
     const accountId = parsePlatformAccountId('account-fixture')
     const installationId = parseInstallationId('desktop-fixture')
     const routeId = parseRelayRouteId('route-fixture')
-    await expect(remoteAccess.authority.enableDesktop(accountId, installationId, routeId))
+    await expect(running.remoteAccess.authority.enableDesktop(accountId, installationId, routeId))
       .resolves.toBe(routeId)
-    await expect(remoteAccess.authority.getDesktop(accountId, installationId))
+    await expect(running.remoteAccess.authority.getDesktop(accountId, installationId))
       .resolves.toEqual({ enabled: true, routeId })
 
-    const stopCoordinator = await remoteAccess.coordinator.listen(parseRelayInstanceId('instance-fixture'), async () => {})
+    const stopCoordinator = await running.remoteAccess.coordinator.listen(
+      parseRelayInstanceId('instance-fixture'),
+      async () => {},
+    )
     cleanups.push(stopCoordinator)
     const directory = {
       routeId,
@@ -72,8 +111,8 @@ describe.skipIf(!durableProgramsAvailable)('operated Platform resource entry wit
       revision: 1,
       expiresAt: Date.now() + 60_000,
     }
-    await remoteAccess.coordinator.register(directory)
-    await expect(remoteAccess.coordinator.locate(routeId, directory.attachmentId)).resolves.toEqual(directory)
+    await running.remoteAccess.coordinator.register(directory)
+    await expect(running.remoteAccess.coordinator.locate(routeId, directory.attachmentId)).resolves.toEqual(directory)
 
     const tables = await pool.query<{ tablename: string }>(
       `SELECT tablename FROM pg_tables
@@ -93,6 +132,36 @@ describe.skipIf(!durableProgramsAvailable)('operated Platform resource entry wit
     ]))
   }, 60_000)
 })
+
+function operatedFixtureEnv(): NodeJS.Dict<string> {
+  return {
+    PLATFORM_ENVIRONMENT: 'production',
+    PLATFORM_ORIGIN: 'https://platform.fixture.example',
+    PLATFORM_GITHUB_CLIENT_ID: 'github-client-fixture',
+    PLATFORM_GITHUB_CLIENT_SECRET: 'github-secret-fixture',
+    PLATFORM_GITHUB_CALLBACK: 'https://platform.fixture.example/v1/account/oauth/github/callback',
+    PLATFORM_GITHUB_CREDENTIAL_REFERENCE: 'credentials://github-oauth/fixture',
+    PLATFORM_POSTGRES_HOST: 'postgres.operated.fixture',
+    PLATFORM_POSTGRES_USER: 'fixture',
+    PLATFORM_POSTGRES_PASSWORD: 'postgres-secret-fixture',
+    PLATFORM_POSTGRES_DATABASE: 'product-entry-fixture',
+    PLATFORM_IDENTITY_NAMESPACE: 'identity-fixture',
+    PLATFORM_REDIS_HOST: 'redis.operated.fixture',
+    PLATFORM_REDIS_USER: 'fixture',
+    PLATFORM_REDIS_PASSWORD: 'redis-secret-fixture',
+    PLATFORM_RELAY_REDIS_KEY_PREFIX: 'gestalt:relay:fixture',
+    PLATFORM_TOKEN_SIGNING_KEY: 'ab'.repeat(32),
+    PLATFORM_POLLING_SIGNING_KEY: 'cd'.repeat(32),
+    PLATFORM_POSTGRES_SSL: 'require',
+    PLATFORM_REDIS_TLS: '1',
+    PLATFORM_LISTEN_HOST: '127.0.0.1',
+    PORT: '0',
+  }
+}
+
+function json(value: unknown): Response {
+  return new Response(JSON.stringify(value), { status: 200, headers: { 'content-type': 'application/json' } })
+}
 
 function commandAvailable(command: string): boolean {
   return spawnSync(command, ['--version'], { stdio: 'ignore' }).status === 0
@@ -168,17 +237,35 @@ function captureStderr(child: ChildProcess): () => string {
 }
 
 async function stopChild(child: ChildProcess): Promise<void> {
-  if (child.exitCode !== null) return
+  const exited = childExit(child)
+  if (child.exitCode !== null) {
+    await exited
+    return
+  }
   child.kill('SIGTERM')
-  await new Promise<void>((resolveExit, reject) => {
-    const timeout = setTimeout(() => {
+  const escalation = setTimeout(() => {
+    if (child.exitCode === null) {
       child.kill('SIGKILL')
-      reject(new Error('durable fixture did not stop after SIGTERM'))
-    }, 5_000)
-    child.once('exit', () => {
-      clearTimeout(timeout)
+    }
+  }, 5_000)
+  try {
+    await Promise.race([
+      exited,
+      delay(10_000).then(() => { throw new Error('durable fixture did not exit after SIGKILL') }),
+    ])
+  } finally {
+    clearTimeout(escalation)
+  }
+}
+
+function childExit(child: ChildProcess): Promise<void> {
+  return new Promise((resolveExit) => {
+    const onExit = (): void => { resolveExit() }
+    child.once('exit', onExit)
+    if (child.exitCode !== null) {
+      child.off('exit', onExit)
       resolveExit()
-    })
+    }
   })
 }
 

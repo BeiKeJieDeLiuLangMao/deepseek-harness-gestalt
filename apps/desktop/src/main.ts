@@ -32,7 +32,7 @@ import {
 } from './updater.ts'
 import { windowChromeOptions } from './window-options.ts'
 import { desktopIconOptions } from './app-icon.ts'
-import { loadDesktopPlatformEnvironment } from './platform-environment.ts'
+import { readDesktopPlatformEnvironment } from './platform-environment.ts'
 import {
   DesktopAccountController, EncryptedDesktopAccountStore,
   UnavailableDesktopAccountController, type DesktopAccountActions,
@@ -51,6 +51,7 @@ import { createDesktopRemoteRelay } from './remote-relay.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const PRELOAD = join(here, 'preload.cjs')
+const OPERATED_PLATFORM_CONFIG = join(here, 'operated-platform.json')
 
 function smokeLog(line: string): void {
   const file = process.env.DSH_DESKTOP_SMOKE_FILE
@@ -75,7 +76,7 @@ let stopPairingEvents: (() => void) | undefined
 let accountSignedIn = false
 const hostStartController = new AbortController()
 let pendingHost: Promise<RunningWebHost> | undefined
-const accountEnvironment = loadDesktopPlatformEnvironment(process.env)
+const accountEnvironment = readDesktopPlatformEnvironment(OPERATED_PLATFORM_CONFIG)
 
 smokeLog('main loaded')
 const gotLock = app.requestSingleInstanceLock()
