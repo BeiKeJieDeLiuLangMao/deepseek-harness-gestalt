@@ -1,5 +1,6 @@
 import { Context } from '@deepseek-ai/cordis'
 import {
+  deriveRelayCredentialDigest,
   deriveRelayCredentialPublicKey,
   generateRelayCredential,
   parseRelayAttachmentId,
@@ -88,14 +89,14 @@ describe('RemoteRelayProvider', () => {
       randomBytes: size => new Uint8Array(size).fill(++entropy),
     })
     const routeId = parseRelayRouteId('route-issue')
-    const desktop = await platform.rotateCredential(routeId)
-    const mobile = await platform.issueCredential(routeId)
+    const desktop = await rotateCredential(platform, routeId)
+    const mobile = await issueCredential(platform, routeId)
 
     expect(mobile).toMatchObject({ routeId, revision: desktop.revision })
     expect(mobile.credential).not.toBe(desktop.credential)
     await platform.revokeRoute(routeId)
-    await expect(platform.issueCredential(routeId)).rejects.toMatchObject({ code: 'RELAY_ROUTE_REVOKED' })
-    await platform.revokeCredential(desktop)
+    await expect(issueCredential(platform, routeId)).rejects.toMatchObject({ code: 'RELAY_ROUTE_REVOKED' })
+    await revokeCredential(platform, desktop)
     await platform.dispose()
   })
 
@@ -109,7 +110,7 @@ describe('RemoteRelayProvider', () => {
       config: CONFIG,
     })
     const routeId = parseRelayRouteId('route-register-digest')
-    const desktop = await platform.rotateCredential(routeId)
+    const desktop = await rotateCredential(platform, routeId)
     const digest = new Uint8Array(32).fill(7)
     const selector = parseRelayPairingSelector('pairing-register-digest')
 
@@ -135,9 +136,9 @@ describe('RemoteRelayProvider', () => {
       randomBytes: size => new Uint8Array(size).fill(9),
     })
     const routeId = parseRelayRouteId('route-revoke-credential')
-    await platform.rotateCredential(routeId, 'desktop')
-    const mobile = await platform.issueCredential(routeId, 'mobile')
-    await platform.revokeCredential(mobile)
+    await rotateCredential(platform, routeId, 'desktop')
+    const mobile = await issueCredential(platform, routeId, 'mobile')
+    await revokeCredential(platform, mobile)
     expect(invalidate).toHaveBeenCalledWith({
       type: 'invalidate',
       routeId,
@@ -151,7 +152,7 @@ describe('RemoteRelayProvider', () => {
     const coordinator = new SharedCoordinator()
     const platform = provider('platform-announce', routeStore, coordinator, 4)
     const routeId = parseRelayRouteId('route-announce')
-    const grant = await platform.rotateCredential(routeId, 'desktop')
+    const grant = await rotateCredential(platform, routeId, 'desktop')
     const attachmentId = parseRelayAttachmentId('desktop-announce')
     let locatedBeforeReady: Awaited<ReturnType<SharedCoordinator['locate']>> = undefined
     const attachment = await platform.attach({
@@ -174,11 +175,11 @@ describe('RemoteRelayProvider', () => {
     const coordinator = new SharedCoordinator()
     const platform = provider('platform-peer-ready', routeStore, coordinator, 5)
     const routeId = parseRelayRouteId('route-peer-ready')
-    const desktopGrant = await platform.rotateCredential(routeId, 'desktop')
+    const desktopGrant = await rotateCredential(platform, routeId, 'desktop')
     const pairingOne = parseRelayPairingSelector('pairing-one')
     const pairingTwo = parseRelayPairingSelector('pairing-two')
-    const mobileOne = await platform.issueCredential(routeId, 'mobile', pairingOne)
-    const mobileTwo = await platform.issueCredential(routeId, 'mobile', pairingTwo)
+    const mobileOne = await issueCredential(platform, routeId, 'mobile', pairingOne)
+    const mobileTwo = await issueCredential(platform, routeId, 'mobile', pairingTwo)
     await platform.attach({
       message: {
         type: 'attach', transportVersion: 1, routeId,
@@ -240,9 +241,9 @@ describe('RemoteRelayProvider', () => {
     const desktopPlatform = provider('platform-peer-desktop', routeStore, coordinator, 81)
     const mobilePlatform = provider('platform-peer-mobile', routeStore, coordinator, 91)
     const routeId = parseRelayRouteId('route-peer-update')
-    const desktopGrant = await desktopPlatform.rotateCredential(routeId, 'desktop')
+    const desktopGrant = await rotateCredential(desktopPlatform, routeId, 'desktop')
     const selector = parseRelayPairingSelector('pairing-peer-update')
-    const mobileGrant = await desktopPlatform.issueCredential(routeId, 'mobile', selector)
+    const mobileGrant = await issueCredential(desktopPlatform, routeId, 'mobile', selector)
     const desktopUpdates: RelayReadyMessage[] = []
     const desktop = await desktopPlatform.attach({
       message: {
@@ -292,8 +293,8 @@ describe('RemoteRelayProvider', () => {
     const coordinator = new SharedCoordinator()
     const platform = provider('platform-a', routeStore, coordinator, 3)
     const routeId = parseRelayRouteId('route-endpoint-scope')
-    const desktop = await platform.rotateCredential(routeId, 'desktop')
-    const mobile = await platform.issueCredential(routeId, 'mobile')
+    const desktop = await rotateCredential(platform, routeId, 'desktop')
+    const mobile = await issueCredential(platform, routeId, 'mobile')
     await expect(platform.attach({
       message: {
         type: 'attach', transportVersion: 1, routeId,
@@ -319,7 +320,7 @@ describe('RemoteRelayProvider', () => {
       })
     }
     const routeId = parseRelayRouteId('route-after-reclamation')
-    const grant = await platform.rotateCredential(routeId)
+    const grant = await rotateCredential(platform, routeId)
     const attachment = await platform.attach({
       message: {
         type: 'attach', transportVersion: 1, routeId,
@@ -340,7 +341,7 @@ describe('RemoteRelayProvider', () => {
       config: { ...CONFIG, maxConnections: 1 }, randomBytes: uniqueRandomBytes(9),
     })
     const routeId = parseRelayRouteId('route-cleanup-tombstone')
-    const grant = await platform.rotateCredential(routeId)
+    const grant = await rotateCredential(platform, routeId)
     const closeSocket = vi.fn()
     const first = await platform.attach({
       message: {
@@ -376,7 +377,7 @@ describe('RemoteRelayProvider', () => {
     const coordinator = new SharedCoordinator()
     const platform = provider('platform-a', routeStore, coordinator, 10)
     const routeId = parseRelayRouteId(`route-cancel-${stage}`)
-    const grant = await platform.rotateCredential(routeId)
+    const grant = await rotateCredential(platform, routeId)
     const entered = deferred<undefined>()
     if (stage === 'authorize') {
       routeStore.authorize = vi.fn(async (
@@ -414,7 +415,7 @@ describe('RemoteRelayProvider', () => {
     const coordinator = new SharedCoordinator()
     const platform = provider('platform-pre-aborted', routeStore, coordinator, 12)
     const routeId = parseRelayRouteId('route-pre-aborted')
-    const grant = await platform.rotateCredential(routeId)
+    const grant = await rotateCredential(platform, routeId)
     const controller = new AbortController()
     controller.abort()
 
@@ -457,8 +458,8 @@ describe('RemoteRelayProvider', () => {
     })
     const platformB = provider('platform-b', routeStore, coordinator, 13)
     const routeId = parseRelayRouteId('route-delivery-collision')
-    const grant = await platformA.rotateCredential(routeId, 'mobile')
-    const desktopGrant = await platformA.issueCredential(routeId, 'desktop')
+    const grant = await rotateCredential(platformA, routeId, 'mobile')
+    const desktopGrant = await issueCredential(platformA, routeId, 'desktop')
     const release = deferred<undefined>()
     const mobile = await platformA.attach({
       message: {
@@ -493,8 +494,8 @@ describe('RemoteRelayProvider', () => {
     })
     const target = provider('platform-collision-target', routeStore, coordinator, 14)
     const routeId = parseRelayRouteId('route-collision-exhausted')
-    const grant = await source.rotateCredential(routeId, 'mobile')
-    const desktopGrant = await source.issueCredential(routeId, 'desktop')
+    const grant = await rotateCredential(source, routeId, 'mobile')
+    const desktopGrant = await issueCredential(source, routeId, 'desktop')
     const release = deferred<undefined>()
     const mobile = await source.attach({
       message: {
@@ -530,8 +531,8 @@ describe('RemoteRelayProvider', () => {
     const platformA = provider('platform-a', routeStore, coordinator, 11)
     const platformB = provider('platform-b', routeStore, coordinator, 29)
     const routeId = parseRelayRouteId('route-one')
-    const grant = await platformA.rotateCredential(routeId, 'mobile')
-    const desktopGrant = await platformA.issueCredential(routeId, 'desktop')
+    const grant = await rotateCredential(platformA, routeId, 'mobile')
+    const desktopGrant = await issueCredential(platformA, routeId, 'desktop')
     const mobileFrames: RelayCiphertextMessage[] = []
     const desktopFrames: RelayCiphertextMessage[] = []
     const mobile = await platformA.attach({
@@ -571,7 +572,7 @@ describe('RemoteRelayProvider', () => {
     const coordinator = new SharedCoordinator()
     const platform = provider('platform-a', routeStore, coordinator, 7)
     const routeId = parseRelayRouteId('route-one')
-    await platform.rotateCredential(routeId)
+    await rotateCredential(platform, routeId)
 
     await expect(platform.attach({
       message: {
@@ -589,7 +590,7 @@ describe('RemoteRelayProvider', () => {
     const coordinator = new SharedCoordinator()
     const platform = provider('platform-a', routeStore, coordinator, 17)
     const routeId = parseRelayRouteId('route-one')
-    const grant = await platform.rotateCredential(routeId, 'mobile')
+    const grant = await rotateCredential(platform, routeId, 'mobile')
     const mobile = await platform.attach({
       message: {
         type: 'attach', transportVersion: 1, routeId,
@@ -621,8 +622,8 @@ describe('RemoteRelayProvider', () => {
       randomBytes: uniqueRandomBytes(37),
     })
     const routeId = parseRelayRouteId('route-slow')
-    const grant = await platformA.rotateCredential(routeId, 'mobile')
-    const desktopGrant = await platformA.issueCredential(routeId, 'desktop')
+    const grant = await rotateCredential(platformA, routeId, 'mobile')
+    const desktopGrant = await issueCredential(platformA, routeId, 'desktop')
     const writer = deferred<undefined>()
     const mobile = await platformA.attach({
       message: {
@@ -662,8 +663,8 @@ describe('RemoteRelayProvider', () => {
     const platformB = provider('platform-b', routeStore, coordinator, 51)
     const routeId = parseRelayRouteId('route-rotated')
     const unrelatedRouteId = parseRelayRouteId('route-unrelated')
-    const first = await platformA.rotateCredential(routeId)
-    const unrelated = await platformA.rotateCredential(unrelatedRouteId)
+    const first = await rotateCredential(platformA, routeId)
+    const unrelated = await rotateCredential(platformA, unrelatedRouteId)
     const oldDesktop = await platformB.attach({
       message: {
         type: 'attach', transportVersion: 1, routeId,
@@ -679,7 +680,7 @@ describe('RemoteRelayProvider', () => {
       deliver: async () => {},
     })
 
-    const rotated = await platformA.rotateCredential(routeId)
+    const rotated = await rotateCredential(platformA, routeId)
     expect(rotated.credential).not.toBe(first.credential)
     await expect(oldDesktop.receive(ciphertext(routeId, 'desktop-old', 'mobile-one', Uint8Array.of(1))))
       .rejects.toEqual(expect.objectContaining<Partial<RemoteRelayError>>({ code: 'REMOTE_OFFLINE' }))
@@ -716,7 +717,7 @@ describe('RemoteRelayProvider', () => {
       randomBytes: uniqueRandomBytes(61),
     })
     const routeId = parseRelayRouteId('route-capacity')
-    const grant = await platform.rotateCredential(routeId)
+    const grant = await rotateCredential(platform, routeId)
     const established = await platform.attach({
       message: {
         type: 'attach', transportVersion: 1, routeId,
@@ -795,7 +796,7 @@ describe('RemoteRelayProvider', () => {
     })
     const platform = provider('platform-quiescence', routeStore, coordinator, 65)
     const routeId = parseRelayRouteId('route-quiescence')
-    const grant = await platform.rotateCredential(routeId)
+    const grant = await rotateCredential(platform, routeId)
     const attaching = platform.attach({
       message: {
         type: 'attach', transportVersion: 1, routeId,
@@ -836,7 +837,7 @@ describe('RemoteRelayProvider', () => {
       randomBytes: size => new Uint8Array(size).fill(++randomByte),
     })
     const routeId = parseRelayRouteId('route-authorization-race')
-    const firstGrant = await platform.rotateCredential(routeId)
+    const firstGrant = await rotateCredential(platform, routeId)
     const entered = deferred<undefined>()
     const release = deferred<undefined>()
     const authorize = routeStore.authorize.bind(routeStore)
@@ -854,7 +855,7 @@ describe('RemoteRelayProvider', () => {
     })
     await entered.promise
 
-    await platform.rotateCredential(routeId)
+    await rotateCredential(platform, routeId)
     release.resolve(undefined)
 
     await expect(attaching).rejects.toMatchObject({ code: 'RELAY_ATTACHMENT_REJECTED' })
@@ -867,7 +868,7 @@ describe('RemoteRelayProvider', () => {
     const coordinator = new SharedCoordinator()
     const platform = provider('platform-post-register-race', routeStore, coordinator, 71)
     const routeId = parseRelayRouteId('route-post-register-race')
-    const grant = await platform.rotateCredential(routeId)
+    const grant = await rotateCredential(platform, routeId)
     const authorize = routeStore.authorize.bind(routeStore)
     let calls = 0
     vi.spyOn(routeStore, 'authorize').mockImplementation(async (id, endpoint, digest) => {
@@ -893,7 +894,7 @@ describe('RemoteRelayProvider', () => {
     const platformA = provider('platform-ack-source', routeStore, coordinator, 72)
     const platformB = provider('platform-ack-target', routeStore, coordinator, 74)
     const routeId = parseRelayRouteId('route-stale-ack')
-    const grant = await platformA.rotateCredential(routeId, 'mobile')
+    const grant = await rotateCredential(platformA, routeId, 'mobile')
     const mobile = await platformA.attach({
       message: {
         type: 'attach', transportVersion: 1, routeId,
@@ -935,8 +936,8 @@ describe('RemoteRelayProvider', () => {
     })
     const target = provider('platform-pending-target', routeStore, coordinator, 73)
     const routeId = parseRelayRouteId('route-pending-capacity')
-    const grant = await source.rotateCredential(routeId, 'mobile')
-    const desktopGrant = await source.issueCredential(routeId, 'desktop')
+    const grant = await rotateCredential(source, routeId, 'mobile')
+    const desktopGrant = await issueCredential(source, routeId, 'desktop')
     const mobile = await source.attach({
       message: {
         type: 'attach', transportVersion: 1, routeId,
@@ -969,7 +970,7 @@ describe('RemoteRelayProvider', () => {
       randomBytes: size => new Uint8Array(++entropyCalls === 2 ? 15 : size).fill(74),
     })
     const badRoute = parseRelayRouteId('route-bad-delivery')
-    const badGrant = await badDelivery.rotateCredential(badRoute, 'mobile')
+    const badGrant = await rotateCredential(badDelivery, badRoute, 'mobile')
     const badMobile = await badDelivery.attach({
       message: {
         type: 'attach', transportVersion: 1, routeId: badRoute,
@@ -992,7 +993,7 @@ describe('RemoteRelayProvider', () => {
     const coordinator = new SharedCoordinator()
     const platform = provider('platform-a', routeStore, coordinator, 71)
     const routeId = parseRelayRouteId('route-heartbeat')
-    const grant = await platform.rotateCredential(routeId)
+    const grant = await rotateCredential(platform, routeId)
     const desktop = await platform.attach({
       message: {
         type: 'attach', transportVersion: 1, routeId,
@@ -1017,7 +1018,7 @@ describe('RemoteRelayProvider', () => {
     const coordinator = new SharedCoordinator()
     const platform = provider('platform-a', routeStore, coordinator, 73)
     const routeId = parseRelayRouteId('route-timeout')
-    const grant = await platform.rotateCredential(routeId)
+    const grant = await rotateCredential(platform, routeId)
     const desktop = await platform.attach({
       message: {
         type: 'attach', transportVersion: 1, routeId,
@@ -1041,8 +1042,8 @@ describe('RemoteRelayProvider', () => {
     coordinator.failStop = true
     const platform = provider('platform-a', routeStore, coordinator, 79)
     const routeId = parseRelayRouteId('route-shutdown')
-    const grant = await platform.rotateCredential(routeId, 'mobile')
-    const desktopGrant = await platform.issueCredential(routeId, 'desktop')
+    const grant = await rotateCredential(platform, routeId, 'mobile')
+    const desktopGrant = await issueCredential(platform, routeId, 'desktop')
     const closeCalls: string[] = []
     let failClose = true
     for (const attachmentId of ['mobile-one', 'desktop-one'] as const) {
@@ -1079,8 +1080,8 @@ describe('RemoteRelayProvider', () => {
     const coordinator = new SharedCoordinator()
     const platform = provider('platform-a', routeStore, coordinator, 83)
     const routeId = parseRelayRouteId('route-drain')
-    const grant = await platform.rotateCredential(routeId, 'mobile')
-    const desktopGrant = await platform.issueCredential(routeId, 'desktop')
+    const grant = await rotateCredential(platform, routeId, 'mobile')
+    const desktopGrant = await issueCredential(platform, routeId, 'desktop')
     const writer = deferred<undefined>()
     const mobile = await platform.attach({
       message: {
@@ -1133,14 +1134,14 @@ describe('RemoteRelayProvider', () => {
       instanceId: parseRelayInstanceId('platform-a'), routeStore, coordinator, config: CONFIG,
       randomBytes: () => new Uint8Array(31),
     })
-    await expect(credentialEntropyIsEndpointOwned.rotateCredential(routeId)).resolves.toMatchObject({ endpoint: 'desktop' })
+    await expect(rotateCredential(credentialEntropyIsEndpointOwned, routeId)).resolves.toMatchObject({ endpoint: 'desktop' })
     await credentialEntropyIsEndpointOwned.dispose()
 
     const badTokenEntropy = new RemoteRelayProvider(new Context(), {
       instanceId: parseRelayInstanceId('platform-b'), routeStore, coordinator, config: CONFIG,
       randomBytes: () => new Uint8Array(15).fill(1),
     })
-    const grant = await badTokenEntropy.rotateCredential(routeId)
+    const grant = await rotateCredential(badTokenEntropy, routeId)
     await expect(badTokenEntropy.attach({
       message: {
         type: 'attach', transportVersion: 1, routeId,
@@ -1154,10 +1155,10 @@ describe('RemoteRelayProvider', () => {
       instanceId: parseRelayInstanceId('platform-defaults'),
       routeStore: new SharedRouteStore(), coordinator: new SharedCoordinator(), config: CONFIG,
     })
-    await defaults.rotateCredential(parseRelayRouteId('route-defaults'))
+    await rotateCredential(defaults, parseRelayRouteId('route-defaults'))
     await defaults.dispose()
     await defaults.dispose()
-    await expect(defaults.rotateCredential(routeId)).rejects.toMatchObject({ code: 'REMOTE_OFFLINE' })
+    await expect(rotateCredential(defaults, routeId)).rejects.toMatchObject({ code: 'REMOTE_OFFLINE' })
     await expect(defaults.revokeRoute(routeId)).rejects.toMatchObject({ code: 'REMOTE_OFFLINE' })
 
     routeStore.uncertain = true
@@ -1193,7 +1194,7 @@ describe('RemoteRelayProvider', () => {
       randomBytes: uniqueRandomBytes(97), clock: { now: () => clock.value },
     })
     const routeId = parseRelayRouteId('route-forged')
-    const grant = await platform.rotateCredential(routeId, 'mobile')
+    const grant = await rotateCredential(platform, routeId, 'mobile')
     const attachment = await platform.attach({
       message: {
         type: 'attach', transportVersion: 1, routeId,
@@ -1243,7 +1244,7 @@ describe('RemoteRelayProvider', () => {
     const coordinator = new SharedCoordinator()
     const platform = provider('platform-a', routeStore, coordinator, 101)
     const routeId = parseRelayRouteId('route-heartbeats')
-    const grant = await platform.rotateCredential(routeId)
+    const grant = await rotateCredential(platform, routeId)
     const message = {
       type: 'attach' as const, transportVersion: 1 as const, routeId,
       attachmentId: parseRelayAttachmentId('desktop-one'), endpoint: 'desktop' as const,
@@ -1261,7 +1262,7 @@ describe('RemoteRelayProvider', () => {
 
     coordinator.failRefresh = false
     const changed = await platform.attach({ message, deliver: async () => {} })
-    await platform.rotateCredential(routeId)
+    await rotateCredential(platform, routeId)
     await expect(changed.receive({
       type: 'heartbeat', transportVersion: 1, attachmentId: message.attachmentId, sentAt: 3,
     })).rejects.toMatchObject({ code: 'REMOTE_OFFLINE' })
@@ -1275,8 +1276,8 @@ describe('RemoteRelayProvider', () => {
     const platformA = provider('platform-a', routeStore, coordinator, 103)
     const platformB = provider('platform-b', routeStore, coordinator, 107)
     const routeId = parseRelayRouteId('route-events')
-    const grant = await platformA.rotateCredential(routeId, 'desktop')
-    const mobileGrant = await platformA.issueCredential(routeId, 'mobile')
+    const grant = await rotateCredential(platformA, routeId, 'desktop')
+    const mobileGrant = await issueCredential(platformA, routeId, 'mobile')
     const close = vi.fn()
     const message = {
       type: 'attach' as const, transportVersion: 1 as const, routeId,
@@ -1329,7 +1330,7 @@ describe('RemoteRelayProvider', () => {
     const coordinator = new SharedCoordinator()
     const platform = provider('platform-a', routeStore, coordinator, 109)
     const routeId = parseRelayRouteId('route-silent-change')
-    const grant = await platform.rotateCredential(routeId)
+    const grant = await rotateCredential(platform, routeId)
     const desktop = await platform.attach({
       message: {
         type: 'attach', transportVersion: 1, routeId,
@@ -1351,7 +1352,7 @@ describe('RemoteRelayProvider', () => {
     const coordinator = new SharedCoordinator()
     const platform = provider('platform-a', routeStore, coordinator, 113)
     const routeId = parseRelayRouteId('route-invalidation-failure')
-    const grant = await platform.rotateCredential(routeId)
+    const grant = await rotateCredential(platform, routeId)
     const first = await platform.attach({
       message: {
         type: 'attach', transportVersion: 1, routeId,
@@ -1389,8 +1390,8 @@ describe('RemoteRelayProvider', () => {
       schedule: (task) => { timeout = task; return { unref: () => {} } as never },
     })
     const routeId = parseRelayRouteId('route-queued-close')
-    const grant = await platformA.rotateCredential(routeId, 'mobile')
-    const desktopGrant = await platformA.issueCredential(routeId, 'desktop')
+    const grant = await rotateCredential(platformA, routeId, 'mobile')
+    const desktopGrant = await issueCredential(platformA, routeId, 'desktop')
     const writer = deferred<undefined>()
     let deliveries = 0
     const mobile = await platformA.attach({
@@ -1452,7 +1453,7 @@ describe('RemoteRelayProvider', () => {
       randomBytes: uniqueRandomBytes(137),
     })
     await disposeEffect?.()
-    await expect(platform.rotateCredential(parseRelayRouteId('route-effect')))
+    await expect(rotateCredential(platform, parseRelayRouteId('route-effect')))
       .rejects.toMatchObject({ code: 'REMOTE_OFFLINE' })
   })
 
@@ -1465,8 +1466,8 @@ describe('RemoteRelayProvider', () => {
       routeStore, coordinator, config: CONFIG, randomBytes: uniqueRandomBytes(201), capacity: gate,
     })
     const routeId = parseRelayRouteId('route-shared-gate')
-    const desktopGrant = await platform.rotateCredential(routeId, 'desktop')
-    const mobileGrant = await platform.issueCredential(routeId, 'mobile')
+    const desktopGrant = await rotateCredential(platform, routeId, 'desktop')
+    const mobileGrant = await issueCredential(platform, routeId, 'mobile')
     const mobileFrames: RelayCiphertextMessage[] = []
     const desktop = await platform.attach({
       message: {
@@ -1517,7 +1518,7 @@ describe('RemoteRelayProvider', () => {
       config: { ...CONFIG, maxConnections: 1 }, randomBytes: uniqueRandomBytes(205), capacity: gate,
     })
     const routeId = parseRelayRouteId('route-gate-max')
-    const grant = await platform.rotateCredential(routeId)
+    const grant = await rotateCredential(platform, routeId)
     const first = await platform.attach({
       message: {
         type: 'attach', transportVersion: 1, routeId,
@@ -1545,7 +1546,7 @@ describe('RemoteRelayProvider', () => {
       config: CONFIG, randomBytes: uniqueRandomBytes(207), capacity: gate,
     })
     const routeId = parseRelayRouteId('route-gate-replace')
-    const grant = await platform.rotateCredential(routeId)
+    const grant = await rotateCredential(platform, routeId)
     const first = await platform.attach({
       message: {
         type: 'attach', transportVersion: 1, routeId,
@@ -1565,7 +1566,7 @@ describe('RemoteRelayProvider', () => {
     expect(gate.shedding).toBe(true)
     await replacement.close()
     expect(gate.shedding).toBe(false)
-    await platform.revokeCredential(grant)
+    await revokeCredential(platform, grant)
     await platform.dispose()
   })
 
@@ -1602,6 +1603,41 @@ function provider(
     config: CONFIG,
     randomBytes: uniqueRandomBytes(randomByte),
   })
+}
+
+async function rotateCredential(
+  relay: TestRemoteRelayProvider,
+  routeId: ReturnType<typeof parseRelayRouteId>,
+  endpoint: 'mobile' | 'desktop' = 'desktop',
+  pairingSelector?: RelayPairingSelector,
+) {
+  const credential = await generateRelayCredential()
+  const revision = await relay.activateCredentialDigest(
+    routeId, endpoint, await deriveRelayCredentialDigest(credential), pairingSelector,
+  )
+  return { routeId, endpoint, credential, revision, ...(pairingSelector === undefined ? {} : { pairingSelector }) }
+}
+
+async function issueCredential(
+  relay: TestRemoteRelayProvider,
+  routeId: ReturnType<typeof parseRelayRouteId>,
+  endpoint: 'mobile' | 'desktop' = 'mobile',
+  pairingSelector?: RelayPairingSelector,
+) {
+  const credential = await generateRelayCredential()
+  const revision = await relay.registerCredentialDigest(
+    routeId, endpoint, await deriveRelayCredentialDigest(credential), pairingSelector,
+  )
+  return { routeId, endpoint, credential, revision, ...(pairingSelector === undefined ? {} : { pairingSelector }) }
+}
+
+async function revokeCredential(
+  relay: TestRemoteRelayProvider,
+  grant: Awaited<ReturnType<typeof rotateCredential>>,
+): Promise<void> {
+  await relay.revokeCredentialDigest(
+    grant.routeId, grant.endpoint, await deriveRelayCredentialDigest(grant.credential),
+  )
 }
 
 /**

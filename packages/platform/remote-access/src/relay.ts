@@ -175,25 +175,19 @@ export abstract class RemoteRelayService extends Service {
   /** @param ctx - Platform composition context receiving the Relay capability. */
   constructor(ctx: Context) { super(ctx, 'remoteRelay') }
 
-  /**
-   * Rotate one route to fresh authority and invalidate older attachments.
-   * @param routeId - opaque route receiving new attachment authority.
-   * @param endpoint - endpoint whose same-endpoint credentials the rotation replaces; defaults to desktop.
-   * @returns the one-time credential grant and its persistent revision.
+  /** Activate one endpoint-generated digest and replace same-endpoint authority.
+   * @param routeId - route receiving endpoint-owned authority.
+   * @param endpoint - endpoint kind bound to the digest.
+   * @param credentialDigest - SHA-256 digest of the endpoint-owned public key.
+   * @param pairingSelector - optional non-secret Personal Pairing selector.
+   * @returns new route revision.
    */
-  abstract rotateCredential(routeId: RelayRouteId, endpoint?: 'mobile' | 'desktop'): Promise<RelayCredentialGrant>
-  /**
-   * Issue distinct endpoint authority without invalidating other credentials on the active route.
-   * @param routeId - active route receiving another independently revocable bearer.
-   * @param endpoint - endpoint the new credential authorizes; defaults to mobile.
-   * @param pairingSelector - non-secret Mobile pairing selector retained beside the credential digest.
-   * @returns a fresh credential at the current route revision.
-   */
-  abstract issueCredential(
+  abstract activateCredentialDigest(
     routeId: RelayRouteId,
-    endpoint?: 'mobile' | 'desktop',
+    endpoint: 'mobile' | 'desktop',
+    credentialDigest: Uint8Array,
     pairingSelector?: RelayPairingSelector,
-  ): Promise<RelayCredentialGrant>
+  ): Promise<number>
   /**
    * Register endpoint-generated authority without receiving its bearer credential.
    * @param routeId - active route receiving Mobile authority.
@@ -231,11 +225,6 @@ export abstract class RemoteRelayService extends Service {
     endpoint: 'mobile' | 'desktop',
     credentialDigest: Uint8Array,
   ): Promise<void>
-  /**
-   * Remove one issued endpoint credential without revoking its route peers.
-   * @param grant - exact issued authority whose ownership did not commit.
-   */
-  abstract revokeCredential(grant: RelayCredentialGrant): Promise<void>
   /**
    * Revoke one route and close its attachments across Platform Instances.
    * @param routeId - opaque route whose current authority becomes invalid.

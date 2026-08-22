@@ -194,9 +194,9 @@ export interface PersonalPairingProviderOptions {
   /** Replaceable reviewed handshake adapter; this package does not implement Noise. */
   handshake: PairingHandshakeProvider
   /** Optional assembled Relay authority; production omits it until the crypto gate is approved. */
-  relay?: Pick<RemoteRelayService, 'rotateCredential' | 'issueCredential' | 'revokeCredential' | 'revokeRoute'>
-    & Partial<Pick<RemoteRelayService,
-      'registerCredentialDigest' | 'registerPairingCredentialDigests' | 'revokeCredentialDigest'>>
+  relay?: Pick<RemoteRelayService, 'revokeRoute'> & Partial<Pick<RemoteRelayService,
+    'activateCredentialDigest' | 'registerCredentialDigest'
+    | 'registerPairingCredentialDigests' | 'revokeCredentialDigest'>>
   /** Deployment-owned durable Mobile Access and pairing-to-route authority. */
   authority?: PersonalPairingAuthorityStore
   /** Clock used for fixed challenge expiry and deterministic assembled scenarios. */
@@ -1381,9 +1381,6 @@ export class PersonalPairingProvider extends RemoteAccessService {
           this.pairings.delete(pairingId)
           this.principalIds.delete(pairing.devicePrincipal.id)
           if (pairing.cleanup !== undefined) await this.cleanupActive(pairing.cleanup)
-          if (pairing.mobileGrant !== undefined) {
-            await this.options.relay?.revokeCredential(pairing.mobileGrant)
-          }
           if (pairing.endpointRouteId !== undefined && pairing.endpointCredentialDigest !== undefined) {
             await this.options.relay?.revokeCredentialDigest?.(
               pairing.endpointRouteId, 'mobile', pairing.endpointCredentialDigest,
@@ -1599,10 +1596,6 @@ export class PersonalPairingProvider extends RemoteAccessService {
         () => this.authority.revokeMobilePairing(pairingId),
       ]
       if (pairing.cleanup !== undefined) operations.push(() => this.cleanupActive(pairing.cleanup as CleanupRecord<ActivePairingKey>))
-      if (pairing.mobileGrant !== undefined && this.options.relay !== undefined) {
-        const grant = pairing.mobileGrant
-        operations.push(async () => { await this.options.relay?.revokeCredential(grant) })
-      }
       if (pairing.endpointRouteId !== undefined && pairing.endpointCredentialDigest !== undefined) {
         const { endpointRouteId, endpointCredentialDigest } = pairing
         operations.push(async () => {
@@ -1744,62 +1737,19 @@ export class PersonalPairingProvider extends RemoteAccessService {
           lastAccessAt: this.clock.now(),
           online: false,
         }
-        let sealedRelayAuthority: Uint8Array | undefined
-        let issuedMobileGrant: RelayCredentialGrant | undefined
-        const desktopAuthority = await this.authority.getDesktop(account.id, record.desktopInstallationId)
-        if (this.options.relay !== undefined) {
-          if (!desktopAuthority.enabled || desktopAuthority.routeId === undefined) {
-            throw new RemoteAccessError('MOBILE_ACCESS_DISABLED', 'Mobile Access is disabled for this Desktop Installation')
-          }
-          if (this.options.handshake.sealMobileRelayAuthority === undefined) {
-            throw new Error('Personal Pairing crypto adapter cannot seal Mobile Relay authority')
-          }
-          const mobileGrant = await this.options.relay.issueCredential(
-            desktopAuthority.routeId,
-            'mobile',
-            parseRelayPairingSelector(view.id),
-          )
-          issuedMobileGrant = mobileGrant
-          try {
-            sealedRelayAuthority = await this.options.handshake.sealMobileRelayAuthority({
-              activePairingKey: activation.activePairingKey,
-              grant: mobileGrant,
-            })
-          } catch (error) {
-            try {
-              await this.options.relay.revokeCredential(mobileGrant)
-            } catch (cleanupError) {
-              throw new AggregateError([error, cleanupError], 'Mobile Relay authority rollback failed')
-            }
-            throw error
-          }
-        }
-        try {
-          await this.authority.confirmMobilePairing({
-            accountId: account.id,
-            desktopInstallationId: record.desktopInstallationId,
-            mobileInstallationId: record.mobileInstallationId,
-            pendingPairingId,
-            pairingId: view.id,
-            ...(sealedRelayAuthority === undefined ? {} : { sealedRelayAuthority }),
-          })
-        } catch (error) {
-          if (issuedMobileGrant !== undefined && this.options.relay !== undefined) {
-            try {
-              await this.options.relay.revokeCredential(issuedMobileGrant)
-            } catch (cleanupError) {
-              throw new AggregateError([error, cleanupError], 'Mobile Relay authority commit rollback failed')
-            }
-          }
-          throw error
-        }
+        await this.authority.confirmMobilePairing({
+          accountId: account.id,
+          desktopInstallationId: record.desktopInstallationId,
+          mobileInstallationId: record.mobileInstallationId,
+          pendingPairingId,
+          pairingId: view.id,
+        })
         this.principalIds.add(principalId)
         this.pairings.set(view.id, {
           ...view,
           desktopInstallationId: record.desktopInstallationId,
           keyReference,
           cleanup: activationCleanup,
-          ...(issuedMobileGrant === undefined ? {} : { mobileGrant: issuedMobileGrant }),
         })
         delete record.activationCleanup
         const confirmed = this.settlePending(pendingPairingId, record, 'confirmed', view)

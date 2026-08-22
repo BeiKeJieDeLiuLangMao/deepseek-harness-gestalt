@@ -3,9 +3,7 @@
 import { createHash, randomBytes as secureRandomBytes } from 'node:crypto'
 import { Context } from '@deepseek-ai/cordis'
 import {
-  deriveRelayCredentialDigest,
   deriveRelayCredentialPublicKeyDigest,
-  generateRelayCredential,
   parseRelayPairingSelector,
   verifyRelayAttachmentProof,
   type RelayAttachMessage,
@@ -25,7 +23,6 @@ import type {
   RelayConnectionToken,
   RelayCoordinationEvent,
   RelayCoordinator,
-  RelayCredentialGrant,
   RelayDeliveryId,
   RelayDirectoryEntry,
   RelayInstanceId,
@@ -90,26 +87,21 @@ export class RemoteRelayProvider extends RemoteRelayService {
     ctx.effect(() => async () => { await this.dispose() }, 'remote-access: Relay resources')
   }
 
-  async rotateCredential(routeId: RelayRouteId, endpoint: 'mobile' | 'desktop' = 'desktop'): Promise<RelayCredentialGrant> {
-    this.assertOpen()
-    const credential = await generateRelayCredential()
-    const revision = await this.options.routeStore.rotate(routeId, endpoint, await deriveRelayCredentialDigest(credential))
-    if (revision > 1) await this.options.coordinator.invalidate({ type: 'invalidate', routeId, revision })
-    return { routeId, endpoint, credential, revision }
-  }
-
-  async issueCredential(
+  async activateCredentialDigest(
     routeId: RelayRouteId,
-    endpoint: 'mobile' | 'desktop' = 'mobile',
+    endpoint: 'mobile' | 'desktop',
+    credentialDigest: Uint8Array,
     pairingSelector?: RelayPairingSelector,
-  ): Promise<RelayCredentialGrant> {
+  ): Promise<number> {
     this.assertOpen()
-    const credential = await generateRelayCredential()
-    const revision = await this.options.routeStore.issue(
-      routeId, endpoint, await deriveRelayCredentialDigest(credential), pairingSelector,
-    )
-    if (revision === undefined) throw new RemoteRelayError('RELAY_ROUTE_REVOKED', 'Relay route is inactive')
-    return { routeId, endpoint, credential, revision, ...(pairingSelector === undefined ? {} : { pairingSelector }) }
+    if (credentialDigest.byteLength !== 32) throw new TypeError('Relay credential digest must contain 32 bytes')
+    const revision = await this.options.routeStore.rotate(routeId, endpoint, credentialDigest.slice())
+    if (pairingSelector !== undefined) {
+      const issued = await this.options.routeStore.issue(routeId, endpoint, credentialDigest.slice(), pairingSelector)
+      if (issued !== revision) throw new RemoteRelayError('RELAY_ROUTE_REVOKED', 'Relay route activation diverged')
+    }
+    if (revision > 1) await this.options.coordinator.invalidate({ type: 'invalidate', routeId, revision })
+    return revision
   }
 
   /**
@@ -161,16 +153,6 @@ export class RemoteRelayProvider extends RemoteRelayService {
     if (digest.byteLength !== 32) throw new TypeError('Relay credential digest must contain 32 bytes')
     const revision = await this.options.routeStore.revokeCredential(routeId, endpoint, digest.slice())
     await this.options.coordinator.invalidate({ type: 'invalidate', routeId, revision })
-  }
-
-  async revokeCredential(grant: RelayCredentialGrant): Promise<void> {
-    this.assertOpen()
-    const revision = await this.options.routeStore.revokeCredential(
-      grant.routeId,
-      grant.endpoint,
-      await deriveRelayCredentialDigest(grant.credential),
-    )
-    await this.options.coordinator.invalidate({ type: 'invalidate', routeId: grant.routeId, revision })
   }
 
   async revokeRoute(routeId: RelayRouteId): Promise<void> {

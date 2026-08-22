@@ -12,6 +12,8 @@
 
 ## 重连与消息
 
+`SnowDesktopEndpointPairingOwner` 与 `SnowMobileHandshakeClient` 完成三条 XKpsk3 消息，Platform 只转发不透明 mailbox 消息与路由元数据。Desktop 在本地构造 QR payload，邀请 PSK 不进入 Platform HTTP 或持久化。端点保护的恢复记录让未完成 transcript 可以跨进程重启继续。Desktop 只在确认事务持久化后擦除邀请状态；Mobile 只在打开的 grant 与 reconnect record 同一次提交成功后擦除邀请状态。
+
 `beginSnowMobileReconnect` 与 `acceptSnowDesktopReconnect` 为每条物理 Relay attachment 创建一条 IK channel。Snow 为每次尝试生成新的临时密钥。IK prologue 绑定 Relay route、credential-bound pairing selector、相互独立的 Desktop 与 Mobile attachment id，以及正数 connection generation，因此其他 route、配对、attachment 组合或 generation 不能复用该 transcript。`SnowMobileAttachmentOwner` 与 `SnowDesktopAttachmentOwner` 把这些 IK 消息作为不透明 Relay ciphertext payload 携带；Desktop 只选择由非秘密 selector 命名的本地 static state，而 Snow 会认证该 static identity。
 
 `SnowCompanionProtocolChannel` 只加密由 `@deepseek-ai/dsh-remote-protocol` 接纳的值。Snow 的有序 transport 会拒绝重放和乱序 ciphertext。Foreground Synchronization 是带有 attachment generation 与 Desktop revision 的版本化 `foreground-sync` Companion projection；原始 1 字节 frame 无法解码成同步 authority。

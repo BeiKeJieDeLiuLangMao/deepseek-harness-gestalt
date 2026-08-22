@@ -815,6 +815,9 @@ importers:
       '@deepseek-ai/dsh-mcp-client':
         specifier: workspace:*
         version: link:../packages/mcp/mcp-client
+      '@deepseek-ai/dsh-noise-channel':
+        specifier: workspace:*
+        version: link:../packages/platform/noise-channel
       '@deepseek-ai/dsh-permission-presets':
         specifier: workspace:*
         version: link:../packages/interaction/permission-presets
