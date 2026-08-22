@@ -41,6 +41,11 @@
   padding-top: var(--dsh-window-chrome-height);
 }
 
+.frame:has([data-desktop-chrome='win']) .centerCol {
+  box-sizing: border-box;
+  padding-top: 36px;
+}
+
 .detailsCol {
   position: relative;
   min-width: 0;
