@@ -115,11 +115,11 @@ export function developmentCompanionPresentation(): MobileCompanionPresentation 
       cwd: '/workspace/deepseek-harness',
       conversation,
     }],
-    loadImage: async (sessionId, attachment) => {
+    loadImage: (sessionId, attachment) => {
       if (sessionId !== SESSION_ID || attachment.attachmentId !== IMAGE.attachmentId) {
-        throw new Error('development Mobile image is outside the selected Session')
+        return Promise.reject(new Error('development Mobile image is outside the selected Session'))
       }
-      return 'data:image/gif;base64,R0lGODlhAQABAAAAACw='
+      return Promise.resolve('data:image/gif;base64,R0lGODlhAQABAAAAACw=')
     },
   }
 }
