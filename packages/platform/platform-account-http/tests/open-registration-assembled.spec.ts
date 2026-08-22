@@ -213,6 +213,9 @@ async function beginAndAuthorize(
     body: JSON.stringify({
       installationId,
       installationKind,
+      ...(installationKind === 'mobile'
+        ? { presentation: { name: `Phone ${installationId}`, platform: 'android' } }
+        : {}),
       publicKey: key.publicKey,
     }),
   })

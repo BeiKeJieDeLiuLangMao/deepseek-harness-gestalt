@@ -1,3 +1,4 @@
+import { Device } from '@capacitor/device'
 import {
   IndexedDbInstallationAccountStore,
   PlatformAccountHttpTransport,
@@ -21,7 +22,8 @@ import {
 } from './companion-lifecycle.ts'
 import { mountMobileEntry } from './mobile-entry.tsx'
 import type { MobilePairingActions } from './MobilePairing.tsx'
-import { MobilePairingController, NativeMobilePairingQrScanner } from './personal-pairing.ts'
+import { BrowserCameraPairingQrScanner, MobilePairingController } from './personal-pairing.ts'
+import { mobileInstallationPresentation } from './mobile-installation.ts'
 import { mobileSystemBrowser } from './system-browser.ts'
 import './root.css'
 
@@ -54,14 +56,6 @@ if (installationId === null) {
   localStorage.setItem(installationIdKey, installationId)
 }
 const parsedInstallationId = parseInstallationId(installationId)
-const installation = new PlatformAccountInstallation({
-  environment,
-  installationId: parsedInstallationId,
-  installationKind: 'mobile',
-  transport: new PlatformAccountHttpTransport({ environment }),
-  store: new IndexedDbInstallationAccountStore(`deepseek-gestalt-platform-account:${environment.databaseIdentity}`),
-  systemBrowser: mobileSystemBrowser,
-})
 let companionVisibilityDisposer: (() => Promise<void>) | undefined
 
 /**
@@ -72,76 +66,88 @@ export function disposeCompanionVisibility(): Promise<void> {
   return companionVisibilityDisposer?.() ?? Promise.resolve()
 }
 
-const unavailablePairing = {
-  status: 'unavailable',
-  error: 'Personal Pairing waits for the independent Noise security review.',
-} as const
-const pairingUnavailable = (): Promise<never> => Promise.reject(new Error(unavailablePairing.error))
-let pairing: MobilePairingActions = {
-  getSnapshot: () => unavailablePairing,
-  subscribe: () => () => {},
-  completeLink: pairingUnavailable,
-  scanQr: pairingUnavailable,
-  retryPairing: pairingUnavailable,
-  activate: () => Promise.resolve(),
-  deactivate: () => Promise.resolve(),
-  unpair: pairingUnavailable,
-}
-let companion: CompanionForegroundRuntime
-if (environment.environment === 'development' && import.meta.env.VITE_PERSONAL_PAIRING_KEYLESS === '1') {
-  const { DevelopmentKeylessMobileHandshakeClient } = await import('./development-keyless-pairing.ts')
-  const { PairingCompanionKeyVault } = await import('./companion-keys.ts')
-  const relayUrl = requiredWss(import.meta.env.VITE_REMOTE_RELAY_WSS_URL)
-  const inboundMaxBytes = positiveInteger(import.meta.env.VITE_REMOTE_RELAY_INBOUND_MAX_BYTES, 'inbound bytes')
-  const inboundMaxMessages = positiveInteger(import.meta.env.VITE_REMOTE_RELAY_INBOUND_MAX_MESSAGES, 'inbound messages')
-  if (inboundMaxBytes < REMOTE_PROTOCOL_LIMITS.relayMessageBytes) {
-    throw new TypeError('Mobile Relay inbound bytes must admit one maximum Relay message')
+/** Settles after the native Installation presentation is bound and the Mobile product surface mounts. */
+export const mobileProductStarted = mountMobileProduct()
+
+async function mountMobileProduct(): Promise<void> {
+  const presentation = mobileInstallationPresentation(await Device.getInfo())
+  const installation = new PlatformAccountInstallation({
+    environment,
+    installationId: parsedInstallationId,
+    installationKind: 'mobile',
+    presentation,
+    transport: new PlatformAccountHttpTransport({ environment }),
+    store: new IndexedDbInstallationAccountStore(`deepseek-gestalt-platform-account:${environment.databaseIdentity}`),
+    systemBrowser: mobileSystemBrowser,
+  })
+
+  const unavailablePairing = {
+    status: 'unavailable',
+    error: 'Personal Pairing waits for the independent Noise security review.',
+  } as const
+  const pairingUnavailable = (): Promise<never> => Promise.reject(new Error(unavailablePairing.error))
+  let pairing: MobilePairingActions = {
+    getSnapshot: () => unavailablePairing,
+    subscribe: () => () => {},
+    completeLink: pairingUnavailable,
+    scanQr: pairingUnavailable,
+    retryPairing: pairingUnavailable,
+    activate: () => Promise.resolve(),
+    deactivate: () => Promise.resolve(),
+    unpair: pairingUnavailable,
   }
-  const relay = new MobileRelayEndpointLifecycle({
-    attachmentId: () => parseRelayAttachmentId(crypto.randomUUID()),
-    connect: async signal => await BrowserRelayEndpointSocket.connect(relayUrl, signal, {
-      maxBytes: inboundMaxBytes,
-      maxMessages: inboundMaxMessages,
-    }),
-    attachTimeoutMs: positiveInteger(import.meta.env.VITE_REMOTE_RELAY_ATTACH_TIMEOUT_MS, 'attach timeout'),
-    heartbeatIntervalMs: positiveInteger(import.meta.env.VITE_REMOTE_RELAY_HEARTBEAT_INTERVAL_MS, 'heartbeat interval'),
-    reconnectDelayMs: positiveInteger(import.meta.env.VITE_REMOTE_RELAY_RECONNECT_DELAY_MS, 'reconnect delay'),
-    onConnectionReady: () => { companionRuntime()?.markConnectionOpen() },
-    onConnectionLost: () => { companionRuntime()?.forgetConnection() },
-    onTransportError: () => { companionRuntime()?.forgetConnection() },
-  })
-  companion = new CompanionForegroundRuntime({ relay })
-  installCompanionRuntime(companion)
-  companionVisibilityDisposer = bindCompanionProcessVisibility(companion)
-  pairing = new MobilePairingController({
-    installation,
-    transport: new RemoteAccessHttpTransport({ environment }),
-    handshake: new DevelopmentKeylessMobileHandshakeClient(),
-    scanner: new NativeMobilePairingQrScanner(),
-    relay: companion,
-    companion,
-    pairingKeys: new PairingCompanionKeyVault(),
-    device: {
-      name: navigator.userAgent.includes('Android') ? 'Android phone' : 'iPhone',
-      platform: navigator.userAgent.includes('Android') ? 'android' : 'ios',
-    },
-  })
-} else {
-  companion = new CompanionForegroundRuntime()
-  installCompanionRuntime(companion)
-}
+  let companion: CompanionForegroundRuntime
+  if (environment.environment === 'development' && import.meta.env.VITE_PERSONAL_PAIRING_KEYLESS === '1') {
+    const { DevelopmentKeylessMobileHandshakeClient } = await import('./development-keyless-pairing.ts')
+    const { PairingCompanionKeyVault } = await import('./companion-keys.ts')
+    const relayUrl = requiredWss(import.meta.env.VITE_REMOTE_RELAY_WSS_URL)
+    const inboundMaxBytes = positiveInteger(import.meta.env.VITE_REMOTE_RELAY_INBOUND_MAX_BYTES, 'inbound bytes')
+    const inboundMaxMessages = positiveInteger(import.meta.env.VITE_REMOTE_RELAY_INBOUND_MAX_MESSAGES, 'inbound messages')
+    if (inboundMaxBytes < REMOTE_PROTOCOL_LIMITS.relayMessageBytes) {
+      throw new TypeError('Mobile Relay inbound bytes must admit one maximum Relay message')
+    }
+    const relay = new MobileRelayEndpointLifecycle({
+      attachmentId: () => parseRelayAttachmentId(crypto.randomUUID()),
+      connect: async signal => await BrowserRelayEndpointSocket.connect(relayUrl, signal, {
+        maxBytes: inboundMaxBytes,
+        maxMessages: inboundMaxMessages,
+      }),
+      attachTimeoutMs: positiveInteger(import.meta.env.VITE_REMOTE_RELAY_ATTACH_TIMEOUT_MS, 'attach timeout'),
+      heartbeatIntervalMs: positiveInteger(import.meta.env.VITE_REMOTE_RELAY_HEARTBEAT_INTERVAL_MS, 'heartbeat interval'),
+      reconnectDelayMs: positiveInteger(import.meta.env.VITE_REMOTE_RELAY_RECONNECT_DELAY_MS, 'reconnect delay'),
+      onConnectionReady: () => { companionRuntime()?.markConnectionOpen() },
+      onConnectionLost: () => { companionRuntime()?.forgetConnection() },
+      onTransportError: () => { companionRuntime()?.forgetConnection() },
+    })
+    companion = new CompanionForegroundRuntime({ relay })
+    installCompanionRuntime(companion)
+    companionVisibilityDisposer = bindCompanionProcessVisibility(companion)
+    pairing = new MobilePairingController({
+      installation,
+      transport: new RemoteAccessHttpTransport({ environment }),
+      handshake: new DevelopmentKeylessMobileHandshakeClient(),
+      scanner: new BrowserCameraPairingQrScanner(),
+      relay: companion,
+      companion,
+      pairingKeys: new PairingCompanionKeyVault(),
+    })
+  } else {
+    companion = new CompanionForegroundRuntime()
+    installCompanionRuntime(companion)
+  }
 
-function positiveInteger(value: unknown, name: string): number {
-  const parsed = Number(value)
-  if (!Number.isSafeInteger(parsed) || parsed <= 0) throw new TypeError(`Mobile Relay ${name} must be a positive integer`)
-  return parsed
-}
+  function positiveInteger(value: unknown, name: string): number {
+    const parsed = Number(value)
+    if (!Number.isSafeInteger(parsed) || parsed <= 0) throw new TypeError(`Mobile Relay ${name} must be a positive integer`)
+    return parsed
+  }
 
-function requiredWss(value: unknown): string {
-  if (typeof value !== 'string' || new URL(value).protocol !== 'wss:') throw new TypeError('Mobile Relay endpoint must use WSS')
-  return value
-}
+  function requiredWss(value: unknown): string {
+    if (typeof value !== 'string' || new URL(value).protocol !== 'wss:') throw new TypeError('Mobile Relay endpoint must use WSS')
+    return value
+  }
 
-const root = document.getElementById('root')
-if (root === null) throw new Error('mobile app: missing #root')
-mountMobileEntry(root, { installation, pairing, companion })
+  const root = document.getElementById('root')
+  if (root === null) throw new Error('mobile app: missing #root')
+  mountMobileEntry(root, { installation, pairing, companion })
+}

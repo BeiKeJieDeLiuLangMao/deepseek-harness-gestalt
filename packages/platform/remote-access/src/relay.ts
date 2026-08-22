@@ -20,6 +20,18 @@ export type RelayInstanceId = Branded<'RelayInstanceId'>
 export type RelayConnectionToken = Branded<'RelayConnectionToken'>
 /** Opaque content-free correlation for one bounded live delivery attempt. */
 export type RelayDeliveryId = Branded<'RelayDeliveryId'>
+/** Content-free SHA-256 identity of one Relay credential. */
+export type RelayCredentialFingerprint = Branded<'RelayCredentialFingerprint'>
+
+/** Durable Mobile Pairing activity projection updated by authenticated Relay lifecycle events. */
+export interface RelayPairingActivitySink {
+  /** Record current online state and optionally an authenticated access timestamp. */
+  recordRelayActivity(input: {
+    credentialFingerprint: RelayCredentialFingerprint
+    online: boolean
+    accessedAt?: number
+  }): Promise<void>
+}
 
 /** Validated deployment tunables for one Relay provider. */
 export interface RemoteRelayConfig {
@@ -207,6 +219,15 @@ export function parseRelayConnectionToken(value: unknown): RelayConnectionToken 
  */
 export function parseRelayDeliveryId(value: unknown): RelayDeliveryId {
   return parseIdentifier(value, 'Relay delivery id') as RelayDeliveryId
+}
+
+/**
+ * Parse a content-free Relay credential fingerprint.
+ * @param value - untrusted durable or adapter value.
+ * @returns branded credential fingerprint.
+ */
+export function parseRelayCredentialFingerprint(value: unknown): RelayCredentialFingerprint {
+  return parseIdentifier(value, 'Relay credential fingerprint') as RelayCredentialFingerprint
 }
 
 function parseIdentifier(value: unknown, name: string): string {

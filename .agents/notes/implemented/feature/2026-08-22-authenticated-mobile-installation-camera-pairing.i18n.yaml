@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-22-authenticated-mobile-installation-camera-pairing.md
+2026-08-22-authenticated-mobile-installation-camera-pairing.md: fa1d2c8a1d326f3ca981bd674acf3e341fc654a1
+2026-08-22-authenticated-mobile-installation-camera-pairing.zh.md: 5b3a76936ddcecc24e91e996cd65c96493c2eb06

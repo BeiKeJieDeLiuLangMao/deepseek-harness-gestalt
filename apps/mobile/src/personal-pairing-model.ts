@@ -21,8 +21,8 @@ export interface MobilePairingActions {
   subscribe(listener: () => void): () => void
   /** Complete the exact high-entropy link produced by Desktop. */
   completeLink(link: string): void | Promise<void>
-  /** Open the native QR scanner and complete its exact payload. */
-  scanQr(): void | Promise<void>
+  /** Open the browser camera scanner and complete its exact payload. */
+  scanQr(video: HTMLVideoElement, signal?: AbortSignal): void | Promise<void>
   /** Retry the retained completion attempt without regenerating handshake material. */
   retryPairing(): void | Promise<void>
   /** Activate this signed-in Mobile lifecycle owner. */

@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
+import { randomUUID } from 'node:crypto'
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 import { parseAccountProofJti, parseInstallationId } from '@deepseek-ai/dsh-platform-account'
@@ -59,7 +60,7 @@ describe('Desktop Settings Remote Access composition', () => {
       const socket = new SettingsRelaySocket()
       const resynchronize = vi.fn()
       const relay = new DesktopRelayEndpointLifecycle({
-        attachmentId: () => parseRelayAttachmentId('desktop-settings'),
+        attachmentId: () => parseRelayAttachmentId(`desktop-${randomUUID()}`),
         connect: async () => socket,
         attachTimeoutMs: 1_000,
         heartbeatIntervalMs: 60_000,
@@ -90,7 +91,7 @@ describe('Desktop Settings Remote Access composition', () => {
       expect(resynchronize).toHaveBeenCalledOnce()
       expect(relay.getState()).toEqual({ connected: true })
       expect(controller.getSnapshot()).toMatchObject({ status: 'ready', enabled: true })
-      await relay.sendCiphertext(parseRelayAttachmentId('mobile-settings'), Uint8Array.of(7))
+      await relay.sendCiphertext(parseRelayAttachmentId(`mobile-${randomUUID()}`), Uint8Array.of(7))
       expect(socket.sent.at(-1)).toMatchObject({ type: 'ciphertext', ciphertext: Uint8Array.of(7) })
 
       await controller.setEnabled(false)
@@ -106,7 +107,7 @@ describe('Desktop Settings Remote Access composition', () => {
 
   it('keeps a real Desktop endpoint offline until Settings installs route authority', async () => {
     const lifecycle = new DesktopRelayEndpointLifecycle({
-      attachmentId: () => parseRelayAttachmentId('desktop-unconfigured'),
+      attachmentId: () => parseRelayAttachmentId(`desktop-${randomUUID()}`),
       connect: async () => new SettingsRelaySocket(),
       attachTimeoutMs: 1_000,
       heartbeatIntervalMs: 60_000,

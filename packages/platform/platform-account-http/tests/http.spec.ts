@@ -101,6 +101,25 @@ describe('Platform Account HTTP consumer', () => {
     expect(account.signOut).toHaveBeenCalledOnce()
   })
 
+  it('binds validated Mobile Installation presentation to the Login Attempt', async () => {
+    const account = accountService()
+    const server = await start(account)
+    const response = await post(server.origin, '/v1/account/login-attempts', {
+      installationId: 'mobile-authenticated',
+      installationKind: 'mobile',
+      presentation: { name: 'Authenticated device name', platform: 'android' },
+      publicKey: { kty: 'EC', crv: 'P-256', x: 'x', y: 'y' },
+    })
+
+    expect(response.status).toBe(201)
+    expect(account.beginLogin).toHaveBeenCalledWith({
+      installationId: 'mobile-authenticated',
+      installationKind: 'mobile',
+      presentation: { name: 'Authenticated device name', platform: 'android' },
+      publicKey: { kty: 'EC', crv: 'P-256', x: 'x', y: 'y' },
+    })
+  })
+
   it('handles preflight and rejects untrusted or malformed origins', async () => {
     const server = await start(accountService())
     const preflight = await fetch(`${server.origin}/v1/account/session`, {
@@ -217,6 +236,15 @@ describe('Platform Account HTTP consumer', () => {
       installationId: 'desktop-1', installationKind: 'desktop', publicKey: null,
     })
     expect(await error(invalidPublicKey)).toEqual([400, 'INVALID_REQUEST'])
+    const missingMobilePresentation = await post(server.origin, '/v1/account/login-attempts', {
+      installationId: 'mobile-1', installationKind: 'mobile', publicKey: {},
+    })
+    expect(await error(missingMobilePresentation)).toEqual([400, 'INVALID_REQUEST'])
+    const invalidMobilePlatform = await post(server.origin, '/v1/account/login-attempts', {
+      installationId: 'mobile-1', installationKind: 'mobile',
+      presentation: { name: 'Browser', platform: 'web' }, publicKey: {},
+    })
+    expect(await error(invalidMobilePlatform)).toEqual([400, 'INVALID_REQUEST'])
     const invalidProof = await post(server.origin, '/v1/account/login-poll', {
       attemptId: 'attempt-1', pollingToken: 'poll', proof: null,
     })

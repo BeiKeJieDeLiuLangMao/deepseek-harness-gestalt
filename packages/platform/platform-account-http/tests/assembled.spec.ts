@@ -230,6 +230,7 @@ describe('real Platform Account HTTP composition', () => {
       environment: ENVIRONMENT,
       installationId: parseInstallationId('two-installation-mobile'),
       installationKind: 'mobile',
+      presentation: { name: 'Two-installation mobile', platform: 'android' },
       transport,
       store: new MemoryInstallationAccountStore(),
       systemBrowser: { open: () => {} },

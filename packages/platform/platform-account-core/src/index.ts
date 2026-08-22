@@ -27,6 +27,8 @@ import AccountService, {
   type AccountSessionView,
   type InstallationKind,
   type InstallationId,
+  type InstallationLoginIdentity,
+  type MobileInstallationPresentation,
   type LoginAttemptId,
   type LoginAttemptView,
   type LoginPollResult,
@@ -166,6 +168,8 @@ export interface LoginAttemptRecord {
   installationId: InstallationId
   /** Desktop or Mobile installation class. */
   installationKind: InstallationKind
+  /** Device-owned Mobile presentation committed with this attempt. */
+  presentation?: MobileInstallationPresentation
   /** Installation P-256 public key. */
   publicKey: JsonWebKey
   /** Random OAuth state bound to the attempt. */
@@ -198,6 +202,8 @@ export interface SessionRecord {
   installationId: InstallationId
   /** Desktop or Mobile installation class. */
   installationKind: InstallationKind
+  /** Device-owned presentation present on every Mobile session. */
+  presentation?: MobileInstallationPresentation
   /** Installation P-256 public key. */
   publicKey: JsonWebKey
   /** Monotonic refresh-token generation. */
@@ -250,11 +256,11 @@ export interface AccountBackend {
   countActiveInstallations(accountId: PlatformAccountId, kind: InstallationKind): Promise<number>
   /** Read the Account bound to one GitHub subject inside an identity namespace. */
   findAccountByIdentity(identityNamespace: string, providerSubject: number): Promise<AccountRecord | undefined>
-  /** Read the live session bound to one installation, when present. */
-  findActiveSessionByInstallation(
+  /** Report whether one installation already owns a live session without decoding its obsolete payload. */
+  hasActiveSessionByInstallation(
     identityNamespace: string,
     installationId: InstallationId,
-  ): Promise<SessionRecord | undefined>
+  ): Promise<boolean>
 }
 
 /** Shared invalidation channel used by every Platform Instance. */
@@ -348,6 +354,7 @@ export class MemoryAccountBackend implements AccountBackend {
       accountId,
       installationId: attempt.installationId,
       installationKind: attempt.installationKind,
+      ...(attempt.presentation === undefined ? {} : { presentation: structuredClone(attempt.presentation) }),
       publicKey: structuredClone(attempt.publicKey),
       revision: 1,
       active: true,
@@ -427,15 +434,14 @@ export class MemoryAccountBackend implements AccountBackend {
     return Promise.resolve(accountId === undefined ? undefined : structuredClone(this.accounts.get(accountId)))
   }
 
-  findActiveSessionByInstallation(
+  hasActiveSessionByInstallation(
     identityNamespace: string,
     installationId: InstallationId,
-  ): Promise<SessionRecord | undefined> {
+  ): Promise<boolean> {
     const sessionId = this.installationIndex.get(`${identityNamespace}:${installationId}`)
-    if (sessionId === undefined) return Promise.resolve(undefined)
+    if (sessionId === undefined) return Promise.resolve(false)
     const session = this.sessions.get(sessionId)
-    if (session?.active !== true) return Promise.resolve(undefined)
-    return Promise.resolve(this.cloneSession(session))
+    return Promise.resolve(session?.active === true)
   }
 
   private revoke(sessionId: AccountSessionId): void {
@@ -582,11 +588,7 @@ export class PlatformAccount extends AccountService {
     ctx.effect(() => async () => { await this.dispose() }, 'platform-account: invalidation subscription')
   }
 
-  async beginLogin(input: {
-    installationId: InstallationId
-    installationKind: InstallationKind
-    publicKey: JsonWebKey
-  }): Promise<LoginAttemptView> {
+  async beginLogin(input: InstallationLoginIdentity & { publicKey: JsonWebKey }): Promise<LoginAttemptView> {
     this.assertCapacity()
     validateP256PublicKey(input.publicKey)
     const now = this.clock.now()
@@ -601,6 +603,7 @@ export class PlatformAccount extends AccountService {
       identityNamespace: this.environment.identityNamespace,
       installationId: input.installationId,
       installationKind: input.installationKind,
+      ...(input.installationKind === 'mobile' ? { presentation: structuredClone(input.presentation) } : {}),
       publicKey: structuredClone(input.publicKey),
       state,
       codeVerifier,
@@ -706,9 +709,16 @@ export class PlatformAccount extends AccountService {
   }): Promise<AuthenticatedInstallationView> {
     const { payload, session } = await this.authorizeAccess(input.accessToken)
     await this.verifyProof(session.publicKey, 'current', hashAccountToken(input.accessToken), input.proof)
+    const installation = session.installationKind === 'desktop'
+      ? { id: session.installationId, kind: 'desktop' as const }
+      : {
+        id: session.installationId,
+        kind: 'mobile' as const,
+        presentation: requireMobilePresentation(session.presentation),
+      }
     return {
       account: accountView(await this.requireAccount(payload.accountId)),
-      installation: { id: session.installationId, kind: session.installationKind },
+      installation,
     }
   }
 
@@ -861,11 +871,11 @@ export class PlatformAccount extends AccountService {
   }
 
   private async assertInstallationQuota(attempt: LoginAttemptRecord): Promise<void> {
-    const existing = await this.backend.findActiveSessionByInstallation(
+    const existing = await this.backend.hasActiveSessionByInstallation(
       attempt.identityNamespace,
       attempt.installationId,
     )
-    if (existing !== undefined) return
+    if (existing) return
     const identity = attempt.identity
     if (identity === undefined) return
     const account = await this.backend.findAccountByIdentity(attempt.identityNamespace, identity.providerSubject)
@@ -892,6 +902,15 @@ function accountView(account: AccountRecord): PlatformAccountView {
     githubLogin: account.githubLogin,
     avatarUrl: account.avatarUrl,
   }
+}
+
+function requireMobilePresentation(
+  presentation: MobileInstallationPresentation | undefined,
+): MobileInstallationPresentation {
+  if (presentation === undefined) {
+    throw new AccountError('SESSION_REVOKED', 'Mobile Account Session has no Installation presentation')
+  }
+  return structuredClone(presentation)
 }
 
 function installationLimit(kind: InstallationKind): number {

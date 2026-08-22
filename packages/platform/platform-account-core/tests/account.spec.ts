@@ -131,7 +131,14 @@ async function login(
   installationId = parseInstallationId('installation-1'),
   installationKind: 'desktop' | 'mobile' = 'desktop',
 ): Promise<{ key: ReturnType<typeof installationKey>; session: Extract<Awaited<ReturnType<PlatformAccount['pollLogin']>>, { status: 'complete' }> }> {
-  const attempt = await account.beginLogin({ installationId, installationKind, publicKey: key.publicKey })
+  const attempt = await account.beginLogin(installationKind === 'mobile'
+    ? {
+      installationId,
+      installationKind,
+      presentation: { name: `${installationId} presentation`, platform: 'ios' },
+      publicKey: key.publicKey,
+    }
+    : { installationId, installationKind, publicKey: key.publicKey })
   await account.completeGitHubCallback({ code: 'code', state: attempt.state })
   const result = await account.pollLogin({
     attemptId: attempt.id,
@@ -248,6 +255,7 @@ describe('PlatformAccount', () => {
     const attempt = await first.beginLogin({
       installationId: parseInstallationId('mobile-installation-1'),
       installationKind: 'mobile',
+      presentation: { name: 'Authenticated mobile installation', platform: 'ios' },
       publicKey: key.publicKey,
     })
     await first.completeGitHubCallback({ code: 'code', state: attempt.state })
@@ -273,8 +281,34 @@ describe('PlatformAccount', () => {
       proof: key.proof('current', hashAccountToken(refreshed.accessToken)),
     })).resolves.toEqual({
       account: refreshed.account,
-      installation: { id: 'mobile-installation-1', kind: 'mobile' },
+      installation: {
+        id: 'mobile-installation-1',
+        kind: 'mobile',
+        presentation: { name: 'Authenticated mobile installation', platform: 'ios' },
+      },
     })
+  })
+
+  it('revokes a durable Mobile session that predates Installation presentation', async () => {
+    const { first, backend } = accountHarness()
+    const key = installationKey()
+    const { session } = await login(
+      first,
+      key,
+      parseInstallationId('legacy-mobile-installation'),
+      'mobile',
+    )
+    const readSession = backend.getSession.bind(backend)
+    vi.spyOn(backend, 'getSession').mockImplementation(async (sessionId) => {
+      const legacy = await readSession(sessionId)
+      if (legacy !== undefined) delete legacy.presentation
+      return legacy
+    })
+
+    await expect(first.currentInstallation({
+      accessToken: session.accessToken,
+      proof: key.proof('current', hashAccountToken(session.accessToken)),
+    })).rejects.toMatchObject({ code: 'SESSION_REVOKED' })
   })
 
   it('invalidates and closes only the current installation across instances', async () => {
@@ -299,6 +333,13 @@ describe('PlatformAccount', () => {
       accessToken: login.accessToken,
       proof: key.proof('current', hashAccountToken(login.accessToken)),
     })).resolves.toEqual(login.account)
+    await expect(second.currentInstallation({
+      accessToken: login.accessToken,
+      proof: key.proof('current', hashAccountToken(login.accessToken)),
+    })).resolves.toEqual({
+      account: login.account,
+      installation: { id: 'desktop-installation-2', kind: 'desktop' },
+    })
     await first.signOut({
       accessToken: login.accessToken,
       proof: key.proof('sign-out', hashAccountToken(login.accessToken)),
@@ -429,7 +470,10 @@ describe('PlatformAccount', () => {
     const pollingAccount = accountHarness({ clock: { now: () => pollingNow } }).first
     const pollingKey = installationKey()
     const pollingAttempt = await pollingAccount.beginLogin({
-      installationId: parseInstallationId('poll-boundary'), installationKind: 'mobile', publicKey: pollingKey.publicKey,
+      installationId: parseInstallationId('poll-boundary'),
+      installationKind: 'mobile',
+      presentation: { name: 'Poll boundary installation', platform: 'android' },
+      publicKey: pollingKey.publicKey,
     })
     await pollingAccount.completeGitHubCallback({ code: 'code', state: pollingAttempt.state })
     pollingNow = pollingAttempt.expiresAt
@@ -849,10 +893,10 @@ describe('PlatformAccount', () => {
     const backend = new MemoryAccountBackend(ENVIRONMENT.databaseIdentity)
     const internals = backend as unknown as { installationIndex: Map<string, string> }
     internals.installationIndex.set(`${ENVIRONMENT.identityNamespace}:ghost`, 'missing-session')
-    expect(await backend.findActiveSessionByInstallation(
+    expect(await backend.hasActiveSessionByInstallation(
       ENVIRONMENT.identityNamespace,
       parseInstallationId('ghost'),
-    )).toBeUndefined()
+    )).toBe(false)
   })
 
   it('skips installation quota when an authorized attempt has not bound a GitHub identity', async () => {

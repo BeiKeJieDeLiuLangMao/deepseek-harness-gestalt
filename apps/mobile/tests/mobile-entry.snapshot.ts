@@ -3,6 +3,7 @@ import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   parseInstallationId,
+  parseMobileInstallationPresentation,
   selectPlatformEnvironment,
   validatePlatformEnvironmentPair,
   type AccountSessionView,
@@ -148,6 +149,7 @@ function installationWithCompletedLogin(): PlatformAccountInstallation {
     environment,
     installationId: parseInstallationId('mobile-snapshot'),
     installationKind: 'mobile',
+    presentation: parseMobileInstallationPresentation({ name: 'Snapshot phone', platform: 'ios' }),
     transport,
     store: new MemoryInstallationAccountStore(),
     systemBrowser: { open: vi.fn() },

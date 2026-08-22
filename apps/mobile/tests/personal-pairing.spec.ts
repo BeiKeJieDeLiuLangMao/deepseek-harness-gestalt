@@ -36,7 +36,7 @@ describe('MobilePairingController', () => {
     const relay = { configure: vi.fn(), start: vi.fn(), stop: vi.fn() }
     const controller = new MobilePairingController({
       installation: installationFixture(), transport, handshake, relay,
-      scanner: { scan: vi.fn() }, device: { name: 'Alice phone', platform: 'ios' },
+      scanner: { scan: vi.fn() },
       schedule: (task) => { scheduled.push(task); return { unref: vi.fn() } as never },
       now: () => Date.parse('2026-08-18T10:01:00.000Z'),
     })
@@ -69,7 +69,7 @@ describe('MobilePairingController', () => {
     }
     const controller = new MobilePairingController({
       installation: installationFixture(), transport, handshake,
-      scanner: { scan: vi.fn() }, device: { name: 'Alice phone', platform: 'ios' },
+      scanner: { scan: vi.fn() },
       pairingKeys: vault,
       schedule: (task) => { scheduled.push(task); return { unref: vi.fn() } as never },
       now: () => Date.parse('2026-08-18T10:01:00.000Z'),
@@ -106,7 +106,7 @@ describe('MobilePairingController', () => {
     const companion = new CompanionForegroundRuntime({ relay })
     const controller = new MobilePairingController({
       installation: installationFixture(), transport, handshake, relay: companion, companion,
-      scanner: { scan: vi.fn() }, device: { name: 'Alice phone', platform: 'ios' },
+      scanner: { scan: vi.fn() },
       schedule: (task) => { scheduled.push(task); return { unref: vi.fn() } as never },
       now: () => Date.parse('2026-08-18T10:01:00.000Z'),
     })
@@ -145,7 +145,7 @@ describe('MobilePairingController', () => {
       const controller = new MobilePairingController({
         installation: installationFixture(), transport, handshake,
         ...(missing === 'relay' ? {} : { relay: { configure: vi.fn(), start: vi.fn(), stop: vi.fn() } }),
-        scanner: { scan: vi.fn() }, device: { name: 'Alice phone', platform: 'ios' },
+        scanner: { scan: vi.fn() },
         schedule: (task) => { scheduled.push(task); return { unref: vi.fn() } as never },
         now: () => Date.parse('2026-08-18T10:01:00.000Z'),
       })
@@ -170,7 +170,7 @@ describe('MobilePairingController', () => {
       relay: {
         configure: vi.fn(), start: vi.fn(), stop: vi.fn(async () => { throw new Error('relay stop failed') }),
       },
-      scanner: { scan: vi.fn() }, device: { name: 'Alice phone', platform: 'ios' },
+      scanner: { scan: vi.fn() },
     })
 
     await expect(controller.deactivate()).rejects.toMatchObject({
@@ -179,7 +179,7 @@ describe('MobilePairingController', () => {
     expect(controller.getSnapshot()).toEqual({ status: 'ready' })
   })
 
-  it('uses the identical full-link completion flow for pasted links and native QR payloads', async () => {
+  it('uses the identical full-link completion flow for pasted links and browser-camera QR payloads', async () => {
     const link = pairingLink(Date.parse('2026-08-18T10:02:00.000Z'))
     const authorizeCurrentInstallation = vi.fn(async () => ({
       accessToken: 'mobile-access',
@@ -213,7 +213,6 @@ describe('MobilePairingController', () => {
       transport,
       handshake,
       scanner,
-      device: { name: 'Alice phone', platform: 'ios' },
       schedule: (task) => {
         scheduled = task
         return setTimeout(() => {}, 60_000)
@@ -226,7 +225,7 @@ describe('MobilePairingController', () => {
       status: 'pending',
       authenticationWords: ['amber', 'binary', 'cedar', 'delta', 'ember', 'frost'],
     })
-    await controller.scanQr()
+    await controller.scanQr({} as HTMLVideoElement)
 
     expect(handshake.begin).toHaveBeenCalledOnce()
     expect(handshake.begin).toHaveBeenCalledWith(link)
@@ -235,6 +234,28 @@ describe('MobilePairingController', () => {
     expect(authorizeCurrentInstallation).toHaveBeenCalledTimes(2)
     scheduled?.()
     await vi.waitFor(() => { expect(controller.getSnapshot()).toEqual({ status: 'paired' }) })
+  })
+
+  it.each([
+    [new Error('Camera permission was denied'), 'Camera permission was denied'],
+    ['not a Pairing Challenge', 'Pairing invitation link'],
+  ] as const)('projects camera and malformed-QR failures explicitly', async (scannerResult, message) => {
+    const scanner = {
+      scan: typeof scannerResult === 'string'
+        ? vi.fn(async () => scannerResult)
+        : vi.fn(async () => await Promise.reject(scannerResult)),
+    }
+    const controller = new MobilePairingController({
+      installation: installationFixture(),
+      transport: transportFixture(),
+      handshake: { begin: vi.fn(), acceptDesktopHandshake: vi.fn() },
+      scanner,
+    })
+
+    await expect(controller.scanQr({} as HTMLVideoElement)).rejects.toThrow(message)
+    const snapshot = controller.getSnapshot()
+    if (snapshot.status !== 'ready') throw new Error(`expected ready snapshot, received ${snapshot.status}`)
+    expect(snapshot.error).toContain(message)
   })
 
   it('retries a lost completion response with the same prepared handshake attempt', async () => {
@@ -246,7 +267,7 @@ describe('MobilePairingController', () => {
         pendingPairingId: parsePendingPairingId('pending-replayed'),
         authenticationWords: ['amber', 'binary', 'cedar', 'delta', 'ember', 'frost'],
         desktopHandshake: Uint8Array.of(8),
-        device: { name: 'Alice phone', platform: 'ios' },
+        device: { name: 'Replay installation', platform: 'ios' },
       })
     const handshake = {
       begin: vi.fn(async () => ({
@@ -260,7 +281,6 @@ describe('MobilePairingController', () => {
       transport,
       handshake,
       scanner: { scan: vi.fn() },
-      device: { name: 'Alice phone', platform: 'ios' },
       now: () => Date.parse('2026-08-18T10:01:00.000Z'),
     })
 
@@ -296,7 +316,7 @@ describe('MobilePairingController', () => {
     }
     const controller = new MobilePairingController({
       installation: installationFixture(), transport, handshake, scanner: { scan: vi.fn() },
-      device: { name: 'Alice phone', platform: 'ios' }, now: () => now.value,
+      now: () => now.value,
     })
 
     await expect(controller.completeLink(link)).rejects.toThrow('response was lost')
@@ -330,7 +350,6 @@ describe('MobilePairingController', () => {
       transport,
       handshake,
       scanner: { scan: vi.fn() },
-      device: { name: 'Alice phone', platform: 'ios' },
       now: () => now.value,
     })
 
@@ -361,7 +380,6 @@ describe('MobilePairingController', () => {
         acceptDesktopHandshake: vi.fn(),
       },
       scanner: { scan: vi.fn() },
-      device: { name: 'Alice phone', platform: 'ios' },
       schedule: (task) => { scheduled.push(task); return { unref: vi.fn() } as never },
       now: () => now.value,
     })
@@ -392,7 +410,7 @@ describe('MobilePairingController', () => {
         })),
         acceptDesktopHandshake: vi.fn(),
       },
-      scanner: { scan: vi.fn() }, device: { name: 'Alice phone', platform: 'ios' },
+      scanner: { scan: vi.fn() },
       now: () => Date.parse('2026-08-18T10:01:00.000Z'),
     })
 
@@ -409,7 +427,7 @@ describe('MobilePairingController', () => {
     expect(controller.getSnapshot()).toEqual({ status: 'retryable', error: 'account B refresh failed' })
   })
 
-  it('serializes native scanning so deactivation drains the scanner and post-close scan is rejected', async () => {
+  it('serializes browser-camera scanning so deactivation drains the scanner and post-close scan is rejected', async () => {
     const scan = deferred<string>()
     const scanner = { scan: vi.fn().mockReturnValue(scan.promise) }
     const transport = transportFixture()
@@ -421,11 +439,11 @@ describe('MobilePairingController', () => {
         })),
         acceptDesktopHandshake: vi.fn(),
       },
-      scanner, device: { name: 'Alice phone', platform: 'ios' },
+      scanner,
       now: () => Date.parse('2026-08-18T10:01:00.000Z'),
     })
 
-    const scanning = controller.scanQr()
+    const scanning = controller.scanQr({} as HTMLVideoElement)
     await vi.waitFor(() => { expect(scanner.scan).toHaveBeenCalledOnce() })
     let drained = false
     const deactivating = controller.deactivate().then(() => { drained = true })
@@ -435,7 +453,7 @@ describe('MobilePairingController', () => {
     await expect(scanning).rejects.toThrow('inactive')
     await deactivating
     expect(transport.completeChallenge).not.toHaveBeenCalled()
-    await expect(controller.scanQr()).rejects.toThrow('inactive')
+    await expect(controller.scanQr({} as HTMLVideoElement)).rejects.toThrow('inactive')
     expect(scanner.scan).toHaveBeenCalledOnce()
   })
 
@@ -457,7 +475,6 @@ describe('MobilePairingController', () => {
       transport,
       handshake,
       scanner: { scan: vi.fn() },
-      device: { name: 'Alice phone', platform: 'ios' },
       schedule: (task) => { scheduled.push(task); return { unref: vi.fn() } as never },
       now: () => Date.parse('2026-08-18T10:01:00.000Z'),
     })
@@ -472,7 +489,7 @@ describe('MobilePairingController', () => {
       pendingPairingId: parsePendingPairingId('pending-drain'),
       authenticationWords: ['amber', 'binary', 'cedar', 'delta', 'ember', 'frost'],
       desktopHandshake: Uint8Array.of(8),
-      device: { name: 'Alice phone', platform: 'ios' },
+      device: { name: 'Draining installation', platform: 'android' },
     })
     await expect(completing).rejects.toThrow('inactive')
     await deactivating
@@ -517,7 +534,7 @@ function transportFixture() {
       pendingPairingId: parsePendingPairingId('pending-one'),
       authenticationWords: ['amber', 'binary', 'cedar', 'delta', 'ember', 'frost'],
       desktopHandshake: Uint8Array.of(8),
-      device: { name: 'Alice phone', platform: 'ios' },
+      device: { name: 'Fixture installation', platform: 'ios' },
     }),
     getMobilePairingStatus: vi.fn().mockResolvedValue({ status: 'paired', pairingId: 'pairing-one' }),
   } satisfies RemoteAccessTransport

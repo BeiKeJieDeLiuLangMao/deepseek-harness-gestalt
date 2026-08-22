@@ -21,6 +21,28 @@ export type AccountProofJti = Branded<'AccountProofJti'>
 /** Installation kinds that may own independent Account Sessions. */
 export type InstallationKind = 'desktop' | 'mobile'
 
+/** Authenticated presentation fields owned by one Mobile Installation session. */
+export interface MobileInstallationPresentation {
+  /** User-recognizable name reported by the Mobile product at sign-in. */
+  name: string
+  /** Mobile operating-system family reported by the Mobile product at sign-in. */
+  platform: 'ios' | 'android'
+}
+
+/** Installation identity bound to one Account Session. */
+export type AuthenticatedInstallation =
+  | { id: InstallationId; kind: 'desktop' }
+  | { id: InstallationId; kind: 'mobile'; presentation: MobileInstallationPresentation }
+
+/** Installation fields committed when a Login Attempt starts. */
+export type InstallationLoginIdentity =
+  | { installationId: InstallationId; installationKind: 'desktop' }
+  | {
+    installationId: InstallationId
+    installationKind: 'mobile'
+    presentation: MobileInstallationPresentation
+  }
+
 /** Public account fields retained from GitHub and displayed to the person. */
 export interface PlatformAccountView {
   /** Environment-namespaced Platform Account id. */
@@ -38,10 +60,7 @@ export interface AuthenticatedInstallationView {
   /** Platform Account authorized by the current Installation session. */
   account: PlatformAccountView
   /** Installation identity and role bound to that session by the Account provider. */
-  installation: {
-    id: InstallationId
-    kind: InstallationKind
-  }
+  installation: AuthenticatedInstallation
 }
 
 /** Proof that the installation private key authorized one Account operation. */

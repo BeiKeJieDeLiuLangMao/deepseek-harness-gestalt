@@ -4,6 +4,7 @@ import {
   parsePairingRendezvousId,
   parsePendingPairingId,
   parsePersonalPairingId,
+  parseRelayCredentialFingerprint,
 } from '@deepseek-ai/dsh-remote-access'
 import { parseRelayRouteId } from '@deepseek-ai/dsh-remote-protocol'
 import { describe, expect, it } from 'vitest'
@@ -47,11 +48,22 @@ describe('PostgresPersonalPairingAuthorityStore', () => {
       mobileInstallationId: MOBILE,
       pendingPairingId: pending,
       pairingId: parsePersonalPairingId('pairing-one'),
+      credentialFingerprint: parseRelayCredentialFingerprint('credential-fingerprint-one'),
+      lastAccessAt: 100,
+      online: false,
       sealedRelayAuthority: Uint8Array.of(1, 2, 3),
     }
     await writer.confirmMobilePairing(authority)
     await writer.confirmMobilePairing(authority)
     expect(await reader.getMobilePairing(pending)).toEqual(authority)
+    await writer.recordRelayActivity({
+      credentialFingerprint: authority.credentialFingerprint,
+      online: true,
+      accessedAt: 200,
+    })
+    expect(await reader.getPersonalPairingActivity(authority.pairingId)).toEqual({ lastAccessAt: 200, online: true })
+    await writer.recordRelayActivity({ credentialFingerprint: authority.credentialFingerprint, online: false })
+    expect(await reader.getPersonalPairingActivity(authority.pairingId)).toEqual({ lastAccessAt: 200, online: false })
     await expect(writer.confirmMobilePairing({
       ...authority,
       pairingId: parsePersonalPairingId('pairing-other'),

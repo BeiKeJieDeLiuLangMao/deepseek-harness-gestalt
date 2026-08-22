@@ -17,6 +17,16 @@ const relayLifecycle = vi.hoisted(() => ({
 }))
 
 vi.mock('@capacitor/browser', () => ({ Browser: { open: browserOpen } }))
+vi.mock('@capacitor/device', () => ({
+  Device: {
+    getInfo: vi.fn(async () => ({
+      name: 'Entry test installation',
+      model: 'Test mobile model',
+      platform: 'ios',
+      operatingSystem: 'ios',
+    })),
+  },
+}))
 vi.mock('@deepseek-ai/dsh-remote-access-client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@deepseek-ai/dsh-remote-access-client')>()
   return {
@@ -87,7 +97,8 @@ describe('Mobile Platform Account entry', () => {
       return json({ status: 'pending' })
     }))
 
-    await import('../src/main.tsx')
+    const { mobileProductStarted } = await import('../src/main.tsx')
+    await mobileProductStarted
     fireEvent.click(await screen.findByRole('checkbox'))
     const button = screen.getByRole('button', { name: '使用 GitHub 继续' })
     await waitFor(() => { expect(button.hasAttribute('disabled')).toBe(false) })
@@ -126,7 +137,8 @@ describe('Mobile Platform Account entry', () => {
     const fetch = vi.fn()
     vi.stubGlobal('fetch', fetch)
 
-    await expect(import('../src/main.tsx')).rejects.toThrow('must admit one maximum Relay message')
+    const { mobileProductStarted } = await import('../src/main.tsx')
+    await expect(mobileProductStarted).rejects.toThrow('must admit one maximum Relay message')
 
     expect(document.getElementById('root')?.childElementCount).toBe(0)
     expect(fetch).not.toHaveBeenCalled()
@@ -143,7 +155,8 @@ describe('Mobile Platform Account entry', () => {
       get: () => hidden ? 'hidden' : 'visible',
     })
 
-    await import('../src/main.tsx')
+    const { mobileProductStarted } = await import('../src/main.tsx')
+    await mobileProductStarted
     const { companionMayMutate, companionRuntime } = await import('../src/companion-lifecycle.ts')
     const { settleCompanionInteraction } = await import('../src/companion-approval.ts')
     const runtime = companionRuntime()

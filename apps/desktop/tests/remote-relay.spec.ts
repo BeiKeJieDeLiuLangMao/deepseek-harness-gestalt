@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { describe, expect, it, vi } from 'vitest'
 import {
   decodeRelayMessage,
@@ -118,7 +119,7 @@ describe('Desktop Remote Relay composition', () => {
     first.receive(encodeRelayMessage({
       type: 'ciphertext', transportVersion: 1,
       routeId: parseRelayRouteId('route-development'),
-      sourceAttachmentId: parseRelayAttachmentId('mobile-development'),
+      sourceAttachmentId: parseRelayAttachmentId(`mobile-${randomUUID()}`),
       targetAttachmentId: attachmentId,
       ciphertext: Uint8Array.of(1),
     }))

@@ -16,6 +16,7 @@ import {
   type RelayCoordinator,
   type RelayDirectoryEntry,
   type RelayRouteStore,
+  type RelayPairingActivitySink,
 } from '../src/index.ts'
 import { RemoteRelayProvider } from '../src/relay-provider.ts'
 
@@ -72,6 +73,61 @@ describe('RemoteRelayProvider', () => {
       routeId,
       revision: mobile.revision + 1,
     })
+    await platform.dispose()
+  })
+
+  it('projects authenticated Mobile attach, heartbeat, ciphertext access, and disconnect activity', async () => {
+    const routeStore = new SharedRouteStore()
+    const coordinator = new SharedCoordinator()
+    const recordRelayActivity = vi.fn(async (
+      _input: Parameters<RelayPairingActivitySink['recordRelayActivity']>[0],
+    ) => {})
+    let now = 100
+    const platform = new RemoteRelayProvider(new Context(), {
+      instanceId: parseRelayInstanceId('platform-activity'),
+      routeStore,
+      coordinator,
+      config: CONFIG,
+      randomBytes: uniqueRandomBytes(31),
+      clock: { now: () => now },
+      pairingActivity: { recordRelayActivity },
+    })
+    const routeId = parseRelayRouteId('route-activity')
+    const desktopGrant = await platform.rotateCredential(routeId, 'desktop')
+    const mobileGrant = await platform.issueCredential(routeId, 'mobile')
+    const desktopId = parseRelayAttachmentId('desktop-activity')
+    const mobileId = parseRelayAttachmentId('mobile-activity')
+    const desktop = await platform.attach({
+      message: {
+        type: 'attach', transportVersion: 1, routeId, attachmentId: desktopId,
+        endpoint: 'desktop', credential: desktopGrant.credential,
+      },
+      deliver: async () => {},
+    })
+    const mobile = await platform.attach({
+      message: {
+        type: 'attach', transportVersion: 1, routeId, attachmentId: mobileId,
+        endpoint: 'mobile', credential: mobileGrant.credential,
+      },
+      deliver: async () => {},
+    })
+    expect(recordRelayActivity).toHaveBeenLastCalledWith(expect.objectContaining({ online: true, accessedAt: 100 }))
+
+    now = 200
+    await mobile.receive({ type: 'heartbeat', transportVersion: 1, attachmentId: mobileId, sentAt: now })
+    expect(recordRelayActivity).toHaveBeenLastCalledWith(expect.objectContaining({ online: true, accessedAt: 200 }))
+
+    now = 300
+    await mobile.receive({
+      type: 'ciphertext', transportVersion: 1, routeId,
+      sourceAttachmentId: mobileId, targetAttachmentId: desktopId, ciphertext: Uint8Array.of(1),
+    })
+    expect(recordRelayActivity).toHaveBeenLastCalledWith(expect.objectContaining({ online: true, accessedAt: 300 }))
+
+    await mobile.close()
+    expect(recordRelayActivity).toHaveBeenLastCalledWith(expect.objectContaining({ online: false }))
+    expect(recordRelayActivity.mock.lastCall?.[0]).not.toHaveProperty('accessedAt')
+    await desktop.close()
     await platform.dispose()
   })
 
@@ -733,7 +789,6 @@ describe('RemoteRelayProvider', () => {
   it('bounds pending delivery acknowledgements and validates delivery correlation entropy', async () => {
     const routeStore = new SharedRouteStore()
     const coordinator = new SharedCoordinator()
-    let timeout: (() => void) | undefined
     let sourceIssued = 0
     const source = new RemoteRelayProvider(new Context(), {
       instanceId: parseRelayInstanceId('platform-pending-source'), routeStore, coordinator,
@@ -742,7 +797,6 @@ describe('RemoteRelayProvider', () => {
         sourceIssued += 1
         return uniqueBytes(size, 72 + sourceIssued * 101)
       },
-      schedule: (task) => { timeout = task; return { unref: () => {} } as never },
     })
     const target = provider('platform-pending-target', routeStore, coordinator, 73)
     const routeId = parseRelayRouteId('route-pending-capacity')
@@ -767,10 +821,10 @@ describe('RemoteRelayProvider', () => {
     await vi.waitFor(() => { expect(coordinator.events).toContainEqual(expect.objectContaining({ type: 'ciphertext' })) })
     await expect(mobile.receive(ciphertext(routeId, 'mobile-one', 'desktop-one', Uint8Array.of(2))))
       .rejects.toMatchObject({ code: 'PLATFORM_CAPACITY' })
-    timeout?.()
+    const disposingSource = source.dispose()
     writer.resolve(undefined)
     await expect(first).rejects.toMatchObject({ code: 'REMOTE_OFFLINE' })
-    await Promise.all([source.dispose(), target.dispose()])
+    await Promise.all([disposingSource, target.dispose()])
 
     let entropyCalls = 0
     const badCoordinator = new SharedCoordinator()

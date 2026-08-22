@@ -13,6 +13,7 @@ import {
 import type { PlatformAccountId } from '@deepseek-ai/dsh-platform-account'
 import type { PlatformAccountInstallation } from '@deepseek-ai/dsh-platform-account-client'
 import type { RemoteAccessTransport } from '@deepseek-ai/dsh-remote-access-client'
+import { BrowserQRCodeReader } from '@zxing/browser'
 import type { MobilePairingActions, MobilePairingSnapshot } from './personal-pairing-model.ts'
 
 /** Process-owned foreground Relay lifecycle released on unpair and Account change. */
@@ -50,10 +51,10 @@ export interface MobilePairingKeyRetention {
   wipe(): void
 }
 
-/** Native QR scanner returning the exact full invitation payload. */
+/** Browser-camera QR scanner returning the exact full invitation payload. */
 interface MobilePairingQrScanner {
-  /** @returns exact full invitation payload from the native scanner. */
-  scan(): Promise<string>
+  /** @returns exact full invitation payload decoded from the camera preview. */
+  scan(video: HTMLVideoElement, signal?: AbortSignal): Promise<string>
 }
 
 interface PreparedMobilePairingAttempt {
@@ -67,21 +68,94 @@ interface PreparedMobilePairingAttempt {
   pendingProjection?: PairingCompletionView
 }
 
-declare global {
-  interface Window {
-    /** Native shell hook returning the exact QR payload without text reconstruction. */
-    dshMobileScanPairingQr?: () => Promise<string>
-  }
+interface BrowserQrReader {
+  scan(
+    video: HTMLVideoElement,
+    callback: (
+      result: { getText(): string } | undefined,
+      error: Error | undefined,
+      controls: BrowserQrScannerControls,
+    ) => void,
+    finalized: (error?: Error) => void,
+  ): BrowserQrScannerControls
 }
 
-/** QR scanner bridge supplied by the native Mobile shell. */
-export class NativeMobilePairingQrScanner implements MobilePairingQrScanner {
-  async scan(): Promise<string> {
-    const scan = window.dshMobileScanPairingQr
-    if (scan === undefined) throw new Error('Native Personal Pairing QR scanner is unavailable')
-    const payload = await scan()
-    if (payload === '') throw new TypeError('Personal Pairing QR payload must be non-empty')
-    return payload
+interface BrowserQrScannerControls {
+  stop(): void
+}
+
+/** Browser-camera scanner for the same complete invitation accepted by paste. */
+export class BrowserCameraPairingQrScanner implements MobilePairingQrScanner {
+  private readonly mediaDevices: MediaDevices | undefined
+  private readonly reader: BrowserQrReader
+
+  /** @param options - browser camera and QR decoder adapters. */
+  constructor(options: { mediaDevices?: MediaDevices; reader?: BrowserQrReader } = {}) {
+    this.mediaDevices = options.mediaDevices ?? globalThis.navigator.mediaDevices
+    this.reader = options.reader ?? new BrowserQRCodeReader()
+  }
+
+  async scan(video: HTMLVideoElement, signal?: AbortSignal): Promise<string> {
+    if (this.mediaDevices?.getUserMedia === undefined) {
+      throw new Error('Camera scanning is not supported by this browser')
+    }
+    throwIfCameraAborted(signal)
+    let stream: MediaStream
+    try {
+      stream = await this.mediaDevices.getUserMedia({
+        audio: false,
+        video: { facingMode: { ideal: 'environment' } },
+      })
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'NotAllowedError') {
+        throw new Error('Camera permission was denied', { cause: error })
+      }
+      if (error instanceof DOMException && error.name === 'NotFoundError') {
+        throw new Error('No camera is available for Personal Pairing', { cause: error })
+      }
+      throw new Error(`Camera access failed: ${error instanceof Error ? error.message : String(error)}`, { cause: error })
+    }
+    const cancel = (): void => { for (const track of stream.getTracks()) track.stop() }
+    signal?.addEventListener('abort', cancel, { once: true })
+    let controls: BrowserQrScannerControls | undefined
+    let scanAbort: (() => void) | undefined
+    try {
+      video.srcObject = stream
+      await settleBeforeCameraAbort(video.play(), signal)
+      const decoded = await new Promise<{ getText(): string }>((resolve, reject) => {
+        scanAbort = (): void => {
+          controls?.stop()
+          reject(new Error('Personal Pairing camera scan was cancelled'))
+        }
+        signal?.addEventListener('abort', scanAbort, { once: true })
+        try {
+          controls = this.reader.scan(
+            video,
+            (result, _error, callbackControls) => {
+              if (result === undefined) return
+              callbackControls.stop()
+              resolve(result)
+            },
+            (error) => {
+              if (error !== undefined) reject(error)
+            },
+          )
+        } catch (error) {
+          reject(error instanceof Error ? error : new Error(String(error), { cause: error }))
+        }
+      })
+      throwIfCameraAborted(signal)
+      const payload = decoded.getText()
+      if (payload === '') throw new TypeError('Personal Pairing QR payload must be non-empty')
+      return payload
+    } finally {
+      signal?.removeEventListener('abort', cancel)
+      if (scanAbort !== undefined) signal?.removeEventListener('abort', scanAbort)
+      controls?.stop()
+      cancel()
+      video.pause()
+      video.srcObject = null
+    }
   }
 }
 
@@ -91,7 +165,6 @@ export interface MobilePairingControllerOptions {
   transport: RemoteAccessTransport
   handshake: MobilePairingHandshakeClient
   scanner: MobilePairingQrScanner
-  device: { name: string; platform: 'ios' | 'android' }
   /** Product Relay lifecycle receiving only Mobile-specific authority. */
   relay?: {
     configure(grant?: RelayCredentialGrant): void | Promise<void>
@@ -182,9 +255,15 @@ export class MobilePairingController implements MobilePairingActions {
     await this.exclusive(async () => { await this.completeLinkOwned(link) })
   }
 
-  async scanQr(): Promise<void> {
+  async scanQr(video: HTMLVideoElement, signal?: AbortSignal): Promise<void> {
     await this.exclusive(async () => {
-      const payload = await this.options.scanner.scan()
+      let payload: string
+      try {
+        payload = await this.options.scanner.scan(video, signal)
+      } catch (error) {
+        this.publish({ status: 'ready', error: errorMessage(error) })
+        throw error
+      }
       this.assertActiveAccount()
       await this.completeLinkOwned(payload)
     })
@@ -225,7 +304,6 @@ export class MobilePairingController implements MobilePairingActions {
         authentication,
         completionId: attempt.completionId,
         oneTimeLink: attempt.link,
-        device: this.options.device,
         mobileHandshake: attempt.mobileHandshake,
       })
       this.assertActiveAccount()
@@ -235,7 +313,7 @@ export class MobilePairingController implements MobilePairingActions {
       this.assertActiveAccount()
       this.publish({
         status: 'pending',
-        deviceName: this.options.device.name,
+        deviceName: completion.device.name,
         authenticationWords: completion.authenticationWords,
       })
       this.scheduleStatus(completion.pendingPairingId)
@@ -285,7 +363,13 @@ export class MobilePairingController implements MobilePairingActions {
       throw new Error('Retry the retained Personal Pairing attempt before using another invitation')
     }
     return (async () => {
-      const attempt = retained ?? await this.prepareAttempt(link)
+      let attempt: PreparedMobilePairingAttempt
+      try {
+        attempt = retained ?? await this.prepareAttempt(link)
+      } catch (error) {
+        this.publish({ status: 'ready', error: errorMessage(error) })
+        throw error
+      }
       await this.runAttempt(attempt)
     })()
   }
@@ -410,4 +494,22 @@ export class MobilePairingController implements MobilePairingActions {
 function throwRejected(results: PromiseSettledResult<unknown>[], message: string): void {
   const errors = results.filter(result => result.status === 'rejected').map(result => result.reason as unknown)
   if (errors.length > 0) throw new AggregateError(errors, message)
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+function throwIfCameraAborted(signal: AbortSignal | undefined): void {
+  if (signal?.aborted === true) throw new Error('Personal Pairing camera scan was cancelled')
+}
+
+function settleBeforeCameraAbort<T>(operation: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
+  if (signal === undefined) return operation
+  if (signal.aborted) return Promise.reject(new Error('Personal Pairing camera scan was cancelled'))
+  return new Promise<T>((resolve, reject) => {
+    const cancelled = (): void => { reject(new Error('Personal Pairing camera scan was cancelled')) }
+    signal.addEventListener('abort', cancelled, { once: true })
+    void operation.then(resolve, reject).finally(() => { signal.removeEventListener('abort', cancelled) })
+  })
 }

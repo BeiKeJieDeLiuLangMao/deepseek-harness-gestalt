@@ -10,13 +10,20 @@ import type {
   AccountService,
   AuthenticatedInstallationView,
   InstallationId,
+  MobileInstallationPresentation,
   PlatformCapacityState,
 } from '@deepseek-ai/dsh-platform-account'
 import {
   parseRelayRouteId,
+  type RelayCredential,
   type RelayRouteId,
 } from '@deepseek-ai/dsh-remote-protocol'
-import type { RelayCredentialGrant, RemoteRelayService } from './relay.ts'
+import type {
+  RelayCredentialFingerprint,
+  RelayCredentialGrant,
+  RelayPairingActivitySink,
+  RemoteRelayService,
+} from './relay.ts'
 
 export * from './relay.ts'
 export * from './open-registration-quotas.ts'
@@ -73,6 +80,11 @@ export interface PairingAccountAuthentication {
   /** Single-use proof created by the Installation key. */
   proof: AccountProof
 }
+
+type AuthenticatedInstallationFor<K extends 'desktop' | 'mobile'> =
+  Omit<AuthenticatedInstallationView, 'installation'> & {
+    installation: Extract<AuthenticatedInstallationView['installation'], { kind: K }>
+  }
 
 /** Complete high-entropy invitation carried by QR and the one-time link. */
 export interface PairingInvitation {
@@ -224,12 +236,7 @@ export class RemoteAccessError extends Error {
 }
 
 /** Device metadata presented for explicit Desktop confirmation. */
-export interface PairingDeviceDescription {
-  /** User-recognizable installation name. */
-  name: string
-  /** Mobile operating-system family. */
-  platform: 'ios' | 'android'
-}
+export type PairingDeviceDescription = MobileInstallationPresentation
 
 /** Pending completion displayed identically on Mobile and Desktop. */
 export interface PairingCompletionView {
@@ -293,11 +300,20 @@ export interface MobilePairingAuthority {
   mobileInstallationId: InstallationId
   pendingPairingId: PendingPairingId
   pairingId: PersonalPairingId
+  credentialFingerprint?: RelayCredentialFingerprint
+  lastAccessAt?: number
+  online?: boolean
   sealedRelayAuthority?: Uint8Array
 }
 
+/** Durable activity displayed for one independently revocable pairing. */
+export interface PersonalPairingActivity {
+  lastAccessAt: number
+  online: boolean
+}
+
 /** Deployment-owned atomic authority store shared by non-sticky Platform Instances. */
-export interface PersonalPairingAuthorityStore {
+export interface PersonalPairingAuthorityStore extends RelayPairingActivitySink {
   /**
    * Exclusively own the durable short-lived pairing transaction state.
    * Mutations, including cleanup tombstones retained by a rejected operation, must be persisted before settlement.
@@ -319,6 +335,8 @@ export interface PersonalPairingAuthorityStore {
   getMobilePairing(pendingPairingId: PendingPairingId): Promise<MobilePairingAuthority | undefined>
   /** Drop one confirmed Mobile pairing result after Desktop revocation. */
   revokeMobilePairing(pairingId: PersonalPairingId): Promise<void>
+  /** Read authoritative Relay activity for one confirmed pairing. */
+  getPersonalPairingActivity(pairingId: PersonalPairingId): Promise<PersonalPairingActivity | undefined>
 }
 
 /** Durable short-lived pairing transaction records loaded under one store-owned exclusive lease. */
@@ -418,6 +436,27 @@ export class MemoryPersonalPairingAuthorityStore implements PersonalPairingAutho
     }
     return Promise.resolve()
   }
+
+  getPersonalPairingActivity(pairingId: PersonalPairingId): Promise<PersonalPairingActivity | undefined> {
+    const authority = [...this.pairings.values()].find(pairing => pairing.pairingId === pairingId)
+    return Promise.resolve(authority?.lastAccessAt === undefined || authority.online === undefined
+      ? undefined
+      : { lastAccessAt: authority.lastAccessAt, online: authority.online })
+  }
+
+  recordRelayActivity(input: {
+    credentialFingerprint: RelayCredentialFingerprint
+    online: boolean
+    accessedAt?: number
+  }): Promise<void> {
+    const authority = [...this.pairings.values()].find(
+      pairing => pairing.credentialFingerprint === input.credentialFingerprint,
+    )
+    if (authority === undefined) return Promise.resolve()
+    authority.online = input.online
+    if (input.accessedAt !== undefined) authority.lastAccessAt = input.accessedAt
+    return Promise.resolve()
+  }
 }
 
 declare module '@deepseek-ai/cordis' {
@@ -472,14 +511,13 @@ export abstract class RemoteAccessService extends Service {
 
   /**
    * Complete the same-account cryptographic exchange without granting authority.
-   * @param input - Mobile authorization, invitation, device metadata, and handshake bytes.
+   * @param input - Mobile authorization, invitation, and handshake bytes.
    * @returns pending result shown on both installations before Desktop confirmation.
    */
   abstract completeChallenge(input: {
     mobile: PairingAccountAuthentication
     completionId: PairingCompletionId
     oneTimeLink: string
-    device: PairingDeviceDescription
     mobileHandshake: Uint8Array
   }): Promise<PairingCompletionView>
 
@@ -841,7 +879,6 @@ export class PersonalPairingProvider extends RemoteAccessService {
     mobile: PairingAccountAuthentication
     completionId: PairingCompletionId
     oneTimeLink: string
-    device: PairingDeviceDescription
     mobileHandshake: Uint8Array
   }): Promise<PairingCompletionView> {
     return this.exclusive(async () => {
@@ -905,7 +942,7 @@ export class PersonalPairingProvider extends RemoteAccessService {
           pendingPairingId,
           authenticationWords: deriveAuthenticationWords(completed.handshakeHash),
           desktopHandshake: completed.desktopHandshake.slice(),
-          device: parseDevice(input.device),
+          device: { ...installation.presentation },
         }
       } catch (error) {
         this.orphanPendingCleanups.set(pendingCleanup, {
@@ -946,10 +983,16 @@ export class PersonalPairingProvider extends RemoteAccessService {
     return this.exclusive(async () => {
       const { account, installation } = await this.authenticate(desktop, 'desktop')
       this.evictExpiredRecords()
-      return [...this.pairings.values()]
+      const pairings = [...this.pairings.values()]
         .filter(pairing => pairing.devicePrincipal.accountId === account.id
           && pairing.desktopInstallationId === installation.id)
-        .map(clonePairing)
+      return await Promise.all(pairings.map(async (pairing) => {
+        const activity = await this.authority.getPersonalPairingActivity(pairing.id)
+        return {
+          ...clonePairing(pairing),
+          ...(activity === undefined ? {} : activity),
+        }
+      }))
     })
   }
 
@@ -1126,12 +1169,18 @@ export class PersonalPairingProvider extends RemoteAccessService {
           }
         }
         try {
+          const credentialFingerprint = issuedMobileGrant === undefined
+            ? undefined
+            : await relayCredentialFingerprint(issuedMobileGrant.credential)
           await this.authority.confirmMobilePairing({
             accountId: account.id,
             desktopInstallationId: record.desktopInstallationId,
             mobileInstallationId: record.mobileInstallationId,
             pendingPairingId,
             pairingId: view.id,
+            ...(credentialFingerprint === undefined ? {} : { credentialFingerprint }),
+            lastAccessAt: view.lastAccessAt,
+            online: view.online,
             ...(sealedRelayAuthority === undefined ? {} : { sealedRelayAuthority }),
           })
         } catch (error) {
@@ -1558,10 +1607,10 @@ export class PersonalPairingProvider extends RemoteAccessService {
     return cleanupResource(cleanup, activePairingKey => this.options.handshake.destroyPairing(activePairingKey))
   }
 
-  private async authenticate(
+  private async authenticate<K extends 'desktop' | 'mobile'>(
     authentication: PairingAccountAuthentication,
-    expectedKind: 'desktop' | 'mobile',
-  ): Promise<AuthenticatedInstallationView> {
+    expectedKind: K,
+  ): Promise<AuthenticatedInstallationFor<K>> {
     const authenticated = await this.authenticateOwner(authentication)
     if (authenticated.installation.kind !== expectedKind) {
       throw new RemoteAccessError(
@@ -1569,7 +1618,7 @@ export class PersonalPairingProvider extends RemoteAccessService {
         `Personal Pairing operation requires an authenticated ${expectedKind} Installation`,
       )
     }
-    return authenticated
+    return authenticated as AuthenticatedInstallationFor<K>
   }
 
   private async authenticateOwner(
@@ -1744,7 +1793,12 @@ export function parsePersonalPairingKeyReference(value: unknown): PersonalPairin
  */
 export function parsePairingInvitationLink(value: unknown): PairingInvitation {
   const raw = nonEmpty(value, 'Pairing invitation link')
-  const url = new URL(raw)
+  let url: URL
+  try {
+    url = new URL(raw)
+  } catch (error) {
+    throw new TypeError('Pairing invitation link must be a complete URL', { cause: error })
+  }
   if (url.protocol !== 'https:') throw new TypeError('Pairing invitation link must use HTTPS')
   const exact = (name: string): string => {
     const values = url.searchParams.getAll(name)
@@ -1817,18 +1871,6 @@ function sameInvitation(left: PairingInvitation, right: PairingInvitation): bool
     && encodeBase64Url(left.invitationSecret) === encodeBase64Url(right.invitationSecret)
 }
 
-function parseDevice(value: unknown): PairingDeviceDescription {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    throw new TypeError('Pairing device must be an object')
-  }
-  const device = value as Record<string, unknown>
-  const name = nonEmpty(device.name, 'Pairing device name')
-  if (device.platform !== 'ios' && device.platform !== 'android') {
-    throw new TypeError('Pairing device platform must be ios or android')
-  }
-  return { name, platform: device.platform }
-}
-
 function cloneCompletion(view: PairingCompletionView): PairingCompletionView {
   return {
     ...view,
@@ -1864,7 +1906,17 @@ function sameMobileAuthority(left: MobilePairingAuthority, right: MobilePairingA
     && left.mobileInstallationId === right.mobileInstallationId
     && left.pendingPairingId === right.pendingPairingId
     && left.pairingId === right.pairingId
+    && left.credentialFingerprint === right.credentialFingerprint
     && bytesEqual(left.sealedRelayAuthority, right.sealedRelayAuthority)
+}
+
+async function relayCredentialFingerprint(
+  credential: RelayCredential,
+): Promise<RelayCredentialFingerprint> {
+  const encoded = new TextEncoder().encode(credential)
+  const bytes = encoded.buffer.slice(encoded.byteOffset, encoded.byteOffset + encoded.byteLength)
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))
+  return encodeBase64Url(digest) as RelayCredentialFingerprint
 }
 
 function bytesEqual(left: Uint8Array | undefined, right: Uint8Array | undefined): boolean {
