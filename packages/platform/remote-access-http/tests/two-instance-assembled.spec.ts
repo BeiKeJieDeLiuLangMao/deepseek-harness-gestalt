@@ -387,6 +387,7 @@ async function loadInstance(id: string, shared: SharedAdapters, entropy: number)
     '  config:',
     "    path: '/v1/remote-access/relay'",
     '    attachTimeoutMs: 1000',
+    '    maxPendingChallenges: 16',
     '',
   ].join('\n'))
   const context = new Context()

@@ -34,6 +34,25 @@ afterEach(async () => {
 })
 
 describe('RelayWebSocketConsumer', () => {
+  it('bounds stalled pre-proof challenges and releases capacity on every socket close', async () => {
+    const relay = relayFixture(attachmentFixture())
+    const endpoint = await start(relay, 1_000, 1)
+    const stalled = await connect(endpoint.url)
+    await vi.waitFor(() => { expect(Reflect.get(endpoint.consumer, 'pendingChallenges')).toBe(1) })
+    const shed = await connect(endpoint.url)
+    const [code] = await once(shed, 'close') as [number]
+    expect(code).toBe(1013)
+    expect(relay.attach).not.toHaveBeenCalled()
+    stalled.close()
+    await once(stalled, 'close')
+    await vi.waitFor(() => { expect(Reflect.get(endpoint.consumer, 'pendingChallenges')).toBe(0) })
+    const admitted = await connect(endpoint.url)
+    const { outcome } = await sendAttach(admitted)
+    await expect(outcome).resolves.toMatchObject({ type: 'ready' })
+    admitted.close()
+    await once(admitted, 'close')
+  })
+
   it('attaches first, exchanges ciphertext and heartbeat, and cleans up on close', async () => {
     const attachment = attachmentFixture()
     const relay = relayFixture(attachment)
@@ -266,10 +285,12 @@ describe('RelayWebSocketConsumer', () => {
   })
 
   it('validates direct and Cordis plugin configuration and registers exact ownership', async () => {
-    expect(() => new RelayWebSocketConsumer(context(relayFixture(attachmentFixture())), 0)).toThrow('positive integer')
-    expect(() => new RelayWebSocketConsumer(context(relayFixture(attachmentFixture())), 1.5)).toThrow('positive integer')
+    expect(() => new RelayWebSocketConsumer(context(relayFixture(attachmentFixture())), 0, 1)).toThrow('positive integer')
+    expect(() => new RelayWebSocketConsumer(context(relayFixture(attachmentFixture())), 1.5, 1)).toThrow('positive integer')
+    expect(() => new RelayWebSocketConsumer(context(relayFixture(attachmentFixture())), 1, 0)).toThrow('positive integer')
     for (const path of ['', '/', 'relay', '/relay/', '/relay?x', '/relay#x']) {
-      expect(() =>{  apply({} as Context, { path, attachTimeoutMs: 1 }) }).toThrow('absolute non-root pathname')
+      expect(() =>{  apply({} as Context, { path, attachTimeoutMs: 1, maxPendingChallenges: 1 }) })
+        .toThrow('absolute non-root pathname')
     }
 
     const handleUpgrade = vi.spyOn(RelayWebSocketConsumer.prototype, 'handleUpgrade').mockImplementation(() => {})
@@ -281,7 +302,7 @@ describe('RelayWebSocketConsumer', () => {
       webServer: { registerUpgrade },
       effect: vi.fn((effect: () => () => void | Promise<void>) => { effects.push(effect) }),
     } as unknown as Context
-    apply(ctx, { path: '/v1/remote-access/relay', attachTimeoutMs: 10 })
+    apply(ctx, { path: '/v1/remote-access/relay', attachTimeoutMs: 10, maxPendingChallenges: 2 })
     expect(effects).toHaveLength(2)
     expect(effects[0]?.()).toBe(disposeUpgrade)
     expect(registerUpgrade).toHaveBeenCalledWith(expect.objectContaining({ path: '/v1/remote-access/relay' }))
@@ -298,7 +319,7 @@ describe('RelayWebSocketConsumer', () => {
   })
 
   it('surfaces a WebSocket server shutdown failure', async () => {
-    const consumer = new RelayWebSocketConsumer(context(relayFixture(attachmentFixture())), 10)
+    const consumer = new RelayWebSocketConsumer(context(relayFixture(attachmentFixture())), 10, 2)
     const server = internalServer(consumer)
     vi.spyOn(server, 'close').mockImplementationOnce((callback) => {
       callback?.(new Error('server close failed'))
@@ -343,12 +364,12 @@ function serverSocket(consumer: RelayWebSocketConsumer): WebSocket {
   return socket
 }
 
-async function start(relay: ReturnType<typeof relayFixture>, timeout = 1_000): Promise<{
+async function start(relay: ReturnType<typeof relayFixture>, timeout = 1_000, maxPendingChallenges = 16): Promise<{
   url: string
   consumer: RelayWebSocketConsumer
   closed: boolean
 }> {
-  const consumer = new RelayWebSocketConsumer(context(relay), timeout)
+  const consumer = new RelayWebSocketConsumer(context(relay), timeout, maxPendingChallenges)
   const server = createServer()
   server.on('upgrade', (req, socket, head) => { consumer.handleUpgrade(req, socket, head) })
   server.listen(0, '127.0.0.1')

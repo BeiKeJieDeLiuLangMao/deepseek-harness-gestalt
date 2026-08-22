@@ -151,6 +151,7 @@ await ctx.plugin(RemoteAccessHttp, { origin: environment.origin })
 await ctx.plugin(RemoteAccessRelayHttp, {
   path: '/v1/remote-access/relay',
   attachTimeoutMs: positivePlatformEnv('PLATFORM_RELAY_ATTACH_TIMEOUT_MS'),
+  maxPendingChallenges: positivePlatformEnv('PLATFORM_RELAY_MAX_PENDING_CHALLENGES'),
 })
 ctx.webServer.register({
   kind: 'exact',

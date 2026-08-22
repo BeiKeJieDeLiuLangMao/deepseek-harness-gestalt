@@ -55,6 +55,7 @@ export interface Config extends RemoteRelayConfig {
   heartbeatIntervalMs: number
   inboundMaxBytes: number
   inboundMaxMessages: number
+  maxPendingChallenges: number
   reconnectDelayMs: number
 }
 
@@ -68,6 +69,7 @@ export const Config: z<Config> = z.object({
   heartbeatTimeoutMs: z.natural().min(1).required(),
   inboundMaxBytes: z.natural().min(1).required(),
   inboundMaxMessages: z.natural().min(1).required(),
+  maxPendingChallenges: z.natural().min(1).required(),
   maxBufferedCiphertextBytes: z.natural().min(1).required(),
   maxConnections: z.natural().min(1).required(),
   maxPendingDeliveries: z.natural().min(1).required(),
@@ -351,7 +353,7 @@ async function startBackend(
       return new Uint8Array(size).fill((randomByte + entropyAllocation) % 256)
     },
   })
-  const consumer = new RelayWebSocketConsumer(ctx, config.attachTimeoutMs)
+  const consumer = new RelayWebSocketConsumer(ctx, config.attachTimeoutMs, config.maxPendingChallenges)
   let open = true
   return {
     id, provider, coordinator, consumer,

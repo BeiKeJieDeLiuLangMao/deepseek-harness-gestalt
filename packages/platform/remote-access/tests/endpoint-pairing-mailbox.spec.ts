@@ -86,7 +86,7 @@ describe('EndpointOwnedPairingMailbox', () => {
       message3: Uint8Array.of(33),
     })).toThrow('message 2')
     expect(() => { mailbox.confirm({
-      pendingPairingId: PENDING, accountId: ACCOUNT, desktopInstallationId: DESKTOP, pairingId: PAIRING,
+      pendingPairingId: PENDING, accountId: ACCOUNT, desktopInstallationId: DESKTOP, pairingId: PAIRING, now: 1_000,
     }) }).toThrow('message 3')
   })
 
@@ -119,7 +119,7 @@ describe('EndpointOwnedPairingMailbox', () => {
       message3: Uint8Array.of(33),
     })
     mailbox.confirm({
-      pendingPairingId: PENDING, accountId: ACCOUNT, desktopInstallationId: DESKTOP, pairingId: PAIRING,
+      pendingPairingId: PENDING, accountId: ACCOUNT, desktopInstallationId: DESKTOP, pairingId: PAIRING, now: 1_000,
     })
     const sealedRelayAuthority = Uint8Array.of(91, 92, 93)
     mailbox.deliverSealedAuthority({
@@ -144,12 +144,13 @@ describe('EndpointOwnedPairingMailbox', () => {
     })).toThrow('invalid')
 
     const rejected = completedMessage1()
-    rejected.reject({ pendingPairingId: PENDING, accountId: ACCOUNT, desktopInstallationId: DESKTOP })
+    rejected.reject({ pendingPairingId: PENDING, accountId: ACCOUNT, desktopInstallationId: DESKTOP, now: 1_500 })
     expect(rejected.readMobile(COMPLETION, ACCOUNT, MOBILE)).toEqual({
       stage: 'rejected', pendingPairingId: PENDING,
     })
+    expect(rejected.exportState().pending[0]?.settledAt).toBe(1_500)
     expect(() => { rejected.confirm({
-      pendingPairingId: PENDING, accountId: ACCOUNT, desktopInstallationId: DESKTOP, pairingId: PAIRING,
+      pendingPairingId: PENDING, accountId: ACCOUNT, desktopInstallationId: DESKTOP, pairingId: PAIRING, now: 1_500,
     }) }).toThrow('message 3')
   })
 

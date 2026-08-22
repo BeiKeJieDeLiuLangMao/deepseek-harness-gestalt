@@ -1018,6 +1018,7 @@ export class PersonalPairingProvider extends RemoteAccessService {
   }): Promise<void> {
     return this.exclusive(async () => {
       const { account, installation } = await this.authenticate(input.desktop, 'desktop')
+      this.evictExpiredRecords()
       const mailbox = this.endpointMailbox()
       mailbox.cancelChallenge(input.challengeId, account.id, installation.id)
       this.commitEndpointMailbox(mailbox)
@@ -1027,6 +1028,7 @@ export class PersonalPairingProvider extends RemoteAccessService {
   async listEndpointPending(desktop: PairingAccountAuthentication): Promise<readonly EndpointPairingDesktopView[]> {
     return this.exclusive(async () => {
       const { account, installation } = await this.authenticate(desktop, 'desktop')
+      this.evictExpiredRecords()
       const mailbox = this.endpointMailbox()
       return this.requireTransactions().endpointMailbox.pending
         .filter(record => record.accountId === account.id && record.desktopInstallationId === installation.id
@@ -1046,6 +1048,7 @@ export class PersonalPairingProvider extends RemoteAccessService {
   }): Promise<void> {
     return this.exclusive(async () => {
       const { account, installation } = await this.authenticate(input.desktop, 'desktop')
+      this.evictExpiredRecords()
       const mailbox = this.endpointMailbox()
       mailbox.submitMessage2({
         pendingPairingId: input.pendingPairingId,
@@ -1063,6 +1066,7 @@ export class PersonalPairingProvider extends RemoteAccessService {
   }): Promise<EndpointPairingMobileView> {
     const prepared = await this.exclusive(async () => {
       const { account, installation } = await this.authenticate(input.mobile, 'mobile')
+      this.evictExpiredRecords()
       const view = this.endpointMailbox().readMobile(input.completionId, account.id, installation.id)
       const publication = this.requireTransactions().endpointPublications.get(view.pendingPairingId)
       return {
@@ -1086,6 +1090,7 @@ export class PersonalPairingProvider extends RemoteAccessService {
   }): Promise<void> {
     return this.exclusive(async () => {
       const { account, installation } = await this.authenticate(input.mobile, 'mobile')
+      this.evictExpiredRecords()
       const mailbox = this.endpointMailbox()
       mailbox.submitMessage3({
         completionId: input.completionId,
@@ -1105,6 +1110,7 @@ export class PersonalPairingProvider extends RemoteAccessService {
   }): Promise<EndpointPairingConfirmation> {
     const prepared = await this.exclusive(async () => {
       const { account, installation } = await this.authenticate(input.desktop, 'desktop')
+      this.evictExpiredRecords()
       if (input.mobileCredentialDigest.byteLength !== 32 || input.desktopCredentialDigest.byteLength !== 32) {
         throw new TypeError('Endpoint Relay credential digests must contain 32 bytes')
       }
@@ -1157,6 +1163,12 @@ export class PersonalPairingProvider extends RemoteAccessService {
       if (this.pairings.has(pairingId) || this.principalIds.has(principalId)) {
         throw new RemoteAccessError('PAIRING_ID_COLLISION', 'Personal Pairing identity was already allocated')
       }
+      if (this.countAccountPairings(account.id) >= OPEN_REGISTRATION_QUOTAS.personalPairings) {
+        throw new RemoteAccessError('QUOTA', 'Platform Account has reached its Personal Pairing limit')
+      }
+      this.assertEndpointRetainedCapacity(
+        mailbox.exportState(), account.id, installation.id, 'desktop', 1,
+      )
       const now = this.clock.now()
       const pairing: StoredPersonalPairing = {
         id: pairingId,
@@ -1273,6 +1285,7 @@ export class PersonalPairingProvider extends RemoteAccessService {
   }): Promise<void> {
     return this.exclusive(async () => {
       const { account, installation } = await this.authenticate(input.desktop, 'desktop')
+      this.evictExpiredRecords()
       const mailbox = this.endpointMailbox()
       mailbox.deliverSealedAuthority({
         pendingPairingId: input.pendingPairingId,
@@ -1290,11 +1303,13 @@ export class PersonalPairingProvider extends RemoteAccessService {
   }): Promise<void> {
     return this.exclusive(async () => {
       const { account, installation } = await this.authenticate(input.desktop, 'desktop')
+      this.evictExpiredRecords()
       const mailbox = this.endpointMailbox()
       mailbox.reject({
         pendingPairingId: input.pendingPairingId,
         accountId: account.id,
         desktopInstallationId: installation.id,
+        now: this.clock.now(),
       })
       this.requireTransactions().endpointPublications.delete(input.pendingPairingId)
       this.commitEndpointMailbox(mailbox)
@@ -2155,6 +2170,13 @@ export class PersonalPairingProvider extends RemoteAccessService {
     const endpointMailbox = this.endpointMailbox()
     endpointMailbox.evict(this.clock.now(), PAIRING_REPLAY_RETENTION_MS)
     this.commitEndpointMailbox(endpointMailbox)
+    const retainedEndpointIds = new Set(this.requireTransactions().endpointMailbox.pending.map(record => record.pendingPairingId))
+    for (const [pendingPairingId, publication] of this.requireTransactions().endpointPublications) {
+      if (retainedEndpointIds.has(pendingPairingId)) continue
+      publication.desktopCredentialDigest.fill(0)
+      publication.credentialDigest.fill(0)
+      this.requireTransactions().endpointPublications.delete(pendingPairingId)
+    }
     const cutoff = this.clock.now() - PAIRING_REPLAY_RETENTION_MS
     for (const [id, record] of this.settledChallenges) {
       if (record.settledAt <= cutoff && record.cleanup.resource === undefined) this.settledChallenges.delete(id)
@@ -2183,7 +2205,11 @@ export class PersonalPairingProvider extends RemoteAccessService {
       ? state.challenges.filter(record => record.accountId === accountId
         && record.desktopInstallationId === installationId).length
       : 0
-    if (pending + challenges + additionalRecords > MAX_RETAINED_PAIRING_RECORDS_PER_INSTALLATION) {
+    const publications = [...this.requireTransactions().endpointPublications.values()].filter(record =>
+      record.accountId === accountId && (kind === 'desktop'
+        ? record.desktopInstallationId === installationId
+        : record.mobileInstallationId === installationId)).length
+    if (pending + challenges + publications + additionalRecords > MAX_RETAINED_PAIRING_RECORDS_PER_INSTALLATION) {
       throw new RemoteAccessError('PAIRING_RESOURCE_LIMIT', `This ${kind} Installation has reached its retained endpoint pairing record limit`)
     }
   }

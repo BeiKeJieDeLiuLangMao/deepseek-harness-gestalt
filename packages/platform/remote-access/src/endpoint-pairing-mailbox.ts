@@ -259,7 +259,7 @@ export class EndpointOwnedPairingMailbox {
     accountId: PlatformAccountId
     desktopInstallationId: InstallationId
     pairingId: import('./index.ts').PersonalPairingId
-    now?: number
+    now: number
   }): void {
     const record = this.requirePending(input.pendingPairingId)
     assertDesktop(record, input.accountId, input.desktopInstallationId)
@@ -268,7 +268,7 @@ export class EndpointOwnedPairingMailbox {
     if (record.confirmed && record.pairingId !== input.pairingId) throw mailboxError('Pairing confirmation replay is stale')
     record.confirmed = true
     record.pairingId = input.pairingId
-    if (record.settledAt === undefined && input.now !== undefined) record.settledAt = input.now
+    record.settledAt ??= input.now
   }
 
   /** Remove one unused endpoint invitation owned by Desktop.
@@ -292,13 +292,13 @@ export class EndpointOwnedPairingMailbox {
     pendingPairingId: PendingPairingId
     accountId: PlatformAccountId
     desktopInstallationId: InstallationId
-    now?: number
+    now: number
   }): void {
     const record = this.requirePending(input.pendingPairingId)
     assertDesktop(record, input.accountId, input.desktopInstallationId)
     if (record.confirmed) throw mailboxError('Pairing is already confirmed')
     record.rejected = true
-    if (record.settledAt === undefined && input.now !== undefined) record.settledAt = input.now
+    record.settledAt ??= input.now
   }
 
   /** Expire invitations, retain terminal outcomes briefly, and bound durable state growth.

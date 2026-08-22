@@ -9,6 +9,7 @@ import {
 
 const CONFIG: Config = {
   attachTimeoutMs: 1_000,
+  maxPendingChallenges: 16,
   capacityRetryAfterMs: 100,
   deliveryAckTimeoutMs: 500,
   directoryTtlMs: 2_000,

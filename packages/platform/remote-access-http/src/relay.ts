@@ -27,12 +27,15 @@ export interface RelayWebSocketConfig {
   path: string
   /** Maximum time from upgrade until the authenticated attach frame arrives. */
   attachTimeoutMs: number
+  /** Maximum upgraded sockets allowed to retain an unanswered attach challenge. */
+  maxPendingChallenges: number
 }
 
 /** Validated Relay WSS configuration with no deployment-specific defaults. */
 export const Config: z<RelayWebSocketConfig> = z.object({
   path: z.string().required(),
   attachTimeoutMs: z.natural().min(1).required(),
+  maxPendingChallenges: z.natural().min(1).required(),
 })
 
 /** Cordis plugin name for the Relay WSS Consumer. */
@@ -46,7 +49,7 @@ export function apply(ctx: Context, config: RelayWebSocketConfig): void {
     || config.path.includes('?') || config.path.includes('#')) {
     throw new TypeError('Remote Relay path must be an absolute non-root pathname without query, fragment, or trailing slash')
   }
-  const consumer = new RelayWebSocketConsumer(ctx, config.attachTimeoutMs)
+  const consumer = new RelayWebSocketConsumer(ctx, config.attachTimeoutMs, config.maxPendingChallenges)
   ctx.effect(() => ctx.webServer.registerUpgrade({
     path: config.path,
     handler: (req, socket, head) => { consumer.handleUpgrade(req, socket, head) },
@@ -63,11 +66,23 @@ export class RelayWebSocketConsumer {
   })
   private readonly pumps = new Set<Promise<void>>()
   private readonly attachmentAborts = new Set<AbortController>()
+  private pendingChallenges = 0
 
-  /** @param ctx - Remote Relay public service. @param attachTimeoutMs - first-frame deadline. */
-  constructor(private readonly ctx: Context, private readonly attachTimeoutMs: number) {
+  /**
+   * @param ctx - Remote Relay public service.
+   * @param attachTimeoutMs - first-frame deadline.
+   * @param maxPendingChallenges - pre-proof socket capacity.
+   */
+  constructor(
+    private readonly ctx: Context,
+    private readonly attachTimeoutMs: number,
+    private readonly maxPendingChallenges: number,
+  ) {
     if (!Number.isSafeInteger(attachTimeoutMs) || attachTimeoutMs <= 0) {
       throw new TypeError('Remote Relay attach timeout must be a positive integer')
+    }
+    if (!Number.isSafeInteger(maxPendingChallenges) || maxPendingChallenges <= 0) {
+      throw new TypeError('Remote Relay pending challenge limit must be a positive integer')
     }
   }
 
@@ -95,6 +110,17 @@ export class RelayWebSocketConsumer {
   }
 
   private accept(socket: WebSocket): void {
+    if (this.pendingChallenges >= this.maxPendingChallenges) {
+      socket.close(1013, 'pending challenge capacity')
+      return
+    }
+    this.pendingChallenges += 1
+    let pendingChallengeHeld = true
+    const releasePendingChallenge = (): void => {
+      if (!pendingChallengeHeld) return
+      pendingChallengeHeld = false
+      this.pendingChallenges -= 1
+    }
     let attachment: RemoteRelayAttachment | undefined
     let challengeRequest: RelayAttachChallengeRequestMessage | undefined
     let challenge: RelayAttachChallengeMessage | undefined
@@ -114,6 +140,7 @@ export class RelayWebSocketConsumer {
       try {
         if (attachment !== undefined) await attachment.close()
       } finally {
+        releasePendingChallenge()
         this.attachmentAborts.delete(attachmentAbort)
       }
     }
@@ -153,6 +180,7 @@ export class RelayWebSocketConsumer {
                 await send(socket, encodeRelayMessage(ready))
               },
             })
+            releasePendingChallenge()
             clearTimeout(attachTimer)
             return
           }
