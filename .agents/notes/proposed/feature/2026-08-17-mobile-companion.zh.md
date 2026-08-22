@@ -4,6 +4,8 @@ Status: proposed
 
 [English](2026-08-17-mobile-companion.md) | 中文
 
+真实产品链路与仅前台生命周期由[使用真实 Companion 产品链路](../architecture/2026-08-22-real-companion-product-path.md)所有；该提案取代本文的推送投递与证明链路验收条款。
+
 ## 问题
 
 DeepSeek Gestalt 仅通过 Desktop Host 加载其回环 Web Host 来展示 Session Surface。用户无法在另一网络上通过手机检查正在进行的工作、回答交互请求或继续 Session。现有 Web Host 不是远程访问服务：直接暴露它会让 agent 能力在缺少设备认证、传输安全、撤销机制与面向独立发布客户端的版本化协议时被访问。

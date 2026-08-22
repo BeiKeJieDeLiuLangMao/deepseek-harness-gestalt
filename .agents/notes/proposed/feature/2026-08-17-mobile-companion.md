@@ -4,6 +4,8 @@ Status: proposed
 
 English | [中文](2026-08-17-mobile-companion.zh.md)
 
+The real product path and foreground-only lifecycle are owned by [Use the real Companion product path](../architecture/2026-08-22-real-companion-product-path.md), which supersedes this proposal's push delivery and proof-path acceptance clauses.
+
 ## Problem
 
 DeepSeek Gestalt exposes the Session Surface only through a Desktop Host that loads its loopback Web Host. A person cannot use a phone on another network to inspect ongoing work, answer an interaction, or continue a Session. The existing Web Host is not a remote-access service: exposing it directly would make agent capabilities reachable without device authentication, transport security, revocation, or a versioned independently released client protocol.
