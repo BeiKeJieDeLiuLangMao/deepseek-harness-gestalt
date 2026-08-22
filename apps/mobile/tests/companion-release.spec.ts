@@ -22,6 +22,10 @@ function complete(): CompanionReleaseEvidence {
 }
 
 describe('Companion release validation', () => {
+  it('contains no notification-provider release evidence', () => {
+    expect(COMPANION_RELEASE_DEVICE_CHECKS).not.toContain('push')
+  })
+
   it('requires every flow, both platforms, upgrade, UI, failure, and Noise review', () => {
     expect(companionReleaseReady(complete())).toBe(true)
     expect(companionReleaseReady({ ...complete(), noiseReview: false })).toBe(false)

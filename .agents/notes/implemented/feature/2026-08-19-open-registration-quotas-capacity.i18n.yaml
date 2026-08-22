@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-19-open-registration-quotas-capacity.md
-2026-08-19-open-registration-quotas-capacity.md: 69ae8be685434a0cb2c0df287b0e50f6e1b9d0d3
-2026-08-19-open-registration-quotas-capacity.zh.md: e6d04f466e3c6f695b0edfa4fa05437b22419dc9
+2026-08-19-open-registration-quotas-capacity.md: 1c6922d3576f80711e2461a0809f2098ffea069e
+2026-08-19-open-registration-quotas-capacity.zh.md: 6870ccc51af4619b5c1e1552b627dd9d67c7c449

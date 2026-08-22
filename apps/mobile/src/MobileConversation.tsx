@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import { settleCompanionInteraction, type CompanionInteraction } from './companion-approval.ts'
-import { companionMayMutate, type CompanionPushState } from './companion-push.ts'
+import { companionMayMutate, type CompanionConnectionState } from './companion-lifecycle.ts'
 import { formatToolArgs, previewTerminalLines, type MobileContentBlock } from './mobile-content.ts'
 import css from './MobileConversation.module.css'
 
@@ -16,19 +16,22 @@ export interface MobileConversationProps {
   onSubmit?: (text: string) => void
   /** Cancel active execution through Desktop cancellation. */
   onCancel?: () => void
+  /** Select an attachment for encrypted transfer through Desktop. */
+  onAttach?: () => void
   /** Whether Desktop is currently streaming. */
   streaming?: boolean
   /** Process visibility required before any interaction settlement. */
-  companionState?: CompanionPushState
+  companionState?: CompanionConnectionState
   /** Receive the Desktop-authoritative interaction after a successful UI settlement. */
   onSettled?: (interaction: CompanionInteraction) => void
 }
 
 /** Phone conversation that reuses Gestalt tokens and never exposes terminal input. */
 export function MobileConversation({
-  title, onBack, blocks, onSubmit, onCancel, streaming = false, companionState, onSettled,
+  title, onBack, blocks, onSubmit, onCancel, onAttach, streaming = false, companionState, onSettled,
 }: MobileConversationProps): ReactNode {
   const [draft, setDraft] = useState('')
+  const mayMutate = companionMayMutate(companionState)
   return (
     <section className={css.page} data-mobile-conversation="detail">
       <header className={css.header}>
@@ -50,19 +53,23 @@ export function MobileConversation({
           className={css.composer}
           onSubmit={(event) => {
             event.preventDefault()
-            if (draft === '') return
+            if (draft === '' || !mayMutate) return
             onSubmit(draft)
             setDraft('')
           }}
         >
           <textarea
             aria-label="继续会话"
+            disabled={!mayMutate}
             value={draft}
             onChange={(event) => { setDraft(event.target.value) }}
           />
-          <button type="submit">发送</button>
+          <button type="submit" disabled={!mayMutate}>发送</button>
           {onCancel !== undefined && streaming && (
-            <button type="button" onClick={onCancel}>取消</button>
+            <button type="button" disabled={!mayMutate} onClick={() => { if (mayMutate) onCancel() }}>取消</button>
+          )}
+          {onAttach !== undefined && (
+            <button type="button" disabled={!mayMutate} onClick={() => { if (mayMutate) onAttach() }}>添加附件</button>
           )}
         </form>
       )}
@@ -74,7 +81,7 @@ function ContentBlock({
   block, companionState, onSettled,
 }: {
   block: MobileContentBlock
-  companionState?: CompanionPushState
+  companionState?: CompanionConnectionState
   onSettled?: (interaction: CompanionInteraction) => void
 }): ReactNode {
   switch (block.kind) {
@@ -164,7 +171,7 @@ function SettlementActions({
   interaction, companionState, onSettled,
 }: {
   interaction: CompanionInteraction
-  companionState: CompanionPushState
+  companionState: CompanionConnectionState
   onSettled?: (interaction: CompanionInteraction) => void
 }): ReactNode {
   const mayMutate = companionMayMutate(companionState)

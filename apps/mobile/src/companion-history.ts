@@ -1,6 +1,7 @@
 /** Companion Session list projection shared by Mobile browse and keyless equality proofs. */
 
 import type { MobileContentBlock } from './mobile-content.ts'
+import { requireCompanionMutation, type CompanionConnectionState } from './companion-mutation.ts'
 
 /** One Session row in the Mobile Companion list. */
 export interface CompanionSessionSummary {
@@ -114,13 +115,16 @@ export interface CreateCompanionSessionInput {
  * @param sessions - current Desktop-confirmed list.
  * @param committed - previously applied operation ids.
  * @param input - create request.
+ * @param connection - foreground connection and validated synchronization state.
  * @returns next list and whether a new row was appended.
  */
 export function createCompanionSession(
   sessions: readonly CompanionSessionSummary[],
   committed: ReadonlySet<string>,
   input: CreateCompanionSessionInput,
+  connection: CompanionConnectionState | undefined,
 ): { sessions: readonly CompanionSessionSummary[]; created: boolean } {
+  requireCompanionMutation(connection, 'session-create')
   if (input.operationId === '') throw new TypeError('Companion create operation id must be non-empty')
   if (committed.has(input.operationId)) return { sessions, created: false }
   const created: CompanionSessionSummary = {

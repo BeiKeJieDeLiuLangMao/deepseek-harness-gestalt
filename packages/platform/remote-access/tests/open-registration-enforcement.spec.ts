@@ -141,7 +141,7 @@ describe('open-registration enforcement', () => {
       })
   }, 30_000)
 
-  it('enforces concurrent, per-blob, and daily blob ceilings and the daily push ceiling', async () => {
+  it('enforces concurrent, per-blob, and daily blob ceilings', async () => {
     const now = { value: NOW }
     const provider = uniqueProvider(now)
     const owner = authentication('desktop-installation', 'account-one')
@@ -202,12 +202,6 @@ describe('open-registration enforcement', () => {
     await expect(daily.admitAttachmentBlob({ owner, bytes: -1 })).rejects.toBeInstanceOf(TypeError)
     await expect(daily.releaseAttachmentBlob({ owner, reservationId: 'missing' })).rejects.toBeInstanceOf(TypeError)
 
-    for (let index = 0; index < OPEN_REGISTRATION_QUOTAS.pushHintsPerAccountPerDay; index += 1) {
-      await provider.emitPushHint(owner)
-    }
-    await expect(provider.emitPushHint(owner)).rejects.toMatchObject({ code: 'QUOTA' })
-    now.value += ACCOUNT_DAILY_QUOTA_WINDOW_MS + 1
-    await expect(provider.emitPushHint(owner)).resolves.toBeUndefined()
   })
 
   it('sheds new pairing and blob acquisition at capacity while an established pairing remains listed', async () => {
@@ -236,11 +230,10 @@ describe('open-registration enforcement', () => {
     })).rejects.toMatchObject({ code: 'PLATFORM_CAPACITY', retryAfter: 5 })
     await expect(provider.admitAttachmentBlob({ owner: desktop, bytes: 1 }))
       .rejects.toMatchObject({ code: 'PLATFORM_CAPACITY', retryAfter: 5 })
-    await expect(provider.emitPushHint(desktop)).resolves.toBeUndefined()
     expect(await provider.listPersonalPairings(desktop)).toMatchObject([{ id: pairing.id }])
   })
 
-  it('rejects the eleventh challenge, sixth blob, and 501st push through a second shared-authority provider', async () => {
+  it('rejects the eleventh challenge and sixth blob through a second shared-authority provider', async () => {
     const now = { value: NOW }
     const authority = new MemoryPersonalPairingAuthorityStore()
     const first = uniqueProvider(now, undefined, authority, 'a-')
@@ -276,10 +269,6 @@ describe('open-registration enforcement', () => {
     })
     await first.releaseAttachmentBlob({ owner: desktopA, reservationId: held[0] as string })
 
-    for (let index = 0; index < OPEN_REGISTRATION_QUOTAS.pushHintsPerAccountPerDay; index += 1) {
-      await first.emitPushHint(desktopA)
-    }
-    await expect(second.emitPushHint(desktopB)).rejects.toMatchObject({ code: 'QUOTA' })
   })
 
   it('rejects a Pairing Challenge when the client IP is missing', async () => {

@@ -95,6 +95,7 @@
     "apps/cli/tests/**/*.ts",
     "apps/mobile/src/personal-pairing-model.ts",
     "apps/mobile/src/personal-pairing.ts",
+    "apps/mobile/src/companion-mutation.ts",
     "apps/mobile/src/companion-attachment.ts",
     "apps/desktop/src/companion-attachments.ts",
     "apps/platform/src/production-env.ts",

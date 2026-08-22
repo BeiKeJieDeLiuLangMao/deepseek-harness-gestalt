@@ -48,7 +48,6 @@ export function emptyPairingTransactionState(): PersonalPairingTransactionState 
     ipChallengeAt: new Map(),
     blobs: new Map(),
     blobUploads: new Map(),
-    pushHintsAt: new Map(),
     blobSequence: { next: 0 },
   }
 }
@@ -72,7 +71,6 @@ export function encodePairingTransactionState(state: PersonalPairingTransactionS
     ipChallengeAt: [...state.ipChallengeAt],
     blobs: [...state.blobs],
     blobUploads: [...state.blobUploads],
-    pushHintsAt: [...state.pushHintsAt],
     blobSequence: { next: state.blobSequence.next },
   }
 }
@@ -105,7 +103,6 @@ export function decodePairingTransactionState(value: unknown): PersonalPairingTr
     ipChallengeAt: decodeNumberListMap(record.ipChallengeAt, 'ipChallengeAt'),
     blobs: decodeMap(record.blobs, 'blobs', asPlainString, decodeBlob),
     blobUploads: decodeMap(record.blobUploads, 'blobUploads', asPlainString, decodeBlobUploads),
-    pushHintsAt: decodeNumberListMap(record.pushHintsAt, 'pushHintsAt'),
     blobSequence: { next: asSafeInteger(asRecord(record.blobSequence, 'blobSequence').next, 'blobSequence.next') },
   }
 }

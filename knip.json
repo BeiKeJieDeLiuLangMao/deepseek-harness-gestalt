@@ -814,6 +814,11 @@
         "tests/**/*.ts"
       ]
     },
+    "apps/mobile": {
+      "entry": [
+        "tests/**/*.snapshot.ts"
+      ]
+    },
     "packages/client/modules": {
       "entry": [
         "tests/**/*.spec.ts"

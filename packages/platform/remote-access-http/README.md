@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-HTTP and WSS Consumers for the public Remote Access services. One fixed HTTP route accepts current-Installation Account proof headers, validates operation input, and delegates only through `ctx.remoteAccess`. Pairing Challenge requests pass the TCP peer address to the per-IP hourly quota. `QUOTA` and `PLATFORM_CAPACITY` map to HTTP 429 with JSON `retryAfter` and a `Retry-After` header. Blob and push admission operations (`admit-blob`, `release-blob`, `emit-push-hint`) enforce those quotas by declared size. The exact WSS path accepts only Relay Transport frames and delegates authenticated attachments through `ctx.remoteRelay`. JSON bodies and error envelopes go through the `@deepseek-ai/dsh-host-webserver` helpers with Remote Access-owned codes and copy.
+HTTP and WSS Consumers for the public Remote Access services. One fixed HTTP route accepts current-Installation Account proof headers, validates operation input, and delegates only through `ctx.remoteAccess`. Pairing Challenge requests pass the TCP peer address to the per-IP hourly quota. `QUOTA` and `PLATFORM_CAPACITY` map to HTTP 429 with JSON `retryAfter` and a `Retry-After` header. Blob admission operations (`admit-blob`, `release-blob`) enforce the declared-size quotas. The exact WSS path accepts only Relay Transport frames and delegates authenticated attachments through `ctx.remoteRelay`. JSON bodies and error envelopes go through the `@deepseek-ai/dsh-host-webserver` helpers with Remote Access-owned codes and copy.
 
 The Consumer reads no Account database fields and grants no authority itself. The Remote Access provider authenticates the Account and Installation role through the Platform Account public service before any pairing lifecycle mutation.
 

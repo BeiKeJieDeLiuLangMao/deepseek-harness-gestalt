@@ -105,6 +105,7 @@ describe('RemoteRelayEndpointController', () => {
       await send(parseRelayAttachmentId('mobile-one'), Uint8Array.of(9))
     })
     let attachment = 0
+    const connectionEvents: string[] = []
     const controller = new RemoteRelayEndpointController({
       endpoint: 'desktop',
       route: async () => ({
@@ -121,18 +122,23 @@ describe('RemoteRelayEndpointController', () => {
       heartbeatIntervalMs: 30_000,
       reconnectDelayMs: 1,
       resynchronize,
+      onConnectionReady: (attachmentId) => { connectionEvents.push(`ready:${attachmentId}`) },
+      onConnectionLost: (attachmentId) => { connectionEvents.push(`lost:${attachmentId}`) },
     })
 
     await controller.start()
     expect(controller.isConnected()).toBe(true)
     expect(resynchronize).toHaveBeenCalledTimes(1)
+    expect(connectionEvents).toEqual(['ready:desktop-1'])
     expect(first.decoded().map(message => message.type)).toEqual(['attach', 'ciphertext'])
     first.end()
     await vi.waitFor(() => { expect(resynchronize).toHaveBeenCalledTimes(2) })
+    expect(connectionEvents).toEqual(['ready:desktop-1', 'lost:desktop-1', 'ready:desktop-2'])
     expect(replacement.decoded().map(message => message.type)).toEqual(['attach', 'ciphertext'])
     expect(first.decoded()).toHaveLength(2)
 
     await controller.stop()
+    expect(connectionEvents).toEqual(['ready:desktop-1', 'lost:desktop-1', 'ready:desktop-2', 'lost:desktop-2'])
     expect(controller.isConnected()).toBe(false)
     await expect(controller.sendCiphertext(parseRelayAttachmentId('mobile-one'), Uint8Array.of(1)))
       .rejects.toMatchObject({ code: 'REMOTE_OFFLINE' })

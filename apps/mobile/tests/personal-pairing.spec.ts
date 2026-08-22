@@ -9,7 +9,7 @@ import {
 import { parseRelayCredential, parseRelayRouteId } from '@deepseek-ai/dsh-remote-protocol'
 import type { RemoteAccessTransport } from '@deepseek-ai/dsh-remote-access-client'
 import { PairingCompanionKeyVault } from '../src/companion-keys.ts'
-import { companionMayMutate, CompanionForegroundRuntime } from '../src/companion-push.ts'
+import { companionMayMutate, CompanionForegroundRuntime } from '../src/companion-lifecycle.ts'
 import { MobilePairingController } from '../src/personal-pairing.ts'
 
 describe('MobilePairingController', () => {
@@ -104,7 +104,6 @@ describe('MobilePairingController', () => {
     }
     const relay = { configure: vi.fn(), start: vi.fn(), stop: vi.fn(), isConnected: () => false }
     const companion = new CompanionForegroundRuntime({ relay })
-    companion.rememberToken('device-token')
     const controller = new MobilePairingController({
       installation: installationFixture(), transport, handshake, relay: companion, companion,
       scanner: { scan: vi.fn() },
@@ -120,20 +119,11 @@ describe('MobilePairingController', () => {
     expect(handshake.wipe).toHaveBeenCalledOnce()
     expect(relay.stop).toHaveBeenCalled()
     expect(relay.configure).toHaveBeenCalledWith(undefined)
-    expect(companion.getState().token).toBeUndefined()
     expect(companion.getState()).toMatchObject({ socketOpen: false, synchronized: false })
     relay.start.mockClear()
     await companion.setForeground(true)
     expect(relay.start).not.toHaveBeenCalled()
     expect(companionMayMutate(companion.getState())).toBe(false)
-    expect(transport.unregisterPushToken).toHaveBeenCalledWith({
-      authentication: {
-        accessToken: 'mobile-access',
-        proof: { jti: 'proof', issuedAt: 1, signature: 'signature' },
-      },
-      routeId: parseRelayRouteId('route-unpair'),
-      token: 'device-token',
-    })
     expect(controller.getSnapshot()).toEqual({ status: 'ready' })
   })
 
@@ -547,7 +537,6 @@ function transportFixture() {
       device: { name: 'Fixture installation', platform: 'ios' },
     }),
     getMobilePairingStatus: vi.fn().mockResolvedValue({ status: 'paired', pairingId: 'pairing-one' }),
-    unregisterPushToken: vi.fn(),
   } satisfies RemoteAccessTransport
 }
 

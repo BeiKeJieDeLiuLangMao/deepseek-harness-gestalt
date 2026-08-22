@@ -59,8 +59,6 @@ describe('Remote Access HTTP open-registration quotas', () => {
     const over = await post(server.origin, owner, { operation: 'admit-blob', bytes: 1 })
     expect(over.status).toBe(429)
     await expect(over.json()).resolves.toMatchObject({ error: { code: 'QUOTA' } })
-    const capacity = await post(server.origin, owner, { operation: 'emit-push-hint' })
-    expect(capacity.status).toBe(200)
   })
 })
 

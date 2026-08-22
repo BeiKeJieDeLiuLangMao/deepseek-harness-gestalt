@@ -127,9 +127,6 @@ async function dispatch(
         reservationId: requiredString(body.reservationId, 'reservationId'),
       })
       return { completed: true }
-    case 'emit-push-hint':
-      await ctx.remoteAccess.emitPushHint(authentication)
-      return { completed: true }
     default: throw new HttpError(400, 'OPERATION_INVALID', 'Remote Access operation is invalid')
   }
 }
