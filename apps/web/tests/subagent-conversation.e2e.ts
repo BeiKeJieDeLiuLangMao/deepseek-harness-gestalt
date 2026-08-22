@@ -254,12 +254,19 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
     let trailingRequested = false
     let releaseCatalog = (): void => {}
     const catalogHeld = new Promise<void>((resolve) => { releaseCatalog = resolve })
+    const catalogSettled = Promise.withResolvers<undefined>()
+    void catalogSettled.promise.catch(() => {})
     await page.route(pattern, async (route) => {
       if (firstClaimed) {
-        const response = await route.fetch()
-        trailingRequested = true
-        await catalogHeld
-        await route.fulfill({ response })
+        try {
+          const response = await route.fetch()
+          trailingRequested = true
+          await catalogHeld
+          await route.fulfill({ response })
+          catalogSettled.resolve(undefined)
+        } catch (error) {
+          catalogSettled.reject(error)
+        }
         return
       }
       firstClaimed = true
@@ -295,6 +302,7 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
       await tree.press('Escape')
     } finally {
       releaseCatalog()
+      if (trailingRequested) await catalogSettled.promise
       await page.unroute(pattern)
     }
   })
