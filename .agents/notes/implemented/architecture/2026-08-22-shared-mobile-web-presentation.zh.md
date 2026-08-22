@@ -22,7 +22,7 @@ Desktop keyed slot 与 `ToolPresentation` 使用同一份内置 Tool roster。Ba
 
 ## Verification
 
-Mobile component test 把原始 Desktop Session、Workspace、conversation 与 pending-wait projection 送入公共入口，覆盖全部终态 conversation-node 类别、共享 Session 行、专用普通与未知 Tool、image、Approval、Ask User、InputBar submit、locale、theme、overflow 与 Host error。keyless browser snapshot 构建打包后的 `main.tsx` 入口，通过拦截的 HTTPS 响应完成 Account lifecycle，再以 390 px 的英文／dark 与中文／light 环境执行共享 conversation、Approval、Ask User 与 input component。production-negative 入口测试证明，即使 build flag 存在，production 环境也不能加载 development projection。该 snapshot 使用本地证据回调，不运行 model round，既不证明加密 Desktop transport，也不证明远端 mutation authority；live 证据仍受 #216 与 #217 阻塞。所有验收都不使用 `prototype-companion` 或 5173/5174 端口。
+Mobile component test 把原始 Desktop Session、Workspace、conversation 与 pending-wait projection 送入公共入口，覆盖有代表性的终态 conversation node、共享 Session 行、专用普通与未知 Tool、image、Approval、Ask User、InputBar submit、locale、theme、overflow 与 Host error。keyless browser snapshot 构建打包后的 `main.tsx` 入口，通过拦截的 HTTPS 响应完成 Account lifecycle，再以 390 px 的英文／dark 与中文／light 环境执行共享 conversation、Approval、Ask User 与 input component。production-negative 入口测试证明，即使 build flag 存在，production 环境也不能加载 development projection。该 snapshot 使用本地证据回调，不运行 model round，既不证明加密 Desktop transport，也不证明远端 mutation authority；live 证据仍受 #216 与 #217 阻塞。所有验收都不使用 `prototype-companion` 或 5173/5174 端口。
 
 ## Alternatives considered
 
