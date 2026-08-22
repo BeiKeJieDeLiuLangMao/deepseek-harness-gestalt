@@ -8,9 +8,9 @@ DeepSeek Gestalt 的 Desktop Host。Electron 拥有窗口、菜单、GitHub 自�
 
 主窗口只接受当前环回 Host 同源导航。包括 GitHub 授权在内的普通 HTTP 链接交给系统浏览器；其他来源和 scheme 不能替换 Session Surface，也不能创建另一个 Electron 窗口。Platform 账号签名密钥和令牌保存在 Electron userData 下、按环境分开的 `safeStorage` 加密文件中；preload 只暴露当前状态与生命周期动词。
 
-个人配对只在真实的 `手机配对` 设置区中配置。preload 暴露手机访问、挑战、待确认决策与已配对设备操作，不会向普通 Session 标题栏、侧栏、审批、输入框或离线视图增加状态。账号登录后，由 Host 拥有的控制器为每项远程访问操作签署新的当前安装证明，在设置中的配对开关开启时轮询待确认决策，并在调用变更前校验 renderer 传入的布尔值与带品牌的待确认 id。同一个 owner 只在手机访问开启时启动注入的 Relay lifecycle，并在关闭开关、退出账号、sleep、关闭窗口或 quit 时停止。开发环境只有同时设置 `DSH_PERSONAL_PAIRING_KEYLESS=1` 与 `DSH_REMOTE_RELAY_WSS_URL`、`DSH_REMOTE_RELAY_ATTACH_TIMEOUT_MS`、`DSH_REMOTE_RELAY_HEARTBEAT_INTERVAL_MS`、`DSH_REMOTE_RELAY_RECONNECT_DELAY_MS`、`DSH_REMOTE_RELAY_INBOUND_MAX_BYTES`、`DSH_REMOTE_RELAY_INBOUND_MAX_MESSAGES`，才会选择真实 HTTP 与 WSS 控制器；完整配置会在创建窗口或获取网络资源前校验。生产环境在独立 Noise 评审接纳经过评审的握手与 Companion channel provider 前保持不可用。Host 永远不会组装仅用于证明的 Snow 实现或任一 keyless provider。
+个人配对只在真实的 `手机配对` 设置区中配置。preload 暴露手机访问、挑战、待确认决策与已配对设备操作，不会向普通 Session 标题栏、侧栏、审批、输入框或离线视图增加状态。在经过评审的握手与 Companion channel provider 接入前，产品 Host 会让这些操作与 Relay 保持 fail-closed；产品入口没有开发或 keyless 选择。keyless 控制器证据只导入 `tests/` 下的 fixture，`main.ts` 无法触达。
 
-Desktop Platform 账号会在创建窗口前校验完整开发与生产环境对：`DSH_PLATFORM_DEVELOPMENT_*` 和 `DSH_PLATFORM_PRODUCTION_*` 两侧分别提供 `ORIGIN`、`CALLBACK_URL`、`GITHUB_CLIENT_ID`、`CREDENTIAL_REFERENCE`、`DATABASE_IDENTITY` 与 `IDENTITY_NAMESPACE`，再由 `DSH_PLATFORM_ENV` 显式选择一侧。缺失、未知、共享、非 HTTPS 或回调不匹配的配置会在渲染与网络流量前使启动失败。操作系统加密不可用仍会作为明确的能力失败显示。加密记录通过 `dsh-atomic-write` 的随机独占同级文件、仅所有者权限、符号链接安全 rename 与失败清理完成替换。
+Desktop Platform 账号只接受一套实际运行的生产身份，由 `DSH_PLATFORM_ORIGIN`、`DSH_PLATFORM_CALLBACK_URL`、`DSH_PLATFORM_GITHUB_CLIENT_ID`、`DSH_PLATFORM_CREDENTIAL_REFERENCE`、`DSH_PLATFORM_DATABASE_IDENTITY` 与 `DSH_PLATFORM_IDENTITY_NAMESPACE` 提供。字段缺失、localhost、非 HTTPS origin 或回调不匹配会在 Electron 创建窗口、启动 Web Host、读取账号存储或发送流量之前使模块启动失败。操作系统加密不可用仍会作为明确的能力失败显示。加密记录通过 `dsh-atomic-write` 的随机独占同级文件、仅所有者权限、符号链接安全 rename 与失败清理完成替换。
 
 在 macOS 上，28px 顶部间距让未改动的 DSH 侧栏标题行避开 traffic lights。Windows 使用覆盖整个窗口的 36px 拖拽行，最小化、最大化和关闭按钮各占 46px。未支持平台的开发运行保留系统窗口框架。
 
@@ -59,4 +59,4 @@ hoisted deploy 会纳入工作区包，但不带 pnpm 的链接式虚拟依赖�
 
 - **安装包里的 Node + dsh 快照由发布 workflow 组装** — `gestalt:dev` 跑的是工作区源码树。
 - **没有 Windows Authenticode** — SmartScreen 会警告；更新器仍会运行。
-- **生产个人配对密码实现尚未组装** — 显式开发 keyless 配置可以执行真实 HTTP/WSS 生命周期，但不提供产品 Companion 密码实现；在独立 Noise 评审接纳产品提供方前，生产设置与 Host bridge 保持 fail-closed。
+- **生产个人配对密码实现尚未组装** — 在独立 Noise 评审接纳产品 provider 前，Settings 与 Host bridge 保持 fail-closed；keyless fixture 是测试，不是产品模式。
