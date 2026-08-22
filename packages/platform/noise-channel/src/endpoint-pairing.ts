@@ -25,9 +25,34 @@ interface DesktopPairingState {
   reconnectState?: Uint8Array
 }
 
+/** Safely protected Desktop XKpsk3 recovery allocation persisted only by the endpoint. */
+export interface SnowDesktopEndpointPairingRecoveryState {
+  desktopPrivate: Uint8Array
+  desktopPublic: Uint8Array
+  ephemeralPrivate: Uint8Array
+  psk: Uint8Array
+  message1?: Uint8Array
+  message2?: Uint8Array
+  message3?: Uint8Array
+  mobilePublic?: Uint8Array
+  handshakeHash?: Uint8Array
+  reconnectState?: Uint8Array
+}
+
 /** Desktop-owned XKpsk3 responder whose private state never enters Platform persistence. */
 export class SnowDesktopEndpointPairingOwner {
   private state: DesktopPairingState | undefined
+
+  /** Restore endpoint-protected XKpsk3 state after a Desktop process restart.
+   * @param recovery - decoded owner-only recovery allocation.
+   * @returns owner resuming the exact handshake transcript.
+   */
+  static restore(recovery: SnowDesktopEndpointPairingRecoveryState): SnowDesktopEndpointPairingOwner {
+    validateRecovery(recovery)
+    const owner = new SnowDesktopEndpointPairingOwner()
+    owner.state = cloneRecovery(recovery)
+    return owner
+  }
 
   /** Create one opaque public invitation payload while retaining every secret locally.
    * @param expiresAt - absolute invitation expiry.
@@ -140,6 +165,20 @@ export class SnowDesktopEndpointPairingOwner {
     return state.reconnectState.slice()
   }
 
+  /** Export a defensive copy for endpoint-protected crash recovery.
+   * @returns current private handshake allocation.
+   */
+  exportRecoveryState(): SnowDesktopEndpointPairingRecoveryState {
+    return cloneRecovery(this.requireState())
+  }
+
+  /** Read the authenticated transcript hash after message 3.
+   * @returns defensive authentication hash copy.
+   */
+  exportAuthenticationHash(): Uint8Array {
+    return this.requireFinished().handshakeHash.slice()
+  }
+
   /** Zero every Desktop endpoint pairing allocation. */
   wipe(): void {
     if (this.state !== undefined) wipeRecord(this.state)
@@ -164,6 +203,33 @@ export class SnowDesktopEndpointPairingOwner {
     }
     return state as ReturnType<SnowDesktopEndpointPairingOwner['requireFinished']>
   }
+}
+
+function validateRecovery(state: SnowDesktopEndpointPairingRecoveryState): void {
+  for (const [name, value] of [
+    ['desktopPrivate', state.desktopPrivate], ['desktopPublic', state.desktopPublic],
+    ['ephemeralPrivate', state.ephemeralPrivate], ['psk', state.psk],
+  ] as const) {
+    if (!(value instanceof Uint8Array) || value.byteLength !== KEY_BYTES) {
+      throw new TypeError(`Snow endpoint recovery ${name} must contain ${String(KEY_BYTES)} bytes`)
+    }
+  }
+  if ((state.message1 === undefined) !== (state.message2 === undefined)) {
+    throw new TypeError('Snow endpoint recovery messages 1 and 2 must settle together')
+  }
+  if (state.message3 !== undefined && (state.message1 === undefined || state.mobilePublic === undefined
+    || state.handshakeHash === undefined)) {
+    throw new TypeError('Snow endpoint recovery message 3 is incomplete')
+  }
+  if (state.reconnectState !== undefined && state.reconnectState.byteLength !== RECONNECT_BYTES) {
+    throw new TypeError('Snow endpoint recovery reconnect state is invalid')
+  }
+}
+
+function cloneRecovery(state: SnowDesktopEndpointPairingRecoveryState): SnowDesktopEndpointPairingRecoveryState {
+  return Object.fromEntries(Object.entries(state).map(([key, value]) => [
+    key, value.slice(),
+  ])) as unknown as SnowDesktopEndpointPairingRecoveryState
 }
 
 /** Decode one opaque invitation inside the Mobile endpoint, never on Platform.

@@ -1,4 +1,4 @@
-import type { RelayAttachmentId } from '@deepseek-ai/dsh-remote-protocol'
+import type { RelayAttachmentId, RelayPairingSelector, RelayPeerUpdateMessage, RelayReadyMessage } from '@deepseek-ai/dsh-remote-protocol'
 import type { RelayCredentialGrant } from '@deepseek-ai/dsh-remote-access'
 import {
   RemoteRelayEndpointController,
@@ -40,35 +40,74 @@ export class FailClosedDesktopRelayLifecycle implements DesktopRelayLifecycle {
 
 /** Real Desktop endpoint composition that owns its current route grant. */
 export class DesktopRelayEndpointLifecycle implements DesktopRelayLifecycle {
-  private grant: RelayCredentialGrant | undefined
+  private readonly endpoints = new Map<RelayPairingSelector, RemoteRelayEndpointController>()
   private stopReason: DesktopRelayStopReason | undefined
-  private readonly endpoint: RemoteRelayEndpointController
-
-  /** @param options - Desktop endpoint adapters other than route authority. */
-  constructor(options: Omit<RemoteRelayEndpointOptions, 'endpoint' | 'route'>) {
-    this.endpoint = new RemoteRelayEndpointController({
-      ...options,
-      endpoint: 'desktop',
-      route: () => {
-        if (this.grant === undefined) throw new Error('Desktop Relay authority is unavailable')
-        return Promise.resolve(this.grant)
-      },
-    })
+  private readonly options: Omit<RemoteRelayEndpointOptions, 'endpoint' | 'route' | 'onCiphertext' | 'onPeerAttachments'> & {
+    onPeerAttachments?: (
+      message: RelayReadyMessage | RelayPeerUpdateMessage,
+      pairingSelector: RelayPairingSelector,
+    ) => void | Promise<void>
+    onCiphertext?: (
+      ciphertext: Uint8Array,
+      sourceAttachmentId: RelayAttachmentId,
+      localAttachmentId: RelayAttachmentId,
+      pairingSelector: RelayPairingSelector,
+    ) => void | Promise<void>
   }
 
-  configure(grant: RelayCredentialGrant): void { this.grant = grant }
+  /** @param options - Desktop endpoint adapters other than route authority. */
+  constructor(options: Omit<RemoteRelayEndpointOptions, 'endpoint' | 'route' | 'onCiphertext' | 'onPeerAttachments'> & {
+    onPeerAttachments?: (
+      message: RelayReadyMessage | RelayPeerUpdateMessage,
+      pairingSelector: RelayPairingSelector,
+    ) => void | Promise<void>
+    onCiphertext?: (
+      ciphertext: Uint8Array,
+      sourceAttachmentId: RelayAttachmentId,
+      localAttachmentId: RelayAttachmentId,
+      pairingSelector: RelayPairingSelector,
+    ) => void | Promise<void>
+  }) {
+    this.options = options
+  }
+
+  configure(grant: RelayCredentialGrant): void {
+    if (grant.endpoint !== 'desktop' || grant.pairingSelector === undefined) {
+      throw new TypeError('Desktop Relay grant must belong to one Personal Pairing')
+    }
+    const selector = grant.pairingSelector
+    let localAttachmentId: RelayAttachmentId | undefined
+    const endpoint = new RemoteRelayEndpointController({
+      ...this.options,
+      endpoint: 'desktop',
+      route: () => Promise.resolve(grant),
+      onPeerAttachments: async (message: RelayReadyMessage | RelayPeerUpdateMessage) => {
+        localAttachmentId = message.attachmentId
+        await this.options.onPeerAttachments?.(message, selector)
+      },
+      onCiphertext: async (ciphertext, sourceAttachmentId) => {
+        if (localAttachmentId === undefined) throw new Error('Desktop Relay has no local attachment identity')
+        await this.options.onCiphertext?.(ciphertext, sourceAttachmentId, localAttachmentId, selector)
+      },
+    })
+    const previous = this.endpoints.get(selector)
+    this.endpoints.set(selector, endpoint)
+    if (previous !== undefined) void previous.stop('mobile-access-disabled')
+  }
   async start(): Promise<void> {
-    await this.endpoint.start()
+    await Promise.all([...this.endpoints.values()].map(async (endpoint) => { await endpoint.start() }))
     this.stopReason = undefined
   }
   async stop(reason: DesktopRelayStopReason = 'quit'): Promise<void> {
-    try { await this.endpoint.stop(reason) } finally { this.stopReason = reason }
+    try {
+      await Promise.all([...this.endpoints.values()].map(async (endpoint) => { await endpoint.stop(reason) }))
+    } finally { this.stopReason = reason }
   }
 
   /** @returns observed attachment ownership and the last completed stop reason. */
   getState(): { connected: boolean; stopReason?: DesktopRelayStopReason } {
     return {
-      connected: this.endpoint.isConnected(),
+      connected: [...this.endpoints.values()].some(endpoint => endpoint.isConnected()),
       ...(this.stopReason === undefined ? {} : { stopReason: this.stopReason }),
     }
   }
@@ -78,7 +117,13 @@ export class DesktopRelayEndpointLifecycle implements DesktopRelayLifecycle {
    * @param targetAttachmentId - live Mobile attachment.
    * @param ciphertext - bounded encrypted frame.
    */
-  async sendCiphertext(targetAttachmentId: RelayAttachmentId, ciphertext: Uint8Array): Promise<void> {
-    await this.endpoint.sendCiphertext(targetAttachmentId, ciphertext)
+  async sendCiphertext(
+    pairingSelector: RelayPairingSelector,
+    targetAttachmentId: RelayAttachmentId,
+    ciphertext: Uint8Array,
+  ): Promise<void> {
+    const endpoint = this.endpoints.get(pairingSelector)
+    if (endpoint === undefined) throw new Error('Desktop Relay pairing authority is unavailable')
+    await endpoint.sendCiphertext(targetAttachmentId, ciphertext)
   }
 }

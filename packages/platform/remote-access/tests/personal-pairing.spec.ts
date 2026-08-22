@@ -87,6 +87,7 @@ describe('PersonalPairingProvider', () => {
     })
     await expect(provider.confirmEndpointPairing({
       desktop, pendingPairingId: completion.pendingPairingId,
+      desktopCredentialDigest: new Uint8Array(32).fill(6),
       mobileCredentialDigest: new Uint8Array(32).fill(7),
     })).rejects.toThrow('publication response lost after commit')
     const recovered = configuredProvider({
@@ -98,6 +99,7 @@ describe('PersonalPairingProvider', () => {
     })
     const confirmation = await recovered.confirmEndpointPairing({
       desktop, pendingPairingId: completion.pendingPairingId,
+      desktopCredentialDigest: new Uint8Array(32).fill(6),
       mobileCredentialDigest: new Uint8Array(32).fill(7),
     })
     expect(confirmation).toMatchObject({
@@ -106,16 +108,19 @@ describe('PersonalPairingProvider', () => {
     })
     await expect(recovered.confirmEndpointPairing({
       desktop, pendingPairingId: completion.pendingPairingId,
+      desktopCredentialDigest: new Uint8Array(32).fill(6),
       mobileCredentialDigest: new Uint8Array(32).fill(7),
     })).resolves.toEqual(confirmation)
     await expect(recovered.confirmEndpointPairing({
       desktop, pendingPairingId: completion.pendingPairingId,
+      desktopCredentialDigest: new Uint8Array(32).fill(6),
       mobileCredentialDigest: new Uint8Array(32).fill(8),
     })).rejects.toThrow('stale')
-    expect(relay.registerCredentialDigest).toHaveBeenCalledWith(
-      parseRelayRouteId('relay-route-endpoint'), 'mobile', new Uint8Array(32).fill(7), 'pairing-endpoint',
+    expect(relay.registerPairingCredentialDigests).toHaveBeenCalledWith(
+      parseRelayRouteId('relay-route-endpoint'), 'pairing-endpoint',
+      new Uint8Array(32).fill(6), new Uint8Array(32).fill(7),
     )
-    expect(relay.registerCredentialDigest).toHaveBeenCalledTimes(2)
+    expect(relay.registerPairingCredentialDigests).toHaveBeenCalledTimes(2)
     await recovered.deliverEndpointRelayAuthority({
       desktop,
       pendingPairingId: completion.pendingPairingId,
@@ -259,7 +264,8 @@ describe('PersonalPairingProvider', () => {
     const mobile = authentication('mobile-installation')
 
     const enabled = await platformA.setMobileAccess({ desktop, enabled: true })
-    expect(enabled.relay?.credential).toBe(desktopCredential)
+    expect(enabled).toEqual({ enabled: true })
+    expect(relay.rotateCredential).not.toHaveBeenCalled()
     expect(await platformB.getMobileAccessState(desktop)).toEqual({ enabled: true })
     const challenge = await platformA.createChallenge({
       desktop,
@@ -353,7 +359,7 @@ describe('PersonalPairingProvider', () => {
     expect(relay.revokeRoute).not.toHaveBeenCalled()
     expect(await provider.getMobileAccessState(desktop)).toEqual({ enabled: true })
     await expect(provider.reissueDesktopRelayAuthority(desktop)).resolves.toMatchObject({
-      enabled: true, relay: { routeId: parseRelayRouteId('route-revoke'), endpoint: 'desktop' },
+      enabled: true,
     })
     await expect(provider.revokePersonalPairing({
       desktop, pairingId: parsePersonalPairingId('pairing-missing'),
@@ -570,7 +576,7 @@ describe('PersonalPairingProvider', () => {
     })).toThrow('shared authority store')
   })
 
-  it('rotates and revokes Relay authority through the authenticated Settings mutation', async () => {
+  it('enables routing metadata without letting Platform issue Desktop private authority', async () => {
     const routeId = parseRelayRouteId('relay-route-id')
     const credential = parseRelayCredential('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA')
     const relay = {
@@ -589,13 +595,9 @@ describe('PersonalPairingProvider', () => {
     })
     const desktop = authentication('desktop-installation', 'account-one')
 
-    await expect(provider.setMobileAccess({ desktop, enabled: true })).resolves.toEqual({
-      enabled: true,
-      relay: { routeId, endpoint: 'desktop', credential, revision: 1 },
-    })
+    await expect(provider.setMobileAccess({ desktop, enabled: true })).resolves.toEqual({ enabled: true })
     await provider.setMobileAccess({ desktop, enabled: true })
-    expect(relay.rotateCredential).toHaveBeenNthCalledWith(1, routeId, 'desktop')
-    expect(relay.rotateCredential).toHaveBeenNthCalledWith(2, routeId, 'desktop')
+    expect(relay.rotateCredential).not.toHaveBeenCalled()
 
     await provider.setMobileAccess({ desktop, enabled: false })
     expect(relay.revokeRoute).toHaveBeenCalledOnce()
@@ -603,7 +605,7 @@ describe('PersonalPairingProvider', () => {
     await provider.dispose()
   })
 
-  it('rolls back a newly enabled shared route when its first credential rotation fails', async () => {
+  it('does not consult Relay credential generation while enabling a new route', async () => {
     const authority = new MemoryPersonalPairingAuthorityStore()
     const routeId = parseRelayRouteId('relay-route-failed-enable')
     const relay = {
@@ -622,12 +624,13 @@ describe('PersonalPairingProvider', () => {
     })
     const desktop = authentication('desktop-installation', 'account-one')
 
-    await expect(provider.setMobileAccess({ desktop, enabled: true })).rejects.toThrow('route store unavailable')
-    expect(await provider.getMobileAccessState(desktop)).toEqual({ enabled: false })
-    expect(relay.revokeRoute).toHaveBeenCalledWith(routeId)
+    await expect(provider.setMobileAccess({ desktop, enabled: true })).resolves.toEqual({ enabled: true })
+    expect(await provider.getMobileAccessState(desktop)).toEqual({ enabled: true })
+    expect(relay.rotateCredential).not.toHaveBeenCalled()
+    expect(relay.revokeRoute).not.toHaveBeenCalled()
   })
 
-  it('keeps an existing shared route enabled when a later credential rotation fails', async () => {
+  it('keeps an existing shared route enabled without rotating endpoint-owned authority', async () => {
     const authority = new MemoryPersonalPairingAuthorityStore()
     const routeId = parseRelayRouteId('relay-route-existing')
     const relay = {
@@ -648,13 +651,14 @@ describe('PersonalPairingProvider', () => {
     const desktop = authentication('desktop-installation', 'account-one')
     await provider.setMobileAccess({ desktop, enabled: true })
 
-    await expect(provider.setMobileAccess({ desktop, enabled: true })).rejects.toThrow('rotation unavailable')
+    await expect(provider.setMobileAccess({ desktop, enabled: true })).resolves.toEqual({ enabled: true })
 
     expect(await provider.getMobileAccessState(desktop)).toEqual({ enabled: true })
+    expect(relay.rotateCredential).not.toHaveBeenCalled()
     expect(relay.revokeRoute).not.toHaveBeenCalled()
   })
 
-  it('reports both credential failure and failed fail-closed route cleanup', async () => {
+  it('does not expose endpoint credential provider failures through route enable', async () => {
     const relay = {
       rotateCredential: vi.fn(async () => { throw new Error('rotation unavailable') }),
       issueCredential: vi.fn(),
@@ -669,11 +673,9 @@ describe('PersonalPairingProvider', () => {
 
     await expect(provider.setMobileAccess({
       desktop: authentication('desktop-installation', 'account-one'), enabled: true,
-    })).rejects.toMatchObject({
-      message: 'Mobile Access enable rollback failed', errors: [
-        expect.objectContaining({ message: 'rotation unavailable' }), expect.any(AggregateError),
-      ],
-    })
+    })).resolves.toEqual({ enabled: true })
+    expect(relay.rotateCredential).not.toHaveBeenCalled()
+    expect(relay.revokeRoute).not.toHaveBeenCalled()
   })
 
   it('completes shared authority cleanup when the keyless composition has no Relay provider', async () => {
@@ -2053,9 +2055,8 @@ describe('PersonalPairingProvider', () => {
       code: 'MOBILE_ACCESS_DISABLED',
     })
     await provider.setMobileAccess({ desktop, enabled: true })
-    await expect(provider.reissueDesktopRelayAuthority(desktop)).resolves.toEqual({
-      enabled: true, relay: { routeId, endpoint: 'desktop', credential: rotated, revision: 2 },
-    })
+    await expect(provider.reissueDesktopRelayAuthority(desktop)).resolves.toEqual({ enabled: true })
+    expect(relay.rotateCredential).not.toHaveBeenCalled()
 
     const keyless = new PersonalPairingProvider(new Context(), {
       account: { currentInstallation: vi.fn(async ({ accessToken }: { accessToken: string }) => authenticated(accessToken)) },
@@ -2392,6 +2393,7 @@ function relayStub(
     })),
     revokeCredential: vi.fn(revokeCredential),
     registerCredentialDigest: vi.fn(async () => revision),
+    registerPairingCredentialDigests: vi.fn(async () => revision),
     revokeCredentialDigest: vi.fn(async () => {}),
     revokeRoute: vi.fn(async () => {}),
   }

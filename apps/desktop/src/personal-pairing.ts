@@ -166,6 +166,7 @@ export class DesktopPairingController implements DesktopPairingActions {
           try {
             local = await this.options.snowPairingVault.createInvitation(expiresAt)
             this.options.snowPairingVault.retainChallenge(challenge.challengeId, local.owner)
+            await this.options.snowPairingVault.flush()
             const oneTimeLink = endpointInvitationLink(
               challenge.routingLink, local.invitationPayload, local.desktopFingerprint,
             )
@@ -251,10 +252,12 @@ export class DesktopPairingController implements DesktopPairingActions {
           confirmation = await this.options.transport.confirmEndpointPairing({
             authentication: await this.options.account.authorizeCurrentInstallation(),
             pendingPairingId,
-            mobileCredentialDigest: prepared.credentialDigest,
+            desktopCredentialDigest: prepared.desktopCredentialDigest,
+            mobileCredentialDigest: prepared.mobileCredentialDigest,
           })
         } finally {
-          prepared.credentialDigest.fill(0)
+          prepared.desktopCredentialDigest.fill(0)
+          prepared.mobileCredentialDigest.fill(0)
         }
         const delivery = await this.options.snowPairingVault.prepareSealedAuthority(
           pendingPairingId, confirmation,
@@ -265,6 +268,9 @@ export class DesktopPairingController implements DesktopPairingActions {
             pendingPairingId,
             sealedRelayAuthority: delivery.sealedRelayAuthority,
           })
+          await this.options.relay?.configure?.(
+            this.options.snowPairingVault.desktopRelayGrant(pendingPairingId),
+          )
           await this.options.snowPairingVault.commitConfirmation(pendingPairingId)
         } finally {
           delivery.sealedRelayAuthority.fill(0)
@@ -329,7 +335,7 @@ export class DesktopPairingController implements DesktopPairingActions {
       }
       this.accountId = accountId
       this.active = true
-      await this.refresh(true)
+      await this.refresh()
     })
   }
 
@@ -364,7 +370,7 @@ export class DesktopPairingController implements DesktopPairingActions {
     throwSettled(results)
   }
 
-  private async refresh(reissueDesktopAuthority = false): Promise<void> {
+  private async refresh(): Promise<void> {
     try {
       const state = await this.options.transport.getMobileAccessState(
         await this.options.account.authorizeCurrentInstallation(),
@@ -377,23 +383,20 @@ export class DesktopPairingController implements DesktopPairingActions {
         this.publish({ status: 'ready', enabled: false, pairings: [] })
         return
       }
-      if (reissueDesktopAuthority && this.options.relay !== undefined) {
-        const recovered = await this.options.transport.reissueDesktopRelayAuthority(
-          await this.options.account.authorizeCurrentInstallation(),
-        )
-        if (recovered.relay === undefined) {
-          throw new Error('Enabled Desktop Remote Access did not return Relay authority')
-        }
-        await this.options.relay.configure(recovered.relay)
+      for (const grant of this.options.snowPairingVault?.desktopRelayGrants() ?? []) {
+        await this.options.relay?.configure?.(grant)
       }
       await this.options.relay?.start()
       if (this.options.snowPairingVault !== undefined) {
         const endpointPending = await this.options.transport.listEndpointPending(
           await this.options.account.authorizeCurrentInstallation(),
         )
-        let finished: Extract<typeof endpointPending[number], { stage: 'message3' }> | undefined
+        let finished: typeof endpointPending[number] | undefined
         for (const record of endpointPending) {
-          if (record.stage === 'confirmed') continue
+          if (record.stage === 'confirmed') {
+            if (this.options.snowPairingVault.hasConfirmation(record.pendingPairingId)) finished ??= record
+            continue
+          }
           let owner
           try {
             owner = this.options.snowPairingVault.bindPending(record.challengeId, record.pendingPairingId)
@@ -407,6 +410,7 @@ export class DesktopPairingController implements DesktopPairingActions {
           }
           if (record.stage === 'message1') {
             const message2 = await owner.acceptMessage1(record.message1)
+            await this.options.snowPairingVault.checkpointPending(record.pendingPairingId)
             await this.options.transport.submitEndpointMessage2({
               authentication: await this.options.account.authorizeCurrentInstallation(),
               pendingPairingId: record.pendingPairingId,
@@ -415,13 +419,12 @@ export class DesktopPairingController implements DesktopPairingActions {
           } else {
             await owner.acceptMessage1(record.message1)
             await owner.finishMessage3(record.message3)
+            await this.options.snowPairingVault.checkpointPending(record.pendingPairingId)
             finished ??= record
           }
         }
         if (finished !== undefined) {
-          const owner = this.options.snowPairingVault.pendingOwner(finished.pendingPairingId)
-          if (owner === undefined) throw new Error('Desktop Snow pending pairing owner is unavailable')
-          const hash = await owner.finishMessage3(finished.message3)
+          const hash = this.options.snowPairingVault.pendingAuthenticationHash(finished.pendingPairingId)
           const pairings = await this.listPairings()
           this.publish({
             status: 'pending', enabled: true, pairings,

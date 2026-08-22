@@ -80,6 +80,22 @@ export class PostgresRelayRouteStore implements RelayRouteStore {
     })
   }
 
+  async registerPairing(
+    routeId: RelayRouteId,
+    pairingSelector: RelayPairingSelector,
+    desktopCredentialDigest: Uint8Array,
+    mobileCredentialDigest: Uint8Array,
+  ): Promise<number> {
+    return await this.transact(async (client) => {
+      const current = await this.loadRoute(client, routeId)
+      const revision = current === undefined || current.revoked ? (current?.revision ?? 0) + 1 : current.revision
+      if (current === undefined || current.revoked) await this.upsertRoute(client, routeId, revision, false)
+      await this.insertAuthority(client, routeId, 'desktop', desktopCredentialDigest, pairingSelector)
+      await this.insertAuthority(client, routeId, 'mobile', mobileCredentialDigest, pairingSelector)
+      return revision
+    })
+  }
+
   async authorize(
     routeId: RelayRouteId,
     endpoint: 'mobile' | 'desktop',

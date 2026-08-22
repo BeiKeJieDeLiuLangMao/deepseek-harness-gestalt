@@ -109,7 +109,9 @@ describe('RemoteAccessHttpTransport', () => {
     await expect(client.submitEndpointMessage2({ authentication, pendingPairingId, message2: Uint8Array.of(4) }))
       .resolves.toBeUndefined()
     await expect(client.confirmEndpointPairing({
-      authentication, pendingPairingId, mobileCredentialDigest: new Uint8Array(32).fill(9),
+      authentication, pendingPairingId,
+      desktopCredentialDigest: new Uint8Array(32).fill(8),
+      mobileCredentialDigest: new Uint8Array(32).fill(9),
     })).resolves.toMatchObject({ routeId: 'route-one', relayRevision: 1, pairing })
     await expect(client.rejectEndpointPairing({ authentication, pendingPairingId })).resolves.toBeUndefined()
     await expect(client.deliverEndpointRelayAuthority({

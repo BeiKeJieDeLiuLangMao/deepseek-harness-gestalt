@@ -1657,6 +1657,21 @@ class SharedRouteStore implements RelayRouteStore {
     return current.revision
   }
 
+  async registerPairing(
+    routeId: string,
+    pairingSelector: RelayPairingSelector,
+    desktopDigest: Uint8Array,
+    mobileDigest: Uint8Array,
+  ): Promise<number> {
+    const current = this.routes.get(routeId)
+    const revision = current === undefined || current.revoked ? (current?.revision ?? 0) + 1 : current.revision
+    const authorities = current === undefined || current.revoked ? new Map() : new Map(current.authorities)
+    authorities.set(Buffer.from(desktopDigest).toString('hex'), { endpoint: 'desktop', pairingSelector })
+    authorities.set(Buffer.from(mobileDigest).toString('hex'), { endpoint: 'mobile', pairingSelector })
+    this.routes.set(routeId, { authorities, revision, revoked: false })
+    return revision
+  }
+
   async authorize(
     routeId: string,
     endpoint: 'mobile' | 'desktop',

@@ -78,11 +78,11 @@ export function createDesktopRemoteRelay(options: DesktopRemoteRelayOptions): De
     channel: SnowCompanionProtocolChannel
     peer: RelayPeerDescriptor
   }>()
-  let projection: {
+  const projections = new Map<string, {
     routeId: Parameters<SnowDesktopAttachmentOwner['accept']>[2]
     attachmentId: Parameters<SnowDesktopAttachmentOwner['accept']>[3]
     peers: readonly RelayPeerDescriptor[]
-  } | undefined
+  }>()
   let desktopRevision = 0
   const lifecycle = new DesktopRelayEndpointLifecycle({
     attachmentId: () => parseRelayAttachmentId(crypto.randomUUID()),
@@ -94,12 +94,13 @@ export function createDesktopRemoteRelay(options: DesktopRemoteRelayOptions): De
     attachTimeoutMs: config.attachTimeoutMs,
     heartbeatIntervalMs: config.heartbeatIntervalMs,
     reconnectDelayMs: config.reconnectDelayMs,
-    onPeerAttachments: (update) => {
-      projection = { routeId: update.routeId, attachmentId: update.attachmentId, peers: update.peers }
+    onPeerAttachments: (update, selector) => {
+      projections.set(selector, { routeId: update.routeId, attachmentId: update.attachmentId, peers: update.peers })
     },
-    onCiphertext: async (ciphertext, sourceAttachmentId) => {
-      const current = projection
+    onCiphertext: async (ciphertext, sourceAttachmentId, localAttachmentId, pairingSelector) => {
+      const current = projections.get(pairingSelector)
       if (current === undefined) throw new Error('Desktop Relay ciphertext has no peer projection')
+      if (current.attachmentId !== localAttachmentId) throw new Error('Desktop Relay ciphertext has a stale local attachment')
       const existing = channels.get(sourceAttachmentId)
       const projected = current.peers.find(peer => peer.attachmentId === sourceAttachmentId)
       if (existing !== undefined) {
@@ -126,18 +127,25 @@ export function createDesktopRemoteRelay(options: DesktopRemoteRelayOptions): De
         }
       }
       channels.set(sourceAttachmentId, { channel: accepted.channel, peer: projected })
-      await lifecycle.sendCiphertext(accepted.targetAttachmentId, accepted.payload)
+      await lifecycle.sendCiphertext(accepted.pairingSelector, accepted.targetAttachmentId, accepted.payload)
       desktopRevision += 1
       await lifecycle.sendCiphertext(
-        accepted.targetAttachmentId,
+        accepted.pairingSelector, accepted.targetAttachmentId,
         sealDesktopForegroundSynchronization(accepted.channel, accepted.generation, desktopRevision),
       )
     },
     resynchronize: async () => {},
-    onConnectionLost: () => {
-      projection = undefined
-      for (const active of channels.values()) active.channel.dispose()
-      channels.clear()
+    onConnectionLost: (attachmentId) => {
+      for (const [selector, projection] of projections) {
+        if (projection.attachmentId !== attachmentId) continue
+        projections.delete(selector)
+        for (const [sourceAttachmentId, active] of channels) {
+          if (active.peer.pairingSelector === selector) {
+            active.channel.dispose()
+            channels.delete(sourceAttachmentId)
+          }
+        }
+      }
     },
   })
   return lifecycle

@@ -195,7 +195,8 @@ export interface PersonalPairingProviderOptions {
   handshake: PairingHandshakeProvider
   /** Optional assembled Relay authority; production omits it until the crypto gate is approved. */
   relay?: Pick<RemoteRelayService, 'rotateCredential' | 'issueCredential' | 'revokeCredential' | 'revokeRoute'>
-    & Partial<Pick<RemoteRelayService, 'registerCredentialDigest' | 'revokeCredentialDigest'>>
+    & Partial<Pick<RemoteRelayService,
+      'registerCredentialDigest' | 'registerPairingCredentialDigests' | 'revokeCredentialDigest'>>
   /** Deployment-owned durable Mobile Access and pairing-to-route authority. */
   authority?: PersonalPairingAuthorityStore
   /** Clock used for fixed challenge expiry and deterministic assembled scenarios. */
@@ -377,6 +378,7 @@ export interface EndpointPairingPublication {
   mobileInstallationId: InstallationId
   pendingPairingId: PendingPairingId
   routeId: RelayRouteId
+  desktopCredentialDigest: Uint8Array
   credentialDigest: Uint8Array
   pairing: StoredPersonalPairing
 }
@@ -560,6 +562,7 @@ export abstract class RemoteAccessService extends Service {
   abstract confirmEndpointPairing(input: {
     desktop: PairingAccountAuthentication
     pendingPairingId: PendingPairingId
+    desktopCredentialDigest: Uint8Array
     mobileCredentialDigest: Uint8Array
   }): Promise<EndpointPairingConfirmation>
 
@@ -794,6 +797,7 @@ export type StoredPersonalPairing = PersonalPairingView & {
   mobileGrant?: RelayCredentialGrant
   endpointPendingPairingId?: PendingPairingId
   endpointRouteId?: RelayRouteId
+  endpointDesktopCredentialDigest?: Uint8Array
   endpointCredentialDigest?: Uint8Array
   endpointRelayRevision?: number
 }
@@ -1087,12 +1091,13 @@ export class PersonalPairingProvider extends RemoteAccessService {
   async confirmEndpointPairing(input: {
     desktop: PairingAccountAuthentication
     pendingPairingId: PendingPairingId
+    desktopCredentialDigest: Uint8Array
     mobileCredentialDigest: Uint8Array
   }): Promise<EndpointPairingConfirmation> {
     const prepared = await this.exclusive(async () => {
       const { account, installation } = await this.authenticate(input.desktop, 'desktop')
-      if (input.mobileCredentialDigest.byteLength !== 32) {
-        throw new TypeError('Mobile Relay credential digest must contain 32 bytes')
+      if (input.mobileCredentialDigest.byteLength !== 32 || input.desktopCredentialDigest.byteLength !== 32) {
+        throw new TypeError('Endpoint Relay credential digests must contain 32 bytes')
       }
       const existing = [...this.pairings.values()].find(
         pairing => pairing.endpointPendingPairingId === input.pendingPairingId,
@@ -1101,6 +1106,7 @@ export class PersonalPairingProvider extends RemoteAccessService {
         if (existing.devicePrincipal.accountId !== account.id
           || existing.desktopInstallationId !== installation.id
           || !bytesEqual(existing.endpointCredentialDigest, input.mobileCredentialDigest)
+          || !bytesEqual(existing.endpointDesktopCredentialDigest, input.desktopCredentialDigest)
           || existing.endpointRouteId === undefined || existing.endpointRelayRevision === undefined) {
           throw new RemoteAccessError('PAIRING_PENDING_INVALID', 'Endpoint Pairing confirmation replay is stale')
         }
@@ -1113,7 +1119,8 @@ export class PersonalPairingProvider extends RemoteAccessService {
       if (retainedPublication !== undefined) {
         if (retainedPublication.accountId !== account.id
           || retainedPublication.desktopInstallationId !== installation.id
-          || !bytesEqual(retainedPublication.credentialDigest, input.mobileCredentialDigest)) {
+          || !bytesEqual(retainedPublication.credentialDigest, input.mobileCredentialDigest)
+          || !bytesEqual(retainedPublication.desktopCredentialDigest, input.desktopCredentialDigest)) {
           throw new RemoteAccessError('PAIRING_PENDING_INVALID', 'Endpoint Pairing publication replay is stale')
         }
         return { publication: cloneEndpointPublication(retainedPublication) }
@@ -1133,8 +1140,8 @@ export class PersonalPairingProvider extends RemoteAccessService {
       if (!authority.enabled || authority.routeId === undefined) {
         throw new RemoteAccessError('MOBILE_ACCESS_DISABLED', 'Mobile Access is disabled for this Desktop Installation')
       }
-      if (this.options.relay?.registerCredentialDigest === undefined) {
-        throw new Error('Remote Relay cannot register endpoint-owned credential authority')
+      if (this.options.relay?.registerPairingCredentialDigests === undefined) {
+        throw new Error('Remote Relay cannot register endpoint-owned pairing authority')
       }
       const pairingId = parsePersonalPairingId(this.randomId('pairing'))
       const principalId = parseDevicePrincipalId(this.randomId('principal'))
@@ -1152,6 +1159,7 @@ export class PersonalPairingProvider extends RemoteAccessService {
         desktopInstallationId: installation.id,
         endpointPendingPairingId: input.pendingPairingId,
         endpointRouteId: authority.routeId,
+        endpointDesktopCredentialDigest: input.desktopCredentialDigest.slice(),
         endpointCredentialDigest: input.mobileCredentialDigest.slice(),
       }
       const publication: EndpointPairingPublication = {
@@ -1160,6 +1168,7 @@ export class PersonalPairingProvider extends RemoteAccessService {
         mobileInstallationId: pending.mobileInstallationId,
         pendingPairingId: input.pendingPairingId,
         routeId: authority.routeId,
+        desktopCredentialDigest: input.desktopCredentialDigest.slice(),
         credentialDigest: input.mobileCredentialDigest.slice(),
         pairing,
       }
@@ -1171,12 +1180,11 @@ export class PersonalPairingProvider extends RemoteAccessService {
   }
 
   private async publishEndpointPairing(publication: EndpointPairingPublication): Promise<EndpointPairingConfirmation> {
-    const register = this.options.relay?.registerCredentialDigest
-    if (register === undefined) throw new Error('Remote Relay cannot register endpoint-owned credential authority')
-    const relayRevision = await register.call(
-      this.options.relay, publication.routeId, 'mobile', publication.credentialDigest,
-      parseRelayPairingSelector(publication.pairing.id),
-    )
+    const register = this.options.relay?.registerPairingCredentialDigests
+    if (register === undefined) throw new Error('Remote Relay cannot register endpoint-owned pairing authority')
+    const relayRevision = await register.call(this.options.relay,
+      publication.routeId, parseRelayPairingSelector(publication.pairing.id),
+      publication.desktopCredentialDigest, publication.credentialDigest)
     await this.authority.confirmMobilePairing({
       accountId: publication.accountId,
       desktopInstallationId: publication.desktopInstallationId,
@@ -1261,38 +1269,14 @@ export class PersonalPairingProvider extends RemoteAccessService {
       const { account, installation } = await this.authenticate(input.desktop, 'desktop')
       this.evictExpiredRecords()
       if (input.enabled) {
-        const previous = await this.authority.getDesktop(account.id, installation.id)
-        let relay: RelayCredentialGrant | undefined
-        if (this.options.relay !== undefined) {
-          const routeId = await this.authority.enableDesktop(
-            account.id,
-            installation.id,
-            parseRelayRouteId(this.randomId('relay-route')),
-          )
-          try {
-            relay = await this.options.relay.rotateCredential(routeId, 'desktop')
-          } catch (error) {
-            if (!previous.enabled) {
-              try {
-                const routeIds = await this.authority.disableDesktop(account.id, installation.id)
-                await cleanupAll(routeIds.map(revokingRouteId => async () => {
-                  await this.options.relay?.revokeRoute(revokingRouteId)
-                  await this.authority.completeRouteRevocation(account.id, installation.id, revokingRouteId)
-                }))
-              } catch (cleanupError) {
-                throw new AggregateError([error, cleanupError], 'Mobile Access enable rollback failed')
-              }
-            }
-            throw error
-          }
-        } else {
-          await this.authority.enableDesktop(
-            account.id,
-            installation.id,
-            parseRelayRouteId('keyless-no-relay'),
-          )
-        }
-        return { enabled: true, ...(relay === undefined ? {} : { relay }) }
+        await this.authority.enableDesktop(
+          account.id,
+          installation.id,
+          this.options.relay === undefined
+            ? parseRelayRouteId('keyless-no-relay')
+            : parseRelayRouteId(this.randomId('relay-route')),
+        )
+        return { enabled: true }
       }
       const routeIds = await this.authority.disableDesktop(account.id, installation.id)
       if (this.options.relay !== undefined) {
@@ -1332,6 +1316,11 @@ export class PersonalPairingProvider extends RemoteAccessService {
               pairing.endpointRouteId, 'mobile', pairing.endpointCredentialDigest,
             )
           }
+          if (pairing.endpointRouteId !== undefined && pairing.endpointDesktopCredentialDigest !== undefined) {
+            await this.options.relay?.revokeCredentialDigest?.(
+              pairing.endpointRouteId, 'desktop', pairing.endpointDesktopCredentialDigest,
+            )
+          }
         }
       }
       await this.cleanupOwner(account.id, installation.id)
@@ -1346,11 +1335,7 @@ export class PersonalPairingProvider extends RemoteAccessService {
       if (!authority.enabled || authority.routeId === undefined) {
         throw new RemoteAccessError('MOBILE_ACCESS_DISABLED', 'Mobile Access is disabled for this Desktop Installation')
       }
-      if (this.options.relay === undefined) return { enabled: true }
-      return {
-        enabled: true,
-        relay: await this.options.relay.rotateCredential(authority.routeId, 'desktop'),
-      }
+      return { enabled: true }
     })
   }
 
@@ -1549,6 +1534,14 @@ export class PersonalPairingProvider extends RemoteAccessService {
         const { endpointRouteId, endpointCredentialDigest } = pairing
         operations.push(async () => {
           await this.options.relay?.revokeCredentialDigest?.(endpointRouteId, 'mobile', endpointCredentialDigest)
+        })
+      }
+      if (pairing.endpointRouteId !== undefined && pairing.endpointDesktopCredentialDigest !== undefined) {
+        const { endpointRouteId, endpointDesktopCredentialDigest } = pairing
+        operations.push(async () => {
+          await this.options.relay?.revokeCredentialDigest?.(
+            endpointRouteId, 'desktop', endpointDesktopCredentialDigest,
+          )
         })
       }
       await cleanupAll(operations)
@@ -2278,11 +2271,15 @@ function cloneEndpointPublication(publication: EndpointPairingPublication): Endp
   return {
     ...publication,
     credentialDigest: publication.credentialDigest.slice(),
+    desktopCredentialDigest: publication.desktopCredentialDigest.slice(),
     pairing: { ...publication.pairing, device: { ...publication.pairing.device },
       devicePrincipal: { ...publication.pairing.devicePrincipal },
       ...(publication.pairing.endpointCredentialDigest === undefined
         ? {}
-        : { endpointCredentialDigest: publication.pairing.endpointCredentialDigest.slice() }) },
+        : { endpointCredentialDigest: publication.pairing.endpointCredentialDigest.slice() }),
+      ...(publication.pairing.endpointDesktopCredentialDigest === undefined
+        ? {}
+        : { endpointDesktopCredentialDigest: publication.pairing.endpointDesktopCredentialDigest.slice() }) },
   }
 }
 
@@ -2293,6 +2290,7 @@ function sameEndpointPublication(left: EndpointPairingPublication, right: Endpoi
     && left.pendingPairingId === right.pendingPairingId
     && left.routeId === right.routeId
     && left.pairing.id === right.pairing.id
+    && bytesEqual(left.desktopCredentialDigest, right.desktopCredentialDigest)
     && bytesEqual(left.credentialDigest, right.credentialDigest)
 }
 

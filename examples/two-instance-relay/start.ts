@@ -126,8 +126,7 @@ export async function apply(_ctx: Context, config: Config): Promise<void> {
     })
     const desktopAuthentication = authentication('desktop', 'desktop-snow')
     const mobileAuthentication = authentication('mobile', 'mobile-snow')
-    const desktopAccess = await pairingA.setMobileAccess({ desktop: desktopAuthentication, enabled: true })
-    if (desktopAccess.relay === undefined) throw new Error('Desktop product flow did not issue Relay authority')
+    await pairingA.setMobileAccess({ desktop: desktopAuthentication, enabled: true })
     const expiresAt = Date.now() + 60_000
     const challenge = await pairingA.createEndpointChallenge({
       desktop: desktopAuthentication,
@@ -155,12 +154,21 @@ export async function apply(_ctx: Context, config: Config): Promise<void> {
     const message3 = mobilePairing.exportFinishMessage()
     await pairingA.submitEndpointMessage3({ mobile: mobileAuthentication, completionId, message3 })
     await desktopPairing.finishMessage3(message3)
+    const desktopCredential = await generateRelayCredential()
     const mobileCredential = await generateRelayCredential()
     const confirmation = await pairingA.confirmEndpointPairing({
       desktop: desktopAuthentication,
       pendingPairingId: pending.pendingPairingId,
+      desktopCredentialDigest: await deriveRelayCredentialDigest(desktopCredential),
       mobileCredentialDigest: await deriveRelayCredentialDigest(mobileCredential),
     })
+    const desktopGrant = {
+      routeId: confirmation.routeId,
+      endpoint: 'desktop' as const,
+      credential: desktopCredential,
+      revision: confirmation.relayRevision,
+      pairingSelector: parseRelayPairingSelector(confirmation.pairing.id),
+    }
     const sealedAuthority = await desktopPairing.sealMobileRelayAuthority({
       routeId: confirmation.routeId,
       endpoint: 'mobile',
@@ -178,7 +186,7 @@ export async function apply(_ctx: Context, config: Config): Promise<void> {
       throw new Error('Mobile product flow did not receive paired Relay authority')
     }
     const mobileGrant = await mobilePairing.openRelayAuthority(mobileStatus.sealedRelayAuthority)
-    const routeId = desktopAccess.relay.routeId
+    const routeId = desktopGrant.routeId
     await pairingA.dispose()
     const replacementAccess = await pairingB.getMobileAccessState(desktopAuthentication)
     const mobileAttachmentId = parseRelayAttachmentId('mobile-snow')
@@ -220,8 +228,8 @@ export async function apply(_ctx: Context, config: Config): Promise<void> {
             throw new Error('Desktop Snow IK did not match the live Relay projection')
           }
           desktopChannel = accepted.channel
-          await desktopLifecycle.sendCiphertext(accepted.targetAttachmentId, accepted.payload)
-          await desktopLifecycle.sendCiphertext(accepted.targetAttachmentId, accepted.channel.seal({
+          await desktopLifecycle.sendCiphertext(accepted.pairingSelector, accepted.targetAttachmentId, accepted.payload)
+          await desktopLifecycle.sendCiphertext(accepted.pairingSelector, accepted.targetAttachmentId, accepted.channel.seal({
             type: 'projection',
             projection: { type: 'foreground-sync', generation: accepted.generation, desktopRevision: 1 },
           }))
@@ -235,7 +243,8 @@ export async function apply(_ctx: Context, config: Config): Promise<void> {
             type: 'confirmed' as const, operationId: message.operation.operationId,
             committedAt: 1_787_027_200_000, outcome: 'accepted' as const,
           }
-        await desktopLifecycle.sendCiphertext(sourceAttachmentId, desktopChannel.seal({ type: 'result', result: response }))
+        await desktopLifecycle.sendCiphertext(desktopGrant.pairingSelector, sourceAttachmentId,
+          desktopChannel.seal({ type: 'result', result: response }))
       },
       onConnectionLost: () => { desktopChannel?.dispose(); desktopChannel = undefined; desktopProjection = undefined },
     })
@@ -270,13 +279,13 @@ export async function apply(_ctx: Context, config: Config): Promise<void> {
 
     await mobile.start()
     await waitForDirectory(backendA.coordinator, routeId, mobileAttachmentId)
-    desktopLifecycle.configure(desktopAccess.relay)
+    desktopLifecycle.configure(desktopGrant)
     await desktopLifecycle.start()
     await waitForDirectory(backendA.coordinator, routeId, desktopAttachmentId)
     await synchronized.promise
     const endpoint = new URL(loadBalancer.url)
     const endpointCount = new Set([loadBalancer.url]).size
-    console.log(`PLATFORM endpointProtocol=${endpoint.protocol} endpointPath=${endpoint.pathname} endpointCount=${String(endpointCount)} nonSticky=${String(acquired[0] !== acquired[1])} mobile=${acquired[0]} desktop=${acquired[1]} productAuthority=${String(replacementAccess.enabled)} distinctCredentials=${String(desktopAccess.relay.credential !== mobileGrant.credential)}`)
+    console.log(`PLATFORM endpointProtocol=${endpoint.protocol} endpointPath=${endpoint.pathname} endpointCount=${String(endpointCount)} nonSticky=${String(acquired[0] !== acquired[1])} mobile=${acquired[0]} desktop=${acquired[1]} productAuthority=${String(replacementAccess.enabled)} distinctCredentials=${String(desktopGrant.credential !== mobileGrant.credential)}`)
     console.log(`PAIRING endpointMailbox=true platformPsk=${String(new URL(challenge.routingLink).searchParams.has('payload'))} sealedAuthority=${String(!new TextDecoder().decode(sealedAuthority).includes(mobileGrant.credential))} ik=true`)
 
     const prompt = 'continue from Mobile across instances'
@@ -421,6 +430,20 @@ class ScenarioRouteStore implements RelayRouteStore {
       endpoint, ...(pairingSelector === undefined ? {} : { pairingSelector }),
     })
     return route.revision
+  }
+  async registerPairing(
+    routeId: RelayRouteId,
+    pairingSelector: RelayPairingSelector,
+    desktopDigest: Uint8Array,
+    mobileDigest: Uint8Array,
+  ): Promise<number> {
+    const current = this.routes.get(routeId)
+    const revision = current === undefined || current.revoked ? (current?.revision ?? 0) + 1 : current.revision
+    const authorities = current === undefined || current.revoked ? new Map() : new Map(current.authorities)
+    authorities.set(Buffer.from(desktopDigest).toString('hex'), { endpoint: 'desktop', pairingSelector })
+    authorities.set(Buffer.from(mobileDigest).toString('hex'), { endpoint: 'mobile', pairingSelector })
+    this.routes.set(routeId, { authorities, revision, revoked: false })
+    return revision
   }
   async authorize(routeId: RelayRouteId, endpoint: 'mobile' | 'desktop', digest: Uint8Array) {
     const route = this.routes.get(routeId)

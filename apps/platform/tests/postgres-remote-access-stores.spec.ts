@@ -139,6 +139,58 @@ describe('PostgresPersonalPairingAuthorityStore', () => {
 })
 
 describe('PostgresRelayRouteStore', () => {
+  it('atomically activates distinct pairing-scoped Desktop and Mobile digests', async () => {
+    const underlying = createMemoryPlatformSqlPool()
+    let failCommit = true
+    const pool: PlatformSqlPool = {
+      query: async (sql, values) => await underlying.query(sql, values),
+      async connect() {
+        const client = await underlying.connect()
+        return {
+          release: () => { client.release() },
+          query: async (sql, values) => {
+            if (failCommit && sql.trim().toLowerCase() === 'commit') {
+              failCommit = false
+              throw new Error('pairing authority commit failed')
+            }
+            return await client.query(sql, values)
+          },
+        }
+      },
+    }
+    const store = new PostgresRelayRouteStore('gestalt', pool)
+    await store.migrate()
+    const routeId = parseRelayRouteId('route-pairing-scoped')
+    const desktopOne = new Uint8Array(32).fill(1)
+    const mobileOne = new Uint8Array(32).fill(2)
+    await expect(store.registerPairing(
+      routeId, parseRelayPairingSelector('pairing-one'), desktopOne, mobileOne,
+    )).rejects.toThrow('pairing authority commit failed')
+    expect(await store.authorize(routeId, 'desktop', desktopOne)).toBeUndefined()
+    expect(await store.authorize(routeId, 'mobile', mobileOne)).toBeUndefined()
+
+    expect(await store.registerPairing(
+      routeId, parseRelayPairingSelector('pairing-one'), desktopOne, mobileOne,
+    )).toBe(1)
+    const desktopTwo = new Uint8Array(32).fill(3)
+    const mobileTwo = new Uint8Array(32).fill(4)
+    expect(await store.registerPairing(
+      routeId, parseRelayPairingSelector('pairing-two'), desktopTwo, mobileTwo,
+    )).toBe(1)
+    expect(await store.authorize(routeId, 'desktop', desktopOne)).toEqual({
+      revision: 1, pairingSelector: 'pairing-one',
+    })
+    expect(await store.authorize(routeId, 'mobile', mobileOne)).toEqual({
+      revision: 1, pairingSelector: 'pairing-one',
+    })
+    expect(await store.authorize(routeId, 'desktop', desktopTwo)).toEqual({
+      revision: 1, pairingSelector: 'pairing-two',
+    })
+    expect(await store.authorize(routeId, 'mobile', mobileTwo)).toEqual({
+      revision: 1, pairingSelector: 'pairing-two',
+    })
+  })
+
   it('rotates, issues, authorizes, and revokes endpoint credentials', async () => {
     const pool = createMemoryPlatformSqlPool()
     const store = new PostgresRelayRouteStore('gestalt', pool)

@@ -128,6 +128,7 @@ function encodeEndpointPublication(publication: EndpointPairingPublication): unk
     mobileInstallationId: publication.mobileInstallationId,
     pendingPairingId: publication.pendingPairingId,
     routeId: publication.routeId,
+    desktopCredentialDigest: encodeBytes(publication.desktopCredentialDigest),
     credentialDigest: encodeBytes(publication.credentialDigest),
     pairing: encodeStoredPairing(publication.pairing),
   }
@@ -137,7 +138,7 @@ function decodeEndpointPublication(value: unknown): EndpointPairingPublication {
   const record = asRecord(value, 'endpoint publication')
   rejectUnsupportedKeys(record, [
     'accountId', 'desktopInstallationId', 'mobileInstallationId', 'pendingPairingId',
-    'routeId', 'credentialDigest', 'pairing',
+    'routeId', 'desktopCredentialDigest', 'credentialDigest', 'pairing',
   ], 'endpoint publication')
   return {
     accountId: parsePlatformAccountId(record.accountId),
@@ -145,6 +146,7 @@ function decodeEndpointPublication(value: unknown): EndpointPairingPublication {
     mobileInstallationId: parseInstallationId(record.mobileInstallationId),
     pendingPairingId: parsePendingPairingId(record.pendingPairingId),
     routeId: parseRelayRouteId(record.routeId),
+    desktopCredentialDigest: decodeFixedBytes(record.desktopCredentialDigest, 'endpoint publication Desktop credential digest', 32),
     credentialDigest: decodeFixedBytes(record.credentialDigest, 'endpoint publication credential digest', 32),
     pairing: decodeStoredPairing(record.pairing),
   }
@@ -358,6 +360,9 @@ function encodeStoredPairing(record: StoredPersonalPairing): unknown {
     ...(record.endpointPendingPairingId === undefined ? {} : { endpointPendingPairingId: record.endpointPendingPairingId }),
     ...(record.endpointRouteId === undefined ? {} : { endpointRouteId: record.endpointRouteId }),
     ...(record.endpointCredentialDigest === undefined ? {} : { endpointCredentialDigest: encodeBytes(record.endpointCredentialDigest) }),
+    ...(record.endpointDesktopCredentialDigest === undefined ? {} : {
+      endpointDesktopCredentialDigest: encodeBytes(record.endpointDesktopCredentialDigest),
+    }),
     ...(record.endpointRelayRevision === undefined ? {} : { endpointRelayRevision: record.endpointRelayRevision }),
   }
 }
@@ -377,6 +382,9 @@ function decodeStoredPairing(value: unknown): StoredPersonalPairing {
     ...(record.endpointCredentialDigest === undefined
       ? {}
       : { endpointCredentialDigest: decodeBytes(record.endpointCredentialDigest, 'stored pairing endpoint credential digest') }),
+    ...(record.endpointDesktopCredentialDigest === undefined
+      ? {}
+      : { endpointDesktopCredentialDigest: decodeBytes(record.endpointDesktopCredentialDigest, 'stored pairing endpoint Desktop credential digest') }),
     ...(record.endpointRelayRevision === undefined
       ? {}
       : { endpointRelayRevision: asSafeInteger(record.endpointRelayRevision, 'stored pairing endpoint Relay revision') }),

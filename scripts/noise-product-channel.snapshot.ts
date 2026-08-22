@@ -94,8 +94,7 @@ describe('Snow product channel runnable snapshot', () => {
     })
     const desktopAuthentication = authentication('desktop', 'desktop-snapshot')
     const mobileAuthentication = authentication('mobile', 'mobile-snapshot')
-    const desktopAccess = await pairing.setMobileAccess({ desktop: desktopAuthentication, enabled: true })
-    if (desktopAccess.relay === undefined) throw new Error('Snapshot Desktop Relay authority is unavailable')
+    await pairing.setMobileAccess({ desktop: desktopAuthentication, enabled: true })
 
     const expiresAt = Date.now() + 60_000
     const route = await pairing.createEndpointChallenge({
@@ -125,17 +124,25 @@ describe('Snow product channel runnable snapshot', () => {
     await pairing.submitEndpointMessage3({ mobile: mobileAuthentication, completionId, message3 })
     await desktop.finishMessage3(message3)
 
-    const credential = await generateRelayCredential()
-    const credentialDigest = await deriveRelayCredentialDigest(credential)
+    const desktopCredential = await generateRelayCredential()
+    const mobileCredential = await generateRelayCredential()
     const confirmation = await pairing.confirmEndpointPairing({
       desktop: desktopAuthentication,
       pendingPairingId: pending.pendingPairingId,
-      mobileCredentialDigest: credentialDigest,
+      desktopCredentialDigest: await deriveRelayCredentialDigest(desktopCredential),
+      mobileCredentialDigest: await deriveRelayCredentialDigest(mobileCredential),
     })
+    const desktopGrant = {
+      routeId: confirmation.routeId,
+      endpoint: 'desktop' as const,
+      credential: desktopCredential,
+      revision: confirmation.relayRevision,
+      pairingSelector: parseRelayPairingSelector(confirmation.pairing.id),
+    }
     const mobileGrant = {
       routeId: confirmation.routeId,
       endpoint: 'mobile' as const,
-      credential,
+      credential: mobileCredential,
       revision: confirmation.relayRevision,
       pairingSelector: parseRelayPairingSelector(confirmation.pairing.id),
     }
@@ -158,7 +165,7 @@ describe('Snow product channel runnable snapshot', () => {
     })
     const desktopReady = deferred<RelayReadyMessage>()
     const desktopAttachment = await relay.attach({
-      message: await attachmentProof(desktopAccess.relay.credential, desktopAccess.relay.routeId, desktopAttachmentId, 'desktop'),
+      message: await attachmentProof(desktopGrant.credential, desktopGrant.routeId, desktopAttachmentId, 'desktop'),
       deliver: () => Promise.resolve(),
       announce: (message) => { desktopReady.resolve(message); return Promise.resolve() },
     })
@@ -201,7 +208,7 @@ describe('Snow product channel runnable snapshot', () => {
       schemaVersion: 2,
       endpointMailboxXkpsk3: 'pass',
       platformInvitationHasNoPsk: !new URL(route.routingLink).searchParams.has('payload'),
-      sealedRelayAuthority: !new TextDecoder().decode(sealed).includes(credential),
+      sealedRelayAuthority: !new TextDecoder().decode(sealed).includes(mobileCredential),
       canonicalDigestRelayAttach: true,
       livePeerUpdate,
       ikFreshEphemerals: !equal(first.message1.slice(0, 32), second.message1.slice(0, 32)),
@@ -263,6 +270,21 @@ class SnapshotRouteStore implements RelayRouteStore {
     if (route === undefined || route.revoked) return Promise.resolve(undefined)
     route.authorities.set(hex(digest), { endpoint, ...(pairingSelector === undefined ? {} : { pairingSelector }) })
     return Promise.resolve(route.revision)
+  }
+
+  registerPairing(
+    routeId: RelayRouteId,
+    pairingSelector: RelayPairingSelector,
+    desktopDigest: Uint8Array,
+    mobileDigest: Uint8Array,
+  ): Promise<number> {
+    const current = this.routes.get(routeId)
+    const revision = current === undefined || current.revoked ? (current?.revision ?? 0) + 1 : current.revision
+    const authorities = current === undefined || current.revoked ? new Map() : new Map(current.authorities)
+    authorities.set(hex(desktopDigest), { endpoint: 'desktop', pairingSelector })
+    authorities.set(hex(mobileDigest), { endpoint: 'mobile', pairingSelector })
+    this.routes.set(routeId, { revision, revoked: false, authorities })
+    return Promise.resolve(revision)
   }
 
   authorize(routeId: RelayRouteId, endpoint: 'mobile' | 'desktop', digest: Uint8Array) {

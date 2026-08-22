@@ -6,6 +6,7 @@ import {
   deriveRelayCredentialDigest,
   deriveRelayCredentialPublicKeyDigest,
   generateRelayCredential,
+  parseRelayPairingSelector,
   verifyRelayAttachmentProof,
   type RelayAttachMessage,
   type RelayAttachmentId,
@@ -129,6 +130,21 @@ export class RemoteRelayProvider extends RemoteRelayService {
     const revision = await this.options.routeStore.issue(routeId, endpoint, digest.slice(), pairingSelector)
     if (revision === undefined) throw new RemoteRelayError('RELAY_ROUTE_REVOKED', 'Relay route is inactive')
     return revision
+  }
+
+  async registerPairingCredentialDigests(
+    routeId: RelayRouteId,
+    pairingSelector: RelayPairingSelector,
+    desktopCredentialDigest: Uint8Array,
+    mobileCredentialDigest: Uint8Array,
+  ): Promise<number> {
+    this.assertOpen()
+    if (desktopCredentialDigest.byteLength !== 32 || mobileCredentialDigest.byteLength !== 32) {
+      throw new TypeError('Relay credential digests must each contain 32 bytes')
+    }
+    return await this.options.routeStore.registerPairing(
+      routeId, pairingSelector, desktopCredentialDigest.slice(), mobileCredentialDigest.slice(),
+    )
   }
 
   /**
@@ -603,17 +619,15 @@ function relayReady(
   entries: readonly RelayDirectoryEntry[],
   now: number,
 ): RelayReadyMessage {
-  if (local.endpoint === 'mobile' && local.pairingSelector === undefined) {
-    throw new RemoteRelayError('RELAY_ATTACHMENT_REJECTED', 'Mobile Relay credential has no pairing selector')
-  }
   const candidates = entries.filter(peer => peer.routeId === local.routeId
     && peer.endpoint !== local.endpoint
     && peer.expiresAt > now
-    && peer.revision === local.revision)
+    && peer.revision === local.revision
+    && (local.pairingSelector === undefined || peer.pairingSelector === local.pairingSelector))
   const peersBySelector = new Map<RelayPairingSelector, RelayReadyMessage['peers'][number]>()
   for (const peer of candidates) {
-    const pairingSelector = local.endpoint === 'mobile' ? local.pairingSelector : peer.pairingSelector
-    if (pairingSelector === undefined) continue
+    const pairingSelector = peer.pairingSelector ?? local.pairingSelector
+      ?? parseRelayPairingSelector('development-keyless-pairing')
     peersBySelector.set(pairingSelector, {
       attachmentId: peer.attachmentId,
       pairingSelector,

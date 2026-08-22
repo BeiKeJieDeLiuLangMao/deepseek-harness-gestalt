@@ -53,6 +53,13 @@ export interface RelayRouteStore {
     credentialDigest: Uint8Array,
     pairingSelector?: RelayPairingSelector,
   ): Promise<number | undefined>
+  /** Atomically activate a pairing-scoped route and register both endpoint digests. */
+  registerPairing(
+    routeId: RelayRouteId,
+    pairingSelector: RelayPairingSelector,
+    desktopCredentialDigest: Uint8Array,
+    mobileCredentialDigest: Uint8Array,
+  ): Promise<number>
   /** @returns current authority metadata, or undefined for wrong/revoked authority. */
   authorize(
     routeId: RelayRouteId,
@@ -200,6 +207,19 @@ export abstract class RemoteRelayService extends Service {
     endpoint: 'mobile' | 'desktop',
     credentialDigest: Uint8Array,
     pairingSelector?: RelayPairingSelector,
+  ): Promise<number>
+  /** Register one pairing's endpoint-owned Desktop and Mobile digests atomically.
+   * @param routeId - route allocated to the authenticated Desktop installation.
+   * @param pairingSelector - non-secret Personal Pairing selector.
+   * @param desktopCredentialDigest - digest of the Desktop-owned signing credential.
+   * @param mobileCredentialDigest - digest of the Mobile-owned signing credential.
+   * @returns active route revision shared by both endpoint authorities.
+   */
+  abstract registerPairingCredentialDigests(
+    routeId: RelayRouteId,
+    pairingSelector: RelayPairingSelector,
+    desktopCredentialDigest: Uint8Array,
+    mobileCredentialDigest: Uint8Array,
   ): Promise<number>
   /** Remove endpoint-generated authority by its retained digest.
    * @param routeId - route owning the authority.

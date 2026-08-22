@@ -80,6 +80,7 @@ export interface RemoteAccessTransport {
   confirmEndpointPairing(input: {
     authentication: PairingAccountAuthentication
     pendingPairingId: PendingPairingId
+    desktopCredentialDigest: Uint8Array
     mobileCredentialDigest: Uint8Array
   }): Promise<EndpointPairingConfirmation>
   /** Reject one endpoint-owned pending handshake. */
@@ -239,10 +240,12 @@ export class RemoteAccessHttpTransport implements RemoteAccessTransport {
   async confirmEndpointPairing(input: {
     authentication: PairingAccountAuthentication
     pendingPairingId: PendingPairingId
+    desktopCredentialDigest: Uint8Array
     mobileCredentialDigest: Uint8Array
   }): Promise<EndpointPairingConfirmation> {
     return parseEndpointConfirmation(await this.call(input.authentication, {
       operation: 'confirm-endpoint-pairing', pendingPairingId: input.pendingPairingId,
+      desktopCredentialDigest: encodeBytes(input.desktopCredentialDigest),
       mobileCredentialDigest: encodeBytes(input.mobileCredentialDigest),
     }))
   }

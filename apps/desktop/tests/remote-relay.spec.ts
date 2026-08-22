@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
 import {
   decodeRelayMessage, encodeRelayMessage, parseRelayAttachmentId, parseRelayPairingSelector,
+  parseRelayAttachChallengeId,
   REMOTE_PROTOCOL_LIMITS,
 } from '@deepseek-ai/dsh-remote-protocol'
 import {
@@ -42,39 +43,49 @@ describe('Desktop Remote Relay composition', () => {
     )))
     const vault = new DesktopSnowPairingVault()
     const local = await vault.createInvitation(Date.now() + 60_000)
+    const challengeId = parsePairingChallengeId('challenge-assembled-mount')
+    const pendingPairingId = parsePendingPairingId('pending-assembled-mount')
+    vault.retainChallenge(challengeId, local.owner)
+    vault.bindPending(challengeId, pendingPairingId)
     const mobileHandshake = new SnowMobileHandshakeClient()
     const message1 = await mobileHandshake.beginEndpointInvitation(local.invitationPayload)
     const message2 = await local.owner.acceptMessage1(message1)
     await mobileHandshake.acceptDesktopHandshake(message2)
     await local.owner.finishMessage3(mobileHandshake.exportFinishMessage())
     const pairingId = parsePersonalPairingId('pairing-assembled-mount')
-    const mobileGrant = {
-      routeId: parseRelayRouteId('route-assembled-mount'), endpoint: 'mobile' as const,
-      credential: parseRelayCredential('AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE'), revision: 1,
-      pairingSelector: parseRelayPairingSelector(pairingId),
-    }
-    const sealed = await local.owner.sealMobileRelayAuthority(mobileGrant)
-    await mobileHandshake.openRelayAuthority(sealed)
-    const reconnectState = local.owner.exportReconnectState()
-    const challengeId = parsePairingChallengeId('challenge-assembled-mount')
-    const pendingPairingId = parsePendingPairingId('pending-assembled-mount')
-    vault.retainChallenge(challengeId, local.owner)
-    vault.bindPending(challengeId, pendingPairingId)
-    vault.activate(pendingPairingId, pairingId, reconnectState)
+    await vault.prepareConfirmation(pendingPairingId)
+    const delivery = await vault.prepareSealedAuthority(pendingPairingId, {
+      pairing: {
+        id: pairingId,
+        devicePrincipal: {
+          id: 'principal-assembled-mount' as never, accountId: 'account-assembled-mount' as never,
+          installationId: 'mobile-assembled-mount' as never, authority: 'companion-surface',
+        },
+        device: { name: 'Alice phone', platform: 'ios' }, pairedAt: 1, lastAccessAt: 1, online: false,
+      },
+      routeId: parseRelayRouteId('route-assembled-mount'), relayRevision: 1,
+    })
+    const mobileGrant = await mobileHandshake.openRelayAuthority(delivery.sealedRelayAuthority)
+    const desktopGrant = vault.desktopRelayGrant(pendingPairingId)
+    await vault.commitConfirmation(pendingPairingId)
 
     const socket = new TestRelaySocket()
     const relay = createDesktopRemoteRelay({
       environment: { ...DEVELOPMENT, environment: 'production' }, source: SOURCE,
       snowPairingVault: vault, connect: async () => socket, initializeWasm: () => {},
     })
-    const desktopGrant = {
-      routeId: mobileGrant.routeId, endpoint: 'desktop' as const,
-      credential: parseRelayCredential('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'), revision: 1,
-    }
     await relay.configure?.(desktopGrant)
     const starting = relay.start()
     await vi.waitFor(() => { expect(socket.sent).toHaveLength(1) })
-    const attach = decodeRelayMessage(socket.sent[0] as Uint8Array)
+    const request = decodeRelayMessage(socket.sent[0] as Uint8Array)
+    if (request.type !== 'attach-challenge') throw new Error('Desktop Relay did not request an attach challenge')
+    socket.push(encodeRelayMessage({
+      ...request, type: 'attach-challenge-response',
+      challengeId: parseRelayAttachChallengeId('challenge-assembled-attach'),
+      nonce: new Uint8Array(32).fill(7), expiresAt: Date.now() + 10_000,
+    }))
+    await vi.waitFor(() => { expect(socket.sent).toHaveLength(2) })
+    const attach = decodeRelayMessage(socket.sent[1] as Uint8Array)
     if (attach.type !== 'attach') throw new Error('Desktop Relay did not attach')
     const mobileAttachmentId = parseRelayAttachmentId('mobile-assembled-mount')
     const generation = 9
@@ -96,8 +107,8 @@ describe('Desktop Remote Relay composition', () => {
       sourceAttachmentId: mobileAttachmentId, targetAttachmentId: attach.attachmentId,
       ciphertext: begun.payload,
     }))
-    await vi.waitFor(() => { expect(socket.sent).toHaveLength(3) })
-    const responses = socket.sent.slice(1).map(decodeRelayMessage)
+    await vi.waitFor(() => { expect(socket.sent).toHaveLength(4) })
+    const responses = socket.sent.slice(2).map(decodeRelayMessage)
     const ik2 = responses[0]
     const sync = responses[1]
     if (ik2?.type !== 'ciphertext' || sync?.type !== 'ciphertext') {
@@ -145,6 +156,7 @@ describe('Desktop Remote Relay composition', () => {
     await production.configure?.({
       routeId: parseRelayRouteId('route-production'), endpoint: 'desktop',
       credential: parseRelayCredential('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'), revision: 1,
+      pairingSelector: parseRelayPairingSelector('pairing-production'),
     })
     const starting = production.start()
     await vi.waitFor(() => { expect(connect).toHaveBeenCalledOnce() })

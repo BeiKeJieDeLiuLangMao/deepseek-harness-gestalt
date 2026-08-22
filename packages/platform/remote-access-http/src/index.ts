@@ -123,6 +123,7 @@ async function dispatch(
       return ctx.remoteAccess.confirmEndpointPairing({
         desktop: authentication,
         pendingPairingId: parsePendingPairingId(body.pendingPairingId),
+        desktopCredentialDigest: decodeFixedBytes(body.desktopCredentialDigest, 'desktopCredentialDigest', 32),
         mobileCredentialDigest: decodeFixedBytes(body.mobileCredentialDigest, 'mobileCredentialDigest', 32),
       })
     case 'reject-endpoint-pairing':

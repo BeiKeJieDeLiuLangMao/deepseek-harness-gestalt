@@ -53,6 +53,7 @@ import {
   parseCompanionSessionId,
   parseCompanionTranscriptEntryId,
   parseRelayAttachmentId,
+  parseRelayPairingSelector,
   parseRelayCredential,
   parseRelayRouteId,
   REMOTE_PROTOCOL_LIMITS,
@@ -254,15 +255,16 @@ describe('two Loader-booted Platform Instances', () => {
       onCiphertext: async (ciphertext, sourceAttachmentId) => {
         const message = decodeCompanionMessage(desktopProtocol, cipher.open(ciphertext))
         if (message.type !== 'operation') return
-        await desktop.sendCiphertext(sourceAttachmentId, cipher.seal(encodeCompanionMessage(desktopProtocol, {
-          type: 'result',
-          result: {
-            type: 'confirmed',
-            operationId: message.operation.operationId,
-            committedAt: 1_787_027_200_000,
-            outcome: 'accepted',
-          },
-        })))
+        await desktop.sendCiphertext(parseRelayPairingSelector('pairing-assembled'), sourceAttachmentId,
+          cipher.seal(encodeCompanionMessage(desktopProtocol, {
+            type: 'result',
+            result: {
+              type: 'confirmed',
+              operationId: message.operation.operationId,
+              committedAt: 1_787_027_200_000,
+              outcome: 'accepted',
+            },
+          })))
       },
     })
     const mobile = new RemoteRelayEndpointController({
@@ -736,6 +738,21 @@ class AssembledRouteStore implements RelayRouteStore {
       endpoint, ...(pairingSelector === undefined ? {} : { pairingSelector }),
     })
     return current.revision
+  }
+
+  async registerPairing(
+    routeId: RelayRouteId,
+    pairingSelector: RelayPairingSelector,
+    desktopDigest: Uint8Array,
+    mobileDigest: Uint8Array,
+  ): Promise<number> {
+    const current = this.rows.get(routeId)
+    const revision = current === undefined || current.revoked ? (current?.revision ?? 0) + 1 : current.revision
+    const owners = current === undefined || current.revoked ? new Map() : new Map(current.owners)
+    owners.set(Buffer.from(desktopDigest).toString('hex'), { endpoint: 'desktop', pairingSelector })
+    owners.set(Buffer.from(mobileDigest).toString('hex'), { endpoint: 'mobile', pairingSelector })
+    this.rows.set(routeId, { revision, revoked: false, owners })
+    return revision
   }
 
   async authorize(routeId: RelayRouteId, endpoint: 'mobile' | 'desktop', digest: Uint8Array) {
