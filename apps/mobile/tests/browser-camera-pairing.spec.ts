@@ -1,6 +1,11 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { BrowserCameraPairingQrScanner } from '../src/personal-pairing.ts'
+
+afterEach(() => {
+  vi.useRealTimers()
+  vi.restoreAllMocks()
+})
 
 describe('BrowserCameraPairingQrScanner', () => {
   it('reads one complete QR payload from the browser camera and releases every track', async () => {
@@ -8,12 +13,18 @@ describe('BrowserCameraPairingQrScanner', () => {
     const stream = { getTracks: () => [{ stop }] } as unknown as MediaStream
     const getUserMedia = vi.fn(async () => stream)
     const link = 'https://platform.example/pair?challenge=complete-high-entropy-payload'
-    const decodeOnceFromStream = vi.fn(async () => ({ getText: () => link }))
+    const stopDecoder = vi.fn()
+    const scan = vi.fn((_video, callback: BrowserScanCallback) => {
+      callback({ getText: () => link }, undefined, { stop: stopDecoder })
+      return { stop: stopDecoder }
+    })
     const scanner = new BrowserCameraPairingQrScanner({
       mediaDevices: { getUserMedia } as unknown as MediaDevices,
-      reader: { decodeOnceFromStream },
+      reader: { scan },
     })
     const video = document.createElement('video')
+    video.play = vi.fn(async () => undefined)
+    video.pause = vi.fn()
 
     await expect(scanner.scan(video)).resolves.toBe(link)
 
@@ -21,14 +32,15 @@ describe('BrowserCameraPairingQrScanner', () => {
       audio: false,
       video: { facingMode: { ideal: 'environment' } },
     })
-    expect(decodeOnceFromStream).toHaveBeenCalledWith(stream, video)
+    expect(scan).toHaveBeenCalledWith(video, expect.any(Function), expect.any(Function))
+    expect(stopDecoder).toHaveBeenCalled()
     expect(stop).toHaveBeenCalledOnce()
     expect(video.srcObject).toBeNull()
   })
 
   it('fails explicitly when browser camera APIs are unavailable', async () => {
     const scanner = new BrowserCameraPairingQrScanner({
-      reader: { decodeOnceFromStream: vi.fn() },
+      reader: { scan: vi.fn() },
     })
 
     await expect(scanner.scan(document.createElement('video')))
@@ -37,49 +49,112 @@ describe('BrowserCameraPairingQrScanner', () => {
 
   it('reports camera denial without starting the QR decoder', async () => {
     const denial = new DOMException('denied', 'NotAllowedError')
-    const decodeOnceFromStream = vi.fn()
+    const scan = vi.fn()
     const scanner = new BrowserCameraPairingQrScanner({
       mediaDevices: {
         getUserMedia: vi.fn(async () => await Promise.reject(denial)),
       } as unknown as MediaDevices,
-      reader: { decodeOnceFromStream },
+      reader: { scan },
     })
 
     await expect(scanner.scan(document.createElement('video')))
       .rejects.toThrow('Camera permission was denied')
-    expect(decodeOnceFromStream).not.toHaveBeenCalled()
+    expect(scan).not.toHaveBeenCalled()
   })
 
   it('rejects an empty decoded QR value and releases the camera', async () => {
     const stop = vi.fn()
-    const scanner = new BrowserCameraPairingQrScanner({
-      mediaDevices: {
-        getUserMedia: vi.fn(async () => ({ getTracks: () => [{ stop }] } as unknown as MediaStream)),
-      } as unknown as MediaDevices,
-      reader: { decodeOnceFromStream: vi.fn(async () => ({ getText: () => '' })) },
-    })
-
-    await expect(scanner.scan(document.createElement('video')))
-      .rejects.toThrow('QR payload must be non-empty')
-    expect(stop).toHaveBeenCalledOnce()
-  })
-
-  it('settles cancellation even when the decoder is still waiting for a QR value', async () => {
-    const stop = vi.fn()
-    const controller = new AbortController()
+    const stopDecoder = vi.fn()
     const scanner = new BrowserCameraPairingQrScanner({
       mediaDevices: {
         getUserMedia: vi.fn(async () => ({ getTracks: () => [{ stop }] } as unknown as MediaStream)),
       } as unknown as MediaDevices,
       reader: {
-        decodeOnceFromStream: vi.fn(async () => await new Promise<{ getText(): string }>(() => {})),
+        scan: vi.fn((_video, callback: BrowserScanCallback) => {
+          callback({ getText: () => '' }, undefined, { stop: stopDecoder })
+          return { stop: stopDecoder }
+        }),
       },
     })
-    const scanning = scanner.scan(document.createElement('video'), controller.signal)
+    const video = document.createElement('video')
+    video.play = vi.fn(async () => undefined)
+    video.pause = vi.fn()
+
+    await expect(scanner.scan(video))
+      .rejects.toThrow('QR payload must be non-empty')
+    expect(stop).toHaveBeenCalledOnce()
+  })
+
+  it('stops the decoder retry loop and media tracks before cancellation settles', async () => {
+    vi.useFakeTimers()
+    const stop = vi.fn()
+    const controller = new AbortController()
+    let retries = 0
+    let retryTimer: ReturnType<typeof setInterval> | undefined
+    const stopDecoder = vi.fn(() => { clearInterval(retryTimer) })
+    const scanner = new BrowserCameraPairingQrScanner({
+      mediaDevices: {
+        getUserMedia: vi.fn(async () => ({ getTracks: () => [{ stop }] } as unknown as MediaStream)),
+      } as unknown as MediaDevices,
+      reader: { scan: vi.fn(() => {
+        retryTimer = setInterval(() => { retries += 1 }, 10)
+        return { stop: stopDecoder }
+      }) },
+    })
+    const video = document.createElement('video')
+    video.play = vi.fn(async () => undefined)
+    video.pause = vi.fn()
+    const scanning = scanner.scan(video, controller.signal)
+    await vi.advanceTimersByTimeAsync(25)
+    const retriesBeforeAbort = retries
 
     controller.abort()
 
     await expect(scanning).rejects.toThrow('camera scan was cancelled')
+    await vi.advanceTimersByTimeAsync(100)
+    expect(retries).toBe(retriesBeforeAbort)
+    expect(stopDecoder).toHaveBeenCalled()
+    expect(stop).toHaveBeenCalled()
+  })
+
+  it('quiesces the real ZXing retry scheduler when the view unmounts', async () => {
+    vi.useFakeTimers()
+    const stop = vi.fn()
+    const drawImage = vi.fn()
+    const getImageData = vi.fn(() => ({ data: new Uint8ClampedArray(16 * 16 * 4) }))
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => ({
+      drawImage,
+      getImageData,
+    }) as unknown as CanvasRenderingContext2D)
+    const scanner = new BrowserCameraPairingQrScanner({
+      mediaDevices: {
+        getUserMedia: vi.fn(async () => ({ getTracks: () => [{ stop }] } as unknown as MediaStream)),
+      } as unknown as MediaDevices,
+    })
+    const video = document.createElement('video')
+    Object.defineProperties(video, {
+      videoWidth: { value: 16 },
+      videoHeight: { value: 16 },
+    })
+    video.play = vi.fn(async () => undefined)
+    video.pause = vi.fn()
+    const controller = new AbortController()
+    const scanning = scanner.scan(video, controller.signal)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(drawImage).toHaveBeenCalled()
+    const attemptsBeforeUnmount = drawImage.mock.calls.length
+
+    controller.abort()
+
+    await expect(scanning).rejects.toThrow('camera scan was cancelled')
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect(drawImage).toHaveBeenCalledTimes(attemptsBeforeUnmount)
     expect(stop).toHaveBeenCalled()
   })
 })
+
+type BrowserScanCallback = (
+  result: { getText(): string } | undefined,
+  error: Error | undefined,
+  controls: { stop(): void },
+) => void

@@ -168,7 +168,7 @@ abstract emitPushHint(owner: PairingAccountAuthentication): Promise<void>
 
 Types: [CompanionPushHint](remote-protocol.md) · [CompanionPushToken](remote-protocol.md)
 
-Source: [`packages/platform/remote-access/src/index.ts:445`](../../packages/platform/remote-access/src/index.ts)
+Source: [`packages/platform/remote-access/src/index.ts:483`](../../packages/platform/remote-access/src/index.ts)
 
 <a id="ctxremoteattachmentauthority--remoteattachmentauthority"></a>
 
@@ -274,5 +274,5 @@ abstract revokeRoute(routeId: RelayRouteId): Promise<void>
 abstract attach(input: { message: RelayAttachMessage deliver: (message: RelayCiphertextMessage) => Promise<void> close?: () => void | Promise<void> signal?: AbortSignal announce?: () => Promise<void> }): Promise<RemoteRelayAttachment>
 ```
 
-Source: [`packages/platform/remote-access/src/relay.ts:143`](../../packages/platform/remote-access/src/relay.ts)
+Source: [`packages/platform/remote-access/src/relay.ts:155`](../../packages/platform/remote-access/src/relay.ts)
 <!-- END GENERATED cordis-surface -->

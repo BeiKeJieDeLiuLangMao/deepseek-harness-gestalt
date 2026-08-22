@@ -15,6 +15,9 @@ interface MobileRow {
   account_id: string
   desktop_installation_id: string
   mobile_installation_id: string
+  credential_fingerprint: string | null
+  last_access_at: number | null
+  online: boolean
   sealed_relay_authority: Buffer | null
 }
 
@@ -96,7 +99,7 @@ function dispatch(
   setSnapshot: (next: Tables | undefined) => void,
 ): { rows: never[] | Array<Record<string, unknown>>; rowCount: number } {
   const text = collapse(sql)
-  if (text.startsWith('create table') || text.startsWith('create unique index')) {
+  if (text.startsWith('create table') || text.startsWith('create unique index') || text.startsWith('alter table')) {
     return { rows: [], rowCount: 0 }
   }
   if (text === 'begin') {
@@ -166,7 +169,12 @@ function dispatch(
         account_id: asString(values[3], 'account id'),
         desktop_installation_id: asString(values[4], 'desktop installation'),
         mobile_installation_id: asString(values[5], 'mobile installation'),
-        sealed_relay_authority: values[6] === null || values[6] === undefined ? null : Buffer.from(values[6] as Buffer),
+        credential_fingerprint: values[6] === null || values[6] === undefined
+          ? null
+          : asString(values[6], 'credential fingerprint'),
+        last_access_at: values[7] === null || values[7] === undefined ? null : asNumber(values[7], 'last access'),
+        online: values[8] === true,
+        sealed_relay_authority: values[9] === null || values[9] === undefined ? null : Buffer.from(values[9] as Buffer),
       })
     }
     return { rows: [], rowCount: 1 }
@@ -174,6 +182,25 @@ function dispatch(
   if (text.includes('from remote_access_mobile_pairings') && text.includes('pending_pairing_id')) {
     const row = live.mobile.get(`${asString(values[0], 'database identity')}\n${asString(values[1], 'pending pairing id')}`)
     return row === undefined ? { rows: [], rowCount: 0 } : { rows: [{ ...row }], rowCount: 1 }
+  }
+  if (text.includes('select last_access_at, online from remote_access_mobile_pairings')) {
+    const identity = asString(values[0], 'database identity')
+    const pairingId = asString(values[1], 'pairing id')
+    const row = [...live.mobile.entries()].find(([key, candidate]) =>
+      key.startsWith(`${identity}\n`) && candidate.pairing_id === pairingId)?.[1]
+    return row === undefined
+      ? { rows: [], rowCount: 0 }
+      : { rows: [{ last_access_at: row.last_access_at, online: row.online }], rowCount: 1 }
+  }
+  if (text.includes('update remote_access_mobile_pairings')) {
+    const identity = asString(values[0], 'database identity')
+    const fingerprint = asString(values[1], 'credential fingerprint')
+    for (const [key, row] of live.mobile) {
+      if (!key.startsWith(`${identity}\n`) || row.credential_fingerprint !== fingerprint) continue
+      row.online = values[2] === true
+      if (values[3] !== null && values[3] !== undefined) row.last_access_at = asNumber(values[3], 'last access')
+    }
+    return { rows: [], rowCount: 1 }
   }
   if (text.includes('delete from remote_access_mobile_pairings') && text.includes('desktop_installation_id')) {
     const identity = asString(values[0], 'database identity')

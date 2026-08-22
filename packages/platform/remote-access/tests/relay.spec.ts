@@ -16,6 +16,7 @@ import {
   type RelayCoordinator,
   type RelayDirectoryEntry,
   type RelayRouteStore,
+  type RelayPairingActivitySink,
 } from '../src/index.ts'
 import { RemoteRelayProvider } from '../src/relay-provider.ts'
 
@@ -72,6 +73,61 @@ describe('RemoteRelayProvider', () => {
       routeId,
       revision: mobile.revision + 1,
     })
+    await platform.dispose()
+  })
+
+  it('projects authenticated Mobile attach, heartbeat, ciphertext access, and disconnect activity', async () => {
+    const routeStore = new SharedRouteStore()
+    const coordinator = new SharedCoordinator()
+    const recordRelayActivity = vi.fn(async (
+      _input: Parameters<RelayPairingActivitySink['recordRelayActivity']>[0],
+    ) => {})
+    let now = 100
+    const platform = new RemoteRelayProvider(new Context(), {
+      instanceId: parseRelayInstanceId('platform-activity'),
+      routeStore,
+      coordinator,
+      config: CONFIG,
+      randomBytes: uniqueRandomBytes(31),
+      clock: { now: () => now },
+      pairingActivity: { recordRelayActivity },
+    })
+    const routeId = parseRelayRouteId('route-activity')
+    const desktopGrant = await platform.rotateCredential(routeId, 'desktop')
+    const mobileGrant = await platform.issueCredential(routeId, 'mobile')
+    const desktopId = parseRelayAttachmentId('desktop-activity')
+    const mobileId = parseRelayAttachmentId('mobile-activity')
+    const desktop = await platform.attach({
+      message: {
+        type: 'attach', transportVersion: 1, routeId, attachmentId: desktopId,
+        endpoint: 'desktop', credential: desktopGrant.credential,
+      },
+      deliver: async () => {},
+    })
+    const mobile = await platform.attach({
+      message: {
+        type: 'attach', transportVersion: 1, routeId, attachmentId: mobileId,
+        endpoint: 'mobile', credential: mobileGrant.credential,
+      },
+      deliver: async () => {},
+    })
+    expect(recordRelayActivity).toHaveBeenLastCalledWith(expect.objectContaining({ online: true, accessedAt: 100 }))
+
+    now = 200
+    await mobile.receive({ type: 'heartbeat', transportVersion: 1, attachmentId: mobileId, sentAt: now })
+    expect(recordRelayActivity).toHaveBeenLastCalledWith(expect.objectContaining({ online: true, accessedAt: 200 }))
+
+    now = 300
+    await mobile.receive({
+      type: 'ciphertext', transportVersion: 1, routeId,
+      sourceAttachmentId: mobileId, targetAttachmentId: desktopId, ciphertext: Uint8Array.of(1),
+    })
+    expect(recordRelayActivity).toHaveBeenLastCalledWith(expect.objectContaining({ online: true, accessedAt: 300 }))
+
+    await mobile.close()
+    expect(recordRelayActivity).toHaveBeenLastCalledWith(expect.objectContaining({ online: false }))
+    expect(recordRelayActivity.mock.lastCall?.[0]).not.toHaveProperty('accessedAt')
+    await desktop.close()
     await platform.dispose()
   })
 

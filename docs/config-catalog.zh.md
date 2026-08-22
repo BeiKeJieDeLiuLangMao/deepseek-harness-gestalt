@@ -1670,11 +1670,11 @@ export interface AccountBackend {
   countActiveInstallations(accountId: PlatformAccountId, kind: InstallationKind): Promise<number>
   /** Read the Account bound to one GitHub subject inside an identity namespace. */
   findAccountByIdentity(identityNamespace: string, providerSubject: number): Promise<AccountRecord | undefined>
-  /** Read the live session bound to one installation, when present. */
-  findActiveSessionByInstallation(
+  /** Report whether one installation already owns a live session without decoding its obsolete payload. */
+  hasActiveSessionByInstallation(
     identityNamespace: string,
     installationId: InstallationId,
-  ): Promise<SessionRecord | undefined>
+  ): Promise<boolean>
 }
 
 /** Shared invalidation channel used by every Platform Instance. */
@@ -1792,7 +1792,7 @@ export interface AccountRecord extends PlatformAccountView {
 
 依赖：[`AccountProofJti`](../packages/platform/platform-account/src/index.ts) · [`AccountSessionId`](subsystems/platform-account.md) · [`InstallationId`](subsystems/platform-account.md) · [`InstallationKind`](../packages/platform/platform-account/src/index.ts) · [`LoginAttemptId`](subsystems/platform-account.md) · [`MobileInstallationPresentation`](../packages/platform/platform-account/src/index.ts) · [`PlatformAccountId`](../packages/platform/platform-account/src/index.ts) · [`PlatformAccountView`](subsystems/platform-account.md) · [`PlatformCapacityState`](../packages/platform/platform-account/src/index.ts) · [`PlatformEnvironment`](../packages/platform/platform-account/src/index.ts) · [`SelectedPlatformEnvironment`](../packages/platform/platform-account/src/index.ts)
 
-来源：[`packages/platform/platform-account-core/src/index.ts:498`](../packages/platform/platform-account-core/src/index.ts)
+来源：[`packages/platform/platform-account-core/src/index.ts:497`](../packages/platform/platform-account-core/src/index.ts)
 
 <a id="deepseek-aidsh-platform-account-http"></a>
 

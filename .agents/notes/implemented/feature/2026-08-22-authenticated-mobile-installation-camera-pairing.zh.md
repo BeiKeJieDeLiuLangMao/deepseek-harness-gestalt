@@ -10,9 +10,9 @@ Personal Pairing 会在完成请求中接受手机名称与平台，但 Platform
 
 ## Decision
 
-Mobile 使用 Capacitor Device adapter 读取名称及 iOS 或 Android 平台，并以有界字段开始 Login Attempt。Platform 将该展示信息随 Login Attempt 与 Account Session 持久化；`currentInstallation()` 只为已鉴别 Mobile Installation 返回它。Personal Pairing 从完成请求中删除设备元数据，并把已鉴别 Installation 展示复制到待确认与已确认配对记录。配对时间、最后一次已鉴别访问、在线状态与独立 Device Principal 仍是 Desktop 权威投影；两个 Mobile Installation 保留不同记录，撤销任意一个配对都不改变另一个。
+Mobile 使用 Capacitor Device adapter 读取名称及 iOS 或 Android 平台，并以有界字段开始 Login Attempt。Platform 将该展示信息随 Login Attempt 与 Account Session 持久化；`currentInstallation()` 只为已鉴别 Mobile Installation 返回它。Personal Pairing 从完成请求中删除设备元数据，并把已鉴别 Installation 展示复制到待确认与已确认配对记录。Mobile Relay credential 通过不含内容的 fingerprint 绑定到该配对；经过鉴别的 attach、heartbeat 与 ciphertext 访问会更新持久化 `online` 和 `lastAccessAt` 状态，attachment 清理只会把 `online` 设为 false。Desktop Settings 读取这些权威字段，并展示名称、平台、配对时间、当前在线状态与最后访问时间。两个 Mobile Installation 保留不同记录，撤销任意一个配对都不改变另一个。
 
-Mobile 页面通过浏览器 `getUserMedia` 与受维护的 ZXing 浏览器 decoder 扫描 QR。它显示实时相机预览，优先选择后置相机，并在成功、失败、取消或卸载后停止全部媒体 track；不支持的 API、权限拒绝、无相机、空 QR 结果与畸形完整链接都会成为可见配对错误。相机值与粘贴值都会先进入 `parsePairingInvitationLink()`，随后使用同一握手路径；不存在短码或 QR 专用邀请 parser。
+Mobile 页面通过浏览器 `getUserMedia` 与受维护的 ZXing 浏览器 decoder 扫描 QR。它显示实时相机预览，优先选择后置相机，并持有 ZXing scanner controls，因此成功、失败、取消或卸载会在扫描结束前同时停止 decoder 重试调度与全部媒体 track。不支持的 API、权限拒绝、无相机、空 QR 结果与畸形完整链接都会成为可见配对错误。相机值与粘贴值都会先进入 `parsePairingInvitationLink()`，随后使用同一握手路径；不存在短码或 QR 专用邀请 parser。
 
 ## Alternatives considered
 
@@ -24,4 +24,4 @@ Mobile 页面通过浏览器 `getUserMedia` 与受维护的 ZXing 浏览器 deco
 
 ## Consequences
 
-当 Device 信息不能识别 iOS 或 Android Installation，或名称无效时，Mobile 登录会在 OAuth 流量前失败。缺少持久展示信息的既有 Mobile Account Session 必须重新登录，Remote Access 才能鉴别它。产品 Mobile 新增 `@capacitor/device` 与 `@zxing/browser`；相机访问要求安全上下文与用户授权。keyless Loader snapshot 证明两个已鉴别 Mobile Installation 投影与独立撤销，但它仍是开发证据，不是产品链路验收。
+当 Device 信息不能识别 iOS 或 Android Installation，或名称无效时，Mobile 登录会在 OAuth 流量前失败。缺少持久展示信息的既有 Mobile Account Session 必须重新登录，Remote Access 才能鉴别它；PostgreSQL quota admission 只检查旧行是否存在，不会解码缺失的展示信息，因此强制重新登录可以原子替换旧行。产品 Mobile 新增 `@capacitor/device` 与 `@zxing/browser`；相机访问要求安全上下文与用户授权。keyless Loader snapshot 证明两个已鉴别 Mobile Installation 投影、独立撤销与 Relay 活动转换，但它仍是开发证据，不是产品链路验收。

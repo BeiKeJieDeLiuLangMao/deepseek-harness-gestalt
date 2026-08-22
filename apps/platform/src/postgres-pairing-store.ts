@@ -7,13 +7,16 @@ import {
   type PlatformAccountId,
 } from '@deepseek-ai/dsh-platform-account'
 import {
+  parseRelayCredentialFingerprint,
   RemoteAccessError,
   type DesktopRemoteAccessAuthority,
   type MobilePairingAuthority,
   type PendingPairingId,
   type PersonalPairingAuthorityStore,
   type PersonalPairingId,
+  type PersonalPairingActivity,
   type PersonalPairingTransactionState,
+  type RelayCredentialFingerprint,
 } from '@deepseek-ai/dsh-remote-access'
 import { parseRelayRouteId, type RelayRouteId } from '@deepseek-ai/dsh-remote-protocol'
 import {
@@ -39,6 +42,9 @@ CREATE TABLE IF NOT EXISTS remote_access_mobile_pairings (
   account_id text NOT NULL,
   desktop_installation_id text NOT NULL,
   mobile_installation_id text NOT NULL,
+  credential_fingerprint text,
+  last_access_at bigint,
+  online boolean NOT NULL DEFAULT FALSE,
   sealed_relay_authority bytea,
   PRIMARY KEY (database_identity, pending_pairing_id)
 );
@@ -48,6 +54,9 @@ CREATE TABLE IF NOT EXISTS remote_access_pairing_transactions (
   database_identity text PRIMARY KEY,
   state jsonb NOT NULL
 );
+ALTER TABLE remote_access_mobile_pairings ADD COLUMN IF NOT EXISTS credential_fingerprint text;
+ALTER TABLE remote_access_mobile_pairings ADD COLUMN IF NOT EXISTS last_access_at bigint;
+ALTER TABLE remote_access_mobile_pairings ADD COLUMN IF NOT EXISTS online boolean NOT NULL DEFAULT FALSE;
 `
 
 interface DesktopRow {
@@ -61,6 +70,9 @@ interface MobileRow {
   account_id: string
   desktop_installation_id: string
   mobile_installation_id: string
+  credential_fingerprint: string | null
+  last_access_at: string | null
+  online: boolean
   sealed_relay_authority: Buffer | Uint8Array | null
 }
 
@@ -244,8 +256,9 @@ export class PostgresPersonalPairingAuthorityStore implements PersonalPairingAut
       await client.query(
         `INSERT INTO remote_access_mobile_pairings (
            database_identity, pending_pairing_id, pairing_id, account_id,
-           desktop_installation_id, mobile_installation_id, sealed_relay_authority
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7)
+           desktop_installation_id, mobile_installation_id, credential_fingerprint,
+           last_access_at, online, sealed_relay_authority
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
          ON CONFLICT (database_identity, pending_pairing_id) DO NOTHING`,
         [
           this.databaseIdentity,
@@ -254,6 +267,9 @@ export class PostgresPersonalPairingAuthorityStore implements PersonalPairingAut
           authority.accountId,
           authority.desktopInstallationId,
           authority.mobileInstallationId,
+          authority.credentialFingerprint ?? null,
+          authority.lastAccessAt ?? null,
+          authority.online ?? false,
           authority.sealedRelayAuthority === undefined
             ? null
             : Buffer.from(authority.sealedRelayAuthority),
@@ -288,7 +304,8 @@ export class PostgresPersonalPairingAuthorityStore implements PersonalPairingAut
   ): Promise<MobilePairingAuthority | undefined> {
     const result = await client.query(
       `SELECT pending_pairing_id, pairing_id, account_id, desktop_installation_id,
-              mobile_installation_id, sealed_relay_authority
+              mobile_installation_id, credential_fingerprint, last_access_at, online,
+              sealed_relay_authority
          FROM remote_access_mobile_pairings
         WHERE database_identity = $1 AND pending_pairing_id = $2${exclusive ? '\n        FOR UPDATE' : ''}`,
       [this.databaseIdentity, pendingPairingId],
@@ -302,6 +319,30 @@ export class PostgresPersonalPairingAuthorityStore implements PersonalPairingAut
       `DELETE FROM remote_access_mobile_pairings
         WHERE database_identity = $1 AND pairing_id = $2`,
       [this.databaseIdentity, pairingId],
+    )
+  }
+
+  async getPersonalPairingActivity(pairingId: PersonalPairingId): Promise<PersonalPairingActivity | undefined> {
+    const result = await this.pool.query(
+      `SELECT last_access_at, online FROM remote_access_mobile_pairings
+        WHERE database_identity = $1 AND pairing_id = $2`,
+      [this.databaseIdentity, pairingId],
+    )
+    const row = result.rows[0]
+    if (row === undefined || row.last_access_at === null || row.last_access_at === undefined) return undefined
+    return { lastAccessAt: Number(row.last_access_at), online: row.online === true }
+  }
+
+  async recordRelayActivity(input: {
+    credentialFingerprint: RelayCredentialFingerprint
+    online: boolean
+    accessedAt?: number
+  }): Promise<void> {
+    await this.pool.query(
+      `UPDATE remote_access_mobile_pairings
+          SET online = $3, last_access_at = COALESCE($4, last_access_at)
+        WHERE database_identity = $1 AND credential_fingerprint = $2`,
+      [this.databaseIdentity, input.credentialFingerprint, input.online, input.accessedAt ?? null],
     )
   }
 }
@@ -321,6 +362,10 @@ function mobileFromRow(row: MobileRow): MobilePairingAuthority {
     mobileInstallationId: parseInstallationId(row.mobile_installation_id),
     pendingPairingId: row.pending_pairing_id as PendingPairingId,
     pairingId: row.pairing_id as PersonalPairingId,
+    ...(row.credential_fingerprint === null
+      ? {}
+      : { credentialFingerprint: parseRelayCredentialFingerprint(row.credential_fingerprint) }),
+    ...(row.last_access_at === null ? {} : { lastAccessAt: Number(row.last_access_at), online: row.online }),
     ...(row.sealed_relay_authority === null
       ? {}
       : { sealedRelayAuthority: Uint8Array.from(row.sealed_relay_authority) }),
@@ -333,6 +378,7 @@ function sameMobileAuthority(left: MobilePairingAuthority, right: MobilePairingA
     && left.mobileInstallationId === right.mobileInstallationId
     && left.pendingPairingId === right.pendingPairingId
     && left.pairingId === right.pairingId
+    && left.credentialFingerprint === right.credentialFingerprint
     && bytesEqual(left.sealedRelayAuthority, right.sealedRelayAuthority)
 }
 

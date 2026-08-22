@@ -323,16 +323,16 @@ export class PostgresAccountBackend implements AccountBackend {
     return result.rows[0] === undefined ? undefined : accountFromRow(result.rows[0])
   }
 
-  async findActiveSessionByInstallation(
+  async hasActiveSessionByInstallation(
     identityNamespace: string,
     installationId: InstallationId,
-  ): Promise<SessionRecord | undefined> {
-    const result = await this.pool.query<SessionRow>(
-      `SELECT * FROM account_sessions
+  ): Promise<boolean> {
+    const result = await this.pool.query(
+      `SELECT 1 FROM account_sessions
         WHERE identity_namespace = $1 AND installation_id = $2 AND active = TRUE`,
       [identityNamespace, installationId],
     )
-    return result.rows[0] === undefined ? undefined : sessionFromRow(result.rows[0])
+    return result.rows[0] !== undefined
   }
 }
 

@@ -864,10 +864,10 @@ describe('PlatformAccount', () => {
     const backend = new MemoryAccountBackend(ENVIRONMENT.databaseIdentity)
     const internals = backend as unknown as { installationIndex: Map<string, string> }
     internals.installationIndex.set(`${ENVIRONMENT.identityNamespace}:ghost`, 'missing-session')
-    expect(await backend.findActiveSessionByInstallation(
+    expect(await backend.hasActiveSessionByInstallation(
       ENVIRONMENT.identityNamespace,
       parseInstallationId('ghost'),
-    )).toBeUndefined()
+    )).toBe(false)
   })
 
   it('skips installation quota when an authorized attempt has not bound a GitHub identity', async () => {

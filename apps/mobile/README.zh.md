@@ -6,7 +6,7 @@
 
 入口会在渲染前校验完整的开发与生产身份对：两侧分别通过 `VITE_PLATFORM_DEVELOPMENT_*` 或 `VITE_PLATFORM_PRODUCTION_*` 前缀提供 `ORIGIN`、`CALLBACK_URL`、`GITHUB_CLIENT_ID`、`CREDENTIAL_REFERENCE`、`DATABASE_IDENTITY` 和 `IDENTITY_NAMESPACE`，再由 `VITE_PLATFORM_ENV` 显式选择一侧。成对字段必须全部不同；缺失、未知、共享、非 HTTPS 或回调不匹配的配置会在渲染和网络流量前失败。
 
-共用 Mobile 入口内置 `@capacitor/browser` 与 `@capacitor/device` adapter。授权尝试准备完成后，继续按钮的用户激活会直接调用 browser adapter；入口没有 `window.open`、弹窗或携带 token 的自定义 URL 回退。Personal Pairing 页面使用 `getUserMedia` 与 `@zxing/browser` 读取一个 QR 值，显示实时预览，并在成功、失败、取消或卸载后释放每条相机 track。不支持的相机 API、权限拒绝、无相机、空结果、畸形链接、过期、重放与跨账号尝试都会显式失败；QR 与粘贴绝不会创建不同的邀请或握手路径。`IndexedDbInstallationAccountStore` 将所选数据库 identity 写入数据库名；原生打包负责提供稳定 WebView origin。
+共用 Mobile 入口内置 `@capacitor/browser` 与 `@capacitor/device` adapter。授权尝试准备完成后，继续按钮的用户激活会直接调用 browser adapter；入口没有 `window.open`、弹窗或携带 token 的自定义 URL 回退。Personal Pairing 页面使用 `getUserMedia` 与 `@zxing/browser` 读取一个 QR 值并显示实时预览；成功、失败、取消或卸载后会同时停止 ZXing 重试调度与每条相机 track。不支持的相机 API、权限拒绝、无相机、空结果、畸形链接、过期、重放与跨账号尝试都会显式失败；QR 与粘贴绝不会创建不同的邀请或握手路径。`IndexedDbInstallationAccountStore` 将所选数据库 identity 写入数据库名；原生打包负责提供稳定 WebView origin。
 
 `apps/mobile/src/companion-cache.ts` 是尚未接入入口的库：它按配对 Desktop 以 Personal Pairing seam 注入的 AES-GCM 密钥密封已打开的 Workspace/Session 元数据与 transcript，并把行存入由 `companionCacheDatabaseName` 命名的 IndexedDB 数据库（`${accountStorageNamespace(environment, accountId)}:companion-cache`），使账号切换把缓存和回执与配对密钥存储隔离开。附件字节、终端内容、spill 文件与凭据永不进入缓存。`CompanionUncertainOperationSettlement` 仅在 mutation 离开设备后写入 Operation Receipt，发送前查阅已有回执，通过 `query-operation-status` 对账未知回执，且永不重放 operation。
 

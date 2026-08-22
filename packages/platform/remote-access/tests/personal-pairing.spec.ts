@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 import type { AccountProof, PlatformAccountView } from '@deepseek-ai/dsh-platform-account'
@@ -25,6 +26,7 @@ import {
   parsePairingRendezvousId,
   parsePendingPairingId,
   parsePersonalPairingId,
+  parseRelayCredentialFingerprint,
   type PairingHandshakeProvider,
 } from '../src/index.ts'
 
@@ -138,6 +140,17 @@ describe('PersonalPairingProvider', () => {
     expect(localStatus.sealedRelayAuthority).toBeInstanceOf(Uint8Array)
     expect(relay.issueCredential).toHaveBeenCalledWith(routeId, 'mobile')
     expect(mobileCredential).not.toBe(desktopCredential)
+    const credentialFingerprint = parseRelayCredentialFingerprint(
+      createHash('sha256').update(mobileCredential).digest('base64url'),
+    )
+    await authority.recordRelayActivity({ credentialFingerprint, online: true, accessedAt: NOW + 100 })
+    await expect(platformB.listPersonalPairings(desktop)).resolves.toEqual([
+      expect.objectContaining({ id: pairing.id, online: true, lastAccessAt: NOW + 100 }),
+    ])
+    await authority.recordRelayActivity({ credentialFingerprint, online: false })
+    await expect(platformA.listPersonalPairings(desktop)).resolves.toEqual([
+      expect.objectContaining({ id: pairing.id, online: false, lastAccessAt: NOW + 100 }),
+    ])
 
     await platformB.setMobileAccess({ desktop, enabled: false })
     expect(await platformA.getMobileAccessState(desktop)).toEqual({ enabled: false })
@@ -2285,6 +2298,8 @@ function authorityRejectingConfirm(
     completeRouteRevocation: store.completeRouteRevocation.bind(store),
     getMobilePairing: store.getMobilePairing.bind(store),
     revokeMobilePairing: store.revokeMobilePairing.bind(store),
+    getPersonalPairingActivity: store.getPersonalPairingActivity.bind(store),
+    recordRelayActivity: store.recordRelayActivity.bind(store),
     confirmMobilePairing: vi.fn(async () => { throw new Error(message) }),
   }
 }

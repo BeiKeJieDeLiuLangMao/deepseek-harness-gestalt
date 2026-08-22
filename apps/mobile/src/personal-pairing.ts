@@ -72,7 +72,19 @@ interface PreparedMobilePairingAttempt {
 }
 
 interface BrowserQrReader {
-  decodeOnceFromStream(stream: MediaStream, video: HTMLVideoElement): Promise<{ getText(): string }>
+  scan(
+    video: HTMLVideoElement,
+    callback: (
+      result: { getText(): string } | undefined,
+      error: Error | undefined,
+      controls: BrowserQrScannerControls,
+    ) => void,
+    finalized: (error?: Error) => void,
+  ): BrowserQrScannerControls
+}
+
+interface BrowserQrScannerControls {
+  stop(): void
 }
 
 /** Browser-camera scanner for the same complete invitation accepted by paste. */
@@ -108,18 +120,43 @@ export class BrowserCameraPairingQrScanner implements MobilePairingQrScanner {
     }
     const cancel = (): void => { for (const track of stream.getTracks()) track.stop() }
     signal?.addEventListener('abort', cancel, { once: true })
+    let controls: BrowserQrScannerControls | undefined
+    let scanAbort: (() => void) | undefined
     try {
-      const decoded = await settleBeforeCameraAbort(
-        this.reader.decodeOnceFromStream(stream, video),
-        signal,
-      )
+      video.srcObject = stream
+      await settleBeforeCameraAbort(video.play(), signal)
+      const decoded = await new Promise<{ getText(): string }>((resolve, reject) => {
+        scanAbort = (): void => {
+          controls?.stop()
+          reject(new Error('Personal Pairing camera scan was cancelled'))
+        }
+        signal?.addEventListener('abort', scanAbort, { once: true })
+        try {
+          controls = this.reader.scan(
+            video,
+            (result, _error, callbackControls) => {
+              if (result === undefined) return
+              callbackControls.stop()
+              resolve(result)
+            },
+            (error) => {
+              if (error !== undefined) reject(error)
+            },
+          )
+        } catch (error) {
+          reject(error instanceof Error ? error : new Error(String(error), { cause: error }))
+        }
+      })
       throwIfCameraAborted(signal)
       const payload = decoded.getText()
       if (payload === '') throw new TypeError('Personal Pairing QR payload must be non-empty')
       return payload
     } finally {
       signal?.removeEventListener('abort', cancel)
+      if (scanAbort !== undefined) signal?.removeEventListener('abort', scanAbort)
+      controls?.stop()
       cancel()
+      video.pause()
       video.srcObject = null
     }
   }

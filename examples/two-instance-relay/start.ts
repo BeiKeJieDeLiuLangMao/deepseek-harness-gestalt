@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
 import { createServer, type Server } from 'node:https'
 import { fileURLToPath } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
@@ -79,8 +80,9 @@ export async function apply(_ctx: Context, config: Config): Promise<void> {
   await withResources(async (resources) => {
     const bus = new KeylessRedisBus()
     const routeStore = new KeylessRouteStore()
-    const backendA = resources.add(await startBackend('platform-a', routeStore, bus, config, 11))
-    const backendB = resources.add(await startBackend('platform-b', routeStore, bus, config, 29))
+    const pairingAuthority = new MemoryPersonalPairingAuthorityStore()
+    const backendA = resources.add(await startBackend('platform-a', routeStore, bus, pairingAuthority, config, 11))
+    const backendB = resources.add(await startBackend('platform-b', routeStore, bus, pairingAuthority, config, 29))
     const acquired: string[] = []
     const loadBalancer = resources.add(await startLoadBalancer([backendA, backendB], acquired))
     const connectEndpoint = async (signal: AbortSignal) => await NodeRelayEndpointSocket.connect(
@@ -89,7 +91,6 @@ export async function apply(_ctx: Context, config: Config): Promise<void> {
       { maxBytes: config.inboundMaxBytes, maxMessages: config.inboundMaxMessages },
       { rejectUnauthorized: false },
     )
-    const pairingAuthority = new MemoryPersonalPairingAuthorityStore()
     let pairingId = 0
     const createPairingProvider = (relay: RemoteRelayProvider) => new PersonalPairingProvider(new Context(), {
       account: {
@@ -170,8 +171,8 @@ export async function apply(_ctx: Context, config: Config): Promise<void> {
       createCompanionVersionOffer('mobile'),
       createCompanionVersionOffer('desktop'),
     )
-    const mobileAttachmentId = parseRelayAttachmentId('mobile-keyless')
-    let desktopAttachmentId = parseRelayAttachmentId('desktop-keyless-1')
+    const mobileAttachmentId = parseRelayAttachmentId(`mobile-${randomUUID()}`)
+    let desktopAttachmentId = parseRelayAttachmentId(`desktop-${randomUUID()}`)
     let desktopGeneration = 0
     let projectionRevision = 0
     let mobileProjection: { revision: number; text: string } | undefined
@@ -182,7 +183,7 @@ export async function apply(_ctx: Context, config: Config): Promise<void> {
     const desktopLifecycle = new DesktopRelayEndpointLifecycle({
       attachmentId: () => {
         desktopGeneration += 1
-        desktopAttachmentId = parseRelayAttachmentId(`desktop-keyless-${String(desktopGeneration)}`)
+        desktopAttachmentId = parseRelayAttachmentId(`desktop-${randomUUID()}`)
         return desktopAttachmentId
       },
       connect: connectEndpoint,
@@ -267,6 +268,9 @@ export async function apply(_ctx: Context, config: Config): Promise<void> {
     const relayBusinessValue = bus.published.some(value => value.includes(prompt))
     const encrypted = !relayBusinessValue
     console.log(`ROUND_TRIP encrypted=${String(encrypted)} relayBusinessValue=${String(relayBusinessValue)} outcome=${outcome}`)
+    const onlinePairing = (await pairingB.listPersonalPairings(desktopAuthentication))[0]
+    if (onlinePairing === undefined) throw new Error('Desktop Settings did not project the active Mobile pairing')
+    console.log(`PAIRING_ACTIVITY online=${String(onlinePairing.online)} lastAccessCurrent=${String(onlinePairing.lastAccessAt >= onlinePairing.pairedAt)}`)
 
     await backendB.close()
     await failoverProjection.promise
@@ -304,6 +308,13 @@ export async function apply(_ctx: Context, config: Config): Promise<void> {
     }
     console.log(`OFFLINE code=${offlineCode} retainedCiphertextValues=${String(bus.retainedCiphertextValueCount())}`)
     console.log(`LIFECYCLE observed=${lifecycleOffline.join(',')} offline=${String(lifecyclePresence.every(present => !present))}`)
+    const beforeDisconnect = (await pairingB.listPersonalPairings(desktopAuthentication))[0]
+    if (beforeDisconnect === undefined) throw new Error('Desktop Settings lost Mobile activity before disconnect')
+    await mobile.stop()
+    await waitUntil(async () => await backendA.coordinator.locate(routeId, mobileAttachmentId) === undefined)
+    const offlinePairing = (await pairingB.listPersonalPairings(desktopAuthentication))[0]
+    if (offlinePairing === undefined) throw new Error('Desktop Settings lost the disconnected Mobile pairing')
+    console.log(`PAIRING_DISCONNECT online=${String(offlinePairing.online)} lastAccessPreserved=${String(offlinePairing.lastAccessAt === beforeDisconnect.lastAccessAt)}`)
     const pairingReplacement = createPairingProvider(backendA.provider)
     resources.add({ close: async () => { await pairingReplacement.dispose() } })
     await pairingReplacement.setMobileAccess({ desktop: desktopAuthentication, enabled: false })
@@ -332,6 +343,7 @@ async function startBackend(
   id: string,
   routeStore: RelayRouteStore,
   bus: KeylessRedisBus,
+  pairingActivity: MemoryPersonalPairingAuthorityStore,
   config: Config,
   randomByte: number,
 ): Promise<Backend> {
@@ -342,6 +354,7 @@ async function startBackend(
   let entropyAllocation = 0
   const provider = new RemoteRelayProvider(ctx, {
     instanceId: parseRelayInstanceId(id), routeStore, coordinator,
+    pairingActivity,
     config: {
       capacityRetryAfterMs: config.capacityRetryAfterMs,
       deliveryAckTimeoutMs: config.deliveryAckTimeoutMs,

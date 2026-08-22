@@ -256,11 +256,11 @@ export interface AccountBackend {
   countActiveInstallations(accountId: PlatformAccountId, kind: InstallationKind): Promise<number>
   /** Read the Account bound to one GitHub subject inside an identity namespace. */
   findAccountByIdentity(identityNamespace: string, providerSubject: number): Promise<AccountRecord | undefined>
-  /** Read the live session bound to one installation, when present. */
-  findActiveSessionByInstallation(
+  /** Report whether one installation already owns a live session without decoding its obsolete payload. */
+  hasActiveSessionByInstallation(
     identityNamespace: string,
     installationId: InstallationId,
-  ): Promise<SessionRecord | undefined>
+  ): Promise<boolean>
 }
 
 /** Shared invalidation channel used by every Platform Instance. */
@@ -434,15 +434,14 @@ export class MemoryAccountBackend implements AccountBackend {
     return Promise.resolve(accountId === undefined ? undefined : structuredClone(this.accounts.get(accountId)))
   }
 
-  findActiveSessionByInstallation(
+  hasActiveSessionByInstallation(
     identityNamespace: string,
     installationId: InstallationId,
-  ): Promise<SessionRecord | undefined> {
+  ): Promise<boolean> {
     const sessionId = this.installationIndex.get(`${identityNamespace}:${installationId}`)
-    if (sessionId === undefined) return Promise.resolve(undefined)
+    if (sessionId === undefined) return Promise.resolve(false)
     const session = this.sessions.get(sessionId)
-    if (session?.active !== true) return Promise.resolve(undefined)
-    return Promise.resolve(this.cloneSession(session))
+    return Promise.resolve(session?.active === true)
   }
 
   private revoke(sessionId: AccountSessionId): void {
@@ -872,11 +871,11 @@ export class PlatformAccount extends AccountService {
   }
 
   private async assertInstallationQuota(attempt: LoginAttemptRecord): Promise<void> {
-    const existing = await this.backend.findActiveSessionByInstallation(
+    const existing = await this.backend.hasActiveSessionByInstallation(
       attempt.identityNamespace,
       attempt.installationId,
     )
-    if (existing !== undefined) return
+    if (existing) return
     const identity = attempt.identity
     if (identity === undefined) return
     const account = await this.backend.findAccountByIdentity(attempt.identityNamespace, identity.providerSubject)

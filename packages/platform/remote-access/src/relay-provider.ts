@@ -12,6 +12,7 @@ import {
   type RelayRouteId,
 } from '@deepseek-ai/dsh-remote-protocol'
 import {
+  parseRelayCredentialFingerprint,
   RemoteRelayError,
   RemoteRelayService,
 } from '@deepseek-ai/dsh-remote-access'
@@ -24,6 +25,7 @@ import type {
   RelayDirectoryEntry,
   RelayInstanceId,
   RelayRouteStore,
+  RelayPairingActivitySink,
   RemoteRelayAttachment,
   RemoteRelayConfig,
 } from './relay.ts'
@@ -32,6 +34,7 @@ interface LocalAttachment {
   entry: RelayDirectoryEntry
   deliver: (message: RelayCiphertextMessage) => Promise<void>
   credentialDigest: Uint8Array
+  credentialFingerprint: ReturnType<typeof parseRelayCredentialFingerprint>
   close?: () => void | Promise<void>
   writer: Promise<void>
   bufferedBytes: number
@@ -42,6 +45,7 @@ interface LocalAttachment {
   writerDrained: boolean
   socketClosed: boolean
   capacityHeld: boolean
+  activityOffline: boolean
 }
 
 interface PendingDelivery {
@@ -75,6 +79,7 @@ export class RemoteRelayProvider extends RemoteRelayService {
     clock?: { now(): number }
     schedule?: (task: () => void, delayMs: number) => ReturnType<typeof setTimeout>
     capacity?: { tryAcquire(): boolean; release(): void; retryAfterMs: number }
+    pairingActivity?: RelayPairingActivitySink
   }) {
     super(ctx)
     this.config = validateRemoteRelayConfig(options.config)
@@ -206,6 +211,7 @@ export class RemoteRelayProvider extends RemoteRelayService {
         entry,
         deliver: input.deliver,
         credentialDigest: digest,
+        credentialFingerprint: fingerprintFromDigest(digest),
         ...(input.close === undefined ? {} : { close: input.close }),
         writer: Promise.resolve(),
         bufferedBytes: 0,
@@ -216,6 +222,7 @@ export class RemoteRelayProvider extends RemoteRelayService {
         writerDrained: false,
         socketClosed: input.close === undefined,
         capacityHeld,
+        activityOffline: false,
       }
       local = attached
       this.attachments.set(key, attached)
@@ -232,6 +239,7 @@ export class RemoteRelayProvider extends RemoteRelayService {
             this.disposed ? 'Platform Instance is offline' : 'Relay credential was superseded during attachment',
           )
         }
+        await this.recordPairingActivity(attached, true, this.now())
         this.armHeartbeat(attached)
       } catch (error) {
         if (!attached.closed) await this.closeAndDrain(attached)
@@ -291,6 +299,7 @@ export class RemoteRelayProvider extends RemoteRelayService {
     if (message.routeId !== local.entry.routeId || message.sourceAttachmentId !== local.entry.attachmentId) {
       throw new RemoteRelayError('RELAY_ATTACHMENT_REJECTED', 'Relay ciphertext source does not match its attachment')
     }
+    await this.recordPairingActivity(local, true, this.now())
     const target = await this.options.coordinator.locate(message.routeId, message.targetAttachmentId)
     if (target === undefined || target.expiresAt <= this.now()) {
       throw new RemoteRelayError('REMOTE_OFFLINE', 'Relay target is offline')
@@ -347,6 +356,7 @@ export class RemoteRelayProvider extends RemoteRelayService {
       throw new RemoteRelayError('REMOTE_OFFLINE', 'Relay directory entry is no longer current')
     }
     local.entry = refreshed
+    await this.recordPairingActivity(local, true, this.now())
     this.armHeartbeat(local)
   }
 
@@ -429,6 +439,15 @@ export class RemoteRelayProvider extends RemoteRelayService {
       complete: () => { local.socketClosed = true },
       promise: Promise.resolve().then(local.close),
     })
+    if (!local.activityOffline && local.entry.endpoint === 'mobile' && this.options.pairingActivity !== undefined) {
+      operations.push({
+        complete: () => { local.activityOffline = true },
+        promise: this.options.pairingActivity.recordRelayActivity({
+          credentialFingerprint: local.credentialFingerprint,
+          online: false,
+        }),
+      })
+    }
     const results = await Promise.allSettled(operations.map(operation => operation.promise))
     const errors: unknown[] = []
     for (const [index, result] of results.entries()) {
@@ -442,6 +461,19 @@ export class RemoteRelayProvider extends RemoteRelayService {
       local.capacityHeld = false
       this.options.capacity?.release()
     }
+  }
+
+  private async recordPairingActivity(
+    local: LocalAttachment,
+    online: boolean,
+    accessedAt: number,
+  ): Promise<void> {
+    if (local.entry.endpoint !== 'mobile' || this.options.pairingActivity === undefined) return
+    await this.options.pairingActivity.recordRelayActivity({
+      credentialFingerprint: local.credentialFingerprint,
+      online,
+      accessedAt,
+    })
   }
 
   private connectionToken(): RelayConnectionToken {
@@ -520,6 +552,10 @@ const NEVER_ABORTED = new AbortController().signal
 
 function credentialDigest(credential: RelayCredential): Uint8Array {
   return new Uint8Array(createHash('sha256').update(credential).digest())
+}
+
+function fingerprintFromDigest(digest: Uint8Array): ReturnType<typeof parseRelayCredentialFingerprint> {
+  return parseRelayCredentialFingerprint(Buffer.from(digest).toString('base64url'))
 }
 
 function attachmentKey(routeId: RelayRouteId, attachmentId: RelayAttachmentId): string {

@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv } from 'node:crypto'
+import { createCipheriv, createDecipheriv, randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import {
   createCompanionNegotiationChannel,
@@ -33,8 +33,8 @@ export async function apply(_ctx: Context): Promise<void> {
 
   const cipher = new KeylessHarnessCipher()
   const routeId = parseRelayRouteId('route-keyless')
-  const mobileAttachment = parseRelayAttachmentId('mobile-keyless')
-  const desktopAttachment = parseRelayAttachmentId('desktop-keyless')
+  const mobileAttachment = parseRelayAttachmentId(`mobile-${randomUUID()}`)
+  const desktopAttachment = parseRelayAttachmentId(`desktop-${randomUUID()}`)
   const mobileOffer = createCompanionVersionOffer('mobile')
   const desktopOffer = createCompanionVersionOffer('desktop')
   const mobileChannel = createCompanionNegotiationChannel()
