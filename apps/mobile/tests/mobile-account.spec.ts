@@ -60,7 +60,7 @@ const session: AccountSessionView = {
 describe('MobileAccount', () => {
   it('shows both privacy notices and blocks GitHub until consent', async () => {
     const { installation, openSystemBrowser } = fixture()
-    render(createElement(MobileAccount, { installation }))
+    render(createElement(MobileAccount, { installation, locale: 'zh', theme: 'light' }))
 
     expect(screen.getByText(/Platform 会保存 GitHub 数字 ID/)).toBeTruthy()
     expect(screen.getByText(/Platform stores the numeric GitHub id/)).toBeTruthy()
@@ -87,7 +87,7 @@ describe('MobileAccount', () => {
       deactivate,
       unpair: vi.fn().mockResolvedValue(undefined),
     }
-    render(createElement(MobileAccount, { installation, pairing }))
+    render(createElement(MobileAccount, { installation, pairing, locale: 'zh', theme: 'light' }))
 
     fireEvent.click(screen.getByRole('checkbox'))
     await waitFor(() => { expect(screen.getByRole('button', { name: '使用 GitHub 继续' }).hasAttribute('disabled')).toBe(false) })

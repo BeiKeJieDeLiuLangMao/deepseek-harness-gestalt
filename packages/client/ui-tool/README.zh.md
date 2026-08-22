@@ -4,7 +4,7 @@
 
 Client 工具展示插件。`ui-conversation` 通过 `conversation.chat.node` 的匹配 key 分发每个已排序的 `tool-call` Conversation Node；本包渲染其中的 root 及其 Code Dispatch 子调用，并把每个原子调用通过 keyed slot `tool.call.toolview` 分发。没有注册的工具名称使用通用卡片。
 
-`./presentation` 入口为 Desktop slot tree 之外的 composition 导出 `ToolPresentation`。它的小型 interface 只接收一个权威 `ToolCallBlock`、Workspace/home 展示根、可选的打开／检查回调以及共享翻译器；implementation 复用 `ToolCallTree` 与 `GenericToolCard`，包括递归子调用、未知工具 fallback，以及 terminal、diff、read、search 和 Web render intent。
+`./presentation` 入口为 Desktop slot tree 之外的 composition 导出 `ToolPresentation`。它的小型 interface 只接收一个权威 `ToolCallBlock`、Workspace/home 展示根、可选的打开／检查回调以及共享翻译器。Desktop keyed-slot registration 与直接 composition 通过同一份内置 roster 分发普通 Tool 名称，并共用 Bash、read、write/edit、grep/glob、Web、todo 与 question row 实现；只有未被认领的 wire Tool 名称进入 `GenericToolCard`。`DirectToolCallTree` 直接接收权威 root，因此调用方不必伪造 Chat Node 或 Host description。
 
 业务 UI 包只注册 wire 工具名称和原子视图，不配对会话事件、不重建 transcript（文本记录），也不拥有 root/subcall 拓扑。运行时仍对 call/result 配对、生命周期和递归 `subCalls` 投影拥有最终决定权；conversation view 仍对 ChatFlow 位置拥有最终决定权。
 

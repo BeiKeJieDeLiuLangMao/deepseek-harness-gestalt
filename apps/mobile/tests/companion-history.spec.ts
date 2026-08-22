@@ -17,6 +17,12 @@ import { MobileBrowse } from '../src/MobileBrowse.tsx'
 
 afterEach(() => { cleanup() })
 
+const browsePresentation = {
+  locale: 'zh' as const,
+  theme: 'light' as const,
+  loadImage: async () => 'data:image/gif;base64,R0lGODlhAQABAAAAACw=',
+}
+
 function conversation(): ConversationSnapshot {
   return {
     sessionId: 's1' as SessionId,
@@ -63,7 +69,9 @@ describe('Mobile Companion browse projection', () => {
   })
 
   it('shows the selected Desktop, connection state, and opens a live transcript full-screen', () => {
-    render(createElement(MobileBrowse, { desktopName: 'Studio Mac', connection: 'online', sessions: history }))
+    render(createElement(MobileBrowse, {
+      desktopName: 'Studio Mac', connection: 'online', sessions: history, ...browsePresentation,
+    }))
     expect(screen.getByText('Studio Mac')).toBeTruthy()
     expect(screen.getByText('Remote Online')).toBeTruthy()
     expect(screen.getByText('Work')).toBeTruthy()
@@ -110,6 +118,7 @@ describe('Mobile Companion browse projection', () => {
       desktopName: 'Studio Mac',
       connection: 'online',
       sessions: history,
+      ...browsePresentation,
       onCreate: (input) => { created.push(input) },
     }))
     fireEvent.click(screen.getByRole('button', { name: '在 Work 新建 Session' }))

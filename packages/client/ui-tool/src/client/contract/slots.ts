@@ -43,6 +43,9 @@ export interface ToolCallOwnerProps {
   inspect?: (() => void) | undefined
 }
 
+/** Owner-defined props shared by keyed Desktop Tool rows and direct Web compositions. */
+export type ToolPresentationViewProps = ToolCallOwnerProps & PropsLocale<'conversation'>
+
 /** Full props of a registered atomic Tool view. */
 export type ToolCallViewProps = PropsRuntime<'tool.call.toolview'>
 

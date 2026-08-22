@@ -18,6 +18,7 @@ import { MobileConversation } from '../src/MobileConversation.tsx'
 afterEach(() => { cleanup() })
 
 const SID = 'session-mobile' as SessionId
+const imageLoader = async (): Promise<string> => 'data:image/gif;base64,R0lGODlhAQABAAAAACw='
 
 function snapshot(
   nodes: readonly ConversationNode[],
@@ -75,6 +76,7 @@ describe('Mobile shared Session presentation', () => {
       title: 'Shared Session',
       onBack: () => {},
       locale: 'en',
+      loadImage: imageLoader,
       snapshot: snapshot([
         { kind: 'user', seq: 0, time: 500, content: [{ type: 'text', text: 'Shared user' }], source: null },
         {
@@ -102,6 +104,8 @@ describe('Mobile shared Session presentation', () => {
     expect(screen.getByText('Host refused')).toBeTruthy()
     expect(screen.getByText('HOST_400')).toBeTruthy()
     expect(document.querySelector('[data-mobile-conversation="detail"] [data-tool="future_tool"]')).not.toBeNull()
+    expect(document.querySelector('[data-toolview="file-mutation"] [data-tool="edit"]')).not.toBeNull()
+    expect(document.querySelector('[data-toolview="generic"] [data-tool="future_tool"]')).not.toBeNull()
 
     const diffRow = document.querySelector('[data-tool="edit"] [data-expandable]')
     expect(diffRow).not.toBeNull()
@@ -140,7 +144,8 @@ describe('Mobile shared Session presentation', () => {
 
     await waitFor(() => { expect(screen.getByAltText('diagram.gif')).toBeTruthy() })
     expect(loadImage).toHaveBeenCalledWith(attachment)
-    const terminalRow = document.querySelector('[data-tool="bash"] [data-expandable]')
+    expect(document.querySelector('[data-toolview="bash"]')).not.toBeNull()
+    const terminalRow = document.querySelector('[data-toolview="bash"] [data-expandable]')
     expect(terminalRow).not.toBeNull()
     fireEvent.click(terminalRow as HTMLElement)
     expect(document.querySelector('[data-terminal]')).not.toBeNull()
@@ -162,12 +167,14 @@ describe('Mobile shared Session presentation', () => {
 
     const { rerender } = render(createElement(MobileConversation, {
       title: 'Interactions', onBack: () => {}, locale: 'en', snapshot: snapshot([], { pending: [approval] }),
+      loadImage: imageLoader,
     }))
     fireEvent.click(screen.getByRole('button', { name: 'Allow once' }))
     expect(approve).toHaveBeenCalledOnce()
 
     rerender(createElement(MobileConversation, {
       title: 'Interactions', onBack: () => {}, locale: 'en', snapshot: snapshot([], { pending: [question] }),
+      loadImage: imageLoader,
     }))
     fireEvent.click(screen.getByRole('radio', { name: 'Yes' }))
     fireEvent.click(screen.getByRole('button', { name: 'Submit' }))
@@ -181,6 +188,7 @@ describe('Mobile shared Session presentation', () => {
       onBack: () => {},
       locale: 'zh',
       theme: 'dark',
+      loadImage: imageLoader,
       snapshot: snapshot([], {
         openState: 'error', openError: { code: 'bad-request', message: '请求无效', details: { issues: [] } },
       }),
@@ -220,12 +228,14 @@ describe('Mobile shared Session presentation', () => {
     const view = render(createElement(MobileConversation, {
       title: 'Composer', onBack: () => {}, locale: 'en',
       snapshot: snapshot([], { running: true }), onSubmit, onCancel,
+      loadImage: imageLoader,
     }))
     fireEvent.click(screen.getByRole('button', { name: 'Stop generating' }))
     expect(onCancel).toHaveBeenCalledOnce()
 
     view.rerender(createElement(MobileConversation, {
       title: 'Composer', onBack: () => {}, locale: 'en', snapshot: snapshot([]), onSubmit, onCancel,
+      loadImage: imageLoader,
     }))
     const textbox = screen.getByRole('textbox')
     fireEvent.change(textbox, { target: { value: 'first', selectionStart: 5 } })

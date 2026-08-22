@@ -1,6 +1,7 @@
 /** Companion Session list projection shared by Mobile browse and keyless equality proofs. */
 
 import type { ConversationSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 
 /** One Session row in the Mobile Companion list. */
 export interface CompanionSessionSummary {
@@ -16,6 +17,8 @@ export interface CompanionSessionSummary {
   summary: string
   /** Desktop-authoritative open Session projection. */
   conversation?: ConversationSnapshot
+  /** Desktop-confirmed Session Workspace root. */
+  cwd?: string
 }
 
 /** Grouped Mobile list: named Workspace/project buckets plus Ungrouped. */
@@ -88,7 +91,26 @@ export function projectMobileCompanionHistory(
     ...(session.project === undefined ? {} : { project: session.project }),
     summary: session.summary,
     ...(session.conversation === undefined ? {} : { conversation: session.conversation }),
+    ...(session.cwd === undefined ? {} : { cwd: session.cwd }),
   }))
+}
+
+/** Production composition accepted by the bundled Mobile entry. */
+export interface MobileCompanionPresentation {
+  /** Selected Paired Desktop name. */
+  desktopName: string
+  /** Desktop reachability at the latest foreground synchronization. */
+  connection: 'online' | 'offline'
+  /** Desktop-confirmed Session history. */
+  sessions: readonly CompanionSessionSummary[]
+  /** Read one authorized historical image from the selected Session. */
+  loadImage: (sessionId: string, attachment: ImageAttachmentRef) => Promise<string>
+  /** Submit a prompt through Desktop authority when transport is available. */
+  onSubmit?: ((sessionId: string, text: string) => void | Promise<void>) | undefined
+  /** Cancel a running Desktop Session when transport is available. */
+  onCancel?: ((sessionId: string) => void) | undefined
+  /** Load the preceding authoritative history window. */
+  onLoadOlder?: ((sessionId: string) => void) | undefined
 }
 
 /** Request to create one Desktop-default Session from Mobile. */

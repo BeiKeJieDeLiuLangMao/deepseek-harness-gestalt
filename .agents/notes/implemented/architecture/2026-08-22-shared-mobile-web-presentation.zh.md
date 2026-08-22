@@ -10,17 +10,19 @@ Mobile Companion 曾用私有 `MobileContentBlock` union 分别实现 Markdown�
 
 ## Decision
 
-Web presentation owner 提供显式 `./presentation` 入口。`ui-conversation` 拥有 assistant Markdown、user bubble、terminal failure、Approval 以及 InputBar/InputMachine adapter；`ui-tool` 拥有递归 Tool presentation 与通用 render-intent fallback；`ui-user-questions` 拥有 Ask User；`ui-attachment` 拥有消息图片。`ui-theme` 提供稳定的 stylesheet subpath。这些入口是公共产品 interface，plugin 专用 skeleton path 与 CSS Module 仍为私有。
+Web presentation owner 提供显式 `./presentation` 入口。`ui-conversation` 拥有 assistant Markdown、user bubble、terminal failure、Approval 与窄版 `InputBarPresentation` interface；`ui-tool` 拥有递归 Tool presentation、内置 keyed roster 与未知 Tool fallback；`ui-user-questions` 拥有 Ask User；`ui-attachment` 拥有消息图片。`ui-theme` 提供稳定的 stylesheet subpath。这些入口是公共产品 interface，plugin 专用 skeleton path 与 CSS Module 仍为私有。
 
 动态 Client 插件包使用 `browserSubpath` 构建这些浏览器 ESM 入口。该构建面把裸依赖与输出的 CSS 留给导入它的产品 shell，但不会把该包归类为 Desktop 静态链接包；它的主 `dsh.client` 模块表入口保持不变。
 
-Mobile 详情 composition 接受 Client Runtime 的 `ConversationSnapshot`、`ConversationNode`、`ToolCallBlock` 与 `PendingWait` 值。它只增加手机导航、locale/theme 选择、会话授权图片 loader，以及 submit/cancel/load 回调。它不会定义 transcript content union、从 `companion-push` 推断 interaction authority，也不会挂载 Desktop columns、Settings、model selection、plugin configuration 或 terminal input。
+Mobile 详情 composition 接受 Client Runtime 的 `ConversationSnapshot`、`ConversationNode`、`ToolCallBlock` 与 `PendingWait` 值。`main.tsx` 接受生产 `MobileCompanionPresentation` interface：经 Desktop 确认的 Session 行、必需的 Session 寻址图片 loader，以及可选 submit/cancel/load 回调。Mobile 只增加手机导航以及由环境决定的 locale/theme 选择。它不会定义 transcript content union、从 `companion-push` 推断 interaction authority，也不会挂载 Desktop columns、Settings、model selection、plugin configuration 或 terminal input。
 
-`ConversationComposer` 是基于 Desktop 同款 `InputBar` 与 `InputMachine` 的本地草稿 adapter。其 interface 把获准的 prompt 与 cancellation operation 委托给调用方；它不拥有 Session state 或 remote delivery。加密 Companion Session transport 仍负责向打包 Mobile 入口提供权威 snapshot 与回调。
+完整 Desktop `InputBar` 与 `ConversationComposer` 使用同一套由 owner 定义的 editor 与 primary-action presentation implementation。`ConversationComposer` 拥有本地 `InputMachine` 草稿，并把获准的 prompt 与 cancellation operation 委托给调用方；它不提供 annotation、attachment、slot、projection、command 或 Host stand-in。加密 Companion Session transport 仍负责向打包 Mobile 入口提供权威 snapshot 与回调。
+
+Desktop keyed slot 与 `ToolPresentation` 使用同一份内置 Tool roster。Bash、read、write/edit、grep/glob、Web、todo 与 question 调用挂载各自专用 owner row；`GenericToolCard` 只渲染未被认领的 wire 名称。直接 composition 把权威 `ToolCallBlock`、cwd 与 home 值送入 `DirectToolCallTree`，不会构造 Chat Node 或 Host description。
 
 ## Verification
 
-Mobile component test 把真实 `ConversationSnapshot` 与 `PendingWait` 值送入公共入口，覆盖 Markdown、高亮 code、image、普通与未知 Tool、diff、有界 terminal presentation、Approval、Ask User、Host failure copy、locale、theme、窄屏 composition、overflow，以及不出现 Desktop privileged control。Mobile Vite build 证明产品入口打包了这些公共 interface。产品视觉证据加载该 bundled entry，而不是 `prototype-companion` 或 5173/5174 端口。
+Mobile component test 把真实 `ConversationSnapshot` 与 `PendingWait` 值送入公共入口，覆盖 Markdown、高亮 code、image、专用普通与未知 Tool、diff、有界 terminal presentation、Approval、Ask User、Host failure copy、locale、theme、窄屏 composition、overflow，以及不出现 Desktop privileged control。keyless browser snapshot 构建打包后的 `main.tsx` 入口，通过拦截的 HTTPS 响应完成 Account lifecycle，再以 390 px 的英文／dark 与中文／light 环境经 `MobileCompanionPresentation` 打开权威 development projection。它不运行 model round，也不证明加密 Desktop transport。两类测试都不使用 `prototype-companion` 或 5173/5174 端口。
 
 ## Alternatives considered
 

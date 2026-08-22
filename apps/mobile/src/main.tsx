@@ -62,10 +62,15 @@ const installation = new PlatformAccountInstallation({
   environment,
   installationId: parsedInstallationId,
   installationKind: 'mobile',
-  transport: new PlatformAccountHttpTransport({ environment }),
+  transport: new PlatformAccountHttpTransport({
+    environment,
+    fetch: (input, init) => globalThis.fetch(input, init),
+  }),
   store: new IndexedDbInstallationAccountStore(`deepseek-gestalt-platform-account:${environment.databaseIdentity}`),
   systemBrowser: mobileSystemBrowser,
 })
+const locale = navigator.languages.some(language => language.toLowerCase().startsWith('zh')) ? 'zh' : 'en'
+const theme = typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
 let companionVisibilityDisposer: (() => Promise<void>) | undefined
 
 /**
@@ -142,8 +147,22 @@ function requiredWss(value: unknown): string {
 
 const root = document.getElementById('root')
 if (root === null) throw new Error('mobile app: missing #root')
-createRoot(root).render(
-  <StrictMode>
-    <MobileAccount installation={installation} pairing={pairing} />
-  </StrictMode>,
-)
+
+async function mountMobileProduct(container: HTMLElement): Promise<void> {
+  const companion = import.meta.env.VITE_MOBILE_PRESENTATION_EXAMPLE === '1'
+    ? (await import('./development-companion-presentation.ts')).developmentCompanionPresentation()
+    : undefined
+  createRoot(container).render(
+    <StrictMode>
+      <MobileAccount
+        installation={installation}
+        pairing={pairing}
+        companion={companion}
+        locale={locale}
+        theme={theme}
+      />
+    </StrictMode>,
+  )
+}
+
+void mountMobileProduct(root)

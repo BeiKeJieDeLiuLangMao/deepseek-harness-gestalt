@@ -10,9 +10,9 @@
 
 ## 共享 Session 呈现
 
-打包后的 Mobile 入口把列表／详情导航留在 `apps/mobile`，并从 Client Runtime 的 Desktop 权威 `ConversationSnapshot` 渲染已打开 Session；它不再拥有 Mobile content-block union。详情路由只导入 `ui-conversation`、`ui-tool`、`ui-user-questions` 与 `ui-attachment` 的显式公共 `./presentation` 入口，以及公共 `ui-primitives`。这些入口执行 Desktop Web composition 使用的同一套 Markdown、code、image、普通与未知 Tool、diff、terminal summary、Approval、Ask User、error 与 InputBar implementation。Mobile 只提供导航、图片加载与 prompt/cancel adapter，绝不挂载 Desktop columns、Settings、model selection、plugin configuration 或 terminal input。
+打包后的 Mobile 入口把列表／详情导航留在 `apps/mobile`，并从 Client Runtime 的 Desktop 权威 `ConversationSnapshot` 渲染已打开 Session；它不再拥有 Mobile content-block union。`MobileCompanionPresentation` 是 `main.tsx` 接受的生产 composition interface：它提供经 Desktop 确认的 Session 行、必需的 Session 寻址图片 loader，以及可选的 prompt、cancel 与较早历史 operation。locale 与 light/dark theme 来自 Mobile 产品环境，并经 `MobileBrowse` 进入共用 conversation、Tool、attachment 与 question 实现。图片一律通过 `ImageGallery` 渲染；普通 Tool 名称使用 Desktop 内置 keyed roster，只有未知名称使用 `GenericToolCard`。Mobile 绝不挂载 Desktop columns、Settings、model selection、plugin configuration 或 terminal input。
 
-产品证据构建并加载该入口。`apps/mobile/prototype-companion` 与开发端口 5173/5174 都不是 Mobile 产品验收 origin。
+keyless snapshot 证据以 `VITE_MOBILE_PRESENTATION_EXAMPLE=1` 构建并加载该入口，通过拦截的 HTTPS 响应完成 Account lifecycle，再经同一生产 composition interface 打开 development `ConversationSnapshot`。该 example 没有 mutation authority，也不运行 model round。live 产品证据仍须等待加密 Companion transport 提供该 interface。`apps/mobile/prototype-companion` 与开发端口 5173/5174 都不是 Mobile 产品验收 origin。
 
 `apps/mobile/src/companion-cache.ts` 是尚未接入入口的库：它按配对 Desktop 以 Personal Pairing seam 注入的 AES-GCM 密钥密封已打开的 Workspace/Session 元数据与 transcript，并把行存入由 `companionCacheDatabaseName` 命名的 IndexedDB 数据库（`${accountStorageNamespace(environment, accountId)}:companion-cache`），使账号切换把缓存和回执与配对密钥存储隔离开。附件字节、终端内容、spill 文件与凭据永不进入缓存。`CompanionUncertainOperationSettlement` 仅在 mutation 离开设备后写入 Operation Receipt，发送前查阅已有回执，通过 `query-operation-status` 对账未知回执，且永不重放 operation。
 

@@ -33,7 +33,11 @@ export interface MobileConversationProps {
   /** Product theme selected by the Mobile shell. */
   theme?: 'light' | 'dark' | undefined
   /** Session-authorized historical-image loader. */
-  loadImage?: ((attachment: ImageAttachmentRef) => Promise<string>) | undefined
+  loadImage: (attachment: ImageAttachmentRef) => Promise<string>
+  /** Session Workspace root used by shared Tool rows. */
+  cwd?: string | undefined
+  /** Desktop account home used by shared path summaries. */
+  home?: string | undefined
   /** Submit a prompt through Desktop acceptance. */
   onSubmit?: ((text: string) => void | Promise<void>) | undefined
   /** Cancel active execution through Desktop cancellation. */
@@ -50,6 +54,8 @@ export function MobileConversation({
   locale = 'zh',
   theme = 'light',
   loadImage,
+  cwd,
+  home,
   onSubmit,
   onCancel,
   onLoadOlder,
@@ -60,16 +66,7 @@ export function MobileConversation({
   const renderMessageImages = ({ images, align }: {
     images: readonly { attachment: ImageAttachmentRef }[]
     align: 'start' | 'end'
-  }): ReactNode => loadImage === undefined
-    ? images.map(({ attachment }) => (
-      <JsonBlock
-        key={attachment.attachmentId}
-        label={attachment.name ?? t('image.label')}
-        payload={attachment}
-        truncatedLabel={total => t('json.truncated', { total })}
-      />
-    ))
-    : <ImageGallery images={images} load={loadImage} align={align} labels={imageLabels} />
+  }): ReactNode => <ImageGallery images={images} load={loadImage} align={align} labels={imageLabels} />
   const question = snapshot.pending.find((wait): wait is PendingWait<'question'> => wait.kind === 'question')
   const approval = snapshot.pending.find((wait): wait is PendingWait<'approval'> => wait.kind === 'approval')
 
@@ -101,6 +98,8 @@ export function MobileConversation({
             key={`${node.kind}:${String(node.seq)}`}
             node={node}
             renderMessageImages={renderMessageImages}
+            cwd={cwd}
+            home={home}
             t={t}
           />
         ))}
@@ -113,7 +112,7 @@ export function MobileConversation({
           />
         )}
         {snapshot.runningCalls.map(call => (
-          <ToolPresentation key={call.callId} block={call} t={t} />
+          <ToolPresentation key={call.callId} block={call} cwd={cwd} home={home} t={t} />
         ))}
       </div>
       <div className={css.composer}>
@@ -132,10 +131,14 @@ export function MobileConversation({
 function ConversationNodePresentation({
   node,
   renderMessageImages,
+  cwd,
+  home,
   t,
 }: {
   node: ConversationNode
   renderMessageImages: Parameters<typeof ConversationUserMessage>[0]['renderMessageImages']
+  cwd?: string | undefined
+  home?: string | undefined
   t: ReturnType<typeof conversationPresentationTranslate>
 }): ReactNode {
   switch (node.kind) {
@@ -154,7 +157,7 @@ function ConversationNodePresentation({
         />
       )
     case 'tool-result':
-      return <ToolPresentation block={node} t={t} />
+      return <ToolPresentation block={node} cwd={cwd} home={home} t={t} />
     case 'turn-error':
     case 'turn-max-tokens':
       return <ConversationFailure node={node} t={t} />

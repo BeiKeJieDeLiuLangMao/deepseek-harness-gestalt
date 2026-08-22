@@ -1,20 +1,17 @@
 /** Public presentation seam shared by Web compositions that do not mount the Desktop page shell. */
 
-import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from 'react'
 import type {
   ConversationSnapshot, PendingWait, TurnErrorNode, TurnMaxTokensNode,
 } from '@deepseek-ai/dsh-client-runtime/client'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
-import type { InputBarProps } from './client/skeleton/InputBar.tsx'
-import type {
-  ComposerKeyboard, EditRange, EditSelection, InputActions, InputEffect, InputState, PasteComponent,
-} from './client/input/contract.ts'
+import type { InputEffect, InputState } from './client/input/contract.ts'
 import { AssistantMarkdown } from './client/chat/AssistantMarkdown.tsx'
 import {
   TurnErrorItem, TurnMaxTokensItem, UserStyleBubble,
 } from './client/chat/MessageItem.tsx'
 import { ApprovalPanel } from './client/skeleton/ApprovalPanel.tsx'
-import { InputBar } from './client/skeleton/InputBar.tsx'
+import { InputBarPresentation } from './client/skeleton/InputBarPresentation.tsx'
 import { InputMachine } from './client/input/machine.ts'
 import { en, zh } from './client/locales.ts'
 
@@ -142,71 +139,60 @@ export function ConversationComposer({ snapshot, onSubmit, onCancel, t }: Conver
     publish()
     settleEffects(machine, effects, publish, onSubmit)
   }, [machine, onSubmit, publish])
+  const composing = useRef(false)
   const submit = useCallback(() => { dispatch({ type: 'enter', mode: 'queue' }) }, [dispatch])
-
-  const inputActions = useMemo<InputActions>(() => ({
-    setDraft: (text) => { dispatch({ type: 'draft-changed', draft: text }) },
-    addImages: () => false,
-    removeImage: () => {},
-    pruneImages: () => {},
-    addTextAnnotation: () => { throw new Error('standalone conversation composer does not own annotations') },
-    updateTextAnnotation: () => {},
-    removeTextAnnotation: () => {},
-    discardTextAnnotations: () => {},
-    addImagePin: () => { throw new Error('standalone conversation composer does not own image pins') },
-    updateImagePin: () => {},
-    removeImagePin: () => {},
-    submit,
-  }), [dispatch, submit])
-  const keyboard = useMemo<ComposerKeyboard>(() => ({
-    get snapshot() { return machine.state },
-    setDraft: (text: string, editRange?: EditRange) => {
-      dispatch({ type: 'draft-changed', draft: text, ...(editRange === undefined ? {} : { editRange }) })
-    },
-    submit: (mode) => { dispatch({ type: 'enter', mode }) },
-    steerQueue: () => {},
-    undo: () => { dispatch({ type: 'undo' }) },
-    redo: () => { dispatch({ type: 'redo' }) },
-    pasteBegin: (text: string, selection: EditSelection, components?: readonly PasteComponent[], generation?: number) => {
-      dispatch({
-        type: 'paste-begin', text, selection,
-        ...(components === undefined ? {} : { components }),
-        ...(generation === undefined ? {} : { generation }),
-      })
-    },
-    invalidatePaste: () => { dispatch({ type: 'invalidate-paste' }) },
-    track: () => {},
-    arbitrate: () => 'pass',
-    space: () => false,
-    dismissPopup: () => {},
-  }), [dispatch, machine])
-  const useInput = useCallback(<T,>(selector: (value: InputState) => T): T => selector(input), [input])
-  const useSession = useCallback(<T,>(selector: (value: ConversationSnapshot) => T): T => selector(snapshot), [snapshot])
-  const emptyMap = useMemo<ReadonlyMap<'/' | '@', readonly string[]>>(() => new Map(), [])
-
-  const props = {
-    sessionId: snapshot.sessionId,
-    useSession,
-    useInput,
-    inputActions,
-    keyboard,
-    addImages: undefined,
-    removeImage: undefined,
-    draftImages: undefined,
-    resolveSubmitMode: () => 'queue' as const,
-    toggleCommandMenu: undefined,
-    stop: onCancel,
-    command: undefined,
-    useNotices: <T,>(selector: (value: null) => T): T => selector(null),
-    useLexicon: <T,>(selector: (value: ReadonlyMap<'/' | '@', readonly string[]>) => T): T => selector(emptyMap),
-    useMenuLauncher: <T,>(selector: (value: null) => T): T => selector(null),
-    useProjection: () => undefined,
-    renderSlot: () => null,
-    variant: 'composer' as const,
-    t,
+  const busy = input.phase === 'adjudicating' || input.phase === 'submitting'
+  const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>): void => {
+    if (event.key === 'Enter' && event.shiftKey) return
+    if ((event.metaKey || event.ctrlKey) && (event.key === 'z' || event.key === 'Z' || event.key === 'y')) {
+      event.preventDefault()
+      if (busy || snapshot.removed) return
+      dispatch({ type: event.key === 'y' || event.shiftKey ? 'redo' : 'undo' })
+      return
+    }
+    if (event.key !== 'Enter' || composing.current || event.nativeEvent.isComposing) return
+    event.preventDefault()
+    if (event.repeat || busy || snapshot.removed) return
+    submit()
   }
-  return <InputBar {...(props as unknown as InputBarProps)} />
+  const onPaste = (event: ClipboardEvent<HTMLTextAreaElement>): void => {
+    if (busy || snapshot.removed) return
+    const text = event.clipboardData.getData('text/plain')
+    if (text === '') return
+    event.preventDefault()
+    dispatch({
+      type: 'paste-begin',
+      text,
+      selection: {
+        start: event.currentTarget.selectionStart,
+        end: event.currentTarget.selectionEnd,
+      },
+    })
+  }
+  return (
+    <div
+      onCompositionStart={() => { composing.current = true }}
+      onCompositionEnd={() => { composing.current = false }}
+    >
+      <InputBarPresentation
+        draft={input.draft}
+        phase={input.phase}
+        running={snapshot.running}
+        busy={busy}
+        disabled={snapshot.removed}
+        placeholder={t(snapshot.removed ? 'placeholder.unavailable' : 'placeholder.default')}
+        onDraftChange={(draft) => { dispatch({ type: 'draft-changed', draft }) }}
+        onSubmit={submit}
+        onStop={onCancel}
+        onKeyDown={onKeyDown}
+        onPaste={onPaste}
+        t={t}
+      />
+    </div>
+  )
 }
 
 export { AssistantMarkdown }
 export type { AssistantMarkdownProps } from './client/chat/AssistantMarkdown.tsx'
+export { InputBarPresentation }
+export type { InputBarPresentationProps } from './client/skeleton/InputBarPresentation.tsx'

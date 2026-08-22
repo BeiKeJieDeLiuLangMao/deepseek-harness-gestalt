@@ -4,7 +4,7 @@
 
 会话领域：骨架（标题栏／标签页／编辑器／空状态）、聊天视图（分组步骤摘要流、流式尾部隔离、轮次状态，以及收起后的 Browser Dock 预览孔）、编辑器 dock（与输入区一同 sticky 的会话统计行）、输入区 dock（队列行加 todo 计划条）、详情壳层（工具详情加 Browser Dock 占用方），以及按 scope 寻址的 ConversationController。工具展示属于 [`ui-tool`](../ui-tool/README.md)。Browser Dock 本身属于 [`ui-browser`](../ui-browser/README.md)。
 
-`./presentation` 入口是不挂载 Desktop 页面的窄屏及其他 Web composition 的公共 seam。它接收 Client Runtime 的 `ConversationSnapshot`、`ConversationNode` 与 `PendingWait` 投影，并导出 Desktop slot tree 使用的同一套助手 Markdown、用户气泡、终态失败、Approval 与 InputBar 实现。`ConversationComposer` 把既有 InputBar 与 InputMachine 适配到调用方提供的 submit/cancel authority；它不会创建 Session authority 或第二套 transcript 模型。
+`./presentation` 入口是不挂载 Desktop 页面的窄屏及其他 Web composition 的公共 seam。它接收 Client Runtime 的 `ConversationSnapshot`、`ConversationNode` 与 `PendingWait` 投影，并导出 Desktop slot tree 使用的同一套助手 Markdown、用户气泡、终态失败与 Approval 实现。`InputBarPresentation` 是窄版 composer interface：完整 Desktop `InputBar` 与 `ConversationComposer` 共用其 editor 和 primary-action 实现，后者只拥有一个 `InputMachine` 草稿以及调用方提供的 submit/cancel 回调。它不会伪造 Desktop annotation、attachment、slot、projection、command 或 Host capability，也不会创建 Session authority 或第二套 transcript 模型。
 
 压缩（compaction）在检查点自身的消息流位置渲染为一行折叠标记，不替换其上方的 transcript（文本记录）。自动压缩使用「上下文已压缩」标题。每个已加载对应 `compaction/summary` 事件的完成标记都会显示被替换条目数量和估算 token 数量，并可点击展开摘要。手动 `/compact` 开始时显示为运行中的 `compact` 行；成功结算后，其显式摘要事件引用会在保持同一 React key 的前提下把该命令折叠进检查点行。完成的检查点静止时保留上下文压缩（context compaction）图标，仅在悬停或键盘聚焦时将其替换为收起／展开指示图标。输入被拒绝、没有可压缩历史、取消和失败时仍使用通用命令行及处理器撰写的文本。配对绝不依赖相邻关系，因为压缩运行期间可能注入持久上下文。面向模型的带框检查点载荷绝不渲染；被引用的 `compaction/summary` 事件位于已加载窗口之外时，检查点仍然可见但不可展开。
 
