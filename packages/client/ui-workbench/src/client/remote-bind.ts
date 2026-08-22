@@ -3,15 +3,15 @@
  */
 
 import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
-import type {
-  BrowserPageState,
-  BrowserRuntimeState,
-  BrowserScreenshot,
-  BrowserTarget,
-  BrowserWorkspaceCreateRemoteRequest,
+import {
+  unwrapBrowserWorkspaceRemote,
+  type BrowserPageState,
+  type BrowserRuntimeState,
+  type BrowserScreenshot,
+  type BrowserTarget,
+  type BrowserWorkspaceCreateRemoteRequest,
 } from '@deepseek-ai/dsh-browser-workspace/client'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
-import { unwrapRemote } from '@deepseek-ai/dsh-api-remotes/client'
 
 /** Generated-or-SRC Browser Workspace namespace this adapter calls. */
 export interface BrowserWorkspaceRemoteFace {
@@ -58,12 +58,12 @@ export function bindBrowserWorkspace(
       if (remote.create === undefined) {
         return Promise.reject(new Error('remote.browserWorkspace.create is not mounted'))
       }
-      return unwrapRemote(remote.create(sessionId, request))
+      return unwrapBrowserWorkspaceRemote(remote.create(sessionId, request))
     },
-    close: (target, expectedRevision) => unwrapRemote(remote.close(sessionId, target, expectedRevision)),
+    close: (target, expectedRevision) => unwrapBrowserWorkspaceRemote(remote.close(sessionId, target, expectedRevision)),
     refresh: (target, expectedRevision, url) =>
-      unwrapRemote(remote.navigate(sessionId, target, expectedRevision, url)),
-    observe: target => unwrapRemote(remote.observe(sessionId, target)),
-    screenshot: target => unwrapRemote(remote.screenshot(sessionId, target)),
+      unwrapBrowserWorkspaceRemote(remote.navigate(sessionId, target, expectedRevision, url)),
+    observe: target => unwrapBrowserWorkspaceRemote(remote.observe(sessionId, target)),
+    screenshot: target => unwrapBrowserWorkspaceRemote(remote.screenshot(sessionId, target)),
   }
 }

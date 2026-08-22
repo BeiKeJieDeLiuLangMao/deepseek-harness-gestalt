@@ -294,6 +294,11 @@ describe('Electron Browser Runtime public lifecycle', () => {
     expect(navigateFirst.filter(result => result.status === 'fulfilled')).toHaveLength(1)
     const afterNavigate = await ctx.browserRuntime.observe({ target: created.target })
     expect(afterNavigate).toMatchObject({ revision: 2, url: 'https://login.test/', target: identities })
+    await expect(ctx.browserRuntime.input({
+      target: created.target,
+      expectedRevision: afterNavigate.revision,
+      url: 'https://example.test/',
+    })).resolves.toMatchObject({ revision: 3, url: 'https://example.test/' })
   })
 
   it('types through one path and treats newline as U+000A', async () => {

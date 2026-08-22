@@ -29,6 +29,7 @@ describe('Electron process detection', () => {
 
   it('presents pages through WebContentsView when the module exposes it', () => {
     const attached: unknown[] = []
+    const captureAttached: unknown[] = []
     const contents = { destroyed: false, isDestroyed() { return this.destroyed }, close() { this.destroyed = true } }
     const order: string[] = []
     const view = {
@@ -45,6 +46,18 @@ describe('Electron process detection', () => {
       },
     }
     function WebContentsView() { return view }
+    const captureHost = {
+      destroyed: false,
+      shown: 0,
+      contentView: {
+        addChildView(next: unknown) { captureAttached.push(next) },
+        removeChildView() { captureAttached.length = 0 },
+      },
+      isDestroyed() { return this.destroyed },
+      showInactive() { this.shown += 1 },
+      destroy() { this.destroyed = true },
+    }
+    function BaseWindow() { return captureHost }
     const parent = {
       contentView: {
         addChildView(next: unknown) { attached.push(next) },
@@ -53,6 +66,7 @@ describe('Electron process detection', () => {
     }
     const host = electronHostFromModule({
       BrowserWindow: function Unused() { throw new Error('child BrowserWindow must not be used') },
+      BaseWindow,
       WebContentsView,
       session: { fromPartition: () => ({}) },
     })
@@ -75,8 +89,10 @@ describe('Electron process detection', () => {
       },
     })
     const bounds = { x: 832, y: 76, width: 448, height: 724 }
-    expect(view.bounds).toEqual({ x: 0, y: 0, width: 1, height: 1 })
-    expect(view.visible).toBe(false)
+    expect(captureAttached).toEqual([view])
+    expect(captureHost.shown).toBe(1)
+    expect(view.bounds).toEqual({ x: 0, y: 0, width: 100, height: 80 })
+    expect(view.visible).toBe(true)
     surface.setBounds(bounds)
     surface.setParentWindow(parent)
     surface.setParentWindow(parent)
@@ -84,20 +100,23 @@ describe('Electron process detection', () => {
     expect(attached).toEqual([view])
     expect(view.bounds).toEqual(bounds)
     expect(view.visible).toBe(true)
-    expect(order.indexOf('bounds:448x724')).toBeLessThan(order.indexOf('visible:true'))
+    expect(order.lastIndexOf('bounds:448x724')).toBeLessThan(order.lastIndexOf('visible:true'))
     surface.raise()
     expect(attached).toEqual([view, view])
     surface.show()
     expect(view.visible).toBe(true)
     surface.hide()
-    expect(view.visible).toBe(false)
-    expect(view.bounds).toEqual({ x: -10_000, y: -10_000, width: 1, height: 1 })
+    expect(attached).toEqual([])
+    expect(captureAttached).toEqual([view])
+    expect(view.visible).toBe(true)
+    expect(view.bounds).toEqual({ x: 0, y: 0, width: 100, height: 80 })
     surface.setParentWindow(null)
     expect(attached).toEqual([])
     expect(surface.isDestroyed()).toBe(false)
     surface.destroy()
     expect(surface.isDestroyed()).toBe(true)
     expect(contents.destroyed).toBe(true)
+    expect(captureHost.destroyed).toBe(true)
   })
 
   it('attaches a view that has no setVisible and ignores a parent without contentView', () => {
@@ -107,8 +126,15 @@ describe('Electron process detection', () => {
       setBounds() {},
     }
     function WebContentsView() { return view }
+    const captureHost = {
+      contentView: { addChildView() {}, removeChildView() {} },
+      isDestroyed: () => true,
+      showInactive() {},
+      destroy() {},
+    }
+    const parent = { contentView: { addChildView() {}, removeChildView() {} } }
     const host = electronHostFromModule({
-      BrowserWindow: function Unused() {},
+      BrowserWindow: function BrowserWindow() { return captureHost },
       WebContentsView,
       session: { fromPartition: () => ({}) },
     })
@@ -130,7 +156,8 @@ describe('Electron process detection', () => {
         backgroundThrottling: false,
       },
     })
-    surface.setParentWindow({})
+    surface.hide()
+    surface.setParentWindow(parent)
     surface.raise()
     surface.show()
     surface.showInactive()

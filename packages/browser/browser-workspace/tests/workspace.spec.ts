@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { BrowserProfileName, BrowserTabId } from '@deepseek-ai/dsh-browser-runtime'
+import { BrowserProfileName, BrowserRuntimeError, BrowserTabId } from '@deepseek-ai/dsh-browser-runtime'
 import BrowserRuntimeDeterministic from '@deepseek-ai/dsh-browser-runtime-deterministic'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
@@ -253,6 +253,44 @@ describe('Session-owned Browser Workspace', () => {
     expect(listBrowserWorkspacePages(after.browserWorkspace.snapshot(restoredSession))).toEqual([
       expect.objectContaining({ target: recreated.target, revision: recreated.revision }),
     ])
+  })
+
+  it('drops missing and closed retained pages but propagates other observe failures', async () => {
+    const ctx = await harness()
+    const session = ctx.sessions.create(SessionId('session-retained-states'))
+    const first = await ctx.browserWorkspace.create({
+      session,
+      profile: 'persistent',
+      name: BrowserProfileName('work'),
+    })
+    await ctx.browserRuntime.close({ target: first.target, expectedRevision: first.revision })
+    const observe = ctx.browserRuntime.observe.bind(ctx.browserRuntime)
+    ctx.browserRuntime.observe = async () => {
+      throw new BrowserRuntimeError('missing', 'BROWSER_NOT_FOUND')
+    }
+    const afterMissing = await ctx.browserWorkspace.create({
+      session,
+      profile: 'persistent',
+      name: BrowserProfileName('work'),
+    })
+
+    ctx.browserRuntime.observe = observe
+    await ctx.browserRuntime.close({ target: afterMissing.target, expectedRevision: afterMissing.revision })
+    const afterClosed = await ctx.browserWorkspace.create({
+      session,
+      profile: 'persistent',
+      name: BrowserProfileName('work'),
+    })
+    expect(afterClosed.target.tabId).not.toBe(afterMissing.target.tabId)
+
+    ctx.browserRuntime.observe = async () => {
+      throw new BrowserRuntimeError('protocol', 'BROWSER_PROTOCOL')
+    }
+    await expect(ctx.browserWorkspace.create({
+      session,
+      profile: 'persistent',
+      name: BrowserProfileName('work'),
+    })).rejects.toMatchObject({ code: 'BROWSER_PROTOCOL' })
   })
 
   it('restores one Session Workspace after reload and closes leftover tabs on Session disposal', async () => {
@@ -533,7 +571,11 @@ describe('Session-owned Browser Workspace', () => {
       url: 'https://beta.test/',
       text: 'typed',
     })
-    await expect(binder.remoteClose(session.id, created.target, inputted.revision))
+    const textOnly = await binder.remoteInput(session.id, created.target, inputted.revision, { text: 'again' })
+    const urlOnly = await binder.remoteInput(session.id, created.target, textOnly.revision, { url: 'https://alpha.test/' })
+    expect(() => binder.remoteInput(session.id, created.target, urlOnly.revision, {}))
+      .toThrowError(/requires url or text/)
+    await expect(binder.remoteClose(session.id, created.target, urlOnly.revision))
       .resolves.toMatchObject({ status: 'closed' })
     expect(() => binder.remoteObserve(SessionId('missing'), created.target))
       .toThrow(/not owned by this Session/)

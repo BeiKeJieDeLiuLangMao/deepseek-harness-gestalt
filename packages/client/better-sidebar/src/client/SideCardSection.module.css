@@ -43,6 +43,8 @@
 /* Group container: the DSH card recipe (PluginCard) — l2 hairline, r16,
    layer-3 fill; holds its own heading + stacked rows / card grid. */
 .group {
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
   flex: none;
   display: flex;
   flex-direction: column;

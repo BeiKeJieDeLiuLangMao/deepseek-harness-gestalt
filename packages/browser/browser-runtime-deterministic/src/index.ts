@@ -352,17 +352,26 @@ export class DeterministicBrowserRuntime extends BrowserRuntime {
       assertBrowserNotAborted(request.signal)
       const state = this.openPage(request.target)
       this.expectRevision(state, request.expectedRevision)
-      const url = request.url ?? state.url
-      const page = this.pages.get(url)
-      if (request.url !== undefined && page === undefined) {
-        throw new BrowserRuntimeError(`deterministic browser page is not configured: ${url}`, 'BROWSER_UNKNOWN_URL')
+      if (request.url === undefined) {
+        return this.commit({
+          ...state,
+          revision: state.revision + 1,
+          text: request.text,
+        })
+      }
+      const page = this.pages.get(request.url)
+      if (page === undefined) {
+        throw new BrowserRuntimeError(
+          `deterministic browser page is not configured: ${request.url}`,
+          'BROWSER_UNKNOWN_URL',
+        )
       }
       return this.commit({
         ...state,
         revision: state.revision + 1,
-        url,
-        title: page?.title ?? state.title,
-        text: request.text ?? page?.text ?? state.text,
+        url: request.url,
+        title: page.title,
+        text: request.text ?? page.text,
       })
     })
   }

@@ -119,8 +119,8 @@ describe('web e2e: Desktop Session Surface overlay', () => {
 
   it('insets only the active macOS Session Surface below its drag strip', async () => {
     expect(await sessionSurfaceGeometry(macPage)).toEqual({
-      inset: 28,
-      paddingTop: 28,
+      inset: 36,
+      paddingTop: 36,
       chrome: 'mac',
     })
     expect(await sessionSurfaceGeometry(winPage)).toEqual({

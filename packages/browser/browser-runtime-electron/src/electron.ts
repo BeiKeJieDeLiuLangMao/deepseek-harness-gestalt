@@ -169,15 +169,21 @@ export function electronHostFromModule(loaded: unknown): ElectronHost {
     throw new Error('browser-runtime-electron: the Electron module did not expose BrowserWindow and session')
   }
   let view: unknown
+  let baseWindow: unknown
   try {
     view = record.WebContentsView
+    baseWindow = record.BaseWindow
   } catch {
     // Vitest electron mocks throw when reading an undeclared named export.
     view = undefined
+    baseWindow = undefined
   }
   return {
     BrowserWindow: typeof view === 'function'
-      ? pageSurfaceFromView(view as ElectronWebContentsViewConstructor)
+      ? pageSurfaceFromView(
+        view as ElectronWebContentsViewConstructor,
+        (typeof baseWindow === 'function' ? baseWindow : browserWindow) as ElectronViewHostConstructor,
+      )
       : browserWindow as ElectronBrowserWindowConstructor,
     session: session as ElectronSessionModule,
   }
@@ -201,6 +207,28 @@ interface ElectronParentContentView {
   removeChildView(view: ElectronWebContentsView): void
 }
 
+/** Hidden native window that keeps an unattached page view painting. */
+interface ElectronViewHost {
+  readonly contentView: ElectronParentContentView
+  isDestroyed(): boolean
+  showInactive(): void
+  destroy(): void
+}
+
+/** Constructor for the hidden page-view paint host. */
+type ElectronViewHostConstructor = new (options: {
+  readonly show: false
+  readonly frame: false
+  readonly skipTaskbar: true
+  readonly focusable: false
+  readonly hasShadow: false
+  readonly x: number
+  readonly y: number
+  readonly width: number
+  readonly height: number
+  readonly opacity: number
+}) => ElectronViewHost
+
 /**
  * Adapt `WebContentsView` to the page-surface verbs the Runtime already calls.
  * A child `BrowserWindow` plus `setParentWindow` SIGSEGV on macOS Electron 41.
@@ -209,19 +237,38 @@ interface ElectronParentContentView {
  */
 function pageSurfaceFromView(
   View: ElectronWebContentsViewConstructor,
+  Host: ElectronViewHostConstructor,
 ): ElectronBrowserWindowConstructor {
   return class PageSurface implements ElectronBrowserWindow {
     readonly webContents: ElectronWebContents
     private readonly view: ElectronWebContentsView
-    private parent: { contentView?: ElectronParentContentView } | null = null
+    private readonly captureHost: ElectronViewHost
+    private readonly captureBounds: ElectronWindowBounds
+    private parent: { contentView?: ElectronParentContentView }
     private pending: ElectronWindowBounds | undefined
     private destroyed = false
 
     constructor(options: ElectronBrowserWindowOptions) {
+      this.captureBounds = { x: 0, y: 0, width: options.width, height: options.height }
+      this.captureHost = new Host({
+        show: false,
+        frame: false,
+        skipTaskbar: true,
+        focusable: false,
+        hasShadow: false,
+        x: -10_000,
+        y: -10_000,
+        width: options.width,
+        height: options.height,
+        opacity: 0,
+      })
+      this.parent = this.captureHost
       this.view = new View({ webPreferences: options.webPreferences })
       this.webContents = this.view.webContents
-      this.view.setBounds({ x: 0, y: 0, width: 1, height: 1 })
-      this.view.setVisible?.(false)
+      this.captureHost.contentView.addChildView(this.view)
+      this.view.setBounds(this.captureBounds)
+      this.view.setVisible?.(true)
+      this.captureHost.showInactive()
     }
 
     isDestroyed(): boolean {
@@ -244,12 +291,18 @@ function pageSurfaceFromView(
     }
 
     hide(): void {
-      this.view.setVisible?.(false)
-      this.view.setBounds({ x: -10_000, y: -10_000, width: 1, height: 1 })
+      if (this.parent !== this.captureHost) {
+        this.detach()
+        this.parent = this.captureHost
+        this.attach()
+      }
+      this.view.setBounds(this.captureBounds)
+      this.view.setVisible?.(true)
     }
 
     setParentWindow(parent: unknown): void {
-      const next = parent as { contentView?: ElectronParentContentView } | null
+      const requested = parent as { contentView?: ElectronParentContentView } | null
+      const next = requested?.contentView === undefined ? this.captureHost : requested
       if (next === this.parent) return
       this.detach()
       this.parent = next
@@ -257,23 +310,25 @@ function pageSurfaceFromView(
     }
 
     raise(): void {
-      this.parent?.contentView?.addChildView(this.view)
+      this.parent.contentView?.addChildView(this.view)
     }
 
     destroy(): void {
       this.detach()
       this.destroyed = true
       if (!this.webContents.isDestroyed()) this.webContents.close()
+      if (!this.captureHost.isDestroyed()) this.captureHost.destroy()
     }
 
     private attach(): void {
-      if (this.pending !== undefined) this.view.setBounds(this.pending)
-      this.parent?.contentView?.addChildView(this.view)
-      if (this.pending !== undefined) this.view.setBounds(this.pending)
+      const bounds = this.parent === this.captureHost ? this.captureBounds : this.pending
+      if (bounds !== undefined) this.view.setBounds(bounds)
+      this.parent.contentView?.addChildView(this.view)
+      if (bounds !== undefined) this.view.setBounds(bounds)
     }
 
     private detach(): void {
-      this.parent?.contentView?.removeChildView(this.view)
+      this.parent.contentView?.removeChildView(this.view)
     }
   }
 }

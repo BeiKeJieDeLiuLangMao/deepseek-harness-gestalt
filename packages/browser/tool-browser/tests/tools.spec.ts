@@ -319,6 +319,14 @@ describe('deferred Browser Runtime Consumer', () => {
     })
     expect(inputWithUrl).toMatchObject({ isError: false, value: { url: 'https://example.test/' } })
 
+    const inputWithUrlAndText = await ctx.tools.execute({
+      callId: CallId('input-with-url-and-text'),
+      name: 'browser_input',
+      arguments: { target, expectedRevision: 1, url: 'https://example.test/', text: 'typed' },
+      signal,
+    })
+    expect(inputWithUrlAndText).toMatchObject({ isError: false, value: { text: 'typed' } })
+
     const clickOnlyInput = await ctx.tools.execute({
       callId: CallId('input-click-only'),
       name: 'browser_input',

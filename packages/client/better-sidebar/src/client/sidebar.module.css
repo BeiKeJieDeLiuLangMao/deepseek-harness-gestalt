@@ -1944,6 +1944,8 @@ body[data-dsh-tab-dragging] .windowDragSpace {
 /* The command the user pastes into a terminal / cmd. Selectable, wrapping,
    and scrollable when long (Windows paths can get very long). */
 .terminalRepairCommand {
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
   flex: 1;
   min-width: 0;
   margin: 0;

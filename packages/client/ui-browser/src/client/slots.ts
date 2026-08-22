@@ -11,7 +11,7 @@ import type {
   BrowserTarget,
 } from '@deepseek-ai/dsh-browser-workspace/client'
 
-export { unwrapRemote } from '@deepseek-ai/dsh-api-remotes/client'
+export { unwrapBrowserWorkspaceRemote as unwrapRemote } from '@deepseek-ai/dsh-browser-workspace/client'
 
 /** Official page chrome verbs closed over the current Session. */
 export interface BrowserPageChromeActions {

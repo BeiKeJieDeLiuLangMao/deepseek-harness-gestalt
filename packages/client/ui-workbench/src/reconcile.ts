@@ -11,6 +11,8 @@ import {
 export interface OfficialPage {
   /** Complete Runtime tab identity. */
   readonly target: BrowserTarget
+  /** Latest revision accepted by Runtime mutations. */
+  readonly revision: number
 }
 
 /** One snapshot sidebar tab of type `browser`. */
@@ -26,7 +28,7 @@ export type OfficialReconcileAction =
   | { readonly kind: 'attach'; readonly tabId: string; readonly target: OfficialPage['target'] }
   | { readonly kind: 'createOfficial'; readonly tabId: string }
   | { readonly kind: 'openSidebar' }
-  | { readonly kind: 'closeOfficial'; readonly target: OfficialPage['target'] }
+  | { readonly kind: 'closeOfficial'; readonly target: OfficialPage['target']; readonly revision: number }
   | { readonly kind: 'closeSidebar'; readonly tabId: string }
 
 /** Known sidebar-tab to official-page bindings from the previous tick. */
@@ -58,7 +60,7 @@ export function planOfficialPageReconcile(
     if (sidebarById.has(tabId)) continue
     const page = officialByKey.get(key)
     if (page !== undefined) {
-      actions.push({ kind: 'closeOfficial', target: page.target })
+      actions.push({ kind: 'closeOfficial', target: page.target, revision: page.revision })
       closingOfficial.add(key)
     }
     nextKnown.delete(tabId)
@@ -87,19 +89,22 @@ export function planOfficialPageReconcile(
     const key = officialTargetKey(page.target)
     return !matchedOfficial.has(key) && !closingOfficial.has(key)
   })
-  const pairCount = Math.min(emptyTabs.length, unmatchedOfficial.length)
-  for (let index = 0; index < pairCount; index += 1) {
-    const tab = emptyTabs[index]
-    const page = unmatchedOfficial[index]
+  let remainingTabs = emptyTabs
+  let remainingOfficial = unmatchedOfficial
+  while (true) {
+    const [tab, ...tabsAfterPair] = remainingTabs
+    const [page, ...officialAfterPair] = remainingOfficial
     if (tab === undefined || page === undefined) break
     actions.push({ kind: 'attach', tabId: tab.id, target: page.target })
     nextKnown.set(tab.id, officialTargetKey(page.target))
+    remainingTabs = tabsAfterPair
+    remainingOfficial = officialAfterPair
   }
 
-  for (const tab of emptyTabs.slice(pairCount)) {
+  for (const tab of remainingTabs) {
     actions.push({ kind: 'createOfficial', tabId: tab.id })
   }
-  if (unmatchedOfficial.length > pairCount) {
+  if (remainingOfficial.length > 0) {
     actions.push({ kind: 'openSidebar' })
   }
 

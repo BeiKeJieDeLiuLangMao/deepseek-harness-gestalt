@@ -95,22 +95,21 @@ export class OfficialBrowserBridge {
     const projection = this.deps.projectionOf(sessionId)
     const official: OfficialPage[] = listBrowserWorkspacePages(projection).map(page => ({
       target: page.target,
+      revision: page.revision,
     }))
     const sidebar = collectSidebarBrowserTabs(snapshot.state)
     const planned = planOfficialPageReconcile(official, sidebar, this.known)
     this.known = planned.known
-    void this.applyActions(sessionId as SessionId, planned.actions, projection)
+    void this.applyActions(sessionId as SessionId, planned.actions)
   }
 
   private async applyActions(
     sessionId: SessionId,
     actions: ReturnType<typeof planOfficialPageReconcile>['actions'],
-    projection: BrowserWorkspaceProjection | undefined,
   ): Promise<void> {
     this.running = true
     try {
       const remote = this.deps.bindRemote(sessionId)
-      const pages = listBrowserWorkspacePages(projection)
       for (const action of actions) {
         if (action.kind === 'attach') {
           this.deps.sidebar.updateTab(action.tabId, {
@@ -125,11 +124,8 @@ export class OfficialBrowserBridge {
           continue
         }
         if (action.kind === 'closeOfficial') {
-          const revision = pages.find(page => (
-            officialTargetKey(page.target) === officialTargetKey(action.target)
-          ))?.revision ?? 0
           try {
-            await remote.close(action.target, revision)
+            await remote.close(action.target, action.revision)
           } catch {
             // The Runtime may already have closed the tab; the next tick drops it.
           }

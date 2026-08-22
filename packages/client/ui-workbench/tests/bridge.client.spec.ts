@@ -57,6 +57,7 @@ function bench(input: {
   projection?: BrowserWorkspaceProjection
   tabs?: Array<{ id: string; type: string; meta?: unknown }>
 } = {}) {
+  let currentSession: string | undefined = SESSION
   let currentProjection = input.projection ?? projection()
   let currentState = state(input.tabs ?? [{ id: 'browser:1', type: 'browser' }])
   const sidebar: WorkbenchSidebarFace = {
@@ -65,7 +66,10 @@ function bench(input: {
     closeTab: vi.fn(),
     activateTab: vi.fn(),
     setPanelOpen: vi.fn(),
-    getSnapshot: () => ({ sessionId: SESSION, state: currentState }),
+    getSnapshot: () => ({
+      ...(currentSession === undefined ? {} : { sessionId: currentSession }),
+      state: currentState,
+    }),
   }
   const remote: BoundBrowserWorkspace = {
     create: vi.fn(async () => page()),
@@ -86,6 +90,7 @@ function bench(input: {
     bridge,
     remote,
     sidebar,
+    setSession: (next: string | undefined) => { currentSession = next },
     setProjection: (next: BrowserWorkspaceProjection) => { currentProjection = next },
     setState: (next: SidebarStateSlice) => { currentState = next },
   }
@@ -134,6 +139,72 @@ describe('OfficialBrowserBridge', () => {
     expect(b.sidebar.activateTab).toHaveBeenCalledWith('browser:1')
   })
 
+  it('ignores another Session reveal and leaves unmatched tabs inactive', () => {
+    const b = bench({ tabs: [{ id: 'browser:1', type: 'browser' }] })
+    b.bridge.reveal('other')
+    expect(b.sidebar.setPanelOpen).not.toHaveBeenCalled()
+    b.bridge.reveal(SESSION)
+    expect(b.sidebar.setPanelOpen).toHaveBeenCalledWith(true)
+    expect(b.sidebar.activateTab).not.toHaveBeenCalled()
+  })
+
+  it('closes a bound sidebar tab after its official page disappears', async () => {
+    const b = bench({ projection: projection(false), tabs: [{ id: 'browser:1', type: 'browser', meta: officialTabMeta(TARGET) }] })
+    b.bridge.tick()
+    await vi.waitFor(() => { expect(b.sidebar.closeTab).toHaveBeenCalledWith('browser:1') })
+  })
+
+  it('opens one sidebar tab when an additional official page has no tab', async () => {
+    const second = { ...TARGET, tabId: 'second' as BrowserTarget['tabId'] }
+    const withSecond: BrowserWorkspaceProjection = {
+      ...projection(),
+      workspaces: [{
+        ...projection().workspaces[0]!,
+        browsers: [{
+          ...projection().workspaces[0]!.browsers[0]!,
+          tabs: [{ tabId: TARGET.tabId, revision: 3 }, { tabId: second.tabId, revision: 0 }],
+        }],
+      }],
+    }
+    const b = bench({ projection: withSecond, tabs: [{ id: 'browser:1', type: 'browser', meta: officialTabMeta(TARGET) }] })
+    b.bridge.tick()
+    await vi.waitFor(() => { expect(b.sidebar.openTab).toHaveBeenCalledWith({ type: 'browser' }) })
+  })
+
+  it('skips create without a Session or empty tab and swallows a rejected create', async () => {
+    const b = bench({ projection: projection(false) })
+    b.setSession(undefined)
+    b.bridge.tick()
+    b.bridge.ensureOfficial('browser:1')
+    await Promise.resolve()
+    expect(b.remote.create).not.toHaveBeenCalled()
+
+    b.setSession(SESSION)
+    b.bridge.ensureOfficial('missing')
+    await Promise.resolve()
+    expect(b.remote.create).not.toHaveBeenCalled()
+
+    vi.mocked(b.remote.create).mockRejectedValueOnce(new Error('runtime gone'))
+    b.bridge.ensureOfficial('browser:1')
+    await vi.waitFor(() => { expect(b.remote.create).toHaveBeenCalledOnce() })
+    expect(b.sidebar.updateTab).not.toHaveBeenCalled()
+  })
+
+  it('omits a blank created title and skips an already bound tab', async () => {
+    const b = bench({ projection: projection(false) })
+    vi.mocked(b.remote.create).mockResolvedValueOnce({ ...page(), title: '   ' })
+    b.bridge.ensureOfficial('browser:1')
+    await vi.waitFor(() => {
+      expect(b.sidebar.updateTab).toHaveBeenCalledWith('browser:1', {
+        meta: officialTabMeta(TARGET, { kind: 'persistent', name: 'test' }),
+      })
+    })
+    b.setState(state([{ id: 'browser:1', type: 'browser', meta: officialTabMeta(TARGET) }]))
+    b.bridge.ensureOfficial('browser:1')
+    await Promise.resolve()
+    expect(b.remote.create).toHaveBeenCalledTimes(1)
+  })
+
   it('does not duplicate an in-flight create for the same empty tab', async () => {
     let settle!: (value: BrowserPageState) => void
     const b = bench({ projection: projection(false) })
@@ -143,5 +214,19 @@ describe('OfficialBrowserBridge', () => {
     expect(b.remote.create).toHaveBeenCalledTimes(1)
     settle(page())
     await Promise.resolve()
+  })
+
+  it('queues one reconcile tick while an official close is in flight', async () => {
+    let settleClose!: () => void
+    const b = bench({ tabs: [{ id: 'browser:1', type: 'browser', meta: officialTabMeta(TARGET) }] })
+    b.bridge.tick()
+    await Promise.resolve()
+    vi.mocked(b.remote.close).mockReturnValue(new Promise<void>((resolve) => { settleClose = resolve }))
+    b.setState(state([]))
+    b.bridge.tick()
+    await vi.waitFor(() => { expect(b.remote.close).toHaveBeenCalledOnce() })
+    b.bridge.tick()
+    settleClose()
+    await vi.waitFor(() => { expect(b.sidebar.openTab).toHaveBeenCalledWith({ type: 'browser' }) })
   })
 })

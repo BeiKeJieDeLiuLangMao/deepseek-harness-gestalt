@@ -678,16 +678,7 @@ function base64url(bytes: Uint8Array): string {
 }
 
 function headerRecord(headers?: HeadersInit): Record<string, string> {
-  const record: Record<string, string> = {}
-  if (headers === undefined) return record
-  if (Array.isArray(headers)) {
-    for (const [key, value] of headers) record[key] = value
-    return record
-  }
-  for (const [key, value] of Object.entries(headers)) {
-    if (typeof value === 'string') record[key] = value
-  }
-  return record
+  return Object.fromEntries(new Headers(headers).entries())
 }
 
 function proofHeaders(accessToken: string, proof: AccountProof): HeadersInit {

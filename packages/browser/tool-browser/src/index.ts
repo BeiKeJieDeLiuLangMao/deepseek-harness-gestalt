@@ -202,27 +202,6 @@ function mutationFrom(
 }
 
 /** Build one non-empty synthetic input request after Consumer validation. */
-function inputFrom(
-  args: {
-    target: { profileId: string; workspaceId: string; browserId: string; tabId: string }
-    expectedRevision: number
-    url?: string
-    text?: string
-  },
-  signal: AbortSignal,
-): BrowserInputRequest {
-  const base = mutationFrom(args, signal)
-  if (args.url !== undefined) {
-    return {
-      ...base,
-      url: args.url,
-      ...args.text === undefined ? {} : { text: args.text },
-    }
-  }
-  if (args.text !== undefined) return { ...base, text: args.text }
-  throw new Error('browser_input requires url or text')
-}
-
 /**
  * Route one Browser Runtime call through the Session binder when both are present.
  * @param ctx - Consumer context that may compose `browserWorkspace`.
@@ -442,12 +421,20 @@ export function apply(ctx: Context, config: Config): void {
         if (args.url === undefined && args.text === undefined) {
           throw new Error('browser_input requires url or text')
         }
+        const base = mutationFrom(args, exec.signal)
+        const request: BrowserInputRequest = args.url === undefined
+          ? { ...base, text: args.text }
+          : {
+            ...base,
+            url: args.url,
+            ...args.text === undefined ? {} : { text: args.text },
+          }
         return routeBrowserCall(
           ctx,
           exec,
           (workspace, request) => workspace.input(request),
           request => ctx.browserRuntime.input(request),
-          inputFrom(args, exec.signal),
+          request,
         )
       },
     }),

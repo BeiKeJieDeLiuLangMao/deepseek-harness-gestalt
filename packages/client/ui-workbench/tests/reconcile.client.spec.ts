@@ -14,7 +14,7 @@ const B: BrowserTarget = { ...A, tabId: 'b' as BrowserTarget['tabId'] }
 describe('planOfficialPageReconcile', () => {
   it('attaches unmatched official pages to empty sidebar tabs', () => {
     const planned = planOfficialPageReconcile(
-      [{ target: A }, { target: B }],
+      [{ target: A, revision: 1 }, { target: B, revision: 2 }],
       [{ id: 'browser:1' }],
       new Map(),
     )
@@ -36,11 +36,11 @@ describe('planOfficialPageReconcile', () => {
 
   it('closes the official page when a known sidebar tab disappears', () => {
     const planned = planOfficialPageReconcile(
-      [{ target: A }],
+      [{ target: A, revision: 1 }],
       [],
       new Map([['browser:1', 'p/w/b/a']]),
     )
-    expect(planned.actions).toEqual([{ kind: 'closeOfficial', target: A }])
+    expect(planned.actions).toEqual([{ kind: 'closeOfficial', target: A, revision: 1 }])
     expect(planned.known.size).toBe(0)
   })
 
@@ -62,7 +62,7 @@ describe('planOfficialPageReconcile', () => {
 
   it('keeps an already bound pair without actions', () => {
     const planned = planOfficialPageReconcile(
-      [{ target: A }],
+      [{ target: A, revision: 1 }],
       [{ id: 'browser:1', meta: officialTabMeta(A) }],
       new Map([['browser:1', 'p/w/b/a']]),
     )

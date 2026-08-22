@@ -293,6 +293,16 @@ describe('Electron Browser HTTP protocol', () => {
       status: 200,
       body: { ok: true, revision: typedBody.revision + 1 },
     })
+    const urlOnly = await json(server.origin, '/input', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        tabId: firstBody.tab.id,
+        expectedRevision: typedBody.revision,
+        url: 'https://example.test/',
+      }),
+    })
+    expect(urlOnly.status).toBe(409)
     const missingRevision = await json(server.origin, '/input', {
       method: 'POST',
       headers,

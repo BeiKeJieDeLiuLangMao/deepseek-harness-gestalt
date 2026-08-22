@@ -236,6 +236,23 @@ describe('SettingsRoot overlay document', () => {
     ;(globalThis as { dshDesktop?: unknown }).dshDesktop = {}
     mount()
     expect(screen.queryByRole('dialog')).toBeNull()
+    cleanup()
+    ;(globalThis as { dshDesktop?: unknown }).dshDesktop = 7
+    mount()
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('closes an overlay request when the optional result sink is absent', async () => {
+    document.documentElement.setAttribute('data-dsh-desktop-overlay', '')
+    ;(globalThis as { dshDesktop?: unknown }).dshDesktop = {
+      chromeOverlayShow: () => {},
+      chromeOverlayGetState: async () => ({ kind: 'settings', requestId: 'without-result' }),
+      onChromeOverlayState: () => () => {},
+      onChromeOverlayResult: () => () => {},
+    }
+    await act(async () => { mount() })
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+    expect(screen.getByRole('dialog')).toBeTruthy()
   })
 })
 

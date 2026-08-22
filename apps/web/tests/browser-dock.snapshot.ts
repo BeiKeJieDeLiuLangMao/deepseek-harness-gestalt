@@ -78,7 +78,7 @@ describe('assembled Browser Dock preview', () => {
       expect(shape).not.toContain('about:blank')
       return shape
     }, { timeout: 10_000 })
-    const shape = ['after-open', opened, 'after-refresh', refreshed].join('\n')
+    const shape = `${['after-open', opened, 'after-refresh', refreshed].join('\n')}\n`
     if (REFRESHING_GOLDEN) {
       mkdirSync(dirname(DOCK_EXPECTED), { recursive: true })
       writeFileSync(DOCK_EXPECTED, shape)

@@ -157,8 +157,11 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
   const requestId = useRef<string | null>(null)
   const close = useCallback(() => {
     if (mode === 'overlay') {
-      const id = requestId.current
-      if (id !== null) settingsDesktopBridge()?.chromeOverlayResult({ type: 'close', requestId: id })
+      const activeRequestId = requestId.current
+      if (activeRequestId === null) return
+      const bridge = settingsDesktopBridge()
+      if (bridge === undefined) return
+      bridge.chromeOverlayResult({ type: 'close', requestId: activeRequestId })
       return
     }
     setOpen(false)

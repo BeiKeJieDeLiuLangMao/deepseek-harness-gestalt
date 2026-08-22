@@ -185,6 +185,26 @@ describe('deterministic Browser Runtime public lifecycle', () => {
     })).rejects.toMatchObject({ code: 'BROWSER_UNKNOWN_URL' })
   })
 
+  it('keeps blank-page title on text input and adopts configured facts on URL-only input', async () => {
+    const ctx = new Context()
+    await ctx.plugin(BrowserRuntimeDeterministic, {
+      idPrefix: 'input-fields',
+      pages: [{ url: 'https://input.test/', title: 'Input', text: 'page text', screenshotPngBase64: PNG_1X1 }],
+    })
+    const created = await ctx.browserRuntime.create({ profile: 'temporary' })
+    const typed = await ctx.browserRuntime.input({
+      target: created.target,
+      expectedRevision: created.revision,
+      text: 'typed',
+    })
+    expect(typed).toMatchObject({ title: 'New Tab', text: 'typed' })
+    await expect(ctx.browserRuntime.input({
+      target: created.target,
+      expectedRevision: typed.revision,
+      url: 'https://input.test/',
+    })).resolves.toMatchObject({ title: 'Input', text: 'page text' })
+  })
+
   it('restores a named Profile identity after close and isolates two Profiles on one origin', async () => {
     const ctx = new Context()
     await ctx.plugin(BrowserRuntimeDeterministic, {

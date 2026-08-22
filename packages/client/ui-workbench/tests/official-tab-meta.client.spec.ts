@@ -25,6 +25,9 @@ describe('official tab meta', () => {
   })
 
   it('round-trips only complete Runtime Profile identities', () => {
+    expect(officialProfileOf(undefined)).toBeUndefined()
+    expect(officialProfileOf({ profile: null })).toBeUndefined()
+    expect(officialProfileOf({ profile: 'shared' })).toBeUndefined()
     expect(officialProfileOf(officialTabMeta(TARGET, { kind: 'temporary' }))).toEqual({ kind: 'temporary' })
     expect(officialProfileOf(officialTabMeta(TARGET, { kind: 'shared' }))).toEqual({ kind: 'shared' })
     expect(officialProfileOf(officialTabMeta(TARGET, { kind: 'persistent', name: 'test' }))).toEqual({
