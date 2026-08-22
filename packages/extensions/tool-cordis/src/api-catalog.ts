@@ -1338,6 +1338,61 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         throws: ['RemoteAccessError `QUOTA` or `PLATFORM_CAPACITY` with `retryAfter` seconds.', 'TypeError when `clientIp` is empty.'],
       },
       {
+        signature: 'abstract createEndpointChallenge(input: { desktop: PairingAccountAuthentication rendezvousId: PairingRendezvousId clientIp: string invitationPayload: Uint8Array desktopFingerprint: string expiresAt: number }): Promise<EndpointPairingChallengeView>',
+        description: 'Register one Desktop-created invitation whose private state remains endpoint-owned.',
+        parameters: [{ name: 'input', description: 'Desktop authorization, opaque invitation, fingerprint, expiry, and client quota identity.' }],
+        returns: 'link/QR projection carrying the opaque payload.',
+      },
+      {
+        signature: 'abstract cancelEndpointChallenge(input: { desktop: PairingAccountAuthentication challengeId: PairingChallengeId }): Promise<void>',
+        description: 'Cancel one unused endpoint-owned invitation.',
+        parameters: [{ name: 'input', description: 'authenticated Desktop ownership and challenge identity.' }],
+      },
+      {
+        signature: 'abstract submitEndpointMessage1(input: { mobile: PairingAccountAuthentication challengeId: PairingChallengeId completionId: PairingCompletionId device: PairingDeviceDescription message1: Uint8Array }): Promise<{ pendingPairingId: PendingPairingId }>',
+        description: 'Submit Mobile XKpsk3 message 1 to the authenticated Desktop mailbox.',
+        parameters: [{ name: 'input', description: 'Mobile authorization, challenge/completion identities, installation metadata, and opaque message.' }],
+        returns: 'stable pending identity.',
+      },
+      {
+        signature: 'abstract listEndpointPending(desktop: PairingAccountAuthentication): Promise<readonly EndpointPairingDesktopView[]>',
+        description: 'Read endpoint-owned pending work for this Desktop.',
+        parameters: [{ name: 'desktop', description: 'authenticated Desktop installation.' }],
+        returns: 'opaque message 1/3 projections.',
+      },
+      {
+        signature: 'abstract submitEndpointMessage2(input: { desktop: PairingAccountAuthentication pendingPairingId: PendingPairingId message2: Uint8Array }): Promise<void>',
+        description: 'Submit Desktop XKpsk3 message 2.',
+        parameters: [{ name: 'input', description: 'Desktop ownership, pending identity, and opaque response.' }],
+      },
+      {
+        signature: 'abstract getEndpointPairingStatus(input: { mobile: PairingAccountAuthentication completionId: PairingCompletionId }): Promise<EndpointPairingMobileView>',
+        description: 'Read Mobile mailbox progress by idempotency identity.',
+        parameters: [{ name: 'input', description: 'Mobile ownership and completion identity.' }],
+        returns: 'current opaque mailbox stage.',
+      },
+      {
+        signature: 'abstract submitEndpointMessage3(input: { mobile: PairingAccountAuthentication completionId: PairingCompletionId message3: Uint8Array }): Promise<void>',
+        description: 'Submit Mobile XKpsk3 message 3.',
+        parameters: [{ name: 'input', description: 'Mobile ownership, completion identity, and opaque finish.' }],
+      },
+      {
+        signature: 'abstract confirmEndpointPairing(input: { desktop: PairingAccountAuthentication pendingPairingId: PendingPairingId mobileCredentialDigest: Uint8Array }): Promise<EndpointPairingConfirmation>',
+        description: 'Record that Desktop authenticated message 3 locally.',
+        parameters: [{ name: 'input', description: 'Desktop ownership and pending identity.' }],
+        returns: 'confirmed pairing and digest-registered Relay route metadata.',
+      },
+      {
+        signature: 'abstract rejectEndpointPairing(input: { desktop: PairingAccountAuthentication pendingPairingId: PendingPairingId }): Promise<void>',
+        description: 'Reject one endpoint-owned pending handshake.',
+        parameters: [{ name: 'input', description: 'authenticated Desktop ownership and pending identity.' }],
+      },
+      {
+        signature: 'abstract deliverEndpointRelayAuthority(input: { desktop: PairingAccountAuthentication pendingPairingId: PendingPairingId sealedRelayAuthority: Uint8Array }): Promise<void>',
+        description: 'Forward Desktop-sealed Mobile Relay authority without opening it.',
+        parameters: [{ name: 'input', description: 'confirmed Desktop ownership and opaque transport ciphertext.' }],
+      },
+      {
         signature: 'abstract getMobileAccessState(desktop: PairingAccountAuthentication): Promise<MobileAccessState>',
         description: 'Read the current Desktop Installation\'s Mobile Access state.',
         parameters: [{ name: 'desktop', description: 'current Desktop authorization.' }],
@@ -1499,6 +1554,17 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'a fresh credential at the current route revision.',
       },
       {
+        signature: 'abstract registerCredentialDigest( routeId: RelayRouteId, endpoint: \'mobile\' | \'desktop\', credentialDigest: Uint8Array, pairingSelector?: RelayPairingSelector, ): Promise<number>',
+        description: 'Register endpoint-generated authority without receiving its bearer credential.',
+        parameters: [{ name: 'routeId', description: 'active route receiving Mobile authority.' }, { name: 'endpoint', description: 'endpoint kind bound to the digest.' }, { name: 'credentialDigest', description: 'SHA-256 digest of the endpoint-owned credential.' }, { name: 'pairingSelector', description: 'non-secret pairing selector retained beside the digest.' }],
+        returns: 'current active route revision.',
+      },
+      {
+        signature: 'abstract revokeCredentialDigest( routeId: RelayRouteId, endpoint: \'mobile\' | \'desktop\', credentialDigest: Uint8Array, ): Promise<void>',
+        description: 'Remove endpoint-generated authority by its retained digest.',
+        parameters: [{ name: 'routeId', description: 'route owning the authority.' }, { name: 'endpoint', description: 'endpoint kind bound to the digest.' }, { name: 'credentialDigest', description: 'exact retained SHA-256 digest.' }],
+      },
+      {
         signature: 'abstract revokeCredential(grant: RelayCredentialGrant): Promise<void>',
         description: 'Remove one issued endpoint credential without revoking its route peers.',
         parameters: [{ name: 'grant', description: 'exact issued authority whose ownership did not commit.' }],
@@ -1509,7 +1575,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'routeId', description: 'opaque route whose current authority becomes invalid.' }],
       },
       {
-        signature: 'abstract attach(input: { message: RelayAttachMessage deliver: (message: RelayCiphertextMessage) => Promise<void> close?: () => void | Promise<void> signal?: AbortSignal announce?: (message: RelayReadyMessage) => Promise<void> }): Promise<RemoteRelayAttachment>',
+        signature: 'abstract attach(input: { message: RelayAttachMessage deliver: (message: RelayCiphertextMessage | RelayPeerUpdateMessage) => Promise<void> close?: () => void | Promise<void> signal?: AbortSignal announce?: (message: RelayReadyMessage) => Promise<void> }): Promise<RemoteRelayAttachment>',
         description: 'Authenticate one outbound Mobile or Desktop attachment and register it only after `announce` flushes ready.',
         parameters: [{ name: 'input', description: 'attach frame, socket writer, optional close callback, and optional ready flush.' }],
         returns: 'the admitted attachment receiving later frames from that socket.',
@@ -3847,6 +3913,38 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface EncodedImageAttachment {\n    mediaType: ImageMediaType;\n    data: string;\n    name?: string;\n}',
   },
   {
+    name: 'EndpointOwnedPairingMailbox',
+    declaration: 'export class EndpointOwnedPairingMailbox {\n    constructor(private readonly options: {\n        pendingPairingId(): PendingPairingId;\n        state?: EndpointOwnedPairingMailboxState;\n    });\n    createChallenge(input: EndpointPairingMailboxChallenge): void;\n    submitMessage1(input: {\n        challengeId: PairingChallengeId;\n        completionId: PairingCompletionId;\n        accountId: PlatformAccountId;\n        mobileInstallationId: InstallationId;\n        device: PairingDeviceDescription;\n        message1: Uint8Array;\n        now: number;\n    }): {\n        pendingPairingId: PendingPairingId;\n    };\n    readDesktop(pendingPairingId: PendingPairingId, accountId: PlatformAccountId, desktopInstallationId: InstallationId): {\n        stage: \'message1\';\n        message1: Uint8Array;\n        device: PairingDeviceDescription;\n    } | {\n        stage: \'message3\';\n        message1: Uint8Array;\n        message2: Uint8Array;\n        message3: Uint8Array;\n        device: PairingDeviceDescription;\n    } | {\n        stage: \'confirmed\';\n        device: PairingDeviceDescription;\n    };\n    submitMessage2(input: {\n        pendingPairingId: PendingPairingId;\n        accountId: PlatformAccountId;\n        desktopInstallationId: InstallationId;\n        message2: Uint8Array;\n    }): {\n        completionId: PairingCompletionId;\n    };\n    readMobile(completionId: PairingCompletionId, accountId: PlatformAccountId, mobileInstallationId: InstallationId): {\n        stage: \'awaiting-desktop\';\n        pe /* …truncated — full shape in source */',
+  },
+  {
+    name: 'EndpointOwnedPairingMailboxState',
+    declaration: 'export interface EndpointOwnedPairingMailboxState {\n    challenges: readonly EndpointPairingMailboxChallenge[];\n    pending: readonly EndpointPairingMailboxPending[];\n}',
+  },
+  {
+    name: 'EndpointPairingChallengeView',
+    declaration: 'export interface EndpointPairingChallengeView {\n    challengeId: PairingChallengeId;\n    expiresAt: number;\n    desktopFingerprint: string;\n    oneTimeLink: string;\n    qrPayload: string;\n}',
+  },
+  {
+    name: 'EndpointPairingConfirmation',
+    declaration: 'export interface EndpointPairingConfirmation {\n    pairing: PersonalPairingView;\n    routeId: RelayRouteId;\n    relayRevision: number;\n}',
+  },
+  {
+    name: 'EndpointPairingDesktopView',
+    declaration: 'export type EndpointPairingDesktopView = {\n    pendingPairingId: PendingPairingId;\n    challengeId: PairingChallengeId;\n} & ReturnType<EndpointOwnedPairingMailbox[\'readDesktop\']>;',
+  },
+  {
+    name: 'EndpointPairingMailboxChallenge',
+    declaration: 'export interface EndpointPairingMailboxChallenge {\n    challengeId: PairingChallengeId;\n    accountId: PlatformAccountId;\n    desktopInstallationId: InstallationId;\n    expiresAt: number;\n    invitationPayload: Uint8Array;\n    completionId?: PairingCompletionId;\n    pendingPairingId?: PendingPairingId;\n}',
+  },
+  {
+    name: 'EndpointPairingMailboxPending',
+    declaration: 'export interface EndpointPairingMailboxPending {\n    pendingPairingId: PendingPairingId;\n    completionId: PairingCompletionId;\n    challengeId: PairingChallengeId;\n    accountId: PlatformAccountId;\n    desktopInstallationId: InstallationId;\n    mobileInstallationId: InstallationId;\n    device: PairingDeviceDescription;\n    message1: Uint8Array;\n    message2?: Uint8Array;\n    message3?: Uint8Array;\n    confirmed: boolean;\n    rejected: boolean;\n    pairingId?: import(\'./index.ts\').PersonalPairingId;\n    sealedRelayAuthority?: Uint8Array;\n}',
+  },
+  {
+    name: 'EndpointPairingMobileView',
+    declaration: 'export type EndpointPairingMobileView = ReturnType<EndpointOwnedPairingMailbox[\'readMobile\']>;',
+  },
+  {
     name: 'EpochHeader',
     declaration: 'export interface EpochHeader {\n    config: LlmCallConfig;\n    adapterDefaults?: LlmCallConfigAdapterDefaults;\n    system?: string;\n    tools?: ToolSchema[];\n}',
   },
@@ -4525,6 +4623,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'RelayPeerDescriptor',
     declaration: 'export interface RelayPeerDescriptor {\n    attachmentId: RelayAttachmentId;\n    pairingSelector: RelayPairingSelector;\n    generation: number;\n}',
+  },
+  {
+    name: 'RelayPeerUpdateMessage',
+    declaration: 'export interface RelayPeerUpdateMessage {\n    type: \'peer-update\';\n    transportVersion: 1;\n    routeId: RelayRouteId;\n    attachmentId: RelayAttachmentId;\n    peers: readonly RelayPeerDescriptor[];\n}',
   },
   {
     name: 'RelayReadyMessage',

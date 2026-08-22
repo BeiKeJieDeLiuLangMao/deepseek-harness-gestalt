@@ -46,6 +46,61 @@ Remote Access capability owning the complete Personal Pairing lifecycle.
  */
 abstract createChallenge(input: { desktop: PairingAccountAuthentication rendezvousId: PairingRendezvousId clientIp: string }): Promise<PairingChallengeView>
 
+/** Register one Desktop-created invitation whose private state remains endpoint-owned.
+ * @param input - Desktop authorization, opaque invitation, fingerprint, expiry, and client quota identity.
+ * @returns link/QR projection carrying the opaque payload.
+ */
+abstract createEndpointChallenge(input: { desktop: PairingAccountAuthentication rendezvousId: PairingRendezvousId clientIp: string invitationPayload: Uint8Array desktopFingerprint: string expiresAt: number }): Promise<EndpointPairingChallengeView>
+
+/** Cancel one unused endpoint-owned invitation.
+ * @param input - authenticated Desktop ownership and challenge identity.
+ */
+abstract cancelEndpointChallenge(input: { desktop: PairingAccountAuthentication challengeId: PairingChallengeId }): Promise<void>
+
+/** Submit Mobile XKpsk3 message 1 to the authenticated Desktop mailbox.
+ * @param input - Mobile authorization, challenge/completion identities, installation metadata, and opaque message.
+ * @returns stable pending identity.
+ */
+abstract submitEndpointMessage1(input: { mobile: PairingAccountAuthentication challengeId: PairingChallengeId completionId: PairingCompletionId device: PairingDeviceDescription message1: Uint8Array }): Promise<{ pendingPairingId: PendingPairingId }>
+
+/** Read endpoint-owned pending work for this Desktop.
+ * @param desktop - authenticated Desktop installation.
+ * @returns opaque message 1/3 projections.
+ */
+abstract listEndpointPending(desktop: PairingAccountAuthentication): Promise<readonly EndpointPairingDesktopView[]>
+
+/** Submit Desktop XKpsk3 message 2.
+ * @param input - Desktop ownership, pending identity, and opaque response.
+ */
+abstract submitEndpointMessage2(input: { desktop: PairingAccountAuthentication pendingPairingId: PendingPairingId message2: Uint8Array }): Promise<void>
+
+/** Read Mobile mailbox progress by idempotency identity.
+ * @param input - Mobile ownership and completion identity.
+ * @returns current opaque mailbox stage.
+ */
+abstract getEndpointPairingStatus(input: { mobile: PairingAccountAuthentication completionId: PairingCompletionId }): Promise<EndpointPairingMobileView>
+
+/** Submit Mobile XKpsk3 message 3.
+ * @param input - Mobile ownership, completion identity, and opaque finish.
+ */
+abstract submitEndpointMessage3(input: { mobile: PairingAccountAuthentication completionId: PairingCompletionId message3: Uint8Array }): Promise<void>
+
+/** Record that Desktop authenticated message 3 locally.
+ * @param input - Desktop ownership and pending identity.
+ * @returns confirmed pairing and digest-registered Relay route metadata.
+ */
+abstract confirmEndpointPairing(input: { desktop: PairingAccountAuthentication pendingPairingId: PendingPairingId mobileCredentialDigest: Uint8Array }): Promise<EndpointPairingConfirmation>
+
+/** Reject one endpoint-owned pending handshake.
+ * @param input - authenticated Desktop ownership and pending identity.
+ */
+abstract rejectEndpointPairing(input: { desktop: PairingAccountAuthentication pendingPairingId: PendingPairingId }): Promise<void>
+
+/** Forward Desktop-sealed Mobile Relay authority without opening it.
+ * @param input - confirmed Desktop ownership and opaque transport ciphertext.
+ */
+abstract deliverEndpointRelayAuthority(input: { desktop: PairingAccountAuthentication pendingPairingId: PendingPairingId sealedRelayAuthority: Uint8Array }): Promise<void>
+
 /**
  * Read the current Desktop Installation's Mobile Access state.
  * @param desktop - current Desktop authorization.
@@ -146,7 +201,7 @@ abstract admitAttachmentBlob(input: { owner: PairingAccountAuthentication bytes:
 abstract releaseAttachmentBlob(input: { owner: PairingAccountAuthentication reservationId: string }): Promise<void>
 ```
 
-Source: [`packages/platform/remote-access/src/index.ts:444`](../../packages/platform/remote-access/src/index.ts)
+Source: [`packages/platform/remote-access/src/index.ts:461`](../../packages/platform/remote-access/src/index.ts)
 
 <a id="ctxremoteattachmentauthority--remoteattachmentauthority"></a>
 
@@ -234,6 +289,23 @@ abstract rotateCredential(routeId: RelayRouteId, endpoint?: 'mobile' | 'desktop'
 abstract issueCredential( routeId: RelayRouteId, endpoint?: 'mobile' | 'desktop', pairingSelector?: RelayPairingSelector, ): Promise<RelayCredentialGrant>
 
 /**
+ * Register endpoint-generated authority without receiving its bearer credential.
+ * @param routeId - active route receiving Mobile authority.
+ * @param endpoint - endpoint kind bound to the digest.
+ * @param credentialDigest - SHA-256 digest of the endpoint-owned credential.
+ * @param pairingSelector - non-secret pairing selector retained beside the digest.
+ * @returns current active route revision.
+ */
+abstract registerCredentialDigest( routeId: RelayRouteId, endpoint: 'mobile' | 'desktop', credentialDigest: Uint8Array, pairingSelector?: RelayPairingSelector, ): Promise<number>
+
+/** Remove endpoint-generated authority by its retained digest.
+ * @param routeId - route owning the authority.
+ * @param endpoint - endpoint kind bound to the digest.
+ * @param credentialDigest - exact retained SHA-256 digest.
+ */
+abstract revokeCredentialDigest( routeId: RelayRouteId, endpoint: 'mobile' | 'desktop', credentialDigest: Uint8Array, ): Promise<void>
+
+/**
  * Remove one issued endpoint credential without revoking its route peers.
  * @param grant - exact issued authority whose ownership did not commit.
  */
@@ -250,8 +322,8 @@ abstract revokeRoute(routeId: RelayRouteId): Promise<void>
  * @param input - attach frame, socket writer, optional close callback, and optional ready flush.
  * @returns the admitted attachment receiving later frames from that socket.
  */
-abstract attach(input: { message: RelayAttachMessage deliver: (message: RelayCiphertextMessage) => Promise<void> close?: () => void | Promise<void> signal?: AbortSignal announce?: (message: RelayReadyMessage) => Promise<void> }): Promise<RemoteRelayAttachment>
+abstract attach(input: { message: RelayAttachMessage deliver: (message: RelayCiphertextMessage | RelayPeerUpdateMessage) => Promise<void> close?: () => void | Promise<void> signal?: AbortSignal announce?: (message: RelayReadyMessage) => Promise<void> }): Promise<RemoteRelayAttachment>
 ```
 
-Source: [`packages/platform/remote-access/src/relay.ts:162`](../../packages/platform/remote-access/src/relay.ts)
+Source: [`packages/platform/remote-access/src/relay.ts:167`](../../packages/platform/remote-access/src/relay.ts)
 <!-- END GENERATED cordis-surface -->
