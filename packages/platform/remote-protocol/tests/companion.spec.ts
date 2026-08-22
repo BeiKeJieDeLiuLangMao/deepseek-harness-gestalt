@@ -628,6 +628,122 @@ describe('Encrypted Companion Protocol codec', () => {
       result: { type: 'attachment-rejected', operationId: 'operation-attachment', reason: 'unknown' },
     }))).toThrow(expect.objectContaining<Partial<RemoteProtocolError>>({ code: 'REMOTE_PROTOCOL_INVALID_MESSAGE' }))
   })
+
+  it('round-trips authoritative Session search and stable Host failures', () => {
+    const negotiated = negotiateFresh(
+      createCompanionVersionOffer('mobile', [1, 2]),
+      createCompanionVersionOffer('desktop', [1, 2]),
+    )
+    const operationId = parseCompanionOperationId('operation-search')
+    const search = json({
+      applicationVersion: 2,
+      type: 'operation',
+      operation: { type: 'search-sessions', operationId, query: 'attachment receipt' },
+    })
+    expect(decodeCompanionMessage(negotiated, search)).toEqual({
+      type: 'operation',
+      operation: { type: 'search-sessions', operationId, query: 'attachment receipt' },
+    })
+
+    const result = json({
+      applicationVersion: 2,
+      type: 'result',
+      result: {
+        type: 'session-search',
+        operationId,
+        items: [{ sessionId: 'session-attachment', snippet: 'matching attachment receipt' }],
+        hasMore: false,
+      },
+    })
+    expect(decodeCompanionMessage(negotiated, result)).toEqual({
+      type: 'result',
+      result: {
+        type: 'session-search',
+        operationId,
+        items: [{
+          sessionId: parseCompanionSessionId('session-attachment'),
+          snippet: 'matching attachment receipt',
+        }],
+        hasMore: false,
+      },
+    })
+
+    const failures = [
+      { kind: 'http', code: 'HOST_HTTP_STATUS', message: 'Desktop Host returned HTTP 400', status: 400 },
+      { kind: 'wire', code: 'HOST_WIRE_INVALID', message: 'Desktop Host response was not valid RPC JSON' },
+      { kind: 'business', code: 'bad-request', message: 'invalid payload for session.search' },
+      { kind: 'timeout', code: 'HOST_TIMEOUT', message: 'Desktop Host request timed out' },
+    ] as const
+    for (const failure of failures) {
+      const encoded = json({
+        applicationVersion: 2,
+        type: 'result',
+        result: { type: 'operation-failed', operationId, failure },
+      })
+      expect(decodeCompanionMessage(negotiated, encoded)).toEqual({
+        type: 'result',
+        result: { type: 'operation-failed', operationId, failure },
+      })
+    }
+  })
+
+  it('rejects malformed Session search and Host failure values at the Companion boundary', () => {
+    const negotiated = negotiateFresh(
+      createCompanionVersionOffer('mobile', [1, 2]),
+      createCompanionVersionOffer('desktop', [1, 2]),
+    )
+    const decodeOperation = (operation: unknown) => decodeCompanionMessage(negotiated, json({
+      applicationVersion: 2, type: 'operation', operation,
+    }))
+    for (const query of [undefined, ' ', 'bad\0query', 'x'.repeat(501)]) {
+      expect(() => decodeOperation({ type: 'search-sessions', operationId: 'search-invalid', query }))
+        .toThrow(expect.objectContaining<Partial<RemoteProtocolError>>({ code: 'REMOTE_PROTOCOL_INVALID_MESSAGE' }))
+    }
+
+    const decodeResult = (result: unknown) => decodeCompanionMessage(negotiated, json({
+      applicationVersion: 2, type: 'result', result,
+    }))
+    const searchBase = {
+      type: 'session-search',
+      operationId: 'search-invalid',
+      items: [{ sessionId: 'session-one', snippet: 'one' }],
+      hasMore: false,
+    }
+    const invalidSearchResults = [
+      { ...searchBase, items: null },
+      { ...searchBase, items: Array.from({ length: 21 }, (_, index) => ({ sessionId: `s-${String(index)}`, snippet: '' })) },
+      { ...searchBase, hasMore: 'false' },
+      { ...searchBase, items: [null] },
+      { ...searchBase, items: [{ sessionId: 'session-one' }] },
+      { ...searchBase, items: [{ sessionId: 'session-one', snippet: '😀'.repeat(241) }] },
+      { ...searchBase, items: [{ sessionId: 'session-one', snippet: 'one' }, { sessionId: 'session-one', snippet: 'two' }] },
+    ]
+    for (const result of invalidSearchResults) {
+      expect(() => decodeResult(result)).toThrow(
+        expect.objectContaining<Partial<RemoteProtocolError>>({ code: 'REMOTE_PROTOCOL_INVALID_MESSAGE' }),
+      )
+    }
+
+    const failure = (value: unknown) => ({ type: 'operation-failed', operationId: 'search-invalid', failure: value })
+    const invalidFailures = [
+      failure({ kind: 'wire', code: 'HOST_WIRE_INVALID', message: 1 }),
+      failure({ kind: 'wire', code: 'HOST_WIRE_INVALID', message: '' }),
+      failure({ kind: 'wire', code: 'HOST_WIRE_INVALID', message: 'x'.repeat(4_097) }),
+      failure({ kind: 'http', code: 'WRONG', message: 'bad', status: 400 }),
+      failure({ kind: 'http', code: 'HOST_HTTP_STATUS', message: 'bad', status: 99 }),
+      failure({ kind: 'http', code: 'HOST_HTTP_STATUS', message: 'bad', status: 600 }),
+      failure({ kind: 'http', code: 'HOST_HTTP_STATUS', message: 'bad', status: '400' }),
+      failure({ kind: 'wire', code: 'WRONG', message: 'bad' }),
+      failure({ kind: 'business', code: 'not valid', message: 'bad' }),
+      failure({ kind: 'timeout', code: 'WRONG', message: 'bad' }),
+      failure({ kind: 'unknown', code: 'UNKNOWN', message: 'bad' }),
+    ]
+    for (const result of invalidFailures) {
+      expect(() => decodeResult(result)).toThrow(
+        expect.objectContaining<Partial<RemoteProtocolError>>({ code: 'REMOTE_PROTOCOL_INVALID_MESSAGE' }),
+      )
+    }
+  })
 })
 
 function attachmentOffer(overrides: { fileName: string }): CompanionOfferAttachmentOperation {

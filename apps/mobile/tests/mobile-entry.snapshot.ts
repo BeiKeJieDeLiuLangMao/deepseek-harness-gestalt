@@ -13,8 +13,14 @@ import {
   PlatformAccountInstallation,
   type PlatformAccountTransport,
 } from '@deepseek-ai/dsh-platform-account-client'
-import { parseRelayCredential, parseRelayRouteId } from '@deepseek-ai/dsh-remote-protocol'
+import {
+  parseCompanionOperationId,
+  parseCompanionSessionId,
+  parseRelayCredential,
+  parseRelayRouteId,
+} from '@deepseek-ai/dsh-remote-protocol'
 import { CompanionForegroundRuntime, installCompanionRuntime } from '../src/companion-lifecycle.ts'
+import { CompanionAttachmentDeliveryUncertainError } from '../src/companion-attachment.ts'
 import { mountMobileEntry } from '../src/mobile-entry.tsx'
 
 const environment = selectPlatformEnvironment(validatePlatformEnvironmentPair({
@@ -63,8 +69,14 @@ describe('Mobile shipped entry foreground mutation gate', () => {
     const installation = installationWithCompletedLogin()
     const root = document.createElement('div')
     document.body.append(root)
+    let rejectAttachment: ((reason: unknown) => void) | undefined
+    const attachmentCompletion = new Promise<void>((_resolve, reject) => { rejectAttachment = reject })
 
-    const mounted = mountMobileEntry(root, { installation, companion: runtime })
+    const mounted = mountMobileEntry(root, {
+      installation,
+      companion: runtime,
+      companionChannel: mutationChannel(attachmentCompletion),
+    })
     const surface = mounted.companionSurface
 
     fireEvent.click(await screen.findByRole('checkbox'))
@@ -99,6 +111,44 @@ describe('Mobile shipped entry foreground mutation gate', () => {
       streaming: true,
     })
     await screen.findByRole('button', { name: /Guarded Session/ })
+
+    const results = surface.bindValidatedCompanionResults()
+    if (results === undefined) throw new Error('expected current Companion result receiver')
+    fireEvent.change(screen.getByRole('searchbox', { name: '搜索 Desktop Sessions' }), {
+      target: { value: 'authoritative' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '搜索' }))
+    results.acceptValidatedCompanionResult({
+      type: 'session-search',
+      operationId: parseCompanionOperationId('mobile-snapshot-search'),
+      items: [{
+        sessionId: parseCompanionSessionId('uncached-authoritative-session'),
+        snippet: 'Desktop-only authoritative hit',
+      }],
+      hasMore: false,
+    })
+    await screen.findByText('Desktop-only authoritative hit')
+    expect(screen.getByRole('region', { name: 'Desktop 搜索结果' }).textContent).toMatchInlineSnapshot(
+      '"Desktop 搜索结果uncached-authoritative-sessionDesktop-only authoritative hit"',
+    )
+    surface.search('')
+    surface.attach('guarded-session', selectedFile())
+    results.acceptValidatedCompanionResult({
+      type: 'attachment-rejected',
+      operationId: parseCompanionOperationId('mobile-snapshot-attachment'),
+      reason: 'hash-mismatch',
+    })
+    expect((await screen.findByRole('alert')).textContent)
+      .toBe('Desktop rejected the attachment: hash-mismatch')
+    surface.attach('guarded-session', selectedFile())
+    rejectAttachment?.(new CompanionAttachmentDeliveryUncertainError(
+      parseCompanionOperationId('mobile-snapshot-attachment'),
+      new Error('connection replaced'),
+    ))
+    await waitFor(() => {
+      expect(screen.getByRole('alert').textContent)
+        .toBe('Attachment delivery is uncertain; reconnect to reconcile it before retrying.')
+    })
 
     runtime.forgetConnection()
     runtime.markConnectionOpen()
@@ -153,6 +203,24 @@ function installationWithCompletedLogin(): PlatformAccountInstallation {
     systemBrowser: { open: vi.fn() },
     crypto: globalThis.crypto,
   })
+}
+
+function mutationChannel(attachmentCompletion: Promise<void>) {
+  return {
+    create: vi.fn(),
+    submit: vi.fn(),
+    cancel: vi.fn(),
+    attach: vi.fn(() => ({
+      operationId: parseCompanionOperationId('mobile-snapshot-attachment'),
+      completion: attachmentCompletion,
+    })),
+    search: vi.fn(() => parseCompanionOperationId('mobile-snapshot-search')),
+    settle: vi.fn(),
+  }
+}
+
+function selectedFile(): File {
+  return { name: 'visible.txt', arrayBuffer: async () => new ArrayBuffer(0) } as File
 }
 
 function visibleMutationControls(): string[] {

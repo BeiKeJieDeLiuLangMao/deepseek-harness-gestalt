@@ -94,4 +94,19 @@ describe('Mobile conversation renderer', () => {
     expect(screen.queryByRole('textbox')).toBeNull()
     expect(previewTerminalLines(lines).spilled).toBe(4)
   })
+
+  it('passes the real selected File to the encrypted attachment callback', () => {
+    const onAttach = vi.fn()
+    const file = new File([Uint8Array.of(0, 255, 1)], 'actual.bin', { type: 'application/octet-stream' })
+    render(createElement(MobileConversation, {
+      title: 'Attachment',
+      onBack: () => {},
+      blocks: [],
+      onSubmit: () => {},
+      onAttach,
+      companionState: { foreground: true, socketOpen: true, synchronized: true },
+    }))
+    fireEvent.change(screen.getByLabelText('添加附件'), { target: { files: [file] } })
+    expect(onAttach).toHaveBeenCalledWith(file)
+  })
 })

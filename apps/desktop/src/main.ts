@@ -21,8 +21,14 @@ import {
 } from '@deepseek-ai/dsh-client-ui-desktop/protocol'
 import { PlatformAccountHttpTransport } from '@deepseek-ai/dsh-platform-account-client'
 import { RemoteAccessHttpTransport } from '@deepseek-ai/dsh-remote-access-client'
+import { parsePersonalPairingId } from '@deepseek-ai/dsh-remote-access'
 import type { DesktopRelayLifecycle } from '@deepseek-ai/dsh-remote-access-client/desktop-relay-lifecycle'
 import type { SelectedPlatformEnvironment } from '@deepseek-ai/dsh-platform-account'
+import {
+  parseCompanionOperationId,
+  REMOTE_PROTOCOL_LIMITS,
+  type CompanionSearchSessionsOperation,
+} from '@deepseek-ai/dsh-remote-protocol'
 import { ensureLaunchDirectory } from './launch-directory.ts'
 import { isElectronExecutable, resolveDesktopRuntime } from './runtime-paths.ts'
 import { planHostExit, shouldPreventQuit, startWithOneRetry } from './host-exit.ts'
@@ -51,6 +57,8 @@ import { DesktopPairingKeyVault } from './pairing-keys.ts'
 import { disposeDesktopOwners } from './shutdown.ts'
 import { startDesktopBrowserRuntime, type DesktopBrowserRuntime } from './browser-runtime.ts'
 import { createDesktopRemoteRelay } from './remote-relay.ts'
+import { DesktopCompanionProductOwner } from './companion-product.ts'
+import { createDesktopHostRpc } from './host-rpc.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const PRELOAD = join(here, 'preload.cjs')
@@ -78,6 +86,10 @@ let stopPairingEvents: (() => void) | undefined
 let accountSignedIn = false
 const hostStartController = new AbortController()
 let pendingHost: Promise<RunningWebHost> | undefined
+const companionProduct = new DesktopCompanionProductOwner({
+  responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
+})
+let uninstallCompanionHost: (() => void) | undefined
 
 smokeLog('main loaded')
 const gotLock = app.requestSingleInstanceLock()
@@ -157,11 +169,12 @@ async function boot(): Promise<void> {
         () => !hostStartController.signal.aborted,
       )
     host = started.value
+    installCompanionHost(host)
     observeHostExit(host)
     smokeLog('host ' + host.url + ' pid ' + String(host.child.pid))
     await window.loadURL(host.url)
     if (process.env.DSH_DESKTOP_SMOKE === '1') {
-      await finishSmoke(window)
+      await finishSmoke(window, host.url)
       return
     }
   } catch (error) {
@@ -321,6 +334,7 @@ function observeHostExit(running: RunningWebHost): void {
 
 async function onHostExit(exited: RunningWebHost): Promise<void> {
   if (shuttingDown || host !== exited) return
+  clearCompanionHost()
   host = undefined
   const plan = planHostExit(window !== undefined && !window.isDestroyed(), respawned)
   if (plan === 'ignore' || window === undefined) return
@@ -328,6 +342,7 @@ async function onHostExit(exited: RunningWebHost): Promise<void> {
     respawned = true
     try {
       host = await startHost()
+      installCompanionHost(host)
       observeHostExit(host)
       await window.loadURL(host.url)
     } catch (error) {
@@ -356,7 +371,7 @@ function installIntegrationsOnce(): void {
   })
 }
 
-async function finishSmoke(target: BrowserWindow): Promise<void> {
+async function finishSmoke(target: BrowserWindow, hostUrl: string): Promise<void> {
   const evidence: unknown = await target.webContents.executeJavaScript(`(async () => {
     const bridge = window.dshDesktop
     const updaterStatus = await bridge?.getStatus()
@@ -418,6 +433,66 @@ async function finishSmoke(target: BrowserWindow): Promise<void> {
     requestShutdown(1)
     return
   }
+  const smokeRpc = createDesktopHostRpc(hostUrl, {
+    timeoutMs: 10_000,
+    responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
+  })
+  const sessionId = 'desktop-smoke-indexed-session'
+  const needle = 'desktop-companion-smoke-indexed-needle'
+  const created = await smokeRpc.call('session.create', { sessionId })
+  const prompted = created.ok
+    ? await smokeRpc.call('session.prompt', {
+      sessionId,
+      mode: 'queue',
+      content: [{ type: 'text', text: needle }],
+    })
+    : created
+  if (!created.ok || !prompted.ok) {
+    smokeLog(`companion entry seed failed ${JSON.stringify(!created.ok ? created : prompted)}`)
+    console.error('dsh desktop smoke: Companion Session seed failed', !created.ok ? created : prompted)
+    requestShutdown(1)
+    return
+  }
+  const hitOperation: CompanionSearchSessionsOperation = {
+    type: 'search-sessions',
+    operationId: parseCompanionOperationId('desktop-smoke-search-hit'),
+    query: needle,
+  }
+  const dependencies = {
+    pairingId: parsePersonalPairingId('desktop-smoke-pairing'),
+    pairingKey: new Uint8Array(32),
+    now: Date.now,
+    downloadAttachment: () => Promise.reject(new Error('Desktop smoke search must not download an attachment')),
+    submitAttachment: () => Promise.reject(new Error('Desktop smoke search must not submit an attachment')),
+  }
+  let hitEvidence = await companionProduct.handle(hitOperation, dependencies)
+  const searchDeadline = Date.now() + 10_000
+  while (
+    Date.now() < searchDeadline
+    && (hitEvidence.type !== 'session-search'
+      || hitEvidence.items.every(item => item.sessionId !== sessionId || !item.snippet.includes(needle)))
+  ) {
+    await new Promise(resolve => setTimeout(resolve, 50))
+    hitEvidence = await companionProduct.handle(hitOperation, dependencies)
+  }
+  smokeLog(`companion entry search hit ${JSON.stringify(hitEvidence)}`)
+  if (hitEvidence.type !== 'session-search'
+    || hitEvidence.items.every(item => item.sessionId !== sessionId || !item.snippet.includes(needle))) {
+    console.error('dsh desktop smoke: Companion entry indexed search failed', hitEvidence)
+    requestShutdown(1)
+    return
+  }
+  const noHitEvidence = await companionProduct.handle({
+    type: 'search-sessions',
+    operationId: parseCompanionOperationId('desktop-smoke-search-no-hit'),
+    query: 'desktop-companion-smoke-no-hit',
+  }, dependencies)
+  smokeLog(`companion entry search no-hit ${JSON.stringify(noHitEvidence)}`)
+  if (noHitEvidence.type !== 'session-search' || noHitEvidence.items.length !== 0) {
+    console.error('dsh desktop smoke: Companion entry no-hit search failed', noHitEvidence)
+    requestShutdown(1)
+    return
+  }
   smokeLog('ok')
   console.log('dsh desktop smoke: ok')
   smokeLog(`relay production-gate ${JSON.stringify(pairing.getRelayState())}`)
@@ -443,6 +518,7 @@ function requestShutdown(exitCode: number, mode: 'exit' | 'allow-quit' = 'exit')
   hostStartController.abort()
   const starting = pendingHost
   const running = host
+  clearCompanionHost()
   host = undefined
   void (async () => {
     try {
@@ -460,6 +536,16 @@ function requestShutdown(exitCode: number, mode: 'exit' | 'allow-quit' = 'exit')
       if (mode === 'exit') app.exit(1)
     }
   })()
+}
+
+function installCompanionHost(running: RunningWebHost): void {
+  clearCompanionHost()
+  uninstallCompanionHost = companionProduct.installHost(running.url)
+}
+
+function clearCompanionHost(): void {
+  uninstallCompanionHost?.()
+  uninstallCompanionHost = undefined
 }
 
 function installIpc(): void {

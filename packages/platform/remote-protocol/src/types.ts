@@ -64,6 +64,14 @@ export interface CompanionOfferAttachmentOperation {
   fileName: string
 }
 
+/** Authoritative full-text Session search delegated to the Paired Desktop Host. */
+export interface CompanionSearchSessionsOperation {
+  type: 'search-sessions'
+  operationId: CompanionOperationId
+  /** Non-blank query accepted by the Host `session.search` request contract. */
+  query: string
+}
+
 /**
  * Stable explicit Companion attachment rejection reasons; never carry application data.
  *
@@ -88,6 +96,7 @@ export interface CompanionQueryOperationStatusOperation {
 export type CompanionOperation =
   | CompanionSubmitPromptOperation
   | CompanionOfferAttachmentOperation
+  | CompanionSearchSessionsOperation
   | CompanionQueryOperationStatusOperation
 
 /** Desktop-authoritative mutation result. */
@@ -103,6 +112,36 @@ export interface CompanionAttachmentRejectedResult {
   type: 'attachment-rejected'
   operationId: CompanionOperationId
   reason: CompanionAttachmentRejectionReason
+}
+
+/** One Desktop-authoritative full-text Session search hit. */
+export interface CompanionSessionSearchItem {
+  sessionId: CompanionSessionId
+  /** Bounded plain-text excerpt returned by Desktop `session.search`. */
+  snippet: string
+}
+
+/** Correlated authoritative search result from the Paired Desktop. */
+export interface CompanionSessionSearchResult {
+  type: 'session-search'
+  operationId: CompanionOperationId
+  items: readonly CompanionSessionSearchItem[]
+  /** Desktop has more matching Sessions and Mobile should ask for a narrower query. */
+  hasMore: boolean
+}
+
+/** Stable failure categories for one Desktop Host call. */
+export type CompanionHostFailure =
+  | { kind: 'http'; code: 'HOST_HTTP_STATUS'; message: string; status: number }
+  | { kind: 'wire'; code: 'HOST_WIRE_INVALID'; message: string }
+  | { kind: 'business'; code: string; message: string }
+  | { kind: 'timeout'; code: 'HOST_TIMEOUT'; message: string }
+
+/** Correlated Host refusal retained as application data through the encrypted channel. */
+export interface CompanionOperationFailedResult {
+  type: 'operation-failed'
+  operationId: CompanionOperationId
+  failure: CompanionHostFailure
 }
 
 /** Reconnect answer returning the original committed result for one operation id. */
@@ -123,6 +162,8 @@ export interface CompanionAbsentStatusResult {
 export type CompanionResult =
   | CompanionConfirmedResult
   | CompanionAttachmentRejectedResult
+  | CompanionSessionSearchResult
+  | CompanionOperationFailedResult
   | CompanionCommittedStatusResult
   | CompanionAbsentStatusResult
 

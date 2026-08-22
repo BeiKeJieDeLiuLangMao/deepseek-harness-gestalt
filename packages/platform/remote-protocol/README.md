@@ -12,7 +12,7 @@ Version 1 exposes only route attachment, opaque ciphertext forwarding, heartbeat
 
 Companion majors 2 and 1 are the current and immediately preceding application versions. Both endpoints must advertise authenticated encryption, pairing-key separation, and replay protection at the selected major. Negotiation selects the highest safe shared major regardless of offer-array order, so an unsafe shared major can fall back only to a safe immediately preceding major. Each logical endpoint connection owns a negotiation channel. Starting a negotiation on that channel invalidates its prior application-codec token before the offers are evaluated; a failed attempt leaves the channel inactive, while other channels remain valid. No safe version overlap fails with an endpoint-specific update requirement before application plaintext can be encoded.
 
-The implemented catalog contains a bounded transcript-page projection, a prompt-submission operation, an attachment-offer operation, a reconnect `query-operation-status` operation, a Desktop-confirmed result, an attachment-rejection result, and `status` answers that return the original committed result for a queried operation id or state explicitly that it committed nothing. The attachment-offer operation is the bounded control message for encrypted attachment transfer: it carries only a one-time blob capability, the ciphertext SHA-256, the exact ciphertext byte count, the capability expiry, and a bounded file name. Every identifier is branded by this protocol rather than imported from a Harness domain package. Unsupported operations and projection fields fail during decoding. A committed `status` answer embeds the confirmed result of the same operation id; an absent answer is only `{ absent: true }`.
+The implemented catalog contains a bounded transcript-page projection; prompt-submission, attachment-offer, authoritative `search-sessions`, and reconnect `query-operation-status` operations; Desktop-confirmed, attachment-rejection, correlated `session-search`, and `operation-failed` results; and `status` answers that return the original committed result for a queried operation id or state explicitly that it committed nothing. The attachment offer carries only a one-time blob capability, ciphertext SHA-256, exact ciphertext byte count, capability expiry, and bounded file name. Session search carries at most 20 unique Session/snippet pairs with 240 Unicode code points per snippet. Host failures preserve one of four closed categories: HTTP status, invalid wire response, typed business error, or timeout. Every identifier is branded by this protocol rather than imported from a Harness domain package. Unsupported operations and projection fields fail during decoding. A committed `status` answer embeds the confirmed result of the same operation id; an absent answer is only `{ absent: true }`.
 
 ## Endpoint attachment cipher
 
@@ -31,6 +31,10 @@ The implemented catalog contains a bounded transcript-page projection, a prompt-
 | Companion application before encryption | 61,440 bytes (60 KiB) |
 | Complete encoded transcript-page message | 49,152 bytes (48 KiB) |
 | Transcript page | 50 entries |
+| Session search query | 500 UTF-16 code units |
+| Session search result | 20 unique Sessions |
+| Session search snippet | 240 Unicode code points |
+| Host failure message | 4,096 UTF-8 bytes |
 | Retained attachment blob | 104,857,600 ciphertext bytes (100 MiB) |
 | Attachment capability lifetime | 900,000 ms (15 minutes) |
 | Attachment file name | 255 UTF-8 bytes |
@@ -49,5 +53,5 @@ None.
 
 ## Known Limitations and Deferred Work
 
-- The current Companion catalog proves prompt submission, attachment offers, operation-status query, transcript projection, and the confirmed, attachment-rejected, and status result kinds; discovery, creation, interaction, and cancellation messages require later protocol additions before their adapters can expose them.
+- The current Companion catalog proves prompt submission, attachment offers, authoritative Session search, operation-status query, transcript projection, and the confirmed, attachment-rejected, session-search, operation-failed, and status result kinds; discovery, creation, interaction, and cancellation messages require later protocol additions before their adapters can expose them.
 - Pairing handshakes, credential persistence, challenge lifecycle, token fan-out, and production Companion message encryption belong to service or reviewed endpoint integrations, not these codecs.

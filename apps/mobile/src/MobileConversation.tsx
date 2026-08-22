@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import { settleCompanionInteraction, type CompanionInteraction } from './companion-approval.ts'
 import { companionMayMutate, type CompanionConnectionState } from './companion-lifecycle.ts'
 import { formatToolArgs, previewTerminalLines, type MobileContentBlock } from './mobile-content.ts'
@@ -17,7 +17,7 @@ export interface MobileConversationProps {
   /** Cancel active execution through Desktop cancellation. */
   onCancel?: () => void
   /** Select an attachment for encrypted transfer through Desktop. */
-  onAttach?: () => void
+  onAttach?: (file: File) => void
   /** Whether Desktop is currently streaming. */
   streaming?: boolean
   /** Process visibility required before any interaction settlement. */
@@ -31,6 +31,7 @@ export function MobileConversation({
   title, onBack, blocks, onSubmit, onCancel, onAttach, streaming = false, companionState, onSettled,
 }: MobileConversationProps): ReactNode {
   const [draft, setDraft] = useState('')
+  const attachmentInput = useRef<HTMLInputElement>(null)
   const mayMutate = companionMayMutate(companionState)
   return (
     <section className={css.page} data-mobile-conversation="detail">
@@ -69,7 +70,25 @@ export function MobileConversation({
             <button type="button" disabled={!mayMutate} onClick={() => { if (mayMutate) onCancel() }}>取消</button>
           )}
           {onAttach !== undefined && (
-            <button type="button" disabled={!mayMutate} onClick={() => { if (mayMutate) onAttach() }}>添加附件</button>
+            <>
+              <input
+                ref={attachmentInput}
+                type="file"
+                aria-label="添加附件"
+                hidden
+                disabled={!mayMutate}
+                onChange={(event) => {
+                  const file = event.target.files?.[0]
+                  if (file !== undefined && mayMutate) onAttach(file)
+                  event.target.value = ''
+                }}
+              />
+              <button
+                type="button"
+                disabled={!mayMutate}
+                onClick={() => { if (mayMutate) attachmentInput.current?.click() }}
+              >添加附件</button>
+            </>
           )}
         </form>
       )}

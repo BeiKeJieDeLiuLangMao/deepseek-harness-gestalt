@@ -8,6 +8,10 @@ import type { CompanionInteraction } from './companion-approval.ts'
 import { createCompanionSession, type CompanionSessionSummary } from './companion-history.ts'
 import { MobileBrowse } from './MobileBrowse.tsx'
 import { MobilePairing, type MobilePairingActions } from './MobilePairing.tsx'
+import type {
+  MobileCompanionAttachmentSnapshot,
+  MobileCompanionSearchSnapshot,
+} from './companion-surface.ts'
 
 /** Mobile Account page props. */
 export interface MobileAccountProps {
@@ -21,7 +25,10 @@ export interface MobileAccountProps {
     onCreate?: (input: { workspace?: string }) => void
     onSubmit?: (sessionId: string, text: string) => void
     onCancel?: (sessionId: string) => void
-    onAttach?: (sessionId: string) => void
+    onAttach?: (sessionId: string, file: File) => void
+    attachment: MobileCompanionAttachmentSnapshot
+    search?: MobileCompanionSearchSnapshot
+    onSearch?: (query: string) => void
     streaming?: boolean
     onSettled?: (interaction: CompanionInteraction) => void
   }
@@ -127,6 +134,9 @@ export function MobileAccount({ installation, pairing, companionSurface }: Mobil
         </>
       )}
       {snapshot.error !== undefined && <p className={css.error} role="alert">{snapshot.error}</p>}
+      {signedIn && companionSurface?.attachment !== undefined
+        && 'message' in companionSurface.attachment
+        && <p className={css.error} role="alert">{companionSurface.attachment.message}</p>}
       {signedIn && pairing !== undefined && <MobilePairing actions={pairing} />}
       {signedIn && (
         <MobileBrowse
@@ -137,6 +147,8 @@ export function MobileAccount({ installation, pairing, companionSurface }: Mobil
           {...(companionSurface?.onSubmit === undefined ? {} : { onSubmit: companionSurface.onSubmit })}
           {...(companionSurface?.onCancel === undefined ? {} : { onCancel: companionSurface.onCancel })}
           {...(companionSurface?.onAttach === undefined ? {} : { onAttach: companionSurface.onAttach })}
+          {...(companionSurface?.search === undefined ? {} : { search: companionSurface.search })}
+          {...(companionSurface?.onSearch === undefined ? {} : { onSearch: companionSurface.onSearch })}
           {...(companionSurface?.streaming === undefined ? {} : { streaming: companionSurface.streaming })}
           {...(companionSurface?.onSettled === undefined ? {} : { onSettled: companionSurface.onSettled })}
           onCreate={(input) => {
