@@ -3,11 +3,9 @@
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
+import { loadOperatedPlatformEnvironment } from '@deepseek-ai/dsh-platform-account'
 import WebServer from '@deepseek-ai/dsh-host-webserver'
 import * as FrontendStatic from '@deepseek-ai/dsh-host-frontend-static'
-import {
-  loadPlatformEnvironment,
-} from '@deepseek-ai/dsh-platform-account'
 import {
   GitHubOAuthIdentityProvider,
   PlatformAccount,
@@ -15,73 +13,40 @@ import {
 import * as PlatformAccountHttp from '@deepseek-ai/dsh-platform-account-http'
 import pg from 'pg'
 import { PostgresAccountBackend } from './postgres-backend.ts'
-import { PostgresPersonalPairingAuthorityStore } from './postgres-pairing-store.ts'
-import { PostgresRelayRouteStore } from './postgres-route-store.ts'
-import {
-  assertOperatedPlatformEnvironment,
-  readPlatformSigningKey,
-  requiredPlatformEnv,
-} from './production-env.ts'
+import { loadOperatedPlatformConfig } from './production-env.ts'
 import { RedisAccountInvalidationBus, connectRedis } from './redis-bus.ts'
+import { OperatedRemoteAccessResources } from './remote-access-resources.ts'
 
-const operated = assertOperatedPlatformEnvironment(process.env.PLATFORM_ENVIRONMENT)
-const origin = requiredPlatformEnv('PLATFORM_ORIGIN')
-const callback = requiredPlatformEnv('PLATFORM_GITHUB_CALLBACK')
-const environment = loadPlatformEnvironment({
-  selection: operated,
-  // Pair member only: the listen process never selects development.
-  development: {
-    origin: 'https://dev.gestaltrun.invalid',
-    callbackUrl: 'https://dev.gestaltrun.invalid/v1/account/oauth/github/callback',
-    githubClientId: 'gestalt-development-unused',
-    credentialReference: 'credentials://github-oauth/development',
-    databaseIdentity: 'gestalt-account-development',
-    identityNamespace: 'gestalt-development',
-  },
-  production: {
-    origin,
-    callbackUrl: callback,
-    githubClientId: requiredPlatformEnv('PLATFORM_GITHUB_CLIENT_ID'),
-    credentialReference: process.env.PLATFORM_GITHUB_CREDENTIAL_REFERENCE ?? 'credentials://github-oauth/production',
-    databaseIdentity: process.env.PLATFORM_POSTGRES_DATABASE ?? 'gestalt',
-    identityNamespace: process.env.PLATFORM_IDENTITY_NAMESPACE ?? 'gestalt-production',
-  },
-})
+const config = loadOperatedPlatformConfig(process.env)
+const environment = loadOperatedPlatformEnvironment(config.environment)
 
-const postgres = new pg.Pool({
-  host: requiredPlatformEnv('PLATFORM_POSTGRES_HOST'),
-  port: Number(process.env.PLATFORM_POSTGRES_PORT ?? '5432'),
-  user: requiredPlatformEnv('PLATFORM_POSTGRES_USER'),
-  password: requiredPlatformEnv('PLATFORM_POSTGRES_PASSWORD'),
-  database: process.env.PLATFORM_POSTGRES_DATABASE ?? 'gestalt',
-  ssl: process.env.PLATFORM_POSTGRES_SSL === 'disable' ? false : { rejectUnauthorized: false },
-})
+const postgres = new pg.Pool(config.postgres)
 
-const redisUser = process.env.PLATFORM_REDIS_USER
-const redisOptions = {
-  host: requiredPlatformEnv('PLATFORM_REDIS_HOST'),
-  password: requiredPlatformEnv('PLATFORM_REDIS_PASSWORD'),
-  tls: process.env.PLATFORM_REDIS_TLS !== '0',
-  ...(redisUser === undefined || redisUser === '' ? {} : { username: redisUser }),
-}
+const redisOptions = config.redis
 
 const publicRoot = join(dirname(fileURLToPath(import.meta.url)), '..', 'public')
 
 const backend = new PostgresAccountBackend(environment.databaseIdentity, postgres)
 await backend.migrate()
-await new PostgresPersonalPairingAuthorityStore(environment.databaseIdentity, postgres).migrate()
-await new PostgresRelayRouteStore(environment.databaseIdentity, postgres).migrate()
 
 const publisher = await connectRedis(redisOptions)
 const subscriber = await connectRedis(redisOptions)
 const invalidation = new RedisAccountInvalidationBus(publisher, subscriber)
 await invalidation.listen()
+const remoteAccess = new OperatedRemoteAccessResources({
+  databaseIdentity: environment.databaseIdentity,
+  postgres,
+  redisCommand: publisher,
+  redisSubscriber: subscriber,
+  redisKeyPrefix: config.relayRedisKeyPrefix,
+})
+await remoteAccess.migrate()
 
 const github = new GitHubOAuthIdentityProvider({
   environment,
   credential: {
     reference: environment.credentialReference,
-    secret: requiredPlatformEnv('PLATFORM_GITHUB_CLIENT_SECRET'),
+    secret: config.githubClientSecret,
   },
 })
 
@@ -99,8 +64,8 @@ await ctx.plugin({
       github,
       environment,
       config: {
-        tokenSigningKey: readPlatformSigningKey('PLATFORM_TOKEN_SIGNING_KEY'),
-        pollingSigningKey: readPlatformSigningKey('PLATFORM_POLLING_SIGNING_KEY'),
+        tokenSigningKey: config.tokenSigningKey,
+        pollingSigningKey: config.pollingSigningKey,
       },
     })
   },

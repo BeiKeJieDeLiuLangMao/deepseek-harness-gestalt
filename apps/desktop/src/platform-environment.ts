@@ -1,24 +1,21 @@
-import { loadPlatformEnvironment, type SelectedPlatformEnvironment } from '@deepseek-ai/dsh-platform-account'
+import { loadOperatedPlatformEnvironment, type SelectedPlatformEnvironment } from '@deepseek-ai/dsh-platform-account'
 
-/** Parse the complete Desktop deployment pair before window or network startup. */
+/** Parse the operated Desktop deployment identity before window or network startup. */
 export function loadDesktopPlatformEnvironment(source: NodeJS.ProcessEnv): SelectedPlatformEnvironment {
-  return loadPlatformEnvironment({
-    selection: source.DSH_PLATFORM_ENV,
-    development: {
-      origin: source.DSH_PLATFORM_DEVELOPMENT_ORIGIN,
-      callbackUrl: source.DSH_PLATFORM_DEVELOPMENT_CALLBACK_URL,
-      githubClientId: source.DSH_PLATFORM_DEVELOPMENT_GITHUB_CLIENT_ID,
-      credentialReference: source.DSH_PLATFORM_DEVELOPMENT_CREDENTIAL_REFERENCE,
-      databaseIdentity: source.DSH_PLATFORM_DEVELOPMENT_DATABASE_IDENTITY,
-      identityNamespace: source.DSH_PLATFORM_DEVELOPMENT_IDENTITY_NAMESPACE,
-    },
-    production: {
-      origin: source.DSH_PLATFORM_PRODUCTION_ORIGIN,
-      callbackUrl: source.DSH_PLATFORM_PRODUCTION_CALLBACK_URL,
-      githubClientId: source.DSH_PLATFORM_PRODUCTION_GITHUB_CLIENT_ID,
-      credentialReference: source.DSH_PLATFORM_PRODUCTION_CREDENTIAL_REFERENCE,
-      databaseIdentity: source.DSH_PLATFORM_PRODUCTION_DATABASE_IDENTITY,
-      identityNamespace: source.DSH_PLATFORM_PRODUCTION_IDENTITY_NAMESPACE,
-    },
+  rejectLegacySelection(source.DSH_PLATFORM_ENV)
+  return loadOperatedPlatformEnvironment({
+    environment: 'production',
+    origin: source.DSH_PLATFORM_ORIGIN,
+    callbackUrl: source.DSH_PLATFORM_CALLBACK_URL,
+    githubClientId: source.DSH_PLATFORM_GITHUB_CLIENT_ID,
+    credentialReference: source.DSH_PLATFORM_CREDENTIAL_REFERENCE,
+    databaseIdentity: source.DSH_PLATFORM_DATABASE_IDENTITY,
+    identityNamespace: source.DSH_PLATFORM_IDENTITY_NAMESPACE,
   })
+}
+
+function rejectLegacySelection(selection: string | undefined): void {
+  if (selection !== undefined && selection !== '') {
+    throw new TypeError('Desktop Platform legacy environment selection is not accepted')
+  }
 }

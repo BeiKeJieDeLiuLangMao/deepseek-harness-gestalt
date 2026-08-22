@@ -264,17 +264,23 @@ describe('DesktopAccountController', () => {
 })
 
 describe('Desktop Platform environment composition', () => {
-  it('fails before composition for missing, unknown, or cross-environment deployment identities', () => {
+  it('loads only the complete operated identity and rejects legacy environment selection', () => {
     const source = desktopEnvironmentSource()
-    expect(loadDesktopPlatformEnvironment(source)).toEqual(ENVIRONMENT)
-    expect(() => loadDesktopPlatformEnvironment({ ...source, DSH_PLATFORM_ENV: undefined }))
-      .toThrow('must be development or production')
-    expect(() => loadDesktopPlatformEnvironment({ ...source, DSH_PLATFORM_ENV: 'preview' }))
-      .toThrow('must be development or production')
+    expect(loadDesktopPlatformEnvironment(source)).toMatchObject({
+      environment: 'production',
+      origin: 'https://platform.example.com',
+      callbackUrl: 'https://platform.example.com/v1/account/oauth/github/callback',
+    })
+    expect(() => loadDesktopPlatformEnvironment({ ...source, DSH_PLATFORM_ORIGIN: undefined }))
+      .toThrow('production origin is required')
     expect(() => loadDesktopPlatformEnvironment({
       ...source,
-      DSH_PLATFORM_PRODUCTION_DATABASE_IDENTITY: source.DSH_PLATFORM_DEVELOPMENT_DATABASE_IDENTITY,
-    })).toThrow('distinct databaseIdentity')
+      DSH_PLATFORM_ORIGIN: 'https://localhost',
+    })).toThrow('must not use a local host')
+    expect(() => loadDesktopPlatformEnvironment({
+      ...source,
+      DSH_PLATFORM_ENV: 'development',
+    })).toThrow('legacy environment selection is not accepted')
   })
 })
 
@@ -372,18 +378,11 @@ function deferred<T>(): { promise: Promise<T>; resolve(value: T): void } {
 
 function desktopEnvironmentSource(): NodeJS.ProcessEnv {
   return {
-    DSH_PLATFORM_ENV: 'development',
-    DSH_PLATFORM_DEVELOPMENT_ORIGIN: 'https://platform.dev.example.com',
-    DSH_PLATFORM_DEVELOPMENT_CALLBACK_URL: 'https://platform.dev.example.com/v1/account/oauth/github/callback',
-    DSH_PLATFORM_DEVELOPMENT_GITHUB_CLIENT_ID: 'desktop-development',
-    DSH_PLATFORM_DEVELOPMENT_CREDENTIAL_REFERENCE: 'credentials://development',
-    DSH_PLATFORM_DEVELOPMENT_DATABASE_IDENTITY: 'database-development',
-    DSH_PLATFORM_DEVELOPMENT_IDENTITY_NAMESPACE: 'gestalt-development',
-    DSH_PLATFORM_PRODUCTION_ORIGIN: 'https://platform.example.com',
-    DSH_PLATFORM_PRODUCTION_CALLBACK_URL: 'https://platform.example.com/v1/account/oauth/github/callback',
-    DSH_PLATFORM_PRODUCTION_GITHUB_CLIENT_ID: 'desktop-production',
-    DSH_PLATFORM_PRODUCTION_CREDENTIAL_REFERENCE: 'credentials://production',
-    DSH_PLATFORM_PRODUCTION_DATABASE_IDENTITY: 'database-production',
-    DSH_PLATFORM_PRODUCTION_IDENTITY_NAMESPACE: 'gestalt-production',
+    DSH_PLATFORM_ORIGIN: 'https://platform.example.com',
+    DSH_PLATFORM_CALLBACK_URL: 'https://platform.example.com/v1/account/oauth/github/callback',
+    DSH_PLATFORM_GITHUB_CLIENT_ID: 'desktop-production',
+    DSH_PLATFORM_CREDENTIAL_REFERENCE: 'credentials://production',
+    DSH_PLATFORM_DATABASE_IDENTITY: 'database-production',
+    DSH_PLATFORM_IDENTITY_NAMESPACE: 'gestalt-production',
   }
 }

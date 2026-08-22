@@ -10,28 +10,21 @@ const appBin = process.env.DSH_PACKAGED_APP_BIN ?? join(
   'Contents', 'MacOS', 'DeepSeek Gestalt',
 )
 
-/** Development Platform environment values that never reach a live service endpoint. */
+/** Operated-identity fixture values that never reach a live service endpoint. */
 const platformEnv = {
-  DSH_PLATFORM_ENV: 'development',
-  DSH_PLATFORM_DEVELOPMENT_ORIGIN: 'https://platform.invalid',
-  DSH_PLATFORM_DEVELOPMENT_CALLBACK_URL: 'https://platform.invalid/v1/account/oauth/github/callback',
-  DSH_PLATFORM_DEVELOPMENT_GITHUB_CLIENT_ID: 'desktop-smoke',
-  DSH_PLATFORM_DEVELOPMENT_CREDENTIAL_REFERENCE: 'credentials://desktop-smoke',
-  DSH_PLATFORM_DEVELOPMENT_DATABASE_IDENTITY: 'desktop-smoke',
-  DSH_PLATFORM_DEVELOPMENT_IDENTITY_NAMESPACE: 'desktop-smoke',
-  DSH_PLATFORM_PRODUCTION_ORIGIN: 'https://platform-production.invalid',
-  DSH_PLATFORM_PRODUCTION_CALLBACK_URL: 'https://platform-production.invalid/v1/account/oauth/github/callback',
-  DSH_PLATFORM_PRODUCTION_GITHUB_CLIENT_ID: 'desktop-smoke-production',
-  DSH_PLATFORM_PRODUCTION_CREDENTIAL_REFERENCE: 'credentials://desktop-smoke-production',
-  DSH_PLATFORM_PRODUCTION_DATABASE_IDENTITY: 'desktop-smoke-production',
-  DSH_PLATFORM_PRODUCTION_IDENTITY_NAMESPACE: 'desktop-smoke-production',
+  DSH_PLATFORM_ORIGIN: 'https://platform.invalid',
+  DSH_PLATFORM_CALLBACK_URL: 'https://platform.invalid/v1/account/oauth/github/callback',
+  DSH_PLATFORM_GITHUB_CLIENT_ID: 'desktop-smoke',
+  DSH_PLATFORM_CREDENTIAL_REFERENCE: 'credentials://desktop-smoke',
+  DSH_PLATFORM_DATABASE_IDENTITY: 'desktop-smoke',
+  DSH_PLATFORM_IDENTITY_NAMESPACE: 'desktop-smoke',
 } as const
 
 describe.skipIf(process.env.DSH_DESKTOP_SMOKE !== '1' || !existsSync(appBin))(
   'packed Desktop Host smoke',
   () => {
-    it('boots the packaged composition without platform environment', async () => {
-      await runPackagedSmoke({})
+    it('refuses a packaged composition without the operated identity before Host startup', async () => {
+      await expect(runPackagedConfigFailure()).resolves.toContain('production origin is required')
     }, 120_000)
 
     it('drains the Remote Access relay offline across packaged shutdown', async () => {
@@ -45,6 +38,28 @@ describe.skipIf(process.env.DSH_DESKTOP_SMOKE !== '1' || !existsSync(appBin))(
     }, 120_000)
   },
 )
+
+async function runPackagedConfigFailure(): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), 'gestalt-pack-config-'))
+  const child = spawn(appBin, [`--user-data-dir=${join(dir, 'electron-user-data')}`], {
+    env: {
+      ...process.env,
+      APPDATA: join(dir, 'app-data'),
+      DSH_HOME: join(dir, 'dsh-home'),
+      HOME: join(dir, 'user-home'),
+      USERPROFILE: join(dir, 'user-home'),
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  let output = ''
+  const onData = (chunk: Buffer): void => { output += chunk.toString() }
+  child.stdout?.on('data', onData)
+  child.stderr?.on('data', onData)
+  const exitCode = await new Promise<number | null>((resolve) => { child.once('exit', resolve) })
+  expect(exitCode).not.toBe(0)
+  expect(output).not.toContain('host http://127.0.0.1:')
+  return output
+}
 
 /**
  * Run the packaged app under an isolated home until smoke completion.
