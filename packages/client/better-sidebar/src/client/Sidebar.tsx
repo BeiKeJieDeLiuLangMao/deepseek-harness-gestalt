@@ -36,7 +36,7 @@ import type { Context, SidebarSessionList } from '../context-types.ts'
 import { appendToDraft } from './conversation-draft.ts'
 import {
   BOTTOM_MIN, PANEL_MIN, agentUuidOf, firstLeaf, isAgentTabId, leafWithTab, migrateBottomTabs, moveTab, moveTabToEdge, openDiffTab,
-  reconcileAgentTerminals,
+  reconcileAgentTerminals, resolvePanelPush,
   resizeSplitIn, setBottomHeight, setWidth, toggleBottomPanel, toggleExpanded, togglePanel,
   type DropZone, type SidebarState, type SidebarStore, type SidebarTab, type SplitNode,
 } from './state.ts'
@@ -648,8 +648,9 @@ export function Sidebar(props: { ctx: Context; store: SidebarStore }) {
    *  layout.css's margins. Every size change — drag frames and committed
    *  state — flows through here so the push never forks between paths. */
   const writeGeometry = (width: number, height: number): void => {
-    document.documentElement.style.setProperty('--dsh-sidebar-width', `${width}px`)
-    document.documentElement.style.setProperty('--dsh-sidebar-height', `${height}px`)
+    const push = resolvePanelPush(state, narrow, { width, height })
+    document.documentElement.style.setProperty('--dsh-sidebar-width', `${push.width}px`)
+    document.documentElement.style.setProperty('--dsh-sidebar-height', `${push.height}px`)
     // The corner handle positions itself relative to the panel (CSS
     // `bottom: calc(var(--dsh-sidebar-height) + 6px)`), so these two layout
     // variables are all it needs — no viewport coordinates written here

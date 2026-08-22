@@ -28,6 +28,8 @@ Package presence in the locked Web Host snapshot does not activate a capability.
 
 Window Chrome uses one 36px row across the Desktop sidebar, center Session content, and top Workbench. On macOS, the sidebar and center portion is a continuous drag region around the traffic lights. The Workbench uses only its flexible unused space after `+` for window dragging; tabs, controls, and tab-drop handling remain interactive. Windows uses the same row with three non-drag caption buttons. Browser-only Web keeps the compact 34px Workbench tab strip and renders no window drag space. Unsupported development platforms keep their system frame.
 
+The right and bottom Workbenches retain their preferred sizes while closed but contribute layout space independently only while visible. Resizing the bottom Workbench cannot apply a closed right Workbench's retained width, and the narrow floating drawer contributes no layout space.
+
 ## Alternatives considered
 
 **Electron as the Web Host (`ELECTRON_RUN_AS_NODE`).** This rebuilds every native addon against Electron's ABI and forks engine behavior from CLI `dsh web`.
@@ -52,6 +54,7 @@ Window Chrome uses one 36px row across the Desktop sidebar, center Session conte
 - Browser `dsh web` keeps the HARNESS badge, has no drag strip, and has no Update Control.
 - Desktop composition shows the GESTALT badge and a drag strip above the logo row. Update Control render tests keep inactive phases absent and actionable phases on the same foot row as Settings.
 - macOS expanded and collapsed layouts align the sidebar, center Session content, and top Workbench on the 36px Window Chrome; its center area and unused Workbench space drag the window without swallowing tabs or controls. Windows keeps its caption buttons at the right edge of the same row. Browser-only Web keeps the interactive 34px tab strip without a window drag node.
+- Resizing the bottom Workbench while the right Workbench is closed preserves the Session list width and the center column's horizontal bounds; each panel's retained size affects layout only while that panel is visible.
 - Dock-style spawn uses the Launch Directory as cwd and does not register that path as a Workspace.
 - Desktop shutdown waits for pending and running Web Host processes to exit; the smoke test rejects an orphaned child, missing Desktop composition or updater bridge, an updater status that has not reached the renderer, and a visible inactive Update Control. The packaged smoke drains Electron stdout/stderr so a Windows pipe cannot stall startup, and fails if the process exits before writing `ok`. A missing or invalid Platform Account deployment pair disables Account and Pairing and still starts the Web Host. First-run Platform Account start keeps the installation id in memory and does not encrypt a record until a login attempt, and Web Host startup does not wait for that start.
 - The keyless browser golden boots the shipped Web profile plus Desktop overlay; release jobs verify Node archive digests, raise the open-file limit to the runner hard limit, and apply a bounded `@electron/osx-sign` resource walk before macOS signing. Publish builds require code signing plus a stapled notarization ticket, and each packaged target is smoked before upload.

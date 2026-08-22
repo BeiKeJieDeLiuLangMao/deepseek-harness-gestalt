@@ -641,6 +641,23 @@ export function setBottomHeight(state: SidebarState, height: number): SidebarSta
   return { ...state, bottomHeight: Math.min(max, Math.max(BOTTOM_MIN, Math.round(height))) }
 }
 
+/** Resolve the layout space occupied by the two visible workbench panels.
+ * @param state Panel visibility for the active session.
+ * @param narrow Whether the viewport uses the floating mobile drawer.
+ * @param size Candidate panel geometry, including sizes retained while closed.
+ * @returns Geometry that may push the Session Surface. */
+export function resolvePanelPush(
+  state: Pick<SidebarState, 'panelOpen' | 'bottomOpen'> | undefined,
+  narrow: boolean,
+  size: Readonly<{ width: number; height: number }>,
+): { width: number; height: number } {
+  if (narrow) return { width: 0, height: 0 }
+  return {
+    width: state?.panelOpen === true ? size.width : 0,
+    height: state?.bottomOpen === true ? size.height : 0,
+  }
+}
+
 /** Toggle a directory in the explorer expansion set. */
 export function toggleExpanded(state: SidebarState, path: string): SidebarState {
   const expanded = state.expanded.includes(path)
