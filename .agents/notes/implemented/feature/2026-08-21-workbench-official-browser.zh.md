@@ -40,3 +40,4 @@ Status: implemented
 - `pnpm run test:electron-runtime-e2e` 在真实 Electron 进程中验证隐藏页面截图与 Profile 隔离。
 - `DSH_COVERAGE_PARTITIONS=4 pnpm run check:ci:coverage` 覆盖全部变更过的 Browser 与工作台分支。
 - `apps/web/tests/browser-dock.snapshot.ts` 固定收起预览，以及打开与刷新后的工作台页面 chrome
+- `pnpm run check:ci:consumers` 会在所有构建态 Client 产物读取者结束后运行 Web 门禁。串行 HMR owner 会先完整恢复 build record 覆盖的产物，再由并行 Web 测试池读取。

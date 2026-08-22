@@ -80,6 +80,20 @@ export type BrowserWorkspaceInputRequest = BrowserInputRequest & BrowserWorkspac
 /** Observe request bound to one Session. */
 export type BrowserWorkspaceObserveRequest = BrowserObserveRequest & BrowserWorkspaceSessionRequest
 
+/** Reconstruct one Runtime target from its projected ownership records. */
+function targetOf(
+  workspace: BrowserWorkspaceRecord,
+  browser: BrowserWorkspaceInstanceRecord,
+  tab: BrowserWorkspaceTabRecord,
+): BrowserTarget {
+  return {
+    profileId: workspace.profileId,
+    workspaceId: workspace.workspaceId,
+    browserId: browser.browserId,
+    tabId: tab.tabId,
+  }
+}
+
 /**
  * Bind Browser Runtime identities to one Session log and project instance and
  * tab ownership from durable Session facts.
@@ -334,12 +348,7 @@ export class BrowserWorkspaceBinder extends TypertRemoteService {
     for (const workspace of snapshot.workspaces) {
       for (const browser of workspace.browsers) {
         for (const tab of browser.tabs) {
-          const target = {
-            profileId: workspace.profileId,
-            workspaceId: workspace.workspaceId,
-            browserId: browser.browserId,
-            tabId: tab.tabId,
-          }
+          const target = targetOf(workspace, browser, tab)
           try {
             const state = await this.ctx.browserRuntime.observe({ target })
             if (state.status !== 'closed') {
@@ -384,12 +393,7 @@ export class BrowserWorkspaceBinder extends TypertRemoteService {
     for (const workspace of snapshot.workspaces) {
       for (const browser of workspace.browsers) {
         for (const tab of browser.tabs) {
-          const target = {
-            profileId: workspace.profileId,
-            workspaceId: workspace.workspaceId,
-            browserId: browser.browserId,
-            tabId: tab.tabId,
-          }
+          const target = targetOf(workspace, browser, tab)
           let state: BrowserRuntimeState
           try {
             state = await this.ctx.browserRuntime.observe({

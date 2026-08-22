@@ -101,8 +101,8 @@ describe.skipIf(MODE === 'record')('web e2e: durable workflow run in Chat', () =
     expect(await runDisclosure.getAttribute('aria-expanded')).toBe('false')
     expect(await disclosures.count()).toBe(1)
     await runDisclosure.press('Space')
-    expect(await disclosures.count()).toBe(2)
-    expect(await phaseDisclosure.getAttribute('aria-expanded')).toBe('true')
+    await expect.poll(() => disclosures.count()).toBe(2)
+    await expect.poll(() => phaseDisclosure.getAttribute('aria-expanded')).toBe('true')
     await member.focus()
 
     const lightColor = await member.locator('[data-member-label]').evaluate(element => getComputedStyle(element).color)

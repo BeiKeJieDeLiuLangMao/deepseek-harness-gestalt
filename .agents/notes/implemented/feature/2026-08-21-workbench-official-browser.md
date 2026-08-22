@@ -40,3 +40,4 @@ One product browser. ChatView hides the preview when the right gutter cannot hos
 - `pnpm run test:electron-runtime-e2e` proves hidden-page screenshots and Profile isolation in a real Electron process.
 - `DSH_COVERAGE_PARTITIONS=4 pnpm run check:ci:coverage` covers every changed Browser and workbench branch.
 - `apps/web/tests/browser-dock.snapshot.ts` pins the collapsed preview and workbench page chrome after open and Refresh
+- `pnpm run check:ci:consumers` runs the Web gate after every built-client artifact reader. The serial HMR owner restores the complete build-record artifact set before the parallel Web pool consumes it.

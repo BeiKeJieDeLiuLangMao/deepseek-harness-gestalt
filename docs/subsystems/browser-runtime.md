@@ -286,7 +286,7 @@ async cleanup(session: Session): Promise<void>
 
 Types: [Session](session.md) · [SessionId](core.md)
 
-Source: [`packages/browser/browser-workspace/src/index.ts:87`](../../packages/browser/browser-workspace/src/index.ts)
+Source: [`packages/browser/browser-workspace/src/index.ts:101`](../../packages/browser/browser-workspace/src/index.ts)
 
 <a id="browser-events"></a>
 

@@ -574,7 +574,7 @@ describe('Session-owned Browser Workspace', () => {
     const textOnly = await binder.remoteInput(session.id, created.target, inputted.revision, { text: 'again' })
     const urlOnly = await binder.remoteInput(session.id, created.target, textOnly.revision, { url: 'https://alpha.test/' })
     expect(() => binder.remoteInput(session.id, created.target, urlOnly.revision, {}))
-      .toThrowError(/requires url or text/)
+      .toThrow(/requires url or text/)
     await expect(binder.remoteClose(session.id, created.target, urlOnly.revision))
       .resolves.toMatchObject({ status: 'closed' })
     expect(() => binder.remoteObserve(SessionId('missing'), created.target))
