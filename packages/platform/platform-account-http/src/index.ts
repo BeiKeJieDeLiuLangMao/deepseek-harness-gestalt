@@ -192,7 +192,7 @@ function requiredMobilePresentation(value: unknown) {
     throw new HttpError(
       400,
       'INVALID_REQUEST',
-      error instanceof Error ? error.message : 'Mobile Installation presentation is invalid',
+      (error as Error).message,
     )
   }
 }

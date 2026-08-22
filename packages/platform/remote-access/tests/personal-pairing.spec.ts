@@ -62,6 +62,12 @@ describe('PersonalPairingProvider', () => {
     }
     await authority.confirmMobilePairing(first)
     await authority.confirmMobilePairing(first)
+    await expect(authority.getPersonalPairingActivity(first.pairingId)).resolves.toBeUndefined()
+    await authority.recordRelayActivity({
+      credentialFingerprint: parseRelayCredentialFingerprint('unknown-fingerprint'),
+      online: true,
+      accessedAt: NOW,
+    })
     const sealed = { ...first, pendingPairingId: parsePendingPairingId('pending-sealed'), sealedRelayAuthority: Uint8Array.of(1, 2) }
     await authority.confirmMobilePairing(sealed)
     await authority.confirmMobilePairing({ ...sealed, sealedRelayAuthority: Uint8Array.of(1, 2) })
@@ -140,6 +146,10 @@ describe('PersonalPairingProvider', () => {
     expect(localStatus.sealedRelayAuthority).toBeInstanceOf(Uint8Array)
     expect(relay.issueCredential).toHaveBeenCalledWith(routeId, 'mobile')
     expect(mobileCredential).not.toBe(desktopCredential)
+    const activity = vi.spyOn(authority, 'getPersonalPairingActivity').mockResolvedValueOnce(undefined)
+    const [withoutActivity] = await platformA.listPersonalPairings(desktop)
+    expect(withoutActivity).toMatchObject({ online: false, lastAccessAt: pairing.pairedAt })
+    activity.mockRestore()
     const credentialFingerprint = parseRelayCredentialFingerprint(
       createHash('sha256').update(mobileCredential).digest('base64url'),
     )
@@ -1897,6 +1907,7 @@ describe('PersonalPairingProvider', () => {
     })
     const valid = new URL(challenge.oneTimeLink)
     const invalidLinks = [
+      'not a URL',
       'http' + challenge.oneTimeLink.slice('https'.length),
       mutateLink(valid, (url) => { url.searchParams.delete('challenge') }),
       mutateLink(valid, (url) => { url.searchParams.append('challenge', 'duplicate') }),

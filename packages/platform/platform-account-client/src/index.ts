@@ -526,7 +526,7 @@ export class PlatformAccountInstallation {
         ? {
           installationId: this.options.installationId,
           installationKind: 'mobile',
-          presentation: requireMobilePresentation(this.options.presentation),
+          presentation: this.options.presentation,
         }
         : { installationId: this.options.installationId, installationKind: 'desktop' }
       const attempt = await this.options.transport.beginLogin({ ...identity, publicKey })
@@ -655,13 +655,6 @@ export class PlatformAccountInstallation {
       )
     }
   }
-}
-
-function requireMobilePresentation(
-  presentation: MobileInstallationPresentation | undefined,
-): MobileInstallationPresentation {
-  if (presentation === undefined) throw new TypeError('Mobile Installation presentation is required')
-  return presentation
 }
 
 async function hashToken(crypto: Crypto, token: string): Promise<string> {

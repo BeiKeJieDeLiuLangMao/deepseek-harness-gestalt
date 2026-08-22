@@ -789,7 +789,6 @@ describe('RemoteRelayProvider', () => {
   it('bounds pending delivery acknowledgements and validates delivery correlation entropy', async () => {
     const routeStore = new SharedRouteStore()
     const coordinator = new SharedCoordinator()
-    let timeout: (() => void) | undefined
     let sourceIssued = 0
     const source = new RemoteRelayProvider(new Context(), {
       instanceId: parseRelayInstanceId('platform-pending-source'), routeStore, coordinator,
@@ -798,7 +797,6 @@ describe('RemoteRelayProvider', () => {
         sourceIssued += 1
         return uniqueBytes(size, 72 + sourceIssued * 101)
       },
-      schedule: (task) => { timeout = task; return { unref: () => {} } as never },
     })
     const target = provider('platform-pending-target', routeStore, coordinator, 73)
     const routeId = parseRelayRouteId('route-pending-capacity')
@@ -823,10 +821,10 @@ describe('RemoteRelayProvider', () => {
     await vi.waitFor(() => { expect(coordinator.events).toContainEqual(expect.objectContaining({ type: 'ciphertext' })) })
     await expect(mobile.receive(ciphertext(routeId, 'mobile-one', 'desktop-one', Uint8Array.of(2))))
       .rejects.toMatchObject({ code: 'PLATFORM_CAPACITY' })
-    timeout?.()
+    const disposingSource = source.dispose()
     writer.resolve(undefined)
     await expect(first).rejects.toMatchObject({ code: 'REMOTE_OFFLINE' })
-    await Promise.all([source.dispose(), target.dispose()])
+    await Promise.all([disposingSource, target.dispose()])
 
     let entropyCalls = 0
     const badCoordinator = new SharedCoordinator()

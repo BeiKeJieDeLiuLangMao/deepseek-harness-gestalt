@@ -66,7 +66,8 @@ export function disposeCompanionVisibility(): Promise<void> {
   return companionVisibilityDisposer?.() ?? Promise.resolve()
 }
 
-void mountMobileProduct()
+/** Settles after the native Installation presentation is bound and the Mobile product surface mounts. */
+export const mobileProductStarted = mountMobileProduct()
 
 async function mountMobileProduct(): Promise<void> {
   const presentation = mobileInstallationPresentation(await Device.getInfo())

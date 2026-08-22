@@ -81,6 +81,11 @@ export interface PairingAccountAuthentication {
   proof: AccountProof
 }
 
+type AuthenticatedInstallationFor<K extends 'desktop' | 'mobile'> =
+  Omit<AuthenticatedInstallationView, 'installation'> & {
+    installation: Extract<AuthenticatedInstallationView['installation'], { kind: K }>
+  }
+
 /** Complete high-entropy invitation carried by QR and the one-time link. */
 export interface PairingInvitation {
   /** Opaque challenge identity. */
@@ -937,9 +942,7 @@ export class PersonalPairingProvider extends RemoteAccessService {
           pendingPairingId,
           authenticationWords: deriveAuthenticationWords(completed.handshakeHash),
           desktopHandshake: completed.desktopHandshake.slice(),
-          device: installation.kind === 'mobile'
-            ? { ...installation.presentation }
-            : unreachableMobileInstallation(),
+          device: { ...installation.presentation },
         }
       } catch (error) {
         this.orphanPendingCleanups.set(pendingCleanup, {
@@ -1604,10 +1607,10 @@ export class PersonalPairingProvider extends RemoteAccessService {
     return cleanupResource(cleanup, activePairingKey => this.options.handshake.destroyPairing(activePairingKey))
   }
 
-  private async authenticate(
+  private async authenticate<K extends 'desktop' | 'mobile'>(
     authentication: PairingAccountAuthentication,
-    expectedKind: 'desktop' | 'mobile',
-  ): Promise<AuthenticatedInstallationView> {
+    expectedKind: K,
+  ): Promise<AuthenticatedInstallationFor<K>> {
     const authenticated = await this.authenticateOwner(authentication)
     if (authenticated.installation.kind !== expectedKind) {
       throw new RemoteAccessError(
@@ -1615,7 +1618,7 @@ export class PersonalPairingProvider extends RemoteAccessService {
         `Personal Pairing operation requires an authenticated ${expectedKind} Installation`,
       )
     }
-    return authenticated
+    return authenticated as AuthenticatedInstallationFor<K>
   }
 
   private async authenticateOwner(
@@ -1866,13 +1869,6 @@ function sameInvitation(left: PairingInvitation, right: PairingInvitation): bool
     && left.rendezvousId === right.rendezvousId
     && left.expiresAt === right.expiresAt
     && encodeBase64Url(left.invitationSecret) === encodeBase64Url(right.invitationSecret)
-}
-
-function unreachableMobileInstallation(): never {
-  throw new RemoteAccessError(
-    'PAIRING_INSTALLATION_KIND_INVALID',
-    'Personal Pairing operation requires an authenticated mobile Installation',
-  )
 }
 
 function cloneCompletion(view: PairingCompletionView): PairingCompletionView {

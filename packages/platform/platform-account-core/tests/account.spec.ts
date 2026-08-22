@@ -289,6 +289,28 @@ describe('PlatformAccount', () => {
     })
   })
 
+  it('revokes a durable Mobile session that predates Installation presentation', async () => {
+    const { first, backend } = accountHarness()
+    const key = installationKey()
+    const { session } = await login(
+      first,
+      key,
+      parseInstallationId('legacy-mobile-installation'),
+      'mobile',
+    )
+    const readSession = backend.getSession.bind(backend)
+    vi.spyOn(backend, 'getSession').mockImplementation(async (sessionId) => {
+      const legacy = await readSession(sessionId)
+      if (legacy !== undefined) delete legacy.presentation
+      return legacy
+    })
+
+    await expect(first.currentInstallation({
+      accessToken: session.accessToken,
+      proof: key.proof('current', hashAccountToken(session.accessToken)),
+    })).rejects.toMatchObject({ code: 'SESSION_REVOKED' })
+  })
+
   it('invalidates and closes only the current installation across instances', async () => {
     const { first, second } = accountHarness()
     const key = installationKey()
@@ -311,6 +333,13 @@ describe('PlatformAccount', () => {
       accessToken: login.accessToken,
       proof: key.proof('current', hashAccountToken(login.accessToken)),
     })).resolves.toEqual(login.account)
+    await expect(second.currentInstallation({
+      accessToken: login.accessToken,
+      proof: key.proof('current', hashAccountToken(login.accessToken)),
+    })).resolves.toEqual({
+      account: login.account,
+      installation: { id: 'desktop-installation-2', kind: 'desktop' },
+    })
     await first.signOut({
       accessToken: login.accessToken,
       proof: key.proof('sign-out', hashAccountToken(login.accessToken)),
