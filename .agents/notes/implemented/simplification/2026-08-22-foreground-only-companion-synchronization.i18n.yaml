@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/simplification/2026-08-22-foreground-only-companion-synchronization.md
-2026-08-22-foreground-only-companion-synchronization.md: 47a24f1f3b4c7f5c2ff7d02b1fcc1fdccdef1cc5
-2026-08-22-foreground-only-companion-synchronization.zh.md: bf6fab5649f99211e1444ec7c1effb1a64fb96a8
+2026-08-22-foreground-only-companion-synchronization.md: 99ead3b18eb1263f6eac402b83c444793a6531a0
+2026-08-22-foreground-only-companion-synchronization.zh.md: 72e7f2b9b15f0d17742263b244441822d6b50dea

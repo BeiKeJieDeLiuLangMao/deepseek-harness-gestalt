@@ -130,7 +130,7 @@ export function MobileAccount({ installation, pairing }: MobileAccountProps): Re
               title: input.workspace === undefined ? 'Ungrouped Session' : 'Workspace Session',
               ...(input.workspace === undefined ? {} : { workspace: input.workspace }),
               devicePrincipalId: 'current-mobile',
-            })
+            }, companionState)
             if (next.created) committed.add(operationId)
             setSessions(next.sessions)
           }}

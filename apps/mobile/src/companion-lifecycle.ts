@@ -2,12 +2,20 @@
 
 import { registerPlugin } from '@capacitor/core'
 import type { RelayCredentialGrant } from '@deepseek-ai/dsh-remote-access'
+import type { CompanionConnectionState } from './companion-mutation.ts'
 
-/** Process visibility and synchronization required before any Companion mutation. */
-export interface CompanionConnectionState {
-  foreground: boolean
-  socketOpen: boolean
-  synchronized: boolean
+export {
+  companionMayMutate,
+  requireCompanionMutation,
+  type CompanionConnectionState,
+  type CompanionMutationName,
+} from './companion-mutation.ts'
+
+/** Authenticated, decoded Desktop resynchronization message supplied by the Encrypted Companion decoder. */
+export interface ValidatedDesktopResync {
+  readonly type: 'desktop-resync'
+  readonly version: 1
+  readonly authenticated: true
 }
 
 /** Relay lifecycle the foreground runtime actually starts and stops. */
@@ -58,18 +66,9 @@ export function markCompanionSocketOpen(state: CompanionConnectionState): Compan
  * @param state - current process state.
  * @returns state that may enable mutations when already foregrounded and attached.
  */
-export function markCompanionSynchronized(state: CompanionConnectionState): CompanionConnectionState {
+function markCompanionSynchronized(state: CompanionConnectionState): CompanionConnectionState {
   if (!state.foreground || !state.socketOpen) return { ...state, synchronized: false }
   return { ...state, synchronized: true }
-}
-
-/**
- * Whether the process may submit a Companion mutation.
- * @param state - current process state.
- * @returns true only after foreground reconnect and Desktop-authoritative sync.
- */
-export function companionMayMutate(state: CompanionConnectionState): boolean {
-  return state.foreground && state.socketOpen && state.synchronized
 }
 
 /** Process-owned foreground, socket, and synchronization state. */
@@ -139,12 +138,14 @@ export class CompanionForegroundRuntime {
   }
 
   /**
-   * Mark Desktop-authoritative synchronization after a real reconnect.
-   * The product caller is `MobileRelayEndpointLifecycle` `onCiphertext`
-   * after Desktop resync ciphertext arrives.
+   * Admit Desktop-authoritative synchronization after the Encrypted Companion
+   * decoder authenticates and decodes the supported versioned resync message.
+   * Raw Relay ciphertext must never call this method.
+   * @param message - validated resync message produced by the authenticated decoder owned by #217.
    */
-  synchronize(): void {
+  acceptValidatedDesktopResync(message: ValidatedDesktopResync): void {
     if (!this.granted) return
+    void message
     this.state = markCompanionSynchronized(this.state)
     this.publish()
   }

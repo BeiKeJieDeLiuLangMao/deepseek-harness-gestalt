@@ -5,7 +5,7 @@ import {
   pageCompanionHistory,
   type CompanionSessionSummary,
 } from './companion-history.ts'
-import type { CompanionConnectionState } from './companion-lifecycle.ts'
+import { companionMayMutate, type CompanionConnectionState } from './companion-lifecycle.ts'
 import { MobileConversation } from './MobileConversation.tsx'
 import css from './MobileBrowse.module.css'
 
@@ -33,6 +33,7 @@ export function MobileBrowse({ desktopName, connection, sessions, onCreate, comp
   )
   const grouped = useMemo(() => groupCompanionSessions(paged.visible), [paged.visible])
   const open = sessions.find(session => session.id === openId)
+  const mayMutate = companionMayMutate(companionState)
 
   if (open !== undefined) {
     if (open.blocks !== undefined) {
@@ -64,14 +65,14 @@ export function MobileBrowse({ desktopName, connection, sessions, onCreate, comp
         <p className={css.desktop}>{desktopName}</p>
         <p className={css.connection} data-connection={connection}>{connection === 'online' ? 'Remote Online' : 'Remote Offline'}</p>
         {onCreate !== undefined && (
-          <button type="button" onClick={() => { onCreate({}) }}>新建 Ungrouped Session</button>
+          <button type="button" disabled={!mayMutate} onClick={() => { if (mayMutate) onCreate({}) }}>新建 Ungrouped Session</button>
         )}
       </header>
       {grouped.groups.map(group => (
         <section key={group.name} className={css.group} aria-label={group.name}>
           <h2>{group.name}</h2>
           {onCreate !== undefined && (
-            <button type="button" onClick={() => { onCreate({ workspace: group.name }) }}>在 {group.name} 新建 Session</button>
+            <button type="button" disabled={!mayMutate} onClick={() => { if (mayMutate) onCreate({ workspace: group.name }) }}>在 {group.name} 新建 Session</button>
           )}
           <SessionList sessions={group.sessions} onOpen={setOpenId} />
         </section>

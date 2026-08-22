@@ -48,6 +48,29 @@ describe('Mobile conversation renderer', () => {
     expect(onSettled).not.toHaveBeenCalled()
   })
 
+  it('disables prompt and cancel callbacks until foreground synchronization', () => {
+    const onSubmit = vi.fn()
+    const onCancel = vi.fn()
+    render(createElement(MobileConversation, {
+      title: 'Blocked',
+      onBack: () => {},
+      blocks: [],
+      onSubmit,
+      onCancel,
+      streaming: true,
+      companionState: { foreground: true, socketOpen: true, synchronized: false },
+    }))
+    fireEvent.change(screen.getByRole('textbox', { name: '继续会话' }), { target: { value: 'continue' } })
+    const submit = screen.getByRole('button', { name: '发送' })
+    const cancel = screen.getByRole('button', { name: '取消' })
+    expect(submit.hasAttribute('disabled')).toBe(true)
+    expect(cancel.hasAttribute('disabled')).toBe(true)
+    fireEvent.click(submit)
+    fireEvent.click(cancel)
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(onCancel).not.toHaveBeenCalled()
+  })
+
   it('renders unknown tools as a generic read-only card and bounds terminal output', () => {
     const lines = Array.from({ length: MOBILE_TERMINAL_PREVIEW_LINES + 4 }, (_, index) => `line-${String(index)}`)
     render(createElement(MobileConversation, {

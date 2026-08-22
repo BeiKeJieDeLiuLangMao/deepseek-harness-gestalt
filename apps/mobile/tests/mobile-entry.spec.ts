@@ -161,8 +161,9 @@ describe('Mobile Platform Account entry', () => {
       operationId: 'op-approve', kind: 'approval', summary: 'write a.ts', authorized: ['once'],
     }, { accepted: true, decision: 'once' }, runtime.getState()).settled).toBeUndefined()
 
-    if (relayLifecycle.onCiphertext === undefined) throw new Error('expected Desktop resync listener')
-    relayLifecycle.onCiphertext()
+    relayLifecycle.onCiphertext?.()
+    expect(runtime.getState().synchronized).toBe(false)
+    runtime.acceptValidatedDesktopResync({ type: 'desktop-resync', version: 1, authenticated: true })
     expect(runtime.getState().synchronized).toBe(true)
     expect(companionMayMutate(runtime.getState())).toBe(true)
     expect(settleCompanionInteraction({

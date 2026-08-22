@@ -29,6 +29,7 @@ export function MobileConversation({
   title, onBack, blocks, onSubmit, onCancel, streaming = false, companionState, onSettled,
 }: MobileConversationProps): ReactNode {
   const [draft, setDraft] = useState('')
+  const mayMutate = companionMayMutate(companionState)
   return (
     <section className={css.page} data-mobile-conversation="detail">
       <header className={css.header}>
@@ -50,7 +51,7 @@ export function MobileConversation({
           className={css.composer}
           onSubmit={(event) => {
             event.preventDefault()
-            if (draft === '') return
+            if (draft === '' || !mayMutate) return
             onSubmit(draft)
             setDraft('')
           }}
@@ -60,9 +61,9 @@ export function MobileConversation({
             value={draft}
             onChange={(event) => { setDraft(event.target.value) }}
           />
-          <button type="submit">发送</button>
+          <button type="submit" disabled={!mayMutate}>发送</button>
           {onCancel !== undefined && streaming && (
-            <button type="button" onClick={onCancel}>取消</button>
+            <button type="button" disabled={!mayMutate} onClick={() => { if (mayMutate) onCancel() }}>取消</button>
           )}
         </form>
       )}

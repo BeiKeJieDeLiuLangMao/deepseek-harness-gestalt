@@ -7,7 +7,6 @@ import {
   companionMayMutate,
   CompanionForegroundRuntime,
   markCompanionSocketOpen,
-  markCompanionSynchronized,
   setCompanionForeground,
 } from '../src/companion-lifecycle.ts'
 
@@ -19,6 +18,7 @@ const grant = {
 }
 
 const ready = { foreground: true, socketOpen: true, synchronized: true }
+const validatedResync = { type: 'desktop-resync', version: 1, authenticated: true } as const
 const approval: CompanionInteraction = {
   operationId: 'op-approve',
   kind: 'approval',
@@ -39,9 +39,9 @@ describe('Companion foreground lifecycle', () => {
     const attached = markCompanionSocketOpen(reconnecting)
     expect(companionMayMutate(attached)).toBe(false)
 
-    const synchronized = markCompanionSynchronized(attached)
+    const synchronized = { ...attached, synchronized: true }
     expect(companionMayMutate(synchronized)).toBe(true)
-    expect(markCompanionSynchronized(background).synchronized).toBe(false)
+    expect(companionMayMutate({ ...background, synchronized: true })).toBe(false)
   })
 
   it('refuses settlement while unsynchronized', () => {
@@ -122,7 +122,7 @@ describe('Companion foreground lifecycle', () => {
     const dispose = bindCompanionProcessVisibility(runtime)
     await runtime.setForeground(true)
     expect(started).toEqual(['start'])
-    runtime.synchronize()
+    runtime.acceptValidatedDesktopResync(validatedResync)
     expect(companionMayMutate(runtime.getState())).toBe(true)
     await runtime.releasePairing()
     started.length = 0
@@ -150,7 +150,7 @@ describe('Companion foreground lifecycle', () => {
       isConnected: () => true,
     }
     const runtime = new CompanionForegroundRuntime({ relay })
-    const onCiphertext = () => { runtime.synchronize() }
+    const onValidatedDesktopResync = () => { runtime.acceptValidatedDesktopResync(validatedResync) }
     runtime.configure(grant)
     const starting = runtime.start()
     await Promise.resolve()
@@ -160,7 +160,7 @@ describe('Companion foreground lifecycle', () => {
     releaseStart()
     await starting
     await releasing
-    onCiphertext()
+    onValidatedDesktopResync()
     expect(companionMayMutate(runtime.getState())).toBe(false)
     expect(started.filter(step => step === 'start')).toHaveLength(1)
   })
