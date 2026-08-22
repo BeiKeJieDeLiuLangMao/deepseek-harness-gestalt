@@ -42,7 +42,7 @@ interface SettingsDesktopBridge {
     requestId?: string
     sectionId?: string
   } | null>
-  chromeOverlayResult: (result: { type: 'close'; requestId: string }) => void
+  chromeOverlayResult?: (result: { type: 'close'; requestId: string }) => void
   onChromeOverlayState: (listener: (state: {
     kind?: string
     requestId?: string
@@ -154,14 +154,10 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
   const [open, setOpen] = useState(false)
   const [activeId, setActiveId] = useState<string | undefined>(undefined)
   const [completedOnboarding, setCompletedOnboarding] = useState<ReadonlySet<string>>(() => new Set())
-  const requestId = useRef<string | null>(null)
+  const requestId = useRef('')
   const close = useCallback(() => {
     if (mode === 'overlay') {
-      const activeRequestId = requestId.current
-      if (activeRequestId === null) return
-      const bridge = settingsDesktopBridge()
-      if (bridge === undefined) return
-      bridge.chromeOverlayResult({ type: 'close', requestId: activeRequestId })
+      settingsDesktopBridge()?.chromeOverlayResult?.({ type: 'close', requestId: requestId.current })
       return
     }
     setOpen(false)
@@ -180,7 +176,7 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
     if (bridge === undefined || typeof bridge.onChromeOverlayResult !== 'function') return
     return bridge.onChromeOverlayResult((result) => {
       if (result.requestId !== requestId.current || result.type !== 'close') return
-      requestId.current = null
+      requestId.current = ''
       setOpen(false)
       setActiveId(undefined)
     })
@@ -191,7 +187,7 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
     if (bridge === undefined || typeof bridge.onChromeOverlayState !== 'function') return
     const applyState = (state: { kind?: string; requestId?: string; sectionId?: string } | null): void => {
       if (state?.kind !== 'settings' || typeof state.requestId !== 'string') {
-        requestId.current = null
+        requestId.current = ''
         setOpen(false)
         setActiveId(undefined)
         return

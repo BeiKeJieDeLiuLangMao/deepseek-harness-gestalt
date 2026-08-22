@@ -356,7 +356,7 @@ export class DeterministicBrowserRuntime extends BrowserRuntime {
         return this.commit({
           ...state,
           revision: state.revision + 1,
-          text: request.text ?? state.text,
+          text: request.text,
         })
       }
       const page = this.pages.get(request.url)

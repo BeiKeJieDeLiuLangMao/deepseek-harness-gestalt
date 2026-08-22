@@ -170,7 +170,7 @@ export interface BrowserNavigateRequest extends BrowserMutationRequest {
 /** Synthetic Agent input against one open tab. At least one input value is required. */
 export type BrowserInputRequest = BrowserMutationRequest & (
   | { readonly url: string; readonly text?: string }
-  | { readonly url?: string; readonly text: string }
+  | { readonly url?: never; readonly text: string }
 )
 
 /** Read-only request for one browser target. */
