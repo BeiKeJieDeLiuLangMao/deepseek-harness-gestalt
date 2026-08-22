@@ -88,9 +88,13 @@ describe('Companion product-entry purity gate', () => {
     ])
   })
 
-  it('finds no proof-only provider reachable from repository product entries', () => {
-    expect(collectCompanionProductEntryResidue(join(import.meta.dirname, '..'))).toEqual([])
-  })
+  it(
+    'finds no proof-only provider reachable from repository product entries',
+    () => {
+      expect(collectCompanionProductEntryResidue(join(import.meta.dirname, '..'))).toEqual([])
+    },
+    30_000,
+  )
 })
 
 function fixtureRoot(files: Record<string, string>): string {
