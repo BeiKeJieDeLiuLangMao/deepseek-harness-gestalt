@@ -797,6 +797,8 @@ describe('ACCOUNT_PRIVACY_NOTICE', () => {
     expect(ACCOUNT_PRIVACY_NOTICE.en).toContain('7 days')
     expect(ACCOUNT_PRIVACY_NOTICE.en).toContain('30 days')
     expect(ACCOUNT_PRIVACY_NOTICE.en).toContain('does not provide account deletion')
+    expect(ACCOUNT_PRIVACY_NOTICE.zh).not.toContain('推送')
+    expect(ACCOUNT_PRIVACY_NOTICE.en).not.toMatch(/push/iu)
   })
 })
 

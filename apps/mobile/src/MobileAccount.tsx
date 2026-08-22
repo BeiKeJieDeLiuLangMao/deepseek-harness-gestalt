@@ -1,9 +1,10 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
-import { companionRuntime } from './companion-push.ts'
+import { companionRuntime } from './companion-lifecycle.ts'
 import type { ReactNode } from 'react'
 import type { PlatformAccountInstallation } from '@deepseek-ai/dsh-platform-account-client'
 import { ACCOUNT_PRIVACY_NOTICE } from '@deepseek-ai/dsh-platform-account/privacy'
 import css from './MobileAccount.module.css'
+import type { CompanionInteraction } from './companion-approval.ts'
 import { createCompanionSession, type CompanionSessionSummary } from './companion-history.ts'
 import { MobileBrowse } from './MobileBrowse.tsx'
 import { MobilePairing, type MobilePairingActions } from './MobilePairing.tsx'
@@ -14,10 +15,20 @@ export interface MobileAccountProps {
   installation: PlatformAccountInstallation
   /** Personal Pairing adapter available after the current Installation signs in. */
   pairing?: MobilePairingActions
+  /** Desktop-confirmed Companion Surface and mutation callbacks. */
+  companionSurface?: {
+    sessions: readonly CompanionSessionSummary[]
+    onCreate?: (input: { workspace?: string }) => void
+    onSubmit?: (sessionId: string, text: string) => void
+    onCancel?: (sessionId: string) => void
+    onAttach?: (sessionId: string) => void
+    streaming?: boolean
+    onSettled?: (interaction: CompanionInteraction) => void
+  }
 }
 
 /** Mobile Account landing with an optional same-installation Personal Pairing projection. */
-export function MobileAccount({ installation, pairing }: MobileAccountProps): ReactNode {
+export function MobileAccount({ installation, pairing, companionSurface }: MobileAccountProps): ReactNode {
   const snapshot = useSyncExternalStore(
     listener => installation.subscribe(listener),
     () => installation.getSnapshot(),
@@ -121,16 +132,25 @@ export function MobileAccount({ installation, pairing }: MobileAccountProps): Re
         <MobileBrowse
           desktopName="Paired Desktop"
           connection="offline"
-          sessions={sessions}
+          sessions={companionSurface?.sessions ?? sessions}
           {...(companionState === undefined ? {} : { companionState })}
+          {...(companionSurface?.onSubmit === undefined ? {} : { onSubmit: companionSurface.onSubmit })}
+          {...(companionSurface?.onCancel === undefined ? {} : { onCancel: companionSurface.onCancel })}
+          {...(companionSurface?.onAttach === undefined ? {} : { onAttach: companionSurface.onAttach })}
+          {...(companionSurface?.streaming === undefined ? {} : { streaming: companionSurface.streaming })}
+          {...(companionSurface?.onSettled === undefined ? {} : { onSettled: companionSurface.onSettled })}
           onCreate={(input) => {
+            if (companionSurface?.onCreate !== undefined) {
+              companionSurface.onCreate(input)
+              return
+            }
             const operationId = crypto.randomUUID()
             const next = createCompanionSession(sessions, committed, {
               operationId,
               title: input.workspace === undefined ? 'Ungrouped Session' : 'Workspace Session',
               ...(input.workspace === undefined ? {} : { workspace: input.workspace }),
               devicePrincipalId: 'current-mobile',
-            })
+            }, companionState)
             if (next.created) committed.add(operationId)
             setSessions(next.sessions)
           }}

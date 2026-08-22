@@ -27,6 +27,8 @@ import {
 
 const desktopA = parseCompanionDesktopId('desktop-a')
 const desktopB = parseCompanionDesktopId('desktop-b')
+const ready = { foreground: true, socketOpen: true, synchronized: true }
+const reconnecting = { foreground: true, socketOpen: true, synchronized: false }
 
 function namespacedStore(accountId: string): IndexedDbCompanionCacheStore {
   return new IndexedDbCompanionCacheStore(
@@ -162,14 +164,14 @@ describe('Companion Cache', () => {
       await settlement.transmit(
         { kind: 'prompt', operationId: parseCompanionOperationId(`op-cap-${String(index)}`) },
         outcomeTransport({ known: false }),
-        true,
+        ready,
       )
     }
     expect((await store.loadReceipts(desktopA)).length).toBe(limit)
     await expect(settlement.transmit(
       { kind: 'prompt', operationId: parseCompanionOperationId('op-cap-overflow') },
       outcomeTransport({ known: false }),
-      true,
+      ready,
     )).rejects.toThrow(new RegExp(`exceeds the ${String(limit)}-row ceiling`))
     await expect(store.saveReceipt(desktopA, {
       operationId: parseCompanionOperationId('op-cap-0'),
@@ -265,11 +267,11 @@ describe('Companion Cache', () => {
     expect(await cacheB.loadOpenedContent(desktopA, 'transcript')).toBe('account-b only')
   })
 
-  it('allows cache reads offline but disables every mutation until Remote Online', async () => {
-    for (const kind of ['prompt', 'cancel', 'approval', 'question', 'attachment', 'other-mutation'] as const) {
-      expect(companionMutationAllowed(false, kind)).toBe(false)
+  it('allows cache reads while reconnecting but disables every mutation until foreground synchronization', async () => {
+    for (const kind of ['session-create', 'prompt', 'cancel', 'approval', 'question', 'attachment', 'other-mutation'] as const) {
+      expect(companionMutationAllowed(reconnecting, kind)).toBe(false)
     }
-    expect(companionMutationAllowed(true, 'prompt')).toBe(true)
+    expect(companionMutationAllowed(ready, 'prompt')).toBe(true)
 
     const store = new InMemoryCompanionCacheStore()
     const cipher = await cipherFor({})
@@ -280,8 +282,8 @@ describe('Companion Cache', () => {
     await expect(settlement.transmit(
       { kind: 'prompt', operationId: parseCompanionOperationId('op-offline') },
       transport,
-      false,
-    )).rejects.toThrow(/Remote Offline disables Companion prompt mutations/)
+      reconnecting,
+    )).rejects.toThrow(/foreground synchronization/)
     expect(sends).toBe(0)
     expect(await store.loadReceipts(desktopA)).toEqual([])
     const cache = new CompanionCache(store, cipher)
@@ -305,7 +307,7 @@ describe('Companion Cache', () => {
     const receipt = await settlement.transmit(
       { kind: 'prompt', operationId: parseCompanionOperationId('op-uncertain') },
       transport,
-      true,
+      ready,
     )
     expect(transmitted).toBe(true)
     expect(receipt.status).toBe('unknown')
@@ -324,7 +326,7 @@ describe('Companion Cache', () => {
     await expect(settlement.transmit(
       { kind: 'prompt', operationId: parseCompanionOperationId('op-never-sent') },
       neverTransmits,
-      true,
+      ready,
     )).rejects.toThrow(/without acknowledging transmission/)
     expect(await store.loadReceipts(desktopA)).toEqual([])
   })
@@ -344,7 +346,7 @@ describe('Companion Cache', () => {
     await expect(settlement.transmit(
       { kind: 'prompt', operationId: parseCompanionOperationId('op-dropped') },
       failsAfterTransmit,
-      true,
+      ready,
     )).rejects.toThrow(/relay dropped/)
     expect(receiptObserved).toBe(true)
     expect(await store.loadReceipts(desktopA)).toEqual([
@@ -358,7 +360,7 @@ describe('Companion Cache', () => {
     const operationId = parseCompanionOperationId('op-unknown-existing')
     await store.saveReceipt(desktopA, { operationId, status: 'unknown' })
     const transport = recordingTransport(undefined, { known: true, result: confirmed('op-unknown-existing') })
-    await expect(settlement.transmit({ kind: 'prompt', operationId }, transport, true)).rejects.toThrow(
+    await expect(settlement.transmit({ kind: 'prompt', operationId }, transport, ready)).rejects.toThrow(
       /must be reconciled before another transmit/,
     )
     expect(transport.sends).toBe(0)
@@ -371,7 +373,7 @@ describe('Companion Cache', () => {
     const original = confirmed('op-committed-existing')
     await store.saveReceipt(desktopA, { operationId, status: 'committed', original })
     const transport = recordingTransport(undefined, { known: true, result: confirmed('op-committed-existing') })
-    await expect(settlement.transmit({ kind: 'prompt', operationId }, transport, true)).resolves.toEqual({
+    await expect(settlement.transmit({ kind: 'prompt', operationId }, transport, ready)).resolves.toEqual({
       operationId,
       status: 'committed',
       original,
@@ -388,7 +390,7 @@ describe('Companion Cache', () => {
     await settlement.transmit(
       { kind: 'prompt', operationId: parseCompanionOperationId('op-reconcile') },
       outcomeTransport({ known: false }),
-      true,
+      ready,
     )
     const settled = await settlement.reconcileUnknown(committedTransport)
     expect(settled).toEqual([{ operationId: parseCompanionOperationId('op-reconcile'), status: 'committed', original }])
@@ -396,25 +398,26 @@ describe('Companion Cache', () => {
     await settlement.transmit(
       { kind: 'approval', operationId: parseCompanionOperationId('op-absent') },
       outcomeTransport({ known: false }),
-      true,
+      ready,
     )
     const absent = await settlement.reconcileUnknown(statusTransport({ committed: false }))
     expect(absent.find(row => row.operationId === parseCompanionOperationId('op-absent'))?.status).toBe('not-submitted')
   })
 
-  it('never automatically replays an uncertain or offline operation', async () => {
+  it('never automatically replays an uncertain or unsynchronized operation', async () => {
     const store = new InMemoryCompanionCacheStore()
     const settlement = new CompanionUncertainOperationSettlement(store, desktopA)
     const operationId = parseCompanionOperationId('op-no-replay')
     const transport = recordingTransport(undefined, { known: false })
-    await settlement.transmit({ kind: 'prompt', operationId }, transport, true)
+    await settlement.transmit({ kind: 'prompt', operationId }, transport, ready)
 
     const replaySpy = recordingTransport(undefined, { known: true, result: confirmed('op-no-replay') })
     const settled = await settlement.reconcileUnknown(replaySpy)
     expect(replaySpy.sends).toBe(0)
     expect(settled.find(row => row.operationId === operationId)?.status).toBe('not-submitted')
 
-    await expect(settlement.transmit({ kind: 'prompt', operationId }, replaySpy, false)).rejects.toThrow(/Remote Offline/)
+    await expect(settlement.transmit({ kind: 'prompt', operationId }, replaySpy, reconnecting))
+      .rejects.toThrow(/foreground synchronization/)
     expect(replaySpy.sends).toBe(0)
   })
 
@@ -436,12 +439,12 @@ describe('Companion Cache', () => {
     await a.transmit(
       { kind: 'prompt', operationId: parseCompanionOperationId('op-a') },
       outcomeTransport({ known: false }),
-      true,
+      ready,
     )
     await b.transmit(
       { kind: 'prompt', operationId: parseCompanionOperationId('op-b') },
       outcomeTransport({ known: false }),
-      true,
+      ready,
     )
     await store.clearDesktop(desktopA)
     expect(await store.loadReceipts(desktopA)).toEqual([])

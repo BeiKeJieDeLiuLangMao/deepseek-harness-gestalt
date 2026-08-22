@@ -22,7 +22,6 @@ export const COMPANION_RELEASE_DEVICE_CHECKS = [
   'encrypted-cache',
   'file-selection',
   'deep-link',
-  'push',
   'foreground-lifecycle',
 ] as const
 

@@ -43,6 +43,10 @@ export interface RemoteRelayEndpointOptions {
   ) => Promise<void>
   /** Endpoint-owned ciphertext receiver. */
   onCiphertext?: (ciphertext: Uint8Array, sourceAttachmentId: RelayAttachmentId) => void | Promise<void>
+  /** Observer invoked after Platform acknowledges one physical attachment. */
+  onConnectionReady?: (attachmentId: RelayAttachmentId) => void
+  /** Observer invoked whenever an acknowledged physical attachment ends. */
+  onConnectionLost?: (attachmentId: RelayAttachmentId) => void
   /** Content-free transport error observer. */
   onTransportError?: (error: RemoteRelayError) => void
   clock?: { now(): number }
@@ -197,6 +201,7 @@ export class RemoteRelayEndpointController {
     }
     const iterator = socket.messages()[Symbol.asyncIterator]()
     let heartbeat: Promise<void> = Promise.resolve()
+    let attached = false
     const heartbeatAbort = new AbortController()
     try {
       await socket.send(encodeRelayMessage({
@@ -210,6 +215,8 @@ export class RemoteRelayEndpointController {
       /* v8 ignore next -- stop can win only in the microtask gap after the acknowledged wait settles. */
       if (isAborted(signal)) return
       owner.connection = connection
+      attached = true
+      this.observeConnection(this.options.onConnectionReady, connection.attachmentId)
       if (this.options.endpoint === 'desktop') {
         await this.options.resynchronize?.((target, ciphertext) => this.sendCiphertext(target, ciphertext))
       }
@@ -226,6 +233,7 @@ export class RemoteRelayEndpointController {
     } finally {
       heartbeatAbort.abort()
       if (owner.connection === connection) owner.connection = undefined
+      if (attached) this.observeConnection(this.options.onConnectionLost, connection.attachmentId)
       const results = await Promise.allSettled([this.closeConnection(connection), heartbeat])
       const errors = rejectedReasons(results)
       if (errors.length > 0) {
@@ -300,6 +308,17 @@ export class RemoteRelayEndpointController {
         : new RemoteRelayError('REMOTE_OFFLINE', 'Relay connection was lost'))
     } catch {
       // Transport observers cannot own or interrupt the Relay lifecycle.
+    }
+  }
+
+  private observeConnection(
+    observer: ((attachmentId: RelayAttachmentId) => void) | undefined,
+    attachmentId: RelayAttachmentId,
+  ): void {
+    try {
+      observer?.(attachmentId)
+    } catch {
+      // Connection observers cannot own or interrupt the Relay lifecycle.
     }
   }
 }

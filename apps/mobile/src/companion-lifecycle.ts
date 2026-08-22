@@ -1,27 +1,27 @@
-/** Content-free Companion foreground state and notification deep-link presentation. */
+/** Foreground Relay lifecycle and Desktop-authoritative synchronization. */
 
 import { registerPlugin } from '@capacitor/core'
 import type { RelayCredentialGrant } from '@deepseek-ai/dsh-remote-access'
-import {
-  parseCompanionPushHint,
-  type CompanionPushHint,
-} from '@deepseek-ai/dsh-remote-protocol'
+import type { CompanionConnectionState } from './companion-mutation.ts'
 
-export type { CompanionPushHint }
+export {
+  companionMayMutate,
+  type CompanionConnectionState,
+} from './companion-mutation.ts'
 
-/** Process visibility and synchronization required before any Companion mutation. */
-export interface CompanionPushState {
-  token: string | undefined
-  foreground: boolean
-  socketOpen: boolean
-  synchronized: boolean
+/** Authenticated, decoded Desktop resynchronization message supplied by the Encrypted Companion decoder. */
+interface ValidatedDesktopResync {
+  readonly type: 'desktop-resync'
+  readonly version: 1
+  readonly authenticated: true
 }
 
-/** Notification chrome that may accompany a tap; it never settles an interaction. */
-export type CompanionNotificationChrome = 'open' | 'approve' | 'answer'
-
-/** Ordered work a tap must finish before the current interaction is shown. */
-export type CompanionDeepLinkPhase = 'foreground' | 'reconnect' | 'synchronize' | 'present'
+/** Generation-bound receiver called only by the authenticated Encrypted Companion decoder. */
+interface ValidatedDesktopResyncReceiver {
+  /** @param message - validated resync for the physical connection that created this receiver. */
+  /** @returns whether this receiver still owns the active connection generation. */
+  acceptValidatedDesktopResync(message: ValidatedDesktopResync): boolean
+}
 
 /** Relay lifecycle the foreground runtime actually starts and stops. */
 export interface CompanionRelayLifecycle {
@@ -47,9 +47,9 @@ let installed: CompanionForegroundRuntime | undefined
  * @returns updated process state; background never keeps a socket or mutation right.
  */
 export function setCompanionForeground(
-  state: CompanionPushState,
+  state: CompanionConnectionState,
   foreground: boolean,
-): CompanionPushState {
+): CompanionConnectionState {
   if (!foreground) {
     return { ...state, foreground: false, socketOpen: false, synchronized: false }
   }
@@ -61,7 +61,7 @@ export function setCompanionForeground(
  * @param state - current process state.
  * @returns state with a live socket only while already foregrounded.
  */
-export function markCompanionSocketOpen(state: CompanionPushState): CompanionPushState {
+export function markCompanionSocketOpen(state: CompanionConnectionState): CompanionConnectionState {
   if (!state.foreground) return { ...state, socketOpen: false, synchronized: false }
   return { ...state, socketOpen: true, synchronized: false }
 }
@@ -69,75 +69,31 @@ export function markCompanionSocketOpen(state: CompanionPushState): CompanionPus
 /**
  * Record that Desktop-authoritative synchronization finished after foreground reconnect.
  * @param state - current process state.
- * @returns state that may present an interaction when already foregrounded and attached.
+ * @returns state that may enable mutations when already foregrounded and attached.
  */
-export function markCompanionSynchronized(state: CompanionPushState): CompanionPushState {
+function markCompanionSynchronized(state: CompanionConnectionState): CompanionConnectionState {
   if (!state.foreground || !state.socketOpen) return { ...state, synchronized: false }
   return { ...state, synchronized: true }
 }
 
-/**
- * Resolve a notification tap. The application must foreground, reconnect, and
- * synchronize before presenting the current interaction. Notification chrome
- * never settles an approval or human question.
- * @param state - current Mobile process state.
- * @param hint - tapped generic hint.
- * @param chrome - optional notification action label; ignored for settlement.
- * @returns the next required phase; `settle` is always false.
- */
-export function openCompanionDeepLink(
-  state: CompanionPushState,
-  hint: CompanionPushHint,
-  chrome: CompanionNotificationChrome = 'open',
-): { phase: CompanionDeepLinkPhase; settle: false; routeId: string; chrome: CompanionNotificationChrome } {
-  const allowlisted = parseCompanionPushHint(hint)
-  if (!state.foreground) {
-    return { phase: 'foreground', settle: false, routeId: allowlisted.routeId, chrome }
-  }
-  if (!state.socketOpen) {
-    return { phase: 'reconnect', settle: false, routeId: allowlisted.routeId, chrome }
-  }
-  if (!state.synchronized) {
-    return { phase: 'synchronize', settle: false, routeId: allowlisted.routeId, chrome }
-  }
-  return { phase: 'present', settle: false, routeId: allowlisted.routeId, chrome }
-}
-
-/**
- * Whether the process may submit a Companion mutation after a deep link.
- * @param state - current process state.
- * @returns true only after foreground reconnect and Desktop-authoritative sync.
- */
-export function companionMayMutate(state: CompanionPushState): boolean {
-  return state.foreground && state.socketOpen && state.synchronized
-}
-
-/**
- * Drop the matching push token on unpair or revocation.
- * @param state - current process state.
- */
-function clearCompanionPushToken(state: CompanionPushState): CompanionPushState {
-  return { ...state, token: undefined }
-}
-
-/** Process-owned foreground, socket, token, and synchronization state. */
+/** Process-owned foreground, socket, and synchronization state. */
 export class CompanionForegroundRuntime {
-  private state: CompanionPushState
+  private state: CompanionConnectionState
   private granted = false
   private transition: Promise<void> = Promise.resolve()
+  private connectionGeneration = 0
+  private activeConnectionGeneration: number | undefined
   private readonly relay: CompanionRelayLifecycle | undefined
   private readonly listeners = new Set<() => void>()
 
   /** @param options - optional real Relay lifecycle; unpaired compositions omit it. */
   constructor(options: { relay?: CompanionRelayLifecycle } = {}) {
     this.relay = options.relay
-    this.state = { token: undefined, foreground: true, socketOpen: false, synchronized: false }
+    this.state = { foreground: true, socketOpen: false, synchronized: false }
   }
 
-  /**
-   * @returns the current process visibility and synchronization snapshot.
-   */
-  getState(): CompanionPushState {
+  /** @returns the current process visibility and synchronization snapshot. */
+  getState(): CompanionConnectionState {
     return this.state
   }
 
@@ -160,6 +116,7 @@ export class CompanionForegroundRuntime {
     this.granted = grant !== undefined
     this.relay?.configure?.(grant)
     if (grant === undefined) {
+      this.activeConnectionGeneration = undefined
       this.state = { ...this.state, socketOpen: false, synchronized: false }
       this.publish()
     }
@@ -173,9 +130,7 @@ export class CompanionForegroundRuntime {
     await this.enqueue(() => this.startOwned())
   }
 
-  /**
-   * Stop and drain the current Mobile attachment through the shared queue.
-   */
+  /** Stop and drain the current Mobile attachment through the shared queue. */
   async stop(): Promise<void> {
     await this.enqueue(() => this.stopOwned())
   }
@@ -190,46 +145,44 @@ export class CompanionForegroundRuntime {
     await this.enqueue(() => this.applyForeground(foreground))
   }
 
-  /**
-   * Mark Desktop-authoritative synchronization after a real reconnect.
-   * The product caller is `MobileRelayEndpointLifecycle` `onCiphertext`
-   * after Desktop resync ciphertext arrives.
-   */
-  synchronize(): void {
-    if (!this.granted) return
-    this.state = markCompanionSynchronized(this.state)
+  /** Record one Platform-acknowledged physical connection and invalidate earlier resync receivers. */
+  markConnectionOpen(): void {
+    if (!this.granted || !this.state.foreground) return
+    this.connectionGeneration += 1
+    this.activeConnectionGeneration = this.connectionGeneration
+    this.state = markCompanionSocketOpen(this.state)
     this.publish()
   }
 
   /**
-   * Drop pairing-delivered authority, reset the socket flags, and stop the
-   * Relay through the shared transition queue.
+   * Bind Desktop resynchronization to the current physical connection generation.
+   * Raw Relay ciphertext must never receive or call this receiver.
+   * @returns a generation-bound receiver, or `undefined` while disconnected.
    */
+  bindValidatedDesktopResync(): ValidatedDesktopResyncReceiver | undefined {
+    const generation = this.activeConnectionGeneration
+    if (generation === undefined || !this.state.socketOpen) return undefined
+    return {
+      acceptValidatedDesktopResync: (message) => {
+        if (!this.granted || this.activeConnectionGeneration !== generation) return false
+        void message
+        this.state = markCompanionSynchronized(this.state)
+        this.publish()
+        return this.state.synchronized
+      },
+    }
+  }
+
+  /** Drop pairing-delivered authority, reset connection state, and stop Relay. */
   async releasePairing(): Promise<void> {
     this.configure(undefined)
     await this.enqueue(() => this.stopOwned())
   }
 
-  /**
-   * Reset socket and synchronization flags without dropping the local token.
-   */
+  /** Reset socket and synchronization state after connection loss. */
   forgetConnection(): void {
+    this.activeConnectionGeneration = undefined
     this.state = { ...this.state, socketOpen: false, synchronized: false }
-    this.publish()
-  }
-
-  /**
-   * Retain the current device token until unpair.
-   * @param token - opaque APNs or FCM registration token.
-   */
-  rememberToken(token: string): void {
-    this.state = { ...this.state, token }
-    this.publish()
-  }
-
-  /** Drop the local token on unpair or revocation. */
-  clearToken(): void {
-    this.state = clearCompanionPushToken(this.state)
     this.publish()
   }
 
@@ -240,6 +193,7 @@ export class CompanionForegroundRuntime {
   }
 
   private async applyForeground(foreground: boolean): Promise<void> {
+    if (!foreground) this.activeConnectionGeneration = undefined
     this.state = setCompanionForeground(this.state, foreground)
     this.publish()
     if (!foreground) {
@@ -261,8 +215,7 @@ export class CompanionForegroundRuntime {
       return
     }
     if (this.relay.isConnected()) {
-      this.state = markCompanionSocketOpen(this.state)
-      this.publish()
+      if (!this.state.socketOpen) this.markConnectionOpen()
     }
   }
 
@@ -291,9 +244,7 @@ export function installCompanionRuntime(runtime: CompanionForegroundRuntime): ()
   return () => { if (installed === runtime) installed = undefined }
 }
 
-/**
- * @returns the runtime installed by the Mobile entry, if any.
- */
+/** @returns the runtime installed by the Mobile entry, if any. */
 export function companionRuntime(): CompanionForegroundRuntime | undefined {
   return installed
 }

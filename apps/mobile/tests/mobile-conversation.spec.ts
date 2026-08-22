@@ -38,7 +38,7 @@ describe('Mobile conversation renderer', () => {
     render(createElement(MobileConversation, {
       title: 'Safe',
       onBack: () => {},
-      companionState: { token: 'tok', foreground: true, socketOpen: true, synchronized: false },
+      companionState: { foreground: true, socketOpen: true, synchronized: false },
       onSettled,
       blocks: [{ kind: 'approval', summary: 'Allow write' }],
     }))
@@ -46,6 +46,35 @@ describe('Mobile conversation renderer', () => {
     expect(button.hasAttribute('disabled')).toBe(true)
     fireEvent.click(button)
     expect(onSettled).not.toHaveBeenCalled()
+  })
+
+  it('disables prompt and cancel callbacks until foreground synchronization', () => {
+    const onSubmit = vi.fn()
+    const onCancel = vi.fn()
+    const onAttach = vi.fn()
+    render(createElement(MobileConversation, {
+      title: 'Blocked',
+      onBack: () => {},
+      blocks: [],
+      onSubmit,
+      onCancel,
+      onAttach,
+      streaming: true,
+      companionState: { foreground: true, socketOpen: true, synchronized: false },
+    }))
+    fireEvent.change(screen.getByRole('textbox', { name: '继续会话' }), { target: { value: 'continue' } })
+    const submit = screen.getByRole('button', { name: '发送' })
+    const cancel = screen.getByRole('button', { name: '取消' })
+    const attach = screen.getByRole('button', { name: '添加附件' })
+    expect(submit.hasAttribute('disabled')).toBe(true)
+    expect(cancel.hasAttribute('disabled')).toBe(true)
+    expect(attach.hasAttribute('disabled')).toBe(true)
+    fireEvent.click(submit)
+    fireEvent.click(cancel)
+    fireEvent.click(attach)
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(onCancel).not.toHaveBeenCalled()
+    expect(onAttach).not.toHaveBeenCalled()
   })
 
   it('renders unknown tools as a generic read-only card and bounds terminal output', () => {
