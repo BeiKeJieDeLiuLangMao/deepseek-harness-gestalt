@@ -3384,7 +3384,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'BrowserInputRequest',
-    declaration: 'export type BrowserInputRequest = BrowserMutationRequest & ({\n    readonly url: string;\n    readonly text?: string;\n} | {\n    readonly url?: string;\n    readonly text: string;\n});',
+    declaration: 'export type BrowserInputRequest = BrowserMutationRequest & ({\n    readonly url: string;\n    readonly text?: string;\n} | {\n    readonly url?: never;\n    readonly text: string;\n});',
   },
   {
     name: 'BrowserInstanceId',
