@@ -53,7 +53,7 @@ export interface RelayRouteStore {
     credentialDigest: Uint8Array,
     pairingSelector?: RelayPairingSelector,
   ): Promise<number | undefined>
-  /** Atomically activate a pairing-scoped route and register both endpoint digests. */
+  /** Atomically register distinct pairing-scoped endpoint digests, rejecting reuse by another selector. */
   registerPairing(
     routeId: RelayRouteId,
     pairingSelector: RelayPairingSelector,

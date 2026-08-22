@@ -2,13 +2,13 @@
 
 [English](README.md) | 中文
 
-远程访问 Service Definition 与个人配对 Service Provider。`ctx.remoteAccess` 对每个 Desktop 安装默认关闭手机访问，直到用户在设置中开启；它创建两分钟单次邀请，通过 `AccountService.currentInstallation()` 鉴别每个账号会话的安装 id 与类型，要求两个安装解析到同一账号，并且仅在 Desktop 明确确认后授予设备主体。调用方不能自行声明安装身份或类型。开放注册配额限制安装、配对与附件；容量水位会以 `PLATFORM_CAPACITY` 和 `retryAfter` 拒绝新的登录、配对、附件或 WSS 接入，已建立的密文流继续。`createChallenge` 要求非空客户端 IP；配对挑战 HTTP 使用 TCP 对端地址并忽略 `x-forwarded-for`。每小时挑战、并发附件和每日上传窗口位于共享配对事务状态中，因此共用一个 `PersonalPairingAuthorityStore` 的两个提供方执行同一份账号完整上限。硬上限返回 60 秒 `retryAfter`；滑动窗口返回剩余窗口秒数。`admitAttachmentBlob` / `releaseAttachmentBlob` 按声明大小执行附件上限，不存储密文。开发与生产使用独立的 origin、OAuth App、回调、凭据、数据库与身份命名空间；密钥只来自部署托管引用，缺失则该能力失败关闭。`PersonalPairingAuthorityStore` 原子持有共享的 Desktop access-to-route 关联、已确认 Mobile 配对结果以及这些配额窗口；内存适配器只用于无密钥测试，部署必须向每个 Platform Instance 提供同一个持久适配器。
+远程访问 Service Definition 与个人配对 Service Provider。`ctx.remoteAccess` 对每个 Desktop 安装默认关闭手机访问，直到用户在设置中开启；它分配两分钟端点 mailbox 路由，通过 `AccountService.currentInstallation()` 鉴别每个账号会话的安装 id 与类型，要求两个安装解析到同一账号，并且仅在 Desktop 明确确认后授予设备主体。调用方不能自行声明安装身份或类型。开放注册配额限制安装、配对与附件；容量水位会以 `PLATFORM_CAPACITY` 和 `retryAfter` 拒绝新的登录、配对、附件或 WSS 接入，已建立的密文流继续。配对挑战 HTTP 使用 TCP 对端地址并忽略 `x-forwarded-for`。每小时挑战、并发附件和每日上传窗口位于共享配对事务状态中，因此共用一个 `PersonalPairingAuthorityStore` 的两个提供方执行同一份账号完整上限。硬上限返回 60 秒 `retryAfter`；滑动窗口返回剩余窗口秒数。开发与生产使用独立的 origin、OAuth App、回调、凭据、数据库与身份命名空间；密钥只来自部署托管引用，缺失则该能力失败关闭。`PersonalPairingAuthorityStore` 原子持有共享 Desktop route 关联、端点 mailbox、prepared publication 与补偿记录、已确认 Mobile 结果及配额窗口；内存适配器是确定性测试适配器，部署必须向每个 Platform Instance 提供同一个持久适配器。
 
-QR 载荷与完整的一次性 HTTPS 链接完全相同，携带 256 位邀请密钥、Desktop 指纹、rendezvous id、过期时间与协议主版本。握手完成后保持待确认，两个安装显示由握手哈希派生的同一组六个认证词。过期、取消、账号不匹配、拒绝、一次成功完成与关闭手机访问都会销毁对应的密码提供方能力。完成 id 与确认 id 保证重试幂等，串行变更保证并发完成只有一个获得邀请。
+Platform 返回不含邀请 PSK 的路由元数据。Desktop 在本地创建完整 XKpsk3 QR 或 HTTPS 载荷，把私有状态保存在受保护存储中，并且只通过 Platform 发送不透明 message 2 与端点公钥摘要。握手完成后保持待确认，两个安装显示由本地 transcript 派生的同一组六个认证词。完成 id 与确认 id 保证重试幂等，串行变更保证并发完成只有一个获得路由挑战。
 
-系统先提交终态，再清理提供方资源。挑战或待确认密钥销毁失败时，资源会保留在可重试清理记录中；客户端重试仍观察原有的完成、确认、取消、拒绝或过期结果，不会重复握手或激活。每个已鉴权安装最多持有四个存活挑战、四个待确认配对，以及合计十六条存活或为重放保留的生命周期记录。清理完成的幂等重放投影在五分钟后淘汰；清理失败的终态记录会继续占用容量，直到销毁成功。失去流程记录的待确认密钥会同时计入所属桌面安装和移动端安装，但不会与已结算记录重复计数。挑战创建时就调度过期任务。共享 authority 的释放仍会结算本实例创建的存活挑战，避免创建进程退出后永久占用每安装上限。提供方释放资源时会排空实例本地的未完成工作，但保留已确认配对与 route 权限，使滚动替换能够重连；只有显式关闭才负责持久撤销。生成的不透明 id 或密钥引用发生碰撞时会立即失败且不覆盖既有记录；激活分配在解析公开引用或生成 id 之前就归清理流程持有。
+系统先提交终态，再执行清理。每个已鉴权安装最多持有四个存活挑战、四个待确认配对，以及合计十六条存活或为重放保留的生命周期记录。清理完成的幂等重放投影在五分钟后淘汰；清理失败的终态记录会继续占用容量，直到销毁成功。端点 publication 在 Relay 登记前按 route generation 持久化；拒绝、过期、关闭手机访问或发布失败会把两个凭据摘要与已确认 Mobile 结果移入分步补偿记录。每个成功撤销步骤都独立提交，因此另一 Platform 进程可在崩溃后继续清理且不重复已完成步骤。提供方释放资源时保留已确认配对与 route 权限，使滚动替换能够重连；只有显式关闭才负责持久撤销。
 
-产品 endpoint 流程把 XKpsk3 适配器与邀请 PSK 留在 Desktop 和 Mobile。Platform 只保存不透明 mailbox 消息、过期与幂等元数据、route generation，以及按配对划分的 Desktop 与 Mobile 公钥 digest。确认操作在同一 selector 下原子发布两端 digest，并在每个外部效果和最终提交前重新校验启用中的 route generation。Mobile 在发送 message 3 前持久化已完成的握手，并在擦除一次性邀请状态前把打开的 sealed grant 与 reconnect state 一起提交。进程重启会恢复同一事务，或者直接从已提交 grant 启动 Relay，不会再次打开该 grant。生成的设备主体只有 `companion-surface` 权限。开发 keyless 适配器仅供测试，受运维 Platform 组合与产品快照都不包含它。
+产品 endpoint 流程把 XKpsk3 适配器、邀请 PSK、P-256 私有凭据与重连状态留在 Desktop 和 Mobile。Platform 只保存不透明 mailbox 消息、过期与幂等元数据、route generation、按配对划分的公钥摘要与补偿进度。确认会拒绝相同或跨配对复用的端点摘要，并在同一 selector 下原子发布两端摘要。Desktop 受保护存储在发布前最多接纳十六项存活或待确认配对；sleep、关闭窗口和普通 quit 只让 Relay 静默，不删除 vault。Mobile 在擦除一次性邀请状态前提交已打开的密封 authority 与 reconnect state。进程重启会恢复同一事务，或者直接从已提交 grant 启动 Relay，不会再次打开该 grant。生成的设备主体只有 `companion-surface` 权限。开发 keyless 适配器仅供测试，受运维 Platform 组合与产品快照都不包含它。
 
 `ctx.remoteRelay` 拥有无状态多实例 Relay 生命周期。Desktop 与 Mobile 分别持有独立 P-256 签名凭据，持久 `RelayRouteStore` 只保留公钥摘要。每条物理连接都证明一份绑定 route、端点、attachment 与过期时间的新鲜挑战，因此观察到的 attach 交换无法授权另一条连接，仅凭不透明 route id 也无法 attach。每个 Platform Instance 先鉴权 attachment 并刷出 ready，再把它注册到会过期的共享目录，并直接发布到目标实例。跨实例事件只包含有界 Relay 密文、带品牌 transport id、连接 token 与 route revision。目标缺失时返回 `REMOTE_OFFLINE`，不存在离线密文或 mutation queue。容量限制只拒绝新 attachment，慢消费者在配置的字节上限处断开，心跳重新验证 route 权限，轮换或撤销会跨实例使旧在线 attachment 失效。仅主机侧的 `relay-provider` 包从本包的公开入口导入 `RemoteRelayError`，使按该类做 `instanceof` 映射的 HTTP Consumer 与 provider 共用同一个构造函数。
 
@@ -24,6 +24,6 @@ QR 载荷与完整的一次性 HTTPS 链接完全相同，携带 256 位邀请�
 
 ## Known Limitations and Deferred Work
 
-- 生产环境已组装仅端点 mailbox、持久 authority store、密封 Mobile grant 与 Snow channel。独立安全评审以及 WKWebView／Android WebView 真机证据仍是发布证据，而不是运行时功能开关。
-- 个人配对 challenge 与待确认握手记录仍使用随附的单进程提供方。已确认的 pairing-to-route/access 权限与 Relay route store 都是部署拥有的 seam；本仓库不供应 PostgreSQL、Redis、TLS 或云实例。
+- 产品组合已组装仅端点 mailbox、持久 authority store、密封 Mobile authority 与 Snow channel。独立安全评审以及 WKWebView／Android WebView 真机证据仍是发布证据，而不是运行时功能开关。
+- 已运营 Platform 通过 PostgreSQL 持久化 mailbox、publication、pairing-to-route 与 Relay 摘要权限，并且只用 Redis 处理会过期的 attachment discovery 与密文投递。本仓库不供应 PostgreSQL、Redis、TLS 或云实例。
 - 产品 Desktop 与 Mobile 使用 endpoint-owned Snow mailbox 和 Companion channel；Platform 不挂载配对密码实现。物理 WebView 证据与针对确切实现的独立评审仍是 release blocker。

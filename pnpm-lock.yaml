@@ -6651,6 +6651,9 @@ importers:
 
   packages/platform/remote-access-http:
     dependencies:
+      '@deepseek-ai/dsh-noise-channel':
+        specifier: workspace:^
+        version: link:../noise-channel
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
         version: link:../../../vendor/schemastery

@@ -44,7 +44,7 @@ export interface DesktopPairingActions {
   subscribe(listener: (snapshot: DesktopPairingSnapshot) => void): () => void
   /** Load Remote Access state after the Account installation has started. */
   start(): Promise<void>
-  /** Stop polling and drain work when the current Account signs out. */
+  /** Quiesce polling and Relay; Mobile Access disablement additionally resets protected Account scope. */
   deactivate(reason?: DesktopRelayStopReason): Promise<void>
   /** Drain lifecycle work during Desktop shutdown. */
   dispose(): Promise<void>

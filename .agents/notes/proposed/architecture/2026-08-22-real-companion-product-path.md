@@ -24,6 +24,8 @@ Mobile Companion has no push capability. APNs and FCM adapters, tokens, payloads
 
 Product acceptance runs the shipped Mobile entry, the operated non-sticky two-instance Platform, and a real Paired Desktop. `apps/mobile/prototype-companion`, Vite ports 5173/5174, fake identities, in-memory stores, test certificates, and test-only providers are prohibited as acceptance origins.
 
+Repository evidence boots two independent Loader-owned Platform/WebServer/HTTP compositions and reaches both published WSS upgrade handlers through a non-sticky endpoint. It completes two endpoint-owned XKpsk3 pairings, sealed authority delivery, Snow IK foreground synchronization, instance failover, and independent revocation. Its memory stores and localhost certificate prove composition and protocol behavior only; they do not replace operated infrastructure, native WebView, or trust-chain evidence.
+
 ## Alternatives considered
 
 **Promote the local Companion listen after replacing individual fixtures.** Rejected because the composition itself owns fake identity, memory authority, localhost trust, and keyless transport; incremental substitution would leave a second product path and ambiguous acceptance evidence.
@@ -46,4 +48,4 @@ Product acceptance runs the shipped Mobile entry, the operated non-sticky two-in
 
 ## Risks
 
-Removing push means the product cannot alert a backgrounded phone; the user must open or foreground Mobile Companion before it can learn current Desktop state. Shared Web components may require deeper public interfaces so phone layout remains independent without exposing Desktop authority. The real assembled test remains blocked until the operated Platform and review-approved channel are available, and production deployment or mobile distribution still requires separate authorization.
+Removing push means the product cannot alert a backgrounded phone; the user must open or foreground Mobile Companion before it can learn current Desktop state. Shared Web components may require deeper public interfaces so phone layout remains independent without exposing Desktop authority. Operated Platform, physical WKWebView/Android WebView, independent security review, production deployment, and mobile distribution remain separate evidence or authorization requirements.

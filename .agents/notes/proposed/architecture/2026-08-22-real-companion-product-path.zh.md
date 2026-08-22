@@ -24,6 +24,8 @@ Mobile Companion 不提供推送能力。[仅前台同步决策](../../implement
 
 产品验收运行发布的 Mobile 入口、已运营的非粘性双实例 Platform 与真实 Paired Desktop。`apps/mobile/prototype-companion`、Vite 端口 5173/5174、假身份、内存存储、测试证书与测试专用 provider 禁止作为验收 origin。
 
+仓库证据启动两套由独立 Loader 持有的 Platform／WebServer／HTTP composition，并经 non-sticky endpoint 到达两者发布的 WSS upgrade handler。它完成两项端点自有 XKpsk3 配对、密封 authority 投递、Snow IK 前台同步、实例故障切换与独立撤销。其中的内存存储与 localhost 证书只证明 composition 和协议行为；它们不能替代已运营基础设施、原生 WebView 或信任链证据。
+
 ## Alternatives considered
 
 **逐个替换 fixture 后提升本地 Companion listen。** 拒绝，因为该 composition 本身拥有假身份、内存权威、localhost 信任和 keyless transport；逐项替换仍会留下第二条产品路径和含糊的验收证据。
@@ -46,4 +48,4 @@ Mobile Companion 不提供推送能力。[仅前台同步决策](../../implement
 
 ## Risks
 
-删除推送意味着产品无法提醒后台中的手机；用户必须打开 Mobile Companion 或将其切回前台，应用才能获知 Desktop 当前状态。共享 Web 组件可能需要更深的公共接口，使手机布局保持独立而不暴露 Desktop 权威。真实组装测试仍受已运营 Platform 与通过评审的通道阻塞，生产部署或移动端分发仍需单独授权。
+删除推送意味着产品无法提醒后台中的手机；用户必须打开 Mobile Companion 或将其切回前台，应用才能获知 Desktop 当前状态。共享 Web 组件可能需要更深的公共接口，使手机布局保持独立而不暴露 Desktop 权威。已运营 Platform、物理 WKWebView／Android WebView、独立安全评审、生产部署与移动端分发仍分别需要证据或授权。
