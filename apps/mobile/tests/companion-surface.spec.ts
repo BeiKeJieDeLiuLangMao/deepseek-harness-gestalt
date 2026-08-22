@@ -186,6 +186,107 @@ describe('MobileCompanionSurface', () => {
     })
   })
 
+  it('owns one attachment operation and ignores an old result after the next file starts', () => {
+    const runtime = new CompanionForegroundRuntime()
+    const mutations = mutationChannel()
+    mutations.attach
+      .mockReturnValueOnce({
+        operationId: parseCompanionOperationId('attachment-old'),
+        completion: new Promise<void>(() => {}),
+      })
+      .mockReturnValueOnce({
+        operationId: parseCompanionOperationId('attachment-new'),
+        completion: new Promise<void>(() => {}),
+      })
+    const surface = new MobileCompanionSurface(runtime, mutations)
+    runtime.configure(grant)
+    runtime.markConnectionOpen()
+    const resync = surface.bindValidatedDesktopResync()
+    const results = surface.bindValidatedCompanionResults()
+    if (resync === undefined || results === undefined) throw new Error('expected current generation receivers')
+    resync.acceptValidatedDesktopResync({
+      type: 'desktop-resync', version: 1, authenticated: true, sessions: [], streaming: false,
+    })
+
+    surface.attach('session-one', selectedFile())
+    expect(() => { surface.attach('session-one', selectedFile()) })
+      .toThrow('Attachment operation attachment-old must be resolved before selecting another file')
+    expect(mutations.attach).toHaveBeenCalledOnce()
+    results.acceptValidatedCompanionResult({
+      type: 'attachment-rejected',
+      operationId: parseCompanionOperationId('attachment-old'),
+      reason: 'expired',
+    })
+
+    surface.attach('session-one', selectedFile())
+    expect(surface.getSnapshot().attachment).toEqual({
+      operationId: 'attachment-new', status: 'sending',
+    })
+    results.acceptValidatedCompanionResult({
+      type: 'confirmed',
+      operationId: parseCompanionOperationId('attachment-old'),
+      committedAt: 1,
+      outcome: 'accepted',
+    })
+    expect(surface.getSnapshot().attachment).toEqual({
+      operationId: 'attachment-new', status: 'sending',
+    })
+    results.acceptValidatedCompanionResult({
+      type: 'confirmed',
+      operationId: parseCompanionOperationId('attachment-new'),
+      committedAt: 2,
+      outcome: 'accepted',
+    })
+    expect(surface.getSnapshot().attachment).toEqual({
+      operationId: 'attachment-new', status: 'accepted',
+    })
+  })
+
+  it('requires an uncertain attachment receipt to reconcile before another file starts', async () => {
+    const runtime = new CompanionForegroundRuntime()
+    let rejectCompletion: ((reason: unknown) => void) | undefined
+    const mutations = mutationChannel()
+    mutations.attach
+      .mockReturnValueOnce({
+        operationId: parseCompanionOperationId('attachment-uncertain'),
+        completion: new Promise<void>((_resolve, reject) => { rejectCompletion = reject }),
+      })
+      .mockReturnValueOnce({
+        operationId: parseCompanionOperationId('attachment-after-reconcile'),
+        completion: new Promise<void>(() => {}),
+      })
+    const surface = new MobileCompanionSurface(runtime, mutations)
+    runtime.configure(grant)
+    runtime.markConnectionOpen()
+    const resync = surface.bindValidatedDesktopResync()
+    const results = surface.bindValidatedCompanionResults()
+    if (resync === undefined || results === undefined) throw new Error('expected current generation receivers')
+    resync.acceptValidatedDesktopResync({
+      type: 'desktop-resync', version: 1, authenticated: true, sessions: [], streaming: false,
+    })
+
+    surface.attach('session-one', selectedFile())
+    rejectCompletion?.(new CompanionAttachmentDeliveryUncertainError(
+      parseCompanionOperationId('attachment-uncertain'),
+      new Error('connection replaced'),
+    ))
+    await Promise.resolve()
+
+    expect(() => { surface.attach('session-one', selectedFile()) })
+      .toThrow('Attachment operation attachment-uncertain must be resolved before selecting another file')
+    expect(mutations.attach).toHaveBeenCalledOnce()
+    results.acceptValidatedCompanionResult({
+      type: 'status',
+      operationId: parseCompanionOperationId('attachment-uncertain'),
+      absent: true,
+    })
+    surface.attach('session-one', selectedFile())
+    expect(mutations.attach).toHaveBeenCalledTimes(2)
+    expect(surface.getSnapshot().attachment).toEqual({
+      operationId: 'attachment-after-reconcile', status: 'sending',
+    })
+  })
+
   it('rejects decoded search results from a replaced connection generation', () => {
     const runtime = new CompanionForegroundRuntime()
     const surface = new MobileCompanionSurface(runtime, mutationChannel())

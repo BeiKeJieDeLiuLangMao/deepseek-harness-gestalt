@@ -1,10 +1,9 @@
 // @vitest-environment jsdom
-import { execFile } from 'node:child_process'
 import { createRequire } from 'node:module'
-import { promisify } from 'node:util'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react'
+import { execa } from 'execa'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   parseInstallationId,
@@ -26,6 +25,7 @@ import {
   parseCompanionOperationId,
   parseRelayCredential,
   parseRelayRouteId,
+  REMOTE_PROTOCOL_LIMITS,
 } from '@deepseek-ai/dsh-remote-protocol'
 import {
   CompanionForegroundRuntime,
@@ -38,11 +38,10 @@ import {
 
 const here = dirname(fileURLToPath(import.meta.url))
 const repo = join(here, '..')
-const execFileAsync = promisify(execFile)
-const testCleanups: Array<() => void> = []
+const testCleanups: Array<() => void | Promise<void>> = []
 
-afterEach(() => {
-  for (const dispose of testCleanups.splice(0).reverse()) dispose()
+afterEach(async () => {
+  for (const dispose of testCleanups.splice(0).reverse()) await dispose()
   cleanup()
 })
 
@@ -51,9 +50,13 @@ describe('Host HTTP failure Companion projection', () => {
     const operationId = parseCompanionOperationId('visible-host-400')
     const tsxLoader = pathToFileURL(createRequire(join(repo, 'package.json')).resolve('tsx')).href
     const probe = join(repo, 'apps', 'desktop', 'tests', 'host-400-codec-probe.ts')
-    const { stdout } = await execFileAsync(process.execPath, ['--import', tsxLoader, probe], {
-      env: { ...process.env, TSX_TSCONFIG_PATH: join(repo, 'tsconfig.json') },
-    })
+    const probeResult = await startProbe(
+      ['--import', tsxLoader, probe],
+      10_000,
+      { TSX_TSCONFIG_PATH: join(repo, 'tsconfig.json') },
+    )
+    expect(probeResult).toMatchObject({ exitCode: 0, timedOut: false, isTerminated: false })
+    const { stdout } = probeResult
     const protocol = negotiateCompanionProtocol(
       createCompanionNegotiationChannel(),
       createCompanionVersionOffer('mobile'),
@@ -109,7 +112,40 @@ describe('Host HTTP failure Companion projection', () => {
 
     expect((await screen.findByRole('alert')).textContent).toBe('Desktop Host returned HTTP 400')
   })
+
+  it('terminates and reaps a stalled codec producer at its deadline', async () => {
+    const result = await startProbe(['-e', 'setInterval(() => {}, 1000)'], 100)
+
+    expect(result).toMatchObject({ timedOut: true, isTerminated: true })
+  })
 })
+
+function startProbe(
+  args: readonly string[],
+  timeout: number,
+  extraEnv: NodeJS.ProcessEnv = {},
+) {
+  const env = Object.fromEntries(
+    Object.entries(process.env).filter(([name]) => !/KEY|PASSWORD|SECRET|TOKEN/iu.test(name)),
+  )
+  const child = execa(process.execPath, args, {
+    cleanup: true,
+    env: { ...env, ...extraEnv },
+    extendEnv: false,
+    forceKillAfterDelay: 500,
+    killSignal: 'SIGTERM',
+    maxBuffer: REMOTE_PROTOCOL_LIMITS.companionMessageBytes * 2,
+    reject: false,
+    timeout,
+  })
+  testCleanups.push(async () => {
+    if (child.nodeChildProcess.exitCode === null && child.nodeChildProcess.signalCode === null) {
+      child.kill('SIGTERM')
+    }
+    await child
+  })
+  return child
+}
 
 const environment = selectPlatformEnvironment(validatePlatformEnvironmentPair({
   development: {

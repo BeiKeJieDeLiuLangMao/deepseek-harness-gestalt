@@ -1,24 +1,24 @@
-import { createRequire } from 'node:module'
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, rm } from 'node:fs/promises'
+import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
+import { Context } from '@deepseek-ai/cordis'
+import AgentRegistry from '@deepseek-ai/dsh-agent'
+import { createApiProxy, toFetchHandler } from '@deepseek-ai/dsh-host-apiproxy'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { parsePersonalPairingId } from '@deepseek-ai/dsh-remote-access'
 import {
   parseCompanionOperationId,
   REMOTE_PROTOCOL_LIMITS,
   type CompanionSearchSessionsOperation,
 } from '@deepseek-ai/dsh-remote-protocol'
+import SessionStore, { SESSION_FORMAT_VERSION, SessionId } from '@deepseek-ai/dsh-session'
+import SqliteSessionQueryEngine from '@deepseek-ai/dsh-session-query-sqlite'
+import UserQuestionService from '@deepseek-ai/dsh-user-questions'
 import { DesktopCompanionProductOwner } from '../src/companion-product.ts'
-import { createDesktopHostRpc } from '../src/host-rpc.ts'
-import { spawnWebHost, type RunningWebHost } from '../src/spawn-web-host.ts'
 import { runHost400CodecProbe } from './host-400-codec-probe.ts'
-import { startKeylessDesktopProvider } from './keyless-provider.ts'
 
-const here = dirname(fileURLToPath(import.meta.url))
-const repo = join(here, '..', '..', '..')
-const desktopPatch = join(here, '..', 'cordis.patch.yml')
 const cleanups: Array<() => Promise<void>> = []
 
 afterEach(async () => {
@@ -27,11 +27,8 @@ afterEach(async () => {
 
 describe('assembled Desktop Companion Host search', () => {
   it('indexes a real Desktop Session and returns authoritative hit and no-hit results', async () => {
-    const provider = await startKeylessDesktopProvider()
-    cleanups.push(async () => { await provider.close() })
-    const assembled = await startDesktopHost(provider.origin)
-    await seedSession(assembled.host.url, assembled.sessionId, 'desktop assembled SQLite needle')
-    const owner = productOwner(assembled.host.url)
+    const assembled = await startDesktopHost('indexed', 'desktop assembled SQLite needle')
+    const owner = productOwner(assembled.url)
 
     let hit = await search(owner, 'desktop assembled SQLite needle', 'assembled-hit')
     await expect.poll(async () => {
@@ -58,11 +55,8 @@ describe('assembled Desktop Companion Host search', () => {
   it.each(['disabled', 'index-failure'] as const)(
     'projects a real Desktop %s search-provider failure',
     async (scenario) => {
-      const provider = await startKeylessDesktopProvider()
-      cleanups.push(async () => { await provider.close() })
-      const assembled = await startDesktopHost(provider.origin, scenario)
-      await seedSession(assembled.host.url, assembled.sessionId, `desktop ${scenario} needle`)
-      const owner = productOwner(assembled.host.url)
+      const assembled = await startDesktopHost(scenario, `desktop ${scenario} needle`)
+      const owner = productOwner(assembled.url)
 
       const failure = await search(owner, `desktop ${scenario} needle`, `assembled-${scenario}`)
       expect(failure).toMatchObject({
@@ -81,58 +75,86 @@ describe('assembled Desktop Companion Host search', () => {
 })
 
 async function startDesktopHost(
-  providerOrigin: string,
-  scenario?: 'disabled' | 'index-failure',
-): Promise<{ host: RunningWebHost; sessionId: string }> {
+  scenario: 'indexed' | 'disabled' | 'index-failure',
+  message: string,
+): Promise<{ url: string; sessionId: string }> {
   const root = await mkdtemp(join(tmpdir(), 'desktop-companion-assembled-'))
   cleanups.push(async () => { await rm(root, { recursive: true, force: true }) })
-  const patches = [desktopPatch]
-  if (scenario !== undefined) {
-    const scenarioPatch = join(root, `${scenario}.yml`)
-    const indexPath = scenario === 'index-failure' ? join(root, 'index-directory') : join(root, 'disabled.sqlite')
-    if (scenario === 'index-failure') await mkdir(indexPath)
-    await writeFile(scenarioPatch, [
-      '- id: session-query-sqlite',
-      '  config:',
-      `    path: ${JSON.stringify(indexPath)}`,
-      `    openAt: ${scenario === 'disabled' ? 'never' : 'first-search'}`,
-      '',
-    ].join('\n'))
-    patches.push(scenarioPatch)
-  }
-  const tsxLoader = pathToFileURL(createRequire(join(repo, 'package.json')).resolve('tsx')).href
-  const bin = join(repo, 'apps', 'cli', 'src', 'bin.ts')
-  const host = await spawnWebHost({
-    node: process.execPath,
-    args: [
-      '--import', tsxLoader, bin, 'web',
-      ...patches.flatMap(patch => ['--patch', patch]),
-      '--host', '127.0.0.1', '--port', '0',
-    ],
-    cwd: root,
-    env: {
-      DSH_HOME: join(root, '.dsh'),
-      DSH_AGENTS_HOME: join(root, '.agents'),
-      DEEPSEEK_API_KEY: 'keyless-desktop-companion-assembled',
-      DEEPSEEK_BASE_URL: providerOrigin,
-      TSX_TSCONFIG_PATH: join(repo, 'tsconfig.json'),
+  const ctx = new Context()
+  const sessions = await ctx.plugin(SessionStore)
+  cleanups.push(async () => { await sessions.dispose() })
+  const agents = await ctx.plugin(AgentRegistry)
+  cleanups.push(async () => { await agents.dispose() })
+  const questions = await ctx.plugin(UserQuestionService)
+  cleanups.push(async () => { await questions.dispose() })
+  const indexPath = scenario === 'index-failure'
+    ? join(root, 'index-directory')
+    : join(root, 'session-search.sqlite')
+  if (scenario === 'index-failure') await mkdir(indexPath)
+  const query = await ctx.plugin(SqliteSessionQueryEngine, {
+    path: indexPath,
+    openAt: scenario === 'disabled' ? 'never' : 'first-search',
+  })
+  cleanups.push(async () => { await query.dispose() })
+  const sessionId = SessionId(`desktop-${scenario}-session`)
+  const session = ctx.sessions.create(sessionId, {
+    meta: {
+      version: SESSION_FORMAT_VERSION,
+      id: sessionId,
+      createdAt: 1,
+      cwd: root,
     },
   })
-  cleanups.push(async () => { await host.stop() })
-  return { host, sessionId: `desktop-${scenario ?? 'indexed'}-session` }
+  session.append('user/message', createUserMessage({
+    content: [{ type: 'text', text: message }],
+    source: { kind: 'user' },
+  }), { surfaceOp: 'append' })
+  const api = createApiProxy(ctx, {
+    defaultModelSelection: () => ({ provider: 'keyless', model: 'assembled' }),
+    cwd: root,
+  })
+  const url = await startHttpCarrier(toFetchHandler(api))
+  return { url, sessionId }
 }
 
-async function seedSession(baseUrl: string, sessionId: string, text: string): Promise<void> {
-  const rpc = createDesktopHostRpc(baseUrl, {
-    timeoutMs: 10_000,
-    responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
+async function startHttpCarrier(handler: { fetch(request: Request): Promise<Response> }): Promise<string> {
+  const server = createServer((request, response) => {
+    void (async () => {
+      const chunks: Buffer[] = []
+      for await (const chunk of request) chunks.push(chunk as Buffer)
+      const fetchResponse = await handler.fetch(new Request(
+        new URL(request.url ?? '/', 'http://desktop-companion.test'),
+        {
+          method: request.method ?? 'GET',
+          headers: Object.fromEntries(
+            Object.entries(request.headers).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
+          ),
+          ...(chunks.length === 0 ? {} : { body: Buffer.concat(chunks) }),
+        },
+      ))
+      response.writeHead(fetchResponse.status, Object.fromEntries(fetchResponse.headers.entries()))
+      response.end(Buffer.from(await fetchResponse.arrayBuffer()))
+    })().catch((error: unknown) => {
+      response.writeHead(500)
+      response.end(error instanceof Error ? error.message : String(error))
+    })
   })
-  await expect(rpc.call('session.create', { sessionId })).resolves.toMatchObject({ ok: true })
-  await expect(rpc.call('session.prompt', {
-    sessionId,
-    mode: 'queue',
-    content: [{ type: 'text', text }],
-  })).resolves.toMatchObject({ ok: true })
+  await new Promise<void>((resolveListen, rejectListen) => {
+    server.once('error', rejectListen)
+    server.listen(0, '127.0.0.1', () => {
+      server.off('error', rejectListen)
+      resolveListen()
+    })
+  })
+  cleanups.push(async () => {
+    server.closeAllConnections()
+    await new Promise<void>((resolveClose, rejectClose) => {
+      server.close((error) => { if (error === undefined) resolveClose(); else rejectClose(error) })
+    })
+  })
+  const address = server.address()
+  if (address === null || typeof address === 'string') throw new Error('expected assembled Host TCP address')
+  return `http://127.0.0.1:${String(address.port)}`
 }
 
 function productOwner(baseUrl: string): DesktopCompanionProductOwner {

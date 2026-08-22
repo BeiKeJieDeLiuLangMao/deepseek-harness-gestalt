@@ -113,7 +113,7 @@ export class MobileCompanionSurface {
     attachment: { status: 'idle' },
   }
   #searchOperationId: CompanionOperationId | undefined
-  readonly #attachmentOperationIds = new Set<CompanionOperationId>()
+  #attachmentOperationId: CompanionOperationId | undefined
 
   /**
    * @param runtime - current physical-connection synchronization authority.
@@ -183,15 +183,20 @@ export class MobileCompanionSurface {
 
   /** @param sessionId - Desktop Session target. @param file - real browser-selected file. */
   readonly attach = (sessionId: string, file: File): void => {
+    if (this.#attachmentOperationId !== undefined) {
+      throw new Error(
+        `Attachment operation ${this.#attachmentOperationId} must be resolved before selecting another file`,
+      )
+    }
     const submission = this.transmit('attachment', channel => channel.attach(sessionId, file))
-    this.#attachmentOperationIds.add(submission.operationId)
+    this.#attachmentOperationId = submission.operationId
     this.#snapshot = {
       ...this.#snapshot,
       attachment: { operationId: submission.operationId, status: 'sending' },
     }
     this.publish()
     void submission.completion.catch((error: unknown) => {
-      if (!this.#attachmentOperationIds.has(submission.operationId)) return
+      if (this.#attachmentOperationId !== submission.operationId) return
       if (
         error instanceof CompanionAttachmentDeliveryUncertainError
         && error.operationId === submission.operationId
@@ -205,7 +210,7 @@ export class MobileCompanionSurface {
           },
         }
       } else {
-        this.#attachmentOperationIds.delete(submission.operationId)
+        this.#attachmentOperationId = undefined
         this.#snapshot = {
           ...this.#snapshot,
           attachment: {
@@ -290,9 +295,9 @@ export class MobileCompanionSurface {
       this.publish()
       return
     }
-    if (!this.#attachmentOperationIds.has(result.operationId)) return
+    if (result.operationId !== this.#attachmentOperationId) return
     if (result.type === 'confirmed') {
-      this.#attachmentOperationIds.delete(result.operationId)
+      this.#attachmentOperationId = undefined
       this.#snapshot = {
         ...this.#snapshot,
         attachment: { operationId: result.operationId, status: 'accepted' },
@@ -301,7 +306,7 @@ export class MobileCompanionSurface {
       return
     }
     if (result.type === 'attachment-rejected') {
-      this.#attachmentOperationIds.delete(result.operationId)
+      this.#attachmentOperationId = undefined
       this.#snapshot = {
         ...this.#snapshot,
         attachment: {
@@ -315,7 +320,7 @@ export class MobileCompanionSurface {
       return
     }
     if (result.type === 'operation-failed') {
-      this.#attachmentOperationIds.delete(result.operationId)
+      this.#attachmentOperationId = undefined
       this.#snapshot = {
         ...this.#snapshot,
         attachment: {
@@ -329,7 +334,7 @@ export class MobileCompanionSurface {
     }
     if (result.type === 'status') {
       if ('absent' in result) {
-        this.#attachmentOperationIds.delete(result.operationId)
+        this.#attachmentOperationId = undefined
         this.#snapshot = {
           ...this.#snapshot,
           attachment: {
@@ -339,7 +344,7 @@ export class MobileCompanionSurface {
           },
         }
       } else {
-        this.#attachmentOperationIds.delete(result.operationId)
+        this.#attachmentOperationId = undefined
         this.#snapshot = {
           ...this.#snapshot,
           attachment: { operationId: result.operationId, status: 'accepted' },
