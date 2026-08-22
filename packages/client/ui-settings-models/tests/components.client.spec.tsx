@@ -416,19 +416,19 @@ describe('ModelsSection', () => {
     const leftover = new Map<string, SettingsNamespaceView>([
       ['llm-deepseek', { ...wireNamespaces()[0]!, user: {} }],
     ])
-    expect(listedProviderRows([official, other], firstRun, new Set()).map(row => row.entry.provider))
+    expect(listedProviderRows([official, other], firstRun).map(row => row.entry.provider))
       .toEqual(['deepseek-official'])
-    expect(listedProviderRows([official, other], leftover, new Set())).toEqual([])
+    expect(listedProviderRows([official, other], leftover)).toEqual([])
     expect(listedProviderRows(
       [{ ...official, credential: { configured: true, writable: true } }, other],
       leftover,
-      new Set(),
     ).map(row => row.entry.provider)).toEqual(['deepseek-official'])
-    expect(listedProviderRows([{ ...official, configured: true }, other], leftover, new Set()).map(row => row.entry.provider))
+    expect(listedProviderRows([{ ...official, configured: true }, other], leftover).map(row => row.entry.provider))
       .toEqual(['deepseek-official'])
-    expect(listedProviderRows([official], firstRun, new Set(['deepseek-official'])).map(row => row.entry.provider))
+    expect(listedProviderRows([official], firstRun).map(row => row.entry.provider))
       .toEqual(['deepseek-official'])
-    expect(listedProviderRows([official], new Map(), new Set())).toEqual([])
+    expect(listedProviderRows([official], leftover)).toEqual([])
+    expect(listedProviderRows([official], new Map())).toEqual([])
   })
 
   it('decides setup need from the joined credential state and the first-run posture', () => {
@@ -1467,6 +1467,34 @@ describe('ModelsSection', () => {
       t={t}
     />)
     await screen.findByText('DeepSeek')
+  })
+
+  it('hides official DeepSeek after delete even if the first-run setup card was closed', async () => {
+    const leftover = { ...withoutUser(wireNamespaces()[0]!), user: {}, revision: 1 }
+    const firstRunNamespaces = wireNamespaces().map(namespace =>
+      namespace.ns === 'llm-deepseek' ? withoutUser(namespace) : namespace)
+    const scripted = scriptedFace({
+      mutate: vi.fn(() => Promise.resolve(ok(leftover))),
+    })
+    scripted.face.llm.providers.mockResolvedValue(ok({
+      providers: [
+        { provider: 'deepseek-official', displayName: 'DeepSeek', settingsNs: 'llm-deepseek', settingsPath: [], active: true },
+      ],
+    }))
+    scripted.face.settings.describe.mockResolvedValue(ok({
+      writable: true, hasDocument: false, namespaces: firstRunNamespaces,
+    }))
+    scripted.face.credentials.describe.mockImplementation((payload: { refs: string[] }) =>
+      Promise.resolve(ok({
+        credentials: Object.fromEntries(payload.refs.map(ref => [ref, { configured: false, writable: true }])),
+      })))
+    await mountFace(scripted)
+    expect(screen.getByLabelText(en.keyInput)).toBeTruthy()
+    fireEvent.click(screen.getByText(en.cancel))
+    fireEvent.click(screen.getByRole('button', { name: deepSeekCopy(en.removeProvider) }))
+    const dialog = screen.getByRole('dialog', { name: deepSeekCopy(en.deleteTitle) })
+    fireEvent.click(within(dialog).getByRole('button', { name: deepSeekCopy(en.deleteConfirm) }))
+    await waitFor(() => { expect(screen.queryByText('DeepSeek')).toBeNull() })
   })
 
   it('removes by unsetting the profile path, never by rebuilding the section', async () => {

@@ -7,7 +7,8 @@
  * the first-run posture — the user layer was never written and no provider on
  * the page can serve requests yet — and only until the user closes that card.
  * A leftover empty user object after delete stays off the list unless a
- * described credential is already stored. The add flow is a card carrying the
+ * described credential is already stored, including in the same session after
+ * the first-run setup card was closed. The add flow is a card carrying the
  * dormant-provider select. Each card kind owns its own open state, so closing
  * one never discards a draft in another. Every mutation writes through the
  * wire, while a provider removal first requires confirmation; the page
@@ -116,6 +117,7 @@ export async function removeProviderProfile(
       ops: [{ op: 'unset', path: [...target.settingsPath] }],
     })
     if (!response.result.ok) return response.result.error.message
+    controller.acceptWrite(response.result.value)
   } catch (error) {
     // The transport rejected rather than answering; the caller must be able
     // to retry the idempotent operation instead of the row silently staying.
@@ -149,23 +151,18 @@ export function needsSetup(row: ProviderRow, anyUsable: boolean): boolean {
  * stays on the list so first-run can open the setup card, or so an already
  * usable page can show an ordinary row. Unsetting the section root leaves
  * `user: {}`, which is not first-run and stays off the list unless a
- * credential is already stored.
+ * credential is already stored. Closing the setup card does not change that
+ * leftover rule; it only switches the never-written row from a card to Edit.
  * @param rows - joined provider rows.
  * @param namespaces - settings namespaces from the same join.
- * @param dismissed - providers whose setup card the user closed this session.
  * @returns rows that appear in the list.
  */
 export function listedProviderRows(
   rows: readonly ProviderRow[],
   namespaces: ReadonlyMap<string, SettingsNamespaceView>,
-  dismissed: ReadonlySet<string>,
 ): ProviderRow[] {
   return rows.filter((row) => {
-    if (
-      row.configured
-      || row.credential?.configured === true
-      || dismissed.has(row.entry.provider)
-    ) return true
+    if (row.configured || row.credential?.configured === true) return true
     if (row.entry.settingsPath.length > 0) return false
     const namespace = namespaces.get(row.entry.settingsNs)
     return namespace !== undefined && namespace.user === undefined
@@ -278,6 +275,11 @@ function Loaded({ injected }: { injected: ModelsSectionFace }): ReactNode {
           setDeleteFailure(failure)
           return
         }
+        setDismissedSetup((previous) => {
+          const next = new Set(previous)
+          next.delete(deleteTarget.provider)
+          return next
+        })
         setDeleteTarget(undefined)
       })
       .finally(() => { setDeleting(false) })
@@ -311,7 +313,7 @@ function Loaded({ injected }: { injected: ModelsSectionFace }): ReactNode {
   // One fact decides both first-run postures on this page and the onboarding
   // step: whether the user already has a provider to talk to.
   const anyUsable = state.rows.some(providerUsable)
-  const listed = listedProviderRows(state.rows, state.namespaces, dismissedSetup)
+  const listed = listedProviderRows(state.rows, state.namespaces)
   const addable = state.rows.filter(row =>
     !row.configured
     && row.entry.settingsNs !== ''
