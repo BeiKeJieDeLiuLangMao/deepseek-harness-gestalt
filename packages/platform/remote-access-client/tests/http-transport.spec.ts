@@ -20,6 +20,7 @@ afterEach(() => { vi.unstubAllGlobals() })
 const challenge = {
   challengeId: 'challenge-one',
   desktopFingerprint: 'desktop-fingerprint',
+  desktopStaticPublicKey: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
   rendezvousId: 'rendezvous-one',
   expiresAt: 123,
   protocolMajor: 1,
@@ -82,7 +83,7 @@ describe('RemoteAccessHttpTransport', () => {
         relay: {
           routeId: 'route-one', endpoint: 'desktop', credential: 'AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE', revision: 2,
         },
-      }, challenge, {}, [completion], [pairing], {}, pairing, {}, {}, completion,
+      }, challenge, {}, [completion], [pairing], {}, pairing, {}, {}, completion, completion,
       { status: 'pending' }, { status: 'rejected' }, {
         status: 'paired', pairingId: 'pairing-one', sealedRelayAuthority: 'AQI',
       }, {},
@@ -106,7 +107,9 @@ describe('RemoteAccessHttpTransport', () => {
     await expect(client.reissueDesktopRelayAuthority(authentication)).resolves.toMatchObject({
       enabled: true, relay: { routeId: 'route-one', endpoint: 'desktop', revision: 2 },
     })
-    await expect(client.createChallenge({ authentication, rendezvousId })).resolves.toMatchObject(challenge)
+    await expect(client.createChallenge({ authentication, rendezvousId })).resolves.toMatchObject({
+      ...challenge, desktopStaticPublicKey: new Uint8Array(32),
+    })
     await expect(client.cancelChallenge({ authentication, challengeId })).resolves.toBeUndefined()
     await expect(client.listPendingPairings(authentication)).resolves.toMatchObject([{
       pendingPairingId: 'pending-one', desktopHandshake: Uint8Array.of(1, 2),
@@ -127,12 +130,17 @@ describe('RemoteAccessHttpTransport', () => {
       device: { name: 'Alice phone', platform: 'ios' },
       mobileHandshake: Uint8Array.of(1, 2),
     })).resolves.toMatchObject({ desktopHandshake: Uint8Array.of(1, 2) })
+    await expect(client.finishChallenge({
+      authentication,
+      pendingPairingId,
+      mobileFinish: Uint8Array.of(3, 4),
+    })).resolves.toMatchObject({ pendingPairingId, desktopHandshake: Uint8Array.of(1, 2) })
     await expect(client.getMobilePairingStatus({ authentication, pendingPairingId })).resolves.toEqual({ status: 'pending' })
     await expect(client.getMobilePairingStatus({ authentication, pendingPairingId })).resolves.toEqual({ status: 'rejected' })
     await expect(client.getMobilePairingStatus({ authentication, pendingPairingId })).resolves.toEqual({
       status: 'paired', pairingId: 'pairing-one', sealedRelayAuthority: Uint8Array.of(1, 2),
     })
-    expect(fetch).toHaveBeenCalledTimes(15)
+    expect(fetch).toHaveBeenCalledTimes(16)
     const first = vi.mocked(fetch).mock.calls[0]
     expect(first?.[0]).toBe('https://platform.example/v1/remote-access/personal-pairing')
     expect(first?.[1]).toMatchObject({
@@ -149,6 +157,9 @@ describe('RemoteAccessHttpTransport', () => {
     expect(JSON.parse(completionBody)).toMatchObject({
       operation: 'complete-challenge', mobileHandshake: 'AQI',
     })
+    const finishBody = vi.mocked(fetch).mock.calls[12]?.[1]?.body
+    if (typeof finishBody !== 'string') throw new TypeError('finish request body must be a string')
+    expect(JSON.parse(finishBody)).toMatchObject({ operation: 'finish-challenge', mobileFinish: 'AwQ' })
   })
 
   it('preserves known service errors and rejects malformed HTTP failures', async () => {

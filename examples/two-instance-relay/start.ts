@@ -38,6 +38,7 @@ import {
   parseRelayRouteId,
   REMOTE_PROTOCOL_LIMITS,
   type RelayAttachmentId,
+  type RelayPairingSelector,
   type RelayRouteId,
 } from '@deepseek-ai/dsh-remote-protocol'
 import z from '@deepseek-ai/schemastery'
@@ -224,7 +225,7 @@ export async function apply(_ctx: Context, config: Config): Promise<void> {
       onCiphertext: async (ciphertext) => {
         const message = decodeCompanionMessage(mobileProtocol, cipher.open(ciphertext))
         if (message.type === 'result' && message.result.type === 'confirmed') result.resolve(message.result.outcome)
-        if (message.type === 'projection') {
+        if (message.type === 'projection' && message.projection.type === 'transcript-page') {
           const entry = message.projection.entries[0]
           if (entry?.type === 'text') {
             const revision = Number(entry.entryId.replace('resync-', ''))
@@ -406,29 +407,39 @@ async function startLoadBalancer(backends: Backend[], acquired: string[]): Promi
 
 class KeylessRouteStore implements RelayRouteStore {
   private readonly routes = new Map<string, {
-    authorities: Map<string, 'mobile' | 'desktop'>
+    authorities: Map<string, { endpoint: 'mobile' | 'desktop'; pairingSelector?: RelayPairingSelector }>
     revision: number
     revoked: boolean
   }>()
   async rotate(routeId: RelayRouteId, endpoint: 'mobile' | 'desktop', digest: Uint8Array): Promise<number> {
     const revision = (this.routes.get(routeId)?.revision ?? 0) + 1
     const authorities = new Map(this.routes.get(routeId)?.authorities ?? [])
-    for (const [value, owner] of authorities) if (owner === endpoint) authorities.delete(value)
-    authorities.set(Buffer.from(digest).toString('hex'), endpoint)
+    for (const [value, owner] of authorities) if (owner.endpoint === endpoint) authorities.delete(value)
+    authorities.set(Buffer.from(digest).toString('hex'), { endpoint })
     this.routes.set(routeId, { authorities, revision, revoked: false })
     return revision
   }
-  async issue(routeId: RelayRouteId, endpoint: 'mobile' | 'desktop', digest: Uint8Array): Promise<number | undefined> {
+  async issue(
+    routeId: RelayRouteId,
+    endpoint: 'mobile' | 'desktop',
+    digest: Uint8Array,
+    pairingSelector?: RelayPairingSelector,
+  ): Promise<number | undefined> {
     const route = this.routes.get(routeId)
     if (route === undefined || route.revoked) return undefined
-    route.authorities.set(Buffer.from(digest).toString('hex'), endpoint)
+    route.authorities.set(Buffer.from(digest).toString('hex'), {
+      endpoint, ...(pairingSelector === undefined ? {} : { pairingSelector }),
+    })
     return route.revision
   }
-  async authorize(routeId: RelayRouteId, endpoint: 'mobile' | 'desktop', digest: Uint8Array): Promise<number | undefined> {
+  async authorize(routeId: RelayRouteId, endpoint: 'mobile' | 'desktop', digest: Uint8Array) {
     const route = this.routes.get(routeId)
-    return route !== undefined && !route.revoked
-      && route.authorities.get(Buffer.from(digest).toString('hex')) === endpoint
-      ? route.revision : undefined
+    const authority = route?.authorities.get(Buffer.from(digest).toString('hex'))
+    return route !== undefined && !route.revoked && authority?.endpoint === endpoint
+      ? { revision: route.revision, ...(authority.pairingSelector === undefined
+        ? {}
+        : { pairingSelector: authority.pairingSelector }) }
+      : undefined
   }
   async revokeCredential(
     routeId: RelayRouteId,
@@ -439,7 +450,7 @@ class KeylessRouteStore implements RelayRouteStore {
     const revision = (current?.revision ?? 0) + 1
     const authorities = new Map(current?.authorities ?? [])
     const encoded = Buffer.from(digest).toString('hex')
-    if (authorities.get(encoded) === endpoint) authorities.delete(encoded)
+    if (authorities.get(encoded)?.endpoint === endpoint) authorities.delete(encoded)
     this.routes.set(routeId, { authorities, revision, revoked: current?.revoked ?? true })
     return revision
   }
@@ -457,6 +468,7 @@ class KeylessRedisBus {
   client(): RelayRedisClient {
     const client: RelayRedisClient = {
       get: async key => this.values.get(key) ?? null,
+      sMembers: async () => [],
       set: async (key, value) => { this.values.set(key, value); return 'OK' },
       eval: async (_script, options) => {
         const key = options.keys[0]

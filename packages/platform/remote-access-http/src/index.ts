@@ -74,11 +74,11 @@ async function dispatch(
       return ctx.remoteAccess.setMobileAccess({ desktop: authentication, enabled: requiredBoolean(body.enabled, 'enabled') })
     case 'reissue-desktop-relay': return ctx.remoteAccess.reissueDesktopRelayAuthority(authentication)
     case 'create-challenge':
-      return ctx.remoteAccess.createChallenge({
+      return challengeWire(await ctx.remoteAccess.createChallenge({
         desktop: authentication,
         rendezvousId: parsePairingRendezvousId(body.rendezvousId),
         clientIp: clientIp(),
-      })
+      }))
     case 'cancel-challenge':
       await ctx.remoteAccess.cancelChallenge({
         desktop: authentication,
@@ -117,6 +117,12 @@ async function dispatch(
         device: parseDevice(body.device),
         mobileHandshake: decodeBytes(body.mobileHandshake, 'mobileHandshake'),
       }))
+    case 'finish-challenge':
+      return completionWire(await ctx.remoteAccess.finishChallenge({
+        mobile: authentication,
+        pendingPairingId: parsePendingPairingId(body.pendingPairingId),
+        mobileFinish: decodeBytes(body.mobileFinish, 'mobileFinish'),
+      }))
     case 'admit-blob':
       return ctx.remoteAccess.admitAttachmentBlob({
         owner: authentication,
@@ -134,6 +140,15 @@ async function dispatch(
 
 function completionWire(value: PairingCompletionView): unknown {
   return { ...value, desktopHandshake: encodeBytes(value.desktopHandshake) }
+}
+
+function challengeWire(value: Awaited<ReturnType<Context['remoteAccess']['createChallenge']>>): unknown {
+  return {
+    ...value,
+    ...(value.desktopStaticPublicKey === undefined
+      ? {}
+      : { desktopStaticPublicKey: encodeBytes(value.desktopStaticPublicKey) }),
+  }
 }
 
 function mobilePairingStatusWire(value: Awaited<ReturnType<Context['remoteAccess']['getMobilePairingStatus']>>): unknown {

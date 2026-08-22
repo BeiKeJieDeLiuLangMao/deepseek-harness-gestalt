@@ -41,7 +41,8 @@ describe('RelayWebSocketConsumer', () => {
     socket.send(encodeRelayMessage(attach()))
     await vi.waitFor(() => { expect(relay.attach).toHaveBeenCalledOnce() })
     expect(await ready).toEqual({
-      type: 'ready', transportVersion: 1, attachmentId: parseRelayAttachmentId('mobile-one'),
+      type: 'ready', transportVersion: 1, routeId: parseRelayRouteId('route-one'),
+      attachmentId: parseRelayAttachmentId('mobile-one'), peers: [],
     })
 
     const ciphertext = ciphertextMessage()
@@ -298,7 +299,10 @@ function relayFixture(attachment: RemoteRelayAttachment) {
     rotateCredential: vi.fn(),
     revokeRoute: vi.fn(),
     attach: vi.fn<RemoteRelayService['attach']>(async (input) => {
-      await input.announce?.()
+      await input.announce?.({
+        type: 'ready', transportVersion: 1, routeId: input.message.routeId,
+        attachmentId: input.message.attachmentId, peers: [],
+      })
       return attachment
     }),
   }

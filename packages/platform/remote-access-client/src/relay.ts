@@ -6,6 +6,7 @@ import {
   encodeRelayMessage,
   type RelayAttachmentId,
   type RelayCredential,
+  type RelayReadyMessage,
   type RelayRouteId,
 } from '@deepseek-ai/dsh-remote-protocol'
 
@@ -45,6 +46,8 @@ export interface RemoteRelayEndpointOptions {
   onCiphertext?: (ciphertext: Uint8Array, sourceAttachmentId: RelayAttachmentId) => void | Promise<void>
   /** Observer invoked after Platform acknowledges one physical attachment. */
   onConnectionReady?: (attachmentId: RelayAttachmentId) => void
+  /** Route-bound opposite attachments authenticated by Relay credential records. */
+  onPeerAttachments?: (message: RelayReadyMessage) => void | Promise<void>
   /** Observer invoked whenever an acknowledged physical attachment ends. */
   onConnectionLost?: (attachmentId: RelayAttachmentId) => void
   /** Content-free transport error observer. */
@@ -211,11 +214,12 @@ export class RemoteRelayEndpointController {
         endpoint: this.options.endpoint,
         credential: route.credential,
       }))
-      await this.awaitReady(connection, iterator, signal)
+      const ready = await this.awaitReady(connection, iterator, signal)
       /* v8 ignore next -- stop can win only in the microtask gap after the acknowledged wait settles. */
       if (isAborted(signal)) return
       owner.connection = connection
       attached = true
+      await this.options.onPeerAttachments?.(ready)
       this.observeConnection(this.options.onConnectionReady, connection.attachmentId)
       if (this.options.endpoint === 'desktop') {
         await this.options.resynchronize?.((target, ciphertext) => this.sendCiphertext(target, ciphertext))
@@ -248,7 +252,7 @@ export class RemoteRelayEndpointController {
     connection: ActiveConnection,
     iterator: AsyncIterator<Uint8Array>,
     signal: AbortSignal,
-  ): Promise<void> {
+  ): Promise<RelayReadyMessage> {
     const next = await withTimeout(
       iterator.next(),
       this.options.attachTimeoutMs,
@@ -260,9 +264,11 @@ export class RemoteRelayEndpointController {
     if (message.type === 'error') {
       throw new RemoteRelayError(message.code, `Remote Relay returned ${message.code}`, message.retryAfterMs)
     }
-    if (message.type !== 'ready' || message.attachmentId !== connection.attachmentId) {
+    if (message.type !== 'ready' || message.routeId !== connection.routeId
+      || message.attachmentId !== connection.attachmentId) {
       throw new RemoteRelayError('RELAY_ATTACHMENT_REJECTED', 'Relay endpoint received an invalid attachment acknowledgement')
     }
+    return message
   }
 
   private async heartbeat(owner: LifecycleOwner, connection: ActiveConnection, signal: AbortSignal): Promise<void> {

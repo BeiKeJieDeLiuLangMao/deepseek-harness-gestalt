@@ -13,6 +13,57 @@ import { companionMayMutate, CompanionForegroundRuntime } from '../src/companion
 import { MobilePairingController } from '../src/personal-pairing.ts'
 
 describe('MobilePairingController', () => {
+  it('finishes XKpsk3 with a fresh Installation proof before exposing authentication words', async () => {
+    const transport = transportFixture()
+    const finish = Uint8Array.of(3, 4)
+    let observedFinish: Uint8Array | undefined
+    let observedProof: string | undefined
+    transport.finishChallenge.mockImplementationOnce(async (input) => {
+      observedFinish = input.mobileFinish.slice()
+      observedProof = input.authentication.proof.jti
+      return {
+        pendingPairingId: parsePendingPairingId('pending-one'),
+        authenticationWords: ['amber', 'binary', 'cedar', 'delta', 'ember', 'frost'],
+        desktopHandshake: Uint8Array.of(8),
+        device: { name: 'Alice phone', platform: 'ios' },
+      }
+    })
+    const authorizeCurrentInstallation = vi.fn()
+      .mockResolvedValueOnce({ accessToken: 'mobile-access', proof: { jti: parseAccountProofJti('proof-one'), issuedAt: 1, signature: 'one' } })
+      .mockResolvedValueOnce({ accessToken: 'mobile-access', proof: { jti: parseAccountProofJti('proof-two'), issuedAt: 2, signature: 'two' } })
+    const installation = {
+      authorizeCurrentInstallation,
+      getSnapshot: vi.fn(() => ({
+        status: 'signed-in' as const,
+        privacyAccepted: true,
+        account: { id: 'account-mobile' as never, githubId: 1, githubLogin: 'mobile', avatarUrl: '' },
+      })),
+    }
+    const handshake = {
+      begin: vi.fn(async () => ({
+        completionId: parsePairingCompletionId('three-message'), mobileHandshake: Uint8Array.of(1),
+      })),
+      acceptDesktopHandshake: vi.fn(),
+      exportFinishMessage: vi.fn(() => finish.slice()),
+    }
+    const controller = new MobilePairingController({
+      installation,
+      transport,
+      handshake,
+      scanner: { scan: vi.fn() },
+      device: { name: 'Alice phone', platform: 'ios' },
+      schedule: () => ({ unref: vi.fn() }) as never,
+      now: () => Date.parse('2026-08-18T10:01:00.000Z'),
+    })
+
+    await controller.completeLink(pairingLink(Date.parse('2026-08-18T10:02:00.000Z')))
+
+    expect(observedProof).toBe('proof-two')
+    expect(observedFinish).toEqual(finish)
+    expect(authorizeCurrentInstallation).toHaveBeenCalledTimes(2)
+    expect(controller.getSnapshot()).toMatchObject({ status: 'pending' })
+  })
+
   it('opens pairing-delivered Mobile authority and starts Relay without a Desktop secret', async () => {
     const scheduled: Array<() => void> = []
     const transport = transportFixture()
@@ -514,6 +565,12 @@ function transportFixture() {
     rejectPairing: vi.fn(),
     revokePersonalPairing: vi.fn(),
     completeChallenge: vi.fn<RemoteAccessTransport['completeChallenge']>().mockResolvedValue({
+      pendingPairingId: parsePendingPairingId('pending-one'),
+      authenticationWords: ['amber', 'binary', 'cedar', 'delta', 'ember', 'frost'],
+      desktopHandshake: Uint8Array.of(8),
+      device: { name: 'Alice phone', platform: 'ios' },
+    }),
+    finishChallenge: vi.fn<RemoteAccessTransport['finishChallenge']>().mockResolvedValue({
       pendingPairingId: parsePendingPairingId('pending-one'),
       authenticationWords: ['amber', 'binary', 'cedar', 'delta', 'ember', 'frost'],
       desktopHandshake: Uint8Array.of(8),

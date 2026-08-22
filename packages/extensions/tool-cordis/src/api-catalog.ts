@@ -1362,6 +1362,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'pending result shown on both installations before Desktop confirmation.',
       },
       {
+        signature: 'finishChallenge(input: { mobile: PairingAccountAuthentication pendingPairingId: PendingPairingId mobileFinish: Uint8Array }): Promise<PairingCompletionView>',
+        description: 'Finish a three-message pairing handshake before Desktop confirmation.',
+        parameters: [{ name: 'input', description: 'Mobile authorization, pending identity, and message 3.' }],
+        returns: 'the pending projection with final authentication words.',
+      },
+      {
         signature: 'abstract getMobilePairingStatus(input: { mobile: PairingAccountAuthentication pendingPairingId: PendingPairingId }): Promise<MobilePairingStatus>',
         description: 'Read the decision for one pairing completed by the current Mobile Installation.',
         parameters: [{ name: 'input', description: 'current Mobile authorization and pending identity.' }],
@@ -1487,9 +1493,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the one-time credential grant and its persistent revision.',
       },
       {
-        signature: 'abstract issueCredential(routeId: RelayRouteId, endpoint?: \'mobile\' | \'desktop\'): Promise<RelayCredentialGrant>',
+        signature: 'abstract issueCredential( routeId: RelayRouteId, endpoint?: \'mobile\' | \'desktop\', pairingSelector?: RelayPairingSelector, ): Promise<RelayCredentialGrant>',
         description: 'Issue distinct endpoint authority without invalidating other credentials on the active route.',
-        parameters: [{ name: 'routeId', description: 'active route receiving another independently revocable bearer.' }, { name: 'endpoint', description: 'endpoint the new credential authorizes; defaults to mobile.' }],
+        parameters: [{ name: 'routeId', description: 'active route receiving another independently revocable bearer.' }, { name: 'endpoint', description: 'endpoint the new credential authorizes; defaults to mobile.' }, { name: 'pairingSelector', description: 'non-secret Mobile pairing selector retained beside the credential digest.' }],
         returns: 'a fresh credential at the current route revision.',
       },
       {
@@ -1503,7 +1509,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'routeId', description: 'opaque route whose current authority becomes invalid.' }],
       },
       {
-        signature: 'abstract attach(input: { message: RelayAttachMessage deliver: (message: RelayCiphertextMessage) => Promise<void> close?: () => void | Promise<void> signal?: AbortSignal announce?: () => Promise<void> }): Promise<RemoteRelayAttachment>',
+        signature: 'abstract attach(input: { message: RelayAttachMessage deliver: (message: RelayCiphertextMessage) => Promise<void> close?: () => void | Promise<void> signal?: AbortSignal announce?: (message: RelayReadyMessage) => Promise<void> }): Promise<RemoteRelayAttachment>',
         description: 'Authenticate one outbound Mobile or Desktop attachment and register it only after `announce` flushes ready.',
         parameters: [{ name: 'input', description: 'attach frame, socket writer, optional close callback, and optional ready flush.' }],
         returns: 'the admitted attachment receiving later frames from that socket.',
@@ -4354,7 +4360,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'PairingInvitation',
-    declaration: 'export interface PairingInvitation {\n    challengeId: PairingChallengeId;\n    invitationSecret: Uint8Array;\n    desktopFingerprint: string;\n    rendezvousId: PairingRendezvousId;\n    expiresAt: number;\n    protocolMajor: typeof PERSONAL_PAIRING_PROTOCOL_MAJOR;\n}',
+    declaration: 'export interface PairingInvitation {\n    challengeId: PairingChallengeId;\n    invitationSecret: Uint8Array;\n    desktopFingerprint: string;\n    desktopStaticPublicKey?: Uint8Array;\n    rendezvousId: PairingRendezvousId;\n    expiresAt: number;\n    protocolMajor: typeof PERSONAL_PAIRING_PROTOCOL_MAJOR;\n}',
   },
   {
     name: 'PairingRendezvousId',
@@ -4506,11 +4512,23 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'RelayCredentialGrant',
-    declaration: 'export interface RelayCredentialGrant {\n    routeId: RelayRouteId;\n    endpoint: \'mobile\' | \'desktop\';\n    credential: RelayCredential;\n    revision: number;\n}',
+    declaration: 'export interface RelayCredentialGrant {\n    routeId: RelayRouteId;\n    endpoint: \'mobile\' | \'desktop\';\n    credential: RelayCredential;\n    revision: number;\n    pairingSelector?: RelayPairingSelector;\n}',
   },
   {
     name: 'RelayHeartbeatMessage',
     declaration: 'export interface RelayHeartbeatMessage {\n    type: \'heartbeat\';\n    transportVersion: 1;\n    attachmentId: RelayAttachmentId;\n    sentAt: number;\n}',
+  },
+  {
+    name: 'RelayPairingSelector',
+    declaration: 'export type RelayPairingSelector = Branded<\'RelayPairingSelector\'>;',
+  },
+  {
+    name: 'RelayPeerDescriptor',
+    declaration: 'export interface RelayPeerDescriptor {\n    attachmentId: RelayAttachmentId;\n    pairingSelector: RelayPairingSelector;\n    generation: number;\n}',
+  },
+  {
+    name: 'RelayReadyMessage',
+    declaration: 'export interface RelayReadyMessage {\n    type: \'ready\';\n    transportVersion: 1;\n    routeId: RelayRouteId;\n    attachmentId: RelayAttachmentId;\n    peers: readonly RelayPeerDescriptor[];\n}',
   },
   {
     name: 'RelayRouteId',

@@ -330,6 +330,8 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   RelayAttachMessage: 'personal-pairing.md',
   RelayCiphertextMessage: 'personal-pairing.md',
   RelayCredentialGrant: 'personal-pairing.md',
+  RelayPairingSelector: 'personal-pairing.md',
+  RelayReadyMessage: 'personal-pairing.md',
   RelayRouteId: 'personal-pairing.md',
   RemoteRelayAttachment: 'personal-pairing.md',
   UserMessage: 'session.md',

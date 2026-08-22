@@ -1,19 +1,12 @@
 /** Desktop Host composition for the product-gated Remote Relay endpoint. */
 
-import { randomUUID } from 'node:crypto'
 import type { SelectedPlatformEnvironment } from '@deepseek-ai/dsh-platform-account'
-import { RemoteRelayError } from '@deepseek-ai/dsh-remote-access'
-import {
-  parseRelayAttachmentId,
-  REMOTE_PROTOCOL_LIMITS,
-} from '@deepseek-ai/dsh-remote-protocol'
+import { REMOTE_PROTOCOL_LIMITS } from '@deepseek-ai/dsh-remote-protocol'
 import type { RelayEndpointSocket } from '@deepseek-ai/dsh-remote-access-client'
 import {
-  DesktopRelayEndpointLifecycle,
   FailClosedDesktopRelayLifecycle,
   type DesktopRelayLifecycle,
 } from '@deepseek-ai/dsh-remote-access-client/desktop-relay-lifecycle'
-import { NodeRelayEndpointSocket } from '@deepseek-ai/dsh-remote-access-client/node-relay-socket'
 
 const CRYPTO_GATE = 'Personal Pairing requires an independently reviewed handshake and Relay crypto provider.'
 
@@ -64,30 +57,8 @@ export function loadDesktopRemoteRelayConfig(
  * @returns Desktop-owned Relay lifecycle injected into Settings.
  */
 export function createDesktopRemoteRelay(options: DesktopRemoteRelayOptions): DesktopRelayLifecycle {
-  if (options.environment.environment !== 'development'
-    || options.source.DSH_PERSONAL_PAIRING_KEYLESS !== '1') {
-    return new FailClosedDesktopRelayLifecycle(CRYPTO_GATE)
-  }
-  const config = loadDesktopRemoteRelayConfig(options.source)
-  const connect = options.connect ?? (async (signal: AbortSignal) => await NodeRelayEndpointSocket.connect(
-    config.url,
-    signal,
-    { maxBytes: config.inboundMaxBytes, maxMessages: config.inboundMaxMessages },
-  ))
-  return new DesktopRelayEndpointLifecycle({
-    attachmentId: () => parseRelayAttachmentId(`desktop-${randomUUID()}`),
-    connect: async signal => await connect(signal, config),
-    attachTimeoutMs: config.attachTimeoutMs,
-    heartbeatIntervalMs: config.heartbeatIntervalMs,
-    reconnectDelayMs: config.reconnectDelayMs,
-    resynchronize: async () => {},
-    onCiphertext: () => {
-      throw new RemoteRelayError(
-        'RELAY_ATTACHMENT_REJECTED',
-        'Development Desktop has no product Companion crypto provider',
-      )
-    },
-  })
+  void options
+  return new FailClosedDesktopRelayLifecycle(CRYPTO_GATE)
 }
 
 function required(source: Record<string, string | undefined>, name: string): string {

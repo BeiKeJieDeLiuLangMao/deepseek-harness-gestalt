@@ -36,6 +36,7 @@ describe('pairing transaction codec', () => {
         challengeId: parsePairingChallengeId('challenge-one'),
         invitationSecret: Uint8Array.from({ length: 32 }, (_, index) => index),
         desktopFingerprint: 'fp',
+        desktopStaticPublicKey: new Uint8Array(32).fill(7),
         rendezvousId: parsePairingRendezvousId('rendezvous-one'),
         expiresAt: 1_787_027_200_000,
         protocolMajor: 1,
@@ -58,6 +59,7 @@ describe('pairing transaction codec', () => {
     )
     const challenge = decoded.challenges.get(parsePairingChallengeId('challenge-one'))
     expect(challenge?.invitation.invitationSecret).toEqual(Uint8Array.from({ length: 32 }, (_, index) => index))
+    expect(challenge?.invitation.desktopStaticPublicKey).toEqual(new Uint8Array(32).fill(7))
     const [orphanCleanup, orphan] = [...decoded.orphanPendingCleanups][0] ?? []
     expect(orphanCleanup).toBe(orphan?.cleanup)
     expect(decoded.accountChallengeAt.get('account-one')).toEqual([10, 20])
@@ -102,8 +104,20 @@ describe('pairing transaction codec', () => {
       },
       completedAt: 9,
     })
+    const completion = state.completions.get(parsePairingCompletionId('completion-one'))
+    if (completion === undefined) throw new Error('pairing codec fixture requires a completion')
+    state.pending.set(parsePendingPairingId('pending-one'), {
+      ...completion,
+      cleanup: { resource: Uint8Array.of(6) },
+      awaitingFinish: true,
+      finishDigest: new Uint8Array(32).fill(8),
+    })
     const decoded = decodePairingTransactionState(encodePairingTransactionState(state))
     expect(decoded.pairings.get(parsePersonalPairingId('pairing-one'))?.mobileGrant?.revision).toBe(2)
     expect(decoded.completions.get(parsePairingCompletionId('completion-one'))?.view.device.platform).toBe('android')
+    expect(decoded.pending.get(parsePendingPairingId('pending-one'))).toMatchObject({
+      awaitingFinish: true,
+      finishDigest: new Uint8Array(32).fill(8),
+    })
   })
 })

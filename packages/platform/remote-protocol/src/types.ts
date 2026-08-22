@@ -6,6 +6,9 @@ export type RelayRouteId = Branded<'RelayRouteId'>
 /** Opaque identifier for one live Relay attachment. */
 export type RelayAttachmentId = Branded<'RelayAttachmentId'>
 
+/** Opaque non-secret selector for one Personal Pairing's endpoint-owned static state. */
+export type RelayPairingSelector = Branded<'RelayPairingSelector'>
+
 /** Exactly 256 bits of transport attachment authority in canonical base64url form. */
 export type RelayCredential = Branded<'RelayCredential'>
 
@@ -141,8 +144,17 @@ export interface CompanionTranscriptPageProjection {
   entries: readonly CompanionTextTranscriptEntry[]
 }
 
+/** Desktop-authoritative state marker required after each foreground IK reconnect. */
+export interface CompanionForegroundSyncProjection {
+  type: 'foreground-sync'
+  /** Physical attachment generation bound into the IK prologue. */
+  generation: number
+  /** Monotonic Desktop projection revision represented by this synchronization. */
+  desktopRevision: number
+}
+
 /** Projections in the first implemented Companion codec slice. */
-export type CompanionProjection = CompanionTranscriptPageProjection
+export type CompanionProjection = CompanionTranscriptPageProjection | CompanionForegroundSyncProjection
 
 /** Version-tagged encrypted application plaintext before endpoint encryption. */
 export type CompanionMessage =
@@ -189,7 +201,17 @@ export interface RelayHeartbeatMessage {
 export interface RelayReadyMessage {
   type: 'ready'
   transportVersion: 1
+  routeId: RelayRouteId
   attachmentId: RelayAttachmentId
+  /** Current opposite-endpoint attachments authenticated under this route. */
+  peers: readonly RelayPeerDescriptor[]
+}
+
+/** One route-bound peer tuple whose static identity is authenticated later by Snow IK. */
+export interface RelayPeerDescriptor {
+  attachmentId: RelayAttachmentId
+  pairingSelector: RelayPairingSelector
+  generation: number
 }
 
 /** Content-free revocation frame for one Relay attachment. */

@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-22-snow-companion-channel-library.md
+2026-08-22-snow-companion-channel-library.md: b7a9d1fb6e1ee35d80b5a9254e9407a99cc7ccf8
+2026-08-22-snow-companion-channel-library.zh.md: ccb53d523cf339c178dd2beb4cd861e7ffd0933d

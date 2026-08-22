@@ -12,6 +12,7 @@ import type {
   RelayCredential,
   RelayErrorCode,
   RelayMessage,
+  RelayPairingSelector,
   RelayRouteId,
 } from './types.ts'
 
@@ -34,6 +35,15 @@ export function parseRelayRouteId(value: unknown): RelayRouteId {
  */
 export function parseRelayAttachmentId(value: unknown): RelayAttachmentId {
   return parseIdentifier(value, 'attachmentId') as RelayAttachmentId
+}
+
+/**
+ * Parse a non-secret Personal Pairing selector at the Relay wire boundary.
+ * @param value - untrusted opaque selector.
+ * @returns branded selector.
+ */
+export function parseRelayPairingSelector(value: unknown): RelayPairingSelector {
+  return parseIdentifier(value, 'pairingSelector') as RelayPairingSelector
 }
 
 /**
@@ -135,10 +145,26 @@ export function decodeRelayMessage(encoded: Uint8Array): RelayMessage {
           sentAt: positiveSafeInteger(record.sentAt, 'Relay heartbeat sentAt'),
         }
       case 'ready':
-        exactKeys(record, ['type', 'transportVersion', 'attachmentId'], 'Relay ready message')
+        exactKeys(record, ['type', 'transportVersion', 'routeId', 'attachmentId', 'peers'], 'Relay ready message')
+        if (!Array.isArray(record.peers)) invalid('Relay ready peers must be an array')
+        const peers = record.peers.map((value) => {
+          const peer = object(value, 'Relay ready peer')
+          exactKeys(peer, ['attachmentId', 'pairingSelector', 'generation'], 'Relay ready peer')
+          return {
+            attachmentId: parseRelayAttachmentId(peer.attachmentId),
+            pairingSelector: parseRelayPairingSelector(peer.pairingSelector),
+            generation: positiveSafeInteger(peer.generation, 'Relay peer generation'),
+          }
+        })
+        if (new Set(peers.map(peer => peer.pairingSelector)).size !== peers.length
+          || new Set(peers.map(peer => peer.attachmentId)).size !== peers.length) {
+          invalid('Relay ready peers must have distinct selectors and attachment ids')
+        }
         return {
           type: 'ready', transportVersion: 1,
+          routeId: parseRelayRouteId(record.routeId),
           attachmentId: parseRelayAttachmentId(record.attachmentId),
+          peers,
         }
       case 'revoke':
         exactKeys(record, ['type', 'transportVersion', 'routeId', 'attachmentId', 'reason'], 'Relay revoke message')

@@ -9,6 +9,8 @@ import type {
   RelayCredential,
   RelayErrorCode,
   RelayHeartbeatMessage,
+  RelayPairingSelector,
+  RelayReadyMessage,
   RelayRouteId,
 } from '@deepseek-ai/dsh-remote-protocol'
 
@@ -44,14 +46,19 @@ export interface RelayRouteStore {
   /** @returns the new monotonically increasing route revision. */
   rotate(routeId: RelayRouteId, endpoint: 'mobile' | 'desktop', credentialDigest: Uint8Array): Promise<number>
   /** @returns the current revision after adding endpoint-specific authority, or undefined when the route is inactive. */
-  issue(routeId: RelayRouteId, endpoint: 'mobile' | 'desktop', credentialDigest: Uint8Array): Promise<number | undefined>
-  /** @returns the current authorized revision, or undefined for wrong/revoked authority. */
+  issue(
+    routeId: RelayRouteId,
+    endpoint: 'mobile' | 'desktop',
+    credentialDigest: Uint8Array,
+    pairingSelector?: RelayPairingSelector,
+  ): Promise<number | undefined>
+  /** @returns current authority metadata, or undefined for wrong/revoked authority. */
   authorize(
     routeId: RelayRouteId,
     endpoint: 'mobile' | 'desktop',
     credentialDigest: Uint8Array,
     signal?: AbortSignal,
-  ): Promise<number | undefined>
+  ): Promise<RelayAuthorization | undefined>
   /** @returns the new revision after removing exactly one endpoint credential. */
   revokeCredential(
     routeId: RelayRouteId,
@@ -67,10 +74,18 @@ export interface RelayDirectoryEntry {
   routeId: RelayRouteId
   attachmentId: RelayAttachmentId
   endpoint: 'mobile' | 'desktop'
+  /** Mobile-only selector loaded from the credential record after authorization. */
+  pairingSelector?: RelayPairingSelector
   instanceId: RelayInstanceId
   connectionToken: RelayConnectionToken
   revision: number
   expiresAt: number
+}
+
+/** Non-secret metadata returned only after one credential digest is authorized. */
+export interface RelayAuthorization {
+  revision: number
+  pairingSelector?: RelayPairingSelector
 }
 
 /** Ciphertext-only forwarding or content-free invalidation carried between Platform Instances. */
@@ -99,6 +114,8 @@ export interface RelayCoordinator {
   unregister(entry: RelayDirectoryEntry): Promise<void>
   /** Resolve one live target without creating durable delivery state. */
   locate(routeId: RelayRouteId, attachmentId: RelayAttachmentId): Promise<RelayDirectoryEntry | undefined>
+  /** List current route attachments for a bounded server-control projection. */
+  list(routeId: RelayRouteId): Promise<readonly RelayDirectoryEntry[]>
   /** Publish one ephemeral coordination event to a currently subscribed Platform Instance. */
   publish(instanceId: RelayInstanceId, event: Exclude<RelayCoordinationEvent, { type: 'invalidate' }>): Promise<boolean>
   /** Fan out one content-free route invalidation. */
@@ -112,6 +129,8 @@ export interface RelayCredentialGrant {
   endpoint: 'mobile' | 'desktop'
   credential: RelayCredential
   revision: number
+  /** Mobile-only selector sealed with this grant and retained beside its digest. */
+  pairingSelector?: RelayPairingSelector
 }
 
 /** Stable, content-free Relay Transport failure.
@@ -155,9 +174,14 @@ export abstract class RemoteRelayService extends Service {
    * Issue distinct endpoint authority without invalidating other credentials on the active route.
    * @param routeId - active route receiving another independently revocable bearer.
    * @param endpoint - endpoint the new credential authorizes; defaults to mobile.
+   * @param pairingSelector - non-secret Mobile pairing selector retained beside the credential digest.
    * @returns a fresh credential at the current route revision.
    */
-  abstract issueCredential(routeId: RelayRouteId, endpoint?: 'mobile' | 'desktop'): Promise<RelayCredentialGrant>
+  abstract issueCredential(
+    routeId: RelayRouteId,
+    endpoint?: 'mobile' | 'desktop',
+    pairingSelector?: RelayPairingSelector,
+  ): Promise<RelayCredentialGrant>
   /**
    * Remove one issued endpoint credential without revoking its route peers.
    * @param grant - exact issued authority whose ownership did not commit.
@@ -178,7 +202,7 @@ export abstract class RemoteRelayService extends Service {
     deliver: (message: RelayCiphertextMessage) => Promise<void>
     close?: () => void | Promise<void>
     signal?: AbortSignal
-    announce?: () => Promise<void>
+    announce?: (message: RelayReadyMessage) => Promise<void>
   }): Promise<RemoteRelayAttachment>
 }
 

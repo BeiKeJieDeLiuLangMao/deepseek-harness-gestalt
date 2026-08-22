@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "xkpsk3": "pass",
+  "sealedRelayAuthority": true,
+  "ikFreshEphemerals": true,
+  "authenticatedForegroundSync": true,
+  "staleTranscriptRejected": true
+}

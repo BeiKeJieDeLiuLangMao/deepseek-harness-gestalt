@@ -85,6 +85,12 @@ export interface RemoteAccessTransport {
     device: PairingDeviceDescription
     mobileHandshake: Uint8Array
   }): Promise<PairingCompletionView>
+  /** @param input - fresh Mobile authorization, pending id, and message 3. @returns finished pending pairing. */
+  finishChallenge(input: {
+    authentication: PairingAccountAuthentication
+    pendingPairingId: PendingPairingId
+    mobileFinish: Uint8Array
+  }): Promise<PairingCompletionView>
   /** @param input - current Mobile authorization and pending id. @returns Desktop decision state. */
   getMobilePairingStatus(input: {
     authentication: PairingAccountAuthentication
@@ -189,6 +195,18 @@ export class RemoteAccessHttpTransport implements RemoteAccessTransport {
     }))
   }
 
+  async finishChallenge(input: {
+    authentication: PairingAccountAuthentication
+    pendingPairingId: PendingPairingId
+    mobileFinish: Uint8Array
+  }): Promise<PairingCompletionView> {
+    return parseCompletion(await this.call(input.authentication, {
+      operation: 'finish-challenge',
+      pendingPairingId: input.pendingPairingId,
+      mobileFinish: encodeBytes(input.mobileFinish),
+    }))
+  }
+
   async getMobilePairingStatus(input: {
     authentication: PairingAccountAuthentication
     pendingPairingId: PendingPairingId
@@ -277,6 +295,9 @@ function parseChallenge(value: unknown): PairingChallengeView {
   return {
     challengeId: parsePairingChallengeId(record.challengeId),
     desktopFingerprint: requiredString(record.desktopFingerprint, 'Pairing Challenge desktopFingerprint'),
+    ...(record.desktopStaticPublicKey === undefined
+      ? {}
+      : { desktopStaticPublicKey: decodeFixedBytes(record.desktopStaticPublicKey, 'Pairing Challenge Desktop public key', 32) }),
     rendezvousId: parsePairingRendezvousId(record.rendezvousId),
     expiresAt,
     protocolMajor: PERSONAL_PAIRING_PROTOCOL_MAJOR,
@@ -344,6 +365,12 @@ function decodeBytes(value: unknown, name: string): Uint8Array {
   const decoded = Uint8Array.from(binary, character => character.charCodeAt(0))
   if (encodeBytes(decoded) !== encoded) throw new TypeError(`${name} must be canonical base64url`)
   return decoded
+}
+
+function decodeFixedBytes(value: unknown, name: string, length: number): Uint8Array {
+  const bytes = decodeBytes(value, name)
+  if (bytes.byteLength !== length) throw new TypeError(`${name} must contain ${String(length)} bytes`)
+  return bytes
 }
 
 const REMOTE_ACCESS_ERROR_CODES: ReadonlySet<RemoteAccessErrorCode> = new Set([

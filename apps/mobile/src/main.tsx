@@ -10,6 +10,11 @@ import {
   RemoteAccessHttpTransport,
 } from '@deepseek-ai/dsh-remote-access-client'
 import { parseRelayAttachmentId, REMOTE_PROTOCOL_LIMITS } from '@deepseek-ai/dsh-remote-protocol'
+import {
+  SnowMobileAttachmentOwner,
+  SnowMobileHandshakeClient,
+  type SnowCompanionProtocolChannel,
+} from '@deepseek-ai/dsh-noise-channel'
 import '@deepseek-ai/dsh-client-ui-theme/src/styles/base.css'
 import '@deepseek-ai/dsh-client-ui-theme/src/styles/design-platform.css'
 import '@deepseek-ai/dsh-client-ui-theme/src/styles/gradient-shadow-text.css'
@@ -20,6 +25,7 @@ import {
   installCompanionRuntime,
 } from './companion-lifecycle.ts'
 import { mountMobileEntry } from './mobile-entry.tsx'
+import { MobileNoiseCompanionReceiver } from './noise-companion.ts'
 import type { MobilePairingActions } from './MobilePairing.tsx'
 import { MobilePairingController, NativeMobilePairingQrScanner } from './personal-pairing.ts'
 import { mobileSystemBrowser } from './system-browser.ts'
@@ -88,14 +94,25 @@ let pairing: MobilePairingActions = {
   unpair: pairingUnavailable,
 }
 let companion: CompanionForegroundRuntime
-if (environment.environment === 'development' && import.meta.env.VITE_PERSONAL_PAIRING_KEYLESS === '1') {
-  const { DevelopmentKeylessMobileHandshakeClient } = await import('./development-keyless-pairing.ts')
-  const { PairingCompanionKeyVault } = await import('./companion-keys.ts')
+if (environment.environment === 'production') {
   const relayUrl = requiredWss(import.meta.env.VITE_REMOTE_RELAY_WSS_URL)
   const inboundMaxBytes = positiveInteger(import.meta.env.VITE_REMOTE_RELAY_INBOUND_MAX_BYTES, 'inbound bytes')
   const inboundMaxMessages = positiveInteger(import.meta.env.VITE_REMOTE_RELAY_INBOUND_MAX_MESSAGES, 'inbound messages')
   if (inboundMaxBytes < REMOTE_PROTOCOL_LIMITS.relayMessageBytes) {
     throw new TypeError('Mobile Relay inbound bytes must admit one maximum Relay message')
+  }
+  const handshake = new SnowMobileHandshakeClient()
+  let attachmentOwner: SnowMobileAttachmentOwner | undefined
+  let channel: SnowCompanionProtocolChannel | undefined
+  let receiver: MobileNoiseCompanionReceiver | undefined
+  let connectionGeneration: number | undefined
+  const clearNoiseConnection = (): void => {
+    attachmentOwner?.cancel()
+    attachmentOwner = undefined
+    channel?.dispose()
+    channel = undefined
+    receiver = undefined
+    connectionGeneration = undefined
   }
   const relay = new MobileRelayEndpointLifecycle({
     attachmentId: () => parseRelayAttachmentId(crypto.randomUUID()),
@@ -106,9 +123,30 @@ if (environment.environment === 'development' && import.meta.env.VITE_PERSONAL_P
     attachTimeoutMs: positiveInteger(import.meta.env.VITE_REMOTE_RELAY_ATTACH_TIMEOUT_MS, 'attach timeout'),
     heartbeatIntervalMs: positiveInteger(import.meta.env.VITE_REMOTE_RELAY_HEARTBEAT_INTERVAL_MS, 'heartbeat interval'),
     reconnectDelayMs: positiveInteger(import.meta.env.VITE_REMOTE_RELAY_RECONNECT_DELAY_MS, 'reconnect delay'),
+    onPeerAttachments: async (ready) => {
+      clearNoiseConnection()
+      const peer = ready.peers[0]
+      if (peer === undefined || ready.peers.length !== 1) {
+        throw new Error('Mobile Relay ready has no unique Desktop pairing peer')
+      }
+      connectionGeneration = peer.generation
+      attachmentOwner = new SnowMobileAttachmentOwner(handshake.exportReconnectState(), peer.pairingSelector)
+      const begun = await attachmentOwner.begin(ready)
+      await relay.sendCiphertext(begun.targetAttachmentId, begun.payload)
+    },
+    onCiphertext: (ciphertext, sourceAttachmentId) => {
+      if (receiver !== undefined) {
+        receiver.receive(ciphertext)
+        return
+      }
+      if (attachmentOwner === undefined) throw new Error('Mobile Relay ciphertext has no pending Snow IK owner')
+      if (connectionGeneration === undefined) throw new Error('Mobile Relay ciphertext has no Snow generation')
+      channel = attachmentOwner.finish(ciphertext, sourceAttachmentId)
+      receiver = new MobileNoiseCompanionReceiver(channel, connectionGeneration, companion)
+    },
     onConnectionReady: () => { companionRuntime()?.markConnectionOpen() },
-    onConnectionLost: () => { companionRuntime()?.forgetConnection() },
-    onTransportError: () => { companionRuntime()?.forgetConnection() },
+    onConnectionLost: () => { clearNoiseConnection(); companionRuntime()?.forgetConnection() },
+    onTransportError: () => { clearNoiseConnection(); companionRuntime()?.forgetConnection() },
   })
   companion = new CompanionForegroundRuntime({ relay })
   installCompanionRuntime(companion)
@@ -116,11 +154,10 @@ if (environment.environment === 'development' && import.meta.env.VITE_PERSONAL_P
   pairing = new MobilePairingController({
     installation,
     transport: new RemoteAccessHttpTransport({ environment }),
-    handshake: new DevelopmentKeylessMobileHandshakeClient(),
+    handshake,
     scanner: new NativeMobilePairingQrScanner(),
     relay: companion,
     companion,
-    pairingKeys: new PairingCompanionKeyVault(),
     device: {
       name: navigator.userAgent.includes('Android') ? 'Android phone' : 'iPhone',
       platform: navigator.userAgent.includes('Android') ? 'android' : 'ios',

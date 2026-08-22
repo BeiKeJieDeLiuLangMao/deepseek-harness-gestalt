@@ -56,6 +56,7 @@ import {
   REMOTE_PROTOCOL_LIMITS,
   type RelayAttachmentId,
   type RelayCiphertextMessage,
+  type RelayPairingSelector,
   type RelayRouteId,
 } from '@deepseek-ai/dsh-remote-protocol'
 import WebSocket from 'ws'
@@ -274,7 +275,7 @@ describe('two Loader-booted Platform Instances', () => {
         if (message.type === 'result' && message.result.type === 'confirmed') {
           accepted.resolve(message.result.outcome)
         }
-        if (message.type === 'projection') {
+        if (message.type === 'projection' && message.projection.type === 'transcript-page') {
           const entry = message.projection.entries[0]
           if (entry?.type === 'text') {
             const revision = Number(entry.entryId.replace('resync-', ''))
@@ -698,30 +699,44 @@ class AssembledCipher {
 }
 
 class AssembledRouteStore implements RelayRouteStore {
-  private readonly rows = new Map<string, { revision: number; revoked: boolean; owners: Map<string, 'mobile' | 'desktop'> }>()
+  private readonly rows = new Map<string, {
+    revision: number
+    revoked: boolean
+    owners: Map<string, { endpoint: 'mobile' | 'desktop'; pairingSelector?: RelayPairingSelector }>
+  }>()
 
   async rotate(routeId: RelayRouteId, endpoint: 'mobile' | 'desktop', digest: Uint8Array): Promise<number> {
     const current = this.rows.get(routeId)
     const revision = (current?.revision ?? 0) + 1
     const owners = new Map(current?.owners ?? [])
-    for (const [encoded, owner] of owners) if (owner === endpoint) owners.delete(encoded)
-    owners.set(Buffer.from(digest).toString('hex'), endpoint)
+    for (const [encoded, owner] of owners) if (owner.endpoint === endpoint) owners.delete(encoded)
+    owners.set(Buffer.from(digest).toString('hex'), { endpoint })
     this.rows.set(routeId, { revision, revoked: false, owners })
     return revision
   }
 
-  async issue(routeId: RelayRouteId, endpoint: 'mobile' | 'desktop', digest: Uint8Array): Promise<number | undefined> {
+  async issue(
+    routeId: RelayRouteId,
+    endpoint: 'mobile' | 'desktop',
+    digest: Uint8Array,
+    pairingSelector?: RelayPairingSelector,
+  ): Promise<number | undefined> {
     const current = this.rows.get(routeId)
     if (current === undefined || current.revoked) return undefined
-    current.owners.set(Buffer.from(digest).toString('hex'), endpoint)
+    current.owners.set(Buffer.from(digest).toString('hex'), {
+      endpoint, ...(pairingSelector === undefined ? {} : { pairingSelector }),
+    })
     return current.revision
   }
 
-  async authorize(routeId: RelayRouteId, endpoint: 'mobile' | 'desktop', digest: Uint8Array): Promise<number | undefined> {
+  async authorize(routeId: RelayRouteId, endpoint: 'mobile' | 'desktop', digest: Uint8Array) {
     const current = this.rows.get(routeId)
-    return current !== undefined && !current.revoked
-      && current.owners.get(Buffer.from(digest).toString('hex')) === endpoint
-      ? current.revision : undefined
+    const authority = current?.owners.get(Buffer.from(digest).toString('hex'))
+    return current !== undefined && !current.revoked && authority?.endpoint === endpoint
+      ? { revision: current.revision, ...(authority.pairingSelector === undefined
+        ? {}
+        : { pairingSelector: authority.pairingSelector }) }
+      : undefined
   }
 
   async revokeCredential(routeId: RelayRouteId, endpoint: 'mobile' | 'desktop', digest: Uint8Array): Promise<number> {
@@ -729,7 +744,7 @@ class AssembledRouteStore implements RelayRouteStore {
     const revision = (current?.revision ?? 0) + 1
     const owners = new Map(current?.owners ?? [])
     const encoded = Buffer.from(digest).toString('hex')
-    if (owners.get(encoded) === endpoint) owners.delete(encoded)
+    if (owners.get(encoded)?.endpoint === endpoint) owners.delete(encoded)
     this.rows.set(routeId, { revision, revoked: current?.revoked ?? true, owners })
     return revision
   }
@@ -744,27 +759,43 @@ class AssembledRouteStore implements RelayRouteStore {
 class AssembledRedisBus {
   readonly published: string[] = []
   private readonly values = new Map<string, { value: string; expiresAt?: number }>()
+  private readonly sets = new Map<string, Set<string>>()
   private readonly subscriptions = new Map<string, Set<(message: string) => void>>()
 
   client(): RelayRedisClient {
     const client: RelayRedisClient = {
       get: async key => this.read(key),
+      sMembers: async key => [...(this.sets.get(key) ?? [])],
       set: async (key, value, options) => {
         this.write(key, value, options.PX)
         return 'OK'
       },
-      eval: async (_script, options) => {
+      eval: async (script, options) => {
         const key = options.keys[0]
         if (key === undefined) return 0
+        if (script.includes("redis.call('SET', KEYS[1], ARGV[1]")) {
+          this.write(key, options.arguments[0] as string, Number(options.arguments[1]))
+          const routeKey = options.keys[1] as string
+          const members = this.sets.get(routeKey) ?? new Set()
+          members.add(options.arguments[2] as string)
+          this.sets.set(routeKey, members)
+          return 1
+        }
         const value = this.read(key)
         if (value === null) return 0
         const record = JSON.parse(value) as { connectionToken?: string }
         if (record.connectionToken !== options.arguments[0]) return 0
-        const replacement = options.arguments[1]
-        if (replacement === undefined) this.values.delete(key)
-        else {
+        if (script.includes("redis.call('SREM'")) {
+          this.values.delete(key)
+          this.sets.get(options.keys[1] as string)?.delete(options.arguments[1] as string)
+        } else {
+          const replacement = options.arguments[1] as string
           const ttl = options.arguments[2]
           this.write(key, replacement, ttl === undefined ? undefined : Number(ttl))
+          const routeKey = options.keys[1] as string
+          const members = this.sets.get(routeKey) ?? new Set()
+          members.add(options.arguments[3] as string)
+          this.sets.set(routeKey, members)
         }
         return 1
       },

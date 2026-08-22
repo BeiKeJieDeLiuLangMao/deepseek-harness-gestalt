@@ -9,6 +9,8 @@ import {
   type RelayCiphertextMessage,
   type RelayCredential,
   type RelayHeartbeatMessage,
+  type RelayPairingSelector,
+  type RelayReadyMessage,
   type RelayRouteId,
 } from '@deepseek-ai/dsh-remote-protocol'
 import {
@@ -92,12 +94,16 @@ export class RemoteRelayProvider extends RemoteRelayService {
     return { routeId, endpoint, credential, revision }
   }
 
-  async issueCredential(routeId: RelayRouteId, endpoint: 'mobile' | 'desktop' = 'mobile'): Promise<RelayCredentialGrant> {
+  async issueCredential(
+    routeId: RelayRouteId,
+    endpoint: 'mobile' | 'desktop' = 'mobile',
+    pairingSelector?: RelayPairingSelector,
+  ): Promise<RelayCredentialGrant> {
     this.assertOpen()
     const credential = this.newCredential()
-    const revision = await this.options.routeStore.issue(routeId, endpoint, credentialDigest(credential))
+    const revision = await this.options.routeStore.issue(routeId, endpoint, credentialDigest(credential), pairingSelector)
     if (revision === undefined) throw new RemoteRelayError('RELAY_ROUTE_REVOKED', 'Relay route is inactive')
-    return { routeId, endpoint, credential, revision }
+    return { routeId, endpoint, credential, revision, ...(pairingSelector === undefined ? {} : { pairingSelector }) }
   }
 
   async revokeCredential(grant: RelayCredentialGrant): Promise<void> {
@@ -121,7 +127,7 @@ export class RemoteRelayProvider extends RemoteRelayService {
     deliver: (message: RelayCiphertextMessage) => Promise<void>
     close?: () => void | Promise<void>
     signal?: AbortSignal
-    announce?: () => Promise<void>
+    announce?: (message: RelayReadyMessage) => Promise<void>
   }): Promise<RemoteRelayAttachment> {
     this.assertOpen()
     const quiescence = deferred<void>()
@@ -139,7 +145,7 @@ export class RemoteRelayProvider extends RemoteRelayService {
     deliver: (message: RelayCiphertextMessage) => Promise<void>
     close?: () => void | Promise<void>
     signal?: AbortSignal
-    announce?: () => Promise<void>
+    announce?: (message: RelayReadyMessage) => Promise<void>
   }): Promise<RemoteRelayAttachment> {
     const signal = input.signal ?? NEVER_ABORTED
     throwIfAborted(signal)
@@ -168,9 +174,9 @@ export class RemoteRelayProvider extends RemoteRelayService {
     let local: LocalAttachment | undefined
     try {
       const digest = credentialDigest(input.message.credential)
-      let revision: number | undefined
+      let authorization
       try {
-        revision = await this.options.routeStore.authorize(
+        authorization = await this.options.routeStore.authorize(
           input.message.routeId,
           input.message.endpoint,
           digest,
@@ -180,7 +186,7 @@ export class RemoteRelayProvider extends RemoteRelayService {
         throw new RemoteRelayError('RELAY_ATTACHMENT_REJECTED', 'Relay route authority is unavailable')
       }
       this.assertOpen()
-      if (revision === undefined) {
+      if (authorization === undefined) {
         throw new RemoteRelayError('RELAY_ATTACHMENT_REJECTED', 'Relay credential is invalid')
       }
       const entry: RelayDirectoryEntry = {
@@ -189,7 +195,8 @@ export class RemoteRelayProvider extends RemoteRelayService {
         endpoint: input.message.endpoint,
         instanceId: this.options.instanceId,
         connectionToken: this.connectionToken(),
-        revision,
+        revision: authorization.revision,
+        ...(authorization.pairingSelector === undefined ? {} : { pairingSelector: authorization.pairingSelector }),
         expiresAt: this.now() + this.config.directoryTtlMs,
       }
       const existing = this.attachments.get(key)
@@ -220,12 +227,15 @@ export class RemoteRelayProvider extends RemoteRelayService {
       local = attached
       this.attachments.set(key, attached)
       try {
-        if (input.announce !== undefined) await input.announce()
+        const routeEntries = await this.options.coordinator.list(entry.routeId)
+        const ready = relayReady(entry, routeEntries, this.now())
+        if (input.announce !== undefined) await input.announce(ready)
         throwIfAborted(signal)
         await this.options.coordinator.register(entry, signal)
         throwIfAborted(signal)
-        const currentRevision = await this.options.routeStore.authorize(entry.routeId, entry.endpoint, digest, signal)
-        if (this.disposed || currentRevision !== entry.revision) {
+        const current = await this.options.routeStore.authorize(entry.routeId, entry.endpoint, digest, signal)
+        if (this.disposed || current?.revision !== entry.revision
+          || current.pairingSelector !== entry.pairingSelector) {
           await this.closeAndDrain(attached)
           throw new RemoteRelayError(
             this.disposed ? 'REMOTE_OFFLINE' : 'RELAY_ATTACHMENT_REJECTED',
@@ -326,9 +336,9 @@ export class RemoteRelayProvider extends RemoteRelayService {
     if (message.attachmentId !== local.entry.attachmentId) {
       throw new RemoteRelayError('RELAY_ATTACHMENT_REJECTED', 'Relay heartbeat does not match its attachment')
     }
-    let revision: number | undefined
+    let authorization
     try {
-      revision = await this.options.routeStore.authorize(
+      authorization = await this.options.routeStore.authorize(
         local.entry.routeId,
         local.entry.endpoint,
         local.credentialDigest,
@@ -337,7 +347,8 @@ export class RemoteRelayProvider extends RemoteRelayService {
       await this.closeAndDrain(local)
       throw new RemoteRelayError('RELAY_ROUTE_REVOKED', 'Relay route authority could not be revalidated')
     }
-    if (revision === undefined || revision !== local.entry.revision) {
+    if (authorization === undefined || authorization.revision !== local.entry.revision
+      || authorization.pairingSelector !== local.entry.pairingSelector) {
       await this.closeAndDrain(local)
       throw new RemoteRelayError('RELAY_ROUTE_REVOKED', 'Relay route authority changed')
     }
@@ -524,6 +535,47 @@ function credentialDigest(credential: RelayCredential): Uint8Array {
 
 function attachmentKey(routeId: RelayRouteId, attachmentId: RelayAttachmentId): string {
   return `${routeId}:${attachmentId}`
+}
+
+function relayReady(
+  local: RelayDirectoryEntry,
+  entries: readonly RelayDirectoryEntry[],
+  now: number,
+): RelayReadyMessage {
+  if (local.endpoint === 'mobile' && local.pairingSelector === undefined) {
+    throw new RemoteRelayError('RELAY_ATTACHMENT_REJECTED', 'Mobile Relay credential has no pairing selector')
+  }
+  const candidates = entries.filter(peer => peer.routeId === local.routeId
+    && peer.endpoint !== local.endpoint
+    && peer.expiresAt > now
+    && peer.revision === local.revision)
+  const peersBySelector = new Map<RelayPairingSelector, RelayReadyMessage['peers'][number]>()
+  for (const peer of candidates) {
+    const pairingSelector = local.endpoint === 'mobile' ? local.pairingSelector : peer.pairingSelector
+    if (pairingSelector === undefined) continue
+    peersBySelector.set(pairingSelector, {
+      attachmentId: peer.attachmentId,
+      pairingSelector,
+      generation: connectionGeneration(local, peer, pairingSelector),
+    })
+  }
+  return {
+    type: 'ready', transportVersion: 1, routeId: local.routeId,
+    attachmentId: local.attachmentId,
+    peers: [...peersBySelector.values()],
+  }
+}
+
+function connectionGeneration(
+  local: RelayDirectoryEntry,
+  peer: RelayDirectoryEntry,
+  pairingSelector: RelayPairingSelector,
+): number {
+  const tokens = [local.connectionToken, peer.connectionToken].sort()
+  const digest = createHash('sha256')
+    .update(`${local.routeId}\0${pairingSelector}\0${tokens[0]}\0${tokens[1]}`)
+    .digest()
+  return digest.readUIntBE(0, 6) + 1
 }
 
 function validateRemoteRelayConfig(config: RemoteRelayConfig): RemoteRelayConfig {

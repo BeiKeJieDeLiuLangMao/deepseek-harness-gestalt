@@ -2,8 +2,11 @@ import { Context } from '@deepseek-ai/cordis'
 import {
   parseRelayAttachmentId,
   parseRelayCredential,
+  parseRelayPairingSelector,
   parseRelayRouteId,
   type RelayCiphertextMessage,
+  type RelayPairingSelector,
+  type RelayReadyMessage,
 } from '@deepseek-ai/dsh-remote-protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -95,6 +98,71 @@ describe('RemoteRelayProvider', () => {
     expect(locatedBeforeReady).toBeUndefined()
     expect(await coordinator.locate(routeId, attachmentId)).toMatchObject({ attachmentId })
     await attachment.close()
+    await platform.dispose()
+  })
+
+  it('projects two credential-bound Mobile peers and replaces one selector with fresh attachment state', async () => {
+    const routeStore = new SharedRouteStore()
+    const coordinator = new SharedCoordinator()
+    const platform = provider('platform-peer-ready', routeStore, coordinator, 5)
+    const routeId = parseRelayRouteId('route-peer-ready')
+    const desktopGrant = await platform.rotateCredential(routeId, 'desktop')
+    const pairingOne = parseRelayPairingSelector('pairing-one')
+    const pairingTwo = parseRelayPairingSelector('pairing-two')
+    const mobileOne = await platform.issueCredential(routeId, 'mobile', pairingOne)
+    const mobileTwo = await platform.issueCredential(routeId, 'mobile', pairingTwo)
+    await platform.attach({
+      message: {
+        type: 'attach', transportVersion: 1, routeId,
+        attachmentId: parseRelayAttachmentId('mobile-one-old'), endpoint: 'mobile',
+        credential: mobileOne.credential,
+      },
+      deliver: async () => {},
+    })
+    await platform.attach({
+      message: {
+        type: 'attach', transportVersion: 1, routeId,
+        attachmentId: parseRelayAttachmentId('mobile-two'), endpoint: 'mobile',
+        credential: mobileTwo.credential,
+      },
+      deliver: async () => {},
+    })
+    let firstReady: RelayReadyMessage | undefined
+    await platform.attach({
+      message: {
+        type: 'attach', transportVersion: 1, routeId,
+        attachmentId: parseRelayAttachmentId('desktop-old'), endpoint: 'desktop',
+        credential: desktopGrant.credential,
+      },
+      deliver: async () => {},
+      announce: async (message) => { firstReady = message },
+    })
+    expect(firstReady?.peers).toHaveLength(2)
+    expect(firstReady?.peers.map(peer => peer.pairingSelector).sort()).toEqual([pairingOne, pairingTwo])
+
+    await platform.attach({
+      message: {
+        type: 'attach', transportVersion: 1, routeId,
+        attachmentId: parseRelayAttachmentId('mobile-one-new'), endpoint: 'mobile',
+        credential: mobileOne.credential,
+      },
+      deliver: async () => {},
+    })
+    let replacementReady: RelayReadyMessage | undefined
+    await platform.attach({
+      message: {
+        type: 'attach', transportVersion: 1, routeId,
+        attachmentId: parseRelayAttachmentId('desktop-new'), endpoint: 'desktop',
+        credential: desktopGrant.credential,
+      },
+      deliver: async () => {},
+      announce: async (message) => { replacementReady = message },
+    })
+    const replacementOne = replacementReady?.peers.find(peer => peer.pairingSelector === pairingOne)
+    const originalOne = firstReady?.peers.find(peer => peer.pairingSelector === pairingOne)
+    expect(replacementReady?.peers).toHaveLength(2)
+    expect(replacementOne?.attachmentId).toBe('mobile-one-new')
+    expect(replacementOne?.generation).not.toBe(originalOne?.generation)
     await platform.dispose()
   })
 
@@ -552,7 +620,7 @@ describe('RemoteRelayProvider', () => {
   })
 
   it('reserves capacity before concurrent attachment authorization completes', async () => {
-    const authorization = deferred<number | undefined>()
+    const authorization = deferred<{ revision: number } | undefined>()
     const routeStore = new SharedRouteStore()
     const authorize = vi.spyOn(routeStore, 'authorize').mockImplementation(async () => await authorization.promise)
     const coordinator = new SharedCoordinator()
@@ -581,7 +649,7 @@ describe('RemoteRelayProvider', () => {
     await Promise.resolve()
     expect(authorize).toHaveBeenCalledOnce()
 
-    authorization.resolve(1)
+    authorization.resolve({ revision: 1 })
     await first
     await expect(second).rejects.toMatchObject({ code: 'PLATFORM_CAPACITY' })
     await platform.dispose()
@@ -654,7 +722,7 @@ describe('RemoteRelayProvider', () => {
     vi.spyOn(routeStore, 'authorize').mockImplementationOnce(async () => {
       entered.resolve(undefined)
       await release.promise
-      return firstGrant.revision
+      return { revision: firstGrant.revision }
     }).mockImplementation(authorize)
     const attaching = platform.attach({
       message: {
@@ -683,7 +751,7 @@ describe('RemoteRelayProvider', () => {
     let calls = 0
     vi.spyOn(routeStore, 'authorize').mockImplementation(async (id, endpoint, digest) => {
       calls += 1
-      if (calls === 2) return grant.revision + 1
+      if (calls === 2) return { revision: grant.revision + 1 }
       return await authorize(id, endpoint, digest)
     })
 
@@ -1432,7 +1500,7 @@ function uniqueBytes(size: number, seed: number): Uint8Array {
 class SharedRouteStore implements RelayRouteStore {
   uncertain = false
   private readonly routes = new Map<string, {
-    authorities: Map<string, 'mobile' | 'desktop'>
+    authorities: Map<string, { endpoint: 'mobile' | 'desktop'; pairingSelector?: RelayPairingSelector }>
     revision: number
     revoked: boolean
   }>()
@@ -1441,25 +1509,45 @@ class SharedRouteStore implements RelayRouteStore {
     const current = this.routes.get(routeId)
     const revision = (current?.revision ?? 0) + 1
     const authorities = new Map(current?.authorities ?? [])
-    for (const [digest, owner] of authorities) if (owner === endpoint) authorities.delete(digest)
-    authorities.set(Buffer.from(credentialDigest).toString('hex'), endpoint)
+    for (const [digest, owner] of authorities) if (owner.endpoint === endpoint) authorities.delete(digest)
+    authorities.set(Buffer.from(credentialDigest).toString('hex'), {
+      endpoint,
+      ...(endpoint === 'mobile' ? { pairingSelector: parseRelayPairingSelector('test-pairing') } : {}),
+    })
     this.routes.set(routeId, { authorities, revision, revoked: false })
     return revision
   }
 
-  async issue(routeId: string, endpoint: 'mobile' | 'desktop', credentialDigest: Uint8Array): Promise<number | undefined> {
+  async issue(
+    routeId: string,
+    endpoint: 'mobile' | 'desktop',
+    credentialDigest: Uint8Array,
+    pairingSelector?: RelayPairingSelector,
+  ): Promise<number | undefined> {
     const current = this.routes.get(routeId)
     if (current === undefined || current.revoked) return undefined
-    current.authorities.set(Buffer.from(credentialDigest).toString('hex'), endpoint)
+    current.authorities.set(Buffer.from(credentialDigest).toString('hex'), {
+      endpoint,
+      ...(endpoint !== 'mobile'
+        ? {}
+        : { pairingSelector: pairingSelector ?? parseRelayPairingSelector('test-pairing') }),
+    })
     return current.revision
   }
 
-  async authorize(routeId: string, endpoint: 'mobile' | 'desktop', credentialDigest: Uint8Array): Promise<number | undefined> {
+  async authorize(
+    routeId: string,
+    endpoint: 'mobile' | 'desktop',
+    credentialDigest: Uint8Array,
+  ): Promise<{ revision: number; pairingSelector?: RelayPairingSelector } | undefined> {
     if (this.uncertain) throw new Error('shared route store unavailable')
     const current = this.routes.get(routeId)
-    if (current === undefined || current.revoked
-      || current.authorities.get(Buffer.from(credentialDigest).toString('hex')) !== endpoint) return undefined
-    return current.revision
+    const authority = current?.authorities.get(Buffer.from(credentialDigest).toString('hex'))
+    if (current === undefined || current.revoked || authority?.endpoint !== endpoint) return undefined
+    return {
+      revision: current.revision,
+      ...(authority.pairingSelector === undefined ? {} : { pairingSelector: authority.pairingSelector }),
+    }
   }
 
   async revokeCredential(
@@ -1471,7 +1559,7 @@ class SharedRouteStore implements RelayRouteStore {
     const revision = (current?.revision ?? 0) + 1
     const authorities = new Map(current?.authorities ?? [])
     const digest = Buffer.from(credentialDigest).toString('hex')
-    if (authorities.get(digest) === endpoint) authorities.delete(digest)
+    if (authorities.get(digest)?.endpoint === endpoint) authorities.delete(digest)
     this.routes.set(routeId, { authorities, revision, revoked: current?.revoked ?? true })
     return revision
   }
@@ -1538,6 +1626,10 @@ class SharedCoordinator implements RelayCoordinator {
 
   async locate(routeId: string, attachmentId: string): Promise<RelayDirectoryEntry | undefined> {
     return this.directory.get(key(routeId, attachmentId))
+  }
+
+  async list(routeId: string): Promise<readonly RelayDirectoryEntry[]> {
+    return [...this.directory.values()].filter(entry => entry.routeId === routeId)
   }
 
   async publish(instanceId: string, event: RelayCoordinationEvent): Promise<boolean> {

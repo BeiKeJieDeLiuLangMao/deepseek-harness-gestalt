@@ -24,7 +24,11 @@ import {
   type StoredPersonalPairing,
 } from '@deepseek-ai/dsh-remote-access'
 import type { RelayCredentialGrant } from '@deepseek-ai/dsh-remote-access'
-import { parseRelayCredential, parseRelayRouteId } from '@deepseek-ai/dsh-remote-protocol'
+import {
+  parseRelayCredential,
+  parseRelayPairingSelector,
+  parseRelayRouteId,
+} from '@deepseek-ai/dsh-remote-protocol'
 
 const CHALLENGE_OUTCOMES = new Set<ChallengeOutcome>([
   'cancelled', 'expired', 'completed', 'account-mismatch', 'disabled', 'disposed',
@@ -181,6 +185,8 @@ function encodePending(record: PendingPairingRecord): unknown {
     ...encodeCompletion(record) as Record<string, unknown>,
     cleanup: encodeCleanup(record.cleanup),
     ...(record.activationCleanup === undefined ? {} : { activationCleanup: encodeCleanup(record.activationCleanup) }),
+    ...(record.awaitingFinish === true ? { awaitingFinish: true } : {}),
+    ...(record.finishDigest === undefined ? {} : { finishDigest: encodeBytes(record.finishDigest) }),
   }
 }
 
@@ -190,6 +196,8 @@ function decodePending(value: unknown): PendingPairingRecord {
     ...decodeCompletion(record),
     cleanup: decodeCleanup(record.cleanup),
     ...(record.activationCleanup === undefined ? {} : { activationCleanup: decodeCleanup(record.activationCleanup) }),
+    ...(record.awaitingFinish === true ? { awaitingFinish: true } : {}),
+    ...(record.finishDigest === undefined ? {} : { finishDigest: decodeBytes(record.finishDigest, 'finishDigest') }),
   }
 }
 
@@ -270,6 +278,9 @@ function encodeInvitation(invitation: ChallengeRecord['invitation']): unknown {
     challengeId: invitation.challengeId,
     invitationSecret: encodeBytes(invitation.invitationSecret),
     desktopFingerprint: invitation.desktopFingerprint,
+    ...(invitation.desktopStaticPublicKey === undefined
+      ? {}
+      : { desktopStaticPublicKey: encodeBytes(invitation.desktopStaticPublicKey) }),
     rendezvousId: invitation.rendezvousId,
     expiresAt: invitation.expiresAt,
     protocolMajor: invitation.protocolMajor,
@@ -286,6 +297,9 @@ function decodeInvitation(value: unknown): ChallengeRecord['invitation'] {
     challengeId: parsePairingChallengeId(record.challengeId),
     invitationSecret: decodeBytes(record.invitationSecret, 'invitationSecret'),
     desktopFingerprint: asPlainString(record.desktopFingerprint, 'desktopFingerprint'),
+    ...(record.desktopStaticPublicKey === undefined
+      ? {}
+      : { desktopStaticPublicKey: decodeFixedBytes(record.desktopStaticPublicKey, 'desktopStaticPublicKey', 32) }),
     rendezvousId: parsePairingRendezvousId(record.rendezvousId),
     expiresAt: asSafeInteger(record.expiresAt, 'invitation.expiresAt'),
     protocolMajor: PERSONAL_PAIRING_PROTOCOL_MAJOR,
@@ -364,6 +378,7 @@ function encodeGrant(grant: RelayCredentialGrant): unknown {
     endpoint: grant.endpoint,
     credential: grant.credential,
     revision: grant.revision,
+    ...(grant.pairingSelector === undefined ? {} : { pairingSelector: grant.pairingSelector }),
   }
 }
 
@@ -377,6 +392,9 @@ function decodeGrant(value: unknown): RelayCredentialGrant {
     endpoint: record.endpoint,
     credential: parseRelayCredential(record.credential),
     revision: asSafeInteger(record.revision, 'relay grant revision'),
+    ...(record.pairingSelector === undefined
+      ? {}
+      : { pairingSelector: parseRelayPairingSelector(record.pairingSelector) }),
   }
 }
 
@@ -416,6 +434,12 @@ function decodeBytes(value: unknown, name: string): Uint8Array {
   const encoded = record.$b
   if (typeof encoded !== 'string' || encoded === '') throw new TypeError(`${name} must be tagged bytes`)
   return Uint8Array.from(Buffer.from(encoded, 'base64url'))
+}
+
+function decodeFixedBytes(value: unknown, name: string, length: number): Uint8Array {
+  const bytes = decodeBytes(value, name)
+  if (bytes.byteLength !== length) throw new TypeError(`${name} must contain ${String(length)} bytes`)
+  return bytes
 }
 
 function decodeMap<K, V>(

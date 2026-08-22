@@ -5,7 +5,7 @@ import {
   parsePendingPairingId,
   parsePersonalPairingId,
 } from '@deepseek-ai/dsh-remote-access'
-import { parseRelayRouteId } from '@deepseek-ai/dsh-remote-protocol'
+import { parseRelayPairingSelector, parseRelayRouteId } from '@deepseek-ai/dsh-remote-protocol'
 import { describe, expect, it } from 'vitest'
 import { PostgresPersonalPairingAuthorityStore } from '../src/postgres-pairing-store.ts'
 import { PostgresRelayRouteStore } from '../src/postgres-route-store.ts'
@@ -120,13 +120,17 @@ describe('PostgresRelayRouteStore', () => {
     const replacement = Uint8Array.of(3, 3, 3)
     expect(await store.issue(routeId, 'mobile', mobile)).toBeUndefined()
     expect(await store.rotate(routeId, 'desktop', desktop)).toBe(1)
-    expect(await store.issue(routeId, 'mobile', mobile)).toBe(1)
-    expect(await store.authorize(routeId, 'desktop', desktop)).toBe(1)
-    expect(await store.authorize(routeId, 'mobile', mobile)).toBe(1)
+    expect(await store.issue(routeId, 'mobile', mobile, parseRelayPairingSelector('pairing-one'))).toBe(1)
+    expect(await store.authorize(routeId, 'desktop', desktop)).toEqual({ revision: 1 })
+    expect(await store.authorize(routeId, 'mobile', mobile)).toEqual({
+      revision: 1, pairingSelector: 'pairing-one',
+    })
     expect(await store.rotate(routeId, 'desktop', replacement)).toBe(2)
     expect(await store.authorize(routeId, 'desktop', desktop)).toBeUndefined()
-    expect(await store.authorize(routeId, 'desktop', replacement)).toBe(2)
-    expect(await store.authorize(routeId, 'mobile', mobile)).toBe(2)
+    expect(await store.authorize(routeId, 'desktop', replacement)).toEqual({ revision: 2 })
+    expect(await store.authorize(routeId, 'mobile', mobile)).toEqual({
+      revision: 2, pairingSelector: 'pairing-one',
+    })
     expect(await store.revokeCredential(routeId, 'mobile', mobile)).toBe(3)
     expect(await store.authorize(routeId, 'mobile', mobile)).toBeUndefined()
     expect(await store.revoke(routeId)).toBe(4)

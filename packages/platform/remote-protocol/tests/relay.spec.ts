@@ -5,6 +5,7 @@ import {
   negotiateRelayTransportVersion,
   parseRelayAttachmentId,
   parseRelayCredential,
+  parseRelayPairingSelector,
   parseRelayRouteId,
   REMOTE_PROTOCOL_LIMITS,
   RemoteProtocolError,
@@ -41,7 +42,14 @@ describe('Relay Transport Protocol codec', () => {
       { type: 'attach', transportVersion: 1, routeId, attachmentId, endpoint: 'mobile', credential },
       { type: 'attach', transportVersion: 1, routeId, attachmentId, endpoint: 'desktop', credential },
       { type: 'heartbeat', transportVersion: 1, attachmentId, sentAt: 1_787_027_200_000 },
-      { type: 'ready', transportVersion: 1, attachmentId },
+      {
+        type: 'ready', transportVersion: 1, routeId, attachmentId,
+        peers: [{
+          attachmentId: parseRelayAttachmentId('desktop-peer'),
+          pairingSelector: parseRelayPairingSelector('pairing-one'),
+          generation: 7,
+        }],
+      },
       { type: 'revoke', transportVersion: 1, routeId, attachmentId, reason: 'device' },
       { type: 'revoke', transportVersion: 1, routeId, attachmentId, reason: 'all' },
       { type: 'revoke', transportVersion: 1, routeId, attachmentId, reason: 'disabled' },
@@ -151,6 +159,18 @@ describe('Relay Transport Protocol codec', () => {
       { type: 'heartbeat', transportVersion: 1, attachmentId: 'mobile', sentAt: 1.5 },
       { type: 'heartbeat', transportVersion: 1, attachmentId: 'mobile', sentAt: -1 },
       { type: 'ready', transportVersion: 1 },
+      { type: 'ready', transportVersion: 1, routeId: 'route', attachmentId: 'mobile', peers: {} },
+      {
+        type: 'ready', transportVersion: 1, routeId: 'route', attachmentId: 'mobile',
+        peers: [{ attachmentId: 'desktop', pairingSelector: 'pairing', generation: 0 }],
+      },
+      {
+        type: 'ready', transportVersion: 1, routeId: 'route', attachmentId: 'mobile',
+        peers: [
+          { attachmentId: 'desktop-one', pairingSelector: 'pairing', generation: 1 },
+          { attachmentId: 'desktop-two', pairingSelector: 'pairing', generation: 2 },
+        ],
+      },
       { type: 'revoke', transportVersion: 1, routeId: 'route', attachmentId: 'mobile', reason: 'unknown' },
       { type: 'error', transportVersion: 1, code: 'UNKNOWN' },
       { type: 'error', transportVersion: 1, code: 'PLATFORM_CAPACITY', retryAfterMs: -1 },

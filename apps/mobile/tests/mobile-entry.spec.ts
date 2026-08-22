@@ -118,7 +118,7 @@ describe('Mobile Platform Account entry', () => {
     expect(fetch).not.toHaveBeenCalled()
   })
 
-  it('validates the development Relay bundle before rendering or network acquisition', async () => {
+  it('validates the production Relay bundle before rendering or network acquisition', async () => {
     configureEnvironment()
     configureRelayEnvironment()
     vi.stubEnv('VITE_REMOTE_RELAY_INBOUND_MAX_BYTES', '1')
@@ -175,8 +175,9 @@ describe('Mobile Platform Account entry', () => {
       operationId: 'op-approve', kind: 'approval', summary: 'write a.ts', authorized: ['once'],
     }, { accepted: true, decision: 'once' }, runtime.getState()).settled).toBeUndefined()
 
-    relayLifecycle.onCiphertext?.()
+    expect(() => { relayLifecycle.onCiphertext?.() }).toThrow('pending Snow IK owner')
     expect(runtime.getState().synchronized).toBe(false)
+    relayLifecycle.onConnectionReady?.()
     const firstResync = runtime.bindValidatedDesktopResync()
     if (firstResync === undefined) throw new Error('expected first Desktop resync receiver')
     firstResync.acceptValidatedDesktopResync({ type: 'desktop-resync', version: 1, authenticated: true })
@@ -225,7 +226,7 @@ function configureEnvironment(): void {
 
 function configureRelayEnvironment(): void {
   const fields: Record<string, string> = {
-    VITE_PERSONAL_PAIRING_KEYLESS: '1',
+    VITE_PLATFORM_ENV: 'production',
     VITE_REMOTE_RELAY_WSS_URL: 'wss://relay.example/v1/remote-access/relay',
     VITE_REMOTE_RELAY_INBOUND_MAX_BYTES: '9999999',
     VITE_REMOTE_RELAY_INBOUND_MAX_MESSAGES: '8',

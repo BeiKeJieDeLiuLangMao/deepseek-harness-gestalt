@@ -31,6 +31,52 @@ import {
 const NOW = Date.parse('2026-08-18T10:00:00.000Z')
 
 describe('PersonalPairingProvider', () => {
+  it('admits Desktop confirmation only after an idempotent Mobile handshake finish', async () => {
+    const handshake = {
+      ...handshakeProvider(),
+      finishChallenge: vi.fn(async () => ({
+        handshakeHash: new Uint8Array(32).fill(4),
+        pendingPairingKey: Uint8Array.of(5),
+      })),
+    }
+    const provider = uniquePairingProvider(handshake)
+    const desktop = authentication('desktop-installation')
+    const mobile = authentication('mobile-installation')
+    await provider.setMobileAccess({ desktop, enabled: true })
+    const challenge = await createChallengeFor(provider, desktop, 'three-message')
+    const pending = await provider.completeChallenge({
+      mobile,
+      completionId: parsePairingCompletionId('three-message'),
+      oneTimeLink: challenge.oneTimeLink,
+      device: { name: 'Alice phone', platform: 'ios' },
+      mobileHandshake: Uint8Array.of(1),
+    })
+
+    expect(await provider.listPendingPairings(desktop)).toEqual([])
+    await expect(provider.confirmPairing({ desktop, pendingPairingId: pending.pendingPairingId }))
+      .rejects.toMatchObject({ code: 'PAIRING_PENDING_INVALID' })
+
+    const finished = await provider.finishChallenge({
+      mobile,
+      pendingPairingId: pending.pendingPairingId,
+      mobileFinish: Uint8Array.of(3),
+    })
+    await expect(provider.finishChallenge({
+      mobile,
+      pendingPairingId: pending.pendingPairingId,
+      mobileFinish: Uint8Array.of(3),
+    })).resolves.toEqual(finished)
+    await expect(provider.finishChallenge({
+      mobile,
+      pendingPairingId: pending.pendingPairingId,
+      mobileFinish: Uint8Array.of(9),
+    })).rejects.toMatchObject({ code: 'PAIRING_PENDING_INVALID' })
+    expect(await provider.listPendingPairings(desktop)).toEqual([finished])
+    await expect(provider.confirmPairing({ desktop, pendingPairingId: pending.pendingPairingId }))
+      .resolves.toMatchObject({ device: { name: 'Alice phone' } })
+    expect(handshake.finishChallenge).toHaveBeenCalledOnce()
+  })
+
   it('keeps a replacement route when stale disable cleanup completes', async () => {
     const authority = new MemoryPersonalPairingAuthorityStore()
     const untouched = new MemoryPersonalPairingAuthorityStore()
@@ -137,7 +183,7 @@ describe('PersonalPairingProvider', () => {
     expect(localStatus.status).toBe('paired')
     if (localStatus.status !== 'paired') throw new Error('expected paired local status')
     expect(localStatus.sealedRelayAuthority).toBeInstanceOf(Uint8Array)
-    expect(relay.issueCredential).toHaveBeenCalledWith(routeId, 'mobile')
+    expect(relay.issueCredential).toHaveBeenCalledWith(routeId, 'mobile', localStatus.pairingId)
     expect(mobileCredential).not.toBe(desktopCredential)
 
     await platformB.setMobileAccess({ desktop, enabled: false })

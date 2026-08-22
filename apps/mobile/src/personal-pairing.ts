@@ -27,6 +27,8 @@ export interface MobilePairingHandshakeClient {
   begin(oneTimeLink: string): Promise<{ completionId: PairingCompletionId; mobileHandshake: Uint8Array }>
   /** Consume the Desktop handshake response before exposing authentication words. */
   acceptDesktopHandshake(desktopHandshake: Uint8Array): Promise<void>
+  /** @returns Mobile message 3 for a three-message handshake, or undefined for development keyless pairing. */
+  exportFinishMessage?(): Uint8Array | undefined
   /** Open Mobile-specific Relay authority sealed to this Personal Pairing. */
   openRelayAuthority?(sealedAuthority: Uint8Array): Promise<RelayCredentialGrant>
   /**
@@ -233,12 +235,27 @@ export class MobilePairingController implements MobilePairingActions {
       attempt.transmission = 'pending'
       await this.options.handshake.acceptDesktopHandshake(completion.desktopHandshake)
       this.assertActiveAccount()
+      const mobileFinish = this.options.handshake.exportFinishMessage?.()
+      let finished = completion
+      if (mobileFinish !== undefined) {
+        try {
+          finished = await this.options.transport.finishChallenge({
+            authentication: await this.options.installation.authorizeCurrentInstallation(),
+            pendingPairingId: completion.pendingPairingId,
+            mobileFinish,
+          })
+        } finally {
+          mobileFinish.fill(0)
+        }
+      }
+      this.assertActiveAccount()
+      attempt.pendingProjection = finished
       this.publish({
         status: 'pending',
         deviceName: this.options.device.name,
-        authenticationWords: completion.authenticationWords,
+        authenticationWords: finished.authenticationWords,
       })
-      this.scheduleStatus(completion.pendingPairingId)
+      this.scheduleStatus(finished.pendingPairingId)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       if (this.isTerminal(error, attempt)) {

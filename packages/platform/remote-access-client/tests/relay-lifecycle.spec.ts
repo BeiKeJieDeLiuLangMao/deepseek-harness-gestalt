@@ -3,6 +3,7 @@ import {
   encodeRelayMessage,
   parseRelayAttachmentId,
   parseRelayCredential,
+  parseRelayPairingSelector,
   parseRelayRouteId,
 } from '@deepseek-ai/dsh-remote-protocol'
 import { describe, expect, it, vi } from 'vitest'
@@ -365,7 +366,8 @@ describe('RemoteRelayEndpointController', () => {
     const socket = new FakeSocket(false)
     const connect = vi.fn(async () => socket)
     const resynchronize = vi.fn(async () => {})
-    const controller = desktopController({ connect, resynchronize, attachTimeoutMs: 1_000 })
+    const onPeerAttachments = vi.fn()
+    const controller = desktopController({ connect, resynchronize, onPeerAttachments, attachTimeoutMs: 1_000 })
 
     const first = controller.start()
     const second = controller.start()
@@ -381,11 +383,21 @@ describe('RemoteRelayEndpointController', () => {
     const attach = socket.decoded()[0]
     if (attach?.type !== 'attach') throw new Error('expected attach')
     socket.receive(encodeRelayMessage({
-      type: 'ready', transportVersion: 1, attachmentId: attach.attachmentId,
+      type: 'ready', transportVersion: 1, routeId: attach.routeId,
+      attachmentId: attach.attachmentId,
+      peers: [{
+        attachmentId: parseRelayAttachmentId('mobile-peer'),
+        pairingSelector: parseRelayPairingSelector('pairing-peer'),
+        generation: 7,
+      }],
     }))
     await Promise.all([first, second])
     expect(connect).toHaveBeenCalledOnce()
     expect(resynchronize).toHaveBeenCalledOnce()
+    expect(onPeerAttachments).toHaveBeenCalledWith(expect.objectContaining({
+      routeId: attach.routeId,
+      peers: [expect.objectContaining({ pairingSelector: 'pairing-peer', generation: 7 })],
+    }))
     await controller.stop()
   })
 
@@ -429,7 +441,8 @@ describe('RemoteRelayEndpointController', () => {
     const starting = controller.start()
     await vi.waitFor(() => { expect(socket.decoded()).toHaveLength(1) })
     socket.receive(encodeRelayMessage({
-      type: 'ready', transportVersion: 1, attachmentId: parseRelayAttachmentId('wrong-attachment'),
+      type: 'ready', transportVersion: 1, routeId: parseRelayRouteId('route-one'),
+      attachmentId: parseRelayAttachmentId('wrong-attachment'), peers: [],
     }))
     await vi.waitFor(() => { expect(onTransportError).toHaveBeenCalledWith(
       expect.objectContaining({ code: 'RELAY_ATTACHMENT_REJECTED' }),
@@ -473,7 +486,8 @@ describe('RemoteRelayEndpointController', () => {
     const starting = controller.start()
     await vi.waitFor(() => { expect(socket.decoded()).toHaveLength(1) })
     socket.receive(encodeRelayMessage({
-      type: 'ready', transportVersion: 1, attachmentId: parseRelayAttachmentId('mobile-one'),
+      type: 'ready', transportVersion: 1, routeId: parseRelayRouteId('route-one'),
+      attachmentId: parseRelayAttachmentId('mobile-one'), peers: [],
     }))
     await Promise.resolve()
     const stopping = controller.stop()
@@ -678,7 +692,8 @@ class FakeSocket implements RelayEndpointSocket {
     const message = decodeRelayMessage(value)
     if (this.autoReady && message.type === 'attach') {
       this.receive(encodeRelayMessage({
-        type: 'ready', transportVersion: 1, attachmentId: message.attachmentId,
+        type: 'ready', transportVersion: 1, routeId: message.routeId,
+        attachmentId: message.attachmentId, peers: [],
       }))
     }
   }

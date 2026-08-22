@@ -75,6 +75,13 @@ abstract reissueDesktopRelayAuthority(desktop: PairingAccountAuthentication): Pr
 abstract completeChallenge(input: { mobile: PairingAccountAuthentication completionId: PairingCompletionId oneTimeLink: string device: PairingDeviceDescription mobileHandshake: Uint8Array }): Promise<PairingCompletionView>
 
 /**
+ * Finish a three-message pairing handshake before Desktop confirmation.
+ * @param input - Mobile authorization, pending identity, and message 3.
+ * @returns the pending projection with final authentication words.
+ */
+finishChallenge(input: { mobile: PairingAccountAuthentication pendingPairingId: PendingPairingId mobileFinish: Uint8Array }): Promise<PairingCompletionView>
+
+/**
  * Read the decision for one pairing completed by the current Mobile Installation.
  * @param input - current Mobile authorization and pending identity.
  * @returns pending, paired, or rejected without exposing Desktop authority.
@@ -139,7 +146,7 @@ abstract admitAttachmentBlob(input: { owner: PairingAccountAuthentication bytes:
 abstract releaseAttachmentBlob(input: { owner: PairingAccountAuthentication reservationId: string }): Promise<void>
 ```
 
-Source: [`packages/platform/remote-access/src/index.ts:430`](../../packages/platform/remote-access/src/index.ts)
+Source: [`packages/platform/remote-access/src/index.ts:444`](../../packages/platform/remote-access/src/index.ts)
 
 <a id="ctxremoteattachmentauthority--remoteattachmentauthority"></a>
 
@@ -221,9 +228,10 @@ abstract rotateCredential(routeId: RelayRouteId, endpoint?: 'mobile' | 'desktop'
  * Issue distinct endpoint authority without invalidating other credentials on the active route.
  * @param routeId - active route receiving another independently revocable bearer.
  * @param endpoint - endpoint the new credential authorizes; defaults to mobile.
+ * @param pairingSelector - non-secret Mobile pairing selector retained beside the credential digest.
  * @returns a fresh credential at the current route revision.
  */
-abstract issueCredential(routeId: RelayRouteId, endpoint?: 'mobile' | 'desktop'): Promise<RelayCredentialGrant>
+abstract issueCredential( routeId: RelayRouteId, endpoint?: 'mobile' | 'desktop', pairingSelector?: RelayPairingSelector, ): Promise<RelayCredentialGrant>
 
 /**
  * Remove one issued endpoint credential without revoking its route peers.
@@ -242,8 +250,8 @@ abstract revokeRoute(routeId: RelayRouteId): Promise<void>
  * @param input - attach frame, socket writer, optional close callback, and optional ready flush.
  * @returns the admitted attachment receiving later frames from that socket.
  */
-abstract attach(input: { message: RelayAttachMessage deliver: (message: RelayCiphertextMessage) => Promise<void> close?: () => void | Promise<void> signal?: AbortSignal announce?: () => Promise<void> }): Promise<RemoteRelayAttachment>
+abstract attach(input: { message: RelayAttachMessage deliver: (message: RelayCiphertextMessage) => Promise<void> close?: () => void | Promise<void> signal?: AbortSignal announce?: (message: RelayReadyMessage) => Promise<void> }): Promise<RemoteRelayAttachment>
 ```
 
-Source: [`packages/platform/remote-access/src/relay.ts:143`](../../packages/platform/remote-access/src/relay.ts)
+Source: [`packages/platform/remote-access/src/relay.ts:162`](../../packages/platform/remote-access/src/relay.ts)
 <!-- END GENERATED cordis-surface -->

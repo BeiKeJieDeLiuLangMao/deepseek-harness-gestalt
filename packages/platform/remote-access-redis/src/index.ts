@@ -14,6 +14,7 @@ import {
   decodeRelayMessage,
   encodeRelayMessage,
   parseRelayAttachmentId,
+  parseRelayPairingSelector,
   parseRelayRouteId,
   REMOTE_PROTOCOL_LIMITS,
   type RelayAttachmentId,
@@ -25,12 +26,21 @@ const KEY_PREFIX_PATTERN = /^[A-Za-z0-9:_-]+$/u
 const DIRECTORY_VALUE_BYTES = 2_048
 const EVENT_BYTES = Math.ceil(REMOTE_PROTOCOL_LIMITS.relayMessageBytes * 4 / 3) + 1_024
 
+const REGISTER_SCRIPT = `
+redis.call('SET', KEYS[1], ARGV[1], 'PX', ARGV[2])
+redis.call('SADD', KEYS[2], ARGV[3])
+redis.call('PEXPIRE', KEYS[2], ARGV[2])
+return 1
+`
+
 const REFRESH_SCRIPT = `
 local current = redis.call('GET', KEYS[1])
 if not current then return 0 end
 local decoded = cjson.decode(current)
 if decoded.connectionToken ~= ARGV[1] then return 0 end
 redis.call('SET', KEYS[1], ARGV[2], 'PX', ARGV[3])
+redis.call('SADD', KEYS[2], ARGV[4])
+redis.call('PEXPIRE', KEYS[2], ARGV[3])
 return 1
 `
 
@@ -40,12 +50,14 @@ if not current then return 0 end
 local decoded = cjson.decode(current)
 if decoded.connectionToken ~= ARGV[1] then return 0 end
 redis.call('DEL', KEYS[1])
+redis.call('SREM', KEYS[2], ARGV[2])
 return 1
 `
 
 /** Minimal maintained-client operations used by the coordinator and its keyless adapter tests. */
 export interface RelayRedisClient {
   get(key: string): Promise<string | null>
+  sMembers(key: string): Promise<string[]>
   set(key: string, value: string, options: { PX: number }): Promise<unknown>
   eval(script: string, options: { keys: string[]; arguments: string[] }): Promise<unknown>
   publish(channel: string, message: string): Promise<number>
@@ -129,31 +141,40 @@ export class RedisRelayCoordinator implements RelayCoordinator {
   async register(entry: RelayDirectoryEntry, signal?: AbortSignal): Promise<void> {
     signal?.throwIfAborted()
     const command = signal === undefined ? this.options.command : this.options.command.withAbortSignal(signal)
-    await command.set(
-      this.directoryKey(entry.routeId, entry.attachmentId),
-      encodeDirectory(entry),
-      { PX: this.ttl(entry) },
-    )
+    const ttl = this.ttl(entry)
+    await command.eval(REGISTER_SCRIPT, {
+      keys: [this.directoryKey(entry.routeId, entry.attachmentId), this.routeDirectoryKey(entry.routeId)],
+      arguments: [encodeDirectory(entry), String(ttl), entry.attachmentId],
+    })
   }
 
   async refresh(entry: RelayDirectoryEntry): Promise<boolean> {
     const result = await this.options.command.eval(REFRESH_SCRIPT, {
-      keys: [this.directoryKey(entry.routeId, entry.attachmentId)],
-      arguments: [entry.connectionToken, encodeDirectory(entry), String(this.ttl(entry))],
+      keys: [this.directoryKey(entry.routeId, entry.attachmentId), this.routeDirectoryKey(entry.routeId)],
+      arguments: [entry.connectionToken, encodeDirectory(entry), String(this.ttl(entry)), entry.attachmentId],
     })
     return result === 1
   }
 
   async unregister(entry: RelayDirectoryEntry): Promise<void> {
     await this.options.command.eval(UNREGISTER_SCRIPT, {
-      keys: [this.directoryKey(entry.routeId, entry.attachmentId)],
-      arguments: [entry.connectionToken],
+      keys: [this.directoryKey(entry.routeId, entry.attachmentId), this.routeDirectoryKey(entry.routeId)],
+      arguments: [entry.connectionToken, entry.attachmentId],
     })
   }
 
   async locate(routeId: RelayRouteId, attachmentId: RelayAttachmentId): Promise<RelayDirectoryEntry | undefined> {
     const value = await this.options.command.get(this.directoryKey(routeId, attachmentId))
     return value === null ? undefined : decodeDirectory(value)
+  }
+
+  async list(routeId: RelayRouteId): Promise<readonly RelayDirectoryEntry[]> {
+    const attachmentIds = await this.options.command.sMembers(this.routeDirectoryKey(routeId))
+    const entries = await Promise.all(attachmentIds.map(async (attachmentId) => {
+      const value = await this.options.command.get(this.directoryKey(routeId, parseRelayAttachmentId(attachmentId)))
+      return value === null ? undefined : decodeDirectory(value)
+    }))
+    return entries.filter((entry): entry is RelayDirectoryEntry => entry !== undefined)
   }
 
   async publish(instanceId: RelayInstanceId, event: RelayCoordinationEvent): Promise<boolean> {
@@ -178,6 +199,10 @@ export class RedisRelayCoordinator implements RelayCoordinator {
 
   private directoryKey(routeId: RelayRouteId, attachmentId: RelayAttachmentId): string {
     return `${this.keyPrefix}:directory:${routeId}:${attachmentId}`
+  }
+
+  private routeDirectoryKey(routeId: RelayRouteId): string {
+    return `${this.keyPrefix}:route-directory:${routeId}`
   }
 
   private instanceChannel(instanceId: RelayInstanceId): string {
@@ -251,12 +276,18 @@ function encodeDirectory(entry: RelayDirectoryEntry): string {
 function decodeDirectory(value: string): RelayDirectoryEntry {
   if (Buffer.byteLength(value) > DIRECTORY_VALUE_BYTES) throw new TypeError('Relay directory entry exceeds its byte limit')
   const record = object(JSON.parse(value) as unknown, 'Relay directory entry')
-  exactKeys(record, ['routeId', 'attachmentId', 'endpoint', 'instanceId', 'connectionToken', 'revision', 'expiresAt'])
+  const keys = record.pairingSelector === undefined
+    ? ['routeId', 'attachmentId', 'endpoint', 'instanceId', 'connectionToken', 'revision', 'expiresAt']
+    : ['routeId', 'attachmentId', 'endpoint', 'pairingSelector', 'instanceId', 'connectionToken', 'revision', 'expiresAt']
+  exactKeys(record, keys)
   if (record.endpoint !== 'mobile' && record.endpoint !== 'desktop') throw new TypeError('Relay directory endpoint is invalid')
   return {
     routeId: parseRelayRouteId(record.routeId),
     attachmentId: parseRelayAttachmentId(record.attachmentId),
     endpoint: record.endpoint,
+    ...(record.pairingSelector === undefined
+      ? {}
+      : { pairingSelector: parseRelayPairingSelector(record.pairingSelector) }),
     instanceId: parseRelayInstanceId(record.instanceId),
     connectionToken: parseRelayConnectionToken(record.connectionToken),
     revision: positiveInteger(record.revision, 'revision'),
