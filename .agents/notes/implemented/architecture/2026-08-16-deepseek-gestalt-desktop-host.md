@@ -10,7 +10,7 @@ English | [中文](2026-08-16-deepseek-gestalt-desktop-host.zh.md)
 
 ## Decision
 
-DeepSeek Gestalt is a Desktop Host: Electron owns the window, application menu, process lifetime, and update checks. On launch it starts a bundled official Node plus a locked `dsh web` Web Host (`--host 127.0.0.1 --port 0`) and loads that loopback URL. The Web Host keeps every Host capability, including the native directory picker.
+DeepSeek Gestalt is a Desktop Host: Electron owns the window, application menu, process lifetime, and update checks. On launch it starts a bundled official Node plus a locked `dsh web` Web Host (`--host 127.0.0.1 --port 0 --no-open`) and loads that loopback URL. Desktop Host owns the window, so spawn and the overlay keep the OS default browser closed ([Desktop Web Host `--no-open`](../bug-fix/2026-08-22-desktop-web-host-no-open.md)). The Web Host keeps every Host capability, including the native directory picker.
 
 Electron supervises the Web Host through shutdown. Window exit, termination signals, and smoke completion cancel a pending start, stop the child, and wait for process exit before the Desktop Host terminates; an intentional shutdown cannot trigger the one-time crash respawn. The trusted main window stays on the active loopback origin, sends ordinary web links to the system browser, and denies other navigation and every new Electron window.
 
