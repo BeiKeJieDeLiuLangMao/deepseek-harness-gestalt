@@ -45,10 +45,7 @@ export function collectCompanionProductEntryResidue(root: string): string[] {
     const analysis = analyzeModule(source, file, selection)
     source.split('\n').forEach((line, index) => {
       if (analysis.lines !== undefined && !analysis.lines.has(index + 1)) return
-      const forbidden = FORBIDDEN.find(({ label, pattern }) => {
-        if (!pattern.test(line)) return false
-        return label !== 'an in-memory product authority' || !/^\s*export\s+class\s+Memory\w+/u.test(line)
-      })
+      const forbidden = FORBIDDEN.find(({ pattern }) => pattern.test(line))
       if (forbidden !== undefined) {
         failures.add(`${display}:${String(index + 1)}: contains ${forbidden.label}.`)
       }
@@ -128,8 +125,15 @@ function analyzeModule(
     if (ts.isExportDeclaration(statement) && statement.moduleSpecifier !== undefined
       && ts.isStringLiteral(statement.moduleSpecifier) && !statement.isTypeOnly) {
       const specifier = statement.moduleSpecifier.text
-      if (statement.exportClause === undefined || ts.isNamespaceExport(statement.exportClause)) {
-        if (selection === undefined) dependencies.push({ specifier })
+      if (statement.exportClause === undefined) {
+        dependencies.push({
+          specifier,
+          ...(selection === undefined ? {} : { exports: selection }),
+        })
+      } else if (ts.isNamespaceExport(statement.exportClause)) {
+        if (selection === undefined || selection.has(statement.exportClause.name.text)) {
+          dependencies.push({ specifier })
+        }
       } else {
         for (const element of statement.exportClause.elements) {
           if (!element.isTypeOnly) {

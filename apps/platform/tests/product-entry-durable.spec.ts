@@ -1,6 +1,6 @@
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import { generateKeyPairSync } from 'node:crypto'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { chmod, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -8,6 +8,7 @@ import { parseInstallationId, parsePlatformAccountId } from '@deepseek-ai/dsh-pl
 import { parseRelayConnectionToken, parseRelayInstanceId } from '@deepseek-ai/dsh-remote-access'
 import { parseRelayAttachmentId, parseRelayRouteId } from '@deepseek-ai/dsh-remote-protocol'
 import pg from 'pg'
+import { createClient } from 'redis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { connectRedis } from '../src/redis-bus.ts'
 import { launchOperatedPlatform } from '../src/launch.ts'
@@ -15,6 +16,7 @@ import { launchOperatedPlatform } from '../src/launch.ts'
 const durableProgramsAvailable = commandAvailable('initdb')
   && commandAvailable('postgres')
   && commandAvailable('redis-server')
+  && commandAvailable('openssl')
 const cleanups: Array<() => Promise<void>> = []
 
 afterEach(async () => {
@@ -131,6 +133,61 @@ describe.skipIf(!durableProgramsAvailable)('operated Platform resource entry wit
       'remote_access_routes',
     ]))
   }, 60_000)
+
+  it('drains HTTP, PostgreSQL, and Redis owners before the boot entry exits on SIGTERM', async () => {
+    const tls = await createTlsFixture()
+    const postgres = await startPostgresFixture(tls)
+    const redis = await startRedisFixture(tls)
+    const port = await freePort()
+    const ca = await readFile(tls.cert, 'utf8')
+    const postgresObserver = new pg.Pool({
+      host: '127.0.0.1', port: postgres.port, user: 'fixture', database: 'postgres',
+      ssl: { ca, rejectUnauthorized: true },
+    })
+    cleanups.push(async () => { await postgresObserver.end() })
+    const redisObserver = createClient({
+      username: 'fixture',
+      password: 'fixture-secret',
+      socket: { host: '127.0.0.1', port: redis.port, tls: true, ca },
+    })
+    await redisObserver.connect()
+    cleanups.push(async () => { await redisObserver.quit() })
+    const child = spawn(process.execPath, [
+      '--import', 'tsx/esm', join(import.meta.dirname, '..', 'src', 'boot.ts'),
+    ], {
+      cwd: join(import.meta.dirname, '..', '..', '..'),
+      env: {
+        ...process.env,
+        ...operatedFixtureEnv(),
+        NODE_EXTRA_CA_CERTS: tls.cert,
+        PLATFORM_POSTGRES_DATABASE: 'postgres',
+        PLATFORM_POSTGRES_HOST: '127.0.0.1',
+        PLATFORM_POSTGRES_PORT: String(postgres.port),
+        PLATFORM_REDIS_HOST: '127.0.0.1',
+        PLATFORM_REDIS_PASSWORD: 'fixture-secret',
+        PLATFORM_REDIS_PORT: String(redis.port),
+        PORT: String(port),
+      },
+      stdio: ['ignore', 'ignore', 'pipe'],
+    })
+    const stderr = captureStderr(child)
+    cleanups.push(async () => { await stopChild(child) })
+    await waitForHttp(port, child, stderr)
+    await expect(postgresClientCount(postgresObserver)).resolves.toBeGreaterThanOrEqual(1)
+    await expect(redisClientCount(redisObserver)).resolves.toBeGreaterThanOrEqual(3)
+
+    const exited = childExit(child)
+    expect(child.kill('SIGTERM')).toBe(true)
+    await expect(Promise.race([
+      exited,
+      delay(10_000).then(() => { throw new Error('Platform entry did not exit after SIGTERM') }),
+    ])).resolves.toEqual({ code: 0, signal: null })
+
+    await expect(httpAvailable(port)).resolves.toBe(false)
+    await expect(postgresClientCount(postgresObserver)).resolves.toBe(0)
+    await expect(redisClientCount(redisObserver)).resolves.toBe(1)
+    expect(stderr()).toContain('platform: listening on 127.0.0.1:')
+  }, 60_000)
 })
 
 function operatedFixtureEnv(): NodeJS.Dict<string> {
@@ -167,7 +224,27 @@ function commandAvailable(command: string): boolean {
   return spawnSync(command, ['--version'], { stdio: 'ignore' }).status === 0
 }
 
-async function startPostgresFixture(): Promise<{ port: number }> {
+interface TlsFixture {
+  cert: string
+  key: string
+}
+
+async function createTlsFixture(): Promise<TlsFixture> {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-operated-tls-'))
+  const cert = join(root, 'server.crt')
+  const key = join(root, 'server.key')
+  const generated = spawnSync('openssl', [
+    'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1',
+    '-keyout', key, '-out', cert, '-subj', '/CN=localhost',
+    '-addext', 'subjectAltName=DNS:localhost,IP:127.0.0.1',
+  ], { encoding: 'utf8' })
+  if (generated.status !== 0) throw new Error(`TLS fixture failed: ${generated.stderr}`)
+  await chmod(key, 0o600)
+  cleanups.push(async () => { await rm(root, { recursive: true, force: true }) })
+  return { cert, key }
+}
+
+async function startPostgresFixture(tls?: TlsFixture): Promise<{ port: number }> {
   const root = await mkdtemp(join(tmpdir(), 'dsh-operated-postgres-'))
   const data = join(root, 'data')
   const initialized = spawnSync('initdb', [
@@ -175,7 +252,12 @@ async function startPostgresFixture(): Promise<{ port: number }> {
   ], { encoding: 'utf8' })
   if (initialized.status !== 0) throw new Error(`initdb fixture failed: ${initialized.stderr}`)
   const port = await freePort()
-  const child = spawn('postgres', ['-D', data, '-h', '127.0.0.1', '-p', String(port)], {
+  const child = spawn('postgres', [
+    '-D', data, '-h', '127.0.0.1', '-p', String(port),
+    ...(tls === undefined ? [] : [
+      '-c', 'ssl=on', '-c', `ssl_cert_file=${tls.cert}`, '-c', `ssl_key_file=${tls.key}`,
+    ]),
+  ], {
     stdio: ['ignore', 'ignore', 'pipe'],
   })
   const stderr = captureStderr(child)
@@ -183,14 +265,19 @@ async function startPostgresFixture(): Promise<{ port: number }> {
     await stopChild(child)
     await rm(root, { recursive: true, force: true })
   })
-  await waitForPostgres(port, stderr)
+  await waitForPostgres(port, stderr, tls)
   return { port }
 }
 
-async function startRedisFixture(): Promise<{ port: number }> {
+async function startRedisFixture(tls?: TlsFixture): Promise<{ port: number }> {
   const port = await freePort()
   const child = spawn('redis-server', [
-    '--bind', '127.0.0.1', '--port', String(port), '--save', '', '--appendonly', 'no',
+    '--bind', '127.0.0.1', '--port', tls === undefined ? String(port) : '0',
+    ...(tls === undefined ? [] : [
+      '--tls-port', String(port), '--tls-cert-file', tls.cert, '--tls-key-file', tls.key,
+      '--tls-ca-cert-file', tls.cert, '--tls-auth-clients', 'no',
+    ]),
+    '--save', '', '--appendonly', 'no',
     '--user', 'default', 'off', '--user', 'fixture', 'on', '>fixture-secret', '~*', '&*', '+@all',
   ], { stdio: ['ignore', 'ignore', 'pipe'] })
   const stderr = captureStderr(child)
@@ -199,10 +286,13 @@ async function startRedisFixture(): Promise<{ port: number }> {
   return { port }
 }
 
-async function waitForPostgres(port: number, stderr: () => string): Promise<void> {
+async function waitForPostgres(port: number, stderr: () => string, tls?: TlsFixture): Promise<void> {
   const deadline = Date.now() + 10_000
   while (Date.now() < deadline) {
-    const probe = new pg.Client({ host: '127.0.0.1', port, user: 'fixture', database: 'postgres' })
+    const probe = new pg.Client({
+      host: '127.0.0.1', port, user: 'fixture', database: 'postgres',
+      ...(tls === undefined ? {} : { ssl: { ca: await readFile(tls.cert, 'utf8'), rejectUnauthorized: true } }),
+    })
     try {
       await probe.connect()
       await probe.end()
@@ -238,13 +328,13 @@ function captureStderr(child: ChildProcess): () => string {
 
 async function stopChild(child: ChildProcess): Promise<void> {
   const exited = childExit(child)
-  if (child.exitCode !== null) {
+  if (child.exitCode !== null || child.signalCode !== null) {
     await exited
     return
   }
   child.kill('SIGTERM')
   const escalation = setTimeout(() => {
-    if (child.exitCode === null) {
+    if (child.exitCode === null && child.signalCode === null) {
       child.kill('SIGKILL')
     }
   }, 5_000)
@@ -258,15 +348,51 @@ async function stopChild(child: ChildProcess): Promise<void> {
   }
 }
 
-function childExit(child: ChildProcess): Promise<void> {
+function childExit(child: ChildProcess): Promise<{ code: number | null; signal: NodeJS.Signals | null }> {
   return new Promise((resolveExit) => {
-    const onExit = (): void => { resolveExit() }
+    const onExit = (code: number | null, signal: NodeJS.Signals | null): void => { resolveExit({ code, signal }) }
     child.once('exit', onExit)
-    if (child.exitCode !== null) {
+    if (child.exitCode !== null || child.signalCode !== null) {
       child.off('exit', onExit)
-      resolveExit()
+      resolveExit({ code: child.exitCode, signal: child.signalCode })
     }
   })
+}
+
+async function waitForHttp(port: number, child: ChildProcess, stderr: () => string): Promise<void> {
+  const deadline = Date.now() + 15_000
+  while (Date.now() < deadline) {
+    if (child.exitCode !== null) throw new Error(`Platform entry exited before listen: ${stderr()}`)
+    if (await httpAvailable(port)) return
+    await delay(50)
+  }
+  throw new Error(`Platform entry did not listen: ${stderr()}`)
+}
+
+async function httpAvailable(port: number): Promise<boolean> {
+  try {
+    const response = await fetch(`http://127.0.0.1:${String(port)}/healthz`, {
+      signal: AbortSignal.timeout(500),
+    })
+    return response.ok
+  } catch {
+    return false
+  }
+}
+
+async function postgresClientCount(pool: pg.Pool): Promise<number> {
+  const result = await pool.query<{ count: number }>(`
+    SELECT count(*)::int AS count
+    FROM pg_stat_activity
+    WHERE client_addr = '127.0.0.1'::inet AND pid <> pg_backend_pid()
+  `)
+  return result.rows[0]?.count ?? 0
+}
+
+async function redisClientCount(client: ReturnType<typeof createClient>): Promise<number> {
+  const list: unknown = await client.sendCommand(['CLIENT', 'LIST'])
+  if (typeof list !== 'string') throw new TypeError('Redis CLIENT LIST fixture response must be text')
+  return list.trim().split('\n').filter(Boolean).length
 }
 
 async function freePort(): Promise<number> {

@@ -69,6 +69,25 @@ describe('Companion product-entry purity gate', () => {
     ])
   })
 
+  it('follows a selected binding through a workspace barrel star re-export', () => {
+    const root = fixtureRoot({
+      'package.json': JSON.stringify({ workspaces: ['packages/*'] }),
+      'apps/desktop/src/main.ts': "import { createAccountBackend } from '@fixture/platform'\nvoid createAccountBackend\n",
+      'apps/mobile/src/main.tsx': '',
+      'apps/platform/src/boot.ts': '',
+      'packages/platform/package.json': JSON.stringify({
+        name: '@fixture/platform',
+        exports: { '.': { default: './lib/index.js' } },
+      }),
+      'packages/platform/src/index.ts': "export * from './memory.ts'\n",
+      'packages/platform/src/memory.ts': 'export function createAccountBackend() { return new MemoryAccountBackend() }\n',
+    })
+
+    expect(collectCompanionProductEntryResidue(root)).toEqual([
+      'packages/platform/src/memory.ts:1: contains an in-memory product authority.',
+    ])
+  })
+
   it('finds no proof-only provider reachable from repository product entries', () => {
     expect(collectCompanionProductEntryResidue(join(import.meta.dirname, '..'))).toEqual([])
   })

@@ -14,7 +14,7 @@ Desktop、Mobile 与 Platform 监听入口只接受一套完整生产身份。`l
 
 GitHub Environment `production` 提供 GitHub OAuth client id、固定回调、credential reference 与解析后的 secret、PostgreSQL database identity、identity namespace、Redis ACL identity 和 Relay Redis key prefix。Desktop 包只包含公开字段与 credential reference，绝不包含解析后的 OAuth secret。监听入口会调用由入口拥有的 `launchOperatedPlatform` composition，不存在虚拟身份对或身份 fallback。PostgreSQL 与 Redis 必须校验证书。`OperatedRemoteAccessResources` 同时拥有 PostgreSQL Personal Pairing authority、Relay route store 与 Redis Relay coordinator；迁移在监听前完成。在经过评审的 Companion channel provider 接入前，配对 HTTP 与 Relay WSS 保持 fail-closed。
 
-`verify-companion-product-entry` gate 会跟随三个产品入口的相对 import 与 bare workspace package 中被选择的 export，并拒绝固定 GitHub fixture 身份、keyless provider、内存 authority、通用环境选择、proof-only example、开发 trust origin 与关闭证书校验。持久资源 assembled 测试会启动临时 PostgreSQL 与 Redis fixture，并驱动 `launchOperatedPlatform` 的环境解析、GitHub OAuth、账号持久化、Personal Pairing authority 与 Relay coordination；它不证明 #43 的实际运行部署已经在线。
+`verify-companion-product-entry` gate 会跟随三个产品入口的相对 import 与 bare workspace package 中被选择的 export，包括星号再导出，并拒绝固定 GitHub fixture 身份、keyless provider、内存 authority、通用环境选择、proof-only example、开发 trust origin 与关闭证书校验。持久资源 assembled 测试会启动临时 PostgreSQL 与 Redis fixture，并驱动 `launchOperatedPlatform` 的环境解析、GitHub OAuth、账号持久化、Personal Pairing authority 与 Relay coordination。另一个 spawned entry 测试会向真实源码可执行入口发送 `SIGTERM`，并验证 HTTP、PostgreSQL 和 Redis owner 在进程正常退出前关闭。这些测试不证明 #43 的实际运行部署已经在线。
 
 ## 曾考虑的替代方案
 
