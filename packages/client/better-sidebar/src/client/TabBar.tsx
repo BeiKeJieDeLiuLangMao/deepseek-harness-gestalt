@@ -222,6 +222,7 @@ export function TabBar(props: {
         if (payload !== null) onDropTab(payload, null)
       }}
     >
+      <div className={css.windowDragRail} data-workbench-window-drag="" aria-hidden="true" />
       <div ref={listRef} className={css.tabList}>
         {tabs.map(tab => (
           <div

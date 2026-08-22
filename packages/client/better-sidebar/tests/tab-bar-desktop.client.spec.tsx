@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { overlayAnchorFromRect, TabBar, tabBarDesktopOverlayOf } from '../src/client/TabBar.tsx'
 
@@ -52,6 +54,21 @@ describe('tabBarDesktopOverlayOf', () => {
 })
 
 describe('TabBar Desktop + menu', () => {
+  it('reserves a draggable top rail without turning the interactive tab bar into a drag region', () => {
+    mount()
+    expect(document.querySelector('[data-workbench-window-drag]')).not.toBeNull()
+
+    const source = readFileSync(
+      join(process.cwd(), 'packages/client/better-sidebar/src/client/sidebar.module.css'),
+      'utf8',
+    )
+    const rail = /\.windowDragRail\s*\{(?<body>[^}]+)\}/.exec(source)?.groups?.body ?? ''
+    expect(rail).toContain('position: absolute')
+    expect(rail).toContain('-webkit-app-region: drag')
+    const optOut = /\.toggleCluster,\s*\.toggleButton,\s*\.tabBar\s*\{(?<body>[^}]+)\}/.exec(source)?.groups?.body ?? ''
+    expect(optOut).toContain('-webkit-app-region: no-drag')
+  })
+
   it('opens the in-page menu when Desktop overlay verbs are absent', () => {
     mount()
     fireEvent.click(screen.getByRole('button', { name: /New tab|新建标签页/ }))

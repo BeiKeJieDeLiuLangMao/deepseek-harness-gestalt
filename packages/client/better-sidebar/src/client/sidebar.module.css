@@ -580,12 +580,30 @@ body[data-dsh-sidebar-dragging] .bottomPanel {
 /* ── Tab strip ─────────────────────────────────────────────────────────── */
 
 .tabBar {
+  position: relative;
   flex: none;
   display: flex;
   align-items: stretch;
   height: 34px;
   border-bottom: 1px solid var(--dsw-alias-border-l1);
   background: var(--dsw-alias-bg-layer-1);
+}
+
+/* Keep a narrow window-drag target at the viewport edge without swallowing
+   tab activation, tab reordering, close, or new-tab input below it. */
+.windowDragRail {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 5px;
+  -webkit-app-region: drag;
+}
+
+/* The bottom workbench is not attached to a window edge. */
+.bottomPanel .windowDragRail {
+  display: none;
 }
 
 .tabBarDrop {
