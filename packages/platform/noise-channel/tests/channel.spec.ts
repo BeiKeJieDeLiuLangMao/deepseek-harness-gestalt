@@ -151,6 +151,7 @@ describe('Snow product Companion channel', () => {
     const desktopAttachmentId = parseRelayAttachmentId('desktop-owner')
     const mobileAttachmentId = parseRelayAttachmentId('mobile-owner')
     const mobile = new SnowMobileAttachmentOwner(paired.mobileState, pairingSelector)
+    paired.mobileState.fill(0)
     const desktop = new SnowDesktopAttachmentOwner(selector => selector === pairingSelector
       ? paired.desktopState
       : undefined)
@@ -172,6 +173,11 @@ describe('Snow product Companion channel', () => {
       routeId,
       desktopAttachmentId,
     )).rejects.toThrow('does not belong')
+    mobile.dispose()
+    await expect(mobile.begin({
+      type: 'ready', transportVersion: 1, routeId, attachmentId: mobileAttachmentId,
+      peers: [{ attachmentId: desktopAttachmentId, pairingSelector, generation: 10 }],
+    })).rejects.toThrow('disposed')
   })
 })
 

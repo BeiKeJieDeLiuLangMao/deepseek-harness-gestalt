@@ -37,12 +37,16 @@ interface PendingMobileReconnect {
 /** Mobile-owned initiator for one verified Relay ready projection. */
 export class SnowMobileAttachmentOwner {
   private pending: PendingMobileReconnect | undefined
+  private readonly reconnectState: Uint8Array
+  private disposed = false
 
   /** @param reconnectState - Mobile static state. @param pairingSelector - this Personal Pairing. */
   constructor(
-    private readonly reconnectState: Uint8Array,
+    reconnectState: Uint8Array,
     private readonly pairingSelector: RelayPairingSelector,
-  ) {}
+  ) {
+    this.reconnectState = reconnectState.slice()
+  }
 
   /**
    * Begin IK for the one Desktop peer projected under this pairing selector.
@@ -50,6 +54,7 @@ export class SnowMobileAttachmentOwner {
    * @returns target attachment and encoded IK message 1.
    */
   async begin(ready: RelayReadyMessage | RelayPeerUpdateMessage): Promise<{ targetAttachmentId: RelayAttachmentId; payload: Uint8Array }> {
+    if (this.disposed) throw new Error('Mobile Snow attachment owner is disposed')
     const peers = ready.peers.filter(peer => peer.pairingSelector === this.pairingSelector)
     if (peers.length !== 1) throw new Error('Mobile Snow reconnect requires exactly one Desktop peer')
     this.pending?.cancel()
@@ -78,6 +83,7 @@ export class SnowMobileAttachmentOwner {
    * @returns authenticated Companion channel.
    */
   finish(payload: Uint8Array, sourceAttachmentId: RelayAttachmentId): SnowCompanionProtocolChannel {
+    if (this.disposed) throw new Error('Mobile Snow attachment owner is disposed')
     const pending = this.pending
     if (pending === undefined) throw new Error('Mobile Snow reconnect has no pending attempt')
     const response = decodeEnvelope(payload)
@@ -93,6 +99,14 @@ export class SnowMobileAttachmentOwner {
   cancel(): void {
     this.pending?.cancel()
     this.pending = undefined
+  }
+
+  /** Cancel pending work and wipe the owner-held reconnect secret. */
+  dispose(): void {
+    if (this.disposed) return
+    this.cancel()
+    this.reconnectState.fill(0)
+    this.disposed = true
   }
 }
 

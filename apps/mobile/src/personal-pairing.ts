@@ -56,6 +56,8 @@ export interface MobilePairingKeyRetention {
    * @param material - at least 32 bytes of pairing key material.
    */
   retain(pairingId: PersonalPairingId, material: Uint8Array): void
+  /** Atomically retain reconnect state and its Mobile Relay authority. */
+  retainConfirmedPairing?(pairingId: PersonalPairingId, material: Uint8Array, grant: RelayCredentialGrant): void
   /** Select and load one signed-in Account scope before Relay attachment. */
   selectAccount?(accountId: PlatformAccountId): Promise<void>
   /** Retain the Mobile-only Relay grant beside its reconnect state. */
@@ -84,6 +86,13 @@ interface PreparedMobilePairingAttempt {
   endpointChallengeId?: ReturnType<typeof parsePairingChallengeId>
   replayExpiresAt?: number
   pendingProjection?: PairingCompletionView
+  confirmed?: {
+    pairingId: PersonalPairingId
+    sealedRelayAuthority: Uint8Array
+    reconnectState: Uint8Array
+    grant: RelayCredentialGrant
+    persisted: boolean
+  }
 }
 
 declare global {
@@ -362,14 +371,24 @@ export class MobilePairingController implements MobilePairingActions {
           if (this.options.handshake.openRelayAuthority === undefined || this.options.relay === undefined) {
             throw new Error('Mobile Relay authority has no product lifecycle owner')
           }
-          const grant = await this.options.handshake.openRelayAuthority(status.sealedRelayAuthority)
-          const reconnectState = this.options.handshake.exportReconnectState?.()
-          if (reconnectState === undefined) throw new Error('Mobile Snow reconnect state is unavailable')
-          this.options.pairingKeys?.retain(status.pairingId, reconnectState)
-          this.options.pairingKeys?.retainRelayAuthority?.(status.pairingId, grant)
-          reconnectState.fill(0)
-          await this.options.pairingKeys?.flush?.()
-          await this.options.relay.configure(grant)
+          const attempt = this.currentAttempt()
+          if (attempt === undefined) throw new Error('Mobile Personal Pairing has no retained confirmation attempt')
+          const confirmed = await this.prepareConfirmedEndpointAttempt(
+            attempt, status.pairingId, status.sealedRelayAuthority,
+          )
+          if (!confirmed.persisted) {
+            if (this.options.pairingKeys?.retainConfirmedPairing !== undefined) {
+              this.options.pairingKeys.retainConfirmedPairing(
+                confirmed.pairingId, confirmed.reconnectState, confirmed.grant,
+              )
+            } else {
+              this.options.pairingKeys?.retain(confirmed.pairingId, confirmed.reconnectState)
+              this.options.pairingKeys?.retainRelayAuthority?.(confirmed.pairingId, confirmed.grant)
+            }
+            await this.options.pairingKeys?.flush?.()
+            confirmed.persisted = true
+          }
+          await this.options.relay.configure(confirmed.grant)
           await this.options.relay.start()
           this.clearAttempt()
           this.publish({ status: 'paired' })
@@ -411,9 +430,38 @@ export class MobilePairingController implements MobilePairingActions {
   }
 
   private clearAttempt(): void {
+    this.attempt?.confirmed?.sealedRelayAuthority.fill(0)
+    this.attempt?.confirmed?.reconnectState.fill(0)
     this.attempt = undefined
     if (this.timer !== undefined) clearTimeout(this.timer)
     this.timer = undefined
+  }
+
+  private async prepareConfirmedEndpointAttempt(
+    attempt: PreparedMobilePairingAttempt,
+    pairingId: PersonalPairingId,
+    sealedRelayAuthority: Uint8Array,
+  ): Promise<NonNullable<PreparedMobilePairingAttempt['confirmed']>> {
+    const retained = attempt.confirmed
+    if (retained !== undefined) {
+      if (retained.pairingId !== pairingId || !sameBytes(retained.sealedRelayAuthority, sealedRelayAuthority)) {
+        throw new Error('Confirmed Personal Pairing changed during Mobile retry')
+      }
+      return retained
+    }
+    const grant = await this.options.handshake.openRelayAuthority?.(sealedRelayAuthority)
+    if (grant === undefined) throw new Error('Mobile Relay authority has no product lifecycle owner')
+    const reconnectState = this.options.handshake.exportReconnectState?.()
+    if (reconnectState === undefined) throw new Error('Mobile Snow reconnect state is unavailable')
+    attempt.confirmed = {
+      pairingId,
+      sealedRelayAuthority: sealedRelayAuthority.slice(),
+      reconnectState: reconnectState.slice(),
+      grant: { ...grant },
+      persisted: false,
+    }
+    reconnectState.fill(0)
+    return attempt.confirmed
   }
 
   private completeLinkOwned(link: string): Promise<void> {
@@ -574,4 +622,8 @@ function parseEndpointInvitation(link: string): {
 function throwRejected(results: PromiseSettledResult<unknown>[], message: string): void {
   const errors = results.filter(result => result.status === 'rejected').map(result => result.reason as unknown)
   if (errors.length > 0) throw new AggregateError(errors, message)
+}
+
+function sameBytes(left: Uint8Array, right: Uint8Array): boolean {
+  return left.byteLength === right.byteLength && left.every((byte, index) => byte === right[index])
 }

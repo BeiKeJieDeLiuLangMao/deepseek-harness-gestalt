@@ -96,6 +96,18 @@ export class PairingCompanionKeyVault implements MobilePairingKeyRetention {
     this.persist()
   }
 
+  /** Retain one confirmed pairing in a single durable store snapshot. */
+  retainConfirmedPairing(pairingId: PersonalPairingId, material: Uint8Array, grant: RelayCredentialGrant): void {
+    if (material.byteLength < 32) throw new TypeError('Personal Pairing key material must contain at least 256 bits')
+    if (!this.materials.has(pairingId) && this.materials.size >= MAX_RETAINED_PAIRING_KEYS) {
+      throw new Error('Mobile retained Personal Pairing key limit reached')
+    }
+    this.materials.get(pairingId)?.fill(0)
+    this.materials.set(pairingId, material.slice())
+    this.grants.set(pairingId, { ...grant })
+    this.persist()
+  }
+
   retainRelayAuthority(pairingId: PersonalPairingId, grant: RelayCredentialGrant): void {
     if (!this.materials.has(pairingId)) throw new Error('Mobile Relay grant has no retained Snow pairing state')
     this.grants.set(pairingId, { ...grant })
@@ -151,7 +163,7 @@ export class PairingCompanionKeyVault implements MobilePairingKeyRetention {
         ...(grant === undefined ? {} : { grant: { ...grant } }),
       }
     })
-    this.persistence = this.persistence.then(async () => {
+    this.persistence = this.persistence.catch(() => undefined).then(async () => {
       try { await this.store?.save(accountId, records) } finally {
         for (const record of records) record.material.fill(0)
       }

@@ -114,7 +114,7 @@ if (environment.environment === 'production') {
   let activeSourceAttachmentId: ReturnType<typeof parseRelayAttachmentId> | undefined
   let pendingGeneration: number | undefined
   const clearNoiseConnection = (): void => {
-    attachmentOwner?.cancel()
+    attachmentOwner?.dispose()
     attachmentOwner = undefined
     channel?.dispose()
     channel = undefined
@@ -135,7 +135,7 @@ if (environment.environment === 'production') {
     onPeerAttachments: async (ready) => {
       const peer = ready.peers[0]
       if (peer === undefined || ready.peers.length !== 1) {
-        attachmentOwner?.cancel()
+        attachmentOwner?.dispose()
         attachmentOwner = undefined
         pendingGeneration = undefined
         if (ready.peers.length > 1) throw new Error('Mobile Relay has multiple Desktop pairing peers')
@@ -144,7 +144,7 @@ if (environment.environment === 'production') {
       if (peer.generation === connectionGeneration || peer.generation === pendingGeneration) return
       const reconnectState = pairingKeys.pairingKeyMaterial(parsePersonalPairingId(peer.pairingSelector))
       if (reconnectState === undefined) throw new Error('Mobile Relay peer has no retained Snow pairing state')
-      attachmentOwner?.cancel()
+      attachmentOwner?.dispose()
       pendingGeneration = peer.generation
       attachmentOwner = new SnowMobileAttachmentOwner(reconnectState, peer.pairingSelector)
       reconnectState.fill(0)
@@ -159,6 +159,7 @@ if (environment.environment === 'production') {
       if (attachmentOwner === undefined) throw new Error('Mobile Relay ciphertext has no pending Snow IK owner')
       if (pendingGeneration === undefined) throw new Error('Mobile Relay ciphertext has no Snow generation')
       const nextChannel = attachmentOwner.finish(ciphertext, sourceAttachmentId)
+      attachmentOwner.dispose()
       channel?.dispose()
       channel = nextChannel
       connectionGeneration = pendingGeneration

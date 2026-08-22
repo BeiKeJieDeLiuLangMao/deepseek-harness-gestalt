@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import 'fake-indexeddb/auto'
 import { parsePersonalPairingId } from '@deepseek-ai/dsh-remote-access'
 import { parsePlatformAccountId } from '@deepseek-ai/dsh-platform-account'
@@ -51,6 +51,26 @@ describe('PairingCompanionKeyVault', () => {
     vault.release(pairing)
     expect(vault.pairingKeyMaterial(pairing)).toBeUndefined()
     vault.release(pairing)
+  })
+
+  it('recovers its durable save queue after a failed confirmed-pairing write', async () => {
+    const grant = {
+      routeId: parseRelayRouteId('route-retry'), endpoint: 'mobile' as const,
+      credential: parseRelayCredential('AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE'), revision: 1,
+    }
+    const save = vi.fn()
+      .mockRejectedValueOnce(new Error('IndexedDB write failed'))
+      .mockResolvedValueOnce(undefined)
+    const store = { load: vi.fn(async () => []), save } as unknown as IndexedDbMobilePairingStateStore
+    const vault = new PairingCompanionKeyVault(store)
+    const accountId = parsePlatformAccountId('account-retry')
+    const pairingId = parsePersonalPairingId('pairing-retry')
+    await vault.selectAccount(accountId)
+    vault.retainConfirmedPairing(pairingId, MATERIAL, grant)
+    await expect(vault.flush()).rejects.toThrow('IndexedDB write failed')
+    vault.retainConfirmedPairing(pairingId, MATERIAL, grant)
+    await expect(vault.flush()).resolves.toBeUndefined()
+    expect(save).toHaveBeenCalledTimes(2)
   })
 
   it('enforces the retained pairing-key ceiling and wipes every key', () => {

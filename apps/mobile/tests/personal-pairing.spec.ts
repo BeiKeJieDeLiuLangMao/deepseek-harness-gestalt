@@ -25,6 +25,10 @@ describe('MobilePairingController', () => {
         stage: 'confirmed', pendingPairingId, pairingId: parsePersonalPairingId('pairing-endpoint'),
         sealedRelayAuthority: Uint8Array.of(8, 9),
       })
+      .mockResolvedValueOnce({
+        stage: 'confirmed', pendingPairingId, pairingId: parsePersonalPairingId('pairing-endpoint'),
+        sealedRelayAuthority: Uint8Array.of(8, 9),
+      })
     const grant = {
       routeId: parseRelayRouteId('route-endpoint'), endpoint: 'mobile' as const,
       credential: parseRelayCredential('AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE'), revision: 1,
@@ -40,7 +44,11 @@ describe('MobilePairingController', () => {
       exportReconnectState: vi.fn(() => reconnectState.slice()),
     }
     const vault = new PairingCompanionKeyVault()
-    const relay = { configure: vi.fn(), start: vi.fn(), stop: vi.fn() }
+    const relay = {
+      configure: vi.fn(),
+      start: vi.fn().mockRejectedValueOnce(new Error('Relay start failed')).mockResolvedValueOnce(undefined),
+      stop: vi.fn(),
+    }
     const controller = new MobilePairingController({
       installation: installationFixture(), transport, handshake, relay, pairingKeys: vault,
       scanner: { scan: vi.fn() }, device: { name: 'Alice phone', platform: 'ios' },
@@ -62,8 +70,12 @@ describe('MobilePairingController', () => {
     scheduled.shift()?.()
     await vi.waitFor(() => { expect(transport.getEndpointPairingStatus).toHaveBeenCalledTimes(2) })
     scheduled.shift()?.()
+    await vi.waitFor(() => { expect(controller.getSnapshot()).toEqual({ status: 'retryable', error: 'Relay start failed' }) })
+    await controller.retryPairing()
+    scheduled.shift()?.()
     await vi.waitFor(() => { expect(controller.getSnapshot()).toEqual({ status: 'paired' }) })
     expect(handshake.openRelayAuthority).toHaveBeenCalledWith(Uint8Array.of(8, 9))
+    expect(handshake.openRelayAuthority).toHaveBeenCalledTimes(1)
     expect(vault.pairingKeyMaterial(parsePersonalPairingId('pairing-endpoint'))).toEqual(reconnectState)
     expect(relay.configure).toHaveBeenCalledWith(grant)
   })
