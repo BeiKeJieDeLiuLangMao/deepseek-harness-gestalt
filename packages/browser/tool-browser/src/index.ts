@@ -418,17 +418,18 @@ export function apply(ctx: Context, config: Config): void {
       execute: async (args, exec) => {
         if (args.url !== undefined && args.url.trim().length === 0) throw new Error('url must be non-empty')
         if (args.text !== undefined && args.text.trim().length === 0) throw new Error('text must be non-empty')
-        if (args.url === undefined && args.text === undefined) {
-          throw new Error('browser_input requires url or text')
-        }
         const base = mutationFrom(args, exec.signal)
-        const request: BrowserInputRequest = args.url === undefined
-          ? { ...base, text: args.text }
-          : {
+        let request: BrowserInputRequest
+        if (args.url === undefined) {
+          if (args.text === undefined) throw new Error('browser_input requires url or text')
+          request = { ...base, text: args.text }
+        } else {
+          request = {
             ...base,
             url: args.url,
             ...args.text === undefined ? {} : { text: args.text },
           }
+        }
         return routeBrowserCall(
           ctx,
           exec,
