@@ -15,6 +15,7 @@ import {
   type CleanupRecord,
   type CompletionReplayRecord,
   type EndpointOwnedPairingMailboxState,
+  type EndpointPairingPublication,
   type OrphanPendingCleanupRecord,
   type PendingOutcome,
   type PendingPairingRecord,
@@ -42,6 +43,7 @@ const PENDING_OUTCOMES = new Set<PendingOutcome>([
 export function emptyPairingTransactionState(): PersonalPairingTransactionState {
   return {
     endpointMailbox: { challenges: [], pending: [] },
+    endpointPublications: new Map(),
     challenges: new Map(),
     settledChallenges: new Map(),
     completions: new Map(),
@@ -66,6 +68,7 @@ export function emptyPairingTransactionState(): PersonalPairingTransactionState 
 export function encodePairingTransactionState(state: PersonalPairingTransactionState): unknown {
   return {
     endpointMailbox: encodeEndpointMailbox(state.endpointMailbox),
+    endpointPublications: [...state.endpointPublications].map(([id, publication]) => [id, encodeEndpointPublication(publication)]),
     challenges: [...state.challenges].map(([id, record]) => [id, encodeChallenge(record)]),
     settledChallenges: [...state.settledChallenges].map(([id, record]) => [id, encodeSettledChallenge(record)]),
     completions: [...state.completions].map(([id, record]) => [id, encodeCompletion(record)]),
@@ -97,6 +100,9 @@ export function decodePairingTransactionState(value: unknown): PersonalPairingTr
   }
   return {
     endpointMailbox: decodeEndpointMailbox(record.endpointMailbox),
+    endpointPublications: decodeMap(
+      record.endpointPublications, 'endpointPublications', parsePendingPairingId, decodeEndpointPublication,
+    ),
     challenges: decodeMap(record.challenges, 'challenges', parsePairingChallengeId, decodeChallenge),
     settledChallenges: decodeMap(
       record.settledChallenges, 'settledChallenges', parsePairingChallengeId, decodeSettledChallenge,
@@ -112,6 +118,35 @@ export function decodePairingTransactionState(value: unknown): PersonalPairingTr
     blobs: decodeMap(record.blobs, 'blobs', asPlainString, decodeBlob),
     blobUploads: decodeMap(record.blobUploads, 'blobUploads', asPlainString, decodeBlobUploads),
     blobSequence: { next: asSafeInteger(asRecord(record.blobSequence, 'blobSequence').next, 'blobSequence.next') },
+  }
+}
+
+function encodeEndpointPublication(publication: EndpointPairingPublication): unknown {
+  return {
+    accountId: publication.accountId,
+    desktopInstallationId: publication.desktopInstallationId,
+    mobileInstallationId: publication.mobileInstallationId,
+    pendingPairingId: publication.pendingPairingId,
+    routeId: publication.routeId,
+    credentialDigest: encodeBytes(publication.credentialDigest),
+    pairing: encodeStoredPairing(publication.pairing),
+  }
+}
+
+function decodeEndpointPublication(value: unknown): EndpointPairingPublication {
+  const record = asRecord(value, 'endpoint publication')
+  rejectUnsupportedKeys(record, [
+    'accountId', 'desktopInstallationId', 'mobileInstallationId', 'pendingPairingId',
+    'routeId', 'credentialDigest', 'pairing',
+  ], 'endpoint publication')
+  return {
+    accountId: parsePlatformAccountId(record.accountId),
+    desktopInstallationId: parseInstallationId(record.desktopInstallationId),
+    mobileInstallationId: parseInstallationId(record.mobileInstallationId),
+    pendingPairingId: parsePendingPairingId(record.pendingPairingId),
+    routeId: parseRelayRouteId(record.routeId),
+    credentialDigest: decodeFixedBytes(record.credentialDigest, 'endpoint publication credential digest', 32),
+    pairing: decodeStoredPairing(record.pairing),
   }
 }
 

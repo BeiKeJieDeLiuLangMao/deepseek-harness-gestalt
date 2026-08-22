@@ -34,8 +34,9 @@ describe('PersonalPairingProvider', () => {
   it('mediates the endpoint-owned XKpsk3 mailbox without calling the Platform crypto adapter', async () => {
     const handshake = handshakeProvider()
     const relay = relayStub(parseRelayRouteId('route-endpoint'), 1)
+    const authority = new MemoryPersonalPairingAuthorityStore()
     const provider = configuredProvider({
-      handshake, relay, authority: new MemoryPersonalPairingAuthorityStore(),
+      handshake, relay, authority,
       clock: { now: () => NOW }, randomId: kind => `${kind}-endpoint`,
     })
     const desktop = authentication('desktop-installation')
@@ -79,7 +80,23 @@ describe('PersonalPairingProvider', () => {
       message3: Uint8Array.of(33),
       device: { name: 'Alice phone', platform: 'ios' },
     }])
-    const confirmation = await provider.confirmEndpointPairing({
+    const confirmMobilePairing = authority.confirmMobilePairing.bind(authority)
+    vi.spyOn(authority, 'confirmMobilePairing').mockImplementationOnce(async (input) => {
+      await confirmMobilePairing(input)
+      throw new Error('publication response lost after commit')
+    })
+    await expect(provider.confirmEndpointPairing({
+      desktop, pendingPairingId: completion.pendingPairingId,
+      mobileCredentialDigest: new Uint8Array(32).fill(7),
+    })).rejects.toThrow('publication response lost after commit')
+    const recovered = configuredProvider({
+      handshake, relay, authority,
+      clock: { now: () => NOW }, randomId: kind => `${kind}-replacement`,
+    })
+    await expect(recovered.getEndpointPairingStatus({ mobile, completionId })).resolves.toMatchObject({
+      stage: 'awaiting-authority', pendingPairingId: completion.pendingPairingId,
+    })
+    const confirmation = await recovered.confirmEndpointPairing({
       desktop, pendingPairingId: completion.pendingPairingId,
       mobileCredentialDigest: new Uint8Array(32).fill(7),
     })
@@ -87,24 +104,24 @@ describe('PersonalPairingProvider', () => {
       routeId: 'relay-route-endpoint', relayRevision: 1,
       pairing: { device: { name: 'Alice phone', platform: 'ios' } },
     })
-    await expect(provider.confirmEndpointPairing({
+    await expect(recovered.confirmEndpointPairing({
       desktop, pendingPairingId: completion.pendingPairingId,
       mobileCredentialDigest: new Uint8Array(32).fill(7),
     })).resolves.toEqual(confirmation)
-    await expect(provider.confirmEndpointPairing({
+    await expect(recovered.confirmEndpointPairing({
       desktop, pendingPairingId: completion.pendingPairingId,
       mobileCredentialDigest: new Uint8Array(32).fill(8),
     })).rejects.toThrow('stale')
     expect(relay.registerCredentialDigest).toHaveBeenCalledWith(
       parseRelayRouteId('relay-route-endpoint'), 'mobile', new Uint8Array(32).fill(7), 'pairing-endpoint',
     )
-    expect(relay.registerCredentialDigest).toHaveBeenCalledOnce()
-    await provider.deliverEndpointRelayAuthority({
+    expect(relay.registerCredentialDigest).toHaveBeenCalledTimes(2)
+    await recovered.deliverEndpointRelayAuthority({
       desktop,
       pendingPairingId: completion.pendingPairingId,
       sealedRelayAuthority: Uint8Array.of(44),
     })
-    expect(await provider.getEndpointPairingStatus({ mobile, completionId })).toMatchObject({
+    expect(await recovered.getEndpointPairingStatus({ mobile, completionId })).toMatchObject({
       stage: 'confirmed', sealedRelayAuthority: Uint8Array.of(44),
     })
     expect(handshake.createChallenge).not.toHaveBeenCalled()
