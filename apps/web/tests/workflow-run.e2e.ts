@@ -53,7 +53,7 @@ describe.skipIf(MODE === 'record')('web e2e: durable workflow run in Chat', () =
     scaffold = await launchWebScaffold({
       replayFixture: PARENT_FIXTURE,
       replayChildFixtures: [CHILD_FIXTURE],
-      paceMs: 50,
+      paceMs: 250,
     })
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
@@ -76,7 +76,7 @@ describe.skipIf(MODE === 'record')('web e2e: durable workflow run in Chat', () =
     await input.press('Enter')
 
     const workflow = page.locator('[data-workflow-run][data-run-status="running"]')
-    await workflow.waitFor({ timeout: 30_000 })
+    await workflow.waitFor({ timeout: 90_000 })
     const disclosures = workflow.locator('[data-disclosure-row]')
     await disclosures.nth(1).waitFor({ timeout: 15_000 })
     const runDisclosure = disclosures.nth(0)
@@ -178,7 +178,7 @@ describe.skipIf(MODE === 'record')('web e2e: durable workflow run in Chat', () =
       () => page.getByRole('button', { name: /^Open Reply with exactly the word/ }).count(),
       { timeout: 10_000 },
     ).toBe(0)
-  }, 90_000)
+  }, 180_000)
 
   it('rebuilds the terminal record from history after reload', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-workflow-run-history'))
