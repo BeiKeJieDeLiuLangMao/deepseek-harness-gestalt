@@ -70,7 +70,7 @@ export interface RedisConnectOptions {
 export interface RedisConnection {
   /** Client used by Platform adapters while the owner is open. */
   readonly client: RedisClientType
-  /** Quit the client and detach its process error listener exactly once. */
+  /** Gracefully close the client, force a still-open failed close, and detach its error listener exactly once. */
   close(): Promise<void>
 }
 
@@ -96,18 +96,22 @@ export async function connectRedis(options: RedisConnectOptions): Promise<RedisC
   try {
     await client.connect()
   } catch (error) {
-    let cleanupError: unknown
+    const connectionError = asError(error)
+    const cleanupErrors: Error[] = []
     try {
       client.destroy()
     } catch (failure) {
-      cleanupError = failure
-    } finally {
+      cleanupErrors.push(asError(failure))
+    }
+    try {
       client.removeListener('error', handleError)
+    } catch (failure) {
+      cleanupErrors.push(asError(failure))
     }
-    if (cleanupError !== undefined) {
-      throw new AggregateError([error, cleanupError], 'Redis connection and cleanup failed')
+    if (cleanupErrors.length > 0) {
+      throw new AggregateError([connectionError, ...cleanupErrors], 'Redis connection and cleanup failed')
     }
-    throw error
+    throw connectionError
   }
   let closed = false
   return {
@@ -115,14 +119,44 @@ export async function connectRedis(options: RedisConnectOptions): Promise<RedisC
     async close(): Promise<void> {
       if (closed) return
       closed = true
+      let closeError: Error | undefined
       try {
-        await client.quit()
+        await client.close()
       } catch (error) {
-        client.destroy()
-        throw error
-      } finally {
+        closeError = asError(error)
+      }
+      const cleanupErrors: Error[] = []
+      if (closeError !== undefined) {
+        let shouldDestroy = true
+        try {
+          shouldDestroy = client.isOpen
+        } catch (error) {
+          cleanupErrors.push(asError(error))
+        }
+        if (shouldDestroy) {
+          try {
+            client.destroy()
+          } catch (error) {
+            cleanupErrors.push(asError(error))
+          }
+        }
+      }
+      try {
         client.removeListener('error', handleError)
+      } catch (error) {
+        cleanupErrors.push(asError(error))
+      }
+      if (closeError !== undefined && cleanupErrors.length > 0) {
+        throw new AggregateError([closeError, ...cleanupErrors], 'Redis close and cleanup failed')
+      }
+      if (closeError !== undefined) throw closeError
+      if (cleanupErrors.length > 0) {
+        throw new AggregateError(cleanupErrors, 'Redis cleanup failed')
       }
     },
   }
+}
+
+function asError(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error), { cause: error })
 }
