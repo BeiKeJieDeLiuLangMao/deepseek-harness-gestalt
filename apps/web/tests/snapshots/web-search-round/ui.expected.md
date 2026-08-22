@@ -1,22 +1,22 @@
 - banner:
   - navigation "Session hierarchy":
-    - button "Use web_search to search exactly" [disabled]
+    - button "Use web_search once with queries" [disabled]
   - img
   - text: Standard mode
   - tablist:
     - tab "Chat" [selected]
     - tab "Trajectory"
-- text: Use web_search to search exactly "DeepSeek Harness snapshot search". Then reply exactly SEARCH_DONE and stop. {{clock}}
+- text: Use web_search once with queries ["DeepSeek Harness snapshot search","DeepSeek Harness multi-query search"]. Then reply exactly SEARCH_DONE and stop. {{clock}}
 - button "Copy":
   - img
 - button "Context injection @deepseek-ai/dsh-system-prompt":
   - img
   - img
   - text: Context injection @deepseek-ai/dsh-system-prompt
-- button "Search DeepSeek Harness snapshot search":
+- button "Search DeepSeek Harness snapshot search, DeepSeek Harness multi-query search":
   - img
   - img
-  - text: Search DeepSeek Harness snapshot search
+  - text: Search DeepSeek Harness snapshot search, DeepSeek Harness multi-query search
 - paragraph: SEARCH_DONE
 - button "Copy":
   - img
@@ -27,7 +27,6 @@
 - button "Branch into a new conversation":
   - img
 - text: {{clock}} Ran for {{duration}} TTFT {{duration}} {{throughput}} tok/s
-- button "Add images"
 - textbox "Message the agent"
 - button "Commands":
   - img

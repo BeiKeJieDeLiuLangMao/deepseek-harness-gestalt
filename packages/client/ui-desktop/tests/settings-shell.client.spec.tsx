@@ -5,8 +5,12 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { Context } from '@deepseek-ai/cordis'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
-import { usePinnedBrowserLanguages } from '@deepseek-ai/dsh-client-test-runtime'
+import { TestRemote, usePinnedBrowserLanguages } from '@deepseek-ai/dsh-client-test-runtime'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
+import {
+  apply as applySettingsBase,
+  inject as settingsBaseInject,
+} from '@deepseek-ai/dsh-client-ui-settings/client'
 import {
   apply as applySettings,
   inject as settingsInject,
@@ -45,6 +49,9 @@ describe('Desktop Settings shell Mobile Access placement', () => {
     if (shell === undefined) throw new Error('Settings shell was not registered')
     const Shell = shell.component as ComponentType<Record<string, unknown>>
     const injected = assembled.shellInject()
+    // This assertion exercises section placement in the in-page shell. The
+    // Desktop overlay transport has separate Host/overlay integration specs.
+    delete (window.dshDesktop as unknown as Record<string, unknown>).chromeOverlayShow
     render(
       <Shell
         wide
@@ -158,6 +165,8 @@ async function assemble() {
     },
     isLoopback: true,
   } as never)
+  new TestRemote(ctx)
+  await ctx.plugin({ inject: [...settingsBaseInject], apply: applySettingsBase }).await()
   const slots = ctx.get('slots') as SlotRegistry
   slots.register(
     {
@@ -219,5 +228,11 @@ function bridge(account: DesktopAccountSnapshot, pairing: DesktopPairingSnapshot
     pairingReject: vi.fn(),
     pairingRevoke: vi.fn(),
     onPairingSnapshot: vi.fn(() => () => {}),
+    chromeOverlayShow: async () => {},
+    chromeOverlayHide: async () => {},
+    chromeOverlayGetState: async () => null,
+    chromeOverlayResult: () => {},
+    onChromeOverlayState: () => () => {},
+    onChromeOverlayResult: () => () => {},
   }
 }

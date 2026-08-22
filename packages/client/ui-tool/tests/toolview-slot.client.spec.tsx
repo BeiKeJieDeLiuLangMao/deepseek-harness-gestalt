@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 // The Tool presentation package's acceptance chain on the REAL machinery stack:
-// SlotTestRuntime (cordis Context + SlotRegistry ledger + the web-react
+// SlotTestRuntime (cordis Context + SlotRegistry ledger + the ui-renderer
 // renderer) + ui-conversation and ui-tool apply — no outlet twins. Proves the
 // keyed 'tool.call.toolview' hole end to end: registered rows dispatch by
 // entryKey (the bash sample lands through its plugin), unregistered tools
@@ -64,7 +64,11 @@ const LAYOUT_CHILDREN = {
  */
 async function bench(nodes: ToolResultNode[], remotes?: Record<string, unknown>) {
   const runtime = await SlotTestRuntime.create()
-  runtime.provide('connection', { api: { settings: {} }, isLoopback: false })
+  runtime.provide('connection', {
+    api: { settings: {} },
+    isLoopback: false,
+    hostDescription: { getSnapshot: () => undefined, subscribe: () => () => {} },
+  })
   // ui-theme's Appearance row binds a durable scope through these two.
   runtime.provide('remote', { $on: () => () => {}, ...remotes })
   if (remotes?.browserWorkspace !== undefined) {
@@ -159,7 +163,6 @@ describe('keyed toolview hole through the real machinery', () => {
       tabId: 'tab-1',
     }
     const focus = vi.fn(() => Promise.resolve({ ok: true, value: {} }))
-    const setDock = vi.fn(() => Promise.resolve({ ok: true, value: {} }))
     const args = JSON.stringify({
       target,
       expectedRevision: 1,
@@ -167,12 +170,9 @@ describe('keyed toolview hole through the real machinery', () => {
     })
     const b = await bench(
       [toolResult(3, 'nav-1', 'browser_navigate', args)],
-      { browserWorkspace: { focus, setDock } },
+      { browserWorkspace: { focus } },
     )
     b.runtime.sessions.binding(SID)?.session.projections.set('browserWorkspace', {
-      dockOpen: false,
-      dockWidth: 720,
-      userCollapsed: true,
       activeWorkspaceId: target.workspaceId,
       workspaces: [{
         workspaceId: target.workspaceId,
@@ -181,7 +181,7 @@ describe('keyed toolview hole through the real machinery', () => {
         browsers: [{
           browserId: target.browserId,
           activeTabId: target.tabId,
-          tabs: [{ tabId: target.tabId, controlOwner: 'agent', revision: 7 }],
+          tabs: [{ tabId: target.tabId, revision: 7 }],
         }],
       }],
     })
@@ -191,7 +191,6 @@ describe('keyed toolview hole through the real machinery', () => {
     )
     expect(b.layout.openDetails).toHaveBeenCalledTimes(1)
     expect(focus).toHaveBeenCalledWith(SID, target, 7)
-    expect(setDock).not.toHaveBeenCalled()
     await b.runtime.dispose()
   })
 
@@ -213,9 +212,6 @@ describe('keyed toolview hole through the real machinery', () => {
       { browserWorkspace: { focus } },
     )
     b.runtime.sessions.binding(SID)?.session.projections.set('browserWorkspace', {
-      dockOpen: true,
-      dockWidth: 720,
-      userCollapsed: false,
       activeWorkspaceId: target.workspaceId,
       workspaces: [{
         workspaceId: target.workspaceId,
@@ -224,7 +220,7 @@ describe('keyed toolview hole through the real machinery', () => {
         browsers: [{
           browserId: target.browserId,
           activeTabId: 'other',
-          tabs: [{ tabId: 'other', controlOwner: 'agent', revision: 1 }],
+          tabs: [{ tabId: 'other', revision: 1 }],
         }],
       }],
     })
@@ -292,7 +288,11 @@ describe('keyed toolview hole through the real machinery', () => {
 describe('registrant declaration injection', () => {
   it('runs a registrant before ui-tool and waits on the actual toolview declaration', async () => {
     const runtime = await SlotTestRuntime.create()
-    runtime.provide('connection', { api: { settings: {} }, isLoopback: false })
+    runtime.provide('connection', {
+      api: { settings: {} },
+      isLoopback: false,
+      hostDescription: { getSnapshot: () => undefined, subscribe: () => () => {} },
+    })
     // ui-theme's Appearance row binds a durable scope through these two.
     runtime.provide('remote', { $on: () => () => {} })
     runtime.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)

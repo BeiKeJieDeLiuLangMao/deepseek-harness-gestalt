@@ -87,7 +87,7 @@ export function createDesktopRemoteRelay(options: DesktopRemoteRelayOptions): De
     isLoopbackListenUrl(config.url) ? { rejectUnauthorized: false } : undefined,
   ))
   let lastSourceAttachmentId = DEVELOPMENT_KEYLESS_MOBILE_ATTACHMENT_ID
-  const relay: { lifecycle?: DesktopRelayLifecycle } = {}
+  const relay: { lifecycle?: DesktopRelayEndpointLifecycle } = {}
   const authority = new DevelopmentKeylessCompanionAuthority({
     streamDelayMs: DEVELOPMENT_COMPANION_STREAM_DELAY_MS,
     emit: async (frames) => {
@@ -104,9 +104,11 @@ export function createDesktopRemoteRelay(options: DesktopRemoteRelayOptions): De
     attachTimeoutMs: config.attachTimeoutMs,
     heartbeatIntervalMs: config.heartbeatIntervalMs,
     reconnectDelayMs: config.reconnectDelayMs,
-    resynchronize: async send => await ignoreRemoteOffline(
-      send(DEVELOPMENT_KEYLESS_MOBILE_ATTACHMENT_ID, DEVELOPMENT_KEYLESS_SYNC_CIPHERTEXT),
-    ),
+    resynchronize: async (send) => {
+      await ignoreRemoteOffline(
+        send(DEVELOPMENT_KEYLESS_MOBILE_ATTACHMENT_ID, DEVELOPMENT_KEYLESS_SYNC_CIPHERTEXT),
+      )
+    },
     onCiphertext: async (ciphertext, sourceAttachmentId) => {
       lastSourceAttachmentId = sourceAttachmentId
       for (const reply of await authority.reply(ciphertext)) {

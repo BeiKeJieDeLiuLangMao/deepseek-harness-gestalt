@@ -28,7 +28,7 @@ const LABELS = {
 function makeShell(deps: Partial<SessionInputDeps> = {}): SessionInputShell {
   return new SessionInputShell({
     actx: {} as ClientContext,
-    defaultSink: vi.fn(),
+    defaultSink: vi.fn(() => Promise.resolve({ kind: 'success' as const })),
     annotationLabels: LABELS,
     ...deps,
   })
@@ -190,7 +190,7 @@ describe('annotation draft persistence', () => {
   })
 
   it('rejects without overwriting newer input: exact snapshot back, draft edits during flight refused', async () => {
-    const sendSession = vi.fn(async (): Promise<boolean> => false)
+    const sendSession = vi.fn(async () => ({ kind: 'error' as const }))
     const rootCtx = {
       get: (name: string): unknown =>
         name === 'conversation'
@@ -219,11 +219,12 @@ describe('annotation draft persistence', () => {
       compiled,
       [],
       'queue',
+      expect.any(AbortSignal),
       [],
     )
     // Newer text typed during the attempt must not enter the snapshot.
     shell.setDraft('A later edit must not win.')
-    expect(shell.snapshot.draft).toBe('')
+    expect(shell.snapshot.draft).toBe('Please revise this.')
 
     await vi.waitFor(() => { expect(shell.snapshot.annotationSubmitting).toBe(false) })
     expect(shell.snapshot.draft).toBe('Please revise this.')

@@ -305,6 +305,79 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'agentTeams',
+    summary: 'Agent Teams service backed by the exact live Lead Session log.',
+    description: 'Agent Teams service backed by the exact live Lead Session log.',
+    methods: [
+      {
+        signature: 'membership(agent: Agent): TeamMembership',
+        description: 'Resolve one exact live Agent\'s Team role.',
+        parameters: [{ name: 'agent', description: 'exact live Agent used as the authority credential.' }],
+        returns: 'its root, Team identity, role, and model-facing name.',
+      },
+      {
+        signature: 'listMembers(agent: Agent): TeamMemberView[]',
+        description: 'List the runtime-enriched roster visible to one Team member.',
+        parameters: [{ name: 'agent', description: 'exact live Team member.' }],
+        returns: 'Lead and teammate rows in creation order.',
+      },
+      {
+        signature: 'async spawnTeammate(caller: Agent, request: SpawnTeammateRequest): Promise<SpawnTeammateResult>',
+        description: 'Create one named, continuable direct child of the Team Lead.',
+        parameters: [{ name: 'caller', description: 'exact live Lead Agent.' }, { name: 'request', description: 'immutable name, description, prompt, context mode, provider, and cancellation.' }],
+        returns: 'the active roster row.',
+      },
+      {
+        signature: 'async sendMessage(caller: Agent, request: SendTeamMessageRequest): Promise<SendTeamMessageResult>',
+        description: 'Queue one durable peer message, then attempt immediate delivery.',
+        parameters: [{ name: 'caller', description: 'exact live sending Team member.' }, { name: 'request', description: 'target name, content, scheduling mode, and pre-queue cancellation.' }],
+        returns: 'durable message identity and immediate-delivery observation.',
+      },
+      {
+        signature: 'async createTask(caller: Agent, request: CreateTeamTaskRequest): Promise<TeamTaskView>',
+        description: 'Create one unowned pending task in the Team Lead log.',
+        parameters: [{ name: 'caller', description: 'exact live Team member creating the task.' }, { name: 'request', description: 'task text, blockers, and advisory write scopes.' }],
+        returns: 'the revision-one task view.',
+      },
+      {
+        signature: 'getTask(caller: Agent, id: TeamTaskId): TeamTaskView',
+        description: 'Return one task, including a deleted tombstone.',
+        parameters: [{ name: 'caller', description: 'exact live Team member reading the task.' }, { name: 'id', description: 'Team-local task identity.' }],
+        returns: 'the latest task value and derived readiness diagnostics.',
+      },
+      {
+        signature: 'listTasks(caller: Agent): TeamTaskView[]',
+        description: 'List current non-deleted tasks in numeric creation order.',
+        parameters: [{ name: 'caller', description: 'exact live Team member reading the board.' }],
+        returns: 'detached current task views.',
+      },
+      {
+        signature: 'async updateTask(caller: Agent, request: UpdateTeamTaskRequest): Promise<TeamTaskView>',
+        description: 'Compare-and-set one authorized task transition.',
+        parameters: [{ name: 'caller', description: 'exact live Team member authorizing the mutation.' }, { name: 'request', description: 'task identity, expected revision, action, and action fields.' }],
+        returns: 'the committed next task revision.',
+      },
+      {
+        signature: 'async waitForChange(caller: Agent, timeoutMs: number, signal: AbortSignal): Promise<TeamWaitResult>',
+        description: 'Wait for the next Team-domain or member-status change.',
+        parameters: [{ name: 'caller', description: 'exact live Team member waiting for activity.' }, { name: 'timeoutMs', description: 'bounded wait duration from ten seconds through one hour.' }, { name: 'signal', description: 'caller cancellation for the wait only.' }],
+        returns: 'one observed change or a timeout result.',
+      },
+      {
+        signature: 'interrupt(caller: Agent, targetName: string): { previousStatus: \'running\' | \'idle\' | \'inactive\' }',
+        description: 'Interrupt one live teammate turn without clearing its pending inbox.',
+        parameters: [{ name: 'caller', description: 'exact live Lead Agent.' }, { name: 'targetName', description: 'durable teammate name.' }],
+        returns: 'the target status sampled before cancellation.',
+      },
+      {
+        signature: 'tryMembership(agent: Agent): TeamMembership | undefined',
+        description: 'Resolve a caller without throwing, used by scoped-tool installation and observers.',
+        parameters: [{ name: 'agent', description: 'candidate exact live Agent.' }],
+        returns: 'Team membership, or undefined for non-Team subagents and stale identities.',
+      },
+    ],
+  },
+  {
     key: 'apiProxy',
     summary: 'Root interface of the unified API.',
     description: 'Root interface of the unified API. New client-request domain = one new file pair + one field here + one map row.',
@@ -426,24 +499,10 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'abstract input(request: BrowserInputRequest): Promise<BrowserPageState>',
-        description: 'Record one human pointer or keyboard mutation after checking its expected revision.',
-        parameters: [{ name: 'request', description: 'Target, expected revision, optional URL or page text, and cancellation.' }],
-        returns: 'committed open page whose `controlOwner` is `human` and whose revision replaces the caller\'s prior revision. Session, Profile, browser instance, and tab identities stay the same. The Agent must observe again before a later mutation.',
+        description: 'Apply synthetic Agent input after checking the expected revision.',
+        parameters: [{ name: 'request', description: 'Target, expected revision, URL or page text, and cancellation.' }],
+        returns: 'committed open page whose revision replaces the caller\'s prior revision. Session, Profile, browser instance, and tab identities stay the same.',
         throws: ['`BrowserRuntimeError` with `BROWSER_ABORTED`, `BROWSER_DISPOSED`, `BROWSER_NOT_FOUND`, `BROWSER_NOT_OPEN`, `BROWSER_REVISION_CONFLICT`, or `BROWSER_UNKNOWN_URL` when the corresponding precondition fails before commit, `BROWSER_PROTOCOL` when the upstream runtime breaks its response protocol, or `BROWSER_RUNTIME_UNAVAILABLE` when it cannot be reached.'],
-      },
-      {
-        signature: 'takeover(request: BrowserMutationRequest): Promise<BrowserPageState>',
-        description: 'Record reported human ownership after checking the expected revision. Identities stay the same. The lock is the revision: a later Agent mutation that observes the current revision may reclaim the tab without `returnControl`.',
-        parameters: [{ name: 'request', description: 'Target, expected revision, and cancellation signal.' }],
-        returns: 'committed open page whose `controlOwner` is `human`.',
-        throws: ['`BrowserRuntimeError` with `BROWSER_ABORTED`, `BROWSER_DISPOSED`, `BROWSER_NOT_FOUND`, `BROWSER_NOT_OPEN`, or `BROWSER_REVISION_CONFLICT` when the corresponding precondition fails before commit, `BROWSER_PROTOCOL` when the upstream runtime breaks its response protocol, or `BROWSER_RUNTIME_UNAVAILABLE` when it cannot be reached.'],
-      },
-      {
-        signature: 'returnControl(request: BrowserMutationRequest): Promise<BrowserPageState>',
-        description: 'Record reported Agent ownership after checking the expected revision. Identities stay the same. The lock is the revision; this method does not add a second lock.',
-        parameters: [{ name: 'request', description: 'Target, expected revision, and cancellation signal.' }],
-        returns: 'committed open page whose `controlOwner` is `agent`.',
-        throws: ['`BrowserRuntimeError` with `BROWSER_ABORTED`, `BROWSER_DISPOSED`, `BROWSER_NOT_FOUND`, `BROWSER_NOT_OPEN`, or `BROWSER_REVISION_CONFLICT` when the corresponding precondition fails before commit, `BROWSER_PROTOCOL` when the upstream runtime breaks its response protocol, or `BROWSER_RUNTIME_UNAVAILABLE` when it cannot be reached.'],
       },
       {
         signature: 'abstract close(request: BrowserMutationRequest): Promise<BrowserClosedState>',
@@ -456,26 +515,14 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
   },
   {
     key: 'browserWorkspace',
-    summary: 'Bind Browser Runtime identities to one Session log and project Dock plus instance and tab ownership from durable Session facts.',
-    description: 'Bind Browser Runtime identities to one Session log and project Dock plus instance and tab ownership from durable Session facts.',
+    summary: 'Bind Browser Runtime identities to one Session log and project instance and tab ownership from durable Session facts.',
+    description: 'Bind Browser Runtime identities to one Session log and project instance and tab ownership from durable Session facts.',
     methods: [
       {
         signature: 'snapshot(session: Session): BrowserWorkspaceProjection',
         description: 'Read the last logged Workspace for one Session.',
         parameters: [{ name: 'session', description: 'Owning Session.' }],
         returns: 'the last logged snapshot, or the empty Workspace.',
-      },
-      {
-        signature: 'setDock(request: BrowserWorkspaceDockRequest): BrowserWorkspaceProjection',
-        description: 'Record Dock visibility and preferred width for one Session.',
-        parameters: [{ name: 'request', description: 'Session, open flag, and optional width.' }],
-        returns: 'the committed Workspace snapshot.',
-      },
-      {
-        signature: '@Remote(\'setDock\') remoteSetDock(sessionId: SessionId, request: BrowserWorkspaceDockMutation): BrowserWorkspaceProjection',
-        description: 'Record Dock visibility and width for the Session named on the wire.',
-        parameters: [{ name: 'sessionId', description: 'Owning Session identity.' }, { name: 'request', description: 'Open flag and optional preferred width.' }],
-        returns: 'the committed Workspace snapshot.',
       },
       {
         signature: '@Remote(\'observe\') remoteObserve(sessionId: SessionId, target: BrowserTarget): Promise<BrowserRuntimeState>',
@@ -503,27 +550,21 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: '@Remote(\'input\') remoteInput( sessionId: SessionId, target: BrowserTarget, expectedRevision: number, input: { readonly url?: string; readonly text?: string }, ): Promise<BrowserPageState>',
-        description: 'Record one human mutation on a Session-owned tab named on the wire.',
-        parameters: [{ name: 'sessionId', description: 'Owning Session identity.' }, { name: 'target', description: 'Complete tab identity.' }, { name: 'expectedRevision', description: 'Latest revision returned by a browser operation.' }, { name: 'input', description: 'Optional URL or text produced by the human gesture.' }],
-        returns: 'the committed open page whose `controlOwner` is `human`.',
-      },
-      {
-        signature: '@Remote(\'takeover\') remoteTakeover(sessionId: SessionId, target: BrowserTarget, expectedRevision: number): Promise<BrowserPageState>',
-        description: 'Record reported human ownership of one Session-owned tab named on the wire.',
-        parameters: [{ name: 'sessionId', description: 'Owning Session identity.' }, { name: 'target', description: 'Complete tab identity.' }, { name: 'expectedRevision', description: 'Latest revision returned by a browser operation.' }],
-        returns: 'the committed open page whose `controlOwner` is `human`.',
-      },
-      {
-        signature: '@Remote(\'returnControl\') remoteReturnControl( sessionId: SessionId, target: BrowserTarget, expectedRevision: number, ): Promise<BrowserPageState>',
-        description: 'Record reported Agent ownership of one Session-owned tab named on the wire.',
-        parameters: [{ name: 'sessionId', description: 'Owning Session identity.' }, { name: 'target', description: 'Complete tab identity.' }, { name: 'expectedRevision', description: 'Latest revision returned by a browser operation.' }],
-        returns: 'the committed open page whose `controlOwner` is `agent`.',
+        description: 'Send one Agent-specified synthetic input to a Session-owned tab named on the wire.',
+        parameters: [{ name: 'sessionId', description: 'Owning Session identity.' }, { name: 'target', description: 'Complete tab identity.' }, { name: 'expectedRevision', description: 'Latest revision returned by a browser operation.' }, { name: 'input', description: 'URL or text supplied by the Agent.' }],
+        returns: 'the committed open page.',
       },
       {
         signature: '@Remote(\'close\') remoteClose(sessionId: SessionId, target: BrowserTarget, expectedRevision: number): Promise<BrowserClosedState>',
         description: 'Close one Session-owned tab named on the wire.',
         parameters: [{ name: 'sessionId', description: 'Owning Session identity.' }, { name: 'target', description: 'Complete tab identity.' }, { name: 'expectedRevision', description: 'Latest revision returned by a browser operation.' }],
         returns: 'the terminal close receipt.',
+      },
+      {
+        signature: '@Remote(\'create\') remoteCreate(sessionId: SessionId, request: BrowserWorkspaceCreateRemoteRequest): Promise<BrowserPageState>',
+        description: 'Create one tab in the Session named on the wire.',
+        parameters: [{ name: 'sessionId', description: 'Owning Session identity.' }, { name: 'request', description: 'Wire create identity and optional attach.' }],
+        returns: 'the committed open page.',
       },
       {
         signature: 'async create(request: BrowserWorkspaceCreateRequest): Promise<BrowserPageState>',
@@ -557,21 +598,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'async input(request: BrowserWorkspaceInputRequest): Promise<BrowserPageState>',
-        description: 'Record one human pointer or keyboard mutation on a Session-owned tab.',
+        description: 'Send one Agent-specified synthetic input to a Session-owned tab.',
         parameters: [{ name: 'request', description: 'Session-bound input request.' }],
-        returns: 'the committed open page whose `controlOwner` is `human`.',
-      },
-      {
-        signature: 'async takeover(request: BrowserWorkspaceMutationRequest): Promise<BrowserPageState>',
-        description: 'Record reported human ownership of one Session-owned tab.',
-        parameters: [{ name: 'request', description: 'Session-bound mutation request.' }],
-        returns: 'the committed open page whose `controlOwner` is `human`.',
-      },
-      {
-        signature: 'async returnControl(request: BrowserWorkspaceMutationRequest): Promise<BrowserPageState>',
-        description: 'Record reported Agent ownership of one Session-owned tab.',
-        parameters: [{ name: 'request', description: 'Session-bound mutation request.' }],
-        returns: 'the committed open page whose `controlOwner` is `agent`.',
+        returns: 'the committed open page.',
       },
       {
         signature: 'async close(request: BrowserWorkspaceMutationRequest): Promise<BrowserClosedState>',
@@ -670,9 +699,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the scoped shadow or global definition.',
       },
       {
-        signature: '@Remote async execute( agent: Agent, line: string, signal: AbortSignal, ): Promise<CommandExecution | undefined>',
-        description: 'Parse and execute a known command without sending it to the model.\n\nA resolved command\'s lifecycle is logged: `command/run` is appended before the handler is invoked and `command/done` after settlement (a thrown or aborted handler settles as `kind: \'error\'`). Both are direct log-only appends — no turn wraps them, and persistence drains them at ordinary checkpoints. Admission misses (syntax or unknown name) log nothing — they never entered a handler. A `command/run` append failure fails the execution loud; a `command/done` append failure on the handler-failure path is contained so the handler\'s own error stays the reported failure.',
-        parameters: [{ name: 'agent', description: 'exact receiving agent.' }, { name: 'line', description: 'complete slash-command line.' }, { name: 'signal', description: 'cancellation signal owned by the UI request.' }],
+        signature: '@Remote async execute( agent: Agent, line: string, images: readonly EncodedImageAttachment[], signal: AbortSignal, ): Promise<CommandExecution | undefined>',
+        description: 'Parse and execute a known command without sending it to the model.\n\nA resolved command\'s lifecycle is logged: `command/run` is appended before the handler is invoked and `command/done` after settlement (a thrown or aborted handler settles as `kind: \'error\'`). Both are direct log-only appends — no turn wraps them, and persistence drains them at ordinary checkpoints. Admission misses (syntax or unknown name) log nothing — they never entered a handler. A `command/run` append failure fails the execution loud; a `command/done` append failure on the handler-failure path is contained so the handler\'s own error stays the reported failure.\n\nImage admission is enforced here, not in the composer: images sent to a command that does not declare `input.images`, an absent attachment store, and an exceeded attachment limit each settle as an error result before the handler runs, and a rejected batch publishes no durable object.',
+        parameters: [{ name: 'agent', description: 'exact receiving agent.' }, { name: 'line', description: 'complete slash-command line.' }, { name: 'images', description: 'base64-encoded composer images accompanying the line, in submission order; empty for a plain invocation.' }, { name: 'signal', description: 'cancellation signal owned by the UI request.' }],
         returns: 'the settled execution (result + lifecycle pairing id), or `undefined` when syntax or name does not resolve.',
       },
     ],
@@ -767,6 +796,25 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [],
         returns: 'the created sandbox after the configured cwd exists.',
         throws: ['when E2B rejects creation or the service is disposing.'],
+      },
+    ],
+  },
+  {
+    key: 'fileReferences',
+    summary: 'Host capability for cancellable file-reference discovery.',
+    description: 'Host capability for cancellable file-reference discovery.',
+    methods: [
+      {
+        signature: 'abstract list( agent: Agent, query: string, signal: AbortSignal, ): Promise<FileReferenceCandidate[]>',
+        description: 'List file and directory candidates for one agent\'s working directory.',
+        parameters: [{ name: 'agent', description: 'target agent whose session cwd bounds discovery.' }, { name: 'query', description: 'path text following `@` or `@"`.' }, { name: 'signal', description: 'caller cancellation.' }],
+        returns: 'deterministic path-only candidates.',
+      },
+      {
+        signature: '@Remote(\'list\') remoteExportList( agent: Agent, query: string, signal: AbortSignal, ): Promise<FileReferenceCandidate[]>',
+        description: 'Remote face of list; the decorator cannot mark the abstract member, so this concrete adapter carries the identical contract.',
+        parameters: [{ name: 'agent', description: 'target agent whose session cwd bounds discovery.' }, { name: 'query', description: 'path text following `@` or `@"`.' }, { name: 'signal', description: 'caller cancellation.' }],
+        returns: 'deterministic path-only candidates.',
       },
     ],
   },
@@ -1759,9 +1807,15 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'candidates labeled by latest title or, when absent, session id.',
       },
       {
+        signature: '@Remote(\'candidates\') async remoteExportCandidates( agent: Agent, query: string, signal: AbortSignal, ): Promise<SessionReferenceMentionCandidate[]>',
+        description: 'Remote face of listCandidates: the configured candidate limit applies, and every candidate carries the canonical mention a host inserts into the prompt draft.',
+        parameters: [{ name: 'agent', description: 'target agent; self is excluded and its cwd drives ranking.' }, { name: 'query', description: 'optional case-insensitive session-id/cwd/title substring.' }, { name: 'signal', description: 'caller cancellation.' }],
+        returns: 'mention-carrying candidates in rank order.',
+      },
+      {
         signature: 'async prepare( agent: Agent, content: ContentBlock[], references: SessionReferenceInput[], signal?: AbortSignal, ): Promise<PreparedReferencedMessage>',
-        description: 'Snapshot all references before enqueue and return one aggregated durable context.',
-        parameters: [{ name: 'agent', description: 'target agent; references to it are rejected.' }, { name: 'content', description: 'already host-normalized readable message content.' }, { name: 'references', description: 'structured source sessions in mention order.' }, { name: 'signal', description: 'optional cancellation boundary for host request teardown.' }],
+        description: 'Snapshot all references for one accepted direct message and return one aggregated durable context.',
+        parameters: [{ name: 'agent', description: 'target agent; references to it are rejected.' }, { name: 'content', description: 'already host-normalized readable message content.' }, { name: 'references', description: 'structured source sessions in mention order.' }, { name: 'signal', description: 'optional cancellation boundary for the active turn.' }],
         returns: 'detached content and optional referenced-session context.',
       },
     ],
@@ -2129,6 +2183,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'parents', description: 'exact host-owned parent Agents entering teardown.' }],
         returns: 'once every retained descendant Activation released its `AgentHandle`.',
         throws: ['an aggregate error after all branches settle when any failed.'],
+      },
+      {
+        signature: 'async drainContinuableChildren(parent: Agent, childIds: readonly SessionId[]): Promise<void>',
+        description: 'Release selected resident continuable direct children of one exact live parent. Other children of the same parent remain admitted and resident. Absent targets and a manager-less composition are accepted no-ops.',
+        parameters: [{ name: 'parent', description: 'exact live direct parent authorizing the selected release.' }, { name: 'childIds', description: 'durable direct-child ids to release when resident.' }],
+        returns: 'once every selected Activation released its `AgentHandle`.',
+        throws: ['{SubagentError} `UNAUTHORIZED` when a resident target belongs to a different parent or the supplied parent identity is stale.'],
       },
       {
         signature: 'listChildren(parentSessionId: SessionId, signal?: AbortSignal): Promise<SubagentListEntry[]>',
@@ -3314,10 +3375,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface BrowserClosedState {\n    readonly status: \'closed\';\n    readonly target: BrowserTarget;\n    readonly revision: number;\n}',
   },
   {
-    name: 'BrowserControlOwner',
-    declaration: 'export type BrowserControlOwner = \'agent\' | \'human\';',
-  },
-  {
     name: 'BrowserCreateAttach',
     declaration: 'export type BrowserCreateAttach = {\n    readonly kind: \'workspace\';\n    readonly workspaceId: BrowserWorkspaceId;\n} | {\n    readonly kind: \'browser\';\n    readonly workspaceId: BrowserWorkspaceId;\n    readonly browserId: BrowserInstanceId;\n};',
   },
@@ -3327,7 +3384,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'BrowserInputRequest',
-    declaration: 'export interface BrowserInputRequest extends BrowserMutationRequest {\n    readonly url?: string;\n    readonly text?: string;\n}',
+    declaration: 'export type BrowserInputRequest = BrowserMutationRequest & ({\n    readonly url: string;\n    readonly text?: string;\n} | {\n    readonly url?: string;\n    readonly text: string;\n});',
   },
   {
     name: 'BrowserInstanceId',
@@ -3347,7 +3404,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'BrowserPageState',
-    declaration: 'export interface BrowserPageState {\n    readonly status: \'open\';\n    readonly target: BrowserTarget;\n    readonly revision: number;\n    readonly url: string;\n    readonly title: string;\n    readonly text: string;\n    readonly focused: boolean;\n    readonly controlOwner: BrowserControlOwner;\n    readonly chrome: BrowserProfileChrome;\n    readonly storage: BrowserProfileStorage;\n}',
+    declaration: 'export interface BrowserPageState {\n    readonly status: \'open\';\n    readonly target: BrowserTarget;\n    readonly revision: number;\n    readonly url: string;\n    readonly title: string;\n    readonly text: string;\n    readonly focused: boolean;\n    readonly chrome: BrowserProfileChrome;\n    readonly storage: BrowserProfileStorage;\n}',
   },
   {
     name: 'BrowserPersistentCreateRequest',
@@ -3399,19 +3456,15 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'BrowserUnavailableState',
-    declaration: 'export interface BrowserUnavailableState {\n    readonly status: \'unavailable\';\n    readonly target: BrowserTarget;\n    readonly revision: number;\n    readonly reason: \'crashed\' | \'unhealthy\' | \'reconnect-failed\';\n    readonly reconnecting: boolean;\n    readonly controlOwner: BrowserControlOwner;\n}',
+    declaration: 'export interface BrowserUnavailableState {\n    readonly status: \'unavailable\';\n    readonly target: BrowserTarget;\n    readonly revision: number;\n    readonly reason: \'crashed\' | \'unhealthy\' | \'reconnect-failed\';\n    readonly reconnecting: boolean;\n}',
+  },
+  {
+    name: 'BrowserWorkspaceCreateRemoteRequest',
+    declaration: 'export type BrowserWorkspaceCreateRemoteRequest = {\n    readonly profile: \'temporary\';\n    readonly attach?: BrowserCreateAttach;\n} | {\n    readonly profile: \'persistent\';\n    readonly name: string;\n    readonly attach?: BrowserCreateAttach;\n} | {\n    readonly profile: \'shared\';\n    readonly attach?: BrowserCreateAttach;\n};',
   },
   {
     name: 'BrowserWorkspaceCreateRequest',
     declaration: 'export type BrowserWorkspaceCreateRequest = BrowserCreateRequest & BrowserWorkspaceSessionRequest;',
-  },
-  {
-    name: 'BrowserWorkspaceDockMutation',
-    declaration: 'export interface BrowserWorkspaceDockMutation {\n    readonly open: boolean;\n    readonly width?: number;\n}',
-  },
-  {
-    name: 'BrowserWorkspaceDockRequest',
-    declaration: 'export interface BrowserWorkspaceDockRequest {\n    readonly session: Session;\n    readonly open: boolean;\n    readonly width?: number;\n}',
   },
   {
     name: 'BrowserWorkspaceId',
@@ -3439,7 +3492,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'BrowserWorkspaceProjection',
-    declaration: 'export interface BrowserWorkspaceProjection {\n    readonly dockOpen: boolean;\n    readonly dockWidth: number;\n    readonly userCollapsed: boolean;\n    readonly workspaces: readonly BrowserWorkspaceRecord[];\n    readonly activeWorkspaceId: BrowserWorkspaceId | null;\n}',
+    declaration: 'export interface BrowserWorkspaceProjection {\n    readonly workspaces: readonly BrowserWorkspaceRecord[];\n    readonly activeWorkspaceId: BrowserWorkspaceId | null;\n}',
   },
   {
     name: 'BrowserWorkspaceRecord',
@@ -3451,7 +3504,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'BrowserWorkspaceTabRecord',
-    declaration: 'export interface BrowserWorkspaceTabRecord {\n    readonly tabId: BrowserTabId;\n    readonly controlOwner: BrowserControlOwner;\n    readonly revision: number;\n}',
+    declaration: 'export interface BrowserWorkspaceTabRecord {\n    readonly tabId: BrowserTabId;\n    readonly revision: number;\n}',
   },
   {
     name: 'CancelOptions',
@@ -3515,11 +3568,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'CommandInputDescriptor',
-    declaration: 'export interface CommandInputDescriptor {\n    readonly hint: string;\n}',
+    declaration: 'export interface CommandInputDescriptor {\n    readonly hint: string;\n    readonly images?: boolean;\n}',
   },
   {
     name: 'CommandInvocation',
-    declaration: 'export interface CommandInvocation {\n    readonly commandId: CommandId;\n    readonly agent: Agent;\n    readonly rawInput: string;\n    readonly signal: AbortSignal;\n}',
+    declaration: 'export interface CommandInvocation {\n    readonly commandId: CommandId;\n    readonly agent: Agent;\n    readonly rawInput: string;\n    readonly attachments: readonly ImageBlock[];\n    readonly signal: AbortSignal;\n}',
   },
   {
     name: 'CommandResult',
@@ -3599,7 +3652,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ContinuableStartSpec',
-    declaration: 'export interface ContinuableStartSpec {\n    readonly provider: string;\n    readonly label: string;\n    readonly request: Omit<SubagentStartRequest, \'label\' | \'signal\' | \'outputSchema\'>;\n    readonly signal: AbortSignal;\n}',
+    declaration: 'export interface ContinuableStartSpec {\n    readonly provider: string;\n    readonly label: string;\n    readonly childId?: SessionId;\n    readonly request: Omit<SubagentStartRequest, \'label\' | \'signal\' | \'outputSchema\'>;\n    readonly signal: AbortSignal;\n}',
   },
   {
     name: 'ContinuableSubagentDescriptorData',
@@ -3648,6 +3701,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'CreateSessionOptions',
     declaration: 'export interface CreateSessionOptions {\n    readonly seed?: readonly SessionEvent[];\n    readonly meta?: {\n        readonly cwd?: string;\n        readonly parentSession?: SessionId;\n        readonly createdAt?: number;\n        readonly seedLength?: number;\n        readonly origin?: \'subagent\';\n        readonly delegationDepth?: number;\n        readonly agentPreset?: string;\n    };\n}',
+  },
+  {
+    name: 'CreateTeamTaskRequest',
+    declaration: 'export interface CreateTeamTaskRequest {\n    readonly subject: string;\n    readonly description: string;\n    readonly blockedBy?: readonly TeamTaskId[];\n    readonly writeScopes?: readonly string[];\n}',
   },
   {
     name: 'CredentialInfo',
@@ -3766,6 +3823,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface EditGoalRequest {\n    readonly objective?: string;\n    readonly maxGoalRounds?: number;\n}',
   },
   {
+    name: 'EncodedImageAttachment',
+    declaration: 'export interface EncodedImageAttachment {\n    mediaType: ImageMediaType;\n    data: string;\n    name?: string;\n}',
+  },
+  {
     name: 'EpochHeader',
     declaration: 'export interface EpochHeader {\n    config: LlmCallConfig;\n    adapterDefaults?: LlmCallConfigAdapterDefaults;\n    system?: string;\n    tools?: ToolSchema[];\n}',
   },
@@ -3780,6 +3841,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'FileLocation',
     declaration: 'export interface FileLocation {\n    path: string;\n    line?: number;\n}',
+  },
+  {
+    name: 'FileReferenceCandidate',
+    declaration: 'export interface FileReferenceCandidate {\n    path: string;\n    kind: \'file\' | \'directory\';\n}',
   },
   {
     name: 'FinishReason',
@@ -3875,7 +3940,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ImageAttachmentLimits',
-    declaration: 'export interface ImageAttachmentLimits {\n    maxImageBytes: number;\n    maxImagesPerMessage: number;\n    maxMessageImageBytes: number;\n    maxImagePixels: number;\n    mediaTypes: readonly ImageMediaType[];\n}',
+    declaration: 'export interface ImageAttachmentLimits {\n    maxImageBytes: number;\n    maxImagesPerMessage: number;\n    maxMessageImageBytes: number;\n    maxImagePixels: number;\n    maxImageDimension: number;\n    mediaTypes: readonly ImageMediaType[];\n}',
   },
   {
     name: 'ImageAttachmentRef',
@@ -4630,6 +4695,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type SelectedPlatformEnvironment = Readonly<PlatformEnvironmentIdentity> & {\n    readonly [selectedPlatformEnvironment]: true;\n};',
   },
   {
+    name: 'SendTeamMessageRequest',
+    declaration: 'export interface SendTeamMessageRequest {\n    readonly target: string;\n    readonly content: ContentBlock[];\n    readonly delivery: \'quiet\' | \'wakeup\';\n    readonly signal: AbortSignal;\n}',
+  },
+  {
+    name: 'SendTeamMessageResult',
+    declaration: 'export interface SendTeamMessageResult {\n    readonly messageId: TeamMessageId;\n    readonly status: \'accepted\' | \'queued\';\n}',
+  },
+  {
     name: 'ServerResponse',
     declaration: 'export interface ServerResponse {\n    type: \'server-response\';\n    rpcId: RpcId;\n    result: RpcResult<unknown>;\n}',
   },
@@ -4643,7 +4716,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SessionEventMap',
-    declaration: 'export interface SessionEventMap {\n    \'turn/start\': {\n        turn: number;\n    };\n    \'turn/end\': {\n        turn: number;\n        reason: TurnEndReason;\n    };\n    \'step/start\': {\n        turn: number;\n        step: number;\n    };\n    \'step/end\': {\n        turn: number;\n        step: number;\n    };\n    \'user/message\': UserMessage;\n    \'assistant/chunk\': {\n        turn: number;\n        step: number;\n        chunk: StreamChunk;\n    };\n    \'assistant/message\': {\n        turn: number;\n        step: number;\n        message: AssistantMessage;\n        usage?: TokenUsage;\n    };\n    \'tool/call\': {\n        turn: number;\n        step: number;\n        callId: CallId;\n        name: string;\n        arguments: string;\n    };\n    \'tool/result\': {\n        turn: number;\n        step: number;\n        message: ToolResultMessage;\n        error?: {\n            name: string;\n            code: string;\n        };\n        meta?: JsonValue;\n    };\n    \'todo/write\': {\n        todos: TodoItem[];\n    };\n    \'request/header\': {\n        header: EpochHeader;\n        reason: RequestHeaderReason;\n    };\n    \'request/context\': RequestContext;\n    \'session/end-seed\': Record<string, never>;\n}',
+    declaration: 'export interface SessionEventMap {\n    \'turn/start\': {\n        turn: number;\n    };\n    \'turn/end\': {\n        turn: number;\n        reason: TurnEndReason;\n    };\n    \'step/start\': {\n        turn: number;\n        step: number;\n    };\n    \'step/end\': {\n        turn: number;\n        step: number;\n    };\n    \'user/message\': UserMessage;\n    \'assistant/chunk\': {\n        turn: number;\n        step: number;\n        chunk: StreamChunk;\n    };\n    \'assistant/message\': {\n        turn: number;\n        step: number;\n        message: AssistantMessage;\n        usage?: TokenUsage;\n        interrupted?: true;\n    };\n    \'tool/call\': {\n        turn: number;\n        step: number;\n        callId: CallId;\n        name: string;\n        arguments: string;\n    };\n    \'tool/result\': {\n        turn: number;\n        step: number;\n        message: ToolResultMessage;\n        error?: {\n            name: string;\n            code: string;\n        };\n        meta?: JsonValue;\n    };\n    \'todo/write\': {\n        todos: TodoItem[];\n    };\n    \'request/header\': {\n        header: EpochHeader;\n        reason: RequestHeaderReason;\n    };\n    \'request/context\': RequestContext;\n    \'session/end-seed\': Record<string, never>;\n}',
   },
   {
     name: 'SessionEventMetadataFilter',
@@ -4764,6 +4837,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SessionReferenceInput',
     declaration: 'export interface SessionReferenceInput {\n    sessionId: SessionId;\n    label?: string;\n}',
+  },
+  {
+    name: 'SessionReferenceMentionCandidate',
+    declaration: 'export interface SessionReferenceMentionCandidate extends SessionReferenceCandidate {\n    mention: string;\n}',
   },
   {
     name: 'SessionResultFilter',
@@ -4970,6 +5047,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SkillViewOptions extends SkillLookupOptions {\n    readonly scope?: ScopeKey | undefined;\n}',
   },
   {
+    name: 'SpawnTeammateRequest',
+    declaration: 'export interface SpawnTeammateRequest {\n    readonly name: string;\n    readonly description: string;\n    readonly prompt: ContentBlock[];\n    readonly context: \'fresh\' | \'fork\';\n    readonly provider: string;\n    readonly signal: AbortSignal;\n}',
+  },
+  {
+    name: 'SpawnTeammateResult',
+    declaration: 'export interface SpawnTeammateResult {\n    readonly member: TeamMemberView;\n}',
+  },
+  {
     name: 'SpillLocator',
     declaration: 'export type SpillLocator = Branded<\'SpillLocator\'>;',
   },
@@ -5027,7 +5112,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SubagentReportDelivery',
-    declaration: 'export type SubagentReportDelivery = \'quiet\' | \'wakeup\';',
+    declaration: 'export type SubagentReportDelivery = \'quiet\' | \'next-step\';',
   },
   {
     name: 'SubagentReportOptions',
@@ -5035,7 +5120,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SubagentResult',
-    declaration: 'export interface SubagentResult {\n    readonly output: ContentBlock[];\n    readonly structured?: unknown;\n    readonly stopReason: SubagentStopReason;\n}',
+    declaration: 'export interface SubagentResult {\n    readonly output: ContentBlock[];\n    readonly structured?: unknown;\n    readonly diagnostic?: string;\n    readonly stopReason: SubagentStopReason;\n}',
   },
   {
     name: 'SubagentRun',
@@ -5055,7 +5140,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SubagentRuntime',
-    declaration: 'export class SubagentRuntime extends Service {\n    constructor(ctx: Context);\n    async startContinuable(spec: ContinuableStartSpec): Promise<ContinuableStart>;\n    async followup(parent: Agent, childId: SessionId, content: ContentBlock[], options: SubagentFollowupOptions): Promise<MessageId>;\n    interrupt(targetSessionId: SessionId, authority: SubagentInterruptAuthority): void;\n    async reportFrom(child: Agent, content: ContentBlock[], options: SubagentReportOptions): Promise<MessageId>;\n    registerContinuableSetup(contribution: ContinuableSetupContribution): () => void;\n    async drainContinuableDescendants(parents: readonly Agent[]): Promise<void>;\n    listChildren(parentSessionId: SessionId, signal?: AbortSignal): Promise<SubagentListEntry[]>;\n    listDescendants(rootSessionId: SessionId, signal?: AbortSignal): Promise<SubagentDescendantListEntry[]>;\n    registerProvider(provider: SubagentProvider): () => void;\n    getProvider(name: string): SubagentProvider | undefined;\n    list(): string[];\n    async start(name: string, request: SubagentStartRequest): Promise<SubagentRun>;\n}',
+    declaration: 'export class SubagentRuntime extends Service {\n    constructor(ctx: Context);\n    async startContinuable(spec: ContinuableStartSpec): Promise<ContinuableStart>;\n    async followup(parent: Agent, childId: SessionId, content: ContentBlock[], options: SubagentFollowupOptions): Promise<MessageId>;\n    interrupt(targetSessionId: SessionId, authority: SubagentInterruptAuthority): void;\n    async reportFrom(child: Agent, content: ContentBlock[], options: SubagentReportOptions): Promise<MessageId>;\n    registerContinuableSetup(contribution: ContinuableSetupContribution): () => void;\n    async drainContinuableDescendants(parents: readonly Agent[]): Promise<void>;\n    async drainContinuableChildren(parent: Agent, childIds: readonly SessionId[]): Promise<void>;\n    listChildren(parentSessionId: SessionId, signal?: AbortSignal): Promise<SubagentListEntry[]>;\n    listDescendants(rootSessionId: SessionId, signal?: AbortSignal): Promise<SubagentDescendantListEntry[]>;\n    registerProvider(provider: SubagentProvider): () => void;\n    getProvider(name: string): SubagentProvider | undefined;\n    list(): string[];\n    async start(name: string, request: SubagentStartRequest): Promise<SubagentRun>;\n}',
   },
   {
     name: 'SubagentStartRequest',
@@ -5148,6 +5233,42 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'TableValueOf',
     declaration: 'export type TableValueOf<S extends DomainSpec, N extends keyof S[\'tables\']> = S[\'tables\'][N] extends DomainTableSpec<string, infer V> ? V : never;',
+  },
+  {
+    name: 'TeamId',
+    declaration: 'export type TeamId = Branded<\'TeamId\'>;',
+  },
+  {
+    name: 'TeamMembership',
+    declaration: 'export interface TeamMembership {\n    readonly root: Agent;\n    readonly id: TeamId;\n    readonly role: \'lead\' | \'teammate\';\n    readonly name: string;\n}',
+  },
+  {
+    name: 'TeamMemberView',
+    declaration: 'export interface TeamMemberView {\n    readonly id: SessionId;\n    readonly name: string;\n    readonly role: \'lead\' | \'teammate\';\n    readonly status: \'running\' | \'idle\' | \'inactive\' | \'provisioning\' | \'failed\';\n    readonly description?: string;\n    readonly provider?: string;\n    readonly context?: \'fresh\' | \'fork\';\n    readonly model?: string;\n    readonly diagnostics: string[];\n}',
+  },
+  {
+    name: 'TeamMessageId',
+    declaration: 'export type TeamMessageId = Branded<\'TeamMessageId\'>;',
+  },
+  {
+    name: 'TeamTaskAction',
+    declaration: 'export type TeamTaskAction = \'claim\' | \'release\' | \'edit\' | \'set_dependencies\' | \'complete\' | \'reopen\' | \'reassign\' | \'delete\';',
+  },
+  {
+    name: 'TeamTaskId',
+    declaration: 'export type TeamTaskId = Branded<\'TeamTaskId\'>;',
+  },
+  {
+    name: 'TeamTaskStatus',
+    declaration: 'export type TeamTaskStatus = \'pending\' | \'in_progress\' | \'completed\' | \'deleted\';',
+  },
+  {
+    name: 'TeamTaskView',
+    declaration: 'export interface TeamTaskView {\n    readonly id: TeamTaskId;\n    readonly revision: number;\n    readonly subject: string;\n    readonly description: string;\n    readonly status: TeamTaskStatus;\n    readonly blockedBy: TeamTaskId[];\n    readonly writeScopes: string[];\n    readonly ownerName?: string;\n    readonly ready: boolean;\n    readonly writeScopeWarnings: string[];\n}',
+  },
+  {
+    name: 'TeamWaitResult',
+    declaration: 'export interface TeamWaitResult {\n    readonly timedOut: boolean;\n}',
   },
   {
     name: 'TerminalBackend',
@@ -5442,6 +5563,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface TypertTypeModel {\n    readonly name: string;\n    readonly declaration: string;\n}',
   },
   {
+    name: 'UpdateTeamTaskRequest',
+    declaration: 'export interface UpdateTeamTaskRequest {\n    readonly taskId: TeamTaskId;\n    readonly expectedRevision: number;\n    readonly action: TeamTaskAction;\n    readonly subject?: string;\n    readonly description?: string;\n    readonly blockedBy?: readonly TeamTaskId[];\n    readonly writeScopes?: readonly string[];\n    readonly owner?: string;\n}',
+  },
+  {
     name: 'UserMessage',
     declaration: 'export interface UserMessage extends Message {\n    readonly role: \'user\';\n}',
   },
@@ -5451,7 +5576,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'WebBootEntry',
-    declaration: 'export interface WebBootEntry {\n    id: string;\n    url: string;\n    rev: string;\n    inject?: string[];\n    immediately?: boolean;\n}',
+    declaration: 'export interface WebBootEntry {\n    id: string;\n    url: string;\n    rev: string;\n    inject?: string[];\n    immediately?: boolean;\n    external?: string[];\n}',
   },
   {
     name: 'WebBootGraph',

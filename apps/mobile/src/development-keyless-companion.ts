@@ -38,7 +38,7 @@ const OPERATION_TIMEOUT_MS = 15_000
 const DEVELOPMENT_CACHE_DESKTOP_ID = parseCompanionDesktopId('desktop-development-keyless')
 
 /** Placeholder `src` for Desktop-projected image metadata that carries no Relay bytes. */
-export const COMPANION_PROJECTED_IMAGE_SRC = 'data:image/gif;base64,R0lGODlhAQABAAAAACw='
+const COMPANION_PROJECTED_IMAGE_SRC = 'data:image/gif;base64,R0lGODlhAQABAAAAACw='
 
 /** Desktop-confirmed Session list owned by the development Companion client. */
 export class DevelopmentCompanionSessionStore {
@@ -297,7 +297,7 @@ export class DevelopmentCompanionClient {
       this.pending.get(message.result.operationId)?.resolve(message.result)
       return
     }
-    if (message.type === 'projection' && message.projection.type === 'transcript-page') {
+    if (message.type === 'projection') {
       this.store.applyTranscript(
         message.projection.sessionId,
         message.projection.entries,

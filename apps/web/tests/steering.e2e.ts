@@ -5,7 +5,7 @@
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
-import type { Browser, Page } from 'playwright'
+import type { Browser, Locator, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import { parseSessionLog } from '@deepseek-ai/dsh-llm-replay'
@@ -27,9 +27,9 @@ const SETTLED_EXPECTED = join(SNAPSHOT_DIR, 'settled.expected.md')
 const MODE = webSnapshotMode()
 // The question composer replaces the textarea, so fill → Queue row → Steer
 // must finish inside the first replay chunk window. At 15 ms that window is
-// shorter than Playwright's round trips; 100 ms supplies test-only headroom,
+// shorter than Playwright's round trips; 50 ms supplies test-only headroom,
 // while larger values lengthen all three replay scenarios linearly.
-const REPLAY_PACE_MS = 100
+const REPLAY_PACE_MS = 50
 
 const PROMPT = 'Use the ask_user_question tool to ask me exactly one question with id "checkpoint", question "Ready to continue?", header "Checkpoint", and options labeled "Yes" and "No". After I answer, reply with one short sentence acknowledging my answer and stop.'
 const STEER = 'Interjection: include the word BANANA in your final reply.'
@@ -45,6 +45,46 @@ const STEER_ALL_MID = join(STEER_ALL_DIR, 'mid-steer.expected.md')
 const STEER_ALL_SETTLED = join(STEER_ALL_DIR, 'settled.expected.md')
 const STEER_ONE = 'Interjection: include the word BANANA in your final reply.'
 const STEER_TWO = 'Interjection: include the word ORANGE in your final reply.'
+
+/** The live InputBar textarea. A leftover hidden node also carries `data-phase`. */
+function visibleComposer(page: Page) {
+  return page.locator('textarea').filter({ visible: true })
+}
+
+/**
+ * Queue one draft on the visible InputBar. Official Enter is a no-op during
+ * `submitting`/`adjudicating`, and the question composer later replaces the
+ * textarea. `ready` is the dock locator that becomes present for this row —
+ * a single item renders the row text; two or more collapse to the count header.
+ */
+async function queueVisibleDraft(page: Page, text: string, ready: Locator): Promise<void> {
+  try {
+    await expect.poll(async () => {
+      if (await ready.count() > 0) return true
+      const input = visibleComposer(page)
+      if (await input.count() === 0) return false
+      const box = input.last()
+      const phase = await box.getAttribute('data-phase')
+      if (phase === null || /^(?:submitting|adjudicating)$/.test(phase)) return false
+      await box.fill(text)
+      await box.press('Enter')
+      return await ready.waitFor({ state: 'attached', timeout: 500 }).then(() => true, () => false)
+    }, { timeout: 10_000, interval: 40 }).toBe(true)
+  } catch (error) {
+    const info = await page.evaluate(() => ({
+      textareas: [...document.querySelectorAll('textarea')].map(el => ({
+        visible: el.getClientRects().length > 0,
+        phase: el.getAttribute('data-phase'),
+        disabled: el.disabled,
+        readOnly: el.readOnly,
+        value: el.value.slice(0, 80),
+      })),
+      question: document.querySelector('[data-question-key]') !== null,
+      dock: document.querySelector('[data-queue-dock]')?.textContent ?? null,
+    }))
+    throw new Error(`queueVisibleDraft failed for ${JSON.stringify(text)}: ${JSON.stringify(info)}`, { cause: error })
+  }
+}
 
 /** Concatenated assistant text deltas — the model-visible reply body. */
 function assistantText(events: SessionEvent[]): string {
@@ -106,9 +146,8 @@ describe('web e2e: mid-turn steering lands durably and visibly', () => {
     // this exact occurrence into the current turn's steering outbox.
     await input.fill(STEER)
     await input.press('Enter')
-    const queued = page.getByText(STEER, { exact: true })
-    await queued.waitFor({ timeout: 10_000 })
     const queuedRow = page.getByRole('listitem').filter({ hasText: STEER })
+    await queuedRow.waitFor({ timeout: 10_000 })
     const steerButton = queuedRow.getByRole('button', { name: 'Steer queued message' })
     await expect.poll(() => steerButton.isEnabled(), { timeout: 10_000 }).toBe(true)
     await steerButton.click({ timeout: 10_000 })
@@ -305,7 +344,10 @@ describe('web e2e: empty-draft Cmd+Enter steers the whole queue', () => {
     scaffold = await launchWebScaffold({
       replayFixture: STEER_ALL_FIXTURE,
       replayOverride: STEER_ALL_OVERRIDE,
-      paceMs: REPLAY_PACE_MS,
+      // Call 0's question-tool stream replaces InputBar; 120 ms keeps both
+      // queue rows inside that window on CI (80 ms missed STEER_TWO on
+      // 32467952709).
+      paceMs: 120,
     })
     scaffold.ctx.on('session/event', (_session, event) => { sessionEvents.push(event) })
     browser = await chromium.launch()
@@ -324,40 +366,40 @@ describe('web e2e: empty-draft Cmd+Enter steers the whole queue', () => {
 
   it.skipIf(MODE === 'record')('queues two messages, then flushes both with an empty-draft Cmd+Enter', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-steer-all'))
-    const input = page.locator('textarea').first()
+    const input = visibleComposer(page)
     await input.waitFor({ timeout: 10_000 })
     const settled = scaffold.whenTurnSettled(30_000)
 
-    // Call 0 streams a question-tool call; the fills must land inside the
-    // first replay window, before the question composer replaces the textarea.
+    // Call 0 streams a question-tool call; both queue rows must land before
+    // the question composer replaces the textarea.
     await input.fill(PROMPT)
     await input.press('Enter')
-    await input.fill(STEER_ONE)
-    await input.press('Enter')
-    await input.fill(STEER_TWO)
-    await input.press('Enter')
     const dock = page.locator('[data-queue-dock]')
-    // Both messages queued: the two-row dock shows a collapsed count header,
-    // and Playwright text matching skips the hidden rows — expand the list,
-    // then assert each row's content.
-    await dock.getByText('2 queued messages').waitFor({ timeout: 10_000 })
-    await dock.getByRole('button').click()
-    await dock.getByText(STEER_ONE, { exact: true }).waitFor({ timeout: 10_000 })
-    await dock.getByText(STEER_TWO, { exact: true }).waitFor({ timeout: 10_000 })
+    // Both rows must land in one composer window. A second poll loop is
+    // slower than the question-tool stream on CI, so send STEER_TWO on the
+    // same InputBar immediately after STEER_ONE attaches.
+    await queueVisibleDraft(page, STEER_ONE, dock.getByText(STEER_ONE, { exact: true }))
+    const still = visibleComposer(page)
+    await still.last().fill(STEER_TWO)
+    await still.last().press('Enter')
+    await dock.getByRole('button', { name: '2 queued messages' }).waitFor({
+      state: 'attached',
+      timeout: 8_000,
+    })
     expect(await page.locator('[data-pending-steering]').count()).toBe(0)
 
     // Empty draft + Cmd+Enter: both queued rows steer in FIFO order, the dock
     // empties, and the pending steering renders at the conversation tail.
-    await input.press('Meta+Enter')
+    // Flush before the question composer hides InputBar.
+    await visibleComposer(page).last().press('Meta+Enter')
     await expect.poll(
       () => page.locator('[data-pending-steering]').filter({ hasText: /BANANA|ORANGE/ }).count(),
       { timeout: 10_000 },
     ).toBe(2)
     expect(await page.locator('[data-queue-dock]').count()).toBe(0)
-    // The reasoning row streams independently of the steering handoff. Wait
-    // for the block to settle so the mid snapshot does not race its transient
-    // visually-hidden Running label while the question keeps the turn open.
     await page.locator('[data-variant="think"][data-state="ok"]').first().waitFor({ timeout: 10_000 })
+    await page.getByRole('region', { name: 'Ready to continue?' }).waitFor({ timeout: 10_000 })
+    await page.getByRole('button', { name: 'Ask question waiting' }).waitFor({ timeout: 10_000 })
     const mid = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(STEER_ALL_MID, mid, MODE)
 

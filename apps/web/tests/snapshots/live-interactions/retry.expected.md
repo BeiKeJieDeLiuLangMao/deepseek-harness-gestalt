@@ -14,7 +14,7 @@
   - img
   - text: Context injection @deepseek-ai/dsh-system-prompt
 - group:
-  - status: Retried model request (1/2) · {{duration}}
+  - status: Retried model request (1/5) · {{duration}}
 - button "Think The user is asking for a one-sentence description of event sourcing. This is a straightforward knowledge question that doesn't require any skill loading or tool calls.":
   - img
   - img
@@ -29,7 +29,6 @@
 - button "Branch into a new conversation":
   - img
 - text: {{clock}} Ran for {{duration}} TTFT {{duration}} {{throughput}} tok/s
-- button "Add images"
 - textbox "Message the agent"
 - button "Commands":
   - img

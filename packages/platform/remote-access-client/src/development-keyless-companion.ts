@@ -13,7 +13,11 @@ import {
 const IV_BYTES = 12
 const DEVELOPMENT_KEYLESS_COMPANION_KEY = Uint8Array.from({ length: 32 }, () => 29)
 
-/** True when the frame is the one-byte keyless sync announcement. */
+/**
+ * Identify the one-byte keyless sync announcement.
+ * @param ciphertext - development Relay frame.
+ * @returns true when the frame is the sync announcement.
+ */
 export function isDevelopmentKeylessSyncCiphertext(ciphertext: Uint8Array): boolean {
   return ciphertext.byteLength === 1
 }

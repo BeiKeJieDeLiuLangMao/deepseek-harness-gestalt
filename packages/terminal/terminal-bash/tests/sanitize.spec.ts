@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { normalizeTerminalText, TerminalSanitizer } from '@deepseek-ai/dsh-terminal-bash/src/sanitize.ts'
+import {
+  hasDefaultPwshPrompt, lastNonEmptyLine, normalizeTerminalText, TerminalSanitizer,
+} from '@deepseek-ai/dsh-terminal-bash/src/sanitize.ts'
 
 describe('TerminalSanitizer', () => {
   it('removes split CSI and owned OSC prompt markers', () => {
@@ -72,5 +74,25 @@ describe('TerminalSanitizer', () => {
     flushed.push(`\x1b]0;${'x'.repeat(16)}`)
     expect(flushed.flush()).toBe('')
     expect(flushed.push('text')).toEqual({ text: 'text', prompt: false })
+  })
+})
+
+describe('lastNonEmptyLine', () => {
+  it('returns the last non-whitespace line and skips a space-only cursor row', () => {
+    expect(lastNonEmptyLine('')).toBe('')
+    expect(lastNonEmptyLine('   \n  ')).toBe('')
+    expect(lastNonEmptyLine('keep=ok\ndsh> \n   ')).toBe('dsh> ')
+    expect(lastNonEmptyLine('one\r\ntwo\rthree')).toBe('three')
+  })
+})
+
+describe('hasDefaultPwshPrompt', () => {
+  it('accepts the default interactive prompt and rejects setup echo or dsh> ', () => {
+    expect(hasDefaultPwshPrompt('PS>')).toBe(true)
+    expect(hasDefaultPwshPrompt('banner\nPS /tmp/ws> ')).toBe(true)
+    expect(hasDefaultPwshPrompt('PS \x1b[27m/tmp/dsh-pty-local-5ayIEJ\x1b[7m> ')).toBe(true)
+    expect(hasDefaultPwshPrompt('PS /tmp/ws>\x1b[0m')).toBe(true)
+    expect(hasDefaultPwshPrompt('dsh> ')).toBe(false)
+    expect(hasDefaultPwshPrompt('function prompt { }\n')).toBe(false)
   })
 })

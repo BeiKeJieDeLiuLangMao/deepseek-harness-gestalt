@@ -7,9 +7,9 @@
  */
 
 export type * from './types.ts'
+export { listBrowserWorkspacePages } from './pages.ts'
 export type {
   BrowserClosedState,
-  BrowserControlOwner,
   BrowserInstanceId,
   BrowserPageState,
   BrowserProfileChrome,

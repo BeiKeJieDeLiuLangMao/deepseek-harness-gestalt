@@ -10,14 +10,14 @@ import type { ClientContext, ObservableSnapshot, SnapshotStore } from '@deepseek
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import type {
   ArbitrateKey, ArbitrateOutcome, CommandClaim, ConsumeTokenRequest, PickOutcome,
-  ReferenceInsert, InputTriggerController, TokenSpan,
+  ReferenceInsert, InputTriggerController, SubmitImageAttachment, SubmitOutcome, TokenSpan,
 } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import type {
   DraftAttachmentId, EditRange, EditSelection, InputActions, InputEffect, InputNotice, InputState,
   PasteComponent, QueuedMessage, SessionInput, SubmitAttempt,
 } from './contract.ts'
 import type { InputSubmitMode } from '../contract/composer-submission.ts'
-import { InputMachine, occurrenceEnd } from './machine.ts'
+import { InputMachine, projectClipboard } from './machine.ts'
 import type {
   AnnotationCompilerLabels, DraftAnnotation, PersistedAnnotationDraft, TextAnchor, TextAnnotationId,
 } from '../annotation/model.ts'
@@ -61,10 +61,19 @@ export interface SessionInputDeps {
     text: string,
     imageIds: readonly DraftAttachmentId[],
     mode: InputSubmitMode,
-    annotationDraft?: AnnotationSubmissionReservation,
-  ): void
+    signal: AbortSignal,
+  ): Promise<SubmitOutcome>
+  /** Command-plane image plumbing (the hub owns the conversation face and the copy). */
+  commandImages?: {
+    /** Resolve ordered draft ids to wire payloads without sending them; rejects when an id no longer resolves. */
+    serialize(ids: readonly DraftAttachmentId[]): Promise<readonly SubmitImageAttachment[]>
+    /** Free consumed draft images after a successful command submit. */
+    release(ids: readonly DraftAttachmentId[]): void
+    /** Localized composer notice for a claimed command that does not accept images. */
+    unsupportedNotice(token: string): string
+  }
   /** Localized ordinary-prose fragments for Annotation Submission (the hub always supplies them). */
-  annotationLabels: AnnotationCompilerLabels
+  annotationLabels?: AnnotationCompilerLabels
   /** Advertised occupancy when the selected model reports a context window. */
   contextCapacity?: () => { usedTokens: number; contextWindow: number } | undefined
 }
@@ -122,7 +131,7 @@ const EMPTY_LEXICON: ReadonlyMap<'/' | '@', readonly string[]> = new Map()
 export class SessionInputShell implements SessionInput {
   /** Published machine state + queue overlay (the InputZone currency source). */
   readonly state: SnapshotStore<InputState>
-  /** Latest surfaced notice (null after clear); the wiring renders it beside the error strip. */
+  /** Latest surfaced notice (null after clear); the bar renders errors as banners and information inline. */
   readonly notices: SnapshotStore<InputNotice | null> = createSnapshotStore<InputNotice | null>(null)
   /** The public provide-channel action face (one stable identity per session). */
   readonly actions: InputActions = {
@@ -144,13 +153,15 @@ export class SessionInputShell implements SessionInput {
   // production (the machine's no-clock default is a constant for pure tests).
   private readonly core = new InputMachine({ now: () => Date.now() })
   private noticeSeq = 0
-  private lastDraft = ''
+  private lastMirroredDraft = ''
   private imageIds: readonly DraftAttachmentId[] = []
   private annotations: readonly DraftAnnotation[] = []
   private annotationSubmission: AnnotationSubmissionReservation | undefined
   private annotationSeq = 0
+  /** One image-only send at a time: Enter during the Host round-trip is a no-op. */
+  private imageSendInFlight = false
   private disposed = false
-  /** Draft persistence mirror (chat store write; receives the clipboard projection, never raw placeholders). */
+  /** Draft persistence mirror (chat store write; receives the clipboard projection, never display-only ranges). */
   private mirrorFn: ((text: string) => void) | undefined
   /** Annotation Draft persistence mirror (chat store write; null = no draft). */
   private annotationMirrorFn: ((draft: PersistedAnnotationDraft | null) => void) | undefined
@@ -184,8 +195,13 @@ export class SessionInputShell implements SessionInput {
     return true
   }
 
-  /** Remove one image id from this draft. */
+  /**
+   * Remove one image id from this draft. Busy admission phases refuse, like
+   * {@link addImages}: a removal landing while a command submit serializes
+   * would otherwise vanish from the rail yet still ride the in-flight send.
+   */
   removeImage(id: DraftAttachmentId): void {
+    if (this.snapshot.phase === 'adjudicating' || this.snapshot.phase === 'submitting') return
     const next = this.imageIds.filter(candidate => candidate !== id)
     if (next.length === this.imageIds.length) return
     this.imageIds = next
@@ -357,15 +373,6 @@ export class SessionInputShell implements SessionInput {
   }
 
   /**
-   * Fold trigger-source paste rewrites over clipboard plain text.
-   * @param text - clipboard plain text.
-   * @returns the rewritten text; unchanged without a trigger roster.
-   */
-  transformPaste(text: string): string {
-    return this.deps.inputTriggers?.()?.transformPaste(text) ?? text
-  }
-
-  /**
    * Paste text over the selection in one transaction, with any hot-snapshot
    * sync matches componentized inside it.
    * @param text - pasted plain text.
@@ -395,7 +402,36 @@ export class SessionInputShell implements SessionInput {
   submit(mode: InputSubmitMode = 'queue'): void {
     if (this.annotationSubmission !== undefined) return
     if (this.snapshot.draft.trim() === '' && (this.imageIds.length > 0 || this.annotations.length > 0)) {
-      if (this.snapshot.phase === 'plain') this.sinkSerialized('', mode)
+      if (this.snapshot.phase === 'plain' && !this.imageSendInFlight) {
+        const imageIds = [...this.imageIds]
+        this.imageSendInFlight = true
+        const reserved = this.reserveAnnotations('')
+        const compiled = this.compile('', this.annotations)
+        if (this.rejectKnownOverflow(compiled, reserved)) {
+          this.imageSendInFlight = false
+          return
+        }
+        void this.deps.defaultSink(compiled, imageIds, mode, new AbortController().signal).then((outcome) => {
+          this.imageSendInFlight = false
+          if (this.disposed) return
+          if (outcome.kind === 'success') this.commitSend(imageIds)
+          else if (outcome.text !== undefined) this.notify('error', outcome.text)
+        }, (error: unknown) => {
+          this.imageSendInFlight = false
+          if (reserved !== undefined) this.settleAnnotationSubmission(reserved, false)
+          if (!this.disposed) this.notify('error', error instanceof Error ? error.message : String(error))
+        })
+      }
+      return
+    }
+    // Claimed pre-gate: a claim that does not declare image acceptance never
+    // submits while images are attached — one notice, everything retained.
+    // Enter-time adjudication applies the same policy for unclaimed lines
+    // inside the command source itself.
+    const before = this.snapshot
+    if (before.phase === 'claimed' && this.imageIds.length > 0 && before.claim?.images !== true) {
+      this.notify('error', this.deps.commandImages?.unsupportedNotice(before.claim?.token ?? before.draft)
+        ?? `${(before.claim?.token ?? before.draft).trim()} images-unsupported`)
       return
     }
     this.run(this.core.dispatch({ type: 'enter', mode }))
@@ -525,13 +561,21 @@ export class SessionInputShell implements SessionInput {
    * a scan-derived decoration, never state.
    * @param text - the plain reference text to splice in (e.g. `/name `).
    * @param span - pick-time span snapshot (draftRev CAS).
+   * @param keepCompleting - re-track at the caret after the splice so an open
+   * token (a directory pick's trailing slash) reopens the menu.
    * @returns whether the text was applied.
    */
-  insertText(text: string, span: TokenSpan): boolean {
+  insertText(text: string, span: TokenSpan, keepCompleting = false): boolean {
     const snapshot = this.core.state
     if (span.draftRev !== snapshot.draftRev) return false
     const draft = snapshot.draft
     this.setDraft(draft.slice(0, span.start) + text + draft.slice(span.end))
+    if (keepCompleting) {
+      // Machine-driven draft replacement never passes through onChange, so
+      // re-track at the caret inside the still-open token (see space()).
+      const next = this.snapshot
+      this.deps.inputTriggers?.()?.track(next.draft, span.start + text.length, { tier: guardOf(next.phase) }, next.draftRev)
+    }
     return true
   }
 
@@ -602,6 +646,11 @@ export class SessionInputShell implements SessionInput {
     this.publish()
   }
 
+  /** Exact in-flight reservation, when one submission is held. */
+  get annotationReservation(): AnnotationSubmissionReservation | undefined {
+    return this.annotationSubmission
+  }
+
   // ---- effect executor ----
 
   private run(effects: readonly InputEffect[]): void {
@@ -625,7 +674,7 @@ export class SessionInputShell implements SessionInput {
         return
       }
       case 'default-sink': {
-        this.sinkSerialized(fx.draft, fx.mode)
+        this.sinkSerialized(fx.attempt, fx.draft, fx.mode)
         return
       }
       default:
@@ -635,58 +684,83 @@ export class SessionInputShell implements SessionInput {
 
   /**
    * Prompt serialization before the sink: expand each
-   * placeholder to its owner's model form via the session controller's
+   * inline reference range to its owner's model form via the session controller's
    * codec routing. Owner missing / serialize failure / disposal blocks the
    * send — notice + draft and chips retained, never a silent downgrade to
    * the clipboard text. Chip-free drafts skip the async detour.
    */
-  private sinkSerialized(draft: string, mode: InputSubmitMode): void {
+  private sinkSerialized(attempt: SubmitAttempt, draft: string, mode: InputSubmitMode): void {
     const imageIds = [...this.imageIds]
-    const annotations = [...this.annotations]
-    const annotationDraft = annotations.length === 0
-      ? undefined
-      : { restoreText: draft, ids: annotations.map(item => item.id) }
-    if (annotationDraft !== undefined) {
-      this.annotationSubmission = annotationDraft
-      this.publish()
-    }
+    const reserved = this.reserveAnnotations(draft)
     const occurrences = this.core.state.occurrences
     if (occurrences.length === 0) {
-      const compiled = this.compile(draft, annotations)
-      if (this.rejectKnownOverflow(compiled, annotationDraft)) return
-      if (annotationDraft === undefined) this.deps.defaultSink(compiled, imageIds, mode)
-      else this.deps.defaultSink(compiled, imageIds, mode, annotationDraft)
+      const compiled = this.compile(draft, this.annotations)
+      if (this.rejectKnownOverflow(compiled, reserved, attempt)) return
+      this.settleSubmit(attempt, this.deps.defaultSink(compiled, imageIds, mode, attempt.signal), imageIds)
       return
     }
     const inputTriggers = this.deps.inputTriggers?.()
     const controller = new AbortController()
     void Promise.all(occurrences.map(async (o) => {
       if (inputTriggers === undefined) throw new Error(`no serializer for reference source "${o.source}"`)
-      return { offset: o.offset, text: await inputTriggers.serializeReference(o.source, o.ref, controller.signal) }
+      return {
+        offset: o.offset,
+        length: o.length,
+        text: await inputTriggers.serializeReference(o.source, o.ref, controller.signal),
+      }
     })).then(
       (parts) => {
         if (this.disposed) return
-        // Splice model forms over their placeholders (offsets are draft-time;
+        // Splice model forms over their display ranges (offsets are draft-time;
         // parts arrive offset-sorted since the table is).
         let out = ''
         let cursor = 0
-        for (const [i, part] of parts.entries()) {
-          const occurrence = occurrences[i]
-          if (occurrence === undefined) break
+        for (const part of parts) {
           out += draft.slice(cursor, part.offset) + part.text
-          cursor = occurrenceEnd(occurrence)
+          cursor = part.offset + part.length
         }
         out += draft.slice(cursor)
-        const compiled = this.compile(out, annotations)
-        if (annotationDraft === undefined) this.deps.defaultSink(compiled, imageIds, mode)
-        else this.deps.defaultSink(compiled, imageIds, mode, annotationDraft)
+        const compiled = this.compile(out, this.annotations)
+        this.settleSubmit(attempt, this.deps.defaultSink(compiled, imageIds, mode, attempt.signal), imageIds)
       },
       (error: unknown) => {
         controller.abort()
-        if (this.disposed) return
-        if (annotationDraft !== undefined) this.settleAnnotationSubmission(annotationDraft, false)
+        if (this.dead(attempt)) return
+        if (reserved !== undefined) this.settleAnnotationSubmission(reserved, false)
         const message = error instanceof Error ? error.message : String(error)
-        this.notify('error', message)
+        this.run(this.core.dispatch({ type: 'submit-settled', attempt, ok: false, message }))
+      },
+    )
+  }
+
+  /** Settle one admission attempt; successful sends consume only their captured images. */
+  private settleSubmit(
+    attempt: SubmitAttempt,
+    pending: Promise<SubmitOutcome>,
+    imageIds: readonly DraftAttachmentId[] = [],
+  ): void {
+    pending.then(
+      (outcome) => {
+        if (this.dead(attempt)) return
+        if (outcome.kind === 'success' && imageIds.length > 0) {
+          const submitted = new Set(imageIds)
+          this.imageIds = this.imageIds.filter(id => !submitted.has(id))
+        }
+        this.run(this.core.dispatch({
+          type: 'submit-settled',
+          attempt,
+          ok: outcome.kind === 'success',
+          outcome,
+        }))
+      },
+      (error: unknown) => {
+        if (this.dead(attempt)) return
+        this.run(this.core.dispatch({
+          type: 'submit-settled',
+          attempt,
+          ok: false,
+          message: error instanceof Error ? error.message : String(error),
+        }))
       },
     )
   }
@@ -699,7 +773,7 @@ export class SessionInputShell implements SessionInput {
       this.run(this.core.dispatch({ type: 'adjudicated', attempt, outcome: undefined }))
       return
     }
-    inputTriggers.adjudicate(draft.trim(), attempt.signal).then(
+    inputTriggers.adjudicate(draft.trim(), attempt.signal, { images: this.imageIds.length }).then(
       (outcome: PickOutcome) => {
         if (this.dead(attempt)) return
         this.run(this.core.dispatch({ type: 'adjudicated', attempt, outcome }))
@@ -712,15 +786,39 @@ export class SessionInputShell implements SessionInput {
     )
   }
 
-  /** The submit transaction: claim.submit against the session scope; ok maps from the outcome kind. */
+  /**
+   * The submit transaction: claim.submit against the session scope; ok maps
+   * from the outcome kind. An accepting claim receives the serialized draft
+   * images, which are cleared and released only on a success outcome; a
+   * failure (serialize, transport, or handler error) keeps draft and images
+   * for correction.
+   */
   private beginSubmit(attempt: SubmitAttempt, claim: CommandClaim, args: string): void {
+    const imageIds = claim.images === true ? [...this.imageIds] : []
     Promise.resolve()
-      .then(() => claim.submit(args, this.deps.actx))
+      .then(async () => {
+        let images: readonly SubmitImageAttachment[] = []
+        if (imageIds.length > 0) {
+          const commandImages = this.deps.commandImages
+          if (commandImages === undefined) throw new Error('conversation.input: commandImages unavailable')
+          images = await commandImages.serialize(imageIds)
+        }
+        // Serialization may outlive the attempt (large files, session
+        // teardown); a dead attempt must not reach the Host executor.
+        if (this.dead(attempt)) return undefined
+        return claim.submit(args, this.deps.actx, images)
+      })
       .then(
         (outcome) => {
-          if (this.dead(attempt)) return
+          if (outcome === undefined || this.dead(attempt)) return
+          if (outcome.kind === 'success' && imageIds.length > 0) {
+            const submitted = new Set(imageIds)
+            this.imageIds = this.imageIds.filter(id => !submitted.has(id))
+            this.deps.commandImages?.release(imageIds)
+          }
           this.run(this.core.dispatch({
             type: 'submit-settled', attempt, ok: outcome.kind === 'success', outcome,
+            ...(outcome.kind === 'error' && outcome.text === undefined ? { message: 'command failed' } : {}),
           }))
         },
         (error: unknown) => {
@@ -748,33 +846,57 @@ export class SessionInputShell implements SessionInput {
   }
 
   private compile(question: string, annotations: readonly DraftAnnotation[]): string {
-    return compileAnnotationSubmission(question, annotations, this.deps.annotationLabels)
+    if (annotations.length === 0) return question.trim()
+    const labels = this.deps.annotationLabels
+    if (labels === undefined) throw new Error('conversation.input: annotationLabels unavailable')
+    return compileAnnotationSubmission(question, annotations, labels)
+  }
+
+  /**
+   * Hold one exact annotation snapshot until Host admission settles it.
+   * @param restoreText - Draft to put back when the Host does not admit.
+   * @returns the reservation, or undefined when the draft has no annotations.
+   */
+  private reserveAnnotations(restoreText: string): AnnotationSubmissionReservation | undefined {
+    if (this.annotations.length === 0) return undefined
+    const reserved = { restoreText, ids: this.annotations.map(item => item.id) }
+    this.annotationSubmission = reserved
+    this.publish()
+    return reserved
   }
 
   /**
    * Reject a known overflow before the sink. Unknown capacity is not this path.
    * @param compiled - assembled request text.
    * @param annotationDraft - in-flight reservation to release on overflow.
+   * @param attempt - live submit attempt to settle when the machine is locked.
    * @returns whether the request must not be sent.
    */
   private rejectKnownOverflow(
     compiled: string,
     annotationDraft: AnnotationSubmissionReservation | undefined,
+    attempt?: SubmitAttempt,
   ): boolean {
     const capacity = this.deps.contextCapacity?.()
     if (capacity === undefined) return false
     if (!assembledRequestOverflows(compiled.length, capacity.usedTokens, capacity.contextWindow)) return false
     if (annotationDraft !== undefined) this.settleAnnotationSubmission(annotationDraft, false)
-    this.notify('error', this.deps.annotationLabels.overflow)
+    const text = this.deps.annotationLabels?.overflow ?? 'Request exceeds context capacity'
+    if (attempt !== undefined && !this.dead(attempt)) {
+      this.run(this.core.dispatch({ type: 'submit-settled', attempt, ok: false, message: text }))
+    } else {
+      this.notify('error', text)
+    }
     return true
   }
 
   private publish(): void {
     const next = this.compose()
     this.state.set(next)
-    if (next.draft !== this.lastDraft) {
-      this.lastDraft = next.draft
-      this.mirrorFn?.(next.draft)
+    const mirroredDraft = projectClipboard(next)
+    if (mirroredDraft !== this.lastMirroredDraft) {
+      this.lastMirroredDraft = mirroredDraft
+      this.mirrorFn?.(mirroredDraft)
     }
     if (this.annotations !== this.lastAnnotations || this.annotationSeq !== this.lastAnnotationSeq) {
       this.lastAnnotations = this.annotations

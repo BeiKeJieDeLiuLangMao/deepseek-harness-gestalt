@@ -322,6 +322,26 @@
       "source": "packages/schedule/schedule/src/types.ts"
     },
     {
+      "doc": "docs/subsystems/agent-team.md",
+      "symbol": "TeamMemberSnapshot",
+      "source": "packages/experimental/agent-team/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/agent-team.md",
+      "symbol": "TeamMessageSnapshot",
+      "source": "packages/experimental/agent-team/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/agent-team.md",
+      "symbol": "TeamMessageSource",
+      "source": "packages/experimental/agent-team/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/agent-team.md",
+      "symbol": "TeamTaskSnapshot",
+      "source": "packages/experimental/agent-team/src/types.ts"
+    },
+    {
       "doc": "docs/subsystems/commands.md",
       "symbol": "CommandInputDescriptor",
       "source": "packages/interaction/commands/src/types.ts"
@@ -687,7 +707,17 @@
     },
     {
       "doc": "docs/subsystems/session-reference.md",
+      "symbol": "FileReferenceCandidate",
+      "source": "packages/context/file-reference/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/session-reference.md",
       "symbol": "SessionReferenceCandidate",
+      "source": "packages/context/session-reference/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/session-reference.md",
+      "symbol": "SessionReferenceMentionCandidate",
       "source": "packages/context/session-reference/src/types.ts"
     },
     {
@@ -699,11 +729,6 @@
       "doc": "docs/subsystems/session-reference.md",
       "symbol": "SessionReferenceErrorCode",
       "source": "packages/context/session-reference/src/config.ts"
-    },
-    {
-      "doc": "docs/subsystems/workspace-reference.md",
-      "symbol": "WorkspaceReferenceSource",
-      "source": "packages/context/workspace-reference/src/types.ts"
     },
     {
       "doc": "docs/subsystems/tools.md",
@@ -908,6 +933,11 @@
     {
       "doc": "docs/subsystems/attachment.md",
       "symbol": "ImageAttachmentLimits",
+      "source": "packages/attachment/attachment/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/attachment.md",
+      "symbol": "EncodedImageAttachment",
       "source": "packages/attachment/attachment/src/types.ts"
     },
     {

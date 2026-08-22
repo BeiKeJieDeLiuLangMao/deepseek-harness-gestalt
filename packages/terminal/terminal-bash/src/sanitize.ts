@@ -8,6 +8,38 @@ export const PROMPT_MARKER_PREFIX = '133;D;'
 /** Exact printable prompt emitted after the private marker. */
 export const CONTROLLED_PROMPT = 'dsh> '
 
+/**
+ * Last line that still has a non-whitespace character.
+ * A PSReadLine cursor row can be spaces only; that is not the prompt.
+ * @param text - sanitized viewport or scrollback.
+ * @returns The last non-whitespace line, preserving trailing spaces, or `''`.
+ */
+export function lastNonEmptyLine(text: string): string {
+  const lines = text.replaceAll('\r\n', '\n').replaceAll('\r', '\n').split('\n')
+  for (let i = lines.length - 1; i >= 0; i -= 1) {
+    const line = lines[i]
+    if (line !== undefined && line.trim() !== '') return line
+  }
+  return ''
+}
+
+/** Strip CSI/SGR so a reverse-video `PS …>` last line still matches. */
+function stripSgr(text: string): string {
+  return text.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, '')
+}
+
+/**
+ * Whether sanitized text contains the default interactive pwsh prompt.
+ * Linux PSReadLine leaves reverse-video CSI around the path; that is not a
+ * last-line-only `PS …>` after sanitizer leftovers.
+ * @param text - sanitized viewport or scrollback.
+ * @returns `true` when a `PS>` or `PS <path>>` line is present.
+ */
+export function hasDefaultPwshPrompt(text: string): boolean {
+  const printable = stripSgr(normalizeTerminalText(text))
+  return /(?:^|\n)PS(?:\s+\S.*)?>\s*(?:\n|$)/.test(printable)
+}
+
 /** One sanitized chunk plus whether it contained the owned prompt marker. */
 export interface SanitizedChunk {
   text: string

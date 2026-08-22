@@ -1,3 +1,0 @@
-- listbox "Trigger suggestions":
-  - text: Workspace
-  - option "wsref-marker.ts wsref-marker.ts" [selected]

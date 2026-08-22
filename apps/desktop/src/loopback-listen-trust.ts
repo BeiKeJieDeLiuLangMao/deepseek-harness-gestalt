@@ -50,7 +50,9 @@ function createInsecureHttpsFetch(): LoopbackListenFetch {
     redirects = 0,
   ): Promise<Response> => {
     const request = typeof Request === 'function' && input instanceof Request ? input : undefined
-    const url = request === undefined ? new URL(String(input)) : new URL(request.url)
+    const url = request === undefined
+      ? new URL(input instanceof URL ? input.href : input)
+      : new URL(request.url)
     const method = request === undefined ? (init?.method ?? 'GET') : request.method
     const headers = request === undefined ? headerRecord(init?.headers) : headerRecord(request.headers)
     const body = request === undefined ? bodyBuffer(method, init?.body) : await requestBody(method, request)
@@ -115,7 +117,7 @@ function headerRecord(headers?: HeadersInit): Record<string, string> {
     return record
   }
   if (Array.isArray(headers)) {
-    for (const [key, value] of headers) record[key] = value
+    for (const [key, value] of headers as readonly (readonly [string, string])[]) record[key] = value
     return record
   }
   return { ...headers as Record<string, string> }
@@ -137,12 +139,12 @@ class LoopbackResponse {
     this.body = body
   }
 
-  async json(): Promise<unknown> {
-    return JSON.parse((this.body ?? Buffer.alloc(0)).toString('utf8')) as unknown
+  json(): Promise<unknown> {
+    return Promise.resolve(JSON.parse((this.body ?? Buffer.alloc(0)).toString('utf8')) as unknown)
   }
 
-  async text(): Promise<string> {
-    return (this.body ?? Buffer.alloc(0)).toString('utf8')
+  text(): Promise<string> {
+    return Promise.resolve((this.body ?? Buffer.alloc(0)).toString('utf8'))
   }
 }
 
@@ -151,7 +153,7 @@ async function requestBody(method: string, request: Request): Promise<Buffer | u
   return Buffer.from(await request.arrayBuffer())
 }
 
-function bodyBuffer(method: string, body: BodyInit | null | undefined): Buffer | undefined {
+function bodyBuffer(method: string, body: unknown): Buffer | undefined {
   if (method === 'GET' || method === 'HEAD' || body == null) return undefined
   if (typeof body === 'string') return Buffer.from(body)
   if (body instanceof Uint8Array) return Buffer.from(body)

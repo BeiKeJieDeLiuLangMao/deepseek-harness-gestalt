@@ -30,6 +30,49 @@ export interface ComposerAttachment {
   previewUrl: string
 }
 
+/** Input state handed to the optional attachment presentation plugin. */
+export interface ComposerAttachmentsOwnerProps {
+  /** Browser-owned draft images in input order. */
+  attachments: readonly ComposerAttachment[]
+  /** Whether a document-level file drop may add images now. */
+  canAcceptDrop: boolean
+  /** Add one dropped batch through the composer's validation path. */
+  onAddImages: (files: readonly File[]) => void
+  /** Remove one draft image through the conversation service. */
+  onRemoveImage: (id: DraftAttachmentId) => void
+  /** Display-ready limits for the drop invitation. */
+  dropLimits?: { readonly count: number; readonly size: string } | undefined
+  /** Optional Composer preview pin overlay for one draft image. */
+  pinOverlayFor?: (attachment: ComposerAttachment) => MessageImagePinOverlay | undefined
+}
+
+/** Pin overlay for one historical image in the message gallery. */
+export interface MessageImagePinOverlay {
+  pins: readonly { id: string; x: number; y: number; index: number }[]
+  modeLabel: string
+  exitLabel: string
+  refuse?: string
+  onPlace: (x: number, y: number) => void
+  onSelect: (id: string) => void
+  onCloseEditor?: () => void
+  editor?: ReactNode
+}
+
+/** Historical image group handed to the optional attachment presentation plugin. */
+export interface MessageImagesOwnerProps {
+  /** Consecutive image blocks rendered as one gallery. */
+  images: readonly { readonly attachment: ImageAttachmentRef }[]
+  /** Session-authorized durable image loader. */
+  loadImage: (attachment: ImageAttachmentRef) => Promise<string>
+  /** Message-side alignment. */
+  align: 'start' | 'end'
+  /** Optional history-image pin overlay for one attachment. */
+  pinOverlayFor?: (attachment: ImageAttachmentRef) => MessageImagePinOverlay | undefined
+}
+
+/** Slot-backed renderer used by chat nodes without importing an attachment implementation. */
+export type RenderMessageImages = (owner: Omit<MessageImagesOwnerProps, 'loadImage'>) => ReactNode
+
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
     /**
@@ -83,10 +126,12 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
       hookContext: string
       inject: ChatNodeTurnDataInjected
     }
+    /** Optional renderer for one consecutive group of durable message images. */
+    'conversation.message.images': { kind: 'single'; scope: 'session'; owner: MessageImagesOwnerProps }
     /**
-     * Collapsed Browser Dock preview in the message region. Occupied by
-     * ui-browser's layered tab stack while the Dock is closed; hidden while
-     * the Dock is visible. Ordinary MCP tool rows stay in conversation history.
+     * Collapsed Browser preview in the conversation right gutter. Occupied by
+     * ui-browser's layered tab stack. ChatView hides the rail when that gutter
+     * is narrower than 240px. Ordinary MCP tool rows stay in conversation history.
      */
     'conversation.browser.preview': { kind: 'single'; scope: 'session' }
     /**
@@ -143,6 +188,11 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * reads the global workspace list.
      */
     'conversation.hero.workspace': { kind: 'single'; scope: 'root'; owner: EmptyWorkspaceOwnerProps }
+    /**
+     * Brand mark leading the blank-session headline. Declared by this
+     * package's `conversation` entry; the shell supplies a fish fallback.
+     */
+    'conversation.hero.brand.mark': { kind: 'single'; scope: 'root'; owner: HeroBrandMarkOwnerProps }
     /**
      * The agent-preset chip beside the workspace picker on the new-session
      * screen. Root scope: no session exists yet, so the choice is staged for
@@ -205,6 +255,12 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * command face through its own inject.
      */
     'conversation.composer.bar': { kind: 'single'; scope: 'session-maybe'; owner: ComposerBarOwnerProps }
+    /** Optional draft-image rail, drop target, and preview surface inside the composer. */
+    'conversation.input.attachments': {
+      kind: 'single'
+      scope: 'session-maybe'
+      owner: ComposerAttachmentsOwnerProps
+    }
     /**
      * The named plan-status seat in the composer tool row, immediately right
      * of the access-mode control — one occupant, so taking it means rendering
@@ -372,8 +428,8 @@ export interface ChatNodeOwnerProps {
    * so the matching Dock tab can focus from the listing revision.
    */
   selectCall?: (callId: CallId, toolName?: string) => void
-  /** Resolve a session-authorized historical image for inline display. */
-  loadImage: (attachment: ImageAttachmentRef) => Promise<string>
+  /** Render a historical image group through the attachment slot. */
+  renderMessageImages: RenderMessageImages
   fileMentions: (owner: TurnTailOwnerProps) => MarkdownFileMentions | undefined
 }
 
@@ -559,7 +615,9 @@ export interface InputControlOwnerProps {
 /** Full composer-bar props: standard kit & owner share & control-seat render share & injected share (hooks bound) & locale seat. */
 export type ComposerBarProps =
   PropsRuntime<'conversation.composer.bar'>
-  & PropsRenderSlots<'conversation.input.plan' | 'conversation.input.model'>
+  & PropsRenderSlots<
+    'conversation.input.attachments' | 'conversation.input.plan' | 'conversation.input.model'
+  >
   & InjectFace<ComposerBarInjected>
   & PropsLocale<'conversation'>
 
@@ -576,6 +634,14 @@ export interface ComposerChainProps {
   session: ConversationSnapshot | undefined
 }
 
+/** Presentation props supplied to the blank-session brand-mark occupant. */
+export interface HeroBrandMarkOwnerProps {
+  /** Requested square edge in pixels. */
+  size: number
+  /** Host CSS class for preserving the default hero mark color and hover motion. */
+  className?: string | undefined
+}
+
 /**
  * Full conversation-slot component props: runtime & child-render (view ring
  * + composer chain/bar + input-region + hero picker slots) & store & injected
@@ -588,6 +654,7 @@ export type ConversationSlotProps =
     | 'conversation.input.overlay'
     | 'conversation.input.dock' | 'conversation.composer.dock'
     | 'conversation.input.left' | 'conversation.input.right'
+    | 'conversation.hero.brand.mark'
     | 'conversation.hero.workspace'
     | 'conversation.hero.agentPreset'
   >
@@ -691,14 +758,16 @@ export interface ChatViewInjected {
   /**
    * Selection write + details panel opening in one gesture. A `browser_*`
    * call whose tab is still listed also focuses that Dock tab with the
-   * listing revision and does not change `dockOpen`.
+   * listing revision.
    */
   openDetails: (target: SelectionTarget) => void
   /**
    * Open a tool-arg filesystem path with the host OS default application
-   * (relative paths resolve against the session cwd).
+   * (relative paths resolve against the session cwd). Always returns a
+   * promise: fulfills when the Host opens the path, rejects when it cannot
+   * hand the path off (the chat view shows that reason and a retry).
    */
-  openFile: (path: string) => void
+  openFile: (path: string) => Promise<void>
   loadOlder: () => void
   /** Resolve a session-authorized historical image for inline display. */
   loadImage: (attachment: ImageAttachmentRef) => Promise<string>
@@ -729,8 +798,15 @@ export interface ChatViewInjected {
 /** Full chat-view component props: runtime & its Tool/command/tail render shares & store & injected & locale seat. */
 export type ChatViewSlotProps =
   PropsRuntime<'conversation.view'>
-  & PropsRenderSlots<'conversation.chat.node' | 'conversation.browser.preview'>
+  & PropsRenderSlots<'conversation.chat.node' | 'conversation.browser.preview' | 'conversation.message.images'>
   & PropsStore<ChatStore> & ChatViewInjected & PropsLocale<'conversation'>
+
+/** Full props of the attachment plugin's composer entry. */
+export type ComposerAttachmentsProps =
+  PropsRuntime<'conversation.input.attachments'> & PropsLocale<'conversation'>
+
+/** Full props of the attachment plugin's message-gallery entry. */
+export type MessageImagesProps = PropsRuntime<'conversation.message.images'> & PropsLocale<'conversation'>
 
 /**
  * Injected share of the details slot: the panel is otherwise a pure reader of

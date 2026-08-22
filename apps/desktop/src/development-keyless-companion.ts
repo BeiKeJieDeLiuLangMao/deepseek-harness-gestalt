@@ -196,7 +196,7 @@ export class DevelopmentKeylessCompanionAuthority {
           ...entry,
           settled: {
             decision: operation.decision,
-            ...('persistent' in operation && operation.persistent !== undefined
+            ...('persistent' in operation
               ? { persistent: operation.persistent }
               : {}),
           },

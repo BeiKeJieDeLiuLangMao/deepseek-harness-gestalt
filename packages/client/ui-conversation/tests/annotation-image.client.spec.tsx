@@ -55,7 +55,7 @@ describe('composer image pin annotations', () => {
   it('keeps text and image pins in one order and drops pins when their image is removed', () => {
     const shell = new SessionInputShell({
       actx: {} as ClientContext,
-      defaultSink: () => {},
+      defaultSink: () => Promise.resolve({ kind: 'success' }),
       annotationLabels: LABELS,
     })
     const imageId = 'draft-1' as DraftAttachmentId
@@ -76,7 +76,7 @@ describe('composer image pin annotations', () => {
   it('forwards a history pin source through the public action face', () => {
     const shell = new SessionInputShell({
       actx: {} as ClientContext,
-      defaultSink: () => {},
+      defaultSink: () => Promise.resolve({ kind: 'success' }),
       annotationLabels: LABELS,
     })
     const imageId = 'sha256:history' as DraftAttachmentId

@@ -2,7 +2,7 @@
 // apply inject factories exercised end to end against the terminal thin
 // API: the strict session API (views triple, draft mirror), the
 // provide-channel input face (machine-sink submit choreography incl.
-// optimistic clear + failure restore), the resident API (selectWorkspace
+// transactional clear + failure retention), the resident API (selectWorkspace
 // draft carrying), the composer-bar stop face, openDetails = select action +
 // layout orchestration, and the closeDetails details API. Complements
 // chat-apply.spec.tsx (registration) and selection-survival.spec.tsx (store
@@ -13,7 +13,7 @@
 // this spec's own contract): these cases pin factory choreography the UI
 // guards would mask. Rendering-path acceptance lives in
 // chat-toolview-slot.spec.tsx. openDetails also focuses a listed browser
-// tab without writing dockOpen.
+// tab from its listing revision.
 
 import { describe, expect, it, vi } from 'vitest'
 import { SlotTestRuntime, usePinnedBrowserLanguages, stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
@@ -158,7 +158,7 @@ describe('conversation slot inject API', () => {
     await b.runtime.dispose()
   })
 
-  it('the provide-channel input face submits through the machine sink: trim, optimistic clear, failure restore without clobber', async () => {
+  it('the provide-channel input face submits through the machine sink: trim, transactional clear, failure retains the draft', async () => {
     const b = await bench()
     const { injected } = b.conversationApi(ROOT)
     const { state, actions } = b.inputApi(ROOT)
@@ -167,20 +167,23 @@ describe('conversation slot inject API', () => {
     actions.submit()
     expect(b.sessionFake.prompt).not.toHaveBeenCalled()
     expect(state.getSnapshot().draft).toBe('   ')
-    // Success: cleared and stays cleared.
+    // Success: the draft clears only after the sink settles.
     actions.setDraft('hello')
     actions.submit()
-    expect(state.getSnapshot().draft).toBe('')
-    await Promise.resolve()
-    expect(b.sessionFake.prompt).toHaveBeenCalledWith([{ type: 'text', text: 'hello' }], 'queue')
-    // Failure: restored (draft still empty when the rejection lands).
+    await vi.waitFor(() => {
+      expect(state.getSnapshot().draft).toBe('')
+    })
+    expect(b.sessionFake.prompt).toHaveBeenCalledWith([{ type: 'text', text: 'hello' }], 'queue', expect.any(AbortSignal))
+    // Failure: the draft is retained through the round-trip.
     b.sessionFake.prompt.mockResolvedValueOnce({ ok: false, error: { code: 'agent-busy', message: 'b', details: { reason: 'b' } } })
     actions.setDraft('retry me')
     actions.submit()
     await vi.waitFor(() => {
-      expect(state.getSnapshot().draft).toBe('retry me')
+      expect(b.sessionFake.prompt).toHaveBeenCalledTimes(2)
     })
-    // Failure landing after new typing: no clobber (restore fills empty only).
+    await new Promise(r => setTimeout(r, 0))
+    expect(state.getSnapshot().draft).toBe('retry me')
+    // Failure landing after new typing: no clobber (the interleaved edit wins).
     b.sessionFake.prompt.mockResolvedValueOnce({ ok: false, error: { code: 'agent-busy', message: 'b', details: { reason: 'b' } } })
     actions.submit()
     actions.setDraft('typed during flight')
@@ -246,7 +249,6 @@ describe('conversation slot inject API', () => {
       tabId: 'tab-1',
     }
     const focus = vi.fn(() => Promise.resolve({ ok: true, value: {} }))
-    const setDock = vi.fn(() => Promise.resolve({ ok: true, value: {} }))
     const node: ToolResultNode = {
       kind: 'tool-result',
       seq: 5,
@@ -277,7 +279,7 @@ describe('conversation slot inject API', () => {
       data: { root: node },
     }
     const b = await bench({
-      remotes: { browserWorkspace: { focus, setDock } },
+      remotes: { browserWorkspace: { focus } },
       snapshot: {
         chat: {
           order: [view.key],
@@ -299,9 +301,6 @@ describe('conversation slot inject API', () => {
     })
     const session = b.runtime.sessions.binding(ROOT)?.session
     session?.projections.set('browserWorkspace', {
-      dockOpen: false,
-      dockWidth: 720,
-      userCollapsed: true,
       activeWorkspaceId: target.workspaceId,
       workspaces: [{
         workspaceId: target.workspaceId,
@@ -310,7 +309,7 @@ describe('conversation slot inject API', () => {
         browsers: [{
           browserId: target.browserId,
           activeTabId: target.tabId,
-          tabs: [{ tabId: target.tabId, controlOwner: 'agent', revision: 7 }],
+          tabs: [{ tabId: target.tabId, revision: 7 }],
         }],
       }],
     })
@@ -321,13 +320,9 @@ describe('conversation slot inject API', () => {
     })
     expect(b.layoutFake.openDetails).toHaveBeenCalledTimes(1)
     expect(focus).toHaveBeenCalledWith(ROOT, target, 7)
-    expect(setDock).not.toHaveBeenCalled()
 
     focus.mockClear()
     session?.projections.set('browserWorkspace', {
-      dockOpen: true,
-      dockWidth: 720,
-      userCollapsed: false,
       activeWorkspaceId: target.workspaceId,
       workspaces: [{
         workspaceId: target.workspaceId,
@@ -336,14 +331,13 @@ describe('conversation slot inject API', () => {
         browsers: [{
           browserId: target.browserId,
           activeTabId: 'other',
-          tabs: [{ tabId: 'other', controlOwner: 'agent', revision: 1 }],
+          tabs: [{ tabId: 'other', revision: 1 }],
         }],
       }],
     })
     injected.openDetails({ turnSeq: 4, callId: 'nav-1', toolName: 'browser_navigate' })
     expect(b.layoutFake.openDetails).toHaveBeenCalledTimes(2)
     expect(focus).not.toHaveBeenCalled()
-    expect(setDock).not.toHaveBeenCalled()
     await b.runtime.dispose()
   })
 
@@ -362,10 +356,18 @@ describe('conversation slot inject API', () => {
   it('openFile (chat view face) resolves against session cwd and calls workspaces.openPath', async () => {
     const b = await bench()
     const { injected } = b.chatViewApi(ROOT)
-    injected.openFile('src/a.ts')
+    await injected.openFile('src/a.ts')
     await vi.waitFor(() => {
       expect(b.runtime.workspaces.calls).toContainEqual({ method: 'openPath', args: ['/proj/src/a.ts'] })
     })
+    await b.runtime.dispose()
+  })
+
+  it('openFile rejects when the Host cannot open the path', async () => {
+    const b = await bench()
+    b.runtime.workspaces.stub('openPath', () => Promise.reject(new Error('xdg-open is not available')))
+    const { injected } = b.chatViewApi(ROOT)
+    await expect(injected.openFile('src/a.ts')).rejects.toThrow('xdg-open is not available')
     await b.runtime.dispose()
   })
 
