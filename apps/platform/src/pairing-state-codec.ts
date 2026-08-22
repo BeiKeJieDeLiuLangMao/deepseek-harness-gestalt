@@ -157,6 +157,13 @@ function decodeEndpointMailbox(value: unknown): EndpointOwnedPairingMailboxState
     }),
     pending: asArray(mailbox.pending, 'endpoint mailbox pending').map((value, index) => {
       const record = asRecord(value, `endpoint mailbox pending ${String(index)}`)
+      rejectUnsupportedKeys(
+        record,
+        ['pendingPairingId', 'completionId', 'challengeId', 'accountId', 'desktopInstallationId',
+          'mobileInstallationId', 'device', 'expiresAt', 'message1', 'message2', 'message3',
+          'confirmed', 'rejected', 'pairingId', 'sealedRelayAuthority', 'settledAt'],
+        `endpoint mailbox pending ${String(index)}`,
+      )
       if (typeof record.confirmed !== 'boolean') throw new TypeError('endpoint mailbox confirmed must be boolean')
       if (typeof record.rejected !== 'boolean') throw new TypeError('endpoint mailbox rejected must be boolean')
       return {
@@ -167,6 +174,7 @@ function decodeEndpointMailbox(value: unknown): EndpointOwnedPairingMailboxState
         desktopInstallationId: parseInstallationId(record.desktopInstallationId),
         mobileInstallationId: parseInstallationId(record.mobileInstallationId),
         device: decodeDevice(record.device),
+        expiresAt: asSafeInteger(record.expiresAt, 'endpoint mailbox pending expiresAt'),
         message1: decodeBytes(record.message1, 'endpoint mailbox message1'),
         ...(record.message2 === undefined ? {} : { message2: decodeBytes(record.message2, 'endpoint mailbox message2') }),
         ...(record.message3 === undefined ? {} : { message3: decodeBytes(record.message3, 'endpoint mailbox message3') }),
@@ -176,6 +184,9 @@ function decodeEndpointMailbox(value: unknown): EndpointOwnedPairingMailboxState
         ...(record.sealedRelayAuthority === undefined
           ? {}
           : { sealedRelayAuthority: decodeBytes(record.sealedRelayAuthority, 'endpoint mailbox sealed authority') }),
+        ...(record.settledAt === undefined
+          ? {}
+          : { settledAt: asSafeInteger(record.settledAt, 'endpoint mailbox pending settledAt') }),
       }
     }),
   }

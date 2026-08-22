@@ -86,6 +86,7 @@ describe('pairing transaction codec', () => {
         desktopInstallationId: parseInstallationId('desktop-one'),
         mobileInstallationId: parseInstallationId('mobile-one'),
         device: { name: 'Alice phone', platform: 'ios' },
+        expiresAt: 1_787_027_200_000,
         message1: Uint8Array.of(11),
         message2: Uint8Array.of(22),
         message3: Uint8Array.of(33),

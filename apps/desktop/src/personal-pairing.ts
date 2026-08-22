@@ -394,7 +394,17 @@ export class DesktopPairingController implements DesktopPairingActions {
         let finished: Extract<typeof endpointPending[number], { stage: 'message3' }> | undefined
         for (const record of endpointPending) {
           if (record.stage === 'confirmed') continue
-          const owner = this.options.snowPairingVault.bindPending(record.challengeId, record.pendingPairingId)
+          let owner
+          try {
+            owner = this.options.snowPairingVault.bindPending(record.challengeId, record.pendingPairingId)
+          } catch (error) {
+            if (!(error instanceof Error) || !error.message.includes('no local invitation owner')) throw error
+            await this.options.transport.rejectEndpointPairing({
+              authentication: await this.options.account.authorizeCurrentInstallation(),
+              pendingPairingId: record.pendingPairingId,
+            })
+            continue
+          }
           if (record.stage === 'message1') {
             const message2 = await owner.acceptMessage1(record.message1)
             await this.options.transport.submitEndpointMessage2({

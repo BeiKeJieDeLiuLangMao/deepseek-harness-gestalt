@@ -29,6 +29,7 @@ export interface EndpointPairingMailboxPending {
   desktopInstallationId: InstallationId
   mobileInstallationId: InstallationId
   device: PairingDeviceDescription
+  expiresAt: number
   message1: Uint8Array
   message2?: Uint8Array
   message3?: Uint8Array
@@ -36,6 +37,7 @@ export interface EndpointPairingMailboxPending {
   rejected: boolean
   pairingId?: import('./index.ts').PersonalPairingId
   sealedRelayAuthority?: Uint8Array
+  settledAt?: number
 }
 
 /** Serializable Platform state contains only opaque messages and lifecycle metadata. */
@@ -134,6 +136,7 @@ export class EndpointOwnedPairingMailbox {
       desktopInstallationId: challenge.desktopInstallationId,
       mobileInstallationId: input.mobileInstallationId,
       device: { ...input.device },
+      expiresAt: challenge.expiresAt,
       message1: input.message1.slice(),
       confirmed: false,
       rejected: false,
@@ -256,6 +259,7 @@ export class EndpointOwnedPairingMailbox {
     accountId: PlatformAccountId
     desktopInstallationId: InstallationId
     pairingId: import('./index.ts').PersonalPairingId
+    now?: number
   }): void {
     const record = this.requirePending(input.pendingPairingId)
     assertDesktop(record, input.accountId, input.desktopInstallationId)
@@ -264,6 +268,7 @@ export class EndpointOwnedPairingMailbox {
     if (record.confirmed && record.pairingId !== input.pairingId) throw mailboxError('Pairing confirmation replay is stale')
     record.confirmed = true
     record.pairingId = input.pairingId
+    if (record.settledAt === undefined && input.now !== undefined) record.settledAt = input.now
   }
 
   /** Remove one unused endpoint invitation owned by Desktop.
@@ -287,11 +292,55 @@ export class EndpointOwnedPairingMailbox {
     pendingPairingId: PendingPairingId
     accountId: PlatformAccountId
     desktopInstallationId: InstallationId
+    now?: number
   }): void {
     const record = this.requirePending(input.pendingPairingId)
     assertDesktop(record, input.accountId, input.desktopInstallationId)
     if (record.confirmed) throw mailboxError('Pairing is already confirmed')
     record.rejected = true
+    if (record.settledAt === undefined && input.now !== undefined) record.settledAt = input.now
+  }
+
+  /** Expire invitations, retain terminal outcomes briefly, and bound durable state growth. */
+  evict(now: number, replayRetentionMs: number): void {
+    const cutoff = now - replayRetentionMs
+    for (const [challengeId, challenge] of this.challenges) {
+      if (challenge.expiresAt <= now) this.challenges.delete(challengeId)
+    }
+    for (const [pendingPairingId, record] of this.pending) {
+      if (!record.confirmed && !record.rejected && record.expiresAt <= now) {
+        record.rejected = true
+        record.settledAt = now
+        record.message1.fill(0)
+        record.message2?.fill(0)
+        record.message3?.fill(0)
+      }
+      if (record.settledAt !== undefined && record.settledAt <= cutoff) {
+        this.pending.delete(pendingPairingId)
+        this.completions.delete(record.completionId)
+        record.message1.fill(0)
+        record.message2?.fill(0)
+        record.message3?.fill(0)
+        record.sealedRelayAuthority?.fill(0)
+      }
+    }
+  }
+
+  /** Reject every retained record owned by a disabled Desktop installation. */
+  disable(accountId: PlatformAccountId, desktopInstallationId: InstallationId, now: number): void {
+    for (const [challengeId, challenge] of this.challenges) {
+      if (challenge.accountId === accountId && challenge.desktopInstallationId === desktopInstallationId) {
+        this.challenges.delete(challengeId)
+      }
+    }
+    for (const record of this.pending.values()) {
+      if (record.accountId === accountId && record.desktopInstallationId === desktopInstallationId) {
+        record.rejected = true
+        record.settledAt ??= now
+        record.sealedRelayAuthority?.fill(0)
+        delete record.sealedRelayAuthority
+      }
+    }
   }
 
   /** Store Desktop-sealed Relay authority without inspecting it.

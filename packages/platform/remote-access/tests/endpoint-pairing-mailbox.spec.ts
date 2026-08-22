@@ -152,6 +152,30 @@ describe('EndpointOwnedPairingMailbox', () => {
       pendingPairingId: PENDING, accountId: ACCOUNT, desktopInstallationId: DESKTOP, pairingId: PAIRING,
     }) }).toThrow('message 3')
   })
+
+  it('expires stale work across restart and sheds retained terminal records', () => {
+    const mailbox = completedMessage1()
+    const restarted = new EndpointOwnedPairingMailbox({
+      pendingPairingId: () => parsePendingPairingId('unused'),
+      state: mailbox.exportState(),
+    })
+    restarted.evict(2_001, 500)
+    expect(restarted.readMobile(COMPLETION, ACCOUNT, MOBILE)).toEqual({
+      stage: 'rejected', pendingPairingId: PENDING,
+    })
+    restarted.evict(2_502, 500)
+    expect(() => restarted.readMobile(COMPLETION, ACCOUNT, MOBILE)).toThrow('invalid')
+    expect(restarted.exportState()).toEqual({ challenges: [], pending: [] })
+  })
+
+  it('settles retained work when Desktop access is disabled', () => {
+    const mailbox = completedMessage1()
+    mailbox.disable(ACCOUNT, DESKTOP, 1_500)
+    expect(mailbox.readMobile(COMPLETION, ACCOUNT, MOBILE)).toEqual({
+      stage: 'rejected', pendingPairingId: PENDING,
+    })
+    expect(mailbox.exportState().challenges).toEqual([])
+  })
 })
 
 function fixture(): EndpointOwnedPairingMailbox {

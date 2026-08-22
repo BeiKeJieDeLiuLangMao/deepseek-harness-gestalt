@@ -74,6 +74,27 @@ describe('UnavailableDesktopPairingController', () => {
 })
 
 describe('DesktopPairingController', () => {
+  it('settles Platform-retained endpoint work after Desktop invitation state was wiped', async () => {
+    const transport = transportFixture()
+    transport.listEndpointPending.mockResolvedValue([{
+      pendingPairingId: parsePendingPairingId('pending-stale'),
+      challengeId: parsePairingChallengeId('challenge-stale'),
+      stage: 'message1', message1: Uint8Array.of(1),
+      device: { name: 'Stale phone', platform: 'ios' },
+    }])
+    const controller = new DesktopPairingController({
+      account: accountFixture(), transport,
+      relay: { configure: vi.fn(), start: vi.fn(), stop: vi.fn() },
+      snowPairingVault: new DesktopSnowPairingVault(),
+    })
+    await controller.start()
+    await controller.setEnabled(true)
+    expect(transport.rejectEndpointPairing).toHaveBeenCalledWith(expect.objectContaining({
+      pendingPairingId: 'pending-stale',
+    }))
+    expect(transport.submitEndpointMessage2).not.toHaveBeenCalled()
+  })
+
   it('owns XKpsk3 invitation state, confirms a digest-only credential, and seals the Mobile grant', async () => {
     initializeSnowChannel(readFileSync(new URL(
       '../../../packages/platform/noise-channel/pkg/dsh_noise_channel_bg.wasm', import.meta.url,

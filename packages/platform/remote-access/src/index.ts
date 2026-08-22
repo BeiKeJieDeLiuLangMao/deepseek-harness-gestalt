@@ -902,6 +902,8 @@ export class PersonalPairingProvider extends RemoteAccessService {
   }): Promise<EndpointPairingChallengeView> {
     return this.exclusive(async () => {
       const { account, installation } = await this.authenticate(input.desktop, 'desktop')
+      this.evictExpiredRecords()
+      this.assertCapacity()
       const now = this.clock.now()
       if (!Number.isSafeInteger(input.expiresAt) || input.expiresAt <= now
         || input.expiresAt > now + PAIRING_CHALLENGE_TTL_MS) {
@@ -914,6 +916,13 @@ export class PersonalPairingProvider extends RemoteAccessService {
       }
       const challengeId = parsePairingChallengeId(this.randomId('challenge'))
       const mailbox = this.endpointMailbox()
+      const mailboxState = mailbox.exportState()
+      if (mailboxState.challenges.filter(record => record.accountId === account.id
+        && record.desktopInstallationId === installation.id).length
+        >= MAX_ACTIVE_PAIRING_CHALLENGES_PER_INSTALLATION) {
+        throw new RemoteAccessError('PAIRING_RESOURCE_LIMIT', 'This Desktop Installation has reached its active endpoint invitation limit')
+      }
+      this.assertEndpointRetainedCapacity(mailboxState, account.id, installation.id, 'desktop', 1)
       mailbox.createChallenge({
         challengeId,
         accountId: account.id,
@@ -944,8 +953,26 @@ export class PersonalPairingProvider extends RemoteAccessService {
   }): Promise<{ pendingPairingId: PendingPairingId }> {
     return this.exclusive(async () => {
       const { account, installation } = await this.authenticate(input.mobile, 'mobile')
+      this.evictExpiredRecords()
+      this.assertCapacity()
       parseDevice(input.device)
       const mailbox = this.endpointMailbox()
+      const mailboxState = mailbox.exportState()
+      const challenge = mailboxState.challenges.find(record => record.challengeId === input.challengeId)
+      if (challenge !== undefined) {
+        if (mailboxState.pending.filter(record => !record.confirmed && !record.rejected
+          && record.accountId === account.id && record.mobileInstallationId === installation.id).length
+          >= MAX_PENDING_PAIRINGS_PER_INSTALLATION) {
+          throw new RemoteAccessError('PAIRING_RESOURCE_LIMIT', 'This Mobile Installation has reached its pending endpoint pairing limit')
+        }
+        if (mailboxState.pending.filter(record => !record.confirmed && !record.rejected
+          && record.accountId === account.id && record.desktopInstallationId === challenge.desktopInstallationId).length
+          >= MAX_PENDING_PAIRINGS_PER_INSTALLATION) {
+          throw new RemoteAccessError('PAIRING_RESOURCE_LIMIT', 'This Desktop Installation has reached its pending endpoint pairing limit')
+        }
+        this.assertEndpointRetainedCapacity(mailboxState, account.id, installation.id, 'mobile', 1)
+        this.assertEndpointRetainedCapacity(mailboxState, account.id, challenge.desktopInstallationId, 'desktop', 1)
+      }
       const result = mailbox.submitMessage1({
         challengeId: input.challengeId,
         completionId: input.completionId,
@@ -1107,6 +1134,7 @@ export class PersonalPairingProvider extends RemoteAccessService {
           accountId: account.id,
           desktopInstallationId: installation.id,
           pairingId,
+          now,
         })
         this.pairings.set(pairingId, pairing)
         this.principalIds.add(principalId)
@@ -1219,6 +1247,9 @@ export class PersonalPairingProvider extends RemoteAccessService {
           this.settleChallenge(challenge, 'disabled')
         }
       }
+      const endpointMailbox = this.endpointMailbox()
+      endpointMailbox.disable(account.id, installation.id, this.clock.now())
+      this.commitEndpointMailbox(endpointMailbox)
       for (const [id, record] of [...this.pending]) {
         if (record.accountId === account.id && record.desktopInstallationId === installation.id) {
           this.settlePending(id, record, 'disabled')
@@ -2007,6 +2038,9 @@ export class PersonalPairingProvider extends RemoteAccessService {
   }
 
   private evictExpiredRecords(): void {
+    const endpointMailbox = this.endpointMailbox()
+    endpointMailbox.evict(this.clock.now(), PAIRING_REPLAY_RETENTION_MS)
+    this.commitEndpointMailbox(endpointMailbox)
     const cutoff = this.clock.now() - PAIRING_REPLAY_RETENTION_MS
     for (const [id, record] of this.settledChallenges) {
       if (record.settledAt <= cutoff && record.cleanup.resource === undefined) this.settledChallenges.delete(id)
@@ -2017,6 +2051,26 @@ export class PersonalPairingProvider extends RemoteAccessService {
     for (const [id, record] of this.settledPending) {
       if (record.settledAt <= cutoff && record.cleanup.resource === undefined
         && record.activeCleanup?.resource === undefined) this.settledPending.delete(id)
+    }
+  }
+
+  private assertEndpointRetainedCapacity(
+    state: EndpointOwnedPairingMailboxState,
+    accountId: string,
+    installationId: InstallationId,
+    kind: 'desktop' | 'mobile',
+    additionalRecords: number,
+  ): void {
+    const pending = state.pending.filter(record => record.accountId === accountId
+      && (kind === 'desktop'
+        ? record.desktopInstallationId === installationId
+        : record.mobileInstallationId === installationId)).length
+    const challenges = kind === 'desktop'
+      ? state.challenges.filter(record => record.accountId === accountId
+        && record.desktopInstallationId === installationId).length
+      : 0
+    if (pending + challenges + additionalRecords > MAX_RETAINED_PAIRING_RECORDS_PER_INSTALLATION) {
+      throw new RemoteAccessError('PAIRING_RESOURCE_LIMIT', `This ${kind} Installation has reached its retained endpoint pairing record limit`)
     }
   }
 
