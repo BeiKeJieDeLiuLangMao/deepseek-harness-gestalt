@@ -131,7 +131,14 @@ async function login(
   installationId = parseInstallationId('installation-1'),
   installationKind: 'desktop' | 'mobile' = 'desktop',
 ): Promise<{ key: ReturnType<typeof installationKey>; session: Extract<Awaited<ReturnType<PlatformAccount['pollLogin']>>, { status: 'complete' }> }> {
-  const attempt = await account.beginLogin({ installationId, installationKind, publicKey: key.publicKey })
+  const attempt = await account.beginLogin(installationKind === 'mobile'
+    ? {
+      installationId,
+      installationKind,
+      presentation: { name: `${installationId} presentation`, platform: 'ios' },
+      publicKey: key.publicKey,
+    }
+    : { installationId, installationKind, publicKey: key.publicKey })
   await account.completeGitHubCallback({ code: 'code', state: attempt.state })
   const result = await account.pollLogin({
     attemptId: attempt.id,
@@ -248,6 +255,7 @@ describe('PlatformAccount', () => {
     const attempt = await first.beginLogin({
       installationId: parseInstallationId('mobile-installation-1'),
       installationKind: 'mobile',
+      presentation: { name: 'Authenticated mobile installation', platform: 'ios' },
       publicKey: key.publicKey,
     })
     await first.completeGitHubCallback({ code: 'code', state: attempt.state })
@@ -273,7 +281,11 @@ describe('PlatformAccount', () => {
       proof: key.proof('current', hashAccountToken(refreshed.accessToken)),
     })).resolves.toEqual({
       account: refreshed.account,
-      installation: { id: 'mobile-installation-1', kind: 'mobile' },
+      installation: {
+        id: 'mobile-installation-1',
+        kind: 'mobile',
+        presentation: { name: 'Authenticated mobile installation', platform: 'ios' },
+      },
     })
   })
 
@@ -429,7 +441,10 @@ describe('PlatformAccount', () => {
     const pollingAccount = accountHarness({ clock: { now: () => pollingNow } }).first
     const pollingKey = installationKey()
     const pollingAttempt = await pollingAccount.beginLogin({
-      installationId: parseInstallationId('poll-boundary'), installationKind: 'mobile', publicKey: pollingKey.publicKey,
+      installationId: parseInstallationId('poll-boundary'),
+      installationKind: 'mobile',
+      presentation: { name: 'Poll boundary installation', platform: 'android' },
+      publicKey: pollingKey.publicKey,
     })
     await pollingAccount.completeGitHubCallback({ code: 'code', state: pollingAttempt.state })
     pollingNow = pollingAttempt.expiresAt

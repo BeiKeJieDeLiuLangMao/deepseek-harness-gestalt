@@ -2,7 +2,7 @@
 
 English | [中文](personal-pairing.zh.md)
 
-[`@deepseek-ai/dsh-remote-access`](../../packages/platform/remote-access/README.md) owns Mobile Access enablement, Pairing Challenge consumption, pending handshake confirmation, Personal Pairing identity, and Companion-only Device Principal authority. It calls `ctx.platformAccount.currentInstallation()` to authenticate each Account Session's installation id and kind, then compares opaque Platform Account ids; it never reads Account storage or GitHub fields and never trusts a caller-supplied installation identity.
+[`@deepseek-ai/dsh-remote-access`](../../packages/platform/remote-access/README.md) owns Mobile Access enablement, Pairing Challenge consumption, pending handshake confirmation, Personal Pairing identity, and Companion-only Device Principal authority. It calls `ctx.platformAccount.currentInstallation()` to authenticate each Account Session's Installation id, kind, and Mobile presentation, then compares opaque Platform Account ids. Pairing completion accepts no device fields: pending and confirmed records use only the authenticated Mobile Installation presentation.
 
 ## Challenge and confirmation lifecycle
 
@@ -69,10 +69,10 @@ abstract reissueDesktopRelayAuthority(desktop: PairingAccountAuthentication): Pr
 
 /**
  * Complete the same-account cryptographic exchange without granting authority.
- * @param input - Mobile authorization, invitation, device metadata, and handshake bytes.
+ * @param input - Mobile authorization, invitation, and handshake bytes.
  * @returns pending result shown on both installations before Desktop confirmation.
  */
-abstract completeChallenge(input: { mobile: PairingAccountAuthentication completionId: PairingCompletionId oneTimeLink: string device: PairingDeviceDescription mobileHandshake: Uint8Array }): Promise<PairingCompletionView>
+abstract completeChallenge(input: { mobile: PairingAccountAuthentication completionId: PairingCompletionId oneTimeLink: string mobileHandshake: Uint8Array }): Promise<PairingCompletionView>
 
 /**
  * Read the decision for one pairing completed by the current Mobile Installation.
@@ -168,7 +168,7 @@ abstract emitPushHint(owner: PairingAccountAuthentication): Promise<void>
 
 Types: [CompanionPushHint](remote-protocol.md) · [CompanionPushToken](remote-protocol.md)
 
-Source: [`packages/platform/remote-access/src/index.ts:449`](../../packages/platform/remote-access/src/index.ts)
+Source: [`packages/platform/remote-access/src/index.ts:445`](../../packages/platform/remote-access/src/index.ts)
 
 <a id="ctxremoteattachmentauthority--remoteattachmentauthority"></a>
 

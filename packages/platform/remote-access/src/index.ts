@@ -10,6 +10,7 @@ import type {
   AccountService,
   AuthenticatedInstallationView,
   InstallationId,
+  MobileInstallationPresentation,
   PlatformCapacityState,
 } from '@deepseek-ai/dsh-platform-account'
 import {
@@ -242,12 +243,7 @@ export class RemoteAccessError extends Error {
 }
 
 /** Device metadata presented for explicit Desktop confirmation. */
-export interface PairingDeviceDescription {
-  /** User-recognizable installation name. */
-  name: string
-  /** Mobile operating-system family. */
-  platform: 'ios' | 'android'
-}
+export type PairingDeviceDescription = MobileInstallationPresentation
 
 /** Pending completion displayed identically on Mobile and Desktop. */
 export interface PairingCompletionView {
@@ -491,14 +487,13 @@ export abstract class RemoteAccessService extends Service {
 
   /**
    * Complete the same-account cryptographic exchange without granting authority.
-   * @param input - Mobile authorization, invitation, device metadata, and handshake bytes.
+   * @param input - Mobile authorization, invitation, and handshake bytes.
    * @returns pending result shown on both installations before Desktop confirmation.
    */
   abstract completeChallenge(input: {
     mobile: PairingAccountAuthentication
     completionId: PairingCompletionId
     oneTimeLink: string
-    device: PairingDeviceDescription
     mobileHandshake: Uint8Array
   }): Promise<PairingCompletionView>
 
@@ -898,7 +893,6 @@ export class PersonalPairingProvider extends RemoteAccessService {
     mobile: PairingAccountAuthentication
     completionId: PairingCompletionId
     oneTimeLink: string
-    device: PairingDeviceDescription
     mobileHandshake: Uint8Array
   }): Promise<PairingCompletionView> {
     return this.exclusive(async () => {
@@ -962,7 +956,9 @@ export class PersonalPairingProvider extends RemoteAccessService {
           pendingPairingId,
           authenticationWords: deriveAuthenticationWords(completed.handshakeHash),
           desktopHandshake: completed.desktopHandshake.slice(),
-          device: parseDevice(input.device),
+          device: installation.kind === 'mobile'
+            ? { ...installation.presentation }
+            : unreachableMobileInstallation(),
         }
       } catch (error) {
         this.orphanPendingCleanups.set(pendingCleanup, {
@@ -1900,7 +1896,12 @@ export function parsePersonalPairingKeyReference(value: unknown): PersonalPairin
  */
 export function parsePairingInvitationLink(value: unknown): PairingInvitation {
   const raw = nonEmpty(value, 'Pairing invitation link')
-  const url = new URL(raw)
+  let url: URL
+  try {
+    url = new URL(raw)
+  } catch (error) {
+    throw new TypeError('Pairing invitation link must be a complete URL', { cause: error })
+  }
   if (url.protocol !== 'https:') throw new TypeError('Pairing invitation link must use HTTPS')
   const exact = (name: string): string => {
     const values = url.searchParams.getAll(name)
@@ -1973,16 +1974,11 @@ function sameInvitation(left: PairingInvitation, right: PairingInvitation): bool
     && encodeBase64Url(left.invitationSecret) === encodeBase64Url(right.invitationSecret)
 }
 
-function parseDevice(value: unknown): PairingDeviceDescription {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    throw new TypeError('Pairing device must be an object')
-  }
-  const device = value as Record<string, unknown>
-  const name = nonEmpty(device.name, 'Pairing device name')
-  if (device.platform !== 'ios' && device.platform !== 'android') {
-    throw new TypeError('Pairing device platform must be ios or android')
-  }
-  return { name, platform: device.platform }
+function unreachableMobileInstallation(): never {
+  throw new RemoteAccessError(
+    'PAIRING_INSTALLATION_KIND_INVALID',
+    'Personal Pairing operation requires an authenticated mobile Installation',
+  )
 }
 
 function cloneCompletion(view: PairingCompletionView): PairingCompletionView {

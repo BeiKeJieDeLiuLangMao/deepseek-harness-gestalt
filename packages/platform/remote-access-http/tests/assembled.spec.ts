@@ -55,7 +55,7 @@ describe('Remote Access HTTP assembled flow', () => {
             githubLogin: accountId,
             avatarUrl: 'https://avatars.example/account',
           },
-          installation: { id: parseInstallationId(id), kind },
+          installation: installation(id, kind),
         }
       }),
     }
@@ -98,7 +98,6 @@ describe('Remote Access HTTP assembled flow', () => {
       authentication: mobile,
       completionId: parsePairingCompletionId('completion-one'),
       oneTimeLink: challenge.oneTimeLink,
-      device: { name: 'Alice phone', platform: 'ios' },
       mobileHandshake: Uint8Array.of(9),
     })
     expect(await transport.getMobilePairingStatus({
@@ -112,7 +111,7 @@ describe('Remote Access HTTP assembled flow', () => {
       pendingPairingId: pending.pendingPairingId,
     })).toMatchObject({ status: 'paired' })
     expect(await transport.listPersonalPairings(desktop)).toMatchObject([{
-      device: { name: 'Alice phone' },
+      device: { name: 'mobile-one installation', platform: 'ios' },
       devicePrincipal: { installationId: 'mobile-one', authority: 'companion-surface' },
     }])
   })
@@ -144,7 +143,7 @@ describe('Remote Access HTTP assembled flow', () => {
             githubLogin: accountId,
             avatarUrl: 'https://avatars.example/account',
           },
-          installation: { id: parseInstallationId(id), kind },
+          installation: installation(id, kind),
         }
       }),
     }
@@ -215,7 +214,6 @@ describe('Remote Access HTTP assembled flow', () => {
       transport,
       handshake: mobileHandshake,
       scanner: { scan: vi.fn() },
-      device: { name: 'Alice phone', platform: 'ios' },
       schedule: () => ({ unref: vi.fn() }) as never,
     })
 
@@ -335,15 +333,11 @@ describe('Remote Access HTTP assembled flow', () => {
       operation: 'complete-challenge',
       completionId: 'completion-one',
       oneTimeLink: 'https://platform.example/pair#invitation',
-      device: { name: 'phone', platform: 'ios' },
       mobileHandshake: 'AQ',
       ...extra,
     })
     expect((await complete({ completionId: '' })).status).toBe(500)
     expect((await complete({ oneTimeLink: '' })).status).toBe(400)
-    expect((await complete({ device: null })).status).toBe(400)
-    expect((await complete({ device: { name: 'phone', platform: 'windows' } })).status).toBe(400)
-    expect((await complete({ device: { name: '', platform: 'ios' } })).status).toBe(400)
     expect((await complete({ mobileHandshake: '' })).status).toBe(400)
     expect((await complete({ mobileHandshake: '*' })).status).toBe(400)
     expect((await complete({ mobileHandshake: 'A' })).status).toBe(400)
@@ -437,6 +431,16 @@ function authentication(accessToken: string): PairingAccountAuthentication {
     accessToken,
     proof: { jti: parseAccountProofJti(crypto.randomUUID()), issuedAt: 1, signature: 'signature' },
   }
+}
+
+function installation(id: string, kind: 'desktop' | 'mobile') {
+  return kind === 'mobile'
+    ? {
+      id: parseInstallationId(id),
+      kind,
+      presentation: { name: `${id} installation`, platform: 'ios' as const },
+    }
+    : { id: parseInstallationId(id), kind }
 }
 
 function proofHeaders(authentication: PairingAccountAuthentication): Record<string, string> {

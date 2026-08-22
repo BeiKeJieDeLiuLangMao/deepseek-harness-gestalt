@@ -100,7 +100,13 @@ export async function apply(_ctx: Context, config: Config): Promise<void> {
               id: parsePlatformAccountId('account-keyless'), githubId: 1, githubLogin: 'keyless',
               avatarUrl: 'https://avatars.example/keyless',
             },
-            installation: { id: parseInstallationId(id), kind },
+            installation: kind === 'mobile'
+              ? {
+                id: parseInstallationId(id),
+                kind,
+                presentation: { name: `${id} installation`, platform: 'ios' },
+              }
+              : { id: parseInstallationId(id), kind },
           }
         },
       },
@@ -140,7 +146,6 @@ export async function apply(_ctx: Context, config: Config): Promise<void> {
       mobile: mobileAuthentication,
       completionId: 'completion-keyless' as never,
       oneTimeLink: challenge.oneTimeLink,
-      device: { name: 'Keyless phone', platform: 'ios' },
       mobileHandshake: Uint8Array.of(5),
     })
     await pairingA.confirmPairing({ desktop: desktopAuthentication, pendingPairingId: pending.pendingPairingId })

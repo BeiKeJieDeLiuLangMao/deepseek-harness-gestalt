@@ -127,7 +127,6 @@ describe('PersonalPairingProvider', () => {
       mobile,
       completionId: parsePairingCompletionId('shared-authority'),
       oneTimeLink: challenge.oneTimeLink,
-      device: { name: 'Alice phone', platform: 'ios' },
       mobileHandshake: Uint8Array.of(9),
     })
     const pairing = await platformA.confirmPairing({ desktop, pendingPairingId: pending.pendingPairingId })
@@ -196,7 +195,6 @@ describe('PersonalPairingProvider', () => {
       mobile: authentication('mobile-installation', 'account-one'),
       completionId: parsePairingCompletionId('revoke-one'),
       oneTimeLink: challenge.oneTimeLink,
-      device: { name: 'Alice phone', platform: 'ios' },
       mobileHandshake: Uint8Array.of(9),
     })
     const pairing = await provider.confirmPairing({ desktop, pendingPairingId: pending.pendingPairingId })
@@ -216,6 +214,66 @@ describe('PersonalPairingProvider', () => {
       desktop, pairingId: parsePersonalPairingId('pairing-missing'),
     })).rejects.toMatchObject({ code: 'PAIRING_PENDING_INVALID' })
     await provider.dispose()
+  })
+
+  it('projects two paired phones from their authenticated Mobile Installations', async () => {
+    const handshake = handshakeProvider()
+    let keySequence = 0
+    handshake.activatePairing.mockImplementation(async () => ({
+      keyReference: `pairing-key-${String(++keySequence)}` as never,
+      activePairingKey: Uint8Array.of(keySequence),
+    }))
+    const provider = uniquePairingProvider(handshake)
+    const desktop = authentication('desktop-installation')
+    await provider.setMobileAccess({ desktop, enabled: true })
+
+    const firstChallenge = await createChallengeFor(provider, desktop, 'first-phone')
+    const firstPending = await provider.completeChallenge({
+      mobile: authentication('mobile-ios'),
+      completionId: parsePairingCompletionId('first-phone'),
+      oneTimeLink: firstChallenge.oneTimeLink,
+      mobileHandshake: Uint8Array.of(9),
+    })
+    const first = await provider.confirmPairing({
+      desktop,
+      pendingPairingId: firstPending.pendingPairingId,
+    })
+
+    const secondChallenge = await createChallengeFor(provider, desktop, 'second-phone')
+    const secondPending = await provider.completeChallenge({
+      mobile: authentication('mobile-android'),
+      completionId: parsePairingCompletionId('second-phone'),
+      oneTimeLink: secondChallenge.oneTimeLink,
+      mobileHandshake: Uint8Array.of(9),
+    })
+    const second = await provider.confirmPairing({
+      desktop,
+      pendingPairingId: secondPending.pendingPairingId,
+    })
+
+    const pairings = await provider.listPersonalPairings(desktop)
+    expect(pairings).toHaveLength(2)
+    expect(pairings[0]).toMatchObject({
+      id: first.id,
+      devicePrincipal: { installationId: parseInstallationId('mobile-ios') },
+      device: { name: 'Personal iOS installation', platform: 'ios' },
+      pairedAt: NOW,
+      lastAccessAt: NOW,
+      online: false,
+    })
+    expect(pairings[1]).toMatchObject({
+      id: second.id,
+      devicePrincipal: { installationId: parseInstallationId('mobile-android') },
+      device: { name: 'Work Android installation', platform: 'android' },
+      pairedAt: NOW,
+      lastAccessAt: NOW,
+      online: false,
+    })
+
+    await provider.revokePersonalPairing({ desktop, pairingId: first.id })
+    expect(await provider.listPersonalPairings(desktop)).toEqual([
+      expect.objectContaining({ id: second.id, device: { name: 'Work Android installation', platform: 'android' } }),
+    ])
   })
 
   it('reissues Desktop Relay authority and keeps pairings on another Installation when disabling', async () => {
@@ -653,7 +711,6 @@ describe('PersonalPairingProvider', () => {
       mobile: authentication('other-desktop', 'account-one'),
       completionId: parsePairingCompletionId('desktop-token-on-mobile-verb'),
       oneTimeLink: challenge.oneTimeLink,
-      device: { name: 'Wrong role', platform: 'ios' },
       mobileHandshake: Uint8Array.of(9),
     })).rejects.toEqual(expect.objectContaining<Partial<RemoteAccessError>>({
       code: 'PAIRING_INSTALLATION_KIND_INVALID',
@@ -663,7 +720,6 @@ describe('PersonalPairingProvider', () => {
       mobile,
       completionId: parsePairingCompletionId('authenticated-mobile'),
       oneTimeLink: challenge.oneTimeLink,
-      device: { name: 'Alice phone', platform: 'ios' },
       mobileHandshake: Uint8Array.of(9),
     })
     await expect(provider.confirmPairing({
@@ -722,14 +778,12 @@ describe('PersonalPairingProvider', () => {
       mobile: authentication('mobile-installation', 'account-one'),
       completionId: parsePairingCompletionId('completion-one'),
       oneTimeLink: challenge.oneTimeLink,
-      device: { name: 'Alice phone', platform: 'ios' },
       mobileHandshake: Uint8Array.of(9),
     })
     const repeated = await provider.completeChallenge({
       mobile: authentication('mobile-installation', 'account-one'),
       completionId: parsePairingCompletionId('completion-one'),
       oneTimeLink: challenge.oneTimeLink,
-      device: { name: 'Alice phone', platform: 'ios' },
       mobileHandshake: Uint8Array.of(9),
     })
 
@@ -754,21 +808,18 @@ describe('PersonalPairingProvider', () => {
       mobile: authentication('mobile-installation', 'account-two'),
       completionId: parsePairingCompletionId('completion-cross-account'),
       oneTimeLink: challenge.oneTimeLink,
-      device: { name: 'Mallory phone', platform: 'android' },
       mobileHandshake: Uint8Array.of(9),
     })).rejects.toEqual(expect.objectContaining<Partial<RemoteAccessError>>({ code: 'PAIRING_ACCOUNT_MISMATCH' }))
     await expect(provider.completeChallenge({
       mobile: authentication('mobile-installation', 'account-two'),
       completionId: parsePairingCompletionId('completion-cross-account-repeat'),
       oneTimeLink: challenge.oneTimeLink,
-      device: { name: 'Mallory phone', platform: 'android' },
       mobileHandshake: Uint8Array.of(9),
     })).rejects.toEqual(expect.objectContaining<Partial<RemoteAccessError>>({ code: 'PAIRING_ACCOUNT_MISMATCH' }))
     await expect(provider.completeChallenge({
       mobile: authentication('mobile-installation', 'account-one'),
       completionId: parsePairingCompletionId('completion-cross-account-retry'),
       oneTimeLink: challenge.oneTimeLink,
-      device: { name: 'Alice phone', platform: 'ios' },
       mobileHandshake: Uint8Array.of(9),
     })).rejects.toEqual(expect.objectContaining<Partial<RemoteAccessError>>({ code: 'PAIRING_CHALLENGE_INVALID' }))
     expect(handshake.completeChallenge).not.toHaveBeenCalled()
@@ -788,7 +839,6 @@ describe('PersonalPairingProvider', () => {
       mobile: authentication('mobile-installation', 'account-one'),
       completionId: parsePairingCompletionId('completion-confirm'),
       oneTimeLink: challenge.oneTimeLink,
-      device: { name: 'Alice phone', platform: 'ios' },
       mobileHandshake: Uint8Array.of(9),
     })
 
@@ -812,7 +862,7 @@ describe('PersonalPairingProvider', () => {
     expect(repeated).toEqual(first)
     expect(first.devicePrincipal.authority).toBe('companion-surface')
     expect(first.devicePrincipal.accountId).toBe('account-one')
-    expect(first.device.name).toBe('Alice phone')
+    expect(first.device).toEqual({ name: 'Work Android installation', platform: 'android' })
     expect(await provider.listPersonalPairings(desktop)).toEqual([first])
     expect(await provider.listPendingPairings(desktop)).toEqual([])
     expect(await provider.getMobilePairingStatus({
@@ -839,7 +889,7 @@ describe('PersonalPairingProvider', () => {
     })
     now.value += PAIRING_CHALLENGE_TTL_MS - 1
     await expect(complete(provider, live.oneTimeLink, 'live-bound')).resolves.toMatchObject({
-      device: { name: 'Alice phone' },
+      device: { name: 'Work Android installation' },
     })
 
     const expired = await provider.createChallenge({
@@ -973,7 +1023,6 @@ describe('PersonalPairingProvider', () => {
       mobile,
       completionId: parsePairingCompletionId('retained-completion'),
       oneTimeLink: challenge.oneTimeLink,
-      device: { name: 'Alice phone', platform: 'ios' as const },
       mobileHandshake: Uint8Array.of(9),
     }
 
@@ -1011,7 +1060,6 @@ describe('PersonalPairingProvider', () => {
       mobile: authentication('mobile-installation'),
       completionId: parsePairingCompletionId('cleanup-retention'),
       oneTimeLink: challenge.oneTimeLink,
-      device: { name: 'Alice phone', platform: 'ios' as const },
       mobileHandshake: Uint8Array.of(9),
     }
 
@@ -1136,7 +1184,6 @@ describe('PersonalPairingProvider', () => {
         mobile,
         completionId: parsePairingCompletionId(`orphan-capacity-${String(index)}`),
         oneTimeLink: challenge.oneTimeLink,
-        device: { name: 'Alice phone', platform: 'ios' },
         mobileHandshake: Uint8Array.of(9),
       }).catch((error: unknown) => error)
       if (result instanceof RemoteAccessError && result.code === 'PAIRING_RESOURCE_LIMIT') {
@@ -1163,7 +1210,6 @@ describe('PersonalPairingProvider', () => {
       mobile,
       completionId: parsePairingCompletionId('orphan-capacity-still-blocked'),
       oneTimeLink: stillBlockedChallenge.oneTimeLink,
-      device: { name: 'Alice phone', platform: 'ios' },
       mobileHandshake: Uint8Array.of(9),
     })).rejects.toEqual(expect.objectContaining<Partial<RemoteAccessError>>({ code: 'PAIRING_RESOURCE_LIMIT' }))
     expect(handshake.completeChallenge).toHaveBeenCalledTimes(retainedAllocationCount)
@@ -1216,7 +1262,6 @@ describe('PersonalPairingProvider', () => {
       mobile: authentication('mobile-installation'),
       completionId: parsePairingCompletionId('completion-cleanup-retry'),
       oneTimeLink: challenge.oneTimeLink,
-      device: { name: 'Alice phone', platform: 'ios' as const },
       mobileHandshake: Uint8Array.of(9),
     }
 
@@ -1551,11 +1596,11 @@ describe('PersonalPairingProvider', () => {
     const completionId = parsePairingCompletionId('completion-collision')
     await provider.completeChallenge({
       mobile: authentication('mobile-installation'), completionId, oneTimeLink: first.oneTimeLink,
-      device: { name: 'Alice phone', platform: 'ios' }, mobileHandshake: Uint8Array.of(9),
+      mobileHandshake: Uint8Array.of(9),
     })
     await expect(provider.completeChallenge({
       mobile: authentication('mobile-installation'), completionId, oneTimeLink: second.oneTimeLink,
-      device: { name: 'Alice phone', platform: 'ios' }, mobileHandshake: Uint8Array.of(9),
+      mobileHandshake: Uint8Array.of(9),
     })).rejects.toEqual(expect.objectContaining<Partial<RemoteAccessError>>({ code: 'PAIRING_ID_COLLISION' }))
     expect(handshake.completeChallenge).toHaveBeenCalledOnce()
   })
@@ -1700,7 +1745,6 @@ describe('PersonalPairingProvider', () => {
       mobile: authentication('other-mobile', 'account-one'),
       completionId: parsePairingCompletionId('completion-one'),
       oneTimeLink: challengeOne.oneTimeLink,
-      device: { name: 'Other phone', platform: 'ios' },
       mobileHandshake: Uint8Array.of(9),
     })).rejects.toEqual(expect.objectContaining<Partial<RemoteAccessError>>({ code: 'PAIRING_CHALLENGE_USED' }))
 
@@ -1858,29 +1902,6 @@ describe('PersonalPairingProvider', () => {
       pairingId: parsePersonalPairingId('missing-pairing'),
     })).rejects.toEqual(expect.objectContaining<Partial<RemoteAccessError>>({ code: 'PAIRING_PENDING_INVALID' }))
 
-    await expect(provider.completeChallenge({
-      mobile: authentication('mobile-one'),
-      completionId: parsePairingCompletionId('bad-device'),
-      oneTimeLink: challenge.oneTimeLink,
-      device: { name: 'Phone', platform: 'windows' as never },
-      mobileHandshake: Uint8Array.of(9),
-    })).rejects.toThrow('platform must be ios or android')
-
-    for (const [index, device] of ['phone', null, []].entries()) {
-      const next = await provider.createChallenge({
-        desktop,
-        rendezvousId: parsePairingRendezvousId(`bad-device-${String(index)}`),
-        clientIp: '192.0.2.1',
-      })
-      await expect(provider.completeChallenge({
-        mobile: authentication('mobile-one'),
-        completionId: parsePairingCompletionId(`bad-device-object-${String(index)}`),
-        oneTimeLink: next.oneTimeLink,
-        device: device as never,
-        mobileHandshake: Uint8Array.of(9),
-      })).rejects.toThrow('Pairing device must be an object')
-    }
-    expect(handshake.destroyPendingPairing).toHaveBeenCalledTimes(4)
   })
 
   it('reissues Desktop Relay authority only for an enabled shared route', async () => {
@@ -2287,7 +2308,6 @@ function complete(provider: PersonalPairingProvider, oneTimeLink: string, id: st
     mobile: authentication('mobile-installation', 'account-one'),
     completionId: parsePairingCompletionId(`completion-${id}`),
     oneTimeLink,
-    device: { name: 'Alice phone', platform: 'ios' },
     mobileHandshake: Uint8Array.of(9),
   })
 }
@@ -2340,11 +2360,18 @@ function collisionPairingProvider(
 function authenticated(accessToken: string) {
   const [accountId, installationToken] = accessToken.split(':') as [string, string]
   const installationId = installationToken.replace(/-token$/u, '')
+  const mobilePresentation = installationId === 'mobile-ios'
+    ? { name: 'Personal iOS installation', platform: 'ios' as const }
+    : { name: 'Work Android installation', platform: 'android' as const }
   return {
     account: account(accountId),
-    installation: {
+    installation: installationId.includes('mobile') ? {
       id: parseInstallationId(installationId),
-      kind: installationId.includes('mobile') ? 'mobile' as const : 'desktop' as const,
+      kind: 'mobile' as const,
+      presentation: mobilePresentation,
+    } : {
+      id: parseInstallationId(installationId),
+      kind: 'desktop' as const,
     },
   }
 }
@@ -2360,7 +2387,6 @@ function completeAs(
     mobile: authentication(mobileInstallationId, accountId),
     completionId: parsePairingCompletionId(`completion-${id}`),
     oneTimeLink,
-    device: { name: 'Alice phone', platform: 'ios' },
     mobileHandshake: Uint8Array.of(9),
   })
 }

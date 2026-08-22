@@ -404,7 +404,6 @@ async function pair(
     mobile,
     completionId: parsePairingCompletionId(`${label}-completion`),
     oneTimeLink: challenge.oneTimeLink,
-    device: { name: 'Alice phone', platform: 'ios' },
     mobileHandshake: Uint8Array.of(9),
   })
   return provider.confirmPairing({ desktop, pendingPairingId: pending.pendingPairingId })
@@ -518,9 +517,12 @@ function authenticated(accessToken: string) {
       githubLogin: accountId,
       avatarUrl: 'https://avatars.example/account',
     },
-    installation: {
-      id: parseInstallationId(installationId),
-      kind: installationId.includes('mobile') ? 'mobile' as const : 'desktop' as const,
-    },
+    installation: installationId.includes('mobile')
+      ? {
+        id: parseInstallationId(installationId),
+        kind: 'mobile' as const,
+        presentation: { name: `${installationId} installation`, platform: 'ios' as const },
+      }
+      : { id: parseInstallationId(installationId), kind: 'desktop' as const },
   }
 }

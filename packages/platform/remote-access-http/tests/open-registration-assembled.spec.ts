@@ -153,7 +153,13 @@ function uniqueProvider(now: { value: number }, capacity?: MemoryPlatformCapacit
             githubLogin: accountId,
             avatarUrl: 'https://avatars.example/account',
           },
-          installation: { id: parseInstallationId(installationId), kind },
+          installation: kind === 'mobile'
+            ? {
+              id: parseInstallationId(installationId),
+              kind,
+              presentation: { name: `${installationId} installation`, platform: 'ios' as const },
+            }
+            : { id: parseInstallationId(installationId), kind },
         }
       }),
     },

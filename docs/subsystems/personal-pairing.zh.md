@@ -2,7 +2,7 @@
 
 [English](personal-pairing.md) | 中文
 
-[`@deepseek-ai/dsh-remote-access`](../../packages/platform/remote-access/README.md) 拥有手机访问开关、配对挑战消费、待确认握手确认、个人配对身份与仅限 Companion 的设备主体权限。它调用 `ctx.platformAccount.currentInstallation()` 鉴别每个账号会话的安装 id 与类型，再比较不透明的平台账号 id；它从不读取账号存储或 GitHub 字段，也不信任调用方自行提供的安装身份。
+[`@deepseek-ai/dsh-remote-access`](../../packages/platform/remote-access/README.md) 拥有 Mobile Access 开关、Pairing Challenge 消费、待确认握手确认、Personal Pairing 身份与仅限 Companion 的 Device Principal authority。它调用 `ctx.platformAccount.currentInstallation()` 鉴别每个 Account Session 的 Installation id、类型与 Mobile 展示，再比较不透明的 Platform Account id。配对完成不接受设备字段：待确认与已确认记录只使用已鉴别 Mobile Installation 展示。
 
 ## 挑战与确认生命周期
 
@@ -69,10 +69,10 @@ abstract reissueDesktopRelayAuthority(desktop: PairingAccountAuthentication): Pr
 
 /**
  * Complete the same-account cryptographic exchange without granting authority.
- * @param input - Mobile authorization, invitation, device metadata, and handshake bytes.
+ * @param input - Mobile authorization, invitation, and handshake bytes.
  * @returns pending result shown on both installations before Desktop confirmation.
  */
-abstract completeChallenge(input: { mobile: PairingAccountAuthentication completionId: PairingCompletionId oneTimeLink: string device: PairingDeviceDescription mobileHandshake: Uint8Array }): Promise<PairingCompletionView>
+abstract completeChallenge(input: { mobile: PairingAccountAuthentication completionId: PairingCompletionId oneTimeLink: string mobileHandshake: Uint8Array }): Promise<PairingCompletionView>
 
 /**
  * Read the decision for one pairing completed by the current Mobile Installation.
@@ -168,7 +168,7 @@ abstract emitPushHint(owner: PairingAccountAuthentication): Promise<void>
 
 Types: [CompanionPushHint](remote-protocol.md) · [CompanionPushToken](remote-protocol.md)
 
-Source: [`packages/platform/remote-access/src/index.ts:449`](../../packages/platform/remote-access/src/index.ts)
+Source: [`packages/platform/remote-access/src/index.ts:445`](../../packages/platform/remote-access/src/index.ts)
 
 <a id="ctxremoteattachmentauthority--remoteattachmentauthority"></a>
 

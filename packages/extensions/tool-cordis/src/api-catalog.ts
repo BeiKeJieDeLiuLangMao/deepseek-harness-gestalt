@@ -1274,9 +1274,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [],
       },
       {
-        signature: 'abstract beginLogin(input: { installationId: InstallationId installationKind: \'desktop\' | \'mobile\' publicKey: JsonWebKey }): Promise<LoginAttemptView>',
+        signature: 'abstract beginLogin(input: InstallationLoginIdentity & { publicKey: JsonWebKey }): Promise<LoginAttemptView>',
         description: 'Start one GitHub Authorization Code attempt for an installation key.',
-        parameters: [{ name: 'input', description: 'installation identity, kind, and public P-256 JWK.' }],
+        parameters: [{ name: 'input', description: 'installation identity, Mobile presentation when applicable, and public P-256 JWK.' }],
         returns: 'the system-browser URL and signed polling capability.',
         throws: ['AccountError `PLATFORM_CAPACITY` with `retryAfter` when the shared watermark is shedding.'],
       },
@@ -1309,7 +1309,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         signature: 'abstract currentInstallation(input: { accessToken: string proof: AccountProof }): Promise<AuthenticatedInstallationView>',
         description: 'Authenticate the Account and Installation identity bound to one current session.',
         parameters: [{ name: 'input', description: 'access token and proof from the session\'s Installation key.' }],
-        returns: 'provider-owned Account id, Installation id, and Installation kind.',
+        returns: 'provider-owned Account and Installation identity, including authenticated Mobile presentation.',
       },
       {
         signature: 'abstract signOut(input: { accessToken: string; proof: AccountProof }): Promise<void>',
@@ -1356,9 +1356,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'enabled state carrying a fresh Desktop grant.',
       },
       {
-        signature: 'abstract completeChallenge(input: { mobile: PairingAccountAuthentication completionId: PairingCompletionId oneTimeLink: string device: PairingDeviceDescription mobileHandshake: Uint8Array }): Promise<PairingCompletionView>',
+        signature: 'abstract completeChallenge(input: { mobile: PairingAccountAuthentication completionId: PairingCompletionId oneTimeLink: string mobileHandshake: Uint8Array }): Promise<PairingCompletionView>',
         description: 'Complete the same-account cryptographic exchange without granting authority.',
-        parameters: [{ name: 'input', description: 'Mobile authorization, invitation, device metadata, and handshake bytes.' }],
+        parameters: [{ name: 'input', description: 'Mobile authorization, invitation, and handshake bytes.' }],
         returns: 'pending result shown on both installations before Desktop confirmation.',
       },
       {
@@ -3391,8 +3391,12 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type AttachmentId = Branded<\'AttachmentId\'>;',
   },
   {
+    name: 'AuthenticatedInstallation',
+    declaration: 'export type AuthenticatedInstallation = {\n    id: InstallationId;\n    kind: \'desktop\';\n} | {\n    id: InstallationId;\n    kind: \'mobile\';\n    presentation: MobileInstallationPresentation;\n};',
+  },
+  {
     name: 'AuthenticatedInstallationView',
-    declaration: 'export interface AuthenticatedInstallationView {\n    account: PlatformAccountView;\n    installation: {\n        id: InstallationId;\n        kind: InstallationKind;\n    };\n}',
+    declaration: 'export interface AuthenticatedInstallationView {\n    account: PlatformAccountView;\n    installation: AuthenticatedInstallation;\n}',
   },
   {
     name: 'BackendRegistry',
@@ -4023,8 +4027,8 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type InstallationId = Branded<\'InstallationId\'>;',
   },
   {
-    name: 'InstallationKind',
-    declaration: 'export type InstallationKind = \'desktop\' | \'mobile\';',
+    name: 'InstallationLoginIdentity',
+    declaration: 'export type InstallationLoginIdentity = {\n    installationId: InstallationId;\n    installationKind: \'desktop\';\n} | {\n    installationId: InstallationId;\n    installationKind: \'mobile\';\n    presentation: MobileInstallationPresentation;\n};',
   },
   {
     name: 'InvariantFailure',
@@ -4339,6 +4343,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface MobileAccessState {\n    enabled: boolean;\n    relay?: RelayCredentialGrant;\n}',
   },
   {
+    name: 'MobileInstallationPresentation',
+    declaration: 'export interface MobileInstallationPresentation {\n    name: string;\n    platform: \'ios\' | \'android\';\n}',
+  },
+  {
     name: 'MobilePairingStatus',
     declaration: 'export type MobilePairingStatus = {\n    status: \'pending\';\n} | {\n    status: \'paired\';\n    pairingId: PersonalPairingId;\n    sealedRelayAuthority?: Uint8Array;\n} | {\n    status: \'rejected\';\n};',
   },
@@ -4388,7 +4396,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'PairingDeviceDescription',
-    declaration: 'export interface PairingDeviceDescription {\n    name: string;\n    platform: \'ios\' | \'android\';\n}',
+    declaration: 'export type PairingDeviceDescription = MobileInstallationPresentation;',
   },
   {
     name: 'PairingInvitation',

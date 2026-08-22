@@ -1,5 +1,6 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
+import { Device } from '@capacitor/device'
 import {
   IndexedDbInstallationAccountStore,
   PlatformAccountHttpTransport,
@@ -23,7 +24,8 @@ import {
 } from './companion-push.ts'
 import { MobileAccount } from './MobileAccount.tsx'
 import type { MobilePairingActions } from './MobilePairing.tsx'
-import { MobilePairingController, NativeMobilePairingQrScanner } from './personal-pairing.ts'
+import { BrowserCameraPairingQrScanner, MobilePairingController } from './personal-pairing.ts'
+import { mobileInstallationPresentation } from './mobile-installation.ts'
 import { mobileSystemBrowser } from './system-browser.ts'
 import './root.css'
 
@@ -56,10 +58,12 @@ if (installationId === null) {
   localStorage.setItem(installationIdKey, installationId)
 }
 const parsedInstallationId = parseInstallationId(installationId)
+const presentation = mobileInstallationPresentation(await Device.getInfo())
 const installation = new PlatformAccountInstallation({
   environment,
   installationId: parsedInstallationId,
   installationKind: 'mobile',
+  presentation,
   transport: new PlatformAccountHttpTransport({ environment }),
   store: new IndexedDbInstallationAccountStore(`deepseek-gestalt-platform-account:${environment.databaseIdentity}`),
   systemBrowser: mobileSystemBrowser,
@@ -116,14 +120,10 @@ if (environment.environment === 'development' && import.meta.env.VITE_PERSONAL_P
     installation,
     transport: new RemoteAccessHttpTransport({ environment }),
     handshake: new DevelopmentKeylessMobileHandshakeClient(),
-    scanner: new NativeMobilePairingQrScanner(),
+    scanner: new BrowserCameraPairingQrScanner(),
     relay: companion,
     companion,
     pairingKeys: new PairingCompanionKeyVault(),
-    device: {
-      name: navigator.userAgent.includes('Android') ? 'Android phone' : 'iPhone',
-      platform: navigator.userAgent.includes('Android') ? 'android' : 'ios',
-    },
   })
 }
 

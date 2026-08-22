@@ -160,7 +160,6 @@ describe('two Loader-booted Platform Instances', () => {
       authentication: mobileAuth,
       completionId: parsePairingCompletionId('completion-assembled'),
       oneTimeLink: challenge.oneTimeLink,
-      device: { name: 'Assembled phone', platform: 'ios' },
       mobileHandshake: Uint8Array.of(5),
     }))
     await withPhase('confirm pairing', desktopTransport.confirmPairing({
@@ -454,7 +453,13 @@ function instanceProvider(id: string, shared: SharedAdapters, entropy: number): 
                 githubLogin: 'assembled',
                 avatarUrl: 'https://avatars.example/assembled',
               },
-              installation: { id: parseInstallationId(installation), kind },
+              installation: kind === 'mobile'
+                ? {
+                  id: parseInstallationId(installation),
+                  kind,
+                  presentation: { name: `${installation} installation`, platform: 'ios' },
+                }
+                : { id: parseInstallationId(installation), kind },
             }
           },
         },

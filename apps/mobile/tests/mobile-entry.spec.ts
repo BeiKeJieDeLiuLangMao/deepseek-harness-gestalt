@@ -14,6 +14,16 @@ const relayLifecycle = vi.hoisted(() => ({
 }))
 
 vi.mock('@capacitor/browser', () => ({ Browser: { open: browserOpen } }))
+vi.mock('@capacitor/device', () => ({
+  Device: {
+    getInfo: vi.fn(async () => ({
+      name: 'Entry test installation',
+      model: 'Test mobile model',
+      platform: 'ios',
+      operatingSystem: 'ios',
+    })),
+  },
+}))
 vi.mock('@deepseek-ai/dsh-remote-access-client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@deepseek-ai/dsh-remote-access-client')>()
   return {

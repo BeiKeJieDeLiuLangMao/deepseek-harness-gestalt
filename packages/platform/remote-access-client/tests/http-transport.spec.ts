@@ -125,7 +125,6 @@ describe('RemoteAccessHttpTransport', () => {
       authentication,
       completionId: parsePairingCompletionId('completion-one'),
       oneTimeLink: challenge.oneTimeLink,
-      device: { name: 'Alice phone', platform: 'ios' },
       mobileHandshake: Uint8Array.of(1, 2),
     })).resolves.toMatchObject({ desktopHandshake: Uint8Array.of(1, 2) })
     await expect(client.getMobilePairingStatus({ authentication, pendingPairingId })).resolves.toEqual({ status: 'pending' })

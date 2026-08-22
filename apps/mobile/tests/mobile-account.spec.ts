@@ -124,6 +124,7 @@ function fixture(): {
       environment: ENVIRONMENT,
       installationId: parseInstallationId('mobile-ui'),
       installationKind: 'mobile',
+      presentation: { name: 'Mobile UI test', platform: 'ios' },
       transport: api,
       store: new MemoryInstallationAccountStore(),
       systemBrowser: { open: openSystemBrowser },

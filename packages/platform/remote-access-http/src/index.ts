@@ -114,7 +114,6 @@ async function dispatch(
         mobile: authentication,
         completionId: parsePairingCompletionId(body.completionId),
         oneTimeLink: requiredString(body.oneTimeLink, 'oneTimeLink'),
-        device: parseDevice(body.device),
         mobileHandshake: decodeBytes(body.mobileHandshake, 'mobileHandshake'),
       }))
     case 'admit-blob':
@@ -173,15 +172,6 @@ function singleHeader(req: IncomingMessage, name: string): string {
   const value = req.headers[name]
   if (typeof value !== 'string' || value === '') throw new HttpError(400, 'PROOF_INVALID', `Missing ${name}`)
   return value
-}
-
-function parseDevice(value: unknown): { name: string; platform: 'ios' | 'android' } {
-  if (!isRecord(value)) throw new HttpError(400, 'DEVICE_INVALID', 'Pairing device must be an object')
-  const platform = value.platform
-  if (platform !== 'ios' && platform !== 'android') {
-    throw new HttpError(400, 'DEVICE_INVALID', 'Pairing device platform is invalid')
-  }
-  return { name: requiredString(value.name, 'device.name'), platform }
 }
 
 function handleCors(req: IncomingMessage, res: ServerResponse, allowedOrigin: string): boolean {
@@ -267,10 +257,6 @@ function decodeBytes(value: unknown, name: string): Uint8Array {
   const decoded = Buffer.from(encoded, 'base64url')
   if (decoded.toString('base64url') !== encoded) throw new HttpError(400, 'BODY_INVALID', `${name} must be canonical base64url`)
   return new Uint8Array(decoded)
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 export { RelayWebSocketConsumer } from './relay.ts'

@@ -308,6 +308,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   AccountSessionId: 'platform-account.md',
   AccountSessionView: 'platform-account.md',
   InstallationId: 'platform-account.md',
+  InstallationLoginIdentity: 'platform-account.md',
   LoginAttemptId: 'platform-account.md',
   LoginAttemptView: 'platform-account.md',
   LoginPollResult: 'platform-account.md',

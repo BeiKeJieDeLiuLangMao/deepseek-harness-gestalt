@@ -79,12 +79,11 @@ export interface RemoteAccessTransport {
     authentication: PairingAccountAuthentication
     pendingPairingId: PendingPairingId
   }): Promise<void>
-  /** @param input - current Mobile authorization, invitation, device, and handshake. @returns pending pairing. */
+  /** @param input - current Mobile authorization, invitation, and handshake. @returns pending pairing. */
   completeChallenge(input: {
     authentication: PairingAccountAuthentication
     completionId: PairingCompletionId
     oneTimeLink: string
-    device: PairingDeviceDescription
     mobileHandshake: Uint8Array
   }): Promise<PairingCompletionView>
   /** @param input - current Mobile authorization and pending id. @returns Desktop decision state. */
@@ -185,14 +184,12 @@ export class RemoteAccessHttpTransport implements RemoteAccessTransport {
     authentication: PairingAccountAuthentication
     completionId: PairingCompletionId
     oneTimeLink: string
-    device: PairingDeviceDescription
     mobileHandshake: Uint8Array
   }): Promise<PairingCompletionView> {
     return parseCompletion(await this.call(input.authentication, {
       operation: 'complete-challenge',
       completionId: input.completionId,
       oneTimeLink: input.oneTimeLink,
-      device: input.device,
       mobileHandshake: encodeBytes(input.mobileHandshake),
     }))
   }

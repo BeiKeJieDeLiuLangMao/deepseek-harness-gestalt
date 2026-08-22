@@ -10,11 +10,12 @@ describe('MobilePairing', () => {
   it('uses a complete link or QR and shows Desktop-matching authentication words', () => {
     let snapshot: ReturnType<MobilePairingActions['getSnapshot']> = { status: 'ready' }
     const completeLink = vi.fn()
+    const scanQr = vi.fn()
     const actions: MobilePairingActions = {
       getSnapshot: () => snapshot,
       subscribe: () => () => {},
       completeLink,
-      scanQr: vi.fn(),
+      scanQr,
       retryPairing: vi.fn(),
       activate: vi.fn().mockResolvedValue(undefined),
       deactivate: vi.fn().mockResolvedValue(undefined),
@@ -22,6 +23,9 @@ describe('MobilePairing', () => {
     }
     const { rerender } = render(createElement(MobilePairing, { actions }))
     const link = 'https://platform.example.com/pair?secret=complete-high-entropy-invitation'
+    fireEvent.click(screen.getByRole('button', { name: '扫描 QR' }))
+    expect(scanQr).toHaveBeenCalledWith(expect.any(HTMLVideoElement), expect.any(AbortSignal))
+    expect(screen.getByText('将 Desktop Settings 中的 QR 对准取景框')).toBeTruthy()
     fireEvent.change(screen.getByRole('textbox', { name: '完整的一次性配对链接' }), { target: { value: link } })
     fireEvent.click(screen.getByRole('button', { name: '继续配对' }))
     expect(completeLink).toHaveBeenCalledWith(link)
