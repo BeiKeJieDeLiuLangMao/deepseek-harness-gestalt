@@ -10,7 +10,7 @@ Status: implemented
 
 ## Decision
 
-DeepSeek Gestalt 是 Desktop Host：Electron 拥有窗口、应用菜单、进程寿命和更新检查。启动时拉起捆绑的官方 Node 加上锁死的 `dsh web` Web Host（`--host 127.0.0.1 --port 0`），并打开该环回 URL。Web Host 保留全部 Host 能力，包括原生选目录。
+DeepSeek Gestalt 是 Desktop Host：Electron 拥有窗口、应用菜单、进程寿命和更新检查。启动时拉起捆绑的官方 Node 加上锁死的 `dsh web` Web Host（`--host 127.0.0.1 --port 0 --no-open`），并打开该环回 URL。Desktop Host 已经拥有窗口，因此 spawn 与叠加层都让操作系统默认浏览器保持关闭（[Desktop Web Host `--no-open`](../bug-fix/2026-08-22-desktop-web-host-no-open.md)）。Web Host 保留全部 Host 能力，包括原生选目录。
 
 Electron 在退出阶段继续监管 Web Host。窗口退出、终止信号和 smoke 结束都会取消尚未完成的启动、停止子进程，并等待进程退出后才终止 Desktop Host；主动关闭不会触发一次性崩溃重启。可信主窗口停留在当前环回 origin，普通网页链接交给系统浏览器，并拒绝其他导航和所有新 Electron 窗口。
 
