@@ -58,6 +58,7 @@ import { disposeDesktopOwners } from './shutdown.ts'
 import { startDesktopBrowserRuntime, type DesktopBrowserRuntime } from './browser-runtime.ts'
 import { createDesktopRemoteRelay } from './remote-relay.ts'
 import { DesktopCompanionProductOwner } from './companion-product.ts'
+import { createDesktopHostRpc } from './host-rpc.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const PRELOAD = join(here, 'preload.cjs')
@@ -173,7 +174,7 @@ async function boot(): Promise<void> {
     smokeLog('host ' + host.url + ' pid ' + String(host.child.pid))
     await window.loadURL(host.url)
     if (process.env.DSH_DESKTOP_SMOKE === '1') {
-      await finishSmoke(window)
+      await finishSmoke(window, host.url)
       return
     }
   } catch (error) {
@@ -370,7 +371,7 @@ function installIntegrationsOnce(): void {
   })
 }
 
-async function finishSmoke(target: BrowserWindow): Promise<void> {
+async function finishSmoke(target: BrowserWindow, hostUrl: string): Promise<void> {
   const evidence: unknown = await target.webContents.executeJavaScript(`(async () => {
     const bridge = window.dshDesktop
     const updaterStatus = await bridge?.getStatus()
@@ -432,21 +433,63 @@ async function finishSmoke(target: BrowserWindow): Promise<void> {
     requestShutdown(1)
     return
   }
-  const searchOperation: CompanionSearchSessionsOperation = {
-    type: 'search-sessions',
-    operationId: parseCompanionOperationId('desktop-smoke-search'),
-    query: 'desktop-companion-smoke-no-hit',
+  const smokeRpc = createDesktopHostRpc(hostUrl, {
+    timeoutMs: 10_000,
+    responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
+  })
+  const sessionId = 'desktop-smoke-indexed-session'
+  const needle = 'desktop-companion-smoke-indexed-needle'
+  const created = await smokeRpc.call('session.create', { sessionId })
+  const prompted = created.ok
+    ? await smokeRpc.call('session.prompt', {
+      sessionId,
+      mode: 'queue',
+      content: [{ type: 'text', text: needle }],
+    })
+    : created
+  if (!created.ok || !prompted.ok) {
+    smokeLog(`companion entry seed failed ${JSON.stringify(!created.ok ? created : prompted)}`)
+    console.error('dsh desktop smoke: Companion Session seed failed', !created.ok ? created : prompted)
+    requestShutdown(1)
+    return
   }
-  const searchEvidence = await companionProduct.handle(searchOperation, {
+  const hitOperation: CompanionSearchSessionsOperation = {
+    type: 'search-sessions',
+    operationId: parseCompanionOperationId('desktop-smoke-search-hit'),
+    query: needle,
+  }
+  const dependencies = {
     pairingId: parsePersonalPairingId('desktop-smoke-pairing'),
     pairingKey: new Uint8Array(32),
     now: Date.now,
     downloadAttachment: () => Promise.reject(new Error('Desktop smoke search must not download an attachment')),
     submitAttachment: () => Promise.reject(new Error('Desktop smoke search must not submit an attachment')),
-  })
-  smokeLog(`companion entry search ${JSON.stringify(searchEvidence)}`)
-  if (searchEvidence.type !== 'session-search') {
-    console.error('dsh desktop smoke: Companion entry search failed', searchEvidence)
+  }
+  let hitEvidence = await companionProduct.handle(hitOperation, dependencies)
+  const searchDeadline = Date.now() + 10_000
+  while (
+    Date.now() < searchDeadline
+    && (hitEvidence.type !== 'session-search'
+      || hitEvidence.items.every(item => item.sessionId !== sessionId || !item.snippet.includes(needle)))
+  ) {
+    await new Promise(resolve => setTimeout(resolve, 50))
+    hitEvidence = await companionProduct.handle(hitOperation, dependencies)
+  }
+  smokeLog(`companion entry search hit ${JSON.stringify(hitEvidence)}`)
+  if (hitEvidence.type !== 'session-search'
+    || hitEvidence.items.every(item => item.sessionId !== sessionId || !item.snippet.includes(needle))) {
+    console.error('dsh desktop smoke: Companion entry indexed search failed', hitEvidence)
+    requestShutdown(1)
+    return
+  }
+  const noHitEvidence = await companionProduct.handle({
+    type: 'search-sessions',
+    operationId: parseCompanionOperationId('desktop-smoke-search-no-hit'),
+    query: 'desktop-companion-smoke-no-hit',
+  }, dependencies)
+  smokeLog(`companion entry search no-hit ${JSON.stringify(noHitEvidence)}`)
+  if (noHitEvidence.type !== 'session-search' || noHitEvidence.items.length !== 0) {
+    console.error('dsh desktop smoke: Companion entry no-hit search failed', noHitEvidence)
     requestShutdown(1)
     return
   }

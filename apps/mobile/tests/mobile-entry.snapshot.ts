@@ -20,6 +20,7 @@ import {
   parseRelayRouteId,
 } from '@deepseek-ai/dsh-remote-protocol'
 import { CompanionForegroundRuntime, installCompanionRuntime } from '../src/companion-lifecycle.ts'
+import { CompanionAttachmentDeliveryUncertainError } from '../src/companion-attachment.ts'
 import { mountMobileEntry } from '../src/mobile-entry.tsx'
 
 const environment = selectPlatformEnvironment(validatePlatformEnvironmentPair({
@@ -68,11 +69,13 @@ describe('Mobile shipped entry foreground mutation gate', () => {
     const installation = installationWithCompletedLogin()
     const root = document.createElement('div')
     document.body.append(root)
+    let rejectAttachment: ((reason: unknown) => void) | undefined
+    const attachmentCompletion = new Promise<void>((_resolve, reject) => { rejectAttachment = reject })
 
     const mounted = mountMobileEntry(root, {
       installation,
       companion: runtime,
-      companionChannel: mutationChannel(),
+      companionChannel: mutationChannel(attachmentCompletion),
     })
     const surface = mounted.companionSurface
 
@@ -129,6 +132,23 @@ describe('Mobile shipped entry foreground mutation gate', () => {
       '"Desktop 搜索结果uncached-authoritative-sessionDesktop-only authoritative hit"',
     )
     surface.search('')
+    surface.attach('guarded-session', selectedFile())
+    results.acceptValidatedCompanionResult({
+      type: 'attachment-rejected',
+      operationId: parseCompanionOperationId('mobile-snapshot-attachment'),
+      reason: 'hash-mismatch',
+    })
+    expect((await screen.findByRole('alert')).textContent)
+      .toBe('Desktop rejected the attachment: hash-mismatch')
+    surface.attach('guarded-session', selectedFile())
+    rejectAttachment?.(new CompanionAttachmentDeliveryUncertainError(
+      parseCompanionOperationId('mobile-snapshot-attachment'),
+      new Error('connection replaced'),
+    ))
+    await waitFor(() => {
+      expect(screen.getByRole('alert').textContent)
+        .toBe('Attachment delivery is uncertain; reconnect to reconcile it before retrying.')
+    })
 
     runtime.forgetConnection()
     runtime.markConnectionOpen()
@@ -185,15 +205,22 @@ function installationWithCompletedLogin(): PlatformAccountInstallation {
   })
 }
 
-function mutationChannel() {
+function mutationChannel(attachmentCompletion: Promise<void>) {
   return {
     create: vi.fn(),
     submit: vi.fn(),
     cancel: vi.fn(),
-    attach: vi.fn(),
+    attach: vi.fn(() => ({
+      operationId: parseCompanionOperationId('mobile-snapshot-attachment'),
+      completion: attachmentCompletion,
+    })),
     search: vi.fn(() => parseCompanionOperationId('mobile-snapshot-search')),
     settle: vi.fn(),
   }
+}
+
+function selectedFile(): File {
+  return { name: 'visible.txt', arrayBuffer: async () => new ArrayBuffer(0) } as File
 }
 
 function visibleMutationControls(): string[] {

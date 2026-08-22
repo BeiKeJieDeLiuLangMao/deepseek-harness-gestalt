@@ -66,6 +66,7 @@ function MobileEntry({
       companionSurface={{
         sessions: projection.sessions,
         streaming: projection.streaming,
+        attachment: projection.attachment,
         search: projection.search,
         onCreate: companionSurface.create,
         onSubmit: companionSurface.submit,

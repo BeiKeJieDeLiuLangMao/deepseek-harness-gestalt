@@ -5,6 +5,7 @@ import {
   parseRelayCredential,
   parseRelayRouteId,
 } from '@deepseek-ai/dsh-remote-protocol'
+import { CompanionAttachmentDeliveryUncertainError } from '../src/companion-attachment.ts'
 import { CompanionForegroundRuntime } from '../src/companion-lifecycle.ts'
 import { MobileCompanionSurface } from '../src/companion-surface.ts'
 
@@ -42,6 +43,7 @@ describe('MobileCompanionSurface', () => {
       sessions: [{ id: 'session-first', title: 'First', summary: 'Authenticated' }],
       streaming: false,
       search: { query: '', status: 'idle', items: [], hasMore: false },
+      attachment: { status: 'idle' },
     })
     expect(() => { surface.create({}) }).toThrow('requires foreground synchronization')
     expect(() => { surface.submit('session-first', 'continue') }).toThrow('requires foreground synchronization')
@@ -125,6 +127,65 @@ describe('MobileCompanionSurface', () => {
     })
   })
 
+  it('correlates attachment rejection, Host failure, and uncertain delivery instead of discarding them', async () => {
+    const runtime = new CompanionForegroundRuntime()
+    let rejectCompletion: ((reason: unknown) => void) | undefined
+    const completion = new Promise<void>((_resolve, reject) => { rejectCompletion = reject })
+    const mutations = mutationChannel({
+      attachmentOperationId: 'attachment-visible',
+      attachmentCompletion: completion,
+    })
+    const surface = new MobileCompanionSurface(runtime, mutations)
+    runtime.configure(grant)
+    runtime.markConnectionOpen()
+    const resync = surface.bindValidatedDesktopResync()
+    const results = surface.bindValidatedCompanionResults()
+    if (resync === undefined || results === undefined) throw new Error('expected current generation receivers')
+    resync.acceptValidatedDesktopResync({
+      type: 'desktop-resync', version: 1, authenticated: true, sessions: [], streaming: false,
+    })
+
+    surface.attach('session-one', selectedFile())
+    expect(surface.getSnapshot().attachment).toEqual({
+      operationId: 'attachment-visible', status: 'sending',
+    })
+    results.acceptValidatedCompanionResult({
+      type: 'attachment-rejected',
+      operationId: parseCompanionOperationId('attachment-visible'),
+      reason: 'hash-mismatch',
+    })
+    expect(surface.getSnapshot().attachment).toEqual({
+      operationId: 'attachment-visible',
+      status: 'rejected',
+      reason: 'hash-mismatch',
+      message: 'Desktop rejected the attachment: hash-mismatch',
+    })
+
+    surface.attach('session-one', selectedFile())
+    results.acceptValidatedCompanionResult({
+      type: 'operation-failed',
+      operationId: parseCompanionOperationId('attachment-visible'),
+      failure: { kind: 'http', code: 'HOST_HTTP_STATUS', message: 'Desktop Host returned HTTP 400', status: 400 },
+    })
+    expect(surface.getSnapshot().attachment).toEqual({
+      operationId: 'attachment-visible',
+      status: 'failed',
+      message: 'Desktop Host returned HTTP 400',
+    })
+
+    surface.attach('session-one', selectedFile())
+    rejectCompletion?.(new CompanionAttachmentDeliveryUncertainError(
+      parseCompanionOperationId('attachment-visible'),
+      new Error('connection replaced'),
+    ))
+    await Promise.resolve()
+    expect(surface.getSnapshot().attachment).toEqual({
+      operationId: 'attachment-visible',
+      status: 'uncertain',
+      message: 'Attachment delivery is uncertain; reconnect to reconcile it before retrying.',
+    })
+  })
+
   it('rejects decoded search results from a replaced connection generation', () => {
     const runtime = new CompanionForegroundRuntime()
     const surface = new MobileCompanionSurface(runtime, mutationChannel())
@@ -175,12 +236,18 @@ describe('MobileCompanionSurface', () => {
   })
 })
 
-function mutationChannel() {
+function mutationChannel(options?: {
+  attachmentOperationId?: string
+  attachmentCompletion?: Promise<void>
+}) {
   return {
     create: vi.fn(),
     submit: vi.fn(),
     cancel: vi.fn(),
-    attach: vi.fn(),
+    attach: vi.fn(() => ({
+      operationId: parseCompanionOperationId(options?.attachmentOperationId ?? 'attachment-default'),
+      completion: options?.attachmentCompletion ?? Promise.resolve(),
+    })),
     search: vi.fn(() => parseCompanionOperationId('search-needle')),
     settle: vi.fn(),
   }

@@ -12,9 +12,9 @@ Mobile Companion 需要查找只存在于 Paired Desktop 索引中的 Session �
 
 Desktop 专用 composition 以 `openAt: first-search` 激活 `session-query-sqlite`，并把派生索引放在 `DSH_HOME/session-search.sqlite`；浏览器 `dsh web` 仍使用仓库默认的 `openAt: never`。Companion 的 `search-sessions` operation 调用 Web Host 的 `session.search` 方法。Mobile 会直接渲染每个关联的 `session-search` Session id/snippet 对，包括 Companion Cache 中不存在的命中，并且绝不会加入缓存中的标题、Workspace、摘要、transcript 或子串匹配。
 
-Encrypted Companion Protocol 以 `operation-failed` 作为无损 Host 失败 result。它的闭合类别包括 HTTP 状态、无效 wire response、类型化业务错误和超时。HTTP 失败保留包括 400 在内的数值状态；业务失败保留有界 code 与 message；每个失败都携带发起 operation id。Desktop loopback client 会先解析 HTTP 状态，再解析 JSON，校验 RPC envelope 与回显 id，并且即使 response chunk 持续到达，也会把 `timeoutMs` 作为一个绝对墙钟 deadline 执行。它的可配置 response accumulator 不能超过 60 KiB Companion 应用 message 上限；累计超限会销毁 response，并产生无效 wire failure。这些预期失败会作为值返回，而不是抛出。Mobile surface 只通过绑定到 decoder 物理连接 generation 的 receiver 接受 result，把当前 result 与当前搜索 operation 关联，并把失败作为 alert 展示；断开、替换或进入后台会让旧 receiver 失效。
+Encrypted Companion Protocol 以 `operation-failed` 作为无损 Host 失败 result。它的闭合类别包括 HTTP 状态、无效 wire response、类型化业务错误和超时。HTTP 失败保留包括 400 在内的数值状态；业务失败保留有界 code 与 message；每个失败都携带发起 operation id。Desktop loopback client 会在非 2xx response header 到达时立即结算，使 response body 累计与绝对墙钟 deadline 都不能替换已知状态。它会校验成功 RPC 的 envelope 与回显 id；其可配置 response accumulator 不能超过 60 KiB Companion 应用 message 上限，累计超限会销毁 response，并产生无效 wire failure。这些预期失败会作为值返回，而不是抛出。Mobile surface 只通过绑定到 decoder 物理连接 generation 的 receiver 接受 result。它会把搜索 result 与当前搜索 operation 关联，并把 attachment 确认、拒绝、Host 失败或重连 status 与 mutation channel 返回的 attachment operation id 关联。attachment send completion 也可以发布 uncertain 状态，并保留 operation id 以便对账。搜索与 attachment 失败会成为可见 alert；断开、替换或进入后台会让旧 decoder receiver 失效。
 
-Desktop Host 会在发布的 Web Host 报告 loopback origin 后安装 `DesktopCompanionProductOwner`，在 Web Host 重启时替换该 RPC，并在关闭前移除。Desktop 入口 smoke 会通过这个已安装 owner 调用一次真实的无命中 `session.search`。这项证据只证明发布的 Host composition 与 RPC 路径；经过评审的加密 channel 仍拥有 endpoint operation 交付与配对范围 attachment 依赖。
+Desktop Host 会在发布的 Web Host 报告 loopback origin 后安装 `DesktopCompanionProductOwner`，在 Web Host 重启时替换该 RPC，并在关闭前移除。Desktop 入口 smoke 会创建真实 Session 并提交 prompt，再通过这个已安装 owner 要求一次索引命中与一次无命中的 `session.search`。独立的真实 Host composition 会覆盖已关闭与故障 SQLite provider。跨进程组装会把真实 HTTP 400 经 Desktop owner 与 Companion codec 送到发布 Mobile 入口的 alert。这些证据只证明发布 endpoint composition 与应用投影；经过评审的加密 channel 仍拥有 endpoint operation 交付与配对范围 attachment 依赖。
 
 搜索结果最多包含 20 个唯一 Session id，每个 snippet 最多包含 240 个 Unicode code point。查询沿用 Host 的 500 个 UTF-16 code unit 上限。失败消息限制为 4,096 个 UTF-8 字节。协议 codec 与 Desktop adapter 会独立执行这些上限，使有效 Host 响应无法变成超限的 Encrypted Companion 消息。
 
@@ -32,4 +32,4 @@ Desktop Host 会在发布的 Web Host 报告 loopback origin 后安装 `DesktopC
 
 ## 后果
 
-Mobile 搜索质量、可见性与 snippet 来自与 Web Session 搜索相同的 Desktop 权威，并且不要求存在匹配的缓存 Session。Host 400、格式错误的响应、业务拒绝、绝对 deadline 超时或陈旧 decoder result 会保持显式或失效，而不会消失或修改替换后的状态。Desktop 会承担派生索引存储与首次搜索启动成本；浏览器 `dsh web` 不承担。经过评审的加密 channel 仍负责安装 Mobile operation 发送方与按 generation 绑定的解码 result receiver，因此发布的 Host 入口、协议与 adapter 证据本身不能证明运营中的产品链路。
+Mobile 搜索质量、可见性与 snippet 来自与 Web Session 搜索相同的 Desktop 权威，并且不要求存在匹配的缓存 Session。attachment 拒绝、attachment Host 失败与 uncertain delivery 会保持关联且可见。Host 400、格式错误的响应、业务拒绝、绝对 deadline 超时或陈旧 decoder result 会保持显式或失效，而不会消失或修改替换后的状态。Desktop 会承担派生索引存储与首次搜索启动成本；浏览器 `dsh web` 不承担。经过评审的加密 channel 仍负责安装 Mobile operation 发送方与按 generation 绑定的解码 result receiver，因此发布的 endpoint、协议与 adapter 证据本身不能证明运营中的产品链路。

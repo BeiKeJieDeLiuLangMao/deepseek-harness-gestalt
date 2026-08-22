@@ -1,11 +1,13 @@
 /** Product-owned Mobile projection of authenticated Desktop Companion state. */
 
 import type {
+  CompanionAttachmentRejectedResult,
   CompanionHostFailure,
   CompanionOperationId,
   CompanionResult,
   CompanionSessionSearchItem,
 } from '@deepseek-ai/dsh-remote-protocol'
+import { CompanionAttachmentDeliveryUncertainError } from './companion-attachment.ts'
 import type { CompanionInteraction } from './companion-approval.ts'
 import type { CompanionSessionSummary } from './companion-history.ts'
 import { companionMayMutate, type CompanionForegroundRuntime } from './companion-lifecycle.ts'
@@ -38,6 +40,8 @@ interface MobileCompanionSurfaceSnapshot {
   readonly streaming: boolean
   /** Current Desktop-authoritative full-text search state. */
   readonly search: MobileCompanionSearchSnapshot
+  /** Latest selected-file transfer and its correlated Desktop outcome. */
+  readonly attachment: MobileCompanionAttachmentSnapshot
 }
 
 /** Desktop-authoritative search state; Mobile never synthesizes substring hits. */
@@ -57,6 +61,30 @@ export type MobileCompanionSearchSnapshot =
     readonly error: CompanionHostFailure
   }
 
+/** Latest attachment state retained until another file is selected. */
+export type MobileCompanionAttachmentSnapshot =
+  | { readonly status: 'idle' }
+  | { readonly operationId: CompanionOperationId; readonly status: 'sending' | 'accepted' }
+  | {
+    readonly operationId: CompanionOperationId
+    readonly status: 'rejected'
+    readonly reason: CompanionAttachmentRejectedResult['reason']
+    readonly message: string
+  }
+  | {
+    readonly operationId: CompanionOperationId
+    readonly status: 'failed' | 'uncertain'
+    readonly message: string
+  }
+
+/** One selected-file transfer started by the encrypted Companion channel. */
+export interface MobileCompanionAttachmentSubmission {
+  /** Operation id used by Desktop results and reconnect reconciliation. */
+  readonly operationId: CompanionOperationId
+  /** Settles after the control message send, or rejects with a pre-send or uncertain-delivery failure. */
+  readonly completion: Promise<void>
+}
+
 /** Optional encrypted mutation channel installed with the authenticated Companion decoder. */
 export interface MobileCompanionMutationChannel {
   /** @param input - Desktop-default Session target. */
@@ -65,8 +93,8 @@ export interface MobileCompanionMutationChannel {
   submit(sessionId: string, text: string): void
   /** @param sessionId - Desktop Session target. */
   cancel(sessionId: string): void
-  /** @param sessionId - Desktop Session target. */
-  attach(sessionId: string, file: File): void
+  /** @param sessionId - Desktop Session target. @param file - selected browser file. @returns correlated transfer. */
+  attach(sessionId: string, file: File): MobileCompanionAttachmentSubmission
   /** @param query - non-blank authoritative Session search. @returns operation id used to correlate its result. */
   search(query: string): CompanionOperationId
   /** @param interaction - Desktop-authorized approval or question settlement. */
@@ -82,8 +110,10 @@ export class MobileCompanionSurface {
     sessions: [],
     streaming: false,
     search: { query: '', status: 'idle', items: [], hasMore: false },
+    attachment: { status: 'idle' },
   }
   #searchOperationId: CompanionOperationId | undefined
+  readonly #attachmentOperationIds = new Set<CompanionOperationId>()
 
   /**
    * @param runtime - current physical-connection synchronization authority.
@@ -129,6 +159,7 @@ export class MobileCompanionSurface {
           })),
           streaming: message.streaming,
           search: this.#snapshot.search,
+          attachment: this.#snapshot.attachment,
         }
         this.publish()
       },
@@ -152,7 +183,40 @@ export class MobileCompanionSurface {
 
   /** @param sessionId - Desktop Session target. @param file - real browser-selected file. */
   readonly attach = (sessionId: string, file: File): void => {
-    this.transmit('attachment', (channel) => { channel.attach(sessionId, file) })
+    const submission = this.transmit('attachment', channel => channel.attach(sessionId, file))
+    this.#attachmentOperationIds.add(submission.operationId)
+    this.#snapshot = {
+      ...this.#snapshot,
+      attachment: { operationId: submission.operationId, status: 'sending' },
+    }
+    this.publish()
+    void submission.completion.catch((error: unknown) => {
+      if (!this.#attachmentOperationIds.has(submission.operationId)) return
+      if (
+        error instanceof CompanionAttachmentDeliveryUncertainError
+        && error.operationId === submission.operationId
+      ) {
+        this.#snapshot = {
+          ...this.#snapshot,
+          attachment: {
+            operationId: submission.operationId,
+            status: 'uncertain',
+            message: 'Attachment delivery is uncertain; reconnect to reconcile it before retrying.',
+          },
+        }
+      } else {
+        this.#attachmentOperationIds.delete(submission.operationId)
+        this.#snapshot = {
+          ...this.#snapshot,
+          attachment: {
+            operationId: submission.operationId,
+            status: 'failed',
+            message: error instanceof Error ? error.message : 'Attachment transfer failed',
+          },
+        }
+      }
+      this.publish()
+    })
   }
 
   /**
@@ -199,8 +263,7 @@ export class MobileCompanionSurface {
   }
 
   private acceptCurrentCompanionResult(result: CompanionResult): void {
-    if (result.operationId !== this.#searchOperationId) return
-    if (result.type === 'session-search') {
+    if (result.operationId === this.#searchOperationId && result.type === 'session-search') {
       this.#snapshot = {
         ...this.#snapshot,
         search: {
@@ -213,7 +276,7 @@ export class MobileCompanionSurface {
       this.publish()
       return
     }
-    if (result.type === 'operation-failed') {
+    if (result.operationId === this.#searchOperationId && result.type === 'operation-failed') {
       this.#snapshot = {
         ...this.#snapshot,
         search: {
@@ -225,6 +288,64 @@ export class MobileCompanionSurface {
         },
       }
       this.publish()
+      return
+    }
+    if (!this.#attachmentOperationIds.has(result.operationId)) return
+    if (result.type === 'confirmed') {
+      this.#attachmentOperationIds.delete(result.operationId)
+      this.#snapshot = {
+        ...this.#snapshot,
+        attachment: { operationId: result.operationId, status: 'accepted' },
+      }
+      this.publish()
+      return
+    }
+    if (result.type === 'attachment-rejected') {
+      this.#attachmentOperationIds.delete(result.operationId)
+      this.#snapshot = {
+        ...this.#snapshot,
+        attachment: {
+          operationId: result.operationId,
+          status: 'rejected',
+          reason: result.reason,
+          message: `Desktop rejected the attachment: ${result.reason}`,
+        },
+      }
+      this.publish()
+      return
+    }
+    if (result.type === 'operation-failed') {
+      this.#attachmentOperationIds.delete(result.operationId)
+      this.#snapshot = {
+        ...this.#snapshot,
+        attachment: {
+          operationId: result.operationId,
+          status: 'failed',
+          message: result.failure.message,
+        },
+      }
+      this.publish()
+      return
+    }
+    if (result.type === 'status') {
+      if ('absent' in result) {
+        this.#attachmentOperationIds.delete(result.operationId)
+        this.#snapshot = {
+          ...this.#snapshot,
+          attachment: {
+            operationId: result.operationId,
+            status: 'failed',
+            message: 'Desktop reports that the attachment was not submitted.',
+          },
+        }
+      } else {
+        this.#attachmentOperationIds.delete(result.operationId)
+        this.#snapshot = {
+          ...this.#snapshot,
+          attachment: { operationId: result.operationId, status: 'accepted' },
+        }
+      }
+      this.publish()
     }
   }
 
@@ -233,12 +354,12 @@ export class MobileCompanionSurface {
     this.transmit(interaction.kind === 'approval' ? 'approval' : 'question', (channel) => { channel.settle(interaction) })
   }
 
-  private transmit(kind: CompanionMutationName, send: (channel: MobileCompanionMutationChannel) => void): void {
+  private transmit<T>(kind: CompanionMutationName, send: (channel: MobileCompanionMutationChannel) => T): T {
     requireCompanionMutation(this.#runtime.getState(), kind)
     if (this.#mutations === undefined) {
       throw new Error('Companion encrypted mutation channel is unavailable')
     }
-    send(this.#mutations)
+    return send(this.#mutations)
   }
 
   private publish(): void {
