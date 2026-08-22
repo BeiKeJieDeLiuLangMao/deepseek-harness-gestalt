@@ -20,4 +20,3 @@ Tool call
 future_tool · unknown fallback
 This turn failedHost rejected request
 HOST_400
-Send message

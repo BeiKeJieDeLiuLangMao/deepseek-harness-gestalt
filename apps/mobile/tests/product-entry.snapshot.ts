@@ -229,6 +229,9 @@ describe('bundled Mobile product entry', () => {
     await input.fill('bundled submit callback')
     await page.getByRole('button', { name: 'Send message' }).click()
     await expect.poll(async () => await input.inputValue()).toBe('')
+    await expect.poll(async () => await page.getByRole('button', { name: 'Send message' }).count()).toBe(1)
+    await page.getByRole('button', { name: 'Back', exact: true }).focus()
+    await expect.poll(async () => await page.getByRole('tooltip').count()).toBe(0)
     await page.locator('[data-toolview="file-mutation"] [data-expandable]').click()
     expect(await page.locator('[data-diff]').count()).toBe(1)
     const overflows = await page.evaluate(() => ({
