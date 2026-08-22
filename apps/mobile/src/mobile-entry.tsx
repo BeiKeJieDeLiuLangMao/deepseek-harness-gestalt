@@ -6,16 +6,21 @@ import type { PlatformAccountInstallation } from '@deepseek-ai/dsh-platform-acco
 import { MobileAccount } from './MobileAccount.tsx'
 import type { MobilePairingActions } from './MobilePairing.tsx'
 import type { CompanionForegroundRuntime } from './companion-lifecycle.ts'
-import { MobileCompanionSurface } from './companion-surface.ts'
+import {
+  MobileCompanionSurface,
+  type MobileCompanionMutationChannel,
+} from './companion-surface.ts'
 
 /** Product dependencies resolved before the Mobile React tree is mounted. */
-interface MobileEntryComposition {
+export interface MobileEntryComposition {
   /** Current Mobile installation lifecycle controller. */
   installation: PlatformAccountInstallation
   /** Personal Pairing adapter available after sign-in. */
   pairing?: MobilePairingActions
   /** Current physical-connection synchronization authority. */
   companion: CompanionForegroundRuntime
+  /** Reviewed encrypted channel that owns operations and decoded results. */
+  companionChannel?: MobileCompanionMutationChannel
 }
 
 /** Mounted product entry and its authenticated Desktop projection receiver. */
@@ -33,7 +38,7 @@ interface MountedMobileEntry {
  * @returns mounted product entry and authenticated Desktop projection receiver.
  */
 export function mountMobileEntry(container: Element, composition: MobileEntryComposition): MountedMobileEntry {
-  const companionSurface = new MobileCompanionSurface(composition.companion)
+  const companionSurface = new MobileCompanionSurface(composition.companion, composition.companionChannel)
   const root = createRoot(container)
   root.render(
     <StrictMode>
@@ -61,10 +66,12 @@ function MobileEntry({
       companionSurface={{
         sessions: projection.sessions,
         streaming: projection.streaming,
+        search: projection.search,
         onCreate: companionSurface.create,
         onSubmit: companionSurface.submit,
         onCancel: companionSurface.cancel,
         onAttach: companionSurface.attach,
+        onSearch: companionSurface.search,
         onSettled: companionSurface.settle,
       }}
     />

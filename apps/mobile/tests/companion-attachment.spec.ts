@@ -5,6 +5,7 @@ import {
   COMPANION_ATTACHMENT_MAX_BYTES,
   COMPANION_ATTACHMENT_SEAL_OVERHEAD_BYTES,
   sealCompanionAttachment,
+  transferSelectedCompanionAttachment,
 } from '../src/companion-attachment.ts'
 
 const pairingKey = crypto.getRandomValues(new Uint8Array(32))
@@ -69,5 +70,57 @@ describe('Companion encrypted attachments', () => {
       fileName: 'notes.txt',
     }, parseCompanionOperationId('operation-blocked'), parseCompanionSessionId('session-one'), reconnecting))
       .toThrow(/foreground synchronization/)
+  })
+
+  it.each([
+    ['binary', 'archive.bin', Uint8Array.of(0, 255, 1, 128)],
+    ['image', 'pixel.png', Uint8Array.of(137, 80, 78, 71, 13, 10, 26, 10)],
+    ['text', 'notes.txt', new TextEncoder().encode('real selected text bytes')],
+  ])('reads real %s file bytes, uploads only ciphertext, and sends only the capability control message', async (
+    _kind,
+    name,
+    plaintext,
+  ) => {
+    const uploaded: Uint8Array[] = []
+    const sent: unknown[] = []
+    const file = {
+      name,
+      arrayBuffer: async () => plaintext.buffer.slice(
+        plaintext.byteOffset,
+        plaintext.byteOffset + plaintext.byteLength,
+      ),
+    }
+    const operation = await transferSelectedCompanionAttachment(file, {
+      pairingKey,
+      origin: 'https://platform.example',
+      authorizationHeaders: { authorization: 'Bearer opaque-current-installation-proof' },
+      operationId: parseCompanionOperationId(`operation-${_kind}`),
+      sessionId: parseCompanionSessionId('session-one'),
+      connection: ready,
+      fetch: async (input, init) => {
+        expect(input).toBe('https://platform.example/v1/remote-attachments')
+        const headers = new Headers(init?.headers)
+        expect(headers.get('authorization')).toBe('Bearer opaque-current-installation-proof')
+        expect(headers.get('content-type')).toBe('application/octet-stream')
+        const body = new Uint8Array(await new Response(init?.body).arrayBuffer())
+        uploaded.push(body)
+        expect(body).not.toEqual(plaintext)
+        return new Response(JSON.stringify({
+          capability: 'A'.repeat(43),
+          byteLength: body.byteLength,
+          expiresAt: 1_900_000,
+        }), { status: 201, headers: { 'content-type': 'application/json' } })
+      },
+      send: async (offer) => { sent.push(offer) },
+    })
+
+    expect(uploaded).toHaveLength(1)
+    expect(operation.fileName).toBe(name)
+    expect(operation.byteLength).toBe(uploaded[0]?.byteLength)
+    expect(sent).toEqual([operation])
+    expect(JSON.stringify(sent)).not.toContain(Buffer.from(plaintext).toString('base64'))
+    expect(Object.keys(operation).sort()).toEqual([
+      'byteLength', 'capability', 'ciphertextSha256', 'expiresAt', 'fileName', 'operationId', 'sessionId', 'type',
+    ])
   })
 })

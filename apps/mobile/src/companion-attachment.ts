@@ -3,6 +3,7 @@
 import {
   COMPANION_ATTACHMENT_SEAL_OVERHEAD_BYTES,
   deriveCompanionAttachmentKey,
+  parseAttachmentCapability,
   REMOTE_PROTOCOL_LIMITS,
   sealCompanionAttachment as sealEndpointAttachment,
   type AttachmentCapability,
@@ -22,6 +23,34 @@ export interface CompanionAttachmentTransfer {
   byteLength: number
   expiresAt: number
   fileName: string
+}
+
+/** Browser file values required by the Companion transfer controller. */
+export interface SelectedCompanionFile {
+  /** Exact user-selected file name. */
+  readonly name: string
+  /** @returns a fresh copy of the selected file bytes. */
+  arrayBuffer(): Promise<ArrayBuffer>
+}
+
+/** Product dependencies for one selected-file transfer. */
+export interface SelectedCompanionAttachmentOptions {
+  /** Independent Personal Pairing key material retained on Mobile. */
+  pairingKey: Uint8Array
+  /** Operated HTTPS Platform origin that owns the pairing-scoped blob capability. */
+  origin: string
+  /** Current-installation proof interpreted by Platform as one Personal Pairing. */
+  authorizationHeaders: Record<string, string>
+  /** Correlation identity for Desktop confirmation or rejection. */
+  operationId: CompanionOfferAttachmentOperation['operationId']
+  /** Desktop-owned Session target. */
+  sessionId: CompanionOfferAttachmentOperation['sessionId']
+  /** Current foreground synchronization authority. */
+  connection: CompanionConnectionState | undefined
+  /** Encrypted Companion sender; receives only the bounded capability message. */
+  send(offer: CompanionOfferAttachmentOperation): Promise<void>
+  /** Browser HTTP adapter; defaults to global fetch. */
+  fetch?: typeof fetch
 }
 
 /**
@@ -70,4 +99,65 @@ export function buildCompanionAttachmentOffer(
     expiresAt: transfer.expiresAt,
     fileName: transfer.fileName,
   }
+}
+
+/**
+ * Read one real browser-selected file, upload only its ciphertext, and send only its capability.
+ * @param file - user-selected browser File values.
+ * @param options - pairing key, operated Platform authority, target Session, and encrypted sender.
+ * @returns the exact control message accepted by the encrypted sender.
+ */
+export async function transferSelectedCompanionAttachment(
+  file: SelectedCompanionFile,
+  options: SelectedCompanionAttachmentOptions,
+): Promise<CompanionOfferAttachmentOperation> {
+  requireCompanionMutation(options.connection, 'attachment')
+  if (file.name === '' || new TextEncoder().encode(file.name).byteLength > REMOTE_PROTOCOL_LIMITS.attachmentFileNameBytes) {
+    throw new TypeError('Companion attachment file name must be non-empty and within its byte ceiling')
+  }
+  const origin = new URL(options.origin)
+  if (origin.protocol !== 'https:') throw new TypeError('Companion attachment Platform origin must use HTTPS')
+  if (Object.keys(options.authorizationHeaders).length === 0) {
+    throw new TypeError('Companion attachment upload requires current pairing-scoped authorization')
+  }
+  const plaintext = new Uint8Array(await file.arrayBuffer())
+  let sealed: Awaited<ReturnType<typeof sealCompanionAttachment>>
+  try {
+    sealed = await sealCompanionAttachment(options.pairingKey, plaintext, options.connection)
+  } finally {
+    plaintext.fill(0)
+  }
+  const headers = new Headers(options.authorizationHeaders)
+  headers.set('content-type', 'application/octet-stream')
+  const response = await (options.fetch ?? fetch)(new URL('/v1/remote-attachments', origin).href, {
+    method: 'POST',
+    headers,
+    body: sealed.ciphertext,
+  })
+  if (response.status !== 201) {
+    throw new Error(`Companion attachment upload failed with HTTP ${String(response.status)}`)
+  }
+  let value: unknown
+  try {
+    value = await response.json()
+  } catch {
+    throw new Error('Companion attachment upload returned invalid JSON')
+  }
+  if (!isRecord(value) || value.byteLength !== sealed.ciphertext.byteLength
+    || !Number.isSafeInteger(value.expiresAt) || (value.expiresAt as number) <= 0) {
+    throw new Error('Companion attachment upload returned an invalid capability grant')
+  }
+  const offer = buildCompanionAttachmentOffer({
+    capability: parseAttachmentCapability(value.capability),
+    ciphertextSha256: sealed.ciphertextSha256,
+    byteLength: sealed.ciphertext.byteLength,
+    expiresAt: value.expiresAt as number,
+    fileName: file.name,
+  }, options.operationId, options.sessionId, options.connection)
+  await options.send(offer)
+  return offer
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }

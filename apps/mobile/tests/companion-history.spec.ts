@@ -131,4 +131,50 @@ describe('Mobile Companion browse projection', () => {
     fireEvent.click(workspace)
     expect(onCreate).not.toHaveBeenCalled()
   })
+
+  it('renders only Desktop-authoritative search hits and exposes Host HTTP 400', () => {
+    const onSearch = vi.fn()
+    const { rerender } = render(createElement(MobileBrowse, {
+      desktopName: 'Studio Mac',
+      connection: 'online',
+      sessions: [
+        { id: 's-hit', title: 'Indexed Session', summary: 'metadata without query' },
+        { id: 's-local', title: 'needle in local title', summary: 'must not become a local hit' },
+      ],
+      search: {
+        query: 'needle',
+        status: 'ready',
+        items: [{ sessionId: 's-hit' as never, snippet: 'Desktop indexed needle' }],
+        hasMore: false,
+      },
+      onSearch,
+      companionState: ready,
+    }))
+    expect(screen.getByText('Indexed Session')).toBeTruthy()
+    expect(screen.getByText('Desktop indexed needle')).toBeTruthy()
+    expect(screen.queryByText('needle in local title')).toBeNull()
+    fireEvent.change(screen.getByRole('searchbox', { name: '搜索 Desktop Sessions' }), {
+      target: { value: 'next query' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '搜索' }))
+    expect(onSearch).toHaveBeenCalledWith('next query')
+
+    rerender(createElement(MobileBrowse, {
+      desktopName: 'Studio Mac',
+      connection: 'online',
+      sessions: history,
+      search: {
+        query: 'bad request',
+        status: 'error',
+        items: [],
+        hasMore: false,
+        error: {
+          kind: 'http', code: 'HOST_HTTP_STATUS', message: 'Desktop Host returned HTTP 400', status: 400,
+        },
+      },
+      onSearch,
+      companionState: ready,
+    }))
+    expect(screen.getByRole('alert').textContent).toContain('HTTP 400')
+  })
 })

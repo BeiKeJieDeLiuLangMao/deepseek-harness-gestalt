@@ -1,8 +1,14 @@
 /** Product-owned Mobile projection of authenticated Desktop Companion state. */
 
+import type {
+  CompanionHostFailure,
+  CompanionOperationId,
+  CompanionResult,
+  CompanionSessionSearchItem,
+} from '@deepseek-ai/dsh-remote-protocol'
 import type { CompanionInteraction } from './companion-approval.ts'
 import type { CompanionSessionSummary } from './companion-history.ts'
-import type { CompanionForegroundRuntime } from './companion-lifecycle.ts'
+import { companionMayMutate, type CompanionForegroundRuntime } from './companion-lifecycle.ts'
 import { requireCompanionMutation, type CompanionMutationName } from './companion-mutation.ts'
 
 interface ValidatedDesktopSurfaceResync {
@@ -24,10 +30,29 @@ interface MobileCompanionSurfaceSnapshot {
   readonly sessions: readonly CompanionSessionSummary[]
   /** Last authenticated execution state. */
   readonly streaming: boolean
+  /** Current Desktop-authoritative full-text search state. */
+  readonly search: MobileCompanionSearchSnapshot
 }
 
+/** Desktop-authoritative search state; Mobile never synthesizes substring hits. */
+export type MobileCompanionSearchSnapshot =
+  | { readonly query: ''; readonly status: 'idle'; readonly items: readonly []; readonly hasMore: false }
+  | {
+    readonly query: string
+    readonly status: 'loading' | 'ready'
+    readonly items: readonly CompanionSessionSearchItem[]
+    readonly hasMore: boolean
+  }
+  | {
+    readonly query: string
+    readonly status: 'error'
+    readonly items: readonly CompanionSessionSearchItem[]
+    readonly hasMore: boolean
+    readonly error: CompanionHostFailure
+  }
+
 /** Optional encrypted mutation channel installed with the authenticated Companion decoder. */
-interface MobileCompanionMutationChannel {
+export interface MobileCompanionMutationChannel {
   /** @param input - Desktop-default Session target. */
   create(input: { workspace?: string }): void
   /** @param sessionId - Desktop Session target. @param text - prompt text. */
@@ -35,7 +60,9 @@ interface MobileCompanionMutationChannel {
   /** @param sessionId - Desktop Session target. */
   cancel(sessionId: string): void
   /** @param sessionId - Desktop Session target. */
-  attach(sessionId: string): void
+  attach(sessionId: string, file: File): void
+  /** @param query - non-blank authoritative Session search. @returns operation id used to correlate its result. */
+  search(query: string): CompanionOperationId
   /** @param interaction - Desktop-authorized approval or question settlement. */
   settle(interaction: CompanionInteraction): void
 }
@@ -45,7 +72,12 @@ export class MobileCompanionSurface {
   readonly #runtime: CompanionForegroundRuntime
   readonly #mutations: MobileCompanionMutationChannel | undefined
   readonly #listeners = new Set<() => void>()
-  #snapshot: MobileCompanionSurfaceSnapshot = { sessions: [], streaming: false }
+  #snapshot: MobileCompanionSurfaceSnapshot = {
+    sessions: [],
+    streaming: false,
+    search: { query: '', status: 'idle', items: [], hasMore: false },
+  }
+  #searchOperationId: CompanionOperationId | undefined
 
   /**
    * @param runtime - current physical-connection synchronization authority.
@@ -90,6 +122,7 @@ export class MobileCompanionSurface {
             ...(session.blocks === undefined ? {} : { blocks: [...session.blocks] }),
           })),
           streaming: message.streaming,
+          search: this.#snapshot.search,
         }
         this.publish()
       },
@@ -111,9 +144,70 @@ export class MobileCompanionSurface {
     this.transmit('cancel', (channel) => { channel.cancel(sessionId) })
   }
 
-  /** @param sessionId - Desktop Session target. */
-  readonly attach = (sessionId: string): void => {
-    this.transmit('attachment', (channel) => { channel.attach(sessionId) })
+  /** @param sessionId - Desktop Session target. @param file - real browser-selected file. */
+  readonly attach = (sessionId: string, file: File): void => {
+    this.transmit('attachment', (channel) => { channel.attach(sessionId, file) })
+  }
+
+  /**
+   * Request Desktop full-text Session search without inspecting the local Companion Cache.
+   * @param query - user query; blank input clears the search page locally without fabricating hits.
+   */
+  readonly search = (query: string): void => {
+    const trimmed = query.trim()
+    if (trimmed === '') {
+      this.#searchOperationId = undefined
+      this.#snapshot = {
+        ...this.#snapshot,
+        search: { query: '', status: 'idle', items: [], hasMore: false },
+      }
+      this.publish()
+      return
+    }
+    if (!companionMayMutate(this.#runtime.getState())) {
+      throw new Error('Companion search requires foreground synchronization')
+    }
+    if (this.#mutations === undefined) throw new Error('Companion encrypted mutation channel is unavailable')
+    this.#searchOperationId = this.#mutations.search(trimmed)
+    this.#snapshot = {
+      ...this.#snapshot,
+      search: { query: trimmed, status: 'loading', items: [], hasMore: false },
+    }
+    this.publish()
+  }
+
+  /**
+   * Apply one decoded result authenticated by the current Encrypted Companion channel.
+   * @param result - validated result after endpoint decryption and protocol decoding.
+   */
+  acceptValidatedCompanionResult(result: CompanionResult): void {
+    if (result.operationId !== this.#searchOperationId) return
+    if (result.type === 'session-search') {
+      this.#snapshot = {
+        ...this.#snapshot,
+        search: {
+          query: this.#snapshot.search.query,
+          status: 'ready',
+          items: result.items.map(item => ({ ...item })),
+          hasMore: result.hasMore,
+        },
+      }
+      this.publish()
+      return
+    }
+    if (result.type === 'operation-failed') {
+      this.#snapshot = {
+        ...this.#snapshot,
+        search: {
+          query: this.#snapshot.search.query,
+          status: 'error',
+          items: this.#snapshot.search.items,
+          hasMore: this.#snapshot.search.hasMore,
+          error: result.failure,
+        },
+      }
+      this.publish()
+    }
   }
 
   /** @param interaction - Desktop-authorized approval or question settlement. */
