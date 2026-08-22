@@ -356,6 +356,7 @@ export interface PersonalPairingAuthorityStore {
 export interface PersonalPairingTransactionState {
   endpointMailbox: EndpointOwnedPairingMailboxState
   endpointPublications: Map<PendingPairingId, EndpointPairingPublication>
+  endpointAccessGenerations: Map<string, EndpointAccessGeneration>
   challenges: Map<PairingChallengeId, ChallengeRecord>
   settledChallenges: Map<PairingChallengeId, SettledChallengeRecord>
   completions: Map<PairingCompletionId, CompletionReplayRecord>
@@ -381,6 +382,14 @@ export interface EndpointPairingPublication {
   desktopCredentialDigest: Uint8Array
   credentialDigest: Uint8Array
   pairing: StoredPersonalPairing
+  accessGeneration: number
+}
+
+/** Durable route phase used to cancel stale endpoint authority publication. */
+export interface EndpointAccessGeneration {
+  generation: number
+  phase: 'enabled' | 'disabled'
+  routeId?: RelayRouteId
 }
 
 interface StoredDesktopAuthority {
@@ -1171,6 +1180,9 @@ export class PersonalPairingProvider extends RemoteAccessService {
         desktopCredentialDigest: input.desktopCredentialDigest.slice(),
         credentialDigest: input.mobileCredentialDigest.slice(),
         pairing,
+        accessGeneration: this.requireEndpointAccessGeneration(
+          account.id, installation.id, authority.routeId,
+        ),
       }
       this.requireTransactions().endpointPublications.set(input.pendingPairingId, publication)
       return { publication: cloneEndpointPublication(publication) }
@@ -1182,49 +1194,76 @@ export class PersonalPairingProvider extends RemoteAccessService {
   private async publishEndpointPairing(publication: EndpointPairingPublication): Promise<EndpointPairingConfirmation> {
     const register = this.options.relay?.registerPairingCredentialDigests
     if (register === undefined) throw new Error('Remote Relay cannot register endpoint-owned pairing authority')
-    const relayRevision = await register.call(this.options.relay,
-      publication.routeId, parseRelayPairingSelector(publication.pairing.id),
-      publication.desktopCredentialDigest, publication.credentialDigest)
-    await this.authority.confirmMobilePairing({
-      accountId: publication.accountId,
-      desktopInstallationId: publication.desktopInstallationId,
-      mobileInstallationId: publication.mobileInstallationId,
-      pendingPairingId: publication.pendingPairingId,
-      pairingId: publication.pairing.id,
-    })
-    return await this.exclusive(() => {
-      const retained = this.requireTransactions().endpointPublications.get(publication.pendingPairingId)
-      const existing = [...this.pairings.values()].find(
-        pairing => pairing.endpointPendingPairingId === publication.pendingPairingId,
-      )
-      if (existing !== undefined) return {
-        pairing: clonePairing(existing), routeId: existing.endpointRouteId as RelayRouteId,
-        relayRevision: existing.endpointRelayRevision as number,
+    let registered = false
+    let authorityPublished = false
+    try {
+      await this.assertEndpointPublicationCurrent(publication)
+      const relayRevision = await register.call(this.options.relay,
+        publication.routeId, parseRelayPairingSelector(publication.pairing.id),
+        publication.desktopCredentialDigest, publication.credentialDigest)
+      registered = true
+      await this.assertEndpointPublicationCurrent(publication)
+      await this.authority.confirmMobilePairing({
+        accountId: publication.accountId,
+        desktopInstallationId: publication.desktopInstallationId,
+        mobileInstallationId: publication.mobileInstallationId,
+        pendingPairingId: publication.pendingPairingId,
+        pairingId: publication.pairing.id,
+      })
+      authorityPublished = true
+      await this.assertEndpointPublicationCurrent(publication)
+      return await this.exclusive(async () => {
+        await this.assertEndpointAccessCurrent(publication)
+        const retained = this.requireTransactions().endpointPublications.get(publication.pendingPairingId)
+        const existing = [...this.pairings.values()].find(
+          pairing => pairing.endpointPendingPairingId === publication.pendingPairingId,
+        )
+        if (existing !== undefined) return {
+          pairing: clonePairing(existing), routeId: existing.endpointRouteId as RelayRouteId,
+          relayRevision: existing.endpointRelayRevision as number,
+        }
+        if (retained === undefined || !sameEndpointPublication(retained, publication)) {
+          throw new RemoteAccessError('PAIRING_PENDING_INVALID', 'Endpoint Pairing publication is unavailable')
+        }
+        const pairing = { ...retained.pairing, endpointRelayRevision: relayRevision }
+        const mailbox = this.endpointMailbox()
+        try {
+          mailbox.confirm({
+            pendingPairingId: retained.pendingPairingId,
+            accountId: retained.accountId,
+            desktopInstallationId: retained.desktopInstallationId,
+            pairingId: pairing.id,
+            now: this.clock.now(),
+          })
+          this.pairings.set(pairing.id, pairing)
+          this.principalIds.add(pairing.devicePrincipal.id)
+          this.commitEndpointMailbox(mailbox)
+        } catch (error) {
+          this.pairings.delete(pairing.id)
+          this.principalIds.delete(pairing.devicePrincipal.id)
+          throw error
+        }
+        this.requireTransactions().endpointPublications.delete(retained.pendingPairingId)
+        return { pairing: clonePairing(pairing), routeId: retained.routeId, relayRevision }
+      })
+    } catch (error) {
+      const cleanup = await Promise.allSettled([
+        ...(authorityPublished ? [this.authority.revokeMobilePairing(publication.pairing.id)] : []),
+        ...(registered ? [
+          this.options.relay?.revokeCredentialDigest?.(
+            publication.routeId, 'desktop', publication.desktopCredentialDigest,
+          ) ?? Promise.resolve(),
+          this.options.relay?.revokeCredentialDigest?.(
+            publication.routeId, 'mobile', publication.credentialDigest,
+          ) ?? Promise.resolve(),
+        ] : []),
+      ])
+      const cleanupErrors = cleanup.filter(result => result.status === 'rejected').map(result => result.reason)
+      if (cleanupErrors.length > 0) {
+        throw new AggregateError([error, ...cleanupErrors], 'Endpoint Pairing publication rollback failed')
       }
-      if (retained === undefined || !sameEndpointPublication(retained, publication)) {
-        throw new RemoteAccessError('PAIRING_PENDING_INVALID', 'Endpoint Pairing publication is unavailable')
-      }
-      const pairing = { ...retained.pairing, endpointRelayRevision: relayRevision }
-      const mailbox = this.endpointMailbox()
-      try {
-        mailbox.confirm({
-          pendingPairingId: retained.pendingPairingId,
-          accountId: retained.accountId,
-          desktopInstallationId: retained.desktopInstallationId,
-          pairingId: pairing.id,
-          now: this.clock.now(),
-        })
-        this.pairings.set(pairing.id, pairing)
-        this.principalIds.add(pairing.devicePrincipal.id)
-        this.commitEndpointMailbox(mailbox)
-      } catch (error) {
-        this.pairings.delete(pairing.id)
-        this.principalIds.delete(pairing.devicePrincipal.id)
-        throw error
-      }
-      this.requireTransactions().endpointPublications.delete(retained.pendingPairingId)
-      return { pairing: clonePairing(pairing), routeId: retained.routeId, relayRevision }
-    })
+      throw error
+    }
   }
 
   async deliverEndpointRelayAuthority(input: {
@@ -1257,6 +1296,7 @@ export class PersonalPairingProvider extends RemoteAccessService {
         accountId: account.id,
         desktopInstallationId: installation.id,
       })
+      this.requireTransactions().endpointPublications.delete(input.pendingPairingId)
       this.commitEndpointMailbox(mailbox)
     })
   }
@@ -1269,16 +1309,34 @@ export class PersonalPairingProvider extends RemoteAccessService {
       const { account, installation } = await this.authenticate(input.desktop, 'desktop')
       this.evictExpiredRecords()
       if (input.enabled) {
-        await this.authority.enableDesktop(
+        const before = await this.authority.getDesktop(account.id, installation.id)
+        const routeId = await this.authority.enableDesktop(
           account.id,
           installation.id,
           this.options.relay === undefined
             ? parseRelayRouteId('keyless-no-relay')
             : parseRelayRouteId(this.randomId('relay-route')),
         )
+        const key = accessKey(account.id, installation.id)
+        const retained = this.requireTransactions().endpointAccessGenerations.get(key)
+        if (!before.enabled || retained === undefined || retained.phase !== 'enabled' || retained.routeId !== routeId) {
+          this.requireTransactions().endpointAccessGenerations.set(key, {
+            generation: (retained?.generation ?? 0) + 1, phase: 'enabled', routeId,
+          })
+        }
         return { enabled: true }
       }
       const routeIds = await this.authority.disableDesktop(account.id, installation.id)
+      const accessKeyValue = accessKey(account.id, installation.id)
+      const retainedAccess = this.requireTransactions().endpointAccessGenerations.get(accessKeyValue)
+      this.requireTransactions().endpointAccessGenerations.set(accessKeyValue, {
+        generation: (retainedAccess?.generation ?? 0) + 1, phase: 'disabled',
+      })
+      for (const [pendingPairingId, publication] of this.requireTransactions().endpointPublications) {
+        if (publication.accountId === account.id && publication.desktopInstallationId === installation.id) {
+          this.requireTransactions().endpointPublications.delete(pendingPairingId)
+        }
+      }
       if (this.options.relay !== undefined) {
         await cleanupAll(routeIds.map(routeId => async () => {
           await this.options.relay?.revokeRoute(routeId)
@@ -2194,6 +2252,35 @@ export class PersonalPairingProvider extends RemoteAccessService {
     return result
   }
 
+  private requireEndpointAccessGeneration(
+    accountId: Branded<'PlatformAccountId'>,
+    desktopInstallationId: InstallationId,
+    routeId: RelayRouteId,
+  ): number {
+    const access = this.requireTransactions().endpointAccessGenerations.get(accessKey(accountId, desktopInstallationId))
+    if (access?.phase !== 'enabled' || access.routeId !== routeId) {
+      throw new RemoteAccessError('MOBILE_ACCESS_DISABLED', 'Endpoint Pairing route generation is unavailable')
+    }
+    return access.generation
+  }
+
+  private async assertEndpointPublicationCurrent(publication: EndpointPairingPublication): Promise<void> {
+    await this.exclusive(async () => { await this.assertEndpointAccessCurrent(publication) })
+  }
+
+  private async assertEndpointAccessCurrent(publication: EndpointPairingPublication): Promise<void> {
+    const retained = this.requireTransactions().endpointPublications.get(publication.pendingPairingId)
+    const access = this.requireTransactions().endpointAccessGenerations.get(
+      accessKey(publication.accountId, publication.desktopInstallationId),
+    )
+    const authority = await this.authority.getDesktop(publication.accountId, publication.desktopInstallationId)
+    if (retained === undefined || !sameEndpointPublication(retained, publication)
+      || access?.phase !== 'enabled' || access.generation !== publication.accessGeneration
+      || access.routeId !== publication.routeId || !authority.enabled || authority.routeId !== publication.routeId) {
+      throw new RemoteAccessError('PAIRING_PENDING_INVALID', 'Endpoint Pairing publication generation is stale')
+    }
+  }
+
   private get challenges(): PersonalPairingTransactionState['challenges'] { return this.requireTransactions().challenges }
   private get settledChallenges(): PersonalPairingTransactionState['settledChallenges'] {
     return this.requireTransactions().settledChallenges
@@ -2251,6 +2338,7 @@ function createPairingTransactionState(): PersonalPairingTransactionState {
   return {
     endpointMailbox: { challenges: [], pending: [] },
     endpointPublications: new Map(),
+    endpointAccessGenerations: new Map(),
     challenges: new Map(),
     settledChallenges: new Map(),
     completions: new Map(),
@@ -2290,6 +2378,7 @@ function sameEndpointPublication(left: EndpointPairingPublication, right: Endpoi
     && left.pendingPairingId === right.pendingPairingId
     && left.routeId === right.routeId
     && left.pairing.id === right.pairing.id
+    && left.accessGeneration === right.accessGeneration
     && bytesEqual(left.desktopCredentialDigest, right.desktopCredentialDigest)
     && bytesEqual(left.credentialDigest, right.credentialDigest)
 }

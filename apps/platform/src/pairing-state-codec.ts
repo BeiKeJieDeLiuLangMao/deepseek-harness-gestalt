@@ -44,6 +44,7 @@ export function emptyPairingTransactionState(): PersonalPairingTransactionState 
   return {
     endpointMailbox: { challenges: [], pending: [] },
     endpointPublications: new Map(),
+    endpointAccessGenerations: new Map(),
     challenges: new Map(),
     settledChallenges: new Map(),
     completions: new Map(),
@@ -69,6 +70,7 @@ export function encodePairingTransactionState(state: PersonalPairingTransactionS
   return {
     endpointMailbox: encodeEndpointMailbox(state.endpointMailbox),
     endpointPublications: [...state.endpointPublications].map(([id, publication]) => [id, encodeEndpointPublication(publication)]),
+    endpointAccessGenerations: [...state.endpointAccessGenerations],
     challenges: [...state.challenges].map(([id, record]) => [id, encodeChallenge(record)]),
     settledChallenges: [...state.settledChallenges].map(([id, record]) => [id, encodeSettledChallenge(record)]),
     completions: [...state.completions].map(([id, record]) => [id, encodeCompletion(record)]),
@@ -103,6 +105,7 @@ export function decodePairingTransactionState(value: unknown): PersonalPairingTr
     endpointPublications: decodeMap(
       record.endpointPublications, 'endpointPublications', parsePendingPairingId, decodeEndpointPublication,
     ),
+    endpointAccessGenerations: decodeEndpointAccessGenerations(record.endpointAccessGenerations),
     challenges: decodeMap(record.challenges, 'challenges', parsePairingChallengeId, decodeChallenge),
     settledChallenges: decodeMap(
       record.settledChallenges, 'settledChallenges', parsePairingChallengeId, decodeSettledChallenge,
@@ -131,6 +134,7 @@ function encodeEndpointPublication(publication: EndpointPairingPublication): unk
     desktopCredentialDigest: encodeBytes(publication.desktopCredentialDigest),
     credentialDigest: encodeBytes(publication.credentialDigest),
     pairing: encodeStoredPairing(publication.pairing),
+    accessGeneration: publication.accessGeneration,
   }
 }
 
@@ -138,7 +142,7 @@ function decodeEndpointPublication(value: unknown): EndpointPairingPublication {
   const record = asRecord(value, 'endpoint publication')
   rejectUnsupportedKeys(record, [
     'accountId', 'desktopInstallationId', 'mobileInstallationId', 'pendingPairingId',
-    'routeId', 'desktopCredentialDigest', 'credentialDigest', 'pairing',
+    'routeId', 'desktopCredentialDigest', 'credentialDigest', 'pairing', 'accessGeneration',
   ], 'endpoint publication')
   return {
     accountId: parsePlatformAccountId(record.accountId),
@@ -149,7 +153,33 @@ function decodeEndpointPublication(value: unknown): EndpointPairingPublication {
     desktopCredentialDigest: decodeFixedBytes(record.desktopCredentialDigest, 'endpoint publication Desktop credential digest', 32),
     credentialDigest: decodeFixedBytes(record.credentialDigest, 'endpoint publication credential digest', 32),
     pairing: decodeStoredPairing(record.pairing),
+    accessGeneration: positiveSafeInteger(record.accessGeneration, 'endpoint publication access generation'),
   }
+}
+
+function decodeEndpointAccessGenerations(value: unknown): PersonalPairingTransactionState['endpointAccessGenerations'] {
+  const result = new Map<string, PersonalPairingTransactionState['endpointAccessGenerations'] extends Map<string, infer V> ? V : never>()
+  for (const entry of asArray(value, 'endpointAccessGenerations')) {
+    if (!Array.isArray(entry) || entry.length !== 2 || typeof entry[0] !== 'string') {
+      throw new TypeError('endpointAccessGenerations entry is invalid')
+    }
+    const record = asRecord(entry[1], 'endpoint access generation')
+    rejectUnsupportedKeys(record, ['generation', 'phase', 'routeId'], 'endpoint access generation')
+    if (record.phase !== 'enabled' && record.phase !== 'disabled') {
+      throw new TypeError('endpoint access generation phase is invalid')
+    }
+    result.set(entry[0], {
+      generation: positiveSafeInteger(record.generation, 'endpoint access generation'),
+      phase: record.phase,
+      ...(record.routeId === undefined ? {} : { routeId: parseRelayRouteId(record.routeId) }),
+    })
+  }
+  return result
+}
+
+function positiveSafeInteger(value: unknown, name: string): number {
+  if (!Number.isSafeInteger(value) || (value as number) < 1) throw new TypeError(`${name} must be a positive safe integer`)
+  return value as number
 }
 
 function encodeEndpointMailbox(state: EndpointOwnedPairingMailboxState): unknown {

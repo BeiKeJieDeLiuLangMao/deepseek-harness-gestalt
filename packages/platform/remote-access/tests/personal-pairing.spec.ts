@@ -31,6 +31,47 @@ import {
 const NOW = Date.parse('2026-08-18T10:00:00.000Z')
 
 describe('PersonalPairingProvider', () => {
+  it('cancels an in-flight endpoint publication when its route generation is disabled', async () => {
+    const routeId = parseRelayRouteId('relay-route-generation')
+    const relay = relayStub(routeId, 1)
+    const registration = deferred<number>()
+    relay.registerPairingCredentialDigests.mockImplementationOnce(async () => await registration.promise)
+    const provider = configuredProvider({
+      handshake: handshakeProvider(), relay, authority: new MemoryPersonalPairingAuthorityStore(),
+      clock: { now: () => NOW }, randomId: kind => kind === 'relay-route' ? routeId : `${kind}-generation`,
+    })
+    const desktop = authentication('desktop-installation')
+    const mobile = authentication('mobile-installation')
+    await provider.setMobileAccess({ desktop, enabled: true })
+    const challenge = await provider.createEndpointChallenge({
+      desktop, rendezvousId: parsePairingRendezvousId('rendezvous-generation'), expiresAt: NOW + 60_000,
+      clientIp: '192.0.2.1',
+    })
+    const completionId = parsePairingCompletionId('completion-generation')
+    const pending = await provider.submitEndpointMessage1({
+      mobile, challengeId: challenge.challengeId, completionId,
+      device: { name: 'Alice phone', platform: 'ios' }, message1: Uint8Array.of(1),
+    })
+    await provider.submitEndpointMessage2({
+      desktop, pendingPairingId: pending.pendingPairingId, message2: Uint8Array.of(2),
+    })
+    await provider.submitEndpointMessage3({ mobile, completionId, message3: Uint8Array.of(3) })
+    const confirming = provider.confirmEndpointPairing({
+      desktop, pendingPairingId: pending.pendingPairingId,
+      desktopCredentialDigest: new Uint8Array(32).fill(4),
+      mobileCredentialDigest: new Uint8Array(32).fill(5),
+    })
+    await vi.waitFor(() => { expect(relay.registerPairingCredentialDigests).toHaveBeenCalledOnce() })
+    await provider.setMobileAccess({ desktop, enabled: false })
+    registration.resolve(1)
+    await expect(confirming).rejects.toMatchObject({ code: 'PAIRING_PENDING_INVALID' })
+    expect(relay.revokeCredentialDigest).toHaveBeenCalledTimes(2)
+    expect(await provider.listPersonalPairings(desktop)).toEqual([])
+    await provider.setMobileAccess({ desktop, enabled: true })
+    expect(await provider.listPersonalPairings(desktop)).toEqual([])
+    await provider.dispose()
+  })
+
   it('mediates the endpoint-owned XKpsk3 mailbox without calling the Platform crypto adapter', async () => {
     const handshake = handshakeProvider()
     const relay = relayStub(parseRelayRouteId('route-endpoint'), 1)
