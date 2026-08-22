@@ -45,8 +45,8 @@
 /* The persistent expand/collapse cluster at the top-right corner: two rail
    controls side by side (bottom panel's glyph LEFT of the right panel's).
    Always pinned to the viewport corner — inside the right panel's top-right
-   while it is open, sitting flush in the 34px tab strip (28px buttons at
-   top: 3) whose right end it really squeezes. z-index 45: above the panels
+   while it is open, sitting flush in the Web 34px or Desktop 36px tab strip
+   whose right end it really squeezes. z-index 45: above the panels
    (40) but below the app's overlay stack (menus/tooltips/modals sit at
    100+), so a cordis approval popup is never hidden behind the workbench
    (issue #52). Absolute within the panel host (the host's inset: 0 makes
@@ -61,6 +61,10 @@
   flex-direction: row;
   gap: 4px;
   pointer-events: auto;
+}
+
+:global(body:has([data-desktop-chrome])) .toggleCluster {
+  top: calc(4px + env(safe-area-inset-top));
 }
 
 /* The tab strip of the OPEN right panel reserves the cluster's width at its
@@ -231,6 +235,14 @@ body[data-dsh-sidebar-dragging] .bottomPanel {
   will-change: transform;
 }
 
+/* Resizing the panel continuously changes the conversation scrollport and
+   wakes Chromium's overlay scrollbar. Preserve its gutter and scrolling but
+   keep the transient thumb from flashing beside the moving panel edge. */
+:global(body[data-dsh-sidebar-dragging] [data-conversation-scroll]) {
+  --dsh-scrollbar-thumb: transparent;
+  --dsh-scrollbar-thumb-hover: transparent;
+}
+
 /* The bottom panel's height drag: the top edge strip (mirror of the right
    panel's width strip), centered on the border like the width strip. */
 .bottomResize {
@@ -292,8 +304,7 @@ body[data-dsh-sidebar-dragging] .bottomPanel {
    wrappers) have no blanket button rule. The property is a no-op in plain
    browsers and in shells without drag regions — safe everywhere. */
 .toggleCluster,
-.toggleButton,
-.tabBar {
+.toggleButton {
   -webkit-app-region: no-drag;
 }
 
@@ -581,6 +592,7 @@ body[data-dsh-sidebar-dragging] .bottomPanel {
 
 .tabBar {
   position: relative;
+  box-sizing: border-box;
   flex: none;
   display: flex;
   align-items: stretch;
@@ -589,21 +601,28 @@ body[data-dsh-sidebar-dragging] .bottomPanel {
   background: var(--dsw-alias-bg-layer-1);
 }
 
-/* Keep a narrow window-drag target at the viewport edge without swallowing
-   tab activation, tab reordering, close, or new-tab input below it. */
-.windowDragRail {
-  position: absolute;
-  z-index: 2;
-  top: 0;
-  right: 0;
-  left: 0;
-  height: 5px;
+/* Desktop aligns the top Workbench with its Window Chrome. Browser-only Web
+   and the bottom Workbench retain the compact 34px tab strip. */
+.tabBar[data-window-chrome] {
+  height: var(--dsh-window-chrome-height);
+}
+
+/* Desktop Window Chrome uses only the unoccupied space after the + control;
+   tabs and controls remain ordinary pointer targets. */
+.windowDragSpace {
+  flex: 1 0 12px;
+  min-width: 12px;
   -webkit-app-region: drag;
 }
 
 /* The bottom workbench is not attached to a window edge. */
-.bottomPanel .windowDragRail {
+.bottomPanel .windowDragSpace {
   display: none;
+}
+
+/* A tab drag temporarily returns this space to the tab-strip drop target. */
+body[data-dsh-tab-dragging] .windowDragSpace {
+  -webkit-app-region: no-drag;
 }
 
 .tabBarDrop {

@@ -101,6 +101,8 @@ export function TabBar(props: {
   paneId: string
   tabs: SidebarTab[]
   active: string | null
+  /** Whether this pane touches the Desktop Window Chrome edge. */
+  windowChrome?: boolean
   onActivate: (tabId: string) => void
   onClose: (tabId: string) => void
   onNewTab: (optionId: string) => void
@@ -114,13 +116,16 @@ export function TabBar(props: {
   getTabBadge?: (tab: SidebarTab) => ReactNode
 }) {
   const {
-    paneId, tabs, active, onActivate, onClose, onNewTab, newTabOptions, onDropTab, getTabIcon, getTabBadge,
+    paneId, tabs, active, windowChrome = false,
+    onActivate, onClose, onNewTab, newTabOptions, onDropTab, getTabIcon, getTabBadge,
   } = props
   const [menuOpen, setMenuOpen] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const listRef = useRef<HTMLDivElement>(null)
   const plusRef = useRef<HTMLButtonElement>(null)
   const overlayRequestId = useRef<string | null>(null)
+  const desktopPlatform = typeof window === 'undefined' ? undefined : window.dshDesktop?.platform
+  const ownsWindowChrome = windowChrome && (desktopPlatform === 'darwin' || desktopPlatform === 'win32')
   const onNewTabRef = useRef(onNewTab)
   useEffect(() => {
     onNewTabRef.current = onNewTab
@@ -203,6 +208,7 @@ export function TabBar(props: {
   return (
     <div
       className={clsx(css.tabBar, dragOver && css.tabBarDrop)}
+      data-window-chrome={ownsWindowChrome || undefined}
       onDragOver={(event) => {
         // The strip owns drops on itself (merge into this pane); stopping
         // propagation keeps the pane root from also running its edge-zone
@@ -222,7 +228,6 @@ export function TabBar(props: {
         if (payload !== null) onDropTab(payload, null)
       }}
     >
-      <div className={css.windowDragRail} data-workbench-window-drag="" aria-hidden="true" />
       <div ref={listRef} className={css.tabList}>
         {tabs.map(tab => (
           <div
@@ -337,6 +342,7 @@ export function TabBar(props: {
             </button>
           )}
         />
+        {ownsWindowChrome && <div className={css.windowDragSpace} data-workbench-window-drag="" aria-hidden="true" />}
       </div>
     </div>
   )

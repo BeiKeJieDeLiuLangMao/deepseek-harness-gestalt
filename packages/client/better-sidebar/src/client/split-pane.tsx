@@ -118,6 +118,7 @@ function PaneEmptyCards(props: {
 /** A leaf: tab strip + active content + VSCode-style drop target for tabs. */
 function LeafView(props: {
   leaf: { id: string; tabs: SidebarTab[]; active: string | null }
+  windowChrome: boolean
   newTabOptions: NewTabOption[]
   actions: WorkbenchActions
   onNewTab: (optionId: string) => void
@@ -125,7 +126,7 @@ function LeafView(props: {
   getTabIcon?: (tab: SidebarTab) => ReactNode
   getTabBadge?: (tab: SidebarTab) => ReactNode
 }) {
-  const { leaf, newTabOptions, actions, onNewTab, renderTab, getTabIcon, getTabBadge } = props
+  const { leaf, windowChrome, newTabOptions, actions, onNewTab, renderTab, getTabIcon, getTabBadge } = props
   const [dropZone, setDropZone] = useState<DropZone | null>(null)
   const activeTab = leaf.tabs.find(tab => tab.id === leaf.active) ?? leaf.tabs[leaf.tabs.length - 1]
 
@@ -174,6 +175,7 @@ function LeafView(props: {
         paneId={leaf.id}
         tabs={leaf.tabs}
         active={leaf.active}
+        windowChrome={windowChrome}
         onActivate={(tabId) => { actions.activateTab(leaf.id, tabId) }}
         onClose={(tabId) => { actions.closeTab(leaf.id, tabId) }}
         onNewTab={onNewTab}
@@ -213,6 +215,7 @@ function LeafView(props: {
 /** Recursive node renderer. */
 function NodeView(props: {
   node: SplitNode
+  windowChrome: boolean
   state: SidebarState
   newTabOptions: NewTabOption[]
   actions: WorkbenchActions
@@ -221,11 +224,12 @@ function NodeView(props: {
   getTabIcon?: (tab: SidebarTab) => ReactNode
   getTabBadge?: (tab: SidebarTab) => ReactNode
 }) {
-  const { node, state, newTabOptions, actions, onNewTab, renderTab, getTabIcon, getTabBadge } = props
+  const { node, windowChrome, state, newTabOptions, actions, onNewTab, renderTab, getTabIcon, getTabBadge } = props
   if (node.kind === 'leaf') {
     return (
       <LeafView
         leaf={node}
+        windowChrome={windowChrome}
         newTabOptions={newTabOptions}
         actions={actions}
         onNewTab={onNewTab}
@@ -252,6 +256,7 @@ function NodeView(props: {
           >
             <NodeView
               node={child}
+              windowChrome={windowChrome && (node.dir === 'row' || index === 0)}
               state={state}
               newTabOptions={newTabOptions}
               actions={actions}
@@ -274,6 +279,8 @@ function NodeView(props: {
 export function Workbench(props: {
   state: SidebarState
   tree?: SplitNode
+  /** Whether the root tree starts at the Desktop Window Chrome edge. */
+  windowChrome?: boolean
   newTabOptions: NewTabOption[]
   actions: WorkbenchActions
   onNewTab: (optionId: string) => void
@@ -281,11 +288,12 @@ export function Workbench(props: {
   getTabIcon?: (tab: SidebarTab) => ReactNode
   getTabBadge?: (tab: SidebarTab) => ReactNode
 }) {
-  const { state, tree, newTabOptions, actions, onNewTab, renderTab, getTabIcon, getTabBadge } = props
+  const { state, tree, windowChrome = false, newTabOptions, actions, onNewTab, renderTab, getTabIcon, getTabBadge } = props
   return (
     <div className={css.workbench}>
       <NodeView
         node={tree ?? state.splits}
+        windowChrome={windowChrome}
         state={state}
         newTabOptions={newTabOptions}
         actions={actions}

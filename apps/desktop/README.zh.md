@@ -12,7 +12,7 @@ DeepSeek Gestalt 的 Desktop Host。Electron 拥有窗口、菜单、GitHub 自�
 
 挂载 Account HTTP、无密钥个人配对和 Relay WSS 的环回双实例开发监听见 [`examples/local-companion-platform`](../../examples/local-companion-platform/README.md)。当所选 origin 是环回 HTTPS 时，Account 与 Remote Access Fetch 以及 Relay WSS 通过 Node `https.request` 接受捆绑的监听证书，GitHub 授权也在进程内完成且不跟随页面回跳 Location，因此系统浏览器不必出示该证书。Desktop Platform 账号会在创建窗口前校验完整开发与生产环境对：`DSH_PLATFORM_DEVELOPMENT_*` 和 `DSH_PLATFORM_PRODUCTION_*` 两侧分别提供 `ORIGIN`、`CALLBACK_URL`、`GITHUB_CLIENT_ID`、`CREDENTIAL_REFERENCE`、`DATABASE_IDENTITY` 与 `IDENTITY_NAMESPACE`，再由 `DSH_PLATFORM_ENV` 显式选择一侧。缺失、未知、共享、非 HTTPS 或回调不匹配的配置会在渲染与网络流量前使启动失败。操作系统加密不可用仍会作为明确的能力失败显示。加密记录通过 `dsh-atomic-write` 的随机独占同级文件、仅所有者权限、符号链接安全 rename 与失败清理完成替换。
 
-在 macOS 上，28px 顶部间距让未改动的 DSH 侧栏标题行避开 traffic lights。Windows 使用覆盖整个窗口的 36px 拖拽行，最小化、最大化和关闭按钮各占 46px。未支持平台的开发运行保留系统窗口框架。
+Window Chrome 在 Desktop 侧栏、Session 内容与顶部 Workbench 上统一使用一条 36px 行。在 macOS 上，侧栏与 Session 区域可在 traffic lights 周围拖动窗口；Workbench 只把 `+` 后的未占用空间作为拖拽区，标签与控件仍可交互。Windows 使用同一行，最小化、最大化和关闭按钮各占 46px。纯浏览器 `dsh web` 保留 34px Workbench 标签栏，且不渲染窗口拖拽区。未支持平台的开发运行保留系统窗口框架。
 
 Desktop 将 `build/icon.icns`、`build/icon.ico` 和 `build/icon.png` 作为自有资源，其字节与千机·Gestalt 已跟踪的生产图标一致。electron-builder 在 macOS 使用 ICNS，并将 ICO 资源写入未签名的 Windows 可执行文件；发布 workflow 会校验该 PE 文件包含最大的源 ICO 帧。main build 会把 PNG 复制到未打包 Electron application path 下，供 macOS Dock 与 Windows 窗口使用；打包则把同一 PNG 安装为显式 extra resource。
 

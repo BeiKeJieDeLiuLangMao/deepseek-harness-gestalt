@@ -15,7 +15,7 @@ const OPTIONS = [
   { id: 'editor', label: 'Files', disabled: true },
 ]
 
-function mount(onNewTab = vi.fn()) {
+function mount(onNewTab = vi.fn(), windowChrome = false) {
   return {
     onNewTab,
     ...render(
@@ -23,6 +23,7 @@ function mount(onNewTab = vi.fn()) {
         paneId="p1"
         tabs={[]}
         active={null}
+        windowChrome={windowChrome}
         onActivate={() => {}}
         onClose={() => {}}
         onNewTab={onNewTab}
@@ -54,19 +55,30 @@ describe('tabBarDesktopOverlayOf', () => {
 })
 
 describe('TabBar Desktop + menu', () => {
-  it('reserves a draggable top rail without turning the interactive tab bar into a drag region', () => {
-    mount()
-    expect(document.querySelector('[data-workbench-window-drag]')).not.toBeNull()
+  it('keeps window drag regions out of the browser-only Web tab bar', () => {
+    mount(vi.fn(), true)
+    expect(document.querySelector('[data-workbench-window-drag]')).toBeNull()
+  })
+
+  it('uses the unused Desktop top-tab space as the window drag region', () => {
+    ;(globalThis as { dshDesktop?: unknown }).dshDesktop = { platform: 'darwin' }
+    mount(vi.fn(), true)
+    const dragSpace = document.querySelector('[data-workbench-window-drag]')
+    expect(dragSpace).not.toBeNull()
+    expect(dragSpace?.nextElementSibling).toBeNull()
 
     const source = readFileSync(
       join(process.cwd(), 'packages/client/better-sidebar/src/client/sidebar.module.css'),
       'utf8',
     )
-    const rail = /\.windowDragRail\s*\{(?<body>[^}]+)\}/.exec(source)?.groups?.body ?? ''
-    expect(rail).toContain('position: absolute')
-    expect(rail).toContain('-webkit-app-region: drag')
-    const optOut = /\.toggleCluster,\s*\.toggleButton,\s*\.tabBar\s*\{(?<body>[^}]+)\}/.exec(source)?.groups?.body ?? ''
-    expect(optOut).toContain('-webkit-app-region: no-drag')
+    const rule = /\.windowDragSpace\s*\{(?<body>[^}]+)\}/.exec(source)?.groups?.body ?? ''
+    expect(rule).toContain('flex: 1')
+    expect(rule).toContain('min-width: 12px')
+    expect(rule).toContain('-webkit-app-region: drag')
+    expect(rule).not.toContain('position: absolute')
+    const tabDragRule = /body\[data-dsh-tab-dragging\] \.windowDragSpace\s*\{(?<body>[^}]+)\}/.exec(source)?.groups?.body ?? ''
+    expect(tabDragRule).toContain('-webkit-app-region: no-drag')
+    expect(source).not.toMatch(/\.toggleButton,\s*\.tabBar\s*\{[^}]*-webkit-app-region:\s*no-drag/)
   })
 
   it('opens the in-page menu when Desktop overlay verbs are absent', () => {
