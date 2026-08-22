@@ -12,7 +12,7 @@ Mobile Companion 需要查找只存在于 Paired Desktop 索引中的 Session �
 
 Desktop 专用 composition 以 `openAt: first-search` 激活 `session-query-sqlite`，并把派生索引放在 `DSH_HOME/session-search.sqlite`；浏览器 `dsh web` 仍使用仓库默认的 `openAt: never`。Companion 的 `search-sessions` operation 调用 Web Host 的 `session.search` 方法。Mobile 会直接渲染每个关联的 `session-search` Session id/snippet 对，包括 Companion Cache 中不存在的命中，并且绝不会加入缓存中的标题、Workspace、摘要、transcript 或子串匹配。
 
-Encrypted Companion Protocol 以 `operation-failed` 作为无损 Host 失败 result。它的闭合类别包括 HTTP 状态、无效 wire response、类型化业务错误和超时。HTTP 失败保留包括 400 在内的数值状态；业务失败保留有界 code 与 message；每个失败都携带发起 operation id。Desktop loopback client 会先解析 HTTP 状态，再解析 JSON，校验 RPC envelope 与回显 id，并且即使 response chunk 持续到达，也会把 `timeoutMs` 作为一个绝对墙钟 deadline 执行；这些预期失败会作为值返回，而不是抛出。Mobile surface 只通过绑定到 decoder 物理连接 generation 的 receiver 接受 result，把当前 result 与当前搜索 operation 关联，并把失败作为 alert 展示；断开、替换或进入后台会让旧 receiver 失效。
+Encrypted Companion Protocol 以 `operation-failed` 作为无损 Host 失败 result。它的闭合类别包括 HTTP 状态、无效 wire response、类型化业务错误和超时。HTTP 失败保留包括 400 在内的数值状态；业务失败保留有界 code 与 message；每个失败都携带发起 operation id。Desktop loopback client 会先解析 HTTP 状态，再解析 JSON，校验 RPC envelope 与回显 id，并且即使 response chunk 持续到达，也会把 `timeoutMs` 作为一个绝对墙钟 deadline 执行。它的可配置 response accumulator 不能超过 60 KiB Companion 应用 message 上限；累计超限会销毁 response，并产生无效 wire failure。这些预期失败会作为值返回，而不是抛出。Mobile surface 只通过绑定到 decoder 物理连接 generation 的 receiver 接受 result，把当前 result 与当前搜索 operation 关联，并把失败作为 alert 展示；断开、替换或进入后台会让旧 receiver 失效。
 
 Desktop Host 会在发布的 Web Host 报告 loopback origin 后安装 `DesktopCompanionProductOwner`，在 Web Host 重启时替换该 RPC，并在关闭前移除。Desktop 入口 smoke 会通过这个已安装 owner 调用一次真实的无命中 `session.search`。这项证据只证明发布的 Host composition 与 RPC 路径；经过评审的加密 channel 仍拥有 endpoint operation 交付与配对范围 attachment 依赖。
 

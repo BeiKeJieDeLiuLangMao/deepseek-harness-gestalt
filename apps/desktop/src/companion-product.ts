@@ -19,6 +19,7 @@ import {
 import {
   createDesktopHostRpc,
   type DesktopHostRpc,
+  type DesktopHostRpcOptions,
   type DesktopHostRpcResult,
 } from './host-rpc.ts'
 
@@ -55,13 +56,16 @@ export type DesktopCompanionPairingDependencies = Omit<CompanionProductOperation
 export class DesktopCompanionProductOwner {
   private installed: { readonly rpc: DesktopHostRpc } | undefined
 
+  /** @param hostOptions - response bound and request deadline for every Web Host generation. */
+  constructor(private readonly hostOptions: DesktopHostRpcOptions) {}
+
   /**
    * Install the current Web Host loopback RPC.
    * @param baseUrl - loopback origin emitted by the shipped Web Host.
    * @returns disposer that cannot remove a replacement installation.
    */
   installHost(baseUrl: string): () => void {
-    const installed = { rpc: createDesktopHostRpc(baseUrl) }
+    const installed = { rpc: createDesktopHostRpc(baseUrl, this.hostOptions) }
     this.installed = installed
     return () => {
       if (this.installed === installed) this.installed = undefined

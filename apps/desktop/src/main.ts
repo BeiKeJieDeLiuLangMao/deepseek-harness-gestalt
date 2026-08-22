@@ -26,6 +26,7 @@ import type { DesktopRelayLifecycle } from '@deepseek-ai/dsh-remote-access-clien
 import type { SelectedPlatformEnvironment } from '@deepseek-ai/dsh-platform-account'
 import {
   parseCompanionOperationId,
+  REMOTE_PROTOCOL_LIMITS,
   type CompanionSearchSessionsOperation,
 } from '@deepseek-ai/dsh-remote-protocol'
 import { ensureLaunchDirectory } from './launch-directory.ts'
@@ -84,7 +85,9 @@ let stopPairingEvents: (() => void) | undefined
 let accountSignedIn = false
 const hostStartController = new AbortController()
 let pendingHost: Promise<RunningWebHost> | undefined
-const companionProduct = new DesktopCompanionProductOwner()
+const companionProduct = new DesktopCompanionProductOwner({
+  responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
+})
 let uninstallCompanionHost: (() => void) | undefined
 
 smokeLog('main loaded')

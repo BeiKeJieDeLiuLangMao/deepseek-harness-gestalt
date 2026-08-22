@@ -3,7 +3,10 @@
 import { randomUUID } from 'node:crypto'
 import { request as httpRequest, type IncomingMessage, type RequestOptions } from 'node:http'
 import { request as httpsRequest } from 'node:https'
-import type { CompanionHostFailure } from '@deepseek-ai/dsh-remote-protocol'
+import {
+  REMOTE_PROTOCOL_LIMITS,
+  type CompanionHostFailure,
+} from '@deepseek-ai/dsh-remote-protocol'
 
 const DEFAULT_HOST_RPC_TIMEOUT_MS = 15_000
 
@@ -27,6 +30,8 @@ export interface DesktopHostRpc {
 export interface DesktopHostRpcOptions {
   /** Wall-clock deadline for one unary Host request. */
   timeoutMs?: number
+  /** Maximum accumulated response bytes; cannot exceed the Companion application-message ceiling. */
+  responseMaxBytes: number
 }
 
 /**
@@ -35,11 +40,16 @@ export interface DesktopHostRpcOptions {
  * @param options - request deadline.
  * @returns typed unary client.
  */
-export function createDesktopHostRpc(baseUrl: string, options: DesktopHostRpcOptions = {}): DesktopHostRpc {
+export function createDesktopHostRpc(baseUrl: string, options: DesktopHostRpcOptions): DesktopHostRpc {
   const origin = new URL(baseUrl)
   const timeoutMs = options.timeoutMs ?? DEFAULT_HOST_RPC_TIMEOUT_MS
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) {
     throw new TypeError('Desktop Host RPC timeoutMs must be a positive safe integer')
+  }
+  const responseMaxBytes = options.responseMaxBytes
+  if (!Number.isSafeInteger(responseMaxBytes) || responseMaxBytes <= 0
+    || responseMaxBytes > REMOTE_PROTOCOL_LIMITS.companionMessageBytes) {
+    throw new TypeError('Desktop Host RPC responseMaxBytes must be a positive safe integer within the Companion message ceiling')
   }
   return {
     async call(method, payload) {
@@ -48,12 +58,16 @@ export function createDesktopHostRpc(baseUrl: string, options: DesktopHostRpcOpt
         new URL(`/api/${method}`, origin),
         { type: 'client-request', rpcId, method, payload },
         timeoutMs,
+        responseMaxBytes,
       )
       if (response.kind === 'timeout') {
         return { ok: false, failure: { kind: 'timeout', code: 'HOST_TIMEOUT', message: 'Desktop Host request timed out' } }
       }
       if (response.kind === 'transport') {
         return { ok: false, failure: { kind: 'wire', code: 'HOST_WIRE_INVALID', message: 'Desktop Host response transport failed' } }
+      }
+      if (response.kind === 'limit') {
+        return { ok: false, failure: { kind: 'wire', code: 'HOST_WIRE_INVALID', message: 'Desktop Host response exceeded its byte limit' } }
       }
       if (response.status < 200 || response.status >= 300) {
         return {
@@ -108,8 +122,9 @@ type RequestOutcome =
   | { kind: 'response'; status: number; text: string }
   | { kind: 'timeout' }
   | { kind: 'transport' }
+  | { kind: 'limit' }
 
-function requestJson(url: URL, body: unknown, timeoutMs: number): Promise<RequestOutcome> {
+function requestJson(url: URL, body: unknown, timeoutMs: number, responseMaxBytes: number): Promise<RequestOutcome> {
   const encoded = JSON.stringify(body)
   return new Promise((resolve) => {
     let settled = false
@@ -127,8 +142,21 @@ function requestJson(url: URL, body: unknown, timeoutMs: number): Promise<Reques
       },
     }, (incoming) => {
       const chunks: Buffer[] = []
-      incoming.on('data', (chunk) => { chunks.push(Buffer.from(chunk as Uint8Array)) })
+      let receivedBytes = 0
+      incoming.on('data', (chunk) => {
+        if (settled) return
+        const bytes = Buffer.from(chunk as Uint8Array)
+        receivedBytes += bytes.byteLength
+        if (receivedBytes > responseMaxBytes) {
+          settle({ kind: 'limit' })
+          incoming.destroy()
+          upstream.destroy()
+          return
+        }
+        chunks.push(bytes)
+      })
       incoming.on('end', () => {
+        if (settled) return
         settle({
           kind: 'response',
           status: incoming.statusCode ?? 500,

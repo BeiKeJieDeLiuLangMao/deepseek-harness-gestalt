@@ -16,6 +16,23 @@ export const COMPANION_ATTACHMENT_MAX_BYTES = REMOTE_PROTOCOL_LIMITS.attachmentB
 /** AES-256-GCM seal overhead applied before comparing plaintext against the ciphertext ceiling. */
 export { COMPANION_ATTACHMENT_SEAL_OVERHEAD_BYTES }
 
+/**
+ * The sender failed, or resolved after the owning connection generation became invalid.
+ * Callers must reconcile `operationId` through `query-operation-status`; they must not resend it.
+ */
+export class CompanionAttachmentDeliveryUncertainError extends Error {
+  readonly code = 'COMPANION_ATTACHMENT_DELIVERY_UNCERTAIN'
+
+  /** @param operationId - transmitted id that requires Desktop reconciliation. @param cause - generation refusal after send. */
+  constructor(
+    readonly operationId: CompanionOfferAttachmentOperation['operationId'],
+    cause: unknown,
+  ) {
+    super(`Companion attachment ${operationId} delivery is uncertain`, { cause })
+    this.name = 'CompanionAttachmentDeliveryUncertainError'
+  }
+}
+
 /** One sealed blob plus the values Mobile sends in the bounded control message. */
 export interface CompanionAttachmentTransfer {
   capability: AttachmentCapability
@@ -47,7 +64,10 @@ export interface SelectedCompanionAttachmentOptions {
   sessionId: CompanionOfferAttachmentOperation['sessionId']
   /** Dynamic authority bound to the current physical connection generation. */
   permit: CompanionMutationPermit
-  /** Encrypted Companion sender; receives only the bounded capability message. */
+  /**
+   * Encrypted Companion sender; receives only the bounded capability message.
+   * Once invoked, rejection or generation loss is an uncertain outcome that must be reconciled, never retried.
+   */
   send(offer: CompanionOfferAttachmentOperation): Promise<void>
   /** Browser HTTP adapter; defaults to global fetch. */
   fetch?: typeof fetch
@@ -162,7 +182,12 @@ export async function transferSelectedCompanionAttachment(
     fileName: file.name,
   }, options.operationId, options.sessionId, options.permit)
   options.permit.requireCurrent()
-  await options.send(offer)
+  try {
+    await options.send(offer)
+    options.permit.requireCurrent()
+  } catch (cause) {
+    throw new CompanionAttachmentDeliveryUncertainError(options.operationId, cause)
+  }
   return offer
 }
 

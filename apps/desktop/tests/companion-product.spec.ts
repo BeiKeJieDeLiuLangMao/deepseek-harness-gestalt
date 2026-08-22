@@ -5,6 +5,7 @@ import {
   deriveCompanionAttachmentKey,
   parseCompanionOperationId,
   parseCompanionSessionId,
+  REMOTE_PROTOCOL_LIMITS,
   sealCompanionAttachment,
   type CompanionOfferAttachmentOperation,
   type CompanionSearchSessionsOperation,
@@ -139,7 +140,9 @@ describe('Desktop Companion product operations', () => {
     })
     const address = server.address()
     if (address === null || typeof address === 'string') throw new Error('expected TCP address')
-    const owner = new DesktopCompanionProductOwner()
+    const owner = new DesktopCompanionProductOwner({
+      responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
+    })
     const uninstallReplaced = owner.installHost(`http://127.0.0.1:${String(address.port)}`)
     const uninstall = owner.installHost(`http://127.0.0.1:${String(address.port)}`)
     uninstallReplaced()

@@ -1,5 +1,6 @@
 import { createServer } from 'node:http'
 import { afterEach, describe, expect, it } from 'vitest'
+import { REMOTE_PROTOCOL_LIMITS } from '@deepseek-ai/dsh-remote-protocol'
 import { createDesktopHostRpc } from '../src/host-rpc.ts'
 
 const closeServers: Array<() => Promise<void>> = []
@@ -7,6 +8,14 @@ const closeServers: Array<() => Promise<void>> = []
 afterEach(async () => { await Promise.all(closeServers.splice(0).map(close => close())) })
 
 describe('Desktop Host RPC', () => {
+  it('rejects response bounds outside the Companion application-message ceiling', () => {
+    expect(() => createDesktopHostRpc('http://127.0.0.1', { responseMaxBytes: 0 }))
+      .toThrow(/positive safe integer within the Companion message ceiling/)
+    expect(() => createDesktopHostRpc('http://127.0.0.1', {
+      responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes + 1,
+    })).toThrow(/positive safe integer within the Companion message ceiling/)
+  })
+
   it('preserves success, HTTP 400, wire failure, business refusal, and timeout as typed results', async () => {
     const server = createServer((request, response) => {
       const chunks: Buffer[] = []
@@ -55,7 +64,10 @@ describe('Desktop Host RPC', () => {
     })
     const address = server.address()
     if (address === null || typeof address === 'string') throw new Error('expected TCP address')
-    const rpc = createDesktopHostRpc(`http://127.0.0.1:${String(address.port)}`, { timeoutMs: 25 })
+    const rpc = createDesktopHostRpc(`http://127.0.0.1:${String(address.port)}`, {
+      timeoutMs: 25,
+      responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
+    })
 
     await expect(rpc.call('session.search', { query: 'ok' })).resolves.toMatchObject({
       ok: true,
@@ -77,10 +89,69 @@ describe('Desktop Host RPC', () => {
       ok: false,
       failure: { kind: 'timeout', code: 'HOST_TIMEOUT', message: 'Desktop Host request timed out' },
     })
-    const deadlineRpc = createDesktopHostRpc(`http://127.0.0.1:${String(address.port)}`, { timeoutMs: 50 })
+    const deadlineRpc = createDesktopHostRpc(`http://127.0.0.1:${String(address.port)}`, {
+      timeoutMs: 50,
+      responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
+    })
     await expect(deadlineRpc.call('session.search', { query: 'slow-chunks' })).resolves.toEqual({
       ok: false,
       failure: { kind: 'timeout', code: 'HOST_TIMEOUT', message: 'Desktop Host request timed out' },
     })
   })
+
+  it('accepts the exact response byte limit and rejects overflow and a fast cumulative flood', async () => {
+    const padding = 'x'.repeat(1_024)
+    const responseBytes = Buffer.byteLength(successResponse('0'.repeat(36), padding))
+    const server = createServer((request, response) => {
+      const chunks: Buffer[] = []
+      request.on('data', chunk => chunks.push(chunk as Buffer))
+      request.on('end', () => {
+        const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as {
+          rpcId: string
+          payload: { query: string }
+        }
+        if (body.payload.query === 'fast-flood') {
+          response.on('error', () => {})
+          for (let index = 0; index < 32; index += 1) response.write(Buffer.alloc(256, 120))
+          response.end()
+          return
+        }
+        response.end(successResponse(body.rpcId, padding))
+      })
+    })
+    await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
+    closeServers.push(async () => {
+      server.closeAllConnections()
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => { if (error === undefined) resolve(); else reject(error) })
+      })
+    })
+    const address = server.address()
+    if (address === null || typeof address === 'string') throw new Error('expected TCP address')
+    const origin = `http://127.0.0.1:${String(address.port)}`
+    const exact = createDesktopHostRpc(origin, { timeoutMs: 1_000, responseMaxBytes: responseBytes })
+    const overflow = createDesktopHostRpc(origin, { timeoutMs: 1_000, responseMaxBytes: responseBytes - 1 })
+    const flood = createDesktopHostRpc(origin, { timeoutMs: 1_000, responseMaxBytes: 1_024 })
+
+    await expect(exact.call('session.search', { query: 'exact' })).resolves.toMatchObject({
+      ok: true,
+      value: { padding },
+    })
+    const limitFailure = {
+      ok: false,
+      failure: {
+        kind: 'wire', code: 'HOST_WIRE_INVALID', message: 'Desktop Host response exceeded its byte limit',
+      },
+    } as const
+    await expect(overflow.call('session.search', { query: 'overflow' })).resolves.toEqual(limitFailure)
+    await expect(flood.call('session.search', { query: 'fast-flood' })).resolves.toEqual(limitFailure)
+  })
 })
+
+function successResponse(rpcId: string, padding: string): string {
+  return JSON.stringify({
+    type: 'server-response',
+    rpcId,
+    result: { ok: true, value: { padding } },
+  })
+}

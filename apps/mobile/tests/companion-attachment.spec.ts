@@ -6,6 +6,7 @@ import {
 } from '@deepseek-ai/dsh-remote-protocol'
 import {
   buildCompanionAttachmentOffer,
+  CompanionAttachmentDeliveryUncertainError,
   COMPANION_ATTACHMENT_MAX_BYTES,
   COMPANION_ATTACHMENT_SEAL_OVERHEAD_BYTES,
   sealCompanionAttachment,
@@ -165,6 +166,31 @@ describe('Companion encrypted attachments', () => {
     }, transferOptions(permit, fetch, send))).rejects.toThrow(/connection generation/)
     expect(fetch).toHaveBeenCalledOnce()
     expect(send).not.toHaveBeenCalled()
+  })
+
+  it('reports uncertain delivery without resending when the connection is replaced during send', async () => {
+    const permit = controlledPermit()
+    const send = vi.fn(async () => { permit.invalidate() })
+    const fetch = vi.fn<typeof globalThis.fetch>(async (_input, init) => {
+      const body = new Uint8Array(await new Response(init?.body).arrayBuffer())
+      return new Response(JSON.stringify({
+        capability: 'A'.repeat(43),
+        byteLength: body.byteLength,
+        expiresAt: 1_900_000,
+      }), { status: 201, headers: { 'content-type': 'application/json' } })
+    })
+
+    const transfer = transferSelectedCompanionAttachment({
+      name: 'uncertain.bin',
+      arrayBuffer: async () => Uint8Array.of(7, 8, 9).buffer,
+    }, transferOptions(permit, fetch, send))
+
+    await expect(transfer).rejects.toMatchObject({
+      name: 'CompanionAttachmentDeliveryUncertainError',
+      code: 'COMPANION_ATTACHMENT_DELIVERY_UNCERTAIN',
+      operationId: parseCompanionOperationId('operation-race'),
+    } satisfies Partial<CompanionAttachmentDeliveryUncertainError>)
+    expect(send).toHaveBeenCalledOnce()
   })
 })
 
