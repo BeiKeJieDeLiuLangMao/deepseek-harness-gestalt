@@ -55,7 +55,10 @@ export function collectCompanionProductEntryResidue(root: string): string[] {
     })
     for (const dependency of analysis.dependencies) {
       const dependencyFile = resolveCodeImport(workspaces, file, dependency.specifier)
-      if (dependencyFile !== undefined) pending.push({ file: dependencyFile, exports: dependency.exports })
+      if (dependencyFile !== undefined) pending.push({
+        file: dependencyFile,
+        ...(dependency.exports === undefined ? {} : { exports: dependency.exports }),
+      })
     }
   }
   return [...failures].sort()
@@ -103,7 +106,8 @@ function analyzeModule(
   const dependencies: ModuleDependency[] = []
   const effectStatements: ts.Statement[] = []
   for (const statement of sourceFile.statements) {
-    if (ts.isImportDeclaration(statement) && !statement.importClause?.isTypeOnly
+    if (ts.isImportDeclaration(statement)
+      && statement.importClause?.phaseModifier !== ts.SyntaxKind.TypeKeyword
       && ts.isStringLiteral(statement.moduleSpecifier)) {
       const specifier = statement.moduleSpecifier.text
       const clause = statement.importClause

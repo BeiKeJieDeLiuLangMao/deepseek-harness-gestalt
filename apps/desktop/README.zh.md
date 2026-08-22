@@ -10,7 +10,7 @@ DeepSeek Gestalt 的 Desktop Host。Electron 拥有窗口、菜单、GitHub 自�
 
 个人配对只在真实的 `手机配对` 设置区中配置。preload 暴露手机访问、挑战、待确认决策与已配对设备操作，不会向普通 Session 标题栏、侧栏、审批、输入框或离线视图增加状态。在经过评审的握手与 Companion channel provider 接入前，产品 Host 会让这些操作与 Relay 保持 fail-closed；产品入口没有开发或 keyless 选择。keyless 控制器证据只导入 `tests/` 下的 fixture，`main.ts` 无法触达。
 
-Desktop Platform 账号只接受一套实际运行的生产身份，由 `DSH_PLATFORM_ORIGIN`、`DSH_PLATFORM_CALLBACK_URL`、`DSH_PLATFORM_GITHUB_CLIENT_ID`、`DSH_PLATFORM_CREDENTIAL_REFERENCE`、`DSH_PLATFORM_DATABASE_IDENTITY` 与 `DSH_PLATFORM_IDENTITY_NAMESPACE` 提供。字段缺失、localhost、非 HTTPS origin 或回调不匹配会在 Electron 创建窗口、启动 Web Host、读取账号存储或发送流量之前使模块启动失败。操作系统加密不可用仍会作为明确的能力失败显示。加密记录通过 `dsh-atomic-write` 的随机独占同级文件、仅所有者权限、符号链接安全 rename 与失败清理完成替换。
+Desktop Platform 账号从打包 main 入口旁的 `operated-platform.json` 读取一套实际运行的生产身份。构建必须显式指定源文件并把它复制进应用 archive；发布 workflow 根据 Platform 部署的公开 origin、回调、GitHub client id、credential reference、PostgreSQL database identity 和 identity namespace 生成该文件，不会嵌入 OAuth secret。字段缺失、localhost、非 HTTPS origin 或回调不匹配会在 Electron 创建窗口、启动 Web Host、读取账号存储或发送流量之前使模块启动失败。操作系统加密不可用仍会作为明确的能力失败显示。加密记录通过 `dsh-atomic-write` 的随机独占同级文件、仅所有者权限、符号链接安全 rename 与失败清理完成替换。
 
 在 macOS 上，28px 顶部间距让未改动的 DSH 侧栏标题行避开 traffic lights。Windows 使用覆盖整个窗口的 36px 拖拽行，最小化、最大化和关闭按钮各占 46px。未支持平台的开发运行保留系统窗口框架。
 
@@ -32,14 +32,14 @@ Schedule 交付为 `session-local`：只有原 Session 处于 live 状态时才�
 
 ```sh
 pnpm install
-pnpm gestalt:dev
+DSH_DESKTOP_OPERATED_PLATFORM_CONFIG=/absolute/path/to/operated-platform.json pnpm gestalt:dev
 ```
 
-需要 `DSH_NODE` 或 `npm_node_execpath` 上的真正 Node（pnpm 会设置后者）。不要让 Electron 用自己的 execPath 去跑 `dsh`。
+配置文件包含上文所述六个公开身份字段，不包含 OAuth secret。进程还需要 `DSH_NODE` 或 `npm_node_execpath` 上的真正 Node（pnpm 会设置后者）。不要让 Electron 用自己的 execPath 去跑 `dsh`。
 
 ## 发布
 
-从 `master` 运行 `Desktop Release` workflow，填写包版本并选择 `publish`。macOS arm64 与 x64 会先在匹配架构的 GitHub runner 上安装依赖；发布构建通过 `desktop-release` environment 完成签名和公证，dry run 不接收发布凭据。Windows NSIS 未签名但仍更新。workflow 会校验每个官方 Node 归档、启动每个打包目标、通过 Desktop bridge 往返读取 disabled 更新状态、等待 renderer 应用该状态、要求未激活的 Update Control 保持缺席、检查 Mac app 的签名和已装订公证票据，在已测试提交上创建 `gestalt-v<version>` 标签与 draft Release，上传并核验精确的安装包、blockmap 与更新 feed 集合，然后发布 Release。交接失败或中断时，workflow 会删除本次运行拥有的标签和 draft。macOS 在 zip 落地后由 Squirrel 把包拷到临时目录，Update Control 显示“正在准备更新”；该阶段结束后才出现“安装并重启”。普通退出仍不会安装。
+从 `master` 运行 `Desktop Release` workflow，填写包版本并选择 `publish`。两个打包 job 都会从 Platform 部署所用的同一组 GitHub Environment 变量投影公开的实际运行 Platform 身份，并要求打包应用在没有运行时 Platform 环境变量时正常启动。macOS arm64 与 x64 会先在匹配架构的 GitHub runner 上安装依赖；发布构建通过 `desktop-release` environment 完成签名和公证，dry run 不接收发布凭据。Windows NSIS 未签名但仍更新。workflow 会校验每个官方 Node 归档、启动每个打包目标、通过 Desktop bridge 往返读取 disabled 更新状态、等待 renderer 应用该状态、要求未激活的 Update Control 保持缺席、检查 Mac app 的签名和已装订公证票据，在已测试提交上创建 `gestalt-v<version>` 标签与 draft Release，上传并核验精确的安装包、blockmap 与更新 feed 集合，然后发布 Release。交接失败或中断时，workflow 会删除本次运行拥有的标签和 draft。macOS 在 zip 落地后由 Squirrel 把包拷到临时目录，Update Control 显示“正在准备更新”；该阶段结束后才出现“安装并重启”。普通退出仍不会安装。
 
 每个发布版本都必须在 `release-notes/` 下提供双语 manifest（元数据清单），并显式指定基线类型、仓库和提交。创建标签前，工作流会校验 manifest 版本及其派生标签，确认该基线是受测提交的祖先，从 Git 计算提交数，并把 draft 正文渲染到 notes file。`0.1.0` manifest 使用 `official-upstream` 基线 `deepseek-ai/deepseek-harness@47f943859bef60e4160492346772ded9b24f765a`；正文链接从该提交到 `gestalt-v0.1.0` 的完整比较。`0.1.1` manifest 使用 `previous-release` 基线 `BeiKeJieDeLiuLangMao/deepseek-harness-gestalt@de2610c9590f2e5b33ab366eb338f7c42058b11b`（`gestalt-v0.1.0`）。`0.1.2` manifest 使用 `previous-release` 基线 `BeiKeJieDeLiuLangMao/deepseek-harness-gestalt@a7482b9709e4631d624f6b471ef2aeec249baf7d`（`gestalt-v0.1.1`）。`0.1.3` manifest 使用 `previous-release` 基线 `BeiKeJieDeLiuLangMao/deepseek-harness-gestalt@4bbbf74a07799fb681e033288fb55b3b16fc08c0`（`gestalt-v0.1.2`）。`0.1.4` manifest 使用 `previous-release` 基线 `BeiKeJieDeLiuLangMao/deepseek-harness-gestalt@f5d133a9c00138b1a3e7ce180118b8262f38399a`（`gestalt-v0.1.3`）。`0.1.5` manifest 使用 `previous-release` 基线 `BeiKeJieDeLiuLangMao/deepseek-harness-gestalt@a2a4c245c7a177891bdbf7238279136e63625a34`（`gestalt-v0.1.4`）。
 

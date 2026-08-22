@@ -18,8 +18,8 @@ type RedisConnection = Awaited<ReturnType<typeof connectRedis>>
 
 /** Replaceable connection creators used only to attach disposable durable-store fixtures. */
 export interface OperatedPlatformLaunchAdapters {
-  createPostgres?(config: OperatedPlatformConfig['postgres']): Pool
-  connectRedis?(config: OperatedPlatformConfig['redis']): Promise<RedisConnection>
+  createPostgres?: (config: OperatedPlatformConfig['postgres']) => Pool
+  connectRedis?: (config: OperatedPlatformConfig['redis']) => Promise<RedisConnection>
   githubFetch?: typeof fetch
 }
 

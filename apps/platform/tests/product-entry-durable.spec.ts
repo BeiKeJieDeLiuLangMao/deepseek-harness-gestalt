@@ -58,7 +58,7 @@ describe.skipIf(!durableProgramsAvailable)('operated Platform resource entry wit
         githubFetch,
       },
     })
-    cleanups.push(running.close)
+    cleanups.push(async () => { await running.close() })
     expect(postgresConfigs).toEqual([expect.objectContaining({ ssl: { rejectUnauthorized: true } })])
     expect(redisConfigs).toHaveLength(2)
     expect(redisConfigs).toEqual(expect.arrayContaining([
