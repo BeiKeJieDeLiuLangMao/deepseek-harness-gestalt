@@ -116,6 +116,7 @@ function requestJson(url: URL, body: unknown, timeoutMs: number): Promise<Reques
     const settle = (outcome: RequestOutcome): void => {
       if (settled) return
       settled = true
+      clearTimeout(deadline)
       resolve(outcome)
     }
     const upstream = startRequest(url, {
@@ -124,7 +125,6 @@ function requestJson(url: URL, body: unknown, timeoutMs: number): Promise<Reques
         'content-type': 'application/json',
         'content-length': String(Buffer.byteLength(encoded)),
       },
-      timeout: timeoutMs,
     }, (incoming) => {
       const chunks: Buffer[] = []
       incoming.on('data', (chunk) => { chunks.push(Buffer.from(chunk as Uint8Array)) })
@@ -137,10 +137,11 @@ function requestJson(url: URL, body: unknown, timeoutMs: number): Promise<Reques
       })
       incoming.on('error', () => { settle({ kind: 'transport' }) })
     })
-    upstream.on('timeout', () => {
+    const deadline = setTimeout(() => {
       settle({ kind: 'timeout' })
       upstream.destroy()
-    })
+    }, timeoutMs)
+    deadline.unref()
     upstream.on('error', () => { settle({ kind: 'transport' }) })
     upstream.end(encoded)
   })

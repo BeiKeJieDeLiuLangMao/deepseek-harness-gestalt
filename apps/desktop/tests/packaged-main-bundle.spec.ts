@@ -19,5 +19,6 @@ describe('packaged Desktop main bundle', () => {
     expect(source).toMatch(/from\s+['"]electron['"]/)
     expect(source).toMatch(/import\s*\(\s*['"]electron-updater['"]\s*\)/)
     expect(source).toMatch(/from\s+['"]ws['"]/)
+    expect(source).toContain('companion entry search')
   })
 })

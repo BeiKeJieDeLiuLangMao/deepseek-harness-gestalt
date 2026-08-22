@@ -49,17 +49,9 @@ export function MobileBrowse({
   const [searchDraft, setSearchDraft] = useState(search?.query ?? '')
   useEffect(() => { setSearchDraft(search?.query ?? '') }, [search?.query])
   const searchActive = search !== undefined && search.query !== ''
-  const authoritativeHits = useMemo(() => {
-    if (search === undefined || search.query === '') return undefined
-    const byId = new Map(sessions.map(session => [session.id, session]))
-    return search.items.flatMap((hit) => {
-      const session = byId.get(hit.sessionId)
-      return session === undefined ? [] : [{ ...session, summary: hit.snippet }]
-    })
-  }, [search, sessions])
   const paged = useMemo(
-    () => pageCompanionHistory(authoritativeHits ?? sessions, searchActive ? 0 : page, COMPANION_HISTORY_PAGE_SIZE),
-    [authoritativeHits, page, searchActive, sessions],
+    () => pageCompanionHistory(sessions, page, COMPANION_HISTORY_PAGE_SIZE),
+    [page, sessions],
   )
   const grouped = useMemo(() => groupCompanionSessions(paged.visible), [paged.visible])
   const open = sessions.find(session => session.id === openId)
@@ -119,7 +111,8 @@ export function MobileBrowse({
           <button type="button" disabled={!mayMutate} onClick={() => { if (mayMutate) onCreate({}) }}>新建 Ungrouped Session</button>
         )}
       </header>
-      {grouped.groups.map(group => (
+      {search !== undefined && search.status !== 'idle' && <AuthoritativeSearchResults search={search} />}
+      {!searchActive && grouped.groups.map(group => (
         <section key={group.name} className={css.group} aria-label={group.name}>
           <h2>{group.name}</h2>
           {onCreate !== undefined && (
@@ -128,13 +121,13 @@ export function MobileBrowse({
           <SessionList sessions={group.sessions} onOpen={setOpenId} />
         </section>
       ))}
-      {grouped.ungrouped.length > 0 && (
+      {!searchActive && grouped.ungrouped.length > 0 && (
         <section className={css.group} aria-label="Ungrouped">
           <h2>Ungrouped</h2>
           <SessionList sessions={grouped.ungrouped} onOpen={setOpenId} />
         </section>
       )}
-      {searchActive && paged.visible.length === 0 && search.status !== 'loading' && <p>没有匹配的 Session</p>}
+      {searchActive && search.items.length === 0 && search.status !== 'loading' && <p>没有匹配的 Session</p>}
       {search?.status === 'loading' && <p>正在搜索 Desktop Session 内容…</p>}
       {search?.hasMore === true && <p>结果较多，请缩小搜索范围。</p>}
       {!searchActive && paged.spilled > 0 && (
@@ -142,6 +135,22 @@ export function MobileBrowse({
           加载更多（还有 {paged.spilled}）
         </button>
       )}
+    </section>
+  )
+}
+
+function AuthoritativeSearchResults({ search }: { search: Exclude<MobileCompanionSearchSnapshot, { query: '' }> }): ReactNode {
+  return (
+    <section className={css.group} aria-label="Desktop 搜索结果">
+      <h2>Desktop 搜索结果</h2>
+      <ul className={css.sessions}>
+        {search.items.map(hit => (
+          <li key={hit.sessionId} className={css.searchResult}>
+            <strong>{hit.sessionId}</strong>
+            <span>{hit.snippet}</span>
+          </li>
+        ))}
+      </ul>
     </section>
   )
 }

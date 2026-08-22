@@ -16,7 +16,11 @@ import {
   CompanionAttachmentReceiveError,
   receiveCompanionAttachment,
 } from './companion-attachments.ts'
-import type { DesktopHostRpc, DesktopHostRpcResult } from './host-rpc.ts'
+import {
+  createDesktopHostRpc,
+  type DesktopHostRpc,
+  type DesktopHostRpcResult,
+} from './host-rpc.ts'
 
 /** Operations owned by the attachment and authoritative-search product bridge. */
 export type CompanionProductOperation = CompanionOfferAttachmentOperation | CompanionSearchSessionsOperation
@@ -42,6 +46,51 @@ export interface CompanionProductOperationDependencies {
     fileName: string
     plaintext: Uint8Array
   }): Promise<DesktopHostRpcResult>
+}
+
+/** Per-pairing dependencies supplied by the reviewed Desktop channel owner. */
+export type DesktopCompanionPairingDependencies = Omit<CompanionProductOperationDependencies, 'host'>
+
+/** Shipped Desktop owner that follows Web Host replacement and executes decoded product operations. */
+export class DesktopCompanionProductOwner {
+  private installed: { readonly rpc: DesktopHostRpc } | undefined
+
+  /**
+   * Install the current Web Host loopback RPC.
+   * @param baseUrl - loopback origin emitted by the shipped Web Host.
+   * @returns disposer that cannot remove a replacement installation.
+   */
+  installHost(baseUrl: string): () => void {
+    const installed = { rpc: createDesktopHostRpc(baseUrl) }
+    this.installed = installed
+    return () => {
+      if (this.installed === installed) this.installed = undefined
+    }
+  }
+
+  /** @returns whether the current Desktop lifecycle installed a Web Host RPC. */
+  hasHost(): boolean {
+    return this.installed !== undefined
+  }
+
+  /**
+   * Execute one operation decoded by the reviewed channel against the current Web Host.
+   * @param operation - validated Companion operation.
+   * @param dependencies - exact Personal Pairing identity, key, and attachment adapters.
+   * @returns correlated product result; absent Web Host becomes a stable wire failure.
+   */
+  async handle(
+    operation: CompanionProductOperation,
+    dependencies: DesktopCompanionPairingDependencies,
+  ): Promise<CompanionResult> {
+    const host = this.installed?.rpc
+    if (host === undefined) {
+      return operationFailed(operation, {
+        kind: 'wire', code: 'HOST_WIRE_INVALID', message: 'Desktop Web Host is not available',
+      })
+    }
+    return await handleCompanionProductOperation(operation, { ...dependencies, host })
+  }
 }
 
 /**

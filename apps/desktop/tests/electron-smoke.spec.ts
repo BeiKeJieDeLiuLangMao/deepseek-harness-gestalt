@@ -53,6 +53,7 @@ describe.skipIf(process.env.DSH_DESKTOP_SMOKE !== '1')('Desktop Host smoke', () 
         const host = text.match(/host http:\/\/127\.0\.0\.1:\d+ pid (\d+)/)
         expect(host).not.toBeNull()
         expect(text).toMatch(/(^|\n)ok(\n|$)/)
+        expect(text).toContain('companion entry search {"type":"session-search"')
         await electronExited
         const finalText = await readFile(log, 'utf8')
         expect(finalText).toContain('relay production-gate {"connected":false}')

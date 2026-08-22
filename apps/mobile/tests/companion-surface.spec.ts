@@ -98,9 +98,11 @@ describe('MobileCompanionSurface', () => {
       ],
       streaming: false,
     })
+    const results = surface.bindValidatedCompanionResults()
+    if (results === undefined) throw new Error('expected Companion result receiver')
     surface.search('needle')
     expect(surface.getSnapshot().search).toEqual({ query: 'needle', status: 'loading', items: [], hasMore: false })
-    surface.acceptValidatedCompanionResult({
+    results.acceptValidatedCompanionResult({
       type: 'session-search',
       operationId: parseCompanionOperationId('search-needle'),
       items: [{ sessionId: parseCompanionSessionId('session-hit'), snippet: 'Desktop indexed needle' }],
@@ -112,7 +114,7 @@ describe('MobileCompanionSurface', () => {
       items: [{ sessionId: 'session-hit', snippet: 'Desktop indexed needle' }],
       hasMore: false,
     })
-    surface.acceptValidatedCompanionResult({
+    results.acceptValidatedCompanionResult({
       type: 'operation-failed',
       operationId: parseCompanionOperationId('search-needle'),
       failure: { kind: 'http', code: 'HOST_HTTP_STATUS', message: 'Desktop Host returned HTTP 400', status: 400 },
@@ -120,6 +122,55 @@ describe('MobileCompanionSurface', () => {
     expect(surface.getSnapshot().search).toMatchObject({
       status: 'error',
       error: { kind: 'http', code: 'HOST_HTTP_STATUS', status: 400 },
+    })
+  })
+
+  it('rejects decoded search results from a replaced connection generation', () => {
+    const runtime = new CompanionForegroundRuntime()
+    const surface = new MobileCompanionSurface(runtime, mutationChannel())
+    runtime.configure(grant)
+    runtime.markConnectionOpen()
+    const firstResync = surface.bindValidatedDesktopResync()
+    const firstResults = surface.bindValidatedCompanionResults()
+    if (firstResync === undefined || firstResults === undefined) throw new Error('expected first generation receivers')
+    firstResync.acceptValidatedDesktopResync({
+      type: 'desktop-resync', version: 1, authenticated: true, sessions: [], streaming: false,
+    })
+    surface.search('needle')
+
+    runtime.forgetConnection()
+    runtime.markConnectionOpen()
+    const replacementResync = surface.bindValidatedDesktopResync()
+    const replacementResults = surface.bindValidatedCompanionResults()
+    if (replacementResync === undefined || replacementResults === undefined) {
+      throw new Error('expected replacement generation receivers')
+    }
+    replacementResync.acceptValidatedDesktopResync({
+      type: 'desktop-resync', version: 1, authenticated: true, sessions: [], streaming: false,
+    })
+    surface.search('replacement')
+
+    firstResults.acceptValidatedCompanionResult({
+      type: 'session-search',
+      operationId: parseCompanionOperationId('search-needle'),
+      items: [{ sessionId: parseCompanionSessionId('stale-hit'), snippet: 'stale decoder result' }],
+      hasMore: false,
+    })
+    expect(surface.getSnapshot().search).toEqual({
+      query: 'replacement', status: 'loading', items: [], hasMore: false,
+    })
+
+    replacementResults.acceptValidatedCompanionResult({
+      type: 'session-search',
+      operationId: parseCompanionOperationId('search-needle'),
+      items: [{ sessionId: parseCompanionSessionId('current-hit'), snippet: 'current decoder result' }],
+      hasMore: false,
+    })
+    expect(surface.getSnapshot().search).toEqual({
+      query: 'replacement',
+      status: 'ready',
+      items: [{ sessionId: 'current-hit', snippet: 'current decoder result' }],
+      hasMore: false,
     })
   })
 })

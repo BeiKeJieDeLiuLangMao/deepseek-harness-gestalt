@@ -21,8 +21,13 @@ import {
 } from '@deepseek-ai/dsh-client-ui-desktop/protocol'
 import { PlatformAccountHttpTransport } from '@deepseek-ai/dsh-platform-account-client'
 import { RemoteAccessHttpTransport } from '@deepseek-ai/dsh-remote-access-client'
+import { parsePersonalPairingId } from '@deepseek-ai/dsh-remote-access'
 import type { DesktopRelayLifecycle } from '@deepseek-ai/dsh-remote-access-client/desktop-relay-lifecycle'
 import type { SelectedPlatformEnvironment } from '@deepseek-ai/dsh-platform-account'
+import {
+  parseCompanionOperationId,
+  type CompanionSearchSessionsOperation,
+} from '@deepseek-ai/dsh-remote-protocol'
 import { ensureLaunchDirectory } from './launch-directory.ts'
 import { isElectronExecutable, resolveDesktopRuntime } from './runtime-paths.ts'
 import { planHostExit, shouldPreventQuit, startWithOneRetry } from './host-exit.ts'
@@ -51,6 +56,7 @@ import { DesktopPairingKeyVault } from './pairing-keys.ts'
 import { disposeDesktopOwners } from './shutdown.ts'
 import { startDesktopBrowserRuntime, type DesktopBrowserRuntime } from './browser-runtime.ts'
 import { createDesktopRemoteRelay } from './remote-relay.ts'
+import { DesktopCompanionProductOwner } from './companion-product.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const PRELOAD = join(here, 'preload.cjs')
@@ -78,6 +84,8 @@ let stopPairingEvents: (() => void) | undefined
 let accountSignedIn = false
 const hostStartController = new AbortController()
 let pendingHost: Promise<RunningWebHost> | undefined
+const companionProduct = new DesktopCompanionProductOwner()
+let uninstallCompanionHost: (() => void) | undefined
 
 smokeLog('main loaded')
 const gotLock = app.requestSingleInstanceLock()
@@ -157,6 +165,7 @@ async function boot(): Promise<void> {
         () => !hostStartController.signal.aborted,
       )
     host = started.value
+    installCompanionHost(host)
     observeHostExit(host)
     smokeLog('host ' + host.url + ' pid ' + String(host.child.pid))
     await window.loadURL(host.url)
@@ -321,6 +330,7 @@ function observeHostExit(running: RunningWebHost): void {
 
 async function onHostExit(exited: RunningWebHost): Promise<void> {
   if (shuttingDown || host !== exited) return
+  clearCompanionHost()
   host = undefined
   const plan = planHostExit(window !== undefined && !window.isDestroyed(), respawned)
   if (plan === 'ignore' || window === undefined) return
@@ -328,6 +338,7 @@ async function onHostExit(exited: RunningWebHost): Promise<void> {
     respawned = true
     try {
       host = await startHost()
+      installCompanionHost(host)
       observeHostExit(host)
       await window.loadURL(host.url)
     } catch (error) {
@@ -418,6 +429,24 @@ async function finishSmoke(target: BrowserWindow): Promise<void> {
     requestShutdown(1)
     return
   }
+  const searchOperation: CompanionSearchSessionsOperation = {
+    type: 'search-sessions',
+    operationId: parseCompanionOperationId('desktop-smoke-search'),
+    query: 'desktop-companion-smoke-no-hit',
+  }
+  const searchEvidence = await companionProduct.handle(searchOperation, {
+    pairingId: parsePersonalPairingId('desktop-smoke-pairing'),
+    pairingKey: new Uint8Array(32),
+    now: Date.now,
+    downloadAttachment: () => Promise.reject(new Error('Desktop smoke search must not download an attachment')),
+    submitAttachment: () => Promise.reject(new Error('Desktop smoke search must not submit an attachment')),
+  })
+  smokeLog(`companion entry search ${JSON.stringify(searchEvidence)}`)
+  if (searchEvidence.type !== 'session-search') {
+    console.error('dsh desktop smoke: Companion entry search failed', searchEvidence)
+    requestShutdown(1)
+    return
+  }
   smokeLog('ok')
   console.log('dsh desktop smoke: ok')
   smokeLog(`relay production-gate ${JSON.stringify(pairing.getRelayState())}`)
@@ -443,6 +472,7 @@ function requestShutdown(exitCode: number, mode: 'exit' | 'allow-quit' = 'exit')
   hostStartController.abort()
   const starting = pendingHost
   const running = host
+  clearCompanionHost()
   host = undefined
   void (async () => {
     try {
@@ -460,6 +490,16 @@ function requestShutdown(exitCode: number, mode: 'exit' | 'allow-quit' = 'exit')
       if (mode === 'exit') app.exit(1)
     }
   })()
+}
+
+function installCompanionHost(running: RunningWebHost): void {
+  clearCompanionHost()
+  uninstallCompanionHost = companionProduct.installHost(running.url)
+}
+
+function clearCompanionHost(): void {
+  uninstallCompanionHost?.()
+  uninstallCompanionHost = undefined
 }
 
 function installIpc(): void {

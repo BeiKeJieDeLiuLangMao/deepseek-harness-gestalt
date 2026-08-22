@@ -32,6 +32,11 @@ describe('Desktop Host RPC', () => {
             return
           case 'timeout':
             return
+          case 'slow-chunks':
+            response.write('{"type":"server-response","rpcId":' + JSON.stringify(body.rpcId) + ',"result":')
+            setTimeout(() => { response.write('{"ok":true,') }, 35)
+            setTimeout(() => { response.end('"value":{}}}') }, 70)
+            return
           default:
             response.end(JSON.stringify({
               type: 'server-response',
@@ -69,6 +74,11 @@ describe('Desktop Host RPC', () => {
       failure: { kind: 'business', code: 'bad-request', message: 'invalid search query' },
     })
     await expect(rpc.call('session.search', { query: 'timeout' })).resolves.toEqual({
+      ok: false,
+      failure: { kind: 'timeout', code: 'HOST_TIMEOUT', message: 'Desktop Host request timed out' },
+    })
+    const deadlineRpc = createDesktopHostRpc(`http://127.0.0.1:${String(address.port)}`, { timeoutMs: 50 })
+    await expect(deadlineRpc.call('session.search', { query: 'slow-chunks' })).resolves.toEqual({
       ok: false,
       failure: { kind: 'timeout', code: 'HOST_TIMEOUT', message: 'Desktop Host request timed out' },
     })

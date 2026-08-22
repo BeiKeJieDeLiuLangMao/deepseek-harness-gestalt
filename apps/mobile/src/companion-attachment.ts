@@ -9,7 +9,7 @@ import {
   type AttachmentCapability,
   type CompanionOfferAttachmentOperation,
 } from '@deepseek-ai/dsh-remote-protocol'
-import { requireCompanionMutation, type CompanionConnectionState } from './companion-mutation.ts'
+import type { CompanionMutationPermit } from './companion-mutation.ts'
 
 /** Accepted per-blob ciphertext ceiling. */
 export const COMPANION_ATTACHMENT_MAX_BYTES = REMOTE_PROTOCOL_LIMITS.attachmentBlobBytes
@@ -45,8 +45,8 @@ export interface SelectedCompanionAttachmentOptions {
   operationId: CompanionOfferAttachmentOperation['operationId']
   /** Desktop-owned Session target. */
   sessionId: CompanionOfferAttachmentOperation['sessionId']
-  /** Current foreground synchronization authority. */
-  connection: CompanionConnectionState | undefined
+  /** Dynamic authority bound to the current physical connection generation. */
+  permit: CompanionMutationPermit
   /** Encrypted Companion sender; receives only the bounded capability message. */
   send(offer: CompanionOfferAttachmentOperation): Promise<void>
   /** Browser HTTP adapter; defaults to global fetch. */
@@ -57,22 +57,25 @@ export interface SelectedCompanionAttachmentOptions {
  * Encrypt attachment bytes on Mobile before upload.
  * @param pairingKey - secret bytes supplied by the Personal Pairing layer.
  * @param plaintext - caller-held plaintext; never leaves Mobile unencrypted.
- * @param connection - foreground connection and validated synchronization state.
+ * @param permit - dynamic foreground synchronization authority.
  * @param ciphertextLimit - ciphertext ceiling compared against `plaintext + seal overhead`; defaults to the protocol ceiling.
  * @returns sealed transfer values for upload and the bounded control message.
  */
 export async function sealCompanionAttachment(
   pairingKey: Uint8Array,
   plaintext: Uint8Array,
-  connection: CompanionConnectionState | undefined,
+  permit: CompanionMutationPermit,
   ciphertextLimit: number = COMPANION_ATTACHMENT_MAX_BYTES,
 ): Promise<{ ciphertext: Uint8Array<ArrayBuffer>; ciphertextSha256: string }> {
-  requireCompanionMutation(connection, 'attachment')
+  permit.requireCurrent()
   if (plaintext.byteLength + COMPANION_ATTACHMENT_SEAL_OVERHEAD_BYTES > ciphertextLimit) {
     throw new Error('Companion attachment exceeds the ciphertext blob ceiling')
   }
   const key = await deriveCompanionAttachmentKey(pairingKey)
-  return await sealEndpointAttachment(key, plaintext)
+  permit.requireCurrent()
+  const sealed = await sealEndpointAttachment(key, plaintext)
+  permit.requireCurrent()
+  return sealed
 }
 
 /**
@@ -80,15 +83,15 @@ export async function sealCompanionAttachment(
  * @param transfer - values returned by the Platform blob store after upload.
  * @param operationId - idempotency key for the Desktop mutation.
  * @param sessionId - Companion Session that will receive the attachment.
- * @param connection - foreground connection and validated synchronization state.
+ * @param permit - dynamic foreground synchronization authority.
  */
 export function buildCompanionAttachmentOffer(
   transfer: CompanionAttachmentTransfer,
   operationId: CompanionOfferAttachmentOperation['operationId'],
   sessionId: CompanionOfferAttachmentOperation['sessionId'],
-  connection: CompanionConnectionState | undefined,
+  permit: CompanionMutationPermit,
 ): CompanionOfferAttachmentOperation {
-  requireCompanionMutation(connection, 'attachment')
+  permit.requireCurrent()
   return {
     type: 'offer-attachment',
     operationId,
@@ -111,7 +114,7 @@ export async function transferSelectedCompanionAttachment(
   file: SelectedCompanionFile,
   options: SelectedCompanionAttachmentOptions,
 ): Promise<CompanionOfferAttachmentOperation> {
-  requireCompanionMutation(options.connection, 'attachment')
+  options.permit.requireCurrent()
   if (file.name === '' || new TextEncoder().encode(file.name).byteLength > REMOTE_PROTOCOL_LIMITS.attachmentFileNameBytes) {
     throw new TypeError('Companion attachment file name must be non-empty and within its byte ceiling')
   }
@@ -121,19 +124,22 @@ export async function transferSelectedCompanionAttachment(
     throw new TypeError('Companion attachment upload requires current pairing-scoped authorization')
   }
   const plaintext = new Uint8Array(await file.arrayBuffer())
+  options.permit.requireCurrent()
   let sealed: Awaited<ReturnType<typeof sealCompanionAttachment>>
   try {
-    sealed = await sealCompanionAttachment(options.pairingKey, plaintext, options.connection)
+    sealed = await sealCompanionAttachment(options.pairingKey, plaintext, options.permit)
   } finally {
     plaintext.fill(0)
   }
   const headers = new Headers(options.authorizationHeaders)
   headers.set('content-type', 'application/octet-stream')
+  options.permit.requireCurrent()
   const response = await (options.fetch ?? fetch)(new URL('/v1/remote-attachments', origin).href, {
     method: 'POST',
     headers,
     body: sealed.ciphertext,
   })
+  options.permit.requireCurrent()
   if (response.status !== 201) {
     throw new Error(`Companion attachment upload failed with HTTP ${String(response.status)}`)
   }
@@ -143,6 +149,7 @@ export async function transferSelectedCompanionAttachment(
   } catch {
     throw new Error('Companion attachment upload returned invalid JSON')
   }
+  options.permit.requireCurrent()
   if (!isRecord(value) || value.byteLength !== sealed.ciphertext.byteLength
     || !Number.isSafeInteger(value.expiresAt) || (value.expiresAt as number) <= 0) {
     throw new Error('Companion attachment upload returned an invalid capability grant')
@@ -153,7 +160,8 @@ export async function transferSelectedCompanionAttachment(
     byteLength: sealed.ciphertext.byteLength,
     expiresAt: value.expiresAt as number,
     fileName: file.name,
-  }, options.operationId, options.sessionId, options.connection)
+  }, options.operationId, options.sessionId, options.permit)
+  options.permit.requireCurrent()
   await options.send(offer)
   return offer
 }

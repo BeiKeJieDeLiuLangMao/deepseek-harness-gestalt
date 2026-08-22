@@ -68,6 +68,12 @@
   text-align: left;
 }
 
+.searchResult {
+  display: flex;
+  flex-direction: column;
+  overflow-wrap: anywhere;
+}
+
 .summary,
 .transcript {
   margin: 0;

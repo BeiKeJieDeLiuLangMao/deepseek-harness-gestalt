@@ -36,7 +36,7 @@ afterEach(async () => { await Promise.all(closeServers.splice(0).map(close => cl
 
 const pairingA = parsePersonalPairingId('pairing-a')
 const pairingKey = crypto.getRandomValues(new Uint8Array(32))
-const ready = { foreground: true, socketOpen: true, synchronized: true }
+const ready = { isCurrent: () => true, requireCurrent: () => {} }
 
 describe('Remote attachment HTTP assembled transfer', () => {
   it.each([
@@ -59,7 +59,7 @@ describe('Remote attachment HTTP assembled transfer', () => {
       authorizationHeaders: { 'x-test-pairing': 'pairing-a' },
       operationId: parseCompanionOperationId(`operation-${kind}`),
       sessionId: parseCompanionSessionId('session-one'),
-      connection: ready,
+      permit: ready,
       fetch: async (url, init) => {
         const requested = new URL(url instanceof Request ? url.url : url)
         return await fetch(new URL(requested.pathname, origin), init)
@@ -101,7 +101,8 @@ describe('Remote attachment HTTP assembled transfer', () => {
 
   it('fails explicitly on cross-pairing consume, hash mismatch, interruption, expiry, and limit violations', async () => {
     const { origin } = await start()
-    const sealed = await mobileSeal(pairingKey, new TextEncoder().encode('second transfer'), ready)
+    const permit = { isCurrent: () => true, requireCurrent: () => {} }
+    const sealed = await mobileSeal(pairingKey, new TextEncoder().encode('second transfer'), permit)
 
     const upload = await fetch(`${origin}/v1/remote-attachments`, {
       method: 'POST',
@@ -115,7 +116,7 @@ describe('Remote attachment HTTP assembled transfer', () => {
       byteLength: grant.byteLength,
       expiresAt: grant.expiresAt,
       fileName: 'notes.txt',
-    }, 'operation-two' as never, 'session-one' as never, ready)
+    }, 'operation-two' as never, 'session-one' as never, permit)
 
     const crossPairing = await fetch(`${origin}/v1/remote-attachments/consume`, {
       method: 'POST',

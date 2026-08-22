@@ -24,6 +24,12 @@ interface ValidatedDesktopSurfaceResyncReceiver {
   acceptValidatedDesktopResync(message: ValidatedDesktopSurfaceResync): void
 }
 
+/** Result receiver owned by one authenticated physical connection generation. */
+interface ValidatedCompanionResultReceiver {
+  /** @param result - validated result decoded by the connection that owns this receiver. */
+  acceptValidatedCompanionResult(result: CompanionResult): void
+}
+
 /** Current Desktop-confirmed content retained while a replacement connection resynchronizes. */
 interface MobileCompanionSurfaceSnapshot {
   /** Last authenticated Session projection. */
@@ -177,10 +183,22 @@ export class MobileCompanionSurface {
   }
 
   /**
-   * Apply one decoded result authenticated by the current Encrypted Companion channel.
-   * @param result - validated result after endpoint decryption and protocol decoding.
+   * Bind decoded-result acceptance to the current physical connection generation.
+   * A receiver from a disconnected or replaced decoder cannot update Mobile state.
+   * @returns receiver for the authenticated decoder, or `undefined` while disconnected.
    */
-  acceptValidatedCompanionResult(result: CompanionResult): void {
+  bindValidatedCompanionResults(): ValidatedCompanionResultReceiver | undefined {
+    const permit = this.#runtime.bindCompanionMutationPermit('other-mutation')
+    if (permit === undefined) return undefined
+    return {
+      acceptValidatedCompanionResult: (result) => {
+        if (!permit.isCurrent()) return
+        this.acceptCurrentCompanionResult(result)
+      },
+    }
+  }
+
+  private acceptCurrentCompanionResult(result: CompanionResult): void {
     if (result.operationId !== this.#searchOperationId) return
     if (result.type === 'session-search') {
       this.#snapshot = {

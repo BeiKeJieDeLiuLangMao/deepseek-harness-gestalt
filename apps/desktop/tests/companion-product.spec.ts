@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from 'vitest'
+import { createServer } from 'node:http'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { parsePersonalPairingId } from '@deepseek-ai/dsh-remote-access'
 import {
   deriveCompanionAttachmentKey,
@@ -8,12 +9,18 @@ import {
   type CompanionOfferAttachmentOperation,
   type CompanionSearchSessionsOperation,
 } from '@deepseek-ai/dsh-remote-protocol'
-import { handleCompanionProductOperation } from '../src/companion-product.ts'
+import {
+  DesktopCompanionProductOwner,
+  handleCompanionProductOperation,
+} from '../src/companion-product.ts'
 import type { DesktopHostRpc, DesktopHostRpcResult } from '../src/host-rpc.ts'
 
 const pairingId = parsePersonalPairingId('pairing-product')
 const pairingKey = crypto.getRandomValues(new Uint8Array(32))
 const sessionId = parseCompanionSessionId('session-product')
+const closeServers: Array<() => Promise<void>> = []
+
+afterEach(async () => { await Promise.all(closeServers.splice(0).map(close => close())) })
 
 describe('Desktop Companion product operations', () => {
   it.each([
@@ -105,6 +112,54 @@ describe('Desktop Companion product operations', () => {
     await expect(handleCompanionProductOperation(operation, baseDependencies({
       call: async () => ({ ok: false, failure }),
     }))).resolves.toEqual({ type: 'operation-failed', operationId: operation.operationId, failure })
+  })
+
+  it('installs the real Web Host RPC in the product owner and invalidates it on Host exit', async () => {
+    const server = createServer((request, response) => {
+      const chunks: Buffer[] = []
+      request.on('data', chunk => chunks.push(chunk as Buffer))
+      request.on('end', () => {
+        const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as { rpcId: string }
+        response.end(JSON.stringify({
+          type: 'server-response',
+          rpcId: body.rpcId,
+          result: {
+            ok: true,
+            value: { items: [{ sessionId: 'session-real-entry', snippet: 'real Host result' }], hasMore: false },
+          },
+        }))
+      })
+    })
+    await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
+    closeServers.push(async () => {
+      server.closeAllConnections()
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => { if (error === undefined) resolve(); else reject(error) })
+      })
+    })
+    const address = server.address()
+    if (address === null || typeof address === 'string') throw new Error('expected TCP address')
+    const owner = new DesktopCompanionProductOwner()
+    const uninstall = owner.installHost(`http://127.0.0.1:${String(address.port)}`)
+
+    await expect(owner.handle(search('entry'), baseDependencies(hostRpc(() => {
+      throw new Error('owner must use its installed Host RPC')
+    })))).resolves.toEqual({
+      type: 'session-search',
+      operationId: parseCompanionOperationId('search-entry'),
+      items: [{ sessionId: parseCompanionSessionId('session-real-entry'), snippet: 'real Host result' }],
+      hasMore: false,
+    })
+    uninstall()
+    await expect(owner.handle(search('after-exit'), baseDependencies(hostRpc(() => {
+      throw new Error('uninstalled owner must not call an injected Host')
+    })))).resolves.toEqual({
+      type: 'operation-failed',
+      operationId: parseCompanionOperationId('search-after-exit'),
+      failure: {
+        kind: 'wire', code: 'HOST_WIRE_INVALID', message: 'Desktop Web Host is not available',
+      },
+    })
   })
 })
 

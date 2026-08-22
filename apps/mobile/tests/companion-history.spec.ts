@@ -132,26 +132,32 @@ describe('Mobile Companion browse projection', () => {
     expect(onCreate).not.toHaveBeenCalled()
   })
 
-  it('renders only Desktop-authoritative search hits and exposes Host HTTP 400', () => {
+  it('renders Desktop-authoritative hits even when the Companion Cache lacks the Session', () => {
     const onSearch = vi.fn()
     const { rerender } = render(createElement(MobileBrowse, {
       desktopName: 'Studio Mac',
       connection: 'online',
       sessions: [
-        { id: 's-hit', title: 'Indexed Session', summary: 'metadata without query' },
+        { id: 's-hit', title: 'Cached title must not label a Host hit', workspace: 'Cached Workspace', summary: 'metadata without query' },
         { id: 's-local', title: 'needle in local title', summary: 'must not become a local hit' },
       ],
       search: {
         query: 'needle',
         status: 'ready',
-        items: [{ sessionId: 's-hit' as never, snippet: 'Desktop indexed needle' }],
+        items: [
+          { sessionId: 's-hit' as never, snippet: 'Desktop indexed needle' },
+          { sessionId: 's-uncached' as never, snippet: 'Authoritative uncached needle' },
+        ],
         hasMore: false,
       },
       onSearch,
       companionState: ready,
     }))
-    expect(screen.getByText('Indexed Session')).toBeTruthy()
+    expect(screen.queryByText('Cached title must not label a Host hit')).toBeNull()
+    expect(screen.queryByText('Cached Workspace')).toBeNull()
     expect(screen.getByText('Desktop indexed needle')).toBeTruthy()
+    expect(screen.getByText('Authoritative uncached needle')).toBeTruthy()
+    expect(screen.getByText('s-uncached')).toBeTruthy()
     expect(screen.queryByText('needle in local title')).toBeNull()
     fireEvent.change(screen.getByRole('searchbox', { name: '搜索 Desktop Sessions' }), {
       target: { value: 'next query' },
