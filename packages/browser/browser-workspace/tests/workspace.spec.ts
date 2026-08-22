@@ -227,6 +227,34 @@ describe('Session-owned Browser Workspace', () => {
     expect(listBrowserWorkspacePages(null)).toEqual([])
   })
 
+  it('recreates a retained Profile after Runtime restart leaves a durable target behind', async () => {
+    const before = await harness()
+    const originalSession = before.sessions.create(SessionId('session-before-restart'))
+    await before.browserWorkspace.create({
+      session: originalSession,
+      profile: 'persistent',
+      name: BrowserProfileName('work'),
+    })
+
+    const after = await harness()
+    const restoredSession = after.sessions.create(SessionId('session-after-restart'), {
+      seed: originalSession.events,
+    })
+    const recreated = await after.browserWorkspace.create({
+      session: restoredSession,
+      profile: 'persistent',
+      name: BrowserProfileName('work'),
+    })
+
+    await expect(after.browserWorkspace.observe({
+      session: restoredSession,
+      target: recreated.target,
+    })).resolves.toMatchObject({ status: 'open' })
+    expect(listBrowserWorkspacePages(after.browserWorkspace.snapshot(restoredSession))).toEqual([
+      expect.objectContaining({ target: recreated.target, revision: recreated.revision }),
+    ])
+  })
+
   it('restores one Session Workspace after reload and closes leftover tabs on Session disposal', async () => {
     const ctx = await harness()
     const first = ctx.sessions.create(SessionId('session-a'))

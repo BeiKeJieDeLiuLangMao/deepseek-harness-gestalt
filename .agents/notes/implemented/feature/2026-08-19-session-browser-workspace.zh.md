@@ -12,6 +12,8 @@ Session 可以打开 Browser Profile，但 Runtime 仍把 Workspace、实例与�
 
 `dsh-browser-workspace` 把 Browser Runtime 身份绑定到一条 Session 日志。每个 Session 独立拥有零个或多个 Workspace。每个 Workspace 使用一个 Browser Profile，并包含多个浏览器实例与标签页。`browser/workspace` 是仅日志、后写覆盖的完整值 Session 事件。折叠会在 Session 切换与重新加载后恢复实例、活动实例、标签页、每个标签页最近一次提交的修订号与活动标签页。
 
+Browser Runtime 页面仍是 live 进程状态。保留身份的 Profile 匹配遇到当前 Runtime 以 `BROWSER_NOT_FOUND` 报告的已记录 target 时，Binder 会遗忘该 target，并继续匹配与创建；其他 observe 失败仍是致命错误。因此 Runtime 进程重启后，下一次 create 会替换缺失页面，而不会把已记录所有权当作页面仍 live 的证明。
+
 Runtime `create` 可以把新实例附加到已有 Workspace，或把新标签页附加到已有实例。命名 Profile 仍以 `BROWSER_PROFILE_BUSY` 拒绝第二个独立写入方；附加到已打开的命名 Profile 属于同一写入方再增加实例或标签页。当调用 Agent Session 存在且 Binder 已组合时，Consumer 经 Binder 路由。跨 Session 页面转移以 `BROWSER_TRANSFER_UNSUPPORTED` 拒绝。附加到另一 live Session 的 Workspace 或实例同样是 `BROWSER_TRANSFER_UNSUPPORTED`；附加到本 Session 未知的层级是 `BROWSER_SESSION_MISMATCH`。Session 释放会返回遗留标签页清理，并从 Session 快照中遗忘这些标签页。
 
 无密钥 Browser Runtime 快照保持不含 Binder，因为它们证明 Consumer 发现与已渲染 Runtime 事实，而不是 Session 隔离。只有组合了 Binder 的路径才宣称 Session 本地所有权。
@@ -28,7 +30,7 @@ Runtime `create` 可以把新实例附加到已有 Workspace，或把新标签�
 
 ## 后果
 
-两个 Session 可以在同一 Runtime 上拥有隔离 Workspace。重新加载从 Session 日志重建标签页所有权以及每个标签页最近一次提交的修订号。命名 Profile 仍是隔离身份。
+两个 Session 可以在同一 Runtime 上拥有隔离 Workspace。重新加载从 Session 日志重建标签页所有权以及每个标签页最近一次提交的修订号。Runtime 进程重启后，下一次保留身份 Profile create 会清除缺失 target。命名 Profile 仍是隔离身份。
 
 ## 验证
 

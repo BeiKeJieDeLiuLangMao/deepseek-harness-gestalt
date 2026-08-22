@@ -372,7 +372,10 @@ export class BrowserWorkspaceBinder extends TypertRemoteService {
     return this.ctx.sessions.list().find(session => ownsAttach(this.snapshot(session), attach))
   }
 
-  /** Reuse one open browser instance on the requested retained Profile. */
+  /**
+   * Reuse one open browser instance on the requested retained Profile.
+   * A logged target missing from the current Runtime is forgotten before matching continues.
+   */
   private async findMatchingBrowser(
     request: BrowserWorkspaceCreateRequest,
   ): Promise<BrowserCreateAttach | undefined> {
@@ -381,15 +384,23 @@ export class BrowserWorkspaceBinder extends TypertRemoteService {
     for (const workspace of snapshot.workspaces) {
       for (const browser of workspace.browsers) {
         for (const tab of browser.tabs) {
-          const state = await this.ctx.browserRuntime.observe({
-            target: {
-              profileId: workspace.profileId,
-              workspaceId: workspace.workspaceId,
-              browserId: browser.browserId,
-              tabId: tab.tabId,
-            },
-            ...request.signal === undefined ? {} : { signal: request.signal },
-          })
+          const target = {
+            profileId: workspace.profileId,
+            workspaceId: workspace.workspaceId,
+            browserId: browser.browserId,
+            tabId: tab.tabId,
+          }
+          let state: BrowserRuntimeState
+          try {
+            state = await this.ctx.browserRuntime.observe({
+              target,
+              ...request.signal === undefined ? {} : { signal: request.signal },
+            })
+          } catch (error) {
+            if (!(error instanceof BrowserRuntimeError) || error.code !== 'BROWSER_NOT_FOUND') throw error
+            this.forget(request.session, target)
+            continue
+          }
           if (state.status === 'closed') {
             this.forget(request.session, state.target)
             continue
