@@ -151,13 +151,17 @@ export function clientBundle(
  * @returns ENV-selected tsdown config for the Client build face.
  */
 export function staticLinked(id: string, libEntry: readonly string[]): BuildFaceConfig {
+  return browserEntries(id, libEntry, true)
+}
+
+function browserEntries(id: string, libEntry: readonly string[], roster: boolean): BuildFaceConfig {
   // Each entry names its own output file, so two entries with the same basename
   // would overwrite one artifact instead of emitting two.
   const names = new Set(libEntry.map(entry => basename(entry, '.js')))
   if (names.size !== libEntry.length) {
     throw new Error(`tsdown: ${id} entries collide on an output name: ${libEntry.join(', ')}`)
   }
-  return clientOnly(libEntry.map(entry => staticLinkedConfig(id, entry)))
+  return clientOnly(libEntry.map(entry => staticLinkedConfig(id, entry, basename(entry, '.js'), roster)))
 }
 
 /**
@@ -169,11 +173,7 @@ export function staticLinked(id: string, libEntry: readonly string[]): BuildFace
  * @returns Client-face configs for the browser subpaths.
  */
 export function browserSubpath(id: string, libEntry: readonly string[]): BuildFaceConfig {
-  const names = new Set(libEntry.map(entry => basename(entry, '.js')))
-  if (names.size !== libEntry.length) {
-    throw new Error(`tsdown: ${id} entries collide on an output name: ${libEntry.join(', ')}`)
-  }
-  return clientOnly(libEntry.map(entry => staticLinkedConfig(id, entry, basename(entry, '.js'), false)))
+  return browserEntries(id, libEntry, false)
 }
 
 /**
