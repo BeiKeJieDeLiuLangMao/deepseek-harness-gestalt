@@ -26,4 +26,4 @@ None.
 
 - Production activation remains fail-closed until an independent reviewer accepts the Snow proof and a reviewed `PairingHandshakeProvider` is assembled.
 - Personal Pairing challenge and pending-handshake records still use the checked-in single-process provider. Confirmed pairing-to-route/access authority and the Relay route store are deployment-owned seams; this repository does not provision PostgreSQL, Redis, TLS, or cloud instances.
-- Relay transport availability does not approve product encryption. Production Desktop composition remains fail-closed until the independent Noise gate admits a reviewed handshake and Companion channel provider.
+- Product Desktop and Mobile use the endpoint-owned Snow mailbox and Companion channel; Platform mounts no pairing cryptography. Physical WebView evidence and independent review of the exact implementation remain release blockers.

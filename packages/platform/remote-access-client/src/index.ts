@@ -57,12 +57,10 @@ export interface RemoteAccessTransport {
     authentication: PairingAccountAuthentication
     rendezvousId: PairingRendezvousId
   }): Promise<PairingChallengeView>
-  /** @param input - Desktop authorization and locally-created opaque Snow invitation. @returns registered invitation. */
+  /** @param input - Desktop authorization and invitation routing metadata. @returns allocated opaque route. */
   createEndpointChallenge(input: {
     authentication: PairingAccountAuthentication
     rendezvousId: PairingRendezvousId
-    invitationPayload: Uint8Array
-    desktopFingerprint: string
     expiresAt: number
   }): Promise<EndpointPairingChallengeView>
   /** Cancel one unused endpoint-owned invitation. */
@@ -205,15 +203,11 @@ export class RemoteAccessHttpTransport implements RemoteAccessTransport {
   async createEndpointChallenge(input: {
     authentication: PairingAccountAuthentication
     rendezvousId: PairingRendezvousId
-    invitationPayload: Uint8Array
-    desktopFingerprint: string
     expiresAt: number
   }): Promise<EndpointPairingChallengeView> {
     return parseEndpointChallenge(await this.call(input.authentication, {
       operation: 'create-endpoint-challenge',
       rendezvousId: input.rendezvousId,
-      invitationPayload: encodeBytes(input.invitationPayload),
-      desktopFingerprint: input.desktopFingerprint,
       expiresAt: input.expiresAt,
     }))
   }
@@ -474,15 +468,10 @@ function parseChallenge(value: unknown): PairingChallengeView {
 
 function parseEndpointChallenge(value: unknown): EndpointPairingChallengeView {
   const record = requiredRecord(value, 'Endpoint Pairing challenge response')
-  const oneTimeLink = requiredString(record.oneTimeLink, 'Endpoint Pairing challenge oneTimeLink')
-  const qrPayload = requiredString(record.qrPayload, 'Endpoint Pairing challenge qrPayload')
-  if (qrPayload !== oneTimeLink) throw new TypeError('Endpoint Pairing QR and link payloads must match')
   return {
     challengeId: parsePairingChallengeId(record.challengeId),
     expiresAt: requiredPositiveInteger(record.expiresAt, 'Endpoint Pairing challenge expiresAt'),
-    desktopFingerprint: requiredString(record.desktopFingerprint, 'Endpoint Pairing challenge desktopFingerprint'),
-    oneTimeLink,
-    qrPayload,
+    routingLink: requiredString(record.routingLink, 'Endpoint Pairing challenge routingLink'),
   }
 }
 

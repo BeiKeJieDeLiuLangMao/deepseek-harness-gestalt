@@ -16,7 +16,6 @@ export interface EndpointPairingMailboxChallenge {
   accountId: PlatformAccountId
   desktopInstallationId: InstallationId
   expiresAt: number
-  invitationPayload: Uint8Array
   completionId?: PairingCompletionId
   pendingPairingId?: PendingPairingId
 }
@@ -45,13 +44,11 @@ export interface EndpointOwnedPairingMailboxState {
   pending: readonly EndpointPairingMailboxPending[]
 }
 
-/** Desktop projection for one Platform-registered opaque invitation. */
+/** Platform-allocated Desktop routing projection containing no invitation payload. */
 export interface EndpointPairingChallengeView {
   challengeId: PairingChallengeId
   expiresAt: number
-  desktopFingerprint: string
-  oneTimeLink: string
-  qrPayload: string
+  routingLink: string
 }
 
 /** Desktop mailbox projection containing only endpoint-owned handshake messages. */
@@ -91,12 +88,11 @@ export class EndpointOwnedPairingMailbox {
     }
   }
 
-  /** Register one Desktop-created opaque invitation.
-   * @param input - authenticated ownership, expiry, and public opaque invitation payload.
+  /** Register one Desktop-owned invitation route.
+   * @param input - authenticated ownership and expiry metadata.
    */
   createChallenge(input: EndpointPairingMailboxChallenge): void {
     if (!Number.isSafeInteger(input.expiresAt) || input.expiresAt <= 0) throw new TypeError('Pairing mailbox expiry must be positive')
-    assertOpaque(input.invitationPayload, 'invitation payload')
     if (this.challenges.has(input.challengeId)) throw mailboxError('Pairing challenge id already exists')
     this.challenges.set(input.challengeId, cloneChallenge(input))
   }
@@ -360,7 +356,7 @@ function assertOpaque(value: Uint8Array, name: string): void {
 }
 
 function cloneChallenge(record: EndpointPairingMailboxChallenge): EndpointPairingMailboxChallenge {
-  return { ...record, invitationPayload: record.invitationPayload.slice() }
+  return { ...record }
 }
 
 function clonePending(record: EndpointPairingMailboxPending): EndpointPairingMailboxPending {

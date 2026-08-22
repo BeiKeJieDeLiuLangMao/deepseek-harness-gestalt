@@ -80,20 +80,24 @@ describe('DesktopPairingController', () => {
     )))
     const transport = transportFixture()
     const relay = { configure: vi.fn(), start: vi.fn(), stop: vi.fn() }
-    const vault = new DesktopSnowPairingVault()
+    let failNextSave = false
+    const save = vi.fn(async () => {
+      if (!failNextSave) return
+      failNextSave = false
+      throw new Error('vault persistence failed after sealed delivery')
+    })
+    const vault = new DesktopSnowPairingVault({ load: vi.fn(async () => []), save })
     const challengeId = parsePairingChallengeId('challenge-endpoint-owner')
     const pendingPairingId = parsePendingPairingId('pending-endpoint-owner')
-    let invitationPayload: Uint8Array | undefined
-    let deliveredAuthority: Uint8Array | undefined
-    transport.deliverEndpointRelayAuthority.mockImplementationOnce(async (input) => {
-      deliveredAuthority = input.sealedRelayAuthority.slice()
+    const deliveredAuthorities: Uint8Array[] = []
+    transport.deliverEndpointRelayAuthority.mockImplementation(async (input) => {
+      deliveredAuthorities.push(input.sealedRelayAuthority.slice())
+      if (deliveredAuthorities.length === 1) throw new Error('sealed authority response was lost after commit')
     })
     transport.createEndpointChallenge.mockImplementationOnce(async (input) => {
-      invitationPayload = input.invitationPayload.slice()
       return {
-        challengeId, expiresAt: input.expiresAt, desktopFingerprint: input.desktopFingerprint,
-        oneTimeLink: 'https://platform.example/pair?endpoint=1',
-        qrPayload: 'https://platform.example/pair?endpoint=1',
+        challengeId, expiresAt: input.expiresAt,
+        routingLink: 'https://platform.example/pair?endpoint=1&expires=1787027200000&protocol=1',
       }
     })
     transport.listEndpointPending.mockResolvedValue([])
@@ -110,7 +114,11 @@ describe('DesktopPairingController', () => {
     await controller.start()
     await controller.setEnabled(true)
     await controller.createChallenge()
-    if (invitationPayload === undefined) throw new Error('endpoint invitation was not registered')
+    const invitationLink = controller.getSnapshot().challenge?.oneTimeLink
+    if (invitationLink === undefined) throw new Error('endpoint invitation was not projected')
+    const encodedPayload = new URL(invitationLink).searchParams.get('payload')
+    if (encodedPayload === null) throw new Error('endpoint invitation has no local payload')
+    const invitationPayload = new Uint8Array(Buffer.from(encodedPayload, 'base64url'))
 
     const mobile = new SnowMobileHandshakeClient()
     const message1 = await mobile.beginEndpointInvitation(invitationPayload)
@@ -130,7 +138,7 @@ describe('DesktopPairingController', () => {
     await controller.start()
     expect(controller.getSnapshot()).toMatchObject({ status: 'pending', pending: { id: pendingPairingId } })
 
-    transport.confirmEndpointPairing.mockResolvedValueOnce({
+    const confirmation = {
       pairing: {
         id: parsePersonalPairingId('pairing-endpoint-owner'),
         devicePrincipal: {
@@ -140,17 +148,35 @@ describe('DesktopPairingController', () => {
         device: { name: 'Alice phone', platform: 'ios' }, pairedAt: 1, lastAccessAt: 1, online: false,
       },
       routeId: parseRelayRouteId('route-endpoint-owner'), relayRevision: 3,
+    }
+    const confirmationDigests: Uint8Array[] = []
+    transport.confirmEndpointPairing.mockImplementation(async (input) => {
+      confirmationDigests.push(input.mobileCredentialDigest.slice())
+      if (confirmationDigests.length === 1) throw new Error('confirmation response was lost after commit')
+      return confirmation
     })
     transport.listEndpointPending.mockResolvedValue([])
+    await expect(controller.confirm(pendingPairingId)).rejects.toThrow('confirmation response was lost after commit')
+    await expect(controller.confirm(pendingPairingId)).rejects.toThrow('sealed authority response was lost after commit')
+    const savesBeforeCommit = save.mock.calls.length
+    failNextSave = true
+    await expect(controller.confirm(pendingPairingId)).rejects.toThrow('vault persistence failed after sealed delivery')
     await controller.confirm(pendingPairingId)
-    const sealed = deliveredAuthority
+    const sealed = deliveredAuthorities.at(-1)
     if (sealed === undefined) throw new Error('Desktop did not deliver sealed Relay authority')
     await expect(mobile.openRelayAuthority(sealed)).resolves.toMatchObject({
       routeId: 'route-endpoint-owner', endpoint: 'mobile', revision: 3,
       pairingSelector: 'pairing-endpoint-owner',
     })
     expect(vault.reconnectState('pairing-endpoint-owner' as never)).toHaveLength(96)
-    expect(transport.confirmEndpointPairing.mock.calls.at(-1)?.[0].mobileCredentialDigest).toHaveLength(32)
+    expect(confirmationDigests).toHaveLength(4)
+    expect(confirmationDigests[1]).toEqual(confirmationDigests[0])
+    expect(confirmationDigests[2]).toEqual(confirmationDigests[0])
+    expect(confirmationDigests[3]).toEqual(confirmationDigests[0])
+    expect(deliveredAuthorities).toHaveLength(3)
+    expect(deliveredAuthorities[1]).toEqual(deliveredAuthorities[0])
+    expect(deliveredAuthorities[2]).toEqual(deliveredAuthorities[0])
+    expect(save).toHaveBeenCalledTimes(savesBeforeCommit + 2)
     await controller.dispose()
   })
 

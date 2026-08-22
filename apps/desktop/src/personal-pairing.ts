@@ -11,9 +11,7 @@ import {
   parsePersonalPairingId,
   type PendingPairingId,
   type PersonalPairingId,
-  type RelayCredentialGrant,
 } from '@deepseek-ai/dsh-remote-access'
-import { parseRelayCredential, parseRelayPairingSelector } from '@deepseek-ai/dsh-remote-protocol'
 import {
   type DesktopRelayStopReason,
   type RemoteAccessTransport,
@@ -158,31 +156,42 @@ export class DesktopPairingController implements DesktopPairingActions {
       try {
         if (this.options.snowPairingVault !== undefined) {
           const expiresAt = this.now() + PAIRING_CHALLENGE_TTL_MS
-          const local = await this.options.snowPairingVault.createInvitation(expiresAt)
+          const authentication = await this.options.account.authorizeCurrentInstallation()
+          const challenge = await this.options.transport.createEndpointChallenge({
+            authentication,
+            rendezvousId: parsePairingRendezvousId(this.randomId()),
+            expiresAt,
+          })
+          let local: Awaited<ReturnType<DesktopSnowPairingVault['createInvitation']>> | undefined
           try {
-            const challenge = await this.options.transport.createEndpointChallenge({
-              authentication: await this.options.account.authorizeCurrentInstallation(),
-              rendezvousId: parsePairingRendezvousId(this.randomId()),
-              invitationPayload: local.invitationPayload,
-              desktopFingerprint: local.desktopFingerprint,
-              expiresAt,
-            })
+            local = await this.options.snowPairingVault.createInvitation(expiresAt)
             this.options.snowPairingVault.retainChallenge(challenge.challengeId, local.owner)
+            const oneTimeLink = endpointInvitationLink(
+              challenge.routingLink, local.invitationPayload, local.desktopFingerprint,
+            )
             const pairings = await this.listPairings()
             this.publish({
               status: 'challenge', enabled: true,
               challenge: {
                 id: challenge.challengeId, expiresAt: challenge.expiresAt,
-                oneTimeLink: challenge.oneTimeLink, qrPayload: challenge.qrPayload,
+                oneTimeLink, qrPayload: oneTimeLink,
               },
               pairings,
             })
             return this.snapshot
           } catch (error) {
-            local.owner.wipe()
+            this.options.snowPairingVault.cancelChallenge(challenge.challengeId)
+            const cleanup = await Promise.allSettled([this.options.transport.cancelEndpointChallenge({
+              authentication, challengeId: challenge.challengeId,
+            })])
+            try {
+              throwSettled(cleanup)
+            } catch (cleanupError) {
+              throw new AggregateError([error, cleanupError], 'Desktop endpoint invitation creation failed')
+            }
             throw error
           } finally {
-            local.invitationPayload.fill(0)
+            local?.invitationPayload.fill(0)
           }
         }
         const challenge = await this.options.transport.createChallenge({
@@ -236,38 +245,29 @@ export class DesktopPairingController implements DesktopPairingActions {
     return this.exclusive(async () => {
       this.assertActive()
       if (this.options.snowPairingVault !== undefined) {
-        const owner = this.options.snowPairingVault.pendingOwner(pendingPairingId)
-        if (owner === undefined) throw new Error('Desktop Snow pairing has no pending endpoint owner')
-        const credentialBytes = crypto.getRandomValues(new Uint8Array(32))
-        const credential = parseRelayCredential(encodeBase64Url(credentialBytes))
-        const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', credentialBytes))
-        credentialBytes.fill(0)
-        const confirmation = await this.options.transport.confirmEndpointPairing({
-          authentication: await this.options.account.authorizeCurrentInstallation(),
-          pendingPairingId,
-          mobileCredentialDigest: digest,
-        })
-        digest.fill(0)
-        const grant: RelayCredentialGrant = {
-          routeId: confirmation.routeId,
-          endpoint: 'mobile',
-          credential,
-          revision: confirmation.relayRevision,
-          pairingSelector: parseRelayPairingSelector(confirmation.pairing.id),
+        const prepared = await this.options.snowPairingVault.prepareConfirmation(pendingPairingId)
+        let confirmation: Awaited<ReturnType<RemoteAccessTransport['confirmEndpointPairing']>>
+        try {
+          confirmation = await this.options.transport.confirmEndpointPairing({
+            authentication: await this.options.account.authorizeCurrentInstallation(),
+            pendingPairingId,
+            mobileCredentialDigest: prepared.credentialDigest,
+          })
+        } finally {
+          prepared.credentialDigest.fill(0)
         }
-        const sealedRelayAuthority = await owner.sealMobileRelayAuthority(grant)
-        const reconnectState = owner.exportReconnectState()
+        const delivery = await this.options.snowPairingVault.prepareSealedAuthority(
+          pendingPairingId, confirmation,
+        )
         try {
           await this.options.transport.deliverEndpointRelayAuthority({
             authentication: await this.options.account.authorizeCurrentInstallation(),
             pendingPairingId,
-            sealedRelayAuthority,
+            sealedRelayAuthority: delivery.sealedRelayAuthority,
           })
-          this.options.snowPairingVault.activate(pendingPairingId, confirmation.pairing.id, reconnectState)
-          await this.options.snowPairingVault.flush()
+          await this.options.snowPairingVault.commitConfirmation(pendingPairingId)
         } finally {
-          sealedRelayAuthority.fill(0)
-          reconnectState.fill(0)
+          delivery.sealedRelayAuthority.fill(0)
         }
         await this.refresh()
         return this.snapshot
@@ -564,6 +564,18 @@ function errorFromUnknown(error: unknown): Error {
 
 function encodeBase64Url(value: Uint8Array): string {
   return Buffer.from(value).toString('base64url')
+}
+
+function endpointInvitationLink(
+  routingLink: string,
+  invitationPayload: Uint8Array,
+  desktopFingerprint: string,
+): string {
+  const link = new URL(routingLink)
+  if (link.searchParams.has('payload')) throw new Error('Platform endpoint routing link exposed invitation payload')
+  link.searchParams.set('payload', encodeBase64Url(invitationPayload))
+  link.searchParams.set('fingerprint', desktopFingerprint)
+  return link.toString()
 }
 
 /**

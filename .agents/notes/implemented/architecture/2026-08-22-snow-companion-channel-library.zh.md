@@ -16,7 +16,7 @@ Status: implemented
 
 每条 Mobile Relay credential 记录都会在 credential digest 旁绑定其 pairing selector。credential 认证完成后，Relay `ready` 会投影 route、本端 attachment，以及当前对端 attachment、selector 与 connection generation。generation 从两个临时 directory connection token、route 与 selector 派生。Platform 只看到既有的不透明路由 metadata 和非秘密 selector；所投影对端是否持有已配对端点密钥，仍由 Snow static authentication 判定。
 
-首次配对使用端点自有的不透明 mailbox。Desktop 创建并保留 XKpsk3 静态密钥、临时密钥与邀请 PSK；Mobile 在本地解码邀请并创建消息 1 与消息 3。Platform 只存储不透明的邀请与握手字节，并执行账号所有权、过期、顺序、单次使用和幂等约束。Desktop 在本地认证消息 3 后创建 Mobile Relay credential。Platform 只登记它的 SHA-256 digest、route 与 pairing selector。Desktop 把 grant 作为第一条 XKpsk3 transport payload 密封，再通过 mailbox 只投递该 ciphertext。
+首次配对使用端点自有的不透明 mailbox。Platform 先分配不含邀请 payload 的 challenge id 与 routing link。Desktop 随后创建并保留 XKpsk3 静态密钥、临时密钥与邀请 PSK，并且只在本地 QR projection 中追加完整邀请；Mobile 在本地解码邀请并创建消息 1 与消息 3。Platform 只存储路由元数据与不透明握手字节，并执行账号所有权、过期、顺序、单次使用和幂等约束。Desktop 在本地认证消息 3 后创建 Mobile Relay credential；端点登记与 Relay attach 都从 canonical credential 解码后的 32 字节派生 authority digest。Desktop 在 confirm 或 delivery 响应丢失以及持久化失败期间保留同一确认事务，只密封一次作为首条 XKpsk3 transport payload 的 grant，并且只在密封投递与加密 reconnect-state 持久化全部完成后丢弃该事务。
 
 生产 Platform 挂载持久 PostgreSQL pairing authority、PostgreSQL Relay route store、Redis directory 与 coordination adapter、pairing HTTP 和 Relay WSS。Platform 不提供配对密码实现：旧的 Platform 中介操作 fail closed，产品端点只使用 mailbox 操作。Desktop 把 reconnect state 保存到 Electron `safeStorage` 保护且 owner-only 原子替换的文件；Mobile 把 reconnect state 与 Mobile-only Relay grant 保存到账号隔离的 IndexedDB 记录。每次物理重连都使用新的 attachment id 与新的 IK 临时密钥。
 

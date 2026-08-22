@@ -477,16 +477,14 @@ export abstract class RemoteAccessService extends Service {
     clientIp: string
   }): Promise<PairingChallengeView>
 
-  /** Register one Desktop-created invitation whose private state remains endpoint-owned.
-   * @param input - Desktop authorization, opaque invitation, fingerprint, expiry, and client quota identity.
-   * @returns link/QR projection carrying the opaque payload.
+  /** Allocate routing metadata before Desktop constructs its endpoint-owned invitation.
+   * @param input - Desktop authorization, rendezvous identity, expiry, and client quota identity.
+   * @returns challenge identity and routing link containing no invitation payload.
    */
   abstract createEndpointChallenge(input: {
     desktop: PairingAccountAuthentication
     rendezvousId: PairingRendezvousId
     clientIp: string
-    invitationPayload: Uint8Array
-    desktopFingerprint: string
     expiresAt: number
   }): Promise<EndpointPairingChallengeView>
 
@@ -900,8 +898,6 @@ export class PersonalPairingProvider extends RemoteAccessService {
     desktop: PairingAccountAuthentication
     rendezvousId: PairingRendezvousId
     clientIp: string
-    invitationPayload: Uint8Array
-    desktopFingerprint: string
     expiresAt: number
   }): Promise<EndpointPairingChallengeView> {
     return this.exclusive(async () => {
@@ -923,23 +919,18 @@ export class PersonalPairingProvider extends RemoteAccessService {
         accountId: account.id,
         desktopInstallationId: installation.id,
         expiresAt: input.expiresAt,
-        invitationPayload: input.invitationPayload,
       })
       this.commitEndpointMailbox(mailbox)
       this.recordChallengeQuota(account.id, clientIp)
       const link = new URL(this.pairingLinkOrigin)
       link.searchParams.set('challenge', challengeId)
-      link.searchParams.set('payload', Buffer.from(input.invitationPayload).toString('base64url'))
       link.searchParams.set('rendezvous', parsePairingRendezvousId(input.rendezvousId))
       link.searchParams.set('expires', String(input.expiresAt))
       link.searchParams.set('protocol', String(PERSONAL_PAIRING_PROTOCOL_MAJOR))
-      const oneTimeLink = link.toString()
       return {
         challengeId,
         expiresAt: input.expiresAt,
-        desktopFingerprint: nonEmpty(input.desktopFingerprint, 'Desktop fingerprint'),
-        oneTimeLink,
-        qrPayload: oneTimeLink,
+        routingLink: link.toString(),
       }
     })
   }

@@ -26,4 +26,4 @@ QR 载荷与完整的一次性 HTTPS 链接完全相同，携带 256 位邀请�
 
 - 在独立评审者接受 Snow 证明且组装经过评审的 `PairingHandshakeProvider` 之前，产品激活保持 fail-closed。
 - 个人配对 challenge 与待确认握手记录仍使用随附的单进程提供方。已确认的 pairing-to-route/access 权限与 Relay route store 都是部署拥有的 seam；本仓库不供应 PostgreSQL、Redis、TLS 或云实例。
-- Relay transport 可用不等于产品加密获批。在独立 Noise gate 接纳经过评审的握手与 Companion channel provider 之前，生产 Desktop 组合保持 fail-closed。
+- 产品 Desktop 与 Mobile 使用 endpoint-owned Snow mailbox 和 Companion channel；Platform 不挂载配对密码实现。物理 WebView 证据与针对确切实现的独立评审仍是 release blocker。

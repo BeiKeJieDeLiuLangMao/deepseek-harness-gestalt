@@ -89,6 +89,17 @@ describe('Remote Access HTTP assembled flow', () => {
     expect(malformedOrigin.status).toBe(403)
     expect(account.currentInstallation).not.toHaveBeenCalled()
 
+    const leakedInvitation = await fetch(`${server.origin}/v1/remote-access/personal-pairing`, {
+      method: 'POST',
+      headers: proofHeaders(desktop),
+      body: JSON.stringify({
+        operation: 'create-endpoint-challenge', rendezvousId: 'rendezvous-endpoint',
+        expiresAt: Date.now() + 60_000, invitationPayload: Buffer.alloc(32, 7).toString('base64url'),
+      }),
+    })
+    expect(leakedInvitation.status).toBe(400)
+    expect(account.currentInstallation).not.toHaveBeenCalled()
+
     await transport.setMobileAccess({ authentication: desktop, enabled: true })
     const challenge = await transport.createChallenge({
       authentication: desktop,

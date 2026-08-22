@@ -119,7 +119,6 @@ function encodeEndpointMailbox(state: EndpointOwnedPairingMailboxState): unknown
   return {
     challenges: state.challenges.map(record => ({
       ...record,
-      invitationPayload: encodeBytes(record.invitationPayload),
     })),
     pending: state.pending.map(record => ({
       ...record,
@@ -138,12 +137,16 @@ function decodeEndpointMailbox(value: unknown): EndpointOwnedPairingMailboxState
   return {
     challenges: asArray(mailbox.challenges, 'endpoint mailbox challenges').map((value, index) => {
       const record = asRecord(value, `endpoint mailbox challenge ${String(index)}`)
+      rejectUnsupportedKeys(
+        record,
+        ['challengeId', 'accountId', 'desktopInstallationId', 'expiresAt', 'completionId', 'pendingPairingId'],
+        `endpoint mailbox challenge ${String(index)}`,
+      )
       return {
         challengeId: parsePairingChallengeId(record.challengeId),
         accountId: parsePlatformAccountId(record.accountId),
         desktopInstallationId: parseInstallationId(record.desktopInstallationId),
         expiresAt: asSafeInteger(record.expiresAt, 'endpoint mailbox challenge expiresAt'),
-        invitationPayload: decodeBytes(record.invitationPayload, 'endpoint mailbox invitation payload'),
         ...(record.completionId === undefined
           ? {}
           : { completionId: parsePairingCompletionId(record.completionId) }),
@@ -548,6 +551,13 @@ function asRecord(value: unknown, name: string): Record<string, unknown> {
     throw new TypeError(`${name} must be an object`)
   }
   return value as Record<string, unknown>
+}
+
+function rejectUnsupportedKeys(record: Record<string, unknown>, keys: readonly string[], name: string): void {
+  const supported = new Set(keys)
+  if (Object.keys(record).some(key => !supported.has(key))) {
+    throw new TypeError(`${name} contains unsupported fields`)
+  }
 }
 
 function asArray(value: unknown, name: string): unknown[] {

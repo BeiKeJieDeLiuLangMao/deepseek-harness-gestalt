@@ -1,4 +1,4 @@
-- id: two-instance-relay-keyless-scenario
+- id: two-instance-relay-snow-scenario
   name: './start.ts'
   config:
     attachTimeoutMs: 1000

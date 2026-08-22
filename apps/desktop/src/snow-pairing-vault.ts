@@ -4,18 +4,41 @@ import { SnowDesktopEndpointPairingOwner } from '@deepseek-ai/dsh-noise-channel'
 import { readFile } from 'node:fs/promises'
 import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import {
+  type EndpointPairingConfirmation,
   parsePersonalPairingId,
   type PairingChallengeId,
   type PendingPairingId,
   type PersonalPairingId,
 } from '@deepseek-ai/dsh-remote-access'
-import type { RelayPairingSelector } from '@deepseek-ai/dsh-remote-protocol'
+import {
+  deriveRelayCredentialDigest,
+  parseRelayCredential,
+  parseRelayPairingSelector,
+  type RelayCredential,
+  type RelayPairingSelector,
+  type RelayRouteId,
+} from '@deepseek-ai/dsh-remote-protocol'
 
 const MAX_PAIRING_STATES = 16
 
 interface PersistedSnowPairingState {
   pairingId: PersonalPairingId
   reconnectState: Uint8Array
+}
+
+interface DesktopSnowConfirmationTransaction {
+  credential: RelayCredential
+  credentialDigest: Uint8Array
+  pairingId?: PersonalPairingId
+  routeId?: RelayRouteId
+  relayRevision?: number
+  sealedRelayAuthority?: Uint8Array
+  reconnectState?: Uint8Array
+}
+
+interface DesktopSnowPairingStore {
+  load(): Promise<readonly PersistedSnowPairingState[]>
+  save(records: readonly PersistedSnowPairingState[]): Promise<void>
 }
 
 /** Encryption operations supplied by Electron safeStorage. */
@@ -67,12 +90,13 @@ export class DesktopSnowPairingVault {
   private readonly challenges = new Map<PairingChallengeId, SnowDesktopEndpointPairingOwner>()
   private readonly pending = new Map<PendingPairingId, SnowDesktopEndpointPairingOwner>()
   private readonly active = new Map<PersonalPairingId, Uint8Array>()
+  private readonly confirmations = new Map<PendingPairingId, DesktopSnowConfirmationTransaction>()
   private persistence: Promise<void> = Promise.resolve()
 
-  constructor(private readonly store?: EncryptedDesktopSnowPairingStore) {}
+  constructor(private readonly store?: DesktopSnowPairingStore) {}
 
   /** Load encrypted reconnect state before the Relay lifecycle can attach. */
-  static async load(store?: EncryptedDesktopSnowPairingStore): Promise<DesktopSnowPairingVault> {
+  static async load(store?: DesktopSnowPairingStore): Promise<DesktopSnowPairingVault> {
     const vault = new DesktopSnowPairingVault(store)
     for (const record of await store?.load() ?? []) vault.active.set(record.pairingId, record.reconnectState.slice())
     return vault
@@ -114,6 +138,80 @@ export class DesktopSnowPairingVault {
     return this.pending.get(pendingPairingId)
   }
 
+  /** Create or replay the local credential transaction used for Platform confirmation. */
+  async prepareConfirmation(pendingPairingId: PendingPairingId): Promise<{
+    credentialDigest: Uint8Array
+  }> {
+    if (!this.pending.has(pendingPairingId)) throw new Error('Desktop Snow pairing has no pending endpoint owner')
+    let transaction = this.confirmations.get(pendingPairingId)
+    if (transaction === undefined) {
+      const credentialBytes = crypto.getRandomValues(new Uint8Array(32))
+      const credential = parseRelayCredential(Buffer.from(credentialBytes).toString('base64url'))
+      credentialBytes.fill(0)
+      transaction = {
+        credential,
+        credentialDigest: await deriveRelayCredentialDigest(credential),
+      }
+      this.confirmations.set(pendingPairingId, transaction)
+    }
+    return { credentialDigest: transaction.credentialDigest.slice() }
+  }
+
+  /** Seal or replay the exact Mobile authority belonging to a confirmed digest transaction. */
+  async prepareSealedAuthority(
+    pendingPairingId: PendingPairingId,
+    confirmation: EndpointPairingConfirmation,
+  ): Promise<{ pairingId: PersonalPairingId; sealedRelayAuthority: Uint8Array }> {
+    const transaction = this.confirmations.get(pendingPairingId)
+    const owner = this.pending.get(pendingPairingId)
+    if (transaction === undefined || owner === undefined) {
+      throw new Error('Desktop Snow confirmation transaction is unavailable')
+    }
+    if (transaction.pairingId !== undefined) {
+      if (transaction.pairingId !== confirmation.pairing.id
+        || transaction.routeId !== confirmation.routeId
+        || transaction.relayRevision !== confirmation.relayRevision
+        || transaction.sealedRelayAuthority === undefined || transaction.reconnectState === undefined) {
+        throw new Error('Desktop Snow confirmation response replay is stale')
+      }
+      return {
+        pairingId: transaction.pairingId,
+        sealedRelayAuthority: transaction.sealedRelayAuthority.slice(),
+      }
+    }
+    const grant = {
+      routeId: confirmation.routeId,
+      endpoint: 'mobile' as const,
+      credential: transaction.credential,
+      revision: confirmation.relayRevision,
+      pairingSelector: parseRelayPairingSelector(confirmation.pairing.id),
+    }
+    const sealedRelayAuthority = await owner.sealMobileRelayAuthority(grant)
+    transaction.pairingId = confirmation.pairing.id
+    transaction.routeId = confirmation.routeId
+    transaction.relayRevision = confirmation.relayRevision
+    transaction.sealedRelayAuthority = sealedRelayAuthority.slice()
+    transaction.reconnectState = owner.exportReconnectState()
+    return { pairingId: confirmation.pairing.id, sealedRelayAuthority }
+  }
+
+  /** Persist the active reconnect state before discarding the retryable confirmation transaction. */
+  async commitConfirmation(pendingPairingId: PendingPairingId): Promise<void> {
+    const transaction = this.confirmations.get(pendingPairingId)
+    if (transaction?.pairingId === undefined || transaction.reconnectState === undefined) {
+      throw new Error('Desktop Snow confirmation transaction is incomplete')
+    }
+    const previous = this.active.get(transaction.pairingId)
+    previous?.fill(0)
+    this.active.set(transaction.pairingId, transaction.reconnectState.slice())
+    this.persist()
+    await this.flush()
+    this.pending.get(pendingPairingId)?.wipe()
+    this.pending.delete(pendingPairingId)
+    wipeConfirmation(transaction)
+    this.confirmations.delete(pendingPairingId)
+  }
+
   /** Drop and zero one unused invitation. */
   cancelChallenge(challengeId: PairingChallengeId): void {
     this.challenges.get(challengeId)?.wipe()
@@ -124,6 +222,9 @@ export class DesktopSnowPairingVault {
   rejectPending(pendingPairingId: PendingPairingId): void {
     this.pending.get(pendingPairingId)?.wipe()
     this.pending.delete(pendingPairingId)
+    const confirmation = this.confirmations.get(pendingPairingId)
+    if (confirmation !== undefined) wipeConfirmation(confirmation)
+    this.confirmations.delete(pendingPairingId)
   }
 
   /** Commit reconnect state under the non-secret selector returned by Platform confirmation. */
@@ -158,9 +259,11 @@ export class DesktopSnowPairingVault {
     for (const owner of this.challenges.values()) owner.wipe()
     for (const owner of this.pending.values()) owner.wipe()
     for (const state of this.active.values()) state.fill(0)
+    for (const confirmation of this.confirmations.values()) wipeConfirmation(confirmation)
     this.challenges.clear()
     this.pending.clear()
     this.active.clear()
+    this.confirmations.clear()
     this.persist()
   }
 
@@ -172,10 +275,16 @@ export class DesktopSnowPairingVault {
     const records = [...this.active].map(([pairingId, reconnectState]) => ({
       pairingId, reconnectState: reconnectState.slice(),
     }))
-    this.persistence = this.persistence.then(async () => {
+    this.persistence = this.persistence.catch(() => {}).then(async () => {
       try { await this.store?.save(records) } finally {
         for (const record of records) record.reconnectState.fill(0)
       }
     })
   }
+}
+
+function wipeConfirmation(transaction: DesktopSnowConfirmationTransaction): void {
+  transaction.credentialDigest.fill(0)
+  transaction.sealedRelayAuthority?.fill(0)
+  transaction.reconnectState?.fill(0)
 }

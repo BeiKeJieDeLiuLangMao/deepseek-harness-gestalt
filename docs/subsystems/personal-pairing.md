@@ -20,7 +20,7 @@ Mutations are serialized. Expiry, cancellation, rejection, disablement, and one 
 
 `ctx.remoteRelay` authenticates an attachment with the opaque route id and a separate rotatable 32-byte credential, persists only its digest and revision through `RelayRouteStore`, and registers the live attachment in an expiring shared directory. `remote-access-redis` carries directory metadata, content-free invalidation, and bounded ciphertext Pub/Sub only; it creates no offline queue. A target on another Platform Instance receives the same opaque Relay frame, while a missing target returns `REMOTE_OFFLINE` immediately.
 
-Mobile and Desktop connect outward through one non-sticky TLS endpoint. Instance loss starts a fresh connection; Desktop sends an authoritative encrypted projection after attachment, and no live socket is migrated. Closing the Desktop window quits the process, while sleep, quit, sign-out, or disabling Mobile Access stops the Relay. Production stays fail-closed until reviewed product cryptography is assembled. The keyless two-instance Loader scenario proves the transport composition without weakening that gate.
+Mobile and Desktop connect outward through one non-sticky TLS endpoint. Instance loss starts a fresh connection; Desktop sends an authoritative encrypted projection after attachment, and no live socket is migrated. Closing the Desktop window quits the process, while sleep, quit, sign-out, or disabling Mobile Access stops the Relay. The two-instance Loader snapshot uses the endpoint mailbox, digest-only authority registration, a Snow-sealed Mobile grant, and attachment-bound Snow IK across real WSS connections; physical WebView evidence and independent review remain release blockers.
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -46,11 +46,11 @@ Remote Access capability owning the complete Personal Pairing lifecycle.
  */
 abstract createChallenge(input: { desktop: PairingAccountAuthentication rendezvousId: PairingRendezvousId clientIp: string }): Promise<PairingChallengeView>
 
-/** Register one Desktop-created invitation whose private state remains endpoint-owned.
- * @param input - Desktop authorization, opaque invitation, fingerprint, expiry, and client quota identity.
- * @returns link/QR projection carrying the opaque payload.
+/** Allocate routing metadata before Desktop constructs its endpoint-owned invitation.
+ * @param input - Desktop authorization, rendezvous identity, expiry, and client quota identity.
+ * @returns challenge identity and routing link containing no invitation payload.
  */
-abstract createEndpointChallenge(input: { desktop: PairingAccountAuthentication rendezvousId: PairingRendezvousId clientIp: string invitationPayload: Uint8Array desktopFingerprint: string expiresAt: number }): Promise<EndpointPairingChallengeView>
+abstract createEndpointChallenge(input: { desktop: PairingAccountAuthentication rendezvousId: PairingRendezvousId clientIp: string expiresAt: number }): Promise<EndpointPairingChallengeView>
 
 /** Cancel one unused endpoint-owned invitation.
  * @param input - authenticated Desktop ownership and challenge identity.

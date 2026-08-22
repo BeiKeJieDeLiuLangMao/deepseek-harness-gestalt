@@ -45,11 +45,9 @@ describe('PersonalPairingProvider', () => {
       desktop,
       rendezvousId: parsePairingRendezvousId('endpoint-mailbox'),
       clientIp: '192.0.2.1',
-      invitationPayload: Uint8Array.of(1, 2, 3),
-      desktopFingerprint: 'snow-endpoint',
       expiresAt: NOW + PAIRING_CHALLENGE_TTL_MS,
     })
-    expect(new URL(challenge.oneTimeLink).searchParams.get('payload')).toBe('AQID')
+    expect(new URL(challenge.routingLink).searchParams.has('payload')).toBe(false)
     const completionId = parsePairingCompletionId('completion-endpoint')
     const completion = await provider.submitEndpointMessage1({
       mobile,
@@ -89,9 +87,18 @@ describe('PersonalPairingProvider', () => {
       routeId: 'relay-route-endpoint', relayRevision: 1,
       pairing: { device: { name: 'Alice phone', platform: 'ios' } },
     })
+    await expect(provider.confirmEndpointPairing({
+      desktop, pendingPairingId: completion.pendingPairingId,
+      mobileCredentialDigest: new Uint8Array(32).fill(7),
+    })).resolves.toEqual(confirmation)
+    await expect(provider.confirmEndpointPairing({
+      desktop, pendingPairingId: completion.pendingPairingId,
+      mobileCredentialDigest: new Uint8Array(32).fill(8),
+    })).rejects.toThrow('stale')
     expect(relay.registerCredentialDigest).toHaveBeenCalledWith(
       parseRelayRouteId('relay-route-endpoint'), 'mobile', new Uint8Array(32).fill(7), 'pairing-endpoint',
     )
+    expect(relay.registerCredentialDigest).toHaveBeenCalledOnce()
     await provider.deliverEndpointRelayAuthority({
       desktop,
       pendingPairingId: completion.pendingPairingId,

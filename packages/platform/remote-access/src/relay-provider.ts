@@ -3,6 +3,7 @@
 import { createHash, randomBytes as secureRandomBytes } from 'node:crypto'
 import { Context } from '@deepseek-ai/cordis'
 import {
+  deriveRelayCredentialDigest,
   parseRelayCredential,
   type RelayAttachMessage,
   type RelayAttachmentId,
@@ -90,7 +91,7 @@ export class RemoteRelayProvider extends RemoteRelayService {
   async rotateCredential(routeId: RelayRouteId, endpoint: 'mobile' | 'desktop' = 'desktop'): Promise<RelayCredentialGrant> {
     this.assertOpen()
     const credential = this.newCredential()
-    const revision = await this.options.routeStore.rotate(routeId, endpoint, credentialDigest(credential))
+    const revision = await this.options.routeStore.rotate(routeId, endpoint, await deriveRelayCredentialDigest(credential))
     if (revision > 1) await this.options.coordinator.invalidate({ type: 'invalidate', routeId, revision })
     return { routeId, endpoint, credential, revision }
   }
@@ -102,7 +103,9 @@ export class RemoteRelayProvider extends RemoteRelayService {
   ): Promise<RelayCredentialGrant> {
     this.assertOpen()
     const credential = this.newCredential()
-    const revision = await this.options.routeStore.issue(routeId, endpoint, credentialDigest(credential), pairingSelector)
+    const revision = await this.options.routeStore.issue(
+      routeId, endpoint, await deriveRelayCredentialDigest(credential), pairingSelector,
+    )
     if (revision === undefined) throw new RemoteRelayError('RELAY_ROUTE_REVOKED', 'Relay route is inactive')
     return { routeId, endpoint, credential, revision, ...(pairingSelector === undefined ? {} : { pairingSelector }) }
   }
@@ -148,7 +151,7 @@ export class RemoteRelayProvider extends RemoteRelayService {
     const revision = await this.options.routeStore.revokeCredential(
       grant.routeId,
       grant.endpoint,
-      credentialDigest(grant.credential),
+      await deriveRelayCredentialDigest(grant.credential),
     )
     await this.options.coordinator.invalidate({ type: 'invalidate', routeId: grant.routeId, revision })
   }
@@ -210,7 +213,7 @@ export class RemoteRelayProvider extends RemoteRelayService {
     this.attachmentReservations.add(key)
     let local: LocalAttachment | undefined
     try {
-      const digest = credentialDigest(input.message.credential)
+      const digest = await deriveRelayCredentialDigest(input.message.credential)
       let authorization
       try {
         authorization = await this.options.routeStore.authorize(
@@ -593,10 +596,6 @@ function throwIfAborted(signal: AbortSignal): void {
 }
 
 const NEVER_ABORTED = new AbortController().signal
-
-function credentialDigest(credential: RelayCredential): Uint8Array {
-  return new Uint8Array(createHash('sha256').update(credential).digest())
-}
 
 function attachmentKey(routeId: RelayRouteId, attachmentId: RelayAttachmentId): string {
   return `${routeId}:${attachmentId}`

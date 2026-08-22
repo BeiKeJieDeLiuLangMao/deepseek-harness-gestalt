@@ -64,9 +64,8 @@ describe('RemoteAccessHttpTransport', () => {
   it('serializes and parses endpoint-owned opaque pairing mailbox operations', async () => {
     const replies = [
       {
-        challengeId: 'challenge-endpoint', expiresAt: 456, desktopFingerprint: 'snow-fingerprint',
-        oneTimeLink: 'https://platform.example/pair?payload=opaque',
-        qrPayload: 'https://platform.example/pair?payload=opaque',
+        challengeId: 'challenge-endpoint', expiresAt: 456,
+        routingLink: 'https://platform.example/pair?challenge=challenge-endpoint',
       },
       {},
       [
@@ -96,8 +95,7 @@ describe('RemoteAccessHttpTransport', () => {
     const rendezvousId = parsePairingRendezvousId('rendezvous-endpoint')
 
     await expect(client.createEndpointChallenge({
-      authentication, rendezvousId, invitationPayload: Uint8Array.of(1, 2),
-      desktopFingerprint: 'snow-fingerprint', expiresAt: 456,
+      authentication, rendezvousId, expiresAt: 456,
     })).resolves.toMatchObject({ challengeId, expiresAt: 456 })
     await expect(client.cancelEndpointChallenge({ authentication, challengeId })).resolves.toBeUndefined()
     await expect(client.listEndpointPending(authentication)).resolves.toEqual([
@@ -136,7 +134,8 @@ describe('RemoteAccessHttpTransport', () => {
       'confirm-endpoint-pairing', 'reject-endpoint-pairing', 'deliver-endpoint-relay-authority', 'submit-endpoint-message1',
       'get-endpoint-pairing-status', 'submit-endpoint-message3', 'get-endpoint-pairing-status',
     ])
-    expect(bodies[0]).toMatchObject({ invitationPayload: 'AQI' })
+    expect(bodies[0]).not.toHaveProperty('invitationPayload')
+    expect(bodies[0]).not.toHaveProperty('desktopFingerprint')
     expect(bodies[3]).toMatchObject({ message2: 'BA' })
     expect(bodies[4]).toMatchObject({ mobileCredentialDigest: 'CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQk' })
     expect(bodies[6]).toMatchObject({ sealedRelayAuthority: 'Bwg' })

@@ -24,7 +24,7 @@ describe('EndpointOwnedPairingMailbox', () => {
     const desktopPrivateSentinel = Uint8Array.from({ length: 32 }, () => 213)
     mailbox.createChallenge({
       challengeId: CHALLENGE, accountId: ACCOUNT, desktopInstallationId: DESKTOP,
-      expiresAt: 2_000, invitationPayload: Uint8Array.of(1, 2, 3),
+      expiresAt: 2_000,
     })
     expect(mailbox.submitMessage1({
       challengeId: CHALLENGE, completionId: COMPLETION, accountId: ACCOUNT,
@@ -64,7 +64,7 @@ describe('EndpointOwnedPairingMailbox', () => {
     const mailbox = fixture()
     mailbox.createChallenge({
       challengeId: CHALLENGE, accountId: ACCOUNT, desktopInstallationId: DESKTOP,
-      expiresAt: 1_000, invitationPayload: Uint8Array.of(1),
+      expiresAt: 1_000,
     })
     expect(() => mailbox.submitMessage1({
       challengeId: CHALLENGE, completionId: COMPLETION, accountId: ACCOUNT,
@@ -135,7 +135,7 @@ describe('EndpointOwnedPairingMailbox', () => {
     const cancelled = fixture()
     cancelled.createChallenge({
       challengeId: CHALLENGE, accountId: ACCOUNT, desktopInstallationId: DESKTOP,
-      expiresAt: 2_000, invitationPayload: Uint8Array.of(1),
+      expiresAt: 2_000,
     })
     cancelled.cancelChallenge(CHALLENGE, ACCOUNT, DESKTOP)
     expect(() => cancelled.submitMessage1({
@@ -162,7 +162,7 @@ function completedMessage1(): EndpointOwnedPairingMailbox {
   const mailbox = fixture()
   mailbox.createChallenge({
     challengeId: CHALLENGE, accountId: ACCOUNT, desktopInstallationId: DESKTOP,
-    expiresAt: 2_000, invitationPayload: Uint8Array.of(1),
+    expiresAt: 2_000,
   })
   mailbox.submitMessage1({
     challengeId: CHALLENGE, completionId: COMPLETION, accountId: ACCOUNT,

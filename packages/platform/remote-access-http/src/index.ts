@@ -80,12 +80,11 @@ async function dispatch(
         clientIp: clientIp(),
       }))
     case 'create-endpoint-challenge':
+      requireExactKeys(body, ['operation', 'rendezvousId', 'expiresAt'], 'Endpoint Pairing challenge request')
       return endpointChallengeWire(await ctx.remoteAccess.createEndpointChallenge({
         desktop: authentication,
         rendezvousId: parsePairingRendezvousId(body.rendezvousId),
         clientIp: clientIp(),
-        invitationPayload: decodeBytes(body.invitationPayload, 'invitationPayload'),
-        desktopFingerprint: requiredString(body.desktopFingerprint, 'desktopFingerprint'),
         expiresAt: requiredPositiveSafeInteger(body.expiresAt, 'expiresAt'),
       }))
     case 'cancel-challenge':
@@ -334,6 +333,13 @@ function requiredString(value: unknown, name: string): string {
 function requiredBoolean(value: unknown, name: string): boolean {
   if (typeof value !== 'boolean') throw new HttpError(400, 'BODY_INVALID', `${name} must be boolean`)
   return value
+}
+
+function requireExactKeys(record: Record<string, unknown>, keys: readonly string[], name: string): void {
+  const expected = new Set(keys)
+  if (Object.keys(record).length !== expected.size || Object.keys(record).some(key => !expected.has(key))) {
+    throw new HttpError(400, 'BODY_INVALID', `${name} contains unsupported fields`)
+  }
 }
 
 function requiredSafeInteger(value: unknown, name: string): number {

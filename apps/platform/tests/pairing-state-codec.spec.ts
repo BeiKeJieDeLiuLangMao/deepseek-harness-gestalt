@@ -75,7 +75,6 @@ describe('pairing transaction codec', () => {
         accountId: parsePlatformAccountId('account-one'),
         desktopInstallationId: parseInstallationId('desktop-one'),
         expiresAt: 1_787_027_200_000,
-        invitationPayload: Uint8Array.of(1, 2, 3),
         completionId: parsePairingCompletionId('completion-mailbox'),
         pendingPairingId: parsePendingPairingId('pending-mailbox'),
       }],
@@ -98,7 +97,22 @@ describe('pairing transaction codec', () => {
     }
     const encoded = encodePairingTransactionState(state)
     expect(JSON.stringify(encoded)).not.toContain(Buffer.from(desktopPrivateSentinel).toString('base64url'))
+    expect(JSON.stringify(encoded)).not.toMatch(/psk|invitationPayload/iu)
     expect(decodePairingTransactionState(encoded).endpointMailbox).toEqual(state.endpointMailbox)
+
+    const leaked = structuredClone(encoded)
+    if (typeof leaked !== 'object' || leaked === null || Array.isArray(leaked)) throw new Error('encoded fixture is invalid')
+    const endpointMailbox: unknown = Reflect.get(leaked, 'endpointMailbox')
+    if (typeof endpointMailbox !== 'object' || endpointMailbox === null || Array.isArray(endpointMailbox)) {
+      throw new Error('encoded endpoint mailbox fixture is invalid')
+    }
+    const challenges: unknown = Reflect.get(endpointMailbox, 'challenges')
+    const challenge: unknown = Array.isArray(challenges) ? challenges[0] : undefined
+    if (typeof challenge !== 'object' || challenge === null || Array.isArray(challenge)) {
+      throw new Error('encoded endpoint challenge fixture is invalid')
+    }
+    Reflect.set(challenge, 'invitationPayload', { $b: Buffer.alloc(32, 9).toString('base64url') })
+    expect(() => decodePairingTransactionState(leaked)).toThrow('unsupported fields')
   })
 
   it('round-trips a confirmed pairing and Relay grant', () => {

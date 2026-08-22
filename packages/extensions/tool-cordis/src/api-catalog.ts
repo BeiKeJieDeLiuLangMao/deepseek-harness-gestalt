@@ -1338,10 +1338,10 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         throws: ['RemoteAccessError `QUOTA` or `PLATFORM_CAPACITY` with `retryAfter` seconds.', 'TypeError when `clientIp` is empty.'],
       },
       {
-        signature: 'abstract createEndpointChallenge(input: { desktop: PairingAccountAuthentication rendezvousId: PairingRendezvousId clientIp: string invitationPayload: Uint8Array desktopFingerprint: string expiresAt: number }): Promise<EndpointPairingChallengeView>',
-        description: 'Register one Desktop-created invitation whose private state remains endpoint-owned.',
-        parameters: [{ name: 'input', description: 'Desktop authorization, opaque invitation, fingerprint, expiry, and client quota identity.' }],
-        returns: 'link/QR projection carrying the opaque payload.',
+        signature: 'abstract createEndpointChallenge(input: { desktop: PairingAccountAuthentication rendezvousId: PairingRendezvousId clientIp: string expiresAt: number }): Promise<EndpointPairingChallengeView>',
+        description: 'Allocate routing metadata before Desktop constructs its endpoint-owned invitation.',
+        parameters: [{ name: 'input', description: 'Desktop authorization, rendezvous identity, expiry, and client quota identity.' }],
+        returns: 'challenge identity and routing link containing no invitation payload.',
       },
       {
         signature: 'abstract cancelEndpointChallenge(input: { desktop: PairingAccountAuthentication challengeId: PairingChallengeId }): Promise<void>',
@@ -3922,7 +3922,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'EndpointPairingChallengeView',
-    declaration: 'export interface EndpointPairingChallengeView {\n    challengeId: PairingChallengeId;\n    expiresAt: number;\n    desktopFingerprint: string;\n    oneTimeLink: string;\n    qrPayload: string;\n}',
+    declaration: 'export interface EndpointPairingChallengeView {\n    challengeId: PairingChallengeId;\n    expiresAt: number;\n    routingLink: string;\n}',
   },
   {
     name: 'EndpointPairingConfirmation',
@@ -3934,7 +3934,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'EndpointPairingMailboxChallenge',
-    declaration: 'export interface EndpointPairingMailboxChallenge {\n    challengeId: PairingChallengeId;\n    accountId: PlatformAccountId;\n    desktopInstallationId: InstallationId;\n    expiresAt: number;\n    invitationPayload: Uint8Array;\n    completionId?: PairingCompletionId;\n    pendingPairingId?: PendingPairingId;\n}',
+    declaration: 'export interface EndpointPairingMailboxChallenge {\n    challengeId: PairingChallengeId;\n    accountId: PlatformAccountId;\n    desktopInstallationId: InstallationId;\n    expiresAt: number;\n    completionId?: PairingCompletionId;\n    pendingPairingId?: PendingPairingId;\n}',
   },
   {
     name: 'EndpointPairingMailboxPending',

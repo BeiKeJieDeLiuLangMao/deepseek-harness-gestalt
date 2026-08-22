@@ -6,9 +6,9 @@ Snow 0.10.0 WebAssembly adapter for Personal Pairing and encrypted Companion mes
 
 ## Pairing
 
-`SnowPairingHandshakeProvider` and `SnowMobileHandshakeClient` complete all three XKpsk3 messages. The finished handshake hash supplies only authentication words. Relay authority is the first responder transport payload from that completed handshake, not JSON protected by a separately assembled application cipher. Opening or sealing that payload destroys the invitation PSK, pairing ephemerals, and transcript state; each endpoint retains only its independently generated static key and the authenticated peer public key.
+`SnowDesktopEndpointPairingOwner` and `SnowMobileHandshakeClient` complete all three XKpsk3 messages while the Platform forwards only opaque mailbox messages and routing metadata. Desktop constructs the QR payload locally, so the invitation PSK never enters Platform HTTP requests or persistence. The finished handshake hash supplies only authentication words. Relay authority is the first responder transport payload from that completed handshake, not JSON protected by a separately assembled application cipher. Opening or sealing that payload destroys the invitation PSK, pairing ephemerals, and transcript state; each endpoint retains only its independently generated static key and the authenticated peer public key.
 
-The provider rebuilds one short-lived XKpsk3 state after a non-sticky HTTP transition by supplying a Snow-generated, single-use ephemeral through Snow's `fixed_ephemeral_key_for_testing_only` API. The independent review must approve that exact use before a product composition selects this provider.
+`SnowPairingHandshakeProvider` retains the older Platform-mediated proof surface and rebuilds short-lived state with Snow's `fixed_ephemeral_key_for_testing_only` API. Product Desktop does not select that provider; it retains the endpoint owner locally through the opaque mailbox transaction.
 
 ## Reconnect and messages
 
@@ -26,5 +26,5 @@ None.
 
 ## Known Limitations and Deferred Work
 
-- Relay peer discovery and the Mobile attachment owner are assembled. Desktop remains fail-closed until first pairing and durable static state are Desktop-owned; the Platform pairing provider is deliberately not mounted as an end-to-end endpoint.
+- Desktop and Mobile product entries assemble endpoint-owned first pairing, durable static state, credential-bound Relay peer discovery, and one Snow IK channel per physical attachment. Platform mounts the opaque mailbox and digest-only Relay authority without endpoint keys or application plaintext.
 - Node 22 and 24 plus the existing simulator and emulator proof cover the selected Snow dependency. Physical iOS and Android evidence and the independent security-review record for this exact adapter remain release blockers.

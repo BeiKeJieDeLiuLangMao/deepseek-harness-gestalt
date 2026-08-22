@@ -60,6 +60,23 @@ export function parseRelayCredential(value: unknown): RelayCredential {
 }
 
 /**
+ * Derive the Relay authority-store digest from canonical credential bytes.
+ * @param credential - validated canonical 256-bit credential.
+ * @returns SHA-256 digest used by endpoint registration and Relay attachment authorization.
+ */
+export async function deriveRelayCredentialDigest(credential: RelayCredential): Promise<Uint8Array> {
+  const bytes = decodeProtocolBase64Url(credential, 32, 'Relay credential')
+  const canonical = new ArrayBuffer(bytes.byteLength)
+  new Uint8Array(canonical).set(bytes)
+  try {
+    return new Uint8Array(await crypto.subtle.digest('SHA-256', canonical))
+  } finally {
+    bytes.fill(0)
+    new Uint8Array(canonical).fill(0)
+  }
+}
+
+/**
  * Parse a canonical 256-bit one-time attachment capability at a wire boundary.
  * @param value - untrusted capability string.
  * @returns branded one-time blob capability.

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   decodeRelayMessage,
+  deriveRelayCredentialDigest,
   encodeRelayMessage,
   negotiateRelayTransportVersion,
   parseRelayAttachmentId,
@@ -12,6 +13,13 @@ import {
 } from '../src/index.ts'
 
 describe('Relay Transport Protocol codec', () => {
+  it('derives credential authority from the canonical decoded 256-bit value', async () => {
+    const credential = parseRelayCredential('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA')
+    const expected = new Uint8Array(await crypto.subtle.digest('SHA-256', new Uint8Array(32)))
+
+    await expect(deriveRelayCredentialDigest(credential)).resolves.toEqual(expected)
+  })
+
   it('round-trips only routing metadata and opaque ciphertext', () => {
     const applicationPlaintext = 'submit the private prompt'
     const encoded = encodeRelayMessage({
