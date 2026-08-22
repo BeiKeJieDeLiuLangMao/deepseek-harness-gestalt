@@ -20,7 +20,7 @@ import {
   CompanionForegroundRuntime,
   companionRuntime,
   installCompanionRuntime,
-} from './companion-push.ts'
+} from './companion-lifecycle.ts'
 import { MobileAccount } from './MobileAccount.tsx'
 import type { MobilePairingActions } from './MobilePairing.tsx'
 import { MobilePairingController, NativeMobilePairingQrScanner } from './personal-pairing.ts'

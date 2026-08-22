@@ -38,7 +38,7 @@ describe('Mobile conversation renderer', () => {
     render(createElement(MobileConversation, {
       title: 'Safe',
       onBack: () => {},
-      companionState: { token: 'tok', foreground: true, socketOpen: true, synchronized: false },
+      companionState: { foreground: true, socketOpen: true, synchronized: false },
       onSettled,
       blocks: [{ kind: 'approval', summary: 'Allow write' }],
     }))

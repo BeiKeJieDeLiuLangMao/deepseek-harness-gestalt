@@ -13,13 +13,10 @@ import {
 import type { PlatformAccountId } from '@deepseek-ai/dsh-platform-account'
 import type { PlatformAccountInstallation } from '@deepseek-ai/dsh-platform-account-client'
 import type { RemoteAccessTransport } from '@deepseek-ai/dsh-remote-access-client'
-import { parseCompanionPushToken, type RelayRouteId } from '@deepseek-ai/dsh-remote-protocol'
 import type { MobilePairingActions, MobilePairingSnapshot } from './personal-pairing-model.ts'
 
-/** Local push-token owner cleared on unpair; implemented by CompanionForegroundRuntime. */
-interface MobilePairingPushOwner {
-  getState(): { token: string | undefined }
-  clearToken(): void
+/** Process-owned foreground Relay lifecycle released on unpair and Account change. */
+interface MobilePairingLifecycleOwner {
   forgetConnection(): void
   releasePairing(): Promise<void>
 }
@@ -101,8 +98,8 @@ export interface MobilePairingControllerOptions {
     start(): Promise<void>
     stop(): Promise<void>
   }
-  /** Process-owned push token owner cleared on unpair. */
-  companion?: MobilePairingPushOwner
+  /** Process-owned foreground Relay lifecycle. */
+  companion?: MobilePairingLifecycleOwner
   /** Optional retention sink receiving confirmed pairing key material for pairing-scoped consumers. */
   pairingKeys?: MobilePairingKeyRetention
   schedule?: (task: () => void, delayMs: number) => ReturnType<typeof setTimeout>
@@ -123,7 +120,6 @@ export class MobilePairingController implements MobilePairingActions {
   private accountId: PlatformAccountId | undefined
   private active = true
   private lifecycleBarrier: Promise<void> = Promise.resolve()
-  private pairedRouteId: RelayRouteId | undefined
 
   /** @param options - Account authority, Remote Access transport, reviewed handshake, and QR scanner. */
   constructor(private readonly options: MobilePairingControllerOptions) {
@@ -156,7 +152,6 @@ export class MobilePairingController implements MobilePairingActions {
       this.assertActiveAccount()
       this.attempt?.mobileHandshake.fill(0)
       this.clearAttempt()
-      await this.clearPushToken()
       await this.options.handshake.wipe?.()
       this.options.pairingKeys?.wipe()
       if (this.options.companion !== undefined) {
@@ -295,27 +290,8 @@ export class MobilePairingController implements MobilePairingActions {
     })()
   }
 
-  private async clearPushToken(): Promise<void> {
-    const token = this.options.companion?.getState().token
-    const routeId = this.pairedRouteId
-    this.pairedRouteId = undefined
-    this.options.companion?.clearToken()
-    if (token === undefined || routeId === undefined) return
-    try {
-      await this.options.transport.unregisterPushToken({
-        authentication: await this.options.installation.authorizeCurrentInstallation(),
-        routeId,
-        token: parseCompanionPushToken(token),
-      })
-    } catch {
-      // Local token is already cleared; an unreachable or deferred HTTP route must not block unpair.
-    }
-  }
-
   private resetAccountScope(): void {
     this.clearAttempt()
-    this.pairedRouteId = undefined
-    this.options.companion?.clearToken()
     this.options.companion?.forgetConnection()
     if (this.options.companion !== undefined) {
       void this.options.companion.releasePairing()
@@ -386,7 +362,6 @@ export class MobilePairingController implements MobilePairingActions {
               }
               const grant = await this.options.handshake.openRelayAuthority(status.sealedRelayAuthority)
               this.assertActiveAccount()
-              this.pairedRouteId = grant.routeId
               await this.options.relay.configure(grant)
               this.assertActiveAccount()
               await this.options.relay.start()

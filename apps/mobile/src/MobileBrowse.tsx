@@ -5,7 +5,7 @@ import {
   pageCompanionHistory,
   type CompanionSessionSummary,
 } from './companion-history.ts'
-import type { CompanionPushState } from './companion-push.ts'
+import type { CompanionConnectionState } from './companion-lifecycle.ts'
 import { MobileConversation } from './MobileConversation.tsx'
 import css from './MobileBrowse.module.css'
 
@@ -20,7 +20,7 @@ export interface MobileBrowseProps {
   /** Optional create handler used by Workspace and global create actions. */
   onCreate?: (input: { workspace?: string }) => void
   /** Process visibility required before conversation settlement. */
-  companionState?: CompanionPushState
+  companionState?: CompanionConnectionState
 }
 
 /** Phone-sized Workspace/Session browse without Desktop columns. */

@@ -1,5 +1,5 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
-import { companionRuntime } from './companion-push.ts'
+import { companionRuntime } from './companion-lifecycle.ts'
 import type { ReactNode } from 'react'
 import type { PlatformAccountInstallation } from '@deepseek-ai/dsh-platform-account-client'
 import { ACCOUNT_PRIVACY_NOTICE } from '@deepseek-ai/dsh-platform-account/privacy'

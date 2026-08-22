@@ -180,7 +180,6 @@ describe('Remote Access HTTP assembled flow', () => {
       rejectPairing: http.rejectPairing.bind(http),
       revokePersonalPairing: http.revokePersonalPairing.bind(http),
       getMobilePairingStatus: http.getMobilePairingStatus.bind(http),
-      unregisterPushToken: http.unregisterPushToken.bind(http),
       completeChallenge: async (request) => {
         requests.push(request)
         const result = await http.completeChallenge(request)
@@ -251,7 +250,6 @@ describe('Remote Access HTTP assembled flow', () => {
       })),
       admitAttachmentBlob: vi.fn(async () => ({ reservationId: 'blob-1' })),
       releaseAttachmentBlob: vi.fn(),
-      emitPushHint: vi.fn(),
     }
     const server = await start(remoteAccess as never)
     const auth = authentication('account-one:desktop:desktop-one')
@@ -274,7 +272,6 @@ describe('Remote Access HTTP assembled flow', () => {
     expect((await request({ operation: 'admit-blob', bytes: -1 })).status).toBe(400)
     expect((await request({ operation: 'release-blob', reservationId: 'blob-1' })).status).toBe(200)
     expect((await request({ operation: 'release-blob', reservationId: '' })).status).toBe(400)
-    expect((await request({ operation: 'emit-push-hint' })).status).toBe(200)
     expect((await request({ operation: 'create-challenge', rendezvousId: 'rendezvous-one' })).status).toBe(200)
     expect(remoteAccess.createChallenge.mock.calls.at(-1)?.[0].clientIp).toMatch(/127\.0\.0\.1|::1/u)
     expect((await request({ operation: 'create-challenge', rendezvousId: 'forwarded' }, {

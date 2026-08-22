@@ -130,7 +130,7 @@ describe('Mobile Platform Account entry', () => {
     })
 
     await import('../src/main.tsx')
-    const { companionMayMutate, companionRuntime } = await import('../src/companion-push.ts')
+    const { companionMayMutate, companionRuntime } = await import('../src/companion-lifecycle.ts')
     const { settleCompanionInteraction } = await import('../src/companion-approval.ts')
     const runtime = companionRuntime()
     if (runtime === undefined) throw new Error('expected companion runtime')
