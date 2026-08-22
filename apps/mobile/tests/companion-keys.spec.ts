@@ -61,7 +61,7 @@ describe('PairingCompanionKeyVault', () => {
     const save = vi.fn()
       .mockRejectedValueOnce(new Error('IndexedDB write failed'))
       .mockResolvedValueOnce(undefined)
-    const store = { load: vi.fn(async () => []), save } as unknown as IndexedDbMobilePairingStateStore
+    const store = { load: vi.fn(async () => ({ active: [] })), save } as unknown as IndexedDbMobilePairingStateStore
     const vault = new PairingCompanionKeyVault(store)
     const accountId = parsePlatformAccountId('account-retry')
     const pairingId = parsePersonalPairingId('pairing-retry')

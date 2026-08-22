@@ -7,7 +7,7 @@ import {
   parseRelayPairingSelector,
   parseRelayRouteId,
 } from '@deepseek-ai/dsh-remote-protocol'
-import type { MobilePairingKeyRetention } from './personal-pairing.ts'
+import type { MobileEndpointPairingRecovery, MobilePairingKeyRetention } from './personal-pairing.ts'
 
 /** Maximum Personal Pairings whose key material one Mobile installation retains. */
 export const MAX_RETAINED_PAIRING_KEYS = 16
@@ -16,6 +16,11 @@ interface StoredMobilePairingState {
   pairingId: PersonalPairingId
   material: Uint8Array
   grant?: RelayCredentialGrant
+}
+
+interface StoredMobilePairingDocument {
+  active: readonly StoredMobilePairingState[]
+  pending?: MobileEndpointPairingRecovery
 }
 
 /** IndexedDB persistence isolated by signed-in Platform Account. */
@@ -31,27 +36,37 @@ export class IndexedDbMobilePairingStateStore {
     })
   }
 
-  async load(accountId: PlatformAccountId): Promise<readonly StoredMobilePairingState[]> {
+  async load(accountId: PlatformAccountId): Promise<StoredMobilePairingDocument> {
     const database = await this.database
     const value = await new Promise<unknown>((resolve, reject) => {
       const request = database.transaction('pairings', 'readonly').objectStore('pairings').get(accountId)
       request.onsuccess = () => { resolve(request.result) }
       request.onerror = () => { reject(request.error ?? new Error('Mobile pairing IndexedDB read failed')) }
     })
-    if (value === undefined) return []
-    if (!Array.isArray(value) || value.length > MAX_RETAINED_PAIRING_KEYS) {
-      throw new TypeError('Mobile pairing state must contain a bounded array')
+    if (value === undefined) return { active: [] }
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+      throw new TypeError('Mobile pairing state must contain an object')
     }
-    return value.map(parseStoredState)
+    const document = value as Record<string, unknown>
+    if (!Array.isArray(document.active) || document.active.length > MAX_RETAINED_PAIRING_KEYS) {
+      throw new TypeError('Mobile pairing active state must contain a bounded array')
+    }
+    return {
+      active: document.active.map(parseStoredState),
+      ...(document.pending === undefined ? {} : { pending: parseEndpointRecovery(document.pending) }),
+    }
   }
 
-  async save(accountId: PlatformAccountId, records: readonly StoredMobilePairingState[]): Promise<void> {
+  async save(accountId: PlatformAccountId, document: StoredMobilePairingDocument): Promise<void> {
     const database = await this.database
-    const encoded = records.map(record => ({
-      pairingId: record.pairingId,
-      material: record.material.slice(),
-      ...(record.grant === undefined ? {} : { grant: { ...record.grant } }),
-    }))
+    const encoded = {
+      active: document.active.map(record => ({
+        pairingId: record.pairingId,
+        material: record.material.slice(),
+        ...(record.grant === undefined ? {} : { grant: { ...record.grant } }),
+      })),
+      ...(document.pending === undefined ? {} : { pending: cloneEndpointRecovery(document.pending) }),
+    }
     await new Promise<void>((resolve, reject) => {
       const transaction = database.transaction('pairings', 'readwrite')
       transaction.objectStore('pairings').put(encoded, accountId)
@@ -65,6 +80,7 @@ export class IndexedDbMobilePairingStateStore {
 export class PairingCompanionKeyVault implements MobilePairingKeyRetention {
   private readonly materials = new Map<string, Uint8Array>()
   private readonly grants = new Map<string, RelayCredentialGrant>()
+  private pending: MobileEndpointPairingRecovery | undefined
   private accountId: PlatformAccountId | undefined
   private persistence: Promise<void> = Promise.resolve()
 
@@ -74,10 +90,12 @@ export class PairingCompanionKeyVault implements MobilePairingKeyRetention {
     if (this.accountId === accountId) return
     this.clearMemory()
     this.accountId = accountId
-    for (const record of await this.store?.load(accountId) ?? []) {
+    const state = await this.store?.load(accountId) ?? { active: [] }
+    for (const record of state.active) {
       this.materials.set(record.pairingId, record.material.slice())
       if (record.grant !== undefined) this.grants.set(record.pairingId, { ...record.grant })
     }
+    this.pending = state.pending === undefined ? undefined : cloneEndpointRecovery(state.pending)
   }
 
   /**
@@ -105,6 +123,23 @@ export class PairingCompanionKeyVault implements MobilePairingKeyRetention {
     this.materials.get(pairingId)?.fill(0)
     this.materials.set(pairingId, material.slice())
     this.grants.set(pairingId, { ...grant })
+    this.clearPendingMemory()
+    this.persist()
+  }
+
+  retainEndpointRecovery(recovery: MobileEndpointPairingRecovery): void {
+    if (recovery.accountId !== this.accountId) throw new Error('Mobile pairing recovery belongs to another Account')
+    this.clearPendingMemory()
+    this.pending = cloneEndpointRecovery(recovery)
+    this.persist()
+  }
+
+  endpointRecovery(): MobileEndpointPairingRecovery | undefined {
+    return this.pending === undefined ? undefined : cloneEndpointRecovery(this.pending)
+  }
+
+  clearEndpointRecovery(): void {
+    this.clearPendingMemory()
     this.persist()
   }
 
@@ -150,12 +185,13 @@ export class PairingCompanionKeyVault implements MobilePairingKeyRetention {
     for (const material of this.materials.values()) material.fill(0)
     this.materials.clear()
     this.grants.clear()
+    this.clearPendingMemory()
   }
 
   private persist(): void {
     if (this.store === undefined || this.accountId === undefined) return
     const accountId = this.accountId
-    const records = [...this.materials].map(([pairingId, material]) => {
+    const active = [...this.materials].map(([pairingId, material]) => {
       const grant = this.grants.get(pairingId)
       return {
         pairingId: parsePersonalPairingId(pairingId),
@@ -163,12 +199,47 @@ export class PairingCompanionKeyVault implements MobilePairingKeyRetention {
         ...(grant === undefined ? {} : { grant: { ...grant } }),
       }
     })
+    const pending = this.pending === undefined ? undefined : cloneEndpointRecovery(this.pending)
     this.persistence = this.persistence.catch(() => undefined).then(async () => {
-      try { await this.store?.save(accountId, records) } finally {
-        for (const record of records) record.material.fill(0)
+      try { await this.store?.save(accountId, { active, ...(pending === undefined ? {} : { pending }) }) } finally {
+        for (const record of active) record.material.fill(0)
+        wipeEndpointRecovery(pending)
       }
     })
   }
+
+  private clearPendingMemory(): void {
+    wipeEndpointRecovery(this.pending)
+    this.pending = undefined
+  }
+}
+
+function cloneEndpointRecovery(recovery: MobileEndpointPairingRecovery): MobileEndpointPairingRecovery {
+  return {
+    ...recovery,
+    mobileHandshake: recovery.mobileHandshake.slice(),
+    handshakeRecovery: recovery.handshakeRecovery.slice(),
+  }
+}
+
+function wipeEndpointRecovery(recovery: MobileEndpointPairingRecovery | undefined): void {
+  recovery?.mobileHandshake.fill(0)
+  recovery?.handshakeRecovery.fill(0)
+}
+
+function parseEndpointRecovery(value: unknown): MobileEndpointPairingRecovery {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new TypeError('Mobile endpoint pairing recovery must be an object')
+  }
+  const record = value as Record<string, unknown>
+  if (typeof record.link !== 'string' || !Number.isSafeInteger(record.expiresAt)
+    || typeof record.accountId !== 'string' || typeof record.completionId !== 'string'
+    || !(record.mobileHandshake instanceof Uint8Array) || !(record.handshakeRecovery instanceof Uint8Array)
+    || !['prepared', 'possibly-committed', 'pending'].includes(String(record.transmission))
+    || typeof record.endpointChallengeId !== 'string' || typeof record.endpointHandshakeFinished !== 'boolean') {
+    throw new TypeError('Mobile endpoint pairing recovery is invalid')
+  }
+  return cloneEndpointRecovery(record as unknown as MobileEndpointPairingRecovery)
 }
 
 function parseStoredState(value: unknown): StoredMobilePairingState {

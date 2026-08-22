@@ -1,4 +1,6 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
+import 'fake-indexeddb/auto'
 import { parseAccountProofJti } from '@deepseek-ai/dsh-platform-account'
 import {
   PAIRING_REPLAY_RETENTION_MS,
@@ -6,13 +8,100 @@ import {
   parsePendingPairingId,
   parsePersonalPairingId,
 } from '@deepseek-ai/dsh-remote-access'
-import { parseRelayCredential, parseRelayRouteId } from '@deepseek-ai/dsh-remote-protocol'
+import { parseRelayCredential, parseRelayPairingSelector, parseRelayRouteId } from '@deepseek-ai/dsh-remote-protocol'
+import {
+  initializeSnowChannel, SnowDesktopEndpointPairingOwner, SnowMobileHandshakeClient,
+} from '@deepseek-ai/dsh-noise-channel'
 import type { RemoteAccessTransport } from '@deepseek-ai/dsh-remote-access-client'
-import { PairingCompanionKeyVault } from '../src/companion-keys.ts'
+import {
+  IndexedDbMobilePairingStateStore, PairingCompanionKeyVault,
+} from '../src/companion-keys.ts'
 import { companionMayMutate, CompanionForegroundRuntime } from '../src/companion-lifecycle.ts'
 import { MobilePairingController } from '../src/personal-pairing.ts'
 
 describe('MobilePairingController', () => {
+  it('recovers a pending Snow transcript and post-open authority across full controller restarts', async () => {
+    initializeSnowChannel(readFileSync(new URL(
+      '../../../packages/platform/noise-channel/pkg/dsh_noise_channel_bg.wasm', import.meta.url,
+    )))
+    const store = new IndexedDbMobilePairingStateStore(`mobile-restart-${crypto.randomUUID()}`)
+    const desktop = new SnowDesktopEndpointPairingOwner()
+    const expiresAt = Date.now() + 60_000
+    const invitation = await desktop.createInvitation(expiresAt)
+    const link = 'https://platform.example/pair?challenge=challenge-restart'
+      + `&payload=${Buffer.from(invitation.invitationPayload).toString('base64url')}`
+      + `&expires=${String(expiresAt)}&protocol=1`
+    const pendingPairingId = parsePendingPairingId('pending-restart')
+    const scheduledOne: Array<() => void> = []
+    const transportOne = transportFixture()
+    let message2: Uint8Array | undefined
+    transportOne.submitEndpointMessage1.mockImplementation(async (input) => {
+      message2 = await desktop.acceptMessage1(input.message1)
+      return { pendingPairingId }
+    })
+    transportOne.getEndpointPairingStatus.mockImplementation(async () => ({
+      stage: 'message2' as const, pendingPairingId,
+      message2: message2 ?? (() => { throw new Error('Desktop message 2 is unavailable') })(),
+    }))
+    transportOne.submitEndpointMessage3.mockImplementation(async (input) => {
+      await desktop.finishMessage3(input.message3)
+    })
+    const first = new MobilePairingController({
+      installation: installationFixture(), transport: transportOne, handshake: new SnowMobileHandshakeClient(),
+      pairingKeys: new PairingCompanionKeyVault(store), scanner: { scan: vi.fn() },
+      device: { name: 'Alice phone', platform: 'ios' },
+      schedule: (task) => { scheduledOne.push(task); return { unref: vi.fn() } as never },
+    })
+    await first.completeLink(link)
+    scheduledOne.shift()?.()
+    await vi.waitFor(() => { expect(transportOne.submitEndpointMessage3).toHaveBeenCalledOnce() })
+    await first.deactivate()
+
+    const pairingId = parsePersonalPairingId('pairing-restart')
+    const grant = {
+      routeId: parseRelayRouteId('route-restart'), endpoint: 'mobile' as const,
+      credential: parseRelayCredential('AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE'), revision: 1,
+      pairingSelector: parseRelayPairingSelector(pairingId),
+    }
+    const sealedRelayAuthority = await desktop.sealMobileRelayAuthority(grant)
+    const scheduledTwo: Array<() => void> = []
+    const transportTwo = transportFixture()
+    transportTwo.getEndpointPairingStatus.mockResolvedValue({
+      stage: 'confirmed', pendingPairingId, pairingId, sealedRelayAuthority,
+    })
+    const relayTwo = {
+      configure: vi.fn(), start: vi.fn(async () => { throw new Error('Relay start failed after durable commit') }),
+      stop: vi.fn(),
+    }
+    const open = vi.spyOn(SnowMobileHandshakeClient.prototype, 'openRelayAuthorityDurably')
+    const second = new MobilePairingController({
+      installation: installationFixture(), transport: transportTwo, handshake: new SnowMobileHandshakeClient(),
+      pairingKeys: new PairingCompanionKeyVault(store), relay: relayTwo, scanner: { scan: vi.fn() },
+      device: { name: 'Alice phone', platform: 'ios' },
+      schedule: (task) => { scheduledTwo.push(task); return { unref: vi.fn() } as never },
+    })
+    await second.activate()
+    scheduledTwo.shift()?.()
+    await vi.waitFor(() => {
+      expect(second.getSnapshot()).toEqual({ status: 'retryable', error: 'Relay start failed after durable commit' })
+    })
+    expect(open).toHaveBeenCalledOnce()
+    await second.deactivate()
+
+    const relayThree = { configure: vi.fn(), start: vi.fn(), stop: vi.fn() }
+    const third = new MobilePairingController({
+      installation: installationFixture(), transport: transportFixture(), handshake: new SnowMobileHandshakeClient(),
+      pairingKeys: new PairingCompanionKeyVault(store), relay: relayThree, scanner: { scan: vi.fn() },
+      device: { name: 'Alice phone', platform: 'ios' }, schedule: () => ({ unref: vi.fn() }) as never,
+    })
+    await third.activate()
+    expect(relayThree.configure).toHaveBeenCalledWith(grant)
+    expect(relayThree.start).toHaveBeenCalledOnce()
+    expect(open).toHaveBeenCalledOnce()
+    open.mockRestore()
+    await third.deactivate()
+  })
+
   it('completes endpoint-owned XKpsk3 through the opaque mailbox and retains reconnect state', async () => {
     const scheduled: Array<() => void> = []
     const transport = transportFixture()
@@ -40,7 +129,13 @@ describe('MobilePairingController', () => {
       acceptDesktopHandshake: vi.fn(),
       exportFinishMessage: vi.fn(() => Uint8Array.of(3)),
       exportAuthenticationHash: vi.fn(() => new Uint8Array(32).fill(4)),
-      openRelayAuthority: vi.fn(async () => grant),
+      exportRecoveryState: vi.fn(() => new Uint8Array(32).fill(6)),
+      openRelayAuthorityDurably: vi.fn(async (_sealed: Uint8Array, persist: (
+        openedGrant: typeof grant, reconnectState: Uint8Array,
+      ) => Promise<void>) => {
+        await persist(grant, reconnectState)
+        return grant
+      }),
       exportReconnectState: vi.fn(() => reconnectState.slice()),
     }
     const vault = new PairingCompanionKeyVault()
@@ -74,8 +169,8 @@ describe('MobilePairingController', () => {
     await controller.retryPairing()
     scheduled.shift()?.()
     await vi.waitFor(() => { expect(controller.getSnapshot()).toEqual({ status: 'paired' }) })
-    expect(handshake.openRelayAuthority).toHaveBeenCalledWith(Uint8Array.of(8, 9))
-    expect(handshake.openRelayAuthority).toHaveBeenCalledTimes(1)
+    expect(handshake.openRelayAuthorityDurably).toHaveBeenCalledWith(Uint8Array.of(8, 9), expect.any(Function))
+    expect(handshake.openRelayAuthorityDurably).toHaveBeenCalledTimes(1)
     expect(vault.pairingKeyMaterial(parsePersonalPairingId('pairing-endpoint'))).toEqual(reconnectState)
     expect(relay.configure).toHaveBeenCalledWith(grant)
   })

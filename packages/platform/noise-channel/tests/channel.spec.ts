@@ -30,9 +30,13 @@ describe('Snow product Companion channel', () => {
     const message1 = await mobile.beginEndpointInvitation(invitation.invitationPayload)
     const message2 = await desktop.acceptMessage1(message1)
     await mobile.acceptDesktopHandshake(message2)
-    const message3 = mobile.exportFinishMessage()
+    const recovery = mobile.exportRecoveryState()
+    const restoredMobile = new SnowMobileHandshakeClient()
+    restoredMobile.restoreRecoveryState(recovery)
+    recovery.fill(0)
+    const message3 = restoredMobile.exportFinishMessage()
     const desktopHash = await desktop.finishMessage3(message3)
-    expect(desktopHash).toEqual(mobile.exportAuthenticationHash())
+    expect(desktopHash).toEqual(restoredMobile.exportAuthenticationHash())
     const grant = {
       endpoint: 'mobile' as const,
       routeId: parseRelayRouteId('route-endpoint'),
@@ -42,9 +46,21 @@ describe('Snow product Companion channel', () => {
     }
     const sealed = await desktop.sealMobileRelayAuthority(grant)
     expect(new TextDecoder().decode(sealed)).not.toContain(grant.credential)
-    await expect(mobile.openRelayAuthority(sealed)).resolves.toEqual(grant)
+    let writes = 0
+    await expect(restoredMobile.openRelayAuthorityDurably(sealed, async () => {
+      writes += 1
+      throw new Error('IndexedDB commit failed')
+    })).rejects.toThrow('IndexedDB commit failed')
+    expect(restoredMobile.exportRecoveryState()).not.toHaveLength(0)
+    await expect(restoredMobile.openRelayAuthorityDurably(sealed, async (opened, reconnectState) => {
+      writes += 1
+      expect(opened).toEqual(grant)
+      expect(reconnectState).toHaveLength(96)
+    })).resolves.toEqual(grant)
+    expect(writes).toBe(2)
+    expect(() => restoredMobile.exportRecoveryState()).toThrow('no prepared invitation')
     expect(desktop.exportReconnectState()).toHaveLength(96)
-    expect(mobile.exportReconnectState()).toHaveLength(96)
+    expect(restoredMobile.exportReconnectState()).toHaveLength(96)
   })
 
   it('seals Mobile Relay authority in the completed XKpsk3 channel', async () => {

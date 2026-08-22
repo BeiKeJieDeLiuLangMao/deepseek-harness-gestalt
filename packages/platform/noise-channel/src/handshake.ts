@@ -36,6 +36,8 @@ const OPEN_VERSION = 2
 const FINISHED_VERSION = 3
 const ACTIVE_VERSION = 4
 const RECONNECT_VERSION = 5
+const MOBILE_RECOVERY_PREPARED_VERSION = 6
+const MOBILE_RECOVERY_FINISHED_VERSION = 7
 const KEY_BYTES = 32
 const CHALLENGE_BYTES = 1 + KEY_BYTES * 3
 const RECONNECT_RECORD_BYTES = KEY_BYTES * 3
@@ -278,10 +280,86 @@ export class SnowMobileHandshakeClient {
       message2: this.message2,
       ciphertext: sealedAuthority,
     })
-    const grant = decodeGrant(plaintext)
-    this.reconnectState = concat(prepared.mobilePrivate, this.mobilePublic, prepared.desktopPublic)
-    this.clearInvitationState()
-    return grant
+    try {
+      const grant = decodeGrant(plaintext)
+      this.reconnectState = concat(prepared.mobilePrivate, this.mobilePublic, prepared.desktopPublic)
+      this.clearInvitationState()
+      return grant
+    } finally { plaintext.fill(0) }
+  }
+
+  /** Open and durably settle Mobile authority before erasing the one-shot invitation state.
+   * @param sealedAuthority - responder transport ciphertext carrying the Mobile grant.
+   * @param persist - endpoint-owned durable commit for the opened grant and reconnect state.
+   * @returns validated Mobile Relay grant after the durable commit settles.
+   */
+  async openRelayAuthorityDurably(
+    sealedAuthority: Uint8Array,
+    persist: (grant: RelayCredentialGrant, reconnectState: Uint8Array) => Promise<void>,
+  ): Promise<RelayCredentialGrant> {
+    const prepared = this.prepared()
+    if (this.message2 === undefined || this.finishMessage === undefined || this.mobilePublic === undefined) {
+      throw new Error('Snow Personal Pairing has not finished XKpsk3')
+    }
+    const plaintext = await openPairingTransport({
+      mobileStaticPrivate: prepared.mobilePrivate,
+      mobileEphemeralPrivate: prepared.mobileEphemeral,
+      desktopPublic: prepared.desktopPublic,
+      psk: prepared.psk,
+      message2: this.message2,
+      ciphertext: sealedAuthority,
+    })
+    const reconnectState = concat(prepared.mobilePrivate, this.mobilePublic, prepared.desktopPublic)
+    try {
+      const grant = decodeGrant(plaintext)
+      await persist({ ...grant }, reconnectState.slice())
+      this.reconnectState = reconnectState.slice()
+      this.clearInvitationState()
+      return grant
+    } finally {
+      plaintext.fill(0)
+      reconnectState.fill(0)
+    }
+  }
+
+  /** Export endpoint-local crash recovery before the sealed grant commits.
+   * @returns encoded Mobile private XKpsk3 allocation.
+   */
+  exportRecoveryState(): Uint8Array {
+    const prepared = this.prepared()
+    if (this.mobilePublic === undefined) throw new Error('Snow Personal Pairing has no Mobile public key')
+    const fixed = [
+      prepared.mobilePrivate, this.mobilePublic, prepared.mobileEphemeral, prepared.desktopPublic, prepared.psk,
+    ]
+    const finished = this.message2 !== undefined || this.finishMessage !== undefined || this.handshakeHash !== undefined
+    if (!finished) return encodeVariableRecord(MOBILE_RECOVERY_PREPARED_VERSION, fixed, [])
+    if (this.message2 === undefined || this.finishMessage === undefined || this.handshakeHash === undefined) {
+      throw new Error('Snow Personal Pairing recovery transcript is incomplete')
+    }
+    return encodeVariableRecord(MOBILE_RECOVERY_FINISHED_VERSION, fixed, [
+      this.message2, this.finishMessage, this.handshakeHash,
+    ])
+  }
+
+  /** Restore endpoint-local XKpsk3 state after a Mobile process restart.
+   * @param recovery - encoded private allocation loaded from Account-scoped storage.
+   */
+  restoreRecoveryState(recovery: Uint8Array): void {
+    this.wipe()
+    const version = recovery[0]
+    const decoded = version === MOBILE_RECOVERY_PREPARED_VERSION
+      ? decodeVariableRecord(recovery, MOBILE_RECOVERY_PREPARED_VERSION, 5, 0, 'Mobile prepared recovery')
+      : decodeVariableRecord(recovery, MOBILE_RECOVERY_FINISHED_VERSION, 5, 3, 'Mobile finished recovery')
+    this.mobilePrivate = decoded.fixed[0]?.slice()
+    this.mobilePublic = decoded.fixed[1]?.slice()
+    this.mobileEphemeral = decoded.fixed[2]?.slice()
+    this.desktopPublic = decoded.fixed[3]?.slice()
+    this.psk = decoded.fixed[4]?.slice()
+    if (version === MOBILE_RECOVERY_FINISHED_VERSION) {
+      this.message2 = decoded.variable[0]?.slice()
+      this.finishMessage = decoded.variable[1]?.slice()
+      this.handshakeHash = decoded.variable[2]?.slice()
+    }
   }
 
   /** Export the retained endpoint static state after pairing.
