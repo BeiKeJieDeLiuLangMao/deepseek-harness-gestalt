@@ -112,6 +112,7 @@ async function offer(fileName: string, plaintext: Uint8Array, id: string): Promi
   operation: CompanionOfferAttachmentOperation
   ciphertext: Uint8Array
 }> {
+  // oxlint-disable-next-line typescript/no-unsafe-assignment -- tsc resolves CryptoKey via @types/node; oxlint misses that global
   const key = await deriveCompanionAttachmentKey(pairingKey)
   const sealed = await sealCompanionAttachment(key, plaintext)
   return {

@@ -426,7 +426,9 @@ function ciConsumerGates(): Gate[] {
       needs: validatedBuild,
     }),
     snapshotGate(validatedBuild),
-    webSnapshotGate(validatedBuild),
+    // The HMR browser owner temporarily rewrites client artifacts before restoring them.
+    // Finish digest-verifying snapshots before that mutation starts.
+    webSnapshotGate(['snapshot']),
     pnpmScript('doc-typecheck', 'doc-typecheck:contracts-ready', {
       needs: validatedBuild,
       env: { DSH_DOC_TYPECHECK_USE_BUILD_OUTPUT: '1' },
