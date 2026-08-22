@@ -53,10 +53,13 @@ export function MobileBrowse({
   const [openId, setOpenId] = useState<SessionId>()
   const [page, setPage] = useState(0)
   const paged = useMemo(
-    () => pageCompanionHistory(sessions, page, COMPANION_HISTORY_PAGE_SIZE),
-    [sessions, page],
+    () => pageCompanionHistory(sessions, workspaces, page, COMPANION_HISTORY_PAGE_SIZE),
+    [sessions, workspaces, page],
   )
-  const groups = useMemo(() => expandedSessionGroups(paged.visible, workspaces), [paged.visible, workspaces])
+  const groups = useMemo(
+    () => expandedSessionGroups(paged.sessions, paged.workspaces),
+    [paged.sessions, paged.workspaces],
+  )
   const tw = useMemo(() => workspacePresentationTranslate(locale), [locale])
   const open = openId === undefined ? undefined : sessions.byId[openId]
   const conversation = openId === undefined ? undefined : conversations[openId]

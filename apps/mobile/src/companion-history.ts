@@ -37,17 +37,24 @@ export interface MobileCompanionPresentation {
   onLoadOlder?: ((sessionId: string) => void) | undefined
 }
 
-/** Page an exact Desktop Session list without projecting another row model. */
+/** Page exact Desktop Session ids and their Workspace memberships without projecting another row model. */
 export function pageCompanionHistory(
   sessions: SessionListState,
+  workspaces: readonly WorkspaceView[],
   page: number,
   ceiling: number = COMPANION_HISTORY_PAGE_SIZE,
-): { visible: SessionListState; spilled: number } {
+): { sessions: SessionListState; workspaces: readonly WorkspaceView[]; spilled: number } {
   if (!Number.isSafeInteger(page) || page < 0) throw new TypeError('Companion history page must be a non-negative integer')
   if (!Number.isSafeInteger(ceiling) || ceiling <= 0) throw new TypeError('Companion history ceiling must be a positive integer')
   const end = (page + 1) * ceiling
+  const ids = sessions.ids.slice(0, end)
+  const visibleIds = new Set(ids)
   return {
-    visible: { ...sessions, ids: sessions.ids.slice(0, end) },
+    sessions: { ...sessions, ids },
+    workspaces: workspaces.map((workspace) => {
+      const sessionIds = workspace.sessionIds.filter(id => visibleIds.has(id))
+      return sessionIds.length === workspace.sessionIds.length ? workspace : { ...workspace, sessionIds }
+    }),
     spilled: Math.max(0, sessions.ids.length - end),
   }
 }

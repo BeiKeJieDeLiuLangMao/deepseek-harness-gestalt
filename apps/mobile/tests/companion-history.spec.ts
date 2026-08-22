@@ -70,10 +70,34 @@ describe('Mobile Companion browse projection', () => {
   it('pages the exact Desktop SessionListState without introducing another row model', () => {
     const ids = Array.from({ length: COMPANION_HISTORY_PAGE_SIZE + 3 }, (_, index) => sid(`id-${String(index)}`))
     const many = { ...sessions, ids }
-    expect(pageCompanionHistory(many, 0).visible.ids).toHaveLength(COMPANION_HISTORY_PAGE_SIZE)
-    expect(pageCompanionHistory(many, 0).spilled).toBe(3)
-    expect(pageCompanionHistory(many, 1).visible.ids).toHaveLength(COMPANION_HISTORY_PAGE_SIZE + 3)
-    expect(pageCompanionHistory(many, 1).spilled).toBe(0)
+    expect(pageCompanionHistory(many, workspaces, 0).sessions.ids).toHaveLength(COMPANION_HISTORY_PAGE_SIZE)
+    expect(pageCompanionHistory(many, workspaces, 0).spilled).toBe(3)
+    expect(pageCompanionHistory(many, workspaces, 1).sessions.ids).toHaveLength(COMPANION_HISTORY_PAGE_SIZE + 3)
+    expect(pageCompanionHistory(many, workspaces, 1).spilled).toBe(0)
+  })
+
+  it('limits Workspace-owned rows until the user loads the next page', () => {
+    const ids = Array.from({ length: COMPANION_HISTORY_PAGE_SIZE + 3 }, (_, index) => sid(`workspace-${String(index)}`))
+    const byId = Object.fromEntries(ids.map((id, index) => [id, {
+      id,
+      title: `Session ${String(index)}`,
+      displayTitle: `Session ${String(index)}`,
+      cwd: '/work',
+      running: false,
+      blank: false,
+      updatedAt: ids.length - index,
+    }]))
+    const many: SessionListState = { ...sessions, ids, byId }
+    const manyWorkspaces: readonly WorkspaceView[] = [{ ...workspaces[0]!, sessionIds: ids }]
+
+    render(createElement(MobileBrowse, {
+      desktopName: 'Studio Mac', connection: 'online', sessions: many, workspaces: manyWorkspaces,
+      conversations: {}, ...browsePresentation,
+    }))
+
+    expect(screen.getAllByRole('treeitem')).toHaveLength(COMPANION_HISTORY_PAGE_SIZE)
+    fireEvent.click(screen.getByRole('button', { name: '加载更多（还有 3）' }))
+    expect(screen.getAllByRole('treeitem')).toHaveLength(COMPANION_HISTORY_PAGE_SIZE + 3)
   })
 
   it('uses shared Desktop Session rows and opens authoritative conversations full-screen', () => {
