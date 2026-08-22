@@ -70,7 +70,8 @@ describe('workspace browser rows', () => {
         runningSubagentCount: 0, completed: false, updatedAt: 0,
       },
     ]
-    render(<SessionListPresentation nodes={nodes} now={0} onOpen={onOpen} t={t} />)
+    render(<SessionListPresentation label="Work sessions" nodes={nodes} now={0} onOpen={onOpen} t={t} />)
+    expect(screen.getByRole('tree', { name: 'Work sessions' })).toBeTruthy()
     const rows = screen.getAllByRole('treeitem')
     expect(rows.map(row => row.tabIndex)).toEqual([0, -1])
 
@@ -92,6 +93,7 @@ describe('workspace browser rows', () => {
     }
     const second: SessionNode = { ...first, id: sid('second'), title: 'Second' }
     const view = render(<SessionListPresentation
+      label="Selected sessions"
       nodes={[first, second]}
       currentId={second.id}
       now={0}
@@ -100,7 +102,9 @@ describe('workspace browser rows', () => {
     />)
     expect(screen.getAllByRole('treeitem').map(row => row.tabIndex)).toEqual([-1, 0])
 
-    view.rerender(<SessionListPresentation nodes={[first]} now={0} onOpen={vi.fn()} t={t} />)
+    view.rerender(<SessionListPresentation
+      label="Selected sessions" nodes={[first]} now={0} onOpen={vi.fn()} t={t}
+    />)
     await waitFor(() => { expect(screen.getByRole('treeitem').tabIndex).toBe(0) })
   })
 
@@ -119,10 +123,24 @@ describe('workspace browser rows', () => {
       t={t}
     />)
     const row = screen.getByRole('treeitem')
+    expect(row.tabIndex).toBe(-1)
     fireEvent.keyDown(row, { key: 'Escape' })
     fireEvent.keyDown(screen.getByRole('button', { name: /“Keyboard”/ }), { key: 'Enter' })
     fireEvent.keyDown(row, { key: 'ArrowDown' })
     expect(onOpen).not.toHaveBeenCalled()
+  })
+
+  it('gives sibling public Session trees distinct accessible names', () => {
+    const node: SessionNode = {
+      id: sid('named'), title: 'Named', blank: false, running: false,
+      runningSubagentCount: 0, completed: false, updatedAt: 0,
+    }
+    render(<>
+      <SessionListPresentation label="Work sessions" nodes={[node]} now={0} onOpen={vi.fn()} t={t} />
+      <SessionListPresentation label="Ungrouped sessions" nodes={[node]} now={0} onOpen={vi.fn()} t={t} />
+    </>)
+    expect(screen.getByRole('tree', { name: 'Work sessions' })).toBeTruthy()
+    expect(screen.getByRole('tree', { name: 'Ungrouped sessions' })).toBeTruthy()
   })
 
   it('omits only an empty leading status slot in the hierarchy-free flat list', () => {

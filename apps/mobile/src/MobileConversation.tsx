@@ -93,7 +93,7 @@ export function MobileConversation({
           <p role="status">{t('chat.loadError', { message: snapshot.openError.message, code: snapshot.openError.code })}</p>
         )}
         {snapshot.hasMore && onLoadOlder !== undefined && (
-          <button type="button" disabled={snapshot.loadingOlder} onClick={onLoadOlder}>
+          <button type="button" disabled={snapshot.loadingOlder || !mutationEnabled} onClick={onLoadOlder}>
             {snapshot.loadingOlder ? t('chat.loadingHistory') : t('chat.loadOlder')}
           </button>
         )}

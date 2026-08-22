@@ -19,7 +19,11 @@ export class LiveMobilePresentationClock implements MobilePresentationClock {
     return this.#now
   }
 
-  /** @param listener - relative-time observer. @returns disposer. */
+  /**
+   * Listener failures are reported together after every observer runs and do not stop later ticks.
+   * @param listener - relative-time observer.
+   * @returns disposer.
+   */
   subscribe(listener: () => void): () => void {
     this.#listeners.add(listener)
     if (this.#listeners.size === 1) {
@@ -40,7 +44,13 @@ export class LiveMobilePresentationClock implements MobilePresentationClock {
     this.#timer = setTimeout(() => {
       this.#timer = undefined
       this.#now = Date.now()
-      for (const listener of [...this.#listeners]) listener()
+      const errors: unknown[] = []
+      for (const listener of [...this.#listeners]) {
+        try { listener() } catch (error) { errors.push(error) }
+      }
+      if (errors.length > 0) {
+        console.error('[mobile-clock] subscriber failures:', new AggregateError(errors))
+      }
       if (this.#listeners.size > 0) this.schedule()
     }, 60_000 - now % 60_000)
   }

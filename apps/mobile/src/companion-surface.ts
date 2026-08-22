@@ -107,7 +107,8 @@ export class MobileCompanionSurface {
 
   /**
    * Bind one decoder receiver, content adapter, and mutation adapter to the current physical generation.
-   * Raw Relay ciphertext cannot call this receiver. The binding becomes active only after its first valid resync.
+   * Raw Relay ciphertext cannot call this receiver. A valid binding becomes authoritative before synchronized
+   * lifecycle listeners run, so those listeners cannot dispatch through the preceding physical generation.
    * @param channel - adapters owned by the same authenticated decoder generation.
    * @returns generation-bound receiver, or `undefined` while disconnected.
    */
@@ -125,10 +126,23 @@ export class MobileCompanionSurface {
           message,
           settlement => this.settlePending(active, settlement),
         )
-        const accepted = lifecycleReceiver.acceptValidatedDesktopResync(message)
-        if (!accepted) return
+        const previousConnection = this.#activeConnection
+        const previousSnapshot = this.#snapshot
         this.#activeConnection = active
         this.#snapshot = projection
+        let accepted: boolean
+        try {
+          accepted = lifecycleReceiver.acceptValidatedDesktopResync(message)
+        } catch (error) {
+          this.#activeConnection = previousConnection
+          this.#snapshot = previousSnapshot
+          throw error
+        }
+        if (!accepted) {
+          this.#activeConnection = previousConnection
+          this.#snapshot = previousSnapshot
+          return
+        }
         this.publish()
       },
     }
@@ -185,15 +199,21 @@ export class MobileCompanionSurface {
     return this.#activeConnection
   }
 
-  private settlePending(
+  private async settlePending(
     expected: ActiveConnection,
     settlement: MobilePendingSettlement,
   ): Promise<MobilePendingSettlementReceipt> {
     const active = this.requireActive(settlement.kind)
     if (active.token !== expected.token) {
-      return Promise.reject(new Error('Companion pending interaction belongs to a stale connection generation'))
+      throw new Error('Companion pending interaction belongs to a stale connection generation')
     }
-    return active.channel.mutations.settle(settlement)
+    const receipt = await active.channel.mutations.settle(settlement)
+    // The receipt belongs to the sending generation; replacement makes even
+    // an accepted old receipt unusable by the shared interaction owner.
+    if (this.#activeConnection?.token !== expected.token || !companionMayMutate(this.#runtime.getState())) {
+      throw new Error('Companion pending interaction belongs to a stale connection generation')
+    }
+    return receipt
   }
 
   private publish(): void {

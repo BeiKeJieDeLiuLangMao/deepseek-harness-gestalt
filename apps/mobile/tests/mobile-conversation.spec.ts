@@ -71,6 +71,25 @@ function tool(overrides: Partial<ToolResultNode> = {}): ToolResultNode {
 }
 
 describe('Mobile shared Session presentation', () => {
+  it('keeps history loading disabled until the current generation admits mutations', () => {
+    const onLoadOlder = vi.fn()
+    const view = render(createElement(MobileConversation, {
+      title: 'History', onBack: () => {}, locale: 'en', loadImage: imageLoader,
+      snapshot: snapshot([], { hasMore: true }), onLoadOlder, mutationEnabled: false,
+    }))
+    const load = screen.getByRole('button', { name: 'Load earlier' })
+    expect(load.hasAttribute('disabled')).toBe(true)
+    fireEvent.click(load)
+    expect(onLoadOlder).not.toHaveBeenCalled()
+
+    view.rerender(createElement(MobileConversation, {
+      title: 'History', onBack: () => {}, locale: 'en', loadImage: imageLoader,
+      snapshot: snapshot([], { hasMore: true }), onLoadOlder, mutationEnabled: true,
+    }))
+    fireEvent.click(screen.getByRole('button', { name: 'Load earlier' }))
+    expect(onLoadOlder).toHaveBeenCalledOnce()
+  })
+
   it('renders Desktop-authoritative Markdown, code, diff, unknown Tool, and failures through shared Web components', () => {
     render(createElement(MobileConversation, {
       title: 'Shared Session',

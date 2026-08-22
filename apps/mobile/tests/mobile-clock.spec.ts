@@ -50,4 +50,31 @@ describe('Mobile presentation clock', () => {
     vi.advanceTimersByTime(60_000)
     expect(vi.getTimerCount()).toBe(0)
   })
+
+  it('contains one throwing observer and continues publishing subsequent ticks', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(0)
+    const clock = new LiveMobilePresentationClock()
+    const expected = new Error('clock observer failed')
+    const report = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const first = vi.fn(() => { throw expected })
+    const second = vi.fn()
+    const disposeFirst = clock.subscribe(first)
+    const disposeSecond = clock.subscribe(second)
+
+    vi.advanceTimersByTime(60_000)
+    expect(first).toHaveBeenCalledOnce()
+    expect(second).toHaveBeenCalledOnce()
+    expect(report).toHaveBeenCalledWith(
+      '[mobile-clock] subscriber failures:',
+      expect.objectContaining({ errors: [expected] }),
+    )
+    expect(vi.getTimerCount()).toBe(1)
+    vi.advanceTimersByTime(60_000)
+    expect(second).toHaveBeenCalledTimes(2)
+
+    disposeFirst()
+    disposeSecond()
+    report.mockRestore()
+  })
 })

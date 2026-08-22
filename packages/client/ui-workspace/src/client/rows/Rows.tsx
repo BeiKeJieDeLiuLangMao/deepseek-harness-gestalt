@@ -361,7 +361,7 @@ export function SearchResultItem({ result, currentId, onOpen, t }: {
  */
 export function SessionNodeItem({
   node, currentId, now, onOpen, onRename, onFork, onArchive, drag, flat = false,
-  tabIndex = 0, onFocus, onMoveFocus, t,
+  tabIndex, onFocus, onMoveFocus, t,
 }: {
   node: SessionNode
   currentId: string | undefined

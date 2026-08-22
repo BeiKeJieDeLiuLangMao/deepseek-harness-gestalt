@@ -44,6 +44,8 @@ export function expandedSessionGroups(
 
 /** Props for the shared Desktop Session row list. */
 export interface SessionListPresentationProps {
+  /** Accessible name for this Session tree. */
+  label: string
   nodes: readonly GroupNode['sessions'][number][]
   currentId?: SessionId | undefined
   now: number
@@ -57,7 +59,7 @@ export interface SessionListPresentationProps {
  * @returns shared Desktop Session rows without Desktop-only mutation menus.
  */
 export function SessionListPresentation({
-  nodes, currentId, now, onOpen, t,
+  label, nodes, currentId, now, onOpen, t,
 }: SessionListPresentationProps): ReactNode {
   const preferred = nodes.some(node => node.id === currentId) ? currentId : nodes[0]?.id
   const [focusId, setFocusId] = useState(preferred)
@@ -73,7 +75,7 @@ export function SessionListPresentation({
     rows?.[target]?.focus()
   }
   return (
-    <div role="tree" ref={tree}>
+    <div role="tree" aria-label={label} ref={tree}>
       {nodes.map((node, index) => (
         <SessionNodeItem
           key={node.id}

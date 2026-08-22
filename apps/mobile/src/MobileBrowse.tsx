@@ -111,25 +111,29 @@ export function MobileBrowse({
           </button>
         )}
       </header>
-      {groups.map(group => (
-        <section key={group.key} className={css.group} aria-label={group.label}>
-          <h2>{group.workspaceId === undefined ? tw('group.ungrouped') : group.label}</h2>
-          {onCreate !== undefined && group.workspaceId !== undefined && (
-            <button type="button" disabled={!canMutate} onClick={() => {
-              if (canMutate && group.workspaceId !== undefined) onCreate({ workspace: group.workspaceId })
-            }}>
-              {locale === 'zh' ? `在 ${group.label} 新建 Session` : `New Session in ${group.label}`}
-            </button>
-          )}
-          <SessionListPresentation
-            nodes={group.sessions}
-            currentId={openId}
-            now={now}
-            onOpen={setOpenId}
-            t={tw}
-          />
-        </section>
-      ))}
+      {groups.map((group) => {
+        const label = group.workspaceId === undefined ? tw('group.ungrouped') : group.label
+        return (
+          <section key={group.key} className={css.group} aria-label={label}>
+            <h2>{label}</h2>
+            {onCreate !== undefined && group.workspaceId !== undefined && (
+              <button type="button" disabled={!canMutate} onClick={() => {
+                if (canMutate && group.workspaceId !== undefined) onCreate({ workspace: group.workspaceId })
+              }}>
+                {locale === 'zh' ? `在 ${group.label} 新建 Session` : `New Session in ${group.label}`}
+              </button>
+            )}
+            <SessionListPresentation
+              label={label}
+              nodes={group.sessions}
+              currentId={openId}
+              now={now}
+              onOpen={setOpenId}
+              t={tw}
+            />
+          </section>
+        )
+      })}
       {paged.spilled > 0 && (
         <button type="button" className={css.more} onClick={() => { setPage(current => current + 1) }}>
           {locale === 'zh' ? `加载更多（还有 ${paged.spilled}）` : `Load more (${paged.spilled} remaining)`}

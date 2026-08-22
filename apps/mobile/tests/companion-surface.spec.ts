@@ -8,6 +8,8 @@ import {
   type ValidatedDesktopSurfaceResync,
 } from '../src/companion-surface.ts'
 
+type SettlementReceipt = Awaited<ReturnType<MobileCompanionConnectionChannel['mutations']['settle']>>
+
 const grant = {
   routeId: parseRelayRouteId('route-surface'),
   endpoint: 'mobile' as const,
@@ -82,6 +84,32 @@ describe('MobileCompanionSurface', () => {
     expect(surface.getSnapshot().sessions.ids).toEqual(['session-replacement'])
   })
 
+  it('publishes synchronized replacement state only after the new channel is authoritative', () => {
+    const runtime = connectedRuntime()
+    const firstChannel = connectionChannel()
+    const surface = new MobileCompanionSurface(runtime)
+    const first = surface.bindAuthenticatedConnection(firstChannel)
+    if (first === undefined) throw new Error('expected Desktop resync receiver')
+    first.acceptValidatedDesktopResync(projection('session-one', 'One'))
+
+    runtime.forgetConnection()
+    runtime.markConnectionOpen()
+    const replacementChannel = connectionChannel()
+    const replacement = surface.bindAuthenticatedConnection(replacementChannel)
+    if (replacement === undefined) throw new Error('expected replacement resync receiver')
+    const dispose = runtime.subscribe(() => {
+      if (runtime.getState().synchronized) surface.submit('session-two', 'during synchronized publication')
+    })
+    replacement.acceptValidatedDesktopResync(projection('session-two', 'Two'))
+    dispose()
+
+    expect(firstChannel.mutations.submit).not.toHaveBeenCalled()
+    expect(replacementChannel.mutations.submit).toHaveBeenCalledWith(
+      'session-two', 'during synchronized publication',
+    )
+    expect(surface.getSnapshot().sessions.ids).toEqual(['session-two'])
+  })
+
   it('adapts pending ids and data into local responders and returns carrier receipts', async () => {
     const runtime = connectedRuntime()
     const channel = connectionChannel()
@@ -129,6 +157,37 @@ describe('MobileCompanionSurface', () => {
     await expect(oldWait.respond({ ok: true, value: { outcome: 'allowed-once' } }))
       .rejects.toThrow('stale connection generation')
     expect(firstChannel.mutations.settle).not.toHaveBeenCalled()
+    expect(replacementChannel.mutations.settle).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['accepted', { accepted: true }],
+    ['rejected', { accepted: false, reason: 'not-pending' }],
+  ] as const)('discards an old %s settlement receipt after a replacement generation synchronizes', async (_label, receipt) => {
+    const runtime = connectedRuntime()
+    const firstChannel = connectionChannel()
+    let resolveFirst: ((receipt: SettlementReceipt) => void) | undefined
+    firstChannel.mutations.settle.mockImplementation(() => new Promise((resolve) => { resolveFirst = resolve }))
+    const surface = new MobileCompanionSurface(runtime)
+    const first = surface.bindAuthenticatedConnection(firstChannel)
+    if (first === undefined) throw new Error('expected Desktop resync receiver')
+    first.acceptValidatedDesktopResync(projection('session-one', 'One', true))
+    const oldWait = surface.getSnapshot().conversations['session-one' as SessionId]?.pending[0]
+    if (oldWait === undefined) throw new Error('expected old pending interaction')
+
+    const pendingReceipt = oldWait.respond({ ok: true, value: { outcome: 'allowed-once' } })
+    await vi.waitFor(() => { expect(firstChannel.mutations.settle).toHaveBeenCalledOnce() })
+    runtime.forgetConnection()
+    runtime.markConnectionOpen()
+    const replacementChannel = connectionChannel()
+    const replacement = surface.bindAuthenticatedConnection(replacementChannel)
+    if (replacement === undefined) throw new Error('expected replacement resync receiver')
+    replacement.acceptValidatedDesktopResync(projection('session-two', 'Two'))
+    if (resolveFirst === undefined) throw new Error('expected first settlement to remain pending')
+    resolveFirst(receipt)
+
+    await expect(pendingReceipt).rejects.toThrow('stale connection generation')
+    expect(surface.getSnapshot().sessions.ids).toEqual(['session-two'])
     expect(replacementChannel.mutations.settle).not.toHaveBeenCalled()
   })
 
