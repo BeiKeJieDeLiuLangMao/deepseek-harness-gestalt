@@ -13,6 +13,15 @@ import {
   PlatformAccount,
 } from '@deepseek-ai/dsh-platform-account-core'
 import * as PlatformAccountHttp from '@deepseek-ai/dsh-platform-account-http'
+import {
+  PersonalPairingProvider,
+  parseRelayInstanceId,
+  type PairingHandshakeProvider,
+} from '@deepseek-ai/dsh-remote-access'
+import { RemoteRelayProvider } from '@deepseek-ai/dsh-remote-access/relay-provider'
+import * as RemoteAccessHttp from '@deepseek-ai/dsh-remote-access-http'
+import * as RemoteAccessRelayHttp from '@deepseek-ai/dsh-remote-access-http/relay'
+import { connectRedisRelayCoordinator } from '@deepseek-ai/dsh-remote-access-redis'
 import pg from 'pg'
 import { PostgresAccountBackend } from './postgres-backend.ts'
 import { PostgresPersonalPairingAuthorityStore } from './postgres-pairing-store.ts'
@@ -69,8 +78,10 @@ const publicRoot = join(dirname(fileURLToPath(import.meta.url)), '..', 'public')
 
 const backend = new PostgresAccountBackend(environment.databaseIdentity, postgres)
 await backend.migrate()
-await new PostgresPersonalPairingAuthorityStore(environment.databaseIdentity, postgres).migrate()
-await new PostgresRelayRouteStore(environment.databaseIdentity, postgres).migrate()
+const pairingAuthority = new PostgresPersonalPairingAuthorityStore(environment.databaseIdentity, postgres)
+const relayRouteStore = new PostgresRelayRouteStore(environment.databaseIdentity, postgres)
+await pairingAuthority.migrate()
+await relayRouteStore.migrate()
 
 const publisher = await connectRedis(redisOptions)
 const subscriber = await connectRedis(redisOptions)
@@ -106,6 +117,42 @@ await ctx.plugin({
   },
 })
 await ctx.plugin(PlatformAccountHttp, { origin: environment.origin })
+const relayRedisUrl = new URL(redisOptions.tls ? 'rediss://localhost' : 'redis://localhost')
+relayRedisUrl.hostname = redisOptions.host
+relayRedisUrl.username = redisOptions.username ?? ''
+relayRedisUrl.password = redisOptions.password
+const relayRedis = await connectRedisRelayCoordinator({
+  url: relayRedisUrl.toString(),
+  keyPrefix: `${environment.identityNamespace}:relay`,
+})
+ctx.effect(() => async () => { await relayRedis.close() }, 'platform: Relay Redis clients')
+const relay = new RemoteRelayProvider(ctx, {
+  instanceId: parseRelayInstanceId(requiredPlatformEnv('PLATFORM_RELAY_INSTANCE_ID')),
+  routeStore: relayRouteStore,
+  coordinator: relayRedis.coordinator,
+  config: {
+    capacityRetryAfterMs: positivePlatformEnv('PLATFORM_RELAY_CAPACITY_RETRY_AFTER_MS'),
+    deliveryAckTimeoutMs: positivePlatformEnv('PLATFORM_RELAY_DELIVERY_ACK_TIMEOUT_MS'),
+    directoryTtlMs: positivePlatformEnv('PLATFORM_RELAY_DIRECTORY_TTL_MS'),
+    heartbeatTimeoutMs: positivePlatformEnv('PLATFORM_RELAY_HEARTBEAT_TIMEOUT_MS'),
+    maxBufferedCiphertextBytes: positivePlatformEnv('PLATFORM_RELAY_MAX_BUFFERED_CIPHERTEXT_BYTES'),
+    maxConnections: positivePlatformEnv('PLATFORM_RELAY_MAX_CONNECTIONS'),
+    maxPendingDeliveries: positivePlatformEnv('PLATFORM_RELAY_MAX_PENDING_DELIVERIES'),
+  },
+})
+new PersonalPairingProvider(ctx, {
+  account: ctx.platformAccount,
+  handshake: endpointOnlyHandshake(),
+  relay,
+  authority: pairingAuthority,
+  pairingLinkOrigin: `${environment.origin}/pair`,
+})
+await ctx.plugin(RemoteAccessHttp, { origin: environment.origin })
+await ctx.plugin(RemoteAccessRelayHttp, {
+  path: '/v1/remote-access/relay',
+  attachTimeoutMs: positivePlatformEnv('PLATFORM_RELAY_ATTACH_TIMEOUT_MS'),
+  maxPendingChallenges: positivePlatformEnv('PLATFORM_RELAY_MAX_PENDING_CHALLENGES'),
+})
 ctx.webServer.register({
   kind: 'exact',
   path: '/healthz',
@@ -124,3 +171,24 @@ ctx.webServer.register({
 })
 await ctx.plugin(FrontendStatic, { distIndex: join(publicRoot, 'index.html') })
 console.error(`platform: listening on ${ctx.webServer.host}:${String(ctx.webServer.port)}`)
+
+function endpointOnlyHandshake(): PairingHandshakeProvider {
+  return {
+    createChallenge: () => Promise.reject(endpointOnlyError()),
+    completeChallenge: () => Promise.reject(endpointOnlyError()),
+    activatePairing: () => Promise.reject(endpointOnlyError()),
+    destroyChallenge: () => {},
+    destroyPendingPairing: () => {},
+    destroyPairing: () => {},
+  }
+}
+
+function endpointOnlyError(): Error {
+  return new Error('Platform-mediated pairing cryptography is disabled; endpoints must use the opaque mailbox')
+}
+
+function positivePlatformEnv(name: string): number {
+  const value = Number(requiredPlatformEnv(name))
+  if (!Number.isSafeInteger(value) || value <= 0) throw new TypeError(`${name} must be a positive integer`)
+  return value
+}

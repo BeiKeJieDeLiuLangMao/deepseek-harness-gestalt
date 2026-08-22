@@ -89,6 +89,17 @@ describe('Remote Access HTTP assembled flow', () => {
     expect(malformedOrigin.status).toBe(403)
     expect(account.currentInstallation).not.toHaveBeenCalled()
 
+    const leakedInvitation = await fetch(`${server.origin}/v1/remote-access/personal-pairing`, {
+      method: 'POST',
+      headers: proofHeaders(desktop),
+      body: JSON.stringify({
+        operation: 'create-endpoint-challenge', rendezvousId: 'rendezvous-endpoint',
+        expiresAt: Date.now() + 60_000, invitationPayload: Buffer.alloc(32, 7).toString('base64url'),
+      }),
+    })
+    expect(leakedInvitation.status).toBe(400)
+    expect(account.currentInstallation).not.toHaveBeenCalled()
+
     await transport.setMobileAccess({ authentication: desktop, enabled: true })
     const challenge = await transport.createChallenge({
       authentication: desktop,
@@ -173,6 +184,13 @@ describe('Remote Access HTTP assembled flow', () => {
       setMobileAccess: http.setMobileAccess.bind(http),
       reissueDesktopRelayAuthority: http.reissueDesktopRelayAuthority.bind(http),
       createChallenge: http.createChallenge.bind(http),
+      createEndpointChallenge: http.createEndpointChallenge.bind(http),
+      cancelEndpointChallenge: http.cancelEndpointChallenge.bind(http),
+      listEndpointPending: http.listEndpointPending.bind(http),
+      submitEndpointMessage2: http.submitEndpointMessage2.bind(http),
+      confirmEndpointPairing: http.confirmEndpointPairing.bind(http),
+      rejectEndpointPairing: http.rejectEndpointPairing.bind(http),
+      deliverEndpointRelayAuthority: http.deliverEndpointRelayAuthority.bind(http),
       cancelChallenge: http.cancelChallenge.bind(http),
       listPendingPairings: http.listPendingPairings.bind(http),
       listPersonalPairings: http.listPersonalPairings.bind(http),
@@ -180,6 +198,10 @@ describe('Remote Access HTTP assembled flow', () => {
       rejectPairing: http.rejectPairing.bind(http),
       revokePersonalPairing: http.revokePersonalPairing.bind(http),
       getMobilePairingStatus: http.getMobilePairingStatus.bind(http),
+      finishChallenge: http.finishChallenge.bind(http),
+      submitEndpointMessage1: http.submitEndpointMessage1.bind(http),
+      getEndpointPairingStatus: http.getEndpointPairingStatus.bind(http),
+      submitEndpointMessage3: http.submitEndpointMessage3.bind(http),
       completeChallenge: async (request) => {
         requests.push(request)
         const result = await http.completeChallenge(request)

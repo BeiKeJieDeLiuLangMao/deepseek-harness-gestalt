@@ -1,7 +1,11 @@
 /** PostgreSQL RelayRouteStore shared by every Platform Instance. */
 
 import type { RelayRouteStore } from '@deepseek-ai/dsh-remote-access'
-import type { RelayRouteId } from '@deepseek-ai/dsh-remote-protocol'
+import {
+  parseRelayPairingSelector,
+  type RelayPairingSelector,
+  type RelayRouteId,
+} from '@deepseek-ai/dsh-remote-protocol'
 import type { PlatformSqlClient, PlatformSqlPool } from './postgres-pairing-store.ts'
 
 const SCHEMA = `
@@ -17,8 +21,11 @@ CREATE TABLE IF NOT EXISTS remote_access_route_authorities (
   route_id text NOT NULL,
   endpoint text NOT NULL,
   digest bytea NOT NULL,
+  pairing_selector text,
   PRIMARY KEY (database_identity, route_id, endpoint, digest)
 );
+CREATE UNIQUE INDEX IF NOT EXISTS remote_access_route_authority_digest_owner
+  ON remote_access_route_authorities (database_identity, route_id, digest);
 `
 
 interface RouteRow {
@@ -65,12 +72,32 @@ export class PostgresRelayRouteStore implements RelayRouteStore {
     routeId: RelayRouteId,
     endpoint: 'mobile' | 'desktop',
     credentialDigest: Uint8Array,
+    pairingSelector?: RelayPairingSelector,
   ): Promise<number | undefined> {
     return await this.transact(async (client) => {
       const current = await this.loadRoute(client, routeId)
       if (current === undefined || current.revoked) return undefined
-      await this.insertAuthority(client, routeId, endpoint, credentialDigest)
+      await this.insertAuthority(client, routeId, endpoint, credentialDigest, pairingSelector)
       return current.revision
+    })
+  }
+
+  async registerPairing(
+    routeId: RelayRouteId,
+    pairingSelector: RelayPairingSelector,
+    desktopCredentialDigest: Uint8Array,
+    mobileCredentialDigest: Uint8Array,
+  ): Promise<number> {
+    if (equalBytes(desktopCredentialDigest, mobileCredentialDigest)) {
+      throw new TypeError('Relay credential digests must be distinct')
+    }
+    return await this.transact(async (client) => {
+      const current = await this.loadRoute(client, routeId)
+      const revision = current === undefined || current.revoked ? (current?.revision ?? 0) + 1 : current.revision
+      if (current === undefined || current.revoked) await this.upsertRoute(client, routeId, revision, false)
+      await this.insertAuthority(client, routeId, 'desktop', desktopCredentialDigest, pairingSelector)
+      await this.insertAuthority(client, routeId, 'mobile', mobileCredentialDigest, pairingSelector)
+      return revision
     })
   }
 
@@ -78,7 +105,7 @@ export class PostgresRelayRouteStore implements RelayRouteStore {
     routeId: RelayRouteId,
     endpoint: 'mobile' | 'desktop',
     credentialDigest: Uint8Array,
-  ): Promise<number | undefined> {
+  ): Promise<{ revision: number; pairingSelector?: RelayPairingSelector } | undefined> {
     const route = await this.pool.query(
       `SELECT revision, revoked
          FROM remote_access_routes
@@ -88,12 +115,19 @@ export class PostgresRelayRouteStore implements RelayRouteStore {
     const current = asRouteRow(route.rows[0])
     if (current === undefined || current.revoked) return undefined
     const authority = await this.pool.query(
-      `SELECT 1
+      `SELECT pairing_selector
          FROM remote_access_route_authorities
         WHERE database_identity = $1 AND route_id = $2 AND endpoint = $3 AND digest = $4`,
       [this.databaseIdentity, routeId, endpoint, Buffer.from(credentialDigest)],
     )
-    return authority.rows[0] === undefined ? undefined : current.revision
+    const record = authority.rows[0]
+    if (record === undefined) return undefined
+    const selector = record.pairing_selector
+    if (selector !== null && typeof selector !== 'string') throw new TypeError('Relay pairing selector row is invalid')
+    return {
+      revision: current.revision,
+      ...(selector === null ? {} : { pairingSelector: parseRelayPairingSelector(selector) }),
+    }
   }
 
   async revokeCredential(
@@ -179,14 +213,30 @@ export class PostgresRelayRouteStore implements RelayRouteStore {
     routeId: RelayRouteId,
     endpoint: 'mobile' | 'desktop',
     credentialDigest: Uint8Array,
+    pairingSelector?: RelayPairingSelector,
   ): Promise<void> {
+    const existing = await client.query(
+      `SELECT endpoint, pairing_selector
+         FROM remote_access_route_authorities
+        WHERE database_identity = $1 AND route_id = $2 AND digest = $3`,
+      [this.databaseIdentity, routeId, Buffer.from(credentialDigest)],
+    )
+    const owner = existing.rows[0]
+    if (owner !== undefined) {
+      if (owner.endpoint === endpoint && owner.pairing_selector === (pairingSelector ?? null)) return
+      throw new Error('Relay credential digest already belongs to another Personal Pairing')
+    }
     await client.query(
-      `INSERT INTO remote_access_route_authorities (database_identity, route_id, endpoint, digest)
-       VALUES ($1,$2,$3,$4)
-       ON CONFLICT (database_identity, route_id, endpoint, digest) DO NOTHING`,
-      [this.databaseIdentity, routeId, endpoint, Buffer.from(credentialDigest)],
+      `INSERT INTO remote_access_route_authorities
+         (database_identity, route_id, endpoint, digest, pairing_selector)
+       VALUES ($1,$2,$3,$4,$5)`,
+      [this.databaseIdentity, routeId, endpoint, Buffer.from(credentialDigest), pairingSelector ?? null],
     )
   }
+}
+
+function equalBytes(left: Uint8Array, right: Uint8Array): boolean {
+  return left.byteLength === right.byteLength && left.every((byte, index) => byte === right[index])
 }
 
 function asRouteRow(value: Record<string, unknown> | undefined): RouteRow | undefined {

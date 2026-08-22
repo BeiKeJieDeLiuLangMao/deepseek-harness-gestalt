@@ -1,18 +1,21 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
 import {
-  decodeRelayMessage,
-  encodeRelayMessage,
-  parseRelayAttachmentId,
-  parseRelayCredential,
-  parseRelayRouteId,
+  decodeRelayMessage, encodeRelayMessage, parseRelayAttachmentId, parseRelayPairingSelector,
+  parseRelayAttachChallengeId,
   REMOTE_PROTOCOL_LIMITS,
 } from '@deepseek-ai/dsh-remote-protocol'
-import { NodeRelayEndpointSocket } from '@deepseek-ai/dsh-remote-access-client/node-relay-socket'
-import type { RelayEndpointSocket } from '@deepseek-ai/dsh-remote-access-client'
 import {
   createDesktopRemoteRelay,
   loadDesktopRemoteRelayConfig,
 } from '../src/remote-relay.ts'
+import { DesktopSnowPairingVault } from '../src/snow-pairing-vault.ts'
+import { parseRelayCredential, parseRelayRouteId } from '@deepseek-ai/dsh-remote-protocol'
+import {
+  initializeSnowChannel, SnowMobileAttachmentOwner, SnowMobileHandshakeClient,
+} from '@deepseek-ai/dsh-noise-channel'
+import { parsePairingChallengeId, parsePendingPairingId, parsePersonalPairingId } from '@deepseek-ai/dsh-remote-access'
+import type { RelayEndpointSocket } from '@deepseek-ai/dsh-remote-access-client'
 
 const DEVELOPMENT = {
   environment: 'development',
@@ -25,7 +28,6 @@ const DEVELOPMENT = {
 } as const
 
 const SOURCE = {
-  DSH_PERSONAL_PAIRING_KEYLESS: '1',
   DSH_REMOTE_RELAY_WSS_URL: 'wss://platform.example/v1/remote-access/relay',
   DSH_REMOTE_RELAY_ATTACH_TIMEOUT_MS: '1000',
   DSH_REMOTE_RELAY_HEARTBEAT_INTERVAL_MS: '30000',
@@ -35,6 +37,90 @@ const SOURCE = {
 }
 
 describe('Desktop Remote Relay composition', () => {
+  it('mounts Desktop IK ownership and sends authenticated foreground synchronization', async () => {
+    initializeSnowChannel(readFileSync(new URL(
+      '../../../packages/platform/noise-channel/pkg/dsh_noise_channel_bg.wasm', import.meta.url,
+    )))
+    const vault = new DesktopSnowPairingVault()
+    const local = await vault.createInvitation(Date.now() + 60_000)
+    const challengeId = parsePairingChallengeId('challenge-assembled-mount')
+    const pendingPairingId = parsePendingPairingId('pending-assembled-mount')
+    vault.retainChallenge(challengeId, local.owner)
+    vault.bindPending(challengeId, pendingPairingId)
+    const mobileHandshake = new SnowMobileHandshakeClient()
+    const message1 = await mobileHandshake.beginEndpointInvitation(local.invitationPayload)
+    const message2 = await local.owner.acceptMessage1(message1)
+    await mobileHandshake.acceptDesktopHandshake(message2)
+    await local.owner.finishMessage3(mobileHandshake.exportFinishMessage())
+    const pairingId = parsePersonalPairingId('pairing-assembled-mount')
+    await vault.prepareConfirmation(pendingPairingId)
+    const delivery = await vault.prepareSealedAuthority(pendingPairingId, {
+      pairing: {
+        id: pairingId,
+        devicePrincipal: {
+          id: 'principal-assembled-mount' as never, accountId: 'account-assembled-mount' as never,
+          installationId: 'mobile-assembled-mount' as never, authority: 'companion-surface',
+        },
+        device: { name: 'Alice phone', platform: 'ios' }, pairedAt: 1, lastAccessAt: 1, online: false,
+      },
+      routeId: parseRelayRouteId('route-assembled-mount'), relayRevision: 1,
+    })
+    const mobileGrant = await mobileHandshake.openRelayAuthority(delivery.sealedRelayAuthority)
+    const desktopGrant = vault.desktopRelayGrant(pendingPairingId)
+    await vault.commitConfirmation(pendingPairingId)
+
+    const socket = new TestRelaySocket()
+    const relay = createDesktopRemoteRelay({
+      environment: { ...DEVELOPMENT, environment: 'production' }, source: SOURCE,
+      snowPairingVault: vault, connect: async () => socket, initializeWasm: () => {},
+    })
+    await relay.configure?.(desktopGrant)
+    const starting = relay.start()
+    await vi.waitFor(() => { expect(socket.sent).toHaveLength(1) })
+    const request = decodeRelayMessage(socket.sent[0] as Uint8Array)
+    if (request.type !== 'attach-challenge') throw new Error('Desktop Relay did not request an attach challenge')
+    socket.push(encodeRelayMessage({
+      ...request, type: 'attach-challenge-response',
+      challengeId: parseRelayAttachChallengeId('challenge-assembled-attach'),
+      nonce: new Uint8Array(32).fill(7), expiresAt: Date.now() + 10_000,
+    }))
+    await vi.waitFor(() => { expect(socket.sent).toHaveLength(2) })
+    const attach = decodeRelayMessage(socket.sent[1] as Uint8Array)
+    if (attach.type !== 'attach') throw new Error('Desktop Relay did not attach')
+    const mobileAttachmentId = parseRelayAttachmentId('mobile-assembled-mount')
+    const generation = 9
+    const ready = {
+      type: 'ready' as const, transportVersion: 1 as const, routeId: mobileGrant.routeId,
+      attachmentId: attach.attachmentId,
+      peers: [{ attachmentId: mobileAttachmentId, pairingSelector: mobileGrant.pairingSelector, generation }],
+    }
+    socket.push(encodeRelayMessage(ready))
+    await starting
+    const mobileOwner = new SnowMobileAttachmentOwner(
+      mobileHandshake.exportReconnectState(), mobileGrant.pairingSelector,
+    )
+    const begun = await mobileOwner.begin({ ...ready, attachmentId: mobileAttachmentId, peers: [{
+      attachmentId: attach.attachmentId, pairingSelector: mobileGrant.pairingSelector, generation,
+    }] })
+    socket.push(encodeRelayMessage({
+      type: 'ciphertext', transportVersion: 1, routeId: mobileGrant.routeId,
+      sourceAttachmentId: mobileAttachmentId, targetAttachmentId: attach.attachmentId,
+      ciphertext: begun.payload,
+    }))
+    await vi.waitFor(() => { expect(socket.sent).toHaveLength(4) })
+    const responses = socket.sent.slice(2).map(decodeRelayMessage)
+    const ik2 = responses[0]
+    const sync = responses[1]
+    if (ik2?.type !== 'ciphertext' || sync?.type !== 'ciphertext') {
+      throw new Error('Desktop Relay did not send IK2 and synchronization')
+    }
+    const channel = mobileOwner.finish(ik2.ciphertext, attach.attachmentId)
+    expect(channel.open(sync.ciphertext)).toEqual({
+      type: 'projection', projection: { type: 'foreground-sync', generation, desktopRevision: 1 },
+    })
+    await relay.stop('quit')
+  })
+
   it('validates the complete development bundle before socket acquisition', () => {
     expect(loadDesktopRemoteRelayConfig(SOURCE)).toEqual({
       url: SOURCE.DSH_REMOTE_RELAY_WSS_URL,
@@ -56,7 +142,7 @@ describe('Desktop Remote Relay composition', () => {
     }
   })
 
-  it('keeps production fail-closed and assembles a cancellable development endpoint', async () => {
+  it('selects the endpoint-owned lifecycle only in production', async () => {
     const connect = vi.fn(async (signal: AbortSignal) => await new Promise<never>((_resolve, reject) => {
       signal.addEventListener('abort', () => { reject(new Error('cancelled')) }, { once: true })
     }))
@@ -64,104 +150,56 @@ describe('Desktop Remote Relay composition', () => {
       environment: { ...DEVELOPMENT, environment: 'production' },
       source: SOURCE,
       connect,
+      snowPairingVault: new DesktopSnowPairingVault(),
+      initializeWasm: () => {},
     })
-    await expect(production.start()).rejects.toThrow('independently reviewed')
-    expect(connect).not.toHaveBeenCalled()
+    await production.configure?.({
+      routeId: parseRelayRouteId('route-production'), endpoint: 'desktop',
+      credential: parseRelayCredential('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'), revision: 1,
+      pairingSelector: parseRelayPairingSelector('pairing-production'),
+    })
+    const starting = production.start()
+    await vi.waitFor(() => { expect(connect).toHaveBeenCalledOnce() })
+    await production.stop('quit')
+    await expect(starting).rejects.toThrow()
     const disabled = createDesktopRemoteRelay({
-      environment: DEVELOPMENT, source: { ...SOURCE, DSH_PERSONAL_PAIRING_KEYLESS: '0' }, connect,
+      environment: DEVELOPMENT, source: SOURCE, connect,
+      snowPairingVault: new DesktopSnowPairingVault(),
     })
     await expect(disabled.start()).rejects.toThrow('independently reviewed')
-
-    const development = createDesktopRemoteRelay({ environment: DEVELOPMENT, source: SOURCE, connect })
-    await development.configure?.({
-      routeId: parseRelayRouteId('route-development'),
-      credential: parseRelayCredential('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'),
-      revision: 1,
-    })
-    const starting = development.start()
-    await vi.waitFor(() => { expect(connect).toHaveBeenCalledOnce() })
-    const stopping = development.stop('window-close')
-    await expect(Promise.allSettled([starting, stopping])).resolves.toHaveLength(2)
-    expect(connect.mock.calls[0]?.[0]).toBeInstanceOf(AbortSignal)
+    expect(connect).toHaveBeenCalledOnce()
   })
 
-  it('rejects development proof mode without a complete config before connecting', async () => {
-    const connect = vi.fn()
-    expect(() => createDesktopRemoteRelay({
-      environment: DEVELOPMENT,
-      source: { ...SOURCE, DSH_REMOTE_RELAY_ATTACH_TIMEOUT_MS: undefined },
-      connect,
+  it('validates Relay configuration independently from disabled composition', () => {
+    expect(() => loadDesktopRemoteRelayConfig({
+      ...SOURCE,
+      DSH_REMOTE_RELAY_ATTACH_TIMEOUT_MS: undefined,
     })).toThrow('DSH_REMOTE_RELAY_ATTACH_TIMEOUT_MS')
-    expect(connect).not.toHaveBeenCalled()
-  })
-
-  it('uses the production Node adapter and rejects ciphertext without a product crypto owner', async () => {
-    const first = new ReadySocket()
-    const second = new ReadySocket()
-    const connect = vi.spyOn(NodeRelayEndpointSocket, 'connect')
-      .mockResolvedValueOnce(first as never)
-      .mockResolvedValueOnce(second as never)
-    const relay = createDesktopRemoteRelay({
-      environment: DEVELOPMENT,
-      source: { ...SOURCE, DSH_REMOTE_RELAY_RECONNECT_DELAY_MS: '1' },
-    })
-    await relay.configure?.({
-      routeId: parseRelayRouteId('route-development'),
-      credential: parseRelayCredential('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'),
-      revision: 1,
-    })
-
-    await relay.start()
-    expect(relay.getState?.()).toEqual({ connected: true })
-    const attachmentId = first.attachmentId
-    if (attachmentId === undefined) throw new Error('fixture did not observe attach')
-    first.receive(encodeRelayMessage({
-      type: 'ciphertext', transportVersion: 1,
-      routeId: parseRelayRouteId('route-development'),
-      sourceAttachmentId: parseRelayAttachmentId('mobile-development'),
-      targetAttachmentId: attachmentId,
-      ciphertext: Uint8Array.of(1),
-    }))
-    await vi.waitFor(() => { expect(connect).toHaveBeenCalledTimes(2) })
-    await relay.stop('quit')
-    expect(relay.getState?.()).toEqual({ connected: false, stopReason: 'quit' })
-    connect.mockRestore()
   })
 })
 
-class ReadySocket implements RelayEndpointSocket {
-  private readonly values: Uint8Array[] = []
-  private readonly waiters: Array<(value: IteratorResult<Uint8Array>) => void> = []
-  attachmentId: ReturnType<typeof parseRelayAttachmentId> | undefined
+class TestRelaySocket implements RelayEndpointSocket {
+  readonly sent: Uint8Array[] = []
+  private readonly queued: Uint8Array[] = []
+  private readonly waiting: Array<(value: IteratorResult<Uint8Array>) => void> = []
+  private closed = false
 
-  async send(value: Uint8Array): Promise<void> {
-    const message = decodeRelayMessage(value)
-    if (message.type !== 'attach') return
-    this.attachmentId = message.attachmentId
-    this.receive(encodeRelayMessage({
-      type: 'ready', transportVersion: 1, attachmentId: message.attachmentId,
-    }))
+  async send(value: Uint8Array): Promise<void> { this.sent.push(value.slice()) }
+  push(value: Uint8Array): void {
+    const resolve = this.waiting.shift()
+    if (resolve === undefined) this.queued.push(value)
+    else resolve({ done: false, value })
   }
-
   messages(): AsyncIterable<Uint8Array> {
-    return {
-      [Symbol.asyncIterator]: () => ({
-        next: async () => await new Promise<IteratorResult<Uint8Array>>((resolve) => {
-          const value = this.values.shift()
-          if (value === undefined) this.waiters.push(resolve)
-          else resolve({ done: false, value })
-        }),
-      }),
-    }
+    return { [Symbol.asyncIterator]: () => ({ next: async () => {
+      const value = this.queued.shift()
+      if (value !== undefined) return { done: false as const, value }
+      if (this.closed) return { done: true as const, value: undefined }
+      return await new Promise<IteratorResult<Uint8Array>>((resolve) => { this.waiting.push(resolve) })
+    } }) }
   }
-
-  receive(value: Uint8Array): void {
-    const waiter = this.waiters.shift()
-    if (waiter === undefined) this.values.push(value)
-    else waiter({ done: false, value })
-  }
-
   async close(): Promise<void> {
-    for (const waiter of this.waiters.splice(0)) waiter({ done: true, value: undefined })
+    this.closed = true
+    for (const resolve of this.waiting.splice(0)) resolve({ done: true, value: undefined })
   }
 }

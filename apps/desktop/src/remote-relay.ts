@@ -1,12 +1,9 @@
-/** Desktop Host composition for the product-gated Remote Relay endpoint. */
+/** Desktop Host composition for the endpoint-owned Snow Remote Relay endpoint. */
 
-import { randomUUID } from 'node:crypto'
+import { readFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import type { SelectedPlatformEnvironment } from '@deepseek-ai/dsh-platform-account'
-import { RemoteRelayError } from '@deepseek-ai/dsh-remote-access'
-import {
-  parseRelayAttachmentId,
-  REMOTE_PROTOCOL_LIMITS,
-} from '@deepseek-ai/dsh-remote-protocol'
+import { parseRelayAttachmentId, REMOTE_PROTOCOL_LIMITS, type RelayPeerDescriptor } from '@deepseek-ai/dsh-remote-protocol'
 import type { RelayEndpointSocket } from '@deepseek-ai/dsh-remote-access-client'
 import {
   DesktopRelayEndpointLifecycle,
@@ -14,6 +11,13 @@ import {
   type DesktopRelayLifecycle,
 } from '@deepseek-ai/dsh-remote-access-client/desktop-relay-lifecycle'
 import { NodeRelayEndpointSocket } from '@deepseek-ai/dsh-remote-access-client/node-relay-socket'
+import {
+  initializeSnowChannel,
+  SnowDesktopAttachmentOwner,
+  type SnowCompanionProtocolChannel,
+} from '@deepseek-ai/dsh-noise-channel'
+import { sealDesktopForegroundSynchronization } from './noise-companion.ts'
+import type { DesktopSnowPairingVault } from './snow-pairing-vault.ts'
 
 const CRYPTO_GATE = 'Personal Pairing requires an independently reviewed handshake and Relay crypto provider.'
 
@@ -32,6 +36,8 @@ export interface DesktopRemoteRelayOptions {
   environment: SelectedPlatformEnvironment
   source: NodeJS.ProcessEnv | Record<string, string | undefined>
   connect?: (signal: AbortSignal, config: DesktopRemoteRelayConfig) => Promise<RelayEndpointSocket>
+  snowPairingVault: DesktopSnowPairingVault
+  initializeWasm?: () => void
 }
 
 /**
@@ -64,30 +70,91 @@ export function loadDesktopRemoteRelayConfig(
  * @returns Desktop-owned Relay lifecycle injected into Settings.
  */
 export function createDesktopRemoteRelay(options: DesktopRemoteRelayOptions): DesktopRelayLifecycle {
-  if (options.environment.environment !== 'development'
-    || options.source.DSH_PERSONAL_PAIRING_KEYLESS !== '1') {
-    return new FailClosedDesktopRelayLifecycle(CRYPTO_GATE)
-  }
+  if (options.environment.environment !== 'production') return new FailClosedDesktopRelayLifecycle(CRYPTO_GATE)
   const config = loadDesktopRemoteRelayConfig(options.source)
-  const connect = options.connect ?? (async (signal: AbortSignal) => await NodeRelayEndpointSocket.connect(
-    config.url,
-    signal,
-    { maxBytes: config.inboundMaxBytes, maxMessages: config.inboundMaxMessages },
-  ))
-  return new DesktopRelayEndpointLifecycle({
-    attachmentId: () => parseRelayAttachmentId(`desktop-${randomUUID()}`),
-    connect: async signal => await connect(signal, config),
+  ;(options.initializeWasm ?? initializeDesktopSnowWasm)()
+  const owner = new SnowDesktopAttachmentOwner(selector => options.snowPairingVault.reconnectState(selector))
+  const channels = new Map<string, {
+    channel: SnowCompanionProtocolChannel
+    peer: RelayPeerDescriptor
+  }>()
+  const projections = new Map<string, {
+    routeId: Parameters<SnowDesktopAttachmentOwner['accept']>[2]
+    attachmentId: Parameters<SnowDesktopAttachmentOwner['accept']>[3]
+    peers: readonly RelayPeerDescriptor[]
+  }>()
+  let desktopRevision = 0
+  const lifecycle = new DesktopRelayEndpointLifecycle({
+    attachmentId: () => parseRelayAttachmentId(crypto.randomUUID()),
+    connect: async signal => options.connect === undefined
+      ? await NodeRelayEndpointSocket.connect(config.url, signal, {
+        maxBytes: config.inboundMaxBytes, maxMessages: config.inboundMaxMessages,
+      })
+      : await options.connect(signal, config),
     attachTimeoutMs: config.attachTimeoutMs,
     heartbeatIntervalMs: config.heartbeatIntervalMs,
     reconnectDelayMs: config.reconnectDelayMs,
-    resynchronize: async () => {},
-    onCiphertext: () => {
-      throw new RemoteRelayError(
-        'RELAY_ATTACHMENT_REJECTED',
-        'Development Desktop has no product Companion crypto provider',
+    onPeerAttachments: (update, selector) => {
+      projections.set(selector, { routeId: update.routeId, attachmentId: update.attachmentId, peers: update.peers })
+    },
+    onCiphertext: async (ciphertext, sourceAttachmentId, localAttachmentId, pairingSelector) => {
+      const current = projections.get(pairingSelector)
+      if (current === undefined) throw new Error('Desktop Relay ciphertext has no peer projection')
+      if (current.attachmentId !== localAttachmentId) throw new Error('Desktop Relay ciphertext has a stale local attachment')
+      const existing = channels.get(sourceAttachmentId)
+      const projected = current.peers.find(peer => peer.attachmentId === sourceAttachmentId)
+      if (existing !== undefined) {
+        if (projected === undefined || projected.generation !== existing.peer.generation
+          || projected.pairingSelector !== existing.peer.pairingSelector) {
+          throw new Error('Desktop Relay rejected a stale Snow channel')
+        }
+        existing.channel.open(ciphertext)
+        return
+      }
+      if (projected === undefined) throw new Error('Desktop Relay rejected an unprojected Snow peer')
+      const accepted = await owner.accept(
+        ciphertext, sourceAttachmentId, current.routeId, current.attachmentId,
+      )
+      if (accepted.generation !== projected.generation
+        || accepted.pairingSelector !== projected.pairingSelector) {
+        accepted.channel.dispose()
+        throw new Error('Desktop Relay rejected a stale Snow IK transcript')
+      }
+      for (const [attachmentId, active] of channels) {
+        if (active.peer.pairingSelector === accepted.pairingSelector) {
+          active.channel.dispose()
+          channels.delete(attachmentId)
+        }
+      }
+      channels.set(sourceAttachmentId, { channel: accepted.channel, peer: projected })
+      await lifecycle.sendCiphertext(accepted.pairingSelector, accepted.targetAttachmentId, accepted.payload)
+      desktopRevision += 1
+      await lifecycle.sendCiphertext(
+        accepted.pairingSelector, accepted.targetAttachmentId,
+        sealDesktopForegroundSynchronization(accepted.channel, accepted.generation, desktopRevision),
       )
     },
+    resynchronize: async () => {},
+    onConnectionLost: (attachmentId) => {
+      for (const [selector, projection] of projections) {
+        if (projection.attachmentId !== attachmentId) continue
+        projections.delete(selector)
+        for (const [sourceAttachmentId, active] of channels) {
+          if (active.peer.pairingSelector === selector) {
+            active.channel.dispose()
+            channels.delete(sourceAttachmentId)
+          }
+        }
+      }
+    },
   })
+  return lifecycle
+}
+
+function initializeDesktopSnowWasm(): void {
+  const require = createRequire(import.meta.url)
+  const glue = require.resolve('@deepseek-ai/dsh-noise-channel/snow-wasm')
+  initializeSnowChannel(readFileSync(glue.replace(/\.js$/u, '_bg.wasm')))
 }
 
 function required(source: Record<string, string | undefined>, name: string): string {

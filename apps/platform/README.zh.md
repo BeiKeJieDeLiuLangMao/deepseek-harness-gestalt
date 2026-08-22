@@ -6,7 +6,7 @@ Platform 监听进程以容器发布。GitHub Actions 会为触及 Platform 树�
 
 实际运行的监听进程只接受 `PLATFORM_ENVIRONMENT=production`。客户端打包仍可解析开发／生产环境对，以便选错 origin 时在产生流量前失败。不存在 staging 选择器，也不运行第二套 Platform。
 
-`GET /` 提供 DeepSeek Gestalt 产品首页。在所需部署密钥齐备后，`GET /healthz` 与 `GET /readyz` 返回 `{ ok: true }`。缺失密钥会在监听前失败退出。Account HTTP 挂在 `/v1/account/*`，持久化走 PostgreSQL 与 Redis。监听进程还会迁移共享的 Personal Pairing 权威表和 Relay route 表。在通过已评审的 Noise handshake 之前，不挂载配对 HTTP 和 Relay WSS。
+`GET /` 提供 DeepSeek Gestalt 产品首页。在所需部署密钥齐备后，`GET /healthz` 与 `GET /readyz` 返回 `{ ok: true }`。缺失密钥会在监听前失败退出。Account HTTP 挂在 `/v1/account/*`，配对 HTTP 与 Relay WSS 分别挂在 `/v1/remote-access/personal-pairing` 和 `/v1/remote-access/relay`。PostgreSQL 持有持久配对与 credential digest authority；Redis 只持有会过期的 attachment directory，以及 content-free 或 ciphertext coordination。Platform 不提供产品配对 cipher，也不会收到端点私钥或 Mobile Relay bearer。
 
 ```sh
 docker build -f apps/platform/Dockerfile -t dsh-platform .
@@ -14,7 +14,9 @@ docker build -f apps/platform/Dockerfile -t dsh-platform .
 
 发布：Actions → Platform Image → Run workflow → 勾选 **push**。部署：Actions → Platform Deploy；工作流先校验 Environment `production` 中的名称，仅在勾选 **deploy** 时才把镜像应用到两台 ECS。ECS 将主机 80 映射到容器 8080，供 ALB 443 转发到 VPC 80。应用步骤使用 Docker `json-file` 轮转（`20m` × `3` 个文件），容器 stdout/stderr 不会占满主机磁盘。同时运行 LoongCollector（`dsh-loongcollector`），把 `dsh-platform` 的 stdout/stderr 送到杭州 SLS 项目 `gestalt` 的 Logstore `application`。采集器以用户自定义机器组标识 `gestalt-platform` 注册，并从加固模式 ECS 元数据读取阿里云账号 ID，空则回退 `PLATFORM_SLS_ACCOUNT_ID`。在该 Logstore 的 Docker 标准输出 Logtail 配置里绑定这个机器组。ECS SSH 与运行密钥放在 Environment `production`。
 
+部署会为每台 ECS 提供不同的 `PLATFORM_RELAY_INSTANCE_ID`，并通过 `PLATFORM_RELAY_*` 变量提供正数的容量、确认等待、directory TTL、heartbeat timeout、ciphertext buffer、连接数、待投递数与 attach timeout。应用会在监听前校验完整配置。
+
 ## 已知限制与暂缓事项
 
-- 本镜像不挂载配对 HTTP 和 Remote Relay WSS。
+- 发布验收前仍需要独立安全评审与物理 WKWebView/Android WebView 证据。
 - Redis 使用 TLS（`PLATFORM_REDIS_TLS=1`）。RDS 开启 SSL 后 PostgreSQL 使用 `sslmode=require`。

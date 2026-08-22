@@ -106,6 +106,7 @@ jobs:
           IFS=',' read -r -a hosts <<< "$HOSTS"
           for host in "${hosts[@]}"; do
             host="${host// /}"
+            relay_instance="relay-${host//./-}"
             echo "deploy ${host}"
             ssh -i /tmp/ecs.pem -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o BatchMode=yes "root@${host}" \
               'dnf -y install docker >/dev/null 2>&1 || yum -y install docker >/dev/null 2>&1; systemctl enable --now docker'
@@ -128,6 +129,16 @@ jobs:
                 -e PLATFORM_REDIS_USER=$(printf %q "$PLATFORM_REDIS_USER") \
                 -e PLATFORM_REDIS_PASSWORD=$(printf %q "$PLATFORM_REDIS_PASSWORD") \
                 -e PLATFORM_REDIS_TLS=1 \
+                -e PLATFORM_RELAY_INSTANCE_ID=$(printf %q "$relay_instance") \
+                -e PLATFORM_RELAY_CAPACITY_RETRY_AFTER_MS=1000 \
+                -e PLATFORM_RELAY_DELIVERY_ACK_TIMEOUT_MS=5000 \
+                -e PLATFORM_RELAY_DIRECTORY_TTL_MS=60000 \
+                -e PLATFORM_RELAY_HEARTBEAT_TIMEOUT_MS=45000 \
+                -e PLATFORM_RELAY_MAX_BUFFERED_CIPHERTEXT_BYTES=1048576 \
+                -e PLATFORM_RELAY_MAX_CONNECTIONS=10000 \
+                -e PLATFORM_RELAY_MAX_PENDING_DELIVERIES=10000 \
+                -e PLATFORM_RELAY_MAX_PENDING_CHALLENGES=10000 \
+                -e PLATFORM_RELAY_ATTACH_TIMEOUT_MS=10000 \
                 -e PLATFORM_TOKEN_SIGNING_KEY=$(printf %q "$PLATFORM_TOKEN_SIGNING_KEY") \
                 -e PLATFORM_POLLING_SIGNING_KEY=$(printf %q "$PLATFORM_POLLING_SIGNING_KEY") \
                 ${IMAGE}"
