@@ -301,7 +301,10 @@ export class EndpointOwnedPairingMailbox {
     if (record.settledAt === undefined && input.now !== undefined) record.settledAt = input.now
   }
 
-  /** Expire invitations, retain terminal outcomes briefly, and bound durable state growth. */
+  /** Expire invitations, retain terminal outcomes briefly, and bound durable state growth.
+   * @param now - current epoch milliseconds.
+   * @param replayRetentionMs - terminal replay retention lifetime.
+   */
   evict(now: number, replayRetentionMs: number): void {
     const cutoff = now - replayRetentionMs
     for (const [challengeId, challenge] of this.challenges) {
@@ -326,7 +329,11 @@ export class EndpointOwnedPairingMailbox {
     }
   }
 
-  /** Reject every retained record owned by a disabled Desktop installation. */
+  /** Reject every retained record owned by a disabled Desktop installation.
+   * @param accountId - owning Platform Account.
+   * @param desktopInstallationId - disabled Desktop installation.
+   * @param now - terminal settlement time.
+   */
   disable(accountId: PlatformAccountId, desktopInstallationId: InstallationId, now: number): void {
     for (const [challengeId, challenge] of this.challenges) {
       if (challenge.accountId === accountId && challenge.desktopInstallationId === desktopInstallationId) {

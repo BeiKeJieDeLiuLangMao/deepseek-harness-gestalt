@@ -1061,7 +1061,7 @@ export class PersonalPairingProvider extends RemoteAccessService {
     })
     if (prepared.publication === undefined) return prepared.view
     await this.publishEndpointPairing(prepared.publication)
-    return await this.exclusive(async () => this.endpointMailbox().readMobile(
+    return await this.exclusive(() => this.endpointMailbox().readMobile(
       input.completionId, prepared.accountId, prepared.installationId,
     ))
   }
@@ -1184,7 +1184,7 @@ export class PersonalPairingProvider extends RemoteAccessService {
       pendingPairingId: publication.pendingPairingId,
       pairingId: publication.pairing.id,
     })
-    return await this.exclusive(async () => {
+    return await this.exclusive(() => {
       const retained = this.requireTransactions().endpointPublications.get(publication.pendingPairingId)
       const existing = [...this.pairings.values()].find(
         pairing => pairing.endpointPendingPairingId === publication.pendingPairingId,
@@ -2187,7 +2187,7 @@ export class PersonalPairingProvider extends RemoteAccessService {
     })
   }
 
-  private exclusive<T>(operation: () => Promise<T>): Promise<T> {
+  private exclusive<T>(operation: () => T | Promise<T>): Promise<T> {
     const owned = async (): Promise<T> => await this.authority.runPairingTransaction(async (state) => {
       this.transactionState = state
       try {

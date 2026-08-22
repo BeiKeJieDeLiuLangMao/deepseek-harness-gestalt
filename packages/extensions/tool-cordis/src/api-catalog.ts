@@ -3938,7 +3938,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'EndpointPairingMailboxPending',
-    declaration: 'export interface EndpointPairingMailboxPending {\n    pendingPairingId: PendingPairingId;\n    completionId: PairingCompletionId;\n    challengeId: PairingChallengeId;\n    accountId: PlatformAccountId;\n    desktopInstallationId: InstallationId;\n    mobileInstallationId: InstallationId;\n    device: PairingDeviceDescription;\n    message1: Uint8Array;\n    message2?: Uint8Array;\n    message3?: Uint8Array;\n    confirmed: boolean;\n    rejected: boolean;\n    pairingId?: import(\'./index.ts\').PersonalPairingId;\n    sealedRelayAuthority?: Uint8Array;\n}',
+    declaration: 'export interface EndpointPairingMailboxPending {\n    pendingPairingId: PendingPairingId;\n    completionId: PairingCompletionId;\n    challengeId: PairingChallengeId;\n    accountId: PlatformAccountId;\n    desktopInstallationId: InstallationId;\n    mobileInstallationId: InstallationId;\n    device: PairingDeviceDescription;\n    expiresAt: number;\n    message1: Uint8Array;\n    message2?: Uint8Array;\n    message3?: Uint8Array;\n    confirmed: boolean;\n    rejected: boolean;\n    pairingId?: import(\'./index.ts\').PersonalPairingId;\n    sealedRelayAuthority?: Uint8Array;\n    settledAt?: number;\n}',
   },
   {
     name: 'EndpointPairingMobileView',
@@ -4593,12 +4593,16 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface RedactedSecret {\n    path: string[];\n    set: boolean;\n}',
   },
   {
+    name: 'RelayAttachChallengeId',
+    declaration: 'export type RelayAttachChallengeId = Branded<\'RelayAttachChallengeId\'>;',
+  },
+  {
     name: 'RelayAttachmentId',
     declaration: 'export type RelayAttachmentId = Branded<\'RelayAttachmentId\'>;',
   },
   {
     name: 'RelayAttachMessage',
-    declaration: 'export interface RelayAttachMessage {\n    type: \'attach\';\n    transportVersion: 1;\n    routeId: RelayRouteId;\n    attachmentId: RelayAttachmentId;\n    endpoint: \'mobile\' | \'desktop\';\n    credential: RelayCredential;\n}',
+    declaration: 'export interface RelayAttachMessage {\n    type: \'attach\';\n    transportVersion: 1;\n    routeId: RelayRouteId;\n    attachmentId: RelayAttachmentId;\n    endpoint: \'mobile\' | \'desktop\';\n    credentialPublicKey: RelayCredentialPublicKey;\n    challengeId: RelayAttachChallengeId;\n    nonce: Uint8Array;\n    expiresAt: number;\n    signature: Uint8Array;\n}',
   },
   {
     name: 'RelayCiphertextMessage',
@@ -4611,6 +4615,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'RelayCredentialGrant',
     declaration: 'export interface RelayCredentialGrant {\n    routeId: RelayRouteId;\n    endpoint: \'mobile\' | \'desktop\';\n    credential: RelayCredential;\n    revision: number;\n    pairingSelector?: RelayPairingSelector;\n}',
+  },
+  {
+    name: 'RelayCredentialPublicKey',
+    declaration: 'export type RelayCredentialPublicKey = Branded<\'RelayCredentialPublicKey\'>;',
   },
   {
     name: 'RelayHeartbeatMessage',

@@ -41,7 +41,7 @@ const RemoteRelayProvider = ProductRemoteRelayProvider as unknown as {
   prototype: TestRemoteRelayProvider
 }
 
-const providerAttach = RemoteRelayProvider.prototype.attach
+const providerAttach = Reflect.get(RemoteRelayProvider.prototype, 'attach')
 const INVALID_TEST_CREDENTIAL = await generateRelayCredential()
 RemoteRelayProvider.prototype.attach = async function (input) {
   const suppliedCredential = Reflect.get(input.message, 'credential') as RelayCredential | undefined

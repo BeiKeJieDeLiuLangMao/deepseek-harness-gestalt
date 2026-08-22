@@ -64,7 +64,10 @@ export function parseRelayCredential(value: unknown): RelayCredential {
   return value as RelayCredential
 }
 
-/** Parse one canonical P-256 SPKI verifier. */
+/** Parse one canonical P-256 SPKI verifier.
+ * @param value - untrusted public-key encoding.
+ * @returns branded canonical public key.
+ */
 export function parseRelayCredentialPublicKey(value: unknown): RelayCredentialPublicKey {
   if (typeof value !== 'string' || value.length < 64 || value.length > 256 || !IDENTIFIER_PATTERN.test(value)) {
     invalid('Relay credential public key must be canonical base64url SPKI')
@@ -73,7 +76,10 @@ export function parseRelayCredentialPublicKey(value: unknown): RelayCredentialPu
   return value as RelayCredentialPublicKey
 }
 
-/** Parse one opaque single-use Relay challenge id. */
+/** Parse one opaque single-use Relay challenge id.
+ * @param value - untrusted challenge identity.
+ * @returns branded challenge identity.
+ */
 export function parseRelayAttachChallengeId(value: unknown): RelayAttachChallengeId {
   return parseIdentifier(value, 'challengeId') as RelayAttachChallengeId
 }
@@ -87,13 +93,18 @@ export async function deriveRelayCredentialDigest(credential: RelayCredential): 
   return deriveRelayCredentialPublicKeyDigest(await deriveRelayCredentialPublicKey(credential))
 }
 
-/** Generate one extractable endpoint-owned P-256 signing credential. */
+/** Generate one extractable endpoint-owned P-256 signing credential.
+ * @returns canonical PKCS#8 private credential.
+ */
 export async function generateRelayCredential(): Promise<RelayCredential> {
   const pair = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify'])
   return encodeProtocolBase64Url(new Uint8Array(await crypto.subtle.exportKey('pkcs8', pair.privateKey))) as RelayCredential
 }
 
-/** Derive the public SPKI verifier from an endpoint private credential. */
+/** Derive the public SPKI verifier from an endpoint private credential.
+ * @param credential - endpoint-owned PKCS#8 private credential.
+ * @returns canonical public SPKI verifier.
+ */
 export async function deriveRelayCredentialPublicKey(credential: RelayCredential): Promise<RelayCredentialPublicKey> {
   const bytes = decodeProtocolBase64Url(credential, 384, 'Relay credential')
   const privateKey = await crypto.subtle.importKey('pkcs8', ownedBuffer(bytes), { name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign'])
@@ -105,7 +116,10 @@ export async function deriveRelayCredentialPublicKey(credential: RelayCredential
   return encodeProtocolBase64Url(new Uint8Array(await crypto.subtle.exportKey('spki', publicKey))) as RelayCredentialPublicKey
 }
 
-/** Derive the persistent authorization digest from a public verifier. */
+/** Derive the persistent authorization digest from a public verifier.
+ * @param publicKey - canonical public SPKI verifier.
+ * @returns SHA-256 authorization digest.
+ */
 export async function deriveRelayCredentialPublicKeyDigest(publicKey: RelayCredentialPublicKey): Promise<Uint8Array> {
   const bytes = decodeProtocolBase64Url(publicKey, 192, 'Relay credential public key')
   const canonical = new ArrayBuffer(bytes.byteLength)
@@ -118,7 +132,11 @@ export async function deriveRelayCredentialPublicKeyDigest(publicKey: RelayCrede
   }
 }
 
-/** Sign the exact single-use Relay attachment challenge tuple. */
+/** Sign the exact single-use Relay attachment challenge tuple.
+ * @param credential - endpoint-owned PKCS#8 private credential.
+ * @param challenge - Platform-issued tuple for this physical socket.
+ * @returns final non-bearer attachment proof.
+ */
 export async function signRelayAttachmentChallenge(
   credential: RelayCredential,
   challenge: RelayAttachChallengeMessage,
@@ -136,7 +154,10 @@ export async function signRelayAttachmentChallenge(
   }
 }
 
-/** Verify one proof against its public SPKI and exact challenge tuple. */
+/** Verify one proof against its public SPKI and exact challenge tuple.
+ * @param message - final attachment proof.
+ * @returns whether the signature authenticates the exact tuple.
+ */
 export async function verifyRelayAttachmentProof(message: RelayAttachMessage): Promise<boolean> {
   const bytes = decodeProtocolBase64Url(message.credentialPublicKey, 192, 'Relay credential public key')
   try {
@@ -150,7 +171,12 @@ export async function verifyRelayAttachmentProof(message: RelayAttachMessage): P
   }
 }
 
-/** Compare a final proof to the challenge issued for this physical socket. */
+/** Compare a final proof to the challenge issued for this physical socket.
+ * @param request - socket's initial public-key request.
+ * @param challenge - challenge issued on that socket.
+ * @param proof - final proof received on that socket.
+ * @returns whether every challenge-bound field matches.
+ */
 export function relayAttachmentProofMatches(
   request: RelayAttachChallengeRequestMessage,
   challenge: RelayAttachChallengeMessage,
