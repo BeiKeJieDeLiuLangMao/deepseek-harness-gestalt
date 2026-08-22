@@ -227,9 +227,18 @@ function validateRecovery(state: SnowDesktopEndpointPairingRecoveryState): void 
 }
 
 function cloneRecovery(state: SnowDesktopEndpointPairingRecoveryState): SnowDesktopEndpointPairingRecoveryState {
-  return Object.fromEntries(Object.entries(state).map(([key, value]) => [
-    key, value.slice(),
-  ])) as unknown as SnowDesktopEndpointPairingRecoveryState
+  return {
+    desktopPrivate: state.desktopPrivate.slice(),
+    desktopPublic: state.desktopPublic.slice(),
+    ephemeralPrivate: state.ephemeralPrivate.slice(),
+    psk: state.psk.slice(),
+    ...(state.message1 === undefined ? {} : { message1: state.message1.slice() }),
+    ...(state.message2 === undefined ? {} : { message2: state.message2.slice() }),
+    ...(state.message3 === undefined ? {} : { message3: state.message3.slice() }),
+    ...(state.mobilePublic === undefined ? {} : { mobilePublic: state.mobilePublic.slice() }),
+    ...(state.handshakeHash === undefined ? {} : { handshakeHash: state.handshakeHash.slice() }),
+    ...(state.reconnectState === undefined ? {} : { reconnectState: state.reconnectState.slice() }),
+  }
 }
 
 /** Decode one opaque invitation inside the Mobile endpoint, never on Platform.

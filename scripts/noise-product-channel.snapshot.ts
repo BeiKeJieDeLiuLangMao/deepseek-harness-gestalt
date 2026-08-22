@@ -280,7 +280,9 @@ class SnapshotRouteStore implements RelayRouteStore {
   ): Promise<number> {
     const current = this.routes.get(routeId)
     const revision = current === undefined || current.revoked ? (current?.revision ?? 0) + 1 : current.revision
-    const authorities = current === undefined || current.revoked ? new Map() : new Map(current.authorities)
+    const authorities = current === undefined || current.revoked
+      ? new Map<string, { endpoint: 'mobile' | 'desktop'; pairingSelector?: RelayPairingSelector }>()
+      : new Map(current.authorities)
     authorities.set(hex(desktopDigest), { endpoint: 'desktop', pairingSelector })
     authorities.set(hex(mobileDigest), { endpoint: 'mobile', pairingSelector })
     this.routes.set(routeId, { revision, revoked: false, authorities })

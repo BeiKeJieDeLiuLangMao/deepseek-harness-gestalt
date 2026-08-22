@@ -14,9 +14,7 @@ import {
   decodeRelayMessage,
   encodeRelayMessage,
   parseRelayAttachmentId,
-  parseRelayCredential,
   type RelayMessage,
-  type RelayRouteId,
 } from '@deepseek-ai/dsh-remote-protocol'
 import { DesktopPairingController } from '../src/personal-pairing.ts'
 
@@ -27,12 +25,8 @@ interface RegisteredRoute {
 }
 
 describe('Desktop Settings Remote Access composition', () => {
-  it('drives authenticated HTTP Settings into Relay grant activation and revocation', async () => {
+  it('drives authenticated HTTP Settings without Platform-issued Desktop authority', async () => {
     const ctx = new Context()
-    const credential = parseRelayCredential('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA')
-    const rotateCredential = vi.fn(async (routeId: RelayRouteId) => {
-      return { routeId, endpoint: 'desktop' as const, credential, revision: 1 }
-    })
     const revokeRoute = vi.fn()
     const remoteAccess = new PersonalPairingProvider(ctx, {
       account: {
@@ -45,7 +39,7 @@ describe('Desktop Settings Remote Access composition', () => {
         })),
       },
       handshake: handshakeFixture(),
-      relay: { rotateCredential, revokeRoute },
+      relay: { revokeRoute },
       authority: new MemoryPersonalPairingAuthorityStore(),
       randomBytes: size => new Uint8Array(size),
       randomId: kind => `${kind}-settings-route`,
@@ -56,16 +50,7 @@ describe('Desktop Settings Remote Access composition', () => {
       const transport = new RemoteAccessHttpTransport({
         environment: { environment: 'development', origin: server.origin } as never,
       })
-      const socket = new SettingsRelaySocket()
-      const resynchronize = vi.fn()
-      const relay = new DesktopRelayEndpointLifecycle({
-        attachmentId: () => parseRelayAttachmentId('desktop-settings'),
-        connect: async () => socket,
-        attachTimeoutMs: 1_000,
-        heartbeatIntervalMs: 60_000,
-        reconnectDelayMs: 60_000,
-        resynchronize,
-      })
+      const relay = { configure: vi.fn(), start: vi.fn(), stop: vi.fn(), getState: () => ({ connected: false }) }
       const controller = new DesktopPairingController({
         account: {
           authorizeCurrentInstallation: vi.fn(async () => authentication('account-one:desktop:desktop-one')),
@@ -85,18 +70,13 @@ describe('Desktop Settings Remote Access composition', () => {
 
       await controller.start()
       await controller.setEnabled(true)
-      expect(rotateCredential).toHaveBeenCalledOnce()
-      expect(socket.sent[0]).toMatchObject({ type: 'attach', credential })
-      expect(resynchronize).toHaveBeenCalledOnce()
-      expect(relay.getState()).toEqual({ connected: true })
+      expect(relay.configure).not.toHaveBeenCalled()
+      expect(relay.start).toHaveBeenCalled()
+      expect(relay.getState()).toEqual({ connected: false })
       expect(controller.getSnapshot()).toMatchObject({ status: 'ready', enabled: true })
-      await relay.sendCiphertext(parseRelayAttachmentId('mobile-settings'), Uint8Array.of(7))
-      expect(socket.sent.at(-1)).toMatchObject({ type: 'ciphertext', ciphertext: Uint8Array.of(7) })
-
       await controller.setEnabled(false)
       expect(revokeRoute).toHaveBeenCalledOnce()
-      expect(socket.closed).toBe(true)
-      expect(relay.getState()).toEqual({ connected: false, stopReason: 'mobile-access-disabled' })
+      expect(relay.stop).toHaveBeenCalledWith('mobile-access-disabled')
       expect(controller.getSnapshot()).toEqual({ status: 'ready', enabled: false, pairings: [] })
       await controller.dispose()
     } finally {
@@ -116,7 +96,7 @@ describe('Desktop Settings Remote Access composition', () => {
     const starting = lifecycle.start()
     await Promise.resolve()
     const stopping = lifecycle.stop()
-    await expect(starting).rejects.toMatchObject({ code: 'REMOTE_OFFLINE' })
+    await expect(starting).resolves.toBeUndefined()
     await stopping
   })
 })

@@ -35,7 +35,9 @@ describe('MobilePairingController', () => {
     const scheduledOne: Array<() => void> = []
     const transportOne = transportFixture()
     let message2: Uint8Array | undefined
-    transportOne.submitEndpointMessage1.mockImplementation(async (input) => {
+    transportOne.submitEndpointMessage1.mockImplementation(async (
+      input: Parameters<RemoteAccessTransport['submitEndpointMessage1']>[0],
+    ) => {
       message2 = await desktop.acceptMessage1(input.message1)
       return { pendingPairingId }
     })
@@ -43,7 +45,9 @@ describe('MobilePairingController', () => {
       stage: 'message2' as const, pendingPairingId,
       message2: message2 ?? (() => { throw new Error('Desktop message 2 is unavailable') })(),
     }))
-    transportOne.submitEndpointMessage3.mockImplementation(async (input) => {
+    transportOne.submitEndpointMessage3.mockImplementation(async (
+      input: Parameters<RemoteAccessTransport['submitEndpointMessage3']>[0],
+    ) => {
       await desktop.finishMessage3(input.message3)
     })
     const first = new MobilePairingController({

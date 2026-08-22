@@ -534,7 +534,16 @@ function wipeVaultState(state: DesktopSnowVaultState): void {
 }
 
 function wipeRecovery(state: SnowDesktopEndpointPairingRecoveryState): void {
-  for (const value of Object.values(state)) value.fill(0)
+  state.desktopPrivate.fill(0)
+  state.desktopPublic.fill(0)
+  state.ephemeralPrivate.fill(0)
+  state.psk.fill(0)
+  state.message1?.fill(0)
+  state.message2?.fill(0)
+  state.message3?.fill(0)
+  state.mobilePublic?.fill(0)
+  state.handshakeHash?.fill(0)
+  state.reconnectState?.fill(0)
 }
 
 function wipeConfirmation(transaction: DesktopSnowConfirmationTransaction): void {

@@ -517,15 +517,20 @@ export class MobilePairingController implements MobilePairingActions {
       return retained
     }
     let durableReconnectState: Uint8Array | undefined
-    const durableOpen = this.options.handshake.openRelayAuthorityDurably
-    const retainConfirmed = this.options.pairingKeys?.retainConfirmedPairing
-    const grant = durableOpen === undefined || retainConfirmed === undefined
-      ? await this.options.handshake.openRelayAuthority?.(sealedRelayAuthority)
-      : await durableOpen.call(this.options.handshake, sealedRelayAuthority, async (openedGrant, reconnectState) => {
-        durableReconnectState = reconnectState.slice()
-        retainConfirmed.call(this.options.pairingKeys, pairingId, reconnectState, openedGrant)
-        await this.options.pairingKeys?.flush?.()
-      })
+    const pairingKeys = this.options.pairingKeys
+    let grant: RelayCredentialGrant | undefined
+    if (this.options.handshake.openRelayAuthorityDurably === undefined
+      || pairingKeys?.retainConfirmedPairing === undefined) {
+      grant = await this.options.handshake.openRelayAuthority?.(sealedRelayAuthority)
+    } else {
+      grant = await this.options.handshake.openRelayAuthorityDurably(
+        sealedRelayAuthority, async (openedGrant, reconnectState) => {
+          durableReconnectState = reconnectState.slice()
+          pairingKeys.retainConfirmedPairing?.(pairingId, reconnectState, openedGrant)
+          await pairingKeys.flush?.()
+        },
+      )
+    }
     if (grant === undefined) throw new Error('Mobile Relay authority has no product lifecycle owner')
     const reconnectState = durableReconnectState ?? this.options.handshake.exportReconnectState?.()
     if (reconnectState === undefined) throw new Error('Mobile Snow reconnect state is unavailable')

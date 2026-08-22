@@ -1270,7 +1270,8 @@ export class PersonalPairingProvider extends RemoteAccessService {
           ) ?? Promise.resolve(),
         ] : []),
       ])
-      const cleanupErrors = cleanup.filter(result => result.status === 'rejected').map(result => result.reason)
+      const cleanupErrors = cleanup.filter(result => result.status === 'rejected')
+        .map(result => result.reason as unknown)
       if (cleanupErrors.length > 0) {
         throw new AggregateError([error, ...cleanupErrors], 'Endpoint Pairing publication rollback failed')
       }
