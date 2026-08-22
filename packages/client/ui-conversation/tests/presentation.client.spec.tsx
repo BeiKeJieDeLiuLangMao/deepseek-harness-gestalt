@@ -10,6 +10,7 @@ import {
 } from '@deepseek-ai/dsh-client-runtime/client'
 import {
   ConversationComposer,
+  ConversationNodePresentation,
   conversationPresentationTranslate,
 } from '../src/presentation.tsx'
 
@@ -43,6 +44,20 @@ function snapshot(overrides: Partial<ConversationSnapshot> = {}): ConversationSn
 }
 
 describe('public conversation presentation seam', () => {
+  it('renders unknown keyed nodes through the shared localized JSON fallback', () => {
+    render(createElement(ConversationNodePresentation, {
+      node: {
+        kind: 'unknown', seq: 1, time: 1, type: 'surface/future', data: 'x'.repeat(20_001),
+      },
+      renderMessageImages: vi.fn(),
+      renderTool: vi.fn(),
+      t: conversationPresentationTranslate('en'),
+    }))
+
+    fireEvent.click(screen.getByRole('button', { name: /Unknown surface event: surface\/future/ }))
+    expect(screen.getByText(/truncated.*20003/i)).toBeTruthy()
+  })
+
   it('submits and retains rejected text through the narrow shared InputBar contract', async () => {
     const onSubmit = vi.fn(async () => { throw new Error('Desktop refused') })
     render(createElement(ConversationComposer, {
@@ -56,6 +71,21 @@ describe('public conversation presentation seam', () => {
     await waitFor(() => { expect(onSubmit).toHaveBeenCalledWith('submit me') })
     expect((input as HTMLTextAreaElement).value).toBe('submit me')
     expect(document.querySelector('[data-input-backdrop]')?.textContent).toContain('submit me')
+  })
+
+  it('settles a synchronous transport refusal and re-enables the retained draft', async () => {
+    const onSubmit = vi.fn(() => { throw new Error('mutation channel unavailable') })
+    render(createElement(ConversationComposer, {
+      snapshot: snapshot(),
+      onSubmit,
+      t: conversationPresentationTranslate('en'),
+    }))
+    const input = screen.getByRole('textbox')
+    fireEvent.change(input, { target: { value: 'retry me' } })
+
+    expect(() => { fireEvent.keyDown(input, { key: 'Enter' }) }).not.toThrow()
+    await waitFor(() => { expect(input.hasAttribute('disabled')).toBe(false) })
+    expect((input as HTMLTextAreaElement).value).toBe('retry me')
   })
 
   it('uses the same primary action for Desktop-authoritative running state', () => {

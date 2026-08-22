@@ -15,6 +15,7 @@
     { "path": "../../packages/client/ui-primitives" },
     { "path": "../../packages/client/ui-tool" },
     { "path": "../../packages/client/ui-user-questions" },
+    { "path": "../../packages/client/ui-workspace" },
     { "path": "../../packages/platform/platform-account" },
     { "path": "../../packages/platform/platform-account-client" },
     { "path": "../../packages/platform/remote-access" },

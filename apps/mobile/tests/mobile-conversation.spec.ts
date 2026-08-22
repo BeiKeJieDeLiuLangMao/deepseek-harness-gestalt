@@ -91,8 +91,26 @@ describe('Mobile shared Session presentation', () => {
           resultView: null,
           content: [{ type: 'text', text: '{"answer":42}' }],
         }),
-        { kind: 'turn-error', seq: 5, time: 5_000, turn: 1, step: 1, message: 'Host refused', code: 'HOST_400' },
-        { kind: 'turn-max-tokens', seq: 6, time: 6_000, turn: 1, step: 1 },
+        {
+          kind: 'context', seq: 5, time: 5_000, content: [{ type: 'text', text: 'Injected context' }],
+          source: null, provenance: { role: 'inject', label: 'AGENTS.md' }, form: null,
+        },
+        {
+          kind: 'model-retry', seq: 6, time: 6_000, retryId: 'mobile-retry' as never,
+          turn: 1, step: 1, retryState: 'cancelled', provider: 'mock', mode: 'normal',
+          policyKey: 'mock-normal', retry: 1, maxRetries: 2, delayMs: 500,
+          failure: { code: 'TRANSPORT', message: 'retry failure' },
+        },
+        {
+          kind: 'command', seq: 7, time: 7_000, commandId: 'mobile-command' as never,
+          name: 'plan', args: '', outcome: { kind: 'success', text: 'Plan mode entered' },
+        },
+        {
+          kind: 'compaction', seq: 8, time: 8_000, summary: 'Retained facts', summaryEventSeq: 7,
+          shadowedItemCount: 4, shadowedTokenCount: 900,
+        },
+        { kind: 'turn-error', seq: 9, time: 9_000, turn: 1, step: 1, message: 'Host refused', code: 'HOST_400' },
+        { kind: 'turn-max-tokens', seq: 10, time: 10_000, turn: 1, step: 1 },
       ]),
     }))
 
@@ -106,6 +124,10 @@ describe('Mobile shared Session presentation', () => {
     expect(document.querySelector('[data-mobile-conversation="detail"] [data-tool="future_tool"]')).not.toBeNull()
     expect(document.querySelector('[data-toolview="file-mutation"] [data-tool="edit"]')).not.toBeNull()
     expect(document.querySelector('[data-toolview="generic"] [data-tool="future_tool"]')).not.toBeNull()
+    expect(document.querySelector('[data-context-source]')?.textContent).toBe('AGENTS.md')
+    expect(screen.getByText(/retry failure/)).toBeTruthy()
+    expect(document.querySelector('[data-variant="others"]')).not.toBeNull()
+    expect(document.querySelector('[data-compaction-icon="context"]')).not.toBeNull()
 
     const diffRow = document.querySelector('[data-tool="edit"] [data-expandable]')
     expect(diffRow).not.toBeNull()
@@ -183,7 +205,7 @@ describe('Mobile shared Session presentation', () => {
     expect(answer).toHaveBeenCalledOnce()
   })
 
-  it('keeps phone navigation while shared copy follows locale and theme', () => {
+  it('keeps phone navigation while shared copy follows locale and theme', async () => {
     const onSubmit = vi.fn()
     const view = render(createElement(MobileConversation, {
       title: '窄屏会话',
@@ -205,7 +227,7 @@ describe('Mobile shared Session presentation', () => {
 
     fireEvent.change(screen.getByRole('textbox'), { target: { value: '继续' } })
     fireEvent.click(screen.getByRole('button', { name: '发送消息' }))
-    expect(onSubmit).toHaveBeenCalledWith('继续')
+    await waitFor(() => { expect(onSubmit).toHaveBeenCalledWith('继续') })
   })
 
   it('binds both locale dictionaries, common labels, fallbacks, and template parameters', () => {

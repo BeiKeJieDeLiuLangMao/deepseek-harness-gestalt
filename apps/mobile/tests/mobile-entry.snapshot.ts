@@ -20,6 +20,7 @@ import {
   PendingWait,
   type ConversationSnapshot,
   type SessionId,
+  type WorkspaceId,
 } from '@deepseek-ai/dsh-client-runtime/client'
 import { CompanionForegroundRuntime, installCompanionRuntime } from '../src/companion-lifecycle.ts'
 import { mountMobileEntry } from '../src/mobile-entry.tsx'
@@ -94,20 +95,26 @@ describe('Mobile shipped entry foreground mutation gate', () => {
       version: 1,
       authenticated: true,
       desktopName: 'Guarded Desktop',
-      sessions: [{
-        id: 'guarded-session',
-        title: 'Guarded Session',
-        workspace: 'Work',
-        summary: 'Pending Desktop work',
-        conversation: guardedConversation(),
+      sessions: guardedSessions(),
+      workspaces: [{
+        workspaceId: 'guarded-workspace' as WorkspaceId,
+        path: '/work', title: 'Work', sessionIds: ['guarded-session' as SessionId],
+        createdAt: '2026-08-22T00:00:00.000Z', updatedAt: '2026-08-22T00:00:00.000Z',
       }],
+      conversations: { ['guarded-session' as SessionId]: guardedConversation() },
     })
-    await screen.findByRole('button', { name: /Guarded Session/ })
+    await screen.findByRole('treeitem', { name: /Guarded Session/ })
+
+    expect(screen.getByRole('button', { name: 'New ungrouped Session' }).hasAttribute('disabled')).toBe(true)
+    fireEvent.click(screen.getByRole('treeitem', { name: /Guarded Session/ }))
+    expect(screen.getByRole('button', { name: 'Allow once' }).hasAttribute('disabled')).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }))
 
     runtime.forgetConnection()
     runtime.markConnectionOpen()
     firstResync.acceptValidatedDesktopResync({
-      type: 'desktop-resync', version: 1, authenticated: true, desktopName: 'Stale Desktop', sessions: [],
+      type: 'desktop-resync', version: 1, authenticated: true, desktopName: 'Stale Desktop',
+      sessions: guardedSessions(), workspaces: [], conversations: {},
     })
 
     await waitFor(() => {
@@ -120,7 +127,7 @@ describe('Mobile shipped entry foreground mutation gate', () => {
       ]
     `)
 
-    fireEvent.click(screen.getByRole('button', { name: /Guarded Session/ }))
+    fireEvent.click(screen.getByRole('treeitem', { name: /Guarded Session/ }))
     expect(visibleMutationControls()).toMatchInlineSnapshot(`
       [
         "button:Allow once:disabled",
@@ -131,6 +138,24 @@ describe('Mobile shipped entry foreground mutation gate', () => {
     disposeRuntime()
   })
 })
+
+function guardedSessions() {
+  const sessionId = 'guarded-session' as SessionId
+  return {
+    ids: [sessionId],
+    byId: {
+      [sessionId]: {
+        id: sessionId, title: 'Guarded Session', displayTitle: 'Guarded Session', cwd: '/work',
+        running: true, pendingInteraction: 'approval' as const, blank: false, updatedAt: 1,
+      },
+    },
+    current: undefined,
+    phase: 'ready' as const,
+    subagentsByParent: {},
+    jobsBySession: {},
+    currentAddress: undefined,
+  }
+}
 
 function installationWithCompletedLogin(): PlatformAccountInstallation {
   const transport: PlatformAccountTransport = {

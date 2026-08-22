@@ -208,7 +208,7 @@ async function mobilePage(options: { locale: string; colorScheme: 'light' | 'dar
     async () => await page.locator('[data-mobile-platform-account]').getAttribute('data-mobile-platform-account'),
     { timeout: 10_000 },
   ).toBe('signed-in')
-  await page.getByRole('button', { name: /Shared Web presentation/ }).click()
+  await page.getByRole('treeitem', { name: /Shared Web presentation/ }).click()
   await expect.poll(async () => await page.locator('[data-mobile-conversation="detail"]').count()).toBe(1)
   return { context, page }
 }
@@ -225,6 +225,10 @@ describe('bundled Mobile product entry', () => {
     expect(await page.locator('[data-toolview="bash"] [data-sample="bash"]').count()).toBe(1)
     expect(await page.locator('[data-toolview="generic"] [data-tool="future_tool"]').count()).toBe(1)
     expect(await page.getByText('Host rejected request').count()).toBe(1)
+    const input = page.getByRole('textbox')
+    await input.fill('bundled submit callback')
+    await page.getByRole('button', { name: 'Send message' }).click()
+    await expect.poll(async () => await input.inputValue()).toBe('')
     await page.locator('[data-toolview="file-mutation"] [data-expandable]').click()
     expect(await page.locator('[data-diff]').count()).toBe(1)
     const overflows = await page.evaluate(() => ({
@@ -235,6 +239,14 @@ describe('bundled Mobile product entry', () => {
     expect(overflows).toEqual({ document: 0, conversation: 0 })
     const text = (await conversation.innerText()).replace(/[ \t]+$/gm, '').trimEnd() + '\n'
     await expect(text).toMatchFileSnapshot(EXPECTED)
+    await page.getByRole('button', { name: 'Back', exact: true }).click()
+    await page.getByRole('treeitem', { name: /Shared Approval/ }).click()
+    expect(await page.locator('[data-approval-key]').count()).toBe(1)
+    expect(await page.getByRole('button', { name: 'Allow once' }).isEnabled()).toBe(true)
+    await page.getByRole('button', { name: 'Back', exact: true }).click()
+    await page.getByRole('treeitem', { name: /Shared Ask User/ }).click()
+    expect(await page.locator('[data-question-key]').count()).toBe(1)
+    expect(await page.getByRole('radio', { name: 'Desktop Web components' }).count()).toBe(1)
     expect(page.url()).not.toMatch(/:517[34](?:\/|$)/)
     await context.close()
   })
@@ -248,6 +260,10 @@ describe('bundled Mobile product entry', () => {
     expect(await page.getByRole('button', { name: '返回' }).count()).toBe(1)
     expect(await page.getByText('HOST_400').count()).toBe(1)
     expect(await page.getByAltText('shared-image.gif').count()).toBe(1)
+    await page.getByRole('button', { name: '返回', exact: true }).click()
+    await page.getByRole('treeitem', { name: /Shared Ask User/ }).click()
+    expect(await page.getByRole('button', { name: '提交' }).count()).toBe(1)
+    expect(await page.locator('[data-question-key]').count()).toBe(1)
     await context.close()
   })
 })

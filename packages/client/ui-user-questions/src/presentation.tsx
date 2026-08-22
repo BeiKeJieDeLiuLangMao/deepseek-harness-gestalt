@@ -3,7 +3,7 @@
 import type { ReactNode } from 'react'
 import type { PendingWait } from '@deepseek-ai/dsh-client-runtime/client'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
-import { QuestionComposer } from './client/QuestionComposer.tsx'
+import { QuestionPresentationView } from './client/QuestionComposer.tsx'
 import { en, zh } from './client/locales.ts'
 
 /** Locale ids supported by the shared question presentation. */
@@ -38,5 +38,5 @@ export interface QuestionPresentationProps {
 
 /** Render and settle Ask User through the same QuestionComposer used by Desktop. */
 export function QuestionPresentation({ wait, t, disabled = false }: QuestionPresentationProps): ReactNode {
-  return <QuestionComposer {...({ matched: wait, t } as Parameters<typeof QuestionComposer>[0])} disabled={disabled} />
+  return <QuestionPresentationView wait={wait} t={t} disabled={disabled} />
 }

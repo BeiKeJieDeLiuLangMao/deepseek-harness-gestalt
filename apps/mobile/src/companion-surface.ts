@@ -2,8 +2,9 @@
 
 import type { CompanionInteraction } from './companion-approval.ts'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
-import type { CompanionSessionSummary } from './companion-history.ts'
-import type { CompanionForegroundRuntime } from './companion-lifecycle.ts'
+import type { SessionListState, WorkspaceView } from '@deepseek-ai/dsh-client-runtime/client'
+import type { CompanionConversationMap } from './companion-history.ts'
+import { companionMayMutate, type CompanionForegroundRuntime } from './companion-lifecycle.ts'
 import { requireCompanionMutation, type CompanionMutationName } from './companion-mutation.ts'
 
 interface ValidatedDesktopSurfaceResync {
@@ -11,7 +12,9 @@ interface ValidatedDesktopSurfaceResync {
   readonly version: 1
   readonly authenticated: true
   readonly desktopName: string
-  readonly sessions: readonly CompanionSessionSummary[]
+  readonly sessions: SessionListState
+  readonly workspaces: readonly WorkspaceView[]
+  readonly conversations: CompanionConversationMap
 }
 
 interface ValidatedDesktopSurfaceResyncReceiver {
@@ -24,11 +27,15 @@ interface MobileCompanionSurfaceSnapshot {
   /** Desktop display name from the last authenticated resync. */
   readonly desktopName?: string | undefined
   /** Last authenticated Session projection. */
-  readonly sessions: readonly CompanionSessionSummary[]
+  readonly sessions: SessionListState
+  /** Last authenticated Workspace projection. */
+  readonly workspaces: readonly WorkspaceView[]
+  /** Last authenticated opened conversations. */
+  readonly conversations: CompanionConversationMap
 }
 
 /** Optional encrypted mutation channel installed with the authenticated Companion decoder. */
-interface MobileCompanionMutationChannel {
+export interface MobileCompanionMutationChannel {
   /** @param input - Desktop-default Session target. */
   create(input: { workspace?: string }): void
   /** @param sessionId - Desktop Session target. @param text - prompt text. */
@@ -53,7 +60,14 @@ export class MobileCompanionSurface {
   readonly #mutations: MobileCompanionMutationChannel | undefined
   readonly #content: MobileCompanionContentChannel | undefined
   readonly #listeners = new Set<() => void>()
-  #snapshot: MobileCompanionSurfaceSnapshot = { sessions: [] }
+  #snapshot: MobileCompanionSurfaceSnapshot = {
+    sessions: {
+      ids: [], byId: {}, current: undefined, phase: 'ready',
+      subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined,
+    },
+    workspaces: [],
+    conversations: {},
+  }
 
   /**
    * @param runtime - current physical-connection synchronization authority.
@@ -85,6 +99,11 @@ export class MobileCompanionSurface {
     return () => { this.#listeners.delete(listener) }
   }
 
+  /** @returns whether current synchronization and an installed encrypted channel both admit mutations. */
+  mayMutate(): boolean {
+    return this.#mutations !== undefined && companionMayMutate(this.#runtime.getState())
+  }
+
   /**
    * Bind projection acceptance to the current physical connection generation.
    * Raw Relay ciphertext cannot call this receiver.
@@ -99,7 +118,9 @@ export class MobileCompanionSurface {
         if (!accepted) return
         this.#snapshot = {
           desktopName: message.desktopName,
-          sessions: message.sessions.map(session => ({ ...session })),
+          sessions: message.sessions,
+          workspaces: message.workspaces,
+          conversations: message.conversations,
         }
         this.publish()
       },

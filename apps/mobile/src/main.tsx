@@ -151,7 +151,7 @@ const root = document.getElementById('root')
 if (root === null) throw new Error('mobile app: missing #root')
 
 async function mountMobileProduct(container: HTMLElement): Promise<void> {
-  const presentation = import.meta.env.VITE_MOBILE_PRESENTATION_EXAMPLE === '1'
+  const presentation = environment.environment === 'development' && import.meta.env.VITE_MOBILE_PRESENTATION_EXAMPLE === '1'
     ? (await import('./development-companion-presentation.ts')).developmentCompanionPresentation()
     : undefined
   mountMobileEntry(container, { installation, pairing, companion, presentation })

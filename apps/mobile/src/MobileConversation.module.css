@@ -53,12 +53,6 @@
   background: var(--dsw-alias-bg-base);
 }
 
-.context {
-  padding: 10px 12px;
-  border-radius: 10px;
-  background: var(--dsw-alias-fill-secondary);
-}
-
 @media (max-width: 360px) {
   .header,
   .blocks {

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { parseRelayCredential, parseRelayRouteId } from '@deepseek-ai/dsh-remote-protocol'
+import type { SessionId, SessionListState } from '@deepseek-ai/dsh-client-runtime/client'
 import { CompanionForegroundRuntime } from '../src/companion-lifecycle.ts'
 import { MobileCompanionSurface } from '../src/companion-surface.ts'
 
@@ -22,7 +23,7 @@ describe('MobileCompanionSurface', () => {
     first.acceptValidatedDesktopResync({
       type: 'desktop-resync', version: 1, authenticated: true,
       desktopName: 'First Desktop',
-      sessions: [{ id: 'session-first', title: 'First', summary: 'Authenticated' }],
+      sessions: sessionList('session-first', 'First'), workspaces: [], conversations: {},
     })
 
     runtime.forgetConnection()
@@ -30,13 +31,11 @@ describe('MobileCompanionSurface', () => {
     first.acceptValidatedDesktopResync({
       type: 'desktop-resync', version: 1, authenticated: true,
       desktopName: 'Stale Desktop',
-      sessions: [{ id: 'session-stale', title: 'Stale', summary: 'Rejected' }],
+      sessions: sessionList('session-stale', 'Stale'), workspaces: [], conversations: {},
     })
 
-    expect(surface.getSnapshot()).toEqual({
-      desktopName: 'First Desktop',
-      sessions: [{ id: 'session-first', title: 'First', summary: 'Authenticated' }],
-    })
+    expect(surface.getSnapshot().desktopName).toBe('First Desktop')
+    expect(surface.getSnapshot().sessions.ids).toEqual(['session-first'])
     expect(() => { surface.create({}) }).toThrow('requires foreground synchronization')
     expect(() => { surface.submit('session-first', 'continue') }).toThrow('requires foreground synchronization')
     expect(() => { surface.cancel('session-first') }).toThrow('requires foreground synchronization')
@@ -56,7 +55,8 @@ describe('MobileCompanionSurface', () => {
     const resync = surface.bindValidatedDesktopResync()
     if (resync === undefined) throw new Error('expected Desktop resync receiver')
     resync.acceptValidatedDesktopResync({
-      type: 'desktop-resync', version: 1, authenticated: true, desktopName: 'Studio Mac', sessions: [],
+      type: 'desktop-resync', version: 1, authenticated: true, desktopName: 'Studio Mac',
+      sessions: sessionList(), workspaces: [], conversations: {},
     })
 
     surface.create({ workspace: 'Work' })
@@ -73,6 +73,29 @@ describe('MobileCompanionSurface', () => {
     expect(mutations.settle).toHaveBeenCalledWith(interaction)
   })
 })
+
+function sessionList(id?: string, title?: string): SessionListState {
+  if (id === undefined || title === undefined) {
+    return {
+      ids: [], byId: {}, current: undefined, phase: 'ready',
+      subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined,
+    }
+  }
+  const sessionId = id as SessionId
+  return {
+    ids: [sessionId],
+    byId: {
+      [sessionId]: {
+        id: sessionId, title, displayTitle: title, running: false, blank: false, updatedAt: 1,
+      },
+    },
+    current: undefined,
+    phase: 'ready',
+    subagentsByParent: {},
+    jobsBySession: {},
+    currentAddress: undefined,
+  }
+}
 
 function mutationChannel() {
   return {

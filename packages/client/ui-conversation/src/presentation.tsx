@@ -2,15 +2,22 @@
 
 import { useCallback, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from 'react'
 import type {
-  ConversationSnapshot, PendingWait, TurnErrorNode, TurnMaxTokensNode,
+  ConversationNode, ConversationSnapshot, PendingWait, ToolResultNode, TurnErrorNode, TurnMaxTokensNode,
 } from '@deepseek-ai/dsh-client-runtime/client'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
+import { JsonBlock } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InputEffect, InputState } from './client/input/contract.ts'
 import { AssistantMarkdown } from './client/chat/AssistantMarkdown.tsx'
 import {
-  TurnErrorItem, TurnMaxTokensItem, UserStyleBubble,
+  ModelRetryItem, TurnErrorItem, TurnMaxTokensItem, UserStyleBubble,
 } from './client/chat/MessageItem.tsx'
-import { ApprovalPanel } from './client/skeleton/ApprovalPanel.tsx'
+import { ContextInjectionRow } from './client/chat/ContextInjectionRow.tsx'
+import { CompactionItem } from './client/chat/CompactionItem.tsx'
+import { GenericCommandCard } from './client/chat/GenericCommandCard.tsx'
+import {
+  ApprovalPresentation, approvalCommandOf,
+} from './client/skeleton/ApprovalPanel.tsx'
+import { PendingApproval } from './client/contract/slots.ts'
 import { InputBarPresentation } from './client/skeleton/InputBarPresentation.tsx'
 import { InputMachine } from './client/input/machine.ts'
 import { en, zh } from './client/locales.ts'
@@ -22,6 +29,11 @@ const COMMON = {
   zh: { copy: '复制', copied: '复制成功', loading: '加载中…' },
   en: { copy: 'Copy', copied: 'Copied', loading: 'Loading…' },
 } as const
+
+/* v8 ignore next 3 -- closed-union defaults only defend future source widening. */
+function assertNever(_value: never): never {
+  throw new Error('Unsupported Conversation Node')
+}
 
 /**
  * Bind the shared conversation dictionaries without constructing a Client Runtime.
@@ -70,6 +82,75 @@ export function ConversationFailure({ node, t }: ConversationFailureProps): Reac
   return node.kind === 'turn-error' ? <TurnErrorItem node={node} t={t} /> : <TurnMaxTokensItem t={t} />
 }
 
+/** Props for the authoritative keyed Conversation Node presentation seam. */
+export interface ConversationNodePresentationProps {
+  /** One Desktop-authoritative finalized Conversation Node. */
+  node: ConversationNode
+  /** Shared image renderer bound to the current Session. */
+  renderMessageImages: ConversationUserMessageProps['renderMessageImages']
+  /** Tool owner adapter; Tool presentation remains in its owning package. */
+  renderTool: (node: ToolResultNode) => ReactNode
+  /** Shared conversation translator. */
+  t: TranslateNS<'conversation'>
+}
+
+/**
+ * Render every finalized Conversation Node through the implementations owned by Desktop Web.
+ * @param props - authoritative node and its owner adapters.
+ * @returns keyed Desktop Web presentation for the node.
+ */
+export function ConversationNodePresentation({
+  node, renderMessageImages, renderTool, t,
+}: ConversationNodePresentationProps): ReactNode {
+  switch (node.kind) {
+    case 'user':
+    case 'steering':
+      return <ConversationUserMessage content={node.content} renderMessageImages={renderMessageImages} t={t} />
+    case 'assistant':
+      return (
+        <AssistantMarkdown
+          blocks={node.blocks}
+          streaming={false}
+          interrupted={node.interrupted}
+          renderMessageImages={renderMessageImages}
+          t={t}
+          sourceId={node.messageId}
+        />
+      )
+    case 'tool-result':
+      return renderTool(node)
+    case 'turn-error':
+    case 'turn-max-tokens':
+      return <ConversationFailure node={node} t={t} />
+    case 'context':
+      return (
+        <ContextInjectionRow
+          content={node.content}
+          source={node.source}
+          provenance={node.provenance}
+          form={node.form}
+          t={t}
+        />
+      )
+    case 'model-retry':
+      return <ModelRetryItem node={node} active={node.retryState === 'scheduled'} t={t} />
+    case 'command':
+      return <GenericCommandCard node={node} t={t} />
+    case 'compaction':
+      return <CompactionItem node={node} t={t} />
+    case 'unknown':
+      return (
+        <JsonBlock
+          label={t('message.unknownSurface', { type: node.type })}
+          payload={node.data}
+          truncatedLabel={total => t('json.truncated', { total })}
+        />
+      )
+    /* v8 ignore next -- every current Conversation Node kind is handled above. */
+    default: return assertNever(node)
+  }
+}
+
 /** Props for the shared Approval takeover. */
 export interface ConversationApprovalProps {
   /** Desktop-authoritative pending Approval carrier. */
@@ -82,10 +163,21 @@ export interface ConversationApprovalProps {
   disabled?: boolean | undefined
 }
 
-/** Render and settle an Approval through the same composer takeover as Desktop. */
+/**
+ * Render and settle an Approval through the same composer takeover as Desktop.
+ * @param props - authoritative pending Approval, projection, translator, and mutation state.
+ * @returns shared Approval takeover.
+ */
 export function ConversationApproval({ wait, snapshot, t, disabled = false }: ConversationApprovalProps): ReactNode {
-  const useSession = useCallback(<T,>(selector: (value: ConversationSnapshot) => T): T => selector(snapshot), [snapshot])
-  return <ApprovalPanel {...({ matched: wait, useSession, t } as Parameters<typeof ApprovalPanel>[0])} disabled={disabled} />
+  const approval = new PendingApproval(wait)
+  return (
+    <ApprovalPresentation
+      wait={wait}
+      command={approvalCommandOf(snapshot, approval)}
+      t={t}
+      disabled={disabled}
+    />
+  )
 }
 
 /** Props for the shared standalone composer adapter. */
@@ -112,7 +204,7 @@ function settleEffects(
   for (const effect of effects) {
     /* v8 ignore next -- the standalone adapter has no claim owner, so its only non-empty effect is default-sink. */
     if (effect.type !== 'default-sink') continue
-    void Promise.resolve(onSubmit(effect.draft)).then(
+    void Promise.resolve().then(() => onSubmit(effect.draft)).then(
       () => {
         machine.dispatch({ type: 'submit-settled', attempt: effect.attempt, ok: true })
         publish()
@@ -131,6 +223,8 @@ function settleEffects(
 /**
  * Render the standard InputBar over a local InputMachine while delegating submission and cancellation.
  * The adapter owns draft mechanics only; the supplied Session projection remains authoritative for run state.
+ * @param props - authoritative projection, transport actions, translator, and mutation state.
+ * @returns shared InputBar presentation with owner-defined draft mechanics.
  */
 export function ConversationComposer({ snapshot, onSubmit, onCancel, t, disabled = false }: ConversationComposerProps): ReactNode {
   const machineRef = useRef<InputMachine>()

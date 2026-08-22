@@ -1,15 +1,13 @@
 import { useMemo, type ReactNode } from 'react'
 import type {
-  ConversationNode, ConversationSnapshot, PendingWait,
+  ConversationSnapshot, PendingWait,
 } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
-import { JsonBlock, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
   AssistantMarkdown,
   ConversationApproval,
   ConversationComposer,
-  ConversationFailure,
-  ConversationUserMessage,
+  ConversationNodePresentation,
   conversationPresentationTranslate,
   type ConversationPresentationLocale,
 } from '@deepseek-ai/dsh-client-ui-conversation/presentation'
@@ -70,6 +68,9 @@ export function MobileConversation({
     images: readonly { attachment: ImageAttachmentRef }[]
     align: 'start' | 'end'
   }): ReactNode => <ImageGallery images={images} load={loadImage} align={align} labels={imageLabels} />
+  const renderTool = (node: Parameters<typeof ToolPresentation>[0]['block']): ReactNode => (
+    <ToolPresentation block={node} cwd={cwd} home={home} t={t} />
+  )
   const question = snapshot.pending.find((wait): wait is PendingWait<'question'> => wait.kind === 'question')
   const approval = snapshot.pending.find((wait): wait is PendingWait<'approval'> => wait.kind === 'approval')
 
@@ -101,8 +102,7 @@ export function MobileConversation({
             key={`${node.kind}:${String(node.seq)}`}
             node={node}
             renderMessageImages={renderMessageImages}
-            cwd={cwd}
-            home={home}
+            renderTool={renderTool}
             t={t}
           />
         ))}
@@ -135,58 +135,4 @@ export function MobileConversation({
       </div>
     </section>
   )
-}
-
-function ConversationNodePresentation({
-  node,
-  renderMessageImages,
-  cwd,
-  home,
-  t,
-}: {
-  node: ConversationNode
-  renderMessageImages: Parameters<typeof ConversationUserMessage>[0]['renderMessageImages']
-  cwd?: string | undefined
-  home?: string | undefined
-  t: ReturnType<typeof conversationPresentationTranslate>
-}): ReactNode {
-  switch (node.kind) {
-    case 'user':
-    case 'steering':
-      return <ConversationUserMessage content={node.content} renderMessageImages={renderMessageImages} t={t} />
-    case 'assistant':
-      return (
-        <AssistantMarkdown
-          blocks={node.blocks}
-          streaming={false}
-          interrupted={node.interrupted}
-          renderMessageImages={renderMessageImages}
-          t={t}
-          sourceId={node.messageId}
-        />
-      )
-    case 'tool-result':
-      return <ToolPresentation block={node} cwd={cwd} home={home} t={t} />
-    case 'turn-error':
-    case 'turn-max-tokens':
-      return <ConversationFailure node={node} t={t} />
-    case 'context':
-      return (
-        <div className={css.context}>
-          {node.content.map((block, index) => block.type === 'text'
-            ? <MarkdownText key={index} text={block.text} />
-            : <JsonBlock key={index} label={t('message.extraBlock')} payload={block} truncatedLabel={total => t('json.truncated', { total })} />)}
-        </div>
-      )
-    case 'unknown':
-      return <JsonBlock label={t('message.unknownSurface', { type: node.type })} payload={node.data} truncatedLabel={total => t('json.truncated', { total })} />
-    case 'model-retry':
-    case 'command':
-    case 'compaction':
-      return <JsonBlock label={node.kind} payload={node} truncatedLabel={total => t('json.truncated', { total })} />
-    default: {
-      const never: never = node
-      return never
-    }
-  }
 }

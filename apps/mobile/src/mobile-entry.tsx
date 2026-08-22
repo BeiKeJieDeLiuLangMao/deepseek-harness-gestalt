@@ -6,10 +6,10 @@ import type { PlatformAccountInstallation } from '@deepseek-ai/dsh-platform-acco
 import { MobileAccount } from './MobileAccount.tsx'
 import type { MobilePairingActions } from './MobilePairing.tsx'
 import type { CompanionForegroundRuntime } from './companion-lifecycle.ts'
-import { companionMayMutate } from './companion-lifecycle.ts'
 import {
   MobileCompanionSurface,
   type MobileCompanionContentChannel,
+  type MobileCompanionMutationChannel,
 } from './companion-surface.ts'
 import type { MobileCompanionPresentation } from './companion-history.ts'
 
@@ -23,6 +23,8 @@ export interface MobileEntryComposition {
   companion: CompanionForegroundRuntime
   /** Authenticated historical-content adapter installed beside the Companion decoder. */
   content?: MobileCompanionContentChannel | undefined
+  /** Authenticated encrypted mutation adapter installed beside the Companion decoder. */
+  mutations?: MobileCompanionMutationChannel | undefined
   /** Keyless projection evidence; production omits this and consumes authenticated resync. */
   presentation?: MobileCompanionPresentation | undefined
 }
@@ -42,7 +44,7 @@ export interface MountedMobileEntry {
  * @returns mounted product entry and authenticated Desktop projection receiver.
  */
 export function mountMobileEntry(container: Element, composition: MobileEntryComposition): MountedMobileEntry {
-  const companionSurface = new MobileCompanionSurface(composition.companion, undefined, composition.content)
+  const companionSurface = new MobileCompanionSurface(composition.companion, composition.mutations, composition.content)
   const root = createRoot(container)
   root.render(
     <StrictMode>
@@ -75,8 +77,10 @@ function MobileEntry({
       desktopName: projection.desktopName,
       connection: companionState.socketOpen && companionState.synchronized ? 'online' : 'offline',
       sessions: projection.sessions,
+      workspaces: projection.workspaces,
+      conversations: projection.conversations,
       loadImage: companionSurface.loadImage,
-      canMutate: companionMayMutate(companionState),
+      canMutate: companionSurface.mayMutate(),
       onCreate: companionSurface.create,
       onSubmit: companionSurface.submit,
       onCancel: companionSurface.cancel,
