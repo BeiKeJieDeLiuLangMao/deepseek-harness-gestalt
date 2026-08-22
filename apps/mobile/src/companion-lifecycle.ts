@@ -113,18 +113,17 @@ export class CompanionForegroundRuntime {
   }
 
   /**
-   * Set or drop pairing-delivered Relay authority. Clearing the grant is
-   * synchronous so a later visibility `start()` cannot attach.
+   * Set or drop pairing-delivered Relay authority. Every authority change
+   * synchronously invalidates the current connection generation; clearing the
+   * grant also prevents a later visibility `start()` from attaching.
    * @param grant - Mobile-specific authority, or `undefined` to drop it.
    */
   configure(grant?: RelayCredentialGrant): void {
     this.granted = grant !== undefined
     this.relay?.configure?.(grant)
-    if (grant === undefined) {
-      this.activeConnectionGeneration = undefined
-      this.state = { ...this.state, socketOpen: false, synchronized: false }
-      this.publish()
-    }
+    this.activeConnectionGeneration = undefined
+    this.state = { ...this.state, socketOpen: false, synchronized: false }
+    this.publish()
   }
 
   /**

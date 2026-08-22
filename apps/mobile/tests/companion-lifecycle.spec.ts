@@ -208,6 +208,13 @@ describe('Companion foreground lifecycle', () => {
     if (replacement === undefined) throw new Error('expected replacement generation authority')
     replacement.acceptValidatedDesktopResync(validatedResync)
     expect(() => { permit.requireCurrent() }).toThrow(/connection generation/)
+
+    const replacementPermit = runtime.bindCompanionMutationPermit('attachment')
+    if (replacementPermit === undefined) throw new Error('expected replacement mutation permit')
+    expect(() => { replacementPermit.requireCurrent() }).not.toThrow()
+    runtime.configure({ ...grant, revision: 2 })
+    expect(replacementPermit.isCurrent()).toBe(false)
+    expect(() => { replacementPermit.requireCurrent() }).toThrow(/connection generation/)
   })
 
   it('removes a Capacitor listener that resolves after dispose starts', async () => {

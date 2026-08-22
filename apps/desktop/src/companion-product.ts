@@ -68,11 +68,6 @@ export class DesktopCompanionProductOwner {
     }
   }
 
-  /** @returns whether the current Desktop lifecycle installed a Web Host RPC. */
-  hasHost(): boolean {
-    return this.installed !== undefined
-  }
-
   /**
    * Execute one operation decoded by the reviewed channel against the current Web Host.
    * @param operation - validated Companion operation.

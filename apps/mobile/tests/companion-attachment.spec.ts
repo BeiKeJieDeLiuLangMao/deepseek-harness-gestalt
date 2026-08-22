@@ -130,6 +130,7 @@ describe('Companion encrypted attachments', () => {
     let releaseRead: ((value: ArrayBuffer) => void) | undefined
     const permit = controlledPermit()
     const fetch = vi.fn<typeof globalThis.fetch>()
+    const selectedBytes = Uint8Array.of(1, 2, 3)
     const transfer = transferSelectedCompanionAttachment({
       name: 'late.bin',
       arrayBuffer: async () => await new Promise<ArrayBuffer>((resolve) => { releaseRead = resolve }),
@@ -138,9 +139,10 @@ describe('Companion encrypted attachments', () => {
     await Promise.resolve()
     permit.invalidate()
     if (releaseRead === undefined) throw new Error('expected selected-file read to start')
-    releaseRead(Uint8Array.of(1, 2, 3).buffer)
+    releaseRead(selectedBytes.buffer)
 
     await expect(transfer).rejects.toThrow(/connection generation/)
+    expect(selectedBytes).toEqual(Uint8Array.of(0, 0, 0))
     expect(fetch).not.toHaveBeenCalled()
   })
 

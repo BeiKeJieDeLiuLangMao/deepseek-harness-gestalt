@@ -124,9 +124,9 @@ export async function transferSelectedCompanionAttachment(
     throw new TypeError('Companion attachment upload requires current pairing-scoped authorization')
   }
   const plaintext = new Uint8Array(await file.arrayBuffer())
-  options.permit.requireCurrent()
   let sealed: Awaited<ReturnType<typeof sealCompanionAttachment>>
   try {
+    options.permit.requireCurrent()
     sealed = await sealCompanionAttachment(options.pairingKey, plaintext, options.permit)
   } finally {
     plaintext.fill(0)
