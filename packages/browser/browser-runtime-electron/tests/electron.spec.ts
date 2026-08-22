@@ -27,6 +27,119 @@ describe('Electron process detection', () => {
     vi.resetModules()
   })
 
+  it('presents pages through WebContentsView when the module exposes it', () => {
+    const attached: unknown[] = []
+    const contents = { destroyed: false, isDestroyed() { return this.destroyed }, close() { this.destroyed = true } }
+    const order: string[] = []
+    const view = {
+      webContents: contents,
+      bounds: undefined as { x: number; y: number; width: number; height: number } | undefined,
+      visible: true,
+      setBounds(bounds: { x: number; y: number; width: number; height: number }) {
+        this.bounds = bounds
+        order.push(`bounds:${bounds.width}x${bounds.height}`)
+      },
+      setVisible(visible: boolean) {
+        this.visible = visible
+        order.push(`visible:${String(visible)}`)
+      },
+    }
+    function WebContentsView() { return view }
+    const parent = {
+      contentView: {
+        addChildView(next: unknown) { attached.push(next) },
+        removeChildView() { attached.length = 0 },
+      },
+    }
+    const host = electronHostFromModule({
+      BrowserWindow: function Unused() { throw new Error('child BrowserWindow must not be used') },
+      WebContentsView,
+      session: { fromPartition: () => ({}) },
+    })
+    const surface = new host.BrowserWindow({
+      show: false,
+      frame: false,
+      skipTaskbar: true,
+      hasShadow: false,
+      roundedCorners: false,
+      width: 100,
+      height: 80,
+      paintWhenInitiallyHidden: true,
+      webPreferences: {
+        partition: 'session-test',
+        offscreen: false,
+        sandbox: true,
+        contextIsolation: true,
+        nodeIntegration: false,
+        backgroundThrottling: false,
+      },
+    })
+    const bounds = { x: 832, y: 76, width: 448, height: 724 }
+    expect(view.bounds).toEqual({ x: 0, y: 0, width: 1, height: 1 })
+    expect(view.visible).toBe(false)
+    surface.setBounds(bounds)
+    surface.setParentWindow(parent)
+    surface.setParentWindow(parent)
+    surface.showInactive()
+    expect(attached).toEqual([view])
+    expect(view.bounds).toEqual(bounds)
+    expect(view.visible).toBe(true)
+    expect(order.indexOf('bounds:448x724')).toBeLessThan(order.indexOf('visible:true'))
+    surface.raise()
+    expect(attached).toEqual([view, view])
+    surface.show()
+    expect(view.visible).toBe(true)
+    surface.hide()
+    expect(view.visible).toBe(false)
+    expect(view.bounds).toEqual({ x: -10_000, y: -10_000, width: 1, height: 1 })
+    surface.setParentWindow(null)
+    expect(attached).toEqual([])
+    expect(surface.isDestroyed()).toBe(false)
+    surface.destroy()
+    expect(surface.isDestroyed()).toBe(true)
+    expect(contents.destroyed).toBe(true)
+  })
+
+  it('attaches a view that has no setVisible and ignores a parent without contentView', () => {
+    const contents = { destroyed: false, isDestroyed() { return this.destroyed }, close() { this.destroyed = true } }
+    const view = {
+      webContents: contents,
+      setBounds() {},
+    }
+    function WebContentsView() { return view }
+    const host = electronHostFromModule({
+      BrowserWindow: function Unused() {},
+      WebContentsView,
+      session: { fromPartition: () => ({}) },
+    })
+    const surface = new host.BrowserWindow({
+      show: false,
+      frame: false,
+      skipTaskbar: true,
+      hasShadow: false,
+      roundedCorners: false,
+      width: 10,
+      height: 10,
+      paintWhenInitiallyHidden: true,
+      webPreferences: {
+        partition: 'session-test',
+        offscreen: false,
+        sandbox: true,
+        contextIsolation: true,
+        nodeIntegration: false,
+        backgroundThrottling: false,
+      },
+    })
+    surface.setParentWindow({})
+    surface.raise()
+    surface.show()
+    surface.showInactive()
+    surface.hide()
+    contents.destroyed = true
+    surface.destroy()
+    expect(surface.isDestroyed()).toBe(true)
+  })
+
   it('rejects a non-object Electron module export', () => {
     expect(() => { electronHostFromModule(null) }).toThrow(/did not expose BrowserWindow and session/)
     expect(() => { electronHostFromModule(7) }).toThrow(/did not expose BrowserWindow and session/)

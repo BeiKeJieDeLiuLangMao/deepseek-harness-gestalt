@@ -1,0 +1,14 @@
+# Local modifications
+
+Every divergence from the pinned upstream commit in [UPSTREAM.md](UPSTREAM.md). Product behavior belongs in `@deepseek-ai/dsh-client-ui-workbench`, not here.
+
+1. **Workspace package manifest** — `package.json` / `tsconfig.json` / `tsconfig.dts.json` / this file / `UPSTREAM.md` are repository-owned. Upstream `package.json` name `dsh-better-sidebar` is `@deepseek-ai/dsh-client-better-sidebar`; version follows the monorepo root. `tsconfig.json` project references use this repository's package paths (`../../core/session`, not `../../session/session`). The snapshot is not a `tsconfig.client.json` project: those references would pull host `Context` merges into the client program.
+2. **`src/config.ts`** — `import z from 'schemastery'` is `import z from '@deepseek-ai/schemastery'`.
+3. **`src/context-types.ts`** — `import type { Context } from 'cordis'` is `import type { Context } from '@deepseek-ai/cordis'`. The file also adds `declare module '@deepseek-ai/cordis'` with only `betterSidebar`.
+4. **`src/invariant.ts`** — companion rewritten to the repository invariant gate (`PACKAGE_NAME` matches this workspace package).
+5. **`tsdown.config.ts`** — client factory id is the workspace package name; Host/Client build faces split the Node library from the browser chunks; the plugin-registry `client-registry.js` channel is omitted. The Node library build emits only snapshot sources to `lib/types` through `tsconfig.dts.json` (`noCheck` and `noResolve`) so published declarations exist without joining the client aggregate or emitting dependency declarations beside dependency sources.
+6. **`src/bundle-route.ts`** — `LIB_DIR` is the package `lib/` directory, not `dirname(import.meta.url)`. Source launch (`tsx`) otherwise looks for `src/client-terminal.js` and the terminal / editor / mermaid chunks 404.
+7. **`src/client/BrowserView.tsx`** — when `ctx.get('workbenchBrowser')` is published, the tab renders that official chrome. The sandboxed iframe remains the fallback for a standalone snapshot install.
+8. **`src/client/service.ts`** — `setPanelOpen(open)` expands or collapses the right workbench panel. The official preview and first Agent tab use it; a type-only `openTab` does not expand.
+9. **`src/client/TabBar.tsx`** — under `window.dshDesktop.chromeOverlayShow`, the `+` menu opens in the Desktop native overlay view instead of the in-page `Menu`. `dsh web` keeps the in-page menu.
+10. **`src/client/index.tsx`** — the Desktop overlay document (`data-dsh-desktop-overlay` / `?dsh-desktop-overlay=1`) does not mount the snapshot `Sidebar` into `document.body`. Overlay Settings still use the Host chrome settings seat.

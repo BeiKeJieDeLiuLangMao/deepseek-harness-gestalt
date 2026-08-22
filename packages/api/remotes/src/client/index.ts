@@ -11,6 +11,20 @@ import pluginInventoryRemote from '@deepseek-ai/dsh-host-plugin-inventory/remote
 import messageFeedbackRemote from '@deepseek-ai/dsh-message-feedback/remote'
 import sessionReferencesRemote from '@deepseek-ai/dsh-session-reference/remote'
 import type { TypertClientRemote } from '@deepseek-ai/dsh-typert-protocol'
+import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
+
+/**
+ * Unwrap one generated Remote result or throw its reported failure.
+ * @param result - Settling result from a generated Remote method.
+ * @returns the successful payload.
+ */
+export async function unwrapRemote<T>(result: Promise<RemoteResult<T>>): Promise<T> {
+  const settled = await result
+  if (!settled.ok) {
+    throw Object.assign(new Error(settled.error.message), { code: settled.error.code })
+  }
+  return settled.value
+}
 
 export type { TypertClientRemote as ClientRemote } from '@deepseek-ai/dsh-typert-protocol'
 export type { PluginInventorySnapshot } from '@deepseek-ai/dsh-host-plugin-inventory/types'

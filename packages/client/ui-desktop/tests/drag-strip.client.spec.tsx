@@ -33,6 +33,12 @@ function bridge(platform: NodeJS.Platform): DesktopBridge {
     pairingGetSnapshot: vi.fn(), pairingSetEnabled: vi.fn(), pairingCreateChallenge: vi.fn(),
     pairingCancelChallenge: vi.fn(), pairingConfirm: vi.fn(), pairingReject: vi.fn(), pairingRevoke: vi.fn(),
     onPairingSnapshot: () => () => {},
+    chromeOverlayShow: async () => {},
+    chromeOverlayHide: async () => {},
+    chromeOverlayGetState: async () => null,
+    chromeOverlayResult: () => {},
+    onChromeOverlayState: () => () => {},
+    onChromeOverlayResult: () => () => {},
   }
 }
 
