@@ -10,6 +10,8 @@
  * engine, so the frame width comes from a mocked getBoundingClientRect and
  * resizes are driven through the ResizeObserver stub.
  */
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, render } from '@testing-library/react'
 import { useSyncExternalStore } from 'react'
@@ -424,5 +426,15 @@ describe('AppFrame — unmount with an in-flight resize frame', () => {
     frameWidth = 1250
     act(() => { fireResize?.(); fireResize?.(); vi.advanceTimersByTime(20) })
     expect(tracks(frame)).toEqual([280, 330])
+  })
+})
+
+describe('AppFrame desktop chrome CSS', () => {
+  it('insets the center column under macOS and Windows chrome markers', () => {
+    const css = readFileSync(join(process.cwd(), 'packages/client/ui-layout/src/client/AppFrame.module.css'), 'utf8')
+    const mac = /\.frame:has\(\[data-desktop-chrome='mac'\]\) \.centerCol\s*\{(?<body>[^}]+)\}/.exec(css)?.groups?.body ?? ''
+    const win = /\.frame:has\(\[data-desktop-chrome='win'\]\) \.centerCol\s*\{(?<body>[^}]+)\}/.exec(css)?.groups?.body ?? ''
+    expect(mac).toContain('padding-top: 28px')
+    expect(win).toContain('padding-top: 36px')
   })
 })
