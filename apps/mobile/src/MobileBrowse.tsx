@@ -5,7 +5,6 @@ import {
   pageCompanionHistory,
   type CompanionSessionSummary,
 } from './companion-history.ts'
-import type { CompanionPushState } from './companion-push.ts'
 import { MobileConversation } from './MobileConversation.tsx'
 import css from './MobileBrowse.module.css'
 
@@ -19,12 +18,14 @@ export interface MobileBrowseProps {
   sessions: readonly CompanionSessionSummary[]
   /** Optional create handler used by Workspace and global create actions. */
   onCreate?: (input: { workspace?: string }) => void
-  /** Process visibility required before conversation settlement. */
-  companionState?: CompanionPushState
+  /** Submit one prompt to the selected Desktop Session. */
+  onSubmit?: ((sessionId: string, text: string) => void | Promise<void>) | undefined
+  /** Cancel one active Desktop Session. */
+  onCancel?: ((sessionId: string) => void) | undefined
 }
 
 /** Phone-sized Workspace/Session browse without Desktop columns. */
-export function MobileBrowse({ desktopName, connection, sessions, onCreate, companionState }: MobileBrowseProps): ReactNode {
+export function MobileBrowse({ desktopName, connection, sessions, onCreate, onSubmit, onCancel }: MobileBrowseProps): ReactNode {
   const [openId, setOpenId] = useState<string>()
   const [page, setPage] = useState(0)
   const paged = useMemo(
@@ -35,13 +36,14 @@ export function MobileBrowse({ desktopName, connection, sessions, onCreate, comp
   const open = sessions.find(session => session.id === openId)
 
   if (open !== undefined) {
-    if (open.blocks !== undefined) {
+    if (open.conversation !== undefined) {
       return (
         <MobileConversation
           title={open.title}
           onBack={() => { setOpenId(undefined) }}
-          blocks={open.blocks}
-          {...(companionState === undefined ? {} : { companionState })}
+          snapshot={open.conversation}
+          {...(onSubmit === undefined ? {} : { onSubmit: (text: string) => onSubmit(open.id, text) })}
+          {...(onCancel === undefined ? {} : { onCancel: () => { onCancel(open.id) } })}
         />
       )
     }
@@ -51,9 +53,7 @@ export function MobileBrowse({ desktopName, connection, sessions, onCreate, comp
           <button type="button" className={css.back} onClick={() => { setOpenId(undefined) }}>返回</button>
           <h1>{open.title}</h1>
         </header>
-        {open.live === true && open.transcript !== undefined
-          ? <ol className={css.transcript}>{open.transcript.map((line, index) => <li key={index}>{line}</li>)}</ol>
-          : <p className={css.summary}>{open.summary}</p>}
+        <p className={css.summary}>{open.summary}</p>
       </section>
     )
   }

@@ -3,6 +3,9 @@ import { createElement } from 'react'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
+  EMPTY_CHAT_SNAPSHOT, EMPTY_CONVERSATION_VIEWS, type ConversationSnapshot, type SessionId,
+} from '@deepseek-ai/dsh-client-runtime/client'
+import {
   COMPANION_HISTORY_PAGE_SIZE,
   createCompanionSession,
   groupCompanionSessions,
@@ -14,8 +17,20 @@ import { MobileBrowse } from '../src/MobileBrowse.tsx'
 
 afterEach(() => { cleanup() })
 
+function conversation(): ConversationSnapshot {
+  return {
+    sessionId: 's1' as SessionId,
+    views: EMPTY_CONVERSATION_VIEWS,
+    chat: EMPTY_CHAT_SNAPSHOT,
+    nodes: [{ kind: 'user', seq: 1, time: 1, content: [{ type: 'text', text: 'hello' }], source: {} }],
+    turnTimings: new Map(), turnEnds: new Map(), partial: null, runningCalls: [], pending: [], queue: [],
+    running: false, subagent: null, composerPhase: 'active', removed: false, openState: 'open', openError: null,
+    hasMore: false, loadingOlder: false, promptError: null, blank: false, lastAgentError: null,
+  }
+}
+
 const history: readonly CompanionSessionSummary[] = [
-  { id: 's1', title: 'Alpha', workspace: 'Work', summary: 'alpha summary', live: true, transcript: ['hello'] },
+  { id: 's1', title: 'Alpha', workspace: 'Work', summary: 'alpha summary', conversation: conversation() },
   { id: 's2', title: 'Beta', project: 'Tools', summary: 'beta summary' },
   { id: 's3', title: 'Gamma', summary: 'ungrouped summary' },
 ]

@@ -12,9 +12,11 @@ import {
   RemoteAccessHttpTransport,
 } from '@deepseek-ai/dsh-remote-access-client'
 import { parseRelayAttachmentId, REMOTE_PROTOCOL_LIMITS } from '@deepseek-ai/dsh-remote-protocol'
-import '@deepseek-ai/dsh-client-ui-theme/src/styles/base.css'
-import '@deepseek-ai/dsh-client-ui-theme/src/styles/design-platform.css'
-import '@deepseek-ai/dsh-client-ui-theme/src/styles/gradient-shadow-text.css'
+import '@deepseek-ai/dsh-client-ui-theme/styles/base.css'
+import '@deepseek-ai/dsh-client-ui-theme/styles/design-platform.css'
+import '@deepseek-ai/dsh-client-ui-theme/styles/scrollbar.css'
+import '@deepseek-ai/dsh-client-ui-theme/styles/gradient-shadow-text.css'
+import '@deepseek-ai/dsh-client-ui-theme/styles/shiki.css'
 import {
   bindCompanionProcessVisibility,
   CompanionForegroundRuntime,

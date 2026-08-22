@@ -1,6 +1,6 @@
 /** Companion Session list projection shared by Mobile browse and keyless equality proofs. */
 
-import type { MobileContentBlock } from './mobile-content.ts'
+import type { ConversationSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
 
 /** One Session row in the Mobile Companion list. */
 export interface CompanionSessionSummary {
@@ -14,12 +14,8 @@ export interface CompanionSessionSummary {
   project?: string
   /** Hidden-session summary text. */
   summary: string
-  /** Whether the transcript is currently open and live. */
-  live?: boolean
-  /** Desktop-confirmed transcript lines when the Session is open. */
-  transcript?: readonly string[]
-  /** Structured conversation blocks for the Mobile renderer. */
-  blocks?: readonly MobileContentBlock[]
+  /** Desktop-authoritative open Session projection. */
+  conversation?: ConversationSnapshot
 }
 
 /** Grouped Mobile list: named Workspace/project buckets plus Ungrouped. */
@@ -91,9 +87,7 @@ export function projectMobileCompanionHistory(
     ...(session.workspace === undefined ? {} : { workspace: session.workspace }),
     ...(session.project === undefined ? {} : { project: session.project }),
     summary: session.summary,
-    ...(session.live === undefined ? {} : { live: session.live }),
-    ...(session.transcript === undefined ? {} : { transcript: [...session.transcript] }),
-    ...(session.blocks === undefined ? {} : { blocks: session.blocks }),
+    ...(session.conversation === undefined ? {} : { conversation: session.conversation }),
   }))
 }
 

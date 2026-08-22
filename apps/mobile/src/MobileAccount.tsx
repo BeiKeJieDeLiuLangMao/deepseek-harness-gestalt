@@ -1,5 +1,4 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
-import { companionRuntime } from './companion-push.ts'
 import type { ReactNode } from 'react'
 import type { PlatformAccountInstallation } from '@deepseek-ai/dsh-platform-account-client'
 import { ACCOUNT_PRIVACY_NOTICE } from '@deepseek-ai/dsh-platform-account/privacy'
@@ -21,11 +20,6 @@ export function MobileAccount({ installation, pairing }: MobileAccountProps): Re
   const snapshot = useSyncExternalStore(
     listener => installation.subscribe(listener),
     () => installation.getSnapshot(),
-  )
-  const companion = companionRuntime()
-  const companionState = useSyncExternalStore(
-    listener => companion?.subscribe(listener) ?? (() => {}),
-    () => companion?.getState(),
   )
   const [accepted, setAccepted] = useState(false)
   const [sessions, setSessions] = useState<readonly CompanionSessionSummary[]>([])
@@ -122,7 +116,6 @@ export function MobileAccount({ installation, pairing }: MobileAccountProps): Re
           desktopName="Paired Desktop"
           connection="offline"
           sessions={sessions}
-          {...(companionState === undefined ? {} : { companionState })}
           onCreate={(input) => {
             const operationId = crypto.randomUUID()
             const next = createCompanionSession(sessions, committed, {

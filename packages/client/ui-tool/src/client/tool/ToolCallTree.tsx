@@ -5,6 +5,14 @@ import type { ToolCallOwnerProps, ToolTreeProps } from '../contract/slots.ts'
 import { GenericToolCard } from './toolviews/GenericToolCard.tsx'
 import css from './ToolCallTree.module.css'
 
+type ToolCallTreePresentationProps = Pick<
+  ToolTreeProps,
+  'renderSlot' | 'node' | 'selectedCallId' | 'cwd' | 'useHostDescription' | 't'
+> & {
+  openFile?: ((path: string) => void) | undefined
+  inspectCall?: ToolTreeProps['inspectCall'] | undefined
+}
+
 /** Resolve a Tool call's wire name from either lifecycle form. */
 function callName(node: ToolCallBlock): string {
   return 'kind' in node ? node.call?.name ?? '' : node.name
@@ -13,7 +21,7 @@ function callName(node: ToolCallBlock): string {
 /** One atomic call dispatched through the Tool-owned keyed slot. */
 const ToolCall = memo(function ToolCall({
   renderSlot, callId, toolName, block, openFile, selected, cwd, home, inspectCall, selectCall, t, children,
-}: Pick<ToolTreeProps, 'renderSlot' | 'openFile' | 'cwd' | 'inspectCall' | 't'> & {
+}: Pick<ToolCallTreePresentationProps, 'renderSlot' | 'openFile' | 'cwd' | 'inspectCall' | 't'> & {
   callId: string
   toolName: string
   block: ToolCallBlock
@@ -29,7 +37,7 @@ const ToolCall = memo(function ToolCall({
     openFile,
     cwd,
     home,
-    inspect: () => { inspectCall(callId) },
+    inspect: inspectCall === undefined ? undefined : () => { inspectCall(callId) },
   }), [callId, toolName, block, openFile, cwd, home, inspectCall])
   return (
     <div
@@ -52,7 +60,7 @@ const ToolCall = memo(function ToolCall({
 
 const ToolCallBranch = memo(function ToolCallBranch({
   renderSlot, block, selectedCallId, cwd, home, openFile, inspectCall, selectCall, t,
-}: Pick<ToolTreeProps, 'renderSlot' | 'selectedCallId' | 'cwd' | 'openFile' | 'inspectCall' | 't'> & {
+}: Pick<ToolCallTreePresentationProps, 'renderSlot' | 'selectedCallId' | 'cwd' | 'openFile' | 'inspectCall' | 't'> & {
   block: ToolCallBlock
   home?: string | undefined
   selectCall?: ((callId: string, toolName?: string) => void) | undefined
@@ -101,7 +109,7 @@ const ToolCallBranch = memo(function ToolCallBranch({
  */
 export function ToolCallTree({
   renderSlot, node, selectedCallId, cwd, openFile, inspectCall, selectCall, useHostDescription, t,
-}: ToolTreeProps & {
+}: ToolCallTreePresentationProps & {
   selectCall?: ((callId: string, toolName?: string) => void) | undefined
 }) {
   const home = useHostDescription(description => description?.home)
