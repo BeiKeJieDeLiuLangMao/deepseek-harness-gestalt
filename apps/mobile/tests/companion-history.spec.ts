@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { createElement } from 'react'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   EMPTY_CHAT_SNAPSHOT, EMPTY_CONVERSATION_VIEWS,
@@ -10,6 +10,7 @@ import {
   COMPANION_HISTORY_PAGE_SIZE, pageCompanionHistory,
 } from '../src/companion-history.ts'
 import { MobileBrowse } from '../src/MobileBrowse.tsx'
+import type { MobilePresentationClock } from '../src/mobile-clock.ts'
 
 afterEach(cleanup)
 
@@ -24,6 +25,7 @@ const browsePresentation = {
   theme: 'light' as const,
   loadImage: () => Promise.resolve('data:image/gif;base64,R0lGODlhAQABAAAAACw='),
   canMutate: true,
+  clock: fixedClock(10_000),
 }
 
 function conversation(): ConversationSnapshot {
@@ -67,6 +69,17 @@ const workspaces: readonly WorkspaceView[] = [{
 }]
 
 describe('Mobile Companion browse projection', () => {
+  it('updates relative Session time from the subscribed clock owner', () => {
+    const clock = mutableClock(5 * 60_000 + 2)
+    render(createElement(MobileBrowse, {
+      desktopName: 'Studio Mac', connection: 'online', sessions, workspaces,
+      conversations: {}, ...browsePresentation, clock,
+    }))
+    expect(screen.getAllByText('5分钟')).toHaveLength(2)
+    act(() => { clock.set(10 * 60_000 + 2) })
+    expect(screen.getAllByText('10分钟')).toHaveLength(2)
+  })
+
   it('pages the exact Desktop SessionListState without introducing another row model', () => {
     const ids = Array.from({ length: COMPANION_HISTORY_PAGE_SIZE + 3 }, (_, index) => sid(`id-${String(index)}`))
     const many = { ...sessions, ids }
@@ -137,3 +150,17 @@ describe('Mobile Companion browse projection', () => {
     expect(screen.getByRole('button', { name: '新建 Ungrouped Session' }).hasAttribute('disabled')).toBe(true)
   })
 })
+
+function fixedClock(now: number): MobilePresentationClock {
+  return { getSnapshot: () => now, subscribe: () => () => {} }
+}
+
+function mutableClock(initial: number): MobilePresentationClock & { set(now: number): void } {
+  let now = initial
+  const listeners = new Set<() => void>()
+  return {
+    getSnapshot: () => now,
+    subscribe: (listener) => { listeners.add(listener); return () => { listeners.delete(listener) } },
+    set: (next) => { now = next; for (const listener of listeners) listener() },
+  }
+}

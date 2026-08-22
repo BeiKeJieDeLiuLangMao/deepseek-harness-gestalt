@@ -2,15 +2,17 @@
 
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import {
-  EMPTY_CHAT_SNAPSHOT,
-  EMPTY_CONVERSATION_VIEWS,
-  PendingWait,
-  type ConversationSnapshot,
   type SessionId,
   type ToolResultNode,
   type WorkspaceId,
 } from '@deepseek-ai/dsh-client-runtime/client'
 import type { MobileCompanionPresentation } from './companion-history.ts'
+import {
+  adaptMobileCompanionProjection,
+  type MobileCompanionProjectionDto,
+} from './companion-projection.ts'
+
+type MobileConversationProjectionDto = MobileCompanionProjectionDto['conversations'][number]
 
 const SESSION_ID = 'mobile-keyless-presentation' as SessionId
 const APPROVAL_SESSION_ID = 'mobile-keyless-approval' as SessionId
@@ -31,7 +33,7 @@ function tool(
   call: NonNullable<ToolResultNode['call']>,
   resultView: ToolResultNode['resultView'],
   content: ToolResultNode['content'] = [],
-): ToolResultNode {
+): MobileConversationProjectionDto['nodes'][number] {
   return {
     kind: 'tool-result',
     seq,
@@ -44,13 +46,11 @@ function tool(
     callView: null,
     resultView,
     subCalls: [],
-  }
+  } as unknown as MobileConversationProjectionDto['nodes'][number]
 }
 
-const conversation: ConversationSnapshot = {
+const conversation: MobileConversationProjectionDto = {
   sessionId: SESSION_ID,
-  views: EMPTY_CONVERSATION_VIEWS,
-  chat: EMPTY_CHAT_SNAPSHOT,
   nodes: [
     {
       kind: 'user', seq: 1, time: 1_000, source: null,
@@ -84,8 +84,8 @@ const conversation: ConversationSnapshot = {
     ),
     { kind: 'turn-error', seq: 6, time: 6_000, turn: 1, step: 1, message: 'Host rejected request', code: 'HOST_400' },
   ],
-  turnTimings: new Map(),
-  turnEnds: new Map(),
+  turnTimings: [],
+  turnEnds: [],
   partial: null,
   runningCalls: [],
   pending: [],
@@ -103,25 +103,10 @@ const conversation: ConversationSnapshot = {
   lastAgentError: null,
 }
 
-const approval = new PendingWait('approval', 'mobile-keyless-approval-rpc' as never, APPROVAL_SESSION_ID, {
-  approvalId: 'mobile-keyless-approval-id' as never,
-  toolName: 'write',
-  reason: 'Allow shared presentation evidence',
-}, () => Promise.resolve({ accepted: true }))
-
-const question = new PendingWait('question', 'mobile-keyless-question-rpc' as never, QUESTION_SESSION_ID, {
-  questions: [{
-    id: 'mobile-keyless-question-id',
-    header: 'Bundled entry evidence',
-    question: 'Which shared presentation is mounted?',
-    options: [{ label: 'Desktop Web components (Recommended)' }, { label: 'A duplicate Mobile renderer' }],
-  }],
-}, () => Promise.resolve({ accepted: true }))
-
 function interactionConversation(
   sessionId: SessionId,
-  pending: ConversationSnapshot['pending'],
-): ConversationSnapshot {
+  pending: MobileConversationProjectionDto['pending'],
+): MobileConversationProjectionDto {
   return {
     ...conversation,
     sessionId,
@@ -130,52 +115,77 @@ function interactionConversation(
   }
 }
 
+const projection: MobileCompanionProjectionDto = {
+  type: 'desktop-resync',
+  version: 1,
+  authenticated: true,
+  desktopName: 'Keyless projection example',
+  sessions: {
+    ids: [SESSION_ID, APPROVAL_SESSION_ID, QUESTION_SESSION_ID],
+    byId: {
+      [SESSION_ID]: {
+        id: SESSION_ID, title: 'Shared Web presentation', displayTitle: 'Shared Web presentation',
+        cwd: '/workspace/deepseek-harness', running: false, blank: false, updatedAt: 3_000,
+      },
+      [APPROVAL_SESSION_ID]: {
+        id: APPROVAL_SESSION_ID, title: 'Shared Approval', displayTitle: 'Shared Approval',
+        cwd: '/workspace/deepseek-harness', running: true, pendingInteraction: 'approval',
+        blank: false, updatedAt: 2_000,
+      },
+      [QUESTION_SESSION_ID]: {
+        id: QUESTION_SESSION_ID, title: 'Shared Ask User', displayTitle: 'Shared Ask User',
+        cwd: '/workspace/deepseek-harness', running: true, pendingInteraction: 'question',
+        blank: false, updatedAt: 1_000,
+      },
+    },
+    current: null,
+    phase: 'ready',
+    subagentsByParent: {},
+    jobsBySession: {},
+    currentAddress: null,
+  },
+  workspaces: [{
+    workspaceId: WORKSPACE_ID,
+    path: '/workspace/deepseek-harness',
+    title: 'DSH',
+    sessionIds: [SESSION_ID, APPROVAL_SESSION_ID, QUESTION_SESSION_ID],
+    createdAt: '2026-08-22T00:00:00.000Z',
+    updatedAt: '2026-08-22T00:00:00.000Z',
+  }],
+  conversations: [
+    conversation,
+    interactionConversation(APPROVAL_SESSION_ID, [{
+      kind: 'approval', interactionId: 'mobile-keyless-approval-rpc', sessionId: APPROVAL_SESSION_ID,
+      payload: {
+        approvalId: 'mobile-keyless-approval-id' as never,
+        toolName: 'write',
+        reason: 'Allow shared presentation evidence',
+      },
+    }]),
+    interactionConversation(QUESTION_SESSION_ID, [{
+      kind: 'question', interactionId: 'mobile-keyless-question-rpc', sessionId: QUESTION_SESSION_ID,
+      payload: {
+        questions: [{
+          id: 'mobile-keyless-question-id',
+          header: 'Bundled entry evidence',
+          question: 'Which shared presentation is mounted?',
+          options: [{ label: 'Desktop Web components (Recommended)' }, { label: 'A duplicate Mobile renderer' }],
+        }],
+      },
+    }]),
+  ],
+}
+
 /**
  * Create a keyless authoritative-projection example through the production composition interface.
  * @returns development-only Mobile Companion presentation with local interaction evidence callbacks.
  */
 export function developmentCompanionPresentation(): MobileCompanionPresentation {
+  const adapted = adaptMobileCompanionProjection(projection, () => Promise.resolve({ accepted: true }))
   return {
-    desktopName: 'Keyless projection example',
+    ...adapted,
     connection: 'offline',
     canMutate: true,
-    sessions: {
-      ids: [SESSION_ID, APPROVAL_SESSION_ID, QUESTION_SESSION_ID],
-      byId: {
-        [SESSION_ID]: {
-          id: SESSION_ID, title: 'Shared Web presentation', displayTitle: 'Shared Web presentation',
-          cwd: '/workspace/deepseek-harness', running: false, blank: false, updatedAt: 3_000,
-        },
-        [APPROVAL_SESSION_ID]: {
-          id: APPROVAL_SESSION_ID, title: 'Shared Approval', displayTitle: 'Shared Approval',
-          cwd: '/workspace/deepseek-harness', running: true, pendingInteraction: 'approval',
-          blank: false, updatedAt: 2_000,
-        },
-        [QUESTION_SESSION_ID]: {
-          id: QUESTION_SESSION_ID, title: 'Shared Ask User', displayTitle: 'Shared Ask User',
-          cwd: '/workspace/deepseek-harness', running: true, pendingInteraction: 'question',
-          blank: false, updatedAt: 1_000,
-        },
-      },
-      current: undefined,
-      phase: 'ready',
-      subagentsByParent: {},
-      jobsBySession: {},
-      currentAddress: undefined,
-    },
-    workspaces: [{
-      workspaceId: WORKSPACE_ID,
-      path: '/workspace/deepseek-harness',
-      title: 'DSH',
-      sessionIds: [SESSION_ID, APPROVAL_SESSION_ID, QUESTION_SESSION_ID],
-      createdAt: '2026-08-22T00:00:00.000Z',
-      updatedAt: '2026-08-22T00:00:00.000Z',
-    }],
-    conversations: {
-      [SESSION_ID]: conversation,
-      [APPROVAL_SESSION_ID]: interactionConversation(APPROVAL_SESSION_ID, [approval]),
-      [QUESTION_SESSION_ID]: interactionConversation(QUESTION_SESSION_ID, [question]),
-    },
     onSubmit: (sessionId, text) => {
       if (sessionId !== SESSION_ID || text.trim() === '') {
         return Promise.reject(new Error('development prompt is outside the input evidence Session'))

@@ -6,6 +6,7 @@ import css from './MobileAccount.module.css'
 import type { MobileCompanionPresentation } from './companion-history.ts'
 import { MobileBrowse } from './MobileBrowse.tsx'
 import { MobilePairing, type MobilePairingActions } from './MobilePairing.tsx'
+import type { MobilePresentationClock } from './mobile-clock.ts'
 
 /** Mobile Account page props. */
 export interface MobileAccountProps {
@@ -19,10 +20,12 @@ export interface MobileAccountProps {
   locale: 'zh' | 'en'
   /** Product theme shared by Mobile browse and conversation presentation. */
   theme: 'light' | 'dark'
+  /** Live clock owner shared by every Session list. */
+  clock: MobilePresentationClock
 }
 
 /** Mobile Account landing with an optional same-installation Personal Pairing projection. */
-export function MobileAccount({ installation, pairing, companion, locale, theme }: MobileAccountProps): ReactNode {
+export function MobileAccount({ installation, pairing, companion, locale, theme, clock }: MobileAccountProps): ReactNode {
   const snapshot = useSyncExternalStore(
     listener => installation.subscribe(listener),
     () => installation.getSnapshot(),
@@ -120,6 +123,7 @@ export function MobileAccount({ installation, pairing, companion, locale, theme 
           {...companion}
           locale={locale}
           theme={theme}
+          clock={clock}
         />
       )}
       <footer>此账号仅识别你的安装；它不会授予任何 Desktop 访问权限。</footer>

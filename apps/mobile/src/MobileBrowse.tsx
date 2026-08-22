@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useMemo, useState, useSyncExternalStore, type ReactNode } from 'react'
 import {
   COMPANION_HISTORY_PAGE_SIZE,
   pageCompanionHistory,
@@ -14,6 +14,7 @@ import {
 } from '@deepseek-ai/dsh-client-ui-workspace/presentation'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import css from './MobileBrowse.module.css'
+import type { MobilePresentationClock } from './mobile-clock.ts'
 
 /** Mobile Companion browse props. */
 export interface MobileBrowseProps {
@@ -35,6 +36,8 @@ export interface MobileBrowseProps {
   loadImage: (sessionId: string, attachment: ImageAttachmentRef) => Promise<string>
   /** Whether the current foreground synchronization admits mutations. */
   canMutate: boolean
+  /** Live clock owner used by shared relative-time rows. */
+  clock: MobilePresentationClock
   /** Optional create handler used by Workspace and global create actions. */
   onCreate?: ((input: { workspace?: string }) => void) | undefined
   /** Submit one prompt to the selected Desktop Session. */
@@ -48,7 +51,7 @@ export interface MobileBrowseProps {
 /** Phone-sized Workspace/Session browse without Desktop columns. */
 export function MobileBrowse({
   desktopName, connection, sessions, workspaces, conversations, locale, theme, loadImage,
-  canMutate, onCreate, onSubmit, onCancel, onLoadOlder,
+  canMutate, clock, onCreate, onSubmit, onCancel, onLoadOlder,
 }: MobileBrowseProps): ReactNode {
   const [openId, setOpenId] = useState<SessionId>()
   const [page, setPage] = useState(0)
@@ -61,6 +64,10 @@ export function MobileBrowse({
     [paged.sessions, paged.workspaces],
   )
   const tw = useMemo(() => workspacePresentationTranslate(locale), [locale])
+  const now = useSyncExternalStore(
+    listener => clock.subscribe(listener),
+    () => clock.getSnapshot(),
+  )
   const open = openId === undefined ? undefined : sessions.byId[openId]
   const conversation = openId === undefined ? undefined : conversations[openId]
 
@@ -117,7 +124,7 @@ export function MobileBrowse({
           <SessionListPresentation
             nodes={group.sessions}
             currentId={openId}
-            now={Date.now()}
+            now={now}
             onOpen={setOpenId}
             t={tw}
           />

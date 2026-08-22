@@ -359,7 +359,10 @@ export function SearchResultItem({ result, currentId, onOpen, t }: {
  * @param props.t - the browser root's locale seat.
  * @returns the session row.
  */
-export function SessionNodeItem({ node, currentId, now, onOpen, onRename, onFork, onArchive, drag, flat = false, t }: {
+export function SessionNodeItem({
+  node, currentId, now, onOpen, onRename, onFork, onArchive, drag, flat = false,
+  tabIndex = 0, onFocus, onMoveFocus, t,
+}: {
   node: SessionNode
   currentId: string | undefined
   now: number
@@ -374,6 +377,12 @@ export function SessionNodeItem({ node, currentId, now, onOpen, onRename, onFork
   drag?: RowDragProps | undefined
   /** The row is rendered without a parent Workspace header. */
   flat?: boolean | undefined
+  /** Roving tab position supplied by the owning tree. */
+  tabIndex?: number | undefined
+  /** Notify the owning tree when this row receives focus. */
+  onFocus?: (() => void) | undefined
+  /** Move the owning tree's roving focus by one row. */
+  onMoveFocus?: ((direction: -1 | 1) => void) | undefined
   t: RowTranslate
 }) {
   const row = node
@@ -402,9 +411,23 @@ export function SessionNodeItem({ node, currentId, now, onOpen, onRename, onFork
         drag?.marker === 'before' && css.dropBefore, drag?.marker === 'after' && css.dropAfter,
       )}
       role="treeitem"
+      tabIndex={tabIndex}
       data-session-row={node.id}
       aria-selected={selected}
+      onFocus={onFocus}
       onClick={() => { onOpen(node.id) }}
+      onKeyDown={(event) => {
+        if (event.target !== event.currentTarget) return
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          onOpen(node.id)
+          return
+        }
+        if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+          event.preventDefault()
+          onMoveFocus?.(event.key === 'ArrowUp' ? -1 : 1)
+        }
+      }}
       draggable={drag !== undefined}
       onDragStart={drag === undefined
         ? undefined

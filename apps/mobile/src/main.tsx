@@ -22,6 +22,7 @@ import {
   installCompanionRuntime,
 } from './companion-lifecycle.ts'
 import { mountMobileEntry } from './mobile-entry.tsx'
+import { fixedMobilePresentationClock } from './mobile-clock.ts'
 import type { MobilePairingActions } from './MobilePairing.tsx'
 import { MobilePairingController, NativeMobilePairingQrScanner } from './personal-pairing.ts'
 import { mobileSystemBrowser } from './system-browser.ts'
@@ -154,7 +155,13 @@ async function mountMobileProduct(container: HTMLElement): Promise<void> {
   const presentation = environment.environment === 'development' && import.meta.env.VITE_MOBILE_PRESENTATION_EXAMPLE === '1'
     ? (await import('./development-companion-presentation.ts')).developmentCompanionPresentation()
     : undefined
-  mountMobileEntry(container, { installation, pairing, companion, presentation })
+  mountMobileEntry(container, {
+    installation,
+    pairing,
+    companion,
+    presentation,
+    ...(presentation === undefined ? {} : { clock: fixedMobilePresentationClock(10_000) }),
+  })
 }
 
 void mountMobileProduct(root)

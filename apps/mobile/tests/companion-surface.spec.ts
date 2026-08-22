@@ -1,8 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
 import { parseRelayCredential, parseRelayRouteId } from '@deepseek-ai/dsh-remote-protocol'
-import type { SessionId, SessionListState } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import { CompanionForegroundRuntime } from '../src/companion-lifecycle.ts'
-import { MobileCompanionSurface } from '../src/companion-surface.ts'
+import {
+  MobileCompanionSurface,
+  type MobileCompanionConnectionChannel,
+  type ValidatedDesktopSurfaceResync,
+} from '../src/companion-surface.ts'
 
 const grant = {
   routeId: parseRelayRouteId('route-surface'),
@@ -12,97 +16,206 @@ const grant = {
 }
 
 describe('MobileCompanionSurface', () => {
-  it('does not project a stale generation or transmit any mutation before its replacement resync', () => {
-    const runtime = new CompanionForegroundRuntime()
-    const mutations = mutationChannel()
-    const surface = new MobileCompanionSurface(runtime, mutations)
-    runtime.configure(grant)
-    runtime.markConnectionOpen()
-    const first = surface.bindValidatedDesktopResync()
-    if (first === undefined) throw new Error('expected Desktop resync receiver')
-    first.acceptValidatedDesktopResync({
-      type: 'desktop-resync', version: 1, authenticated: true,
-      desktopName: 'First Desktop',
-      sessions: sessionList('session-first', 'First'), workspaces: [], conversations: {},
+  it('round-trips an explicit JSON projection without Maps, classes, or callbacks', () => {
+    const dto = projection('session-one', 'One', true)
+    const parsed = JSON.parse(JSON.stringify(dto)) as ValidatedDesktopSurfaceResync
+    expect(parsed).toEqual(dto)
+    expect(parsed.conversations[0]?.turnTimings).toEqual([])
+    expect(parsed.conversations[0]?.pending[0]).toEqual({
+      kind: 'approval', interactionId: 'approval-rpc', sessionId: 'session-one',
+      payload: { approvalId: 'approval-id', toolName: 'write', reason: 'Allow write' },
     })
+  })
+
+  it('rejects class-backed values before they can synchronize a connection', () => {
+    const runtime = connectedRuntime()
+    const surface = new MobileCompanionSurface(runtime)
+    const receiver = surface.bindAuthenticatedConnection(connectionChannel())
+    if (receiver === undefined) throw new Error('expected Desktop resync receiver')
+    const invalid = projection('session-one', 'One') as unknown as { conversations: unknown }
+    invalid.conversations = new Map()
+
+    expect(() => {
+      receiver.acceptValidatedDesktopResync(invalid as ValidatedDesktopSurfaceResync)
+    }).toThrow('must contain only JSON-compatible values')
+    expect(runtime.getState().synchronized).toBe(false)
+  })
+
+  it('does not synchronize when a JSON projection cannot build presentation carriers', () => {
+    const runtime = connectedRuntime()
+    const surface = new MobileCompanionSurface(runtime)
+    const receiver = surface.bindAuthenticatedConnection(connectionChannel())
+    if (receiver === undefined) throw new Error('expected Desktop resync receiver')
+    const invalid = { ...projection('session-one', 'One'), sessions: null }
+
+    expect(() => {
+      receiver.acceptValidatedDesktopResync(invalid as unknown as ValidatedDesktopSurfaceResync)
+    }).toThrow()
+    expect(runtime.getState().synchronized).toBe(false)
+    expect(surface.mayMutate()).toBe(false)
+  })
+
+  it('binds projection, content, and mutation channels to one physical connection generation', () => {
+    const runtime = connectedRuntime()
+    const firstChannel = connectionChannel()
+    const surface = new MobileCompanionSurface(runtime)
+    const first = surface.bindAuthenticatedConnection(firstChannel)
+    if (first === undefined) throw new Error('expected Desktop resync receiver')
+    first.acceptValidatedDesktopResync(projection('session-first', 'First'))
+    surface.submit('session-first', 'continue')
 
     runtime.forgetConnection()
     runtime.markConnectionOpen()
-    first.acceptValidatedDesktopResync({
-      type: 'desktop-resync', version: 1, authenticated: true,
-      desktopName: 'Stale Desktop',
-      sessions: sessionList('session-stale', 'Stale'), workspaces: [], conversations: {},
-    })
+    first.acceptValidatedDesktopResync(projection('session-stale', 'Stale'))
+    expect(() => { surface.submit('session-first', 'stale') }).toThrow('requires foreground synchronization')
 
-    expect(surface.getSnapshot().desktopName).toBe('First Desktop')
-    expect(surface.getSnapshot().sessions.ids).toEqual(['session-first'])
-    expect(() => { surface.create({}) }).toThrow('requires foreground synchronization')
-    expect(() => { surface.submit('session-first', 'continue') }).toThrow('requires foreground synchronization')
-    expect(() => { surface.cancel('session-first') }).toThrow('requires foreground synchronization')
-    expect(() => { surface.attach('session-first') }).toThrow('requires foreground synchronization')
-    expect(() => {
-      surface.settle({ operationId: 'approval', kind: 'approval', summary: 'write', authorized: ['once'] })
-    }).toThrow('requires foreground synchronization')
-    expect(Object.values(mutations).every(mock => mock.mock.calls.length === 0)).toBe(true)
+    const replacementChannel = connectionChannel()
+    const replacement = surface.bindAuthenticatedConnection(replacementChannel)
+    if (replacement === undefined) throw new Error('expected replacement resync receiver')
+    replacement.acceptValidatedDesktopResync(projection('session-replacement', 'Replacement'))
+    surface.submit('session-replacement', 'current')
+
+    expect(firstChannel.mutations.submit).toHaveBeenCalledTimes(1)
+    expect(firstChannel.mutations.submit).toHaveBeenCalledWith('session-first', 'continue')
+    expect(replacementChannel.mutations.submit).toHaveBeenCalledOnce()
+    expect(replacementChannel.mutations.submit).toHaveBeenCalledWith('session-replacement', 'current')
+    expect(surface.getSnapshot().sessions.ids).toEqual(['session-replacement'])
   })
 
-  it('routes mutations only after the current generation accepts its validated projection', () => {
-    const runtime = new CompanionForegroundRuntime()
-    const mutations = mutationChannel()
-    const surface = new MobileCompanionSurface(runtime, mutations)
-    runtime.configure(grant)
-    runtime.markConnectionOpen()
-    const resync = surface.bindValidatedDesktopResync()
-    if (resync === undefined) throw new Error('expected Desktop resync receiver')
-    resync.acceptValidatedDesktopResync({
-      type: 'desktop-resync', version: 1, authenticated: true, desktopName: 'Studio Mac',
-      sessions: sessionList(), workspaces: [], conversations: {},
+  it('adapts pending ids and data into local responders and returns carrier receipts', async () => {
+    const runtime = connectedRuntime()
+    const channel = connectionChannel()
+    channel.mutations.settle.mockResolvedValueOnce({ accepted: true })
+      .mockResolvedValueOnce({ accepted: false, reason: 'not-pending' })
+    const surface = new MobileCompanionSurface(runtime)
+    const receiver = surface.bindAuthenticatedConnection(channel)
+    if (receiver === undefined) throw new Error('expected Desktop resync receiver')
+    receiver.acceptValidatedDesktopResync(projection('session-one', 'One', true))
+
+    const conversation = surface.getSnapshot().conversations['session-one' as SessionId]
+    const approval = conversation?.pending[0]
+    const question = conversation?.pending[1]
+    if (approval === undefined || question === undefined) throw new Error('expected adapted pending interactions')
+    const approvalResult = { ok: true as const, value: { outcome: 'allowed-once' } }
+    const questionResult = { ok: true as const, value: { answers: [{ id: 'q1', selected: ['Yes'] }] } }
+
+    await expect(approval.respond(approvalResult)).resolves.toEqual({ accepted: true })
+    await expect(question.respond(questionResult)).resolves.toEqual({ accepted: false, reason: 'not-pending' })
+    expect(channel.mutations.settle).toHaveBeenNthCalledWith(1, {
+      kind: 'approval', sessionId: 'session-one', interactionId: 'approval-rpc', result: approvalResult,
     })
+    expect(channel.mutations.settle).toHaveBeenNthCalledWith(2, {
+      kind: 'question', sessionId: 'session-one', interactionId: 'question-rpc', result: questionResult,
+    })
+  })
 
-    surface.create({ workspace: 'Work' })
-    surface.submit('session-one', 'continue')
-    surface.cancel('session-one')
-    surface.attach('session-one')
-    const interaction = { operationId: 'question', kind: 'ask-user' as const, summary: 'Continue?', authorized: ['A'] }
-    surface.settle(interaction)
+  it('refuses an old local responder after a replacement generation synchronizes', async () => {
+    const runtime = connectedRuntime()
+    const firstChannel = connectionChannel()
+    const surface = new MobileCompanionSurface(runtime)
+    const first = surface.bindAuthenticatedConnection(firstChannel)
+    if (first === undefined) throw new Error('expected Desktop resync receiver')
+    first.acceptValidatedDesktopResync(projection('session-one', 'One', true))
+    const oldWait = surface.getSnapshot().conversations['session-one' as SessionId]?.pending[0]
+    if (oldWait === undefined) throw new Error('expected old pending interaction')
 
-    expect(mutations.create).toHaveBeenCalledWith({ workspace: 'Work' })
-    expect(mutations.submit).toHaveBeenCalledWith('session-one', 'continue')
-    expect(mutations.cancel).toHaveBeenCalledWith('session-one')
-    expect(mutations.attach).toHaveBeenCalledWith('session-one')
-    expect(mutations.settle).toHaveBeenCalledWith(interaction)
+    runtime.forgetConnection()
+    runtime.markConnectionOpen()
+    const replacementChannel = connectionChannel()
+    const replacement = surface.bindAuthenticatedConnection(replacementChannel)
+    if (replacement === undefined) throw new Error('expected replacement resync receiver')
+    replacement.acceptValidatedDesktopResync(projection('session-two', 'Two'))
+
+    await expect(oldWait.respond({ ok: true, value: { outcome: 'allowed-once' } }))
+      .rejects.toThrow('stale connection generation')
+    expect(firstChannel.mutations.settle).not.toHaveBeenCalled()
+    expect(replacementChannel.mutations.settle).not.toHaveBeenCalled()
+  })
+
+  it('addresses history loading through the current generation only', () => {
+    const runtime = connectedRuntime()
+    const firstChannel = connectionChannel()
+    const surface = new MobileCompanionSurface(runtime)
+    const first = surface.bindAuthenticatedConnection(firstChannel)
+    if (first === undefined) throw new Error('expected Desktop resync receiver')
+    first.acceptValidatedDesktopResync(projection('session-one', 'One'))
+    surface.loadOlder('session-one')
+    expect(firstChannel.mutations.loadOlder).toHaveBeenCalledWith('session-one')
+
+    runtime.forgetConnection()
+    runtime.markConnectionOpen()
+    expect(() => { surface.loadOlder('session-one') }).toThrow('requires foreground synchronization')
   })
 })
 
-function sessionList(id?: string, title?: string): SessionListState {
-  if (id === undefined || title === undefined) {
-    return {
-      ids: [], byId: {}, current: undefined, phase: 'ready',
-      subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined,
-    }
-  }
-  const sessionId = id as SessionId
-  return {
-    ids: [sessionId],
-    byId: {
-      [sessionId]: {
-        id: sessionId, title, displayTitle: title, running: false, blank: false, updatedAt: 1,
-      },
-    },
-    current: undefined,
-    phase: 'ready',
-    subagentsByParent: {},
-    jobsBySession: {},
-    currentAddress: undefined,
-  }
+function connectedRuntime(): CompanionForegroundRuntime {
+  const runtime = new CompanionForegroundRuntime()
+  runtime.configure(grant)
+  runtime.markConnectionOpen()
+  return runtime
 }
 
-function mutationChannel() {
+function connectionChannel() {
+  const mutations = {
+    create: vi.fn<MobileCompanionConnectionChannel['mutations']['create']>(),
+    submit: vi.fn<MobileCompanionConnectionChannel['mutations']['submit']>(),
+    cancel: vi.fn<MobileCompanionConnectionChannel['mutations']['cancel']>(),
+    attach: vi.fn<MobileCompanionConnectionChannel['mutations']['attach']>(),
+    loadOlder: vi.fn<MobileCompanionConnectionChannel['mutations']['loadOlder']>(),
+    settle: vi.fn<MobileCompanionConnectionChannel['mutations']['settle']>(),
+  }
   return {
-    create: vi.fn(),
-    submit: vi.fn(),
-    cancel: vi.fn(),
-    attach: vi.fn(),
-    settle: vi.fn(),
+    mutations,
+    content: { loadImage: vi.fn(async () => 'data:image/gif;base64,R0lGODlhAQABAAAAACw=') },
+  } satisfies MobileCompanionConnectionChannel
+}
+
+function projection(id: string, title: string, pending = false): ValidatedDesktopSurfaceResync {
+  return {
+    type: 'desktop-resync',
+    version: 1,
+    authenticated: true,
+    desktopName: `${title} Desktop`,
+    sessions: {
+      ids: [id],
+      byId: {
+        [id]: { id, title, displayTitle: title, running: pending, blank: false, updatedAt: 1 },
+      },
+      current: null,
+      phase: 'ready',
+      subagentsByParent: {},
+      jobsBySession: {},
+      currentAddress: null,
+    },
+    workspaces: [],
+    conversations: [{
+      sessionId: id,
+      nodes: [],
+      turnTimings: [],
+      turnEnds: [],
+      partial: null,
+      runningCalls: [],
+      pending: pending
+        ? [{
+          kind: 'approval', interactionId: 'approval-rpc', sessionId: id,
+          payload: { approvalId: 'approval-id' as never, toolName: 'write', reason: 'Allow write' },
+        }, {
+          kind: 'question', interactionId: 'question-rpc', sessionId: id,
+          payload: { questions: [{ id: 'q1', question: 'Continue?', options: [{ label: 'Yes' }] }] },
+        }]
+        : [],
+      queue: [],
+      running: pending,
+      subagent: null,
+      composerPhase: 'active',
+      removed: false,
+      openState: 'open',
+      openError: null,
+      hasMore: true,
+      loadingOlder: false,
+      promptError: null,
+      blank: false,
+      lastAgentError: null,
+    }],
   }
 }

@@ -6,12 +6,9 @@ import type { PlatformAccountInstallation } from '@deepseek-ai/dsh-platform-acco
 import { MobileAccount } from './MobileAccount.tsx'
 import type { MobilePairingActions } from './MobilePairing.tsx'
 import type { CompanionForegroundRuntime } from './companion-lifecycle.ts'
-import {
-  MobileCompanionSurface,
-  type MobileCompanionContentChannel,
-  type MobileCompanionMutationChannel,
-} from './companion-surface.ts'
+import { MobileCompanionSurface } from './companion-surface.ts'
 import type { MobileCompanionPresentation } from './companion-history.ts'
+import { LiveMobilePresentationClock, type MobilePresentationClock } from './mobile-clock.ts'
 
 /** Product dependencies resolved before the Mobile React tree is mounted. */
 export interface MobileEntryComposition {
@@ -21,12 +18,10 @@ export interface MobileEntryComposition {
   pairing?: MobilePairingActions
   /** Current physical-connection synchronization authority. */
   companion: CompanionForegroundRuntime
-  /** Authenticated historical-content adapter installed beside the Companion decoder. */
-  content?: MobileCompanionContentChannel | undefined
-  /** Authenticated encrypted mutation adapter installed beside the Companion decoder. */
-  mutations?: MobileCompanionMutationChannel | undefined
   /** Keyless projection evidence; production omits this and consumes authenticated resync. */
   presentation?: MobileCompanionPresentation | undefined
+  /** Injectable presentation clock; production defaults to the live system clock. */
+  clock?: MobilePresentationClock | undefined
 }
 
 /** Mounted product entry and its authenticated Desktop projection receiver. */
@@ -44,11 +39,12 @@ export interface MountedMobileEntry {
  * @returns mounted product entry and authenticated Desktop projection receiver.
  */
 export function mountMobileEntry(container: Element, composition: MobileEntryComposition): MountedMobileEntry {
-  const companionSurface = new MobileCompanionSurface(composition.companion, composition.mutations, composition.content)
+  const companionSurface = new MobileCompanionSurface(composition.companion)
+  const clock = composition.clock ?? new LiveMobilePresentationClock()
   const root = createRoot(container)
   root.render(
     <StrictMode>
-      <MobileEntry composition={composition} companionSurface={companionSurface} />
+      <MobileEntry composition={composition} companionSurface={companionSurface} clock={clock} />
     </StrictMode>,
   )
   return { companionSurface, unmount: () => { root.unmount() } }
@@ -57,9 +53,11 @@ export function mountMobileEntry(container: Element, composition: MobileEntryCom
 function MobileEntry({
   composition,
   companionSurface,
+  clock,
 }: {
   composition: MobileEntryComposition
   companionSurface: MobileCompanionSurface
+  clock: MobilePresentationClock
 }): ReactNode {
   const projection = useSyncExternalStore(
     listener => companionSurface.subscribe(listener),
@@ -84,6 +82,7 @@ function MobileEntry({
       onCreate: companionSurface.create,
       onSubmit: companionSurface.submit,
       onCancel: companionSurface.cancel,
+      onLoadOlder: companionSurface.loadOlder,
     }
   return (
     <MobileAccount
@@ -92,6 +91,7 @@ function MobileEntry({
       companion={composition.presentation ?? authenticated}
       locale={locale}
       theme={theme}
+      clock={clock}
     />
   )
 }

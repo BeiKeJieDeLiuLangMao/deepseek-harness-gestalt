@@ -823,6 +823,9 @@
         "src/**/*.ts",
         "src/**/*.tsx",
         "tests/**/*.ts"
+      ],
+      "ignoreDependencies": [
+        "@deepseek-ai/dsh-client-ui-primitives"
       ]
     },
     "packages/client/modules": {

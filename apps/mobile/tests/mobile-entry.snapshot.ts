@@ -14,16 +14,12 @@ import {
   type PlatformAccountTransport,
 } from '@deepseek-ai/dsh-platform-account-client'
 import { parseRelayCredential, parseRelayRouteId } from '@deepseek-ai/dsh-remote-protocol'
-import {
-  EMPTY_CHAT_SNAPSHOT,
-  EMPTY_CONVERSATION_VIEWS,
-  PendingWait,
-  type ConversationSnapshot,
-  type SessionId,
-  type WorkspaceId,
-} from '@deepseek-ai/dsh-client-runtime/client'
 import { CompanionForegroundRuntime, installCompanionRuntime } from '../src/companion-lifecycle.ts'
 import { mountMobileEntry } from '../src/mobile-entry.tsx'
+import type {
+  MobileCompanionConnectionChannel, ValidatedDesktopSurfaceResync,
+} from '../src/companion-surface.ts'
+import { fixedMobilePresentationClock } from '../src/mobile-clock.ts'
 
 const environment = selectPlatformEnvironment(validatePlatformEnvironmentPair({
   development: {
@@ -65,14 +61,18 @@ const accountSession: AccountSessionView = {
 afterEach(cleanup)
 
 describe('Mobile shipped entry foreground mutation gate', () => {
-  it('keeps every human-visible mutation control disabled before current-generation validated resync', async () => {
+  it('binds receipts and history pages to the current-generation bundled entry', async () => {
     const runtime = new CompanionForegroundRuntime()
     const disposeRuntime = installCompanionRuntime(runtime)
     const installation = installationWithCompletedLogin()
     const root = document.createElement('div')
     document.body.append(root)
 
-    const mounted = mountMobileEntry(root, { installation, companion: runtime })
+    const mounted = mountMobileEntry(root, {
+      installation,
+      companion: runtime,
+      clock: fixedMobilePresentationClock(10_000),
+    })
     const surface = mounted.companionSurface
 
     fireEvent.click(await screen.findByRole('checkbox'))
@@ -88,7 +88,8 @@ describe('Mobile shipped entry foreground mutation gate', () => {
       revision: 1,
     })
     runtime.markConnectionOpen()
-    const firstResync = surface.bindValidatedDesktopResync()
+    const firstChannel = connectionChannel()
+    const firstResync = surface.bindAuthenticatedConnection(firstChannel)
     if (firstResync === undefined) throw new Error('expected first Desktop surface resync receiver')
     firstResync.acceptValidatedDesktopResync({
       type: 'desktop-resync',
@@ -97,24 +98,45 @@ describe('Mobile shipped entry foreground mutation gate', () => {
       desktopName: 'Guarded Desktop',
       sessions: guardedSessions(),
       workspaces: [{
-        workspaceId: 'guarded-workspace' as WorkspaceId,
-        path: '/work', title: 'Work', sessionIds: ['guarded-session' as SessionId],
+        workspaceId: 'guarded-workspace',
+        path: '/work', title: 'Work', sessionIds: ['guarded-session'],
         createdAt: '2026-08-22T00:00:00.000Z', updatedAt: '2026-08-22T00:00:00.000Z',
       }],
-      conversations: { ['guarded-session' as SessionId]: guardedConversation() },
+      conversations: [guardedConversation()],
     })
     await screen.findByRole('treeitem', { name: /Guarded Session/ })
 
-    expect(screen.getByRole('button', { name: 'New ungrouped Session' }).hasAttribute('disabled')).toBe(true)
+    expect(screen.getByRole('button', { name: 'New ungrouped Session' }).hasAttribute('disabled')).toBe(false)
     fireEvent.click(screen.getByRole('treeitem', { name: /Guarded Session/ }))
-    expect(screen.getByRole('button', { name: 'Allow once' }).hasAttribute('disabled')).toBe(true)
+    expect(screen.getByRole('button', { name: 'Allow once' }).hasAttribute('disabled')).toBe(false)
+    firstChannel.mutations.settle.mockResolvedValueOnce({ accepted: false, reason: 'not-pending' })
+    fireEvent.click(screen.getByRole('button', { name: 'Allow once' }))
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Allow once' }).hasAttribute('disabled')).toBe(false)
+    })
+    expect(firstChannel.mutations.settle).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 'guarded-session', interactionId: 'guarded-approval',
+    }))
+    fireEvent.click(screen.getByRole('button', { name: 'Load earlier' }))
+    expect(firstChannel.mutations.loadOlder).toHaveBeenCalledWith('guarded-session')
+    firstResync.acceptValidatedDesktopResync({
+      type: 'desktop-resync', version: 1, authenticated: true, desktopName: 'Guarded Desktop',
+      sessions: guardedSessions(),
+      workspaces: [{
+        workspaceId: 'guarded-workspace', path: '/work', title: 'Work', sessionIds: ['guarded-session'],
+        createdAt: '2026-08-22T00:00:00.000Z', updatedAt: '2026-08-22T00:00:00.000Z',
+      }],
+      conversations: [guardedConversation(true)],
+    })
+    await screen.findByText('Older page')
+    expect(screen.queryByRole('button', { name: 'Load earlier' })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Back' }))
 
     runtime.forgetConnection()
     runtime.markConnectionOpen()
     firstResync.acceptValidatedDesktopResync({
       type: 'desktop-resync', version: 1, authenticated: true, desktopName: 'Stale Desktop',
-      sessions: guardedSessions(), workspaces: [], conversations: {},
+      sessions: guardedSessions(), workspaces: [], conversations: [],
     })
 
     await waitFor(() => {
@@ -140,20 +162,19 @@ describe('Mobile shipped entry foreground mutation gate', () => {
 })
 
 function guardedSessions() {
-  const sessionId = 'guarded-session' as SessionId
   return {
-    ids: [sessionId],
+    ids: ['guarded-session'],
     byId: {
-      [sessionId]: {
-        id: sessionId, title: 'Guarded Session', displayTitle: 'Guarded Session', cwd: '/work',
+      'guarded-session': {
+        id: 'guarded-session', title: 'Guarded Session', displayTitle: 'Guarded Session', cwd: '/work',
         running: true, pendingInteraction: 'approval' as const, blank: false, updatedAt: 1,
       },
     },
-    current: undefined,
+    current: null,
     phase: 'ready' as const,
     subagentsByParent: {},
     jobsBySession: {},
-    currentAddress: undefined,
+    currentAddress: null,
   }
 }
 
@@ -179,23 +200,29 @@ function installationWithCompletedLogin(): PlatformAccountInstallation {
   })
 }
 
-function guardedConversation(): ConversationSnapshot {
-  const sessionId = 'guarded-session' as SessionId
-  const approval = new PendingWait('approval', 'guarded-approval' as never, sessionId, {
-    approvalId: 'guarded-approval-id' as never,
-    toolName: 'write',
-    reason: 'Allow write',
-  }, vi.fn())
+function guardedConversation(complete = false): ValidatedDesktopSurfaceResync['conversations'][number] {
   return {
-    sessionId,
-    views: EMPTY_CONVERSATION_VIEWS,
-    chat: EMPTY_CHAT_SNAPSHOT,
-    nodes: [],
-    turnTimings: new Map(),
-    turnEnds: new Map(),
+    sessionId: 'guarded-session',
+    nodes: [
+      ...(complete
+        ? [{
+          kind: 'user' as const, seq: 1, time: 1, source: null,
+          content: [{ type: 'text' as const, text: 'Older page' }],
+        }]
+        : []),
+      {
+        kind: 'user' as const, seq: 2, time: 2, source: null,
+        content: [{ type: 'text' as const, text: 'Current page' }],
+      },
+    ],
+    turnTimings: [],
+    turnEnds: [],
     partial: null,
     runningCalls: [],
-    pending: [approval],
+    pending: [{
+      kind: 'approval', interactionId: 'guarded-approval', sessionId: 'guarded-session',
+      payload: { approvalId: 'guarded-approval-id' as never, toolName: 'write', reason: 'Allow write' },
+    }],
     queue: [],
     running: true,
     subagent: null,
@@ -203,12 +230,27 @@ function guardedConversation(): ConversationSnapshot {
     removed: false,
     openState: 'open',
     openError: null,
-    hasMore: false,
+    hasMore: !complete,
     loadingOlder: false,
     promptError: null,
     blank: false,
     lastAgentError: null,
   }
+}
+
+function connectionChannel() {
+  const mutations = {
+    create: vi.fn<MobileCompanionConnectionChannel['mutations']['create']>(),
+    submit: vi.fn<MobileCompanionConnectionChannel['mutations']['submit']>(),
+    cancel: vi.fn<MobileCompanionConnectionChannel['mutations']['cancel']>(),
+    attach: vi.fn<MobileCompanionConnectionChannel['mutations']['attach']>(),
+    loadOlder: vi.fn<MobileCompanionConnectionChannel['mutations']['loadOlder']>(),
+    settle: vi.fn<MobileCompanionConnectionChannel['mutations']['settle']>(),
+  }
+  return {
+    mutations,
+    content: { loadImage: vi.fn(async () => 'data:image/gif;base64,R0lGODlhAQABAAAAACw=') },
+  } satisfies MobileCompanionConnectionChannel
 }
 
 function visibleMutationControls(): string[] {

@@ -1,6 +1,6 @@
 /** Public Session list/row presentation shared by Desktop and narrow Web compositions. */
 
-import type { ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type {
   SessionId, SessionListState, WorkspaceView,
 } from '@deepseek-ai/dsh-client-runtime/client'
@@ -59,15 +59,31 @@ export interface SessionListPresentationProps {
 export function SessionListPresentation({
   nodes, currentId, now, onOpen, t,
 }: SessionListPresentationProps): ReactNode {
+  const preferred = nodes.some(node => node.id === currentId) ? currentId : nodes[0]?.id
+  const [focusId, setFocusId] = useState(preferred)
+  const tree = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!nodes.some(node => node.id === focusId)) setFocusId(preferred)
+  }, [focusId, nodes, preferred])
+  const moveFocus = (index: number, direction: -1 | 1): void => {
+    const target = Math.max(0, Math.min(nodes.length - 1, index + direction))
+    const next = nodes[target] as (typeof nodes)[number]
+    setFocusId(next.id)
+    const rows = tree.current?.querySelectorAll<HTMLElement>('[data-session-row]')
+    rows?.[target]?.focus()
+  }
   return (
-    <div role="tree">
-      {nodes.map(node => (
+    <div role="tree" ref={tree}>
+      {nodes.map((node, index) => (
         <SessionNodeItem
           key={node.id}
           node={node}
           currentId={currentId}
           now={now}
           onOpen={onOpen}
+          tabIndex={node.id === focusId ? 0 : -1}
+          onFocus={() => { setFocusId(node.id) }}
+          onMoveFocus={(direction) => { moveFocus(index, direction) }}
           flat
           t={t}
         />

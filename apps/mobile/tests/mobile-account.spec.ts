@@ -17,6 +17,7 @@ import {
 } from '@deepseek-ai/dsh-platform-account-client'
 import { MobileAccount } from '../src/MobileAccount.tsx'
 import type { MobilePairingActions } from '../src/MobilePairing.tsx'
+import { fixedMobilePresentationClock } from '../src/mobile-clock.ts'
 
 afterEach(cleanup)
 
@@ -56,11 +57,12 @@ const session: AccountSessionView = {
   accessExpiresAt: Date.now() + 900_000,
   refreshExpiresAt: Date.now() + 2_592_000_000,
 }
+const clock = fixedMobilePresentationClock(0)
 
 describe('MobileAccount', () => {
   it('shows both privacy notices and blocks GitHub until consent', async () => {
     const { installation, openSystemBrowser } = fixture()
-    render(createElement(MobileAccount, { installation, locale: 'zh', theme: 'light' }))
+    render(createElement(MobileAccount, { installation, locale: 'zh', theme: 'light', clock }))
 
     expect(screen.getByText(/Platform 会保存 GitHub 数字 ID/)).toBeTruthy()
     expect(screen.getByText(/Platform stores the numeric GitHub id/)).toBeTruthy()
@@ -87,7 +89,7 @@ describe('MobileAccount', () => {
       deactivate,
       unpair: vi.fn().mockResolvedValue(undefined),
     }
-    render(createElement(MobileAccount, { installation, pairing, locale: 'zh', theme: 'light' }))
+    render(createElement(MobileAccount, { installation, pairing, locale: 'zh', theme: 'light', clock }))
 
     fireEvent.click(screen.getByRole('checkbox'))
     await waitFor(() => { expect(screen.getByRole('button', { name: '使用 GitHub 继续' }).hasAttribute('disabled')).toBe(false) })
