@@ -10,11 +10,11 @@ Status: implemented
 
 ## 决策
 
-Mobile Companion 只在用户打开应用或把应用切回前台后获取当前状态。进入后台会停止 Relay WSS 连接。回到前台会与选中的 Paired Desktop 重新连接。Relay ciphertext 不能把同步标记为完成：由 #217 所有的已鉴权 Encrypted Companion decoder 必须解码受支持、有版本的 Desktop resync message，之后才能调用 `acceptValidatedDesktopResync`。`companionMayMutate` 随后才允许 Session 创建、提示词、取消、审批、人机问题回答、附件及其他 mutation；在此之前，每个 helper 与最终发送控制器都会 fail closed。
+Mobile Companion 只在用户打开应用或把应用切回前台后获取当前状态。进入后台会停止 Relay WSS 连接。回到前台会与选中的 Paired Desktop 重新连接。每个确认的物理 attachment 都会启动一个 Mobile 同步 generation；connection loss 与 transport error 会在内部重连前清除 `socketOpen`、`synchronized` 和 active generation。Relay ciphertext 不能把同步标记为完成：由 #217 所有的已鉴权 Encrypted Companion decoder 必须解码受支持、有版本的 Desktop resync message，并调用 `bindValidatedDesktopResync` 返回的 generation-bound receiver。过期 receiver 不能授权替换 socket。`companionMayMutate` 随后才允许 Session 创建、提示词、取消、审批、人机问题回答、附件及其他 mutation；在此之前，每个 helper 与最终发送控制器都会 fail closed。
 
 产品不包含推送投递能力。发布源码与配置不包含 APNs 和 FCM adapter、payload 记录、登记 token、持久化、撤销清理、配额、指标类别、部署 secret、原生依赖、HTTP 操作或通知 deep link。配对链接仍然保留，因为它只携带一个短期 Pairing Challenge，不携带过期交互权威。
 
-仓库级 `verify-companion-no-push` 门禁扫描发布的 application、package、example、native、Python、website、workflow、script、生成源码、manifest 与依赖 lock 路径，同时排除测试和说明文档。它拒绝提供方 symbol 与 operation、`fcmToken` 与 `pushToken`、原生通知依赖与配置、厂商原生 asset 文件名及过时发布证据，同时允许普通数组 `push()` 调用。Mobile 生命周期与 mutation 测试证明进入后台时停止连接、串行前台重连、拒绝把原始 ciphertext 当作同步、各 mutation 路径 fail closed，以及解除配对时移除 grant。
+仓库级 `verify-companion-no-push` 门禁扫描发布的 application、已跟踪 build 配置、package、example、native、Python、website、workflow、script、生成源码、manifest 与依赖 lock 路径，同时排除测试、说明文档和已知生成输出。它拒绝提供方 symbol 与 operation、单复数 device-token 字段、token repository、原生通知依赖、权限与 API、厂商原生 asset 文件名及过时发布证据，同时允许普通数组 `push()` 调用。Mobile 生命周期与 mutation 测试证明进入后台时停止连接、串行前台和内部重连、拒绝过期 generation、拒绝把原始 ciphertext 当作同步、各 mutation 路径 fail closed，以及解除配对时移除 grant。keyless 真实入口 snapshot 会钉住创建、提示词、取消、附件、审批和 Ask User 控件在当前 generation 完成已验证同步前保持 disabled。
 
 该决策实现[真实 Companion 产品链路](../../proposed/architecture/2026-08-22-real-companion-product-path.md)中的通知移除切片。旧的无内容通知决策已整合到此处，因为没有生产 schema、配置、migration、兼容行为、文档承诺或支持性行为测试继续存在。
 

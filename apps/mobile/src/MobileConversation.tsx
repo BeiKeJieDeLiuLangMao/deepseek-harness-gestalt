@@ -16,6 +16,8 @@ export interface MobileConversationProps {
   onSubmit?: (text: string) => void
   /** Cancel active execution through Desktop cancellation. */
   onCancel?: () => void
+  /** Select an attachment for encrypted transfer through Desktop. */
+  onAttach?: () => void
   /** Whether Desktop is currently streaming. */
   streaming?: boolean
   /** Process visibility required before any interaction settlement. */
@@ -26,7 +28,7 @@ export interface MobileConversationProps {
 
 /** Phone conversation that reuses Gestalt tokens and never exposes terminal input. */
 export function MobileConversation({
-  title, onBack, blocks, onSubmit, onCancel, streaming = false, companionState, onSettled,
+  title, onBack, blocks, onSubmit, onCancel, onAttach, streaming = false, companionState, onSettled,
 }: MobileConversationProps): ReactNode {
   const [draft, setDraft] = useState('')
   const mayMutate = companionMayMutate(companionState)
@@ -58,12 +60,16 @@ export function MobileConversation({
         >
           <textarea
             aria-label="继续会话"
+            disabled={!mayMutate}
             value={draft}
             onChange={(event) => { setDraft(event.target.value) }}
           />
           <button type="submit" disabled={!mayMutate}>发送</button>
           {onCancel !== undefined && streaming && (
             <button type="button" disabled={!mayMutate} onClick={() => { if (mayMutate) onCancel() }}>取消</button>
+          )}
+          {onAttach !== undefined && (
+            <button type="button" disabled={!mayMutate} onClick={() => { if (mayMutate) onAttach() }}>添加附件</button>
           )}
         </form>
       )}

@@ -122,7 +122,9 @@ describe('Companion foreground lifecycle', () => {
     const dispose = bindCompanionProcessVisibility(runtime)
     await runtime.setForeground(true)
     expect(started).toEqual(['start'])
-    runtime.acceptValidatedDesktopResync(validatedResync)
+    const receiver = runtime.bindValidatedDesktopResync()
+    if (receiver === undefined) throw new Error('expected Desktop resync receiver')
+    receiver.acceptValidatedDesktopResync(validatedResync)
     expect(companionMayMutate(runtime.getState())).toBe(true)
     await runtime.releasePairing()
     started.length = 0
@@ -150,7 +152,6 @@ describe('Companion foreground lifecycle', () => {
       isConnected: () => true,
     }
     const runtime = new CompanionForegroundRuntime({ relay })
-    const onValidatedDesktopResync = () => { runtime.acceptValidatedDesktopResync(validatedResync) }
     runtime.configure(grant)
     const starting = runtime.start()
     await Promise.resolve()
@@ -160,9 +161,29 @@ describe('Companion foreground lifecycle', () => {
     releaseStart()
     await starting
     await releasing
-    onValidatedDesktopResync()
+    expect(runtime.bindValidatedDesktopResync()).toBeUndefined()
     expect(companionMayMutate(runtime.getState())).toBe(false)
     expect(started.filter(step => step === 'start')).toHaveLength(1)
+  })
+
+  it('invalidates a validated resync receiver across physical reconnect generations', () => {
+    const runtime = new CompanionForegroundRuntime()
+    runtime.configure(grant)
+    runtime.markConnectionOpen()
+    const first = runtime.bindValidatedDesktopResync()
+    if (first === undefined) throw new Error('expected first resync receiver')
+    first.acceptValidatedDesktopResync(validatedResync)
+    expect(companionMayMutate(runtime.getState())).toBe(true)
+
+    runtime.forgetConnection()
+    runtime.markConnectionOpen()
+    first.acceptValidatedDesktopResync(validatedResync)
+    expect(companionMayMutate(runtime.getState())).toBe(false)
+
+    const replacement = runtime.bindValidatedDesktopResync()
+    if (replacement === undefined) throw new Error('expected replacement resync receiver')
+    replacement.acceptValidatedDesktopResync(validatedResync)
+    expect(companionMayMutate(runtime.getState())).toBe(true)
   })
 
   it('removes a Capacitor listener that resolves after dispose starts', async () => {

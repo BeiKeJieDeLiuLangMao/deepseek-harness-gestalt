@@ -18,6 +18,7 @@ import '@deepseek-ai/dsh-client-ui-theme/src/styles/gradient-shadow-text.css'
 import {
   bindCompanionProcessVisibility,
   CompanionForegroundRuntime,
+  companionRuntime,
   installCompanionRuntime,
 } from './companion-lifecycle.ts'
 import { MobileAccount } from './MobileAccount.tsx'
@@ -106,6 +107,9 @@ if (environment.environment === 'development' && import.meta.env.VITE_PERSONAL_P
     attachTimeoutMs: positiveInteger(import.meta.env.VITE_REMOTE_RELAY_ATTACH_TIMEOUT_MS, 'attach timeout'),
     heartbeatIntervalMs: positiveInteger(import.meta.env.VITE_REMOTE_RELAY_HEARTBEAT_INTERVAL_MS, 'heartbeat interval'),
     reconnectDelayMs: positiveInteger(import.meta.env.VITE_REMOTE_RELAY_RECONNECT_DELAY_MS, 'reconnect delay'),
+    onConnectionReady: () => { companionRuntime()?.markConnectionOpen() },
+    onConnectionLost: () => { companionRuntime()?.forgetConnection() },
+    onTransportError: () => { companionRuntime()?.forgetConnection() },
   })
   const companion = new CompanionForegroundRuntime({ relay })
   installCompanionRuntime(companion)

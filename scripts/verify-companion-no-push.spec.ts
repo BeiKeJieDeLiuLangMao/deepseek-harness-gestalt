@@ -31,12 +31,18 @@ describe('Companion push absence gate', () => {
     roots.push(root)
     const files: Record<string, string> = {
       '.github/workflows/mobile-release.yml': 'secret: PLATFORM_FCM_KEY\n',
+      'apps/desktop/build/entitlements.mac.plist': '<key>aps-environment</key>\n',
       'apps/mobile/android/app/google-services.json': '{}\n',
+      'apps/mobile/android/app/src/main/AndroidManifest.xml': '<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\n',
       'apps/mobile/ios/App/App.entitlements': '<key>aps-environment</key>\n',
+      'apps/mobile/ios/App/Notifications.swift': 'UNUserNotificationCenter.current()\n',
       'apps/mobile/package.json': '{"dependencies":{"expo-notifications":"1.0.0"}}\n',
       'apps/mobile/public/firebase-messaging-sw.js': 'self.addEventListener("message", () => {})\n',
       'apps/mobile/src/companion-release.ts': 'const checks = ["push"]\n',
+      'packages/platform/remote-access/package.json': '{"dependencies":{"node-apn":"1.0.0"}}\n',
+      'packages/platform/remote-access/src/push-store.ts': 'class PushTokenRepositoryMemory {}\n',
       'scripts/mobile-release.ts': 'const fcmToken = process.env.VALUE\n',
+      'scripts/mobile-tokens.ts': 'const pushTokens: string[] = []\n',
     }
     for (const [file, contents] of Object.entries(files)) {
       mkdirSync(dirname(join(root, file)), { recursive: true })
@@ -46,14 +52,20 @@ describe('Companion push absence gate', () => {
     const failures = collectCompanionPushResidue(root)
     expect(failures).toEqual(expect.arrayContaining([
       '.github/workflows/mobile-release.yml:1: contains forbidden Companion push product token FCM.',
+      'apps/desktop/build/entitlements.mac.plist:1: contains forbidden Companion push product token native notification configuration.',
       'apps/mobile/android/app/google-services.json: contains forbidden Companion push product path google-services.json.',
+      'apps/mobile/android/app/src/main/AndroidManifest.xml:1: contains forbidden Companion push product token native notification configuration.',
       'apps/mobile/ios/App/App.entitlements:1: contains forbidden Companion push product token native notification configuration.',
+      'apps/mobile/ios/App/Notifications.swift:1: contains forbidden Companion push product token native notification API.',
       'apps/mobile/package.json:1: contains forbidden Companion push product token native notification dependency.',
       'apps/mobile/public/firebase-messaging-sw.js: contains forbidden Companion push product path firebase-messaging-sw.js.',
       'apps/mobile/src/companion-release.ts:1: contains forbidden Companion push product token release push evidence.',
+      'packages/platform/remote-access/package.json:1: contains forbidden Companion push product token native notification dependency.',
+      'packages/platform/remote-access/src/push-store.ts:1: contains forbidden Companion push product token push token repository.',
       'scripts/mobile-release.ts:1: contains forbidden Companion push product token device token symbol.',
+      'scripts/mobile-tokens.ts:1: contains forbidden Companion push product token device token symbol.',
     ]))
-    expect(failures).toHaveLength(7)
+    expect(failures).toHaveLength(13)
   })
 
   it('finds no Companion push product residue in the repository', () => {

@@ -21,7 +21,7 @@ const PRODUCT_GLOBS = [
 ]
 
 const EXCLUDED_PATHS = [
-  /(?:^|\/)(?:node_modules|\.git|lib|dist|build|coverage|tests?|__tests__|snapshots)(?:\/|$)/u,
+  /(?:^|\/)(?:node_modules|\.git|lib|dist|coverage|tests?|__tests__|snapshots)(?:\/|$)/u,
   /(?:^|\/)(?:README|CONTEXT)(?:\.zh)?\.md$/u,
   /\.md$|\.i18n\.yaml$|(?:\.spec|\.test)\.[^.]+$/u,
   /^scripts\/verify-companion-no-push\.ts$/u,
@@ -37,17 +37,19 @@ const FORBIDDEN_TOKENS = [
   { label: 'APNs', pattern: /(?:^|[^a-z0-9])apns(?:$|[^a-z0-9])/iu },
   { label: 'FCM', pattern: /(?:^|[^a-z0-9])fcm(?:$|[^a-z0-9])/iu },
   { label: 'CompanionPush symbol', pattern: /\bCompanionPush[A-Za-z0-9_]*\b/u },
-  { label: 'device token symbol', pattern: /\b(?:fcmToken|pushToken)\b/iu },
+  { label: 'device token symbol', pattern: /\b(?:fcmToken|pushTokens?)\b/iu },
+  { label: 'push token repository', pattern: /\bPushTokenRepository[A-Za-z0-9_]*\b/u },
   { label: 'push token symbol', pattern: /\b(?:PushPlatform|PushTokenRegistration|PushTokenStore)\b/u },
   { label: 'push product language', pattern: /\bpush[- ](?:token|notification|delivery|provider|hint|quota|metric|secret)s?\b/iu },
   { label: 'push product language', pattern: /推送/u },
   { label: 'push operation', pattern: /\b(?:emit|register|unregister)-push-(?:hint|token)\b/u },
   { label: 'push quota or persistence', pattern: /\bpushHints(?:At|PerAccountPerDay)\b/u },
   { label: 'Capacitor push dependency', pattern: /@capacitor\/push-notifications\b/u },
-  { label: 'native notification dependency', pattern: /\b(?:expo-notifications|firebase-admin|firebase\/messaging|@react-native-firebase\/messaging|FirebaseMessaging)\b/u },
+  { label: 'native notification dependency', pattern: /\b(?:expo-notifications|firebase-admin|firebase\/messaging|@react-native-firebase\/messaging|FirebaseMessaging|node-apn)\b/u },
   { label: 'native notification dependency', pattern: /com\.google\.firebase:firebase-messaging\b/u },
-  { label: 'native notification configuration', pattern: /\b(?:aps-environment|remote-notification)\b/iu },
+  { label: 'native notification configuration', pattern: /\b(?:aps-environment|remote-notification|POST_NOTIFICATIONS)\b/iu },
   { label: 'native notification configuration', pattern: /\bgoogle-services(?:\.json)?\b/iu },
+  { label: 'native notification API', pattern: /\bUNUserNotificationCenter\b/u },
 ] as const
 
 const RELEASE_PUSH_EVIDENCE = /["']push["']/u

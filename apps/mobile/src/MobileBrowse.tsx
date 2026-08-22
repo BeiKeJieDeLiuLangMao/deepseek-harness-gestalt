@@ -6,6 +6,7 @@ import {
   type CompanionSessionSummary,
 } from './companion-history.ts'
 import { companionMayMutate, type CompanionConnectionState } from './companion-lifecycle.ts'
+import type { CompanionInteraction } from './companion-approval.ts'
 import { MobileConversation } from './MobileConversation.tsx'
 import css from './MobileBrowse.module.css'
 
@@ -19,12 +20,25 @@ export interface MobileBrowseProps {
   sessions: readonly CompanionSessionSummary[]
   /** Optional create handler used by Workspace and global create actions. */
   onCreate?: (input: { workspace?: string }) => void
+  /** Submit a prompt for the opened Session. */
+  onSubmit?: (sessionId: string, text: string) => void
+  /** Cancel execution for the opened Session. */
+  onCancel?: (sessionId: string) => void
+  /** Select an attachment for the opened Session. */
+  onAttach?: (sessionId: string) => void
+  /** Whether the opened Session is streaming. */
+  streaming?: boolean
+  /** Receive a Desktop-authoritative interaction settlement. */
+  onSettled?: (interaction: CompanionInteraction) => void
   /** Process visibility required before conversation settlement. */
   companionState?: CompanionConnectionState
 }
 
 /** Phone-sized Workspace/Session browse without Desktop columns. */
-export function MobileBrowse({ desktopName, connection, sessions, onCreate, companionState }: MobileBrowseProps): ReactNode {
+export function MobileBrowse({
+  desktopName, connection, sessions, onCreate, onSubmit, onCancel, onAttach,
+  streaming = false, companionState, onSettled,
+}: MobileBrowseProps): ReactNode {
   const [openId, setOpenId] = useState<string>()
   const [page, setPage] = useState(0)
   const paged = useMemo(
@@ -42,6 +56,11 @@ export function MobileBrowse({ desktopName, connection, sessions, onCreate, comp
           title={open.title}
           onBack={() => { setOpenId(undefined) }}
           blocks={open.blocks}
+          {...(onSubmit === undefined ? {} : { onSubmit: (text: string) => { onSubmit(open.id, text) } })}
+          {...(onCancel === undefined ? {} : { onCancel: () => { onCancel(open.id) } })}
+          {...(onAttach === undefined ? {} : { onAttach: () => { onAttach(open.id) } })}
+          streaming={streaming}
+          {...(onSettled === undefined ? {} : { onSettled })}
           {...(companionState === undefined ? {} : { companionState })}
         />
       )

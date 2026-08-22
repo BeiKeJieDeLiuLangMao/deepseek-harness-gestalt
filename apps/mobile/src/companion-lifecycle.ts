@@ -6,16 +6,20 @@ import type { CompanionConnectionState } from './companion-mutation.ts'
 
 export {
   companionMayMutate,
-  requireCompanionMutation,
   type CompanionConnectionState,
-  type CompanionMutationName,
 } from './companion-mutation.ts'
 
 /** Authenticated, decoded Desktop resynchronization message supplied by the Encrypted Companion decoder. */
-export interface ValidatedDesktopResync {
+interface ValidatedDesktopResync {
   readonly type: 'desktop-resync'
   readonly version: 1
   readonly authenticated: true
+}
+
+/** Generation-bound receiver called only by the authenticated Encrypted Companion decoder. */
+interface ValidatedDesktopResyncReceiver {
+  /** @param message - validated resync for the physical connection that created this receiver. */
+  acceptValidatedDesktopResync(message: ValidatedDesktopResync): void
 }
 
 /** Relay lifecycle the foreground runtime actually starts and stops. */
@@ -76,6 +80,8 @@ export class CompanionForegroundRuntime {
   private state: CompanionConnectionState
   private granted = false
   private transition: Promise<void> = Promise.resolve()
+  private connectionGeneration = 0
+  private activeConnectionGeneration: number | undefined
   private readonly relay: CompanionRelayLifecycle | undefined
   private readonly listeners = new Set<() => void>()
 
@@ -109,6 +115,7 @@ export class CompanionForegroundRuntime {
     this.granted = grant !== undefined
     this.relay?.configure?.(grant)
     if (grant === undefined) {
+      this.activeConnectionGeneration = undefined
       this.state = { ...this.state, socketOpen: false, synchronized: false }
       this.publish()
     }
@@ -137,17 +144,31 @@ export class CompanionForegroundRuntime {
     await this.enqueue(() => this.applyForeground(foreground))
   }
 
-  /**
-   * Admit Desktop-authoritative synchronization after the Encrypted Companion
-   * decoder authenticates and decodes the supported versioned resync message.
-   * Raw Relay ciphertext must never call this method.
-   * @param message - validated resync message produced by the authenticated decoder owned by #217.
-   */
-  acceptValidatedDesktopResync(message: ValidatedDesktopResync): void {
-    if (!this.granted) return
-    void message
-    this.state = markCompanionSynchronized(this.state)
+  /** Record one Platform-acknowledged physical connection and invalidate earlier resync receivers. */
+  markConnectionOpen(): void {
+    if (!this.granted || !this.state.foreground) return
+    this.connectionGeneration += 1
+    this.activeConnectionGeneration = this.connectionGeneration
+    this.state = markCompanionSocketOpen(this.state)
     this.publish()
+  }
+
+  /**
+   * Bind Desktop resynchronization to the current physical connection generation.
+   * Raw Relay ciphertext must never receive or call this receiver.
+   * @returns a generation-bound receiver, or `undefined` while disconnected.
+   */
+  bindValidatedDesktopResync(): ValidatedDesktopResyncReceiver | undefined {
+    const generation = this.activeConnectionGeneration
+    if (generation === undefined || !this.state.socketOpen) return undefined
+    return {
+      acceptValidatedDesktopResync: (message) => {
+        if (!this.granted || this.activeConnectionGeneration !== generation) return
+        void message
+        this.state = markCompanionSynchronized(this.state)
+        this.publish()
+      },
+    }
   }
 
   /** Drop pairing-delivered authority, reset connection state, and stop Relay. */
@@ -158,6 +179,7 @@ export class CompanionForegroundRuntime {
 
   /** Reset socket and synchronization state after connection loss. */
   forgetConnection(): void {
+    this.activeConnectionGeneration = undefined
     this.state = { ...this.state, socketOpen: false, synchronized: false }
     this.publish()
   }
@@ -169,6 +191,7 @@ export class CompanionForegroundRuntime {
   }
 
   private async applyForeground(foreground: boolean): Promise<void> {
+    if (!foreground) this.activeConnectionGeneration = undefined
     this.state = setCompanionForeground(this.state, foreground)
     this.publish()
     if (!foreground) {
@@ -190,8 +213,7 @@ export class CompanionForegroundRuntime {
       return
     }
     if (this.relay.isConnected()) {
-      this.state = markCompanionSocketOpen(this.state)
-      this.publish()
+      if (!this.state.socketOpen) this.markConnectionOpen()
     }
   }
 
