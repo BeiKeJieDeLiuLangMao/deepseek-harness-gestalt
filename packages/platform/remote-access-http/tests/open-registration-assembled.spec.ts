@@ -1,11 +1,10 @@
-/** REAL HTTP composition for open-registration pairing, blob, and push quotas. */
+/** REAL HTTP composition for open-registration pairing and blob quotas. */
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { parseAccountProofJti, parseInstallationId } from '@deepseek-ai/dsh-platform-account'
 import {
-  ACCOUNT_DAILY_QUOTA_WINDOW_MS,
   MemoryPlatformCapacityGate,
   OPEN_REGISTRATION_HARD_CAP_RETRY_AFTER_SECONDS,
   OPEN_REGISTRATION_QUOTAS,
@@ -87,7 +86,7 @@ describe('assembled open-registration Remote Access quotas', () => {
     })
   })
 
-  it('enforces blob and push ceilings and sheds new pairing at capacity over HTTP', {
+  it('enforces blob ceilings and sheds new pairing at capacity over HTTP', {
     timeout: 60_000,
   }, async () => {
     const now = { value: NOW }
@@ -117,13 +116,6 @@ describe('assembled open-registration Remote Access quotas', () => {
     })
     expect(oversize.status).toBe(429)
 
-    for (let index = 0; index < OPEN_REGISTRATION_QUOTAS.pushHintsPerAccountPerDay; index += 1) {
-      expect((await request(server.origin, desktop, { operation: 'emit-push-hint' })).status).toBe(200)
-    }
-    const pushOver = await request(server.origin, desktop, { operation: 'emit-push-hint' })
-    expect(pushOver.status).toBe(429)
-    now.value += ACCOUNT_DAILY_QUOTA_WINDOW_MS + 1
-
     expect(gate.tryAcquire()).toBe(true)
     const shed = await request(server.origin, desktop, {
       operation: 'create-challenge',
@@ -133,7 +125,6 @@ describe('assembled open-registration Remote Access quotas', () => {
     expect(shed.headers.get('retry-after')).toBe('5')
     await expect(shed.json()).resolves.toMatchObject({ error: { code: 'PLATFORM_CAPACITY', retryAfter: 5 } })
     expect((await request(server.origin, desktop, { operation: 'admit-blob', bytes: 1 })).status).toBe(429)
-    expect((await request(server.origin, desktop, { operation: 'emit-push-hint' })).status).toBe(200)
     const listed = await request(server.origin, desktop, { operation: 'list-pairings' })
     expect(listed.status).toBe(200)
     await expect(listed.json()).resolves.toMatchObject([{ id: pairing.id }])

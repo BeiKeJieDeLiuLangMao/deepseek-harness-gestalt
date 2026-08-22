@@ -24,8 +24,10 @@ export interface MobileBrowseProps {
   theme: 'light' | 'dark'
   /** Session-authorized historical-image loader. */
   loadImage: (sessionId: string, attachment: ImageAttachmentRef) => Promise<string>
+  /** Whether the current foreground synchronization admits mutations. */
+  canMutate: boolean
   /** Optional create handler used by Workspace and global create actions. */
-  onCreate?: (input: { workspace?: string }) => void
+  onCreate?: ((input: { workspace?: string }) => void) | undefined
   /** Submit one prompt to the selected Desktop Session. */
   onSubmit?: ((sessionId: string, text: string) => void | Promise<void>) | undefined
   /** Cancel one active Desktop Session. */
@@ -37,7 +39,7 @@ export interface MobileBrowseProps {
 /** Phone-sized Workspace/Session browse without Desktop columns. */
 export function MobileBrowse({
   desktopName, connection, sessions, locale, theme, loadImage,
-  onCreate, onSubmit, onCancel, onLoadOlder,
+  canMutate, onCreate, onSubmit, onCancel, onLoadOlder,
 }: MobileBrowseProps): ReactNode {
   const [openId, setOpenId] = useState<string>()
   const [page, setPage] = useState(0)
@@ -59,6 +61,7 @@ export function MobileBrowse({
           theme={theme}
           loadImage={attachment => loadImage(open.id, attachment)}
           cwd={open.cwd}
+          mutationEnabled={canMutate}
           {...(onSubmit === undefined ? {} : { onSubmit: (text: string) => onSubmit(open.id, text) })}
           {...(onCancel === undefined ? {} : { onCancel: () => { onCancel(open.id) } })}
           {...(onLoadOlder === undefined ? {} : { onLoadOlder: () => { onLoadOlder(open.id) } })}
@@ -82,14 +85,16 @@ export function MobileBrowse({
         <p className={css.desktop}>{desktopName}</p>
         <p className={css.connection} data-connection={connection}>{connection === 'online' ? 'Remote Online' : 'Remote Offline'}</p>
         {onCreate !== undefined && (
-          <button type="button" onClick={() => { onCreate({}) }}>{locale === 'zh' ? '新建 Ungrouped Session' : 'New ungrouped Session'}</button>
+          <button type="button" disabled={!canMutate} onClick={() => { if (canMutate) onCreate({}) }}>
+            {locale === 'zh' ? '新建 Ungrouped Session' : 'New ungrouped Session'}
+          </button>
         )}
       </header>
       {grouped.groups.map(group => (
         <section key={group.name} className={css.group} aria-label={group.name}>
           <h2>{group.name}</h2>
           {onCreate !== undefined && (
-            <button type="button" onClick={() => { onCreate({ workspace: group.name }) }}>
+            <button type="button" disabled={!canMutate} onClick={() => { if (canMutate) onCreate({ workspace: group.name }) }}>
               {locale === 'zh' ? `在 ${group.name} 新建 Session` : `New Session in ${group.name}`}
             </button>
           )}

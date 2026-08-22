@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { createElement } from 'react'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   EMPTY_CHAT_SNAPSHOT, EMPTY_CONVERSATION_VIEWS, type ConversationSnapshot, type SessionId,
 } from '@deepseek-ai/dsh-client-runtime/client'
@@ -21,6 +21,7 @@ const browsePresentation = {
   locale: 'zh' as const,
   theme: 'light' as const,
   loadImage: async () => 'data:image/gif;base64,R0lGODlhAQABAAAAACw=',
+  canMutate: true,
 }
 
 function conversation(): ConversationSnapshot {
@@ -40,6 +41,8 @@ const history: readonly CompanionSessionSummary[] = [
   { id: 's2', title: 'Beta', project: 'Tools', summary: 'beta summary' },
   { id: 's3', title: 'Gamma', summary: 'ungrouped summary' },
 ]
+const ready = { foreground: true, socketOpen: true, synchronized: true }
+const reconnecting = { foreground: true, socketOpen: true, synchronized: false }
 
 describe('Mobile Companion browse projection', () => {
   it('groups Workspace and project rows and leaves unlabeled Sessions in Ungrouped', () => {
@@ -90,7 +93,7 @@ describe('Mobile Companion browse projection', () => {
       title: 'New Work',
       workspace: 'Work',
       devicePrincipalId: 'device-1',
-    })
+    }, ready)
     committed.add('op-work')
     expect(workspace.created).toBe(true)
     expect(groupCompanionSessions(workspace.sessions).groups[0]?.sessions.map(session => session.title))
@@ -100,16 +103,24 @@ describe('Mobile Companion browse projection', () => {
       title: 'Duplicate',
       workspace: 'Work',
       devicePrincipalId: 'device-1',
-    })
+    }, ready)
     expect(replay.created).toBe(false)
     expect(replay.sessions).toHaveLength(workspace.sessions.length)
     const ungrouped = createCompanionSession(workspace.sessions, committed, {
       operationId: 'op-ungrouped',
       title: 'Loose',
       devicePrincipalId: 'device-1',
-    })
+    }, ready)
     expect(ungrouped.sessions.at(-1)).toMatchObject({ title: 'Loose' })
     expect(ungrouped.sessions.at(-1)?.workspace).toBeUndefined()
+  })
+
+  it('refuses Session creation before foreground synchronization', () => {
+    expect(() => createCompanionSession(history, new Set(), {
+      operationId: 'op-blocked',
+      title: 'Blocked',
+      devicePrincipalId: 'device-1',
+    }, reconnecting)).toThrow(/foreground synchronization/)
   })
 
   it('exposes Workspace-targeted and global Ungrouped create actions without a voice control', () => {
@@ -125,5 +136,24 @@ describe('Mobile Companion browse projection', () => {
     fireEvent.click(screen.getByRole('button', { name: '新建 Ungrouped Session' }))
     expect(created).toEqual([{ workspace: 'Work' }, {}])
     expect(screen.queryByRole('button', { name: /voice|语音/i })).toBeNull()
+  })
+
+  it('disables every Session creation action before foreground synchronization', () => {
+    const onCreate = vi.fn()
+    render(createElement(MobileBrowse, {
+      desktopName: 'Studio Mac',
+      connection: 'online',
+      sessions: history,
+      ...browsePresentation,
+      canMutate: false,
+      onCreate,
+    }))
+    const global = screen.getByRole('button', { name: '新建 Ungrouped Session' })
+    const workspace = screen.getByRole('button', { name: '在 Work 新建 Session' })
+    expect(global.hasAttribute('disabled')).toBe(true)
+    expect(workspace.hasAttribute('disabled')).toBe(true)
+    fireEvent.click(global)
+    fireEvent.click(workspace)
+    expect(onCreate).not.toHaveBeenCalled()
   })
 })

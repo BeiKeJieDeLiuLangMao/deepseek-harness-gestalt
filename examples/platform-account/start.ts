@@ -74,7 +74,8 @@ export async function apply(ctx: Context): Promise<void> {
 
   const pair = generateKeyPairSync('ec', { namedCurve: 'P-256' })
   console.log('PRIVACY zh+en before authorization')
-  console.log(`NOTICE ${ACCOUNT_PRIVACY_NOTICE.zh.includes('不提供账号删除') && ACCOUNT_PRIVACY_NOTICE.en.includes('does not provide account deletion') ? 'accepted' : 'missing'}`)
+  console.log(`NOTICE zh=${ACCOUNT_PRIVACY_NOTICE.zh}`)
+  console.log(`NOTICE en=${ACCOUNT_PRIVACY_NOTICE.en}`)
   const attempt = await first.beginLogin({
     installationId: parseInstallationId('desktop-keyless-1'),
     installationKind: 'desktop',

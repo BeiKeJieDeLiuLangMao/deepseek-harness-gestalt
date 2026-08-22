@@ -38,7 +38,7 @@ export function commandOf(call: RunningToolCall | undefined): string | undefined
  * @param props - the selector-matched pending approval carrier plus the framework standard kit.
  * @returns The approval prompt for this request.
  */
-export function ApprovalPanel(props: ApprovalComposerProps) {
+export function ApprovalPanel(props: ApprovalComposerProps & { disabled?: boolean | undefined }) {
   const approval = useMemo(() => new PendingApproval(props.matched), [props.matched])
   const command = props.useSession((snapshot) => {
     if (approval.callId === undefined) return undefined
@@ -46,13 +46,23 @@ export function ApprovalPanel(props: ApprovalComposerProps) {
     if (root === undefined) return undefined
     return root.callId === approval.callId && !('kind' in root) ? commandOf(root) : undefined
   })
-  return <ApprovalFlow key={approval.key} pending={approval} t={props.t} {...command === undefined ? {} : { command }} />
+  const disabled = props.disabled === true
+  return (
+    <ApprovalFlow
+      key={approval.key}
+      pending={approval}
+      t={props.t}
+      disabled={disabled}
+      {...command === undefined ? {} : { command }}
+    />
+  )
 }
 
-function ApprovalFlow({ pending, command, t }: {
+function ApprovalFlow({ pending, command, t, disabled }: {
   pending: PendingApproval
   command?: string
   t: ApprovalComposerProps['t']
+  disabled: boolean
 }) {
   // Local one-shot latch: the panel leaves only when the resolved frame
   // lands; until then the buttons must not re-fire. An answer failure
@@ -74,10 +84,10 @@ function ApprovalFlow({ pending, command, t }: {
           {command !== undefined && <div className={css.command}>{command}</div>}
         </div>
         <div className={css.actionRow}>
-          <Button variant="outline" className={css.reject} disabled={answered} onClick={() => { answer('rejected') }}>
+          <Button variant="outline" className={css.reject} disabled={answered || disabled} onClick={() => { answer('rejected') }}>
             {t('approval.reject')}
           </Button>
-          <Button variant="primary" disabled={answered} onClick={() => { answer('allowed-once') }}>
+          <Button variant="primary" disabled={answered || disabled} onClick={() => { answer('allowed-once') }}>
             {t('approval.allowOnce')}
           </Button>
         </div>

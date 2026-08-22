@@ -39,10 +39,6 @@ The implemented catalog contains a bounded transcript-page projection, a prompt-
 
 The package does not encrypt Companion message traffic. Mobile and Desktop supply an independently reviewed end-to-end channel, then encrypt version offers and encoded Companion messages before Relay forwarding. The [keyless assembled example](../../../examples/remote-protocol/start.ts) uses an example-only AES-GCM adapter to prove the composition and ciphertext-only Relay view; it is not a product cryptographic implementation or security-review result. Product integration remains subject to the [independent Noise review](../../../docs/security/noise-cross-runtime-proof.md).
 
-## Content-free push hints
-
-A Companion push hint carries only a generic category (`approval`, `question`, `turn-complete`, or `failure`) plus an opaque `routeId` and optional `sessionRef`. Token and `sessionRef` ceilings are UTF-8 byte limits (4096 and 128). Streaming chunks have no category and never produce a hint. Wire parsing rejects unknown categories, malformed identifiers, and extra fields, so Session text cannot ride beside the hint. `buildApnsPushPayload` and `buildFcmPushMessage` project that same pair onto the vendor JSON bodies; titles repeat the category and contain no transcript, interaction, device name, or credential.
-
 ## Model Experience
 
 None, as Remote Protocol metadata and device origin never enter a model request.

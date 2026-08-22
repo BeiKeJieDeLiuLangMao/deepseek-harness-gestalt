@@ -1,5 +1,7 @@
 /** Mobile continue/cancel mutations that reuse Desktop acceptance and commit order. */
 
+import { requireCompanionMutation, type CompanionConnectionState } from './companion-mutation.ts'
+
 /** One recorded Companion mutation. */
 export interface CompanionMutationRecord {
   /** Idempotency key. */
@@ -29,6 +31,7 @@ export interface CompanionPromptState {
  * @param state - current transcript.
  * @param committed - previously applied operation ids.
  * @param input - prompt request.
+ * @param connection - foreground connection and validated synchronization state.
  * @returns next state; a repeated operation id returns the original result.
  */
 export function submitCompanionPrompt(
@@ -40,7 +43,9 @@ export function submitCompanionPrompt(
     text: string
     accepted: boolean
   },
+  connection: CompanionConnectionState | undefined,
 ): CompanionPromptState {
+  requireCompanionMutation(connection, 'prompt')
   const previous = committed.get(input.operationId)
   if (previous !== undefined) return state
   if (!input.accepted) {
@@ -95,13 +100,16 @@ export function settleCompanionPrompt(
  * @param state - current transcript.
  * @param committed - previously applied operation ids.
  * @param input - cancel request.
+ * @param connection - foreground connection and validated synchronization state.
  * @returns next state.
  */
 export function cancelCompanionPrompt(
   state: CompanionPromptState,
   committed: ReadonlyMap<string, CompanionMutationRecord>,
   input: { operationId: string; devicePrincipalId: string; accepted: boolean },
+  connection: CompanionConnectionState | undefined,
 ): CompanionPromptState {
+  requireCompanionMutation(connection, 'cancel')
   const previous = committed.get(input.operationId)
   if (previous !== undefined) return state
   const record: CompanionMutationRecord = {

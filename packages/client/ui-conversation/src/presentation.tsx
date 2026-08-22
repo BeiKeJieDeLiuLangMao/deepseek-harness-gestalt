@@ -78,12 +78,14 @@ export interface ConversationApprovalProps {
   snapshot: ConversationSnapshot
   /** Shared conversation translator. */
   t: TranslateNS<'conversation'>
+  /** Disable settlement while the composition lacks current mutation authority. */
+  disabled?: boolean | undefined
 }
 
 /** Render and settle an Approval through the same composer takeover as Desktop. */
-export function ConversationApproval({ wait, snapshot, t }: ConversationApprovalProps): ReactNode {
+export function ConversationApproval({ wait, snapshot, t, disabled = false }: ConversationApprovalProps): ReactNode {
   const useSession = useCallback(<T,>(selector: (value: ConversationSnapshot) => T): T => selector(snapshot), [snapshot])
-  return <ApprovalPanel {...({ matched: wait, useSession, t } as Parameters<typeof ApprovalPanel>[0])} />
+  return <ApprovalPanel {...({ matched: wait, useSession, t } as Parameters<typeof ApprovalPanel>[0])} disabled={disabled} />
 }
 
 /** Props for the shared standalone composer adapter. */
@@ -96,6 +98,8 @@ export interface ConversationComposerProps {
   onCancel?: (() => void) | undefined
   /** Shared conversation translator. */
   t: TranslateNS<'conversation'>
+  /** Disable edits and mutations while the composition lacks current authority. */
+  disabled?: boolean | undefined
 }
 
 /** Execute InputMachine effects for the standalone composer. */
@@ -128,7 +132,7 @@ function settleEffects(
  * Render the standard InputBar over a local InputMachine while delegating submission and cancellation.
  * The adapter owns draft mechanics only; the supplied Session projection remains authoritative for run state.
  */
-export function ConversationComposer({ snapshot, onSubmit, onCancel, t }: ConversationComposerProps): ReactNode {
+export function ConversationComposer({ snapshot, onSubmit, onCancel, t, disabled = false }: ConversationComposerProps): ReactNode {
   const machineRef = useRef<InputMachine>()
   const machine = machineRef.current ?? new InputMachine()
   machineRef.current = machine
@@ -179,7 +183,7 @@ export function ConversationComposer({ snapshot, onSubmit, onCancel, t }: Conver
         phase={input.phase}
         running={snapshot.running}
         busy={busy}
-        disabled={snapshot.removed}
+        disabled={snapshot.removed || disabled}
         placeholder={t(snapshot.removed ? 'placeholder.unavailable' : 'placeholder.default')}
         onDraftChange={(draft) => { dispatch({ type: 'draft-changed', draft }) }}
         onSubmit={submit}

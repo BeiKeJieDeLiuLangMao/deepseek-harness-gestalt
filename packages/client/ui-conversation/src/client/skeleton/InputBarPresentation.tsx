@@ -153,7 +153,7 @@ export function InputBarPresentation({
             <InputBarPrimaryAction
               kind={primaryStops ? 'stop' : 'send'}
               label={primaryStops ? t('input.stop') : t('input.send')}
-              disabled={primaryStops ? onStop === undefined : locked || draft.trim() === ''}
+              disabled={primaryStops ? disabled || onStop === undefined : locked || draft.trim() === ''}
               onClick={primaryStops ? () => { onStop?.() } : onSubmit}
             />
           </div>

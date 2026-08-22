@@ -2,6 +2,7 @@
 
 import type { ConversationSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import { requireCompanionMutation, type CompanionConnectionState } from './companion-mutation.ts'
 
 /** One Session row in the Mobile Companion list. */
 export interface CompanionSessionSummary {
@@ -105,6 +106,10 @@ export interface MobileCompanionPresentation {
   sessions: readonly CompanionSessionSummary[]
   /** Read one authorized historical image from the selected Session. */
   loadImage: (sessionId: string, attachment: ImageAttachmentRef) => Promise<string>
+  /** Whether current foreground synchronization admits mutation controls. */
+  canMutate: boolean
+  /** Create one Desktop-default Session when mutation authority is available. */
+  onCreate?: ((input: { workspace?: string }) => void) | undefined
   /** Submit a prompt through Desktop authority when transport is available. */
   onSubmit?: ((sessionId: string, text: string) => void | Promise<void>) | undefined
   /** Cancel a running Desktop Session when transport is available. */
@@ -130,13 +135,16 @@ export interface CreateCompanionSessionInput {
  * @param sessions - current Desktop-confirmed list.
  * @param committed - previously applied operation ids.
  * @param input - create request.
+ * @param connection - foreground connection and validated synchronization state.
  * @returns next list and whether a new row was appended.
  */
 export function createCompanionSession(
   sessions: readonly CompanionSessionSummary[],
   committed: ReadonlySet<string>,
   input: CreateCompanionSessionInput,
+  connection: CompanionConnectionState | undefined,
 ): { sessions: readonly CompanionSessionSummary[]; created: boolean } {
+  requireCompanionMutation(connection, 'session-create')
   if (input.operationId === '') throw new TypeError('Companion create operation id must be non-empty')
   if (committed.has(input.operationId)) return { sessions, created: false }
   const created: CompanionSessionSummary = {

@@ -15,7 +15,3 @@ Relay Transport 版本协商独立于 Encrypted Companion 应用协商。Relay �
 Relay route/attachment id 与 Companion operation、Session projection、transcript entry id 是从 `unknown` 解析出的不同品牌化字符串。Companion 使用协议原生标识符，不导入 Harness 领域类型。两个 codec 都会拒绝未知 discriminant、额外字段、不安全数值、畸形 UTF-8/JSON、过深 parser、大型 container、过多编码值、超大消息和超大密文。Base64url 字段只接受规范的无填充拼写。加密前 Companion 应用数据最多为 60 KiB。完整编码 transcript-page 消息采用更严格的 50 条或 48 KiB 上限，并按 UTF-8 wire 字节计量。
 
 本包不拥有加密实现。Endpoint adapter 使用已评审的配对通道加密 offer 和应用消息。无密钥 Loader example 只用 harness-local cipher 证明 Relay 解码与转发不需要应用明文。
-
-## 无内容推送提示
-
-`CompanionPushHint` 是协议原生记录：通用类别（`approval`、`question`、`turn-complete` 或 `failure`）、带品牌的 `routeId`，以及可选的不透明 `sessionRef`。`CompanionPushToken` 是带品牌的 APNs 或 FCM 登记 token。流式分片没有类别，`companionPushHintForEvent` 返回 `undefined`。解析器拒绝额外字段。APNs 与 FCM 投影只复制该字段对以及重复类别的标题；它们不携带 transcript、交互、设备或凭据值。Token 扇出与厂商凭据属于远程访问。

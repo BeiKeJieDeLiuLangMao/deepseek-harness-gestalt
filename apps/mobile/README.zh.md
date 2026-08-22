@@ -10,7 +10,7 @@
 
 ## 共享 Session 呈现
 
-打包后的 Mobile 入口把列表／详情导航留在 `apps/mobile`，并从 Client Runtime 的 Desktop 权威 `ConversationSnapshot` 渲染已打开 Session；它不再拥有 Mobile content-block union。`MobileCompanionPresentation` 是 `main.tsx` 接受的生产 composition interface：它提供经 Desktop 确认的 Session 行、必需的 Session 寻址图片 loader，以及可选的 prompt、cancel 与较早历史 operation。locale 与 light/dark theme 来自 Mobile 产品环境，并经 `MobileBrowse` 进入共用 conversation、Tool、attachment 与 question 实现。图片一律通过 `ImageGallery` 渲染；普通 Tool 名称使用 Desktop 内置 keyed roster，只有未知名称使用 `GenericToolCard`。Mobile 绝不挂载 Desktop columns、Settings、model selection、plugin configuration 或 terminal input。
+打包后的 Mobile 入口把列表／详情导航留在 `apps/mobile`，并从 Client Runtime 的 Desktop 权威 `ConversationSnapshot` 渲染已打开 Session；它不再拥有 Mobile content-block union。`main.tsx` 调用的 `mountMobileEntry` 接受生产 `MobileCompanionPresentation` interface：经 Desktop 确认的 Session 行、必需的 Session 寻址图片 loader、当前 mutation authority，以及可选的 create、prompt、cancel 与较早历史 operation。locale 与 light/dark theme 来自 Mobile 产品环境，并经 `MobileBrowse` 进入共用 conversation、Tool、attachment 与 question 实现。图片一律通过 `ImageGallery` 渲染；普通 Tool 名称使用 Desktop 内置 keyed roster，只有未知名称使用 `GenericToolCard`。Mobile 绝不挂载 Desktop columns、Settings、model selection、plugin configuration 或 terminal input。
 
 keyless snapshot 证据以 `VITE_MOBILE_PRESENTATION_EXAMPLE=1` 构建并加载该入口，通过拦截的 HTTPS 响应完成 Account lifecycle，再经同一生产 composition interface 打开 development `ConversationSnapshot`。该 example 没有 mutation authority，也不运行 model round。live 产品证据仍须等待加密 Companion transport 提供该 interface。`apps/mobile/prototype-companion` 与开发端口 5173/5174 都不是 Mobile 产品验收 origin。
 
@@ -27,6 +27,6 @@ Vite 通过 [`tsconfig.base.json`](../../tsconfig.base.json) 的 paths 解析工
 
 - 生产配对在独立 Noise 评审接纳经过评审的握手提供方前保持不可用。只有所选 Platform 环境为开发环境时，`VITE_PERSONAL_PAIRING_KEYLESS=1` 才会选择真实开发控制器与明确标记为未评审的 keyless Mobile 握手。该模式还要求 `VITE_REMOTE_RELAY_WSS_URL`、`VITE_REMOTE_RELAY_ATTACH_TIMEOUT_MS`、`VITE_REMOTE_RELAY_HEARTBEAT_INTERVAL_MS`、`VITE_REMOTE_RELAY_RECONNECT_DELAY_MS`、`VITE_REMOTE_RELAY_INBOUND_MAX_BYTES` 和 `VITE_REMOTE_RELAY_INBOUND_MAX_MESSAGES`；所有字段都在应用渲染前完成校验。
 - Companion Cache 库尚未接入 Mobile 入口：composition 不会构造 `companionCacheDatabaseName`、注入 #31 配对派生密钥、应答 Desktop 的 `query-operation-status` 查询，也不提供 composer、离线回执或清除缓存 UI。
-- 加密 Companion Session transport 仍须向打包入口提供权威 `ConversationSnapshot`、图片 loader 以及 submit/cancel adapter；presentation seam 不会合成这些值，也不会把 `companion-push` 复用为 Session authority。
-- Remote Companion traffic 与附件 flow 不在此 shell 范围内。`CompanionForegroundRuntime` 是 Relay start/stop 的唯一所有者：配对与可见性共用一条转移队列，Mobile 在 Desktop resync 密文到达后通过 `onCiphertext` 调用 `synchronize()`，`unpair()` 会丢掉 grant，因此之后的可见性变化不能再 `start()` socket。`settleCompanionInteraction` 要求前台重连与该同步；原生 APNs/FCM 登记与真机投递仍不在此 shell 范围内。
+- 加密 Companion decoder 仍须向生产 surface 提供权威 `ConversationSnapshot`、Session 寻址图片 loader 与 mutation adapter；presentation interface 不会合成这些值。
+- `CompanionForegroundRuntime` 是 Relay start/stop 的唯一所有者：配对与可见性共用一条转移队列，进入后台会停止 WSS，`unpair()` 会丢掉 grant，因此之后的可见性变化不能再启动 socket。每次物理 attachment ready/lost 转移都会创建或作废一个 synchronization generation，transport error 也会清除 `socketOpen` 与 `synchronized`。任意 Relay ciphertext 不能完成同步。#217 所属的 authenticated decoder 必须调用 `MobileCompanionSurface.bindValidatedDesktopResync` 返回的 receiver；旧 attachment 的 receiver 不能授权 replacement socket，也不能替换最后一次 authenticated projection。Mobile 不提供后台 notification delivery；只有打开应用或回到前台才会获取当前 Desktop state。
 - 原生 iOS/Android 工程生成与设备打包不属于本 shell；仓库内 composition 已包含 Capacitor 系统浏览器适配器与共用 WebView 账号生命周期。

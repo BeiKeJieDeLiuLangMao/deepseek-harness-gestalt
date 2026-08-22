@@ -11,6 +11,9 @@ const relayLifecycle = vi.hoisted(() => ({
   stop: vi.fn(async () => {}),
   isConnected: vi.fn(() => false),
   onCiphertext: undefined as (() => void) | undefined,
+  onConnectionReady: undefined as (() => void) | undefined,
+  onConnectionLost: undefined as (() => void) | undefined,
+  onTransportError: undefined as (() => void) | undefined,
 }))
 
 vi.mock('@capacitor/browser', () => ({ Browser: { open: browserOpen } }))
@@ -19,8 +22,16 @@ vi.mock('@deepseek-ai/dsh-remote-access-client', async (importOriginal) => {
   return {
     ...actual,
     MobileRelayEndpointLifecycle: class {
-      constructor(options: { onCiphertext?: () => void } = {}) {
+      constructor(options: {
+        onCiphertext?: () => void
+        onConnectionReady?: () => void
+        onConnectionLost?: () => void
+        onTransportError?: () => void
+      } = {}) {
         relayLifecycle.onCiphertext = options.onCiphertext
+        relayLifecycle.onConnectionReady = options.onConnectionReady
+        relayLifecycle.onConnectionLost = options.onConnectionLost
+        relayLifecycle.onTransportError = options.onTransportError
       }
       configure = relayLifecycle.configure
       start = relayLifecycle.start
@@ -39,6 +50,9 @@ afterEach(() => {
   relayLifecycle.isConnected.mockReset()
   relayLifecycle.isConnected.mockReturnValue(false)
   relayLifecycle.onCiphertext = undefined
+  relayLifecycle.onConnectionReady = undefined
+  relayLifecycle.onConnectionLost = undefined
+  relayLifecycle.onTransportError = undefined
   localStorage.clear()
   vi.unstubAllEnvs()
   vi.unstubAllGlobals()
@@ -130,7 +144,7 @@ describe('Mobile Platform Account entry', () => {
     })
 
     await import('../src/main.tsx')
-    const { companionMayMutate, companionRuntime } = await import('../src/companion-push.ts')
+    const { companionMayMutate, companionRuntime } = await import('../src/companion-lifecycle.ts')
     const { settleCompanionInteraction } = await import('../src/companion-approval.ts')
     const runtime = companionRuntime()
     if (runtime === undefined) throw new Error('expected companion runtime')
@@ -161,13 +175,27 @@ describe('Mobile Platform Account entry', () => {
       operationId: 'op-approve', kind: 'approval', summary: 'write a.ts', authorized: ['once'],
     }, { accepted: true, decision: 'once' }, runtime.getState()).settled).toBeUndefined()
 
-    if (relayLifecycle.onCiphertext === undefined) throw new Error('expected Desktop resync listener')
-    relayLifecycle.onCiphertext()
+    relayLifecycle.onCiphertext?.()
+    expect(runtime.getState().synchronized).toBe(false)
+    const firstResync = runtime.bindValidatedDesktopResync()
+    if (firstResync === undefined) throw new Error('expected first Desktop resync receiver')
+    firstResync.acceptValidatedDesktopResync({ type: 'desktop-resync', version: 1, authenticated: true })
     expect(runtime.getState().synchronized).toBe(true)
     expect(companionMayMutate(runtime.getState())).toBe(true)
     expect(settleCompanionInteraction({
       operationId: 'op-approve', kind: 'approval', summary: 'write a.ts', authorized: ['once'],
     }, { accepted: true, decision: 'once' }, runtime.getState()).settled).toEqual({ decision: 'once' })
+
+    relayLifecycle.onConnectionLost?.()
+    relayLifecycle.onTransportError?.()
+    expect(companionMayMutate(runtime.getState())).toBe(false)
+    relayLifecycle.onConnectionReady?.()
+    firstResync.acceptValidatedDesktopResync({ type: 'desktop-resync', version: 1, authenticated: true })
+    expect(companionMayMutate(runtime.getState())).toBe(false)
+    const replacementResync = runtime.bindValidatedDesktopResync()
+    if (replacementResync === undefined) throw new Error('expected replacement Desktop resync receiver')
+    replacementResync.acceptValidatedDesktopResync({ type: 'desktop-resync', version: 1, authenticated: true })
+    expect(companionMayMutate(runtime.getState())).toBe(true)
 
     hidden = true
     document.dispatchEvent(new Event('visibilitychange'))

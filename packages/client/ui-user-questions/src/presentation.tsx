@@ -32,9 +32,11 @@ export interface QuestionPresentationProps {
   wait: PendingWait<'question'>
   /** Shared question translator. */
   t: TranslateNS<'question'>
+  /** Disable settlement while the composition lacks current mutation authority. */
+  disabled?: boolean | undefined
 }
 
 /** Render and settle Ask User through the same QuestionComposer used by Desktop. */
-export function QuestionPresentation({ wait, t }: QuestionPresentationProps): ReactNode {
-  return <QuestionComposer {...({ matched: wait, t } as Parameters<typeof QuestionComposer>[0])} />
+export function QuestionPresentation({ wait, t, disabled = false }: QuestionPresentationProps): ReactNode {
+  return <QuestionComposer {...({ matched: wait, t } as Parameters<typeof QuestionComposer>[0])} disabled={disabled} />
 }

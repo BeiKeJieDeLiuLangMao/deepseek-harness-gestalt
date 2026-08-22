@@ -168,6 +168,7 @@ describe('Mobile shared Session presentation', () => {
     const { rerender } = render(createElement(MobileConversation, {
       title: 'Interactions', onBack: () => {}, locale: 'en', snapshot: snapshot([], { pending: [approval] }),
       loadImage: imageLoader,
+      mutationEnabled: true,
     }))
     fireEvent.click(screen.getByRole('button', { name: 'Allow once' }))
     expect(approve).toHaveBeenCalledOnce()
@@ -175,6 +176,7 @@ describe('Mobile shared Session presentation', () => {
     rerender(createElement(MobileConversation, {
       title: 'Interactions', onBack: () => {}, locale: 'en', snapshot: snapshot([], { pending: [question] }),
       loadImage: imageLoader,
+      mutationEnabled: true,
     }))
     fireEvent.click(screen.getByRole('radio', { name: 'Yes' }))
     fireEvent.click(screen.getByRole('button', { name: 'Submit' }))
@@ -193,6 +195,7 @@ describe('Mobile shared Session presentation', () => {
         openState: 'error', openError: { code: 'bad-request', message: '请求无效', details: { issues: [] } },
       }),
       onSubmit,
+      mutationEnabled: true,
     }))
     expect(screen.getByRole('button', { name: '返回' })).toBeTruthy()
     expect(screen.getByPlaceholderText('给智能体发消息')).toBeTruthy()
@@ -229,6 +232,7 @@ describe('Mobile shared Session presentation', () => {
       title: 'Composer', onBack: () => {}, locale: 'en',
       snapshot: snapshot([], { running: true }), onSubmit, onCancel,
       loadImage: imageLoader,
+      mutationEnabled: true,
     }))
     fireEvent.click(screen.getByRole('button', { name: 'Stop generating' }))
     expect(onCancel).toHaveBeenCalledOnce()
@@ -236,6 +240,7 @@ describe('Mobile shared Session presentation', () => {
     view.rerender(createElement(MobileConversation, {
       title: 'Composer', onBack: () => {}, locale: 'en', snapshot: snapshot([]), onSubmit, onCancel,
       loadImage: imageLoader,
+      mutationEnabled: true,
     }))
     const textbox = screen.getByRole('textbox')
     fireEvent.change(textbox, { target: { value: 'first', selectionStart: 5 } })
@@ -253,5 +258,27 @@ describe('Mobile shared Session presentation', () => {
     fireEvent.select(textbox)
     fireEvent.keyDown(textbox, { key: 'Enter' })
     await waitFor(() => { expect(onSubmit).toHaveBeenCalled() })
+  })
+
+  it('keeps shared composer mutations disabled before current-generation synchronization', () => {
+    const onSubmit = vi.fn()
+    const onCancel = vi.fn()
+    render(createElement(MobileConversation, {
+      title: 'Reconnect',
+      onBack: () => {},
+      locale: 'en',
+      loadImage: imageLoader,
+      snapshot: snapshot([], { running: true }),
+      onSubmit,
+      onCancel,
+      mutationEnabled: false,
+    }))
+    const input = screen.getByRole('textbox')
+    const stop = screen.getByRole('button', { name: 'Stop generating' })
+    expect(input.hasAttribute('disabled')).toBe(true)
+    expect(stop.hasAttribute('disabled')).toBe(true)
+    fireEvent.click(stop)
+    expect(onCancel).not.toHaveBeenCalled()
+    expect(onSubmit).not.toHaveBeenCalled()
   })
 })

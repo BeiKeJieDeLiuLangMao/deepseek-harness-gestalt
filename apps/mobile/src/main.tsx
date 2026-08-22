@@ -1,5 +1,3 @@
-import { StrictMode } from 'react'
-import { createRoot } from 'react-dom/client'
 import {
   IndexedDbInstallationAccountStore,
   PlatformAccountHttpTransport,
@@ -22,8 +20,8 @@ import {
   CompanionForegroundRuntime,
   companionRuntime,
   installCompanionRuntime,
-} from './companion-push.ts'
-import { MobileAccount } from './MobileAccount.tsx'
+} from './companion-lifecycle.ts'
+import { mountMobileEntry } from './mobile-entry.tsx'
 import type { MobilePairingActions } from './MobilePairing.tsx'
 import { MobilePairingController, NativeMobilePairingQrScanner } from './personal-pairing.ts'
 import { mobileSystemBrowser } from './system-browser.ts'
@@ -69,8 +67,6 @@ const installation = new PlatformAccountInstallation({
   store: new IndexedDbInstallationAccountStore(`deepseek-gestalt-platform-account:${environment.databaseIdentity}`),
   systemBrowser: mobileSystemBrowser,
 })
-const locale = navigator.languages.some(language => language.toLowerCase().startsWith('zh')) ? 'zh' : 'en'
-const theme = typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
 let companionVisibilityDisposer: (() => Promise<void>) | undefined
 
 /**
@@ -96,6 +92,7 @@ let pairing: MobilePairingActions = {
   deactivate: () => Promise.resolve(),
   unpair: pairingUnavailable,
 }
+let companion: CompanionForegroundRuntime
 if (environment.environment === 'development' && import.meta.env.VITE_PERSONAL_PAIRING_KEYLESS === '1') {
   const { DevelopmentKeylessMobileHandshakeClient } = await import('./development-keyless-pairing.ts')
   const { PairingCompanionKeyVault } = await import('./companion-keys.ts')
@@ -114,9 +111,11 @@ if (environment.environment === 'development' && import.meta.env.VITE_PERSONAL_P
     attachTimeoutMs: positiveInteger(import.meta.env.VITE_REMOTE_RELAY_ATTACH_TIMEOUT_MS, 'attach timeout'),
     heartbeatIntervalMs: positiveInteger(import.meta.env.VITE_REMOTE_RELAY_HEARTBEAT_INTERVAL_MS, 'heartbeat interval'),
     reconnectDelayMs: positiveInteger(import.meta.env.VITE_REMOTE_RELAY_RECONNECT_DELAY_MS, 'reconnect delay'),
-    onCiphertext: () => { companionRuntime()?.synchronize() },
+    onConnectionReady: () => { companionRuntime()?.markConnectionOpen() },
+    onConnectionLost: () => { companionRuntime()?.forgetConnection() },
+    onTransportError: () => { companionRuntime()?.forgetConnection() },
   })
-  const companion = new CompanionForegroundRuntime({ relay })
+  companion = new CompanionForegroundRuntime({ relay })
   installCompanionRuntime(companion)
   companionVisibilityDisposer = bindCompanionProcessVisibility(companion)
   pairing = new MobilePairingController({
@@ -132,6 +131,9 @@ if (environment.environment === 'development' && import.meta.env.VITE_PERSONAL_P
       platform: navigator.userAgent.includes('Android') ? 'android' : 'ios',
     },
   })
+} else {
+  companion = new CompanionForegroundRuntime()
+  installCompanionRuntime(companion)
 }
 
 function positiveInteger(value: unknown, name: string): number {
@@ -149,20 +151,10 @@ const root = document.getElementById('root')
 if (root === null) throw new Error('mobile app: missing #root')
 
 async function mountMobileProduct(container: HTMLElement): Promise<void> {
-  const companion = import.meta.env.VITE_MOBILE_PRESENTATION_EXAMPLE === '1'
+  const presentation = import.meta.env.VITE_MOBILE_PRESENTATION_EXAMPLE === '1'
     ? (await import('./development-companion-presentation.ts')).developmentCompanionPresentation()
     : undefined
-  createRoot(container).render(
-    <StrictMode>
-      <MobileAccount
-        installation={installation}
-        pairing={pairing}
-        companion={companion}
-        locale={locale}
-        theme={theme}
-      />
-    </StrictMode>,
-  )
+  mountMobileEntry(container, { installation, pairing, companion, presentation })
 }
 
 void mountMobileProduct(root)

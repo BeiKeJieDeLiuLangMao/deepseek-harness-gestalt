@@ -44,6 +44,8 @@ export interface MobileConversationProps {
   onCancel?: (() => void) | undefined
   /** Load the preceding Desktop-authoritative history window. */
   onLoadOlder?: (() => void) | undefined
+  /** Whether current foreground synchronization admits mutations. */
+  mutationEnabled?: boolean | undefined
 }
 
 /** Phone conversation using Desktop-authoritative projections and exported DSH Web presentation. */
@@ -59,6 +61,7 @@ export function MobileConversation({
   onSubmit,
   onCancel,
   onLoadOlder,
+  mutationEnabled = false,
 }: MobileConversationProps): ReactNode {
   const t = useMemo(() => conversationPresentationTranslate(locale), [locale])
   const tq = useMemo(() => questionPresentationTranslate(locale), [locale])
@@ -117,11 +120,17 @@ export function MobileConversation({
       </div>
       <div className={css.composer}>
         {question !== undefined
-          ? <QuestionPresentation wait={question} t={tq} />
+          ? <QuestionPresentation wait={question} t={tq} disabled={!mutationEnabled} />
           : approval !== undefined
-            ? <ConversationApproval wait={approval} snapshot={snapshot} t={t} />
+            ? <ConversationApproval wait={approval} snapshot={snapshot} t={t} disabled={!mutationEnabled} />
             : onSubmit !== undefined
-              ? <ConversationComposer snapshot={snapshot} onSubmit={onSubmit} onCancel={onCancel} t={t} />
+              ? <ConversationComposer
+                snapshot={snapshot}
+                onSubmit={onSubmit}
+                onCancel={onCancel}
+                t={t}
+                disabled={!mutationEnabled}
+              />
               : null}
       </div>
     </section>

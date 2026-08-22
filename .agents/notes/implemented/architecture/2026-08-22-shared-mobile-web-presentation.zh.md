@@ -14,7 +14,7 @@ Web presentation owner 提供显式 `./presentation` 入口。`ui-conversation` 
 
 动态 Client 插件包使用 `browserSubpath` 构建这些浏览器 ESM 入口。该构建面把裸依赖与输出的 CSS 留给导入它的产品 shell，但不会把该包归类为 Desktop 静态链接包；它的主 `dsh.client` 模块表入口保持不变。
 
-Mobile 详情 composition 接受 Client Runtime 的 `ConversationSnapshot`、`ConversationNode`、`ToolCallBlock` 与 `PendingWait` 值。`main.tsx` 接受生产 `MobileCompanionPresentation` interface：经 Desktop 确认的 Session 行、必需的 Session 寻址图片 loader，以及可选 submit/cancel/load 回调。Mobile 只增加手机导航以及由环境决定的 locale/theme 选择。它不会定义 transcript content union、从 `companion-push` 推断 interaction authority，也不会挂载 Desktop columns、Settings、model selection、plugin configuration 或 terminal input。
+Mobile 详情 composition 接受 Client Runtime 的 `ConversationSnapshot`、`ConversationNode`、`ToolCallBlock` 与 `PendingWait` 值。`main.tsx` 使用的 `mountMobileEntry` 接受生产 `MobileCompanionPresentation` interface：经 Desktop 确认的 Session 行、必需的 Session 寻址图片 loader、当前 mutation authority，以及可选 create/submit/cancel/load 回调。Mobile 只增加手机导航以及由环境决定的 locale/theme 选择。它不会定义 transcript content union、从 Relay lifecycle state 推断 interaction authority，也不会挂载 Desktop columns、Settings、model selection、plugin configuration 或 terminal input。
 
 完整 Desktop `InputBar` 与 `ConversationComposer` 使用同一套由 owner 定义的 editor 与 primary-action presentation implementation。`ConversationComposer` 拥有本地 `InputMachine` 草稿，并把获准的 prompt 与 cancellation operation 委托给调用方；它不提供 annotation、attachment、slot、projection、command 或 Host stand-in。加密 Companion Session transport 仍负责向打包 Mobile 入口提供权威 snapshot 与回调。
 

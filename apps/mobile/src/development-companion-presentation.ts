@@ -106,6 +106,7 @@ export function developmentCompanionPresentation(): MobileCompanionPresentation 
   return {
     desktopName: 'Keyless projection example',
     connection: 'offline',
+    canMutate: false,
     sessions: [{
       id: SESSION_ID,
       title: 'Shared Web presentation',

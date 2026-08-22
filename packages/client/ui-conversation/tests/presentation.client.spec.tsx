@@ -69,4 +69,43 @@ describe('public conversation presentation seam', () => {
     fireEvent.click(screen.getByRole('button', { name: '停止生成' }))
     expect(onCancel).toHaveBeenCalledOnce()
   })
+
+  it('preserves draft rules across keyboard, composition, paste, and unavailable states', async () => {
+    let resolveSubmit: (() => void) | undefined
+    const onSubmit = vi.fn(() => new Promise<void>((resolve) => { resolveSubmit = resolve }))
+    const view = render(createElement(ConversationComposer, {
+      snapshot: snapshot(),
+      onSubmit,
+      t: conversationPresentationTranslate('en'),
+    }))
+    const input = screen.getByRole('textbox')
+
+    fireEvent.keyDown(input, { key: 'Enter', shiftKey: true })
+    fireEvent.keyDown(input, { key: 'z', ctrlKey: true })
+    fireEvent.keyDown(input, { key: 'Z', metaKey: true, shiftKey: true })
+    fireEvent.keyDown(input, { key: 'y', ctrlKey: true })
+    fireEvent.paste(input, { clipboardData: { getData: () => '' } })
+    fireEvent.compositionStart(input)
+    fireEvent.keyDown(input, { key: 'Enter' })
+    fireEvent.compositionEnd(input)
+    expect(onSubmit).not.toHaveBeenCalled()
+
+    fireEvent.change(input, { target: { value: 'send once' } })
+    fireEvent.keyDown(input, { key: 'Enter', repeat: true })
+    expect(onSubmit).not.toHaveBeenCalled()
+    fireEvent.keyDown(input, { key: 'Enter' })
+    await waitFor(() => { expect(onSubmit).toHaveBeenCalledWith('send once') })
+    fireEvent.keyDown(input, { key: 'z', metaKey: true })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    fireEvent.paste(input, { clipboardData: { getData: () => 'busy paste' } })
+
+    resolveSubmit?.()
+    await waitFor(() => { expect((input as HTMLTextAreaElement).value).toBe('') })
+    view.rerender(createElement(ConversationComposer, {
+      snapshot: snapshot({ removed: true }),
+      onSubmit,
+      t: conversationPresentationTranslate('en'),
+    }))
+    expect(screen.getByPlaceholderText('Session unavailable')).toBeTruthy()
+  })
 })

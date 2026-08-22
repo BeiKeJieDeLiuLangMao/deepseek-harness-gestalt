@@ -13,7 +13,7 @@ export interface MobileAccountProps {
   installation: PlatformAccountInstallation
   /** Personal Pairing adapter available after the current Installation signs in. */
   pairing?: MobilePairingActions
-  /** Desktop-authoritative Companion composition supplied by encrypted transport. */
+  /** Desktop-authoritative Companion presentation supplied by the product entry. */
   companion?: MobileCompanionPresentation | undefined
   /** Product locale shared by Mobile browse and conversation presentation. */
   locale: 'zh' | 'en'

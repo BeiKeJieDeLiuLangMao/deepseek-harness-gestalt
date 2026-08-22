@@ -9,6 +9,11 @@ import {
   type CompanionConfirmedResult,
   type CompanionOperationId,
 } from '@deepseek-ai/dsh-remote-protocol'
+import {
+  companionMayMutate,
+  requireCompanionMutation,
+  type CompanionConnectionState,
+} from './companion-mutation.ts'
 
 /** Opaque Paired Desktop identity injected by the Personal Pairing seam. */
 export type CompanionDesktopId = Branded<'CompanionDesktopId'>
@@ -74,8 +79,9 @@ export function companionCacheAdmits(kind: string): kind is CompanionCacheConten
   return (ADMITTED_CONTENT_KINDS as readonly string[]).includes(kind)
 }
 
-/** Mutations Remote Offline disables; cache reads stay permitted. */
+/** Mutations foreground synchronization gates; cache reads stay permitted. */
 const COMPANION_OFFLINE_MUTATIONS = [
+  'session-create',
   'prompt',
   'cancel',
   'approval',
@@ -88,12 +94,15 @@ export type CompanionMutationKind = (typeof COMPANION_OFFLINE_MUTATIONS)[number]
 
 /**
  * Whether a mutation may run in the current connection state.
- * @param online - Remote Online.
+ * @param connection - foreground connection and validated synchronization state.
  * @param _kind - mutation kind reserved for future per-kind policy.
- * @returns false for every mutation while Remote Offline.
+ * @returns false until foreground reconnect and validated Desktop resynchronization complete.
  */
-export function companionMutationAllowed(online: boolean, _kind: CompanionMutationKind): boolean {
-  return online
+export function companionMutationAllowed(
+  connection: CompanionConnectionState | undefined,
+  _kind: CompanionMutationKind,
+): boolean {
+  return companionMayMutate(connection)
 }
 
 /** Encrypted-at-rest cache row for one Paired Desktop. */
@@ -625,22 +634,20 @@ export class CompanionUncertainOperationSettlement {
 
   /**
    * Transmit one mutation, storing an Operation Receipt only after the request
-   * left this device. Offline proposals never reach the transport. An existing
+   * left this device. Unsynchronized proposals never reach the transport. An existing
    * `unknown` receipt must be reconciled first; a `committed` receipt is
    * returned without resending.
    * @param mutation - proposed mutation.
    * @param transport - Relay-backed transport.
-   * @param online - whether Remote is currently Online.
+   * @param connection - foreground connection and validated synchronization state.
    * @returns the settled receipt, or the unknown receipt awaiting reconciliation.
    */
   async transmit(
     mutation: CompanionMutationRequest,
     transport: CompanionMutationTransport,
-    online: boolean,
+    connection: CompanionConnectionState | undefined,
   ): Promise<CompanionOperationReceipt> {
-    if (!companionMutationAllowed(online, mutation.kind)) {
-      throw new Error(`Remote Offline disables Companion ${mutation.kind} mutations`)
-    }
+    requireCompanionMutation(connection, mutation.kind)
     const existing = (await this.#store.loadReceipts(this.#desktopId))
       .find(row => row.operationId === mutation.operationId)
     if (existing?.status === 'unknown') {

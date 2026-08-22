@@ -41,7 +41,6 @@ export function parseRecommendedLabel(label: string): { label: string; recommend
 /** Return whether a text-field key event belongs to an active IME composition. */
 function isComposing(event: KeyboardEvent<HTMLTextAreaElement | HTMLInputElement>): boolean {
   // keyCode 229 is the legacy IME-composition signal engines emit without isComposing.
-  // oxlint-disable-next-line typescript/no-deprecated
   return event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229
 }
 
@@ -58,14 +57,19 @@ function isComposing(event: KeyboardEvent<HTMLTextAreaElement | HTMLInputElement
  * @param props - the selector-matched pending question carrier plus the framework standard kit.
  * @returns The question flow, or the intent's own surface, for this request.
  */
-export function QuestionComposer(props: QuestionComposerProps) {
+export function QuestionComposer(props: QuestionComposerProps & { disabled?: boolean | undefined }) {
   // Domain-face mint rides the carrier's stable identity (never minted in a
   // select/render dispatch — per-dispatch minting would churn memo identity).
   const question = useMemo(() => new PendingQuestion(props.matched), [props.matched])
   const review = useMemo(() => planReviewOf(question.questions), [question])
-  return review === undefined
-    ? <QuestionFlow key={question.key} pending={question} t={props.t} />
-    : <PlanReviewPanel key={question.key} pending={question} review={review} t={props.t} />
+  const disabled = props.disabled === true
+  return (
+    <fieldset className={css.mutationScope} disabled={disabled}>
+      {review === undefined
+        ? <QuestionFlow key={question.key} pending={question} t={props.t} />
+        : <PlanReviewPanel key={question.key} pending={question} review={review} t={props.t} />}
+    </fieldset>
+  )
 }
 
 function QuestionFlow({ pending, t }: { pending: PendingQuestion } & Pick<QuestionComposerProps, 't'>) {
