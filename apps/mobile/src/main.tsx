@@ -1,5 +1,3 @@
-import { StrictMode } from 'react'
-import { createRoot } from 'react-dom/client'
 import {
   IndexedDbInstallationAccountStore,
   PlatformAccountHttpTransport,
@@ -21,7 +19,7 @@ import {
   companionRuntime,
   installCompanionRuntime,
 } from './companion-lifecycle.ts'
-import { MobileAccount } from './MobileAccount.tsx'
+import { mountMobileEntry } from './mobile-entry.tsx'
 import type { MobilePairingActions } from './MobilePairing.tsx'
 import { MobilePairingController, NativeMobilePairingQrScanner } from './personal-pairing.ts'
 import { mobileSystemBrowser } from './system-browser.ts'
@@ -89,6 +87,7 @@ let pairing: MobilePairingActions = {
   deactivate: () => Promise.resolve(),
   unpair: pairingUnavailable,
 }
+let companion: CompanionForegroundRuntime
 if (environment.environment === 'development' && import.meta.env.VITE_PERSONAL_PAIRING_KEYLESS === '1') {
   const { DevelopmentKeylessMobileHandshakeClient } = await import('./development-keyless-pairing.ts')
   const { PairingCompanionKeyVault } = await import('./companion-keys.ts')
@@ -111,7 +110,7 @@ if (environment.environment === 'development' && import.meta.env.VITE_PERSONAL_P
     onConnectionLost: () => { companionRuntime()?.forgetConnection() },
     onTransportError: () => { companionRuntime()?.forgetConnection() },
   })
-  const companion = new CompanionForegroundRuntime({ relay })
+  companion = new CompanionForegroundRuntime({ relay })
   installCompanionRuntime(companion)
   companionVisibilityDisposer = bindCompanionProcessVisibility(companion)
   pairing = new MobilePairingController({
@@ -127,6 +126,9 @@ if (environment.environment === 'development' && import.meta.env.VITE_PERSONAL_P
       platform: navigator.userAgent.includes('Android') ? 'android' : 'ios',
     },
   })
+} else {
+  companion = new CompanionForegroundRuntime()
+  installCompanionRuntime(companion)
 }
 
 function positiveInteger(value: unknown, name: string): number {
@@ -142,8 +144,4 @@ function requiredWss(value: unknown): string {
 
 const root = document.getElementById('root')
 if (root === null) throw new Error('mobile app: missing #root')
-createRoot(root).render(
-  <StrictMode>
-    <MobileAccount installation={installation} pairing={pairing} />
-  </StrictMode>,
-)
+mountMobileEntry(root, { installation, pairing, companion })

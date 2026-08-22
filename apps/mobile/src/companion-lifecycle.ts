@@ -19,7 +19,8 @@ interface ValidatedDesktopResync {
 /** Generation-bound receiver called only by the authenticated Encrypted Companion decoder. */
 interface ValidatedDesktopResyncReceiver {
   /** @param message - validated resync for the physical connection that created this receiver. */
-  acceptValidatedDesktopResync(message: ValidatedDesktopResync): void
+  /** @returns whether this receiver still owns the active connection generation. */
+  acceptValidatedDesktopResync(message: ValidatedDesktopResync): boolean
 }
 
 /** Relay lifecycle the foreground runtime actually starts and stops. */
@@ -163,10 +164,11 @@ export class CompanionForegroundRuntime {
     if (generation === undefined || !this.state.socketOpen) return undefined
     return {
       acceptValidatedDesktopResync: (message) => {
-        if (!this.granted || this.activeConnectionGeneration !== generation) return
+        if (!this.granted || this.activeConnectionGeneration !== generation) return false
         void message
         this.state = markCompanionSynchronized(this.state)
         this.publish()
+        return this.state.synchronized
       },
     }
   }

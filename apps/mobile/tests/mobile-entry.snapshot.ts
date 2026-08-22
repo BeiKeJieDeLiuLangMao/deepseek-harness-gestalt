@@ -1,6 +1,5 @@
 // @vitest-environment jsdom
-import { createElement } from 'react'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   parseInstallationId,
@@ -14,11 +13,9 @@ import {
   PlatformAccountInstallation,
   type PlatformAccountTransport,
 } from '@deepseek-ai/dsh-platform-account-client'
-import { MobileAccount } from '../src/MobileAccount.tsx'
-import {
-  CompanionForegroundRuntime,
-  installCompanionRuntime,
-} from '../src/companion-lifecycle.ts'
+import { parseRelayCredential, parseRelayRouteId } from '@deepseek-ai/dsh-remote-protocol'
+import { CompanionForegroundRuntime, installCompanionRuntime } from '../src/companion-lifecycle.ts'
+import { mountMobileEntry } from '../src/mobile-entry.tsx'
 
 const environment = selectPlatformEnvironment(validatePlatformEnvironmentPair({
   development: {
@@ -59,50 +56,16 @@ const accountSession: AccountSessionView = {
 
 afterEach(cleanup)
 
-describe('Mobile real entry foreground mutation gate', () => {
-  it('keeps every human-visible mutation control disabled before validated resync', async () => {
+describe('Mobile shipped entry foreground mutation gate', () => {
+  it('keeps every human-visible mutation control disabled before current-generation validated resync', async () => {
     const runtime = new CompanionForegroundRuntime()
     const disposeRuntime = installCompanionRuntime(runtime)
-    const transport: PlatformAccountTransport = {
-      environment,
-      beginLogin: vi.fn<PlatformAccountTransport['beginLogin']>().mockResolvedValue(attempt),
-      pollLogin: vi.fn<PlatformAccountTransport['pollLogin']>().mockResolvedValue({
-        status: 'complete', ...accountSession,
-      }),
-      refresh: vi.fn<PlatformAccountTransport['refresh']>(),
-      current: vi.fn<PlatformAccountTransport['current']>(),
-      signOut: vi.fn<PlatformAccountTransport['signOut']>().mockResolvedValue(undefined),
-    }
-    const installation = new PlatformAccountInstallation({
-      environment,
-      installationId: parseInstallationId('mobile-snapshot'),
-      installationKind: 'mobile',
-      transport,
-      store: new MemoryInstallationAccountStore(),
-      systemBrowser: { open: vi.fn() },
-      crypto: globalThis.crypto,
-    })
-    render(createElement(MobileAccount, {
-      installation,
-      companionSurface: {
-        sessions: [{
-          id: 'guarded-session',
-          title: 'Guarded Session',
-          workspace: 'Work',
-          summary: 'Pending Desktop work',
-          blocks: [
-            { kind: 'approval', summary: 'Allow write' },
-            { kind: 'ask-user', question: 'Continue?' },
-          ],
-        }],
-        onCreate: vi.fn(),
-        onSubmit: vi.fn(),
-        onCancel: vi.fn(),
-        onAttach: vi.fn(),
-        streaming: true,
-        onSettled: vi.fn(),
-      },
-    }))
+    const installation = installationWithCompletedLogin()
+    const root = document.createElement('div')
+    document.body.append(root)
+
+    const mounted = mountMobileEntry(root, { installation, companion: runtime })
+    const surface = mounted.companionSurface
 
     fireEvent.click(await screen.findByRole('checkbox'))
     const login = screen.getByRole('button', { name: '使用 GitHub 继续' })
@@ -110,6 +73,42 @@ describe('Mobile real entry foreground mutation gate', () => {
     fireEvent.click(login)
     await screen.findByText('@octocat')
 
+    runtime.configure({
+      routeId: parseRelayRouteId('route-mobile-snapshot'),
+      endpoint: 'mobile',
+      credential: parseRelayCredential('AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE'),
+      revision: 1,
+    })
+    runtime.markConnectionOpen()
+    const firstResync = surface.bindValidatedDesktopResync()
+    if (firstResync === undefined) throw new Error('expected first Desktop surface resync receiver')
+    firstResync.acceptValidatedDesktopResync({
+      type: 'desktop-resync',
+      version: 1,
+      authenticated: true,
+      sessions: [{
+        id: 'guarded-session',
+        title: 'Guarded Session',
+        workspace: 'Work',
+        summary: 'Pending Desktop work',
+        blocks: [
+          { kind: 'approval', summary: 'Allow write' },
+          { kind: 'ask-user', question: 'Continue?' },
+        ],
+      }],
+      streaming: true,
+    })
+    await screen.findByRole('button', { name: /Guarded Session/ })
+
+    runtime.forgetConnection()
+    runtime.markConnectionOpen()
+    firstResync.acceptValidatedDesktopResync({
+      type: 'desktop-resync', version: 1, authenticated: true, sessions: [], streaming: false,
+    })
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: '新建 Ungrouped Session' }).hasAttribute('disabled')).toBe(true)
+    })
     expect(visibleMutationControls()).toMatchInlineSnapshot(`
       [
         "button:新建 Ungrouped Session:disabled",
@@ -128,9 +127,33 @@ describe('Mobile real entry foreground mutation gate', () => {
         "button:添加附件:disabled",
       ]
     `)
+
+    mounted.unmount()
     disposeRuntime()
   })
 })
+
+function installationWithCompletedLogin(): PlatformAccountInstallation {
+  const transport: PlatformAccountTransport = {
+    environment,
+    beginLogin: vi.fn<PlatformAccountTransport['beginLogin']>().mockResolvedValue(attempt),
+    pollLogin: vi.fn<PlatformAccountTransport['pollLogin']>().mockResolvedValue({
+      status: 'complete', ...accountSession,
+    }),
+    refresh: vi.fn<PlatformAccountTransport['refresh']>(),
+    current: vi.fn<PlatformAccountTransport['current']>(),
+    signOut: vi.fn<PlatformAccountTransport['signOut']>().mockResolvedValue(undefined),
+  }
+  return new PlatformAccountInstallation({
+    environment,
+    installationId: parseInstallationId('mobile-snapshot'),
+    installationKind: 'mobile',
+    transport,
+    store: new MemoryInstallationAccountStore(),
+    systemBrowser: { open: vi.fn() },
+    crypto: globalThis.crypto,
+  })
+}
 
 function visibleMutationControls(): string[] {
   const names = new Set(['新建 Ungrouped Session', '在 Work 新建 Session', '允许', '继续会话', '发送', '取消', '添加附件'])
