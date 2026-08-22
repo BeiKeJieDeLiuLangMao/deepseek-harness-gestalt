@@ -137,6 +137,17 @@ export class ModelsSettingsStore {
   ) {}
 
   /**
+   * Fold one settings-write answer into the shared describe mirror. Removal
+   * mutates through the wire rather than a namespace scope, so the page has
+   * to apply the returned view before {@link load} joins; `ensure` will not
+   * re-read a mirror that is already ready.
+   * @param view - the namespace view `settings.mutate` answered with.
+   */
+  acceptWrite(view: SettingsNamespaceView): void {
+    this.describeFace.acceptView(view)
+  }
+
+  /**
    * Refresh the whole page snapshot: the provider directory and the mirror's
    * settings answer in parallel, then one batched credential describe over
    * every referenced ref. Provider failure or absence of an initial settings
