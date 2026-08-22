@@ -13,7 +13,12 @@ import {
   PlatformAccountInstallation,
   type PlatformAccountTransport,
 } from '@deepseek-ai/dsh-platform-account-client'
-import { parseRelayCredential, parseRelayRouteId } from '@deepseek-ai/dsh-remote-protocol'
+import {
+  parseCompanionOperationId,
+  parseCompanionSessionId,
+  parseRelayCredential,
+  parseRelayRouteId,
+} from '@deepseek-ai/dsh-remote-protocol'
 import { CompanionForegroundRuntime, installCompanionRuntime } from '../src/companion-lifecycle.ts'
 import { mountMobileEntry } from '../src/mobile-entry.tsx'
 
@@ -64,7 +69,11 @@ describe('Mobile shipped entry foreground mutation gate', () => {
     const root = document.createElement('div')
     document.body.append(root)
 
-    const mounted = mountMobileEntry(root, { installation, companion: runtime })
+    const mounted = mountMobileEntry(root, {
+      installation,
+      companion: runtime,
+      companionChannel: mutationChannel(),
+    })
     const surface = mounted.companionSurface
 
     fireEvent.click(await screen.findByRole('checkbox'))
@@ -99,6 +108,27 @@ describe('Mobile shipped entry foreground mutation gate', () => {
       streaming: true,
     })
     await screen.findByRole('button', { name: /Guarded Session/ })
+
+    const results = surface.bindValidatedCompanionResults()
+    if (results === undefined) throw new Error('expected current Companion result receiver')
+    fireEvent.change(screen.getByRole('searchbox', { name: '搜索 Desktop Sessions' }), {
+      target: { value: 'authoritative' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '搜索' }))
+    results.acceptValidatedCompanionResult({
+      type: 'session-search',
+      operationId: parseCompanionOperationId('mobile-snapshot-search'),
+      items: [{
+        sessionId: parseCompanionSessionId('uncached-authoritative-session'),
+        snippet: 'Desktop-only authoritative hit',
+      }],
+      hasMore: false,
+    })
+    await screen.findByText('Desktop-only authoritative hit')
+    expect(screen.getByRole('region', { name: 'Desktop 搜索结果' }).textContent).toMatchInlineSnapshot(
+      '"Desktop 搜索结果uncached-authoritative-sessionDesktop-only authoritative hit"',
+    )
+    surface.search('')
 
     runtime.forgetConnection()
     runtime.markConnectionOpen()
@@ -153,6 +183,17 @@ function installationWithCompletedLogin(): PlatformAccountInstallation {
     systemBrowser: { open: vi.fn() },
     crypto: globalThis.crypto,
   })
+}
+
+function mutationChannel() {
+  return {
+    create: vi.fn(),
+    submit: vi.fn(),
+    cancel: vi.fn(),
+    attach: vi.fn(),
+    search: vi.fn(() => parseCompanionOperationId('mobile-snapshot-search')),
+    settle: vi.fn(),
+  }
 }
 
 function visibleMutationControls(): string[] {
