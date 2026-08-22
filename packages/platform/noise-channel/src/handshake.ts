@@ -29,6 +29,7 @@ import {
   writePairingMessage2,
   writePairingMessage3,
 } from './wasm.ts'
+import { decodeSnowEndpointInvitation } from './endpoint-pairing.ts'
 
 const CHALLENGE_VERSION = 1
 const OPEN_VERSION = 2
@@ -188,6 +189,7 @@ export class SnowMobileHandshakeClient {
   private psk: Uint8Array | undefined
   private message2: Uint8Array | undefined
   private finishMessage: Uint8Array | undefined
+  private handshakeHash: Uint8Array | undefined
   private reconnectState: Uint8Array | undefined
 
   /**
@@ -196,33 +198,31 @@ export class SnowMobileHandshakeClient {
    * @returns completion identity and XKpsk3 message 1.
    */
   async begin(oneTimeLink: string): Promise<{ completionId: PairingCompletionId; mobileHandshake: Uint8Array }> {
-    this.wipe()
     const invitation = parsePairingInvitationLink(oneTimeLink)
     try {
       if (invitation.desktopStaticPublicKey === undefined) {
         throw new TypeError('Snow Personal Pairing invitation has no Desktop static public key')
       }
-      const mobile = await generateSnowKeypair()
-      const ephemeral = await generateSnowKeypair()
-      this.mobilePrivate = mobile.privateKey
-      this.mobilePublic = mobile.publicKey
-      this.mobileEphemeral = ephemeral.privateKey
-      const desktopPublic = invitation.desktopStaticPublicKey.slice()
-      const psk = invitation.invitationSecret.slice()
-      this.desktopPublic = desktopPublic
-      this.psk = psk
-      ephemeral.publicKey.fill(0)
       return {
         completionId: parsePairingCompletionId(`snow-${crypto.randomUUID()}`),
-        mobileHandshake: await writePairingMessage1({
-          mobileStaticPrivate: mobile.privateKey,
-          mobileEphemeralPrivate: ephemeral.privateKey,
-          desktopPublic,
-          psk,
-        }),
+        mobileHandshake: await this.prepare(invitation.desktopStaticPublicKey, invitation.invitationSecret),
       }
     } finally {
       invitation.invitationSecret.fill(0)
+    }
+  }
+
+  /** Prepare Mobile message 1 from a Desktop-owned opaque invitation payload.
+   * @param invitationPayload - mailbox-carried invitation decoded only inside Mobile.
+   * @returns XKpsk3 Mobile message 1.
+   */
+  async beginEndpointInvitation(invitationPayload: Uint8Array): Promise<Uint8Array> {
+    const invitation = decodeSnowEndpointInvitation(invitationPayload)
+    try {
+      return await this.prepare(invitation.desktopPublic, invitation.psk)
+    } finally {
+      invitation.desktopPublic.fill(0)
+      invitation.psk.fill(0)
     }
   }
 
@@ -241,6 +241,7 @@ export class SnowMobileHandshakeClient {
     })
     this.message2 = desktopHandshake.slice()
     this.finishMessage = finished.message3
+    this.handshakeHash = finished.handshakeHash
   }
 
   /** Export the prepared XKpsk3 Mobile finish message.
@@ -249,6 +250,14 @@ export class SnowMobileHandshakeClient {
   exportFinishMessage(): Uint8Array {
     if (this.finishMessage === undefined) throw new Error('Snow Personal Pairing has no finish message')
     return this.finishMessage.slice()
+  }
+
+  /** Export the public authentication hash for Mobile words.
+   * @returns completed XKpsk3 authentication hash.
+   */
+  exportAuthenticationHash(): Uint8Array {
+    if (this.handshakeHash === undefined) throw new Error('Snow Personal Pairing has no authentication hash')
+    return this.handshakeHash.slice()
   }
 
   /**
@@ -299,12 +308,14 @@ export class SnowMobileHandshakeClient {
     this.psk?.fill(0)
     this.message2?.fill(0)
     this.finishMessage?.fill(0)
+    this.handshakeHash?.fill(0)
     this.mobilePrivate = undefined
     this.mobileEphemeral = undefined
     this.desktopPublic = undefined
     this.psk = undefined
     this.message2 = undefined
     this.finishMessage = undefined
+    this.handshakeHash = undefined
   }
 
   private prepared(): {
@@ -323,6 +334,26 @@ export class SnowMobileHandshakeClient {
       desktopPublic: this.desktopPublic,
       psk: this.psk,
     }
+  }
+
+  private async prepare(desktopPublicInput: Uint8Array, pskInput: Uint8Array): Promise<Uint8Array> {
+    this.wipe()
+    const mobile = await generateSnowKeypair()
+    const ephemeral = await generateSnowKeypair()
+    this.mobilePrivate = mobile.privateKey
+    this.mobilePublic = mobile.publicKey
+    this.mobileEphemeral = ephemeral.privateKey
+    const desktopPublic = desktopPublicInput.slice()
+    const psk = pskInput.slice()
+    this.desktopPublic = desktopPublic
+    this.psk = psk
+    ephemeral.publicKey.fill(0)
+    return await writePairingMessage1({
+      mobileStaticPrivate: mobile.privateKey,
+      mobileEphemeralPrivate: ephemeral.privateKey,
+      desktopPublic,
+      psk,
+    })
   }
 }
 

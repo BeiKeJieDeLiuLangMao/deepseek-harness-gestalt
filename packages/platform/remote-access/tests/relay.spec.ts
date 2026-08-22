@@ -56,6 +56,31 @@ describe('RemoteRelayProvider', () => {
     await platform.dispose()
   })
 
+  it('registers an endpoint-owned credential digest without receiving bearer authority', async () => {
+    const routeStore = new SharedRouteStore()
+    const issue = vi.spyOn(routeStore, 'issue')
+    const platform = new RemoteRelayProvider(new Context(), {
+      instanceId: parseRelayInstanceId('platform-register-digest'),
+      routeStore,
+      coordinator: new SharedCoordinator(),
+      config: CONFIG,
+    })
+    const routeId = parseRelayRouteId('route-register-digest')
+    const desktop = await platform.rotateCredential(routeId)
+    const digest = new Uint8Array(32).fill(7)
+    const selector = parseRelayPairingSelector('pairing-register-digest')
+
+    await expect(platform.registerCredentialDigest(routeId, 'mobile', digest, selector))
+      .resolves.toBe(desktop.revision)
+    expect(issue).toHaveBeenCalledWith(routeId, 'mobile', digest, selector)
+    await expect(platform.registerCredentialDigest(routeId, 'mobile', Uint8Array.of(1), selector))
+      .rejects.toThrow('must contain 32 bytes')
+    await platform.revokeRoute(routeId)
+    await expect(platform.registerCredentialDigest(routeId, 'mobile', digest, selector))
+      .rejects.toMatchObject({ code: 'RELAY_ROUTE_REVOKED' })
+    await platform.dispose()
+  })
+
   it('revokes one endpoint credential and publishes an invalidate', async () => {
     const coordinator = new SharedCoordinator()
     const invalidate = vi.spyOn(coordinator, 'invalidate')
@@ -164,6 +189,59 @@ describe('RemoteRelayProvider', () => {
     expect(replacementOne?.attachmentId).toBe('mobile-one-new')
     expect(replacementOne?.generation).not.toBe(originalOne?.generation)
     await platform.dispose()
+  })
+
+  it('pushes route-bound peer replacement and close updates across Platform Instances', async () => {
+    const routeStore = new SharedRouteStore()
+    const coordinator = new SharedCoordinator()
+    const desktopPlatform = provider('platform-peer-desktop', routeStore, coordinator, 81)
+    const mobilePlatform = provider('platform-peer-mobile', routeStore, coordinator, 91)
+    const routeId = parseRelayRouteId('route-peer-update')
+    const desktopGrant = await desktopPlatform.rotateCredential(routeId, 'desktop')
+    const selector = parseRelayPairingSelector('pairing-peer-update')
+    const mobileGrant = await desktopPlatform.issueCredential(routeId, 'mobile', selector)
+    const desktopUpdates: RelayReadyMessage[] = []
+    const desktop = await desktopPlatform.attach({
+      message: {
+        type: 'attach', transportVersion: 1, routeId,
+        attachmentId: parseRelayAttachmentId('desktop-peer-update'), endpoint: 'desktop',
+        credential: desktopGrant.credential,
+      },
+      deliver: async (message) => {
+        if (message.type === 'peer-update') desktopUpdates.push({ ...message, type: 'ready' })
+      },
+    })
+    desktopUpdates.length = 0
+    const first = await mobilePlatform.attach({
+      message: {
+        type: 'attach', transportVersion: 1, routeId,
+        attachmentId: parseRelayAttachmentId('mobile-peer-old'), endpoint: 'mobile',
+        credential: mobileGrant.credential,
+      },
+      deliver: async () => {},
+    })
+    expect(desktopUpdates.at(-1)?.peers).toEqual([
+      expect.objectContaining({ attachmentId: 'mobile-peer-old', pairingSelector: selector }),
+    ])
+    const oldGeneration = desktopUpdates.at(-1)?.peers[0]?.generation
+    const replacement = await mobilePlatform.attach({
+      message: {
+        type: 'attach', transportVersion: 1, routeId,
+        attachmentId: parseRelayAttachmentId('mobile-peer-new'), endpoint: 'mobile',
+        credential: mobileGrant.credential,
+      },
+      deliver: async () => {},
+    })
+    expect(desktopUpdates.at(-1)?.peers).toEqual([
+      expect.objectContaining({ attachmentId: 'mobile-peer-new', pairingSelector: selector }),
+    ])
+    expect(desktopUpdates.at(-1)?.peers[0]?.generation).not.toBe(oldGeneration)
+    await first.close()
+    expect(desktopUpdates.at(-1)?.peers[0]?.attachmentId).toBe('mobile-peer-new')
+    await replacement.close()
+    expect(desktopUpdates.at(-1)?.peers).toEqual([])
+    await desktop.close()
+    await Promise.all([desktopPlatform.dispose(), mobilePlatform.dispose()])
   })
 
   it('rejects cross-endpoint credentials in both directions', async () => {
@@ -418,14 +496,14 @@ describe('RemoteRelayProvider', () => {
         type: 'attach', transportVersion: 1, routeId,
         attachmentId: parseRelayAttachmentId('mobile-one'), endpoint: 'mobile', credential: grant.credential,
       },
-      deliver: async (message) => { mobileFrames.push(message) },
+      deliver: async (message) => { if (message.type === 'ciphertext') mobileFrames.push(message) },
     })
     await platformB.attach({
       message: {
         type: 'attach', transportVersion: 1, routeId,
         attachmentId: parseRelayAttachmentId('desktop-one'), endpoint: 'desktop', credential: desktopGrant.credential,
       },
-      deliver: async (message) => { desktopFrames.push(message) },
+      deliver: async (message) => { if (message.type === 'ciphertext') desktopFrames.push(message) },
     })
     const ciphertext = Uint8Array.of(5, 8, 13, 21)
 
@@ -438,7 +516,7 @@ describe('RemoteRelayProvider', () => {
 
     expect(mobileFrames).toEqual([])
     expect(desktopFrames).toEqual([expect.objectContaining({ ciphertext })])
-    expect(coordinator.events).toEqual([
+    expect(coordinator.events.filter(event => event.type === 'ciphertext' || event.type === 'delivered')).toEqual([
       expect.objectContaining({ type: 'ciphertext', routeId, ciphertext }),
       expect.objectContaining({ type: 'delivered' }),
     ])
@@ -483,7 +561,7 @@ describe('RemoteRelayProvider', () => {
       targetAttachmentId: parseRelayAttachmentId('desktop-missing'),
       ciphertext: Uint8Array.of(1),
     })).rejects.toEqual(expect.objectContaining<Partial<RemoteRelayError>>({ code: 'REMOTE_OFFLINE' }))
-    expect(coordinator.events).toEqual([])
+    expect(coordinator.events.filter(event => event.type === 'ciphertext')).toEqual([])
     expect(coordinator.queuedEventCount).toBe(0)
     await platform.dispose()
   })
@@ -1166,7 +1244,9 @@ describe('RemoteRelayProvider', () => {
     await platformB.attach({ message, deliver: async () => {}, close })
     const replacement = await platformB.attach({
       message,
-      deliver: async () => { throw new Error('writer failed') },
+      deliver: async (outgoing) => {
+        if (outgoing.type === 'ciphertext') throw new Error('writer failed')
+      },
     })
     expect(close).toHaveBeenCalledOnce()
     const mobile = await platformA.attach({
@@ -1358,7 +1438,7 @@ describe('RemoteRelayProvider', () => {
         type: 'attach', transportVersion: 1, routeId,
         attachmentId: parseRelayAttachmentId('mobile-established'), endpoint: 'mobile', credential: mobileGrant.credential,
       },
-      deliver: async (message) => { mobileFrames.push(message) },
+      deliver: async (message) => { if (message.type === 'ciphertext') mobileFrames.push(message) },
     })
     expect(gate.shedding).toBe(true)
     await expect(platform.attach({

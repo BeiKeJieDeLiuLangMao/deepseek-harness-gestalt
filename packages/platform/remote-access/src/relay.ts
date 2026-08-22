@@ -9,6 +9,7 @@ import type {
   RelayCredential,
   RelayErrorCode,
   RelayHeartbeatMessage,
+  RelayPeerUpdateMessage,
   RelayPairingSelector,
   RelayReadyMessage,
   RelayRouteId,
@@ -97,6 +98,10 @@ export type RelayCoordinationEvent =
     revision: number
   })
   | { type: 'delivered'; deliveryId: RelayDeliveryId }
+  | (RelayPeerUpdateMessage & {
+    targetConnectionToken: RelayConnectionToken
+    revision: number
+  })
   | { type: 'invalidate'; routeId: RelayRouteId; revision: number }
 
 /** Shared ephemeral directory, invalidation, and ciphertext Pub/Sub adapter. */
@@ -183,6 +188,30 @@ export abstract class RemoteRelayService extends Service {
     pairingSelector?: RelayPairingSelector,
   ): Promise<RelayCredentialGrant>
   /**
+   * Register endpoint-generated authority without receiving its bearer credential.
+   * @param routeId - active route receiving Mobile authority.
+   * @param endpoint - endpoint kind bound to the digest.
+   * @param credentialDigest - SHA-256 digest of the endpoint-owned credential.
+   * @param pairingSelector - non-secret pairing selector retained beside the digest.
+   * @returns current active route revision.
+   */
+  abstract registerCredentialDigest(
+    routeId: RelayRouteId,
+    endpoint: 'mobile' | 'desktop',
+    credentialDigest: Uint8Array,
+    pairingSelector?: RelayPairingSelector,
+  ): Promise<number>
+  /** Remove endpoint-generated authority by its retained digest.
+   * @param routeId - route owning the authority.
+   * @param endpoint - endpoint kind bound to the digest.
+   * @param credentialDigest - exact retained SHA-256 digest.
+   */
+  abstract revokeCredentialDigest(
+    routeId: RelayRouteId,
+    endpoint: 'mobile' | 'desktop',
+    credentialDigest: Uint8Array,
+  ): Promise<void>
+  /**
    * Remove one issued endpoint credential without revoking its route peers.
    * @param grant - exact issued authority whose ownership did not commit.
    */
@@ -199,7 +228,7 @@ export abstract class RemoteRelayService extends Service {
    */
   abstract attach(input: {
     message: RelayAttachMessage
-    deliver: (message: RelayCiphertextMessage) => Promise<void>
+    deliver: (message: RelayCiphertextMessage | RelayPeerUpdateMessage) => Promise<void>
     close?: () => void | Promise<void>
     signal?: AbortSignal
     announce?: (message: RelayReadyMessage) => Promise<void>

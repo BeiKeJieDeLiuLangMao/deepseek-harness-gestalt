@@ -8,7 +8,7 @@ DeepSeek Gestalt 的 Desktop Host。Electron 拥有窗口、菜单、GitHub 自�
 
 主窗口只接受当前环回 Host 同源导航。包括 GitHub 授权在内的普通 HTTP 链接交给系统浏览器；其他来源和 scheme 不能替换 Session Surface，也不能创建另一个 Electron 窗口。Platform 账号签名密钥和令牌保存在 Electron userData 下、按环境分开的 `safeStorage` 加密文件中；preload 只暴露当前状态与生命周期动词。
 
-个人配对只在真实的 `手机配对` 设置区中配置。preload 暴露手机访问、挑战、待确认决策与已配对设备操作，不会向普通 Session 标题栏、侧栏、审批、输入框或离线视图增加状态。账号登录后，由 Host 拥有的控制器为每项远程访问操作签署新的当前安装证明，在设置中的配对开关开启时轮询待确认决策，并在调用变更前校验 renderer 传入的布尔值与带品牌的待确认 id。同一个 owner 只在手机访问开启时启动注入的 Relay lifecycle，并在关闭开关、退出账号、sleep、关闭窗口或 quit 时停止。开发环境不选择 keyless 产品控制器。Relay 现在会投影 credential-bound peer attachment selector，而注入的 Desktop lifecycle 在首次配对与持久 Snow static state 由 Desktop 拥有前保持 fail-closed。`SnowDesktopAttachmentOwner` 只接纳绑定 route/selector/attachment/generation 的 IK，`sealDesktopForegroundSynchronization` 则只通过所得 channel 发出版本化 `foreground-sync` projection。Host 永远不会组装 keyless 配对或 Companion cipher provider。
+个人配对只在真实的 `手机配对` 设置区中配置。preload 暴露手机访问、挑战、待确认决策与已配对设备操作，不会向普通 Session 标题栏、侧栏、审批、输入框或离线视图增加状态。账号登录后，由 Host 拥有的控制器为每项操作签署新的当前安装证明，在本地创建 XKpsk3 邀请状态，并且只转发不透明 mailbox 消息。确认时，Desktop 创建 Mobile Relay credential，只向 Platform 提交 SHA-256 digest，以第一条 Snow transport payload 密封 grant，再把 reconnect record 保存到 `safeStorage` 保护且 owner-only 原子替换的文件。同一个 owner 只在手机访问开启时运行真实 WSS lifecycle。`SnowDesktopAttachmentOwner` 只接纳当前投影且绑定 route/selector/attachment/generation 的 IK 请求，只在认证后替换 active selector，并在 IK2 后立即发送版本化加密的 `foreground-sync`。开发环境不选择 keyless 产品控制器。
 
 Desktop Platform 账号会在创建窗口前校验完整开发与生产环境对：`DSH_PLATFORM_DEVELOPMENT_*` 和 `DSH_PLATFORM_PRODUCTION_*` 两侧分别提供 `ORIGIN`、`CALLBACK_URL`、`GITHUB_CLIENT_ID`、`CREDENTIAL_REFERENCE`、`DATABASE_IDENTITY` 与 `IDENTITY_NAMESPACE`，再由 `DSH_PLATFORM_ENV` 显式选择一侧。缺失、未知、共享、非 HTTPS 或回调不匹配的配置会在渲染与网络流量前使启动失败。操作系统加密不可用仍会作为明确的能力失败显示。加密记录通过 `dsh-atomic-write` 的随机独占同级文件、仅所有者权限、符号链接安全 rename 与失败清理完成替换。
 
@@ -59,4 +59,4 @@ hoisted deploy 会纳入工作区包，但不带 pnpm 的链接式虚拟依赖�
 
 - **安装包里的 Node + dsh 快照由发布 workflow 组装** — `gestalt:dev` 跑的是工作区源码树。
 - **没有 Windows Authenticode** — SmartScreen 会警告；更新器仍会运行。
-- **生产 Desktop pairing ownership 尚未组装** — Relay peer discovery 已存在，但在首次配对与持久 static state 由 Desktop 拥有，并且物理设备证据与独立评审接纳确切 Snow provider 之前，Desktop 保持 fail-closed。
+- **仍缺外部发布证据** — 确切的 Snow/WASM 实现需要独立安全评审，发布链路还需要物理 Desktop 加 WKWebView/Android WebView 证据。本地 Vite、测试证书与 `prototype-companion` 不是产品验收。

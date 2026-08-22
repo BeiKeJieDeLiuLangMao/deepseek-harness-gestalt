@@ -464,22 +464,40 @@ class KeylessRouteStore implements RelayRouteStore {
 class KeylessRedisBus {
   readonly published: string[] = []
   private readonly values = new Map<string, string>()
+  private readonly sets = new Map<string, Set<string>>()
   private readonly subscriptions = new Map<string, Set<(message: string) => void>>()
   client(): RelayRedisClient {
     const client: RelayRedisClient = {
       get: async key => this.values.get(key) ?? null,
-      sMembers: async () => [],
+      sMembers: async key => [...(this.sets.get(key) ?? [])],
       set: async (key, value) => { this.values.set(key, value); return 'OK' },
       eval: async (_script, options) => {
         const key = options.keys[0]
         if (key === undefined) return 0
+        const routeKey = options.keys[1]
+        if (options.arguments.length === 3 && routeKey !== undefined) {
+          this.values.set(key, options.arguments[0] as string)
+          const members = this.sets.get(routeKey) ?? new Set<string>()
+          members.add(options.arguments[2] as string)
+          this.sets.set(routeKey, members)
+          return 1
+        }
         const value = this.values.get(key)
         if (value === undefined) return 0
         const record = JSON.parse(value) as { connectionToken?: string }
         if (record.connectionToken !== options.arguments[0]) return 0
         const replacement = options.arguments[1]
-        if (replacement === undefined) this.values.delete(key)
-        else this.values.set(key, replacement)
+        if (options.arguments.length === 2) {
+          this.values.delete(key)
+          if (routeKey !== undefined) this.sets.get(routeKey)?.delete(options.arguments[1] as string)
+        } else if (replacement !== undefined) {
+          this.values.set(key, replacement)
+          if (routeKey !== undefined) {
+            const members = this.sets.get(routeKey) ?? new Set<string>()
+            members.add(options.arguments[3] as string)
+            this.sets.set(routeKey, members)
+          }
+        }
         return 1
       },
       publish: async (channel, message) => {

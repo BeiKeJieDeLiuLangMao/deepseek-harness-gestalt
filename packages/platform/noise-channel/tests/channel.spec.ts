@@ -10,6 +10,7 @@ import {
   SnowMobileHandshakeClient,
   SnowMobileAttachmentOwner,
   SnowDesktopAttachmentOwner,
+  SnowDesktopEndpointPairingOwner,
   SnowPairingHandshakeProvider,
   SnowCompanionProtocolChannel,
   initializeSnowChannel,
@@ -22,6 +23,30 @@ beforeAll(() => {
 })
 
 describe('Snow product Companion channel', () => {
+  it('keeps XKpsk3 Desktop private state endpoint-owned across opaque mailbox messages', async () => {
+    const desktop = new SnowDesktopEndpointPairingOwner()
+    const invitation = await desktop.createInvitation(Date.now() + 60_000)
+    const mobile = new SnowMobileHandshakeClient()
+    const message1 = await mobile.beginEndpointInvitation(invitation.invitationPayload)
+    const message2 = await desktop.acceptMessage1(message1)
+    await mobile.acceptDesktopHandshake(message2)
+    const message3 = mobile.exportFinishMessage()
+    const desktopHash = await desktop.finishMessage3(message3)
+    expect(desktopHash).toEqual(mobile.exportAuthenticationHash())
+    const grant = {
+      endpoint: 'mobile' as const,
+      routeId: parseRelayRouteId('route-endpoint'),
+      credential: parseRelayCredential('A'.repeat(43)),
+      revision: 1,
+      pairingSelector: parseRelayPairingSelector('pairing-endpoint'),
+    }
+    const sealed = await desktop.sealMobileRelayAuthority(grant)
+    expect(new TextDecoder().decode(sealed)).not.toContain(grant.credential)
+    await expect(mobile.openRelayAuthority(sealed)).resolves.toEqual(grant)
+    expect(desktop.exportReconnectState()).toHaveLength(96)
+    expect(mobile.exportReconnectState()).toHaveLength(96)
+  })
+
   it('seals Mobile Relay authority in the completed XKpsk3 channel', async () => {
     const paired = await completePairing()
     const grant = {

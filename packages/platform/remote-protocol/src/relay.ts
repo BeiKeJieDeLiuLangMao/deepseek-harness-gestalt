@@ -90,6 +90,8 @@ export function encodeRelayMessage(message: RelayMessage): Uint8Array {
       return encode({ ...message })
     case 'heartbeat':
       return encode({ ...message })
+    case 'peer-update':
+      return encode({ ...message })
     case 'ready':
       return encode({ ...message })
     case 'revoke':
@@ -144,28 +146,10 @@ export function decodeRelayMessage(encoded: Uint8Array): RelayMessage {
           attachmentId: parseRelayAttachmentId(record.attachmentId),
           sentAt: positiveSafeInteger(record.sentAt, 'Relay heartbeat sentAt'),
         }
+      case 'peer-update':
+        return decodePeerProjection(record, 'peer-update', 'Relay peer update')
       case 'ready':
-        exactKeys(record, ['type', 'transportVersion', 'routeId', 'attachmentId', 'peers'], 'Relay ready message')
-        if (!Array.isArray(record.peers)) invalid('Relay ready peers must be an array')
-        const peers = record.peers.map((value) => {
-          const peer = object(value, 'Relay ready peer')
-          exactKeys(peer, ['attachmentId', 'pairingSelector', 'generation'], 'Relay ready peer')
-          return {
-            attachmentId: parseRelayAttachmentId(peer.attachmentId),
-            pairingSelector: parseRelayPairingSelector(peer.pairingSelector),
-            generation: positiveSafeInteger(peer.generation, 'Relay peer generation'),
-          }
-        })
-        if (new Set(peers.map(peer => peer.pairingSelector)).size !== peers.length
-          || new Set(peers.map(peer => peer.attachmentId)).size !== peers.length) {
-          invalid('Relay ready peers must have distinct selectors and attachment ids')
-        }
-        return {
-          type: 'ready', transportVersion: 1,
-          routeId: parseRelayRouteId(record.routeId),
-          attachmentId: parseRelayAttachmentId(record.attachmentId),
-          peers,
-        }
+        return decodePeerProjection(record, 'ready', 'Relay ready')
       case 'revoke':
         exactKeys(record, ['type', 'transportVersion', 'routeId', 'attachmentId', 'reason'], 'Relay revoke message')
         if (record.reason !== 'device' && record.reason !== 'all' && record.reason !== 'disabled') {
@@ -196,6 +180,34 @@ export function decodeRelayMessage(encoded: Uint8Array): RelayMessage {
   } catch (error) {
     if (error instanceof RemoteProtocolError) throw error
     throw new RemoteProtocolError('REMOTE_PROTOCOL_INVALID_MESSAGE', 'Relay message is not valid protocol JSON')
+  }
+}
+
+function decodePeerProjection(
+  record: Record<string, unknown>,
+  type: 'ready' | 'peer-update',
+  name: string,
+): Extract<RelayMessage, { type: typeof type }> {
+  exactKeys(record, ['type', 'transportVersion', 'routeId', 'attachmentId', 'peers'], `${name} message`)
+  if (!Array.isArray(record.peers)) invalid(`${name} peers must be an array`)
+  const peers = record.peers.map((value) => {
+    const peer = object(value, `${name} peer`)
+    exactKeys(peer, ['attachmentId', 'pairingSelector', 'generation'], `${name} peer`)
+    return {
+      attachmentId: parseRelayAttachmentId(peer.attachmentId),
+      pairingSelector: parseRelayPairingSelector(peer.pairingSelector),
+      generation: positiveSafeInteger(peer.generation, 'Relay peer generation'),
+    }
+  })
+  if (new Set(peers.map(peer => peer.pairingSelector)).size !== peers.length
+    || new Set(peers.map(peer => peer.attachmentId)).size !== peers.length) {
+    invalid(`${name} peers must have distinct selectors and attachment ids`)
+  }
+  return {
+    type, transportVersion: 1,
+    routeId: parseRelayRouteId(record.routeId),
+    attachmentId: parseRelayAttachmentId(record.attachmentId),
+    peers,
   }
 }
 

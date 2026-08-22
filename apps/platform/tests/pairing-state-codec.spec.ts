@@ -66,6 +66,41 @@ describe('pairing transaction codec', () => {
     expect(decoded.blobSequence.next).toBe(4)
   })
 
+  it('persists only opaque endpoint mailbox messages and never Desktop private state', () => {
+    const state = emptyPairingTransactionState()
+    const desktopPrivateSentinel = Uint8Array.from({ length: 32 }, () => 213)
+    state.endpointMailbox = {
+      challenges: [{
+        challengeId: parsePairingChallengeId('challenge-mailbox'),
+        accountId: parsePlatformAccountId('account-one'),
+        desktopInstallationId: parseInstallationId('desktop-one'),
+        expiresAt: 1_787_027_200_000,
+        invitationPayload: Uint8Array.of(1, 2, 3),
+        completionId: parsePairingCompletionId('completion-mailbox'),
+        pendingPairingId: parsePendingPairingId('pending-mailbox'),
+      }],
+      pending: [{
+        pendingPairingId: parsePendingPairingId('pending-mailbox'),
+        completionId: parsePairingCompletionId('completion-mailbox'),
+        challengeId: parsePairingChallengeId('challenge-mailbox'),
+        accountId: parsePlatformAccountId('account-one'),
+        desktopInstallationId: parseInstallationId('desktop-one'),
+        mobileInstallationId: parseInstallationId('mobile-one'),
+        device: { name: 'Alice phone', platform: 'ios' },
+        message1: Uint8Array.of(11),
+        message2: Uint8Array.of(22),
+        message3: Uint8Array.of(33),
+        confirmed: true,
+        rejected: false,
+        pairingId: parsePersonalPairingId('pairing-mailbox'),
+        sealedRelayAuthority: Uint8Array.of(44),
+      }],
+    }
+    const encoded = encodePairingTransactionState(state)
+    expect(JSON.stringify(encoded)).not.toContain(Buffer.from(desktopPrivateSentinel).toString('base64url'))
+    expect(decodePairingTransactionState(encoded).endpointMailbox).toEqual(state.endpointMailbox)
+  })
+
   it('round-trips a confirmed pairing and Relay grant', () => {
     const state = emptyPairingTransactionState()
     state.pairings.set(parsePersonalPairingId('pairing-one'), {

@@ -173,6 +173,13 @@ describe('Remote Access HTTP assembled flow', () => {
       setMobileAccess: http.setMobileAccess.bind(http),
       reissueDesktopRelayAuthority: http.reissueDesktopRelayAuthority.bind(http),
       createChallenge: http.createChallenge.bind(http),
+      createEndpointChallenge: http.createEndpointChallenge.bind(http),
+      cancelEndpointChallenge: http.cancelEndpointChallenge.bind(http),
+      listEndpointPending: http.listEndpointPending.bind(http),
+      submitEndpointMessage2: http.submitEndpointMessage2.bind(http),
+      confirmEndpointPairing: http.confirmEndpointPairing.bind(http),
+      rejectEndpointPairing: http.rejectEndpointPairing.bind(http),
+      deliverEndpointRelayAuthority: http.deliverEndpointRelayAuthority.bind(http),
       cancelChallenge: http.cancelChallenge.bind(http),
       listPendingPairings: http.listPendingPairings.bind(http),
       listPersonalPairings: http.listPersonalPairings.bind(http),
@@ -181,6 +188,9 @@ describe('Remote Access HTTP assembled flow', () => {
       revokePersonalPairing: http.revokePersonalPairing.bind(http),
       getMobilePairingStatus: http.getMobilePairingStatus.bind(http),
       finishChallenge: http.finishChallenge.bind(http),
+      submitEndpointMessage1: http.submitEndpointMessage1.bind(http),
+      getEndpointPairingStatus: http.getEndpointPairingStatus.bind(http),
+      submitEndpointMessage3: http.submitEndpointMessage3.bind(http),
       completeChallenge: async (request) => {
         requests.push(request)
         const result = await http.completeChallenge(request)

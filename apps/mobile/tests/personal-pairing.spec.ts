@@ -13,6 +13,61 @@ import { companionMayMutate, CompanionForegroundRuntime } from '../src/companion
 import { MobilePairingController } from '../src/personal-pairing.ts'
 
 describe('MobilePairingController', () => {
+  it('completes endpoint-owned XKpsk3 through the opaque mailbox and retains reconnect state', async () => {
+    const scheduled: Array<() => void> = []
+    const transport = transportFixture()
+    const pendingPairingId = parsePendingPairingId('pending-endpoint')
+    transport.submitEndpointMessage1.mockResolvedValue({ pendingPairingId })
+    transport.getEndpointPairingStatus
+      .mockResolvedValueOnce({ stage: 'message2', pendingPairingId, message2: Uint8Array.of(2) })
+      .mockResolvedValueOnce({ stage: 'awaiting-authority', pendingPairingId })
+      .mockResolvedValueOnce({
+        stage: 'confirmed', pendingPairingId, pairingId: parsePersonalPairingId('pairing-endpoint'),
+        sealedRelayAuthority: Uint8Array.of(8, 9),
+      })
+    const grant = {
+      routeId: parseRelayRouteId('route-endpoint'), endpoint: 'mobile' as const,
+      credential: parseRelayCredential('AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE'), revision: 1,
+    }
+    const reconnectState = new Uint8Array(96).fill(5)
+    const handshake = {
+      begin: vi.fn(async () => { throw new Error('legacy begin must not run') }),
+      beginEndpointInvitation: vi.fn(async () => Uint8Array.of(1)),
+      acceptDesktopHandshake: vi.fn(),
+      exportFinishMessage: vi.fn(() => Uint8Array.of(3)),
+      exportAuthenticationHash: vi.fn(() => new Uint8Array(32).fill(4)),
+      openRelayAuthority: vi.fn(async () => grant),
+      exportReconnectState: vi.fn(() => reconnectState.slice()),
+    }
+    const vault = new PairingCompanionKeyVault()
+    const relay = { configure: vi.fn(), start: vi.fn(), stop: vi.fn() }
+    const controller = new MobilePairingController({
+      installation: installationFixture(), transport, handshake, relay, pairingKeys: vault,
+      scanner: { scan: vi.fn() }, device: { name: 'Alice phone', platform: 'ios' },
+      schedule: (task) => { scheduled.push(task); return { unref: vi.fn() } as never },
+      now: () => Date.parse('2026-08-18T10:01:00.000Z'),
+    })
+    const payload = btoa(String.fromCharCode(7, 8)).replaceAll('=', '')
+    await controller.completeLink(
+      `https://platform.example/pair?challenge=challenge-endpoint&payload=${payload}`
+      + `&expires=${String(Date.parse('2026-08-18T10:02:00.000Z'))}&protocol=1`,
+    )
+    expect(transport.submitEndpointMessage1).toHaveBeenCalledWith(expect.objectContaining({
+      challengeId: 'challenge-endpoint', message1: Uint8Array.of(1),
+    }))
+
+    scheduled.shift()?.()
+    await vi.waitFor(() => { expect(transport.submitEndpointMessage3).toHaveBeenCalled() })
+    expect(controller.getSnapshot()).toMatchObject({ status: 'pending' })
+    scheduled.shift()?.()
+    await vi.waitFor(() => { expect(transport.getEndpointPairingStatus).toHaveBeenCalledTimes(2) })
+    scheduled.shift()?.()
+    await vi.waitFor(() => { expect(controller.getSnapshot()).toEqual({ status: 'paired' }) })
+    expect(handshake.openRelayAuthority).toHaveBeenCalledWith(Uint8Array.of(8, 9))
+    expect(vault.pairingKeyMaterial(parsePersonalPairingId('pairing-endpoint'))).toEqual(reconnectState)
+    expect(relay.configure).toHaveBeenCalledWith(grant)
+  })
+
   it('finishes XKpsk3 with a fresh Installation proof before exposing authentication words', async () => {
     const transport = transportFixture()
     const finish = Uint8Array.of(3, 4)
@@ -558,6 +613,13 @@ function transportFixture() {
     setMobileAccess: vi.fn(),
     reissueDesktopRelayAuthority: vi.fn(),
     createChallenge: vi.fn(),
+    createEndpointChallenge: vi.fn(),
+    cancelEndpointChallenge: vi.fn(),
+    listEndpointPending: vi.fn(),
+    submitEndpointMessage2: vi.fn(),
+    confirmEndpointPairing: vi.fn(),
+    rejectEndpointPairing: vi.fn(),
+    deliverEndpointRelayAuthority: vi.fn(),
     cancelChallenge: vi.fn(),
     listPendingPairings: vi.fn(),
     listPersonalPairings: vi.fn(),
@@ -570,6 +632,9 @@ function transportFixture() {
       desktopHandshake: Uint8Array.of(8),
       device: { name: 'Alice phone', platform: 'ios' },
     }),
+    submitEndpointMessage1: vi.fn(),
+    getEndpointPairingStatus: vi.fn(),
+    submitEndpointMessage3: vi.fn(),
     finishChallenge: vi.fn<RemoteAccessTransport['finishChallenge']>().mockResolvedValue({
       pendingPairingId: parsePendingPairingId('pending-one'),
       authenticationWords: ['amber', 'binary', 'cedar', 'delta', 'ember', 'frost'],

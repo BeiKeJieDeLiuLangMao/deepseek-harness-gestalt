@@ -10,6 +10,7 @@ import {
   type RelayCredential,
   type RelayHeartbeatMessage,
   type RelayPairingSelector,
+  type RelayPeerUpdateMessage,
   type RelayReadyMessage,
   type RelayRouteId,
 } from '@deepseek-ai/dsh-remote-protocol'
@@ -32,7 +33,7 @@ import type {
 
 interface LocalAttachment {
   entry: RelayDirectoryEntry
-  deliver: (message: RelayCiphertextMessage) => Promise<void>
+  deliver: (message: RelayCiphertextMessage | RelayPeerUpdateMessage) => Promise<void>
   credentialDigest: Uint8Array
   close?: () => void | Promise<void>
   writer: Promise<void>
@@ -106,6 +107,42 @@ export class RemoteRelayProvider extends RemoteRelayService {
     return { routeId, endpoint, credential, revision, ...(pairingSelector === undefined ? {} : { pairingSelector }) }
   }
 
+  /**
+   * @param routeId - active route.
+   * @param endpoint - credential endpoint.
+   * @param digest - endpoint-created SHA-256 digest.
+   * @param pairingSelector - optional non-secret pairing selector.
+   * @returns active route revision.
+   */
+  async registerCredentialDigest(
+    routeId: RelayRouteId,
+    endpoint: 'mobile' | 'desktop',
+    digest: Uint8Array,
+    pairingSelector?: RelayPairingSelector,
+  ): Promise<number> {
+    this.assertOpen()
+    if (digest.byteLength !== 32) throw new TypeError('Relay credential digest must contain 32 bytes')
+    const revision = await this.options.routeStore.issue(routeId, endpoint, digest.slice(), pairingSelector)
+    if (revision === undefined) throw new RemoteRelayError('RELAY_ROUTE_REVOKED', 'Relay route is inactive')
+    return revision
+  }
+
+  /**
+   * @param routeId - active route.
+   * @param endpoint - credential endpoint.
+   * @param digest - endpoint-created SHA-256 digest.
+   */
+  async revokeCredentialDigest(
+    routeId: RelayRouteId,
+    endpoint: 'mobile' | 'desktop',
+    digest: Uint8Array,
+  ): Promise<void> {
+    this.assertOpen()
+    if (digest.byteLength !== 32) throw new TypeError('Relay credential digest must contain 32 bytes')
+    const revision = await this.options.routeStore.revokeCredential(routeId, endpoint, digest.slice())
+    await this.options.coordinator.invalidate({ type: 'invalidate', routeId, revision })
+  }
+
   async revokeCredential(grant: RelayCredentialGrant): Promise<void> {
     this.assertOpen()
     const revision = await this.options.routeStore.revokeCredential(
@@ -124,7 +161,7 @@ export class RemoteRelayProvider extends RemoteRelayService {
 
   async attach(input: {
     message: RelayAttachMessage
-    deliver: (message: RelayCiphertextMessage) => Promise<void>
+    deliver: (message: RelayCiphertextMessage | RelayPeerUpdateMessage) => Promise<void>
     close?: () => void | Promise<void>
     signal?: AbortSignal
     announce?: (message: RelayReadyMessage) => Promise<void>
@@ -142,7 +179,7 @@ export class RemoteRelayProvider extends RemoteRelayService {
 
   private async attachReserved(input: {
     message: RelayAttachMessage
-    deliver: (message: RelayCiphertextMessage) => Promise<void>
+    deliver: (message: RelayCiphertextMessage | RelayPeerUpdateMessage) => Promise<void>
     close?: () => void | Promise<void>
     signal?: AbortSignal
     announce?: (message: RelayReadyMessage) => Promise<void>
@@ -243,6 +280,7 @@ export class RemoteRelayProvider extends RemoteRelayService {
           )
         }
         this.armHeartbeat(attached)
+        await this.publishPeerUpdates(entry.routeId, entry.connectionToken)
       } catch (error) {
         if (!attached.closed) await this.closeAndDrain(attached)
         throw error
@@ -375,6 +413,15 @@ export class RemoteRelayProvider extends RemoteRelayService {
       this.pendingDeliveries.get(event.deliveryId)?.(true)
       return
     }
+    if (event.type === 'peer-update') {
+      const target = this.attachments.get(attachmentKey(event.routeId, event.attachmentId))
+      if (target === undefined || target.closed
+        || target.entry.connectionToken !== event.targetConnectionToken
+        || target.entry.revision !== event.revision) return
+      const { targetConnectionToken: _targetConnectionToken, revision: _revision, ...message } = event
+      await this.deliver(target, message)
+      return
+    }
     const target = this.attachments.get(attachmentKey(event.routeId, event.targetAttachmentId))
     if (target === undefined || target.closed
       || target.entry.connectionToken !== event.targetConnectionToken
@@ -391,8 +438,11 @@ export class RemoteRelayProvider extends RemoteRelayService {
     }
   }
 
-  private async deliver(local: LocalAttachment, message: RelayCiphertextMessage): Promise<boolean> {
-    const size = message.ciphertext.byteLength
+  private async deliver(
+    local: LocalAttachment,
+    message: RelayCiphertextMessage | RelayPeerUpdateMessage,
+  ): Promise<boolean> {
+    const size = message.type === 'ciphertext' ? message.ciphertext.byteLength : 0
     if (local.bufferedBytes + size > this.config.maxBufferedCiphertextBytes) {
       await this.closeAndDrain(local)
       throw new RemoteRelayError('RELAY_SLOW_CONSUMER', 'Relay target exceeded its ciphertext buffer limit')
@@ -453,6 +503,21 @@ export class RemoteRelayProvider extends RemoteRelayService {
       local.capacityHeld = false
       this.options.capacity?.release()
     }
+    await this.publishPeerUpdates(local.entry.routeId)
+  }
+
+  private async publishPeerUpdates(routeId: RelayRouteId, exclude?: RelayConnectionToken): Promise<void> {
+    const entries = await this.options.coordinator.list(routeId)
+    const now = this.now()
+    const active = entries.filter(entry => entry.expiresAt > now)
+    await Promise.all(active.filter(target => target.connectionToken !== exclude).map(async (target) => {
+      const update = relayPeerUpdate(target, active, now)
+      await this.options.coordinator.publish(target.instanceId, {
+        ...update,
+        targetConnectionToken: target.connectionToken,
+        revision: target.revision,
+      })
+    }))
   }
 
   private connectionToken(): RelayConnectionToken {
@@ -564,6 +629,15 @@ function relayReady(
     attachmentId: local.attachmentId,
     peers: [...peersBySelector.values()],
   }
+}
+
+function relayPeerUpdate(
+  local: RelayDirectoryEntry,
+  entries: readonly RelayDirectoryEntry[],
+  now: number,
+): RelayPeerUpdateMessage {
+  const ready = relayReady(local, entries, now)
+  return { ...ready, type: 'peer-update' }
 }
 
 function connectionGeneration(

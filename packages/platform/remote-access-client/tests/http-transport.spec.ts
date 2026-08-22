@@ -61,6 +61,89 @@ function transport(value: unknown, status = 200): { client: RemoteAccessHttpTran
 }
 
 describe('RemoteAccessHttpTransport', () => {
+  it('serializes and parses endpoint-owned opaque pairing mailbox operations', async () => {
+    const replies = [
+      {
+        challengeId: 'challenge-endpoint', expiresAt: 456, desktopFingerprint: 'snow-fingerprint',
+        oneTimeLink: 'https://platform.example/pair?payload=opaque',
+        qrPayload: 'https://platform.example/pair?payload=opaque',
+      },
+      {},
+      [
+        { pendingPairingId: 'pending-one', challengeId: 'challenge-one', stage: 'message1', message1: 'AQI', device: { name: 'One', platform: 'ios' } },
+        { pendingPairingId: 'pending-two', challengeId: 'challenge-two', stage: 'message3', message1: 'Aw', message2: 'BA', message3: 'BQ', device: { name: 'Two', platform: 'android' } },
+        { pendingPairingId: 'pending-three', challengeId: 'challenge-three', stage: 'confirmed', device: { name: 'Three', platform: 'ios' } },
+      ],
+      {}, {
+        pairing, routeId: 'route-one', relayRevision: 1,
+      }, {}, {},
+      { pendingPairingId: 'pending-one' },
+      { stage: 'message2', pendingPairingId: 'pending-one', message2: 'Bg' },
+      {},
+      { stage: 'confirmed', pendingPairingId: 'pending-one', pairingId: 'pairing-one', sealedRelayAuthority: 'Bwg' },
+    ]
+    const fetch = vi.fn(async (
+      _input: Parameters<typeof globalThis.fetch>[0],
+      _init?: Parameters<typeof globalThis.fetch>[1],
+    ) => new Response(JSON.stringify(replies.shift()), { status: 200 }))
+    const client = new RemoteAccessHttpTransport({
+      environment: { environment: 'development', origin: 'https://platform.example' } as never,
+      fetch,
+    })
+    const challengeId = parsePairingChallengeId('challenge-endpoint')
+    const completionId = parsePairingCompletionId('completion-endpoint')
+    const pendingPairingId = parsePendingPairingId('pending-one')
+    const rendezvousId = parsePairingRendezvousId('rendezvous-endpoint')
+
+    await expect(client.createEndpointChallenge({
+      authentication, rendezvousId, invitationPayload: Uint8Array.of(1, 2),
+      desktopFingerprint: 'snow-fingerprint', expiresAt: 456,
+    })).resolves.toMatchObject({ challengeId, expiresAt: 456 })
+    await expect(client.cancelEndpointChallenge({ authentication, challengeId })).resolves.toBeUndefined()
+    await expect(client.listEndpointPending(authentication)).resolves.toEqual([
+      { pendingPairingId, challengeId: 'challenge-one', stage: 'message1', message1: Uint8Array.of(1, 2), device: { name: 'One', platform: 'ios' } },
+      {
+        pendingPairingId: 'pending-two', challengeId: 'challenge-two', stage: 'message3', message1: Uint8Array.of(3),
+        message2: Uint8Array.of(4), message3: Uint8Array.of(5), device: { name: 'Two', platform: 'android' },
+      },
+      { pendingPairingId: 'pending-three', challengeId: 'challenge-three', stage: 'confirmed', device: { name: 'Three', platform: 'ios' } },
+    ])
+    await expect(client.submitEndpointMessage2({ authentication, pendingPairingId, message2: Uint8Array.of(4) }))
+      .resolves.toBeUndefined()
+    await expect(client.confirmEndpointPairing({
+      authentication, pendingPairingId, mobileCredentialDigest: new Uint8Array(32).fill(9),
+    })).resolves.toMatchObject({ routeId: 'route-one', relayRevision: 1, pairing })
+    await expect(client.rejectEndpointPairing({ authentication, pendingPairingId })).resolves.toBeUndefined()
+    await expect(client.deliverEndpointRelayAuthority({
+      authentication, pendingPairingId, sealedRelayAuthority: Uint8Array.of(7, 8),
+    })).resolves.toBeUndefined()
+    await expect(client.submitEndpointMessage1({
+      authentication, challengeId, completionId, device: { name: 'Alice phone', platform: 'ios' },
+      message1: Uint8Array.of(1, 2),
+    })).resolves.toEqual({ pendingPairingId })
+    await expect(client.getEndpointPairingStatus({ authentication, completionId })).resolves.toEqual({
+      stage: 'message2', pendingPairingId, message2: Uint8Array.of(6),
+    })
+    await expect(client.submitEndpointMessage3({ authentication, completionId, message3: Uint8Array.of(5) }))
+      .resolves.toBeUndefined()
+    await expect(client.getEndpointPairingStatus({ authentication, completionId })).resolves.toEqual({
+      stage: 'confirmed', pendingPairingId, pairingId: 'pairing-one', sealedRelayAuthority: Uint8Array.of(7, 8),
+    })
+    expect(fetch).toHaveBeenCalledTimes(11)
+    const bodies = fetch.mock.calls.map(call => JSON.parse(call[1]?.body as string) as Record<string, unknown>)
+    expect(bodies.map(body => body.operation)).toEqual([
+      'create-endpoint-challenge', 'cancel-endpoint-challenge', 'list-endpoint-pending', 'submit-endpoint-message2',
+      'confirm-endpoint-pairing', 'reject-endpoint-pairing', 'deliver-endpoint-relay-authority', 'submit-endpoint-message1',
+      'get-endpoint-pairing-status', 'submit-endpoint-message3', 'get-endpoint-pairing-status',
+    ])
+    expect(bodies[0]).toMatchObject({ invitationPayload: 'AQI' })
+    expect(bodies[3]).toMatchObject({ message2: 'BA' })
+    expect(bodies[4]).toMatchObject({ mobileCredentialDigest: 'CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQk' })
+    expect(bodies[6]).toMatchObject({ sealedRelayAuthority: 'Bwg' })
+    expect(bodies[7]).toMatchObject({ message1: 'AQI' })
+    expect(bodies[9]).toMatchObject({ message3: 'BQ' })
+  })
+
   it('uses the global Fetch implementation by default', async () => {
     const fetch = vi.fn(async () => new Response(JSON.stringify({ enabled: false })))
     vi.stubGlobal('fetch', fetch)

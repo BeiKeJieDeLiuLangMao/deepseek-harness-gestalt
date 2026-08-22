@@ -1,4 +1,5 @@
 import { describe, expect, expectTypeOf, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
 import type {
   DesktopBridge,
   DesktopPairingChallenge,
@@ -25,6 +26,8 @@ import {
   parseRelayRouteId,
 } from '@deepseek-ai/dsh-remote-protocol'
 import { DesktopPairingKeyVault } from '../src/pairing-keys.ts'
+import { initializeSnowChannel, SnowMobileHandshakeClient } from '@deepseek-ai/dsh-noise-channel'
+import { DesktopSnowPairingVault } from '../src/snow-pairing-vault.ts'
 import {
   DesktopPairingController,
   UnavailableDesktopPairingController,
@@ -71,6 +74,86 @@ describe('UnavailableDesktopPairingController', () => {
 })
 
 describe('DesktopPairingController', () => {
+  it('owns XKpsk3 invitation state, confirms a digest-only credential, and seals the Mobile grant', async () => {
+    initializeSnowChannel(readFileSync(new URL(
+      '../../../packages/platform/noise-channel/pkg/dsh_noise_channel_bg.wasm', import.meta.url,
+    )))
+    const transport = transportFixture()
+    const relay = { configure: vi.fn(), start: vi.fn(), stop: vi.fn() }
+    const vault = new DesktopSnowPairingVault()
+    const challengeId = parsePairingChallengeId('challenge-endpoint-owner')
+    const pendingPairingId = parsePendingPairingId('pending-endpoint-owner')
+    let invitationPayload: Uint8Array | undefined
+    let deliveredAuthority: Uint8Array | undefined
+    transport.deliverEndpointRelayAuthority.mockImplementationOnce(async (input) => {
+      deliveredAuthority = input.sealedRelayAuthority.slice()
+    })
+    transport.createEndpointChallenge.mockImplementationOnce(async (input) => {
+      invitationPayload = input.invitationPayload.slice()
+      return {
+        challengeId, expiresAt: input.expiresAt, desktopFingerprint: input.desktopFingerprint,
+        oneTimeLink: 'https://platform.example/pair?endpoint=1',
+        qrPayload: 'https://platform.example/pair?endpoint=1',
+      }
+    })
+    transport.listEndpointPending.mockResolvedValue([])
+    const controller = new DesktopPairingController({
+      account: {
+        getSnapshot: signedInAccountSnapshot,
+        authorizeCurrentInstallation: vi.fn(async () => ({
+          accessToken: 'desktop-access',
+          proof: { jti: parseAccountProofJti('proof'), issuedAt: 1, signature: 'signature' },
+        })),
+      },
+      transport, relay, snowPairingVault: vault,
+    })
+    await controller.start()
+    await controller.setEnabled(true)
+    await controller.createChallenge()
+    if (invitationPayload === undefined) throw new Error('endpoint invitation was not registered')
+
+    const mobile = new SnowMobileHandshakeClient()
+    const message1 = await mobile.beginEndpointInvitation(invitationPayload)
+    transport.listEndpointPending.mockResolvedValueOnce([{
+      pendingPairingId, challengeId, stage: 'message1', message1,
+      device: { name: 'Alice phone', platform: 'ios' },
+    }])
+    await controller.start()
+    const message2 = transport.submitEndpointMessage2.mock.calls.at(-1)?.[0].message2
+    if (message2 === undefined) throw new Error('Desktop Snow message 2 was not submitted')
+    await mobile.acceptDesktopHandshake(message2)
+    const message3 = mobile.exportFinishMessage()
+    transport.listEndpointPending.mockResolvedValueOnce([{
+      pendingPairingId, challengeId, stage: 'message3', message1, message2, message3,
+      device: { name: 'Alice phone', platform: 'ios' },
+    }])
+    await controller.start()
+    expect(controller.getSnapshot()).toMatchObject({ status: 'pending', pending: { id: pendingPairingId } })
+
+    transport.confirmEndpointPairing.mockResolvedValueOnce({
+      pairing: {
+        id: parsePersonalPairingId('pairing-endpoint-owner'),
+        devicePrincipal: {
+          id: 'principal-endpoint' as never, accountId: 'account-one' as never,
+          installationId: 'mobile-one' as never, authority: 'companion-surface',
+        },
+        device: { name: 'Alice phone', platform: 'ios' }, pairedAt: 1, lastAccessAt: 1, online: false,
+      },
+      routeId: parseRelayRouteId('route-endpoint-owner'), relayRevision: 3,
+    })
+    transport.listEndpointPending.mockResolvedValue([])
+    await controller.confirm(pendingPairingId)
+    const sealed = deliveredAuthority
+    if (sealed === undefined) throw new Error('Desktop did not deliver sealed Relay authority')
+    await expect(mobile.openRelayAuthority(sealed)).resolves.toMatchObject({
+      routeId: 'route-endpoint-owner', endpoint: 'mobile', revision: 3,
+      pairingSelector: 'pairing-endpoint-owner',
+    })
+    expect(vault.reconnectState('pairing-endpoint-owner' as never)).toHaveLength(96)
+    expect(transport.confirmEndpointPairing.mock.calls.at(-1)?.[0].mobileCredentialDigest).toHaveLength(32)
+    await controller.dispose()
+  })
+
   it('installs the Settings Relay grant before starting the endpoint lifecycle', async () => {
     const transport = transportFixture()
     const grant = {
@@ -657,6 +740,13 @@ function transportFixture() {
       oneTimeLink: 'https://platform.example/pair?full=1',
       qrPayload: 'https://platform.example/pair?full=1',
     }),
+    createEndpointChallenge: vi.fn<RemoteAccessTransport['createEndpointChallenge']>(),
+    cancelEndpointChallenge: vi.fn<RemoteAccessTransport['cancelEndpointChallenge']>(),
+    listEndpointPending: vi.fn<RemoteAccessTransport['listEndpointPending']>(),
+    submitEndpointMessage2: vi.fn<RemoteAccessTransport['submitEndpointMessage2']>(),
+    confirmEndpointPairing: vi.fn<RemoteAccessTransport['confirmEndpointPairing']>(),
+    rejectEndpointPairing: vi.fn<RemoteAccessTransport['rejectEndpointPairing']>(),
+    deliverEndpointRelayAuthority: vi.fn<RemoteAccessTransport['deliverEndpointRelayAuthority']>(),
     cancelChallenge: vi.fn(),
     listPendingPairings: vi.fn().mockResolvedValue([]),
     listPersonalPairings: vi.fn().mockResolvedValue([{
@@ -676,6 +766,9 @@ function transportFixture() {
     rejectPairing: vi.fn(),
     revokePersonalPairing: vi.fn(),
     completeChallenge: vi.fn(),
+    submitEndpointMessage1: vi.fn(),
+    getEndpointPairingStatus: vi.fn(),
+    submitEndpointMessage3: vi.fn(),
     finishChallenge: vi.fn(),
     getMobilePairingStatus: vi.fn(),
   } satisfies RemoteAccessTransport

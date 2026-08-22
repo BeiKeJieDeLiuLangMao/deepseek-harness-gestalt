@@ -31,6 +31,79 @@ import {
 const NOW = Date.parse('2026-08-18T10:00:00.000Z')
 
 describe('PersonalPairingProvider', () => {
+  it('mediates the endpoint-owned XKpsk3 mailbox without calling the Platform crypto adapter', async () => {
+    const handshake = handshakeProvider()
+    const relay = relayStub(parseRelayRouteId('route-endpoint'), 1)
+    const provider = configuredProvider({
+      handshake, relay, authority: new MemoryPersonalPairingAuthorityStore(),
+      clock: { now: () => NOW }, randomId: kind => `${kind}-endpoint`,
+    })
+    const desktop = authentication('desktop-installation')
+    const mobile = authentication('mobile-installation')
+    await provider.setMobileAccess({ desktop, enabled: true })
+    const challenge = await provider.createEndpointChallenge({
+      desktop,
+      rendezvousId: parsePairingRendezvousId('endpoint-mailbox'),
+      clientIp: '192.0.2.1',
+      invitationPayload: Uint8Array.of(1, 2, 3),
+      desktopFingerprint: 'snow-endpoint',
+      expiresAt: NOW + PAIRING_CHALLENGE_TTL_MS,
+    })
+    expect(new URL(challenge.oneTimeLink).searchParams.get('payload')).toBe('AQID')
+    const completionId = parsePairingCompletionId('completion-endpoint')
+    const completion = await provider.submitEndpointMessage1({
+      mobile,
+      challengeId: challenge.challengeId,
+      completionId,
+      device: { name: 'Alice phone', platform: 'ios' },
+      message1: Uint8Array.of(11),
+    })
+    expect(await provider.listEndpointPending(desktop)).toEqual([{
+      pendingPairingId: completion.pendingPairingId,
+      challengeId: challenge.challengeId,
+      stage: 'message1',
+      message1: Uint8Array.of(11),
+      device: { name: 'Alice phone', platform: 'ios' },
+    }])
+    await provider.submitEndpointMessage2({
+      desktop, pendingPairingId: completion.pendingPairingId, message2: Uint8Array.of(22),
+    })
+    expect(await provider.getEndpointPairingStatus({ mobile, completionId })).toMatchObject({
+      stage: 'message2', message2: Uint8Array.of(22),
+    })
+    await provider.submitEndpointMessage3({ mobile, completionId, message3: Uint8Array.of(33) })
+    expect(await provider.listEndpointPending(desktop)).toEqual([{
+      pendingPairingId: completion.pendingPairingId,
+      challengeId: challenge.challengeId,
+      stage: 'message3',
+      message1: Uint8Array.of(11),
+      message2: Uint8Array.of(22),
+      message3: Uint8Array.of(33),
+      device: { name: 'Alice phone', platform: 'ios' },
+    }])
+    const confirmation = await provider.confirmEndpointPairing({
+      desktop, pendingPairingId: completion.pendingPairingId,
+      mobileCredentialDigest: new Uint8Array(32).fill(7),
+    })
+    expect(confirmation).toMatchObject({
+      routeId: 'relay-route-endpoint', relayRevision: 1,
+      pairing: { device: { name: 'Alice phone', platform: 'ios' } },
+    })
+    expect(relay.registerCredentialDigest).toHaveBeenCalledWith(
+      parseRelayRouteId('relay-route-endpoint'), 'mobile', new Uint8Array(32).fill(7), 'pairing-endpoint',
+    )
+    await provider.deliverEndpointRelayAuthority({
+      desktop,
+      pendingPairingId: completion.pendingPairingId,
+      sealedRelayAuthority: Uint8Array.of(44),
+    })
+    expect(await provider.getEndpointPairingStatus({ mobile, completionId })).toMatchObject({
+      stage: 'confirmed', sealedRelayAuthority: Uint8Array.of(44),
+    })
+    expect(handshake.createChallenge).not.toHaveBeenCalled()
+    expect(handshake.completeChallenge).not.toHaveBeenCalled()
+  })
+
   it('admits Desktop confirmation only after an idempotent Mobile handshake finish', async () => {
     const handshake = {
       ...handshakeProvider(),
@@ -2294,6 +2367,8 @@ function relayStub(
       credential: parseRelayCredential('AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE'), revision,
     })),
     revokeCredential: vi.fn(revokeCredential),
+    registerCredentialDigest: vi.fn(async () => revision),
+    revokeCredentialDigest: vi.fn(async () => {}),
     revokeRoute: vi.fn(async () => {}),
   }
 }

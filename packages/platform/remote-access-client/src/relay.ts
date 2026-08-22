@@ -7,6 +7,7 @@ import {
   type RelayAttachmentId,
   type RelayCredential,
   type RelayReadyMessage,
+  type RelayPeerUpdateMessage,
   type RelayRouteId,
 } from '@deepseek-ai/dsh-remote-protocol'
 
@@ -47,7 +48,7 @@ export interface RemoteRelayEndpointOptions {
   /** Observer invoked after Platform acknowledges one physical attachment. */
   onConnectionReady?: (attachmentId: RelayAttachmentId) => void
   /** Route-bound opposite attachments authenticated by Relay credential records. */
-  onPeerAttachments?: (message: RelayReadyMessage) => void | Promise<void>
+  onPeerAttachments?: (message: RelayReadyMessage | RelayPeerUpdateMessage) => void | Promise<void>
   /** Observer invoked whenever an acknowledged physical attachment ends. */
   onConnectionLost?: (attachmentId: RelayAttachmentId) => void
   /** Content-free transport error observer. */
@@ -290,6 +291,13 @@ export class RemoteRelayEndpointController {
         throw new RemoteRelayError('RELAY_ATTACHMENT_REJECTED', 'Relay ciphertext does not belong to this attachment')
       }
       await this.options.onCiphertext?.(message.ciphertext, message.sourceAttachmentId)
+      return
+    }
+    if (message.type === 'peer-update') {
+      if (message.routeId !== connection.routeId || message.attachmentId !== connection.attachmentId) {
+        throw new RemoteRelayError('RELAY_ATTACHMENT_REJECTED', 'Relay peer update does not belong to this attachment')
+      }
+      await this.options.onPeerAttachments?.(message)
       return
     }
     if (message.type === 'error') {

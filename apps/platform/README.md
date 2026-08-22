@@ -6,7 +6,7 @@ Platform listen process packaged as a container. GitHub Actions builds the image
 
 The operated listen process accepts only `PLATFORM_ENVIRONMENT=production`. Client packaging may still parse a development/production pair so a mis-selected origin fails before traffic. There is no staging selector and no second operated Platform.
 
-`GET /` serves the DeepSeek Gestalt product homepage. `GET /healthz` and `GET /readyz` answer `{ ok: true }` after required deployment secrets are present. Missing secrets fail the process before listen. Account HTTP is mounted on `/v1/account/*` against PostgreSQL and Redis. Listen also migrates the shared Personal Pairing authority and Relay route tables. Pairing HTTP and Relay WSS stay unmounted until a reviewed Noise handshake is approved.
+`GET /` serves the DeepSeek Gestalt product homepage. `GET /healthz` and `GET /readyz` answer `{ ok: true }` after required deployment secrets are present. Missing secrets fail the process before listen. Account HTTP is mounted on `/v1/account/*` against PostgreSQL and Redis. Pairing HTTP and Relay WSS are mounted on `/v1/remote-access/personal-pairing` and `/v1/remote-access/relay`; PostgreSQL owns durable pairing and credential-digest authority, while Redis owns only expiring attachment directories and content-free or ciphertext coordination. Platform provides no product pairing cipher and never receives endpoint private keys or a Mobile Relay bearer.
 
 ```sh
 docker build -f apps/platform/Dockerfile -t dsh-platform .
@@ -14,7 +14,9 @@ docker build -f apps/platform/Dockerfile -t dsh-platform .
 
 Publish: Actions → Platform Image → Run workflow → set **push**. Deploy: Actions → Platform Deploy; the workflow validates Environment `production` names first, and applies the image on both ECS hosts only when **deploy** is set. ECS publishes host port 80 to the container listen port 8080 so ALB HTTPS:443 can forward to VPC:80. The apply step uses Docker `json-file` rotation (`20m` × `3` files) so container stdout/stderr cannot fill the host disk. It also runs LoongCollector (`dsh-loongcollector`) so `dsh-platform` stdout/stderr can reach SLS project `gestalt` logstore `application` in `cn-hangzhou`. The collector registers with user-defined machine-group id `gestalt-platform` and reads the Aliyun account id from hardened ECS metadata, falling back to `PLATFORM_SLS_ACCOUNT_ID`. Bind that group to the logstore's Docker stdout Logtail config. ECS SSH and runtime secrets live in Environment `production`.
 
+The deployment supplies a distinct `PLATFORM_RELAY_INSTANCE_ID` per ECS host plus positive capacity, acknowledgement, directory TTL, heartbeat timeout, ciphertext buffer, connection, pending-delivery, and attach-timeout values through the `PLATFORM_RELAY_*` variables. The application validates the complete bundle before listening.
+
 ## Known Limitations and Deferred Work
 
-- Pairing HTTP and Remote Relay WSS are not mounted in this image.
+- Independent security review and physical WKWebView/Android WebView evidence are required before release acceptance.
 - Redis uses TLS (`PLATFORM_REDIS_TLS=1`). PostgreSQL uses `sslmode=require` when the RDS instance has SSL enabled.

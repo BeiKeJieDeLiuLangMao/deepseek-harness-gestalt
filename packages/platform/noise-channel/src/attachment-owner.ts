@@ -6,6 +6,7 @@ import {
   parseRelayRouteId,
   type RelayAttachmentId,
   type RelayPairingSelector,
+  type RelayPeerUpdateMessage,
   type RelayReadyMessage,
   type RelayRouteId,
 } from '@deepseek-ai/dsh-remote-protocol'
@@ -48,7 +49,7 @@ export class SnowMobileAttachmentOwner {
    * @param ready - route-bound Relay attachment acknowledgement.
    * @returns target attachment and encoded IK message 1.
    */
-  async begin(ready: RelayReadyMessage): Promise<{ targetAttachmentId: RelayAttachmentId; payload: Uint8Array }> {
+  async begin(ready: RelayReadyMessage | RelayPeerUpdateMessage): Promise<{ targetAttachmentId: RelayAttachmentId; payload: Uint8Array }> {
     const peers = ready.peers.filter(peer => peer.pairingSelector === this.pairingSelector)
     if (peers.length !== 1) throw new Error('Mobile Snow reconnect requires exactly one Desktop peer')
     this.pending?.cancel()
@@ -113,7 +114,13 @@ export class SnowDesktopAttachmentOwner {
     sourceAttachmentId: RelayAttachmentId,
     routeId: RelayRouteId,
     attachmentId: RelayAttachmentId,
-  ): Promise<{ targetAttachmentId: RelayAttachmentId; payload: Uint8Array; channel: SnowCompanionProtocolChannel }> {
+  ): Promise<{
+    targetAttachmentId: RelayAttachmentId
+    payload: Uint8Array
+    channel: SnowCompanionProtocolChannel
+    pairingSelector: RelayPairingSelector
+    generation: number
+  }> {
     const request = decodeEnvelope(payload)
     if (request.type !== 'snow-ik-1' || request.routeId !== routeId
       || request.desktopAttachmentId !== attachmentId
@@ -131,6 +138,8 @@ export class SnowDesktopAttachmentOwner {
       targetAttachmentId: request.mobileAttachmentId,
       payload: encodeEnvelope(response),
       channel: new SnowCompanionProtocolChannel(accepted.channel),
+      pairingSelector: request.pairingSelector,
+      generation: request.generation,
     }
   }
 }

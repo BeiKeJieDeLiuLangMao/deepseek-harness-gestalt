@@ -14,6 +14,7 @@ import {
   type ChallengeRecord,
   type CleanupRecord,
   type CompletionReplayRecord,
+  type EndpointOwnedPairingMailboxState,
   type OrphanPendingCleanupRecord,
   type PendingOutcome,
   type PendingPairingRecord,
@@ -40,6 +41,7 @@ const PENDING_OUTCOMES = new Set<PendingOutcome>([
 /** Empty exclusive pairing-transaction document. */
 export function emptyPairingTransactionState(): PersonalPairingTransactionState {
   return {
+    endpointMailbox: { challenges: [], pending: [] },
     challenges: new Map(),
     settledChallenges: new Map(),
     completions: new Map(),
@@ -63,6 +65,7 @@ export function emptyPairingTransactionState(): PersonalPairingTransactionState 
  */
 export function encodePairingTransactionState(state: PersonalPairingTransactionState): unknown {
   return {
+    endpointMailbox: encodeEndpointMailbox(state.endpointMailbox),
     challenges: [...state.challenges].map(([id, record]) => [id, encodeChallenge(record)]),
     settledChallenges: [...state.settledChallenges].map(([id, record]) => [id, encodeSettledChallenge(record)]),
     completions: [...state.completions].map(([id, record]) => [id, encodeCompletion(record)]),
@@ -93,6 +96,7 @@ export function decodePairingTransactionState(value: unknown): PersonalPairingTr
     orphans.set(orphan.cleanup, orphan)
   }
   return {
+    endpointMailbox: decodeEndpointMailbox(record.endpointMailbox),
     challenges: decodeMap(record.challenges, 'challenges', parsePairingChallengeId, decodeChallenge),
     settledChallenges: decodeMap(
       record.settledChallenges, 'settledChallenges', parsePairingChallengeId, decodeSettledChallenge,
@@ -108,6 +112,69 @@ export function decodePairingTransactionState(value: unknown): PersonalPairingTr
     blobs: decodeMap(record.blobs, 'blobs', asPlainString, decodeBlob),
     blobUploads: decodeMap(record.blobUploads, 'blobUploads', asPlainString, decodeBlobUploads),
     blobSequence: { next: asSafeInteger(asRecord(record.blobSequence, 'blobSequence').next, 'blobSequence.next') },
+  }
+}
+
+function encodeEndpointMailbox(state: EndpointOwnedPairingMailboxState): unknown {
+  return {
+    challenges: state.challenges.map(record => ({
+      ...record,
+      invitationPayload: encodeBytes(record.invitationPayload),
+    })),
+    pending: state.pending.map(record => ({
+      ...record,
+      message1: encodeBytes(record.message1),
+      ...(record.message2 === undefined ? {} : { message2: encodeBytes(record.message2) }),
+      ...(record.message3 === undefined ? {} : { message3: encodeBytes(record.message3) }),
+      ...(record.sealedRelayAuthority === undefined
+        ? {}
+        : { sealedRelayAuthority: encodeBytes(record.sealedRelayAuthority) }),
+    })),
+  }
+}
+
+function decodeEndpointMailbox(value: unknown): EndpointOwnedPairingMailboxState {
+  const mailbox = asRecord(value, 'endpoint mailbox')
+  return {
+    challenges: asArray(mailbox.challenges, 'endpoint mailbox challenges').map((value, index) => {
+      const record = asRecord(value, `endpoint mailbox challenge ${String(index)}`)
+      return {
+        challengeId: parsePairingChallengeId(record.challengeId),
+        accountId: parsePlatformAccountId(record.accountId),
+        desktopInstallationId: parseInstallationId(record.desktopInstallationId),
+        expiresAt: asSafeInteger(record.expiresAt, 'endpoint mailbox challenge expiresAt'),
+        invitationPayload: decodeBytes(record.invitationPayload, 'endpoint mailbox invitation payload'),
+        ...(record.completionId === undefined
+          ? {}
+          : { completionId: parsePairingCompletionId(record.completionId) }),
+        ...(record.pendingPairingId === undefined
+          ? {}
+          : { pendingPairingId: parsePendingPairingId(record.pendingPairingId) }),
+      }
+    }),
+    pending: asArray(mailbox.pending, 'endpoint mailbox pending').map((value, index) => {
+      const record = asRecord(value, `endpoint mailbox pending ${String(index)}`)
+      if (typeof record.confirmed !== 'boolean') throw new TypeError('endpoint mailbox confirmed must be boolean')
+      if (typeof record.rejected !== 'boolean') throw new TypeError('endpoint mailbox rejected must be boolean')
+      return {
+        pendingPairingId: parsePendingPairingId(record.pendingPairingId),
+        completionId: parsePairingCompletionId(record.completionId),
+        challengeId: parsePairingChallengeId(record.challengeId),
+        accountId: parsePlatformAccountId(record.accountId),
+        desktopInstallationId: parseInstallationId(record.desktopInstallationId),
+        mobileInstallationId: parseInstallationId(record.mobileInstallationId),
+        device: decodeDevice(record.device),
+        message1: decodeBytes(record.message1, 'endpoint mailbox message1'),
+        ...(record.message2 === undefined ? {} : { message2: decodeBytes(record.message2, 'endpoint mailbox message2') }),
+        ...(record.message3 === undefined ? {} : { message3: decodeBytes(record.message3, 'endpoint mailbox message3') }),
+        confirmed: record.confirmed,
+        rejected: record.rejected,
+        ...(record.pairingId === undefined ? {} : { pairingId: parsePersonalPairingId(record.pairingId) }),
+        ...(record.sealedRelayAuthority === undefined
+          ? {}
+          : { sealedRelayAuthority: decodeBytes(record.sealedRelayAuthority, 'endpoint mailbox sealed authority') }),
+      }
+    }),
   }
 }
 
@@ -236,9 +303,13 @@ function encodeStoredPairing(record: StoredPersonalPairing): unknown {
   return {
     ...encodePairingView(record) as Record<string, unknown>,
     desktopInstallationId: record.desktopInstallationId,
-    keyReference: record.keyReference,
-    cleanup: encodeCleanup(record.cleanup),
+    ...(record.keyReference === undefined ? {} : { keyReference: record.keyReference }),
+    ...(record.cleanup === undefined ? {} : { cleanup: encodeCleanup(record.cleanup) }),
     ...(record.mobileGrant === undefined ? {} : { mobileGrant: encodeGrant(record.mobileGrant) }),
+    ...(record.endpointPendingPairingId === undefined ? {} : { endpointPendingPairingId: record.endpointPendingPairingId }),
+    ...(record.endpointRouteId === undefined ? {} : { endpointRouteId: record.endpointRouteId }),
+    ...(record.endpointCredentialDigest === undefined ? {} : { endpointCredentialDigest: encodeBytes(record.endpointCredentialDigest) }),
+    ...(record.endpointRelayRevision === undefined ? {} : { endpointRelayRevision: record.endpointRelayRevision }),
   }
 }
 
@@ -247,9 +318,19 @@ function decodeStoredPairing(value: unknown): StoredPersonalPairing {
   return {
     ...decodePairingView(record),
     desktopInstallationId: parseInstallationId(record.desktopInstallationId),
-    keyReference: parsePersonalPairingKeyReference(record.keyReference),
-    cleanup: decodeCleanup(record.cleanup),
+    ...(record.keyReference === undefined ? {} : { keyReference: parsePersonalPairingKeyReference(record.keyReference) }),
+    ...(record.cleanup === undefined ? {} : { cleanup: decodeCleanup(record.cleanup) }),
     ...(record.mobileGrant === undefined ? {} : { mobileGrant: decodeGrant(record.mobileGrant) }),
+    ...(record.endpointPendingPairingId === undefined
+      ? {}
+      : { endpointPendingPairingId: parsePendingPairingId(record.endpointPendingPairingId) }),
+    ...(record.endpointRouteId === undefined ? {} : { endpointRouteId: parseRelayRouteId(record.endpointRouteId) }),
+    ...(record.endpointCredentialDigest === undefined
+      ? {}
+      : { endpointCredentialDigest: decodeBytes(record.endpointCredentialDigest, 'stored pairing endpoint credential digest') }),
+    ...(record.endpointRelayRevision === undefined
+      ? {}
+      : { endpointRelayRevision: asSafeInteger(record.endpointRelayRevision, 'stored pairing endpoint Relay revision') }),
   }
 }
 

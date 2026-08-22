@@ -10,7 +10,9 @@ export const name = 'noise-channel-invariant'
 export const inject = ['invariants']
 
 /** Channel state is checked at its wire and state-machine boundaries. */
-const install: InvariantInstaller = () => {}
+const install: InvariantInstaller = () => {
+  // No runtime invariant: wire codecs and process-owned state machines reject every invalid relationship synchronously.
+}
 
 /** @param ctx - runtime receiving package ownership. @returns registration disposer. */
 export const apply = (ctx: Context): Promise<() => void> =>

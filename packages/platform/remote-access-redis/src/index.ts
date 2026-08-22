@@ -300,14 +300,21 @@ function encodeEvent(event: RelayCoordinationEvent): string {
     ? JSON.stringify(event)
     : event.type === 'delivered'
       ? JSON.stringify(event)
-      : JSON.stringify({
-        type: 'ciphertext',
-        sourceInstanceId: event.sourceInstanceId,
-        targetConnectionToken: event.targetConnectionToken,
-        deliveryId: event.deliveryId,
-        revision: event.revision,
-        frame: Buffer.from(encodeRelayMessage(withoutCoordination(event))).toString('base64url'),
-      })
+      : event.type === 'peer-update'
+        ? JSON.stringify({
+          type: 'peer-update',
+          targetConnectionToken: event.targetConnectionToken,
+          revision: event.revision,
+          frame: Buffer.from(encodeRelayMessage(withoutPeerCoordination(event))).toString('base64url'),
+        })
+        : JSON.stringify({
+          type: 'ciphertext',
+          sourceInstanceId: event.sourceInstanceId,
+          targetConnectionToken: event.targetConnectionToken,
+          deliveryId: event.deliveryId,
+          revision: event.revision,
+          frame: Buffer.from(encodeRelayMessage(withoutCoordination(event))).toString('base64url'),
+        })
   return value
 }
 
@@ -326,19 +333,21 @@ function decodeEvent(value: string): RelayCoordinationEvent {
     exactKeys(record, ['type', 'deliveryId'])
     return { type: 'delivered', deliveryId: parseRelayDeliveryId(record.deliveryId) }
   }
+  if (record.type === 'peer-update') {
+    exactKeys(record, ['type', 'targetConnectionToken', 'revision', 'frame'])
+    const frame = decodeCoordinationFrame(record.frame)
+    if (frame.type !== 'peer-update') throw new TypeError('Relay coordination frame must carry a peer update')
+    return {
+      ...frame,
+      targetConnectionToken: parseRelayConnectionToken(record.targetConnectionToken),
+      revision: positiveInteger(record.revision, 'revision'),
+    }
+  }
   exactKeys(record, ['type', 'sourceInstanceId', 'targetConnectionToken', 'deliveryId', 'revision', 'frame'])
   if (record.type !== 'ciphertext' || typeof record.frame !== 'string') {
     throw new TypeError('Relay coordination event type is invalid')
   }
-  const encodedFrame = record.frame
-  if (!/^[A-Za-z0-9_-]*$/u.test(encodedFrame) || encodedFrame.length % 4 === 1) {
-    throw new TypeError('Relay coordination frame must use canonical base64url')
-  }
-  const decodedFrame = Buffer.from(encodedFrame, 'base64url')
-  if (decodedFrame.toString('base64url') !== encodedFrame) {
-    throw new TypeError('Relay coordination frame must use canonical base64url')
-  }
-  const frame = decodeRelayMessage(new Uint8Array(decodedFrame))
+  const frame = decodeCoordinationFrame(record.frame)
   if (frame.type !== 'ciphertext') throw new TypeError('Relay coordination frame must carry ciphertext')
   return {
     ...frame,
@@ -349,6 +358,17 @@ function decodeEvent(value: string): RelayCoordinationEvent {
   }
 }
 
+function decodeCoordinationFrame(value: unknown): ReturnType<typeof decodeRelayMessage> {
+  if (typeof value !== 'string' || !/^[A-Za-z0-9_-]*$/u.test(value) || value.length % 4 === 1) {
+    throw new TypeError('Relay coordination frame must use canonical base64url')
+  }
+  const decoded = Buffer.from(value, 'base64url')
+  if (decoded.toString('base64url') !== value) {
+    throw new TypeError('Relay coordination frame must use canonical base64url')
+  }
+  return decodeRelayMessage(new Uint8Array(decoded))
+}
+
 function withoutCoordination(
   event: Extract<RelayCoordinationEvent, { type: 'ciphertext' }>,
 ): RelayCiphertextMessage {
@@ -356,6 +376,17 @@ function withoutCoordination(
     sourceInstanceId: _sourceInstanceId,
     targetConnectionToken: _targetConnectionToken,
     deliveryId: _deliveryId,
+    revision: _revision,
+    ...frame
+  } = event
+  return frame
+}
+
+function withoutPeerCoordination(
+  event: Extract<RelayCoordinationEvent, { type: 'peer-update' }>,
+) {
+  const {
+    targetConnectionToken: _targetConnectionToken,
     revision: _revision,
     ...frame
   } = event

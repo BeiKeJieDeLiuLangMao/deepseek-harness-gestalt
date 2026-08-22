@@ -47,7 +47,7 @@ import {
   setPairingEnabledFromIpc,
   type DesktopPairingActions,
 } from './personal-pairing.ts'
-import { DesktopPairingKeyVault } from './pairing-keys.ts'
+import { DesktopSnowPairingVault, EncryptedDesktopSnowPairingStore } from './snow-pairing-vault.ts'
 import { disposeDesktopOwners } from './shutdown.ts'
 import { startDesktopBrowserRuntime, type DesktopBrowserRuntime } from './browser-runtime.ts'
 import { createDesktopRemoteRelay } from './remote-relay.ts'
@@ -120,7 +120,16 @@ async function boot(): Promise<void> {
     account = new UnavailableDesktopAccountController('Platform environment is not configured')
     pairing = new UnavailableDesktopPairingController('Platform environment is not configured')
   } else {
-    const relay = createDesktopRemoteRelay({ environment: accountEnvironment, source: process.env })
+    const snowPairingVault = await DesktopSnowPairingVault.load(new EncryptedDesktopSnowPairingStore(
+      join(app.getPath('userData'), `snow-pairings-${accountEnvironment.databaseIdentity}.bin`),
+      {
+        encrypt: value => safeStorage.encryptString(value),
+        decrypt: value => safeStorage.decryptString(Buffer.from(value)),
+      },
+    ))
+    const relay = createDesktopRemoteRelay({
+      environment: accountEnvironment, source: process.env, snowPairingVault,
+    })
     account = createDesktopAccount(accountEnvironment)
     let accountReady = true
     try {
@@ -137,7 +146,7 @@ async function boot(): Promise<void> {
       })
     }
     if (accountReady) smokeLog('account ready')
-    pairing = createDesktopPairing(accountEnvironment, account, relay)
+    pairing = createDesktopPairing(accountEnvironment, account, relay, snowPairingVault)
     accountSignedIn = account.getSnapshot().status === 'signed-in'
     if (accountSignedIn) {
       await pairing.start().catch((error: unknown) => {
@@ -563,6 +572,7 @@ function createDesktopPairing(
   environment: SelectedPlatformEnvironment,
   currentAccount: DesktopAccountActions,
   relay: DesktopRelayLifecycle,
+  snowPairingVault: DesktopSnowPairingVault,
 ): DesktopPairingActions {
   const unavailableReason = 'Personal Pairing requires an independently reviewed handshake and Relay crypto provider.'
   if (environment.environment !== 'production') {
@@ -572,7 +582,7 @@ function createDesktopPairing(
     account: currentAccount,
     transport: new RemoteAccessHttpTransport({ environment }),
     relay,
-    pairingKeys: new DesktopPairingKeyVault(),
+    snowPairingVault,
   })
 }
 

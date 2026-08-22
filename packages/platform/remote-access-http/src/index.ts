@@ -79,13 +79,30 @@ async function dispatch(
         rendezvousId: parsePairingRendezvousId(body.rendezvousId),
         clientIp: clientIp(),
       }))
+    case 'create-endpoint-challenge':
+      return endpointChallengeWire(await ctx.remoteAccess.createEndpointChallenge({
+        desktop: authentication,
+        rendezvousId: parsePairingRendezvousId(body.rendezvousId),
+        clientIp: clientIp(),
+        invitationPayload: decodeBytes(body.invitationPayload, 'invitationPayload'),
+        desktopFingerprint: requiredString(body.desktopFingerprint, 'desktopFingerprint'),
+        expiresAt: requiredPositiveSafeInteger(body.expiresAt, 'expiresAt'),
+      }))
     case 'cancel-challenge':
       await ctx.remoteAccess.cancelChallenge({
         desktop: authentication,
         challengeId: parsePairingChallengeId(body.challengeId),
       })
       return { completed: true }
+    case 'cancel-endpoint-challenge':
+      await ctx.remoteAccess.cancelEndpointChallenge({
+        desktop: authentication,
+        challengeId: parsePairingChallengeId(body.challengeId),
+      })
+      return { completed: true }
     case 'list-pending': return (await ctx.remoteAccess.listPendingPairings(authentication)).map(completionWire)
+    case 'list-endpoint-pending':
+      return (await ctx.remoteAccess.listEndpointPending(authentication)).map(endpointDesktopWire)
     case 'list-pairings': return ctx.remoteAccess.listPersonalPairings(authentication)
     case 'revoke-pairing':
       await ctx.remoteAccess.revokePersonalPairing({
@@ -103,6 +120,32 @@ async function dispatch(
         desktop: authentication,
         pendingPairingId: parsePendingPairingId(body.pendingPairingId),
       })
+    case 'confirm-endpoint-pairing':
+      return ctx.remoteAccess.confirmEndpointPairing({
+        desktop: authentication,
+        pendingPairingId: parsePendingPairingId(body.pendingPairingId),
+        mobileCredentialDigest: decodeFixedBytes(body.mobileCredentialDigest, 'mobileCredentialDigest', 32),
+      })
+    case 'reject-endpoint-pairing':
+      await ctx.remoteAccess.rejectEndpointPairing({
+        desktop: authentication,
+        pendingPairingId: parsePendingPairingId(body.pendingPairingId),
+      })
+      return { completed: true }
+    case 'submit-endpoint-message2':
+      await ctx.remoteAccess.submitEndpointMessage2({
+        desktop: authentication,
+        pendingPairingId: parsePendingPairingId(body.pendingPairingId),
+        message2: decodeBytes(body.message2, 'message2'),
+      })
+      return { completed: true }
+    case 'deliver-endpoint-relay-authority':
+      await ctx.remoteAccess.deliverEndpointRelayAuthority({
+        desktop: authentication,
+        pendingPairingId: parsePendingPairingId(body.pendingPairingId),
+        sealedRelayAuthority: decodeBytes(body.sealedRelayAuthority, 'sealedRelayAuthority'),
+      })
+      return { completed: true }
     case 'reject-pairing':
       await ctx.remoteAccess.rejectPairing({
         desktop: authentication,
@@ -117,6 +160,26 @@ async function dispatch(
         device: parseDevice(body.device),
         mobileHandshake: decodeBytes(body.mobileHandshake, 'mobileHandshake'),
       }))
+    case 'submit-endpoint-message1':
+      return ctx.remoteAccess.submitEndpointMessage1({
+        mobile: authentication,
+        challengeId: parsePairingChallengeId(body.challengeId),
+        completionId: parsePairingCompletionId(body.completionId),
+        device: parseDevice(body.device),
+        message1: decodeBytes(body.message1, 'message1'),
+      })
+    case 'get-endpoint-pairing-status':
+      return endpointMobileWire(await ctx.remoteAccess.getEndpointPairingStatus({
+        mobile: authentication,
+        completionId: parsePairingCompletionId(body.completionId),
+      }))
+    case 'submit-endpoint-message3':
+      await ctx.remoteAccess.submitEndpointMessage3({
+        mobile: authentication,
+        completionId: parsePairingCompletionId(body.completionId),
+        message3: decodeBytes(body.message3, 'message3'),
+      })
+      return { completed: true }
     case 'finish-challenge':
       return completionWire(await ctx.remoteAccess.finishChallenge({
         mobile: authentication,
@@ -136,6 +199,30 @@ async function dispatch(
       return { completed: true }
     default: throw new HttpError(400, 'OPERATION_INVALID', 'Remote Access operation is invalid')
   }
+}
+
+function endpointChallengeWire(value: Awaited<ReturnType<Context['remoteAccess']['createEndpointChallenge']>>): unknown {
+  return value
+}
+
+function endpointDesktopWire(value: Awaited<ReturnType<Context['remoteAccess']['listEndpointPending']>>[number]): unknown {
+  if (value.stage === 'confirmed') return value
+  return {
+    ...value,
+    message1: encodeBytes(value.message1),
+    ...(value.stage === 'message3'
+      ? { message2: encodeBytes(value.message2), message3: encodeBytes(value.message3) }
+      : {}),
+  }
+}
+
+function endpointMobileWire(value: Awaited<ReturnType<Context['remoteAccess']['getEndpointPairingStatus']>>): unknown {
+  if (value.stage === 'message2') return { ...value, message2: encodeBytes(value.message2) }
+  if (value.stage === 'confirmed') return {
+    ...value,
+    sealedRelayAuthority: encodeBytes(value.sealedRelayAuthority),
+  }
+  return value
 }
 
 function completionWire(value: PairingCompletionView): unknown {
@@ -262,6 +349,12 @@ function requiredNonNegativeSafeInteger(value: unknown, name: string): number {
   return integer
 }
 
+function requiredPositiveSafeInteger(value: unknown, name: string): number {
+  const integer = requiredSafeInteger(value, name)
+  if (integer <= 0) throw new HttpError(400, 'BODY_INVALID', `${name} must be a positive integer`)
+  return integer
+}
+
 /** TCP peer address. Forwarded headers are not used for the per-IP hourly quota. */
 function requestClientIp(req: IncomingMessage): string {
   const address = req.socket.remoteAddress
@@ -279,6 +372,12 @@ function decodeBytes(value: unknown, name: string): Uint8Array {
   const decoded = Buffer.from(encoded, 'base64url')
   if (decoded.toString('base64url') !== encoded) throw new HttpError(400, 'BODY_INVALID', `${name} must be canonical base64url`)
   return new Uint8Array(decoded)
+}
+
+function decodeFixedBytes(value: unknown, name: string, length: number): Uint8Array {
+  const bytes = decodeBytes(value, name)
+  if (bytes.byteLength !== length) throw new TypeError(`${name} must contain ${String(length)} bytes`)
+  return bytes
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

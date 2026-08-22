@@ -16,9 +16,11 @@ Status: implemented
 
 每条 Mobile Relay credential 记录都会在 credential digest 旁绑定其 pairing selector。credential 认证完成后，Relay `ready` 会投影 route、本端 attachment，以及当前对端 attachment、selector 与 connection generation。generation 从两个临时 directory connection token、route 与 selector 派生。Platform 只看到既有的不透明路由 metadata 和非秘密 selector；所投影对端是否持有已配对端点密钥，仍由 Snow static authentication 判定。
 
-Mobile 生产入口会选择端点自有的 IK owner，并且只有该 owner 完成后才接纳 Companion 消息。Desktop 继续 fail-closed，因为当前 HTTP pairing provider 仍在 Platform 上持有 Desktop static state；挂载该 provider 会把 Platform 中介加密误称为端到端加密。Desktop 生产入口选择 responder 之前，必须用 Desktop 自有的持久 pairing state 和首次配对消息路径替换该 provider。
+首次配对使用端点自有的不透明 mailbox。Desktop 创建并保留 XKpsk3 静态密钥、临时密钥与邀请 PSK；Mobile 在本地解码邀请并创建消息 1 与消息 3。Platform 只存储不透明的邀请与握手字节，并执行账号所有权、过期、顺序、单次使用和幂等约束。Desktop 在本地认证消息 3 后创建 Mobile Relay credential。Platform 只登记它的 SHA-256 digest、route 与 pairing selector。Desktop 把 grant 作为第一条 XKpsk3 transport payload 密封，再通过 mailbox 只投递该 ciphertext。
 
-非粘性 XKpsk3 HTTP 状态转换通过 `fixed_ephemeral_key_for_testing_only`，使用 Snow 生成且只使用一次的临时密钥重建 Snow 状态。这一确切用法、生成的 binding 与已提交 WASM 仍属于独立审查范围。
+生产 Platform 挂载持久 PostgreSQL pairing authority、PostgreSQL Relay route store、Redis directory 与 coordination adapter、pairing HTTP 和 Relay WSS。Platform 不提供配对密码实现：旧的 Platform 中介操作 fail closed，产品端点只使用 mailbox 操作。Desktop 把 reconnect state 保存到 Electron `safeStorage` 保护且 owner-only 原子替换的文件；Mobile 把 reconnect state 与 Mobile-only Relay grant 保存到账号隔离的 IndexedDB 记录。每次物理重连都使用新的 attachment id 与新的 IK 临时密钥。
+
+Relay 在 attachment 登记、替换和关闭后，向已连接的对端发送 content-free `peer-update`，包括跨 Platform Instance 的情况。新投影只启动候选 IK；只有 Snow 认证准确的 route、selector、双方 attachment id 与 generation 后，候选 channel 才能替换 active channel。Desktop 先发送 IK 响应，再发送版本化加密的 `foreground-sync`；Mobile mutation authority 在该 projection 认证前保持关闭。
 
 ## 考虑过的替代方案
 
@@ -32,4 +34,4 @@ Mobile 生产入口会选择端点自有的 IK owner，并且只有该 owner 完
 
 ## 后果
 
-仓库具备可执行的 XKpsk3 grant 密封、credential-bound peer projection、attachment-bound fresh IK、重放与乱序拒绝、route/selector/attachment transcript 拒绝，以及不依赖第二套应用 cipher 的版本化认证同步。Remote Access 也支持幂等的第三条握手消息，并在它完成前阻止 Desktop 确认。产品激活仍依赖 Desktop 端点所有权、原生持久存储、物理设备证据与针对确切适配器的独立审查；本地 package tests 与现有 proof 不满足这些 release 条件。
+发布的 Desktop、Mobile 与 Platform 入口现在选择端点自有的配对与 attachment channel。仓库证据覆盖不透明 mailbox 的响应丢失与重放、只登记 digest 的 Relay authority、两个 Mobile selector、跨实例 late attachment 与 replacement、端点状态持久化、真实 XKpsk3 grant 打开、fresh IK、陈旧 transcript 拒绝和认证 Foreground Synchronization。发布验收仍需要针对确切实现的独立审查，以及物理 WKWebView 与 Android WebView 证据；package tests、本地 Vite 和 proof 可执行程序不能替代这些外部记录。

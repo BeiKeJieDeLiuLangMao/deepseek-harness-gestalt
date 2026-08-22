@@ -207,6 +207,16 @@ export interface RelayReadyMessage {
   peers: readonly RelayPeerDescriptor[]
 }
 
+/** Content-free replacement of the current opposite-endpoint attachment projection. */
+export interface RelayPeerUpdateMessage {
+  type: 'peer-update'
+  transportVersion: 1
+  routeId: RelayRouteId
+  /** Receiving attachment whose route projection is replaced. */
+  attachmentId: RelayAttachmentId
+  peers: readonly RelayPeerDescriptor[]
+}
+
 /** One route-bound peer tuple whose static identity is authenticated later by Snow IK. */
 export interface RelayPeerDescriptor {
   attachmentId: RelayAttachmentId
@@ -246,5 +256,6 @@ export type RelayMessage =
   | RelayCiphertextMessage
   | RelayErrorMessage
   | RelayHeartbeatMessage
+  | RelayPeerUpdateMessage
   | RelayReadyMessage
   | RelayRevokeMessage
