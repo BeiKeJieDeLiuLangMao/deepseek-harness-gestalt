@@ -27,6 +27,9 @@
       "path": "../../core/session"
     },
     {
+      "path": "../ui-chat"
+    },
+    {
       "path": "../ui-conversation"
     },
     {
