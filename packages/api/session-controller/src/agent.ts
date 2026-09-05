@@ -269,6 +269,39 @@ export class ApiSessionAgentController {
   }
 
   /**
+   * Resume one already-materialized Session identity. Missing persistence
+   * fails loud instead of creating a second Host Session.
+   * @param sessionId - receiver-owned Host Session identity.
+   * @param cwd - directory the Session must own.
+   * @returns the matching live ordinary Agent.
+   */
+  async resumeExistingSession(sessionId: SessionId, cwd: string): Promise<Agent> {
+    const live = this.ctx.agents.get(sessionId)
+    if (live !== undefined) {
+      if (hasApiSessionSubagentOwner(this.ctx, live.session, live)) {
+        throw new ApiSessionSubagentOwnership(sessionId)
+      }
+      if (live.session.header.cwd !== cwd) {
+        throw new ApiSessionCwdConflict(sessionId, cwd, live.session.header.cwd)
+      }
+      return live
+    }
+    try {
+      const agent = await this.resume(sessionId)
+      if (agent.session.header.cwd !== cwd) {
+        throw new ApiSessionCwdConflict(sessionId, cwd, agent.session.header.cwd)
+      }
+      return agent
+    } catch (error: unknown) {
+      if (error instanceof ApiSessionNotFound
+        || (error instanceof SessionQueryError && error.code === 'SESSION_QUERY_SESSION_NOT_FOUND')) {
+        throw new Error(`member-question Session "${sessionId}" is not materialized`)
+      }
+      throw error
+    }
+  }
+
+  /**
    * Install or return the Session-local model selection used by prompt assembly.
    * @param agent - live Agent that owns the selection.
    * @returns the installed mutable selection reference.

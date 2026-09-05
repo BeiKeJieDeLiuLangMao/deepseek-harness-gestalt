@@ -25,6 +25,7 @@ import {
   type RemoteResult,
 } from '@deepseek-ai/dsh-typert-protocol'
 import SessionController from '../src/index.ts'
+import type { SessionControllerInternals } from '../src/index.ts'
 import type {
   ModelCatalog,
   SessionAdmitAttachmentRequest,
@@ -95,6 +96,8 @@ export interface TestSessionRemoteDefaults {
   readonly saveDefaultModelSelection?: (selection: AgentModelSelection) => void | Promise<void>
   readonly openPath?: (path: string, signal: AbortSignal) => Promise<void>
   readonly canOpenPath?: () => boolean
+  readonly receivingTerminalRetryMs?: number
+  readonly receivingTerminalTimer?: SessionControllerInternals['receivingTerminalTimer']
 }
 
 const installed = new WeakMap<Context, SessionController>()
@@ -256,10 +259,16 @@ function installControllers(
           ? {}
           : { coldBlankProbeMaxBytes: defaults.coldBlankProbeMaxBytes },
         ...defaults.nativeOpen === undefined ? {} : { nativeOpen: defaults.nativeOpen },
+        ...defaults.receivingTerminalRetryMs === undefined
+          ? {}
+          : { receivingTerminalRetryMs: defaults.receivingTerminalRetryMs },
       },
       {
         ...defaults.openPath === undefined ? {} : { openPath: defaults.openPath },
         ...defaults.canOpenPath === undefined ? {} : { canOpenPath: defaults.canOpenPath },
+        ...defaults.receivingTerminalTimer === undefined
+          ? {}
+          : { receivingTerminalTimer: defaults.receivingTerminalTimer },
       },
     )
   } finally {

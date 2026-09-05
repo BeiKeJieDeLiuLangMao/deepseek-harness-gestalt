@@ -25,6 +25,11 @@ import {
 } from './list.ts'
 import { buildModelCatalog } from './catalog.ts'
 import { installModelSelectionProjection } from './model-selection-projection.ts'
+import {
+  DEFAULT_RECEIVING_TERMINAL_RETRY_MS,
+  installReceivingSessionMaterializer,
+  type ReceivingTerminalRetryTimer,
+} from './receiving-materializer.ts'
 import { SessionSkillCatalog } from './skill-catalog.ts'
 import type {
   ModelCatalog,
@@ -83,6 +88,8 @@ export interface Config {
   readonly coldBlankProbeMaxBytes?: number
   /** Override platform desktop-opener detection. */
   readonly nativeOpen?: boolean
+  /** Delay between failed member-question terminal Session sync attempts. */
+  readonly receivingTerminalRetryMs?: number
 }
 
 /** Host integrations replaceable by direct unit tests. */
@@ -91,6 +98,8 @@ export interface SessionControllerInternals {
   readonly openPath?: (path: string, signal: AbortSignal) => Promise<void>
   /** Native handoff availability probe. */
   readonly canOpenPath?: () => boolean
+  /** Timer used by member-question terminal Session sync retries. */
+  readonly receivingTerminalTimer?: ReceivingTerminalRetryTimer
 }
 
 /** Host service backing the generated `ctx.remote.session` namespace. */
@@ -111,6 +120,7 @@ export class SessionController extends TypertRemoteService {
     coldBlankProbeMaxEvents: z.natural().default(DEFAULT_COLD_BLANK_PROBE_MAX_EVENTS),
     coldBlankProbeMaxBytes: z.natural().default(DEFAULT_COLD_BLANK_PROBE_MAX_BYTES),
     nativeOpen: z.boolean(),
+    receivingTerminalRetryMs: z.natural().min(1).default(DEFAULT_RECEIVING_TERMINAL_RETRY_MS),
   })
 
   private readonly agents: ApiSessionAgentController
@@ -150,6 +160,12 @@ export class SessionController extends TypertRemoteService {
       ?? (() => config.nativeOpen ?? (internals.openPath !== undefined || canOpenNativePath()))
     ctx.plugin(SessionFileReferences)
     ctx.plugin(SessionSkillCatalog)
+    ctx.effect(() => installReceivingSessionMaterializer(ctx, this.agents, {
+      terminalRetryMs: config.receivingTerminalRetryMs ?? DEFAULT_RECEIVING_TERMINAL_RETRY_MS,
+      ...internals.receivingTerminalTimer === undefined
+        ? {}
+        : { timer: internals.receivingTerminalTimer },
+    }), 'session-controller.receiving-materializer')
 
     ctx.on('session/created', (session) => {
       ctx.emit('api-session/added', this.listState.summaryFor(session))

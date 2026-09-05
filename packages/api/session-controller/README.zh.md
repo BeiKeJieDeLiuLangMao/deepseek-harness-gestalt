@@ -31,6 +31,8 @@ Client adapter 提供 `SessionEventStream`，即绑定到一个普通 Session �
 
 `ctx.sessions.registerAdmission(sessionId, route)` 与 `registerAdmissionAdapter(adapter)` 为精确 Session 身份或匹配 adapter 安装功能自有 Client 路由。延迟注册、替换与撤销会立即作用于已有 `Session` binding，因为每个 Session 在 prompt、cancel、queue 变更与 command 时解析当前归属方。精确身份优先于 adapter；默认冲突策略替换先前精确归属方，`conflict: 'reject'` 则抛错。过期 disposer 不会撤销更新的归属方。命中后失败或抛错绝不会回退到库存 Host Remote，包括 catalog 定址 child 的 `subagents.prompt` 与 `subagents.interruptByParent`，command 也绝不会转成 prompt。未命中的 Session 仍走库存 Remote，没有归属方时也包括这些 subagent 路由。注册不授予 Host 权限；标题与普通 subagent 地址都不是凭证。`modelRoute` 为普通已列出 Session 提供 Host `session.modelCatalog` 与 `session.selectModel`。catalog 定址与 `origin: 'subagent'` 身份在功能 `modelRoute` 打开前保持隐藏；Host `session.selectModel` 拒绝这些身份（`session/agent-busy`），本 Client 也不会改派到父会话。admission 拥有 `modelRoute` 字段时替换库存，包括显式 undefined 隐藏；省略该字段不是隐藏。`commandCatalogSessionId` 与 `skillCatalogSessionId` 仍只是展示 lookup。`ui-commands` 与 `ui-skill` 按该身份列目录；execute 仍落在 composer Session。`historyScope: 'owned-suffix'` 用 Host follow 的 `header.seedLength`（`inheritedEventCount`）裁剪 Client 事件窗。后来的 `session/end-seed` 不抬高该 floor；持久日志不变。`ui-better-sidebar` 为 draft 与已知 Side Chat id 在 `registerAdmissionAdapter` 上注册产品 adapter。
 
+当组合了 `memberQuestionReceiver` 时，Host apply 会把唯一的到达 Session materializer、人工轮次准入与终态 Session 同步登记为同一个 Cordis effect。已认证 ingest 会创建或续写 receiver 拥有的 Session 身份，挂上绑定 Workspace，写入可忽略的 `member-question/received` 元数据，注入 Decision Brief 且不启动模型轮次，并 flush persistence。到达 flush 失败会保持 `materialized` 为 false，后续 ingest 按同一身份重试。持久终态会恢复该已物化 Session，并恰好追加一次可忽略的 `member-question/settled`；flush 失败后按 `receivingTerminalRetryMs` 重试。人工轮次准入会恢复同一 Session，以保留的 rpcId 标记 `source.kind=user`，并 steer 或 followup；未物化身份会被拒绝，而不是再创建第二个 Session。卸载 controller 会取消定时器、拒绝过期写入、等待进行中的同步，并撤回两处登记。
+
 Client apply 会注入全部必填生成命名空间（含 `remote.memberQuestion`），并把 `ctx.receivingQuestions` 登记为 Cordis 服务。该书加载 `memberQuestion.snapshot`，经 `memberQuestion.settle` 结算，并随 fiber 卸载。缺少必填命名空间时插件停在注入等待，直到 `$mount` 提供该服务；apply 不会在 `remote.session` 就绪后探 `ctx.remote.memberQuestion` 并把尚未完成的 mount 当成硬失败。
 
 `ctx.sessions.binding(id)` 保持渲染安全的查找：它绝不会打开 Host 历史或刷新 catalog。`stageProvisional()` 会把调用方提供的、仅供 renderer 使用的 Session 身份插入普通 list 与 binding 缓存，且不改变 `list.current`。Host list 刷新会保留该未发布行；当 Host baseline 已列出该 id 时，会原地发布并保持同一 binding。`openForRender()` 是显式渲染的 Host I/O —— 在仍为临时身份时跳过历史请求，Host 发布后则打开历史并刷新 subagent catalog 且不选中该 Session，未知身份为 no-op。对同一身份重复暂存会失败并报错。Host 发布会原地升级同一身份和 `SessionBinding`；之后暂存 disposer 变为 no-op，因此不能删除已发布 Session。释放未发布身份会恰好一次移除其行与 Agent scope，包括首次成功 Host list baseline 之前。renderer 只消费 `UiSession.adapter.resolve(sessionId)`，不拥有此生命周期。
@@ -47,6 +49,7 @@ Session 对象还承载本地提交回显：`session.beginSubmission` 在调用�
 | `coldBlankProbeMaxEvents` | `16` | stat 报告的事件数不超过该值的冷 Session 才可进行空白状态验证；`0` 禁用事件数门槛 |
 | `coldBlankProbeMaxBytes` | `1,024` | 后端不提供事件数时，stat 报告的工件字节数不超过该值的冷 Session 才可进行空白状态验证；`0` 禁用字节数门槛 |
 | `nativeOpen` | 平台探测 | 是否能把 Session 工作区路径交给原生桌面打开器 |
+| `receivingTerminalRetryMs` | `1,000` | 成员提问终态 Session 同步失败后的重试间隔 |
 
 生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-api-session-controller)是所有受支持字段及其 JSDoc 的完整来源。
 
@@ -67,6 +70,7 @@ Session 对象还承载本地提交回显：`session.beginSubmission` 在调用�
 
 - Control baseline 表示进程本地状态，因此 Host 重启后无法重建 jobs。
 - follow 恢复失败会对调用方可见，而不会无限重试。
+- 浏览器 `memberQuestion.admitHumanTurn` 仍经剩余 Host 组合（当前为 ApiProxy）把图片提升后交给 `receiver.admitHumanTurn`。生成的 receiver Remote 仍只暴露 `snapshot` 与 `settle`。
 - 文件引用补全使用共享 Agent lookup，因此可能恢复冷 Session；`skills/list` 目录是不激活 Agent 的 skill 元数据读取路径。
 - Client admission registry 分派覆盖精确身份与 adapter 上的 prompt、cancel、queue 变更与 command，命中时也会挡住库存 subagent prompt 与 interrupt 路由。`modelRoute` 为普通 Session 使用库存 Host catalog；catalog child 在功能路由打开前保持隐藏。省略 `modelRoute` 不是隐藏。`commandCatalogSessionId` 与 `skillCatalogSessionId` 只是展示 lookup，由 `ui-commands` 与 `ui-skill` 消费。`historyScope: 'owned-suffix'` 按 Host `seedLength` 裁剪展示窗；后来的 `session/end-seed` 不抬高该 floor。`ui-better-sidebar` 注册 Side Chat adapter。
 

@@ -18,6 +18,7 @@
     "src/history.ts",
     "src/list.ts",
     "src/model-selection-projection.ts",
+    "src/receiving-materializer.ts",
     "src/skill-catalog.ts"
   ],
   "references": [
@@ -30,6 +31,7 @@
     { "path": "../../context/file-reference" },
     { "path": "../../goal/goal" },
     { "path": "../../attachment/attachment" },
+    { "path": "../../interaction/member-question-receiver" },
     { "path": "../../interaction/permission-presets" },
     { "path": "../../jobs/jobs" },
     { "path": "../../llm/llm" },
