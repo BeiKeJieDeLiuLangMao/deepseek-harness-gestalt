@@ -73,7 +73,7 @@ dsh --profile web --no-open --port 8080
 
 ### patch 语义
 
-patch 会替换目标行的整个 `config`，因此每个 Web 行都重述自己拥有的每个键：基础行上的 persona、`DSH_TOOLS_MODE` PTC mode 开关与 `session-query-sqlite` 值，随后 `insert` 添加 Web 宿主行、传输层与浏览器名录。base 以进程级挂载的按 agent 工具行在这里被禁用，由 preset 名录接管；每项宿主层与 preset 层归属决策的理由以行内注释写在 patch 里。
+patch 会替换目标行的整个 `config`，因此每个 Web 行都重述自己拥有的每个键：基础行上的 persona、基础 `tools` 的 `toolSearch` 预算与 `DSH_TOOLS_MODE` PTC mode 开关，以及 `session-query-sqlite` 值，随后 `insert` 添加 Web 宿主行、传输层与浏览器名录。base 以进程级挂载的按 agent 工具行在这里被禁用，由 preset 名录接管；每项宿主层与 preset 层归属决策的理由以行内注释写在 patch 里。
 
 ### 就绪宣告
 
@@ -92,6 +92,7 @@ URL 行与浏览器交接都是就绪信号：监督方一观察到该行就发�
 | [`cordis.patch.yml`](cordis.patch.yml) | Web patch：重述的基础值、Web 宿主行、浏览器名录、preset 之后的 agent 层 |
 | — | 不发布运行时不变式伴生入口；本包只持有静态 contribution 列表，每项 contribution 都由其 registry 释放。 |
 | [`tests/web-app.spec.ts`](tests/web-app.spec.ts) | dist 解析、fallback 席位、提示词段落、就绪宣告 |
+| [`tests/patch.spec.ts`](tests/patch.spec.ts) | base + web-app 组合保留所需 `toolSearch` |
 | [`tests/startup.spec.ts`](tests/startup.spec.ts) | 在真实 Loader 树上的命令行解析 |
 | [`tests/trusted-hosts.spec.ts`](tests/trusted-hosts.spec.ts) | LAN 信任采样 |
 | [`tests/browser-open.spec.ts`](tests/browser-open.spec.ts) | 页面可达后的默认浏览器交接 |
