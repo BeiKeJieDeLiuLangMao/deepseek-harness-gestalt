@@ -130,6 +130,9 @@ export class BrowserWorkspaceBinder extends TypertRemoteService {
 
   /**
    * Read the last logged Workspace for one Session.
+   * Folds the complete Session log, including a fork-inherited prefix.
+   * After fork, parent and child can reconstruct the same Workspace; this
+   * method does not grant exclusive live Runtime authority.
    * @param session - Owning Session.
    * @returns the last logged snapshot, or the empty Workspace.
    */
