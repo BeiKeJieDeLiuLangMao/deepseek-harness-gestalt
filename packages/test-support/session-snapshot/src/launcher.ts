@@ -12,7 +12,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, symlink
 import { createRequire } from 'node:module'
 import { basename, dirname, join, resolve } from 'node:path'
 import { Readable, Writable } from 'node:stream'
-import { pathToFileURL } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import * as yaml from 'js-yaml'
 import {
   client as createAcpClientApp,
@@ -377,9 +377,12 @@ function barePackageName(specifier: string): string | undefined {
 
 /** Find a bare package's directory from the authored patch's module-resolution anchor. */
 function packageDirFromPatch(source: string, packageName: string): string | undefined {
-  for (const searchPath of createRequire(pathToFileURL(source)).resolve.paths(packageName) ?? []) {
-    const candidate = join(searchPath, packageName)
-    if (existsSync(join(candidate, 'package.json'))) return realpathSync(candidate)
+  const anchors = [source, fileURLToPath(import.meta.url)]
+  for (const anchor of anchors) {
+    for (const searchPath of createRequire(pathToFileURL(anchor)).resolve.paths(packageName) ?? []) {
+      const candidate = join(searchPath, packageName)
+      if (existsSync(join(candidate, 'package.json'))) return realpathSync(candidate)
+    }
   }
   return undefined
 }

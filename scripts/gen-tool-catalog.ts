@@ -40,7 +40,9 @@ import SkillRegistry from '@deepseek-ai/dsh-skill'
 import * as SkillFileSystem from '@deepseek-ai/dsh-skill-filesystem'
 import LocalJobRegistry from '@deepseek-ai/dsh-jobs-local'
 import * as ToolAskUser from '@deepseek-ai/dsh-tool-ask-user'
+import DeterministicBrowserRuntime from '@deepseek-ai/dsh-browser-runtime-deterministic'
 import * as ToolBash from '@deepseek-ai/dsh-tool-bash'
+import * as ToolBrowser from '@deepseek-ai/dsh-tool-browser'
 import * as ToolPwsh from '@deepseek-ai/dsh-tool-pwsh'
 import * as ToolBashPersistent from '@deepseek-ai/dsh-tool-bash-persistent'
 import * as ToolPwshPersistent from '@deepseek-ai/dsh-tool-pwsh-persistent'
@@ -50,6 +52,7 @@ import * as ToolFs from '@deepseek-ai/dsh-tool-fs'
 import * as ToolFsSearch from '@deepseek-ai/dsh-tool-fs-search'
 import * as ToolStrReplaceEditor from '@deepseek-ai/dsh-tool-str-replace-editor'
 import TerminalSessionService from '@deepseek-ai/dsh-terminal'
+import * as ToolProjectMembers from '@deepseek-ai/dsh-tool-project-members'
 import * as ToolPty from '@deepseek-ai/dsh-tool-terminal'
 import * as ToolGoal from '@deepseek-ai/dsh-tool-goal'
 import * as ToolSchedule from '@deepseek-ai/dsh-schedule'
@@ -165,6 +168,11 @@ export interface ToolPackage {
   /** Agent-like scope key whose tool view is catalogued instead of the global view. */
   scope?: (ctx: Context) => Agent
   /**
+   * Harvest deferred catalog schemas (`tool_search` inventory) instead of the
+   * immediately model-visible subset. Browser tools register only as deferred.
+   */
+  harvestCatalog?: true
+  /**
    * Config for the caller's `ToolRuntime` mount. The registry itself ships a
    * model-facing tool (`run_code`, registered under a non-native `mode`), so
    * ITS catalog entry boots the registry in the mode that exposes it;
@@ -240,6 +248,28 @@ const TOOL_PACKAGES: ToolPackage[] = [
     },
     note:
       'The bash tool is the model-facing consumer of the bash executor seam. A `run_in_background` run registers with the generic `ctx.jobs` runtime and is collected/stopped through the `job_*` tools from `@deepseek-ai/dsh-tool-jobs`; the `enableRunInBackground` config (default true) removes the parameter entirely when disabled.',
+  },
+  {
+    pkg: '@deepseek-ai/dsh-tool-browser',
+    dir: 'tool-browser',
+    source: 'packages/browser/tool-browser/src/index.ts',
+    requires: ['ctx.tools', 'ctx.browserRuntime', 'ctx.tools.toolSearch for deferred discovery'],
+    writes: ['tool/call', 'tool/result'],
+    harvestCatalog: true,
+    toolsConfig: { toolSearch: { maxResultBytes: 65536 } },
+    async mount(ctx) {
+      await ctx.plugin(DeterministicBrowserRuntime, {
+        pages: [{
+          url: 'https://example.test/',
+          title: 'Example Domain',
+          text: 'A deterministic browser page.',
+          screenshotPngBase64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+        }],
+      })
+      await ctx.plugin(ToolBrowser)
+    },
+    note:
+      'The seven Browser Runtime operations register as deferred `tool_search` inventory until loaded. Schema harvest uses catalogSchemas over a keyless deterministic Runtime.',
   },
   {
     pkg: '@deepseek-ai/dsh-tool-pwsh',
@@ -407,6 +437,18 @@ const TOOL_PACKAGES: ToolPackage[] = [
     },
     note:
       'The lsp tool keeps provider selection and language-server subprocesses behind ctx.lsp, so its model-visible schema stays stable across providers. Requires a registered provider (e.g. `@deepseek-ai/dsh-lsp-stdio`) at runtime; without one, a query returns the structured `LSP_UNAVAILABLE` error rather than changing the schema.',
+  },
+  {
+    pkg: '@deepseek-ai/dsh-tool-project-members',
+    dir: 'tool-project-members',
+    source: 'packages/interaction/tool-project-members/src/index.ts',
+    requires: ['ctx.tools', 'optional ctx.projectMembership or injected rosterResolver'],
+    writes: ['tool/call', 'tool/result'],
+    async mount(ctx) {
+      await ctx.plugin(ToolProjectMembers)
+    },
+    note:
+      'project_members reads a cloud project roster. A composition supplies account, project binding, and presence through Config resolvers; the package itself depends only on the membership Service Definition.',
   },
   {
     pkg: '@deepseek-ai/dsh-tool-ralph',
@@ -671,7 +713,10 @@ export async function collectToolCatalog(packages: ToolPackage[] = TOOL_PACKAGES
       await ctx.plugin(SystemPrompt)
       await ctx.plugin(ToolRuntime, entry.toolsConfig ?? {})
       await entry.mount(ctx)
-      const schemas = ctx.tools.schemas(entry.scope?.(ctx)).sort((a, b) => a.name.localeCompare(b.name))
+      const schemas = (entry.harvestCatalog === true
+        ? ctx.tools.catalogSchemas(entry.scope?.(ctx))
+        : ctx.tools.schemas(entry.scope?.(ctx))
+      ).sort((a, b) => a.name.localeCompare(b.name))
       assertToolsHarvested(entry, schemas.length)
       catalog.push({
         pkg: entry.pkg,
@@ -731,7 +776,7 @@ export function render(catalog: ToolCatalog): string {
     '',
     'Every model-facing tool a shipped plugin contributes to `ctx.tools`: the `name`, `description`, and JSON-Schema `parameters` the model receives via the system-prompt assembly. It complements the [subsystem pages](subsystems/core.md) (the types plus each page\'s generated Cordis API region) — this page is the *tools* the agent is offered.',
     '',
-    'This file is GENERATED and verified fresh by `pnpm run verify-tool-catalog` (part of `doc-sync`) — do not edit it by hand. Unlike the cordis catalog (a pure source-AST pass), this generator BOOTS each tool plugin on a real context and reads `ctx.tools.schemas()`, because a tool schema is not statically knowable (runtime-spread enums, concatenated descriptions, config-driven names, raw-JSON-Schema MCP tools). A completeness guard globs `packages/*/tool-*` and fails if any package is missing from the generator\'s boot manifest, so a new tool cannot be silently undocumented. See [the tool-schema-catalog Agent Note](../.agents/notes/implemented/process/2026-07-02-tool-schema-catalog.md).',
+    'This file is GENERATED and verified fresh by `pnpm run verify-tool-catalog` (part of `doc-sync`) — do not edit it by hand. Unlike the cordis catalog (a pure source-AST pass), this generator BOOTS each tool plugin on a real context and reads the complete `ctx.tools.catalogSchemas()` end-tool catalog plus the registry-owned presentation schemas from `ctx.tools.schemas()`, because a tool schema is not statically knowable (runtime-spread enums, concatenated descriptions, config-driven names, raw-JSON-Schema MCP tools). A completeness guard globs `packages/*/tool-*` and fails if any package is missing from the generator\'s boot manifest, so a new tool cannot be silently undocumented. See [the tool-schema-catalog Agent Note](../.agents/notes/implemented/process/2026-07-02-tool-schema-catalog.md).',
     '',
     'Scope: shipped product tools under `packages/*/tool-*`, each booted with its DEFAULT config, except where a Config field is REQUIRED with no default — there the generator must choose, and the per-package note records which branch this page shows. The registered tool NAME can be a load-time config (e.g. `tool-subagent`\'s `toolName`), so a deployment may expose a package under a different or additional name — a per-package note records those shipped aliases where they exist. The `examples/` demo tools (e.g. `echo`) are excluded, matching the cordis catalog\'s packages-only scope.',
     '',
