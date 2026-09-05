@@ -54,6 +54,9 @@
       "path": "../../interaction/user-questions"
     },
     {
+      "path": "../../interaction/member-question-receiver"
+    },
+    {
       "path": "../session-controller/tsconfig.host.json"
     },
     {

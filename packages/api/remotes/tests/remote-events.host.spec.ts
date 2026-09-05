@@ -7,7 +7,7 @@ import type {
 } from '@deepseek-ai/dsh-api-gateway'
 import { scopeTarget } from '@deepseek-ai/dsh-scope'
 import { describe, expect, it } from 'vitest'
-import { apply, inject } from '../src/index.ts'
+import { apply, inject, API_REMOTE_FORWARDED_EVENTS } from '../src/index.ts'
 
 interface GatewayProbe {
   source: TypertRemoteEventSource | undefined
@@ -79,12 +79,43 @@ function invocationOf(value: unknown): TypertRemoteEventInvocation {
 }
 
 describe('Remote event Host source', () => {
+  it('forwards member-question-receiver/changed as an emit event', () => {
+    expect(API_REMOTE_FORWARDED_EVENTS).toContainEqual({
+      event: 'member-question-receiver/changed',
+      mode: 'emit',
+    })
+  })
+
   it('registers the Host home used by Client connection generations', async () => {
     const { gateway, fiber } = await setup()
     expect(gateway.host?.home).toBeTypeOf('string')
     expect(gateway.host?.home.length).toBeGreaterThan(0)
     await fiber.dispose()
     expect(gateway.host).toBeUndefined()
+  })
+
+  it('forwards a member-question-receiver/changed payload as lossless JSON', async () => {
+    const { ctx, gateway, fiber } = await setup()
+    const abort = new AbortController()
+    const iterator = sourceOf(gateway)(abort.signal)[Symbol.asyncIterator]()
+    const pending = iterator.next()
+    emitRaw(ctx, 'member-question-receiver/changed', [{
+      revision: 3,
+      questionId: 'question-1',
+      state: 'answered',
+    }])
+    await expect(pending).resolves.toEqual({
+      done: false,
+      value: {
+        event: 'member-question-receiver/changed',
+        args: [{ revision: 3, questionId: 'question-1', state: 'answered' }],
+      },
+    })
+    const done = iterator.next()
+    abort.abort()
+    await expect(done).resolves.toEqual({ done: true, value: undefined })
+    await fiber.dispose()
+    await ctx.fiber.dispose()
   })
 
   it('gives each Client stream an independent allowlisted event queue', async () => {

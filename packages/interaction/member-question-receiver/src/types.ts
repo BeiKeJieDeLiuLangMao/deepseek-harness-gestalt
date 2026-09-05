@@ -1,3 +1,7 @@
+/**
+ * Public receiver projection and Remote settlement vocabulary.
+ * @module @deepseek-ai/dsh-member-question-receiver/types
+ */
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { PlatformAccountId } from '@deepseek-ai/dsh-platform-account'
@@ -145,6 +149,23 @@ export type MemberQuestionReceiverSettlement =
     readonly kind: 'authoritative'
     readonly claim: MemberQuestionTerminalClaim
   }
+
+/** Wire payload for Host-owned Remote settlement. Installation identity is absent. */
+export interface MemberQuestionRemoteSettleRequest {
+  /** Host receiving thread observed by the caller. */
+  readonly receivingSessionId: ReceivingSessionId
+  /** Exact pending-row revision the caller observed. */
+  readonly revision: number
+  /** Question identity to settle. */
+  readonly questionId: MemberQuestionId
+  /** Human answer or decline; Host fills Installation identity and time. */
+  readonly response:
+    | { readonly kind: 'answered'; readonly answers: readonly CompanionMemberQuestionAnswer[] }
+    | { readonly kind: 'declined' }
+}
+
+/** Canonical terminal returned by Host-owned Remote settlement. */
+export type MemberQuestionRemoteSettleResponse = CompanionMemberQuestionSettledResult
 
 /** Human-authored text handed to the future Host Session adapter. */
 interface MemberQuestionHumanTextContent {
@@ -320,5 +341,16 @@ declare module '@deepseek-ai/cordis' {
      * @mode emit
      */
     'member-question-receiver/changed'(change: MemberQuestionReceiverChange): void
+  }
+}
+
+declare module '@deepseek-ai/dsh-typert-protocol' {
+  interface RemoteErrorDetailsMap {
+    'member-question/revision-stale': {
+      readonly receivingSessionId: ReceivingSessionId
+      readonly questionId: MemberQuestionId
+      readonly revision: number
+    }
+    'member-question/settlement-identity-unavailable': {}
   }
 }
