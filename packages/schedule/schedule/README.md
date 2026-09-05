@@ -86,7 +86,7 @@ The package rests on one separation and three commitments:
 
 | File | Role |
 |---|---|
-| [`src/index.ts`](src/index.ts) | Plugin entry: `inject`, `agent/created` observation, per-root runtime and tool installation |
+| [`src/index.ts`](src/index.ts) | Plugin entry: `inject`, `agent/created` observation, shared FIFO, per-root runtime and tool installation |
 | [`src/tools.ts`](src/tools.ts) | Tool definitions, preflight, serialized transactions, closed error union |
 | [`src/domain.ts`](src/domain.ts) | Strict decoding, fold, time validation, framing, occurrence arithmetic |
 | [`src/runtime.ts`](src/runtime.ts) | Live timer owner: maintenance claim, follow-up, dispatch barrier |
@@ -112,7 +112,7 @@ Calendar normalization is deterministic. Local times inside a daylight-saving ga
 
 ### Management pipeline
 
-One Agent-scoped queue serializes each accepted management transaction with the live owner's due transaction from preflight through any post-append barrier. `schedule_create` checkpoints, allocates a never-reused id, appends the create event, and checkpoints again; a cancelled caller stops before append. Every successful management preflight also asks the live owner to recompute, which recovers a retained create or delete batch after a previous post-append barrier returned `persistence_uncertain`.
+One plugin-owned `ScheduleTransactions` FIFO serializes each accepted management transaction with the live owner's due transaction from preflight through any post-append barrier. `schedule_create` checkpoints, allocates a never-reused id, appends the create event, and checkpoints again; a cancelled caller stops before append. Every successful management preflight also asks the live owner to recompute, which recovers a retained create or delete batch after a previous post-append barrier returned `persistence_uncertain`.
 
 Every read or decision from the fold first awaits `ctx.sessions.flush(session)`; a missing, rejected, or detached persistence path returns `persistence_uncertain`, and create and an actual delete await a second barrier after append before confirming the mutation. Shape-only failures are validated before the serialized transaction. Input, time, and durability failures return a closed set of stable version-1 error codes; the closed union and each code's conditions live in [`src/tools.ts`](src/tools.ts).
 

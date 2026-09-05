@@ -39,7 +39,7 @@ const SHARED_VIEW_PROPERTIES = {
   id: { type: 'string', required: true },
   prompt: { type: 'string', required: true },
   scheduledAt: { type: 'string', required: true },
-  state: { type: 'string', required: true, enum: ['scheduled', 'overdue', 'paused'] },
+  state: { type: 'string', required: true, enum: ['scheduled', 'overdue'] },
   deliveryMode: { type: 'string', required: true, const: 'session-local' },
 } as const
 
@@ -154,11 +154,11 @@ const CREATE_DESCRIPTION =
   + 'is live and otherwise becomes overdue until the session is resumed.'
 
 const LIST_DESCRIPTION =
-  'List every retained active or paused reminder in the current session in creation order, including '
-  + 'its exact id, UTC target, scheduled, overdue, or paused state, and session-local delivery mode.'
+  'List every retained active reminder in the current session in creation order, including '
+  + 'its exact id, UTC target, scheduled or overdue state, and session-local delivery mode.'
 
 const DELETE_DESCRIPTION =
-  'Delete one retained active or paused reminder in the current session by the exact id returned by '
+  'Delete one retained active reminder in the current session by the exact id returned by '
   + 'schedule_create or schedule_list. Unknown or already-finished ids return deleted false.'
 
 /** Deterministic model content for every canonical Schedule value. */
@@ -413,7 +413,7 @@ export function registerScheduleTools(
           const folded = foldForTool(agent)
           if (isToolError(folded)) return folded
           const now = Date.now()
-          return folded.schedules.map(({ record, paused }) => scheduleView(record, now, paused))
+          return folded.active.map(record => scheduleView(record, now))
         })
       },
       presentCall: () => present('List reminders', 'read'),
@@ -438,7 +438,7 @@ export function registerScheduleTools(
           notifyDurableChange()
           const folded = foldForTool(agent)
           if (isToolError(folded)) return folded
-          if (!folded.schedules.some(schedule => schedule.record.id === id)) {
+          if (!folded.active.some(record => record.id === id)) {
             return { id, deleted: false, code: 'schedule_not_found' }
           }
           const cancelledBeforeAppend = cancellationPlaceholder(exec.signal)

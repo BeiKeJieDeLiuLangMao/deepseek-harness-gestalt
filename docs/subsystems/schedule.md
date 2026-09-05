@@ -120,24 +120,6 @@ interface ScheduleDeleteChange {
 ```
 
 ```ts type-equiv
-/** Pauses one currently deliverable reminder without changing its target. */
-interface SchedulePauseChange {
-  readonly version: 1
-  readonly operation: 'pause'
-  readonly id: ScheduleId
-}
-```
-
-```ts type-equiv
-/** Resumes one paused reminder without changing its target. */
-interface ScheduleResumeChange {
-  readonly version: 1
-  readonly operation: 'resume'
-  readonly id: ScheduleId
-}
-```
-
-```ts type-equiv
 /** Records that one active one-shot reminder entered the durable dispatch history. */
 interface OneShotScheduleDispatchChange {
   readonly version: 1
@@ -164,15 +146,10 @@ type ScheduleDispatchChange = OneShotScheduleDispatchChange | EveryScheduleDispa
 
 ```ts type-equiv
 /** Strict version-1 durable Schedule mutation union. */
-type ScheduleChange =
-  | ScheduleCreateChange
-  | ScheduleDeleteChange
-  | SchedulePauseChange
-  | ScheduleResumeChange
-  | ScheduleDispatchChange
+type ScheduleChange = ScheduleCreateChange | ScheduleDeleteChange | ScheduleDispatchChange
 ```
 
-The strict decoder and fold reject unknown versions, extra fields, reused ids, mismatched one-shot or Every dispatch shapes, and delete or dispatch transitions against inactive records. A normal Session folds its complete event stream. A fork folds only events at or after `SessionHeader.seedLength`, so it retains history without adopting the parent Session's active reminders. The `schedule/change` declaration and source location are also indexed in the [persistence catalog](../persistence-catalog.md#schedulechange--log-only).
+The strict decoder and fold reject unknown versions, extra fields, reused ids, mismatched one-shot or Every dispatch shapes, pause or resume operations, and delete or dispatch transitions against inactive records. A normal Session folds its complete event stream. A fork folds only events at or after `SessionHeader.inheritedEventCount`, so it retains history without adopting the parent Session's active reminders. The `schedule/change` declaration and source location are also indexed in the [persistence catalog](../persistence-catalog.md#schedulechange--log-only).
 
 ## Active views and management
 
@@ -180,7 +157,7 @@ Tool values combine the durable record with delivery state derived from the curr
 
 ```ts type-equiv
 /** Current delivery timing derived from the durable record and wall clock. */
-type ScheduleState = 'scheduled' | 'overdue' | 'paused'
+type ScheduleState = 'scheduled' | 'overdue'
 ```
 
 ```ts type-equiv
@@ -189,22 +166,20 @@ type ScheduleDeliveryMode = 'session-local'
 ```
 
 ```ts type-equiv
-/** Complete model-facing view of one retained reminder. */
+/** Complete model-facing view of one active reminder. */
 type ScheduleView = ScheduleRecord & {
-  /** Current timing or durable delivery suspension. */
+  /** Whether the target remains in the future. */
   readonly state: ScheduleState
   /** Reminder delivery never leaves the owning session. */
   readonly deliveryMode: ScheduleDeliveryMode
 }
 ```
 
-The generated [tool catalog](../tool-catalog.md#deepseek-aidsh-schedule) owns the argument and result schemas for `schedule_create`, `schedule_list`, and `schedule_delete`. List includes paused records, and delete accepts active or paused records; there are no model-facing pause or resume tools. Management calls serialize with due work in one Schedule Service-owned, per-Session FIFO. Every read or decision first waits for the shared Session persistence barrier; create and an actual delete wait again after appending. Plugin teardown closes admission and awaits accepted transactions, while independent Contexts own independent queues. A barrier failure reports `persistence_uncertain` instead of guessing whether an eager write committed. The other stable error codes are `invalid_prompt`, `invalid_selector`, `invalid_rule`, `invalid_time_zone`, `not_future`, `time_out_of_range`, `frequency_too_high`, `corrupt_schedule_log`, and `internal_error`.
-
-The `ctx.schedules` Remote Service takes a branded Session id without invoking cold Agent resume. It uses an already-live root when present; otherwise it reserves and enters the exact prepared Session without announcing it, flushes before folding, appends and flushes the mutation, then detaches without publishing Session or Agent lifecycle or starting delivery. A preparation or entry collision recomputes against the exact live root inside the same FIFO. The same persistence barriers and Service-owned queue cover tools, human mutations, and due work.
+The generated [tool catalog](../tool-catalog.md#deepseek-aidsh-schedule) owns the argument and result schemas for `schedule_create`, `schedule_list`, and `schedule_delete`. List and delete operate on the authoritative `active` fold; there are no model-facing pause or resume tools and no `paused` compatibility field. Management calls serialize with due work in one plugin-owned, per-Session FIFO shared by tools and the live runtime. Every read or decision first waits for the shared Session persistence barrier; create and an actual delete wait again after appending. Plugin teardown closes admission and awaits accepted transactions, while independent Contexts own independent queues. A barrier failure reports `persistence_uncertain` instead of guessing whether an eager write committed. The other stable error codes are `invalid_prompt`, `invalid_selector`, `invalid_rule`, `invalid_time_zone`, `not_future`, `time_out_of_range`, `frequency_too_high`, `corrupt_schedule_log`, and `internal_error`.
 
 ## Browser projection
 
-The `schedules` Session projection is an `owned-suffix` fold over `schedule/change`. Its whole value retains records in creation order and adds only the durable `paused` flag; the Client clock derives scheduled versus overdue presentation from `scheduledAt`. Desktop displays this value as a Session-header current-state board immediately after background jobs. Its active count excludes paused records, and its controls pause, resume, or delete with an inline second confirmation. The board has no create form and never reconstructs state from transcript or tool-call rendering.
+The optional `schedule` Session projection is an owned-suffix fold over `schedule/change`. Its whole value is `{ inheritedEventCount, active, seenIds }`; the Client clock derives scheduled versus overdue presentation from `scheduledAt`. The catalog has no create form and never reconstructs state from transcript or tool-call rendering.
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 

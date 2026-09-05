@@ -12,25 +12,25 @@ Status: implemented
 
 ## 决策
 
-[`examples/web-schedule`](../../../../examples/web-schedule/README.zh.md) overlay 显式加载 `@deepseek-ai/dsh-time-context` 与 `@deepseek-ai/dsh-schedule`；纯浏览器 Web 的默认配置树保持不变。DeepSeek Gestalt Desktop overlay 默认加载同一插件对。Schedule 只观察插件加载后发布的根 Agent，并在该 Agent scope 中安装三个工具和一个可丢弃 owner。cold history 读取、已发布的根、child Agent 与没有其中一层 overlay 的 host 都不会激活它。
+[`examples/web-schedule`](../../../../examples/web-schedule/README.md) overlay 显式加载 `@deepseek-ai/dsh-time-context` 与 `@deepseek-ai/dsh-schedule`；纯浏览器 Web 的默认配置树保持不变。DeepSeek Gestalt Desktop overlay 默认加载同一插件对。Schedule 只观察插件加载后发布的根 Agent，并在该 Agent scope 中安装三个工具和一个可丢弃 owner。cold history 读取、已发布的根、child Agent 与没有其中一层 overlay 的 host 都不会激活它。
 
-用户可见的投递边界是 `session-local`：原 Session 只有在 live 时才会准时运行提醒，cold 期间不发送任何外部通知；该 Session 再次 live 后才会处理 overdue 提醒。到期工作会等待 Agent 完全 idle，再通过 `followup()` 进入普通的下一轮队列；它绝不会中途引导当前轮次，也没有独立投递回执（[对话式交付](../simplification/2026-08-09-conversational-schedule-delivery.zh.md)）。单独的 [Session Schedule 任务板](2026-08-17-session-schedule-board.zh.md) 投影当前保留状态，并负责人工 pause、resume 与 delete，但不声明投递成功。
+用户可见的投递边界是 `session-local`：原 Session 只有在 live 时才会准时运行提醒，cold 期间不发送任何外部通知；该 Session 再次 live 后才会处理 overdue 提醒。到期工作会等待 Agent 完全 idle，再通过 `followup()` 进入普通的下一轮队列；它绝不会中途引导当前轮次，也没有独立投递回执（[对话式交付](../simplification/2026-08-09-conversational-schedule-delivery.zh.md)）。单独的 [Session Schedule 任务板](2026-08-17-session-schedule-board.zh.md) 仍记录计划中的人工当前状态目录；本 Host 包的持久 fold 与工具只通过 `active` 记录暴露 `create`／`delete`／`dispatch`。
 
 | 场景 | 持久事实 | live 行为 | 用户可见结果 |
 | --- | --- | --- | --- |
-| 创建与管理 | 原 Session 中的 `schedule/change` create／pause／resume／delete | Agent-scoped 工具与人工 Remote 变更在读取前、变更后执行 checkpoint | 稳定 id、UTC 目标、状态与 `session-local` 说明 |
+| 创建与管理 | 原 Session 中的 `schedule/change` create／delete | Agent-scoped 工具在读取前、变更后执行 checkpoint | 稳定 id、UTC 目标、状态与 `session-local` 说明 |
 | 到期时繁忙 | 活动 create 仍在 fold 中 | owner 等待 idle maintenance，排入一个 follow-up，再追加 dispatch | 后续一个普通对话轮次 |
 | 多条 Every 记录逾期 | 每条活动记录都保留最早一个尚未接受且与锚点对齐的目标 | 一次决策选择每条记录的最新发生时点，并将其推进到当前时刻之后 | 一个普通 follow-up，其中每条记录各有一个发生时点 |
 | 进程停止或 Session cold | 活动 create 仍在 persistence 中 | 不存在 timer 或后台扫描；resume 重建 owner | 未来目标继续等待；overdue 目标会被尝试 |
-| fork | 父 event 留在继承前缀 | child fold 从 `seedLength` 开始 | 父工作不会在 child 中变为活动状态 |
+| fork | 父 event 留在继承前缀 | child fold 从 `inheritedEventCount` 开始 | 父工作不会在 child 中变为活动状态 |
 
 ### Session 日志权威与工具
 
-版本 1 `schedule/change` stream 是唯一持久的 Schedule 权威。create 记录拥有一个 Session 内不复用的品牌 id、trim 后的提示词、规则判别字段和 UTC 目标。pause 与 resume 保留记录且不改变目标；delete 与一次性 dispatch 是终结转换。Every dispatch 会存储 id 与决策时点，使 fold 将该记录直接推进到错过的发生时点之后。严格 decoder 与纯 fold 会拒绝未知版本、额外字段、重复使用的 id、形状不匹配的 dispatch，以及从缺失或不兼容状态发起的转换。普通 Session 折叠完整 stream；fork 只折叠 `SessionHeader.seedLength` 位置及其后的 event。
+版本 1 `schedule/change` stream 是唯一持久的 Schedule 权威。create 记录拥有一个 Session 内不复用的品牌 id、trim 后的提示词、规则判别字段和 UTC 目标。delete 与一次性 dispatch 是终结转换。Every dispatch 会存储 id 与决策时点，使 fold 将该记录直接推进到错过的发生时点之后。严格 decoder 与纯 fold 会拒绝未知版本、额外字段、重复使用的 id、pause 或 resume 操作、形状不匹配的 dispatch，以及从缺失或不兼容状态发起的转换。普通 Session 折叠完整 stream；fork 只折叠 `SessionHeader.inheritedEventCount` 位置及其后的 event。
 
 当前规则 union 接受非空提示词和恰好一个 selector。`after_seconds` 是正的安全整数 delay，其记录为 `{ id, kind: 'after', prompt, afterSeconds, scheduledAt }`。`at` 可以是带 `Z` 或数值偏移量且严格符合 RFC 3339 的值，也可以是带显式时区的结构化 `{ date, time, time_zone }`；其记录为 `{ id, kind: 'at', prompt, scheduledAt }`。`every_seconds` 是不小于 300 的安全整数，其 `{ id, kind: 'every', prompt, everySeconds, scheduledAt }` 记录始终与从创建时刻加一个间隔开始的序列对齐。一次性 dispatch 只存储 id；Every dispatch 存储 `id + acceptedAt`。工具值派生 `scheduled` 或 `overdue`，并包含 `deliveryMode: 'session-local'`。
 
-一个 Agent-scoped FIFO 会将管理事务与 live owner 的到期事务从 preflight 到 post-append barrier 全程串行化。每项工具读取都会先等待 `ctx.sessions.flush(session)`。create 会尽可能在进入 FIFO 前拒绝输入形状错误，随后执行 preflight、分配 id、追加记录并再次 checkpoint。delete 会在进入 FIFO 前验证 id，在判断其是否活动前执行 preflight，并且只在追加后再次 checkpoint。list 与 not-found delete 绝不会根据未经确认的 live 后缀作答。barrier 失败会返回 `persistence_uncertain`，而不是猜测 eager write 是否已经提交。
+一个插件拥有的 `ScheduleTransactions` FIFO 会将管理事务与 live owner 的到期事务从 preflight 到 post-append barrier 全程串行化。每项工具读取都会先等待 `ctx.sessions.flush(session)`。create 会尽可能在进入 FIFO 前拒绝输入形状错误，随后执行 preflight、分配 id、追加记录并再次 checkpoint。delete 会在进入 FIFO 前验证 id，在判断其是否位于 `folded.active` 前执行 preflight，并且只在追加后再次 checkpoint。list 与 not-found delete 绝不会根据未经确认的 live 后缀作答。barrier 失败会返回 `persistence_uncertain`，而不是猜测 eager write 是否已经提交。
 
 每次成功的管理 preflight 也会要求 live owner 重新计算。因此，如果先前的 post-append 被拒绝，后续 list 可以确认保留的 create 并将其 arm，而无需私有的 persistence 重试 timer。
 
@@ -74,7 +74,7 @@ dispatch 记录的是队列准入，而不是模型完成或用户收到提醒�
 
 ## 验证
 
-包测试以逐文件 100% coverage 固定严格回放、一次性与 Every 状态转换、创建锚点运算、只追赶最新一次、多记录批处理、fork 后缀、id 复用、偏移量与本地日历 profile、IANA 校验、夏令时缺口与重叠、时间边界、timer 分段、墙钟变化、overdue 准入、固定 framing、入队与 append 失败、barrier 恢复、注册 rollback 和完全停稳的 dispose。属性测试会在不同间隔与跳过跨度下比较 Every 计算与回放。production JSONL restart 测试证明一条 overdue 提醒会经过真实 Agent 生命周期 dispatch，并且再次 restart 后不会重复 dispatch。Host／client 测试固定浏览器时区采样与绑定到提示词的校验。无密钥组装 Web 场景覆盖浏览器本地 At，以及通过普通 assistant follow-up 交付的逾期双记录 Every 批次，两者都没有回执 UI；Desktop 组合覆盖要求该插件对与全部三个工具存在，并要求纯浏览器默认组合不含它们。
+包测试以逐文件 100% coverage 固定严格回放、一次性与 Every 状态转换、创建锚点运算、只追赶最新一次、多记录批处理、fork 后缀、id 复用、偏移量与本地日历 profile、IANA 校验、夏令时缺口与重叠、时间边界、timer 分段、墙钟变化、overdue 准入、固定 framing、入队与 append 失败、barrier 恢复、注册 rollback 和完全停稳的 dispose。属性测试会在不同间隔与跳过跨度下比较 Every 计算与回放。production JSONL restart 测试证明一条 cold overdue 提醒在未来 live root resume 之前保持不活动，resume 后经过真实 Agent 生命周期 dispatch，并且再次 restart 后不会重复 dispatch。Host／client 测试固定浏览器时区采样与绑定到提示词的校验。无密钥组装 Web 场景覆盖浏览器本地 At，以及通过普通 assistant follow-up 交付的逾期双记录 Every 批次，两者都没有回执 UI；Desktop 组合覆盖要求该插件对与全部三个工具存在，并要求纯浏览器默认组合不含它们。
 
 ## 后果
 

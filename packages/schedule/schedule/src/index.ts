@@ -11,6 +11,7 @@ import type {} from '@deepseek-ai/dsh-session-projection'
 import { scheduleProjectionDefinition } from './projection.ts'
 import { ScheduleRuntime } from './runtime.ts'
 import { registerScheduleTools } from './tools.ts'
+import { ScheduleTransactions } from './transaction.ts'
 
 export type * from './types.ts'
 export {
@@ -31,6 +32,7 @@ export {
   scheduleView,
 } from './domain.ts'
 export { registerScheduleTools } from './tools.ts'
+export { ScheduleTransactions } from './transaction.ts'
 
 /** Cordis function-plugin name. */
 export const name = 'schedule'
@@ -46,14 +48,21 @@ export function apply(ctx: Context): void {
   })
 
   const runtimes = new Map<Agent, OwnerCleanup>()
+  const transactions = new ScheduleTransactions()
   let stopping = false
 
   ctx.effect(() => {
     const stopCreated = ctx.on('agent/created', ({ agent }) => {
       if (stopping || runtimes.has(agent) || !ctx.agents.roots().includes(agent)) return
-      const runtime = new ScheduleRuntime(ctx, agent)
+      const runtime = new ScheduleRuntime(ctx, agent, transactions)
       const cleanup: OwnerCleanup = agent.ctx.effect(() => {
-        const disposeTools = registerScheduleTools(ctx, agent.ctx, agent, () => { runtime.requestDrive() })
+        const disposeTools = registerScheduleTools(
+          ctx,
+          agent.ctx,
+          agent,
+          transactions,
+          () => { runtime.requestDrive() },
+        )
         const stopStatus = agent.ctx.on('agent/status', ({ status }) => {
           if (status === 'idle' && agent.session.snapshotEvents().some(event => event.type === 'schedule/change')) {
             runtime.requestDrive()
@@ -79,6 +88,7 @@ export function apply(ctx: Context): void {
       const cleanups = [...runtimes.values()]
       runtimes.clear()
       await Promise.allSettled(cleanups.map(cleanup => Promise.resolve(cleanup())))
+      await transactions.dispose()
     }
   }, 'schedule.lifecycle()')
 }

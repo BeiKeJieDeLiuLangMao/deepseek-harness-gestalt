@@ -86,7 +86,7 @@ Session projection 是可选能力。`ctx.sessionProjections` 存在时，插件
 
 | 文件 | 职责 |
 |---|---|
-| [`src/index.ts`](src/index.ts) | 插件入口：`inject`、`agent/created` 观察、按根的 runtime 与工具安装 |
+| [`src/index.ts`](src/index.ts) | 插件入口：`inject`、`agent/created` 观察、共享 FIFO、按根的 runtime 与工具安装 |
 | [`src/tools.ts`](src/tools.ts) | 工具定义、preflight、序列化事务、封闭错误联合 |
 | [`src/domain.ts`](src/domain.ts) | 严格解码、折叠、时间校验、framing、occurrence 算术 |
 | [`src/runtime.ts`](src/runtime.ts) | live timer owner：maintenance 认领、follow-up、dispatch barrier |
@@ -112,7 +112,7 @@ projection 只携带持久记录。它不持久化或传输 scheduled／overdue 
 
 ### 管理流水线
 
-一条 agent 范围的队列把每项已接纳的管理事务与 live owner 的到期事务从 preflight 到任何 post-append barrier 全程串行化。`schedule_create` 建立检查点、分配永不复用的 id、追加 create 事件，再次建立检查点；被取消的调用方在追加前停止。每次成功的管理 preflight 还会要求 live owner 重新计算，这会在先前的 post-append barrier 返回 `persistence_uncertain` 后恢复所保留的 create 或 delete 批次。
+一条插件拥有的 `ScheduleTransactions` FIFO 把每项已接纳的管理事务与 live owner 的到期事务从 preflight 到任何 post-append barrier 全程串行化。`schedule_create` 建立检查点、分配永不复用的 id、追加 create 事件，再次建立检查点；被取消的调用方在追加前停止。每次成功的管理 preflight 还会要求 live owner 重新计算，这会在先前的 post-append barrier 返回 `persistence_uncertain` 后恢复所保留的 create 或 delete 批次。
 
 每项从折叠结果读取或作出判断的操作都会先等待 `ctx.sessions.flush(session)`；持久化路径缺失、被拒绝或已分离时返回 `persistence_uncertain`，create 与实际 delete 在追加后还会等待第二个 barrier 再确认变更。只依赖输入形状的失败会在序列化事务之前被验证。输入、时间与持久化失败会返回一组封闭的稳定版本 1 错误代码；该封闭联合及各代码的触发条件位于 [`src/tools.ts`](src/tools.ts)。
 

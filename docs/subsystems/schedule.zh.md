@@ -120,24 +120,6 @@ interface ScheduleDeleteChange {
 ```
 
 ```ts type-equiv
-/** Pauses one currently deliverable reminder without changing its target. */
-interface SchedulePauseChange {
-  readonly version: 1
-  readonly operation: 'pause'
-  readonly id: ScheduleId
-}
-```
-
-```ts type-equiv
-/** Resumes one paused reminder without changing its target. */
-interface ScheduleResumeChange {
-  readonly version: 1
-  readonly operation: 'resume'
-  readonly id: ScheduleId
-}
-```
-
-```ts type-equiv
 /** Records that one active one-shot reminder entered the durable dispatch history. */
 interface OneShotScheduleDispatchChange {
   readonly version: 1
@@ -164,15 +146,10 @@ type ScheduleDispatchChange = OneShotScheduleDispatchChange | EveryScheduleDispa
 
 ```ts type-equiv
 /** Strict version-1 durable Schedule mutation union. */
-type ScheduleChange =
-  | ScheduleCreateChange
-  | ScheduleDeleteChange
-  | SchedulePauseChange
-  | ScheduleResumeChange
-  | ScheduleDispatchChange
+type ScheduleChange = ScheduleCreateChange | ScheduleDeleteChange | ScheduleDispatchChange
 ```
 
-严格 decoder 与 fold 会拒绝未知版本、额外字段、复用 id、不匹配的一次性提醒或 Every dispatch 形状，以及针对非活动记录的 delete 或 dispatch 转换。普通 Session 折叠完整事件流。fork 只折叠 `SessionHeader.seedLength` 位置及其后的事件，因此保留历史，但不会接管父 Session 的活动提醒。`schedule/change` 声明和源码位置也编入[持久化目录](../persistence-catalog.zh.md#schedulechange--log-only)。
+严格 decoder 与 fold 会拒绝未知版本、额外字段、复用 id、不匹配的一次性提醒或 Every dispatch 形状、pause 或 resume 操作，以及针对非活动记录的 delete 或 dispatch 转换。普通 Session 折叠完整事件流。fork 只折叠 `SessionHeader.inheritedEventCount` 位置及其后的事件，因此保留历史，但不会接管父 Session 的活动提醒。`schedule/change` 声明和源码位置也编入[持久化目录](../persistence-catalog.zh.md#schedulechange--log-only)。
 
 ## 活动视图与管理
 
@@ -180,7 +157,7 @@ type ScheduleChange =
 
 ```ts type-equiv
 /** Current delivery timing derived from the durable record and wall clock. */
-type ScheduleState = 'scheduled' | 'overdue' | 'paused'
+type ScheduleState = 'scheduled' | 'overdue'
 ```
 
 ```ts type-equiv
@@ -189,22 +166,20 @@ type ScheduleDeliveryMode = 'session-local'
 ```
 
 ```ts type-equiv
-/** Complete model-facing view of one retained reminder. */
+/** Complete model-facing view of one active reminder. */
 type ScheduleView = ScheduleRecord & {
-  /** Current timing or durable delivery suspension. */
+  /** Whether the target remains in the future. */
   readonly state: ScheduleState
   /** Reminder delivery never leaves the owning session. */
   readonly deliveryMode: ScheduleDeliveryMode
 }
 ```
 
-生成的[工具目录](../tool-catalog.zh.md#deepseek-aidsh-schedule)负责 `schedule_create`、`schedule_list` 和 `schedule_delete` 的参数与结果 schema。list 包含已暂停记录，delete 接受活动或已暂停记录；不存在面向模型的 pause 或 resume 工具。一条由 Schedule Service 拥有、按 Session 串行化的 FIFO 会把管理调用与到期工作串行化。每次读取或判断都会先等待共享的 Session 持久化 barrier；create 与实际执行的 delete 在追加后还会再次等待。插件拆卸会关闭准入并等待已接纳事务，而独立 Context 拥有独立队列。barrier 失败会报告 `persistence_uncertain`，而不是猜测 eager write 是否已提交。其他稳定错误代码是 `invalid_prompt`、`invalid_selector`、`invalid_rule`、`invalid_time_zone`、`not_future`、`time_out_of_range`、`frequency_too_high`、`corrupt_schedule_log` 和 `internal_error`。
-
-`ctx.schedules` Remote Service 接受 branded Session id，而不会调用 cold Agent resume。存在 live 根 Agent 时直接使用；否则预留并 enter 精确的 prepared Session，但不 announce；它在 fold 前 flush，append 并再次 flush，随后 detach，整个过程不发布 Session 或 Agent 生命周期，也不启动投递。preparation 或 enter 冲突会在同一 FIFO 内针对精确 live root 重新计算。同一组持久化 barrier 与 Service-owned queue 覆盖工具、人工变更与到期工作。
+生成的[工具目录](../tool-catalog.zh.md#deepseek-aidsh-schedule)负责 `schedule_create`、`schedule_list` 和 `schedule_delete` 的参数与结果 schema。list 与 delete 操作权威的 `active` fold；不存在面向模型的 pause 或 resume 工具，也不存在 `paused` 兼容字段。一条由插件拥有、按 Session 串行化的 FIFO 会把工具管理调用与 live runtime 到期工作串行化。每次读取或判断都会先等待共享的 Session 持久化 barrier；create 与实际执行的 delete 在追加后还会再次等待。插件拆卸会关闭准入并等待已接纳事务，而独立 Context 拥有独立队列。barrier 失败会报告 `persistence_uncertain`，而不是猜测 eager write 是否已提交。其他稳定错误代码是 `invalid_prompt`、`invalid_selector`、`invalid_rule`、`invalid_time_zone`、`not_future`、`time_out_of_range`、`frequency_too_high`、`corrupt_schedule_log` 和 `internal_error`。
 
 ## 浏览器 Projection
 
-`schedules` Session projection 是对 `schedule/change` 的 `owned-suffix` fold。其完整值按创建顺序保留记录，只增加持久化的 `paused` 标志；Client 时钟根据 `scheduledAt` 推导等待中或待补跑展示。Desktop 会把该值显示为紧接在后台任务之后的 Session 标题栏当前状态任务板。其活跃计数排除已暂停记录，控件支持暂停、恢复以及行内二次确认删除。任务板没有创建表单，也绝不从 transcript 或工具调用渲染重建状态。
+可选的 `schedule` Session projection 是对 `schedule/change` 的 owned-suffix fold。其完整值是 `{ inheritedEventCount, active, seenIds }`；Client 时钟根据 `scheduledAt` 推导等待中或待补跑展示。该目录没有创建表单，也绝不从 transcript 或工具调用渲染重建状态。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
