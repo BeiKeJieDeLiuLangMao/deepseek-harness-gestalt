@@ -10,7 +10,7 @@ Companion 的 Ask User 与 Approval 结算走 `/api/respond` 和 mux `rpcId`。G
 
 ## 决策
 
-Desktop Host RPC 在 `/api/remote.mux` 上跟随 `$events`，使用官方 ready 与 downlink 解析器，并通过与其他 Host 方法相同的认证一元通道提交 `$events/result`。Companion 登记表在当前 `clientId` 下按 `eventId` 保存等待。配对私有 interaction id 仍由 HMAC 派生。过期等待在本地以 `not-pending` 失败，不伪造 Host 回执。Ask User 回答为 `{ answers }`；取消为 `UserQuestionError` / `ASK_CANCELLED`。Approval 结果为 `allowed-once` 与 `rejected`。Host 重启与 `$events` abort 清空 pending。配对 ledger 仍拥有 mutation 重试。
+Desktop Host RPC 在 `/api/remote.mux` 上跟随 `$events`，使用官方 ready 与 downlink 解析器，并通过与其他 Host 方法相同的认证一元通道提交 `$events/result`。Companion 登记表在当前 `clientId` 下按 `eventId` 保存等待。配对私有 interaction id 仍由 HMAC 派生。过期等待在本地以 `not-pending` 失败，不伪造 Host 回执。Ask User 回答为 `{ answers }`；取消为 `UserQuestionError` / `ASK_CANCELLED`。Approval 结果为 `allowed-once` 与 `rejected`。Host 重启与 `$events` abort 清空 pending。配对 ledger 仍拥有 mutation 重试。Session Controller 的 `api-session/added` 与 `api-session/removed` emit 使 Companion surface 失效，下次投影再拉 `session/list`。`api-session/status`、`api-session/activity` 与 `api-session/error` 使该 Session 行失效。Workspace follow increment 与活动 Session follow append 只作脏信号。活动 `session/follow` event 经 `liveProjection.changed` 使该 Session 失效，下次 `projectLiveSession` 替换含 conversation 增量，包括 Assistant chunk 与消息。取消 live projection 后该 Session 的后续 conversation 回调停止。workspace follow upsert 使 Companion surface 失效。Desktop 不再打开 `/api/events.mux` 或 `/api/events.host`。Companion 列表、创建、搜索、图片读取与不透明文件准入使用生成的 `session/list`、`session/create`、`session/search`、`session/attachment` 与 `session/admitAttachment`。图片读取与文件准入保持在这两条独立 Remote 上。
 
 ## 备选方案
 

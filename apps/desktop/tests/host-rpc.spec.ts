@@ -78,33 +78,33 @@ describe('Desktop Host RPC', () => {
       responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
     })
 
-    await expect(rpc.call('session.search', { query: 'ok' })).resolves.toMatchObject({
+    await expect(rpc.call('session/search', { query: 'ok' })).resolves.toMatchObject({
       ok: true,
       value: { items: [], hasMore: false },
     })
-    await expect(rpc.call('session.search', { query: 'http-400' })).resolves.toEqual({
+    await expect(rpc.call('session/search', { query: 'http-400' })).resolves.toEqual({
       ok: false,
       failure: { kind: 'http', code: 'HOST_HTTP_STATUS', message: 'Desktop Host returned HTTP 400', status: 400 },
     })
-    await expect(rpc.call('session.search', { query: 'wire-invalid' })).resolves.toEqual({
+    await expect(rpc.call('session/search', { query: 'wire-invalid' })).resolves.toEqual({
       ok: false,
       failure: { kind: 'wire', code: 'HOST_WIRE_INVALID', message: 'Desktop Host response was not valid RPC JSON' },
     })
-    await expect(rpc.call('session.search', { query: 'business' })).resolves.toEqual({
+    await expect(rpc.call('session/search', { query: 'business' })).resolves.toEqual({
       ok: false,
       failure: { kind: 'business', code: 'bad-request', message: 'invalid search query' },
     })
-    await expect(rpc.call('session.search', { query: 'timeout' })).resolves.toEqual({
+    await expect(rpc.call('session/search', { query: 'timeout' })).resolves.toEqual({
       ok: false,
       failure: { kind: 'timeout', code: 'HOST_TIMEOUT', message: 'Desktop Host request timed out' },
     })
-    await expect(rpc.call('session.admitAttachment', { query: 'slow-chunks' }, { timeoutMs: 100 }))
+    await expect(rpc.call('session/admitAttachment', { query: 'slow-chunks' }, { timeoutMs: 100 }))
       .resolves.toMatchObject({ ok: true, value: {} })
     const deadlineRpc = createDesktopHostRpc(`http://127.0.0.1:${String(address.port)}`, {
       timeoutMs: 50,
       responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
     })
-    await expect(deadlineRpc.call('session.search', { query: 'slow-chunks' })).resolves.toEqual({
+    await expect(deadlineRpc.call('session/search', { query: 'slow-chunks' })).resolves.toEqual({
       ok: false,
       failure: { kind: 'timeout', code: 'HOST_TIMEOUT', message: 'Desktop Host request timed out' },
     })
@@ -178,7 +178,7 @@ describe('Desktop Host RPC', () => {
 
   it('accepts the exact response byte limit and rejects overflow and a fast cumulative flood', async () => {
     const padding = 'x'.repeat(1_024)
-    const historyPadding = 'h'.repeat(REMOTE_PROTOCOL_LIMITS.companionMessageBytes + 1)
+    const pagePadding = 'h'.repeat(REMOTE_PROTOCOL_LIMITS.companionMessageBytes + 1)
     const baselinePadding = 'b'.repeat(REMOTE_PROTOCOL_LIMITS.companionMessageBytes + 1)
     const baselineResponseMaxBytes = REMOTE_PROTOCOL_LIMITS.transcriptPageBytes
       * REMOTE_PROTOCOL_LIMITS.transcriptPageEntries
@@ -192,11 +192,11 @@ describe('Desktop Host RPC', () => {
           method: string
           payload: { query: string }
         }
-        if (body.method === 'session.history') {
-          response.end(successResponse(body.rpcId, historyPadding))
+        if (body.method === 'session/page') {
+          response.end(successResponse(body.rpcId, pagePadding))
           return
         }
-        if (body.method === 'session.list' || body.method === 'workspace.list') {
+        if (body.method === 'session/list') {
           if (body.payload.query === 'oversized-baseline') {
             response.end(Buffer.alloc(baselineResponseMaxBytes + 1, 120))
             return
@@ -230,7 +230,7 @@ describe('Desktop Host RPC', () => {
       timeoutMs: 1, attachmentTimeoutMs: 1_000, responseMaxBytes: 1,
     })
 
-    await expect(exact.call('session.search', { query: 'exact' })).resolves.toMatchObject({
+    await expect(exact.call('session/search', { query: 'exact' })).resolves.toMatchObject({
       ok: true,
       value: { padding },
     })
@@ -240,18 +240,16 @@ describe('Desktop Host RPC', () => {
         kind: 'wire', code: 'HOST_WIRE_INVALID', message: 'Desktop Host response exceeded its byte limit',
       },
     } as const
-    await expect(overflow.call('session.search', { query: 'overflow' })).resolves.toEqual(limitFailure)
-    await expect(flood.call('session.search', { query: 'fast-flood' })).resolves.toEqual(limitFailure)
-    await expect(flood.call('session.history', { query: 'history' })).resolves.toMatchObject({
-      ok: true, value: { padding: historyPadding },
+    await expect(overflow.call('session/search', { query: 'overflow' })).resolves.toEqual(limitFailure)
+    await expect(flood.call('session/search', { query: 'fast-flood' })).resolves.toEqual(limitFailure)
+    await expect(flood.call('session/page', { query: 'page' })).resolves.toMatchObject({
+      ok: true, value: { padding: pagePadding },
     })
-    for (const method of ['session.list', 'workspace.list']) {
-      await expect(flood.call(method, { query: 'baseline' })).resolves.toMatchObject({
-        ok: true, value: { padding: baselinePadding },
-      })
-      await expect(flood.call(method, { query: 'oversized-baseline' })).resolves.toEqual(limitFailure)
-    }
-    await expect(attachment.call('session.attachment', { query: 'attachment' })).resolves.toMatchObject({
+    await expect(flood.call('session/list', { query: 'baseline' })).resolves.toMatchObject({
+      ok: true, value: { padding: baselinePadding },
+    })
+    await expect(flood.call('session/list', { query: 'oversized-baseline' })).resolves.toEqual(limitFailure)
+    await expect(attachment.call('session/attachment', { query: 'attachment' })).resolves.toMatchObject({
       ok: true, value: { padding },
     })
   })
@@ -296,8 +294,8 @@ describe('Desktop Host RPC', () => {
     } as const
 
     await expect(Promise.all([
-      rpc.call('session.search', { query: 'oversized' }),
-      rpc.call('session.search', { query: 'never-ending' }),
+      rpc.call('session/search', { query: 'oversized' }),
+      rpc.call('session/search', { query: 'never-ending' }),
     ])).resolves.toEqual([httpFailure, httpFailure])
     await expect.poll(() => closedResponses.size).toBe(2)
   })

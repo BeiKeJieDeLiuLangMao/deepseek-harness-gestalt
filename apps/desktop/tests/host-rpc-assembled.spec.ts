@@ -11,12 +11,17 @@ import { parsePersonalPairingId } from '@deepseek-ai/dsh-remote-access'
 import { startMockLlmServer } from '@deepseek-ai/dsh-llm-mock-server'
 import { parseCompanionOperationId, parseCompanionSessionId } from '@deepseek-ai/dsh-remote-protocol'
 import { DesktopCompanionOperationLedger } from '../src/companion-operation-ledger.ts'
+import type { DesktopCompanionLiveProjectionChange } from '../src/companion-live-projection.ts'
 import { DesktopCompanionProductOwner, handleCompanionProductOperation } from '../src/companion-product.ts'
 import {
+  admitDesktopHostAttachment,
   archiveDesktopHostSession,
   bootstrapDesktopHostCookie, createDesktopHostRpc, createDesktopHostSession,
   createDesktopHostWorkspace,
   listDesktopHostSessions, pageDesktopHostSession,
+  promptDesktopHostSession,
+  readDesktopHostAttachment,
+  searchDesktopHostSessions,
 } from '../src/host-rpc.ts'
 import { spawnWebHost, type RunningWebHost } from '../src/spawn-web-host.ts'
 
@@ -470,6 +475,257 @@ describe('Desktop Host RPC against shipped dsh web', () => {
       expectWritten: false,
     })
   }, 180_000)
+
+  it('creates, lists, searches, reads images, and admits files on generated Session remotes', async () => {
+    const first = await startShippedHost()
+    const cookie = await bootstrapDesktopHostCookie(first.running.launchUrl, first.running.url)
+    const rpc = createDesktopHostRpc(first.running.url, {
+      timeoutMs: 15_000,
+      responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
+      attachmentTimeoutMs: 15_000,
+      cookieHeader: cookie,
+    })
+    const sessionId = parseCompanionSessionId('desktop-generated-session-remotes')
+    await expect(createDesktopHostSession(rpc, sessionId)).resolves.toMatchObject({
+      ok: true, value: { sessionId },
+    })
+    await expect(listDesktopHostSessions(rpc)).resolves.toMatchObject({
+      ok: true,
+      value: { items: expect.arrayContaining([expect.objectContaining({ sessionId })]) },
+    })
+    const needle = 'desktop-generated-search-needle'
+    await expect(promptDesktopHostSession(rpc, {
+      requestId: 'desktop-generated-search-prompt',
+      sessionId,
+      mode: 'queue',
+      content: [{ type: 'text', text: needle }],
+    })).resolves.toMatchObject({ ok: true, value: { accepted: true } })
+    await expect.poll(async () => {
+      const searched = await searchDesktopHostSessions(rpc, needle)
+      return searched.ok && isRecord(searched.value) && Array.isArray(searched.value.items)
+        && searched.value.items.some(item => isRecord(item) && item.sessionId === sessionId)
+    }).toBe(true)
+
+    const png = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+      'base64',
+    )
+    await expect(rpc.call('session/selectModel', {
+      args: {
+        request: {
+          sessionId,
+          provider: 'deepseek-official',
+          model: 'deepseek-v4-flash-vision-exp',
+        },
+      },
+    })).resolves.toMatchObject({
+      ok: true,
+      value: { selected: { provider: 'deepseek-official', model: 'deepseek-v4-flash-vision-exp' } },
+    })
+    const frames: unknown[] = []
+    const follow = new AbortController()
+    const watching = rpc.followSession(sessionId, follow.signal, (frame) => { frames.push(frame) })
+    try {
+      await expect.poll(() => frames.some(frame => isRecord(frame) && frame.type === 'snapshot')).toBe(true)
+      const imagePrompt = await promptDesktopHostSession(rpc, {
+        requestId: 'desktop-generated-image-prompt',
+        sessionId,
+        mode: 'queue',
+        content: [
+          { type: 'text', text: 'see image' },
+          { type: 'image', mediaType: 'image/png', data: png.toString('base64'), name: 'pixel.png' },
+        ],
+      })
+      if (!imagePrompt.ok) throw new Error(`image prompt failed: ${JSON.stringify(imagePrompt)}`)
+      expect(imagePrompt).toMatchObject({ ok: true, value: { accepted: true } })
+      await expect.poll(() => imageAttachmentIdFromFollow(frames) !== undefined).toBe(true)
+      const imageId = imageAttachmentIdFromFollow(frames)
+      if (imageId === undefined) throw new Error('missing image attachment id')
+      const image = await readDesktopHostAttachment(rpc, { sessionId, attachmentId: imageId })
+      if (!image.ok) throw new Error(`image read failed id=${String(imageId)} result=${JSON.stringify(image)}`)
+      expect(image).toMatchObject({
+        ok: true,
+        value: { attachment: expect.objectContaining({ mediaType: 'image/png' }), data: png.toString('base64') },
+      })
+
+      const fileBytes = Uint8Array.of(0, 255, 1, 2)
+      const admitted = await admitDesktopHostAttachment(rpc, {
+        sessionId,
+        operationId: 'desktop-generated-file-admit',
+        mediaType: 'application/octet-stream',
+        name: 'payload.bin',
+        data: Buffer.from(fileBytes).toString('base64'),
+      })
+      expect(admitted).toMatchObject({
+        ok: true,
+        value: { attachment: expect.objectContaining({
+          name: 'payload.bin', mediaType: 'application/octet-stream', bytes: 4,
+        }) },
+      })
+      const fileId = admitted.ok && isRecord(admitted.value) && isRecord(admitted.value.attachment)
+        ? admitted.value.attachment.attachmentId
+        : undefined
+      expect(typeof fileId).toBe('string')
+      await expect(readDesktopHostAttachment(rpc, { sessionId, attachmentId: String(fileId) })).resolves.toMatchObject({
+        ok: false,
+        failure: { kind: 'business' },
+      })
+      expect(await durableSessionLog(first.home, sessionId)).toContain('session/attachment-admitted')
+    } finally {
+      follow.abort()
+      await watching
+    }
+  }, 180_000)
+
+  it('invalidates Companion list from shipped Host api-session notices', async () => {
+    const first = await startShippedHost()
+    const cookie = await bootstrapDesktopHostCookie(first.running.launchUrl, first.running.url)
+    const owner = new DesktopCompanionProductOwner({
+      timeoutMs: 15_000,
+      responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
+    })
+    const uninstall = owner.installHost(first.running.url, cookie)
+    const rpc = createDesktopHostRpc(first.running.url, {
+      timeoutMs: 15_000,
+      responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
+      cookieHeader: cookie,
+    })
+    const sessionId = parseCompanionSessionId('desktop-list-notice-session')
+    const changes: unknown[] = []
+    const disconnect = owner.connectLiveProjection(
+      parsePersonalPairingId('pairing-list-notice'),
+      (change) => { changes.push(change) },
+      () => {},
+    )
+    try {
+      await expect(createDesktopHostSession(rpc, sessionId)).resolves.toMatchObject({
+        ok: true, value: { sessionId },
+      })
+      await expect.poll(() => {
+        return changes.filter(change => isRecord(change) && change.type === 'surface').length >= 1
+      }).toBe(true)
+      await expect(listDesktopHostSessions(rpc)).resolves.toMatchObject({
+        ok: true,
+        value: { items: expect.arrayContaining([expect.objectContaining({ sessionId })]) },
+      })
+      const surfaces = changes.filter(change => isRecord(change) && change.type === 'surface').length
+      await expect(archiveDesktopHostSession(rpc, sessionId)).resolves.toMatchObject({ ok: true })
+      await expect.poll(() => {
+        return changes.filter(change => isRecord(change) && change.type === 'surface').length > surfaces
+      }).toBe(true)
+    } finally {
+      disconnect()
+      uninstall()
+    }
+  }, 180_000)
+
+  it('projects assistant conversation from owner live session/follow and stops after unsubscribe', async () => {
+    const apiKey = 'desktop-assembled-follow-consumer-key'
+    const assistantText = 'desktop-follow-consumer-assistant'
+    const llm = await startMockLlmServer({
+      sequence: ['success'],
+      repeatLast: true,
+      apiKey,
+      successText: assistantText,
+    })
+    try {
+      const first = await startShippedHost({
+        DEEPSEEK_API_KEY: apiKey,
+        DEEPSEEK_BASE_URL: llm.baseURL,
+      })
+      const cookie = await bootstrapDesktopHostCookie(first.running.launchUrl, first.running.url)
+      const owner = new DesktopCompanionProductOwner({
+        timeoutMs: 15_000,
+        responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
+      })
+      owner.installLedger(await DesktopCompanionOperationLedger.load({
+        load: async () => [],
+        save: async () => {},
+      }))
+      const uninstall = owner.installHost(first.running.url, cookie)
+      const rpc = createDesktopHostRpc(first.running.url, {
+        timeoutMs: 15_000,
+        responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
+        cookieHeader: cookie,
+      })
+      const pairingId = parsePersonalPairingId('pairing-follow-consumer')
+      const attachmentKey = new Uint8Array(32)
+      const pairing = {
+        pairingId,
+        attachmentKey,
+        now: () => 1_000,
+        downloadAttachment: async () => { throw new Error('follow consumer must not download') },
+        submitAttachment: async () => { throw new Error('follow consumer must not submit attachments') },
+        generation: 1,
+        desktopRevision: 1,
+        desktopName: 'Assembled Desktop',
+      }
+      const sessionId = parseCompanionSessionId('desktop-follow-consumer-session')
+      const needle = 'desktop follow consumer prompt'
+      const changes: DesktopCompanionLiveProjectionChange[] = []
+      const disconnect = owner.connectLiveProjection(pairingId, (change) => { changes.push(change) }, () => {})
+      try {
+        await expect(createDesktopHostSession(rpc, sessionId)).resolves.toMatchObject({
+          ok: true, value: { sessionId },
+        })
+        await expect(owner.handle({
+          type: 'observe-session',
+          operationId: parseCompanionOperationId('desktop-follow-observe'),
+          sessionId,
+        }, pairing)).resolves.toMatchObject({ type: 'confirmed' })
+        const observed = changes.find(change => (
+          change.type === 'session' && change.sessionId === sessionId && change.includeConversation
+        ))
+        if (observed === undefined) throw new Error('observe-session did not request a live conversation')
+        await expect(owner.projectLiveSession(observed, attachmentKey, new AbortController().signal))
+          .resolves.toMatchObject({ sessionId, conversation: { sessionId } })
+
+        const surfacesBeforeWorkspace = changes.filter(change => change.type === 'surface').length
+        await expect(owner.handle({
+          type: 'submit-prompt',
+          operationId: parseCompanionOperationId('desktop-follow-prompt'),
+          sessionId,
+          text: needle,
+        }, pairing)).resolves.toMatchObject({ type: 'confirmed' })
+        await expect.poll(async () => {
+          const latest = [...changes].reverse().find(change => (
+            change.type === 'session' && change.sessionId === sessionId && change.includeConversation
+          ))
+          if (latest === undefined) return false
+          const projected = await owner.projectLiveSession(latest, attachmentKey, new AbortController().signal)
+          return conversationHasUserText(projected, needle)
+            && conversationHasAssistantText(projected, assistantText)
+        }).toBe(true)
+
+        await expect(createDesktopHostWorkspace(rpc, first.home)).resolves.toMatchObject({ ok: true })
+        await expect.poll(() => {
+          return changes.filter(change => change.type === 'surface').length > surfacesBeforeWorkspace
+        }).toBe(true)
+
+        disconnect()
+        const afterLive = changes.length
+        const llmCalls = llm.requests.length
+        await expect(owner.handle({
+          type: 'submit-prompt',
+          operationId: parseCompanionOperationId('desktop-follow-after-unsub'),
+          sessionId,
+          text: 'must not notify after live unsubscribe',
+        }, pairing)).resolves.toMatchObject({ type: 'confirmed' })
+        await expect.poll(() => llm.requests.length > llmCalls).toBe(true)
+        await new Promise(resolve => setTimeout(resolve, 250))
+        expect(changes.filter(change => (
+          change.type === 'session' && change.sessionId === sessionId && change.includeConversation
+        )).length).toBe(changes.slice(0, afterLive).filter(change => (
+          change.type === 'session' && change.sessionId === sessionId && change.includeConversation
+        )).length)
+        expect(changes.length).toBe(afterLive)
+      } finally {
+        uninstall()
+      }
+    } finally {
+      await llm.close()
+    }
+  }, 180_000)
 })
 
 function followHasUserRequest(frame: unknown, requestId: string): boolean {
@@ -500,6 +756,56 @@ function followHasTurnEnd(frame: unknown): boolean {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function conversationHasUserText(projected: unknown, text: string): boolean {
+  if (!isRecord(projected) || !isRecord(projected.conversation) || !Array.isArray(projected.conversation.nodes)) {
+    return false
+  }
+  return projected.conversation.nodes.some((node) => {
+    return isRecord(node) && node.kind === 'user' && Array.isArray(node.content)
+      && node.content.some(block => isRecord(block) && block.type === 'text' && block.text === text)
+  })
+}
+
+function conversationHasAssistantText(projected: unknown, text: string): boolean {
+  if (!isRecord(projected) || !isRecord(projected.conversation)) return false
+  const nodes = Array.isArray(projected.conversation.nodes) ? projected.conversation.nodes : []
+  const partial = isRecord(projected.conversation.partial) && Array.isArray(projected.conversation.partial.blocks)
+    ? projected.conversation.partial.blocks
+    : []
+  return [...nodes, ...partial].some((item) => {
+    if (!isRecord(item)) return false
+    if (item.kind === 'assistant' && Array.isArray(item.blocks)) {
+      return item.blocks.some(block => isRecord(block) && block.kind === 'text' && block.text === text)
+    }
+    return item.kind === 'text' && item.text === text
+  })
+}
+
+function imageAttachmentIdFromFollow(frames: readonly unknown[]): string | undefined {
+  for (const frame of frames) {
+    const events = followEvents(frame)
+    for (const event of events) {
+      if (!isRecord(event) || event.type !== 'user/message' || !isRecord(event.data) || !Array.isArray(event.data.content)) {
+        continue
+      }
+      for (const block of event.data.content) {
+        if (!isRecord(block) || block.type !== 'image' || !isRecord(block.attachment)) continue
+        if (typeof block.attachment.attachmentId === 'string') return block.attachment.attachmentId
+      }
+    }
+  }
+  return undefined
+}
+
+function followEvents(frame: unknown): unknown[] {
+  if (!isRecord(frame)) return []
+  if (frame.type === 'event') return [frame.event]
+  if (frame.type === 'snapshot' && Array.isArray(frame.records)) {
+    return frame.records.map(record => isRecord(record) ? record.event : undefined)
+  }
+  return []
 }
 
 async function runAssembledApproval(input: {

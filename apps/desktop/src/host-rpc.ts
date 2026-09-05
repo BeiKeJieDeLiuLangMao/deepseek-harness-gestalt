@@ -62,16 +62,6 @@ export interface DesktopHostRpc {
   completeEvent(
     result: RemoteEventResult,
   ): Promise<DesktopHostRpcResult>
-  /** Follow Host Session and interaction frames for the current Web Host generation. */
-  watchMux?(
-    signal: AbortSignal,
-    accept: (envelope: { rpcId: string; payload: unknown }) => void,
-  ): Promise<void>
-  /** Follow Host list/status frames for the current Web Host generation. */
-  watchHost?(
-    signal: AbortSignal,
-    accept: (envelope: { rpcId: string; payload: unknown }) => void,
-  ): Promise<void>
   /**
    * Follow generated Gateway `session/follow` on `/api/remote.mux`.
    * Cookie is sent only to the bootstrap origin. Abort sends mux `cancel`.
@@ -130,12 +120,8 @@ export function createDesktopHostRpc(baseUrl: string, options: DesktopHostRpcOpt
   }
   const rpc: DesktopHostRpc = {
     async call(method, payload, callOptions) {
-      const attachmentRead = method === 'session.attachment'
-      const projectedRead = method === 'session.history'
-        || method === 'session.list'
-        || method === 'session/list'
-        || method === 'session/page'
-        || method === 'workspace.list'
+      const attachmentRead = method === 'session/attachment'
+      const projectedRead = method === 'session/list' || method === 'session/page'
       const callTimeoutMs = callOptions?.timeoutMs
         ?? (attachmentRead ? options.attachmentTimeoutMs : undefined)
         ?? timeoutMs
@@ -206,12 +192,6 @@ export function createDesktopHostRpc(baseUrl: string, options: DesktopHostRpcOpt
       parseRemoteEventResult(result)
       return rpc.call(REMOTE_EVENT_RESULT_ENDPOINT, { args: result })
     },
-    watchMux: async (signal, accept) => {
-      await watchHostWebSocket(origin, '/api/events.mux', signal, accept, options.cookieHeader)
-    },
-    watchHost: async (signal, accept) => {
-      await watchHostWebSocket(origin, '/api/events.host', signal, accept, options.cookieHeader)
-    },
     followSession: async (sessionId, signal, accept, maxMessages) => {
       await followRemoteMux(
         origin,
@@ -234,55 +214,6 @@ export function createDesktopHostRpc(baseUrl: string, options: DesktopHostRpcOpt
     },
   }
   return rpc
-}
-
-function watchHostWebSocket(
-  origin: URL,
-  path: string,
-  signal: AbortSignal,
-  accept: (envelope: { rpcId: string; payload: unknown }) => void,
-  cookieHeader?: string,
-): Promise<void> {
-  const url = new URL(path, origin)
-  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
-  return new Promise((resolve, reject) => {
-    const socket = openOriginWebSocket(url, origin, cookieHeader)
-    const settled = { value: false }
-    const cleanup = (): void => {
-      detachSocketListeners(signal, abort, socket)
-    }
-    const settle = (failure?: Error): void => {
-      settleSocket(settled, cleanup, resolve, reject, failure)
-    }
-    const abort = (): void => {
-      closeOriginWebSocket(socket)
-      settle()
-    }
-    const message = (data: WebSocket.RawData): void => {
-      try {
-        const text = typeof data === 'string' ? data : Buffer.from(data as Uint8Array).toString('utf8')
-        if (Buffer.byteLength(text) > MAX_HOST_PROJECTED_RESPONSE_BYTES) {
-          throw new Error('Desktop Host event stream frame exceeded its byte ceiling')
-        }
-        const envelope: unknown = JSON.parse(text)
-        if (!isRecord(envelope) || envelope.type !== 'server-request'
-          || typeof envelope.rpcId !== 'string' || !('payload' in envelope)) {
-          throw new Error('Desktop Host event stream envelope was invalid')
-        }
-        accept({ rpcId: envelope.rpcId, payload: envelope.payload })
-      } catch (cause) {
-        socket.close()
-        settle(new Error('Desktop Host event stream returned an invalid frame', { cause }))
-      }
-    }
-    socket.on('message', message)
-    socket.once('close', () => {
-      settle(signal.aborted || settled.value ? undefined : new Error('Desktop Host event stream closed'))
-    })
-    socket.once('error', () => { settle(new Error('Desktop Host event stream failed')) })
-    signal.addEventListener('abort', abort, { once: true })
-    if (signal.aborted) abort()
-  })
 }
 
 function parseServerResponse(body: unknown, rpcId: string): DesktopHostRpcResult {
@@ -388,15 +319,79 @@ export function listDesktopHostSessions(
 export function createDesktopHostSession(
   rpc: DesktopHostRpc,
   sessionId: string,
-  options?: { timeoutMs?: number; signal?: AbortSignal; cwd?: string },
+  options?: { timeoutMs?: number; signal?: AbortSignal; cwd?: string; rpcId?: string },
 ): Promise<DesktopHostRpcResult> {
   const { cwd, ...callOptions } = options ?? {}
-  return rpc.call('session/create', {
-    args: { request: {
-      sessionId,
-      ...(cwd === undefined ? {} : { cwd }),
-    } },
+  return createDesktopHostSessionRequest(rpc, {
+    sessionId,
+    ...(cwd === undefined ? {} : { cwd }),
   }, Object.keys(callOptions).length === 0 ? undefined : callOptions)
+}
+
+/**
+ * Create or adopt one Session through generated Gateway `session/create`.
+ * @param rpc - authenticated Desktop Host RPC.
+ * @param request - generated create request fields.
+ * @param options - optional timeout, cancellation, and initiator rpc id.
+ * @returns the Host create value or a typed failure.
+ */
+export function createDesktopHostSessionRequest(
+  rpc: DesktopHostRpc,
+  request: { sessionId?: string; workspaceId?: string; cwd?: string },
+  options?: { timeoutMs?: number; signal?: AbortSignal; rpcId?: string },
+): Promise<DesktopHostRpcResult> {
+  return rpc.call('session/create', { args: { request } }, options)
+}
+
+/**
+ * Search visible Session content through generated Gateway `session/search`.
+ * @param rpc - authenticated Desktop Host RPC.
+ * @param query - literal message-content query.
+ * @param options - optional timeout and cancellation.
+ * @returns the Host search value or a typed failure.
+ */
+export function searchDesktopHostSessions(
+  rpc: DesktopHostRpc,
+  query: string,
+  options?: { timeoutMs?: number; signal?: AbortSignal },
+): Promise<DesktopHostRpcResult> {
+  return rpc.call('session/search', { args: { request: { query } } }, options)
+}
+
+/**
+ * Read one image proven reachable from the Session log through generated Gateway `session/attachment`.
+ * @param rpc - authenticated Desktop Host RPC.
+ * @param request - Session and image attachment identities.
+ * @param options - optional timeout and cancellation.
+ * @returns the Host image value or a typed failure.
+ */
+export function readDesktopHostAttachment(
+  rpc: DesktopHostRpc,
+  request: { sessionId: string; attachmentId: string },
+  options?: { timeoutMs?: number; signal?: AbortSignal },
+): Promise<DesktopHostRpcResult> {
+  return rpc.call('session/attachment', { args: { request } }, options)
+}
+
+/**
+ * Admit one Companion opaque file through generated Gateway `session/admitAttachment`.
+ * @param rpc - authenticated Desktop Host RPC.
+ * @param request - Session identity, Companion operation id, media type, name, and canonical base64.
+ * @param options - optional timeout and cancellation.
+ * @returns the Host admission value or a typed failure.
+ */
+export function admitDesktopHostAttachment(
+  rpc: DesktopHostRpc,
+  request: {
+    sessionId: string
+    operationId: string
+    mediaType: string
+    name: string
+    data: string
+  },
+  options?: { timeoutMs?: number; signal?: AbortSignal },
+): Promise<DesktopHostRpcResult> {
+  return rpc.call('session/admitAttachment', { args: { request } }, options)
 }
 
 /**
@@ -437,7 +432,10 @@ export function promptDesktopHostSession(
     requestId: string
     sessionId: string
     mode: 'queue' | 'steer'
-    content: ReadonlyArray<{ type: 'text'; text: string }>
+    content: ReadonlyArray<
+      | { type: 'text'; text: string }
+      | { type: 'image'; mediaType: string; data: string; name?: string }
+    >
   },
   options?: { timeoutMs?: number; rpcId?: string; signal?: AbortSignal },
 ): Promise<DesktopHostRpcResult> {

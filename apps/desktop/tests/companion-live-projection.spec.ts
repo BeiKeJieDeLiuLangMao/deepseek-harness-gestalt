@@ -97,7 +97,7 @@ describe('Desktop Companion live projection', () => {
       followSession: async () => {},
       call: vi.fn(async (method: string) => {
         calls.push(method)
-        if (method === 'session.list') return { ok: true, value: { items: [
+        if (method === 'session/list') return { ok: true, value: { items: [
           { sessionId: 'session-hidden', updatedAt: 10, running: true, blank: false },
           { sessionId: opened, updatedAt: 20, running: true, blank: false },
         ] } }
@@ -113,7 +113,7 @@ describe('Desktop Companion live projection', () => {
       summary: { running: true }, workspaces: [],
     })
     expect(hidden).not.toHaveProperty('conversation')
-    expect(calls).toEqual(['session.list'])
+    expect(calls).toEqual(['session/list'])
 
     calls.splice(0)
     archivedSessionIds = ['session-hidden']
@@ -128,7 +128,7 @@ describe('Desktop Companion live projection', () => {
         partial: { turn: 1, step: 1, blocks: [{ kind: 'text', text: 'live output' }] },
       },
     })
-    expect(calls).toEqual(['session.list'])
+    expect(calls).toEqual(['session/list'])
 
     calls.splice(0)
     archivedSessionIds = [opened]

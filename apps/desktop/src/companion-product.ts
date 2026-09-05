@@ -44,10 +44,15 @@ import {
   receiveCompanionAttachment,
 } from './companion-attachments.ts'
 import {
+  admitDesktopHostAttachment,
   cancelDesktopHostSession,
   createDesktopHostRpc,
+  createDesktopHostSessionRequest,
+  listDesktopHostSessions,
   pageDesktopHostSession,
   promptDesktopHostSession,
+  readDesktopHostAttachment,
+  searchDesktopHostSessions,
   type DesktopHostRpc,
   type DesktopHostRpcOptions,
   type DesktopHostRpcResult,
@@ -139,7 +144,6 @@ export class DesktopCompanionProductOwner {
     readonly cancellation: AbortController
     workspace?: DesktopWorkspaceFollowCache
     history?: DesktopSessionHistoryCache
-    streams?: { readonly cancellation: AbortController; readonly task: Promise<void> }
   } | undefined
   private ledger: DesktopCompanionOperationLedger | undefined
   private readonly interactions = new DesktopCompanionInteractionRegistry()
@@ -159,13 +163,8 @@ export class DesktopCompanionProductOwner {
     disconnect: (error: Error) => void,
   ): () => void {
     const dispose = this.liveProjection.connect(pairingId, changed, disconnect)
-    const installed = this.installed
-    if (installed !== undefined) this.ensureHostStreams(installed)
-    return () => {
-      dispose()
-      const current = this.installed
-      if (!this.liveProjection.hasConnections() && current !== undefined) this.stopHostStreams(current)
-    }
+    if (this.installed !== undefined) this.liveProjection.surfaceChanged()
+    return dispose
   }
 
   /** Whether one projected conversation still belongs to the pairing's current observation epoch. */
@@ -216,8 +215,14 @@ export class DesktopCompanionProductOwner {
       ...cookieHeader === undefined ? {} : { cookieHeader },
     })
     const cancellation = new AbortController()
-    const workspace = startWorkspaceFollowCache(rpc, cancellation.signal)
-    const history = new DesktopSessionHistoryCache(rpc, cancellation.signal)
+    const workspace = startWorkspaceFollowCache(rpc, cancellation.signal, () => {
+      this.liveProjection.surfaceChanged()
+    })
+    const history = new DesktopSessionHistoryCache(rpc, cancellation.signal, (sessionId) => {
+      try { this.liveProjection.changed(parseCompanionSessionId(sessionId)) } catch {
+        // Follow keys that are not Companion Session ids stay off the live Session projection.
+      }
+    })
     const installed: NonNullable<DesktopCompanionProductOwner['installed']> = {
       rpc, cancellation, workspace, history,
     }
@@ -225,13 +230,9 @@ export class DesktopCompanionProductOwner {
     this.surfaceDiscovery.clear()
     this.installed = installed
     this.startEventFollow(installed)
-    if (this.liveProjection.hasConnections()) {
-      this.ensureHostStreams(installed)
-      this.liveProjection.surfaceChanged()
-    }
+    if (this.liveProjection.hasConnections()) this.liveProjection.surfaceChanged()
     return () => {
       cancellation.abort()
-      installed.streams?.cancellation.abort()
       if (this.installed === installed) {
         this.installed = undefined
         this.interactions.clear()
@@ -320,6 +321,7 @@ export class DesktopCompanionProductOwner {
       this.interactions.clear()
       const failure = error instanceof Error ? error : new Error('Desktop Host Remote event stream ended', { cause: error })
       console.error('[desktop-companion] Host Remote event stream failed:', failure)
+      this.liveProjection.fail(failure)
     })
   }
 
@@ -329,68 +331,25 @@ export class DesktopCompanionProductOwner {
       return
     }
     this.interactions.accept(frame)
-    if (frame.type !== 'waterfall') return
-    try {
-      this.liveProjection.changed(parseCompanionSessionId(frame.agentId))
-    } catch {
-      // Agent identities that are not Companion Session ids stay off the live Session projection.
-    }
-  }
-
-  private ensureHostStreams(installed: NonNullable<DesktopCompanionProductOwner['installed']>): void {
-    if (installed.streams !== undefined || installed.cancellation.signal.aborted) return
-    if (installed.rpc.watchMux === undefined || installed.rpc.watchHost === undefined) {
-      this.liveProjection.fail(new Error('Desktop Web Host event streams are unavailable'))
+    if (frame.type === 'waterfall') {
+      try {
+        this.liveProjection.changed(parseCompanionSessionId(frame.agentId))
+      } catch {
+        // Agent identities that are not Companion Session ids stay off the live Session projection.
+      }
       return
     }
-    const cancellation = new AbortController()
-    const abort = (): void => { cancellation.abort() }
-    installed.cancellation.signal.addEventListener('abort', abort, { once: true })
-    const task = Promise.all([
-      installed.rpc.watchMux(cancellation.signal, (envelope) => { this.acceptMuxEnvelope(envelope) }),
-      installed.rpc.watchHost(cancellation.signal, (envelope) => { this.acceptHostEnvelope(envelope) }),
-    ]).then(() => undefined)
-    const streams = { cancellation, task }
-    installed.streams = streams
-    void task.then(
-      () => { this.finishHostStreams(installed, streams, undefined) },
-      (error: unknown) => { this.finishHostStreams(installed, streams, error) },
-    ).finally(() => { installed.cancellation.signal.removeEventListener('abort', abort) })
-  }
-
-  private stopHostStreams(installed: NonNullable<DesktopCompanionProductOwner['installed']>): void {
-    const streams = installed.streams
-    if (streams === undefined) return
-    delete installed.streams
-    streams.cancellation.abort()
-  }
-
-  private finishHostStreams(
-    installed: NonNullable<DesktopCompanionProductOwner['installed']>,
-    streams: NonNullable<NonNullable<DesktopCompanionProductOwner['installed']>['streams']>,
-    failure: unknown,
-  ): void {
-    if (installed.streams !== streams) return
-    delete installed.streams
-    streams.cancellation.abort()
-    if (installed.cancellation.signal.aborted || this.installed !== installed) return
-    const error = failure instanceof Error ? failure : new Error('Desktop Web Host event streams ended', { cause: failure })
-    console.error('[desktop-companion] Host event streams failed:', error)
-    this.liveProjection.fail(error)
-  }
-
-  private acceptMuxEnvelope(envelope: { rpcId: string; payload: unknown }): void {
-    const sessionId = hostEventSessionId(envelope.payload)
-    if (sessionId !== undefined) this.liveProjection.changed(sessionId)
-  }
-
-  private acceptHostEnvelope(envelope: { rpcId: string; payload: unknown }): void {
-    if (isHostSurfaceAuthorityEvent(envelope.payload)) {
+    if (frame.type !== 'emit') return
+    if (frame.event === 'api-session/added' || frame.event === 'api-session/removed') {
       this.liveProjection.surfaceChanged()
       return
     }
-    const sessionId = hostEventSessionId(envelope.payload)
-    if (sessionId !== undefined) this.liveProjection.changed(sessionId)
+    if (frame.event === 'api-session/status'
+      || frame.event === 'api-session/activity'
+      || frame.event === 'api-session/error') {
+      const sessionId = apiSessionEmitSessionId(frame.args[0])
+      if (sessionId !== undefined) this.liveProjection.changed(sessionId)
+    }
   }
 
   /**
@@ -411,7 +370,7 @@ export class DesktopCompanionProductOwner {
         kind: 'wire', code: 'HOST_WIRE_INVALID', message: 'Desktop Web Host is not available',
       } }
     }
-    return await host.call('session.admitAttachment', {
+    return await admitDesktopHostAttachment(host, {
       sessionId: input.sessionId,
       operationId: input.operationId,
       name: input.fileName,
@@ -485,15 +444,15 @@ async function createHostSession(
   operation: Extract<CompanionProductOperation, { type: 'create-session' }>,
   dependencies: CompanionProductOperationDependencies,
 ): Promise<CompanionResult> {
-  const response = await dependencies.host.call(
-    'session.create',
+  const response = await createDesktopHostSessionRequest(
+    dependencies.host,
     operation.workspaceId === undefined ? {} : { workspaceId: operation.workspaceId },
     { rpcId: operation.operationId },
   )
   if (!response.ok) return operationFailed(operation, normalizeFailure(response.failure))
-  if (!isRecord(response.value)) return invalidHostResult(operation, 'session.create')
+  if (!isRecord(response.value)) return invalidHostResult(operation, 'session/create')
   let sessionId: ReturnType<typeof parseCompanionSessionId>
-  try { sessionId = parseCompanionSessionId(response.value.sessionId) } catch { return invalidHostResult(operation, 'session.create') }
+  try { sessionId = parseCompanionSessionId(response.value.sessionId) } catch { return invalidHostResult(operation, 'session/create') }
   return { type: 'session-created', operationId: operation.operationId, sessionId, committedAt: dependencies.now() }
 }
 
@@ -547,7 +506,7 @@ export class DesktopCompanionSurfaceDiscovery {
     this.epochs.set(dependencies.pairingId, epoch)
     this.states.delete(dependencies.pairingId)
     const [sessionResponse, workspaceValue] = await Promise.all([
-      dependencies.host.call('session.list', {}),
+      listDesktopHostSessions(dependencies.host),
       waitForWorkspaceSnapshot(dependencies),
     ])
     if (!sessionResponse.ok) return operationFailed(operation, normalizeFailure(sessionResponse.failure))
@@ -629,7 +588,7 @@ async function loadHistory(
   operation: Extract<CompanionProductOperation, { type: 'load-history' }>,
   dependencies: CompanionProductOperationDependencies,
 ): Promise<CompanionProjection | CompanionOperationFailedResult> {
-  const sessionsResponse = await dependencies.host.call('session.list', {})
+  const sessionsResponse = await listDesktopHostSessions(dependencies.host)
   if (!sessionsResponse.ok) return operationFailed(operation, normalizeFailure(sessionsResponse.failure))
   const session = parseSurfaceSession(sessionsResponse.value, operation.sessionId)
   if (session === undefined) return invalidHostResult(operation, 'history Session status')
@@ -666,7 +625,7 @@ export async function projectDesktopCompanionLiveSession(
   signal: AbortSignal,
 ): Promise<DesktopCompanionLiveProjectionPayload> {
   const requests = [
-    dependencies.host.call('session.list', {}, { signal }),
+    listDesktopHostSessions(dependencies.host, { signal }),
     waitForWorkspaceSnapshot(dependencies, signal),
     ...(includeConversation
       ? [loadSessionHistoryPage(dependencies, sessionId, {
@@ -760,7 +719,7 @@ async function readImage(
   operation: Extract<CompanionProductOperation, { type: 'read-image' }>,
   dependencies: CompanionProductOperationDependencies,
 ): Promise<CompanionResult | readonly CompanionResult[]> {
-  const response = await dependencies.host.call('session.attachment', {
+  const response = await readDesktopHostAttachment(dependencies.host, {
     sessionId: operation.sessionId, attachmentId: operation.attachmentId,
   })
   if (!response.ok) return operationFailed(operation, normalizeFailure(response.failure))
@@ -841,7 +800,7 @@ async function searchSessions(
   dependencies: CompanionProductOperationDependencies,
 ): Promise<CompanionSessionSearchResult | CompanionOperationFailedResult> {
   const [response, workspaceValue] = await Promise.all([
-    dependencies.host.call('session.search', { query: operation.query }),
+    searchDesktopHostSessions(dependencies.host, operation.query),
     waitForWorkspaceSnapshot(dependencies),
   ])
   if (!response.ok) return operationFailed(operation, normalizeFailure(response.failure))
@@ -850,7 +809,7 @@ async function searchSessions(
     return operationFailed(operation, {
       kind: 'wire',
       code: 'HOST_WIRE_INVALID',
-      message: 'Desktop Host session.search returned an invalid value',
+      message: 'Desktop Host session/search returned an invalid value',
     })
   }
   if (!isWorkspaceSnapshot(workspaceValue)) {
@@ -1348,6 +1307,7 @@ class DesktopWorkspaceFollowCache {
   private readonly waiters = new Set<(
     snapshot: DesktopWorkspaceSnapshot | DesktopWorkspaceSnapshotFailure,
   ) => void>()
+  onIncrement?: () => void
 
   wait(signal?: AbortSignal): Promise<DesktopWorkspaceSnapshot | DesktopWorkspaceSnapshotFailure> {
     if (this.value !== undefined) return Promise.resolve(this.value)
@@ -1386,6 +1346,7 @@ class DesktopWorkspaceFollowCache {
     }
     this.value = applyWorkspaceFollowIncrement(this.value, decoded)
     this.flush(this.value)
+    this.onIncrement?.()
   }
 
   fail(message = 'Desktop Host workspace follow ended'): void {
@@ -1436,8 +1397,13 @@ function applyWorkspaceFollowIncrement(
   return { ...snapshot, archivedSessionIds: [...frame.archivedSessionIds] }
 }
 
-function startWorkspaceFollowCache(rpc: DesktopHostRpc, signal: AbortSignal): DesktopWorkspaceFollowCache {
+function startWorkspaceFollowCache(
+  rpc: DesktopHostRpc,
+  signal: AbortSignal,
+  onIncrement: () => void,
+): DesktopWorkspaceFollowCache {
   const cache = new DesktopWorkspaceFollowCache()
+  cache.onIncrement = onIncrement
   void rpc.followWorkspaces(signal, (frame) => { cache.accept(frame) }).catch((error: unknown) => {
     cache.fail(error instanceof Error ? error.message : 'Desktop Host workspace follow ended')
   })
@@ -1465,6 +1431,7 @@ export class DesktopSessionHistoryCache {
   constructor(
     private readonly rpc: DesktopHostRpc,
     private readonly signal: AbortSignal,
+    private readonly onSessionChanged?: (sessionId: string) => void,
   ) {
     signal.addEventListener('abort', () => { this.clear() }, { once: true })
   }
@@ -1638,6 +1605,8 @@ export class DesktopSessionHistoryCache {
       return
     }
     current.events = [...current.events, decoded.event as SessionWireEvent]
+    const sessionId = key.slice(0, key.lastIndexOf(':'))
+    this.onSessionChanged?.(sessionId)
   }
 }
 
@@ -1745,20 +1714,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function hostEventSessionId(payload: unknown): CompanionSessionId | undefined {
-  if (!isRecord(payload) || typeof payload.type !== 'string' || typeof payload.sessionId !== 'string') return undefined
-  if (payload.type !== 'session/event' && payload.type !== 'session/subscribed'
-    && payload.type !== 'approval/requested' && payload.type !== 'approval/resolved'
-    && payload.type !== 'question/requested' && payload.type !== 'question/resolved'
-    && payload.type !== 'session/queue' && payload.type !== 'session/jobs'
-    && payload.type !== 'session/projection' && payload.type !== 'host/session-added'
-    && payload.type !== 'host/session-removed' && payload.type !== 'host/session-status'
-    && payload.type !== 'host/agent-error') return undefined
-  return parseCompanionSessionId(payload.sessionId)
-}
-
-function isHostSurfaceAuthorityEvent(payload: unknown): boolean {
-  if (!isRecord(payload)) return false
-  return payload.type === 'host/workspace-changed' || payload.type === 'host/workspace-removed'
-    || payload.type === 'host/workspace-order-changed' || payload.type === 'host/archived-sessions-changed'
+function apiSessionEmitSessionId(value: unknown): CompanionSessionId | undefined {
+  const raw = typeof value === 'string' ? value
+    : isRecord(value) && typeof value.sessionId === 'string' ? value.sessionId
+      : undefined
+  if (raw === undefined) return undefined
+  try { return parseCompanionSessionId(raw) } catch {
+    return undefined
+  }
 }
