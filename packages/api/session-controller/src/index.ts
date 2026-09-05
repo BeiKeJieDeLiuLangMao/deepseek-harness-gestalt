@@ -349,6 +349,8 @@ export class SessionController extends TypertRemoteService {
 
   /**
    * Mutate one still-pending queue occurrence on a live Agent.
+   * Edit content uses the JSON-safe {@link PromptContentPart} vocabulary;
+   * non-text parts are refused as `session/attachment-invalid`.
    * @param request - Session, queue item, and requested mutation.
    * @returns acknowledgement that the queue mutation was applied.
    */
