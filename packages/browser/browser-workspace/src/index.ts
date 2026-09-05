@@ -25,11 +25,12 @@ import {
   type BrowserScreenshot,
   type BrowserTarget,
 } from '@deepseek-ai/dsh-browser-runtime'
-import type { Session, SessionId } from '@deepseek-ai/dsh-session'
+import { SessionLogOffset, type Session, type SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-projection'
 import type {} from '@deepseek-ai/dsh-workspace'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { applyBrowserWorkspaceProjection, EMPTY_BROWSER_WORKSPACE, foldBrowserWorkspace } from './fold.ts'
+import { listBrowserWorkspacePages } from './pages.ts'
 import type {
   BrowserWorkspaceCreateRemoteRequest,
   BrowserWorkspaceInstanceRecord,
@@ -98,11 +99,14 @@ function targetOf(
 
 /**
  * Bind Browser Runtime identities to one Session log and project instance and
- * tab ownership from durable Session facts.
+ * tab ownership from durable Session facts. Live Runtime authority is the
+ * process-local Session that last `adopt`ed a tab in this Binder; a folded
+ * snapshot is historical display only.
  */
 export class BrowserWorkspaceBinder extends TypertRemoteService {
   static inject = ['browserRuntime', 'sessions']
   private createTail: Promise<void> = Promise.resolve()
+  private readonly liveOwners = new Map<string, { readonly sessionId: SessionId; readonly target: BrowserTarget }>()
 
   constructor(ctx: Context) {
     super(ctx, 'browserWorkspace')
@@ -126,10 +130,14 @@ export class BrowserWorkspaceBinder extends TypertRemoteService {
         stateVersion: 3,
       })
     })
+    this.restoreLiveOwners()
   }
 
   /**
    * Read the last logged Workspace for one Session.
+   * Folds the complete Session log, including a fork-inherited prefix.
+   * That reconstruction is historical display; live Runtime verbs still
+   * require this Binder's process-local adopt mapping.
    * @param session - Owning Session.
    * @returns the last logged snapshot, or the empty Workspace.
    */
@@ -363,27 +371,27 @@ export class BrowserWorkspaceBinder extends TypertRemoteService {
     await this.closeOwnedTabs(session, false)
   }
 
-  /** Close every projected tab and optionally remove its recovery record. */
+  /** Close live Runtime tabs this Session adopted, then optionally drop display records. */
   private async closeOwnedTabs(session: Session, forget: boolean): Promise<void> {
-    const snapshot = this.snapshot(session)
     const failures: unknown[] = []
-    for (const workspace of snapshot.workspaces) {
-      for (const browser of workspace.browsers) {
-        for (const tab of browser.tabs) {
-          const target = targetOf(workspace, browser, tab)
-          try {
-            const state = await this.ctx.browserRuntime.observe({ target })
-            if (state.status !== 'closed') {
-              if (!forget && state.status === 'open') this.recordPage(session, state)
-              await this.ctx.browserRuntime.close({ target, expectedRevision: state.revision })
-            }
-            if (forget) this.forget(session, target)
-          } catch (error) {
-            this.ctx.logger.warn('browser-workspace: Session Runtime release failed for one tab')
-            this.ctx.logger.warn(error)
-            if (forget) failures.push(error)
-          }
+    for (const target of this.liveTargetsOf(session.id)) {
+      try {
+        const state = await this.ctx.browserRuntime.observe({ target })
+        if (state.status !== 'closed') {
+          if (!forget && state.status === 'open') this.recordPage(session, state)
+          await this.ctx.browserRuntime.close({ target, expectedRevision: state.revision })
         }
+        this.dropLive(target)
+        if (forget) this.forget(session, target)
+      } catch (error) {
+        this.ctx.logger.warn('browser-workspace: Session Runtime release failed for one tab')
+        this.ctx.logger.warn(error)
+        if (forget) failures.push(error)
+      }
+    }
+    if (forget && failures.length === 0) {
+      for (const page of listBrowserWorkspacePages(this.snapshot(session))) {
+        this.forget(session, page.target)
       }
     }
     if (failures.length > 0) {
@@ -391,21 +399,29 @@ export class BrowserWorkspaceBinder extends TypertRemoteService {
     }
   }
 
-  /** Reject attach that names another Session's hierarchy or an unowned one. */
+  /** Reject attach that names another Session's live hierarchy or an unowned one. */
   private assertCreateAttach(session: Session, attach: BrowserCreateRequest['attach']): void {
     if (attach === undefined) return
-    const owner = this.ownerOfAttach(attach)
-    if (owner !== undefined && owner.id !== session.id) {
+    const ownerId = this.liveOwnerOfAttach(attach)
+    if (ownerId !== undefined && ownerId !== session.id) {
       throw new BrowserRuntimeError('cross-Session page transfer is not supported', 'BROWSER_TRANSFER_UNSUPPORTED')
     }
-    if (!ownsAttach(this.snapshot(session), attach)) {
+    if (ownerId !== session.id) {
       throw new BrowserRuntimeError('browser attach target is not owned by this Session', 'BROWSER_SESSION_MISMATCH')
     }
   }
 
-  /** Find the live Session that already owns one attach hierarchy, if any. */
-  private ownerOfAttach(attach: NonNullable<BrowserCreateRequest['attach']>): Session | undefined {
-    return this.ctx.sessions.list().find(session => ownsAttach(this.snapshot(session), attach))
+  /** Find the live Session that adopted one attach hierarchy, if any. */
+  private liveOwnerOfAttach(attach: NonNullable<BrowserCreateRequest['attach']>): SessionId | undefined {
+    for (const entry of this.liveOwners.values()) {
+      if (attach.kind === 'workspace' && entry.target.workspaceId === attach.workspaceId) return entry.sessionId
+      if (
+        attach.kind === 'browser'
+        && entry.target.workspaceId === attach.workspaceId
+        && entry.target.browserId === attach.browserId
+      ) return entry.sessionId
+    }
+    return undefined
   }
 
   /**
@@ -421,6 +437,8 @@ export class BrowserWorkspaceBinder extends TypertRemoteService {
       for (const browser of workspace.browsers) {
         for (const tab of browser.tabs) {
           const target = targetOf(workspace, browser, tab)
+          const liveOwner = this.liveOwners.get(liveKey(target))?.sessionId
+          if (liveOwner !== undefined && liveOwner !== request.session.id) continue
           let state: BrowserRuntimeState
           try {
             state = await this.ctx.browserRuntime.observe({
@@ -450,15 +468,16 @@ export class BrowserWorkspaceBinder extends TypertRemoteService {
     return undefined
   }
 
-  /** Reject a target that another Session owns or that this Session never adopted. */
+  /**
+   * Reject a target another Session adopted live, or that this Session never
+   * adopted in this Binder. A folded snapshot does not grant operate rights.
+   */
   private assertOwned(session: Session, target: BrowserTarget): void {
-    for (const other of this.ctx.sessions.list()) {
-      if (other.id === session.id) continue
-      if (ownsTarget(this.snapshot(other), target)) {
-        throw new BrowserRuntimeError('cross-Session page transfer is not supported', 'BROWSER_TRANSFER_UNSUPPORTED')
-      }
+    const ownerId = this.liveOwners.get(liveKey(target))?.sessionId
+    if (ownerId !== undefined && ownerId !== session.id) {
+      throw new BrowserRuntimeError('cross-Session page transfer is not supported', 'BROWSER_TRANSFER_UNSUPPORTED')
     }
-    if (!ownsTarget(this.snapshot(session), target)) {
+    if (ownerId !== session.id) {
       throw new BrowserRuntimeError('browser target is not owned by this Session', 'BROWSER_SESSION_MISMATCH')
     }
   }
@@ -472,11 +491,12 @@ export class BrowserWorkspaceBinder extends TypertRemoteService {
     return session
   }
 
-  /** Record a newly created tab on the owning Session. */
+  /** Record a newly created tab as this Session's live Runtime owner and display row. */
   private adopt(
     session: Session,
     page: BrowserPageState,
   ): void {
+    this.liveOwners.set(liveKey(page.target), { sessionId: session.id, target: page.target })
     const current = this.snapshot(session)
     this.commit(session, adoptTarget(current, page.target, page.revision, page.url))
   }
@@ -488,7 +508,8 @@ export class BrowserWorkspaceBinder extends TypertRemoteService {
    */
   private syncRuntimeState(state: BrowserRuntimeState): void {
     if (state.status === 'closed') return
-    const session = this.ctx.sessions.list().find(item => ownsTarget(this.snapshot(item), state.target))
+    const ownerId = this.liveOwners.get(liveKey(state.target))?.sessionId
+    const session = ownerId === undefined ? undefined : this.ctx.sessions.get(ownerId)
     if (session === undefined) return
     if (state.status === 'open') this.recordPage(session, state)
     else this.recordRevision(session, state.target, state.revision)
@@ -518,8 +539,42 @@ export class BrowserWorkspaceBinder extends TypertRemoteService {
 
   /** Drop a closed tab from the Session Workspace. */
   private forget(session: Session, target: BrowserTarget): void {
+    if (this.liveOwners.get(liveKey(target))?.sessionId === session.id) this.dropLive(target)
     const current = this.snapshot(session)
     this.commit(session, forgetTarget(current, target))
+  }
+
+  /** Targets this Session adopted in this Binder process. */
+  private liveTargetsOf(sessionId: SessionId): BrowserTarget[] {
+    const targets: BrowserTarget[] = []
+    for (const entry of this.liveOwners.values()) {
+      if (entry.sessionId === sessionId) targets.push(entry.target)
+    }
+    return targets
+  }
+
+  /** Forget process-local live authority for one target. */
+  private dropLive(target: BrowserTarget): void {
+    this.liveOwners.delete(liveKey(target))
+  }
+
+  /**
+   * Rebuild live owners from targets this Session introduced after its
+   * inherited prefix. A later whole snapshot that still lists an inherited tab
+   * is display metadata, not adopt. Two Sessions that both introduced the same
+   * remaining tab fail loudly.
+   */
+  private restoreLiveOwners(): void {
+    for (const session of this.ctx.sessions.list()) {
+      for (const target of introducedTargets(session)) {
+        const key = liveKey(target)
+        const existing = this.liveOwners.get(key)
+        if (existing !== undefined && existing.sessionId !== session.id) {
+          throw new BrowserRuntimeError('cross-Session page transfer is not supported', 'BROWSER_TRANSFER_UNSUPPORTED')
+        }
+        this.liveOwners.set(key, { sessionId: session.id, target })
+      }
+    }
   }
 
   /** Append one whole-value Workspace snapshot when it differs. */
@@ -532,19 +587,18 @@ export class BrowserWorkspaceBinder extends TypertRemoteService {
   }
 }
 
-/** Whether one snapshot already names the complete target. */
-function ownsTarget(snapshot: BrowserWorkspaceProjection, target: BrowserTarget): boolean {
-  const workspace = snapshot.workspaces.find(item => item.workspaceId === target.workspaceId)
-  if (workspace === undefined || workspace.profileId !== target.profileId) return false
-  const browser = workspace.browsers.find(item => item.browserId === target.browserId)
-  return browser?.tabs.some(tab => tab.tabId === target.tabId) === true
+/** Process-local key for one Runtime target. */
+function liveKey(target: BrowserTarget): string {
+  return `${target.profileId}\0${target.workspaceId}\0${target.browserId}\0${target.tabId}`
 }
 
-/** Whether one snapshot already owns the Workspace or instance named by attach. */
-function ownsAttach(snapshot: BrowserWorkspaceProjection, attach: BrowserCreateAttach): boolean {
-  const workspace = snapshot.workspaces.find(item => item.workspaceId === attach.workspaceId)
-  if (workspace === undefined) return false
-  return attach.kind === 'workspace' || workspace.browsers.some(browser => browser.browserId === attach.browserId)
+/** Targets this Session added after the inherited prefix and still listed. */
+function introducedTargets(session: Session): BrowserTarget[] {
+  const inherited = new Set(listBrowserWorkspacePages(
+    foldBrowserWorkspace(session.snapshotEvents(SessionLogOffset(0), session.inheritedEventCount)),
+  ).map(page => liveKey(page.target)))
+  const current = listBrowserWorkspacePages(foldBrowserWorkspace(session.snapshotEvents()))
+  return current.map(page => page.target).filter(target => !inherited.has(liveKey(target)))
 }
 
 /** Add one target to the Session snapshot, creating Workspace and instance rows as needed. */
@@ -576,11 +630,18 @@ function adoptTarget(
     browser = { browserId: target.browserId, tabs: [], activeTabId: target.tabId }
     workspace.browsers.push(browser)
   }
-  browser.tabs.push({
-    tabId: target.tabId,
-    revision,
-    ...(url === undefined || url === 'about:blank' ? {} : { url }),
-  })
+  const existing = browser.tabs.find(tab => tab.tabId === target.tabId)
+  if (existing === undefined) {
+    browser.tabs.push({
+      tabId: target.tabId,
+      revision,
+      ...(url === undefined || url === 'about:blank' ? {} : { url }),
+    })
+  } else {
+    browser.tabs = browser.tabs.map(tab => (
+      tab.tabId === target.tabId ? tabWithFacts(tab, revision, url) : tab
+    ))
+  }
   workspace.activeBrowserId = target.browserId
   browser.activeTabId = target.tabId
   return {

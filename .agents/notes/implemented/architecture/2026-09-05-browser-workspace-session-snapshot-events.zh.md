@@ -10,7 +10,7 @@ Browser Workspace 曾从 Typert 诊断拒绝的实时 `Session.events` 数组重
 
 ## 决定
 
-Binder 折叠 `Session.snapshotEvents()` 得到后写覆盖的 Workspace，包含 fork 继承前缀。这是原有的 Session 持有后写覆盖规则：子 Session 在写入自己的快照之前，从完整日志重建继承的 Workspace。live Runtime 动词拒绝当前被多于一个 live Session 持有的 target，因此继承持久所有权不会转移 live 页面。`foldBrowserWorkspace` 的可选 `end` 仍是所供事件数组的排他下标，不是 `SessionSeq`。最终 `session.append('browser/workspace', snapshot, { ignorable: true })` 把仅日志事件标记为未知类型读取方可跳过。不变式伴生校验每条 `snapshotEvents()` 记录，并继续忽略无关类型，包括未挂载伴生时的未知可忽略事件。
+Binder 折叠 `Session.snapshotEvents()` 得到后写覆盖的 Workspace，包含 fork 继承前缀。该重建只用于历史展示。live Runtime 授权属于本 Binder 进程中 `adopt` 该标签页的 Session，并在 Binder HMR 后从每个 live Session 在继承前缀之后新引入、且仍列出的 target 重建。之后的整份快照仍列出继承标签页只是展示元数据，不是 adopt。两个 Session 都新引入同一仍存在的标签页时会显式失败。Browser Runtime 的 create 与 `browser/runtime-state` 事件不带 Session id。操作、attach、cleanup 与释放只关闭已 adopt 的标签页。子会话离开 store 不会关闭父会话的 live target。`foldBrowserWorkspace` 的可选 `end` 仍是所供事件数组的排他下标，不是 `SessionSeq`。最终 `session.append('browser/workspace', snapshot, { ignorable: true })` 把仅日志事件标记为未知类型读取方可跳过。不变式伴生校验每条 `snapshotEvents()` 记录，并继续忽略无关类型，包括未挂载伴生时的未知可忽略事件。
 
 ## 曾考虑的替代方案
 
@@ -24,4 +24,4 @@ Binder 折叠 `Session.snapshotEvents()` 得到后写覆盖的 Workspace，包�
 
 ## 影响
 
-未知类型读取方可跳过 Browser Workspace 快照。挂载 Binder 的读取方仍从冻结 snapshot API 折叠后写覆盖状态。fork 后的 Session 通过 `snapshot(child)` 重建继承的 Workspace 所有权；父会话与子会话同时 live 时，Runtime 动词拒绝该共享 target。
+未知类型读取方可跳过 Browser Workspace 快照。挂载 Binder 的读取方仍从冻结 snapshot API 折叠后写覆盖状态。fork 后的 Session 通过 `snapshot(child)` 重建继承的 Workspace 展示，创建该标签页的 Session 在 forget、cleanup 或离开 store 之前保持 live Runtime 动词。Binder HMR 从每个 Session 继承前缀之后新引入的 target 恢复该 live 映射，不把继承快照授予子会话操作权。

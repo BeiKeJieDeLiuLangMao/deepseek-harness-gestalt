@@ -233,24 +233,240 @@ describe('Session-owned Browser Workspace', () => {
     expect(listBrowserWorkspacePages(null)).toEqual([])
   })
 
-  it('lets a forked Session reconstruct inherited Workspace ownership without transferring the live page', async () => {
+  it('lets a forked Session reconstruct inherited Workspace ownership from the parent prefix', async () => {
     const ctx = await harness()
     const parent = ctx.sessions.create(SessionId('session-fork-parent'))
     const created = await ctx.browserWorkspace.create({ session: parent, profile: 'temporary' })
     parent.append('turn/start', { turn: 1 })
     parent.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    const parentSnapshot = ctx.browserWorkspace.snapshot(parent)
     const child = ctx.sessions.fork(parent, parent.snapshotEvents().at(-1)!.seq, SessionId('session-fork-child'))
-    expect(ctx.browserWorkspace.snapshot(child)).toEqual(ctx.browserWorkspace.snapshot(parent))
+    expect(ctx.browserWorkspace.snapshot(parent)).toEqual(parentSnapshot)
+    expect(ctx.browserWorkspace.snapshot(child)).toEqual(parentSnapshot)
+    expect(listBrowserWorkspacePages(ctx.browserWorkspace.snapshot(child)).map(page => page.target))
+      .toEqual([created.target])
+    expect(child.ownEvents().some(event => event.type === 'browser/workspace')).toBe(false)
+  })
+
+  it('keeps parent live Runtime authority after a child inherits the Workspace snapshot', async () => {
+    const ctx = await harness()
+    const parent = ctx.sessions.create(SessionId('session-fork-parent-live'))
+    const created = await ctx.browserWorkspace.create({ session: parent, profile: 'temporary' })
+    parent.append('turn/start', { turn: 1 })
+    parent.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    const child = ctx.sessions.fork(parent, parent.snapshotEvents().at(-1)!.seq, SessionId('session-fork-child-live'))
     await expect(ctx.browserWorkspace.observe({ session: parent, target: created.target }))
-      .rejects.toMatchObject({ code: 'BROWSER_TRANSFER_UNSUPPORTED' })
+      .resolves.toMatchObject({ status: 'open', target: created.target })
+    await expect(ctx.browserWorkspace.navigate({
+      session: parent,
+      target: created.target,
+      expectedRevision: created.revision,
+      url: 'https://alpha.test/',
+    })).resolves.toMatchObject({ status: 'open', target: created.target })
     await expect(ctx.browserWorkspace.observe({ session: child, target: created.target }))
       .rejects.toMatchObject({ code: 'BROWSER_TRANSFER_UNSUPPORTED' })
     await expect(ctx.browserWorkspace.navigate({
       session: child,
       target: created.target,
       expectedRevision: created.revision,
-      url: 'https://alpha.test/',
+      url: 'https://beta.test/',
     })).rejects.toMatchObject({ code: 'BROWSER_TRANSFER_UNSUPPORTED' })
+    await expect(ctx.browserWorkspace.create({
+      session: child,
+      profile: 'temporary',
+      attach: { kind: 'browser', workspaceId: created.target.workspaceId, browserId: created.target.browserId },
+    })).rejects.toMatchObject({ code: 'BROWSER_TRANSFER_UNSUPPORTED' })
+    const stranger = ctx.sessions.create(SessionId('session-fork-stranger'))
+    await expect(ctx.browserWorkspace.observe({ session: stranger, target: created.target }))
+      .rejects.toMatchObject({ code: 'BROWSER_TRANSFER_UNSUPPORTED' })
+    const closed = await ctx.browserWorkspace.close({
+      session: parent,
+      target: created.target,
+      expectedRevision: 1,
+    })
+    expect(closed.status).toBe('closed')
+    await expect(ctx.browserRuntime.observe({ target: created.target }))
+      .resolves.toMatchObject({ status: 'closed' })
+    expect(listBrowserWorkspacePages(ctx.browserWorkspace.snapshot(child)).map(page => page.target))
+      .toEqual([created.target])
+  })
+
+  it('does not let a child Session close the parent live target on dispose or cleanup', async () => {
+    const ctx = await harness()
+    const parent = ctx.sessions.create(SessionId('session-fork-parent-cleanup'))
+    const created = await ctx.browserWorkspace.create({ session: parent, profile: 'temporary' })
+    parent.append('turn/start', { turn: 1 })
+    parent.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    const child = ctx.sessions.prepare(SessionId('session-fork-child-cleanup'), {
+      seed: parent.snapshotEvents(),
+      inheritedEventCount: parent.seq,
+      meta: { parentSession: parent.id, isSeeded: true },
+    })
+    const detachChild = ctx.sessions.enter(child)
+    ctx.sessions.announce(child)
+    expect(ctx.browserWorkspace.snapshot(child)).toEqual(ctx.browserWorkspace.snapshot(parent))
+    await ctx.browserWorkspace.cleanup(child)
+    await expect(ctx.browserRuntime.observe({ target: created.target }))
+      .resolves.toMatchObject({ status: 'open', target: created.target })
+    await expect(ctx.browserWorkspace.observe({ session: parent, target: created.target }))
+      .resolves.toMatchObject({ status: 'open', target: created.target })
+    detachChild()
+    await expect.poll(() => ctx.browserRuntime.observe({ target: created.target }))
+      .toMatchObject({ status: 'open', target: created.target })
+  })
+
+  it('closes parent live tabs on parent dispose without giving the child Runtime authority', async () => {
+    const ctx = await harness()
+    const parent = ctx.sessions.prepare(SessionId('session-fork-parent-dispose'))
+    const detachParent = ctx.sessions.enter(parent)
+    ctx.sessions.announce(parent)
+    const created = await ctx.browserWorkspace.create({ session: parent, profile: 'temporary' })
+    parent.append('turn/start', { turn: 1 })
+    parent.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    const child = ctx.sessions.create(SessionId('session-fork-child-dispose'), {
+      seed: parent.snapshotEvents(),
+      inheritedEventCount: parent.seq,
+      meta: { parentSession: parent.id, isSeeded: true },
+    })
+    detachParent()
+    await expect.poll(() => ctx.browserRuntime.observe({ target: created.target })).toMatchObject({ status: 'closed' })
+    await expect(ctx.browserWorkspace.observe({ session: child, target: created.target }))
+      .rejects.toMatchObject({ code: 'BROWSER_SESSION_MISMATCH' })
+    await expect(ctx.browserWorkspace.create({
+      session: child,
+      profile: 'temporary',
+      attach: { kind: 'workspace', workspaceId: created.target.workspaceId },
+    })).rejects.toMatchObject({ code: 'BROWSER_SESSION_MISMATCH' })
+  })
+
+  it('restores display after Binder reconstruction without inventing a live owner', async () => {
+    const before = await harness()
+    const parent = before.sessions.create(SessionId('session-fork-parent-restart'))
+    const created = await before.browserWorkspace.create({ session: parent, profile: 'temporary' })
+    parent.append('turn/start', { turn: 1 })
+    parent.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    const child = before.sessions.fork(parent, parent.snapshotEvents().at(-1)!.seq, SessionId('session-fork-child-restart'))
+    const after = await harness()
+    const restoredParent = after.sessions.create(SessionId('session-fork-parent-restart'), {
+      seed: parent.snapshotEvents(),
+    })
+    const restoredChild = after.sessions.create(SessionId('session-fork-child-restart'), {
+      seed: child.snapshotEvents(),
+      inheritedEventCount: child.inheritedEventCount,
+      meta: { parentSession: parent.id, isSeeded: true },
+    })
+    expect(listBrowserWorkspacePages(after.browserWorkspace.snapshot(restoredParent)).map(page => page.target))
+      .toEqual([created.target])
+    expect(listBrowserWorkspacePages(after.browserWorkspace.snapshot(restoredChild)).map(page => page.target))
+      .toEqual([created.target])
+    await expect(after.browserWorkspace.observe({ session: restoredParent, target: created.target }))
+      .rejects.toMatchObject({ code: 'BROWSER_SESSION_MISMATCH' })
+    await expect(after.browserWorkspace.observe({ session: restoredChild, target: created.target }))
+      .rejects.toMatchObject({ code: 'BROWSER_SESSION_MISMATCH' })
+    const recreated = await after.browserWorkspace.create({ session: restoredParent, profile: 'temporary' })
+    await expect(after.browserWorkspace.observe({ session: restoredParent, target: recreated.target }))
+      .resolves.toMatchObject({ status: 'open', target: recreated.target })
+    await expect(after.browserWorkspace.observe({ session: restoredChild, target: recreated.target }))
+      .rejects.toMatchObject({ code: 'BROWSER_TRANSFER_UNSUPPORTED' })
+  })
+
+  it('restores live owners from this Session ownEvents after Binder HMR while Runtime pages remain', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(SessionProjectionRegistry)
+    await ctx.plugin(BrowserRuntimeDeterministic, { idPrefix: 'space', pages: PAGES })
+    const fiber = await ctx.plugin(BrowserWorkspaceBinder)
+    const parent = ctx.sessions.create(SessionId('session-hmr-parent'))
+    const created = await ctx.browserWorkspace.create({
+      session: parent,
+      profile: 'persistent',
+      name: BrowserProfileName('work'),
+    })
+    parent.append('turn/start', { turn: 1 })
+    parent.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    const child = ctx.sessions.fork(parent, parent.snapshotEvents().at(-1)!.seq, SessionId('session-hmr-child'))
+    await fiber.dispose()
+    await ctx.plugin(BrowserWorkspaceBinder)
+    await expect(ctx.browserRuntime.observe({ target: created.target }))
+      .resolves.toMatchObject({ status: 'open', target: created.target })
+    await expect(ctx.browserWorkspace.observe({ session: parent, target: created.target }))
+      .resolves.toMatchObject({ status: 'open', target: created.target })
+    await expect(ctx.browserWorkspace.observe({ session: child, target: created.target }))
+      .rejects.toMatchObject({ code: 'BROWSER_TRANSFER_UNSUPPORTED' })
+    const extra = await ctx.browserWorkspace.create({
+      session: parent,
+      profile: 'persistent',
+      name: BrowserProfileName('work'),
+    })
+    expect(extra.target.browserId).toBe(created.target.browserId)
+    expect(extra.target.tabId).not.toBe(created.target.tabId)
+    await expect(ctx.browserWorkspace.observe({ session: parent, target: extra.target }))
+      .resolves.toMatchObject({ status: 'open', target: extra.target })
+    await expect(ctx.browserWorkspace.observe({ session: child, target: extra.target }))
+      .rejects.toMatchObject({ code: 'BROWSER_TRANSFER_UNSUPPORTED' })
+    ctx.emit('browser/runtime-state', {
+      status: 'unavailable',
+      target: created.target,
+      revision: created.revision + 1,
+      reason: 'crashed',
+      reconnecting: true,
+    })
+    expect(ctx.browserWorkspace.snapshot(parent).workspaces[0]?.browsers[0]?.tabs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ tabId: created.target.tabId, revision: created.revision + 1 }),
+      ]),
+    )
+    expect(listBrowserWorkspacePages(ctx.browserWorkspace.snapshot(child))[0]?.revision)
+      .toBe(created.revision)
+  })
+
+  it('does not treat a child last-wins snapshot as adopt of inherited parent tabs after Binder HMR', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(SessionProjectionRegistry)
+    await ctx.plugin(BrowserRuntimeDeterministic, { idPrefix: 'space', pages: PAGES })
+    const fiber = await ctx.plugin(BrowserWorkspaceBinder)
+    const parent = ctx.sessions.create(SessionId('session-hmr-diff-parent'))
+    const parentTab = await ctx.browserWorkspace.create({ session: parent, profile: 'temporary' })
+    parent.append('turn/start', { turn: 1 })
+    parent.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    const child = ctx.sessions.fork(parent, parent.snapshotEvents().at(-1)!.seq, SessionId('session-hmr-diff-child'))
+    const childTab = await ctx.browserWorkspace.create({ session: child, profile: 'temporary' })
+    expect(foldBrowserWorkspace(child.ownEvents()).workspaces.some(workspace => (
+      workspace.browsers.some(browser => browser.tabs.some(tab => tab.tabId === parentTab.target.tabId))
+    ))).toBe(true)
+    await fiber.dispose()
+    await ctx.plugin(BrowserWorkspaceBinder)
+    await expect(ctx.browserWorkspace.observe({ session: parent, target: parentTab.target }))
+      .resolves.toMatchObject({ status: 'open', target: parentTab.target })
+    await expect(ctx.browserWorkspace.observe({ session: child, target: parentTab.target }))
+      .rejects.toMatchObject({ code: 'BROWSER_TRANSFER_UNSUPPORTED' })
+    await expect(ctx.browserWorkspace.observe({ session: child, target: childTab.target }))
+      .resolves.toMatchObject({ status: 'open', target: childTab.target })
+    await expect(ctx.browserWorkspace.observe({ session: parent, target: childTab.target }))
+      .rejects.toMatchObject({ code: 'BROWSER_TRANSFER_UNSUPPORTED' })
+    await ctx.browserWorkspace.cleanup(child)
+    await expect(ctx.browserRuntime.observe({ target: parentTab.target }))
+      .resolves.toMatchObject({ status: 'open', target: parentTab.target })
+    await expect(ctx.browserRuntime.observe({ target: childTab.target }))
+      .resolves.toMatchObject({ status: 'closed' })
+  })
+
+  it('refuses to invent a live owner when two Sessions ownEvents claim the same tab', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(SessionProjectionRegistry)
+    await ctx.plugin(BrowserRuntimeDeterministic, { idPrefix: 'space', pages: PAGES })
+    const fiber = await ctx.plugin(BrowserWorkspaceBinder)
+    const first = ctx.sessions.create(SessionId('session-claim-first'))
+    const created = await ctx.browserWorkspace.create({ session: first, profile: 'temporary' })
+    const second = ctx.sessions.create(SessionId('session-claim-second'))
+    second.append('browser/workspace', ctx.browserWorkspace.snapshot(first), { ignorable: true })
+    await fiber.dispose()
+    await expect(ctx.plugin(BrowserWorkspaceBinder)).rejects.toMatchObject({
+      code: 'BROWSER_TRANSFER_UNSUPPORTED',
+    })
+    expect(created.target.tabId).toBeTypeOf('string')
   })
 
   it('recreates a retained Profile after Runtime restart leaves a durable target behind', async () => {
@@ -407,24 +623,12 @@ describe('Session-owned Browser Workspace', () => {
     expect(listBrowserWorkspacePages(ctx.browserWorkspace.snapshot(releaseFailure)))
       .toEqual([{ target: releasePage.target, revision: releasePage.revision }])
 
+    const failing = ctx.sessions.create(SessionId('session-failing-cleanup'))
+    const failingPage = await ctx.browserWorkspace.create({ session: failing, profile: 'temporary' })
     ctx.browserRuntime.observe = async (request) => {
-      if (request.target.tabId === live.target.tabId) throw new Error('cleanup observe failed')
+      if (request.target.tabId === failingPage.target.tabId) throw new Error('cleanup observe failed')
       return observer(request)
     }
-    const failing = ctx.sessions.create(SessionId('session-failing-cleanup'))
-    failing.append('browser/workspace', {
-      activeWorkspaceId: live.target.workspaceId,
-      workspaces: [{
-        workspaceId: live.target.workspaceId,
-        profileId: live.target.profileId,
-        activeBrowserId: live.target.browserId,
-        browsers: [{
-          browserId: live.target.browserId,
-          activeTabId: live.target.tabId,
-          tabs: [{ tabId: live.target.tabId, revision: 0 }],
-        }],
-      }],
-    }, { ignorable: true })
     await expect(ctx.browserWorkspace.cleanup(failing))
       .rejects.toThrow('failed to close every archived Session tab')
     expect(ctx.browserWorkspace.snapshot(failing).workspaces).toHaveLength(1)
