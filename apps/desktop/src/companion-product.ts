@@ -6,6 +6,7 @@ import type {
   WorkspaceBaseline, WorkspaceFollowFrame,
 } from '@deepseek-ai/dsh-api-workspace-controller/types'
 import workspaceRemote from '@deepseek-ai/dsh-api-workspace-controller/remote'
+import sessionRemote from '@deepseek-ai/dsh-api-session-controller/remote'
 import {
   expandSessionHistoryRecords,
 } from '@deepseek-ai/dsh-api-session-controller'
@@ -1291,6 +1292,9 @@ function codePointCount(value: string): number {
 const WORKSPACE_FOLLOW_CODEC = workspaceRemote.descriptors.find(
   descriptor => descriptor.namespace === 'workspace' && descriptor.method === 'follow',
 )?.result
+const SESSION_FOLLOW_CODEC = sessionRemote.descriptors.find(
+  descriptor => descriptor.namespace === 'session' && descriptor.method === 'follow',
+)?.result
 
 class DesktopWorkspaceFollowCache {
   private value: DesktopWorkspaceSnapshot | undefined
@@ -1394,17 +1398,23 @@ function startWorkspaceFollowCache(rpc: DesktopHostRpc, signal: AbortSignal): De
   return cache
 }
 
+type DesktopHistoryFollowSnapshot = {
+  readonly maxMessages: number | undefined
+  readonly throughSeq: number
+  events: SessionWireEvent[]
+  hasMore: boolean
+}
+
+type DesktopHistoryOpening =
+  | { readonly kind: 'ready'; readonly snapshot: DesktopHistoryFollowSnapshot }
+  | { readonly kind: 'error'; readonly message: string }
+
 /** Follow/page owner for one Desktop Host generation. */
 export class DesktopSessionHistoryCache {
-  private readonly follows = new Map<string, {
-    readonly maxMessages: number | undefined
-    readonly throughSeq: number
-    events: SessionWireEvent[]
-    hasMore: boolean
-  }>()
-  private readonly waiters = new Map<string, Set<(
-    snapshot: { events: SessionWireEvent[]; hasMore: boolean } | undefined,
-  ) => void>>()
+  private readonly follows = new Map<string, DesktopHistoryFollowSnapshot>()
+  private readonly failures = new Map<string, string>()
+  private readonly waiters = new Map<string, Set<(opening: DesktopHistoryOpening | undefined) => void>>()
+  private readonly controllers = new Map<string, AbortController>()
 
   constructor(
     private readonly rpc: DesktopHostRpc,
@@ -1415,6 +1425,9 @@ export class DesktopSessionHistoryCache {
 
   clear(): void {
     this.follows.clear()
+    this.failures.clear()
+    for (const controller of this.controllers.values()) controller.abort()
+    this.controllers.clear()
     for (const pending of this.waiters.values()) {
       for (const waiter of pending) waiter(undefined)
     }
@@ -1427,32 +1440,25 @@ export class DesktopSessionHistoryCache {
     signal?: AbortSignal,
   ): Promise<DesktopHostRpcResult> {
     if (this.signal.aborted || signal?.aborted) {
-      return {
-        ok: false,
-        failure: {
-          kind: 'wire',
-          code: 'HOST_WIRE_INVALID',
-          message: 'Desktop Host session follow snapshot is still loading',
-        },
-      }
+      return historyLoadingFailure()
     }
     const opening = await this.opening(sessionId, request.maxMessages, signal)
-    if (opening === undefined) {
+    if (opening === undefined) return historyLoadingFailure()
+    if (opening.kind === 'error') {
       return {
         ok: false,
-        failure: {
-          kind: 'wire',
-          code: 'HOST_WIRE_INVALID',
-          message: 'Desktop Host session follow snapshot is still loading',
-        },
+        failure: { kind: 'wire', code: 'HOST_WIRE_INVALID', message: opening.message },
       }
     }
     if (request.beforeSeq === undefined) {
-      return { ok: true, value: conversationHistoryValue(opening.events, opening.hasMore) }
+      return {
+        ok: true,
+        value: conversationHistoryValue(opening.snapshot.events, opening.snapshot.hasMore),
+      }
     }
     const paged = await pageDesktopHostSession(this.rpc, {
       sessionId,
-      throughSeq: opening.throughSeq,
+      throughSeq: opening.snapshot.throughSeq,
       beforeSeq: request.beforeSeq,
       ...request.maxMessages === undefined ? {} : { maxMessages: request.maxMessages },
     }, { signal })
@@ -1482,26 +1488,26 @@ export class DesktopSessionHistoryCache {
     sessionId: string,
     maxMessages: number | undefined,
     signal?: AbortSignal,
-  ): Promise<{ events: SessionWireEvent[]; hasMore: boolean; throughSeq: number } | undefined> {
+  ): Promise<DesktopHistoryOpening | undefined> {
     const key = this.followKey(sessionId, maxMessages)
     const current = this.follows.get(key)
-    if (current !== undefined) return current
+    if (current !== undefined) return { kind: 'ready', snapshot: current }
+    const failed = this.failures.get(key)
+    if (failed !== undefined) return { kind: 'error', message: failed }
     this.ensureFollow(sessionId, maxMessages)
     const ready = this.follows.get(key)
-    if (ready !== undefined) return ready
+    if (ready !== undefined) return { kind: 'ready', snapshot: ready }
+    const failedAfter = this.failures.get(key)
+    if (failedAfter !== undefined) return { kind: 'error', message: failedAfter }
     const waiters = this.waiters.get(key) ?? new Set()
     this.waiters.set(key, waiters)
     return await new Promise((resolve) => {
-      const finish = (_snapshot: { events: SessionWireEvent[]; hasMore: boolean } | undefined): void => {
+      const finish = (opening: DesktopHistoryOpening | undefined): void => {
         signal?.removeEventListener('abort', abort)
         waiters.delete(finish)
-        resolve(this.follows.get(key))
+        resolve(opening)
       }
-      const abort = (): void => {
-        signal?.removeEventListener('abort', abort)
-        waiters.delete(finish)
-        resolve(undefined)
-      }
+      const abort = (): void => { finish(undefined) }
       waiters.add(finish)
       signal?.addEventListener('abort', abort, { once: true })
       if (signal?.aborted || this.signal.aborted) abort()
@@ -1509,47 +1515,113 @@ export class DesktopSessionHistoryCache {
   }
 
   private ensureFollow(sessionId: string, maxMessages: number | undefined): void {
-    if (this.rpc.followSession === undefined) return
     const key = this.followKey(sessionId, maxMessages)
-    if (this.follows.has(key) || this.waiters.has(key)) return
-    const waiters = new Set<(snapshot: { events: SessionWireEvent[]; hasMore: boolean } | undefined) => void>()
+    if (this.follows.has(key) || this.waiters.has(key) || this.controllers.has(key)) return
+    const waiters = new Set<(opening: DesktopHistoryOpening | undefined) => void>()
     this.waiters.set(key, waiters)
-    void this.rpc.followSession(sessionId, this.signal, (frame) => {
+    const controller = new AbortController()
+    this.controllers.set(key, controller)
+    const onAbort = (): void => { controller.abort() }
+    this.signal.addEventListener('abort', onAbort, { once: true })
+    void this.rpc.followSession(sessionId, controller.signal, (frame) => {
       this.accept(key, maxMessages, frame)
-    }, maxMessages).catch(() => {
-      const pending = this.waiters.get(key)
-      this.waiters.delete(key)
-      this.follows.delete(key)
-      if (pending === undefined) return
-      for (const waiter of pending) waiter(undefined)
+    }, maxMessages).then(() => {
+      if (controller.signal.aborted || this.follows.has(key) || this.failures.has(key)) return
+      this.failFollow(key, 'Desktop Host session follow ended')
+    }, (error: unknown) => {
+      this.failFollow(
+        key,
+        error instanceof Error ? error.message : 'Desktop Host session follow ended',
+      )
+    }).finally(() => {
+      this.signal.removeEventListener('abort', onAbort)
     })
   }
 
+  private failFollow(key: string, message: string): void {
+    this.follows.delete(key)
+    this.failures.set(key, message)
+    const controller = this.controllers.get(key)
+    this.controllers.delete(key)
+    if (controller !== undefined && !controller.signal.aborted) controller.abort()
+    const pending = this.waiters.get(key)
+    this.waiters.delete(key)
+    if (pending === undefined) return
+    for (const waiter of pending) waiter({ kind: 'error', message })
+  }
+
   private accept(key: string, maxMessages: number | undefined, frame: unknown): void {
-    if (!isRecord(frame) || typeof frame.type !== 'string') return
-    if (frame.type === 'snapshot') {
-      if (typeof frame.cursor !== 'number' || !Array.isArray(frame.records) || typeof frame.hasMore !== 'boolean') {
+    let decoded: { type: string; cursor?: number; records?: unknown; hasMore?: boolean; event?: unknown }
+    try {
+      decoded = decodeSessionFollowFrame(frame)
+    } catch (cause) {
+      this.failFollow(
+        key,
+        cause instanceof Error ? cause.message : 'Desktop Host session follow frame was invalid',
+      )
+      return
+    }
+    if (decoded.type === 'snapshot') {
+      if (typeof decoded.cursor !== 'number' || !Array.isArray(decoded.records)
+        || typeof decoded.hasMore !== 'boolean') {
+        this.failFollow(key, 'Desktop Host session follow snapshot was invalid')
         return
       }
-      const records = parseHistoryRecordList(frame.records)
-      if (records === undefined) return
-      const snapshot = {
+      const records = parseHistoryRecordList(decoded.records)
+      if (records === undefined) {
+        this.failFollow(key, 'Desktop Host session follow snapshot was invalid')
+        return
+      }
+      const snapshot: DesktopHistoryFollowSnapshot = {
         maxMessages,
-        throughSeq: frame.cursor,
+        throughSeq: decoded.cursor,
         events: expandSessionHistoryRecords(records),
-        hasMore: frame.hasMore,
+        hasMore: decoded.hasMore,
       }
       this.follows.set(key, snapshot)
       const pending = this.waiters.get(key)
       this.waiters.delete(key)
       if (pending !== undefined) {
-        for (const waiter of pending) waiter(snapshot)
+        for (const waiter of pending) waiter({ kind: 'ready', snapshot })
       }
       return
     }
     const current = this.follows.get(key)
-    if (current === undefined || frame.type !== 'event' || !isRecord(frame.event)) return
-    current.events = [...current.events, frame.event as SessionWireEvent]
+    if (current === undefined || decoded.type !== 'event' || !isRecord(decoded.event)) {
+      this.failFollow(key, 'Desktop Host session follow increment arrived before a snapshot')
+      return
+    }
+    current.events = [...current.events, decoded.event as SessionWireEvent]
+  }
+}
+
+function historyLoadingFailure(): DesktopHostRpcResult {
+  return {
+    ok: false,
+    failure: {
+      kind: 'wire',
+      code: 'HOST_WIRE_INVALID',
+      message: 'Desktop Host session follow snapshot is still loading',
+    },
+  }
+}
+
+function decodeSessionFollowFrame(value: unknown): {
+  type: string
+  cursor?: number
+  records?: unknown
+  hasMore?: boolean
+  event?: unknown
+} {
+  if (SESSION_FOLLOW_CODEC === undefined || SESSION_FOLLOW_CODEC.mode !== 'strict') {
+    throw new Error('Desktop Host session follow codec is unavailable')
+  }
+  return SESSION_FOLLOW_CODEC.schema.parse(value) as {
+    type: string
+    cursor?: number
+    records?: unknown
+    hasMore?: boolean
+    event?: unknown
   }
 }
 

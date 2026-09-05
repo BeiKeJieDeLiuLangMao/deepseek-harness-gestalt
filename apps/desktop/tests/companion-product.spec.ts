@@ -147,18 +147,20 @@ describe('Desktop Companion product operations', () => {
           })
           return
         }
-        accept({
-          type: 'snapshot',
-          cursor: maxMessages === 1 ? 0 : 3,
+        accept(sessionFollowSnapshot({
+          cursor: maxMessages === 1 ? 0 : 10,
           hasMore: maxMessages === 1,
           records: [{
             type: 'event',
             event: {
-              type: 'user/message', seq: maxMessages === 1 ? 0 : 3, time: 1,
+              type: 'user/message',
+              seq: maxMessages === 1 ? 0 : 10,
+              time: 1,
               data: { content: [{ type: 'text', text: String(maxMessages) }], source: { kind: 'user' } },
+              ...maxMessages === 20 ? { sourceEventSeqs: [8, 9] } : {},
             },
           }],
-        })
+        }))
         await new Promise<void>((resolve) => {
           if (signal.aborted) resolve()
           else signal.addEventListener('abort', () => resolve(), { once: true })
@@ -173,13 +175,21 @@ describe('Desktop Companion product operations', () => {
       ok: true, value: { events: [{ event: { seq: 0, data: { content: [{ text: '1' }] } } }], hasMore: true },
     })
     expect(second).toMatchObject({
-      ok: true, value: { events: [{ event: { seq: 3, data: { content: [{ text: '20' }] } } }], hasMore: false },
+      ok: true,
+      value: { events: [{ event: { seq: 10, sourceEventSeqs: [8, 9] } }], hasMore: false },
     })
-    await cache.page('session-product', { beforeSeq: 3, maxMessages: 20 })
-    expect(pages).toEqual([{
-      address: { kind: 'session', sessionId: 'session-product' },
-      throughSeq: 3, beforeSeq: 3, maxMessages: 20,
-    }])
+    await cache.page('session-product', { beforeSeq: 0, maxMessages: 1 })
+    await cache.page('session-product', { beforeSeq: 10, maxMessages: 20 })
+    expect(pages).toEqual([
+      {
+        address: { kind: 'session', sessionId: 'session-product' },
+        throughSeq: 0, beforeSeq: 0, maxMessages: 1,
+      },
+      {
+        address: { kind: 'session', sessionId: 'session-product' },
+        throughSeq: 10, beforeSeq: 10, maxMessages: 20,
+      },
+    ])
     const cancelled = new AbortController()
     const pending = cache.page('session-other', { maxMessages: 5 }, cancelled.signal)
     cancelled.abort()
@@ -191,6 +201,77 @@ describe('Desktop Companion product operations', () => {
     await expect(cache.page('session-product', { maxMessages: 20 })).resolves.toMatchObject({
       ok: false, failure: { code: 'HOST_WIRE_INVALID' },
     })
+  })
+
+  it('fails closed when a session follow snapshot is invalid and keeps packed neighbors intact', async () => {
+    const generation = new AbortController()
+    let invalidAccepts = 0
+    const rpc: DesktopHostRpc = {
+      call: async () => {
+        throw new Error('invalid follow must not page')
+      },
+      followWorkspaces: async () => {},
+      followSession: async (sessionId, signal, accept, maxMessages) => {
+        if (sessionId === 'session-invalid') {
+          invalidAccepts += 1
+          accept({ type: 'snapshot', records: 'not-an-array' })
+          await new Promise<void>((resolve) => {
+            if (signal.aborted) resolve()
+            else signal.addEventListener('abort', () => resolve(), { once: true })
+          })
+          return
+        }
+        accept(sessionFollowSnapshot({
+          cursor: 14,
+          hasMore: false,
+          records: [
+            {
+              type: 'chunks',
+              event: {
+                type: 'chunkrow/text-chunks',
+                seq: 11,
+                time: 20,
+                data: { turn: 1, step: 2, index: 0, dt: [1, 2], texts: ['a', 'b', 'c'] },
+              },
+            },
+            {
+              type: 'event',
+              event: {
+                type: 'assistant/message',
+                seq: 14,
+                time: 30,
+                data: { turn: 1, step: 2 },
+                sourceEventSeqs: [11, 12, 13],
+              },
+            },
+          ],
+        }))
+        await new Promise<void>((resolve) => {
+          if (signal.aborted) resolve()
+          else signal.addEventListener('abort', () => resolve(), { once: true })
+        })
+        void maxMessages
+      },
+    }
+    const cache = new DesktopSessionHistoryCache(rpc, generation.signal)
+    await expect(cache.page('session-invalid', { maxMessages: 2 })).resolves.toMatchObject({
+      ok: false, failure: { kind: 'wire', code: 'HOST_WIRE_INVALID' },
+    })
+    expect(invalidAccepts).toBe(1)
+    const packed = await cache.page('session-packed', { maxMessages: 20 })
+    expect(packed).toMatchObject({
+      ok: true,
+      value: {
+        events: [
+          { event: { type: 'assistant/chunk', seq: 11 } },
+          { event: { type: 'assistant/chunk', seq: 12 } },
+          { event: { type: 'assistant/chunk', seq: 13 } },
+          { event: { type: 'assistant/message', seq: 14, sourceEventSeqs: [11, 12, 13] } },
+        ],
+        hasMore: false,
+      },
+    })
+    generation.abort()
   })
 
   it('rejects surface and search while the workspace follow snapshot is still loading', async () => {
@@ -918,6 +999,20 @@ function hostRpc(call: DesktopHostRpc['call'], respond?: DesktopHostRpc['respond
     call,
     ...(respond === undefined ? {} : { respond }),
     followWorkspaces: async () => {},
+    followSession: async () => {},
+  }
+}
+
+function sessionFollowSnapshot(value: {
+  cursor: number
+  hasMore: boolean
+  records: unknown[]
+}): unknown {
+  return {
+    type: 'snapshot',
+    header: { version: 0, id: 'session-product', createdAt: 1 },
+    projections: { asOfSeq: value.cursor, values: {} },
+    ...value,
   }
 }
 

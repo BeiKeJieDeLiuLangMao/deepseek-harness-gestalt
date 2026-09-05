@@ -62,7 +62,7 @@ export interface DesktopHostRpc {
    * Follow generated Gateway `session/follow` on `/api/remote.mux`.
    * Cookie is sent only to the bootstrap origin. Abort sends mux `cancel`.
    */
-  followSession?(
+  followSession(
     sessionId: string,
     signal: AbortSignal,
     accept: (frame: unknown) => void,
