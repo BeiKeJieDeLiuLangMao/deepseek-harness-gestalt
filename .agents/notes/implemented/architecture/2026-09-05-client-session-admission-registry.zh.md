@@ -14,7 +14,7 @@ Status: implemented
 
 `SessionManager` 把实时解析器传入每个 `Session`。prompt、cancel、queue 变更与 command 在调用时咨询该解析器，因此延迟注册、替换与撤销作用于已有 binding。匹配的 adapter 从 `binding.session` 调用；未命中的 Session 仍走库存 Remote。命中后返回失败或抛错绝不会回退到库存 Host Remote，包括 Session 已有 catalog subagent 地址时的 `subagents.prompt` 与 `subagents.interruptByParent`。命中后省略 `updateQueue` 或 `command` 会失败并报错。command 绝不会转成 prompt。未命中的普通 Session 仍走库存 Remote，也包括这些 subagent 路由。注册不授予 Host 权限；标题与 catalog subagent 地址都不是凭证。
 
-`commandCatalogSessionId` 与 `skillCatalogSessionId` 仍只是 lookup helper。省略它们会为功能自有 Session 隐藏对应 catalog。没有功能路由、仅被 catalog 定址的 subagent 也会隐藏 command 与 skill。`modelRoute` 为普通 Session 与 catalog 定址 Session 提供 Host `session.modelCatalog` 与 `session.selectModel`。已注册的 admission helper 会替换该库存路由，包括显式 undefined 在撤销前隐藏选择器。未知身份保持不可用。`historyScope` 已声明但未被读取。本切片不注册 Side Chat 产品 adapter。
+`commandCatalogSessionId` 与 `skillCatalogSessionId` 仍只是 lookup helper。省略它们会为功能自有 Session 隐藏对应 catalog。没有功能路由、仅被 catalog 定址的 subagent 也会隐藏 command 与 skill。`modelRoute` 为普通已列出 Session 提供 Host `session.modelCatalog` 与 `session.selectModel`。catalog 定址与 `origin: 'subagent'` 身份保持隐藏，因为 Host `session.selectModel` 拒绝它们（`session/agent-busy`）；本 Client 不改派到父会话。admission 拥有 `modelRoute` 字段时替换库存，包括显式 undefined 隐藏；省略该字段不是隐藏。`ui-model-selection` 把该可用性发到 directory store，并通过 `subscribeAdmission` 刷新。未知身份保持不可用。`historyScope` 已声明但未被读取。本切片不注册 Side Chat 产品 adapter。
 
 ## Alternatives considered
 
@@ -32,4 +32,4 @@ Status: implemented
 
 ## Testing
 
-`packages/api/session-controller/tests/session-admission.client.spec.ts` 固定临时身份首次 prompt、普通 Remote 保留、延迟注册、替换 disposer、reject 冲突、无回退失败（含 queue 与 command 抛错）、command 隔离、经 `binding.session` 的 adapter `handles` 分派且未命中仍走库存 Remote、有无 admission 时 catalog 定址 subagent 的库存路由、标题/地址非授权、销毁、lookup-only command/skill helper，以及库存 `modelRoute` 的 catalog 与 select（含 admission 优先与撤销恢复）。`packages/client/ui-model-selection/tests/model-directory.client.spec.ts` 经实时 `ClientSessions.modelRoute` 驱动 `ModelDirectory` 的 load 与 select。`packages/client/ui-model-selection/tests/browser-plugin.client.spec.ts` 固定 `/model` 经同一 helper 的可用性。`queue-store.client.spec.ts` 固定经注入准入解析器的 queue 变更。
+`packages/api/session-controller/tests/session-admission.client.spec.ts` 固定同一套分派用例、普通 Session 的库存 `modelRoute`、catalog child 在功能路由打开前隐藏、omit 与显式 undefined 的区别，以及不对 subagent 身份调用 `session.selectModel`。`packages/client/ui-model-selection/tests/model-directory.client.spec.ts` 经 `subscribeAdmission` 驱动 `ModelDirectory` 的 load、select 与 live hide。`packages/client/ui-model-selection/tests/model-select.client.spec.tsx` 在 directory store 发布 `available: false` 时隐藏 composer 控件。`queue-store.client.spec.ts` 固定经注入准入解析器的 queue 变更。

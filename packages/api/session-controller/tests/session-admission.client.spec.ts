@@ -602,7 +602,7 @@ describe('Session Client admission dispatch', () => {
     expect(svc.resolveAdmission(childId)).toBeUndefined()
     expect(svc.commandCatalogSessionId(childId)).toBeUndefined()
     expect(svc.skillCatalogSessionId(childId)).toBeUndefined()
-    expect(svc.modelRoute(childId)).toBeDefined()
+    expect(svc.modelRoute(childId)).toBeUndefined()
 
     await child.session.prompt([{ type: 'text', text: 'not a credential' }], 'queue')
     await child.session.cancel()
@@ -752,14 +752,27 @@ describe('Session Client admission dispatch', () => {
       model: 'fixture',
     }])
 
-    const childStock = svc.modelRoute(childId)
-    expect(childStock).toBeDefined()
-    await childStock!.selectModel!({ provider: 'fixture', model: 'child' })
-    expect(api.callsOf('session.selectModel').at(-1)).toEqual({
-      sessionId: childId,
+    expect(svc.modelRoute(childId)).toBeUndefined()
+    expect(api.callsOf('session.selectModel')).toEqual([{
+      sessionId,
       provider: 'fixture',
-      model: 'child',
+      model: 'fixture',
+    }])
+
+    const childSelect = vi.fn(() => Promise.resolve(ok({ selected: { provider: 'owned', model: 'child' } })))
+    const dropChild = svc.registerAdmission(childId, {
+      prompt: vi.fn(() => Promise.resolve(ok({ accepted: true as const }))),
+      cancel: vi.fn(() => Promise.resolve(ok({ accepted: true as const }))),
+      modelRoute: () => ({
+        models: () => Promise.resolve(ok({ groups: [] })),
+        selectModel: childSelect,
+      }),
     })
+    await svc.modelRoute(childId)!.selectModel!({ provider: 'owned', model: 'child' })
+    expect(childSelect).toHaveBeenCalledTimes(1)
+    expect(api.callsOf('session.selectModel')).toHaveLength(1)
+    dropChild()
+    expect(svc.modelRoute(childId)).toBeUndefined()
 
     expect(svc.modelRoute(sid('ghost'))).toBeUndefined()
 
@@ -773,7 +786,7 @@ describe('Session Client admission dispatch', () => {
     expect(svc.modelRoute(sessionId)?.models).toBe(admissionModels)
     await svc.modelRoute(sessionId)!.selectModel!({ provider: 'owned', model: 'm' })
     expect(admissionSelect).toHaveBeenCalledTimes(1)
-    expect(api.callsOf('session.selectModel')).toHaveLength(2)
+    expect(api.callsOf('session.selectModel')).toHaveLength(1)
 
     const hide = svc.registerAdmission(sessionId, {
       prompt: vi.fn(() => Promise.resolve(ok({ accepted: true as const }))),
@@ -796,5 +809,37 @@ describe('Session Client admission dispatch', () => {
     const rejected = await svc.modelRoute(sessionId)!.selectModel!({ provider: 'missing', model: 'nope' })
     expect(rejected.ok).toBe(false)
     expect(rejected.error.code).toBe('session/model-unroutable')
+  })
+
+  it('omits modelRoute without hiding stock, unlike an explicit undefined hide', async () => {
+    const { svc, api } = bench()
+    const sessionId = sid('session-omit-model')
+    api.onList = () => Promise.resolve(ok({
+      items: [{ sessionId, updatedAt: 100, running: false, blank: false }],
+    }))
+    await svc.refresh()
+    expect(svc.modelRoute(sessionId)?.selectModel).toBeTypeOf('function')
+
+    const dropOmit = svc.registerAdmission(sessionId, {
+      prompt: vi.fn(() => Promise.resolve(ok({ accepted: true as const }))),
+      cancel: vi.fn(() => Promise.resolve(ok({ accepted: true as const }))),
+    })
+    expect(svc.modelRoute(sessionId)?.selectModel).toBeTypeOf('function')
+    await svc.modelRoute(sessionId)!.selectModel!({ provider: 'fixture', model: 'omit' })
+    expect(api.callsOf('session.selectModel')).toEqual([{
+      sessionId,
+      provider: 'fixture',
+      model: 'omit',
+    }])
+    dropOmit()
+
+    const dropHide = svc.registerAdmission(sessionId, {
+      prompt: vi.fn(() => Promise.resolve(ok({ accepted: true as const }))),
+      cancel: vi.fn(() => Promise.resolve(ok({ accepted: true as const }))),
+      modelRoute: () => undefined,
+    })
+    expect(svc.modelRoute(sessionId)).toBeUndefined()
+    dropHide()
+    expect(svc.modelRoute(sessionId)?.selectModel).toBeTypeOf('function')
   })
 })

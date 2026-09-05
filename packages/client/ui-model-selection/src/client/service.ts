@@ -78,6 +78,7 @@ export class ModelDirectoryResolver extends Service {
       () => sessions.modelRoute(sessionId),
       this.catalog,
       binding.session.projections.faceOf('modelSelection'),
+      listener => sessions.subscribeAdmission(listener),
     )
     live.directories.set(sessionId, directory)
     // The composer cannot read this plugin (the dependency runs one way), so

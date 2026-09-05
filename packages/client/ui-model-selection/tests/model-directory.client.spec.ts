@@ -87,4 +87,39 @@ describe('ModelDirectory over ClientSessions.modelRoute', () => {
     await directory.select({ provider: 'fixture', model: 'fixture' })
     expect(api.callsOf('session.selectModel')).toHaveLength(2)
   })
+
+  it('refuses select after a live explicit modelRoute hide', async () => {
+    const ctx = new Context()
+    const api = new FakeApiClient()
+    const remotes = fakeRemote(api)
+    remotes.session.modelCatalog = () => Promise.resolve(ok(CATALOG))
+    const svc = new ClientSessions(ctx, remotes)
+    const sessionId = sid('session-live-hide')
+    api.onList = () => Promise.resolve(ok({
+      items: [{ sessionId, updatedAt: 100, running: false, blank: false }],
+    }))
+    await svc.refresh()
+    const binding = svc.binding(sessionId)!
+    binding.session.projections.apply('modelSelection', { lastUsed: null, next: null }, SessionSeq(1))
+    const catalog = new ModelCatalogDirectory({ remote: { session: remotes.session } } as never)
+    const directory = new ModelDirectory(
+      () => svc.modelRoute(sessionId),
+      catalog,
+      binding.session.projections.faceOf('modelSelection'),
+      listener => svc.subscribeAdmission(listener),
+    )
+    await directory.load()
+    expect(directory.store.getSnapshot().available).toBe(true)
+    const drop = svc.registerAdmission(sessionId, {
+      prompt: vi.fn(() => Promise.resolve(ok({ accepted: true as const }))),
+      cancel: vi.fn(() => Promise.resolve(ok({ accepted: true as const }))),
+      modelRoute: () => undefined,
+    })
+    expect(directory.store.getSnapshot().available).toBe(false)
+    await expect(directory.select({ provider: 'fixture', model: 'fixture' }))
+      .rejects.toThrow(/unavailable for this session/)
+    expect(api.callsOf('session.selectModel')).toEqual([])
+    drop()
+    expect(directory.store.getSnapshot().available).toBe(true)
+  })
 })

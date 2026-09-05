@@ -105,8 +105,10 @@ export interface SessionAdmissionRoute {
 
   /**
    * Route model inspection and selection for this Session.
-   * When present, this helper replaces the stock Host catalog route, including
-   * an explicit undefined that hides the selector until detach.
+   * Owning this field replaces stock, including an explicit undefined that
+   * hides the selector until detach. Omitting the field is not a hide: an
+   * ordinary listed Session keeps the stock Host catalog, and a catalog child
+   * stays hidden because Host `session.selectModel` refuses subagent origin.
    * @param sessionId - target Session identity.
    * @returns the feature route, or undefined when model selection stays hidden.
    */

@@ -14,6 +14,8 @@ import type { ModelCatalogDirectory } from './catalog.ts'
 
 /** Directory snapshot both entries render from. */
 export interface ModelDirectoryState {
+  /** Live `sessions.modelRoute` presence; late hide must refuse select. */
+  available: boolean
   /** Effective selection: durable next-request projection, then Host default. */
   current: ModelSelection | null
   /**
@@ -38,7 +40,7 @@ export interface ModelDirectoryState {
 export class ModelDirectory {
   /** The shared snapshot both entries render from (uSES-safe store). */
   readonly store: SnapshotStore<ModelDirectoryState> = createSnapshotStore<ModelDirectoryState>({
-    current: null, routable: null, groups: [], failures: [], status: 'idle', error: null,
+    available: false, current: null, routable: null, groups: [], failures: [], status: 'idle', error: null,
   })
 
   /** Latest selection operation wins; an older response never overwrites a newer one. */
@@ -47,19 +49,23 @@ export class ModelDirectory {
   private resolved = false
   private readonly unsubscribeCatalog: () => void
   private readonly unsubscribeSelection: () => void
+  private readonly unsubscribeAdmission: () => void
 
   /**
    * @param routeOf - live `sessions.modelRoute` for this identity.
    * @param catalog - Host-generation catalog shared by every Session.
    * @param projected - durable model selection projected from Session history.
+   * @param subscribeAdmission - admission register/replace/revoke channel.
    */
   constructor(
     private readonly routeOf: () => SessionModelRoute | undefined,
     private readonly catalog: ModelCatalogDirectory,
     private readonly projected: ObservableSnapshot<unknown>,
+    subscribeAdmission?: (listener: () => void) => () => void,
   ) {
     this.unsubscribeCatalog = catalog.store.subscribe(() => { this.syncInputs() })
     this.unsubscribeSelection = projected.subscribe(() => { this.syncInputs() })
+    this.unsubscribeAdmission = subscribeAdmission?.(() => { this.syncInputs() }) ?? (() => {})
     this.syncInputs()
   }
 
@@ -119,6 +125,7 @@ export class ModelDirectory {
     this.disposed = true
     this.unsubscribeSelection()
     this.unsubscribeCatalog()
+    this.unsubscribeAdmission()
   }
 
   private assertAvailable(): void {
@@ -129,19 +136,22 @@ export class ModelDirectory {
 
   private syncInputs(): void {
     if (this.disposed) return
+    const available = this.routeOf() !== undefined
     const catalog = this.catalog.store.getSnapshot()
     const projected = modelSelectionProjection(this.projected.getSnapshot())
     if (catalog.status !== 'ready' || catalog.value === null || projected === undefined) {
       if (this.resolved) {
-        if (catalog.status === 'error') {
-          this.store.update((state) => {
+        this.store.update((state) => {
+          state.available = available
+          if (catalog.status === 'error') {
             state.status = 'error'
             state.error = catalog.error
-          })
-        }
+          }
+        })
         return
       }
       this.store.set({
+        available,
         current: null,
         routable: null,
         groups: [],
@@ -154,6 +164,7 @@ export class ModelDirectory {
     const current = projected.next ?? catalog.value.default
     this.resolved = true
     this.store.set({
+      available,
       current,
       routable: catalog.value.routableProviders.includes(current.provider),
       groups: catalog.value.groups,

@@ -225,6 +225,8 @@ export class ClientSessions implements ISessions {
   private readonly scopes = new Map<SessionId, ScopeRecord>()
   private readonly exactAdmissions = new Map<SessionId, ExactAdmissionEntry>()
   private readonly admissionAdapters: AdapterAdmissionEntry[] = []
+  /** Listeners for live model-route availability after register/replace/revoke. */
+  private readonly admissionListeners = new Set<() => void>()
   /** In-flight scope drops remain here after records leave `scopes`, so root disposal can await quiescence. */
   private readonly scopeDrops = new Set<Promise<void>>()
   /**
@@ -288,6 +290,7 @@ export class ClientSessions implements ISessions {
       this.scopes.clear()
       this.exactAdmissions.clear()
       this.admissionAdapters.length = 0
+      this.admissionListeners.clear()
       this.deferredRemovals.clear()
       this.watched = undefined
       for (const [id, record] of scopes) this.startScopeDrop(id, record)
@@ -645,10 +648,12 @@ export class ClientSessions implements ISessions {
     }
     const token = Symbol('exact-admission')
     this.exactAdmissions.set(sessionId, { route, token })
+    this.notifyAdmission()
     return () => {
       if (this.disposed) return
       if (this.exactAdmissions.get(sessionId)?.token === token) {
         this.exactAdmissions.delete(sessionId)
+        this.notifyAdmission()
       }
     }
   }
@@ -667,36 +672,60 @@ export class ClientSessions implements ISessions {
     const token = Symbol('adapter-admission')
     const entry: AdapterAdmissionEntry = { adapter, token }
     this.admissionAdapters.push(entry)
+    this.notifyAdmission()
     return () => {
       if (this.disposed) return
       const at = this.admissionAdapters.findIndex(e => e.token === token)
       if (at !== -1) {
         this.admissionAdapters.splice(at, 1)
+        this.notifyAdmission()
       }
     }
   }
 
   /**
+   * Subscribe to admission register, replace, and revoke.
+   * Used by the model directory store so composer availability tracks the live owner.
+   * @param listener - notified after the admission set changes.
+   * @returns unsubscribe function.
+   */
+  subscribeAdmission(listener: () => void): () => void {
+    this.admissionListeners.add(listener)
+    return () => { this.admissionListeners.delete(listener) }
+  }
+
+  private notifyAdmission(): void {
+    for (const listener of this.admissionListeners) listener()
+  }
+
+  /**
    * Model inspection and selection for one Session.
-   * A registered admission `modelRoute` wins, including an explicit undefined
-   * that hides the selector. Detach restores the stock Host catalog route for
-   * an ordinary or catalog-addressed Session. Unknown identities stay hidden.
+   * An admission that owns `modelRoute` (including explicit undefined) replaces
+   * stock. Omitting the field leaves stock for an ordinary listed Session and
+   * keeps a catalog-addressed child hidden. Host `session.selectModel` refuses
+   * subagent-owned identities (`session/agent-busy`); this Client does not
+   * retarget the parent or open that path without a feature route.
    * @param sessionId - target Session identity.
    * @returns the live route, or undefined when model selection stays unavailable.
    */
   modelRoute(sessionId: SessionId): SessionModelRoute | undefined {
     const admission = this.resolveAdmission(sessionId)
-    if (admission !== undefined) {
+    if (admission !== undefined && 'modelRoute' in admission) {
       return admission.modelRoute?.(sessionId)
     }
-    if (!this.eligible(sessionId) && this.manager.subagentAddress(sessionId) === undefined) {
+    if (
+      !this.eligible(sessionId)
+      || this.manager.subagentAddress(sessionId) !== undefined
+      || this.list.getSnapshot().byId[sessionId]?.origin === 'subagent'
+    ) {
       return undefined
     }
     return this.stockModelRoute(sessionId)
   }
 
   /**
-   * Stock Host catalog and selection for one ordinary or catalog-addressed Session.
+   * Stock Host catalog and selection for one ordinary listed Session.
+   * Catalog-addressed children stay off this path.
    * @param sessionId - target Session identity.
    * @returns the Host `session.modelCatalog` / `session.selectModel` route.
    */

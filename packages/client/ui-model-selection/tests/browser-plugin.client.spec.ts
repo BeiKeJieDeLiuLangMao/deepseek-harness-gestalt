@@ -125,6 +125,7 @@ async function bench() {
   const scopes = new Map<SessionId, Context>()
   const addressed = new Set<SessionId>()
   const hidden = new Set<SessionId>()
+  const admissionListeners = new Set<() => void>()
   ctx.provide('sessions', {
     scope: (id: SessionId) => scopes.get(id),
     binding: (id: SessionId) => {
@@ -152,6 +153,10 @@ async function bench() {
           ...selection.reasoningEffort === undefined ? {} : { reasoningEffort: selection.reasoningEffort },
         }),
       },
+    subscribeAdmission: (listener: () => void) => {
+      admissionListeners.add(listener)
+      return () => { admissionListeners.delete(listener) }
+    },
   })
   const fiber = ctx.plugin({ inject: [...inject], apply })
   await fiber.await()
@@ -174,7 +179,10 @@ async function bench() {
     setHostCurrent: (selection: ModelSelection) => { defaultSelection = selection },
     setProjected: (id: SessionId, value: ModelSelectionProjection) => { projections.get(id)?.set(value) },
     address: (id: SessionId) => { addressed.add(id) },
-    hideModelRoute: (id: SessionId) => { hidden.add(id) },
+    hideModelRoute: (id: SessionId) => {
+      hidden.add(id)
+      for (const listener of admissionListeners) listener()
+    },
     setRoutable: (next: boolean) => { routable = next },
     blockOf: (key: string) => blocks.get(sid(key)),
   }
@@ -389,7 +397,7 @@ describe('ui-model-selection dual entry', () => {
     )).rejects.toThrow(/unavailable for this session/)
 
     const face = b.seat().inject!(sid('child'))
-    expect(face.available).toBe(false)
+    expect(face.directory.getSnapshot().available).toBe(false)
     face.load()
     await expect(face.select({ provider: 'deepseek', model: 'deepseek-v4-pro' })).resolves.toBe(false)
     await expect(b.ctx.modelDirectories.directoryFor(sid('child')).load())
@@ -410,7 +418,7 @@ describe('ui-model-selection dual entry', () => {
     const options = await b.contribution().ui.options(projection('s1'), new AbortController().signal)
     expect(options.map((o: SelectOption) => o.label)).toEqual(['DeepSeek-V4-Flash', 'DeepSeek-V4-Pro'])
     const face = b.seat().inject!(sid('s1'))
-    expect(face.available).toBe(true)
+    expect(face.directory.getSnapshot().available).toBe(true)
     expect(await face.select({
       provider: 'deepseek-official',
       model: 'deepseek-v4-pro',

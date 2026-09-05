@@ -186,11 +186,19 @@ export interface ISessions {
    */
   registerAdmissionAdapter(adapter: SessionAdmissionAdapter): () => void
   /**
+   * Subscribe to admission register, replace, and revoke.
+   * @param listener - notified after the admission set changes.
+   * @returns unsubscribe function.
+   */
+  subscribeAdmission(listener: () => void): () => void
+  /**
    * Model inspection and selection for one Session.
-   * Admission `modelRoute` wins while registered; otherwise an ordinary or
-   * catalog-addressed Session uses Host `session.modelCatalog` and
-   * `session.selectModel`. Unknown identities and feature routes that omit
-   * the helper stay unavailable.
+   * An admission that owns `modelRoute` replaces stock, including an explicit
+   * undefined that hides the selector. Omitting the field leaves stock for an
+   * ordinary listed Session. Catalog-addressed and `origin: 'subagent'`
+   * identities stay hidden until a feature route opens them; this Client does
+   * not call Host `session.selectModel` for those identities or retarget the
+   * parent. Unknown identities stay unavailable.
    * @param sessionId - target Session identity.
    * @returns the live route, or undefined when model selection stays unavailable.
    */
