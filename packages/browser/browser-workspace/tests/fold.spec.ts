@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { Session, SessionId } from '@deepseek-ai/dsh-session'
+import { Session, SessionId, SessionSeq } from '@deepseek-ai/dsh-session'
 import { BrowserInstanceId, BrowserProfileId, BrowserTabId, BrowserWorkspaceId } from '@deepseek-ai/dsh-browser-runtime'
 import { applyBrowserWorkspaceProjection, EMPTY_BROWSER_WORKSPACE, foldBrowserWorkspace } from '../src/fold.ts'
 import type { BrowserWorkspaceProjection } from '../src/client.ts'
@@ -33,7 +33,7 @@ describe('Browser Workspace fold', () => {
   it('keeps the same projection reference for unrelated events', () => {
     const next = applyBrowserWorkspaceProjection(EMPTY_BROWSER_WORKSPACE, {
       type: 'turn/start',
-      seq: 0,
+      seq: SessionSeq(0),
       time: 0,
       data: { turn: 1 },
     })
