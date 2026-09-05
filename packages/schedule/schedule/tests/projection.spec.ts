@@ -60,8 +60,10 @@ function created(record: ScheduleRecord, seq: SessionSeq): SessionEvent {
 describe('Schedule Session projection', () => {
   it('matches an empty replay, preserves creation order, and applies every terminal transition', () => {
     let projected: ScheduleProjectionState = scheduleProjectionDefinition.init(RESTORE_HEADER, SessionLogOffset(0))
-    expect(projected).toEqual({ inheritedEventCount: 0, active: [], seenIds: [] })
-    expect(scheduleProjectionDefinition.wire.view(projected)).toEqual(foldScheduleEvents([]).active)
+    expect(projected).toEqual({ inheritedEventCount: 0, active: [], paused: [], schedules: [], seenIds: [] })
+    expect(scheduleProjectionDefinition.wire.view(projected)).toEqual(foldScheduleEvents([]).schedules.map(
+      ({ record, paused }) => ({ ...record, paused }),
+    ))
 
     const events: SessionEvent[] = [
       created(afterRecord('after'), SessionSeq(0)),
@@ -114,8 +116,42 @@ describe('Schedule Session projection', () => {
       inheritedEventCount: 1,
       ...foldScheduleEvents([...events, unrelated], SessionLogOffset(1)),
     })
-    expect(scheduleProjectionDefinition.wire.view(projected)).toEqual(projected.active)
+    expect(scheduleProjectionDefinition.wire.view(projected)).toEqual(
+      projected.schedules.map(({ record, paused }) => ({ ...record, paused })),
+    )
     expect(projected.active.map(record => record.id)).toEqual(['child-at', 'child-every'])
+  })
+
+  it('projects pause, resume, and paused delete without changing the retained target', () => {
+    const record = afterRecord('after')
+    let projected: ScheduleProjectionState = scheduleProjectionDefinition.init(RESTORE_HEADER, SessionLogOffset(0))
+    projected = scheduleProjectionDefinition.apply(projected, created(record, SessionSeq(0)))
+    projected = scheduleProjectionDefinition.apply(
+      projected,
+      change({ version: 1, operation: 'pause', id: 'after' }, SessionSeq(1)),
+    )
+    expect(projected.paused).toEqual([record])
+    expect(projected.active).toEqual([])
+    expect(scheduleProjectionDefinition.wire.view(projected)).toEqual([{ ...record, paused: true }])
+
+    projected = scheduleProjectionDefinition.apply(
+      projected,
+      change({ version: 1, operation: 'resume', id: 'after' }, SessionSeq(2)),
+    )
+    expect(projected.active).toEqual([record])
+    expect(projected.paused).toEqual([])
+    expect(scheduleProjectionDefinition.wire.view(projected)).toEqual([{ ...record, paused: false }])
+
+    projected = scheduleProjectionDefinition.apply(
+      projected,
+      change({ version: 1, operation: 'pause', id: 'after' }, SessionSeq(3)),
+    )
+    projected = scheduleProjectionDefinition.apply(
+      projected,
+      change({ version: 1, operation: 'delete', id: 'after' }, SessionSeq(4)),
+    )
+    expect(projected.schedules).toEqual([])
+    expect(projected.seenIds).toEqual(['after'])
   })
 
   it('restores checkpoints, folds a bounded tail, and fails loud on damaged durable data', async () => {
@@ -140,7 +176,7 @@ describe('Schedule Session projection', () => {
       SessionLogOffset(0),
     )
     expect(resumed.snapshot.values.schedule?.map(record => record.id)).toEqual(['two'])
-    expect(resumed.checkpoint.schedule).toMatchObject({ ver: 2, seq: 2 })
+    expect(resumed.checkpoint.schedule).toMatchObject({ ver: 3, seq: 2 })
 
     expect(() => ctx.sessionProjections.restore(
       {},
@@ -156,26 +192,34 @@ describe('Schedule Session projection', () => {
     contexts.push(ctx)
     await ctx.plugin(SessionProjectionRegistry)
     ctx.sessionProjections.register(scheduleProjectionDefinition)
-    const row = (val: unknown) => ({ schedule: { ver: 2, seq: SessionSeq(0), val } })
+    const row = (val: unknown) => ({ schedule: { ver: 3, seq: SessionSeq(0), val } })
 
     expect(ctx.sessionProjections.viewCheckpoint(row({
       inheritedEventCount: 0,
       active: [{ ...afterRecord('bad-time'), scheduledAt: 'not-an-instant' }],
+      paused: [],
+      schedules: [],
       seenIds: ['bad-time'],
     }))).toEqual({})
     expect(ctx.sessionProjections.viewCheckpoint(row({
       inheritedEventCount: 0,
       active: [afterRecord('missing')],
+      paused: [],
+      schedules: [],
       seenIds: [],
     }))).toEqual({})
     expect(ctx.sessionProjections.viewCheckpoint(row({
       inheritedEventCount: 0,
       active: [afterRecord('duplicate'), afterRecord('duplicate')],
+      paused: [],
+      schedules: [],
       seenIds: ['duplicate', 'duplicate'],
     }))).toEqual({})
     expect(ctx.sessionProjections.viewCheckpoint(row({
       inheritedEventCount: 0,
       active: [],
+      paused: [],
+      schedules: [],
       seenIds: [' bad-id'],
     }))).toEqual({})
   })
