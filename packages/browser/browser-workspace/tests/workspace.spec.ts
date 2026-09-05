@@ -39,7 +39,7 @@ describe('Session-owned Browser Workspace', () => {
     expect(ctx.browserWorkspace.snapshot(first)).toEqual(EMPTY_BROWSER_WORKSPACE)
     expect(ctx.sessionProjections.snapshot(first).values.browserWorkspace).toEqual(EMPTY_BROWSER_WORKSPACE)
     expect(ctx.browserWorkspace.snapshot(second)).toEqual(EMPTY_BROWSER_WORKSPACE)
-    expect(foldBrowserWorkspace(first.events)).toEqual(ctx.browserWorkspace.snapshot(first))
+    expect(foldBrowserWorkspace(first.snapshotEvents())).toEqual(ctx.browserWorkspace.snapshot(first))
   })
 
   it('lets one Session own multiple Profiles, instances, and tabs without exposing another Session', async () => {
@@ -233,6 +233,26 @@ describe('Session-owned Browser Workspace', () => {
     expect(listBrowserWorkspacePages(null)).toEqual([])
   })
 
+  it('lets a forked Session reconstruct inherited Workspace ownership without transferring the live page', async () => {
+    const ctx = await harness()
+    const parent = ctx.sessions.create(SessionId('session-fork-parent'))
+    const created = await ctx.browserWorkspace.create({ session: parent, profile: 'temporary' })
+    parent.append('turn/start', { turn: 1 })
+    parent.append('turn/end', { turn: 1 })
+    const child = ctx.sessions.fork(parent, parent.snapshotEvents().at(-1)!.seq, SessionId('session-fork-child'))
+    expect(ctx.browserWorkspace.snapshot(child)).toEqual(ctx.browserWorkspace.snapshot(parent))
+    await expect(ctx.browserWorkspace.observe({ session: parent, target: created.target }))
+      .rejects.toMatchObject({ code: 'BROWSER_TRANSFER_UNSUPPORTED' })
+    await expect(ctx.browserWorkspace.observe({ session: child, target: created.target }))
+      .rejects.toMatchObject({ code: 'BROWSER_TRANSFER_UNSUPPORTED' })
+    await expect(ctx.browserWorkspace.navigate({
+      session: child,
+      target: created.target,
+      expectedRevision: created.revision,
+      url: 'https://alpha.test/',
+    })).rejects.toMatchObject({ code: 'BROWSER_TRANSFER_UNSUPPORTED' })
+  })
+
   it('recreates a retained Profile after Runtime restart leaves a durable target behind', async () => {
     const before = await harness()
     const originalSession = before.sessions.create(SessionId('session-before-restart'))
@@ -244,7 +264,7 @@ describe('Session-owned Browser Workspace', () => {
 
     const after = await harness()
     const restoredSession = after.sessions.create(SessionId('session-after-restart'), {
-      seed: originalSession.events,
+      seed: originalSession.snapshotEvents(),
     })
     const recreated = await after.browserWorkspace.create({
       session: restoredSession,
@@ -314,10 +334,11 @@ describe('Session-owned Browser Workspace', () => {
       expectedRevision: 0,
       url: 'https://alpha.test/',
     })
-    const logged = first.events.filter(event => event.type === 'browser/workspace')
+    const logged = first.snapshotEvents().filter(event => event.type === 'browser/workspace')
     expect(logged.length).toBeGreaterThan(0)
+    expect(logged.every(event => event.ignorable === true)).toBe(true)
 
-    const replayed = foldBrowserWorkspace(first.events)
+    const replayed = foldBrowserWorkspace(first.snapshotEvents())
     expect(replayed).toEqual(ctx.browserWorkspace.snapshot(first))
     expect(ctx.sessionProjections.snapshot(first).values.browserWorkspace).toEqual(replayed)
 
@@ -326,7 +347,7 @@ describe('Session-owned Browser Workspace', () => {
     await restoredCtx.plugin(SessionProjectionRegistry)
     await restoredCtx.plugin(BrowserRuntimeDeterministic, { idPrefix: 'space', pages: PAGES })
     await restoredCtx.plugin(BrowserWorkspaceBinder)
-    const restored = restoredCtx.sessions.create(SessionId('session-a-restored'), { seed: first.events })
+    const restored = restoredCtx.sessions.create(SessionId('session-a-restored'), { seed: first.snapshotEvents() })
     expect(restoredCtx.browserWorkspace.snapshot(restored)).toEqual(replayed)
     expect(restoredCtx.sessionProjections.snapshot(restored).values.browserWorkspace).toEqual(replayed)
 
@@ -403,7 +424,7 @@ describe('Session-owned Browser Workspace', () => {
           tabs: [{ tabId: live.target.tabId, revision: 0 }],
         }],
       }],
-    })
+    }, { ignorable: true })
     await expect(ctx.browserWorkspace.cleanup(failing))
       .rejects.toThrow('failed to close every archived Session tab')
     expect(ctx.browserWorkspace.snapshot(failing).workspaces).toHaveLength(1)
@@ -424,7 +445,7 @@ describe('Session-owned Browser Workspace', () => {
           tabs: [{ tabId: live.target.tabId, revision: 0 }],
         }],
       }],
-    })
+    }, { ignorable: true })
     await ctx.browserWorkspace.cleanup(alreadyClosed)
     expect(ctx.browserWorkspace.snapshot(alreadyClosed).workspaces).toEqual([])
   })
@@ -633,7 +654,7 @@ describe('Session-owned Browser Workspace', () => {
       url: 'https://beta.test/',
     })).rejects.toMatchObject({ code: 'BROWSER_REVISION_CONFLICT' })
 
-    const replayed = foldBrowserWorkspace(session.events)
+    const replayed = foldBrowserWorkspace(session.snapshotEvents())
     expect(replayed.workspaces[0]?.browsers[0]?.tabs[0]?.revision).toBe(inputted.revision)
   })
 

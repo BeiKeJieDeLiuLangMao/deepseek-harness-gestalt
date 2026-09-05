@@ -20,7 +20,7 @@ Session log 在发布后必须能升级格式，而最先发布的运行时决�
 
 ## 影响
 
-v0（0812 发布）交付的内容：分方向的拒绝并带原始日志路径；基于生成的已知词汇清单（`KNOWN_SESSION_EVENT_TYPES`，由 `gen-persistence-catalog` 从所有 `SessionEventMap` 声明合并生成，`verify-persistence-catalog` 保证新鲜）的未知事件守卫；`ignorable` 信封字段被种子校验、JSONL 和 BFF 线上 schema 接受。升级器链本身推迟到第一个真实的 v0→v1 变更出现、有真实对象可测时再建。第一方写入方不通过 `Session.append` 设置 `ignorable`，但当前有一个仓库外插件依赖该字段；其保留条件与替代机制要求由[外部插件保留决策](2026-08-30-retain-ignorable-external-session-events.zh.md)定义。带该标记的外部信息性事件可以继续重新加载，未知必需事件则会拒绝恢复。未知类型守卫只在读取侧生效：`appendCore` 继续拒绝已淘汰的 legacy 形状，但不对新类型做词汇检查，因为写入时拒绝会让活跃会话的持久化中途停摆，代价大于下次加载时的显式拒绝。JSONL provider 会在校验本格式版本的 header、解码任何事件行之前，直接从原始 header 行拒绝外来版本，因此结构完全不同的未来格式仍会报告升级方向而不是"损坏"。
+v0（0812 发布）交付的内容：分方向的拒绝并带原始日志路径；基于生成的已知词汇清单（`KNOWN_SESSION_EVENT_TYPES`，由 `gen-persistence-catalog` 从所有 `SessionEventMap` 声明合并生成，`verify-persistence-catalog` 保证新鲜）的未知事件守卫；`ignorable` 信封字段被种子校验、JSONL 和 BFF 线上 schema 接受。升级器链本身推迟到第一个真实的 v0→v1 变更出现、有真实对象可测时再建。读取方可省略且不改变重建结果的第一方仅日志写入方在 `Session.append` 上设置 `ignorable: true`；Browser Workspace 是其中一个写入方（[Browser Workspace session log 访问](2026-09-05-browser-workspace-session-snapshot-events.zh.md)）。仓库外插件仍是当前消费方；其保留条件与替代机制要求由[外部插件保留决策](2026-08-30-retain-ignorable-external-session-events.zh.md)定义。带该标记的信息性事件可以继续重新加载，未知必需事件则会拒绝恢复。未知类型守卫只在读取侧生效：`appendCore` 继续拒绝已淘汰的 legacy 形状，但不对新类型做词汇检查，因为写入时拒绝会让活跃会话的持久化中途停摆，代价大于下次加载时的显式拒绝。JSONL provider 会在校验本格式版本的 header、解码任何事件行之前，直接从原始 header 行拒绝外来版本，因此结构完全不同的未来格式仍会报告升级方向而不是"损坏"。
 
 ## 曾考虑的替代方案
 

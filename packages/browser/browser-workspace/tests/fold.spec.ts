@@ -21,13 +21,13 @@ const SNAPSHOT: BrowserWorkspaceProjection = {
 describe('Browser Workspace fold', () => {
   it('returns the empty Workspace before any snapshot and last-wins after', () => {
     const session = Session.create(SessionId('fold-session'))
-    expect(foldBrowserWorkspace(session.events)).toBe(EMPTY_BROWSER_WORKSPACE)
-    session.append('browser/workspace', SNAPSHOT)
-    expect(foldBrowserWorkspace(session.events)).toEqual(SNAPSHOT)
+    expect(foldBrowserWorkspace(session.snapshotEvents())).toBe(EMPTY_BROWSER_WORKSPACE)
+    session.append('browser/workspace', SNAPSHOT, { ignorable: true })
+    expect(foldBrowserWorkspace(session.snapshotEvents())).toEqual(SNAPSHOT)
     const later = { ...SNAPSHOT, activeWorkspaceId: null }
-    session.append('browser/workspace', later)
-    expect(foldBrowserWorkspace(session.events)).toEqual(later)
-    expect(foldBrowserWorkspace(session.events, 0)).toBe(EMPTY_BROWSER_WORKSPACE)
+    session.append('browser/workspace', later, { ignorable: true })
+    expect(foldBrowserWorkspace(session.snapshotEvents())).toEqual(later)
+    expect(foldBrowserWorkspace(session.snapshotEvents(), 0)).toBe(EMPTY_BROWSER_WORKSPACE)
   })
 
   it('keeps the same projection reference for unrelated events', () => {
