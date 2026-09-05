@@ -18,6 +18,7 @@ export { AttachmentId, ImageVariantId } from './brand.ts'
 export { AttachmentError, isImageAdmissionError } from './error.ts'
 export type { AttachmentErrorCode, ByteAdmissionErrorCode, ImageAdmissionErrorCode } from './error.ts'
 export { admitEncodedImages, admitPromptContent } from './admission.ts'
+export { displayName } from './display-name.ts'
 export { requestImageDimensions } from './request-projection.ts'
 export type {
   AttachmentId as AttachmentIdType,

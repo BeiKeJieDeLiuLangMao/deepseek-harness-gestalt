@@ -4,8 +4,10 @@ import { createHash, randomUUID } from 'node:crypto'
 import { constants } from 'node:fs'
 import { chmod, link, mkdir, open, readFile, unlink } from 'node:fs/promises'
 import { dirname, join, parse, resolve } from 'node:path'
-import { AttachmentError } from '@deepseek-ai/dsh-attachment'
+import { AttachmentError, displayName } from '@deepseek-ai/dsh-attachment'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+
+export { displayName }
 
 const ID_PATTERN = /^sha256:([a-f0-9]{64})$/
 const durableHomes = new Set<string>()
@@ -13,21 +15,6 @@ const durableHomes = new Set<string>()
 /** SHA-256 digest of exact stored bytes as lowercase hex. */
 export function digest(data: Uint8Array): string {
   return createHash('sha256').update(data).digest('hex')
-}
-
-/**
- * Strip path separators and control characters from a caller-supplied display name.
- * @param value - original display name, which may include Windows or POSIX path text.
- * @returns a leaf name of at most 255 characters, or undefined when nothing remains.
- */
-export function displayName(value: string | undefined): string | undefined {
-  if (value === undefined) return undefined
-  // Strip both separator styles by hand: a POSIX host treats `\` as an
-  // ordinary character, so path.basename would keep a Windows client's full
-  // local path and leak it into the reference and the session log.
-  const leaf = value.slice(Math.max(value.lastIndexOf('/'), value.lastIndexOf('\\')) + 1)
-  const clean = leaf.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 255)
-  return clean === '' ? undefined : clean
 }
 
 /**

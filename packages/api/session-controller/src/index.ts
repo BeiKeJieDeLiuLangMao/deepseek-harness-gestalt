@@ -13,6 +13,7 @@ import {
   inspectApiSession,
   type ApiSessionAgentResult,
 } from './agent.ts'
+import { SessionAttachmentAdmission } from './attachment-admission.ts'
 import { SessionCommandController } from './commands.ts'
 import { SessionControlController } from './control.ts'
 import { SessionHistoryController } from './history.ts'
@@ -27,6 +28,8 @@ import { installModelSelectionProjection } from './model-selection-projection.ts
 import { SessionSkillCatalog } from './skill-catalog.ts'
 import type {
   ModelCatalog,
+  SessionAdmitAttachmentRequest,
+  SessionAdmitAttachmentValue,
   SessionAttachmentRequest,
   SessionAttachmentValue,
   SessionCancelRequest,
@@ -107,6 +110,7 @@ export class SessionController extends TypertRemoteService {
   })
 
   private readonly agents: ApiSessionAgentController
+  private readonly admissions: SessionAttachmentAdmission
   private readonly commands: SessionCommandController
   private readonly controlState: SessionControlController
   private readonly history: SessionHistoryController
@@ -124,6 +128,7 @@ export class SessionController extends TypertRemoteService {
     super(ctx, 'sessionController', { namespace: 'session' })
     installModelSelectionProjection(ctx)
     this.agents = new ApiSessionAgentController(ctx)
+    this.admissions = new SessionAttachmentAdmission(ctx, this.agents)
     this.commands = new SessionCommandController(ctx, this.agents, process.cwd())
     this.controlState = new SessionControlController(ctx)
     // Registered before history so reverse-order teardown closes every
@@ -345,6 +350,19 @@ export class SessionController extends TypertRemoteService {
   @Remote('attachment')
   attachment(request: SessionAttachmentRequest): Promise<SessionAttachmentValue> {
     return this.commands.attachment(request)
+  }
+
+  /**
+   * Admit one Companion opaque file onto a Session without sending it to a model.
+   * Identical `operationId` retries return the recorded reference; a conflicting
+   * payload fails. Concurrent admissions for one Session serialize on the Agent
+   * controller's existing admission chain before append and flush.
+   * @param request - Session identity, Companion operation id, media type, name, and canonical base64.
+   * @returns the durable opaque-byte reference.
+   */
+  @Remote('admitAttachment')
+  admitAttachment(request: SessionAdmitAttachmentRequest): Promise<SessionAdmitAttachmentValue> {
+    return this.admissions.admitAttachment(request)
   }
 
   /**

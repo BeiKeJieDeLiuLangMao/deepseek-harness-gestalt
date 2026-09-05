@@ -75,6 +75,7 @@ The service family runs one admission-and-storage flow: every image entry point 
 |---|---|
 | [`src/index.ts`](src/index.ts) | Plugin entry: abstract `AttachmentStore` service and re-exports |
 | [`src/types.ts`](src/types.ts) | Durable vocabulary: references, limits, upload and store payloads |
+| [`src/display-name.ts`](src/display-name.ts) | Shared leaf-name stripping for image and opaque-byte references |
 | [`src/admission.ts`](src/admission.ts) | Browser prompt admission: canonical-base64 enforcement, `saveImages` delegation, and durable prompt-part projection |
 | [`src/error.ts`](src/error.ts) | `AttachmentError` class and the `isImageAdmissionError` runtime subset |
 | [`src/brand.ts`](src/brand.ts) | `AttachmentId` branded opaque identifier |

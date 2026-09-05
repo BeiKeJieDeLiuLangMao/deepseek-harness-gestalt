@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import AttachmentStore, {
   AttachmentError,
   AttachmentId,
+  displayName,
   ImageVariantId,
   isImageAdmissionError,
   type ImageAttachmentRef,
@@ -151,6 +152,15 @@ describe('AttachmentStore.readImageRequest', () => {
     const store = new RecordingStore(new Context())
     const ref = await store.saveImage(image(1))
     expect(store.imageHostPath(ref)).toBeUndefined()
+  })
+})
+
+describe('displayName', () => {
+  it('strips Windows and POSIX path prefixes and empty leaves', () => {
+    expect(displayName('C:\\Users\\a\\notes.pdf')).toBe('notes.pdf')
+    expect(displayName('/home/a/notes.pdf')).toBe('notes.pdf')
+    expect(displayName('C:\\Users\\a\\')).toBeUndefined()
+    expect(displayName('\u0000')).toBeUndefined()
   })
 })
 
