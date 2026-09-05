@@ -731,13 +731,21 @@ export class ClientSessions implements ISessions {
    */
   private stockModelRoute(sessionId: SessionId): SessionModelRoute {
     return {
-      models: () => this.remotes.session.modelCatalog(),
-      selectModel: (selection, signal) => this.remotes.session.selectModel({
-        sessionId,
-        provider: selection.provider,
-        model: selection.model,
-        ...selection.reasoningEffort === undefined ? {} : { reasoningEffort: selection.reasoningEffort },
-      }, signal),
+      models: (signal) => {
+        signal?.throwIfAborted()
+        return this.remotes.session.modelCatalog()
+      },
+      selectModel: async (selection, signal) => {
+        signal?.throwIfAborted()
+        const result = await this.remotes.session.selectModel({
+          sessionId,
+          provider: selection.provider,
+          model: selection.model,
+          ...selection.reasoningEffort === undefined ? {} : { reasoningEffort: selection.reasoningEffort },
+        })
+        signal?.throwIfAborted()
+        return result
+      },
     }
   }
 
