@@ -5,12 +5,12 @@
  * Live Workspace facts arrive through `useProjection('browserWorkspace')`.
  */
 import type { Context } from '@deepseek-ai/cordis'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-browser-workspace/remote'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import { BrowserPreview } from './BrowserPreview.tsx'
@@ -111,7 +111,7 @@ export function apply(ctx: Context): void {
   ctx.slots.inject('conversation.browser.preview', () => ctx.slots.register({
     name: 'conversation.browser.preview',
     locale: NS,
-    inject: (sessionId: SessionId): BrowserPreviewActions => ({
+    inject: (sessionId): BrowserPreviewActions => ({
       reveal: () => {
         const workbench = ctx.get('workbenchBrowser') as WorkbenchBrowserReveal | undefined
         workbench?.reveal(sessionId)

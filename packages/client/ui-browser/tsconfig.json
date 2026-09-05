@@ -39,6 +39,9 @@
       "path": "../ui-renderer"
     },
     {
+      "path": "../ui-session"
+    },
+    {
       "path": "../ui-settings"
     },
     {
