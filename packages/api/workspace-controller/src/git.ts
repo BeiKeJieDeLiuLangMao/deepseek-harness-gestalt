@@ -3,6 +3,9 @@
  * @module @deepseek-ai/dsh-api-workspace-controller
  */
 
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type { NativeCommandRunner } from '@deepseek-ai/dsh-native-command'
 import type { SubprocessHandle, SubprocessOutcome } from '@deepseek-ai/dsh-subprocess'
@@ -16,6 +19,8 @@ export const WORKSPACE_GIT_GRACE_MS = 1_000
 export const DEFAULT_WORKSPACE_GIT_TIMEOUT_MS = 30_000
 /** Capability-owned timeout code fused into the production Git abort signal. */
 export const WORKSPACE_GIT_TIMEOUT_CODE = 'WORKSPACE_GIT_TIMEOUT'
+/** Protocols `git clone` may use; also the `GIT_ALLOW_PROTOCOL` value. */
+export const WORKSPACE_GIT_CLONE_PROTOCOLS = 'https:file:ssh'
 
 const WORKSPACE_GIT_ENV_ALLOWLIST = new Set([
   'COMSPEC', 'HOME', 'LANG', 'LC_ALL', 'PATH', 'PATHEXT', 'SYSTEMROOT', 'TEMP', 'TMP', 'TMPDIR', 'USERPROFILE',
@@ -51,8 +56,14 @@ export function createWorkspaceGitCommand(
     env.GIT_CONFIG_KEY_0 = 'credential.interactive'
     env.GIT_CONFIG_VALUE_0 = 'never'
     env.GIT_TERMINAL_PROMPT = '0'
+    env.GIT_ALLOW_PROTOCOL = WORKSPACE_GIT_CLONE_PROTOCOLS
+    env.GIT_CONFIG_NOSYSTEM = '1'
     env.LANG = 'C'
     env.LC_ALL = 'C'
+    const isolationDir = mkdtempSync(join(tmpdir(), 'dsh-workspace-git-config-'))
+    const isolationConfig = join(isolationDir, 'config')
+    writeFileSync(isolationConfig, '', { mode: 0o600 })
+    env.GIT_CONFIG_GLOBAL = isolationConfig
     using hostDeadline = deadline(signal, timeoutMs, WORKSPACE_GIT_TIMEOUT_CODE)
     let handle: SubprocessHandle | undefined
     let outcome: SubprocessOutcome | undefined
@@ -77,6 +88,11 @@ export function createWorkspaceGitCommand(
       if (handle !== undefined) {
         if (hostDeadline.signal.aborted) handle.terminate()
         await handle.waitForExit()
+      }
+      try {
+        rmSync(isolationDir, { recursive: true, force: true })
+      } catch (_isolationCleanup) {
+        // Isolation files live under os.tmpdir, never the clone dest.
       }
     }
     if (timeoutOf(hostDeadline.signal, WORKSPACE_GIT_TIMEOUT_CODE) !== undefined) {
@@ -114,4 +130,24 @@ export function workspaceGitFailureCode(error: unknown): string | number | undef
   if (message === undefined) return undefined
   const numeric = /workspace Git exited with code (\d+)$/.exec(message)
   return numeric?.[1] === undefined ? undefined : Number(numeric[1])
+}
+
+/**
+ * Classify a clone remote for the Host allowlist. Errors must not echo the URL.
+ * @param remoteUrl - caller-supplied remote after trim.
+ * @returns `https`, `ssh` (including scp-like), or `file`.
+ */
+export function workspaceCloneRemoteKind(remoteUrl: string): 'https' | 'ssh' | 'file' | undefined {
+  if (remoteUrl === '') return undefined
+  const scheme = /^([A-Za-z][A-Za-z0-9+.-]*):/.exec(remoteUrl)?.[1]?.toLowerCase()
+  if (scheme === 'https') return remoteUrl.startsWith('https://') ? 'https' : undefined
+  if (scheme === 'ssh') return remoteUrl.startsWith('ssh://') ? 'ssh' : undefined
+  if (scheme === 'file') return 'file'
+  if (scheme !== undefined && scheme.length === 1 && /^[A-Za-z]:[\\/]/.test(remoteUrl)) return 'file'
+  if (scheme !== undefined) return undefined
+  if (remoteUrl.startsWith('/') || remoteUrl.startsWith('./') || remoteUrl.startsWith('../')) return 'file'
+  if (remoteUrl.includes('\\') && !remoteUrl.includes(':')) return 'file'
+  if (!remoteUrl.includes('/') && !remoteUrl.includes('\\') && !remoteUrl.includes(':')) return 'file'
+  if (/^[^@/\s]+@[^/:\s]+:/.test(remoteUrl)) return 'ssh'
+  return undefined
 }
