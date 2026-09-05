@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -7,22 +8,30 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { materializeProfilePatch } from '../src/launcher.ts'
 
 const launcherDir = dirname(fileURLToPath(new URL('../src/launcher.ts', import.meta.url)))
-const harnessScope = join(launcherDir, 'node_modules', '@dsh-snapshot-test')
-const roots: string[] = []
+const created: string[] = []
 
 afterEach(async () => {
-  await Promise.all(roots.splice(0).reverse().map(dir => rm(dir, { recursive: true, force: true })))
-  await rm(harnessScope, { recursive: true, force: true })
+  await Promise.all(created.splice(0).reverse().map(dir => rm(dir, { recursive: true, force: true })))
 })
+
+function uniquePackageName(): string {
+  return `dsh-snap-launch-${randomUUID()}`
+}
+
+async function registerDir(dir: string): Promise<string> {
+  await mkdir(dir, { recursive: true })
+  created.push(dir)
+  return dir
+}
 
 async function tempRoot(prefix: string): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), prefix))
-  roots.push(dir)
+  created.push(dir)
   return dir
 }
 
 async function writePackage(dir: string, name: string, marker: string): Promise<string> {
-  await mkdir(dir, { recursive: true })
+  await registerDir(dir)
   await writeFile(join(dir, 'package.json'), `${JSON.stringify({ name, version: '0.0.0', marker })}\n`)
   return realpath(dir)
 }
@@ -40,51 +49,42 @@ function profileLink(cwd: string, packageName: string): string {
 
 describe('materializeProfilePatch dual-anchor linking', () => {
   it('links from the harness source when the patch directory cannot see the package', async () => {
-    const packageName = '@dsh-snapshot-test/harness-anchor'
-    const harnessPkg = join(harnessScope, 'harness-anchor')
-    roots.push(harnessScope)
-    try {
-      const expected = await writePackage(harnessPkg, packageName, 'harness')
-      const cwd = await tempRoot('dsh-snap-launch-harness-')
-      const patchDir = join(cwd, 'patches')
-      const source = await writePatch(patchDir, packageName)
-      const targetDir = join(cwd, 'materialized')
-      await mkdir(targetDir, { recursive: true })
+    const packageName = uniquePackageName()
+    const expected = await writePackage(join(launcherDir, 'node_modules', packageName), packageName, 'harness')
+    const cwd = await tempRoot('dsh-snap-launch-harness-')
+    const patchDir = join(cwd, 'patches')
+    const source = await writePatch(patchDir, packageName)
+    const targetDir = join(cwd, 'materialized')
+    await mkdir(targetDir, { recursive: true })
 
-      materializeProfilePatch(source, cwd, targetDir, 0)
+    materializeProfilePatch(source, cwd, targetDir, 0)
 
-      expect(await realpath(profileLink(cwd, packageName))).toBe(expected)
-    } finally {
-      await rm(harnessScope, { recursive: true, force: true })
-    }
+    expect(await realpath(profileLink(cwd, packageName))).toBe(expected)
   })
 
   it('prefers the package beside the patch when both anchors resolve', async () => {
-    const packageName = '@dsh-snapshot-test/shared-anchor'
-    const harnessPkg = join(harnessScope, 'shared-anchor')
-    roots.push(harnessScope)
-    try {
-      await writePackage(harnessPkg, packageName, 'harness')
-      const cwd = await tempRoot('dsh-snap-launch-prefer-')
-      const patchDir = join(cwd, 'patches')
-      const patchPkg = join(patchDir, 'node_modules', '@dsh-snapshot-test', 'shared-anchor')
-      const expected = await writePackage(patchPkg, packageName, 'patch')
-      const source = await writePatch(patchDir, packageName)
-      const targetDir = join(cwd, 'materialized')
-      await mkdir(targetDir, { recursive: true })
+    const packageName = uniquePackageName()
+    await writePackage(join(launcherDir, 'node_modules', packageName), packageName, 'harness')
+    const cwd = await tempRoot('dsh-snap-launch-prefer-')
+    const patchDir = join(cwd, 'patches')
+    const expected = await writePackage(
+      join(patchDir, 'node_modules', packageName),
+      packageName,
+      'patch',
+    )
+    const source = await writePatch(patchDir, packageName)
+    const targetDir = join(cwd, 'materialized')
+    await mkdir(targetDir, { recursive: true })
 
-      materializeProfilePatch(source, cwd, targetDir, 0)
+    materializeProfilePatch(source, cwd, targetDir, 0)
 
-      const linked = profileLink(cwd, packageName)
-      expect(await realpath(linked)).toBe(expected)
-      expect(JSON.parse(await readFile(join(linked, 'package.json'), 'utf8')).marker).toBe('patch')
-    } finally {
-      await rm(harnessScope, { recursive: true, force: true })
-    }
+    const linked = profileLink(cwd, packageName)
+    expect(await realpath(linked)).toBe(expected)
+    expect(JSON.parse(await readFile(join(linked, 'package.json'), 'utf8')).marker).toBe('patch')
   })
 
   it('leaves an unresolved bare name for installation heal instead of throwing', async () => {
-    const packageName = '@dsh-snapshot-test/missing-anchor'
+    const packageName = uniquePackageName()
     const cwd = await tempRoot('dsh-snap-launch-miss-')
     const source = await writePatch(join(cwd, 'patches'), packageName)
     const targetDir = join(cwd, 'materialized')
@@ -103,11 +103,10 @@ describe('materializeProfilePatch dual-anchor linking', () => {
   })
 
   it('rejects an existing profile link that points at a different package directory', async () => {
-    const packageName = '@dsh-snapshot-test/conflict-anchor'
+    const packageName = uniquePackageName()
     const cwd = await tempRoot('dsh-snap-launch-conflict-')
     const patchDir = join(cwd, 'patches')
-    const patchPkg = join(patchDir, 'node_modules', '@dsh-snapshot-test', 'conflict-anchor')
-    await writePackage(patchPkg, packageName, 'patch')
+    await writePackage(join(patchDir, 'node_modules', packageName), packageName, 'patch')
     const other = await writePackage(join(cwd, 'other-conflict-anchor'), packageName, 'other')
     const link = profileLink(cwd, packageName)
     await mkdir(dirname(link), { recursive: true })
