@@ -102,6 +102,12 @@ describe('three Client applies: session-controller, member-questions, user-quest
       settle: vi.fn(async (request: unknown) => {
         const parsed = memberQuestionRemoteSettleRequestSchema.safeParse(request)
         expect(parsed.success).toBe(true)
+        if (memberQuestion.settle.mock.calls.length === 1) {
+          return {
+            ok: false as const,
+            error: { code: 'gateway/bad-request', message: 'exact payload required', details: {} },
+          }
+        }
         current = snapshotOf(2, [], [{
           questionId: 'question-1' as never,
           receivingSessionId: SID as never,
@@ -218,7 +224,10 @@ describe('three Client applies: session-controller, member-questions, user-quest
       expect(mounted.container.querySelector('[data-slot="question.presentation"]')).not.toBeNull()
       fireEvent.click(screen.getByRole('radio', { name: '移出' }))
       fireEvent.click(screen.getByRole('button', { name: '提交' }))
-      await waitFor(() => { expect(memberQuestion.settle).toHaveBeenCalledTimes(1) })
+      expect(await screen.findByText('exact payload required')).toBeTruthy()
+      expect(screen.getByRole('radio', { name: '移出' }).getAttribute('aria-checked')).toBe('true')
+      expect(memberQuestion.settle).toHaveBeenCalledTimes(1)
+      expect(ctx.receivingQuestions.pending(SID)?.questionId).toBe('question-1')
       expect(memberQuestion.settle.mock.calls[0]?.[0]).toMatchObject({
         receivingSessionId: SID,
         revision: 1,
@@ -228,6 +237,8 @@ describe('three Client applies: session-controller, member-questions, user-quest
           answers: [{ id: 'remove-member', selected: ['移出 (recommended)'] }],
         },
       })
+      fireEvent.click(screen.getByRole('button', { name: '提交' }))
+      await waitFor(() => { expect(memberQuestion.settle).toHaveBeenCalledTimes(2) })
       await waitFor(() => {
         expect(mounted.container.querySelector('[data-member-presentation]')).toBeNull()
       })

@@ -188,6 +188,48 @@ describe('ReceivingQuestionBook generated Remote', () => {
     })
   })
 
+  it('reloads after a Host changed that arrived during an in-flight snapshot', async () => {
+    const hold = Promise.withResolvers<undefined>()
+    let current = hostSnapshot(1, 'pending')
+    const { book, emitChanged, snapshot } = bench({
+      snapshotImpl: async () => {
+        await hold.promise
+        return envelope(current)
+      },
+    })
+    const started = book.start()
+    await vi.waitFor(() => { expect(snapshot).toHaveBeenCalledTimes(1) })
+    current = hostSnapshot(2, 'expired')
+    emitChanged({ revision: 2, questionId: 'question-1', state: 'expired' })
+    hold.resolve(undefined)
+    await started
+    await vi.waitFor(() => {
+      expect(book.pending(SESSION)).toBeUndefined()
+    })
+    expect(book.records(SESSION)).toMatchObject([{ state: 'expired', terminalAt: 500 }])
+    expect(snapshot).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not reload a dirty snapshot after dispose', async () => {
+    const hold = Promise.withResolvers<undefined>()
+    let current = hostSnapshot(1, 'pending')
+    const { book, emitChanged, snapshot } = bench({
+      snapshotImpl: async () => {
+        await hold.promise
+        return envelope(current)
+      },
+    })
+    void book.start()
+    await vi.waitFor(() => { expect(snapshot).toHaveBeenCalledTimes(1) })
+    current = hostSnapshot(2, 'expired')
+    emitChanged({ revision: 2, questionId: 'question-1', state: 'expired' })
+    book.dispose()
+    hold.resolve(undefined)
+    await Promise.resolve()
+    expect(snapshot).toHaveBeenCalledTimes(1)
+    expect(book.pending(SESSION)).toBeUndefined()
+  })
+
   it('removes the pending row when changed reports a terminal', async () => {
     let current = hostSnapshot(1, 'pending')
     const { book, emitChanged, snapshot: snapshotFn } = bench({

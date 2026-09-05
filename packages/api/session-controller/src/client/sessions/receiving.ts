@@ -86,6 +86,7 @@ export class ReceivingQuestionBook implements ObservableSnapshot<ReceivingQuesti
   #offChanged: (() => void) | undefined
   #disposed = false
   #load: Promise<void> | undefined
+  #dirty = false
 
   constructor(
     ctx: Context,
@@ -120,11 +121,22 @@ export class ReceivingQuestionBook implements ObservableSnapshot<ReceivingQuesti
 
   /**
    * Re-read the complete Host snapshot, collapsing concurrent callers.
+   * A `changed` or settle that arrives during an in-flight snapshot marks a
+   * follow-up load; dispose cancels that follow-up.
    * @returns completion of the in-flight load.
    */
   refresh(): Promise<void> {
     if (this.#disposed) return Promise.resolve()
-    this.#load ??= this.load().finally(() => { this.#load = undefined })
+    if (this.#load !== undefined) {
+      this.#dirty = true
+      return this.#load
+    }
+    this.#load = this.load().finally(() => {
+      this.#load = undefined
+      if (this.#disposed || !this.#dirty) return
+      this.#dirty = false
+      void this.refresh()
+    })
     return this.#load
   }
 
@@ -208,6 +220,7 @@ export class ReceivingQuestionBook implements ObservableSnapshot<ReceivingQuesti
   /** Release projected rows and refuse further Remote writes. */
   dispose(): void {
     this.#disposed = true
+    this.#dirty = false
     this.#offChanged?.()
     this.#offChanged = undefined
     this.#rows.clear()
