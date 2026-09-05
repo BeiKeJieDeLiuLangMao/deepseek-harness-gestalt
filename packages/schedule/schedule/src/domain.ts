@@ -488,17 +488,35 @@ export function decodeScheduleChange(value: unknown): ScheduleChange {
         operation: 'create',
         schedule: decodeScheduleRecord(value['schedule']),
       })
-    case 'delete':
-    case 'pause':
-    case 'resume': {
+    case 'delete': {
       if (!hasExactKeys(value, ['version', 'operation', 'id'])) {
-        throw new ScheduleLogError(`schedule ${value['operation']} must contain exactly version, operation, and id`)
+        throw new ScheduleLogError('schedule delete must contain exactly version, operation, and id')
       }
       return Object.freeze({
         version: SCHEDULE_CHANGE_VERSION,
-        operation: value['operation'],
+        operation: 'delete',
         id: decodeId(value['id']),
-      }) as Extract<ScheduleChange, { operation: 'delete' | 'pause' | 'resume' }>
+      })
+    }
+    case 'pause': {
+      if (!hasExactKeys(value, ['version', 'operation', 'id'])) {
+        throw new ScheduleLogError('schedule pause must contain exactly version, operation, and id')
+      }
+      return Object.freeze({
+        version: SCHEDULE_CHANGE_VERSION,
+        operation: 'pause',
+        id: decodeId(value['id']),
+      })
+    }
+    case 'resume': {
+      if (!hasExactKeys(value, ['version', 'operation', 'id'])) {
+        throw new ScheduleLogError('schedule resume must contain exactly version, operation, and id')
+      }
+      return Object.freeze({
+        version: SCHEDULE_CHANGE_VERSION,
+        operation: 'resume',
+        id: decodeId(value['id']),
+      })
     }
     case 'dispatch': {
       if (hasExactKeys(value, ['version', 'operation', 'id'])) {

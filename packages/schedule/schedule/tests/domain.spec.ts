@@ -202,6 +202,14 @@ describe('version-1 Schedule decoding and folding', () => {
       paused,
       scheduleEvent({ version: 1, operation: 'dispatch', id: 'first' }, 3),
     ])).toThrow(/inactive id/)
+    expect(() => foldScheduleEvents([
+      scheduleEvent({ version: 1, operation: 'pause', id: 'missing' }),
+    ])).toThrow(/pause targets/)
+    expect(() => foldScheduleEvents([
+      scheduleEvent({ version: 1, operation: 'resume', id: 'missing' }),
+    ])).toThrow(/resume targets/)
+    expect(() => decodeScheduleChange({ version: 1, operation: 'hold', id: 'first' }))
+      .toThrow(/must be create, delete, pause, resume, or dispatch/)
 
     const deleted = scheduleEvent({ version: 1, operation: 'delete', id: 'first' }, 3)
     expect(foldScheduleEvents([first, paused, deleted])).toEqual({
@@ -210,6 +218,16 @@ describe('version-1 Schedule decoding and folding', () => {
       schedules: [],
       seenIds: ['first'],
     })
+    expect(() => foldScheduleEvents([
+      first,
+      deleted,
+      scheduleEvent({ version: 1, operation: 'pause', id: 'first' }, 2),
+    ])).toThrow(/pause targets/)
+    expect(() => foldScheduleEvents([
+      first,
+      deleted,
+      scheduleEvent({ version: 1, operation: 'resume', id: 'first' }, 2),
+    ])).toThrow(/resume targets/)
   })
 
   it('allocates a readable id without reusing ended or colliding ids', () => {
