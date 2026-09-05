@@ -233,7 +233,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/api/session-controller/src/index.ts:72`](../packages/api/session-controller/src/index.ts)
+Source: [`packages/api/session-controller/src/index.ts:75`](../packages/api/session-controller/src/index.ts)
 
 <a id="deepseek-aidsh-api-settings-controller"></a>
 
@@ -271,7 +271,7 @@ export interface Config {
 
 Depends on: [`NativeCommandRunner`](../packages/util/native-command/src/index.ts)
 
-Source: [`packages/api/workspace-controller/src/index.ts:36`](../packages/api/workspace-controller/src/index.ts)
+Source: [`packages/api/workspace-controller/src/index.ts:38`](../packages/api/workspace-controller/src/index.ts)
 
 <a id="deepseek-aidsh-attachment-local"></a>
 
