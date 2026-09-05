@@ -30,7 +30,7 @@
  */
 import type { Context as CordisContext } from '@deepseek-ai/cordis'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
-import type { SessionAdmissionAdapter } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionAdmissionAdapter } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
 import type { BetterSidebarService } from './client/service.ts'
 
@@ -387,8 +387,8 @@ export interface SidebarSessionsService {
     origin: 'subagent'
     title: string
   }): () => void
-  /** Register one feature-owned prompt/cancel route for exact Session identities. */
-  registerAdmissionAdapter?(adapter: SessionAdmissionAdapter): () => void
+  /** Register one feature-owned prompt/cancel route for matching Session identities. */
+  registerAdmissionAdapter(adapter: SessionAdmissionAdapter): () => void
 }
 
 /** Explicit-Session mounting face provided by ui-renderer. */

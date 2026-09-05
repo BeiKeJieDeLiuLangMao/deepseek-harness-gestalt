@@ -36,7 +36,7 @@
 |---|---|
 | 1 工作区清单 | **保留** — 仍由本仓持有；不在允许导入路径内 |
 | 2 `src/config.ts` schemastery | **保留** |
-| 3 `src/context-types.ts` 准入 / `uiRenderer` / workspaces 归档 | **保留**；并把 `openWorkspacePath` **迁到** `remote.session`。`SessionAdmissionAdapter` 仍 type-import `@deepseek-ai/dsh-client-runtime/client`，因为 ClientSessions 尚未拥有完整路由契约。该 import **不是**已完成的 owner。不要补空本地 interface。 |
+| 3 `src/context-types.ts` 准入 / `uiRenderer` / workspaces 归档 | **保留**；并把 `openWorkspacePath` **迁到** `remote.session`。`SessionAdmissionAdapter` type-import `@deepseek-ai/dsh-api-session-controller/client`。`registerAdmissionAdapter` 为必填。 |
 | 4 `src/invariant.ts` PACKAGE_NAME | **保留** |
 | 5 tsdown / chunk-loader 工作区 factory id | **保留**（`clientBundle('@deepseek-ai/dsh-client-ui-better-sidebar', 'client.js')`）。`dsh.plugin.json` 仍命名上游插件注册表通道 `./lib/client-registry.js`；本仓 tsdown 面仍不额外产出该 factory。locale 是额外 chunk，不是第二条注册表通道。 |
 | 6 `src/bundle-route.ts` `LIB_DIR` | **保留**（包内 `lib/`，含 `client-locale.js`） |
