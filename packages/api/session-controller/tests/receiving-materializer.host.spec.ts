@@ -4,11 +4,15 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } fro
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry, { Inbox } from '@deepseek-ai/dsh-agent'
 import type { Agent, AgentFactory, CreateAgentOptions } from '@deepseek-ai/dsh-agent'
 import FileMemberQuestionReceiver from '@deepseek-ai/dsh-member-question-receiver'
+import type {
+  MemberQuestionTerminalAuthority,
+  MemberQuestionTerminalClaim,
+} from '@deepseek-ai/dsh-member-question-receiver'
 import type { PlatformAccountId } from '@deepseek-ai/dsh-platform-account'
 import {
   parseCompanionOperationId,
@@ -59,6 +63,38 @@ const envelope = {
   },
 }
 
+class MemoryTerminalAuthority implements MemberQuestionTerminalAuthority {
+  readonly terminals = new Map<string, MemberQuestionTerminalClaim['terminal']>()
+
+  async claim(candidate: MemberQuestionTerminalClaim['terminal']): Promise<MemberQuestionTerminalClaim> {
+    const prior = this.terminals.get(candidate.questionId)
+    if (prior !== undefined) return { claimed: false, terminal: prior }
+    this.terminals.set(candidate.questionId, candidate)
+    return { claimed: true, terminal: candidate }
+  }
+}
+
+class ManualTimer {
+  readonly pending: Array<{ callback: () => void; delayMs: number }> = []
+
+  set(callback: () => void, delayMs: number): unknown {
+    const handle = { callback, delayMs }
+    this.pending.push(handle)
+    return handle
+  }
+
+  clear(handle: unknown): void {
+    const index = this.pending.indexOf(handle as typeof this.pending[number])
+    if (index >= 0) this.pending.splice(index, 1)
+  }
+
+  fire(): void {
+    const next = this.pending.shift()
+    if (next === undefined) throw new Error('no timer scheduled')
+    next.callback()
+  }
+}
+
 function stubAgent(session: Session): Agent {
   return {
     id: session.id,
@@ -77,12 +113,17 @@ function stubAgent(session: Session): Agent {
   }
 }
 
-async function harness(): Promise<{
+async function harness(options: {
+  readonly terminalAuthority?: MemberQuestionTerminalAuthority
+  readonly receivingTerminalTimer?: ManualTimer
+  readonly resume?: AgentFactory['resume']
+} = {}): Promise<{
   ctx: Context
   receiver: FileMemberQuestionReceiver
   workspaceId: string
   workspacePath: string
   jsonlRoot: string
+  timer: ManualTimer | undefined
 }> {
   const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'dsh-receiving-materializer-')))
   roots.push(root)
@@ -118,7 +159,7 @@ async function harness(): Promise<{
         },
       }
     },
-    resume: () => Promise.reject(new Error('receiving materializer tests keep sources live')),
+    resume: options.resume ?? (() => Promise.reject(new Error('receiving materializer tests keep sources live'))),
   }
   ctx.agents.setFactory(factory)
   await ctx.plugin(FileMemberQuestionReceiver, {
@@ -127,10 +168,15 @@ async function harness(): Promise<{
     maxRecords: 16,
     terminalRetryMs: 10,
     clock: () => 1_000,
+    ...options.terminalAuthority === undefined ? {} : { terminalAuthority: options.terminalAuthority },
   })
   createSessionTestController(ctx, {
     defaultModelSelection: () => ({ provider: 'fixture', model: 'fixture-model' }),
     cwd: workspacePath,
+    receivingTerminalRetryMs: 5,
+    ...options.receivingTerminalTimer === undefined
+      ? {}
+      : { receivingTerminalTimer: options.receivingTerminalTimer },
   })
   const workspace = await ctx.workspaceRegistry.create(workspacePath)
   const receiver = ctx.memberQuestionReceiver as FileMemberQuestionReceiver
@@ -139,7 +185,14 @@ async function harness(): Promise<{
     envelope.operation.projectId,
     workspace.id,
   )
-  return { ctx, receiver, workspaceId: workspace.id, workspacePath, jsonlRoot }
+  return {
+    ctx,
+    receiver,
+    workspaceId: workspace.id,
+    workspacePath,
+    jsonlRoot,
+    timer: options.receivingTerminalTimer,
+  }
 }
 
 describe('Session Controller receiving materializer', () => {
@@ -202,6 +255,133 @@ describe('Session Controller receiving materializer', () => {
           cachedPath: '.dsh/member-questions/question-materialize/architecture.md',
         }],
       })
+  })
+
+  it('appends one ignorable settled event when the receiver terminal commits', async () => {
+    const { ctx, receiver } = await harness({ terminalAuthority: new MemoryTerminalAuthority() })
+    const arrived = await receiver.ingest(envelope)
+    await receiver.settle(envelope.operation.questionId, {
+      kind: 'declined',
+      settledByInstallationId: 'installation-local' as never,
+      settledByDeviceName: 'Local Mac',
+      settledAt: 1_100,
+    })
+    await vi.waitFor(() => {
+      const events = ctx.sessions.get(arrived.receivingSessionId as unknown as SessionId)
+        ?.snapshotEvents().filter(event => event.type === 'member-question/settled')
+      expect(events).toHaveLength(1)
+    })
+    const session = ctx.sessions.get(arrived.receivingSessionId as unknown as SessionId)
+    expect(session?.snapshotEvents().filter(event => event.type === 'member-question/settled')).toHaveLength(1)
+    expect(session?.snapshotEvents().find(event => event.type === 'member-question/settled')).toMatchObject({
+      ignorable: true,
+      data: { outcome: 'declined', questionId: envelope.operation.questionId },
+    })
+    await receiver.settle(envelope.operation.questionId, {
+      kind: 'declined',
+      settledByInstallationId: 'installation-local' as never,
+      settledByDeviceName: 'Local Mac',
+      settledAt: 1_200,
+    })
+    await Promise.resolve()
+    expect(session?.snapshotEvents().filter(event => event.type === 'member-question/settled')).toHaveLength(1)
+  })
+
+  it('retries a failed terminal flush without duplicating the settled event', async () => {
+    const timer = new ManualTimer()
+    const { ctx, receiver } = await harness({
+      terminalAuthority: new MemoryTerminalAuthority(),
+      receivingTerminalTimer: timer,
+    })
+    const arrived = await receiver.ingest(envelope)
+    const sessionId = arrived.receivingSessionId as unknown as SessionId
+    const flush = vi.spyOn(ctx.sessions, 'flush')
+    flush.mockRejectedValueOnce(new Error('injected flush failure'))
+    await receiver.settle(envelope.operation.questionId, {
+      kind: 'declined',
+      settledByInstallationId: 'installation-local' as never,
+      settledByDeviceName: 'Local Mac',
+      settledAt: 1_100,
+    })
+    await vi.waitFor(() => { expect(flush).toHaveBeenCalled() })
+    expect(ctx.sessions.get(sessionId)?.snapshotEvents()
+      .filter(event => event.type === 'member-question/settled')).toHaveLength(1)
+    timer.fire()
+    await vi.waitFor(() => { expect(flush.mock.calls.length).toBeGreaterThanOrEqual(2) })
+    expect(ctx.sessions.get(sessionId)?.snapshotEvents()
+      .filter(event => event.type === 'member-question/settled')).toHaveLength(1)
+  })
+
+  it('replays durable terminals onto JSONL after Host restart', async () => {
+    const first = await harness({ terminalAuthority: new MemoryTerminalAuthority() })
+    const arrived = await first.receiver.ingest(envelope)
+    await first.receiver.settle(envelope.operation.questionId, {
+      kind: 'declined',
+      settledByInstallationId: 'installation-local' as never,
+      settledByDeviceName: 'Local Mac',
+      settledAt: 1_100,
+    })
+    await vi.waitFor(() => {
+      expect(first.ctx.sessions.get(arrived.receivingSessionId as unknown as SessionId)
+        ?.snapshotEvents().some(event => event.type === 'member-question/settled')).toBe(true)
+    })
+    const jsonlRoot = first.jsonlRoot
+    const workspacePath = first.workspacePath
+    const receiverRoot = join(jsonlRoot, '..', 'receiver')
+    await first.ctx.fiber.dispose()
+    contexts.splice(contexts.indexOf(first.ctx), 1)
+
+    const ctx = new Context()
+    contexts.push(ctx)
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(SessionProjectionRegistry)
+    await ctx.plugin(AgentRegistry)
+    await ctx.plugin(JsonlSessionPersistence, { root: jsonlRoot, compression: 'none' })
+    await ctx.plugin(Storage)
+    ctx.storage.backend.register('memory', new MemoryStorageBackend())
+    const storageDomain = new DomainFacility(ctx, { backend: 'memory', routes: {} })
+    ctx.storage.mount('domain', storageDomain)
+    ctx.provide('storageDomain', storageDomain)
+    await ctx.plugin(WorkspaceRegistry)
+    ctx.agents.setFactory({
+      createAgent: () => Promise.reject(new Error('restart must resume')),
+      resume: async (ownerCtx, options) => {
+        const stored = await ctx.sessionPersistence.open(options.resumeSessionId, 'write')
+        const events = await stored.read()
+        const session = ctx.sessions.create(options.resumeSessionId, {
+          seed: [...events],
+          meta: stored.header,
+        })
+        const agent = stubAgent(session)
+        ctx.agents.register(agent)
+        void ownerCtx
+        return { agent, dispose: async () => { await stored.close() } }
+      },
+    })
+    await ctx.plugin(FileMemberQuestionReceiver, {
+      storagePath: receiverRoot,
+      environment: 'development',
+      maxRecords: 16,
+      terminalRetryMs: 10,
+      clock: () => 2_000,
+      terminalAuthority: new MemoryTerminalAuthority(),
+    })
+    const workspace = await ctx.workspaceRegistry.resolveByPath(workspacePath)
+      ?? await ctx.workspaceRegistry.create(workspacePath)
+    const restarted = ctx.memberQuestionReceiver as FileMemberQuestionReceiver
+    await restarted.bind(
+      envelope.authority.accountId,
+      envelope.operation.projectId,
+      workspace.id,
+    )
+    createSessionTestController(ctx, {
+      defaultModelSelection: () => ({ provider: 'fixture', model: 'fixture-model' }),
+      cwd: workspacePath,
+    })
+    await vi.waitFor(() => {
+      const session = ctx.sessions.get(arrived.receivingSessionId as unknown as SessionId)
+      expect(session?.snapshotEvents().filter(event => event.type === 'member-question/settled')).toHaveLength(1)
+    })
   })
 
   it('withdraws the materializer so a later Host owner can replace it', async () => {

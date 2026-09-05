@@ -83,7 +83,6 @@ import type { InstallationId } from '@deepseek-ai/dsh-remote-protocol'
 import type {
   MemberQuestionHumanTurnAdmissionContext,
   MemberQuestionHumanTurnContent,
-  TerminalMemberQuestionView,
 } from '@deepseek-ai/dsh-member-question-receiver'
 
 import type {} from '@deepseek-ai/dsh-project-membership'
@@ -1945,17 +1944,6 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     return workspace
   }
 
-  /** Resolve one receiving account/project association outside the receiver transaction. */
-  async function receivingWorkspace(
-    admission: Pick<MemberQuestionHumanTurnAdmissionContext, 'receivingAccountId' | 'projectId'>,
-  ): Promise<Workspace> {
-    const binding = ctx.get('memberQuestionWorkspaceBinding')
-    if (binding === undefined) {
-      throw new Error('member-question admission requires exact local Workspace binding authority')
-    }
-    return workspaceFromId(await binding.resolve(admission.receivingAccountId, admission.projectId))
-  }
-
   /** Whether one stable message identity already entered this Session or remains pending. */
   function hasMessage(session: Session, messageId: string): boolean {
     return session.events.some((event) => {
@@ -1989,114 +1977,6 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       await ctx.sessions.flush(agent.session)
       return { accepted: true }
     }), 'api-proxy: member-question human admission')
-  }
-
-  const terminalSyncs = new Map<string, Promise<void>>()
-  const terminalRetryPending = new Map<string, TerminalMemberQuestionView>()
-  const terminalOwnedTasks = new Set<Promise<unknown>>()
-  let terminalRetryTimer: ReturnType<typeof setTimeout> | undefined
-  let receiverRecoveryTimer: ReturnType<typeof setTimeout> | undefined
-  let receiverLifecycleDisposed = false
-
-  function trackReceiverTask<T>(task: Promise<T>, cleanup?: () => void): Promise<T> {
-    terminalOwnedTasks.add(task)
-    const settle = (): void => {
-      terminalOwnedTasks.delete(task)
-      cleanup?.()
-    }
-    void task.then(settle, settle)
-    return task
-  }
-
-  async function syncMaterializedTerminal(view: TerminalMemberQuestionView): Promise<void> {
-    if (view.hostSessionId === undefined) return
-    const workspace = await receivingWorkspace({
-      receivingAccountId: view.receivingAccountId,
-      projectId: view.brief.projectId,
-    })
-    const sessionId = view.hostSessionId
-    const agent = await ensureSession(sessionId, workspace.path, true)
-    await workspace.attachSession(sessionId)
-    if (!agent.session.events.some(event => event.type === 'member-question/settled'
-      && event.data.questionId === view.questionId)) {
-      agent.session.append('member-question/settled', view.terminal, { ignorable: true })
-    }
-    // A preceding attempt may have appended the event before its flush failed.
-    await ctx.sessions.flush(agent.session)
-  }
-
-  function scheduleTerminalSync(view: TerminalMemberQuestionView): Promise<void> {
-    if (receiverLifecycleDisposed) return Promise.reject(new Error('member-question terminal sync is disposed'))
-    const key = view.questionId
-    const task = (terminalSyncs.get(key) ?? Promise.resolve())
-      .catch(() => undefined)
-      .then(() => syncMaterializedTerminal(view))
-    terminalSyncs.set(key, task)
-    return trackReceiverTask(task, () => {
-      if (terminalSyncs.get(key) === task) terminalSyncs.delete(key)
-    })
-  }
-
-  function queueTerminalRetry(view: TerminalMemberQuestionView): void {
-    if (receiverLifecycleDisposed) return
-    terminalRetryPending.set(view.questionId, view)
-    if (terminalRetryTimer !== undefined) return
-    terminalRetryTimer = setTimeout(() => {
-      terminalRetryTimer = undefined
-      const task = drainTerminalRetries()
-      void trackReceiverTask(task)
-    }, 1_000)
-  }
-
-  async function drainTerminalRetries(): Promise<void> {
-    for (const [questionId, view] of [...terminalRetryPending]) {
-      if (receiverLifecycleDisposed) return
-      try {
-        await scheduleTerminalSync(view)
-        terminalRetryPending.delete(questionId)
-      } catch (error: unknown) {
-        console.error('member-question terminal Session sync retry failed:', error)
-      }
-    }
-    const next = terminalRetryPending.values().next().value
-    if (next !== undefined) queueTerminalRetry(next)
-  }
-
-  if (memberQuestionReceiver !== undefined) {
-    ctx.effect(() => {
-      const disposeChanges = memberQuestionReceiver.changes((snapshot) => {
-        for (const view of snapshot.terminal) {
-          void scheduleTerminalSync(view).catch((error: unknown) => {
-            console.error('member-question terminal Session sync failed:', error)
-            queueTerminalRetry(view)
-          })
-        }
-      })
-      const recover = async (): Promise<void> => {
-        try {
-          await memberQuestionReceiver.resumeReservedSessionMaterializations()
-          await memberQuestionReceiver.resumeReservedHumanTurns()
-          const snapshot = await memberQuestionReceiver.snapshot()
-          for (const view of snapshot.terminal) await scheduleTerminalSync(view)
-        } catch (error: unknown) {
-          if (receiverLifecycleDisposed) return
-          console.error('member-question Host recovery failed:', error)
-          receiverRecoveryTimer = setTimeout(() => {
-            receiverRecoveryTimer = undefined
-            void trackReceiverTask(recover())
-          }, 1_000)
-        }
-      }
-      void trackReceiverTask(recover())
-      return async () => {
-        receiverLifecycleDisposed = true
-        disposeChanges()
-        if (terminalRetryTimer !== undefined) clearTimeout(terminalRetryTimer)
-        if (receiverRecoveryTimer !== undefined) clearTimeout(receiverRecoveryTimer)
-        terminalRetryPending.clear()
-        await Promise.allSettled([...terminalOwnedTasks])
-      }
-    }, 'api-proxy: member-question recovery and terminal Session sync')
   }
 
   /**
@@ -2512,10 +2392,6 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
               settledByDeviceName: installation.deviceName, settledAt,
             },
         )
-        const terminalView = (await memberQuestionReceiver.snapshot()).terminal.find(
-          view => view.questionId === terminal.questionId,
-        )
-        if (terminalView !== undefined) await scheduleTerminalSync(terminalView)
         return ok(request, terminal)
       },
 

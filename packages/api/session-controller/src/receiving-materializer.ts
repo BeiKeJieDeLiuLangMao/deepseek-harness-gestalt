@@ -7,11 +7,31 @@ import {
   writeMemberQuestionDocumentCache,
   type MemberQuestionHumanTurnAdmissionContext,
   type MemberQuestionSessionMaterializer,
+  type TerminalMemberQuestionView,
 } from '@deepseek-ai/dsh-member-question-receiver'
 import type { Session, SessionId } from '@deepseek-ai/dsh-session'
 import { SessionAlreadyExistsError } from '@deepseek-ai/dsh-session-persistence'
 import { WorkspaceId } from '@deepseek-ai/dsh-workspace'
 import type { ApiSessionAgentController } from './agent.ts'
+
+/** Default delay between failed terminal Session sync attempts. */
+export const DEFAULT_RECEIVING_TERMINAL_RETRY_MS = 1_000
+
+/** Timer used by receiving terminal Session sync retries. */
+export interface ReceivingTerminalRetryTimer {
+  /** Schedule one callback. */
+  set(callback: () => void, delayMs: number): unknown
+  /** Cancel one scheduled callback. */
+  clear(handle: unknown): void
+}
+
+/** Host options for arrival materialization and terminal Session sync. */
+export interface ReceivingMaterializerOptions {
+  /** Delay between failed terminal Session sync attempts. */
+  readonly terminalRetryMs?: number
+  /** Timer used by terminal retries; defaults to the process timer. */
+  readonly timer?: ReceivingTerminalRetryTimer
+}
 
 /** Compact model-visible Decision Brief for one received operation. */
 function decisionBrief(row: MemberQuestionHumanTurnAdmissionContext['questions'][number]): string {
@@ -43,21 +63,44 @@ function hasMessage(session: Session, messageId: string): boolean {
 }
 
 /**
- * Register the single Host arrival materializer on the member-question receiver.
+ * Register the single Host arrival materializer and terminal Session sync.
  * Creates or continues the receiver-owned Session identity, attaches the bound
  * Workspace, records ignorable `member-question/received` metadata, and injects
- * the Decision Brief without starting a model turn. Unregistering the effect
- * withdraws the materializer.
+ * the Decision Brief without starting a model turn. After a durable terminal,
+ * appends ignorable `member-question/settled` once and flushes. Failed flushes
+ * retry on the configured timer. Dispose cancels timers, refuses stale writes,
+ * and waits for in-flight syncs.
  * @param ctx - Host context with sessions, agents, and workspace registry.
  * @param agents - Session Controller Agent activation.
- * @returns disposer for this exact registration, or undefined when the receiver is uncomposed.
+ * @param options - retry delay and timer.
+ * @returns async disposer for this exact registration, or undefined when the receiver is uncomposed.
  */
 export function installReceivingSessionMaterializer(
   ctx: Context,
   agents: ApiSessionAgentController,
-): (() => void) | undefined {
+  options: ReceivingMaterializerOptions = {},
+): (() => void | Promise<void>) | undefined {
   const receiver = ctx.get('memberQuestionReceiver')
   if (receiver === undefined) return undefined
+  const retryMs = options.terminalRetryMs ?? DEFAULT_RECEIVING_TERMINAL_RETRY_MS
+  const timer = options.timer ?? { set: setTimeout, clear: clearTimeout }
+  const terminalSyncs = new Map<string, Promise<void>>()
+  const terminalRetryPending = new Map<string, TerminalMemberQuestionView>()
+  const ownedTasks = new Set<Promise<unknown>>()
+  let retryHandle: unknown
+  let recoveryHandle: unknown
+  let disposed = false
+
+  const track = <T>(task: Promise<T>, cleanup?: () => void): Promise<T> => {
+    ownedTasks.add(task)
+    const settle = (): void => {
+      ownedTasks.delete(task)
+      cleanup?.()
+    }
+    void task.then(settle, settle)
+    return task
+  }
+
   const materializer: MemberQuestionSessionMaterializer = async (input, admission) => {
     const workspace = ctx.workspaceRegistry.get(WorkspaceId(admission.workspaceId))
     if (workspace === undefined) {
@@ -141,5 +184,112 @@ export function installReceivingSessionMaterializer(
       ...(cachedReferences === undefined ? {} : { cachedReferences }),
     }
   }
-  return receiver.registerSessionMaterializer(materializer)
+
+  const resolveWorkspace = async (view: TerminalMemberQuestionView) => {
+    const binding = receiver.lookup(view.receivingAccountId, view.brief.projectId)
+    const workspaceId = await binding
+    if (workspaceId === undefined) {
+      throw new Error('member-question admission requires exact local Workspace binding authority')
+    }
+    const workspace = ctx.workspaceRegistry.get(WorkspaceId(workspaceId))
+    if (workspace === undefined) {
+      throw new Error(`member-question binding references unknown Workspace ${workspaceId}`)
+    }
+    return workspace
+  }
+
+  const persistWriter = async (header: Session['header']): Promise<void> => {
+    const persistence = ctx.get('sessionPersistence')
+    if (persistence === undefined) return
+    try {
+      await persistence.create(header)
+    } catch (error: unknown) {
+      if (!(error instanceof SessionAlreadyExistsError)) throw error
+    }
+  }
+
+  const syncMaterializedTerminal = async (view: TerminalMemberQuestionView): Promise<void> => {
+    if (disposed || view.hostSessionId === undefined) return
+    const workspace = await resolveWorkspace(view)
+    const sessionId = view.hostSessionId
+    const agent = await agents.ensureSession(sessionId, workspace.path, true)
+    await workspace.attachSession(sessionId)
+    await persistWriter(agent.session.header)
+    if (!agent.session.snapshotEvents().some(event => event.type === 'member-question/settled'
+      && event.data.questionId === view.questionId)) {
+      agent.session.append('member-question/settled', view.terminal, { ignorable: true })
+    }
+    if (disposed) return
+    await ctx.sessions.flush(agent.session)
+  }
+
+  const scheduleTerminalSync = (view: TerminalMemberQuestionView): Promise<void> => {
+    if (disposed) return Promise.reject(new Error('member-question terminal sync is disposed'))
+    const key = String(view.questionId)
+    const task = (terminalSyncs.get(key) ?? Promise.resolve())
+      .catch(() => undefined)
+      .then(() => syncMaterializedTerminal(view))
+    terminalSyncs.set(key, task)
+    return track(task, () => {
+      if (terminalSyncs.get(key) === task) terminalSyncs.delete(key)
+    })
+  }
+
+  const queueTerminalRetry = (view: TerminalMemberQuestionView): void => {
+    if (disposed) return
+    terminalRetryPending.set(String(view.questionId), view)
+    if (retryHandle !== undefined) return
+    retryHandle = timer.set(() => {
+      retryHandle = undefined
+      void track(drainTerminalRetries())
+    }, retryMs)
+  }
+
+  const drainTerminalRetries = async (): Promise<void> => {
+    for (const [questionId, view] of [...terminalRetryPending]) {
+      if (disposed) return
+      try {
+        await scheduleTerminalSync(view)
+        terminalRetryPending.delete(questionId)
+      } catch (error: unknown) {
+        ctx.logger.error(`member-question terminal Session sync retry failed: ${String(error)}`)
+      }
+    }
+    const next = terminalRetryPending.values().next().value
+    if (next !== undefined) queueTerminalRetry(next)
+  }
+
+  const unregisterMaterializer = receiver.registerSessionMaterializer(materializer)
+  const disposeChanges = receiver.changes((snapshot) => {
+    for (const view of snapshot.terminal) {
+      void scheduleTerminalSync(view).catch((error: unknown) => {
+        ctx.logger.error(`member-question terminal Session sync failed: ${String(error)}`)
+        queueTerminalRetry(view)
+      })
+    }
+  })
+  const recover = async (): Promise<void> => {
+    try {
+      await receiver.resumeReservedSessionMaterializations()
+      const snapshot = await receiver.snapshot()
+      for (const view of snapshot.terminal) await scheduleTerminalSync(view)
+    } catch (error: unknown) {
+      if (disposed) return
+      ctx.logger.error(`member-question Host recovery failed: ${String(error)}`)
+      recoveryHandle = timer.set(() => {
+        recoveryHandle = undefined
+        void track(recover())
+      }, retryMs)
+    }
+  }
+  void track(recover())
+  return async () => {
+    disposed = true
+    unregisterMaterializer()
+    disposeChanges()
+    if (retryHandle !== undefined) timer.clear(retryHandle)
+    if (recoveryHandle !== undefined) timer.clear(recoveryHandle)
+    terminalRetryPending.clear()
+    await Promise.allSettled([...ownedTasks])
+  }
 }
