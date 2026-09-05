@@ -13,6 +13,12 @@ import {
 import type {
   SessionHistoryRecord, SessionWireEvent,
 } from '@deepseek-ai/dsh-api-session-controller/types'
+import type {
+  RemoteEventClientId,
+  RemoteEventDownlinkFrame,
+  RemoteEventId,
+  RemoteEventReadyFrame,
+} from '@deepseek-ai/dsh-api-gateway'
 import {
   encodeProtocolBase64Url,
   parseCompanionInteractionId,
@@ -56,9 +62,10 @@ import {
 /** Operations owned by the attachment and authoritative-search product bridge. */
 export type CompanionProductOperation = Exclude<CompanionOperation, { type: 'query-operation-status' }>
 
-/** One exact Host pending request retained only by Desktop endpoint memory. */
+/** One exact Host pending waterfall retained only by Desktop endpoint memory. */
 export interface DesktopPendingCompanionInteraction {
-  rpcId: string
+  eventId: RemoteEventId
+  clientId: RemoteEventClientId
   kind: 'approval' | 'question'
   sessionId: CompanionSessionId
   approvalId?: string
@@ -217,6 +224,7 @@ export class DesktopCompanionProductOwner {
     this.interactions.clear()
     this.surfaceDiscovery.clear()
     this.installed = installed
+    this.startEventFollow(installed)
     if (this.liveProjection.hasConnections()) {
       this.ensureHostStreams(installed)
       this.liveProjection.surfaceChanged()
@@ -275,10 +283,21 @@ export class DesktopCompanionProductOwner {
         host,
         workspaceSnapshot: signal => this.installed?.workspace?.wait(signal),
         sessionHistory: this.installed?.history,
+        resolveInteraction: interactionId => this.interactions.resolve(interactionId, dependencies.attachmentKey),
+        pendingInteractions: sessionId => this.interactions.project(sessionId, dependencies.attachmentKey),
       }
-      return operation.type === 'refresh-surface'
+      const output = operation.type === 'refresh-surface'
         ? await this.surfaceDiscovery.refresh(operation, withHost)
         : await handleCompanionProductOperation(operation, withHost)
+      if (operation.type === 'settle-interaction'
+        && !Array.isArray(output)
+        && 'type' in output
+        && output.type === 'interaction-receipt'
+        && output.accepted) {
+        const pending = this.interactions.resolve(operation.interactionId, dependencies.attachmentKey)
+        if (pending !== undefined) this.interactions.forget(pending.eventId)
+      }
+      return output
     }
     if (!isLedgerMutation(operation)) return await execute()
     if (this.ledger === undefined) return operationFailed(operation, {
@@ -291,6 +310,31 @@ export class DesktopCompanionProductOwner {
       }
       return output
     })
+  }
+
+  private startEventFollow(installed: NonNullable<DesktopCompanionProductOwner['installed']>): void {
+    void installed.rpc.followEvents(installed.cancellation.signal, (frame) => {
+      this.acceptEventFrame(frame)
+    }).catch((error: unknown) => {
+      if (installed.cancellation.signal.aborted || this.installed !== installed) return
+      this.interactions.clear()
+      const failure = error instanceof Error ? error : new Error('Desktop Host Remote event stream ended', { cause: error })
+      console.error('[desktop-companion] Host Remote event stream failed:', failure)
+    })
+  }
+
+  private acceptEventFrame(frame: RemoteEventDownlinkFrame | RemoteEventReadyFrame): void {
+    if (frame.type === 'ready') {
+      this.interactions.ready(frame)
+      return
+    }
+    this.interactions.accept(frame)
+    if (frame.type !== 'waterfall') return
+    try {
+      this.liveProjection.changed(parseCompanionSessionId(frame.agentId))
+    } catch {
+      // Agent identities that are not Companion Session ids stay off the live Session projection.
+    }
   }
 
   private ensureHostStreams(installed: NonNullable<DesktopCompanionProductOwner['installed']>): void {
@@ -330,14 +374,12 @@ export class DesktopCompanionProductOwner {
     delete installed.streams
     streams.cancellation.abort()
     if (installed.cancellation.signal.aborted || this.installed !== installed) return
-    this.interactions.clear()
     const error = failure instanceof Error ? failure : new Error('Desktop Web Host event streams ended', { cause: failure })
     console.error('[desktop-companion] Host event streams failed:', error)
     this.liveProjection.fail(error)
   }
 
   private acceptMuxEnvelope(envelope: { rpcId: string; payload: unknown }): void {
-    this.interactions.accept(envelope)
     const sessionId = hostEventSessionId(envelope.payload)
     if (sessionId !== undefined) this.liveProjection.changed(sessionId)
   }
@@ -693,23 +735,25 @@ async function settleInteraction(
     || (operation.settlement.kind === 'approval' ? pending.kind !== 'approval' : pending.kind !== 'question')) {
     return { type: 'interaction-receipt', operationId: operation.operationId, accepted: false, reason: 'not-pending' }
   }
-  const respond = dependencies.host.respond?.bind(dependencies.host)
-  if (respond === undefined) return operationFailed(operation, {
-    kind: 'wire', code: 'HOST_WIRE_INVALID', message: 'Desktop Host interaction response is unavailable',
+  const outcome = operation.settlement.kind === 'approval'
+    ? { kind: 'result' as const, value: operation.settlement.outcome }
+    : operation.settlement.kind === 'question'
+      ? { kind: 'result' as const, value: { answers: operation.settlement.answers } }
+      : {
+        kind: 'rejected' as const,
+        error: {
+          name: 'UserQuestionError',
+          message: 'the user cancelled ask_user_question',
+          code: 'ASK_CANCELLED',
+        },
+      }
+  const receipt = await dependencies.host.completeEvent({
+    clientId: pending.clientId,
+    eventId: pending.eventId,
+    outcome,
   })
-  let result: Record<string, unknown>
-  if (operation.settlement.kind === 'approval') {
-    if (pending.approvalId === undefined) return { type: 'interaction-receipt', operationId: operation.operationId, accepted: false, reason: 'bad-response' }
-    result = { ok: true, value: {
-      sessionId: operation.sessionId, approvalId: pending.approvalId, outcome: operation.settlement.outcome,
-    } }
-  } else if (operation.settlement.kind === 'question') {
-    result = { ok: true, value: { sessionId: operation.sessionId, answer: { answers: operation.settlement.answers } } }
-  } else {
-    result = { ok: false, error: { code: 'cancelled', message: 'Mobile user cancelled Ask User', details: {} } }
-  }
-  const receipt = await respond(pending.rpcId, result)
-  return { type: 'interaction-receipt', operationId: operation.operationId, ...receipt }
+  if (!receipt.ok) return operationFailed(operation, normalizeFailure(receipt.failure))
+  return { type: 'interaction-receipt', operationId: operation.operationId, accepted: true }
 }
 
 async function readImage(

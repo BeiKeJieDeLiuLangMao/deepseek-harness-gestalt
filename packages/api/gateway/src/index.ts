@@ -71,8 +71,22 @@ export type {
 } from './types.ts'
 export type { RemoteEventHostInfo } from './stream-protocol.ts'
 export {
+  parseRemoteEventDownlinkFrame,
+  parseRemoteEventReadyFrame,
+  parseRemoteEventResult,
   parseRemoteStreamServerMessage,
+  REMOTE_EVENT_RESULT_ENDPOINT,
+  REMOTE_EVENT_STREAM_ENDPOINT,
+  REMOTE_EVENT_STREAM_PAYLOAD,
   REMOTE_STREAM_MUX_PATH,
+} from './stream-protocol.ts'
+export type {
+  RemoteEventClientId,
+  RemoteEventDownlinkFrame,
+  RemoteEventId,
+  RemoteEventInvocationFrame,
+  RemoteEventReadyFrame,
+  RemoteEventResult,
 } from './stream-protocol.ts'
 
 interface GatewayErrorOptions {

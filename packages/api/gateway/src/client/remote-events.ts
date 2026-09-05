@@ -15,10 +15,9 @@ import {
   REMOTE_EVENT_RESULT_ENDPOINT,
   REMOTE_EVENT_STREAM_ENDPOINT,
   REMOTE_EVENT_STREAM_PAYLOAD,
-  isRemoteEventAgentId,
-  isRemoteEventClientId,
-  isRemoteEventId,
   isRemoteJsonValue,
+  parseRemoteEventDownlinkFrame,
+  parseRemoteEventReadyFrame,
   projectRemoteEventRejection,
   type RemoteEventClientId,
   type RemoteEventDownlinkFrame,
@@ -261,70 +260,23 @@ function parseRemoteEventReady(value: unknown): {
   readonly clientId: RemoteEventClientId
   readonly host: ConnectionHostInfo
 } {
-  if (!isRemoteEventRecord(value)
-    || !hasExactRemoteEventKeys(value, ['type', 'clientId', 'host'])
-    || value.type !== 'ready'
-    || !isRemoteEventClientId(value.clientId)
-    || !isRemoteEventRecord(value.host)
-    || !hasExactRemoteEventKeys(value.host, ['home'])
-    || typeof value.host.home !== 'string') {
+  try {
+    const frame = parseRemoteEventReadyFrame(value)
+    return { clientId: frame.clientId, host: { home: frame.host.home } }
+  } catch {
+    // Official parser TypeError is rewritten to the Client-owned ready-frame diagnostic.
     throw new TypeError('client api: forwarded Remote event stream did not begin with ready')
   }
-  return { clientId: value.clientId, host: { home: value.host.home } }
 }
 
 /** Validate one untrusted value from the Gateway-internal forwarded-event stream. */
 function parseRemoteEventFrame(value: unknown): Exclude<RemoteEventDownlinkFrame, { type: 'ready' }> {
-  if (!isRemoteEventRecord(value)) invalidRemoteEventFrame()
-  if (value.type === 'cancel'
-    && hasExactRemoteEventKeys(value, ['type', 'eventId'])
-    && isRemoteEventId(value.eventId)) {
-    return { type: 'cancel', eventId: value.eventId }
+  try {
+    return parseRemoteEventDownlinkFrame(value)
+  } catch {
+    // Official parser TypeError is rewritten to the Client-owned downlink-frame diagnostic.
+    throw new TypeError('client api: invalid forwarded Remote event frame')
   }
-  if (value.type === 'emit'
-    && hasExactRemoteEventKeys(value, ['type', 'event', 'args'])
-    && validRemoteEventName(value.event)
-    && Array.isArray(value.args)
-    && isRemoteJsonValue(value.args)) {
-    return { type: 'emit', event: value.event, args: value.args }
-  }
-  if (value.type === 'waterfall'
-    && hasExactRemoteEventKeys(value, ['type', 'event', 'eventId', 'agentId', 'request'])
-    && validRemoteEventName(value.event)
-    && isRemoteEventId(value.eventId)
-    && isRemoteEventAgentId(value.agentId)
-    && isRemoteEventRecord(value.request)
-    && !Object.hasOwn(value.request, 'agent')
-    && !Object.hasOwn(value.request, 'signal')
-    && isRemoteJsonValue(value.request)) {
-    return {
-      type: 'waterfall',
-      event: value.event,
-      eventId: value.eventId,
-      agentId: value.agentId,
-      request: value.request,
-    }
-  }
-  invalidRemoteEventFrame()
-}
-
-function isRemoteEventRecord(value: unknown): value is Record<string, unknown> {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
-  const prototype: unknown = Object.getPrototypeOf(value)
-  return prototype === Object.prototype || prototype === null
-}
-
-function hasExactRemoteEventKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
-  const ownKeys = Reflect.ownKeys(value)
-  return ownKeys.length === keys.length && keys.every(key => Object.hasOwn(value, key))
-}
-
-function validRemoteEventName(value: unknown): value is string {
-  return typeof value === 'string' && value.length > 0
-}
-
-function invalidRemoteEventFrame(): never {
-  throw new TypeError('client api: invalid forwarded Remote event frame')
 }
 
 /** Race listener completion against its delivery lifetime. */
