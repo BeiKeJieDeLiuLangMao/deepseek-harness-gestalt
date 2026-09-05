@@ -178,6 +178,11 @@ describe('gate graph validation', () => {
     expect(quick).toEqual(full.filter(gate => gate.quick === true))
   })
 
+  it('omits failureDomain on ordinary product gates', () => {
+    const gates = withPnpmEntrypoint(() => gatesForMode('ci-primary'))
+    expect(gates.every(subject => subject.failureDomain === undefined)).toBe(true)
+  })
+
   it('keeps the hygiene aggregate aligned with the package script checks', () => {
     const ids = withPnpmEntrypoint(() => gatesForMode('hygiene').map(subject => subject.id))
 

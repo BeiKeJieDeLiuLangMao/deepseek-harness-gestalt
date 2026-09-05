@@ -42,6 +42,9 @@ export type Mode =
 type GateResultStatus = 'passed' | 'failed' | 'skipped'
 type GateState = 'pending' | 'running' | GateResultStatus
 
+/** Closed failure-ownership tags a gate may declare for CI evidence. */
+export type GateFailureDomain = 'infrastructure' | 'failover-readiness'
+
 /** A command and its dependency metadata inside one aggregate. */
 export interface Gate {
   id: string
@@ -59,6 +62,13 @@ export interface Gate {
   allowFailure?: boolean
   /** Write child output as it arrives instead of buffering it until completion. */
   streamOutput?: boolean
+  /**
+   * Failure ownership for CI evidence classification. Omit on ordinary product
+   * gates. `infrastructure` allows the transient-transport class only together
+   * with the diagnostic allowlist; `failover-readiness` classifies the gate
+   * regardless of diagnostics.
+   */
+  failureDomain?: GateFailureDomain
 }
 
 /** The observed outcome of one gate process. */

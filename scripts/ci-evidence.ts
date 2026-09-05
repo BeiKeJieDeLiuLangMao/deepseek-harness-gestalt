@@ -3,7 +3,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 
-import type { GateResult, Mode } from './run-gates.ts'
+import type { GateFailureDomain, GateResult, Mode } from './run-gates.ts'
 
 const CI_EVIDENCE_FORMAT_VERSION = 1
 
@@ -135,7 +135,9 @@ export function isTransientInfrastructureFailure(diagnostics: string): boolean {
 }
 
 /**
- * Classify a failed gate from its owned id and exact process diagnostics.
+ * Classify a failed gate from its owned id, declared {@link GateFailureDomain},
+ * and exact process diagnostics. Transport-shaped output is not infrastructure
+ * unless the gate declared that domain.
  * @param result - Failed or skipped gate outcome.
  * @returns Stable failure category used by reports and retry policy.
  */
@@ -144,8 +146,9 @@ export function classifyGateFailure(result: GateResult): CiFailureClassification
     result.error ?? '',
     ...result.output.map(chunk => chunk.text),
   ].join('\n')
-  if (result.gate.failureDomain === 'failover-readiness') return 'failover-readiness'
-  if (result.gate.failureDomain === 'infrastructure' && isTransientInfrastructureFailure(diagnostics)) {
+  const domain: GateFailureDomain | undefined = result.gate.failureDomain
+  if (domain === 'failover-readiness') return 'failover-readiness'
+  if (domain === 'infrastructure' && isTransientInfrastructureFailure(diagnostics)) {
     return 'transient-infrastructure'
   }
   if (RUNNER_CONTAMINATION_PATTERNS.some(pattern => pattern.test(diagnostics)) || result.signalCode !== null) {
