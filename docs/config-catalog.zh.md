@@ -213,7 +213,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/api/gateway/src/index.ts:119`](../packages/api/gateway/src/index.ts)
+Source: [`packages/api/gateway/src/index.ts:123`](../packages/api/gateway/src/index.ts)
 
 <a id="deepseek-aidsh-api-session-controller"></a>
 
@@ -233,7 +233,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/api/session-controller/src/index.ts:75`](../packages/api/session-controller/src/index.ts)
+Source: [`packages/api/session-controller/src/index.ts:76`](../packages/api/session-controller/src/index.ts)
 
 <a id="deepseek-aidsh-api-settings-controller"></a>
 
@@ -4323,6 +4323,12 @@ export interface Config {
 ```ts config-catalog
 /** Plugin config (all optional — `apply` fills env-var and constant defaults). */
 export interface Config {
+  /**
+   * Which provider tab the next search reads. `deepseek` uses this section's
+   * official DeepSeek endpoint; `anthropic-messages` uses the Anthropic tab;
+   * `kimi` uses Moonshot `POST /v1/search`.
+   */
+  backend?: WebSearchBackend
   /** Literal DeepSeek API key; prefer {@link apiKeyEnv} so no secret enters configuration files. */
   apiKey?: string
   /** Credential reference resolved for each search; defaults to `DEEPSEEK_API_KEY`. */
@@ -4338,6 +4344,9 @@ export interface Config {
   /** Maximum `web_search` server-tool uses per request. Defaults to 5. */
   maxUses?: number
 }
+
+/** Which provider tab the next search reads. */
+export type WebSearchBackend = 'deepseek' | 'anthropic-messages' | 'kimi'
 ```
 
 来源：[`packages/web/web-search-deepseek/src/index.ts:51`](../packages/web/web-search-deepseek/src/index.ts)
