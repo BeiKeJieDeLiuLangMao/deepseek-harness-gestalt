@@ -160,6 +160,28 @@ describe('Desktop Companion product operations', () => {
     })
   })
 
+  it('rejects surface and search after a workspace follow frame fails the generated codec', async () => {
+    const loopback = await listenCompanionHost({
+      workspaceFollowValue: { type: 'baseline', value: { items: 'not-an-array' } },
+    })
+    const owner = new DesktopCompanionProductOwner({
+      timeoutMs: 2_000, responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
+    })
+    const uninstall = owner.installHost(loopback.origin)
+    const pairing = baseDependencies(hostRpc(async () => {
+      throw new Error('owner must use its installed Host RPC')
+    }))
+    await expect(owner.handle(op({ type: 'refresh-surface', offset: 0 }), pairing)).resolves.toMatchObject({
+      type: 'operation-failed',
+      failure: { kind: 'wire', code: 'HOST_WIRE_INVALID' },
+    })
+    await expect(owner.handle(search('needle'), pairing)).resolves.toMatchObject({
+      type: 'operation-failed',
+      failure: { kind: 'wire', code: 'HOST_WIRE_INVALID' },
+    })
+    uninstall()
+  })
+
   it('projects a later Session page with exact hasMore and Workspace membership', async () => {
     let items = Array.from({ length: REMOTE_PROTOCOL_LIMITS.surfaceSessionRows + 1 }, (_, index) => ({
       sessionId: `session-${String(index)}`,
@@ -861,10 +883,50 @@ function deferred<T>(): { promise: Promise<T>; resolve(value: T): void } {
   return { promise, resolve }
 }
 
-async function listenCompanionHost(): Promise<{ origin: string }> {
-  const server = createServer()
+async function listenCompanionHost(options?: {
+  workspaceFollowValue?: unknown
+}): Promise<{ origin: string }> {
+  const workspaceFollowValue = options?.workspaceFollowValue ?? {
+    type: 'baseline', value: { items: [], archivedSessionIds: [] },
+  }
+  const server = createServer((request, response) => {
+    const chunks: Buffer[] = []
+    request.on('data', chunk => chunks.push(chunk as Buffer))
+    request.on('end', () => {
+      let rpcId = 'rpc'
+      try {
+        const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as { rpcId?: string; method?: string }
+        rpcId = body.rpcId ?? rpcId
+        if (body.method === 'session/list' || body.method === 'session.list') {
+          response.end(JSON.stringify({
+            type: 'server-response', rpcId,
+            result: { ok: true, value: { items: [{
+              sessionId: 'session-product', updatedAt: 9, running: false, blank: false,
+            }] } },
+          }))
+          return
+        }
+        if (body.method === 'session.search') {
+          response.end(JSON.stringify({
+            type: 'server-response', rpcId,
+            result: { ok: true, value: { items: [{ sessionId: 'session-hit', snippet: 'needle' }], hasMore: false } },
+          }))
+          return
+        }
+      } catch {
+        // Unary bodies that are not Host RPC JSON stay a wire failure.
+      }
+      response.end(JSON.stringify({
+        type: 'server-response', rpcId, result: { ok: false, error: { code: 'unavailable', message: 'no' } },
+      }))
+    })
+  })
   const wss = new WebSocketServer({ noServer: true })
   server.on('upgrade', (request, socket, head) => {
+    if (request.url !== '/api/remote.mux') {
+      socket.destroy()
+      return
+    }
     wss.handleUpgrade(request, socket, head, (websocket) => {
       websocket.on('message', (data) => {
         const text = typeof data === 'string' ? data : Buffer.from(data as Uint8Array).toString('utf8')
@@ -873,7 +935,7 @@ async function listenCompanionHost(): Promise<{ origin: string }> {
           websocket.send(JSON.stringify({
             type: 'item',
             streamId: message.streamId,
-            value: { type: 'baseline', value: { items: [], archivedSessionIds: [] } },
+            value: workspaceFollowValue,
           }))
         }
       })
