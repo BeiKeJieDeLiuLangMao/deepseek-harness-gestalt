@@ -54,11 +54,29 @@ export function createPendingInvitationsSource(
     }
   }
 
+  /**
+   * True when two invitation cards carry the same published fields.
+   * @param left - current snapshot row.
+   * @param right - newly polled row.
+   * @returns whether the wizard view is unchanged.
+   */
+  const sameView = (left: WorkspacePendingInvitation, right: WorkspacePendingInvitation): boolean =>
+    left.invitationId === right.invitationId
+    && left.receivingAccountId === right.receivingAccountId
+    && left.projectId === right.projectId
+    && left.projectName === right.projectName
+    && left.inviterName === right.inviterName
+    && left.remoteUrl === right.remoteUrl
+    && left.grantedRole === right.grantedRole
+
   const publish = (next: readonly WorkspacePendingInvitation[]): void => {
-    const sameIds = next.length === snapshot.invitations.length
-      && next.every((invitation, index) => invitation.invitationId === snapshot.invitations[index]?.invitationId)
-    if (sameIds && next.length === 0) return
-    if (sameIds) {
+    const sameContent = next.length === snapshot.invitations.length
+      && next.every((invitation, index) => {
+        const previous = snapshot.invitations[index]
+        return previous !== undefined && sameView(invitation, previous)
+      })
+    if (sameContent && next.length === 0) return
+    if (sameContent) {
       snapshot = { invitations: snapshot.invitations, epoch: snapshot.epoch + 1 }
       notify()
       return
@@ -87,18 +105,12 @@ export function createPendingInvitationsSource(
     const token = generation
     inFlight = true
     void client.pendingInvitations().then((invitations) => {
-      if (token !== generation) {
-        inFlight = false
-        return
-      }
+      if (token !== generation) return
       inFlight = false
       if (disposed || bound !== client) return
       publish(invitations)
     }).catch(() => {
-      if (token !== generation) {
-        inFlight = false
-        return
-      }
+      if (token !== generation) return
       inFlight = false
     })
   }
