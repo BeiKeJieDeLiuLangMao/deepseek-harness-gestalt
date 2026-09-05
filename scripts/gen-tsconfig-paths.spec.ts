@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
 import { imageMediaTypeForPath } from '@deepseek-ai/dsh-tool-fs/read-policy'
 import {
@@ -97,6 +98,19 @@ describe('generated tsconfig package aliases', () => {
     )
     expect(config).not.toContain('dsh-tool-fs/read-policy": ["./packages/fs/tool-fs/lib')
     expect(imageMediaTypeForPath('shot.png')).toBe('image/png')
+    const configPath = resolve(root, 'tsconfig.base.json')
+    const host = ts.createCompilerHost({})
+    const read = ts.readConfigFile(configPath, ts.sys.readFile)
+    if (read.error !== undefined) throw new Error(ts.flattenDiagnosticMessageText(read.error.messageText, '\n'))
+    const parsed = ts.parseJsonConfigFileContent(read.config, ts.sys, root, { baseUrl: root }, configPath)
+    const resolved = ts.resolveModuleName(
+      '@deepseek-ai/dsh-tool-fs/read-policy',
+      resolve(root, 'packages/subagent/tool-subagent/src/index.ts'),
+      parsed.options,
+      host,
+    )
+    expect(resolved.resolvedModule?.resolvedFileName.replaceAll('\\', '/'))
+      .toBe(resolve(root, 'packages/fs/tool-fs/src/read-policy.ts').replaceAll('\\', '/'))
   })
 
   it('leaves no wildcard that probes every package group', () => {

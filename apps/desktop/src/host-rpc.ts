@@ -120,6 +120,7 @@ export function createDesktopHostRpc(baseUrl: string, options: DesktopHostRpcOpt
       const projectedRead = method === 'session.history'
         || method === 'session.list'
         || method === 'session/list'
+        || method === 'session/page'
         || method === 'workspace.list'
       const callTimeoutMs = callOptions?.timeoutMs
         ?? (attachmentRead ? options.attachmentTimeoutMs : undefined)
@@ -403,6 +404,34 @@ export function archiveDesktopHostSession(
   options?: { timeoutMs?: number; signal?: AbortSignal },
 ): Promise<DesktopHostRpcResult> {
   return rpc.call('workspace/archiveSession', { args: { request: { sessionId } } }, options)
+}
+
+/**
+ * Admit one prompt through generated Gateway `session/prompt`.
+ * `requestId` is the initiator identity; Host never mints a replacement.
+ */
+export function promptDesktopHostSession(
+  rpc: DesktopHostRpc,
+  request: {
+    requestId: string
+    sessionId: string
+    mode: 'queue' | 'steer'
+    content: ReadonlyArray<{ type: 'text'; text: string }>
+  },
+  options?: { timeoutMs?: number; rpcId?: string; signal?: AbortSignal },
+): Promise<DesktopHostRpcResult> {
+  return rpc.call('session/prompt', { args: { request } }, options)
+}
+
+/**
+ * Cancel one live turn through generated Gateway `session/cancel`.
+ */
+export function cancelDesktopHostSession(
+  rpc: DesktopHostRpc,
+  sessionId: string,
+  options?: { timeoutMs?: number; rpcId?: string; signal?: AbortSignal },
+): Promise<DesktopHostRpcResult> {
+  return rpc.call('session/cancel', { args: { request: { sessionId } } }, options)
 }
 
 /**
