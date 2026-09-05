@@ -79,10 +79,10 @@ const runGitC: NativeCommandRunner = (command, args, signal) =>
     })
   })
 
-function collected(text: string, lossy = false): SubprocessHandle['collected'] {
+function collected(text: string, lossy = false, stderrText = ''): SubprocessHandle['collected'] {
   return {
     stdout: { readFrom: () => ({ text, nextOffset: text.length, lossy }) },
-    stderr: { readFrom: () => ({ text: '', nextOffset: 0, lossy: false }) },
+    stderr: { readFrom: () => ({ text: stderrText, nextOffset: stderrText.length, lossy: false }) },
   }
 }
 
@@ -231,17 +231,23 @@ describe('WorkspaceController.gitRemote', () => {
       .rejects.toMatchObject({ code: 'workspace/git-failed' })
   })
 
-  it('maps an unreadable .git directory to workspace/git-failed', async () => {
+  it('maps an unreadable Git config to workspace/git-failed', async () => {
+    // chmod 000 on `.git` itself makes Git emit C-locale `not a git repository`
+    // (same diagnostic as a missing repo), so this case would pass by looking
+    // unbound. Origin is added first, then only `.git/config` is made unreadable
+    // so get-url exits 128 with `Permission denied`.
     const { controller, root } = await harness({ workspaceGitCommand: runGitC })
     const path = stageDir(root, 'denied')
     git(path, ['init'])
+    git(path, ['remote', 'add', 'origin', 'https://github.com/o/r.git'])
     const created = await controller.create({ path })
-    chmodSync(join(path, '.git'), 0o000)
+    const configPath = join(path, '.git', 'config')
+    chmodSync(configPath, 0o000)
     try {
       await expect(controller.gitRemote({ workspaceId: created.workspace.workspaceId }, new AbortController().signal))
         .rejects.toMatchObject({ code: 'workspace/git-failed' })
     } finally {
-      chmodSync(join(path, '.git'), 0o755)
+      chmodSync(configPath, 0o644)
     }
   })
 
@@ -555,5 +561,29 @@ describe('WorkspaceController.gitRemote production runner classification', () =>
       .resolves.toEqual({})
     await expect(controller.gitRemote({ workspaceId: second.workspace.workspaceId }, new AbortController().signal))
       .rejects.toMatchObject({ code: 'workspace/git-failed' })
+  })
+
+  it('maps production get-url Permission denied to git-failed and not-a-repository to unbound', async () => {
+    const stderrs = [
+      'fatal: unable to access \'.git/config\': Permission denied\n',
+      'fatal: not a git repository (or any of the parent directories): .git\n',
+    ]
+    const { controller, root } = await harness({
+      subprocess: {
+        spawn() {
+          const stderrText = stderrs.shift() ?? ''
+          return handle({
+            outcome: { exitCode: 128, signal: null },
+            collected: collected('', false, stderrText),
+          })
+        },
+      },
+    })
+    const denied = await controller.create({ path: stageDir(root, 'prod-denied') })
+    const missing = await controller.create({ path: stageDir(root, 'prod-missing') })
+    await expect(controller.gitRemote({ workspaceId: denied.workspace.workspaceId }, new AbortController().signal))
+      .rejects.toMatchObject({ code: 'workspace/git-failed' })
+    await expect(controller.gitRemote({ workspaceId: missing.workspace.workspaceId }, new AbortController().signal))
+      .resolves.toEqual({})
   })
 })
