@@ -97,15 +97,6 @@ describe('Desktop Companion live projection', () => {
           { sessionId: 'session-hidden', updatedAt: 10, running: true, blank: false },
           { sessionId: opened, updatedAt: 20, running: true, blank: false },
         ] } }
-        if (method === 'session.history') return { ok: true, value: { events: [
-          { event: { type: 'step/start', seq: 0, time: 1, data: { turn: 1, step: 1 } } },
-          { event: { type: 'assistant/chunk', seq: 1, time: 2, data: {
-            turn: 1, step: 1, chunk: { type: 'block-start', index: 0, blockType: 'text' },
-          } } },
-          { event: { type: 'assistant/chunk', seq: 2, time: 3, data: {
-            turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: 'live output' },
-          } } },
-        ], hasMore: false } }
         throw new Error(`unexpected Host method ${method}`)
       }),
     }
@@ -133,7 +124,7 @@ describe('Desktop Companion live projection', () => {
         partial: { turn: 1, step: 1, blocks: [{ kind: 'text', text: 'live output' }] },
       },
     })
-    expect(calls).toEqual(['session.list', 'session.history'])
+    expect(calls).toEqual(['session.list'])
 
     calls.splice(0)
     archivedSessionIds = [opened]
@@ -146,6 +137,23 @@ describe('Desktop Companion live projection', () => {
 function liveDependencies(host: DesktopHostRpc, archivedSessionIds: readonly string[] = []) {
   return {
     host,
+    sessionHistory: {
+      page: async () => ({
+        ok: true as const,
+        value: {
+          events: [
+            { event: { type: 'step/start', seq: 0, time: 1, data: { turn: 1, step: 1 } } },
+            { event: { type: 'assistant/chunk', seq: 1, time: 2, data: {
+              turn: 1, step: 1, chunk: { type: 'block-start', index: 0, blockType: 'text' },
+            } } },
+            { event: { type: 'assistant/chunk', seq: 2, time: 3, data: {
+              turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: 'live output' },
+            } } },
+          ],
+          hasMore: false,
+        },
+      }),
+    },
     workspaceSnapshot: () => Promise.resolve({
       items: [{
         workspaceId: 'workspace-live', path: '/work', title: 'Work',

@@ -3,13 +3,12 @@
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
-import SessionStore, { SessionSeq } from '@deepseek-ai/dsh-session'
-import { decodeStorageRecord, type ChunkRow } from '@deepseek-ai/dsh-session/chunk-rows'
+import SessionStore from '@deepseek-ai/dsh-session'
+import { expandSessionHistoryRecords } from '../src/history-records.ts'
 import { ToolCallId, createMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
 import { SessionHistoryController } from '@deepseek-ai/dsh-api-session-controller/src/history.ts'
 import type {
-  ChunkRowEvent,
   SessionFollowFrame,
   SessionPage,
   SessionWireEvent,
@@ -85,20 +84,7 @@ async function openFollow(
 
 /** Expand packed page records for assertions over the logical journal. */
 function pageEvents(page: SessionPage): SessionWireEvent[] {
-  return page.records.flatMap(record => record.type === 'event'
-    ? [record.event]
-    : decodeStorageRecord(chunkRow(record.event)).map(event => event as unknown as SessionWireEvent))
-}
-
-function chunkRow(event: ChunkRowEvent): ChunkRow {
-  switch (event.type) {
-    case 'chunkrow/text-chunks':
-      return { type: 'text-chunks', seq0: SessionSeq(event.seq), time0: event.time, data: event.data }
-    case 'chunkrow/reasoning-chunks':
-      return { type: 'reasoning-chunks', seq0: SessionSeq(event.seq), time0: event.time, data: event.data }
-    case 'chunkrow/tool-call-chunks':
-      return { type: 'tool-call-chunks', seq0: SessionSeq(event.seq), time0: event.time, data: event.data }
-  }
+  return expandSessionHistoryRecords(page.records)
 }
 
 describe('Session history raw journal', () => {

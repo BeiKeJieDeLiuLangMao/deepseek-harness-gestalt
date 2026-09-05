@@ -7,6 +7,12 @@ import type {
 } from '@deepseek-ai/dsh-api-workspace-controller/types'
 import workspaceRemote from '@deepseek-ai/dsh-api-workspace-controller/remote'
 import {
+  expandSessionHistoryRecords,
+} from '@deepseek-ai/dsh-api-session-controller'
+import type {
+  SessionHistoryRecord, SessionWireEvent,
+} from '@deepseek-ai/dsh-api-session-controller/types'
+import {
   encodeProtocolBase64Url,
   parseCompanionInteractionId,
   parseCompanionSessionId,
@@ -32,6 +38,7 @@ import {
 } from './companion-attachments.ts'
 import {
   createDesktopHostRpc,
+  pageDesktopHostSession,
   type DesktopHostRpc,
   type DesktopHostRpcOptions,
   type DesktopHostRpcResult,
@@ -78,6 +85,8 @@ export interface CompanionProductOperationDependencies {
   host: DesktopHostRpc
   /** Latest accepted `workspace/follow` snapshot, or a loading/error failure. */
   workspaceSnapshot: (signal?: AbortSignal) => Promise<DesktopWorkspaceSnapshot | DesktopWorkspaceSnapshotFailure>
+  /** Follow/page owner for one Host generation; older pages keep the opening throughSeq. */
+  sessionHistory?: DesktopSessionHistoryCache
   /** Personal Pairing authenticated by the reviewed Companion channel. */
   pairingId: PersonalPairingId
   /** Independent key material for that exact Personal Pairing. */
@@ -119,6 +128,7 @@ export class DesktopCompanionProductOwner {
     readonly rpc: DesktopHostRpc
     readonly cancellation: AbortController
     workspace?: DesktopWorkspaceFollowCache
+    history?: DesktopSessionHistoryCache
     streams?: { readonly cancellation: AbortController; readonly task: Promise<void> }
   } | undefined
   private ledger: DesktopCompanionOperationLedger | undefined
@@ -168,6 +178,7 @@ export class DesktopCompanionProductOwner {
     return await projectDesktopCompanionLiveSession(change.sessionId, change.includeConversation, {
       host,
       workspaceSnapshot: signal => this.installed?.workspace?.wait(signal),
+      sessionHistory: this.installed?.history,
       pendingInteractions: sessionId => this.pendingInteractions(sessionId, attachmentKey),
     }, signal)
   }
@@ -196,7 +207,10 @@ export class DesktopCompanionProductOwner {
     })
     const cancellation = new AbortController()
     const workspace = startWorkspaceFollowCache(rpc, cancellation.signal)
-    const installed: NonNullable<DesktopCompanionProductOwner['installed']> = { rpc, cancellation, workspace }
+    const history = new DesktopSessionHistoryCache(rpc, cancellation.signal)
+    const installed: NonNullable<DesktopCompanionProductOwner['installed']> = {
+      rpc, cancellation, workspace, history,
+    }
     this.interactions.clear()
     this.surfaceDiscovery.clear()
     this.installed = installed
@@ -257,6 +271,7 @@ export class DesktopCompanionProductOwner {
         ...dependencies,
         host,
         workspaceSnapshot: signal => this.installed?.workspace?.wait(signal),
+        sessionHistory: this.installed?.history,
       }
       return operation.type === 'refresh-surface'
         ? await this.surfaceDiscovery.refresh(operation, withHost)
@@ -575,20 +590,17 @@ async function loadHistory(
   operation: Extract<CompanionProductOperation, { type: 'load-history' }>,
   dependencies: CompanionProductOperationDependencies,
 ): Promise<CompanionProjection | CompanionOperationFailedResult> {
-  const [response, sessionsResponse] = await Promise.all([
-    dependencies.host.call('session.history', {
-      sessionId: operation.sessionId,
-      ...(operation.beforeSeq === undefined ? {} : { beforeSeq: operation.beforeSeq }),
-      maxMessages: operation.maxMessages,
-    }),
-    dependencies.host.call('session.list', {}),
-  ])
-  if (!response.ok) return operationFailed(operation, normalizeFailure(response.failure))
+  const sessionsResponse = await dependencies.host.call('session.list', {})
   if (!sessionsResponse.ok) return operationFailed(operation, normalizeFailure(sessionsResponse.failure))
   const session = parseSurfaceSession(sessionsResponse.value, operation.sessionId)
   if (session === undefined) return invalidHostResult(operation, 'history Session status')
+  const history = await loadSessionHistoryPage(dependencies, operation.sessionId, {
+    beforeSeq: operation.beforeSeq,
+    maxMessages: operation.maxMessages,
+  })
+  if (!history.ok) return operationFailed(operation, history.failure)
   const conversation = parseConversationHistory(
-    response.value, operation.sessionId, dependencies.pendingInteractions(operation.sessionId), session.running,
+    history.value, operation.sessionId, dependencies.pendingInteractions(operation.sessionId), session.running,
   )
   if (conversation === undefined) return invalidHostResult(operation, 'history')
   return {
@@ -611,16 +623,16 @@ async function loadHistory(
 export async function projectDesktopCompanionLiveSession(
   sessionId: CompanionSessionId,
   includeConversation: boolean,
-  dependencies: Pick<CompanionProductOperationDependencies, 'host' | 'workspaceSnapshot' | 'pendingInteractions'>,
+  dependencies: Pick<CompanionProductOperationDependencies, 'host' | 'workspaceSnapshot' | 'sessionHistory' | 'pendingInteractions'>,
   signal: AbortSignal,
 ): Promise<DesktopCompanionLiveProjectionPayload> {
   const requests = [
     dependencies.host.call('session.list', {}, { signal }),
     waitForWorkspaceSnapshot(dependencies, signal),
     ...(includeConversation
-      ? [dependencies.host.call('session.history', {
-        sessionId, maxMessages: REMOTE_PROTOCOL_LIMITS.historyPageMessages,
-      }, { signal })]
+      ? [loadSessionHistoryPage(dependencies, sessionId, {
+        maxMessages: REMOTE_PROTOCOL_LIMITS.historyPageMessages,
+      }, signal)]
       : []),
   ] as const
   const [sessionResponse, workspaceValue, historyResponse] = await Promise.all(requests)
@@ -1384,6 +1396,176 @@ function startWorkspaceFollowCache(rpc: DesktopHostRpc, signal: AbortSignal): De
     cache.fail(error instanceof Error ? error.message : 'Desktop Host workspace follow ended')
   })
   return cache
+}
+
+class DesktopSessionHistoryCache {
+  private readonly follows = new Map<string, {
+    readonly throughSeq: number
+    events: SessionWireEvent[]
+    hasMore: boolean
+  }>()
+  private readonly waiters = new Map<string, Set<(
+    snapshot: { events: SessionWireEvent[]; hasMore: boolean } | undefined,
+  ) => void>>()
+
+  constructor(
+    private readonly rpc: DesktopHostRpc,
+    private readonly signal: AbortSignal,
+  ) {}
+
+  async page(
+    sessionId: string,
+    request: { beforeSeq?: number; maxMessages?: number },
+    signal?: AbortSignal,
+  ): Promise<DesktopHostRpcResult> {
+    const opening = await this.opening(sessionId, request.maxMessages, signal)
+    if (opening === undefined) {
+      return {
+        ok: false,
+        failure: {
+          kind: 'wire',
+          code: 'HOST_WIRE_INVALID',
+          message: 'Desktop Host session follow snapshot is still loading',
+        },
+      }
+    }
+    if (request.beforeSeq === undefined) {
+      return { ok: true, value: conversationHistoryValue(opening.events, opening.hasMore) }
+    }
+    const paged = await pageDesktopHostSession(this.rpc, {
+      sessionId,
+      throughSeq: opening.throughSeq,
+      beforeSeq: request.beforeSeq,
+      ...request.maxMessages === undefined ? {} : { maxMessages: request.maxMessages },
+    }, { signal })
+    if (!paged.ok) return paged
+    const records = parseHistoryRecords(paged.value)
+    if (records === undefined) {
+      return {
+        ok: false,
+        failure: {
+          kind: 'wire',
+          code: 'HOST_WIRE_INVALID',
+          message: 'Desktop Host session/page returned an invalid value',
+        },
+      }
+    }
+    return {
+      ok: true,
+      value: conversationHistoryValue(expandSessionHistoryRecords(records.records), records.hasMore),
+    }
+  }
+
+  private async opening(
+    sessionId: string,
+    maxMessages: number | undefined,
+    signal?: AbortSignal,
+  ): Promise<{ events: SessionWireEvent[]; hasMore: boolean; throughSeq: number } | undefined> {
+    const current = this.follows.get(sessionId)
+    if (current !== undefined) return current
+    this.ensureFollow(sessionId, maxMessages)
+    const waiters = this.waiters.get(sessionId) ?? new Set()
+    this.waiters.set(sessionId, waiters)
+    return await new Promise((resolve) => {
+      const finish = (_snapshot: { events: SessionWireEvent[]; hasMore: boolean } | undefined): void => {
+        signal?.removeEventListener('abort', abort)
+        waiters.delete(finish)
+        const ready = this.follows.get(sessionId)
+        resolve(ready)
+      }
+      const abort = (): void => { finish(undefined) }
+      waiters.add(finish)
+      signal?.addEventListener('abort', abort, { once: true })
+      if (this.signal.aborted) finish(undefined)
+    })
+  }
+
+  private ensureFollow(sessionId: string, maxMessages: number | undefined): void {
+    if (this.follows.has(sessionId) || this.waiters.has(sessionId)) {
+      if (!this.follows.has(sessionId) && this.rpc.followSession !== undefined) return
+    }
+    if (this.rpc.followSession === undefined) return
+    const waiters = this.waiters.get(sessionId) ?? new Set()
+    this.waiters.set(sessionId, waiters)
+    void this.rpc.followSession(sessionId, this.signal, (frame) => {
+      this.accept(sessionId, frame)
+    }, maxMessages).catch(() => {
+      const pending = this.waiters.get(sessionId)
+      if (pending === undefined) return
+      this.waiters.delete(sessionId)
+      for (const waiter of pending) waiter(undefined)
+    })
+  }
+
+  private accept(sessionId: string, frame: unknown): void {
+    if (!isRecord(frame) || typeof frame.type !== 'string') return
+    if (frame.type === 'snapshot') {
+      if (typeof frame.cursor !== 'number' || !Array.isArray(frame.records) || typeof frame.hasMore !== 'boolean') {
+        return
+      }
+      const records = parseHistoryRecordList(frame.records)
+      if (records === undefined) return
+      const snapshot = {
+        throughSeq: frame.cursor,
+        events: expandSessionHistoryRecords(records),
+        hasMore: frame.hasMore,
+      }
+      this.follows.set(sessionId, snapshot)
+      const pending = this.waiters.get(sessionId)
+      this.waiters.delete(sessionId)
+      if (pending !== undefined) {
+        for (const waiter of pending) waiter(snapshot)
+      }
+      return
+    }
+    const current = this.follows.get(sessionId)
+    if (current === undefined || frame.type !== 'event' || !isRecord(frame.event)) return
+    current.events = [...current.events, frame.event as SessionWireEvent]
+  }
+}
+
+function parseHistoryRecords(value: unknown): { records: SessionHistoryRecord[]; hasMore: boolean } | undefined {
+  if (!isRecord(value) || !Array.isArray(value.records) || typeof value.hasMore !== 'boolean') return undefined
+  const records = parseHistoryRecordList(value.records)
+  if (records === undefined) return undefined
+  return { records, hasMore: value.hasMore }
+}
+
+function conversationHistoryValue(
+  events: readonly SessionWireEvent[],
+  hasMore: boolean,
+): { events: Array<{ event: SessionWireEvent }>; hasMore: boolean } {
+  return { events: events.map(event => ({ event })), hasMore }
+}
+
+function parseHistoryRecordList(value: readonly unknown[]): SessionHistoryRecord[] | undefined {
+  const records: SessionHistoryRecord[] = []
+  for (const item of value) {
+    if (!isRecord(item) || (item.type !== 'event' && item.type !== 'chunks') || !isRecord(item.event)) {
+      return undefined
+    }
+    records.push(item as SessionHistoryRecord)
+  }
+  return records
+}
+
+async function loadSessionHistoryPage(
+  dependencies: Pick<CompanionProductOperationDependencies, 'host' | 'sessionHistory'>,
+  sessionId: string,
+  request: { beforeSeq?: number; maxMessages?: number },
+  signal?: AbortSignal,
+): Promise<DesktopHostRpcResult> {
+  if (dependencies.sessionHistory !== undefined) {
+    return await dependencies.sessionHistory.page(sessionId, request, signal)
+  }
+  return {
+    ok: false,
+    failure: {
+      kind: 'wire',
+      code: 'HOST_WIRE_INVALID',
+      message: 'Desktop Host session follow snapshot is still loading',
+    },
+  }
 }
 
 async function waitForWorkspaceSnapshot(

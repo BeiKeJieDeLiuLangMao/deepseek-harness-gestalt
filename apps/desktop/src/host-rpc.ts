@@ -66,6 +66,7 @@ export interface DesktopHostRpc {
     sessionId: string,
     signal: AbortSignal,
     accept: (frame: unknown) => void,
+    maxMessages?: number,
   ): Promise<void>
   /**
    * Follow generated Gateway `workspace/follow` on `/api/remote.mux`.
@@ -197,11 +198,18 @@ export function createDesktopHostRpc(baseUrl: string, options: DesktopHostRpcOpt
     watchHost: async (signal, accept) => {
       await watchHostWebSocket(origin, '/api/events.host', signal, accept, options.cookieHeader)
     },
-    followSession: async (sessionId, signal, accept) => {
+    followSession: async (sessionId, signal, accept, maxMessages) => {
       await followRemoteMux(
         origin,
         'session/follow',
-        { args: { request: { address: { kind: 'session', sessionId } } } },
+        {
+          args: {
+            request: {
+              address: { kind: 'session', sessionId },
+              ...maxMessages === undefined ? {} : { maxMessages },
+            },
+          },
+        },
         signal,
         accept,
         options.cookieHeader,
@@ -396,6 +404,33 @@ export function archiveDesktopHostSession(
   options?: { timeoutMs?: number; signal?: AbortSignal },
 ): Promise<DesktopHostRpcResult> {
   return rpc.call('workspace/archiveSession', { args: { request: { sessionId } } }, options)
+}
+
+/**
+ * Read one message-aligned history page through generated Gateway `session/page`.
+ * `throughSeq` is the inclusive follow-snapshot cursor; `beforeSeq` and `maxMessages`
+ * are forwarded to Host pagination and are not a client-side event-count cut.
+ */
+export function pageDesktopHostSession(
+  rpc: DesktopHostRpc,
+  request: {
+    sessionId: string
+    throughSeq: number
+    beforeSeq?: number
+    maxMessages?: number
+  },
+  options?: { timeoutMs?: number; signal?: AbortSignal },
+): Promise<DesktopHostRpcResult> {
+  return rpc.call('session/page', {
+    args: {
+      request: {
+        address: { kind: 'session', sessionId: request.sessionId },
+        throughSeq: request.throughSeq,
+        ...request.beforeSeq === undefined ? {} : { beforeSeq: request.beforeSeq },
+        ...request.maxMessages === undefined ? {} : { maxMessages: request.maxMessages },
+      },
+    },
+  }, options)
 }
 
 function openOriginWebSocket(url: URL, origin: URL, cookieHeader?: string): WebSocket {

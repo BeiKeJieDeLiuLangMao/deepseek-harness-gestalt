@@ -9,7 +9,7 @@ import { REMOTE_PROTOCOL_LIMITS } from '@deepseek-ai/dsh-remote-protocol'
 import {
   archiveDesktopHostSession,
   bootstrapDesktopHostCookie, createDesktopHostRpc, createDesktopHostSession, createDesktopHostWorkspace,
-  listDesktopHostSessions,
+  listDesktopHostSessions, pageDesktopHostSession,
 } from '../src/host-rpc.ts'
 import { spawnWebHost, type RunningWebHost } from '../src/spawn-web-host.ts'
 
@@ -192,6 +192,11 @@ describe('Desktop Host RPC against shipped dsh web', () => {
       restarted.push(frame)
     })
     await expect.poll(() => restarted.some(frame => isRecord(frame) && frame.type === 'snapshot')).toBe(true)
+    const snapshot = restarted.find(frame => isRecord(frame) && frame.type === 'snapshot')
+    if (!isRecord(snapshot) || typeof snapshot.cursor !== 'number') throw new Error('missing follow snapshot')
+    await expect(pageDesktopHostSession(next, {
+      sessionId, throughSeq: snapshot.cursor, maxMessages: 20,
+    })).resolves.toMatchObject({ ok: true, value: { records: expect.any(Array), hasMore: expect.any(Boolean) } })
     restartFollow.abort()
     await expect(restartWatch).resolves.toBeUndefined()
   }, 180_000)

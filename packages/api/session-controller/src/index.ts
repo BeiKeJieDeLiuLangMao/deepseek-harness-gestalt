@@ -60,6 +60,7 @@ import type {
 } from './types.ts'
 
 export type * from './types.ts'
+export { expandSessionHistoryRecord, expandSessionHistoryRecords } from './history-records.ts'
 export { ApiSessionNotFound } from './agent.ts'
 export { SessionFileReferences } from './file-references.ts'
 export { SessionSkillCatalog } from './skill-catalog.ts'

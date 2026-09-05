@@ -268,34 +268,30 @@ describe('Desktop Companion product operations', () => {
   })
 
   it('projects Host history into the shared conversation carrier', async () => {
-    const dependencies = baseDependencies(hostRpc(async (method, payload) => {
-      if (method === 'session.list') return { ok: true, value: { items: [{
+    const dependencies = baseDependencies(hostRpc(async (method) => {
+      expect(method).toBe('session.list')
+      return { ok: true, value: { items: [{
         sessionId: 'session-product', updatedAt: 30, running: true, blank: false,
       }] } }
-      expect(method).toBe('session.history')
-      expect(payload).toEqual({ sessionId, beforeSeq: 10, maxMessages: 20 })
-      return { ok: true, value: {
-        events: [
-          { event: { type: 'user/message', seq: 1, time: 10, data: {
-            id: 'message-user', content: [{ type: 'text', text: 'hello' }], source: { kind: 'user' },
-          } } },
-          { event: { type: 'assistant/message', seq: 2, time: 20, data: {
-            turn: 1, step: 1, message: {
-              id: 'message-assistant', role: 'assistant', content: [{ type: 'text', text: 'world' }],
-              source: { kind: 'assistant' },
-            },
-          } } },
-          { event: { type: 'user/message', seq: 3, time: 25, data: {
-            id: 'message-steering', content: [{ type: 'text', text: 'redirect' }],
-            source: { kind: 'steering' },
-          } } },
-          { event: { type: 'turn/end', seq: 4, time: 30, data: {
-            turn: 1, reason: { kind: 'error', error: { message: 'model failed', code: 'MODEL_FAILED' } },
-          } } },
-        ],
-        hasMore: false,
-      } }
     }))
+    dependencies.sessionHistory = historyCache([
+      { event: { type: 'user/message', seq: 1, time: 10, data: {
+        id: 'message-user', content: [{ type: 'text', text: 'hello' }], source: { kind: 'user' },
+      } } },
+      { event: { type: 'assistant/message', seq: 2, time: 20, data: {
+        turn: 1, step: 1, message: {
+          id: 'message-assistant', role: 'assistant', content: [{ type: 'text', text: 'world' }],
+          source: { kind: 'assistant' },
+        },
+      } } },
+      { event: { type: 'user/message', seq: 3, time: 25, data: {
+        id: 'message-steering', content: [{ type: 'text', text: 'redirect' }],
+        source: { kind: 'steering' },
+      } } },
+      { event: { type: 'turn/end', seq: 4, time: 30, data: {
+        turn: 1, reason: { kind: 'error', error: { message: 'model failed', code: 'MODEL_FAILED' } },
+      } } },
+    ])
     const operation = op({ type: 'load-history', sessionId, beforeSeq: 10, maxMessages: 20 })
     await expect(handleCompanionProductOperation(operation, dependencies)).resolves.toMatchObject({
       type: 'conversation-snapshot', operationId: operation.operationId, sessionId, beforeSeq: 10,
@@ -317,15 +313,12 @@ describe('Desktop Companion product operations', () => {
       if (method === 'session.list') return { ok: true, value: { items: [{
         sessionId: 'session-product', updatedAt: 30, running: false, blank: false,
       }] } }
-      expect(method).toBe('session.history')
-      return { ok: true, value: {
-        events: [{ event: { type: 'user/message', seq: 1, time: 10, data: {
-          id: 'message-context', content: [{ type: 'text', text: 'Current runtime context.' }],
-          source: { kind: 'plugin', plugin: '@deepseek-ai/dsh-system-prompt', form: 'snapshot' },
-        } } }],
-        hasMore: false,
-      } }
+      throw new Error(`unexpected Host method ${method}`)
     }))
+    dependencies.sessionHistory = historyCache([{ event: { type: 'user/message', seq: 1, time: 10, data: {
+      id: 'message-context', content: [{ type: 'text', text: 'Current runtime context.' }],
+      source: { kind: 'plugin', plugin: '@deepseek-ai/dsh-system-prompt', form: 'snapshot' },
+    } } }])
     const operation = op({ type: 'load-history', sessionId, maxMessages: 20 })
 
     await expect(handleCompanionProductOperation(operation, dependencies)).resolves.toMatchObject({
@@ -344,20 +337,17 @@ describe('Desktop Companion product operations', () => {
       if (method === 'session.list') return { ok: true, value: { items: [{
         sessionId: 'session-product', updatedAt: 30, running: false, blank: false,
       }] } }
-      expect(method).toBe('session.history')
-      return { ok: true, value: {
-        events: [
-          { event: { type: 'tool/call', seq: 1, time: 10, data: {
-            turn: 1, step: 1, callId: 'call-1', name: 'bash', arguments: '{"command":"pwd"}',
-          } }, view: { for: 'call', view: { card: 'terminal', title: 'Run command', cwd: '/tmp' } } },
-          { event: { type: 'tool/result', seq: 2, time: 20, data: {
-            turn: 1, step: 1,
-            message: { source: { kind: 'tool', callId: 'call-1' }, content: [{ type: 'text', text: '/tmp' }] },
-          } }, view: { for: 'result', view: { card: 'terminal', title: 'Command result', output: '/tmp', exitCode: 0 } } },
-        ],
-        hasMore: false,
-      } }
+      throw new Error(`unexpected Host method ${method}`)
     }))
+    dependencies.sessionHistory = historyCache([
+      { event: { type: 'tool/call', seq: 1, time: 10, data: {
+        turn: 1, step: 1, callId: 'call-1', name: 'bash', arguments: '{"command":"pwd"}',
+      } }, view: { for: 'call', view: { card: 'terminal', title: 'Run command', cwd: '/tmp' } } },
+      { event: { type: 'tool/result', seq: 2, time: 20, data: {
+        turn: 1, step: 1,
+        message: { source: { kind: 'tool', callId: 'call-1' }, content: [{ type: 'text', text: '/tmp' }] },
+      } }, view: { for: 'result', view: { card: 'terminal', title: 'Command result', output: '/tmp', exitCode: 0 } } },
+    ])
     const operation = op({ type: 'load-history', sessionId, maxMessages: 20 })
 
     await expect(handleCompanionProductOperation(operation, dependencies)).resolves.toMatchObject({
@@ -375,9 +365,9 @@ describe('Desktop Companion product operations', () => {
       if (method === 'session.list') return { ok: true, value: { items: [{
         sessionId: 'session-product', updatedAt: 30, running: false, blank: true,
       }] } }
-      expect(method).toBe('session.history')
-      return { ok: true, value: { events: [], hasMore: false } }
+      throw new Error(`unexpected Host method ${method}`)
     }))
+    dependencies.sessionHistory = historyCache([])
     const operation = op({ type: 'load-history', sessionId, maxMessages: 20 })
 
     await expect(handleCompanionProductOperation(operation, dependencies)).resolves.toMatchObject({
@@ -400,9 +390,9 @@ describe('Desktop Companion product operations', () => {
     items.push({ sessionId: target, updatedAt: 100, running: true, blank: false })
     const dependencies = baseDependencies(hostRpc(async (method) => {
       if (method === 'session.list') return { ok: true, value: { items } }
-      expect(method).toBe('session.history')
-      return { ok: true, value: { events: [], hasMore: false } }
+      throw new Error(`unexpected Host method ${method}`)
     }))
+    dependencies.sessionHistory = historyCache([])
     const operation = op({ type: 'load-history', sessionId: target, maxMessages: 20 })
 
     await expect(handleCompanionProductOperation(operation, dependencies)).resolves.toMatchObject({
@@ -417,25 +407,22 @@ describe('Desktop Companion product operations', () => {
       if (method === 'session.list') return { ok: true, value: { items: [{
         sessionId: 'session-product', updatedAt: 50, running: false, blank: false,
       }] } }
-      expect(method).toBe('session.history')
-      return { ok: true, value: {
-        events: [
-          { event: { type: 'step/start', seq: 1, time: 10, data: { turn: 1, step: 1 } } },
-          { event: { type: 'turn/end', seq: 2, time: 20, data: {
-            turn: 1, reason: { kind: 'error', error: { message: 'temporary', code: 'RATE_LIMIT' } },
-          } } },
-          { event: { type: 'llm/retry', seq: 3, time: 30, data: {
-            retryId: 'retry-product', turn: 1, step: 1, provider: 'deepseek', mode: 'normal',
-            policyKey: 'normal', retry: 1, maxRetries: 2, delayMs: 500,
-            failure: { message: 'temporary', code: 'RATE_LIMIT' },
-          } } },
-          { event: { type: 'llm/retry-started', seq: 4, time: 40, data: {
-            retryId: 'retry-product', turn: 1, step: 1, retry: 1,
-          } } },
-        ],
-        hasMore: false,
-      } }
+      throw new Error(`unexpected Host method ${method}`)
     }))
+    dependencies.sessionHistory = historyCache([
+      { event: { type: 'step/start', seq: 1, time: 10, data: { turn: 1, step: 1 } } },
+      { event: { type: 'turn/end', seq: 2, time: 20, data: {
+        turn: 1, reason: { kind: 'error', error: { message: 'temporary', code: 'RATE_LIMIT' } },
+      } } },
+      { event: { type: 'llm/retry', seq: 3, time: 30, data: {
+        retryId: 'retry-product', turn: 1, step: 1, provider: 'deepseek', mode: 'normal',
+        policyKey: 'normal', retry: 1, maxRetries: 2, delayMs: 500,
+        failure: { message: 'temporary', code: 'RATE_LIMIT' },
+      } } },
+      { event: { type: 'llm/retry-started', seq: 4, time: 40, data: {
+        retryId: 'retry-product', turn: 1, step: 1, retry: 1,
+      } } },
+    ])
     const operation = op({ type: 'load-history', sessionId, maxMessages: 20 })
 
     await expect(handleCompanionProductOperation(operation, dependencies)).resolves.toMatchObject({
@@ -800,10 +787,17 @@ function hostRpc(call: DesktopHostRpc['call'], respond?: DesktopHostRpc['respond
   return { call, ...(respond === undefined ? {} : { respond }) }
 }
 
+function historyCache(events: unknown[], hasMore = false) {
+  return {
+    page: async () => ({ ok: true as const, value: { events, hasMore } }),
+  } as never
+}
+
 function baseDependencies(host: DesktopHostRpc, workspaceValue: unknown = { items: [], archivedSessionIds: [] }) {
   return {
     host,
     workspaceSnapshot: () => Promise.resolve(workspaceValue as never),
+    sessionHistory: historyCache([]),
     pairingId,
     attachmentKey,
     now: () => 1_000,
