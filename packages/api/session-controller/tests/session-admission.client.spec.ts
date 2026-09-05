@@ -843,6 +843,56 @@ describe('Session Client admission dispatch', () => {
     expect(svc.modelRoute(sessionId)?.selectModel).toBeTypeOf('function')
   })
 
+  it('catalog subagent without admission has no model route', async () => {
+    const { svc, api } = bench()
+    const parentId = sid('session-catalog-parent')
+    const childId = sid('session-catalog-child')
+    api.onList = () => Promise.resolve(ok({
+      items: [{ sessionId: parentId, updatedAt: 100, running: false, blank: false }],
+    }))
+    api.onSubagentList = () => Promise.resolve(ok({
+      entries: [{
+        kind: 'child',
+        id: childId,
+        mode: 'continuable',
+        label: 'Child',
+        activity: 'inactive',
+        hasChildren: false,
+      }],
+      parentAvailable: true,
+    }))
+    await svc.refresh()
+    await svc.refreshSubagents(parentId)
+    svc.openSubagent({
+      parentSessionId: parentId,
+      childSessionId: childId,
+      mode: 'continuable',
+    })
+
+    expect(svc.modelRoute(parentId)?.selectModel).toBeTypeOf('function')
+    expect(svc.modelRoute(childId)).toBeUndefined()
+    expect(api.callsOf('session.selectModel')).toEqual([])
+
+    const omit = svc.registerAdmission(childId, {
+      prompt: vi.fn(() => Promise.resolve(ok({ accepted: true as const }))),
+      cancel: vi.fn(() => Promise.resolve(ok({ accepted: true as const }))),
+    })
+    expect(svc.modelRoute(childId)).toBeUndefined()
+    omit()
+
+    const childSelect = vi.fn(() => Promise.resolve(ok({ selected: { provider: 'owned', model: 'child' } })))
+    const drop = svc.registerAdmission(childId, {
+      prompt: vi.fn(() => Promise.resolve(ok({ accepted: true as const }))),
+      cancel: vi.fn(() => Promise.resolve(ok({ accepted: true as const }))),
+      modelRoute: () => ({ selectModel: childSelect }),
+    })
+    await svc.modelRoute(childId)!.selectModel!({ provider: 'owned', model: 'child' })
+    expect(childSelect).toHaveBeenCalledTimes(1)
+    expect(api.callsOf('session.selectModel')).toEqual([])
+    drop()
+    expect(svc.modelRoute(childId)).toBeUndefined()
+  })
+
   it('does not stock-route a listed subagent-origin Session or retarget its parent', async () => {
     const { svc, api } = bench()
     const parentId = sid('session-listed-parent')
