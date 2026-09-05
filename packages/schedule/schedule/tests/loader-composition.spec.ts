@@ -6,17 +6,17 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Include from '@deepseek-ai/cordis-plugin-include'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
-import AgentRegistry from '@deepseek-ai/dsh-agent'
+import AgentRegistry, { type Agent } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
-import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
+import SessionStore, { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import * as SchedulePlugin from '@deepseek-ai/dsh-schedule'
-import { decodeScheduleChange, ScheduleLogError } from '../src/domain.ts'
+import { decodeScheduleChange } from '../src/domain.ts'
 
 let root: string | undefined
 let context: Context | undefined
@@ -69,13 +69,15 @@ const BASE_ROWS = [
   '        model: mock',
 ] as const
 
-function scheduleChanges(agent: { session: { snapshotEvents: () => readonly { type: string }[] } }) {
-  return agent.session.snapshotEvents().filter(event => event.type === 'schedule/change')
+function scheduleChanges(agent: Agent): readonly SessionEvent<'schedule/change'>[] {
+  return agent.session.snapshotEvents().filter(
+    (event): event is SessionEvent<'schedule/change'> => event.type === 'schedule/change',
+  )
 }
 
 async function execute(
   ctx: Context,
-  agent: { id: string },
+  agent: Agent,
   name: string,
   args: Record<string, unknown>,
   callId: string,
@@ -182,19 +184,11 @@ describe('Schedule real Loader composition through cordis.yml', () => {
     if (listed.isError) throw new Error('expected Schedule list value')
     expect(listed.value).toEqual([expect.objectContaining({ id: 'schedule-1', prompt: 'loader reminder' })])
 
-    // Accepted Session Schedule board semantics (implemented note L15/L17):
-    // v1 id-only pause/resume, list includes state paused, human Remote on
-    // ctx.schedules sharing this plugin FIFO. Current Host fold still rejects
-    // that durable JSON and has no schedules service.
-    const acceptedPause = {
-      version: 1 as const,
-      operation: 'pause' as const,
+    expect(decodeScheduleChange({
+      version: 1,
+      operation: 'pause',
       id: 'schedule-1',
-    }
-    expect(() => decodeScheduleChange(acceptedPause)).toThrow(ScheduleLogError)
-    expect(() => decodeScheduleChange(acceptedPause)).toThrow(
-      'schedule/change operation must be create, delete, or dispatch',
-    )
+    })).toEqual({ version: 1, operation: 'pause', id: 'schedule-1' })
     expect(ctx.get('schedules')).toBeUndefined()
     expect(listed.value).not.toEqual(expect.arrayContaining([
       expect.objectContaining({ id: 'schedule-1', state: 'paused' }),
