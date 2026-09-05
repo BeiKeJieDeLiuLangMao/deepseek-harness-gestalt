@@ -247,7 +247,31 @@ export interface Config {
 }
 ```
 
-Source: [`packages/api/settings-controller/src/index.ts:36`](../packages/api/settings-controller/src/index.ts)
+Source: [`packages/api/settings-controller/src/index.ts:48`](../packages/api/settings-controller/src/index.ts)
+
+<a id="deepseek-aidsh-api-workspace-controller"></a>
+
+## `@deepseek-ai/dsh-api-workspace-controller`
+
+Requires: `typert` · `workspaceRegistry`
+
+```ts config-catalog
+/** Optional Host Git runner for Workspace origin inspection. */
+export interface WorkspaceControllerOptions extends Config {
+  /** No-shell Git runner; defaults to the subprocess-tree production runner. */
+  readonly workspaceGitCommand?: NativeCommandRunner
+}
+
+/** Host-owned Workspace Git deadline and optional test runner. */
+export interface Config {
+  /** Host deadline in milliseconds for one Workspace Git command. */
+  readonly gitTimeoutMs?: number
+}
+```
+
+Depends on: [`NativeCommandRunner`](../packages/util/native-command/src/index.ts)
+
+Source: [`packages/api/workspace-controller/src/index.ts:36`](../packages/api/workspace-controller/src/index.ts)
 
 <a id="deepseek-aidsh-attachment-local"></a>
 
@@ -4431,7 +4455,6 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-acp-app` — requires `cmdlineArgs` ([`packages/bundle/acp-app/src/index.ts`](../packages/bundle/acp-app/src/index.ts))
 - `@deepseek-ai/dsh-agent` ([`packages/core/agent/src/index.ts`](../packages/core/agent/src/index.ts))
 - `@deepseek-ai/dsh-api-remotes` — requires `typertGateway` ([`packages/api/remotes/src/index.ts`](../packages/api/remotes/src/index.ts))
-- `@deepseek-ai/dsh-api-workspace-controller` — requires `typert` · `workspaceRegistry` ([`packages/api/workspace-controller/src/index.ts`](../packages/api/workspace-controller/src/index.ts))
 - `@deepseek-ai/dsh-authorization` — requires `credentials` ([`packages/credentials/authorization/src/index.ts`](../packages/credentials/authorization/src/index.ts))
 - `@deepseek-ai/dsh-browser-workspace` — requires `browserRuntime` · `sessions` ([`packages/browser/browser-workspace/src/index.ts`](../packages/browser/browser-workspace/src/index.ts))
 - `@deepseek-ai/dsh-client-locale` ([`packages/client/locale/src/index.ts`](../packages/client/locale/src/index.ts))
