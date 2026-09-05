@@ -16,7 +16,7 @@ Status: implemented
 
 `ctx.schedules` Service 拥有 `schedules/pause`、`schedules/resume` 与 `schedules/delete`。它们的 wire 标识是 branded `SessionId`，因此人工变更不会调用通用的 Agent-resume lookup。一条由 Service 拥有、按 Session 串行化的 FIFO 会把人工变更与工具管理和到期投递串行化；拆卸会关闭准入并等待已接纳事务，不同 Context 拥有不同队列。已存在的 live 根 Agent 使用普通的 preflight flush、append、post-append flush 和 runtime 重算。cold Session 通过 `sessionPersistence.prepare` 预留，在不 announce 的情况下 enter，在读取 fold 前 flush，完成变更并再次 flush，随后 detach；整个过程不发布 Session 或 Agent 生命周期，也不启动投递。通用 `session/detached` 边会清退已 announce 与未 announce entry 的持久化及 projection-cache 状态，因此该路径不会保留 Session，也不需要伪造公开生命周期。如果 preparation 或 enter 输给 Agent 发布，该事务会在同一 FIFO 内重新计算并使用该精确 live 根 Agent。Session 日志仍是唯一持久权威，因此暂停与恢复无需另一个存储即可在重启后保留。
 
-Schedule 贡献独立的 Session projection，key 为 `schedule`，其中按创建顺序包含保留记录和持久化 `paused` 标志。apply 会跳过 `seq` 小于 `Session.inheritedEventCount` 的 `schedule/change` 事件；Host 定义没有 `eventScope` 字段。Client 接收已完成的当前值，绝不折叠 Schedule 事件，也不从工具调用或对话输出重建状态。只有 Client 时钟根据 `scheduledAt` 推导 scheduled 或 overdue 展示。
+Schedule 贡献独立的 Session projection，key 为 `schedule`，其中按创建顺序包含保留记录和持久化 `paused` 标志。`init` 保存 `Session.inheritedEventCount`；`apply` 会跳过 `seq` 小于该切点的 `schedule/change` 事件。Host 定义没有 `eventScope` 字段。Client 接收已完成的当前值，绝不折叠 Schedule 事件，也不从工具调用或对话输出重建状态。只有 Client 时钟根据 `scheduledAt` 推导 scheduled 或 overdue 展示。
 
 Web app bundle 包含 A 版 Session 标题栏入口，顺序为 30，紧接在后台任务之后。它仅在 Host 挂载 Schedule Remote 贡献时激活，并在 projection 为空时保持缺席。触发器计数包含 scheduled 与 overdue 记录，并排除 paused 记录。任务板保持创建顺序，展示 scheduled、overdue 与 paused 行，并提供 pause、resume 与 delete。delete 需要行内二次确认。任务板没有创建表单；创建仍通过面向模型的 `schedule_create` 完成。
 
