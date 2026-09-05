@@ -55,6 +55,13 @@ describe('Desktop Companion product operations', () => {
               value: { type: 'baseline', value: { items: [], archivedSessionIds: [] } },
             }))
           }
+          if (message.type === 'open' && message.endpoint === '$events' && message.streamId !== undefined) {
+            websocket.send(JSON.stringify({
+              type: 'item',
+              streamId: message.streamId,
+              value: { type: 'ready', clientId: 'client-loopback', host: { home: '/tmp' } },
+            }))
+          }
         })
       })
     })
@@ -130,6 +137,8 @@ describe('Desktop Companion product operations', () => {
     const pages: Array<{ throughSeq: number; beforeSeq?: number; maxMessages?: number }> = []
     const generation = new AbortController()
     const rpc: DesktopHostRpc = {
+      followEvents: async () => {},
+      completeEvent: async () => ({ ok: true, value: undefined }),
       call: async (method, payload) => {
         expect(method).toBe('session/page')
         const request = (payload as { args: { request: {
@@ -210,6 +219,8 @@ describe('Desktop Companion product operations', () => {
     const generation = new AbortController()
     let invalidAccepts = 0
     const rpc: DesktopHostRpc = {
+      followEvents: async () => {},
+      completeEvent: async () => ({ ok: true, value: undefined }),
       call: async () => {
         throw new Error('invalid follow must not page')
       },
@@ -729,13 +740,15 @@ describe('Desktop Companion product operations', () => {
     ])
   })
 
-  it('settles pairing-private Approval and Ask User requests through Host respond', async () => {
-    const respond = vi.fn<NonNullable<DesktopHostRpc['respond']>>(async () => ({ accepted: true }))
-    const host = hostRpc(async () => { throw new Error('settlement must not use an arbitrary Host method') }, respond)
+  it('settles pairing-private Approval and Ask User requests through $events/result', async () => {
+    const completeEvent = vi.fn<DesktopHostRpc['completeEvent']>(async () => ({ ok: true, value: undefined }))
+    const host = hostRpc(async () => { throw new Error('settlement must not use an arbitrary Host method') }, completeEvent)
     const dependencies = baseDependencies(host)
     const interactionId = parseCompanionInteractionId('interaction-product')
     dependencies.resolveInteraction = () => ({
-      rpcId: 'host-request-private', kind: 'approval', sessionId,
+      eventId: 'event-approval' as never,
+      clientId: 'client-generation' as never,
+      kind: 'approval', sessionId,
       approvalId: 'approval-product',
     })
     const operation = op({
@@ -745,9 +758,50 @@ describe('Desktop Companion product operations', () => {
     await expect(handleCompanionProductOperation(operation, dependencies)).resolves.toEqual({
       type: 'interaction-receipt', operationId: operation.operationId, accepted: true,
     })
-    expect(respond).toHaveBeenCalledWith('host-request-private', {
-      ok: true,
-      value: { sessionId, approvalId: 'approval-product', outcome: 'allowed-once' },
+    expect(completeEvent).toHaveBeenCalledWith({
+      clientId: 'client-generation',
+      eventId: 'event-approval',
+      outcome: { kind: 'result', value: 'allowed-once' },
+    })
+  })
+
+  it('rejects an expired Ask User locally and cancels through ASK_CANCELLED', async () => {
+    const completeEvent = vi.fn<DesktopHostRpc['completeEvent']>(async () => ({ ok: true, value: undefined }))
+    const host = hostRpc(async () => { throw new Error('expired settlement must not invent Host not-pending') }, completeEvent)
+    const dependencies = baseDependencies(host)
+    const missing = op({
+      type: 'settle-interaction', sessionId,
+      interactionId: parseCompanionInteractionId('interaction-missing'),
+      settlement: { kind: 'question', answers: [{ id: 'q1', selected: ['Yes'] }] },
+    })
+    await expect(handleCompanionProductOperation(missing, dependencies)).resolves.toEqual({
+      type: 'interaction-receipt', operationId: missing.operationId, accepted: false, reason: 'not-pending',
+    })
+    expect(completeEvent).not.toHaveBeenCalled()
+    const interactionId = parseCompanionInteractionId('interaction-question')
+    dependencies.resolveInteraction = () => ({
+      eventId: 'event-question' as never,
+      clientId: 'client-generation' as never,
+      kind: 'question', sessionId,
+    })
+    const cancel = op({
+      type: 'settle-interaction', sessionId, interactionId,
+      settlement: { kind: 'question-cancelled' },
+    })
+    await expect(handleCompanionProductOperation(cancel, dependencies)).resolves.toEqual({
+      type: 'interaction-receipt', operationId: cancel.operationId, accepted: true,
+    })
+    expect(completeEvent).toHaveBeenCalledWith({
+      clientId: 'client-generation',
+      eventId: 'event-question',
+      outcome: {
+        kind: 'rejected',
+        error: {
+          name: 'UserQuestionError',
+          message: 'the user cancelled ask_user_question',
+          code: 'ASK_CANCELLED',
+        },
+      },
     })
   })
 
@@ -1032,10 +1086,11 @@ function search(query: string): CompanionSearchSessionsOperation {
   }
 }
 
-function hostRpc(call: DesktopHostRpc['call'], respond?: DesktopHostRpc['respond']): DesktopHostRpc {
+function hostRpc(call: DesktopHostRpc['call'], completeEvent?: DesktopHostRpc['completeEvent']): DesktopHostRpc {
   return {
     call,
-    ...(respond === undefined ? {} : { respond }),
+    followEvents: async () => {},
+    completeEvent: completeEvent ?? (async () => ({ ok: true, value: undefined })),
     followWorkspaces: async () => {},
     followSession: async () => {},
   }
@@ -1104,10 +1159,10 @@ async function listenCompanionHost(options?: {
         const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as { rpcId?: string; method?: string }
         rpcId = body.rpcId ?? rpcId
         if (body.method !== undefined) options?.onUnary?.(body.method)
-        if (body.method === 'session/prompt' || body.method === 'session/cancel') {
+        if (body.method === 'session/prompt' || body.method === 'session/cancel' || body.method === '$events/result') {
           response.end(JSON.stringify({
             type: 'server-response', rpcId,
-            result: { ok: true, value: { accepted: true } },
+            result: { ok: true, value: body.method === '$events/result' ? undefined : { accepted: true } },
           }))
           return
         }
@@ -1150,6 +1205,13 @@ async function listenCompanionHost(options?: {
             type: 'item',
             streamId: message.streamId,
             value: workspaceFollowValue,
+          }))
+        }
+        if (message.type === 'open' && message.endpoint === '$events' && message.streamId !== undefined) {
+          websocket.send(JSON.stringify({
+            type: 'item',
+            streamId: message.streamId,
+            value: { type: 'ready', clientId: 'client-loopback', host: { home: '/tmp' } },
           }))
         }
       })

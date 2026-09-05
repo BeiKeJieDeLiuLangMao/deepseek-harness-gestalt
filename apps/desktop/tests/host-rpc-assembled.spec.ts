@@ -10,7 +10,8 @@ import { REMOTE_PROTOCOL_LIMITS } from '@deepseek-ai/dsh-remote-protocol'
 import { parsePersonalPairingId } from '@deepseek-ai/dsh-remote-access'
 import { startMockLlmServer } from '@deepseek-ai/dsh-llm-mock-server'
 import { parseCompanionOperationId, parseCompanionSessionId } from '@deepseek-ai/dsh-remote-protocol'
-import { handleCompanionProductOperation } from '../src/companion-product.ts'
+import { DesktopCompanionOperationLedger } from '../src/companion-operation-ledger.ts'
+import { DesktopCompanionProductOwner, handleCompanionProductOperation } from '../src/companion-product.ts'
 import {
   archiveDesktopHostSession,
   bootstrapDesktopHostCookie, createDesktopHostRpc, createDesktopHostSession,
@@ -360,6 +361,92 @@ describe('Desktop Host RPC against shipped dsh web', () => {
       } finally {
         follow.abort()
         await watching
+      }
+    } finally {
+      await llm.close()
+    }
+  }, 180_000)
+
+  it('answers one shipped Host ask_user_question through $events/result', async () => {
+    const apiKey = 'desktop-assembled-ask-user-key'
+    const llm = await startMockLlmServer({
+      sequence: ['tool_call_success', 'success'],
+      apiKey,
+      toolName: 'ask_user_question',
+      toolArguments: JSON.stringify({
+        questions: [{
+          id: 'q1',
+          question: 'Continue?',
+          options: [{ label: 'Yes' }],
+        }],
+      }),
+      successText: 'acknowledged-ask-user',
+    })
+    try {
+      const first = await startShippedHost({
+        DEEPSEEK_API_KEY: apiKey,
+        DEEPSEEK_BASE_URL: llm.baseURL,
+      })
+      const cookie = await bootstrapDesktopHostCookie(first.running.launchUrl, first.running.url)
+      const owner = new DesktopCompanionProductOwner({
+        timeoutMs: 15_000,
+        responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
+      })
+      const ledger = await DesktopCompanionOperationLedger.load({
+        load: async () => [],
+        save: async () => {},
+      })
+      owner.installLedger(ledger)
+      const uninstall = owner.installHost(first.running.url, cookie)
+      const rpc = createDesktopHostRpc(first.running.url, {
+        timeoutMs: 15_000,
+        responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
+        cookieHeader: cookie,
+      })
+      const sessionId = parseCompanionSessionId('desktop-ask-user-session')
+      const attachmentKey = new Uint8Array(32)
+      const pairing = {
+        pairingId: parsePersonalPairingId('pairing-ask-user'),
+        attachmentKey,
+        now: () => 1_000,
+        downloadAttachment: async () => { throw new Error('ask-user must not download') },
+        submitAttachment: async () => { throw new Error('ask-user must not submit attachments') },
+        generation: 1,
+        desktopRevision: 1,
+        desktopName: 'Assembled Desktop',
+        resolveInteraction: () => undefined,
+        pendingInteractions: () => [],
+      }
+      try {
+        await expect(createDesktopHostSession(rpc, sessionId)).resolves.toMatchObject({
+          ok: true, value: { sessionId },
+        })
+        const submit = {
+          type: 'submit-prompt' as const,
+          operationId: parseCompanionOperationId('desktop-ask-user-prompt'),
+          sessionId,
+          text: 'ask the user one question',
+        }
+        await expect(owner.handle(submit, pairing)).resolves.toMatchObject({
+          type: 'confirmed', operationId: submit.operationId,
+        })
+        await expect.poll(() => owner.pendingInteractions(sessionId, attachmentKey).length > 0).toBe(true)
+        const pending = owner.pendingInteractions(sessionId, attachmentKey)[0]
+        if (pending === undefined || pending.kind !== 'question') throw new Error('missing Ask User wait')
+        await expect(owner.handle({
+          type: 'settle-interaction',
+          operationId: parseCompanionOperationId('desktop-ask-user-answer'),
+          sessionId,
+          interactionId: pending.interactionId,
+          settlement: { kind: 'question', answers: [{ id: 'q1', selected: ['Yes'] }] },
+        }, pairing)).resolves.toMatchObject({ type: 'interaction-receipt', accepted: true })
+        await expect.poll(async () => {
+          const log = await durableSessionLog(first.home, sessionId)
+          return log.includes('acknowledged-ask-user')
+        }).toBe(true)
+        expect(owner.pendingInteractions(sessionId, attachmentKey)).toHaveLength(0)
+      } finally {
+        uninstall()
       }
     } finally {
       await llm.close()

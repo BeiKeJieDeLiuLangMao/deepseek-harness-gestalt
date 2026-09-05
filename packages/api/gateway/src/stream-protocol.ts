@@ -239,6 +239,73 @@ export function isRemoteEventAgentId(value: unknown): value is RemoteEventAgentI
   return typeof value === 'string' && value.length > 0
 }
 
+/**
+ * Parse the opening item of the Gateway-internal forwarded-event stream.
+ * @param value - untrusted stream item.
+ * @returns Client generation identity and Host facts.
+ */
+export function parseRemoteEventReadyFrame(value: unknown): RemoteEventReadyFrame {
+  if (!isPlainRecord(value)
+    || !exactKeys(value, ['type', 'clientId', 'host'])
+    || value.type !== 'ready'
+    || !isRemoteEventClientId(value.clientId)
+    || !isPlainRecord(value.host)
+    || !exactKeys(value.host, ['home'])
+    || typeof value.host.home !== 'string') {
+    throw new TypeError('api gateway: forwarded Remote event stream did not begin with ready')
+  }
+  return {
+    type: 'ready',
+    clientId: value.clientId,
+    host: { home: value.host.home },
+  }
+}
+
+/**
+ * Parse one later item from the Gateway-internal forwarded-event stream.
+ * @param value - untrusted stream item after the ready frame.
+ * @returns emit, waterfall, or cancel frame.
+ */
+export function parseRemoteEventDownlinkFrame(
+  value: unknown,
+): Exclude<RemoteEventDownlinkFrame, { type: 'ready' }> {
+  if (!isPlainRecord(value)) {
+    throw new TypeError('api gateway: invalid forwarded Remote event frame')
+  }
+  if (value.type === 'cancel'
+    && exactKeys(value, ['type', 'eventId'])
+    && isRemoteEventId(value.eventId)) {
+    return { type: 'cancel', eventId: value.eventId }
+  }
+  if (value.type === 'emit'
+    && exactKeys(value, ['type', 'event', 'args'])
+    && typeof value.event === 'string'
+    && value.event.length > 0
+    && Array.isArray(value.args)
+    && isRemoteJsonValue(value.args)) {
+    return { type: 'emit', event: value.event, args: value.args }
+  }
+  if (value.type === 'waterfall'
+    && exactKeys(value, ['type', 'event', 'eventId', 'agentId', 'request'])
+    && typeof value.event === 'string'
+    && value.event.length > 0
+    && isRemoteEventId(value.eventId)
+    && isRemoteEventAgentId(value.agentId)
+    && isPlainRecord(value.request)
+    && !Object.hasOwn(value.request, 'agent')
+    && !Object.hasOwn(value.request, 'signal')
+    && isRemoteJsonValue(value.request)) {
+    return {
+      type: 'waterfall',
+      event: value.event,
+      eventId: value.eventId,
+      agentId: value.agentId,
+      request: value.request,
+    }
+  }
+  throw new TypeError('api gateway: invalid forwarded Remote event frame')
+}
+
 /** One logical stream request sent from the browser. */
 export type RemoteStreamClientMessage =
   | {

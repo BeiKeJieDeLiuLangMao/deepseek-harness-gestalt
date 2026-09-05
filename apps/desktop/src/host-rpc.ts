@@ -5,8 +5,17 @@ import { request as httpRequest, type IncomingMessage, type RequestOptions } fro
 import { request as httpsRequest } from 'node:https'
 import WebSocket from 'ws'
 import {
+  parseRemoteEventDownlinkFrame,
+  parseRemoteEventReadyFrame,
+  parseRemoteEventResult,
   parseRemoteStreamServerMessage,
+  REMOTE_EVENT_RESULT_ENDPOINT,
+  REMOTE_EVENT_STREAM_ENDPOINT,
+  REMOTE_EVENT_STREAM_PAYLOAD,
   REMOTE_STREAM_MUX_PATH,
+  type RemoteEventDownlinkFrame,
+  type RemoteEventReadyFrame,
+  type RemoteEventResult,
 } from '@deepseek-ai/dsh-api-gateway'
 import {
   REMOTE_PROTOCOL_LIMITS,
@@ -39,15 +48,20 @@ export interface DesktopHostRpc {
     options?: { timeoutMs?: number; rpcId?: string; signal?: AbortSignal },
   ): Promise<DesktopHostRpcResult>
   /**
-   * Settle one Host-originated Approval or Ask User request by its private rpc identity.
-   * @param rpcId - exact id received from the current Host event stream.
-   * @param result - domain result shell accepted by `/api/respond`.
-   * @returns Host carrier receipt.
+   * Follow Gateway `$events` on `/api/remote.mux`.
+   * Cookie is sent only to the bootstrap origin. Abort sends mux `cancel`.
    */
-  respond?(
-    rpcId: string,
-    result: Record<string, unknown>,
-  ): Promise<{ accepted: true } | { accepted: false; reason: 'not-pending' | 'bad-response' }>
+  followEvents(
+    signal: AbortSignal,
+    accept: (frame: RemoteEventDownlinkFrame | RemoteEventReadyFrame) => void,
+  ): Promise<void>
+  /**
+   * Settle one Host waterfall through Gateway `$events/result`.
+   * Completed or replaced events are Gateway no-ops, not Host `not-pending`.
+   */
+  completeEvent(
+    result: RemoteEventResult,
+  ): Promise<DesktopHostRpcResult>
   /** Follow Host Session and interaction frames for the current Web Host generation. */
   watchMux?(
     signal: AbortSignal,
@@ -114,7 +128,7 @@ export function createDesktopHostRpc(baseUrl: string, options: DesktopHostRpcOpt
     || responseMaxBytes > REMOTE_PROTOCOL_LIMITS.companionMessageBytes) {
     throw new TypeError('Desktop Host RPC responseMaxBytes must be a positive safe integer within the Companion message ceiling')
   }
-  return {
+  const rpc: DesktopHostRpc = {
     async call(method, payload, callOptions) {
       const attachmentRead = method === 'session.attachment'
       const projectedRead = method === 'session.history'
@@ -170,28 +184,27 @@ export function createDesktopHostRpc(baseUrl: string, options: DesktopHostRpcOpt
       }
       return parseServerResponse(body, rpcId)
     },
-    async respond(rpcId, result) {
-      const response = await requestJson(
-        new URL('/api/respond', origin),
-        { type: 'client-response', rpcId, result },
-        timeoutMs,
-        responseMaxBytes,
-        undefined,
+    followEvents: async (signal, accept) => {
+      let ready = false
+      await followRemoteMux(
+        origin,
+        REMOTE_EVENT_STREAM_ENDPOINT,
+        REMOTE_EVENT_STREAM_PAYLOAD,
+        signal,
+        (frame) => {
+          if (!ready) {
+            accept(parseRemoteEventReadyFrame(frame))
+            ready = true
+            return
+          }
+          accept(parseRemoteEventDownlinkFrame(frame))
+        },
         options.cookieHeader,
       )
-      if (response.kind !== 'response' || response.status < 200 || response.status >= 300) {
-        throw new Error('Desktop Host interaction response transport failed')
-      }
-      const value: unknown = JSON.parse(response.text)
-      if (!isRecord(value) || typeof value.accepted !== 'boolean') {
-        throw new Error('Desktop Host interaction receipt was invalid')
-      }
-      if (value.accepted && Object.keys(value).length === 1) return { accepted: true }
-      if (!value.accepted && Object.keys(value).length === 2
-        && (value.reason === 'not-pending' || value.reason === 'bad-response')) {
-        return { accepted: false, reason: value.reason }
-      }
-      throw new Error('Desktop Host interaction receipt was invalid')
+    },
+    completeEvent: async (result) => {
+      parseRemoteEventResult(result)
+      return rpc.call(REMOTE_EVENT_RESULT_ENDPOINT, { args: result })
     },
     watchMux: async (signal, accept) => {
       await watchHostWebSocket(origin, '/api/events.mux', signal, accept, options.cookieHeader)
@@ -220,6 +233,7 @@ export function createDesktopHostRpc(baseUrl: string, options: DesktopHostRpcOpt
       await followRemoteMux(origin, 'workspace/follow', { args: {} }, signal, accept, options.cookieHeader)
     },
   }
+  return rpc
 }
 
 function watchHostWebSocket(

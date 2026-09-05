@@ -91,6 +91,8 @@ describe('Desktop Companion live projection', () => {
     const calls: string[] = []
     let archivedSessionIds: string[] = []
     const host: DesktopHostRpc = {
+      followEvents: async () => {},
+      completeEvent: async () => ({ ok: true, value: undefined }),
       followWorkspaces: async () => {},
       followSession: async () => {},
       call: vi.fn(async (method: string) => {
@@ -138,7 +140,13 @@ describe('Desktop Companion live projection', () => {
 
 function liveDependencies(host: DesktopHostRpc, archivedSessionIds: readonly string[] = []) {
   return {
-    host: { followWorkspaces: async () => {}, followSession: async () => {}, ...host },
+    host: {
+      followEvents: async () => {},
+      completeEvent: async () => ({ ok: true, value: undefined }),
+      followWorkspaces: async () => {},
+      followSession: async () => {},
+      ...host,
+    },
     sessionHistory: {
       page: async () => ({
         ok: true as const,
