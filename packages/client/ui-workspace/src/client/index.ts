@@ -22,9 +22,10 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // Type-only: pulls the Session root standard-hook merge.
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
+import type {} from '@deepseek-ai/dsh-project-membership-client'
 import type { WorkspaceBrowserInjected, WorkspacePickerInjected } from './contract/slots.ts'
 import { Config, type WorkspaceConfig } from '../config.ts'
-import { membershipGatewayOf, type ProjectMembershipClientFace } from './membership-gateway.ts'
+import { isProjectMembershipClient, membershipGatewayOf } from './membership-gateway.ts'
 import {
   createPendingInvitationsSource, type PendingInvitationPollClient,
 } from './pending-invitations-source.ts'
@@ -154,8 +155,8 @@ export function apply(ctx: Context, config?: WorkspaceConfig): void {
     },
     createWorkspace: input => workspaces.create(input),
     ...((): Pick<WorkspaceBrowserInjected, 'projectMembership'> => {
-      const client = ctx.get('projectMembershipClient') as ProjectMembershipClientFace | undefined
-      if (client === undefined) return {}
+      const client = ctx.get('projectMembershipClient')
+      if (!isProjectMembershipClient(client)) return {}
       return { projectMembership: membershipGatewayOf(client) }
     })(),
     hooks: {

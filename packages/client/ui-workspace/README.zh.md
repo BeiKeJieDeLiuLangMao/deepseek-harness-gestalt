@@ -107,7 +107,7 @@ Workspace 与 Session 悬浮卡片会复制对应行被截断的值：激活 Wor
 - **没有 Session 删除与取消归档控件**：会话可以归档，但已归档会话没有查看或取消归档入口；删除 Workspace 注册记录不会删除 Session。
 - **待处理的用户交互不会聚合到折叠的分组上**：折叠分组内正在等待的行不会点亮分组头指示，只有展开该分组后才可见。
 - **原生文件夹选择依赖本地 Host 载体**：在 `-native` 组合下，进程内部署或远程浏览器部署无法打开本地操作系统对话框；可远程的选取是 `-browse` 组合的应用内流程。
-- **按工作区解析的云项目 Git 仍是 Host 缺口（#590）**：浏览区行菜单第一项始终是**工作区设置**；有 membership client 时，待处理邀请来自 apply 拥有的 `usePendingInvitations` hook。但 `createProject({ localWorkspaceId })`、`projectForWorkspace`、`localRemoteFor`、`cloneWorkspace` 尚无 Host 动词。注入的 gateway 会拒绝这四个调用，而不是编造空操作。邀请轮询间隔是插件 `Config.pollIntervalMs`（默认 15 000）。
+- **按工作区解析的云项目 Git 仍是 Host 缺口（#590）**：浏览区行菜单第一项始终是**工作区设置**；有 membership client 时，待处理邀请来自 apply 拥有的 `usePendingInvitations` hook。但 `createProject({ localWorkspaceId })`、`projectForWorkspace`、`localRemoteFor`、`cloneWorkspace` 尚无 Host 动词。`decideInvitation({ accept-with-link })` 只转发 `{ link }`；`localWorkspaceId`、`receivingAccountId`、`projectId` 不是 Host membership 动词。注入的 gateway 会拒绝这四个 Git 调用，而不是编造空操作。邀请轮询间隔是插件 `Config.pollIntervalMs`（默认 15 000）。创建邀请的展示名使用提交的 GitHub login；`InvitationView` 没有 `inviteeName`。
 
 <a id="dev-note"></a>
 ### 开发备注

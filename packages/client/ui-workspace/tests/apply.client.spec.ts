@@ -184,7 +184,11 @@ describe('ui-workspace apply', () => {
     const b = await bench()
     const pendingInvitations = vi.fn(async () => [])
     b.ctx.provide('projectMembershipClient', {
+      createProject: vi.fn(),
+      projectByRemote: vi.fn(),
       roster: vi.fn(),
+      heartbeat: vi.fn(),
+      closePresence: vi.fn(),
       invite: vi.fn(),
       issuedInvitations: vi.fn(),
       retractInvitation: vi.fn(),

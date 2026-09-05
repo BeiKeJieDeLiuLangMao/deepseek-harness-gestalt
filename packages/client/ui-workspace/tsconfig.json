@@ -58,6 +58,18 @@
     },
     {
       "path": "../../util/workspace-path"
+    },
+    {
+      "path": "../../util/brand"
+    },
+    {
+      "path": "../../platform/project-membership"
+    },
+    {
+      "path": "../../platform/project-membership-client"
+    },
+    {
+      "path": "../../platform/platform-account"
     }
   ]
 }

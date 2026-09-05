@@ -230,7 +230,10 @@ export interface ProjectMembershipGateway {
     project: { id: string; name: string; boundRemoteUrl?: string }
     members: readonly WorkspaceMemberRow[]
   }>
-  /** Invite a GitHub login into the bound project. */
+  /**
+   * Invite a GitHub login into the bound project.
+   * `inviteeName` is the submitted `githubLogin`; create-invite does not return a display name.
+   */
   invite(input: {
     projectId: string
     githubLogin: string
@@ -240,7 +243,11 @@ export interface ProjectMembershipGateway {
   issuedInvitations(projectId: string): Promise<readonly WorkspaceIssuedInvitation[]>
   /** Retract one outbound invitation. */
   retractInvitation(invitationId: string): Promise<void>
-  /** Accept or decline one inbound invitation. */
+  /**
+   * Accept or decline one inbound invitation.
+   * `accept-with-link` forwards only `{ link }` to the membership client;
+   * `localWorkspaceId`, `receivingAccountId`, and `projectId` are not Host verbs (#590).
+   */
   decideInvitation(
     invitationId: string,
     decision:

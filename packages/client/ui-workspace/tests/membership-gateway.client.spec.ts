@@ -1,42 +1,108 @@
 import { describe, expect, it, vi } from 'vitest'
-import { membershipGatewayOf, type ProjectMembershipClientFace } from '../src/client/membership-gateway.ts'
+import { brandString } from '@deepseek-ai/dsh-brand'
+import type {
+  FunctionTag, InvitationId, InvitationView, MembershipId, ProjectId, ProjectRole,
+} from '@deepseek-ai/dsh-project-membership'
+import type { PlatformAccountId } from '@deepseek-ai/dsh-platform-account'
+import type {
+  IssuedInvitationView, PendingInvitationView, ProjectMembershipClient, RosterMemberView,
+} from '@deepseek-ai/dsh-project-membership-client'
+import { isProjectMembershipClient, membershipGatewayOf } from '../src/client/membership-gateway.ts'
 
-function client(overrides: Partial<ProjectMembershipClientFace> = {}): ProjectMembershipClientFace {
+const projectId = brandString<ProjectId>('project-1')
+const invitationId = brandString<InvitationId>('invitation-1')
+const issuedInvitationId = brandString<InvitationId>('invitation-2')
+const pendingInvitationId = brandString<InvitationId>('invitation-3')
+const membershipId = brandString<MembershipId>('membership-1')
+const accountId = brandString<PlatformAccountId>('account-1')
+const inviteeAccountId = brandString<PlatformAccountId>('account-2')
+
+const invitationView = (id: InvitationId, grantedRole: Exclude<ProjectRole, 'owner'>): InvitationView => ({
+  id,
+  projectId,
+  inviterAccountId: accountId,
+  inviteeAccountId,
+  state: 'pending',
+  grantedRole,
+  invitedAt: 1,
+})
+
+const rosterMember = (): RosterMemberView => ({
+  id: membershipId,
+  accountId,
+  displayName: 'octocat',
+  avatarRef: '',
+  role: 'owner',
+  tags: [brandString<FunctionTag>('platform')],
+  presence: 'online',
+  joinedAt: 1,
+})
+
+const issuedRow = (): IssuedInvitationView => ({
+  invitationId: issuedInvitationId,
+  inviteeName: 'mona',
+  grantedRole: 'member',
+  invitedAt: 1,
+})
+
+const pendingRow = (): PendingInvitationView => ({
+  invitationId: pendingInvitationId,
+  receivingAccountId: inviteeAccountId,
+  projectId,
+  projectName: 'Assembled',
+  inviterName: 'mona',
+  remoteUrl: 'https://github.com/o/repo',
+  grantedRole: 'admin',
+  invitedAt: 1,
+})
+
+function client(overrides: Partial<ProjectMembershipClient> = {}): ProjectMembershipClient {
   return {
+    createProject: vi.fn(),
+    projectByRemote: vi.fn(),
     roster: vi.fn(async () => ({
-      project: { id: 'project-1', name: 'Assembled', boundRemoteUrl: 'https://github.com/o/repo' },
-      members: [{
-        id: 'membership-1',
-        accountId: 'account-1',
-        displayName: 'octocat',
-        avatarRef: '',
-        role: 'owner' as const,
-        tags: ['platform'],
-        presence: 'online' as const,
-      }],
+      project: { id: projectId, name: 'Assembled', boundRemoteUrl: 'https://github.com/o/repo', createdAt: 1 },
+      members: [rosterMember()],
     })),
-    invite: vi.fn(async () => ({ id: 'invitation-1', inviteeName: 'mona', grantedRole: 'admin' as const })),
-    issuedInvitations: vi.fn(async () => [{ invitationId: 'invitation-2', inviteeName: 'mona', grantedRole: 'member' as const }]),
-    retractInvitation: vi.fn(async () => undefined),
+    heartbeat: vi.fn(),
+    closePresence: vi.fn(),
+    invite: vi.fn(async () => invitationView(invitationId, 'admin')),
     decideInvitation: vi.fn(async () => undefined),
+    retractInvitation: vi.fn(async () => undefined),
+    pendingInvitations: vi.fn(async () => [pendingRow()]),
+    issuedInvitations: vi.fn(async () => [issuedRow()]),
     changeRole: vi.fn(async () => undefined),
     setMemberTags: vi.fn(async () => undefined),
     removeMember: vi.fn(async () => undefined),
-    pendingInvitations: vi.fn(async () => [{
-      invitationId: 'invitation-3',
-      receivingAccountId: 'account-2',
-      projectId: 'project-1',
-      projectName: 'Assembled',
-      inviterName: 'mona',
-      remoteUrl: 'https://github.com/o/repo',
-      grantedRole: 'admin' as const,
-    }]),
     ...overrides,
   }
 }
 
+describe('isProjectMembershipClient', () => {
+  it('accepts a complete membership client and rejects a partial object', () => {
+    expect(isProjectMembershipClient(client())).toBe(true)
+    expect(isProjectMembershipClient({ roster: vi.fn() })).toBe(false)
+    expect(isProjectMembershipClient(undefined)).toBe(false)
+  })
+})
+
 describe('membershipGatewayOf', () => {
-  it('forwards roster, invite, pending, and decline callbacks without wrapping the client object', async () => {
+  it('uses the submitted GitHub login as inviteeName when create-invite returns no display name', async () => {
+    const membership = client({
+      invite: vi.fn(async () => invitationView(invitationId, 'admin')),
+    })
+    const gateway = membershipGatewayOf(membership)
+    await expect(gateway.invite({
+      projectId: 'project-1', githubLogin: 'mona', grantedRole: 'admin',
+    })).resolves.toEqual({ invitationId: 'invitation-1', inviteeName: 'mona', grantedRole: 'admin' })
+    expect(membership.invite).toHaveBeenCalledWith({
+      projectId, githubLogin: 'mona', grantedRole: 'admin',
+    })
+    const issued = await membership.invite.mock.results[0]?.value as InvitationView
+    expect(issued).not.toHaveProperty('inviteeName')
+  })
+
+  it('forwards roster, issued invitations, pending cards, and decline', async () => {
     const membership = client()
     const gateway = membershipGatewayOf(membership)
     await expect(gateway.roster('project-1')).resolves.toEqual({
@@ -51,12 +117,17 @@ describe('membershipGatewayOf', () => {
         presence: 'online',
       }],
     })
-    await expect(gateway.invite({
-      projectId: 'project-1', githubLogin: 'mona', grantedRole: 'admin',
-    })).resolves.toEqual({ invitationId: 'invitation-1', inviteeName: 'mona', grantedRole: 'admin' })
     await gateway.decideInvitation('invitation-3', { decision: 'decline' })
-    expect(membership.decideInvitation).toHaveBeenCalledWith('invitation-3', { decision: 'decline' })
-    await expect(gateway.pendingInvitations()).resolves.toHaveLength(1)
+    expect(membership.decideInvitation).toHaveBeenCalledWith(pendingInvitationId, { decision: 'decline' })
+    await expect(gateway.pendingInvitations()).resolves.toEqual([{
+      invitationId: 'invitation-3',
+      receivingAccountId: 'account-2',
+      projectId: 'project-1',
+      projectName: 'Assembled',
+      inviterName: 'mona',
+      remoteUrl: 'https://github.com/o/repo',
+      grantedRole: 'admin',
+    }])
     await expect(gateway.issuedInvitations('project-1')).resolves.toEqual([
       { invitationId: 'invitation-2', inviteeName: 'mona', grantedRole: 'member' },
     ])
@@ -64,10 +135,10 @@ describe('membershipGatewayOf', () => {
     await gateway.changeRole('membership-1', 'admin')
     await gateway.setMemberTags('membership-1', ['platform'])
     await gateway.removeMember('membership-1')
-    expect(membership.retractInvitation).toHaveBeenCalledWith('invitation-2')
-    expect(membership.changeRole).toHaveBeenCalledWith('membership-1', 'admin')
-    expect(membership.setMemberTags).toHaveBeenCalledWith('membership-1', ['platform'])
-    expect(membership.removeMember).toHaveBeenCalledWith('membership-1')
+    expect(membership.retractInvitation).toHaveBeenCalledWith(issuedInvitationId)
+    expect(membership.changeRole).toHaveBeenCalledWith(membershipId, 'admin')
+    expect(membership.setMemberTags).toHaveBeenCalledWith(membershipId, [brandString<FunctionTag>('platform')])
+    expect(membership.removeMember).toHaveBeenCalledWith(membershipId)
   })
 
   it('forwards accept-with-link as the membership-client link body', async () => {
@@ -80,7 +151,7 @@ describe('membershipGatewayOf', () => {
       projectId: 'project-1',
       link: { workspaceName: 'deepseek-harness', normalizedRemoteUrl: 'https://github.com/o/repo' },
     })
-    expect(membership.decideInvitation).toHaveBeenCalledWith('invitation-3', {
+    expect(membership.decideInvitation).toHaveBeenCalledWith(pendingInvitationId, {
       decision: 'accept-with-link',
       link: { workspaceName: 'deepseek-harness', normalizedRemoteUrl: 'https://github.com/o/repo' },
     })

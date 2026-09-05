@@ -1,63 +1,68 @@
-/** Adapt an optional membership client into the browsing-region gateway. */
-import type { ProjectMembershipGateway } from './contract/slots.ts'
+/**
+ * Adapt Desktop's ProjectMembershipClient into browsing-region callbacks.
+ * Workspace-keyed Git lookup, create-by-workspace, and clone remain Host gaps (#590).
+ */
+import { brandString } from '@deepseek-ai/dsh-brand'
+import type {
+  FunctionTag, InvitationId, MembershipId, ProjectId, ProjectRole,
+} from '@deepseek-ai/dsh-project-membership'
+import type { ProjectMembershipClient } from '@deepseek-ai/dsh-project-membership-client'
+import type { ProjectMembershipGateway, WorkspaceProjectRole } from './contract/slots.ts'
 
-/** Desktop-provided membership client resolved without importing its package. */
-export interface ProjectMembershipClientFace {
-  roster(projectId: string): Promise<{
-    project: { id: string; name: string; boundRemoteUrl: string }
-    members: readonly {
-      id: string
-      accountId: string
-      displayName: string
-      avatarRef: string
-      role: 'owner' | 'admin' | 'member'
-      tags: readonly string[]
-      presence: 'online' | 'offline'
-    }[]
-  }>
-  invite(input: { projectId: string; githubLogin: string; grantedRole: 'admin' | 'member' }): Promise<{
-    id: string
-    inviteeName: string
-    grantedRole: 'admin' | 'member'
-  }>
-  issuedInvitations(projectId: string): Promise<readonly {
-    invitationId: string
-    inviteeName: string
-    grantedRole: 'admin' | 'member'
-  }[]>
-  retractInvitation(invitationId: string): Promise<void>
-  decideInvitation(
-    invitationId: string,
-    input: { decision: 'decline' } | { decision: 'accept-with-link'; link: { workspaceName: string; normalizedRemoteUrl?: string } },
-  ): Promise<void>
-  changeRole(membershipId: string, role: 'owner' | 'admin' | 'member'): Promise<void>
-  setMemberTags(membershipId: string, tags: readonly string[]): Promise<void>
-  removeMember(membershipId: string): Promise<void>
-  pendingInvitations(): Promise<readonly {
-    invitationId: string
-    receivingAccountId: string
-    projectId: string
-    projectName: string
-    inviterName: string
-    remoteUrl: string
-    grantedRole: 'admin' | 'member'
-  }[]>
+const MEMBERSHIP_METHODS = [
+  'createProject', 'projectByRemote', 'roster', 'heartbeat', 'closePresence',
+  'invite', 'decideInvitation', 'retractInvitation', 'pendingInvitations',
+  'issuedInvitations', 'changeRole', 'setMemberTags', 'removeMember',
+] as const
+
+/**
+ * True when `value` exposes the Desktop membership-client methods.
+ * Used at the Cordis `ctx.get` boundary; branded ids are not reconstructed here.
+ * @param value - optional Cordis service value.
+ * @returns whether the value can be passed to {@link membershipGatewayOf}.
+ */
+export function isProjectMembershipClient(value: unknown): value is ProjectMembershipClient {
+  if (typeof value !== 'object' || value === null) return false
+  return MEMBERSHIP_METHODS.every((method) => {
+    const member: unknown = Reflect.get(value, method)
+    return typeof member === 'function'
+  })
+}
+
+function projectIdOf(value: string): ProjectId {
+  return brandString<ProjectId>(value)
+}
+
+function invitationIdOf(value: string): InvitationId {
+  return brandString<InvitationId>(value)
+}
+
+function membershipIdOf(value: string): MembershipId {
+  return brandString<MembershipId>(value)
+}
+
+function functionTagOf(value: string): FunctionTag {
+  return brandString<FunctionTag>(value)
+}
+
+function grantableInviteRole(role: WorkspaceProjectRole): Exclude<ProjectRole, 'owner'> {
+  if (role === 'owner') throw new Error('ui-workspace: invite cannot grant owner')
+  return role
 }
 
 /**
  * Adapt membership-client callbacks into the browsing-region gateway.
- * Workspace-keyed Git lookup, create-by-workspace, and clone remain Host gaps (#590).
  * @param client - Desktop-provided membership client.
  * @returns callback gateway for settings and the invite wizard.
  */
-export function membershipGatewayOf(client: ProjectMembershipClientFace): ProjectMembershipGateway {
+export function membershipGatewayOf(client: ProjectMembershipClient): ProjectMembershipGateway {
   const missingWorkspaceGit = (method: 'createProject' | 'projectForWorkspace' | 'localRemoteFor' | 'cloneWorkspace'): Promise<never> =>
     Promise.reject(new Error(`ui-workspace: ProjectMembershipGateway.${method} requires Host workspace Git (#590)`))
   return {
     createProject: () => missingWorkspaceGit('createProject'),
     projectForWorkspace: () => missingWorkspaceGit('projectForWorkspace'),
     roster: async (projectId) => {
-      const read = await client.roster(projectId)
+      const read = await client.roster(projectIdOf(projectId))
       return {
         project: { id: read.project.id, name: read.project.name, boundRemoteUrl: read.project.boundRemoteUrl },
         members: read.members.map(member => ({
@@ -72,23 +77,53 @@ export function membershipGatewayOf(client: ProjectMembershipClientFace): Projec
       }
     },
     invite: async (input) => {
-      if (input.grantedRole === 'owner') throw new Error('ui-workspace: invite cannot grant owner')
-      const issued = await client.invite(input)
-      return { invitationId: issued.id, inviteeName: issued.inviteeName, grantedRole: issued.grantedRole }
+      const grantedRole = grantableInviteRole(input.grantedRole)
+      const issued = await client.invite({
+        projectId: projectIdOf(input.projectId),
+        githubLogin: input.githubLogin,
+        grantedRole,
+      })
+      return {
+        invitationId: issued.id,
+        inviteeName: input.githubLogin,
+        grantedRole: issued.grantedRole,
+      }
     },
-    issuedInvitations: projectId => client.issuedInvitations(projectId),
-    retractInvitation: invitationId => client.retractInvitation(invitationId),
+    issuedInvitations: async (projectId) => {
+      const issued = await client.issuedInvitations(projectIdOf(projectId))
+      return issued.map(row => ({
+        invitationId: row.invitationId,
+        inviteeName: row.inviteeName,
+        grantedRole: row.grantedRole,
+      }))
+    },
+    retractInvitation: invitationId => client.retractInvitation(invitationIdOf(invitationId)),
     decideInvitation: async (invitationId, decision) => {
+      const id = invitationIdOf(invitationId)
       if (decision.decision === 'decline') {
-        await client.decideInvitation(invitationId, { decision: 'decline' })
+        await client.decideInvitation(id, { decision: 'decline' })
         return
       }
-      await client.decideInvitation(invitationId, { decision: 'accept-with-link', link: decision.link })
+      await client.decideInvitation(id, { decision: 'accept-with-link', link: decision.link })
     },
-    changeRole: (membershipId, role) => client.changeRole(membershipId, role),
-    setMemberTags: (membershipId, tags) => client.setMemberTags(membershipId, tags),
-    removeMember: membershipId => client.removeMember(membershipId),
-    pendingInvitations: () => client.pendingInvitations(),
+    changeRole: (membershipId, role) => client.changeRole(membershipIdOf(membershipId), role),
+    setMemberTags: (membershipId, tags) => client.setMemberTags(
+      membershipIdOf(membershipId),
+      tags.map(functionTagOf),
+    ),
+    removeMember: membershipId => client.removeMember(membershipIdOf(membershipId)),
+    pendingInvitations: async () => {
+      const pending = await client.pendingInvitations()
+      return pending.map(row => ({
+        invitationId: row.invitationId,
+        receivingAccountId: row.receivingAccountId,
+        projectId: row.projectId,
+        projectName: row.projectName,
+        inviterName: row.inviterName,
+        remoteUrl: row.remoteUrl,
+        grantedRole: row.grantedRole,
+      }))
+    },
     localRemoteFor: () => missingWorkspaceGit('localRemoteFor'),
     cloneWorkspace: () => missingWorkspaceGit('cloneWorkspace'),
   }
