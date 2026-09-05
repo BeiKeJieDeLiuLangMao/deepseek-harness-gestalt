@@ -16,6 +16,7 @@ import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import * as SchedulePlugin from '@deepseek-ai/dsh-schedule'
+import { decodeScheduleChange, ScheduleLogError } from '../src/domain.ts'
 
 let root: string | undefined
 let context: Context | undefined
@@ -180,6 +181,24 @@ describe('Schedule real Loader composition through cordis.yml', () => {
     expect(listed.isError).toBe(false)
     if (listed.isError) throw new Error('expected Schedule list value')
     expect(listed.value).toEqual([expect.objectContaining({ id: 'schedule-1', prompt: 'loader reminder' })])
+
+    // Accepted Session Schedule board semantics (implemented note L15/L17):
+    // v1 id-only pause/resume, list includes state paused, human Remote on
+    // ctx.schedules sharing this plugin FIFO. Current Host fold still rejects
+    // that durable JSON and has no schedules service.
+    const acceptedPause = {
+      version: 1 as const,
+      operation: 'pause' as const,
+      id: 'schedule-1',
+    }
+    expect(() => decodeScheduleChange(acceptedPause)).toThrow(ScheduleLogError)
+    expect(() => decodeScheduleChange(acceptedPause)).toThrow(
+      'schedule/change operation must be create, delete, or dispatch',
+    )
+    expect(ctx.get('schedules')).toBeUndefined()
+    expect(listed.value).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'schedule-1', state: 'paused' }),
+    ]))
 
     const deleted = await execute(ctx, root.agent, 'schedule_delete', { id: 'schedule-1' }, 'schedule-loader-delete')
     expect(deleted.isError).toBe(false)
