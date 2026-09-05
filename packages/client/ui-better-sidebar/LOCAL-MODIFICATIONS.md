@@ -27,3 +27,34 @@ Every divergence from the pinned upstream commit in [UPSTREAM.md](UPSTREAM.md). 
 22. **`src/client/sidebar.module.css`** — right and bottom workbench panels use `contain: style` only. `contain: layout` shifted an absolutely positioned Desktop panel so the tab strip sat off-screen and the official page covered the sidebar tab list.
 23. **`src/client/service.ts`** — an `openTab` seed with a path or URL whose active pane is in the bottom tree lands in the right workbench before minting. Type-only `+` clicks still follow the pane that owns the menu.
 24. **`src/client/state.ts`** — closing the last docked tab in the right workbench collapses that panel; closing the last docked tab in the bottom workbench collapses the bottom panel. Remaining floats do not keep an empty docked tree open after `closeTab`; undocking the last docked tab does not collapse the panel.
+
+## 0.18.0 refresh dispositions (`f9153dfc` → `f59ffd07`)
+
+Allowed import paths only: `dsh.plugin.json`, `src`, `tsdown.config.ts`. Upstream `src/client/sidechat-transcript.ts` was **not** imported (retired parallel transcript/polling renderer). Locale dictionaries stay in sibling files; the new `src/client/chunks/locale.tsx` lazy chunk is **adopted**, and `CHUNKS` includes `locale`. Split-sidebar modules under `src/client/sidebar/` and `src/client/changes/` are **adopted**.
+
+| LOCAL row | Disposition |
+|---|---|
+| 1 workspace manifests | **retained** — still repository-owned; not in the allowed import paths |
+| 2 `src/config.ts` schemastery | **retained** |
+| 3 `src/context-types.ts` admission / `uiRenderer` / workspaces archive | **retained**; also **relocated** `openWorkspacePath` onto `remote.session`. `SessionAdmissionAdapter` still type-imports `@deepseek-ai/dsh-client-runtime/client` because ClientSessions does not yet own the complete routing contract. That import is **not** a finished owner. Do not add an empty local interface. |
+| 4 `src/invariant.ts` PACKAGE_NAME | **retained** |
+| 5 tsdown / chunk-loader workspace factory id | **retained** (`clientBundle('@deepseek-ai/dsh-client-ui-better-sidebar', 'client.js')`). `dsh.plugin.json` still names `./lib/client-registry.js` as the upstream plugin-registry channel; this repository's tsdown face still omits emitting that extra factory. Locale is an additional chunk, not a second registry channel. |
+| 6 `src/bundle-route.ts` `LIB_DIR` | **retained** (package `lib/`, including `client-locale.js`) |
+| 7 BrowserView workbenchBrowser | **retained** |
+| 8 `setPanelOpen` / `createTab` seed | **retained** |
+| 9 Desktop overlay `+` menu / windowChrome | **retained** (merged with 0.18 pinned-tab tree on the right Workbench) |
+| 10 panel resize / no automatic Files home | **retained** |
+| 11 Desktop overlay does not mount Sidebar | **retained** |
+| 12 Side Chat Agent-handle quiescence | **retained** |
+| 13 canonical Conversation Side Chat | **retained**. Upstream in-tab composer, history menu, transcript polling, soft-close, and `sidechat-transcript` stay **retired**. |
+| 14 git selected-repo fail-loud | **retained** |
+| 15 `sidebar_open` sender isolation | **retained** |
+| 16 shared loopback allowlist | **retained** (0.18 `fenceEnabledOf` adopted for write/tree/search; loopback parser stays the shared module) |
+| 17 regional zh export names | **retained**; locale chunk aliases those descriptive exports |
+| 18 intercept produced-files vs deliverables | **retained** |
+| 19 restore/close / `?dsh-sidebar-reset` | **retained** |
+| 20 `producedFolder` class | **retained** |
+| 21 `resolveReadablePath` for reads | **retained**; write/tree/search still use workspace fence |
+| 22 `contain: style` on docked panels | **retained** |
+| 23 bottom-tree `openTab` seed lands right | **retained** |
+| 24 last docked tab collapses panel | **retained** |

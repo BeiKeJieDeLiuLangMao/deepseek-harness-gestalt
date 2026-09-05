@@ -151,13 +151,14 @@ function modelSelectionOf(value: unknown): {
   if (typeof record.provider !== 'string' || typeof record.model !== 'string') {
     throw new SidebarError('bad-request', 'selection provider and model are required')
   }
-  if (record.reasoningEffort !== undefined && typeof record.reasoningEffort !== 'string') {
+  const reasoningEffort = typeof record.reasoningEffort === 'string' ? record.reasoningEffort : undefined
+  if (record.reasoningEffort !== undefined && reasoningEffort === undefined) {
     throw new SidebarError('bad-request', 'invalid selection reasoningEffort')
   }
   return {
     provider: record.provider,
     model: record.model,
-    ...(record.reasoningEffort === undefined ? {} : { reasoningEffort: record.reasoningEffort }),
+    ...(reasoningEffort === undefined ? {} : { reasoningEffort }),
   }
 }
 
@@ -318,6 +319,39 @@ function liveThreadAgent(ctx: Context, childId: SessionId): Agent | undefined {
   return agents?.get(childId)
 }
 
+/**
+ * The thread's event log (seed + its own events, already expanded): the live
+ * agent's in-memory log while the thread is attached — the freshest read,
+ * including events not yet flushed — else the persisted logical log. Both
+ * DSH generations expose these seams with the same shape (the 0.1.2
+ * persistence layer packs chunk rows on disk but expands them on inspect;
+ * the live log is `Session.snapshotEvents()`, the 0.1.2-alpha.4 rename of
+ * the `Session.events` property), which is why the transcript reads here
+ * instead of the client's session-history RPC: that face
+ * (`ctx.connection.api`) was removed in 0.1.2-alpha.1's Remote-gateway
+ * migration.
+ */
+async function threadLogEvents(ctx: Context, childId: string): Promise<readonly SidechatLogEvent[]> {
+  const agent = liveThreadAgent(ctx, childId)
+  if (agent !== undefined) {
+    return agent.session.snapshotEvents() as unknown as readonly SidechatLogEvent[]
+  }
+  const persistence = ctx.get('sessionPersistence') as SidebarSessionPersistenceService | undefined
+  if (persistence === undefined) {
+    throw new SidebarError('sidechat-error', 'the session persistence service is unavailable', 503)
+  }
+  try {
+    const inspected = await persistence.inspect(childId)
+    return inspected.events as unknown as readonly SidechatLogEvent[]
+  } catch (error: unknown) {
+    throw new SidebarError(
+      'not-found',
+      `thread "${childId}" is not available: ${error instanceof Error ? error.message : String(error)}`,
+      404,
+    )
+  }
+}
+
 /** Build the Side Chat routes (all optional services degrade to a wire
  *  error the tab surfaces inline). The record keys are the FULL wire method
  *  names the /sidebar/api dispatcher looks up (`api[method]`). */
@@ -353,11 +387,11 @@ export function buildSidechatApi(ctx: Context): SidechatApi {
       }
       const parentSession = parent.session
       const inheritance = buildSidechatInheritance(
-        parentSession.events as unknown as readonly SidechatLogEvent[],
+        parentSession.snapshotEvents() as unknown as readonly SidechatLogEvent[],
       )
       const { agentPreset, setup } = await composeChildSetup(
         ctx,
-        resolvePresetId(parentSession.header, parentSession.events),
+        resolvePresetId(parentSession.header, parentSession.snapshotEvents()),
       )
       const requestedSelection = modelSelectionOf((payload as { selection?: unknown }).selection)
       const selected = requestedSelection === undefined
@@ -389,7 +423,6 @@ export function buildSidechatApi(ctx: Context): SidechatApi {
         meta: {
           ...(parentSession.header.cwd === undefined ? {} : { cwd: parentSession.header.cwd }),
           parentSession: parentSession.id,
-          seedLength: seed.length,
           origin: 'subagent',
           delegationDepth: (parentSession.header.delegationDepth ?? 0) + 1,
           ...(agentPreset === undefined ? {} : { agentPreset }),
@@ -467,7 +500,7 @@ export function buildSidechatApi(ctx: Context): SidechatApi {
           throw new SidebarError('sidechat-error', `thread resume failed: ${error instanceof Error ? error.message : String(error)}`, 500)
         }
       }
-      if (boundaryDelivered(agent.session.events as unknown as readonly SidechatLogEvent[])) {
+      if (boundaryDelivered(agent.session.snapshotEvents() as unknown as readonly SidechatLogEvent[])) {
         admitPrompt(agent, textPrompt(text), rawMode)
       } else {
         // Compatibility for persisted empty Side Chat Sessions created by an

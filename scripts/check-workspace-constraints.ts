@@ -169,6 +169,7 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
     'lib/client-terminal.js',
     'lib/client-editor.js',
     'lib/client-mermaid.js',
+    'lib/client-locale.js',
   ],
   // The CPython side ships as source .py files, published as-is rather than built.
   '@deepseek-ai/dsh-code-runtime-python': ['py/**/*.py'],

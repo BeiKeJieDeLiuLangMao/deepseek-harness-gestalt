@@ -16,12 +16,12 @@ describe('sidechat route lifecycle', () => {
       inject,
       followup,
       options: { provider: 'deepseek', model: 'chat' },
-      session: { events: [], header: {} },
+      session: { events: [], snapshotEvents: () => [], header: {} },
     } as unknown as Agent
     const parent = {
       id: 'parent',
       options: { provider: 'deepseek', model: 'chat' },
-      session: { id: 'parent', events: [], header: {} },
+      session: { id: 'parent', events: [], snapshotEvents: () => [], header: {} },
     } as unknown as Agent
     const create = vi.fn(() => Promise.resolve({ agent: child, dispose: () => Promise.resolve() }))
     const ctx = {
@@ -59,12 +59,12 @@ describe('sidechat route lifecycle', () => {
       inject: vi.fn(),
       followup: vi.fn(),
       options: { provider: 'deepseek', model: 'chat' },
-      session: { events: [], header: {} },
+      session: { events: [], snapshotEvents: () => [], header: {} },
     } as unknown as Agent
     const parent = {
       id: 'parent',
       options: { provider: 'deepseek', model: 'chat' },
-      session: { id: 'parent', events: [], header: {} },
+      session: { id: 'parent', events: [], snapshotEvents: () => [], header: {} },
     } as unknown as Agent
     const disposeHandle = vi.fn(async () => { childLive = false })
     const ctx = {
@@ -103,12 +103,12 @@ describe('sidechat route lifecycle', () => {
       inject: vi.fn(),
       followup: vi.fn(),
       options: { provider: 'deepseek', model: 'chat' },
-      session: { events: [], header: {} },
+      session: { events: [], snapshotEvents: () => [], header: {} },
     } as unknown as Agent
     const parent = {
       id: 'parent',
       options: { provider: 'deepseek', model: 'chat' },
-      session: { id: 'parent', events: [], header: {} },
+      session: { id: 'parent', events: [], snapshotEvents: () => [], header: {} },
     } as unknown as Agent
     const failure = new Error('release failed')
     const disposeHandle = vi.fn()
@@ -158,6 +158,9 @@ describe('sidechat route lifecycle', () => {
           type: 'user/message',
           data: { content: [{ type: 'text', text: 'Side conversation boundary' }] },
         }],
+        snapshotEvents() {
+          return this.events
+        },
       },
     } as unknown as Agent
     const ctx = {
@@ -281,7 +284,7 @@ describe('sidechat route lifecycle', () => {
     const parent = {
       id: 'parent',
       options: { provider: 'deepseek', model: 'chat' },
-      session: { events: [], header: {} },
+      session: { events: [], snapshotEvents: () => [], header: {} },
     } as unknown as Agent
     const ctx = {
       get: (name: string) => {
@@ -387,7 +390,7 @@ describe('sidechat route lifecycle', () => {
         id: 'cold-child',
         ctx: agentCtx,
         options: options.agentOptions ?? {},
-        session: { events, header: {} },
+        session: { events, snapshotEvents: () => events, header: {} },
         followup: vi.fn(),
       } as unknown as Agent
       return { agent: resumedAgent, dispose: () => Promise.resolve() }
@@ -432,7 +435,7 @@ describe('sidechat route lifecycle', () => {
       inject,
       followup,
       options: {},
-      session: { events: [], header: {} },
+      session: { events: [], snapshotEvents: () => [], header: {} },
     } as unknown as Agent
     const resume = vi.fn(() => resumed)
     const ctx = {

@@ -97,4 +97,23 @@ describe('package payload constraints', () => {
       'lib/types/**/*.d.ts',
     ])
   })
+
+  it('publishes the locale chunk beside the other better-sidebar lazy chunks', () => {
+    expect(expectedDshPackageFiles({
+      name: '@deepseek-ai/dsh-client-ui-better-sidebar',
+      exports: {
+        './invariant': { types: './lib/types/invariant.d.ts', default: './lib/invariant.js' },
+        './client': { default: './lib/client.js' },
+      },
+    })).toEqual([
+      'lib/index.js',
+      'lib/invariant.js',
+      'lib/client.js',
+      'lib/client-terminal.js',
+      'lib/client-editor.js',
+      'lib/client-mermaid.js',
+      'lib/client-locale.js',
+      'lib/types/**/*.d.ts',
+    ])
+  })
 })
