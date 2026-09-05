@@ -3,22 +3,26 @@
 import { Context, Service } from '@deepseek-ai/cordis'
 import { AttachmentError } from './error.ts'
 import type {
+  ByteAttachmentRef,
   ImageAttachmentLimits,
   ImageAttachmentRef,
   ImageRequestPolicy,
   RequestImageAttachment,
+  SaveByteAttachment,
   SaveImageAttachment,
+  StoredByteAttachment,
   StoredImageAttachment,
 } from './types.ts'
 
 export { AttachmentId, ImageVariantId } from './brand.ts'
 export { AttachmentError, isImageAdmissionError } from './error.ts'
-export type { AttachmentErrorCode, ImageAdmissionErrorCode } from './error.ts'
+export type { AttachmentErrorCode, ByteAdmissionErrorCode, ImageAdmissionErrorCode } from './error.ts'
 export { admitEncodedImages, admitPromptContent } from './admission.ts'
 export { requestImageDimensions } from './request-projection.ts'
 export type {
   AttachmentId as AttachmentIdType,
   AdmittedPromptContentPart,
+  ByteAttachmentRef,
   EncodedImageAttachment,
   ImageAttachmentLimits,
   ImageAttachmentRef,
@@ -26,7 +30,9 @@ export type {
   ImageMediaType,
   PromptContentPart,
   RequestImageAttachment,
+  SaveByteAttachment,
   SaveImageAttachment,
+  StoredByteAttachment,
   StoredImageAttachment,
 } from './types.ts'
 
@@ -102,6 +108,22 @@ export abstract class AttachmentStore extends Service {
   abstract saveImage(input: SaveImageAttachment): Promise<ImageAttachmentRef>
 
   /**
+   * Persist exact opaque bytes before a Companion admission event is appended.
+   * Bytes are content-addressed and never decoded as an image or sent to a model.
+   * Providers that do not store opaque bytes refuse with
+   * {@link AttachmentErrorCode | ATTACHMENT_BYTES_UNSUPPORTED}.
+   * @param input - exact bytes, declared media type, and display name.
+   * @returns the durable content-addressed byte reference.
+   */
+  saveBytes(input: SaveByteAttachment): Promise<ByteAttachmentRef> {
+    void input
+    return Promise.reject(new AttachmentError(
+      'The mounted attachment provider cannot persist opaque byte attachments.',
+      'ATTACHMENT_BYTES_UNSUPPORTED',
+    ))
+  }
+
+  /**
    * Read one image and verify that bytes still match the recorded reference.
    * @param ref - durable reference from the session log.
    * @param signal - optional cancellation for backend read and verification work.
@@ -109,6 +131,24 @@ export abstract class AttachmentStore extends Service {
    * @throws the signal reason when aborted, or a storage error when verification fails.
    */
   abstract readImage(ref: ImageAttachmentRef, signal?: AbortSignal): Promise<StoredImageAttachment>
+
+  /**
+   * Read one opaque byte object and verify that bytes still match the recorded reference.
+   * Providers that do not store opaque bytes refuse with
+   * {@link AttachmentErrorCode | ATTACHMENT_BYTES_UNSUPPORTED}.
+   * @param ref - durable reference from the session log.
+   * @param signal - optional cancellation for backend read and verification work.
+   * @returns the verified bytes and recorded reference.
+   * @throws the signal reason when aborted, or a storage error when verification fails.
+   */
+  readBytes(ref: ByteAttachmentRef, signal?: AbortSignal): Promise<StoredByteAttachment> {
+    signal?.throwIfAborted()
+    void ref
+    return Promise.reject(new AttachmentError(
+      'The mounted attachment provider cannot read opaque byte attachments.',
+      'ATTACHMENT_BYTES_UNSUPPORTED',
+    ))
+  }
 
   /**
    * Locate the provider-owned normalized object in the harness host filesystem.

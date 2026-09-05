@@ -279,10 +279,12 @@ export interface Config {
   normalizedImageMaxBytes?: number
   /** Maximum simultaneous normalization or request-image transformations in this service instance. */
   imageCompressionConcurrency?: number
+  /** Maximum encoded bytes accepted for one opaque byte attachment. Default: 100 MiB. */
+  maxByteBytes?: number
 }
 ```
 
-Source: [`packages/attachment/attachment-local/src/index.ts:55`](../packages/attachment/attachment-local/src/index.ts)
+Source: [`packages/attachment/attachment-local/src/index.ts:66`](../packages/attachment/attachment-local/src/index.ts)
 
 <a id="deepseek-aidsh-bash-local"></a>
 
@@ -509,7 +511,7 @@ export interface SidebarConfig {
 }
 ```
 
-Source: [`packages/client/ui-better-sidebar/src/config.ts:40`](../packages/client/ui-better-sidebar/src/config.ts)
+Source: [`packages/client/ui-better-sidebar/src/config.ts:38`](../packages/client/ui-better-sidebar/src/config.ts)
 
 <a id="deepseek-aidsh-code-runtime-worker-thread"></a>
 
@@ -1714,6 +1716,18 @@ export interface MemberQuestionReceiverConfig {
   readonly timer?: MemberQuestionReceiverTimer
   /** Atomic state writer override for storage-boundary verification. */
   readonly stateWriter?: MemberQuestionReceiverStateWriter
+  /**
+   * Host Installation id used for human settlement. Optional and development-only
+   * with `memberQuestionDeviceName`; production leaves both absent until
+   * authenticated cross-machine publication is composed. Wire payloads never
+   * supply this identity.
+   */
+  readonly memberQuestionInstallationId?: string
+  /**
+   * Host device name used for human settlement. Must be configured together
+   * with `memberQuestionInstallationId`.
+   */
+  readonly memberQuestionDeviceName?: string
 }
 
 /** Authority adapter retaining exactly one global terminal per question id. */
@@ -1892,7 +1906,7 @@ interface MemberQuestionHumanImageContent {
 
 Depends on: [`Branded`](../packages/util/brand/src/index.ts) · [`CompanionMemberQuestionOperation`](../packages/platform/remote-protocol/src/index.ts) · [`CompanionMemberQuestionSettledResult`](../packages/platform/remote-protocol/src/index.ts) · [`HostSessionId`](subsystems/core.md) · [`ImageAttachmentRef`](subsystems/attachment.md) · [`MemberQuestionId`](../packages/platform/remote-protocol/src/index.ts) · [`PlatformAccountId`](../packages/platform/platform-account/src/index.ts) · [`ProjectId`](../packages/platform/project-membership/src/index.ts)
 
-Source: [`packages/interaction/member-question-receiver/src/index.ts:117`](../packages/interaction/member-question-receiver/src/index.ts)
+Source: [`packages/interaction/member-question-receiver/src/index.ts:141`](../packages/interaction/member-question-receiver/src/index.ts)
 
 <a id="deepseek-aidsh-member-question-sender"></a>
 
@@ -2049,7 +2063,7 @@ export interface MemberMembershipWatchInput {
 
 Depends on: [`CompanionMemberQuestionSettledResult`](../packages/platform/remote-protocol/src/index.ts) · [`CompanionMessage`](../packages/platform/remote-protocol/src/index.ts) · [`CompanionOperationId`](../packages/platform/remote-protocol/src/index.ts) · [`DocumentTransferId`](../packages/platform/remote-protocol/src/index.ts) · [`MemberQuestionId`](../packages/platform/remote-protocol/src/index.ts) · [`ProjectId`](../packages/platform/remote-protocol/src/index.ts) · [`SealedProjectPeerGrant`](../packages/platform/remote-access/src/index.ts)
 
-Source: [`packages/interaction/member-question-sender/src/index.ts:176`](../packages/interaction/member-question-sender/src/index.ts)
+Source: [`packages/interaction/member-question-sender/src/index.ts:180`](../packages/interaction/member-question-sender/src/index.ts)
 
 <a id="deepseek-aidsh-message-feedback"></a>
 
@@ -3533,17 +3547,17 @@ export interface OriginResolverInput {
 /** Authenticated Project, Decision Brief origin, and live-roster Account for one eligible addressee. */
 export interface MemberQuestionRoute {
   /** Cloud Project whose current roster contains the addressee. */
-  readonly projectId: string
+  readonly projectId: ProjectId
   /** Authenticated Decision Brief origin from the same roster read. */
-  readonly origin: MemberQuestionOrigin
+  readonly origin: AskUserQuestionMemberOrigin
   /** Durable Account id matched from the live roster, never the model-supplied login. */
-  readonly toProjectMember: string
+  readonly toProjectMember: PlatformAccountId
 }
 ```
 
-Depends on: [`Agent`](subsystems/core.md) · [`MemberQuestionOrigin`](../packages/interaction/member-question-sender/src/index.ts)
+Depends on: [`Agent`](subsystems/core.md) · [`AskUserQuestionMemberOrigin`](../packages/interaction/user-questions/src/index.ts) · [`PlatformAccountId`](../packages/platform/platform-account/src/index.ts) · [`ProjectId`](../packages/platform/remote-protocol/src/index.ts)
 
-Source: [`packages/interaction/tool-ask-user/src/index.ts:91`](../packages/interaction/tool-ask-user/src/index.ts)
+Source: [`packages/interaction/tool-ask-user/src/index.ts:89`](../packages/interaction/tool-ask-user/src/index.ts)
 
 <a id="deepseek-aidsh-tool-bash"></a>
 

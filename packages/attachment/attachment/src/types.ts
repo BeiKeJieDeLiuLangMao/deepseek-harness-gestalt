@@ -87,6 +87,35 @@ export interface StoredImageAttachment {
   data: Uint8Array
 }
 
+/** Durable, serializable reference to one immutable opaque byte object. */
+export interface ByteAttachmentRef {
+  /** Opaque storage identifier; never a filesystem path or bearer URL. */
+  attachmentId: AttachmentId
+  /** Caller-declared media type recorded with the object; bytes are not decoded. */
+  mediaType: string
+  /** Exact stored byte length. */
+  bytes: number
+  /** SHA-256 digest of the stored bytes as 64 lowercase hex characters. */
+  sha256: string
+  /** Optional display name stripped of local path information. */
+  name?: string
+}
+
+/** Request to validate and durably commit one opaque byte object. */
+export interface SaveByteAttachment {
+  data: Uint8Array
+  /** Caller-declared media type recorded with the object; it is never decoded. */
+  mediaType: string
+  /** Display name; path separators and control characters are stripped before storage. */
+  name: string
+}
+
+/** Stored opaque bytes returned after reference and digest verification. */
+export interface StoredByteAttachment {
+  ref: ByteAttachmentRef
+  data: Uint8Array
+}
+
 /** Deterministic request-image policy selected by one exact model route. */
 export interface ImageRequestPolicy {
   /** Maximum width multiplied by height after aspect-preserving projection. */

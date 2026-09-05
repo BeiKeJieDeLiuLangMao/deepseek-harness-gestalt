@@ -5,22 +5,31 @@ import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { AttachmentStore } from '@deepseek-ai/dsh-attachment'
 import type {
+  ByteAttachmentRef,
   ImageAttachmentLimits,
   ImageAttachmentRef,
   ImageRequestPolicy,
   RequestImageAttachment,
+  SaveByteAttachment,
   SaveImageAttachment,
+  StoredByteAttachment,
   StoredImageAttachment,
 } from '@deepseek-ai/dsh-attachment'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import type { NormalizationPolicy } from './normalization.ts'
 import { CompressionLimiter } from './compression-limiter.ts'
-import { commitPreparedImageFile, normalizedImagePath, prepareImageFile, readImageFile, validateImageFile } from './store.ts'
+import { readByteFile, saveByteFile } from './bytes.ts'
+import {
+  commitPreparedImageFile, normalizedImagePath, prepareImageFile, readImageFile, validateImageFile,
+} from './store.ts'
 import { readRequestImageFile, requestImageVariantId } from './request-image.ts'
 
 export { canPassThroughNormalization, normalizeImage } from './normalization.ts'
 export type { NormalizedImage, NormalizationPolicy } from './normalization.ts'
-export { commitPreparedImageFile, prepareImageFile, readImageFile, saveImageFile, validateImageFile } from './store.ts'
+export { readByteFile, saveByteFile } from './bytes.ts'
+export {
+  commitPreparedImageFile, prepareImageFile, readImageFile, saveImageFile, validateImageFile,
+} from './store.ts'
 export type { PreparedImageFile } from './store.ts'
 export { readRequestImageFile, requestImageVariantId } from './request-image.ts'
 
@@ -46,6 +55,8 @@ export const DEFAULT_NORMALIZED_IMAGE_MAX_PIXELS = 2048 * 2048
 export const DEFAULT_NORMALIZED_IMAGE_MAX_DIMENSION = 8192
 /** Default encoded-byte target for one stored normalized image. */
 export const DEFAULT_NORMALIZED_IMAGE_MAX_BYTES = 4 * 1024 * 1024
+/** Default maximum encoded bytes for one submitted opaque attachment. */
+export const DEFAULT_MAX_BYTE_BYTES = 100 * 1024 * 1024
 /** Conservative default number of simultaneous native image transformations per store. */
 export const DEFAULT_IMAGE_COMPRESSION_CONCURRENCY = 2
 /** Maximum configurable native image transformations per store. */
@@ -76,6 +87,8 @@ export interface Config {
   normalizedImageMaxBytes?: number
   /** Maximum simultaneous normalization or request-image transformations in this service instance. */
   imageCompressionConcurrency?: number
+  /** Maximum encoded bytes accepted for one opaque byte attachment. Default: 100 MiB. */
+  maxByteBytes?: number
 }
 
 function abortReason(signal: AbortSignal): Error {
@@ -153,6 +166,7 @@ export class LocalAttachmentStore extends AttachmentStore {
     normalizedImageMaxBytes: z.number().step(1).min(1).default(DEFAULT_NORMALIZED_IMAGE_MAX_BYTES),
     imageCompressionConcurrency: z.number().step(1).min(1).max(MAX_IMAGE_COMPRESSION_CONCURRENCY)
       .default(DEFAULT_IMAGE_COMPRESSION_CONCURRENCY),
+    maxByteBytes: z.number().step(1).min(1).default(DEFAULT_MAX_BYTE_BYTES),
   })
 
   /** Absolute versioned storage root. */
@@ -162,6 +176,8 @@ export class LocalAttachmentStore extends AttachmentStore {
   readonly normalizationPolicy: Readonly<NormalizationPolicy>
   /** Resolved instance-level compression limit. */
   readonly imageCompressionConcurrency: number
+  /** Maximum encoded bytes accepted for one opaque byte attachment. */
+  readonly maxByteBytes: number
   private readonly compression: CompressionLimiter
   private readonly requestInflight = new Map<string, SharedRequest<RequestImageAttachment>>()
 
@@ -191,6 +207,7 @@ export class LocalAttachmentStore extends AttachmentStore {
     }
     this.imageCompressionConcurrency = compressionConcurrency
     this.compression = new CompressionLimiter(compressionConcurrency)
+    this.maxByteBytes = config.maxByteBytes ?? DEFAULT_MAX_BYTE_BYTES
   }
 
   async validateImage(input: SaveImageAttachment): Promise<void> {
@@ -216,6 +233,14 @@ export class LocalAttachmentStore extends AttachmentStore {
 
   async readImage(ref: ImageAttachmentRef, signal?: AbortSignal): Promise<StoredImageAttachment> {
     return readImageFile(this.root, ref, signal)
+  }
+
+  override async saveBytes(input: SaveByteAttachment): Promise<ByteAttachmentRef> {
+    return saveByteFile(this.root, input, this.maxByteBytes)
+  }
+
+  override async readBytes(ref: ByteAttachmentRef, signal?: AbortSignal): Promise<StoredByteAttachment> {
+    return readByteFile(this.root, ref, signal)
   }
 
   override imageHostPath(ref: ImageAttachmentRef): string {
