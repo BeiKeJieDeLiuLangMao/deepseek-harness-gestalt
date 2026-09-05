@@ -177,6 +177,26 @@ describe('Desktop Host RPC', () => {
             }))
             return
           }
+          case 'utf8-3byte-cross':
+          case 'utf8-emoji-cross':
+          case 'utf8-legal-fffd': {
+            const prefix = '[gateway/internal] '
+            const remaining = REMOTE_PROTOCOL_LIMITS.hostFailureMessageBytes - Buffer.byteLength(prefix)
+            const message = body.payload.query === 'utf8-3byte-cross'
+              ? `${'a'.repeat(remaining - 2)}\u4f60`
+              : body.payload.query === 'utf8-emoji-cross'
+                ? `${'a'.repeat(remaining - 3)}\u{1F600}`
+                : `${'a'.repeat(remaining - 3)}\uFFFD${'x'}`
+            response.end(JSON.stringify({
+              type: 'server-response',
+              rpcId: body.rpcId,
+              result: {
+                ok: false,
+                error: { code: 'gateway/internal', message, details: {} },
+              },
+            }))
+            return
+          }
           case 'timeout':
             return
           case 'slow-chunks':
@@ -293,6 +313,12 @@ describe('Desktop Host RPC', () => {
     expect(utf8Boundary.failure.message.startsWith('[gateway/internal] ')).toBe(true)
     expect(utf8Boundary.failure.message).not.toMatch(/\uFFFD/u)
     expect(utf8Boundary.failure.message.length).toBeGreaterThan('[gateway/internal] '.length)
+    const threeByte = await rpc.call('session/search', { query: 'utf8-3byte-cross' })
+    const emoji = await rpc.call('session/search', { query: 'utf8-emoji-cross' })
+    const legalReplacement = await rpc.call('session/search', { query: 'utf8-legal-fffd' })
+    expectPrefixedUtf8Budget(threeByte, { last: 'a', forbidden: '\u4f60' })
+    expectPrefixedUtf8Budget(emoji, { last: 'a', forbidden: '\u{1F600}' })
+    expectPrefixedUtf8Budget(legalReplacement, { last: '\uFFFD' })
     await expect(rpc.call('session/search', { query: 'timeout' })).resolves.toEqual({
       ok: false,
       failure: { kind: 'timeout', code: 'HOST_TIMEOUT', message: 'Desktop Host request timed out' },
@@ -608,4 +634,22 @@ function successResponse(rpcId: string, padding: string): string {
     rpcId,
     result: { ok: true, value: { padding } },
   })
+}
+
+function expectPrefixedUtf8Budget(
+  result: Awaited<ReturnType<ReturnType<typeof createDesktopHostRpc>['call']>>,
+  options: { last: string; forbidden?: string },
+): void {
+  const prefix = '[gateway/internal] '
+  expect(result).toMatchObject({ ok: false, failure: { kind: 'business', code: 'internal' } })
+  if (result.ok || result.failure.kind !== 'business') {
+    throw new Error('expected a truncated namespaced Host business failure')
+  }
+  const message = result.failure.message
+  expect(message.startsWith(prefix)).toBe(true)
+  expect(Buffer.byteLength(message)).toBeLessThanOrEqual(REMOTE_PROTOCOL_LIMITS.hostFailureMessageBytes)
+  expect(() => new TextDecoder('utf-8', { fatal: true }).decode(Buffer.from(message))).not.toThrow()
+  const original = message.slice(prefix.length)
+  expect(original.at(-1)).toBe(options.last)
+  if (options.forbidden !== undefined) expect(original).not.toContain(options.forbidden)
 }

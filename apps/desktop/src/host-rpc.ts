@@ -292,9 +292,26 @@ function boundedFailureMessage(hostMessage: string): string {
 function utf8Truncate(value: string, maxBytes: number): string {
   const encoded = new TextEncoder().encode(value)
   if (encoded.byteLength <= maxBytes) return value
-  const sliced = encoded.subarray(0, maxBytes)
-  const decoded = new TextDecoder('utf-8', { fatal: false }).decode(sliced)
-  return decoded.replace(/\uFFFD$/u, '')
+  if (maxBytes <= 0) return ''
+  let end = maxBytes
+  const start = utf8CharStart(encoded, end - 1)
+  const width = utf8LeadWidth(encoded[start] ?? 0)
+  if (start + width > maxBytes) end = start
+  return new TextDecoder('utf-8', { fatal: true }).decode(encoded.subarray(0, end))
+}
+
+function utf8CharStart(bytes: Uint8Array, index: number): number {
+  let start = index
+  while (start > 0 && ((bytes[start] ?? 0) & 0xc0) === 0x80) start -= 1
+  return start
+}
+
+function utf8LeadWidth(lead: number): number {
+  if ((lead & 0x80) === 0) return 1
+  if ((lead & 0xe0) === 0xc0) return 2
+  if ((lead & 0xf0) === 0xe0) return 3
+  if ((lead & 0xf8) === 0xf0) return 4
+  return 1
 }
 
 type RequestOutcome =
