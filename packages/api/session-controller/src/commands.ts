@@ -28,6 +28,7 @@ import {
   inspectApiSession,
 } from './agent.ts'
 import type {
+  PromptContentPart,
   SessionAttachmentRequest,
   SessionAttachmentValue,
   SessionCancelRequest,
@@ -383,18 +384,12 @@ export class SessionCommandController {
 
   /**
    * Mutate one still-pending queue occurrence without resuming a cold Agent.
+   * Edit content is the JSON-safe prompt vocabulary; non-text parts fail as
+   * `session/attachment-invalid` and never admit attachments.
    * @param request - Session, queue item, and requested mutation.
    * @returns acknowledgement that the queue mutation was applied.
    */
   updateQueue(request: SessionUpdateQueueRequest): SessionUpdateQueueValue {
-    if (request.action.kind === 'edit'
-      && request.action.content.some(block => block.type !== 'text')) {
-      throw new RemoteError(
-        'session/attachment-invalid',
-        'queue edits accept text content only',
-        { reason: 'QUEUE_EDIT_NON_TEXT' },
-      )
-    }
     const agent = this.ctx.agents.get(request.sessionId)
     if (agent !== undefined && hasApiSessionSubagentOwner(this.ctx, agent.session, agent)) {
       throw apiSessionSubagentOwnershipError(request.sessionId)
@@ -417,7 +412,7 @@ export class SessionCommandController {
     if (request.action.kind === 'edit') {
       agent.inbox.replace(request.itemId, freezeMessage<UserMessage>({
         ...message,
-        content: [...request.action.content],
+        content: queueEditText(request.action.content),
       }))
     } else {
       agent.inbox.remove(request.itemId)
@@ -553,4 +548,23 @@ function referencedImage(
 
 function routeServed(ctx: Context, provider: string): boolean {
   return ctx.llm.listProviders().some(entry => entry.id === provider)
+}
+
+/**
+ * Keep queue-edit content on the JSON-safe prompt vocabulary and refuse
+ * image parts. Queue mutation never admits attachments.
+ * @param content - wire edit parts from {@link QueueAction}.
+ * @returns text-only inbox content for the pending occurrence.
+ */
+function queueEditText(content: readonly PromptContentPart[]): Array<{ type: 'text'; text: string }> {
+  return content.map((block) => {
+    if (block.type !== 'text') {
+      throw new RemoteError(
+        'session/attachment-invalid',
+        'queue edits accept text content only',
+        { reason: 'QUEUE_EDIT_NON_TEXT' },
+      )
+    }
+    return { type: 'text', text: block.text }
+  })
 }

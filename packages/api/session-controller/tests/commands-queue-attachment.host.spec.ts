@@ -72,12 +72,7 @@ describe('Session queue commands', () => {
       itemId: queued.id,
       action: {
         kind: 'edit',
-        content: [{
-          type: 'image',
-          attachment: {
-            attachmentId: AttachmentId('att-edit'), mediaType: 'image/png', bytes: 1, width: 1, height: 1,
-          },
-        }],
+        content: [{ type: 'image', mediaType: 'image/png', data: 'AAAA' }],
       },
     })), 'session/attachment-invalid')
     await expectFailure(Promise.resolve().then(() => controller.updateQueue({
