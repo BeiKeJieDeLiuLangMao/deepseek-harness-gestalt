@@ -40,7 +40,7 @@ Gestalt 只发货一个覆盖 `web-search-deepseek` 的 `web_search` 工具。�
 
 ## Testing
 
-`packages/web/web-search-deepseek/tests/settings.spec.ts` 会切换 `backend`，并断言 Messages 打到 `{baseURL}/messages`，而 Kimi 打到搜索 URL 且不追加 `/messages`。客户端测试覆盖 tab 选择和测试搜索控件。plugin-config 快照列出一张 Web Search 卡片。
+`packages/web/web-search-deepseek/tests/settings.spec.ts` 会切换 `backend`，并断言 Messages 打到 `{baseURL}/messages`，而 Kimi 打到搜索 URL 且不追加 `/messages`。`packages/web/web-search-deepseek/tests/deepseek.spec.ts` 固定 Moonshot `text_query` 与仅 Bearer 鉴权。客户端测试覆盖 tab 选择和测试搜索控件。plugin-config 快照列出一张 Web Search 卡片。Settings 段通过 `SettingsProvider.installSection` 安装到 `web-search-deepseek`、`web-search-anthropic` 和 `web-search-kimi`。
 
 ## Related
 
