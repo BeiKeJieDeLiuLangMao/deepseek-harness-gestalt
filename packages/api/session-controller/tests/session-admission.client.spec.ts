@@ -682,7 +682,7 @@ describe('Session Client admission dispatch', () => {
     expect(svc.skillCatalogSessionId(sessionId)).toBe(sessionId)
   })
 
-  it('serves stock modelCatalog and selectModel for ordinary and catalog-addressed Sessions', async () => {
+  it('serves stock modelCatalog and selectModel for ordinary Sessions and hides catalog children without a feature route', async () => {
     const { svc, api } = bench()
     const sessionId = sid('session-stock-model')
     const parentId = sid('session-stock-parent')
@@ -841,5 +841,31 @@ describe('Session Client admission dispatch', () => {
     expect(svc.modelRoute(sessionId)).toBeUndefined()
     dropHide()
     expect(svc.modelRoute(sessionId)?.selectModel).toBeTypeOf('function')
+  })
+
+  it('does not stock-route a listed subagent-origin Session or retarget its parent', async () => {
+    const { svc, api } = bench()
+    const parentId = sid('session-listed-parent')
+    const childId = sid('session-listed-child')
+    api.onList = () => Promise.resolve(ok({
+      items: [{
+        sessionId: parentId,
+        updatedAt: 100,
+        running: false,
+        blank: false,
+      }, {
+        sessionId: childId,
+        updatedAt: 100,
+        running: false,
+        blank: false,
+        parentSessionId: parentId,
+        origin: 'subagent',
+      }],
+    }))
+    await svc.refresh()
+    expect(svc.modelRoute(parentId)?.selectModel).toBeTypeOf('function')
+    expect(svc.modelRoute(childId)).toBeUndefined()
+    expect(svc.binding(childId)).toBeDefined()
+    expect(api.callsOf('session.selectModel')).toEqual([])
   })
 })

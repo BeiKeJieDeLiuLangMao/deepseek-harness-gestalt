@@ -183,6 +183,10 @@ async function bench() {
       hidden.add(id)
       for (const listener of admissionListeners) listener()
     },
+    showModelRoute: (id: SessionId) => {
+      hidden.delete(id)
+      for (const listener of admissionListeners) listener()
+    },
     setRoutable: (next: boolean) => { routable = next },
     blockOf: (key: string) => blocks.get(sid(key)),
   }
@@ -425,5 +429,33 @@ describe('ui-model-selection dual entry', () => {
       reasoningEffort: 'max',
     })).toBe(true)
     expect(b.calls.select).toBe(1)
+  })
+
+  it('late hide after composer inject refuses select and detach restores the stock route', async () => {
+    const b = await bench()
+    b.mint('s1')
+    const face = b.seat().inject!(sid('s1'))
+    expect(face.directory.getSnapshot().available).toBe(true)
+    expect(await face.select({
+      provider: 'deepseek-official',
+      model: 'deepseek-v4-pro',
+    })).toBe(true)
+    expect(b.calls.select).toBe(1)
+
+    b.hideModelRoute(sid('s1'))
+    expect(face.directory.getSnapshot().available).toBe(false)
+    expect(await face.select({
+      provider: 'deepseek-official',
+      model: 'deepseek-v4-flash',
+    })).toBe(false)
+    expect(b.calls.select).toBe(1)
+
+    b.showModelRoute(sid('s1'))
+    expect(face.directory.getSnapshot().available).toBe(true)
+    expect(await face.select({
+      provider: 'deepseek-official',
+      model: 'deepseek-v4-flash',
+    })).toBe(true)
+    expect(b.calls.select).toBe(2)
   })
 })
