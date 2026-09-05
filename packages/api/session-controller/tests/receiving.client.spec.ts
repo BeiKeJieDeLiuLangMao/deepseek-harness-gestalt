@@ -209,9 +209,7 @@ describe('ReceivingQuestionBook generated Remote', () => {
     emitChanged({ revision: 2, questionId: 'question-1', state: 'expired' })
     hold.resolve(undefined)
     await started
-    await vi.waitFor(() => {
-      expect(book.pending(SESSION)).toBeUndefined()
-    })
+    expect(book.pending(SESSION)).toBeUndefined()
     expect(book.records(SESSION)).toMatchObject([{ state: 'expired', terminalAt: 500 }])
     expect(snapshot).toHaveBeenCalledTimes(2)
   })
