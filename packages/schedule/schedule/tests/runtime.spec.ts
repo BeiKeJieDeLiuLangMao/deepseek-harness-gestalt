@@ -197,6 +197,26 @@ describe('Schedule timer and admission runtime', () => {
     await runtime.dispose()
   })
 
+  it('does not follow up a paused overdue reminder until resume', async () => {
+    const test = await harness()
+    appendAfter(test, 'schedule-1', 1, Date.now() - 1_000)
+    test.agent.session.append('schedule/change', { version: 1, operation: 'pause', id: 'schedule-1' })
+    const runtime = runtimeFor(test)
+    runtime.start()
+    await settle()
+    expect(test.followed).toEqual([])
+    expect(test.agent.session.snapshotEvents().some(event =>
+      event.type === 'schedule/change' && event.data.operation === 'dispatch')).toBe(false)
+
+    test.agent.session.append('schedule/change', { version: 1, operation: 'resume', id: 'schedule-1' })
+    runtime.requestDrive()
+    await settle()
+    expect(test.followed).toHaveLength(1)
+    expect(test.agent.session.snapshotEvents().some(event =>
+      event.type === 'schedule/change' && event.data.operation === 'dispatch')).toBe(true)
+    await runtime.dispose()
+  })
+
   it('treats a forward jump as overdue and dispatches once', async () => {
     const test = await harness()
     appendAfter(test, 'schedule-1', 60)

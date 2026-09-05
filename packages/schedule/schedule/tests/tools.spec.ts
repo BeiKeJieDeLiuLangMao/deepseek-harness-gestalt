@@ -122,10 +122,9 @@ describe('Schedule tool protocol', () => {
       .toEqual({ card: 'generic', title: 'List reminders', kind: 'read' })
     expect(test.ctx.tools.get('schedule_delete')?.presentCall?.({ id: 'schedule-1' }))
       .toEqual({ card: 'generic', title: 'Delete reminder', kind: 'other', rawInput: 'schedule-1' })
-    expect(test.ctx.tools.get('schedule_list')?.description).toContain('active reminder')
-    expect(test.ctx.tools.get('schedule_delete')?.description).toContain('active reminder')
-    expect(test.ctx.tools.get('schedule_list')?.description).not.toContain('paused')
-    expect(test.ctx.tools.get('schedule_delete')?.description).not.toContain('paused')
+    expect(test.ctx.tools.get('schedule_list')?.description).toContain('paused state')
+    expect(test.ctx.tools.get('schedule_delete')?.description).toContain('paused reminder')
+    expect(JSON.stringify(test.ctx.tools.get('schedule_list')?.output.schema)).toContain('"paused"')
     test.disposeTools()
     test.disposeTools()
     expect(test.ctx.tools.get('schedule_create')).toBeUndefined()
@@ -201,6 +200,42 @@ describe('Schedule tool protocol', () => {
 
     expect(value(await execute(test, 'schedule_create', { prompt: 'next', after_seconds: 1 })))
       .toMatchObject({ id: 'schedule-2' })
+  })
+
+  it('lists paused reminders in create order, keeps the target on resume, and deletes paused ids', async () => {
+    const test = await harness()
+    expect(value(await execute(test, 'schedule_create', { prompt: 'later', after_seconds: 30 }))).toMatchObject({
+      id: 'schedule-1',
+      scheduledAt: '2026-08-05T12:00:30.000Z',
+    })
+    expect(value(await execute(test, 'schedule_create', { prompt: 'sooner', after_seconds: 60 }))).toMatchObject({
+      id: 'schedule-2',
+    })
+    test.agent.session.append('schedule/change', { version: 1, operation: 'pause', id: 'schedule-1' })
+    vi.setSystemTime(new Date('2026-08-05T12:00:31.000Z'))
+    expect(value(await execute(test, 'schedule_list', {}))).toEqual([
+      expect.objectContaining({
+        id: 'schedule-1',
+        state: 'paused',
+        scheduledAt: '2026-08-05T12:00:30.000Z',
+      }),
+      expect.objectContaining({ id: 'schedule-2', state: 'scheduled' }),
+    ])
+    test.agent.session.append('schedule/change', { version: 1, operation: 'resume', id: 'schedule-1' })
+    expect(value(await execute(test, 'schedule_list', {}))).toEqual([
+      expect.objectContaining({
+        id: 'schedule-1',
+        state: 'overdue',
+        scheduledAt: '2026-08-05T12:00:30.000Z',
+      }),
+      expect.objectContaining({ id: 'schedule-2', state: 'scheduled' }),
+    ])
+    test.agent.session.append('schedule/change', { version: 1, operation: 'pause', id: 'schedule-1' })
+    expect(value(await execute(test, 'schedule_delete', { id: 'schedule-1' })))
+      .toEqual({ id: 'schedule-1', deleted: true })
+    expect(value(await execute(test, 'schedule_list', {}))).toEqual([
+      expect.objectContaining({ id: 'schedule-2' }),
+    ])
   })
 
   it('rejects an empty or padded delete id before persistence', async () => {

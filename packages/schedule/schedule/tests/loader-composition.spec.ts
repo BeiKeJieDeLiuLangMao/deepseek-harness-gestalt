@@ -184,22 +184,29 @@ describe('Schedule real Loader composition through cordis.yml', () => {
     if (listed.isError) throw new Error('expected Schedule list value')
     expect(listed.value).toEqual([expect.objectContaining({ id: 'schedule-1', prompt: 'loader reminder' })])
 
-    expect(decodeScheduleChange({
+    root.agent.session.append('schedule/change', {
       version: 1,
       operation: 'pause',
       id: 'schedule-1',
-    })).toEqual({ version: 1, operation: 'pause', id: 'schedule-1' })
+    })
+    expect(decodeScheduleChange(scheduleChanges(root.agent).at(-1)?.data)).toEqual({
+      version: 1,
+      operation: 'pause',
+      id: 'schedule-1',
+    })
+    const pausedList = await execute(ctx, root.agent, 'schedule_list', {}, 'schedule-loader-paused-list')
+    expect(pausedList.isError).toBe(false)
+    if (pausedList.isError) throw new Error('expected paused Schedule list value')
+    expect(pausedList.value).toEqual([
+      expect.objectContaining({ id: 'schedule-1', prompt: 'loader reminder', state: 'paused' }),
+    ])
     expect(ctx.get('schedules')).toBeUndefined()
-    expect(listed.value).not.toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: 'schedule-1', state: 'paused' }),
-    ]))
 
     const deleted = await execute(ctx, root.agent, 'schedule_delete', { id: 'schedule-1' }, 'schedule-loader-delete')
     expect(deleted.isError).toBe(false)
     if (deleted.isError) throw new Error('expected Schedule delete value')
     expect(deleted.value).toEqual({ id: 'schedule-1', deleted: true })
-    expect(scheduleChanges(root.agent).map(event => event.type === 'schedule/change' ? event.data.operation : undefined))
-      .toEqual(['create', 'delete'])
+    expect(scheduleChanges(root.agent).map(event => event.data.operation)).toEqual(['create', 'pause', 'delete'])
 
     const child = await root.agent.ctx.agents.create({ sessionId: SessionId('schedule-child') })
     expect(ctx.tools.get('schedule_create', child.agent)).toBeUndefined()
