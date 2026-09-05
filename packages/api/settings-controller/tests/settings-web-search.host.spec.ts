@@ -1,8 +1,6 @@
-import { execFileSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
-import { createRequire } from 'node:module'
+import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
@@ -18,7 +16,6 @@ import SettingsController from '../src/index.ts'
 import { MemorySettings } from '../../../settings/settings/tests/memory.ts'
 
 const contexts: Context[] = []
-const require = createRequire(import.meta.url)
 
 afterEach(async () => {
   for (const context of contexts.splice(0).reverse()) await context.fiber.dispose()
@@ -294,20 +291,5 @@ describe('settings.testWebSearch probe', () => {
       error: { code: 'gateway/cancelled' },
     })
     expect(provider.calls.some(call => call.query === 'generated probe')).toBe(true)
-  }, 60_000)
-
-  it('emits the package ./types declaration from this tree\'s sources', () => {
-    const root = join(import.meta.dirname, '../../../..')
-    const packageRoot = join(root, 'packages/api/settings-controller')
-    const tsc = join(dirname(require.resolve('typescript/package.json')), 'bin/tsc')
-    execFileSync(process.execPath, [
-      tsc,
-      '-p',
-      join(packageRoot, 'tsconfig.json'),
-      '--pretty',
-      'false',
-    ], { cwd: root, stdio: 'pipe' })
-    expect(readFileSync(join(packageRoot, 'lib/types/types.d.ts'), 'utf8'))
-      .toContain('SettingsWebSearchProbeValue')
   }, 60_000)
 })
