@@ -5,7 +5,8 @@ import { pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import TypertGatewayService from '@deepseek-ai/dsh-api-gateway'
-import { apply as applyClientRemote, inject as clientRemoteInject } from '../../../api/gateway/src/client/index.ts'
+import { apply as applyClientRemote, inject as clientRemoteInject } from '@deepseek-ai/dsh-api-gateway/client'
+import SettingsController from '@deepseek-ai/dsh-api-settings-controller'
 import { remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
 import type { TypertContribution } from '@deepseek-ai/dsh-typert-registry/types'
 import type { TypertRemoteContribution } from '@deepseek-ai/dsh-typert-protocol'
@@ -19,7 +20,6 @@ import { MemoryCredentials } from '../../../credentials/credentials/tests/memory
 import { MemorySettings } from '../../../settings/settings/tests/memory.ts'
 import { WebRuntime } from '@deepseek-ai/dsh-web'
 import * as deepseekPlugin from '@deepseek-ai/dsh-web-search-deepseek'
-import SettingsController from '../../../api/settings-controller/src/index.ts'
 
 const contexts: Context[] = []
 
