@@ -6,5 +6,3 @@ recording: authored
 header:
   class: member-question-routed-ask
   pin: true
-  systemPromptSource: text-turn
-  toolSchemasSource: text-turn

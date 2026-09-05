@@ -1,5 +1,7 @@
 /** Keyless real-sender composition for the Project Members transcript. */
 
+import crypto from 'node:crypto'
+import { Module } from 'node:module'
 import type { Context } from '@deepseek-ai/cordis'
 import CompanionMemberQuestionSender, {
   type MemberQuestionDeliveryPort,
@@ -11,6 +13,13 @@ export const name = 'project-members-memory-member-question'
 
 /** Compose the production sender with an immediate keyless member answer. */
 export async function apply(ctx: Context): Promise<void> {
+  // Pin dashless `mq` question ids; identity redaction matches hyphenated UUIDs only.
+  let next = 0
+  crypto.randomUUID = () => {
+    next += 1
+    return `36f683c1-23df-4b88-9d68-${next.toString(16).padStart(12, '0')}`
+  }
+  Module.syncBuiltinESMExports()
   const terminals = new Map<string, CompanionMemberQuestionSettledResult>()
   const delivery: MemberQuestionDeliveryPort = {
     deliver: async (encoded) => {
