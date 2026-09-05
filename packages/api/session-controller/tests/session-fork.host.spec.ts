@@ -1,13 +1,19 @@
 /** Session Controller fork boundaries, lineage, and inherited model routing. */
 
-import { describe, expect, it, vi } from 'vitest'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry, { agentEvents } from '@deepseek-ai/dsh-agent'
 import type { Agent, AgentHandle, CreateAgentOptions } from '@deepseek-ai/dsh-agent'
 import { createUserMessage, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { LlmCallConfig } from '@deepseek-ai/dsh-llm'
-import SessionStore, { SessionLogOffset, SessionSeq } from '@deepseek-ai/dsh-session'
-import type { Session, SessionEvent, SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
+import GoalService, { foldGoal } from '@deepseek-ai/dsh-goal'
+import SessionStore, { Session, SessionLogOffset, SessionSeq } from '@deepseek-ai/dsh-session'
+import type { SessionEvent, SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
+import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import type { Workspace } from '@deepseek-ai/dsh-workspace'
 import {
@@ -15,6 +21,11 @@ import {
 } from './test-remote.ts'
 
 const sid = (id: string): SessionId => id as SessionId
+const jsonlRoots: string[] = []
+
+afterEach(async () => {
+  for (const root of jsonlRoots.splice(0)) await rm(root, { recursive: true, force: true })
+})
 
 function request<P>(payload: P): P {
   return payload
@@ -300,5 +311,136 @@ describe('sessions.fork', () => {
       reasoningEffort: 'high',
     })
     await ctx.fiber.dispose()
+  })
+
+  it('clears an inherited active goal on the child without changing the source or auto-arming', async () => {
+    const ctx = await composed()
+    await ctx.plugin(GoalService)
+    const source = liveAgent(ctx, 'session-goal-source', 1)
+    const parentAgent = ctx.agents.get(source.id)
+    if (parentAgent === undefined) throw new Error('source agent is missing')
+    const goal = ctx.goals.create(parentAgent, { objective: 'parent product goal', maxGoalRounds: 8 })
+    const parentEvents = source.snapshotEvents()
+    const response = await remote(ctx).fork(request({ sessionId: source.id }))
+    expect(response.ok).toBe(true)
+    if (!response.ok) return
+    const child = ctx.sessions.get(response.value.sessionId)
+    const childAgent = ctx.agents.get(response.value.sessionId)
+    if (child === undefined || childAgent === undefined) throw new Error('fork did not publish the child')
+    expect(ctx.goals.get(parentAgent)).toMatchObject({
+      id: goal.id,
+      revision: goal.revision,
+      phase: 'active',
+    })
+    expect(source.snapshotEvents()).toEqual(parentEvents)
+    expect(ctx.goals.get(childAgent)).toBeUndefined()
+    expect(foldGoal(child.snapshotEvents()).goal).toBeUndefined()
+    const lastOwned = child.snapshotEvents().at(-2)
+    expect(lastOwned?.type).toBe('goal/change')
+    if (lastOwned?.type !== 'goal/change') throw new Error('expected a child-owned clear tombstone')
+    expect(lastOwned.seq).toBe(child.inheritedEventCount)
+    const created = ctx.goals.create(childAgent, { objective: 'child-owned goal' })
+    expect(created.phase).toBe('active')
+    expect(ctx.goals.get(parentAgent)?.id).toBe(goal.id)
+    await ctx.fiber.dispose()
+  })
+
+  it('reopens a JSONL-persisted product-fork child without the inherited goal', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-session-fork-goal-jsonl-'))
+    jsonlRoots.push(root)
+    const ctx = await composed()
+    await ctx.plugin(GoalService)
+    await ctx.plugin(JsonlSessionPersistence, { root, compression: 'none' })
+    const source = liveAgent(ctx, 'session-goal-jsonl-source', 1)
+    const parentAgent = ctx.agents.get(source.id)
+    if (parentAgent === undefined) throw new Error('source agent is missing')
+    const parentGoal = ctx.goals.create(parentAgent, { objective: 'parent jsonl goal', maxGoalRounds: 8 })
+    const parentEvents = source.snapshotEvents()
+    const response = await remote(ctx).fork(request({ sessionId: source.id }))
+    expect(response.ok).toBe(true)
+    if (!response.ok) return
+    const liveChild = ctx.sessions.get(response.value.sessionId)
+    const liveChildAgent = ctx.agents.get(response.value.sessionId)
+    if (liveChild === undefined || liveChildAgent === undefined) {
+      throw new Error('fork did not publish the child')
+    }
+    const parentCut = liveChild.inheritedEventCount
+    const childGoal = ctx.goals.create(liveChildAgent, { objective: 'child jsonl goal' })
+    const parentHandle = await ctx.sessionPersistence.create(source.header)
+    const childHandle = await ctx.sessionPersistence.create(liveChild.header, {
+      inheritedEventCount: liveChild.inheritedEventCount,
+    })
+    try {
+      await parentHandle.append(source.snapshotEvents())
+      await childHandle.append(liveChild.snapshotEvents())
+      await parentHandle.flush()
+      await childHandle.flush()
+    } finally {
+      await parentHandle.close()
+      await childHandle.close()
+    }
+    await ctx.fiber.dispose()
+
+    const reader = new Context()
+    await reader.plugin(SessionStore)
+    await reader.plugin(SessionProjectionRegistry)
+    await reader.plugin(AgentRegistry)
+    await reader.plugin(GoalService)
+    await reader.plugin(JsonlSessionPersistence, { root, compression: 'none' })
+    const storedParent = await reader.sessionPersistence.open(source.id, 'read')
+    const storedChild = await reader.sessionPersistence.open(liveChild.id, 'read')
+    let parentInspection: { header: SessionHeader; inheritedEventCount: SessionLogOffset; events: readonly SessionEvent[] }
+    let childInspection: { header: SessionHeader; inheritedEventCount: SessionLogOffset; events: readonly SessionEvent[] }
+    try {
+      parentInspection = {
+        header: storedParent.header,
+        inheritedEventCount: storedParent.inheritedEventCount,
+        events: await storedParent.read(),
+      }
+      childInspection = {
+        header: storedChild.header,
+        inheritedEventCount: storedChild.inheritedEventCount,
+        events: await storedChild.read(),
+      }
+    } finally {
+      await storedParent.close()
+      await storedChild.close()
+    }
+    expect(parentInspection.events.map(event => event.type)).toEqual(parentEvents.map(event => event.type))
+    expect(foldGoal(parentInspection.events).goal).toMatchObject({
+      id: parentGoal.id,
+      phase: 'active',
+    })
+    expect(childInspection.inheritedEventCount).toBe(parentCut)
+    expect(foldGoal(childInspection.events).goal).toMatchObject({
+      id: childGoal.id,
+      phase: 'active',
+      objective: 'child jsonl goal',
+    })
+    const tombstone = childInspection.events[parentCut]
+    expect(tombstone?.type).toBe('goal/change')
+    if (tombstone?.type !== 'goal/change') throw new Error('expected a persisted child-owned clear tombstone')
+    expect(tombstone.seq).toBe(parentCut)
+
+    const restoredChild = reader.sessions.prepare(liveChild.id, {
+      seedSource: 'persistence',
+      seed: childInspection.events,
+      meta: childInspection.header,
+      inheritedEventCount: childInspection.inheritedEventCount,
+    })
+    expect(restoredChild).toBeInstanceOf(Session)
+    expect(restoredChild.inheritedEventCount).toBe(parentCut)
+    expect(foldGoal(restoredChild.snapshotEvents()).goal).toMatchObject({
+      id: childGoal.id,
+      objective: 'child jsonl goal',
+    })
+    const restoredParent = Session.fromRestore(
+      source.id,
+      parentInspection.events,
+      parentInspection.header,
+      parentInspection.inheritedEventCount,
+    )
+    expect(foldGoal(restoredParent.snapshotEvents()).goal).toMatchObject({ id: parentGoal.id })
+    await reader.fiber.dispose()
   })
 })

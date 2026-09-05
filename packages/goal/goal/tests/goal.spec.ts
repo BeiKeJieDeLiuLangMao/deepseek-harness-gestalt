@@ -208,12 +208,12 @@ describe('GoalService creation and replay', () => {
     const { ctx, agent, session } = await harness()
     const goal = ctx.goals.create(agent, { objective: 'inherit then clear', maxGoalRounds: 5 })
     appendRound(session, goal, 1)
-    const parentPrefix = [...session.events]
+    const parentPrefix = [...session.snapshotEvents()]
 
     const childSeed = clearGoalFromForkSeed(parentPrefix, 2_000)
 
     expect(childSeed).not.toBe(parentPrefix)
-    expect(session.events).toEqual(parentPrefix)
+    expect(session.snapshotEvents()).toEqual(parentPrefix)
     expect(foldGoal(parentPrefix).goal).toMatchObject({ id: goal.id, phase: 'active' })
     expect(foldGoal(childSeed).goal).toBeUndefined()
     const last = childSeed.at(-1)
@@ -229,7 +229,7 @@ describe('GoalService creation and replay', () => {
   it('returns an already-cleared fork seed unchanged', async () => {
     const { ctx, agent, session } = await harness()
     ctx.goals.create(agent, { objective: 'clear once' })
-    const cleared = clearGoalFromForkSeed(session.events, 2_000)
+    const cleared = clearGoalFromForkSeed(session.snapshotEvents(), 2_000)
 
     expect(clearGoalFromForkSeed(cleared, 3_000)).toBe(cleared)
   })
@@ -242,7 +242,7 @@ describe('GoalService creation and replay', () => {
       content: [{ type: 'text', text: 'context only' }],
       source: { kind: 'user' },
     }))
-    const seed = session.events
+    const seed = session.snapshotEvents()
 
     expect(clearGoalFromForkSeed(seed, 2_000)).toBe(seed)
   })
@@ -252,7 +252,7 @@ describe('GoalService creation and replay', () => {
     const goal = ctx.goals.create(agent, { objective: 'done before fork' })
     const done = ctx.goals.complete(agent, goal)
 
-    const childSeed = clearGoalFromForkSeed(session.events, 2_000)
+    const childSeed = clearGoalFromForkSeed(session.snapshotEvents(), 2_000)
 
     expect(foldGoal(childSeed).goal).toBeUndefined()
     const last = childSeed.at(-1)

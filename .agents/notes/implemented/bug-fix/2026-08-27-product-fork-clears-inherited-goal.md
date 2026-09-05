@@ -10,7 +10,7 @@ A side conversation is created by `session.fork`: the child session is seeded wi
 
 ## Decision
 
-`clearGoalFromForkSeed(seed)` is a pure pre-publication transform owned by the goal package. It folds the contiguous parent prefix and, when a current goal exists, returns a new seed with one trailing clear tombstone. The host keeps `header.seedLength` equal to the parent-prefix length, so the tombstone is in the child's owned suffix while `AgentRegistry.create` admits the complete seed and publishes the child atomically. A malformed prefix or clear change fails before the child exists.
+`clearGoalFromForkSeed(seed, now?)` is a pure pre-publication transform owned by the goal package. It folds `snapshotEvents()` of the contiguous parent prefix and, when a current goal exists, returns a new seed with one trailing `goal/change` clear tombstone numbered `SessionSeq(seed.length)`. Product `session.fork` (Session Controller, and ApiProxy while it remains) keeps `inheritedEventCount` equal to that parent-prefix length, so the tombstone is in the child's owned suffix while `AgentRegistry.create` admits the complete seed and publishes the child atomically. A malformed prefix or clear change fails as `GoalError` before the child exists. `SessionStore.fork()` does not apply this transform.
 
 Automation seeding is unchanged: subagent fork providers seed child logs directly and keep the inherit-then-disarm posture, because an automation child never owns the parent's objective as a human thread does.
 
@@ -30,4 +30,4 @@ The persistence decision this narrows stays active. The session log remains the 
 
 ## Consequences
 
-Newly forked side threads start goalless and may create their own goal; the source thread's goal is untouched. `tool-goal`'s model-visible description is unchanged because its fork sentence describes arming, which remains true for seeded automation children. Existing forked sessions keep showing the inherited goal until cleared by hand. Package tests pin the pure seed transform, no-goal identity case, completed-goal case, and automation inheritance; the api-proxy fork suite pins pre-publication isolation and the untouched source.
+Newly forked side threads start goalless and may create their own goal; the source thread's goal is untouched. `tool-goal`'s model-visible description is unchanged because its fork sentence describes arming, which remains true for seeded automation children. Existing forked sessions keep showing the inherited goal until cleared by hand. Package tests pin the pure seed transform over `snapshotEvents()`, the no-goal identity case, the completed-goal case, and SessionStore inheritance; the Session Controller fork suite pins pre-publication isolation, the child-owned tombstone at `inheritedEventCount`, the untouched source, and a child-created goal that does not mutate the parent.

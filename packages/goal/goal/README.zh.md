@@ -69,7 +69,7 @@ pause、complete、block 和 clear 都会停用续行。block 是唯一保留策
 
 ### 什么会保留，什么不会
 
-每项被接受的变更都会持久记录到会话日志——goal 状态的唯一存储——因此 goal 状态绝不依赖临时消息投递。会话 resume 或 fork 后，goal、其 phase、其 revision 与已准入 Round 数量都仍然存在。自动续行是例外：任何会话开始边界之后，`active` 的 goal 都会被停用续行——在有人显式 resume 之前，agent 不会自行继续。
+每项被接受的变更都会持久记录到会话日志——goal 状态的唯一存储——因此 goal 状态绝不依赖临时消息投递。会话 resume 后，goal、其 phase、其 revision 与已准入 Round 数量都仍然存在。`SessionStore.fork()` 也会继承该前缀，而产品级 fork（`session.fork`）会把前缀交给 `clearGoalFromForkSeed`，并把 `inheritedEventCount` 保持为父前缀长度，因此子会话自有的 clear 墓碑不会被继承。自动续行是进程本地的：任何会话开始边界之后，`active` 的 goal 都会被停用续行——在有人显式 resume 之前，agent 不会自行继续。
 
 ### 观察 goal
 
@@ -107,7 +107,7 @@ view.activation                        // 'armed' | 'disarmed' — not persisted
 | [`src/index.ts`](src/index.ts) | 插件入口：`GoalService`、config schema、变更、续行启用缓存、投影单元 |
 | [`src/domain.ts`](src/domain.ts) | 持久变更载荷、`goal/changed` 事件、goal 消息来源归属 |
 | [`src/types.ts`](src/types.ts) | 纯客户端安全类型：`GoalView`、`GoalSnapshot`、投影键声明 |
-| [`src/fold.ts`](src/fold.ts) | 持久 goal 变更的严格回放折叠与解码器 |
+| [`src/fold.ts`](src/fold.ts) | 持久 goal 变更的严格回放折叠、解码器与 `clearGoalFromForkSeed` |
 | [`src/runtime.ts`](src/runtime.ts) | `GoalId` 品牌、`GoalError` 代码、变更版本常量 |
 | [`src/invariant.ts`](src/invariant.ts) | 不变式伴生：对每个已挂接会话的独立增量折叠 |
 

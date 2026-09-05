@@ -10,7 +10,7 @@ Status: implemented
 
 ## Decision
 
-`clearGoalFromForkSeed(seed)` 是由 goal 包拥有的纯发布前转换。它折叠连续的父日志前缀；若存在当前目标，则返回追加了一条 clear 墓碑的新种子。宿主保持 `header.seedLength` 等于父前缀长度，因此墓碑位于子会话自有后缀，而 `AgentRegistry.create` 会原子地接纳完整种子并发布子会话。前缀或 clear 变更格式错误时，创建会在子会话出现前失败。
+`clearGoalFromForkSeed(seed, now?)` 是由 goal 包拥有的纯发布前转换。它折叠连续父前缀的 `snapshotEvents()`；若存在当前目标，则返回追加了一条 `goal/change` clear 墓碑的新种子，其 `seq` 为 `SessionSeq(seed.length)`。产品级 `session.fork`（Session Controller，以及仍保留的 ApiProxy）把 `inheritedEventCount` 保持为该父前缀长度，因此墓碑位于子会话自有后缀，而 `AgentRegistry.create` 会原子地接纳完整种子并发布子会话。前缀或 clear 变更格式错误时以 `GoalError` 在子会话出现前失败。`SessionStore.fork()` 不应用此转换。
 
 自动化种子路径不变：子代理 fork 提供方直接为子日志做种子，维持"继承后停用"姿态，因为自动化子代理永远不会像人类线程那样拥有父目标。
 
@@ -30,4 +30,4 @@ Status: implemented
 
 ## Consequences
 
-新 fork 的侧边线程以无目标状态开始，可以创建自己的目标；源线程的目标不受影响。`tool-goal` 的模型可见描述不变，因为其中关于 fork 的句子描述的是启用状态，对种子化自动化子代理仍然成立。已存在的 fork 会话继续显示继承目标，直到手动清除。包测试锁定纯种子转换、无目标原样返回、已完成目标与自动化继承；api-proxy fork 套件锁定发布前隔离与源线程不受影响。
+新 fork 的侧边线程以无目标状态开始，可以创建自己的目标；源线程的目标不受影响。`tool-goal` 的模型可见描述不变，因为其中关于 fork 的句子描述的是启用状态，对种子化自动化子代理仍然成立。已存在的 fork 会话继续显示继承目标，直到手动清除。包测试锁定基于 `snapshotEvents()` 的纯种子转换、无目标原样返回、已完成目标与 SessionStore 继承；Session Controller fork 套件锁定发布前隔离、位于 `inheritedEventCount` 的子会话自有墓碑、源线程不受影响，以及子会话新建目标不改写父目标。

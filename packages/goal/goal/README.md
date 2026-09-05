@@ -69,7 +69,7 @@ Pause, completion, blocking, and clear all disarm continuation. Blocking is the 
 
 ### What survives and what does not
 
-Every accepted change is recorded durably in the session log — the only store of goal state — so goal state never depends on transient message delivery. After session resume or fork, the goal, its phase, its revisions, and its admitted-round count are all still there. Automatic continuation is the exception: an active goal is disarmed after any session-start edge, so the agent does not continue on its own until someone explicitly resumes it.
+Every accepted change is recorded durably in the session log — the only store of goal state — so goal state never depends on transient message delivery. After session resume, the goal, its phase, its revisions, and its admitted-round count remain. `SessionStore.fork()` also inherits that prefix, while a product fork (`session.fork`) passes the prefix through `clearGoalFromForkSeed` and keeps `inheritedEventCount` at the parent-prefix length so the child-owned clear tombstone is not inherited. Automatic continuation is process-local: an active goal is disarmed after any session-start edge, so the agent does not continue on its own until someone explicitly resumes it.
 
 ### Observing a goal
 
@@ -107,7 +107,7 @@ This section explains how the service realizes the behavior above; the observabl
 | [`src/index.ts`](src/index.ts) | Plugin entry: `GoalService`, config schema, mutations, activation cache, projection unit |
 | [`src/domain.ts`](src/domain.ts) | Durable change payloads, `goal/changed` event, goal message-source attribution |
 | [`src/types.ts`](src/types.ts) | Pure client-safe types: `GoalView`, `GoalSnapshot`, projection-key declaration |
-| [`src/fold.ts`](src/fold.ts) | Strict replay fold and decoder for durable goal changes |
+| [`src/fold.ts`](src/fold.ts) | Strict replay fold, decoder, and `clearGoalFromForkSeed` |
 | [`src/runtime.ts`](src/runtime.ts) | `GoalId` brand, `GoalError` codes, change-version constant |
 | [`src/invariant.ts`](src/invariant.ts) | Invariant companion: independent incremental fold over every attached session |
 

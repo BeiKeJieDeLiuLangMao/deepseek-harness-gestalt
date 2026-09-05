@@ -54,7 +54,7 @@ import type {
 export type * from './types.ts'
 export type * from './domain.ts'
 export { GOAL_CHANGE_VERSION, GoalError, GoalId } from './runtime.ts'
-export { decodeGoalChange, foldGoal, goalChangeRef } from './fold.ts'
+export { clearGoalFromForkSeed, decodeGoalChange, foldGoal, goalChangeRef } from './fold.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
