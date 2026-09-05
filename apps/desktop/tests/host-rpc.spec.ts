@@ -1,5 +1,6 @@
 import { createServer } from 'node:http'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { WebSocketServer } from 'ws'
 import { REMOTE_PROTOCOL_LIMITS } from '@deepseek-ai/dsh-remote-protocol'
 import {
   bootstrapDesktopHostCookie, createDesktopHostRpc, listDesktopHostSessions,
@@ -123,7 +124,10 @@ describe('Desktop Host RPC', () => {
         }
         response.writeHead(303, {
           location: '/',
-          'set-cookie': 'dsh-auth-x=session; Path=/; HttpOnly; SameSite=Strict',
+          'set-cookie': [
+            'dsh-auth-x=session; Path=/; HttpOnly; SameSite=Strict',
+            'dsh-extra=keep; Path=/; HttpOnly; SameSite=Strict',
+          ],
         }).end()
         return
       }
@@ -160,7 +164,7 @@ describe('Desktop Host RPC', () => {
     await expect(bootstrapDesktopHostCookie(`${origin}/?token=launch`, 'http://127.0.0.1:9'))
       .rejects.toThrow(/same-origin loopback launch URL/)
     const cookie = await bootstrapDesktopHostCookie(`${origin}/?token=launch`, origin)
-    expect(cookie).toBe('dsh-auth-x=session')
+    expect(cookie).toBe('dsh-auth-x=session; dsh-extra=keep')
     const rpc = createDesktopHostRpc(origin, {
       timeoutMs: 1_000,
       responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
@@ -168,7 +172,7 @@ describe('Desktop Host RPC', () => {
     })
     const listed = await listDesktopHostSessions(rpc)
     expect(listed.ok).toBe(true)
-    expect(cookies).toEqual(['dsh-auth-x=session'])
+    expect(cookies).toEqual(['dsh-auth-x=session; dsh-extra=keep'])
     expect(methods).toEqual(['session/list'])
   })
 
@@ -298,45 +302,56 @@ describe('Desktop Host RPC', () => {
     await expect.poll(() => closedResponses.size).toBe(2)
   })
 
-  it('bounds Host event frames before projecting them into Companion messages', async () => {
-    const sockets: TestWebSocket[] = []
-    class TestWebSocket extends EventTarget {
-      static readonly CONNECTING = 0
-      static readonly OPEN = 1
-      readyState = TestWebSocket.OPEN
-      readonly close = vi.fn(() => { this.readyState = 3 })
-      constructor(readonly url: URL) {
-        super()
-        sockets.push(this)
-      }
-    }
-    vi.stubGlobal('WebSocket', TestWebSocket)
-    const rpc = createDesktopHostRpc('http://127.0.0.1', {
+  it('opens generated session/follow on /api/remote.mux with the bootstrap cookie', async () => {
+    const opens: unknown[] = []
+    const cookies: string[] = []
+    const server = createServer()
+    const wss = new WebSocketServer({ noServer: true })
+    server.on('upgrade', (request, socket, head) => {
+      cookies.push(request.headers.cookie ?? '')
+      expect(request.url).toBe('/api/remote.mux')
+      wss.handleUpgrade(request, socket, head, (websocket) => {
+        websocket.on('message', (data) => {
+          const text = typeof data === 'string' ? data : Buffer.from(data as Uint8Array).toString('utf8')
+          const message = JSON.parse(text) as { type: string; streamId: string; endpoint?: string; payload?: unknown }
+          if (message.type === 'open') {
+            opens.push({ endpoint: message.endpoint, payload: message.payload })
+            websocket.send(JSON.stringify({
+              type: 'item', streamId: message.streamId, value: { type: 'snapshot', cursor: 0 },
+            }))
+          }
+          if (message.type === 'cancel') websocket.close()
+        })
+      })
+    })
+    await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
+    closeServers.push(async () => {
+      wss.close()
+      server.closeAllConnections()
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => { if (error === undefined) resolve(); else reject(error) })
+      })
+    })
+    const address = server.address()
+    if (address === null || typeof address === 'string') throw new Error('expected TCP address')
+    const origin = `http://127.0.0.1:${String(address.port)}`
+    const rpc = createDesktopHostRpc(origin, {
       responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
+      cookieHeader: 'dsh-auth-x=session',
     })
-    const accepted = vi.fn()
+    const frames: unknown[] = []
     const cancellation = new AbortController()
-    const watching = rpc.watchHost?.(cancellation.signal, accepted)
-    const largeFrame = JSON.stringify({
-      type: 'server-request', rpcId: 'large-frame',
-      payload: { type: 'session/event', sessionId: 'session-large', padding: 'x'.repeat(
-        REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
-      ) },
+    const watching = rpc.followSession?.('session-follow', cancellation.signal, (frame) => {
+      frames.push(frame)
+      cancellation.abort()
     })
-
-    sockets[0]?.dispatchEvent(new MessageEvent('message', { data: largeFrame }))
-    expect(accepted).toHaveBeenCalledOnce()
-    expect(sockets[0]?.close).not.toHaveBeenCalled()
-    cancellation.abort()
     await expect(watching).resolves.toBeUndefined()
-
-    const overflowCancellation = new AbortController()
-    const overflow = rpc.watchHost?.(overflowCancellation.signal, accepted)
-    const maxProjectedBytes = REMOTE_PROTOCOL_LIMITS.transcriptPageBytes
-      * REMOTE_PROTOCOL_LIMITS.transcriptPageEntries
-    sockets[1]?.dispatchEvent(new MessageEvent('message', { data: 'x'.repeat(maxProjectedBytes + 1) }))
-    await expect(overflow).rejects.toThrow('Desktop Host event stream returned an invalid frame')
-    expect(sockets[1]?.close).toHaveBeenCalledOnce()
+    expect(cookies).toEqual(['dsh-auth-x=session'])
+    expect(opens).toEqual([{
+      endpoint: 'session/follow',
+      payload: { args: { request: { address: { kind: 'session', sessionId: 'session-follow' } } } },
+    }])
+    expect(frames).toEqual([{ type: 'snapshot', cursor: 0 }])
   })
 })
 
