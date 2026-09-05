@@ -11,7 +11,11 @@ import type { CompanionMemberQuestionSettledResult } from '@deepseek-ai/dsh-remo
 
 export const name = 'project-members-memory-member-question'
 
-/** Module-scoped sequence preserves first-round golden question id and avoids collisions on reload. */
+/**
+ * Module-scoped sequence preserves first-round golden question id and avoids
+ * collisions across re-applies of the same module instance. Cache-busted module
+ * reload is not claimed.
+ */
 let sequence = 0
 
 interface ActivePatch {

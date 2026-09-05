@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 import * as plugin from '../snapshots/session/member-question-routed-ask/memory-member-question.ts'
 
 describe('memory-member-question randomUUID lifecycle ownership', () => {
+  // Same-module re-apply owns the patch stack and sequence. Cache-busted module reload is not claimed.
   it('patches randomUUID on apply and restores original on fiber disposal', async () => {
     const originalRandomUUID = crypto.randomUUID
     const ctx = new Context()
@@ -22,8 +23,6 @@ describe('memory-member-question randomUUID lifecycle ownership', () => {
   it('restores original randomUUID if apply fails', async () => {
     const originalRandomUUID = crypto.randomUUID
     const failingCtx = new Context()
-
-    // Induce failure during apply by invalidating context state or registering conflict
     failingCtx.effect = () => {
       throw new Error('simulated apply failure')
     }
@@ -32,7 +31,7 @@ describe('memory-member-question randomUUID lifecycle ownership', () => {
     expect(crypto.randomUUID).toBe(originalRandomUUID)
   })
 
-  it('prevents stale disposer from overwriting a newer owner on reload', async () => {
+  it('prevents a stale disposer from overwriting a newer same-module owner', async () => {
     const originalRandomUUID = crypto.randomUUID
 
     const ctxA = new Context()
@@ -44,18 +43,14 @@ describe('memory-member-question randomUUID lifecycle ownership', () => {
     const patchB = crypto.randomUUID
     expect(patchB).not.toBe(patchA)
 
-    // Dispose ctxA (stale disposer from first registration)
     await ctxA.fiber.dispose()
-    // Must NOT revert to original while ctxB is active owner
     expect(crypto.randomUUID).toBe(patchB)
 
-    // Dispose ctxB (current owner)
     await ctxB.fiber.dispose()
-    // Now restored to original
     expect(crypto.randomUUID).toBe(originalRandomUUID)
   })
 
-  it('maintains monotonic sequence across reloads without duplicate IDs', async () => {
+  it('keeps a monotonic sequence across same-module re-applies without duplicate IDs', async () => {
     const originalRandomUUID = crypto.randomUUID
 
     const ctx1 = new Context()
@@ -82,17 +77,14 @@ describe('memory-member-question randomUUID lifecycle ownership', () => {
     const id1 = crypto.randomUUID()
     expect(id1).toMatch(/^36f683c1-23df-4b88-9d68-[0-9a-f]{12}$/)
 
-    // Dispose first fork
     await fork1.dispose()
     expect(crypto.randomUUID).toBe(originalRandomUUID)
 
-    // Re-register plugin in root (simulating reload cycle)
     const fork2 = root.plugin(plugin)
     await fork2
     const id2 = crypto.randomUUID()
     expect(id2).not.toBe(id1)
 
-    // Dispose second fork
     await fork2.dispose()
     await root.fiber.dispose()
     expect(crypto.randomUUID).toBe(originalRandomUUID)
