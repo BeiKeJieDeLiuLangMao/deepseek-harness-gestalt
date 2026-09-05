@@ -619,96 +619,112 @@ describe('Desktop Host RPC against shipped dsh web', () => {
     }
   }, 180_000)
 
-  it('projects conversation from session/follow increments and surfaces workspace upserts', async () => {
-    const first = await startShippedHost()
-    const cookie = await bootstrapDesktopHostCookie(first.running.launchUrl, first.running.url)
-    const owner = new DesktopCompanionProductOwner({
-      timeoutMs: 15_000,
-      responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
+  it('projects assistant conversation from owner live session/follow and stops after unsubscribe', async () => {
+    const apiKey = 'desktop-assembled-follow-consumer-key'
+    const assistantText = 'desktop-follow-consumer-assistant'
+    const llm = await startMockLlmServer({
+      sequence: ['success'],
+      repeatLast: true,
+      apiKey,
+      successText: assistantText,
     })
-    owner.installLedger(await DesktopCompanionOperationLedger.load({
-      load: async () => [],
-      save: async () => {},
-    }))
-    const uninstall = owner.installHost(first.running.url, cookie)
-    const rpc = createDesktopHostRpc(first.running.url, {
-      timeoutMs: 15_000,
-      responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
-      cookieHeader: cookie,
-    })
-    const pairingId = parsePersonalPairingId('pairing-follow-consumer')
-    const attachmentKey = new Uint8Array(32)
-    const pairing = {
-      pairingId,
-      attachmentKey,
-      now: () => 1_000,
-      downloadAttachment: async () => { throw new Error('follow consumer must not download') },
-      submitAttachment: async () => { throw new Error('follow consumer must not submit attachments') },
-      generation: 1,
-      desktopRevision: 1,
-      desktopName: 'Assembled Desktop',
-    }
-    const sessionId = parseCompanionSessionId('desktop-follow-consumer-session')
-    const needle = 'desktop follow consumer prompt'
-    const changes: DesktopCompanionLiveProjectionChange[] = []
-    const disconnects: Error[] = []
-    const disconnect = owner.connectLiveProjection(
-      pairingId,
-      (change) => { changes.push(change) },
-      (error) => { disconnects.push(error) },
-    )
     try {
-      await expect(createDesktopHostSession(rpc, sessionId)).resolves.toMatchObject({
-        ok: true, value: { sessionId },
+      const first = await startShippedHost({
+        DEEPSEEK_API_KEY: apiKey,
+        DEEPSEEK_BASE_URL: llm.baseURL,
       })
-      await expect(owner.handle({
-        type: 'observe-session',
-        operationId: parseCompanionOperationId('desktop-follow-observe'),
-        sessionId,
-      }, pairing)).resolves.toMatchObject({ type: 'confirmed' })
-      const observed = changes.find(change => (
-        change.type === 'session' && change.sessionId === sessionId && change.includeConversation
-      ))
-      if (observed === undefined) throw new Error('observe-session did not request a live conversation')
-      await expect(owner.projectLiveSession(observed, attachmentKey, new AbortController().signal))
-        .resolves.toMatchObject({ sessionId, conversation: { sessionId } })
-
-      const surfacesBeforeWorkspace = changes.filter(change => change.type === 'surface').length
-      await expect(owner.handle({
-        type: 'submit-prompt',
-        operationId: parseCompanionOperationId('desktop-follow-prompt'),
-        sessionId,
-        text: needle,
-      }, pairing)).resolves.toMatchObject({ type: 'confirmed' })
-      await expect.poll(async () => {
-        const latest = [...changes].reverse().find(change => (
+      const cookie = await bootstrapDesktopHostCookie(first.running.launchUrl, first.running.url)
+      const owner = new DesktopCompanionProductOwner({
+        timeoutMs: 15_000,
+        responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
+      })
+      owner.installLedger(await DesktopCompanionOperationLedger.load({
+        load: async () => [],
+        save: async () => {},
+      }))
+      const uninstall = owner.installHost(first.running.url, cookie)
+      const rpc = createDesktopHostRpc(first.running.url, {
+        timeoutMs: 15_000,
+        responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
+        cookieHeader: cookie,
+      })
+      const pairingId = parsePersonalPairingId('pairing-follow-consumer')
+      const attachmentKey = new Uint8Array(32)
+      const pairing = {
+        pairingId,
+        attachmentKey,
+        now: () => 1_000,
+        downloadAttachment: async () => { throw new Error('follow consumer must not download') },
+        submitAttachment: async () => { throw new Error('follow consumer must not submit attachments') },
+        generation: 1,
+        desktopRevision: 1,
+        desktopName: 'Assembled Desktop',
+      }
+      const sessionId = parseCompanionSessionId('desktop-follow-consumer-session')
+      const needle = 'desktop follow consumer prompt'
+      const changes: DesktopCompanionLiveProjectionChange[] = []
+      const disconnect = owner.connectLiveProjection(pairingId, (change) => { changes.push(change) }, () => {})
+      try {
+        await expect(createDesktopHostSession(rpc, sessionId)).resolves.toMatchObject({
+          ok: true, value: { sessionId },
+        })
+        await expect(owner.handle({
+          type: 'observe-session',
+          operationId: parseCompanionOperationId('desktop-follow-observe'),
+          sessionId,
+        }, pairing)).resolves.toMatchObject({ type: 'confirmed' })
+        const observed = changes.find(change => (
           change.type === 'session' && change.sessionId === sessionId && change.includeConversation
         ))
-        if (latest === undefined) return false
-        const projected = await owner.projectLiveSession(latest, attachmentKey, new AbortController().signal)
-        return conversationHasUserText(projected, needle)
-          && conversationHasTurnError(projected)
-      }).toBe(true)
+        if (observed === undefined) throw new Error('observe-session did not request a live conversation')
+        await expect(owner.projectLiveSession(observed, attachmentKey, new AbortController().signal))
+          .resolves.toMatchObject({ sessionId, conversation: { sessionId } })
 
-      await expect(createDesktopHostWorkspace(rpc, first.home)).resolves.toMatchObject({ ok: true })
-      await expect.poll(() => {
-        return changes.filter(change => change.type === 'surface').length > surfacesBeforeWorkspace
-      }).toBe(true)
+        const surfacesBeforeWorkspace = changes.filter(change => change.type === 'surface').length
+        await expect(owner.handle({
+          type: 'submit-prompt',
+          operationId: parseCompanionOperationId('desktop-follow-prompt'),
+          sessionId,
+          text: needle,
+        }, pairing)).resolves.toMatchObject({ type: 'confirmed' })
+        await expect.poll(async () => {
+          const latest = [...changes].reverse().find(change => (
+            change.type === 'session' && change.sessionId === sessionId && change.includeConversation
+          ))
+          if (latest === undefined) return false
+          const projected = await owner.projectLiveSession(latest, attachmentKey, new AbortController().signal)
+          return conversationHasUserText(projected, needle)
+            && conversationHasAssistantText(projected, assistantText)
+        }).toBe(true)
+
+        await expect(createDesktopHostWorkspace(rpc, first.home)).resolves.toMatchObject({ ok: true })
+        await expect.poll(() => {
+          return changes.filter(change => change.type === 'surface').length > surfacesBeforeWorkspace
+        }).toBe(true)
+
+        disconnect()
+        const afterLive = changes.length
+        const llmCalls = llm.requests.length
+        await expect(owner.handle({
+          type: 'submit-prompt',
+          operationId: parseCompanionOperationId('desktop-follow-after-unsub'),
+          sessionId,
+          text: 'must not notify after live unsubscribe',
+        }, pairing)).resolves.toMatchObject({ type: 'confirmed' })
+        await expect.poll(() => llm.requests.length > llmCalls).toBe(true)
+        await new Promise(resolve => setTimeout(resolve, 250))
+        expect(changes.filter(change => (
+          change.type === 'session' && change.sessionId === sessionId && change.includeConversation
+        )).length).toBe(changes.slice(0, afterLive).filter(change => (
+          change.type === 'session' && change.sessionId === sessionId && change.includeConversation
+        )).length)
+        expect(changes.length).toBe(afterLive)
+      } finally {
+        uninstall()
+      }
     } finally {
-      uninstall()
+      await llm.close()
     }
-    expect(disconnects.length).toBeGreaterThan(0)
-    const afterHost = changes.length
-    await promptDesktopHostSession(rpc, {
-      requestId: 'desktop-follow-after-uninstall',
-      sessionId,
-      mode: 'queue',
-      content: [{ type: 'text', text: 'must not notify after Host uninstall' }],
-    }).catch(() => {})
-    await createDesktopHostWorkspace(rpc, join(first.home, '.agents')).catch(() => {})
-    await new Promise(resolve => setTimeout(resolve, 250))
-    expect(changes.length).toBe(afterHost)
-    disconnect()
   }, 180_000)
 })
 
@@ -752,11 +768,19 @@ function conversationHasUserText(projected: unknown, text: string): boolean {
   })
 }
 
-function conversationHasTurnError(projected: unknown): boolean {
-  if (!isRecord(projected) || !isRecord(projected.conversation) || !Array.isArray(projected.conversation.nodes)) {
-    return false
-  }
-  return projected.conversation.nodes.some(node => isRecord(node) && node.kind === 'turn-error')
+function conversationHasAssistantText(projected: unknown, text: string): boolean {
+  if (!isRecord(projected) || !isRecord(projected.conversation)) return false
+  const nodes = Array.isArray(projected.conversation.nodes) ? projected.conversation.nodes : []
+  const partial = isRecord(projected.conversation.partial) && Array.isArray(projected.conversation.partial.blocks)
+    ? projected.conversation.partial.blocks
+    : []
+  return [...nodes, ...partial].some((item) => {
+    if (!isRecord(item)) return false
+    if (item.kind === 'assistant' && Array.isArray(item.blocks)) {
+      return item.blocks.some(block => isRecord(block) && block.kind === 'text' && block.text === text)
+    }
+    return item.kind === 'text' && item.text === text
+  })
 }
 
 function imageAttachmentIdFromFollow(frames: readonly unknown[]): string | undefined {
