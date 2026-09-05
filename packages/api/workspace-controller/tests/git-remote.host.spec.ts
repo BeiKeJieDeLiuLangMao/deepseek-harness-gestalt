@@ -188,6 +188,29 @@ describe('WorkspaceController.gitRemote', () => {
       .rejects.toMatchObject({ code: 'workspace/git-failed' })
   })
 
+  it('maps a nested checkout whose parent .git/config is corrupt to workspace/git-failed', async () => {
+    const { controller, root } = await harness({ workspaceGitCommand: runNativeCommand })
+    const repo = stageDir(root, 'nested-repo')
+    git(repo, ['init'])
+    git(repo, ['remote', 'add', 'origin', 'https://github.com/o/r.git'])
+    const nested = stageDir(repo, 'nested/deep')
+    writeFileSync(join(repo, '.git', 'config'), 'this is not valid git config [[[\n')
+    const created = await controller.create({ path: nested })
+    await expect(controller.gitRemote({ workspaceId: created.workspace.workspaceId }, new AbortController().signal))
+      .rejects.toMatchObject({ code: 'workspace/git-failed' })
+  })
+
+  it('maps a bare repository whose ./config is corrupt to workspace/git-failed', async () => {
+    const { controller, root } = await harness({ workspaceGitCommand: runNativeCommand })
+    const bare = join(root, 'bare.git')
+    git(root, ['init', '--bare', bare])
+    git(bare, ['remote', 'add', 'origin', 'https://github.com/o/r.git'])
+    writeFileSync(join(bare, 'config'), 'this is not valid git config [[[\n')
+    const created = await controller.create({ path: bare })
+    await expect(controller.gitRemote({ workspaceId: created.workspace.workspaceId }, new AbortController().signal))
+      .rejects.toMatchObject({ code: 'workspace/git-failed' })
+  })
+
   it('maps an unreadable .git directory to workspace/git-failed', async () => {
     const { controller, root } = await harness({ workspaceGitCommand: runNativeCommand })
     const path = stageDir(root, 'denied')
