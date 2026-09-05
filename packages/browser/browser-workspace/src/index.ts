@@ -130,6 +130,7 @@ export class BrowserWorkspaceBinder extends TypertRemoteService {
         stateVersion: 3,
       })
     })
+    this.restoreLiveOwners()
   }
 
   /**
@@ -555,6 +556,24 @@ export class BrowserWorkspaceBinder extends TypertRemoteService {
   /** Forget process-local live authority for one target. */
   private dropLive(target: BrowserTarget): void {
     this.liveOwners.delete(liveKey(target))
+  }
+
+  /**
+   * Rebuild live owners from each live Session's `ownEvents()` last-wins fold.
+   * Inherited prefix events are display-only. Two Sessions that both wrote the
+   * same tab into their own events fail loudly; the Binder does not pick a winner.
+   */
+  private restoreLiveOwners(): void {
+    for (const session of this.ctx.sessions.list()) {
+      for (const page of listBrowserWorkspacePages(foldBrowserWorkspace(session.ownEvents()))) {
+        const key = liveKey(page.target)
+        const existing = this.liveOwners.get(key)
+        if (existing !== undefined && existing.sessionId !== session.id) {
+          throw new BrowserRuntimeError('cross-Session page transfer is not supported', 'BROWSER_TRANSFER_UNSUPPORTED')
+        }
+        this.liveOwners.set(key, { sessionId: session.id, target: page.target })
+      }
+    }
   }
 
   /** Append one whole-value Workspace snapshot when it differs. */
