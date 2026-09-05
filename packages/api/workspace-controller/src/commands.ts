@@ -8,8 +8,10 @@ import {
   WorkspaceOrderInvalidError,
   WorkspaceUnknownSessionError,
 } from '@deepseek-ai/dsh-workspace'
+import type { NativeCommandRunner } from '@deepseek-ai/dsh-native-command'
 import { RemoteError, remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
 import { workspaceView } from './feed.ts'
+import { workspaceGitFailureCode } from './git.ts'
 import type {
   WorkspaceArchiveSessionRequest,
   WorkspaceArchiveValue,
@@ -17,6 +19,8 @@ import type {
   WorkspaceCreateValue,
   WorkspaceDeleteRequest,
   WorkspaceDeleteValue,
+  WorkspaceGitRemoteRequest,
+  WorkspaceGitRemoteValue,
   WorkspaceInsertBeforeRequest,
   WorkspaceInsertSessionBeforeRequest,
   WorkspaceOrderValue,
@@ -28,8 +32,14 @@ import type {
 export class WorkspaceCommands {
   private operationTail = Promise.resolve()
 
-  /** @param ctx - Host context containing the Workspace registry. */
-  constructor(private readonly ctx: Context) {}
+  /**
+   * @param ctx - Host context containing the Workspace registry.
+   * @param runGit - no-shell Git runner; production uses the subprocess tree service.
+   */
+  constructor(
+    private readonly ctx: Context,
+    private readonly runGit: NativeCommandRunner,
+  ) {}
 
   /**
    * Create or resolve one Workspace over an existing directory.
@@ -146,6 +156,35 @@ export class WorkspaceCommands {
   }
 
   /**
+   * Read the configured `origin` of one registered Workspace checkout.
+   * @param request - Workspace identity.
+   * @param signal - caller lifetime; abort terminates the Git process tree.
+   * @returns `{ remoteUrl }` when origin is non-empty; `{}` for a non-Git directory or a checkout without `origin`.
+   *   Host deadline and other Git execution failures reject with `workspace/git-failed`.
+   */
+  async gitRemote(request: WorkspaceGitRemoteRequest, signal: AbortSignal): Promise<WorkspaceGitRemoteValue> {
+    if (signal.aborted) {
+      throw new RemoteError('gateway/cancelled', 'workspace remote inspection was aborted', {})
+    }
+    const workspace = this.requireWorkspace(request.workspaceId)
+    try {
+      const { stdout } = await this.runGit(
+        'git',
+        ['-C', workspace.path, 'remote', 'get-url', 'origin'],
+        signal,
+      )
+      const remoteUrl = stdout.trim()
+      return remoteUrl === '' ? {} : { remoteUrl }
+    } catch (error) {
+      if (signal.aborted) {
+        throw new RemoteError('gateway/cancelled', 'workspace remote inspection was aborted', {}, { cause: error })
+      }
+      if (isUnboundOriginFailure(error)) return {}
+      throw gitFailed(request.workspaceId, error)
+    }
+  }
+
+  /**
    * Add one known Session to the registry-global archive set.
    * @param request - Session identity to archive.
    * @returns the complete resulting archive set.
@@ -179,6 +218,34 @@ function workspaceNotFound(workspaceId: WorkspaceId): RemoteError<'workspace/not
     `Workspace "${workspaceId}" not found`,
     { workspaceId },
   )
+}
+
+function gitFailed(workspaceId: WorkspaceId, error: unknown): RemoteError<'workspace/git-failed'> {
+  return new RemoteError(
+    'workspace/git-failed',
+    errorMessage(error),
+    { workspaceId },
+    { cause: error },
+  )
+}
+
+/**
+ * `git remote get-url origin` uses exit 2 for a missing `origin`. Exit 128 is
+ * unbound only for the C-locale `not a git repository` diagnostic; nested and
+ * bare checkouts can fail 128 without a Workspace-local `.git`.
+ */
+function isUnboundOriginFailure(error: unknown): boolean {
+  const code = workspaceGitFailureCode(error)
+  if (code === 2) return true
+  if (code !== 128) return false
+  return workspaceGitFailureText(error).includes('not a git repository')
+}
+
+function workspaceGitFailureText(error: unknown): string {
+  if (typeof error !== 'object' || error === null) return ''
+  const stderr = 'stderr' in error && typeof error.stderr === 'string' ? error.stderr : ''
+  const message = error instanceof Error ? error.message : ''
+  return `${stderr}\n${message}`
 }
 
 function errorMessage(error: unknown): string {
