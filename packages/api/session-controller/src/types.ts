@@ -1,7 +1,7 @@
 /** Browser-safe request, result, and lifecycle vocabulary for the Session Remote service. */
 
 import type {
-  AttachmentIdType, ImageAttachmentLimits, ImageAttachmentRef, ImageMediaType,
+  AttachmentIdType, ByteAttachmentRef, ImageAttachmentLimits, ImageAttachmentRef, ImageMediaType,
 } from '@deepseek-ai/dsh-attachment'
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
@@ -38,6 +38,18 @@ declare module '@deepseek-ai/dsh-session/types' {
      * assembly. Log-only: it never enters derived model history.
      */
     'model/selection': ModelSelection
+    /**
+     * Records one immutable Companion file after Host admission.
+     * Log-only: it never enters derived model history.
+     * @param attachment - durable verified opaque-byte reference.
+     * @param operationId - idempotency identity from the encrypted Companion operation.
+     * @param source - authenticated Companion admission source.
+     */
+    'session/attachment-admitted': {
+      attachment: ByteAttachmentRef
+      operationId: string
+      source: 'companion'
+    }
   }
 }
 
@@ -322,6 +334,20 @@ export interface SessionAttachmentRequest {
 export interface SessionAttachmentValue {
   readonly attachment: ImageAttachmentRef
   readonly data: string
+}
+
+/** Companion opaque-file admission request. */
+export interface SessionAdmitAttachmentRequest {
+  readonly sessionId: SessionId
+  readonly operationId: string
+  readonly mediaType: string
+  readonly name: string
+  readonly data: string
+}
+
+/** Durable opaque-file reference after Companion admission. */
+export interface SessionAdmitAttachmentValue {
+  readonly attachment: ByteAttachmentRef
 }
 
 /** Pending queue mutation request. */

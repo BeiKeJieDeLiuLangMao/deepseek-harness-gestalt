@@ -27,6 +27,8 @@ import {
 import SessionController from '../src/index.ts'
 import type {
   ModelCatalog,
+  SessionAdmitAttachmentRequest,
+  SessionAdmitAttachmentValue,
   SessionAttachmentRequest,
   SessionAttachmentValue,
   SessionCancelRequest,
@@ -68,6 +70,7 @@ export interface TestSessionRemote {
   fork(request: SessionForkRequest): Promise<RemoteResult<SessionForkValue>>
   prompt(request: SessionPromptRequest, signal?: AbortSignal): Promise<RemoteResult<SessionPromptValue>>
   attachment(request: SessionAttachmentRequest): Promise<RemoteResult<SessionAttachmentValue>>
+  admitAttachment(request: SessionAdmitAttachmentRequest): Promise<RemoteResult<SessionAdmitAttachmentValue>>
   updateQueue(request: SessionUpdateQueueRequest): Promise<RemoteResult<SessionUpdateQueueValue>>
   cancel(request: SessionCancelRequest): Promise<RemoteResult<SessionCancelValue>>
   openWorkspacePath(
@@ -317,6 +320,7 @@ export function createSessionTestRemote(
       signal,
     ),
     attachment: request => remoteResult(() => direct.attachment(request)),
+    admitAttachment: request => remoteResult(() => direct.admitAttachment(request)),
     updateQueue: request => remoteResult(() => direct.updateQueue(request)),
     cancel: request => remoteResult(() => direct.cancel(request)),
     openWorkspacePath: (request, signal = new AbortController().signal) => remoteResult(
