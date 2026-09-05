@@ -14,6 +14,8 @@ Python SDK 没有独立的应用入口。它以 `--profile sdk` 启动内置的 
 
 每次启动都必须显式指定 Harness home。请传入 `dsh_home`，或在子进程环境中提供非空的 `DSH_HOME`。SDK 刻意不会发现 `~/.dsh`。
 
+运行时确认 `shutdown` 后，`close()` 会先等待服务器拥有的 teardown、持久化和正常进程退出，再向进程发送信号。`shutdown_timeout_seconds` 为有限值时，该值分别约束 shutdown 请求、正常退出等待和 terminate 后等待；未收到确认或等待退出超时时，SDK 进入 terminate／kill 兜底流程。将其设为 `None` 会保留这些阶段的无界等待语义。
+
 ```py
 from deepseek_harness import DeepSeekHarness
 

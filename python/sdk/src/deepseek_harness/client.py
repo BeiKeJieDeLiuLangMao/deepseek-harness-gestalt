@@ -96,39 +96,50 @@ class HarnessClient:
         proc = self._proc
         if proc is None:
             return
-        shutdown_completed = False
+        shutdown_acknowledged = False
         try:
             self.request("shutdown", None, response_model=_ShutdownResponse, timeout_seconds=self.config.shutdown_timeout_seconds)
-            shutdown_completed = True
+            shutdown_acknowledged = True
         except Exception as exc:
             self._stderr_lines.append(f"shutdown request failed: {exc}")
-        if proc.stdin:
-            try:
-                proc.stdin.close()
-            except Exception as exc:
-                self._stderr_lines.append(f"stdin close failed: {exc}")
-        if shutdown_completed:
+
+        if shutdown_acknowledged:
+            self._close_stdin(proc)
             try:
                 proc.wait(timeout=self.config.shutdown_timeout_seconds)
             except subprocess.TimeoutExpired:
-                pass
-        if proc.poll() is None:
-            try:
-                proc.terminate()
-            except ProcessLookupError:
-                pass
-        if proc.poll() is None:
-            try:
-                proc.wait(timeout=self.config.shutdown_timeout_seconds)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                proc.wait()
+                self._stop_runtime(proc)
+        else:
+            self._stop_runtime(proc)
+
+        self._close_stdin(proc)
         self._proc = None
         self._fail_waiters(self._runtime_closed_error("DeepSeek Harness runtime closed"))
         if self._reader_thread and self._reader_thread.is_alive():
             self._reader_thread.join(timeout=0.5)
         if self._stderr_thread and self._stderr_thread.is_alive():
             self._stderr_thread.join(timeout=0.5)
+
+    def _close_stdin(self, proc: subprocess.Popen[str]) -> None:
+        if proc.stdin is None or proc.stdin.closed:
+            return
+        try:
+            proc.stdin.close()
+        except Exception as exc:
+            self._stderr_lines.append(f"stdin close failed: {exc}")
+
+    def _stop_runtime(self, proc: subprocess.Popen[str]) -> None:
+        self._close_stdin(proc)
+        if proc.poll() is None:
+            try:
+                proc.terminate()
+            except ProcessLookupError:
+                pass
+        try:
+            proc.wait(timeout=self.config.shutdown_timeout_seconds)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
 
     def initialize(
         self,
