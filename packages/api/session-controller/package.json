@@ -47,7 +47,9 @@
         "@deepseek-ai/dsh-api-gateway/client"
       ],
       "inject": [
-        "@deepseek-ai/dsh-api-gateway"
+        "@deepseek-ai/dsh-api-gateway",
+        "@deepseek-ai/dsh-member-question-receiver",
+        "@deepseek-ai/dsh-user-questions"
       ],
       "platform": "web"
     }
@@ -85,6 +87,7 @@
     "@deepseek-ai/dsh-goal": "workspace:^",
     "@deepseek-ai/dsh-jobs": "workspace:^",
     "@deepseek-ai/dsh-llm": "workspace:^",
+    "@deepseek-ai/dsh-member-question-receiver": "workspace:^",
     "@deepseek-ai/dsh-native-command": "workspace:^",
     "@deepseek-ai/dsh-scope": "workspace:^",
     "@deepseek-ai/dsh-session": "workspace:^",
@@ -97,6 +100,7 @@
     "@deepseek-ai/dsh-subagent": "workspace:^",
     "@deepseek-ai/dsh-typert-protocol": "workspace:^",
     "@deepseek-ai/dsh-typert-registry": "workspace:^",
+    "@deepseek-ai/dsh-user-questions": "workspace:^",
     "@deepseek-ai/dsh-util-time": "workspace:^",
     "@deepseek-ai/dsh-util-workspace-path": "workspace:^",
     "@deepseek-ai/dsh-workspace": "workspace:^"
@@ -126,6 +130,7 @@
     "@deepseek-ai/dsh-goal": "workspace:^",
     "@deepseek-ai/dsh-jobs": "workspace:^",
     "@deepseek-ai/dsh-llm": "workspace:^",
+    "@deepseek-ai/dsh-member-question-receiver": "workspace:^",
     "@deepseek-ai/dsh-native-command": "workspace:^",
     "@deepseek-ai/dsh-permission-presets": "workspace:^",
     "@deepseek-ai/dsh-scope": "workspace:^",
@@ -144,6 +149,7 @@
     "@deepseek-ai/dsh-typert-generator": "workspace:^",
     "@deepseek-ai/dsh-typert-protocol": "workspace:^",
     "@deepseek-ai/dsh-typert-registry": "workspace:^",
+    "@deepseek-ai/dsh-user-questions": "workspace:^",
     "@deepseek-ai/dsh-util-crypto": "workspace:^",
     "@deepseek-ai/dsh-util-time": "workspace:^",
     "@deepseek-ai/dsh-util-workspace-path": "workspace:^",

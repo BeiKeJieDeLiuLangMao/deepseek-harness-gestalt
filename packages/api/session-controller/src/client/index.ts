@@ -4,8 +4,10 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-agent/types'
 import { createSessionControlStream } from './transport.ts'
 import { ClientSessions } from './sessions/service.ts'
+import { ReceivingQuestionBook } from './sessions/receiving.ts'
 import type { SessionRemotes } from './sessions/remotes.ts'
 import type {} from '../remote-events.ts'
+import type {} from '@deepseek-ai/dsh-member-question-receiver/remote'
 
 export {
   createSessionControlStream,
@@ -53,6 +55,13 @@ export type {
   SessionAdmissionRoute,
   SessionModelRoute,
 } from './contract/admission.ts'
+export { ReceivingQuestionBook } from './sessions/receiving.ts'
+export type {
+  ReceivingMemberQuestionRecord,
+  ReceivingQuestionBookView,
+  ReceivingQuestionSettleResponse,
+  ReceivingSessionRow,
+} from './sessions/receiving.ts'
 export { MutableSessionEventSource } from './contract/events.ts'
 export type {
   SessionEventChange,
@@ -76,6 +85,8 @@ declare module '@deepseek-ai/cordis' {
   interface Context {
     /** Client Session object layer and Agent scope owner. */
     sessions: import('./contract/sessions.ts').ISessions
+    /** Host-owned member-question receiving projection. */
+    receivingQuestions: import('./sessions/receiving.ts').ReceivingQuestionBook
   }
 }
 
@@ -89,12 +100,22 @@ export const inject = [
 ]
 
 /**
- * Install Client Session state and its reconnecting control stream.
+ * Install Client Session state, receiving-question projection, and the reconnecting control stream.
+ * After `remote.session` is active, a missing generated `memberQuestion` property fails apply.
  * @param ctx - Client Cordis context.
  */
 export function apply(ctx: Context): void {
+  if (ctx.remote.memberQuestion === undefined) {
+    throw new Error('generated Remote namespace "memberQuestion" is not mounted')
+  }
   const remotes = ctx.remote as unknown as SessionRemotes
   const sessions = new ClientSessions(ctx, remotes)
+  const receiving = new ReceivingQuestionBook(ctx)
+  ctx.effect(() => {
+    ctx.reflect.provide('receivingQuestions', receiving, undefined)
+    void receiving.start()
+    return () => { receiving.dispose() }
+  }, 'session-controller.client.receiving')
   ctx.remote.$on('api-session/added', (summary) => { sessions.handleSessionAdded(summary) })
   ctx.remote.$on('api-session/removed', (sessionId) => { sessions.handleSessionRemoved(sessionId) })
   ctx.remote.$on('api-session/status', (sessionId, running) => {

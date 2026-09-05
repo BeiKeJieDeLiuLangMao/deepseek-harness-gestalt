@@ -9,7 +9,10 @@
   ],
   "references": [
     {
-      "path": "../../api/remotes/tsconfig.client.json"
+      "path": "../../api/gateway/tsconfig.client.json"
+    },
+    {
+      "path": "../../api/session-controller/tsconfig.client.json"
     },
     {
       "path": "../../../vendor/cordis"
@@ -18,16 +21,31 @@
       "path": "../locale"
     },
     {
-      "path": "../runtime"
+      "path": "../connection/tsconfig.client.json"
     },
     {
       "path": "../ui-conversation"
+    },
+    {
+      "path": "../ui-renderer"
     },
     {
       "path": "../ui-slots"
     },
     {
       "path": "../ui-user-questions"
+    },
+    {
+      "path": "../../typert/registry"
+    },
+    {
+      "path": "../../interaction/member-question-receiver"
+    },
+    {
+      "path": "../../interaction/user-questions"
+    },
+    {
+      "path": "../../util/workspace-path"
     },
     {
       "path": "../../runtime-diagnostics/invariants"

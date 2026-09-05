@@ -7,16 +7,15 @@
 // presentation's drafts.
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import type {
-  ConversationSnapshot, SessionId, SessionListState, WorkspaceListState,
-} from '@deepseek-ai/dsh-client-runtime/client'
-import { PendingWait } from '@deepseek-ai/dsh-client-runtime/client'
-import type { RpcReceipt } from '@deepseek-ai/dsh-api-remotes/client'
-import { RpcId } from '@deepseek-ai/dsh-client-connection/client'
+import type { SessionId, SessionListState, WorkspaceListState } from '@deepseek-ai/dsh-client-connection/client'
+import type { SessionSnapshot } from '@deepseek-ai/dsh-api-session-controller/src/client/contract/snapshot.ts'
+import type { PendingMemberQuestionView } from '@deepseek-ai/dsh-member-question-receiver/types'
+import type { ReceivingQuestionBookView } from '@deepseek-ai/dsh-api-session-controller/src/client/sessions/receiving.ts'
+import { useState } from 'react'
 import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 import { registerDomSnapshotSerializer } from '@deepseek-ai/dsh-client-test-runtime'
 import {
-  BACKGROUND_CLAMP, clampBackground, isMemberQuestionBatch, memberBriefOf, selectMemberQuestion,
+  BACKGROUND_CLAMP, clampBackground, memberBriefOf, selectMemberQuestion,
   selectMemberQuestionRecords,
   type MemberQuestionComposerProps,
 } from '../src/client/contract/slots.ts'
@@ -48,7 +47,7 @@ const seat = seatOver(zh, questionZh, commonZh)
 const kit = {
   sessionId: SID,
   session: undefined,
-  useSession: (() => { throw new Error('unused') }) as unknown as SnapshotSelectorHook<ConversationSnapshot>,
+  useSession: (() => { throw new Error('unused') }) as unknown as SnapshotSelectorHook<SessionSnapshot>,
   useSessions: (() => { throw new Error('unused') }) as unknown as SnapshotSelectorHook<SessionListState>,
   useWorkspaces: (() => { throw new Error('unused') }) as unknown as SnapshotSelectorHook<WorkspaceListState>,
   useProjection: (() => undefined) as never,
@@ -59,79 +58,194 @@ const kit = {
 
 const NOW = 1_800_000_000_000
 
-/** One member-question batch: the carried intent rides every question. */
-const memberQuestions = (intent: Record<string, unknown>): MemberQuestionComposerProps['matched']['payload']['questions'] => [{
+const QUESTIONS = [{
   id: 'remove-member',
   header: '成员管理',
   question: '将王小明移出项目吗？',
-  detail: '该成员近 30 天无提交记录。',
   options: [
     { label: '移出 (recommended)', description: '收回项目访问权。' },
     { label: '保留', description: '保持只读成员身份。' },
   ],
-  intent,
-}] as MemberQuestionComposerProps['matched']['payload']['questions']
+}]
 
 /** Carried Decision Brief fields: origin identity, materials, and the expiry instant. */
 const projection = () => ({
   origin: {
     projectName: '千帆平台',
     originSessionTitle: '整理迭代计划',
+    askerAccountId: 'account-alice',
     askerDisplayName: '王小明',
     askerRole: 'admin' as const,
+    askerAvatarUrl: '',
   },
   references: [
     {
       path: 'docs/roster.md',
       reason: '当前成员名单与角色',
-      cachedPath: '.dsh/member-questions/question-1/roster.md',
-      content: '# 成员名单',
     },
     {
       path: 'reports/activity.csv',
       reason: '近 30 天活跃度',
-      cachedPath: '.dsh/member-questions/question-1/activity.csv',
     },
   ],
+  cachedReferences: [
+    { path: 'docs/roster.md', cachedPath: '.dsh/member-questions/question-1/roster.md' },
+    { path: 'reports/activity.csv', cachedPath: '.dsh/member-questions/question-1/activity.csv' },
+  ],
   expiresAt: NOW + 125 * 1000,
+  background: '该成员近 30 天无提交记录。',
 })
 
-/** Carrier fixture over a scripted respond carrier; the extras ride the shared intent. */
-function memberWait(
-  carriedOver: Record<string, unknown> = projection(),
-  respond = vi.fn(() => Promise.resolve<RpcReceipt>({ accepted: true })),
-) {
-  const payload = {
-    questions: memberQuestions({ kind: 'member-question', ...carriedOver }),
+function memberWait(over: Partial<{
+  origin: Partial<ReturnType<typeof projection>['origin']>
+  references: ReturnType<typeof projection>['references']
+  cachedReferences: ReturnType<typeof projection>['cachedReferences']
+  expiresAt: number
+  background: string
+  questions: typeof QUESTIONS
+}> = {}): { carrier: PendingMemberQuestionView } {
+  const carried = projection()
+  const origin = { ...carried.origin, ...over.origin }
+  return {
+    carrier: {
+      questionId: 'question-1' as never,
+      receivingSessionId: SID as never,
+      receivingAccountId: 'account-receiver' as never,
+      revision: 1,
+      arrivedAt: 100,
+      operation: {
+        type: 'member-question',
+        operationId: 'operation-1' as never,
+        questionId: 'question-1' as never,
+        projectId: 'project-1' as never,
+        originSessionId: 'origin-session-1' as never,
+        expiresAt: over.expiresAt ?? carried.expiresAt,
+        origin,
+        background: over.background ?? carried.background,
+        questions: over.questions ?? QUESTIONS,
+        references: over.references ?? carried.references,
+      },
+      cachedReferences: over.cachedReferences ?? carried.cachedReferences,
+    },
   }
-  const carrier = new PendingWait(
-    'question', RpcId('q-1'), SID, payload, respond)
-  return { carrier, respond }
 }
 
-function genericWait(intent: undefined | { kind: 'plan-review'; approve: string }) {
-  const payload = {
-    questions: [{
-      id: 'plain', question: '继续吗？',
-      options: [{ label: '是' }, { label: '否' }],
-      ...(intent === undefined ? {} : { intent }),
-    }],
+function receivingView(wait?: PendingMemberQuestionView, records: readonly unknown[] = []): ReceivingQuestionBookView {
+  if (wait === undefined && records.length === 0) return { byId: {} }
+  return {
+    byId: {
+      [SID]: {
+        sessionId: SID,
+        title: 'member-question',
+        updatedAt: 0,
+        revision: wait?.revision ?? 1,
+        materialized: false,
+        pending: wait,
+        records: records as ReceivingQuestionBookView['byId'][string]['records'],
+      },
+    },
   }
-  return new PendingWait('question', RpcId('q-2'), SID, payload, () => Promise.resolve<RpcReceipt>({ accepted: true }))
+}
+
+function PresentationDouble(props: {
+  requestKey: string
+  questions: { id: string; question: string; options?: readonly { label: string }[] }[]
+  answer: (batch: { answers: { id: string; selected: string[] }[] }) => Promise<void>
+  cancel: () => Promise<void>
+  t: (key: string) => string
+}) {
+  const question = props.questions[0]
+  const firstLabel = question?.options?.[0]?.label ?? ''
+  const [selected, setSelected] = useState(firstLabel)
+  const [error, setError] = useState<string | null>(null)
+  const [expanded, setExpanded] = useState(true)
+  const radioName = firstLabel.replace(/ \((?:recommended|推荐)\)/i, '')
+  return (
+    <div data-question-presentation="" data-request-key={props.requestKey}>
+      <button
+        type="button"
+        aria-expanded={expanded ? 'true' : 'false'}
+        aria-label={expanded ? props.t('nav.minimize') : props.t('nav.maximize')}
+        onClick={() => { setExpanded(open => !open) }}
+      />
+      {question !== undefined && <div>{question.question}</div>}
+      {expanded && firstLabel !== '' && (
+        <button
+          type="button"
+          role="radio"
+          aria-checked={selected === firstLabel ? 'true' : 'false'}
+          aria-label={radioName}
+          onClick={() => { setSelected(firstLabel) }}
+        >
+          {radioName}
+        </button>
+      )}
+      {expanded && <span>1 / 1</span>}
+      {expanded && <span>推荐</span>}
+      {expanded && <textarea placeholder={props.t('custom.placeholder')} />}
+      {error !== null && <div role="status">{error}</div>}
+      {expanded && (
+        <button
+          type="button"
+          onClick={() => {
+            if (question === undefined) return
+            void props.answer({ answers: [{ id: question.id, selected: [selected] }] })
+              .catch((cause: unknown) => {
+                setError(cause instanceof Error ? cause.message : String(cause))
+              })
+          }}
+        >
+          {props.t('submit')}
+        </button>
+      )}
+    </div>
+  )
+}
+
+function receivingProps(
+  wait?: PendingMemberQuestionView,
+  records: readonly unknown[] = [],
+  questionT: ReturnType<typeof seat> = seat('question'),
+) {
+  const view = receivingView(wait, records)
+  return {
+    useReceivingQuestions: ((selector: (next: ReceivingQuestionBookView) => unknown) => selector(view)),
+    hooks: {
+      receivingQuestions: {
+        getSnapshot: () => view,
+        subscribe: () => () => {},
+      },
+    },
+    settle: vi.fn(async () => {}),
+    decline: vi.fn(async () => {}),
+    renderSlot: ((_name: 'question.presentation', owner: {
+      requestKey: string
+      questions: { id: string; question: string; options?: readonly { label: string }[] }[]
+      answer: (batch: { answers: { id: string; selected: string[] }[] }) => Promise<void>
+      cancel: () => Promise<void>
+    }) => (
+      <PresentationDouble
+        requestKey={owner.requestKey}
+        questions={owner.questions}
+        answer={owner.answer}
+        cancel={owner.cancel}
+        t={questionT}
+      />
+    )) as MemberQuestionComposerProps['renderSlot'],
+  }
 }
 
 function renderCard(
-  carrier: PendingWait<'question'>,
+  carrier: PendingMemberQuestionView,
   focusDocument: MemberQuestionComposerProps['focusDocument'] = () => {},
   openReference: MemberQuestionComposerProps['openReference'] = () => {},
 ) {
   return render(
     <MemberQuestionCard
       matched={carrier}
-      interactions={[carrier]}
       {...kit}
+      {...receivingProps(carrier)}
       t={seat('member-question')}
-      questionT={seat('question')}
       focusDocument={focusDocument}
       openReference={openReference}
     />,
@@ -162,30 +276,27 @@ describe('member-question routing', () => {
     const props = {
       ...kit,
       input: { draft: '', phase: 'plain' },
-      session: { pending: [carrier], memberQuestionRecords: [] },
+      session: {},
       t: seat('member-question'),
-      questionT: seat('question'),
       focusDocument: () => {},
       openReference: () => {},
+      ...receivingProps(carrier),
     }
     const pending = render(MemberQuestionDock(props as never))
     expect(pending.container.querySelector('[data-member-presentation]')).not.toBeNull()
     pending.unmount()
     const terminal = render(MemberQuestionDock({
       ...props,
-      session: {
-        pending: [],
-        memberQuestionRecords: [{
-          questionId: 'terminal', state: 'withdrawn', askedAt: 100, terminalAt: 200,
-          intent: { kind: 'member-question', questionId: 'terminal' },
-        }],
-      },
+      ...receivingProps(undefined, [{
+        questionId: 'terminal', state: 'withdrawn', askedAt: 100, terminalAt: 200,
+        intent: { kind: 'member-question', questionId: 'terminal' },
+      }]),
     } as never))
     expect(terminal.container.querySelector('[data-record-state="withdrawn"]')).not.toBeNull()
     terminal.unmount()
     const empty = render(MemberQuestionDock({
       ...props,
-      session: { pending: [] },
+      ...receivingProps(),
     } as never))
     expect(empty.container.innerHTML).toBe('')
   })
@@ -194,40 +305,17 @@ describe('member-question routing', () => {
     expect(selectMemberQuestionRecords({ session: undefined })).toBeNull()
     expect(selectMemberQuestionRecords({ session: {
       memberQuestionRecords: [],
-    } as unknown as ConversationSnapshot })).toBeNull()
+    } })).toBeNull()
     const records = [{ questionId: 'q' }] as never
     expect(selectMemberQuestionRecords({ session: {
       memberQuestionRecords: records,
-    } as unknown as ConversationSnapshot })).toBe(records)
+    } })).toBe(records)
   })
 
-  it('claims a request whose whole batch declares the member-question intent', () => {
+  it('claims a Host pending member-question row', () => {
     const { carrier } = memberWait()
-    expect(isMemberQuestionBatch(carrier.payload.questions)).toBe(true)
-    expect(selectMemberQuestion({ interactions: [carrier] })).toBe(carrier)
-  })
-
-  it('keeps plan-review requests with the shared composer', () => {
-    const carrier = genericWait({ kind: 'plan-review', approve: '是' })
-    expect(selectMemberQuestion({ interactions: [carrier] })).toBeNull()
-  })
-
-  it('keeps intent-less requests with the generic flow', () => {
-    const carrier = genericWait(undefined)
-    expect(selectMemberQuestion({ interactions: [carrier] })).toBeNull()
-  })
-
-  it('declines a mixed batch to the generic flow', () => {
-    const payload = {
-      questions: [
-        ...memberQuestions({ kind: 'member-question' }),
-        { id: 'plain', question: '继续吗？', options: [{ label: '是' }] },
-      ],
-    }
-    const carrier = new PendingWait(
-      'question', RpcId('q-3'), SID, payload,
-      () => Promise.resolve<RpcReceipt>({ accepted: true }))
-    expect(selectMemberQuestion({ interactions: [carrier] })).toBeNull()
+    expect(selectMemberQuestion({ pending: carrier })).toBe(carrier)
+    expect(selectMemberQuestion({ pending: undefined })).toBeNull()
   })
 })
 
@@ -247,14 +335,18 @@ describe('clampBackground and memberBriefOf', () => {
       expiresAt: NOW + 3_600_000,
     })
     const brief = memberBriefOf(carrier)
-    expect(brief.origin).toEqual(projection().origin)
+    expect(brief.origin).toEqual({
+      projectName: '千帆平台',
+      originSessionTitle: '整理迭代计划',
+      askerDisplayName: '王小明',
+      askerRole: 'admin',
+    })
     expect(brief.references).toEqual([
       {
         filename: 'roster.md',
         reason: '当前成员名单与角色',
         path: 'docs/roster.md',
         cachedPath: '.dsh/member-questions/question-1/roster.md',
-        content: '# 成员名单',
       },
       {
         filename: 'activity.csv',
@@ -264,23 +356,11 @@ describe('clampBackground and memberBriefOf', () => {
       },
     ])
     expect(brief.expiresAt).toBe(NOW + 3_600_000)
-    // The carrier's detail is the background, byte-for-byte under the budget.
     expect(brief.background).toBe('该成员近 30 天无提交记录。')
   })
 
-  it('renders the identity-lite brief when the projection has not landed', () => {
-    const { carrier } = memberWait({})
-    const brief = memberBriefOf(carrier)
-    expect(brief.origin).toBeUndefined()
-    expect(brief.expiresAt).toBeUndefined()
-    expect(brief.references).toEqual([])
-    expect(brief.background).toBe('该成员近 30 天无提交记录。')
-  })
-
-  it('omits an empty fallback background when neither carried background nor detail exists', () => {
-    const carrier = new PendingWait('question', RpcId('q-empty'), SID, {
-      questions: [{ id: 'plain', question: 'Continue?', intent: { kind: 'member-question' } as never }],
-    }, () => Promise.resolve<RpcReceipt>({ accepted: true }))
+  it('omits an empty Host background', () => {
+    const { carrier } = memberWait({ background: '' })
     expect(memberBriefOf(carrier).background).toBeUndefined()
   })
 })
@@ -454,6 +534,7 @@ describe('MemberQuestionCard', () => {
     const { carrier } = memberWait({
       origin: projection().origin,
       references: [{ path: 'docs/roster.md', reason: '当前成员名单与角色' }],
+      cachedReferences: [],
     })
     renderCard(carrier, undefined, openReference)
     fireEvent.click(screen.getByRole('button', { name: /roster\.md/ }))
@@ -473,8 +554,7 @@ describe('MemberQuestionCard', () => {
   })
 
   it('renders answered-elsewhere terminal metadata as a passive record band', () => {
-    const intent = memberQuestions({ kind: 'member-question', ...projection() })[0]?.intent
-    if (intent?.kind !== 'member-question') throw new Error('member-question test intent missing')
+    const intent = { kind: 'member-question', questionId: 'question-1' } as never
     render(<MemberQuestionRecords matched={[{
       questionId: 'question-1',
       state: 'answered-elsewhere',
@@ -489,8 +569,7 @@ describe('MemberQuestionCard', () => {
   })
 
   it('renders every terminal state and the answered-elsewhere device fallback', () => {
-    const intent = memberQuestions({ kind: 'member-question', ...projection() })[0]?.intent
-    if (intent?.kind !== 'member-question') throw new Error('member-question test intent missing')
+    const intent = { kind: 'member-question', questionId: 'question-1' } as never
     const states = ['answered', 'declined', 'expired', 'withdrawn', 'superseded'] as const
     render(<MemberQuestionRecords matched={[
       ...states.map((state, index) => ({
@@ -526,15 +605,12 @@ describe('MemberQuestionCard', () => {
     }
   })
 
-  it('snapshots the identity-lite banner and the folded strip', async () => {
-    const { carrier } = memberWait({})
+  it('snapshots the folded strip with Host origin identity', async () => {
+    const { carrier } = memberWait()
     const { container } = renderCard(carrier)
-    tidyDomForSnapshot(container)
-    expect(container).toMatchSnapshot()
     fireEvent.click(screen.getByRole('button', { name: '收起问题卡片' }))
     await waitFor(() => { expect(container.querySelector('[data-folded]')).toBeTruthy() })
-    // No origin rides the carrier: the strip names the generic member face.
-    expect(screen.getByText('远端 · 成员')).toBeTruthy()
+    expect(screen.getByText('远端 · 王小明')).toBeTruthy()
     tidyDomForSnapshot(container)
     expect(container).toMatchSnapshot()
   })
@@ -547,10 +623,9 @@ describe('MemberQuestionCard', () => {
       const { container } = render(
         <MemberQuestionCard
           matched={carrier}
-          interactions={[carrier]}
           {...kit}
+          {...receivingProps(carrier, [], seatEn('question'))}
           t={seatEn('member-question')}
-          questionT={seatEn('question')}
           focusDocument={() => {}}
           openReference={() => {}}
         />,
@@ -562,5 +637,57 @@ describe('MemberQuestionCard', () => {
     } finally {
       vi.restoreAllMocks()
     }
+  })
+
+  it('keeps QuestionComposer drafts when Host settle fails and retries through the presentation slot', async () => {
+    const { carrier } = memberWait()
+    const extras = receivingProps(carrier)
+    extras.settle
+      .mockRejectedValueOnce(new Error('exact payload required'))
+      .mockResolvedValueOnce(undefined)
+    render(
+      <MemberQuestionCard
+        matched={carrier}
+        {...kit}
+        {...extras}
+        t={seat('member-question')}
+        focusDocument={() => {}}
+        openReference={() => {}}
+      />,
+    )
+    fireEvent.click(screen.getByRole('radio', { name: '移出' }))
+    fireEvent.click(screen.getByRole('button', { name: '提交' }))
+    expect(await screen.findByText('exact payload required')).toBeTruthy()
+    expect(screen.getByRole('radio', { name: '移出' }).getAttribute('aria-checked')).toBe('true')
+    expect(extras.settle).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByRole('button', { name: '提交' }))
+    await waitFor(() => { expect(extras.settle).toHaveBeenCalledTimes(2) })
+    expect(extras.settle.mock.calls[1]?.[1]).toEqual([
+      { id: 'remove-member', selected: ['移出 (recommended)'] },
+    ])
+  })
+
+  it('clears the pending card when the book projection has no pending row', () => {
+    const { carrier } = memberWait()
+    const pending = render(MemberQuestionDock({
+      ...kit,
+      ...receivingProps(carrier),
+      t: seat('member-question'),
+      focusDocument: () => {},
+      openReference: () => {},
+    } as never))
+    expect(pending.container.querySelector('[data-member-presentation]')).not.toBeNull()
+    pending.rerender(MemberQuestionDock({
+      ...kit,
+      ...receivingProps(undefined, [{
+        questionId: 'question-1', state: 'expired', askedAt: 100, terminalAt: 200,
+        intent: { kind: 'member-question', questionId: 'question-1' },
+      }]),
+      t: seat('member-question'),
+      focusDocument: () => {},
+      openReference: () => {},
+    } as never))
+    expect(pending.container.querySelector('[data-member-presentation]')).toBeNull()
+    expect(pending.container.querySelector('[data-record-state="expired"]')).not.toBeNull()
   })
 })

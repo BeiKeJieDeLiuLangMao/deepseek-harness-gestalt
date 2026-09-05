@@ -1,21 +1,21 @@
 /**
- * Member-question plugin, browser half: the MemberQuestionCard registered as a
- * selector-routed entry of the conversation-declared composer chain, ahead of
- * the shared question composer, plus the `member-question` dictionaries. The
- * selector claims only requests whose whole batch declares the
- * `member-question` intent; `plan-review` and generic requests keep electing
- * the shared composer unchanged. The presentation and answer protocol stay
- * owned by dsh-client-ui-user-questions — this package mounts the sanctioned
- * presentation seam under its Decision Brief banner and binds the `question`
- * dictionary through the standard locale seat for it.
+ * Member-question plugin, browser half: the MemberQuestionDock registered on
+ * conversation.input.dock. It reads Host pending views from ReceivingQuestionBook
+ * and declares question.presentation for the shared Ask User occupant. This
+ * package does not import PendingQuestion.
  */
-import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
-import { resolveWorkspacePath } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context as ClientContext } from '@deepseek-ai/cordis'
+import type { SessionId } from '@deepseek-ai/dsh-client-connection/client'
 import type { DetailsDocumentFocus } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type { ReceivingQuestionBook } from '@deepseek-ai/dsh-api-session-controller/src/client/sessions/receiving.ts'
+import { resolveWorkspacePath } from '@deepseek-ai/dsh-util-workspace-path'
 import { MemberQuestionDock } from './MemberQuestionCard.tsx'
 import { en, zh, type MemberQuestionKey } from './locales.ts'
 
-export { selectMemberQuestion, selectMemberQuestionRecords, isMemberQuestionBatch, memberBriefOf, clampBackground, BACKGROUND_CLAMP } from './contract/slots.ts'
+export {
+  selectMemberQuestion, selectMemberQuestionRecords,
+  memberBriefOf, presentationQuestionsOf, clampBackground, BACKGROUND_CLAMP,
+} from './contract/slots.ts'
 export type {
   MemberQuestionBrief, MemberQuestionComposerProps, MemberQuestionOrigin,
   MemberQuestionReferenceChip, MemberQuestionRole, MemberQuestionWait,
@@ -29,11 +29,18 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   }
 }
 
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    /** Host-owned member-question receiving projection. */
+    receivingQuestions: ReceivingQuestionBook
+  }
+}
+
 /** Dictionary namespace owned by this plugin. */
 const NS = 'member-question'
 
-/** Required services: the slot registry, dictionaries, and Files-open path. */
-export const inject = ['slots', 'locale', 'workspaces', 'sessions']
+/** Required services: slots, dictionaries, Files-open path, and receiving projection. */
+export const inject = ['slots', 'locale', 'workspaces', 'sessions', 'receivingQuestions']
 
 /**
  * Client plugin body: register the `member-question` dictionaries and the
@@ -44,11 +51,6 @@ export const inject = ['slots', 'locale', 'workspaces', 'sessions']
  */
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-member-questions: dictionaries')
-
-  // The mounted presentation reads the `question` namespace (owned by
-  // dsh-client-ui-user-questions); bind is stable per namespace, so the
-  // injected translator never churns memo identity.
-  const questionT = ctx.locale.bind('question')
 
   // Resolve the optional provider at gesture time: dynamic client rows may
   // supply or release ui-conversation after this fiber has registered.
@@ -76,7 +78,16 @@ export function apply(ctx: ClientContext): void {
       id: 'member-question',
       order: -20,
       locale: NS,
-      inject: () => ({ questionT, focusDocument, openReference }),
+      children: {
+        'question.presentation': { kind: 'single', scope: 'session' },
+      },
+      inject: () => ({
+        focusDocument,
+        openReference,
+        settle: (sessionId, answers) => ctx.receivingQuestions.settle(sessionId, answers),
+        decline: sessionId => ctx.receivingQuestions.decline(sessionId),
+        hooks: { receivingQuestions: ctx.receivingQuestions },
+      }),
     },
     MemberQuestionDock,
   ))

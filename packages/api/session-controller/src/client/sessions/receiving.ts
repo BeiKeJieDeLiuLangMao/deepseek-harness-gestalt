@@ -1,11 +1,20 @@
-/** Host-snapshot adapter for model-silent member-question receiving Sessions. */
-import type { IApiClient, MemberQuestionReceiverSnapshot, RpcId, SessionId } from '@deepseek-ai/dsh-api-remotes/client'
-import type { AskUserQuestionItem } from '@deepseek-ai/dsh-user-questions/types'
-import type { SessionFace } from '../contract/session.ts'
-import type { ConversationSnapshot, MemberQuestionRecordView, PromptError } from './conversation.ts'
-import { EMPTY_CHAT_SNAPSHOT, EMPTY_CONVERSATION_VIEWS } from './conversation.ts'
-import { PendingWait } from './pending.ts'
-import { ProjectionValueStore } from './projection-store.ts'
+/**
+ * Host-snapshot adapter for model-silent member-question receiving Sessions.
+ * Generated `memberQuestion` Remote is the only Host path. The book stores
+ * Host pending views; UI owns PendingQuestion and drafts.
+ */
+import type { Context } from '@deepseek-ai/cordis'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { AskUserQuestionAnswer, AskUserQuestionItem } from '@deepseek-ai/dsh-user-questions/types'
+import type {
+  MemberQuestionReceiverChange,
+  MemberQuestionReceiverSnapshot,
+  MemberQuestionRemoteSettleRequest,
+  PendingMemberQuestionView,
+  TerminalMemberQuestionView,
+} from '@deepseek-ai/dsh-member-question-receiver/types'
+import type {} from '@deepseek-ai/dsh-api-remotes/client'
+import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 
 /** Carried presentation intent for a routed member question. */
 export type MemberQuestionIntent = Extract<
@@ -19,7 +28,14 @@ export type ReceivingMemberQuestionState =
   | 'expired' | 'withdrawn' | 'superseded'
 
 /** Host-projected terminal record band. */
-export type ReceivingMemberQuestionRecord = MemberQuestionRecordView
+export interface ReceivingMemberQuestionRecord {
+  readonly questionId: string
+  readonly state: ReceivingMemberQuestionState
+  readonly askedAt: number
+  readonly terminalAt: number
+  readonly intent: MemberQuestionIntent
+  readonly settledByDeviceName?: string
+}
 
 /** One Host-owned receiving Session projection. */
 export interface ReceivingSessionRow {
@@ -28,11 +44,7 @@ export interface ReceivingSessionRow {
   readonly updatedAt: number
   readonly revision: number
   readonly materialized: boolean
-  readonly active: {
-    readonly questionId: string
-    readonly intent: MemberQuestionIntent
-    readonly wait: PendingWait<'question'>
-  } | undefined
+  readonly pending: PendingMemberQuestionView | undefined
   readonly records: readonly ReceivingMemberQuestionRecord[]
 }
 
@@ -41,176 +53,17 @@ export interface ReceivingQuestionBookOptions {
   readonly currentInstallationId?: string
 }
 
-const EMPTY: readonly never[] = []
-
-class ReceivingSessionFace implements SessionFace {
-  readonly projections = new ProjectionValueStore()
-  readonly #listeners = new Set<() => void>()
-  #snapshot: ConversationSnapshot
-  #pending: MemberQuestionReceiverSnapshot['pending'][number] | undefined
-  #promptError: PromptError | null = null
-  #host: SessionFace | undefined
-  #hostDisposer: (() => void) | undefined
-  #promptAdmission: {
-    readonly revision: number
-    readonly content?: Parameters<SessionFace['prompt']>[0]
-    readonly mode: Parameters<SessionFace['prompt']>[1]
-    readonly rpcId: RpcId
-  } | undefined
-
-  constructor(readonly sessionId: SessionId, private readonly api: IApiClient) {
-    this.#snapshot = this.buildSnapshot(undefined, EMPTY)
-  }
-
-  getSnapshot(): ConversationSnapshot { return this.#snapshot }
-
-  subscribe(listener: () => void): () => void {
-    this.#listeners.add(listener)
-    return () => { this.#listeners.delete(listener) }
-  }
-
-  publish(
-    pending: MemberQuestionReceiverSnapshot['pending'][number] | undefined,
-    wait: PendingWait<'question'> | undefined,
-    records: readonly ReceivingMemberQuestionRecord[],
-  ): void {
-    if (this.#snapshot.pending[0] === wait && this.#snapshot.memberQuestionRecords === records) return
-    this.#pending = pending
-    if (pending?.reservedAdmission !== undefined
-      && String(this.#promptAdmission?.rpcId) !== pending.reservedAdmission.rpcId) {
-      this.#promptAdmission = {
-        revision: pending.revision,
-        mode: pending.reservedAdmission.mode,
-        rpcId: pending.reservedAdmission.rpcId as unknown as RpcId,
-      }
-    }
-    this.#snapshot = this.buildSnapshot(wait, records)
-    this.publishChange()
-  }
-
-  bindHost(host: SessionFace): void {
-    if (this.#host === host) return
-    this.#hostDisposer?.()
-    this.#host = host
-    this.#hostDisposer = host.subscribe(() => {
-      this.refreshSnapshot()
-    })
-    this.refreshSnapshot()
-  }
-
-  dispose(): void {
-    this.#hostDisposer?.()
-    this.#hostDisposer = undefined
-    this.#host = undefined
-    this.#listeners.clear()
-  }
-
-  private publishChange(): void {
-    for (const listener of [...this.#listeners]) {
-      try { listener() } catch (error) { console.error('receiving session subscriber failed:', error) }
-    }
-  }
-
-  private refreshSnapshot(): void {
-    this.#snapshot = this.buildSnapshot(
-      this.#snapshot.pending[0] as PendingWait<'question'> | undefined,
-      this.#snapshot.memberQuestionRecords ?? EMPTY,
-    )
-    this.publishChange()
-  }
-
-  async prompt(
-    content: Parameters<SessionFace['prompt']>[0],
-    mode: Parameters<SessionFace['prompt']>[1],
-    signal?: AbortSignal,
-  ): ReturnType<SessionFace['prompt']> {
-    const pending = this.#pending
-    if (pending === undefined || this.#host !== undefined) {
-      return this.#host?.prompt(content, mode, signal) ?? this.unroutable('prompt')
-    }
-    const retained = this.#promptAdmission
-    const admission = retained?.revision === pending.revision
-      ? { ...retained, content: retained.content ?? structuredClone(content) }
-      : {
-        revision: pending.revision,
-        content: structuredClone(content),
-        mode,
-        rpcId: crypto.randomUUID() as RpcId,
-      }
-    this.#promptAdmission = admission
-    if (this.#promptError !== null) {
-      this.#promptError = null
-      this.refreshSnapshot()
-    }
-    try {
-      const response = await this.api.memberQuestions.admitHumanTurn({
-        receivingSessionId: pending.receivingSessionId,
-        revision: pending.revision,
-        content: admission.content,
-        mode: admission.mode,
-      }, signal, admission.rpcId)
-      if (response.result.ok) {
-        this.#promptAdmission = undefined
-      }
-      if (!response.result.ok) {
-        this.#promptError = { op: 'send', error: response.result.error }
-        this.refreshSnapshot()
-      }
-      return response.result
-    } catch (error: unknown) {
-      const failure = {
-        ok: false as const,
-        error: { code: 'internal' as const, message: String(error), details: {} },
-      }
-      this.#promptError = { op: 'send', error: failure.error }
-      this.refreshSnapshot()
-      return failure
-    }
-  }
-  readAttachment(...args: Parameters<SessionFace['readAttachment']>): ReturnType<SessionFace['readAttachment']> { return this.#host?.readAttachment(...args) ?? this.unroutable('attachment read') }
-  updateQueue(...args: Parameters<SessionFace['updateQueue']>): ReturnType<SessionFace['updateQueue']> { return this.#host?.updateQueue(...args) ?? this.unroutable('queue mutation') }
-  cancel(...args: Parameters<SessionFace['cancel']>): ReturnType<SessionFace['cancel']> { return this.#host?.cancel(...args) ?? this.unroutable('turn cancellation') }
-  rename(...args: Parameters<SessionFace['rename']>): ReturnType<SessionFace['rename']> { return this.#host?.rename(...args) ?? this.unroutable('rename') }
-  loadOlder(...args: Parameters<SessionFace['loadOlder']>): ReturnType<SessionFace['loadOlder']> { return this.#host?.loadOlder(...args) ?? this.unroutable('history') }
-  command(...args: Parameters<SessionFace['command']>): ReturnType<SessionFace['command']> { return this.#host?.command(...args) ?? this.unroutable('command') }
-
-  private unroutable(operation: string): Promise<never> {
-    return Promise.reject(new Error(`receiving session ${this.sessionId} has no ${operation} route`))
-  }
-
-  private buildSnapshot(
-    wait: PendingWait<'question'> | undefined,
-    records: readonly ReceivingMemberQuestionRecord[],
-  ): ConversationSnapshot {
-    const host = this.#host?.getSnapshot()
-    const legacy = host?.chat.legacy ?? EMPTY_CHAT_SNAPSHOT.legacy
-    return {
-      ...host,
-      sessionId: this.sessionId,
-      views: host?.views ?? EMPTY_CONVERSATION_VIEWS,
-      chat: host?.chat ?? EMPTY_CHAT_SNAPSHOT,
-      nodes: legacy.nodes,
-      turnTimings: legacy.turnTimings,
-      turnEnds: legacy.turnEnds,
-      partial: null,
-      runningCalls: legacy.runningCalls,
-      pending: wait === undefined ? EMPTY : [wait],
-      queue: host?.queue ?? EMPTY,
-      running: host?.running ?? false,
-      subagent: host?.subagent ?? null,
-      composerPhase: 'active',
-      memberQuestionRecords: records,
-      removed: false,
-      openState: host?.openState ?? 'open',
-      openError: host?.openError ?? null,
-      hasMore: host?.hasMore ?? false,
-      loadingOlder: host?.loadingOlder ?? false,
-      promptError: this.#promptError,
-      blank: false,
-      lastAgentError: host?.lastAgentError ?? null,
-    }
-  }
+/** Immutable receiving projection keyed by Host receiving Session. */
+export interface ReceivingQuestionBookView {
+  readonly byId: Readonly<Record<string, ReceivingSessionRow>>
 }
+
+/** Human response forwarded to generated memberQuestion.settle. */
+export type ReceivingQuestionSettleResponse =
+  | { readonly kind: 'answered'; readonly answers: AskUserQuestionAnswer['answers'] }
+  | { readonly kind: 'declined' }
+
+const EMPTY: readonly never[] = []
 
 /**
  * Build the receiving row title from the Host brief origin.
@@ -221,36 +74,96 @@ export function briefSourceLine(origin: MemberQuestionIntent['origin']): string 
   return `${origin.projectName} — ${origin.originSessionTitle}`
 }
 
-/**
- * Read one shared member-question intent from a complete question batch.
- * @param questions - questions expected to carry one identical intent.
- * @returns the shared intent, or undefined for a mixed or generic batch.
- */
-export function memberQuestionIntentOf(
-  questions: readonly AskUserQuestionItem[],
-): MemberQuestionIntent | undefined {
-  const first = questions[0]?.intent
-  if (first?.kind !== 'member-question') return undefined
-  const shared = JSON.stringify(first)
-  return questions.slice(1).some(question => JSON.stringify(question.intent) !== shared) ? undefined : first
-}
-
-/** Project one authoritative Host snapshot into stable renderer Session faces. */
-export class ReceivingQuestionBook {
-  readonly #api: IApiClient
+/** Project one authoritative Host snapshot into identity-stable receiving rows. */
+export class ReceivingQuestionBook implements ObservableSnapshot<ReceivingQuestionBookView> {
+  readonly #ctx: Context
   readonly #onChange: () => void
+  readonly #listeners = new Set<() => void>()
   #currentInstallationId: string | undefined
   readonly #rows = new Map<SessionId, ReceivingSessionRow>()
-  readonly #faces = new Map<SessionId, ReceivingSessionFace>()
+  #view: ReceivingQuestionBookView = { byId: {} }
   #revision = -1
+  #offChanged: (() => void) | undefined
+  #disposed = false
+  #load: Promise<void> | undefined
+  #dirty = false
 
   constructor(
-    api: IApiClient,
+    ctx: Context,
     options: ReceivingQuestionBookOptions & { onChange?: () => void } = {},
   ) {
-    this.#api = api
+    this.#ctx = ctx
     this.#onChange = options.onChange ?? (() => {})
     this.#currentInstallationId = options.currentInstallationId
+  }
+
+  /** Return the cached receiving rows. */
+  getSnapshot = (): ReceivingQuestionBookView => this.#view
+
+  /** Subscribe to row replacement. */
+  subscribe = (listener: () => void): (() => void) => {
+    this.#listeners.add(listener)
+    return () => { this.#listeners.delete(listener) }
+  }
+
+  /**
+   * Subscribe to forwarded ledger commits and load the generated snapshot.
+   * @returns completion of the first snapshot.
+   */
+  start(): Promise<void> {
+    if (this.#disposed) return Promise.reject(new Error('receiving question book is disposed'))
+    this.#offChanged ??= this.#ctx.remote.$on(
+      'member-question-receiver/changed',
+      (change: MemberQuestionReceiverChange) => { this.handleChanged(change) },
+    )
+    return this.refresh()
+  }
+
+  /**
+   * Re-read the complete Host snapshot, collapsing concurrent callers.
+   * A `changed` or settle that arrives during an in-flight snapshot marks a
+   * follow-up load; dispose cancels that follow-up.
+   * @returns completion of the in-flight load.
+   */
+  refresh(): Promise<void> {
+    if (this.#disposed) return Promise.resolve()
+    if (this.#load !== undefined) {
+      this.#dirty = true
+      return this.#load
+    }
+    this.#load = this.load().finally(() => {
+      this.#load = undefined
+      if (this.#disposed || !this.#dirty) return
+      this.#dirty = false
+      void this.refresh()
+    })
+    return this.#load
+  }
+
+  /**
+   * Apply one forwarded ledger commit by re-reading the complete snapshot.
+   * @param _change - durable revision, question identity, and committed state.
+   */
+  handleChanged(_change: MemberQuestionReceiverChange): void {
+    void this.refresh()
+  }
+
+  /**
+   * The Host pending view for one receiving Session, when pending.
+   * @param sessionId - Host receiving Session identity.
+   * @returns the Host pending row, or undefined.
+   */
+  pending(sessionId: SessionId): PendingMemberQuestionView | undefined {
+    return this.#rows.get(sessionId)?.pending
+  }
+
+  /**
+   * Terminal records for one receiving Session.
+   * @param sessionId - Host receiving Session identity.
+   * @returns the projected terminal bands.
+   */
+  records(sessionId: SessionId): readonly ReceivingMemberQuestionRecord[] {
+    return this.#rows.get(sessionId)?.records ?? EMPTY
   }
 
   /**
@@ -258,25 +171,75 @@ export class ReceivingQuestionBook {
    * @returns the receiving rows.
    */
   rows(): readonly ReceivingSessionRow[] { return [...this.#rows.values()] }
+
   /**
-   * Resolve the renderer face for one Host receiving identity.
-   * @param sessionId - persisted Host receiving Session id.
-   * @returns the renderer-only face when the Host projection contains it.
+   * Answer the current pending row through generated Remote.
+   * Failures leave the snapshot unchanged except a stale revision, which refreshes.
+   * @param sessionId - Host receiving Session identity.
+   * @param answers - structured answer batch.
+   * @returns completion of the Remote write.
    */
-  face(sessionId: SessionId): SessionFace | undefined { return this.#faces.get(sessionId) }
+  settle(sessionId: SessionId, answers: AskUserQuestionAnswer['answers']): Promise<void> {
+    return this.write(sessionId, { kind: 'answered', answers })
+  }
+
   /**
-   * Whether the receiver ledger mapped this identity to an ordinary Host Session.
-   * @param sessionId - receiving Session identity.
-   * @returns true after authoritative materialization.
+   * Decline the current pending row through generated Remote.
+   * @param sessionId - Host receiving Session identity.
+   * @returns completion of the Remote write.
    */
-  isMaterialized(sessionId: SessionId): boolean { return this.#rows.get(sessionId)?.materialized === true }
-  /**
-   * Attach the ordinary Host face while retaining receiver pending/record projection.
-   * @param sessionId - materialized receiving Session identity.
-   * @param host - ordinary Host-backed Session face.
-   */
-  bindHost(sessionId: SessionId, host: SessionFace): void {
-    this.#faces.get(sessionId)?.bindHost(host)
+  decline(sessionId: SessionId): Promise<void> {
+    return this.write(sessionId, { kind: 'declined' })
+  }
+
+  private write(sessionId: SessionId, response: ReceivingQuestionSettleResponse): Promise<void> {
+    if (this.#disposed) return Promise.reject(new Error('receiving question book is disposed'))
+    const pending = this.#rows.get(sessionId)?.pending
+    if (pending === undefined) {
+      return Promise.reject(new Error('receiving question has no pending row'))
+    }
+    const request: MemberQuestionRemoteSettleRequest = {
+      receivingSessionId: pending.receivingSessionId,
+      revision: pending.revision,
+      questionId: pending.questionId,
+      response,
+    }
+    return this.#ctx.remote.memberQuestion.settle(request).then((carried) => {
+      if (!carried.ok) {
+        if (carried.error.code === 'member-question/revision-stale') {
+          return this.refresh().then(() => {
+            throw new Error(carried.error.message)
+          })
+        }
+        throw new Error(carried.error.message)
+      }
+      return this.refresh()
+    })
+  }
+
+  /** Release projected rows and refuse further Remote writes. */
+  dispose(): void {
+    this.#disposed = true
+    this.#dirty = false
+    this.#offChanged?.()
+    this.#offChanged = undefined
+    this.#rows.clear()
+    this.publishView()
+    this.#listeners.clear()
+  }
+
+  private publishView(): void {
+    const byId: Record<string, ReceivingSessionRow> = {}
+    for (const [sessionId, row] of this.#rows) byId[sessionId] = row
+    this.#view = { byId }
+    for (const listener of [...this.#listeners]) listener()
+  }
+
+  private async load(): Promise<void> {
+    const carried = await this.#ctx.remote.memberQuestion.snapshot()
+    if (this.#disposed) return
+    if (!carried.ok) return
+    this.applySnapshot(carried.value)
   }
 
   /**
@@ -308,23 +271,10 @@ export class ReceivingQuestionBook {
     for (const [sessionId, group] of groups) this.projectGroup(sessionId, group)
     for (const sessionId of [...this.#rows.keys()]) {
       if (sessionIds.has(sessionId)) continue
-      this.#rows.get(sessionId)?.active?.wait.markSettled()
       this.#rows.delete(sessionId)
-      this.#faces.get(sessionId)?.dispose()
-      this.#faces.delete(sessionId)
     }
+    this.publishView()
     this.#onChange()
-  }
-
-  /** Disconnect changes no business state; the next Host baseline converges by revision. */
-  handleDisconnected(): void {}
-
-  /** Release all renderer carriers and projected rows. */
-  dispose(): void {
-    for (const row of this.#rows.values()) row.active?.wait.markSettled()
-    for (const face of this.#faces.values()) face.dispose()
-    this.#rows.clear()
-    this.#faces.clear()
   }
 
   private projectGroup(
@@ -338,88 +288,51 @@ export class ReceivingQuestionBook {
     if (exemplar === undefined) return
     const accountId = group.pending?.receivingAccountId ?? group.terminal[0]?.receivingAccountId
     if (accountId === undefined) return
-    const records = group.terminal.flatMap((view): ReceivingMemberQuestionRecord[] => {
-      const terminal = view.terminal
-      if (terminal.outcome === 'answered'
-        && (this.#currentInstallationId === undefined
-          || terminal.settledByInstallationId === this.#currentInstallationId)) {
-        return []
-      }
-      const state = terminal.outcome === 'answered' ? 'answered-elsewhere' : terminal.outcome
-      return [{
-        questionId: view.questionId,
-        state,
-        askedAt: view.arrivedAt,
-        terminalAt: terminal.settledAt,
-        intent: intentOf(view.brief, view.receivingAccountId, view.cachedReferences),
-        ...(terminal.outcome === 'answered' || terminal.outcome === 'declined'
-          ? { settledByDeviceName: terminal.settledByDeviceName }
-          : {}),
-      }]
-    })
-    const pending = group.pending
-    const active = pending === undefined ? undefined : {
-      questionId: pending.questionId,
-      intent: intentOf(pending.operation, pending.receivingAccountId, pending.cachedReferences),
-      wait: this.waitFor(pending),
-    }
-    this.#rows.get(sessionId)?.active?.wait.markSettled()
-    const updatedAt = Math.max(pending?.arrivedAt ?? 0, ...records.map(record => record.terminalAt))
-    const revision = Math.max(pending?.revision ?? 0, ...group.terminal.map(record => record.revision))
-    const row: ReceivingSessionRow = {
+    const records = group.terminal.flatMap(view => this.recordOf(view))
+    const pendingRow = group.pending
+    const intent = pendingRow === undefined
+      ? intentOf(exemplar, accountId, pendingRow?.cachedReferences)
+      : intentOf(pendingRow.operation, pendingRow.receivingAccountId, pendingRow.cachedReferences)
+    const updatedAt = Math.max(pendingRow?.arrivedAt ?? 0, ...records.map(record => record.terminalAt))
+    const revision = Math.max(pendingRow?.revision ?? 0, ...group.terminal.map(record => record.revision))
+    this.#rows.set(sessionId, {
       sessionId,
-      title: briefSourceLine(intentOf(exemplar, accountId, pending?.cachedReferences).origin),
+      title: briefSourceLine(intent.origin),
       updatedAt,
       revision,
-      materialized: pending?.hostSessionId !== undefined
+      materialized: pendingRow?.hostSessionId !== undefined
         || group.terminal.some(record => record.hostSessionId !== undefined),
-      active,
+      pending: pendingRow,
       records,
-    }
-    this.#rows.set(sessionId, row)
-    let face = this.#faces.get(sessionId)
-    if (face === undefined) {
-      face = new ReceivingSessionFace(sessionId, this.#api)
-      this.#faces.set(sessionId, face)
-    }
-    face.publish(pending, active?.wait, records)
+    })
   }
 
-  private waitFor(pending: MemberQuestionReceiverSnapshot['pending'][number]): PendingWait<'question'> {
-    const rpcId = pending.questionId as unknown as RpcId
-    const intent = intentOf(pending.operation, pending.receivingAccountId, pending.cachedReferences)
-    const questions: AskUserQuestionItem[] = pending.operation.questions.map(question => ({
-      id: question.id,
-      question: question.question,
-      ...(question.header === undefined ? {} : { header: question.header }),
-      ...(question.options === undefined ? {} : { options: question.options.map(option => ({ ...option })) }),
-      ...(question.multiSelect === undefined ? {} : { multiSelect: question.multiSelect }),
-      intent,
-    }))
-    return new PendingWait(
-      'question', rpcId, pending.operation.originSessionId as unknown as SessionId, { questions },
-      async (message) => {
-        const response = message.result.ok
-          ? { kind: 'answered' as const, answers: (message.result.value as {
-            answer: { answers: { id: string; selected: string[]; custom?: string }[] }
-          }).answer.answers }
-          : { kind: 'declined' as const }
-        const result = await this.#api.memberQuestions.settle({
-          receivingSessionId: pending.receivingSessionId,
-          revision: pending.revision,
-          questionId: pending.questionId,
-          response,
-        })
-        return result.result.ok
-          ? { accepted: true }
-          : { accepted: false, reason: result.result.error.code === 'bad-request' ? 'not-pending' : 'bad-response' }
-      },
-    )
+  private recordOf(view: TerminalMemberQuestionView): ReceivingMemberQuestionRecord[] {
+    const terminal = view.terminal
+    if (terminal.outcome === 'answered'
+      && (this.#currentInstallationId === undefined
+        || terminal.settledByInstallationId === this.#currentInstallationId)) {
+      return []
+    }
+    const state: ReceivingMemberQuestionState = terminal.outcome === 'answered'
+      ? 'answered-elsewhere'
+      : terminal.outcome
+    return [{
+      questionId: view.questionId,
+      state,
+      askedAt: view.arrivedAt,
+      terminalAt: terminal.settledAt,
+      intent: intentOf(view.brief, view.receivingAccountId, view.cachedReferences),
+      ...(terminal.outcome === 'answered' || terminal.outcome === 'declined'
+        ? { settledByDeviceName: terminal.settledByDeviceName }
+        : {}),
+    }]
   }
 }
 
 function intentOf(
-  operation: MemberQuestionReceiverSnapshot['pending'][number]['operation'],
+  operation: MemberQuestionReceiverSnapshot['pending'][number]['operation']
+    | MemberQuestionReceiverSnapshot['terminal'][number]['brief'],
   receivingAccountId: string,
   cachedReferences?: readonly { path: string; cachedPath: string }[],
 ): MemberQuestionIntent {

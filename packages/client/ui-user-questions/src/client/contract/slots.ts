@@ -1,5 +1,7 @@
 /** Question composer props and one pending Remote waterfall response. */
-import type { PropsLocale, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
+import type {
+  PropsLocale, PropsRuntime, PropsStore,
+} from '@deepseek-ai/dsh-client-ui-slots'
 // The client module declares the conversation.composer SlotMap entry required by PropsRuntime.
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {
@@ -11,6 +13,21 @@ declare module '@deepseek-ai/dsh-client-ui-session/client' {
   interface SessionPendingInteractionMap {
     /** Pending question or plan-review request. */
     question: PendingQuestion
+  }
+}
+
+declare module '@deepseek-ai/dsh-client-ui-slots' {
+  interface SlotMap {
+    /**
+     * Shared Ask User presentation over JSON questions and a Host submit
+     * callback. The member-question dock declares this child; this package
+     * occupies it. PendingQuestion stays in this package.
+     */
+    'question.presentation': {
+      kind: 'single'
+      scope: 'session'
+      owner: QuestionPresentationOwnerProps
+    }
   }
 }
 
@@ -121,22 +138,26 @@ export class PendingQuestion {
   readonly #signal: AbortSignal | undefined
   readonly #onAbort: (() => void) | undefined
   readonly #delegated = Symbol('pending question delegated')
+  readonly #submit: PendingQuestionSubmit | undefined
   #settled = false
 
   /**
    * @param sessionId - Agent/Session identity owning the scoped request.
    * @param questions - complete question batch.
    * @param signal - Host request and delivery lifetime.
+   * @param options - optional Host submit and stable draft key.
    */
   constructor(
     readonly sessionId: SessionId,
     questions: readonly AskUserQuestionItem[],
     signal?: AbortSignal,
+    options: PendingQuestionOptions = {},
   ) {
     nextQuestionKey += 1
-    this.key = `question:${String(nextQuestionKey)}`
+    this.key = options.key ?? `question:${String(nextQuestionKey)}`
     this.questions = questions
     this.kind = planReviewOf(questions) === undefined ? 'question' : 'plan-review'
+    this.#submit = options.submit
     const completion = Promise.withResolvers<QuestionAnswer>()
     this.result = completion.promise
     this.#resolve = completion.resolve
@@ -158,7 +179,8 @@ export class PendingQuestion {
    * Resolve the Host waterfall with the whole answer batch.
    * @param answer - complete structured answer batch.
    */
-  answer(answer: QuestionAnswer): Promise<void> {
+  async answer(answer: QuestionAnswer): Promise<void> {
+    if (this.#submit !== undefined) await this.#submit('answered', answer)
     return settlePendingComposer(() => {
       this.finish(() => { this.#resolve(answer) })
     }, 'pending question settlement failed')
@@ -180,7 +202,8 @@ export class PendingQuestion {
   }
 
   /** Reject the Host waterfall because the user closed the question. */
-  cancel(): Promise<void> {
+  async cancel(): Promise<void> {
+    if (this.#submit !== undefined) await this.#submit('declined')
     return settlePendingComposer(() => {
       this.finish(() => {
         this.#reject(questionError('the user cancelled ask_user_question', 'ASK_CANCELLED'))
@@ -207,6 +230,32 @@ export class PendingQuestion {
   }
 }
 
+/** Host settlement invoked before local finish; rejection keeps drafts. */
+export type PendingQuestionSubmit = (
+  kind: 'answered' | 'declined',
+  answer?: QuestionAnswer,
+) => Promise<void>
+
+/** Optional Host-submit path and stable draft key for shared presentation. */
+export interface PendingQuestionOptions {
+  /** Opaque render identity; defaults to an incrementing question key. */
+  readonly key?: string
+  /** Host write that must succeed before local finish. */
+  readonly submit?: PendingQuestionSubmit
+}
+
+/** JSON questions plus Host answer/cancel for the shared presentation slot. */
+export interface QuestionPresentationOwnerProps {
+  /** Stable draft-store key for this Host pending row. */
+  requestKey: string
+  /** Complete question batch. */
+  questions: readonly AskUserQuestionItem[]
+  /** Host answer; rejection leaves QuestionComposer drafts. */
+  answer: (answer: QuestionAnswer) => Promise<void>
+  /** Host decline; rejection leaves QuestionComposer drafts. */
+  cancel: () => Promise<void>
+}
+
 /** Pending value returned by the composer-chain selector. */
 export type QuestionWait = PendingQuestion
 
@@ -221,4 +270,10 @@ export type QuestionComposerProps =
   PropsRuntime<'conversation.composer'>
   & PropsStore<ReturnType<typeof createQuestionDraftStore>>
   & { matched: QuestionWait }
+  & PropsLocale<'question'>
+
+/** Occupant of `question.presentation`. */
+export type QuestionPresentationSlotProps =
+  PropsRuntime<'question.presentation'>
+  & PropsStore<ReturnType<typeof createQuestionDraftStore>>
   & PropsLocale<'question'>
