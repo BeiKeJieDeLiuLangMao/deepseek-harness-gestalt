@@ -120,12 +120,8 @@ export function createDesktopHostRpc(baseUrl: string, options: DesktopHostRpcOpt
   }
   const rpc: DesktopHostRpc = {
     async call(method, payload, callOptions) {
-      const attachmentRead = method === 'session.attachment'
-      const projectedRead = method === 'session.history'
-        || method === 'session.list'
-        || method === 'session/list'
-        || method === 'session/page'
-        || method === 'workspace.list'
+      const attachmentRead = method === 'session/attachment'
+      const projectedRead = method === 'session/list' || method === 'session/page'
       const callTimeoutMs = callOptions?.timeoutMs
         ?? (attachmentRead ? options.attachmentTimeoutMs : undefined)
         ?? timeoutMs
@@ -323,15 +319,79 @@ export function listDesktopHostSessions(
 export function createDesktopHostSession(
   rpc: DesktopHostRpc,
   sessionId: string,
-  options?: { timeoutMs?: number; signal?: AbortSignal; cwd?: string },
+  options?: { timeoutMs?: number; signal?: AbortSignal; cwd?: string; rpcId?: string },
 ): Promise<DesktopHostRpcResult> {
   const { cwd, ...callOptions } = options ?? {}
-  return rpc.call('session/create', {
-    args: { request: {
-      sessionId,
-      ...(cwd === undefined ? {} : { cwd }),
-    } },
+  return createDesktopHostSessionRequest(rpc, {
+    sessionId,
+    ...(cwd === undefined ? {} : { cwd }),
   }, Object.keys(callOptions).length === 0 ? undefined : callOptions)
+}
+
+/**
+ * Create or adopt one Session through generated Gateway `session/create`.
+ * @param rpc - authenticated Desktop Host RPC.
+ * @param request - generated create request fields.
+ * @param options - optional timeout, cancellation, and initiator rpc id.
+ * @returns the Host create value or a typed failure.
+ */
+export function createDesktopHostSessionRequest(
+  rpc: DesktopHostRpc,
+  request: { sessionId?: string; workspaceId?: string; cwd?: string },
+  options?: { timeoutMs?: number; signal?: AbortSignal; rpcId?: string },
+): Promise<DesktopHostRpcResult> {
+  return rpc.call('session/create', { args: { request } }, options)
+}
+
+/**
+ * Search visible Session content through generated Gateway `session/search`.
+ * @param rpc - authenticated Desktop Host RPC.
+ * @param query - literal message-content query.
+ * @param options - optional timeout and cancellation.
+ * @returns the Host search value or a typed failure.
+ */
+export function searchDesktopHostSessions(
+  rpc: DesktopHostRpc,
+  query: string,
+  options?: { timeoutMs?: number; signal?: AbortSignal },
+): Promise<DesktopHostRpcResult> {
+  return rpc.call('session/search', { args: { request: { query } } }, options)
+}
+
+/**
+ * Read one image proven reachable from the Session log through generated Gateway `session/attachment`.
+ * @param rpc - authenticated Desktop Host RPC.
+ * @param request - Session and image attachment identities.
+ * @param options - optional timeout and cancellation.
+ * @returns the Host image value or a typed failure.
+ */
+export function readDesktopHostAttachment(
+  rpc: DesktopHostRpc,
+  request: { sessionId: string; attachmentId: string },
+  options?: { timeoutMs?: number; signal?: AbortSignal },
+): Promise<DesktopHostRpcResult> {
+  return rpc.call('session/attachment', { args: { request } }, options)
+}
+
+/**
+ * Admit one Companion opaque file through generated Gateway `session/admitAttachment`.
+ * @param rpc - authenticated Desktop Host RPC.
+ * @param request - Session identity, Companion operation id, media type, name, and canonical base64.
+ * @param options - optional timeout and cancellation.
+ * @returns the Host admission value or a typed failure.
+ */
+export function admitDesktopHostAttachment(
+  rpc: DesktopHostRpc,
+  request: {
+    sessionId: string
+    operationId: string
+    mediaType: string
+    name: string
+    data: string
+  },
+  options?: { timeoutMs?: number; signal?: AbortSignal },
+): Promise<DesktopHostRpcResult> {
+  return rpc.call('session/admitAttachment', { args: { request } }, options)
 }
 
 /**
@@ -372,7 +432,10 @@ export function promptDesktopHostSession(
     requestId: string
     sessionId: string
     mode: 'queue' | 'steer'
-    content: ReadonlyArray<{ type: 'text'; text: string }>
+    content: ReadonlyArray<
+      | { type: 'text'; text: string }
+      | { type: 'image'; mediaType: string; data: string; name?: string }
+    >
   },
   options?: { timeoutMs?: number; rpcId?: string; signal?: AbortSignal },
 ): Promise<DesktopHostRpcResult> {

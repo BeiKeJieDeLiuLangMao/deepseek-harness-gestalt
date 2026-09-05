@@ -1,5 +1,9 @@
 # Test overlay: keep Connection, Gateway remotes, and Session Controller.
 # Disable browser-roster rows so a source tree without client bundles can boot.
+- id: session-query-sqlite
+  config:
+    path: !!js dshHomePath('session-search.sqlite')
+    openAt: first-search
 - id: workspace-controller
   config: {}
 - id: client-hmr

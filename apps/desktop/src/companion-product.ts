@@ -44,10 +44,15 @@ import {
   receiveCompanionAttachment,
 } from './companion-attachments.ts'
 import {
+  admitDesktopHostAttachment,
   cancelDesktopHostSession,
   createDesktopHostRpc,
+  createDesktopHostSessionRequest,
+  listDesktopHostSessions,
   pageDesktopHostSession,
   promptDesktopHostSession,
+  readDesktopHostAttachment,
+  searchDesktopHostSessions,
   type DesktopHostRpc,
   type DesktopHostRpcOptions,
   type DesktopHostRpcResult,
@@ -365,7 +370,7 @@ export class DesktopCompanionProductOwner {
         kind: 'wire', code: 'HOST_WIRE_INVALID', message: 'Desktop Web Host is not available',
       } }
     }
-    return await host.call('session.admitAttachment', {
+    return await admitDesktopHostAttachment(host, {
       sessionId: input.sessionId,
       operationId: input.operationId,
       name: input.fileName,
@@ -439,15 +444,15 @@ async function createHostSession(
   operation: Extract<CompanionProductOperation, { type: 'create-session' }>,
   dependencies: CompanionProductOperationDependencies,
 ): Promise<CompanionResult> {
-  const response = await dependencies.host.call(
-    'session.create',
+  const response = await createDesktopHostSessionRequest(
+    dependencies.host,
     operation.workspaceId === undefined ? {} : { workspaceId: operation.workspaceId },
     { rpcId: operation.operationId },
   )
   if (!response.ok) return operationFailed(operation, normalizeFailure(response.failure))
-  if (!isRecord(response.value)) return invalidHostResult(operation, 'session.create')
+  if (!isRecord(response.value)) return invalidHostResult(operation, 'session/create')
   let sessionId: ReturnType<typeof parseCompanionSessionId>
-  try { sessionId = parseCompanionSessionId(response.value.sessionId) } catch { return invalidHostResult(operation, 'session.create') }
+  try { sessionId = parseCompanionSessionId(response.value.sessionId) } catch { return invalidHostResult(operation, 'session/create') }
   return { type: 'session-created', operationId: operation.operationId, sessionId, committedAt: dependencies.now() }
 }
 
@@ -501,7 +506,7 @@ export class DesktopCompanionSurfaceDiscovery {
     this.epochs.set(dependencies.pairingId, epoch)
     this.states.delete(dependencies.pairingId)
     const [sessionResponse, workspaceValue] = await Promise.all([
-      dependencies.host.call('session.list', {}),
+      listDesktopHostSessions(dependencies.host),
       waitForWorkspaceSnapshot(dependencies),
     ])
     if (!sessionResponse.ok) return operationFailed(operation, normalizeFailure(sessionResponse.failure))
@@ -583,7 +588,7 @@ async function loadHistory(
   operation: Extract<CompanionProductOperation, { type: 'load-history' }>,
   dependencies: CompanionProductOperationDependencies,
 ): Promise<CompanionProjection | CompanionOperationFailedResult> {
-  const sessionsResponse = await dependencies.host.call('session.list', {})
+  const sessionsResponse = await listDesktopHostSessions(dependencies.host)
   if (!sessionsResponse.ok) return operationFailed(operation, normalizeFailure(sessionsResponse.failure))
   const session = parseSurfaceSession(sessionsResponse.value, operation.sessionId)
   if (session === undefined) return invalidHostResult(operation, 'history Session status')
@@ -620,7 +625,7 @@ export async function projectDesktopCompanionLiveSession(
   signal: AbortSignal,
 ): Promise<DesktopCompanionLiveProjectionPayload> {
   const requests = [
-    dependencies.host.call('session.list', {}, { signal }),
+    listDesktopHostSessions(dependencies.host, { signal }),
     waitForWorkspaceSnapshot(dependencies, signal),
     ...(includeConversation
       ? [loadSessionHistoryPage(dependencies, sessionId, {
@@ -714,7 +719,7 @@ async function readImage(
   operation: Extract<CompanionProductOperation, { type: 'read-image' }>,
   dependencies: CompanionProductOperationDependencies,
 ): Promise<CompanionResult | readonly CompanionResult[]> {
-  const response = await dependencies.host.call('session.attachment', {
+  const response = await readDesktopHostAttachment(dependencies.host, {
     sessionId: operation.sessionId, attachmentId: operation.attachmentId,
   })
   if (!response.ok) return operationFailed(operation, normalizeFailure(response.failure))
@@ -795,7 +800,7 @@ async function searchSessions(
   dependencies: CompanionProductOperationDependencies,
 ): Promise<CompanionSessionSearchResult | CompanionOperationFailedResult> {
   const [response, workspaceValue] = await Promise.all([
-    dependencies.host.call('session.search', { query: operation.query }),
+    searchDesktopHostSessions(dependencies.host, operation.query),
     waitForWorkspaceSnapshot(dependencies),
   ])
   if (!response.ok) return operationFailed(operation, normalizeFailure(response.failure))
@@ -804,7 +809,7 @@ async function searchSessions(
     return operationFailed(operation, {
       kind: 'wire',
       code: 'HOST_WIRE_INVALID',
-      message: 'Desktop Host session.search returned an invalid value',
+      message: 'Desktop Host session/search returned an invalid value',
     })
   }
   if (!isWorkspaceSnapshot(workspaceValue)) {

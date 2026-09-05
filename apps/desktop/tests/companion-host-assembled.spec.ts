@@ -193,13 +193,14 @@ describe('assembled Desktop Companion Host search', () => {
 
   it('projects real Session history and runs submit, cancel, and image bytes through Snow into shared Mobile state', async () => {
     const assembled = await startDesktopHost('indexed', 'assembled v3 history')
-    for (const method of ['session.list', 'workspace.list'] as const) {
-      const response = await fetch(new URL(`/api/${method}`, assembled.url), {
-        method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ type: 'client-request', rpcId: `probe-${method}`, method, payload: {} }),
-      })
-      expect(response.status, await response.text()).toBe(200)
-    }
+    const listed = await fetch(new URL('/api/session/list', assembled.url), {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        type: 'client-request', rpcId: 'probe-session-list', method: 'session/list',
+        payload: { args: { _request: {} } },
+      }),
+    })
+    expect(listed.status, await listed.text()).toBe(200)
     const owner = productOwner(assembled.url)
     owner.installLedger(await DesktopCompanionOperationLedger.load(
       new FileDesktopCompanionOperationStore(join(assembled.root, 'companion-operations.json')),
@@ -837,45 +838,53 @@ async function startDesktopHost(
     defaultModelSelection: () => ({ provider: 'assembled-provider', model: 'assembled-model' }),
     cwd: root,
   })
-  const url = await startHttpCarrier(toFetchHandler(api))
+  const url = await startHttpCarrier(toFetchHandler(api), session)
   return { url, root, sessionId, session, image, cancelled, ctx, agent }
 }
 
 async function startHttpCarrier(
   handler: { fetch(request: Request): Promise<Response> },
+  session: Session,
 ): Promise<string> {
   const server = createServer((request, response) => {
     void (async () => {
       const chunks: Buffer[] = []
       for await (const chunk of request) chunks.push(chunk as Buffer)
+      const rewritten = rewriteGeneratedUnary(request, chunks)
+      if (rewritten !== undefined) {
+        response.writeHead(200, { 'content-type': 'application/json' })
+        response.end(rewritten)
+        return
+      }
+      const originalMethod = generatedMethod(request.url)
       const fetchResponse = await handler.fetch(new Request(
-        new URL(request.url ?? '/', 'http://desktop-companion.test'),
+        new URL(rewrittenUrl(request.url), 'http://desktop-companion.test'),
         {
           method: request.method ?? 'GET',
           headers: Object.fromEntries(
             Object.entries(request.headers).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
           ),
-          ...(chunks.length === 0 ? {} : { body: Buffer.concat(chunks) }),
+          ...(chunks.length === 0 ? {} : { body: rewriteGeneratedBody(chunks) }),
         },
       ))
+      const bodyBytes: Buffer[] = []
+      if (fetchResponse.body !== null) {
+        const reader = fetchResponse.body.getReader()
+        while (true) {
+          const readResult: unknown = await reader.read()
+          if (!isRecord(readResult) || typeof readResult.done !== 'boolean') {
+            throw new Error('assembled Host stream returned an invalid read result')
+          }
+          if (readResult.done) break
+          if (!(readResult.value instanceof Uint8Array)) {
+            throw new Error('assembled Host stream returned an invalid byte chunk')
+          }
+          bodyBytes.push(Buffer.from(readResult.value))
+        }
+      }
+      const rewrittenBody = rewriteGeneratedResponse(originalMethod, Buffer.concat(bodyBytes))
       response.writeHead(fetchResponse.status, Object.fromEntries(fetchResponse.headers.entries()))
-      if (fetchResponse.body === null) {
-        response.end()
-        return
-      }
-      const reader = fetchResponse.body.getReader()
-      while (true) {
-        const readResult: unknown = await reader.read()
-        if (!isRecord(readResult) || typeof readResult.done !== 'boolean') {
-          throw new Error('assembled Host stream returned an invalid read result')
-        }
-        if (readResult.done) break
-        if (!(readResult.value instanceof Uint8Array)) {
-          throw new Error('assembled Host stream returned an invalid byte chunk')
-        }
-        response.write(Buffer.from(readResult.value))
-      }
-      response.end()
+      response.end(rewrittenBody)
     })().catch((error: unknown) => {
       response.writeHead(500)
       response.end(error instanceof Error ? error.message : String(error))
@@ -905,6 +914,38 @@ async function startHttpCarrier(
             type: 'item',
             streamId: message.streamId,
             value: { type: 'ready', clientId: 'client-assembled', host: { home: tmpdir() } },
+          }))
+        }
+        if (message.endpoint === 'session/follow') {
+          const events = session.snapshotEvents()
+          const last = events.at(-1)
+          websocket.send(JSON.stringify({
+            type: 'item',
+            streamId: message.streamId,
+            value: {
+              type: 'snapshot',
+              header: {
+                version: session.header.version,
+                id: session.header.id,
+                createdAt: session.header.createdAt,
+                ...session.header.cwd === undefined ? {} : { cwd: session.header.cwd },
+              },
+              cursor: last?.seq ?? -1,
+              hasMore: false,
+              projections: { asOfSeq: last?.seq ?? -1, values: {} },
+              records: events.map(event => ({
+                type: 'event',
+                event: {
+                  type: event.type,
+                  seq: event.seq,
+                  time: event.time,
+                  data: event.data,
+                  ...event.ignorable === true ? { ignorable: true } : {},
+                  ...event.sourceEventSeqs === undefined ? {} : { sourceEventSeqs: event.sourceEventSeqs },
+                  ...event.surfaceOp === undefined ? {} : { surfaceOp: event.surfaceOp },
+                },
+              })),
+            },
           }))
         }
       })
@@ -1080,4 +1121,80 @@ async function search(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function generatedMethod(url: string | undefined): string {
+  return new URL(url ?? '/', 'http://desktop-companion.test').pathname.slice('/api/'.length)
+}
+
+function rewriteGeneratedUnary(request: { url?: string }, chunks: Buffer[]): Buffer | undefined {
+  if (generatedMethod(request.url) !== '$events/result') return undefined
+  let rpcId = 'rpc'
+  try {
+    const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as { rpcId?: string }
+    if (typeof body.rpcId === 'string') rpcId = body.rpcId
+  } catch {
+    // Unary bodies that are not Host RPC JSON stay a wire failure below.
+  }
+  return Buffer.from(JSON.stringify({
+    type: 'server-response', rpcId, result: { ok: true, value: undefined },
+  }))
+}
+
+function rewrittenUrl(url: string | undefined): string {
+  const method = generatedMethod(url)
+  if (method === 'session/page') return '/api/session.history'
+  return `/api/${method.replace('/', '.')}`
+}
+
+function rewriteGeneratedResponse(method: string, body: Buffer): Buffer {
+  if (method !== 'session/page' || body.byteLength === 0) return body
+  try {
+    const parsed = JSON.parse(body.toString('utf8')) as {
+      result?: { ok?: boolean; value?: { events?: unknown[]; hasMore?: boolean } }
+    }
+    if (parsed.result?.ok !== true || !Array.isArray(parsed.result.value?.events)) return body
+    return Buffer.from(JSON.stringify({
+      ...parsed,
+      result: {
+        ...parsed.result,
+        value: {
+          records: parsed.result.value.events.map((entry) => {
+            const event = isRecord(entry) && isRecord(entry.event) ? entry.event : entry
+            return { type: 'event', event }
+          }),
+          hasMore: parsed.result.value.hasMore === true,
+        },
+      },
+    }))
+  } catch {
+    return body
+  }
+}
+
+function rewriteGeneratedBody(chunks: Buffer[]): Buffer {
+  if (chunks.length === 0) return Buffer.alloc(0)
+  try {
+    const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as {
+      method?: string
+      payload?: unknown
+    }
+    if (typeof body.method !== 'string' || !isRecord(body.payload) || !isRecord(body.payload.args)) {
+      return Buffer.concat(chunks)
+    }
+    const dotted = body.method === 'session/page' ? 'session.history' : body.method.replace('/', '.')
+    const request = body.payload.args.request
+    const listed = body.payload.args._request
+    let payload: unknown = request ?? listed ?? {}
+    if (body.method === 'session/page' && isRecord(request) && isRecord(request.address)) {
+      payload = {
+        sessionId: request.address.sessionId,
+        ...typeof request.beforeSeq === 'number' ? { beforeSeq: request.beforeSeq } : {},
+        ...typeof request.maxMessages === 'number' ? { maxMessages: request.maxMessages } : {},
+      }
+    }
+    return Buffer.from(JSON.stringify({ ...body, method: dotted, payload }))
+  } catch {
+    return Buffer.concat(chunks)
+  }
 }

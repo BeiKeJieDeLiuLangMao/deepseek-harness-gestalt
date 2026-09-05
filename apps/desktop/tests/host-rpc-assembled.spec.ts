@@ -13,10 +13,14 @@ import { parseCompanionOperationId, parseCompanionSessionId } from '@deepseek-ai
 import { DesktopCompanionOperationLedger } from '../src/companion-operation-ledger.ts'
 import { DesktopCompanionProductOwner, handleCompanionProductOperation } from '../src/companion-product.ts'
 import {
+  admitDesktopHostAttachment,
   archiveDesktopHostSession,
   bootstrapDesktopHostCookie, createDesktopHostRpc, createDesktopHostSession,
   createDesktopHostWorkspace,
   listDesktopHostSessions, pageDesktopHostSession,
+  promptDesktopHostSession,
+  readDesktopHostAttachment,
+  searchDesktopHostSessions,
 } from '../src/host-rpc.ts'
 import { spawnWebHost, type RunningWebHost } from '../src/spawn-web-host.ts'
 
@@ -471,6 +475,107 @@ describe('Desktop Host RPC against shipped dsh web', () => {
     })
   }, 180_000)
 
+  it('creates, lists, searches, reads images, and admits files on generated Session remotes', async () => {
+    const first = await startShippedHost()
+    const cookie = await bootstrapDesktopHostCookie(first.running.launchUrl, first.running.url)
+    const rpc = createDesktopHostRpc(first.running.url, {
+      timeoutMs: 15_000,
+      responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
+      attachmentTimeoutMs: 15_000,
+      cookieHeader: cookie,
+    })
+    const sessionId = parseCompanionSessionId('desktop-generated-session-remotes')
+    await expect(createDesktopHostSession(rpc, sessionId)).resolves.toMatchObject({
+      ok: true, value: { sessionId },
+    })
+    await expect(listDesktopHostSessions(rpc)).resolves.toMatchObject({
+      ok: true,
+      value: { items: expect.arrayContaining([expect.objectContaining({ sessionId })]) },
+    })
+    const needle = 'desktop-generated-search-needle'
+    await expect(promptDesktopHostSession(rpc, {
+      requestId: 'desktop-generated-search-prompt',
+      sessionId,
+      mode: 'queue',
+      content: [{ type: 'text', text: needle }],
+    })).resolves.toMatchObject({ ok: true, value: { accepted: true } })
+    await expect.poll(async () => {
+      const searched = await searchDesktopHostSessions(rpc, needle)
+      return searched.ok && isRecord(searched.value) && Array.isArray(searched.value.items)
+        && searched.value.items.some(item => isRecord(item) && item.sessionId === sessionId)
+    }).toBe(true)
+
+    const png = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+      'base64',
+    )
+    await expect(rpc.call('session/selectModel', {
+      args: {
+        request: {
+          sessionId,
+          provider: 'deepseek-official',
+          model: 'deepseek-v4-flash-vision-exp',
+        },
+      },
+    })).resolves.toMatchObject({
+      ok: true,
+      value: { selected: { provider: 'deepseek-official', model: 'deepseek-v4-flash-vision-exp' } },
+    })
+    const frames: unknown[] = []
+    const follow = new AbortController()
+    const watching = rpc.followSession(sessionId, follow.signal, (frame) => { frames.push(frame) })
+    try {
+      await expect.poll(() => frames.some(frame => isRecord(frame) && frame.type === 'snapshot')).toBe(true)
+      const imagePrompt = await promptDesktopHostSession(rpc, {
+        requestId: 'desktop-generated-image-prompt',
+        sessionId,
+        mode: 'queue',
+        content: [
+          { type: 'text', text: 'see image' },
+          { type: 'image', mediaType: 'image/png', data: png.toString('base64'), name: 'pixel.png' },
+        ],
+      })
+      if (!imagePrompt.ok) throw new Error(`image prompt failed: ${JSON.stringify(imagePrompt)}`)
+      expect(imagePrompt).toMatchObject({ ok: true, value: { accepted: true } })
+      await expect.poll(() => imageAttachmentIdFromFollow(frames) !== undefined).toBe(true)
+      const imageId = imageAttachmentIdFromFollow(frames)
+      if (imageId === undefined) throw new Error('missing image attachment id')
+      const image = await readDesktopHostAttachment(rpc, { sessionId, attachmentId: imageId })
+      if (!image.ok) throw new Error(`image read failed id=${String(imageId)} result=${JSON.stringify(image)}`)
+      expect(image).toMatchObject({
+        ok: true,
+        value: { attachment: expect.objectContaining({ mediaType: 'image/png' }), data: png.toString('base64') },
+      })
+
+      const fileBytes = Uint8Array.of(0, 255, 1, 2)
+      const admitted = await admitDesktopHostAttachment(rpc, {
+        sessionId,
+        operationId: 'desktop-generated-file-admit',
+        mediaType: 'application/octet-stream',
+        name: 'payload.bin',
+        data: Buffer.from(fileBytes).toString('base64'),
+      })
+      expect(admitted).toMatchObject({
+        ok: true,
+        value: { attachment: expect.objectContaining({
+          name: 'payload.bin', mediaType: 'application/octet-stream', bytes: 4,
+        }) },
+      })
+      const fileId = admitted.ok && isRecord(admitted.value) && isRecord(admitted.value.attachment)
+        ? admitted.value.attachment.attachmentId
+        : undefined
+      expect(typeof fileId).toBe('string')
+      await expect(readDesktopHostAttachment(rpc, { sessionId, attachmentId: String(fileId) })).resolves.toMatchObject({
+        ok: false,
+        failure: { kind: 'business' },
+      })
+      expect(await durableSessionLog(first.home, sessionId)).toContain('session/attachment-admitted')
+    } finally {
+      follow.abort()
+      await watching
+    }
+  }, 180_000)
+
   it('invalidates Companion list from shipped Host api-session notices', async () => {
     const first = await startShippedHost()
     const cookie = await bootstrapDesktopHostCookie(first.running.launchUrl, first.running.url)
@@ -542,6 +647,31 @@ function followHasTurnEnd(frame: unknown): boolean {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function imageAttachmentIdFromFollow(frames: readonly unknown[]): string | undefined {
+  for (const frame of frames) {
+    const events = followEvents(frame)
+    for (const event of events) {
+      if (!isRecord(event) || event.type !== 'user/message' || !isRecord(event.data) || !Array.isArray(event.data.content)) {
+        continue
+      }
+      for (const block of event.data.content) {
+        if (!isRecord(block) || block.type !== 'image' || !isRecord(block.attachment)) continue
+        if (typeof block.attachment.attachmentId === 'string') return block.attachment.attachmentId
+      }
+    }
+  }
+  return undefined
+}
+
+function followEvents(frame: unknown): unknown[] {
+  if (!isRecord(frame)) return []
+  if (frame.type === 'event') return [frame.event]
+  if (frame.type === 'snapshot' && Array.isArray(frame.records)) {
+    return frame.records.map(record => isRecord(record) ? record.event : undefined)
+  }
+  return []
 }
 
 async function runAssembledApproval(input: {

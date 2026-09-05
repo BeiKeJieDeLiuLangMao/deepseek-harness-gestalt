@@ -139,7 +139,7 @@ describe('Desktop Companion product operations', () => {
     const calls: string[] = []
     const dependencies = baseDependencies(hostRpc(async (method) => {
       calls.push(method)
-      if (method === 'session.list') return { ok: true, value: { items: [{
+      if (method === 'session/list') return { ok: true, value: { items: [{
         sessionId: 'session-product', updatedAt: 9, running: false, blank: false,
         cwd: '/work', projections: { asOfSeq: 1, values: { title: 'Real session' } },
       }, {
@@ -160,7 +160,7 @@ describe('Desktop Companion product operations', () => {
       sessions: [{ sessionId, displayTitle: 'Real session', cwd: '/work' }],
       workspaces: [{ workspaceId: 'workspace-product', sessionIds: [sessionId] }],
     })
-    expect(calls).toEqual(['session.list'])
+    expect(calls).toEqual(['session/list'])
   })
 
   it('does not reuse a follow snapshot when maxMessages changes', async () => {
@@ -321,10 +321,10 @@ describe('Desktop Companion product operations', () => {
 
   it('rejects surface and search while the workspace follow snapshot is still loading', async () => {
     const dependencies = baseDependencies(hostRpc(async (method) => {
-      if (method === 'session.list') return { ok: true, value: { items: [{
+      if (method === 'session/list') return { ok: true, value: { items: [{
         sessionId: 'session-product', updatedAt: 9, running: false, blank: false,
       }] } }
-      if (method === 'session.search') return { ok: true, value: { items: [
+      if (method === 'session/search') return { ok: true, value: { items: [
         { sessionId: 'session-hit', snippet: 'needle' },
       ], hasMore: false } }
       throw new Error(`unexpected Host method ${method}`)
@@ -343,7 +343,7 @@ describe('Desktop Companion product operations', () => {
 
   it('does not reuse a workspace snapshot after the follow stream fails', async () => {
     const dependencies = baseDependencies(hostRpc(async (method) => {
-      if (method === 'session.search') return { ok: true, value: { items: [
+      if (method === 'session/search') return { ok: true, value: { items: [
         { sessionId: 'session-hit', snippet: 'needle' },
       ], hasMore: false } }
       throw new Error(`unexpected Host method ${method}`)
@@ -397,7 +397,7 @@ describe('Desktop Companion product operations', () => {
       archivedSessionIds: [],
     })
     const dependencies = baseDependencies(hostRpc(async (method) => {
-      if (method === 'session.list') {
+      if (method === 'session/list') {
         sessionListCalls += 1
         return { ok: true, value: { items } }
       }
@@ -439,7 +439,7 @@ describe('Desktop Companion product operations', () => {
       blank: false,
       projections: { values: { title: `${String(index)}-${'large title '.repeat(300)}` } },
     }))
-    const dependencies = baseDependencies(hostRpc(async method => method === 'session.list'
+    const dependencies = baseDependencies(hostRpc(async method => method === 'session/list'
       ? { ok: true, value: { items } }
       : { ok: true, value: { items: [], archivedSessionIds: [] } }))
     const discovery = new DesktopCompanionSurfaceDiscovery()
@@ -469,7 +469,7 @@ describe('Desktop Companion product operations', () => {
   })
 
   it('returns a bounded failure when one surface row exceeds the projection byte limit', async () => {
-    const dependencies = baseDependencies(hostRpc(async method => method === 'session.list'
+    const dependencies = baseDependencies(hostRpc(async method => method === 'session/list'
       ? { ok: true, value: { items: [{
         sessionId: 'session-oversized',
         updatedAt: 1,
@@ -493,7 +493,7 @@ describe('Desktop Companion product operations', () => {
     const oldWorkspaces = deferred<DesktopHostRpcResult>()
     const discovery = new DesktopCompanionSurfaceDiscovery()
     const oldDependencies = baseDependencies(hostRpc(async method => await (
-      method === 'session.list' ? oldSessions.promise : oldWorkspaces.promise
+      method === 'session/list' ? oldSessions.promise : oldWorkspaces.promise
     )))
     const old = discovery.refresh(op({ type: 'refresh-surface', offset: 0 }), oldDependencies)
 
@@ -501,7 +501,7 @@ describe('Desktop Companion product operations', () => {
     const items = Array.from({ length: REMOTE_PROTOCOL_LIMITS.surfaceSessionRows + 1 }, (_, index) => ({
       sessionId: `replacement-${String(index)}`, updatedAt: index, running: false, blank: false,
     }))
-    const replacementDependencies = baseDependencies(hostRpc(async method => method === 'session.list'
+    const replacementDependencies = baseDependencies(hostRpc(async method => method === 'session/list'
       ? { ok: true, value: { items } }
       : { ok: true, value: { items: [], archivedSessionIds: [] } }))
     await discovery.refresh({
@@ -528,7 +528,7 @@ describe('Desktop Companion product operations', () => {
 
   it('projects Host history into the shared conversation carrier', async () => {
     const dependencies = baseDependencies(hostRpc(async (method) => {
-      expect(method).toBe('session.list')
+      expect(method).toBe('session/list')
       return { ok: true, value: { items: [{
         sessionId: 'session-product', updatedAt: 30, running: true, blank: false,
       }] } }
@@ -569,7 +569,7 @@ describe('Desktop Companion product operations', () => {
 
   it('projects non-user messages with the shared context presentation metadata', async () => {
     const dependencies = baseDependencies(hostRpc(async (method) => {
-      if (method === 'session.list') return { ok: true, value: { items: [{
+      if (method === 'session/list') return { ok: true, value: { items: [{
         sessionId: 'session-product', updatedAt: 30, running: false, blank: false,
       }] } }
       throw new Error(`unexpected Host method ${method}`)
@@ -593,7 +593,7 @@ describe('Desktop Companion product operations', () => {
 
   it('unwraps Host tool presentation envelopes for the shared Mobile cards', async () => {
     const dependencies = baseDependencies(hostRpc(async (method) => {
-      if (method === 'session.list') return { ok: true, value: { items: [{
+      if (method === 'session/list') return { ok: true, value: { items: [{
         sessionId: 'session-product', updatedAt: 30, running: false, blank: false,
       }] } }
       throw new Error(`unexpected Host method ${method}`)
@@ -621,7 +621,7 @@ describe('Desktop Companion product operations', () => {
 
   it('projects an empty Session with the shared blank composer phase', async () => {
     const dependencies = baseDependencies(hostRpc(async (method) => {
-      if (method === 'session.list') return { ok: true, value: { items: [{
+      if (method === 'session/list') return { ok: true, value: { items: [{
         sessionId: 'session-product', updatedAt: 30, running: false, blank: true,
       }] } }
       throw new Error(`unexpected Host method ${method}`)
@@ -648,7 +648,7 @@ describe('Desktop Companion product operations', () => {
     )
     items.push({ sessionId: target, updatedAt: 100, running: true, blank: false })
     const dependencies = baseDependencies(hostRpc(async (method) => {
-      if (method === 'session.list') return { ok: true, value: { items } }
+      if (method === 'session/list') return { ok: true, value: { items } }
       throw new Error(`unexpected Host method ${method}`)
     }))
     dependencies.sessionHistory = historyCache([])
@@ -663,7 +663,7 @@ describe('Desktop Companion product operations', () => {
 
   it('projects model retries and suppresses the retry-owned terminal turn error', async () => {
     const dependencies = baseDependencies(hostRpc(async (method) => {
-      if (method === 'session.list') return { ok: true, value: { items: [{
+      if (method === 'session/list') return { ok: true, value: { items: [{
         sessionId: 'session-product', updatedAt: 50, running: false, blank: false,
       }] } }
       throw new Error(`unexpected Host method ${method}`)
@@ -766,8 +766,8 @@ describe('Desktop Companion product operations', () => {
       type: 'session-created', operationId: ungrouped.operationId, sessionId: 'session-created-2',
     })
     expect(calls).toEqual([
-      ['session.create', { workspaceId: 'workspace-product' }],
-      ['session.create', {}],
+      ['session/create', { args: { request: { workspaceId: 'workspace-product' } } }],
+      ['session/create', { args: { request: {} } }],
     ])
   })
 
@@ -894,8 +894,9 @@ describe('Desktop Companion product operations', () => {
 
   it('returns exact historical image bytes as ordered chunks', async () => {
     const bytes = Uint8Array.of(0, 1, 2, 255)
-    const dependencies = baseDependencies(hostRpc(async (method) => {
-      expect(method).toBe('session.attachment')
+    const dependencies = baseDependencies(hostRpc(async (method, payload) => {
+      expect(method).toBe('session/attachment')
+      expect(payload).toEqual({ args: { request: { sessionId, attachmentId: 'image-product' } } })
       return { ok: true, value: {
         attachment: { id: 'image-product', mediaType: 'image/png', bytes: bytes.byteLength, sha256: '0'.repeat(64) },
         data: Buffer.from(bytes).toString('base64'),
@@ -970,8 +971,8 @@ describe('Desktop Companion product operations', () => {
     let items = [{ sessionId: 'session-hit', snippet: 'Desktop indexed needle' }]
     let expectedQuery = 'needle'
     const call = vi.fn(async (method: string, payload: Record<string, unknown>): Promise<DesktopHostRpcResult> => {
-      expect(method).toBe('session.search')
-      expect(payload).toEqual({ query: expectedQuery })
+      expect(method).toBe('session/search')
+      expect(payload).toEqual({ args: { request: { query: expectedQuery } } })
       return {
         ok: true,
         value: {
@@ -998,7 +999,7 @@ describe('Desktop Companion product operations', () => {
   it('excludes Desktop-archived Sessions from authoritative full-text results', async () => {
     const operation = search('needle')
     const dependencies = baseDependencies(hostRpc(async (method) => {
-      expect(method).toBe('session.search')
+      expect(method).toBe('session/search')
       return { ok: true, value: { items: [
         { sessionId: 'session-visible', snippet: 'Visible needle' },
         { sessionId: 'session-archived', snippet: 'Archived needle' },
@@ -1209,7 +1210,7 @@ async function listenCompanionHost(options?: {
           }))
           return
         }
-        if (body.method === 'session/list' || body.method === 'session.list') {
+        if (body.method === 'session/list') {
           response.end(JSON.stringify({
             type: 'server-response', rpcId,
             result: { ok: true, value: { items: [{
@@ -1218,10 +1219,34 @@ async function listenCompanionHost(options?: {
           }))
           return
         }
-        if (body.method === 'session.search') {
+        if (body.method === 'session/create') {
+          response.end(JSON.stringify({
+            type: 'server-response', rpcId,
+            result: { ok: true, value: { sessionId: 'session-created' } },
+          }))
+          return
+        }
+        if (body.method === 'session/search') {
           response.end(JSON.stringify({
             type: 'server-response', rpcId,
             result: { ok: true, value: { items: [{ sessionId: 'session-hit', snippet: 'needle' }], hasMore: false } },
+          }))
+          return
+        }
+        if (body.method === 'session/attachment') {
+          response.end(JSON.stringify({
+            type: 'server-response', rpcId,
+            result: { ok: true, value: {
+              attachment: { id: 'image-product', mediaType: 'image/png', bytes: 4, sha256: '0'.repeat(64) },
+              data: Buffer.from(Uint8Array.of(0, 1, 2, 255)).toString('base64'),
+            } },
+          }))
+          return
+        }
+        if (body.method === 'session/admitAttachment') {
+          response.end(JSON.stringify({
+            type: 'server-response', rpcId,
+            result: { ok: true, value: { attachment: { name: 'payload.bin', mediaType: 'application/octet-stream', bytes: 4 } } },
           }))
           return
         }
