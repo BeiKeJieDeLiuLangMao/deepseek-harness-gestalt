@@ -54,6 +54,8 @@ import type {
   SessionSearchValue,
   SessionSelectModelRequest,
   SessionSelectModelValue,
+  SessionToolEligibility,
+  SessionToolEligibilityRequest,
   SessionUpdateQueueRequest,
   SessionUpdateQueueValue,
 } from '../src/types.ts'
@@ -65,6 +67,7 @@ export interface TestSessionRemote {
   search(request: SessionSearchRequest, signal?: AbortSignal): Promise<RemoteResult<SessionSearchValue>>
   create(request: SessionCreateRequest): Promise<RemoteResult<SessionCreateValue>>
   selectModel(request: SessionSelectModelRequest): Promise<RemoteResult<SessionSelectModelValue>>
+  toolEligibility(request: SessionToolEligibilityRequest): Promise<RemoteResult<SessionToolEligibility>>
   modelCatalog(): Promise<RemoteResult<ModelCatalog>>
   rename(request: SessionRenameRequest): Promise<RemoteResult<SessionRenameValue>>
   fork(request: SessionForkRequest): Promise<RemoteResult<SessionForkValue>>
@@ -312,6 +315,7 @@ export function createSessionTestRemote(
     ),
     create: request => remoteResult(() => direct.create(request)),
     selectModel: request => remoteResult(() => direct.selectModel(request)),
+    toolEligibility: request => remoteResult(() => direct.toolEligibility(request)),
     modelCatalog: () => remoteResult(() => direct.modelCatalog()),
     rename: request => remoteResult(() => direct.rename(request)),
     fork: request => remoteResult(() => direct.fork(request)),
