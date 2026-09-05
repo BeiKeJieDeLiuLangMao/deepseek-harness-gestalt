@@ -677,9 +677,8 @@ export class ClientSessions implements ISessions {
   }
 
   /**
-   * Resolve model inspection and selection for one Session.
-   * Returns a registered admission route only; ordinary Sessions have no
-   * stock catalog owner in this slice.
+   * Lookup-only model inspection and selection for one Session.
+   * Returns a registered admission route only; no UI consumer in this slice.
    * @param sessionId - target Session identity.
    * @returns the feature route, or undefined.
    */
@@ -692,9 +691,10 @@ export class ClientSessions implements ISessions {
   }
 
   /**
-   * Resolve the ordinary command-catalog Session identity.
+   * Lookup-only ordinary command-catalog Session identity.
    * A feature-owned Session that omits the helper hides commands.
    * A catalog-addressed subagent without a feature route also hides commands.
+   * No UI consumer in this slice.
    * @param sessionId - target Session identity.
    * @returns the catalog identity, or undefined when commands stay hidden.
    */
@@ -706,9 +706,10 @@ export class ClientSessions implements ISessions {
   }
 
   /**
-   * Resolve the skill-catalog Session identity.
+   * Lookup-only skill-catalog Session identity.
    * A feature-owned Session that omits the helper hides skills.
    * A catalog-addressed subagent without a feature route also hides skills.
+   * No UI consumer in this slice.
    * @param sessionId - target Session identity.
    * @returns the catalog identity, or undefined when skills stay hidden.
    */

@@ -303,6 +303,44 @@ describe('Session Client admission dispatch', () => {
     expect(api.calls.filter(c => c.method === 'session.prompt')).toEqual([])
   })
 
+  it('does not fall back to Remote when admission updateQueue or command throws', async () => {
+    const { svc, api, remote } = bench()
+    const sessionId = sid('session-throw-queue-command')
+
+    api.onList = () => Promise.resolve(ok({
+      items: [{
+        sessionId,
+        updatedAt: 100,
+        running: false,
+        blank: false,
+      }],
+    }))
+    await svc.refresh()
+    const binding = svc.binding(sessionId)!
+    const executeSpy = vi.spyOn(remote.commands, 'execute')
+
+    const route: SessionAdmissionRoute = {
+      prompt: vi.fn(() => Promise.resolve(ok({ accepted: true as const }))),
+      cancel: vi.fn(() => Promise.resolve(ok({ accepted: true as const }))),
+      updateQueue: vi.fn(() => Promise.reject(new Error('queue adapter drop'))),
+      command: vi.fn(() => Promise.reject(new Error('command adapter drop'))),
+    }
+    svc.registerAdmission(sessionId, route)
+
+    const queueResult = await binding.session.updateQueue(mid('item-throw'), { kind: 'steer' })
+    expect(queueResult.ok).toBe(false)
+    expect(queueResult.error.code).toBe('gateway/internal')
+    expect(queueResult.error.message).toBe('queue adapter drop')
+    expect(api.calls.filter(c => c.method === 'session.updateQueue')).toEqual([])
+
+    const commandResult = await binding.session.command('/permission full')
+    expect(commandResult.ok).toBe(false)
+    expect(commandResult.error.code).toBe('gateway/internal')
+    expect(commandResult.error.message).toBe('command adapter drop')
+    expect(executeSpy).not.toHaveBeenCalled()
+    expect(route.prompt).not.toHaveBeenCalled()
+  })
+
   it('routes cancel through admission and preserves failure promptError without falling back to Remote', async () => {
     const { svc, api } = bench()
     const sessionId = sid('session-cancel-1')
@@ -442,60 +480,20 @@ describe('Session Client admission dispatch', () => {
     drop()
   })
 
-  it('manages pattern-based SessionAdmissionAdapter registrations and rejects duplicate adapter ids', async () => {
-    const { svc } = bench()
+  it('dispatches matching adapter handles through an existing Session binding and leaves unmatched Sessions on stock Remotes', async () => {
+    const { svc, api, remote } = bench()
     const targetId = sid('subagent-sidechat-123')
     const otherId = sid('session-normal-456')
 
-    const promptMock = vi.fn(() => Promise.resolve(ok({ accepted: true as const })))
-
-    const adapter: SessionAdmissionAdapter = {
-      id: 'test-adapter',
-      handles: sessionId => sessionId === targetId,
-      prompt: promptMock,
-      cancel: vi.fn(() => Promise.resolve(ok({ accepted: true as const }))),
-    }
-
-    const drop = svc.registerAdmissionAdapter(adapter)
-
-    // Duplicate registration rejected
-    expect(() => {
-      svc.registerAdmissionAdapter(adapter)
-    }).toThrowError('sessions.registerAdmissionAdapter: duplicate adapter "test-adapter"')
-
-    expect(svc.resolveAdmission(targetId)).toBe(adapter)
-    expect(svc.resolveAdmission(otherId)).toBeUndefined()
-
-    // Exact registration takes precedence over adapter
-    const exactPrompt = vi.fn(() => Promise.resolve(ok({ accepted: true as const })))
-    const exactRoute: SessionAdmissionRoute = {
-      prompt: exactPrompt,
-      cancel: vi.fn(() => Promise.resolve(ok({ accepted: true as const }))),
-    }
-    const dropExact = svc.registerAdmission(targetId, exactRoute)
-    expect(svc.resolveAdmission(targetId)).toBe(exactRoute)
-
-    dropExact()
-    expect(svc.resolveAdmission(targetId)).toBe(adapter)
-
-    drop()
-    expect(svc.resolveAdmission(targetId)).toBeUndefined()
-  })
-
-  it('dispatches prompt, cancel, queue, and command through a matching adapter on an existing binding', async () => {
-    const { svc, api, remote } = bench()
-    const sessionId = sid('session-adapter-dispatch')
-
     api.onList = () => Promise.resolve(ok({
-      items: [{
-        sessionId,
-        updatedAt: 100,
-        running: false,
-        blank: false,
-      }],
+      items: [
+        { sessionId: targetId, updatedAt: 100, running: false, blank: false },
+        { sessionId: otherId, updatedAt: 100, running: false, blank: false },
+      ],
     }))
     await svc.refresh()
-    const binding = svc.binding(sessionId)!
+    const hit = svc.binding(targetId)!
+    const miss = svc.binding(otherId)!
 
     const promptMock = vi.fn(() => Promise.resolve(ok({ accepted: true as const })))
     const cancelMock = vi.fn(() => Promise.resolve(ok({ accepted: true as const })))
@@ -504,22 +502,26 @@ describe('Session Client admission dispatch', () => {
     const executeSpy = vi.spyOn(remote.commands, 'execute')
 
     const adapter: SessionAdmissionAdapter = {
-      id: 'dispatch-adapter',
-      handles: candidate => candidate === sessionId,
+      id: 'test-adapter',
+      handles: sessionId => sessionId === targetId,
       prompt: promptMock,
       cancel: cancelMock,
       updateQueue: updateQueueMock,
       command: commandMock,
     }
-    const drop = svc.registerAdmissionAdapter(adapter)
 
-    await expect(binding.session.prompt([{ type: 'text', text: 'via adapter' }], 'queue'))
+    const drop = svc.registerAdmissionAdapter(adapter)
+    expect(() => {
+      svc.registerAdmissionAdapter(adapter)
+    }).toThrowError('sessions.registerAdmissionAdapter: duplicate adapter "test-adapter"')
+
+    await expect(hit.session.prompt([{ type: 'text', text: 'via adapter' }], 'queue'))
       .resolves.toEqual({ ok: true, value: { accepted: true } })
-    await expect(binding.session.cancel())
+    await expect(hit.session.cancel())
       .resolves.toEqual({ ok: true, value: { accepted: true } })
-    await expect(binding.session.updateQueue(mid('item-adapter'), { kind: 'steer' }))
+    await expect(hit.session.updateQueue(mid('item-adapter'), { kind: 'steer' }))
       .resolves.toEqual({ ok: true, value: { accepted: true } })
-    await expect(binding.session.command('/permission full'))
+    await expect(hit.session.command('/permission full'))
       .resolves.toEqual({ ok: true, value: { matched: true } })
 
     expect(promptMock).toHaveBeenCalledTimes(1)
@@ -533,7 +535,34 @@ describe('Session Client admission dispatch', () => {
     )).toEqual([])
     expect(executeSpy).not.toHaveBeenCalled()
 
+    await expect(miss.session.prompt([{ type: 'text', text: 'stock remote' }], 'queue'))
+      .resolves.toEqual({ ok: true, value: { accepted: true } })
+    await expect(miss.session.cancel())
+      .resolves.toEqual({ ok: true, value: { accepted: true } })
+    await expect(miss.session.updateQueue(mid('item-stock'), { kind: 'steer' }))
+      .resolves.toEqual({ ok: true, value: { accepted: true } })
+    await expect(miss.session.command('/help'))
+      .resolves.toEqual({ ok: true, value: { matched: false } })
+
+    expect(promptMock).toHaveBeenCalledTimes(1)
+    expect(cancelMock).toHaveBeenCalledTimes(1)
+    expect(updateQueueMock).toHaveBeenCalledTimes(1)
+    expect(commandMock).toHaveBeenCalledTimes(1)
+    expect(api.calls.some(c => c.method === 'session.prompt' && (c.payload as { sessionId: string }).sessionId === otherId)).toBe(true)
+    expect(api.calls.some(c => c.method === 'session.cancel' && (c.payload as { sessionId: string }).sessionId === otherId)).toBe(true)
+    expect(api.calls.some(c => c.method === 'session.updateQueue' && (c.payload as { sessionId: string }).sessionId === otherId)).toBe(true)
+    expect(executeSpy).toHaveBeenCalledWith(otherId, '/help', [])
+
+    const exactRoute: SessionAdmissionRoute = {
+      prompt: vi.fn(() => Promise.resolve(ok({ accepted: true as const }))),
+      cancel: vi.fn(() => Promise.resolve(ok({ accepted: true as const }))),
+    }
+    const dropExact = svc.registerAdmission(targetId, exactRoute)
+    expect(svc.resolveAdmission(targetId)).toBe(exactRoute)
+    dropExact()
+    expect(svc.resolveAdmission(targetId)).toBe(adapter)
     drop()
+    expect(svc.resolveAdmission(targetId)).toBeUndefined()
   })
 
   it('does not treat titles or catalog subagent addresses as admission credentials', async () => {
@@ -576,8 +605,30 @@ describe('Session Client admission dispatch', () => {
     expect(svc.modelRoute(childId)).toBeUndefined()
 
     await child.session.prompt([{ type: 'text', text: 'not a credential' }], 'queue')
+    await child.session.cancel()
     expect(api.calls.some(c => c.method === 'subagents.prompt')).toBe(true)
-    expect(api.calls.filter(c => c.method === 'session.prompt')).toEqual([])
+    expect(api.calls.some(c => c.method === 'subagents.interruptByParent')).toBe(true)
+    expect(api.calls.filter(c => c.method === 'session.prompt' || c.method === 'session.cancel')).toEqual([])
+
+    const promptMock = vi.fn(() => Promise.resolve(ok({ accepted: true as const })))
+    const cancelMock = vi.fn(() => Promise.resolve(ok({ accepted: true as const })))
+    const drop = svc.registerAdmission(childId, {
+      prompt: promptMock,
+      cancel: cancelMock,
+    })
+    api.calls.length = 0
+
+    await child.session.prompt([{ type: 'text', text: 'owned child' }], 'queue')
+    await child.session.cancel()
+    expect(promptMock).toHaveBeenCalledTimes(1)
+    expect(cancelMock).toHaveBeenCalledTimes(1)
+    expect(api.calls.filter(c =>
+      c.method === 'subagents.prompt'
+      || c.method === 'subagents.interruptByParent'
+      || c.method === 'session.prompt'
+      || c.method === 'session.cancel',
+    )).toEqual([])
+    drop()
   })
 
   it('rejects admission registration after ClientSessions disposal', async () => {
@@ -601,7 +652,7 @@ describe('Session Client admission dispatch', () => {
       .toThrowError('sessions.registerAdmissionAdapter: ClientSessions is disposed')
   })
 
-  it('delegates modelRoute, commandCatalogSessionId, and skillCatalogSessionId to admission', () => {
+  it('exposes modelRoute, commandCatalogSessionId, and skillCatalogSessionId as lookup-only helpers', () => {
     const { svc } = bench()
     const sessionId = sid('session-catalogs-1')
     const parentId = sid('session-parent-0')
