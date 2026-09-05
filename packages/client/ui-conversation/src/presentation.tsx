@@ -1,6 +1,6 @@
 /** Public presentation seam shared by Web compositions that do not mount the Desktop page shell. */
 
-import { useCallback, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from 'react'
 import type { SessionSnapshot } from '@deepseek-ai/dsh-api-session-controller/client'
 import { JsonBlock, MarkdownText, projectUserText } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
@@ -272,15 +272,39 @@ function approvalFailureMessage(cause: unknown): string {
 export function ConversationApproval({ wait, t, disabled = false }: ConversationApprovalProps): ReactNode {
   const [pending, setPending] = useState(false)
   const [failure, setFailure] = useState<string | undefined>(undefined)
+  const waitRef = useRef(wait)
+  const generationRef = useRef(0)
+  const inFlightRef = useRef(false)
+  const mountedRef = useRef(true)
+  if (waitRef.current !== wait) {
+    waitRef.current = wait
+    generationRef.current += 1
+    inFlightRef.current = false
+    setPending(false)
+    setFailure(undefined)
+  }
+  useEffect(() => {
+    mountedRef.current = true
+    return () => { mountedRef.current = false }
+  }, [])
   const locked = disabled || pending
   const settle = (outcome: 'allowed-once' | 'rejected'): void => {
-    if (locked) return
+    if (disabled || inFlightRef.current) return
+    inFlightRef.current = true
     setPending(true)
     setFailure(undefined)
-    void wait.answer(outcome).catch((cause: unknown) => {
+    const token = generationRef.current
+    const fail = (cause: unknown): void => {
+      if (token !== generationRef.current || !mountedRef.current) return
+      inFlightRef.current = false
       setPending(false)
       setFailure(approvalFailureMessage(cause))
-    })
+    }
+    try {
+      void Promise.resolve(wait.answer(outcome)).catch(fail)
+    } catch (cause) {
+      fail(cause)
+    }
   }
   return (
     <div role="group" aria-label={t('approval.detailAria')}>

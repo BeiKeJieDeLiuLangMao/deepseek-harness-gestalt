@@ -52,6 +52,60 @@ describe('public conversation presentation seam', () => {
     expect(answer).toHaveBeenCalledTimes(2)
   })
 
+  it('resets a replaced wait and ignores a late failure from the previous request', async () => {
+    let rejectFirst!: (reason: unknown) => void
+    const first = new Promise<void>((_, reject) => { rejectFirst = reject })
+    const firstAnswer = vi.fn(() => first)
+    const secondAnswer = vi.fn(async () => undefined)
+    const t = conversationPresentationTranslate('en')
+    const view = render(createElement(ConversationApproval, {
+      wait: { kind: 'approval', reason: 'first request', answer: firstAnswer },
+      t,
+    }))
+    const allow = screen.getByRole('button', { name: 'Allow once' })
+    allow.click()
+    allow.click()
+    expect(firstAnswer).toHaveBeenCalledOnce()
+    view.rerender(createElement(ConversationApproval, {
+      wait: { kind: 'approval', reason: 'second request', answer: secondAnswer },
+      t,
+    }))
+    expect(screen.getByText('second request')).toBeTruthy()
+    expect(screen.queryByRole('alert')).toBeNull()
+    rejectFirst(new Error('stale transport'))
+    await Promise.resolve()
+    expect(screen.queryByRole('alert')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Allow once' }))
+    expect(secondAnswer).toHaveBeenCalledOnce()
+  })
+
+  it('ignores settlement after unmount and retries a synchronous answer throw', async () => {
+    let rejectFirst!: (reason: unknown) => void
+    const first = new Promise<void>((_, reject) => { rejectFirst = reject })
+    const firstAnswer = vi.fn(() => first)
+    const t = conversationPresentationTranslate('en')
+    const view = render(createElement(ConversationApproval, {
+      wait: { kind: 'approval', reason: 'unmounted request', answer: firstAnswer },
+      t,
+    }))
+    fireEvent.click(screen.getByRole('button', { name: 'Allow once' }))
+    view.unmount()
+    rejectFirst(new Error('gone'))
+    await Promise.resolve()
+
+    const answer = vi.fn<(outcome: 'allowed-once' | 'rejected') => Promise<void>>()
+      .mockImplementationOnce(() => { throw new Error('sync refused') })
+      .mockResolvedValue(undefined)
+    render(createElement(ConversationApproval, {
+      wait: { kind: 'approval', reason: 'retry request', answer },
+      t,
+    }))
+    fireEvent.click(screen.getByRole('button', { name: 'Allow once' }))
+    expect((await screen.findByRole('alert')).textContent).toContain('sync refused')
+    fireEvent.click(screen.getByRole('button', { name: 'Allow once' }))
+    await waitFor(() => { expect(answer).toHaveBeenCalledTimes(2) })
+  })
+
   it('does not settle approval while mutation authority is disabled', () => {
     const answer = vi.fn()
     render(createElement(ConversationApproval, {
