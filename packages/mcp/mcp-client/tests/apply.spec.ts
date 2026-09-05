@@ -6,6 +6,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
+import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import type { Config } from '@deepseek-ai/dsh-mcp-client'
 
@@ -198,6 +199,48 @@ describe('apply (plugin lifecycle)', () => {
     expect(mockConnect).not.toHaveBeenCalled()
     expect(mockListTools).not.toHaveBeenCalled()
     expect(ctx.tools.get('mcp__srv__remote')).toBeUndefined()
+  })
+
+  it('registers a deferred server through tool_search while keeping execute and list_changed', async () => {
+    await ctx.fiber.dispose()
+    ctx = new Context()
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime, { toolSearch: { maxResultBytes: 65_536 } })
+
+    await apply(ctx, { ...stdioConfig, deferLoading: true })
+
+    expect(ctx.tools.get('mcp__srv__remote')?.deferLoading).toBe(true)
+    expect(ctx.tools.schemas().map(schema => schema.name)).not.toContain('mcp__srv__remote')
+    expect(ctx.tools.catalogSchemas().map(schema => schema.name)).toContain('mcp__srv__remote')
+
+    const discovered = await ctx.tools.execute({
+      signal: new AbortController().signal,
+      callId: ToolCallId('search-remote'),
+      name: 'tool_search',
+      arguments: { query: 'remote tool' },
+    })
+    expect(discovered.isError).toBe(false)
+    expect(JSON.stringify(discovered.value)).toContain('mcp__srv__remote')
+
+    const executed = await ctx.tools.execute({
+      signal: new AbortController().signal,
+      callId: ToolCallId('run-remote'),
+      name: 'mcp__srv__remote',
+      arguments: {},
+    })
+    expect(executed.isError).toBe(false)
+
+    mockListTools.mockResolvedValue({
+      tools: [{ name: 'updated', description: 'Replacement deferred tool', inputSchema: { type: 'object' } }],
+      nextCursor: undefined,
+    })
+    const handler = mockSetNotificationHandler.mock.calls[0]![1] as () => Promise<void>
+    await handler()
+
+    expect(ctx.tools.get('mcp__srv__remote')).toBeUndefined()
+    expect(ctx.tools.get('mcp__srv__updated')?.deferLoading).toBe(true)
+    expect(ctx.tools.schemas().map(schema => schema.name)).not.toContain('mcp__srv__updated')
+    expect(ctx.tools.catalogSchemas().map(schema => schema.name)).toContain('mcp__srv__updated')
   })
 
   it('keeps the Cordis plugin loading until initial discovery publishes its tools', async () => {

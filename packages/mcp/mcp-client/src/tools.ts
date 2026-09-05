@@ -32,6 +32,11 @@ export interface ToolBridgeOptions {
   registrationFailure: 'contain' | 'throw'
   serverName: string
   toolCallTimeoutMs: number
+  /**
+   * When true, each registered definition uses `ToolDefinition.deferLoading`
+   * so `tool_search` publishes the schema instead of the initial request.
+   */
+  deferLoading: boolean
 }
 
 /** State for one sync generation: the current set of disposers keyed by public name. */
@@ -135,7 +140,7 @@ export function publicToolName(serverName: string, rawName: string): string {
  *
  * @param client - Connected MCP Client instance used to list and call tools.
  * @param ctx - Cordis context providing the `tools` service for registration.
- * @param opts - Bridge options: server namespace and per-call timeout.
+ * @param opts - Bridge options: server namespace, per-call timeout, and deferred registration.
  * @param previous - Disposer map from the prior sync generation; disposed
  *   during the swap phase (only after the fetch phase succeeded).
  * @returns A map of registered public tool names to their unregister
@@ -258,6 +263,7 @@ function createDefinition(
     name: publicName,
     description,
     parameters,
+    ...opts.deferLoading ? { deferLoading: true } : {},
     output: createOutput(rawName, structuredSchema),
     execute: createExecutor(client, ctx, rawName, taskRequired, opts, projections),
     finalizeContent(exec: Readonly<ToolExecution>, result: Readonly<ToolExecutionResult>) {

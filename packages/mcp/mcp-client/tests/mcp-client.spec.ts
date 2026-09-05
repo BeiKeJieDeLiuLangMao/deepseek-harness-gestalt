@@ -148,6 +148,7 @@ const defaultOpts: ToolBridgeOptions = {
   registrationFailure: 'contain',
   serverName: 'srv',
   toolCallTimeoutMs: 60_000,
+  deferLoading: false,
 }
 
 // ---- Tests ----
@@ -202,6 +203,42 @@ describe('syncTools', () => {
     // Raw names are NOT registered.
     expect(ctx.tools.get('greet')).toBeUndefined()
     expect(ctx.tools.get('add')).toBeUndefined()
+    expect(ctx.tools.get('mcp__srv__greet')?.deferLoading).not.toBe(true)
+    expect(ctx.tools.schemas().map(schema => schema.name)).toContain('mcp__srv__greet')
+  })
+
+  it('registers a deferred generation that stays executable and catalogued', async () => {
+    await ctx.fiber.dispose()
+    ctx = new Context()
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime, { toolSearch: { maxResultBytes: 65_536 } })
+    const client = createMockClient([
+      { name: 'greet', description: 'Say hello from the MCP server', inputSchema: { type: 'object' } },
+    ])
+
+    await syncTools(client as never, ctx, { ...defaultOpts, deferLoading: true }, new Map())
+
+    const definition = ctx.tools.get('mcp__srv__greet')
+    expect(definition?.deferLoading).toBe(true)
+    expect(ctx.tools.schemas().map(schema => schema.name)).not.toContain('mcp__srv__greet')
+    expect(ctx.tools.catalogSchemas().map(schema => schema.name)).toContain('mcp__srv__greet')
+
+    const discovered = await ctx.tools.execute({
+      signal: testToolSignal,
+      callId: ToolCallId('search-greet'),
+      name: 'tool_search',
+      arguments: { query: 'hello MCP' },
+    })
+    expect(discovered.isError).toBe(false)
+    expect(JSON.stringify(discovered.value)).toContain('mcp__srv__greet')
+
+    const result = await ctx.tools.execute({
+      signal: testToolSignal,
+      callId: ToolCallId('run-greet'),
+      name: 'mcp__srv__greet',
+      arguments: {},
+    })
+    expect(result.isError).toBe(false)
   })
 
   it('lets two servers publish the same raw name side by side', async () => {
