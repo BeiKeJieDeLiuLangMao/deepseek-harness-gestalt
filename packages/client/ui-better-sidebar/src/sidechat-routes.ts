@@ -331,7 +331,7 @@ function liveThreadAgent(ctx: Context, childId: SessionId): Agent | undefined {
  * (`ctx.connection.api`) was removed in 0.1.2-alpha.1's Remote-gateway
  * migration.
  */
-async function threadLogEvents(ctx: Context, childId: string): Promise<readonly SidechatLogEvent[]> {
+async function threadLogEvents(ctx: Context, childId: SessionId): Promise<readonly SidechatLogEvent[]> {
   const agent = liveThreadAgent(ctx, childId)
   if (agent !== undefined) {
     return agent.session.snapshotEvents() as unknown as readonly SidechatLogEvent[]

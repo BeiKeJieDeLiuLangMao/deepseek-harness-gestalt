@@ -4,7 +4,8 @@
 
 1. **工作区包清单** — `package.json` / `tsconfig.json` / `tsconfig.dts.json` / 本文件 / `UPSTREAM.md` 由本仓持有。上游 `package.json` 名 `dsh-better-sidebar` 收成 `@deepseek-ai/dsh-client-ui-better-sidebar`；上游插件 id、Cordis 名称与设置命名空间仍为 `dsh-better-sidebar`，工作区版本跟随 monorepo 根。清单把上游运行时依赖映射为工作区 peer 与开发依赖，而 `react-icons` 仍作为打包依赖。`tsconfig.json` 的 project references 使用本仓路径（`../../core/session`，不是 `../../session/session`）。快照不是 `tsconfig.client.json` 工程：那些 references 会把宿主 `Context` 合并拉进客户端程序。
 2. **`src/config.ts`** — `import z from 'schemastery'` 改为 `import z from '@deepseek-ai/schemastery'`。
-3. **`src/context-types.ts`** — 上游 `CordisContext & SidebarContextShape` 交叉类型保留唯一的 `betterSidebar` Cordis augmentation。本仓加入具体的客户端连接与 Session 准入类型，以及 canonical Side Chat 组合所需的临时 Session 与 `uiRenderer` 接口。
+3. **`src/context-types.ts`** — 上游 `CordisContext & SidebarContextShape` 交叉类型保留唯一的 `betterSidebar` Cordis augmentation。本仓加入具体的客户端连接与 Session 准入类型，以及 canonical Side Chat 组合所需的临时 Session 与 `uiRenderer` 接口。`SidebarSessionEvent.data` 为 `unknown`，以便 Host `SessionEvent` 载荷（如 `UserMessage`）可赋给该镜像。`stageProvisional` 使用 branded `SessionId`。
+25. **`src/client/layout.css.d.ts` / `src/client/css-modules.d.ts`** — Host Typert 分析本包时会纳入 Client 半部。`layout.css.d.ts` 是该副作用样式表的同目录声明；`css-modules.d.ts` 声明 `@xterm/xterm/css/xterm.css`。不声明全局 `*.css` 通配。
 4. **`src/invariant.ts`** — 按本仓 invariant 门禁重写 companion（`PACKAGE_NAME` 与本工作区包名一致）。
 5. **`tsdown.config.ts` / `src/client/chunk-loader.ts`** — 客户端 factory id 使用工作区包名；Host/Client 构建面拆开 Node 库与浏览器分块；省略插件注册表用的 `client-registry.js` 通道；分块与客户端 externals 请求 `@deepseek-ai/cordis`。Node 库构建通过 `tsconfig.dts.json`（`noCheck` 与 `noResolve`）只把快照源码声明写入 `lib/types`，这样无需加入客户端聚合，也不会把依赖声明写到依赖源码旁边。
 6. **`src/bundle-route.ts`** — `LIB_DIR` 固定为包内 `lib/`，而不是 `dirname(import.meta.url)`。源码启动（`tsx`）否则会去读 `src/client-terminal.js`，终端 / 编辑器 / mermaid 分块会 404。
@@ -36,7 +37,8 @@
 |---|---|
 | 1 工作区清单 | **保留** — 仍由本仓持有；不在允许导入路径内 |
 | 2 `src/config.ts` schemastery | **保留** |
-| 3 `src/context-types.ts` 准入 / `uiRenderer` / workspaces 归档 | **保留**；并把 `openWorkspacePath` **迁到** `remote.session`。`SessionAdmissionAdapter` type-import `@deepseek-ai/dsh-api-session-controller/client`。`registerAdmissionAdapter` 为必填。 |
+| 3 `src/context-types.ts` 准入 / `uiRenderer` / workspaces 归档 | **保留**；并把 `openWorkspacePath` **迁到** `remote.session`。`SessionAdmissionAdapter` type-import `@deepseek-ai/dsh-api-session-controller/client`。`registerAdmissionAdapter` 为必填。`SidebarSessionEvent.data` 为 `unknown`；`stageProvisional` 使用 branded `SessionId`。 |
+| 25 Host 可达 CSS ambient | **新增** — 同目录 `layout.css.d.ts`，以及 `css-modules.d.ts` 中的 `@xterm/xterm/css/xterm.css`，供 Host Typert 分析 Client 半部 |
 | 4 `src/invariant.ts` PACKAGE_NAME | **保留** |
 | 5 tsdown / chunk-loader 工作区 factory id | **保留**（`clientBundle('@deepseek-ai/dsh-client-ui-better-sidebar', 'client.js')`）。`dsh.plugin.json` 仍命名上游插件注册表通道 `./lib/client-registry.js`；本仓 tsdown 面仍不额外产出该 factory。locale 是额外 chunk，不是第二条注册表通道。 |
 | 6 `src/bundle-route.ts` `LIB_DIR` | **保留**（包内 `lib/`，含 `client-locale.js`） |

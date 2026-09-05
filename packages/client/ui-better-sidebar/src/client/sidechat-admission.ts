@@ -5,7 +5,7 @@
  * the authority for start, prompt, cancel, queue, and model selection.
  */
 import type { SessionAdmissionAdapter } from '@deepseek-ai/dsh-api-session-controller/client'
-import type { ModelSelection, SessionId } from '@deepseek-ai/dsh-api-remotes/client'
+import type { ModelSelection } from '@deepseek-ai/dsh-api-remotes/client'
 import { RemoteError, type RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { Context } from '../context-types.ts'
 import {
@@ -116,19 +116,15 @@ function createSidechatAdmission(ctx: Context): SessionAdmissionAdapter {
         if (parentSessionId === undefined) throw new Error(`Side Chat session "${sessionId}" has no parent`)
         if (draft !== undefined) {
           const result = await ctx.remote.commands.execute(parentSessionId, line, [])
-          if (!result.ok) {
+          if (result.ok === false) {
             return {
               ok: false,
-              error: new RemoteError(
-                'gateway/internal',
-                result.error.message,
-                {},
-              ),
+              error: new RemoteError('gateway/internal', result.error.message, {}),
             }
           }
           return { ok: true, value: { matched: result.value !== undefined } }
         }
-        await api.sidechatPermission(sessionId, parentSessionId as SessionId, preset)
+        await api.sidechatPermission(sessionId, parentSessionId, preset)
         return { ok: true, value: { matched: true } }
       } catch (cause) {
         return routeFailure(cause)

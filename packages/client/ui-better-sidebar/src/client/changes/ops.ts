@@ -125,7 +125,10 @@ export function extractFileOps(events: readonly SidebarSessionEvent[]): FileOp[]
   const byCall = new Map<string, FileOp>()
   for (const event of events) {
     if (event.type === 'tool/call') {
-      const data = event.data as { name?: unknown; callId?: unknown; arguments?: unknown }
+      const data = event.data !== null && typeof event.data === 'object'
+        ? event.data as { name?: unknown; callId?: unknown; arguments?: unknown }
+        : undefined
+      if (data === undefined) continue
       if (typeof data.name !== 'string' || typeof data.callId !== 'string') continue
       const kind = kindOf(data.name)
       if (kind === undefined) continue
@@ -148,7 +151,10 @@ export function extractFileOps(events: readonly SidebarSessionEvent[]): FileOp[]
       }
       byCall.set(data.callId, base)
     } else if (event.type === 'tool/result') {
-      const message = (event.data as { message?: unknown }).message as ToolResultMessageLike | undefined
+      const payload = event.data !== null && typeof event.data === 'object'
+        ? event.data as { message?: unknown }
+        : undefined
+      const message = payload?.message as ToolResultMessageLike | undefined
       if (message === undefined) continue
       const callId = message.source?.callId
       if (typeof callId !== 'string') continue

@@ -1,6 +1,7 @@
 /** Side Chat tab shell over the canonical explicit-Session conversation renderer. */
 import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from 'react'
-import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
+import { SessionId } from '@deepseek-ai/dsh-session'
+import type { SessionId as SessionIdType } from '@deepseek-ai/dsh-api-remotes/client'
 import type { Context } from '../context-types.ts'
 import {
   SIDE_LABEL_PREFIX, SIDE_NEW_THREAD_TITLE, sidechatTabRootThreadId, sidechatTabThreadId,
@@ -12,12 +13,12 @@ import type { SidebarTab } from './state.ts'
 import css from './SideChatView.module.css'
 
 /** The thread a tab is bound to (durable in tab.meta across refreshes). */
-export function sidechatThreadIdOf(tab: SidebarTab): SessionId | undefined {
+export function sidechatThreadIdOf(tab: SidebarTab): SessionIdType | undefined {
   return sidechatTabThreadId(tab.meta)
 }
 
 /** Root Side Chat identity whose live handle belongs to this navigable tab. */
-export function sidechatRootThreadIdOf(tab: SidebarTab): SessionId | undefined {
+export function sidechatRootThreadIdOf(tab: SidebarTab): SessionIdType | undefined {
   return sidechatTabRootThreadId(tab.meta)
 }
 
@@ -44,7 +45,7 @@ export function SideChatView(props: {
   const summary = threadId === undefined ? undefined : list.byId[threadId]
   const published = summary?.blank === false
   const conversationHost = useRef<HTMLDivElement | null>(null)
-  const openSession = useCallback((sessionId: SessionId): void => {
+  const openSession = useCallback((sessionId: SessionIdType): void => {
     ctx.get('betterSidebar')?.updateTab(tab.id, {
       meta: { threadId: sessionId, ...(rootThreadId === undefined ? {} : { rootThreadId }) },
     })
@@ -57,10 +58,10 @@ export function SideChatView(props: {
 
   useEffect(() => {
     if (threadId === undefined || !provisional || published) return
-    const forgetDraft = registerSidechatDraft(threadId, scope.sessionId)
+    const forgetDraft = registerSidechatDraft(threadId, SessionId(scope.sessionId))
     const unstage = ctx.sessions.stageProvisional({
-      sessionId: threadId as never,
-      parentSessionId: scope.sessionId as never,
+      sessionId: threadId,
+      parentSessionId: SessionId(scope.sessionId),
       origin: 'subagent',
       title: SIDE_NEW_THREAD_TITLE,
     })
