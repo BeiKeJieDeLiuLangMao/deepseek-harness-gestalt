@@ -11,6 +11,7 @@ import { parsePersonalPairingId } from '@deepseek-ai/dsh-remote-access'
 import { startMockLlmServer } from '@deepseek-ai/dsh-llm-mock-server'
 import { parseCompanionOperationId, parseCompanionSessionId } from '@deepseek-ai/dsh-remote-protocol'
 import { DesktopCompanionOperationLedger } from '../src/companion-operation-ledger.ts'
+import type { DesktopCompanionLiveProjectionChange } from '../src/companion-live-projection.ts'
 import { DesktopCompanionProductOwner, handleCompanionProductOperation } from '../src/companion-product.ts'
 import {
   admitDesktopHostAttachment,
@@ -617,6 +618,98 @@ describe('Desktop Host RPC against shipped dsh web', () => {
       uninstall()
     }
   }, 180_000)
+
+  it('projects conversation from session/follow increments and surfaces workspace upserts', async () => {
+    const first = await startShippedHost()
+    const cookie = await bootstrapDesktopHostCookie(first.running.launchUrl, first.running.url)
+    const owner = new DesktopCompanionProductOwner({
+      timeoutMs: 15_000,
+      responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
+    })
+    owner.installLedger(await DesktopCompanionOperationLedger.load({
+      load: async () => [],
+      save: async () => {},
+    }))
+    const uninstall = owner.installHost(first.running.url, cookie)
+    const rpc = createDesktopHostRpc(first.running.url, {
+      timeoutMs: 15_000,
+      responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
+      cookieHeader: cookie,
+    })
+    const pairingId = parsePersonalPairingId('pairing-follow-consumer')
+    const attachmentKey = new Uint8Array(32)
+    const pairing = {
+      pairingId,
+      attachmentKey,
+      now: () => 1_000,
+      downloadAttachment: async () => { throw new Error('follow consumer must not download') },
+      submitAttachment: async () => { throw new Error('follow consumer must not submit attachments') },
+      generation: 1,
+      desktopRevision: 1,
+      desktopName: 'Assembled Desktop',
+    }
+    const sessionId = parseCompanionSessionId('desktop-follow-consumer-session')
+    const needle = 'desktop follow consumer prompt'
+    const changes: DesktopCompanionLiveProjectionChange[] = []
+    const disconnects: Error[] = []
+    const disconnect = owner.connectLiveProjection(
+      pairingId,
+      (change) => { changes.push(change) },
+      (error) => { disconnects.push(error) },
+    )
+    try {
+      await expect(createDesktopHostSession(rpc, sessionId)).resolves.toMatchObject({
+        ok: true, value: { sessionId },
+      })
+      await expect(owner.handle({
+        type: 'observe-session',
+        operationId: parseCompanionOperationId('desktop-follow-observe'),
+        sessionId,
+      }, pairing)).resolves.toMatchObject({ type: 'confirmed' })
+      const observed = changes.find(change => (
+        change.type === 'session' && change.sessionId === sessionId && change.includeConversation
+      ))
+      if (observed === undefined) throw new Error('observe-session did not request a live conversation')
+      await expect(owner.projectLiveSession(observed, attachmentKey, new AbortController().signal))
+        .resolves.toMatchObject({ sessionId, conversation: { sessionId } })
+
+      const surfacesBeforeWorkspace = changes.filter(change => change.type === 'surface').length
+      await expect(owner.handle({
+        type: 'submit-prompt',
+        operationId: parseCompanionOperationId('desktop-follow-prompt'),
+        sessionId,
+        text: needle,
+      }, pairing)).resolves.toMatchObject({ type: 'confirmed' })
+      await expect.poll(async () => {
+        const latest = [...changes].reverse().find(change => (
+          change.type === 'session' && change.sessionId === sessionId && change.includeConversation
+        ))
+        if (latest === undefined) return false
+        const projected = await owner.projectLiveSession(latest, attachmentKey, new AbortController().signal)
+        return conversationHasUserText(projected, needle)
+          && conversationHasTurnError(projected)
+      }).toBe(true)
+
+      await expect(createDesktopHostWorkspace(rpc, first.home)).resolves.toMatchObject({ ok: true })
+      await expect.poll(() => {
+        return changes.filter(change => change.type === 'surface').length > surfacesBeforeWorkspace
+      }).toBe(true)
+    } finally {
+      uninstall()
+    }
+    expect(disconnects.length).toBeGreaterThan(0)
+    const afterHost = changes.length
+    await promptDesktopHostSession(rpc, {
+      requestId: 'desktop-follow-after-uninstall',
+      sessionId,
+      mode: 'queue',
+      content: [{ type: 'text', text: 'must not notify after Host uninstall' }],
+    }).catch(() => {})
+    await createDesktopHostWorkspace(rpc, join(first.home, '.agents')).catch(() => {})
+    await new Promise(resolve => setTimeout(resolve, 250))
+    expect(changes.length).toBe(afterHost)
+    disconnect()
+  }, 180_000)
 })
 
 function followHasUserRequest(frame: unknown, requestId: string): boolean {
@@ -647,6 +740,23 @@ function followHasTurnEnd(frame: unknown): boolean {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function conversationHasUserText(projected: unknown, text: string): boolean {
+  if (!isRecord(projected) || !isRecord(projected.conversation) || !Array.isArray(projected.conversation.nodes)) {
+    return false
+  }
+  return projected.conversation.nodes.some((node) => {
+    return isRecord(node) && node.kind === 'user' && Array.isArray(node.content)
+      && node.content.some(block => isRecord(block) && block.type === 'text' && block.text === text)
+  })
+}
+
+function conversationHasTurnError(projected: unknown): boolean {
+  if (!isRecord(projected) || !isRecord(projected.conversation) || !Array.isArray(projected.conversation.nodes)) {
+    return false
+  }
+  return projected.conversation.nodes.some(node => isRecord(node) && node.kind === 'turn-error')
 }
 
 function imageAttachmentIdFromFollow(frames: readonly unknown[]): string | undefined {

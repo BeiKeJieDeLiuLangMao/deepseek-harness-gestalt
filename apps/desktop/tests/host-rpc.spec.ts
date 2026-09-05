@@ -178,7 +178,7 @@ describe('Desktop Host RPC', () => {
 
   it('accepts the exact response byte limit and rejects overflow and a fast cumulative flood', async () => {
     const padding = 'x'.repeat(1_024)
-    const historyPadding = 'h'.repeat(REMOTE_PROTOCOL_LIMITS.companionMessageBytes + 1)
+    const pagePadding = 'h'.repeat(REMOTE_PROTOCOL_LIMITS.companionMessageBytes + 1)
     const baselinePadding = 'b'.repeat(REMOTE_PROTOCOL_LIMITS.companionMessageBytes + 1)
     const baselineResponseMaxBytes = REMOTE_PROTOCOL_LIMITS.transcriptPageBytes
       * REMOTE_PROTOCOL_LIMITS.transcriptPageEntries
@@ -193,7 +193,7 @@ describe('Desktop Host RPC', () => {
           payload: { query: string }
         }
         if (body.method === 'session/page') {
-          response.end(successResponse(body.rpcId, historyPadding))
+          response.end(successResponse(body.rpcId, pagePadding))
           return
         }
         if (body.method === 'session/list') {
@@ -242,8 +242,8 @@ describe('Desktop Host RPC', () => {
     } as const
     await expect(overflow.call('session/search', { query: 'overflow' })).resolves.toEqual(limitFailure)
     await expect(flood.call('session/search', { query: 'fast-flood' })).resolves.toEqual(limitFailure)
-    await expect(flood.call('session/page', { query: 'history' })).resolves.toMatchObject({
-      ok: true, value: { padding: historyPadding },
+    await expect(flood.call('session/page', { query: 'page' })).resolves.toMatchObject({
+      ok: true, value: { padding: pagePadding },
     })
     await expect(flood.call('session/list', { query: 'baseline' })).resolves.toMatchObject({
       ok: true, value: { padding: baselinePadding },
