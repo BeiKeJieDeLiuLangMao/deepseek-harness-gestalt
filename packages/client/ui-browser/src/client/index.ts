@@ -4,12 +4,14 @@
  * collapsed preview, Profile settings, and Remote unwrap helpers.
  * Live Workspace facts arrive through `useProjection('browserWorkspace')`.
  */
-import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
-import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context } from '@deepseek-ai/cordis'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
+import type {} from '@deepseek-ai/dsh-browser-workspace/remote'
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
-import type {} from '@deepseek-ai/dsh-browser-workspace/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import { BrowserPreview } from './BrowserPreview.tsx'
 import { BrowserSettingsSection } from './BrowserSettingsSection.tsx'
@@ -29,7 +31,6 @@ export { recoverListedMutation } from './listed-mutation.ts'
 export { BrowserPageChrome } from './BrowserPageChrome.tsx'
 export type { BrowserPageChromeProps } from './BrowserPageChrome.tsx'
 export type { BrowserKey } from './locales.ts'
-export { listBrowserWorkspacePages } from '@deepseek-ai/dsh-browser-workspace/client'
 export type { BrowserWorkspacePage } from '@deepseek-ai/dsh-browser-workspace/client'
 export {
   BROWSER_SETTINGS_NAMESPACE,
@@ -42,6 +43,10 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
     /** Browser chrome and collapsed preview copy. */
     browser: BrowserKey
+  }
+  interface SlotMap {
+    /** Collapsed preview in the conversation gutter. */
+    'conversation.browser.preview': { kind: 'single'; scope: 'session' }
   }
 }
 
@@ -60,7 +65,7 @@ export const inject = [
  * Client plugin body: collapsed preview and Profile settings.
  * @param ctx - client root context.
  */
-export function apply(ctx: ClientContext): void {
+export function apply(ctx: Context): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-browser: dictionaries')
   const scope = ctx.settingsScope.bind<BrowserSettings>({ namespace: BROWSER_SETTINGS_NAMESPACE })
   const preferences = createSnapshotStore<BrowserSettings>({ ...DEFAULT_BROWSER_SETTINGS })

@@ -1,7 +1,8 @@
 /** Browser registration and Remote transport adapter for preview and settings. */
 import { Context, Service } from '@deepseek-ai/cordis'
 import { describe, expect, it } from 'vitest'
-import { SlotRegistry, type SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import type { BrowserTarget } from '@deepseek-ai/dsh-browser-workspace/client'
 import type { BrowserPreviewActions } from '../src/client/slots.ts'
@@ -11,7 +12,7 @@ import { unwrapRemote } from '../src/client/slots.ts'
 import { en, NS, zh } from '../src/client/locales.ts'
 import { apply as nodeApply } from '../src/index.ts'
 import { BROWSER_SETTINGS_NAMESPACE, DEFAULT_BROWSER_SETTINGS } from '../src/browser-settings.ts'
-import { SettingsProvider, settingsNamespace, type SettingsNamespace } from '@deepseek-ai/dsh-settings'
+import { SettingsProvider, type SettingsNamespace } from '@deepseek-ai/dsh-settings'
 
 class MemorySettings extends SettingsProvider {
   readonly writable = true
@@ -224,7 +225,7 @@ describe('ui-browser node half', () => {
     await ctx.plugin(MemorySettings).await()
     const fiber = ctx.plugin({ apply: nodeApply })
     await fiber.await()
-    const ns = settingsNamespace(BROWSER_SETTINGS_NAMESPACE)
+    const ns = BROWSER_SETTINGS_NAMESPACE as SettingsNamespace
     expect(ctx.settings.get(ns)).toEqual(DEFAULT_BROWSER_SETTINGS)
     await fiber.dispose()
     expect(ctx.settings.describe().map(row => row.ns)).not.toContain(ns)
