@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -18,6 +19,17 @@ const defaults = {
 describe('SessionController facade', () => {
   it('does not require the Tools service', () => {
     expect(SessionController.inject).not.toContain('tools')
+  })
+
+  it('lists every Host entry relative module in tsconfig.host.json', () => {
+    const config = JSON.parse(readFileSync(new URL('../tsconfig.host.json', import.meta.url), 'utf8')) as {
+      files: string[]
+    }
+    const listed = new Set(config.files)
+    const source = readFileSync(new URL('../src/index.ts', import.meta.url), 'utf8')
+    const imports = [...source.matchAll(/from '\.\/([^']+)\.ts'/g)].map(match => `src/${match[1]}.ts`)
+    expect(imports).toContain('src/history-records.ts')
+    for (const file of imports) expect(listed).toContain(file)
   })
 
   it('owns Host service methods and publishes Agent lifecycle projections', async () => {
