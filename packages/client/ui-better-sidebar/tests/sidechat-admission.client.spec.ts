@@ -183,4 +183,51 @@ describe('Side Chat Session admission', () => {
       childSessionId: childId,
     })])
   })
+
+  it('omits Side Chat models() so Host modelCatalog stays the directory source', async () => {
+    const { svc, api, ctx } = bench()
+    const parentId = sid('session-model-parent')
+    const childId = sid('session-sidechat-model')
+    const ordinaryId = sid('session-ordinary-model')
+    const fetches = stubSidebarFetch(call => {
+      if (call.method === 'sidechat.selectModel') {
+        return { ok: true, value: { selected: call.body.selection } }
+      }
+      return { ok: true, value: { accepted: true, childId: call.body.childId } }
+    })
+    installSidechatAdmission(ctx)
+    api.onList = () => Promise.resolve(ok({
+      items: [{ sessionId: ordinaryId, updatedAt: 100, running: false, blank: false }],
+    }))
+    await svc.refresh()
+    registerSidechatDraft(childId, parentId)
+    svc.stageProvisional({
+      sessionId: childId,
+      parentSessionId: parentId,
+      origin: 'subagent',
+      title: 'New thread',
+    })
+
+    const side = svc.modelRoute(childId)
+    expect(side?.models).toBeUndefined()
+    expect(side?.selectModel).toBeTypeOf('function')
+    await expect(side!.selectModel!({ provider: 'owned', model: 'child' })).resolves.toEqual({
+      ok: true,
+      value: { selected: { provider: 'owned', model: 'child' } },
+    })
+    expect(fetches.some(call => call.method === 'sidechat.selectModel')).toBe(true)
+    expect(api.callsOf('session.selectModel')).toEqual([])
+
+    const stock = svc.modelRoute(ordinaryId)
+    expect(stock?.models).toBeTypeOf('function')
+    await expect(stock!.models!()).resolves.toMatchObject({ ok: true })
+    await expect(stock!.selectModel!({ provider: 'fixture', model: 'fixture' })).resolves.toMatchObject({
+      ok: true,
+    })
+    expect(api.callsOf('session.selectModel')).toEqual([{
+      sessionId: ordinaryId,
+      provider: 'fixture',
+      model: 'fixture',
+    }])
+  })
 })
