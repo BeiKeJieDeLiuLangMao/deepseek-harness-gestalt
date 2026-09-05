@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-With `dsh-web-search-deepseek`, the harness searches the web through DeepSeek's native search using an existing `DEEPSEEK_API_KEY`. Choose it when a deployment wants DeepSeek native search and accepts that one search costs a full model turn in latency and tokens, because DeepSeek exposes no dedicated search endpoint. Results come from the structured search blocks DeepSeek returns, never from scraping text out of a reply. A missing credential fails the call with a structured error; a response without a search-result block fails loudly rather than degrading. The model-facing `web_search` tool lives in `dsh-tool-web`.
+With `dsh-web-search-deepseek`, the harness searches the web through one `deepseek-official` provider. The Web Search card writes `backend` on the DeepSeek section: `deepseek` (Anthropic Messages + `web_search_20250305` at `https://api.deepseek.com/anthropic/v1`), `anthropic-messages` (the same Messages contract at a user-named base; missing `baseURL` makes the provider unavailable), or `kimi` (Moonshot `POST` of `{ "text_query" }` with Bearer-only auth at the dedicated search URL). Protocol is explicit, not sniffed from the URL. DeepSeek native search costs a full model turn; Kimi does not. Results come from structured blocks or Moonshot `search_results`, never from scraping text out of a reply. A missing credential fails the call with a structured error. The model-facing `web_search` tool lives in `dsh-tool-web`.
 
 ## Table of Contents
 
@@ -45,13 +45,16 @@ Load the web service and the provider; the key resolves from `ctx.credentials` w
 
 | Field | Default | Meaning |
 |---|---|---|
-| `apiKey` | omitted | Literal DeepSeek API key; prefer `apiKeyEnv` so no secret enters configuration. A non-empty literal wins |
+| `backend` | `deepseek` | Which tab the next search reads: `deepseek`, `anthropic-messages`, or `kimi`. Each tab has its own settings namespace; leftover DeepSeek `baseURL` is not read when another tab is selected |
+| `apiKey` | omitted | Literal API key; prefer `apiKeyEnv` so no secret enters configuration. A non-empty ASCII literal wins |
 | `apiKeyEnv` | `DEEPSEEK_API_KEY` | Credential reference resolved for each search through `ctx.credentials`, or from the process environment when that service is absent. A missing value fails the call as `WEB_PROVIDER_CREDENTIAL_MISSING` |
-| `baseURL` | `https://api.deepseek.com/anthropic/v1` | Anthropic-compatible endpoint base; `/messages` is appended. Falls back to `$DEEPSEEK_SEARCH_BASE_URL`; an unparseable value makes the provider unavailable |
-| `model` | `deepseek-v4-flash` | Anthropic-format model name |
-| `apiVersion` | `2023-06-01` | `anthropic-version` header value |
+| `baseURL` | `https://api.deepseek.com/anthropic/v1` | DeepSeek tab: Anthropic-compatible endpoint base; `/messages` is appended. Falls back to `$DEEPSEEK_SEARCH_BASE_URL`; an unparseable value makes the provider unavailable |
+| `model` | `deepseek-v4-flash` | Anthropic-format model name (Messages backends) |
+| `apiVersion` | `2023-06-01` | `anthropic-version` header value (Messages backends) |
 | `maxTokens` | `4096` | Positive-integer upper bound on generated tokens for the Messages request |
-| `maxUses` | `5` | Positive-integer maximum `web_search` server-tool uses per request |
+| `maxUses` | `5` | Positive-integer maximum `web_search` server-tool uses, or Kimi source bound |
+
+The Anthropic tab lives in `web-search-anthropic` (`baseURL` required). The Kimi tab lives in `web-search-kimi` (default `https://api.kimi.com/coding/v1/search`, key `KIMI_WEB_SEARCH_API_KEY` then ASCII-safe `DEEPSEEK_API_KEY`). Non-ASCII stored keys are not sent as HTTP headers.
 
 The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-web-search-deepseek) is the exhaustive source for every accepted field and its JSDoc. The entry above is the base layer of the provider's Settings section; a user layer over it reaches the next search, because the provider projects the section per call rather than capturing it at registration.
 
@@ -88,9 +91,9 @@ The provider is built on two commitments:
 
 | File | Role |
 |---|---|
-| [`src/index.ts`](src/index.ts) | Plugin entry: config schema, Settings section installation, per-search option projection |
-| [`src/provider.ts`](src/provider.ts) | The `DeepSeekSearchProvider`: Messages request dispatch, block parsing, citation joining, credential resolution |
-| [`src/types.ts`](src/types.ts) | Anthropic wire types for the search response |
+| [`src/index.ts`](src/index.ts) | Plugin entry: `backend` selector, three Settings namespaces via `installSection`, per-search option projection |
+| [`src/provider.ts`](src/provider.ts) | The `DeepSeekSearchProvider`: Messages dispatch or Moonshot `text_query`, block/result mapping, credential resolution |
+| [`src/types.ts`](src/types.ts) | Anthropic wire types for the Messages search response |
 | — | No runtime invariant companion is published; the package emits a pre-dispatch log event but owns no later authoritative dispatch event to relate it to. Exact envelope equality is pinned at the provider boundary instead. |
 
 ### Request flow

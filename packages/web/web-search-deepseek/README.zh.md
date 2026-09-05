@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-有了 `dsh-web-search-deepseek`，harness 可以通过 DeepSeek 原生搜索检索 web，使用部署已有的 `DEEPSEEK_API_KEY`。当部署希望使用 DeepSeek 原生搜索、并接受一次搜索在延迟与 token 上消耗一个完整模型轮次时选择它，因为 DeepSeek 不提供专用搜索端点。结果来自 DeepSeek 返回的结构化搜索块，绝不会从回复文本中抓取。凭据缺失时调用以结构化错误失败；响应缺少搜索结果块时会响亮地失败，而非降级。面向模型的 `web_search` 工具位于 `dsh-tool-web`。
+有了 `dsh-web-search-deepseek`，harness 通过同一个 `deepseek-official` 提供方检索 web。Web Search 卡片在 DeepSeek 段写入 `backend`：`deepseek`（Anthropic Messages + `web_search_20250305`，基址 `https://api.deepseek.com/anthropic/v1`）、`anthropic-messages`（同一套 Messages 约定，基址由用户填写；缺少 `baseURL` 时提供方不可用），或 `kimi`（对专用搜索 URL 以 Bearer-only 鉴权 `POST` `{ "text_query" }`）。协议是显式的，不从 URL 猜测。DeepSeek 原生搜索消耗完整模型轮次；Kimi 不会。结果来自结构化块或 Moonshot `search_results`，绝不会从回复文本中抓取。凭据缺失时调用以结构化错误失败。面向模型的 `web_search` 工具位于 `dsh-tool-web`。
 
 ## 目录
 
@@ -45,13 +45,16 @@ kind: "package-reference"
 
 | 字段 | 默认值 | 含义 |
 |---|---|---|
-| `apiKey` | 未设置 | DeepSeek API 密钥字面值；优先使用 `apiKeyEnv`，避免密钥进入配置。非空字面值优先 |
+| `backend` | `deepseek` | 下一次搜索读取的 tab：`deepseek`、`anthropic-messages` 或 `kimi`。每个 tab 有自己的 settings 命名空间；选中其他 tab 时不读取残留的 DeepSeek `baseURL` |
+| `apiKey` | 未设置 | API 密钥字面值；优先使用 `apiKeyEnv`，避免密钥进入配置。非空 ASCII 字面值优先 |
 | `apiKeyEnv` | `DEEPSEEK_API_KEY` | 每次搜索通过 `ctx.credentials` 解析的凭据引用；没有该服务时从进程环境解析。值缺失时调用以 `WEB_PROVIDER_CREDENTIAL_MISSING` 失败 |
-| `baseURL` | `https://api.deepseek.com/anthropic/v1` | Anthropic 兼容端点基址；追加 `/messages`。缺省时回退到 `$DEEPSEEK_SEARCH_BASE_URL`；无法解析时提供方不可用 |
-| `model` | `deepseek-v4-flash` | Anthropic 格式模型名称 |
-| `apiVersion` | `2023-06-01` | `anthropic-version` 标头值 |
+| `baseURL` | `https://api.deepseek.com/anthropic/v1` | DeepSeek tab：Anthropic 兼容端点基址；追加 `/messages`。缺省时回退到 `$DEEPSEEK_SEARCH_BASE_URL`；无法解析时提供方不可用 |
+| `model` | `deepseek-v4-flash` | Anthropic 格式模型名称（Messages 后端） |
+| `apiVersion` | `2023-06-01` | `anthropic-version` 标头值（Messages 后端） |
 | `maxTokens` | `4096` | Messages 请求生成 token 的正整数上限 |
-| `maxUses` | `5` | 每次请求使用 `web_search` 服务器工具的正整数上限 |
+| `maxUses` | `5` | `web_search` 服务器工具使用上限，或 Kimi 的 source 上限 |
+
+Anthropic tab 位于 `web-search-anthropic`（必须填写 `baseURL`）。Kimi tab 位于 `web-search-kimi`（默认 `https://api.kimi.com/coding/v1/search`，密钥先读 `KIMI_WEB_SEARCH_API_KEY`，再读 ASCII-safe 的 `DEEPSEEK_API_KEY`）。非 ASCII 的已存密钥不会作为 HTTP 头发送。
 
 生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-web-search-deepseek)是每个受支持字段及其 JSDoc 的穷尽式真源。上面的条目是提供方 Settings 段的 base 层；叠加其上的用户层会作用于下一次搜索，因为提供方是按次投影该段，而不是在注册时固化它。
 
@@ -88,8 +91,8 @@ kind: "package-reference"
 
 | 文件 | 职责 |
 |---|---|
-| [`src/index.ts`](src/index.ts) | 插件入口：配置 schema、Settings 段安装、逐次选项投影 |
-| [`src/provider.ts`](src/provider.ts) | `DeepSeekSearchProvider`：Messages 请求分发、块解析、引用拼接、凭据解析 |
+| [`src/index.ts`](src/index.ts) | 插件入口：`backend` 选择器、通过 `installSection` 安装三个 Settings 命名空间、逐次选项投影 |
+| [`src/provider.ts`](src/provider.ts) | `DeepSeekSearchProvider`：Messages 分发或 Moonshot `text_query`、块/结果映射、凭据解析 |
 | [`src/types.ts`](src/types.ts) | 搜索响应的 Anthropic 协议类型 |
 | — | 不发布运行时不变式伴生入口；约定在服务处强制执行。 |
 
