@@ -1,4 +1,4 @@
-import { Context, FiberState } from '@deepseek-ai/cordis'
+import { Context } from '@deepseek-ai/cordis'
 import type { Fiber } from '@deepseek-ai/cordis'
 import type {
   ConnectionGeneration,
@@ -121,45 +121,15 @@ async function flush(): Promise<void> {
 }
 
 describe('Session Controller Client apply', () => {
-  it('does not inject remote.memberQuestion so a missing Host namespace cannot park forever', () => {
+  it('injects every required generated Remote namespace including memberQuestion', () => {
     expect(SessionClient.inject).toEqual([
       'typert',
       'remote',
       'remote.commands',
       'remote.session',
       'remote.subagents',
+      'remote.memberQuestion',
     ])
-  })
-
-  it('fails apply immediately when generated memberQuestion is not mounted', async () => {
-    const ctx = new Context()
-    contexts.add(ctx)
-    await ctx.plugin(TypertRegistry)
-    const api = new FakeApiClient()
-    const remote = fakeRemote(api)
-    ctx.reflect.provide('remote', {
-      ...remote,
-      $stream: <Item>(options: RemoteStreamOptions<Item>) => (
-        new RemoteStream({
-          isLoopback: true,
-          generation: { getSnapshot: () => GENERATION, subscribe: () => () => {} },
-          state: { getSnapshot: () => 'connected' as const, subscribe: () => () => {} },
-          rpc: { call: () => Promise.reject(new Error('unexpected generic RPC call')) },
-          reconnect: () => {},
-          registerGenerationSource: () => () => {},
-          start: () => ({ stop: () => {} }),
-        } as ConnectionHandle, options)
-      ),
-      $host: { home: GENERATION.host.home, isLoopback: true },
-      $on: () => () => {},
-    })
-    ctx.reflect.provide('remote.commands', remote.commands)
-    ctx.reflect.provide('remote.session', remote.session)
-    ctx.reflect.provide('remote.subagents', remote.subagents)
-    const fiber = ctx.plugin(SessionClient)
-    await expect(fiber).rejects.toThrow('generated Remote namespace "memberQuestion" is not mounted')
-    expect(fiber.state).toBe(FiberState.FAILED)
-    expect(ctx.get('receivingQuestions')).toBeUndefined()
   })
 
   it('registers receivingQuestions through Cordis and unloads it with the fiber', async () => {

@@ -190,6 +190,7 @@ describe('three Client applies: session-controller, member-questions, user-quest
     ctx.reflect.provide('remote.commands', ctx.remote.commands)
     ctx.reflect.provide('remote.session', ctx.remote.session)
     ctx.reflect.provide('remote.subagents', ctx.remote.subagents)
+    ctx.reflect.provide('remote.memberQuestion', memberQuestion)
 
     slots.register({
       name: 'root',
