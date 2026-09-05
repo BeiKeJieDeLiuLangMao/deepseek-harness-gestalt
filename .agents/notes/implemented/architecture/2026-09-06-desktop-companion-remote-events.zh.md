@@ -20,4 +20,4 @@ Desktop Host RPC 在 `/api/remote.mux` 上跟随 `$events`，使用官方 ready 
 
 ## 后果
 
-Renderer 与 Companion 可以同时收到同一 waterfall。第一个声称它的 `$events/result` 继续 Host；后续结果 no-op。Approval 结算可在后续测试中共用此 owner，无需第二套 facade。
+Renderer 与 Companion 可以同时收到同一 waterfall。第一个声称它的 `$events/result` 继续 Host；后续结果 no-op。Approval 结算把结果字符串 `allowed-once` 或 `rejected` 作为 waterfall result 回传，而不是 Ask User 的 `{ answers }` 对象。同一配对操作的后续 Companion 重试由 ledger 去重；针对已取消等待的另一操作在本地以 `not-pending` 失败。
