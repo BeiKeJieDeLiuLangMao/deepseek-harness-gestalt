@@ -41,18 +41,10 @@ afterEach(async () => {
   await disposeSearchFixtures()
 })
 
-/**
- * Abort owner mux subscriptions, then wait one I/O turn so `followEvents`
- * observes cancellation before the child is killed. Keep this in `finally`
- * as well as `afterEach` so a failed assertion still unsubscribes first.
- */
+/** Uninstall the Companion owner, then always stop the Host child. */
 async function disposeSearchFixtures(): Promise<void> {
   try {
     for (const uninstall of uninstalls.splice(0).reverse()) uninstall()
-    // `followEvents` settles abort on the WebSocket `close` turn, which is
-    // after `AbortController.abort()` returns. Drain that turn before kill.
-    await new Promise<void>((resolve) => { setImmediate(resolve) })
-    await new Promise<void>((resolve) => { setTimeout(resolve, 0) })
   } finally {
     await stopShippedWebHosts(children, homes)
   }
