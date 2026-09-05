@@ -1068,6 +1068,21 @@ importers:
       '@deepseek-ai/dsh-api-session-controller':
         specifier: workspace:^
         version: link:../session-controller
+      '@deepseek-ai/dsh-browser-runtime-deterministic':
+        specifier: workspace:^
+        version: link:../../browser/browser-runtime-deterministic
+      '@deepseek-ai/dsh-browser-workspace':
+        specifier: workspace:^
+        version: link:../../browser/browser-workspace
+      '@deepseek-ai/dsh-session-projection':
+        specifier: workspace:^
+        version: link:../../session/session-projection
+      '@deepseek-ai/dsh-typert-generator':
+        specifier: workspace:^
+        version: link:../../typert/generator
+      '@deepseek-ai/dsh-typert-registry':
+        specifier: workspace:^
+        version: link:../../typert/registry
       '@deepseek-ai/dsh-api-settings-controller':
         specifier: workspace:^
         version: link:../settings-controller
