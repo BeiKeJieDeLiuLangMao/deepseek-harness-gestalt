@@ -79,6 +79,11 @@ describe('ui-member-questions browser apply', () => {
         settle: (sessionId: SessionId, response: { kind: string }) => Promise<void>
       })()
       expect(typeof injected.settle).toBe('function')
+      await injected.settle('receiving-session' as SessionId, { kind: 'declined' })
+      expect(ctx.receivingQuestions.settle).toHaveBeenCalledWith(
+        'receiving-session',
+        { kind: 'declined' },
+      )
     } finally {
       await fiber.dispose()
     }

@@ -16,6 +16,8 @@
     { "path": "../../attachment/attachment" },
     { "path": "../../client/connection/tsconfig.client.json" },
     { "path": "../../client/store" },
+    { "path": "../../interaction/member-question-receiver" },
+    { "path": "../../interaction/user-questions" },
     { "path": "../../context/file-reference" },
     { "path": "../../core/session" },
     { "path": "../../jobs/jobs" },
