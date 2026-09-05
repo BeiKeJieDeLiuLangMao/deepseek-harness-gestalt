@@ -16,8 +16,10 @@ import { SIDE_LABEL_PREFIX } from '../sidechat-core.ts'
 /**
  * Side Chat threads ride the subagent origin (main-list hiding + the RPC
  * ownership fence) but they are NOT subagent topology: they carry the
- * durable 'Side: ' label and live as sidebar tabs. Excluding them here
- * keeps the auto-open trigger and the Subagent page counts clean.
+ * durable 'Side: ' label or a renderer-only `provisional` marker and live
+ * as sidebar tabs. An ordinary blank session without that origin is not a
+ * Side Chat row. Excluding Side Chat here keeps the auto-open trigger and
+ * the Subagent page counts clean.
  */
 export function isSideThreadSummary(summary: SidebarSessionSummary): boolean {
   return summary.origin === 'subagent'

@@ -4,6 +4,7 @@ import {
   countSubagentDescendants,
   detectNewDirectSubagent,
   directSubagentCount,
+  isSideThreadSummary,
 } from '../src/client/subagent-detect.ts'
 import { treeSessionIds } from '../src/client/subagent-lineage.ts'
 
@@ -31,6 +32,20 @@ describe('Side Chat topology exclusion', () => {
 
     expect(directSubagentCount(after.byId, parent.id)).toBe(0)
     expect(detectNewDirectSubagent(before, after, parent.id)).toBe(false)
+    expect(countSubagentDescendants(after.byId, parent.id)).toEqual({ count: 0, runningCount: 0 })
+    expect(treeSessionIds(after.byId, parent.id)).toEqual(new Set([parent.id]))
+  })
+
+  it('does not treat an ordinary blank session without origin as Side Chat', () => {
+    const parent = summary('parent')
+    const blank = summary('blank-child', {
+      parentId: parent.id,
+      blank: true,
+    })
+    const after = list(parent, blank)
+
+    expect(isSideThreadSummary(blank)).toBe(false)
+    expect(directSubagentCount(after.byId, parent.id)).toBe(0)
     expect(countSubagentDescendants(after.byId, parent.id)).toEqual({ count: 0, runningCount: 0 })
     expect(treeSessionIds(after.byId, parent.id)).toEqual(new Set([parent.id]))
   })

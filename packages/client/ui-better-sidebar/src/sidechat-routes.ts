@@ -500,10 +500,7 @@ export function buildSidechatApi(ctx: Context): SidechatApi {
           throw new SidebarError('sidechat-error', `thread resume failed: ${error instanceof Error ? error.message : String(error)}`, 500)
         }
       }
-      const sessionEvents = typeof agent.session.snapshotEvents === 'function'
-        ? agent.session.snapshotEvents()
-        : (agent.session as { events?: readonly SidechatLogEvent[] }).events ?? []
-      if (boundaryDelivered(sessionEvents as unknown as readonly SidechatLogEvent[])) {
+      if (boundaryDelivered(agent.session.snapshotEvents() as unknown as readonly SidechatLogEvent[])) {
         admitPrompt(agent, textPrompt(text), rawMode)
       } else {
         // Compatibility for persisted empty Side Chat Sessions created by an
