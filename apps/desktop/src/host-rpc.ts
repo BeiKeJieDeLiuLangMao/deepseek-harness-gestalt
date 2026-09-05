@@ -240,30 +240,39 @@ function parseServerResponse(body: unknown, rpcId: string): DesktopHostRpcResult
   return { ok: false, failure: companionBusinessFailure(hostCode, hostMessage) }
 }
 
+const HOST_DIAGNOSTIC_CODE = /^[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*$/u
 const COMPANION_BUSINESS_CODE = /^[A-Za-z0-9_-]{1,128}$/u
+const INVALID_HOST_BUSINESS_CODE: CompanionHostFailure = {
+  kind: 'wire',
+  code: 'HOST_WIRE_INVALID',
+  message: 'Desktop Host business error code was invalid',
+}
 
 /**
- * Companion business `code` rejects `/`. Keep the Host reason as `code` and
- * retain a namespaced Host code as a `Host error <ns/reason>: ` prefix on the
- * original user-visible message. Retry classification stays `kind`.
+ * Companion business `code` rejects `/`. Keep the Host reason as a legal
+ * last-segment `code`. A validated namespaced Host diagnostic is retained as
+ * `[<original Host code>] ` before the original user-visible message.
+ * Illegal or over-long Host codes stay `HOST_WIRE_INVALID` and are not
+ * copied into the prefix. Retry classification stays `kind`.
  */
 function companionBusinessFailure(hostCode: string, hostMessage: string): CompanionHostFailure {
-  const code = companionLegalBusinessCode(hostCode)
+  if (!isHostDiagnosticCode(hostCode)) return INVALID_HOST_BUSINESS_CODE
+  const slash = hostCode.lastIndexOf('/')
+  const code = slash === -1 ? hostCode : hostCode.slice(slash + 1)
+  if (!COMPANION_BUSINESS_CODE.test(code)) return INVALID_HOST_BUSINESS_CODE
   return {
     kind: 'business',
     code,
-    message: hostCode === code ? hostMessage : prefixedHostFailureMessage(hostCode, hostMessage),
+    message: slash === -1 ? hostMessage : prefixedHostFailureMessage(hostCode, hostMessage),
   }
 }
 
-function companionLegalBusinessCode(hostCode: string): string {
-  const slash = hostCode.lastIndexOf('/')
-  const reason = slash === -1 ? hostCode : hostCode.slice(slash + 1)
-  return COMPANION_BUSINESS_CODE.test(reason) ? reason : 'host-error'
+function isHostDiagnosticCode(hostCode: string): boolean {
+  return hostCode.length <= 128 && HOST_DIAGNOSTIC_CODE.test(hostCode)
 }
 
 function prefixedHostFailureMessage(hostCode: string, hostMessage: string): string {
-  const prefix = `Host error ${hostCode}: `
+  const prefix = `[${hostCode}] `
   const limit = REMOTE_PROTOCOL_LIMITS.hostFailureMessageBytes
   const prefixBytes = new TextEncoder().encode(prefix)
   if (prefixBytes.byteLength >= limit) return utf8Truncate(prefix, limit)

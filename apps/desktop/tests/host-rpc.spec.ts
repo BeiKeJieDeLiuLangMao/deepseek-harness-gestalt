@@ -76,6 +76,34 @@ describe('Desktop Host RPC', () => {
               },
             }))
             return
+          case 'illegal-host-code':
+            response.end(JSON.stringify({
+              type: 'server-response',
+              rpcId: body.rpcId,
+              result: {
+                ok: false,
+                error: {
+                  code: 'https://evil.example/internal',
+                  message: 'session search failed: SESSION_QUERY_SEARCH_DISABLED',
+                  details: {},
+                },
+              },
+            }))
+            return
+          case 'overlong-host-code':
+            response.end(JSON.stringify({
+              type: 'server-response',
+              rpcId: body.rpcId,
+              result: {
+                ok: false,
+                error: {
+                  code: `gateway/${'a'.repeat(128)}`,
+                  message: 'session search failed: SESSION_QUERY_SEARCH_DISABLED',
+                  details: {},
+                },
+              },
+            }))
+            return
           case 'timeout':
             return
           case 'slow-chunks':
@@ -127,7 +155,7 @@ describe('Desktop Host RPC', () => {
       failure: {
         kind: 'business',
         code: 'internal',
-        message: 'Host error gateway/internal: session search failed: SESSION_QUERY_SEARCH_DISABLED',
+        message: '[gateway/internal] session search failed: SESSION_QUERY_SEARCH_DISABLED',
       },
     })
     const sessionInternal = await rpc.call('session/search', { query: 'session-internal' })
@@ -137,7 +165,7 @@ describe('Desktop Host RPC', () => {
       failure: {
         kind: 'business',
         code: 'internal',
-        message: 'Host error session/internal: session search failed: SESSION_QUERY_SEARCH_DISABLED',
+        message: '[session/internal] session search failed: SESSION_QUERY_SEARCH_DISABLED',
       },
     })
     expect(gatewayInternal.ok).toBe(false)
@@ -146,8 +174,26 @@ describe('Desktop Host RPC', () => {
     expect(gatewayInternal.failure.kind).toBe(sessionInternal.failure.kind)
     expect(gatewayInternal.failure.code).toBe(sessionInternal.failure.code)
     expect(gatewayInternal.failure.message).not.toBe(sessionInternal.failure.message)
-    expect(gatewayInternal.failure.message).toContain('gateway/internal')
-    expect(sessionInternal.failure.message).toContain('session/internal')
+    expect(gatewayInternal.failure.message).toContain('[gateway/internal] ')
+    expect(sessionInternal.failure.message).toContain('[session/internal] ')
+    expect(gatewayInternal.failure.message).toContain('session search failed')
+    expect(sessionInternal.failure.message).toContain('session search failed')
+    await expect(rpc.call('session/search', { query: 'illegal-host-code' })).resolves.toEqual({
+      ok: false,
+      failure: {
+        kind: 'wire',
+        code: 'HOST_WIRE_INVALID',
+        message: 'Desktop Host business error code was invalid',
+      },
+    })
+    await expect(rpc.call('session/search', { query: 'overlong-host-code' })).resolves.toEqual({
+      ok: false,
+      failure: {
+        kind: 'wire',
+        code: 'HOST_WIRE_INVALID',
+        message: 'Desktop Host business error code was invalid',
+      },
+    })
     await expect(rpc.call('session/search', { query: 'timeout' })).resolves.toEqual({
       ok: false,
       failure: { kind: 'timeout', code: 'HOST_TIMEOUT', message: 'Desktop Host request timed out' },
