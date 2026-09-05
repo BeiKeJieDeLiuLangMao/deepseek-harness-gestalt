@@ -147,6 +147,7 @@ describe('ui-workspace apply', () => {
     expect(b.insertSessionBefore).toHaveBeenCalledWith('ws', 's1', 's2')
     await browser.createWorkspace({ path: '/tmp/browser-project' })
     expect(b.create).toHaveBeenCalledWith({ path: '/tmp/browser-project' })
+    expect(browser.projectMembership).toBeUndefined()
 
     const picker = (b.slots.entries('conversation.hero.workspace')[0]!.inject as () => WorkspacePickerInjected)()
     await picker.createWorkspace({ path: '/tmp/project' })
@@ -177,6 +178,31 @@ describe('ui-workspace apply', () => {
     dispose()
     expect(browser.hooks.directoryFlow.getSnapshot()).toBe(false)
     unsubscribe()
+  })
+
+  it('injects membership callbacks when a projectMembershipClient is present', async () => {
+    const b = await bench()
+    const pendingInvitations = vi.fn(async () => [])
+    b.ctx.provide('projectMembershipClient', {
+      roster: vi.fn(),
+      invite: vi.fn(),
+      issuedInvitations: vi.fn(),
+      retractInvitation: vi.fn(),
+      decideInvitation: vi.fn(),
+      changeRole: vi.fn(),
+      setMemberTags: vi.fn(),
+      removeMember: vi.fn(),
+      pendingInvitations,
+    })
+    declare(b.slots, 'sidebar.workspaces')
+    await b.ctx.plugin({ inject: [...inject], apply }).await()
+    const browser = (b.slots.entries('sidebar.workspaces')[0]!.inject as () => WorkspaceBrowserInjected)()
+    expect(browser.projectMembership).toBeDefined()
+    expect(browser.projectMembership).not.toHaveProperty('heartbeat')
+    await browser.projectMembership!.pendingInvitations()
+    expect(pendingInvitations).toHaveBeenCalledOnce()
+    await expect(browser.projectMembership!.localRemoteFor('ws' as never))
+      .rejects.toThrow('#590')
   })
 
   it('rejects the browser search callback on a Session Controller business error', async () => {
