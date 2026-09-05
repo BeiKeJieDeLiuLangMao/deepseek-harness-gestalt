@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process'
+import { execFile, execFileSync } from 'node:child_process'
 import { chmodSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -8,7 +8,6 @@ import SessionStore from '@deepseek-ai/dsh-session'
 import Storage from '@deepseek-ai/dsh-storage'
 import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
 import type { NativeCommandRunner } from '@deepseek-ai/dsh-native-command'
-import { runNativeCommand } from '@deepseek-ai/dsh-native-command'
 import type { SubprocessHandle, SubprocessOutcome, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import WorkspaceRegistry from '@deepseek-ai/dsh-workspace'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
@@ -59,6 +58,27 @@ function git(cwd: string, args: readonly string[]): void {
   execFileSync('git', [...args], { cwd, stdio: 'ignore' })
 }
 
+/** Matches production Git locale: child `LANG`/`LC_ALL=C` only, not the parent process. */
+const runGitC: NativeCommandRunner = (command, args, signal) =>
+  new Promise((resolve, reject) => {
+    execFile(command, [...args], {
+      encoding: 'utf8',
+      signal,
+      windowsHide: true,
+      env: { ...process.env, LANG: 'C', LC_ALL: 'C' },
+    }, (error, stdout, stderr) => {
+      if (error !== null) {
+        reject(Object.assign(new Error(error.message, { cause: error }), {
+          code: error.code,
+          stdout,
+          stderr,
+        }))
+        return
+      }
+      resolve({ stdout, stderr })
+    })
+  })
+
 function collected(text: string, lossy = false): SubprocessHandle['collected'] {
   return {
     stdout: { readFrom: () => ({ text, nextOffset: text.length, lossy }) },
@@ -84,7 +104,7 @@ function handle(options: {
 
 describe('WorkspaceController.gitRemote', () => {
   it('reads origin from a real checkout through argv Git', async () => {
-    const { controller, root } = await harness({ workspaceGitCommand: runNativeCommand })
+    const { controller, root } = await harness({ workspaceGitCommand: runGitC })
     const path = stageDir(root, 'origin')
     git(path, ['init'])
     git(path, ['remote', 'add', 'origin', 'https://github.com/o/r.git'])
@@ -94,7 +114,7 @@ describe('WorkspaceController.gitRemote', () => {
   })
 
   it('returns no remoteUrl for a checkout without origin and a non-Git Workspace', async () => {
-    const { controller, root } = await harness({ workspaceGitCommand: runNativeCommand })
+    const { controller, root } = await harness({ workspaceGitCommand: runGitC })
     const gitless = await controller.create({ path: stageDir(root, 'plain') })
     const noOriginPath = stageDir(root, 'no-origin')
     git(noOriginPath, ['init'])
@@ -179,7 +199,7 @@ describe('WorkspaceController.gitRemote', () => {
   })
 
   it('maps a corrupt Git config to workspace/git-failed instead of an unbound Workspace', async () => {
-    const { controller, root } = await harness({ workspaceGitCommand: runNativeCommand })
+    const { controller, root } = await harness({ workspaceGitCommand: runGitC })
     const path = stageDir(root, 'bad-config')
     git(path, ['init'])
     writeFileSync(join(path, '.git', 'config'), '[core\n')
@@ -189,7 +209,7 @@ describe('WorkspaceController.gitRemote', () => {
   })
 
   it('maps a nested checkout whose parent .git/config is corrupt to workspace/git-failed', async () => {
-    const { controller, root } = await harness({ workspaceGitCommand: runNativeCommand })
+    const { controller, root } = await harness({ workspaceGitCommand: runGitC })
     const repo = stageDir(root, 'nested-repo')
     git(repo, ['init'])
     git(repo, ['remote', 'add', 'origin', 'https://github.com/o/r.git'])
@@ -201,7 +221,7 @@ describe('WorkspaceController.gitRemote', () => {
   })
 
   it('maps a bare repository whose ./config is corrupt to workspace/git-failed', async () => {
-    const { controller, root } = await harness({ workspaceGitCommand: runNativeCommand })
+    const { controller, root } = await harness({ workspaceGitCommand: runGitC })
     const bare = join(root, 'bare.git')
     git(root, ['init', '--bare', bare])
     git(bare, ['remote', 'add', 'origin', 'https://github.com/o/r.git'])
@@ -212,7 +232,7 @@ describe('WorkspaceController.gitRemote', () => {
   })
 
   it('maps an unreadable .git directory to workspace/git-failed', async () => {
-    const { controller, root } = await harness({ workspaceGitCommand: runNativeCommand })
+    const { controller, root } = await harness({ workspaceGitCommand: runGitC })
     const path = stageDir(root, 'denied')
     git(path, ['init'])
     const created = await controller.create({ path })
@@ -322,6 +342,36 @@ describe('createWorkspaceGitCommand', () => {
     const run = createWorkspaceGitCommand(ctx, process.cwd())
     await expect(run('bash', ['-c', 'true'], new AbortController().signal))
       .rejects.toThrow(/rejects executable/)
+  })
+
+  it('forces child LANG and LC_ALL to C even when the parent locale is not C', async () => {
+    const previousLang = process.env.LANG
+    const previousLcAll = process.env.LC_ALL
+    process.env.LANG = 'zh_CN.UTF-8'
+    process.env.LC_ALL = 'zh_CN.UTF-8'
+    try {
+      const spawns: SubprocessSpawnSpec[] = []
+      const ctx = new Context()
+      ctx.provide('subprocess', {
+        spawn(spec: SubprocessSpawnSpec) {
+          spawns.push(spec)
+          return handle({
+            outcome: { exitCode: 0, signal: null },
+            collected: collected('https://github.com/o/r.git\n'),
+          })
+        },
+      } as never)
+      const run = createWorkspaceGitCommand(ctx, process.cwd())
+      await expect(run('git', ['remote', 'get-url', 'origin'], new AbortController().signal))
+        .resolves.toEqual({ stdout: 'https://github.com/o/r.git\n', stderr: '' })
+      expect(spawns[0]?.env?.LANG).toBe('C')
+      expect(spawns[0]?.env?.LC_ALL).toBe('C')
+    } finally {
+      if (previousLang === undefined) delete process.env.LANG
+      else process.env.LANG = previousLang
+      if (previousLcAll === undefined) delete process.env.LC_ALL
+      else process.env.LC_ALL = previousLcAll
+    }
   })
 
   it('maps a lossy capture to overflow', async () => {
