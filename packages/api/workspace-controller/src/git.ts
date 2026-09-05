@@ -20,7 +20,7 @@ const WORKSPACE_GIT_ENV_ALLOWLIST = new Set([
  * Build the production Git runner over `ctx.subprocess`.
  * @param ctx - Host context that may carry the subprocess service.
  * @param cwd - spawn working directory; Git still receives `-C` for the Workspace path.
- * @returns a runner that accepts only the `git` executable.
+ * @returns a runner that accepts only the `git` executable and forces `LANG`/`LC_ALL=C`.
  */
 export function createWorkspaceGitCommand(ctx: Context, cwd: string): NativeCommandRunner {
   return async (command, args, signal) => {
@@ -36,6 +36,8 @@ export function createWorkspaceGitCommand(ctx: Context, cwd: string): NativeComm
     env.GIT_CONFIG_KEY_0 = 'credential.interactive'
     env.GIT_CONFIG_VALUE_0 = 'never'
     env.GIT_TERMINAL_PROMPT = '0'
+    env.LANG = 'C'
+    env.LC_ALL = 'C'
     const handle = subprocess.spawn({
       argv: [command, ...args],
       cwd,
@@ -61,8 +63,28 @@ export function createWorkspaceGitCommand(ctx: Context, cwd: string): NativeComm
       throw new Error('workspace Git output exceeded the bounded capture')
     }
     if (outcome.exitCode !== 0) {
-      throw new Error(`workspace Git exited with ${outcome.exitCode === null ? outcome.signal ?? 'unknown signal' : `code ${String(outcome.exitCode)}`}`)
+      const terminatingSignal = outcome.signal
+      const code = outcome.exitCode === null ? terminatingSignal ?? 'unknown signal' : outcome.exitCode
+      throw Object.assign(
+        new Error(`workspace Git exited with ${typeof code === 'number' ? `code ${String(code)}` : code}`),
+        { code, signal: terminatingSignal, stdout: stdout.text, stderr: stderr.text },
+      )
     }
     return { stdout: stdout.text, stderr: stderr.text }
   }
+}
+
+/**
+ * Numeric Git exit, spawn code, or terminating signal from a Workspace Git runner failure.
+ * @param error - thrown runner result, including `runNativeCommand` and production subprocess failures.
+ * @returns the attached `code`, or a parsed production-runner exit/signal from the error message.
+ */
+export function workspaceGitFailureCode(error: unknown): string | number | undefined {
+  if (typeof error !== 'object' || error === null) return undefined
+  const code = 'code' in error ? error.code : undefined
+  if (typeof code === 'number' || typeof code === 'string') return code
+  const message = error instanceof Error ? error.message : undefined
+  if (message === undefined) return undefined
+  const numeric = /workspace Git exited with code (\d+)$/.exec(message)
+  return numeric?.[1] === undefined ? undefined : Number(numeric[1])
 }

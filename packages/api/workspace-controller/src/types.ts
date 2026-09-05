@@ -46,7 +46,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'directory-picker/exists': { readonly path: string }
     /** The parent is not fully qualified, the name is not one segment, or creation failed. */
     'directory-picker/create-failed': { readonly path: string }
-    /** Workspace Git output overflowed its capture or the subprocess service is absent. */
+    /** Workspace Git inspection failed for a reason other than a missing repository or missing `origin`. */
     'workspace/git-failed': { readonly workspaceId: WorkspaceId }
   }
 }

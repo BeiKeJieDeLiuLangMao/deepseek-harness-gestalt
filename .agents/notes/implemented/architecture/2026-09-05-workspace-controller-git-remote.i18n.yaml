@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-05-workspace-controller-git-remote.md
-2026-09-05-workspace-controller-git-remote.md: c13ed1d11151b8234829249c2f637f458bce7637
-2026-09-05-workspace-controller-git-remote.zh.md: 970fbd57a55805b140264c7013aa72426d3b60e5
+2026-09-05-workspace-controller-git-remote.md: f198f29468b0a5f9cda8d97f65bcb40e8637b9b1
+2026-09-05-workspace-controller-git-remote.zh.md: a7821298773b57f1769a69fdc3e1ed72d30abe54

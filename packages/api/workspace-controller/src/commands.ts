@@ -8,9 +8,12 @@ import {
   WorkspaceOrderInvalidError,
   WorkspaceUnknownSessionError,
 } from '@deepseek-ai/dsh-workspace'
+import { lstatSync } from 'node:fs'
+import { join } from 'node:path'
 import type { NativeCommandRunner } from '@deepseek-ai/dsh-native-command'
 import { RemoteError, remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
 import { workspaceView } from './feed.ts'
+import { workspaceGitFailureCode } from './git.ts'
 import type {
   WorkspaceArchiveSessionRequest,
   WorkspaceArchiveValue,
@@ -158,7 +161,8 @@ export class WorkspaceCommands {
    * Read the configured `origin` of one registered Workspace checkout.
    * @param request - Workspace identity.
    * @param signal - caller lifetime; abort terminates the Git process tree.
-   * @returns `{ remoteUrl }` when origin is non-empty; `{}` for a non-Git directory or missing origin.
+   * @returns `{ remoteUrl }` when origin is non-empty; `{}` for a non-Git directory or a checkout without `origin`.
+   *   Other Git execution failures reject with `workspace/git-failed`.
    */
   async gitRemote(request: WorkspaceGitRemoteRequest, signal: AbortSignal): Promise<WorkspaceGitRemoteValue> {
     if (signal.aborted) {
@@ -177,23 +181,8 @@ export class WorkspaceCommands {
       if (signal.aborted) {
         throw new RemoteError('gateway/cancelled', 'workspace remote inspection was aborted', {}, { cause: error })
       }
-      if (error instanceof Error && error.message === 'workspace Git output exceeded the bounded capture') {
-        throw new RemoteError(
-          'workspace/git-failed',
-          error.message,
-          { workspaceId: request.workspaceId },
-          { cause: error },
-        )
-      }
-      if (error instanceof Error && error.message === 'workspace Git operations require the subprocess service') {
-        throw new RemoteError(
-          'workspace/git-failed',
-          error.message,
-          { workspaceId: request.workspaceId },
-          { cause: error },
-        )
-      }
-      return {}
+      if (isUnboundOriginFailure(error, workspace.path)) return {}
+      throw gitFailed(request.workspaceId, error)
     }
   }
 
@@ -231,6 +220,40 @@ function workspaceNotFound(workspaceId: WorkspaceId): RemoteError<'workspace/not
     `Workspace "${workspaceId}" not found`,
     { workspaceId },
   )
+}
+
+function gitFailed(workspaceId: WorkspaceId, error: unknown): RemoteError<'workspace/git-failed'> {
+  return new RemoteError(
+    'workspace/git-failed',
+    errorMessage(error),
+    { workspaceId },
+    { cause: error },
+  )
+}
+
+/**
+ * `git remote get-url origin` uses exit 2 for a missing `origin` and 128 for
+ * several unrelated failures. Only a missing Git directory at the Workspace
+ * path, not every 128, is unbound.
+ */
+function isUnboundOriginFailure(error: unknown, workspacePath: string): boolean {
+  const code = workspaceGitFailureCode(error)
+  if (code === 2) return true
+  if (code !== 128) return false
+  return !workspaceGitMetadataPresent(workspacePath)
+}
+
+function workspaceGitMetadataPresent(workspacePath: string): boolean {
+  try {
+    lstatSync(join(workspacePath, '.git'))
+    return true
+  } catch (error) {
+    return !isEnoent(error)
+  }
+}
+
+function isEnoent(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT'
 }
 
 function errorMessage(error: unknown): string {

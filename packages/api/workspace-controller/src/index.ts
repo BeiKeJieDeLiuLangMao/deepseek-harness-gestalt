@@ -131,6 +131,7 @@ export class WorkspaceController extends TypertRemoteService {
    * @param request - Workspace identity.
    * @param signal - caller lifetime; abort terminates the Git process tree.
    * @returns `{ remoteUrl }` when origin is non-empty; `{}` when the checkout is not Git or has no origin.
+   *   Missing Git, permission, corrupt config, signal death, and other execution failures reject with `workspace/git-failed`.
    */
   @Remote('gitRemote')
   gitRemote(request: WorkspaceGitRemoteRequest, signal: AbortSignal): Promise<WorkspaceGitRemoteValue> {
