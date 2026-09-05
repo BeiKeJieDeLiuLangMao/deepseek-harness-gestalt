@@ -25,6 +25,7 @@ import {
 } from './list.ts'
 import { buildModelCatalog } from './catalog.ts'
 import { installModelSelectionProjection } from './model-selection-projection.ts'
+import { installReceivingSessionMaterializer } from './receiving-materializer.ts'
 import { SessionSkillCatalog } from './skill-catalog.ts'
 import type {
   ModelCatalog,
@@ -147,6 +148,7 @@ export class SessionController extends TypertRemoteService {
       ?? (() => config.nativeOpen ?? (internals.openPath !== undefined || canOpenNativePath()))
     ctx.plugin(SessionFileReferences)
     ctx.plugin(SessionSkillCatalog)
+    ctx.effect(() => installReceivingSessionMaterializer(ctx, this.agents), 'session-controller.receiving-materializer')
 
     ctx.on('session/created', (session) => {
       ctx.emit('api-session/added', this.listState.summaryFor(session))

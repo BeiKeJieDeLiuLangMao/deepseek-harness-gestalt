@@ -85,7 +85,7 @@ import type {
   MemberQuestionHumanTurnContent,
   TerminalMemberQuestionView,
 } from '@deepseek-ai/dsh-member-question-receiver'
-import { writeMemberQuestionDocumentCache } from '@deepseek-ai/dsh-member-question-receiver'
+
 import type {} from '@deepseek-ai/dsh-project-membership'
 // Side-effect type import: resolves the `approval/request` waterfall and
 // `ctx.get('approval')` without a value dependency on the seam (optional composition).
@@ -1965,122 +1965,16 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     })
   }
 
-  /** Compact model-visible Decision Brief for one received operation. */
-  function decisionBrief(operation: MemberQuestionHumanTurnAdmissionContext['questions'][number]): string {
-    const brief = 'operation' in operation ? operation.operation : operation.brief
-    const questions = brief.questions.map((question) => {
-      const options = question.options?.map(option => option.label).join(' | ')
-      return options === undefined ? `- ${question.question}` : `- ${question.question}\n  Options: ${options}`
-    }).join('\n')
-    const references = brief.references.length === 0
-      ? 'None'
-      : brief.references.map(reference => `- ${reference.path}: ${reference.reason}`).join('\n')
-    return [
-      `Decision Brief from ${brief.origin.askerDisplayName} (${brief.origin.askerRole})`,
-      `Project: ${brief.origin.projectName}`,
-      `Origin Session: ${brief.origin.originSessionTitle}`,
-      `Background: ${brief.background}`,
-      'Questions:', questions,
-      'References:', references,
-    ].join('\n')
-  }
-
   /** Preserve browser content at the ordinary attachment admission seam. */
   function admissionContent(content: readonly MemberQuestionHumanTurnContent[]): ContentBlock[] {
     return content.map(block => structuredClone(block))
   }
 
-  async function materializeReceivingSession(
-    sessionId: SessionId,
-    admission: MemberQuestionHumanTurnAdmissionContext,
-  ): Promise<{
-    agent: Agent
-    cachedReferences: MemberQuestionHumanTurnAdmissionContext['questions'][number]['cachedReferences']
-  }> {
-    const workspace = workspaceFromId(admission.workspaceId)
-    const agent = await ensureSession(sessionId, workspace.path, true)
-    await workspace.attachSession(sessionId)
-    const titles = ctx.get('sessionTitle')
-    const origin = admission.questions[0] === undefined
-      ? undefined
-      : ('operation' in admission.questions[0] ? admission.questions[0].operation : admission.questions[0].brief).origin
-    if (titles !== undefined && origin !== undefined && titles.get(agent.session) === undefined) {
-      titles.rename(agent.session, `${origin.projectName} — ${origin.originSessionTitle}`)
-    }
-    const cachedByQuestion = new Map<string, NonNullable<typeof admission.questions[number]['cachedReferences']>>()
-    for (const question of admission.questions) {
-      if (question.cachedReferences !== undefined) {
-        cachedByQuestion.set(String(question.questionId), question.cachedReferences)
-      }
-    }
-    const currentQuestion = admission.questions.find((question): question is Extract<
-      typeof admission.questions[number],
-      { operation: unknown }
-    > => !('terminal' in question) && question.cachedReferences === undefined)
-    if (currentQuestion !== undefined) {
-      cachedByQuestion.set(String(currentQuestion.questionId), await writeMemberQuestionDocumentCache({
-        workspacePath: workspace.path,
-        questionId: currentQuestion.questionId,
-        references: currentQuestion.operation.references,
-        documents: admission.documents,
-      }))
-    }
-    for (const question of admission.questions) {
-      const operation = 'operation' in question ? question.operation : question.brief
-      const cachedReferences = cachedByQuestion.get(String(operation.questionId))
-      if (!agent.session.events.some(event => event.type === 'member-question/received'
-        && event.data.questionId === operation.questionId)) {
-        agent.session.append('member-question/received', {
-          questionId: operation.questionId,
-          projectId: operation.projectId,
-          originSessionId: operation.originSessionId as unknown as SessionId,
-          arrivedAt: question.arrivedAt,
-          expiresAt: operation.expiresAt,
-          origin: operation.origin,
-          background: operation.background,
-          questions: operation.questions,
-          references: operation.references,
-          ...(cachedReferences === undefined ? {} : { cachedReferences }),
-        }, { ignorable: true })
-      }
-      if ('terminal' in question && !agent.session.events.some(event =>
-        event.type === 'member-question/settled'
-        && event.data.questionId === question.terminal.questionId)) {
-        agent.session.append('member-question/settled', question.terminal, { ignorable: true })
-      }
-      const briefId = MessageId(`member-question-brief:${operation.questionId}`)
-      if (!hasMessage(agent.session, briefId)) {
-        agent.inject(freezeMessage({
-          id: briefId,
-          role: 'user',
-          content: [{ type: 'text', text: decisionBrief(question) }],
-          source: { kind: 'plugin', plugin: 'member-question-receiver', form: 'relay' },
-        }))
-      }
-    }
-    await ctx.sessions.flush(agent.session)
-    return {
-      agent,
-      cachedReferences: currentQuestion === undefined
-        ? undefined
-        : cachedByQuestion.get(String(currentQuestion.questionId)),
-    }
-  }
-
   if (memberQuestionReceiver !== undefined) {
-    ctx.effect(() => memberQuestionReceiver.registerSessionMaterializer(async (input, admission) => {
-      const materialized = await materializeReceivingSession(
-        input.receivingSessionId as unknown as SessionId, admission,
-      )
-      return {
-        accepted: true as const,
-        ...(materialized.cachedReferences === undefined ? {} : { cachedReferences: materialized.cachedReferences }),
-      }
-    }), 'api-proxy: member-question Session materialization')
     ctx.effect(() => memberQuestionReceiver.registerHumanTurnAdmitter(async (input, admission) => {
-      const { agent } = await materializeReceivingSession(
-        input.receivingSessionId as unknown as SessionId, admission,
-      )
+      const workspace = workspaceFromId(admission.workspaceId)
+      const agent = await ensureSession(input.receivingSessionId as unknown as SessionId, workspace.path, true)
+      await workspace.attachSession(input.receivingSessionId as unknown as SessionId)
       const humanId = MessageId(`member-question-human:${input.rpcId}`)
       if (!hasMessage(agent.session, humanId)) {
         const message = freezeMessage({
