@@ -1,4 +1,5 @@
 /** Chat-owned selection state shared by the transcript and details panel. */
+import type { DetailsDocumentFocus } from '@deepseek-ai/dsh-client-ui-conversation/client'
 
 /** Tool call identity as carried by Chat nodes. */
 export type ToolCallId = string
@@ -21,4 +22,9 @@ export interface TurnProcessViewEntry {
 export interface ChatStoreState {
   selection: SelectionTarget | null
   turnProcesses: TurnProcessViewEntry[]
+  /**
+   * Focused document rendered in place of the tool body. Read with `?? null`
+   * so snapshots persisted before this field rehydrate without it.
+   */
+  documentFocus: DetailsDocumentFocus | null
 }

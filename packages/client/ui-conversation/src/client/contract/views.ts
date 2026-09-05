@@ -1,5 +1,17 @@
 /** Conversation view and session-local presentation state. */
 
+/** Focused document rendered in the details panel in place of a tool body. */
+export interface DetailsDocumentFocus {
+  /** Workspace-relative document path (identity and later reopening). */
+  path: string
+  /** File name rendered as the panel title (the path's last segment). */
+  filename: string
+  /** Display name of the member the document came from. */
+  from: string
+  /** Inline document body for the renderable kinds; absent renders identity only. */
+  content?: string
+}
+
 /**
  * One conversation view tab, projected from a 'conversation.view' slot
  * entry's registration options (label falls back to the entry id).

@@ -21,6 +21,9 @@
       "path": "../../../vendor/cordis"
     },
     {
+      "path": "../../../vendor/schemastery"
+    },
+    {
       "path": "../ui-slots"
     },
     {
@@ -55,6 +58,18 @@
     },
     {
       "path": "../../util/workspace-path"
+    },
+    {
+      "path": "../../util/brand"
+    },
+    {
+      "path": "../../platform/project-membership"
+    },
+    {
+      "path": "../../platform/project-membership-client"
+    },
+    {
+      "path": "../../platform/platform-account"
     }
   ]
 }

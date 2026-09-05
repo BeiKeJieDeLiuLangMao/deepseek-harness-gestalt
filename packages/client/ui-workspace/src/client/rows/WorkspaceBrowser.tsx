@@ -20,12 +20,13 @@ import type {
 } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { WorkspaceId, WorkspaceView } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { WorkspaceBrowserProps } from '../contract/slots.ts'
+import type { WorkspaceBrowserProps, WorkspacePendingInvitation } from '../contract/slots.ts'
 import type { SessionNode, SessionOrderBy } from '../tree.ts'
 import { deriveFlat, deriveGroups, deriveSearchResults, UNGROUPED_KEY } from '../tree.ts'
 import { ProjectRowItem, SearchResultItem, SessionNodeItem } from './Rows.tsx'
 import { FLAT_SESSION_ORDER_KEY } from '../stores.ts'
 import { WorkspacePickFlow } from '../WorkspacePicker.tsx'
+import { InviteWizardModal, WorkspaceSettingsModal } from '../WorkspaceSettings.tsx'
 import css from './WorkspaceBrowser.module.css'
 
 /**
@@ -260,6 +261,8 @@ type SessionTreeProps = Pick<
   onSessionRename: (sessionId: SessionNode['id'], currentTitle: string) => void
   /** Archive a session (row menu action; the row disappears on the state echo). */
   onSessionArchive: (sessionId: SessionNode['id']) => void
+  /** Open workspace settings for a real Workspace group. */
+  onSettingsRequest: (workspaceId: WorkspaceId, currentTitle: string) => void
   /** Session order behavior: fixed after edits, or additionally promoted by user activity. */
   orderBy: SessionOrderBy
 }
@@ -267,7 +270,7 @@ type SessionTreeProps = Pick<
 /** The scrolling session tree; unmounting drops the sessions subscription and expand-all state. */
 function SessionTree({
   useSessions, useSessionPendingInteraction, startSession, open, forkSession, workspaces, archivedSessionIds,
-  onRenameRequest, onDeleteRequest, onSessionRename, onSessionArchive,
+  onRenameRequest, onDeleteRequest, onSessionRename, onSessionArchive, onSettingsRequest,
   insertWorkspaceBefore, insertSessionBefore, orderBy,
   groupExpansion, setGroupExpanded,
   sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder, home, t,
@@ -515,6 +518,10 @@ function SessionTree({
                 actions={group.workspaceId === undefined
                   ? undefined
                   : {
+                    settings: () => {
+                    /* v8 ignore next -- narrowing guard: the actions object exists only for real-workspace groups. */
+                      if (group.workspaceId !== undefined) onSettingsRequest(group.workspaceId, group.label)
+                    },
                     rename: () => {
                     /* v8 ignore next -- narrowing guard: the actions object exists only for real-workspace groups. */
                       if (group.workspaceId !== undefined) onRenameRequest(group.workspaceId, group.label)
@@ -821,10 +828,17 @@ export function WorkspaceBrowser({
   searchResultLimit,
   useDirectoryFlow,
   useHostInfo,
+  usePendingInvitations,
+  useMembership,
   renderSlot,
+  projectMembership,
   t,
 }: WorkspaceBrowserProps) {
   const home = useHostInfo(info => info.home)
+  const invitations = usePendingInvitations(state => state.invitations)
+  const invitationEpoch = usePendingInvitations(state => state.epoch)
+  const membershipAvailable = useMembership(state => state.available)
+  const membershipEpoch = useMembership(state => state.epoch)
   const workspaces = useWorkspaces(state => state.items)
   const workspacePhase = useWorkspaces(state => state.phase)
   const archivedSessionIds = useWorkspaces(state => state.archivedSessionIds)
@@ -888,6 +902,23 @@ export function WorkspaceBrowser({
   const [wsPickerOpen, setWsPickerOpen] = useState(false)
   const wsPlusRef = useRef<HTMLButtonElement>(null)
   const composingRef = useRef(false)
+  const [pendingInvitation, setPendingInvitation] = useState<WorkspacePendingInvitation | null>(null)
+  const goneInvitationIds = useRef(new Set<string>())
+  useEffect(() => {
+    if (!membershipAvailable) {
+      setPendingInvitation(null)
+      return
+    }
+    const offered = invitations.find(
+      invitation => !goneInvitationIds.current.has(invitation.invitationId),
+    )
+    setPendingInvitation((current) => {
+      if (offered === undefined) return current === null ? current : null
+      if (current !== null && offered.invitationId === current.invitationId) return current
+      if (current !== null) return current
+      return offered
+    })
+  }, [invitationEpoch, invitations, membershipAvailable])
 
   // Rail search = expand + land in the search box: the flag arms before the
   // expand request; once the shell flips wide the input mounts and takes focus.
@@ -1038,6 +1069,11 @@ export function WorkspaceBrowser({
   const [deleting, setDeleting] = useState(false)
   const [deleteCommittedId, setDeleteCommittedId] = useState<WorkspaceId | null>(null)
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [settingsTarget, setSettingsTarget] = useState<{ workspaceId: WorkspaceId; title: string; path: string } | null>(null)
+  useEffect(() => {
+    if (membershipAvailable) return
+    setSettingsTarget(null)
+  }, [membershipAvailable])
   useEffect(() => {
     if (deleteCommittedId === null
       || workspaces.some(workspace => workspace.workspaceId === deleteCommittedId)) return
@@ -1252,6 +1288,10 @@ export function WorkspaceBrowser({
                 orderBy={orderBy}
                 home={home}
                 t={t}
+                onSettingsRequest={(workspaceId, currentTitle) => {
+                  const path = workspaces.find(workspace => workspace.workspaceId === workspaceId)?.path ?? ''
+                  setSettingsTarget({ workspaceId, title: currentTitle, path })
+                }}
                 onRenameRequest={(workspaceId, currentTitle) => {
                   setRenameTarget({ workspaceId, currentTitle })
                   setRenameDraft(currentTitle)
@@ -1356,6 +1396,35 @@ export function WorkspaceBrowser({
         {deleting && <div className={css.deleteStatus} role="status">{t('delete.pending')}</div>}
         {deleteError !== null && <div className={css.renameError} role="alert">{deleteError}</div>}
       </Modal>
+      {settingsTarget !== null && membershipAvailable && (
+        <WorkspaceSettingsModal
+          key={membershipEpoch}
+          workspaceId={settingsTarget.workspaceId}
+          workspaceTitle={settingsTarget.title}
+          workspacePath={settingsTarget.path}
+          gateway={projectMembership}
+          onClose={() => { setSettingsTarget(null) }}
+          t={t}
+        />
+      )}
+      {pendingInvitation !== null && membershipAvailable && (
+        <InviteWizardModal
+          key={`${membershipEpoch}:${pendingInvitation.invitationId}`}
+          invitation={pendingInvitation}
+          workspaces={workspaces.map(workspace => ({
+            workspaceId: workspace.workspaceId,
+            title: workspace.title,
+            path: workspace.path,
+          }))}
+          gateway={projectMembership}
+          onClose={() => { setPendingInvitation(null) }}
+          onInvitationGone={(invitationId) => {
+            goneInvitationIds.current.add(invitationId)
+            setPendingInvitation(null)
+          }}
+          t={t}
+        />
+      )}
     </div>
   )
 }

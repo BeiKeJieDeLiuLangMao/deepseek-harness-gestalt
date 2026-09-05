@@ -33,7 +33,9 @@ export type {
   ConversationPromptSnapshot, RequestInspectionSnapshot, RequestPromptChange, RequestPromptInspection, RequestPromptInspector, RequestView,
 } from './contract/request-inspection.ts'
 export { inspectRequestPrompt } from './contract/request-inspection.ts'
-export type { ConversationStoreState, ConversationViewRequest, ViewTab } from './contract/views.ts'
+export type {
+  ConversationStoreState, ConversationViewRequest, DetailsDocumentFocus, ViewTab,
+} from './contract/views.ts'
 
 export { ConversationNodeAssembler } from './conversation/assembler.ts'
 export type {
@@ -54,7 +56,7 @@ export type {
   ConversationSessionInjected, ConversationSessionSlotProps, ConversationSlotProps,
   ConversationStore, ConvViewOwnerProps, ConvViewProps, EmptyWorkspaceOwnerProps,
   HeroAgentPresetOwnerProps, HeroBrandMarkOwnerProps, InputControlOwnerProps, InputZone,
-  MessageImageLoader, MessageImageSource, MessageImagesOwnerProps, RenderMessageImages, UseConversation,
+  MessageImageLoader, MessageImagePinOverlay, MessageImageSource, MessageImagesOwnerProps, RenderMessageImages, UseConversation,
   UseConversationViews,
 } from './contract/slots.ts'
 export type {

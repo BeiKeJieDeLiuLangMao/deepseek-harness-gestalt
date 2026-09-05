@@ -4,7 +4,7 @@ import { createChatStore } from '../src/client/stores.ts'
 describe('createChatStore', () => {
   it('starts without a selected Chat target', () => {
     const store = createChatStore().create()
-    expect(store.store.getSnapshot()).toEqual({ selection: null, turnProcesses: [] })
+    expect(store.store.getSnapshot()).toEqual({ selection: null, turnProcesses: [], documentFocus: null })
   })
 
   it('selects and clears one Chat details target', () => {
@@ -45,5 +45,13 @@ describe('createChatStore', () => {
     store.actions.setTurnProcessOpen(9, 10, false)
 
     expect(store.store.getSnapshot().turnProcesses).toEqual([{ turn: 3, answerStep: 4 }])
+  })
+
+  it('clears a focused document when a tool is selected', () => {
+    const store = createChatStore().create()
+    store.actions.focusDocument({ path: 'docs/plan.md', filename: 'plan.md', from: '李四' })
+    expect(store.store.getSnapshot().documentFocus).not.toBeNull()
+    store.actions.select({ turnSeq: 2, stepSeq: 1, callId: 'c1', toolName: 'read' })
+    expect(store.store.getSnapshot().documentFocus).toBeNull()
   })
 })

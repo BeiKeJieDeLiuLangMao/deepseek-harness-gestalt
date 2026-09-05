@@ -32,6 +32,8 @@ import type { RemoteHostFacts } from '@deepseek-ai/dsh-api-remotes/client'
 import type { WorkspaceId, WorkspaceView } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { createWorkspaceViewStore } from '../stores.ts'
+import type { MembershipAvailabilitySnapshot } from '../membership-gateway.ts'
+import type { PendingInvitationsSnapshot } from '../pending-invitations-source.ts'
 
 /**
  * Owner share of the directory-flow holes: the complete conversation between
@@ -96,6 +98,16 @@ export type WorkspaceBrowserInjected = {
      * saw. Select the field the surface needs (`info => info.home`).
      */
     hostInfo: HostObservable<RemoteHostFacts>
+    /**
+     * Apply-owned inbound invitation list. The renderer binds this source to
+     * `usePendingInvitations`; the browsing region does not start a timer.
+     */
+    pendingInvitations: HostObservable<PendingInvitationsSnapshot>
+    /**
+     * Apply-owned membership-client availability. Root inject is cached for
+     * the registration lifetime, so late bind and replace must ride this hook.
+     */
+    membership: HostObservable<MembershipAvailabilitySnapshot>
   }
   /**
    * Start a New Session in a Workspace: reuse-or-create its blank session and
@@ -142,6 +154,134 @@ export type WorkspaceBrowserInjected = {
   insertSessionBefore: (workspaceId: WorkspaceId, sessionId: SessionId, beforeSessionId?: SessionId) => Promise<void>
   /** Adopt a picked host directory as a real Workspace before targeting a Session. */
   createWorkspace: (input: { path: string }) => Promise<WorkspaceView>
+  /**
+   * Late-bound Cloud Project membership transport. Callbacks resolve the
+   * current membership client at call time. Modal availability rides
+   * `hooks.membership`; absence of a live client closes settings and the wizard.
+   */
+  projectMembership: ProjectMembershipGateway
+}
+
+/** Cloud Project role used by workspace settings and the invite wizard. */
+export type WorkspaceProjectRole = 'owner' | 'admin' | 'member'
+
+/** Bound Cloud Project shown in workspace settings. */
+export interface WorkspaceProjectView {
+  /** Cloud Project id. */
+  id: string
+  /** Display name of the Cloud Project. */
+  name: string
+  /** Optional origin remote bound to the Cloud Project. */
+  boundRemoteUrl?: string
+  /** Account that opened the current settings surface. */
+  receivingAccountId: string
+}
+
+/** One roster row in workspace settings. */
+export interface WorkspaceMemberRow {
+  /** Membership id used by role, tag, and removal actions. */
+  membershipId: string
+  /** Platform account id of the member. */
+  accountId: string
+  /** Display name shown in the roster. */
+  displayName: string
+  /** Avatar URL, or empty when the row uses initials. */
+  avatarRef: string
+  /** Current project role. */
+  role: WorkspaceProjectRole
+  /** Function tags shown in the roster editor. */
+  tags: readonly string[]
+  /** Presence reported for the member. */
+  presence: 'online' | 'offline'
+}
+
+/** One pending outbound invitation shown under the roster. */
+export interface WorkspaceIssuedInvitation {
+  /** Invitation id used by retract. */
+  invitationId: string
+  /** Invitee display name. */
+  inviteeName: string
+  /** Role granted if the invitee accepts. */
+  grantedRole: WorkspaceProjectRole
+}
+
+/** One inbound invitation offered by the invite wizard. */
+export interface WorkspacePendingInvitation {
+  /** Invitation id used by accept and decline. */
+  invitationId: string
+  /** Account that received the invitation. */
+  receivingAccountId: string
+  /** Cloud Project being offered. */
+  projectId: string
+  /** Cloud Project display name. */
+  projectName: string
+  /** Inviter display name. */
+  inviterName: string
+  /** Origin remote of the invited project. */
+  remoteUrl: string
+  /** Role granted if the invitee accepts. */
+  grantedRole: WorkspaceProjectRole
+}
+
+/**
+ * Composition-owned membership transport used by workspace settings and the
+ * invite wizard. Desktop adapts the membership client onto this face.
+ */
+export interface ProjectMembershipGateway {
+  /** Create a Cloud Project bound to one local Workspace. */
+  createProject(input: { name: string; localWorkspaceId: WorkspaceId }): Promise<WorkspaceProjectView>
+  /** Read the Cloud Project bound to one local Workspace, if any. */
+  projectForWorkspace(workspaceId: WorkspaceId): Promise<WorkspaceProjectView | undefined>
+  /** Read the bound project's roster. */
+  roster(projectId: string): Promise<{
+    project: { id: string; name: string; boundRemoteUrl?: string }
+    members: readonly WorkspaceMemberRow[]
+  }>
+  /**
+   * Invite a GitHub login into the bound project.
+   * `inviteeName` is the submitted `githubLogin`; create-invite does not return a display name.
+   */
+  invite(input: {
+    projectId: string
+    githubLogin: string
+    grantedRole: WorkspaceProjectRole
+  }): Promise<{ invitationId: string; inviteeName: string; grantedRole: WorkspaceProjectRole }>
+  /** Read outbound invitations that have not been decided. */
+  issuedInvitations(projectId: string): Promise<readonly WorkspaceIssuedInvitation[]>
+  /** Retract one outbound invitation. */
+  retractInvitation(invitationId: string): Promise<void>
+  /**
+   * Accept or decline one inbound invitation.
+   * `accept-with-link` forwards only `{ link }` to the membership client;
+   * `localWorkspaceId`, `receivingAccountId`, and `projectId` are not Host verbs (#590).
+   */
+  decideInvitation(
+    invitationId: string,
+    decision:
+      | { decision: 'decline' }
+      | {
+        decision: 'accept-with-link'
+        localWorkspaceId: WorkspaceId
+        receivingAccountId: string
+        projectId: string
+        link: { workspaceName: string; normalizedRemoteUrl?: string }
+      },
+  ): Promise<void>
+  /** Change one member's role. */
+  changeRole(membershipId: string, role: WorkspaceProjectRole): Promise<void>
+  /** Replace one member's function tags. */
+  setMemberTags(membershipId: string, tags: readonly string[]): Promise<void>
+  /** Remove one member from the bound project. */
+  removeMember(membershipId: string): Promise<void>
+  /** Read inbound invitations still pending for the current actor. */
+  pendingInvitations(): Promise<readonly WorkspacePendingInvitation[]>
+  /** Read the local origin remote for one Workspace, if Git reports one. */
+  localRemoteFor(workspaceId: WorkspaceId): Promise<string | undefined>
+  /** Clone the invited remote into a new local Workspace. */
+  cloneWorkspace(input: {
+    remoteUrl: string
+    directoryName: string
+  }): Promise<{ workspaceId: WorkspaceId; title: string; normalizedRemoteUrl: string } | undefined>
 }
 
 /** Full browser props: shell owner share + viewing store + injected actions + the locale seat. */

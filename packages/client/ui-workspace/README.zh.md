@@ -37,7 +37,7 @@ kind: "package-reference"
 
 ### 管理会话
 
-Session 行内的 Rename 操作打开一个以该行显示标题预填的对话框；确认未修改的标题是有意允许的——这正是把当前自动标题钉住、不再被重新生成覆盖的手势。Archive 不经确认对话框直接提交，归档集合回声落地后，该行从所有分组视图中消失。Fork 在源会话最后一个已完成轮次处 fork，在客户端递增继承的持久化标题后再打开子会话。Workspace 行内的 Delete 操作会打开确认框，说明保留边界；成功后该分组被移除，其 Session 则留在 Ungrouped 下。
+Session 行内的 Rename 操作打开一个以该行显示标题预填的对话框；确认未修改的标题是有意允许的——这正是把当前自动标题钉住、不再被重新生成覆盖的手势。Archive 不经确认对话框直接提交，归档集合回声落地后，该行从所有分组视图中消失。Fork 在源会话最后一个已完成轮次处 fork，在客户端递增继承的持久化标题后再打开子会话。Workspace 行内的 Delete 操作会打开确认框，说明保留边界；成功后该分组被移除，其 Session 则留在 Ungrouped 下。公共 Session 列表 presentation 仅在组合提供对应回调时渲染重命名、分叉和归档，因此只读消费者（如 MobileBrowse）不会出现无效菜单项。
 
 ### 待处理交互
 
@@ -107,6 +107,7 @@ Workspace 与 Session 悬浮卡片会复制对应行被截断的值：激活 Wor
 - **没有 Session 删除与取消归档控件**：会话可以归档，但已归档会话没有查看或取消归档入口；删除 Workspace 注册记录不会删除 Session。
 - **待处理的用户交互不会聚合到折叠的分组上**：折叠分组内正在等待的行不会点亮分组头指示，只有展开该分组后才可见。
 - **原生文件夹选择依赖本地 Host 载体**：在 `-native` 组合下，进程内部署或远程浏览器部署无法打开本地操作系统对话框；可远程的选取是 `-browse` 组合的应用内流程。
+- **按工作区解析的云项目 Git 仍是 Host 缺口（#590）**：浏览区行菜单第一项始终是**工作区设置**；待处理邀请来自 apply 拥有的 `usePendingInvitations` hook。membership 回调是稳定的晚绑定 inject 对象：每次调用解析当前 `projectMembershipClient`，`useMembership` 驱动设置与邀请向导在晚挂、替换、卸载下的可用性。`createProject({ localWorkspaceId })`、`projectForWorkspace`、`localRemoteFor`、`cloneWorkspace` 尚无 Host 动词。`decideInvitation({ accept-with-link })` 只转发 `{ link }`；`localWorkspaceId`、`receivingAccountId`、`projectId` 不是 Host membership 动词。注入的 gateway 会拒绝这四个 Git 调用，而不是编造空操作。邀请轮询间隔是插件 `Config.pollIntervalMs`（默认 15 000）。创建邀请的展示名使用提交的 GitHub login；`InvitationView` 没有 `inviteeName`。
 
 <a id="dev-note"></a>
 ### 开发备注

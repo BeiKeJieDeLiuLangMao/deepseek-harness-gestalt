@@ -37,7 +37,7 @@ Collapsed search is one header action beside the view and add actions: activatin
 
 ### Managing sessions
 
-The Session row's Rename action opens a dialog prefilled with the row's display title; confirming an unchanged title is deliberately allowed — it pins the current automatic title against regeneration. Archive commits without a confirmation dialog and the row disappears from every grouping surface when the archive-set echo lands. Fork forks at the source's last completed turn, increments the inherited persisted title on the client, and then opens the child. Workspace Delete opens a confirmation that states the retention boundary; success removes the group while its Sessions remain under Ungrouped.
+The Session row's Rename action opens a dialog prefilled with the row's display title; confirming an unchanged title is deliberately allowed — it pins the current automatic title against regeneration. Archive commits without a confirmation dialog and the row disappears from every grouping surface when the archive-set echo lands. Fork forks at the source's last completed turn, increments the inherited persisted title on the client, and then opens the child. Workspace Delete opens a confirmation that states the retention boundary; success removes the group while its Sessions remain under Ungrouped. The public Session list presentation renders rename, fork, and archive only when the composition supplies those callbacks, so a read-only consumer such as MobileBrowse does not show dead menu items.
 
 ### Pending interactions
 
@@ -107,6 +107,7 @@ These limits define the search depth, the archive surface, and the picking carri
 - **No Session deletion or unarchive control** — sessions can be archived, but archived sessions have no viewing or unarchive surface, and Workspace registration deletion does not delete Sessions.
 - **Pending user interaction is not aggregated into collapsed groups** — a waiting row inside a collapsed group lights no group-header indicator and becomes visible only after that group is expanded.
 - **Native folder selection depends on the local Host carrier** — under the `-native` composition, in-process or remote browser deployments cannot open a local operating-system dialog; remote-capable picking is the `-browse` composition's in-app flow.
+- **Workspace-keyed Cloud Project Git is still a Host gap (#590)** — the browsing region always offers **Workspace settings** as the first row-menu item and reads inbound invitations from the apply-owned `usePendingInvitations` hook. Membership callbacks are a stable late-bound inject object: each call resolves the current `projectMembershipClient`, and `useMembership` drives settings and invite-wizard availability across late bind, replace, and unload. `createProject({ localWorkspaceId })`, `projectForWorkspace`, `localRemoteFor`, and `cloneWorkspace` have no Host verbs yet. `decideInvitation({ accept-with-link })` forwards only `{ link }`; `localWorkspaceId`, `receivingAccountId`, and `projectId` are not Host membership verbs. The injected gateway rejects the four Git calls instead of inventing a no-op. Invitation poll cadence is the plugin `Config.pollIntervalMs` field (default 15 000). Create-invite UI copy uses the submitted GitHub login; `InvitationView` has no `inviteeName`.
 
 <a id="dev-note"></a>
 ### Dev Note

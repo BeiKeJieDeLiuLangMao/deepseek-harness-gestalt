@@ -92,6 +92,7 @@ describe('deriveGroups', () => {
       list(receiving),
       [workspace('bound', ['receiving'])],
       noArchive,
+      noAttention,
       view(['bound']),
     )
     expect(groups.map(group => group.key)).toEqual(['bound'])
