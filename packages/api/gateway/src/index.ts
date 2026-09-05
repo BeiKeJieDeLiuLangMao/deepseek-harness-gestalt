@@ -70,6 +70,10 @@ export type {
   TypertRemoteEventSource,
 } from './types.ts'
 export type { RemoteEventHostInfo } from './stream-protocol.ts'
+export {
+  parseRemoteStreamServerMessage,
+  REMOTE_STREAM_MUX_PATH,
+} from './stream-protocol.ts'
 
 interface GatewayErrorOptions {
   readonly cause?: unknown

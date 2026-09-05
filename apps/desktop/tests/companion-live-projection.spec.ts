@@ -91,43 +91,32 @@ describe('Desktop Companion live projection', () => {
     const calls: string[] = []
     let archivedSessionIds: string[] = []
     const host: DesktopHostRpc = {
+      followWorkspaces: async () => {},
+      followSession: async () => {},
       call: vi.fn(async (method: string) => {
         calls.push(method)
         if (method === 'session.list') return { ok: true, value: { items: [
           { sessionId: 'session-hidden', updatedAt: 10, running: true, blank: false },
           { sessionId: opened, updatedAt: 20, running: true, blank: false },
         ] } }
-        if (method === 'workspace.list') return { ok: true, value: { items: [{
-          workspaceId: 'workspace-live', path: '/work', title: 'Work',
-          sessionIds: [opened], createdAt: '2026-08-24T00:00:00.000Z',
-          updatedAt: '2026-08-24T00:00:00.000Z',
-        }], archivedSessionIds } }
-        if (method === 'session.history') return { ok: true, value: { events: [
-          { event: { type: 'step/start', seq: 0, time: 1, data: { turn: 1, step: 1 } } },
-          { event: { type: 'assistant/chunk', seq: 1, time: 2, data: {
-            turn: 1, step: 1, chunk: { type: 'block-start', index: 0, blockType: 'text' },
-          } } },
-          { event: { type: 'assistant/chunk', seq: 2, time: 3, data: {
-            turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: 'live output' },
-          } } },
-        ], hasMore: false } }
         throw new Error(`unexpected Host method ${method}`)
       }),
     }
     const hidden = await projectDesktopCompanionLiveSession(
-      parseCompanionSessionId('session-hidden'), false, liveDependencies(host), new AbortController().signal,
+      parseCompanionSessionId('session-hidden'), false, liveDependencies(host, archivedSessionIds),
+      new AbortController().signal,
     )
     expect(hidden).toMatchObject({
       sessionId: 'session-hidden', position: 0,
       summary: { running: true }, workspaces: [],
     })
     expect(hidden).not.toHaveProperty('conversation')
-    expect(calls).toEqual(['session.list', 'workspace.list'])
+    expect(calls).toEqual(['session.list'])
 
     calls.splice(0)
     archivedSessionIds = ['session-hidden']
     const detailed = await projectDesktopCompanionLiveSession(
-      opened, true, liveDependencies(host), new AbortController().signal,
+      opened, true, liveDependencies(host, archivedSessionIds), new AbortController().signal,
     )
     expect(detailed).toMatchObject({
       sessionId: opened,
@@ -137,19 +126,45 @@ describe('Desktop Companion live projection', () => {
         partial: { turn: 1, step: 1, blocks: [{ kind: 'text', text: 'live output' }] },
       },
     })
-    expect(calls).toEqual(['session.list', 'workspace.list', 'session.history'])
+    expect(calls).toEqual(['session.list'])
 
     calls.splice(0)
     archivedSessionIds = [opened]
     await expect(projectDesktopCompanionLiveSession(
-      opened, true, liveDependencies(host), new AbortController().signal,
+      opened, true, liveDependencies(host, archivedSessionIds), new AbortController().signal,
     )).resolves.toEqual({ sessionId: opened, removed: true })
   })
 })
 
-function liveDependencies(host: DesktopHostRpc) {
+function liveDependencies(host: DesktopHostRpc, archivedSessionIds: readonly string[] = []) {
   return {
-    host,
+    host: { followWorkspaces: async () => {}, followSession: async () => {}, ...host },
+    sessionHistory: {
+      page: async () => ({
+        ok: true as const,
+        value: {
+          events: [
+            { event: { type: 'step/start', seq: 0, time: 1, data: { turn: 1, step: 1 } } },
+            { event: { type: 'assistant/chunk', seq: 1, time: 2, data: {
+              turn: 1, step: 1, chunk: { type: 'block-start', index: 0, blockType: 'text' },
+            } } },
+            { event: { type: 'assistant/chunk', seq: 2, time: 3, data: {
+              turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: 'live output' },
+            } } },
+          ],
+          hasMore: false,
+        },
+      }),
+    },
+    workspaceSnapshot: () => Promise.resolve({
+      items: [{
+        workspaceId: 'workspace-live', path: '/work', title: 'Work',
+        sessionIds: [parseCompanionSessionId('session-opened')],
+        createdAt: '2026-08-24T00:00:00.000Z',
+        updatedAt: '2026-08-24T00:00:00.000Z',
+      }],
+      archivedSessionIds,
+    }),
     pendingInteractions: () => [],
   }
 }

@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { imageMediaTypeForPath } from '@deepseek-ai/dsh-tool-fs/read-policy'
 import {
   collectPackageAliases,
   collectPackageNames,
@@ -85,6 +86,17 @@ describe('generated tsconfig package aliases', () => {
     const names = collectPackageNames()
     expect(names).toContain('@deepseek-ai/dsh-typert-protocol')
     expect(uncoveredPackages(names, mappedSpecifiers(config))).toEqual([])
+  })
+
+  it('maps dsh-tool-fs/read-policy to source outside the generated region', () => {
+    const config = readFileSync(resolve(root, 'tsconfig.base.json'), 'utf8')
+    const begin = config.indexOf('      // BEGIN generated package aliases — pnpm run gen-tsconfig-paths')
+    const handwritten = config.slice(0, begin)
+    expect(handwritten).toContain(
+      '"@deepseek-ai/dsh-tool-fs/read-policy": ["./packages/fs/tool-fs/src/read-policy.ts"]',
+    )
+    expect(config).not.toContain('dsh-tool-fs/read-policy": ["./packages/fs/tool-fs/lib')
+    expect(imageMediaTypeForPath('shot.png')).toBe('image/png')
   })
 
   it('leaves no wildcard that probes every package group', () => {

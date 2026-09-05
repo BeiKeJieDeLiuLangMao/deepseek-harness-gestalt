@@ -5,11 +5,13 @@ import { request as httpRequest, type IncomingMessage, type RequestOptions } fro
 import { request as httpsRequest } from 'node:https'
 import WebSocket from 'ws'
 import {
+  parseRemoteStreamServerMessage,
+  REMOTE_STREAM_MUX_PATH,
+} from '@deepseek-ai/dsh-api-gateway'
+import {
   REMOTE_PROTOCOL_LIMITS,
   type CompanionHostFailure,
 } from '@deepseek-ai/dsh-remote-protocol'
-
-const REMOTE_STREAM_MUX_PATH = '/api/remote.mux'
 
 const DEFAULT_HOST_RPC_TIMEOUT_MS = 15_000
 const MAX_HOST_ATTACHMENT_RESPONSE_BYTES = Math.ceil(
@@ -60,8 +62,17 @@ export interface DesktopHostRpc {
    * Follow generated Gateway `session/follow` on `/api/remote.mux`.
    * Cookie is sent only to the bootstrap origin. Abort sends mux `cancel`.
    */
-  followSession?(
+  followSession(
     sessionId: string,
+    signal: AbortSignal,
+    accept: (frame: unknown) => void,
+    maxMessages?: number,
+  ): Promise<void>
+  /**
+   * Follow generated Gateway `workspace/follow` on `/api/remote.mux`.
+   * Cookie is sent only to the bootstrap origin. Abort sends mux `cancel`.
+   */
+  followWorkspaces(
     signal: AbortSignal,
     accept: (frame: unknown) => void,
   ): Promise<void>
@@ -187,15 +198,25 @@ export function createDesktopHostRpc(baseUrl: string, options: DesktopHostRpcOpt
     watchHost: async (signal, accept) => {
       await watchHostWebSocket(origin, '/api/events.host', signal, accept, options.cookieHeader)
     },
-    followSession: async (sessionId, signal, accept) => {
+    followSession: async (sessionId, signal, accept, maxMessages) => {
       await followRemoteMux(
         origin,
         'session/follow',
-        { args: { request: { address: { kind: 'session', sessionId } } } },
+        {
+          args: {
+            request: {
+              address: { kind: 'session', sessionId },
+              ...maxMessages === undefined ? {} : { maxMessages },
+            },
+          },
+        },
         signal,
         accept,
         options.cookieHeader,
       )
+    },
+    followWorkspaces: async (signal, accept) => {
+      await followRemoteMux(origin, 'workspace/follow', { args: {} }, signal, accept, options.cookieHeader)
     },
   }
 }
@@ -213,14 +234,13 @@ function watchHostWebSocket(
     const socket = openOriginWebSocket(url, origin, cookieHeader)
     const settled = { value: false }
     const cleanup = (): void => {
-      signal.removeEventListener('abort', abort)
-      socket.removeAllListeners()
+      detachSocketListeners(signal, abort, socket)
     }
     const settle = (failure?: Error): void => {
       settleSocket(settled, cleanup, resolve, reject, failure)
     }
     const abort = (): void => {
-      if (socket.readyState === WebSocket.CONNECTING || socket.readyState === WebSocket.OPEN) socket.close()
+      closeOriginWebSocket(socket)
       settle()
     }
     const message = (data: WebSocket.RawData): void => {
@@ -242,7 +262,7 @@ function watchHostWebSocket(
     }
     socket.on('message', message)
     socket.once('close', () => {
-      settle(signal.aborted ? undefined : new Error('Desktop Host event stream closed'))
+      settle(signal.aborted || settled.value ? undefined : new Error('Desktop Host event stream closed'))
     })
     socket.once('error', () => { settle(new Error('Desktop Host event stream failed')) })
     signal.addEventListener('abort', abort, { once: true })
@@ -357,13 +377,82 @@ export function createDesktopHostSession(
   return rpc.call('session/create', { args: { request: { sessionId } } }, options)
 }
 
+/**
+ * Register one existing directory as a Workspace through generated Gateway `workspace/create`.
+ * @param rpc - authenticated Desktop Host RPC.
+ * @param path - existing directory path.
+ * @returns the Host create value or a typed failure.
+ */
+export function createDesktopHostWorkspace(
+  rpc: DesktopHostRpc,
+  path: string,
+  options?: { timeoutMs?: number; signal?: AbortSignal },
+): Promise<DesktopHostRpcResult> {
+  return rpc.call('workspace/create', { args: { request: { path } } }, options)
+}
+
+/**
+ * Archive one Session through generated Gateway `workspace/archiveSession`.
+ * @param rpc - authenticated Desktop Host RPC.
+ * @param sessionId - Session identity to hide from Workspace grouping surfaces.
+ * @returns the Host archive value or a typed failure.
+ */
+export function archiveDesktopHostSession(
+  rpc: DesktopHostRpc,
+  sessionId: string,
+  options?: { timeoutMs?: number; signal?: AbortSignal },
+): Promise<DesktopHostRpcResult> {
+  return rpc.call('workspace/archiveSession', { args: { request: { sessionId } } }, options)
+}
+
+/**
+ * Read one message-aligned history page through generated Gateway `session/page`.
+ * `throughSeq` is the inclusive follow-snapshot cursor; `beforeSeq` and `maxMessages`
+ * are forwarded to Host pagination and are not a client-side event-count cut.
+ */
+export function pageDesktopHostSession(
+  rpc: DesktopHostRpc,
+  request: {
+    sessionId: string
+    throughSeq: number
+    beforeSeq?: number
+    maxMessages?: number
+  },
+  options?: { timeoutMs?: number; signal?: AbortSignal },
+): Promise<DesktopHostRpcResult> {
+  return rpc.call('session/page', {
+    args: {
+      request: {
+        address: { kind: 'session', sessionId: request.sessionId },
+        throughSeq: request.throughSeq,
+        ...request.beforeSeq === undefined ? {} : { beforeSeq: request.beforeSeq },
+        ...request.maxMessages === undefined ? {} : { maxMessages: request.maxMessages },
+      },
+    },
+  }, options)
+}
+
 function openOriginWebSocket(url: URL, origin: URL, cookieHeader?: string): WebSocket {
   if (url.hostname !== origin.hostname || url.port !== origin.port) {
     throw new TypeError('Desktop Host WebSocket must stay on the bootstrap origin')
   }
-  return new WebSocket(url, {
+  const socket = new WebSocket(url, {
+    handshakeTimeout: 1_000,
     ...cookieHeader === undefined ? {} : { headers: { cookie: cookieHeader } },
   })
+  socket.on('error', () => {})
+  return socket
+}
+
+function closeOriginWebSocket(socket: WebSocket): void {
+  if (socket.readyState === WebSocket.OPEN) socket.close()
+}
+
+function detachSocketListeners(signal: AbortSignal, abort: () => void, socket: WebSocket): void {
+  signal.removeEventListener('abort', abort)
+  socket.removeAllListeners('message')
+  socket.removeAllListeners('open')
+  socket.removeAllListeners('close')
 }
 
 function settleSocket(
@@ -396,8 +485,7 @@ function followRemoteMux(
     const settled = { value: false }
     let opened = false
     const cleanup = (): void => {
-      signal.removeEventListener('abort', abort)
-      socket.removeAllListeners()
+      detachSocketListeners(signal, abort, socket)
     }
     const settle = (failure?: Error): void => {
       settleSocket(settled, cleanup, resolve, reject, failure)
@@ -406,7 +494,7 @@ function followRemoteMux(
       if (opened && socket.readyState === WebSocket.OPEN) {
         socket.send(JSON.stringify({ type: 'cancel', streamId }))
       }
-      if (socket.readyState === WebSocket.CONNECTING || socket.readyState === WebSocket.OPEN) socket.close()
+      closeOriginWebSocket(socket)
       settle()
     }
     const message = (data: WebSocket.RawData): void => {
@@ -415,8 +503,8 @@ function followRemoteMux(
         if (Buffer.byteLength(text) > MAX_HOST_PROJECTED_RESPONSE_BYTES) {
           throw new Error('Desktop Host event stream frame exceeded its byte ceiling')
         }
-        const frame: unknown = JSON.parse(text)
-        if (!isRecord(frame) || typeof frame.type !== 'string' || frame.streamId !== streamId) {
+        const frame = parseRemoteStreamServerMessage(text)
+        if (frame.streamId !== streamId) {
           throw new Error('Desktop Host Remote mux frame was invalid')
         }
         if (frame.type === 'item') {
@@ -428,10 +516,7 @@ function followRemoteMux(
           settle()
           return
         }
-        if (frame.type === 'error' && isRecord(frame.error) && typeof frame.error.message === 'string') {
-          throw new Error(frame.error.message)
-        }
-        throw new Error('Desktop Host Remote mux frame was invalid')
+        throw new Error(frame.error.message)
       } catch (cause) {
         socket.close()
         settle(cause instanceof Error ? cause : new Error('Desktop Host Remote mux frame was invalid', { cause }))
@@ -443,7 +528,7 @@ function followRemoteMux(
     })
     socket.on('message', message)
     socket.once('close', () => {
-      settle(signal.aborted ? undefined : new Error('Desktop Host event stream closed'))
+      settle(signal.aborted || settled.value ? undefined : new Error('Desktop Host event stream closed'))
     })
     socket.once('error', () => { settle(new Error('Desktop Host event stream failed')) })
     signal.addEventListener('abort', abort, { once: true })

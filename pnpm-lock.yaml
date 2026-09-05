@@ -473,6 +473,15 @@ importers:
 
   apps/desktop:
     dependencies:
+      '@deepseek-ai/dsh-api-gateway':
+        specifier: workspace:^
+        version: link:../../packages/api/gateway
+      '@deepseek-ai/dsh-api-session-controller':
+        specifier: workspace:^
+        version: link:../../packages/api/session-controller
+      '@deepseek-ai/dsh-api-workspace-controller':
+        specifier: workspace:^
+        version: link:../../packages/api/workspace-controller
       '@deepseek-ai/dsh-atomic-write':
         specifier: workspace:^
         version: link:../../packages/util/atomic-write

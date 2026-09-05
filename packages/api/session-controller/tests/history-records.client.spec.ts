@@ -8,6 +8,7 @@ import {
   historyRecordFirstSeq,
   historyRecordLastSeq,
 } from '../src/client/sessions/history-records.ts'
+import { expandSessionHistoryRecords } from '../src/history-records.ts'
 
 describe('Session history record projection', () => {
   it('retains an ordinary event and its point cursor', () => {
@@ -74,5 +75,23 @@ describe('Session history record projection', () => {
     expect(event).toBe(packed.event)
     expect(Object.hasOwn(event.data, 'name')).toBe(false)
     expect(historyRecordLastSeq(packed)).toBe(22)
+  })
+
+  it('expands packed chunkrow records through decodeStorageRecord without dropping seq or time', () => {
+    const packed: SessionHistoryRecord = {
+      type: 'chunks',
+      event: {
+        type: 'chunkrow/text-chunks',
+        seq: 11,
+        time: 20,
+        data: { turn: 1, step: 2, index: 0, dt: [1, 2], texts: ['a', 'b', 'c'] },
+      },
+    }
+    const events = expandSessionHistoryRecords([packed])
+    expect(events).toEqual([
+      { type: 'assistant/chunk', seq: 11, time: 20, data: { turn: 1, step: 2, chunk: { type: 'text-delta', index: 0, text: 'a' } } },
+      { type: 'assistant/chunk', seq: 12, time: 21, data: { turn: 1, step: 2, chunk: { type: 'text-delta', index: 0, text: 'b' } } },
+      { type: 'assistant/chunk', seq: 13, time: 23, data: { turn: 1, step: 2, chunk: { type: 'text-delta', index: 0, text: 'c' } } },
+    ])
   })
 })

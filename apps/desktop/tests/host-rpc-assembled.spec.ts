@@ -7,7 +7,9 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { WorkspaceTypertGenerator } from '@deepseek-ai/dsh-typert-generator'
 import { REMOTE_PROTOCOL_LIMITS } from '@deepseek-ai/dsh-remote-protocol'
 import {
-  bootstrapDesktopHostCookie, createDesktopHostRpc, createDesktopHostSession, listDesktopHostSessions,
+  archiveDesktopHostSession,
+  bootstrapDesktopHostCookie, createDesktopHostRpc, createDesktopHostSession, createDesktopHostWorkspace,
+  listDesktopHostSessions, pageDesktopHostSession,
 } from '../src/host-rpc.ts'
 import { spawnWebHost, type RunningWebHost } from '../src/spawn-web-host.ts'
 
@@ -190,8 +192,93 @@ describe('Desktop Host RPC against shipped dsh web', () => {
       restarted.push(frame)
     })
     await expect.poll(() => restarted.some(frame => isRecord(frame) && frame.type === 'snapshot')).toBe(true)
+    const snapshot = restarted.find(frame => isRecord(frame) && frame.type === 'snapshot')
+    if (!isRecord(snapshot) || typeof snapshot.cursor !== 'number') throw new Error('missing follow snapshot')
+    await expect(pageDesktopHostSession(next, {
+      sessionId, throughSeq: snapshot.cursor, maxMessages: 20,
+    })).resolves.toMatchObject({ ok: true, value: { records: expect.any(Array), hasMore: expect.any(Boolean) } })
     restartFollow.abort()
     await expect(restartWatch).resolves.toBeUndefined()
+  }, 180_000)
+
+  it('follows generated workspace/follow, applies a create increment, and reauths after Host restart', async () => {
+    const first = await startShippedHost()
+    const cookie = await bootstrapDesktopHostCookie(first.running.launchUrl, first.running.url)
+    const rpc = createDesktopHostRpc(first.running.url, {
+      timeoutMs: 10_000,
+      responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
+      cookieHeader: cookie,
+    })
+    const frames: unknown[] = []
+    const follow = new AbortController()
+    const watching = rpc.followWorkspaces?.(follow.signal, (frame) => { frames.push(frame) })
+    await expect.poll(() => frames.some(frame => isRecord(frame) && frame.type === 'baseline')).toBe(true)
+    const created = await createDesktopHostWorkspace(rpc, first.home)
+    expect(created.ok).toBe(true)
+    if (!created.ok || !isRecord(created.value) || !isRecord(created.value.workspace)
+      || typeof created.value.workspace.path !== 'string') {
+      throw new Error('Desktop Host workspace/create returned an invalid value')
+    }
+    expect(created.value.workspace.path).toContain('dsh-desktop-host-rpc-')
+    await expect.poll(() => frames.some(frame => isRecord(frame) && frame.type === 'upsert')).toBe(true)
+    const seen = frames.length
+    follow.abort()
+    await expect(watching).resolves.toBeUndefined()
+    await createDesktopHostWorkspace(rpc, join(first.home, '.agents'))
+    await new Promise(resolve => setTimeout(resolve, 250))
+    expect(frames.length).toBe(seen)
+
+    await first.running.stop()
+    children.splice(children.indexOf(first.running), 1)
+    const second = await startShippedHost()
+    const stale = createDesktopHostRpc(second.running.url, {
+      timeoutMs: 10_000,
+      responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
+      cookieHeader: cookie,
+    })
+    const staleFollow = new AbortController()
+    await expect(stale.followWorkspaces?.(staleFollow.signal, () => {})).rejects.toThrow()
+    const nextCookie = await bootstrapDesktopHostCookie(second.running.launchUrl, second.running.url)
+    const next = createDesktopHostRpc(second.running.url, {
+      timeoutMs: 10_000,
+      responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
+      cookieHeader: nextCookie,
+    })
+    const restarted: unknown[] = []
+    const restartFollow = new AbortController()
+    const restartWatch = next.followWorkspaces?.(restartFollow.signal, (frame) => { restarted.push(frame) })
+    await expect.poll(() => restarted.some(frame => isRecord(frame) && frame.type === 'baseline')).toBe(true)
+    restartFollow.abort()
+    await expect(restartWatch).resolves.toBeUndefined()
+  }, 180_000)
+
+  it('archives a Session through workspace/follow without exposing it after unsubscribe', async () => {
+    const first = await startShippedHost()
+    const cookie = await bootstrapDesktopHostCookie(first.running.launchUrl, first.running.url)
+    const rpc = createDesktopHostRpc(first.running.url, {
+      timeoutMs: 10_000,
+      responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
+      cookieHeader: cookie,
+    })
+    const sessionId = 'desktop-archived-session'
+    await expect(createDesktopHostSession(rpc, sessionId)).resolves.toMatchObject({
+      ok: true, value: { sessionId },
+    })
+    const frames: unknown[] = []
+    const follow = new AbortController()
+    const watching = rpc.followWorkspaces?.(follow.signal, (frame) => { frames.push(frame) })
+    await expect.poll(() => frames.some(frame => isRecord(frame) && frame.type === 'baseline')).toBe(true)
+    await expect(archiveDesktopHostSession(rpc, sessionId)).resolves.toMatchObject({ ok: true })
+    await expect.poll(() => frames.some((frame) => {
+      return isRecord(frame) && frame.type === 'archived'
+        && Array.isArray(frame.archivedSessionIds) && frame.archivedSessionIds.includes(sessionId)
+    })).toBe(true)
+    const seen = frames.length
+    follow.abort()
+    await expect(watching).resolves.toBeUndefined()
+    await archiveDesktopHostSession(rpc, `${sessionId}-after-unsub`)
+    await new Promise(resolve => setTimeout(resolve, 250))
+    expect(frames.length).toBe(seen)
   }, 180_000)
 })
 

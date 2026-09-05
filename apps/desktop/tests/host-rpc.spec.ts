@@ -353,6 +353,56 @@ describe('Desktop Host RPC', () => {
     }])
     expect(frames).toEqual([{ type: 'snapshot', cursor: 0 }])
   })
+
+  it('opens generated workspace/follow on /api/remote.mux with empty args', async () => {
+    const opens: unknown[] = []
+    const cookies: string[] = []
+    const server = createServer()
+    const wss = new WebSocketServer({ noServer: true })
+    server.on('upgrade', (request, socket, head) => {
+      cookies.push(request.headers.cookie ?? '')
+      expect(request.url).toBe('/api/remote.mux')
+      wss.handleUpgrade(request, socket, head, (websocket) => {
+        websocket.on('message', (data) => {
+          const text = typeof data === 'string' ? data : Buffer.from(data as Uint8Array).toString('utf8')
+          const message = JSON.parse(text) as { type: string; streamId: string; endpoint?: string; payload?: unknown }
+          if (message.type === 'open') {
+            opens.push({ endpoint: message.endpoint, payload: message.payload })
+            websocket.send(JSON.stringify({
+              type: 'item', streamId: message.streamId,
+              value: { type: 'baseline', value: { items: [], archivedSessionIds: [] } },
+            }))
+          }
+          if (message.type === 'cancel') websocket.close()
+        })
+      })
+    })
+    await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
+    closeServers.push(async () => {
+      wss.close()
+      server.closeAllConnections()
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => { if (error === undefined) resolve(); else reject(error) })
+      })
+    })
+    const address = server.address()
+    if (address === null || typeof address === 'string') throw new Error('expected TCP address')
+    const origin = `http://127.0.0.1:${String(address.port)}`
+    const rpc = createDesktopHostRpc(origin, {
+      responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
+      cookieHeader: 'dsh-auth-x=session',
+    })
+    const frames: unknown[] = []
+    const cancellation = new AbortController()
+    const watching = rpc.followWorkspaces?.(cancellation.signal, (frame) => {
+      frames.push(frame)
+      cancellation.abort()
+    })
+    await expect(watching).resolves.toBeUndefined()
+    expect(cookies).toEqual(['dsh-auth-x=session'])
+    expect(opens).toEqual([{ endpoint: 'workspace/follow', payload: { args: {} } }])
+    expect(frames).toEqual([{ type: 'baseline', value: { items: [], archivedSessionIds: [] } }])
+  })
 })
 
 function successResponse(rpcId: string, padding: string): string {
