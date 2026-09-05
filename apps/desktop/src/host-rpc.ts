@@ -244,7 +244,6 @@ function parseServerResponse(body: unknown, rpcId: string): DesktopHostRpcResult
 const HOST_DIAGNOSTIC_CODE = /^[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*$/u
 const COMPANION_BUSINESS_CODE = /^[A-Za-z0-9_-]{1,128}$/u
 const HOST_DIAGNOSTIC_CODE_MAX = 128
-const MIN_ORIGINAL_FAILURE_MESSAGE_BYTES = 256
 const INVALID_HOST_BUSINESS_CODE: CompanionHostFailure = {
   kind: 'wire',
   code: 'HOST_WIRE_INVALID',
@@ -280,9 +279,8 @@ function prefixedHostFailureMessage(hostCode: string, hostMessage: string): stri
   const prefix = `[${hostCode}] `
   const limit = REMOTE_PROTOCOL_LIMITS.hostFailureMessageBytes
   const prefixBytes = new TextEncoder().encode(prefix).byteLength
-  const originalBudget = limit - prefixBytes
-  if (originalBudget < MIN_ORIGINAL_FAILURE_MESSAGE_BYTES) return undefined
-  return prefix + utf8Truncate(hostMessage, originalBudget)
+  if (prefixBytes >= limit) return undefined
+  return prefix + utf8Truncate(hostMessage, limit - prefixBytes)
 }
 
 function boundedFailureMessage(hostMessage: string): string {

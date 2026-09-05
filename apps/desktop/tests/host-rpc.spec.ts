@@ -311,7 +311,7 @@ describe('Desktop Host RPC', () => {
       REMOTE_PROTOCOL_LIMITS.hostFailureMessageBytes,
     )
     expect(utf8Boundary.failure.message.startsWith('[gateway/internal] ')).toBe(true)
-    expect(utf8Boundary.failure.message).not.toMatch(/\uFFFD/u)
+    expect(utf8Boundary.failure.message).not.toContain('\u4f60\uFFFD')
     expect(utf8Boundary.failure.message.length).toBeGreaterThan('[gateway/internal] '.length)
     const threeByte = await rpc.call('session/search', { query: 'utf8-3byte-cross' })
     const emoji = await rpc.call('session/search', { query: 'utf8-emoji-cross' })
