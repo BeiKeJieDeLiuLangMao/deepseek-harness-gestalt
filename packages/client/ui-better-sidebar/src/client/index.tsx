@@ -11,8 +11,7 @@
 import { createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import type { Context } from '../context-types.ts'
-import type { SessionAdmissionAdapter } from '@deepseek-ai/dsh-client-runtime/client'
-import type { ModelSelection, RpcResult } from '@deepseek-ai/dsh-api-remotes/client'
+import { installSidechatAdmission } from './sidechat-admission.ts'
 import { allLeaves, createSidebarStore, isAgentTabId } from './state.ts'
 import { createBetterSidebarService, matchUrlTarget } from './service.ts'
 import { loadChunk, revalidateChunksOnReactivate, setChunkModuleSystem } from './chunk-loader.ts'
@@ -26,11 +25,7 @@ import { subscribeSideThreadRestoration } from './sidechat-restore.ts'
 import { registerSettingsNavIcon } from './settings-nav-icon.ts'
 import { loadBootDecision } from './prefs.ts'
 import { SideCardSection } from './SideCardSection.tsx'
-import {
-  api, isKnownSidechatSession, noteSidechatDraftSelection, settleSidechatDraft, SidebarApiError,
-  sidechatDraftOf,
-} from './api.ts'
-import { SIDE_LABEL_PREFIX } from '../sidechat-core.ts'
+import { api } from './api.ts'
 import { LOCALE_NS, attachLocale, attachBetterLocale, t, zh, en } from './locales.ts'
 import css from './sidebar.module.css'
 import './layout.css'
@@ -62,132 +57,8 @@ function isDesktopOverlayDocument(): boolean {
  * @param ctx - the client cordis context (slots, sessions).
  */
 export function apply(ctx: Context): void {
-  const routeFailure = <T,>(cause: unknown): RpcResult<T> => ({
-    ok: false,
-    error: {
-      code: 'internal',
-      message: cause instanceof Error ? cause.message : String(cause),
-      details: {},
-    },
-  })
-  const sidechatAdmission: SessionAdmissionAdapter = {
-    id: 'better-sidebar-sidechat',
-    handles: (sessionId) => {
-      if (isKnownSidechatSession(sessionId)) return true
-      const summary = ctx.sessions.list.getSnapshot().byId[sessionId]
-      return summary?.origin === 'subagent' && summary.displayTitle.startsWith(SIDE_LABEL_PREFIX)
-    },
-    historyScope: 'owned-suffix',
-    skillCatalogSessionId: (sessionId) => sidechatDraftOf(sessionId)?.parentSessionId ?? sessionId,
-    prompt: async (sessionId, content, mode, signal) => {
-      if (content.some(part => part.type !== 'text')) {
-        return {
-          ok: false,
-          error: {
-            code: 'attachment-error',
-            message: 'Image input is unavailable in Side Chat.',
-            details: { reason: 'SUBAGENT_IMAGE_UNSUPPORTED' },
-          },
-        }
-      }
-      const text = content.map(part => part.type === 'text' ? part.text : '').join('\n\n')
-      const draft = sidechatDraftOf(sessionId)
-      if (draft === undefined) {
-        await api.sidechatPrompt(sessionId, text, mode, signal)
-      } else {
-        await api.sidechatStart(
-          draft.parentSessionId,
-          sessionId,
-          text,
-          draft.selection,
-          signal,
-        )
-        settleSidechatDraft(sessionId)
-      }
-      return { ok: true, value: { accepted: true } }
-    },
-    cancel: async (sessionId) => {
-      if (sidechatDraftOf(sessionId) !== undefined) return { ok: true, value: { accepted: true } }
-      await api.sidechatCancel(sessionId)
-      return { ok: true, value: { accepted: true } }
-    },
-    updateQueue: async (sessionId, itemId, action) => {
-      try {
-        await api.sidechatUpdateQueue(sessionId, itemId, action)
-        return { ok: true, value: { accepted: true } }
-      } catch (cause) {
-        if (cause instanceof SidebarApiError && cause.code === 'queue-item-not-found') {
-          return {
-            ok: false,
-            error: { code: 'queue-item-not-found', message: cause.message, details: { itemId } },
-          }
-        }
-        if (cause instanceof SidebarApiError && cause.code === 'steer-unavailable') {
-          return {
-            ok: false,
-            error: { code: 'steer-unavailable', message: cause.message, details: { itemId } },
-          }
-        }
-        return routeFailure(cause)
-      }
-    },
-    command: async (sessionId, line) => {
-      const match = /^\/permission\s+(\S+)\s*$/u.exec(line)
-      const preset = match?.[1]
-      if (preset === undefined) return { ok: true, value: { matched: false } }
-      try {
-        const draft = sidechatDraftOf(sessionId)
-        const summary = ctx.sessions.list.getSnapshot().byId[sessionId]
-        const parentSessionId = draft?.parentSessionId ?? summary?.parentId
-        if (parentSessionId === undefined) throw new Error(`Side Chat session "${sessionId}" has no parent`)
-        if (draft !== undefined) {
-          const result = await ctx.remote.commands.execute(parentSessionId, line, [])
-          if (!result.ok) return result
-          return { ok: true, value: { matched: result.value !== undefined } }
-        }
-        await api.sidechatPermission(sessionId, parentSessionId, preset)
-        return { ok: true, value: { matched: true } }
-      } catch (cause) {
-        return routeFailure(cause)
-      }
-    },
-    modelRoute: (sessionId) => ({
-      models: async (signal) => {
-        try {
-          const draft = sidechatDraftOf(sessionId)
-          const summary = ctx.sessions.list.getSnapshot().byId[sessionId]
-          const parentSessionId = draft?.parentSessionId ?? summary?.parentId
-          const [catalog, model] = await Promise.all([
-            ctx.connection.api.llm.models({}, signal),
-            api.sidechatModel(sessionId, parentSessionId, draft !== undefined, signal),
-          ])
-          if (!catalog.result.ok) return catalog.result
-          return {
-            ok: true,
-            value: {
-              ...model,
-              groups: catalog.result.value.groups,
-              failures: catalog.result.value.failures,
-            },
-          }
-        } catch (cause) {
-          return routeFailure(cause)
-        }
-      },
-      selectModel: async (selection: ModelSelection, signal) => {
-        try {
-          const provisional = sidechatDraftOf(sessionId) !== undefined
-          const result = await api.sidechatSelectModel(sessionId, selection, provisional, signal)
-          noteSidechatDraftSelection(sessionId, result.selected)
-          return { ok: true, value: result }
-        } catch (cause) {
-          return routeFailure(cause)
-        }
-      },
-    }),
-  }
   ctx.effect(
-    () => ctx.sessions.registerAdmissionAdapter?.(sidechatAdmission),
+    () => installSidechatAdmission(ctx),
     'dsh-better-sidebar: Side Chat Session admission',
   )
   // The sidebar follows the DSH i18n system: attach the locale service so

@@ -28,6 +28,15 @@ export function isKnownSidechatSession(sessionId: SessionId): boolean {
   return sidechatSessionIds.has(sessionId)
 }
 
+/**
+ * Remember one Side Chat identity this browser already bound (draft, start, or tab).
+ * Titles are display-only and must not call this.
+ * @param sessionId - exact Side Chat Session identity.
+ */
+export function noteKnownSidechatSession(sessionId: SessionId): void {
+  sidechatSessionIds.add(sessionId)
+}
+
 /** Register one renderer-only Side Chat draft until its first prompt succeeds. */
 export function registerSidechatDraft(sessionId: SessionId, parentSessionId: SessionId): () => void {
   sidechatSessionIds.add(sessionId)

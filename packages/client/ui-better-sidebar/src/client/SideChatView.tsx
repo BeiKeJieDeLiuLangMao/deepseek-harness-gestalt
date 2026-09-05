@@ -5,7 +5,7 @@ import type { Context } from '../context-types.ts'
 import {
   SIDE_LABEL_PREFIX, SIDE_NEW_THREAD_TITLE, sidechatTabRootThreadId, sidechatTabThreadId,
 } from '../sidechat-core.ts'
-import { registerSidechatDraft } from './api.ts'
+import { noteKnownSidechatSession, registerSidechatDraft } from './api.ts'
 import { t } from './locales.ts'
 import type { SessionScope } from './api.ts'
 import type { SidebarTab } from './state.ts'
@@ -49,6 +49,11 @@ export function SideChatView(props: {
       meta: { threadId: sessionId, ...(rootThreadId === undefined ? {} : { rootThreadId }) },
     })
   }, [ctx, rootThreadId, tab.id])
+
+  useEffect(() => {
+    if (threadId === undefined) return
+    noteKnownSidechatSession(threadId)
+  }, [threadId])
 
   useEffect(() => {
     if (threadId === undefined || !provisional || published) return

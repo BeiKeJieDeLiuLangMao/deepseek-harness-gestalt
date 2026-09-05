@@ -36,7 +36,7 @@ Allowed import paths only: `dsh.plugin.json`, `src`, `tsdown.config.ts`. Upstrea
 |---|---|
 | 1 workspace manifests | **retained** — still repository-owned; not in the allowed import paths |
 | 2 `src/config.ts` schemastery | **retained** |
-| 3 `src/context-types.ts` admission / `uiRenderer` / workspaces archive | **retained**; also **relocated** `openWorkspacePath` onto `remote.session`. `SessionAdmissionAdapter` still type-imports `@deepseek-ai/dsh-client-runtime/client` because ClientSessions does not yet own the complete routing contract. That import is **not** a finished owner. Do not add an empty local interface. |
+| 3 `src/context-types.ts` admission / `uiRenderer` / workspaces archive | **retained**; also **relocated** `openWorkspacePath` onto `remote.session`. `SessionAdmissionAdapter` type-imports `@deepseek-ai/dsh-api-session-controller/client`. `registerAdmissionAdapter` is required. |
 | 4 `src/invariant.ts` PACKAGE_NAME | **retained** |
 | 5 tsdown / chunk-loader workspace factory id | **retained** (`clientBundle('@deepseek-ai/dsh-client-ui-better-sidebar', 'client.js')`). `dsh.plugin.json` still names `./lib/client-registry.js` as the upstream plugin-registry channel; this repository's tsdown face still omits emitting that extra factory. Locale is an additional chunk, not a second registry channel. |
 | 6 `src/bundle-route.ts` `LIB_DIR` | **retained** (package `lib/`, including `client-locale.js`) |
