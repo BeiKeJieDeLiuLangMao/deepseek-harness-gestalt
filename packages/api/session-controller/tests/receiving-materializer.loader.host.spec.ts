@@ -319,4 +319,77 @@ describe('receiving materializer through a real Loader composition', () => {
       mode: 'queue',
     })).rejects.toThrow('unknown receiving Session')
   })
+
+  it('runs ingest, human turn, model response, and terminal settle on one Loader-owned Host', async () => {
+    const { ctx, adapter, workspacePath, jsonlRoot } = await boot()
+    const workspace = await ctx.workspaceRegistry.create(workspacePath)
+    const receiver = ctx.memberQuestionReceiver as FileMemberQuestionReceiver
+    await receiver.bind(envelope.authority.accountId, envelope.operation.projectId, workspace.id)
+    const arrived = await receiver.ingest(envelope)
+    const pending = (await receiver.snapshot()).pending[0]
+    if (pending === undefined) throw new Error('expected a pending question')
+    const sessionId = arrived.receivingSessionId as unknown as SessionId
+    expect(ctx.sessions.get(sessionId)?.snapshotEvents()
+      .some(event => event.type === 'turn/start')).toBe(false)
+    expect(adapter.requests).toEqual([])
+    const idle = waitForIdle(ctx, sessionId)
+    const rpcId = 'human-turn-owned' as MemberQuestionReceiverRpcId
+    await receiver.admitHumanTurn({
+      receivingSessionId: arrived.receivingSessionId,
+      revision: pending.revision,
+      rpcId,
+      content: [{ type: 'text', text: 'Use JSONL.' }],
+      mode: 'queue',
+    })
+    await idle
+    const liveEvents = ctx.sessions.get(sessionId)?.snapshotEvents() ?? []
+    expect(liveEvents.some(event => event.type === 'user/message'
+      && event.data.id === `member-question-human:${rpcId}`)).toBe(true)
+    expect(liveEvents.some(event => event.type === 'assistant/message'
+      && JSON.stringify(event.data).includes('acknowledged the brief'))).toBe(true)
+    expect(adapter.requests).toHaveLength(1)
+    await receiver.settle(envelope.operation.questionId, {
+      kind: 'declined',
+      settledByInstallationId: 'installation-local' as never,
+      settledByDeviceName: 'Local Mac',
+      settledAt: Date.now(),
+    })
+    await vi.waitFor(() => {
+      expect(ctx.sessions.get(sessionId)?.snapshotEvents()
+        .filter(event => event.type === 'member-question/settled')).toHaveLength(1)
+    })
+    const reader = new Context()
+    contexts.push(reader)
+    await reader.plugin(SessionStore)
+    await reader.plugin(JsonlSessionPersistence, { root: jsonlRoot, compression: 'none' })
+    const stored = await reader.sessionPersistence.open(sessionId, 'read')
+    try {
+      const persisted = await stored.read()
+      expect(persisted.filter(event => event.type === 'member-question/received')).toHaveLength(1)
+      expect(persisted.filter(event => event.type === 'user/message'
+        && event.data.id === `member-question-human:${rpcId}`)).toHaveLength(1)
+      expect(persisted.filter(event => event.type === 'member-question/settled')).toHaveLength(1)
+    } finally {
+      await stored.close()
+    }
+  })
+
+  it('withdraws the unique Host admitter when the Session Controller Loader entry unloads', async () => {
+    const { ctx, workspacePath } = await boot()
+    const workspace = await ctx.workspaceRegistry.create(workspacePath)
+    const receiver = ctx.memberQuestionReceiver as FileMemberQuestionReceiver
+    await receiver.bind(envelope.authority.accountId, envelope.operation.projectId, workspace.id)
+    expect(() => ctx.memberQuestionReceiver.registerHumanTurnAdmitter(async () => ({ accepted: true as const })))
+      .toThrow('already registered')
+    expect(() => ctx.memberQuestionReceiver.registerSessionMaterializer(async () => ({ accepted: true as const })))
+      .toThrow('already registered')
+    const controller = [...ctx.loader.entries()]
+      .find(entry => entry.options.name === '@deepseek-ai/dsh-api-session-controller')
+    if (controller?.fiber === undefined) throw new Error('expected Session Controller Loader fiber')
+    await controller.fiber.dispose()
+    const replacementAdmitter = ctx.memberQuestionReceiver.registerHumanTurnAdmitter(async () => ({ accepted: true as const }))
+    replacementAdmitter()
+    const replacementMaterializer = ctx.memberQuestionReceiver.registerSessionMaterializer(async () => ({ accepted: true as const }))
+    replacementMaterializer()
+  })
 })
