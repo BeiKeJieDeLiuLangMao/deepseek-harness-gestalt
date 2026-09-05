@@ -18,10 +18,6 @@ import type {} from '@deepseek-ai/dsh-agent-default-model'
 import type { InstallationId } from '@deepseek-ai/dsh-remote-protocol'
 import type { ApiProxy } from './api/index.ts'
 import { createApiProxy, DEFAULT_COLD_BLANK_PROBE_MAX_BYTES } from './api-proxy.ts'
-import {
-  DEFAULT_SESSION_LOG_COMPRESSION_LEVEL,
-  type SessionLogCompressionLevel,
-} from './session-export.ts'
 
 export type * from './api/index.ts'
 export { RpcId } from './api/rpc.ts'
@@ -49,12 +45,6 @@ export interface Config {
    */
   nativeOpen?: boolean
   /**
-   * DEFLATE level for every session-log ZIP entry: `0` stores without
-   * compression, `1` favors CPU/latency, and `9` favors archive size.
-   * @default 6
-   */
-  sessionExportCompressionLevel?: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9
-  /**
    * Maximum physical size of a cold Session artifact eligible for blankness
    * verification. Zero disables probes.
    * @default 1024
@@ -79,8 +69,6 @@ export class ApiProxyService extends Service implements ApiProxy {
 
   static Config: z<Config> = z.object({
     nativeOpen: z.boolean(),
-    sessionExportCompressionLevel: z.number().step(1).min(0).max(9)
-      .default(DEFAULT_SESSION_LOG_COMPRESSION_LEVEL) as z<SessionLogCompressionLevel>,
     coldBlankProbeMaxBytes: z.natural().default(DEFAULT_COLD_BLANK_PROBE_MAX_BYTES),
     memberQuestionInstallationId: z.string(),
     memberQuestionDeviceName: z.string(),
@@ -98,7 +86,6 @@ export class ApiProxyService extends Service implements ApiProxy {
   readonly llm: ApiProxy['llm']
   readonly memberQuestions: ApiProxy['memberQuestions']
   readonly events: ApiProxy['events']
-  readonly downloads: ApiProxy['downloads']
   readonly respond: ApiProxy['respond']
 
   constructor(ctx: Context, config: Config) {
@@ -119,9 +106,6 @@ export class ApiProxyService extends Service implements ApiProxy {
       saveDefaultModelSelection: selection => ctx.agentDefaultModel.saveSelection(selection),
       cwd: process.cwd(),
       ...config.nativeOpen === undefined ? {} : { canOpenPath: () => config.nativeOpen as boolean },
-      ...(config.sessionExportCompressionLevel === undefined
-        ? {}
-        : { sessionExportCompressionLevel: config.sessionExportCompressionLevel }),
       ...(config.coldBlankProbeMaxBytes === undefined
         ? {}
         : { coldBlankProbeMaxBytes: config.coldBlankProbeMaxBytes }),
@@ -144,7 +128,6 @@ export class ApiProxyService extends Service implements ApiProxy {
     this.llm = api.llm
     this.memberQuestions = api.memberQuestions
     this.events = api.events
-    this.downloads = api.downloads
     // createApiProxy returns closures (no `this` capture), so the bind is
     // behavior-neutral.
     this.respond = api.respond.bind(api)

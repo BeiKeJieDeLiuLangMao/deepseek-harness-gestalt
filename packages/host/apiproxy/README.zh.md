@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-所有客户端共用的 API 网关由三部分组成：TypeScript API 约定（`src/api/`，不依赖 Node，可从浏览器导入）、fetch 载体对（`src/fetch/`：宿主侧的 `toFetchHandler`，以及客户端侧的 `AbstractApiClient` 与平台子类）和宿主侧实现（`src/api-proxy.ts`：`createApiProxy` 加上默认导出的 `ApiProxyService` 网关插件，其配置为 `{nativeOpen?, sessionExportCompressionLevel?, coldBlankProbeMaxBytes?, memberQuestionInstallationId?, memberQuestionDeviceName?}`，提供 `ctx.apiProxy`）。该包不注册任何路由；HTTP 等载体自行包装 `ctx.apiProxy`。随发行版交付的 Web 组合位于 [`packages/bundle/web-app/cordis.patch.yml`](../../bundle/web-app/cordis.patch.yml)，其默认 Agent（智能体）模型选择属于 base 组合包中的 [`@deepseek-ai/dsh-agent-default-model`](../../core/agent-default-model/README.zh.md)。
+所有客户端共用的 API 网关由三部分组成：TypeScript API 约定（`src/api/`，不依赖 Node，可从浏览器导入）、fetch 载体对（`src/fetch/`：宿主侧的 `toFetchHandler`，以及客户端侧的 `AbstractApiClient` 与平台子类）和宿主侧实现（`src/api-proxy.ts`：`createApiProxy` 加上默认导出的 `ApiProxyService` 网关插件，其配置为 `{nativeOpen?, coldBlankProbeMaxBytes?, memberQuestionInstallationId?, memberQuestionDeviceName?}`，提供 `ctx.apiProxy`）。该包不注册任何路由；HTTP 等载体自行包装 `ctx.apiProxy`。随发行版交付的 Web 组合位于 [`packages/bundle/web-app/cordis.patch.yml`](../../bundle/web-app/cordis.patch.yml)，其默认 Agent（智能体）模型选择属于 base 组合包中的 [`@deepseek-ai/dsh-agent-default-model`](../../core/agent-default-model/README.zh.md)。
 
 ## 共享 Agent 默认值（`agent-default-model` Settings 分节）
 
@@ -20,7 +20,7 @@ Settings 分节中的 `reasoningEffort` 在 agent-default-model 插件配置中�
 
 协议消息组成一个四象限可辨识联合：发起方 × 请求／响应，与物理通道解耦。四种消息分别是 `ClientRequest`（POST `/api/<method>` 的请求体）、`ServerResponse`（该 POST 的响应体）、`ServerRequest`（SSE（Server-Sent Events）帧）和 `ClientResponse`（POST `/api/respond` 的请求体）。响应始终回显对应请求的 `rpcId`，绝不签发新值。方法的参数与返回值结构只存在于领域接口签名（`SessionsApi`、`HostApi`、`EventsApi`）中；`RpcMethodMap` 注册方法，其他所有位置均通过 `RequestPayload<K>`／`ResponseValue<K>` 派生。Zod schema 以 `satisfies z.ZodType<Wire<T>>` 锚定类型，并分两层解析：先解析信封，再解析业务载荷，随后按方法分发。业务错误由 `RpcResult` 的错误分支承载（`RpcErrorDetailsMap` 封闭错误码集合）；HTTP 状态只表达载体层结果。每个 `/api` POST 都必须声明 `application/json` 媒体类型——否则在分发前即以 415 拒绝，因此跨站「简单请求」（浏览器不经 CORS 预检就会发出）永远无法盲目执行有副作用的方法。
 
-分层与协议决策记录在 [GUI 分层与 RPC 协议 RFC](../../../.agents/notes/implemented/architecture/2026-07-19-gui-layering-and-rpc-protocol.zh.md) 中；浏览器侧消费架构记录在 [Web 客户端架构 RFC](../../../.agents/notes/implemented/architecture/2026-07-19-gui-web-client-architecture.zh.md) 中。
+分层与协议决策记录在 GUI 分层与 RPC 协议 RFC 中；浏览器侧消费架构记录在 [Web 客户端架构 RFC](../../../.agents/notes/implemented/architecture/2026-07-19-gui-web-client-architecture.zh.md) 中。
 
 首个回答认领待处理请求之前，系统会对照该请求校验问题响应。多选题的回答项可以同时携带 `selected` 中的请求选项标签与非空 `custom` 文本；单选题的回答项必须二选一。标签重复、标签未知、id 不匹配、批次不完整以及自定义文本为空都会以 `bad-response` 拒绝。
 
@@ -30,7 +30,7 @@ Settings 分节中的 `reasoningEffort` 在 agent-default-model 插件配置中�
 
 `session.history` 的尾页（不带 `beforeSeq`）额外携带一个可选的 `projections` 块——`ctx.sessionProjections`（`@deepseek-ai/dsh-session-projection`）上每个已注册单元的水位线快照，`asOfSeq` = 这些值共同反映到的最后一个事件 seq（空日志为 `-1`）。网关还订阅注册表的变更流，为每个状态发生变化的单元生成一个 `session/projection` mux 帧（`{sessionId, key, value, seq}`——实时推送状态，绝不入日志；客户端按 seq 高者胜维护一个按会话的通用值仓）。载体不持有其他领域的知识（每个值在注册表内部已过其单元自己的 schema；协议 schema 对 `values`/`value` 保持宽松）；loadOlder 页永不携带该块，未装注册表的组合则两个面都不提供。网关拥有两个单元：`sessionListMetadata` 缓存用于 `session.list` 的单调 blank→nonblank 转换与最新真人 prompt 时间；`imageLimits` 则把 prompt 准入时执行的 attachments 配置作为每次启动恒定的值发布（`apply` 保持状态引用不变，因此只靠基线携带、绝不产生变更帧），供客户端在提交前拒绝超限的加入并给上传入口标注上限，后者仅在注册表与 attachments 服务同时组合时激活。
 
-会话日志导出是宿主侧的下载面，不是 RPC：`GET /api/session.export?sessionId=…&includeDescendants=true` 流式返回一个 ZIP，其中每个文件都是会话存储工件的逐字原文（持久化后端的 `readRaw`——按物理编码解码的确切持久化字节，绝非从解析后事件重建），根会话放在其原始基础文件名下，每个子代理后代放在 `subagents/<id>/` 下，每个被任何包含的日志引用的图片放在 `media/<attachmentId>.<ext>` 下（从附件存储读取并校验；共享图片只出现一次）。`HEAD` 会执行相同的根工件准备，并在没有响应 body 的情况下返回状态与响应头，使浏览器 Client 可以在把 GET 交给原生下载管理器前发现流式传输前的失败。每个实时根会话或后代都会在读取原始工件前立即通过权威的 `SessionStore.flush` 持久性屏障；冷会话没有需要 flush 的内存工作。压缩在宿主侧使用 fflate 流式 Zip API 和已验证的 `sessionExportCompressionLevel` 0–9（默认 6），使部署可以在 CPU／延迟与归档大小之间取舍；响应边生成边分块写出，宿主从不把整个归档放进单个缓冲区。响应队列达到 64 KiB 字节高水位后，生产会等待 Consumer pull 恢复正容量；fflate 的同步回调最多只会让该界限多出一次有界输入 push 的输出。请求中止或响应 body 取消会停止血缘与工件工作、终止活跃压缩器，并继续按取消传播，而不会变成 HTTP 500。它要求同时挂载持久化、session-query 与附件服务：任一缺失应答 500，持久化后端不提供每会话原始工件时应答 501，根会话缺失时应答 404，后代缺少存储工件或引用的图片无法读取则整个流失败（fail-loud，绝不静默少导出）。端点由传输层挂载，`ApiProxy.downloads.sessionLog` 实现它。
+会话日志 ZIP 下载不是 ApiProxy RPC。`@deepseek-ai/dsh-session-log-export` 在 Connection 上拥有 `GET`/`HEAD /api/session.export`。
 
 会话标题与其他所有领域一样搭乘这对通用投影机制——历史尾页的 `projections` 块外加 `title` 键下的 `session/projection` 帧。标题不会加入 `session.list`；冷会话在其中仍只有元数据，直到打开或恢复操作附加其日志。`session.rename` 接受用户显式标题（冷会话先恢复），委托给 `ctx.sessionTitle.rename`——被接受的 `session/title` 事件将标题钉住、不再被自动生成覆盖——并返回规范化后的标题及其事件 seq，让 client 在推送帧到达前就结算自己的 `title` 投影格；规范化后为空的标题返回 `title-invalid`。
 

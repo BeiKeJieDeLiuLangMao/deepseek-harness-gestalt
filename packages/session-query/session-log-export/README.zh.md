@@ -79,7 +79,7 @@ Web bundle 将本包与 Connection、`dsh-commands`、`dsh-client-ui-commands` �
 
 两条入口都会对 `GET /api/session.export?...` 发出 `HEAD` 预检，然后把 GET URL 交给浏览器下载管理器，JavaScript 不缓冲 ZIP。一个控制器按会话持有一项进行中的下载，把并发操作折叠进该任务，并在插件释放时取消预检。弹窗状态存放在按会话键控的快照存储中，因此按钮与命令按会话共享一个弹窗。
 
-Host 路由是业务拥有的精确 Fetch contribution。Connection 应用 Host/Origin 与浏览器会话检查并桥接流式 `Response`；本包拥有查询校验、活动会话 flush、基于句柄的日志读取与附件读取、ZIP 生成和 HTTP 状态语义。
+Host 路由是业务拥有的精确 Fetch contribution，经 `ctx.effect` 注册。Connection 应用 Host/Origin 与浏览器会话检查并桥接流式 `Response`；本包拥有查询校验、活动会话 flush、基于句柄的日志读取与附件读取、ZIP 生成和 HTTP 状态语义。ApiProxy 不提供该路径。
 
 </details>
 
@@ -123,6 +123,7 @@ Host 路由是业务拥有的精确 Fetch contribution。Connection 应用 Host/
 
 - **浏览器下载，而非 Host 路径写入**——目标位置由浏览器选择；不会返回 Host 路径或原生文件夹操作。
 - **预检只报告流式传输前的失败**——浏览器接受 GET 后发生的子会话或附件读取失败由浏览器下载管理器报告，不通过弹窗报告。
+- **Trajectory 工具栏仍与 fork 并列**——Session 日志控件仍在 `conversation.trajectory.toolbar.utilities`；本包不移动它。
 
 <a id="dev-note"></a>
 ### 开发备注

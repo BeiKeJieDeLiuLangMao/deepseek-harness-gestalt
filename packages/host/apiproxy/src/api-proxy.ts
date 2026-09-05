@@ -44,16 +44,7 @@ import type {
   QueuedInboxItem, SessionSummary, SettingsNamespaceView, SubagentAddress, JobView, ToolEventView,
   WorkspaceId, WorkspaceView,
 } from './api/index.ts'
-import {
-  DEFAULT_SESSION_LOG_COMPRESSION_LEVEL,
-  flushLiveSessionLog,
-  sessionLogExportDeps,
-  sessionLogZipFilename,
-  streamSessionLogZip,
-  type SessionLogExportReady,
-  type SessionLogCompressionLevel,
-} from './session-export.ts'
-import type { SessionRawArtifact } from '@deepseek-ai/dsh-session-persistence'
+
 import {
   SESSION_SEARCH_RESULT_LIMIT,
   SESSION_SEARCH_SNIPPET_MAX_CODE_POINTS,
@@ -651,8 +642,6 @@ export interface ApiProxyDefaults {
   openTextFile?: (path: string, signal: AbortSignal) => Promise<void>
   /** No-shell Git command boundary; injectable for Workspace Git tests. */
   workspaceGitCommand?: NativeCommandRunner
-  /** Validated DEFLATE level for session-log ZIP entries; defaults to 6. */
-  sessionExportCompressionLevel?: SessionLogCompressionLevel
   /** Maximum artifact size eligible for one cold blankness read. */
   coldBlankProbeMaxBytes?: number
   /**
@@ -1176,8 +1165,6 @@ function optionalWebSearch(value: unknown): WebSearchProbeRuntime | undefined {
  * @returns the ApiProxy implementation.
  */
 export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiProxy {
-  const sessionExportCompressionLevel = defaults.sessionExportCompressionLevel
-    ?? DEFAULT_SESSION_LOG_COMPRESSION_LEVEL
   const coldBlankProbeMaxBytes = defaults.coldBlankProbeMaxBytes
     ?? DEFAULT_COLD_BLANK_PROBE_MAX_BYTES
   const memberQuestionReceiver = ctx.get('memberQuestionReceiver')
@@ -4447,63 +4434,6 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           receiverDisposer?.()
           for (const dispose of disposers) dispose()
         })
-      },
-    },
-
-    downloads: {
-      async sessionLog(request, signal) {
-        // Clean error path first: missing services answer 500 and a missing
-        // root artifact 404 before any zip byte is produced. The root content
-        // read here is reused as the first zip entry, so nothing is read twice.
-        const deps = sessionLogExportDeps(ctx)
-        if (deps.sessionQuery === undefined || deps.sessionPersistence === undefined || deps.attachments === undefined) {
-          return new Response(
-            'session log export is unavailable: missing session-query, session-persistence, or attachments service',
-            { status: 500 },
-          )
-        }
-        if (!deps.sessionPersistence.supportsRawArtifacts) {
-          return new Response(
-            'session log export is unavailable: the persistence backend does not expose per-session raw artifacts',
-            { status: 501 },
-          )
-        }
-        const ready: SessionLogExportReady = {
-          sessionQuery: deps.sessionQuery,
-          sessionPersistence: deps.sessionPersistence,
-          attachments: deps.attachments,
-          sessions: deps.sessions,
-        }
-        let root: SessionRawArtifact | undefined
-        try {
-          await flushLiveSessionLog(deps, request.sessionId, signal)
-          root = await deps.sessionPersistence.readRaw(request.sessionId, signal)
-          signal.throwIfAborted()
-        } catch {
-          signal.throwIfAborted()
-          // Root preparation failure: answer 500 without echoing the error,
-          // which may carry absolute host paths into the browser error bar.
-          return new Response('session log export failed to prepare the stored artifact', { status: 500 })
-        }
-        if (root === undefined) {
-          return new Response('session not found', { status: 404 })
-        }
-        return new Response(
-          streamSessionLogZip(
-            ready,
-            root,
-            request.sessionId,
-            request.includeDescendants === true,
-            sessionExportCompressionLevel,
-            signal,
-          ),
-          {
-            headers: {
-              'content-type': 'application/zip',
-              'content-disposition': `attachment; filename="${sessionLogZipFilename(request.sessionId)}"`,
-            },
-          },
-        )
       },
     },
 

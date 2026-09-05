@@ -81,7 +81,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       ? REQUESTED
       : { kind: 'error', text: 'The Web /export command does not accept a path.' }),
   }), 'session-log-download: command')
-  connectionOf(ctx).fetch.register({
+  ctx.effect(() => connectionOf(ctx).fetch.register({
     path: SESSION_LOG_EXPORT_PATH,
     methods: ['GET', 'HEAD'],
     fetch: async (request) => {
@@ -94,7 +94,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       await response.body?.cancel()
       return new Response(null, { status: response.status, headers: response.headers })
     },
-  })
+  }), 'session-log-download: fetch route')
 }
 
 function connectionOf(ctx: Context): SessionLogConnection {

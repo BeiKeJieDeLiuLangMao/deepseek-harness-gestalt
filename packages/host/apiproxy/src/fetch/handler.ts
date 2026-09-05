@@ -9,7 +9,6 @@
 import { randomUUID } from 'node:crypto'
 import type { z } from 'zod'
 import type { ApiProxy, MuxFrame, HostFrame } from '../api/index.ts'
-import { sessionLogQuerySchema } from '../api/downloads.schema.ts'
 import type { RequestPayload, ResponseValue, RpcMethodMap } from '../api/rpc-map.ts'
 import type { ClientRequest, RpcError, RpcRequest, RpcResponse, ServerRequest, ServerResponse } from '../api/rpc.ts'
 import { RpcId } from '../api/rpc.ts'
@@ -272,25 +271,14 @@ export function toFetchHandler(api: ApiProxy): { fetch: typeof fetch } {
       const url = new URL(req.url)
       const path = url.pathname
 
-      // No-envelope read channels (SSE GET streams + host-only download):
-      // physical routes that answer directly, without a wire envelope.
+      // No-envelope read channels (SSE GET streams): physical routes that
+      // answer directly, without a wire envelope. Session-log ZIP download
+      // is owned by `@deepseek-ai/dsh-session-log-export` on Connection.
       if (path === '/api/events.mux' && req.method === 'GET') {
         return sseResponse(api.events.mux({ rpcId: RpcId(randomUUID()), payload: {} }, req.signal))
       }
       if (path === '/api/events.host' && req.method === 'GET') {
         return sseResponse(api.events.host({ rpcId: RpcId(randomUUID()), payload: {} }, req.signal))
-      }
-      if (path === '/api/session.export' && (req.method === 'GET' || req.method === 'HEAD')) {
-        // Query params are a different boundary from the POST envelope, but
-        // the request still casts its brands only through the domain schema.
-        const parsed = sessionLogQuerySchema.safeParse(Object.fromEntries(url.searchParams))
-        if (!parsed.success) {
-          return new Response('missing or invalid sessionId query parameter', { status: 400 })
-        }
-        const response = await api.downloads.sessionLog(parsed.data, req.signal)
-        if (req.method === 'GET') return response
-        await response.body?.cancel()
-        return new Response(null, { status: response.status, headers: response.headers })
       }
 
       if (req.method !== 'POST' || !path.startsWith('/api/')) {
