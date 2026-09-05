@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { SessionId } from '@deepseek-ai/dsh-session'
+import { SessionId, SessionSeq } from '@deepseek-ai/dsh-session'
 import type { SessionEvent, SessionEventMap, SessionEventType } from '@deepseek-ai/dsh-session'
 import {
   applyTeamEvent,
@@ -16,7 +16,7 @@ const TEAM = TeamId(ROOT)
 const CHILD = SessionId('child-a')
 
 function event<T extends SessionEventType>(type: T, data: SessionEventMap[T], seq: number): SessionEvent<T> {
-  return { type, data, seq, time: seq } as SessionEvent<T>
+  return { type, data, seq: SessionSeq(seq), time: seq } as SessionEvent<T>
 }
 
 
@@ -25,7 +25,7 @@ function rawTeamEvent(
   data: unknown,
   seq: number,
 ): SessionEvent {
-  return { type, data, seq, time: seq } as unknown as SessionEvent
+  return { type, data, seq: SessionSeq(seq), time: seq } as unknown as SessionEvent
 }
 
 function v2TeamEvent<T extends 'team/member' | 'team/task' | 'team/message/queued' | 'team/message/delivered'>(
@@ -33,7 +33,7 @@ function v2TeamEvent<T extends 'team/member' | 'team/task' | 'team/message/queue
   data: SessionEventMap[T],
   seq: number,
 ): SessionEvent<T> {
-  return { type, data, seq, time: seq } as SessionEvent<T>
+  return { type, data, seq: SessionSeq(seq), time: seq } as SessionEvent<T>
 }
 
 /** Queued-minus-delivered mail, the recovery mailbox the fold is responsible for. */
@@ -162,6 +162,8 @@ describe('Agent Teams fold', () => {
         blockedBy: [TeamTaskId('task-1')],
       }),
     }, 1)
+    if (!isTeamEvent(second) || second.type !== 'team/task') throw new Error('expected team/task fixture')
+    const secondTask = second.data.task
     const invalid: Array<{ records: SessionEvent[]; message: RegExp }> = [
       {
         records: [rawTeamEvent('team/task', {
@@ -182,7 +184,7 @@ describe('Agent Teams fold', () => {
       {
         records: [first, rawTeamEvent('team/task', {
           ...second.data,
-          task: { ...second.data.task, blockedBy: [TeamTaskId('task-1'), TeamTaskId('task-1')] },
+          task: { ...secondTask, blockedBy: [TeamTaskId('task-1'), TeamTaskId('task-1')] },
         }, 1)],
         message: /repeats blocker/,
       },
@@ -241,7 +243,7 @@ describe('Agent Teams fold', () => {
       ...delivered.data,
       targetId: SessionId('other'),
     }, 1)])).toThrow(/target changed/)
-    expect(() => foldTeam(ROOT, [queued, delivered, { ...delivered, seq: 2 }])).toThrow(/delivered twice/)
+    expect(() => foldTeam(ROOT, [queued, delivered, { ...delivered, seq: SessionSeq(2) }])).toThrow(/delivered twice/)
   })
 
   it('validates every current-version persisted payload before folding it', () => {
@@ -294,7 +296,7 @@ describe('Agent Teams fold', () => {
 
   it.each(['quiet', 'wakeup'] as const)('normalizes v1 queued %s delivery to the current message', (delivery) => {
     const state = foldTeam(ROOT, [{
-      type: 'team/message/queued', seq: 0, time: 0,
+      type: 'team/message/queued', seq: SessionSeq(0), time: 0,
       data: { version: 1, teamId: TEAM, message: { ...message(), delivery } },
     } as unknown as SessionEvent])
     expect(pending(state)[0]).toMatchObject({
@@ -306,9 +308,9 @@ describe('Agent Teams fold', () => {
 
   it('folds mixed v1 and v2 records to current state', () => {
     const state = foldTeam(ROOT, [
-      { type: 'team/member', seq: 0, time: 0, data: { version: 1, teamId: TEAM, member: member() } } as unknown as SessionEvent,
+      { type: 'team/member', seq: SessionSeq(0), time: 0, data: { version: 1, teamId: TEAM, member: member() } } as unknown as SessionEvent,
       v2TeamEvent('team/member', { version: 2, teamId: TEAM, member: member({ phase: 'active' }) }, 1),
-      { type: 'team/task', seq: 2, time: 2, data: { version: 1, teamId: TEAM, task: task() } } as unknown as SessionEvent,
+      { type: 'team/task', seq: SessionSeq(2), time: 2, data: { version: 1, teamId: TEAM, task: task() } } as unknown as SessionEvent,
       v2TeamEvent('team/task', { version: 2, teamId: TEAM, task: task({ revision: 2, status: 'completed' }) }, 3),
     ])
     expect(state.members.get(CHILD)?.phase).toBe('active')
