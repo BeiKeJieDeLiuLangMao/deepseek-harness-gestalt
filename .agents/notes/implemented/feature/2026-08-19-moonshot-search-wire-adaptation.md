@@ -40,7 +40,7 @@ The unused field panel and `useThis` leftover are tracked in [drop the unused pr
 
 ## Testing
 
-`packages/web/web-search-deepseek/tests/settings.spec.ts` switches `backend` and asserts Messages hits `{baseURL}/messages` while Kimi hits the search URL with no `/messages` suffix. `packages/web/web-search-deepseek/tests/deepseek.spec.ts` pins Moonshot `text_query` and Bearer-only headers. `packages/client/ui-settings-plugins` writes `backend` from provider tabs, binds each tab to its settings namespace, and probes through generated `settings.testWebSearch`. Settings sections install through `SettingsProvider.installSection` on `web-search-deepseek`, `web-search-anthropic`, and `web-search-kimi`.
+`packages/web/web-search-deepseek/tests/settings.spec.ts` switches `backend` and asserts Messages hits `{baseURL}/messages` while Kimi hits the search URL with no `/messages` suffix. `packages/web/web-search-deepseek/tests/deepseek.spec.ts` pins Moonshot `text_query` and Bearer-only headers. `packages/client/ui-settings-plugins` writes `backend` from provider tabs, binds each tab to its settings namespace, and probes through generated `settings.testWebSearch` after awaiting the same settings-scope write tail so a probe cannot race the previous provider. `packages/client/ui-settings-plugins/tests/web-search-backend-probe.host.spec.ts` drives that loop through MemorySettings, generated Remote, and a local HTTP fixture. Settings sections install through `SettingsProvider.installSection` on `web-search-deepseek`, `web-search-anthropic`, and `web-search-kimi`.
 
 ## Related
 

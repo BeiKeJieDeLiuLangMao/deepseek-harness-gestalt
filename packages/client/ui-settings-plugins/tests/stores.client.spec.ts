@@ -1073,8 +1073,84 @@ describe('WebSearchShell', () => {
     shell.rewire()
     const face = shell.inject()
 
-    face.selectProvider('kimi')
-    await vi.waitFor(() => { expect(deepseek.set).toHaveBeenCalledWith('backend', 'kimi') })
+    await face.selectProvider('kimi')
+    expect(deepseek.set).toHaveBeenCalledWith('backend', 'kimi')
+  })
+
+  it('does not probe until an in-flight backend write lands', async () => {
+    const deepseek = stubSettingsScope<WebSearchSettings>()
+    const credentials = credentialsApi(true)
+    const gate = deferred<undefined>()
+    deepseek.set.mockImplementation(async (field: string, value: unknown) => {
+      await gate.promise
+      deepseek.publish({
+        status: 'ready',
+        writable: true,
+        value: { ...(deepseek.scope.getSnapshot().value ?? {}), [field]: value } as WebSearchSettings,
+        user: { [field]: value },
+      })
+    })
+    const testWebSearch = vi.fn(() => Promise.resolve({
+      ok: true as const,
+      value: { count: 1, title: 'Kimi' },
+    }))
+    const ctx = ctxWith({
+      credentials: credentials.ctx.remote.credentials,
+      settings: { testWebSearch },
+    })
+    const deepseekTab = searchController(deepseek, ctx, 'deepseek', deepseek)
+    const kimiHost = stubSettingsScope<WebSearchSettings>()
+    const kimiTab = searchController(kimiHost, ctx, 'kimi', deepseek)
+    deepseek.publish({ status: 'ready', writable: true, value: { backend: 'deepseek' }, user: {} })
+    kimiHost.publish({ status: 'ready', writable: true, value: {}, user: {} })
+    const shell = new WebSearchShell(
+      deepseek.scope,
+      () => [
+        { options: { id: 'deepseek', order: 0, label: 'DeepSeek' }, inject: () => deepseekTab.inject() },
+        { options: { id: 'kimi', order: 20, label: 'Kimi' }, inject: () => kimiTab.inject() },
+      ] as never,
+      { titleKey: 'webSearchTitle', descriptionKey: 'webSearchDescription' },
+      deepseekTab,
+      ctx,
+    )
+    shell.rewire()
+    const face = shell.inject()
+    const switching = face.selectProvider('kimi')
+    const probing = face.testSearch()
+    expect(testWebSearch).not.toHaveBeenCalled()
+    gate.resolve()
+    await switching
+    await expect(probing).resolves.toEqual({ status: 'ok', count: 1, title: 'Kimi' })
+    expect(testWebSearch).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the card dirty and does not probe when backend did not land', async () => {
+    const deepseek = stubSettingsScope<WebSearchSettings>()
+    const credentials = credentialsApi(true)
+    deepseek.set.mockResolvedValue(undefined)
+    const testWebSearch = vi.fn()
+    const ctx = ctxWith({
+      credentials: credentials.ctx.remote.credentials,
+      settings: { testWebSearch },
+    })
+    const controller = searchController(deepseek, ctx)
+    deepseek.publish({ status: 'ready', writable: true, value: { backend: 'deepseek' }, user: {} })
+    const shell = new WebSearchShell(
+      deepseek.scope,
+      () => [{ options: { id: 'deepseek', order: 0, label: 'DeepSeek' }, inject: () => controller.inject() }] as never,
+      { titleKey: 'webSearchTitle', descriptionKey: 'webSearchDescription' },
+      controller,
+      ctx,
+    )
+    shell.rewire()
+    const face = shell.inject()
+    await face.selectProvider('kimi')
+    await expect(face.testSearch()).resolves.toEqual({
+      status: 'error',
+      message: 'search provider could not be switched',
+    })
+    expect(face.hooks.webSearchCard.getSnapshot()).toMatchObject({ failed: true, dirty: true })
+    expect(testWebSearch).not.toHaveBeenCalled()
   })
 
   it('probes through settings.testWebSearch after persisting the selected tab', async () => {

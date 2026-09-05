@@ -277,9 +277,8 @@ export interface WebSearchShellFace extends CardActions {
   /** Locale key of the Web Search card description. */
   descriptionKey: PluginsSettingsLocaleKey
   /** Write `backend` so the next search reads this provider. */
-  selectProvider: (id: string) => void
+  selectProvider: (id: string) => Promise<void>
   /** Probe the selected provider through `settings.testWebSearch`. */
-  testSearch: () => Promise<WebSearchProbe>
 }
 
 /** Outcome of one Plugins-card search probe. */
@@ -296,6 +295,8 @@ export class WebSearchShell {
   private unsubChild: (() => void) | undefined
   private readonly tabListeners = new Set<() => void>()
   private tabSnapshot: readonly WebSearchProviderTab[] = []
+  /** Serializes `backend` writes so a probe cannot race an in-flight tab switch. */
+  private selectionWrite = Promise.resolve()
 
   /**
    * @param selectionScope - the DeepSeek section that stores `backend`.
@@ -374,9 +375,16 @@ export class WebSearchShell {
       resetField: (field) => { this.selectedFace().resetField(field) },
       save: () => { this.selectedFace().save() },
       discard: () => { this.selectedFace().discard() },
-      selectProvider: (id) => { void this.selectionScope.set('backend', id) },
+      selectProvider: id => this.queueBackend(id),
       testSearch: async () => {
+        await this.selectionWrite
+        if (this.store.getSnapshot().failed) {
+          return { status: 'error', message: 'search provider could not be switched' }
+        }
         await this.selectedFace().persist()
+        if (this.selectedFace().hooks.webSearchCard.getSnapshot().failed) {
+          return { status: 'error', message: 'search settings could not be saved' }
+        }
         const response = await this.ctx.remote.settings.testWebSearch(WEB_SEARCH_PROBE_QUERY)
         if (!response.ok) {
           return { status: 'error', message: response.error.message }
@@ -388,6 +396,26 @@ export class WebSearchShell {
         }
       },
     }
+  }
+
+  /**
+   * Queue one `backend` write on the DeepSeek scope and wait for Host settlement.
+   * A later probe joins this tail so it cannot run against the previous provider.
+   */
+  private queueBackend(id: string): Promise<void> {
+    const write = this.commitBackend(id)
+    this.selectionWrite = this.selectionWrite.then(() => write, () => write)
+    return write
+  }
+
+  private async commitBackend(id: string): Promise<void> {
+    await this.selectionScope.set('backend', id)
+    const landed = (this.selectionScope.getSnapshot().value?.backend ?? 'deepseek') === id
+    if (!landed) {
+      this.store.set({ ...this.store.getSnapshot(), failed: true, dirty: true })
+      return
+    }
+    this.rewire()
   }
 
   private selectedId(): string {

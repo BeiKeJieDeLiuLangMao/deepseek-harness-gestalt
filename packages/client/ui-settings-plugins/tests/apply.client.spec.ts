@@ -268,7 +268,7 @@ describe('ui-settings-plugins apply', () => {
     await ctx.plugin({ inject: [...inject], apply }).await()
     const card = slots.entries('settings.plugin.item').find(entry => entry.options.key === 'web-search-deepseek')!
     const face = (card.inject as unknown as () => {
-      selectProvider: (id: string) => void
+      selectProvider: (id: string) => Promise<void>
       testSearch: () => Promise<unknown>
       hooks: { providerTabs: { getSnapshot: () => readonly { id: string }[] } }
     })()
@@ -276,13 +276,11 @@ describe('ui-settings-plugins apply', () => {
       .toEqual(['deepseek', 'anthropic-messages', 'kimi'])
     expect(slots.entries('settings.plugin.web-search.provider').map(entry => entry.options.id))
       .toEqual(['deepseek', 'anthropic-messages', 'kimi'])
-    face.selectProvider('kimi')
-    await vi.waitFor(() => {
-      expect(mutateSettings).toHaveBeenCalledWith(
-        'web-search-deepseek',
-        [{ op: 'set', path: ['backend'], value: 'kimi' }],
-        0,
-      )
-    })
+    await face.selectProvider('kimi')
+    expect(mutateSettings).toHaveBeenCalledWith(
+      'web-search-deepseek',
+      [{ op: 'set', path: ['backend'], value: 'kimi' }],
+      0,
+    )
   })
 })

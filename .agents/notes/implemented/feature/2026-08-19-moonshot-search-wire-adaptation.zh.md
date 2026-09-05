@@ -40,7 +40,7 @@ Gestalt 只发货一个覆盖 `web-search-deepseek` 的 `web_search` 工具。�
 
 ## Testing
 
-`packages/web/web-search-deepseek/tests/settings.spec.ts` 会切换 `backend`，并断言 Messages 打到 `{baseURL}/messages`，而 Kimi 打到搜索 URL 且不追加 `/messages`。`packages/web/web-search-deepseek/tests/deepseek.spec.ts` 固定 Moonshot `text_query` 与仅 Bearer 鉴权。`packages/client/ui-settings-plugins` 由提供方 tab 写入 `backend`，把每个 tab 绑到各自的 settings 命名空间，并通过生成的 `settings.testWebSearch` 探测。Settings 段通过 `SettingsProvider.installSection` 安装到 `web-search-deepseek`、`web-search-anthropic` 和 `web-search-kimi`。
+`packages/web/web-search-deepseek/tests/settings.spec.ts` 会切换 `backend`，并断言 Messages 打到 `{baseURL}/messages`，而 Kimi 打到搜索 URL 且不追加 `/messages`。`packages/web/web-search-deepseek/tests/deepseek.spec.ts` 固定 Moonshot `text_query` 与仅 Bearer 鉴权。`packages/client/ui-settings-plugins` 由提供方 tab 写入 `backend`，把每个 tab 绑到各自的 settings 命名空间，并在等待同一条 settings-scope 写入队列之后通过生成的 `settings.testWebSearch` 探测，因此探测不会打到上一个提供方。`packages/client/ui-settings-plugins/tests/web-search-backend-probe.host.spec.ts` 用 MemorySettings、生成的 Remote 和本地 HTTP fixture 驱动该闭环。Settings 段通过 `SettingsProvider.installSection` 安装到 `web-search-deepseek`、`web-search-anthropic` 和 `web-search-kimi`。
 
 ## Related
 
