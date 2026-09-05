@@ -803,7 +803,7 @@ function hostRpc(call: DesktopHostRpc['call'], respond?: DesktopHostRpc['respond
 function baseDependencies(host: DesktopHostRpc, workspaceValue: unknown = { items: [], archivedSessionIds: [] }) {
   return {
     host,
-    workspaceSnapshot: () => Promise.resolve(workspaceValue),
+    workspaceSnapshot: () => Promise.resolve(workspaceValue as never),
     pairingId,
     attachmentKey,
     now: () => 1_000,

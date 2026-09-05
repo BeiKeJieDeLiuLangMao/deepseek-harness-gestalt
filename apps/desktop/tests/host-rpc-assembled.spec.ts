@@ -7,6 +7,7 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { WorkspaceTypertGenerator } from '@deepseek-ai/dsh-typert-generator'
 import { REMOTE_PROTOCOL_LIMITS } from '@deepseek-ai/dsh-remote-protocol'
 import {
+  archiveDesktopHostSession,
   bootstrapDesktopHostCookie, createDesktopHostRpc, createDesktopHostSession, createDesktopHostWorkspace,
   listDesktopHostSessions,
 } from '../src/host-rpc.ts'
@@ -244,6 +245,35 @@ describe('Desktop Host RPC against shipped dsh web', () => {
     await expect.poll(() => restarted.some(frame => isRecord(frame) && frame.type === 'baseline')).toBe(true)
     restartFollow.abort()
     await expect(restartWatch).resolves.toBeUndefined()
+  }, 180_000)
+
+  it('archives a Session through workspace/follow without exposing it after unsubscribe', async () => {
+    const first = await startShippedHost()
+    const cookie = await bootstrapDesktopHostCookie(first.running.launchUrl, first.running.url)
+    const rpc = createDesktopHostRpc(first.running.url, {
+      timeoutMs: 10_000,
+      responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
+      cookieHeader: cookie,
+    })
+    const sessionId = 'desktop-archived-session'
+    await expect(createDesktopHostSession(rpc, sessionId)).resolves.toMatchObject({
+      ok: true, value: { sessionId },
+    })
+    const frames: unknown[] = []
+    const follow = new AbortController()
+    const watching = rpc.followWorkspaces?.(follow.signal, (frame) => { frames.push(frame) })
+    await expect.poll(() => frames.some(frame => isRecord(frame) && frame.type === 'baseline')).toBe(true)
+    await expect(archiveDesktopHostSession(rpc, sessionId)).resolves.toMatchObject({ ok: true })
+    await expect.poll(() => frames.some((frame) => {
+      return isRecord(frame) && frame.type === 'archived'
+        && Array.isArray(frame.archivedSessionIds) && frame.archivedSessionIds.includes(sessionId)
+    })).toBe(true)
+    const seen = frames.length
+    follow.abort()
+    await expect(watching).resolves.toBeUndefined()
+    await archiveDesktopHostSession(rpc, `${sessionId}-after-unsub`)
+    await new Promise(resolve => setTimeout(resolve, 250))
+    expect(frames.length).toBe(seen)
   }, 180_000)
 })
 

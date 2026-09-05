@@ -5,11 +5,13 @@ import { request as httpRequest, type IncomingMessage, type RequestOptions } fro
 import { request as httpsRequest } from 'node:https'
 import WebSocket from 'ws'
 import {
+  parseRemoteStreamServerMessage,
+  REMOTE_STREAM_MUX_PATH,
+} from '@deepseek-ai/dsh-api-gateway'
+import {
   REMOTE_PROTOCOL_LIMITS,
   type CompanionHostFailure,
 } from '@deepseek-ai/dsh-remote-protocol'
-
-const REMOTE_STREAM_MUX_PATH = '/api/remote.mux'
 
 const DEFAULT_HOST_RPC_TIMEOUT_MS = 15_000
 const MAX_HOST_ATTACHMENT_RESPONSE_BYTES = Math.ceil(
@@ -382,6 +384,20 @@ export function createDesktopHostWorkspace(
   return rpc.call('workspace/create', { args: { request: { path } } }, options)
 }
 
+/**
+ * Archive one Session through generated Gateway `workspace/archiveSession`.
+ * @param rpc - authenticated Desktop Host RPC.
+ * @param sessionId - Session identity to hide from Workspace grouping surfaces.
+ * @returns the Host archive value or a typed failure.
+ */
+export function archiveDesktopHostSession(
+  rpc: DesktopHostRpc,
+  sessionId: string,
+  options?: { timeoutMs?: number; signal?: AbortSignal },
+): Promise<DesktopHostRpcResult> {
+  return rpc.call('workspace/archiveSession', { args: { request: { sessionId } } }, options)
+}
+
 function openOriginWebSocket(url: URL, origin: URL, cookieHeader?: string): WebSocket {
   if (url.hostname !== origin.hostname || url.port !== origin.port) {
     throw new TypeError('Desktop Host WebSocket must stay on the bootstrap origin')
@@ -440,8 +456,8 @@ function followRemoteMux(
         if (Buffer.byteLength(text) > MAX_HOST_PROJECTED_RESPONSE_BYTES) {
           throw new Error('Desktop Host event stream frame exceeded its byte ceiling')
         }
-        const frame: unknown = JSON.parse(text)
-        if (!isRecord(frame) || typeof frame.type !== 'string' || frame.streamId !== streamId) {
+        const frame = parseRemoteStreamServerMessage(text)
+        if (frame.streamId !== streamId) {
           throw new Error('Desktop Host Remote mux frame was invalid')
         }
         if (frame.type === 'item') {
@@ -453,10 +469,7 @@ function followRemoteMux(
           settle()
           return
         }
-        if (frame.type === 'error' && isRecord(frame.error) && typeof frame.error.message === 'string') {
-          throw new Error(frame.error.message)
-        }
-        throw new Error('Desktop Host Remote mux frame was invalid')
+        throw new Error(frame.error.message)
       } catch (cause) {
         socket.close()
         settle(cause instanceof Error ? cause : new Error('Desktop Host Remote mux frame was invalid', { cause }))

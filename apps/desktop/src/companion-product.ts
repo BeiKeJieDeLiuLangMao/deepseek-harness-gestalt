@@ -2,6 +2,10 @@
 
 import { createHash } from 'node:crypto'
 import type { PersonalPairingId } from '@deepseek-ai/dsh-remote-access'
+import type {
+  WorkspaceBaseline, WorkspaceFollowFrame,
+} from '@deepseek-ai/dsh-api-workspace-controller/types'
+import workspaceRemote from '@deepseek-ai/dsh-api-workspace-controller/remote'
 import {
   encodeProtocolBase64Url,
   parseCompanionInteractionId,
@@ -60,12 +64,20 @@ export type DesktopCompanionLiveProjectionPayload = CompanionLiveSessionProjecti
     : never
   : never
 
+/** Accepted `workspace/follow` baseline after applying ordered increments. */
+export type DesktopWorkspaceSnapshot = WorkspaceBaseline
+
+/** Missing or failed `workspace/follow` snapshot; never treated as an empty archive set. */
+export type DesktopWorkspaceSnapshotFailure =
+  | { readonly kind: 'loading' }
+  | { readonly kind: 'error'; readonly message: string }
+
 /** Desktop product dependencies scoped to one authenticated Personal Pairing. */
 export interface CompanionProductOperationDependencies {
   /** Current Web Host unary RPC. */
   host: DesktopHostRpc
-  /** Latest `workspace/follow` baseline after applying ordered increments. */
-  workspaceSnapshot: (signal?: AbortSignal) => Promise<unknown | undefined> | unknown | undefined
+  /** Latest accepted `workspace/follow` snapshot, or a loading/error failure. */
+  workspaceSnapshot: (signal?: AbortSignal) => Promise<DesktopWorkspaceSnapshot | DesktopWorkspaceSnapshotFailure>
   /** Personal Pairing authenticated by the reviewed Companion channel. */
   pairingId: PersonalPairingId
   /** Independent key material for that exact Personal Pairing. */
@@ -485,7 +497,9 @@ export class DesktopCompanionSurfaceDiscovery {
       waitForWorkspaceSnapshot(dependencies),
     ])
     if (!sessionResponse.ok) return operationFailed(operation, normalizeFailure(sessionResponse.failure))
-    if (workspaceValue === undefined) return invalidHostResult(operation, 'surface baseline')
+    if (!isWorkspaceSnapshot(workspaceValue)) {
+      return operationFailed(operation, workspaceSnapshotFailure(workspaceValue))
+    }
     const snapshot: DesktopSurfaceAuthoritySnapshot = {
       generation: dependencies.generation,
       sessionValue: sessionResponse.value,
@@ -613,6 +627,9 @@ export async function projectDesktopCompanionLiveSession(
   if (!sessionResponse.ok) throw new Error(sessionResponse.failure.message)
   if (!isRecord(sessionResponse.value) || !Array.isArray(sessionResponse.value.items)) {
     throw new Error('Desktop Host live Session list returned an invalid value')
+  }
+  if (!isWorkspaceSnapshot(workspaceValue)) {
+    throw new Error(workspaceSnapshotFailure(workspaceValue).message)
   }
   const archived = parseArchivedSessionIds(workspaceValue)
   if (archived === undefined) throw new Error('Desktop Host live Workspace projection returned an invalid value')
@@ -776,6 +793,9 @@ async function searchSessions(
       code: 'HOST_WIRE_INVALID',
       message: 'Desktop Host session.search returned an invalid value',
     })
+  }
+  if (!isWorkspaceSnapshot(workspaceValue)) {
+    return operationFailed(operation, workspaceSnapshotFailure(workspaceValue))
   }
   const archived = parseArchivedSessionIds(workspaceValue)
   if (archived === undefined) {
@@ -1256,105 +1276,140 @@ function codePointCount(value: string): number {
   return count
 }
 
+const WORKSPACE_FOLLOW_CODEC = workspaceRemote.descriptors.find(
+  descriptor => descriptor.namespace === 'workspace' && descriptor.method === 'follow',
+)?.result
+
 class DesktopWorkspaceFollowCache {
-  private value: { items: unknown[]; archivedSessionIds: unknown[] } | undefined
-  private readonly waiters = new Set<(snapshot: unknown | undefined) => void>()
+  private value: DesktopWorkspaceSnapshot | undefined
+  private failure: DesktopWorkspaceSnapshotFailure = { kind: 'loading' }
+  private readonly waiters = new Set<(
+    snapshot: DesktopWorkspaceSnapshot | DesktopWorkspaceSnapshotFailure,
+  ) => void>()
 
-  snapshot(): unknown | undefined {
-    return this.value === undefined
-      ? undefined
-      : { items: this.value.items, archivedSessionIds: this.value.archivedSessionIds }
-  }
-
-  wait(signal?: AbortSignal): Promise<unknown | undefined> {
-    const current = this.snapshot()
-    if (current !== undefined || signal?.aborted) return Promise.resolve(current)
+  wait(signal?: AbortSignal): Promise<DesktopWorkspaceSnapshot | DesktopWorkspaceSnapshotFailure> {
+    if (this.value !== undefined) return Promise.resolve(this.value)
+    if (this.failure.kind === 'error' || signal?.aborted) return Promise.resolve(this.failure)
     return new Promise((resolve) => {
-      const finish = (snapshot: unknown | undefined): void => {
+      const finish = (snapshot: DesktopWorkspaceSnapshot | DesktopWorkspaceSnapshotFailure): void => {
         signal?.removeEventListener('abort', abort)
         this.waiters.delete(finish)
         resolve(snapshot)
       }
-      const abort = (): void => { finish(undefined) }
+      const abort = (): void => { finish(this.failure) }
       this.waiters.add(finish)
       signal?.addEventListener('abort', abort, { once: true })
     })
   }
 
   accept(frame: unknown): void {
-    if (!isRecord(frame) || typeof frame.type !== 'string') return
-    if (frame.type === 'baseline' && isRecord(frame.value)
-      && Array.isArray(frame.value.items) && Array.isArray(frame.value.archivedSessionIds)) {
+    let decoded: WorkspaceFollowFrame
+    try {
+      decoded = decodeWorkspaceFollowFrame(frame)
+    } catch (cause) {
+      this.fail(cause instanceof Error ? cause.message : 'Desktop Host workspace follow frame was invalid')
+      return
+    }
+    if (decoded.type === 'baseline') {
       this.value = {
-        items: [...frame.value.items],
-        archivedSessionIds: [...frame.value.archivedSessionIds],
+        items: [...decoded.value.items],
+        archivedSessionIds: [...decoded.value.archivedSessionIds],
       }
-      this.flush()
+      this.flush(this.value)
       return
     }
-    if (this.value === undefined) return
-    if (frame.type === 'upsert' && isRecord(frame.workspace)
-      && typeof frame.workspace.workspaceId === 'string') {
-      const next = [...this.value.items]
-      const index = next.findIndex(item => isRecord(item) && item.workspaceId === frame.workspace.workspaceId)
-      if (index === -1) next.push(frame.workspace)
-      else next[index] = frame.workspace
-      this.value = { ...this.value, items: next }
+    if (this.value === undefined) {
+      this.fail('Desktop Host workspace follow increment arrived before a baseline')
       return
     }
-    if (frame.type === 'remove' && typeof frame.workspaceId === 'string') {
-      this.value = {
-        ...this.value,
-        items: this.value.items.filter(item => !(isRecord(item) && item.workspaceId === frame.workspaceId)),
-      }
-      return
-    }
-    if (frame.type === 'order' && Array.isArray(frame.workspaceIds)) {
-      const byId = new Map(this.value.items.flatMap((item) => {
-        if (!isRecord(item) || typeof item.workspaceId !== 'string') return []
-        return [[item.workspaceId, item] as const]
-      }))
-      this.value = {
-        ...this.value,
-        items: frame.workspaceIds.flatMap((id) => {
-          if (typeof id !== 'string') return []
-          const item = byId.get(id)
-          return item === undefined ? [] : [item]
-        }),
-      }
-      return
-    }
-    if (frame.type === 'archived' && Array.isArray(frame.archivedSessionIds)) {
-      this.value = { ...this.value, archivedSessionIds: [...frame.archivedSessionIds] }
-    }
+    this.value = applyWorkspaceFollowIncrement(this.value, decoded)
+    this.flush(this.value)
   }
 
-  fail(): void {
+  fail(message = 'Desktop Host workspace follow ended'): void {
     this.value = undefined
-    this.flush()
+    this.failure = { kind: 'error', message }
+    this.flush(this.failure)
   }
 
-  private flush(): void {
-    const snapshot = this.snapshot()
+  private flush(snapshot: DesktopWorkspaceSnapshot | DesktopWorkspaceSnapshotFailure): void {
     for (const waiter of [...this.waiters]) waiter(snapshot)
   }
+}
+
+function decodeWorkspaceFollowFrame(value: unknown): WorkspaceFollowFrame {
+  if (WORKSPACE_FOLLOW_CODEC === undefined || WORKSPACE_FOLLOW_CODEC.mode !== 'strict') {
+    throw new Error('Desktop Host workspace follow codec is unavailable')
+  }
+  return WORKSPACE_FOLLOW_CODEC.schema.parse(value) as WorkspaceFollowFrame
+}
+
+function applyWorkspaceFollowIncrement(
+  snapshot: DesktopWorkspaceSnapshot,
+  frame: Exclude<WorkspaceFollowFrame, { type: 'baseline' }>,
+): DesktopWorkspaceSnapshot {
+  if (frame.type === 'upsert') {
+    const next = [...snapshot.items]
+    const index = next.findIndex(item => item.workspaceId === frame.workspace.workspaceId)
+    if (index === -1) next.push(frame.workspace)
+    else next[index] = frame.workspace
+    return { ...snapshot, items: next }
+  }
+  if (frame.type === 'remove') {
+    return {
+      ...snapshot,
+      items: snapshot.items.filter(item => item.workspaceId !== frame.workspaceId),
+    }
+  }
+  if (frame.type === 'order') {
+    const byId = new Map(snapshot.items.map(item => [item.workspaceId, item] as const))
+    return {
+      ...snapshot,
+      items: frame.workspaceIds.flatMap((id) => {
+        const item = byId.get(id)
+        return item === undefined ? [] : [item]
+      }),
+    }
+  }
+  return { ...snapshot, archivedSessionIds: [...frame.archivedSessionIds] }
 }
 
 function startWorkspaceFollowCache(rpc: DesktopHostRpc, signal: AbortSignal): DesktopWorkspaceFollowCache {
   const cache = new DesktopWorkspaceFollowCache()
   if (rpc.followWorkspaces === undefined) {
-    cache.accept({ type: 'baseline', value: { items: [], archivedSessionIds: [] } })
+    cache.fail('Desktop Web Host workspace follow is unavailable')
     return cache
   }
-  void rpc.followWorkspaces(signal, (frame) => { cache.accept(frame) }).catch(() => { cache.fail() })
+  void rpc.followWorkspaces(signal, (frame) => { cache.accept(frame) }).catch((error: unknown) => {
+    cache.fail(error instanceof Error ? error.message : 'Desktop Host workspace follow ended')
+  })
   return cache
 }
 
 async function waitForWorkspaceSnapshot(
   dependencies: Pick<CompanionProductOperationDependencies, 'workspaceSnapshot'>,
   signal?: AbortSignal,
-): Promise<unknown | undefined> {
+): Promise<DesktopWorkspaceSnapshot | DesktopWorkspaceSnapshotFailure> {
   return await dependencies.workspaceSnapshot(signal)
+}
+
+function isWorkspaceSnapshot(
+  value: DesktopWorkspaceSnapshot | DesktopWorkspaceSnapshotFailure,
+): value is DesktopWorkspaceSnapshot {
+  return !('kind' in value)
+}
+
+function workspaceSnapshotFailure(
+  failure: DesktopWorkspaceSnapshotFailure,
+): CompanionHostFailure {
+  if (failure.kind === 'loading') {
+    return {
+      kind: 'timeout',
+      code: 'HOST_TIMEOUT',
+      message: 'Desktop Host workspace follow snapshot is still loading',
+    }
+  }
+  return { kind: 'wire', code: 'HOST_WIRE_INVALID', message: failure.message }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
