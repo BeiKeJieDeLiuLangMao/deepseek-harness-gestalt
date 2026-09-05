@@ -14,7 +14,7 @@ Status: implemented
 
 `SessionManager` 把实时解析器传入每个 `Session`。prompt、cancel、queue 变更与 command 在调用时咨询该解析器，因此延迟注册、替换与撤销作用于已有 binding。匹配的 adapter 从 `binding.session` 调用；未命中的 Session 仍走库存 Remote。命中后返回失败或抛错绝不会回退到库存 Host Remote，包括 Session 已有 catalog subagent 地址时的 `subagents.prompt` 与 `subagents.interruptByParent`。命中后省略 `updateQueue` 或 `command` 会失败并报错。command 绝不会转成 prompt。未命中的普通 Session 仍走库存 Remote，也包括这些 subagent 路由。注册不授予 Host 权限；标题与 catalog subagent 地址都不是凭证。
 
-`modelRoute`、`commandCatalogSessionId` 与 `skillCatalogSessionId` 只是 lookup helper。功能自有 Session 省略 catalog helper 会隐藏对应 catalog。没有功能路由、仅被 catalog 定址的 subagent 也会隐藏 command 与 skill。本切片没有 UI 消费方读取这些 helper。`historyScope` 已声明但未被读取。本切片不为普通 Session 安装库存模型 catalog，也不注册 Side Chat 产品 adapter。
+`commandCatalogSessionId` 与 `skillCatalogSessionId` 仍只是 lookup helper。省略它们会为功能自有 Session 隐藏对应 catalog。没有功能路由、仅被 catalog 定址的 subagent 也会隐藏 command 与 skill。`modelRoute` 为普通 Session 与 catalog 定址 Session 提供 Host `session.modelCatalog` 与 `session.selectModel`。已注册的 admission helper 会替换该库存路由，包括显式 undefined 在撤销前隐藏选择器。未知身份保持不可用。`historyScope` 已声明但未被读取。本切片不注册 Side Chat 产品 adapter。
 
 ## Alternatives considered
 
@@ -28,8 +28,8 @@ Status: implemented
 
 ## Consequences
 
-标准 `Session` 的 prompt、cancel、queue 与 command 可以由 Client plugin 拥有，且无需 Host 权限。Side Chat 与其他功能 Session 在对话 UI 完整之前，仍需要产品 adapter、库存模型 catalog、catalog 消费方与 history suffix 裁剪。`ui-model-selection` 已经读取 `modelRoute`；普通 Session 在该后续切片落地前没有库存路由。
+标准 `Session` 的 prompt、cancel、queue 与 command 可以由 Client plugin 拥有，且无需 Host 权限。`ui-model-selection` 读取实时 `sessions.modelRoute`：普通 Session 与 catalog 定址 Session 保留 Host catalog，功能路由可以隐藏或替换它。Side Chat 在对话 UI 完整之前仍需要产品 adapter、skill/command catalog 消费方与 history suffix 裁剪。
 
 ## Testing
 
-`packages/api/session-controller/tests/session-admission.client.spec.ts` 固定临时身份首次 prompt、普通 Remote 保留、延迟注册、替换 disposer、reject 冲突、无回退失败（含 queue 与 command 抛错）、command 隔离、经 `binding.session` 的 adapter `handles` 分派且未命中仍走库存 Remote、有无 admission 时 catalog 定址 subagent 的库存路由、标题/地址非授权、销毁，以及 lookup-only catalog helper。`queue-store.client.spec.ts` 固定经注入准入解析器的 queue 变更。
+`packages/api/session-controller/tests/session-admission.client.spec.ts` 固定临时身份首次 prompt、普通 Remote 保留、延迟注册、替换 disposer、reject 冲突、无回退失败（含 queue 与 command 抛错）、command 隔离、经 `binding.session` 的 adapter `handles` 分派且未命中仍走库存 Remote、有无 admission 时 catalog 定址 subagent 的库存路由、标题/地址非授权、销毁、lookup-only command/skill helper，以及库存 `modelRoute` 的 catalog 与 select（含 admission 优先与撤销恢复）。`packages/client/ui-model-selection/tests/browser-plugin.client.spec.ts` 固定 `/model` 经实时 `sessions.modelRoute` 的可用性、列举与选择。`queue-store.client.spec.ts` 固定经注入准入解析器的 queue 变更。

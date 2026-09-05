@@ -105,10 +105,10 @@ export interface SessionAdmissionRoute {
 
   /**
    * Route model inspection and selection for this Session.
-   * Ordinary Sessions still need a stock catalog owner; this slice returns
-   * the registered route only.
+   * When present, this helper replaces the stock Host catalog route, including
+   * an explicit undefined that hides the selector until detach.
    * @param sessionId - target Session identity.
-   * @returns the feature route, or undefined.
+   * @returns the feature route, or undefined when model selection stays hidden.
    */
   modelRoute?(sessionId: SessionId): SessionModelRoute | undefined
 

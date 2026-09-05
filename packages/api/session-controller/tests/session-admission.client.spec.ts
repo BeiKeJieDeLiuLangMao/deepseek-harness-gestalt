@@ -602,7 +602,7 @@ describe('Session Client admission dispatch', () => {
     expect(svc.resolveAdmission(childId)).toBeUndefined()
     expect(svc.commandCatalogSessionId(childId)).toBeUndefined()
     expect(svc.skillCatalogSessionId(childId)).toBeUndefined()
-    expect(svc.modelRoute(childId)).toBeUndefined()
+    expect(svc.modelRoute(childId)).toBeDefined()
 
     await child.session.prompt([{ type: 'text', text: 'not a credential' }], 'queue')
     await child.session.cancel()
@@ -652,7 +652,7 @@ describe('Session Client admission dispatch', () => {
       .toThrowError('sessions.registerAdmissionAdapter: ClientSessions is disposed')
   })
 
-  it('exposes modelRoute, commandCatalogSessionId, and skillCatalogSessionId as lookup-only helpers', () => {
+  it('keeps commandCatalogSessionId and skillCatalogSessionId as lookup-only helpers', () => {
     const { svc } = bench()
     const sessionId = sid('session-catalogs-1')
     const parentId = sid('session-parent-0')
@@ -678,8 +678,123 @@ describe('Session Client admission dispatch', () => {
 
     drop()
 
-    expect(svc.modelRoute(sessionId)).toBeUndefined()
     expect(svc.commandCatalogSessionId(sessionId)).toBe(sessionId)
     expect(svc.skillCatalogSessionId(sessionId)).toBe(sessionId)
+  })
+
+  it('serves stock modelCatalog and selectModel for ordinary and catalog-addressed Sessions', async () => {
+    const { svc, api } = bench()
+    const sessionId = sid('session-stock-model')
+    const parentId = sid('session-stock-parent')
+    const childId = sid('session-stock-child')
+
+    api.onList = () => Promise.resolve(ok({
+      items: [{
+        sessionId,
+        updatedAt: 100,
+        running: false,
+        blank: false,
+      }, {
+        sessionId: parentId,
+        updatedAt: 100,
+        running: false,
+        blank: false,
+      }],
+    }))
+    api.onSubagentList = () => Promise.resolve(ok({
+      entries: [{
+        kind: 'child',
+        id: childId,
+        mode: 'continuable',
+        label: 'Child',
+        activity: 'inactive',
+        hasChildren: false,
+      }],
+      parentAvailable: true,
+    }))
+    api.onSelectModel = payload => Promise.resolve({
+      ok: false,
+      error: {
+        code: 'session/model-unroutable',
+        message: `provider ${payload.provider} is not routable`,
+        details: {},
+      },
+    })
+    await svc.refresh()
+    await svc.refreshSubagents(parentId)
+    svc.openSubagent({
+      parentSessionId: parentId,
+      childSessionId: childId,
+      mode: 'continuable',
+    })
+
+    const stock = svc.modelRoute(sessionId)
+    expect(stock?.models).toBeTypeOf('function')
+    expect(stock?.selectModel).toBeTypeOf('function')
+    await expect(stock!.models!()).resolves.toMatchObject({
+      ok: true,
+      value: { default: { provider: 'fixture', model: 'fixture' } },
+    })
+    api.onSelectModel = payload => Promise.resolve(ok({
+      selected: {
+        provider: payload.provider,
+        model: payload.model,
+        ...(payload.reasoningEffort === undefined ? {} : { reasoningEffort: payload.reasoningEffort }),
+      },
+    }))
+    await expect(stock!.selectModel!({ provider: 'fixture', model: 'fixture' })).resolves.toEqual({
+      ok: true,
+      value: { selected: { provider: 'fixture', model: 'fixture' } },
+    })
+    expect(api.callsOf('session.selectModel')).toEqual([{
+      sessionId,
+      provider: 'fixture',
+      model: 'fixture',
+    }])
+
+    const childStock = svc.modelRoute(childId)
+    expect(childStock).toBeDefined()
+    await childStock!.selectModel!({ provider: 'fixture', model: 'child' })
+    expect(api.callsOf('session.selectModel').at(-1)).toEqual({
+      sessionId: childId,
+      provider: 'fixture',
+      model: 'child',
+    })
+
+    expect(svc.modelRoute(sid('ghost'))).toBeUndefined()
+
+    const admissionModels = vi.fn(() => Promise.resolve(ok({ groups: [{ id: 'owned' }] })))
+    const admissionSelect = vi.fn(() => Promise.resolve(ok({ selected: { provider: 'owned', model: 'm' } })))
+    const drop = svc.registerAdmission(sessionId, {
+      prompt: vi.fn(() => Promise.resolve(ok({ accepted: true as const }))),
+      cancel: vi.fn(() => Promise.resolve(ok({ accepted: true as const }))),
+      modelRoute: () => ({ models: admissionModels, selectModel: admissionSelect }),
+    })
+    expect(svc.modelRoute(sessionId)?.models).toBe(admissionModels)
+    await svc.modelRoute(sessionId)!.selectModel!({ provider: 'owned', model: 'm' })
+    expect(admissionSelect).toHaveBeenCalledTimes(1)
+    expect(api.callsOf('session.selectModel')).toHaveLength(2)
+
+    const hide = svc.registerAdmission(sessionId, {
+      prompt: vi.fn(() => Promise.resolve(ok({ accepted: true as const }))),
+      cancel: vi.fn(() => Promise.resolve(ok({ accepted: true as const }))),
+      modelRoute: () => undefined,
+    })
+    expect(svc.modelRoute(sessionId)).toBeUndefined()
+    hide()
+    drop()
+    expect(svc.modelRoute(sessionId)?.selectModel).toBeTypeOf('function')
+
+    api.onSelectModel = payload => Promise.resolve({
+      ok: false,
+      error: {
+        code: 'session/model-unroutable',
+        message: `provider ${payload.provider} is not routable`,
+        details: {},
+      },
+    })
+    const rejected = await svc.modelRoute(sessionId)!.selectModel!({ provider: 'missing', model: 'nope' })
+    expect(rejected.ok).toBe(false)
+    expect(rejected.error.code).toBe('session/model-unroutable')
   })
 })

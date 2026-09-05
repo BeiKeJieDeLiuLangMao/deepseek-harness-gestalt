@@ -186,10 +186,13 @@ export interface ISessions {
    */
   registerAdmissionAdapter(adapter: SessionAdmissionAdapter): () => void
   /**
-   * Lookup-only model inspection and selection for one Session.
-   * Returns a registered admission route only; no UI consumer in this slice.
+   * Model inspection and selection for one Session.
+   * Admission `modelRoute` wins while registered; otherwise an ordinary or
+   * catalog-addressed Session uses Host `session.modelCatalog` and
+   * `session.selectModel`. Unknown identities and feature routes that omit
+   * the helper stay unavailable.
    * @param sessionId - target Session identity.
-   * @returns the feature route, or undefined.
+   * @returns the live route, or undefined when model selection stays unavailable.
    */
   modelRoute(sessionId: SessionId): SessionModelRoute | undefined
   /**

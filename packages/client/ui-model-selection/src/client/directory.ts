@@ -7,8 +7,7 @@
 import type {
   ModelCatalogFailure, ModelProviderGroup, ModelSelection, ModelSelectionProjection,
 } from '@deepseek-ai/dsh-api-session-controller/types'
-import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
-import type { TypertClientRemote } from '@deepseek-ai/dsh-typert-protocol'
+import type { SessionModelRoute } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { ObservableSnapshot, SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { ModelCatalogDirectory } from './catalog.ts'
@@ -50,16 +49,12 @@ export class ModelDirectory {
   private readonly unsubscribeSelection: () => void
 
   /**
-   * @param sessions - the session wire face (captured from the plugin's root connection).
-   * @param sessionId - the owning session.
-   * @param available - whether this session may use Agent-bound model RPCs.
+   * @param routeOf - live `sessions.modelRoute` for this identity.
    * @param catalog - Host-generation catalog shared by every Session.
    * @param projected - durable model selection projected from Session history.
    */
   constructor(
-    private readonly sessions: Pick<TypertClientRemote['session'], 'selectModel'>,
-    private readonly sessionId: SessionId,
-    private readonly available: () => boolean,
+    private readonly routeOf: () => SessionModelRoute | undefined,
     private readonly catalog: ModelCatalogDirectory,
     private readonly projected: ObservableSnapshot<unknown>,
   ) {
@@ -89,14 +84,11 @@ export class ModelDirectory {
     this.assertAvailable()
     const generation = ++this.generation
     this.store.update((s) => { s.status = 'selecting'; s.error = null })
-    const result = await this.sessions.selectModel({
-      sessionId: this.sessionId,
-      provider: selection.provider,
-      model: selection.model,
-      ...selection.reasoningEffort === undefined
-        ? {}
-        : { reasoningEffort: selection.reasoningEffort },
-    })
+    const route = this.routeOf()
+    if (route?.selectModel === undefined) {
+      throw new Error('model selection is unavailable for this session')
+    }
+    const result = await route.selectModel(selection)
     if (this.disposed || generation !== this.generation) {
       if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`)
       return
@@ -130,8 +122,8 @@ export class ModelDirectory {
   }
 
   private assertAvailable(): void {
-    if (!this.available()) {
-      throw new Error('model selection is unavailable for addressed subagent sessions')
+    if (this.routeOf() === undefined) {
+      throw new Error('model selection is unavailable for this session')
     }
   }
 

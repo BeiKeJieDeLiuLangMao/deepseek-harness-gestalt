@@ -245,18 +245,18 @@ export class ClientSessions implements ISessions {
 
   /**
    * @param ctx - client root context (scope fibers mount under it).
-   * @param remote - generated Remote namespaces shared with every Session.
+   * @param remotes - generated Remote namespaces shared with every Session.
    */
   constructor(
     private readonly rootCtx: Context,
-    remote: SessionRemotes,
+    private readonly remotes: SessionRemotes,
   ) {
     this.selection = createSnapshotStore<SessionSelection>(
       {},
       { persist: { name: 'dsh.sessions.current' } })
     const restored = this.selection.getSnapshot()
     this.manager = new SessionManager(
-      remote,
+      remotes,
       restored.sessionId,
       restored.subagentAddress,
       sessionId => this.resolveAdmission(sessionId),
@@ -677,17 +677,39 @@ export class ClientSessions implements ISessions {
   }
 
   /**
-   * Lookup-only model inspection and selection for one Session.
-   * Returns a registered admission route only; no UI consumer in this slice.
+   * Model inspection and selection for one Session.
+   * A registered admission `modelRoute` wins, including an explicit undefined
+   * that hides the selector. Detach restores the stock Host catalog route for
+   * an ordinary or catalog-addressed Session. Unknown identities stay hidden.
    * @param sessionId - target Session identity.
-   * @returns the feature route, or undefined.
+   * @returns the live route, or undefined when model selection stays unavailable.
    */
   modelRoute(sessionId: SessionId): SessionModelRoute | undefined {
     const admission = this.resolveAdmission(sessionId)
-    if (admission?.modelRoute !== undefined) {
-      return admission.modelRoute(sessionId)
+    if (admission !== undefined) {
+      return admission.modelRoute?.(sessionId)
     }
-    return undefined
+    if (!this.eligible(sessionId) && this.manager.subagentAddress(sessionId) === undefined) {
+      return undefined
+    }
+    return this.stockModelRoute(sessionId)
+  }
+
+  /**
+   * Stock Host catalog and selection for one ordinary or catalog-addressed Session.
+   * @param sessionId - target Session identity.
+   * @returns the Host `session.modelCatalog` / `session.selectModel` route.
+   */
+  private stockModelRoute(sessionId: SessionId): SessionModelRoute {
+    return {
+      models: () => this.remotes.session.modelCatalog(),
+      selectModel: (selection, signal) => this.remotes.session.selectModel({
+        sessionId,
+        provider: selection.provider,
+        model: selection.model,
+        ...selection.reasoningEffort === undefined ? {} : { reasoningEffort: selection.reasoningEffort },
+      }, signal),
+    }
   }
 
   /**
