@@ -1,5 +1,6 @@
 import { createServer } from 'node:http'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { WebSocketServer } from 'ws'
 import { parsePersonalPairingId } from '@deepseek-ai/dsh-remote-access'
 import {
   deriveCompanionAttachmentKey,
@@ -102,13 +103,14 @@ describe('Desktop Companion product operations', () => {
       }, {
         sessionId: 'session-archived', updatedAt: 10, running: false, blank: false,
       }] } }
-      if (method === 'workspace.list') return { ok: true, value: { items: [{
+      throw new Error(`unexpected Host method ${method}`)
+    }), {
+      items: [{
         workspaceId: 'workspace-product', path: '/work', title: 'Work',
         sessionIds: ['session-product'], createdAt: '2026-08-23T00:00:00.000Z',
         updatedAt: '2026-08-23T00:00:00.000Z',
-      }], archivedSessionIds: ['session-archived'] } }
-      throw new Error(`unexpected Host method ${method}`)
-    }))
+      }], archivedSessionIds: ['session-archived'],
+    })
     const operation = op({ type: 'refresh-surface', offset: 0 })
     await expect(handleCompanionProductOperation(operation, dependencies)).resolves.toMatchObject({
       type: 'surface-snapshot', operationId: operation.operationId,
@@ -116,7 +118,7 @@ describe('Desktop Companion product operations', () => {
       sessions: [{ sessionId, displayTitle: 'Real session', cwd: '/work' }],
       workspaces: [{ workspaceId: 'workspace-product', sessionIds: [sessionId] }],
     })
-    expect(calls).toEqual(['session.list', 'workspace.list'])
+    expect(calls).toEqual(['session.list'])
   })
 
   it('projects a later Session page with exact hasMore and Workspace membership', async () => {
@@ -127,21 +129,22 @@ describe('Desktop Companion product operations', () => {
       blank: false,
     }))
     let sessionListCalls = 0
+    const workspaceSnapshot = () => Promise.resolve({
+      items: items.map((item, index) => ({
+        workspaceId: `workspace-${String(index)}`, path: `/work/${String(index)}`, title: `Work ${String(index)}`,
+        sessionIds: [item.sessionId],
+        createdAt: '2026-08-23T00:00:00.000Z', updatedAt: '2026-08-23T00:00:00.000Z',
+      })),
+      archivedSessionIds: [],
+    })
     const dependencies = baseDependencies(hostRpc(async (method) => {
       if (method === 'session.list') {
         sessionListCalls += 1
         return { ok: true, value: { items } }
       }
-      if (method === 'workspace.list') return { ok: true, value: {
-        items: items.map((item, index) => ({
-          workspaceId: `workspace-${String(index)}`, path: `/work/${String(index)}`, title: `Work ${String(index)}`,
-          sessionIds: [item.sessionId],
-          createdAt: '2026-08-23T00:00:00.000Z', updatedAt: '2026-08-23T00:00:00.000Z',
-        })),
-        archivedSessionIds: [],
-      } }
       throw new Error(`unexpected Host method ${method}`)
     }))
+    dependencies.workspaceSnapshot = workspaceSnapshot
     const discovery = new DesktopCompanionSurfaceDiscovery()
     await expect(discovery.refresh(op({ type: 'refresh-surface', offset: 0 }), dependencies)).resolves.toMatchObject({
       offset: 0,
@@ -631,7 +634,6 @@ describe('Desktop Companion product operations', () => {
     let items = [{ sessionId: 'session-hit', snippet: 'Desktop indexed needle' }]
     let expectedQuery = 'needle'
     const call = vi.fn(async (method: string, payload: Record<string, unknown>): Promise<DesktopHostRpcResult> => {
-      if (method === 'workspace.list') return { ok: true, value: { items: [], archivedSessionIds: [] } }
       expect(method).toBe('session.search')
       expect(payload).toEqual({ query: expectedQuery })
       return {
@@ -701,15 +703,34 @@ describe('Desktop Companion product operations', () => {
           rpcId: body.rpcId,
           result: {
             ok: true,
-            value: body.method === 'workspace.list'
-              ? { items: [], archivedSessionIds: [] }
-              : { items: [{ sessionId: 'session-real-entry', snippet: 'real Host result' }], hasMore: false },
+            value: { items: [{ sessionId: 'session-real-entry', snippet: 'real Host result' }], hasMore: false },
           },
         }))
       })
     })
+    const wss = new WebSocketServer({ noServer: true })
+    server.on('upgrade', (request, socket, head) => {
+      if (request.url !== '/api/remote.mux') {
+        socket.destroy()
+        return
+      }
+      wss.handleUpgrade(request, socket, head, (websocket) => {
+        websocket.on('message', (data) => {
+          const text = typeof data === 'string' ? data : Buffer.from(data as Uint8Array).toString('utf8')
+          const message = JSON.parse(text) as { type: string; streamId: string; endpoint?: string }
+          if (message.type === 'open' && message.endpoint === 'workspace/follow') {
+            websocket.send(JSON.stringify({
+              type: 'item',
+              streamId: message.streamId,
+              value: { type: 'baseline', value: { items: [], archivedSessionIds: [] } },
+            }))
+          }
+        })
+      })
+    })
     await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
     closeServers.push(async () => {
+      wss.close()
       server.closeAllConnections()
       await new Promise<void>((resolve, reject) => {
         server.close((error) => { if (error === undefined) resolve(); else reject(error) })
@@ -779,9 +800,10 @@ function hostRpc(call: DesktopHostRpc['call'], respond?: DesktopHostRpc['respond
   return { call, ...(respond === undefined ? {} : { respond }) }
 }
 
-function baseDependencies(host: DesktopHostRpc) {
+function baseDependencies(host: DesktopHostRpc, workspaceValue: unknown = { items: [], archivedSessionIds: [] }) {
   return {
     host,
+    workspaceSnapshot: () => Promise.resolve(workspaceValue),
     pairingId,
     attachmentKey,
     now: () => 1_000,

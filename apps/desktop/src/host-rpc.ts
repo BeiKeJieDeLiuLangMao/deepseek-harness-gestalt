@@ -65,6 +65,14 @@ export interface DesktopHostRpc {
     signal: AbortSignal,
     accept: (frame: unknown) => void,
   ): Promise<void>
+  /**
+   * Follow generated Gateway `workspace/follow` on `/api/remote.mux`.
+   * Cookie is sent only to the bootstrap origin. Abort sends mux `cancel`.
+   */
+  followWorkspaces?(
+    signal: AbortSignal,
+    accept: (frame: unknown) => void,
+  ): Promise<void>
 }
 
 /** Desktop Host RPC construction options. */
@@ -197,6 +205,9 @@ export function createDesktopHostRpc(baseUrl: string, options: DesktopHostRpcOpt
         options.cookieHeader,
       )
     },
+    followWorkspaces: async (signal, accept) => {
+      await followRemoteMux(origin, 'workspace/follow', { args: {} }, signal, accept, options.cookieHeader)
+    },
   }
 }
 
@@ -242,7 +253,7 @@ function watchHostWebSocket(
     }
     socket.on('message', message)
     socket.once('close', () => {
-      settle(signal.aborted ? undefined : new Error('Desktop Host event stream closed'))
+      settle(signal.aborted || settled.value ? undefined : new Error('Desktop Host event stream closed'))
     })
     socket.once('error', () => { settle(new Error('Desktop Host event stream failed')) })
     signal.addEventListener('abort', abort, { once: true })
@@ -357,6 +368,20 @@ export function createDesktopHostSession(
   return rpc.call('session/create', { args: { request: { sessionId } } }, options)
 }
 
+/**
+ * Register one existing directory as a Workspace through generated Gateway `workspace/create`.
+ * @param rpc - authenticated Desktop Host RPC.
+ * @param path - existing directory path.
+ * @returns the Host create value or a typed failure.
+ */
+export function createDesktopHostWorkspace(
+  rpc: DesktopHostRpc,
+  path: string,
+  options?: { timeoutMs?: number; signal?: AbortSignal },
+): Promise<DesktopHostRpcResult> {
+  return rpc.call('workspace/create', { args: { request: { path } } }, options)
+}
+
 function openOriginWebSocket(url: URL, origin: URL, cookieHeader?: string): WebSocket {
   if (url.hostname !== origin.hostname || url.port !== origin.port) {
     throw new TypeError('Desktop Host WebSocket must stay on the bootstrap origin')
@@ -443,7 +468,7 @@ function followRemoteMux(
     })
     socket.on('message', message)
     socket.once('close', () => {
-      settle(signal.aborted ? undefined : new Error('Desktop Host event stream closed'))
+      settle(signal.aborted || settled.value ? undefined : new Error('Desktop Host event stream closed'))
     })
     socket.once('error', () => { settle(new Error('Desktop Host event stream failed')) })
     signal.addEventListener('abort', abort, { once: true })

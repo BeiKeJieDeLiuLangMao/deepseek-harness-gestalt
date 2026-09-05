@@ -64,6 +64,8 @@ export type DesktopCompanionLiveProjectionPayload = CompanionLiveSessionProjecti
 export interface CompanionProductOperationDependencies {
   /** Current Web Host unary RPC. */
   host: DesktopHostRpc
+  /** Latest `workspace/follow` baseline after applying ordered increments. */
+  workspaceSnapshot: (signal?: AbortSignal) => Promise<unknown | undefined> | unknown | undefined
   /** Personal Pairing authenticated by the reviewed Companion channel. */
   pairingId: PersonalPairingId
   /** Independent key material for that exact Personal Pairing. */
@@ -104,6 +106,7 @@ export class DesktopCompanionProductOwner {
   private installed: {
     readonly rpc: DesktopHostRpc
     readonly cancellation: AbortController
+    workspace?: DesktopWorkspaceFollowCache
     streams?: { readonly cancellation: AbortController; readonly task: Promise<void> }
   } | undefined
   private ledger: DesktopCompanionOperationLedger | undefined
@@ -152,6 +155,7 @@ export class DesktopCompanionProductOwner {
     if (host === undefined) throw new Error('Desktop Web Host is not available')
     return await projectDesktopCompanionLiveSession(change.sessionId, change.includeConversation, {
       host,
+      workspaceSnapshot: signal => this.installed?.workspace?.wait(signal),
       pendingInteractions: sessionId => this.pendingInteractions(sessionId, attachmentKey),
     }, signal)
   }
@@ -179,7 +183,8 @@ export class DesktopCompanionProductOwner {
       ...cookieHeader === undefined ? {} : { cookieHeader },
     })
     const cancellation = new AbortController()
-    const installed: NonNullable<DesktopCompanionProductOwner['installed']> = { rpc, cancellation }
+    const workspace = startWorkspaceFollowCache(rpc, cancellation.signal)
+    const installed: NonNullable<DesktopCompanionProductOwner['installed']> = { rpc, cancellation, workspace }
     this.interactions.clear()
     this.surfaceDiscovery.clear()
     this.installed = installed
@@ -235,9 +240,16 @@ export class DesktopCompanionProductOwner {
         committedAt: dependencies.now(), outcome: 'accepted',
       }
     }
-    const execute = async () => operation.type === 'refresh-surface'
-      ? await this.surfaceDiscovery.refresh(operation, { ...dependencies, host })
-      : await handleCompanionProductOperation(operation, { ...dependencies, host })
+    const execute = async () => {
+      const withHost = {
+        ...dependencies,
+        host,
+        workspaceSnapshot: signal => this.installed?.workspace?.wait(signal),
+      }
+      return operation.type === 'refresh-surface'
+        ? await this.surfaceDiscovery.refresh(operation, withHost)
+        : await handleCompanionProductOperation(operation, withHost)
+    }
     if (!isLedgerMutation(operation)) return await execute()
     if (this.ledger === undefined) return operationFailed(operation, {
       kind: 'wire', code: 'HOST_WIRE_INVALID', message: 'Desktop Companion operation ledger is unavailable',
@@ -355,7 +367,7 @@ export async function handleCompanionProductOperation(
     case 'offer-attachment':
       return await receiveAttachment(operation, dependencies)
     case 'search-sessions':
-      return await searchSessions(operation, dependencies.host)
+      return await searchSessions(operation, dependencies)
     case 'refresh-surface':
       return await new DesktopCompanionSurfaceDiscovery().refresh(operation, dependencies)
     case 'load-history':
@@ -468,16 +480,16 @@ export class DesktopCompanionSurfaceDiscovery {
     const epoch = Symbol('Desktop Companion surface discovery')
     this.epochs.set(dependencies.pairingId, epoch)
     this.states.delete(dependencies.pairingId)
-    const [sessionResponse, workspaceResponse] = await Promise.all([
+    const [sessionResponse, workspaceValue] = await Promise.all([
       dependencies.host.call('session.list', {}),
-      dependencies.host.call('workspace.list', {}),
+      waitForWorkspaceSnapshot(dependencies),
     ])
     if (!sessionResponse.ok) return operationFailed(operation, normalizeFailure(sessionResponse.failure))
-    if (!workspaceResponse.ok) return operationFailed(operation, normalizeFailure(workspaceResponse.failure))
+    if (workspaceValue === undefined) return invalidHostResult(operation, 'surface baseline')
     const snapshot: DesktopSurfaceAuthoritySnapshot = {
       generation: dependencies.generation,
       sessionValue: sessionResponse.value,
-      workspaceValue: workspaceResponse.value,
+      workspaceValue,
     }
     return this.project(operation, dependencies, epoch, snapshot)
   }
@@ -585,25 +597,24 @@ async function loadHistory(
 export async function projectDesktopCompanionLiveSession(
   sessionId: CompanionSessionId,
   includeConversation: boolean,
-  dependencies: Pick<CompanionProductOperationDependencies, 'host' | 'pendingInteractions'>,
+  dependencies: Pick<CompanionProductOperationDependencies, 'host' | 'workspaceSnapshot' | 'pendingInteractions'>,
   signal: AbortSignal,
 ): Promise<DesktopCompanionLiveProjectionPayload> {
   const requests = [
     dependencies.host.call('session.list', {}, { signal }),
-    dependencies.host.call('workspace.list', {}, { signal }),
+    waitForWorkspaceSnapshot(dependencies, signal),
     ...(includeConversation
       ? [dependencies.host.call('session.history', {
         sessionId, maxMessages: REMOTE_PROTOCOL_LIMITS.historyPageMessages,
       }, { signal })]
       : []),
   ] as const
-  const [sessionResponse, workspaceResponse, historyResponse] = await Promise.all(requests)
+  const [sessionResponse, workspaceValue, historyResponse] = await Promise.all(requests)
   if (!sessionResponse.ok) throw new Error(sessionResponse.failure.message)
-  if (!workspaceResponse.ok) throw new Error(workspaceResponse.failure.message)
   if (!isRecord(sessionResponse.value) || !Array.isArray(sessionResponse.value.items)) {
     throw new Error('Desktop Host live Session list returned an invalid value')
   }
-  const archived = parseArchivedSessionIds(workspaceResponse.value)
+  const archived = parseArchivedSessionIds(workspaceValue)
   if (archived === undefined) throw new Error('Desktop Host live Workspace projection returned an invalid value')
   if (archived.has(sessionId)) return { sessionId, removed: true }
   const visibleSessions = surfaceSessionValues(sessionResponse.value, archived)
@@ -614,7 +625,7 @@ export async function projectDesktopCompanionLiveSession(
   if (summary === undefined || summary.sessionId !== sessionId) {
     throw new Error('Desktop Host live Session summary returned an invalid value')
   }
-  const workspaces = parseSurfaceWorkspaces(workspaceResponse.value, new Set([sessionId]))
+  const workspaces = parseSurfaceWorkspaces(workspaceValue, new Set([sessionId]))
   if (workspaces === undefined) throw new Error('Desktop Host live Workspace projection returned an invalid value')
   if (!includeConversation) return { sessionId, position, summary, workspaces }
   if (historyResponse === undefined || !historyResponse.ok) {
@@ -751,14 +762,13 @@ async function receiveAttachment(
 
 async function searchSessions(
   operation: CompanionSearchSessionsOperation,
-  host: DesktopHostRpc,
+  dependencies: CompanionProductOperationDependencies,
 ): Promise<CompanionSessionSearchResult | CompanionOperationFailedResult> {
-  const [response, workspaceResponse] = await Promise.all([
-    host.call('session.search', { query: operation.query }),
-    host.call('workspace.list', {}),
+  const [response, workspaceValue] = await Promise.all([
+    dependencies.host.call('session.search', { query: operation.query }),
+    waitForWorkspaceSnapshot(dependencies),
   ])
   if (!response.ok) return operationFailed(operation, normalizeFailure(response.failure))
-  if (!workspaceResponse.ok) return operationFailed(operation, normalizeFailure(workspaceResponse.failure))
   const parsed = parseSearchValue(response.value)
   if (parsed === undefined) {
     return operationFailed(operation, {
@@ -767,12 +777,12 @@ async function searchSessions(
       message: 'Desktop Host session.search returned an invalid value',
     })
   }
-  const archived = parseArchivedSessionIds(workspaceResponse.value)
+  const archived = parseArchivedSessionIds(workspaceValue)
   if (archived === undefined) {
     return operationFailed(operation, {
       kind: 'wire',
       code: 'HOST_WIRE_INVALID',
-      message: 'Desktop Host workspace.list returned an invalid value',
+      message: 'Desktop Host workspace follow snapshot returned an invalid value',
     })
   }
   return {
@@ -1244,6 +1254,107 @@ function codePointCount(value: string): number {
   let count = 0
   for (const _codePoint of value) count++
   return count
+}
+
+class DesktopWorkspaceFollowCache {
+  private value: { items: unknown[]; archivedSessionIds: unknown[] } | undefined
+  private readonly waiters = new Set<(snapshot: unknown | undefined) => void>()
+
+  snapshot(): unknown | undefined {
+    return this.value === undefined
+      ? undefined
+      : { items: this.value.items, archivedSessionIds: this.value.archivedSessionIds }
+  }
+
+  wait(signal?: AbortSignal): Promise<unknown | undefined> {
+    const current = this.snapshot()
+    if (current !== undefined || signal?.aborted) return Promise.resolve(current)
+    return new Promise((resolve) => {
+      const finish = (snapshot: unknown | undefined): void => {
+        signal?.removeEventListener('abort', abort)
+        this.waiters.delete(finish)
+        resolve(snapshot)
+      }
+      const abort = (): void => { finish(undefined) }
+      this.waiters.add(finish)
+      signal?.addEventListener('abort', abort, { once: true })
+    })
+  }
+
+  accept(frame: unknown): void {
+    if (!isRecord(frame) || typeof frame.type !== 'string') return
+    if (frame.type === 'baseline' && isRecord(frame.value)
+      && Array.isArray(frame.value.items) && Array.isArray(frame.value.archivedSessionIds)) {
+      this.value = {
+        items: [...frame.value.items],
+        archivedSessionIds: [...frame.value.archivedSessionIds],
+      }
+      this.flush()
+      return
+    }
+    if (this.value === undefined) return
+    if (frame.type === 'upsert' && isRecord(frame.workspace)
+      && typeof frame.workspace.workspaceId === 'string') {
+      const next = [...this.value.items]
+      const index = next.findIndex(item => isRecord(item) && item.workspaceId === frame.workspace.workspaceId)
+      if (index === -1) next.push(frame.workspace)
+      else next[index] = frame.workspace
+      this.value = { ...this.value, items: next }
+      return
+    }
+    if (frame.type === 'remove' && typeof frame.workspaceId === 'string') {
+      this.value = {
+        ...this.value,
+        items: this.value.items.filter(item => !(isRecord(item) && item.workspaceId === frame.workspaceId)),
+      }
+      return
+    }
+    if (frame.type === 'order' && Array.isArray(frame.workspaceIds)) {
+      const byId = new Map(this.value.items.flatMap((item) => {
+        if (!isRecord(item) || typeof item.workspaceId !== 'string') return []
+        return [[item.workspaceId, item] as const]
+      }))
+      this.value = {
+        ...this.value,
+        items: frame.workspaceIds.flatMap((id) => {
+          if (typeof id !== 'string') return []
+          const item = byId.get(id)
+          return item === undefined ? [] : [item]
+        }),
+      }
+      return
+    }
+    if (frame.type === 'archived' && Array.isArray(frame.archivedSessionIds)) {
+      this.value = { ...this.value, archivedSessionIds: [...frame.archivedSessionIds] }
+    }
+  }
+
+  fail(): void {
+    this.value = undefined
+    this.flush()
+  }
+
+  private flush(): void {
+    const snapshot = this.snapshot()
+    for (const waiter of [...this.waiters]) waiter(snapshot)
+  }
+}
+
+function startWorkspaceFollowCache(rpc: DesktopHostRpc, signal: AbortSignal): DesktopWorkspaceFollowCache {
+  const cache = new DesktopWorkspaceFollowCache()
+  if (rpc.followWorkspaces === undefined) {
+    cache.accept({ type: 'baseline', value: { items: [], archivedSessionIds: [] } })
+    return cache
+  }
+  void rpc.followWorkspaces(signal, (frame) => { cache.accept(frame) }).catch(() => { cache.fail() })
+  return cache
+}
+
+async function waitForWorkspaceSnapshot(
+  dependencies: Pick<CompanionProductOperationDependencies, 'workspaceSnapshot'>,
+  signal?: AbortSignal,
+): Promise<unknown | undefined> {
+  return await dependencies.workspaceSnapshot(signal)
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
