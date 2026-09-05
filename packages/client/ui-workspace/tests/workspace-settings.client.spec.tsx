@@ -89,7 +89,7 @@ function gateway(overrides: Partial<ProjectMembershipGateway> = {}) {
   }
 }
 
-function mountBrowser(overrides: Partial<WorkspaceBrowserProps> = {}) {
+function mount(membership: ProjectMembershipGateway | undefined, overrides: Partial<WorkspaceBrowserProps> = {}) {
   const store = createWorkspaceViewStore().create()
   const props: WorkspaceBrowserProps = {
     wide: true,
@@ -115,39 +115,10 @@ function mountBrowser(overrides: Partial<WorkspaceBrowserProps> = {}) {
     useHostInfo: selector => selector({ home: '/Users/octocat' }),
     renderSlot: ((_name: string, owner: { open: boolean }) => (owner.open ? <div data-testid="directory-flow" /> : null)) as never,
     t,
+    ...(membership === undefined ? {} : { projectMembership: membership }),
     ...overrides,
   }
   return render(<WorkspaceBrowser {...props} />)
-}
-
-function mountSettings(membership: ProjectMembershipGateway) {
-  return render(<WorkspaceSettingsModal
-    workspaceId={wid('proj')}
-    workspaceTitle="proj"
-    workspacePath="/projects/proj"
-    gateway={membership}
-    onClose={vi.fn()}
-    t={t}
-  />)
-}
-
-function mountWizard(
-  membership: ProjectMembershipGateway,
-  invitation = pendingInvitation,
-  workspaces = [{ workspaceId: wid('proj'), title: 'proj' }],
-  onInvitationGone?: (invitationId: string) => void,
-) {
-  const view = render(<div />)
-  const close = () => { view.unmount() }
-  view.rerender(<InviteWizardModal
-    invitation={invitation}
-    workspaces={workspaces}
-    gateway={membership}
-    onClose={close}
-    {...(onInvitationGone === undefined ? {} : { onInvitationGone })}
-    t={t}
-  />)
-  return view
 }
 
 /** Open a real workspace row's ⋯ menu. */
@@ -202,18 +173,21 @@ describe('workspace settings and invite wizard (M4)', () => {
     expect(cloneDirectoryName(':', '..')).toBe('project')
   })
 
-  it('keeps the workspace-row menu to rename and delete while settings mount independently', () => {
-    mountBrowser()
+  it('offers 工作区设置 as the first workspace-row menu item', () => {
+    mount(undefined)
     openWorkspaceMenu()
-    expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual(['重命名', '删除工作区'])
-    expect(screen.queryByRole('menuitem', { name: '工作区设置' })).toBeNull()
+    const items = screen.getAllByRole('menuitem').map(item => item.textContent)
+    expect(items[0]).toBe('工作区设置')
+    expect(items).toEqual(['工作区设置', '重命名', '删除工作区'])
   })
 
   it('routes the upgrade create action through the membership gateway and shows the roster', async () => {
     const membership = gateway()
     vi.useFakeTimers()
     try {
-      mountSettings(membership)
+      mount(membership)
+      openWorkspaceMenu()
+      fireEvent.click(screen.getByRole('menuitem', { name: '工作区设置' }))
       await tick()
       fireEvent.change(screen.getByLabelText('云项目名称'), { target: { value: 'Assembled' } })
       expect(screen.getByText(SAME_REMOTE)).toBeTruthy()
@@ -256,7 +230,9 @@ describe('workspace settings and invite wizard (M4)', () => {
     const membership = gateway({ localRemoteFor: vi.fn(async () => undefined) })
     vi.useFakeTimers()
     try {
-      mountSettings(membership)
+      mount(membership)
+      openWorkspaceMenu()
+      fireEvent.click(screen.getByRole('menuitem', { name: '工作区设置' }))
       await tick()
       expect(screen.getByText('未检测到 origin remote')).toBeTruthy()
       expect(screen.queryByLabelText('Git remote 地址')).toBeNull()
@@ -301,7 +277,9 @@ describe('workspace settings and invite wizard (M4)', () => {
     })
     vi.useFakeTimers()
     try {
-      mountSettings(membership)
+      mount(membership)
+      openWorkspaceMenu()
+      fireEvent.click(screen.getByRole('menuitem', { name: '工作区设置' }))
       await tick()
       expect(membership.projectForWorkspace).toHaveBeenCalledWith(wid('proj'))
       expect(screen.getByText('Restored')).toBeTruthy()
@@ -359,7 +337,7 @@ describe('workspace settings and invite wizard (M4)', () => {
     })
     vi.useFakeTimers()
     try {
-      const first = mountWizard(membership)
+      mount(membership)
       await tick()
       expect(screen.getByText('mona 邀请你加入云项目“Assembled”。')).toBeTruthy()
       expect(screen.getByText('加入后角色：admin')).toBeTruthy()
@@ -368,10 +346,9 @@ describe('workspace settings and invite wizard (M4)', () => {
       fireEvent.click(screen.getByRole('button', { name: '关闭' }))
       expect(screen.queryByText('mona 邀请你加入云项目“Assembled”。')).toBeNull()
       expect(membership.decideInvitation).not.toHaveBeenCalled()
-      first.unmount()
+      expect(membership.pendingInvitations).toHaveBeenCalled()
 
-      mountWizard(membership)
-      await tick()
+      await tick(15_000)
       fireEvent.click(screen.getByRole('button', { name: '接受' }))
       await tick()
 
@@ -381,10 +358,7 @@ describe('workspace settings and invite wizard (M4)', () => {
       fireEvent.click(screen.getByRole('button', { name: '关闭' }))
       expect(screen.queryByText('关联本地工作区')).toBeNull()
       expect(membership.decideInvitation).not.toHaveBeenCalled()
-      cleanup()
-
-      mountWizard(membership)
-      await tick()
+      await tick(15_000)
       expect(screen.getByText('加入后角色：admin')).toBeTruthy()
       fireEvent.click(screen.getByRole('button', { name: '接受' }))
       await tick()
@@ -423,10 +397,7 @@ describe('workspace settings and invite wizard (M4)', () => {
     })
     vi.useFakeTimers()
     try {
-      mountWizard(membership, {
-        invitationId: 'invitation-clone', receivingAccountId: 'account-2', projectId: 'project-1',
-        projectName: 'Assembled', inviterName: 'mona', remoteUrl: SAME_REMOTE, grantedRole: 'member',
-      })
+      mount(membership)
       await tick()
       fireEvent.click(screen.getByRole('button', { name: '接受' }))
       await tick()
@@ -462,7 +433,7 @@ describe('workspace settings and invite wizard (M4)', () => {
     })
     vi.useFakeTimers()
     try {
-      mountWizard(membership)
+      mount(membership)
       await tick()
       fireEvent.click(screen.getByRole('button', { name: '拒绝' }))
       await tick()
@@ -969,16 +940,11 @@ describe('workspace settings and invite wizard (M4)', () => {
     })
     vi.useFakeTimers()
     try {
-      const onInvitationGone = vi.fn()
-      mountWizard(
-        membership,
-        {
-          invitationId: 'invitation-retracted', receivingAccountId: 'account-2', projectId: 'project-1',
-          projectName: 'Assembled', inviterName: 'mona', remoteUrl: SAME_REMOTE, grantedRole: 'admin',
-        },
-        [{ workspaceId: wid('proj'), title: 'deepseek-harness' }],
-        onInvitationGone,
-      )
+      mount(membership, {
+        useWorkspaces: hook(workspaceState([
+          workspace('proj', ['alpha-s'], 'IdeaProjects', '/Users/yishu.cy/IdeaProjects/deepseek-harness'),
+        ])),
+      })
       await tick()
       fireEvent.click(screen.getByRole('button', { name: '接受' }))
       await tick()
@@ -989,8 +955,8 @@ describe('workspace settings and invite wizard (M4)', () => {
       await tick()
       expect(screen.queryByText('关联本地工作区')).toBeNull()
       expect(screen.queryByText(/Error invoking remote method/)).toBeNull()
+      await tick(15_000)
       expect(screen.queryByText('mona 邀请你加入云项目“Assembled”。')).toBeNull()
-      expect(onInvitationGone).toHaveBeenCalledWith('invitation-retracted')
       expect(membership.decideInvitation).toHaveBeenCalledOnce()
     } finally {
       vi.useRealTimers()

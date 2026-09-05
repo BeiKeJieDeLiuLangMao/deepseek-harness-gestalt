@@ -20,13 +20,17 @@ import type {
 } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { WorkspaceId, WorkspaceView } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { WorkspaceBrowserProps } from '../contract/slots.ts'
+import type { WorkspaceBrowserProps, WorkspacePendingInvitation } from '../contract/slots.ts'
 import type { SessionNode, SessionOrderBy } from '../tree.ts'
 import { deriveFlat, deriveGroups, deriveSearchResults, UNGROUPED_KEY } from '../tree.ts'
 import { ProjectRowItem, SearchResultItem, SessionNodeItem } from './Rows.tsx'
 import { FLAT_SESSION_ORDER_KEY } from '../stores.ts'
 import { WorkspacePickFlow } from '../WorkspacePicker.tsx'
+import { InviteWizardModal, WorkspaceSettingsModal } from '../WorkspaceSettings.tsx'
 import css from './WorkspaceBrowser.module.css'
+
+/** Pending-invitation poll interval while the browser is mounted. */
+const INVITE_POLL_MS = 15_000
 
 /**
  * Column slide length (--ds-transition-duration-slow): rail-search focus waits it out —
@@ -260,6 +264,8 @@ type SessionTreeProps = Pick<
   onSessionRename: (sessionId: SessionNode['id'], currentTitle: string) => void
   /** Archive a session (row menu action; the row disappears on the state echo). */
   onSessionArchive: (sessionId: SessionNode['id']) => void
+  /** Open workspace settings for a real Workspace group. */
+  onSettingsRequest: (workspaceId: WorkspaceId, currentTitle: string) => void
   /** Session order behavior: fixed after edits, or additionally promoted by user activity. */
   orderBy: SessionOrderBy
 }
@@ -267,7 +273,7 @@ type SessionTreeProps = Pick<
 /** The scrolling session tree; unmounting drops the sessions subscription and expand-all state. */
 function SessionTree({
   useSessions, useSessionPendingInteraction, startSession, open, forkSession, workspaces, archivedSessionIds,
-  onRenameRequest, onDeleteRequest, onSessionRename, onSessionArchive,
+  onRenameRequest, onDeleteRequest, onSessionRename, onSessionArchive, onSettingsRequest,
   insertWorkspaceBefore, insertSessionBefore, orderBy,
   groupExpansion, setGroupExpanded,
   sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder, home, t,
@@ -515,6 +521,10 @@ function SessionTree({
                 actions={group.workspaceId === undefined
                   ? undefined
                   : {
+                    settings: () => {
+                    /* v8 ignore next -- narrowing guard: the actions object exists only for real-workspace groups. */
+                      if (group.workspaceId !== undefined) onSettingsRequest(group.workspaceId, group.label)
+                    },
                     rename: () => {
                     /* v8 ignore next -- narrowing guard: the actions object exists only for real-workspace groups. */
                       if (group.workspaceId !== undefined) onRenameRequest(group.workspaceId, group.label)
@@ -822,6 +832,7 @@ export function WorkspaceBrowser({
   useDirectoryFlow,
   useHostInfo,
   renderSlot,
+  projectMembership,
   t,
 }: WorkspaceBrowserProps) {
   const home = useHostInfo(info => info.home)
@@ -923,6 +934,30 @@ export function WorkspaceBrowser({
     document.addEventListener('click', onClick)
     return () => { document.removeEventListener('click', onClick) }
   }, [normalizedQuery, wide, searchExpanded, searchOnExpand])
+
+  useEffect(() => {
+    if (projectMembership === undefined) return
+    let cancelled = false
+    const poll = (): void => {
+      void projectMembership.pendingInvitations().then((invitations) => {
+        if (cancelled) return
+        const next = invitations.find(invitation => !goneInvitationIds.current.has(invitation.invitationId))
+        setPendingInvitation((current) => {
+          if (current !== null && next?.invitationId === current.invitationId) return current
+          if (current !== null) return current
+          return next ?? null
+        })
+      }).catch(() => {
+        // A poll failure leaves the current card; the next interval retries.
+      })
+    }
+    poll()
+    const timer = window.setInterval(poll, INVITE_POLL_MS)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [projectMembership])
 
   useEffect(() => {
     if (normalizedQuery === '') {
@@ -1038,6 +1073,9 @@ export function WorkspaceBrowser({
   const [deleting, setDeleting] = useState(false)
   const [deleteCommittedId, setDeleteCommittedId] = useState<WorkspaceId | null>(null)
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [settingsTarget, setSettingsTarget] = useState<{ workspaceId: WorkspaceId; title: string; path: string } | null>(null)
+  const [pendingInvitation, setPendingInvitation] = useState<WorkspacePendingInvitation | null>(null)
+  const goneInvitationIds = useRef(new Set<string>())
   useEffect(() => {
     if (deleteCommittedId === null
       || workspaces.some(workspace => workspace.workspaceId === deleteCommittedId)) return
@@ -1252,6 +1290,10 @@ export function WorkspaceBrowser({
                 orderBy={orderBy}
                 home={home}
                 t={t}
+                onSettingsRequest={(workspaceId, currentTitle) => {
+                  const path = workspaces.find(workspace => workspace.workspaceId === workspaceId)?.path ?? ''
+                  setSettingsTarget({ workspaceId, title: currentTitle, path })
+                }}
                 onRenameRequest={(workspaceId, currentTitle) => {
                   setRenameTarget({ workspaceId, currentTitle })
                   setRenameDraft(currentTitle)
@@ -1356,6 +1398,33 @@ export function WorkspaceBrowser({
         {deleting && <div className={css.deleteStatus} role="status">{t('delete.pending')}</div>}
         {deleteError !== null && <div className={css.renameError} role="alert">{deleteError}</div>}
       </Modal>
+      {settingsTarget !== null && projectMembership !== undefined && (
+        <WorkspaceSettingsModal
+          workspaceId={settingsTarget.workspaceId}
+          workspaceTitle={settingsTarget.title}
+          workspacePath={settingsTarget.path}
+          gateway={projectMembership}
+          onClose={() => { setSettingsTarget(null) }}
+          t={t}
+        />
+      )}
+      {pendingInvitation !== null && projectMembership !== undefined && (
+        <InviteWizardModal
+          invitation={pendingInvitation}
+          workspaces={workspaces.map(workspace => ({
+            workspaceId: workspace.workspaceId,
+            title: workspace.title,
+            path: workspace.path,
+          }))}
+          gateway={projectMembership}
+          onClose={() => { setPendingInvitation(null) }}
+          onInvitationGone={(invitationId) => {
+            goneInvitationIds.current.add(invitationId)
+            setPendingInvitation(null)
+          }}
+          t={t}
+        />
+      )}
     </div>
   )
 }

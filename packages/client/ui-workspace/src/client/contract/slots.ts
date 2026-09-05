@@ -142,6 +142,11 @@ export type WorkspaceBrowserInjected = {
   insertSessionBefore: (workspaceId: WorkspaceId, sessionId: SessionId, beforeSessionId?: SessionId) => Promise<void>
   /** Adopt a picked host directory as a real Workspace before targeting a Session. */
   createWorkspace: (input: { path: string }) => Promise<WorkspaceView>
+  /**
+   * Optional Cloud Project membership transport. Absence keeps 工作区设置 in
+   * the row menu and leaves the invite wizard unmounted.
+   */
+  projectMembership?: ProjectMembershipGateway | undefined
 }
 
 /** Cloud Project role used by workspace settings and the invite wizard. */
