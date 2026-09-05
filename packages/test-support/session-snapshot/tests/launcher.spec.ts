@@ -12,6 +12,7 @@ const roots: string[] = []
 
 afterEach(async () => {
   await Promise.all(roots.splice(0).reverse().map(dir => rm(dir, { recursive: true, force: true })))
+  await rm(harnessScope, { recursive: true, force: true })
 })
 
 async function tempRoot(prefix: string): Promise<string> {
@@ -93,6 +94,12 @@ describe('materializeProfilePatch dual-anchor linking', () => {
 
     expect(existsSync(target)).toBe(true)
     expect(existsSync(profileLink(cwd, packageName))).toBe(false)
+
+    const installPkg = await writePackage(join(cwd, 'install-closure', packageName), packageName, 'install')
+    const link = profileLink(cwd, packageName)
+    await mkdir(dirname(link), { recursive: true })
+    await symlink(installPkg, link, process.platform === 'win32' ? 'junction' : 'dir')
+    expect(await realpath(link)).toBe(installPkg)
   })
 
   it('rejects an existing profile link that points at a different package directory', async () => {
