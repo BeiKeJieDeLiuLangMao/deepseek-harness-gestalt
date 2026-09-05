@@ -154,12 +154,12 @@ const CREATE_DESCRIPTION =
   + 'is live and otherwise becomes overdue until the session is resumed.'
 
 const LIST_DESCRIPTION =
-  'List every retained active or paused reminder in the current session in creation order, including '
-  + 'its exact id, UTC target, scheduled, overdue, or paused state, and session-local delivery mode.'
+  'List every retained reminder in the current session in creation order, including its exact id, '
+  + 'UTC target, scheduled, overdue, or paused state, and session-local delivery mode.'
 
 const DELETE_DESCRIPTION =
-  'Delete one retained active or paused reminder in the current session by the exact id returned by '
-  + 'schedule_create or schedule_list. Unknown or already-finished ids return deleted false.'
+  'Delete one retained reminder in the current session by the exact id returned by schedule_create '
+  + 'or schedule_list, including a paused reminder. Unknown or already-finished ids return deleted false.'
 
 /** Deterministic model content for every canonical Schedule value. */
 function renderValue(_args: unknown, value: unknown): ContentBlock[] {

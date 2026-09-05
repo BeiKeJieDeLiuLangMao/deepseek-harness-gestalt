@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-schedule` 为你的会话提供持久的提醒：让模型稍后提醒你，提醒会作为同一会话中的普通 follow-up 消息返回。你可以安排延时后的一次性提醒、绝对时间的一次性提醒，或固定间隔的重复提醒，也可以列出仍待处理的提醒或取消提醒。提醒在重启后依然存在：已经 live 且空闲的 agent 可以立即交付到期工作，而已关闭或 cold 的会话会让提醒保持逾期，直到未来的 live 根 agent 恢复会话。交付只发生在会话内部，没有电子邮件、短信或推送通知。它是可选的 Web 能力；加载 Schedule overlay 即可启用提醒工具与只读活动提醒目录。普通与搜索侧边栏行还会在尽力而为的列表 projection 明确非空时显示不可交互的闹钟；该闹钟不保证 live runtime 存在。
+`dsh-schedule` 为你的会话提供持久的提醒：让模型稍后提醒你，提醒会作为同一会话中的普通 follow-up 消息返回。你可以安排延时后的一次性提醒、绝对时间的一次性提醒，或固定间隔的重复提醒，也可以列出或取消保留提醒，包括暂停的提醒。提醒在重启后依然存在：已经 live 且空闲的 agent 可以立即交付到期工作，而已关闭或 cold 的会话会让提醒保持逾期，直到未来的 live 根 agent 恢复会话。交付只发生在会话内部，没有电子邮件、短信或推送通知。它是可选的 Web 能力；加载 Schedule overlay 即可启用提醒工具。`schedule_list` 按创建顺序返回保留提醒，包括暂停行。会话头目录尚未挂载。普通与搜索侧边栏行可能在尽力而为的列表 projection 明确非空时显示不可交互的闹钟；该闹钟不保证 live runtime，也不表示已挂载会话头目录。
 
 ## 目录
 
@@ -47,13 +47,13 @@ dsh web --patch apps/cli/config/examples/schedule/cordis.yml
 
 一次性提醒有两种形式：延时后——例如「30 分钟后」——或绝对时间，可以给出带显式偏移量的时刻，如 `2026-09-01T15:00:00+08:00`，也可以给出带命名时区（如 `Europe/Berlin`）的本地日期与时间（只有加载 time-context overlay 时才应用浏览器时区）。重复提醒按至少 5 分钟的固定间隔运行，并与你首次设置的时间保持对齐。每条提醒都需要在触发时展示的内容。
 
-创建成功会返回带 id、目标时间、状态与交付模式的提醒；`schedule_list` 按创建顺序显示所有待处理提醒；按 id 取消会移除待处理提醒，未知或已结束的 id 会报告 `schedule_not_found` 且不改变任何内容。
+创建成功会返回带 id、目标时间、状态与交付模式的提醒；`schedule_list` 按创建顺序显示每条保留提醒，包括暂停行；按 id 取消会移除活动或暂停提醒，未知或已结束的 id 会报告 `schedule_not_found` 且不改变任何内容。
 
 无法成为提醒的输入——空提示词、多于一个 selector、无效时区、非未来或超出范围的时间、低于 5 分钟的重复间隔——会返回稳定的错误代码而不是成功。生成的[工具目录](../../../docs/tool-catalog.zh.md#deepseek-aidsh-schedule)拥有每个工具接受的精确参数。
 
 ### 提醒何时触发
 
-到期提醒会在会话空闲后作为普通 follow-up 消息出现；agent 绝不会中断正在运行的轮次。已经 live 且空闲的 agent 可以认领 maintenance 并立即交付，无需再次恢复。一次性提醒先于任何重复批次触发；同时到期的多条重复提醒会按时间顺序合并为一条消息。如果会话在提醒到期时已关闭或 cold，提醒会保持逾期，直到未来的 live 根 agent 恢复会话——会话之外不会发送任何内容。错过若干间隔的重复提醒只展示最新一个到期发生时点，不展示积压。可选 Web 目录只显示活动记录，并不充当交付回执；dispatch 表示 follow-up 已入队并被记录，不表示模型成功或用户已读取回答。
+到期提醒会在会话空闲后作为普通 follow-up 消息出现；agent 绝不会中断正在运行的轮次。已经 live 且空闲的 agent 可以认领 maintenance 并立即交付，无需再次恢复。一次性提醒先于任何重复批次触发；同时到期的多条重复提醒会按时间顺序合并为一条消息。如果会话在提醒到期时已关闭或 cold，提醒会保持逾期，直到未来的 live 根 agent 恢复会话——会话之外不会发送任何内容。错过若干间隔的重复提醒只展示最新一个到期发生时点，不展示积压。Host 工具会列出保留的暂停记录。可选 Web 会话头目录与人工 pause/resume 控件尚未挂载。dispatch 表示 follow-up 已入队并被记录，不表示模型成功或用户已读取回答。
 
 -----
 
@@ -71,14 +71,14 @@ dsh web --patch apps/cli/config/examples/schedule/cordis.yml
 
 Time-context 不是 Schedule 的依赖。官方 Web overlay 挂载 `@deepseek-ai/dsh-time-context`，让模型能够按浏览器请求本地时区解释自然语言；但模型仍必须向 `schedule_create` 传入显式偏移量或 `time_zone`；Schedule 绝不会从模型上下文导入或推断该值。
 
-Session projection 是可选能力。`ctx.sessionProjections` 存在时，插件会注册严格的 `schedule` 单元并公开完整的活动 `ScheduleRecord[]`；不带注册表的 headless 组合仍保留相同工具与 runtime。浏览器安全的记录词汇由纯类型出口 `@deepseek-ai/dsh-schedule/client` 提供。随附 Web bundle 通过 disabled row 解析 `ui-schedule`，显式 Schedule overlay 再与 Host Schedule 服务一起启用该 row。
+Session projection 是可选能力。`ctx.sessionProjections` 存在时，插件会注册 key 为 `schedule` 的单元并公开保留的 `ScheduleProjectionItem[]`（含暂停）。apply 会跳过 `Session.inheritedEventCount` 之前的事件；定义没有 `eventScope` 字段。不带注册表的 headless 组合仍保留相同工具与 runtime。浏览器安全的记录词汇由纯类型出口 `@deepseek-ai/dsh-schedule/client` 提供。overlay 加载 Host 工具；会话头目录与人工 pause/resume 控件尚未挂载。
 
 ### 设计理念
 
 本包建立在一个分离与三项承诺之上：
 
 - **会话日志拥有状态。** 版本 1 的 `schedule/change` 事件是唯一持久权威；timer、工具值与 follow-up 都是从折叠结果重建的可丢弃投影。
-- **严格回放。** 解码器拒绝未知版本、额外字段、重复使用的 id、形状不匹配的 dispatch 以及针对非活动记录的转换，因此损坏的流会大声失败，而不是派生出错误视图。
+- **严格回放。** 解码器拒绝未知版本、额外字段、重复使用的 id、形状不匹配的 dispatch 以及针对缺失或不兼容记录的转换，因此损坏的流会大声失败，而不是派生出错误视图。
 - **先持久化再决策。** 每项读取或决策都等待共享的会话 flush barrier，create 与 delete 只在第二个 post-append barrier 之后才确认。
 - **仅限会话本地交付。** 没有外部渠道、没有 cold 会话调度器、也没有回执：到期工作进入同一会话，否则保持活动。
 
@@ -86,7 +86,7 @@ Session projection 是可选能力。`ctx.sessionProjections` 存在时，插件
 
 | 文件 | 职责 |
 |---|---|
-| [`src/index.ts`](src/index.ts) | 插件入口：`inject`、`agent/created` 观察、按根的 runtime 与工具安装 |
+| [`src/index.ts`](src/index.ts) | 插件入口：`inject`、`agent/created` 观察、共享 FIFO、按根的 runtime 与工具安装 |
 | [`src/tools.ts`](src/tools.ts) | 工具定义、preflight、序列化事务、封闭错误联合 |
 | [`src/domain.ts`](src/domain.ts) | 严格解码、折叠、时间校验、framing、occurrence 算术 |
 | [`src/runtime.ts`](src/runtime.ts) | live timer owner：maintenance 认领、follow-up、dispatch barrier |
@@ -98,13 +98,13 @@ Session projection 是可选能力。`ctx.sessionProjections` 存在时，插件
 
 ### 持久状态与回放
 
-普通会话折叠完整事件流。fork 只折叠 `session.ownEvents()`，因此子会话永远不会继承父会话的提醒。Schedule projection 从投影注册表接收 Session 的精确 `inheritedEventCount`，并在该切点之后应用同一个 transition 函数。每条 create 记录都携带稳定的会话本地 `ScheduleId`、已 trim 的提示词与四位年份 RFC 3339 UTC `scheduledAt`；`after` 记录还存储 `afterSeconds`，`at` 记录不保留所提交的偏移量或本地字段，`every` 记录存储 `everySeconds`，并把 `scheduledAt` 视为尚未 dispatch 的最早创建锚点对齐发生时点。delete 与一次性 dispatch 只携带 id；`every` dispatch 会附加 `acceptedAt`，回放直接推进到该决策时点之后的第一个锚点对齐目标。
+普通会话折叠完整事件流。fork 只折叠 `Session.inheritedEventCount` 之后的 `session.ownEvents()`，因此子会话永远不会继承父会话的提醒。Schedule projection 从投影注册表接收同一切点，并在该切点之后应用同一个 transition 函数。每条 create 记录都携带稳定的会话本地 `ScheduleId`、已 trim 的提示词与四位年份 RFC 3339 UTC `scheduledAt`；`after` 记录还存储 `afterSeconds`，`at` 记录不保留所提交的偏移量或本地字段，`every` 记录存储 `everySeconds`，并把 `scheduledAt` 视为尚未 dispatch 的最早创建锚点对齐发生时点。pause 与 resume 只携带 id 并保留目标；delete 与一次性 dispatch 也只携带 id；`every` dispatch 会附加 `acceptedAt`，回放直接推进到该决策时点之后的第一个锚点对齐目标。
 
 ### 客户端 projection
 
-可选的 `schedule` projection 将 `{ inheritedEventCount, active, seenIds }` 作为严格的纯 JSON 检查点，并且只发布完整的 `active` 数组。其 schema 复用持久 Schedule decoder，拒绝重复或不一致的 id，并让损坏的持久事件通过既有 Session 读取失败传播，而不是发布部分目录。live 惰性构建、事件驱动构建、cold restore、history 读取与 detached Subagent 读取都使用精确 Session 切点与同一套自有后缀 transition。
+可选的 `schedule` projection 将 `{ inheritedEventCount, active, paused, schedules, seenIds }` 作为严格的纯 JSON 检查点，并按创建顺序发布保留的 `{ ...record, paused }` 项。apply 会忽略 `seq` 小于 `Session.inheritedEventCount` 的 `schedule/change` 事件。其 schema 复用持久 Schedule decoder，拒绝重复或不一致的已解码记录，并让损坏的持久事件通过既有 Session 读取失败传播，而不是发布部分目录。
 
-projection 只携带持久记录。它不持久化或传输 scheduled／overdue 状态、本地化文本、相对时间、浏览器本地时间、排序状态、popover 状态、runtime 存活或交付回执。[`dsh-client-ui-schedule`](../../client/ui-schedule/README.zh.md) 从完整数组与查看方浏览器时钟派生目录呈现。[`dsh-client-ui-workspace`](../../client/ui-workspace/README.zh.md) 只派生列表值是否为非空数组，因此持久 projection cache 缺失或陈旧时，普通行与搜索结果的闹钟可能短暂漏显或残留。
+projection 携带持久记录与 paused 标志。它不持久化或传输 scheduled／overdue 状态、本地化文本、相对时间、浏览器本地时间、排序状态、popover 状态、runtime 存活或交付回执。Host 工具列出该保留集合。人工 pause/resume Remote 传输与 Desktop 任务板仍是保留的设计义务，尚未挂载。[`dsh-client-ui-workspace`](../../client/ui-workspace/README.zh.md) 只派生列表值是否为非空数组，因此持久 projection cache 缺失或陈旧时，普通行与搜索结果的闹钟可能短暂漏显或残留。
 
 ### 时间校验
 
@@ -112,7 +112,7 @@ projection 只携带持久记录。它不持久化或传输 scheduled／overdue 
 
 ### 管理流水线
 
-一条 agent 范围的队列把每项已接纳的管理事务与 live owner 的到期事务从 preflight 到任何 post-append barrier 全程串行化。`schedule_create` 建立检查点、分配永不复用的 id、追加 create 事件，再次建立检查点；被取消的调用方在追加前停止。每次成功的管理 preflight 还会要求 live owner 重新计算，这会在先前的 post-append barrier 返回 `persistence_uncertain` 后恢复所保留的 create 或 delete 批次。
+一条插件拥有的 `ScheduleTransactions` FIFO 把每项已接纳的管理事务与 live owner 的到期事务从 preflight 到任何 post-append barrier 全程串行化。`schedule_create` 建立检查点、分配永不复用的 id、追加 create 事件，再次建立检查点；被取消的调用方在追加前停止。每次成功的管理 preflight 还会要求 live owner 重新计算，这会在先前的 post-append barrier 返回 `persistence_uncertain` 后恢复所保留的 create 或 delete 批次。
 
 每项从折叠结果读取或作出判断的操作都会先等待 `ctx.sessions.flush(session)`；持久化路径缺失、被拒绝或已分离时返回 `persistence_uncertain`，create 与实际 delete 在追加后还会等待第二个 barrier 再确认变更。只依赖输入形状的失败会在序列化事务之前被验证。输入、时间与持久化失败会返回一组封闭的稳定版本 1 错误代码；该封闭联合及各代码的触发条件位于 [`src/tools.ts`](src/tools.ts)。
 
@@ -218,7 +218,7 @@ reminders_json: <JSON.stringify(reminders)>
 - **只追赶最新一次**——逾期 Every 记录只贡献其最新一个到期发生时点，因此 Schedule 绝不会回放因错过间隔而形成的积压。
 - **存在狭窄的崩溃重复窗口**——同步 follow-up 获得准入后、dispatch 检查点完成前发生崩溃，可能使提醒重复；本包不承诺模型完成、用户确认或副作用恰好执行一次。
 - **加载顺序边界**——插件不会扫描或接管加载时已经 live 的 agent。
-- **目录只是只读当前状态**——可选 Web 界面没有历史、mutation、Retry 或 acknowledgement 语义；终结记录会消失，交付仍然是普通对话输出。
+- **人工 pause/resume Remote 与任务板 UI 尚未挂载**——Host fold 与工具接受暂停 list/delete。已接受的任务板决策仍拥有人工 Remote 变更与会话头目录；本包不安装 `ctx.schedules` 或任务板。
 
 <a id="dev-note"></a>
 ### 开发备注

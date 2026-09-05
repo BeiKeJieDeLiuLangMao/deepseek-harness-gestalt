@@ -57,6 +57,8 @@ describe('version-1 Schedule decoding and folding', () => {
     const at = decodeScheduleChange(atCreateData())
     const every = decodeScheduleChange(everyCreateData())
     const remove = decodeScheduleChange({ version: 1, operation: 'delete', id: 'schedule-1' })
+    const pause = decodeScheduleChange({ version: 1, operation: 'pause', id: 'schedule-1' })
+    const resume = decodeScheduleChange({ version: 1, operation: 'resume', id: 'schedule-1' })
     const dispatch = decodeScheduleChange({ version: 1, operation: 'dispatch', id: 'schedule-1' })
     const everyDispatch = decodeScheduleChange({
       version: 1,
@@ -69,6 +71,8 @@ describe('version-1 Schedule decoding and folding', () => {
     expect(at).toEqual(atCreateData())
     expect(every).toEqual(everyCreateData())
     expect(remove).toEqual({ version: 1, operation: 'delete', id: 'schedule-1' })
+    expect(pause).toEqual({ version: 1, operation: 'pause', id: 'schedule-1' })
+    expect(resume).toEqual({ version: 1, operation: 'resume', id: 'schedule-1' })
     expect(dispatch).toEqual({ version: 1, operation: 'dispatch', id: 'schedule-1' })
     expect(everyDispatch).toEqual({
       version: 1,
@@ -86,7 +90,9 @@ describe('version-1 Schedule decoding and folding', () => {
   it.each([
     null,
     { version: 2, operation: 'delete', id: 'schedule-1' },
-    { version: 1, operation: 'pause', id: 'schedule-1' },
+    { version: 1, operation: 'pause', id: '' },
+    { version: 1, operation: 'resume', id: ' schedule-1' },
+    { version: 1, operation: 'pause', id: 'schedule-1', extra: true },
     { version: 1, operation: 'delete', id: 'schedule-1', extra: true },
     { version: 1, operation: 'dispatch', id: '' },
     { version: 1, operation: 'dispatch', id: ' schedule-1' },
@@ -121,6 +127,8 @@ describe('version-1 Schedule decoding and folding', () => {
     const removed = scheduleEvent({ version: 1, operation: 'delete', id: 'first' }, 2)
     expect(foldScheduleEvents([first, second, removed])).toEqual({
       active: [expect.objectContaining({ id: 'second' })],
+      paused: [],
+      schedules: [{ record: expect.objectContaining({ id: 'second' }), paused: false }],
       seenIds: ['first', 'second'],
     })
     expect(() => foldScheduleEvents([
@@ -140,6 +148,8 @@ describe('version-1 Schedule decoding and folding', () => {
     const childCreate = scheduleEvent(createData('child'), 1)
     expect(foldScheduleEvents([parentCreate, childCreate], SessionLogOffset(1))).toEqual({
       active: [expect.objectContaining({ id: 'child' })],
+      paused: [],
+      schedules: [{ record: expect.objectContaining({ id: 'child' }), paused: false }],
       seenIds: ['child'],
     })
     expect(() => foldScheduleEvents([], -1 as never)).toThrow(/inheritedEventCount/)
@@ -147,11 +157,84 @@ describe('version-1 Schedule decoding and folding', () => {
     expect(() => foldScheduleEvents([], 0.5 as never)).toThrow(/inheritedEventCount/)
   })
 
+  it('pauses without dropping the record, resumes without moving the target, and deletes paused ids', () => {
+    const first = scheduleEvent(createData('first', 'check logs', '2026-08-05T12:00:00.000Z'), 0)
+    const second = scheduleEvent(atCreateData('second'), 1)
+    const paused = scheduleEvent({ version: 1, operation: 'pause', id: 'first' }, 2)
+    const foldedPaused = foldScheduleEvents([first, second, paused])
+    expect(foldedPaused).toEqual({
+      active: [expect.objectContaining({ id: 'second' })],
+      paused: [expect.objectContaining({
+        id: 'first',
+        prompt: 'check logs',
+        scheduledAt: '2026-08-05T12:00:00.000Z',
+      })],
+      schedules: [
+        {
+          record: expect.objectContaining({ id: 'first', scheduledAt: '2026-08-05T12:00:00.000Z' }),
+          paused: true,
+        },
+        { record: expect.objectContaining({ id: 'second' }), paused: false },
+      ],
+      seenIds: ['first', 'second'],
+    })
+    expect(scheduleView(createData('first').schedule as never, Date.parse('2026-08-05T12:01:00.000Z'), true))
+      .toMatchObject({ id: 'first', state: 'paused', scheduledAt: '2026-08-05T12:00:00.000Z' })
+
+    const resumed = scheduleEvent({ version: 1, operation: 'resume', id: 'first' }, 3)
+    const foldedResumed = foldScheduleEvents([first, second, paused, resumed])
+    expect(foldedResumed.schedules.map(item => item.record.id)).toEqual(['first', 'second'])
+    expect(foldedResumed.schedules[0]).toEqual({
+      record: expect.objectContaining({ id: 'first', scheduledAt: '2026-08-05T12:00:00.000Z' }),
+      paused: false,
+    })
+    expect(foldedResumed.active[0]).toEqual(expect.objectContaining({
+      id: 'first',
+      scheduledAt: '2026-08-05T12:00:00.000Z',
+    }))
+    expect(scheduleView(foldedResumed.active[0]!, Date.parse('2026-08-05T12:01:00.000Z')))
+      .toMatchObject({ state: 'overdue', scheduledAt: '2026-08-05T12:00:00.000Z' })
+
+    expect(() => foldScheduleEvents([first, paused, paused])).toThrow(/pause targets/)
+    expect(() => foldScheduleEvents([first, resumed])).toThrow(/resume targets/)
+    expect(() => foldScheduleEvents([
+      first,
+      paused,
+      scheduleEvent({ version: 1, operation: 'dispatch', id: 'first' }, 3),
+    ])).toThrow(/inactive id/)
+    expect(() => foldScheduleEvents([
+      scheduleEvent({ version: 1, operation: 'pause', id: 'missing' }),
+    ])).toThrow(/pause targets/)
+    expect(() => foldScheduleEvents([
+      scheduleEvent({ version: 1, operation: 'resume', id: 'missing' }),
+    ])).toThrow(/resume targets/)
+    expect(() => decodeScheduleChange({ version: 1, operation: 'hold', id: 'first' }))
+      .toThrow(/must be create, delete, pause, resume, or dispatch/)
+
+    const deleted = scheduleEvent({ version: 1, operation: 'delete', id: 'first' }, 3)
+    expect(foldScheduleEvents([first, paused, deleted])).toEqual({
+      active: [],
+      paused: [],
+      schedules: [],
+      seenIds: ['first'],
+    })
+    expect(() => foldScheduleEvents([
+      first,
+      deleted,
+      scheduleEvent({ version: 1, operation: 'pause', id: 'first' }, 2),
+    ])).toThrow(/pause targets/)
+    expect(() => foldScheduleEvents([
+      first,
+      deleted,
+      scheduleEvent({ version: 1, operation: 'resume', id: 'first' }, 2),
+    ])).toThrow(/resume targets/)
+  })
+
   it('allocates a readable id without reusing ended or colliding ids', () => {
-    expect(allocateScheduleId({ active: [], seenIds: [] })).toBe('schedule-1')
-    expect(allocateScheduleId({ active: [], seenIds: [ScheduleId('custom'), ScheduleId('schedule-3')] }))
+    expect(allocateScheduleId({ seenIds: [] })).toBe('schedule-1')
+    expect(allocateScheduleId({ seenIds: [ScheduleId('custom'), ScheduleId('schedule-3')] }))
       .toBe('schedule-4')
-    expect(allocateScheduleId({ active: [], seenIds: [ScheduleId('one'), ScheduleId('schedule-2')] }))
+    expect(allocateScheduleId({ seenIds: [ScheduleId('one'), ScheduleId('schedule-2')] }))
       .toBe('schedule-3')
   })
 })
@@ -285,6 +368,17 @@ describe('fixed-rate records and durable progression', () => {
         everySeconds: 300,
         scheduledAt: '2026-08-05T12:20:00.000Z',
       }],
+      paused: [],
+      schedules: [{
+        record: {
+          id: 'schedule-every',
+          kind: 'every',
+          prompt: 'check metrics',
+          everySeconds: 300,
+          scheduledAt: '2026-08-05T12:20:00.000Z',
+        },
+        paused: false,
+      }],
       seenIds: ['schedule-every'],
     })
     expect(() => foldScheduleEvents([
@@ -318,7 +412,7 @@ describe('fixed-rate records and durable progression', () => {
         id: final.id,
         acceptedAt: final.scheduledAt,
       }, 1),
-    ])).toEqual({ active: [], seenIds: [final.id] })
+    ])).toEqual({ active: [], paused: [], schedules: [], seenIds: [final.id] })
 
     const first = createEveryScheduleRecord(ScheduleId('schedule-one'), 'line\n"quoted"', 300, start)
     const second = createEveryScheduleRecord(ScheduleId('schedule-two'), 'check metrics', 600, start)

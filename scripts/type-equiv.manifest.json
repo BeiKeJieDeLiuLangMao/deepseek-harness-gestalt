@@ -333,6 +333,11 @@
       "source": "packages/schedule/schedule/src/types.ts"
     },
     {
+      "doc": "docs/subsystems/schedule.md",
+      "symbol": "ScheduleProjectionItem",
+      "source": "packages/schedule/schedule/src/types.ts"
+    },
+    {
       "doc": "docs/subsystems/agent-team.md",
       "symbol": "TeamMemberSnapshot",
       "source": "packages/experimental/agent-team/src/types.ts"

@@ -88,6 +88,7 @@ export class ScheduleRuntime {
    * Construct an inactive runtime; {@link start} begins the first preflight.
    * @param ctx - Global service context.
    * @param agent - Exact live root agent.
+   * @param transactions - Plugin-owned FIFO shared with tool management.
    */
   constructor(
     private readonly ctx: Context,

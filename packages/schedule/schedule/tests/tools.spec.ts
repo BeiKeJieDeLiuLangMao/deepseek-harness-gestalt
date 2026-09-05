@@ -8,6 +8,7 @@ import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import type { ToolExecutionResult } from '@deepseek-ai/dsh-tools'
+import { ScheduleId } from '../src/domain.ts'
 import { registerScheduleTools } from '../src/tools.ts'
 import { ScheduleTransactions } from '../src/transaction.ts'
 
@@ -122,8 +123,9 @@ describe('Schedule tool protocol', () => {
       .toEqual({ card: 'generic', title: 'List reminders', kind: 'read' })
     expect(test.ctx.tools.get('schedule_delete')?.presentCall?.({ id: 'schedule-1' }))
       .toEqual({ card: 'generic', title: 'Delete reminder', kind: 'other', rawInput: 'schedule-1' })
-    expect(test.ctx.tools.get('schedule_list')?.description).toContain('active or paused')
-    expect(test.ctx.tools.get('schedule_delete')?.description).toContain('active or paused')
+    expect(test.ctx.tools.get('schedule_list')?.description).toContain('paused state')
+    expect(test.ctx.tools.get('schedule_delete')?.description).toContain('paused reminder')
+    expect(JSON.stringify(test.ctx.tools.get('schedule_list')?.output.schema)).toContain('"paused"')
     test.disposeTools()
     test.disposeTools()
     expect(test.ctx.tools.get('schedule_create')).toBeUndefined()
@@ -199,6 +201,94 @@ describe('Schedule tool protocol', () => {
 
     expect(value(await execute(test, 'schedule_create', { prompt: 'next', after_seconds: 1 })))
       .toMatchObject({ id: 'schedule-2' })
+  })
+
+  it('lists paused reminders in create order, keeps the target on resume, and deletes paused ids', async () => {
+    const test = await harness()
+    expect(value(await execute(test, 'schedule_create', { prompt: 'later', after_seconds: 30 }))).toMatchObject({
+      id: 'schedule-1',
+      scheduledAt: '2026-08-05T12:00:30.000Z',
+    })
+    expect(value(await execute(test, 'schedule_create', { prompt: 'sooner', after_seconds: 60 }))).toMatchObject({
+      id: 'schedule-2',
+    })
+    test.agent.session.append('schedule/change', { version: 1, operation: 'pause', id: ScheduleId('schedule-1') })
+    vi.setSystemTime(new Date('2026-08-05T12:00:31.000Z'))
+    expect(value(await execute(test, 'schedule_list', {}))).toEqual([
+      expect.objectContaining({
+        id: 'schedule-1',
+        state: 'paused',
+        scheduledAt: '2026-08-05T12:00:30.000Z',
+      }),
+      expect.objectContaining({ id: 'schedule-2', state: 'scheduled' }),
+    ])
+    test.agent.session.append('schedule/change', { version: 1, operation: 'resume', id: ScheduleId('schedule-1') })
+    expect(value(await execute(test, 'schedule_list', {}))).toEqual([
+      expect.objectContaining({
+        id: 'schedule-1',
+        state: 'overdue',
+        scheduledAt: '2026-08-05T12:00:30.000Z',
+      }),
+      expect.objectContaining({ id: 'schedule-2', state: 'scheduled' }),
+    ])
+    test.agent.session.append('schedule/change', { version: 1, operation: 'pause', id: ScheduleId('schedule-1') })
+    expect(value(await execute(test, 'schedule_delete', { id: 'schedule-1' })))
+      .toEqual({ id: 'schedule-1', deleted: true })
+    expect(value(await execute(test, 'schedule_list', {}))).toEqual([
+      expect.objectContaining({ id: 'schedule-2' }),
+    ])
+  })
+
+  it('keeps a paused delete behind FIFO and both flush barriers', async () => {
+    const test = await harness()
+    await execute(test, 'schedule_create', { prompt: 'later', after_seconds: 30 })
+    test.agent.session.append('schedule/change', { version: 1, operation: 'pause', id: ScheduleId('schedule-1') })
+
+    test.flushes.outcomes.push('reject')
+    expect(value(await execute(test, 'schedule_list', {}))).toMatchObject({
+      code: 'persistence_uncertain',
+      operation: 'list',
+    })
+    expect(value(await execute(test, 'schedule_list', {}))).toEqual([
+      expect.objectContaining({ id: 'schedule-1', state: 'paused' }),
+    ])
+
+    test.flushes.outcomes.push('reject')
+    expect(value(await execute(test, 'schedule_delete', { id: 'schedule-1' }))).toMatchObject({
+      code: 'persistence_uncertain',
+      operation: 'delete',
+      id: 'schedule-1',
+    })
+    expect(test.agent.session.snapshotEvents().filter(event => event.type === 'schedule/change'))
+      .toHaveLength(2)
+
+    let releaseOwner: (() => void) | undefined
+    let markOwnerStarted: (() => void) | undefined
+    const ownerStarted = new Promise<void>((resolve) => {
+      markOwnerStarted = resolve
+    })
+    const owner = test.transactions.run(test.agent.id, async () => {
+      markOwnerStarted?.()
+      await new Promise<void>((resolve) => { releaseOwner = resolve })
+    })
+    await ownerStarted
+    const listing = execute(test, 'schedule_list', {})
+    await Promise.resolve()
+    expect(test.flushes.count).toBe(5)
+    if (releaseOwner === undefined) throw new Error('missing owner transaction release')
+    releaseOwner()
+    await owner
+    expect(value(await listing)).toEqual([
+      expect.objectContaining({ id: 'schedule-1', state: 'paused' }),
+    ])
+
+    test.flushes.outcomes.push('resolve', 'reject', 'resolve')
+    expect(value(await execute(test, 'schedule_delete', { id: 'schedule-1' }))).toMatchObject({
+      code: 'persistence_uncertain',
+      operation: 'delete',
+      id: 'schedule-1',
+    })
+    expect(value(await execute(test, 'schedule_list', {}))).toEqual([])
   })
 
   it('rejects an empty or padded delete id before persistence', async () => {

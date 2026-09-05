@@ -87,12 +87,22 @@ export class ScheduleInputError extends Error {
   }
 }
 
-/** Pure replay result, retaining active create order and every used id. */
+/** Pure replay result, retaining create order and every used id. */
 export interface FoldedSchedules {
-  /** Active records in their original create order. */
+  /** Deliverable records in their original create order. */
   readonly active: readonly ScheduleRecord[]
+  /** Paused records in their original create order. */
+  readonly paused: readonly ScheduleRecord[]
+  /** Every retained record with its durable paused flag, in create order. */
+  readonly schedules: readonly FoldedSchedule[]
   /** Every id ever created in this session-local suffix. */
   readonly seenIds: readonly ScheduleIdType[]
+}
+
+/** One retained durable record and whether delivery is paused. */
+export interface FoldedSchedule {
+  readonly record: ScheduleRecord
+  readonly paused: boolean
 }
 
 /** One latest-only fixed-rate decision derived without enumerating a backlog. */
@@ -488,6 +498,26 @@ export function decodeScheduleChange(value: unknown): ScheduleChange {
         id: decodeId(value['id']),
       })
     }
+    case 'pause': {
+      if (!hasExactKeys(value, ['version', 'operation', 'id'])) {
+        throw new ScheduleLogError('schedule pause must contain exactly version, operation, and id')
+      }
+      return Object.freeze({
+        version: SCHEDULE_CHANGE_VERSION,
+        operation: 'pause',
+        id: decodeId(value['id']),
+      })
+    }
+    case 'resume': {
+      if (!hasExactKeys(value, ['version', 'operation', 'id'])) {
+        throw new ScheduleLogError('schedule resume must contain exactly version, operation, and id')
+      }
+      return Object.freeze({
+        version: SCHEDULE_CHANGE_VERSION,
+        operation: 'resume',
+        id: decodeId(value['id']),
+      })
+    }
     case 'dispatch': {
       if (hasExactKeys(value, ['version', 'operation', 'id'])) {
         return Object.freeze({
@@ -507,7 +537,7 @@ export function decodeScheduleChange(value: unknown): ScheduleChange {
       throw new ScheduleLogError('schedule dispatch must contain id and optional acceptedAt only')
     }
     default:
-      throw new ScheduleLogError('schedule/change operation must be create, delete, or dispatch')
+      throw new ScheduleLogError('schedule/change operation must be create, delete, pause, resume, or dispatch')
   }
 }
 
@@ -573,7 +603,7 @@ function dispatchedRecord(record: ScheduleRecord, change: DecodedDispatch): Sche
  * This is the single transition authority shared by full-log replay and the
  * incremental Session projection. One mutable Map/Set pair spans the whole
  * batch; the returned arrays are materialized and frozen once.
- * @param folded - complete active records and used-id history before the changes.
+ * @param folded - complete retained records and used-id history before the changes.
  * @param changes - strictly decoded durable mutations in log order.
  * @returns the complete fold value after every mutation.
  */
@@ -581,7 +611,7 @@ export function applyScheduleChanges(
   folded: FoldedSchedules,
   changes: Iterable<ScheduleChange>,
 ): FoldedSchedules {
-  const active = new Map(folded.active.map(record => [record.id, record]))
+  const retained = new Map(folded.schedules.map(schedule => [schedule.record.id, schedule]))
   const seen = new Set(folded.seenIds)
   for (const change of changes) {
     switch (change.operation) {
@@ -590,21 +620,37 @@ export function applyScheduleChanges(
           throw new ScheduleLogError(`schedule id ${JSON.stringify(change.schedule.id)} was reused`)
         }
         seen.add(change.schedule.id)
-        active.set(change.schedule.id, change.schedule)
+        retained.set(change.schedule.id, Object.freeze({ record: change.schedule, paused: false }))
         break
       case 'delete':
-        if (!active.delete(change.id)) {
+        if (!retained.delete(change.id)) {
           throw new ScheduleLogError(`schedule delete targets inactive id ${JSON.stringify(change.id)}`)
         }
         break
+      case 'pause': {
+        const schedule = retained.get(change.id)
+        if (schedule === undefined || schedule.paused) {
+          throw new ScheduleLogError(`schedule pause targets inactive or paused id ${JSON.stringify(change.id)}`)
+        }
+        retained.set(change.id, Object.freeze({ record: schedule.record, paused: true }))
+        break
+      }
+      case 'resume': {
+        const schedule = retained.get(change.id)
+        if (schedule === undefined || !schedule.paused) {
+          throw new ScheduleLogError(`schedule resume targets inactive or active id ${JSON.stringify(change.id)}`)
+        }
+        retained.set(change.id, Object.freeze({ record: schedule.record, paused: false }))
+        break
+      }
       case 'dispatch': {
-        const record = active.get(change.id)
-        if (record === undefined) {
+        const schedule = retained.get(change.id)
+        if (schedule === undefined || schedule.paused) {
           throw new ScheduleLogError(`schedule dispatch targets inactive id ${JSON.stringify(change.id)}`)
         }
-        const next = dispatchedRecord(record, change)
-        if (next === undefined) active.delete(change.id)
-        else active.set(change.id, next)
+        const next = dispatchedRecord(schedule.record, change)
+        if (next === undefined) retained.delete(change.id)
+        else retained.set(change.id, Object.freeze({ record: next, paused: false }))
         break
       }
       /* v8 ignore next 3 -- decodeScheduleChange returns a closed operation union. */
@@ -614,17 +660,20 @@ export function applyScheduleChanges(
       }
     }
   }
+  const schedules = Object.freeze([...retained.values()])
   return Object.freeze({
-    active: Object.freeze([...active.values()]),
+    active: Object.freeze(schedules.filter(schedule => !schedule.paused).map(schedule => schedule.record)),
+    paused: Object.freeze(schedules.filter(schedule => schedule.paused).map(schedule => schedule.record)),
+    schedules,
     seenIds: Object.freeze([...seen]),
   })
 }
 
 /**
- * Fold the package-owned stream after the durable fork seed boundary.
+ * Fold the package-owned stream after `Session.inheritedEventCount`.
  * @param events - Complete ordered session log or candidate-extended log.
- * @param inheritedEventCount - Inherited prefix length excluded from child ownership.
- * @returns Active records and all previously used ids.
+ * @param inheritedEventCount - Session-owned inherited prefix length excluded from child ownership.
+ * @returns Retained records and all previously used ids.
  */
 export function foldScheduleEvents(
   events: readonly SessionEvent[],
@@ -637,6 +686,8 @@ export function foldScheduleEvents(
   }
   const initial: FoldedSchedules = Object.freeze({
     active: Object.freeze([]),
+    paused: Object.freeze([]),
+    schedules: Object.freeze([]),
     seenIds: Object.freeze([]),
   })
   const changes = function* (): Generator<ScheduleChange> {
@@ -652,7 +703,7 @@ export function foldScheduleEvents(
  * @param folded - Fold containing every previously created id.
  * @returns A fresh `schedule-N` identity.
  */
-export function allocateScheduleId(folded: FoldedSchedules): ScheduleIdType {
+export function allocateScheduleId(folded: Pick<FoldedSchedules, 'seenIds'>): ScheduleIdType {
   const seen = new Set(folded.seenIds)
   let sequence = seen.size + 1
   let candidate = ScheduleId(`schedule-${sequence}`)
@@ -786,14 +837,15 @@ export function createEveryScheduleRecord(
 
 /**
  * Derive one execution-local management view.
- * @param record - Active durable record.
+ * @param record - Retained durable record.
  * @param now - Wall-clock sample used for its timing state.
+ * @param paused - Whether durable delivery is suspended.
  * @returns Complete session-local view.
  */
-export function scheduleView(record: ScheduleRecord, now: number): ScheduleView {
+export function scheduleView(record: ScheduleRecord, now: number, paused = false): ScheduleView {
   return Object.freeze({
     ...record,
-    state: now >= Date.parse(record.scheduledAt) ? 'overdue' : 'scheduled',
+    state: paused ? 'paused' : now >= Date.parse(record.scheduledAt) ? 'overdue' : 'scheduled',
     deliveryMode: 'session-local',
   })
 }

@@ -419,7 +419,13 @@ const TOOL_PACKAGES: ToolPackage[] = [
       const session = ctx.sessions.create(SessionId('tool-catalog-schedule'))
       const agent = { id: session.id, session } as Agent
       await mountCatalogChildScope(ctx, (childCtx) => {
-        ToolSchedule.registerScheduleTools(ctx, childCtx, agent, () => {})
+        ToolSchedule.registerScheduleTools(
+          ctx,
+          childCtx,
+          agent,
+          new ToolSchedule.ScheduleTransactions(),
+          () => {},
+        )
       }, agent, ['tools', 'systemPrompt'])
     },
     scope: ctx => catalogChildScopes.get(ctx) as Agent,

@@ -111,7 +111,7 @@ interface ScheduleCreateChange {
 ```
 
 ```ts type-equiv
-/** Deletes one currently active reminder. */
+/** Deletes one currently retained reminder, including a paused reminder. */
 interface ScheduleDeleteChange {
   readonly version: 1
   readonly operation: 'delete'
@@ -172,7 +172,7 @@ type ScheduleChange =
   | ScheduleDispatchChange
 ```
 
-The strict decoder and fold reject unknown versions, extra fields, reused ids, mismatched one-shot or Every dispatch shapes, and delete or dispatch transitions against inactive records. A normal Session folds its complete event stream. A fork folds only events at or after `SessionHeader.seedLength`, so it retains history without adopting the parent Session's active reminders. The `schedule/change` declaration and source location are also indexed in the [persistence catalog](../persistence-catalog.md#schedulechange--log-only).
+The strict decoder and fold reject unknown versions, extra fields, reused ids, mismatched one-shot or Every dispatch shapes, and transitions against absent, already-paused, already-active, or otherwise incompatible records. A normal Session folds its complete event stream. A fork folds only events at or after `Session.inheritedEventCount`, so it retains history without adopting the parent Session's reminders. The `schedule/change` declaration and source location are also indexed in the [persistence catalog](../persistence-catalog.md#schedulechange--log-only).
 
 ## Active views and management
 
@@ -198,13 +198,19 @@ type ScheduleView = ScheduleRecord & {
 }
 ```
 
-The generated [tool catalog](../tool-catalog.md#deepseek-aidsh-schedule) owns the argument and result schemas for `schedule_create`, `schedule_list`, and `schedule_delete`. List includes paused records, and delete accepts active or paused records; there are no model-facing pause or resume tools. Management calls serialize with due work in one Schedule Service-owned, per-Session FIFO. Every read or decision first waits for the shared Session persistence barrier; create and an actual delete wait again after appending. Plugin teardown closes admission and awaits accepted transactions, while independent Contexts own independent queues. A barrier failure reports `persistence_uncertain` instead of guessing whether an eager write committed. The other stable error codes are `invalid_prompt`, `invalid_selector`, `invalid_rule`, `invalid_time_zone`, `not_future`, `time_out_of_range`, `frequency_too_high`, `corrupt_schedule_log`, and `internal_error`.
+```ts type-equiv
+/** Whole projected value for one retained reminder. */
+type ScheduleProjectionItem = ScheduleRecord & {
+  /** Durable delivery suspension; timing state is derived by the Client clock. */
+  readonly paused: boolean
+}
+```
 
-The `ctx.schedules` Remote Service takes a branded Session id without invoking cold Agent resume. It uses an already-live root when present; otherwise it reserves and enters the exact prepared Session without announcing it, flushes before folding, appends and flushes the mutation, then detaches without publishing Session or Agent lifecycle or starting delivery. A preparation or entry collision recomputes against the exact live root inside the same FIFO. The same persistence barriers and Service-owned queue cover tools, human mutations, and due work.
+The generated [tool catalog](../tool-catalog.md#deepseek-aidsh-schedule) owns the argument and result schemas for `schedule_create`, `schedule_list`, and `schedule_delete`. List reads retained records in create order, including paused rows with `state: 'paused'`; delete accepts an active or paused id. There are no model-facing pause or resume tools. Due delivery still uses the `active` fold only. Management calls serialize with due work in one plugin-owned, per-Session FIFO shared by tools and the live runtime. Every read or decision first waits for the shared Session persistence barrier; create and an actual delete wait again after appending. Plugin teardown closes admission and awaits accepted transactions, while independent Contexts own independent queues. A barrier failure reports `persistence_uncertain` instead of guessing whether an eager write committed. The other stable error codes are `invalid_prompt`, `invalid_selector`, `invalid_rule`, `invalid_time_zone`, `not_future`, `time_out_of_range`, `frequency_too_high`, `corrupt_schedule_log`, and `internal_error`. Human pause/resume Remote transport and the Desktop board remain a retained design obligation and are not mounted; this Host package does not install `ctx.schedules`. The [Session Schedule board](../../.agents/notes/implemented/feature/2026-08-17-session-schedule-board.md) decision still owns that catalog.
 
 ## Browser projection
 
-The `schedules` Session projection is an `owned-suffix` fold over `schedule/change`. Its whole value retains records in creation order and adds only the durable `paused` flag; the Client clock derives scheduled versus overdue presentation from `scheduledAt`. Desktop displays this value as a Session-header current-state board immediately after background jobs. Its active count excludes paused records, and its controls pause, resume, or delete with an inline second confirmation. The board has no create form and never reconstructs state from transcript or tool-call rendering.
+The Host projection key is `schedule`. Apply skips `schedule/change` events whose `seq` is below `Session.inheritedEventCount`; the definition has no `eventScope` field. Its checkpoint is `{ inheritedEventCount, active, paused, schedules, seenIds }` and its wire value is the retained `ScheduleProjectionItem[]` in create order. The Client clock derives scheduled versus overdue presentation from `scheduledAt`; `paused` is durable. Host tools list that retained set. The Web header catalog and human pause/resume controls are not mounted. The projection never reconstructs state from transcript or tool-call rendering.
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -257,4 +263,4 @@ The process-local owner derives its earliest timer from the durable fold and rer
 
 Due work waits for the Agent to become fully idle and claims the maintenance phase before it refolds state, samples the decision, queues one `followup()`, and appends the corresponding dispatch changes. It never calls `steer()` and never interrupts a current turn.
 
-The admitted one-shot or fixed-rate batch starts one normal later turn and appears through the ordinary conversation transcript; Schedule has no independent durable delivery receipt. The browser board shows current reminder management state, not model completion or acknowledgement. If framing or synchronous queue admission fails, no dispatch is recorded and the reminder stays active. The narrow crash interval after admission but before durable dispatch can repeat reminder content after recovery, so the boundary is best-effort at-least-once rather than exactly-once delivery.
+The admitted one-shot or fixed-rate batch starts one normal later turn and appears through the ordinary conversation transcript; Schedule has no independent durable delivery receipt. Host tools can list paused state; the browser board is not mounted and does not claim model completion or acknowledgement. If framing or synchronous queue admission fails, no dispatch is recorded and the reminder stays active. The narrow crash interval after admission but before durable dispatch can repeat reminder content after recovery, so the boundary is best-effort at-least-once rather than exactly-once delivery.
