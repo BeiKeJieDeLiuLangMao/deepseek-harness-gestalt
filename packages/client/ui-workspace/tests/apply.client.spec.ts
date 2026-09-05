@@ -195,14 +195,20 @@ describe('ui-workspace apply', () => {
       pendingInvitations,
     })
     declare(b.slots, 'sidebar.workspaces')
-    await b.ctx.plugin({ inject: [...inject], apply }).await()
+    const fiber = b.ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
     const browser = (b.slots.entries('sidebar.workspaces')[0]!.inject as () => WorkspaceBrowserInjected)()
     expect(browser.projectMembership).toBeDefined()
     expect(browser.projectMembership).not.toHaveProperty('heartbeat')
-    await browser.projectMembership!.pendingInvitations()
-    expect(pendingInvitations).toHaveBeenCalledOnce()
+    await vi.waitFor(() => {
+      expect(pendingInvitations).toHaveBeenCalled()
+    })
+    const firstSource = browser.hooks.pendingInvitations
+    const again = (b.slots.entries('sidebar.workspaces')[0]!.inject as () => WorkspaceBrowserInjected)()
+    expect(again.hooks.pendingInvitations).toBe(firstSource)
     await expect(browser.projectMembership!.localRemoteFor('ws' as never))
       .rejects.toThrow('#590')
+    await fiber.dispose()
   })
 
   it('rejects the browser search callback on a Session Controller business error', async () => {

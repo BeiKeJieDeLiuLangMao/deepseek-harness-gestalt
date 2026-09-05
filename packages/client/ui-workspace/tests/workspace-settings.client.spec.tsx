@@ -54,6 +54,15 @@ function hook<T>(snapshot: T) {
 }
 
 const SAME_REMOTE = 'https://github.com/octocat/repo'
+const pendingInvitation = {
+  invitationId: 'invitation-1',
+  receivingAccountId: 'account-2',
+  projectId: 'project-1',
+  projectName: 'Assembled',
+  inviterName: 'mona',
+  remoteUrl: SAME_REMOTE,
+  grantedRole: 'admin' as const,
+}
 
 function gateway(overrides: Partial<ProjectMembershipGateway> = {}) {
   return {
@@ -89,6 +98,32 @@ function gateway(overrides: Partial<ProjectMembershipGateway> = {}) {
   }
 }
 
+function invitationsHook(invitations: readonly (typeof pendingInvitation)[] = [], epoch = 0) {
+  const snapshot = { invitations, epoch }
+  return bindSnapshotSelector({
+    getSnapshot: () => snapshot,
+    subscribe: () => () => {},
+  })
+}
+
+function liveInvitations(invitations: readonly (typeof pendingInvitation)[], epoch = 1) {
+  let current = { invitations, epoch }
+  const listeners = new Set<() => void>()
+  return {
+    hook: bindSnapshotSelector({
+      getSnapshot: () => current,
+      subscribe: (listener: () => void) => {
+        listeners.add(listener)
+        return () => { listeners.delete(listener) }
+      },
+    }),
+    bump(): void {
+      current = { invitations: current.invitations, epoch: current.epoch + 1 }
+      for (const listener of listeners) listener()
+    },
+  }
+}
+
 function mount(membership: ProjectMembershipGateway | undefined, overrides: Partial<WorkspaceBrowserProps> = {}) {
   const store = createWorkspaceViewStore().create()
   const props: WorkspaceBrowserProps = {
@@ -112,7 +147,8 @@ function mount(membership: ProjectMembershipGateway | undefined, overrides: Part
     insertSessionBefore: vi.fn(async () => {}),
     createWorkspace: vi.fn(async () => workspace('created', [])),
     useDirectoryFlow: bindSnapshotSelector({ getSnapshot: () => true, subscribe: () => () => {} }),
-    useHostInfo: selector => selector({ home: '/Users/octocat' }),
+    useHostInfo: selector => selector({ home: '/Users/octocat', isLoopback: true }),
+    usePendingInvitations: invitationsHook(),
     renderSlot: ((_name: string, owner: { open: boolean }) => (owner.open ? <div data-testid="directory-flow" /> : null)) as never,
     t,
     ...(membership === undefined ? {} : { projectMembership: membership }),
@@ -153,15 +189,6 @@ function deferred<T>() {
 
 const projectView = {
   id: 'project-1', name: 'Assembled', boundRemoteUrl: SAME_REMOTE, receivingAccountId: 'account-owner',
-}
-const pendingInvitation = {
-  invitationId: 'invitation-1',
-  receivingAccountId: 'account-2',
-  projectId: 'project-1',
-  projectName: 'Assembled',
-  inviterName: 'mona',
-  remoteUrl: SAME_REMOTE,
-  grantedRole: 'admin' as const,
 }
 
 describe('workspace settings and invite wizard (M4)', () => {
@@ -329,15 +356,11 @@ describe('workspace settings and invite wizard (M4)', () => {
   })
 
   it('runs the invite wizard: accept, mandatory link with same-remote advice, close returns undecided', async () => {
-    const membership = gateway({
-      pendingInvitations: vi.fn(async () => [{
-        invitationId: 'invitation-1', receivingAccountId: 'account-2', projectId: 'project-1',
-        projectName: 'Assembled', inviterName: 'mona', remoteUrl: SAME_REMOTE, grantedRole: 'admin' as const,
-      }]),
-    })
+    const membership = gateway()
+    const offered = liveInvitations([pendingInvitation])
     vi.useFakeTimers()
     try {
-      mount(membership)
+      mount(membership, { usePendingInvitations: offered.hook })
       await tick()
       expect(screen.getByText('mona 邀请你加入云项目“Assembled”。')).toBeTruthy()
       expect(screen.getByText('加入后角色：admin')).toBeTruthy()
@@ -346,9 +369,8 @@ describe('workspace settings and invite wizard (M4)', () => {
       fireEvent.click(screen.getByRole('button', { name: '关闭' }))
       expect(screen.queryByText('mona 邀请你加入云项目“Assembled”。')).toBeNull()
       expect(membership.decideInvitation).not.toHaveBeenCalled()
-      expect(membership.pendingInvitations).toHaveBeenCalled()
 
-      await tick(15_000)
+      await act(async () => { offered.bump() })
       fireEvent.click(screen.getByRole('button', { name: '接受' }))
       await tick()
 
@@ -358,7 +380,7 @@ describe('workspace settings and invite wizard (M4)', () => {
       fireEvent.click(screen.getByRole('button', { name: '关闭' }))
       expect(screen.queryByText('关联本地工作区')).toBeNull()
       expect(membership.decideInvitation).not.toHaveBeenCalled()
-      await tick(15_000)
+      await act(async () => { offered.bump() })
       expect(screen.getByText('加入后角色：admin')).toBeTruthy()
       fireEvent.click(screen.getByRole('button', { name: '接受' }))
       await tick()
@@ -389,15 +411,17 @@ describe('workspace settings and invite wizard (M4)', () => {
         workspaceId: wid('clone'), title: 'Assembled', normalizedRemoteUrl: SAME_REMOTE,
       })
     const membership = gateway({
-      pendingInvitations: vi.fn(async () => [{
-        invitationId: 'invitation-clone', receivingAccountId: 'account-2', projectId: 'project-1',
-        projectName: 'Assembled', inviterName: 'mona', remoteUrl: SAME_REMOTE, grantedRole: 'member' as const,
-      }]),
       cloneWorkspace,
     })
     vi.useFakeTimers()
     try {
-      mount(membership)
+      mount(membership, {
+        usePendingInvitations: invitationsHook([{
+          ...pendingInvitation,
+          invitationId: 'invitation-clone',
+          grantedRole: 'member',
+        }], 1),
+      })
       await tick()
       fireEvent.click(screen.getByRole('button', { name: '接受' }))
       await tick()
@@ -425,15 +449,10 @@ describe('workspace settings and invite wizard (M4)', () => {
   })
 
   it('declining from the wizard card routes the decline decision', async () => {
-    const membership = gateway({
-      pendingInvitations: vi.fn(async () => [{
-        invitationId: 'invitation-1', receivingAccountId: 'account-2', projectId: 'project-1',
-        projectName: 'Assembled', inviterName: 'mona', remoteUrl: SAME_REMOTE, grantedRole: 'admin' as const,
-      }]),
-    })
+    const membership = gateway()
     vi.useFakeTimers()
     try {
-      mount(membership)
+      mount(membership, { usePendingInvitations: invitationsHook([pendingInvitation], 1) })
       await tick()
       fireEvent.click(screen.getByRole('button', { name: '拒绝' }))
       await tick()
@@ -929,21 +948,23 @@ describe('workspace settings and invite wizard (M4)', () => {
   })
 
   it('does not reopen a retracted invitation after decide reports it is not pending', async () => {
+    const retracted = {
+      invitationId: 'invitation-retracted', receivingAccountId: 'account-2', projectId: 'project-1',
+      projectName: 'Assembled', inviterName: 'mona', remoteUrl: SAME_REMOTE, grantedRole: 'admin' as const,
+    }
     const membership = gateway({
-      pendingInvitations: vi.fn(async () => [{
-        invitationId: 'invitation-retracted', receivingAccountId: 'account-2', projectId: 'project-1',
-        projectName: 'Assembled', inviterName: 'mona', remoteUrl: SAME_REMOTE, grantedRole: 'admin' as const,
-      }]),
       decideInvitation: vi.fn().mockRejectedValue(new Error(
         'Error invoking remote method \'projectMembership:decide\': INVITATION_NOT_PENDING invitation already reached retracted',
       )),
     })
+    const offered = liveInvitations([retracted])
     vi.useFakeTimers()
     try {
       mount(membership, {
         useWorkspaces: hook(workspaceState([
           workspace('proj', ['alpha-s'], 'IdeaProjects', '/Users/yishu.cy/IdeaProjects/deepseek-harness'),
         ])),
+        usePendingInvitations: offered.hook,
       })
       await tick()
       fireEvent.click(screen.getByRole('button', { name: '接受' }))
@@ -955,7 +976,7 @@ describe('workspace settings and invite wizard (M4)', () => {
       await tick()
       expect(screen.queryByText('关联本地工作区')).toBeNull()
       expect(screen.queryByText(/Error invoking remote method/)).toBeNull()
-      await tick(15_000)
+      await act(async () => { offered.bump() })
       expect(screen.queryByText('mona 邀请你加入云项目“Assembled”。')).toBeNull()
       expect(membership.decideInvitation).toHaveBeenCalledOnce()
     } finally {

@@ -32,6 +32,7 @@ import type { RemoteHostFacts } from '@deepseek-ai/dsh-api-remotes/client'
 import type { WorkspaceId, WorkspaceView } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { createWorkspaceViewStore } from '../stores.ts'
+import type { PendingInvitationsSnapshot } from '../pending-invitations-source.ts'
 
 /**
  * Owner share of the directory-flow holes: the complete conversation between
@@ -96,6 +97,11 @@ export type WorkspaceBrowserInjected = {
      * saw. Select the field the surface needs (`info => info.home`).
      */
     hostInfo: HostObservable<RemoteHostFacts>
+    /**
+     * Apply-owned inbound invitation list. The renderer binds this source to
+     * `usePendingInvitations`; the browsing region does not start a timer.
+     */
+    pendingInvitations: HostObservable<PendingInvitationsSnapshot>
   }
   /**
    * Start a New Session in a Workspace: reuse-or-create its blank session and

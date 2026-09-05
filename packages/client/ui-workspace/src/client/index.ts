@@ -23,7 +23,11 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // Type-only: pulls the Session root standard-hook merge.
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type { WorkspaceBrowserInjected, WorkspacePickerInjected } from './contract/slots.ts'
+import { Config, type WorkspaceConfig } from '../config.ts'
 import { membershipGatewayOf, type ProjectMembershipClientFace } from './membership-gateway.ts'
+import {
+  createPendingInvitationsSource, type PendingInvitationPollClient,
+} from './pending-invitations-source.ts'
 import { UiWorkspaceService } from './navigation.ts'
 import { createWorkspaceViewStore } from './stores.ts'
 import { WorkspaceBrowser } from './rows/WorkspaceBrowser.tsx'
@@ -38,6 +42,8 @@ export type {
   WorkspacePickerInjected, WorkspacePickerProps, WorkspaceProjectRole, WorkspaceProjectView,
 } from './contract/slots.ts'
 export type { WorkspaceKey } from './locales.ts'
+export { Config } from '../config.ts'
+export type { WorkspaceConfig } from '../config.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface GlobalStandardProps {
@@ -71,14 +77,31 @@ export const inject = [
  * ledger. Inject factories return plain callbacks; data reads use the
  * framework's global hooks.
  * @param ctx - client root context.
+ * @param config - Loader-validated plugin tunables; omitted fields use schema defaults.
  */
-export function apply(ctx: Context): void {
+export function apply(ctx: Context, config?: WorkspaceConfig): void {
   const sessions = ctx.get('sessions') as ISessions
   const workspaces = ctx.get('workspaces') as IWorkspaces
   const uiWorkspace = new UiWorkspaceService(
     ctx, ctx.remote.directoryPicker, workspaces, sessions)
   ctx.slots.provideRoot({ hooks: { workspaces: workspaces.list } })
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-workspace: dictionaries')
+  const pollIntervalMs = Config(config ?? {}).pollIntervalMs as number
+  const pendingInvitations = createPendingInvitationsSource(
+    () => ctx.get('projectMembershipClient') as PendingInvitationPollClient | undefined,
+    pollIntervalMs,
+  )
+  ctx.effect(() => {
+    pendingInvitations.start()
+    const stop = ctx.on('internal/service', (name: string) => {
+      if (name !== 'projectMembershipClient') return
+      pendingInvitations.notifyProviderChange()
+    })
+    return () => {
+      stop()
+      pendingInvitations.dispose()
+    }
+  }, 'ui-workspace: pending invitations')
 
   const searchSessions: WorkspaceBrowserInjected['searchSessions'] = async (query, signal) => {
     const result = await sessions.search(query, signal)
@@ -135,7 +158,11 @@ export function apply(ctx: Context): void {
       if (client === undefined) return {}
       return { projectMembership: membershipGatewayOf(client) }
     })(),
-    hooks: { directoryFlow: browserFlowSource, hostInfo },
+    hooks: {
+      directoryFlow: browserFlowSource,
+      hostInfo,
+      pendingInvitations: pendingInvitations.source,
+    },
   })
   const pickerInjected = (): WorkspacePickerInjected => ({
     createWorkspace: input => workspaces.create(input),

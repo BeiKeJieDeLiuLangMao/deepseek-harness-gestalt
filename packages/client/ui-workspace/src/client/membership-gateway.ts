@@ -72,6 +72,7 @@ export function membershipGatewayOf(client: ProjectMembershipClientFace): Projec
       }
     },
     invite: async (input) => {
+      if (input.grantedRole === 'owner') throw new Error('ui-workspace: invite cannot grant owner')
       const issued = await client.invite(input)
       return { invitationId: issued.id, inviteeName: issued.inviteeName, grantedRole: issued.grantedRole }
     },

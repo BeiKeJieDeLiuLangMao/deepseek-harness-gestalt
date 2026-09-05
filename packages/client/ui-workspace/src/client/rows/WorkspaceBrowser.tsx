@@ -29,9 +29,6 @@ import { WorkspacePickFlow } from '../WorkspacePicker.tsx'
 import { InviteWizardModal, WorkspaceSettingsModal } from '../WorkspaceSettings.tsx'
 import css from './WorkspaceBrowser.module.css'
 
-/** Pending-invitation poll interval while the browser is mounted. */
-const INVITE_POLL_MS = 15_000
-
 /**
  * Column slide length (--ds-transition-duration-slow): rail-search focus waits it out —
  * focus() forces a synchronous layout and would jank the slide.
@@ -831,11 +828,14 @@ export function WorkspaceBrowser({
   searchResultLimit,
   useDirectoryFlow,
   useHostInfo,
+  usePendingInvitations,
   renderSlot,
   projectMembership,
   t,
 }: WorkspaceBrowserProps) {
   const home = useHostInfo(info => info.home)
+  const invitations = usePendingInvitations(state => state.invitations)
+  const invitationEpoch = usePendingInvitations(state => state.epoch)
   const workspaces = useWorkspaces(state => state.items)
   const workspacePhase = useWorkspaces(state => state.phase)
   const archivedSessionIds = useWorkspaces(state => state.archivedSessionIds)
@@ -899,6 +899,19 @@ export function WorkspaceBrowser({
   const [wsPickerOpen, setWsPickerOpen] = useState(false)
   const wsPlusRef = useRef<HTMLButtonElement>(null)
   const composingRef = useRef(false)
+  const [pendingInvitation, setPendingInvitation] = useState<WorkspacePendingInvitation | null>(null)
+  const goneInvitationIds = useRef(new Set<string>())
+  useEffect(() => {
+    const offered = invitations.find(
+      invitation => !goneInvitationIds.current.has(invitation.invitationId),
+    )
+    setPendingInvitation((current) => {
+      if (offered === undefined) return current === null ? current : null
+      if (current !== null && offered.invitationId === current.invitationId) return current
+      if (current !== null) return current
+      return offered
+    })
+  }, [invitationEpoch, invitations])
 
   // Rail search = expand + land in the search box: the flag arms before the
   // expand request; once the shell flips wide the input mounts and takes focus.
@@ -934,30 +947,6 @@ export function WorkspaceBrowser({
     document.addEventListener('click', onClick)
     return () => { document.removeEventListener('click', onClick) }
   }, [normalizedQuery, wide, searchExpanded, searchOnExpand])
-
-  useEffect(() => {
-    if (projectMembership === undefined) return
-    let cancelled = false
-    const poll = (): void => {
-      void projectMembership.pendingInvitations().then((invitations) => {
-        if (cancelled) return
-        const next = invitations.find(invitation => !goneInvitationIds.current.has(invitation.invitationId))
-        setPendingInvitation((current) => {
-          if (current !== null && next?.invitationId === current.invitationId) return current
-          if (current !== null) return current
-          return next ?? null
-        })
-      }).catch(() => {
-        // A poll failure leaves the current card; the next interval retries.
-      })
-    }
-    poll()
-    const timer = window.setInterval(poll, INVITE_POLL_MS)
-    return () => {
-      cancelled = true
-      window.clearInterval(timer)
-    }
-  }, [projectMembership])
 
   useEffect(() => {
     if (normalizedQuery === '') {
@@ -1074,8 +1063,6 @@ export function WorkspaceBrowser({
   const [deleteCommittedId, setDeleteCommittedId] = useState<WorkspaceId | null>(null)
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [settingsTarget, setSettingsTarget] = useState<{ workspaceId: WorkspaceId; title: string; path: string } | null>(null)
-  const [pendingInvitation, setPendingInvitation] = useState<WorkspacePendingInvitation | null>(null)
-  const goneInvitationIds = useRef(new Set<string>())
   useEffect(() => {
     if (deleteCommittedId === null
       || workspaces.some(workspace => workspace.workspaceId === deleteCommittedId)) return
