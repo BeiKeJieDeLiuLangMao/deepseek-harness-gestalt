@@ -23,6 +23,7 @@ import type {
 } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import type { CommandContribution, CommandDecoration, CommandUiContract } from './contract.ts'
 import type { CommandDescriptor } from './directory.ts'
+import { loadCommandCatalog } from './catalog.ts'
 import { CommandDirectory } from './directory.ts'
 import { PopupSelectController } from './popup.ts'
 import type { TokenSegment } from './popup.ts'
@@ -137,12 +138,8 @@ export class CommandUiRuntime extends Service implements CommandUiContract {
     const locale = ctx.get('locale')
     if (locale === undefined) throw new Error('ui-commands: locale service unavailable')
     this.t = locale.bind('command')
-    this.directory = new CommandDirectory(async (sessionId) => {
-      if (this.sessions().subagentAddress(sessionId) !== undefined) return []
-      const result = await ctx.remote.commands.list(sessionId)
-      if (!result.ok) throw new Error(`command.list failed: ${result.error.code}: ${result.error.message}`)
-      return result.value
-    })
+    this.directory = new CommandDirectory(sessionId =>
+      loadCommandCatalog(this.sessions(), ctx.remote.commands, sessionId))
     const inputTriggers = ctx.get('inputTriggers')
     if (inputTriggers === undefined) throw new Error('ui-commands: slash service unavailable')
     ctx.effect(() => inputTriggers.registerSource({
@@ -160,6 +157,10 @@ export class CommandUiRuntime extends Service implements CommandUiContract {
     // prewarming so a newly opened menu waits for the replacement catalog.
     ctx.remote.$on('agent-preset/selected', (sessionId) => { this.directory.resetSession(sessionId) })
     ctx.on('connection/reset', () => { this.directory.resetConnected() })
+    ctx.effect(
+      () => this.sessions().subscribeAdmission(() => { this.directory.invalidateAll() }),
+      'command: admission catalog',
+    )
   }
 
   /**

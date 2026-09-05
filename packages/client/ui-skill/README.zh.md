@@ -47,7 +47,7 @@ source 不实现任何裁决钩子，也没有引用 codec：pick 落下字面�
 
 ### 候选流程
 
-目录按普通会话缓存，拉取走 single-flight；scope 创建时的 `warm` 钩子预热该会话的缓存项，转发的 owner 事件 `agent-preset/selected` 丢弃该会话这一项（目录属于 preset，而空会话可能在预热之后才切换），`connection/reset` 清空全部缓存。由目录寻址的可继续 subagent 在客户端解析为没有 skill 候选，因为现有 skill RPC 要求会话已挂载；查看其持久化历史不得激活它。列表 RPC 使用插件注册时捕获的根上下文连接；草稿 chip 视觉由 `lexicon` 扫描派生。
+目录按 Session 缓存，经 `sessions.skillCatalogSessionId` 做 single-flight 拉取。draft Side Chat 把该 helper 指到 parent；省略则隐藏 skills。Host `skills/list` 使用目录身份，不把 execute 改写到 parent。list 失败是错误，不是空成功。`subscribeAdmission` 清空缓存。没有 helper 的 catalog child 仍隐藏。草稿 chip 视觉由 `lexicon` 扫描派生。
 
 ### 注册
 

@@ -696,6 +696,7 @@ export class ClientSessions implements ISessions {
 
   private notifyAdmission(): void {
     for (const listener of this.admissionListeners) listener()
+    this.manager.applyHistoryScopes()
   }
 
   /**
@@ -753,7 +754,7 @@ export class ClientSessions implements ISessions {
    * Lookup-only ordinary command-catalog Session identity.
    * A feature-owned Session that omits the helper hides commands.
    * A catalog-addressed subagent without a feature route also hides commands.
-   * No UI consumer in this slice.
+   * `ui-commands` reads this for the generic directory.
    * @param sessionId - target Session identity.
    * @returns the catalog identity, or undefined when commands stay hidden.
    */
@@ -768,7 +769,7 @@ export class ClientSessions implements ISessions {
    * Lookup-only skill-catalog Session identity.
    * A feature-owned Session that omits the helper hides skills.
    * A catalog-addressed subagent without a feature route also hides skills.
-   * No UI consumer in this slice.
+   * `ui-skill` reads this for the suggestion directory.
    * @param sessionId - target Session identity.
    * @returns the catalog identity, or undefined when skills stay hidden.
    */

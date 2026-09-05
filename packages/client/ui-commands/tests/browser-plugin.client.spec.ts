@@ -32,6 +32,8 @@ async function bench() {
   ctx.provide('sessions', {
     scope: (id: SessionId) => scopes.get(id),
     scopeOf: (c: Context) => scopeOf(c),
+    commandCatalogSessionId: (id: SessionId) => id,
+    subscribeAdmission: () => () => {},
   })
   const commandsRemote = { list: () => Promise.resolve([]) }
   // The service subscribes its cache-invalidation events on construction, so

@@ -116,7 +116,10 @@ export interface SessionAdmissionRoute {
 
   /**
    * Hide inherited fork seed events from the rendered conversation window.
-   * History suffix trimming is not applied in this slice.
+   * The Client trims the event source using Host `seedLength`
+   * (`inheritedEventCount`). A `session/end-seed` at that cut may hide
+   * itself; a later marker does not raise the floor. The durable log and
+   * model seed stay intact.
    */
   readonly historyScope?: 'owned-suffix' | undefined
 }

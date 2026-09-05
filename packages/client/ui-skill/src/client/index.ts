@@ -39,6 +39,7 @@ import type { InputTriggerServiceContract, InputTriggerSource } from '@deepseek-
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 // Type-only: pulls the SlotRegistry service merge (ctx.slots).
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
+import { loadSkillCatalog } from './catalog.ts'
 import { SkillRow } from './SkillRow.tsx'
 import { en, NS, zh, type SkillKey } from './locales.ts'
 
@@ -93,15 +94,10 @@ export function apply(ctx: ClientContext): void {
   }
 
   const fetchCatalog = (sessionId: SessionId): Promise<readonly SkillEntry[]> => {
-    if (sessions.subagentAddress(sessionId) !== undefined) return Promise.resolve([])
     const existing = fetches.get(sessionId)
     if (existing !== undefined) return existing.promise
     const abort = new AbortController()
-    const promise = (async () => {
-      const result = await skills.list({ sessionId }, abort.signal)
-      if (!result.ok) throw new Error(`skills/list failed: ${result.error.code}: ${result.error.message}`)
-      return result.value.skills
-    })()
+    const promise = loadSkillCatalog(sessions, skills, sessionId, abort.signal)
     const entry: CatalogFetch = { promise, abort }
     fetches.set(sessionId, entry)
     promise.then(
@@ -185,6 +181,7 @@ export function apply(ctx: ClientContext): void {
   // session's cached catalog belongs to the composition it no longer runs.
   ctx.remote.$on('agent-preset/selected', invalidate)
   ctx.on('connection/reset', clearAll)
+  ctx.effect(() => sessions.subscribeAdmission(clearAll), 'ui-skill: admission catalog')
   ctx.effect(() => {
     const unregister = inputTriggers.registerSource(source)
     return () => {
