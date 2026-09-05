@@ -7,7 +7,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-api-remotes/client'
 import type { ConnectionSinks } from '@deepseek-ai/dsh-api-remotes/client'
-import { SESSION_SEARCH_RESULT_LIMIT } from '@deepseek-ai/dsh-host-apiproxy/api'
+
 import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
 import * as RuntimeClient from '../src/client/index.ts'
 import type { ConversationNodeDefinition } from '../src/client/contract/conversation.ts'
@@ -66,7 +66,7 @@ describe('runtime client apply', () => {
     expect(sessions !== undefined).toBe(true)
     expect(workspaces !== undefined).toBe(true)
     // The bound the wire schema enforces, not a per-connection negotiation.
-    expect((sessions as SessionRuntime).searchResultLimit).toBe(SESSION_SEARCH_RESULT_LIMIT)
+    expect((sessions as SessionRuntime).searchResultLimit).toBe(20)
     if (workspaces === undefined) throw new Error('WorkspaceRuntime missing after runtime apply')
     expect(bench.sinks).toBeDefined()
 
