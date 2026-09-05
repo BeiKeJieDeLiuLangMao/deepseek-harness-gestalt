@@ -12,6 +12,8 @@ import { createWorkspaceGitCommand, DEFAULT_WORKSPACE_GIT_TIMEOUT_MS } from './g
 import type {
   WorkspaceArchiveSessionRequest,
   WorkspaceArchiveValue,
+  WorkspaceCloneGitRequest,
+  WorkspaceCloneGitValue,
   WorkspaceCreateRequest,
   WorkspaceCreateValue,
   WorkspaceDeleteRequest,
@@ -43,6 +45,7 @@ export { DirectoryPickerController } from './directory-picker.ts'
 export {
   createWorkspaceGitCommand,
   DEFAULT_WORKSPACE_GIT_TIMEOUT_MS,
+  workspaceCloneRemoteKind,
 } from './git.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -153,6 +156,20 @@ export class WorkspaceController extends TypertRemoteService {
   @Remote('gitRemote')
   gitRemote(request: WorkspaceGitRemoteRequest, signal: AbortSignal): Promise<WorkspaceGitRemoteValue> {
     return this.commands.gitRemote(request, signal)
+  }
+
+  /**
+   * Clone a Git remote into a new child directory and register it as a Workspace.
+   * Exclusive `mkdir` refuses an existing file, directory, or link. Git or registry
+   * failure keeps the partial directory and reports its path. The Host never
+   * recursively deletes that published target.
+   * @param request - remote URL, existing parent, and one path segment.
+   * @param signal - caller lifetime; abort terminates Git and keeps a partial target.
+   * @returns the registered Workspace.
+   */
+  @Remote('cloneGit')
+  cloneGit(request: WorkspaceCloneGitRequest, signal: AbortSignal): Promise<WorkspaceCloneGitValue> {
+    return this.commands.cloneGit(request, signal)
   }
 
   /**

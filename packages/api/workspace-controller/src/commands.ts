@@ -8,13 +8,17 @@ import {
   WorkspaceOrderInvalidError,
   WorkspaceUnknownSessionError,
 } from '@deepseek-ai/dsh-workspace'
+import { lstat, mkdir, stat } from 'node:fs/promises'
+import { join } from 'node:path'
 import type { NativeCommandRunner } from '@deepseek-ai/dsh-native-command'
 import { RemoteError, remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
 import { workspaceView } from './feed.ts'
-import { workspaceGitFailureCode } from './git.ts'
+import { workspaceCloneRemoteKind, workspaceGitFailureCode } from './git.ts'
 import type {
   WorkspaceArchiveSessionRequest,
   WorkspaceArchiveValue,
+  WorkspaceCloneGitRequest,
+  WorkspaceCloneGitValue,
   WorkspaceCreateRequest,
   WorkspaceCreateValue,
   WorkspaceDeleteRequest,
@@ -185,6 +189,73 @@ export class WorkspaceCommands {
   }
 
   /**
+   * Clone one Git remote into a new child directory and register it as a Workspace.
+   * Exclusive `mkdir` of the published name; Git or registry failure keeps that directory.
+   * @param request - remote URL, existing parent directory, and one path segment.
+   * @param signal - caller lifetime; abort terminates Git and keeps a partial target.
+   * @returns the registered Workspace.
+   */
+  cloneGit(request: WorkspaceCloneGitRequest, signal: AbortSignal): Promise<WorkspaceCloneGitValue> {
+    if (signal.aborted) {
+      return Promise.reject(new RemoteError('gateway/cancelled', 'workspace clone was aborted', {}))
+    }
+    const remoteUrl = request.remoteUrl.trim()
+    const parentPath = request.parentPath.trim()
+    const directoryName = request.directoryName.trim()
+    if (remoteUrl === '' || parentPath === '') {
+      return Promise.reject(new RemoteError(
+        'gateway/bad-request',
+        'workspace clone requires a remote URL and parent path',
+        {},
+      ))
+    }
+    if (!isOnePathSegment(directoryName)) {
+      return Promise.reject(new RemoteError(
+        'gateway/bad-request',
+        'workspace clone requires directoryName to be one path segment',
+        {},
+      ))
+    }
+    if (workspaceCloneRemoteKind(remoteUrl) === undefined) {
+      return Promise.reject(new RemoteError(
+        'workspace/clone-failed',
+        'workspace clone allows only https, ssh, or file remotes',
+        { path: join(parentPath, directoryName), parentPath, directoryName },
+      ))
+    }
+    const target = join(parentPath, directoryName)
+    return this.enqueue(async () => {
+      try {
+        const parent = await lstat(parentPath)
+        if (parent.isSymbolicLink() || parent.isFile()) {
+          throw new Error('parent path is not a directory')
+        }
+        const parentStat = await stat(parentPath)
+        if (!parentStat.isDirectory()) throw new Error('parent path is not a directory')
+        await mkdir(target)
+        const created = await lstat(target)
+        if (created.isSymbolicLink()) {
+          throw new Error('clone target was replaced by a symbolic link')
+        }
+        if (signal.aborted) throw new Error('aborted')
+        await this.runGit('git', ['clone', '--', remoteUrl, target], signal)
+        const workspace = await this.ctx.workspaceRegistry.create(target)
+        return { workspace: workspaceView(workspace) }
+      } catch (error) {
+        if (signal.aborted) {
+          throw new RemoteError('gateway/cancelled', 'workspace clone was aborted', {}, { cause: error })
+        }
+        throw new RemoteError(
+          'workspace/clone-failed',
+          `cannot clone Workspace into "${target}": ${errorMessage(error)}`,
+          { path: target, parentPath, directoryName },
+          { cause: error },
+        )
+      }
+    })
+  }
+
+  /**
    * Add one known Session to the registry-global archive set.
    * @param request - Session identity to archive.
    * @returns the complete resulting archive set.
@@ -250,4 +321,8 @@ function workspaceGitFailureText(error: unknown): string {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+function isOnePathSegment(name: string): boolean {
+  return name !== '' && name !== '.' && name !== '..' && !name.includes('/') && !name.includes('\\')
 }

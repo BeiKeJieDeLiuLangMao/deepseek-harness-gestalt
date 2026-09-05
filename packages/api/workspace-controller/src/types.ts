@@ -48,6 +48,12 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'directory-picker/create-failed': { readonly path: string }
     /** Workspace Git inspection failed for a reason other than a missing repository or missing `origin`. */
     'workspace/git-failed': { readonly workspaceId: WorkspaceId }
+    /** Clone could not create a new Workspace at the requested child path. */
+    'workspace/clone-failed': {
+      readonly path: string
+      readonly parentPath: string
+      readonly directoryName: string
+    }
   }
 }
 
@@ -64,6 +70,18 @@ export interface WorkspaceGitRemoteRequest {
 /** Configured `origin` URL when Git reports one. */
 export interface WorkspaceGitRemoteValue {
   readonly remoteUrl?: string
+}
+
+/** Clone a Git remote into a new child directory under an existing parent. */
+export interface WorkspaceCloneGitRequest {
+  readonly remoteUrl: string
+  readonly parentPath: string
+  readonly directoryName: string
+}
+
+/** Registered Workspace after a successful clone. */
+export interface WorkspaceCloneGitValue {
+  readonly workspace: WorkspaceView
 }
 
 /** Created or previously registered Workspace. */
