@@ -105,6 +105,8 @@ async function bench(opts: BenchOptions = {}) {
   ctx.provide('sessions', {
     scope: (id: SessionId) => scopes.get(id)?.ctx,
     scopeOf: (c: Context) => scopeOf(c),
+    commandCatalogSessionId: (id: SessionId) => id === opts.addressed ? undefined : id,
+    subscribeAdmission: () => () => {},
     subagentAddress: (id: SessionId) => id === opts.addressed
       ? { parentSessionId: sid('parent'), childSessionId: id, mode: 'continuable' as const }
       : undefined,

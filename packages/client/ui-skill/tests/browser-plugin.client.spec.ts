@@ -65,6 +65,8 @@ async function bench(list: ListFn, addressed?: SessionId) {
   let captured: InputTriggerSource | undefined
   ctx.provide('inputTriggers', { registerSource: (src: InputTriggerSource) => { captured = src; return () => {} } })
   ctx.provide('sessions', {
+    skillCatalogSessionId: (id: SessionId) => id === addressed ? undefined : id,
+    subscribeAdmission: () => () => {},
     subagentAddress: (id: SessionId) => id === addressed
       ? { parentSessionId: sid('parent'), childSessionId: id, mode: 'continuable' as const }
       : undefined,
@@ -108,7 +110,11 @@ describe('apply', () => {
   it('registers the dedicated skill row and its locale dictionaries', async () => {
     const ctx = new Context()
     ctx.provide('inputTriggers', { registerSource: () => () => {} })
-    ctx.provide('sessions', { subagentAddress: () => undefined })
+    ctx.provide('sessions', {
+      skillCatalogSessionId: (id: SessionId) => id,
+      subscribeAdmission: () => () => {},
+      subagentAddress: () => undefined,
+    })
     new TestRemote(ctx, { skills: { list: listOk(CATALOG) } })
     const presentation = providePresentation(ctx)
     await ctx.plugin({ inject: [...inject], apply }).await()
@@ -143,7 +149,10 @@ describe('apply', () => {
   it('registers the "/" skill source; disposal frees the name (HMR safety)', async () => {
     const ctx = new Context()
     // InputTriggerService itself injects 'sessions'; the stub unblocks its fiber.
-    ctx.provide('sessions', {})
+    ctx.provide('sessions', {
+      skillCatalogSessionId: (id: SessionId) => id,
+      subscribeAdmission: () => () => {},
+    })
     await ctx.plugin(InputTriggerService).await()
     new TestRemote(ctx, { skills: { list: listOk(CATALOG) } })
     const presentation = providePresentation(ctx)
