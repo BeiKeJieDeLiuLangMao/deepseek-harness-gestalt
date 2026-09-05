@@ -10,7 +10,9 @@ import type { SessionPendingInteractionSnapshot } from '@deepseek-ai/dsh-client-
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
-import type { ProjectMembershipGateway, WorkspaceBrowserProps } from '../src/client/contract/slots.ts'
+import type {
+  ProjectMembershipGateway, WorkspaceBrowserProps, WorkspacePendingInvitation,
+} from '../src/client/contract/slots.ts'
 import { createWorkspaceViewStore } from '../src/client/stores.ts'
 import { WorkspaceBrowser } from '../src/client/rows/WorkspaceBrowser.tsx'
 import {
@@ -54,14 +56,14 @@ function hook<T>(snapshot: T) {
 }
 
 const SAME_REMOTE = 'https://github.com/octocat/repo'
-const pendingInvitation = {
+const pendingInvitation: WorkspacePendingInvitation = {
   invitationId: 'invitation-1',
   receivingAccountId: 'account-2',
   projectId: 'project-1',
   projectName: 'Assembled',
   inviterName: 'mona',
   remoteUrl: SAME_REMOTE,
-  grantedRole: 'admin' as const,
+  grantedRole: 'admin',
 }
 
 function gateway(overrides: Partial<ProjectMembershipGateway> = {}) {
@@ -98,7 +100,7 @@ function gateway(overrides: Partial<ProjectMembershipGateway> = {}) {
   }
 }
 
-function invitationsHook(invitations: readonly (typeof pendingInvitation)[] = [], epoch = 0) {
+function invitationsHook(invitations: readonly WorkspacePendingInvitation[] = [], epoch = 0) {
   const snapshot = { invitations, epoch }
   return bindSnapshotSelector({
     getSnapshot: () => snapshot,
@@ -106,7 +108,7 @@ function invitationsHook(invitations: readonly (typeof pendingInvitation)[] = []
   })
 }
 
-function liveInvitations(invitations: readonly (typeof pendingInvitation)[], epoch = 1) {
+function liveInvitations(invitations: readonly WorkspacePendingInvitation[], epoch = 1) {
   let current = { invitations, epoch }
   const listeners = new Set<() => void>()
   return {
