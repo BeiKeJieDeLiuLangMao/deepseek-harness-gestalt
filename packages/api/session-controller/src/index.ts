@@ -55,6 +55,8 @@ import type {
   SessionSearchValue,
   SessionSelectModelRequest,
   SessionSelectModelValue,
+  SessionToolEligibility,
+  SessionToolEligibilityRequest,
   SessionUpdateQueueRequest,
   SessionUpdateQueueValue,
 } from './types.ts'
@@ -267,6 +269,33 @@ export class SessionController extends TypertRemoteService {
   @Remote('modelCatalog')
   modelCatalog(): Promise<ModelCatalog> {
     return buildModelCatalog(this.ctx)
+  }
+
+  /**
+   * Read the effective allow-only tool catalog for one live Session.
+   * Absent `allow` means no allow-only policy is active; an empty array means
+   * the composition explicitly allows no end tool. `tools` is the same
+   * `ctx.tools.catalogSchemas` view used by model request assembly.
+   * @param request - Session whose Agent context owns the catalog.
+   * @returns the configured union and exact eligible schemas.
+   */
+  @Remote('toolEligibility')
+  async toolEligibility(request: SessionToolEligibilityRequest): Promise<SessionToolEligibility> {
+    const found = await this.agents.resolveAgent(request.sessionId)
+    if ('error' in found) throw found.error
+    const tools = this.ctx.get('tools')
+    if (tools === undefined) {
+      throw new RemoteError(
+        'gateway/internal',
+        'tool eligibility is unavailable: this deployment mounts no tools service',
+        {},
+      )
+    }
+    const allow = tools.eligibilityAllow(found.agent)
+    return {
+      ...allow === undefined ? {} : { allow: [...allow] },
+      tools: tools.catalogSchemas(found.agent),
+    }
   }
 
   /**
