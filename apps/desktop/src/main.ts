@@ -92,7 +92,7 @@ import type { DesktopCompanionOperationOutput } from './companion-product.ts'
 import {
   DesktopCompanionOperationLedger, FileDesktopCompanionOperationStore,
 } from './companion-operation-ledger.ts'
-import { createDesktopHostRpc } from './host-rpc.ts'
+import { bootstrapDesktopHostCookie, createDesktopHostRpc } from './host-rpc.ts'
 import { desktopInstallationPresentation } from './desktop-installation.ts'
 import { downloadCompanionAttachment } from './companion-attachments.ts'
 import { projectDesktopRendererEvent } from './renderer-projection.ts'
@@ -314,11 +314,11 @@ async function boot(): Promise<void> {
         () => !hostStartController.signal.aborted,
       )
     host = started.value
-    installCompanionHost(host)
+    await installCompanionHost(host)
     observeHostExit(host)
     sub2api.onHostOriginChanged()
     smokeLog('host ' + host.url + ' pid ' + String(host.child.pid))
-    await revealHost(target, host.url)
+    await revealHost(target, host.launchUrl)
     if (process.env.DSH_DESKTOP_SMOKE === '1') {
       await finishSmoke(window, host.url)
       return
@@ -427,7 +427,7 @@ async function focusOrReopen(): Promise<void> {
   window = target
   const bootScreen = attachBootScreen(target)
   try {
-    await revealHost(target, host.url)
+    await revealHost(target, host.launchUrl)
     void ensureChromeOverlay(window, host.url)
   } catch (error) {
     await showError(target, error)
@@ -592,11 +592,11 @@ async function replaceWebHost(startTimeoutMs?: number): Promise<RunningWebHost> 
   await previous?.stop()
   const started = await startHost(startTimeoutMs)
   host = started
-  installCompanionHost(started)
+  await installCompanionHost(started)
   observeHostExit(started)
   smokeLog('host replaced ' + started.url + ' pid ' + String(started.child.pid))
   if (window !== undefined && !window.isDestroyed()) {
-    await revealHost(window, started.url)
+    await revealHost(window, started.launchUrl)
     void ensureChromeOverlay(window, started.url)
   }
   sub2api?.onHostOriginChanged()
@@ -841,9 +841,11 @@ function requestShutdown(exitCode: number, mode: 'exit' | 'allow-quit' = 'exit')
   })()
 }
 
-function installCompanionHost(running: RunningWebHost): void {
+async function installCompanionHost(running: RunningWebHost): Promise<void> {
   clearCompanionHost()
-  uninstallCompanionHost = companionProduct.installHost(running.url)
+  const cookieHeader = await bootstrapDesktopHostCookie(running.launchUrl, running.url)
+  if (host !== running) return
+  uninstallCompanionHost = companionProduct.installHost(running.url, cookieHeader)
   companionHostReady = true
   void startPairingForCurrentDesktop()
 }

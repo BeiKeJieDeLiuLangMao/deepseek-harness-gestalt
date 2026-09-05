@@ -1,7 +1,9 @@
 import { createServer } from 'node:http'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { REMOTE_PROTOCOL_LIMITS } from '@deepseek-ai/dsh-remote-protocol'
-import { createDesktopHostRpc } from '../src/host-rpc.ts'
+import {
+  bootstrapDesktopHostCookie, createDesktopHostRpc, listDesktopHostSessions,
+} from '../src/host-rpc.ts'
 
 const closeServers: Array<() => Promise<void>> = []
 
@@ -105,6 +107,69 @@ describe('Desktop Host RPC', () => {
       ok: false,
       failure: { kind: 'timeout', code: 'HOST_TIMEOUT', message: 'Desktop Host request timed out' },
     })
+  })
+
+  it('exchanges the same-origin launch token and sends the cookie on unary calls', async () => {
+    const cookies: string[] = []
+    const methods: string[] = []
+    const server = createServer((request, response) => {
+      if (request.method === 'GET') {
+        if (request.url === '/off-origin/?token=launch') {
+          response.writeHead(303, {
+            location: 'http://127.0.0.1:9/',
+            'set-cookie': 'dsh-auth-x=stolen; Path=/; HttpOnly; SameSite=Strict',
+          }).end()
+          return
+        }
+        response.writeHead(303, {
+          location: '/',
+          'set-cookie': 'dsh-auth-x=session; Path=/; HttpOnly; SameSite=Strict',
+        }).end()
+        return
+      }
+      cookies.push(request.headers.cookie ?? '')
+      const chunks: Buffer[] = []
+      request.on('data', chunk => chunks.push(chunk as Buffer))
+      request.on('end', () => {
+        const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as {
+          rpcId: string
+          method: string
+          payload: { args: { _request: object } }
+        }
+        methods.push(body.method)
+        expect(body.payload).toEqual({ args: { _request: {} } })
+        response.end(JSON.stringify({
+          type: 'server-response',
+          rpcId: body.rpcId,
+          result: { ok: true, value: { items: [] } },
+        }))
+      })
+    })
+    await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
+    closeServers.push(async () => {
+      server.closeAllConnections()
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => { if (error === undefined) resolve(); else reject(error) })
+      })
+    })
+    const address = server.address()
+    if (address === null || typeof address === 'string') throw new Error('expected TCP address')
+    const origin = `http://127.0.0.1:${String(address.port)}`
+    await expect(bootstrapDesktopHostCookie(`${origin}/off-origin/?token=launch`, origin))
+      .rejects.toThrow(/same-origin loopback launch URL/)
+    await expect(bootstrapDesktopHostCookie(`${origin}/?token=launch`, 'http://127.0.0.1:9'))
+      .rejects.toThrow(/same-origin loopback launch URL/)
+    const cookie = await bootstrapDesktopHostCookie(`${origin}/?token=launch`, origin)
+    expect(cookie).toBe('dsh-auth-x=session')
+    const rpc = createDesktopHostRpc(origin, {
+      timeoutMs: 1_000,
+      responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
+      cookieHeader: cookie,
+    })
+    const listed = await listDesktopHostSessions(rpc)
+    expect(listed.ok).toBe(true)
+    expect(cookies).toEqual(['dsh-auth-x=session'])
+    expect(methods).toEqual(['session/list'])
   })
 
   it('accepts the exact response byte limit and rejects overflow and a fast cumulative flood', async () => {

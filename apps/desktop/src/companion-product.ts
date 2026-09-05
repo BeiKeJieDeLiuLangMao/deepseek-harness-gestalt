@@ -169,11 +169,15 @@ export class DesktopCompanionProductOwner {
 
   /**
    * Install the current Web Host loopback RPC.
-   * @param baseUrl - loopback origin emitted by the shipped Web Host.
+   * @param baseUrl - public loopback origin emitted by the shipped Web Host.
+   * @param cookieHeader - in-memory Host session cookie; omitted only in tests that stub HTTP.
    * @returns disposer that cannot remove a replacement installation.
    */
-  installHost(baseUrl: string): () => void {
-    const rpc = createDesktopHostRpc(baseUrl, this.hostOptions)
+  installHost(baseUrl: string, cookieHeader?: string): () => void {
+    const rpc = createDesktopHostRpc(baseUrl, {
+      ...this.hostOptions,
+      ...cookieHeader === undefined ? {} : { cookieHeader },
+    })
     const cancellation = new AbortController()
     const installed: NonNullable<DesktopCompanionProductOwner['installed']> = { rpc, cancellation }
     this.interactions.clear()
