@@ -25,12 +25,24 @@ import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typer
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import { z } from 'zod'
 import { CredentialsController } from './credentials.ts'
-import type { AgentPresetDirectoryOpenValue, SettingsDocumentOpenValue } from './types.ts'
+import type {
+  AgentPresetDirectoryOpenValue,
+  SettingsDocumentOpenValue,
+  SettingsWebSearchProbeValue,
+} from './types.ts'
 
 export { CredentialsController } from './credentials.ts'
 export type * from './types.ts'
 
 const settingsNamespaceRequestSchema = z.object({ ns: z.string().min(1) })
+const DEFAULT_WEB_SEARCH_PROBE_QUERY = 'deepseek harness'
+
+interface WebSearchProbeRuntime {
+  search(
+    request: { query: string },
+    signal?: AbortSignal,
+  ): Promise<{ sources: ReadonlyArray<{ title?: string; url?: string }> }>
+}
 
 /** Native document-opening policy. */
 export interface Config {
@@ -257,6 +269,52 @@ export class SettingsController extends TypertRemoteService {
     }
   }
 
+  /**
+   * Run one `ctx.web.search` with the currently selected search backend so a
+   * configuration page can probe a provider without opening a Session.
+   * @param query - search text; omitted uses the Host default probe query.
+   * @param signal - caller lifetime forwarded to the web capability.
+   * @returns source count and the first source's title and url when present.
+   * @throws RemoteError when the web capability is absent, the search fails, or the caller aborts.
+   */
+  @Remote
+  async testWebSearch(
+    query: string | undefined,
+    signal: AbortSignal,
+  ): Promise<SettingsWebSearchProbeValue> {
+    if (isAborted(signal)) throw new RemoteError('gateway/cancelled', 'web search probe was aborted', {})
+    const web = optionalWebSearch(this.ctx.get('web'))
+    if (web === undefined) {
+      throw new RemoteError(
+        'gateway/internal',
+        'web capability is absent: this deployment does not mount @deepseek-ai/dsh-web',
+        {},
+      )
+    }
+    const parsed = query === undefined ? undefined : z.string().min(1).safeParse(query)
+    if (parsed !== undefined && !parsed.success) {
+      throw new RemoteError('gateway/bad-request', 'invalid payload for settings.testWebSearch', {
+        issues: parsed.error.issues,
+      })
+    }
+    const resolvedQuery = parsed === undefined ? DEFAULT_WEB_SEARCH_PROBE_QUERY : parsed.data
+    try {
+      const result = await web.search({ query: resolvedQuery }, signal)
+      if (isAborted(signal)) throw new RemoteError('gateway/cancelled', 'web search probe was aborted', {})
+      const first = result.sources[0]
+      return {
+        count: result.sources.length,
+        ...first?.title === undefined ? {} : { title: first.title },
+        ...first?.url === undefined ? {} : { url: first.url },
+      }
+    } catch (error: unknown) {
+      if (isAborted(signal) || isAbortError(error)) {
+        throw new RemoteError('gateway/cancelled', 'web search probe was aborted', {}, { cause: error })
+      }
+      throw new RemoteError('gateway/internal', messageOf(error), {}, { cause: error })
+    }
+  }
+
   private async write(
     ns: string,
     mode: 'update' | 'replace' | 'mutate',
@@ -301,6 +359,26 @@ export class SettingsController extends TypertRemoteService {
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+function isAbortError(error: unknown): boolean {
+  return typeof error === 'object'
+    && error !== null
+    && Reflect.get(error, 'name') === 'AbortError'
+}
+
+/**
+ * Narrow an optional `ctx.get('web')` without importing the web seam into this
+ * Host program (the seam is optional at composition time).
+ * @param value - `ctx.get('web')`.
+ * @returns the search face, or undefined when the capability is absent.
+ */
+function optionalWebSearch(value: unknown): WebSearchProbeRuntime | undefined {
+  if (value === undefined || value === null || typeof value !== 'object') return undefined
+  if (!('search' in value)) return undefined
+  const candidate = value as { search?: unknown }
+  if (typeof candidate.search !== 'function') return undefined
+  return value as WebSearchProbeRuntime
 }
 
 interface SettingsConflict {

@@ -31,6 +31,8 @@ Mount this package as a Loader entry in a profile that serves browser configurat
 
 `settings.openSettingsDocument()` prepares the provider-owned document and opens it with the native text-editor intent. `settings.canOpenAgentPresetDirectory()` reports native-opening availability when the preset page becomes visible. `settings.openAgentPresetDirectory(id)` resolves only a user-authored preset and either opens its directory or returns the path when native opening is unavailable; neither open method accepts a browser-supplied filesystem target.
 
+`settings.testWebSearch(query?)` runs one `ctx.web.search` with the currently selected search backend so a configuration page can probe a provider without opening a Session. An omitted query uses `deepseek harness`. The method returns `{ count, title?, url? }` from the first source. A missing web capability or a provider failure is `gateway/internal`; abort is `gateway/cancelled` and is forwarded to the capability.
+
 -----
 
 <a id="configuration"></a>

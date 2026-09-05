@@ -18,7 +18,7 @@ Gestalt 只发货一个覆盖 `web-search-deepseek` 的 `web_search` 工具。�
 - **Anthropic** — 同一套 Messages 约定，基址由用户填写；缺少 `baseURL` 时提供方不可用。
 - **Kimi** — Moonshot 专用搜索：对配置的 URL（默认 `https://api.kimi.com/coding/v1/search`）发起 `POST`，请求体 `{ "text_query" }`，鉴权 `Authorization: Bearer`。密钥先读 `KIMI_WEB_SEARCH_API_KEY`，该值不是可进 header 的 ASCII 时再读 `DEEPSEEK_API_KEY`。
 
-其他插件可以向 `settings.plugin.web-search.provider` 再注册 tab。插件卡片的 **测试搜索** 调用 `settings.testWebSearch`，内部执行 `ctx.web.search({ query: 'deepseek harness' })`。
+其他插件可以向 `settings.plugin.web-search.provider` 再注册 tab。插件卡片的 **测试搜索** 调用生成的 settings Remote 上的 `settings.testWebSearch`，内部执行 `ctx.web.search({ query: 'deepseek harness' })`。
 
 ## Alternatives considered
 
