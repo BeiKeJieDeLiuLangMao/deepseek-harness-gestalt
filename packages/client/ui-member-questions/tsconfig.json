@@ -9,6 +9,9 @@
   ],
   "references": [
     {
+      "path": "../../api/gateway/tsconfig.client.json"
+    },
+    {
       "path": "../../api/session-controller/tsconfig.client.json"
     },
     {
@@ -31,6 +34,9 @@
     },
     {
       "path": "../ui-user-questions"
+    },
+    {
+      "path": "../../typert/registry"
     },
     {
       "path": "../../interaction/member-question-receiver"
