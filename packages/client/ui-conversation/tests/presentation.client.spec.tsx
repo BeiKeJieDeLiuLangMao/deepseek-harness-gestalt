@@ -8,6 +8,7 @@ import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
 import type { RenderMessageImages } from '../src/client/contract/slots.ts'
 import {
+  ConversationApproval,
   ConversationComposer,
   ConversationNodePresentation,
   conversationPresentationTranslate,
@@ -25,6 +26,45 @@ const photo = (id: string, name: string) => ({
 })
 
 describe('public conversation presentation seam', () => {
+  it('settles approval allow-once and reject once, then retries after a visible failure', async () => {
+    const answer = vi.fn<(outcome: 'allowed-once' | 'rejected') => Promise<void>>()
+      .mockRejectedValueOnce(new Error('transport refused'))
+      .mockResolvedValue(undefined)
+    render(createElement(ConversationApproval, {
+      wait: { kind: 'approval', toolName: 'bash', reason: 'run privileged command', answer },
+      snapshot: sessionSnapshot('presentation-session' as SessionId),
+      t: conversationPresentationTranslate('en'),
+    }))
+    expect(screen.getByText('run privileged command')).toBeTruthy()
+    expect(screen.getByText('Waiting for approval')).toBeTruthy()
+    const allow = screen.getByRole('button', { name: 'Allow once' })
+    const reject = screen.getByRole('button', { name: 'Reject' })
+    fireEvent.click(allow)
+    fireEvent.click(allow)
+    fireEvent.click(reject)
+    expect(answer).toHaveBeenCalledTimes(1)
+    expect(answer).toHaveBeenCalledWith('allowed-once')
+    expect((await screen.findByRole('alert')).textContent).toContain('transport refused')
+    fireEvent.click(reject)
+    await waitFor(() => { expect(answer).toHaveBeenCalledTimes(2) })
+    expect(answer).toHaveBeenLastCalledWith('rejected')
+    fireEvent.click(screen.getByRole('button', { name: 'Allow once' }))
+    expect(answer).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not settle approval while mutation authority is disabled', () => {
+    const answer = vi.fn()
+    render(createElement(ConversationApproval, {
+      wait: { kind: 'approval', toolName: 'bash', answer },
+      t: conversationPresentationTranslate('zh'),
+      disabled: true,
+    }))
+    expect(screen.getByText('工具 bash 请求越权执行')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '允许一次' }))
+    fireEvent.click(screen.getByRole('button', { name: '拒绝' }))
+    expect(answer).not.toHaveBeenCalled()
+  })
+
   it('hands user image blocks to the authorized renderer in source order', () => {
     const first = photo('att-first', 'first.png')
     const second = photo('att-second', 'second.png')

@@ -224,6 +224,8 @@ export function ConversationNodePresentation({
 export interface ConversationApprovalWait {
   /** Domain discriminator. */
   readonly kind: 'approval'
+  /** Tool requesting the decision, used when the asker supplied no reason. */
+  readonly toolName?: string | undefined
   /** Human-readable reason supplied by the asker. */
   readonly reason?: string | undefined
   /**
@@ -238,27 +240,58 @@ export interface ConversationApprovalWait {
 export interface ConversationApprovalProps {
   /** Desktop-authoritative pending Approval carrier. */
   wait: ConversationApprovalWait
+  /**
+   * Optional Session projection accepted for Mobile call-site compatibility.
+   * Command detail stays on the Desktop `conversation.approval.detail` slot;
+   * this shared seam does not invent a command renderer.
+   */
+  snapshot?: SessionSnapshot | undefined
   /** Shared conversation translator. */
   t: TranslateNS<'conversation'>
   /** Disable settlement while the composition lacks current mutation authority. */
   disabled?: boolean | undefined
 }
 
+function approvalHeadline(wait: ConversationApprovalWait, t: TranslateNS<'conversation'>): string {
+  if (wait.reason !== undefined && wait.reason !== '') return wait.reason
+  if (wait.toolName !== undefined && wait.toolName !== '') {
+    return presentationCopy(t, 'approval.escalation', { toolName: wait.toolName })
+  }
+  return t('placeholder.unavailable')
+}
+
+function approvalFailureMessage(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause)
+}
+
 /**
- * Render and settle an Approval through the same composer takeover as Desktop.
+ * Render and settle an Approval through allow-once and reject actions.
  * @param props - authoritative pending Approval, translator, and mutation state.
  * @returns shared Approval takeover.
  */
 export function ConversationApproval({ wait, t, disabled = false }: ConversationApprovalProps): ReactNode {
+  const [pending, setPending] = useState(false)
+  const [failure, setFailure] = useState<string | undefined>(undefined)
+  const locked = disabled || pending
+  const settle = (outcome: 'allowed-once' | 'rejected'): void => {
+    if (locked) return
+    setPending(true)
+    setFailure(undefined)
+    void wait.answer(outcome).catch((cause: unknown) => {
+      setPending(false)
+      setFailure(approvalFailureMessage(cause))
+    })
+  }
   return (
-    <div>
-      <p>{wait.reason ?? t('placeholder.unavailable')}</p>
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={() => { void wait.answer('allowed-once') }}
-      >
-        {t('input.send')}
+    <div role="group" aria-label={t('approval.detailAria')}>
+      <p>{t('approval.waiting')}</p>
+      <p>{approvalHeadline(wait, t)}</p>
+      {failure !== undefined && <p role="alert">{failure}</p>}
+      <button type="button" disabled={locked} onClick={() => { settle('rejected') }}>
+        {t('approval.reject')}
+      </button>
+      <button type="button" disabled={locked} onClick={() => { settle('allowed-once') }}>
+        {t('approval.allowOnce')}
       </button>
     </div>
   )
