@@ -11,18 +11,22 @@ import { SessionId } from '@deepseek-ai/dsh-session'
 
 let ctx: Context | undefined
 let workdir: string | undefined
+let home: string | undefined
 
 afterEach(async () => {
   await ctx?.fiber.dispose()
   ctx = undefined
   if (workdir !== undefined) await rm(workdir, { recursive: true, force: true })
   workdir = undefined
+  if (home !== undefined) await rm(home, { recursive: true, force: true })
+  home = undefined
 })
 
 describe.skipIf(!process.env.DEEPSEEK_API_KEY)('spawn backend with-key smoke', () => {
   it('a parent delegates to a child that writes a file on disk', async () => {
     workdir = await mkdtemp(join(tmpdir(), 'dsh-subagent-spawn-e2e-'))
-    ctx = await spawnHarness(workdir)
+    home = await mkdtemp(join(tmpdir(), 'dsh-subagent-spawn-e2e-home-'))
+    ctx = await spawnHarness(workdir, home)
     const parent = await ctx.agentLoop.create(SessionId('e2e-parent'), { provider: 'deepseek-official', model: 'deepseek-v4-flash' })
 
     parent.followup(createUserMessage({
