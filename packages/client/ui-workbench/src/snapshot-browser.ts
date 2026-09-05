@@ -6,7 +6,7 @@
  * kept https links in the system browser do not apply to a Runtime page.
  */
 
-/** Settings namespace registered by the better-sidebar snapshot host. */
+/** Snapshot host settings namespace; Host apply uses this literal with `settings.get`. */
 export const SNAPSHOT_PREFS_NS = 'dsh-better-sidebar'
 
 /** Built-in snapshot tab id for the official Browser page chrome. */

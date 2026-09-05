@@ -6,7 +6,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { settingsNamespace } from '@deepseek-ai/dsh-settings'
+import type {} from '@deepseek-ai/dsh-settings'
 import { SNAPSHOT_PREFS_NS, snapshotBrowserProductPatch, type SnapshotBrowserPrefs } from './snapshot-browser.ts'
 
 /** Host plugin identity for cordis.yml rows. */
@@ -59,7 +59,7 @@ function nextImmediate(): Promise<void> {
  * @param ctx - Host context that may carry a loader.
  */
 async function awaitSnapshotRegistration(ctx: Context): Promise<void> {
-  const ns = settingsNamespace(SNAPSHOT_PREFS_NS)
+  const ns = SNAPSHOT_PREFS_NS
   const loader = ctx.get('loader') as SnapshotLoader | undefined
   if (loader === undefined) return
   if (![...loader.entries()].some(isSnapshotEntry)) return
@@ -79,7 +79,7 @@ async function awaitSnapshotRegistration(ctx: Context): Promise<void> {
  * @param ctx - Host context that already composed settings and the snapshot.
  */
 export async function apply(ctx: Context): Promise<void> {
-  const ns = settingsNamespace(SNAPSHOT_PREFS_NS)
+  const ns = SNAPSHOT_PREFS_NS
   if (ctx.settings.get(ns) === undefined) await awaitSnapshotRegistration(ctx)
   const current = ctx.settings.get(ns) as SnapshotBrowserPrefs | undefined
   if (current === undefined) {
