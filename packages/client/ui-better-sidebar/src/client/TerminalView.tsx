@@ -229,14 +229,14 @@ export function TerminalView(props: { scope: SessionScope; tabId: string; store:
         // pasteable command. A failed fetch falls back to the plain banner.
         if (event.code === 1011 && event.reason === PTY_DEPS_MISSING) {
           void api.terminalDeps().then((status) => {
-            if (status.ok) {
-              // The host recovered between the close and the fetch — the
-              // plain banner with a retry is the honest state.
-              setFatal(t('terminalDepsFailed'))
+            if (status.ok === false) {
+              setFatal(null)
+              setDepsFatal(status)
               return
             }
-            setFatal(null)
-            setDepsFatal(status)
+            // The host recovered between the close and the fetch — the
+            // plain banner with a retry is the honest state.
+            setFatal(t('terminalDepsFailed'))
           }).catch(() => {
             setFatal(t('terminalDepsFailed'))
           })

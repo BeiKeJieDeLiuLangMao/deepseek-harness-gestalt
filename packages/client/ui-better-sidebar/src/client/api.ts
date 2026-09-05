@@ -9,6 +9,7 @@
 import { encodeHtmlUrl } from '../html-route.ts'
 import type { MessageId, ModelSelection, QueueAction, SessionId } from '@deepseek-ai/dsh-api-remotes/client'
 import type { LastActivity } from '../subagent-activity.ts'
+import type { SidebarSessionEvent } from '../context-types.ts'
 import type { BrowserProbeResult } from './browser.ts'
 
 /** Side Chat ids learned before their list summary reaches the browser. */

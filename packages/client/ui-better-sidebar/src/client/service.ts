@@ -814,7 +814,7 @@ export function createBetterSidebarService(
       console.error('[dsh-better-sidebar] tab close rejected:', error)
       return
     }
-    if (lifecycle === undefined) {
+    if (!(lifecycle instanceof Promise)) {
       commit()
       return
     }

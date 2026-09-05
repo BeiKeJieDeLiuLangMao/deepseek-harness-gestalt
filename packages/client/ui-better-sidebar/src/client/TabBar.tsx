@@ -133,7 +133,7 @@ export function TabBar(props: {
 }) {
   const {
     paneId, tabs, active, windowChrome = false,
-    onActivate, onClose, onNewTab, newTabOptions, onDropTab, onFloatTab, getTabIcon, getTabBadge,
+    onActivate, onClose, onNewTab, newTabOptions, onDropTab, onFloatTab, onPinTab, getTabIcon, getTabBadge,
   } = props
   const [menuOpen, setMenuOpen] = useState(false)
   // The tab right-click context menu: the target tab plus the cursor

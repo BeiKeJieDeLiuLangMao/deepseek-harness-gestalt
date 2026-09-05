@@ -455,7 +455,7 @@ function buildApi(
       // An absent cursor means "from the very first event" — a session whose
       // log opens on a tool event (subagent seeds do) carries seq 0, which a
       // literal `> 0` comparison would drop, so the absent case floors at -1.
-      const afterSeq = rawAfter ?? -1
+      const afterSeq = typeof rawAfter === 'number' ? rawAfter : -1
       let events: readonly SidebarSessionEvent[] | undefined = ctx.sessions.get(sessionId)?.snapshotEvents()
       if (events === undefined) {
         const persistence = ctx.get('sessionPersistence')
@@ -678,9 +678,9 @@ export function apply(ctx: Context, config?: SidebarConfig): void {
   const nodePty = loadNodePty()
   if (nodePty === null) {
     const status = depsStatus()
-    const detail = status.ok
-      ? 'unknown cause'
-      : `${status.cause}. Repair: ${status.command}`
+    const detail = status.ok === false
+      ? `${status.cause}. Repair: ${status.command}`
+      : 'unknown cause'
     ctx.logger?.warn(`[dsh-better-sidebar] node-pty (${DSH_NODE_PTY_RANGE}) failed to load: ${detail}`)
   }
   const ptyManager = nodePty !== null
@@ -971,7 +971,7 @@ export function apply(ctx: Context, config?: SidebarConfig): void {
       try {
         const url = new URL(req.url ?? '/', 'http://dsh.internal')
         const decoded = decodeHtmlUrl(url.pathname)
-        if (!decoded.ok) {
+        if (decoded.ok === false) {
           writeError(res, new SidebarError('bad-request', decoded.message, decoded.status))
           return
         }

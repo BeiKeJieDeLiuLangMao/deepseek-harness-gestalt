@@ -20,24 +20,17 @@ import type {
   SidebarSubagentCatalog,
 } from '../context-types.ts'
 import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
+import { countSubagentDescendants, isSideThreadSummary, rootAncestor } from './subagent-lineage.ts'
 import { SIDE_LABEL_PREFIX } from '../sidechat-core.ts'
 import type { SideThreadRef } from './state.ts'
+
+export { countSubagentDescendants, isSideThreadSummary, rootAncestor }
+export type { SubagentDescendantTotals } from './subagent-lineage.ts'
 
 /** Workspace archive projection required before Side Chat restoration. */
 export interface SideThreadArchiveSnapshot {
   phase: 'pending' | 'ready'
   archivedSessionIds: readonly SessionId[]
-}
-
-/**
- * Side Chat threads ride the subagent origin (main-list hiding + the RPC
- * ownership fence) but they are NOT subagent topology: they carry the
- * durable 'Side: ' label and live as sidebar tabs. Excluding them here
- * keeps the auto-open trigger and the Subagent page counts clean.
- */
-export function isSideThreadSummary(summary: SidebarSessionSummary): boolean {
-  return summary.origin === 'subagent'
-    && (summary.provisional === true || summary.displayTitle.startsWith(SIDE_LABEL_PREFIX))
 }
 
 /** Count the direct subagent children of one session (durable `origin` rows). */

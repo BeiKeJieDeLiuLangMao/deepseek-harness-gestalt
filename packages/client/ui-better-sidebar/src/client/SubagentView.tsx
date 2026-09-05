@@ -234,8 +234,10 @@ function CatalogRows({
   // strip owns them). Legacy threads created before the descriptor fix still
   // arrive as corrupt diagnostics; they are recognized by summary title.
   const visibleEntries = (catalog?.entries ?? []).filter((entry) => {
+    const summary = byId[entry.id]
+    if (summary !== undefined && isSideThreadSummary(summary)) return false
     if (entry.kind === 'child') return !(entry.label?.startsWith(SIDE_LABEL_PREFIX) ?? false)
-    return !(byId[entry.id]?.displayTitle.startsWith(SIDE_LABEL_PREFIX) ?? false)
+    return !(summary?.displayTitle.startsWith(SIDE_LABEL_PREFIX) ?? false)
   })
   return (
     <>

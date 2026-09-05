@@ -1247,7 +1247,6 @@ function loadState(sessionId: string, prefs: SidebarPrefs): SidebarState {
   // there, and auto-opening it on first paint would cover the conversation
   // before the user asked. Once the user expands the drawer,
   // `panelOpen: true` persists like any other state.
-  const viewport = typeof window !== 'undefined' ? window.innerWidth : undefined
   const width = globalWidth ?? (viewport === undefined
     ? PANEL_DEFAULT
     : defaultWidthFor(viewport, prefs.defaultWidthPercent))

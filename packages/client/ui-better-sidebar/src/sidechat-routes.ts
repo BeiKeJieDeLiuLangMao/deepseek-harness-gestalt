@@ -151,13 +151,14 @@ function modelSelectionOf(value: unknown): {
   if (typeof record.provider !== 'string' || typeof record.model !== 'string') {
     throw new SidebarError('bad-request', 'selection provider and model are required')
   }
-  if (record.reasoningEffort !== undefined && typeof record.reasoningEffort !== 'string') {
+  const reasoningEffort = typeof record.reasoningEffort === 'string' ? record.reasoningEffort : undefined
+  if (record.reasoningEffort !== undefined && reasoningEffort === undefined) {
     throw new SidebarError('bad-request', 'invalid selection reasoningEffort')
   }
   return {
     provider: record.provider,
     model: record.model,
-    ...(record.reasoningEffort === undefined ? {} : { reasoningEffort: record.reasoningEffort }),
+    ...(reasoningEffort === undefined ? {} : { reasoningEffort }),
   }
 }
 
@@ -499,7 +500,10 @@ export function buildSidechatApi(ctx: Context): SidechatApi {
           throw new SidebarError('sidechat-error', `thread resume failed: ${error instanceof Error ? error.message : String(error)}`, 500)
         }
       }
-      if (boundaryDelivered(agent.session.events as unknown as readonly SidechatLogEvent[])) {
+      const sessionEvents = typeof agent.session.snapshotEvents === 'function'
+        ? agent.session.snapshotEvents()
+        : (agent.session as { events?: readonly SidechatLogEvent[] }).events ?? []
+      if (boundaryDelivered(sessionEvents as unknown as readonly SidechatLogEvent[])) {
         admitPrompt(agent, textPrompt(text), rawMode)
       } else {
         // Compatibility for persisted empty Side Chat Sessions created by an
