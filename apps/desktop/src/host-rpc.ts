@@ -231,19 +231,51 @@ function parseServerResponse(body: unknown, rpcId: string): DesktopHostRpcResult
       failure: { kind: 'wire', code: 'HOST_WIRE_INVALID', message: 'Desktop Host response did not contain an RPC result' },
     }
   }
-  const code = typeof result.error.code === 'string' && result.error.code !== ''
-    ? companionBusinessCode(result.error.code)
+  const hostCode = typeof result.error.code === 'string' && result.error.code !== ''
+    ? result.error.code
     : 'host-error'
-  const message = typeof result.error.message === 'string' && result.error.message !== ''
+  const hostMessage = typeof result.error.message === 'string' && result.error.message !== ''
     ? result.error.message
     : 'Desktop Host rejected the request'
-  return { ok: false, failure: { kind: 'business', code, message } }
+  return { ok: false, failure: companionBusinessFailure(hostCode, hostMessage) }
 }
 
-/** Companion business codes reject `/`; keep the Gateway/Session reason segment. */
-function companionBusinessCode(code: string): string {
-  const slash = code.lastIndexOf('/')
-  return slash === -1 ? code : code.slice(slash + 1)
+const COMPANION_BUSINESS_CODE = /^[A-Za-z0-9_-]{1,128}$/u
+
+/**
+ * Companion business `code` rejects `/`. Keep the Host reason as `code` and
+ * retain a namespaced Host code as a `Host error <ns/reason>: ` prefix on the
+ * original user-visible message. Retry classification stays `kind`.
+ */
+function companionBusinessFailure(hostCode: string, hostMessage: string): CompanionHostFailure {
+  const code = companionLegalBusinessCode(hostCode)
+  return {
+    kind: 'business',
+    code,
+    message: hostCode === code ? hostMessage : prefixedHostFailureMessage(hostCode, hostMessage),
+  }
+}
+
+function companionLegalBusinessCode(hostCode: string): string {
+  const slash = hostCode.lastIndexOf('/')
+  const reason = slash === -1 ? hostCode : hostCode.slice(slash + 1)
+  return COMPANION_BUSINESS_CODE.test(reason) ? reason : 'host-error'
+}
+
+function prefixedHostFailureMessage(hostCode: string, hostMessage: string): string {
+  const prefix = `Host error ${hostCode}: `
+  const limit = REMOTE_PROTOCOL_LIMITS.hostFailureMessageBytes
+  const prefixBytes = new TextEncoder().encode(prefix)
+  if (prefixBytes.byteLength >= limit) return utf8Truncate(prefix, limit)
+  return prefix + utf8Truncate(hostMessage, limit - prefixBytes.byteLength)
+}
+
+function utf8Truncate(value: string, maxBytes: number): string {
+  const encoded = new TextEncoder().encode(value)
+  if (encoded.byteLength <= maxBytes) return value
+  const sliced = encoded.subarray(0, maxBytes)
+  const decoded = new TextDecoder('utf-8', { fatal: false }).decode(sliced)
+  return decoded.replace(/\uFFFD$/u, '')
 }
 
 type RequestOutcome =

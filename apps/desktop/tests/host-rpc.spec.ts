@@ -62,6 +62,20 @@ describe('Desktop Host RPC', () => {
               },
             }))
             return
+          case 'session-internal':
+            response.end(JSON.stringify({
+              type: 'server-response',
+              rpcId: body.rpcId,
+              result: {
+                ok: false,
+                error: {
+                  code: 'session/internal',
+                  message: 'session search failed: SESSION_QUERY_SEARCH_DISABLED',
+                  details: {},
+                },
+              },
+            }))
+            return
           case 'timeout':
             return
           case 'slow-chunks':
@@ -113,9 +127,27 @@ describe('Desktop Host RPC', () => {
       failure: {
         kind: 'business',
         code: 'internal',
-        message: 'session search failed: SESSION_QUERY_SEARCH_DISABLED',
+        message: 'Host error gateway/internal: session search failed: SESSION_QUERY_SEARCH_DISABLED',
       },
     })
+    const sessionInternal = await rpc.call('session/search', { query: 'session-internal' })
+    const gatewayInternal = await rpc.call('session/search', { query: 'gateway-internal' })
+    expect(sessionInternal).toEqual({
+      ok: false,
+      failure: {
+        kind: 'business',
+        code: 'internal',
+        message: 'Host error session/internal: session search failed: SESSION_QUERY_SEARCH_DISABLED',
+      },
+    })
+    expect(gatewayInternal.ok).toBe(false)
+    expect(sessionInternal.ok).toBe(false)
+    if (gatewayInternal.ok || sessionInternal.ok) throw new Error('expected namespaced Host business failures')
+    expect(gatewayInternal.failure.kind).toBe(sessionInternal.failure.kind)
+    expect(gatewayInternal.failure.code).toBe(sessionInternal.failure.code)
+    expect(gatewayInternal.failure.message).not.toBe(sessionInternal.failure.message)
+    expect(gatewayInternal.failure.message).toContain('gateway/internal')
+    expect(sessionInternal.failure.message).toContain('session/internal')
     await expect(rpc.call('session/search', { query: 'timeout' })).resolves.toEqual({
       ok: false,
       failure: { kind: 'timeout', code: 'HOST_TIMEOUT', message: 'Desktop Host request timed out' },
