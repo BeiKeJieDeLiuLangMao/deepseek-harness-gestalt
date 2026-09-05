@@ -22,7 +22,7 @@ Moved in this candidate (not yet a complete deletion):
 ## Remaining blockers before delete
 
 1. `apps/web/tests/member-question-receiving.e2e.ts` and `member-question-receiving.snapshot.ts` call `scaffold.ctx.apiProxy.sessions.{create,prompt,history}` and `scaffold.ctx.apiProxy.memberQuestions.admitHumanTurn`. Web scaffold no longer provides `apiProxy`. Replacement is Host Session Controller + member-question receiver after the late-inject MQ work (421/73de) lands; until then these suites cannot run against a deleted package.
-2. `apps/desktop/tests/companion-host-assembled.spec.ts` still boots `createApiProxy` + `toFetchHandler` as the HTTP/WebSocket carrier for seven Snow assembled cases. `host-rpc-assembled.spec.ts` already covers generated Remote unary/follow on real `dsh web`; the Snow cases must retarget that Desktop Host RPC before Desktop can drop the workspace dependency.
+2. `apps/desktop/tests/companion-host-assembled.spec.ts` still boots `createApiProxy` + `toFetchHandler` as the HTTP/WebSocket carrier for seven Snow assembled cases. Companion search hit/no-hit, archived exclusion, and `openAt: never` / index-open failure now also run against shipped `dsh web` in `companion-host-search.assembled.spec.ts` (cookie + generated `session/search`). The remaining Snow create/history/live/mutation/fence cases still need that Desktop Host RPC before Desktop can drop the workspace dependency. The HTTP 400 codec probe already uses a real loopback 400, not apiproxy.
 
 ## Test move plan
 
@@ -36,7 +36,7 @@ Moved in this candidate (not yet a complete deletion):
 | Session search | `session.search` | already on Session Controller |
 | Session log export | Connection `GET /api/session.export` | already off apiproxy |
 | MQ admit/prompt/history in Web e2e | receiver + Session Controller | **blocked** |
-| Desktop Snow assembled HTTP | `createDesktopHostRpc` | **blocked** |
+| Desktop Snow assembled HTTP | `createDesktopHostRpc` | search hit/no-hit, archived exclusion, and provider-failure on shipped Host; remaining Snow create/history/live/mutation/fence **blocked** |
 
 ## Alternatives considered
 

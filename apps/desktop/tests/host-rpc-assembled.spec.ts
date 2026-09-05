@@ -1,15 +1,14 @@
-import { accessSync, constants as fsConstants, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { glob, mkdtemp, readFile, rm } from 'node:fs/promises'
+import { accessSync, constants as fsConstants, mkdirSync, readFileSync } from 'node:fs'
+import { glob, mkdtemp, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 import { decompressZstdFrame, scanZstdFrames } from '../../../packages/session/session-persistence-jsonl/src/zstd.ts'
 import { afterEach, beforeAll, describe, expect, it } from 'vitest'
-import { WorkspaceTypertGenerator } from '@deepseek-ai/dsh-typert-generator'
-import { REMOTE_PROTOCOL_LIMITS } from '@deepseek-ai/dsh-remote-protocol'
 import { parsePersonalPairingId } from '@deepseek-ai/dsh-remote-access'
 import { startMockLlmServer } from '@deepseek-ai/dsh-llm-mock-server'
-import { parseCompanionOperationId, parseCompanionSessionId } from '@deepseek-ai/dsh-remote-protocol'
+import {
+  parseCompanionOperationId, parseCompanionSessionId, REMOTE_PROTOCOL_LIMITS,
+} from '@deepseek-ai/dsh-remote-protocol'
 import { DesktopCompanionOperationLedger } from '../src/companion-operation-ledger.ts'
 import type { DesktopCompanionLiveProjectionChange } from '../src/companion-live-projection.ts'
 import { DesktopCompanionProductOwner, handleCompanionProductOperation } from '../src/companion-product.ts'
@@ -23,86 +22,29 @@ import {
   readDesktopHostAttachment,
   searchDesktopHostSessions,
 } from '../src/host-rpc.ts'
-import { spawnWebHost, type RunningWebHost } from '../src/spawn-web-host.ts'
+import type { RunningWebHost } from '../src/spawn-web-host.ts'
+import {
+  generateDesktopHostTypertArtifacts,
+  startShippedWebHost,
+  stopShippedWebHosts,
+} from './shipped-web-host.ts'
 
-const here = dirname(fileURLToPath(import.meta.url))
-const repo = join(here, '..', '..', '..')
 const children: RunningWebHost[] = []
 const homes: string[] = []
 
-const TYPERT_PACKAGES = [
-  '@deepseek-ai/dsh-agent-presets',
-  '@deepseek-ai/dsh-api-session-controller',
-  '@deepseek-ai/dsh-api-settings-controller',
-  '@deepseek-ai/dsh-api-workspace-controller',
-  '@deepseek-ai/dsh-browser-workspace',
-  '@deepseek-ai/dsh-commands',
-  '@deepseek-ai/dsh-cordis-host-runner',
-  '@deepseek-ai/dsh-goal',
-  '@deepseek-ai/dsh-host-plugin-inventory',
-  '@deepseek-ai/dsh-llm',
-  '@deepseek-ai/dsh-member-question-receiver',
-  '@deepseek-ai/dsh-message-feedback',
-  '@deepseek-ai/dsh-session-reference',
-  '@deepseek-ai/dsh-subagent',
-] as const
-
 beforeAll(() => {
-  const artifacts = new WorkspaceTypertGenerator(repo)
-    .generate([...TYPERT_PACKAGES], ['host'])
-  for (const artifact of artifacts) {
-    const output = join(repo, artifact.packageRoot, 'lib')
-    mkdirSync(output, { recursive: true })
-    writeFileSync(join(output, `typert.${artifact.face}.js`), artifact.js)
-    writeFileSync(join(output, `typert.${artifact.face}.d.ts`), artifact.dts)
-    if (artifact.remote === undefined) continue
-    writeFileSync(join(output, 'typert.remote-client.js'), artifact.remote.js)
-    writeFileSync(join(output, 'typert.remote-client.d.ts'), artifact.remote.dts)
-    writeFileSync(join(output, 'typert.remote-client.d.ts.map'), artifact.remote.dtsMap)
-  }
+  generateDesktopHostTypertArtifacts()
 }, 120_000)
 
 afterEach(async () => {
-  await Promise.all(children.splice(0).map(running => running.stop()))
-  await Promise.all(homes.splice(0).map(home => rm(home, { recursive: true, force: true })))
+  await stopShippedWebHosts(children, homes)
 })
-
-function cleanEnvironment(home: string): NodeJS.ProcessEnv {
-  const env = Object.fromEntries(Object.entries(process.env).filter(([name]) =>
-    !/(?:KEY|SECRET|TOKEN|PASSWORD|CREDENTIAL)/iu.test(name)))
-  return {
-    ...env,
-    DSH_AGENTS_HOME: join(home, '.agents'),
-    DSH_HOME: join(home, '.dsh'),
-    DSH_TELEMETRY_DISABLED: '1',
-    NODE_NO_WARNINGS: '1',
-    SSH_CONNECTION: '',
-    SSH_TTY: '',
-    TSX_TSCONFIG_PATH: join(repo, 'tsconfig.json'),
-  }
-}
 
 async function startShippedHost(
   env: NodeJS.ProcessEnv = {},
   home?: string,
 ): Promise<{ home: string; running: RunningWebHost }> {
-  const resolved = home ?? await mkdtemp(join(tmpdir(), 'dsh-desktop-host-rpc-'))
-  if (home === undefined) homes.push(resolved)
-  const homeDir = resolved
-  const tsx = new URL('../../../node_modules/tsx/dist/esm/index.mjs', import.meta.url).href
-  const running = await spawnWebHost({
-    node: process.execPath,
-    args: [
-      '--import', tsx,
-      join(repo, 'apps/cli/src/bin.ts'),
-      'web', '--patch', join(here, 'fixtures/host-rpc-auth.patch.yml'),
-      '--no-open', '--host', '127.0.0.1', '--port', '0',
-    ],
-    cwd: repo,
-    env: { ...cleanEnvironment(homeDir), ...env },
-  }, 90_000)
-  children.push(running)
-  return { home: homeDir, running }
+  return startShippedWebHost({ env, home, children, homes })
 }
 
 describe('Desktop Host RPC against shipped dsh web', () => {

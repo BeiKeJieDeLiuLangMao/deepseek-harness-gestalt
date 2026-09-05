@@ -231,13 +231,85 @@ function parseServerResponse(body: unknown, rpcId: string): DesktopHostRpcResult
       failure: { kind: 'wire', code: 'HOST_WIRE_INVALID', message: 'Desktop Host response did not contain an RPC result' },
     }
   }
-  const code = typeof result.error.code === 'string' && result.error.code !== ''
-    ? result.error.code
-    : 'host-error'
-  const message = typeof result.error.message === 'string' && result.error.message !== ''
+  if (typeof result.error.code !== 'string' || result.error.code === '') {
+    return { ok: false, failure: INVALID_HOST_BUSINESS_CODE }
+  }
+  const hostMessage = typeof result.error.message === 'string' && result.error.message !== ''
     ? result.error.message
     : 'Desktop Host rejected the request'
-  return { ok: false, failure: { kind: 'business', code, message } }
+  return { ok: false, failure: companionBusinessFailure(result.error.code, hostMessage) }
+}
+
+/** Gateway/Session Host codes are `<domain>/<reason>` segments, or a bare reason. */
+const HOST_DIAGNOSTIC_CODE = /^[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*$/u
+const COMPANION_BUSINESS_CODE = /^[A-Za-z0-9_-]{1,128}$/u
+const HOST_DIAGNOSTIC_CODE_MAX = 128
+const INVALID_HOST_BUSINESS_CODE: CompanionHostFailure = {
+  kind: 'wire',
+  code: 'HOST_WIRE_INVALID',
+  message: 'Desktop Host business error code was invalid',
+}
+
+/**
+ * Companion business `code` rejects `/`. Keep the Host reason as a legal
+ * last-segment `code`. A validated namespaced Host diagnostic is retained as
+ * `[<original Host code>] ` before the original user-visible message.
+ * Illegal types, empty segments, newlines, or over-long Host codes stay
+ * `HOST_WIRE_INVALID` and are not copied into the prefix. The prefix never
+ * consumes the 4096-byte message ceiling. Retry classification stays `kind`.
+ */
+function companionBusinessFailure(hostCode: string, hostMessage: string): CompanionHostFailure {
+  if (!isHostDiagnosticCode(hostCode)) return INVALID_HOST_BUSINESS_CODE
+  const slash = hostCode.lastIndexOf('/')
+  const code = slash === -1 ? hostCode : hostCode.slice(slash + 1)
+  if (!COMPANION_BUSINESS_CODE.test(code)) return INVALID_HOST_BUSINESS_CODE
+  if (slash === -1) {
+    return { kind: 'business', code, message: boundedFailureMessage(hostMessage) }
+  }
+  const message = prefixedHostFailureMessage(hostCode, hostMessage)
+  if (message === undefined) return INVALID_HOST_BUSINESS_CODE
+  return { kind: 'business', code, message }
+}
+
+function isHostDiagnosticCode(hostCode: string): boolean {
+  return hostCode.length <= HOST_DIAGNOSTIC_CODE_MAX && HOST_DIAGNOSTIC_CODE.test(hostCode)
+}
+
+function prefixedHostFailureMessage(hostCode: string, hostMessage: string): string | undefined {
+  const prefix = `[${hostCode}] `
+  const limit = REMOTE_PROTOCOL_LIMITS.hostFailureMessageBytes
+  const prefixBytes = new TextEncoder().encode(prefix).byteLength
+  if (prefixBytes >= limit) return undefined
+  return prefix + utf8Truncate(hostMessage, limit - prefixBytes)
+}
+
+function boundedFailureMessage(hostMessage: string): string {
+  return utf8Truncate(hostMessage, REMOTE_PROTOCOL_LIMITS.hostFailureMessageBytes)
+}
+
+function utf8Truncate(value: string, maxBytes: number): string {
+  const encoded = new TextEncoder().encode(value)
+  if (encoded.byteLength <= maxBytes) return value
+  if (maxBytes <= 0) return ''
+  let end = maxBytes
+  const start = utf8CharStart(encoded, end - 1)
+  const width = utf8LeadWidth(encoded[start] ?? 0)
+  if (start + width > maxBytes) end = start
+  return new TextDecoder('utf-8', { fatal: true }).decode(encoded.subarray(0, end))
+}
+
+function utf8CharStart(bytes: Uint8Array, index: number): number {
+  let start = index
+  while (start > 0 && ((bytes[start] ?? 0) & 0xc0) === 0x80) start -= 1
+  return start
+}
+
+function utf8LeadWidth(lead: number): number {
+  if ((lead & 0x80) === 0) return 1
+  if ((lead & 0xe0) === 0xc0) return 2
+  if ((lead & 0xf0) === 0xe0) return 3
+  if ((lead & 0xf8) === 0xf0) return 4
+  return 1
 }
 
 type RequestOutcome =
