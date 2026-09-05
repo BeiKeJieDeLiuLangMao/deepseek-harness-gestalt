@@ -117,8 +117,9 @@ export interface SessionAdmissionRoute {
   /**
    * Hide inherited fork seed events from the rendered conversation window.
    * The Client trims the event source using Host `seedLength`
-   * (`inheritedEventCount`) and the last `session/end-seed` seq. The durable
-   * log and model seed stay intact.
+   * (`inheritedEventCount`). A `session/end-seed` at that cut may hide
+   * itself; a later marker does not raise the floor. The durable log and
+   * model seed stay intact.
    */
   readonly historyScope?: 'owned-suffix' | undefined
 }
