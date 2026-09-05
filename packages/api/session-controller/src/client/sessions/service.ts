@@ -29,6 +29,12 @@ import {
   createSnapshotStore, type SnapshotStore,
 } from '@deepseek-ai/dsh-client-store'
 import type { RemoteFailure, RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
+import type {
+  SessionAdmissionAdapter,
+  SessionAdmissionOptions,
+  SessionAdmissionRoute,
+  SessionModelRoute,
+} from '../contract/admission.ts'
 import type { SessionEventSource } from '../contract/events.ts'
 import type { SessionFace } from '../contract/session.ts'
 import type { AgentContext, ISessions } from '../contract/sessions.ts'
@@ -183,6 +189,16 @@ interface ScopeRecord {
   session: Session
 }
 
+interface ExactAdmissionEntry {
+  readonly route: SessionAdmissionRoute
+  readonly token: symbol
+}
+
+interface AdapterAdmissionEntry {
+  readonly adapter: SessionAdmissionAdapter
+  readonly token: symbol
+}
+
 /** Root sessions service: list store, current selection, object-layer manager, scope tree, bindings, and breadcrumb routes. */
 export class ClientSessions implements ISessions {
   /**
@@ -207,6 +223,8 @@ export class ClientSessions implements ISessions {
   private readonly selection: SnapshotStore<SessionSelection>
 
   private readonly scopes = new Map<SessionId, ScopeRecord>()
+  private readonly exactAdmissions = new Map<SessionId, ExactAdmissionEntry>()
+  private readonly admissionAdapters: AdapterAdmissionEntry[] = []
   /** In-flight scope drops remain here after records leave `scopes`, so root disposal can await quiescence. */
   private readonly scopeDrops = new Set<Promise<void>>()
   /**
@@ -241,6 +259,7 @@ export class ClientSessions implements ISessions {
       remote,
       restored.sessionId,
       restored.subagentAddress,
+      sessionId => this.resolveAdmission(sessionId),
     )
     this.list = createSnapshotStore<SessionListState>({
       ids: [], byId: {}, current: undefined, phase: 'pending',
@@ -267,6 +286,8 @@ export class ClientSessions implements ISessions {
       disposeManagerProjection()
       const scopes = [...this.scopes]
       this.scopes.clear()
+      this.exactAdmissions.clear()
+      this.admissionAdapters.length = 0
       this.deferredRemovals.clear()
       this.watched = undefined
       for (const [id, record] of scopes) this.startScopeDrop(id, record)
@@ -585,6 +606,117 @@ export class ClientSessions implements ISessions {
     if (record === undefined) return
     void record.session.open()
     void this.manager.refreshSubagents(sessionId)
+  }
+
+  /**
+   * Resolve the active feature-owned admission route for a Session.
+   * Exact-SessionId registrations take precedence over pattern adapters.
+   * @param sessionId - Session identity.
+   * @returns the active admission route, or undefined.
+   */
+  resolveAdmission(sessionId: SessionId): SessionAdmissionRoute | undefined {
+    const exact = this.exactAdmissions.get(sessionId)
+    if (exact !== undefined) return exact.route
+    for (const entry of this.admissionAdapters) {
+      if (entry.adapter.handles(sessionId)) {
+        return entry.adapter
+      }
+    }
+    return undefined
+  }
+
+  /**
+   * Register feature-owned admission route for an exact Session identity.
+   * Late registration, replacement, and revocation take effect immediately
+   * on existing Session bindings.
+   * @param sessionId - exact target Session identity.
+   * @param route - feature-owned handlers for prompt, cancel, queue mutation, and commands.
+   * @param options - conflict strategy; default 'replace' establishes the new single owner.
+   * @returns reference-safe disposer; an outdated disposer does not revoke a newer owner.
+   */
+  registerAdmission(
+    sessionId: SessionId,
+    route: SessionAdmissionRoute,
+    options: SessionAdmissionOptions = {},
+  ): () => void {
+    this.assertActive('registerAdmission')
+    if (options.conflict === 'reject' && this.exactAdmissions.has(sessionId)) {
+      throw new Error(`sessions.registerAdmission: session "${sessionId}" already has an active admission route`)
+    }
+    const token = Symbol('exact-admission')
+    this.exactAdmissions.set(sessionId, { route, token })
+    return () => {
+      if (this.disposed) return
+      if (this.exactAdmissions.get(sessionId)?.token === token) {
+        this.exactAdmissions.delete(sessionId)
+      }
+    }
+  }
+
+  /**
+   * Register one feature-owned Session admission adapter across matching sessions.
+   * Duplicate adapter ids are rejected.
+   * @param adapter - adapter implementing handles(sessionId) and dispatch routes.
+   * @returns reference-safe disposer.
+   */
+  registerAdmissionAdapter(adapter: SessionAdmissionAdapter): () => void {
+    this.assertActive('registerAdmissionAdapter')
+    if (this.admissionAdapters.some(entry => entry.adapter.id === adapter.id)) {
+      throw new Error(`sessions.registerAdmissionAdapter: duplicate adapter ${JSON.stringify(adapter.id)}`)
+    }
+    const token = Symbol('adapter-admission')
+    const entry: AdapterAdmissionEntry = { adapter, token }
+    this.admissionAdapters.push(entry)
+    return () => {
+      if (this.disposed) return
+      const at = this.admissionAdapters.findIndex(e => e.token === token)
+      if (at !== -1) {
+        this.admissionAdapters.splice(at, 1)
+      }
+    }
+  }
+
+  /**
+   * Resolve model inspection and selection for one Session.
+   * Returns a registered admission route only; ordinary Sessions have no
+   * stock catalog owner in this slice.
+   * @param sessionId - target Session identity.
+   * @returns the feature route, or undefined.
+   */
+  modelRoute(sessionId: SessionId): SessionModelRoute | undefined {
+    const admission = this.resolveAdmission(sessionId)
+    if (admission?.modelRoute !== undefined) {
+      return admission.modelRoute(sessionId)
+    }
+    return undefined
+  }
+
+  /**
+   * Resolve the ordinary command-catalog Session identity.
+   * A feature-owned Session that omits the helper hides commands.
+   * A catalog-addressed subagent without a feature route also hides commands.
+   * @param sessionId - target Session identity.
+   * @returns the catalog identity, or undefined when commands stay hidden.
+   */
+  commandCatalogSessionId(sessionId: SessionId): SessionId | undefined {
+    const admission = this.resolveAdmission(sessionId)
+    if (admission !== undefined) return admission.commandCatalogSessionId?.(sessionId)
+    if (this.manager.subagentAddress(sessionId) !== undefined) return undefined
+    return sessionId
+  }
+
+  /**
+   * Resolve the skill-catalog Session identity.
+   * A feature-owned Session that omits the helper hides skills.
+   * A catalog-addressed subagent without a feature route also hides skills.
+   * @param sessionId - target Session identity.
+   * @returns the catalog identity, or undefined when skills stay hidden.
+   */
+  skillCatalogSessionId(sessionId: SessionId): SessionId | undefined {
+    const admission = this.resolveAdmission(sessionId)
+    if (admission !== undefined) return admission.skillCatalogSessionId?.(sessionId)
+    if (this.manager.subagentAddress(sessionId) !== undefined) return undefined
+    return sessionId
   }
 
   /**

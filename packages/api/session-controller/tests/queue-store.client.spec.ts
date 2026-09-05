@@ -241,7 +241,7 @@ describe('queue operation transport', () => {
       ok: true as const,
       value: { accepted: true as const },
     }))
-    const session = new Session(SID, api, fakeRemote(), {
+    const session = new Session(SID, fakeRemote(api), {
       admission: () => ({
         id: 'sidechat',
         handles: () => true,

@@ -23,18 +23,25 @@ import type {
 import type {
   OpenState, PendingSubmission, PromptError, SessionSnapshot,
 } from '../contract/snapshot.ts'
+import type { SessionAdmissionRoute } from '../contract/admission.ts'
 import { MutableSessionEventSource } from '../contract/events.ts'
 import type {
   SessionEventLikeEntry, SessionLiveEventEntry,
 } from '../contract/events.ts'
 import { Notifier } from './notifier.ts'
 import { isRemoteFailure } from '@deepseek-ai/dsh-api-gateway/client'
-import type { RemoteFailure, RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
+import { RemoteError, type RemoteFailure, type RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { SessionRemotes } from './remotes.ts'
 import { ProjectionValueStore } from './projection-store.ts'
 import type { ProjectionsBaseline } from './projection-store.ts'
 import { resolvedClientTimeZone } from '../time-zone.ts'
 import { SessionQueueMirror } from './queue-mirror.ts'
+
+function toRemoteFailure(error: unknown): RemoteFailure {
+  if (isRemoteFailure(error)) return error
+  const message = error instanceof Error ? error.message : String(error)
+  return new RemoteError('gateway/internal', message, {})
+}
 
 function projectionsBaseline(value: SessionProjectionBaseline): ProjectionsBaseline {
   return {
@@ -70,6 +77,8 @@ export interface SessionOptions {
    * private store (bare object-layer construction).
    */
   projections?: ProjectionValueStore
+  /** Resolve the currently installed feature-owned admission route, if any. */
+  admission?: (sessionId: SessionId) => SessionAdmissionRoute | undefined
 }
 
 /**
@@ -237,7 +246,17 @@ export class Session implements SessionFace {
     if (this.blankBit) this.firstPromptPendingTurn = true
     this.notifier.markDirty()
     let result: RemoteResult<{ accepted: true }>
-    if (this.address === undefined) {
+    const admission = this.options.admission?.(this.sessionId)
+    if (admission !== undefined) {
+      try {
+        result = await admission.prompt(this.sessionId, content, mode, signal)
+      } catch (error) {
+        result = {
+          ok: false,
+          error: toRemoteFailure(error),
+        }
+      }
+    } else if (this.address === undefined) {
       const clientTimeZone = resolvedClientTimeZone()
       result = await this.remote.session.prompt({
         requestId: requestId ?? randomUUID() as SessionRequestId,
@@ -299,6 +318,23 @@ export class Session implements SessionFace {
 
   /** Apply one operation to a still-pending queue occurrence. */
   async updateQueue(itemId: MessageId, action: QueueAction): Promise<RemoteResult<{ accepted: true }>> {
+    const admission = this.options.admission?.(this.sessionId)
+    if (admission !== undefined) {
+      if (admission.updateQueue === undefined) {
+        return {
+          ok: false,
+          error: new RemoteError('gateway/internal', 'the owning Session feature does not support queue mutation', {}),
+        }
+      }
+      try {
+        return await admission.updateQueue(this.sessionId, itemId, action)
+      } catch (error) {
+        return {
+          ok: false,
+          error: toRemoteFailure(error),
+        }
+      }
+    }
     return this.remote.session.updateQueue({ sessionId: this.sessionId, itemId, action })
   }
 
@@ -310,14 +346,27 @@ export class Session implements SessionFace {
    * @returns the cancel result.
    */
   async cancel(): Promise<RemoteResult<{ accepted: true }>> {
-    const address = this.address
-    const result = address !== undefined
-      ? await this.remote.subagents.interruptByParent(
-        address.childSessionId,
-        address.parentSessionId,
-        'continuable',
-      )
-      : await this.remote.session.cancel({ sessionId: this.sessionId })
+    const admission = this.options.admission?.(this.sessionId)
+    let result: RemoteResult<{ accepted: true }>
+    if (admission !== undefined) {
+      try {
+        result = await admission.cancel(this.sessionId)
+      } catch (error) {
+        result = {
+          ok: false,
+          error: toRemoteFailure(error),
+        }
+      }
+    } else {
+      const address = this.address
+      result = address !== undefined
+        ? await this.remote.subagents.interruptByParent(
+          address.childSessionId,
+          address.parentSessionId,
+          'continuable',
+        )
+        : await this.remote.session.cancel({ sessionId: this.sessionId })
+    }
     if (!result.ok) {
       this.promptError = { op: 'stop', error: result.error }
       this.notifier.markDirty()
@@ -350,6 +399,23 @@ export class Session implements SessionFace {
    * @returns the admission result.
    */
   async command(line: string): Promise<RemoteResult<{ matched: boolean }>> {
+    const admission = this.options.admission?.(this.sessionId)
+    if (admission !== undefined) {
+      if (admission.command === undefined) {
+        return {
+          ok: false,
+          error: new RemoteError('gateway/internal', 'the owning Session feature does not support commands', {}),
+        }
+      }
+      try {
+        return await admission.command(this.sessionId, line)
+      } catch (error) {
+        return {
+          ok: false,
+          error: toRemoteFailure(error),
+        }
+      }
+    }
     const result = await this.remote.commands.execute(this.sessionId, line, [])
     if (!result.ok) return result
     return { ok: true, value: { matched: result.value !== undefined } }

@@ -9,6 +9,12 @@ import type { SubagentAddress } from '@deepseek-ai/dsh-subagent/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
+import type {
+  SessionAdmissionAdapter,
+  SessionAdmissionOptions,
+  SessionAdmissionRoute,
+  SessionModelRoute,
+} from './admission.ts'
 import type { AgentContext } from '../scope.ts'
 import type { SessionSearchResultItem } from '../sessions/manager.ts'
 import type { SessionBinding, SessionListState } from '../sessions/service.ts'
@@ -16,6 +22,12 @@ import type { SessionFace } from './session.ts'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 
 export type { AgentContext } from '../scope.ts'
+export type {
+  SessionAdmissionAdapter,
+  SessionAdmissionOptions,
+  SessionAdmissionRoute,
+  SessionModelRoute,
+} from './admission.ts'
 
 /**
  * The sessions-service face injected as `ctx.sessions`.
@@ -152,4 +164,49 @@ export interface ISessions {
    * @param sessionId - listed, addressed, or staged Session identity.
    */
   openForRender(sessionId: SessionId): void
+  /**
+   * Register feature-owned admission route for an exact Session identity.
+   * Late registration, replacement, and revocation take effect immediately
+   * on existing Session bindings.
+   * @param sessionId - exact target Session identity.
+   * @param route - feature-owned handlers for prompt, cancel, queue mutation, and commands.
+   * @param options - conflict strategy; default 'replace' establishes the new single owner.
+   * @returns reference-safe disposer; an outdated disposer does not revoke a newer owner.
+   */
+  registerAdmission(
+    sessionId: SessionId,
+    route: SessionAdmissionRoute,
+    options?: SessionAdmissionOptions,
+  ): () => void
+  /**
+   * Register one feature-owned Session admission adapter across matching sessions.
+   * Duplicate adapter ids are rejected.
+   * @param adapter - adapter implementing handles(sessionId) and dispatch routes.
+   * @returns reference-safe disposer.
+   */
+  registerAdmissionAdapter(adapter: SessionAdmissionAdapter): () => void
+  /**
+   * Resolve model inspection and selection for one Session.
+   * Returns a registered admission route only; ordinary Sessions have no
+   * stock catalog owner in this slice.
+   * @param sessionId - target Session identity.
+   * @returns the feature route, or undefined.
+   */
+  modelRoute(sessionId: SessionId): SessionModelRoute | undefined
+  /**
+   * Resolve the ordinary command-catalog Session identity.
+   * A feature-owned Session that omits the helper hides commands.
+   * A catalog-addressed subagent without a feature route also hides commands.
+   * @param sessionId - target Session identity.
+   * @returns the catalog identity, or undefined when commands stay hidden.
+   */
+  commandCatalogSessionId(sessionId: SessionId): SessionId | undefined
+  /**
+   * Resolve the skill-catalog Session identity.
+   * A feature-owned Session that omits the helper hides skills.
+   * A catalog-addressed subagent without a feature route also hides skills.
+   * @param sessionId - target Session identity.
+   * @returns the catalog identity, or undefined when skills stay hidden.
+   */
+  skillCatalogSessionId(sessionId: SessionId): SessionId | undefined
 }

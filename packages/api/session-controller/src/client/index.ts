@@ -47,6 +47,12 @@ export type {
   SubmissionHandle,
 } from './contract/session.ts'
 export type { ISessions } from './contract/sessions.ts'
+export type {
+  SessionAdmissionAdapter,
+  SessionAdmissionOptions,
+  SessionAdmissionRoute,
+  SessionModelRoute,
+} from './contract/admission.ts'
 export { MutableSessionEventSource } from './contract/events.ts'
 export type {
   SessionEventChange,
