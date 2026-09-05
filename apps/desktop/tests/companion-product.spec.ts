@@ -665,9 +665,16 @@ describe('Desktop Companion product operations', () => {
       type: 'confirmed', operationId: cancel.operationId,
     })
     expect(calls).toEqual([
-      ['session.prompt', { sessionId, mode: 'queue', content: [{ type: 'text', text: 'continue' }] }],
-      ['session.cancel', { sessionId }],
+      ['session/prompt', { args: { request: {
+        requestId: submit.operationId,
+        sessionId,
+        mode: 'queue',
+        content: [{ type: 'text', text: 'continue' }],
+      } } }],
+      ['session/cancel', { args: { request: { sessionId } } }],
     ])
+    await handleCompanionProductOperation(submit, dependencies)
+    expect(calls[2]).toEqual(calls[0])
   })
 
   it('creates Workspace-owned and Ungrouped Sessions through the exact Host request', async () => {

@@ -92,7 +92,10 @@ import type { DesktopCompanionOperationOutput } from './companion-product.ts'
 import {
   DesktopCompanionOperationLedger, FileDesktopCompanionOperationStore,
 } from './companion-operation-ledger.ts'
-import { bootstrapDesktopHostCookie, createDesktopHostRpc } from './host-rpc.ts'
+import {
+  bootstrapDesktopHostCookie, createDesktopHostRpc, createDesktopHostSession,
+  pageDesktopHostSession, promptDesktopHostSession,
+} from './host-rpc.ts'
 import { desktopInstallationPresentation } from './desktop-installation.ts'
 import { downloadCompanionAttachment } from './companion-attachments.ts'
 import { projectDesktopRendererEvent } from './renderer-projection.ts'
@@ -707,13 +710,15 @@ async function finishSmoke(target: BrowserWindow, hostUrl: string): Promise<void
   })
   const sessionId = 'desktop-smoke-indexed-session'
   const needle = 'desktop-companion-smoke-indexed-needle'
-  const created = await smokeRpc.call('session.create', { sessionId })
+  const created = await createDesktopHostSession(smokeRpc, sessionId)
+  const promptRequestId = parseCompanionOperationId('desktop-smoke-prompt')
   const prompted = created.ok
-    ? await smokeRpc.call('session.prompt', {
+    ? await promptDesktopHostSession(smokeRpc, {
+      requestId: promptRequestId,
       sessionId,
       mode: 'queue',
       content: [{ type: 'text', text: needle }],
-    })
+    }, { rpcId: promptRequestId })
     : created
   if (!created.ok || !prompted.ok) {
     smokeLog(`companion entry seed failed ${JSON.stringify(!created.ok ? created : prompted)}`)
@@ -724,13 +729,27 @@ async function finishSmoke(target: BrowserWindow, hostUrl: string): Promise<void
   const turnDeadline = Date.now() + 10_000
   let turnSettled = false
   let turnEvidence: unknown
+  const follow = new AbortController()
+  const frames: unknown[] = []
+  const watching = smokeRpc.followSession(sessionId, follow.signal, (frame) => { frames.push(frame) })
   while (Date.now() < turnDeadline) {
-    const history = await smokeRpc.call('session.history', { sessionId, maxMessages: 1 })
-    turnEvidence = history
-    turnSettled = history.ok && smokeHistoryHasTurnEnd(history.value)
-    if (turnSettled) break
+    const snapshot = frames.find(frame => smokeFollowHasTurnEnd(frame))
+    if (snapshot !== undefined) {
+      turnSettled = true
+      turnEvidence = snapshot
+      break
+    }
+    const cursor = smokeFollowCursor(frames)
+    if (cursor !== undefined) {
+      const history = await pageDesktopHostSession(smokeRpc, { sessionId, throughSeq: cursor, maxMessages: 20 })
+      turnEvidence = history
+      turnSettled = history.ok && smokePageHasTurnEnd(history.value)
+      if (turnSettled) break
+    }
     await new Promise(resolve => setTimeout(resolve, 50))
   }
+  follow.abort()
+  await watching.catch(() => {})
   if (!turnSettled) {
     smokeLog(`companion entry turn did not settle ${JSON.stringify(turnEvidence)}`)
     console.error('dsh desktop smoke: Companion Session turn did not settle', turnEvidence)
@@ -788,11 +807,39 @@ async function finishSmoke(target: BrowserWindow, hostUrl: string): Promise<void
   target.close()
 }
 
-function smokeHistoryHasTurnEnd(value: unknown): boolean {
-  if (value === null || typeof value !== 'object' || !('events' in value) || !Array.isArray(value.events)) return false
-  return value.events.some((entry: unknown) => entry !== null && typeof entry === 'object'
-    && 'event' in entry && entry.event !== null && typeof entry.event === 'object'
-    && 'type' in entry.event && entry.event.type === 'turn/end')
+function isSmokeRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function smokeFollowCursor(frames: readonly unknown[]): number | undefined {
+  for (let index = frames.length - 1; index >= 0; index--) {
+    const frame = frames[index]
+    if (isSmokeRecord(frame) && frame.type === 'snapshot' && typeof frame.cursor === 'number') {
+      return frame.cursor
+    }
+  }
+  return undefined
+}
+
+function smokeEventType(value: unknown): string | undefined {
+  if (!isSmokeRecord(value)) return undefined
+  if (typeof value.type === 'string' && value.type === 'turn/end') return value.type
+  if (isSmokeRecord(value.event) && typeof value.event.type === 'string') return value.event.type
+  return undefined
+}
+
+function smokeFollowHasTurnEnd(frame: unknown): boolean {
+  if (!isSmokeRecord(frame)) return false
+  if (frame.type === 'event') return smokeEventType(frame.event) === 'turn/end'
+  if (frame.type !== 'snapshot' || !Array.isArray(frame.records)) return false
+  return frame.records.some(record => smokeEventType(record) === 'turn/end'
+    || (isSmokeRecord(record) && smokeEventType(record.event) === 'turn/end'))
+}
+
+function smokePageHasTurnEnd(value: unknown): boolean {
+  if (!isSmokeRecord(value) || !Array.isArray(value.records)) return false
+  return value.records.some(record => smokeEventType(record) === 'turn/end'
+    || (isSmokeRecord(record) && smokeEventType(record.event) === 'turn/end'))
 }
 
 function requestShutdown(exitCode: number, mode: 'exit' | 'allow-quit' = 'exit'): void {

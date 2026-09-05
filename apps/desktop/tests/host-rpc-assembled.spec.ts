@@ -6,9 +6,14 @@ import { fileURLToPath } from 'node:url'
 import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { WorkspaceTypertGenerator } from '@deepseek-ai/dsh-typert-generator'
 import { REMOTE_PROTOCOL_LIMITS } from '@deepseek-ai/dsh-remote-protocol'
+import { parsePersonalPairingId } from '@deepseek-ai/dsh-remote-access'
+import { startMockLlmServer } from '@deepseek-ai/dsh-llm-mock-server'
+import { parseCompanionOperationId, parseCompanionSessionId } from '@deepseek-ai/dsh-remote-protocol'
+import { handleCompanionProductOperation } from '../src/companion-product.ts'
 import {
   archiveDesktopHostSession,
-  bootstrapDesktopHostCookie, createDesktopHostRpc, createDesktopHostSession, createDesktopHostWorkspace,
+  bootstrapDesktopHostCookie, cancelDesktopHostSession, createDesktopHostRpc, createDesktopHostSession,
+  createDesktopHostWorkspace,
   listDesktopHostSessions, pageDesktopHostSession,
 } from '../src/host-rpc.ts'
 import { spawnWebHost, type RunningWebHost } from '../src/spawn-web-host.ts'
@@ -70,7 +75,9 @@ function cleanEnvironment(home: string): NodeJS.ProcessEnv {
   }
 }
 
-async function startShippedHost(): Promise<{ home: string; running: RunningWebHost }> {
+async function startShippedHost(
+  env: NodeJS.ProcessEnv = {},
+): Promise<{ home: string; running: RunningWebHost }> {
   const home = await mkdtemp(join(tmpdir(), 'dsh-desktop-host-rpc-'))
   homes.push(home)
   const tsx = new URL('../../../node_modules/tsx/dist/esm/index.mjs', import.meta.url).href
@@ -83,7 +90,7 @@ async function startShippedHost(): Promise<{ home: string; running: RunningWebHo
       '--no-open', '--host', '127.0.0.1', '--port', '0',
     ],
     cwd: repo,
-    env: cleanEnvironment(home),
+    env: { ...cleanEnvironment(home), ...env },
   }, 90_000)
   children.push(running)
   return { home, running }
@@ -280,7 +287,87 @@ describe('Desktop Host RPC against shipped dsh web', () => {
     await new Promise(resolve => setTimeout(resolve, 250))
     expect(frames.length).toBe(seen)
   }, 180_000)
+
+  it('submits session/prompt with initiator requestId then cancels through session/cancel', async () => {
+    const apiKey = 'desktop-assembled-prompt-key'
+    const llm = await startMockLlmServer({ sequence: ['stall'], apiKey })
+    try {
+      const first = await startShippedHost({
+        DEEPSEEK_API_KEY: apiKey,
+        DEEPSEEK_BASE_URL: llm.baseURL,
+      })
+      const cookie = await bootstrapDesktopHostCookie(first.running.launchUrl, first.running.url)
+      const rpc = createDesktopHostRpc(first.running.url, {
+        timeoutMs: 15_000,
+        responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
+        cookieHeader: cookie,
+      })
+      const sessionId = parseCompanionSessionId('desktop-prompt-session')
+      await expect(createDesktopHostSession(rpc, sessionId)).resolves.toMatchObject({
+        ok: true, value: { sessionId },
+      })
+      const submit = {
+        type: 'submit-prompt' as const,
+        operationId: parseCompanionOperationId('desktop-prompt-operation'),
+        sessionId,
+        text: 'assembled companion prompt',
+      }
+      const pairing = {
+        pairingId: parsePersonalPairingId('pairing-assembled'),
+        attachmentKey: new Uint8Array(32),
+        now: () => 1_000,
+        downloadAttachment: async () => { throw new Error('assembled prompt must not download') },
+        submitAttachment: async () => { throw new Error('assembled prompt must not submit attachments') },
+        generation: 1,
+        desktopRevision: 1,
+        desktopName: 'Assembled Desktop',
+        resolveInteraction: () => undefined,
+        pendingInteractions: () => [],
+        workspaceSnapshot: async () => ({ items: [], archivedSessionIds: [] }),
+      }
+      await expect(handleCompanionProductOperation(submit, { ...pairing, host: rpc })).resolves.toMatchObject({
+        type: 'confirmed', operationId: submit.operationId,
+      })
+      const frames: unknown[] = []
+      const follow = new AbortController()
+      const watching = rpc.followSession(sessionId, follow.signal, (frame) => { frames.push(frame) })
+      await expect.poll(() => frames.some(frame => followHasUserRequest(frame, submit.operationId))).toBe(true)
+      await expect(handleCompanionProductOperation({
+        type: 'cancel-session', operationId: parseCompanionOperationId('desktop-cancel-operation'), sessionId,
+      }, { ...pairing, host: rpc })).resolves.toMatchObject({ type: 'confirmed' })
+      await expect.poll(() => frames.some(frame => followHasTurnEnd(frame))).toBe(true)
+      follow.abort()
+      await watching
+      const snapshot = frames.find(frame => isRecord(frame) && frame.type === 'snapshot')
+      if (!isRecord(snapshot) || typeof snapshot.cursor !== 'number') throw new Error('missing follow snapshot')
+      const paged = await pageDesktopHostSession(rpc, { sessionId, throughSeq: snapshot.cursor, maxMessages: 20 })
+      expect(paged.ok).toBe(true)
+      await expect(cancelDesktopHostSession(rpc, sessionId)).resolves.toMatchObject({ ok: true, value: { accepted: true } })
+    } finally {
+      await llm.close()
+    }
+  }, 180_000)
 })
+
+function followHasUserRequest(frame: unknown, requestId: string): boolean {
+  if (!isRecord(frame)) return false
+  const events = frame.type === 'event' ? [frame.event] : frame.type === 'snapshot' && Array.isArray(frame.records)
+    ? frame.records.map(record => isRecord(record) ? record.event : undefined)
+    : []
+  return events.some((event) => {
+    return isRecord(event) && event.type === 'user/message' && isRecord(event.data)
+      && isRecord(event.data.source) && event.data.source.rpcId === requestId
+  })
+}
+
+function followHasTurnEnd(frame: unknown): boolean {
+  if (!isRecord(frame)) return false
+  if (frame.type === 'event') {
+    return isRecord(frame.event) && frame.event.type === 'turn/end'
+  }
+  if (frame.type !== 'snapshot' || !Array.isArray(frame.records)) return false
+  return frame.records.some(record => isRecord(record) && isRecord(record.event) && record.event.type === 'turn/end')
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)

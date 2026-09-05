@@ -38,8 +38,10 @@ import {
   receiveCompanionAttachment,
 } from './companion-attachments.ts'
 import {
+  cancelDesktopHostSession,
   createDesktopHostRpc,
   pageDesktopHostSession,
+  promptDesktopHostSession,
   type DesktopHostRpc,
   type DesktopHostRpcOptions,
   type DesktopHostRpcResult,
@@ -406,15 +408,9 @@ export async function handleCompanionProductOperation(
         committedAt: dependencies.now(), outcome: 'accepted',
       }
     case 'submit-prompt':
-      return await acceptedHostMutation(operation, dependencies, 'session.prompt', {
-        sessionId: operation.sessionId,
-        mode: 'queue',
-        content: [{ type: 'text', text: operation.text }],
-      })
+      return await acceptedHostMutation(operation, dependencies)
     case 'cancel-session':
-      return await acceptedHostMutation(operation, dependencies, 'session.cancel', {
-        sessionId: operation.sessionId,
-      })
+      return await acceptedHostMutation(operation, dependencies)
     case 'settle-interaction':
       return await settleInteraction(operation, dependencies)
     case 'read-image':
@@ -673,10 +669,16 @@ export async function projectDesktopCompanionLiveSession(
 async function acceptedHostMutation(
   operation: Extract<CompanionProductOperation, { type: 'submit-prompt' | 'cancel-session' }>,
   dependencies: CompanionProductOperationDependencies,
-  method: 'session.prompt' | 'session.cancel',
-  payload: Record<string, unknown>,
 ): Promise<CompanionResult> {
-  const response = await dependencies.host.call(method, payload, { rpcId: operation.operationId })
+  const response = operation.type === 'submit-prompt'
+    ? await promptDesktopHostSession(dependencies.host, {
+      requestId: operation.operationId,
+      sessionId: operation.sessionId,
+      mode: 'queue',
+      content: [{ type: 'text', text: operation.text }],
+    }, { rpcId: operation.operationId })
+    : await cancelDesktopHostSession(dependencies.host, operation.sessionId, { rpcId: operation.operationId })
+  const method = operation.type === 'submit-prompt' ? 'session/prompt' : 'session/cancel'
   if (!response.ok) return operationFailed(operation, normalizeFailure(response.failure))
   if (!isRecord(response.value) || response.value.accepted !== true) return invalidHostResult(operation, method)
   return { type: 'confirmed', operationId: operation.operationId, committedAt: dependencies.now(), outcome: 'accepted' }
