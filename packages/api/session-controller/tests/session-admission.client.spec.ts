@@ -14,6 +14,8 @@ import { describe, expect, it, vi } from 'vitest'
 import type { MessageId, SessionId } from '@deepseek-ai/dsh-session/types'
 import { ClientSessions } from '../src/client/sessions/service.ts'
 import type { SessionAdmissionAdapter, SessionAdmissionRoute } from '../src/client/contract/admission.ts'
+import type { SessionRemote } from '../src/client/transport.ts'
+import type { SessionSelectModelRequest } from '../src/types.ts'
 import {
   FakeApiClient,
   fakeRemote,
@@ -841,6 +843,36 @@ describe('Session Client admission dispatch', () => {
     expect(svc.modelRoute(sessionId)).toBeUndefined()
     dropHide()
     expect(svc.modelRoute(sessionId)?.selectModel).toBeTypeOf('function')
+  })
+
+  it('honors abort on stock selectModel without a second Remote argument', async () => {
+    type SelectModelExtra = SessionRemote['selectModel'] extends (
+      request: SessionSelectModelRequest,
+      extra: infer Extra,
+    ) => unknown ? Extra : never
+    const generatedSelectModelIsUnary: [SelectModelExtra] extends [never] ? true : false = true
+    expect(generatedSelectModelIsUnary).toBe(true)
+    const { svc, api } = bench()
+    const sessionId = sid('session-stock-abort')
+    api.onList = () => Promise.resolve(ok({
+      items: [{ sessionId, updatedAt: 100, running: false, blank: false }],
+    }))
+    await svc.refresh()
+    await expect(
+      svc.modelRoute(sessionId)!.selectModel!(
+        { provider: 'fixture', model: 'fixture' },
+        AbortSignal.abort(),
+      ),
+    ).rejects.toMatchObject({ name: 'AbortError' })
+    expect(api.callsOf('session.selectModel')).toEqual([])
+    await expect(
+      svc.modelRoute(sessionId)!.selectModel!({ provider: 'fixture', model: 'ok' }),
+    ).resolves.toMatchObject({ ok: true })
+    expect(api.callsOf('session.selectModel')).toEqual([{
+      sessionId,
+      provider: 'fixture',
+      model: 'ok',
+    }])
   })
 
   it('catalog subagent without admission has no model route', async () => {
