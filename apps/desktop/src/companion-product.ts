@@ -1394,8 +1394,10 @@ function startWorkspaceFollowCache(rpc: DesktopHostRpc, signal: AbortSignal): De
   return cache
 }
 
-class DesktopSessionHistoryCache {
+/** Follow/page owner for one Desktop Host generation. */
+export class DesktopSessionHistoryCache {
   private readonly follows = new Map<string, {
+    readonly maxMessages: number | undefined
     readonly throughSeq: number
     events: SessionWireEvent[]
     hasMore: boolean
@@ -1407,13 +1409,33 @@ class DesktopSessionHistoryCache {
   constructor(
     private readonly rpc: DesktopHostRpc,
     private readonly signal: AbortSignal,
-  ) {}
+  ) {
+    signal.addEventListener('abort', () => { this.clear() }, { once: true })
+  }
+
+  clear(): void {
+    this.follows.clear()
+    for (const pending of this.waiters.values()) {
+      for (const waiter of pending) waiter(undefined)
+    }
+    this.waiters.clear()
+  }
 
   async page(
     sessionId: string,
     request: { beforeSeq?: number; maxMessages?: number },
     signal?: AbortSignal,
   ): Promise<DesktopHostRpcResult> {
+    if (this.signal.aborted || signal?.aborted) {
+      return {
+        ok: false,
+        failure: {
+          kind: 'wire',
+          code: 'HOST_WIRE_INVALID',
+          message: 'Desktop Host session follow snapshot is still loading',
+        },
+      }
+    }
     const opening = await this.opening(sessionId, request.maxMessages, signal)
     if (opening === undefined) {
       return {
@@ -1452,48 +1474,58 @@ class DesktopSessionHistoryCache {
     }
   }
 
+  private followKey(sessionId: string, maxMessages: number | undefined): string {
+    return `${sessionId}:${maxMessages === undefined ? '' : String(maxMessages)}`
+  }
+
   private async opening(
     sessionId: string,
     maxMessages: number | undefined,
     signal?: AbortSignal,
   ): Promise<{ events: SessionWireEvent[]; hasMore: boolean; throughSeq: number } | undefined> {
-    const current = this.follows.get(sessionId)
+    const key = this.followKey(sessionId, maxMessages)
+    const current = this.follows.get(key)
     if (current !== undefined) return current
     this.ensureFollow(sessionId, maxMessages)
-    const waiters = this.waiters.get(sessionId) ?? new Set()
-    this.waiters.set(sessionId, waiters)
+    const ready = this.follows.get(key)
+    if (ready !== undefined) return ready
+    const waiters = this.waiters.get(key) ?? new Set()
+    this.waiters.set(key, waiters)
     return await new Promise((resolve) => {
       const finish = (_snapshot: { events: SessionWireEvent[]; hasMore: boolean } | undefined): void => {
         signal?.removeEventListener('abort', abort)
         waiters.delete(finish)
-        const ready = this.follows.get(sessionId)
-        resolve(ready)
+        resolve(this.follows.get(key))
       }
-      const abort = (): void => { finish(undefined) }
+      const abort = (): void => {
+        signal?.removeEventListener('abort', abort)
+        waiters.delete(finish)
+        resolve(undefined)
+      }
       waiters.add(finish)
       signal?.addEventListener('abort', abort, { once: true })
-      if (this.signal.aborted) finish(undefined)
+      if (signal?.aborted || this.signal.aborted) abort()
     })
   }
 
   private ensureFollow(sessionId: string, maxMessages: number | undefined): void {
-    if (this.follows.has(sessionId) || this.waiters.has(sessionId)) {
-      if (!this.follows.has(sessionId) && this.rpc.followSession !== undefined) return
-    }
     if (this.rpc.followSession === undefined) return
-    const waiters = this.waiters.get(sessionId) ?? new Set()
-    this.waiters.set(sessionId, waiters)
+    const key = this.followKey(sessionId, maxMessages)
+    if (this.follows.has(key) || this.waiters.has(key)) return
+    const waiters = new Set<(snapshot: { events: SessionWireEvent[]; hasMore: boolean } | undefined) => void>()
+    this.waiters.set(key, waiters)
     void this.rpc.followSession(sessionId, this.signal, (frame) => {
-      this.accept(sessionId, frame)
+      this.accept(key, maxMessages, frame)
     }, maxMessages).catch(() => {
-      const pending = this.waiters.get(sessionId)
+      const pending = this.waiters.get(key)
+      this.waiters.delete(key)
+      this.follows.delete(key)
       if (pending === undefined) return
-      this.waiters.delete(sessionId)
       for (const waiter of pending) waiter(undefined)
     })
   }
 
-  private accept(sessionId: string, frame: unknown): void {
+  private accept(key: string, maxMessages: number | undefined, frame: unknown): void {
     if (!isRecord(frame) || typeof frame.type !== 'string') return
     if (frame.type === 'snapshot') {
       if (typeof frame.cursor !== 'number' || !Array.isArray(frame.records) || typeof frame.hasMore !== 'boolean') {
@@ -1502,19 +1534,20 @@ class DesktopSessionHistoryCache {
       const records = parseHistoryRecordList(frame.records)
       if (records === undefined) return
       const snapshot = {
+        maxMessages,
         throughSeq: frame.cursor,
         events: expandSessionHistoryRecords(records),
         hasMore: frame.hasMore,
       }
-      this.follows.set(sessionId, snapshot)
-      const pending = this.waiters.get(sessionId)
-      this.waiters.delete(sessionId)
+      this.follows.set(key, snapshot)
+      const pending = this.waiters.get(key)
+      this.waiters.delete(key)
       if (pending !== undefined) {
         for (const waiter of pending) waiter(snapshot)
       }
       return
     }
-    const current = this.follows.get(sessionId)
+    const current = this.follows.get(key)
     if (current === undefined || frame.type !== 'event' || !isRecord(frame.event)) return
     current.events = [...current.events, frame.event as SessionWireEvent]
   }
