@@ -32,6 +32,7 @@ import type { RemoteHostFacts } from '@deepseek-ai/dsh-api-remotes/client'
 import type { WorkspaceId, WorkspaceView } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { createWorkspaceViewStore } from '../stores.ts'
+import type { MembershipAvailabilitySnapshot } from '../membership-gateway.ts'
 import type { PendingInvitationsSnapshot } from '../pending-invitations-source.ts'
 
 /**
@@ -102,6 +103,11 @@ export type WorkspaceBrowserInjected = {
      * `usePendingInvitations`; the browsing region does not start a timer.
      */
     pendingInvitations: HostObservable<PendingInvitationsSnapshot>
+    /**
+     * Apply-owned membership-client availability. Root inject is cached for
+     * the registration lifetime, so late bind and replace must ride this hook.
+     */
+    membership: HostObservable<MembershipAvailabilitySnapshot>
   }
   /**
    * Start a New Session in a Workspace: reuse-or-create its blank session and
@@ -149,10 +155,11 @@ export type WorkspaceBrowserInjected = {
   /** Adopt a picked host directory as a real Workspace before targeting a Session. */
   createWorkspace: (input: { path: string }) => Promise<WorkspaceView>
   /**
-   * Optional Cloud Project membership transport. Absence keeps 工作区设置 in
-   * the row menu and leaves the invite wizard unmounted.
+   * Late-bound Cloud Project membership transport. Callbacks resolve the
+   * current membership client at call time. Modal availability rides
+   * `hooks.membership`; absence of a live client closes settings and the wizard.
    */
-  projectMembership?: ProjectMembershipGateway | undefined
+  projectMembership: ProjectMembershipGateway
 }
 
 /** Cloud Project role used by workspace settings and the invite wizard. */

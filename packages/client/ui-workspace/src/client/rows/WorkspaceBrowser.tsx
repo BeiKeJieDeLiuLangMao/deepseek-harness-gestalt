@@ -829,6 +829,7 @@ export function WorkspaceBrowser({
   useDirectoryFlow,
   useHostInfo,
   usePendingInvitations,
+  useMembership,
   renderSlot,
   projectMembership,
   t,
@@ -836,6 +837,8 @@ export function WorkspaceBrowser({
   const home = useHostInfo(info => info.home)
   const invitations = usePendingInvitations(state => state.invitations)
   const invitationEpoch = usePendingInvitations(state => state.epoch)
+  const membershipAvailable = useMembership(state => state.available)
+  const membershipEpoch = useMembership(state => state.epoch)
   const workspaces = useWorkspaces(state => state.items)
   const workspacePhase = useWorkspaces(state => state.phase)
   const archivedSessionIds = useWorkspaces(state => state.archivedSessionIds)
@@ -902,6 +905,10 @@ export function WorkspaceBrowser({
   const [pendingInvitation, setPendingInvitation] = useState<WorkspacePendingInvitation | null>(null)
   const goneInvitationIds = useRef(new Set<string>())
   useEffect(() => {
+    if (!membershipAvailable) {
+      setPendingInvitation(null)
+      return
+    }
     const offered = invitations.find(
       invitation => !goneInvitationIds.current.has(invitation.invitationId),
     )
@@ -911,7 +918,7 @@ export function WorkspaceBrowser({
       if (current !== null) return current
       return offered
     })
-  }, [invitationEpoch, invitations])
+  }, [invitationEpoch, invitations, membershipAvailable])
 
   // Rail search = expand + land in the search box: the flag arms before the
   // expand request; once the shell flips wide the input mounts and takes focus.
@@ -1063,6 +1070,10 @@ export function WorkspaceBrowser({
   const [deleteCommittedId, setDeleteCommittedId] = useState<WorkspaceId | null>(null)
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [settingsTarget, setSettingsTarget] = useState<{ workspaceId: WorkspaceId; title: string; path: string } | null>(null)
+  useEffect(() => {
+    if (membershipAvailable) return
+    setSettingsTarget(null)
+  }, [membershipAvailable])
   useEffect(() => {
     if (deleteCommittedId === null
       || workspaces.some(workspace => workspace.workspaceId === deleteCommittedId)) return
@@ -1385,8 +1396,9 @@ export function WorkspaceBrowser({
         {deleting && <div className={css.deleteStatus} role="status">{t('delete.pending')}</div>}
         {deleteError !== null && <div className={css.renameError} role="alert">{deleteError}</div>}
       </Modal>
-      {settingsTarget !== null && projectMembership !== undefined && (
+      {settingsTarget !== null && membershipAvailable && (
         <WorkspaceSettingsModal
+          key={membershipEpoch}
           workspaceId={settingsTarget.workspaceId}
           workspaceTitle={settingsTarget.title}
           workspacePath={settingsTarget.path}
@@ -1395,8 +1407,9 @@ export function WorkspaceBrowser({
           t={t}
         />
       )}
-      {pendingInvitation !== null && projectMembership !== undefined && (
+      {pendingInvitation !== null && membershipAvailable && (
         <InviteWizardModal
+          key={`${membershipEpoch}:${pendingInvitation.invitationId}`}
           invitation={pendingInvitation}
           workspaces={workspaces.map(workspace => ({
             workspaceId: workspace.workspaceId,

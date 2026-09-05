@@ -148,6 +148,21 @@ describe('membershipGatewayOf', () => {
     })
   })
 
+  it('resolves the current client on each call and rejects while unbound', async () => {
+    let current: ReturnType<typeof client> | undefined
+    const gateway = membershipGatewayOf(() => current)
+    await expect(gateway.pendingInvitations())
+      .rejects.toThrow('requires a membership client')
+    current = client()
+    await expect(gateway.pendingInvitations()).resolves.toHaveLength(1)
+    const replacement = client({
+      pendingInvitations: vi.fn(async () => []),
+    })
+    current = replacement
+    await expect(gateway.pendingInvitations()).resolves.toEqual([])
+    expect(replacement.pendingInvitations).toHaveBeenCalledOnce()
+  })
+
   it('rejects workspace-keyed Git methods that Host membership does not provide', async () => {
     const gateway = membershipGatewayOf(client())
     await expect(gateway.createProject({ name: 'Assembled', localWorkspaceId: 'ws' as never }))

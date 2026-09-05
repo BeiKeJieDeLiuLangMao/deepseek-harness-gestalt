@@ -108,6 +108,24 @@ function invitationsHook(invitations: readonly WorkspacePendingInvitation[] = []
   })
 }
 
+function liveMembership(available: boolean, epoch = 0) {
+  let current = { available, epoch }
+  const listeners = new Set<() => void>()
+  return {
+    hook: bindSnapshotSelector({
+      getSnapshot: () => current,
+      subscribe: (listener: () => void) => {
+        listeners.add(listener)
+        return () => { listeners.delete(listener) }
+      },
+    }),
+    set(next: { available: boolean; epoch: number }): void {
+      current = next
+      for (const listener of listeners) listener()
+    },
+  }
+}
+
 function liveInvitations(invitations: readonly WorkspacePendingInvitation[], epoch = 1) {
   let current = { invitations, epoch }
   const listeners = new Set<() => void>()
@@ -151,9 +169,13 @@ function mount(membership: ProjectMembershipGateway | undefined, overrides: Part
     useDirectoryFlow: bindSnapshotSelector({ getSnapshot: () => true, subscribe: () => () => {} }),
     useHostInfo: selector => selector({ home: '/Users/octocat', isLoopback: true }),
     usePendingInvitations: invitationsHook(),
+    useMembership: bindSnapshotSelector({
+      getSnapshot: () => ({ available: membership !== undefined, epoch: 0 }),
+      subscribe: () => () => {},
+    }),
     renderSlot: ((_name: string, owner: { open: boolean }) => (owner.open ? <div data-testid="directory-flow" /> : null)) as never,
     t,
-    ...(membership === undefined ? {} : { projectMembership: membership }),
+    projectMembership: membership ?? gateway(),
     ...overrides,
   }
   return render(<WorkspaceBrowser {...props} />)
@@ -200,6 +222,29 @@ describe('workspace settings and invite wizard (M4)', () => {
     expect(cloneDirectoryName('https://example.test/o/CON.git', 'fallback')).toBe('project-CON')
     expect(cloneDirectoryName('https://example.test/o/a*b.git', 'fallback')).toBe('a-b')
     expect(cloneDirectoryName(':', '..')).toBe('project')
+  })
+
+  it('closes settings when membership unloads and ignores a stale project lookup', async () => {
+    const firstLookup = deferred<undefined>()
+    const first = gateway({
+      projectForWorkspace: vi.fn().mockReturnValue(firstLookup.promise),
+    })
+    const membership = liveMembership(true, 0)
+    vi.useFakeTimers()
+    try {
+      mount(first, { useMembership: membership.hook })
+      openWorkspaceMenu()
+      fireEvent.click(screen.getByRole('menuitem', { name: '工作区设置' }))
+      expect(screen.getByText('正在查找已绑定的云项目…')).toBeTruthy()
+      membership.set({ available: false, epoch: 1 })
+      await flush()
+      expect(screen.queryByText('正在查找已绑定的云项目…')).toBeNull()
+      firstLookup.resolve(undefined)
+      await flush()
+      expect(screen.queryByRole('dialog')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('offers 工作区设置 as the first workspace-row menu item', () => {

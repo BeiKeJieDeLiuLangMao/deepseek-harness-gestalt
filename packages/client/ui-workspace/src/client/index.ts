@@ -25,7 +25,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-project-membership-client'
 import type { WorkspaceBrowserInjected, WorkspacePickerInjected } from './contract/slots.ts'
 import { Config, type WorkspaceConfig } from '../config.ts'
-import { membershipGatewayOf } from './membership-gateway.ts'
+import { createMembershipAvailabilitySource, membershipGatewayOf } from './membership-gateway.ts'
 import {
   createPendingInvitationsSource, type PendingInvitationPollClient,
 } from './pending-invitations-source.ts'
@@ -92,11 +92,16 @@ export function apply(ctx: Context, config?: WorkspaceConfig): void {
     () => ctx.get('projectMembershipClient') as PendingInvitationPollClient | undefined,
     pollIntervalMs,
   )
+  const membershipAvailability = createMembershipAvailabilitySource(
+    () => ctx.get('projectMembershipClient') !== undefined,
+  )
+  const projectMembership = membershipGatewayOf(() => ctx.get('projectMembershipClient'))
   ctx.effect(() => {
     pendingInvitations.start()
     const stop = ctx.on('internal/service', (name: string) => {
       if (name !== 'projectMembershipClient') return
       pendingInvitations.notifyProviderChange()
+      membershipAvailability.notifyProviderChange()
     })
     return () => {
       stop()
@@ -154,15 +159,12 @@ export function apply(ctx: Context, config?: WorkspaceConfig): void {
       await workspaces.insertSessionBefore(workspaceId, sessionId, beforeSessionId)
     },
     createWorkspace: input => workspaces.create(input),
-    ...((): Pick<WorkspaceBrowserInjected, 'projectMembership'> => {
-      const client = ctx.get('projectMembershipClient')
-      if (client === undefined) return {}
-      return { projectMembership: membershipGatewayOf(client) }
-    })(),
+    projectMembership,
     hooks: {
       directoryFlow: browserFlowSource,
       hostInfo,
       pendingInvitations: pendingInvitations.source,
+      membership: membershipAvailability.source,
     },
   })
   const pickerInjected = (): WorkspacePickerInjected => ({

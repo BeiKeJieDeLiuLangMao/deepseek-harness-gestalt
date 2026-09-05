@@ -75,6 +75,25 @@ async function bench() {
   }
 }
 
+function membershipClient(overrides: Record<string, unknown> = {}) {
+  return {
+    createProject: vi.fn(),
+    projectByRemote: vi.fn(),
+    roster: vi.fn(),
+    heartbeat: vi.fn(),
+    closePresence: vi.fn(),
+    invite: vi.fn(),
+    issuedInvitations: vi.fn(),
+    retractInvitation: vi.fn(),
+    decideInvitation: vi.fn(),
+    changeRole: vi.fn(),
+    setMemberTags: vi.fn(),
+    removeMember: vi.fn(),
+    pendingInvitations: vi.fn(async () => []),
+    ...overrides,
+  }
+}
+
 type HoleName = 'sidebar.workspaces' | 'conversation.hero.workspace' | 'conversation.empty.workspace'
 
 /** Declare any subset of the holes with a single root registration ('root' is a single slot). */
@@ -147,7 +166,10 @@ describe('ui-workspace apply', () => {
     expect(b.insertSessionBefore).toHaveBeenCalledWith('ws', 's1', 's2')
     await browser.createWorkspace({ path: '/tmp/browser-project' })
     expect(b.create).toHaveBeenCalledWith({ path: '/tmp/browser-project' })
-    expect(browser.projectMembership).toBeUndefined()
+    expect(browser.projectMembership).toBeDefined()
+    expect(browser.hooks.membership.getSnapshot()).toEqual({ available: false, epoch: 0 })
+    await expect(browser.projectMembership.roster('project-1'))
+      .rejects.toThrow('requires a membership client')
 
     const picker = (b.slots.entries('conversation.hero.workspace')[0]!.inject as () => WorkspacePickerInjected)()
     await picker.createWorkspace({ path: '/tmp/project' })
@@ -178,6 +200,51 @@ describe('ui-workspace apply', () => {
     dispose()
     expect(browser.hooks.directoryFlow.getSnapshot()).toBe(false)
     unsubscribe()
+  })
+
+  it('keeps one cached inject object live across late bind, replace, and unload', async () => {
+    const b = await bench()
+    declare(b.slots, 'sidebar.workspaces')
+    const fiber = b.ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+    const entry = b.slots.entries('sidebar.workspaces')[0]!
+    const injected = (entry.inject as () => WorkspaceBrowserInjected)()
+    expect(injected.hooks.membership.getSnapshot().available).toBe(false)
+    const notified = vi.fn()
+    injected.hooks.membership.subscribe(notified)
+
+    const firstRoster = vi.fn(async () => ({
+      project: { id: 'p1', name: 'First', boundRemoteUrl: 'https://github.com/o/first' },
+      members: [],
+    }))
+    const first = membershipClient({ roster: firstRoster })
+    const stopFirst = b.ctx.provide('projectMembershipClient', first)
+    expect(injected.hooks.membership.getSnapshot()).toEqual({ available: true, epoch: 1 })
+    expect(notified).toHaveBeenCalledTimes(1)
+    await expect(injected.projectMembership.roster('p1')).resolves.toMatchObject({
+      project: { id: 'p1', name: 'First' },
+    })
+    expect(firstRoster).toHaveBeenCalledOnce()
+
+    stopFirst()
+    const secondRoster = vi.fn(async () => ({
+      project: { id: 'p2', name: 'Second', boundRemoteUrl: 'https://github.com/o/second' },
+      members: [],
+    }))
+    const second = membershipClient({ roster: secondRoster })
+    const stopSecond = b.ctx.provide('projectMembershipClient', second)
+    expect(injected.hooks.membership.getSnapshot()).toEqual({ available: true, epoch: 3 })
+    await expect(injected.projectMembership.roster('p2')).resolves.toMatchObject({
+      project: { id: 'p2', name: 'Second' },
+    })
+    expect(firstRoster).toHaveBeenCalledOnce()
+    expect(secondRoster).toHaveBeenCalledOnce()
+
+    stopSecond()
+    expect(injected.hooks.membership.getSnapshot().available).toBe(false)
+    await expect(injected.projectMembership.roster('p2'))
+      .rejects.toThrow('requires a membership client')
+    await fiber.dispose()
   })
 
   it('injects membership callbacks when a projectMembershipClient is present', async () => {
