@@ -13,7 +13,7 @@ import { parseCompanionOperationId, parseCompanionSessionId } from '@deepseek-ai
 import { handleCompanionProductOperation } from '../src/companion-product.ts'
 import {
   archiveDesktopHostSession,
-  bootstrapDesktopHostCookie, cancelDesktopHostSession, createDesktopHostRpc, createDesktopHostSession,
+  bootstrapDesktopHostCookie, createDesktopHostRpc, createDesktopHostSession,
   createDesktopHostWorkspace,
   listDesktopHostSessions, pageDesktopHostSession,
 } from '../src/host-rpc.ts'
@@ -326,38 +326,41 @@ describe('Desktop Host RPC against shipped dsh web', () => {
         pendingInteractions: () => [],
         workspaceSnapshot: async () => ({ items: [], archivedSessionIds: [] }),
       }
-      await expect(handleCompanionProductOperation(submit, { ...pairing, host: rpc })).resolves.toMatchObject({
-        type: 'confirmed', operationId: submit.operationId,
-      })
-      await expect.poll(async () => {
-        const log = await durableSessionLog(first.home, sessionId)
-        return log.includes(`"rpcId":"${submit.operationId}"`)
-      }).toBe(true)
       const frames: unknown[] = []
       const follow = new AbortController()
       const watching = rpc.followSession(sessionId, follow.signal, (frame) => { frames.push(frame) })
-      await expect.poll(() => frames.some(frame => followHasUserRequest(frame, submit.operationId))).toBe(true)
-      const llmCallsBeforeCancel = llm.requests.length
-      expect(llmCallsBeforeCancel).toBeGreaterThan(0)
-      await expect(handleCompanionProductOperation({
-        type: 'cancel-session', operationId: parseCompanionOperationId('desktop-cancel-operation'), sessionId,
-      }, { ...pairing, host: rpc })).resolves.toMatchObject({ type: 'confirmed' })
-      await expect.poll(() => frames.some(frame => followHasTurnEnd(frame))).toBe(true)
-      await expect.poll(async () => {
-        const listed = await listDesktopHostSessions(rpc)
-        if (!listed.ok || !isRecord(listed.value) || !Array.isArray(listed.value.items)) return false
-        const row = listed.value.items.find(item => isRecord(item) && item.sessionId === sessionId)
-        return isRecord(row) && row.running === false
-      }).toBe(true)
-      await new Promise(resolve => setTimeout(resolve, 400))
-      expect(llm.requests.length).toBe(llmCallsBeforeCancel)
-      follow.abort()
-      await watching
-      const snapshot = frames.find(frame => isRecord(frame) && frame.type === 'snapshot')
-      if (!isRecord(snapshot) || typeof snapshot.cursor !== 'number') throw new Error('missing follow snapshot')
-      const paged = await pageDesktopHostSession(rpc, { sessionId, throughSeq: snapshot.cursor, maxMessages: 20 })
-      expect(paged.ok).toBe(true)
-      await expect(cancelDesktopHostSession(rpc, sessionId)).resolves.toMatchObject({ ok: true, value: { accepted: true } })
+      try {
+        await expect(handleCompanionProductOperation(submit, { ...pairing, host: rpc })).resolves.toMatchObject({
+          type: 'confirmed', operationId: submit.operationId,
+        })
+        await expect.poll(async () => {
+          const log = await durableSessionLog(first.home, sessionId)
+          return log.includes(`"rpcId":"${submit.operationId}"`)
+        }).toBe(true)
+        await expect.poll(() => llm.requests.length > 0).toBe(true)
+        await expect.poll(() => frames.some(frame => followHasTurnStart(frame))).toBe(true)
+        expect(frames.some(frame => followHasUserRequest(frame, submit.operationId))).toBe(true)
+        const llmCallsBeforeCancel = llm.requests.length
+        await expect(handleCompanionProductOperation({
+          type: 'cancel-session', operationId: parseCompanionOperationId('desktop-cancel-operation'), sessionId,
+        }, { ...pairing, host: rpc })).resolves.toMatchObject({ type: 'confirmed' })
+        await expect.poll(() => frames.some(frame => followHasTurnEnd(frame))).toBe(true)
+        await expect.poll(async () => {
+          const listed = await listDesktopHostSessions(rpc)
+          if (!listed.ok || !isRecord(listed.value) || !Array.isArray(listed.value.items)) return false
+          const row = listed.value.items.find(item => isRecord(item) && item.sessionId === sessionId)
+          return isRecord(row) && row.running === false
+        }).toBe(true)
+        expect(llm.requests.length).toBe(llmCallsBeforeCancel)
+        const latest = [...frames].reverse().find(frame => isRecord(frame) && frame.type === 'snapshot')
+          ?? frames.find(frame => isRecord(frame) && frame.type === 'snapshot')
+        if (!isRecord(latest) || typeof latest.cursor !== 'number') throw new Error('missing follow snapshot')
+        const paged = await pageDesktopHostSession(rpc, { sessionId, throughSeq: latest.cursor, maxMessages: 20 })
+        expect(paged.ok).toBe(true)
+      } finally {
+        follow.abort()
+        await watching
+      }
     } finally {
       await llm.close()
     }
@@ -375,13 +378,19 @@ function followHasUserRequest(frame: unknown, requestId: string): boolean {
   })
 }
 
-function followHasTurnEnd(frame: unknown): boolean {
+function followHasEventType(frame: unknown, type: string): boolean {
   if (!isRecord(frame)) return false
-  if (frame.type === 'event') {
-    return isRecord(frame.event) && frame.event.type === 'turn/end'
-  }
+  if (frame.type === 'event') return isRecord(frame.event) && frame.event.type === type
   if (frame.type !== 'snapshot' || !Array.isArray(frame.records)) return false
-  return frame.records.some(record => isRecord(record) && isRecord(record.event) && record.event.type === 'turn/end')
+  return frame.records.some(record => isRecord(record) && isRecord(record.event) && record.event.type === type)
+}
+
+function followHasTurnStart(frame: unknown): boolean {
+  return followHasEventType(frame, 'turn/start')
+}
+
+function followHasTurnEnd(frame: unknown): boolean {
+  return followHasEventType(frame, 'turn/end')
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

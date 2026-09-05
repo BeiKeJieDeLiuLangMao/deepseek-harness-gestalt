@@ -17,6 +17,9 @@ import {
   type CompanionOperation,
 } from '@deepseek-ai/dsh-remote-protocol'
 import {
+  DesktopCompanionOperationLedger,
+} from '../src/companion-operation-ledger.ts'
+import {
   DesktopCompanionSurfaceDiscovery,
   DesktopCompanionProductOwner,
   DesktopSessionHistoryCache,
@@ -673,8 +676,36 @@ describe('Desktop Companion product operations', () => {
       } } }],
       ['session/cancel', { args: { request: { sessionId } } }],
     ])
-    await handleCompanionProductOperation(submit, dependencies)
-    expect(calls[2]).toEqual(calls[0])
+  })
+
+  it('retries a pairing ledger submit without a second Host prompt', async () => {
+    let prompts = 0
+    const loopback = await listenCompanionHost({
+      onUnary: (method) => {
+        if (method === 'session/prompt') prompts += 1
+      },
+    })
+    const owner = new DesktopCompanionProductOwner({
+      timeoutMs: 2_000, responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
+    })
+    const ledger = await DesktopCompanionOperationLedger.load({
+      load: async () => [],
+      save: async () => {},
+    })
+    owner.installLedger(ledger)
+    const uninstall = owner.installHost(loopback.origin)
+    const submit = op({ type: 'submit-prompt', sessionId, text: 'continue' })
+    const pairing = baseDependencies(hostRpc(async () => {
+      throw new Error('owner must use its installed Host RPC')
+    }))
+    await expect(owner.handle(submit, pairing)).resolves.toMatchObject({
+      type: 'confirmed', operationId: submit.operationId,
+    })
+    await expect(owner.handle(submit, pairing)).resolves.toMatchObject({
+      type: 'confirmed', operationId: submit.operationId,
+    })
+    expect(prompts).toBe(1)
+    uninstall()
   })
 
   it('creates Workspace-owned and Ungrouped Sessions through the exact Host request', async () => {
@@ -1059,6 +1090,7 @@ function deferred<T>(): { promise: Promise<T>; resolve(value: T): void } {
 
 async function listenCompanionHost(options?: {
   workspaceFollowValue?: unknown
+  onUnary?: (method: string) => void
 }): Promise<{ origin: string }> {
   const workspaceFollowValue = options?.workspaceFollowValue ?? {
     type: 'baseline', value: { items: [], archivedSessionIds: [] },
@@ -1071,6 +1103,14 @@ async function listenCompanionHost(options?: {
       try {
         const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as { rpcId?: string; method?: string }
         rpcId = body.rpcId ?? rpcId
+        if (body.method !== undefined) options?.onUnary?.(body.method)
+        if (body.method === 'session/prompt' || body.method === 'session/cancel') {
+          response.end(JSON.stringify({
+            type: 'server-response', rpcId,
+            result: { ok: true, value: { accepted: true } },
+          }))
+          return
+        }
         if (body.method === 'session/list' || body.method === 'session.list') {
           response.end(JSON.stringify({
             type: 'server-response', rpcId,
