@@ -1,4 +1,4 @@
-import { Context } from '@deepseek-ai/cordis'
+import { Context, FiberState } from '@deepseek-ai/cordis'
 import type { Fiber } from '@deepseek-ai/cordis'
 import type {
   ConnectionGeneration,
@@ -7,8 +7,10 @@ import type {
 import {
   RemoteStreamCarrierError,
   RemoteStream,
+  apply as applyGateway,
   type RemoteStreamOptions,
 } from '@deepseek-ai/dsh-api-gateway/client'
+import memberQuestionRemote from '../../../interaction/member-question-receiver/lib/typert.remote-client.js'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -130,6 +132,68 @@ describe('Session Controller Client apply', () => {
       'remote.subagents',
       'remote.memberQuestion',
     ])
+  })
+
+  it('parks until generated memberQuestion is $mounted, then unloads and remounts without duplicate listeners', async () => {
+    const ctx = new Context()
+    contexts.add(ctx)
+    await ctx.plugin(TypertRegistry)
+    const api = new FakeApiClient()
+    const remote = fakeRemote(api)
+    const snapshot = vi.fn(async () => ({ ok: true as const, value: { revision: 0, pending: [], terminal: [] } }))
+    ctx.provide('connection', {
+      isLoopback: true,
+      generation: { getSnapshot: () => GENERATION, subscribe: () => () => {} },
+      state: { getSnapshot: () => 'connected' as const, subscribe: () => () => {} },
+      rpc: {
+        call: async (_channel: string, endpoint: string) => {
+          if (endpoint === 'memberQuestion/snapshot') return snapshot()
+          return { ok: false as const, error: { code: 'unused', message: 'unused', details: {} } }
+        },
+      },
+      reconnect: () => {},
+      registerGenerationSource: () => () => {},
+      start: () => ({ stop: () => {} }),
+    } as ConnectionHandle)
+    ctx.reflect.provide('remote.commands', remote.commands)
+    ctx.reflect.provide('remote.session', remote.session)
+    ctx.reflect.provide('remote.subagents', remote.subagents)
+    const gateway = ctx.plugin({ inject: ['typert', 'connection'], apply: applyGateway })
+    await gateway
+    const changed = new Set<(...args: never[]) => void>()
+    const originalOn = ctx.remote.$on.bind(ctx.remote)
+    vi.spyOn(ctx.remote, '$on').mockImplementation((event, listener) => {
+      if (event !== 'member-question-receiver/changed') return originalOn(event, listener)
+      changed.add(listener as (...args: never[]) => void)
+      const off = originalOn(event, listener)
+      return () => {
+        changed.delete(listener as (...args: never[]) => void)
+        off()
+      }
+    })
+    const fiber = ctx.plugin(SessionClient)
+    expect(fiber.state).toBe(FiberState.PENDING)
+    expect(ctx.get('receivingQuestions')).toBeUndefined()
+
+    const disposeMount = await ctx.remote.$mount(memberQuestionRemote)
+    await fiber
+    expect(fiber.state).toBe(FiberState.ACTIVE)
+    expect(ctx.receivingQuestions).toBeInstanceOf(ReceivingQuestionBook)
+    await vi.waitFor(() => { expect(snapshot).toHaveBeenCalled() })
+    expect(changed.size).toBe(1)
+
+    await disposeMount()
+    expect(fiber.state).toBe(FiberState.PENDING)
+    expect(ctx.get('receivingQuestions')).toBeUndefined()
+    expect(changed.size).toBe(0)
+
+    const remount = await ctx.remote.$mount(memberQuestionRemote)
+    await fiber
+    expect(fiber.state).toBe(FiberState.ACTIVE)
+    expect(ctx.receivingQuestions).toBeInstanceOf(ReceivingQuestionBook)
+    await vi.waitFor(() => { expect(snapshot.mock.calls.length).toBeGreaterThanOrEqual(2) })
+    expect(changed.size).toBe(1)
+    await remount()
   })
 
   it('registers receivingQuestions through Cordis and unloads it with the fiber', async () => {
