@@ -470,6 +470,48 @@ describe('Desktop Host RPC against shipped dsh web', () => {
       expectWritten: false,
     })
   }, 180_000)
+
+  it('invalidates Companion list from shipped Host api-session notices', async () => {
+    const first = await startShippedHost()
+    const cookie = await bootstrapDesktopHostCookie(first.running.launchUrl, first.running.url)
+    const owner = new DesktopCompanionProductOwner({
+      timeoutMs: 15_000,
+      responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
+    })
+    const uninstall = owner.installHost(first.running.url, cookie)
+    const rpc = createDesktopHostRpc(first.running.url, {
+      timeoutMs: 15_000,
+      responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
+      cookieHeader: cookie,
+    })
+    const sessionId = parseCompanionSessionId('desktop-list-notice-session')
+    const changes: unknown[] = []
+    const disconnect = owner.connectLiveProjection(
+      parsePersonalPairingId('pairing-list-notice'),
+      (change) => { changes.push(change) },
+      () => {},
+    )
+    try {
+      await expect(createDesktopHostSession(rpc, sessionId)).resolves.toMatchObject({
+        ok: true, value: { sessionId },
+      })
+      await expect.poll(() => {
+        return changes.filter(change => isRecord(change) && change.type === 'surface').length >= 1
+      }).toBe(true)
+      await expect(listDesktopHostSessions(rpc)).resolves.toMatchObject({
+        ok: true,
+        value: { items: expect.arrayContaining([expect.objectContaining({ sessionId })]) },
+      })
+      const surfaces = changes.filter(change => isRecord(change) && change.type === 'surface').length
+      await expect(archiveDesktopHostSession(rpc, sessionId)).resolves.toMatchObject({ ok: true })
+      await expect.poll(() => {
+        return changes.filter(change => isRecord(change) && change.type === 'surface').length > surfaces
+      }).toBe(true)
+    } finally {
+      disconnect()
+      uninstall()
+    }
+  }, 180_000)
 })
 
 function followHasUserRequest(frame: unknown, requestId: string): boolean {

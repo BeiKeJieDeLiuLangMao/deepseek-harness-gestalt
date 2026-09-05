@@ -86,6 +86,16 @@ describe('Remote event Host source', () => {
     })
   })
 
+  it('forwards Session Controller list notices as emit events', () => {
+    expect(API_REMOTE_FORWARDED_EVENTS).toEqual(expect.arrayContaining([
+      { event: 'api-session/added', mode: 'emit' },
+      { event: 'api-session/removed', mode: 'emit' },
+      { event: 'api-session/status', mode: 'emit' },
+      { event: 'api-session/activity', mode: 'emit' },
+      { event: 'api-session/error', mode: 'emit' },
+    ]))
+  })
+
   it('registers the Host home used by Client connection generations', async () => {
     const { gateway, fiber } = await setup()
     expect(gateway.host?.home).toBeTypeOf('string')

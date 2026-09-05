@@ -77,16 +77,13 @@ describe('Desktop Companion product operations', () => {
       timeoutMs: 100, responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
     })
     const uninstall = owner.installHost(`http://127.0.0.1:${String(address.port)}`)
-    expect(upgrades.filter(path => path.startsWith('/api/events.')).length).toBe(0)
+    await expect.poll(() => upgrades.filter(path => path === '/api/remote.mux').length).toBeGreaterThan(0)
+    expect(upgrades.some(path => path.startsWith('/api/events.'))).toBe(false)
     const first = owner.connectLiveProjection(pairingId, () => {}, () => {})
     const second = owner.connectLiveProjection(pairingId, () => {}, () => {})
-    await expect.poll(() => upgrades.filter(path => path.startsWith('/api/events.')).length).toBe(2)
+    expect(upgrades.some(path => path.startsWith('/api/events.'))).toBe(false)
     first()
-    expect(upgrades.filter(path => path.startsWith('/api/events.')).length).toBe(2)
     second()
-    const replacement = owner.connectLiveProjection(pairingId, () => {}, () => {})
-    await expect.poll(() => upgrades.filter(path => path.startsWith('/api/events.')).length).toBe(4)
-    replacement()
     uninstall()
   })
 
@@ -100,6 +97,40 @@ describe('Desktop Companion product operations', () => {
     const uninstall = owner.installHost(loopback.origin)
     expect(changed).toHaveBeenCalledOnce()
     expect(changed).toHaveBeenCalledWith({ type: 'surface' })
+    disconnect()
+    uninstall()
+  })
+
+  it('invalidates Companion list from $events api-session notices without polling', async () => {
+    const loopback = await listenCompanionHost({
+      onEventsOpen: (send) => {
+        send({
+          type: 'emit',
+          event: 'api-session/added',
+          args: [{ sessionId: 'session-added', updatedAt: 1, running: false, blank: true }],
+        })
+        send({
+          type: 'emit',
+          event: 'api-session/status',
+          args: ['session-running', true],
+        })
+        send({
+          type: 'emit',
+          event: 'api-session/removed',
+          args: ['session-added'],
+        })
+      },
+    })
+    const owner = new DesktopCompanionProductOwner({
+      timeoutMs: 2_000, responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
+    })
+    const changes: unknown[] = []
+    const disconnect = owner.connectLiveProjection(pairingId, (change) => { changes.push(change) }, () => {})
+    const uninstall = owner.installHost(loopback.origin)
+    await expect.poll(() => changes.filter(change => isRecord(change) && change.type === 'surface').length >= 3).toBe(true)
+    await expect.poll(() => changes.some((change) => {
+      return isRecord(change) && change.type === 'session' && change.sessionId === 'session-running'
+    })).toBe(true)
     disconnect()
     uninstall()
   })
@@ -994,11 +1025,6 @@ describe('Desktop Companion product operations', () => {
 
   it('installs the real Web Host RPC in the product owner and invalidates it on Host exit', async () => {
     const server = createServer((request, response) => {
-      if (request.url === '/api/events.mux' || request.url === '/api/events.host') {
-        response.writeHead(426)
-        response.end()
-        return
-      }
       const chunks: Buffer[] = []
       request.on('data', chunk => chunks.push(chunk as Buffer))
       request.on('end', () => {
@@ -1155,9 +1181,14 @@ function deferred<T>(): { promise: Promise<T>; resolve(value: T): void } {
   return { promise, resolve }
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
 async function listenCompanionHost(options?: {
   workspaceFollowValue?: unknown
   onUnary?: (method: string) => void
+  onEventsOpen?: (send: (value: unknown) => void) => void
 }): Promise<{ origin: string }> {
   const workspaceFollowValue = options?.workspaceFollowValue ?? {
     type: 'baseline', value: { items: [], archivedSessionIds: [] },
@@ -1225,6 +1256,13 @@ async function listenCompanionHost(options?: {
             streamId: message.streamId,
             value: { type: 'ready', clientId: 'client-loopback', host: { home: '/tmp' } },
           }))
+          options?.onEventsOpen?.((value) => {
+            websocket.send(JSON.stringify({
+              type: 'item',
+              streamId: message.streamId,
+              value,
+            }))
+          })
         }
       })
     })

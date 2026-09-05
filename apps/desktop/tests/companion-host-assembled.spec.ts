@@ -2,6 +2,7 @@ import { createElement, useSyncExternalStore, type ReactNode } from 'react'
 import { readFileSync } from 'node:fs'
 import { mkdtemp, mkdir, rm } from 'node:fs/promises'
 import { createServer } from 'node:http'
+import { WebSocketServer } from 'ws'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { JSDOM } from 'jsdom'
@@ -14,7 +15,6 @@ import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { createApiProxy, toFetchHandler } from '@deepseek-ai/dsh-host-apiproxy'
 import LlmRuntime, { createUserMessage } from '@deepseek-ai/dsh-llm'
-import { WebSocketDownlinks } from '@deepseek-ai/dsh-client-connection/src/websocket-downlink.ts'
 import { parsePersonalPairingId } from '@deepseek-ai/dsh-remote-access'
 import {
   generateRelayCredential,
@@ -837,13 +837,12 @@ async function startDesktopHost(
     defaultModelSelection: () => ({ provider: 'assembled-provider', model: 'assembled-model' }),
     cwd: root,
   })
-  const url = await startHttpCarrier(toFetchHandler(api), new WebSocketDownlinks(api))
+  const url = await startHttpCarrier(toFetchHandler(api))
   return { url, root, sessionId, session, image, cancelled, ctx, agent }
 }
 
 async function startHttpCarrier(
   handler: { fetch(request: Request): Promise<Response> },
-  downlinks: WebSocketDownlinks,
 ): Promise<string> {
   const server = createServer((request, response) => {
     void (async () => {
@@ -882,11 +881,34 @@ async function startHttpCarrier(
       response.end(error instanceof Error ? error.message : String(error))
     })
   })
+  const wss = new WebSocketServer({ noServer: true })
   server.on('upgrade', (request, socket, head) => {
     const pathname = new URL(request.url ?? '/', 'http://desktop-companion.test').pathname
-    if (pathname === '/api/events.mux') downlinks.handleMux(request, socket, head)
-    else if (pathname === '/api/events.host') downlinks.handleHost(request, socket, head)
-    else socket.destroy()
+    if (pathname !== '/api/remote.mux') {
+      socket.destroy()
+      return
+    }
+    wss.handleUpgrade(request, socket, head, (websocket) => {
+      websocket.on('message', (data) => {
+        const text = typeof data === 'string' ? data : Buffer.from(data as Uint8Array).toString('utf8')
+        const message = JSON.parse(text) as { type?: string; streamId?: string; endpoint?: string }
+        if (message.type !== 'open' || message.streamId === undefined) return
+        if (message.endpoint === 'workspace/follow') {
+          websocket.send(JSON.stringify({
+            type: 'item',
+            streamId: message.streamId,
+            value: { type: 'baseline', value: { items: [], archivedSessionIds: [] } },
+          }))
+        }
+        if (message.endpoint === '$events') {
+          websocket.send(JSON.stringify({
+            type: 'item',
+            streamId: message.streamId,
+            value: { type: 'ready', clientId: 'client-assembled', host: { home: tmpdir() } },
+          }))
+        }
+      })
+    })
   })
   await new Promise<void>((resolveListen, rejectListen) => {
     server.once('error', rejectListen)
@@ -896,7 +918,8 @@ async function startHttpCarrier(
     })
   })
   cleanups.push(async () => {
-    await downlinks.close()
+    for (const client of wss.clients) client.terminate()
+    wss.close()
     server.closeAllConnections()
     await new Promise<void>((resolveClose, rejectClose) => {
       server.close((error) => { if (error === undefined) resolveClose(); else rejectClose(error) })
