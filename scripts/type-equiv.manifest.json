@@ -1018,6 +1018,21 @@
     },
     {
       "doc": "docs/subsystems/attachment.md",
+      "symbol": "ByteAttachmentRef",
+      "source": "packages/attachment/attachment/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/attachment.md",
+      "symbol": "SaveByteAttachment",
+      "source": "packages/attachment/attachment/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/attachment.md",
+      "symbol": "StoredByteAttachment",
+      "source": "packages/attachment/attachment/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/attachment.md",
       "symbol": "ImageRequestPolicy",
       "source": "packages/attachment/attachment/src/types.ts"
     },

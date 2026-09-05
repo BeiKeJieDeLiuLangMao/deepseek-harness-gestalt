@@ -154,6 +154,24 @@ describe('AttachmentStore.readImageRequest', () => {
   })
 })
 
+describe('AttachmentStore opaque bytes', () => {
+  it('refuses save and read when the provider does not persist opaque bytes', async () => {
+    const store = new UnsupportedProjectionStore(new Context())
+    const input = { data: Uint8Array.of(1, 2, 3), mediaType: 'application/pdf', name: 'notes.pdf' }
+    await expect(store.saveBytes(input)).rejects.toMatchObject({ code: 'ATTACHMENT_BYTES_UNSUPPORTED' })
+    const controller = new AbortController()
+    const reason = new Error('cancel unsupported bytes')
+    controller.abort(reason)
+    expect(() => store.readBytes({
+      attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`),
+      mediaType: 'application/pdf',
+      bytes: 3,
+      sha256: 'a'.repeat(64),
+      name: 'notes.pdf',
+    }, controller.signal)).toThrow(reason)
+  })
+})
+
 describe('isImageAdmissionError', () => {
   it('separates caller-correctable image admission failures from storage faults', () => {
     expect(isImageAdmissionError(new AttachmentError('bad bytes', 'INVALID_IMAGE'))).toBe(true)

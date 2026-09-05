@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-本包提供附件的本地存储与图片处理后端：源图经过校验、方向修正、元数据与色彩配置移除，并规范化为 8-bit sRGB/sRGBA 后保存在 `DSH_HOME` 下；路由专用请求版本另行派生并缓存。随附的 `dsh` 组合使用的就是它，因此持久图片附件无需配置即可工作。相同规范化图片只存一份，同一请求变体的并发读取共享工作，即使后来收紧准入限制，已存图片仍然可读。存储仅限本机——其他主机无法读取这些图片——对象也永远不会自动删除。
+本包提供附件的本地存储与图片处理后端：源图经过校验、方向修正、元数据与色彩配置移除，并规范化为 8-bit sRGB/sRGBA 后保存在 `DSH_HOME` 下；路由专用请求版本另行派生并缓存。精确的不透明 Companion 文件共用同一套内容寻址对象目录，且不会做图片解码。随附的 `dsh` 组合使用的就是它，因此持久附件无需配置即可工作。相同对象只存一份，同一请求变体的并发读取共享工作，即使后来收紧准入限制，已存对象仍然可读。存储仅限本机——其他主机无法读取这些对象——对象也永远不会自动删除。
 
 ## 目录
 
@@ -47,6 +47,7 @@ kind: "package-reference"
 | `normalizedImageMaxDimension` | `8192` | 应用总像素预算后的最大长边 |
 | `normalizedImageMaxBytes` | `4 MiB` | 编码字节目标；没有候选满足时保留质量阶梯中的最小输出 |
 | `imageCompressionConcurrency` | `2` | 并发规范化与请求变换的 FIFO 上限 |
+| `maxByteBytes` | `100 MiB` | 单个不透明 Companion 文件接受的最大编码字节数 |
 
 生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-attachment-local)是每个受支持字段及其 JSDoc 的穷尽式真源。
 
@@ -81,7 +82,7 @@ kind: "package-reference"
 
 ### 写入与读取路径
 
-对象存放在 `<DSH_HOME>/attachments/v1/objects/<sha256-prefix>/<sha256>`；相同字节会去重为同一个对象和同一个 `sha256:` 标识符。首次写入前，进程会把 home 的每个祖先目录逐级同步到文件系统根目录，因此绝不会把另一个进程已创建但尚未同步的目录误认为安全边界。随后，写入过程把字节暂存到 `v1/tmp`、同步临时文件、以原子且排他的硬链接发布，并同步发布目录——在 Windows 上，文件系统元数据日志负责目录项持久性。保存成功后，已报告的引用即持久。
+对象存放在 `<DSH_HOME>/attachments/v1/objects/<sha256-prefix>/<sha256>`；无论调用方保存的是规范化图片还是不透明 Companion 文件，相同字节都会去重为同一个对象和同一个 `sha256:` 标识符。首次写入前，进程会把 home 的每个祖先目录逐级同步到文件系统根目录，因此绝不会把另一个进程已创建但尚未同步的目录误认为安全边界。随后，写入过程把字节暂存到 `v1/tmp`、同步临时文件、以原子且排他的硬链接发布，并同步发布目录——在 Windows 上，文件系统元数据日志负责目录项持久性。保存成功后，已报告的引用即持久。不透明文件保留调用方字节与声明的媒体类型；它们绝不会被当作图片解码，也不会投影给模型。
 
 准入允许每条消息最多 20 张图片与 200 MiB 源字节；单个源图最多 20 MiB、6400 万像素与单边 8192 像素。系统应用方向、移除元数据与色彩配置，并把规范化结果限制在 2048×2048 总像素预算、8192 像素长边和 4 MiB 编码字节目标内，因此极端宽高比会保留短边分辨率。已经满足限制的干净、单帧、8-bit sRGB/sRGBA PNG、JPEG 或 WebP 会逐字节直通；GIF、动画、元数据、方向、16-bit PNG 与不兼容色彩空间会触发转换。
 
@@ -92,7 +93,9 @@ kind: "package-reference"
 | 文件 | 职责 |
 |---|---|
 | [`src/index.ts`](src/index.ts) | 插件入口：`LocalAttachmentStore`、`Config` schema、默认值 |
-| [`src/store.ts`](src/store.ts) | 内容寻址写入与校验读取：暂存、硬链接发布、fsync 链、摘要校验 |
+| [`src/objects.ts`](src/objects.ts) | 共享的内容寻址发布：暂存、硬链接、fsync 链、摘要 |
+| [`src/bytes.ts`](src/bytes.ts) | 不透明 Companion 文件准入与校验读取 |
+| [`src/store.ts`](src/store.ts) | 在共享对象存储上的图片准备、提交与校验读取 |
 | [`src/normalization.ts`](src/normalization.ts) + [`src/encoding.ts`](src/encoding.ts) | 提供方无关的规范化与有界格式／质量候选 |
 | [`src/request-image.ts`](src/request-image.ts) | 路由专用请求变换、缓存身份与 singleflight |
 | [`src/image.ts`](src/image.ts) | 完整光栅解码与元数据校验 |

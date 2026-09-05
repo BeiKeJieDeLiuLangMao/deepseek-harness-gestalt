@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-You can attach images to prompts and commands, and the harness keeps provider-independent normalized versions durably: each source image is admitted and normalized before your message is processed, reappears in conversation history, and is projected to the selected model route in later turns of the same session. The shipped `dsh` composition enables this with no setup. Attached images survive restarts, while browser paths, provider URLs, local storage paths, and base64 never enter durable session events. Only raster formats (PNG, JPEG, WebP, GIF) are accepted, and unsent composer drafts stay in the browser until you submit. Stored images are never deleted automatically, and non-image files, audio, and video are not supported yet.
+You can attach images to prompts and commands, and the harness keeps provider-independent normalized versions durably: each source image is admitted and normalized before your message is processed, reappears in conversation history, and is projected to the selected model route in later turns of the same session. The same store can persist exact opaque Companion files as content-addressed byte objects that never enter model history. The shipped `dsh` composition enables this with no setup. Attached images survive restarts, while browser paths, provider URLs, local storage paths, and base64 never enter durable session events. Prompt images accept only raster formats (PNG, JPEG, WebP, GIF), and unsent composer drafts stay in the browser until you submit. Stored objects are never deleted automatically. Audio and video still have no product path.
 
 ## Table of Contents
 
@@ -67,7 +67,7 @@ This section explains the design decisions behind the seam and the service opera
 
 ### Service operations
 
-The service family runs one admission-and-storage flow: every entry point enforces source batch limits and canonical base64, prepares provider-independent normalized attachments before publishing any member, and commits them durably in input order without partial results. `readImageRequest` derives deterministic route-sized variants whose identity includes the attachment id, transform version, pixel and byte budgets, and encoder settings. The pure `requestImageDimensions` export computes each projection's aspect-preserving dimensions from a total-pixel budget, so providers and request pricing share one geometry. `imageHostPath` exposes an implementation-owned host location only to trusted same-process consumers that need execution-world mapping. Callers compose ordered batches while the implementation owns compression concurrency, caching, and singleflight. Reads and projections preserve caller cancellation. Failures carry stable machine-readable codes, and the caller-correctable admission subset is recognizable at runtime so each protocol adapter maps its own vocabulary; the exact per-operation contracts live in [`src/index.ts`](src/index.ts) and [`src/error.ts`](src/error.ts).
+The service family runs one admission-and-storage flow: every image entry point enforces source batch limits and canonical base64, prepares provider-independent normalized attachments before publishing any member, and commits them durably in input order without partial results. `saveBytes` and `readBytes` persist and verify exact opaque files on the same content-addressed objects without decoding them as images or projecting them to a model. `readImageRequest` derives deterministic route-sized variants whose identity includes the attachment id, transform version, pixel and byte budgets, and encoder settings. The pure `requestImageDimensions` export computes each projection's aspect-preserving dimensions from a total-pixel budget, so providers and request pricing share one geometry. `imageHostPath` exposes an implementation-owned host location only to trusted same-process consumers that need execution-world mapping. Callers compose ordered batches while the implementation owns compression concurrency, caching, and singleflight. Reads and projections preserve caller cancellation. Failures carry stable machine-readable codes, and the caller-correctable admission subset is recognizable at runtime so each protocol adapter maps its own vocabulary; the exact per-operation contracts live in [`src/index.ts`](src/index.ts) and [`src/error.ts`](src/error.ts).
 
 ### Source map
 
@@ -111,7 +111,7 @@ Adding an image changes the provider request and therefore invalidates the affec
 
 These limits describe what image attachments can and cannot do; they are current package constraints, not a task backlog.
 
-- **Raster images only** — PNG, JPEG, WebP, and GIF are accepted; generic files, audio, and video are not supported yet.
+- **Prompt images remain raster-only** — PNG, JPEG, WebP, and GIF are admitted as images; opaque Companion files use `saveBytes` and never become `ImageBlock`s. Audio and video still have no product path.
 - **Images are never deleted** — stored images are retained indefinitely; nothing removes them automatically.
 - **Unsent drafts are not saved** — a composer draft stays in the browser until you submit the message.
 
@@ -127,8 +127,8 @@ This Dev Note is working context for maintainers: undecided directions and open 
 
 Resumed and forked sessions may share immutable objects, so any retention policy needs a reference model that accounts for session lineage before objects can be collected. No decision is recorded yet; the local backend currently retains everything.
 
-#### Future: non-image attachments and assistant-side output
+#### Future: assistant-side image output and media types beyond files
 
-Generic files, audio, and video would need separate lifecycle and provider contracts, and the role-neutral `ImageBlock` leaves assistant-side image output as forward compatibility — current production adapters declare text-only output, so only user content carries images. Both directions are undecided.
+Opaque Companion files already persist through `saveBytes`. Audio, video, and assistant-side image output still need separate lifecycle and provider contracts — current production adapters declare text-only output, so only user content carries images.
 
 </details>

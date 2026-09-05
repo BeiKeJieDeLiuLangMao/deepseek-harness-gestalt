@@ -11,6 +11,7 @@ import LocalAttachmentStore, {
   DEFAULT_NORMALIZED_IMAGE_MAX_DIMENSION,
   DEFAULT_NORMALIZED_IMAGE_MAX_PIXELS,
   DEFAULT_IMAGE_COMPRESSION_CONCURRENCY,
+  DEFAULT_MAX_BYTE_BYTES,
   DEFAULT_MAX_IMAGE_BYTES,
   DEFAULT_MAX_IMAGE_DIMENSION,
   DEFAULT_MAX_IMAGE_PIXELS,
@@ -40,6 +41,8 @@ describe('local attachment service', () => {
       maxBytes: DEFAULT_NORMALIZED_IMAGE_MAX_BYTES,
     })
     expect(service.imageCompressionConcurrency).toBe(DEFAULT_IMAGE_COMPRESSION_CONCURRENCY)
+    expect(DEFAULT_MAX_BYTE_BYTES).toBe(100 * 1024 * 1024)
+    expect(service.maxByteBytes).toBe(DEFAULT_MAX_BYTE_BYTES)
     const ref = {
       attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`),
       mediaType: 'image/png' as const,
@@ -87,6 +90,9 @@ describe('local attachment service', () => {
       await expect(readFile(hostPath)).resolves.toEqual(Buffer.from(data))
       const request = await service.readImageRequest(ref, { maxPixels: 1, maxBytes: 1024 })
       expect(request).not.toHaveProperty('access')
+      const bytes = Uint8Array.from(Buffer.from('not an image', 'utf8'))
+      const byteRef = await service.saveBytes({ data: bytes, mediaType: 'text/plain', name: 'notes.txt' })
+      await expect(service.readBytes(byteRef)).resolves.toEqual({ ref: byteRef, data: bytes })
     } finally {
       await rm(dshHome, { recursive: true, force: true })
     }
