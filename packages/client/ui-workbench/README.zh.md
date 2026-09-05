@@ -17,3 +17,4 @@ web-app 组合先插入快照行，再插入本适配层，并保留 `id: ui-bro
 ## 已知限制与延期工作
 
 - **快照 fs/git/pty 仍走 `/sidebar`** — 本期不把它们迁到官方 `fs` 或 `terminal` 能力缝。
+- **客户端 `apply` 用 Cordis 标注根上下文，用 `@deepseek-ai/dsh-session/types` 标注 Session 身份** — inject 列表仍为组合声明 `@deepseek-ai/dsh-client-runtime`；测试不再值导入该包。

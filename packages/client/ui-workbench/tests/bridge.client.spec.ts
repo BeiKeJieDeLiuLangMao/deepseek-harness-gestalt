@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {
   BrowserPageState, BrowserTarget, BrowserWorkspaceProjection,
 } from '@deepseek-ai/dsh-browser-workspace/client'
