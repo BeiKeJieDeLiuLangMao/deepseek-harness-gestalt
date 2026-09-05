@@ -52,7 +52,6 @@ export type { ISessions } from './contract/sessions.ts'
 export { ReceivingQuestionBook } from './sessions/receiving.ts'
 export type {
   ReceivingMemberQuestionRecord,
-  ReceivingPendingQuestion,
   ReceivingQuestionBookView,
   ReceivingQuestionSettleResponse,
   ReceivingSessionRow,

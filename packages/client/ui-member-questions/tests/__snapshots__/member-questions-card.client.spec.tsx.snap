@@ -174,6 +174,61 @@ exports[`MemberQuestionCard > snapshots the English copy 1`] = `
 </div>
 `;
 
+exports[`MemberQuestionCard > snapshots the folded strip with Host origin identity 1`] = `
+<div>
+  <div
+    class="frame"
+    data-folded="true"
+    data-question-key="s1:question-1"
+  >
+    <section
+      aria-label="远端 · 王小明"
+      class="card cardFolded"
+    >
+      <button
+        aria-label="远端 · 王小明"
+        class="foldedBar"
+        type="button"
+      >
+        <span
+          class="remoteTag"
+        >
+          远端
+        </span>
+        <span
+          class="foldedSummary"
+        >
+          远端 · 王小明
+        </span>
+        <span
+          class="foldedMark"
+        >
+          已收起
+        </span>
+      </button>
+      <div
+        class="body bodyHidden"
+        data-member-presentation="true"
+      >
+        <div
+          data-question-presentation=""
+          data-request-key="s1:question-1:1"
+        >
+          <button
+            aria-expanded="false"
+            aria-label="展开问题卡片"
+            type="button"
+          />
+          <div>
+            将王小明移出项目吗？
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+`;
+
 exports[`MemberQuestionCard > snapshots the full banner and the shared presentation (light) 1`] = `
 <div>
   <div
@@ -515,143 +570,6 @@ exports[`MemberQuestionCard > snapshots the full banner under the dark theme att
           >
             提交
           </button>
-        </div>
-      </div>
-    </section>
-  </div>
-</div>
-`;
-
-exports[`MemberQuestionCard > snapshots the identity-lite banner and the folded strip 1`] = `
-<div>
-  <div
-    class="frame"
-    data-question-key="s1:question-1"
-  >
-    <section
-      aria-label="远端 · 成员"
-      class="card"
-    >
-      <header
-        class="banner"
-      >
-        <div
-          class="originRow"
-        >
-          <span
-            class="remoteTag"
-          >
-            远端
-          </span>
-        </div>
-        <div
-          class="background"
-        >
-          <span
-            class="contextLabel"
-          >
-            背景
-          </span>
-          <p
-            class="backgroundText"
-          >
-            该成员近 30 天无提交记录。
-          </p>
-        </div>
-      </header>
-      <div
-        class="body"
-        data-member-presentation="true"
-      >
-        <div
-          data-question-presentation=""
-          data-request-key="s1:question-1:1"
-        >
-          <button
-            aria-expanded="true"
-            aria-label="收起问题卡片"
-            type="button"
-          />
-          <div>
-            将王小明移出项目吗？
-          </div>
-          <button
-            aria-checked="true"
-            aria-label="移出"
-            role="radio"
-            type="button"
-          >
-            移出
-          </button>
-          <span>
-            1 / 1
-          </span>
-          <span>
-            推荐
-          </span>
-          <textarea
-            placeholder="输入你的答案"
-          />
-          <button
-            type="button"
-          >
-            提交
-          </button>
-        </div>
-      </div>
-    </section>
-  </div>
-</div>
-`;
-
-exports[`MemberQuestionCard > snapshots the identity-lite banner and the folded strip 2`] = `
-<div>
-  <div
-    class="frame"
-    data-folded="true"
-    data-question-key="s1:question-1"
-  >
-    <section
-      aria-label="远端 · 成员"
-      class="card cardFolded"
-    >
-      <button
-        aria-label="远端 · 成员"
-        class="foldedBar"
-        type="button"
-      >
-        <span
-          class="remoteTag"
-        >
-          远端
-        </span>
-        <span
-          class="foldedSummary"
-        >
-          远端 · 成员
-        </span>
-        <span
-          class="foldedMark"
-        >
-          已收起
-        </span>
-      </button>
-      <div
-        class="body bodyHidden"
-        data-member-presentation="true"
-      >
-        <div
-          data-question-presentation=""
-          data-request-key="s1:question-1:1"
-        >
-          <button
-            aria-expanded="false"
-            aria-label="展开问题卡片"
-            type="button"
-          />
-          <div>
-            将王小明移出项目吗？
-          </div>
         </div>
       </div>
     </section>

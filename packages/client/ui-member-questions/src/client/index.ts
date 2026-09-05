@@ -1,6 +1,6 @@
 /**
  * Member-question plugin, browser half: the MemberQuestionDock registered on
- * conversation.input.dock. It reads JSON pending rows from ReceivingQuestionBook
+ * conversation.input.dock. It reads Host pending views from ReceivingQuestionBook
  * and declares question.presentation for the shared Ask User occupant. This
  * package does not import PendingQuestion.
  */
@@ -11,7 +11,10 @@ import type { ReceivingQuestionBook } from '@deepseek-ai/dsh-api-session-control
 import { MemberQuestionDock } from './MemberQuestionCard.tsx'
 import { en, zh, type MemberQuestionKey } from './locales.ts'
 
-export { selectMemberQuestion, selectMemberQuestionRecords, isMemberQuestionBatch, memberBriefOf, clampBackground, BACKGROUND_CLAMP } from './contract/slots.ts'
+export {
+  selectMemberQuestion, selectMemberQuestionRecords,
+  memberBriefOf, presentationQuestionsOf, clampBackground, BACKGROUND_CLAMP,
+} from './contract/slots.ts'
 export type {
   MemberQuestionBrief, MemberQuestionComposerProps, MemberQuestionOrigin,
   MemberQuestionReferenceChip, MemberQuestionRole, MemberQuestionWait,
@@ -82,7 +85,8 @@ export function apply(ctx: ClientContext): void {
       inject: () => ({
         focusDocument,
         openReference,
-        settle: (sessionId, response) => ctx.receivingQuestions.settle(sessionId, response),
+        settle: (sessionId, answers) => ctx.receivingQuestions.settle(sessionId, answers),
+        decline: sessionId => ctx.receivingQuestions.decline(sessionId),
         hooks: { receivingQuestions: ctx.receivingQuestions },
       }),
     },

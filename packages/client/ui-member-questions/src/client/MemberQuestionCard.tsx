@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
   memberBriefOf,
+  presentationQuestionsOf,
   selectMemberQuestion,
   type MemberQuestionComposerProps, type MemberQuestionDockProps,
   type MemberQuestionOrigin, type MemberQuestionRole,
@@ -144,14 +145,14 @@ export function MemberQuestionCard(props: MemberQuestionComposerProps) {
   const records = props.useReceivingQuestions(view =>
     view.byId[props.sessionId]?.records ?? [])
   const answer = useCallback((batch: { answers: { id: string; selected: string[]; custom?: string }[] }) => (
-    props.settle(props.sessionId, { kind: 'answered', answers: batch.answers })
+    props.settle(props.sessionId, batch.answers)
   ), [props.sessionId, props.settle])
   const cancel = useCallback(() => (
-    props.settle(props.sessionId, { kind: 'declined' })
-  ), [props.sessionId, props.settle])
+    props.decline(props.sessionId)
+  ), [props.sessionId, props.decline])
   const presentation = props.renderSlot('question.presentation', {
-    requestKey: `${props.matched.sessionId}:${props.matched.questionId}:${props.matched.revision}`,
-    questions: props.matched.questions,
+    requestKey: `${props.matched.receivingSessionId}:${props.matched.questionId}:${props.matched.revision}`,
+    questions: presentationQuestionsOf(props.matched),
     answer,
     cancel,
   })
@@ -159,7 +160,7 @@ export function MemberQuestionCard(props: MemberQuestionComposerProps) {
   return (
     <div
       className={css.frame}
-      data-question-key={`${props.matched.sessionId}:${props.matched.questionId}`}
+      data-question-key={`${props.matched.receivingSessionId}:${props.matched.questionId}`}
       data-folded={folded || undefined}
     >
       <MemberQuestionRecords matched={records} t={props.t} />

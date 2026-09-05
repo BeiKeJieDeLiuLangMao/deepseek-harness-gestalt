@@ -136,14 +136,11 @@ describe('ReceivingQuestionBook generated Remote', () => {
     expect(snapshot).toHaveBeenCalledTimes(1)
     const pending = book.pending(SESSION)
     expect(pending).toMatchObject({
-      sessionId: SESSION,
+      receivingSessionId: SESSION,
       questionId: 'question-1',
       revision: 1,
     })
-    expect(pending?.questions[0]?.intent).toMatchObject({
-      kind: 'member-question',
-      questionId: 'question-1',
-    })
+    expect(pending?.operation.questions[0]?.id).toBe('channel')
     expect(book.records(SESSION)).toEqual([])
   })
 
@@ -156,20 +153,16 @@ describe('ReceivingQuestionBook generated Remote', () => {
     })
     await book.start()
     const pending = book.pending(SESSION)!
-    await expect(book.settle(SESSION, {
-      kind: 'answered',
-      answers: [{ id: 'channel', selected: ['Canary'] }],
-    })).rejects.toThrow('exact payload required')
+    await expect(book.settle(SESSION, [{ id: 'channel', selected: ['Canary'] }]))
+      .rejects.toThrow('exact payload required')
     expect(settle).toHaveBeenCalledWith({
       receivingSessionId: 'receiving-host-1',
       revision: 1,
       questionId: 'question-1',
       response: { kind: 'answered', answers: [{ id: 'channel', selected: ['Canary'] }] },
     })
-    await expect(book.settle(SESSION, {
-      kind: 'answered',
-      answers: [{ id: 'channel', selected: ['Stable'] }],
-    })).rejects.toThrow('exact payload required')
+    await expect(book.settle(SESSION, [{ id: 'channel', selected: ['Stable'] }]))
+      .rejects.toThrow('exact payload required')
     expect(settle).toHaveBeenCalledTimes(2)
     expect(book.pending(SESSION)).toEqual(pending)
   })
@@ -187,10 +180,8 @@ describe('ReceivingQuestionBook generated Remote', () => {
     })
     await book.start()
     setSnapshot(hostSnapshot(2, 'pending'))
-    await expect(book.settle(SESSION, {
-      kind: 'answered',
-      answers: [{ id: 'channel', selected: ['Canary'] }],
-    })).rejects.toMatchObject({ message: 'stale' })
+    await expect(book.settle(SESSION, [{ id: 'channel', selected: ['Canary'] }]))
+      .rejects.toMatchObject({ message: 'stale' })
     expect(settle.mock.calls[0]?.[0]).toMatchObject({ revision: 1 })
     await vi.waitFor(() => {
       expect(snapshot).toHaveBeenCalledTimes(2)
@@ -220,10 +211,8 @@ describe('ReceivingQuestionBook generated Remote', () => {
     await book.start()
     expect(book.pending(SESSION)).toBeDefined()
     book.dispose()
-    await expect(book.settle(SESSION, {
-      kind: 'answered',
-      answers: [{ id: 'channel', selected: ['Canary'] }],
-    })).rejects.toThrow(/disposed/)
+    await expect(book.settle(SESSION, [{ id: 'channel', selected: ['Canary'] }]))
+      .rejects.toThrow(/disposed/)
     expect(settle).toHaveBeenCalledTimes(0)
     expect(book.pending(SESSION)).toBeUndefined()
   })

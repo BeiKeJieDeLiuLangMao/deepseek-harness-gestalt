@@ -13,16 +13,15 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-user-questions/client'
 import type { SessionId } from '@deepseek-ai/dsh-client-connection/client'
 import type { DetailsDocumentFocus } from '@deepseek-ai/dsh-client-ui-conversation/client'
-import type { AskUserQuestionItem } from '@deepseek-ai/dsh-user-questions/types'
+import type { AskUserQuestionAnswer, AskUserQuestionItem } from '@deepseek-ai/dsh-user-questions/types'
+import type { PendingMemberQuestionView } from '@deepseek-ai/dsh-member-question-receiver/types'
 import type {
   ReceivingMemberQuestionRecord,
-  ReceivingPendingQuestion,
   ReceivingQuestionBookView,
-  ReceivingQuestionSettleResponse,
 } from '@deepseek-ai/dsh-api-session-controller/src/client/sessions/receiving.ts'
 
-/** JSON pending row a member brief renders. */
-export type MemberQuestionWait = ReceivingPendingQuestion
+/** Host pending view a member brief renders. */
+export type MemberQuestionWait = PendingMemberQuestionView
 
 /** Collaboration-plane role of the asking member, as the receiver renders it. */
 export type MemberQuestionRole = 'owner' | 'admin' | 'member'
@@ -92,87 +91,68 @@ export function clampBackground(text: string): string {
  * (origin identity, background, references, expiry), so this read narrows the
  * carried brief off the batch's shared intent.
  */
-type MemberQuestionCarriedIntent = Extract<
-  NonNullable<AskUserQuestionItem['intent']>,
-  { kind: 'member-question' }
->
-
 /** File name of a referenced document path. */
 function filenameOf(path: string): string {
   return path.slice(path.lastIndexOf('/') + 1)
 }
 
 /**
- * Whether a request batch is a member-question request: every question of the
- * batch declares the `member-question` intent. The banner is one request-level
- * Decision Brief, so a batch mixing intents (or carrying any generic or
- * plan-review question) stays with the generic composer entry — an intent
- * changes presentation, never which requests each surface can answer.
+ * Build the banner's Decision Brief over a Host pending member-question row.
+ * Origin, background, references, and expiry come from the Host operation;
+ * cached paths come from the Host pending view.
  *
- * @param questions - the request's whole question batch.
- * @returns Whether the member-question wrapper claims the request.
- */
-export function isMemberQuestionBatch(
-  questions: readonly { intent?: { kind: string } & object }[],
-): boolean {
-  return questions.length > 0
-    && questions.every(question => question.intent?.kind === 'member-question')
-}
-
-/**
- * Build the banner's Decision Brief over a claimed member-question request.
- * Origin, background, references, and expiry come from the batch's shared
- * carried intent; when a request predates the carried fields (or a test
- * fixture omits them), background falls back to the first supporting detail
- * and the brief renders identity-lite.
- *
- * @param wait - the JSON pending row.
+ * @param wait - the Host pending view.
  * @returns The rendered brief.
  */
 export function memberBriefOf(wait: MemberQuestionWait): MemberQuestionBrief {
-  const intent = wait.questions.find(question => question.intent?.kind === 'member-question')
-    ?.intent
-  const carried = intent?.kind === 'member-question'
-    && (intent as Partial<MemberQuestionCarriedIntent>).origin !== undefined
-    ? intent
-    : undefined
-  const fallback = clampBackground(
-    wait.questions.find(question => question.detail !== undefined)?.detail ?? '',
-  )
-  const background = clampBackground(carried?.background ?? fallback)
+  const origin = wait.operation.origin
+  const background = clampBackground(wait.operation.background)
   return {
-    ...(carried === undefined ? {} : {
-      origin: {
-        projectName: carried.origin.projectName,
-        originSessionTitle: carried.origin.originSessionTitle,
-        askerDisplayName: carried.origin.askerDisplayName,
-        askerAvatarUrl: carried.origin.askerAvatarUrl,
-        askerRole: carried.origin.askerRole,
-      },
-    }),
+    origin: {
+      projectName: origin.projectName,
+      originSessionTitle: origin.originSessionTitle,
+      askerDisplayName: origin.askerDisplayName,
+      ...(origin.askerAvatarUrl === '' ? {} : { askerAvatarUrl: origin.askerAvatarUrl }),
+      askerRole: origin.askerRole,
+    },
     ...(background === '' ? {} : { background }),
-    references: (carried?.references ?? []).map(reference => ({
-      filename: filenameOf(reference.cachedPath ?? reference.path),
-      reason: reference.reason,
-      path: reference.path,
-      ...(reference.cachedPath === undefined ? {} : { cachedPath: reference.cachedPath }),
-      ...(reference.content === undefined ? {} : { content: reference.content }),
-    })),
-    ...(carried === undefined ? {} : { expiresAt: carried.expiresAt }),
+    references: wait.operation.references.map((reference) => {
+      const cachedPath = wait.cachedReferences?.find(entry => entry.path === reference.path)?.cachedPath
+      return {
+        filename: filenameOf(cachedPath ?? reference.path),
+        reason: reference.reason,
+        path: reference.path,
+        ...(cachedPath === undefined ? {} : { cachedPath }),
+      }
+    }),
+    expiresAt: wait.operation.expiresAt,
   }
 }
 
 /**
- * Claim the member-question banner while the Host pending row is a
- * member-question batch.
- * @param owner - JSON pending row from ReceivingQuestionBook.
- * @returns the pending row when the batch declares the intent, else null.
+ * Claim the member-question banner while the Host pending row is present.
+ * @param owner - Host pending view from ReceivingQuestionBook.
+ * @returns the pending view, or null.
  */
 export function selectMemberQuestion(owner: {
   pending?: MemberQuestionWait | undefined
 }): MemberQuestionWait | null {
-  const wait = owner.pending
-  return wait !== undefined && isMemberQuestionBatch(wait.questions) ? wait : null
+  return owner.pending ?? null
+}
+
+/**
+ * Map Host operation questions into the shared presentation's JSON batch.
+ * @param wait - Host pending view.
+ * @returns Ask User items for `question.presentation`.
+ */
+export function presentationQuestionsOf(wait: MemberQuestionWait): AskUserQuestionItem[] {
+  return wait.operation.questions.map(question => ({
+    id: question.id,
+    question: question.question,
+    ...(question.header === undefined ? {} : { header: question.header }),
+    ...(question.options === undefined ? {} : { options: question.options.map(option => ({ ...option })) }),
+    ...(question.multiSelect === undefined ? {} : { multiSelect: question.multiSelect }),
+  }))
 }
 
 /**
@@ -198,7 +178,8 @@ export type MemberQuestionComposerProps =
   & PropsLocale<'member-question'>
   & {
     useReceivingQuestions: SnapshotSelectorHook<ReceivingQuestionBookView>
-    settle: (sessionId: SessionId, response: ReceivingQuestionSettleResponse) => Promise<void>
+    settle: (sessionId: SessionId, answers: AskUserQuestionAnswer['answers']) => Promise<void>
+    decline: (sessionId: SessionId) => Promise<void>
     /**
      * Focus a referenced document in the session's details panel. The callback
      * resolves `ctx.get('detailsFocus')` per gesture; absent providers make it
@@ -219,7 +200,7 @@ export type MemberQuestionDockProps =
   PropsRuntime<'conversation.input.dock'>
   & PropsRenderSlots<'question.presentation'>
   & PropsLocale<'member-question'>
-  & Pick<MemberQuestionComposerProps, 'focusDocument' | 'openReference' | 'settle'>
+  & Pick<MemberQuestionComposerProps, 'focusDocument' | 'openReference' | 'settle' | 'decline'>
   & {
     hooks: { receivingQuestions: HostObservable<ReceivingQuestionBookView> }
     useReceivingQuestions: SnapshotSelectorHook<ReceivingQuestionBookView>

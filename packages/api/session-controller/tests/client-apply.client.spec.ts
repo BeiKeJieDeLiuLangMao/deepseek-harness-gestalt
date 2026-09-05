@@ -135,9 +135,7 @@ describe('Session Controller Client apply', () => {
     })
     await bench.fiber.dispose()
     expect(bench.ctx.get('receivingQuestions')).toBeUndefined()
-    await expect(book.settle('receiving-host-1' as SessionId, {
-      kind: 'declined',
-    })).rejects.toThrow(/disposed/)
+    await expect(book.decline('receiving-host-1' as SessionId)).rejects.toThrow(/disposed/)
   })
 
   it('forwards dock settle through the registered book onto generated Remote', async () => {
@@ -190,10 +188,9 @@ describe('Session Controller Client apply', () => {
         answers: [{ id: 'channel', selected: ['Canary'] }],
       },
     })
-    await bench.ctx.receivingQuestions.settle(sessionId, {
-      kind: 'answered',
-      answers: [{ id: 'channel', selected: ['Canary'] }],
-    })
+    await bench.ctx.receivingQuestions.settle(sessionId, [
+      { id: 'channel', selected: ['Canary'] },
+    ])
     expect(bench.memberQuestion.settle).toHaveBeenCalledWith({
       receivingSessionId: sessionId,
       revision: 1,

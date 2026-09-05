@@ -40,6 +40,7 @@ async function bench(sessions?: {
     pending: () => undefined,
     records: () => [],
     settle: vi.fn(async () => {}),
+    decline: vi.fn(async () => {}),
     getSnapshot: () => ({ byId: {} }),
     subscribe: () => () => {},
   }
@@ -76,14 +77,18 @@ describe('ui-member-questions browser apply', () => {
         'question.presentation': { kind: 'single', scope: 'session' },
       })
       const injected = (entry.inject as unknown as () => {
-        settle: (sessionId: SessionId, response: { kind: string }) => Promise<void>
+        settle: (sessionId: SessionId, answers: { id: string; selected: string[] }[]) => Promise<void>
+        decline: (sessionId: SessionId) => Promise<void>
       })()
       expect(typeof injected.settle).toBe('function')
-      await injected.settle('receiving-session' as SessionId, { kind: 'declined' })
+      expect(typeof injected.decline).toBe('function')
+      await injected.settle('receiving-session' as SessionId, [{ id: 'channel', selected: ['Canary'] }])
       expect(ctx.receivingQuestions.settle).toHaveBeenCalledWith(
         'receiving-session',
-        { kind: 'declined' },
+        [{ id: 'channel', selected: ['Canary'] }],
       )
+      await injected.decline('receiving-session' as SessionId)
+      expect(ctx.receivingQuestions.decline).toHaveBeenCalledWith('receiving-session')
     } finally {
       await fiber.dispose()
     }
