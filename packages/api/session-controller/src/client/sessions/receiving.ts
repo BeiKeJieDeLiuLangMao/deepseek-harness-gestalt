@@ -122,8 +122,9 @@ export class ReceivingQuestionBook implements ObservableSnapshot<ReceivingQuesti
   /**
    * Re-read the complete Host snapshot, collapsing concurrent callers.
    * A `changed` or settle that arrives during an in-flight snapshot marks a
-   * follow-up load; dispose cancels that follow-up.
-   * @returns completion of the in-flight load.
+   * follow-up load; waiters of the in-flight load wait until that drain
+   * finishes. Dispose cancels the follow-up. A failed snapshot does not loop.
+   * @returns completion of the in-flight load, including any dirty drain.
    */
   refresh(): Promise<void> {
     if (this.#disposed) return Promise.resolve()
@@ -131,13 +132,9 @@ export class ReceivingQuestionBook implements ObservableSnapshot<ReceivingQuesti
       this.#dirty = true
       return this.#load
     }
-    this.#load = this.load().finally(() => {
-      this.#load = undefined
-      if (this.#disposed || !this.#dirty) return
-      this.#dirty = false
-      void this.refresh()
-    })
-    return this.#load
+    const flight = this.drain()
+    this.#load = flight
+    return flight
   }
 
   /**
@@ -235,11 +232,25 @@ export class ReceivingQuestionBook implements ObservableSnapshot<ReceivingQuesti
     for (const listener of [...this.#listeners]) listener()
   }
 
-  private async load(): Promise<void> {
+  private async drain(): Promise<void> {
+    try {
+      for (;;) {
+        const applied = await this.load()
+        if (!applied || this.#disposed) return
+        if (!this.#dirty) return
+        this.#dirty = false
+      }
+    } finally {
+      this.#load = undefined
+    }
+  }
+
+  private async load(): Promise<boolean> {
     const carried = await this.#ctx.remote.memberQuestion.snapshot()
-    if (this.#disposed) return
-    if (!carried.ok) return
+    if (this.#disposed) return false
+    if (!carried.ok) return false
     this.applySnapshot(carried.value)
+    return true
   }
 
   /**

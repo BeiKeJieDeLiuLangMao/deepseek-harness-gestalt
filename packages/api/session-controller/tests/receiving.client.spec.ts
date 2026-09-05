@@ -188,12 +188,18 @@ describe('ReceivingQuestionBook generated Remote', () => {
     })
   })
 
-  it('reloads after a Host changed that arrived during an in-flight snapshot', async () => {
+  it('applies a terminal Host changed that arrived during snapshot 1 without a second event', async () => {
     const hold = Promise.withResolvers<undefined>()
-    let current = hostSnapshot(1, 'pending')
+    const first = hostSnapshot(1, 'pending')
+    let current = first
+    let calls = 0
     const { book, emitChanged, snapshot } = bench({
       snapshotImpl: async () => {
-        await hold.promise
+        calls += 1
+        if (calls === 1) {
+          await hold.promise
+          return envelope(first)
+        }
         return envelope(current)
       },
     })
@@ -203,9 +209,7 @@ describe('ReceivingQuestionBook generated Remote', () => {
     emitChanged({ revision: 2, questionId: 'question-1', state: 'expired' })
     hold.resolve(undefined)
     await started
-    await vi.waitFor(() => {
-      expect(book.pending(SESSION)).toBeUndefined()
-    })
+    expect(book.pending(SESSION)).toBeUndefined()
     expect(book.records(SESSION)).toMatchObject([{ state: 'expired', terminalAt: 500 }])
     expect(snapshot).toHaveBeenCalledTimes(2)
   })

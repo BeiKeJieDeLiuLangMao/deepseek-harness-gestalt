@@ -97,17 +97,15 @@ export const inject = [
   'remote.commands',
   'remote.session',
   'remote.subagents',
+  'remote.memberQuestion',
 ]
 
 /**
  * Install Client Session state, receiving-question projection, and the reconnecting control stream.
- * After `remote.session` is active, a missing generated `memberQuestion` property fails apply.
+ * Required generated namespaces, including `memberQuestion`, are injected services.
  * @param ctx - Client Cordis context.
  */
 export function apply(ctx: Context): void {
-  if (ctx.remote.memberQuestion === undefined) {
-    throw new Error('generated Remote namespace "memberQuestion" is not mounted')
-  }
   const remotes = ctx.remote as unknown as SessionRemotes
   const sessions = new ClientSessions(ctx, remotes)
   const receiving = new ReceivingQuestionBook(ctx)
