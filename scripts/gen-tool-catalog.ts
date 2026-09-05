@@ -19,7 +19,7 @@ import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SqliteSessionQueryEngine from '@deepseek-ai/dsh-session-query-sqlite'
 import GoalService from '@deepseek-ai/dsh-goal'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import ToolRuntime, { type Config as ToolsConfig } from '@deepseek-ai/dsh-tools'
+import ToolRuntime, { RUN_CODE_NAME, TOOL_SEARCH_NAME, type Config as ToolsConfig } from '@deepseek-ai/dsh-tools'
 import LocalBashExecutor from '@deepseek-ai/dsh-bash-local'
 import * as BashEnvPlugin from '@deepseek-ai/dsh-shell-env'
 import { PwshLocalExecutor } from '@deepseek-ai/dsh-pwsh-local'
@@ -175,11 +175,6 @@ export interface ToolPackage {
   /** Agent-like scope key whose tool view is catalogued instead of the global view. */
   scope?: (ctx: Context) => Agent
   /**
-   * Harvest deferred catalog schemas (`tool_search` inventory) instead of the
-   * immediately model-visible subset. Browser tools register only as deferred.
-   */
-  harvestCatalog?: true
-  /**
    * Config for the caller's `ToolRuntime` mount. The registry itself ships a
    * model-facing tool (`run_code`, registered under a non-native `mode`), so
    * ITS catalog entry boots the registry in the mode that exposes it;
@@ -264,7 +259,6 @@ const TOOL_PACKAGES: ToolPackage[] = [
     source: 'packages/browser/tool-browser/src/index.ts',
     requires: ['ctx.tools', 'ctx.browserRuntime', 'ctx.tools.toolSearch for deferred discovery'],
     writes: ['tool/call', 'tool/result'],
-    harvestCatalog: true,
     toolsConfig: { toolSearch: { maxResultBytes: 65536 } },
     async mount(ctx) {
       await ctx.plugin(DeterministicBrowserRuntime, {
@@ -722,10 +716,7 @@ export async function collectToolCatalog(packages: ToolPackage[] = TOOL_PACKAGES
       await ctx.plugin(SystemPrompt)
       await ctx.plugin(ToolRuntime, entry.toolsConfig ?? {})
       await entry.mount(ctx)
-      const schemas = (entry.harvestCatalog === true
-        ? ctx.tools.catalogSchemas(entry.scope?.(ctx))
-        : ctx.tools.schemas(entry.scope?.(ctx))
-      ).sort((a, b) => a.name.localeCompare(b.name))
+      const schemas = harvestPackageSchemas(ctx, entry)
       assertToolsHarvested(entry, schemas.length)
       catalog.push({
         pkg: entry.pkg,
@@ -744,6 +735,25 @@ export async function collectToolCatalog(packages: ToolPackage[] = TOOL_PACKAGES
     }
   }
   return catalog
+}
+
+const TOOLS_PACKAGE = '@deepseek-ai/dsh-tools'
+
+/**
+ * Union the end-tool catalog with registry-owned presentation schemas.
+ * `catalogSchemas()` omits `run_code` and `tool_search`; `schemas()` omits
+ * deferred tools. Merge by name, then keep registry-owned names only on the
+ * tools package so a `toolSearch` harvest (browser) does not steal `tool_search`.
+ */
+function harvestPackageSchemas(ctx: Context, entry: ToolPackage): ToolSchema[] {
+  const scope = entry.scope?.(ctx)
+  const merged = new Map<string, ToolSchema>()
+  for (const schema of ctx.tools.catalogSchemas(scope)) merged.set(schema.name, schema)
+  for (const schema of ctx.tools.schemas(scope)) merged.set(schema.name, schema)
+  return [...merged.values()]
+    .filter(schema => entry.pkg === TOOLS_PACKAGE
+      || (schema.name !== RUN_CODE_NAME && schema.name !== TOOL_SEARCH_NAME))
+    .sort((a, b) => a.name.localeCompare(b.name))
 }
 
 /** Resolve one harvested tool to the plugin source that registered it. */

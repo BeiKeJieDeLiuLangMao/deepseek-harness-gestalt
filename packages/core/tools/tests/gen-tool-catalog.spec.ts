@@ -100,6 +100,12 @@ describe('gen-tool-catalog collectToolCatalog', () => {
     const tools = catalog.find(entry => entry.pkg === '@deepseek-ai/dsh-tools')
     expect(tools?.schemas.map(schema => schema.name).sort()).toEqual(['run_code', 'tool_search'])
     expect(tools?.sources.tool_search).toBe('packages/core/tools/src/index.ts')
+    const browser = catalog.find(entry => entry.pkg === '@deepseek-ai/dsh-tool-browser')
+    expect(browser?.schemas.map(schema => schema.name)).not.toContain('tool_search')
+    expect(browser?.schemas.map(schema => schema.name)).toEqual([
+      'browser_close', 'browser_create', 'browser_focus', 'browser_input',
+      'browser_navigate', 'browser_observe', 'browser_screenshot',
+    ])
   })
 })
 
