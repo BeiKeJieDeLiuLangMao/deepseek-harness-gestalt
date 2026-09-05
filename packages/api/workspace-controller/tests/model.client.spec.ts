@@ -10,6 +10,8 @@ import type {
   WorkspaceDeleteRequest,
   WorkspaceDeleteValue,
   WorkspaceFollowFrame,
+  WorkspaceGitRemoteRequest,
+  WorkspaceGitRemoteValue,
   WorkspaceInsertBeforeRequest,
   WorkspaceInsertSessionBeforeRequest,
   WorkspaceOrderValue,
@@ -84,6 +86,10 @@ class FakeWorkspaceRemote implements WorkspaceRemote {
     request: WorkspaceArchiveSessionRequest,
   ) => Promise<RemoteResult<WorkspaceArchiveValue>> = request =>
     Promise.resolve(remoteOk({ archivedSessionIds: [request.sessionId] }))
+  onGitRemote: (
+    _request: WorkspaceGitRemoteRequest,
+    _signal?: AbortSignal,
+  ) => Promise<RemoteResult<WorkspaceGitRemoteValue>> = () => Promise.resolve(remoteOk({}))
 
   create(request: WorkspaceCreateRequest): Promise<RemoteResult<WorkspaceCreateValue>> {
     this.record('create', request)
@@ -113,6 +119,14 @@ class FakeWorkspaceRemote implements WorkspaceRemote {
   archiveSession(request: WorkspaceArchiveSessionRequest): Promise<RemoteResult<WorkspaceArchiveValue>> {
     this.record('archiveSession', request)
     return this.onArchiveSession(request)
+  }
+
+  gitRemote(
+    request: WorkspaceGitRemoteRequest,
+    signal?: AbortSignal,
+  ): Promise<RemoteResult<WorkspaceGitRemoteValue>> {
+    this.record('gitRemote', request)
+    return this.onGitRemote(request, signal)
   }
 
   async *follow(_signal?: AbortSignal): AsyncGenerator<WorkspaceFollowFrame> {}

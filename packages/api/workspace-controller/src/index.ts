@@ -1,10 +1,12 @@
 /** Host Workspace Remote owner: explicit commands and reconnect-safe state. */
 
 import { Context } from '@deepseek-ai/cordis'
+import type { NativeCommandRunner } from '@deepseek-ai/dsh-native-command'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { WorkspaceCommands } from './commands.ts'
 import { DirectoryPickerController } from './directory-picker.ts'
 import { WorkspaceFeed } from './feed.ts'
+import { createWorkspaceGitCommand } from './git.ts'
 import type {
   WorkspaceArchiveSessionRequest,
   WorkspaceArchiveValue,
@@ -13,6 +15,8 @@ import type {
   WorkspaceDeleteRequest,
   WorkspaceDeleteValue,
   WorkspaceFollowFrame,
+  WorkspaceGitRemoteRequest,
+  WorkspaceGitRemoteValue,
   WorkspaceInsertBeforeRequest,
   WorkspaceInsertSessionBeforeRequest,
   WorkspaceOrderValue,
@@ -20,8 +24,15 @@ import type {
   WorkspaceValue,
 } from './types.ts'
 
+/** Optional Host Git runner for Workspace origin inspection. */
+export interface WorkspaceControllerOptions {
+  /** No-shell Git runner; defaults to the subprocess-tree production runner. */
+  readonly workspaceGitCommand?: NativeCommandRunner
+}
+
 export type * from './types.ts'
 export { DirectoryPickerController } from './directory-picker.ts'
+export { createWorkspaceGitCommand } from './git.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -37,10 +48,16 @@ export class WorkspaceController extends TypertRemoteService {
   private readonly commands: WorkspaceCommands
   private readonly feed: WorkspaceFeed
 
-  /** @param ctx - Host context containing the Workspace registry. */
-  constructor(ctx: Context) {
+  /**
+   * @param ctx - Host context containing the Workspace registry.
+   * @param options - optional Git runner; production uses `ctx.subprocess`.
+   */
+  constructor(ctx: Context, options: WorkspaceControllerOptions = {}) {
     super(ctx, 'workspaceController', { namespace: 'workspace' })
-    this.commands = new WorkspaceCommands(ctx)
+    this.commands = new WorkspaceCommands(
+      ctx,
+      options.workspaceGitCommand ?? createWorkspaceGitCommand(ctx, process.cwd()),
+    )
     this.feed = new WorkspaceFeed(ctx)
     // This package is the Loader entry for both Remote owners it hosts: the
     // directory-picking seam is abstract and never an entry itself. The child
@@ -107,6 +124,17 @@ export class WorkspaceController extends TypertRemoteService {
   @Remote('archiveSession')
   archiveSession(request: WorkspaceArchiveSessionRequest): Promise<WorkspaceArchiveValue> {
     return this.commands.archiveSession(request)
+  }
+
+  /**
+   * Read the configured Git `origin` of one registered Workspace.
+   * @param request - Workspace identity.
+   * @param signal - caller lifetime; abort terminates the Git process tree.
+   * @returns `{ remoteUrl }` when origin is non-empty; `{}` when the checkout is not Git or has no origin.
+   */
+  @Remote('gitRemote')
+  gitRemote(request: WorkspaceGitRemoteRequest, signal: AbortSignal): Promise<WorkspaceGitRemoteValue> {
+    return this.commands.gitRemote(request, signal)
   }
 
   /**

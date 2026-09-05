@@ -8,6 +8,7 @@ import {
   WorkspaceOrderInvalidError,
   WorkspaceUnknownSessionError,
 } from '@deepseek-ai/dsh-workspace'
+import type { NativeCommandRunner } from '@deepseek-ai/dsh-native-command'
 import { RemoteError, remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
 import { workspaceView } from './feed.ts'
 import type {
@@ -17,6 +18,8 @@ import type {
   WorkspaceCreateValue,
   WorkspaceDeleteRequest,
   WorkspaceDeleteValue,
+  WorkspaceGitRemoteRequest,
+  WorkspaceGitRemoteValue,
   WorkspaceInsertBeforeRequest,
   WorkspaceInsertSessionBeforeRequest,
   WorkspaceOrderValue,
@@ -28,8 +31,14 @@ import type {
 export class WorkspaceCommands {
   private operationTail = Promise.resolve()
 
-  /** @param ctx - Host context containing the Workspace registry. */
-  constructor(private readonly ctx: Context) {}
+  /**
+   * @param ctx - Host context containing the Workspace registry.
+   * @param runGit - no-shell Git runner; production uses the subprocess tree service.
+   */
+  constructor(
+    private readonly ctx: Context,
+    private readonly runGit: NativeCommandRunner,
+  ) {}
 
   /**
    * Create or resolve one Workspace over an existing directory.
@@ -143,6 +152,49 @@ export class WorkspaceCommands {
       )
     }
     return { workspace: workspaceView(workspace) }
+  }
+
+  /**
+   * Read the configured `origin` of one registered Workspace checkout.
+   * @param request - Workspace identity.
+   * @param signal - caller lifetime; abort terminates the Git process tree.
+   * @returns `{ remoteUrl }` when origin is non-empty; `{}` for a non-Git directory or missing origin.
+   */
+  async gitRemote(request: WorkspaceGitRemoteRequest, signal: AbortSignal): Promise<WorkspaceGitRemoteValue> {
+    if (signal.aborted) {
+      throw new RemoteError('gateway/cancelled', 'workspace remote inspection was aborted', {})
+    }
+    const workspace = this.requireWorkspace(request.workspaceId)
+    try {
+      const { stdout } = await this.runGit(
+        'git',
+        ['-C', workspace.path, 'remote', 'get-url', 'origin'],
+        signal,
+      )
+      const remoteUrl = stdout.trim()
+      return remoteUrl === '' ? {} : { remoteUrl }
+    } catch (error) {
+      if (signal.aborted) {
+        throw new RemoteError('gateway/cancelled', 'workspace remote inspection was aborted', {}, { cause: error })
+      }
+      if (error instanceof Error && error.message === 'workspace Git output exceeded the bounded capture') {
+        throw new RemoteError(
+          'workspace/git-failed',
+          error.message,
+          { workspaceId: request.workspaceId },
+          { cause: error },
+        )
+      }
+      if (error instanceof Error && error.message === 'workspace Git operations require the subprocess service') {
+        throw new RemoteError(
+          'workspace/git-failed',
+          error.message,
+          { workspaceId: request.workspaceId },
+          { cause: error },
+        )
+      }
+      return {}
+    }
   }
 
   /**
