@@ -90,11 +90,12 @@ export interface SidebarSessionStore {
   get(id: string): {
     header: SidebarSessionHeader
     /**
-     * The live session's append-only event log (immutable snapshot; absent
-     * on sessions the runtime has not hydrated). Read-only access — the
-     * jobs.output route replays `job_output` tool/result rows from it.
+     * The live session's append-only event log as an immutable snapshot.
+     * Read-only access — the jobs.output route replays `job_output`
+     * tool/result rows from it. (The `Session.events` property this face
+     * mirrored was renamed to `snapshotEvents()` in DSH 0.1.2-alpha.4.)
      */
-    events?: readonly SidebarSessionEvent[]
+    snapshotEvents(): readonly SidebarSessionEvent[]
   } | undefined
 }
 
@@ -121,6 +122,7 @@ export interface SidebarSlotRegisterOptions {
   locale?: string
   registrant?: string
   /** Business-face factory; args depend on the slot scope. */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- mirrors the host slots signature, where inject args are untyped; unknown[] would reject concrete-typed implementations (contravariance)
   inject?: (...args: any[]) => Record<string, unknown>
   children?: Record<string, unknown>
 }
@@ -313,39 +315,6 @@ export interface SidebarSessionPersistenceService {
   }>
 }
 
-/** RPC result slot mirror (`RpcResult<T>` on the wire). */
-export type SidebarRpcResult<T> = { ok: true; value: T } | { ok: false; error: { code: string; message: string } }
-
-/** Unary response mirror (`RpcResponse<T>` on the wire). */
-export interface SidebarRpcResponse<T> {
-  rpcId: unknown
-  result: SidebarRpcResult<T>
-}
-
-/** The generic session-history RPC face the Side Chat transcript polls
- *  (subagent.history verifies subagent-catalog membership, which our custom
- *  side-thread children do not have — the generic session.history reads any
- *  durable log directly). */
-export interface SidebarSessionHistoryRpc {
-  history(
-    payload: { sessionId: string; beforeSeq?: number; maxMessages?: number },
-    signal?: AbortSignal,
-  ): Promise<SidebarRpcResponse<{ events: SidebarHistoryEntry[]; hasMore: boolean }>>
-}
-
-/** The wire face the Subagent activity summary needs (subset of `ctx.connection`). */
-export interface SidebarConnectionHandle {
-  api: {
-    sessions: SidebarSessionHistoryRpc
-    subagents: {
-      history(
-        payload: SidebarSubagentAddress & { beforeSeq?: number; maxMessages?: number },
-        signal?: AbortSignal,
-      ): Promise<SidebarRpcResponse<{ events: SidebarHistoryEntry[]; hasMore: boolean }>>
-    }
-  }
-}
-
 /** The client session list snapshot the sidebar subscribes to. */
 export interface SidebarSessionList {
   current: SessionId | undefined
@@ -446,9 +415,10 @@ export interface SidebarLocaleService {
 
 /** The composer draft face the sidebar reaches through `ctx.conversation.input`. */
 export interface SidebarSessionInput {
-  /** The live input store (draft read for append). */
+  /** The live input store (draft read for append). `draftRev` is the machine's
+   *  span-CAS revision — required to mint a structured file-reference chip. */
   state: {
-    getSnapshot(): { draft: string }
+    getSnapshot(): { draft: string; draftRev?: number }
   }
   /** Replace the draft text (the input machine's single public write path). */
   setDraft(text: string): void
@@ -462,7 +432,7 @@ export interface SidebarConversation {
 }
 
 /**
- * The client workspaces service face (mirror of the runtime IWorkspaces).
+ * The client workspaces service face used for Side Chat archival close.
  */
 export interface SidebarWorkspacesService {
   /** Open a filesystem path with the Host operating system's default application. */
@@ -474,6 +444,25 @@ export interface SidebarWorkspacesService {
     getSnapshot(): { phase: 'pending' | 'ready'; archivedSessionIds: readonly SessionId[] }
     subscribe(listener: () => void): () => void
   }
+}
+
+/**
+ * The client `remote.session` namespace face. The chat's file-open funnel is
+ * `openWorkspacePath`: the caller resolves the path against the session cwd,
+ * and the host hands it to the OS's default application.
+ */
+export interface SidebarRemoteSessionService {
+  /**
+   * Open an absolute path with the Host operating system's default
+   * application. Resolves with the typert `RemoteResult` envelope.
+   */
+  openWorkspacePath(
+    request: { path: string },
+    signal?: AbortSignal,
+  ): Promise<
+    | { readonly ok: true; readonly value: { opened: boolean } }
+    | { readonly ok: false; readonly error: { readonly code: string; readonly message: string; readonly details: object } }
+  >
 }
 
 /**
@@ -556,12 +545,22 @@ export interface SidebarContextShape {
   sessions: SidebarSessionStore & SidebarSessionsService
   /** The client wire handle used by sidebar RPC helpers. */
   connection: ConnectionHandle
+  /** Workspace archival used by Side Chat close. */
+  workspaces: SidebarWorkspacesService
+  /** Typert Remote namespaces used by file-open interception and Side Chat commands. */
+  remote: {
+    session: SidebarRemoteSessionService
+    commands: {
+      execute(sessionId: SessionId, line: string, args: readonly unknown[]): Promise<
+        | { readonly ok: true; readonly value: unknown }
+        | { readonly ok: false; readonly error: { readonly code: string; readonly message: string; readonly details: object } }
+      >
+    }
+  }
   /** The web runtime trust list (bind-derived). */
   webRuntime: SidebarWebRuntime
   /** The client slot registry (register/inject). */
   slots: SidebarSlotsService
-  /** The client workspaces service face (file-open funnel). */
-  workspaces: SidebarWorkspacesService
   /** The settings service face (prefs persistence + namespace reads). */
   settings: SidebarSettingsService
   /** The invariant registry face. */
