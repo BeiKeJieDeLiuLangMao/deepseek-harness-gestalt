@@ -8,16 +8,10 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
+import type {} from '@deepseek-ai/dsh-browser-workspace/remote'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
-import type {
-  BrowserPageState,
-  BrowserRuntimeState,
-  BrowserScreenshot,
-  BrowserTarget,
-} from '@deepseek-ai/dsh-browser-workspace/client'
-import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import { BrowserPreview } from './BrowserPreview.tsx'
 import { BrowserSettingsSection } from './BrowserSettingsSection.tsx'
@@ -44,18 +38,6 @@ export {
   browserCreateRequestFromSettings,
 } from '../browser-settings.ts'
 export type { BrowserSettings } from '../browser-settings.ts'
-
-interface BrowserWorkspaceRemoteFace {
-  focus(sessionId: SessionId, target: BrowserTarget, expectedRevision: number): Promise<RemoteResult<BrowserPageState>>
-  observe(sessionId: SessionId, target: BrowserTarget): Promise<RemoteResult<BrowserRuntimeState>>
-  screenshot(sessionId: SessionId, target: BrowserTarget): Promise<RemoteResult<BrowserScreenshot>>
-}
-
-declare module '@deepseek-ai/dsh-api-gateway/client' {
-  interface ClientRemote {
-    browserWorkspace: BrowserWorkspaceRemoteFace
-  }
-}
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {

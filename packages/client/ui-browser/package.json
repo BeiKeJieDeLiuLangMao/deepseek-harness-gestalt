@@ -49,7 +49,6 @@
     "@deepseek-ai/cordis": "workspace:^"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-api-gateway": "workspace:^",
     "@deepseek-ai/dsh-api-remotes": "workspace:^",
     "@deepseek-ai/dsh-browser-workspace": "workspace:^",
     "@deepseek-ai/dsh-client-locale": "workspace:^",
