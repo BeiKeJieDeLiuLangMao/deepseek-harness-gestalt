@@ -14,6 +14,8 @@ The Python SDK has no separate application entrypoint. It launches the bundled `
 
 Every launch requires an explicit Harness home. Pass `dsh_home` or provide a non-empty `DSH_HOME` in the child environment. The SDK deliberately never discovers `~/.dsh`.
 
+After the runtime acknowledges `shutdown`, `close()` waits for server-owned teardown, persistence, and normal process exit before signaling the process. With a finite `shutdown_timeout_seconds`, that value independently bounds the shutdown request, the normal-exit wait, and the post-terminate wait; a missing acknowledgement or exit timeout enters the terminate/kill fallback. Setting it to `None` preserves unbounded waits at those phases.
+
 ```py
 from deepseek_harness import DeepSeekHarness
 
