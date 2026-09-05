@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-05-session-admit-attachment-remote.md
-2026-09-05-session-admit-attachment-remote.md: c58d59224fe260e18ca7b22d02cee7ac02000405
-2026-09-05-session-admit-attachment-remote.zh.md: 7c32d0befff7068a970a79e3880148d9f03647d6
+2026-09-05-session-admit-attachment-remote.md: 009a3fcfd0cf33ec690a45bc383b70b7c2bb9f5f
+2026-09-05-session-admit-attachment-remote.zh.md: fd9cc9c08b42468eb9454684a676f0e4ec541bff

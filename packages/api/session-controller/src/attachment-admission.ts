@@ -2,9 +2,9 @@
 
 import { createHash } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
-import { AttachmentError } from '@deepseek-ai/dsh-attachment'
+import { AttachmentError, displayName } from '@deepseek-ai/dsh-attachment'
 import type { ByteAttachmentRef } from '@deepseek-ai/dsh-attachment'
-import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import type { ApiSessionAgentController } from './agent.ts'
 import type { SessionAdmitAttachmentRequest, SessionAdmitAttachmentValue } from './types.ts'
@@ -24,7 +24,8 @@ const MEDIA_TYPE = /^[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]{0,126}\/[A-Za-z0-9][A-Za-z0
  * Admit exact Companion file bytes onto one Session without sending them to a model.
  * Concurrent `operationId`s for the same Session share the Agent controller's
  * admission chain so collision checks and `session/attachment-admitted` appends
- * serialize at one live Session commit point.
+ * serialize at one live Session commit point. A recorded admission is not
+ * reported successful until `sessions.flush` completes.
  */
 export class SessionAttachmentAdmission {
   /**
@@ -51,7 +52,14 @@ export class SessionAttachmentAdmission {
         { reason: 'INVALID_BYTE_MEDIA_TYPE' },
       )
     }
-    const name = boundedToken(request.name, ADMIT_ATTACHMENT_MAX_NAME_CHARS, 'name')
+    const recordedName = displayName(request.name)
+    if (recordedName === undefined) {
+      throw new RemoteError(
+        'session/attachment-invalid',
+        'File attachment name is invalid.',
+        { reason: 'INVALID_BYTE_NAME' },
+      )
+    }
     const bytes = decodeCanonicalBase64(request.data)
     const sha256 = createHash('sha256').update(bytes).digest('hex')
     const found = await this.agents.resolveAgent(request.sessionId)
@@ -63,13 +71,14 @@ export class SessionAttachmentAdmission {
           sha256,
           bytes: bytes.byteLength,
           mediaType,
-          name,
+          name: recordedName,
         })
+        await flushAdmission(this.ctx, found.agent.session)
         return { attachment: prior.data.attachment }
       }
       let attachment: ByteAttachmentRef
       try {
-        attachment = await this.ctx.attachments.saveBytes({ data: bytes, mediaType, name })
+        attachment = await this.ctx.attachments.saveBytes({ data: bytes, mediaType, name: recordedName })
       } catch (error: unknown) {
         if (error instanceof AttachmentError) {
           throw new RemoteError('session/attachment-invalid', error.message, { reason: error.code })
@@ -81,9 +90,22 @@ export class SessionAttachmentAdmission {
         operationId,
         source: 'companion',
       }, { ignorable: true })
-      await this.ctx.sessions.flush(found.agent.session)
+      await flushAdmission(this.ctx, found.agent.session)
       return { attachment }
     })
+  }
+}
+
+async function flushAdmission(ctx: Context, session: Session): Promise<void> {
+  try {
+    await ctx.sessions.flush(session)
+  } catch (error: unknown) {
+    throw new RemoteError(
+      'gateway/internal',
+      'Unable to persist file attachment admission.',
+      {},
+      { cause: error instanceof Error ? error : undefined },
+    )
   }
 }
 

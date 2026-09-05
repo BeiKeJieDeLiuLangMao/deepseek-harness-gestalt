@@ -341,6 +341,7 @@ export interface SessionAdmitAttachmentRequest {
   readonly sessionId: SessionId
   readonly operationId: string
   readonly mediaType: string
+  /** Caller display name; Host records the attachment-owner leaf after `displayName`. */
   readonly name: string
   readonly data: string
 }

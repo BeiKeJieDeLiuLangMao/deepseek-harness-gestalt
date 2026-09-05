@@ -75,6 +75,7 @@ kind: "package-reference"
 |---|---|
 | [`src/index.ts`](src/index.ts) | 插件入口：抽象 `AttachmentStore` 服务与再导出 |
 | [`src/types.ts`](src/types.ts) | 持久词汇：引用、限额、上传与存储载荷 |
+| [`src/display-name.ts`](src/display-name.ts) | 图片与不透明字节引用共用的 leaf 名剥离 |
 | [`src/admission.ts`](src/admission.ts) | 浏览器 prompt 准入：强制规范 base64、委托 `saveImages` 并投影持久 prompt part |
 | [`src/error.ts`](src/error.ts) | `AttachmentError` 类与 `isImageAdmissionError` 运行时子集 |
 | [`src/brand.ts`](src/brand.ts) | `AttachmentId` 带类型标记的不透明标识符 |

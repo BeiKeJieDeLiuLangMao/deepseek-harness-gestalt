@@ -10,7 +10,7 @@ Desktop Companion 已经用精确解密后的文件字节调用 `session.admitAt
 
 ## Decision
 
-`SessionController` 通过 `SessionAttachmentAdmission` 拥有 `session.admitAttachment`。该方法会恢复普通 Session，然后复用 `ApiSessionAgentController.serializeImageAdmission`，使同一 Session 上的并发 `operationId` 在 live Agent/Session 提交点串行。链持有后扫描 Session 日志中的该 `operationId`：`sha256` / bytes / mediaType / name 匹配则返回已记录的 `ByteAttachmentRef`；不匹配则以 `ATTACHMENT_OPERATION_COLLISION` 失败且不追加。首次准入调用 `saveBytes`，追加可忽略的 `session/attachment-admitted`（`source: 'companion'`），再 `sessions.flush`。线路边界与历史 Companion schema 一致（operation id ≤ 128、media type ≤ 127、name ≤ 255、最多 100 MiB 的规范 base64）。不透明文件绝不会变成 `ImageBlock` 或 prompt 文本。`session.attachment` 仍是图片读取。Desktop 仍使用名称 `session.admitAttachment`；把 Desktop 调用方从 ApiProxy 换走属于后续接线。
+`SessionController` 通过 `SessionAttachmentAdmission` 拥有 `session.admitAttachment`。该方法会恢复普通 Session，然后复用 `ApiSessionAgentController.serializeImageAdmission`，使同一 Session 上的并发 `operationId` 在 live Agent/Session 提交点串行。链持有后扫描 Session 日志中的该 `operationId`：`sha256` / bytes / mediaType / name（name 经附件 seam 的 `displayName` 规范化后再比较）匹配则返回已记录的 `ByteAttachmentRef`；不匹配则以 `ATTACHMENT_OPERATION_COLLISION` 失败且不追加。首次准入调用 `saveBytes`，追加可忽略的 `session/attachment-admitted`（`source: 'companion'`），再 `sessions.flush`。内存中已记录的准入在 flush 完成前不报告成功，因此之后用同一 `operationId` 重试会把持久化做完。线路边界与历史 Companion schema 一致（operation id ≤ 128、media type ≤ 127、name ≤ 255、最多 100 MiB 的规范 base64）。不透明文件绝不会变成 `ImageBlock` 或 prompt 文本。`session.attachment` 仍是图片读取。Desktop 仍使用名称 `session.admitAttachment`；把 Desktop 调用方从 ApiProxy 换走属于后续接线。
 
 ## Alternatives considered
 
@@ -22,4 +22,4 @@ Desktop Companion 已经用精确解密后的文件字节调用 `session.admitAt
 
 ## Consequences
 
-Host 测试用真实本地对象和 JSONL 日志覆盖幂等重试、碰撞、超限载荷、并发相同 operation，以及可忽略事件重开。在 Desktop 改接之前，ApiProxy 仍包含旧方法。事件载荷的 persistence-catalog 再生要等该所有权迁移完成。
+Host 测试用真实本地对象和 JSONL 日志覆盖路径名重试、flush 失败恢复、碰撞、超限载荷、并发相同 operation，以及可忽略事件重开。生成的 Host 与 Client Remote codec 覆盖有界请求、非法名字和 subagent 拒绝。在 Desktop 改接之前，ApiProxy 仍包含旧方法。事件载荷的 persistence-catalog 再生要等该所有权迁移完成。

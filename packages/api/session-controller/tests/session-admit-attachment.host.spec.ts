@@ -1,7 +1,7 @@
 /** Session Controller Companion opaque-file admission. */
 
 import { createHash } from 'node:crypto'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, rename, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -12,6 +12,7 @@ import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+import { logPath } from '@deepseek-ai/dsh-session-persistence-jsonl/src/format.ts'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import { createSessionTestRemote, installSessionReadTestServices } from './test-remote.ts'
 
@@ -127,6 +128,29 @@ describe('session.admitAttachment', () => {
     await ctx.fiber.dispose()
   })
 
+  it('normalizes Windows and POSIX path names for storage and retry matching', async () => {
+    const { ctx, sessionId, remote } = await harness()
+    const data = pdfBytes()
+    const first = await remote.admitAttachment(payload(data, { name: 'C:\\Users\\a\\notes.pdf' }))
+    expect(first.ok).toBe(true)
+    if (!first.ok) return
+    expect(first.value.attachment.name).toBe('notes.pdf')
+    const retry = await remote.admitAttachment(payload(data, { name: '/home/a/notes.pdf' }))
+    expect(retry.ok).toBe(true)
+    if (!retry.ok) return
+    expect(retry.value.attachment).toEqual(first.value.attachment)
+    const empty = await remote.admitAttachment(payload(data, { operationId: 'op-empty', name: 'C:\\Users\\a\\' }))
+    expect(empty.ok).toBe(false)
+    if (empty.ok) return
+    expect(empty.error).toMatchObject({
+      code: 'session/attachment-invalid',
+      details: { reason: 'INVALID_BYTE_NAME' },
+    })
+    expect(ctx.sessions.get(sessionId)?.snapshotEvents()
+      .filter(event => event.type === 'session/attachment-admitted')).toHaveLength(1)
+    await ctx.fiber.dispose()
+  })
+
   it('rejects a colliding operation id without appending a second event', async () => {
     const { ctx, sessionId, remote } = await harness()
     const first = await remote.admitAttachment(payload(pdfBytes()))
@@ -177,6 +201,48 @@ describe('session.admitAttachment', () => {
     expect(ctx.sessions.get(sessionId)?.snapshotEvents()
       .filter(event => event.type === 'session/attachment-admitted')).toHaveLength(1)
     await ctx.fiber.dispose()
+  })
+
+  it('retries flush after a JSONL write failure until one admission is durable', async () => {
+    const { ctx, sessionId, remote } = await harness()
+    const data = pdfBytes()
+    const jsonlRoot = join(roots[0] as string, 'sessions')
+    const session = ctx.sessions.get(sessionId)
+    if (session === undefined) throw new Error('source session missing')
+    await ctx.sessions.flush(session)
+    const artifact = logPath(jsonlRoot, session.header.cwd, sessionId, 'none')
+    const hidden = `${artifact}.hidden`
+    await rename(artifact, hidden)
+    await mkdir(artifact)
+    const failed = await remote.admitAttachment(payload(data))
+    expect(failed.ok).toBe(false)
+    if (failed.ok) return
+    expect(failed.error.code).toBe('gateway/internal')
+    expect(ctx.sessions.get(sessionId)?.snapshotEvents()
+      .filter(event => event.type === 'session/attachment-admitted')).toHaveLength(1)
+    await rm(artifact, { recursive: true, force: true })
+    await rename(hidden, artifact)
+    const retried = await remote.admitAttachment(payload(data))
+    expect(retried.ok).toBe(true)
+    if (!retried.ok) return
+    await ctx.fiber.dispose()
+
+    const reader = new Context()
+    await reader.plugin(SessionStore)
+    await reader.plugin(JsonlSessionPersistence, { root: jsonlRoot, compression: 'none' })
+    const handle = await reader.sessionPersistence.open(sessionId, 'read')
+    try {
+      const events = await handle.read()
+      expect(events.filter(event => event.type === 'session/attachment-admitted')).toHaveLength(1)
+      expect(events.at(-1)).toMatchObject({
+        type: 'session/attachment-admitted',
+        ignorable: true,
+        data: { operationId: 'op-1', source: 'companion' },
+      })
+    } finally {
+      await handle.close()
+    }
+    await reader.fiber.dispose()
   })
 
   it('reopens the JSONL log with the ignorable admission still present', async () => {
