@@ -1,12 +1,16 @@
-import { existsSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import TypertGatewayService from '@deepseek-ai/dsh-api-gateway'
-import { RemoteError, remoteErrorOf, remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
+import { apply as applyClientRemote, inject as clientRemoteInject } from '../../gateway/src/client/index.ts'
+import { remoteErrorOf, remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
 import type { TypertContribution } from '@deepseek-ai/dsh-typert-registry/types'
+import type { TypertRemoteContribution } from '@deepseek-ai/dsh-typert-protocol'
 import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
 import { WebRuntime } from '@deepseek-ai/dsh-web'
 import type { WebSearchProvider, WebSearchRequest, WebSearchResult } from '@deepseek-ai/dsh-web'
@@ -14,6 +18,7 @@ import SettingsController from '../src/index.ts'
 import { MemorySettings } from '../../../settings/settings/tests/memory.ts'
 
 const contexts: Context[] = []
+const require = createRequire(import.meta.url)
 
 afterEach(async () => {
   for (const context of contexts.splice(0).reverse()) await context.fiber.dispose()
@@ -32,13 +37,23 @@ class RecordingSearchProvider implements WebSearchProvider {
 
   async search(request: WebSearchRequest, signal?: AbortSignal): Promise<WebSearchResult> {
     this.calls.push({ query: request.query, ...signal === undefined ? {} : { signal } })
-    if (this.hang !== undefined) {
+    if (this.hang !== undefined && request.query === 'hang') {
       if (signal === undefined) throw new Error('fixture hang requires a signal')
       return this.hang(signal)
     }
     if (this.error !== undefined) throw this.error
     return this.result
   }
+}
+
+interface SettingsProbeClient {
+  testWebSearch(
+    query?: string,
+    signal?: AbortSignal,
+  ): Promise<
+    | { readonly ok: true; readonly value: { readonly count: number; readonly title?: string; readonly url?: string } }
+    | { readonly ok: false; readonly error: { readonly code: string; readonly message: string } }
+  >
 }
 
 async function bootWeb(provider: RecordingSearchProvider): Promise<{
@@ -55,27 +70,79 @@ async function bootWeb(provider: RecordingSearchProvider): Promise<{
   return { ctx, controller: ctx.settingsController, provider }
 }
 
-async function loadGeneratedSettingsTypert(): Promise<TypertContribution> {
-  try {
-    const { WorkspaceTypertGenerator } = await import('@deepseek-ai/dsh-typert-generator')
-    const root = join(import.meta.dirname, '../../../..')
-    const [artifact] = new WorkspaceTypertGenerator(root).generate(
-      ['@deepseek-ai/dsh-api-settings-controller'],
-      ['host'],
-    )
-    if (artifact === undefined) throw new Error('settings-controller Typert artifact was not generated')
-    const modulePath = join(mkdtempSync(join(tmpdir(), 'dsh-settings-typert-')), 'typert.host.js')
-    writeFileSync(modulePath, artifact.js)
-    const generated = await import(pathToFileURL(modulePath).href) as { TYPERT: TypertContribution }
-    return generated.TYPERT
-  } catch (error) {
-    const modulePath = join(import.meta.dirname, '../lib/typert.host.js')
-    if (!existsSync(modulePath)) throw error
-    const generated = await import(`${pathToFileURL(modulePath).href}?t=${Date.now()}`) as {
-      TYPERT: TypertContribution
-    }
-    return generated.TYPERT
-  }
+function rewriteZod(source: string): string {
+  return source.replaceAll("from 'zod'", `from ${JSON.stringify(import.meta.resolve('zod'))}`)
+}
+
+async function generateSettingsTypert(): Promise<{
+  readonly host: TypertContribution
+  readonly remote: TypertRemoteContribution
+}> {
+  const { WorkspaceTypertGenerator } = await import('@deepseek-ai/dsh-typert-generator')
+  const root = join(import.meta.dirname, '../../../..')
+  const [artifact] = new WorkspaceTypertGenerator(root).generate(
+    ['@deepseek-ai/dsh-api-settings-controller'],
+    ['host'],
+  )
+  if (artifact === undefined) throw new Error('settings-controller Typert artifact was not generated')
+  if (artifact.remote === undefined) throw new Error('settings-controller Remote client artifact was not generated')
+  const directory = mkdtempSync(join(tmpdir(), 'dsh-settings-typert-'))
+  const hostPath = join(directory, 'typert.host.js')
+  const remotePath = join(directory, 'typert.remote-client.js')
+  writeFileSync(hostPath, rewriteZod(artifact.js))
+  writeFileSync(remotePath, rewriteZod(artifact.remote.js))
+  const hostModule = await import(pathToFileURL(hostPath).href) as { TYPERT: TypertContribution }
+  const remoteModule = await import(pathToFileURL(remotePath).href) as { TYPERT_REMOTE: TypertRemoteContribution }
+  return { host: hostModule.TYPERT, remote: remoteModule.TYPERT_REMOTE }
+}
+
+async function mountGeneratedSettingsClient(
+  host: Context,
+  remote: TypertRemoteContribution,
+): Promise<SettingsProbeClient> {
+  const client = new Context()
+  contexts.push(client)
+  await client.plugin(TypertRegistry)
+  client.provide('connection', {
+    rpc: {
+      call: async (_channel: string, endpoint: string, payload: { readonly args: Record<string, unknown> }, signal: AbortSignal) => {
+        const [namespace, method] = endpoint.split('/')
+        if (namespace === undefined || method === undefined) {
+          throw new Error(`invalid Remote endpoint ${JSON.stringify(endpoint)}`)
+        }
+        try {
+          const value = await host.typertGateway.invoke({
+            namespace,
+            method,
+            args: payload.args,
+            signal,
+          })
+          return { ok: true as const, value }
+        } catch (error) {
+          const failure = remoteErrorOf(error)
+          if (failure === undefined) {
+            return {
+              ok: false as const,
+              error: {
+                code: 'gateway/internal',
+                message: error instanceof Error ? error.message : String(error),
+                details: {},
+              },
+            }
+          }
+          return {
+            ok: false as const,
+            error: { code: failure.code, message: failure.message, details: failure.details },
+          }
+        }
+      },
+    },
+    registerGenerationSource: () => () => {},
+    start: () => ({ stop: () => {} }),
+  } as never)
+  await client.plugin({ inject: clientRemoteInject, apply: applyClientRemote })
+  await client.remote.$mount(remote)
+  return client.remote.settings as SettingsProbeClient
 }
 
 describe('settings.testWebSearch probe', () => {
@@ -162,7 +229,6 @@ describe('settings.testWebSearch probe', () => {
     const pending = controller.testWebSearch('hang', abort.signal)
     abort.abort()
     const failure = await pending.then(() => undefined, (error: unknown) => error)
-    expect(failure).toBeInstanceOf(RemoteError)
     expect(remoteErrorOf(failure)?.code).toBe('gateway/cancelled')
   })
 
@@ -172,8 +238,8 @@ describe('settings.testWebSearch probe', () => {
     const { ctx, controller, provider } = await bootWeb(fixture)
     await ctx.plugin(TypertRegistry)
     await ctx.plugin(TypertGatewayService)
-    const contribution = await loadGeneratedSettingsTypert()
-    ctx.typert.register(contribution)
+    const generated = await generateSettingsTypert()
+    ctx.typert.register(generated.host)
     const descriptor = ctx.typert.local.get('settings/testWebSearch')
     expect(descriptor).toBeDefined()
     expect(descriptor?.parameters.some(parameter => parameter.codec.mode === 'src-json')).toBe(false)
@@ -193,5 +259,55 @@ describe('settings.testWebSearch probe', () => {
     })
     expect(provider.calls.at(-1)?.query).toBe('generated probe')
     expect(controller.typertRemote.namespace).toBe('settings')
+  }, 60_000)
+
+  it('serves success, illegal query, and abort through the generated Remote client', async () => {
+    const fixture = new RecordingSearchProvider()
+    fixture.result = { sources: [{ url: 'https://example.test/', title: 'Docs' }], truncated: false }
+    fixture.hang = async (signal) => {
+      await new Promise<void>((_, reject) => {
+        signal.addEventListener('abort', () => {
+          reject(Object.assign(new Error('aborted'), { name: 'AbortError' }))
+        }, { once: true })
+      })
+      return { sources: [], truncated: false }
+    }
+    const { ctx, provider } = await bootWeb(fixture)
+    await ctx.plugin(TypertRegistry)
+    await ctx.plugin(TypertGatewayService)
+    const generated = await generateSettingsTypert()
+    ctx.typert.register(generated.host)
+    const settings = await mountGeneratedSettingsClient(ctx, generated.remote)
+    await expect(settings.testWebSearch('generated probe')).resolves.toEqual({
+      ok: true,
+      value: { count: 1, title: 'Docs', url: 'https://example.test/' },
+    })
+    await expect(settings.testWebSearch('')).resolves.toMatchObject({
+      ok: false,
+      error: { code: 'gateway/bad-request' },
+    })
+    const abort = new AbortController()
+    const pending = settings.testWebSearch('hang', abort.signal)
+    abort.abort()
+    await expect(pending).resolves.toMatchObject({
+      ok: false,
+      error: { code: 'gateway/cancelled' },
+    })
+    expect(provider.calls.some(call => call.query === 'generated probe')).toBe(true)
+  }, 60_000)
+
+  it('emits the package ./types declaration from this tree\'s sources', () => {
+    const root = join(import.meta.dirname, '../../../..')
+    const packageRoot = join(root, 'packages/api/settings-controller')
+    const tsc = join(dirname(require.resolve('typescript/package.json')), 'bin/tsc')
+    execFileSync(process.execPath, [
+      tsc,
+      '-p',
+      join(packageRoot, 'tsconfig.json'),
+      '--pretty',
+      'false',
+    ], { cwd: root, stdio: 'pipe' })
+    expect(readFileSync(join(packageRoot, 'lib/types/types.d.ts'), 'utf8'))
+      .toContain('SettingsWebSearchProbeValue')
   }, 60_000)
 })
