@@ -27,3 +27,34 @@
 22. **`src/client/sidebar.module.css`** — 右侧与底部工作台面板只使用 `contain: style`。`contain: layout` 会把 Desktop 上绝对定位的面板顶出视口，标签条落到屏外，官方页面因而盖住侧栏标签列表。
 23. **`src/client/service.ts`** — 带 path 或 URL 的 `openTab` seed 若活动 pane 在底部树，会在 mint 之前落到右侧工作台。纯类型的 `+` 点击仍跟随菜单所在 pane。
 24. **`src/client/state.ts`** — 关闭右侧工作台最后一个停靠标签会收起该面板；关闭底部工作台最后一个停靠标签会收起底部面板。`closeTab` 之后剩下的浮动窗口不会让空的停靠树保持打开；把最后一个停靠标签拖成浮动窗口不会收起面板。
+
+## 0.18.0 刷新处置（`f9153dfc` → `f59ffd07`）
+
+仅导入允许路径：`dsh.plugin.json`、`src`、`tsdown.config.ts`。上游 `src/client/sidechat-transcript.ts` **未导入**（退役平行 transcript/轮询渲染器）。locale 字典仍在兄弟文件；新的 `src/client/chunks/locale.tsx` lazy chunk **采用**，`CHUNKS` 含 `locale`。`src/client/sidebar/` 与 `src/client/changes/` 的 split-sidebar 模块 **采用**。
+
+| LOCAL 行 | 处置 |
+|---|---|
+| 1 工作区清单 | **保留** — 仍由本仓持有；不在允许导入路径内 |
+| 2 `src/config.ts` schemastery | **保留** |
+| 3 `src/context-types.ts` 准入 / `uiRenderer` / workspaces 归档 | **保留**；并把 `openWorkspacePath` **迁到** `remote.session`。`SessionAdmissionAdapter` 仍 type-import `@deepseek-ai/dsh-client-runtime/client`，因为 ClientSessions 尚未拥有完整路由契约。该 import **不是**已完成的 owner。不要补空本地 interface。 |
+| 4 `src/invariant.ts` PACKAGE_NAME | **保留** |
+| 5 tsdown / chunk-loader 工作区 factory id | **保留**（`clientBundle('@deepseek-ai/dsh-client-ui-better-sidebar', 'client.js')`）。`dsh.plugin.json` 仍命名上游插件注册表通道 `./lib/client-registry.js`；本仓 tsdown 面仍不额外产出该 factory。locale 是额外 chunk，不是第二条注册表通道。 |
+| 6 `src/bundle-route.ts` `LIB_DIR` | **保留**（包内 `lib/`，含 `client-locale.js`） |
+| 7 BrowserView workbenchBrowser | **保留** |
+| 8 `setPanelOpen` / `createTab` seed | **保留** |
+| 9 Desktop overlay `+` 菜单 / windowChrome | **保留**（与 0.18 右侧 Workbench 的 pinned-tab tree 合并） |
+| 10 面板缩放 / 不自动 Files 首页 | **保留** |
+| 11 Desktop overlay 不挂 Sidebar | **保留** |
+| 12 Side Chat Agent 句柄静止 | **保留** |
+| 13 canonical Conversation Side Chat | **保留**。上游页内 composer、history 菜单、transcript 轮询、soft-close 与 `sidechat-transcript` 仍 **退役**。 |
+| 14 git 选中子仓 fail-loud | **保留** |
+| 15 `sidebar_open` sender 隔离 | **保留** |
+| 16 共用 loopback allowlist | **保留**（0.18 `fenceEnabledOf` 用于写/tree/search；loopback 解析器仍是共享模块） |
+| 17 区域中文 export 名 | **保留**；locale chunk 别名这些描述性 export |
+| 18 intercept produced-files vs deliverables | **保留** |
+| 19 restore/close / `?dsh-sidebar-reset` | **保留** |
+| 20 `producedFolder` 类 | **保留** |
+| 21 读取走 `resolveReadablePath` | **保留**；写/tree/search 仍用工作区围栏 |
+| 22 停靠面板 `contain: style` | **保留** |
+| 23 底部树 `openTab` seed 落到右侧 | **保留** |
+| 24 最后一个停靠标签收起面板 | **保留** |
