@@ -75,6 +75,13 @@ export function apply(ctx: Context): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-chat: dictionaries')
   const t = ctx.locale.bind(NS)
   const chatStore = createChatStore()
+  const focusActions = new Map<SessionId, BoundActions<typeof chatStore>>()
+  ctx.provide('detailsFocus', {
+    focus: (sessionId, document) => {
+      focusActions.get(sessionId)?.focusDocument(document)
+      ctx.layout.openDetails()
+    },
+  })
   const chatScrollPositions = new Map<SessionId, ChatScrollPosition>()
   const transcriptView = new TranscriptViewPolicy(
     ctx.settingsScope.bind<ChatSettings>({ namespace: CHAT_SETTINGS_NAMESPACE }),
@@ -104,6 +111,7 @@ export function apply(ctx: Context): void {
       },
       store: chatStore,
       inject: (sessionId: SessionId, actions: BoundActions<typeof chatStore>): ChatViewInjected => {
+        focusActions.set(sessionId, actions)
         const binding = ctx.sessions.binding(sessionId)
         if (binding === undefined) throw new Error(`ui-chat: unknown session "${sessionId}"`)
         const session = binding.session
@@ -163,7 +171,10 @@ export function apply(ctx: Context): void {
   ctx.slots.inject('details', () => ctx.slots.register({
     name: 'details',
     locale: NS,
-    children: { 'conversation.details.tool': { kind: 'single', scope: 'session' } },
+    children: {
+      'conversation.details.tool': { kind: 'single', scope: 'session' },
+      'conversation.details.document': { kind: 'single', scope: 'session' },
+    },
     store: chatStore,
     inject: (): DetailsInjected => ({ closeDetails: () => { ctx.layout.closeDetails() } }),
   }, DetailsPanel))

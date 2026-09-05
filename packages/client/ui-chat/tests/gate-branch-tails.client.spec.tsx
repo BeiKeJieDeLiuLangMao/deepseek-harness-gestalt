@@ -157,6 +157,12 @@ describe('render branch tails', () => {
           removeImage: () => {},
           pruneImages: () => {},
           submit: () => {},
+          addTextAnnotation: () => 'annotation-1' as never,
+          updateTextAnnotation: () => {},
+          removeTextAnnotation: () => {},
+          discardTextAnnotations: () => {},
+          addImagePin: () => 'annotation-2' as never,
+          updateImagePin: () => {},
         }}
         useStore={bindSnapshotSelector(chat)}
         actions={chat.actions}
@@ -219,6 +225,12 @@ describe('render branch tails', () => {
           removeImage: () => {},
           pruneImages: () => {},
           submit: () => {},
+          addTextAnnotation: () => 'annotation-1' as never,
+          updateTextAnnotation: () => {},
+          removeTextAnnotation: () => {},
+          discardTextAnnotations: () => {},
+          addImagePin: () => 'annotation-2' as never,
+          updateImagePin: () => {},
         }}
         useStore={bindSnapshotSelector(chat)}
         actions={chat.actions}

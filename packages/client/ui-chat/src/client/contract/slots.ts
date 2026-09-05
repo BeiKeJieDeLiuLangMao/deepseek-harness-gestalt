@@ -1,8 +1,8 @@
 /** Chat-owned Slot declarations and composed component props. */
 import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
-import type { SessionSeq } from '@deepseek-ai/dsh-session/types'
+import type { SessionId, SessionSeq } from '@deepseek-ai/dsh-session/types'
 import type {
-  ConversationLocationDataStore, ConversationTurnDataMap,
+  ConversationLocationDataStore, ConversationTurnDataMap, DetailsDocumentFocus,
   MessageImageLoader, MessageImagesOwnerProps, RenderMessageImages, TurnLocation,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {
@@ -57,6 +57,8 @@ declare module '@deepseek-ai/cordis' {
   interface Context {
     /** Optional prose file-mention provider. */
     chatFileMentions: ChatFileMentions
+    /** Optional focused-document writer for the Chat details panel. */
+    detailsFocus: DetailsFocus
   }
 }
 
@@ -169,10 +171,29 @@ export interface DetailsInjected {
   closeDetails: () => void
 }
 
+/** Owner currency of the focused-document details seat. */
+export interface DetailsDocumentOwnerProps {
+  /** Document identity and optional inline body. */
+  document: DetailsDocumentFocus
+}
+
+/**
+ * Optional service that writes a focused document into one Session's Chat
+ * store and opens the details panel. Reached via `ctx.get('detailsFocus')`.
+ */
+export interface DetailsFocus {
+  /**
+   * Focus one document in the named Session's details panel.
+   * @param sessionId - receiving Session.
+   * @param document - document identity and optional inline body.
+   */
+  focus(sessionId: SessionId, document: DetailsDocumentFocus): void
+}
+
 /** Full details-panel props. */
 export type DetailsSlotProps =
   PropsRuntime<'details'>
-  & PropsRenderSlots<'conversation.details.tool'>
+  & PropsRenderSlots<'conversation.details.tool' | 'conversation.details.document'>
   & PropsStore<ChatStore>
   & InjectFace<DetailsInjected>
   & PropsLocale<'chat'>
@@ -232,5 +253,11 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * replaces the shipped Tool details renderer; absence uses the raw fallback.
      */
     'conversation.details.tool': { kind: 'single'; scope: 'session'; owner: DetailsToolOwnerProps }
+    /**
+     * Focused-document body that replaces the tool details while a document
+     * is selected. The owner supplies the document identity and optional
+     * inline body; absence uses the three-way markdown/html/file fallback.
+     */
+    'conversation.details.document': { kind: 'single'; scope: 'session'; owner: DetailsDocumentOwnerProps }
   }
 }
