@@ -25,7 +25,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-project-membership-client'
 import type { WorkspaceBrowserInjected, WorkspacePickerInjected } from './contract/slots.ts'
 import { Config, type WorkspaceConfig } from '../config.ts'
-import { isProjectMembershipClient, membershipGatewayOf } from './membership-gateway.ts'
+import { membershipGatewayOf } from './membership-gateway.ts'
 import {
   createPendingInvitationsSource, type PendingInvitationPollClient,
 } from './pending-invitations-source.ts'
@@ -156,7 +156,7 @@ export function apply(ctx: Context, config?: WorkspaceConfig): void {
     createWorkspace: input => workspaces.create(input),
     ...((): Pick<WorkspaceBrowserInjected, 'projectMembership'> => {
       const client = ctx.get('projectMembershipClient')
-      if (!isProjectMembershipClient(client)) return {}
+      if (client === undefined) return {}
       return { projectMembership: membershipGatewayOf(client) }
     })(),
     hooks: {

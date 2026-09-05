@@ -3,11 +3,10 @@ import { brandString } from '@deepseek-ai/dsh-brand'
 import type {
   FunctionTag, InvitationId, InvitationView, MembershipId, ProjectId, ProjectRole,
 } from '@deepseek-ai/dsh-project-membership'
-import type { PlatformAccountId } from '@deepseek-ai/dsh-platform-account'
 import type {
-  IssuedInvitationView, PendingInvitationView, ProjectMembershipClient, RosterMemberView,
+  IssuedInvitationView, PendingInvitationView, PlatformAccountId, ProjectMembershipClient, RosterMemberView,
 } from '@deepseek-ai/dsh-project-membership-client'
-import { isProjectMembershipClient, membershipGatewayOf } from '../src/client/membership-gateway.ts'
+import { membershipGatewayOf } from '../src/client/membership-gateway.ts'
 
 const projectId = brandString<ProjectId>('project-1')
 const invitationId = brandString<InvitationId>('invitation-1')
@@ -77,14 +76,6 @@ function client(overrides: Partial<ProjectMembershipClient> = {}): ProjectMember
     ...overrides,
   }
 }
-
-describe('isProjectMembershipClient', () => {
-  it('accepts a complete membership client and rejects a partial object', () => {
-    expect(isProjectMembershipClient(client())).toBe(true)
-    expect(isProjectMembershipClient({ roster: vi.fn() })).toBe(false)
-    expect(isProjectMembershipClient(undefined)).toBe(false)
-  })
-})
 
 describe('membershipGatewayOf', () => {
   it('uses the submitted GitHub login as inviteeName when create-invite returns no display name', async () => {

@@ -9,26 +9,6 @@ import type {
 import type { ProjectMembershipClient } from '@deepseek-ai/dsh-project-membership-client'
 import type { ProjectMembershipGateway, WorkspaceProjectRole } from './contract/slots.ts'
 
-const MEMBERSHIP_METHODS = [
-  'createProject', 'projectByRemote', 'roster', 'heartbeat', 'closePresence',
-  'invite', 'decideInvitation', 'retractInvitation', 'pendingInvitations',
-  'issuedInvitations', 'changeRole', 'setMemberTags', 'removeMember',
-] as const
-
-/**
- * True when `value` exposes the Desktop membership-client methods.
- * Used at the Cordis `ctx.get` boundary; branded ids are not reconstructed here.
- * @param value - optional Cordis service value.
- * @returns whether the value can be passed to {@link membershipGatewayOf}.
- */
-export function isProjectMembershipClient(value: unknown): value is ProjectMembershipClient {
-  if (typeof value !== 'object' || value === null) return false
-  return MEMBERSHIP_METHODS.every((method) => {
-    const member: unknown = Reflect.get(value, method)
-    return typeof member === 'function'
-  })
-}
-
 function projectIdOf(value: string): ProjectId {
   return brandString<ProjectId>(value)
 }
