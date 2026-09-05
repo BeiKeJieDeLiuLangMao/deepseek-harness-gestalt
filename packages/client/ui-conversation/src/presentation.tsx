@@ -4,6 +4,7 @@ import { useCallback, useRef, useState, type ClipboardEvent, type KeyboardEvent,
 import type { SessionSnapshot } from '@deepseek-ai/dsh-api-session-controller/client'
 import { JsonBlock, MarkdownText, projectUserText } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
+import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
 import type {
   ConversationNode, ToolResultNode, TurnErrorNode, TurnMaxTokensNode,
 } from './client/contract/records.ts'
@@ -11,7 +12,7 @@ import type { InputEffect } from './client/contract/input.ts'
 import { SubmitMachine } from './client/input/machine.ts'
 import { InputBarPresentation } from './client/skeleton/InputBarPresentation.tsx'
 import { en, zh } from './client/locales.ts'
-import type { RenderMessageImages } from './client/contract/slots.ts'
+import type { MessageImageSource, RenderMessageImages } from './client/contract/slots.ts'
 
 /** Locale ids supported by the shared Web presentation. */
 export type ConversationPresentationLocale = 'zh' | 'en'
@@ -76,27 +77,41 @@ function markdownLabels(t: TranslateNS<'conversation'>): { code: { copyLabel: st
 
 /** Props for the shared user-message renderer. */
 export interface ConversationUserMessageProps {
-  /** Desktop-authoritative message content. */
-  content: readonly unknown[]
+  /** Desktop-authoritative user or steering content blocks. */
+  content: readonly ContentBlock[]
   /** Shared image renderer bound to the current Session's authorized loader. */
   renderMessageImages: RenderMessageImages
   /** Shared conversation translator. */
   t: TranslateNS<'conversation'>
 }
 
-/** Render a user message through the same bubble implementation as Desktop. */
-export function ConversationUserMessage({ content, renderMessageImages, t }: ConversationUserMessageProps): ReactNode {
+/**
+ * Split user content into text, durable image refs, and unknown blocks.
+ * @param content - user or steering ContentBlock list.
+ * @returns joined text, authorized image sources in source order, and leftover blocks.
+ */
+function userContentParts(content: readonly ContentBlock[]): {
+  text: string
+  images: MessageImageSource[]
+  rest: unknown[]
+} {
   const texts: string[] = []
+  const images: MessageImageSource[] = []
   const rest: unknown[] = []
   for (const block of content) {
-    const record = block as { type?: string; text?: string }
-    if (record.type === 'text' && typeof record.text === 'string') texts.push(record.text)
+    if (block.type === 'text') texts.push(block.text)
+    else if (block.type === 'image') images.push({ attachment: block.attachment })
     else rest.push(block)
   }
-  const text = texts.join('')
+  return { text: texts.join(''), images, rest }
+}
+
+/** Render a user message through the same bubble implementation as Desktop. */
+export function ConversationUserMessage({ content, renderMessageImages, t }: ConversationUserMessageProps): ReactNode {
+  const { text, images, rest } = userContentParts(content)
   return (
     <div>
-      {renderMessageImages({ images: [], align: 'end' })}
+      {renderMessageImages({ images, align: 'end' })}
       {text !== '' && <div>{projectUserText(text, [])}</div>}
       {rest.map((block, index) => (
         <JsonBlock

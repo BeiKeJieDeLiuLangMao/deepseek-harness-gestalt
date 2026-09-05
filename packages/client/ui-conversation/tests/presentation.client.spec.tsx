@@ -4,6 +4,9 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { sessionSnapshot } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { AttachmentId } from '@deepseek-ai/dsh-attachment'
+import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
+import type { RenderMessageImages } from '../src/client/contract/slots.ts'
 import {
   ConversationComposer,
   ConversationNodePresentation,
@@ -12,7 +15,44 @@ import {
 
 afterEach(cleanup)
 
+const photo = (id: string, name: string) => ({
+  attachmentId: AttachmentId(id),
+  mediaType: 'image/png' as const,
+  bytes: 12,
+  width: 8,
+  height: 8,
+  name,
+})
+
 describe('public conversation presentation seam', () => {
+  it('hands user image blocks to the authorized renderer in source order', () => {
+    const first = photo('att-first', 'first.png')
+    const second = photo('att-second', 'second.png')
+    const content: ContentBlock[] = [
+      { type: 'image', attachment: first },
+      { type: 'text', text: 'caption' },
+      { type: 'image', attachment: second },
+      { type: 'reasoning', text: 'hidden' },
+    ]
+    const renderMessageImages = vi.fn<RenderMessageImages>(() => null)
+    render(createElement(ConversationNodePresentation, {
+      node: { kind: 'user', seq: 1, time: 1, content, source: content },
+      renderMessageImages,
+      renderTool: vi.fn(),
+      t: conversationPresentationTranslate('en'),
+    }))
+
+    expect(renderMessageImages).toHaveBeenCalledWith({
+      images: [{ attachment: first }, { attachment: second }],
+      align: 'end',
+    })
+    expect(screen.getByText('caption')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: /Unknown surface event: block/ }))
+    expect(screen.getByText(/"type": "reasoning"/)).toBeTruthy()
+    expect(renderMessageImages.mock.calls[0]![0].images[0]).toEqual({ attachment: first })
+    expect(renderMessageImages.mock.calls[0]![0].images[0]).not.toHaveProperty('preview')
+  })
+
   it('renders unknown keyed nodes through the shared localized JSON fallback', () => {
     render(createElement(ConversationNodePresentation, {
       node: {
