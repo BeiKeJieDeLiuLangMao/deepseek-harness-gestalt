@@ -16,6 +16,7 @@ import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
 import LocalFileReferenceService from '@deepseek-ai/dsh-file-reference-local'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
 import FileMemberQuestionReceiver from '@deepseek-ai/dsh-member-question-receiver'
+import type { MemberQuestionReceiverRpcId } from '@deepseek-ai/dsh-member-question-receiver'
 import type { PlatformAccountId } from '@deepseek-ai/dsh-platform-account'
 import {
   parseCompanionOperationId,
@@ -35,7 +36,7 @@ import ToolRuntime from '@deepseek-ai/dsh-tools'
 import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
 import WorkspaceRegistry from '@deepseek-ai/dsh-workspace'
 import SessionController from '../src/index.ts'
-import { MockAdapter } from '../../../core/agent-loop/tests/mock-adapter.ts'
+import { MockAdapter, textResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
 
 const roots: string[] = []
 const contexts: Context[] = []
@@ -53,7 +54,7 @@ const envelope = {
     questionId: parseMemberQuestionId('question-loader'),
     projectId: parseMemberQuestionProjectId('project-loader'),
     originSessionId: parseCompanionSessionId('origin-loader'),
-    expiresAt: 9_000,
+    expiresAt: Date.now() + 60_000,
     origin: {
       projectName: 'Atlas',
       originSessionTitle: 'Choose storage',
@@ -170,9 +171,20 @@ async function boot(): Promise<{
     .filter(entry => entry.fiber === undefined && !entry.disabled)
     .map(entry => entry.options.name)
   expect(unloaded).toEqual([])
-  const adapter = new MockAdapter([])
+  const adapter = new MockAdapter([textResponse('acknowledged the brief')])
   ctx.llm.registerAdapter(['mock'], adapter)
   return { ctx, adapter, workspacePath, jsonlRoot: join(root, 'sessions') }
+}
+
+function waitForIdle(ctx: Context, sessionId: SessionId): Promise<void> {
+  return new Promise((resolve) => {
+    const dispose = ctx.on('agent/status', ({ agent, status }) => {
+      if (agent.id === sessionId && status === 'idle') {
+        dispose()
+        resolve()
+      }
+    })
+  })
 }
 
 describe('receiving materializer through a real Loader composition', () => {
@@ -250,5 +262,61 @@ describe('receiving materializer through a real Loader composition', () => {
     expect(ctx.sessions.get(sessionId)?.snapshotEvents()
       .filter(event => event.type === 'member-question/settled')).toHaveLength(1)
     expect(adapter.requests).toEqual([])
+  })
+
+  it('admits one human turn through the receiver onto a real AgentLoop turn', async () => {
+    const { ctx, adapter, workspacePath } = await boot()
+    const workspace = await ctx.workspaceRegistry.create(workspacePath)
+    const receiver = ctx.memberQuestionReceiver as FileMemberQuestionReceiver
+    await receiver.bind(envelope.authority.accountId, envelope.operation.projectId, workspace.id)
+    const arrived = await receiver.ingest(envelope)
+    const snapshot = await receiver.snapshot()
+    const pending = snapshot.pending[0]
+    if (pending === undefined) throw new Error('expected a pending question')
+    const sessionId = arrived.receivingSessionId as unknown as SessionId
+    const idle = waitForIdle(ctx, sessionId)
+    const rpcId = 'human-turn-loader' as MemberQuestionReceiverRpcId
+    const admitted = await receiver.admitHumanTurn({
+      receivingSessionId: arrived.receivingSessionId,
+      revision: pending.revision,
+      rpcId,
+      content: [{ type: 'text', text: 'Use JSONL.' }],
+      mode: 'queue',
+    })
+    expect(admitted).toMatchObject({ accepted: true, receivingSessionId: arrived.receivingSessionId, rpcId })
+    await idle
+    const events = ctx.sessions.get(sessionId)?.snapshotEvents() ?? []
+    const human = events.filter(event => event.type === 'user/message'
+      && event.data.id === `member-question-human:${rpcId}`)
+    expect(human).toHaveLength(1)
+    expect(human[0]?.data.source).toMatchObject({ kind: 'user', rpcId })
+    expect(events.some(event => event.type === 'turn/start')).toBe(true)
+    expect(adapter.requests).toHaveLength(1)
+    const replayed = await receiver.admitHumanTurn({
+      receivingSessionId: arrived.receivingSessionId,
+      revision: pending.revision,
+      rpcId,
+      content: [{ type: 'text', text: 'Use JSONL.' }],
+      mode: 'queue',
+    })
+    expect(replayed.rpcId).toBe(rpcId)
+    expect(ctx.sessions.get(sessionId)?.snapshotEvents()
+      .filter(event => event.type === 'user/message'
+        && event.data.id === `member-question-human:${rpcId}`)).toHaveLength(1)
+    expect(adapter.requests).toHaveLength(1)
+  })
+
+  it('refuses a human turn for an unmaterialized receiving identity', async () => {
+    const { ctx, workspacePath } = await boot()
+    const workspace = await ctx.workspaceRegistry.create(workspacePath)
+    const receiver = ctx.memberQuestionReceiver as FileMemberQuestionReceiver
+    await receiver.bind(envelope.authority.accountId, envelope.operation.projectId, workspace.id)
+    await expect(receiver.admitHumanTurn({
+      receivingSessionId: 'receiving-missing' as never,
+      revision: 1,
+      rpcId: 'human-turn-missing' as MemberQuestionReceiverRpcId,
+      content: [{ type: 'text', text: 'hello' }],
+      mode: 'queue',
+    })).rejects.toThrow('unknown receiving Session')
   })
 })

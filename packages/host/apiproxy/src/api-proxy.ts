@@ -76,12 +76,11 @@ import type { SettingsDescriptor, SettingsNamespace, SettingsPathOp } from '@dee
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 // Value edge: the rename impl narrows the title service's validation failure; the import also resolves `ctx.get('sessionTitle')`.
 import { SessionTitleInvalidError } from '@deepseek-ai/dsh-session-title'
-import { MessageId, type CallId } from '@deepseek-ai/dsh-llm/brand'
+import { type CallId } from '@deepseek-ai/dsh-llm/brand'
 import type { ScopeKey } from '@deepseek-ai/dsh-scope'
 import type { ApprovalOutcome, ApprovalRequestId } from '@deepseek-ai/dsh-user-approval'
 import type { InstallationId } from '@deepseek-ai/dsh-remote-protocol'
 import type {
-  MemberQuestionHumanTurnAdmissionContext,
   MemberQuestionHumanTurnContent,
 } from '@deepseek-ai/dsh-member-question-receiver'
 
@@ -1933,59 +1932,6 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       if (existing !== undefined) return { workspace: existing, created: false }
       return { workspace: await ctx.workspaceRegistry.create(path), created: true }
     })
-  }
-
-  /** Resolve one exact local Workspace identity carried by receiver state. */
-  function workspaceFromId(workspaceId: MemberQuestionHumanTurnAdmissionContext['workspaceId']): Workspace {
-    const workspace = ctx.workspaceRegistry.get(brandWorkspaceId(workspaceId))
-    if (workspace === undefined) {
-      throw new Error(`member-question binding references unknown Workspace ${workspaceId}`)
-    }
-    return workspace
-  }
-
-  /** Whether one stable message identity already entered this Session or remains pending. */
-  function hasMessage(session: Session, messageId: string): boolean {
-    return session.events.some((event) => {
-      if (event.type === 'user/message') return event.data.id === messageId
-      return event.type === 'agent/inbox/spliced'
-        && event.data.inserted.some(message => message.id === messageId)
-    })
-  }
-
-  /** Preserve browser content at the ordinary attachment admission seam. */
-  function admissionContent(content: readonly MemberQuestionHumanTurnContent[]): ContentBlock[] {
-    return content.map(block => structuredClone(block))
-  }
-
-  if (memberQuestionReceiver !== undefined) {
-    ctx.effect(() => memberQuestionReceiver.registerHumanTurnAdmitter(async (input, admission) => {
-      const workspace = workspaceFromId(admission.workspaceId)
-      const sessionId = input.receivingSessionId as unknown as SessionId
-      const live = ctx.agents.get(sessionId)
-      const persistence = ctx.get('sessionPersistence')
-      const stored = live === undefined && persistence !== undefined
-        ? (await persistence.list()).some(snapshot => snapshot.header.id === sessionId)
-        : false
-      if (live === undefined && !stored) {
-        throw new Error(`member-question Session "${sessionId}" is not materialized`)
-      }
-      const agent = await ensureSession(sessionId, workspace.path, true)
-      await workspace.attachSession(input.receivingSessionId as unknown as SessionId)
-      const humanId = MessageId(`member-question-human:${input.rpcId}`)
-      if (!hasMessage(agent.session, humanId)) {
-        const message = freezeMessage({
-          id: humanId,
-          role: 'user' as const,
-          content: admissionContent(input.content),
-          source: { kind: 'user' as const, rpcId: input.rpcId as unknown as RpcId },
-        })
-        if (input.mode === 'steer') agent.steer(message)
-        else agent.followup(message)
-      }
-      await ctx.sessions.flush(agent.session)
-      return { accepted: true }
-    }), 'api-proxy: member-question human admission')
   }
 
   /**

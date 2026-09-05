@@ -1,11 +1,13 @@
 /** Host Session materialization for authenticated member-question arrivals. */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { freezeMessage } from '@deepseek-ai/dsh-llm'
+import { freezeMessage, type ContentBlock } from '@deepseek-ai/dsh-llm'
 import { MessageId } from '@deepseek-ai/dsh-llm/brand'
 import {
   writeMemberQuestionDocumentCache,
   type MemberQuestionHumanTurnAdmissionContext,
+  type MemberQuestionHumanTurnAdmitter,
+  type MemberQuestionHumanTurnContent,
   type MemberQuestionSessionMaterializer,
   type TerminalMemberQuestionView,
 } from '@deepseek-ai/dsh-member-question-receiver'
@@ -13,6 +15,7 @@ import type { Session, SessionId } from '@deepseek-ai/dsh-session'
 import { SessionAlreadyExistsError } from '@deepseek-ai/dsh-session-persistence'
 import { WorkspaceId } from '@deepseek-ai/dsh-workspace'
 import type { ApiSessionAgentController } from './agent.ts'
+import type { SessionRequestId } from './types.ts'
 
 /** Default delay between failed terminal Session sync attempts. */
 export const DEFAULT_RECEIVING_TERMINAL_RETRY_MS = 1_000
@@ -63,13 +66,16 @@ function hasMessage(session: Session, messageId: string): boolean {
 }
 
 /**
- * Register the single Host arrival materializer and terminal Session sync.
- * Creates or continues the receiver-owned Session identity, attaches the bound
- * Workspace, records ignorable `member-question/received` metadata, and injects
- * the Decision Brief without starting a model turn. After a durable terminal,
- * appends ignorable `member-question/settled` once and flushes. Failed flushes
- * retry on the configured timer. Dispose cancels timers, refuses stale writes,
- * and waits for in-flight syncs.
+ * Register the single Host arrival materializer, human-turn admitter, and
+ * terminal Session sync. Creates or continues the receiver-owned Session
+ * identity, attaches the bound Workspace, records ignorable
+ * `member-question/received` metadata, and injects the Decision Brief without
+ * starting a model turn. After a durable terminal, appends ignorable
+ * `member-question/settled` once and flushes. Failed flushes retry on the
+ * configured timer. Human turns resume an already-materialized Session, mark
+ * `source.kind=user` with the reserved rpcId, and steer or follow up. Dispose
+ * cancels timers, refuses stale writes, waits for in-flight syncs, and
+ * withdraws both registrations.
  * @param ctx - Host context with sessions, agents, and workspace registry.
  * @param agents - Session Controller Agent activation.
  * @param options - retry delay and timer.
@@ -259,7 +265,36 @@ export function installReceivingSessionMaterializer(
     if (next !== undefined) queueTerminalRetry(next)
   }
 
+  const admissionContent = (content: readonly MemberQuestionHumanTurnContent[]): ContentBlock[] =>
+    content.map(block => structuredClone(block))
+
+  const admitter: MemberQuestionHumanTurnAdmitter = async (input, admission) => {
+    if (disposed) throw new Error('member-question human admission is disposed')
+    const workspace = ctx.workspaceRegistry.get(WorkspaceId(admission.workspaceId))
+    if (workspace === undefined) {
+      throw new Error(`member-question binding references unknown Workspace ${admission.workspaceId}`)
+    }
+    const sessionId = input.receivingSessionId as unknown as SessionId
+    const agent = await agents.resumeExistingSession(sessionId, workspace.path)
+    await workspace.attachSession(sessionId)
+    const humanId = MessageId(`member-question-human:${input.rpcId}`)
+    if (!hasMessage(agent.session, humanId)) {
+      const message = freezeMessage({
+        id: humanId,
+        role: 'user' as const,
+        content: admissionContent(input.content),
+        source: { kind: 'user' as const, rpcId: input.rpcId as unknown as SessionRequestId },
+      })
+      if (input.mode === 'steer') agent.steer(message)
+      else agent.followup(message)
+    }
+    if (disposed) throw new Error('member-question human admission is disposed')
+    await ctx.sessions.flush(agent.session)
+    return { accepted: true as const }
+  }
+
   const unregisterMaterializer = receiver.registerSessionMaterializer(materializer)
+  const unregisterAdmitter = receiver.registerHumanTurnAdmitter(admitter)
   const disposeChanges = receiver.changes((snapshot) => {
     for (const view of snapshot.terminal) {
       void scheduleTerminalSync(view).catch((error: unknown) => {
@@ -271,6 +306,7 @@ export function installReceivingSessionMaterializer(
   const recover = async (): Promise<void> => {
     try {
       await receiver.resumeReservedSessionMaterializations()
+      await receiver.resumeReservedHumanTurns()
       const snapshot = await receiver.snapshot()
       for (const view of snapshot.terminal) await scheduleTerminalSync(view)
     } catch (error: unknown) {
@@ -286,6 +322,7 @@ export function installReceivingSessionMaterializer(
   return async () => {
     disposed = true
     unregisterMaterializer()
+    unregisterAdmitter()
     disposeChanges()
     if (retryHandle !== undefined) timer.clear(retryHandle)
     if (recoveryHandle !== undefined) timer.clear(recoveryHandle)
