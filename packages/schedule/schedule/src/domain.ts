@@ -670,9 +670,9 @@ export function applyScheduleChanges(
 }
 
 /**
- * Fold the package-owned stream after the durable fork seed boundary.
+ * Fold the package-owned stream after `Session.inheritedEventCount`.
  * @param events - Complete ordered session log or candidate-extended log.
- * @param inheritedEventCount - Inherited prefix length excluded from child ownership.
+ * @param inheritedEventCount - Session-owned inherited prefix length excluded from child ownership.
  * @returns Retained records and all previously used ids.
  */
 export function foldScheduleEvents(

@@ -16,7 +16,7 @@ Status: implemented
 
 `ctx.schedules` Service 拥有 `schedules/pause`、`schedules/resume` 与 `schedules/delete`。它们的 wire 标识是 branded `SessionId`，因此人工变更不会调用通用的 Agent-resume lookup。一条由 Service 拥有、按 Session 串行化的 FIFO 会把人工变更与工具管理和到期投递串行化；拆卸会关闭准入并等待已接纳事务，不同 Context 拥有不同队列。已存在的 live 根 Agent 使用普通的 preflight flush、append、post-append flush 和 runtime 重算。cold Session 通过 `sessionPersistence.prepare` 预留，在不 announce 的情况下 enter，在读取 fold 前 flush，完成变更并再次 flush，随后 detach；整个过程不发布 Session 或 Agent 生命周期，也不启动投递。通用 `session/detached` 边会清退已 announce 与未 announce entry 的持久化及 projection-cache 状态，因此该路径不会保留 Session，也不需要伪造公开生命周期。如果 preparation 或 enter 输给 Agent 发布，该事务会在同一 FIFO 内重新计算并使用该精确 live 根 Agent。Session 日志仍是唯一持久权威，因此暂停与恢复无需另一个存储即可在重启后保留。
 
-Schedule 贡献独立的 `schedules` Session projection，其中按创建顺序包含保留记录和持久化 `paused` 标志。该 projection 声明 `eventScope: 'owned-suffix'`；projection registry 与 cache 在 eager、lazy、restore 和 replay 路径中都从 `SessionHeader.seedLength` 开始。Client 接收已完成的当前值，绝不折叠 Schedule 事件，也不从工具调用或对话输出重建状态。只有 Client 时钟根据 `scheduledAt` 推导 scheduled 或 overdue 展示。
+Schedule 贡献独立的 `schedules` Session projection，其中按创建顺序包含保留记录和持久化 `paused` 标志。该 projection 声明 `eventScope: 'owned-suffix'`；projection registry 与 cache 在 eager、lazy、restore 和 replay 路径中都从 `Session.inheritedEventCount` 开始。Client 接收已完成的当前值，绝不折叠 Schedule 事件，也不从工具调用或对话输出重建状态。只有 Client 时钟根据 `scheduledAt` 推导 scheduled 或 overdue 展示。
 
 Web app bundle 包含 A 版 Session 标题栏入口，顺序为 30，紧接在后台任务之后。它仅在 Host 挂载 Schedule Remote 贡献时激活，并在 projection 为空时保持缺席。触发器计数包含 scheduled 与 overdue 记录，并排除 paused 记录。任务板保持创建顺序，展示 scheduled、overdue 与 paused 行，并提供 pause、resume 与 delete。delete 需要行内二次确认。任务板没有创建表单；创建仍通过面向模型的 `schedule_create` 完成。
 
@@ -38,9 +38,7 @@ Web app bundle 包含 A 版 Session 标题栏入口，顺序为 30，紧接在�
 
 ## 验证
 
-Schedule domain 与 restart 测试覆盖有效和无效 pause/resume 转换、删除 paused、列出 paused、runtime 排除、持久化不确定性、cold fold 前 flush、preparation 与 enter 对 live owner 的竞态、cold 变更期间不发布公开生命周期，以及恢复投递前完整的 JSONL Host remount。事务测试证明按 Session 排序、独立 owner 隔离、关闭准入与完全停稳的 dispose。Projection-cache 测试证明未 announce 与普通已 announce 的 detach 都会立即且仅写入一次检查点，并清退 interval 工作。detached Host history 证明 `SessionHeader.seedLength` 会进入 cold restore；Schedule projection 测试会拒绝畸形变更与无效转换，而不是发布部分值。插件生命周期覆盖证明 Schedule projection 贡献会随所属 fiber 一同离开。Typert 与 Client 测试覆盖 Remote 挂载、后台任务后的组合标题栏顺序、活跃计数、状态行、pause/resume、行内删除确认与生命周期清理。
-
-一个无密钥 assembled Desktop 浏览器场景从只含持久 Session fixture 的状态经真实 HTTP 启动 Web bundle。它证明任务板来自 projection，通过生成的 Remote 暂停时不会移除或禁用当前对话，reload 后仍保持暂停，随后恢复，并通过行内二次确认删除，且匹配已提交的无障碍快照。
+Schedule domain、tools、runtime 与 restart 测试覆盖有效和无效 pause/resume 转换、删除 paused、列出 paused、runtime 排除暂停 overdue、持久化不确定性、JSONL remount 的 overdue 投递，以及 Include/Loader 的 create-pause-list-delete。事务测试证明按 Session 排序、独立 owner 隔离、关闭准入与完全停稳的 dispose。Schedule projection 测试会拒绝畸形变更、无效转换，以及解码记录不一致的检查点索引。插件生命周期覆盖证明 Schedule projection 贡献会随所属 fiber 一同离开。人工 Remote 传输与 Desktop 任务板 UI 仍未接线（[#590](https://github.com/gestaltrun/deepseek-harness-gestalt/issues/590)、[#591](https://github.com/gestaltrun/deepseek-harness-gestalt/issues/591)）；Typert、Client 与 assembled Desktop 任务板场景不是当前 Host 证据。
 
 ## 后果
 

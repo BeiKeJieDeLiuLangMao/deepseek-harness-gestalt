@@ -47,13 +47,13 @@ Enable the overlay before starting the session you want reminders in: a session 
 
 One-time reminders come in two forms: after a delay — for example "in 30 minutes" — or at an absolute time, given either as an instant with an explicit offset such as `2026-09-01T15:00:00+08:00` or as a local date and time with a named zone such as `Europe/Berlin` (the browser's zone applies only when the time-context overlay is present). Repeating reminders run on a fixed interval of at least 5 minutes and stay aligned to the time you first set them. Every reminder needs content to show when it fires.
 
-A successful create returns the reminder with its id, target time, state, and delivery mode; `schedule_list` shows all pending reminders in the order you created them; canceling by id removes a pending reminder, and an unknown or already-finished id reports `schedule_not_found` without changing anything.
+A successful create returns the reminder with its id, target time, state, and delivery mode; `schedule_list` shows every retained reminder in creation order, including paused rows; canceling by id removes an active or paused reminder, and an unknown or already-finished id reports `schedule_not_found` without changing anything.
 
 Input that cannot become a reminder — an empty prompt, more than one selector, an invalid time zone, a non-future or out-of-range time, a repeating interval below 5 minutes — returns a stable error code instead of succeeding. The generated [tool catalog](../../../docs/tool-catalog.md#deepseek-aidsh-schedule) owns the exact arguments each tool accepts.
 
 ### When reminders fire
 
-Due reminders appear as ordinary follow-up messages after the conversation becomes idle; the agent never interrupts a running turn. An already-live idle agent can claim maintenance and deliver immediately without another resume. One-time reminders fire before any repeating batch, and several repeating reminders due at once arrive together in one message ordered by time. If the session is closed or cold when a reminder comes due, it stays overdue until a future live root agent resumes the session — nothing is sent outside the session. A repeating reminder that missed intervals while the session was away presents only its latest due occurrence, not a backlog. The optional Web catalog shows only active records and is not a delivery receipt; dispatch means the follow-up was queued and recorded, not that the model succeeded or the user read the answer.
+Due reminders appear as ordinary follow-up messages after the conversation becomes idle; the agent never interrupts a running turn. An already-live idle agent can claim maintenance and deliver immediately without another resume. One-time reminders fire before any repeating batch, and several repeating reminders due at once arrive together in one message ordered by time. If the session is closed or cold when a reminder comes due, it stays overdue until a future live root agent resumes the session — nothing is sent outside the session. A repeating reminder that missed intervals while the session was away presents only its latest due occurrence, not a backlog. Host tools list retained paused records. The optional Web header catalog and human pause/resume controls are not mounted. Dispatch means the follow-up was queued and recorded, not that the model succeeded or the user read the answer.
 
 -----
 
@@ -71,14 +71,14 @@ The plugin declares `inject = ['agents', 'sessions', 'tools', 'sessionPersistenc
 
 Time-context is not a Schedule dependency. The official Web overlay mounts `@deepseek-ai/dsh-time-context` so the model can interpret natural language in the browser's request-local zone, but the model must still pass an explicit offset or `time_zone` to `schedule_create`; Schedule never imports or infers from model context.
 
-Session projection is optional. When `ctx.sessionProjections` exists, the plugin registers the strict `schedule` unit and exposes the complete active `ScheduleRecord[]`; a headless composition without the registry keeps the same tools and runtime. The browser-safe record vocabulary is available from the type-only `@deepseek-ai/dsh-schedule/client` export. The shipped Web bundle resolves `ui-schedule` through a disabled row, and the explicit Schedule overlay enables that row alongside the Host Schedule services.
+Session projection is optional. When `ctx.sessionProjections` exists, the plugin registers the strict `schedule` unit and exposes retained `ScheduleProjectionItem[]` (including paused); a headless composition without the registry keeps the same tools and runtime. The browser-safe record vocabulary is available from the type-only `@deepseek-ai/dsh-schedule/client` export. The shipped Web bundle resolves `ui-schedule` through a disabled row, and the explicit Schedule overlay enables that row alongside the Host Schedule services.
 
 ### Design philosophy
 
 The package rests on one separation and three commitments:
 
 - **The Session log owns the state.** Version-1 `schedule/change` events are the only durable authority; timers, tool values, and follow-ups are disposable projections rebuilt from the fold.
-- **Strict replay.** The decoder rejects unknown versions, extra fields, reused ids, mismatched dispatch shapes, and transitions against inactive records, so a corrupt stream fails loudly instead of deriving wrong views.
+- **Strict replay.** The decoder rejects unknown versions, extra fields, reused ids, mismatched dispatch shapes, and transitions against absent or incompatible records, so a corrupt stream fails loudly instead of deriving wrong views.
 - **Persistence before decision.** Every read or decision awaits the shared Session flush barrier, and create and delete confirm only after a second post-append barrier.
 - **Session-local delivery only.** No external channel, no cold-session scheduler, and no receipt: due work enters the same conversation or stays active.
 
@@ -98,13 +98,13 @@ The package rests on one separation and three commitments:
 
 ### Durable state and replay
 
-A normal Session folds its complete event stream. A fork folds only `session.ownEvents()`, so a child never inherits its parent's reminders. The Schedule projection receives the Session's exact `inheritedEventCount` from the projection registry and applies the same transition function after that cut. Every create record carries a stable Session-local `ScheduleId`, the trimmed prompt, and a four-digit-year RFC 3339 UTC `scheduledAt`; an `after` record also stores `afterSeconds`, an `at` record stores no copy of its submitted offset or local fields, and an `every` record stores `everySeconds` with `scheduledAt` as the earliest creation-anchor-aligned occurrence not yet dispatched. Delete and one-shot dispatch carry only the id; an `every` dispatch adds `acceptedAt`, and replay advances directly to the first anchor-aligned target after that decision time.
+A normal Session folds its complete event stream. A fork folds only `session.ownEvents()` after `Session.inheritedEventCount`, so a child never inherits its parent's reminders. The Schedule projection receives that same cut from the projection registry and applies the same transition function after it. Every create record carries a stable Session-local `ScheduleId`, the trimmed prompt, and a four-digit-year RFC 3339 UTC `scheduledAt`; an `after` record also stores `afterSeconds`, an `at` record stores no copy of its submitted offset or local fields, and an `every` record stores `everySeconds` with `scheduledAt` as the earliest creation-anchor-aligned occurrence not yet dispatched. Pause and resume carry only the id and keep the target; delete and one-shot dispatch also carry only the id; an `every` dispatch adds `acceptedAt`, and replay advances directly to the first anchor-aligned target after that decision time.
 
 ### Client projection
 
-The optional `schedule` projection checkpoints `{ inheritedEventCount, active, seenIds }` as strict plain JSON and publishes only the complete `active` array. Its schema reuses the durable Schedule decoder, rejects duplicate or inconsistent ids, and propagates corrupt durable events through the existing Session read failure instead of publishing a partial catalog. Live lazy build, event-driven build, cold restore, history reads, and detached Subagent reads all use the exact Session cut and the same owned-suffix transition.
+The optional `schedule` projection checkpoints `{ inheritedEventCount, active, paused, schedules, seenIds }` as strict plain JSON and publishes retained `{ ...record, paused }` items in create order. Its schema reuses the durable Schedule decoder, rejects duplicate or inconsistent decoded records, and propagates corrupt durable events through the existing Session read failure instead of publishing a partial catalog. Live lazy build, event-driven build, cold restore, history reads, and detached Subagent reads all use `Session.inheritedEventCount` and the same owned-suffix transition.
 
-The projection carries durable records only. It does not persist or transmit scheduled-versus-overdue status, localized text, relative time, browser-local time, sorting state, popover state, runtime liveness, or delivery receipts. [`dsh-client-ui-schedule`](../../client/ui-schedule/README.md) derives catalog presentation from the complete array and the viewing browser's clock. [`dsh-client-ui-workspace`](../../client/ui-workspace/README.md) derives only whether the list value is a non-empty array, so ordinary and search rows may briefly omit or retain the alarm when the durable projection cache is missing or stale.
+The projection carries durable records and the paused flag. It does not persist or transmit scheduled-versus-overdue status, localized text, relative time, browser-local time, sorting state, popover state, runtime liveness, or delivery receipts. Host tools list that retained set. [`dsh-client-ui-schedule`](../../client/ui-schedule/README.md) would derive catalog presentation from the complete array and the viewing browser's clock, but that UI is not mounted. [`dsh-client-ui-workspace`](../../client/ui-workspace/README.md) derives only whether the list value is a non-empty array, so ordinary and search rows may briefly omit or retain the alarm when the durable projection cache is missing or stale.
 
 ### Time validation
 
@@ -218,7 +218,7 @@ These limits describe when Schedule does not fit your use case or needs special 
 - **Latest-only catch-up** — an overdue Every record contributes only its latest due occurrence, so Schedule never replays a missed backlog.
 - **Narrow crash duplicate window** — a crash after synchronous follow-up admission but before the dispatch checkpoint can repeat the reminder; the package does not claim model completion, user acknowledgement, or exactly-once effects.
 - **Load-order boundary** — the plugin does not scan or adopt Agents that were already live when it loaded.
-- **Catalog is read-only current state** — the optional Web surface has no history, mutation, retry, or acknowledgement semantics; terminal records disappear and delivery remains ordinary conversation output.
+- **Human pause/resume Remote and board UI are unwired** — Host fold and tools accept paused list/delete; `ctx.schedules` Remote and the Desktop board remain later Host/Client work. The optional Web catalog is not mounted.
 
 <a id="dev-note"></a>
 ### Dev Note
