@@ -1,4 +1,4 @@
-import { Context } from '@deepseek-ai/cordis'
+import { Context, FiberState } from '@deepseek-ai/cordis'
 import type { Fiber } from '@deepseek-ai/cordis'
 import type {
   ConnectionGeneration,
@@ -121,8 +121,45 @@ async function flush(): Promise<void> {
 }
 
 describe('Session Controller Client apply', () => {
-  it('declares the generated memberQuestion Remote as a required injection', () => {
-    expect(SessionClient.inject).toContain('remote.memberQuestion')
+  it('does not inject remote.memberQuestion so a missing Host namespace cannot park forever', () => {
+    expect(SessionClient.inject).toEqual([
+      'typert',
+      'remote',
+      'remote.commands',
+      'remote.session',
+      'remote.subagents',
+    ])
+  })
+
+  it('fails apply immediately when generated memberQuestion is not mounted', async () => {
+    const ctx = new Context()
+    contexts.add(ctx)
+    await ctx.plugin(TypertRegistry)
+    const api = new FakeApiClient()
+    const remote = fakeRemote(api)
+    ctx.reflect.provide('remote', {
+      ...remote,
+      $stream: <Item>(options: RemoteStreamOptions<Item>) => (
+        new RemoteStream({
+          isLoopback: true,
+          generation: { getSnapshot: () => GENERATION, subscribe: () => () => {} },
+          state: { getSnapshot: () => 'connected' as const, subscribe: () => () => {} },
+          rpc: { call: () => Promise.reject(new Error('unexpected generic RPC call')) },
+          reconnect: () => {},
+          registerGenerationSource: () => () => {},
+          start: () => ({ stop: () => {} }),
+        } as ConnectionHandle, options)
+      ),
+      $host: { home: GENERATION.host.home, isLoopback: true },
+      $on: () => () => {},
+    })
+    ctx.reflect.provide('remote.commands', remote.commands)
+    ctx.reflect.provide('remote.session', remote.session)
+    ctx.reflect.provide('remote.subagents', remote.subagents)
+    const fiber = ctx.plugin(SessionClient)
+    await expect(fiber).rejects.toThrow('generated Remote namespace "memberQuestion" is not mounted')
+    expect(fiber.state).toBe(FiberState.FAILED)
+    expect(ctx.get('receivingQuestions')).toBeUndefined()
   })
 
   it('registers receivingQuestions through Cordis and unloads it with the fiber', async () => {
@@ -191,6 +228,74 @@ describe('Session Controller Client apply', () => {
     await bench.ctx.receivingQuestions.settle(sessionId, [
       { id: 'channel', selected: ['Canary'] },
     ])
+    expect(bench.memberQuestion.settle).toHaveBeenCalledWith({
+      receivingSessionId: sessionId,
+      revision: 1,
+      questionId: 'question-1',
+      response: { kind: 'answered', answers: [{ id: 'channel', selected: ['Canary'] }] },
+    })
+  })
+
+  it('lets a receivingQuestions consumer bind dock settle onto the registered book', async () => {
+    const bench = await mount()
+    const sessionId = sid('receiving-host-1')
+    bench.memberQuestion.snapshot.mockResolvedValue({
+      ok: true,
+      value: {
+        revision: 1,
+        pending: [{
+          questionId: 'question-1',
+          receivingSessionId: sessionId,
+          receivingAccountId: 'account-receiver',
+          revision: 1,
+          arrivedAt: 100,
+          operation: {
+            type: 'member-question',
+            operationId: 'operation-1',
+            questionId: 'question-1',
+            projectId: 'project-1',
+            originSessionId: 'origin-session-1',
+            expiresAt: 10_000,
+            origin: {
+              projectName: 'Atlas',
+              originSessionTitle: 'Release decision',
+              askerAccountId: 'account-alice',
+              askerRole: 'owner',
+              askerDisplayName: 'Alice',
+              askerAvatarUrl: 'https://example.com/alice.png',
+            },
+            background: 'Choose the launch channel.',
+            questions: [{ id: 'channel', question: 'Which channel?', options: [{ label: 'Canary' }] }],
+            references: [],
+          },
+        }],
+        terminal: [],
+      },
+    })
+    await bench.ctx.receivingQuestions.refresh()
+    bench.memberQuestion.settle.mockResolvedValue({
+      ok: true,
+      value: {
+        type: 'member-question-settled',
+        operationId: 'operation-1',
+        questionId: 'question-1',
+        outcome: 'answered',
+        settledAt: 500,
+        settledByInstallationId: 'installation-a',
+        settledByDeviceName: 'Desk A',
+        answers: [{ id: 'channel', selected: ['Canary'] }],
+      },
+    })
+    let injected: ((answers: { id: string; selected: string[] }[]) => Promise<void>) | undefined
+    const consumer = bench.ctx.plugin({
+      inject: ['receivingQuestions'],
+      apply: (ctx) => {
+        injected = answers => ctx.receivingQuestions.settle(sessionId, answers)
+      },
+    })
+    await consumer
+    expect(bench.ctx.get('receivingQuestions')).toBe(bench.ctx.receivingQuestions)
+    await injected!([{ id: 'channel', selected: ['Canary'] }])
     expect(bench.memberQuestion.settle).toHaveBeenCalledWith({
       receivingSessionId: sessionId,
       revision: 1,
