@@ -9,12 +9,17 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+import { basename } from 'node:path'
 import z from '@deepseek-ai/schemastery'
 import { scopeChainOf, scopeOf } from '@deepseek-ai/dsh-scope'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { Agent, AgentOptions } from '@deepseek-ai/dsh-agent'
 import { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
+import { AttachmentError } from '@deepseek-ai/dsh-attachment'
+import type { ImageMediaType, SaveImageAttachment } from '@deepseek-ai/dsh-attachment'
+import type {} from '@deepseek-ai/dsh-fs'
+import { imageMediaTypeForPath, resolveRegularReadTarget } from '@deepseek-ai/dsh-tool-fs/read-policy'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import { SessionSeq } from '@deepseek-ai/dsh-session'
 import {
@@ -30,10 +35,12 @@ import {
   hasDelegationModelRequest,
   preflightChildLlmRoute,
   requestedAgentOptions,
+  unionModelRoutes,
 } from './model-selection.ts'
 import type { DelegationModelRequest, ModelSelectionPolicy } from './model-selection.ts'
 import { registerListSubagentModels } from './list-models.ts'
 import type {} from './model-selection-settings.ts'
+import type {} from '@deepseek-ai/dsh-subagent-route-preauthorization'
 import {
   recordSubagentModelSelection,
   subagentModelSelectionProjectionDefinition,
@@ -57,6 +64,11 @@ export interface Config {
    * top-level session and inherit that decision in its child sessions.
    */
   modelSelectionSettings?: boolean
+  /**
+   * Sample `ctx.subagentRoutePreauthorization` once for each fresh top-level
+   * Session. An absent Provider records an empty list.
+   */
+  deploymentRoutePreauthorization?: boolean
   /**
    * Expose `run_in_background` (default true). Disabled instances omit the
    * parameter and reject forced background calls.
@@ -105,6 +117,7 @@ export const Config: z<Config> = z.object({
   provider: z.string().required(),
   toolName: z.string().default('subagent'),
   modelSelectionSettings: z.boolean().default(false),
+  deploymentRoutePreauthorization: z.boolean().default(false),
   enableRunInBackground: z.boolean().default(true),
   backgroundMode: z.union(['one-shot', 'continuable'] as const).default('one-shot'),
   // Prevent Schemastery from materializing omitted agentOptions as `{}`.
@@ -276,6 +289,42 @@ function providerWording(inheritsConversation: boolean): { description: string; 
 
 interface DelegationRunRequest {
   readonly run_in_background?: boolean
+  readonly images?: readonly string[]
+}
+
+async function readAttachedImage(
+  ctx: Context,
+  exec: Parameters<NonNullable<ReturnType<typeof defineTool>['execute']>>[1],
+  requestedPath: string,
+  acceptedTypes: readonly ImageMediaType[],
+  byteCap: number,
+): Promise<SaveImageAttachment> {
+  const mediaType = imageMediaTypeForPath(requestedPath)
+  if (mediaType === undefined) throw new Error(`cannot attach "${requestedPath}": images only accepts PNG/JPEG/WebP/GIF paths`)
+  if (!acceptedTypes.includes(mediaType)) throw new Error(`cannot attach "${requestedPath}": ${mediaType} images are not accepted by this deployment`)
+  const fs = ctx.get('fs')
+  if (fs === undefined) throw new Error(`cannot attach "${requestedPath}": no filesystem service is mounted`)
+  const { target } = await resolveRegularReadTarget(ctx, exec, requestedPath, 'attach')
+  const data = await fs.readBytes(target, exec.signal, byteCap)
+  return { data, mediaType, name: basename(target.displayPath) }
+}
+
+async function resolveAttachedImages(
+  ctx: Context,
+  exec: Parameters<NonNullable<ReturnType<typeof defineTool>['execute']>>[1],
+  paths: readonly string[],
+): Promise<Extract<ContentBlock, { type: 'image' }>[]> {
+  const firstPath = paths[0]
+  if (firstPath === undefined) return []
+  const attachments = ctx.get('attachments')
+  if (attachments === undefined) throw new Error(`cannot attach "${firstPath}": no attachment service is mounted`)
+  const { maxImagesPerMessage, maxImageBytes, maxMessageImageBytes, mediaTypes } = attachments.imageLimits
+  if (paths.length > maxImagesPerMessage) throw new AttachmentError('Image batch exceeds the configured image-count limit.', 'TOO_MANY_IMAGES')
+  const byteCap = Math.min(maxImageBytes, maxMessageImageBytes)
+  const refs = await attachments.saveImages(await Promise.all(
+    paths.map(path => readAttachedImage(ctx, exec, path, mediaTypes, byteCap)),
+  ))
+  return refs.map(attachment => ({ type: 'image', attachment }))
 }
 
 interface DelegationRunSpec {
@@ -315,7 +364,7 @@ export function apply(ctx: Context, config: Config): void {
   const continuable = (config.backgroundMode ?? 'one-shot') === 'continuable'
   const toolName = config.toolName ?? 'subagent'
 
-  const modelSelectionCapable = config.modelSelectionSettings === true
+  const modelSelectionCapable = config.modelSelectionSettings === true || config.deploymentRoutePreauthorization === true
   ctx.sessionProjections.register(subagentModelSelectionProjectionDefinition)
 
   const assertSubagentProviderConfiguration = (subagentProvider: SubagentProvider): void => {
@@ -390,6 +439,13 @@ export function apply(ctx: Context, config: Config): void {
             required: true,
             description: wording.promptDescription,
           },
+          ...subagentProvider.capabilities.images ? {
+            images: {
+              type: 'array' as const,
+              items: { type: 'string' as const },
+              description: 'Optional workspace image file paths attached to the child prompt.',
+            },
+          } : {},
           ...modelSelectionEnabled ? {
             provider: {
               type: 'string' as const,
@@ -468,6 +524,10 @@ export function apply(ctx: Context, config: Config): void {
             throw new Error('subagent tool requires a calling agent (exec.agent was undefined)')
           }
 
+          const delegated = args as typeof args & DelegationRunRequest
+          if (delegated.images !== undefined && !subagentProvider.capabilities.images) {
+            throw new Error('images are disabled for this tool instance (backend cannot carry prompt image blocks)')
+          }
           const modelRequest = args as DelegationModelRequest
           const parentOptions = parentAgentOptionsForDelegation(parent)
           const requiresRoutePreflight = hasDelegationModelRequest(modelRequest)
@@ -505,9 +565,8 @@ export function apply(ctx: Context, config: Config): void {
           }
           exec.signal.throwIfAborted()
           const maxDepth = typeof config.maxDepth === 'number' ? config.maxDepth : undefined
-          const request = {
+          const requestBase = {
             label: args.description,
-            prompt: [{ type: 'text', text: args.prompt }] as ContentBlock[],
             parent,
             ...requestedChildAgentOptions !== undefined ? { agentOptions: requestedChildAgentOptions } : {},
             ...config.persona !== undefined ? { persona: config.persona } : {},
@@ -520,10 +579,11 @@ export function apply(ctx: Context, config: Config): void {
             if (continuable) {
               // Resolves at inbox acceptance: the child owns its own turns from
               // there, so this call neither waits for nor collects a result.
+              const imageBlocks = await resolveAttachedImages(runtimeCtx, exec, delegated.images ?? [])
               const started = await runtimeCtx.subagents.startContinuable({
                 provider: config.provider,
                 label: args.description,
-                request,
+                request: { ...requestBase, prompt: [{ type: 'text', text: args.prompt }, ...imageBlocks] },
                 signal: exec.signal,
               })
               return { kind: 'continuable' as const, subagentId: started.childId }
@@ -540,7 +600,13 @@ export function apply(ctx: Context, config: Config): void {
               owner: parent,
               run: () => {
                 const controller = new AbortController()
-                const start = runtimeCtx.subagents.start(config.provider, { ...request, signal: controller.signal })
+                const jobExec = { ...exec, signal: controller.signal }
+                const start = resolveAttachedImages(runtimeCtx, jobExec, delegated.images ?? [])
+                  .then(imageBlocks => runtimeCtx.subagents.start(config.provider, {
+                    ...requestBase,
+                    prompt: [{ type: 'text', text: args.prompt }, ...imageBlocks],
+                    signal: controller.signal,
+                  }))
                 return {
                   cancel: (reason?: string) => {
                     controller.abort(reason ?? 'background subagent task killed')
@@ -553,8 +619,10 @@ export function apply(ctx: Context, config: Config): void {
             return { kind: 'background' as const, jobId: id }
           }
 
+          const imageBlocks = await resolveAttachedImages(runtimeCtx, exec, delegated.images ?? [])
           const run: SubagentRun = await runtimeCtx.subagents.start(config.provider, {
-            ...request,
+            ...requestBase,
+            prompt: [{ type: 'text', text: args.prompt }, ...imageBlocks],
             signal: exec.signal,
           })
           return settleForegroundRun(run)
@@ -598,13 +666,13 @@ export function apply(ctx: Context, config: Config): void {
     }
   }
 
-  if (config.modelSelectionSettings !== true) {
+  if (!modelSelectionCapable) {
     install(ctx, undefined)
     return
   }
 
-  const settings = ctx.get('subagentModelSelection')
-  if (settings === undefined) {
+  const settings = config.modelSelectionSettings === true ? ctx.get('subagentModelSelection') : undefined
+  if (config.modelSelectionSettings === true && settings === undefined) {
     throw new Error(
       'tool-subagent: `modelSelectionSettings` requires '
       + '@deepseek-ai/dsh-tool-subagent/model-selection-settings in the Host scope',
@@ -612,10 +680,12 @@ export function apply(ctx: Context, config: Config): void {
   }
   const compositionScope = scopeOf(ctx)
   if (compositionScope === undefined) {
-    throw new Error('tool-subagent: `modelSelectionSettings` requires an Agent or preset scope')
+    throw new Error('tool-subagent: model route authorization requires an Agent or preset scope')
   }
 
-  const selectForAgent = (agent: NonNullable<Context['agent']>): ModelSelectionPolicy | undefined => {
+  const selectForAgent = (
+    agent: NonNullable<Context['agent']>,
+  ): ModelSelectionPolicy | undefined => {
     const freshSession = agent.session.firstLiveSeq === 0
       && agent.session.eventAt(SessionSeq(0))?.type !== 'session/end-seed'
     let allowedModels = subagentModelSelectionPolicy(ctx.sessionProjections, agent.session)
@@ -624,19 +694,25 @@ export function apply(ctx: Context, config: Config): void {
         ? agent.session.header.parentSession
         : undefined
       if (parentId !== undefined) {
-        const parent = ctx.get('agents')?.get(parentId)
+        const parent = agent.ctx.get('agents')?.get(parentId)
         allowedModels = parent === undefined
           ? undefined
           : subagentModelSelectionPolicy(ctx.sessionProjections, parent.session)
       } else if (freshSession) {
-        const current = settings.current()
-        allowedModels = current.enabled ? current.allowedModels : undefined
+        const current = settings?.current()
+        const userRoutes = current?.enabled === true ? current.allowedModels : []
+        const deploymentRoutes = config.deploymentRoutePreauthorization === true
+          ? agent.ctx.get('subagentRoutePreauthorization')?.snapshot() ?? []
+          : []
+        allowedModels = unionModelRoutes(userRoutes, deploymentRoutes)
       }
     }
     if (allowedModels !== undefined) {
       recordSubagentModelSelection(ctx.sessionProjections, agent.session, allowedModels)
     }
-    return allowedModels === undefined ? undefined : { routes: allowedModels }
+    return allowedModels === undefined || allowedModels.length === 0
+      ? undefined
+      : { routes: allowedModels }
   }
 
   const agent = ctx.agent
@@ -652,20 +728,18 @@ export function apply(ctx: Context, config: Config): void {
   const belongsToComposition = (candidate: Agent): boolean =>
     scopeChainOf(scopeOf(candidate.ctx)).includes(compositionScope)
   const installScoped = (candidate: Agent): void => {
-    if (scopedInstalls.has(candidate) || installing.has(candidate)) return
+    if (!belongsToComposition(candidate) || scopedInstalls.has(candidate) || installing.has(candidate)) return
     // Reserve before the injected fiber runs: tool registration emits
     // `tools/change` synchronously, which re-enters the reconciliation below.
     installing.add(candidate)
-    let fiber: ReturnType<Context['inject']>
     try {
       const policy = selectForAgent(candidate)
-      fiber = candidate.ctx.inject(['tools', 'subagents', 'systemPrompt'], (runtimeCtx) => {
+      scopedInstalls.set(candidate, candidate.ctx.inject(['tools', 'subagents', 'systemPrompt'], (runtimeCtx) => {
         install(runtimeCtx, policy)
-      })
+      }))
     } finally {
       installing.delete(candidate)
     }
-    scopedInstalls.set(candidate, fiber)
   }
   const removeScoped = (candidate: Agent): void => {
     const fiber = scopedInstalls.get(candidate)

@@ -4,28 +4,34 @@
  * @module @deepseek-ai/dsh-tools
  */
 
+import { isProxy } from 'node:util/types'
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
+import Ajv from 'ajv'
+import Ajv2020 from 'ajv/dist/2020.js'
+import MiniSearch from 'minisearch'
+import { brandString } from '@deepseek-ai/dsh-brand'
 import { AnonymousEntries, NamedEntries, ScopedLayers, scopeOf, scopeTarget } from '@deepseek-ai/dsh-scope'
 import type { ScopeKey, ScopeLayer, Scoped } from '@deepseek-ai/dsh-scope'
 import type { ToolCallId, ContentBlock, ToolSchema } from '@deepseek-ai/dsh-llm'
 import { HarnessError } from '@deepseek-ai/dsh-llm'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { UserMessage } from '@deepseek-ai/dsh-session'
-import { assertNever, deepFreeze, snapshotJsonValue, type JsonValue } from '@deepseek-ai/dsh-util-values'
-import type { ToolProviderResult } from '@deepseek-ai/dsh-system-prompt'
+import { assertNever, deepFreeze, isJsonValue, snapshotJsonValue, type JsonValue } from '@deepseek-ai/dsh-util-values'
+import type { AssembleContext, ToolProviderResult } from '@deepseek-ai/dsh-system-prompt'
 import type { CodeRuntime } from '@deepseek-ai/dsh-code-runtime'
 // Type-only: makes `ctx.get('approval')` resolve to the ApprovalService
 // augmentation. The seam stays optional at runtime — see `serviceAsk`.
 import type {} from '@deepseek-ai/dsh-user-approval'
 import type { ToolCallView, ToolResultView } from './presentation.ts'
-import { assertSupportedJsonSchema, validateJsonSchemaValue } from './json-schema.ts'
+import { assertSupportedJsonSchema, isPlainJsonRecord, validateJsonSchemaValue } from './json-schema.ts'
 import type { JsonSchemaNode } from './json-schema.ts'
 import { createRunCodeTool, RUN_CODE_NAME } from './ptc.ts'
 import type { CodeSdkLanguage } from './ptc.ts'
 import { renderToolsSdk } from './ts-types.ts'
 import type { ToolSdkSchema } from './ts-types.ts'
 import { renderToolsSdkPy } from './py-types.ts'
+import { ToolArgsError } from './schema.ts'
 
 /**
  * Language → SDK-section renderer. The registry looks up the loaded
@@ -49,6 +55,146 @@ import { renderToolsSdkPy } from './py-types.ts'
  * model can only discover by being denied is one it corrects too late.
  */
 const PTC_ONLY_INSTRUCTION = `\`${RUN_CODE_NAME}\` is the only tool you can call directly — a tool call naming any other tool fails. Reach every tool the SDK declares below from inside the program.`
+
+/** Reserved schema-discovery tool name. */
+export const TOOL_SEARCH_NAME = 'tool_search'
+const DRAFT_7_SCHEMA_ID = 'http://json-schema.org/draft-07/schema#'
+const DRAFT_2020_SCHEMA_ID = 'https://json-schema.org/draft/2020-12/schema'
+const RESTORED_DISCOVERY_CALL_ID = brandString<ToolCallId>('tool-search-restored')
+const DRAFT_7_SCHEMA_VALIDATOR = new Ajv({ strict: false, allErrors: true })
+const DRAFT_2020_SCHEMA_VALIDATOR = new Ajv2020({ strict: false, allErrors: true })
+
+interface ResolvedToolSearchConfig {
+  readonly defaultLimit: number
+  readonly maxResults: number
+  readonly maxResultBytes: number
+}
+
+/** Validate and resolve one model-authored deferred-tool search request. */
+function resolveToolSearchArguments(value: unknown, config: ResolvedToolSearchConfig): { query: string; limit: number } {
+  if (!isPlainJsonRecord(value)) throw new ToolArgsError(['must be an object'])
+  for (const key of Object.keys(value)) {
+    if (key !== 'query' && key !== 'limit') throw new ToolArgsError([`unexpected property "${key}"`])
+  }
+  const query = value.query
+  if (typeof query !== 'string') throw new ToolArgsError(['"query" must be a string'])
+  if (query.trim().length === 0) throw new ToolArgsError(['"query" must contain non-whitespace text'])
+  const limit = value.limit
+  if (limit !== undefined && (typeof limit !== 'number' || !Number.isInteger(limit))) {
+    throw new ToolArgsError(['"limit" must be an integer'])
+  }
+  if (typeof limit === 'number' && (limit < 1 || limit > config.maxResults)) {
+    throw new ToolArgsError([`"limit" must be between 1 and ${config.maxResults}`])
+  }
+  return { query, limit: typeof limit === 'number' ? limit : config.defaultLimit }
+}
+
+/** Validate a complete deferred parameter schema using its declared dialect. */
+function assertDeferredParameterSchema(value: unknown, subject: string): asserts value is Record<string, unknown> {
+  if (!isPlainJsonRecord(value) || value.type !== 'object') {
+    throw new Error(`${subject}.parameters must be an object-rooted JSON schema`)
+  }
+  const dialect = value.$schema
+  let validator: Ajv | Ajv2020
+  let schema = value
+  if (dialect === undefined || dialect === DRAFT_7_SCHEMA_ID) {
+    validator = DRAFT_7_SCHEMA_VALIDATOR
+  } else if (dialect === 'http://json-schema.org/draft-07/schema'
+    || dialect === 'https://json-schema.org/draft-07/schema'
+    || dialect === 'https://json-schema.org/draft-07/schema#') {
+    validator = DRAFT_7_SCHEMA_VALIDATOR
+    schema = { ...schema, $schema: DRAFT_7_SCHEMA_ID }
+  } else if (dialect === DRAFT_2020_SCHEMA_ID) {
+    validator = DRAFT_2020_SCHEMA_VALIDATOR
+  } else if (dialect === `${DRAFT_2020_SCHEMA_ID}#`) {
+    validator = DRAFT_2020_SCHEMA_VALIDATOR
+    schema = { ...schema, $schema: DRAFT_2020_SCHEMA_ID }
+  } else {
+    throw new Error(`${subject}.parameters uses unsupported JSON schema dialect ${JSON.stringify(dialect)}`)
+  }
+  let valid: boolean | Promise<unknown>
+  try {
+    valid = validator.validateSchema(schema)
+  } catch (error: unknown) {
+    throw new Error(`${subject}.parameters must be a valid JSON schema`, { cause: error })
+  }
+  if (typeof valid !== 'boolean') {
+    throw new Error(`${subject}.parameters must not require asynchronous schema validation`)
+  }
+  if (!valid) {
+    throw new Error(`${subject}.parameters must be a valid JSON schema: ${validator.errorsText()}`)
+  }
+}
+
+/** Parse one complete model-facing schema from durable or generated JSON. */
+function parseDeferredToolSchema(value: unknown, subject: string): ToolSchema {
+  if (!isPlainJsonRecord(value)) throw new Error(`${subject} must be an object`)
+  const keys = Object.keys(value)
+  if (keys.length !== 3 || !keys.includes('name') || !keys.includes('description') || !keys.includes('parameters')) {
+    throw new Error(`${subject} must contain exactly name, description, and parameters`)
+  }
+  if (typeof value.name !== 'string' || value.name.length === 0) throw new Error(`${subject}.name must be a non-empty string`)
+  if (typeof value.description !== 'string') throw new Error(`${subject}.description must be a string`)
+  assertDeferredParameterSchema(value.parameters, subject)
+  const parameters = snapshotJsonValue(value.parameters)
+  if (parameters === undefined || typeof parameters !== 'object' || parameters === null || Array.isArray(parameters)) {
+    throw new Error(`${subject}.parameters must be lossless JSON`)
+  }
+  return { name: value.name, description: value.description, parameters }
+}
+
+/** Canonical rendered content used by fresh and reconstructed discovery results. */
+function renderedDeferredSchemas(schemas: readonly unknown[]): ContentBlock[] {
+  return [{ type: 'text', text: JSON.stringify(schemas, null, 2) }]
+}
+
+/** UTF-8 bytes of the complete durable discovery result block. */
+function deferredToolResultBytes(callId: ToolCallId, content: readonly ContentBlock[], schemas: readonly unknown[]): number {
+  return new TextEncoder().encode(JSON.stringify({
+    type: 'tool-result', toolCallId: callId, content, isError: false, loadedTools: schemas,
+  })).byteLength
+}
+
+/** Enforce the complete model-visible and durable discovery result budget. */
+function assertDeferredResultWithinBudget(
+  callId: ToolCallId,
+  content: readonly ContentBlock[],
+  schemas: readonly unknown[],
+  config: ResolvedToolSearchConfig,
+): void {
+  const bytes = deferredToolResultBytes(callId, content, schemas)
+  if (bytes <= config.maxResultBytes) return
+  throw new HarnessError(
+    `deferred discovery result is ${bytes} bytes, exceeding configured maxResultBytes ${config.maxResultBytes}`,
+    'TOOL_SEARCH_RESULT_TOO_LARGE',
+  )
+}
+
+/** Read only an own enumerable data-property name before restored-candidate eligibility is known. */
+function restoredDeferredToolName(value: unknown): string | undefined {
+  if (typeof value !== 'object' || value === null || isProxy(value) || !isPlainJsonRecord(value)) return undefined
+  const descriptor = Object.getOwnPropertyDescriptor(value, 'name')
+  if (descriptor === undefined || descriptor.enumerable !== true || !('value' in descriptor)) return undefined
+  return typeof descriptor.value === 'string' && descriptor.value.length > 0 ? descriptor.value : undefined
+}
+
+/** Whether one eligible restored candidate is accessor-free lossless JSON. */
+function isSafeRestoredToolSchema(value: unknown): boolean {
+  const pending: unknown[] = [value]
+  const seen = new Set<object>()
+  while (pending.length > 0) {
+    const current = pending.pop()
+    if (current === null || typeof current !== 'object') continue
+    if (isProxy(current) || seen.has(current)) return false
+    seen.add(current)
+    for (const key of Reflect.ownKeys(current)) {
+      const descriptor = Object.getOwnPropertyDescriptor(current, key)
+      if (descriptor === undefined || !('value' in descriptor)) return false
+      pending.push(descriptor.value)
+    }
+  }
+  return isJsonValue(value)
+}
 
 const SDK_RENDERERS: Record<string, (schemas: ToolSdkSchema[]) => string> = {
   typescript: renderToolsSdk,
@@ -212,6 +358,12 @@ export interface ToolOutputDefinition {
 
 /** A registered tool: its schema plus the execution function. */
 export interface ToolDefinition extends ToolSchema {
+  /**
+   * Omit this schema from the initial model request and expose it through
+   * `tool_search`. The definition remains registered and executable; current
+   * scope eligibility still governs both discovery and dispatch.
+   */
+  readonly deferLoading?: boolean
   /** Mandatory canonical output declaration. */
   readonly output: ToolOutputDefinition
   /**
@@ -551,6 +703,8 @@ export interface ToolExecutionSuccess {
   /** Execution-local canonical value; deliberately omitted from durable events. */
   readonly value: JsonValue
   readonly content: ContentBlock[]
+  /** Deferred schemas discovered by this result for subsequent requests. */
+  readonly loadedTools?: ToolSchema[]
   readonly error?: never
   readonly meta?: JsonValue
   readonly additionalContexts?: UserMessage[]
@@ -664,6 +818,15 @@ export interface Config {
    * restores strictly serial dispatch. Must be a positive integer.
    */
   maxParallelSubCalls?: number
+  /** Enable the reserved `tool_search` discovery tool; `false` disables deferred registrations. */
+  toolSearch?: false | {
+    /** Results returned when the model omits `limit` (default 5). */
+    defaultLimit?: number
+    /** Highest accepted `limit` (default 10). */
+    maxResults?: number
+    /** Maximum UTF-8 bytes in a complete fresh or reconstructed durable discovery result. */
+    maxResultBytes: number
+  }
 }
 
 /**
@@ -678,6 +841,27 @@ export interface ToolRestriction {
 }
 
 /** One restriction compiled at registration for repeated live-global lookup. */
+/** Mutable positive allowance owned by a settings resolver for one live scope. */
+export interface ToolEligibilityContribution {
+  current(): readonly string[] | undefined
+  baseAllow(): readonly string[] | undefined
+  commit(names: readonly string[] | undefined): (() => readonly unknown[]) | undefined
+  replace(names: readonly string[] | undefined): void
+  dispose(): void
+}
+
+/** Resolver-only registry entry point kept out of the named service API. */
+export interface ToolEligibilityContributions {
+  register(owner: Context, scope: ScopeKey, publish: (allow: readonly string[] | undefined) => void): ToolEligibilityContribution
+}
+
+/** Symbol-keyed settings bridge omitted from the generated named service API. @internal */
+export const TOOL_ELIGIBILITY_CONTRIBUTIONS: unique symbol = Symbol('@deepseek-ai/dsh-tools.eligibility-contributions')
+
+interface EligibilityAllowance {
+  names: ReadonlySet<string> | undefined
+}
+
 interface CompiledToolRestriction {
   readonly allow?: ReadonlySet<string>
   readonly deny?: ReadonlySet<string>
@@ -687,6 +871,8 @@ interface CompiledToolRestriction {
 interface ToolView {
   /** Visible definitions after restrictions, scoped shadowing, and transport insertion. */
   readonly visible: ReadonlyMap<string, ToolDefinition>
+  /** Effective positive allowance, or absent when eligibility is unrestricted. */
+  readonly eligibility: ReadonlySet<string> | undefined
   /** Pre-restriction capability names used by prompt-order validation. */
   readonly knownNames: ReadonlySet<string>
   /** Current global names that a scoped restriction may name. */
@@ -707,6 +893,7 @@ export type ToolGuard = (execution: Readonly<ToolExecution>) => string | undefin
 class ToolLayer implements ScopeLayer {
   readonly tools: NamedEntries<ToolDefinition>
   readonly restrictions = new AnonymousEntries<CompiledToolRestriction>()
+  readonly eligibilityAllowances = new AnonymousEntries<EligibilityAllowance>()
   readonly guards = new AnonymousEntries<ToolGuard>()
   /**
    * Presentation this scope's agent declared for itself, shadowing the
@@ -723,8 +910,8 @@ class ToolLayer implements ScopeLayer {
 
   /** Whether every contribution table in this aggregate layer is empty. */
   isEmpty(): boolean {
-    return this.tools.isEmpty() && this.restrictions.isEmpty() && this.guards.isEmpty()
-      && this.mode === undefined
+    return this.tools.isEmpty() && this.restrictions.isEmpty() && this.eligibilityAllowances.isEmpty()
+      && this.guards.isEmpty() && this.mode === undefined
   }
 
   /** Whether every compiled restriction in this layer admits a global tool name. */
@@ -773,6 +960,24 @@ function resolveMaxParallelSubCalls(value: number | undefined): number {
   return maxParallelSubCalls
 }
 
+/** Resolve and validate deferred-discovery limits for direct construction. */
+function resolveToolSearchConfig(config: Config['toolSearch']): ResolvedToolSearchConfig | undefined {
+  if (config === undefined || config === false) return undefined
+  const maxResultBytes = config.maxResultBytes
+  const maxResults = config.maxResults ?? 10
+  const defaultLimit = config.defaultLimit ?? 5
+  if (!Number.isInteger(maxResultBytes) || maxResultBytes < 1) {
+    throw new Error('toolSearch.maxResultBytes must be a positive integer')
+  }
+  if (!Number.isInteger(maxResults) || maxResults < 1) {
+    throw new Error('toolSearch.maxResults must be a positive integer')
+  }
+  if (!Number.isInteger(defaultLimit) || defaultLimit < 1 || defaultLimit > maxResults) {
+    throw new Error('toolSearch.defaultLimit must be a positive integer no greater than toolSearch.maxResults')
+  }
+  return { defaultLimit, maxResults, maxResultBytes }
+}
+
 /**
  * Tool registry and execution pipeline. Scoped registrations shadow globals;
  * one visibility resolver feeds presentation, lookup, and dispatch.
@@ -783,6 +988,14 @@ export class ToolRuntime extends Service {
   static Config: z<Config> = z.object({
     mode: z.union(['native', 'ptc', 'both'] as const).default('native'),
     maxParallelSubCalls: z.natural().min(1).default(10),
+    toolSearch: z.union([
+      z.const(false),
+      z.object({
+        defaultLimit: z.natural().min(1).default(5),
+        maxResults: z.natural().min(1).default(10),
+        maxResultBytes: z.natural().min(1).required(),
+      }),
+    ]).default(false),
   })
 
   /** Internal staged view consumed by `dsh-agent-loop`'s parallel scheduler. */
@@ -791,6 +1004,11 @@ export class ToolRuntime extends Service {
     dispatch: exec => this.dispatchScheduledExecution(exec),
     finalize: (exec, result) => this.finalizeScheduledExecution(exec, result),
     finish: (exec, result) => this.finishScheduledExecution(exec, result),
+  }
+
+  /** Resolver-only mutable eligibility bridge. */
+  readonly [TOOL_ELIGIBILITY_CONTRIBUTIONS]: ToolEligibilityContributions = {
+    register: (owner, scope, publish) => this.createEligibilityContribution(owner, scope, publish),
   }
 
   /** Context deferred by a running tool body, keyed by its scheduler-owned execution. */
@@ -808,6 +1026,9 @@ export class ToolRuntime extends Service {
   /** Presentation for scopes that declare none; {@link presentAs} shadows it per scope. */
   private readonly defaultMode: ToolPresentationMode
   private readonly maxParallelSubCalls: number
+  private readonly toolSearchConfig: ResolvedToolSearchConfig | undefined
+  /** Schemas discovered by the reserved search execution that produced a result. */
+  private readonly loadedTools = new WeakMap<ToolExecution, ToolSchema[]>()
   /**
    * Reserved presentation transport, kept outside the filterable registration
    * layers. Built on first need rather than at construction: which agents run
@@ -815,6 +1036,7 @@ export class ToolRuntime extends Service {
    * transport is stateless beyond its closures over `this`.
    */
   private ptcTransport: ToolDefinition | undefined
+  private toolSearchTool: ToolDefinition | undefined
 
   constructor(ctx: Context, config: Config = {}) {
     super(ctx, 'tools')
@@ -822,7 +1044,8 @@ export class ToolRuntime extends Service {
     // optional-input type for direct (non-Loader) construction in tests.
     this.defaultMode = config.mode ?? 'native'
     this.maxParallelSubCalls = resolveMaxParallelSubCalls(config.maxParallelSubCalls)
-    ctx.systemPrompt.tools(context => this.wireSchemas(context.scope))
+    this.toolSearchConfig = resolveToolSearchConfig(config.toolSearch)
+    ctx.systemPrompt.tools(context => this.wireSchemas(context))
     if (this.defaultMode !== 'native') {
       ctx.systemPrompt.section(this.collapseSection())
       ctx.systemPrompt.section(this.sdkSection())
@@ -878,7 +1101,7 @@ export class ToolRuntime extends Service {
         const render = SDK_RENDERERS[runtime.language]
         /* v8 ignore next -- requireCodeRuntime rejects an unknown language before this runs. */
         if (render === undefined) throw new Error(`dsh-tools: no SDK renderer for ${runtime.language}`)
-        return render(this.sdkSchemas(context.scope))
+        return render(this.sdkSchemas(context))
       },
     }
   }
@@ -920,8 +1143,71 @@ export class ToolRuntime extends Service {
       peekRuntime: () => this.ctx.get('codeRuntime'),
       maxParallel: this.maxParallelSubCalls,
       shapeDispatchLog: dispatch => this.shapeDispatchLog(dispatch),
+      bindingSchemas: agent => this.codeBindingSchemas(agent),
+      recordLoadedTools: (exec, schemas) => {
+        const loaded = new Map((this.loadedTools.get(exec) ?? []).map(schema => [schema.name, schema]))
+        for (const schema of schemas) loaded.set(schema.name, schema)
+        this.loadedTools.set(exec, [...loaded.values()])
+      },
     })
     return this.ptcTransport
+  }
+
+  /** Build the reserved schema-discovery tool on first use. */
+  private requireToolSearch(): ToolDefinition {
+    const config = this.toolSearchConfig
+    if (config === undefined) throw new Error('dsh-tools: deferred tools require toolSearch configuration')
+    this.toolSearchTool ??= {
+      name: TOOL_SEARCH_NAME,
+      description: 'Search deferred tools by name and description. Returns matching callable schemas for subsequent requests.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', minLength: 1, description: 'Words describing the needed capability.' },
+          limit: {
+            type: 'integer', minimum: 1, maximum: config.maxResults,
+            description: `Maximum matches to return (default ${config.defaultLimit}).`,
+          },
+        },
+        required: ['query'],
+        additionalProperties: false,
+      },
+      output: {
+        schema: { type: 'array', items: {} },
+        render: (_args, value) => renderedDeferredSchemas(value as JsonValue[]),
+      },
+      execute: (args, exec) => {
+        const { query, limit } = resolveToolSearchArguments(args, config)
+        const definitions = [...this.view(exec.agent).visible.values()]
+          .filter(definition => definition.deferLoading === true)
+        const byName = new Map(definitions.map(definition => [definition.name, definition]))
+        const search = new MiniSearch<{ id: string; name: string; description: string }>({
+          fields: ['name', 'description'],
+          idField: 'id',
+        })
+        search.addAll(definitions.map(definition => ({
+          id: definition.name,
+          name: definition.name,
+          description: definition.description,
+        })))
+        const schemas = search.search(query, {
+          boost: { name: 2 },
+          combineWith: 'AND',
+          prefix: true,
+        }).slice(0, limit).flatMap((result) => {
+          const definition = byName.get(String(result.id))
+          if (definition === undefined) throw new Error(`tool_search returned unknown indexed tool "${String(result.id)}"`)
+          return [parseDeferredToolSchema(
+            this.schemaOf(definition, true),
+            `tool_search result schema for "${definition.name}"`,
+          )]
+        })
+        assertDeferredResultWithinBudget(exec.callId, renderedDeferredSchemas(schemas), schemas, config)
+        this.loadedTools.set(exec, schemas)
+        return Promise.resolve(schemas)
+      },
+    }
+    return this.toolSearchTool
   }
 
   /**
@@ -961,7 +1247,6 @@ export class ToolRuntime extends Service {
         yield ctx.systemPrompt.section(this.sdkSection())
       }
     }.bind(this), 'tools.presentAs()')
-    // oxlint-disable-next-line typescript/no-misused-promises -- synchronous composite teardown
     return dispose
   }
 
@@ -969,12 +1254,16 @@ export class ToolRuntime extends Service {
    * Build one scope's wire schemas and names for prompt-order validation.
    * Restrictions do not make known tools invalid, but a mode collapse does.
    */
-  private wireSchemas(scope?: ScopeKey): ToolProviderResult {
-    const view = this.view(scope)
-    const mode = this.modeFor(scope)
+  private wireSchemas(context: AssembleContext): ToolProviderResult {
+    const view = this.view(context.scope)
+    const mode = this.modeFor(context.scope)
+    const loaded = this.loadedSchemas(context.agent, view)
     if (mode === 'native') {
-      const schemas = [...view.visible.values()].map(definition => this.schemaOf(definition, false))
-      return { schemas, knownNames: [...view.knownNames] }
+      const schemas = [...view.visible.values()]
+        .filter(definition => definition.deferLoading !== true)
+        .map(definition => this.schemaOf(definition, false))
+      schemas.push(...loaded)
+      return { schemas, knownNames: schemas.map(schema => schema.name) }
     }
     // Validate the runtime language BEFORE projecting schemas: schemaOf reads
     // run_code's language-aware description/parameters getters, whose own
@@ -982,14 +1271,55 @@ export class ToolRuntime extends Service {
     // renderer-table rejection the canonical assembly-time error for a
     // language with no SDK renderer.
     this.requireCodeRuntime(mode)
-    const schemas = [...view.visible.values()].map(definition => this.schemaOf(definition, false))
+    const schemas = [...view.visible.values()]
+      .filter(definition => definition.deferLoading !== true)
+      .map(definition => this.schemaOf(definition, false))
     if (mode === 'ptc') {
       return {
         schemas: schemas.filter(schema => schema.name === RUN_CODE_NAME),
         knownNames: [RUN_CODE_NAME],
       }
     }
-    return { schemas, knownNames: [...view.knownNames, RUN_CODE_NAME] }
+    schemas.push(...loaded)
+    return { schemas, knownNames: schemas.map(schema => schema.name) }
+  }
+
+  /** Recover current deferred schemas by filtering, budgeting, then validating durable history. */
+  private loadedSchemas(agent: Agent | undefined, view: ToolView): ToolSchema[] {
+    const session = agent?.session
+    if (session === undefined || typeof session.deriveMessages !== 'function') return []
+    const messages = session.deriveMessages()
+    const eligibleNames = new Set<string>()
+    let maxEligibleNameLength = 0
+    for (const definition of view.visible.values()) {
+      if (definition.deferLoading !== true) continue
+      eligibleNames.add(definition.name)
+      maxEligibleNameLength = Math.max(maxEligibleNameLength, definition.name.length)
+    }
+    if (eligibleNames.size === 0) return []
+    const loaded = new Map<string, unknown>()
+    for (const message of messages) {
+      for (const block of message.content) {
+        if (block.type !== 'tool-result' || block.loadedTools === undefined) continue
+        for (const candidate of block.loadedTools as unknown[]) {
+          const name = restoredDeferredToolName(candidate)
+          if (name === undefined || name.length > maxEligibleNameLength || !eligibleNames.has(name)) continue
+          if (!isSafeRestoredToolSchema(candidate)) continue
+          loaded.set(name, candidate)
+        }
+      }
+    }
+    const eligible = [...loaded.values()]
+    if (eligible.length === 0) return []
+    const config = this.toolSearchConfig
+    if (config === undefined) throw new Error('dsh-tools: restored loadedTools require toolSearch configuration')
+    assertDeferredResultWithinBudget(
+      RESTORED_DISCOVERY_CALL_ID,
+      renderedDeferredSchemas(eligible),
+      eligible,
+      config,
+    )
+    return eligible.map(candidate => parseDeferredToolSchema(candidate, 'durable loadedTools entry'))
   }
 
   /**
@@ -1039,11 +1369,17 @@ export class ToolRuntime extends Service {
       && (!Number.isFinite(timeoutMs) || timeoutMs <= 0)) {
       throw new TypeError(`tool "${name}" timeoutMs must be a positive finite number`)
     }
-    // Reserved unconditionally: any agent may select a code mode for itself,
+    // Reserved unconditionally: any agent may select PTC mode for itself,
     // so a name free to take under the deployment default would become a
     // collision the moment a preset mounted.
     if (name === RUN_CODE_NAME) {
       throw new Error(`tool name "${RUN_CODE_NAME}" is reserved for the PTC mode presentation transport and cannot be registered or shadowed`)
+    }
+    if (name === TOOL_SEARCH_NAME) {
+      throw new Error(`tool name "${TOOL_SEARCH_NAME}" is reserved for deferred schema discovery and cannot be registered or shadowed`)
+    }
+    if (definition.deferLoading === true && this.toolSearchConfig === undefined) {
+      throw new Error(`tool "${name}" sets deferLoading but dsh-tools toolSearch is disabled`)
     }
     return this.layers.effect(
       this.ctx,
@@ -1089,14 +1425,84 @@ export class ToolRuntime extends Service {
   }
 
   /**
-   * Register a monotonic guard after the extensible `tools/pre-execute`
-   * waterfall. A plain-context guard applies globally; one registered through
-   * `agent.ctx` applies only to that agent. Any matching guard may deny by
-   * returning a reason, while no guard can force-allow a call another guard
-   * denied. The exact effect disposer is returned for ordered ownership and
-   * HMR cleanup.
+   * Add positive tool eligibility for the calling scope.
+   * @param names - exact registered or future tool names allowed by this contribution.
+   * @returns the disposer that removes this contribution.
+   */
+  allowEligible(names: readonly string[]): () => void {
+    if (scopeOf(this.ctx) === undefined) throw new Error('tools.allowEligible() requires a scoped context')
+    return this.layers.effect(
+      this.ctx,
+      layer => layer.eligibilityAllowances.append({ names: new Set(names) }),
+      { label: 'tools.allowEligible()' },
+    )
+  }
+
+  /** Resolve the sorted union of positive eligibility declarations, or undefined when unrestricted. */
+  eligibilityAllow(scope?: ScopeKey): readonly string[] | undefined {
+    const names = new Set<string>()
+    let declared = false
+    for (const layer of this.layers.chainLayers(scope)) {
+      for (const allowance of layer.eligibilityAllowances.values()) {
+        if (allowance.names === undefined) continue
+        declared = true
+        for (const name of allowance.names) names.add(name)
+      }
+    }
+    return declared ? [...names].sort() : undefined
+  }
+
+  /** Create one mutable allowance whose owner and visibility scope differ. */
+  private createEligibilityContribution(
+    owner: Context,
+    scope: ScopeKey,
+    publish: (allow: readonly string[] | undefined) => void,
+  ): ToolEligibilityContribution {
+    const allowance: EligibilityAllowance = { names: undefined }
+    let active = true
+    const notify = (allow: readonly string[] | undefined): readonly unknown[] => {
+      const failures: unknown[] = []
+      try { publish(allow) } catch (error) { failures.push(error) }
+      try { this.ctx.emit('tools/change') } catch (error) { failures.push(error) }
+      return failures
+    }
+    const dispose = this.layers.effectAt(owner, scope, (layer) => {
+      const undo = layer.eligibilityAllowances.append(allowance)
+      return () => {
+        const changed = allowance.names !== undefined
+        allowance.names = undefined
+        active = false
+        undo()
+        if (!changed) return
+        const failures = notify(undefined)
+        if (failures.length > 0) throw new AggregateError(failures, 'tool eligibility observers failed')
+      }
+    }, { label: 'tools.eligibilityContribution()', notify: false })
+    const current = (): readonly string[] | undefined => allowance.names === undefined ? undefined : [...allowance.names].sort()
+    const commit = (names: readonly string[] | undefined): (() => readonly unknown[]) | undefined => {
+      if (!active) throw new Error('tool eligibility contribution is disposed')
+      const next = names === undefined ? undefined : [...new Set(names)].sort()
+      const prior = current()
+      if (JSON.stringify(prior) === JSON.stringify(next)) return undefined
+      allowance.names = next === undefined ? undefined : new Set(next)
+      return () => notify(next)
+    }
+    return {
+      current,
+      baseAllow: () => this.eligibilityAllow(scope),
+      commit,
+      replace: (names) => {
+        const failures = commit(names)?.() ?? []
+        if (failures.length > 0) throw new AggregateError(failures, 'tool eligibility observers failed')
+      },
+      dispose,
+    }
+  }
+
+  /**
+   * Register a monotonic guard after the extensible pre-execute waterfall.
    * @param guard - synchronous check; a returned string denies the execution.
-   * @returns the exact disposer that unregisters the guard.
+   * @returns the disposer that unregisters the guard.
    */
   guard(guard: ToolGuard): () => void {
     return this.layers.effect(
@@ -1157,19 +1563,22 @@ export class ToolRuntime extends Service {
     const visible = new Map<string, ToolDefinition>()
     const knownNames = new Set<string>()
     const restrictableNames = new Set<string>()
+    const eligibility = this.eligibilityAllow(scope)
+    const eligible = eligibility === undefined ? undefined : new Set(eligibility)
+    const admitsEligibility = (name: string): boolean => eligible === undefined || eligible.has(name)
     for (const [name, definition] of inherited) {
       knownNames.add(name)
       restrictableNames.add(name)
       // Restrictions intersect across the whole chain: any scope on it may
       // mask an inherited name for everything nested inside it.
-      if (layers.every(layer => layer.admits(name))) visible.set(name, definition)
+      if (admitsEligibility(name) && layers.every(layer => layer.admits(name))) visible.set(name, definition)
     }
     // The scope's own registrations last, shadowing an inherited name and
     // outside the filter above.
     if (own !== undefined) {
       for (const [name, definition] of own.tools.entries()) {
         knownNames.add(name)
-        visible.set(name, definition)
+        if (admitsEligibility(name)) visible.set(name, definition)
       }
     }
     // Presentation infrastructure is resolved last and outside capability
@@ -1180,7 +1589,13 @@ export class ToolRuntime extends Service {
     if (this.modeFor(scope) !== 'native') {
       visible.set(RUN_CODE_NAME, this.requireCodeTransport())
     }
-    return { visible, knownNames, restrictableNames }
+    if (this.toolSearchConfig !== undefined) visible.set(TOOL_SEARCH_NAME, this.requireToolSearch())
+    return { visible, eligibility: eligible, knownNames, restrictableNames }
+  }
+
+  /** Whether a registered definition is excluded by the current positive allowance. */
+  private eligibilityDenies(view: ToolView, name: string): boolean {
+    return view.eligibility !== undefined && view.knownNames.has(name) && !view.eligibility.has(name)
   }
 
   /**
@@ -1223,13 +1638,33 @@ export class ToolRuntime extends Service {
    * @returns one deep-cloned schema per visible tool.
    */
   schemas(scope?: ScopeKey): ToolSchema[] {
-    return [...this.view(scope).visible.values()].map(definition => this.schemaOf(definition, true))
+    return [...this.view(scope).visible.values()]
+      .filter(definition => definition.deferLoading !== true)
+      .map(definition => this.schemaOf(definition, true))
+  }
+
+  /** Project the current eligible end-tool catalog, including deferred definitions. */
+  catalogSchemas(scope?: ScopeKey): ToolSchema[] {
+    return [...this.view(scope).visible.values()]
+      .filter(definition => definition.name !== RUN_CODE_NAME && definition.name !== TOOL_SEARCH_NAME)
+      .map(definition => this.schemaOf(definition, true))
+  }
+
+  /** Project the live schemas that one PTC program may bind. */
+  private codeBindingSchemas(agent: Agent | undefined): ToolSchema[] {
+    const view = this.view(agent)
+    return [...view.visible.values()]
+      .filter(definition => definition.name !== RUN_CODE_NAME && definition.deferLoading !== true)
+      .map(definition => this.schemaOf(definition, true))
+      .concat(this.loadedSchemas(agent, view))
   }
 
   /** Project visible callable tools onto the generated PTC mode SDK contract. */
-  private sdkSchemas(scope?: ScopeKey): ToolSdkSchema[] {
-    return [...this.view(scope).visible.values()]
-      .filter(definition => definition.name !== RUN_CODE_NAME)
+  private sdkSchemas(context: AssembleContext): ToolSdkSchema[] {
+    const view = this.view(context.scope)
+    const loaded = new Map(this.loadedSchemas(context.agent, view).map(schema => [schema.name, schema]))
+    const immediate = [...view.visible.values()]
+      .filter(definition => definition.name !== RUN_CODE_NAME && definition.deferLoading !== true)
       .map((definition): ToolSdkSchema => {
         const output = snapshotJsonValue(definition.output.schema)
         /* v8 ignore next -- registration already validated and retained this schema as lossless JSON. */
@@ -1241,6 +1676,13 @@ export class ToolRuntime extends Service {
           output,
         }
       })
+    return immediate.concat([...loaded.values()].map((schema): ToolSdkSchema => {
+      const definition = view.visible.get(schema.name)
+      if (definition === undefined) throw new Error(`loaded tool "${schema.name}" is not live`)
+      const output = snapshotJsonValue(definition.output.schema)
+      if (output === undefined) throw new Error(`tool "${schema.name}" output schema must be lossless JSON before SDK projection`)
+      return { ...schema, output }
+    }))
   }
 
   /** Project one definition onto the model-facing schema fields. */
@@ -1368,7 +1810,9 @@ export class ToolRuntime extends Service {
     // observe — or worse, approve — a call that can only fail. An unknown tool
     // keeps the historical dispatch-stage `UNKNOWN_TOOL` path so policy
     // listeners still see every name that reaches the registry.
-    const visible = this.get(name, agent)
+    const initialView = this.view(agent)
+    const visible = initialView.visible.get(name)
+    const eligibilityDenied = this.eligibilityDenies(initialView, name)
     const collapsed = visible !== undefined && this.collapses(name, agent, parent !== undefined)
     const concludingExecutions = this.concludingExecutions
     const base = {
@@ -1411,7 +1855,7 @@ export class ToolRuntime extends Service {
         callerSignal: signal,
         bodyInvoked: false,
       })
-      if (collapsed) {
+      if (eligibilityDenied || collapsed) {
         // The collapse denies the call before the policy pipeline, but a
         // pre-dispatch abort still keeps the established cancellation
         // contract: `prepare`'s caller-cancellation check is skipped for
@@ -1419,6 +1863,10 @@ export class ToolRuntime extends Service {
         // `UNKNOWN_TOOL` on an already-cancelled call.
         if (signal.aborted) {
           return { kind: 'final-result', exec: execution, result: toolAbortedBeforeDispatchResult() }
+        }
+        if (eligibilityDenied) {
+          this.contentFinalizers.delete(execution)
+          return { kind: 'final-result', exec: execution, result: toolErrorResult(new ToolNotFoundError(name)) }
         }
         // The name IS visible here, so the denial carries the route the model
         // must take instead. Without it the model reads a bare `unknown tool`
@@ -1559,6 +2007,11 @@ export class ToolRuntime extends Service {
    */
   private async dispatchScheduledExecution(exec: ToolRunContext): Promise<ScheduledToolDispatch> {
     try {
+      const view = this.view(exec.agent)
+      if (this.eligibilityDenies(view, exec.name)) {
+        this.contentFinalizers.delete(exec)
+        return { kind: 'final-result', result: toolErrorResult(new ToolNotFoundError(exec.name)) }
+      }
       const mutableExec = exec as MutableToolRunContext
       const carrier = scopeTarget(this, exec.agent)
       const result = await this.ctx.waterfall(
@@ -1629,7 +2082,13 @@ export class ToolRuntime extends Service {
     let finalResult: ToolExecutionResult
     try {
       finalResult = this.materializeFinalResult(this.applyFinalContent(exec, materializedResult))
+      if (!finalResult.isError && finalResult.loadedTools !== undefined) {
+        const config = this.toolSearchConfig
+        if (config === undefined) throw new Error('dsh-tools: loadedTools require toolSearch configuration')
+        assertDeferredResultWithinBudget(exec.callId, finalResult.content, finalResult.loadedTools, config)
+      }
     } catch (error: unknown) {
+      this.loadedTools.delete(exec)
       finalResult = this.materializeFinalResult(toolErrorResult(error))
     }
     this.notifyResult(exec, finalResult)
@@ -1641,7 +2100,14 @@ export class ToolRuntime extends Service {
     const finalizeContent = this.contentFinalizers.get(exec)
     if (finalizeContent === undefined) return result
     const content = finalizeContent(exec, result)
-    return content === undefined ? result : { ...result, content }
+    return content === undefined ? result : { ...this.withoutLoadedTools(result), content }
+  }
+
+  /** Remove discovery metadata when a later authority replaces the committed result. */
+  private withoutLoadedTools(result: ToolExecutionResult): ToolExecutionResult {
+    if (result.isError || result.loadedTools === undefined) return result
+    const { loadedTools: _discarded, ...retained } = result
+    return retained
   }
 
   /** Notify observers without exposing a mutation or error channel into the outcome. */
@@ -1758,14 +2224,15 @@ export class ToolRuntime extends Service {
       }
       const tool = this.resolveExecution(exec.name, exec.agent, exec.parent !== undefined)
       if (tool === undefined) throw new ToolNotFoundError(exec.name)
-      const replaced = this.createSuccessResult(exec, tool, decision.value)
+      const replaced = this.createSuccessResult(exec, tool, decision.value, false)
       return this.markCanonical(exec, {
         ...replaced,
         ...additionalContexts.length > 0 ? { additionalContexts } : {},
       })
     }
+    const retained = decision.content === undefined ? result : this.withoutLoadedTools(result)
     return this.markCanonical(exec, {
-      ...result,
+      ...retained,
       ...decision.content !== undefined ? { content: decision.content } : {},
       ...additionalContexts.length > 0 ? { additionalContexts } : {},
     })
@@ -1781,7 +2248,12 @@ export class ToolRuntime extends Service {
   }
 
   /** Snapshot, validate, render, and optionally project one successful body value. */
-  private createSuccessResult(exec: ToolExecution, tool: ToolDefinition, candidate: unknown): ToolExecutionSuccess {
+  private createSuccessResult(
+    exec: ToolExecution,
+    tool: ToolDefinition,
+    candidate: unknown,
+    includeLoadedTools = true,
+  ): ToolExecutionSuccess {
     const detached = snapshotToolValue(tool.name, candidate)
     const violations = validateJsonSchemaValue(tool.output.schema, detached, 'value')
     if (violations.length > 0) throw new ToolOutputError(tool.name, violations)
@@ -1804,10 +2276,12 @@ export class ToolRuntime extends Service {
       meta = snapshotProjection(tool.name, 'presentationMeta', projected)
     }
     const concludesTurn = this.concludingExecutions.has(exec)
+    const loadedTools = includeLoadedTools ? this.loadedTools.get(exec) : undefined
     return this.markCanonical(exec, this.materializeFinalResult({
       isError: false,
       value,
       content,
+      ...loadedTools !== undefined ? { loadedTools } : {},
       ...meta !== undefined ? { meta } : {},
       ...concludesTurn ? { concludesTurn: true as const } : {},
     }) as ToolExecutionSuccess)
@@ -1827,7 +2301,7 @@ export class ToolRuntime extends Service {
     }
     const tool = this.resolveExecution(exec.name, exec.agent, exec.parent !== undefined)
     if (tool === undefined) throw new ToolNotFoundError(exec.name)
-    const normalized = this.createSuccessResult(exec, tool, result.value)
+    const normalized = this.createSuccessResult(exec, tool, result.value, false)
     return this.markCanonical(exec, {
       ...normalized,
       ...result.additionalContexts !== undefined ? { additionalContexts: result.additionalContexts } : {},
@@ -1838,6 +2312,7 @@ export class ToolRuntime extends Service {
   private materializeFinalResult(result: ToolExecutionResult): ToolExecutionResult {
     const presentation = {
       content: result.content,
+      ...!result.isError && result.loadedTools !== undefined ? { loadedTools: result.loadedTools } : {},
       ...result.meta !== undefined ? { meta: result.meta } : {},
       ...result.additionalContexts !== undefined ? { additionalContexts: result.additionalContexts } : {},
     }

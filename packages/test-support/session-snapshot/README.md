@@ -87,6 +87,7 @@ A scenario requiring a non-Windows host declares `posixOnly`, which skips its ru
 ### What can go wrong
 
 - **A fixture guard rejects the committed files** — orphan scenario dirs, missing files, multiple pins for one header class, duplicate sidecar content, unscrubbed JSONL headers, and malformed pinning headers all fail the suite before comparisons run.
+- **A bare patch package is missing from both snapshot anchors** — launch linking searches the patch directory first, then this package's launcher module, and leaves the name unlinked so `healProfilesModuleFallback` can still supply the dsh installation closure. A package missing from that closure fails at Loader import (`ERR_MODULE_NOT_FOUND`) or, after the fiber is active, as `plugin-package-inventory-deepseek: cannot resolve active package`.
 - **The session harvest needs raw JSONL mode** — snapshot configs set the JSONL backend's `compression: 'none'`; compressed JSONL has no snapshot-harvest path.
 - **Built mode needs current artifacts** — run `pnpm run build` before selecting `DSH_EXAMPLE_MODE=lib`; source mode remains the zero-build path.
 

@@ -12,7 +12,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, symlink
 import { createRequire } from 'node:module'
 import { basename, dirname, join, resolve } from 'node:path'
 import { Readable, Writable } from 'node:stream'
-import { pathToFileURL } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import * as yaml from 'js-yaml'
 import {
   client as createAcpClientApp,
@@ -375,11 +375,23 @@ function barePackageName(specifier: string): string | undefined {
   return first.startsWith('@') ? `${first}/${second}` : first
 }
 
-/** Find a bare package's directory from the authored patch's module-resolution anchor. */
+/**
+ * Find a bare package directory for snapshot launch linking.
+ * The authored patch is searched first so a scenario-local `node_modules`
+ * wins; the launcher module is second so test-support packages remain
+ * resolvable when the patch tree cannot see them. Absence is not an error:
+ * {@link healProfilesModuleFallback} still supplies the dsh installation
+ * closure. A name missing from both snapshot anchors and that closure fails
+ * later at Loader import (`ERR_MODULE_NOT_FOUND`) or, once a fiber is active,
+ * at `plugin-package-inventory-deepseek: cannot resolve active package`.
+ */
 function packageDirFromPatch(source: string, packageName: string): string | undefined {
-  for (const searchPath of createRequire(pathToFileURL(source)).resolve.paths(packageName) ?? []) {
-    const candidate = join(searchPath, packageName)
-    if (existsSync(join(candidate, 'package.json'))) return realpathSync(candidate)
+  const anchors = [source, fileURLToPath(import.meta.url)]
+  for (const anchor of anchors) {
+    for (const searchPath of createRequire(pathToFileURL(anchor)).resolve.paths(packageName) ?? []) {
+      const candidate = join(searchPath, packageName)
+      if (existsSync(join(candidate, 'package.json'))) return realpathSync(candidate)
+    }
   }
   return undefined
 }

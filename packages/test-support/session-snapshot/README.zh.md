@@ -87,6 +87,7 @@ defineAcpSnapshotSuite({
 ### 可能出什么问题
 
 - **fixture 保护拒绝已提交文件**——遗留场景目录、缺失文件、一个 header 类别包含多个 pin、重复的伴随文件内容、未擦除的 JSONL header 与格式错误的 pin header 都会在比较运行前使套件失败。
+- **两个 snapshot 锚点都找不到裸 patch 包**——启动链接先搜 patch 目录，再搜本包 launcher 模块，并保持未链接，以便 `healProfilesModuleFallback` 仍能提供 dsh 安装依赖闭包。该闭包也没有的包会在 Loader import 时失败（`ERR_MODULE_NOT_FOUND`），或在 fiber 已激活后报 `plugin-package-inventory-deepseek: cannot resolve active package`。
 - **会话收集需要原始 JSONL mode**——快照配置使用 JSONL 后端的 `compression: 'none'`；压缩 JSONL 没有快照收集路径。
 - **构建 mode 需要当前产物**——选择 `DSH_EXAMPLE_MODE=lib` 前先运行 `pnpm run build`；源 mode 仍是零构建路径。
 
