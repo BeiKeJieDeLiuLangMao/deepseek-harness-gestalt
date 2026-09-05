@@ -1,7 +1,7 @@
 /** Session Controller Companion opaque-file admission. */
 
 import { createHash } from 'node:crypto'
-import { mkdir, mkdtemp, rename, rm } from 'node:fs/promises'
+import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -12,7 +12,6 @@ import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
-import { logPath } from '@deepseek-ai/dsh-session-persistence-jsonl/src/format.ts'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import { createSessionTestRemote, installSessionReadTestServices } from './test-remote.ts'
 
@@ -203,28 +202,30 @@ describe('session.admitAttachment', () => {
     await ctx.fiber.dispose()
   })
 
-  it('retries flush after a JSONL write failure until one admission is durable', async () => {
+  it('withholds success until sessions.flush settles, including a prior-operation retry', async () => {
     const { ctx, sessionId, remote } = await harness()
     const data = pdfBytes()
     const jsonlRoot = join(roots[0] as string, 'sessions')
-    const session = ctx.sessions.get(sessionId)
-    if (session === undefined) throw new Error('source session missing')
-    await ctx.sessions.flush(session)
-    const artifact = logPath(jsonlRoot, session.header.cwd, sessionId, 'none')
-    const hidden = `${artifact}.hidden`
-    await rename(artifact, hidden)
-    await mkdir(artifact)
+    let rejectFlush = true
+    let flushCalls = 0
+    ctx.on('session/flush', async () => {
+      flushCalls += 1
+      if (rejectFlush) throw new Error('flush barrier held')
+    })
     const failed = await remote.admitAttachment(payload(data))
     expect(failed.ok).toBe(false)
     if (failed.ok) return
     expect(failed.error.code).toBe('gateway/internal')
-    expect(ctx.sessions.get(sessionId)?.snapshotEvents()
-      .filter(event => event.type === 'session/attachment-admitted')).toHaveLength(1)
-    await rm(artifact, { recursive: true, force: true })
-    await rename(hidden, artifact)
+    expect(flushCalls).toBe(1)
+    const live = ctx.sessions.get(sessionId)?.snapshotEvents()
+      .filter(event => event.type === 'session/attachment-admitted') ?? []
+    expect(live).toHaveLength(1)
+    rejectFlush = false
     const retried = await remote.admitAttachment(payload(data))
     expect(retried.ok).toBe(true)
     if (!retried.ok) return
+    expect(flushCalls).toBe(2)
+    expect(retried.value.attachment).toEqual(live[0]?.data.attachment)
     await ctx.fiber.dispose()
 
     const reader = new Context()
@@ -233,11 +234,12 @@ describe('session.admitAttachment', () => {
     const handle = await reader.sessionPersistence.open(sessionId, 'read')
     try {
       const events = await handle.read()
-      expect(events.filter(event => event.type === 'session/attachment-admitted')).toHaveLength(1)
-      expect(events.at(-1)).toMatchObject({
+      const admitted = events.filter(event => event.type === 'session/attachment-admitted')
+      expect(admitted).toHaveLength(1)
+      expect(admitted[0]).toMatchObject({
         type: 'session/attachment-admitted',
         ignorable: true,
-        data: { operationId: 'op-1', source: 'companion' },
+        data: { operationId: 'op-1', source: 'companion', attachment: retried.value.attachment },
       })
     } finally {
       await handle.close()

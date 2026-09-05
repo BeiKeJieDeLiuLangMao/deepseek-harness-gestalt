@@ -22,4 +22,4 @@ Desktop Companion already calls `session.admitAttachment` with exact decrypted f
 
 ## Consequences
 
-Host tests persist real local objects and JSONL logs for path-name retries, flush-failure recovery, collisions, over-limit payloads, concurrent identical operations, and ignorable reopen. Generated Host and Client Remote codecs cover bounded requests, invalid names, and subagent refusal. ApiProxy still contains the old method until Desktop is retargeted. Persistence-catalog regeneration for the event payload waits on that owner move.
+Host tests persist real local objects and JSONL logs for path-name retries, collisions, over-limit payloads, concurrent identical operations, and ignorable reopen. Success is withheld until `sessions.flush` settles, including a later retry of an already-appended `operationId`; reopen then matches that one recorded event. Generated Host and Client Remote codecs cover bounded requests, invalid names, and subagent refusal. ApiProxy still contains the old method until Desktop is retargeted. Persistence-catalog regeneration for the event payload waits on that owner move.

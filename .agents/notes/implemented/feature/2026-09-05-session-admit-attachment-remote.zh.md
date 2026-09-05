@@ -22,4 +22,4 @@ Desktop Companion 已经用精确解密后的文件字节调用 `session.admitAt
 
 ## Consequences
 
-Host 测试用真实本地对象和 JSONL 日志覆盖路径名重试、flush 失败恢复、碰撞、超限载荷、并发相同 operation，以及可忽略事件重开。生成的 Host 与 Client Remote codec 覆盖有界请求、非法名字和 subagent 拒绝。在 Desktop 改接之前，ApiProxy 仍包含旧方法。事件载荷的 persistence-catalog 再生要等该所有权迁移完成。
+Host 测试用真实本地对象和 JSONL 日志覆盖路径名重试、碰撞、超限载荷、并发相同 operation，以及可忽略事件重开。成功在 `sessions.flush` settle 之前不会返回，包括已追加 `operationId` 的后续重试；重开后与那一条已记录事件一致。生成的 Host 与 Client Remote codec 覆盖有界请求、非法名字和 subagent 拒绝。在 Desktop 改接之前，ApiProxy 仍包含旧方法。事件载荷的 persistence-catalog 再生要等该所有权迁移完成。
