@@ -382,14 +382,21 @@ export function listDesktopHostSessions(
  * Create or adopt one Session through generated Gateway `session/create`.
  * @param rpc - authenticated Desktop Host RPC.
  * @param sessionId - durable Session identity.
+ * @param options - optional timeout, cancellation, and Session project directory.
  * @returns the Host create value or a typed failure.
  */
 export function createDesktopHostSession(
   rpc: DesktopHostRpc,
   sessionId: string,
-  options?: { timeoutMs?: number; signal?: AbortSignal },
+  options?: { timeoutMs?: number; signal?: AbortSignal; cwd?: string },
 ): Promise<DesktopHostRpcResult> {
-  return rpc.call('session/create', { args: { request: { sessionId } } }, options)
+  const { cwd, ...callOptions } = options ?? {}
+  return rpc.call('session/create', {
+    args: { request: {
+      sessionId,
+      ...(cwd === undefined ? {} : { cwd }),
+    } },
+  }, Object.keys(callOptions).length === 0 ? undefined : callOptions)
 }
 
 /**

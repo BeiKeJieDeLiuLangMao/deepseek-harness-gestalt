@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { accessSync, constants as fsConstants, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { glob, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -79,9 +79,11 @@ function cleanEnvironment(home: string): NodeJS.ProcessEnv {
 
 async function startShippedHost(
   env: NodeJS.ProcessEnv = {},
+  home?: string,
 ): Promise<{ home: string; running: RunningWebHost }> {
-  const home = await mkdtemp(join(tmpdir(), 'dsh-desktop-host-rpc-'))
-  homes.push(home)
+  const resolved = home ?? await mkdtemp(join(tmpdir(), 'dsh-desktop-host-rpc-'))
+  if (home === undefined) homes.push(resolved)
+  const homeDir = resolved
   const tsx = new URL('../../../node_modules/tsx/dist/esm/index.mjs', import.meta.url).href
   const running = await spawnWebHost({
     node: process.execPath,
@@ -92,10 +94,10 @@ async function startShippedHost(
       '--no-open', '--host', '127.0.0.1', '--port', '0',
     ],
     cwd: repo,
-    env: { ...cleanEnvironment(home), ...env },
+    env: { ...cleanEnvironment(homeDir), ...env },
   }, 90_000)
   children.push(running)
-  return { home, running }
+  return { home: homeDir, running }
 }
 
 describe('Desktop Host RPC against shipped dsh web', () => {
@@ -452,6 +454,22 @@ describe('Desktop Host RPC against shipped dsh web', () => {
       await llm.close()
     }
   }, 180_000)
+
+  it('allows one shipped Host bash escalation and writes the scratch file once', async () => {
+    await runAssembledApproval({
+      sessionId: 'desktop-approval-allow-session',
+      outcome: 'allowed-once',
+      expectWritten: true,
+    })
+  }, 180_000)
+
+  it('rejects one shipped Host bash escalation and never writes the scratch file', async () => {
+    await runAssembledApproval({
+      sessionId: 'desktop-approval-reject-session',
+      outcome: 'rejected',
+      expectWritten: false,
+    })
+  }, 180_000)
 })
 
 function followHasUserRequest(frame: unknown, requestId: string): boolean {
@@ -482,6 +500,131 @@ function followHasTurnEnd(frame: unknown): boolean {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+async function runAssembledApproval(input: {
+  sessionId: string
+  outcome: 'allowed-once' | 'rejected'
+  expectWritten: boolean
+}): Promise<void> {
+  const apiKey = `desktop-assembled-approval-${input.outcome}`
+  const marker = `desktop-approval-${input.outcome}`
+  const home = await mkdtemp(join(tmpdir(), 'dsh-desktop-host-rpc-'))
+  homes.push(home)
+  const workspace = join(home, 'workspace')
+  const scratch = join(home, 'scratch', 'approval-scratch.txt')
+  mkdirSync(workspace, { recursive: true })
+  mkdirSync(join(home, 'scratch'), { recursive: true })
+  const llm = await startMockLlmServer({
+    sequence: ['tool_call_success', 'success'],
+    apiKey,
+    toolName: 'bash',
+    toolArguments: JSON.stringify({
+      command: `printf ${marker} >> ${JSON.stringify(scratch)}`,
+      description: 'Append one approval marker to the isolated Host scratch file',
+      sandbox_permissions: 'danger-full-access',
+      justification: 'Assembled Companion approval must observe one exclusive scratch write.',
+    }),
+    successText: `approval-${input.outcome}-done`,
+  })
+  try {
+    const first = await startShippedHost({
+      DEEPSEEK_API_KEY: apiKey,
+      DEEPSEEK_BASE_URL: llm.baseURL,
+      DSH_PERMISSION_MODE: 'workspace-write',
+    }, home)
+    const cookie = await bootstrapDesktopHostCookie(first.running.launchUrl, first.running.url)
+    const owner = new DesktopCompanionProductOwner({
+      timeoutMs: 15_000,
+      responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
+    })
+    const ledger = await DesktopCompanionOperationLedger.load({
+      load: async () => [],
+      save: async () => {},
+    })
+    owner.installLedger(ledger)
+    const uninstall = owner.installHost(first.running.url, cookie)
+    const rpc = createDesktopHostRpc(first.running.url, {
+      timeoutMs: 15_000,
+      responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
+      cookieHeader: cookie,
+    })
+    const sessionId = parseCompanionSessionId(input.sessionId)
+    const attachmentKey = new Uint8Array(32)
+    const pairing = {
+      pairingId: parsePersonalPairingId('pairing-approval'),
+      attachmentKey,
+      now: () => 1_000,
+      downloadAttachment: async () => { throw new Error('approval must not download') },
+      submitAttachment: async () => { throw new Error('approval must not submit attachments') },
+      generation: 1,
+      desktopRevision: 1,
+      desktopName: 'Assembled Desktop',
+      resolveInteraction: () => undefined,
+      pendingInteractions: () => [],
+    }
+    try {
+      await expect(createDesktopHostSession(rpc, sessionId, { cwd: workspace })).resolves.toMatchObject({
+        ok: true, value: { sessionId },
+      })
+      const submit = {
+        type: 'submit-prompt' as const,
+        operationId: parseCompanionOperationId(`desktop-approval-${input.outcome}-prompt`),
+        sessionId,
+        text: 'escalate one bash write',
+      }
+      await expect(owner.handle(submit, pairing)).resolves.toMatchObject({
+        type: 'confirmed', operationId: submit.operationId,
+      })
+      await expect.poll(() => {
+        return owner.pendingInteractions(sessionId, attachmentKey).some(item => item.kind === 'approval')
+      }).toBe(true)
+      const pending = owner.pendingInteractions(sessionId, attachmentKey).find(item => item.kind === 'approval')
+      if (pending === undefined) throw new Error('missing Approval wait')
+      const settle = {
+        type: 'settle-interaction' as const,
+        operationId: parseCompanionOperationId(`desktop-approval-${input.outcome}-answer`),
+        sessionId,
+        interactionId: pending.interactionId,
+        settlement: { kind: 'approval' as const, outcome: input.outcome },
+      }
+      await expect(owner.handle(settle, pairing)).resolves.toMatchObject({
+        type: 'interaction-receipt', accepted: true,
+      })
+      await expect(owner.handle(settle, pairing)).resolves.toMatchObject({
+        type: 'interaction-receipt', accepted: true,
+      })
+      await expect.poll(() => owner.pendingInteractions(sessionId, attachmentKey)).toEqual([])
+      if (input.expectWritten) {
+        await expect.poll(() => {
+          try {
+            return readFileSync(scratch, 'utf8')
+          } catch {
+            return ''
+          }
+        }).toBe(marker)
+      } else {
+        await expect.poll(async () => {
+          const log = await durableSessionLog(first.home, sessionId)
+          return log.includes('the user rejected escalating this command')
+        }).toBe(true)
+        expect(() => accessSync(scratch, fsConstants.F_OK)).toThrow()
+      }
+      await expect(owner.handle({
+        type: 'settle-interaction',
+        operationId: parseCompanionOperationId(`desktop-approval-${input.outcome}-late`),
+        sessionId,
+        interactionId: pending.interactionId,
+        settlement: { kind: 'approval', outcome: 'rejected' },
+      }, pairing)).resolves.toMatchObject({
+        type: 'interaction-receipt', accepted: false, reason: 'not-pending',
+      })
+    } finally {
+      uninstall()
+    }
+  } finally {
+    await llm.close()
+  }
 }
 
 async function durableSessionLog(home: string, sessionId: string): Promise<string> {

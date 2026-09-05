@@ -20,4 +20,4 @@ Desktop Host RPC follows `$events` on `/api/remote.mux` with the official ready 
 
 ## Consequences
 
-Renderer and Companion can both receive the same waterfall. The first `$events/result` that claims it continues the Host; later results no-op. Approval settlement can share this owner in a later test without a second facade.
+Renderer and Companion can both receive the same waterfall. The first `$events/result` that claims it continues the Host; later results no-op. Approval settlement posts the outcome string `allowed-once` or `rejected` as the waterfall result, not an Ask User `{ answers }` object. A later Companion retry of the same pairing operation is ledger-deduped; a different operation against a cancelled wait fails locally as `not-pending`.

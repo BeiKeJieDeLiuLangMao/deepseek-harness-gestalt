@@ -763,6 +763,18 @@ describe('Desktop Companion product operations', () => {
       eventId: 'event-approval',
       outcome: { kind: 'result', value: 'allowed-once' },
     })
+    const reject = op({
+      type: 'settle-interaction', sessionId, interactionId,
+      settlement: { kind: 'approval', outcome: 'rejected' },
+    })
+    await expect(handleCompanionProductOperation(reject, dependencies)).resolves.toEqual({
+      type: 'interaction-receipt', operationId: reject.operationId, accepted: true,
+    })
+    expect(completeEvent).toHaveBeenLastCalledWith({
+      clientId: 'client-generation',
+      eventId: 'event-approval',
+      outcome: { kind: 'result', value: 'rejected' },
+    })
   })
 
   it('rejects an expired Ask User locally and cancels through ASK_CANCELLED', async () => {
