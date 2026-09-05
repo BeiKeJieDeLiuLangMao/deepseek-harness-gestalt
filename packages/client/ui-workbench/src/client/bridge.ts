@@ -2,7 +2,7 @@
  * Apply official-page ↔ sidebar-tab reconcile actions and panel follow.
  */
 
-import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {
   BrowserPageState, BrowserTarget, BrowserWorkspaceCreateRemoteRequest,
   BrowserWorkspaceProjection,

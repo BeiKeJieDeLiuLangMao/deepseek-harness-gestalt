@@ -2,7 +2,7 @@
  * Desktop-only chrome plus Platform Account state in Mobile Pairing Settings.
  * Mounted only through the Desktop `--patch` overlay.
  */
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
@@ -46,7 +46,7 @@ export const inject = ['slots', 'locale']
  * Register Desktop chrome into sidebar holes declared by ui-sidebar.
  * @param ctx - client root context.
  */
-export function apply(ctx: ClientContext): void {
+export function apply(ctx: Context): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-desktop: dictionaries')
 
   const updater = createUpdaterSource()

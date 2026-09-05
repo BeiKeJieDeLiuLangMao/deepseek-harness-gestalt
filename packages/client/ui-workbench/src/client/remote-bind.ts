@@ -2,7 +2,7 @@
  * Session-bound Browser Workspace Remote verbs for the official tab chrome.
  */
 
-import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import {
   unwrapBrowserWorkspaceRemote,
   type BrowserPageState,

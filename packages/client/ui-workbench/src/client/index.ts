@@ -3,7 +3,8 @@
  * browser tab, 1:1 with Session-owned Workspace pages.
  */
 import { createElement, type ReactElement } from 'react'
-import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context } from '@deepseek-ai/cordis'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {
   BrowserPageState, BrowserTarget, BrowserWorkspaceCreateRemoteRequest, BrowserWorkspaceProjection,
 } from '@deepseek-ai/dsh-browser-workspace/client'
@@ -52,7 +53,7 @@ declare module '@deepseek-ai/cordis' {
  * Client plugin body: publish official tab chrome and keep pages paired.
  * @param ctx - client root context.
  */
-export function apply(ctx: ClientContext): void {
+export function apply(ctx: Context): void {
   const sidebar = ctx.get('betterSidebar') as WorkbenchSidebarFace | undefined
   if (sidebar === undefined) {
     throw new Error('ui-workbench: betterSidebar is not published; mount the snapshot client first')

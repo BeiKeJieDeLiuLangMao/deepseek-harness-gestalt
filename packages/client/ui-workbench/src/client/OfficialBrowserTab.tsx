@@ -4,7 +4,7 @@
  */
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react'
 import type { Context } from '@deepseek-ai/cordis'
-import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {
   BrowserPageState, BrowserTarget, BrowserWorkspaceProjection,
 } from '@deepseek-ai/dsh-browser-workspace/client'

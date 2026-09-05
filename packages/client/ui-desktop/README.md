@@ -17,5 +17,6 @@ None; this package neither assembles nor sends a provider request.
 ## Known Limitations and Deferred Work
 
 - **The plugin is a no-op without `window.dshDesktop`** — Mobile Pairing Account state, Update Control, and Window Chrome render nothing; their sources stay in initial states.
+- **Tests still value-import `SlotRegistry` from `@deepseek-ai/dsh-client-runtime/client`** — production `apply` types the root context from Cordis; that test import is a later scope.
 - **Assembled Desktop Web E2E installs `installDesktopBridgeFixture`** — a required preload member missing from that fixture fails typecheck instead of a browser timeout ([typed DesktopBridge fixture](../../../.agents/notes/implemented/testing/2026-08-21-typed-desktop-bridge-e2e-fixture.md)).
 - **Product pairing is endpoint-owned** — the Host mounts the opaque mailbox, endpoint Snow owners, durable key vault, sealed Mobile authority delivery, and the real Relay lifecycle. Independent review and physical WebView runs remain release evidence.
