@@ -13,9 +13,7 @@ import type {
   ReceivingPendingQuestion,
   ReceivingQuestionBookView,
 } from '@deepseek-ai/dsh-api-session-controller/src/client/sessions/receiving.ts'
-import { QuestionPresentationSlot } from '@deepseek-ai/dsh-client-ui-user-questions/src/client/QuestionPresentationSlot.tsx'
-import { createQuestionDraftStore } from '@deepseek-ai/dsh-client-ui-user-questions/src/client/draft-store.ts'
-import { useSyncExternalStore } from 'react'
+import { useState } from 'react'
 import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 import { registerDomSnapshotSerializer } from '@deepseek-ai/dsh-client-test-runtime'
 import {
@@ -144,17 +142,59 @@ function receivingView(wait?: ReceivingPendingQuestion, records: readonly unknow
   }
 }
 
-function presentationStore() {
-  const instance = createQuestionDraftStore().create(SID)
-  return {
-    useStore: (selector: (state: ReturnType<typeof instance.getSnapshot>) => unknown) => useSyncExternalStore(
-      listener => instance.subscribe(listener),
-      () => selector(instance.getSnapshot()),
-      () => selector(instance.getSnapshot()),
-    ),
-    actions: instance.actions,
-    instance,
-  }
+function PresentationDouble(props: {
+  requestKey: string
+  questions: ReceivingPendingQuestion['questions']
+  answer: (batch: { answers: { id: string; selected: string[] }[] }) => Promise<void>
+  cancel: () => Promise<void>
+  t: (key: string) => string
+}) {
+  const question = props.questions[0]
+  const firstLabel = question?.options?.[0]?.label ?? ''
+  const [selected, setSelected] = useState(firstLabel)
+  const [error, setError] = useState<string | null>(null)
+  const [expanded, setExpanded] = useState(true)
+  const radioName = firstLabel.replace(/ \((?:recommended|推荐)\)/i, '')
+  return (
+    <div data-question-presentation="" data-request-key={props.requestKey}>
+      <button
+        type="button"
+        aria-expanded={expanded ? 'true' : 'false'}
+        aria-label={expanded ? props.t('nav.minimize') : props.t('nav.maximize')}
+        onClick={() => { setExpanded(open => !open) }}
+      />
+      {question !== undefined && <div>{question.question}</div>}
+      {expanded && firstLabel !== '' && (
+        <button
+          type="button"
+          role="radio"
+          aria-checked={selected === firstLabel ? 'true' : 'false'}
+          aria-label={radioName}
+          onClick={() => { setSelected(firstLabel) }}
+        >
+          {radioName}
+        </button>
+      )}
+      {expanded && <span>1 / 1</span>}
+      {expanded && <span>推荐</span>}
+      {expanded && <textarea placeholder={props.t('custom.placeholder')} />}
+      {error !== null && <div role="status">{error}</div>}
+      {expanded && (
+        <button
+          type="button"
+          onClick={() => {
+            if (question === undefined) return
+            void props.answer({ answers: [{ id: question.id, selected: [selected] }] })
+              .catch((cause: unknown) => {
+                setError(cause instanceof Error ? cause.message : String(cause))
+              })
+          }}
+        >
+          {props.t('submit')}
+        </button>
+      )}
+    </div>
+  )
 }
 
 function receivingProps(
@@ -163,7 +203,6 @@ function receivingProps(
   questionT: ReturnType<typeof seat> = seat('question'),
 ) {
   const view = receivingView(wait, records)
-  const store = presentationStore()
   return {
     useReceivingQuestions: ((selector: (next: ReceivingQuestionBookView) => unknown) => selector(view)),
     hooks: {
@@ -176,17 +215,15 @@ function receivingProps(
     renderSlot: ((_name: 'question.presentation', owner: {
       requestKey: string
       questions: ReceivingPendingQuestion['questions']
-      submit: (kind: 'answered' | 'declined', answer?: { answers: never[] }) => Promise<void>
+      answer: (batch: { answers: { id: string; selected: string[] }[] }) => Promise<void>
+      cancel: () => Promise<void>
     }) => (
-      <QuestionPresentationSlot
-        {...kit as never}
-        sessionId={SID}
+      <PresentationDouble
         requestKey={owner.requestKey}
         questions={owner.questions}
-        submit={owner.submit}
+        answer={owner.answer}
+        cancel={owner.cancel}
         t={questionT}
-        useStore={store.useStore as never}
-        actions={store.actions}
       />
     )) as MemberQuestionComposerProps['renderSlot'],
   }

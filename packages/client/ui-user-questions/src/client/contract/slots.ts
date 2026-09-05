@@ -244,14 +244,16 @@ export interface PendingQuestionOptions {
   readonly submit?: PendingQuestionSubmit
 }
 
-/** JSON questions plus Host submit for the shared presentation slot. */
+/** JSON questions plus Host answer/cancel for the shared presentation slot. */
 export interface QuestionPresentationOwnerProps {
   /** Stable draft-store key for this Host pending row. */
   requestKey: string
   /** Complete question batch. */
   questions: readonly AskUserQuestionItem[]
-  /** Host settlement; rejection leaves QuestionComposer drafts. */
-  submit: PendingQuestionSubmit
+  /** Host answer; rejection leaves QuestionComposer drafts. */
+  answer: (answer: QuestionAnswer) => Promise<void>
+  /** Host decline; rejection leaves QuestionComposer drafts. */
+  cancel: () => Promise<void>
 }
 
 /** Pending value returned by the composer-chain selector. */

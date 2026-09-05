@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 import { useSyncExternalStore } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { PendingQuestion, type QuestionComposerProps } from '../src/client/contract/slots.ts'
 import { createQuestionDraftStore } from '../src/client/draft-store.ts'
 import { QuestionComposer, parseRecommendedLabel } from '../src/client/QuestionComposer.tsx'
+import { QuestionPresentationSlot } from '../src/client/QuestionPresentationSlot.tsx'
 import { en, zh } from '../src/client/locales.ts'
 import { en as commonEn } from '@deepseek-ai/dsh-client-locale/src/locales/en.ts'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
@@ -421,6 +422,34 @@ describe('PendingQuestion domain face', () => {
       message: 'the user cancelled ask_user_question',
     })
     await expect(question.cancel()).rejects.toThrow(/already settled/)
+  })
+
+  it('keeps QuestionComposer drafts when the presentation-slot Host answer rejects', async () => {
+    const answer = vi.fn()
+      .mockRejectedValueOnce(new Error('exact payload required'))
+      .mockResolvedValueOnce(undefined)
+    const cancel = vi.fn(async () => {})
+    render(
+      <QuestionPresentationSlot
+        {...kit}
+        sessionId={SID}
+        requestKey="host:q-1"
+        questions={[{
+          id: 'remove-member',
+          question: '将王小明移出项目吗？',
+          options: [{ label: '移出 (recommended)' }, { label: '保留' }],
+        }]}
+        answer={answer}
+        cancel={cancel}
+      />,
+    )
+    fireEvent.click(screen.getByRole('radio', { name: '移出' }))
+    fireEvent.click(screen.getByRole('button', { name: '提交' }))
+    expect(await screen.findByText('exact payload required')).toBeTruthy()
+    expect(screen.getByRole('radio', { name: '移出' }).getAttribute('aria-checked')).toBe('true')
+    fireEvent.click(screen.getByRole('button', { name: '提交' }))
+    await waitFor(() => { expect(answer).toHaveBeenCalledTimes(2) })
+    expect(cancel).not.toHaveBeenCalled()
   })
 
   it('runs Host submit before local finish and stays unsettled when submit rejects', async () => {

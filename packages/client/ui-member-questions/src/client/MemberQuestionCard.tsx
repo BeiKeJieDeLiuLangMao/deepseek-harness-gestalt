@@ -143,15 +143,17 @@ export function MemberQuestionCard(props: MemberQuestionComposerProps) {
   const askerName = brief.origin?.askerDisplayName ?? props.t('origin.fallback')
   const records = props.useReceivingQuestions(view =>
     view.byId[props.sessionId]?.records ?? [])
-  const submit = useCallback((kind: 'answered' | 'declined', answer?: { answers: { id: string; selected: string[]; custom?: string }[] }) => (
-    props.settle(props.sessionId, kind === 'answered'
-      ? { kind: 'answered', answers: answer?.answers ?? [] }
-      : { kind: 'declined' })
+  const answer = useCallback((batch: { answers: { id: string; selected: string[]; custom?: string }[] }) => (
+    props.settle(props.sessionId, { kind: 'answered', answers: batch.answers })
+  ), [props.sessionId, props.settle])
+  const cancel = useCallback(() => (
+    props.settle(props.sessionId, { kind: 'declined' })
   ), [props.sessionId, props.settle])
   const presentation = props.renderSlot('question.presentation', {
     requestKey: `${props.matched.sessionId}:${props.matched.questionId}:${props.matched.revision}`,
     questions: props.matched.questions,
-    submit,
+    answer,
+    cancel,
   })
 
   return (

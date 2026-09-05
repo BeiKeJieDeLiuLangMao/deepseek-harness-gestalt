@@ -3,7 +3,7 @@
  * the conversation-owned input dock, plus the receiver-side Decision Brief
  * face over JSON pending rows from ReceivingQuestionBook. The shared
  * presentation occupies `question.presentation`; this package declares that
- * child and passes JSON plus a Host submit callback.
+ * child and passes JSON plus Host answer/cancel callbacks.
  */
 import type {
   HostObservable, PropsLocale, PropsRenderSlots, PropsRuntime, SnapshotSelectorHook,

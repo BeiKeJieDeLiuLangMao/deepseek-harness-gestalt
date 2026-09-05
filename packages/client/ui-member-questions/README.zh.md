@@ -8,7 +8,7 @@
 
 材料芯片只通过 Better Sidebar Files 打开 receiver 所有的缓存副本。Host 把传输 bytes 写到 `.dsh/member-questions/<questionId>/`，因此同名 Workspace 文件不会被覆盖或误打开。点击芯片会用 receiving Session id 与缓存 path 调用 `ctx.betterSidebar.openFile`；缺少 `cachedPath` 时芯片是 no-op。markdown、沙箱 HTML 与不受支持的类型复用普通 Files viewer。Files editor 标签未注册时，芯片回退到 `ctx.workspaces.openPath` 与 Host 系统打开器。不存在成员提问专用文档 dock。
 
-`ReceivingQuestionBook` 是唯一 Host snapshot owner。它加载生成的 `memberQuestion.snapshot`，经 `memberQuestion.settle` 结算，并在 `member-question-receiver/changed` 时刷新。dock 读取 JSON pending 行与 terminal records，并声明 `question.presentation`，传入 questions 与 Host submit callback。`PendingQuestion` 与草稿仍由 ui-user-questions 拥有。Host settle 失败时 JSON 行与 QuestionComposer 草稿都保留。
+`ReceivingQuestionBook` 是唯一 Host snapshot owner。它加载生成的 `memberQuestion.snapshot`，经 `memberQuestion.settle` 结算，并在 `member-question-receiver/changed` 时刷新。dock 读取 JSON pending 行与 terminal records，并声明 `question.presentation`，传入 questions 与 Host answer/cancel callback。`PendingQuestion` 与草稿仍由 ui-user-questions 拥有。Host settle 失败时 JSON 行与 QuestionComposer 草稿都保留。
 
 pending 卡片消失后，answered、declined、expired、withdrawn 与 superseded 记录仍以被动条带显示。另一个 Installation 赢得的回答会显示为 elsewhere answered，并带获胜设备名与 settlement time。未被替换的产品 composer 经 receiving face 的单次 admission RPC 提交；卡片不会再挂载第二个 textarea，renderer 也不会分别发起 Session creation 与 prompt。
 
