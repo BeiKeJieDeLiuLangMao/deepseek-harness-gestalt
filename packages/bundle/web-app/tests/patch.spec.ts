@@ -46,10 +46,10 @@ describe('web-app tools overlay over dsh-base', () => {
     await ctx.fiber.dispose()
   })
 
-  it('fails deferred browser_create when an overlay drops toolSearch', async () => {
-    const base = loadPatches(new URL('../../base/cordis.patch.yml', import.meta.url))
-    const dropped = compose([base, [{ id: 'tools', config: { mode: 'native' } }]])
-    const tools = dropped.find(entry => entry.id === 'tools')
+  it('drops toolSearch when the shipped disable fixture replaces the tools row', async () => {
+    const tools = composeDisableFixture().find(entry => entry.id === 'tools')
+    expect(tools?.config).toEqual({ mode: 'native' })
+    expect(tools?.config).not.toHaveProperty('toolSearch')
     await expect(mountBrowser((tools?.config ?? {}) as Record<string, unknown>))
       .rejects.toThrow(/browser_create.*deferLoading but dsh-tools toolSearch is disabled/)
   })
@@ -63,6 +63,16 @@ function composedToolsConfig(): Record<string, unknown> {
     throw new Error('composed web-app tools row must have a config object')
   }
   return tools.config as Record<string, unknown>
+}
+
+function composeDisableFixture() {
+  const base = loadPatches(new URL('../../base/cordis.patch.yml', import.meta.url))
+  const overlay = loadPatches(new URL('../cordis.patch.yml', import.meta.url))
+  const disable = loadPatches(new URL(
+    '../../../../apps/cli/tests/profiles/headless/tests/fixtures/deferred-tool-search-disabled.cordis.yml',
+    import.meta.url,
+  ))
+  return compose([base, overlay, disable])
 }
 
 async function mountBrowser(toolsRow: Record<string, unknown>): Promise<Context> {

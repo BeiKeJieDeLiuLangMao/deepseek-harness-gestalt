@@ -119,9 +119,14 @@
     "@deepseek-ai/cordis": "workspace:^"
   },
   "devDependencies": {
+    "@deepseek-ai/cordis-plugin-include": "workspace:^",
     "@deepseek-ai/cordis-plugin-loader": "workspace:^",
+    "@deepseek-ai/dsh-browser-runtime-deterministic": "workspace:^",
     "@deepseek-ai/dsh-shell-env": "workspace:^",
     "@deepseek-ai/dsh-system-prompt": "workspace:^",
-    "@deepseek-ai/cordis": "workspace:^"
+    "@deepseek-ai/dsh-tool-browser": "workspace:^",
+    "@deepseek-ai/dsh-tools": "workspace:^",
+    "@deepseek-ai/cordis": "workspace:^",
+    "js-yaml": "^4.2.0"
   }
 }
