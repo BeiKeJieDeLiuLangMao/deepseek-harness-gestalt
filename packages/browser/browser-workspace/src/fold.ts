@@ -14,8 +14,8 @@ export const EMPTY_BROWSER_WORKSPACE: BrowserWorkspaceProjection = Object.freeze
 
 /**
  * Fold the last logged Browser Workspace snapshot, or the empty Workspace.
- * @param events - Session log or any prefix of it.
- * @param end - Exclusive end index; defaults to the whole log.
+ * @param events - Session snapshot, child-owned events, or any prefix of those arrays.
+ * @param end - Exclusive array index; defaults to the whole supplied array.
  * @returns the last logged Workspace, or the empty Workspace when none exists.
  */
 export function foldBrowserWorkspace(

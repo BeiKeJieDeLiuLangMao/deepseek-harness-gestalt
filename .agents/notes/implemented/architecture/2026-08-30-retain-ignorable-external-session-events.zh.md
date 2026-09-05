@@ -14,7 +14,7 @@ Status: implemented
 
 标准 `SessionEvent` 信封保留 `ignorable?: true`，每种表示都保留它：seed 校验、JSONL、API 传输、生成目录与测试 fixture。持久化 seam 的已存事件校验（`validateStoredEvents`）继续拒绝未知事件，除非已存信封显式带有 `ignorable: true`；字段不存在时仍表示读取必需。
 
-只有替代机制在事件生产、持久化、重新加载与传输中都支持当前第三方插件，并为已包含该标记的会话提供显式切换方案后，才能删除此字段。[Session log 版本决策](2026-08-10-session-log-version-mechanism.zh.md)继续定义默认读取必需的安全规则与格式版本策略。
+只有替代机制在事件生产、持久化、重新加载与传输中都支持当前第三方插件，并为已包含该标记的会话提供显式切换方案后，才能删除此字段。[Session log 版本决策](2026-08-10-session-log-version-mechanism.zh.md)继续定义默认读取必需的安全规则与格式版本策略。Browser Workspace 以同一标记写入 `browser/workspace`（[Browser Workspace session log 访问](2026-09-05-browser-workspace-session-snapshot-events.zh.md)），不改变读取必需的默认。
 
 ## 曾考虑的替代方案
 

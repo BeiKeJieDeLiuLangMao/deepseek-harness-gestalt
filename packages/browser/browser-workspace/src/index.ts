@@ -134,7 +134,7 @@ export class BrowserWorkspaceBinder extends TypertRemoteService {
    * @returns the last logged snapshot, or the empty Workspace.
    */
   snapshot(session: Session): BrowserWorkspaceProjection {
-    return foldBrowserWorkspace(session.events)
+    return foldBrowserWorkspace(session.snapshotEvents())
   }
 
   /**
@@ -527,7 +527,7 @@ export class BrowserWorkspaceBinder extends TypertRemoteService {
     const current = this.snapshot(session)
     if (sameSnapshot(current, next)) return current
     const committed = freezeSnapshot(next)
-    session.append('browser/workspace', committed)
+    session.append('browser/workspace', committed, { ignorable: true })
     return committed
   }
 }
