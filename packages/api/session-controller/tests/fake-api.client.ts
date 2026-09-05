@@ -118,6 +118,8 @@ export class FakeApiClient {
   readonly calls: { method: string; payload: unknown }[] = []
   /** Session ids in physical follow-generation opening order. */
   readonly followStarts: SessionId[] = []
+  /** Optional Host `inheritedEventCount` placed on the follow snapshot header. */
+  historySeedLength: number | undefined
 
   // Programmable slots (defaults answer OK-empty); reassign per case.
   onList: (payload: unknown) => Promise<RemoteResult<{ items: never[] }>> = () => Promise.resolve(ok({ items: [] }))
@@ -398,6 +400,7 @@ export class FakeApiClient {
           ...(request.address.kind === 'subagent'
             ? { origin: 'subagent' as const, parentSession: request.address.parentSessionId }
             : {}),
+          ...(this.historySeedLength === undefined ? {} : { seedLength: this.historySeedLength }),
         },
         cursor,
         records: page.records.filter(record => historyRecordLastSeq(record) <= cursor),

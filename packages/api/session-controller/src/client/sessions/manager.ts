@@ -302,6 +302,11 @@ export class SessionManager {
     }
   }
 
+  /** Recompute owned-suffix windows after admission register or revoke. */
+  applyHistoryScopes(): void {
+    for (const session of this.sessions.values()) session.applyHistoryScope()
+  }
+
   /**
    * Lazy build: return the existing instance or construct one (no auto-open —
    * open is triggered by the container's select callback).

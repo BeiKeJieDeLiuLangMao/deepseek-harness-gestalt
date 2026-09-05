@@ -40,6 +40,8 @@ export type SessionRemote = ClientRemote['session']
 /** Opening metadata carried only by a follow snapshot, never by loadOlder pages. */
 interface SessionJournalPage extends SessionPage {
   readonly projections?: SessionProjectionBaseline
+  /** Host `inheritedEventCount` as wire `seedLength`; absent when the Session is unseeded. */
+  readonly seedLength?: number
 }
 
 /** One complete publication from the Session journal stream. */
@@ -182,6 +184,7 @@ export class SessionEventStream extends RemoteJournalStream<
             records: frame.records,
             hasMore: frame.hasMore,
             projections: frame.projections,
+            ...(frame.header.seedLength === undefined ? {} : { seedLength: frame.header.seedLength }),
           },
         }
         continue

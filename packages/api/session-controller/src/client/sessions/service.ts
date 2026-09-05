@@ -696,6 +696,7 @@ export class ClientSessions implements ISessions {
 
   private notifyAdmission(): void {
     for (const listener of this.admissionListeners) listener()
+    this.manager.applyHistoryScopes()
   }
 
   /**

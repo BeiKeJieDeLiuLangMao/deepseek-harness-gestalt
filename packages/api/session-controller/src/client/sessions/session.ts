@@ -91,6 +91,11 @@ export class Session implements SessionFace {
   // ---- Window and derived state (all private; the snapshot is the only read API) ----
   private baseSeq = SessionLogOffset(0)
   private hasMore = false
+  /** Host `inheritedEventCount` from the follow snapshot `seedLength`. */
+  private inheritedFloor: SessionLogOffset | undefined
+  /** Untrimmed journal window; owned-suffix display is derived from this. */
+  private retainedEntries: readonly SessionEventLikeEntry[] = []
+  private retainedHasMore = false
   private openState: OpenState = 'cold'
   private openError: RemoteFailure | null = null
   private openPromise: Promise<void> | null = null
@@ -511,8 +516,21 @@ export class Session implements SessionFace {
     this.openState = 'cold'
     this.openError = null
     this.baseSeq = SessionLogOffset(0)
+    this.inheritedFloor = undefined
+    this.retainedEntries = []
+    this.retainedHasMore = false
     this.notifier.markDirty()
     await this.open()
+  }
+
+  /**
+   * Recompute the displayed history window after admission register or revoke.
+   * No-op while the Session has no installed journal.
+   */
+  applyHistoryScope(): void {
+    if (this.openState === 'cold' || this.openState === 'error') return
+    this.publishVisibleWindow()
+    this.notifier.markDirty()
   }
 
   // ---- Subscription API (useSyncExternalStore direct wiring) ----
@@ -686,6 +704,7 @@ export class Session implements SessionFace {
           change.entries,
           change.hasMore,
           change.page.projections === undefined ? undefined : projectionsBaseline(change.page.projections),
+          change.page.seedLength,
         )
         return
       case 'prepend':
@@ -697,21 +716,79 @@ export class Session implements SessionFace {
   }
 
   /** Replace the complete contiguous window and apply page-owned projection metadata. */
-  private installWindow(entries: readonly SessionEventLikeEntry[], hasMore: boolean, projections?: ProjectionsBaseline): void {
-    this.baseSeq = SessionLogOffset(entries[0]?.event.seq ?? 0)
-    this.hasMore = hasMore
-    if (entries.some(entry => entry.event.type === 'turn/start')) this.firstPromptPendingTurn = false
+  private installWindow(
+    entries: readonly SessionEventLikeEntry[],
+    hasMore: boolean,
+    projections?: ProjectionsBaseline,
+    seedLength?: number,
+  ): void {
+    this.inheritedFloor = seedLength === undefined ? undefined : SessionLogOffset(seedLength)
+    this.retainedEntries = entries
+    this.retainedHasMore = hasMore
     if (projections !== undefined) this.projections.seed(projections)
-    this.eventSource.replace(entries, hasMore)
-    for (const entry of entries) this.observeSubmissionEvent(entry.event)
+    const visible = this.publishVisibleWindow()
+    if (visible.some(entry => entry.event.type === 'turn/start')) this.firstPromptPendingTurn = false
+    for (const entry of visible) this.observeSubmissionEvent(entry.event)
     this.notifier.markDirty()
   }
 
   /** Prepend one stream-validated history page. */
   private prependWindow(entries: readonly SessionEventLikeEntry[], hasMore: boolean): void {
-    this.baseSeq = entries[0] === undefined ? this.baseSeq : SessionLogOffset(entries[0].event.seq)
-    this.hasMore = hasMore
-    this.eventSource.prepend(entries, hasMore)
+    this.retainedEntries = entries.length === 0 ? this.retainedEntries : [...entries, ...this.retainedEntries]
+    this.retainedHasMore = hasMore
+    const visibleNew = this.filterOwnedSuffix(entries)
+    const visible = this.visibleWindow()
+    this.baseSeq = SessionLogOffset(visible.entries[0]?.event.seq ?? this.baseSeq)
+    this.hasMore = visible.hasMore
+    if (visibleNew.length === 0) {
+      if (this.eventSource.getSnapshot().hasMore !== visible.hasMore) {
+        this.eventSource.replace(visible.entries, visible.hasMore)
+      }
+      return
+    }
+    this.eventSource.prepend(visibleNew, visible.hasMore)
+  }
+
+  /**
+   * Displayed suffix for `historyScope: 'owned-suffix'`.
+   * Floor is last `session/end-seed` seq+1, else Host `seedLength`.
+   */
+  private ownedFloor(): SessionLogOffset | undefined {
+    if (this.options.admission?.(this.sessionId)?.historyScope !== 'owned-suffix') return undefined
+    let floor = this.inheritedFloor
+    for (let index = this.retainedEntries.length - 1; index >= 0; index -= 1) {
+      const entry = this.retainedEntries[index]
+      if (entry?.event.type === 'session/end-seed') {
+        floor = SessionLogOffset(entry.event.seq + 1)
+        break
+      }
+    }
+    return floor
+  }
+
+  private filterOwnedSuffix(entries: readonly SessionEventLikeEntry[]): SessionEventLikeEntry[] {
+    const floor = this.ownedFloor()
+    if (floor === undefined) return [...entries]
+    return entries.filter(entry => entry.event.seq >= floor && entry.event.type !== 'session/end-seed')
+  }
+
+  private visibleWindow(): { entries: SessionEventLikeEntry[]; hasMore: boolean } {
+    const floor = this.ownedFloor()
+    if (floor === undefined) {
+      return { entries: [...this.retainedEntries], hasMore: this.retainedHasMore }
+    }
+    const entries = this.filterOwnedSuffix(this.retainedEntries)
+    const firstVisible = entries[0]?.event.seq
+    const hasMore = this.retainedHasMore && firstVisible !== undefined && firstVisible > floor
+    return { entries, hasMore }
+  }
+
+  private publishVisibleWindow(): SessionEventLikeEntry[] {
+    const visible = this.visibleWindow()
+    this.baseSeq = SessionLogOffset(visible.entries[0]?.event.seq ?? this.baseSeq)
+    this.hasMore = visible.hasMore
+    this.eventSource.replace(visible.entries, visible.hasMore)
+    return visible.entries
   }
 
   /** Append one stream-validated live event. */
@@ -720,7 +797,8 @@ export class Session implements SessionFace {
     const awaitingFirstTurn = this.firstPromptPendingTurn
     if (event.type === 'turn/start') this.firstPromptPendingTurn = false
     const queueChanged = this.queueMirror.acceptDurable(event)
-    this.eventSource.append(entry)
+    this.retainedEntries = [...this.retainedEntries, entry]
+    if (this.filterOwnedSuffix([entry]).length > 0) this.eventSource.append(entry)
     // After the feed append: the conversation assembly's animation frame is
     // registered by the feed subscribers above, so the echo-retirement frame
     // scheduled here always runs after the durable node became renderable.
