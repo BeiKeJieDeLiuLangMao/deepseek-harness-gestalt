@@ -421,6 +421,8 @@ describe('task admission and package contracts', () => {
     expect(ctx.subagents.getProvider('claude-code')).toMatchObject({
       name: 'claude-code',
       capabilities: {
+        agentOptions: false,
+        images: false,
         outputSchema: false,
         depthLimit: false,
         toolFilter: false,
