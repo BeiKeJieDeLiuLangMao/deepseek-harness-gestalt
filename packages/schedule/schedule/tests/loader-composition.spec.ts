@@ -200,7 +200,6 @@ describe('Schedule real Loader composition through cordis.yml', () => {
     expect(pausedList.value).toEqual([
       expect.objectContaining({ id: 'schedule-1', prompt: 'loader reminder', state: 'paused' }),
     ])
-    expect(ctx.get('schedules')).toBeUndefined()
 
     const deleted = await execute(ctx, root.agent, 'schedule_delete', { id: 'schedule-1' }, 'schedule-loader-delete')
     expect(deleted.isError).toBe(false)

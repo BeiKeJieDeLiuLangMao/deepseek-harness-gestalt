@@ -238,6 +238,58 @@ describe('Schedule tool protocol', () => {
     ])
   })
 
+  it('keeps a paused delete behind FIFO and both flush barriers', async () => {
+    const test = await harness()
+    await execute(test, 'schedule_create', { prompt: 'later', after_seconds: 30 })
+    test.agent.session.append('schedule/change', { version: 1, operation: 'pause', id: 'schedule-1' })
+
+    test.flushes.outcomes.push('reject')
+    expect(value(await execute(test, 'schedule_list', {}))).toMatchObject({
+      code: 'persistence_uncertain',
+      operation: 'list',
+    })
+    expect(value(await execute(test, 'schedule_list', {}))).toEqual([
+      expect.objectContaining({ id: 'schedule-1', state: 'paused' }),
+    ])
+
+    test.flushes.outcomes.push('reject')
+    expect(value(await execute(test, 'schedule_delete', { id: 'schedule-1' }))).toMatchObject({
+      code: 'persistence_uncertain',
+      operation: 'delete',
+      id: 'schedule-1',
+    })
+    expect(test.agent.session.snapshotEvents().filter(event => event.type === 'schedule/change'))
+      .toHaveLength(2)
+
+    let releaseOwner: (() => void) | undefined
+    let markOwnerStarted: (() => void) | undefined
+    const ownerStarted = new Promise<void>((resolve) => {
+      markOwnerStarted = resolve
+    })
+    const owner = test.transactions.run(test.agent.id, async () => {
+      markOwnerStarted?.()
+      await new Promise<void>((resolve) => { releaseOwner = resolve })
+    })
+    await ownerStarted
+    const listing = execute(test, 'schedule_list', {})
+    await Promise.resolve()
+    expect(test.flushes.count).toBe(5)
+    if (releaseOwner === undefined) throw new Error('missing owner transaction release')
+    releaseOwner()
+    await owner
+    expect(value(await listing)).toEqual([
+      expect.objectContaining({ id: 'schedule-1', state: 'paused' }),
+    ])
+
+    test.flushes.outcomes.push('resolve', 'reject', 'resolve')
+    expect(value(await execute(test, 'schedule_delete', { id: 'schedule-1' }))).toMatchObject({
+      code: 'persistence_uncertain',
+      operation: 'delete',
+      id: 'schedule-1',
+    })
+    expect(value(await execute(test, 'schedule_list', {}))).toEqual([])
+  })
+
   it('rejects an empty or padded delete id before persistence', async () => {
     const test = await harness()
     for (const id of ['', ' schedule-1']) {
