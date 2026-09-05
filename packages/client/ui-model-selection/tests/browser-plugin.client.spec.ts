@@ -124,6 +124,8 @@ async function bench() {
   ctx.provide('locale', localeRuntime)
   const scopes = new Map<SessionId, Context>()
   const addressed = new Set<SessionId>()
+  const hidden = new Set<SessionId>()
+  const admissionListeners = new Set<() => void>()
   ctx.provide('sessions', {
     scope: (id: SessionId) => scopes.get(id),
     binding: (id: SessionId) => {
@@ -140,6 +142,21 @@ async function bench() {
     subagentAddress: (id: SessionId) => addressed.has(id)
       ? { parentSessionId: sid('parent'), childSessionId: id, mode: 'continuable' as const }
       : undefined,
+    modelRoute: (id: SessionId) => hidden.has(id) || scopes.get(id) === undefined
+      ? undefined
+      : {
+        models: () => sessionRemote.modelCatalog(),
+        selectModel: (selection: ModelSelection) => sessionRemote.selectModel({
+          sessionId: id,
+          provider: selection.provider,
+          model: selection.model,
+          ...selection.reasoningEffort === undefined ? {} : { reasoningEffort: selection.reasoningEffort },
+        }),
+      },
+    subscribeAdmission: (listener: () => void) => {
+      admissionListeners.add(listener)
+      return () => { admissionListeners.delete(listener) }
+    },
   })
   const fiber = ctx.plugin({ inject: [...inject], apply })
   await fiber.await()
@@ -162,6 +179,14 @@ async function bench() {
     setHostCurrent: (selection: ModelSelection) => { defaultSelection = selection },
     setProjected: (id: SessionId, value: ModelSelectionProjection) => { projections.get(id)?.set(value) },
     address: (id: SessionId) => { addressed.add(id) },
+    hideModelRoute: (id: SessionId) => {
+      hidden.add(id)
+      for (const listener of admissionListeners) listener()
+    },
+    showModelRoute: (id: SessionId) => {
+      hidden.delete(id)
+      for (const listener of admissionListeners) listener()
+    },
     setRoutable: (next: boolean) => { routable = next },
     blockOf: (key: string) => blocks.get(sid(key)),
   }
@@ -363,29 +388,74 @@ describe('ui-model-selection dual entry', () => {
     expect(() => b.seat().inject!(sid('ghost'))).toThrow(/resolved no scope/)
   })
 
-  it('withholds both model entries from addressed subagent sessions without Agent-bound RPCs', async () => {
+  it('withholds both model entries when sessions.modelRoute is absent', async () => {
     const b = await bench()
     b.mint('child')
     b.address(sid('child'))
+    b.hideModelRoute(sid('child'))
 
     expect(b.contribution().available(projection('child'))).toBe(false)
     await expect(b.contribution().ui.options(
       projection('child'),
       new AbortController().signal,
-    )).rejects.toThrow(/unavailable for addressed subagent/)
+    )).rejects.toThrow(/unavailable for this session/)
 
     const face = b.seat().inject!(sid('child'))
-    expect(face.available).toBe(false)
+    expect(face.directory.getSnapshot().available).toBe(false)
     face.load()
     await expect(face.select({ provider: 'deepseek', model: 'deepseek-v4-pro' })).resolves.toBe(false)
     await expect(b.ctx.modelDirectories.directoryFor(sid('child')).load())
-      .rejects.toThrow(/unavailable for addressed subagent/)
+      .rejects.toThrow(/unavailable for this session/)
     await expect(b.ctx.modelDirectories.directoryFor(sid('child')).select({
       provider: 'deepseek',
       model: 'deepseek-v4-pro',
-    })).rejects.toThrow(/unavailable for addressed subagent/)
+    })).rejects.toThrow(/unavailable for this session/)
     b.ctx.emit('connection/reset')
     await Promise.resolve()
     expect(b.calls).toEqual({ models: 2, select: 0 })
+  })
+
+  it('lists and selects through sessions.modelRoute for an ordinary Session', async () => {
+    const b = await bench()
+    b.mint('s1')
+    expect(b.contribution().available(projection('s1'))).toBe(true)
+    const options = await b.contribution().ui.options(projection('s1'), new AbortController().signal)
+    expect(options.map((o: SelectOption) => o.label)).toEqual(['DeepSeek-V4-Flash', 'DeepSeek-V4-Pro'])
+    const face = b.seat().inject!(sid('s1'))
+    expect(face.directory.getSnapshot().available).toBe(true)
+    expect(await face.select({
+      provider: 'deepseek-official',
+      model: 'deepseek-v4-pro',
+      reasoningEffort: 'max',
+    })).toBe(true)
+    expect(b.calls.select).toBe(1)
+  })
+
+  it('late hide after composer inject refuses select and detach restores the stock route', async () => {
+    const b = await bench()
+    b.mint('s1')
+    const face = b.seat().inject!(sid('s1'))
+    expect(face.directory.getSnapshot().available).toBe(true)
+    expect(await face.select({
+      provider: 'deepseek-official',
+      model: 'deepseek-v4-pro',
+    })).toBe(true)
+    expect(b.calls.select).toBe(1)
+
+    b.hideModelRoute(sid('s1'))
+    expect(face.directory.getSnapshot().available).toBe(false)
+    expect(await face.select({
+      provider: 'deepseek-official',
+      model: 'deepseek-v4-flash',
+    })).toBe(false)
+    expect(b.calls.select).toBe(1)
+
+    b.showModelRoute(sid('s1'))
+    expect(face.directory.getSnapshot().available).toBe(true)
+    expect(await face.select({
+      provider: 'deepseek-official',
+      model: 'deepseek-v4-flash',
+    })).toBe(true)
+    expect(b.calls.select).toBe(2)
   })
 })

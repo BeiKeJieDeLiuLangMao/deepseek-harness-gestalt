@@ -75,11 +75,10 @@ export class ModelDirectoryResolver extends Service {
     const binding = sessions.binding(sessionId)
     if (binding === undefined) throw new Error(`ui-model-selection: session "${String(sessionId)}" resolved no binding`)
     const directory = new ModelDirectory(
-      this.ctx.remote.session,
-      sessionId,
-      () => sessions.subagentAddress(sessionId) === undefined,
+      () => sessions.modelRoute(sessionId),
       this.catalog,
       binding.session.projections.faceOf('modelSelection'),
+      listener => sessions.subscribeAdmission(listener),
     )
     live.directories.set(sessionId, directory)
     // The composer cannot read this plugin (the dependency runs one way), so

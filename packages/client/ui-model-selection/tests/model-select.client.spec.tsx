@@ -38,6 +38,7 @@ const modelSelectCss = readFileSync(
 
 function state(overrides: Partial<ModelDirectoryState> = {}): ModelDirectoryState {
   return {
+    available: true,
     current: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
     routable: true,
     groups: [{
@@ -68,7 +69,6 @@ describe('ModelSelect reasoning effort', () => {
     })
     render(<ModelSelect
       locked={false}
-      available
       directory={directory}
       load={vi.fn()}
       select={select}
@@ -110,7 +110,6 @@ describe('ModelSelect reasoning effort', () => {
     }))
     render(<ModelSelect
       locked={false}
-      available
       directory={directory}
       load={vi.fn()}
       select={vi.fn().mockResolvedValue(true)}
@@ -132,7 +131,6 @@ describe('ModelSelect reasoning effort', () => {
     const select = vi.fn().mockResolvedValue(true)
     render(<ModelSelect
       locked={false}
-      available
       directory={directory}
       load={vi.fn()}
       select={select}
@@ -158,7 +156,6 @@ describe('ModelSelect reasoning effort', () => {
     }))
     render(<ModelSelect
       locked={false}
-      available
       directory={directory}
       load={vi.fn()}
       select={vi.fn().mockResolvedValue(true)}
@@ -186,7 +183,6 @@ describe('ModelSelect reasoning effort', () => {
     }))
     render(<ModelSelect
       locked={false}
-      available
       directory={directory}
       load={vi.fn()}
       select={vi.fn().mockResolvedValue(true)}
@@ -221,7 +217,6 @@ describe('ModelSelect reasoning effort', () => {
     })
     render(<ModelSelect
       locked={false}
-      available
       directory={directory}
       load={vi.fn()}
       select={select}
@@ -241,8 +236,7 @@ describe('ModelSelect reasoning effort', () => {
     const load = vi.fn()
     render(<ModelSelect
       locked={false}
-      available={false}
-      directory={createSnapshotStore(state())}
+      directory={createSnapshotStore(state({ available: false }))}
       load={load}
       select={vi.fn().mockResolvedValue(false)}
       t={t}
@@ -250,5 +244,27 @@ describe('ModelSelect reasoning effort', () => {
 
     expect(screen.queryByRole('button')).toBeNull()
     expect(load).not.toHaveBeenCalled()
+  })
+
+  it('hides the control and refuses a later select when the live route disappears', async () => {
+    const directory = createSnapshotStore<ModelDirectoryState>(state())
+    const select = vi.fn(async () => true)
+    const gated = (selection: ModelSelection) => directory.getSnapshot().available
+      ? select(selection)
+      : Promise.resolve(false)
+    render(<ModelSelect
+      locked={false}
+      directory={directory}
+      load={vi.fn()}
+      select={gated}
+      t={t}
+    />)
+    expect(screen.getByRole('button', { name: /选择模型/ })).toBeDefined()
+    directory.set(state({ available: false }))
+    await waitFor(() => {
+      expect(screen.queryByRole('button')).toBeNull()
+    })
+    await expect(gated({ provider: 'deepseek-official', model: 'deepseek-v4-pro' })).resolves.toBe(false)
+    expect(select).not.toHaveBeenCalled()
   })
 })

@@ -25,6 +25,7 @@ import { Notifier } from './notifier.ts'
 import { ProjectionValueStore } from './projection-store.ts'
 import { Session } from './session.ts'
 import type { SessionRemotes } from './remotes.ts'
+import type { SessionAdmissionRoute } from '../contract/admission.ts'
 
 function sessionSeqCursor(value: number): SessionSeqCursor {
   return value === -1 ? -1 : SessionSeq(value)
@@ -156,11 +157,14 @@ export class SessionManager {
   /**
    * @param remote - generated Remote namespaces the Session cluster calls.
    * @param restoredSelection - persisted real-Session selection candidate.
+   * @param restoredAddress - optional persisted subagent address candidate.
+   * @param resolveAdmission - optional dynamic admission route resolver.
    */
   constructor(
     private readonly remote: SessionRemotes,
     restoredSelection?: SessionId,
     restoredAddress?: SubagentAddress,
+    private readonly resolveAdmission?: (sessionId: SessionId) => SessionAdmissionRoute | undefined,
   ) {
     this.selected = restoredSelection
     if (restoredAddress !== undefined) this.addresses.set(restoredAddress.childSessionId, restoredAddress)
@@ -351,6 +355,7 @@ export class SessionManager {
         this.recordMutation({ kind: 'engaged', sessionId: engaged.sessionId })
       },
       projections: this.projectionStore(sessionId),
+      ...(this.resolveAdmission === undefined ? {} : { admission: this.resolveAdmission }),
     })
   }
 
@@ -555,7 +560,7 @@ export class SessionManager {
           }
           const hostBaseline: SessionSummary[] = this.listPhase === 'pending'
             ? [...result.value.items]
-            : mergeOrderedBaseline(established, result.value.items, summary => summary.sessionId)
+            : mergeOrderedBaseline(established, result.value.items, (summary: SessionSummary) => summary.sessionId)
           const provisional = [...this.provisionalSummaries.values()]
           const baseline: SessionSummary[] = [
             ...provisional,
