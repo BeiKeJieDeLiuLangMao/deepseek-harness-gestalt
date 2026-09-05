@@ -1961,7 +1961,16 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
   if (memberQuestionReceiver !== undefined) {
     ctx.effect(() => memberQuestionReceiver.registerHumanTurnAdmitter(async (input, admission) => {
       const workspace = workspaceFromId(admission.workspaceId)
-      const agent = await ensureSession(input.receivingSessionId as unknown as SessionId, workspace.path, true)
+      const sessionId = input.receivingSessionId as unknown as SessionId
+      const live = ctx.agents.get(sessionId)
+      const persistence = ctx.get('sessionPersistence')
+      const stored = live === undefined && persistence !== undefined
+        ? (await persistence.list()).some(snapshot => snapshot.header.id === sessionId)
+        : false
+      if (live === undefined && !stored) {
+        throw new Error(`member-question Session "${sessionId}" is not materialized`)
+      }
+      const agent = await ensureSession(sessionId, workspace.path, true)
       await workspace.attachSession(input.receivingSessionId as unknown as SessionId)
       const humanId = MessageId(`member-question-human:${input.rpcId}`)
       if (!hasMessage(agent.session, humanId)) {

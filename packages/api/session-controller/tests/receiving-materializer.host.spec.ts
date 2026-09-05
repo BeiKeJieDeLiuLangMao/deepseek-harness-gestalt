@@ -6,8 +6,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import AgentRegistry, { Inbox } from '@deepseek-ai/dsh-agent'
-import type { Agent, AgentFactory, CreateAgentOptions } from '@deepseek-ai/dsh-agent'
+import AgentLoop from '@deepseek-ai/dsh-agent-loop'
+import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
 import FileMemberQuestionReceiver from '@deepseek-ai/dsh-member-question-receiver'
 import type {
   MemberQuestionTerminalAuthority,
@@ -21,8 +21,8 @@ import {
   parseMemberQuestionProjectId,
 } from '@deepseek-ai/dsh-remote-protocol'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
-import type { Session } from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+import { MockAdapter } from '../../../core/agent-loop/tests/mock-adapter.ts'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import Storage from '@deepseek-ai/dsh-storage'
 import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
@@ -95,34 +95,16 @@ class ManualTimer {
   }
 }
 
-function stubAgent(session: Session): Agent {
-  return {
-    id: session.id,
-    options: {},
-    session,
-    inbox: new Inbox(session, { inserted: () => {}, discarded: () => {}, claimed: () => {} }),
-    status: 'idle',
-    ctx: new Context(),
-    send: () => {},
-    followup: () => {},
-    steer: () => ({ outcome: Promise.resolve({ status: 'rejected' as const }) }),
-    inject: () => {},
-    cancel() {},
-    runMaintenance: job => job(new AbortController().signal),
-    whenIdle: () => Promise.resolve(),
-  }
-}
-
 async function harness(options: {
   readonly terminalAuthority?: MemberQuestionTerminalAuthority
   readonly receivingTerminalTimer?: ManualTimer
-  readonly resume?: AgentFactory['resume']
 } = {}): Promise<{
   ctx: Context
   receiver: FileMemberQuestionReceiver
   workspaceId: string
   workspacePath: string
   jsonlRoot: string
+  adapter: MockAdapter
   timer: ManualTimer | undefined
 }> {
   const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'dsh-receiving-materializer-')))
@@ -132,36 +114,18 @@ async function harness(options: {
   mkdirSync(workspacePath)
   const ctx = new Context()
   contexts.push(ctx)
-  await ctx.plugin(SessionStore)
+  await mountAgentLoopTestDependencies(ctx)
   await ctx.plugin(SessionProjectionRegistry)
-  await ctx.plugin(AgentRegistry)
   await ctx.plugin(JsonlSessionPersistence, { root: jsonlRoot, compression: 'none' })
+  await ctx.plugin(AgentLoop, { agents: [] })
+  const adapter = new MockAdapter([])
+  ctx.llm.registerAdapter(['mock'], adapter)
   await ctx.plugin(Storage)
   ctx.storage.backend.register('memory', new MemoryStorageBackend())
   const storageDomain = new DomainFacility(ctx, { backend: 'memory', routes: {} })
   ctx.storage.mount('domain', storageDomain)
   ctx.provide('storageDomain', storageDomain)
   await ctx.plugin(WorkspaceRegistry)
-  const factory: AgentFactory = {
-    async createAgent(ownerCtx: Context, options: CreateAgentOptions) {
-      const session = ctx.sessions.create(options.sessionId, {
-        ...options.meta === undefined ? {} : { meta: options.meta },
-      })
-      const handle = await ctx.sessionPersistence.create(session.header)
-      const agent = stubAgent(session)
-      const unregister = ctx.agents.register(agent)
-      void ownerCtx
-      return {
-        agent,
-        dispose: async () => {
-          unregister()
-          await handle.close()
-        },
-      }
-    },
-    resume: options.resume ?? (() => Promise.reject(new Error('receiving materializer tests keep sources live'))),
-  }
-  ctx.agents.setFactory(factory)
   await ctx.plugin(FileMemberQuestionReceiver, {
     storagePath: join(root, 'receiver'),
     environment: 'development',
@@ -171,7 +135,7 @@ async function harness(options: {
     ...options.terminalAuthority === undefined ? {} : { terminalAuthority: options.terminalAuthority },
   })
   createSessionTestController(ctx, {
-    defaultModelSelection: () => ({ provider: 'fixture', model: 'fixture-model' }),
+    defaultModelSelection: () => ({ provider: 'mock', model: 'mock' }),
     cwd: workspacePath,
     receivingTerminalRetryMs: 5,
     ...options.receivingTerminalTimer === undefined
@@ -191,13 +155,14 @@ async function harness(options: {
     workspaceId: workspace.id,
     workspacePath,
     jsonlRoot,
+    adapter,
     timer: options.receivingTerminalTimer,
   }
 }
 
 describe('Session Controller receiving materializer', () => {
   it('materializes the receiver Session identity onto JSONL from authenticated ingest', async () => {
-    const { ctx, receiver, jsonlRoot } = await harness()
+    const { ctx, receiver, jsonlRoot, adapter } = await harness()
     const arrived = await receiver.ingest(envelope)
     const replayed = await receiver.ingest(envelope)
     expect(replayed.receivingSessionId).toBe(arrived.receivingSessionId)
@@ -209,14 +174,25 @@ describe('Session Controller receiving materializer', () => {
       hostSessionId: arrived.receivingSessionId,
     })
     const live = ctx.sessions.get(arrived.receivingSessionId as unknown as SessionId)
-    const received = live?.snapshotEvents().filter(event => event.type === 'member-question/received')
+    const events = live?.snapshotEvents() ?? []
+    const received = events.filter(event => event.type === 'member-question/received')
     expect(received).toHaveLength(1)
-    expect(received?.[0]).toMatchObject({
+    expect(received[0]).toMatchObject({
       type: 'member-question/received',
       ignorable: true,
       data: { questionId: envelope.operation.questionId },
     })
-    expect(ctx.agents.get(arrived.receivingSessionId as unknown as SessionId)?.status).toBe('idle')
+    const brief = events.filter(event => event.type === 'agent/inbox/spliced'
+      && event.data.inserted.some(message => message.id === `member-question-brief:${envelope.operation.questionId}`))
+    expect(brief).toHaveLength(1)
+    expect(brief[0]?.data.inserted[0]?.content).toEqual([{
+      type: 'text',
+      text: expect.stringContaining('Decision Brief from Ada'),
+    }])
+    expect(events.filter(event => event.type === 'turn/start')).toHaveLength(0)
+    const agent = ctx.agents.get(arrived.receivingSessionId as unknown as SessionId)
+    expect(agent?.status).toBe('idle')
+    expect(adapter.requests).toEqual([])
 
     const reader = new Context()
     contexts.push(reader)
@@ -227,9 +203,12 @@ describe('Session Controller receiving materializer', () => {
       'read',
     )
     try {
-      const events = await stored.read()
+      const persisted = await stored.read()
       expect(stored.header.id).toBe(arrived.receivingSessionId)
-      expect(events.filter(event => event.type === 'member-question/received')).toHaveLength(1)
+      expect(persisted.filter(event => event.type === 'member-question/received')).toHaveLength(1)
+      expect(persisted.filter(event => event.type === 'agent/inbox/spliced'
+        && event.data.inserted.some(message => message.id === `member-question-brief:${envelope.operation.questionId}`)))
+        .toHaveLength(1)
     } finally {
       await stored.close()
     }
@@ -255,6 +234,35 @@ describe('Session Controller receiving materializer', () => {
           cachedPath: '.dsh/member-questions/question-materialize/architecture.md',
         }],
       })
+  })
+
+  it('keeps materialized false when arrival flush fails and retries to the same Session', async () => {
+    const { ctx, receiver, adapter } = await harness()
+    const flush = vi.spyOn(ctx.sessions, 'flush')
+    flush.mockRejectedValueOnce(new Error('injected arrival flush failure'))
+    await expect(receiver.ingest(envelope)).rejects.toThrow('injected arrival flush failure')
+    expect((await receiver.snapshot()).pending[0]?.hostSessionId).toBeUndefined()
+    expect(adapter.requests).toEqual([])
+    flush.mockRestore()
+    const arrived = await receiver.ingest(envelope)
+    expect((await receiver.snapshot()).pending[0]?.hostSessionId).toBe(arrived.receivingSessionId)
+    const session = ctx.sessions.get(arrived.receivingSessionId as unknown as SessionId)
+    expect(session?.snapshotEvents().filter(event => event.type === 'member-question/received')).toHaveLength(1)
+    expect(session?.snapshotEvents().filter(event => event.type === 'agent/inbox/spliced'
+      && event.data.inserted.some(message => message.id === `member-question-brief:${envelope.operation.questionId}`)))
+      .toHaveLength(1)
+    expect(ctx.agents.get(arrived.receivingSessionId as unknown as SessionId)?.status).toBe('idle')
+    expect(adapter.requests).toEqual([])
+  })
+
+  it('refuses to create a dark Session for an unmaterialized receiving identity', async () => {
+    const { ctx } = await harness()
+    const sessionId = SessionId('receiving-unmaterialized')
+    const agents = new ApiSessionAgentController(ctx)
+    await expect(agents.resumeExistingSession(sessionId, ctx.workspaceRegistry.list()[0]!.path))
+      .rejects.toThrow(`member-question Session "${sessionId}" is not materialized`)
+    expect(ctx.sessions.get(sessionId)).toBeUndefined()
+    expect(ctx.agents.get(sessionId)).toBeUndefined()
   })
 
   it('appends one ignorable settled event when the receiver terminal commits', async () => {
@@ -333,31 +341,17 @@ describe('Session Controller receiving materializer', () => {
 
     const ctx = new Context()
     contexts.push(ctx)
-    await ctx.plugin(SessionStore)
+    await mountAgentLoopTestDependencies(ctx)
     await ctx.plugin(SessionProjectionRegistry)
-    await ctx.plugin(AgentRegistry)
     await ctx.plugin(JsonlSessionPersistence, { root: jsonlRoot, compression: 'none' })
+    await ctx.plugin(AgentLoop, { agents: [] })
+    ctx.llm.registerAdapter(['mock'], new MockAdapter([]))
     await ctx.plugin(Storage)
     ctx.storage.backend.register('memory', new MemoryStorageBackend())
     const storageDomain = new DomainFacility(ctx, { backend: 'memory', routes: {} })
     ctx.storage.mount('domain', storageDomain)
     ctx.provide('storageDomain', storageDomain)
     await ctx.plugin(WorkspaceRegistry)
-    ctx.agents.setFactory({
-      createAgent: () => Promise.reject(new Error('restart must resume')),
-      resume: async (ownerCtx, options) => {
-        const stored = await ctx.sessionPersistence.open(options.resumeSessionId, 'write')
-        const events = await stored.read()
-        const session = ctx.sessions.create(options.resumeSessionId, {
-          seed: [...events],
-          meta: stored.header,
-        })
-        const agent = stubAgent(session)
-        ctx.agents.register(agent)
-        void ownerCtx
-        return { agent, dispose: async () => { await stored.close() } }
-      },
-    })
     await ctx.plugin(FileMemberQuestionReceiver, {
       storagePath: receiverRoot,
       environment: 'development',
@@ -375,7 +369,7 @@ describe('Session Controller receiving materializer', () => {
       workspace.id,
     )
     createSessionTestController(ctx, {
-      defaultModelSelection: () => ({ provider: 'fixture', model: 'fixture-model' }),
+      defaultModelSelection: () => ({ provider: 'mock', model: 'mock' }),
       cwd: workspacePath,
     })
     await vi.waitFor(() => {

@@ -212,7 +212,7 @@ export function installReceivingSessionMaterializer(
     if (disposed || view.hostSessionId === undefined) return
     const workspace = await resolveWorkspace(view)
     const sessionId = view.hostSessionId
-    const agent = await agents.ensureSession(sessionId, workspace.path, true)
+    const agent = await agents.resumeExistingSession(sessionId, workspace.path)
     await workspace.attachSession(sessionId)
     await persistWriter(agent.session.header)
     if (!agent.session.snapshotEvents().some(event => event.type === 'member-question/settled'
