@@ -3,7 +3,7 @@ import { access, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { WorkspaceTypertGenerator } from '@deepseek-ai/dsh-typert-generator'
 import { Context } from '@deepseek-ai/cordis'
 import type { PlatformAccountId } from '@deepseek-ai/dsh-platform-account'
@@ -24,6 +24,7 @@ import FileMemberQuestionReceiver, {
 } from '../src/index.ts'
 import type {
   MemberQuestionReceiverConfig,
+  MemberQuestionReceiverSnapshot,
   MemberQuestionTerminalAuthority,
   MemberQuestionTerminalClaim,
 } from '../src/index.ts'
@@ -90,6 +91,19 @@ class MemoryTerminalAuthority implements MemberQuestionTerminalAuthority {
   }
 }
 
+class SnapshotBarrierReceiver extends FileMemberQuestionReceiver {
+  snapshotHold = Promise.resolve()
+  snapshotsReleased = 0
+
+  override snapshot(): Promise<MemberQuestionReceiverSnapshot> {
+    return super.snapshot().then(async (snapshot) => {
+      this.snapshotsReleased += 1
+      await this.snapshotHold
+      return snapshot
+    })
+  }
+}
+
 async function requireGeneratedArtifacts(): Promise<{
   readonly TYPERT: TypertContribution
   readonly TYPERT_REMOTE: TypertRemoteContribution
@@ -104,20 +118,25 @@ async function requireGeneratedArtifacts(): Promise<{
   return { TYPERT: host.TYPERT, TYPERT_REMOTE: remote.TYPERT_REMOTE ?? remote.default }
 }
 
-async function createGeneratedHost(overrides: Partial<MemberQuestionReceiverConfig> = {}): Promise<{
+async function createGeneratedHost(
+  overrides: Partial<MemberQuestionReceiverConfig> = {},
+  plugin: typeof FileMemberQuestionReceiver = FileMemberQuestionReceiver,
+  storagePath?: string,
+): Promise<{
   readonly ctx: Context
   readonly receiver: FileMemberQuestionReceiver
+  readonly storagePath: string
 }> {
-  const storagePath = await mkdtemp(join(tmpdir(), 'dsh-member-question-generated-'))
-  roots.push(storagePath)
+  const root = storagePath ?? await mkdtemp(join(tmpdir(), 'dsh-member-question-generated-'))
+  if (storagePath === undefined) roots.push(root)
   const ctx = new Context()
   contexts.push(ctx)
   await ctx.plugin(TypertRegistry)
   const { TYPERT } = await requireGeneratedArtifacts()
   ctx.typert.register(TYPERT)
   await ctx.plugin(TypertGatewayService)
-  await ctx.plugin(FileMemberQuestionReceiver, {
-    storagePath,
+  await ctx.plugin(plugin, {
+    storagePath: root,
     environment: 'development',
     maxRecords: 16,
     terminalRetryMs: 10,
@@ -127,7 +146,29 @@ async function createGeneratedHost(overrides: Partial<MemberQuestionReceiverConf
     memberQuestionDeviceName: 'Host Mac',
     ...overrides,
   })
-  return { ctx, receiver: ctx.memberQuestionReceiver as FileMemberQuestionReceiver }
+  return { ctx, receiver: ctx.memberQuestionReceiver as FileMemberQuestionReceiver, storagePath: root }
+}
+
+function settleArgs(
+  arrived: { receivingSessionId: string; revision: number; questionId: string },
+  selected: string,
+): { request: Record<string, unknown> } {
+  return {
+    request: {
+      receivingSessionId: arrived.receivingSessionId,
+      revision: arrived.revision,
+      questionId: arrived.questionId,
+      response: { kind: 'answered', answers: [{ id: 'choice', selected: [selected] }] },
+    },
+  }
+}
+
+function invokeSettle(ctx: Context, args: { request: Record<string, unknown> }): Promise<unknown> {
+  return ctx.typertGateway.invoke({
+    namespace: 'memberQuestion',
+    method: 'settle',
+    args,
+  })
 }
 
 describe('generated member-question Remote codecs', () => {
@@ -257,5 +298,57 @@ describe('generated member-question Remote codecs', () => {
     })
     await dispose()
     expect((ctx.remote as { memberQuestion?: unknown }).memberQuestion).toBeUndefined()
+  })
+
+  it('serializes two generated Remote settles that observed the same revision', async () => {
+    const hold = Promise.withResolvers<undefined>()
+    const { ctx, receiver, storagePath } = await createGeneratedHost({}, SnapshotBarrierReceiver)
+    const barrier = receiver as SnapshotBarrierReceiver
+    barrier.snapshotHold = hold.promise
+    const arrived = await receiver.ingest(envelope)
+    const first = invokeSettle(ctx, settleArgs(arrived, 'Continue'))
+    const second = invokeSettle(ctx, settleArgs(arrived, 'Stop'))
+    await vi.waitFor(() => {
+      expect(barrier.snapshotsReleased).toBe(2)
+    })
+    hold.resolve(undefined)
+    const settled = await Promise.allSettled([first, second])
+    const winners = settled.flatMap(result => result.status === 'fulfilled' ? [result.value] : [])
+    const stale = settled.flatMap((result) => {
+      if (result.status !== 'rejected') return []
+      const error = result.reason as { code?: string }
+      return error.code === 'member-question/revision-stale' ? [error] : []
+    })
+    expect(winners.length + stale.length).toBe(2)
+    expect(winners.length).toBeGreaterThanOrEqual(1)
+    const answers = new Set(winners.map(value => JSON.stringify(
+      (value as { answers: readonly { selected: string[] }[] }).answers,
+    )))
+    expect(answers.size).toBe(1)
+    const winner = winners[0] as { answers: readonly { selected: readonly string[] }[]; outcome: string }
+    expect(winner.outcome).toBe('answered')
+    expect(['Continue', 'Stop']).toContain(winner.answers[0]?.selected[0])
+
+    await expect(invokeSettle(ctx, settleArgs(arrived, 'Continue'))).rejects.toMatchObject({
+      code: 'member-question/revision-stale',
+    })
+    await expect(invokeSettle(ctx, settleArgs(arrived, 'Stop'))).rejects.toMatchObject({
+      code: 'member-question/revision-stale',
+    })
+
+    await ctx.fiber.dispose()
+    contexts.splice(contexts.indexOf(ctx), 1)
+    const reopened = await createGeneratedHost({}, FileMemberQuestionReceiver, storagePath)
+    const snapshot = await reopened.ctx.typertGateway.invoke({
+      namespace: 'memberQuestion',
+      method: 'snapshot',
+      args: {},
+    }) as {
+      pending: unknown[]
+      terminal: readonly { terminal: { answers?: readonly { selected: readonly string[] }[] } }[]
+    }
+    expect(snapshot.pending).toEqual([])
+    expect(snapshot.terminal).toHaveLength(1)
+    expect(snapshot.terminal[0]?.terminal.answers).toEqual(winner.answers)
   })
 })
