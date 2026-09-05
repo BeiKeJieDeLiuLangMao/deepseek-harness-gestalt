@@ -79,7 +79,7 @@ The package has two halves. The Host half ([`src/index.ts`](src/index.ts)) regis
 
 Both entry paths issue a `HEAD` preflight to `GET /api/session.export?...`, then hand the GET URL to the browser download manager without buffering the ZIP in JavaScript. One controller owns one in-flight download per session, collapses concurrent gestures into that operation, and cancels the preflight on plugin disposal. Modal state lives in a snapshot store keyed by session, so the button and the command share one dialog per session.
 
-The Host route is a feature-owned exact Fetch contribution. Connection applies its Host/Origin and browser-session checks and bridges the streaming `Response`; this package owns query validation, live-session flushes, handle-based log reads and attachment reads, ZIP generation, and HTTP status semantics.
+The Host route is a feature-owned exact Fetch contribution registered through `ctx.effect`. Connection applies its Host/Origin and browser-session checks and bridges the streaming `Response`; this package owns query validation, live-session flushes, handle-based log reads and attachment reads, ZIP generation, and HTTP status semantics. ApiProxy does not serve this path.
 
 </details>
 
@@ -123,6 +123,7 @@ These limits define when this package is a poor fit or needs special operational
 
 - **Browser download, not a Host-path writer** — the browser chooses the local destination; no Host path or native folder action is returned.
 - **Preflight reports only pre-stream failures** — a descendant or attachment failure after the browser accepts the GET is reported by the browser download manager, not by the dialog.
+- **Trajectory toolbar stays beside fork** — the Session-log control remains on `conversation.trajectory.toolbar.utilities`; this package does not relocate it.
 
 <a id="dev-note"></a>
 ### Dev Note
