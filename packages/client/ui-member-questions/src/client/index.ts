@@ -12,11 +12,8 @@
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-client-connection/client'
 import type { DetailsDocumentFocus } from '@deepseek-ai/dsh-client-ui-conversation/client'
-// Type-only: generated memberQuestion Remote and ctx.remote.$on event keys.
-import type {} from '@deepseek-ai/dsh-api-remotes/client'
-import type { MemberQuestionReceiverChange } from '@deepseek-ai/dsh-member-question-receiver/types'
+import type { ReceivingQuestionBook } from '@deepseek-ai/dsh-api-session-controller/src/client/sessions/receiving.ts'
 import { MemberQuestionDock } from './MemberQuestionCard.tsx'
-import { MemberQuestionRemoteController } from './remote-controller.ts'
 import { en, zh, type MemberQuestionKey } from './locales.ts'
 
 export { selectMemberQuestion, selectMemberQuestionRecords, isMemberQuestionBatch, memberBriefOf, clampBackground, BACKGROUND_CLAMP } from './contract/slots.ts'
@@ -25,11 +22,6 @@ export type {
   MemberQuestionReferenceChip, MemberQuestionRole, MemberQuestionWait,
 } from './contract/slots.ts'
 export type { MemberQuestionKey } from './locales.ts'
-export type {
-  MemberQuestionRemoteActionResult,
-  MemberQuestionRemoteStatus,
-  MemberQuestionRemoteView,
-} from './remote-controller.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -38,11 +30,18 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   }
 }
 
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    /** Host-owned member-question receiving projection. */
+    receivingQuestions: ReceivingQuestionBook
+  }
+}
+
 /** Dictionary namespace owned by this plugin. */
 const NS = 'member-question'
 
-/** Required services: slots, dictionaries, Files-open path, and memberQuestion Remote. */
-export const inject = ['slots', 'locale', 'workspaces', 'sessions', 'remote', 'remote.memberQuestion']
+/** Required services: slots, dictionaries, Files-open path, and receiving projection. */
+export const inject = ['slots', 'locale', 'workspaces', 'sessions', 'receivingQuestions']
 
 /**
  * Client plugin body: register the `member-question` dictionaries and the
@@ -64,18 +63,6 @@ export function apply(ctx: ClientContext): void {
   const focusDocument = (sessionId: SessionId, document: DetailsDocumentFocus): void => {
     ctx.get('detailsFocus')?.focus(sessionId, document)
   }
-
-  const remote = new MemberQuestionRemoteController(ctx)
-  void remote.ensure()
-  ctx.effect(() => {
-    const off = ctx.remote.$on('member-question-receiver/changed', (change: MemberQuestionReceiverChange) => {
-      remote.handleChanged(change)
-    })
-    return () => {
-      off()
-      remote.dispose()
-    }
-  }, 'ui-member-questions: memberQuestion remote')
 
   const openReference = (sessionId: SessionId, path: string, title?: string): void => {
     const cwd = ctx.sessions.list.getSnapshot().byId[sessionId]?.cwd
@@ -103,10 +90,7 @@ export function apply(ctx: ClientContext): void {
         questionT,
         focusDocument,
         openReference,
-        hooks: { memberQuestionRemote: remote },
-        ensure: () => remote.ensure(),
-        settle: (request: Parameters<MemberQuestionRemoteController['settle']>[0]) => remote.settle(request),
-        retry: () => remote.retry(),
+        hooks: { receivingQuestions: ctx.receivingQuestions },
       }),
     },
     MemberQuestionDock,

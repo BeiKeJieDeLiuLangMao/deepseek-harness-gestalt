@@ -7,18 +7,12 @@ import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 import type { SessionId } from '@deepseek-ai/dsh-client-connection/client'
 import type { DetailsDocumentFocus } from '@deepseek-ai/dsh-client-ui-conversation/client'
-import { TestRemote } from '@deepseek-ai/dsh-client-test-runtime/src/remote.ts'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { MemberQuestionDock } from '../src/client/MemberQuestionCard.tsx'
 import { apply, inject } from '../src/client/index.ts'
 import { apply as nodeApply } from '../src/index.ts'
 import { en as questionEn, zh as questionZh } from '@deepseek-ai/dsh-client-ui-user-questions/src/client/locales.ts'
-
-const emptyRemote = {
-  snapshot: async () => ({ ok: true as const, value: { revision: 0, pending: [], terminal: [] } }),
-  settle: async () => ({ ok: false as const, error: { code: 'unused', message: 'unused', details: {} } }),
-}
 
 async function bench(sessions?: {
   list: { getSnapshot: () => { byId: Record<string, { cwd?: string } | undefined> } }
@@ -42,7 +36,14 @@ async function bench(sessions?: {
   locale.register('question', { zh: questionZh, en: questionEn })
   ctx.provide('locale', locale)
   ctx.slots.installLocale(locale)
-  new TestRemote(ctx, { memberQuestion: emptyRemote })
+  const receivingQuestions = {
+    activeQuestion: () => undefined,
+    records: () => [],
+    getSnapshot: () => ({ byId: {} }),
+    subscribe: () => () => {},
+  }
+  ctx.provide('receivingQuestions', receivingQuestions)
+  ctx.receivingQuestions = receivingQuestions as never
   const fiber = ctx.plugin({ inject: [...inject], apply })
   await fiber.await()
   return { ctx, fiber, workspaces, locale }
@@ -50,7 +51,7 @@ async function bench(sessions?: {
 
 describe('ui-member-questions browser apply', () => {
   it('declares every service it binds', () => {
-    expect(inject).toEqual(['slots', 'locale', 'workspaces', 'sessions', 'remote', 'remote.memberQuestion'])
+    expect(inject).toEqual(['slots', 'locale', 'workspaces', 'sessions', 'receivingQuestions'])
   })
 
   it('node-half apply is an intentional no-op', () => {

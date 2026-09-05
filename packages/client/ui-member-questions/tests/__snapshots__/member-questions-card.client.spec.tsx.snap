@@ -4,7 +4,7 @@ exports[`MemberQuestionCard > snapshots the English copy 1`] = `
 <div>
   <div
     class="frame"
-    data-question-key="q:q-1"
+    data-question-key="question:21"
   >
     <section
       aria-label="Remote · 王小明"
@@ -133,16 +133,13 @@ exports[`MemberQuestionCard > snapshots the English copy 1`] = `
         class="body"
         data-member-presentation="true"
       >
-        <fieldset
-          class="mutationScope"
-          role="presentation"
-        >
+        <fieldset>
           <div
             class="frame"
-            data-question-key="q:q-1"
+            data-question-key="question:21"
           >
             <section
-              aria-labelledby="question-q:q-1-0"
+              aria-labelledby="question-question:21-0"
               class="card"
             >
               <header
@@ -158,7 +155,7 @@ exports[`MemberQuestionCard > snapshots the English copy 1`] = `
                   </div>
                   <h2
                     class="title"
-                    id="question-q:q-1-0"
+                    id="question-question:21-0"
                   >
                     将王小明移出项目吗？
                   </h2>
@@ -396,7 +393,7 @@ exports[`MemberQuestionCard > snapshots the full banner and the shared presentat
 <div>
   <div
     class="frame"
-    data-question-key="q:q-1"
+    data-question-key="question:18"
   >
     <section
       aria-label="远端 · 王小明"
@@ -525,16 +522,13 @@ exports[`MemberQuestionCard > snapshots the full banner and the shared presentat
         class="body"
         data-member-presentation="true"
       >
-        <fieldset
-          class="mutationScope"
-          role="presentation"
-        >
+        <fieldset>
           <div
             class="frame"
-            data-question-key="q:q-1"
+            data-question-key="question:18"
           >
             <section
-              aria-labelledby="question-q:q-1-0"
+              aria-labelledby="question-question:18-0"
               class="card"
             >
               <header
@@ -550,7 +544,7 @@ exports[`MemberQuestionCard > snapshots the full banner and the shared presentat
                   </div>
                   <h2
                     class="title"
-                    id="question-q:q-1-0"
+                    id="question-question:18-0"
                   >
                     将王小明移出项目吗？
                   </h2>
@@ -788,7 +782,7 @@ exports[`MemberQuestionCard > snapshots the full banner under the dark theme att
 <div>
   <div
     class="frame"
-    data-question-key="q:q-1"
+    data-question-key="question:19"
   >
     <section
       aria-label="远端 · 王小明"
@@ -917,16 +911,13 @@ exports[`MemberQuestionCard > snapshots the full banner under the dark theme att
         class="body"
         data-member-presentation="true"
       >
-        <fieldset
-          class="mutationScope"
-          role="presentation"
-        >
+        <fieldset>
           <div
             class="frame"
-            data-question-key="q:q-1"
+            data-question-key="question:19"
           >
             <section
-              aria-labelledby="question-q:q-1-0"
+              aria-labelledby="question-question:19-0"
               class="card"
             >
               <header
@@ -942,7 +933,7 @@ exports[`MemberQuestionCard > snapshots the full banner under the dark theme att
                   </div>
                   <h2
                     class="title"
-                    id="question-q:q-1-0"
+                    id="question-question:19-0"
                   >
                     将王小明移出项目吗？
                   </h2>
@@ -1180,7 +1171,7 @@ exports[`MemberQuestionCard > snapshots the identity-lite banner and the folded 
 <div>
   <div
     class="frame"
-    data-question-key="q:q-1"
+    data-question-key="question:20"
   >
     <section
       aria-label="远端 · 成员"
@@ -1217,16 +1208,13 @@ exports[`MemberQuestionCard > snapshots the identity-lite banner and the folded 
         class="body"
         data-member-presentation="true"
       >
-        <fieldset
-          class="mutationScope"
-          role="presentation"
-        >
+        <fieldset>
           <div
             class="frame"
-            data-question-key="q:q-1"
+            data-question-key="question:20"
           >
             <section
-              aria-labelledby="question-q:q-1-0"
+              aria-labelledby="question-question:20-0"
               class="card"
             >
               <header
@@ -1242,7 +1230,7 @@ exports[`MemberQuestionCard > snapshots the identity-lite banner and the folded 
                   </div>
                   <h2
                     class="title"
-                    id="question-q:q-1-0"
+                    id="question-question:20-0"
                   >
                     将王小明移出项目吗？
                   </h2>
@@ -1481,7 +1469,7 @@ exports[`MemberQuestionCard > snapshots the identity-lite banner and the folded 
   <div
     class="frame"
     data-folded="true"
-    data-question-key="q:q-1"
+    data-question-key="question:20"
   >
     <section
       aria-label="远端 · 成员"
@@ -1512,16 +1500,13 @@ exports[`MemberQuestionCard > snapshots the identity-lite banner and the folded 
         class="body bodyHidden"
         data-member-presentation="true"
       >
-        <fieldset
-          class="mutationScope"
-          role="presentation"
-        >
+        <fieldset>
           <div
             class="frame"
-            data-question-key="q:q-1"
+            data-question-key="question:20"
           >
             <section
-              aria-labelledby="question-q:q-1-0"
+              aria-labelledby="question-question:20-0"
               class="card cardMinimized"
             >
               <header
@@ -1537,7 +1522,7 @@ exports[`MemberQuestionCard > snapshots the identity-lite banner and the folded 
                   </div>
                   <h2
                     class="title"
-                    id="question-q:q-1-0"
+                    id="question-question:20-0"
                   >
                     将王小明移出项目吗？
                   </h2>

@@ -7,12 +7,10 @@
 // presentation's drafts.
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import type {
-  ConversationSnapshot, SessionId, SessionListState, WorkspaceListState,
-} from '@deepseek-ai/dsh-client-runtime/client'
-import { PendingWait } from '@deepseek-ai/dsh-client-runtime/client'
-import type { RpcReceipt } from '@deepseek-ai/dsh-api-remotes/client'
-import { RpcId } from '@deepseek-ai/dsh-client-connection/client'
+import type { SessionId, SessionListState, WorkspaceListState } from '@deepseek-ai/dsh-client-connection/client'
+import type { SessionSnapshot } from '@deepseek-ai/dsh-api-session-controller/src/client/contract/snapshot.ts'
+import type { ReceivingQuestionBookView } from '@deepseek-ai/dsh-api-session-controller/src/client/sessions/receiving.ts'
+import { PendingQuestion } from '@deepseek-ai/dsh-client-ui-user-questions/src/client/contract/slots.ts'
 import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 import { registerDomSnapshotSerializer } from '@deepseek-ai/dsh-client-test-runtime'
 import {
@@ -48,7 +46,7 @@ const seat = seatOver(zh, questionZh, commonZh)
 const kit = {
   sessionId: SID,
   session: undefined,
-  useSession: (() => { throw new Error('unused') }) as unknown as SnapshotSelectorHook<ConversationSnapshot>,
+  useSession: (() => { throw new Error('unused') }) as unknown as SnapshotSelectorHook<SessionSnapshot>,
   useSessions: (() => { throw new Error('unused') }) as unknown as SnapshotSelectorHook<SessionListState>,
   useWorkspaces: (() => { throw new Error('unused') }) as unknown as SnapshotSelectorHook<WorkspaceListState>,
   useProjection: (() => undefined) as never,
@@ -60,7 +58,7 @@ const kit = {
 const NOW = 1_800_000_000_000
 
 /** One member-question batch: the carried intent rides every question. */
-const memberQuestions = (intent: Record<string, unknown>): MemberQuestionComposerProps['matched']['payload']['questions'] => [{
+const memberQuestions = (intent: Record<string, unknown>): MemberQuestionComposerProps['matched']['questions'] => [{
   id: 'remove-member',
   header: '成员管理',
   question: '将王小明移出项目吗？',
@@ -70,7 +68,7 @@ const memberQuestions = (intent: Record<string, unknown>): MemberQuestionCompose
     { label: '保留', description: '保持只读成员身份。' },
   ],
   intent,
-}] as MemberQuestionComposerProps['matched']['payload']['questions']
+}] as MemberQuestionComposerProps['matched']['questions']
 
 /** Carried Decision Brief fields: origin identity, materials, and the expiry instant. */
 const projection = () => ({
@@ -97,39 +95,63 @@ const projection = () => ({
 })
 
 /** Carrier fixture over a scripted respond carrier; the extras ride the shared intent. */
-function memberWait(
-  carriedOver: Record<string, unknown> = projection(),
-  respond = vi.fn(() => Promise.resolve<RpcReceipt>({ accepted: true })),
-) {
-  const payload = {
-    questions: memberQuestions({ kind: 'member-question', ...carriedOver }),
-  }
-  const carrier = new PendingWait(
-    'question', RpcId('q-1'), SID, payload, respond)
-  return { carrier, respond }
+function memberWait(carriedOver: Record<string, unknown> = projection()) {
+  const carrier = new PendingQuestion(SID, memberQuestions({ kind: 'member-question', ...carriedOver }))
+  return { carrier }
 }
 
 function genericWait(intent: undefined | { kind: 'plan-review'; approve: string }) {
-  const payload = {
-    questions: [{
-      id: 'plain', question: '继续吗？',
-      options: [{ label: '是' }, { label: '否' }],
-      ...(intent === undefined ? {} : { intent }),
-    }],
+  return new PendingQuestion(SID, [{
+    id: 'plain', question: '继续吗？',
+    options: [{ label: '是' }, { label: '否' }],
+    ...(intent === undefined ? {} : { intent }),
+  }])
+}
+
+function receivingView(wait?: PendingQuestion, records: readonly unknown[] = []): ReceivingQuestionBookView {
+  if (wait === undefined && records.length === 0) return { byId: {} }
+  return {
+    byId: {
+      [SID]: {
+        sessionId: SID,
+        title: 'member-question',
+        updatedAt: 0,
+        revision: 1,
+        materialized: false,
+        active: wait === undefined ? undefined : {
+          questionId: 'question-1',
+          intent: wait.questions[0]?.intent as never,
+          wait,
+        },
+        records: records as ReceivingQuestionBookView['byId'][string]['records'],
+      },
+    },
   }
-  return new PendingWait('question', RpcId('q-2'), SID, payload, () => Promise.resolve<RpcReceipt>({ accepted: true }))
+}
+
+function receivingProps(wait?: PendingQuestion, records: readonly unknown[] = []) {
+  const view = receivingView(wait, records)
+  return {
+    useReceivingQuestions: ((selector: (next: ReceivingQuestionBookView) => unknown) => selector(view)),
+    hooks: {
+      receivingQuestions: {
+        getSnapshot: () => view,
+        subscribe: () => () => {},
+      },
+    },
+  }
 }
 
 function renderCard(
-  carrier: PendingWait<'question'>,
+  carrier: PendingQuestion,
   focusDocument: MemberQuestionComposerProps['focusDocument'] = () => {},
   openReference: MemberQuestionComposerProps['openReference'] = () => {},
 ) {
   return render(
     <MemberQuestionCard
       matched={carrier}
-      interactions={[carrier]}
       {...kit}
+      {...receivingProps(carrier)}
       t={seat('member-question')}
       questionT={seat('question')}
       focusDocument={focusDocument}
@@ -162,30 +184,28 @@ describe('member-question routing', () => {
     const props = {
       ...kit,
       input: { draft: '', phase: 'plain' },
-      session: { pending: [carrier], memberQuestionRecords: [] },
+      session: {},
       t: seat('member-question'),
       questionT: seat('question'),
       focusDocument: () => {},
       openReference: () => {},
+      ...receivingProps(carrier),
     }
     const pending = render(MemberQuestionDock(props as never))
     expect(pending.container.querySelector('[data-member-presentation]')).not.toBeNull()
     pending.unmount()
     const terminal = render(MemberQuestionDock({
       ...props,
-      session: {
-        pending: [],
-        memberQuestionRecords: [{
-          questionId: 'terminal', state: 'withdrawn', askedAt: 100, terminalAt: 200,
-          intent: { kind: 'member-question', questionId: 'terminal' },
-        }],
-      },
+      ...receivingProps(undefined, [{
+        questionId: 'terminal', state: 'withdrawn', askedAt: 100, terminalAt: 200,
+        intent: { kind: 'member-question', questionId: 'terminal' },
+      }]),
     } as never))
     expect(terminal.container.querySelector('[data-record-state="withdrawn"]')).not.toBeNull()
     terminal.unmount()
     const empty = render(MemberQuestionDock({
       ...props,
-      session: { pending: [] },
+      ...receivingProps(),
     } as never))
     expect(empty.container.innerHTML).toBe('')
   })
@@ -194,40 +214,35 @@ describe('member-question routing', () => {
     expect(selectMemberQuestionRecords({ session: undefined })).toBeNull()
     expect(selectMemberQuestionRecords({ session: {
       memberQuestionRecords: [],
-    } as unknown as ConversationSnapshot })).toBeNull()
+    } })).toBeNull()
     const records = [{ questionId: 'q' }] as never
     expect(selectMemberQuestionRecords({ session: {
       memberQuestionRecords: records,
-    } as unknown as ConversationSnapshot })).toBe(records)
+    } })).toBe(records)
   })
 
   it('claims a request whose whole batch declares the member-question intent', () => {
     const { carrier } = memberWait()
-    expect(isMemberQuestionBatch(carrier.payload.questions)).toBe(true)
-    expect(selectMemberQuestion({ interactions: [carrier] })).toBe(carrier)
+    expect(isMemberQuestionBatch(carrier.questions)).toBe(true)
+    expect(selectMemberQuestion({ pendingInteraction: carrier })).toBe(carrier)
   })
 
   it('keeps plan-review requests with the shared composer', () => {
     const carrier = genericWait({ kind: 'plan-review', approve: '是' })
-    expect(selectMemberQuestion({ interactions: [carrier] })).toBeNull()
+    expect(selectMemberQuestion({ pendingInteraction: carrier })).toBeNull()
   })
 
   it('keeps intent-less requests with the generic flow', () => {
     const carrier = genericWait(undefined)
-    expect(selectMemberQuestion({ interactions: [carrier] })).toBeNull()
+    expect(selectMemberQuestion({ pendingInteraction: carrier })).toBeNull()
   })
 
   it('declines a mixed batch to the generic flow', () => {
-    const payload = {
-      questions: [
-        ...memberQuestions({ kind: 'member-question' }),
-        { id: 'plain', question: '继续吗？', options: [{ label: '是' }] },
-      ],
-    }
-    const carrier = new PendingWait(
-      'question', RpcId('q-3'), SID, payload,
-      () => Promise.resolve<RpcReceipt>({ accepted: true }))
-    expect(selectMemberQuestion({ interactions: [carrier] })).toBeNull()
+    const carrier = new PendingQuestion(SID, [
+      ...memberQuestions({ kind: 'member-question' }),
+      { id: 'plain', question: '继续吗？', options: [{ label: '是' }] },
+    ])
+    expect(selectMemberQuestion({ pendingInteraction: carrier })).toBeNull()
   })
 })
 
@@ -278,9 +293,9 @@ describe('clampBackground and memberBriefOf', () => {
   })
 
   it('omits an empty fallback background when neither carried background nor detail exists', () => {
-    const carrier = new PendingWait('question', RpcId('q-empty'), SID, {
-      questions: [{ id: 'plain', question: 'Continue?', intent: { kind: 'member-question' } as never }],
-    }, () => Promise.resolve<RpcReceipt>({ accepted: true }))
+    const carrier = new PendingQuestion(SID, [
+      { id: 'plain', question: 'Continue?', intent: { kind: 'member-question' } as never },
+    ])
     expect(memberBriefOf(carrier).background).toBeUndefined()
   })
 })
@@ -547,8 +562,8 @@ describe('MemberQuestionCard', () => {
       const { container } = render(
         <MemberQuestionCard
           matched={carrier}
-          interactions={[carrier]}
           {...kit}
+          {...receivingProps(carrier)}
           t={seatEn('member-question')}
           questionT={seatEn('question')}
           focusDocument={() => {}}

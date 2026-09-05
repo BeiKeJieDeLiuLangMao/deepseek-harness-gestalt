@@ -2,11 +2,13 @@
  * Member-question slot contract: the registrant-side props composition for
  * the conversation-owned `conversation.composer` chain, plus the receiver-side
  * Decision Brief face over the shared question carrier. The carrier
- * (PendingWait) and the question protocol stay owned by
- * dsh-client-ui-user-questions; this package adds only the banner faces a
- * receiver renders around the shared presentation.
+ * (ReceivingPendingQuestion) and the question protocol stay owned by
+ * session-controller / ui-user-questions; this package adds only the banner
+ * faces a receiver renders around the shared presentation.
  */
-import type { PropsLocale, PropsRuntime, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
+import type {
+  HostObservable, PropsLocale, PropsRuntime, SnapshotSelectorHook, TranslateNS,
+} from '@deepseek-ai/dsh-client-ui-slots'
 // Pulls ui-conversation's SlotMap merge (the 'conversation.composer' entry)
 // and the locale plugin's Context merge into every program that sees this
 // contract, so PropsRuntime and TranslateNS resolve.
@@ -15,18 +17,17 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 // The shared question presentation's namespace merge ('question') and the
 // sanctioned presentation seam this wrapper mounts under the banner.
 import type {} from '@deepseek-ai/dsh-client-ui-user-questions/client'
-import type {
-  ConversationSnapshot, MemberQuestionRecordView, PendingInteraction, PendingWait, SessionId,
-} from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId } from '@deepseek-ai/dsh-client-connection/client'
 import type { DetailsDocumentFocus } from '@deepseek-ai/dsh-client-ui-conversation/client'
-import type { MemberQuestionRemoteSettleRequest } from '@deepseek-ai/dsh-member-question-receiver/types'
+import type { PendingQuestion } from '@deepseek-ai/dsh-client-ui-user-questions/src/client/contract/slots.ts'
+import type { ReceivingPendingQuestion } from '@deepseek-ai/dsh-api-session-controller/src/client/sessions/receiving.ts'
 import type {
-  MemberQuestionRemoteActionResult,
-  MemberQuestionRemoteController,
-} from '../remote-controller.ts'
+  ReceivingMemberQuestionRecord,
+  ReceivingQuestionBookView,
+} from '@deepseek-ai/dsh-api-session-controller/src/client/sessions/receiving.ts'
 
 /** The pending question carrier a member brief renders and settles. */
-export type MemberQuestionWait = PendingWait<'question'>
+export type MemberQuestionWait = PendingQuestion | ReceivingPendingQuestion
 
 /** Collaboration-plane role of the asking member, as the receiver renders it. */
 export type MemberQuestionRole = 'owner' | 'admin' | 'member'
@@ -97,7 +98,7 @@ export function clampBackground(text: string): string {
  * carried brief off the batch's shared intent.
  */
 type MemberQuestionCarriedIntent = Extract<
-  NonNullable<MemberQuestionWait['payload']['questions'][number]['intent']>,
+  NonNullable<MemberQuestionWait['questions'][number]['intent']>,
   { kind: 'member-question' }
 >
 
@@ -134,7 +135,7 @@ export function isMemberQuestionBatch(
  * @returns The rendered brief.
  */
 export function memberBriefOf(wait: MemberQuestionWait): MemberQuestionBrief {
-  const intent = wait.payload.questions.find(question => question.intent?.kind === 'member-question')
+  const intent = wait.questions.find(question => question.intent?.kind === 'member-question')
     ?.intent
   // A brief counts as carried only with its origin identity present: a bare
   // `member-question` tag (pre-relay payloads, minimal fixtures) renders the
@@ -144,7 +145,7 @@ export function memberBriefOf(wait: MemberQuestionWait): MemberQuestionBrief {
     ? intent
     : undefined
   const fallback = clampBackground(
-    wait.payload.questions.find(question => question.detail !== undefined)?.detail ?? '',
+    wait.questions.find(question => question.detail !== undefined)?.detail ?? '',
   )
   const background = clampBackground(carried?.background ?? fallback)
   return {
@@ -174,12 +175,17 @@ export function memberBriefOf(wait: MemberQuestionWait): MemberQuestionBrief {
  * member-question request (pure — owner props only). Registered ahead of the
  * generic question entry so `plan-review` requests and generic requests keep
  * electing the shared composer unchanged.
- * @param owner - the composer chain's owner props, carrying `interactions`.
+ * @param owner - the composer chain's owner props, carrying the pending carrier.
  * @returns the member-question wait when the batch declares the intent, else null.
  */
-export function selectMemberQuestion(owner: { interactions: readonly PendingInteraction[] }): MemberQuestionWait | null {
-  return owner.interactions.find((wait): wait is MemberQuestionWait =>
-    wait.kind === 'question' && isMemberQuestionBatch(wait.payload.questions)) ?? null
+export function selectMemberQuestion(owner: {
+  interactions?: readonly MemberQuestionWait[]
+  pendingInteraction?: MemberQuestionWait | undefined
+}): MemberQuestionWait | null {
+  const wait = owner.pendingInteraction
+    ?? owner.interactions?.find((item): item is MemberQuestionWait =>
+      item.kind === 'question' && isMemberQuestionBatch(item.questions))
+  return wait !== undefined && isMemberQuestionBatch(wait.questions) ? wait : null
 }
 
 /**
@@ -188,8 +194,8 @@ export function selectMemberQuestion(owner: { interactions: readonly PendingInte
  * @returns non-empty terminal records, or null when the surface does not apply.
  */
 export function selectMemberQuestionRecords(
-  owner: { session: ConversationSnapshot | undefined },
-): readonly MemberQuestionRecordView[] | null {
+  owner: { session?: { memberQuestionRecords?: readonly ReceivingMemberQuestionRecord[] } },
+): readonly ReceivingMemberQuestionRecord[] | null {
   const records = owner.session?.memberQuestionRecords
   return records === undefined || records.length === 0 ? null : records
 }
@@ -208,6 +214,9 @@ export type MemberQuestionComposerProps =
   & PropsLocale<'member-question'>
   & { questionT: TranslateNS<'question'> }
   & {
+    useReceivingQuestions: SnapshotSelectorHook<ReceivingQuestionBookView>
+  }
+  & {
     /**
      * Focus a referenced document in the session's details panel. The callback
      * resolves `ctx.get('detailsFocus')` per gesture; absent providers make it
@@ -223,22 +232,13 @@ export type MemberQuestionComposerProps =
     openReference: (sessionId: SessionId, path: string, title?: string) => void
   }
 
-/** Generated memberQuestion Remote verbs closed over apply, never over ctx in React. */
-export interface MemberQuestionRemoteInjected {
-  /** Observable snapshot/settle view for the inject `hooks` compartment. */
-  hooks: { memberQuestionRemote: MemberQuestionRemoteController }
-  /** Load the Host snapshot once. */
-  ensure: () => Promise<MemberQuestionRemoteActionResult>
-  /** Settle through generated Remote; failures retain the request as draft. */
-  settle: (request: MemberQuestionRemoteSettleRequest) => Promise<MemberQuestionRemoteActionResult>
-  /** Resend the retained draft after an error or stale revision. */
-  retry: () => Promise<MemberQuestionRemoteActionResult>
-}
-
 /** Additive input-dock carrier that leaves the product composer mounted. */
 export type MemberQuestionDockProps =
   PropsRuntime<'conversation.input.dock'>
   & PropsLocale<'member-question'>
   & { questionT: TranslateNS<'question'> }
   & Pick<MemberQuestionComposerProps, 'focusDocument' | 'openReference'>
-  & MemberQuestionRemoteInjected
+  & {
+    hooks: { receivingQuestions: HostObservable<ReceivingQuestionBookView> }
+    useReceivingQuestions: SnapshotSelectorHook<ReceivingQuestionBookView>
+  }

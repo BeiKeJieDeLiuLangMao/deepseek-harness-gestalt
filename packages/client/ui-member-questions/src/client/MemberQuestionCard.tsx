@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
-import { QuestionPresentation } from '@deepseek-ai/dsh-client-ui-user-questions/client'
+import { QuestionPresentation } from '@deepseek-ai/dsh-client-ui-user-questions/src/presentation.tsx'
 import {
   memberBriefOf,
   selectMemberQuestion,
   type MemberQuestionComposerProps, type MemberQuestionDockProps,
   type MemberQuestionOrigin, type MemberQuestionRole,
 } from './contract/slots.ts'
-import type { MemberQuestionRecordView } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ReceivingMemberQuestionRecord } from '@deepseek-ai/dsh-api-session-controller/src/client/sessions/receiving.ts'
 import css from './MemberQuestionCard.module.css'
 
 export type {
@@ -58,7 +58,7 @@ function roleLabel(t: MemberQuestionComposerProps['t'], role: MemberQuestionRole
 
 /** Passive Host terminal records retained after a card settles. */
 export function MemberQuestionRecords(props: {
-  matched: readonly MemberQuestionRecordView[]
+  matched: readonly ReceivingMemberQuestionRecord[]
   t: MemberQuestionComposerProps['t']
 }) {
   if (props.matched.length === 0) return null
@@ -76,7 +76,7 @@ export function MemberQuestionRecords(props: {
   )
 }
 
-function recordLabel(t: MemberQuestionComposerProps['t'], record: MemberQuestionRecordView): string {
+function recordLabel(t: MemberQuestionComposerProps['t'], record: ReceivingMemberQuestionRecord): string {
   return record.state === 'answered-elsewhere'
     ? t('record.answered-elsewhere', { device: record.settledByDeviceName ?? t('origin.fallback') })
     : t(`record.${record.state}`)
@@ -142,7 +142,8 @@ export function MemberQuestionCard(props: MemberQuestionComposerProps) {
 
   const folded = (innerCollapsed && !innerRevealed) || (detailsOpen && !detailsRevealed)
   const askerName = brief.origin?.askerDisplayName ?? props.t('origin.fallback')
-  const records = props.session?.memberQuestionRecords ?? []
+  const records = props.useReceivingQuestions(view =>
+    view.byId[props.sessionId]?.records ?? [])
 
   return (
     <div className={css.frame} data-question-key={props.matched.key} data-folded={folded || undefined}>
@@ -227,7 +228,7 @@ export function MemberQuestionCard(props: MemberQuestionComposerProps) {
         {/* Kept mounted while folded: the presentation owns the drafts, and
             folding must not spend them. */}
         <div className={clsx(css.body, folded && css.bodyHidden)} ref={bodyRef} data-member-presentation>
-          <QuestionPresentation wait={props.matched} t={props.questionT} />
+          <QuestionPresentation wait={props.matched as never} t={props.questionT} />
         </div>
       </section>
     </div>
@@ -236,9 +237,10 @@ export function MemberQuestionCard(props: MemberQuestionComposerProps) {
 
 /** Additive Decision Brief dock above the unchanged product composer. */
 export function MemberQuestionDock(props: MemberQuestionDockProps) {
-  const matched = selectMemberQuestion({ interactions: props.session.pending })
+  const row = props.useReceivingQuestions(view => view.byId[props.sessionId])
+  const matched = selectMemberQuestion({ pendingInteraction: row?.active?.wait })
   if (matched === null) {
-    return <MemberQuestionRecords matched={props.session.memberQuestionRecords ?? []} t={props.t} />
+    return <MemberQuestionRecords matched={row?.records ?? []} t={props.t} />
   }
-  return <MemberQuestionCard {...props} interactions={props.session.pending} matched={matched} />
+  return <MemberQuestionCard {...props} matched={matched} />
 }
