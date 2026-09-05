@@ -14,7 +14,7 @@ Status: implemented
 
 [`examples/web-schedule`](../../../../examples/web-schedule/README.md) overlay 显式加载 `@deepseek-ai/dsh-time-context` 与 `@deepseek-ai/dsh-schedule`；纯浏览器 Web 的默认配置树保持不变。DeepSeek Gestalt Desktop overlay 默认加载同一插件对。Schedule 只观察插件加载后发布的根 Agent，并在该 Agent scope 中安装三个工具和一个可丢弃 owner。cold history 读取、已发布的根、child Agent 与没有其中一层 overlay 的 host 都不会激活它。
 
-用户可见的投递边界是 `session-local`：原 Session 只有在 live 时才会准时运行提醒，cold 期间不发送任何外部通知；该 Session 再次 live 后才会处理 overdue 提醒。到期工作会等待 Agent 完全 idle，再通过 `followup()` 进入普通的下一轮队列；它绝不会中途引导当前轮次，也没有独立投递回执（[对话式交付](../simplification/2026-08-09-conversational-schedule-delivery.zh.md)）。Host fold 与工具接受持久 `create`／`pause`／`resume`／`delete`／`dispatch`；`schedule_list` 包含暂停行，`schedule_delete` 接受暂停 id。不存在面向模型的 pause 或 resume 工具。人工 pause/resume Remote 传输与 Desktop 任务板 UI 仍未接线（[#590](https://github.com/gestaltrun/deepseek-harness-gestalt/issues/590)、[#591](https://github.com/gestaltrun/deepseek-harness-gestalt/issues/591)）；[Session Schedule 任务板](2026-08-17-session-schedule-board.zh.md) 决策仍拥有该目录。
+用户可见的投递边界是 `session-local`：原 Session 只有在 live 时才会准时运行提醒，cold 期间不发送任何外部通知；该 Session 再次 live 后才会处理 overdue 提醒。到期工作会等待 Agent 完全 idle，再通过 `followup()` 进入普通的下一轮队列；它绝不会中途引导当前轮次，也没有独立投递回执（[对话式交付](../simplification/2026-08-09-conversational-schedule-delivery.zh.md)）。Host fold 与工具接受持久 `create`／`pause`／`resume`／`delete`／`dispatch`；`schedule_list` 包含暂停行，`schedule_delete` 接受暂停 id。不存在面向模型的 pause 或 resume 工具。人工 pause/resume Remote 传输与 Desktop 任务板仍是保留的设计义务，尚未挂载；本 Host 包不安装 `ctx.schedules`。[Session Schedule 任务板](2026-08-17-session-schedule-board.zh.md) 决策仍拥有该目录。
 
 | 场景 | 持久事实 | live 行为 | 用户可见结果 |
 | --- | --- | --- | --- |
@@ -81,6 +81,6 @@ dispatch 记录的是队列准入，而不是模型完成或用户收到提醒�
 - 提醒状态通过普通 Session persistence 跨重启存活，无需新数据库或公开 service。
 - cold Session 不工作、不发送外部通知；重新打开后可能交付 overdue 工作。
 - 无需持久 Session 时区状态或从 Schedule 到 time-context 的依赖，绝对时间输入仍然具有确定性。
-- 用户在普通对话中看到提醒输出。Host 工具列出保留的暂停状态；管理任务板 UI 尚未挂载，dispatch 与未来任务板都绝不会夸大模型成功或 acknowledgement。
+- 用户在普通对话中看到提醒输出。Host 工具列出保留的暂停状态；管理任务板尚未挂载，dispatch 与任务板决策都绝不会夸大模型成功或 acknowledgement。
 - 每个 live 根只增加从 fold 派生的 timer、可选 idle wait 与一个 in-flight operation。
 - 固定速率周期性受到至少 5 分钟、只追赶最新一次，以及每条逾期记录只在一个批次中贡献一个发生时点的约束；日历周期性仍在此产品边界之外。

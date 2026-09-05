@@ -206,11 +206,11 @@ type ScheduleProjectionItem = ScheduleRecord & {
 }
 ```
 
-生成的[工具目录](../tool-catalog.zh.md#deepseek-aidsh-schedule)负责 `schedule_create`、`schedule_list` 和 `schedule_delete` 的参数与结果 schema。list 按创建顺序读取保留记录，包含 `state: 'paused'` 的暂停行；delete 接受活动或暂停 id。不存在面向模型的 pause 或 resume 工具。到期投递仍只使用 `active` fold。一条由插件拥有、按 Session 串行化的 FIFO 会把工具管理调用与 live runtime 到期工作串行化。每次读取或判断都会先等待共享的 Session 持久化 barrier；create 与实际执行的 delete 在追加后还会再次等待。插件拆卸会关闭准入并等待已接纳事务，而独立 Context 拥有独立队列。barrier 失败会报告 `persistence_uncertain`，而不是猜测 eager write 是否已提交。其他稳定错误代码是 `invalid_prompt`、`invalid_selector`、`invalid_rule`、`invalid_time_zone`、`not_future`、`time_out_of_range`、`frequency_too_high`、`corrupt_schedule_log` 和 `internal_error`。人工 pause/resume Remote 传输与 Desktop 任务板 UI 仍未接线（[#590](https://github.com/gestaltrun/deepseek-harness-gestalt/issues/590)、[#591](https://github.com/gestaltrun/deepseek-harness-gestalt/issues/591)）；[Session Schedule 任务板](../../.agents/notes/implemented/feature/2026-08-17-session-schedule-board.zh.md) 决策仍拥有该目录。
+生成的[工具目录](../tool-catalog.zh.md#deepseek-aidsh-schedule)负责 `schedule_create`、`schedule_list` 和 `schedule_delete` 的参数与结果 schema。list 按创建顺序读取保留记录，包含 `state: 'paused'` 的暂停行；delete 接受活动或暂停 id。不存在面向模型的 pause 或 resume 工具。到期投递仍只使用 `active` fold。一条由插件拥有、按 Session 串行化的 FIFO 会把工具管理调用与 live runtime 到期工作串行化。每次读取或判断都会先等待共享的 Session 持久化 barrier；create 与实际执行的 delete 在追加后还会再次等待。插件拆卸会关闭准入并等待已接纳事务，而独立 Context 拥有独立队列。barrier 失败会报告 `persistence_uncertain`，而不是猜测 eager write 是否已提交。其他稳定错误代码是 `invalid_prompt`、`invalid_selector`、`invalid_rule`、`invalid_time_zone`、`not_future`、`time_out_of_range`、`frequency_too_high`、`corrupt_schedule_log` 和 `internal_error`。人工 pause/resume Remote 传输与 Desktop 任务板仍是保留的设计义务，尚未挂载；本 Host 包不安装 `ctx.schedules`。[Session Schedule 任务板](../../.agents/notes/implemented/feature/2026-08-17-session-schedule-board.zh.md) 决策仍拥有该目录。
 
 ## 浏览器 Projection
 
-可选的 `schedule` Session projection 是对 `schedule/change` 的 owned-suffix fold。其检查点是 `{ inheritedEventCount, active, paused, schedules, seenIds }`，wire 值是按创建顺序保留的 `ScheduleProjectionItem[]`。Client 时钟根据 `scheduledAt` 推导等待中或待补跑展示；`paused` 是持久的。Host 工具列出该保留集合。Web 会话头目录与人工 pause/resume 控件尚未挂载。projection 绝不从 transcript 或工具调用渲染重建状态。
+Host projection 的 key 是 `schedule`。apply 会跳过 `seq` 小于 `Session.inheritedEventCount` 的 `schedule/change` 事件；定义没有 `eventScope` 字段。其检查点是 `{ inheritedEventCount, active, paused, schedules, seenIds }`，wire 值是按创建顺序保留的 `ScheduleProjectionItem[]`。Client 时钟根据 `scheduledAt` 推导等待中或待补跑展示；`paused` 是持久的。Host 工具列出该保留集合。Web 会话头目录与人工 pause/resume 控件尚未挂载。projection 绝不从 transcript 或工具调用渲染重建状态。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
