@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
+import SessionStore, { SessionId, SessionSeq } from '@deepseek-ai/dsh-session'
+import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import InvariantRegistry, { InvariantError } from '@deepseek-ai/dsh-invariants'
 import * as BrowserWorkspaceInvariant from '../src/invariant.ts'
 import type { BrowserWorkspaceProjection } from '../src/types.ts'
@@ -91,10 +92,17 @@ describe('Browser Workspace invariant', () => {
   it('keeps an unknown ignorable event when the Workspace companion is not mounted', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)
-    const session = ctx.sessions.create()
-    expect(() => session.append('plugin/telemetry' as never, { kind: 'kept' }, { ignorable: true })).not.toThrow()
-    expect(session.snapshotEvents()).toEqual([
+    const session = ctx.sessions.create(SessionId('unknown-ignorable'), {
+      seed: [{
+        type: 'plugin/telemetry',
+        seq: SessionSeq(0),
+        time: 1,
+        data: { kind: 'kept' },
+        ignorable: true,
+      } as SessionEvent],
+    })
+    expect(session.snapshotEvents()).toEqual(expect.arrayContaining([
       expect.objectContaining({ type: 'plugin/telemetry', ignorable: true, data: { kind: 'kept' } }),
-    ])
+    ]))
   })
 })

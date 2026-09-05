@@ -238,7 +238,7 @@ describe('Session-owned Browser Workspace', () => {
     const parent = ctx.sessions.create(SessionId('session-fork-parent'))
     const created = await ctx.browserWorkspace.create({ session: parent, profile: 'temporary' })
     parent.append('turn/start', { turn: 1 })
-    parent.append('turn/end', { turn: 1 })
+    parent.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
     const child = ctx.sessions.fork(parent, parent.snapshotEvents().at(-1)!.seq, SessionId('session-fork-child'))
     expect(ctx.browserWorkspace.snapshot(child)).toEqual(ctx.browserWorkspace.snapshot(parent))
     await expect(ctx.browserWorkspace.observe({ session: parent, target: created.target }))
