@@ -37,8 +37,9 @@ async function bench(sessions?: {
   ctx.provide('locale', locale)
   ctx.slots.installLocale(locale)
   const receivingQuestions = {
-    activeQuestion: () => undefined,
+    pending: () => undefined,
     records: () => [],
+    settle: vi.fn(async () => {}),
     getSnapshot: () => ({ byId: {} }),
     subscribe: () => () => {},
   }
@@ -71,8 +72,13 @@ describe('ui-member-questions browser apply', () => {
       expect(memberT('tag.remote')).toBe('远端')
       expect(memberT('collapsed.mark')).toBe('已收起')
 
-      const injected = (entry.inject as unknown as () => { questionT: (key: string) => string })()
-      expect(injected.questionT('nav.minimize')).toBe('收起问题卡片')
+      expect(entry.children).toEqual({
+        'question.presentation': { kind: 'single', scope: 'session' },
+      })
+      const injected = (entry.inject as unknown as () => {
+        settle: (sessionId: SessionId, response: { kind: string }) => Promise<void>
+      })()
+      expect(typeof injected.settle).toBe('function')
     } finally {
       await fiber.dispose()
     }

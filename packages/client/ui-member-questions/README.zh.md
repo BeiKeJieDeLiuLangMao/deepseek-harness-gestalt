@@ -8,7 +8,7 @@
 
 材料芯片只通过 Better Sidebar Files 打开 receiver 所有的缓存副本。Host 把传输 bytes 写到 `.dsh/member-questions/<questionId>/`，因此同名 Workspace 文件不会被覆盖或误打开。点击芯片会用 receiving Session id 与缓存 path 调用 `ctx.betterSidebar.openFile`；缺少 `cachedPath` 时芯片是 no-op。markdown、沙箱 HTML 与不受支持的类型复用普通 Files viewer。Files editor 标签未注册时，芯片回退到 `ctx.workspaces.openPath` 与 Host 系统打开器。不存在成员提问专用文档 dock。
 
-`ReceivingQuestionBook` 是 Client 唯一的 pending owner。它加载生成的 `memberQuestion.snapshot`，经 `memberQuestion.settle` 结算，并在 `member-question-receiver/changed` 时刷新。dock 读取该书的 `PendingQuestion` 与 terminal records；React 从不接收 `ctx`。settle 失败时同一 `PendingQuestion` 仍可作答，因此草稿保留。
+`ReceivingQuestionBook` 是唯一 Host snapshot owner。它加载生成的 `memberQuestion.snapshot`，经 `memberQuestion.settle` 结算，并在 `member-question-receiver/changed` 时刷新。dock 读取 JSON pending 行与 terminal records，并声明 `question.presentation`，传入 questions 与 Host submit callback。`PendingQuestion` 与草稿仍由 ui-user-questions 拥有。Host settle 失败时 JSON 行与 QuestionComposer 草稿都保留。
 
 pending 卡片消失后，answered、declined、expired、withdrawn 与 superseded 记录仍以被动条带显示。另一个 Installation 赢得的回答会显示为 elsewhere answered，并带获胜设备名与 settlement time。未被替换的产品 composer 经 receiving face 的单次 admission RPC 提交；卡片不会再挂载第二个 textarea，renderer 也不会分别发起 Session creation 与 prompt。
 
@@ -25,4 +25,4 @@ pending 卡片消失后，answered、declined、expired、withdrawn 与 supersed
 - **Dock 路由以整批为单位** —— 仅当待处理请求中的每个问题都声明 `member-question` 意图时本卡才渲染；只要混入一个普通或 `plan-review` 问题，整批就交给共享问题 composer，不存在按问题拆分。
 - **材料芯片需要 Files viewer 或 Host 系统打开器** —— 已注册的 Files editor 标签会在 receiving Session 中打开 receiver 所有的缓存 path；缺少 `cachedPath` 时芯片是 no-op，同名 Workspace 文件不会被打开；否则使用 Host 系统打开器。不存在第二个产品内文档 dock。
 - **Admission 失败会保留在 receiving card** —— 共享 input state 保留 draft 并暴露 Host diagnostic。只有 Host materialization 成功后，普通 model、command 与 skill route 才会开放。
-- **Receiving Session face 仍由 session-controller 拥有** —— `ReceivingQuestionBook` 把 Host snapshot 行映射成 `PendingQuestion`。本包不再保留第二条 Remote ledger。
+- **Receiving Session face 仍由 session-controller 拥有** —— `ReceivingQuestionBook` 把 Host snapshot 行投影为 JSON。本包不再保留第二条 Remote ledger。

@@ -25,10 +25,13 @@ import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import { PendingQuestion } from './contract/slots.ts'
 import { createQuestionDraftStore } from './draft-store.ts'
 import { QuestionComposer } from './QuestionComposer.tsx'
+import { QuestionPresentationSlot } from './QuestionPresentationSlot.tsx'
 import { en, zh, type QuestionKey } from './locales.ts'
 
 export type {
-  PendingQuestion, PlanReview, QuestionAnswer, QuestionComposerProps, QuestionWait,
+  PendingQuestion, PendingQuestionOptions, PendingQuestionSubmit, PlanReview,
+  QuestionAnswer, QuestionComposerProps, QuestionPresentationOwnerProps,
+  QuestionPresentationSlotProps, QuestionWait,
 } from './contract/slots.ts'
 export type { QuestionKey } from './locales.ts'
 
@@ -100,6 +103,14 @@ export function apply(ctx: ClientContext): void {
       store: questionDraftStore,
     },
     QuestionComposer,
+  ))
+  ctx.slots.inject('question.presentation', () => ctx.slots.register(
+    {
+      name: 'question.presentation',
+      locale: NS,
+      store: questionDraftStore,
+    },
+    QuestionPresentationSlot,
   ))
   ctx.remote.$on('user-questions/request', function (request, next) {
     return answerQuestion(ctx, this, request, next, registerPendingInteraction)

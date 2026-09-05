@@ -423,6 +423,18 @@ describe('PendingQuestion domain face', () => {
     await expect(question.cancel()).rejects.toThrow(/already settled/)
   })
 
+  it('runs Host submit before local finish and stays unsettled when submit rejects', async () => {
+    const submit = vi.fn()
+      .mockRejectedValueOnce(new Error('exact payload required'))
+      .mockResolvedValueOnce(undefined)
+    const question = new PendingQuestion(SID, QUESTIONS, undefined, { key: 'host:q-1', submit })
+    const batch = { answers: [{ id: 'mode', selected: ['Fast'] }] }
+    await expect(question.answer(batch)).rejects.toThrow('exact payload required')
+    expect(submit).toHaveBeenCalledWith('answered', batch)
+    await expect(question.answer(batch)).resolves.toBeUndefined()
+    await expect(question.result).resolves.toBe(batch)
+  })
+
   it('exposes its Client render identity and scoped request values', () => {
     const question = new PendingQuestion(SID, QUESTIONS)
     expect(question.key).toMatch(/^question:\d+$/)

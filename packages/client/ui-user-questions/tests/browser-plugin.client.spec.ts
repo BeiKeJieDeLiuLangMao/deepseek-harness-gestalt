@@ -5,6 +5,7 @@ import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { QuestionComposer } from '../src/client/QuestionComposer.tsx'
+import { QuestionPresentationSlot } from '../src/client/QuestionPresentationSlot.tsx'
 import { PendingQuestion } from '../src/client/contract/slots.ts'
 import { createQuestionDraftStore } from '../src/client/draft-store.ts'
 import { apply, inject } from '../src/client/index.ts'
@@ -39,7 +40,13 @@ async function bench(declare = true) {
   const slots = ctx.get('slots') as SlotRegistry
   if (declare) {
     slots.register(
-      { name: 'root', children: { 'conversation.composer': { kind: 'chain', scope: 'session' } } } as never,
+      {
+        name: 'root',
+        children: {
+          'conversation.composer': { kind: 'chain', scope: 'session' },
+          'question.presentation': { kind: 'single', scope: 'session' },
+        },
+      } as never,
       () => null,
     )
   }
@@ -110,6 +117,7 @@ describe('apply', () => {
     expect(b.on).toHaveBeenCalledOnce()
     expect(next).toHaveBeenCalledOnce()
     expect(b.slots.entries('conversation.composer')).toHaveLength(0)
+    expect(b.slots.entries('question.presentation')).toHaveLength(0)
     expect(b.pending.getSnapshot()).toEqual([])
   })
 
@@ -121,6 +129,7 @@ describe('apply', () => {
 
     const entry = b.slots.entries('conversation.composer')[0]!
     expect(entry.component).toBe(QuestionComposer)
+    expect(b.slots.entries('question.presentation')[0]?.component).toBe(QuestionPresentationSlot)
     expect(entry.inject).toBeUndefined()
     expect(entry.locale).toBe('question')
     const store = entry.store as ReturnType<typeof createQuestionDraftStore>

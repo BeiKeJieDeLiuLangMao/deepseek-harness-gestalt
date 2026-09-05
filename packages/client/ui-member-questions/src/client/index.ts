@@ -1,13 +1,8 @@
 /**
- * Member-question plugin, browser half: the MemberQuestionCard registered as a
- * selector-routed entry of the conversation-declared composer chain, ahead of
- * the shared question composer, plus the `member-question` dictionaries. The
- * selector claims only requests whose whole batch declares the
- * `member-question` intent; `plan-review` and generic requests keep electing
- * the shared composer unchanged. The presentation and answer protocol stay
- * owned by dsh-client-ui-user-questions — this package mounts the sanctioned
- * presentation seam under its Decision Brief banner and binds the `question`
- * dictionary through the standard locale seat for it.
+ * Member-question plugin, browser half: the MemberQuestionDock registered on
+ * conversation.input.dock. It reads JSON pending rows from ReceivingQuestionBook
+ * and declares question.presentation for the shared Ask User occupant. This
+ * package does not import PendingQuestion.
  */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-client-connection/client'
@@ -53,11 +48,6 @@ export const inject = ['slots', 'locale', 'workspaces', 'sessions', 'receivingQu
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-member-questions: dictionaries')
 
-  // The mounted presentation reads the `question` namespace (owned by
-  // dsh-client-ui-user-questions); bind is stable per namespace, so the
-  // injected translator never churns memo identity.
-  const questionT = ctx.locale.bind('question')
-
   // Resolve the optional provider at gesture time: dynamic client rows may
   // supply or release ui-conversation after this fiber has registered.
   const focusDocument = (sessionId: SessionId, document: DetailsDocumentFocus): void => {
@@ -86,10 +76,13 @@ export function apply(ctx: ClientContext): void {
       id: 'member-question',
       order: -20,
       locale: NS,
+      children: {
+        'question.presentation': { kind: 'single', scope: 'session' },
+      },
       inject: () => ({
-        questionT,
         focusDocument,
         openReference,
+        settle: (sessionId, response) => ctx.receivingQuestions.settle(sessionId, response),
         hooks: { receivingQuestions: ctx.receivingQuestions },
       }),
     },

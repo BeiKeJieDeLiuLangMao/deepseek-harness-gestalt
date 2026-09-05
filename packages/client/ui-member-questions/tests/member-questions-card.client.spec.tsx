@@ -9,8 +9,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { SessionId, SessionListState, WorkspaceListState } from '@deepseek-ai/dsh-client-connection/client'
 import type { SessionSnapshot } from '@deepseek-ai/dsh-api-session-controller/src/client/contract/snapshot.ts'
-import type { ReceivingQuestionBookView } from '@deepseek-ai/dsh-api-session-controller/src/client/sessions/receiving.ts'
-import { PendingQuestion } from '@deepseek-ai/dsh-client-ui-user-questions/src/client/contract/slots.ts'
+import type {
+  ReceivingPendingQuestion,
+  ReceivingQuestionBookView,
+} from '@deepseek-ai/dsh-api-session-controller/src/client/sessions/receiving.ts'
+import { QuestionPresentationSlot } from '@deepseek-ai/dsh-client-ui-user-questions/src/client/QuestionPresentationSlot.tsx'
+import { createQuestionDraftStore } from '@deepseek-ai/dsh-client-ui-user-questions/src/client/draft-store.ts'
+import { useSyncExternalStore } from 'react'
 import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 import { registerDomSnapshotSerializer } from '@deepseek-ai/dsh-client-test-runtime'
 import {
@@ -94,21 +99,35 @@ const projection = () => ({
   expiresAt: NOW + 125 * 1000,
 })
 
-/** Carrier fixture over a scripted respond carrier; the extras ride the shared intent. */
-function memberWait(carriedOver: Record<string, unknown> = projection()) {
-  const carrier = new PendingQuestion(SID, memberQuestions({ kind: 'member-question', ...carriedOver }))
-  return { carrier }
+function memberWait(carriedOver: Record<string, unknown> = projection()): { carrier: ReceivingPendingQuestion } {
+  const questions = memberQuestions({ kind: 'member-question', ...carriedOver })
+  return {
+    carrier: {
+      sessionId: SID,
+      questionId: 'question-1',
+      revision: 1,
+      questions,
+      intent: questions[0]!.intent as ReceivingPendingQuestion['intent'],
+    },
+  }
 }
 
-function genericWait(intent: undefined | { kind: 'plan-review'; approve: string }) {
-  return new PendingQuestion(SID, [{
+function genericWait(intent: undefined | { kind: 'plan-review'; approve: string }): ReceivingPendingQuestion {
+  const questions = [{
     id: 'plain', question: '继续吗？',
     options: [{ label: '是' }, { label: '否' }],
     ...(intent === undefined ? {} : { intent }),
-  }])
+  }]
+  return {
+    sessionId: SID,
+    questionId: 'plain',
+    revision: 1,
+    questions,
+    intent: { kind: 'member-question' } as never,
+  }
 }
 
-function receivingView(wait?: PendingQuestion, records: readonly unknown[] = []): ReceivingQuestionBookView {
+function receivingView(wait?: ReceivingPendingQuestion, records: readonly unknown[] = []): ReceivingQuestionBookView {
   if (wait === undefined && records.length === 0) return { byId: {} }
   return {
     byId: {
@@ -116,21 +135,35 @@ function receivingView(wait?: PendingQuestion, records: readonly unknown[] = [])
         sessionId: SID,
         title: 'member-question',
         updatedAt: 0,
-        revision: 1,
+        revision: wait?.revision ?? 1,
         materialized: false,
-        active: wait === undefined ? undefined : {
-          questionId: 'question-1',
-          intent: wait.questions[0]?.intent as never,
-          wait,
-        },
+        pending: wait,
         records: records as ReceivingQuestionBookView['byId'][string]['records'],
       },
     },
   }
 }
 
-function receivingProps(wait?: PendingQuestion, records: readonly unknown[] = []) {
+function presentationStore() {
+  const instance = createQuestionDraftStore().create(SID)
+  return {
+    useStore: (selector: (state: ReturnType<typeof instance.getSnapshot>) => unknown) => useSyncExternalStore(
+      listener => instance.subscribe(listener),
+      () => selector(instance.getSnapshot()),
+      () => selector(instance.getSnapshot()),
+    ),
+    actions: instance.actions,
+    instance,
+  }
+}
+
+function receivingProps(
+  wait?: ReceivingPendingQuestion,
+  records: readonly unknown[] = [],
+  questionT: ReturnType<typeof seat> = seat('question'),
+) {
   const view = receivingView(wait, records)
+  const store = presentationStore()
   return {
     useReceivingQuestions: ((selector: (next: ReceivingQuestionBookView) => unknown) => selector(view)),
     hooks: {
@@ -139,11 +172,28 @@ function receivingProps(wait?: PendingQuestion, records: readonly unknown[] = []
         subscribe: () => () => {},
       },
     },
+    settle: vi.fn(async () => {}),
+    renderSlot: ((_name: 'question.presentation', owner: {
+      requestKey: string
+      questions: ReceivingPendingQuestion['questions']
+      submit: (kind: 'answered' | 'declined', answer?: { answers: never[] }) => Promise<void>
+    }) => (
+      <QuestionPresentationSlot
+        {...kit as never}
+        sessionId={SID}
+        requestKey={owner.requestKey}
+        questions={owner.questions}
+        submit={owner.submit}
+        t={questionT}
+        useStore={store.useStore as never}
+        actions={store.actions}
+      />
+    )) as MemberQuestionComposerProps['renderSlot'],
   }
 }
 
 function renderCard(
-  carrier: PendingQuestion,
+  carrier: ReceivingPendingQuestion,
   focusDocument: MemberQuestionComposerProps['focusDocument'] = () => {},
   openReference: MemberQuestionComposerProps['openReference'] = () => {},
 ) {
@@ -153,7 +203,6 @@ function renderCard(
       {...kit}
       {...receivingProps(carrier)}
       t={seat('member-question')}
-      questionT={seat('question')}
       focusDocument={focusDocument}
       openReference={openReference}
     />,
@@ -186,7 +235,6 @@ describe('member-question routing', () => {
       input: { draft: '', phase: 'plain' },
       session: {},
       t: seat('member-question'),
-      questionT: seat('question'),
       focusDocument: () => {},
       openReference: () => {},
       ...receivingProps(carrier),
@@ -224,25 +272,31 @@ describe('member-question routing', () => {
   it('claims a request whose whole batch declares the member-question intent', () => {
     const { carrier } = memberWait()
     expect(isMemberQuestionBatch(carrier.questions)).toBe(true)
-    expect(selectMemberQuestion({ pendingInteraction: carrier })).toBe(carrier)
+    expect(selectMemberQuestion({ pending: carrier })).toBe(carrier)
   })
 
   it('keeps plan-review requests with the shared composer', () => {
     const carrier = genericWait({ kind: 'plan-review', approve: '是' })
-    expect(selectMemberQuestion({ pendingInteraction: carrier })).toBeNull()
+    expect(selectMemberQuestion({ pending: carrier })).toBeNull()
   })
 
   it('keeps intent-less requests with the generic flow', () => {
     const carrier = genericWait(undefined)
-    expect(selectMemberQuestion({ pendingInteraction: carrier })).toBeNull()
+    expect(selectMemberQuestion({ pending: carrier })).toBeNull()
   })
 
   it('declines a mixed batch to the generic flow', () => {
-    const carrier = new PendingQuestion(SID, [
-      ...memberQuestions({ kind: 'member-question' }),
-      { id: 'plain', question: '继续吗？', options: [{ label: '是' }] },
-    ])
-    expect(selectMemberQuestion({ pendingInteraction: carrier })).toBeNull()
+    const carrier: ReceivingPendingQuestion = {
+      sessionId: SID,
+      questionId: 'mixed',
+      revision: 1,
+      questions: [
+        ...memberQuestions({ kind: 'member-question' }),
+        { id: 'plain', question: '继续吗？', options: [{ label: '是' }] },
+      ],
+      intent: { kind: 'member-question' } as never,
+    }
+    expect(selectMemberQuestion({ pending: carrier })).toBeNull()
   })
 })
 
@@ -293,9 +347,13 @@ describe('clampBackground and memberBriefOf', () => {
   })
 
   it('omits an empty fallback background when neither carried background nor detail exists', () => {
-    const carrier = new PendingQuestion(SID, [
-      { id: 'plain', question: 'Continue?', intent: { kind: 'member-question' } as never },
-    ])
+    const carrier: ReceivingPendingQuestion = {
+      sessionId: SID,
+      questionId: 'plain',
+      revision: 1,
+      questions: [{ id: 'plain', question: 'Continue?', intent: { kind: 'member-question' } as never }],
+      intent: { kind: 'member-question' } as never,
+    }
     expect(memberBriefOf(carrier).background).toBeUndefined()
   })
 })
@@ -563,9 +621,8 @@ describe('MemberQuestionCard', () => {
         <MemberQuestionCard
           matched={carrier}
           {...kit}
-          {...receivingProps(carrier)}
+          {...receivingProps(carrier, [], seatEn('question'))}
           t={seatEn('member-question')}
-          questionT={seatEn('question')}
           focusDocument={() => {}}
           openReference={() => {}}
         />,
@@ -577,5 +634,58 @@ describe('MemberQuestionCard', () => {
     } finally {
       vi.restoreAllMocks()
     }
+  })
+
+  it('keeps QuestionComposer drafts when Host settle fails and retries through the presentation slot', async () => {
+    const { carrier } = memberWait()
+    const extras = receivingProps(carrier)
+    extras.settle
+      .mockRejectedValueOnce(new Error('exact payload required'))
+      .mockResolvedValueOnce(undefined)
+    render(
+      <MemberQuestionCard
+        matched={carrier}
+        {...kit}
+        {...extras}
+        t={seat('member-question')}
+        focusDocument={() => {}}
+        openReference={() => {}}
+      />,
+    )
+    fireEvent.click(screen.getByRole('radio', { name: '移出' }))
+    fireEvent.click(screen.getByRole('button', { name: '提交' }))
+    expect(await screen.findByText('exact payload required')).toBeTruthy()
+    expect(screen.getByRole('radio', { name: '移出' }).getAttribute('aria-checked')).toBe('true')
+    expect(extras.settle).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByRole('button', { name: '提交' }))
+    await waitFor(() => { expect(extras.settle).toHaveBeenCalledTimes(2) })
+    expect(extras.settle.mock.calls[1]?.[1]).toMatchObject({
+      kind: 'answered',
+      answers: [{ id: 'remove-member', selected: ['移出 (recommended)'] }],
+    })
+  })
+
+  it('clears the pending card when the book projection has no pending row', () => {
+    const { carrier } = memberWait()
+    const pending = render(MemberQuestionDock({
+      ...kit,
+      ...receivingProps(carrier),
+      t: seat('member-question'),
+      focusDocument: () => {},
+      openReference: () => {},
+    } as never))
+    expect(pending.container.querySelector('[data-member-presentation]')).not.toBeNull()
+    pending.rerender(MemberQuestionDock({
+      ...kit,
+      ...receivingProps(undefined, [{
+        questionId: 'question-1', state: 'expired', askedAt: 100, terminalAt: 200,
+        intent: { kind: 'member-question', questionId: 'question-1' },
+      }]),
+      t: seat('member-question'),
+      focusDocument: () => {},
+      openReference: () => {},
+    } as never))
+    expect(pending.container.querySelector('[data-member-presentation]')).toBeNull()
+    expect(pending.container.querySelector('[data-record-state="expired"]')).not.toBeNull()
   })
 })

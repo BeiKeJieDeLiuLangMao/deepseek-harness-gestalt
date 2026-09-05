@@ -1,6 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
-import { QuestionPresentation } from '@deepseek-ai/dsh-client-ui-user-questions/src/presentation.tsx'
 import {
   memberBriefOf,
   selectMemberQuestion,
@@ -144,9 +143,23 @@ export function MemberQuestionCard(props: MemberQuestionComposerProps) {
   const askerName = brief.origin?.askerDisplayName ?? props.t('origin.fallback')
   const records = props.useReceivingQuestions(view =>
     view.byId[props.sessionId]?.records ?? [])
+  const submit = useCallback((kind: 'answered' | 'declined', answer?: { answers: { id: string; selected: string[]; custom?: string }[] }) => (
+    props.settle(props.sessionId, kind === 'answered'
+      ? { kind: 'answered', answers: answer?.answers ?? [] }
+      : { kind: 'declined' })
+  ), [props.sessionId, props.settle])
+  const presentation = props.renderSlot('question.presentation', {
+    requestKey: `${props.matched.sessionId}:${props.matched.questionId}:${props.matched.revision}`,
+    questions: props.matched.questions,
+    submit,
+  })
 
   return (
-    <div className={css.frame} data-question-key={props.matched.key} data-folded={folded || undefined}>
+    <div
+      className={css.frame}
+      data-question-key={`${props.matched.sessionId}:${props.matched.questionId}`}
+      data-folded={folded || undefined}
+    >
       <MemberQuestionRecords matched={records} t={props.t} />
       <section
         className={clsx(css.card, folded && css.cardFolded)}
@@ -228,7 +241,7 @@ export function MemberQuestionCard(props: MemberQuestionComposerProps) {
         {/* Kept mounted while folded: the presentation owns the drafts, and
             folding must not spend them. */}
         <div className={clsx(css.body, folded && css.bodyHidden)} ref={bodyRef} data-member-presentation>
-          <QuestionPresentation wait={props.matched as never} t={props.questionT} />
+          {presentation}
         </div>
       </section>
     </div>
@@ -238,7 +251,7 @@ export function MemberQuestionCard(props: MemberQuestionComposerProps) {
 /** Additive Decision Brief dock above the unchanged product composer. */
 export function MemberQuestionDock(props: MemberQuestionDockProps) {
   const row = props.useReceivingQuestions(view => view.byId[props.sessionId])
-  const matched = selectMemberQuestion({ pendingInteraction: row?.active?.wait })
+  const matched = selectMemberQuestion({ pending: row?.pending })
   if (matched === null) {
     return <MemberQuestionRecords matched={row?.records ?? []} t={props.t} />
   }

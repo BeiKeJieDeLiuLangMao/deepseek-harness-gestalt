@@ -6,7 +6,7 @@ import type {
   MemberQuestionReceiverSnapshot,
   MemberQuestionRemoteSettleRequest,
 } from '@deepseek-ai/dsh-member-question-receiver/types'
-import { ReceivingPendingQuestion, ReceivingQuestionBook } from '../src/client/sessions/receiving.ts'
+import { ReceivingQuestionBook } from '../src/client/sessions/receiving.ts'
 
 const operation = {
   type: 'member-question' as const,
@@ -27,6 +27,8 @@ const operation = {
   questions: [{ id: 'channel', question: 'Which channel?', options: [{ label: 'Canary' }, { label: 'Stable' }] }],
   references: [{ path: 'docs/architecture.md', reason: 'Rollout constraints' }],
 }
+
+const SESSION = 'receiving-host-1' as SessionId
 
 function hostSnapshot(
   revision: number,
@@ -128,20 +130,24 @@ function bench(options: {
 }
 
 describe('ReceivingQuestionBook generated Remote', () => {
-  it('projects one PendingQuestion from the generated snapshot', async () => {
+  it('projects one JSON pending row from the generated snapshot', async () => {
     const { book, snapshot } = bench()
     await book.start()
     expect(snapshot).toHaveBeenCalledTimes(1)
-    const wait = book.activeQuestion('receiving-host-1' as SessionId)
-    expect(wait).toBeInstanceOf(ReceivingPendingQuestion)
-    expect(wait?.questions[0]?.intent).toMatchObject({
+    const pending = book.pending(SESSION)
+    expect(pending).toMatchObject({
+      sessionId: SESSION,
+      questionId: 'question-1',
+      revision: 1,
+    })
+    expect(pending?.questions[0]?.intent).toMatchObject({
       kind: 'member-question',
       questionId: 'question-1',
     })
-    expect(book.records('receiving-host-1' as SessionId)).toEqual([])
+    expect(book.records(SESSION)).toEqual([])
   })
 
-  it('keeps the PendingQuestion answerable when generated settle fails', async () => {
+  it('keeps the JSON pending row when generated settle fails', async () => {
     const { book, settle } = bench({
       settleImpl: async () => ({
         ok: false,
@@ -149,19 +155,23 @@ describe('ReceivingQuestionBook generated Remote', () => {
       }),
     })
     await book.start()
-    const wait = book.activeQuestion('receiving-host-1' as SessionId)!
-    await expect(wait.answer({ answers: [{ id: 'channel', selected: ['Canary'] }] }))
-      .rejects.toThrow('exact payload required')
+    const pending = book.pending(SESSION)!
+    await expect(book.settle(SESSION, {
+      kind: 'answered',
+      answers: [{ id: 'channel', selected: ['Canary'] }],
+    })).rejects.toThrow('exact payload required')
     expect(settle).toHaveBeenCalledWith({
       receivingSessionId: 'receiving-host-1',
       revision: 1,
       questionId: 'question-1',
       response: { kind: 'answered', answers: [{ id: 'channel', selected: ['Canary'] }] },
     })
-    await expect(wait.answer({ answers: [{ id: 'channel', selected: ['Stable'] }] }))
-      .rejects.toThrow('exact payload required')
+    await expect(book.settle(SESSION, {
+      kind: 'answered',
+      answers: [{ id: 'channel', selected: ['Stable'] }],
+    })).rejects.toThrow('exact payload required')
     expect(settle).toHaveBeenCalledTimes(2)
-    expect(book.activeQuestion('receiving-host-1' as SessionId)).toBe(wait)
+    expect(book.pending(SESSION)).toEqual(pending)
   })
 
   it('rejects a stale revision through generated settle and refreshes', async () => {
@@ -177,43 +187,45 @@ describe('ReceivingQuestionBook generated Remote', () => {
     })
     await book.start()
     setSnapshot(hostSnapshot(2, 'pending'))
-    const wait = book.activeQuestion('receiving-host-1' as SessionId)!
-    await expect(wait.answer({ answers: [{ id: 'channel', selected: ['Canary'] }] }))
-      .rejects.toMatchObject({ message: 'stale' })
+    await expect(book.settle(SESSION, {
+      kind: 'answered',
+      answers: [{ id: 'channel', selected: ['Canary'] }],
+    })).rejects.toMatchObject({ message: 'stale' })
     expect(settle.mock.calls[0]?.[0]).toMatchObject({ revision: 1 })
     await vi.waitFor(() => {
       expect(snapshot).toHaveBeenCalledTimes(2)
     })
   })
 
-  it('removes the pending question when changed reports a terminal', async () => {
+  it('removes the pending row when changed reports a terminal', async () => {
     let current = hostSnapshot(1, 'pending')
     const { book, emitChanged, snapshot: snapshotFn } = bench({
       snapshotImpl: async () => envelope(current),
     })
     await book.start()
-    const wait = book.activeQuestion('receiving-host-1' as SessionId)!
+    expect(book.pending(SESSION)).toBeDefined()
     current = hostSnapshot(2, 'expired')
     emitChanged({ revision: 2, questionId: 'question-1', state: 'expired' })
     await vi.waitFor(() => {
-      expect(book.activeQuestion('receiving-host-1' as SessionId)).toBeUndefined()
+      expect(book.pending(SESSION)).toBeUndefined()
     })
-    expect(book.records('receiving-host-1' as SessionId)).toMatchObject([
+    expect(book.records(SESSION)).toMatchObject([
       { state: 'expired', terminalAt: 500 },
     ])
-    wait.abort(new Error('superseded'))
     expect(snapshotFn.mock.calls.length).toBeGreaterThanOrEqual(2)
   })
 
   it('stops settle after dispose', async () => {
     const { book, settle } = bench()
     await book.start()
-    const wait = book.activeQuestion('receiving-host-1' as SessionId)!
+    expect(book.pending(SESSION)).toBeDefined()
     book.dispose()
-    await expect(wait.answer({ answers: [{ id: 'channel', selected: ['Canary'] }] }))
-      .rejects.toThrow(/disposed/)
+    await expect(book.settle(SESSION, {
+      kind: 'answered',
+      answers: [{ id: 'channel', selected: ['Canary'] }],
+    })).rejects.toThrow(/disposed/)
     expect(settle).toHaveBeenCalledTimes(0)
-    expect(book.activeQuestion('receiving-host-1' as SessionId)).toBeUndefined()
+    expect(book.pending(SESSION)).toBeUndefined()
   })
 
   it('derives answered-elsewhere from Host Installation identity on the snapshot', async () => {
@@ -223,8 +235,8 @@ describe('ReceivingQuestionBook generated Remote', () => {
     second.setSnapshot(hostSnapshot(2, 'answered', 'installation-a'))
     await first.book.start()
     await second.book.start()
-    expect(first.book.records('receiving-host-1' as SessionId)).toEqual([])
-    expect(second.book.records('receiving-host-1' as SessionId)).toMatchObject([{
+    expect(first.book.records(SESSION)).toEqual([])
+    expect(second.book.records(SESSION)).toMatchObject([{
       state: 'answered-elsewhere', settledByDeviceName: 'Desk A', terminalAt: 500,
     }])
   })

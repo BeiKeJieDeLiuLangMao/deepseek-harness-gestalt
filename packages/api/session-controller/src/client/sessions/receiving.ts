@@ -1,7 +1,7 @@
 /**
  * Host-snapshot adapter for model-silent member-question receiving Sessions.
- * Generated `memberQuestion` Remote is the only Host path; ReceivingPendingQuestion
- * is the only pending carrier.
+ * Generated `memberQuestion` Remote is the only Host path. The book projects
+ * JSON pending rows; UI owns PendingQuestion and drafts.
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -38,6 +38,15 @@ export interface ReceivingMemberQuestionRecord {
   readonly settledByDeviceName?: string
 }
 
+/** JSON pending row projected from one Host pending view. */
+export interface ReceivingPendingQuestion {
+  readonly sessionId: SessionId
+  readonly questionId: string
+  readonly revision: number
+  readonly questions: readonly AskUserQuestionItem[]
+  readonly intent: MemberQuestionIntent
+}
+
 /** One Host-owned receiving Session projection. */
 export interface ReceivingSessionRow {
   readonly sessionId: SessionId
@@ -45,11 +54,7 @@ export interface ReceivingSessionRow {
   readonly updatedAt: number
   readonly revision: number
   readonly materialized: boolean
-  readonly active: {
-    readonly questionId: string
-    readonly intent: MemberQuestionIntent
-    readonly wait: ReceivingPendingQuestion
-  } | undefined
+  readonly pending: ReceivingPendingQuestion | undefined
   readonly records: readonly ReceivingMemberQuestionRecord[]
 }
 
@@ -63,75 +68,12 @@ export interface ReceivingQuestionBookView {
   readonly byId: Readonly<Record<string, ReceivingSessionRow>>
 }
 
+/** Human response forwarded to generated memberQuestion.settle. */
+export type ReceivingQuestionSettleResponse =
+  | { readonly kind: 'answered'; readonly answers: AskUserQuestionAnswer['answers'] }
+  | { readonly kind: 'declined' }
+
 const EMPTY: readonly never[] = []
-let nextReceivingQuestionKey = 0
-
-/**
- * Receiving Session pending carrier. Host settle runs before local finish so a
- * failed Remote write keeps the same object answerable.
- */
-export class ReceivingPendingQuestion {
-  readonly kind: 'question' | 'plan-review' = 'question'
-  readonly key: string
-  readonly questions: readonly AskUserQuestionItem[]
-  readonly result: Promise<AskUserQuestionAnswer>
-  readonly #resolve: (answer: AskUserQuestionAnswer) => void
-  readonly #reject: (reason: unknown) => void
-  readonly #settle: (kind: 'answered' | 'declined', answers?: AskUserQuestionAnswer['answers']) => Promise<void>
-  #finished = false
-
-  constructor(
-    readonly sessionId: SessionId,
-    questions: readonly AskUserQuestionItem[],
-    settle: (kind: 'answered' | 'declined', answers?: AskUserQuestionAnswer['answers']) => Promise<void>,
-  ) {
-    nextReceivingQuestionKey += 1
-    this.key = `question:${String(nextReceivingQuestionKey)}`
-    this.questions = questions
-    const completion = Promise.withResolvers<AskUserQuestionAnswer>()
-    this.result = completion.promise
-    this.#resolve = completion.resolve
-    this.#reject = completion.reject
-    this.#settle = settle
-    void this.result.catch(() => {
-      // Snapshot replacement and dispose abort with no waiter.
-    })
-  }
-
-  /**
-   * Settle the Host pending row, then finish the local presentation.
-   * @param answer - complete structured answer batch.
-   * @returns completion of Host settle and local finish.
-   */
-  async answer(answer: AskUserQuestionAnswer): Promise<void> {
-    await this.#settle('answered', answer.answers)
-    this.finish(() => { this.#resolve(answer) })
-  }
-
-  /**
-   * Decline the Host pending row, then finish the local presentation.
-   * @returns completion of Host settle and local finish.
-   */
-  async cancel(): Promise<void> {
-    await this.#settle('declined')
-    this.finish(() => { this.#reject(new Error('the user cancelled ask_user_question')) })
-  }
-
-  /**
-   * End an unanswered presentation without a Host write.
-   * @param reason - rejection exposed to waiting listeners.
-   */
-  abort(reason: unknown): void {
-    if (this.#finished) return
-    this.finish(() => { this.#reject(reason) })
-  }
-
-  private finish(settle: () => void): void {
-    if (this.#finished) throw new Error(`pending question ${this.key} is already settled`)
-    this.#finished = true
-    settle()
-  }
-}
 
 /**
  * Build the receiving row title from the Host brief origin.
@@ -221,12 +163,12 @@ export class ReceivingQuestionBook implements ObservableSnapshot<ReceivingQuesti
   }
 
   /**
-   * The active PendingQuestion for one receiving Session, when pending.
+   * The JSON pending row for one receiving Session, when pending.
    * @param sessionId - Host receiving Session identity.
-   * @returns the unique pending carrier, or undefined.
+   * @returns the unique pending DTO, or undefined.
    */
-  activeQuestion(sessionId: SessionId): ReceivingPendingQuestion | undefined {
-    return this.#rows.get(sessionId)?.active?.wait
+  pending(sessionId: SessionId): ReceivingPendingQuestion | undefined {
+    return this.#rows.get(sessionId)?.pending
   }
 
   /**
@@ -244,14 +186,40 @@ export class ReceivingQuestionBook implements ObservableSnapshot<ReceivingQuesti
    */
   rows(): readonly ReceivingSessionRow[] { return [...this.#rows.values()] }
 
-  /** Release pending carriers and refuse further Remote writes. */
+  /**
+   * Settle the current pending row of one receiving Session through generated Remote.
+   * Failures leave the snapshot unchanged except a stale revision, which refreshes.
+   * @param sessionId - Host receiving Session identity.
+   * @param response - human answer or decline.
+   * @returns completion of the Remote write.
+   */
+  settle(sessionId: SessionId, response: ReceivingQuestionSettleResponse): Promise<void> {
+    if (this.#disposed) return Promise.reject(new Error('receiving question book is disposed'))
+    const row = this.#rows.get(sessionId)
+    const pending = row?.pending
+    if (pending === undefined) {
+      return Promise.reject(new Error('receiving question has no pending row'))
+    }
+    const request: MemberQuestionRemoteSettleRequest = {
+      receivingSessionId: pending.sessionId as never,
+      revision: pending.revision,
+      questionId: pending.questionId as never,
+      response,
+    }
+    return this.#ctx.remote.memberQuestion.settle(request).then((carried) => {
+      if (!carried.ok) {
+        if (carried.error.code === 'member-question/revision-stale') void this.refresh()
+        throw new Error(carried.error.message)
+      }
+      void this.refresh()
+    })
+  }
+
+  /** Release projected rows and refuse further Remote writes. */
   dispose(): void {
     this.#disposed = true
     this.#offChanged?.()
     this.#offChanged = undefined
-    for (const row of this.#rows.values()) {
-      row.active?.wait.abort(new Error('receiving question book is disposed'))
-    }
     this.#rows.clear()
     this.publishView()
     this.#listeners.clear()
@@ -300,7 +268,6 @@ export class ReceivingQuestionBook implements ObservableSnapshot<ReceivingQuesti
     for (const [sessionId, group] of groups) this.projectGroup(sessionId, group)
     for (const sessionId of [...this.#rows.keys()]) {
       if (sessionIds.has(sessionId)) continue
-      this.#rows.get(sessionId)?.active?.wait.abort(new Error('receiving question withdrawn'))
       this.#rows.delete(sessionId)
     }
     this.publishView()
@@ -319,34 +286,27 @@ export class ReceivingQuestionBook implements ObservableSnapshot<ReceivingQuesti
     const accountId = group.pending?.receivingAccountId ?? group.terminal[0]?.receivingAccountId
     if (accountId === undefined) return
     const records = group.terminal.flatMap(view => this.recordOf(view))
-    const pending = group.pending
-    const prior = this.#rows.get(sessionId)
-    let wait = prior?.active?.wait
-    const intent = pending === undefined
-      ? intentOf(exemplar, accountId, pending?.cachedReferences)
-      : intentOf(pending.operation, pending.receivingAccountId, pending.cachedReferences)
-    if (pending === undefined) {
-      wait?.abort(new Error('receiving question settled'))
-      wait = undefined
-    } else if (wait === undefined || prior?.active?.questionId !== pending.questionId) {
-      wait?.abort(new Error('receiving question replaced'))
-      wait = this.waitFor(pending)
-    }
-    const active = pending === undefined || wait === undefined ? undefined : {
-      questionId: pending.questionId,
+    const pendingRow = group.pending
+    const intent = pendingRow === undefined
+      ? intentOf(exemplar, accountId, pendingRow?.cachedReferences)
+      : intentOf(pendingRow.operation, pendingRow.receivingAccountId, pendingRow.cachedReferences)
+    const pending = pendingRow === undefined ? undefined : {
+      sessionId,
+      questionId: pendingRow.questionId,
+      revision: pendingRow.revision,
+      questions: questionsOf(pendingRow, intent),
       intent,
-      wait,
     }
-    const updatedAt = Math.max(pending?.arrivedAt ?? 0, ...records.map(record => record.terminalAt))
-    const revision = Math.max(pending?.revision ?? 0, ...group.terminal.map(record => record.revision))
+    const updatedAt = Math.max(pendingRow?.arrivedAt ?? 0, ...records.map(record => record.terminalAt))
+    const revision = Math.max(pendingRow?.revision ?? 0, ...group.terminal.map(record => record.revision))
     this.#rows.set(sessionId, {
       sessionId,
       title: briefSourceLine(intent.origin),
       updatedAt,
       revision,
-      materialized: pending?.hostSessionId !== undefined
+      materialized: pendingRow?.hostSessionId !== undefined
         || group.terminal.some(record => record.hostSessionId !== undefined),
-      active,
+      pending,
       records,
     })
   }
@@ -372,40 +332,20 @@ export class ReceivingQuestionBook implements ObservableSnapshot<ReceivingQuesti
         : {}),
     }]
   }
+}
 
-  private waitFor(pending: MemberQuestionReceiverSnapshot['pending'][number]): ReceivingPendingQuestion {
-    const intent = intentOf(pending.operation, pending.receivingAccountId, pending.cachedReferences)
-    const questions: AskUserQuestionItem[] = pending.operation.questions.map(question => ({
-      id: question.id,
-      question: question.question,
-      ...(question.header === undefined ? {} : { header: question.header }),
-      ...(question.options === undefined ? {} : { options: question.options.map(option => ({ ...option })) }),
-      ...(question.multiSelect === undefined ? {} : { multiSelect: question.multiSelect }),
-      intent,
-    }))
-    return new ReceivingPendingQuestion(
-      pending.receivingSessionId as unknown as SessionId,
-      questions,
-      (kind, answers) => {
-        if (this.#disposed) return Promise.reject(new Error('receiving question book is disposed'))
-        const request: MemberQuestionRemoteSettleRequest = {
-          receivingSessionId: pending.receivingSessionId,
-          revision: pending.revision,
-          questionId: pending.questionId,
-          response: kind === 'answered'
-            ? { kind: 'answered', answers: answers ?? [] }
-            : { kind: 'declined' },
-        }
-        return this.#ctx.remote.memberQuestion.settle(request).then((carried) => {
-          if (!carried.ok) {
-            if (carried.error.code === 'member-question/revision-stale') void this.refresh()
-            throw new Error(carried.error.message)
-          }
-          void this.refresh()
-        })
-      },
-    )
-  }
+function questionsOf(
+  pending: MemberQuestionReceiverSnapshot['pending'][number],
+  intent: MemberQuestionIntent,
+): AskUserQuestionItem[] {
+  return pending.operation.questions.map(question => ({
+    id: question.id,
+    question: question.question,
+    ...(question.header === undefined ? {} : { header: question.header }),
+    ...(question.options === undefined ? {} : { options: question.options.map(option => ({ ...option })) }),
+    ...(question.multiSelect === undefined ? {} : { multiSelect: question.multiSelect }),
+    intent,
+  }))
 }
 
 function intentOf(
