@@ -14,7 +14,7 @@ Keep the package on disk until every remaining consumer has an owner-local repla
 
 Moved in this candidate (not yet a complete deletion):
 
-- `session.toolEligibility` lives on Session Controller (`@Remote('toolEligibility')`), with Host tests for omitted `allow`, empty `allow`, and nonempty union from the Agent tools context.
+- `session.toolEligibility` lives on Session Controller (`@Remote('toolEligibility')`). Direct Host tests cover omitted `allow`, empty `allow`, and nonempty union. Generated Host/Client codec tests cover the same D1 cases plus cold resume of the Agent-context allow union, missing Tools, subagent ownership, and Client codec rejection of a missing `sessionId`.
 - Runtime `transportError` comes from `@deepseek-ai/dsh-client-connection/client`.
 - Runtime `searchResultLimit` tests assert the Session search bound `20` without importing apiproxy.
 - The apiproxy-backed `api-proxy-tool-eligibility.spec.ts` is removed because Session Controller already owns the behavior.
@@ -28,7 +28,7 @@ Moved in this candidate (not yet a complete deletion):
 
 | Old apiproxy surface | Current owner | Status |
 |---|---|---|
-| `session.toolEligibility` | `session-controller` Host Remote | moved |
+| `session.toolEligibility` | `session-controller` Host Remote + generated codecs | moved |
 | `transportError` | `dsh-client-connection/client` | moved |
 | `SESSION_SEARCH_RESULT_LIMIT` | `session-controller` `types.ts` (`20`) | tests assert bound, not the old export |
 | Goal fork seed | `session.fork` + `clearGoalFromForkSeed` | already on Session Controller |

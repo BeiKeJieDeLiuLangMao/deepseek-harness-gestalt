@@ -14,7 +14,7 @@ Status: proposed
 
 本候选已迁、但还不是完整删除：
 
-- `session.toolEligibility` 在 Session Controller（`@Remote('toolEligibility')`），Host 测试覆盖省略 `allow`、空 `allow`、以及来自 Agent tools context 的非空并集。
+- `session.toolEligibility` 在 Session Controller（`@Remote('toolEligibility')`）。直接 Host 测试覆盖省略 `allow`、空 `allow`、非空并集。生成 Host/Client codec 测试覆盖相同 D1 用例，以及冷 resume 的 Agent-context allow 并集、缺 Tools、subagent 归属、以及 Client 对缺失 `sessionId` 的 codec 拒绝。
 - Runtime `transportError` 来自 `@deepseek-ai/dsh-client-connection/client`。
 - Runtime `searchResultLimit` 测试断言 Session search 上限 `20`，不再导入 apiproxy。
 - 删除 apiproxy 承载的 `api-proxy-tool-eligibility.spec.ts`，因为行为已由 Session Controller 拥有。
@@ -28,7 +28,7 @@ Status: proposed
 
 | 旧 apiproxy 面 | 当前所有者 | 状态 |
 |---|---|---|
-| `session.toolEligibility` | `session-controller` Host Remote | 已迁 |
+| `session.toolEligibility` | `session-controller` Host Remote + 生成 codec | 已迁 |
 | `transportError` | `dsh-client-connection/client` | 已迁 |
 | `SESSION_SEARCH_RESULT_LIMIT` | `session-controller` `types.ts`（`20`） | 测试断言上限，不引用旧导出 |
 | Goal fork seed | `session.fork` + `clearGoalFromForkSeed` | 已在 Session Controller |

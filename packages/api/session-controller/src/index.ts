@@ -57,6 +57,7 @@ import type {
   SessionSelectModelValue,
   SessionToolEligibility,
   SessionToolEligibilityRequest,
+  SessionToolEligibilitySchema,
   SessionUpdateQueueRequest,
   SessionUpdateQueueValue,
 } from './types.ts'
@@ -294,7 +295,11 @@ export class SessionController extends TypertRemoteService {
     const allow = tools.eligibilityAllow(found.agent)
     return {
       ...allow === undefined ? {} : { allow: [...allow] },
-      tools: tools.catalogSchemas(found.agent),
+      tools: tools.catalogSchemas(found.agent).map((schema): SessionToolEligibilitySchema => ({
+        name: schema.name,
+        description: schema.description,
+        parameters: schema.parameters as SessionToolEligibilitySchema['parameters'],
+      })),
     }
   }
 

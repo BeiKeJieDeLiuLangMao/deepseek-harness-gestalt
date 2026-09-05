@@ -4,7 +4,7 @@ import type {
   AttachmentIdType, ByteAttachmentRef, ImageAttachmentLimits, ImageAttachmentRef, ImageMediaType,
 } from '@deepseek-ai/dsh-attachment'
 import type { Branded } from '@deepseek-ai/dsh-brand'
-import type { MessageId, ToolSchema } from '@deepseek-ai/dsh-llm'
+import type { MessageId } from '@deepseek-ai/dsh-llm'
 import type { ChunkRow } from '@deepseek-ai/dsh-session/chunk-rows'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SessionProjectionMap } from '@deepseek-ai/dsh-session-projection/types'
@@ -276,12 +276,20 @@ export interface SessionCreateValue {
   readonly agentPreset?: string
 }
 
+/** JSON-safe tool schema projected for one Session eligibility catalog. */
+export interface SessionToolEligibilitySchema {
+  readonly name: string
+  readonly description: string
+  /** JSON Schema object for the arguments. */
+  readonly parameters: { readonly [key: string]: JsonValue }
+}
+
 /** Effective allow-only tool catalog for one live Session. */
 export interface SessionToolEligibility {
   /** Sorted configured union; absent means no allow-only policy is active. */
   readonly allow?: readonly string[]
   /** Exact schemas currently eligible for model assembly and execution. */
-  readonly tools: readonly ToolSchema[]
+  readonly tools: readonly SessionToolEligibilitySchema[]
 }
 
 /** Session tool-eligibility request. */
