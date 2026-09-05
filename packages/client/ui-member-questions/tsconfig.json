@@ -45,6 +45,9 @@
       "path": "../../interaction/user-questions"
     },
     {
+      "path": "../../util/workspace-path"
+    },
+    {
       "path": "../../runtime-diagnostics/invariants"
     }
   ]

@@ -8,6 +8,7 @@ import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-client-connection/client'
 import type { DetailsDocumentFocus } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { ReceivingQuestionBook } from '@deepseek-ai/dsh-api-session-controller/src/client/sessions/receiving.ts'
+import { resolveWorkspacePath } from '@deepseek-ai/dsh-util-workspace-path'
 import { MemberQuestionDock } from './MemberQuestionCard.tsx'
 import { en, zh, type MemberQuestionKey } from './locales.ts'
 
@@ -59,9 +60,7 @@ export function apply(ctx: ClientContext): void {
 
   const openReference = (sessionId: SessionId, path: string, title?: string): void => {
     const cwd = ctx.sessions.list.getSnapshot().byId[sessionId]?.cwd
-    const absolute = cwd === undefined || cwd === '' || path.startsWith('/')
-      ? path
-      : `${cwd.replace(/[/\\]+$/, '')}/${path.replace(/^[/\\]+/, '')}`
+    const absolute = resolveWorkspacePath(cwd, path)
     const sidebar = ctx.get('betterSidebar') as {
       getTab(id: string): unknown
       openFile(scope: { sessionId: string; cwd?: string }, path: string, title?: string): void
