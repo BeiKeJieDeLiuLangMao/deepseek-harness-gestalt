@@ -23,6 +23,7 @@ describe('NO_START_CAPABILITIES', () => {
   it('advertises nothing and is frozen (shared by every out-of-process backend)', () => {
     expect(NO_START_CAPABILITIES).toEqual({
       agentOptions: false,
+      images: false,
       outputSchema: false,
       depthLimit: false,
       toolFilter: false,

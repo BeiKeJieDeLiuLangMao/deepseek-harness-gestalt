@@ -436,6 +436,8 @@ describe('task admission and package contracts', () => {
     expect(provider).toMatchObject({
       name: 'codex',
       capabilities: {
+        agentOptions: false,
+        images: false,
         outputSchema: false,
         depthLimit: false,
         toolFilter: false,
