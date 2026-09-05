@@ -14,6 +14,7 @@ import { ChatNodeSeat } from './ChatNodeSeat.tsx'
 import { TurnNavigator } from './TurnNavigator.tsx'
 import { mergeTurnRailItems, type TurnRailItem } from './turn-rail-items.ts'
 import { formatRunDuration } from './message-chrome.ts'
+import { previewRailTight } from './preview-rail.ts'
 import css from './ChatView.module.css'
 
 const FOLLOW_THRESHOLD = 24
@@ -304,6 +305,7 @@ export function ChatView({
 
   const listRef = useRef<HTMLDivElement | null>(null)
   const columnRef = useRef<HTMLDivElement | null>(null)
+  const [previewTight, setPreviewTight] = useState(false)
   // A saved position starts disarmed; the first layout effect synchronously
   // restores it and normalizes a floor-clamped position back to following.
   const [atBottom, setAtBottom] = useState(() => chatScroll.read() === null)
@@ -633,10 +635,15 @@ export function ChatView({
     const composer = scrollport.querySelector<HTMLElement>('[data-composer-seat]')
     // Flow-height changes (image loads, tool disclosures) move rows across the
     // reading line without a scroll event, so the active mark resyncs here too.
+    const measurePreviewRail = (): void => {
+      setPreviewTight(previewRailTight(scrollport.clientWidth, column.clientWidth))
+    }
     const observer = new ResizeObserver(() => {
       followRef.current?.()
       activeTurnRef.current?.()
+      measurePreviewRail()
     })
+    measurePreviewRail()
     observer.observe(column)
     if (composer !== null) observer.observe(composer)
     return () => { observer.disconnect() }
@@ -830,6 +837,11 @@ export function ChatView({
             >
               <IconChevronDownOutline14 />
             </button>
+          </div>
+        )}
+        {!previewTight && (
+          <div className={css.previewRail} data-browser-preview-rail="">
+            {renderSlot('conversation.browser.preview', {})}
           </div>
         )}
       </div>

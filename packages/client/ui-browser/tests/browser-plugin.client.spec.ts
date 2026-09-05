@@ -55,8 +55,15 @@ async function bench() {
   ctx.slots.register({
     name: 'root',
     children: {
-      'conversation.browser.preview': { kind: 'single', scope: 'session' },
+      'conversation.view': { kind: 'list', scope: 'session' },
       'settings.section': { kind: 'list', scope: 'root' },
+    },
+  } as never, () => null)
+  ctx.slots.register({
+    name: 'conversation.view',
+    id: 'chat',
+    children: {
+      'conversation.browser.preview': { kind: 'single', scope: 'session' },
     },
   } as never, () => null)
   ctx.provide('sessions', {})
@@ -76,7 +83,7 @@ async function bench() {
 }
 
 describe('ui-browser browser plugin', () => {
-  it('declares and registers the collapsed preview without a details occupant', async () => {
+  it('registers the collapsed preview without a details occupant', async () => {
     const b = await bench()
     expect(inject).toEqual([
       'slots', 'sessions', 'remote', 'remote.browserWorkspace', 'locale', 'settingsScope',
@@ -104,8 +111,15 @@ describe('ui-browser browser plugin', () => {
     ctx.slots.register({
       name: 'root',
       children: {
-        'conversation.browser.preview': { kind: 'single', scope: 'session' },
+        'conversation.view': { kind: 'list', scope: 'session' },
         'settings.section': { kind: 'list', scope: 'root' },
+      },
+    } as never, () => null)
+    ctx.slots.register({
+      name: 'conversation.view',
+      id: 'chat',
+      children: {
+        'conversation.browser.preview': { kind: 'single', scope: 'session' },
       },
     } as never, () => null)
     ctx.provide('sessions', {})
@@ -183,8 +197,15 @@ describe('ui-browser browser plugin', () => {
     ctx.slots.register({
       name: 'root',
       children: {
-        'conversation.browser.preview': { kind: 'single', scope: 'session' },
+        'conversation.view': { kind: 'list', scope: 'session' },
         'settings.section': { kind: 'list', scope: 'root' },
+      },
+    } as never, () => null)
+    ctx.slots.register({
+      name: 'conversation.view',
+      id: 'chat',
+      children: {
+        'conversation.browser.preview': { kind: 'single', scope: 'session' },
       },
     } as never, () => null)
     ctx.provide('sessions', {})

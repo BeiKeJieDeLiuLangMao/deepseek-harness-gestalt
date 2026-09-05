@@ -108,6 +108,7 @@ export function apply(ctx: Context): void {
       children: {
         'conversation.chat.node': { kind: 'keyed', scope: 'session', inject: CHAT_NODE_INJECT },
         'conversation.message.images': { kind: 'single', scope: 'session' },
+        'conversation.browser.preview': { kind: 'single', scope: 'session' },
       },
       store: chatStore,
       inject: (sessionId: SessionId, actions: BoundActions<typeof chatStore>): ChatViewInjected => {

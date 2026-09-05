@@ -9,6 +9,7 @@ import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-browser-workspace/remote'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
+import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
@@ -43,10 +44,6 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
     /** Browser chrome and collapsed preview copy. */
     browser: BrowserKey
-  }
-  interface SlotMap {
-    /** Collapsed preview in the conversation gutter. */
-    'conversation.browser.preview': { kind: 'single'; scope: 'session' }
   }
 }
 

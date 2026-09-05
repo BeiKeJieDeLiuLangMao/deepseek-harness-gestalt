@@ -217,6 +217,23 @@
   background: var(--dsw-alias-button-floating-hover);
 }
 
+/* Collapsed Browser preview: right gutter of the scrollport. Hidden when
+   ChatView measures that gutter narrower than 240px. Does not shrink the
+   centered message column. */
+.previewRail {
+  position: sticky;
+  bottom: 16px;
+  z-index: 1;
+  float: right;
+  width: 168px;
+  margin-top: -184px;
+  pointer-events: none;
+}
+
+.previewRail > * {
+  pointer-events: auto;
+}
+
 /* Host open-path refusal: same dialog family as the workspace folder error. */
 .modalAction {
   min-width: 72px;

@@ -541,6 +541,22 @@ describe('Chat node rendering', () => {
 })
 
 describe('ChatView', () => {
+  it('requests the Browser preview rail from the Chat-declared child slot', () => {
+    const snapshot = chatSnapshotFixture({
+      nodes: [userInTurn(1, 'first prompt', 1), assistant(2, 'first response', 1)],
+      turnEnds: new Map([[1, 3]]),
+    })
+    const h = makeHarness({}, {}, snapshot)
+    const keys: string[] = []
+    const renderSlot = ((key: string, owner: object, opts?: { fallback?: React.ReactNode }) => {
+      keys.push(key)
+      return h.props.renderSlot(key as never, owner as never, opts as never)
+    }) as ChatViewSlotProps['renderSlot']
+    render(<h.ChatView {...{ ...h.props, renderSlot }} />)
+    expect(keys).toContain('conversation.browser.preview')
+    expect(document.querySelector('[data-browser-preview-rail]')).not.toBeNull()
+  })
+
   it('leaves the turn rail unrendered when an unrelated Chat update commits', () => {
     const snapshot = chatSnapshotFixture({
       nodes: [
@@ -2115,7 +2131,9 @@ describe('ChatView', () => {
     const h = makeHarness({ nodes: [block] })
     const calls: { key: string; owner: object; entryKey?: string }[] = []
     h.setNodeRenderer(((key: string, owner: object, opts?: { entryKey?: string; fallback?: React.ReactNode }) => {
-      calls.push({ key, owner, ...(opts?.entryKey !== undefined ? { entryKey: opts.entryKey } : {}) })
+      if (key === 'conversation.chat.node') {
+        calls.push({ key, owner, ...(opts?.entryKey !== undefined ? { entryKey: opts.entryKey } : {}) })
+      }
       return opts?.fallback ?? null
     }) as React.ComponentProps<typeof ChatNodeSeat>['renderSlot'])
     render(<h.ChatView {...h.props} />)
