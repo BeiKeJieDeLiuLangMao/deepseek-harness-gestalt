@@ -1,8 +1,9 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { glob, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { decompressZstdFrame, scanZstdFrames } from '../../../packages/session/session-persistence-jsonl/src/zstd.ts'
 import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { WorkspaceTypertGenerator } from '@deepseek-ai/dsh-typert-generator'
 import { REMOTE_PROTOCOL_LIMITS } from '@deepseek-ai/dsh-remote-protocol'
@@ -328,14 +329,28 @@ describe('Desktop Host RPC against shipped dsh web', () => {
       await expect(handleCompanionProductOperation(submit, { ...pairing, host: rpc })).resolves.toMatchObject({
         type: 'confirmed', operationId: submit.operationId,
       })
+      await expect.poll(async () => {
+        const log = await durableSessionLog(first.home, sessionId)
+        return log.includes(`"rpcId":"${submit.operationId}"`)
+      }).toBe(true)
       const frames: unknown[] = []
       const follow = new AbortController()
       const watching = rpc.followSession(sessionId, follow.signal, (frame) => { frames.push(frame) })
       await expect.poll(() => frames.some(frame => followHasUserRequest(frame, submit.operationId))).toBe(true)
+      const llmCallsBeforeCancel = llm.requests.length
+      expect(llmCallsBeforeCancel).toBeGreaterThan(0)
       await expect(handleCompanionProductOperation({
         type: 'cancel-session', operationId: parseCompanionOperationId('desktop-cancel-operation'), sessionId,
       }, { ...pairing, host: rpc })).resolves.toMatchObject({ type: 'confirmed' })
       await expect.poll(() => frames.some(frame => followHasTurnEnd(frame))).toBe(true)
+      await expect.poll(async () => {
+        const listed = await listDesktopHostSessions(rpc)
+        if (!listed.ok || !isRecord(listed.value) || !Array.isArray(listed.value.items)) return false
+        const row = listed.value.items.find(item => isRecord(item) && item.sessionId === sessionId)
+        return isRecord(row) && row.running === false
+      }).toBe(true)
+      await new Promise(resolve => setTimeout(resolve, 400))
+      expect(llm.requests.length).toBe(llmCallsBeforeCancel)
       follow.abort()
       await watching
       const snapshot = frames.find(frame => isRecord(frame) && frame.type === 'snapshot')
@@ -371,4 +386,20 @@ function followHasTurnEnd(frame: unknown): boolean {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+async function durableSessionLog(home: string, sessionId: string): Promise<string> {
+  const root = join(home, '.dsh', 'sessions')
+  const matches: string[] = []
+  for await (const match of glob(`**/${sessionId}/session.jsonl.zstd`, { cwd: root })) {
+    matches.push(match)
+  }
+  if (matches[0] === undefined) return ''
+  const bytes = await readFile(join(root, matches[0]))
+  const scan = scanZstdFrames(bytes)
+  const chunks: Buffer[] = []
+  for (const frame of scan.frames) {
+    chunks.push(await decompressZstdFrame(bytes.subarray(frame.start, frame.end)))
+  }
+  return Buffer.concat(chunks).toString('utf8')
 }
