@@ -31,6 +31,8 @@ kind: "package-reference"
 
 `settings.openSettingsDocument()` 准备 provider 持有的文档，并用原生文本编辑器意图将其打开。`settings.canOpenAgentPresetDirectory()` 在 preset 页面显示时报告原生打开能力。`settings.openAgentPresetDirectory(id)` 只解析用户创作的 preset，并在原生打开不可用时返回目录路径；两个打开方法都不接受浏览器提供的文件系统目标。
 
+`settings.testWebSearch(query?)` 用当前选中的 search backend 执行一次 `ctx.web.search`，让配置页在不打开 Session 的情况下探测 provider。省略 query 时使用 `deepseek harness`。方法返回 `{ count, title?, url? }`，取自第一条 source。缺少 web capability 或 provider 失败为 `gateway/internal`；中止为 `gateway/cancelled`，并转发给该 capability。
+
 -----
 
 <a id="configuration"></a>

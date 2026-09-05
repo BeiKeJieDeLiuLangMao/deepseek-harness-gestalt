@@ -37,3 +37,14 @@ export interface SettingsDocumentOpenValue {
 export type AgentPresetDirectoryOpenValue =
   | { readonly opened: true }
   | { readonly opened: false; readonly path: string }
+
+/**
+ * Outcome of one settings-page web-search probe. `count` is the selected
+ * provider's source list length; `title` and `url` copy the first source when
+ * that source declared them.
+ */
+export interface SettingsWebSearchProbeValue {
+  readonly count: number
+  readonly title?: string
+  readonly url?: string
+}

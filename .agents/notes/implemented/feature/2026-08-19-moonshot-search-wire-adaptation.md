@@ -18,7 +18,7 @@ The same `deepseek-official` provider still owns `ctx.web` search. Protocol is e
 - **Anthropic** — the same Messages contract at a base the user names; a missing `baseURL` makes the provider unavailable.
 - **Kimi** — Moonshot dedicated search: `POST` the configured URL (default `https://api.kimi.com/coding/v1/search`) with `{ "text_query" }` and `Authorization: Bearer`. Key `KIMI_WEB_SEARCH_API_KEY`, then `DEEPSEEK_API_KEY` if that value is header-safe ASCII.
 
-Extra plugins register more tabs into `settings.plugin.web-search.provider`. The Plugins card's **Test search** calls `settings.testWebSearch`, which runs `ctx.web.search({ query: 'deepseek harness' })`.
+Extra plugins register more tabs into `settings.plugin.web-search.provider`. The Plugins card's **Test search** calls `settings.testWebSearch` on the generated settings Remote, which runs `ctx.web.search({ query: 'deepseek harness' })`.
 
 ## Alternatives considered
 
