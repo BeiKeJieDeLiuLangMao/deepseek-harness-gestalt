@@ -104,6 +104,79 @@ describe('Desktop Host RPC', () => {
               },
             }))
             return
+          case 'empty-host-code':
+            response.end(JSON.stringify({
+              type: 'server-response',
+              rpcId: body.rpcId,
+              result: {
+                ok: false,
+                error: {
+                  code: '',
+                  message: 'session search failed: SESSION_QUERY_SEARCH_DISABLED',
+                  details: {},
+                },
+              },
+            }))
+            return
+          case 'numeric-host-code':
+            response.end(JSON.stringify({
+              type: 'server-response',
+              rpcId: body.rpcId,
+              result: {
+                ok: false,
+                error: {
+                  code: 1,
+                  message: 'session search failed: SESSION_QUERY_SEARCH_DISABLED',
+                  details: {},
+                },
+              },
+            }))
+            return
+          case 'newline-host-code':
+            response.end(JSON.stringify({
+              type: 'server-response',
+              rpcId: body.rpcId,
+              result: {
+                ok: false,
+                error: {
+                  code: 'gateway/\ninternal',
+                  message: 'session search failed: SESSION_QUERY_SEARCH_DISABLED',
+                  details: {},
+                },
+              },
+            }))
+            return
+          case 'empty-segment-host-code':
+            response.end(JSON.stringify({
+              type: 'server-response',
+              rpcId: body.rpcId,
+              result: {
+                ok: false,
+                error: {
+                  code: 'gateway//internal',
+                  message: 'session search failed: SESSION_QUERY_SEARCH_DISABLED',
+                  details: {},
+                },
+              },
+            }))
+            return
+          case 'utf8-boundary': {
+            const prefix = '[gateway/internal] '
+            const remaining = REMOTE_PROTOCOL_LIMITS.hostFailureMessageBytes - Buffer.byteLength(prefix)
+            response.end(JSON.stringify({
+              type: 'server-response',
+              rpcId: body.rpcId,
+              result: {
+                ok: false,
+                error: {
+                  code: 'gateway/internal',
+                  message: `${'你'.repeat(Math.floor(remaining / 3) + 1)}session search failed`,
+                  details: {},
+                },
+              },
+            }))
+            return
+          }
           case 'timeout':
             return
           case 'slow-chunks':
@@ -194,6 +267,32 @@ describe('Desktop Host RPC', () => {
         message: 'Desktop Host business error code was invalid',
       },
     })
+    const invalidHostCode = {
+      ok: false as const,
+      failure: {
+        kind: 'wire' as const,
+        code: 'HOST_WIRE_INVALID' as const,
+        message: 'Desktop Host business error code was invalid',
+      },
+    }
+    await expect(rpc.call('session/search', { query: 'empty-host-code' })).resolves.toEqual(invalidHostCode)
+    await expect(rpc.call('session/search', { query: 'numeric-host-code' })).resolves.toEqual(invalidHostCode)
+    await expect(rpc.call('session/search', { query: 'newline-host-code' })).resolves.toEqual(invalidHostCode)
+    await expect(rpc.call('session/search', { query: 'empty-segment-host-code' })).resolves.toEqual(invalidHostCode)
+    const utf8Boundary = await rpc.call('session/search', { query: 'utf8-boundary' })
+    expect(utf8Boundary).toMatchObject({
+      ok: false,
+      failure: { kind: 'business', code: 'internal' },
+    })
+    if (utf8Boundary.ok || utf8Boundary.failure.kind !== 'business') {
+      throw new Error('expected a truncated namespaced Host business failure')
+    }
+    expect(Buffer.byteLength(utf8Boundary.failure.message)).toBeLessThanOrEqual(
+      REMOTE_PROTOCOL_LIMITS.hostFailureMessageBytes,
+    )
+    expect(utf8Boundary.failure.message.startsWith('[gateway/internal] ')).toBe(true)
+    expect(utf8Boundary.failure.message).not.toMatch(/\uFFFD/u)
+    expect(utf8Boundary.failure.message.length).toBeGreaterThan('[gateway/internal] '.length)
     await expect(rpc.call('session/search', { query: 'timeout' })).resolves.toEqual({
       ok: false,
       failure: { kind: 'timeout', code: 'HOST_TIMEOUT', message: 'Desktop Host request timed out' },
