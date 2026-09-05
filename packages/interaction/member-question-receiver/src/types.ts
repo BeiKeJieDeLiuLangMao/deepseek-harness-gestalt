@@ -1,3 +1,7 @@
+/**
+ * Public receiver projection and Remote settlement vocabulary.
+ * @module @deepseek-ai/dsh-member-question-receiver/types
+ */
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { PlatformAccountId } from '@deepseek-ai/dsh-platform-account'

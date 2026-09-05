@@ -198,10 +198,10 @@ describe('member-question Remote snapshot and settle', () => {
     expect((await receiver.snapshot()).pending).toHaveLength(1)
   })
 
-  it('ignores Installation identity and settledAt on the wire', async () => {
+  it('rejects Installation identity and settledAt on the SRC wire', async () => {
     const { ctx, receiver } = await createHost({ clock: () => 1_500 })
     const arrived = await receiver.ingest(envelope)
-    const terminal = await ctx.typertGateway.invoke({
+    await expect(ctx.typertGateway.invoke({
       namespace: 'memberQuestion',
       method: 'settle',
       args: {
@@ -215,12 +215,8 @@ describe('member-question Remote snapshot and settle', () => {
           settledAt: 9_999,
         },
       },
-    }) as { settledByInstallationId: string; settledByDeviceName: string; settledAt: number }
-    expect(terminal).toMatchObject({
-      settledByInstallationId: 'installation-host',
-      settledByDeviceName: 'Host Mac',
-      settledAt: 1_500,
-    })
+    })).rejects.toMatchObject({ code: 'gateway/bad-request' })
+    expect((await receiver.snapshot()).pending).toHaveLength(1)
   })
 
   it('fails closed when Host settlement identity is uncomposed', async () => {

@@ -46,6 +46,7 @@ import type {
   ReceivingSessionId,
   TerminalMemberQuestionView,
 } from './types.ts'
+import { memberQuestionRemoteSettleRequestSchema } from './remote-schemas.ts'
 
 export {
   MEMBER_QUESTION_DOCUMENT_CACHE_ROOT,
@@ -56,6 +57,11 @@ export type {
   MemberQuestionTransferredDocument,
 } from './document-cache.ts'
 export { MemberQuestionDocumentAssembler } from './document-transfer.ts'
+export {
+  memberQuestionRemoteSettleRequestSchema,
+  memberQuestionRemoteSettleResponseSchema,
+  memberQuestionRemoteSnapshotSchema,
+} from './remote-schemas.ts'
 
 export type {
   AdmitMemberQuestionHumanTurnInput,
@@ -209,6 +215,15 @@ export abstract class MemberQuestionReceiverService extends TypertRemoteService 
    */
   @Remote('settle')
   async remoteSettle(request: MemberQuestionRemoteSettleRequest): Promise<MemberQuestionRemoteSettleResponse> {
+    const parsed = memberQuestionRemoteSettleRequestSchema.safeParse(request)
+    if (!parsed.success) {
+      throw new RemoteError(
+        'gateway/bad-request',
+        'member-question settle request is not an exact Host settlement payload',
+        { issues: parsed.error.issues },
+      )
+    }
+    const settlement = parsed.data
     const installation = this.hostSettlementInstallation()
     if (installation === undefined) {
       throw new RemoteError(
@@ -218,27 +233,27 @@ export abstract class MemberQuestionReceiverService extends TypertRemoteService 
       )
     }
     const snapshot = await this.snapshot()
-    const pending = snapshot.pending.find(row => row.questionId === request.questionId)
+    const pending = snapshot.pending.find(row => row.questionId === settlement.questionId)
     if (pending === undefined
-      || pending.receivingSessionId !== request.receivingSessionId
-      || pending.revision !== request.revision) {
+      || pending.receivingSessionId !== settlement.receivingSessionId
+      || pending.revision !== settlement.revision) {
       throw new RemoteError(
         'member-question/revision-stale',
         'member-question receiver revision is stale',
         {
-          receivingSessionId: request.receivingSessionId,
-          questionId: request.questionId,
-          revision: request.revision,
+          receivingSessionId: settlement.receivingSessionId,
+          questionId: settlement.questionId,
+          revision: settlement.revision,
         },
       )
     }
     const settledAt = this.settlementClock()
     return this.settle(
-      request.questionId,
-      request.response.kind === 'answered'
+      settlement.questionId,
+      settlement.response.kind === 'answered'
         ? {
           kind: 'answered',
-          answers: request.response.answers,
+          answers: settlement.response.answers,
           settledByInstallationId: installation.id,
           settledByDeviceName: installation.deviceName,
           settledAt,
