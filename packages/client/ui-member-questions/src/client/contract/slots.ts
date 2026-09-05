@@ -19,6 +19,11 @@ import type {
   ConversationSnapshot, MemberQuestionRecordView, PendingInteraction, PendingWait, SessionId,
 } from '@deepseek-ai/dsh-client-runtime/client'
 import type { DetailsDocumentFocus } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type { MemberQuestionRemoteSettleRequest } from '@deepseek-ai/dsh-member-question-receiver/types'
+import type {
+  MemberQuestionRemoteActionResult,
+  MemberQuestionRemoteController,
+} from '../remote-controller.ts'
 
 /** The pending question carrier a member brief renders and settles. */
 export type MemberQuestionWait = PendingWait<'question'>
@@ -218,9 +223,22 @@ export type MemberQuestionComposerProps =
     openReference: (sessionId: SessionId, path: string, title?: string) => void
   }
 
+/** Generated memberQuestion Remote verbs closed over apply, never over ctx in React. */
+export interface MemberQuestionRemoteInjected {
+  /** Observable snapshot/settle view for the inject `hooks` compartment. */
+  hooks: { memberQuestionRemote: MemberQuestionRemoteController }
+  /** Load the Host snapshot once. */
+  ensure: () => Promise<MemberQuestionRemoteActionResult>
+  /** Settle through generated Remote; failures retain the request as draft. */
+  settle: (request: MemberQuestionRemoteSettleRequest) => Promise<MemberQuestionRemoteActionResult>
+  /** Resend the retained draft after an error or stale revision. */
+  retry: () => Promise<MemberQuestionRemoteActionResult>
+}
+
 /** Additive input-dock carrier that leaves the product composer mounted. */
 export type MemberQuestionDockProps =
   PropsRuntime<'conversation.input.dock'>
   & PropsLocale<'member-question'>
   & { questionT: TranslateNS<'question'> }
   & Pick<MemberQuestionComposerProps, 'focusDocument' | 'openReference'>
+  & MemberQuestionRemoteInjected

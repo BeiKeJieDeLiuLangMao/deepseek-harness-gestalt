@@ -9,10 +9,14 @@
  * presentation seam under its Decision Brief banner and binds the `question`
  * dictionary through the standard locale seat for it.
  */
-import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
-import { resolveWorkspacePath } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context as ClientContext } from '@deepseek-ai/cordis'
+import type { SessionId } from '@deepseek-ai/dsh-client-connection/client'
 import type { DetailsDocumentFocus } from '@deepseek-ai/dsh-client-ui-conversation/client'
+// Type-only: generated memberQuestion Remote and ctx.remote.$on event keys.
+import type {} from '@deepseek-ai/dsh-api-remotes/client'
+import type { MemberQuestionReceiverChange } from '@deepseek-ai/dsh-member-question-receiver/types'
 import { MemberQuestionDock } from './MemberQuestionCard.tsx'
+import { MemberQuestionRemoteController } from './remote-controller.ts'
 import { en, zh, type MemberQuestionKey } from './locales.ts'
 
 export { selectMemberQuestion, selectMemberQuestionRecords, isMemberQuestionBatch, memberBriefOf, clampBackground, BACKGROUND_CLAMP } from './contract/slots.ts'
@@ -21,6 +25,11 @@ export type {
   MemberQuestionReferenceChip, MemberQuestionRole, MemberQuestionWait,
 } from './contract/slots.ts'
 export type { MemberQuestionKey } from './locales.ts'
+export type {
+  MemberQuestionRemoteActionResult,
+  MemberQuestionRemoteStatus,
+  MemberQuestionRemoteView,
+} from './remote-controller.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -32,8 +41,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 /** Dictionary namespace owned by this plugin. */
 const NS = 'member-question'
 
-/** Required services: the slot registry, dictionaries, and Files-open path. */
-export const inject = ['slots', 'locale', 'workspaces', 'sessions']
+/** Required services: slots, dictionaries, Files-open path, and memberQuestion Remote. */
+export const inject = ['slots', 'locale', 'workspaces', 'sessions', 'remote', 'remote.memberQuestion']
 
 /**
  * Client plugin body: register the `member-question` dictionaries and the
@@ -56,9 +65,23 @@ export function apply(ctx: ClientContext): void {
     ctx.get('detailsFocus')?.focus(sessionId, document)
   }
 
+  const remote = new MemberQuestionRemoteController(ctx)
+  void remote.ensure()
+  ctx.effect(() => {
+    const off = ctx.remote.$on('member-question-receiver/changed', (change: MemberQuestionReceiverChange) => {
+      remote.handleChanged(change)
+    })
+    return () => {
+      off()
+      remote.dispose()
+    }
+  }, 'ui-member-questions: memberQuestion remote')
+
   const openReference = (sessionId: SessionId, path: string, title?: string): void => {
     const cwd = ctx.sessions.list.getSnapshot().byId[sessionId]?.cwd
-    const absolute = resolveWorkspacePath(cwd, path)
+    const absolute = cwd === undefined || cwd === '' || path.startsWith('/')
+      ? path
+      : `${cwd.replace(/[/\\]+$/, '')}/${path.replace(/^[/\\]+/, '')}`
     const sidebar = ctx.get('betterSidebar') as {
       getTab(id: string): unknown
       openFile(scope: { sessionId: string; cwd?: string }, path: string, title?: string): void
@@ -76,7 +99,15 @@ export function apply(ctx: ClientContext): void {
       id: 'member-question',
       order: -20,
       locale: NS,
-      inject: () => ({ questionT, focusDocument, openReference }),
+      inject: () => ({
+        questionT,
+        focusDocument,
+        openReference,
+        hooks: { memberQuestionRemote: remote },
+        ensure: () => remote.ensure(),
+        settle: (request: Parameters<MemberQuestionRemoteController['settle']>[0]) => remote.settle(request),
+        retry: () => remote.retry(),
+      }),
     },
     MemberQuestionDock,
   ))

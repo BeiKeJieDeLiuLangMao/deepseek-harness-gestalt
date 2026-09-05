@@ -12,6 +12,9 @@
       "path": "../../api/remotes/tsconfig.client.json"
     },
     {
+      "path": "../../interaction/member-question-receiver"
+    },
+    {
       "path": "../../../vendor/cordis"
     },
     {
@@ -21,7 +24,13 @@
       "path": "../runtime"
     },
     {
+      "path": "../connection/tsconfig.client.json"
+    },
+    {
       "path": "../ui-conversation"
+    },
+    {
+      "path": "../ui-renderer"
     },
     {
       "path": "../ui-slots"
