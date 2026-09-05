@@ -25,7 +25,7 @@ import {
   type BrowserScreenshot,
   type BrowserTarget,
 } from '@deepseek-ai/dsh-browser-runtime'
-import type { Session, SessionId } from '@deepseek-ai/dsh-session'
+import { SessionLogOffset, type Session, type SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-projection'
 import type {} from '@deepseek-ai/dsh-workspace'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
@@ -559,19 +559,20 @@ export class BrowserWorkspaceBinder extends TypertRemoteService {
   }
 
   /**
-   * Rebuild live owners from each live Session's `ownEvents()` last-wins fold.
-   * Inherited prefix events are display-only. Two Sessions that both wrote the
-   * same tab into their own events fail loudly; the Binder does not pick a winner.
+   * Rebuild live owners from targets this Session introduced after its
+   * inherited prefix. A later whole snapshot that still lists an inherited tab
+   * is display metadata, not adopt. Two Sessions that both introduced the same
+   * remaining tab fail loudly.
    */
   private restoreLiveOwners(): void {
     for (const session of this.ctx.sessions.list()) {
-      for (const page of listBrowserWorkspacePages(foldBrowserWorkspace(session.ownEvents()))) {
-        const key = liveKey(page.target)
+      for (const target of introducedTargets(session)) {
+        const key = liveKey(target)
         const existing = this.liveOwners.get(key)
         if (existing !== undefined && existing.sessionId !== session.id) {
           throw new BrowserRuntimeError('cross-Session page transfer is not supported', 'BROWSER_TRANSFER_UNSUPPORTED')
         }
-        this.liveOwners.set(key, { sessionId: session.id, target: page.target })
+        this.liveOwners.set(key, { sessionId: session.id, target })
       }
     }
   }
@@ -589,6 +590,15 @@ export class BrowserWorkspaceBinder extends TypertRemoteService {
 /** Process-local key for one Runtime target. */
 function liveKey(target: BrowserTarget): string {
   return `${target.profileId}\0${target.workspaceId}\0${target.browserId}\0${target.tabId}`
+}
+
+/** Targets this Session added after the inherited prefix and still listed. */
+function introducedTargets(session: Session): BrowserTarget[] {
+  const inherited = new Set(listBrowserWorkspacePages(
+    foldBrowserWorkspace(session.snapshotEvents(SessionLogOffset(0), session.inheritedEventCount)),
+  ).map(page => liveKey(page.target)))
+  const current = listBrowserWorkspacePages(foldBrowserWorkspace(session.snapshotEvents()))
+  return current.map(page => page.target).filter(target => !inherited.has(liveKey(target)))
 }
 
 /** Add one target to the Session snapshot, creating Workspace and instance rows as needed. */

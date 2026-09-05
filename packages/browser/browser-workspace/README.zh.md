@@ -22,4 +22,4 @@
 
 - Dock chrome、宽度与折叠状态属于 Client 包。本包只持久化 Session 所有权、活动身份，以及每个标签页最近一次提交的修订号和非空白 URL。
 - 无密钥 Browser Runtime 快照只组合 Runtime 与 Consumer。Session 隔离由 Binder 持有，这些不含 Binder 的轨迹不宣称该隔离。
-- live Runtime 所有权是进程内的：本 Binder 在 `adopt` 时记录创建该标签页的 Session，并在 Binder HMR 后从每个 live Session 的 `ownEvents()` 后写覆盖折叠重建该映射。继承前缀事件只用于展示。两个 Session 都把同一标签页写入自己的事件时会显式失败。Browser Runtime 的 create/状态事件不带 Session id，因此新 Runtime 仍通过保留 Profile 的 create 路径替换缺失页面。
+- live Runtime 所有权是进程内的：本 Binder 在 `adopt` 时记录创建该标签页的 Session，并在 Binder HMR 后从每个 live Session 在继承前缀之后新引入、且仍列出的 target 重建该映射。之后的整份快照仍列出继承标签页只用于展示。两个 Session 都新引入同一仍存在的标签页时会显式失败。Browser Runtime 的 create/状态事件不带 Session id，因此新 Runtime 仍通过保留 Profile 的 create 路径替换缺失页面。
