@@ -16,7 +16,7 @@ import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import * as SchedulePlugin from '@deepseek-ai/dsh-schedule'
-import { decodeScheduleChange } from '../src/domain.ts'
+import { decodeScheduleChange, ScheduleId } from '../src/domain.ts'
 
 let root: string | undefined
 let context: Context | undefined
@@ -187,7 +187,7 @@ describe('Schedule real Loader composition through cordis.yml', () => {
     root.agent.session.append('schedule/change', {
       version: 1,
       operation: 'pause',
-      id: 'schedule-1',
+      id: ScheduleId('schedule-1'),
     })
     expect(decodeScheduleChange(scheduleChanges(root.agent).at(-1)?.data)).toEqual({
       version: 1,

@@ -231,10 +231,10 @@ describe('version-1 Schedule decoding and folding', () => {
   })
 
   it('allocates a readable id without reusing ended or colliding ids', () => {
-    expect(allocateScheduleId({ active: [], seenIds: [] })).toBe('schedule-1')
-    expect(allocateScheduleId({ active: [], seenIds: [ScheduleId('custom'), ScheduleId('schedule-3')] }))
+    expect(allocateScheduleId({ seenIds: [] })).toBe('schedule-1')
+    expect(allocateScheduleId({ seenIds: [ScheduleId('custom'), ScheduleId('schedule-3')] }))
       .toBe('schedule-4')
-    expect(allocateScheduleId({ active: [], seenIds: [ScheduleId('one'), ScheduleId('schedule-2')] }))
+    expect(allocateScheduleId({ seenIds: [ScheduleId('one'), ScheduleId('schedule-2')] }))
       .toBe('schedule-3')
   })
 })

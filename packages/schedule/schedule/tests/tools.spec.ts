@@ -8,6 +8,7 @@ import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import type { ToolExecutionResult } from '@deepseek-ai/dsh-tools'
+import { ScheduleId } from '../src/domain.ts'
 import { registerScheduleTools } from '../src/tools.ts'
 import { ScheduleTransactions } from '../src/transaction.ts'
 
@@ -211,7 +212,7 @@ describe('Schedule tool protocol', () => {
     expect(value(await execute(test, 'schedule_create', { prompt: 'sooner', after_seconds: 60 }))).toMatchObject({
       id: 'schedule-2',
     })
-    test.agent.session.append('schedule/change', { version: 1, operation: 'pause', id: 'schedule-1' })
+    test.agent.session.append('schedule/change', { version: 1, operation: 'pause', id: ScheduleId('schedule-1') })
     vi.setSystemTime(new Date('2026-08-05T12:00:31.000Z'))
     expect(value(await execute(test, 'schedule_list', {}))).toEqual([
       expect.objectContaining({
@@ -221,7 +222,7 @@ describe('Schedule tool protocol', () => {
       }),
       expect.objectContaining({ id: 'schedule-2', state: 'scheduled' }),
     ])
-    test.agent.session.append('schedule/change', { version: 1, operation: 'resume', id: 'schedule-1' })
+    test.agent.session.append('schedule/change', { version: 1, operation: 'resume', id: ScheduleId('schedule-1') })
     expect(value(await execute(test, 'schedule_list', {}))).toEqual([
       expect.objectContaining({
         id: 'schedule-1',
@@ -230,7 +231,7 @@ describe('Schedule tool protocol', () => {
       }),
       expect.objectContaining({ id: 'schedule-2', state: 'scheduled' }),
     ])
-    test.agent.session.append('schedule/change', { version: 1, operation: 'pause', id: 'schedule-1' })
+    test.agent.session.append('schedule/change', { version: 1, operation: 'pause', id: ScheduleId('schedule-1') })
     expect(value(await execute(test, 'schedule_delete', { id: 'schedule-1' })))
       .toEqual({ id: 'schedule-1', deleted: true })
     expect(value(await execute(test, 'schedule_list', {}))).toEqual([
@@ -241,7 +242,7 @@ describe('Schedule tool protocol', () => {
   it('keeps a paused delete behind FIFO and both flush barriers', async () => {
     const test = await harness()
     await execute(test, 'schedule_create', { prompt: 'later', after_seconds: 30 })
-    test.agent.session.append('schedule/change', { version: 1, operation: 'pause', id: 'schedule-1' })
+    test.agent.session.append('schedule/change', { version: 1, operation: 'pause', id: ScheduleId('schedule-1') })
 
     test.flushes.outcomes.push('reject')
     expect(value(await execute(test, 'schedule_list', {}))).toMatchObject({

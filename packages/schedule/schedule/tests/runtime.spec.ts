@@ -200,7 +200,7 @@ describe('Schedule timer and admission runtime', () => {
   it('does not follow up a paused overdue reminder until resume', async () => {
     const test = await harness()
     appendAfter(test, 'schedule-1', 1, Date.now() - 1_000)
-    test.agent.session.append('schedule/change', { version: 1, operation: 'pause', id: 'schedule-1' })
+    test.agent.session.append('schedule/change', { version: 1, operation: 'pause', id: ScheduleId('schedule-1') })
     const runtime = runtimeFor(test)
     runtime.start()
     await settle()
@@ -208,7 +208,7 @@ describe('Schedule timer and admission runtime', () => {
     expect(test.agent.session.snapshotEvents().some(event =>
       event.type === 'schedule/change' && event.data.operation === 'dispatch')).toBe(false)
 
-    test.agent.session.append('schedule/change', { version: 1, operation: 'resume', id: 'schedule-1' })
+    test.agent.session.append('schedule/change', { version: 1, operation: 'resume', id: ScheduleId('schedule-1') })
     runtime.requestDrive()
     await settle()
     expect(test.followed).toHaveLength(1)
