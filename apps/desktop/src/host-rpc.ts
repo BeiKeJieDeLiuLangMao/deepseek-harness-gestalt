@@ -3,10 +3,13 @@
 import { randomUUID } from 'node:crypto'
 import { request as httpRequest, type IncomingMessage, type RequestOptions } from 'node:http'
 import { request as httpsRequest } from 'node:https'
+import WebSocket from 'ws'
 import {
   REMOTE_PROTOCOL_LIMITS,
   type CompanionHostFailure,
 } from '@deepseek-ai/dsh-remote-protocol'
+
+const REMOTE_STREAM_MUX_PATH = '/api/remote.mux'
 
 const DEFAULT_HOST_RPC_TIMEOUT_MS = 15_000
 const MAX_HOST_ATTACHMENT_RESPONSE_BYTES = Math.ceil(
@@ -52,6 +55,15 @@ export interface DesktopHostRpc {
   watchHost?(
     signal: AbortSignal,
     accept: (envelope: { rpcId: string; payload: unknown }) => void,
+  ): Promise<void>
+  /**
+   * Follow generated Gateway `session/follow` on `/api/remote.mux`.
+   * Cookie is sent only to the bootstrap origin. Abort sends mux `cancel`.
+   */
+  followSession?(
+    sessionId: string,
+    signal: AbortSignal,
+    accept: (frame: unknown) => void,
   ): Promise<void>
 }
 
@@ -170,10 +182,20 @@ export function createDesktopHostRpc(baseUrl: string, options: DesktopHostRpcOpt
       throw new Error('Desktop Host interaction receipt was invalid')
     },
     watchMux: async (signal, accept) => {
-      await watchHostWebSocket(origin, '/api/events.mux', signal, accept)
+      await watchHostWebSocket(origin, '/api/events.mux', signal, accept, options.cookieHeader)
     },
     watchHost: async (signal, accept) => {
-      await watchHostWebSocket(origin, '/api/events.host', signal, accept)
+      await watchHostWebSocket(origin, '/api/events.host', signal, accept, options.cookieHeader)
+    },
+    followSession: async (sessionId, signal, accept) => {
+      await followRemoteMux(
+        origin,
+        'session/follow',
+        { args: { request: { address: { kind: 'session', sessionId } } } },
+        signal,
+        accept,
+        options.cookieHeader,
+      )
     },
   }
 }
@@ -183,36 +205,31 @@ function watchHostWebSocket(
   path: string,
   signal: AbortSignal,
   accept: (envelope: { rpcId: string; payload: unknown }) => void,
+  cookieHeader?: string,
 ): Promise<void> {
   const url = new URL(path, origin)
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
   return new Promise((resolve, reject) => {
-    const socket = new WebSocket(url)
-    let settled = false
+    const socket = openOriginWebSocket(url, origin, cookieHeader)
+    const settled = { value: false }
     const cleanup = (): void => {
       signal.removeEventListener('abort', abort)
-      socket.removeEventListener('message', message)
-      socket.removeEventListener('close', close)
-      socket.removeEventListener('error', error)
+      socket.removeAllListeners()
     }
     const settle = (failure?: Error): void => {
-      if (settled) return
-      settled = true
-      cleanup()
-      if (failure === undefined) resolve()
-      else reject(failure)
+      settleSocket(settled, cleanup, resolve, reject, failure)
     }
     const abort = (): void => {
       if (socket.readyState === WebSocket.CONNECTING || socket.readyState === WebSocket.OPEN) socket.close()
       settle()
     }
-    const message = (event: MessageEvent): void => {
+    const message = (data: WebSocket.RawData): void => {
       try {
-        if (typeof event.data !== 'string'
-          || new TextEncoder().encode(event.data).byteLength > MAX_HOST_PROJECTED_RESPONSE_BYTES) {
+        const text = typeof data === 'string' ? data : Buffer.from(data as Uint8Array).toString('utf8')
+        if (Buffer.byteLength(text) > MAX_HOST_PROJECTED_RESPONSE_BYTES) {
           throw new Error('Desktop Host event stream frame exceeded its byte ceiling')
         }
-        const envelope: unknown = JSON.parse(event.data)
+        const envelope: unknown = JSON.parse(text)
         if (!isRecord(envelope) || envelope.type !== 'server-request'
           || typeof envelope.rpcId !== 'string' || !('payload' in envelope)) {
           throw new Error('Desktop Host event stream envelope was invalid')
@@ -223,14 +240,12 @@ function watchHostWebSocket(
         settle(new Error('Desktop Host event stream returned an invalid frame', { cause }))
       }
     }
-    const close = (): void => {
+    socket.on('message', message)
+    socket.once('close', () => {
       settle(signal.aborted ? undefined : new Error('Desktop Host event stream closed'))
-    }
-    const error = (): void => { settle(new Error('Desktop Host event stream failed')) }
+    })
+    socket.once('error', () => { settle(new Error('Desktop Host event stream failed')) })
     signal.addEventListener('abort', abort, { once: true })
-    socket.addEventListener('message', message)
-    socket.addEventListener('close', close, { once: true })
-    socket.addEventListener('error', error, { once: true })
     if (signal.aborted) abort()
   })
 }
@@ -326,6 +341,114 @@ export function listDesktopHostSessions(
   options?: { timeoutMs?: number; signal?: AbortSignal },
 ): Promise<DesktopHostRpcResult> {
   return rpc.call('session/list', { args: { _request: {} } }, options)
+}
+
+/**
+ * Create or adopt one Session through generated Gateway `session/create`.
+ * @param rpc - authenticated Desktop Host RPC.
+ * @param sessionId - durable Session identity.
+ * @returns the Host create value or a typed failure.
+ */
+export function createDesktopHostSession(
+  rpc: DesktopHostRpc,
+  sessionId: string,
+  options?: { timeoutMs?: number; signal?: AbortSignal },
+): Promise<DesktopHostRpcResult> {
+  return rpc.call('session/create', { args: { request: { sessionId } } }, options)
+}
+
+function openOriginWebSocket(url: URL, origin: URL, cookieHeader?: string): WebSocket {
+  if (url.hostname !== origin.hostname || url.port !== origin.port) {
+    throw new TypeError('Desktop Host WebSocket must stay on the bootstrap origin')
+  }
+  return new WebSocket(url, {
+    ...cookieHeader === undefined ? {} : { headers: { cookie: cookieHeader } },
+  })
+}
+
+function settleSocket(
+  settled: { value: boolean },
+  cleanup: () => void,
+  resolve: () => void,
+  reject: (error: Error) => void,
+  failure?: Error,
+): void {
+  if (settled.value) return
+  settled.value = true
+  cleanup()
+  if (failure === undefined) resolve()
+  else reject(failure)
+}
+
+function followRemoteMux(
+  origin: URL,
+  endpoint: string,
+  payload: unknown,
+  signal: AbortSignal,
+  accept: (frame: unknown) => void,
+  cookieHeader?: string,
+): Promise<void> {
+  const url = new URL(REMOTE_STREAM_MUX_PATH, origin)
+  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+  const streamId = randomUUID()
+  return new Promise((resolve, reject) => {
+    const socket = openOriginWebSocket(url, origin, cookieHeader)
+    const settled = { value: false }
+    let opened = false
+    const cleanup = (): void => {
+      signal.removeEventListener('abort', abort)
+      socket.removeAllListeners()
+    }
+    const settle = (failure?: Error): void => {
+      settleSocket(settled, cleanup, resolve, reject, failure)
+    }
+    const abort = (): void => {
+      if (opened && socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ type: 'cancel', streamId }))
+      }
+      if (socket.readyState === WebSocket.CONNECTING || socket.readyState === WebSocket.OPEN) socket.close()
+      settle()
+    }
+    const message = (data: WebSocket.RawData): void => {
+      try {
+        const text = typeof data === 'string' ? data : Buffer.from(data as Uint8Array).toString('utf8')
+        if (Buffer.byteLength(text) > MAX_HOST_PROJECTED_RESPONSE_BYTES) {
+          throw new Error('Desktop Host event stream frame exceeded its byte ceiling')
+        }
+        const frame: unknown = JSON.parse(text)
+        if (!isRecord(frame) || typeof frame.type !== 'string' || frame.streamId !== streamId) {
+          throw new Error('Desktop Host Remote mux frame was invalid')
+        }
+        if (frame.type === 'item') {
+          accept(frame.value)
+          return
+        }
+        if (frame.type === 'end') {
+          socket.close()
+          settle()
+          return
+        }
+        if (frame.type === 'error' && isRecord(frame.error) && typeof frame.error.message === 'string') {
+          throw new Error(frame.error.message)
+        }
+        throw new Error('Desktop Host Remote mux frame was invalid')
+      } catch (cause) {
+        socket.close()
+        settle(cause instanceof Error ? cause : new Error('Desktop Host Remote mux frame was invalid', { cause }))
+      }
+    }
+    socket.once('open', () => {
+      opened = true
+      socket.send(JSON.stringify({ type: 'open', streamId, endpoint, payload }))
+    })
+    socket.on('message', message)
+    socket.once('close', () => {
+      settle(signal.aborted ? undefined : new Error('Desktop Host event stream closed'))
+    })
+    socket.once('error', () => { settle(new Error('Desktop Host event stream failed')) })
+    signal.addEventListener('abort', abort, { once: true })
+    if (signal.aborted) abort()
+  })
 }
 
 function cookieRequestHeader(setCookie: string | readonly string[] | undefined): string | undefined {
