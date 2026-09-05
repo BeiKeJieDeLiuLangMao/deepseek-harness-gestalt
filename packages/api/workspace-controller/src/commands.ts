@@ -162,7 +162,7 @@ export class WorkspaceCommands {
    * @param request - Workspace identity.
    * @param signal - caller lifetime; abort terminates the Git process tree.
    * @returns `{ remoteUrl }` when origin is non-empty; `{}` for a non-Git directory or a checkout without `origin`.
-   *   Other Git execution failures reject with `workspace/git-failed`.
+   *   Host deadline and other Git execution failures reject with `workspace/git-failed`.
    */
   async gitRemote(request: WorkspaceGitRemoteRequest, signal: AbortSignal): Promise<WorkspaceGitRemoteValue> {
     if (signal.aborted) {
