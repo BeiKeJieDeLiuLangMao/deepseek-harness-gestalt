@@ -2020,7 +2020,7 @@ Source: [`packages/subagent/tool-subagent/src/list-models.ts`](../packages/subag
 
 来源：[`packages/subagent/tool-subagent/src/index.ts`](../packages/subagent/tool-subagent/src/index.ts)
 
-注册的工具名称取决于加载时 `toolName` 配置（默认为 `subagent`）；上述 schema 对应默认值。随产品发布的组合会为每个 subagent 后端加载一次该包，因此模型还会看到绑定到 fork 后端的 `subagent_fork`。每个实例的描述、`run_in_background` 参数与 system prompt 策略取决于它自己的 `backgroundMode` 和 `enableRunInBackground`，因此两个随附 schema 并不相同：`subagent` 为 `continuable`，省略参数时默认后台运行，并由 runtime 自动投递结束结果；`subagent_fork` 保持 `one-shot`，省略参数时默认前台运行。详见 `packages/bundle/base/cordis.patch.yml` 和 `examples/acp-agent/cordis.yml`。
+注册的委派名称是加载时 `toolName` 配置（默认为 `subagent`）；上述默认 schema 关闭模型选择，而发现 schema 作为启用 Session 中的固定伴随工具展示。可选的 `images` 参数仅在绑定提供方公布 `capabilities.images` 时出现；本次 harvest 使用确实公布该能力的进程内目录 fixture，因此公布 `images: false` 的 ACP 及其他进程外后端会省略该字段。Web 预设为每个新的顶层 Session 采样 Plugins 偏好，并在其子 Session 中保留该决定；`subagent_fork` 保持固定路由。每个实例通过 `modelSelectionSettings`、`backgroundMode` 和 `enableRunInBackground` 独立控制是否读取模型选择设置及其后台行为。
 
 <a id="deepseek-aidsh-tool-subagent-control"></a>
 
