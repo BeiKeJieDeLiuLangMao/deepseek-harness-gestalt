@@ -46,14 +46,25 @@ async function bench(served?: string[]) {
         })),
       },
     }))
+  const mutateSettings = vi.fn((ns: string, ops: readonly unknown[]) => Promise.resolve({
+    ok: true as const,
+    value: {
+      ns, schema: {}, value: Object.fromEntries(
+        (ops as readonly { op: string; path: string[]; value?: unknown }[])
+          .filter(op => op.op === 'set')
+          .map(op => [op.path[0], op.value]),
+      ),
+      applies: 'live', secrets: [], revision: 1, writable: true, hasDocument: true,
+    },
+  }))
   const remote = new TestRemote(ctx, {
     credentials: { describe: describeCredentials, set: vi.fn() },
     session: { modelCatalog: models },
-    settings: { describe: describeSettings },
+    settings: { describe: describeSettings, mutate: mutateSettings, testWebSearch: vi.fn() },
   })
   await ctx.plugin({ inject: [...settingsInject], apply: settingsApply }).await()
   return {
-    ctx, slots: ctx.get('slots') as SlotRegistry, describeCredentials, describeSettings, models, remote,
+    ctx, slots: ctx.get('slots') as SlotRegistry, describeCredentials, describeSettings, mutateSettings, models, remote,
   }
 }
 
@@ -71,7 +82,7 @@ describe('ui-settings-plugins apply', () => {
 
   it('declares the services it uses', () => {
     expect(inject).toEqual([
-      'slots', 'locale', 'remote', 'remote.credentials', 'remote.session', 'settingsScope',
+      'slots', 'locale', 'remote', 'remote.credentials', 'remote.session', 'remote.settings', 'settingsScope',
     ])
   })
 
@@ -120,8 +131,10 @@ describe('ui-settings-plugins apply', () => {
     expect(Object.keys(tabFace.hooks)).toEqual(['configurablePlugins'])
     for (const entry of slots.entries('settings.plugin.item')) {
       const face = (entry as { inject?: () => unknown }).inject?.() as { hooks: Record<string, unknown> }
-      // Each card injects exactly one snapshot store plus its own actions.
-      expect(Object.keys(face.hooks)).toHaveLength(1)
+      expect(Object.keys(face.hooks)).toEqual(
+        entry.options.key === 'web-search-deepseek' ? ['webSearchCard', 'providerTabs'] : expect.any(Array),
+      )
+      if (entry.options.key !== 'web-search-deepseek') expect(Object.keys(face.hooks)).toHaveLength(1)
     }
   })
 
@@ -188,7 +201,7 @@ describe('ui-settings-plugins apply', () => {
     // event is the only thing that reaches the card.
     remote.emit('credentials/reference-updated', ['DEEPSEEK_API_KEY'])
 
-    await vi.waitFor(() => { expect(describeCredentials).toHaveBeenCalledTimes(1) })
+    await vi.waitFor(() => { expect(describeCredentials).toHaveBeenCalledTimes(3) })
   })
 
   it('refreshes the subagent catalog after model inputs change or the connection resets', async () => {
@@ -236,11 +249,38 @@ describe('ui-settings-plugins apply', () => {
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
     expect(slots.entries('settings.plugin.item')).toHaveLength(4)
+    expect(slots.entries('settings.plugin.web-search.provider').map(entry => entry.options.id))
+      .toEqual(['deepseek', 'anthropic-messages', 'kimi'])
 
     await fiber.dispose()
 
     expect(slots.entries('settings.section')).toHaveLength(0)
     expect(slots.spec('settings.plugins.tab')).toBeUndefined()
     expect(slots.spec('settings.plugin.item')).toBeUndefined()
+    expect(slots.spec('settings.plugin.web-search.provider')).toBeUndefined()
+  })
+
+  it('registers three search-provider tabs whose inject faces write independent namespaces', async () => {
+    const { ctx, slots, mutateSettings } = await bench([
+      'web-search-deepseek', 'web-search-anthropic', 'web-search-kimi',
+    ])
+    declareRoot(slots)
+    await ctx.plugin({ inject: [...inject], apply }).await()
+    const card = slots.entries('settings.plugin.item').find(entry => entry.options.key === 'web-search-deepseek')!
+    const face = (card.inject as unknown as () => {
+      selectProvider: (id: string) => Promise<void>
+      testSearch: () => Promise<unknown>
+      hooks: { providerTabs: { getSnapshot: () => readonly { id: string }[] } }
+    })()
+    expect(face.hooks.providerTabs.getSnapshot().map(tab => tab.id))
+      .toEqual(['deepseek', 'anthropic-messages', 'kimi'])
+    expect(slots.entries('settings.plugin.web-search.provider').map(entry => entry.options.id))
+      .toEqual(['deepseek', 'anthropic-messages', 'kimi'])
+    await face.selectProvider('kimi')
+    expect(mutateSettings).toHaveBeenCalledWith(
+      'web-search-deepseek',
+      [{ op: 'set', path: ['backend'], value: 'kimi' }],
+      0,
+    )
   })
 })

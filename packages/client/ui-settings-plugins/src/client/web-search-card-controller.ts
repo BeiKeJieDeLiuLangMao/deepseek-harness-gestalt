@@ -1,6 +1,7 @@
 /**
- * The web-search card's staged form over the `web-search-deepseek` settings
- * namespace.
+ * One web-search card's staged form. Official DeepSeek, Anthropic Messages, and
+ * Kimi each bind their own settings namespace. Selecting a tab writes `backend`
+ * on the DeepSeek section so the Host does not guess the wire from a URL.
  *
  * The key is the one control that does not live in the section: its literal
  * never rides a response, so the card learns only whether one is configured
@@ -10,14 +11,16 @@
  */
 
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
-// Type-only: pulls the ctx.remote merge into this program.
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
-import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
+import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { HostObservable, StoredEntry } from '@deepseek-ai/dsh-client-ui-slots'
+import { labeledSlotTab } from './slot-tab.ts'
 import {
   CardForm, numberField, textField,
   type CardActions, type CardFieldState, type CardShell,
 } from './card-form.ts'
+import type { PluginsSettingsLocaleKey } from './locales.ts'
 
 /**
  * Namespace of the DeepSeek search provider. Spelled here rather than
@@ -25,14 +28,28 @@ import {
  */
 export const WEB_SEARCH_NS = 'web-search-deepseek'
 
+/** Namespace of the Anthropic-protocol search tab. */
+export const WEB_SEARCH_ANTHROPIC_NS = 'web-search-anthropic'
+
+/** Namespace of the Kimi coding search tab. */
+export const WEB_SEARCH_KIMI_NS = 'web-search-kimi'
+
+/** Which provider tab the Host should read on the next `web_search`. */
+export type WebSearchBackend = 'deepseek' | 'anthropic-messages' | 'kimi'
+
 /** Credential reference the provider resolves when the section names none. */
 const DEFAULT_API_KEY_REF = 'DEEPSEEK_API_KEY'
 
 /** Form field the credential control stages under. */
 const API_KEY_FIELD = 'apiKey'
 
+/** Probe query the Plugins card sends through `settings.testWebSearch`. */
+const WEB_SEARCH_PROBE_QUERY = 'deepseek harness'
+
 /** The search-provider fields this card edits. */
 export interface WebSearchSettings {
+  /** Which card the next search reads; only the DeepSeek section stores this. */
+  backend?: WebSearchBackend
   /** Credential reference naming the environment key. */
   apiKeyEnv?: string
   /** Provider endpoint; blank inherits the provider default. */
@@ -63,30 +80,65 @@ export interface WebSearchCardState extends CardShell {
   apiKeyConfigured: boolean
   /** Whether the credentials domain accepts a write for it; false disables the control. */
   apiKeyWritable: boolean
+  /** Whether this tab is the one the next search will read. */
+  active: boolean
+  /** Provider id currently written to `backend`. */
+  selectedProvider: string
 }
 
-/** The registration-side face the web-search card's slot entry injects. */
+/** One provider tab projected from `settings.plugin.web-search.provider`. */
+export interface WebSearchProviderTab {
+  /** Provider id written to `backend` when this tab is selected. */
+  id: string
+  /** Registration order; lower first. */
+  order: number
+  /** Localized tab label. */
+  label: string
+}
+
+/** The registration-side face one provider tab injects. */
 export interface WebSearchCardFace extends CardActions {
   hooks: {
     /** Card snapshot bound by the renderer as useWebSearchCard. */
     webSearchCard: SnapshotStore<WebSearchCardState>
   }
+  /** Locale key of this card's title. */
+  titleKey: PluginsSettingsLocaleKey
+  /** Locale key of this card's description. */
+  descriptionKey: PluginsSettingsLocaleKey
+  /** Locale key of the endpoint hint. */
+  baseUrlHintKey: PluginsSettingsLocaleKey
+  /** Prefix for control ids so two cards on one page do not collide. */
+  idPrefix: string
+  /** Write staged edits so a probe uses the values on screen. */
+  persist: () => Promise<void>
 }
 
-/** Bridges the `web-search-deepseek` scope and the credentials domain onto the card. */
+/** Bridges one search-provider namespace and the credentials domain onto a tab. */
 export class WebSearchCardController {
   private readonly form: CardForm<WebSearchSettings>
   private readonly store: SnapshotStore<WebSearchCardState>
   private credential: CredentialState = { ref: '', configured: false, writable: true }
 
   /**
-   * @param scope - the bound settings scope for the `web-search-deepseek` namespace.
+   * @param scope - the bound settings scope for this tab's namespace.
    * @param ctx - the card plugin's context, whose `remote.credentials` namespace
-   * answers for the credential the section references.
+   *   answers for the credential the section references.
+   * @param backend - the `backend` value this tab writes when selected.
+   * @param selectionScope - the DeepSeek section that stores `backend`.
+   * @param copy - locale keys this tab renders.
    */
   constructor(
     private readonly scope: SettingsScope<WebSearchSettings>,
     private readonly ctx: ClientContext,
+    private readonly backend: WebSearchBackend,
+    private readonly selectionScope: SettingsScope<WebSearchSettings>,
+    private readonly copy: {
+      titleKey: PluginsSettingsLocaleKey
+      descriptionKey: PluginsSettingsLocaleKey
+      baseUrlHintKey: PluginsSettingsLocaleKey
+      idPrefix: string
+    },
   ) {
     this.form = new CardForm(
       scope,
@@ -95,6 +147,7 @@ export class WebSearchCardController {
     )
     this.store = this.form.bind(() => this.projection())
     scope.subscribe(() => { void this.readCredential() })
+    this.selectionScope.subscribe(() => { this.store.set(this.projection()) })
     void this.readCredential()
   }
 
@@ -106,6 +159,8 @@ export class WebSearchCardController {
       apiKey: this.form.field(API_KEY_FIELD),
       apiKeyConfigured: this.credential.configured,
       apiKeyWritable: this.credential.writable,
+      active: (this.selectionScope.getSnapshot().value?.backend ?? 'deepseek') === this.backend,
+      selectedProvider: this.selectionScope.getSnapshot().value?.backend ?? 'deepseek',
     }
   }
 
@@ -154,11 +209,16 @@ export class WebSearchCardController {
   }
 
   /**
-   * Build the face the card's slot registration injects.
-   * @returns the card's snapshot and its form actions.
+   * Build the face the tab's slot registration injects.
+   * @returns the tab's snapshot and its form actions.
    */
   inject(): WebSearchCardFace {
-    return { hooks: { webSearchCard: this.store }, ...this.form.actions() }
+    return {
+      hooks: { webSearchCard: this.store },
+      ...this.copy,
+      ...this.form.actions(),
+      persist: () => this.form.save(),
+    }
   }
 
   /**
@@ -183,4 +243,190 @@ export class WebSearchCardController {
 function refOf(snapshot: SettingsScopeSnapshot<WebSearchSettings>): string {
   const declared = snapshot.value?.apiKeyEnv
   return declared !== undefined && declared.length > 0 ? declared : DEFAULT_API_KEY_REF
+}
+
+const EMPTY_CARD: WebSearchCardState = {
+  // The configurable tab only dispatches this card when the Host serves the
+  // namespace. Hide-on-unavailable would swallow the chrome while provider
+  // tabs are still injecting.
+  available: true,
+  writable: false,
+  dirty: false,
+  invalid: false,
+  saving: false,
+  failed: false,
+  baseURL: { text: '', overridden: false, invalid: false },
+  maxUses: { text: '', overridden: false, invalid: false },
+  apiKey: { text: '', overridden: false, invalid: false },
+  apiKeyConfigured: false,
+  apiKeyWritable: false,
+  active: false,
+  selectedProvider: 'deepseek',
+}
+
+/** The Web Search card chrome: one form, many provider tabs. */
+export interface WebSearchShellFace extends CardActions {
+  hooks: {
+    /** Snapshot of the selected provider's form. */
+    webSearchCard: SnapshotStore<WebSearchCardState>
+    /** Ordered provider tabs registered into the card. */
+    providerTabs: HostObservable<readonly WebSearchProviderTab[]>
+  }
+  /** Locale key of the Web Search card title. */
+  titleKey: PluginsSettingsLocaleKey
+  /** Locale key of the Web Search card description. */
+  descriptionKey: PluginsSettingsLocaleKey
+  /** Write `backend` so the next search reads this provider. */
+  selectProvider: (id: string) => Promise<void>
+  /** Probe the selected provider through `settings.testWebSearch`. */
+}
+
+/** Outcome of one Plugins-card search probe. */
+export type WebSearchProbe =
+  | { status: 'ok'; count: number; title?: string }
+  | { status: 'error'; message: string }
+
+/**
+ * Projects the selected provider tab onto one card face so Save/Discard stay
+ * on the outer chrome while extra plugins can still register new tabs.
+ */
+export class WebSearchShell {
+  private readonly store = createSnapshotStore<WebSearchCardState>(EMPTY_CARD)
+  private unsubChild: (() => void) | undefined
+  private readonly tabListeners = new Set<() => void>()
+  private tabSnapshot: readonly WebSearchProviderTab[] = []
+  /** Serializes `backend` writes so a probe cannot race an in-flight tab switch. */
+  private selectionWrite = Promise.resolve()
+
+  /**
+   * @param selectionScope - the DeepSeek section that stores `backend`.
+   * @param entries - the provider tabs currently registered into the card.
+   * @param copy - locale keys for the outer card.
+   * @param fallback - DeepSeek tab used when the ledger has no match.
+   * @param ctx - plugin context whose generated `remote.settings.testWebSearch` probes.
+   */
+  constructor(
+    private readonly selectionScope: SettingsScope<WebSearchSettings>,
+    private readonly entries: () => readonly StoredEntry[],
+    private readonly copy: {
+      titleKey: PluginsSettingsLocaleKey
+      descriptionKey: PluginsSettingsLocaleKey
+    },
+    private readonly fallback: WebSearchCardController,
+    private readonly ctx: ClientContext,
+  ) {
+    this.selectionScope.subscribe(() => { this.rewire() })
+  }
+
+  /** Notify tab subscribers after the provider ledger changes. */
+  notifyTabs(): void {
+    for (const listener of this.tabListeners) listener()
+  }
+
+  /** Rebind the chrome store to the selected provider's form. */
+  rewire(): void {
+    this.unsubChild?.()
+    this.unsubChild = undefined
+    const selected = this.selectedFace()
+    const child = selected.hooks.webSearchCard
+    this.store.set(child.getSnapshot())
+    this.unsubChild = child.subscribe(() => { this.store.set(child.getSnapshot()) })
+  }
+
+  /**
+   * Build the face the Web Search card injects.
+   * @returns chrome snapshot, tab ledger, and actions for the selected tab.
+   */
+  inject(): WebSearchShellFace {
+    return {
+      hooks: {
+        webSearchCard: this.store,
+        providerTabs: {
+          getSnapshot: () => {
+            const next = this.entries()
+              .map(labeledSlotTab)
+              .toSorted((left, right) => left.order - right.order)
+            const prev = this.tabSnapshot
+            if (prev.length === next.length
+              && prev.every((tab, index) => {
+                const other = next[index]
+                return other !== undefined
+                  && tab.id === other.id
+                  && tab.order === other.order
+                  && tab.label === other.label
+              })) {
+              return prev
+            }
+            this.tabSnapshot = next
+            return next
+          },
+          subscribe: (listener) => {
+            this.tabListeners.add(listener)
+            const offSelection = this.selectionScope.subscribe(listener)
+            return () => {
+              this.tabListeners.delete(listener)
+              offSelection()
+            }
+          },
+        },
+      },
+      ...this.copy,
+      edit: (field, text) => { this.selectedFace().edit(field, text) },
+      resetField: (field) => { this.selectedFace().resetField(field) },
+      save: () => { this.selectedFace().save() },
+      discard: () => { this.selectedFace().discard() },
+      selectProvider: id => this.queueBackend(id),
+      testSearch: async () => {
+        await this.selectionWrite
+        if (this.store.getSnapshot().failed) {
+          return { status: 'error', message: 'search provider could not be switched' }
+        }
+        await this.selectedFace().persist()
+        if (this.selectedFace().hooks.webSearchCard.getSnapshot().failed) {
+          return { status: 'error', message: 'search settings could not be saved' }
+        }
+        const response = await this.ctx.remote.settings.testWebSearch(WEB_SEARCH_PROBE_QUERY)
+        if (!response.ok) {
+          return { status: 'error', message: response.error.message }
+        }
+        return {
+          status: 'ok',
+          count: response.value.count,
+          ...response.value.title === undefined ? {} : { title: response.value.title },
+        }
+      },
+    }
+  }
+
+  /**
+   * Queue one `backend` write on the DeepSeek scope and wait for Host settlement.
+   * A later probe joins this tail so it cannot run against the previous provider.
+   */
+  private queueBackend(id: string): Promise<void> {
+    const write = this.commitBackend(id)
+    this.selectionWrite = this.selectionWrite.then(() => write, () => write)
+    return write
+  }
+
+  private async commitBackend(id: string): Promise<void> {
+    await this.selectionScope.set('backend', id)
+    const landed = (this.selectionScope.getSnapshot().value?.backend ?? 'deepseek') === id
+    if (!landed) {
+      this.store.set({ ...this.store.getSnapshot(), failed: true, dirty: true })
+      return
+    }
+    this.rewire()
+  }
+
+  private selectedId(): string {
+    return this.selectionScope.getSnapshot().value?.backend ?? 'deepseek'
+  }
+
+  private selectedFace(): WebSearchCardFace {
+    const id = this.selectedId()
+    const match = this.entries().find(entry => entry.options.id === id)
+      ?? this.entries().find(entry => entry.options.id === 'deepseek')
+    if (match === undefined) return this.fallback.inject()
+    return (match.inject as unknown as () => WebSearchCardFace)()
+  }
 }

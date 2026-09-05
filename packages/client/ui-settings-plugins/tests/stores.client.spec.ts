@@ -18,7 +18,9 @@ import {
   subagentModelCandidates,
   type SubagentModelSelectionSettings,
 } from '../src/client/subagent-model-selection-card-controller.ts'
-import { WebSearchCardController, type WebSearchSettings } from '../src/client/web-search-card-controller.ts'
+import {
+  WebSearchCardController, WebSearchShell, type WebSearchSettings,
+} from '../src/client/web-search-card-controller.ts'
 
 /** Make the stub behave like a Host that accepts every write. */
 function acceptWrites<T>(host: StubSettingsScope<T>): void {
@@ -49,6 +51,23 @@ function acceptWrites<T>(host: StubSettingsScope<T>): void {
 /** The card plugin's context, scripted down to the namespaces a card reaches. */
 function ctxWith(namespaces: object) {
   return { remote: namespaces } as never
+}
+
+const WEB_SEARCH_COPY = {
+  titleKey: 'webSearchTitle' as const,
+  descriptionKey: 'webSearchDescription' as const,
+  baseUrlHintKey: 'webSearchBaseUrlHint' as const,
+  idPrefix: 'plugin-config-web-search',
+}
+
+function searchController(
+  host: StubSettingsScope<WebSearchSettings>,
+  ctx: object,
+  backend: WebSearchSettings['backend'] = 'deepseek',
+  selection: StubSettingsScope<WebSearchSettings> = host,
+) {
+  return new WebSearchCardController(
+    host.scope, ctx as never, backend ?? 'deepseek', selection.scope, WEB_SEARCH_COPY)
 }
 
 function credentialsApi(configured: boolean) {
@@ -857,7 +876,7 @@ describe('WebSearchCardController', () => {
   it('reads the credential state for the reference the tab names', async () => {
     const host = stubSettingsScope<WebSearchSettings>()
     const credentials = credentialsApi(true)
-    const controller = new WebSearchCardController(host.scope, credentials.ctx)
+    const controller = searchController(host, credentials.ctx)
     const state = () => controller.inject().hooks.webSearchCard.getSnapshot()
     await vi.waitFor(() => { expect(credentials.describe).toHaveBeenCalled() })
 
@@ -873,7 +892,7 @@ describe('WebSearchCardController', () => {
   it('writes the staged key through the credentials domain, never the settings section', async () => {
     const host = stubSettingsScope<WebSearchSettings>()
     const credentials = credentialsApi(false)
-    const controller = new WebSearchCardController(host.scope, credentials.ctx)
+    const controller = searchController(host, credentials.ctx)
     host.publish({ status: 'ready', writable: true, value: {}, user: {} })
     const face = controller.inject()
 
@@ -898,7 +917,7 @@ describe('WebSearchCardController', () => {
   it('keeps the stored key when the draft is left blank', () => {
     const host = stubSettingsScope<WebSearchSettings>()
     const credentials = credentialsApi(true)
-    const controller = new WebSearchCardController(host.scope, credentials.ctx)
+    const controller = searchController(host, credentials.ctx)
     host.publish({ status: 'ready', writable: true, value: {}, user: {} })
     const face = controller.inject()
 
@@ -913,7 +932,7 @@ describe('WebSearchCardController', () => {
   it('re-reads when the Host reports the watched reference changed', async () => {
     const host = stubSettingsScope<WebSearchSettings>()
     const credentials = credentialsApi(false)
-    const controller = new WebSearchCardController(host.scope, credentials.ctx)
+    const controller = searchController(host, credentials.ctx)
     host.publish({ status: 'ready', writable: true, value: {}, user: {} })
     await vi.waitFor(() => { expect(credentials.describe).toHaveBeenCalled() })
     credentials.describe.mockClear()
@@ -937,7 +956,7 @@ describe('WebSearchCardController', () => {
   it('addresses the reference the tab declares rather than the default', async () => {
     const host = stubSettingsScope<WebSearchSettings>()
     const credentials = credentialsApi(false)
-    const controller = new WebSearchCardController(host.scope, credentials.ctx)
+    const controller = searchController(host, credentials.ctx)
     host.publish({ status: 'ready', writable: true, value: { apiKeyEnv: 'SEARCH_KEY' }, user: {} })
     const face = controller.inject()
 
@@ -951,7 +970,7 @@ describe('WebSearchCardController', () => {
   it('reports a key the Host did not store as a failed save', async () => {
     const host = stubSettingsScope<WebSearchSettings>()
     const credentials = credentialsApi(false)
-    const controller = new WebSearchCardController(host.scope, credentials.ctx)
+    const controller = searchController(host, credentials.ctx)
     host.publish({ status: 'ready', writable: true, value: {}, user: {} })
     const face = controller.inject()
 
@@ -971,7 +990,7 @@ describe('WebSearchCardController', () => {
     })
     const describe = vi.fn(refusal)
     const set = vi.fn(refusal)
-    const controller = new WebSearchCardController(host.scope, ctxWith({ credentials: { describe, set } }))
+    const controller = searchController(host, ctxWith({ credentials: { describe, set } }))
     const face = controller.inject()
     await vi.waitFor(() => { expect(describe).toHaveBeenCalled() })
 
@@ -993,7 +1012,7 @@ describe('WebSearchCardController', () => {
       ok: false as const,
       error: new RemoteError('gateway/internal', 'no credential provider', {}),
     }))
-    const controller = new WebSearchCardController(host.scope, ctxWith({
+    const controller = searchController(host, ctxWith({
       credentials: { describe, set: vi.fn() },
     }))
     await vi.waitFor(() => { expect(describe).toHaveBeenCalled() })
@@ -1005,7 +1024,7 @@ describe('WebSearchCardController', () => {
     const host = stubSettingsScope<WebSearchSettings>()
     acceptWrites(host)
     const credentials = credentialsApi(true)
-    const controller = new WebSearchCardController(host.scope, credentials.ctx)
+    const controller = searchController(host, credentials.ctx)
     host.publish({ status: 'ready', writable: true, value: {}, base: {}, user: {} })
     const face = controller.inject()
 
@@ -1016,6 +1035,181 @@ describe('WebSearchCardController', () => {
 
     expect(host.set.mock.calls).toEqual([['baseURL', 'https://other.test'], ['maxUses', 3]])
     expect(credentials.set).not.toHaveBeenCalled()
+  })
+
+  it('does not write a leftover DeepSeek URL into the Kimi namespace', async () => {
+    const deepseek = stubSettingsScope<WebSearchSettings>()
+    const kimi = stubSettingsScope<WebSearchSettings>()
+    acceptWrites(kimi)
+    const credentials = credentialsApi(true)
+    const controller = searchController(kimi, credentials.ctx, 'kimi', deepseek)
+    deepseek.publish({ status: 'ready', writable: true, value: { backend: 'kimi', baseURL: 'https://search.leftover.test/v1' }, user: {} })
+    kimi.publish({ status: 'ready', writable: true, value: {}, base: {}, user: {} })
+    const face = controller.inject()
+
+    face.edit('baseURL', 'https://api.kimi.com/coding/v1/search')
+    face.save()
+    await vi.waitFor(() => { expect(kimi.set).toHaveBeenCalled() })
+
+    expect(kimi.set.mock.calls).toEqual([['baseURL', 'https://api.kimi.com/coding/v1/search']])
+    expect(deepseek.set).not.toHaveBeenCalled()
+  })
+})
+
+describe('WebSearchShell', () => {
+  it('writes backend on the DeepSeek section when a provider tab is selected', async () => {
+    const deepseek = stubSettingsScope<WebSearchSettings>()
+    acceptWrites(deepseek)
+    const credentials = credentialsApi(true)
+    const controller = searchController(deepseek, credentials.ctx)
+    deepseek.publish({ status: 'ready', writable: true, value: { backend: 'deepseek' }, user: {} })
+    const shell = new WebSearchShell(
+      deepseek.scope,
+      () => [{ options: { id: 'deepseek', order: 0, label: 'DeepSeek' }, inject: () => controller.inject() }] as never,
+      { titleKey: 'webSearchTitle', descriptionKey: 'webSearchDescription' },
+      controller,
+      credentials.ctx,
+    )
+    shell.rewire()
+    const face = shell.inject()
+
+    await face.selectProvider('kimi')
+    expect(deepseek.set).toHaveBeenCalledWith('backend', 'kimi')
+  })
+
+  it('does not probe until an in-flight backend write lands', async () => {
+    const deepseek = stubSettingsScope<WebSearchSettings>()
+    const credentials = credentialsApi(true)
+    const gate = deferred<undefined>()
+    deepseek.set.mockImplementation(async (field: string, value: unknown) => {
+      await gate.promise
+      deepseek.publish({
+        status: 'ready',
+        writable: true,
+        value: { ...(deepseek.scope.getSnapshot().value ?? {}), [field]: value } as WebSearchSettings,
+        user: { [field]: value },
+      })
+    })
+    const testWebSearch = vi.fn(() => Promise.resolve({
+      ok: true as const,
+      value: { count: 1, title: 'Kimi' },
+    }))
+    const ctx = ctxWith({
+      credentials: credentials.ctx.remote.credentials,
+      settings: { testWebSearch },
+    })
+    const deepseekTab = searchController(deepseek, ctx, 'deepseek', deepseek)
+    const kimiHost = stubSettingsScope<WebSearchSettings>()
+    const kimiTab = searchController(kimiHost, ctx, 'kimi', deepseek)
+    deepseek.publish({ status: 'ready', writable: true, value: { backend: 'deepseek' }, user: {} })
+    kimiHost.publish({ status: 'ready', writable: true, value: {}, user: {} })
+    const shell = new WebSearchShell(
+      deepseek.scope,
+      () => [
+        { options: { id: 'deepseek', order: 0, label: 'DeepSeek' }, inject: () => deepseekTab.inject() },
+        { options: { id: 'kimi', order: 20, label: 'Kimi' }, inject: () => kimiTab.inject() },
+      ] as never,
+      { titleKey: 'webSearchTitle', descriptionKey: 'webSearchDescription' },
+      deepseekTab,
+      ctx,
+    )
+    shell.rewire()
+    const face = shell.inject()
+    const switching = face.selectProvider('kimi')
+    const probing = face.testSearch()
+    expect(testWebSearch).not.toHaveBeenCalled()
+    gate.resolve()
+    await switching
+    await expect(probing).resolves.toEqual({ status: 'ok', count: 1, title: 'Kimi' })
+    expect(testWebSearch).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the card dirty and does not probe when backend did not land', async () => {
+    const deepseek = stubSettingsScope<WebSearchSettings>()
+    const credentials = credentialsApi(true)
+    deepseek.set.mockResolvedValue(undefined)
+    const testWebSearch = vi.fn()
+    const ctx = ctxWith({
+      credentials: credentials.ctx.remote.credentials,
+      settings: { testWebSearch },
+    })
+    const controller = searchController(deepseek, ctx)
+    deepseek.publish({ status: 'ready', writable: true, value: { backend: 'deepseek' }, user: {} })
+    const shell = new WebSearchShell(
+      deepseek.scope,
+      () => [{ options: { id: 'deepseek', order: 0, label: 'DeepSeek' }, inject: () => controller.inject() }] as never,
+      { titleKey: 'webSearchTitle', descriptionKey: 'webSearchDescription' },
+      controller,
+      ctx,
+    )
+    shell.rewire()
+    const face = shell.inject()
+    await face.selectProvider('kimi')
+    await expect(face.testSearch()).resolves.toEqual({
+      status: 'error',
+      message: 'search provider could not be switched',
+    })
+    expect(face.hooks.webSearchCard.getSnapshot()).toMatchObject({ failed: true, dirty: true })
+    expect(testWebSearch).not.toHaveBeenCalled()
+  })
+
+  it('probes through settings.testWebSearch after persisting the selected tab', async () => {
+    const deepseek = stubSettingsScope<WebSearchSettings>()
+    acceptWrites(deepseek)
+    const credentials = credentialsApi(true)
+    const testWebSearch = vi.fn(() => Promise.resolve({
+      ok: true as const,
+      value: { count: 2, title: 'Harness' },
+    }))
+    const ctx = ctxWith({
+      credentials: credentials.ctx.remote.credentials,
+      settings: { testWebSearch },
+    })
+    const controller = searchController(deepseek, ctx)
+    deepseek.publish({ status: 'ready', writable: true, value: { backend: 'deepseek' }, user: {} })
+    const shell = new WebSearchShell(
+      deepseek.scope,
+      () => [{ options: { id: 'deepseek', order: 0, label: 'DeepSeek' }, inject: () => controller.inject() }] as never,
+      { titleKey: 'webSearchTitle', descriptionKey: 'webSearchDescription' },
+      controller,
+      ctx,
+    )
+    shell.rewire()
+    const face = shell.inject()
+    face.edit('baseURL', 'https://search.test/v1')
+
+    await expect(face.testSearch()).resolves.toEqual({ status: 'ok', count: 2, title: 'Harness' })
+    await vi.waitFor(() => { expect(deepseek.set).toHaveBeenCalledWith('baseURL', 'https://search.test/v1') })
+    expect(testWebSearch).toHaveBeenCalledWith('deepseek harness')
+  })
+
+  it('reports a failed probe without claiming success', async () => {
+    const deepseek = stubSettingsScope<WebSearchSettings>()
+    const credentials = credentialsApi(true)
+    const ctx = ctxWith({
+      credentials: credentials.ctx.remote.credentials,
+      settings: {
+        testWebSearch: () => Promise.resolve({
+          ok: false as const,
+          error: new RemoteError('gateway/internal', 'search refused', {}),
+        }),
+      },
+    })
+    const controller = searchController(deepseek, ctx)
+    deepseek.publish({ status: 'ready', writable: true, value: {}, user: {} })
+    const shell = new WebSearchShell(
+      deepseek.scope,
+      () => [{ options: { id: 'deepseek', order: 0, label: 'DeepSeek' }, inject: () => controller.inject() }] as never,
+      { titleKey: 'webSearchTitle', descriptionKey: 'webSearchDescription' },
+      controller,
+      ctx,
+    )
+    shell.rewire()
+
+    await expect(shell.inject().testSearch()).resolves.toEqual({
+      status: 'error',
+      message: 'search refused',
+    })
   })
 })
 

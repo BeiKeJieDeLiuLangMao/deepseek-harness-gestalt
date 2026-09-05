@@ -510,9 +510,23 @@ describe('WebSearchCard', () => {
       apiKey: field(''),
       apiKeyConfigured: false,
       apiKeyWritable: true,
+      active: true,
+      selectedProvider: 'deepseek',
       ...state,
     })
-    const actions = cardActions()
+    const actions = {
+      ...cardActions(),
+      selectProvider: vi.fn(),
+      testSearch: vi.fn(async () => ({ status: 'ok' as const, count: 1, title: 'A' })),
+      titleKey: 'webSearchTitle' as const,
+      descriptionKey: 'webSearchDescription' as const,
+      useProviderTabs: (selector: (rows: readonly { id: string; order: number; label: string }[]) => unknown) =>
+        selector([
+          { id: 'deepseek', order: 0, label: en.providerDeepseek },
+          { id: 'anthropic-messages', order: 10, label: en.providerAnthropic },
+          { id: 'kimi', order: 20, label: en.providerKimi },
+        ]),
+    }
     const props = { ...actions, t, useWebSearchCard: bindSnapshotSelector(store) } as unknown as WebSearchCardProps
     render(<WebSearchCard {...props} />)
     return actions
@@ -567,5 +581,14 @@ describe('WebSearchCard', () => {
       ['maxUses', '4'],
     ])
     expect(actions.resetField.mock.calls).toEqual([['baseURL'], ['maxUses']])
+  })
+
+  it('selects a provider tab and probes the current backend', async () => {
+    const actions = renderWebSearch({ selectedProvider: 'deepseek' })
+    fireEvent.click(screen.getByText(en.webSearchTitle))
+    fireEvent.click(screen.getByRole('tab', { name: en.providerKimi }))
+    expect(actions.selectProvider).toHaveBeenCalledWith('kimi')
+    fireEvent.click(screen.getByRole('button', { name: en.testSearch }))
+    await vi.waitFor(() => { expect(actions.testSearch).toHaveBeenCalled() })
   })
 })
