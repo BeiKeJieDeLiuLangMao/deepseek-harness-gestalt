@@ -1388,10 +1388,6 @@ function applyWorkspaceFollowIncrement(
 
 function startWorkspaceFollowCache(rpc: DesktopHostRpc, signal: AbortSignal): DesktopWorkspaceFollowCache {
   const cache = new DesktopWorkspaceFollowCache()
-  if (rpc.followWorkspaces === undefined) {
-    cache.fail('Desktop Web Host workspace follow is unavailable')
-    return cache
-  }
   void rpc.followWorkspaces(signal, (frame) => { cache.accept(frame) }).catch((error: unknown) => {
     cache.fail(error instanceof Error ? error.message : 'Desktop Host workspace follow ended')
   })

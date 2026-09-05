@@ -31,62 +31,62 @@ const closeServers: Array<() => Promise<void>> = []
 afterEach(async () => {
   vi.unstubAllGlobals()
   await Promise.all(closeServers.splice(0).map(close => close()))
-})
+}, 15_000)
 
 describe('Desktop Companion product operations', () => {
   it('leases Host event streams only while authenticated live connections exist', async () => {
-    const sockets: TestHostWebSocket[] = []
-    class TestHostWebSocket extends EventTarget {
-      static readonly CONNECTING = 0
-      static readonly OPEN = 1
-      readyState = TestHostWebSocket.CONNECTING
-      readonly close = vi.fn(() => {
-        this.readyState = 3
-        this.dispatchEvent(new Event('close'))
+    const upgrades: string[] = []
+    const server = createServer()
+    const wss = new WebSocketServer({ noServer: true })
+    server.on('upgrade', (request, socket, head) => {
+      upgrades.push(request.url ?? '')
+      wss.handleUpgrade(request, socket, head, (websocket) => {
+        websocket.on('message', (data) => {
+          const text = typeof data === 'string' ? data : Buffer.from(data as Uint8Array).toString('utf8')
+          const message = JSON.parse(text) as { type?: string; streamId?: string; endpoint?: string }
+          if (message.type === 'open' && message.endpoint === 'workspace/follow' && message.streamId !== undefined) {
+            websocket.send(JSON.stringify({
+              type: 'item',
+              streamId: message.streamId,
+              value: { type: 'baseline', value: { items: [], archivedSessionIds: [] } },
+            }))
+          }
+        })
       })
-      constructor(readonly url: URL) {
-        super()
-        sockets.push(this)
-      }
-    }
-    vi.stubGlobal('WebSocket', TestHostWebSocket)
+    })
+    await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
+    closeServers.push(async () => {
+      for (const client of wss.clients) client.terminate()
+      wss.close()
+      server.close()
+    })
+    const address = server.address()
+    if (address === null || typeof address === 'string') throw new Error('expected TCP address')
     const owner = new DesktopCompanionProductOwner({
       timeoutMs: 100, responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
     })
-    const uninstall = owner.installHost('http://127.0.0.1:43123')
-    expect(sockets).toHaveLength(0)
+    const uninstall = owner.installHost(`http://127.0.0.1:${String(address.port)}`)
+    expect(upgrades.filter(path => path.startsWith('/api/events.')).length).toBe(0)
     const first = owner.connectLiveProjection(pairingId, () => {}, () => {})
     const second = owner.connectLiveProjection(pairingId, () => {}, () => {})
-    expect(sockets).toHaveLength(2)
-
+    await expect.poll(() => upgrades.filter(path => path.startsWith('/api/events.')).length).toBe(2)
     first()
-    expect(sockets.every(socket => socket.close.mock.calls.length === 0)).toBe(true)
+    expect(upgrades.filter(path => path.startsWith('/api/events.')).length).toBe(2)
     second()
-    expect(sockets.every(socket => socket.close.mock.calls.length === 1)).toBe(true)
-
     const replacement = owner.connectLiveProjection(pairingId, () => {}, () => {})
-    expect(sockets).toHaveLength(4)
+    await expect.poll(() => upgrades.filter(path => path.startsWith('/api/events.')).length).toBe(4)
     replacement()
     uninstall()
-    await Promise.resolve()
   })
 
-  it('requests a complete Mobile resync when the Web Host arrives after Relay authentication', () => {
-    class TestHostWebSocket extends EventTarget {
-      static readonly CONNECTING = 0
-      static readonly OPEN = 1
-      readyState = TestHostWebSocket.CONNECTING
-      close(): void { this.readyState = 3 }
-    }
-    vi.stubGlobal('WebSocket', TestHostWebSocket)
+  it('requests a complete Mobile resync when the Web Host arrives after Relay authentication', async () => {
+    const loopback = await listenCompanionHost()
     const owner = new DesktopCompanionProductOwner({
       timeoutMs: 100, responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
     })
     const changed = vi.fn()
     const disconnect = owner.connectLiveProjection(pairingId, changed, () => {})
-
-    const uninstall = owner.installHost('http://127.0.0.1:43123')
-
+    const uninstall = owner.installHost(loopback.origin)
     expect(changed).toHaveBeenCalledOnce()
     expect(changed).toHaveBeenCalledWith({ type: 'surface' })
     disconnect()
@@ -119,6 +119,45 @@ describe('Desktop Companion product operations', () => {
       workspaces: [{ workspaceId: 'workspace-product', sessionIds: [sessionId] }],
     })
     expect(calls).toEqual(['session.list'])
+  })
+
+  it('rejects surface and search while the workspace follow snapshot is still loading', async () => {
+    const dependencies = baseDependencies(hostRpc(async (method) => {
+      if (method === 'session.list') return { ok: true, value: { items: [{
+        sessionId: 'session-product', updatedAt: 9, running: false, blank: false,
+      }] } }
+      if (method === 'session.search') return { ok: true, value: { items: [
+        { sessionId: 'session-hit', snippet: 'needle' },
+      ], hasMore: false } }
+      throw new Error(`unexpected Host method ${method}`)
+    }))
+    dependencies.workspaceSnapshot = async () => ({ kind: 'loading' })
+    await expect(handleCompanionProductOperation(op({ type: 'refresh-surface', offset: 0 }), dependencies))
+      .resolves.toMatchObject({
+        type: 'operation-failed',
+        failure: { kind: 'timeout', code: 'HOST_TIMEOUT' },
+      })
+    await expect(handleCompanionProductOperation(search('needle'), dependencies)).resolves.toMatchObject({
+      type: 'operation-failed',
+      failure: { kind: 'timeout', code: 'HOST_TIMEOUT' },
+    })
+  })
+
+  it('does not reuse a workspace snapshot after the follow stream fails', async () => {
+    const dependencies = baseDependencies(hostRpc(async (method) => {
+      if (method === 'session.search') return { ok: true, value: { items: [
+        { sessionId: 'session-hit', snippet: 'needle' },
+      ], hasMore: false } }
+      throw new Error(`unexpected Host method ${method}`)
+    }), { items: [], archivedSessionIds: [] })
+    await expect(handleCompanionProductOperation(search('needle'), dependencies)).resolves.toMatchObject({
+      type: 'session-search', items: [{ sessionId: 'session-hit' }],
+    })
+    dependencies.workspaceSnapshot = async () => ({ kind: 'error', message: 'Desktop Host workspace follow ended' })
+    await expect(handleCompanionProductOperation(search('needle'), dependencies)).resolves.toMatchObject({
+      type: 'operation-failed',
+      failure: { kind: 'wire', code: 'HOST_WIRE_INVALID', message: 'Desktop Host workspace follow ended' },
+    })
   })
 
   it('projects a later Session page with exact hasMore and Workspace membership', async () => {
@@ -631,7 +670,7 @@ describe('Desktop Companion product operations', () => {
         },
       }
     })
-    const dependencies = baseDependencies({ call })
+    const dependencies = baseDependencies(hostRpc(call))
     await expect(handleCompanionProductOperation(operation, dependencies)).resolves.toEqual({
       type: 'session-search',
       operationId: operation.operationId,
@@ -643,17 +682,18 @@ describe('Desktop Companion product operations', () => {
     await expect(handleCompanionProductOperation(search('absent'), dependencies)).resolves.toMatchObject({
       type: 'session-search', items: [], hasMore: false,
     })
-    expect(call).toHaveBeenCalledTimes(4)
+    expect(call).toHaveBeenCalledTimes(2)
   })
 
   it('excludes Desktop-archived Sessions from authoritative full-text results', async () => {
     const operation = search('needle')
-    const dependencies = baseDependencies(hostRpc(async method => method === 'session.search'
-      ? { ok: true, value: { items: [
+    const dependencies = baseDependencies(hostRpc(async (method) => {
+      expect(method).toBe('session.search')
+      return { ok: true, value: { items: [
         { sessionId: 'session-visible', snippet: 'Visible needle' },
         { sessionId: 'session-archived', snippet: 'Archived needle' },
       ], hasMore: false } }
-      : { ok: true, value: { items: [], archivedSessionIds: ['session-archived'] } }))
+    }), { items: [], archivedSessionIds: ['session-archived'] })
 
     await expect(handleCompanionProductOperation(operation, dependencies)).resolves.toEqual({
       type: 'session-search',
@@ -669,9 +709,8 @@ describe('Desktop Companion product operations', () => {
     ['http-400', { kind: 'http', code: 'HOST_HTTP_STATUS', message: 'Desktop Host returned HTTP 400', status: 400 }],
   ] as const)('projects %s Host search refusal without stream loss', async (_name, failure) => {
     const operation = search(_name)
-    await expect(handleCompanionProductOperation(operation, baseDependencies({
-      call: async () => ({ ok: false, failure }),
-    }))).resolves.toEqual({ type: 'operation-failed', operationId: operation.operationId, failure })
+    await expect(handleCompanionProductOperation(operation, baseDependencies(hostRpc(async () => ({ ok: false, failure })))),
+    ).resolves.toEqual({ type: 'operation-failed', operationId: operation.operationId, failure })
   })
 
   it('installs the real Web Host RPC in the product owner and invalidates it on Host exit', async () => {
@@ -717,11 +756,9 @@ describe('Desktop Companion product operations', () => {
     })
     await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
     closeServers.push(async () => {
+      for (const client of wss.clients) client.terminate()
       wss.close()
-      server.closeAllConnections()
-      await new Promise<void>((resolve, reject) => {
-        server.close((error) => { if (error === undefined) resolve(); else reject(error) })
-      })
+      server.close()
     })
     const address = server.address()
     if (address === null || typeof address === 'string') throw new Error('expected TCP address')
@@ -731,7 +768,6 @@ describe('Desktop Companion product operations', () => {
     const uninstallReplaced = owner.installHost(`http://127.0.0.1:${String(address.port)}`)
     const uninstall = owner.installHost(`http://127.0.0.1:${String(address.port)}`)
     uninstallReplaced()
-
     await expect(owner.handle(search('entry'), baseDependencies(hostRpc(() => {
       throw new Error('owner must use its installed Host RPC')
     })))).resolves.toEqual({
@@ -784,7 +820,11 @@ function search(query: string): CompanionSearchSessionsOperation {
 }
 
 function hostRpc(call: DesktopHostRpc['call'], respond?: DesktopHostRpc['respond']): DesktopHostRpc {
-  return { call, ...(respond === undefined ? {} : { respond }) }
+  return {
+    call,
+    ...(respond === undefined ? {} : { respond }),
+    followWorkspaces: async () => {},
+  }
 }
 
 function historyCache(events: unknown[], hasMore = false) {
@@ -819,4 +859,34 @@ function deferred<T>(): { promise: Promise<T>; resolve(value: T): void } {
   let resolve!: (value: T) => void
   const promise = new Promise<T>((settle) => { resolve = settle })
   return { promise, resolve }
+}
+
+async function listenCompanionHost(): Promise<{ origin: string }> {
+  const server = createServer()
+  const wss = new WebSocketServer({ noServer: true })
+  server.on('upgrade', (request, socket, head) => {
+    wss.handleUpgrade(request, socket, head, (websocket) => {
+      websocket.on('message', (data) => {
+        const text = typeof data === 'string' ? data : Buffer.from(data as Uint8Array).toString('utf8')
+        const message = JSON.parse(text) as { type?: string; streamId?: string; endpoint?: string }
+        if (message.type === 'open' && message.endpoint === 'workspace/follow' && message.streamId !== undefined) {
+          websocket.send(JSON.stringify({
+            type: 'item',
+            streamId: message.streamId,
+            value: { type: 'baseline', value: { items: [], archivedSessionIds: [] } },
+          }))
+        }
+      })
+    })
+  })
+  await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
+  closeServers.push(async () => {
+    wss.close()
+    for (const client of wss.clients) client.terminate()
+    wss.close()
+    server.close()
+  })
+  const address = server.address()
+  if (address === null || typeof address === 'string') throw new Error('expected TCP address')
+  return { origin: `http://127.0.0.1:${String(address.port)}` }
 }

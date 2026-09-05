@@ -72,7 +72,7 @@ export interface DesktopHostRpc {
    * Follow generated Gateway `workspace/follow` on `/api/remote.mux`.
    * Cookie is sent only to the bootstrap origin. Abort sends mux `cancel`.
    */
-  followWorkspaces?(
+  followWorkspaces(
     signal: AbortSignal,
     accept: (frame: unknown) => void,
   ): Promise<void>
@@ -234,14 +234,13 @@ function watchHostWebSocket(
     const socket = openOriginWebSocket(url, origin, cookieHeader)
     const settled = { value: false }
     const cleanup = (): void => {
-      signal.removeEventListener('abort', abort)
-      socket.removeAllListeners()
+      detachSocketListeners(signal, abort, socket)
     }
     const settle = (failure?: Error): void => {
       settleSocket(settled, cleanup, resolve, reject, failure)
     }
     const abort = (): void => {
-      if (socket.readyState === WebSocket.CONNECTING || socket.readyState === WebSocket.OPEN) socket.close()
+      closeOriginWebSocket(socket)
       settle()
     }
     const message = (data: WebSocket.RawData): void => {
@@ -437,9 +436,23 @@ function openOriginWebSocket(url: URL, origin: URL, cookieHeader?: string): WebS
   if (url.hostname !== origin.hostname || url.port !== origin.port) {
     throw new TypeError('Desktop Host WebSocket must stay on the bootstrap origin')
   }
-  return new WebSocket(url, {
+  const socket = new WebSocket(url, {
+    handshakeTimeout: 1_000,
     ...cookieHeader === undefined ? {} : { headers: { cookie: cookieHeader } },
   })
+  socket.on('error', () => {})
+  return socket
+}
+
+function closeOriginWebSocket(socket: WebSocket): void {
+  if (socket.readyState === WebSocket.OPEN) socket.close()
+}
+
+function detachSocketListeners(signal: AbortSignal, abort: () => void, socket: WebSocket): void {
+  signal.removeEventListener('abort', abort)
+  socket.removeAllListeners('message')
+  socket.removeAllListeners('open')
+  socket.removeAllListeners('close')
 }
 
 function settleSocket(
@@ -472,8 +485,7 @@ function followRemoteMux(
     const settled = { value: false }
     let opened = false
     const cleanup = (): void => {
-      signal.removeEventListener('abort', abort)
-      socket.removeAllListeners()
+      detachSocketListeners(signal, abort, socket)
     }
     const settle = (failure?: Error): void => {
       settleSocket(settled, cleanup, resolve, reject, failure)
@@ -482,7 +494,7 @@ function followRemoteMux(
       if (opened && socket.readyState === WebSocket.OPEN) {
         socket.send(JSON.stringify({ type: 'cancel', streamId }))
       }
-      if (socket.readyState === WebSocket.CONNECTING || socket.readyState === WebSocket.OPEN) socket.close()
+      closeOriginWebSocket(socket)
       settle()
     }
     const message = (data: WebSocket.RawData): void => {
