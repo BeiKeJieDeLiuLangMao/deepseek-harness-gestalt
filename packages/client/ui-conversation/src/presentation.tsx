@@ -341,6 +341,80 @@ function isNotice(effect: InputEffect): effect is Extract<InputEffect, { type: '
   return effect.type === 'notice'
 }
 
+const DRAFT_HISTORY_LIMIT = 200
+
+/** Local undo/redo ring for the standalone controlled textarea. */
+class DraftHistory {
+  private undo: string[] = []
+  private redo: string[] = []
+  private composing = false
+  private compositionBase: string | undefined
+
+  /**
+   * Record a committed draft change as one undo unit.
+   * @param previous - draft before the change.
+   * @param next - draft after the change.
+   */
+  record(previous: string, next: string): void {
+    if (previous === next) return
+    if (this.composing) return
+    this.undo.push(previous)
+    if (this.undo.length > DRAFT_HISTORY_LIMIT) this.undo.shift()
+    this.redo = []
+  }
+
+  /** Begin an IME composition so later commits coalesce into one unit. */
+  beginComposition(current: string): void {
+    if (this.composing) return
+    this.composing = true
+    this.compositionBase = current
+  }
+
+  /**
+   * End IME composition and record one unit from the composition start.
+   * @param next - draft after composition.
+   */
+  endComposition(next: string): void {
+    if (!this.composing) return
+    const previous = this.compositionBase ?? next
+    this.composing = false
+    this.compositionBase = undefined
+    this.record(previous, next)
+  }
+
+  /**
+   * Undo one unit.
+   * @param current - live draft.
+   * @returns previous draft, or the current draft when the log is empty.
+   */
+  undoDraft(current: string): string {
+    const previous = this.undo.pop()
+    if (previous === undefined) return current
+    this.redo.push(current)
+    return previous
+  }
+
+  /**
+   * Redo one unit.
+   * @param current - live draft.
+   * @returns next draft, or the current draft when the redo stack is empty.
+   */
+  redoDraft(current: string): string {
+    const next = this.redo.pop()
+    if (next === undefined) return current
+    this.undo.push(current)
+    return next
+  }
+
+  /** Cut history after a successful send so the sent draft cannot resurrect. */
+  clear(): void {
+    this.undo = []
+    this.redo = []
+    this.composing = false
+    this.compositionBase = undefined
+  }
+}
+
 function settleEffects(
   machine: SubmitMachine,
   effects: readonly InputEffect[],
@@ -349,6 +423,7 @@ function settleEffects(
   setDraft: (draft: string) => void,
   setBusy: (busy: boolean) => void,
   onSubmit: ConversationComposerProps['onSubmit'],
+  history: DraftHistory,
 ): void {
   for (const effect of effects) {
     if (effect.type !== 'default-sink') continue
@@ -359,6 +434,7 @@ function settleEffects(
         const settled = machine.dispatch({
           type: 'sink-settled', attempt: effect.attempt, ok: true,
         })
+        history.clear()
         setDraft('')
         setBusy(false)
         publishNotice(settled.find(isNotice))
@@ -391,6 +467,9 @@ export function ConversationComposer({
   const machineRef = useRef<SubmitMachine>()
   const machine = machineRef.current ?? new SubmitMachine()
   machineRef.current = machine
+  const historyRef = useRef<DraftHistory>()
+  const history = historyRef.current ?? new DraftHistory()
+  historyRef.current = history
   const [draft, setDraft] = useState('')
   const [, setPhase] = useState(machine.state.phase)
   const [busy, setBusy] = useState(false)
@@ -404,14 +483,20 @@ export function ConversationComposer({
   const dispatch = useCallback((event: Parameters<SubmitMachine['dispatch']>[0]) => {
     const effects = machine.dispatch(event)
     publish()
-    settleEffects(machine, effects, publish, setNotice, setDraft, markBusy, onSubmit)
-  }, [machine, markBusy, onSubmit, publish])
+    settleEffects(machine, effects, publish, setNotice, setDraft, markBusy, onSubmit, history)
+  }, [history, machine, markBusy, onSubmit, publish])
   const composing = useRef(false)
   const submit = useCallback(() => { dispatch({ type: 'enter', mode: 'queue', draft }) }, [dispatch, draft])
+  const applyDraft = (next: string): void => {
+    setDraft(next)
+    dispatch({ type: 'draft-changed', draft: next })
+  }
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>): void => {
     if (event.key === 'Enter' && event.shiftKey) return
     if ((event.metaKey || event.ctrlKey) && (event.key === 'z' || event.key === 'Z' || event.key === 'y')) {
       event.preventDefault()
+      if (busyRef.current || snapshot.removed) return
+      applyDraft(event.key === 'y' || event.shiftKey ? history.redoDraft(draft) : history.undoDraft(draft))
       return
     }
     if (event.key !== 'Enter' || composing.current || event.nativeEvent.isComposing) return
@@ -426,12 +511,20 @@ export function ConversationComposer({
     event.preventDefault()
     const start = event.currentTarget.selectionStart
     const end = event.currentTarget.selectionEnd
-    setDraft(`${draft.slice(0, start)}${text}${draft.slice(end)}`)
+    const next = `${draft.slice(0, start)}${text}${draft.slice(end)}`
+    history.record(draft, next)
+    applyDraft(next)
   }
   return (
     <div
-      onCompositionStart={() => { composing.current = true }}
-      onCompositionEnd={() => { composing.current = false }}
+      onCompositionStart={() => {
+        composing.current = true
+        history.beginComposition(draft)
+      }}
+      onCompositionEnd={() => {
+        composing.current = false
+        history.endComposition(draft)
+      }}
     >
       <InputBarPresentation
         draft={draft}
@@ -441,8 +534,8 @@ export function ConversationComposer({
         disabled={snapshot.removed || disabled}
         placeholder={t(snapshot.removed ? 'placeholder.unavailable' : 'placeholder.default')}
         onDraftChange={(next) => {
-          setDraft(next)
-          dispatch({ type: 'draft-changed', draft: next })
+          history.record(draft, next)
+          applyDraft(next)
         }}
         onSubmit={submit}
         onStop={onCancel}

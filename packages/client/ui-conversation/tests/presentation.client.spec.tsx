@@ -215,6 +215,57 @@ describe('public conversation presentation seam', () => {
     expect(tool.closest('[data-composer-card]')).not.toBeNull()
   })
 
+  it('undoes typing and paste, and cannot resurrect a successfully sent draft', async () => {
+    const onSubmit = vi.fn(async () => undefined)
+    render(createElement(ConversationComposer, {
+      snapshot: sessionSnapshot('presentation-session' as SessionId),
+      onSubmit,
+      t: conversationPresentationTranslate('en'),
+    }))
+    const input = screen.getByRole('textbox') as HTMLTextAreaElement
+    fireEvent.change(input, { target: { value: 'ab' } })
+    input.setSelectionRange(2, 2)
+    fireEvent.paste(input, { clipboardData: { getData: () => 'cd' } })
+    expect(input.value).toBe('abcd')
+    fireEvent.keyDown(input, { key: 'z', ctrlKey: true })
+    expect(input.value).toBe('ab')
+    fireEvent.keyDown(input, { key: 'y', ctrlKey: true })
+    expect(input.value).toBe('abcd')
+    fireEvent.keyDown(input, { key: 'Z', metaKey: true, shiftKey: true })
+    expect(input.value).toBe('abcd')
+    fireEvent.keyDown(input, { key: 'Enter' })
+    await waitFor(() => { expect(onSubmit).toHaveBeenCalledWith('abcd') })
+    expect(input.value).toBe('')
+    fireEvent.keyDown(input, { key: 'z', metaKey: true })
+    expect(input.value).toBe('')
+  })
+
+  it('keeps IME composition as one undo unit and swallows undo while busy', async () => {
+    let resolveSubmit: (() => void) | undefined
+    const onSubmit = vi.fn(() => new Promise<void>((resolve) => { resolveSubmit = resolve }))
+    render(createElement(ConversationComposer, {
+      snapshot: sessionSnapshot('presentation-session' as SessionId),
+      onSubmit,
+      t: conversationPresentationTranslate('en'),
+    }))
+    const input = screen.getByRole('textbox') as HTMLTextAreaElement
+    fireEvent.change(input, { target: { value: 'keep' } })
+    fireEvent.compositionStart(input)
+    fireEvent.change(input, { target: { value: 'keep你' } })
+    fireEvent.change(input, { target: { value: 'keep你好' } })
+    fireEvent.compositionEnd(input)
+    expect(input.value).toBe('keep你好')
+    fireEvent.keyDown(input, { key: 'z', ctrlKey: true })
+    expect(input.value).toBe('keep')
+    fireEvent.change(input, { target: { value: 'keep going' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    await waitFor(() => { expect(onSubmit).toHaveBeenCalledOnce() })
+    fireEvent.keyDown(input, { key: 'z', ctrlKey: true })
+    expect(input.value).toBe('keep going')
+    resolveSubmit?.()
+    await waitFor(() => { expect(input.value).toBe('') })
+  })
+
   it('preserves draft rules across keyboard, composition, paste, and unavailable states', async () => {
     let resolveSubmit: (() => void) | undefined
     const onSubmit = vi.fn(() => new Promise<void>((resolve) => { resolveSubmit = resolve }))
