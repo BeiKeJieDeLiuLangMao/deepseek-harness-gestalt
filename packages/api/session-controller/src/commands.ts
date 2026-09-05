@@ -10,6 +10,7 @@ import {
   ReasoningEffortId, createUserMessage, freezeMessage,
 } from '@deepseek-ai/dsh-llm'
 import type { MessageSource } from '@deepseek-ai/dsh-llm'
+import { clearGoalFromForkSeed } from '@deepseek-ai/dsh-goal'
 import { SessionLogOffset, SessionSeq } from '@deepseek-ai/dsh-session'
 import type { SessionEvent, SessionHeader, SessionId, UserMessage } from '@deepseek-ai/dsh-session'
 import { SessionQueryError, type SessionObservation } from '@deepseek-ai/dsh-session-query'
@@ -245,9 +246,10 @@ export class SessionCommandController {
     const composition = await this.agents.composeAgent(this.agents.presetForObservation(source))
     try {
       const { provider, model } = this.ctx.agentDefaultModel.currentSelection()
+      const prefix = source.events.slice(0, cut)
       await this.ctx.agents.create({
         sessionId: childId,
-        seed: source.events.slice(0, cut),
+        seed: clearGoalFromForkSeed(prefix),
         inheritedEventCount: cut,
         meta: {
           ...(source.header.cwd === undefined ? {} : { cwd: source.header.cwd }),

@@ -6,6 +6,7 @@ import AgentRegistry, { agentEvents } from '@deepseek-ai/dsh-agent'
 import type { Agent, AgentHandle, CreateAgentOptions } from '@deepseek-ai/dsh-agent'
 import { createUserMessage, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { LlmCallConfig } from '@deepseek-ai/dsh-llm'
+import GoalService, { foldGoal } from '@deepseek-ai/dsh-goal'
 import SessionStore, { SessionLogOffset, SessionSeq } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent, SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
@@ -299,6 +300,38 @@ describe('sessions.fork', () => {
       model: 'inherited-model',
       reasoningEffort: 'high',
     })
+    await ctx.fiber.dispose()
+  })
+
+  it('clears an inherited active goal on the child without changing the source or auto-arming', async () => {
+    const ctx = await composed()
+    await ctx.plugin(GoalService)
+    const source = liveAgent(ctx, 'session-goal-source', 1)
+    const parentAgent = ctx.agents.get(source.id)
+    if (parentAgent === undefined) throw new Error('source agent is missing')
+    const goal = ctx.goals.create(parentAgent, { objective: 'parent product goal', maxGoalRounds: 8 })
+    const parentEvents = source.snapshotEvents()
+    const response = await remote(ctx).fork(request({ sessionId: source.id }))
+    expect(response.ok).toBe(true)
+    if (!response.ok) return
+    const child = ctx.sessions.get(response.value.sessionId)
+    const childAgent = ctx.agents.get(response.value.sessionId)
+    if (child === undefined || childAgent === undefined) throw new Error('fork did not publish the child')
+    expect(ctx.goals.get(parentAgent)).toMatchObject({
+      id: goal.id,
+      revision: goal.revision,
+      phase: 'active',
+    })
+    expect(source.snapshotEvents()).toEqual(parentEvents)
+    expect(ctx.goals.get(childAgent)).toBeUndefined()
+    expect(foldGoal(child.snapshotEvents()).goal).toBeUndefined()
+    const lastOwned = child.snapshotEvents().at(-2)
+    expect(lastOwned?.type).toBe('goal/change')
+    if (lastOwned?.type !== 'goal/change') throw new Error('expected a child-owned clear tombstone')
+    expect(lastOwned.seq).toBe(child.inheritedEventCount)
+    const created = ctx.goals.create(childAgent, { objective: 'child-owned goal' })
+    expect(created.phase).toBe('active')
+    expect(ctx.goals.get(parentAgent)?.id).toBe(goal.id)
     await ctx.fiber.dispose()
   })
 })
