@@ -7130,6 +7130,9 @@ importers:
       '@deepseek-ai/dsh-llm':
         specifier: workspace:^
         version: link:../../llm/llm
+      '@deepseek-ai/dsh-platform-account':
+        specifier: workspace:^
+        version: link:../../platform/platform-account
       '@deepseek-ai/dsh-remote-access':
         specifier: workspace:^
         version: link:../../platform/remote-access
@@ -7139,6 +7142,9 @@ importers:
       '@deepseek-ai/dsh-session':
         specifier: workspace:^
         version: link:../../core/session
+      '@deepseek-ai/dsh-user-questions':
+        specifier: workspace:^
+        version: link:../user-questions
 
   packages/interaction/permission-presets:
     dependencies:
@@ -7191,6 +7197,12 @@ importers:
       '@deepseek-ai/dsh-llm':
         specifier: workspace:^
         version: link:../../llm/llm
+      '@deepseek-ai/dsh-platform-account':
+        specifier: workspace:^
+        version: link:../../platform/platform-account
+      '@deepseek-ai/dsh-remote-protocol':
+        specifier: workspace:^
+        version: link:../../platform/remote-protocol
       '@deepseek-ai/dsh-system-prompt':
         specifier: workspace:^
         version: link:../../core/system-prompt
@@ -7280,6 +7292,12 @@ importers:
       '@deepseek-ai/dsh-llm':
         specifier: workspace:^
         version: link:../../llm/llm
+      '@deepseek-ai/dsh-platform-account':
+        specifier: workspace:^
+        version: link:../../platform/platform-account
+      '@deepseek-ai/dsh-remote-protocol':
+        specifier: workspace:^
+        version: link:../../platform/remote-protocol
       '@deepseek-ai/dsh-scope':
         specifier: workspace:^
         version: link:../../core/scope
