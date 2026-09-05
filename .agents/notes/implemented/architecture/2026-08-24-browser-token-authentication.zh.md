@@ -12,7 +12,7 @@ Web Host 以当前操作系统用户的权限运行具有工具能力的 Session
 
 `dsh-client-connection` 在分发前认证完整 Host API。每个 API Proxy 方法、Remote 一元调用、通用 Connection channel 和 Remote WebSocket stream 都要求同一个浏览器会话；endpoint 所有权与方法名称不改变 authority。既有 Host/Origin 校验先执行，继续负责 DNS rebinding 和跨站请求防御，失败时返回 403。Host 可信但没有有效浏览器会话时返回 401。浏览器信任规则仍由[载体级浏览器信任决策](2026-07-28-api-browser-trust-boundary.zh.md)持有。
 
-每个 Host 进程生成随机启动令牌，并由应用根 context 跨 Connection 热重载保留。`dsh-web-app` 每个进程只打印并打开一次 query 中带该令牌的普通根 URL。`frontend-static` 请求 Connection 授权 index 响应：只有 `GET /?token=...` 会把进程令牌交换为 cookie，再重定向到干净的 `/`；API 路径和 Authorization header 都不接受该令牌。过时令牌如果同时带有有效 cookie，会重定向到干净的 `/`。缺失与无效凭据得到同一份最小 401 响应。非 index 静态资产保持公开。
+每个 Host 进程生成随机启动令牌，并由应用根 context 跨 Connection 热重载保留。`dsh-web-app` 每个进程只打印并打开一次 query 中带该令牌的普通根 URL。Desktop Host 从 stdout 解析该认证启动 URL，把不含令牌的 origin 作为公开 Host URL，并独立对 loopback `GET /?token=...` 做同一次交换，把 cookie 留在主进程内存里供 unary RPC 使用。`frontend-static` 请求 Connection 授权 index 响应：只有 `GET /?token=...` 会把进程令牌交换为 cookie，再重定向到干净的 `/`；API 路径和 Authorization header 都不接受该令牌。过时令牌如果同时带有有效 cookie，会重定向到干净的 `/`。缺失与无效凭据得到同一份最小 401 响应。非 index 静态资产保持公开。Desktop Host 从不把 cookie 写入磁盘，从不记录令牌或 cookie，也从不把二者交给 renderer 或 Companion。
 
 cookie 是签名且绑定 authority 的 bearer。确定性名称与签名 payload 都包含规范化 hostname 和 port，因此同一 Harness home 可以在不同 Web port 运行而不发生 cookie 冲突。payload 在绝对有效期内携带安全整数形式的签发与过期时间；`cookieMaxAgeDays` 默认为 30。cookie 是 host-only、`Path=/`、`HttpOnly`、`SameSite=Strict`。随附服务器使用 loopback HTTP，因此不设置 `Secure`。这里没有 logout 操作或反向代理专用处理。
 
@@ -24,7 +24,7 @@ HMAC 密钥是 `ctx.credentials` 中位于 `client-connection/browser-session` �
 
 ## 验证
 
-单元覆盖 Connection 重载时保留进程令牌、每次激活只加载一次密钥、无需读取凭据提供方的同步校验、cookie 属性、HMAC 与 payload 校验、authority 与有效期校验、记录删除在下一次激活时生效、无效持久记录，以及用有效 cookie 清理过时令牌 URL。Host 传输套件固定通用 RPC、Typert Remote HTTP、精确 Fetch 路由和 WebSocket upgrade 路径上一致的 401/403 行为。frontend 真实组合测试经 Loader 启动 credentials、Connection、webserver 与静态服务，证明读取 index 前完成令牌交换，同时静态资产仍公开。打包 worker 测试证明 cookie 编码可移植，并覆盖认证与信任拒绝后的 worker 本地重试。真实 CLI 测试在临时 `DSH_HOME` 上用同一端口两次启动 `dsh web`，证明伪造 `Host: localhost` 仍未认证，以交换所得 cookie 调用 `settings/describe`，观测新的进程令牌，并在重启后复用旧 cookie。
+单元覆盖 Connection 重载时保留进程令牌、每次激活只加载一次密钥、无需读取凭据提供方的同步校验、cookie 属性、HMAC 与 payload 校验、authority 与有效期校验、记录删除在下一次激活时生效、无效持久记录，以及用有效 cookie 清理过时令牌 URL。Host 传输套件固定通用 RPC、Typert Remote HTTP、精确 Fetch 路由和 WebSocket upgrade 路径上一致的 401/403 行为。frontend 真实组合测试经 Loader 启动 credentials、Connection、webserver 与静态服务，证明读取 index 前完成令牌交换，同时静态资产仍公开。打包 worker 测试证明 cookie 编码可移植，并覆盖认证与信任拒绝后的 worker 本地重试。真实 CLI 测试在临时 `DSH_HOME` 上用同一端口两次启动 `dsh web`，证明伪造 `Host: localhost` 仍未认证，以交换所得 cookie 调用 `settings/describe`，观测新的进程令牌，并在重启后复用旧 cookie。Desktop Host 测试解析认证启动 URL、从 spawn 诊断中抹去 `token=`、拒绝跨 origin bootstrap，并启动随附 `dsh web` 子进程，证明未认证的 `session/list` 返回 401、同源令牌交换后可以列出 Session，以及重启后的 Host 拒绝先前内存 cookie。
 
 ## 曾考虑的替代方案
 
@@ -33,6 +33,8 @@ HMAC 密钥是 `ctx.credentials` 中位于 `client-connection/browser-session` �
 **保留按方法的特权列表，并把存储凭据限制在已配置目标。** 列表可能漏掉新 endpoint，也不能约束已经控制工具型 Session 的调用者。`discoverModels` 目标规则不构成安全边界，因为同一已认证主体可以更新 settings 并运行命令。统一认证覆盖授予进程控制权的操作。
 
 **持久化启动令牌或把它作为 API bearer 接受。** 持久启动令牌会成为第二份长期凭据；Authorization header 支持则会增加没有当前 consumer 的非浏览器客户端约定。进程令牌只完成一次浏览器 cookie 交换。
+
+**给 Desktop Host 增加进入 Web Host 子进程的私有 IPC invoke 路径。** 该子进程是独立 Node 进程，当前没有 IPC stdio。新控制通道会在 Connection cookie 会话旁再造一套权限模型。Desktop Host 改为执行与 renderer 相同的 loopback 令牌交换，并把 cookie 留在主进程内存中。
 
 **每次重启都轮换签名密钥。** 这会阻止既有浏览器在普通 DSH 重启后重连。只持久化签名密钥既保留该工作流，又由进程令牌轮换把启动 URL 限定在一个进程生命周期。
 

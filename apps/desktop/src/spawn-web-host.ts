@@ -3,7 +3,7 @@
  * @module @deepseek-ai/dsh-desktop/spawn-web-host
  */
 import { type ChildProcess, spawn } from 'node:child_process'
-import { webUrlFromOutput } from './web-url.ts'
+import { webHostAnnouncementFromOutput } from './web-url.ts'
 
 /** How we invoke `dsh web`. */
 export interface WebHostCommand {
@@ -27,8 +27,10 @@ export interface RunningWebHost {
   readonly exited: Promise<void>
   /** Request termination and resolve after the child exits. */
   readonly stop: () => Promise<void>
-  /** Loopback URL including the assigned port. */
+  /** Public loopback origin including the assigned port. */
   readonly url: string
+  /** Authenticated startup URL; exchanged once in memory and never logged. */
+  readonly launchUrl: string
 }
 
 const SENSITIVE_ENVIRONMENT_NAME = /(?:KEY|SECRET|TOKEN|PASSWORD|CREDENTIAL)/iu
@@ -45,6 +47,7 @@ export function redactWebHostDiagnostic(output: string, environment: NodeJS.Proc
   return redacted
     .replaceAll(/([A-Z][A-Z0-9_]*(?:KEY|SECRET|TOKEN|PASSWORD|CREDENTIAL)[A-Z0-9_]*\s*[:=]\s*)[^\s,;]+/giu, '$1[REDACTED]')
     .replaceAll(/(https?:\/\/)[^\s/@:]+:[^\s/@]+@/giu, '$1[REDACTED]@')
+    .replaceAll(/([?&]token=)[^&\s]+/giu, '$1[REDACTED]')
 }
 
 /** Return a bounded credential-free child diagnostic. */
@@ -111,11 +114,13 @@ export function spawnWebHost(
     if (command.signal?.aborted === true) onAbort()
     const onData = (chunk: Buffer | string): void => {
       buffer += chunk.toString()
-      const url = webUrlFromOutput(buffer)
-      if (url === undefined || settled) return
+      const announcement = webHostAnnouncementFromOutput(buffer)
+      if (announcement === undefined || settled) return
       settled = true
       clearTimeout(timer)
-      resolve({ child, exited, stop, url })
+      resolve({
+        child, exited, stop, url: announcement.origin, launchUrl: announcement.launchUrl,
+      })
     }
     child.stdout.on('data', onData)
     child.stderr.on('data', onData)

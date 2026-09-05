@@ -63,16 +63,21 @@ export interface DesktopHostRpcOptions {
   responseMaxBytes: number
   /** Wall-clock deadline for one maximum-size local attachment admission. */
   attachmentTimeoutMs?: number
+  /** In-memory Host session cookie from {@link bootstrapDesktopHostCookie}; never logged or persisted. */
+  cookieHeader?: string
 }
 
 /**
  * Build the Desktop-owned loopback Host RPC client.
- * @param baseUrl - Web Host loopback origin printed at spawn.
+ * @param baseUrl - public Web Host loopback origin.
  * @param options - request deadline.
  * @returns typed unary client.
  */
 export function createDesktopHostRpc(baseUrl: string, options: DesktopHostRpcOptions): DesktopHostRpc {
   const origin = new URL(baseUrl)
+  if (origin.protocol !== 'http:' || origin.hostname !== '127.0.0.1') {
+    throw new TypeError('Desktop Host RPC baseUrl must be a loopback http origin')
+  }
   const timeoutMs = options.timeoutMs ?? DEFAULT_HOST_RPC_TIMEOUT_MS
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) {
     throw new TypeError('Desktop Host RPC timeoutMs must be a positive safe integer')
@@ -91,6 +96,7 @@ export function createDesktopHostRpc(baseUrl: string, options: DesktopHostRpcOpt
       const attachmentRead = method === 'session.attachment'
       const projectedRead = method === 'session.history'
         || method === 'session.list'
+        || method === 'session/list'
         || method === 'workspace.list'
       const callTimeoutMs = callOptions?.timeoutMs
         ?? (attachmentRead ? options.attachmentTimeoutMs : undefined)
@@ -107,6 +113,7 @@ export function createDesktopHostRpc(baseUrl: string, options: DesktopHostRpcOpt
           ? MAX_HOST_ATTACHMENT_RESPONSE_BYTES
           : projectedRead ? MAX_HOST_PROJECTED_RESPONSE_BYTES : responseMaxBytes,
         callOptions?.signal,
+        options.cookieHeader,
       )
       if (response.kind === 'timeout') {
         return { ok: false, failure: { kind: 'timeout', code: 'HOST_TIMEOUT', message: 'Desktop Host request timed out' } }
@@ -145,6 +152,8 @@ export function createDesktopHostRpc(baseUrl: string, options: DesktopHostRpcOpt
         { type: 'client-response', rpcId, result },
         timeoutMs,
         responseMaxBytes,
+        undefined,
+        options.cookieHeader,
       )
       if (response.kind !== 'response' || response.status < 200 || response.status >= 300) {
         throw new Error('Desktop Host interaction response transport failed')
@@ -251,10 +260,113 @@ function parseServerResponse(body: unknown, rpcId: string): DesktopHostRpcResult
 }
 
 type RequestOutcome =
-  | { kind: 'response'; status: number; text: string }
+  | { kind: 'response'; status: number; text: string; headers?: IncomingMessage['headers'] }
   | { kind: 'timeout' }
   | { kind: 'transport' }
   | { kind: 'limit' }
+
+/**
+ * Exchange the process launch token at the loopback root for an in-memory Host cookie.
+ * @param launchUrl - authenticated `GET /?token=` URL printed by `dsh web`.
+ * @param origin - public loopback origin; redirects off this origin fail.
+ * @param timeoutMs - wall-clock deadline for the exchange.
+ * @returns the `Cookie` request header value. Never persisted.
+ */
+export async function bootstrapDesktopHostCookie(
+  launchUrl: string,
+  origin: string,
+  timeoutMs = DEFAULT_HOST_RPC_TIMEOUT_MS,
+): Promise<string> {
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) {
+    throw new TypeError('Desktop Host cookie bootstrap timeoutMs must be a positive safe integer')
+  }
+  const launch = new URL(launchUrl)
+  const expected = new URL(origin)
+  if (launch.origin !== expected.origin
+    || expected.protocol !== 'http:'
+    || expected.hostname !== '127.0.0.1'
+    || launch.pathname !== '/'
+    || launch.searchParams.getAll('token').length !== 1) {
+    throw new TypeError('Desktop Host cookie bootstrap requires the same-origin loopback launch URL')
+  }
+  const response = await requestEmpty(launch, timeoutMs)
+  if (response.kind === 'timeout') {
+    throw new Error('Desktop Host cookie bootstrap timed out')
+  }
+  if (response.kind === 'transport') {
+    throw new Error('Desktop Host cookie bootstrap transport failed')
+  }
+  if (response.status !== 303) {
+    throw new Error(`Desktop Host cookie bootstrap returned HTTP ${String(response.status)}`)
+  }
+  const locationHeader = response.headers.location
+  const location = Array.isArray(locationHeader) ? locationHeader[0] : locationHeader
+  if (location === undefined) {
+    throw new Error('Desktop Host cookie bootstrap omitted Location')
+  }
+  const redirected = new URL(location, expected)
+  if (redirected.origin !== expected.origin || redirected.pathname !== '/') {
+    throw new Error('Desktop Host cookie bootstrap redirected off the launch origin')
+  }
+  const cookie = cookieRequestHeader(response.headers['set-cookie'])
+  if (cookie === undefined) {
+    throw new Error('Desktop Host cookie bootstrap omitted Set-Cookie')
+  }
+  return cookie
+}
+
+/**
+ * Read visible Sessions through generated Gateway `session/list`.
+ * @param rpc - authenticated Desktop Host RPC.
+ * @param options - optional timeout and cancellation.
+ * @returns the Host list value or a typed failure.
+ */
+export function listDesktopHostSessions(
+  rpc: DesktopHostRpc,
+  options?: { timeoutMs?: number; signal?: AbortSignal },
+): Promise<DesktopHostRpcResult> {
+  return rpc.call('session/list', { args: { _request: {} } }, options)
+}
+
+function cookieRequestHeader(setCookie: string | readonly string[] | undefined): string | undefined {
+  const values = typeof setCookie === 'string' ? [setCookie] : setCookie === undefined ? [] : [...setCookie]
+  const cookies = values.map((entry) => {
+    const at = entry.indexOf(';')
+    return (at === -1 ? entry : entry.slice(0, at)).trim()
+  }).filter(entry => entry.length > 0)
+  return cookies.length === 0 ? undefined : cookies.join('; ')
+}
+
+function requestEmpty(url: URL, timeoutMs: number): Promise<RequestOutcome> {
+  return new Promise((resolve) => {
+    let settled = false
+    const settle = (outcome: RequestOutcome): void => {
+      if (settled) return
+      settled = true
+      clearTimeout(deadline)
+      resolve(outcome)
+    }
+    const upstream = startRequest(url, { method: 'GET' }, (incoming) => {
+      incoming.resume()
+      incoming.on('error', () => { settle({ kind: 'transport' }) })
+      settle({
+        kind: 'response',
+        status: incoming.statusCode ?? 500,
+        text: '',
+        headers: incoming.headers,
+      })
+      incoming.destroy()
+      upstream.destroy()
+    })
+    const deadline = setTimeout(() => {
+      settle({ kind: 'timeout' })
+      upstream.destroy()
+    }, timeoutMs)
+    deadline.unref()
+    upstream.on('error', () => { settle({ kind: 'transport' }) })
+    upstream.end()
+  })
+}
 
 function requestJson(
   url: URL,
@@ -262,6 +374,7 @@ function requestJson(
   timeoutMs: number,
   responseMaxBytes: number,
   signal?: AbortSignal,
+  cookieHeader?: string,
 ): Promise<RequestOutcome> {
   const encoded = JSON.stringify(body)
   return new Promise((resolve) => {
@@ -282,6 +395,7 @@ function requestJson(
       headers: {
         'content-type': 'application/json',
         'content-length': String(Buffer.byteLength(encoded)),
+        ...cookieHeader === undefined ? {} : { cookie: cookieHeader },
       },
     }, (incoming) => {
       incoming.on('error', () => { settle({ kind: 'transport' }) })
