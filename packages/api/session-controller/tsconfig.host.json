@@ -16,6 +16,7 @@
     "src/control.ts",
     "src/file-references.ts",
     "src/history.ts",
+    "src/history-records.ts",
     "src/list.ts",
     "src/model-selection-projection.ts",
     "src/receiving-materializer.ts",
