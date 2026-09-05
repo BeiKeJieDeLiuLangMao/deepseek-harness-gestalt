@@ -15,10 +15,16 @@
       "path": "../locale"
     },
     {
+      "path": "../../api/gateway/tsconfig.client.json"
+    },
+    {
       "path": "../../api/remotes/tsconfig.client.json"
     },
     {
-      "path": "../runtime"
+      "path": "../store"
+    },
+    {
+      "path": "../../core/session"
     },
     {
       "path": "../ui-conversation"
