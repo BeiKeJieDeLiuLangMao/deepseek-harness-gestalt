@@ -87,8 +87,8 @@ const scheduleProjectionStateSchema = z.object({
     context.addIssue({ code: 'custom', message: 'seen Schedule ids must be unique' })
   }
   const retained = new Set<ScheduleId>()
-  const derivedActive: ScheduleId[] = []
-  const derivedPaused: ScheduleId[] = []
+  const derivedActive: ScheduleRecord[] = []
+  const derivedPaused: ScheduleRecord[] = []
   for (const schedule of state.schedules) {
     if (!seen.has(schedule.record.id)) {
       context.addIssue({ code: 'custom', message: 'every retained Schedule id must have been seen' })
@@ -97,16 +97,22 @@ const scheduleProjectionStateSchema = z.object({
       context.addIssue({ code: 'custom', message: 'retained Schedule ids must be unique' })
     }
     retained.add(schedule.record.id)
-    if (schedule.paused) derivedPaused.push(schedule.record.id)
-    else derivedActive.push(schedule.record.id)
+    if (schedule.paused) derivedPaused.push(schedule.record)
+    else derivedActive.push(schedule.record)
   }
-  if (state.active.map(record => record.id).join('\0') !== derivedActive.join('\0')) {
-    context.addIssue({ code: 'custom', message: 'active Schedule records must match unpaused retained order' })
+  if (!sameRecords(state.active, derivedActive)) {
+    context.addIssue({ code: 'custom', message: 'active Schedule records must match unpaused retained records' })
   }
-  if (state.paused.map(record => record.id).join('\0') !== derivedPaused.join('\0')) {
-    context.addIssue({ code: 'custom', message: 'paused Schedule records must match paused retained order' })
+  if (!sameRecords(state.paused, derivedPaused)) {
+    context.addIssue({ code: 'custom', message: 'paused Schedule records must match paused retained records' })
   }
 }) as unknown as z.ZodType<ScheduleProjectionState>
+
+/** Compare decoded reminder arrays by order and complete durable fields. */
+function sameRecords(left: readonly ScheduleRecord[], right: readonly ScheduleRecord[]): boolean {
+  return left.length === right.length
+    && left.every((record, index) => JSON.stringify(record) === JSON.stringify(right[index]))
+}
 
 /** Projection definition sharing the Schedule domain's strict transition authority. */
 export const scheduleProjectionDefinition = {

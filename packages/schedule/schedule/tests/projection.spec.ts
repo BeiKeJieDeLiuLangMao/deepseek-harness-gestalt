@@ -224,6 +224,49 @@ describe('Schedule Session projection', () => {
     }))).toEqual({})
   })
 
+  it('rejects checkpoint indexes whose ids match but decoded records differ', async () => {
+    const ctx = new Context()
+    contexts.push(ctx)
+    await ctx.plugin(SessionProjectionRegistry)
+    ctx.sessionProjections.register(scheduleProjectionDefinition)
+    const row = (val: unknown) => ({ schedule: { ver: 3, seq: SessionSeq(0), val } })
+    const retained = afterRecord('kept', 'original')
+    const paused = atRecord('held')
+    const consistent = {
+      inheritedEventCount: 0,
+      active: [retained],
+      paused: [paused],
+      schedules: [
+        { record: retained, paused: false },
+        { record: paused, paused: true },
+      ],
+      seenIds: ['kept', 'held'],
+    }
+    expect(ctx.sessionProjections.viewCheckpoint(row(consistent))).toEqual({
+      schedule: [
+        { ...retained, paused: false },
+        { ...paused, paused: true },
+      ],
+    })
+
+    expect(ctx.sessionProjections.viewCheckpoint(row({
+      ...consistent,
+      active: [{ ...retained, prompt: 'rewritten' }],
+    }))).toEqual({})
+    expect(ctx.sessionProjections.viewCheckpoint(row({
+      ...consistent,
+      active: [{ ...retained, scheduledAt: '2026-08-25T12:30:00.000Z' }],
+    }))).toEqual({})
+    expect(ctx.sessionProjections.viewCheckpoint(row({
+      ...consistent,
+      active: [{ ...retained, afterSeconds: 90 }],
+    }))).toEqual({})
+    expect(ctx.sessionProjections.viewCheckpoint(row({
+      ...consistent,
+      paused: [{ ...paused, kind: 'after', afterSeconds: 30, scheduledAt: paused.scheduledAt, prompt: paused.prompt }],
+    }))).toEqual({})
+  })
+
   it('registers only while the Schedule plugin fiber is live', async () => {
     const ctx = new Context()
     contexts.push(ctx)
