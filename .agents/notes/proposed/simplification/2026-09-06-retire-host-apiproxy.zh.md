@@ -22,7 +22,7 @@ Status: proposed
 ## 删除前剩余阻断
 
 1. `apps/web/tests/member-question-receiving.e2e.ts` 与 `member-question-receiving.snapshot.ts` 调用 `scaffold.ctx.apiProxy.sessions.{create,prompt,history}` 以及 `scaffold.ctx.apiProxy.memberQuestions.admitHumanTurn`。Web scaffold 已不再提供 `apiProxy`。替换面是 late-inject MQ（421/73de）落地后的 Host Session Controller + member-question receiver；在此之前这些套件不能对着已删包运行。
-2. `apps/desktop/tests/companion-host-assembled.spec.ts` 仍用 `createApiProxy` + `toFetchHandler` 作为七条 Snow assembled 用例的 HTTP/WebSocket 载体。`host-rpc-assembled.spec.ts` 已在真实 `dsh web` 上覆盖生成 Remote unary/follow；Snow 用例必须改到该 Desktop Host RPC，Desktop 才能去掉 workspace 依赖。
+2. `apps/desktop/tests/companion-host-assembled.spec.ts` 仍用 `createApiProxy` + `toFetchHandler` 作为七条 Snow assembled 用例的 HTTP/WebSocket 载体。Companion search hit/no-hit、归档排除、以及 `openAt: never` / 索引打开失败现已在 `companion-host-search.assembled.spec.ts` 上对着 shipped `dsh web` 跑（cookie + 生成 `session/search`）。其余 Snow create/history/live/mutation/fence 仍须改到该 Desktop Host RPC，Desktop 才能去掉 workspace 依赖。HTTP 400 codec probe 已用真实 loopback 400，不经 apiproxy。
 
 ## 测试迁移计划
 
@@ -36,7 +36,7 @@ Status: proposed
 | Session search | `session.search` | 已在 Session Controller |
 | Session log export | Connection `GET /api/session.export` | 已离开 apiproxy |
 | Web e2e 的 MQ admit/prompt/history | receiver + Session Controller | **阻断** |
-| Desktop Snow assembled HTTP | `createDesktopHostRpc` | **阻断** |
+| Desktop Snow assembled HTTP | `createDesktopHostRpc` | search hit/no-hit、归档排除、provider-failure 已上 shipped Host；其余 Snow create/history/live/mutation/fence **阻断** |
 
 ## 考虑过的替代
 

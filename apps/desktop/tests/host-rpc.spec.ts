@@ -48,6 +48,20 @@ describe('Desktop Host RPC', () => {
               result: { ok: false, error: { code: 'bad-request', message: 'invalid search query', details: {} } },
             }))
             return
+          case 'gateway-internal':
+            response.end(JSON.stringify({
+              type: 'server-response',
+              rpcId: body.rpcId,
+              result: {
+                ok: false,
+                error: {
+                  code: 'gateway/internal',
+                  message: 'session search failed: SESSION_QUERY_SEARCH_DISABLED',
+                  details: {},
+                },
+              },
+            }))
+            return
           case 'timeout':
             return
           case 'slow-chunks':
@@ -93,6 +107,14 @@ describe('Desktop Host RPC', () => {
     await expect(rpc.call('session/search', { query: 'business' })).resolves.toEqual({
       ok: false,
       failure: { kind: 'business', code: 'bad-request', message: 'invalid search query' },
+    })
+    await expect(rpc.call('session/search', { query: 'gateway-internal' })).resolves.toEqual({
+      ok: false,
+      failure: {
+        kind: 'business',
+        code: 'internal',
+        message: 'session search failed: SESSION_QUERY_SEARCH_DISABLED',
+      },
     })
     await expect(rpc.call('session/search', { query: 'timeout' })).resolves.toEqual({
       ok: false,

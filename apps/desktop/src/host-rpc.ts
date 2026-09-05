@@ -232,12 +232,18 @@ function parseServerResponse(body: unknown, rpcId: string): DesktopHostRpcResult
     }
   }
   const code = typeof result.error.code === 'string' && result.error.code !== ''
-    ? result.error.code
+    ? companionBusinessCode(result.error.code)
     : 'host-error'
   const message = typeof result.error.message === 'string' && result.error.message !== ''
     ? result.error.message
     : 'Desktop Host rejected the request'
   return { ok: false, failure: { kind: 'business', code, message } }
+}
+
+/** Companion business codes reject `/`; keep the Gateway/Session reason segment. */
+function companionBusinessCode(code: string): string {
+  const slash = code.lastIndexOf('/')
+  return slash === -1 ? code : code.slice(slash + 1)
 }
 
 type RequestOutcome =
