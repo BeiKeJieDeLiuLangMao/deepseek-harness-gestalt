@@ -12,7 +12,7 @@ import {
   writeGateReport,
   type CiFailureClassification,
 } from './ci-evidence.ts'
-import type { Gate, GateResult } from './run-gates.ts'
+import type { Gate, GateFailureDomain, GateResult } from './run-gates.ts'
 
 function result(
   id: string,
@@ -20,7 +20,7 @@ function result(
     output?: string
     signalCode?: NodeJS.Signals
     allowFailure?: boolean
-    failureDomain?: 'infrastructure' | 'failover-readiness'
+    failureDomain?: GateFailureDomain
     status?: GateResult['status']
   } = {},
 ): GateResult {
@@ -68,6 +68,27 @@ describe('CI failure classification', () => {
 
   it('does not infer infrastructure ownership from a transport-shaped product failure', () => {
     expect(classifyGateFailure(result('test', { output: 'ECONNRESET' }))).toBe('product-regression')
+  })
+
+  it('reads failureDomain from the Gate declaration, not from an evidence-side default', () => {
+    const declared: Gate = {
+      id: 'test',
+      label: 'test',
+      displayCommand: 'run test',
+      command: process.execPath,
+      args: [],
+      failureDomain: 'infrastructure',
+    }
+    expect(declared.failureDomain).toBe('infrastructure')
+    expect(result('test').gate.failureDomain).toBeUndefined()
+    expect(classifyGateFailure({
+      gate: declared,
+      status: 'failed',
+      durationMs: 12,
+      output: [{ stream: 'stderr', text: 'ECONNRESET' }],
+      exitCode: 1,
+      signalCode: null,
+    })).toBe('transient-infrastructure')
   })
 
   it('keeps the transient signature allowlist narrow', () => {

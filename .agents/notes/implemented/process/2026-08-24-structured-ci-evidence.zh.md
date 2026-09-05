@@ -10,7 +10,7 @@
 
 ## 决策
 
-CI Planner JSON 和每个已接入的 gate aggregate 都会作为带版本的 artifact 上传。gate 报告按声明顺序保留阶段结果，按实际完成顺序确定首个阻塞失败，并保留耗时、阻塞状态、进程事实、稳定的失败分类和相关 artifact 名称。分类目录区分产品回归、覆盖率、snapshot、生成物漂移、workflow policy、Runner 污染和瞬时基础设施故障。
+CI Planner JSON 和每个已接入的 gate aggregate 都会作为带版本的 artifact 上传。gate 报告按声明顺序保留阶段结果，按实际完成顺序确定首个阻塞失败，并保留耗时、阻塞状态、进程事实、稳定的失败分类和相关 artifact 名称。分类目录区分产品回归、覆盖率、snapshot、生成物漂移、workflow policy、Runner 污染和瞬时基础设施故障。run-gates 声明上的 `Gate.failureDomain` 是 infrastructure 与 failover-readiness 归属的所有者：普通产品 gate 省略该字段；`infrastructure` 仅在同时命中诊断 allowlist 时才允许瞬时传输分类；`failover-readiness` 不论诊断如何都按该 gate 分类。完整 standby 清单仍使用报告级 `failover-readiness` 覆盖。
 
 自动重试由显式命令包装器负责，而不是重试整个工作流。只有第一次命令的完整诊断与严格的瞬时基础设施 allowlist 匹配时，才允许恰好一次第二次尝试。报告会保留两次尝试。allowlist 包含传输超时/重置，以及 node-gyp 获取 headers 时 pnpm 内置 Undici HTTP/1 解析器触发 `assert(!this.paused)` 的精确故障；Python runtime immutable install 与 manylinux 镜像拉取都通过该包装器发布尝试证据。断言、覆盖率失败、snapshot 漂移、生成物漂移、policy 失败、进程 signal 和未分类失败永不重试。
 
