@@ -13,6 +13,7 @@ import type {
   QueueAction,
   SessionAddress,
   SessionControlFrame,
+  SessionHistoryRecord,
   SessionProjectionBaseline,
   SessionQueuedItem,
   SessionRequestId,
@@ -36,6 +37,7 @@ import { ProjectionValueStore } from './projection-store.ts'
 import type { ProjectionsBaseline } from './projection-store.ts'
 import { resolvedClientTimeZone } from '../time-zone.ts'
 import { SessionQueueMirror } from './queue-mirror.ts'
+import { historyRecordFirstSeq, historyRecordLastSeq } from './history-records.ts'
 
 function toRemoteFailure(error: unknown): RemoteFailure {
   if (isRemoteFailure(error)) return error
@@ -751,25 +753,32 @@ export class Session implements SessionFace {
 
   /**
    * Displayed suffix for `historyScope: 'owned-suffix'`.
-   * Floor is last `session/end-seed` seq+1, else Host `seedLength`.
+   * Floor is Host `seedLength` (`inheritedEventCount`). Later `session/end-seed`
+   * markers are own records and must not raise it.
    */
   private ownedFloor(): SessionLogOffset | undefined {
     if (this.options.admission?.(this.sessionId)?.historyScope !== 'owned-suffix') return undefined
-    let floor = this.inheritedFloor
-    for (let index = this.retainedEntries.length - 1; index >= 0; index -= 1) {
-      const entry = this.retainedEntries[index]
-      if (entry?.event.type === 'session/end-seed') {
-        floor = SessionLogOffset(entry.event.seq + 1)
-        break
-      }
-    }
-    return floor
+    return this.inheritedFloor
   }
 
   private filterOwnedSuffix(entries: readonly SessionEventLikeEntry[]): SessionEventLikeEntry[] {
     const floor = this.ownedFloor()
     if (floor === undefined) return [...entries]
-    return entries.filter(entry => entry.event.seq >= floor && entry.event.type !== 'session/end-seed')
+    return entries.filter(entry => this.isOwnedSuffixEntry(entry, floor))
+  }
+
+  /**
+   * Whether one journal record belongs in the owned display window.
+   * Packed rows use their logical seq range; a row that starts below the
+   * inherited cut is dropped rather than split. `session/end-seed` is hidden
+   * and never raises the floor.
+   */
+  private isOwnedSuffixEntry(entry: SessionEventLikeEntry, floor: SessionLogOffset): boolean {
+    if (entry.type === 'event' && entry.event.type === 'session/end-seed') return false
+    const record = entry as SessionHistoryRecord
+    const first = historyRecordFirstSeq(record)
+    const last = historyRecordLastSeq(record)
+    return first >= floor && last >= floor
   }
 
   private visibleWindow(): { entries: SessionEventLikeEntry[]; hasMore: boolean } {
@@ -778,8 +787,10 @@ export class Session implements SessionFace {
       return { entries: [...this.retainedEntries], hasMore: this.retainedHasMore }
     }
     const entries = this.filterOwnedSuffix(this.retainedEntries)
-    const firstVisible = entries[0]?.event.seq
-    const hasMore = this.retainedHasMore && firstVisible !== undefined && firstVisible > floor
+    const firstRetained = this.retainedEntries[0] === undefined
+      ? undefined
+      : historyRecordFirstSeq(this.retainedEntries[0] as SessionHistoryRecord)
+    const hasMore = this.retainedHasMore && firstRetained !== undefined && firstRetained > floor
     return { entries, hasMore }
   }
 
