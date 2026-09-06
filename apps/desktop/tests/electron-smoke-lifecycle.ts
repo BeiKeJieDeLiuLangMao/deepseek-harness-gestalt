@@ -2,7 +2,7 @@
 
 import type { ChildProcess } from 'node:child_process'
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
-import { dirname, isAbsolute, relative, resolve } from 'node:path'
+import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 
 const TERMINATION_GRACE_MS = 1_000
 
@@ -27,6 +27,7 @@ export function observeSmokeChild(child: ChildProcess): {
       child.once('exit', onExit)
       child.once('error', onError)
     })
+  void exited.catch(() => {})
   return { output: () => text, exited }
 }
 
@@ -65,7 +66,8 @@ export async function retainSmokeEvidence(options: {
   const evidence = resolve(options.evidencePath)
   const relation = relative(root, evidence)
   try {
-    if (relation === '' || (!relation.startsWith('..') && !isAbsolute(relation))) {
+    const insideRoot = relation === '' || (!isAbsolute(relation) && relation !== '..' && !relation.startsWith(`..${sep}`))
+    if (insideRoot) {
       throw new Error('Desktop smoke evidence path must be outside the isolated root')
     }
     let smoke = ''

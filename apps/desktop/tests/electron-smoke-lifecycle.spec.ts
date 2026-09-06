@@ -39,13 +39,29 @@ describe('Electron smoke lifecycle', () => {
     }
   })
 
-  it('removes the isolated root when evidence writing fails', async () => {
+  it('rejects dot-prefixed evidence names inside the isolated root and still removes it', async () => {
     const root = await mkdtemp(join(tmpdir(), 'electron-smoke-lifecycle-failure-'))
     const smokeLog = join(root, 'smoke.log')
     await writeFile(smokeLog, 'smoke evidence')
     await expect(retainSmokeEvidence({
-      evidencePath: join(root, 'evidence.log'), root, smokeLog, processOutput: '',
+      evidencePath: join(root, '..evidence.log'), root, smokeLog, processOutput: '',
     })).rejects.toThrow('must be outside')
     await expect(stat(root)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('allows an evidence file in a legitimate sibling path', async () => {
+    const parent = await mkdtemp(join(tmpdir(), 'electron-smoke-lifecycle-parent-'))
+    const root = join(parent, 'root')
+    const smokeLog = join(root, 'smoke.log')
+    const evidencePath = join(parent, 'evidence.log')
+    await import('node:fs/promises').then(({ mkdir }) => mkdir(root))
+    await writeFile(smokeLog, 'smoke evidence')
+    try {
+      await retainSmokeEvidence({ evidencePath, root, smokeLog, processOutput: '' })
+      await expect(readFile(evidencePath, 'utf8')).resolves.toContain('smoke evidence')
+      await expect(stat(root)).rejects.toMatchObject({ code: 'ENOENT' })
+    } finally {
+      await rm(parent, { recursive: true, force: true })
+    }
   })
 })
