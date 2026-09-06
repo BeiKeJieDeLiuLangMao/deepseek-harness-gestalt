@@ -55,7 +55,7 @@ describe('Electron smoke lifecycle', () => {
   })
 
   it.skipIf(process.platform === 'win32')('refuses a live process with the wrong private home', async () => {
-    const expectedHome = await mkdtemp(join(tmpdir(), 'electron-smoke-expected-home-'))
+    const expectedHome = await mkdtemp(join(tmpdir(), 'electron smoke expected home '))
     const actualHome = `${expectedHome}-other`
     await writeFile(actualHome, '')
     const host = spawn(process.execPath, [orphanFixture, 'host', 'web', '--host', '127.0.0.1', '--port', '0'], {
