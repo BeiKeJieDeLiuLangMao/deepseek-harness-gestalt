@@ -172,6 +172,8 @@ describe('assembled Desktop Companion Ask User question on shipped dsh web', () 
     await expect.poll(() => {
       const pending = surface.getSnapshot().conversations[localSessionId]?.pending ?? []
       if (pending.some(wait => wait.kind === 'question')) return true
+      // Pending waits project through the Desktop load-history conversation
+      // snapshot; this poll is the history observation that surfaces them.
       if (surface.getSnapshot().conversations[localSessionId]?.loadingOlder !== true) {
         surface.loadOlder(localSessionId)
       }
@@ -190,28 +192,130 @@ describe('assembled Desktop Companion Ask User question on shipped dsh web', () 
       type: 'status', operationId: settleOperationId,
       committed: { type: 'interaction-receipt', operationId: settleOperationId, accepted: true },
     })
-    await expect.poll(() => {
-      if (surface.getSnapshot().conversations[localSessionId]?.running === false) return true
-      if (surface.getSnapshot().conversations[localSessionId]?.loadingOlder !== true) {
-        surface.loadOlder(localSessionId)
-      }
-      return false
-    }).toBe(true)
-    expect(surface.getSnapshot().operationFailure).toBeUndefined()
     await expect.poll(async () => {
       const log = await durableSessionLog(first.home, sessionId)
-      return log.includes('ask_user_question')
-        && log.includes('"text":"{\\"answers\\":[{\\"id\\":\\"q1\\",\\"selected\\":[\\"Yes\\"]}]}')
-        && log.includes('"text":"acknowledged-snow-question"')
+      const result = settledAskUserResult(log)
+      return result !== undefined
+        && finalAssistantTextAfter(log, result.callId) !== undefined
         && log.includes('"type":"turn/end"')
     }).toBe(true)
-    expect(llm.requests.some(request => isRecord(request.body)
-      && JSON.stringify(request.body).includes('tool_call_id')
-      && JSON.stringify(request.body).includes('q1')
-      && JSON.stringify(request.body).includes('Yes'))).toBe(true)
+    const toolResult = settledAskUserResult(await durableSessionLog(first.home, sessionId))
+    if (toolResult === undefined) throw new Error('settled ask_user_question tool/result never reached the Host log')
+    const toolCall = await askUserToolCallIdFromLog(first.home, sessionId)
+    expect(toolResult.callId).toBe(toolCall)
+    expect(toolResult.answers).toEqual([{ id: 'q1', selected: ['Yes'] }])
+    const finalText = finalAssistantTextAfter(await durableSessionLog(first.home, sessionId), toolResult.callId)
+    expect(finalText).toBe('acknowledged-snow-question')
+    expect(surface.getSnapshot().operationFailure).toBeUndefined()
+    await expect.poll(() => answeredFollowUpRequest(llm.requests)).not.toBeUndefined()
+    const followUp = answeredFollowUpRequest(llm.requests)
+    if (followUp === undefined) throw new Error('the answered follow-up model request never arrived')
+    const followUpBody = JSON.stringify(followUp.body)
+    expect(followUpBody).toContain('q1')
+    expect(followUpBody).toContain('Yes')
     expect(owner.pendingInteractions(sessionId, channels.attachmentKey.slice())).toHaveLength(0)
   }, 180_000)
 })
+
+interface SettledAskUserResult {
+  readonly callId: string
+  readonly answers: unknown
+}
+
+/**
+ * Parse the durable log for the ask_user_question tool/result whose payload
+ * carries the Mobile answer, keyed to the Assistant tool-call id.
+ */
+function settledAskUserResult(log: string): SettledAskUserResult | undefined {
+  const callId = askUserToolCallId(log)
+  if (callId === undefined) return undefined
+  for (const line of log.split('\n')) {
+    if (!line.includes('"type":"tool/result"')) continue
+    const event = JSON.parse(line) as { data?: { message?: { content?: unknown } } }
+    const blocks = event.data?.message?.content
+    if (!Array.isArray(blocks)) continue
+    for (const block of blocks) {
+      if (!isRecord(block) || block.type !== 'tool-result' || block.toolCallId !== callId) continue
+      const parts = block.content
+      if (!Array.isArray(parts) || !isRecord(parts[0]) || typeof parts[0].text !== 'string') return undefined
+      try {
+        const parsed = JSON.parse(parts[0].text) as { answers?: unknown }
+        return { callId, answers: parsed.answers }
+      } catch {
+        return undefined
+      }
+    }
+  }
+  return undefined
+}
+
+function askUserToolCallId(log: string): string | undefined {
+  for (const line of log.split('\n')) {
+    if (!line.includes('"type":"assistant/message"') || !line.includes('ask_user_question')) continue
+    const event = JSON.parse(line) as { data?: { message?: { content?: unknown } } }
+    const blocks = event.data?.message?.content
+    if (!Array.isArray(blocks)) continue
+    for (const block of blocks) {
+      if (!isRecord(block) || block.type !== 'tool-call' || block.name !== 'ask_user_question') continue
+      return typeof block.id === 'string' ? block.id : undefined
+    }
+  }
+  return undefined
+}
+
+/**
+ * The final assistant text of the turn, proven to follow the settled
+ * ask_user_question result in durable-log sequence order.
+ */
+function finalAssistantTextAfter(log: string, callId: string): string | undefined {
+  const resultSeq = settledAskUserResultSeq(log, callId)
+  if (resultSeq === undefined) return undefined
+  for (const line of log.split('\n')) {
+    if (!line.includes('"type":"assistant/message"')) continue
+    const event = JSON.parse(line) as { seq?: unknown; data?: { message?: { content?: unknown } } }
+    if (typeof event.seq !== 'number' || event.seq <= resultSeq) continue
+    const blocks = event.data?.message?.content
+    if (!Array.isArray(blocks)) continue
+    for (const block of blocks) {
+      if (!isRecord(block) || block.type !== 'text' || typeof block.text !== 'string') continue
+      return block.text
+    }
+  }
+  return undefined
+}
+
+function settledAskUserResultSeq(log: string, callId: string): number | undefined {
+  for (const line of log.split('\n')) {
+    if (!line.includes('"type":"tool/result"') || !line.includes(callId)) continue
+    const event = JSON.parse(line) as { seq?: unknown }
+    return typeof event.seq === 'number' ? event.seq : undefined
+  }
+  return undefined
+}
+
+/**
+ * Read the Assistant ask_user_question tool-call id straight from the durable
+ * log so the settled result is correlated with the exact originating call.
+ */
+async function askUserToolCallIdFromLog(
+  home: string,
+  sessionId: ReturnType<typeof parseCompanionSessionId>,
+): Promise<string | undefined> {
+  const log = await durableSessionLog(home, sessionId)
+  return askUserToolCallId(log)
+}
+
+/** The first model request whose wire body carries the answered tool result. */
+function answeredFollowUpRequest(requests: readonly { readonly body: unknown }[]): { body: unknown } | undefined {
+  for (const request of requests) {
+    if (!isRecord(request.body)) continue
+    const body = JSON.stringify(request.body)
+    if (body.includes('tool_call_id') && body.includes('q1') && body.includes('Yes')) {
+      return { body: request.body }
+    }
+  }
+  return undefined
+}
 
 function pairingDependencies(
   owner: InstanceType<typeof DesktopCompanionProductOwner>,
