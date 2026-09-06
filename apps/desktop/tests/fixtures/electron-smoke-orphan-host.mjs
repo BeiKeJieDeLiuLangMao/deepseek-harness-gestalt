@@ -7,7 +7,7 @@ if (role === 'host') {
   process.stdout.write(`host http://127.0.0.1:43123 pid ${process.pid}\n`)
   setInterval(() => {}, 1_000)
 } else {
-  const host = spawn(process.execPath, [new URL(import.meta.url).pathname, dshHome, 'host'], {
+  const host = spawn(process.execPath, [new URL(import.meta.url).pathname, dshHome, 'host', 'http://127.0.0.1:43123'], {
     env: { ...process.env, DSH_HOME: dshHome }, detached: false,
     stdio: ['ignore', 'pipe', 'inherit'],
   })

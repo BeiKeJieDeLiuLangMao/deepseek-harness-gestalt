@@ -5,7 +5,8 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import {
-  observeSmokeChild, retainSmokeEvidence, smokeHostIdentity, stopOwnedSmokeHost, stopSmokeChild,
+  captureSmokeHostIdentity, observeSmokeChild, retainSmokeEvidence, smokeHostIdentity, stopOwnedSmokeHost,
+  stopSmokeChild,
 } from './electron-smoke-lifecycle.ts'
 
 const childFixture = fileURLToPath(new URL('./fixtures/electron-smoke-child.mjs', import.meta.url))
@@ -36,8 +37,9 @@ describe('Electron smoke lifecycle', () => {
     const observed = observeSmokeChild(parent)
     try {
       await expect(observed.exited).resolves.toBeUndefined()
-      const identity = smokeHostIdentity(observed.output())
-      expect(identity).toBeDefined()
+      const parsed = smokeHostIdentity(observed.output())
+      expect(parsed).toBeDefined()
+      const identity = parsed === undefined ? undefined : captureSmokeHostIdentity(parsed)
       await expect(stopOwnedSmokeHost(identity, dshHome)).resolves.toBeUndefined()
       if (identity !== undefined) expect(() => process.kill(identity.pid, 0)).toThrow()
     } finally {

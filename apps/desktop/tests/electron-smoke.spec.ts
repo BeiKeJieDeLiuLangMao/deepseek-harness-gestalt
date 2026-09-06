@@ -6,7 +6,8 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { startKeylessDesktopProvider } from './keyless-provider.ts'
 import {
-  observeSmokeChild, retainSmokeEvidence, smokeHostIdentity, stopOwnedSmokeHost, stopSmokeChild,
+  captureSmokeHostIdentity, observeSmokeChild, retainSmokeEvidence, smokeHostIdentity, stopOwnedSmokeHost,
+  stopSmokeChild,
 } from './electron-smoke-lifecycle.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -26,6 +27,7 @@ describe.skipIf(process.env.DSH_DESKTOP_SMOKE !== '1')('Desktop Host smoke', () 
     let exited: Promise<void> | undefined
     let output = ''
     let processOutput = (): string => ''
+    let hostIdentity: ReturnType<typeof smokeHostIdentity>
     let processFailure = (): Error | undefined => () => undefined
     try {
       child = spawn(electronBin, ['out/main.mjs'], {
@@ -52,8 +54,9 @@ describe.skipIf(process.env.DSH_DESKTOP_SMOKE !== '1')('Desktop Host smoke', () 
         if (failure !== undefined) throw failure
         const text = await readFile(log, 'utf8')
         if (text.includes('\nok\n') || text.endsWith('\nok') || /(^|\n)ok\n/.test(text) || text.split('\n').includes('ok')) {
-          const host = text.match(/host http:\/\/127\.0\.0\.1:\d+ pid (\d+)/)
-          expect(host).not.toBeNull()
+          const host = smokeHostIdentity(text)
+          expect(host).toBeDefined()
+          if (host !== undefined) hostIdentity = captureSmokeHostIdentity(host)
           expect(text).toMatch(/(^|\n)ok(\n|$)/)
           expect(text).toContain('companion entry search hit {"type":"session-search"')
           expect(text).toContain('desktop-companion-smoke-indexed-needle')
@@ -65,8 +68,8 @@ describe.skipIf(process.env.DSH_DESKTOP_SMOKE !== '1')('Desktop Host smoke', () 
           expect(finalText).toContain('relay mobile-access-disabled {"connected":false,"stopReason":"mobile-access-disabled"}')
           expect(finalText).toContain('relay window-close {"connected":false,"stopReason":"window-close"}')
           expect(finalText).toContain('relay quit {"connected":false,"stopReason":"quit"}')
-          const pid = Number(host?.[1])
-          await expect.poll(() => processExists(pid), { timeout: 5_000 }).toBe(false)
+          if (host === undefined) throw new Error('missing Desktop smoke Host identity')
+          await expect.poll(() => processExists(host.pid), { timeout: 5_000 }).toBe(false)
           return
         }
         if (
@@ -85,8 +88,7 @@ describe.skipIf(process.env.DSH_DESKTOP_SMOKE !== '1')('Desktop Host smoke', () 
       try {
         await stopSmokeChild(child, exited)
         output = processOutput()
-        const text = await readFile(log, 'utf8')
-        await stopOwnedSmokeHost(smokeHostIdentity(text), dshHome)
+        await stopOwnedSmokeHost(hostIdentity, dshHome)
       } finally {
         try { await provider.close() } finally {
           await retainSmokeEvidence({ evidencePath: evidence, root: dir, smokeLog: log, processOutput: output })

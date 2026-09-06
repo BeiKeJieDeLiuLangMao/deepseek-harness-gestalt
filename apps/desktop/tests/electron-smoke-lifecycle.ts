@@ -48,6 +48,7 @@ export async function stopSmokeChild(child: ChildProcess | undefined, exited: Pr
 export interface SmokeHostIdentity {
   readonly origin: string
   readonly pid: number
+  readonly started?: string
 }
 
 /** Parse the Host identity recorded by this smoke run. */
@@ -58,11 +59,20 @@ export function smokeHostIdentity(log: string): SmokeHostIdentity | undefined {
   return Number.isSafeInteger(pid) && pid > 0 ? { origin: match[1], pid } : undefined
 }
 
+/** Fence a live logged Host against later PID reuse. */
+export function captureSmokeHostIdentity(identity: SmokeHostIdentity): SmokeHostIdentity {
+  return { ...identity, started: processStart(identity.pid) }
+}
+
 /** Stop a logged Host only when its live command carries this run's private DSH_HOME. */
 export async function stopOwnedSmokeHost(identity: SmokeHostIdentity | undefined, dshHome: string): Promise<void> {
   if (identity === undefined || !processExists(identity.pid)) return
+  if (process.platform === 'win32') {
+    throw new Error('Desktop smoke Host ownership verification is unavailable on Windows')
+  }
+  if (identity.started === undefined || processStart(identity.pid) !== identity.started) return
   const command = processCommand(identity.pid)
-  if (!command.includes(resolve(dshHome)) || !command.includes('dsh')) {
+  if (!command.includes(`DSH_HOME=${resolve(dshHome)}`) || !command.includes(identity.origin)) {
     throw new Error(`refusing to signal unverified Desktop smoke Host pid ${String(identity.pid)}`)
   }
   process.kill(identity.pid, 'SIGTERM')
@@ -71,6 +81,10 @@ export async function stopOwnedSmokeHost(identity: SmokeHostIdentity | undefined
   if (!await processExitsWithin(identity.pid, TERMINATION_GRACE_MS)) {
     throw new Error(`Desktop smoke Host ${String(identity.pid)} did not exit after SIGKILL`)
   }
+}
+
+function processStart(pid: number): string {
+  return execFileSync('ps', ['-p', String(pid), '-o', 'lstart='], { encoding: 'utf8' }).trim()
 }
 
 function processCommand(pid: number): string {
