@@ -597,14 +597,15 @@ function requireSessionCreated(result: CompanionMutationResult): void {
 function interactionSettlement(
   settlement: MobilePendingSettlement,
 ): Extract<CompanionOperation, { type: 'settle-interaction' }>['settlement'] {
-  const result = settlement.result
   if (settlement.kind === 'approval') {
+    const result = settlement.result
     if (!result.ok || !isRecord(result.value)
       || (result.value.outcome !== 'allowed-once' && result.value.outcome !== 'rejected')) {
       throw new TypeError('Companion Approval settlement result is invalid')
     }
     return { kind: 'approval', outcome: result.value.outcome }
   }
+  const result = settlement.result
   if (!result.ok) {
     if (result.error.code !== 'cancelled') throw new TypeError('Companion Ask User cancellation is invalid')
     return { kind: 'question-cancelled' }
