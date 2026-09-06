@@ -119,7 +119,7 @@ describe('assembled Desktop Companion attachments on shipped dsh web', () => {
     const originalFetch = globalThis.fetch
     globalThis.fetch = vi.fn(async (input, init) => {
       const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
-      if (url === 'https://platform.example/v1/remote-attachments') {
+      if (url === 'https://platform.example/v1/remote-attachments' && init?.method === 'POST') {
         ciphertext = new Uint8Array(await new Response(init?.body).arrayBuffer())
         return new Response(JSON.stringify({
           capability: 'A'.repeat(43), byteLength: ciphertext.byteLength, expiresAt: Date.now() + 60_000,
@@ -168,13 +168,15 @@ describe('assembled Desktop Companion attachments on shipped dsh web', () => {
       const admitted = admittedAttachments(durableLog)
       expect(admitted).toHaveLength(3)
       for (const [index, [name, mediaType, bytes]] of expectedFiles.entries()) {
+        const sha256 = createHash('sha256').update(bytes).digest('hex')
         expect(admitted[index]).toMatchObject({
           operationId: opened.filter(operation => operation.type === 'offer-attachment')[index]?.operationId,
-          attachment: {
-            name, mediaType, bytes: bytes.byteLength,
-            sha256: createHash('sha256').update(bytes).digest('hex'),
-          },
+          attachment: { name, mediaType, bytes: bytes.byteLength, sha256 },
         })
+        const stored = new Uint8Array(await readFile(join(
+          first.home, '.dsh', 'attachments', 'v1', 'objects', sha256.slice(0, 2), sha256,
+        )))
+        expect(stored).toEqual(bytes)
         expect(submitted[index]).toMatchObject({ name })
         expect(submitted[index]?.mediaType).toBe(mediaType)
         expect(submitted[index]?.plaintext).toEqual(bytes)
