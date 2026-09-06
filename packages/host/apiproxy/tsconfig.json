@@ -42,6 +42,9 @@
       "path": "../../util/brand"
     },
     {
+      "path": "../../util/crypto"
+    },
+    {
       "path": "../../attachment/attachment"
     },
     {

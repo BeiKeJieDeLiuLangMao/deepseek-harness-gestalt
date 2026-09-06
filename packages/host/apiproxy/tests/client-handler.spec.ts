@@ -44,7 +44,6 @@ function scriptedApi(overrides: {
       bindWorkspace: r => ok(r, { bound: true as const }),
       snapshot: r => ok(r, { revision: 0, pending: [], terminal: [] }),
       settle: err,
-      admitHumanTurn: r => ok(r, { accepted: true as const, sessionId: r.payload.receivingSessionId }),
       ...overrides.memberQuestions,
     },
     sessions: {

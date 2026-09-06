@@ -117,8 +117,8 @@ describe.skipIf(MODE === 'record')('web e2e: Host-owned member-question receivin
     await receiverWorkspace.setTitle('Atlas Bound Workspace')
     const projectId = 'project-atlas'
     await bindReceiverWorkspace(receiver, projectId, receiverWorkspace.id)
-    const create = vi.spyOn(scaffold.ctx.apiProxy.sessions, 'create')
-    const prompt = vi.spyOn(scaffold.ctx.apiProxy.sessions, 'prompt')
+    const create = vi.spyOn(scaffold.ctx.sessionController, 'create')
+    const prompt = vi.spyOn(scaffold.ctx.sessionController, 'prompt')
     const ingress = createAuthenticatedMemberQuestionIngress(receiver)
     const workspaceRoot = join(scaffold.workspaceCwd, 'workspace')
     await mkdir(join(workspaceRoot, 'docs'), { recursive: true })
@@ -260,9 +260,9 @@ describe.skipIf(MODE === 'record')('web e2e: Host-owned member-question receivin
       const restartedService = scaffold.ctx.get('memberQuestionReceiver')
       if (restartedService === undefined) throw new Error('member-question e2e: restarted receiver unavailable')
       receiver = restartedService
-      const restartedCreate = vi.spyOn(scaffold.ctx.apiProxy.sessions, 'create')
-      const restartedHistory = vi.spyOn(scaffold.ctx.apiProxy.sessions, 'history')
-      const restartedPrompt = vi.spyOn(scaffold.ctx.apiProxy.sessions, 'prompt')
+      const restartedCreate = vi.spyOn(scaffold.ctx.sessionController, 'create')
+      const restartedFollow = vi.spyOn(scaffold.ctx.sessionController, 'follow')
+      const restartedPrompt = vi.spyOn(scaffold.ctx.sessionController, 'prompt')
       browser = await chromium.launch()
       page = await newEnglishPage(browser)
       await page.addInitScript(({ key, value }) => { localStorage.setItem(key, value) }, {
@@ -299,14 +299,16 @@ describe.skipIf(MODE === 'record')('web e2e: Host-owned member-question receivin
       expect(restartedSession?.events.filter(event => event.type === 'member-question/settled'))
         .toHaveLength(2)
       expect(restartedCreate).not.toHaveBeenCalled()
-      expect(new Set(restartedHistory.mock.calls.map(([request]) => request.payload.sessionId)))
-        .toEqual(new Set([first.receivingSessionId]))
+      expect(new Set(restartedFollow.mock.calls.map(([request]) => {
+        const address = request.address
+        return address.kind === 'session' ? address.sessionId : address.childSessionId
+      }))).toEqual(new Set([first.receivingSessionId]))
       expect(restartedPrompt).not.toHaveBeenCalled()
       expect(forbiddenRequests).toEqual([])
       expect(tripwire.pageErrors).toEqual([])
       expect(tripwire.warnings).toEqual([])
       restartedCreate.mockRestore()
-      restartedHistory.mockRestore()
+      restartedFollow.mockRestore()
       restartedPrompt.mockRestore()
     } finally {
       create.mockRestore()
@@ -343,11 +345,20 @@ describe.skipIf(MODE === 'record')('web e2e: Host-owned member-question receivin
       vi.spyOn(restartScaffold.ctx.sessions, 'flush')
         .mockImplementationOnce(realFlush)
         .mockRejectedValueOnce(new Error('injected post-prompt restart failure'))
-      const failed = await restartScaffold.ctx.apiProxy.memberQuestions.admitHumanTurn({
-        rpcId: rpcId as never,
-        payload,
+      const failed = restartScaffold.ctx.typertGateway.invoke({
+        namespace: 'memberQuestion',
+        method: 'admitHumanTurn',
+        args: {
+          request: {
+            receivingSessionId: payload.receivingSessionId,
+            revision: payload.revision,
+            requestId: rpcId,
+            content: payload.content,
+            mode: payload.mode,
+          },
+        },
       })
-      expect(failed.result).toMatchObject({ ok: false })
+      await expect(failed).rejects.toThrow('injected post-prompt restart failure')
       expect((await service.snapshot()).pending[0]?.reservedAdmission?.rpcId).toBe(rpcId)
       const ledger = await readFile(join(
         restartHome,
@@ -368,11 +379,23 @@ describe.skipIf(MODE === 'record')('web e2e: Host-owned member-question receivin
       if (service === undefined) throw new Error('member-question restart e2e: restarted receiver unavailable')
       await bindReceiverWorkspace(service, 'project-host-restart', workspace.id)
       expect((await service.snapshot()).pending[0]?.reservedAdmission?.rpcId).toBe(rpcId)
-      const recovered = await restartScaffold.ctx.apiProxy.memberQuestions.admitHumanTurn({
-        rpcId: rpcId as never,
-        payload,
+      const recovered = await restartScaffold.ctx.typertGateway.invoke({
+        namespace: 'memberQuestion',
+        method: 'admitHumanTurn',
+        args: {
+          request: {
+            receivingSessionId: payload.receivingSessionId,
+            revision: payload.revision,
+            requestId: rpcId,
+            content: payload.content,
+            mode: payload.mode,
+          },
+        },
+      }) as { accepted: true; receivingSessionId: string }
+      expect(recovered).toMatchObject({
+        accepted: true,
+        receivingSessionId: arrived.receivingSessionId,
       })
-      expect(recovered.result).toMatchObject({ ok: true })
       const session = restartScaffold.ctx.sessions.get(arrived.receivingSessionId as never)
       expect(session?.events.filter(event => event.type === 'turn/start')).toHaveLength(1)
       expect(session?.events.filter(event => event.type === 'user/message'

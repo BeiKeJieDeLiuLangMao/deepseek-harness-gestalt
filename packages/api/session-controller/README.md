@@ -70,7 +70,7 @@ No direct effect; model requests remain owned by the Agent and LLM packages.
 
 - Control baselines represent process-local state and therefore cannot reconstruct jobs after a Host restart.
 - A failed follow resumption remains visible to the caller instead of retrying indefinitely.
-- Browser `memberQuestion.admitHumanTurn` still rides the remaining Host composition (currently ApiProxy) for image promotion onto `receiver.admitHumanTurn`. Generated receiver Remote still exposes only `snapshot` and `settle`.
+- Remaining ApiProxy member-question methods are `workspaceBinding`, `ensureWorkspaceBinding`, and `bindWorkspace`. Snapshot, settle, and human-turn admission are generated `memberQuestion` Remotes.
 - File-reference completion uses the shared Agent lookup and can resume a cold Session; the `skills/list` catalog is the non-activating alternative for skill metadata.
 - Client admission registry dispatch covers prompt, cancel, queue mutation, and command on exact identities and adapters, including blocking stock subagent prompt and interrupt routes on a hit. `modelRoute` uses the stock Host catalog for ordinary Sessions; catalog children stay hidden until a feature route opens them. Omitting `modelRoute` is not a hide. `commandCatalogSessionId` and `skillCatalogSessionId` are lookup-only display helpers consumed by `ui-commands` and `ui-skill`. `historyScope: 'owned-suffix'` trims the displayed window from Host `seedLength`; a later `session/end-seed` does not raise that floor. `ui-better-sidebar` registers the Side Chat adapter.
 

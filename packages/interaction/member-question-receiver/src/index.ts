@@ -12,6 +12,7 @@ import type {
   InstallationId,
   MemberQuestionId,
 } from '@deepseek-ai/dsh-remote-protocol'
+import { AttachmentError, admitPromptContent } from '@deepseek-ai/dsh-attachment'
 import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import {
   EMPTY_PERSISTED_RECEIVER_STATE,
@@ -36,7 +37,10 @@ import type {
   MemberQuestionWorkspaceBinding,
   MemberQuestionReceiverListener,
   MemberQuestionReceiverSnapshot,
+  MemberQuestionHumanTurnContent,
   MemberQuestionReceiverSettlement,
+  MemberQuestionRemoteAdmitHumanTurnRequest,
+  MemberQuestionRemoteAdmitHumanTurnResponse,
   MemberQuestionRemoteSettleRequest,
   MemberQuestionRemoteSettleResponse,
   MemberQuestionTerminalAuthority,
@@ -46,7 +50,10 @@ import type {
   ReceivingSessionId,
   TerminalMemberQuestionView,
 } from './types.ts'
-import { memberQuestionRemoteSettleRequestSchema } from './remote-schemas.ts'
+import {
+  memberQuestionRemoteAdmitHumanTurnRequestSchema,
+  memberQuestionRemoteSettleRequestSchema,
+} from './remote-schemas.ts'
 
 export {
   MEMBER_QUESTION_DOCUMENT_CACHE_ROOT,
@@ -58,6 +65,8 @@ export type {
 } from './document-cache.ts'
 export { MemberQuestionDocumentAssembler } from './document-transfer.ts'
 export {
+  memberQuestionRemoteAdmitHumanTurnRequestSchema,
+  memberQuestionRemoteAdmitHumanTurnResponseSchema,
   memberQuestionRemoteSettleRequestSchema,
   memberQuestionRemoteSettleResponseSchema,
   memberQuestionRemoteSnapshotSchema,
@@ -80,6 +89,8 @@ export type {
   MemberQuestionReceiverAuthority,
   MemberQuestionReceiverSnapshot,
   MemberQuestionReceiverSettlement,
+  MemberQuestionRemoteAdmitHumanTurnRequest,
+  MemberQuestionRemoteAdmitHumanTurnResponse,
   MemberQuestionRemoteSettleRequest,
   MemberQuestionRemoteSettleResponse,
   MemberQuestionReceiverRpcId,
@@ -265,6 +276,69 @@ export abstract class MemberQuestionReceiverService extends TypertRemoteService 
           settledAt,
         },
     )
+  }
+
+  /**
+   * Admit one explicit human turn after promoting encoded image uploads.
+   * Wire payloads supply receiving-session, revision, requestId, content, and
+   * mode. Host attachment admission replaces image bytes with durable refs
+   * before reservation; callers cannot cite an attachment they did not upload.
+   * @param request - observed receiving identity, revision, requestId, content, and mode.
+   * @returns the durable idempotent admission result.
+   */
+  @Remote('admitHumanTurn')
+  async remoteAdmitHumanTurn(
+    request: MemberQuestionRemoteAdmitHumanTurnRequest,
+  ): Promise<MemberQuestionRemoteAdmitHumanTurnResponse> {
+    const parsed = memberQuestionRemoteAdmitHumanTurnRequestSchema.safeParse(request)
+    if (!parsed.success) {
+      throw new RemoteError(
+        'gateway/bad-request',
+        'member-question admitHumanTurn request is not an exact Host admission payload',
+        { issues: parsed.error.issues },
+      )
+    }
+    const hasImage = parsed.data.content.some(part => part.type === 'image')
+    let durable: readonly MemberQuestionHumanTurnContent[]
+    if (hasImage) {
+      const attachments = this.ctx.get('attachments')
+      if (attachments === undefined) {
+        throw new RemoteError(
+          'member-question/attachment-unavailable',
+          'member-question human admission requires the Host attachment store',
+          {},
+        )
+      }
+      try {
+        durable = await admitPromptContent(attachments, parsed.data.content)
+      } catch (error: unknown) {
+        if (error instanceof AttachmentError) {
+          throw new RemoteError('member-question/attachment-invalid', error.message, { reason: error.code })
+        }
+        throw error
+      }
+    } else {
+      durable = parsed.data.content.flatMap((part) => {
+        if (part.type !== 'text') return []
+        return [{ type: 'text' as const, text: part.text }]
+      })
+    }
+    try {
+      return await this.admitHumanTurn({
+        receivingSessionId: parsed.data.receivingSessionId,
+        revision: parsed.data.revision,
+        rpcId: parsed.data.requestId,
+        content: durable,
+        mode: parsed.data.mode,
+      })
+    } catch (error: unknown) {
+      if (error instanceof RemoteError) throw error
+      throw new RemoteError(
+        'member-question/human-turn-failed',
+        error instanceof Error ? error.message : String(error),
+        {},
+      )
+    }
   }
 
   /**

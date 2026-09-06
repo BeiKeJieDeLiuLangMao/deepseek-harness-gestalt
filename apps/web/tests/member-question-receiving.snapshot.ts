@@ -113,16 +113,15 @@ describe('member-question receiving keyless assembled snapshot', () => {
       })
       await expect.poll(() => scaffold.ctx.sessions.get(arrived.receivingSessionId as never)?.events.filter(event =>
         event.type === 'member-question/settled' && event.data.outcome === 'answered').length).toBe(1)
-      const afterAnswer = await scaffold.ctx.apiProxy.sessions.prompt({
-        rpcId: 'rpc-snapshot-after-answer' as never,
-        payload: {
+      try {
+        await scaffold.ctx.sessionController.prompt({
+          requestId: 'rpc-snapshot-after-answer' as never,
           sessionId: arrived.receivingSessionId as never,
           mode: 'queue',
           content: [{ type: 'text', text: 'Record the chosen channel in the rollout notes.' }],
-        },
-      })
-      if (!afterAnswer.result.ok) {
-        throw new Error(`member-question snapshot: post-answer prompt failed: ${afterAnswer.result.error.message}`)
+        }, new AbortController().signal)
+      } catch (error: unknown) {
+        throw new Error(`member-question snapshot: post-answer prompt failed: ${error instanceof Error ? error.message : String(error)}`)
       }
       await expect.poll(() => scaffold.ctx.sessions.get(arrived.receivingSessionId as never)?.events.filter(event =>
         event.type === 'user/message' && event.data.content.some(block =>

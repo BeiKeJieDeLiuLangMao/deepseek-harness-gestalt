@@ -28,7 +28,6 @@ export interface RpcMethodMap {
   'memberQuestion.bindWorkspace': MemberQuestionsApi['bindWorkspace']
   'memberQuestion.snapshot': MemberQuestionsApi['snapshot']
   'memberQuestion.settle': MemberQuestionsApi['settle']
-  'memberQuestion.admitHumanTurn': MemberQuestionsApi['admitHumanTurn']
   'session.list': SessionsApi['list']
   'session.search': SessionsApi['search']
   'session.create': SessionsApi['create']
