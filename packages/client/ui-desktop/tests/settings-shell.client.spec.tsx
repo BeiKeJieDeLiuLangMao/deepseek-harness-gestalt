@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ComponentType, ReactNode } from 'react'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { Context } from '@deepseek-ai/cordis'
-import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
+import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { TestRemote, usePinnedBrowserLanguages } from '@deepseek-ai/dsh-client-test-runtime'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
@@ -56,12 +56,16 @@ describe('Desktop Settings shell Mobile Access placement', () => {
     render(
       <Shell
         wide
+        reconnect={injected.reconnect}
+        t={assembled.locale.bind('settings')}
         useSessions={(select: (state: unknown) => unknown) => select({
           phase: 'ready',
           current: 'active-session',
           byId: { 'active-session': { blank: false } },
         })}
         useWorkspaces={unused}
+        useConnectionState={(select: (state: unknown) => unknown) =>
+          select(injected.hooks.connectionState.getSnapshot())}
         useOnboardingSteps={(select: (rows: unknown) => unknown) => select(injected.hooks.onboardingSteps.getSnapshot())}
         useSections={(select: (rows: unknown) => unknown) => select(injected.hooks.sections.getSnapshot())}
         renderSlot={(key: string, owner: object, opts?: { only?: string }) =>
@@ -165,8 +169,20 @@ async function assemble() {
       },
     },
     isLoopback: true,
+    state: { getSnapshot: () => 'connected', subscribe: () => () => {} },
+    reconnect: () => {},
   } as never)
-  new TestRemote(ctx)
+  new TestRemote(ctx, {
+    settings: {
+      describe: vi.fn(() => Promise.resolve({
+        ok: true as const,
+        value: { writable: true, hasDocument: true, namespaces: [] },
+      })),
+      openSettingsDocument: vi.fn(() => Promise.resolve({
+        ok: true as const, value: { opened: true as const },
+      })),
+    },
+  })
   await ctx.plugin({ inject: [...settingsBaseInject], apply: applySettingsBase }).await()
   const slots = ctx.get('slots') as SlotRegistry
   slots.register(

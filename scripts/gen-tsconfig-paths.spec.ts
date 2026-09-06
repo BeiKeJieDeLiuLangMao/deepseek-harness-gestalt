@@ -113,6 +113,29 @@ describe('generated tsconfig package aliases', () => {
       .toBe(resolve(root, 'packages/fs/tool-fs/src/read-policy.ts').replaceAll('\\', '/'))
   })
 
+  it('maps dsh-platform-account/privacy to source outside the generated region', () => {
+    const config = readFileSync(resolve(root, 'tsconfig.base.json'), 'utf8')
+    const begin = config.indexOf('      // BEGIN generated package aliases — pnpm run gen-tsconfig-paths')
+    const handwritten = config.slice(0, begin)
+    expect(handwritten).toContain(
+      '"@deepseek-ai/dsh-platform-account/privacy": ["./packages/platform/platform-account/src/privacy.ts"]',
+    )
+    expect(config).not.toContain('dsh-platform-account/privacy": ["./packages/platform/platform-account/lib')
+    const configPath = resolve(root, 'tsconfig.base.json')
+    const host = ts.createCompilerHost({})
+    const read = ts.readConfigFile(configPath, ts.sys.readFile)
+    if (read.error !== undefined) throw new Error(ts.flattenDiagnosticMessageText(read.error.messageText, '\n'))
+    const parsed = ts.parseJsonConfigFileContent(read.config, ts.sys, root, { baseUrl: root }, configPath)
+    const resolved = ts.resolveModuleName(
+      '@deepseek-ai/dsh-platform-account/privacy',
+      resolve(root, 'packages/client/ui-desktop/src/client/AccountControl.tsx'),
+      parsed.options,
+      host,
+    )
+    expect(resolved.resolvedModule?.resolvedFileName.replaceAll('\\', '/'))
+      .toBe(resolve(root, 'packages/platform/platform-account/src/privacy.ts').replaceAll('\\', '/'))
+  })
+
   it('leaves no wildcard that probes every package group', () => {
     const config = readFileSync(resolve(root, 'tsconfig.base.json'), 'utf8')
     // These two listed one candidate per group, so resolving a package late in
