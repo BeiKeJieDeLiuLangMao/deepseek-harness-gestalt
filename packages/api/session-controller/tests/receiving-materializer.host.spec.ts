@@ -397,10 +397,60 @@ describe('Session Controller receiving materializer', () => {
       .toThrow('already registered')
     expect(() => ctx.memberQuestionReceiver.registerHumanTurnAdmitter(async () => ({ accepted: true as const })))
       .toThrow('already registered')
-    await unregister?.()
+    await unregister()
     const replacement = ctx.memberQuestionReceiver.registerSessionMaterializer(async () => ({ accepted: true as const }))
     replacement()
     const replacementAdmitter = ctx.memberQuestionReceiver.registerHumanTurnAdmitter(async () => ({ accepted: true as const }))
     replacementAdmitter()
+  })
+
+  it('keeps SessionController active without a receiver and installs after that service appears', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-receiving-materializer-optional-'))
+    roots.push(root)
+    const workspacePath = join(root, 'workspace')
+    mkdirSync(workspacePath)
+    const ctx = new Context()
+    contexts.push(ctx)
+    await mountAgentLoopTestDependencies(ctx)
+    await ctx.plugin(SessionProjectionRegistry)
+    await ctx.plugin(JsonlSessionPersistence, { root: join(root, 'sessions'), compression: 'none' })
+    await ctx.plugin(AgentLoop, { agents: [] })
+    ctx.llm.registerAdapter(['mock'], new MockAdapter([]))
+    await ctx.plugin(Storage)
+    ctx.storage.backend.register('memory', new MemoryStorageBackend())
+    const storageDomain = new DomainFacility(ctx, { backend: 'memory', routes: {} })
+    ctx.storage.mount('domain', storageDomain)
+    ctx.provide('storageDomain', storageDomain)
+    await ctx.plugin(WorkspaceRegistry)
+    const controller = createSessionTestController(ctx, {
+      defaultModelSelection: () => ({ provider: 'mock', model: 'mock' }),
+      cwd: workspacePath,
+    })
+    expect(ctx.get('memberQuestionReceiver')).toBeUndefined()
+    expect(controller.typertRemote.namespace).toBe('session')
+    const firstReceiver = await ctx.plugin(FileMemberQuestionReceiver, {
+      storagePath: join(root, 'receiver'),
+      environment: 'development',
+      maxRecords: 8,
+      terminalRetryMs: 10,
+    })
+    await vi.waitFor(() => {
+      expect(() => ctx.memberQuestionReceiver.registerSessionMaterializer(async () => ({ accepted: true as const })))
+        .toThrow('already registered')
+      expect(() => ctx.memberQuestionReceiver.registerHumanTurnAdmitter(async () => ({ accepted: true as const })))
+        .toThrow('already registered')
+    })
+    await firstReceiver.dispose()
+    expect(ctx.get('memberQuestionReceiver')).toBeUndefined()
+    await ctx.plugin(FileMemberQuestionReceiver, {
+      storagePath: join(root, 'receiver'),
+      environment: 'development',
+      maxRecords: 8,
+      terminalRetryMs: 10,
+    })
+    await vi.waitFor(() => {
+      expect(() => ctx.memberQuestionReceiver.registerSessionMaterializer(async () => ({ accepted: true as const })))
+        .toThrow('already registered')
+    })
   })
 })

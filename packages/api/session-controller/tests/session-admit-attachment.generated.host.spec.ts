@@ -146,6 +146,17 @@ async function createGeneratedHost(origin?: 'subagent'): Promise<{
 }
 
 describe('generated session.admitAttachment Remote codecs', () => {
+  it('analyzes the Host face without an illegal receiving-materializer effect', () => {
+    expect(() => new WorkspaceTypertGenerator(workspaceRoot)
+      .generate(['@deepseek-ai/dsh-api-session-controller'], ['host'])).not.toThrow()
+  })
+
+  it('activates SessionController when memberQuestionReceiver is uncomposed', async () => {
+    const { ctx } = await createGeneratedHost()
+    expect(ctx.get('memberQuestionReceiver')).toBeUndefined()
+    expect(ctx.sessionController.typertRemote.namespace).toBe('session')
+  })
+
   it('admits a bounded Companion file through the generated Host codec', async () => {
     const { ctx } = await createGeneratedHost()
     const value = await ctx.typertGateway.invoke({

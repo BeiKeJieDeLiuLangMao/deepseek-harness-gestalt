@@ -157,12 +157,12 @@ export class SessionController extends TypertRemoteService {
       ?? (() => config.nativeOpen ?? (internals.openPath !== undefined || canOpenNativePath()))
     ctx.plugin(SessionFileReferences)
     ctx.plugin(SessionSkillCatalog)
-    ctx.effect(() => installReceivingSessionMaterializer(ctx, this.agents, {
+    ctx.inject(['memberQuestionReceiver'], () => installReceivingSessionMaterializer(ctx, this.agents, {
       terminalRetryMs: config.receivingTerminalRetryMs ?? DEFAULT_RECEIVING_TERMINAL_RETRY_MS,
       ...internals.receivingTerminalTimer === undefined
         ? {}
         : { timer: internals.receivingTerminalTimer },
-    }), 'session-controller.receiving-materializer')
+    }))
 
     ctx.on('session/created', (session) => {
       ctx.emit('api-session/added', this.listState.summaryFor(session))
