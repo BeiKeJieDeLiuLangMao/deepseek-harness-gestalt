@@ -167,11 +167,15 @@ describe('assembled Desktop Companion attachments on shipped dsh web', () => {
       const durableLog = await durableSessionLog(first.home, sessionId)
       const admitted = admittedAttachments(durableLog)
       expect(admitted).toHaveLength(3)
+      const attachmentOperations = opened.filter(operation => operation.type === 'offer-attachment')
       for (const [index, [name, mediaType, bytes]] of expectedFiles.entries()) {
+        const operationId = attachmentOperations[index]?.operationId
+        if (operationId === undefined) throw new Error(`missing recorded operation for ${name}`)
+        const records = admitted.filter(record => record.operationId === operationId)
+        expect(records).toHaveLength(1)
         const sha256 = createHash('sha256').update(bytes).digest('hex')
-        expect(admitted[index]).toMatchObject({
-          operationId: opened.filter(operation => operation.type === 'offer-attachment')[index]?.operationId,
-          source: 'companion', ignorable: true,
+        expect(records[0]).toEqual({
+          operationId, source: 'companion', ignorable: true,
           attachment: { attachmentId: `sha256:${sha256}`, name, mediaType, bytes: bytes.byteLength, sha256 },
         })
         const stored = new Uint8Array(await readFile(join(
