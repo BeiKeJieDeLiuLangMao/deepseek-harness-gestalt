@@ -178,9 +178,16 @@ describe('assembled Desktop Companion attachments on shipped dsh web', () => {
           operationId, source: 'companion', ignorable: true,
           attachment: { attachmentId: `sha256:${sha256}`, name, mediaType, bytes: bytes.byteLength, sha256 },
         })
+        const attachmentId = records[0]?.attachment.attachmentId
+        if (attachmentId === undefined || !attachmentId.startsWith('sha256:')) {
+          throw new Error(`invalid durable attachment id for ${name}`)
+        }
+        const objectDigest = attachmentId.slice('sha256:'.length)
+        expect(objectDigest).toBe(sha256)
         const stored = new Uint8Array(await readFile(join(
-          first.home, '.dsh', 'attachments', 'v1', 'objects', sha256.slice(0, 2), sha256,
+          first.home, '.dsh', 'attachments', 'v1', 'objects', objectDigest.slice(0, 2), objectDigest,
         )))
+        expect(createHash('sha256').update(stored).digest('hex')).toBe(records[0]?.attachment.sha256)
         expect(stored).toEqual(bytes)
         expect(submitted[index]).toMatchObject({ name })
         expect(submitted[index]?.mediaType).toBe(mediaType)
