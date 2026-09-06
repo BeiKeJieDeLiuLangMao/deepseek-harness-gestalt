@@ -1,10 +1,11 @@
-import { spawn } from 'node:child_process'
+import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { startKeylessDesktopProvider } from './keyless-provider.ts'
+import { observeSmokeChild, retainSmokeEvidence, stopSmokeChild } from './electron-smoke-lifecycle.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const desktopRoot = join(here, '..')
@@ -15,10 +16,15 @@ describe.skipIf(process.env.DSH_DESKTOP_SMOKE !== '1')('Desktop Host smoke', () 
     if (process.platform === 'linux' && process.env.DISPLAY === undefined) return
     const dir = await mkdtemp(join(tmpdir(), 'gestalt-smoke-'))
     const log = join(dir, 'smoke.log')
+    const evidence = join(tmpdir(), 'deepseek-harness-evidence', `electron-smoke-${process.pid}.log`)
     await writeFile(log, '')
     const provider = await startKeylessDesktopProvider()
+    let child: ChildProcess | undefined
+    let exited: Promise<void> | undefined
+    let output = ''
+    let processOutput = (): string => ''
     try {
-      const child = spawn(electronBin, ['out/main.mjs'], {
+      child = spawn(electronBin, ['out/main.mjs'], {
         cwd: desktopRoot,
         env: {
           ...withoutRuntimePlatformEnvironment(process.env),
@@ -32,13 +38,9 @@ describe.skipIf(process.env.DSH_DESKTOP_SMOKE !== '1')('Desktop Host smoke', () 
         },
         stdio: ['ignore', 'pipe', 'pipe'],
       })
-      const electronExited = new Promise<void>((resolve) => {
-        child.once('exit', () => { resolve() })
-      })
-      let output = ''
-      const onData = (chunk: Buffer): void => { output += chunk.toString() }
-      child.stdout?.on('data', onData)
-      child.stderr?.on('data', onData)
+      const observed = observeSmokeChild(child)
+      exited = observed.exited
+      processOutput = observed.output
       const deadline = Date.now() + 90_000
       while (Date.now() < deadline) {
         const text = await readFile(log, 'utf8')
@@ -49,7 +51,7 @@ describe.skipIf(process.env.DSH_DESKTOP_SMOKE !== '1')('Desktop Host smoke', () 
           expect(text).toContain('companion entry search hit {"type":"session-search"')
           expect(text).toContain('desktop-companion-smoke-indexed-needle')
           expect(text).toContain('companion entry search no-hit {"type":"session-search"')
-          await electronExited
+          await exited
           const finalText = await readFile(log, 'utf8')
           expect(finalText).toContain('relay production-gate {"connected":false}')
           expect(finalText).toContain('relay sleep {"connected":false,"stopReason":"sleep"}')
@@ -65,15 +67,22 @@ describe.skipIf(process.env.DSH_DESKTOP_SMOKE !== '1')('Desktop Host smoke', () 
         || text.includes('missing window.__DSH_BOOT__')
         || text.includes('error ')
         ) {
-          child.kill()
+          output = processOutput()
           throw new Error(text + '\n' + output.slice(-2000))
         }
         await new Promise((resolve) => { setTimeout(resolve, 250) })
       }
-      child.kill()
+      output = processOutput()
       throw new Error('desktop smoke timed out\n' + (await readFile(log, 'utf8')) + '\n' + output.slice(-2000))
     } finally {
-      await provider.close()
+      try {
+        await stopSmokeChild(child, exited)
+        output = processOutput()
+      } finally {
+        try { await provider.close() } finally {
+          await retainSmokeEvidence({ evidencePath: evidence, root: dir, smokeLog: log, processOutput: output })
+        }
+      }
     }
   }, 120_000)
 })
