@@ -1,6 +1,6 @@
 /** Desktop GESTALT name artwork for the sidebar brand seat. */
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import css from './BrandSeat.module.css'
+import { GestaltBrandName } from './GestaltBrandName.tsx'
 
 /** Props derived from the sidebar's brand-name slot. */
 export type BrandSeatProps = PropsRuntime<'sidebar.brand.name'>
@@ -11,5 +11,5 @@ export type BrandSeatProps = PropsRuntime<'sidebar.brand.name'>
  * @returns the decorative product name.
  */
 export function BrandSeat(_props: BrandSeatProps) {
-  return <span className={css.name} aria-hidden="true">GESTALT</span>
+  return <GestaltBrandName />
 }

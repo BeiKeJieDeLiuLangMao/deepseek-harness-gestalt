@@ -11,6 +11,11 @@ describe('BrandSeat', () => {
         useWorkspaces={(() => { throw new Error('unused') })}
       />,
     )
-    expect(container.textContent).toContain('GESTALT')
+    const wordmark = container.querySelector('svg')
+    expect(wordmark?.getAttribute('viewBox')).toBe('26 0 156 24')
+    expect(wordmark?.querySelectorAll('path').length).toBeGreaterThan(8)
+    expect(wordmark?.querySelector('rect[x="129.348"]')).not.toBeNull()
+    expect(wordmark?.querySelector('text')?.textContent).toBe('GESTALT')
+    expect(wordmark?.querySelector('[id="dsh-wordmark-whale-clip"]')).toBeNull()
   })
 })
