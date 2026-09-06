@@ -33,7 +33,10 @@ describe('Electron smoke lifecycle', () => {
 
   it.skipIf(process.platform === 'win32')('stops an owned Host left after its parent is killed', async () => {
     const dshHome = await mkdtemp(join(tmpdir(), 'electron-smoke-orphan-home-'))
-    const parent = spawn(process.execPath, [orphanFixture, dshHome], { stdio: ['ignore', 'pipe', 'pipe'] })
+    const parent = spawn(process.execPath, [orphanFixture], {
+      env: { ...process.env, DSH_HOME: dshHome },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
     const observed = observeSmokeChild(parent)
     try {
       await expect(observed.exited).resolves.toBeUndefined()

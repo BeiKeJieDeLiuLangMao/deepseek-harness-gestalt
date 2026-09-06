@@ -1,14 +1,16 @@
 import { spawn } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 
-const dshHome = process.argv[2]
-const role = process.argv[3]
+const role = process.argv[2]
+const origin = process.argv[3] ?? 'http://127.0.0.1:43123'
 if (role === 'host') {
   process.on('SIGTERM', () => {})
-  process.stdout.write(`host http://127.0.0.1:43123 pid ${process.pid}\n`)
+  process.stdout.write(`host ${origin} pid ${process.pid}\n`)
   setInterval(() => {}, 1_000)
 } else {
-  const host = spawn(process.execPath, [new URL(import.meta.url).pathname, dshHome, 'host', 'http://127.0.0.1:43123'], {
-    env: { ...process.env, DSH_HOME: dshHome }, detached: false,
+  const host = spawn(process.execPath, [fileURLToPath(import.meta.url), 'host', origin], {
+    env: process.env,
+    detached: false,
     stdio: ['ignore', 'pipe', 'inherit'],
   })
   host.stdout.once('data', chunk => {
