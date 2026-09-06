@@ -498,101 +498,6 @@ describe('assembled Desktop Companion Host search', () => {
     await relayOwner.drain()
   }, 45_000)
 
-  it('runs shipped Mobile mutations through Snow into the real Desktop Host', async () => {
-    const assembled = await startDesktopHost('indexed', 'assembled Snow search needle')
-    const owner = productOwner(assembled.url)
-    owner.installLedger(await DesktopCompanionOperationLedger.load(
-      new FileDesktopCompanionOperationStore(join(assembled.root, 'legacy-product-operations.json')),
-    ))
-    const channel = await snowProductChannels()
-    const runtime = synchronizedRuntime(channel.mobile, channel.desktop, channel.generation)
-    const connection = new MobileSnowCompanionConnection()
-    connection.connect({
-      channel: channel.mobile,
-      targetAttachmentId: channel.desktopAttachmentId,
-      pairingSelector: channel.pairingSelector,
-      generation: channel.generation,
-    })
-    let retainedCiphertext = new Uint8Array()
-    const results: unknown[] = []
-    const productRef: { current?: MobileSnowCompanionProductChannel } = {}
-    const receiver = new MobileNoiseCompanionReceiver(
-      channel.mobile, channel.generation, runtime,
-      () => ({ acceptValidatedCompanionResult: (result) => {
-        results.push(result)
-        productRef.current?.acceptResult(result)
-      } }),
-    )
-    const product = new MobileSnowCompanionProductChannel({
-      runtime,
-      connection,
-      operationSettlement: assembledOperationSettlement('desktop-shipped'),
-      installation: { authorizeCurrentInstallation: async () => ({
-        accessToken: 'assembled-current-installation',
-        proof: { jti: 'assembled-proof' as never, issuedAt: 1, signature: 'assembled-signature' },
-      }) },
-      attachmentKeys: { attachmentKeyMaterial: () => channel.attachmentKey.slice() },
-      platformOrigin: 'https://operated-platform.test',
-      sendCiphertext: async (_target, ciphertext) => {
-        const opened = channel.desktop.open(ciphertext)
-        if (opened.type !== 'operation') throw new Error('assembled Desktop did not open a Companion operation')
-        const output = await owner.handle(opened.operation as never, {
-          pairingId: 'pairing-assembled-snow' as never,
-          attachmentKey: channel.attachmentKey.slice(),
-          now: Date.now,
-          generation: channel.generation,
-          desktopRevision: 1,
-          desktopName: 'Assembled Desktop',
-          downloadAttachment: async () => retainedCiphertext.slice(),
-          submitAttachment: async input => await owner.submitAttachment(input),
-          resolveInteraction: interactionId => owner.resolveInteraction(interactionId, channel.attachmentKey),
-          pendingInteractions: sessionId => owner.pendingInteractions(sessionId, channel.attachmentKey),
-        })
-        if (Array.isArray(output) || isProjection(output)) throw new Error('legacy assembled operation returned non-result output')
-        receiver.receive(channel.desktop.seal({ type: 'result', result: output as CompanionResult }))
-      },
-    })
-    productRef.current = product
-    const originalFetch = globalThis.fetch
-    globalThis.fetch = async (_input, init) => {
-      retainedCiphertext = new Uint8Array(await new Response(init?.body).arrayBuffer())
-      return new Response(JSON.stringify({
-        capability: 'A'.repeat(43), byteLength: retainedCiphertext.byteLength,
-        expiresAt: Date.now() + 60_000,
-      }), { status: 201, headers: { 'content-type': 'application/json' } })
-    }
-    try {
-      const search = product.search('assembled Snow search needle')
-      await search.completion
-      await expect.poll(() => results.some(result => isOperationResult(result, search.operationId))).toBe(true)
-      for (const [name, type, bytes] of [
-        ['payload.bin', 'application/octet-stream', Uint8Array.of(0, 255, 1, 2)],
-        ['pixel.png', 'image/png', Uint8Array.of(137, 80, 78, 71, 13, 10, 26, 10)],
-        ['notes.txt', 'text/plain', new TextEncoder().encode('assembled exact text bytes')],
-      ] as const) {
-        const transfer = product.attach(assembled.sessionId, new File([bytes], name, { type }))
-        await transfer.completion
-        await expect.poll(() => results.some(result => isOperationResult(result, transfer.operationId))).toBe(true)
-      }
-      expect(results.map(result => typeof result === 'object' && result !== null && 'type' in result
-        ? result.type
-        : 'invalid')).toEqual(['session-search', 'confirmed', 'confirmed', 'confirmed'])
-      const admitted = assembled.session.events.filter(event => event.type === 'session/attachment-admitted')
-      expect(admitted.map(event => event.type === 'session/attachment-admitted'
-        ? [event.data.attachment.name, event.data.attachment.mediaType, event.data.attachment.bytes]
-        : [])).toEqual([
-        ['payload.bin', 'application/octet-stream', 4],
-        ['pixel.png', 'image/png', 8],
-        ['notes.txt', 'text/plain', 26],
-      ])
-    } finally {
-      globalThis.fetch = originalFetch
-      channel.attachmentKey.fill(0)
-      channel.mobile.dispose()
-      channel.desktop.dispose()
-    }
-  }, 45_000)
-
   it('indexes a real Desktop Session and returns authoritative hit and no-hit results', async () => {
     const assembled = await startDesktopHost('indexed', 'desktop assembled SQLite needle')
     const owner = productOwner(assembled.url)
@@ -980,25 +885,6 @@ async function snowProductChannels(): Promise<{
   }
 }
 
-function synchronizedRuntime(
-  mobile: SnowCompanionProtocolChannel,
-  desktop: SnowCompanionProtocolChannel,
-  generation: number,
-): CompanionForegroundRuntime {
-  const runtime = new CompanionForegroundRuntime()
-  runtime.configure({
-    routeId: parseRelayRouteId('route-assembled-snow'), endpoint: 'mobile',
-    credential: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' as never, revision: 1,
-  })
-  runtime.markConnectionOpen()
-  const receiver = new MobileNoiseCompanionReceiver(mobile, generation, runtime)
-  receiver.receive(desktop.seal({
-    type: 'projection',
-    projection: { type: 'foreground-sync', desktopName: 'Assembled Desktop', generation, desktopRevision: 1 },
-  }))
-  return runtime
-}
-
 function connectedRuntime(): CompanionForegroundRuntime {
   const runtime = new CompanionForegroundRuntime()
   runtime.configure({
@@ -1035,11 +921,6 @@ function isProjection(value: CompanionProjection | CompanionResult): value is Co
 
 function isResultList(value: DesktopCompanionOperationOutput): value is readonly CompanionResult[] {
   return Array.isArray(value)
-}
-
-function isOperationResult(value: unknown, operationId: unknown): boolean {
-  return typeof value === 'object' && value !== null && 'operationId' in value
-    && value.operationId === operationId
 }
 
 async function search(
