@@ -243,6 +243,9 @@
       // util/ folders are role-named without the util- prefix their npm names carry,
       // so these aliases stay hand-written like dsh-util-crypto above.
       "@deepseek-ai/dsh-util-time": ["./packages/util/time/src"],
+      // Public ./privacy is lib/types in exports; source-plane Vite/tsx need this
+      // hand-written file alias (the generator only emits bare + /invariant).
+      "@deepseek-ai/dsh-platform-account/privacy": ["./packages/platform/platform-account/src/privacy.ts"],
       // BEGIN generated package aliases — pnpm run gen-tsconfig-paths
       "@deepseek-ai/dsh-acp": ["./packages/acp/acp/src"],
       "@deepseek-ai/dsh-acp-app": ["./packages/bundle/acp-app/src"],
