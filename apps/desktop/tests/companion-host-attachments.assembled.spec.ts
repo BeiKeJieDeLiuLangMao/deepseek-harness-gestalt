@@ -1,5 +1,6 @@
 /** Companion search and attachment admission through Snow and shipped dsh web. */
 
+import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { glob, readFile } from 'node:fs/promises'
@@ -75,6 +76,7 @@ describe('assembled Desktop Companion attachments on shipped dsh web', () => {
     })
     let ciphertext = new Uint8Array()
     const opened: CompanionOperation[] = []
+    const results: CompanionResult[] = []
     const submitted: Array<{ name: string; mediaType: string; plaintext: Uint8Array }> = []
     const product = new MobileSnowCompanionProductChannel({
       runtime, connection,
@@ -110,6 +112,7 @@ describe('assembled Desktop Companion attachments on shipped dsh web', () => {
         }
         const openedResult = channels.mobile.open(channels.desktop.seal({ type: 'result', result: result as CompanionResult }))
         if (openedResult.type !== 'result') throw new Error('Mobile expected a Snow result')
+        results.push(openedResult.result)
         product.acceptResult(openedResult.result)
       },
     })
@@ -125,10 +128,18 @@ describe('assembled Desktop Companion attachments on shipped dsh web', () => {
       return await originalFetch(input, init)
     })
     try {
-      const search = product.search(needle)
-      await search.completion
-      const searchOperation = opened.find(operation => operation.operationId === search.operationId)
-      expect(searchOperation).toMatchObject({ type: 'search-sessions', query: needle })
+      let searchHit: CompanionResult | undefined
+      await expect.poll(async () => {
+        const search = product.search(needle)
+        await search.completion
+        const searchOperation = opened.find(operation => operation.operationId === search.operationId)
+        expect(searchOperation).toMatchObject({ type: 'search-sessions', query: needle })
+        searchHit = results.find(result => result.operationId === search.operationId)
+        return searchHit?.type === 'session-search' && searchHit.items.some(item => item.sessionId === sessionId)
+      }, { timeout: 15_000 }).toBe(true)
+      expect(searchHit).toMatchObject({
+        type: 'session-search', items: expect.arrayContaining([expect.objectContaining({ sessionId })]),
+      })
 
       const expectedFiles = [
         ['payload.bin', 'application/octet-stream', Uint8Array.of(0, 255, 1, 2)],
@@ -154,11 +165,16 @@ describe('assembled Desktop Companion attachments on shipped dsh web', () => {
       }
       expect(submitted).toHaveLength(3)
       const durableLog = await durableSessionLog(first.home, sessionId)
-      expect((durableLog.match(/"type":"session\/attachment-admitted"/g) ?? [])).toHaveLength(3)
-      expect(durableLog).toContain('payload.bin')
-      expect(durableLog).toContain('pixel.png')
-      expect(durableLog).toContain('notes.txt')
+      const admitted = admittedAttachments(durableLog)
+      expect(admitted).toHaveLength(3)
       for (const [index, [name, mediaType, bytes]] of expectedFiles.entries()) {
+        expect(admitted[index]).toMatchObject({
+          operationId: opened.filter(operation => operation.type === 'offer-attachment')[index]?.operationId,
+          attachment: {
+            name, mediaType, bytes: bytes.byteLength,
+            sha256: createHash('sha256').update(bytes).digest('hex'),
+          },
+        })
         expect(submitted[index]).toMatchObject({ name })
         expect(submitted[index]?.mediaType).toBe(mediaType)
         expect(submitted[index]?.plaintext).toEqual(bytes)
@@ -210,6 +226,29 @@ async function snowChannels(): Promise<{
     desktop: desktopNegotiation.finish(mobileNegotiation.payload),
     attachmentKey, pairingSelector, desktopAttachmentId, generation,
   }
+}
+
+function admittedAttachments(log: string): Array<{
+  operationId: string
+  attachment: { name?: string; mediaType: string; bytes: number; sha256: string }
+}> {
+  const values = []
+  for (const line of log.split('\n')) {
+    if (!line.includes('"type":"session/attachment-admitted"')) continue
+    const event = JSON.parse(line) as { data?: { operationId?: unknown; attachment?: unknown } }
+    const attachment = event.data?.attachment
+    if (typeof event.data?.operationId !== 'string' || typeof attachment !== 'object' || attachment === null) continue
+    const ref = attachment as Record<string, unknown>
+    if (typeof ref.mediaType !== 'string' || typeof ref.bytes !== 'number' || typeof ref.sha256 !== 'string') continue
+    values.push({
+      operationId: event.data.operationId,
+      attachment: {
+        ...(typeof ref.name === 'string' ? { name: ref.name } : {}),
+        mediaType: ref.mediaType, bytes: ref.bytes, sha256: ref.sha256,
+      },
+    })
+  }
+  return values
 }
 
 async function durableSessionLog(home: string, sessionId: string): Promise<string> {
