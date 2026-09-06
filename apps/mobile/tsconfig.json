@@ -15,7 +15,6 @@
     { "path": "../../packages/interaction/user-questions" },
     { "path": "../../packages/workspace/workspace" },
     { "path": "../../packages/client/ui-primitives" },
-    { "path": "../../packages/client/ui-theme" },
     { "path": "../../packages/platform/platform-account" },
     { "path": "../../packages/platform/platform-account-client" },
     { "path": "../../packages/platform/remote-access" },
