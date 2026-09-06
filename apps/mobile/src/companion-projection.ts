@@ -181,8 +181,13 @@ export class MobilePendingDraftStore {
    * @param draft - last user-selected Approval outcome or Ask User answers.
    */
   set(key: MobilePendingDraftKey, draft: MobilePendingDraft): void {
-    if (this.#revoked) throw new MobilePendingDraftStoreRevokedError()
+    this.requireWritable()
     this.#drafts.set(draftKey(key), draft)
+  }
+
+  /** Reject writes after this store was revoked. */
+  requireWritable(): void {
+    if (this.#revoked) throw new MobilePendingDraftStoreRevokedError()
   }
 
   /**
@@ -970,6 +975,7 @@ function adaptConversation(
         }))
       },
       cancel: async () => {
+        drafts.requireWritable()
         await requireAcceptedReceipt(settle({
           kind: 'question',
           sessionId: SessionId(wait.sessionId),

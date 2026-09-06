@@ -375,6 +375,10 @@ describe('MobileCompanionSurface', () => {
     const nextWait = surface.getSnapshot().conversations[sid('session-one')]?.pending[0]
     if (nextWait?.kind !== 'approval') throw new Error('expected replacement pending Approval')
     expect(nextWait.draft).toEqual({})
+    await expect(oldWait.answer('rejected'))
+      .rejects.toMatchObject({ name: 'MobilePendingDraftStoreRevokedError' })
+    expect(nextWait.draft).toEqual({})
+    expect(replacementChannel.mutations.settle).not.toHaveBeenCalled()
   })
 
   it.each([

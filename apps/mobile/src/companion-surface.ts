@@ -264,7 +264,7 @@ export class MobileCompanionSurface {
     const adapted = adaptMobileCompanionProjection(
       projection,
       () => Promise.reject(new Error('Companion interaction requires foreground synchronization')),
-      this.#pendingDrafts,
+      new MobilePendingDraftStore(),
     )
     this.#snapshot = {
       ...adapted,
@@ -347,7 +347,7 @@ export class MobileCompanionSurface {
     channel: MobileCompanionConnectionChannel,
   ): ValidatedDesktopSurfaceResyncReceiver | undefined {
     const lifecycleReceiver = this.#runtime.bindValidatedDesktopResync()
-    if (lifecycleReceiver === undefined) return undefined
+    if (lifecycleReceiver === undefined || !this.#runtime.getState().socketOpen) return undefined
     const token = Symbol('mobile-companion-connection')
     return {
       acceptValidatedDesktopResync: (message) => {
