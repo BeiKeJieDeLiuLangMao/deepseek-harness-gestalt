@@ -81,9 +81,9 @@ export function MobileConversation({
   const approval = snapshot.pending.find((wait): wait is Extract<typeof wait, { kind: 'approval' }> => (
     wait.kind === 'approval'
   ))
-  const backLabel = locale === 'zh' ? '返回' : 'Back'
-  const attachmentLabel = locale === 'zh' ? '添加附件' : 'Add attachment'
-  const displayTitle = snapshot.blank ? locale === 'zh' ? '新会话' : 'New Session' : title
+  const backLabel = t('nav.back')
+  const attachmentLabel = t('attachment.add')
+  const displayTitle = snapshot.blank ? t('session.new') : title
   const openError = typeof snapshot.openError === 'object' && snapshot.openError !== null
     ? snapshot.openError as { readonly message?: string; readonly code?: string }
     : undefined

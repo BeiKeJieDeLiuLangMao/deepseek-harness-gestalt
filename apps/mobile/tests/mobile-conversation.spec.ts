@@ -184,6 +184,11 @@ describe('Mobile shared Session presentation', () => {
     expect(document.querySelector('[data-toolview="file-mutation"] [data-tool="edit"]')).not.toBeNull()
     expect(document.querySelector('[data-toolview="generic"] [data-tool="future_tool"]')).not.toBeNull()
     expect(document.querySelector('[data-context-source]')?.textContent).toBe('AGENTS.md')
+    const contextRow = document.querySelector('[data-context-source]')?.closest('[data-expandable]')
+    expect(contextRow).not.toBeNull()
+    fireEvent.click(contextRow as HTMLElement)
+    expect(screen.getByText('Injected context')).toBeTruthy()
+    expect(document.querySelector('[data-context-injection-body]')?.textContent).toBe('Injected context')
     expect(screen.getByText(/retry failure/)).toBeTruthy()
     expect(document.querySelector('[data-variant="others"]')).not.toBeNull()
     expect(document.querySelector('[data-compaction-icon="context"]')).not.toBeNull()
@@ -256,6 +261,90 @@ describe('Mobile shared Session presentation', () => {
     fireEvent.click(screen.getByRole('radio', { name: 'Yes' }))
     fireEvent.click(screen.getByRole('button', { name: 'Submit' }))
     expect(answer).toHaveBeenCalledOnce()
+  })
+
+  it('keeps injected context body behind the same disclosure as the source label', () => {
+    render(createElement(MobileConversation, {
+      title: 'Context', onBack: () => {}, locale: 'en', loadImage: imageLoader,
+      snapshot: snapshot([{
+        kind: 'context', seq: 5, time: 5_000, content: [{ type: 'text', text: 'Injected context' }],
+        source: null, provenance: { role: 'inject', label: 'AGENTS.md' }, form: null,
+      }]),
+    }))
+    expect(screen.getByText('AGENTS.md')).toBeTruthy()
+    expect(screen.queryByText('Injected context')).toBeNull()
+    fireEvent.click(screen.getByText('AGENTS.md').closest('[data-expandable]') as HTMLElement)
+    expect(screen.getByText('Injected context')).toBeTruthy()
+  })
+
+  it('advances, returns, and submits every Ask User selection after a failed settlement', async () => {
+    const answer = vi.fn(async () => { throw new Error('Companion encrypted operation could not be sent') })
+    const wait: MobilePendingQuestion = {
+      kind: 'question',
+      interactionId: 'rpc-questions',
+      sessionId: SID,
+      questions: [
+        { id: 'q1', question: 'Continue?', options: [{ label: 'Yes' }, { label: 'No' }] },
+        { id: 'q2', question: 'Color?', options: [{ label: 'Blue' }, { label: 'Red' }] },
+      ],
+      draft: {},
+      answer,
+      cancel: async () => {},
+    }
+    render(createElement(MobileConversation, {
+      title: 'Questions', onBack: () => {}, locale: 'en',
+      snapshot: snapshot([], { pending: [wait] }),
+      loadImage: imageLoader,
+      mutationEnabled: true,
+    }))
+    fireEvent.click(screen.getByRole('radio', { name: 'Yes' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Next question' }))
+    expect(screen.getByText('Color?')).toBeTruthy()
+    fireEvent.click(screen.getByRole('radio', { name: 'Blue' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Previous question' }))
+    expect(screen.getByText('Continue?')).toBeTruthy()
+    expect(screen.getByRole('radio', { name: 'Yes' }).getAttribute('aria-checked')).toBe('true')
+    fireEvent.click(screen.getByRole('button', { name: 'Next question' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Submit' }))
+    await waitFor(() => { expect(answer).toHaveBeenCalledOnce() })
+    expect(answer.mock.calls[0]?.[0]).toEqual({
+      answers: [
+        { id: 'q1', selected: ['Yes'] },
+        { id: 'q2', selected: ['Blue'] },
+      ],
+    })
+    expect(screen.getByText(/could not be sent/)).toBeTruthy()
+    expect(screen.getByRole('radio', { name: 'Blue' }).getAttribute('aria-checked')).toBe('true')
+    fireEvent.click(screen.getByRole('button', { name: 'Previous question' }))
+    expect(screen.getByRole('radio', { name: 'Yes' }).getAttribute('aria-checked')).toBe('true')
+  })
+
+  it('keeps the selected Approval outcome pressed after settlement failure', async () => {
+    const draft: { outcome?: 'allowed-once' | 'rejected' } = {}
+    const wait: MobilePendingApproval = {
+      kind: 'approval',
+      interactionId: 'rpc-approval-retry',
+      sessionId: SID,
+      approvalId: 'approval-retry',
+      toolName: 'bash',
+      reason: 'Allow write',
+      draft,
+      answer: async (outcome) => {
+        draft.outcome = outcome
+        throw new Error('Companion encrypted operation could not be sent')
+      },
+    }
+    render(createElement(MobileConversation, {
+      title: 'Approval', onBack: () => {}, locale: 'en',
+      snapshot: snapshot([], { pending: [wait] }),
+      loadImage: imageLoader,
+      mutationEnabled: true,
+    }))
+    fireEvent.click(screen.getByRole('button', { name: 'Allow once' }))
+    await waitFor(() => { expect(screen.getByText(/could not be sent/)).toBeTruthy() })
+    expect(draft.outcome).toBe('allowed-once')
+    expect(screen.getByRole('button', { name: 'Allow once' }).getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByRole('button', { name: 'Reject' }).getAttribute('aria-pressed')).toBe('false')
   })
 
   it('keeps phone navigation while shared copy follows locale and theme', async () => {

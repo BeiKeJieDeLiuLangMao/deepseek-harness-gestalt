@@ -361,13 +361,33 @@ function ToolCallRow({
   )
 }
 
-function ContextRow({ node }: { node: Record<string, unknown> }): ReactNode {
+function contextText(node: Record<string, unknown>): string {
+  const texts: string[] = []
+  for (const block of asArray(node.content) ?? []) {
+    const record = asRecord(block)
+    if (record?.type === 'text' && typeof record.text === 'string') texts.push(record.text)
+  }
+  return texts.join('')
+}
+
+function ContextRow({ node, t }: { node: Record<string, unknown>; t: MobileConversationCopy }): ReactNode {
   const provenance = asRecord(node.provenance)
   const label = asString(provenance?.label)
+  const body = contextText(node)
+  const [open, setOpen] = useState(false)
   return (
-    <div>
-      {label !== undefined && <span data-context-source>{label}</span>}
-    </div>
+    <DisclosureRow
+      icon={<IconApiOutline14 size={14} />}
+      title={t('message.contextInjection')}
+      open={open}
+      expandable={body !== ''}
+      expandOnRowClick
+      keepContentWhenOpen
+      onToggle={() => { setOpen(value => !value) }}
+      collapsedContent={label === undefined ? undefined : <span data-context-source>{label}</span>}
+    >
+      {body !== '' && <div data-context-injection-body>{body}</div>}
+    </DisclosureRow>
   )
 }
 
@@ -441,7 +461,7 @@ export function MobileConversationNodeView({
     case 'tool-result':
       return <ToolCallRow node={record} t={t} cwd={cwd} home={home} />
     case 'context':
-      return <ContextRow node={record} />
+      return <ContextRow node={record} t={t} />
     case 'compaction':
       return <CompactionRow node={record} t={t} />
     case 'command':
@@ -512,6 +532,7 @@ export function MobileApprovalForm({
 }): ReactNode {
   const [pending, setPending] = useState(false)
   const [failure, setFailure] = useState<string | undefined>()
+  const [selected, setSelected] = useState<'allowed-once' | 'rejected' | undefined>(wait.draft.outcome)
   const locked = disabled || pending
   const headline = wait.reason !== undefined && wait.reason !== ''
     ? wait.reason
@@ -520,25 +541,38 @@ export function MobileApprovalForm({
       : t('placeholder.unavailable')
   const settle = (outcome: 'allowed-once' | 'rejected'): void => {
     if (locked) return
+    setSelected(outcome)
     setPending(true)
     setFailure(undefined)
     void wait.answer(outcome).then(
       () => { setPending(false) },
       (cause: unknown) => {
         setPending(false)
+        setSelected(wait.draft.outcome ?? outcome)
         setFailure(cause instanceof Error ? cause.message : String(cause))
       },
     )
   }
+  const shown = wait.draft.outcome ?? selected
   return (
     <div role="group" aria-label={t('approval.detailAria')}>
       <p>{t('approval.waiting')}</p>
       <p>{headline}</p>
       {failure !== undefined && <p role="alert">{failure}</p>}
-      <button type="button" disabled={locked} onClick={() => { settle('rejected') }}>
+      <button
+        type="button"
+        disabled={locked}
+        aria-pressed={shown === 'rejected'}
+        onClick={() => { settle('rejected') }}
+      >
         {t('approval.reject')}
       </button>
-      <button type="button" disabled={locked} onClick={() => { settle('allowed-once') }}>
+      <button
+        type="button"
+        disabled={locked}
+        aria-pressed={shown === 'allowed-once'}
+        onClick={() => { settle('allowed-once') }}
+      >
         {t('approval.allowOnce')}
       </button>
     </div>
@@ -558,28 +592,34 @@ export function MobileQuestionForm({
   disabled?: boolean
 }): ReactNode {
   const questions = wait.questions
-  const [index] = useState(0)
+  const [index, setIndex] = useState(0)
   const [drafts, setDrafts] = useState(() => questions.map((question) => {
     const stored = wait.draft.answers?.find(item => item.id === question.id)
     return { selected: stored?.selected ?? [], custom: stored?.custom ?? '' }
   }))
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<string | undefined>()
+  const last = questions.length - 1
   const question = questions[index]
   if (question === undefined) return null
   const draft = drafts[index] ?? { selected: [], custom: '' }
   const options = question.options ?? []
+  const collectAnswers = (): AskUserQuestionAnswer['answers'] => questions.map((item, itemIndex) => {
+    const stored = wait.draft.answers?.find(answer => answer.id === item.id)
+    const value = drafts[itemIndex] ?? {
+      selected: stored?.selected ?? [],
+      custom: stored?.custom ?? '',
+    }
+    const custom = value.custom.trim()
+    return {
+      id: item.id,
+      selected: custom === '' || item.multiSelect === true ? value.selected : [],
+      ...(custom === '' ? {} : { custom }),
+    }
+  })
   const submit = (): void => {
     if (disabled || busy) return
-    const answers: AskUserQuestionAnswer['answers'] = questions.map((item, itemIndex) => {
-      const value = drafts[itemIndex] ?? { selected: [], custom: '' }
-      const custom = value.custom.trim()
-      return {
-        id: item.id,
-        selected: custom === '' || item.multiSelect === true ? value.selected : [],
-        ...(custom === '' ? {} : { custom }),
-      }
-    })
+    const answers = collectAnswers()
     setBusy(true)
     setFailure(undefined)
     void wait.answer({ answers }).then(
@@ -602,6 +642,7 @@ export function MobileQuestionForm({
       return { selected: [label], custom: '' }
     }))
   }
+  const answered = draft.selected.length > 0 || draft.custom.trim() !== ''
   return (
     <fieldset disabled={disabled || busy}>
       <h2>{question.question}</h2>
@@ -628,11 +669,32 @@ export function MobileQuestionForm({
       </button>
       <button
         type="button"
-        disabled={disabled || busy || (draft.selected.length === 0 && draft.custom.trim() === '')}
-        onClick={submit}
+        aria-label={t('nav.prev')}
+        disabled={disabled || busy || index === 0}
+        onClick={() => { setIndex(current => Math.max(0, current - 1)) }}
       >
-        {busy ? t('submitting') : t('submit')}
+        {t('nav.prev')}
       </button>
+      {index < last
+        ? (
+          <button
+            type="button"
+            aria-label={t('nav.next')}
+            disabled={disabled || busy || !answered}
+            onClick={() => { setIndex(current => Math.min(last, current + 1)) }}
+          >
+            {t('action.next')}
+          </button>
+        )
+        : (
+          <button
+            type="button"
+            disabled={disabled || busy || !answered}
+            onClick={submit}
+          >
+            {busy ? t('submitting') : t('submit')}
+          </button>
+        )}
     </fieldset>
   )
 }
