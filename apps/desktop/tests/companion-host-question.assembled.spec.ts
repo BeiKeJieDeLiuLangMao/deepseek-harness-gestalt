@@ -73,7 +73,6 @@ describe('assembled Desktop Companion Ask User question on shipped dsh web', () 
     const apiKey = 'desktop-assembled-snow-question-key'
     const llm = await startMockLlmServer({
       sequence: ['tool_call_success', 'success'],
-      repeatLast: true,
       apiKey,
       toolName: 'ask_user_question',
       toolArguments: JSON.stringify({
@@ -85,6 +84,7 @@ describe('assembled Desktop Companion Ask User question on shipped dsh web', () 
     const first = await startShippedWebHost({
       children, homes,
       env: { DEEPSEEK_API_KEY: apiKey, DEEPSEEK_BASE_URL: llm.baseURL },
+      extraPatches: [join(import.meta.dirname, 'fixtures/snow-question-no-title.patch.yml')],
     })
     const cookie = await bootstrapDesktopHostCookie(first.running.launchUrl, first.running.url)
     const rpc = createDesktopHostRpc(first.running.url, {
@@ -213,6 +213,11 @@ describe('assembled Desktop Companion Ask User question on shipped dsh web', () 
     const followUpBody = JSON.stringify(followUp.body)
     expect(followUpBody).toContain('q1')
     expect(followUpBody).toContain('Yes')
+    expect(llm.requests.length).toBe(2)
+    for (const request of llm.requests) {
+      const body = isRecord(request.body) ? JSON.stringify(request.body) : ''
+      expect(body.includes('ask_user_question') || body.includes('tool_call_id')).toBe(true)
+    }
     expect(owner.pendingInteractions(sessionId, channels.attachmentKey.slice())).toHaveLength(0)
   }, 180_000)
 })
