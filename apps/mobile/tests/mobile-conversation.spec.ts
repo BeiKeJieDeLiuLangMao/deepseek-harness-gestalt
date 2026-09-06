@@ -7,9 +7,9 @@ import {
   PendingWait,
   type ConversationNode,
   type ConversationSnapshot,
-  type SessionId,
   type ToolResultNode,
 } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { conversationPresentationTranslate } from '@deepseek-ai/dsh-client-ui-conversation/presentation'
 import { questionPresentationTranslate } from '@deepseek-ai/dsh-client-ui-user-questions/presentation'

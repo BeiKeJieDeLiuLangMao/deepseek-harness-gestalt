@@ -7,8 +7,8 @@ import {
   EMPTY_CHAT_SNAPSHOT,
   EMPTY_CONVERSATION_VIEWS,
   type ConversationSnapshot,
-  type SessionId,
 } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { MobileBrowse } from '../src/MobileBrowse.tsx'
 import { fixedMobilePresentationClock } from '../src/mobile-clock.ts'
 

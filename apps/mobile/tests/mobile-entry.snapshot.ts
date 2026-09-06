@@ -27,7 +27,8 @@ import type {
   MobileCompanionConnectionChannel, ValidatedDesktopSurfaceResync,
 } from '../src/companion-surface.ts'
 import { fixedMobilePresentationClock } from '../src/mobile-clock.ts'
-import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { randomUuid } from '../src/random-uuid.ts'
 
 const sid = (value: string): SessionId => value as SessionId
 
@@ -37,7 +38,7 @@ const environment = loadOperatedPlatformEnvironment({
   githubClientId: 'mobile-fixture', credentialReference: 'credentials://fixture',
   databaseIdentity: 'database-fixture', identityNamespace: 'namespace-fixture',
 })
-const installationIdentity = crypto.randomUUID()
+const installationIdentity = randomUuid()
 const installationPlatform = crypto.getRandomValues(new Uint8Array(1))[0]! % 2 === 0 ? 'ios' : 'android'
 
 const attempt: LoginAttemptView = {

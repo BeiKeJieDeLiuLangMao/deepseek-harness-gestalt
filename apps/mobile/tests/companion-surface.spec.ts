@@ -5,7 +5,7 @@ import {
   parseRelayCredential,
   parseRelayRouteId,
 } from '@deepseek-ai/dsh-remote-protocol'
-import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { CompanionAttachmentDeliveryUncertainError } from '../src/companion-attachment.ts'
 import { CompanionForegroundRuntime } from '../src/companion-lifecycle.ts'
 import {
