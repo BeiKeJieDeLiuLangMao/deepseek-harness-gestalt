@@ -12,6 +12,7 @@
     { "path": "../../packages/api/session-controller/tsconfig.client.json" },
     { "path": "../../packages/api/workspace-controller/tsconfig.client.json" },
     { "path": "../../packages/core/session" },
+    { "path": "../../packages/interaction/user-questions" },
     { "path": "../../packages/workspace/workspace" },
     { "path": "../../packages/client/runtime" },
     { "path": "../../packages/client/ui-attachment" },
