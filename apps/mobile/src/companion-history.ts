@@ -1,8 +1,9 @@
 /** Mobile composition over Desktop-owned Session list and conversation projections. */
 
-import type {
-  ConversationSnapshot, SessionId, SessionListState, WorkspaceView,
-} from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { WorkspaceView } from '@deepseek-ai/dsh-api-workspace-controller/types'
+import type { MobileConversationView } from './companion-projection.ts'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type {
   MobileCompanionAttachmentSnapshot,
@@ -15,7 +16,7 @@ import type { CompanionConnectionFailure } from './companion-lifecycle.ts'
 export const COMPANION_HISTORY_PAGE_SIZE = 20
 
 /** Desktop-authoritative conversations keyed by the same Session ids as the list projection. */
-export type CompanionConversationMap = Readonly<Partial<Record<SessionId, ConversationSnapshot>>>
+export type CompanionConversationMap = Readonly<Partial<Record<SessionId, MobileConversationView>>>
 
 /** Production composition accepted by the bundled Mobile entry. */
 export interface MobileCompanionPresentation {

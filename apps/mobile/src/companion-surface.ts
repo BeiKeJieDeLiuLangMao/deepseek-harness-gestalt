@@ -1,7 +1,9 @@
 /** Product-owned Mobile projection of authenticated Desktop Companion state. */
 
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
-import type { ConversationSnapshot, SessionId, SessionListState, WorkspaceView } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { WorkspaceView } from '@deepseek-ai/dsh-api-workspace-controller/types'
+import { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {
   CompanionAttachmentRejectedResult,
   CompanionHostFailure,
@@ -18,6 +20,7 @@ import {
   adaptMobileCompanionProjection,
   assertCompanionJsonProjection,
   type MobileCompanionProjectionDto,
+  type MobileConversationView,
   type MobilePendingSettlement,
   type MobilePendingSettlementReceipt,
 } from './companion-projection.ts'
@@ -123,7 +126,7 @@ export interface MobileCompanionSurfaceSnapshot {
   /** Last authenticated Workspace projection. */
   readonly workspaces: readonly WorkspaceView[]
   /** Last authenticated opened conversations. */
-  readonly conversations: Readonly<Partial<Record<SessionId, ConversationSnapshot>>>
+  readonly conversations: Readonly<Partial<Record<SessionId, MobileConversationView>>>
   /** Current Desktop-authoritative full-text search state. */
   readonly search: MobileCompanionSearchSnapshot
   /** Latest selected-file transfer and its correlated Desktop outcome. */
@@ -866,10 +869,10 @@ function companionSendFailure(): CompanionHostFailure {
 }
 
 function localSessionId(value: CompanionSessionId): SessionId {
-  return value as unknown as SessionId
+  return SessionId(value)
 }
 
-function oldestNodeSeq(conversation: ConversationSnapshot): number | undefined {
+function oldestNodeSeq(conversation: MobileConversationView): number | undefined {
   let oldest: number | undefined
   for (const node of conversation.nodes) {
     if (!Number.isSafeInteger(node.seq) || node.seq < 0) continue

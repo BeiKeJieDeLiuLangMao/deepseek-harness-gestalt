@@ -1,21 +1,12 @@
-/** JSON wire projection and the sole adapter into shared Web presentation carriers. */
+/** JSON wire projection adapted to public Session/Workspace types and shared interaction carriers. */
 
-import {
-  EMPTY_CHAT_SNAPSHOT,
-  EMPTY_CONVERSATION_VIEWS,
-  PendingWait,
-  conversationContextKey,
-  type ChatConversationViewNode,
-  type ConversationNode,
-  type ConversationSnapshot,
-  type PendingPayloads,
-  type QueuedMessage,
-  type RunningToolCall,
-  type SessionId,
-  type SessionListState,
-  type SessionSummary,
-  type WorkspaceView,
-} from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionListState, SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { WorkspaceView } from '@deepseek-ai/dsh-api-workspace-controller/types'
+import type { ConversationApprovalWait } from '@deepseek-ai/dsh-client-ui-conversation/src/presentation.tsx'
+import { PendingQuestion } from '@deepseek-ai/dsh-client-ui-user-questions/src/client/contract/slots.ts'
+import type { QuestionAnswer } from '@deepseek-ai/dsh-client-ui-user-questions/src/client/contract/slots.ts'
+import { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 
 /** Values admitted by the authenticated Companion projection decoder. */
 type CompanionJsonValue =
@@ -40,11 +31,9 @@ interface MobileSessionSummaryDto {
   readonly title?: string
   readonly displayTitle: string
   readonly cwd?: string
-  readonly agentPreset?: string
   readonly parentId?: string
   readonly origin?: 'subagent'
   readonly running: boolean
-  readonly pendingInteraction?: SessionSummary['pendingInteraction']
   readonly completed?: boolean
   readonly blank: boolean
   readonly updatedAt: number
@@ -73,35 +62,45 @@ interface MobileWorkspaceDto {
 }
 
 /** Pending interaction data carries identity and domain payload, never a responder. */
-type MobilePendingInteractionDto = {
-  [Kind in keyof PendingPayloads]: {
-    readonly kind: Kind
+type MobilePendingInteractionDto =
+  | {
+    readonly kind: 'approval'
     readonly interactionId: string
     readonly sessionId: string
-    readonly payload: JsonProjection<PendingPayloads[Kind]>
+    readonly payload: {
+      readonly approvalId: string
+      readonly toolName: string
+      readonly callId?: string
+      readonly reason?: string
+    }
   }
-}[keyof PendingPayloads]
+  | {
+    readonly kind: 'question'
+    readonly interactionId: string
+    readonly sessionId: string
+    readonly payload: { readonly questions: readonly CompanionJsonValue[] }
+  }
 
-type MobileConversationJsonFields = JsonProjection<Pick<ConversationSnapshot,
-  | 'nodes'
-  | 'partial'
-  | 'runningCalls'
-  | 'queue'
-  | 'running'
-  | 'subagent'
-  | 'composerPhase'
-  | 'removed'
-  | 'openState'
-  | 'openError'
-  | 'hasMore'
-  | 'loadingOlder'
-  | 'promptError'
-  | 'blank'
-  | 'lastAgentError'
->>
+type MobileConversationJsonFields = {
+  readonly nodes: readonly CompanionJsonValue[]
+  readonly partial: CompanionJsonValue
+  readonly runningCalls: readonly CompanionJsonValue[]
+  readonly queue: readonly CompanionJsonValue[]
+  readonly running: boolean
+  readonly subagent: CompanionJsonValue
+  readonly composerPhase: 'blank' | 'engaging' | 'active'
+  readonly removed: boolean
+  readonly openState: 'cold' | 'loading' | 'open' | 'error'
+  readonly openError: CompanionJsonValue
+  readonly hasMore: boolean
+  readonly loadingOlder: boolean
+  readonly promptError: CompanionJsonValue
+  readonly blank: boolean
+  readonly lastAgentError: string | null
+}
 
-type MobileToolCallCard = NonNullable<RunningToolCall['callView']>['card']
-type MobileToolResultCard = NonNullable<Extract<ConversationNode, { kind: 'tool-result' }>['resultView']>['card']
+type MobileToolCallCard = 'generic' | 'terminal' | 'diff'
+type MobileToolResultCard = 'generic' | 'terminal' | 'diff' | 'search' | 'read' | 'web'
 type PresentationRecordParser = (view: Record<string, CompanionJsonValue>) => void
 
 /** JSON conversation state needed by the shared narrow presentation. */
@@ -126,18 +125,63 @@ export interface MobileCompanionProjectionDto {
   readonly conversations: readonly MobileConversationProjectionDto[]
 }
 
-/** Result encoded by the shared Approval or Ask User owner. */
-type MobilePendingSettlementResult = Parameters<PendingWait['respond']>[0]
-
-/** Carrier receipt returned to the shared interaction owner. */
-export type MobilePendingSettlementReceipt = Awaited<ReturnType<PendingWait['respond']>>
+/** Carrier receipt returned after Desktop accepts or rejects a settlement. */
+export type MobilePendingSettlementReceipt =
+  | { readonly accepted: true }
+  | { readonly accepted: false; readonly reason: string }
 
 /** Generation-bound interaction response sent to the Paired Desktop. */
-export interface MobilePendingSettlement {
-  readonly kind: keyof PendingPayloads
+export type MobilePendingSettlement =
+  | {
+    readonly kind: 'approval'
+    readonly sessionId: SessionId
+    readonly interactionId: string
+    readonly result: {
+      readonly ok: true
+      readonly value: { readonly outcome: 'allowed-once' | 'rejected' }
+    }
+  }
+  | {
+    readonly kind: 'question'
+    readonly sessionId: SessionId
+    readonly interactionId: string
+    readonly result:
+      | { readonly ok: true; readonly value: { readonly answer: QuestionAnswer } }
+      | { readonly ok: false; readonly error: { readonly code: 'cancelled' } }
+  }
+
+/** One conversation node plus seq used by history paging. */
+export interface MobileConversationNode {
+  readonly kind: string
+  readonly seq: number
+  readonly time: number
+  readonly [key: string]: unknown
+}
+
+/** Pending Approval or Ask User carrier accepted by shared presentation. */
+export type MobilePendingCarrier = ConversationApprovalWait | PendingQuestion
+
+/** Local conversation view created from one authenticated JSON conversation. */
+export interface MobileConversationView {
   readonly sessionId: SessionId
-  readonly interactionId: string
-  readonly result: MobilePendingSettlementResult
+  readonly nodes: readonly MobileConversationNode[]
+  readonly turnTimings: ReadonlyMap<number, { readonly startTime: number; readonly endTime?: number }>
+  readonly turnEnds: ReadonlyMap<number, number>
+  readonly partial: unknown
+  readonly runningCalls: readonly unknown[]
+  readonly pending: readonly MobilePendingCarrier[]
+  readonly queue: readonly unknown[]
+  readonly running: boolean
+  readonly subagent: unknown
+  readonly composerPhase: MobileConversationProjectionDto['composerPhase']
+  readonly removed: boolean
+  readonly openState: MobileConversationProjectionDto['openState']
+  readonly openError: unknown
+  readonly hasMore: boolean
+  readonly loadingOlder: boolean
+  readonly promptError: unknown
+  readonly blank: boolean
+  readonly lastAgentError: string | null
 }
 
 /** Local presentation projection created from one authenticated JSON message. */
@@ -145,7 +189,7 @@ export interface AdaptedMobileCompanionProjection {
   readonly desktopName: string
   readonly sessions: SessionListState
   readonly workspaces: readonly WorkspaceView[]
-  readonly conversations: Readonly<Partial<Record<SessionId, ConversationSnapshot>>>
+  readonly conversations: Readonly<Partial<Record<SessionId, MobileConversationView>>>
 }
 
 /**
@@ -709,124 +753,128 @@ export function adaptMobileCompanionProjection(
   settle: (request: MobilePendingSettlement) => Promise<MobilePendingSettlementReceipt>,
 ): AdaptedMobileCompanionProjection {
   const sessions = adaptSessions(dto.sessions)
-  const workspaces = dto.workspaces.map(workspace => ({
-    ...workspace,
-    workspaceId: workspace.workspaceId as WorkspaceView['workspaceId'],
-    sessionIds: workspace.sessionIds as SessionId[],
+  const workspaces = dto.workspaces.map((workspace): WorkspaceView => ({
+    workspaceId: workspace.workspaceId as WorkspaceId,
+    path: workspace.path,
+    title: workspace.title,
+    sessionIds: workspace.sessionIds.map(id => SessionId(id)),
+    createdAt: workspace.createdAt,
+    updatedAt: workspace.updatedAt,
   }))
-  const conversations: Partial<Record<SessionId, ConversationSnapshot>> = {}
+  const conversations: Partial<Record<SessionId, MobileConversationView>> = {}
   for (const candidate of dto.conversations) {
     const conversation = parseMobileConversationProjection(candidate)
-    const sessionId = conversation.sessionId as SessionId
+    const sessionId = SessionId(conversation.sessionId)
     conversations[sessionId] = adaptConversation(conversation, settle)
   }
   return { desktopName: dto.desktopName, sessions, workspaces, conversations }
 }
 
 function adaptSessions(dto: MobileSessionListDto): SessionListState {
-  const byId = Object.fromEntries(Object.entries(dto.byId).map(([id, row]) => [id, {
-    ...row,
-    id: row.id as SessionId,
-    ...(row.parentId === undefined ? {} : { parentId: row.parentId }),
-    ...(row.projectionValues === undefined ? {} : { projectionValues: row.projectionValues }),
-  }])) as unknown as Record<SessionId, SessionSummary>
+  const byId = Object.fromEntries(Object.entries(dto.byId).map(([id, row]) => {
+    const sessionId = SessionId(row.id)
+    const summary: SessionSummary = {
+      id: sessionId,
+      displayTitle: row.displayTitle,
+      running: row.running,
+      blank: row.blank,
+      updatedAt: row.updatedAt,
+      ...(row.title === undefined ? {} : { title: row.title }),
+      ...(row.cwd === undefined ? {} : { cwd: row.cwd }),
+      ...(row.parentId === undefined ? {} : { parentId: SessionId(row.parentId) }),
+      ...(row.origin === undefined ? {} : { origin: row.origin }),
+      ...(row.completed === undefined ? {} : { completed: row.completed }),
+      ...(row.projectionValues === undefined
+        ? {}
+        : { projectionValues: row.projectionValues as SessionSummary['projectionValues'] }),
+    }
+    return [id, summary]
+  })) as Record<SessionId, SessionSummary>
   return {
-    ids: dto.ids as SessionId[],
+    ids: dto.ids.map(id => SessionId(id)),
     byId,
-    current: dto.current === null ? undefined : dto.current as SessionId,
+    current: dto.current === null ? undefined : SessionId(dto.current),
     phase: dto.phase,
     subagentsByParent: dto.subagentsByParent as unknown as SessionListState['subagentsByParent'],
-    jobsBySession: dto.jobsBySession,
+    jobsBySession: dto.jobsBySession as SessionListState['jobsBySession'],
     currentAddress: dto.currentAddress === null
       ? undefined
-      : dto.currentAddress,
+      : dto.currentAddress as SessionListState['currentAddress'],
   }
 }
 
 function adaptConversation(
   dto: MobileConversationProjectionDto,
   settle: (request: MobilePendingSettlement) => Promise<MobilePendingSettlementReceipt>,
-): ConversationSnapshot {
-  const sessionId = dto.sessionId as SessionId
-  const nodes = dto.nodes as readonly ConversationNode[]
-  const runningCalls = dto.runningCalls as readonly RunningToolCall[]
-  const turnTimings = new Map(dto.turnTimings)
-  const turnEnds = new Map(dto.turnEnds)
-  const toolRoots = [
-    ...nodes.filter((node): node is Extract<ConversationNode, { kind: 'tool-result' }> => node.kind === 'tool-result'),
-    ...runningCalls,
-  ]
-  const chatNodes = toolRoots.map((root): ChatConversationViewNode => ({
-    key: conversationContextKey('tool-call', root.callId),
-    kind: 'tool-call',
-    id: root.callId,
-    target: 'chat',
-    data: { root },
-    anchorSeq: 'seq' in root ? root.seq : Number.MAX_SAFE_INTEGER,
-    location: { kind: 'session' },
-    visibility: 'visible',
-  }))
-  const chatNodeMap = new Map(chatNodes.map(node => [node.key, node]))
-  const pending = dto.pending.map((wait) => {
-    const respond = (result: MobilePendingSettlementResult): Promise<MobilePendingSettlementReceipt> => settle({
-      kind: wait.kind,
-      sessionId: localSessionId(wait.sessionId),
-      interactionId: wait.interactionId,
-      result,
-    })
-    return wait.kind === 'approval'
-      ? new PendingWait(
-        'approval', pendingRpcId(wait.interactionId), localSessionId(wait.sessionId),
-        wait.payload, message => respond(message.result),
-      )
-      : new PendingWait(
-        'question', pendingRpcId(wait.interactionId), localSessionId(wait.sessionId),
-        wait.payload as unknown as PendingPayloads['question'], message => respond(message.result),
-      )
+): MobileConversationView {
+  const sessionId = SessionId(dto.sessionId)
+  const pending = dto.pending.map((wait): MobilePendingCarrier => {
+    if (wait.kind === 'approval') {
+      const approval: ConversationApprovalWait = {
+        kind: 'approval',
+        ...(wait.payload.toolName === '' ? {} : { toolName: wait.payload.toolName }),
+        ...(wait.payload.reason === undefined || wait.payload.reason === ''
+          ? {}
+          : { reason: wait.payload.reason }),
+        answer: async (outcome) => {
+          await settle({
+            kind: 'approval',
+            sessionId: SessionId(wait.sessionId),
+            interactionId: wait.interactionId,
+            result: { ok: true, value: { outcome } },
+          })
+        },
+      }
+      return approval
+    }
+    return new PendingQuestion(
+      SessionId(wait.sessionId),
+      wait.payload.questions as ConstructorParameters<typeof PendingQuestion>[1],
+      undefined,
+      {
+        key: wait.interactionId,
+        submit: async (kind, answer) => {
+          await settle(kind === 'declined'
+            ? {
+              kind: 'question',
+              sessionId: SessionId(wait.sessionId),
+              interactionId: wait.interactionId,
+              result: { ok: false, error: { code: 'cancelled' } },
+            }
+            : {
+              kind: 'question',
+              sessionId: SessionId(wait.sessionId),
+              interactionId: wait.interactionId,
+              result: { ok: true, value: { answer: requireQuestionAnswer(answer) } },
+            })
+        },
+      },
+    )
   })
   return {
     sessionId,
-    views: EMPTY_CONVERSATION_VIEWS,
-    chat: {
-      ...EMPTY_CHAT_SNAPSHOT,
-      order: chatNodes.map(node => node.key),
-      nodes: {
-        get: key => chatNodeMap.get(key),
-        values: () => chatNodes,
-      },
-      legacy: {
-        nodes,
-        turnTimings,
-        turnEnds,
-        partial: dto.partial,
-        runningCalls,
-      },
-    },
-    nodes,
-    turnTimings,
-    turnEnds,
+    nodes: dto.nodes as readonly MobileConversationNode[],
+    turnTimings: new Map(dto.turnTimings),
+    turnEnds: new Map(dto.turnEnds),
     partial: dto.partial,
-    runningCalls,
+    runningCalls: dto.runningCalls,
     pending,
-    queue: dto.queue as readonly QueuedMessage[],
+    queue: dto.queue,
     running: dto.running,
     subagent: dto.subagent,
     composerPhase: dto.composerPhase,
     removed: dto.removed,
     openState: dto.openState,
-    openError: dto.openError as ConversationSnapshot['openError'],
+    openError: dto.openError,
     hasMore: dto.hasMore,
     loadingOlder: dto.loadingOlder,
-    promptError: dto.promptError as ConversationSnapshot['promptError'],
+    promptError: dto.promptError,
     blank: dto.blank,
     lastAgentError: dto.lastAgentError,
   }
 }
 
-function pendingRpcId(value: string): ConstructorParameters<typeof PendingWait>[1] {
-  return value as ConstructorParameters<typeof PendingWait>[1]
-}
-
-function localSessionId(value: string): SessionId {
-  return value as SessionId
+function requireQuestionAnswer(answer: QuestionAnswer | undefined): QuestionAnswer {
+  if (answer === undefined) throw new TypeError('Companion Ask User settlement omitted its answer')
+  return answer
 }

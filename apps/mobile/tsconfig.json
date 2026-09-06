@@ -9,6 +9,10 @@
   "references": [
     { "path": "../../packages/util/brand" },
     { "path": "../../packages/attachment/attachment" },
+    { "path": "../../packages/core/session" },
+    { "path": "../../packages/workspace/workspace" },
+    { "path": "../../packages/api/session-controller" },
+    { "path": "../../packages/api/workspace-controller" },
     { "path": "../../packages/client/runtime" },
     { "path": "../../packages/client/ui-attachment" },
     { "path": "../../packages/client/ui-conversation" },
