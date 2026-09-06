@@ -135,9 +135,17 @@ export type MobilePendingDraft =
 
 /** Identity of one pending row across Host snapshots of the same connection generation. */
 export interface MobilePendingDraftKey {
-  readonly generation: number
   readonly sessionId: SessionId
   readonly interactionId: string
+}
+
+/** Writes after this store was replaced by a later connection generation or pairing. */
+export class MobilePendingDraftStoreRevokedError extends Error {
+  override readonly name = 'MobilePendingDraftStoreRevokedError'
+
+  constructor() {
+    super('Companion pending draft store belongs to a stale connection generation')
+  }
 }
 
 /** Desktop refused the settlement while the pending row remains live. */
@@ -152,42 +160,52 @@ export class MobilePendingSettlementRejectedError extends Error {
   }
 }
 
-/** Mobile-owned store of last user selections keyed by generation, Session, and interaction. */
+/** Mobile-owned store of last user selections keyed by Session and interaction. */
 export class MobilePendingDraftStore {
   readonly #drafts = new Map<string, MobilePendingDraft>()
+  #revoked = false
 
   /**
    * Read the last user selection for one still-pending interaction.
-   * @param key - generation, Session, and Desktop HMAC interaction id.
-   * @returns stored draft, or undefined when the user has not selected a value.
+   * @param key - Session and Desktop HMAC interaction id.
+   * @returns stored draft, or undefined when the user has not selected a value or this store was revoked.
    */
   get(key: MobilePendingDraftKey): MobilePendingDraft | undefined {
+    if (this.#revoked) return undefined
     return this.#drafts.get(draftKey(key))
   }
 
   /**
    * Record a user selection before Desktop settlement.
-   * @param key - generation, Session, and Desktop HMAC interaction id.
+   * @param key - Session and Desktop HMAC interaction id.
    * @param draft - last user-selected Approval outcome or Ask User answers.
    */
   set(key: MobilePendingDraftKey, draft: MobilePendingDraft): void {
+    if (this.#revoked) throw new MobilePendingDraftStoreRevokedError()
     this.#drafts.set(draftKey(key), draft)
   }
 
   /**
-   * Drop drafts whose generation, Session, or interaction id is no longer live.
-   * @param liveKeys - keys present in the latest Host projection of this generation.
+   * Drop drafts whose Session or interaction id is no longer live on this generation.
+   * @param liveKeys - Session and interaction pairs present in the latest Host projection.
    */
   retain(liveKeys: readonly MobilePendingDraftKey[]): void {
+    if (this.#revoked) return
     const live = new Set(liveKeys.map(draftKey))
     for (const stored of [...this.#drafts.keys()]) {
       if (!live.has(stored)) this.#drafts.delete(stored)
     }
   }
+
+  /** Invalidate this store so later writes from old carriers cannot reach a replacement generation. */
+  revoke(): void {
+    this.#revoked = true
+    this.#drafts.clear()
+  }
 }
 
 function draftKey(key: MobilePendingDraftKey): string {
-  return `${String(key.generation)}\0${key.sessionId}\0${key.interactionId}`
+  return `${key.sessionId}\0${key.interactionId}`
 }
 
 /** Generation-bound interaction response sent to the Paired Desktop. */
@@ -832,15 +850,13 @@ function invalidConversationProjection(): never {
  * Build local shared-presentation carriers from an authenticated JSON projection.
  * @param dto - validated wire projection.
  * @param settle - generation-bound response adapter for pending interactions.
- * @param drafts - surface-owned last user selections.
- * @param generation - current physical connection generation; cache restore uses `0`.
+ * @param drafts - generation-owned last user selections.
  * @returns Desktop-authoritative local presentation values.
  */
 export function adaptMobileCompanionProjection(
   dto: MobileCompanionProjectionDto,
   settle: (request: MobilePendingSettlement) => Promise<MobilePendingSettlementReceipt>,
   drafts: MobilePendingDraftStore = new MobilePendingDraftStore(),
-  generation = 0,
 ): AdaptedMobileCompanionProjection {
   const sessions = adaptSessions(dto.sessions)
   const workspaces = dto.workspaces.map((workspace): WorkspaceView => ({
@@ -856,10 +872,10 @@ export function adaptMobileCompanionProjection(
   for (const candidate of dto.conversations) {
     const conversation = parseMobileConversationProjection(candidate)
     const sessionId = SessionId(conversation.sessionId)
-    conversations[sessionId] = adaptConversation(conversation, settle, drafts, generation)
+    conversations[sessionId] = adaptConversation(conversation, settle, drafts)
     for (const wait of conversation.pending) {
       liveKeys.push({
-        generation, sessionId: SessionId(wait.sessionId), interactionId: wait.interactionId,
+        sessionId: SessionId(wait.sessionId), interactionId: wait.interactionId,
       })
     }
   }
@@ -904,12 +920,11 @@ function adaptConversation(
   dto: MobileConversationProjectionDto,
   settle: (request: MobilePendingSettlement) => Promise<MobilePendingSettlementReceipt>,
   drafts: MobilePendingDraftStore,
-  generation: number,
 ): MobileConversationView {
   const sessionId = SessionId(dto.sessionId)
   const pending = dto.pending.map((wait): MobilePendingCarrier => {
     const key: MobilePendingDraftKey = {
-      generation, sessionId: SessionId(wait.sessionId), interactionId: wait.interactionId,
+      sessionId: SessionId(wait.sessionId), interactionId: wait.interactionId,
     }
     if (wait.kind === 'approval') {
       const stored = drafts.get(key)

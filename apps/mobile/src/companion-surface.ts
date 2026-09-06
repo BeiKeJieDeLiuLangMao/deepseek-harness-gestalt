@@ -212,10 +212,17 @@ export class MobileCompanionSurface {
   }>()
   readonly #historyOperations = new Map<CompanionOperationId, PendingHistoryOperation>()
   readonly #historyInFlight = new Map<SessionId, PendingHistoryOperation>()
-  readonly #pendingDrafts = new MobilePendingDraftStore()
+  #pendingDrafts = new MobilePendingDraftStore()
+  readonly #unsubscribeRuntime: () => void
 
   /** @param runtime - current physical-connection synchronization authority. */
-  constructor(runtime: CompanionForegroundRuntime) { this.#runtime = runtime }
+  constructor(runtime: CompanionForegroundRuntime) {
+    this.#runtime = runtime
+    this.#unsubscribeRuntime = runtime.subscribe(() => {
+      if (runtime.getState().socketOpen) return
+      this.replacePendingDrafts()
+    })
+  }
 
   /** @returns the last authenticated Desktop projection. */
   getSnapshot(): MobileCompanionSurfaceSnapshot { return this.#snapshot }
@@ -223,6 +230,12 @@ export class MobileCompanionSurface {
   subscribe(listener: () => void): () => void {
     this.#listeners.add(listener)
     return () => { this.#listeners.delete(listener) }
+  }
+
+  /** Stop observing connection loss. */
+  dispose(): void {
+    this.#unsubscribeRuntime()
+    this.replacePendingDrafts()
   }
 
   /** Select the cache owned by the current Account and Personal Pairing. */
@@ -237,7 +250,7 @@ export class MobileCompanionSurface {
     this.#attachmentOperationId = undefined
     this.#refreshOperationId = undefined
     this.#createdSessionFocus = undefined
-    this.#pendingDrafts.retain([])
+    this.replacePendingDrafts()
     this.#snapshot = emptySurfaceSnapshot()
     this.publish()
   }
@@ -252,7 +265,6 @@ export class MobileCompanionSurface {
       projection,
       () => Promise.reject(new Error('Companion interaction requires foreground synchronization')),
       this.#pendingDrafts,
-      0,
     )
     this.#snapshot = {
       ...adapted,
@@ -351,13 +363,11 @@ export class MobileCompanionSurface {
           : message
         const previousConnection = this.#activeConnection
         const replacingConnection = previousConnection !== undefined && previousConnection.token !== token
-        if (replacingConnection) this.#pendingDrafts.retain([])
-        const generation = this.#runtime.currentConnectionGeneration() ?? 0
+        if (replacingConnection) this.replacePendingDrafts()
         const projection = adaptMobileCompanionProjection(
           presentationMessage,
           settlement => this.settlePending(active, settlement),
           this.#pendingDrafts,
-          generation,
         )
         const conversations = { ...projection.conversations }
         if (!replacingConnection) {
@@ -821,6 +831,11 @@ export class MobileCompanionSurface {
         [sessionId]: { ...conversation, loadingOlder },
       },
     }
+  }
+
+  private replacePendingDrafts(): void {
+    this.#pendingDrafts.revoke()
+    this.#pendingDrafts = new MobilePendingDraftStore()
   }
 
   private requireActive(kind: CompanionMutationName): ActiveConnection {

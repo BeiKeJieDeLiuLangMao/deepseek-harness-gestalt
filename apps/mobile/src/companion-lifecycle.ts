@@ -110,11 +110,6 @@ export class CompanionForegroundRuntime {
     return this.state
   }
 
-  /** @returns the current physical connection generation, or undefined while disconnected. */
-  currentConnectionGeneration(): number | undefined {
-    return this.activeConnectionGeneration
-  }
-
   /**
    * Subscribe to process-state transitions.
    * @param listener - observer invoked after each published change.

@@ -368,9 +368,13 @@ describe('MobileCompanionSurface', () => {
 
     if (oldWait.kind !== 'approval') throw new Error('expected old pending Approval')
     await expect(oldWait.answer('allowed-once'))
-      .rejects.toThrow('stale connection generation')
+      .rejects.toMatchObject({ name: 'MobilePendingDraftStoreRevokedError' })
     expect(firstChannel.mutations.settle).not.toHaveBeenCalled()
     expect(replacementChannel.mutations.settle).not.toHaveBeenCalled()
+    replacement.acceptValidatedDesktopResync(projection('session-one', 'One', true))
+    const nextWait = surface.getSnapshot().conversations[sid('session-one')]?.pending[0]
+    if (nextWait?.kind !== 'approval') throw new Error('expected replacement pending Approval')
+    expect(nextWait.draft).toEqual({})
   })
 
   it.each([
