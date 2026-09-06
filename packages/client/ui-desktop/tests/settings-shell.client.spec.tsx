@@ -37,7 +37,7 @@ describe('Desktop Settings shell Mobile Access placement', () => {
     expect(resolveSlotLabel(sections[1]!.options.label)).toBe('手机配对')
     expect(resolveSlotLabel(sections[2]!.options.label)).toBe('账号池')
     expect(sections.find(entry => entry.options.id === 'mobile-pairing')?.component).toBe(AccountControl)
-    expect(assembled.slots.entries('sidebar.brand').length).toBeGreaterThan(0)
+    expect(assembled.slots.entries('sidebar.brand.name').length).toBeGreaterThan(0)
     expect(assembled.slots.entries('sidebar.footer.action').map(entry => entry.options.id)).toContain('desktop-update')
 
     await vi.waitFor(() => {
@@ -199,7 +199,7 @@ async function assemble() {
     {
       name: 'sidebar',
       children: {
-        'sidebar.brand': { kind: 'chain', scope: 'root' },
+        'sidebar.brand.name': { kind: 'single', scope: 'root' },
         'sidebar.chrome.drag': { kind: 'list', scope: 'root' },
         'sidebar.footer.action': { kind: 'list', scope: 'root' },
       },

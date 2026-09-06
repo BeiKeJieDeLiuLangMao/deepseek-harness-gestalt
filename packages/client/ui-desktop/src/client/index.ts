@@ -5,6 +5,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-project-membership-client'
@@ -65,8 +66,8 @@ export function apply(ctx: Context): void {
     ctx.effect(() => bindDesktopSub2Api(sub2api, desktop), 'ui-desktop: sub2api status')
   }
 
-  ctx.slots.inject('sidebar.brand', () => ctx.slots.register(
-    { name: 'sidebar.brand', select: () => ({}), locale: NS },
+  ctx.slots.inject('sidebar.brand.name', () => ctx.slots.register(
+    { name: 'sidebar.brand.name', priority: -1 },
     BrandSeat,
   ))
   ctx.slots.inject('sidebar.chrome.drag', () => ctx.slots.register(

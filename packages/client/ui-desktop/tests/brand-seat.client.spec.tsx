@@ -7,7 +7,6 @@ describe('BrandSeat', () => {
   it('renders the GESTALT plate', () => {
     const { container } = render(
       <BrandSeat
-        wide
         useSessions={(() => { throw new Error('unused') })}
         useWorkspaces={(() => { throw new Error('unused') })}
       />,

@@ -44,6 +44,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * package's 'sidebar' entry; each action receives only the column state.
      */
     'sidebar.footer.action': { kind: 'list'; scope: 'root'; owner: SidebarFooterActionOwnerProps }
+    /** Desktop window drag chrome above the sidebar content. */
+    'sidebar.chrome.drag': { kind: 'list'; scope: 'root' }
   }
 }
 
@@ -114,5 +116,6 @@ export type SidebarRootComponentProps =
     | 'sidebar.workspaces'
     | 'sidebar.settings'
     | 'sidebar.footer.action'
+    | 'sidebar.chrome.drag'
   >
   & SidebarRootInjected & PropsLocale<'sidebar'>

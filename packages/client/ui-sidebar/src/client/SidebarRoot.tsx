@@ -137,6 +137,7 @@ export function SidebarRoot({
       }}
       onPointerLeave={() => { armLinger() }}
     >
+      {renderSlot('sidebar.chrome.drag', {})}
       <div className={css.logoRow}>
         {/* Expanded, the brand doubles as a New Session shortcut; the
             collapsed rail's logo is the expand toggle below instead. */}

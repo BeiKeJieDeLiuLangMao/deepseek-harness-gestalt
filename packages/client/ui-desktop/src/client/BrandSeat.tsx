@@ -1,15 +1,15 @@
-/** Desktop wordmark: same whale + deepseek letterforms, GESTALT plate. */
+/** Desktop wordmark: official whale and letterforms with the GESTALT plate. */
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { BrandWordmark } from '@deepseek-ai/dsh-client-ui-primitives'
 
-/** Chain occupant for `sidebar.brand`. */
-export type BrandSeatProps = PropsRuntime<'sidebar.brand'>
+/** Props derived from the sidebar's brand-name slot. */
+export type BrandSeatProps = PropsRuntime<'sidebar.brand.name'>
 
 /**
- * Render the GESTALT wordmark.
- * @param _props - chain owner share (wide is unused; the shell unmounts this on the rail).
- * @returns the wordmark svg.
+ * Render the GESTALT wordmark without duplicating the independently slotted mark.
+ * @param _props - root-scoped slot props.
+ * @returns the decorative product wordmark.
  */
 export function BrandSeat(_props: BrandSeatProps) {
-  return <BrandWordmark badge="gestalt" />
+  return <BrandWordmark includeMark={false} badge="gestalt" />
 }

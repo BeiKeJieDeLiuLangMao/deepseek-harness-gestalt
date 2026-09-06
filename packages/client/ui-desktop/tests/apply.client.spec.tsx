@@ -31,7 +31,7 @@ async function bench() {
     {
       name: 'sidebar',
       children: {
-        'sidebar.brand': { kind: 'chain', scope: 'root' },
+        'sidebar.brand.name': { kind: 'single', scope: 'root' },
         'sidebar.chrome.drag': { kind: 'list', scope: 'root' },
         'sidebar.footer.action': { kind: 'list', scope: 'root' },
       },
@@ -49,7 +49,7 @@ describe('ui-desktop apply', () => {
   it('occupies brand, drag, update, Mobile Pairing, and Sub2API Settings seats', async () => {
     const b = await bench()
     await b.ctx.plugin({ inject: [...inject], apply }).await()
-    expect(b.slots.entries('sidebar.brand')).not.toHaveLength(0)
+    expect(b.slots.entries('sidebar.brand.name')).not.toHaveLength(0)
     expect(b.slots.entries('sidebar.chrome.drag')).not.toHaveLength(0)
     expect(b.slots.entries('sidebar.footer.action')).not.toHaveLength(0)
     expect(b.slots.entries('settings.section').map(entry => entry.options.id))
@@ -136,8 +136,7 @@ describe('ui-desktop apply', () => {
     expect(b.ctx.get('projectMembershipClient')).toBe(desktop.projectMembership)
     expect(desktop.sub2ApiGetSnapshot).toHaveBeenCalledOnce()
     expect(desktop.onSub2ApiSnapshot).toHaveBeenCalledOnce()
-    const brand = b.slots.entries('sidebar.brand')[0]
-    expect(brand?.select?.({} as never)).toEqual({})
+    expect(b.slots.entries('sidebar.brand.name')).toHaveLength(1)
     const footer = b.slots.entries('sidebar.footer.action').find(entry => entry.options.id === 'desktop-update')
     expect((footer?.inject as () => { hooks: { updater: unknown } } | undefined)?.()?.hooks.updater).toBeDefined()
     const pairing = b.slots.entries('settings.section').find(entry => entry.options.id === 'mobile-pairing')
