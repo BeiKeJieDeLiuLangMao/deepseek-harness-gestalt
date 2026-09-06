@@ -319,6 +319,39 @@ describe('Mobile shared Session presentation', () => {
     expect(screen.getByRole('radio', { name: 'Yes' }).getAttribute('aria-checked')).toBe('true')
   })
 
+  it('submits a custom Ask User answer and a skipped question through the same batch', async () => {
+    const answer = vi.fn(async () => {})
+    const wait: MobilePendingQuestion = {
+      kind: 'question',
+      interactionId: 'rpc-custom',
+      sessionId: SID,
+      questions: [
+        { id: 'q1', question: 'Continue?', options: [{ label: 'Yes' }] },
+        { id: 'q2', question: 'Notes?' },
+      ],
+      draft: {},
+      answer,
+      cancel: async () => {},
+    }
+    render(createElement(MobileConversation, {
+      title: 'Custom', onBack: () => {}, locale: 'en',
+      snapshot: snapshot([], { pending: [wait] }),
+      loadImage: imageLoader,
+      mutationEnabled: true,
+    }))
+    fireEvent.click(screen.getByRole('button', { name: 'Skip this question' }))
+    expect(screen.getByText('Notes?')).toBeTruthy()
+    fireEvent.change(screen.getByPlaceholderText('Type your answer'), { target: { value: 'later' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Submit' }))
+    await waitFor(() => { expect(answer).toHaveBeenCalledOnce() })
+    expect(answer.mock.calls[0]?.[0]).toEqual({
+      answers: [
+        { id: 'q1', selected: [] },
+        { id: 'q2', selected: [], custom: 'later' },
+      ],
+    })
+  })
+
   it('keeps the selected Approval outcome pressed after settlement failure', async () => {
     const draft: { outcome?: 'allowed-once' | 'rejected' } = {}
     const wait: MobilePendingApproval = {

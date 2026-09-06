@@ -643,9 +643,44 @@ export function MobileQuestionForm({
     }))
   }
   const answered = draft.selected.length > 0 || draft.custom.trim() !== ''
+  const skip = (): void => {
+    setDrafts(current => current.map((item, itemIndex) => (
+      itemIndex === index ? { selected: [], custom: '' } : item
+    )))
+    if (index < last) setIndex(current => current + 1)
+    else {
+      const answers = questions.map((item, itemIndex) => {
+        if (itemIndex === index) return { id: item.id, selected: [] }
+        const value = drafts[itemIndex] ?? { selected: [], custom: '' }
+        const custom = value.custom.trim()
+        return {
+          id: item.id,
+          selected: custom === '' || item.multiSelect === true ? value.selected : [],
+          ...(custom === '' ? {} : { custom }),
+        }
+      })
+      setBusy(true)
+      setFailure(undefined)
+      void wait.answer({ answers }).then(
+        () => { setBusy(false) },
+        (cause: unknown) => {
+          setBusy(false)
+          setFailure(cause instanceof Error ? cause.message : String(cause))
+        },
+      )
+    }
+  }
+  const setCustom = (custom: string): void => {
+    setDrafts(current => current.map((item, itemIndex) => (
+      itemIndex === index
+        ? { selected: question.multiSelect === true ? item.selected : [], custom }
+        : item
+    )))
+  }
   return (
     <fieldset disabled={disabled || busy}>
       <h2>{question.question}</h2>
+      {question.detail !== undefined && question.detail !== '' && <p>{question.detail}</p>}
       <div role={question.multiSelect === true ? 'group' : 'radiogroup'}>
         {options.map((option, optionIndex) => {
           const selected = draft.selected.includes(option.label)
@@ -663,9 +698,19 @@ export function MobileQuestionForm({
           )
         })}
       </div>
+      <textarea
+        aria-label={t('custom.placeholder')}
+        placeholder={t('custom.placeholder')}
+        value={draft.custom}
+        disabled={disabled || busy}
+        onChange={(event) => { setCustom(event.target.value) }}
+      />
       {failure !== undefined && <p role="alert">{failure}</p>}
       <button type="button" disabled={disabled || busy} onClick={() => { void wait.cancel() }}>
         {t('nav.cancel')}
+      </button>
+      <button type="button" disabled={disabled || busy} onClick={skip}>
+        {t('action.skip')}
       </button>
       <button
         type="button"

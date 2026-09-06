@@ -15,7 +15,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { MobileConversationLocale } from './mobile-conversation-copy.ts'
 import {
   expandedSessionGroups, SessionListPresentation, workspacePresentationTranslate,
-} from '@deepseek-ai/dsh-client-ui-workspace/presentation'
+} from '@deepseek-ai/dsh-client-ui-workspace/src/presentation.tsx'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import css from './MobileBrowse.module.css'
 import type { MobilePresentationClock } from './mobile-clock.ts'
