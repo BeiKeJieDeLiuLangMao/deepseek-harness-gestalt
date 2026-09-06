@@ -352,6 +352,68 @@ describe('Mobile shared Session presentation', () => {
     })
   })
 
+  it('keeps custom and skipped Ask User drafts after settlement failure', async () => {
+    const draft: { answers?: { id: string; selected: string[]; custom?: string }[] } = {}
+    const wait: MobilePendingQuestion = {
+      kind: 'question',
+      interactionId: 'rpc-custom-fail',
+      sessionId: SID,
+      questions: [
+        { id: 'q1', question: 'Continue?', options: [{ label: 'Yes' }] },
+        { id: 'q2', question: 'Notes?' },
+      ],
+      draft,
+      answer: async (value) => {
+        draft.answers = value.answers
+        throw new Error('Companion encrypted operation could not be sent')
+      },
+      cancel: async () => {},
+    }
+    render(createElement(MobileConversation, {
+      title: 'Retry', onBack: () => {}, locale: 'en',
+      snapshot: snapshot([], { pending: [wait] }),
+      loadImage: imageLoader,
+      mutationEnabled: true,
+    }))
+    fireEvent.click(screen.getByRole('button', { name: 'Skip this question' }))
+    fireEvent.change(screen.getByPlaceholderText('Type your answer'), { target: { value: 'later' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Submit' }))
+    await waitFor(() => { expect(screen.getByText(/could not be sent/)).toBeTruthy() })
+    expect(screen.getByPlaceholderText('Type your answer')).toHaveProperty('value', 'later')
+    fireEvent.click(screen.getByRole('button', { name: 'Previous question' }))
+    expect(screen.getByRole('radio', { name: 'Yes' }).getAttribute('aria-checked')).toBe('false')
+  })
+
+  it('submits multi-select labels together with custom text', async () => {
+    const answer = vi.fn(async () => {})
+    const wait: MobilePendingQuestion = {
+      kind: 'question',
+      interactionId: 'rpc-multi',
+      sessionId: SID,
+      questions: [{
+        id: 'q1', question: 'Pick', multiSelect: true,
+        options: [{ label: 'A' }, { label: 'B' }],
+      }],
+      draft: {},
+      answer,
+      cancel: async () => {},
+    }
+    render(createElement(MobileConversation, {
+      title: 'Multi', onBack: () => {}, locale: 'en',
+      snapshot: snapshot([], { pending: [wait] }),
+      loadImage: imageLoader,
+      mutationEnabled: true,
+    }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'A' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'B' }))
+    fireEvent.change(screen.getByPlaceholderText('Type your answer'), { target: { value: 'other' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Submit' }))
+    await waitFor(() => { expect(answer).toHaveBeenCalledOnce() })
+    expect(answer.mock.calls[0]?.[0]).toEqual({
+      answers: [{ id: 'q1', selected: ['A', 'B'], custom: 'other' }],
+    })
+  })
+
   it('keeps the selected Approval outcome pressed after settlement failure', async () => {
     const draft: { outcome?: 'allowed-once' | 'rejected' } = {}
     const wait: MobilePendingApproval = {

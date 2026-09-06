@@ -14,8 +14,8 @@ import type { WorkspaceView } from '@deepseek-ai/dsh-api-workspace-controller/cl
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { MobileConversationLocale } from './mobile-conversation-copy.ts'
 import {
-  expandedSessionGroups, SessionListPresentation, workspacePresentationTranslate,
-} from '@deepseek-ai/dsh-client-ui-workspace/src/presentation.tsx'
+  expandedSessionGroups, MobileSessionList, workspacePresentationTranslate,
+} from './mobile-session-list.tsx'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import css from './MobileBrowse.module.css'
 import type { MobilePresentationClock } from './mobile-clock.ts'
@@ -163,11 +163,11 @@ export function MobileBrowse({
     : connection === 'online'
       ? locale === 'zh' ? '远程在线' : 'Remote Online'
       : locale === 'zh' ? '远程离线' : 'Remote Offline'
-  const groups = useMemo(
-    () => expandedSessionGroups(sessions, workspaces),
-    [sessions, workspaces],
-  )
   const tw = useMemo(() => workspacePresentationTranslate(locale), [locale])
+  const groups = useMemo(
+    () => expandedSessionGroups(sessions, workspaces, tw),
+    [sessions, tw, workspaces],
+  )
   const subscribeClock = useCallback((listener: () => void) => clock.subscribe(listener), [clock])
   const now = useSyncExternalStore(
     subscribeClock,
@@ -489,7 +489,7 @@ export function MobileBrowse({
                   </header>
                   {!collapsed && (
                     <>
-                      <SessionListPresentation
+                      <MobileSessionList
                         label={label}
                         nodes={paged.items}
                         currentId={openId}

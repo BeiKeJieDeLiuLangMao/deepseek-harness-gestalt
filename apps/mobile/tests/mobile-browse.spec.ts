@@ -3,12 +3,8 @@
 import { createElement } from 'react'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import {
-  EMPTY_CHAT_SNAPSHOT,
-  EMPTY_CONVERSATION_VIEWS,
-  type ConversationSnapshot,
-} from '@deepseek-ai/dsh-client-runtime/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { MobileConversationView } from '../src/companion-projection.ts'
 import { MobileBrowse } from '../src/MobileBrowse.tsx'
 import { fixedMobilePresentationClock } from '../src/mobile-clock.ts'
 
@@ -41,10 +37,8 @@ const attachmentSessions = {
   },
   current: attachmentSessionId,
 }
-const attachmentConversation: ConversationSnapshot = {
+const attachmentConversation: MobileConversationView = {
   sessionId: attachmentSessionId,
-  views: EMPTY_CONVERSATION_VIEWS,
-  chat: EMPTY_CHAT_SNAPSHOT,
   nodes: [],
   turnTimings: new Map(),
   turnEnds: new Map(),

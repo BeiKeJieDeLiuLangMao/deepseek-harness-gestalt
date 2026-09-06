@@ -604,6 +604,14 @@ export function MobileQuestionForm({
   if (question === undefined) return null
   const draft = drafts[index] ?? { selected: [], custom: '' }
   const options = question.options ?? []
+  const restoreDrafts = (): void => {
+    const stored = wait.draft.answers
+    if (stored === undefined) return
+    setDrafts(questions.map((question) => {
+      const item = stored.find(answer => answer.id === question.id)
+      return { selected: item?.selected ?? [], custom: item?.custom ?? '' }
+    }))
+  }
   const collectAnswers = (): AskUserQuestionAnswer['answers'] => questions.map((item, itemIndex) => {
     const stored = wait.draft.answers?.find(answer => answer.id === item.id)
     const value = drafts[itemIndex] ?? {
@@ -626,6 +634,7 @@ export function MobileQuestionForm({
       () => { setBusy(false) },
       (cause: unknown) => {
         setBusy(false)
+        restoreDrafts()
         setFailure(cause instanceof Error ? cause.message : String(cause))
       },
     )
@@ -665,6 +674,7 @@ export function MobileQuestionForm({
         () => { setBusy(false) },
         (cause: unknown) => {
           setBusy(false)
+          restoreDrafts()
           setFailure(cause instanceof Error ? cause.message : String(cause))
         },
       )
