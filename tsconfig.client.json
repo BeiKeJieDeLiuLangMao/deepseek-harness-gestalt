@@ -42,7 +42,6 @@
     // smoke policy). webserver has zero workspace deps and no cordis merge,
     // so it cannot drag host-side Context augmentation into this program.
     { "path": "./packages/host/webserver" },
-    { "path": "./packages/client/runtime" },
     { "path": "./packages/client/ui-better-sidebar" },
     { "path": "./packages/client/ui-browser" },
     { "path": "./packages/client/ui-desktop" },

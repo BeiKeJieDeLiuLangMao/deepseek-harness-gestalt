@@ -31,9 +31,6 @@
       "path": "../modules"
     },
     {
-      "path": "../runtime"
-    },
-    {
       "path": "../ui-conversation"
     },
     {

@@ -2376,7 +2376,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/platform/platform-account-http/src/index.ts:31`](../packages/platform/platform-account-http/src/index.ts)
+Source: [`packages/platform/platform-account-http/src/index.ts:32`](../packages/platform/platform-account-http/src/index.ts)
 
 <a id="deepseek-aidsh-plugin-package-inventory-deepseek"></a>
 
@@ -2447,7 +2447,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/platform/project-membership-http/src/index.ts:56`](../packages/platform/project-membership-http/src/index.ts)
+Source: [`packages/platform/project-membership-http/src/index.ts:57`](../packages/platform/project-membership-http/src/index.ts)
 
 <a id="deepseek-aidsh-pwsh-local"></a>
 
@@ -2518,7 +2518,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/platform/remote-access-http/src/index.ts:30`](../packages/platform/remote-access-http/src/index.ts)
+Source: [`packages/platform/remote-access-http/src/index.ts:31`](../packages/platform/remote-access-http/src/index.ts)
 
 <a id="deepseek-aidsh-remote-attachments"></a>
 
@@ -4464,7 +4464,6 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-browser-workspace` — requires `browserRuntime` · `sessions` ([`packages/browser/browser-workspace/src/index.ts`](../packages/browser/browser-workspace/src/index.ts))
 - `@deepseek-ai/dsh-client-locale` ([`packages/client/locale/src/index.ts`](../packages/client/locale/src/index.ts))
 - `@deepseek-ai/dsh-client-modules` — requires `webServer` · `loader` ([`packages/client/modules/src/index.ts`](../packages/client/modules/src/index.ts))
-- `@deepseek-ai/dsh-client-runtime` ([`packages/client/runtime/src/index.ts`](../packages/client/runtime/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-agent-preset` ([`packages/client/ui-agent-preset/src/index.ts`](../packages/client/ui-agent-preset/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-approval` ([`packages/client/ui-approval/src/index.ts`](../packages/client/ui-approval/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-attachment` ([`packages/client/ui-attachment/src/index.ts`](../packages/client/ui-attachment/src/index.ts))
