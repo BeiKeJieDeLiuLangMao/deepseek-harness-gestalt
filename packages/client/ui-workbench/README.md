@@ -17,4 +17,4 @@ None; the package never assembles or sends provider requests.
 ## Known Limitations and Deferred Work
 
 - **Snapshot fs/git/pty stay on `/sidebar`** — this phase does not migrate them onto official `fs` or `terminal` capability seams.
-- **Client `apply` types the root context from Cordis and Session identities from `@deepseek-ai/dsh-session/types`** — the inject list still names `@deepseek-ai/dsh-client-runtime` for composition; tests do not value-import that package.
+- **Client `apply` types the root context from Cordis and Session identities from `@deepseek-ai/dsh-session/types`.** The live Session list is the Session Controller `sessions` service, not `@deepseek-ai/dsh-client-runtime`.

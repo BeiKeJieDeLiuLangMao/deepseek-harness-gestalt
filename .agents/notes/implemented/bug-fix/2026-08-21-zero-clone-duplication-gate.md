@@ -10,7 +10,7 @@ English | [中文](2026-08-21-zero-clone-duplication-gate.zh.md)
 
 ## Decision
 
-Shared logic is extracted only where ownership and dependency direction stay valid. `@deepseek-ai/dsh-host-webserver` owns parameterized `readJsonObject`, `writeJson`, `writeHttpError`, `writeRetryAfterError`, and `HttpError`. Platform Account HTTP and Remote Access HTTP pass their own status, code, and message; domain mapping (`AccountError` vs `RemoteAccessError`, 401/400 vs 409) stays in each Consumer. Desktop Account and pairing bind through `bindDesktopSnapshot` in `ui-desktop`'s snapshot source. Jobs/Schedule Escape handlers and the two script snapshot runners no longer meet the gate threshold once the ignore comments are removed, so they lose those comments without a new shared module. `.jscpd.json` keeps `minTokens: 60`, `minLines: 6`, and `**/tests/**` ignored. Deliberate parallel implementations (bash/pwsh, package invariants, Trajectory Definitions) keep their existing source-range exceptions.
+Shared logic is extracted only where ownership and dependency direction stay valid. `@deepseek-ai/dsh-host-webserver/http` owns parameterized `readJsonObject`, `writeJson`, `writeHttpError`, `writeRetryAfterError`, `HttpError`, and `CorsOriginPolicy`. The package root stays the `WebServer` plugin. Platform Account HTTP and Remote Access HTTP pass their own status, code, and message; domain mapping (`AccountError` vs `RemoteAccessError`, 401/400 vs 409) stays in each Consumer. Desktop Account and pairing bind through `bindDesktopSnapshot` in `ui-desktop`'s snapshot source. Jobs/Schedule Escape handlers and the two script snapshot runners no longer meet the gate threshold once the ignore comments are removed, so they lose those comments without a new shared module. `.jscpd.json` keeps `minTokens: 60`, `minLines: 6`, and `**/tests/**` ignored. Deliberate parallel implementations (bash/pwsh, package invariants, Trajectory Definitions) keep their existing source-range exceptions.
 
 This note supersedes the HTTP `jscpd:ignore` sentence in the [inherited baseline CI reds note](2026-08-19-inherited-ci-baseline-reds.md).
 
@@ -32,4 +32,4 @@ The duplication gate reports zero clones on `packages` and `scripts` without exc
 
 ## Verification
 
-`pnpm run duplication` reports zero clones. Focused owning tests cover `http-json.ts`, Platform Account HTTP envelopes, Remote Access HTTP assembled routes, and Desktop Account/pairing bind. Removing the ticketed `jscpd:ignore` comments and re-running the gate still reports zero clones.
+`pnpm run duplication` reports zero clones. Focused owning tests cover `@deepseek-ai/dsh-host-webserver/http`, Platform Account HTTP envelopes, Remote Access HTTP assembled routes, and Desktop Account/pairing bind. Removing the ticketed `jscpd:ignore` comments and re-running the gate still reports zero clones.

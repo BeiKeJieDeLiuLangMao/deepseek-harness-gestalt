@@ -44,6 +44,10 @@ Set `compression: 'gzip'` to wrap eligible socket-backed responses without chang
 
 `register(route)` adds a named `exact` or `prefix` HTTP route, `registerUpgrade(route)` adds an upgrade route for an exact pathname, and both return a disposer that removes the registration. A duplicate path within either table throws — route patterns are a composition-level contract, so a collision is a misconfiguration. HTTP matching is exact over the whole table, then longest prefix, then the fallback handler; upgrades match exactly and unmatched connections are closed.
 
+### HTTP JSON and CORS helpers
+
+Route owners that share bounded JSON bodies and exact Origin matching import `@deepseek-ai/dsh-host-webserver/http`. That entry publishes `CorsOriginPolicy`, `HttpError`, `readJsonObject`, `writeJson`, `writeHttpError`, and `writeRetryAfterError`. The package root remains the `WebServer` plugin; the helpers register no routes and do not add TLS, authentication, or a server-wide origin policy.
+
 ### The fallback seat
 
 `registerFallback(handler)` claims the one handler for every request no named route matches. A second registration throws; while no fallback is registered the server answers 404. In the shipped Web composition the [SPA dist server](../frontend-static/README.md) owns the seat and calls `renderIndex` on every index response it renders.
@@ -75,6 +79,9 @@ The package is a plain route registry with no harness vocabulary: `WebServer` ex
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | `WebServer` service: route tables, fallback seat, index rendering, matching, lifecycle |
+| [`src/http.ts`](src/http.ts) | Published `@deepseek-ai/dsh-host-webserver/http` barrel for CORS and JSON helpers |
+| [`src/cors-origin.ts`](src/cors-origin.ts) | Exact Origin allowlist used by HTTP route owners |
+| [`src/http-json.ts`](src/http-json.ts) | Bounded JSON object reader and JSON error writers |
 | — | No runtime invariant companion is published; route registration and disposal mutate one route table through the same service, so a register/dispose probe only re-executes the implementation. Real routing and HMR tests own the behavior. |
 | [`src/injections.ts`](src/injections.ts) | Structured `IndexInjection` rows and `renderIndexInjections` row rendering |
 

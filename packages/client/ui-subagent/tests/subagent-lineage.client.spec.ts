@@ -28,4 +28,12 @@ describe('UI Subagent descendant projection', () => {
     expect(result.get(cycleB.id)?.count).toBe(2)
     expect(result.get(sid('missing'))).toEqual({ count: 1, runningCount: 1 })
   })
+
+  it('does not count renderer-only provisional children as subagents', () => {
+    const owner = { id: sid('owner'), running: false }
+    const draft = {
+      id: sid('draft'), parentId: owner.id, origin: 'subagent' as const, running: false, provisional: true as const,
+    }
+    expect(indexSubagentDescendants({ [owner.id]: owner, [draft.id]: draft }).get(owner.id)).toBeUndefined()
+  })
 })
