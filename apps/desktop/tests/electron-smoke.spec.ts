@@ -85,15 +85,21 @@ describe.skipIf(process.env.DSH_DESKTOP_SMOKE !== '1')('Desktop Host smoke', () 
       output = processOutput()
       throw new Error('desktop smoke timed out\n' + (await readFile(log, 'utf8')) + '\n' + output.slice(-2000))
     } finally {
+      const cleanupErrors: unknown[] = []
+      try { await stopSmokeChild(child, exited) } catch (error) { cleanupErrors.push(error) }
+      output = processOutput()
+      try { await stopOwnedSmokeHost(hostIdentity, dshHome) } catch (error) { cleanupErrors.push(error) }
+      try { await provider.close() } catch (error) { cleanupErrors.push(error) }
       try {
-        await stopSmokeChild(child, exited)
-        output = processOutput()
-        await stopOwnedSmokeHost(hostIdentity, dshHome)
-      } finally {
-        try { await provider.close() } finally {
-          await retainSmokeEvidence({ evidencePath: evidence, root: dir, smokeLog: log, processOutput: output })
-        }
+        await retainSmokeEvidence({
+          evidencePath: evidence, root: dir, smokeLog: log, processOutput: output,
+          preserveRoot: cleanupErrors.length > 0,
+        })
+      } catch (error) {
+        cleanupErrors.push(error)
       }
+      if (cleanupErrors.length === 1) throw cleanupErrors[0]
+      if (cleanupErrors.length > 1) throw new AggregateError(cleanupErrors, 'Desktop smoke cleanup failed')
     }
   }, 120_000)
 })

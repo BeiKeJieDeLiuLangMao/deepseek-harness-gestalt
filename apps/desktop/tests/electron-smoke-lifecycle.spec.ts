@@ -68,6 +68,21 @@ describe('Electron smoke lifecycle', () => {
     }
   })
 
+  it('retains the isolated root when Host ownership cleanup fails', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'electron-smoke-preserved-root-'))
+    const smokeLog = join(root, 'smoke.log')
+    const evidencePath = join(tmpdir(), `electron-smoke-preserved-evidence-${process.pid}.log`)
+    await writeFile(smokeLog, 'ownership failed')
+    try {
+      await retainSmokeEvidence({ evidencePath, root, smokeLog, processOutput: '', preserveRoot: true })
+      await expect(stat(root)).resolves.toBeDefined()
+      await expect(readFile(evidencePath, 'utf8')).resolves.toContain('ownership failed')
+    } finally {
+      await rm(root, { recursive: true, force: true })
+      await rm(evidencePath, { force: true })
+    }
+  })
+
   it('rejects dot-prefixed evidence names inside the isolated root and still removes it', async () => {
     const root = await mkdtemp(join(tmpdir(), 'electron-smoke-lifecycle-failure-'))
     const smokeLog = join(root, 'smoke.log')

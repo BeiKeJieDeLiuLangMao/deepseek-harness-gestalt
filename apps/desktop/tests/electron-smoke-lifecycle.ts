@@ -129,6 +129,7 @@ export async function retainSmokeEvidence(options: {
   readonly root: string
   readonly smokeLog: string
   readonly processOutput: string
+  readonly preserveRoot?: boolean
 }): Promise<void> {
   const root = resolve(options.root)
   const evidence = resolve(options.evidencePath)
@@ -145,6 +146,6 @@ export async function retainSmokeEvidence(options: {
     await mkdir(dirname(evidence), { recursive: true })
     await writeFile(evidence, `${smoke}\n--- electron output ---\n${options.processOutput}`)
   } finally {
-    await rm(root, { recursive: true, force: true })
+    if (options.preserveRoot !== true) await rm(root, { recursive: true, force: true })
   }
 }
