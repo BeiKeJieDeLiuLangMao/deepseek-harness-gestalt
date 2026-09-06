@@ -44,6 +44,10 @@ kind: "package-reference"
 
 `register(route)` 添加具名的 `exact`／`prefix` HTTP route，`registerUpgrade(route)` 为精确 pathname 添加 upgrade route，两者返回的 disposer 都会移除注册。同一张表内的重复路径会抛错——route 模式是组合层约定，冲突即配置错误。HTTP 匹配先在整张表中匹配精确 route，再匹配最长前缀，最后交给回退 handler；upgrade 只做精确匹配，未命中连接直接关闭。
 
+### HTTP JSON 与 CORS 助手
+
+共享有界 JSON 正文与精确 Origin 匹配的路由持有者从 `@deepseek-ai/dsh-host-webserver/http` 导入。该入口发布 `CorsOriginPolicy`、`HttpError`、`readJsonObject`、`writeJson`、`writeHttpError` 与 `writeRetryAfterError`。包根仍是 `WebServer` 插件；这些助手不注册路由，也不添加 TLS、认证或服务器级来源策略。
+
 ### 回退席位
 
 `registerFallback(handler)` 认领所有未被具名 route 命中的请求的唯一个 handler。第二次注册会抛错；没有注册回退时服务器回答 404。在随附的 Web 组合中，[SPA dist 服务器](../frontend-static/README.zh.md)拥有该席位，并对其渲染的每个 index 响应调用 `renderIndex`。
@@ -75,6 +79,9 @@ index 启动输入分两层。`collectIndexInjections()` 收集一张全新的�
 | 文件 | 职责 |
 |---|---|
 | [`src/index.ts`](src/index.ts) | `WebServer` 服务：路由表、回退席位、index 渲染、匹配、生命周期 |
+| [`src/http.ts`](src/http.ts) | 发布的 `@deepseek-ai/dsh-host-webserver/http` 桶，供 CORS 与 JSON 助手使用 |
+| [`src/cors-origin.ts`](src/cors-origin.ts) | HTTP 路由持有者使用的精确 Origin 允许列表 |
+| [`src/http-json.ts`](src/http-json.ts) | 有界 JSON 对象读取与 JSON 错误写出 |
 | — | 不发布运行时不变式伴生入口；路由注册与释放通过同一服务修改同一张路由表，register/dispose 探针只会重复执行实现。真实路由与 HMR 测试负责该行为。 |
 | [`src/injections.ts`](src/injections.ts) | 结构化 `IndexInjection` 行与 `renderIndexInjections` 行渲染 |
 
