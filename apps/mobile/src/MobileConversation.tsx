@@ -1,23 +1,22 @@
 import { useMemo, useRef, type ReactNode } from 'react'
-import type {
-  ConversationSnapshot, PendingWait,
-} from '@deepseek-ai/dsh-client-runtime/client'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { CompanionHostFailure } from '@deepseek-ai/dsh-remote-protocol'
-import {
-  AssistantMarkdown,
-  ConversationApproval,
-  ConversationComposer,
-  ConversationNodePresentation,
-  conversationPresentationTranslate,
-  type ConversationPresentationLocale,
-} from '@deepseek-ai/dsh-client-ui-conversation/presentation'
-import { ToolPresentation } from '@deepseek-ai/dsh-client-ui-tool/presentation'
-import { ImageGallery, messageImageLabels } from '@deepseek-ai/dsh-client-ui-attachment/presentation'
-import {
-  QuestionPresentation, questionPresentationTranslate,
-} from '@deepseek-ai/dsh-client-ui-user-questions/presentation'
 import { IconChevronLeftOutline14, IconPlusOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { MobileConversationView } from './companion-projection.ts'
+import {
+  conversationPresentationTranslate,
+  questionPresentationTranslate,
+  type MobileConversationLocale,
+} from './mobile-conversation-copy.ts'
+import {
+  MobileApprovalForm,
+  MobileComposer,
+  MobileConversationNodeView,
+  MobilePartialAssistant,
+  MobileQuestionForm,
+  MobileRunningTool,
+  messageImageLabels,
+} from './mobile-conversation-nodes.tsx'
 import css from './MobileConversation.module.css'
 
 /** Full-screen Mobile conversation props. */
@@ -26,15 +25,15 @@ export interface MobileConversationProps {
   title: string
   /** Return to the list. */
   onBack: () => void
-  /** Desktop-authoritative Session projection. */
-  snapshot: ConversationSnapshot
-  /** Product locale applied to all shared presentation components. */
-  locale?: ConversationPresentationLocale | undefined
+  /** Desktop-authoritative Mobile conversation view. */
+  snapshot: MobileConversationView
+  /** Product locale applied to Mobile-owned conversation chrome. */
+  locale?: MobileConversationLocale | undefined
   /** Product theme selected by the Mobile shell. */
   theme?: 'light' | 'dark' | undefined
   /** Session-authorized historical-image loader. */
   loadImage: (attachment: ImageAttachmentRef) => Promise<string>
-  /** Session Workspace root used by shared Tool rows. */
+  /** Session Workspace root used by Tool path summaries. */
   cwd?: string | undefined
   /** Desktop account home used by shared path summaries. */
   home?: string | undefined
@@ -54,7 +53,7 @@ export interface MobileConversationProps {
   operationFailure?: CompanionHostFailure | undefined
 }
 
-/** Phone conversation using Desktop-authoritative projections and exported DSH Web presentation. */
+/** Phone conversation using Desktop-authoritative JSON conversation views. */
 export function MobileConversation({
   title,
   onBack,
@@ -76,18 +75,18 @@ export function MobileConversation({
   const t = useMemo(() => conversationPresentationTranslate(locale), [locale])
   const tq = useMemo(() => questionPresentationTranslate(locale), [locale])
   const imageLabels = useMemo(() => messageImageLabels(t), [t])
-  const renderMessageImages = ({ images, align }: {
-    images: readonly { attachment: ImageAttachmentRef }[]
-    align: 'start' | 'end'
-  }): ReactNode => <ImageGallery images={images} load={loadImage} align={align} labels={imageLabels} />
-  const renderTool = (node: Parameters<typeof ToolPresentation>[0]['block']): ReactNode => (
-    <ToolPresentation block={node} cwd={cwd} home={home} t={t} />
-  )
-  const question = snapshot.pending.find((wait): wait is PendingWait<'question'> => wait.kind === 'question')
-  const approval = snapshot.pending.find((wait): wait is PendingWait<'approval'> => wait.kind === 'approval')
-  const backLabel = locale === 'zh' ? '返回' : 'Back'
-  const attachmentLabel = locale === 'zh' ? '添加附件' : 'Add attachment'
-  const displayTitle = snapshot.blank ? locale === 'zh' ? '新会话' : 'New Session' : title
+  const question = snapshot.pending.find((wait): wait is Extract<typeof wait, { kind: 'question' }> => (
+    wait.kind === 'question'
+  ))
+  const approval = snapshot.pending.find((wait): wait is Extract<typeof wait, { kind: 'approval' }> => (
+    wait.kind === 'approval'
+  ))
+  const backLabel = t('nav.back')
+  const attachmentLabel = t('attachment.add')
+  const displayTitle = snapshot.blank ? t('session.new') : title
+  const openError = typeof snapshot.openError === 'object' && snapshot.openError !== null
+    ? snapshot.openError as { readonly message?: string; readonly code?: string }
+    : undefined
   const attachmentControl = onAttach === undefined ? undefined : (
     <>
       <input
@@ -131,8 +130,11 @@ export function MobileConversation({
         {connectionAlert !== undefined && <p role="alert">{connectionAlert}</p>}
         {operationFailure !== undefined && <p role="alert">{operationFailure.message}</p>}
         {snapshot.openState === 'loading' && <p role="status">{t('chat.loadingHistory')}</p>}
-        {snapshot.openState === 'error' && snapshot.openError !== null && (
-          <p role="status">{t('chat.loadError', { message: snapshot.openError.message, code: snapshot.openError.code })}</p>
+        {snapshot.openState === 'error' && openError !== undefined && (
+          <p role="status">{t('chat.loadError', {
+            message: openError.message ?? '',
+            code: openError.code ?? '',
+          })}</p>
         )}
         {snapshot.hasMore && onLoadOlder !== undefined && (
           <button type="button" disabled={snapshot.loadingOlder || !mutationEnabled} onClick={onLoadOlder}>
@@ -140,34 +142,36 @@ export function MobileConversation({
           </button>
         )}
         {snapshot.nodes.map(node => (
-          <ConversationNodePresentation
+          <MobileConversationNodeView
             key={`${node.kind}:${String(node.seq)}`}
             node={node}
-            renderMessageImages={renderMessageImages}
-            renderTool={renderTool}
+            loadImage={loadImage}
+            labels={imageLabels}
             t={t}
+            cwd={cwd}
+            home={home}
           />
         ))}
         {snapshot.partial !== null && (
-          <AssistantMarkdown
-            blocks={snapshot.partial.blocks}
-            streaming
-            renderMessageImages={renderMessageImages}
+          <MobilePartialAssistant
+            partial={snapshot.partial}
+            loadImage={loadImage}
+            labels={imageLabels}
             t={t}
           />
         )}
-        {snapshot.runningCalls.map(call => (
-          <ToolPresentation key={call.callId} block={call} cwd={cwd} home={home} t={t} />
+        {snapshot.runningCalls.map((call, index) => (
+          <MobileRunningTool key={index} call={call} t={t} cwd={cwd} home={home} />
         ))}
       </div>
       <div className={css.composer}>
         {question !== undefined
-          ? <QuestionPresentation wait={question} t={tq} disabled={!mutationEnabled} />
+          ? <MobileQuestionForm wait={question} t={tq} disabled={!mutationEnabled} />
           : approval !== undefined
-            ? <ConversationApproval wait={approval} snapshot={snapshot} t={t} disabled={!mutationEnabled} />
+            ? <MobileApprovalForm wait={approval} t={t} disabled={!mutationEnabled} />
             : onSubmit !== undefined
-              ? <ConversationComposer
-                snapshot={snapshot}
+              ? <MobileComposer
+                conversation={snapshot}
                 onSubmit={onSubmit}
                 onCancel={onCancel}
                 t={t}
