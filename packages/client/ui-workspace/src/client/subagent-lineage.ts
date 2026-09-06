@@ -7,6 +7,8 @@ interface LineageEntry {
   readonly parentId?: SessionId
   readonly origin?: 'subagent'
   readonly running: boolean
+  /** Renderer-only identity that has not published a Host Session yet. */
+  readonly provisional?: true
 }
 
 /** Descendant counts for one possible parent Session. */
@@ -26,7 +28,7 @@ export function indexSubagentDescendants(
 ): ReadonlyMap<SessionId, SubagentDescendantSummary> {
   const indexed = new Map<SessionId, { count: number; runningCount: number }>()
   for (const descendant of Object.values(summaries)) {
-    if (descendant.origin !== 'subagent') continue
+    if (descendant.origin !== 'subagent' || descendant.provisional === true) continue
     const seen = new Set<SessionId>()
     let current: LineageEntry | undefined = descendant
     while (current?.origin === 'subagent' && current.parentId !== undefined && !seen.has(current.id)) {

@@ -15,6 +15,7 @@ import {
   type PairingAccountAuthentication,
   type PairingCompletionView,
 } from '@deepseek-ai/dsh-remote-access'
+import type {} from '@deepseek-ai/dsh-host-webserver'
 import {
   CorsOriginPolicy,
   HttpError,
@@ -22,7 +23,7 @@ import {
   writeHttpError,
   writeJson,
   writeRetryAfterError,
-} from '@deepseek-ai/dsh-host-webserver'
+} from '@deepseek-ai/dsh-host-webserver/http'
 
 const MAX_REMOTE_ACCESS_JSON_BYTES = 64 * 1024
 

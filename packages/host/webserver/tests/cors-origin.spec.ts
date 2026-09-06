@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { CorsOriginPolicy } from '../src/cors-origin.ts'
+import { CorsOriginPolicy } from '../src/http.ts'
 
 describe('exact CORS Origin policy', () => {
   it('matches standard and custom tuple origins without admitting opaque origins', () => {
