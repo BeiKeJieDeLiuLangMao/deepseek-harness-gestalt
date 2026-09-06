@@ -105,43 +105,69 @@ describe('assembled Desktop Companion live Session projection on shipped dsh web
     })
     const surface = new MobileCompanionSurface(runtime)
     const receiverRef: { current?: MobileNoiseCompanionReceiver } = {}
+    // One authoritative desktop-revision counter for this bridge, mirroring the
+    // Desktop Relay owner: operations observe its current value, and every
+    // sealed projection is stamped by the same monotonic allocation.
     let desktopRevision = 1
+    const allocateDesktopRevision = (): number => desktopRevision += 1
     const observedChange: { current?: DesktopCompanionLiveProjectionChange } = {}
-    const liveTasks = new Set<Promise<void>>()
     const liveErrors: unknown[] = []
+    const pendingLive = new Map<string, DesktopCompanionLiveProjectionChange>()
+    let livePump: Promise<void> | undefined
+    const liveTasks = new Set<Promise<void>>()
+    const drainLive = (): Promise<void> => livePump === undefined
+      ? Promise.resolve()
+      : livePump.then(() => drainLive())
     const projectChange = async (change: DesktopCompanionLiveProjectionChange): Promise<void> => {
       const receiver = receiverRef.current
       // Before the Mobile receiver installs, no authenticated channel exists;
       // the Desktop Relay owner drops these projections the same way.
       if (receiver === undefined) return
       if (change.type === 'surface') {
-        // This direct-channel bridge has no relay reconnect semantics; the
-        // assembled receiver keeps its completed surface and the next session
-        // change carries any authority update in its own projection.
+        // Surface authority changes replay the foreground-sync baseline exactly
+        // as the Desktop Relay owner's pumpLive does before the Mobile surface
+        // refreshes itself.
+        receiver.receive(channels.desktop.seal({ type: 'projection', projection: {
+          type: 'foreground-sync', desktopName: 'Assembled Desktop',
+          generation: channels.generation, desktopRevision: allocateDesktopRevision(),
+        } }))
         return
       }
       const payload = await owner.projectLiveSession(change, channels.attachmentKey.slice(), new AbortController().signal)
       const projection: CompanionProjection = {
         type: 'session-live', generation: channels.generation,
-        desktopRevision: desktopRevision += 1,
+        desktopRevision: allocateDesktopRevision(),
         ...payload,
       } as CompanionProjection
       receiver.receive(channels.desktop.seal({ type: 'projection', projection: requireEncodableProjection(channels.desktop, projection) }))
     }
-    const disposeLive = owner.connectLiveProjection(
-      parsePersonalPairingId(channels.pairingSelector),
-      (change) => {
-        observedChange.current = change
-        const task = projectChange(change)
-        liveTasks.add(task)
-        void task.then(() => { liveTasks.delete(task) }, (error) => {
-          liveTasks.delete(task)
-          liveErrors.push(error)
-        })
-      },
-      (error) => { liveErrors.push(error) },
-    )
-    uninstalls.push(disposeLive)
+    const pumpLive = async (): Promise<void> => {
+      for (;;) {
+        const next = pendingLive.entries().next()
+        if (next.done) return
+        const [key, change] = next.value
+        pendingLive.delete(key)
+        await projectChange(change)
+      }
+    }
+    const queueLive = (change: DesktopCompanionLiveProjectionChange): void => {
+      observedChange.current = change
+      const key = change.type === 'surface' ? 'surface' : change.sessionId
+      if (change.type === 'surface') pendingLive.clear()
+      pendingLive.set(key, change)
+      if (livePump !== undefined) return
+      const pump = pumpLive()
+      livePump = pump
+      liveTasks.add(pump)
+      void pump.then(() => {
+        if (livePump === pump) livePump = undefined
+        liveTasks.delete(pump)
+      }, (error) => {
+        if (livePump === pump) livePump = undefined
+        liveTasks.delete(pump)
+        liveErrors.push(error)
+      })
+    }
     const product = new MobileSnowCompanionProductChannel({
       runtime, connection,
       operationSettlement: assembledOperationSettlement('desktop-snow-live'),
@@ -157,12 +183,12 @@ describe('assembled Desktop Companion live Session projection on shipped dsh web
         await Promise.resolve()
         const opened = channels.desktop.open(ciphertext)
         if (opened.type !== 'operation') throw new Error('assembled Desktop expected a Companion operation')
-        const output = await owner.handle(opened.operation, pairingDependencies(owner, channels))
+        const output = await owner.handle(opened.operation, pairingDependencies(owner, channels, desktopRevision))
         const receiver = receiverRef.current
         if (receiver === undefined) throw new Error('assembled Mobile receiver is not installed')
         for (const item of isResultList(output) ? output : [output]) {
           const projection = isProjection(item)
-            ? { ...item, generation: channels.generation, desktopRevision: desktopRevision += 1 } as CompanionProjection
+            ? { ...item, generation: channels.generation, desktopRevision: allocateDesktopRevision() } as CompanionProjection
             : undefined
           receiver.receive(channels.desktop.seal(projection === undefined
             ? { type: 'result', result: item }
@@ -184,6 +210,12 @@ describe('assembled Desktop Companion live Session projection on shipped dsh web
       (offset) => { surface.trackSurfaceRefresh(product.refreshSurface(offset)) },
     )
     receiverRef.current = receiver
+    const disposeLive = owner.connectLiveProjection(
+      parsePersonalPairingId(channels.pairingSelector),
+      queueLive,
+      (error) => { liveErrors.push(error) },
+    )
+    uninstalls.push(disposeLive)
     receiver.receive(channels.desktop.seal({
       type: 'projection',
       projection: {
@@ -192,7 +224,9 @@ describe('assembled Desktop Companion live Session projection on shipped dsh web
       },
     }))
     const localSessionId = sessionId as SessionId
-    await expect.poll(() => surface.getSnapshot().sessions.ids.includes(localSessionId)).toBe(true)
+    await expect.poll(() => {
+      return surface.getSnapshot().sessions.ids.includes(localSessionId)
+    }).toBe(true)
     surface.observeSession(localSessionId)
     await expect.poll(() => observedChange.current?.type === 'session'
       && observedChange.current.sessionId === sessionId
@@ -226,7 +260,7 @@ describe('assembled Desktop Companion live Session projection on shipped dsh web
     expect(log).toContain('live-projected-answer')
     expect(log).toContain('"type":"turn/end"')
     disposeLive()
-    while (liveTasks.size > 0) await Promise.all([...liveTasks])
+    await drainLive()
     if (liveErrors.length > 0) throw new Error(`live projection failed before disconnect: ${String(liveErrors[0])}`)
     const nodesBeforeDisconnect = surface.getSnapshot().conversations[localSessionId]?.nodes.length ?? 0
     const turnsBeforeDisconnect = await countTurnEnds(first.home, sessionId)
@@ -235,12 +269,12 @@ describe('assembled Desktop Companion live Session projection on shipped dsh web
     await expect(owner.handle({
       type: 'submit-prompt', operationId: parseOperationId('live-after-disconnect-prompt'),
       sessionId: second, text: 'host continues without the projected connection',
-    }, pairingDependencies(owner, channels))).resolves.toMatchObject({ type: 'confirmed' })
+    }, pairingDependencies(owner, channels, desktopRevision))).resolves.toMatchObject({ type: 'confirmed' })
     await expect.poll(() => durableSessionLog(first.home, second).then(text => text.includes('turn/end'))).toBe(true)
     await expect(owner.handle({
       type: 'submit-prompt', operationId: parseOperationId('live-observed-after-disconnect-prompt'),
       sessionId, text: 'the observed Session continues without its projection stream',
-    }, pairingDependencies(owner, channels))).resolves.toMatchObject({ type: 'confirmed' })
+    }, pairingDependencies(owner, channels, desktopRevision))).resolves.toMatchObject({ type: 'confirmed' })
     await expect.poll(async () => await countTurnEnds(first.home, sessionId) > turnsBeforeDisconnect).toBe(true)
     expect(liveTasks.size).toBe(0)
     expect(surface.getSnapshot().sessions.ids).not.toContain(second as SessionId)
@@ -322,6 +356,7 @@ function parseOperationId(value: string): Parameters<
 function pairingDependencies(
   owner: InstanceType<typeof DesktopCompanionProductOwner>,
   channels: Awaited<ReturnType<typeof snowProductChannels>>,
+  currentDesktopRevision: number,
 ): Parameters<InstanceType<typeof DesktopCompanionProductOwner>['handle']>[1] {
   const attachmentKey = channels.attachmentKey.slice()
   return {
@@ -329,7 +364,7 @@ function pairingDependencies(
     attachmentKey,
     now: Date.now,
     generation: channels.generation,
-    desktopRevision: 1,
+    desktopRevision: currentDesktopRevision,
     desktopName: 'Assembled Desktop',
     downloadAttachment: () => Promise.reject(new Error('live must not download an attachment')),
     submitAttachment: () => Promise.reject(new Error('live must not submit an attachment')),
