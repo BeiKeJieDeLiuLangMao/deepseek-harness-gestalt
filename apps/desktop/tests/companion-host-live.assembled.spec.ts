@@ -1,10 +1,10 @@
 /** Live Session projection through Snow to the Mobile surface without manual history pulls. */
 
+import { createServer, type Server } from 'node:http'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { glob, readFile } from 'node:fs/promises'
 import { afterEach, beforeAll, describe, expect, it } from 'vitest'
-import { startMockLlmServer } from '@deepseek-ai/dsh-llm-mock-server'
 import { parsePersonalPairingId } from '@deepseek-ai/dsh-remote-access'
 import {
   generateRelayCredential,
@@ -13,7 +13,6 @@ import {
   parseRelayPairingSelector,
   parseRelayRouteId,
   REMOTE_PROTOCOL_LIMITS,
-  type CompanionMessage,
   type CompanionProjection,
   type CompanionResult,
 } from '@deepseek-ai/dsh-remote-protocol'
@@ -72,11 +71,11 @@ afterEach(async () => {
 describe('assembled Desktop Companion live Session projection on shipped dsh web', () => {
   it('delivers a real Host turn to the Mobile surface without a manual history pull', async () => {
     const apiKey = 'desktop-assembled-snow-live-key'
-    const llm = await startMockLlmServer({ sequence: ['slow_success'], repeatLast: true, apiKey, successText: 'live-projected-answer', chunkDelayMs: 100 })
+    const llm = await startControlledStreamingLlm(apiKey)
     cleanups.push(async () => { await llm.close() })
     const first = await startShippedWebHost({
       children, homes,
-      env: { DEEPSEEK_API_KEY: apiKey, DEEPSEEK_BASE_URL: llm.baseURL },
+      env: { DEEPSEEK_API_KEY: apiKey, DEEPSEEK_BASE_URL: llm.baseUrl },
       extraPatches: [join(import.meta.dirname, 'fixtures/snow-question-no-title.patch.yml')],
     })
     const cookie = await bootstrapDesktopHostCookie(first.running.launchUrl, first.running.url)
@@ -127,7 +126,7 @@ describe('assembled Desktop Companion live Session projection on shipped dsh web
         desktopRevision: desktopRevision += 1,
         ...payload,
       } as CompanionProjection
-      receiver.receive(channels.desktop.seal(boundLiveProjection(channels.desktop, projection)))
+      receiver.receive(channels.desktop.seal({ type: 'projection', projection: requireEncodableProjection(channels.desktop, projection) }))
     }
     const disposeLive = owner.connectLiveProjection(
       parsePersonalPairingId(channels.pairingSelector),
@@ -199,27 +198,38 @@ describe('assembled Desktop Companion live Session projection on shipped dsh web
       && observedChange.current.sessionId === sessionId
       && observedChange.current.includeConversation === true).toBe(true)
     await expect.poll(() => surface.getSnapshot().sessions.byId[localSessionId] !== undefined).toBe(true)
-    surface.submit(localSessionId, 'project this turn live')
-    // Live replacements merge the streaming turn into the final conversation;
-    // the asserted contract is that the completed turn ARRIVES without any
-    // manual history pull, not that every intermediate running state is sampled.
+    await expect(surface.submit(localSessionId, 'project this turn live')).resolves.toBeUndefined()
+    // Stage 1 — while the model stream is held mid-answer, the submitted user
+    // message and the running turn must already be live on the surface.
     await expect.poll(() => {
       if (liveErrors.length > 0) throw new Error(`live projection failed: ${String(liveErrors[0])}`)
       const conversation = surface.getSnapshot().conversations[localSessionId]
       if (conversation === undefined) return false
       const userNode = conversation.nodes.some(node => isRecord(node) && node.kind === 'user')
+      return conversation.running === true && userNode
+    }, { timeout: 60_000 }).toBe(true)
+    // Stage 2 — after the model finishes, the final assistant node and the
+    // stopped turn arrive as further live replacements without any history pull.
+    llm.release()
+    await expect.poll(() => {
+      if (liveErrors.length > 0) throw new Error(`live projection failed: ${String(liveErrors[0])}`)
+      const conversation = surface.getSnapshot().conversations[localSessionId]
+      if (conversation === undefined) return false
       const assistantNode = conversation.nodes.some(node => isRecord(node)
         && node.kind === 'assistant'
         && Array.isArray(node.blocks)
         && node.blocks.some(block => isRecord(block) && block.kind === 'text' && block.text === 'live-projected-answer'))
-      return conversation.running === false && userNode && assistantNode
+      return conversation.running === false && assistantNode
     }, { timeout: 60_000 }).toBe(true)
     expect(surface.getSnapshot().operationFailure).toBeUndefined()
     const log = await durableSessionLog(first.home, sessionId)
     expect(log).toContain('live-projected-answer')
     expect(log).toContain('"type":"turn/end"')
     disposeLive()
+    while (liveTasks.size > 0) await Promise.all([...liveTasks])
+    if (liveErrors.length > 0) throw new Error(`live projection failed before disconnect: ${String(liveErrors[0])}`)
     const nodesBeforeDisconnect = surface.getSnapshot().conversations[localSessionId]?.nodes.length ?? 0
+    const turnsBeforeDisconnect = await countTurnEnds(first.home, sessionId)
     const second = parseCompanionSessionId('desktop-snow-live-after-disconnect')
     await expect(createDesktopHostSession(rpc, second)).resolves.toMatchObject({ ok: true })
     await expect(owner.handle({
@@ -227,24 +237,80 @@ describe('assembled Desktop Companion live Session projection on shipped dsh web
       sessionId: second, text: 'host continues without the projected connection',
     }, pairingDependencies(owner, channels))).resolves.toMatchObject({ type: 'confirmed' })
     await expect.poll(() => durableSessionLog(first.home, second).then(text => text.includes('turn/end'))).toBe(true)
+    await expect(owner.handle({
+      type: 'submit-prompt', operationId: parseOperationId('live-observed-after-disconnect-prompt'),
+      sessionId, text: 'the observed Session continues without its projection stream',
+    }, pairingDependencies(owner, channels))).resolves.toMatchObject({ type: 'confirmed' })
+    await expect.poll(async () => await countTurnEnds(first.home, sessionId) > turnsBeforeDisconnect).toBe(true)
+    expect(liveTasks.size).toBe(0)
     expect(surface.getSnapshot().sessions.ids).not.toContain(second as SessionId)
     expect(surface.getSnapshot().conversations[localSessionId]?.nodes.length).toBe(nodesBeforeDisconnect)
   }, 180_000)
 })
 
-function boundLiveProjection(
+/**
+ * External streaming model fixture with a deterministic mid-answer barrier:
+ * the first half of the answer is streamed, the response is held until
+ * `release()`, then the remainder and the terminal chunk complete the turn.
+ */
+async function startControlledStreamingLlm(apiKey: string): Promise<{
+  readonly release: () => void
+  readonly baseUrl: string
+  readonly close: () => Promise<void>
+}> {
+  let release: () => void = () => {}
+  const held = new Promise<void>((resolve) => { release = resolve })
+  const server: Server = createServer((request, response) => {
+    request.on('data', () => {})
+    request.on('end', () => {
+      if (request.headers.authorization !== `Bearer ${apiKey}`) {
+        response.writeHead(401).end()
+        return
+      }
+      response.writeHead(200, { 'content-type': 'text/event-stream' })
+      const send = (payload: unknown): void => {
+        response.write(`data: ${JSON.stringify(payload)}\n\n`)
+      }
+      send({ choices: [{ index: 0, delta: { role: 'assistant' }, finish_reason: null }] })
+      send({ choices: [{ index: 0, delta: { content: 'live-projected-' }, finish_reason: null }] })
+      void held.then(() => {
+        send({ choices: [{ index: 0, delta: { content: 'answer' }, finish_reason: null }] })
+        send({ choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] })
+        response.write('data: [DONE]\n\n')
+        response.end()
+      })
+    })
+  })
+  await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
+  const address = server.address()
+  if (address === null || typeof address === 'string') throw new Error('controlled streaming fixture has no port')
+  return {
+    release,
+    baseUrl: `http://127.0.0.1:${String(address.port)}`,
+    close: () => new Promise<void>((resolve) => { server.close(() => resolve()) }),
+  }
+}
+
+/**
+ * The direct bridge refuses any projection the channel cannot encode. The
+ * Desktop Relay owner (boundLiveSessionProjection in
+ * apps/desktop/src/remote-relay.ts) degrades oversized conversations instead;
+ * that path is unreachable for this spec's small conversations, and failing
+ * closed here never masks the negotiated limit.
+ */
+function requireEncodableProjection(
   channel: Pick<SnowCompanionProtocolChannel, 'canEncode'>,
   projection: CompanionProjection,
-): CompanionMessage['projection'] extends never ? never : { type: 'projection'; projection: CompanionProjection } {
-  const message = { type: 'projection' as const, projection }
-  if (channel.canEncode(message)) return message
-  if ('conversation' in projection && projection.conversation !== undefined) {
-    const { conversation: _conversation, ...summary } = projection
-    if (channel.canEncode({ type: 'projection', projection: summary as CompanionProjection })) {
-      return { type: 'projection', projection: summary as CompanionProjection }
-    }
+): CompanionProjection {
+  if (!channel.canEncode({ type: 'projection', projection })) {
+    throw new Error('assembled live projection exceeds its negotiated wire limit')
   }
-  throw new Error('assembled live projection summary exceeds its negotiated wire limit')
+  return projection
+}
+
+async function countTurnEnds(home: string, sessionId: string): Promise<number> {
+  const log = await durableSessionLog(home, sessionId)
+  return (log.match(/"type":"turn\/end"/g) ?? []).length
 }
 
 function parseOperationId(value: string): Parameters<
