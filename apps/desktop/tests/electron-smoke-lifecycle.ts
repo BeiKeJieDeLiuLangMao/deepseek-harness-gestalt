@@ -9,9 +9,11 @@ const TERMINATION_GRACE_MS = 1_000
 /** Capture output and await one child exit exactly once. */
 export function observeSmokeChild(child: ChildProcess): {
   readonly output: () => string
+  readonly failure: () => Error | undefined
   readonly exited: Promise<void>
 } {
   let text = ''
+  let failure: Error | undefined
   const retain = (chunk: Buffer): void => { text += chunk.toString() }
   child.stdout?.on('data', retain)
   child.stderr?.on('data', retain)
@@ -23,12 +25,12 @@ export function observeSmokeChild(child: ChildProcess): {
         child.off('error', onError)
       }
       const onExit = (): void => { cleanup(); resolveExit() }
-      const onError = (error: Error): void => { cleanup(); rejectExit(error) }
+      const onError = (error: Error): void => { failure = error; cleanup(); rejectExit(error) }
       child.once('exit', onExit)
       child.once('error', onError)
     })
   void exited.catch(() => {})
-  return { output: () => text, exited }
+  return { output: () => text, failure: () => failure, exited }
 }
 
 /** Request bounded TERM→KILL termination and wait until the owned child exits. */

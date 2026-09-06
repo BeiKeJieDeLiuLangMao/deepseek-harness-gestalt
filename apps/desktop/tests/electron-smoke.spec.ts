@@ -23,6 +23,7 @@ describe.skipIf(process.env.DSH_DESKTOP_SMOKE !== '1')('Desktop Host smoke', () 
     let exited: Promise<void> | undefined
     let output = ''
     let processOutput = (): string => ''
+    let processFailure = (): Error | undefined => () => undefined
     try {
       child = spawn(electronBin, ['out/main.mjs'], {
         cwd: desktopRoot,
@@ -41,8 +42,11 @@ describe.skipIf(process.env.DSH_DESKTOP_SMOKE !== '1')('Desktop Host smoke', () 
       const observed = observeSmokeChild(child)
       exited = observed.exited
       processOutput = observed.output
+      processFailure = observed.failure
       const deadline = Date.now() + 90_000
       while (Date.now() < deadline) {
+        const failure = processFailure()
+        if (failure !== undefined) throw failure
         const text = await readFile(log, 'utf8')
         if (text.includes('\nok\n') || text.endsWith('\nok') || /(^|\n)ok\n/.test(text) || text.split('\n').includes('ok')) {
           const host = text.match(/host http:\/\/127\.0\.0\.1:\d+ pid (\d+)/)
