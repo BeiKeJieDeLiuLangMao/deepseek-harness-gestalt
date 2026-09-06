@@ -80,9 +80,6 @@ import { type CallId } from '@deepseek-ai/dsh-llm/brand'
 import type { ScopeKey } from '@deepseek-ai/dsh-scope'
 import type { ApprovalOutcome, ApprovalRequestId } from '@deepseek-ai/dsh-user-approval'
 import type { InstallationId } from '@deepseek-ai/dsh-remote-protocol'
-import type {
-  MemberQuestionHumanTurnContent,
-} from '@deepseek-ai/dsh-member-question-receiver'
 
 import type {} from '@deepseek-ai/dsh-project-membership'
 // Side-effect type import: resolves the `approval/request` waterfall and
@@ -136,19 +133,6 @@ async function durablePromptContent(ctx: Context, content: readonly PromptConten
     ? { type: 'text', text: part.text }
     // admitEncodedImages returns one reference per image part in order.
     : { type: 'image', attachment: refs[next++] as ImageAttachmentRef })
-}
-
-/** Promote browser bytes before the receiver journal owns a crash-safe human action. */
-async function durableMemberQuestionContent(
-  ctx: Context,
-  content: readonly PromptContentPart[],
-): Promise<MemberQuestionHumanTurnContent[]> {
-  const durable = await durablePromptContent(ctx, content)
-  return durable.map((block): MemberQuestionHumanTurnContent => {
-    if (block.type === 'text') return { type: 'text', text: block.text }
-    if (block.type === 'image') return { type: 'image', attachment: block.attachment }
-    throw new Error(`member-question human admission produced unsupported durable content ${JSON.stringify(block.type)}`)
-  })
 }
 
 /** Search durable content for an image reference, including nested tool results. */
@@ -2348,34 +2332,6 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             },
         )
         return ok(request, terminal)
-      },
-
-      async admitHumanTurn(request) {
-        if (memberQuestionReceiver === undefined) {
-          return err(request, { code: 'internal', message: 'member-question receiver is unavailable', details: {} })
-        }
-        try {
-          const content = await durableMemberQuestionContent(ctx, request.payload.content)
-          const admitted = await memberQuestionReceiver.admitHumanTurn({
-            ...request.payload,
-            content,
-            rpcId: request.rpcId as never,
-          })
-          return ok(request, { accepted: true as const, sessionId: admitted.receivingSessionId })
-        } catch (error: unknown) {
-          if (error instanceof AttachmentError) {
-            return err(request, {
-              code: 'attachment-error',
-              message: error.message,
-              details: { reason: error.code },
-            })
-          }
-          return err(request, {
-            code: 'internal',
-            message: `member-question human turn admission failed: ${String(error)}`,
-            details: {},
-          })
-        }
       },
     },
 

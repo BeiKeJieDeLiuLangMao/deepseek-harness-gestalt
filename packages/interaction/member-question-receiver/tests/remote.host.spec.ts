@@ -102,6 +102,7 @@ describe('member-question Remote snapshot and settle', () => {
     expect(remoteMethods(receiver)).toEqual([
       { method: 'remoteSnapshot', exportName: 'snapshot', invocation: { kind: 'direct' } },
       { method: 'remoteSettle', exportName: 'settle', invocation: { kind: 'direct' } },
+      { method: 'remoteAdmitHumanTurn', exportName: 'admitHumanTurn', invocation: { kind: 'direct' } },
     ])
   })
 
@@ -281,5 +282,81 @@ describe('member-question Remote snapshot and settle', () => {
       settledAt: 1_100,
     })
     expect(revisions).toEqual([arrived.revision])
+  })
+
+  it('admits a text human turn through SRC and refuses an unknown receiving Session', async () => {
+    const { ctx, receiver } = await createHost()
+    await receiver.bind(envelope.authority.accountId, envelope.operation.projectId, 'workspace-remote' as never)
+    const arrived = await receiver.ingest(envelope)
+    await expect(ctx.typertGateway.invoke({
+      namespace: 'memberQuestion',
+      method: 'admitHumanTurn',
+      args: {
+        request: {
+          receivingSessionId: arrived.receivingSessionId,
+          revision: arrived.revision,
+          requestId: 'rpc-remote-text',
+          content: [{ type: 'text', text: 'Help me decide.' }],
+          mode: 'queue',
+        },
+      },
+    })).rejects.toMatchObject({
+      code: 'member-question/human-turn-failed',
+      message: expect.stringContaining('admitter is required'),
+    })
+    const unregister = receiver.registerHumanTurnAdmitter(async () => ({ accepted: true as const }))
+    const admitted = await ctx.typertGateway.invoke({
+      namespace: 'memberQuestion',
+      method: 'admitHumanTurn',
+      args: {
+        request: {
+          receivingSessionId: arrived.receivingSessionId,
+          revision: arrived.revision,
+          requestId: 'rpc-remote-text',
+          content: [{ type: 'text', text: 'Help me decide.' }],
+          mode: 'queue',
+        },
+      },
+    }) as { accepted: true; receivingSessionId: string; rpcId: string }
+    expect(admitted).toMatchObject({
+      accepted: true,
+      receivingSessionId: arrived.receivingSessionId,
+      rpcId: 'rpc-remote-text',
+    })
+    await expect(ctx.typertGateway.invoke({
+      namespace: 'memberQuestion',
+      method: 'admitHumanTurn',
+      args: {
+        request: {
+          receivingSessionId: 'receiving-missing',
+          revision: 1,
+          requestId: 'rpc-remote-missing',
+          content: [{ type: 'text', text: 'hello' }],
+          mode: 'queue',
+        },
+      },
+    })).rejects.toMatchObject({
+      code: 'member-question/human-turn-failed',
+      message: expect.stringContaining('unknown receiving Session'),
+    })
+    unregister()
+  })
+
+  it('rejects attachment refs and extra identity on the admitHumanTurn SRC wire', async () => {
+    const { ctx, receiver } = await createHost()
+    const arrived = await receiver.ingest(envelope)
+    await expect(ctx.typertGateway.invoke({
+      namespace: 'memberQuestion',
+      method: 'admitHumanTurn',
+      args: {
+        request: {
+          receivingSessionId: arrived.receivingSessionId,
+          revision: arrived.revision,
+          requestId: 'rpc-remote-ref',
+          content: [{ type: 'image', attachment: { attachmentId: 'forged' } }],
+          mode: 'queue',
+        },
+      },
+    })).rejects.toBeInstanceOf(RemoteError)
   })
 })

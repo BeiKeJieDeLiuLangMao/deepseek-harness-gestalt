@@ -12,11 +12,11 @@ import Loader from '@deepseek-ai/cordis-plugin-loader'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import AgentDefaultModelConfig from '@deepseek-ai/dsh-agent-default-model'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
+import TypertGatewayService from '@deepseek-ai/dsh-api-gateway'
 import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
 import LocalFileReferenceService from '@deepseek-ai/dsh-file-reference-local'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
 import FileMemberQuestionReceiver from '@deepseek-ai/dsh-member-question-receiver'
-import type { MemberQuestionReceiverRpcId } from '@deepseek-ai/dsh-member-question-receiver'
 import type { PlatformAccountId } from '@deepseek-ai/dsh-platform-account'
 import {
   parseCompanionOperationId,
@@ -78,6 +78,7 @@ function compositionYaml(root: string): string {
     "- name: '@deepseek-ai/dsh-agent'",
     "- name: '@deepseek-ai/dsh-session-projection'",
     "- name: '@deepseek-ai/dsh-typert-registry'",
+    "- name: '@deepseek-ai/dsh-api-gateway'",
     "- name: '@deepseek-ai/dsh-agent-default-model'",
     '  config:',
     '    provider: mock',
@@ -145,6 +146,7 @@ async function boot(): Promise<{
     ['@deepseek-ai/dsh-agent', AgentRegistry],
     ['@deepseek-ai/dsh-session-projection', SessionProjectionRegistry],
     ['@deepseek-ai/dsh-typert-registry', TypertRegistry],
+    ['@deepseek-ai/dsh-api-gateway', TypertGatewayService],
     ['@deepseek-ai/dsh-agent-default-model', AgentDefaultModelConfig],
     ['@deepseek-ai/dsh-session-persistence-jsonl', JsonlSessionPersistence],
     ['@deepseek-ai/dsh-attachment-local', LocalAttachmentStore],
@@ -171,9 +173,31 @@ async function boot(): Promise<{
     .filter(entry => entry.fiber === undefined && !entry.disabled)
     .map(entry => entry.options.name)
   expect(unloaded).toEqual([])
-  const adapter = new MockAdapter([textResponse('acknowledged the brief')])
+  const adapter = new MockAdapter([
+    textResponse('acknowledged the brief'),
+    textResponse('acknowledged the image'),
+  ])
   ctx.llm.registerAdapter(['mock'], adapter)
   return { ctx, adapter, workspacePath, jsonlRoot: join(root, 'sessions') }
+}
+
+const PNG_1X1 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
+
+function invokeAdmit(
+  ctx: Context,
+  request: {
+    receivingSessionId: string
+    revision: number
+    requestId: string
+    content: readonly Record<string, unknown>[]
+    mode: 'queue' | 'steer'
+  },
+): Promise<{ accepted: true; receivingSessionId: string; rpcId: string; revision: number }> {
+  return ctx.typertGateway.invoke({
+    namespace: 'memberQuestion',
+    method: 'admitHumanTurn',
+    args: { request },
+  }) as Promise<{ accepted: true; receivingSessionId: string; rpcId: string; revision: number }>
 }
 
 function waitForIdle(ctx: Context, sessionId: SessionId): Promise<void> {
@@ -275,11 +299,11 @@ describe('receiving materializer through a real Loader composition', () => {
     if (pending === undefined) throw new Error('expected a pending question')
     const sessionId = arrived.receivingSessionId as unknown as SessionId
     const idle = waitForIdle(ctx, sessionId)
-    const rpcId = 'human-turn-loader' as MemberQuestionReceiverRpcId
-    const admitted = await receiver.admitHumanTurn({
+    const rpcId = 'human-turn-loader'
+    const admitted = await invokeAdmit(ctx, {
       receivingSessionId: arrived.receivingSessionId,
       revision: pending.revision,
-      rpcId,
+      requestId: rpcId,
       content: [{ type: 'text', text: 'Use JSONL.' }],
       mode: 'queue',
     })
@@ -292,10 +316,10 @@ describe('receiving materializer through a real Loader composition', () => {
     expect(human[0]?.data.source).toMatchObject({ kind: 'user', rpcId })
     expect(events.some(event => event.type === 'turn/start')).toBe(true)
     expect(adapter.requests).toHaveLength(1)
-    const replayed = await receiver.admitHumanTurn({
+    const replayed = await invokeAdmit(ctx, {
       receivingSessionId: arrived.receivingSessionId,
       revision: pending.revision,
-      rpcId,
+      requestId: rpcId,
       content: [{ type: 'text', text: 'Use JSONL.' }],
       mode: 'queue',
     })
@@ -311,13 +335,51 @@ describe('receiving materializer through a real Loader composition', () => {
     const workspace = await ctx.workspaceRegistry.create(workspacePath)
     const receiver = ctx.memberQuestionReceiver as FileMemberQuestionReceiver
     await receiver.bind(envelope.authority.accountId, envelope.operation.projectId, workspace.id)
-    await expect(receiver.admitHumanTurn({
-      receivingSessionId: 'receiving-missing' as never,
+    await expect(invokeAdmit(ctx, {
+      receivingSessionId: 'receiving-missing',
       revision: 1,
-      rpcId: 'human-turn-missing' as MemberQuestionReceiverRpcId,
+      requestId: 'human-turn-missing',
       content: [{ type: 'text', text: 'hello' }],
       mode: 'queue',
-    })).rejects.toThrow('unknown receiving Session')
+    })).rejects.toMatchObject({
+      code: 'member-question/human-turn-failed',
+      message: expect.stringContaining('unknown receiving Session'),
+    })
+  })
+
+  it('promotes an encoded image through generated admitHumanTurn without storing raw bytes in the ledger', async () => {
+    const { ctx, adapter, workspacePath } = await boot()
+    const workspace = await ctx.workspaceRegistry.create(workspacePath)
+    const receiver = ctx.memberQuestionReceiver as FileMemberQuestionReceiver
+    await receiver.bind(envelope.authority.accountId, envelope.operation.projectId, workspace.id)
+    const arrived = await receiver.ingest(envelope)
+    const pending = (await receiver.snapshot()).pending[0]
+    if (pending === undefined) throw new Error('expected a pending question')
+    const sessionId = arrived.receivingSessionId as unknown as SessionId
+    const rpcId = 'human-turn-image'
+    const idle = waitForIdle(ctx, sessionId)
+    await invokeAdmit(ctx, {
+      receivingSessionId: arrived.receivingSessionId,
+      revision: pending.revision,
+      requestId: rpcId,
+      content: [
+        { type: 'text', text: 'See this decision.' },
+        { type: 'image', mediaType: 'image/png', data: PNG_1X1, name: 'decision.png' },
+      ],
+      mode: 'queue',
+    })
+    await expect.poll(() => {
+      const events = ctx.sessions.get(sessionId)?.snapshotEvents() ?? []
+      return events.some(event => event.type === 'user/message'
+        && event.data.id === `member-question-human:${rpcId}`
+        && event.data.content.some(block => block.type === 'image' && 'attachment' in block))
+    }).toBe(true)
+    const events = ctx.sessions.get(sessionId)?.snapshotEvents() ?? []
+    const human = events.find(event => event.type === 'user/message'
+      && event.data.id === `member-question-human:${rpcId}`)
+    expect(JSON.stringify(human?.data.content)).not.toContain(PNG_1X1)
+    await idle
+    expect(adapter.requests).toHaveLength(1)
   })
 
   it('runs ingest, human turn, model response, and terminal settle on one Loader-owned Host', async () => {
@@ -333,11 +395,11 @@ describe('receiving materializer through a real Loader composition', () => {
       .some(event => event.type === 'turn/start')).toBe(false)
     expect(adapter.requests).toEqual([])
     const idle = waitForIdle(ctx, sessionId)
-    const rpcId = 'human-turn-owned' as MemberQuestionReceiverRpcId
-    await receiver.admitHumanTurn({
+    const rpcId = 'human-turn-owned'
+    await invokeAdmit(ctx, {
       receivingSessionId: arrived.receivingSessionId,
       revision: pending.revision,
-      rpcId,
+      requestId: rpcId,
       content: [{ type: 'text', text: 'Use JSONL.' }],
       mode: 'queue',
     })

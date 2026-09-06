@@ -167,6 +167,33 @@ export interface MemberQuestionRemoteSettleRequest {
 /** Canonical terminal returned by Host-owned Remote settlement. */
 export type MemberQuestionRemoteSettleResponse = CompanionMemberQuestionSettledResult
 
+/** Browser-uploaded prompt part accepted by Host-owned Remote human-turn admission. */
+export type MemberQuestionRemoteAdmitHumanTurnContent =
+  | { readonly type: 'text'; readonly text: string }
+  | {
+    readonly type: 'image'
+    readonly mediaType: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif'
+    readonly data: string
+    readonly name?: string
+  }
+
+/** Wire payload for Host-owned Remote human-turn admission. Attachment refs are absent. */
+export interface MemberQuestionRemoteAdmitHumanTurnRequest {
+  /** Host receiving thread observed by the caller. */
+  readonly receivingSessionId: ReceivingSessionId
+  /** Exact receiving-thread revision the caller observed. */
+  readonly revision: number
+  /** Client-minted idempotency identity retained across retries. */
+  readonly requestId: MemberQuestionReceiverRpcId
+  /** Browser text and encoded image uploads; Host promotes images before reservation. */
+  readonly content: readonly MemberQuestionRemoteAdmitHumanTurnContent[]
+  /** Ordinary Host queue or steering admission mode. */
+  readonly mode: 'queue' | 'steer'
+}
+
+/** Durable result returned by Host-owned Remote human-turn admission. */
+export type MemberQuestionRemoteAdmitHumanTurnResponse = AdmitMemberQuestionHumanTurnResult
+
 /** Human-authored text handed to the future Host Session adapter. */
 interface MemberQuestionHumanTextContent {
   /** Content discriminant. */
@@ -352,5 +379,8 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
       readonly revision: number
     }
     'member-question/settlement-identity-unavailable': {}
+    'member-question/attachment-unavailable': {}
+    'member-question/attachment-invalid': { readonly reason: string }
+    'member-question/human-turn-failed': {}
   }
 }
