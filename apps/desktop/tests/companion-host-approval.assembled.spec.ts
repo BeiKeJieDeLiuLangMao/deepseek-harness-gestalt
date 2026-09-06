@@ -9,6 +9,7 @@ import { startMockLlmServer } from '@deepseek-ai/dsh-llm-mock-server'
 import { parsePersonalPairingId } from '@deepseek-ai/dsh-remote-access'
 import {
   generateRelayCredential,
+  parseCompanionOperationId,
   parseCompanionSessionId,
   parseRelayAttachmentId,
   parseRelayPairingSelector,
@@ -191,6 +192,23 @@ describe('assembled Desktop Companion Approval on shipped dsh web', () => {
     )).toMatchObject({
       type: 'status', operationId: settlementId,
       committed: { type: 'interaction-receipt', operationId: settlementId, accepted: true },
+    })
+    const replay = {
+      type: 'settle-interaction' as const,
+      operationId: settlementId,
+      sessionId,
+      interactionId: approval.interactionId,
+      settlement: { kind: 'approval' as const, outcome },
+    }
+    await expect(owner.handle(replay, pairingDependencies(owner, channels))).resolves.toMatchObject({
+      type: 'interaction-receipt', operationId: settlementId, accepted: true,
+    })
+    await expect(owner.handle({
+      ...replay,
+      operationId: parseCompanionOperationId(`desktop-snow-approval-${outcome}-late`),
+      settlement: { kind: 'approval', outcome: 'rejected' },
+    }, pairingDependencies(owner, channels))).resolves.toMatchObject({
+      type: 'interaction-receipt', accepted: false, reason: 'not-pending',
     })
     const log = await approvalResultLog(first.home, sessionId, outcome)
     expect(log).toContain('"type":"turn/end"')
