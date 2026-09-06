@@ -79,15 +79,17 @@ function hasMessage(session: Session, messageId: string): boolean {
  * @param ctx - Host context with sessions, agents, and workspace registry.
  * @param agents - Session Controller Agent activation.
  * @param options - retry delay and timer.
- * @returns async disposer for this exact registration, or undefined when the receiver is uncomposed.
+ * @returns async disposer for this exact registration.
  */
 export function installReceivingSessionMaterializer(
   ctx: Context,
   agents: ApiSessionAgentController,
   options: ReceivingMaterializerOptions = {},
-): (() => void | Promise<void>) | undefined {
+): () => void | Promise<void> {
   const receiver = ctx.get('memberQuestionReceiver')
-  if (receiver === undefined) return undefined
+  if (receiver === undefined) {
+    throw new Error('member-question receiver is required to install Host Session materialization')
+  }
   const retryMs = options.terminalRetryMs ?? DEFAULT_RECEIVING_TERMINAL_RETRY_MS
   const timer = options.timer ?? { set: setTimeout, clear: clearTimeout }
   const terminalSyncs = new Map<string, Promise<void>>()
