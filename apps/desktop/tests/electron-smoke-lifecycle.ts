@@ -1,6 +1,6 @@
 /** Owned process and artifact lifecycle for the Desktop Electron smoke. */
 
-import type { ChildProcess } from 'node:child_process'
+import { execFileSync, type ChildProcess } from 'node:child_process'
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 
@@ -43,6 +43,58 @@ export async function stopSmokeChild(child: ChildProcess | undefined, exited: Pr
   if (!await settlesWithin(exited, TERMINATION_GRACE_MS)) {
     throw new Error(`Desktop smoke child ${String(child.pid)} did not exit after SIGKILL`)
   }
+}
+
+export interface SmokeHostIdentity {
+  readonly origin: string
+  readonly pid: number
+}
+
+/** Parse the Host identity recorded by this smoke run. */
+export function smokeHostIdentity(log: string): SmokeHostIdentity | undefined {
+  const match = /(?:^|\n)host (http:\/\/127\.0\.0\.1:\d+) pid (\d+)(?:\n|$)/.exec(log)
+  if (match?.[1] === undefined || match[2] === undefined) return undefined
+  const pid = Number(match[2])
+  return Number.isSafeInteger(pid) && pid > 0 ? { origin: match[1], pid } : undefined
+}
+
+/** Stop a logged Host only when its live command carries this run's private DSH_HOME. */
+export async function stopOwnedSmokeHost(identity: SmokeHostIdentity | undefined, dshHome: string): Promise<void> {
+  if (identity === undefined || !processExists(identity.pid)) return
+  const command = processCommand(identity.pid)
+  if (!command.includes(resolve(dshHome)) || !command.includes('dsh')) {
+    throw new Error(`refusing to signal unverified Desktop smoke Host pid ${String(identity.pid)}`)
+  }
+  process.kill(identity.pid, 'SIGTERM')
+  if (await processExitsWithin(identity.pid, TERMINATION_GRACE_MS)) return
+  process.kill(identity.pid, 'SIGKILL')
+  if (!await processExitsWithin(identity.pid, TERMINATION_GRACE_MS)) {
+    throw new Error(`Desktop smoke Host ${String(identity.pid)} did not exit after SIGKILL`)
+  }
+}
+
+function processCommand(pid: number): string {
+  return execFileSync('ps', ['eww', '-p', String(pid), '-o', 'command='], { encoding: 'utf8' }).trim()
+}
+
+function processExists(pid: number): boolean {
+  try { process.kill(pid, 0); return true } catch { return false }
+}
+
+async function processExitsWithin(pid: number, ms: number): Promise<boolean> {
+  let timer: ReturnType<typeof setInterval> | undefined
+  return await new Promise((resolveExit) => {
+    const deadline = Date.now() + ms
+    timer = setInterval(() => {
+      if (!processExists(pid)) {
+        clearInterval(timer)
+        resolveExit(true)
+      } else if (Date.now() >= deadline) {
+        clearInterval(timer)
+        resolveExit(false)
+      }
+    }, 25).unref()
+  })
 }
 
 async function settlesWithin(settlement: Promise<void>, ms: number): Promise<boolean> {

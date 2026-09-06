@@ -5,7 +5,9 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { startKeylessDesktopProvider } from './keyless-provider.ts'
-import { observeSmokeChild, retainSmokeEvidence, stopSmokeChild } from './electron-smoke-lifecycle.ts'
+import {
+  observeSmokeChild, retainSmokeEvidence, smokeHostIdentity, stopOwnedSmokeHost, stopSmokeChild,
+} from './electron-smoke-lifecycle.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const desktopRoot = join(here, '..')
@@ -16,6 +18,7 @@ describe.skipIf(process.env.DSH_DESKTOP_SMOKE !== '1')('Desktop Host smoke', () 
     if (process.platform === 'linux' && process.env.DISPLAY === undefined) return
     const dir = await mkdtemp(join(tmpdir(), 'gestalt-smoke-'))
     const log = join(dir, 'smoke.log')
+    const dshHome = join(dir, 'dsh-home')
     const evidence = join(tmpdir(), 'deepseek-harness-evidence', `electron-smoke-${process.pid}.log`)
     await writeFile(log, '')
     const provider = await startKeylessDesktopProvider()
@@ -31,7 +34,7 @@ describe.skipIf(process.env.DSH_DESKTOP_SMOKE !== '1')('Desktop Host smoke', () 
           ...withoutRuntimePlatformEnvironment(process.env),
           DSH_DESKTOP_SMOKE: '1',
           DSH_DESKTOP_SMOKE_FILE: log,
-          DSH_HOME: join(dir, 'dsh-home'),
+          DSH_HOME: dshHome,
           DSH_NODE: process.execPath,
           DEEPSEEK_API_KEY: 'keyless-desktop-entry-smoke',
           DEEPSEEK_BASE_URL: provider.origin,
@@ -82,6 +85,8 @@ describe.skipIf(process.env.DSH_DESKTOP_SMOKE !== '1')('Desktop Host smoke', () 
       try {
         await stopSmokeChild(child, exited)
         output = processOutput()
+        const text = await readFile(log, 'utf8')
+        await stopOwnedSmokeHost(smokeHostIdentity(text), dshHome)
       } finally {
         try { await provider.close() } finally {
           await retainSmokeEvidence({ evidencePath: evidence, root: dir, smokeLog: log, processOutput: output })

@@ -5,10 +5,11 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import {
-  observeSmokeChild, retainSmokeEvidence, stopSmokeChild,
+  observeSmokeChild, retainSmokeEvidence, smokeHostIdentity, stopOwnedSmokeHost, stopSmokeChild,
 } from './electron-smoke-lifecycle.ts'
 
 const childFixture = fileURLToPath(new URL('./fixtures/electron-smoke-child.mjs', import.meta.url))
+const orphanFixture = fileURLToPath(new URL('./fixtures/electron-smoke-orphan-host.mjs', import.meta.url))
 
 describe('Electron smoke lifecycle', () => {
   it.skipIf(process.platform === 'win32')('escalates an owned child that ignores SIGTERM and joins its exit', async () => {
@@ -26,6 +27,21 @@ describe('Electron smoke lifecycle', () => {
       try { await stopSmokeChild(child, observed.exited) } catch (cleanupError) {
         if (failure === undefined) throw cleanupError
       }
+    }
+  })
+
+  it.skipIf(process.platform === 'win32')('stops an owned Host left after its parent is killed', async () => {
+    const dshHome = await mkdtemp(join(tmpdir(), 'electron-smoke-orphan-home-'))
+    const parent = spawn(process.execPath, [orphanFixture, dshHome], { stdio: ['ignore', 'pipe', 'pipe'] })
+    const observed = observeSmokeChild(parent)
+    try {
+      await expect(observed.exited).resolves.toBeUndefined()
+      const identity = smokeHostIdentity(observed.output())
+      expect(identity).toBeDefined()
+      await expect(stopOwnedSmokeHost(identity, dshHome)).resolves.toBeUndefined()
+      if (identity !== undefined) expect(() => process.kill(identity.pid, 0)).toThrow()
+    } finally {
+      await rm(dshHome, { recursive: true, force: true })
     }
   })
 
