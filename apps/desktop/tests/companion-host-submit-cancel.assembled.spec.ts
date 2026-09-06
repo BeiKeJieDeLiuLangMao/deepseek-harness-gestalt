@@ -12,6 +12,7 @@ import {
   parseRelayPairingSelector,
   parseRelayRouteId,
   REMOTE_PROTOCOL_LIMITS,
+  type CompanionOperationId,
   type CompanionProjection,
   type CompanionResult,
 } from '@deepseek-ai/dsh-remote-protocol'
@@ -83,6 +84,13 @@ describe('assembled Desktop Companion submit and cancel on shipped dsh web', () 
     const sessionId = parseCompanionSessionId('desktop-surface-prompt-session')
     await expect(createDesktopHostSession(rpc, sessionId)).resolves.toMatchObject({
       ok: true, value: { sessionId },
+    })
+    const hostFrames: unknown[] = []
+    const follow = new AbortController()
+    const watching = rpc.followSession(sessionId, follow.signal, (frame) => { hostFrames.push(frame) })
+    cleanups.push(async () => {
+      follow.abort()
+      await watching
     })
     const owner = productOwner(first.running.url, cookie)
     owner.installLedger(await DesktopCompanionOperationLedger.load(
@@ -156,9 +164,28 @@ describe('assembled Desktop Companion submit and cancel on shipped dsh web', () 
       return false
     }).toBe(true)
     await expect.poll(() => surface.getSnapshot().conversations[localSessionId]?.running === true).toBe(true)
+    await expect.poll(() => hostFrames.some(frame => followHasEventType(frame, 'turn/start'))).toBe(true)
     const llmCallsBeforeCancel = llm.requests.length
+    const cancelOperationIds: CompanionOperationId[] = []
+    const originalHandle = owner.handle.bind(owner)
+    owner.handle = async (operation, dependencies) => {
+      if (operation.type === 'cancel-session') cancelOperationIds.push(operation.operationId)
+      return await originalHandle(operation, dependencies)
+    }
     surface.cancel(localSessionId)
+    await expect.poll(() => cancelOperationIds.length).toBe(1)
+    const cancelOperationId = cancelOperationIds[0]
+    if (cancelOperationId === undefined) throw new Error('Companion cancel did not reach the Desktop owner')
+    await expect.poll(async () => await owner.queryOperationStatus(
+      parsePersonalPairingId(channels.pairingSelector), cancelOperationId,
+    )).toMatchObject({
+      type: 'status', operationId: cancelOperationId,
+      committed: { type: 'confirmed', operationId: cancelOperationId, outcome: 'accepted' },
+    })
+    await expect.poll(() => hostFrames.some(frame => followHasEventType(frame, 'turn/end'))).toBe(true)
+    expect(llm.requests[0]?.outcome).toBe('stalled')
     await expect.poll(() => surface.getSnapshot().conversations[localSessionId]?.running === false).toBe(true)
+    expect(surface.getSnapshot().operationFailure).toBeUndefined()
     expect(llm.requests.length).toBe(llmCallsBeforeCancel)
     const listed = await listDesktopHostSessions(rpc)
     expect(listed.ok).toBe(true)
@@ -169,6 +196,13 @@ describe('assembled Desktop Companion submit and cancel on shipped dsh web', () 
     expect(isRecord(row) && row.running === false).toBe(true)
   }, 180_000)
 })
+
+function followHasEventType(frame: unknown, type: string): boolean {
+  if (!isRecord(frame)) return false
+  if (frame.type === 'event') return isRecord(frame.event) && frame.event.type === type
+  if (frame.type !== 'snapshot' || !Array.isArray(frame.records)) return false
+  return frame.records.some(record => isRecord(record) && isRecord(record.event) && record.event.type === type)
+}
 
 function conversationHasUserText(
   surface: MobileCompanionSurface,
