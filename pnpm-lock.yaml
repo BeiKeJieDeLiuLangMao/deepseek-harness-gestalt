@@ -2843,9 +2843,6 @@ importers:
       '@deepseek-ai/dsh-client-modules':
         specifier: workspace:^
         version: link:../modules
-      '@deepseek-ai/dsh-client-runtime':
-        specifier: workspace:^
-        version: link:../runtime
       '@deepseek-ai/dsh-client-ui-conversation':
         specifier: workspace:^
         version: link:../ui-conversation
@@ -4800,9 +4797,6 @@ importers:
       '@deepseek-ai/dsh-browser-workspace':
         specifier: workspace:^
         version: link:../../browser/browser-workspace
-      '@deepseek-ai/dsh-client-runtime':
-        specifier: workspace:^
-        version: link:../runtime
       '@deepseek-ai/dsh-client-ui-better-sidebar':
         specifier: workspace:^
         version: link:../ui-better-sidebar
