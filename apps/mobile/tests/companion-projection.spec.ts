@@ -35,8 +35,13 @@ describe('Mobile Companion JSON projection', () => {
       || question.kind === 'approval') {
       throw new Error('expected adapted pending interactions')
     }
+    expect(approval.draft).toEqual({})
+    expect(question.draft).toEqual({})
+    expect(question.questions).toEqual([{ id: 'q1', question: 'Continue?', options: [{ label: 'Yes' }] }])
     await expect(approval.answer('allowed-once')).resolves.toBeUndefined()
     await expect(question.answer({ answers: [{ id: 'q1', selected: ['Yes'] }] })).resolves.toBeUndefined()
+    expect(approval.draft).toEqual({ outcome: 'allowed-once' })
+    expect(question.draft).toEqual({ answers: [{ id: 'q1', selected: ['Yes'] }] })
     expect(settle).toHaveBeenNthCalledWith(1, {
       kind: 'approval', sessionId, interactionId: 'approval-rpc',
       result: { ok: true, value: { outcome: 'allowed-once' } },
@@ -45,6 +50,27 @@ describe('Mobile Companion JSON projection', () => {
       kind: 'question', sessionId, interactionId: 'question-rpc',
       result: { ok: true, value: { answer: { answers: [{ id: 'q1', selected: ['Yes'] }] } } },
     })
+  })
+
+  it('keeps Ask User and Approval drafts when Desktop settlement fails', async () => {
+    const settle = vi.fn(async () => {
+      throw new Error('Companion encrypted operation could not be sent')
+    })
+    const adapted = adaptMobileCompanionProjection(projection(), settle)
+    const conversation = adapted.conversations[SessionId('session-one')]
+    const approval = conversation?.pending[0]
+    const question = conversation?.pending[1]
+    if (approval === undefined || question === undefined || approval.kind !== 'approval'
+      || question.kind !== 'question') {
+      throw new Error('expected adapted pending interactions')
+    }
+    await expect(approval.answer('rejected')).rejects.toThrow('could not be sent')
+    expect(approval.draft).toEqual({})
+    await expect(question.answer({ answers: [{ id: 'q1', selected: ['Yes'] }] }))
+      .rejects.toThrow('could not be sent')
+    expect(question.draft).toEqual({})
+    await expect(question.cancel()).rejects.toThrow('could not be sent')
+    expect(question.draft).toEqual({})
   })
 
   it('rejects class-backed values and malformed conversation nodes', () => {

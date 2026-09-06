@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/proposed/simplification/2026-09-06-retire-host-apiproxy.md
-2026-09-06-retire-host-apiproxy.md: e81f38767de281f628e67e5d7f0adad01490ee47
-2026-09-06-retire-host-apiproxy.zh.md: 0e12571c68a007c4969b25ebfbc7d766436e435a
+2026-09-06-retire-host-apiproxy.md: 1132387b084bc845b945b500db22196347df0d5b
+2026-09-06-retire-host-apiproxy.zh.md: abbec629f08bc886b79be53b5ad8e4200c02972d

@@ -1,11 +1,9 @@
-/** JSON wire projection adapted to public Session/Workspace types and shared interaction carriers. */
+/** JSON wire projection adapted to public Session/Workspace types and Mobile-owned pending actions. */
 
 import type { SessionListState, SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { WorkspaceView } from '@deepseek-ai/dsh-api-workspace-controller/types'
-import type { ConversationApprovalWait } from '@deepseek-ai/dsh-client-ui-conversation/src/presentation.tsx'
-import { PendingQuestion } from '@deepseek-ai/dsh-client-ui-user-questions/src/client/contract/slots.ts'
-import type { QuestionAnswer } from '@deepseek-ai/dsh-client-ui-user-questions/src/client/contract/slots.ts'
 import { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { AskUserQuestionAnswer, AskUserQuestionItem } from '@deepseek-ai/dsh-user-questions/types'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 
 /** Values admitted by the authenticated Companion projection decoder. */
@@ -78,7 +76,7 @@ type MobilePendingInteractionDto =
     readonly kind: 'question'
     readonly interactionId: string
     readonly sessionId: string
-    readonly payload: { readonly questions: readonly CompanionJsonValue[] }
+    readonly payload: { readonly questions: readonly AskUserQuestionItem[] }
   }
 
 type MobileConversationJsonFields = {
@@ -146,7 +144,7 @@ export type MobilePendingSettlement =
     readonly sessionId: SessionId
     readonly interactionId: string
     readonly result:
-      | { readonly ok: true; readonly value: { readonly answer: QuestionAnswer } }
+      | { readonly ok: true; readonly value: { readonly answer: AskUserQuestionAnswer } }
       | { readonly ok: false; readonly error: { readonly code: 'cancelled' } }
   }
 
@@ -158,8 +156,32 @@ export interface MobileConversationNode {
   readonly [key: string]: unknown
 }
 
-/** Pending Approval or Ask User carrier accepted by shared presentation. */
-export type MobilePendingCarrier = ConversationApprovalWait | PendingQuestion
+/** JSON Approval plus the generation-bound Desktop settlement action. */
+export interface MobilePendingApproval {
+  readonly kind: 'approval'
+  readonly interactionId: string
+  readonly sessionId: SessionId
+  readonly approvalId: string
+  readonly toolName: string
+  readonly callId?: string
+  readonly reason?: string
+  readonly draft: { readonly outcome?: 'allowed-once' | 'rejected' }
+  answer(outcome: 'allowed-once' | 'rejected'): Promise<void>
+}
+
+/** JSON Ask User plus the generation-bound Desktop settlement actions. */
+export interface MobilePendingQuestion {
+  readonly kind: 'question'
+  readonly interactionId: string
+  readonly sessionId: SessionId
+  readonly questions: readonly AskUserQuestionItem[]
+  readonly draft: { readonly answers?: AskUserQuestionAnswer['answers'] }
+  answer(answer: AskUserQuestionAnswer): Promise<void>
+  cancel(): Promise<void>
+}
+
+/** Mobile-owned pending row; not a Client Runtime or UI waterfall class. */
+export type MobilePendingCarrier = MobilePendingApproval | MobilePendingQuestion
 
 /** Local conversation view created from one authenticated JSON conversation. */
 export interface MobileConversationView {
@@ -810,46 +832,64 @@ function adaptConversation(
   const sessionId = SessionId(dto.sessionId)
   const pending = dto.pending.map((wait): MobilePendingCarrier => {
     if (wait.kind === 'approval') {
-      const approval: ConversationApprovalWait = {
+      const approval: MobilePendingApproval = {
         kind: 'approval',
-        ...(wait.payload.toolName === '' ? {} : { toolName: wait.payload.toolName }),
+        interactionId: wait.interactionId,
+        sessionId: SessionId(wait.sessionId),
+        approvalId: wait.payload.approvalId,
+        toolName: wait.payload.toolName,
+        ...(wait.payload.callId === undefined ? {} : { callId: wait.payload.callId }),
         ...(wait.payload.reason === undefined || wait.payload.reason === ''
           ? {}
           : { reason: wait.payload.reason }),
+        draft: {},
         answer: async (outcome) => {
-          await settle({
-            kind: 'approval',
-            sessionId: SessionId(wait.sessionId),
-            interactionId: wait.interactionId,
-            result: { ok: true, value: { outcome } },
-          })
+          approval.draft.outcome = outcome
+          try {
+            await settle({
+              kind: 'approval',
+              sessionId: SessionId(wait.sessionId),
+              interactionId: wait.interactionId,
+              result: { ok: true, value: { outcome } },
+            })
+          } catch (error) {
+            approval.draft.outcome = undefined
+            throw error
+          }
         },
       }
       return approval
     }
-    return new PendingQuestion(
-      SessionId(wait.sessionId),
-      wait.payload.questions as ConstructorParameters<typeof PendingQuestion>[1],
-      undefined,
-      {
-        key: wait.interactionId,
-        submit: async (kind, answer) => {
-          await settle(kind === 'declined'
-            ? {
-              kind: 'question',
-              sessionId: SessionId(wait.sessionId),
-              interactionId: wait.interactionId,
-              result: { ok: false, error: { code: 'cancelled' } },
-            }
-            : {
-              kind: 'question',
-              sessionId: SessionId(wait.sessionId),
-              interactionId: wait.interactionId,
-              result: { ok: true, value: { answer: requireQuestionAnswer(answer) } },
-            })
-        },
+    const question: MobilePendingQuestion = {
+      kind: 'question',
+      interactionId: wait.interactionId,
+      sessionId: SessionId(wait.sessionId),
+      questions: wait.payload.questions,
+      draft: {},
+      answer: async (answer) => {
+        question.draft.answers = answer.answers
+        try {
+          await settle({
+            kind: 'question',
+            sessionId: SessionId(wait.sessionId),
+            interactionId: wait.interactionId,
+            result: { ok: true, value: { answer } },
+          })
+        } catch (error) {
+          question.draft.answers = undefined
+          throw error
+        }
       },
-    )
+      cancel: async () => {
+        await settle({
+          kind: 'question',
+          sessionId: SessionId(wait.sessionId),
+          interactionId: wait.interactionId,
+          result: { ok: false, error: { code: 'cancelled' } },
+        })
+      },
+    }
+    return question
   })
   return {
     sessionId,
@@ -872,9 +912,4 @@ function adaptConversation(
     blank: dto.blank,
     lastAgentError: dto.lastAgentError,
   }
-}
-
-function requireQuestionAnswer(answer: QuestionAnswer | undefined): QuestionAnswer {
-  if (answer === undefined) throw new TypeError('Companion Ask User settlement omitted its answer')
-  return answer
 }

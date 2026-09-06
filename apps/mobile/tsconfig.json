@@ -10,6 +10,7 @@
     { "path": "../../packages/util/brand" },
     { "path": "../../packages/attachment/attachment" },
     { "path": "../../packages/core/session" },
+    { "path": "../../packages/interaction/user-questions" },
     { "path": "../../packages/workspace/workspace" },
     { "path": "../../packages/api/session-controller" },
     { "path": "../../packages/api/workspace-controller" },
