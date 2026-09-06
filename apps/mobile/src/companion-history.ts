@@ -1,8 +1,9 @@
 /** Mobile composition over Desktop-owned Session list and conversation projections. */
 
-import type {
-  ConversationSnapshot, SessionId, SessionListState, WorkspaceView,
-} from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { WorkspaceView } from '@deepseek-ai/dsh-api-workspace-controller/client'
+import type { ConversationSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type {
   MobileCompanionAttachmentSnapshot,

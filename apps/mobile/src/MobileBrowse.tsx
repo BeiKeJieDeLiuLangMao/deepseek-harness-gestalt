@@ -9,9 +9,9 @@ import {
 } from './companion-history.ts'
 import type { MobileCompanionOperationFailure, MobileCompanionSearchSnapshot } from './companion-surface.ts'
 import { MobileConversation } from './MobileConversation.tsx'
-import type {
-  SessionId, SessionListState, WorkspaceView,
-} from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { WorkspaceView } from '@deepseek-ai/dsh-api-workspace-controller/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { ConversationPresentationLocale } from '@deepseek-ai/dsh-client-ui-conversation/presentation'
 import {
   expandedSessionGroups, SessionListPresentation, workspacePresentationTranslate,

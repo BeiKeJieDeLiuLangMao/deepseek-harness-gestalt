@@ -10,7 +10,8 @@ import {
   parseRelayRouteId,
 } from '@deepseek-ai/dsh-remote-protocol'
 import { CompanionForegroundRuntime } from '../src/companion-lifecycle.ts'
-import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { randomUuid } from '../src/random-uuid.ts'
 import type { MobileCompanionTrackedSubmission } from '../src/companion-surface.ts'
 import {
   MobileSnowCompanionConnection,
@@ -654,6 +655,6 @@ function synchronizedRuntime(): CompanionForegroundRuntime {
 function settlement(): CompanionUncertainOperationSettlement {
   return new CompanionUncertainOperationSettlement(
     new InMemoryCompanionCacheStore(),
-    parseCompanionDesktopId(`desktop-${crypto.randomUUID()}`),
+    parseCompanionDesktopId(`desktop-${randomUuid()}`),
   )
 }

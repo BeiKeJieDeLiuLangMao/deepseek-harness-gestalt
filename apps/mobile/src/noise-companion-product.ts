@@ -17,7 +17,7 @@ import {
   type RelayPairingSelector,
 } from '@deepseek-ai/dsh-remote-protocol'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
-import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SnowCompanionProtocolChannel } from '@deepseek-ai/dsh-noise-channel'
 import { transferSelectedCompanionAttachment } from './companion-attachment.ts'
 import type { CompanionForegroundRuntime } from './companion-lifecycle.ts'
