@@ -215,9 +215,11 @@ describe('assembled Desktop Companion Approval on shipped dsh web', () => {
     if (bashResult === undefined) throw new Error('the approval-gated bash tool/result never reached the Host log')
     expect(log).toContain('"type":"turn/end"')
     if (expectWritten) {
+      expect(bashResult.isError).toBe(false)
       expect(bashResult.text).not.toContain('the user rejected escalating this command')
       await expect(readFile(marker, 'utf8')).resolves.toBe(`approval-${outcome}`)
     } else {
+      expect(bashResult.isError).toBe(true)
       expect(bashResult.text).toContain('the user rejected escalating this command')
       await expect(readFile(marker, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
     }
@@ -229,7 +231,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function bashToolResult(log: string): { callId: string; text: string } | undefined {
+function bashToolResult(log: string): { callId: string; isError: boolean; text: string } | undefined {
   let callId: string | undefined
   for (const line of log.split('\n')) {
     if (!line.includes('"type":"assistant/message"') || !line.includes('"name":"bash"')) continue
@@ -248,7 +250,9 @@ function bashToolResult(log: string): { callId: string; text: string } | undefin
     const result = content.find(block => isRecord(block) && block.type === 'tool-result' && block.toolCallId === callId)
     if (!isRecord(result) || !Array.isArray(result.content)) continue
     const text = result.content.find(part => isRecord(part) && typeof part.text === 'string')
-    if (isRecord(text) && typeof text.text === 'string') return { callId, text: text.text }
+    if (isRecord(text) && typeof text.text === 'string') {
+      return { callId, isError: result.isError === true, text: text.text }
+    }
   }
   return undefined
 }
