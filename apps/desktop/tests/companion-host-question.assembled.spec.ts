@@ -207,12 +207,11 @@ describe('assembled Desktop Companion Ask User question on shipped dsh web', () 
     const finalText = finalAssistantTextAfter(await durableSessionLog(first.home, sessionId), toolResult.callId)
     expect(finalText).toBe('acknowledged-snow-question')
     expect(surface.getSnapshot().operationFailure).toBeUndefined()
-    await expect.poll(() => answeredFollowUpRequest(llm.requests)).not.toBeUndefined()
-    const followUp = answeredFollowUpRequest(llm.requests)
+    await expect.poll(() => answeredFollowUpRequest(llm.requests, toolResult.callId)).not.toBeUndefined()
+    const followUp = answeredFollowUpRequest(llm.requests, toolResult.callId)
     if (followUp === undefined) throw new Error('the answered follow-up model request never arrived')
-    const followUpBody = JSON.stringify(followUp.body)
-    expect(followUpBody).toContain('q1')
-    expect(followUpBody).toContain('Yes')
+    expect(followUp.toolCallId).toBe(toolResult.callId)
+    expect(followUp.answers).toEqual([{ id: 'q1', selected: ['Yes'] }])
     expect(llm.requests.length).toBe(2)
     for (const request of llm.requests) {
       const body = isRecord(request.body) ? JSON.stringify(request.body) : ''
@@ -310,13 +309,26 @@ async function askUserToolCallIdFromLog(
   return askUserToolCallId(log)
 }
 
-/** The first model request whose wire body carries the answered tool result. */
-function answeredFollowUpRequest(requests: readonly { readonly body: unknown }[]): { body: unknown } | undefined {
+/**
+ * The follow-up model request whose wire body answers the exact ask_user_question
+ * tool call: the `role: 'tool'` message carries the same `tool_call_id` and a
+ * JSON content that parses to the same selected answers.
+ */
+function answeredFollowUpRequest(
+  requests: readonly { readonly body: unknown }[],
+  callId: string,
+): { toolCallId: string; answers: unknown } | undefined {
   for (const request of requests) {
-    if (!isRecord(request.body)) continue
-    const body = JSON.stringify(request.body)
-    if (body.includes('tool_call_id') && body.includes('q1') && body.includes('Yes')) {
-      return { body: request.body }
+    if (!isRecord(request.body) || !Array.isArray(request.body.messages)) continue
+    for (const message of request.body.messages) {
+      if (!isRecord(message) || message.role !== 'tool' || message.tool_call_id !== callId) continue
+      if (typeof message.content !== 'string') continue
+      try {
+        const parsed = JSON.parse(message.content) as { answers?: unknown }
+        return { toolCallId: message.tool_call_id, answers: parsed.answers }
+      } catch {
+        return undefined
+      }
     }
   }
   return undefined
