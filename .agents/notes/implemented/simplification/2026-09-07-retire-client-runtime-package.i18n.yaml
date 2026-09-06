@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/simplification/2026-09-07-retire-client-runtime-package.md
-2026-09-07-retire-client-runtime-package.md: beece0a295d2eccf98839362121638c77623c2f9
-2026-09-07-retire-client-runtime-package.zh.md: 46644da6a8f07f329301197760f25a9173826db8
+2026-09-07-retire-client-runtime-package.md: 301e4a9f94c304191d90fd00278d9bfc830e123b
+2026-09-07-retire-client-runtime-package.zh.md: 70b6451178827090b697bf47681d41439d45c832

@@ -12,9 +12,15 @@ Status: implemented
 
 工作区不包含 `packages/client/runtime`。Session 与 Workspace 行为属于 API controller，conversation 组装属于 `ui-conversation`，slot 渲染属于 `ui-renderer`，subagent lineage 属于当前 presentation owner。产品包直接引用这些 owner。
 
-包源码及其过期测试在 commit `511366c0953fb30ce1742b68ea2f3f4c4f5d2a68` 中删除。后续退役 commit 删除剩余 TypeScript 引用、生成的包 alias 和 catalog、lockfile importer、compiler-face 登记与过期 invariant 文档。
+工作区图不包含该包的 TypeScript reference、生成 alias 与 catalog、lockfile importer、compiler-face 登记和 invariant 文档。
 
-仅当当前 owner 仍实现对应行为时，才保留被删除包的测试价值。Session admission 与 provisional identity 由 Session Controller 测试覆盖；Workspace mutation、排序、archive 状态与目录选择由 Workspace Controller 测试覆盖；lineage 计数由 `ui-workspace` 与 `ui-subagent` 覆盖；Desktop Companion interaction 相关性使用生成的 `$events` client 与 event identity。旧 `PendingWait.respond()` response envelope 及其 `rpcId` 回填不迁移，因为当前 interaction 协议通过 `clientId` 与 `eventId` 结算 `$events`。
+旧 `PendingWait.respond()` response envelope 及其 `rpcId` 回填已不存在，因为当前 interaction 协议通过 `clientId` 与 `eventId` 结算 `$events`。
+
+## Testing
+
+Session Controller 测试覆盖 admission 与 provisional identity。Workspace Controller 测试覆盖 mutation、排序、archive 状态与目录选择。`ui-workspace` 与 `ui-subagent` 测试覆盖 lineage 计数。Desktop Companion product 与 interaction 测试先生成 Typert Remote 产物，再覆盖通过 `clientId` 与 `eventId` 的 `$events` 相关性。Workbench 测试把 Browser Workspace 的公开 `/client` 入口直接解析到 browser-safe source。
+
+包管理器 frozen-lock 检查、生成 path 与 catalog 检查、compiler-face 测试和 consumer suite 验证仓库图不再依赖该包。剩余 Workbench external-policy 违规需要由其 owner 迁移，不能作为恢复该包的依据。
 
 ## Alternatives considered
 

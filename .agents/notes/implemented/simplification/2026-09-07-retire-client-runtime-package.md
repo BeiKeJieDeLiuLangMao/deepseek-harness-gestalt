@@ -12,9 +12,15 @@ The temporary `@deepseek-ai/dsh-client-runtime` package duplicated Client Sessio
 
 The workspace omits `packages/client/runtime`. Session and Workspace behavior belongs to the API controllers, conversation assembly belongs to `ui-conversation`, slot rendering belongs to `ui-renderer`, and subagent lineage belongs to its current presentation owners. Product packages reference those owners directly.
 
-The package source and its obsolete tests were removed in commit `511366c0953fb30ce1742b68ea2f3f4c4f5d2a68`. The follow-up retirement commit removes the remaining TypeScript references, generated package alias and catalogs, lockfile importer, compiler-face registration, and stale invariant documentation.
+The workspace graph omits the package's TypeScript references, generated alias and catalogs, lockfile importer, compiler-face registration, and invariant documentation.
 
-Tests for the removed package are retained only where a current owner still implements the behavior. Session admission and provisional identities are covered by Session Controller tests; Workspace mutations, ordering, archive state, and directory selection are covered by Workspace Controller tests; lineage counts are covered by `ui-workspace` and `ui-subagent`; Desktop Companion interaction correlation uses generated `$events` client and event identities. The old `PendingWait.respond()` response envelope and its `rpcId` backfill are not migrated because the current interaction protocol settles `$events` by `clientId` and `eventId`.
+The old `PendingWait.respond()` response envelope and its `rpcId` backfill are absent because the current interaction protocol settles `$events` by `clientId` and `eventId`.
+
+## Testing
+
+Session Controller tests cover admission and provisional identities. Workspace Controller tests cover mutations, ordering, archive state, and directory selection. `ui-workspace` and `ui-subagent` tests cover lineage counts. Desktop Companion product and interaction tests generate the Typert Remote artifacts, then cover `$events` correlation through `clientId` and `eventId`. Workbench tests resolve Browser Workspace's public `/client` entry directly to its browser-safe source.
+
+The package-manager frozen-lock check, generated path and catalog checks, compiler-face tests, and consumer suites verify that repository graphs no longer require the package. The remaining Workbench external-policy violations require their own owner migration and are not evidence for restoring this package.
 
 ## Alternatives considered
 
