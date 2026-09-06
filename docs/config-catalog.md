@@ -230,10 +230,12 @@ export interface Config {
   readonly coldBlankProbeMaxBytes?: number
   /** Override platform desktop-opener detection. */
   readonly nativeOpen?: boolean
+  /** Delay between failed member-question terminal Session sync attempts. */
+  readonly receivingTerminalRetryMs?: number
 }
 ```
 
-Source: [`packages/api/session-controller/src/index.ts:76`](../packages/api/session-controller/src/index.ts)
+Source: [`packages/api/session-controller/src/index.ts:84`](../packages/api/session-controller/src/index.ts)
 
 <a id="deepseek-aidsh-api-settings-controller"></a>
 
