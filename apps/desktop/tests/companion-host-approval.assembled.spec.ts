@@ -210,19 +210,53 @@ describe('assembled Desktop Companion Approval on shipped dsh web', () => {
     }, pairingDependencies(owner, channels))).resolves.toMatchObject({
       type: 'interaction-receipt', accepted: false, reason: 'not-pending',
     })
-    const log = await approvalResultLog(first.home, sessionId, outcome)
+    const log = await approvalResultLog(first.home, sessionId)
+    const bashResult = bashToolResult(log)
+    if (bashResult === undefined) throw new Error('the approval-gated bash tool/result never reached the Host log')
     expect(log).toContain('"type":"turn/end"')
-    expect(log).toContain(outcome)
-    if (expectWritten) await expect(readFile(marker, 'utf8')).resolves.toBe(`approval-${outcome}`)
-    else await expect(readFile(marker, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+    if (expectWritten) {
+      expect(bashResult.text).not.toContain('the user rejected escalating this command')
+      await expect(readFile(marker, 'utf8')).resolves.toBe(`approval-${outcome}`)
+    } else {
+      expect(bashResult.text).toContain('the user rejected escalating this command')
+      await expect(readFile(marker, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+    }
     expect(owner.pendingInteractions(sessionId, channels.attachmentKey.slice())).toHaveLength(0)
   }, 180_000)
 })
 
-async function approvalResultLog(home: string, sessionId: string, outcome: string): Promise<string> {
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function bashToolResult(log: string): { callId: string; text: string } | undefined {
+  let callId: string | undefined
+  for (const line of log.split('\n')) {
+    if (!line.includes('"type":"assistant/message"') || !line.includes('"name":"bash"')) continue
+    const event = JSON.parse(line) as { data?: { message?: { content?: unknown } } }
+    const content = event.data?.message?.content
+    if (!Array.isArray(content)) continue
+    const call = content.find(block => isRecord(block) && block.type === 'tool-call' && block.name === 'bash')
+    if (isRecord(call) && typeof call.id === 'string') callId = call.id
+  }
+  if (callId === undefined) return undefined
+  for (const line of log.split('\n')) {
+    if (!line.includes('"type":"tool/result"')) continue
+    const event = JSON.parse(line) as { data?: { message?: { content?: unknown } } }
+    const content = event.data?.message?.content
+    if (!Array.isArray(content)) continue
+    const result = content.find(block => isRecord(block) && block.type === 'tool-result' && block.toolCallId === callId)
+    if (!isRecord(result) || !Array.isArray(result.content)) continue
+    const text = result.content.find(part => isRecord(part) && typeof part.text === 'string')
+    if (isRecord(text) && typeof text.text === 'string') return { callId, text: text.text }
+  }
+  return undefined
+}
+
+async function approvalResultLog(home: string, sessionId: string): Promise<string> {
   await expect.poll(async () => {
     const log = await durableSessionLog(home, sessionId)
-    return log.includes(outcome) && log.includes('"type":"turn/end"')
+    return bashToolResult(log) !== undefined && log.includes('"type":"turn/end"')
   }).toBe(true)
   return await durableSessionLog(home, sessionId)
 }
