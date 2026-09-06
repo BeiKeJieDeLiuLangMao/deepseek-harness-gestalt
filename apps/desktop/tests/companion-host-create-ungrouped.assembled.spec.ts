@@ -1,7 +1,7 @@
-/** Browse Ungrouped create through Snow, Surface, owner, ledger, and shipped dsh web. */
+/** Browse Workspace-owned and Ungrouped create through Snow, Surface, owner, ledger, and shipped dsh web. */
 
 import { createElement, useSyncExternalStore, type ReactNode } from 'react'
-import { readFileSync } from 'node:fs'
+import { mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { JSDOM } from 'jsdom'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
@@ -10,6 +10,7 @@ import {
   generateRelayCredential,
   parseRelayAttachmentId,
   parseRelayPairingSelector,
+  parseCompanionWorkspaceId,
   parseRelayRouteId,
   REMOTE_PROTOCOL_LIMITS,
   type CompanionCreateSessionOperation,
@@ -25,7 +26,8 @@ import {
   DesktopCompanionOperationLedger, FileDesktopCompanionOperationStore,
 } from '../src/companion-operation-ledger.ts'
 import {
-  bootstrapDesktopHostCookie, createDesktopHostRpc, listDesktopHostSessions,
+  bootstrapDesktopHostCookie, createDesktopHostRpc, createDesktopHostSessionRequest,
+  createDesktopHostWorkspace, listDesktopHostSessions,
 } from '../src/host-rpc.ts'
 import type { RunningWebHost } from '../src/spawn-web-host.ts'
 import {
@@ -67,14 +69,32 @@ afterEach(async () => {
   }
 })
 
-describe('assembled Desktop Companion Ungrouped create on shipped dsh web', () => {
-  it('creates an Ungrouped Session from the shipped Mobile button through Snow and the real Host', async () => {
+describe('assembled Desktop Companion create on shipped dsh web', () => {
+  it('creates Workspace-owned and Ungrouped Sessions from shipped Mobile buttons through Snow and the real Host', async () => {
     installMobileDom()
     const { cleanup, fireEvent, render, screen, waitFor, within } = await import('@testing-library/react')
     cleanups.push(async () => { cleanup() })
 
     const first = await startShippedWebHost({ children, homes })
     const cookie = await bootstrapDesktopHostCookie(first.running.launchUrl, first.running.url)
+    const rpc = listRpc(first.running.url, cookie)
+    const workspaceRoot = join(first.home, 'Assembled Workspace')
+    mkdirSync(workspaceRoot, { recursive: true })
+    const createdWorkspace = await createDesktopHostWorkspace(rpc, workspaceRoot)
+    expect(createdWorkspace.ok).toBe(true)
+    if (!createdWorkspace.ok || !isRecord(createdWorkspace.value) || !isRecord(createdWorkspace.value.workspace)
+      || typeof createdWorkspace.value.workspace.workspaceId !== 'string'
+      || createdWorkspace.value.workspace.title !== 'Assembled Workspace') {
+      throw new Error('Desktop Host workspace/create returned an invalid Workspace')
+    }
+    const workspaceId = parseCompanionWorkspaceId(createdWorkspace.value.workspace.workspaceId)
+    const seeded = await createDesktopHostSessionRequest(rpc, { workspaceId })
+    if (!seeded.ok) {
+      throw new Error(`Desktop Host session/create seed failed: ${JSON.stringify(seeded.failure)}`)
+    }
+    if (!seeded.ok || !isRecord(seeded.value) || typeof seeded.value.sessionId !== 'string') {
+      throw new Error('Desktop Host session/create did not seed a Workspace Session')
+    }
     const owner = productOwner(first.running.url, cookie)
     const ledgerPath = join(first.home, 'companion-create-operations.json')
     owner.installLedger(await DesktopCompanionOperationLedger.load(
@@ -91,7 +111,7 @@ describe('assembled Desktop Companion Ungrouped create on shipped dsh web', () =
     const receiverRef: { current?: MobileNoiseCompanionReceiver } = {}
     const createOperations: CompanionCreateSessionOperation[] = []
     const received: CompanionResult[] = []
-    const listedBefore = await listDesktopHostSessions(listRpc(first.running.url, cookie))
+    const listedBefore = await listDesktopHostSessions(rpc)
     const initialHostIds = listedSessionIds(listedBefore)
     const product = new MobileSnowCompanionProductChannel({
       runtime, connection,
@@ -140,38 +160,59 @@ describe('assembled Desktop Companion Ungrouped create on shipped dsh web', () =
         generation: channels.generation, desktopRevision: 1,
       },
     }))
-    await expect.poll(() => surface.getSnapshot().desktopName).toBe('Assembled Desktop')
+    await expect.poll(() => surface.getSnapshot().workspaces.map(item => item.workspaceId))
+      .toContain(workspaceId)
 
     render(createElement(AssembledMobileBrowse, { surface, runtime }))
+    if (screen.queryByRole('button', { name: 'Back' }) !== null) {
+      fireEvent.click(screen.getByRole('button', { name: 'Back' }))
+    }
+    await screen.findByRole('region', { name: 'Assembled Workspace' })
     const initialIds = new Set(surface.getSnapshot().sessions.ids)
-    fireEvent.click(screen.getByRole('button', { name: 'New ungrouped Session' }))
+    fireEvent.click(within(screen.getByRole('region', { name: 'Assembled Workspace' }))
+      .getByRole('button', { name: 'New Session in Assembled Workspace' }))
     await waitFor(() => { expect(createOperations).toHaveLength(1) })
-    await waitFor(() => { expect(received[0]).toMatchObject({ type: 'session-created' }) })
+    await waitFor(() => { expect(received).toHaveLength(1) })
+    expect(received[0]).toMatchObject({ type: 'session-created' })
     await waitFor(() => { expect(surface.getSnapshot().sessions.ids).toHaveLength(initialIds.size + 1) })
-    const ungroupedSessionId = surface.getSnapshot().sessions.ids.find(id => !initialIds.has(id))
+    const workspaceSessionId = surface.getSnapshot().sessions.ids.find(id => !initialIds.has(id))
+    if (workspaceSessionId === undefined) throw new Error('Workspace-owned Session was not projected')
+    await screen.findByRole('heading', { name: workspaceSessionId })
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }))
+    expect(within(screen.getByRole('region', { name: 'Assembled Workspace' }))
+      .getByRole('treeitem', { name: 'New Session' }).getAttribute('data-session-row')).toBe(workspaceSessionId)
+
+    fireEvent.click(screen.getByRole('button', { name: 'New ungrouped Session' }))
+    await waitFor(() => { expect(surface.getSnapshot().sessions.ids).toHaveLength(initialIds.size + 2) })
+    const ungroupedSessionId = surface.getSnapshot().sessions.ids.find(id => (
+      !initialIds.has(id) && id !== workspaceSessionId
+    ))
     if (ungroupedSessionId === undefined) throw new Error('Ungrouped Session was not projected')
     await screen.findByRole('heading', { name: ungroupedSessionId })
     fireEvent.click(screen.getByRole('button', { name: 'Back' }))
     expect(within(screen.getByRole('region', { name: 'Ungrouped' }))
       .getByRole('treeitem', { name: 'New Session' }).getAttribute('data-session-row')).toBe(ungroupedSessionId)
 
-    expect(createOperations[0]).toMatchObject({ type: 'create-session' })
-    expect(createOperations[0]).not.toHaveProperty('workspaceId')
-    const listed = await listDesktopHostSessions(listRpc(first.running.url, cookie))
-    expect(listedSessionIds(listed)).toEqual(expect.arrayContaining([...initialHostIds, ungroupedSessionId]))
+    expect(createOperations).toHaveLength(2)
+    expect(createOperations[0]).toMatchObject({ type: 'create-session', workspaceId })
+    expect(createOperations[1]).not.toHaveProperty('workspaceId')
+    const listed = await listDesktopHostSessions(rpc)
+    expect(listedSessionIds(listed)).toEqual(expect.arrayContaining([
+      ...initialHostIds, workspaceSessionId, ungroupedSessionId,
+    ]))
     const restoredLedger = await DesktopCompanionOperationLedger.load(
       new FileDesktopCompanionOperationStore(ledgerPath),
     )
-    const operation = createOperations[0]
-    if (operation === undefined) throw new Error('expected Ungrouped create-session operation')
-    await expect(restoredLedger.query(parsePersonalPairingId(channels.pairingSelector), operation.operationId))
-      .resolves.toMatchObject({ type: 'session-created', operationId: operation.operationId })
-    await expect(owner.queryOperationStatus(
-      parsePersonalPairingId(channels.pairingSelector), operation.operationId,
-    )).resolves.toMatchObject({
-      type: 'status', operationId: operation.operationId,
-      committed: { type: 'session-created', operationId: operation.operationId },
-    })
+    for (const operation of createOperations) {
+      await expect(restoredLedger.query(parsePersonalPairingId(channels.pairingSelector), operation.operationId))
+        .resolves.toMatchObject({ type: 'session-created', operationId: operation.operationId })
+      await expect(owner.queryOperationStatus(
+        parsePersonalPairingId(channels.pairingSelector), operation.operationId,
+      )).resolves.toMatchObject({
+        type: 'status', operationId: operation.operationId,
+        committed: { type: 'session-created', operationId: operation.operationId },
+      })
+    }
   }, 180_000)
 })
 
