@@ -215,10 +215,7 @@ describe('assembled Desktop Companion Ask User question on shipped dsh web', () 
     expect(followUp.answers).toEqual([{ id: 'q1', selected: ['Yes'] }])
     expect(llm.requests.length).toBeGreaterThan(requestCountBeforeAnswer)
     expect(llm.requests.length).toBe(2)
-    for (const request of llm.requests) {
-      const body = isRecord(request.body) ? JSON.stringify(request.body) : ''
-      expect(body.includes('ask_user_question') || body.includes('tool_call_id')).toBe(true)
-    }
+    expect(answeredFollowUpRequest(llm.requests, 'a-different-tool-call-id')).toBeUndefined()
     expect(owner.pendingInteractions(sessionId, channels.attachmentKey.slice())).toHaveLength(0)
   }, 180_000)
 })
