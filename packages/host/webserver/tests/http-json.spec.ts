@@ -7,7 +7,7 @@ import {
   writeHttpError,
   writeJson,
   writeRetryAfterError,
-} from '../src/http-json.ts'
+} from '../src/http.ts'
 
 const LIMITS = {
   maxBytes: 16,
