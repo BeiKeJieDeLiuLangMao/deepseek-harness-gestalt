@@ -40,8 +40,13 @@ describe('Mobile Companion JSON projection', () => {
     expect(question.questions).toEqual([{ id: 'q1', question: 'Continue?', options: [{ label: 'Yes' }] }])
     await expect(approval.answer('allowed-once')).resolves.toBeUndefined()
     await expect(question.answer({ answers: [{ id: 'q1', selected: ['Yes'] }] })).resolves.toBeUndefined()
-    expect(approval.draft).toEqual({ outcome: 'allowed-once' })
-    expect(question.draft).toEqual({ answers: [{ id: 'q1', selected: ['Yes'] }] })
+    expect(adapted.conversations[sessionId]?.pending).toHaveLength(2)
+    const cleared = projection()
+    const conversationDto = cleared.conversations[0]
+    if (conversationDto === undefined) throw new Error('expected conversation DTO')
+    conversationDto.pending = []
+    const next = adaptMobileCompanionProjection(cleared, settle)
+    expect(next.conversations[sessionId]?.pending).toEqual([])
     expect(settle).toHaveBeenNthCalledWith(1, {
       kind: 'approval', sessionId, interactionId: 'approval-rpc',
       result: { ok: true, value: { outcome: 'allowed-once' } },
@@ -65,12 +70,12 @@ describe('Mobile Companion JSON projection', () => {
       throw new Error('expected adapted pending interactions')
     }
     await expect(approval.answer('rejected')).rejects.toThrow('could not be sent')
-    expect(approval.draft).toEqual({})
+    expect(approval.draft).toEqual({ outcome: 'rejected' })
     await expect(question.answer({ answers: [{ id: 'q1', selected: ['Yes'] }] }))
       .rejects.toThrow('could not be sent')
-    expect(question.draft).toEqual({})
+    expect(question.draft).toEqual({ answers: [{ id: 'q1', selected: ['Yes'] }] })
     await expect(question.cancel()).rejects.toThrow('could not be sent')
-    expect(question.draft).toEqual({})
+    expect(question.draft).toEqual({ answers: [{ id: 'q1', selected: ['Yes'] }] })
   })
 
   it('rejects class-backed values and malformed conversation nodes', () => {

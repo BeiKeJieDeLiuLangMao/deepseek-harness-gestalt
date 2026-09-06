@@ -165,6 +165,7 @@ export interface MobilePendingApproval {
   readonly toolName: string
   readonly callId?: string
   readonly reason?: string
+  /** Last user-selected outcome; kept after a failed settlement so retry can resend it. */
   readonly draft: { readonly outcome?: 'allowed-once' | 'rejected' }
   answer(outcome: 'allowed-once' | 'rejected'): Promise<void>
 }
@@ -175,6 +176,7 @@ export interface MobilePendingQuestion {
   readonly interactionId: string
   readonly sessionId: SessionId
   readonly questions: readonly AskUserQuestionItem[]
+  /** Last user-selected answers; kept after a failed settlement so retry can resend them. */
   readonly draft: { readonly answers?: AskUserQuestionAnswer['answers'] }
   answer(answer: AskUserQuestionAnswer): Promise<void>
   cancel(): Promise<void>
@@ -845,17 +847,12 @@ function adaptConversation(
         draft: {},
         answer: async (outcome) => {
           approval.draft.outcome = outcome
-          try {
-            await settle({
-              kind: 'approval',
-              sessionId: SessionId(wait.sessionId),
-              interactionId: wait.interactionId,
-              result: { ok: true, value: { outcome } },
-            })
-          } catch (error) {
-            approval.draft.outcome = undefined
-            throw error
-          }
+          await settle({
+            kind: 'approval',
+            sessionId: SessionId(wait.sessionId),
+            interactionId: wait.interactionId,
+            result: { ok: true, value: { outcome } },
+          })
         },
       }
       return approval
@@ -868,17 +865,12 @@ function adaptConversation(
       draft: {},
       answer: async (answer) => {
         question.draft.answers = answer.answers
-        try {
-          await settle({
-            kind: 'question',
-            sessionId: SessionId(wait.sessionId),
-            interactionId: wait.interactionId,
-            result: { ok: true, value: { answer } },
-          })
-        } catch (error) {
-          question.draft.answers = undefined
-          throw error
-        }
+        await settle({
+          kind: 'question',
+          sessionId: SessionId(wait.sessionId),
+          interactionId: wait.interactionId,
+          result: { ok: true, value: { answer } },
+        })
       },
       cancel: async () => {
         await settle({
