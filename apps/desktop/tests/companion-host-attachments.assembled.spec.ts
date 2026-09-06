@@ -2,6 +2,7 @@
 
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { glob, readFile } from 'node:fs/promises'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { parsePersonalPairingId } from '@deepseek-ai/dsh-remote-access'
 import {
@@ -18,6 +19,7 @@ import {
 import type { RunningWebHost } from '../src/spawn-web-host.ts'
 import { DesktopCompanionOperationLedger, FileDesktopCompanionOperationStore } from '../src/companion-operation-ledger.ts'
 import { generateDesktopHostTypertArtifacts, startShippedWebHost, stopShippedWebHosts } from './shipped-web-host.ts'
+import { decompressZstdFrame, scanZstdFrames } from '../../../packages/session/session-persistence-jsonl/src/zstd.ts'
 import { CompanionForegroundRuntime } from '../../mobile/src/companion-lifecycle.ts'
 import { CompanionUncertainOperationSettlement, InMemoryCompanionCacheStore, parseCompanionDesktopId } from '../../mobile/src/companion-cache.ts'
 import { MobileSnowCompanionConnection, MobileSnowCompanionProductChannel } from '../../mobile/src/noise-companion-product.ts'
@@ -112,11 +114,15 @@ describe('assembled Desktop Companion attachments on shipped dsh web', () => {
       },
     })
     const originalFetch = globalThis.fetch
-    globalThis.fetch = vi.fn(async (_input, init) => {
-      ciphertext = new Uint8Array(await new Response(init?.body).arrayBuffer())
-      return new Response(JSON.stringify({
-        capability: 'A'.repeat(43), byteLength: ciphertext.byteLength, expiresAt: Date.now() + 60_000,
-      }), { status: 201, headers: { 'content-type': 'application/json' } })
+    globalThis.fetch = vi.fn(async (input, init) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+      if (url === 'https://platform.example/v1/remote-attachments') {
+        ciphertext = new Uint8Array(await new Response(init?.body).arrayBuffer())
+        return new Response(JSON.stringify({
+          capability: 'A'.repeat(43), byteLength: ciphertext.byteLength, expiresAt: Date.now() + 60_000,
+        }), { status: 201, headers: { 'content-type': 'application/json' } })
+      }
+      return await originalFetch(input, init)
     })
     try {
       const search = product.search(needle)
@@ -147,10 +153,14 @@ describe('assembled Desktop Companion attachments on shipped dsh web', () => {
         expect(opened.filter(candidate => candidate.operationId === transfer.operationId)).toHaveLength(1)
       }
       expect(submitted).toHaveLength(3)
+      const durableLog = await durableSessionLog(first.home, sessionId)
+      expect((durableLog.match(/"type":"session\/attachment-admitted"/g) ?? [])).toHaveLength(3)
+      expect(durableLog).toContain('payload.bin')
+      expect(durableLog).toContain('pixel.png')
+      expect(durableLog).toContain('notes.txt')
       for (const [index, [name, mediaType, bytes]] of expectedFiles.entries()) {
         expect(submitted[index]).toMatchObject({ name })
-        if (name !== 'pixel.png') expect(submitted[index]?.mediaType).toBe(mediaType)
-        else expect(submitted[index]?.mediaType.startsWith('image/')).toBe(true)
+        expect(submitted[index]?.mediaType).toBe(mediaType)
         expect(submitted[index]?.plaintext).toEqual(bytes)
       }
     } finally {
@@ -200,6 +210,18 @@ async function snowChannels(): Promise<{
     desktop: desktopNegotiation.finish(mobileNegotiation.payload),
     attachmentKey, pairingSelector, desktopAttachmentId, generation,
   }
+}
+
+async function durableSessionLog(home: string, sessionId: string): Promise<string> {
+  const root = join(home, '.dsh')
+  const matches: string[] = []
+  for await (const match of glob(`**/${sessionId}/session.jsonl.zstd`, { cwd: root })) matches.push(match)
+  if (matches[0] === undefined) return ''
+  const bytes = await readFile(join(root, matches[0]))
+  const scan = scanZstdFrames(bytes)
+  const chunks: Buffer[] = []
+  for (const frame of scan.frames) chunks.push(await decompressZstdFrame(bytes.subarray(frame.start, frame.end)))
+  return Buffer.concat(chunks).toString('utf8')
 }
 
 function synchronizedRuntime(): CompanionForegroundRuntime {
