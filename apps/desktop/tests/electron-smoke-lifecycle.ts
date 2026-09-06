@@ -76,7 +76,11 @@ export async function stopOwnedSmokeHost(identity: SmokeHostIdentity | undefined
     throw new Error(`refusing to signal reused Desktop smoke Host pid ${String(identity.pid)}`)
   }
   const command = processCommand(identity.pid)
-  if (!command.includes(`DSH_HOME=${resolve(dshHome)}`) || !/\b(?:dsh|bin\.ts|bin\.js)\b/.test(command)) {
+  const environment = processEnvironment(identity.pid)
+  const expectedHome = `DSH_HOME=${resolve(dshHome)}`
+  const hasExpectedHome = environment.split(/\s+/u).includes(expectedHome)
+  const isWebHost = /(?:^|\s)web\s+.*--host\s+127\.0\.0\.1\s+--port\s+0(?:\s|$)/u.test(command)
+  if (!hasExpectedHome || !isWebHost) {
     throw new Error(`refusing to signal unverified Desktop smoke Host pid ${String(identity.pid)}`)
   }
   process.kill(identity.pid, 'SIGTERM')
@@ -92,6 +96,10 @@ function processStart(pid: number): string {
 }
 
 function processCommand(pid: number): string {
+  return execFileSync('ps', ['-p', String(pid), '-o', 'command='], { encoding: 'utf8' }).trim()
+}
+
+function processEnvironment(pid: number): string {
   return execFileSync('ps', ['eww', '-p', String(pid), '-o', 'command='], { encoding: 'utf8' }).trim()
 }
 
