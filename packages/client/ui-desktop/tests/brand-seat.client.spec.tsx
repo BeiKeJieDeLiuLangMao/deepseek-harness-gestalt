@@ -16,6 +16,6 @@ describe('BrandSeat', () => {
     expect(wordmark?.querySelectorAll('path').length).toBeGreaterThan(8)
     expect(wordmark?.querySelector('rect[x="129.348"]')).not.toBeNull()
     expect(wordmark?.querySelector('text')?.textContent).toBe('GESTALT')
-    expect(wordmark?.querySelector('[id="dsh-wordmark-whale-clip"]')).toBeNull()
+    expect(Number(wordmark?.getAttribute('viewBox')?.split(' ')[0])).toBeGreaterThan(23.16)
   })
 })
