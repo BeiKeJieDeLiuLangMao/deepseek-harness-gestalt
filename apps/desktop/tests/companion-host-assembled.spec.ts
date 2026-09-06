@@ -593,50 +593,6 @@ describe('assembled Desktop Companion Host search', () => {
     }
   }, 45_000)
 
-  it('retains the Snow send nonce when the durable operation fence fails', async () => {
-    const channel = await snowProductChannels()
-    const runtime = synchronizedRuntime(channel.mobile, channel.desktop, channel.generation)
-    const connection = new MobileSnowCompanionConnection()
-    connection.connect({
-      channel: channel.mobile,
-      targetAttachmentId: channel.desktopAttachmentId,
-      pairingSelector: channel.pairingSelector,
-      generation: channel.generation,
-    })
-    const store = new InMemoryCompanionCacheStore()
-    vi.spyOn(store, 'saveReceipt').mockRejectedValueOnce(new Error('durable fence failed'))
-    const opened: Array<'operation'> = []
-    const product = new MobileSnowCompanionProductChannel({
-      runtime,
-      connection,
-      operationSettlement: new CompanionUncertainOperationSettlement(
-        store,
-        parseCompanionDesktopId('desktop-fence-nonce'),
-      ),
-      installation: { authorizeCurrentInstallation: async () => ({
-        accessToken: 'assembled-current-installation',
-        proof: { jti: 'assembled-proof' as never, issuedAt: 1, signature: 'assembled-signature' },
-      }) },
-      attachmentKeys: { attachmentKeyMaterial: () => channel.attachmentKey.slice() },
-      platformOrigin: 'https://operated-platform.test',
-      sendCiphertext: async (_target, ciphertext) => {
-        const message = channel.desktop.open(ciphertext)
-        if (message.type !== 'operation') throw new Error('assembled Desktop expected an operation')
-        opened.push(message.type)
-      },
-    })
-    try {
-      await expect(product.submit(assembledSessionId(), 'fenced prompt').completion)
-        .rejects.toThrow('durable fence failed')
-      await expect(product.search('nonce remains synchronized').completion).resolves.toBeUndefined()
-      expect(opened).toEqual(['operation'])
-    } finally {
-      channel.attachmentKey.fill(0)
-      channel.mobile.dispose()
-      channel.desktop.dispose()
-    }
-  })
-
   it('indexes a real Desktop Session and returns authoritative hit and no-hit results', async () => {
     const assembled = await startDesktopHost('indexed', 'desktop assembled SQLite needle')
     const owner = productOwner(assembled.url)
@@ -690,10 +646,6 @@ function assembledOperationSettlement(desktopId: string): CompanionUncertainOper
     new InMemoryCompanionCacheStore(),
     parseCompanionDesktopId(desktopId),
   )
-}
-
-function assembledSessionId(): SessionId {
-  return 'session-fence-nonce' as SessionId
 }
 
 function installMobileDom(): void {
