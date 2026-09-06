@@ -6,6 +6,7 @@ import {
   parseRelayRouteId,
 } from '@deepseek-ai/dsh-remote-protocol'
 import { SessionId } from '@deepseek-ai/dsh-session/types'
+import { MobilePendingSettlementRejectedError } from '../src/companion-projection.ts'
 import { CompanionAttachmentDeliveryUncertainError } from '../src/companion-attachment.ts'
 import { CompanionForegroundRuntime } from '../src/companion-lifecycle.ts'
 import {
@@ -335,7 +336,7 @@ describe('MobileCompanionSurface', () => {
 
     await expect(approval.answer('allowed-once')).resolves.toBeUndefined()
     await expect(question.answer({ answers: [{ id: 'q1', selected: ['Yes'] }] }))
-      .rejects.toThrow('not accepted: not-pending')
+      .rejects.toBeInstanceOf(MobilePendingSettlementRejectedError)
     expect(question.draft).toEqual({ answers: [{ id: 'q1', selected: ['Yes'] }] })
     expect(conversation?.pending).toHaveLength(2)
     expect(channel.mutations.settle).toHaveBeenNthCalledWith(1, {

@@ -5,6 +5,7 @@ import {
   assertCompanionJsonProjection,
   parseMobileConversationProjection,
   MobilePendingDraftStore,
+  MobilePendingSettlementRejectedError,
   type MobileCompanionProjectionDto,
   type MobilePendingSettlement,
 } from '../src/companion-projection.ts'
@@ -83,6 +84,7 @@ describe('Mobile Companion JSON projection', () => {
       throw new Error('expected adapted pending Ask User')
     }
     const answers = [{ id: 'q1', selected: ['Yes'] }]
+    await expect(question.answer({ answers })).rejects.toBeInstanceOf(MobilePendingSettlementRejectedError)
     await expect(question.answer({ answers })).rejects.toThrow('not accepted: not-pending')
     expect(question.draft).toEqual({ answers })
     expect(adapted.conversations[SessionId('session-one')]?.pending).toHaveLength(2)
@@ -114,6 +116,74 @@ describe('Mobile Companion JSON projection', () => {
     }
     expect(nextApproval.draft).toEqual({ outcome: 'allowed-once' })
     expect(nextQuestion.draft).toEqual({ answers: [{ id: 'q1', selected: ['Yes'] }] })
+  })
+
+  it('keeps a draft across a later snapshot of the same Session, interaction, and generation', async () => {
+    const drafts = new MobilePendingDraftStore()
+    const first = adaptMobileCompanionProjection(projection(), vi.fn(async () => {
+      throw new Error('Companion encrypted operation could not be sent')
+    }), drafts, 3)
+    const approval = first.conversations[SessionId('session-one')]?.pending[0]
+    if (approval?.kind !== 'approval') throw new Error('expected adapted pending Approval')
+    await expect(approval.answer('allowed-once')).rejects.toThrow('could not be sent')
+    const refreshed = adaptMobileCompanionProjection(projection(), vi.fn(async () => ({ accepted: true as const })), drafts, 3)
+    const next = refreshed.conversations[SessionId('session-one')]?.pending[0]
+    if (next?.kind !== 'approval') throw new Error('expected refreshed pending Approval')
+    expect(next.draft).toEqual({ outcome: 'allowed-once' })
+  })
+
+  it('isolates reused interaction ids across Sessions and Host generations', async () => {
+    const drafts = new MobilePendingDraftStore()
+    const first = adaptMobileCompanionProjection(projection(), vi.fn(async () => {
+      throw new Error('Companion encrypted operation could not be sent')
+    }), drafts, 1)
+    const approval = first.conversations[SessionId('session-one')]?.pending[0]
+    if (approval?.kind !== 'approval') throw new Error('expected adapted pending Approval')
+    await expect(approval.answer('allowed-once')).rejects.toThrow('could not be sent')
+    const otherSession = projection()
+    const otherConversation = otherSession.conversations[0]
+    if (otherConversation === undefined) throw new Error('expected conversation DTO')
+    otherSession.sessions.ids = ['session-two']
+    otherSession.sessions.byId = {
+      'session-two': {
+        id: 'session-two', title: 'Two', displayTitle: 'Two', running: true, blank: false, updatedAt: 1,
+      },
+    }
+    otherConversation.sessionId = 'session-two'
+    otherConversation.pending = [{
+      kind: 'approval', interactionId: 'approval-rpc', sessionId: 'session-two',
+      payload: { approvalId: 'approval-id', toolName: 'write', reason: 'Allow write' },
+    }]
+    const isolated = adaptMobileCompanionProjection(otherSession, vi.fn(async () => ({ accepted: true as const })), drafts, 1)
+    expect(isolated.conversations[SessionId('session-two')]?.pending[0]?.kind).toBe('approval')
+    if (isolated.conversations[SessionId('session-two')]?.pending[0]?.kind !== 'approval') {
+      throw new Error('expected isolated pending Approval')
+    }
+    expect(isolated.conversations[SessionId('session-two')]?.pending[0].draft).toEqual({})
+    const nextGeneration = adaptMobileCompanionProjection(projection(), vi.fn(async () => ({ accepted: true as const })), drafts, 2)
+    const nextApproval = nextGeneration.conversations[SessionId('session-one')]?.pending[0]
+    if (nextApproval?.kind !== 'approval') throw new Error('expected next-generation pending Approval')
+    expect(nextApproval.draft).toEqual({})
+  })
+
+  it('drops drafts when the Host projection no longer lists the pending row', async () => {
+    const drafts = new MobilePendingDraftStore()
+    const first = adaptMobileCompanionProjection(projection(), vi.fn(async () => {
+      throw new Error('Companion encrypted operation could not be sent')
+    }), drafts, 1)
+    const approval = first.conversations[SessionId('session-one')]?.pending[0]
+    if (approval?.kind !== 'approval') throw new Error('expected adapted pending Approval')
+    await expect(approval.answer('allowed-once')).rejects.toThrow('could not be sent')
+    const terminal = projection()
+    const conversationDto = terminal.conversations[0]
+    if (conversationDto === undefined) throw new Error('expected conversation DTO')
+    conversationDto.pending = []
+    const next = adaptMobileCompanionProjection(terminal, vi.fn(async () => ({ accepted: true as const })), drafts, 1)
+    expect(next.conversations[SessionId('session-one')]?.pending).toEqual([])
+    const revived = adaptMobileCompanionProjection(projection(), vi.fn(async () => ({ accepted: true as const })), drafts, 1)
+    const revivedApproval = revived.conversations[SessionId('session-one')]?.pending[0]
+    if (revivedApproval?.kind !== 'approval') throw new Error('expected revived pending Approval')
+    expect(revivedApproval.draft).toEqual({})
   })
 
   it('rejects class-backed values and malformed conversation nodes', () => {

@@ -237,7 +237,7 @@ export class MobileCompanionSurface {
     this.#attachmentOperationId = undefined
     this.#refreshOperationId = undefined
     this.#createdSessionFocus = undefined
-    this.#pendingDrafts.retain(new Set())
+    this.#pendingDrafts.retain([])
     this.#snapshot = emptySurfaceSnapshot()
     this.publish()
   }
@@ -252,6 +252,7 @@ export class MobileCompanionSurface {
       projection,
       () => Promise.reject(new Error('Companion interaction requires foreground synchronization')),
       this.#pendingDrafts,
+      0,
     )
     this.#snapshot = {
       ...adapted,
@@ -348,13 +349,16 @@ export class MobileCompanionSurface {
         const presentationMessage = pendingFocus !== undefined && pendingCreatedSession?.blank === true
           ? { ...message, sessions: { ...message.sessions, current: pendingFocus.sessionId } }
           : message
+        const previousConnection = this.#activeConnection
+        const replacingConnection = previousConnection !== undefined && previousConnection.token !== token
+        if (replacingConnection) this.#pendingDrafts.retain([])
+        const generation = this.#runtime.currentConnectionGeneration() ?? 0
         const projection = adaptMobileCompanionProjection(
           presentationMessage,
           settlement => this.settlePending(active, settlement),
           this.#pendingDrafts,
+          generation,
         )
-        const previousConnection = this.#activeConnection
-        const replacingConnection = previousConnection !== undefined && previousConnection.token !== token
         const conversations = { ...projection.conversations }
         if (!replacingConnection) {
           for (const pending of this.#historyInFlight.values()) {
