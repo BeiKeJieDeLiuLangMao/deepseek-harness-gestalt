@@ -171,7 +171,8 @@ describe('assembled Desktop Companion attachments on shipped dsh web', () => {
         const sha256 = createHash('sha256').update(bytes).digest('hex')
         expect(admitted[index]).toMatchObject({
           operationId: opened.filter(operation => operation.type === 'offer-attachment')[index]?.operationId,
-          attachment: { name, mediaType, bytes: bytes.byteLength, sha256 },
+          source: 'companion', ignorable: true,
+          attachment: { attachmentId: `sha256:${sha256}`, name, mediaType, bytes: bytes.byteLength, sha256 },
         })
         const stored = new Uint8Array(await readFile(join(
           first.home, '.dsh', 'attachments', 'v1', 'objects', sha256.slice(0, 2), sha256,
@@ -232,19 +233,29 @@ async function snowChannels(): Promise<{
 
 function admittedAttachments(log: string): Array<{
   operationId: string
-  attachment: { name?: string; mediaType: string; bytes: number; sha256: string }
+  source: string
+  ignorable: boolean
+  attachment: { attachmentId: string; name?: string; mediaType: string; bytes: number; sha256: string }
 }> {
   const values = []
   for (const line of log.split('\n')) {
     if (!line.includes('"type":"session/attachment-admitted"')) continue
-    const event = JSON.parse(line) as { data?: { operationId?: unknown; attachment?: unknown } }
+    const event = JSON.parse(line) as {
+      ignorable?: unknown
+      data?: { operationId?: unknown; source?: unknown; attachment?: unknown }
+    }
     const attachment = event.data?.attachment
     if (typeof event.data?.operationId !== 'string' || typeof attachment !== 'object' || attachment === null) continue
     const ref = attachment as Record<string, unknown>
-    if (typeof ref.mediaType !== 'string' || typeof ref.bytes !== 'number' || typeof ref.sha256 !== 'string') continue
+    if (typeof event.data.source !== 'string' || typeof event.ignorable !== 'boolean'
+      || typeof ref.attachmentId !== 'string' || typeof ref.mediaType !== 'string'
+      || typeof ref.bytes !== 'number' || typeof ref.sha256 !== 'string') continue
     values.push({
       operationId: event.data.operationId,
+      source: event.data.source,
+      ignorable: event.ignorable,
       attachment: {
+        attachmentId: ref.attachmentId,
         ...(typeof ref.name === 'string' ? { name: ref.name } : {}),
         mediaType: ref.mediaType, bytes: ref.bytes, sha256: ref.sha256,
       },
