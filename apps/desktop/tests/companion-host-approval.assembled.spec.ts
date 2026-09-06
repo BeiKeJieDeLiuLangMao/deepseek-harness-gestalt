@@ -213,7 +213,7 @@ describe('assembled Desktop Companion Approval on shipped dsh web', () => {
     const log = await approvalResultLog(first.home, sessionId)
     const bashResult = bashToolResult(log)
     if (bashResult === undefined) throw new Error('the approval-gated bash tool/result never reached the Host log')
-    expect(log).toContain('"type":"turn/end"')
+    expect(turnEndedAfter(log, bashResult.seq)).toBe(true)
     if (expectWritten) {
       expect(bashResult.isError).toBe(false)
       expect(bashResult.text).not.toContain('the user rejected escalating this command')
@@ -231,11 +231,19 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function bashToolResult(log: string): { callId: string; isError: boolean; text: string } | undefined {
+function turnEndedAfter(log: string, seq: number): boolean {
+  return log.split('\n').some((line) => {
+    if (!line.includes('"type":"turn/end"')) return false
+    const event = JSON.parse(line) as { seq?: unknown }
+    return typeof event.seq === 'number' && event.seq > seq
+  })
+}
+
+function bashToolResult(log: string): { callId: string; isError: boolean; seq: number; text: string } | undefined {
   let callId: string | undefined
   for (const line of log.split('\n')) {
     if (!line.includes('"type":"assistant/message"') || !line.includes('"name":"bash"')) continue
-    const event = JSON.parse(line) as { data?: { message?: { content?: unknown } } }
+    const event = JSON.parse(line) as { seq?: unknown; data?: { message?: { content?: unknown } } }
     const content = event.data?.message?.content
     if (!Array.isArray(content)) continue
     const call = content.find(block => isRecord(block) && block.type === 'tool-call' && block.name === 'bash')
@@ -244,14 +252,14 @@ function bashToolResult(log: string): { callId: string; isError: boolean; text: 
   if (callId === undefined) return undefined
   for (const line of log.split('\n')) {
     if (!line.includes('"type":"tool/result"')) continue
-    const event = JSON.parse(line) as { data?: { message?: { content?: unknown } } }
+    const event = JSON.parse(line) as { seq?: unknown; data?: { message?: { content?: unknown } } }
     const content = event.data?.message?.content
     if (!Array.isArray(content)) continue
     const result = content.find(block => isRecord(block) && block.type === 'tool-result' && block.toolCallId === callId)
     if (!isRecord(result) || !Array.isArray(result.content)) continue
     const text = result.content.find(part => isRecord(part) && typeof part.text === 'string')
-    if (isRecord(text) && typeof text.text === 'string') {
-      return { callId, isError: result.isError === true, text: text.text }
+    if (isRecord(text) && typeof text.text === 'string' && typeof event.seq === 'number') {
+      return { callId, isError: result.isError === true, seq: event.seq, text: text.text }
     }
   }
   return undefined
@@ -260,7 +268,8 @@ function bashToolResult(log: string): { callId: string; isError: boolean; text: 
 async function approvalResultLog(home: string, sessionId: string): Promise<string> {
   await expect.poll(async () => {
     const log = await durableSessionLog(home, sessionId)
-    return bashToolResult(log) !== undefined && log.includes('"type":"turn/end"')
+    const result = bashToolResult(log)
+    return result !== undefined && turnEndedAfter(log, result.seq)
   }).toBe(true)
   return await durableSessionLog(home, sessionId)
 }
