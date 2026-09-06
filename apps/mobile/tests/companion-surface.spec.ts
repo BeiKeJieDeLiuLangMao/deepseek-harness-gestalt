@@ -334,7 +334,10 @@ describe('MobileCompanionSurface', () => {
     }
 
     await expect(approval.answer('allowed-once')).resolves.toBeUndefined()
-    await expect(question.answer({ answers: [{ id: 'q1', selected: ['Yes'] }] })).resolves.toBeUndefined()
+    await expect(question.answer({ answers: [{ id: 'q1', selected: ['Yes'] }] }))
+      .rejects.toThrow('not accepted: not-pending')
+    expect(question.draft).toEqual({ answers: [{ id: 'q1', selected: ['Yes'] }] })
+    expect(conversation?.pending).toHaveLength(2)
     expect(channel.mutations.settle).toHaveBeenNthCalledWith(1, {
       kind: 'approval', sessionId: 'session-one', interactionId: 'approval-rpc',
       result: { ok: true, value: { outcome: 'allowed-once' } },

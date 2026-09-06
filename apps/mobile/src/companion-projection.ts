@@ -128,6 +128,44 @@ export type MobilePendingSettlementReceipt =
   | { readonly accepted: true }
   | { readonly accepted: false; readonly reason: string }
 
+/** User-selected Approval or Ask User values retained across failed settlement and later Host snapshots. */
+export type MobilePendingDraft =
+  | { readonly kind: 'approval'; readonly outcome: 'allowed-once' | 'rejected' }
+  | { readonly kind: 'question'; readonly answers: AskUserQuestionAnswer['answers'] }
+
+/** Mobile-owned store of last user selections keyed by Desktop interaction id. */
+export class MobilePendingDraftStore {
+  readonly #drafts = new Map<string, MobilePendingDraft>()
+
+  /**
+   * Read the last user selection for one still-pending interaction.
+   * @param interactionId - Desktop HMAC interaction id.
+   * @returns stored draft, or undefined when the user has not selected a value.
+   */
+  get(interactionId: string): MobilePendingDraft | undefined {
+    return this.#drafts.get(interactionId)
+  }
+
+  /**
+   * Record a user selection before Desktop settlement.
+   * @param interactionId - Desktop HMAC interaction id.
+   * @param draft - last user-selected Approval outcome or Ask User answers.
+   */
+  set(interactionId: string, draft: MobilePendingDraft): void {
+    this.#drafts.set(interactionId, draft)
+  }
+
+  /**
+   * Drop drafts whose interaction ids are no longer in the Host pending list.
+   * @param liveInteractionIds - interaction ids in the latest Host projection.
+   */
+  retain(liveInteractionIds: ReadonlySet<string>): void {
+    for (const interactionId of [...this.#drafts.keys()]) {
+      if (!liveInteractionIds.has(interactionId)) this.#drafts.delete(interactionId)
+    }
+  }
+}
+
 /** Generation-bound interaction response sent to the Paired Desktop. */
 export type MobilePendingSettlement =
   | {
@@ -775,6 +813,7 @@ function invalidConversationProjection(): never {
 export function adaptMobileCompanionProjection(
   dto: MobileCompanionProjectionDto,
   settle: (request: MobilePendingSettlement) => Promise<MobilePendingSettlementReceipt>,
+  drafts: MobilePendingDraftStore = new MobilePendingDraftStore(),
 ): AdaptedMobileCompanionProjection {
   const sessions = adaptSessions(dto.sessions)
   const workspaces = dto.workspaces.map((workspace): WorkspaceView => ({
@@ -786,11 +825,14 @@ export function adaptMobileCompanionProjection(
     updatedAt: workspace.updatedAt,
   }))
   const conversations: Partial<Record<SessionId, MobileConversationView>> = {}
+  const liveInteractionIds = new Set<string>()
   for (const candidate of dto.conversations) {
     const conversation = parseMobileConversationProjection(candidate)
     const sessionId = SessionId(conversation.sessionId)
-    conversations[sessionId] = adaptConversation(conversation, settle)
+    conversations[sessionId] = adaptConversation(conversation, settle, drafts)
+    for (const wait of conversation.pending) liveInteractionIds.add(wait.interactionId)
   }
+  drafts.retain(liveInteractionIds)
   return { desktopName: dto.desktopName, sessions, workspaces, conversations }
 }
 
@@ -830,10 +872,12 @@ function adaptSessions(dto: MobileSessionListDto): SessionListState {
 function adaptConversation(
   dto: MobileConversationProjectionDto,
   settle: (request: MobilePendingSettlement) => Promise<MobilePendingSettlementReceipt>,
+  drafts: MobilePendingDraftStore,
 ): MobileConversationView {
   const sessionId = SessionId(dto.sessionId)
   const pending = dto.pending.map((wait): MobilePendingCarrier => {
     if (wait.kind === 'approval') {
+      const stored = drafts.get(wait.interactionId)
       const approval: MobilePendingApproval = {
         kind: 'approval',
         interactionId: wait.interactionId,
@@ -844,41 +888,44 @@ function adaptConversation(
         ...(wait.payload.reason === undefined || wait.payload.reason === ''
           ? {}
           : { reason: wait.payload.reason }),
-        draft: {},
+        draft: stored?.kind === 'approval' ? { outcome: stored.outcome } : {},
         answer: async (outcome) => {
+          drafts.set(wait.interactionId, { kind: 'approval', outcome })
           approval.draft.outcome = outcome
-          await settle({
+          await requireAcceptedReceipt(settle({
             kind: 'approval',
             sessionId: SessionId(wait.sessionId),
             interactionId: wait.interactionId,
             result: { ok: true, value: { outcome } },
-          })
+          }))
         },
       }
       return approval
     }
+    const stored = drafts.get(wait.interactionId)
     const question: MobilePendingQuestion = {
       kind: 'question',
       interactionId: wait.interactionId,
       sessionId: SessionId(wait.sessionId),
       questions: wait.payload.questions,
-      draft: {},
+      draft: stored?.kind === 'question' ? { answers: stored.answers } : {},
       answer: async (answer) => {
+        drafts.set(wait.interactionId, { kind: 'question', answers: answer.answers })
         question.draft.answers = answer.answers
-        await settle({
+        await requireAcceptedReceipt(settle({
           kind: 'question',
           sessionId: SessionId(wait.sessionId),
           interactionId: wait.interactionId,
           result: { ok: true, value: { answer } },
-        })
+        }))
       },
       cancel: async () => {
-        await settle({
+        await requireAcceptedReceipt(settle({
           kind: 'question',
           sessionId: SessionId(wait.sessionId),
           interactionId: wait.interactionId,
           result: { ok: false, error: { code: 'cancelled' } },
-        })
+        }))
       },
     }
     return question
@@ -904,4 +951,12 @@ function adaptConversation(
     blank: dto.blank,
     lastAgentError: dto.lastAgentError,
   }
+}
+
+async function requireAcceptedReceipt(
+  receipt: Promise<MobilePendingSettlementReceipt>,
+): Promise<void> {
+  const settled = await receipt
+  if (settled.accepted) return
+  throw new Error(`Companion pending settlement was not accepted: ${settled.reason}`)
 }

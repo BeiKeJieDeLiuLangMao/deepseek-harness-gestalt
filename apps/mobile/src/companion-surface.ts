@@ -20,6 +20,7 @@ import {
   adaptMobileCompanionProjection,
   assertCompanionJsonProjection,
   type MobileCompanionProjectionDto,
+  MobilePendingDraftStore,
   type MobileConversationView,
   type MobilePendingSettlement,
   type MobilePendingSettlementReceipt,
@@ -211,6 +212,7 @@ export class MobileCompanionSurface {
   }>()
   readonly #historyOperations = new Map<CompanionOperationId, PendingHistoryOperation>()
   readonly #historyInFlight = new Map<SessionId, PendingHistoryOperation>()
+  readonly #pendingDrafts = new MobilePendingDraftStore()
 
   /** @param runtime - current physical-connection synchronization authority. */
   constructor(runtime: CompanionForegroundRuntime) { this.#runtime = runtime }
@@ -235,6 +237,7 @@ export class MobileCompanionSurface {
     this.#attachmentOperationId = undefined
     this.#refreshOperationId = undefined
     this.#createdSessionFocus = undefined
+    this.#pendingDrafts.retain(new Set())
     this.#snapshot = emptySurfaceSnapshot()
     this.publish()
   }
@@ -248,6 +251,7 @@ export class MobileCompanionSurface {
     const adapted = adaptMobileCompanionProjection(
       projection,
       () => Promise.reject(new Error('Companion interaction requires foreground synchronization')),
+      this.#pendingDrafts,
     )
     this.#snapshot = {
       ...adapted,
@@ -347,6 +351,7 @@ export class MobileCompanionSurface {
         const projection = adaptMobileCompanionProjection(
           presentationMessage,
           settlement => this.settlePending(active, settlement),
+          this.#pendingDrafts,
         )
         const previousConnection = this.#activeConnection
         const replacingConnection = previousConnection !== undefined && previousConnection.token !== token
