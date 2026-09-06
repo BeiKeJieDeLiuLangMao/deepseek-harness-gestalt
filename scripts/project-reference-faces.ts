@@ -38,7 +38,6 @@ export const GESTALT_COMPILER_FACES: Readonly<Record<ProjectFace, readonly strin
   ],
   client: [
     'apps/mobile',
-    'packages/client/runtime',
     'packages/client/ui-better-sidebar',
     'packages/client/ui-browser',
     'packages/client/ui-desktop',
@@ -66,7 +65,7 @@ const WORKSPACE_MANIFESTS = [
 const GESTALT_PROJECT_PATTERNS = [
   'apps/{desktop,mobile,platform}/tsconfig.json',
   'packages/browser/*/tsconfig.json',
-  'packages/client/{runtime,ui-better-sidebar,ui-browser,ui-desktop,ui-member-questions,ui-workbench}/tsconfig.json',
+  'packages/client/{ui-better-sidebar,ui-browser,ui-desktop,ui-member-questions,ui-workbench}/tsconfig.json',
   'packages/core/{agent-tool-eligibility,tools-eligibility}/tsconfig.json',
   'packages/host/apiproxy/tsconfig.json',
   'packages/interaction/{member-question-receiver,member-question-sender,tool-project-members}/tsconfig.json',

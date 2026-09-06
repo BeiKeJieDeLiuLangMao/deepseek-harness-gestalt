@@ -56,7 +56,7 @@ const NODE_BUILTINS = new Set([
   ...builtinModules.map(id => `node:${id}`),
 ])
 
-/** Module specifiers the web shell shares into the frozen module table (the official PLATFORM_MODULES list; `dsh-client-runtime` was removed upstream in DSH 0.1.2-alpha and no chunk requires it). */
+/** Module specifiers the web shell shares into the frozen module table. */
 const CLIENT_EXTERNALS = [
   'react',
   'react/jsx-runtime',

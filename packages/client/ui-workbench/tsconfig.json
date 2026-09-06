@@ -21,9 +21,6 @@
       "path": "../../browser/browser-workspace"
     },
     {
-      "path": "../runtime"
-    },
-    {
       "path": "../ui-browser"
     },
     {

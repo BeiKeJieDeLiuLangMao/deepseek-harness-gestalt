@@ -113,6 +113,28 @@ describe('generated tsconfig package aliases', () => {
       .toBe(resolve(root, 'packages/fs/tool-fs/src/read-policy.ts').replaceAll('\\', '/'))
   })
 
+  it('maps dsh-browser-workspace/client to its browser-safe source entry', () => {
+    const config = readFileSync(resolve(root, 'tsconfig.base.json'), 'utf8')
+    const begin = config.indexOf('      // BEGIN generated package aliases — pnpm run gen-tsconfig-paths')
+    const handwritten = config.slice(0, begin)
+    expect(handwritten).toContain(
+      '"@deepseek-ai/dsh-browser-workspace/client": ["./packages/browser/browser-workspace/src/client.ts"]',
+    )
+    const configPath = resolve(root, 'tsconfig.base.json')
+    const host = ts.createCompilerHost({})
+    const read = ts.readConfigFile(configPath, ts.sys.readFile)
+    if (read.error !== undefined) throw new Error(ts.flattenDiagnosticMessageText(read.error.messageText, '\n'))
+    const parsed = ts.parseJsonConfigFileContent(read.config, ts.sys, root, { baseUrl: root }, configPath)
+    const resolved = ts.resolveModuleName(
+      '@deepseek-ai/dsh-browser-workspace/client',
+      resolve(root, 'packages/client/ui-workbench/src/client/OfficialBrowserTab.tsx'),
+      parsed.options,
+      host,
+    )
+    expect(resolved.resolvedModule?.resolvedFileName.replaceAll('\\', '/'))
+      .toBe(resolve(root, 'packages/browser/browser-workspace/src/client.ts').replaceAll('\\', '/'))
+  })
+
   it('maps dsh-platform-account/privacy to source outside the generated region', () => {
     const config = readFileSync(resolve(root, 'tsconfig.base.json'), 'utf8')
     const begin = config.indexOf('      // BEGIN generated package aliases — pnpm run gen-tsconfig-paths')

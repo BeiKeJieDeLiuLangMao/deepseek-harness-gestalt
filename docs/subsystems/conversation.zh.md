@@ -1,12 +1,32 @@
-# 添加 Web Client Conversation Node
+# Conversation 组装
 
-[English](adding-a-conversation-node.md) | 中文
+[English](conversation.md) | 中文
 
-本教程为 Web Client Chat 视图添加一行由业务自行拥有的内容。完成后的插件会把一个持久 Session 事件族关联成一个 Context，增量构造业务 State，发布类型化 Step 数据，再渲染 keyed Chat Node；整个过程不扫描 Session 窗口或其他已渲染节点。本教程假设 Host 已经记录这些事件，且该 Client 插件已组装进 Web bundle；Host 侧外部 UI 和 Trajectory 等额外视图目标不在本文范围内。
+Conversation 是 Client `SessionEventLikeEntry` 窗口与浏览器 view 之间不绑定具体 target 的组装层。[`ui-conversation`](../../packages/client/ui-conversation/README.zh.md) 拥有 event 与 view registry、每个 `SessionBinding` 的 identity-stable binding、Turn/Step location、增量 Context 组装、target source、共享 shell 与输入编排。目标包如 [`ui-chat`](../../packages/client/ui-chat/README.zh.md) 与 [`ui-trajectory`](../../packages/client/ui-trajectory/README.zh.md) 拥有各自的 Definition、最终 snapshot 与渲染。
 
-[Conversation Node 组装决策](../../.agents/notes/implemented/architecture/2026-08-09-client-conversation-node-assembly.zh.md)记录完整的引擎模型和设计理由；本文只说明实现路径。
+本文定义数据模型，以及业务包扩展 Conversation node 的路径。[Web Client 架构](web-client.zh.md)把该子系统放在 Client model 与 Slot 之间；[Conversation Node 组装决策](../../.agents/notes/implemented/architecture/2026-08-09-client-conversation-node-assembly.zh.md)记录设计理由。
 
-## 1. 设计可回放的事件族
+## 数据模型与所有权
+
+Session Controller 拥有连续的已加载逻辑事件窗口。每个 `SessionEventLikeEntry` 都是 `{ type: 'event', event: SessionEvent }` 或 `{ type: 'chunks', event: ChunkRowEvent }`；两种内部事件都提供 `type`、`seq`、`time` 与 `data`。`ui-conversation` 把这些 entry 交给 assembler，不开启第二条 history stream、不转换 record，也不展开 packed member。每个 Session 的一个 `ConversationNodeAssembler` 应用全部已注册 Definition，并为每个已注册 view target 发布独立 source。
+
+| 概念 | Owner 与用途 |
+|---|---|
+| Event Definition | 业务包一次匹配一个标准事件或 packed Assistant run，按稳定 `(kind, id)` 相关联，折叠确定性 State，并可选择物化一个 target node。 |
+| Context | 引擎为一个 `(kind, id)` 持有的有序 Match 与当前 State。packed run 占一个 update Match；只有 update 的证据可保持 pending，直到分页补齐唯一 scalar start。 |
+| Location | 引擎从持久 boundary event 派生的 Session、Turn 或 Step 坐标。Definition 可向一个 Turn 或 Step 发布类型化数据。 |
+| View Definition | target 包为每个 Session 创建一个增量 builder，并拥有该 target 的最终 snapshot 类型。 |
+| View | Chat、Trajectory 等 Slot entry 只读取自己的 target snapshot，并渲染 target 拥有的 node。 |
+
+Chat 与 Trajectory 可以识别同一个持久事件族，但各自保留 Definition State 与最终 node payload。共享且不绑定 target 的机制仅限 identity routing、有序 replay、Location data、predecessor dependency 与 publication cadence。
+
+## Target 激活
+
+每个 Session 保留只增不减的 active target 集合。创建或读取 target source 不会激活它。Shell 会显式激活持久化或新选中的 View；其他 consumer 在首次订阅 source 时激活 target。首次激活创建该 target 的 builder，并基于当前按 target 索引的 Context 调用一次 `replace()`。后续 flush 对每个 active target 调用 `apply()`，取消订阅不会移除 target。
+
+Shell 拥有 View 选择：binding 创建、被选为 current 或 View roster 变化时，它解析已注册的 preferred View 或 Chat fallback。Assembler 只接收已解析 target id，不自行选择 Chat 或其他默认 target。第三方 View 通过相同的选择与激活操作参与。
+
+## 可回放事件族
 
 编写 Definition 前先选定稳定的业务 id。构成同一个 Node 的每条事件都必须携带该 id，或只凭自身 payload 独立推导出该 id；Client 绝不能把 update 猜测为属于“最近一个未完成”的 Context。
 
@@ -22,18 +42,19 @@
 
 系统支持增量事件。如果生产方能以较低成本发出 whole-value checkpoint，应优先采用，因为 start 位于已加载窗口之外时它仍可直接使用。每条 delta 都必须携带稳定 id，并且按照日志 `seq` 升序回放时能够确定性地产生 State；它不能依赖只存在于实时内存中的状态。如果当前历史窗口只有 update，Assembler 会保留一个 pending Context，并在更早分页补齐 start 前不构造 State。如果产品必须在 start 尚未加载时渲染，terminal 或 checkpoint 事件就必须携带足够的完整 fallback 状态，让 Definition 能直接构造结果；不要通过扫描无关事件恢复它。
 
-## 2. 实现 Definition 与类型化 Chat payload
+## Definition 与类型化 Chat payload
 
 为了完整展示关联关系，下面把生产方声明和 Client 贡献写在同一个代码块里。实际的包族中，branded id 与 `SessionEventMap` 声明留在事件生产方，Definition、Chat data 合并与 renderer 留在 Client 插件。
 
 ```ts ignore-check
 import { createElement } from 'react'
+import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import type {
-  ClientContext, ConversationLocation, ConversationNodeContext,
+  ConversationLocation, ConversationNodeContext,
   ConversationNodeDefinition,
-} from '@deepseek-ai/dsh-client-runtime/client'
-import type { ChatNodeViewProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
+} from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type { ChatNodeViewProps } from '@deepseek-ai/dsh-client-ui-chat/client'
 
 type ReviewId = Branded<'ReviewId'>
 
@@ -88,13 +109,13 @@ interface ReviewChatData {
   readonly summary?: string
 }
 
-declare module '@deepseek-ai/dsh-client-ui-conversation/client' {
+declare module '@deepseek-ai/dsh-client-ui-chat/client' {
   interface ChatNodeDataMap {
     'review-job': ReviewChatData
   }
 }
 
-declare module '@deepseek-ai/dsh-client-runtime/client' {
+declare module '@deepseek-ai/dsh-client-ui-conversation/client' {
   interface ConversationStepDataMap {
     'review-job': ReviewChatData
   }
@@ -182,10 +203,10 @@ function ReviewNodeView({ node }: ChatNodeViewProps<'review-job'>) {
   return createElement('p', null, text)
 }
 
-export const inject = ['conversationEvents', 'slots']
+export const inject = ['uiConversation', 'slots']
 
 export function apply(ctx: ClientContext): void {
-  ctx.conversationEvents.register(reviewDefinition)
+  ctx.uiConversation.events.register(reviewDefinition)
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
     name: 'conversation.chat.node',
     key: 'review-job',
@@ -199,15 +220,15 @@ export function apply(ctx: ClientContext): void {
 
 `target` 与 `buildViewNode(context)` 必须同时声明一项由 target 拥有的渲染贡献。把 `context.key` 保留为 React 侧身份，根据持久排序证据选择 `anchorSeq`，并且只返回 renderer 可以直接使用的数据。某个 target Node 一旦发布，就要继续返回同一个 key；需要暂时离开可见流时使用 `visibility: 'hidden'`，不要改为返回 `null` 撤回它。
 
-## 3. 只在 start 时查询更早的业务 Context
+## Predecessor 读取
 
 有些 Definition 需要另一个业务 kind 在当前位置之前的最新 State。`start` 会收到 `ConversationContextReader`；应在这里调用 `reader.previous<State>(kind)`，不要接收 Context 集合或扫描事件。Reader 返回当前 start `seq` 之前最近一个已启动 Context 的只读数据。
 
 Assembler 会记录这项依赖。如果后续 older prepend 带来了更近的前序 Context、补齐了原先未知的窗口缺口，或者前序 State 被修订，引擎会从 `start` 重新运行依赖方 Context，并按 `seq` 升序回放其 update。被查询的 Definition 仍负责把有用信息写入自身 State；Reader 不提供业务专用查询方法，也不授予修改其他 Context 的权限。
 
-## 4. 理解三条摄入路径
+## 窗口更新路径
 
-历史可能从尾部开始一页一页向前请求，但每个已接收分页都会先按 `seq` 升序归一化，再进入 State 回放。
+历史可以从尾部开始逐页向前请求。Session journal 先验证不重叠的逻辑 sequence range；Assembler 再按首个 `seq` 对已接受输入排序，然后回放 State。
 
 | 路径 | 引擎工作 | Definition 可观察到的行为 |
 |---|---|---|
@@ -219,7 +240,7 @@ Assembler 会记录这项依赖。如果后续 older prepend 带来了更近的�
 
 `publication` 控制发生 State 变更后何时物化。结构或 terminal 变化使用 `immediate`，高频可见 delta 使用 `animation-frame`，只为后续发布积累 State 时使用 `none`。引擎仍会按日志顺序应用每条 update；该选项只合并视图发布频率。
 
-## 5. 验证回放、分页与渲染
+## 验证义务
 
 添加聚焦测试，证明以下结果：
 
@@ -229,5 +250,7 @@ Assembler 会记录这项依赖。如果后续 older prepend 带来了更近的�
 4. prepend 更早分页只增加更早的行；数据未变化的既有 keyed Node value 不被替换。
 5. 重复的可见 delta 保持 `context.key`，并在请求 `animation-frame` 时每帧最多发布一次。
 6. keyed renderer 只消费 `node.data` 与受限 Location hook，不扫描 Session 事件窗口、Context 或 Chat Node。
+7. scalar 与 packed Assistant history 产生相同的最终 State、时间 boundary 与 target snapshot；一个 packed run 在 replace、prepend、Location replay 与 registry rebuild 中始终只占一个 Match。
+8. 创建 target source 不执行 builder 工作；显式选择或首次订阅执行一次完整 replace，后续更新到达每个 active target，重复激活不再 replace。
 
-流式与中断处理可参考 [`packages/client/ui-conversation/src/client/conversation-nodes/assistant.ts`](../../packages/client/ui-conversation/src/client/conversation-nodes/assistant.ts)，前序查询可参考 [`inbox.ts`](../../packages/client/ui-conversation/src/client/conversation-nodes/inbox.ts) 与 [`message.ts`](../../packages/client/ui-conversation/src/client/conversation-nodes/message.ts)，只发布 Turn data 而不创建自有 Node 的例子见 [`packages/client/ui-deliverables`](../../packages/client/ui-deliverables)。
+流式与中断处理参考 [`packages/client/ui-chat/src/client/conversation-nodes/assistant.ts`](../../packages/client/ui-chat/src/client/conversation-nodes/assistant.ts)，predecessor 查询参考 [`inbox.ts`](../../packages/client/ui-chat/src/client/conversation-nodes/inbox.ts) 与 [`message.ts`](../../packages/client/ui-chat/src/client/conversation-nodes/message.ts)，只发布 Turn data 而不创建自有 Node 的例子见 [`packages/client/ui-deliverables`](../../packages/client/ui-deliverables)。

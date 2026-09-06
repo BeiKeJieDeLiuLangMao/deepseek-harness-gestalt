@@ -1,5 +1,5 @@
 import { createServer } from 'node:http'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { WebSocketServer } from 'ws'
 import { parsePersonalPairingId } from '@deepseek-ai/dsh-remote-access'
 import {
@@ -19,13 +19,29 @@ import {
 import {
   DesktopCompanionOperationLedger,
 } from '../src/companion-operation-ledger.ts'
-import {
-  DesktopCompanionSurfaceDiscovery,
-  DesktopCompanionProductOwner,
-  DesktopSessionHistoryCache,
-  handleCompanionProductOperation,
+import type {
+  DesktopCompanionSurfaceDiscovery as DesktopCompanionSurfaceDiscoveryType,
+  DesktopCompanionProductOwner as DesktopCompanionProductOwnerType,
+  DesktopSessionHistoryCache as DesktopSessionHistoryCacheType,
+  handleCompanionProductOperation as HandleCompanionProductOperationType,
 } from '../src/companion-product.ts'
 import type { DesktopHostRpc, DesktopHostRpcResult } from '../src/host-rpc.ts'
+import { generateDesktopHostTypertArtifacts } from './shipped-web-host.ts'
+
+let DesktopCompanionSurfaceDiscovery: typeof DesktopCompanionSurfaceDiscoveryType
+let DesktopCompanionProductOwner: typeof DesktopCompanionProductOwnerType
+let DesktopSessionHistoryCache: typeof DesktopSessionHistoryCacheType
+let handleCompanionProductOperation: typeof HandleCompanionProductOperationType
+
+beforeAll(async () => {
+  generateDesktopHostTypertArtifacts()
+  ;({
+    DesktopCompanionSurfaceDiscovery,
+    DesktopCompanionProductOwner,
+    DesktopSessionHistoryCache,
+    handleCompanionProductOperation,
+  } = await import('../src/companion-product.ts'))
+}, 120_000)
 
 const pairingId = parsePersonalPairingId('pairing-product')
 const attachmentKey = crypto.getRandomValues(new Uint8Array(32))

@@ -64,10 +64,8 @@ type ChunkFactory = (require: (spec: string) => unknown) => ChunkExports
  * external and the loader resolves them here). A superset is safe: the
  * require only answers what the chunk actually asks for. The shell's static
  * module table seeds React, Cordis, and the UI libraries (primitives/slots).
- * `@deepseek-ai/dsh-client-runtime` was removed upstream in DSH 0.1.2-alpha
- * (its seed row became bare-name `@deepseek-ai/dsh-client-store`) and no
- * chunk ever required it, so its row is gone; so are dsh-client-web-react /
- * dsh-client-schema-form, dropped back in DSH 0.1.0-rc.8.
+ * Only the static module-table entries required by current chunks belong here.
+ * Historical feature-package rows are intentionally absent.
  */
 export const CHUNK_EXTERNALS: readonly string[] = [
   'react',
