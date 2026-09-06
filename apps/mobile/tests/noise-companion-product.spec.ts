@@ -120,7 +120,7 @@ describe('Mobile Snow Companion product channel', () => {
     product.cancel(sid('session-v3'))
     const receipt = product.settle({
       kind: 'approval', sessionId: sid('session-v3'), interactionId: parseCompanionInteractionId('interaction-v3'),
-      result: { ok: true, value: { sessionId: 'session-v3', approvalId: 'approval-v3', outcome: 'allowed-once' } },
+      result: { ok: true, value: { outcome: 'allowed-once' } },
     })
     await vi.waitFor(() => {
       const types = seal.mock.calls.map(call => (call[0] as { operation: { type: string } }).operation.type)

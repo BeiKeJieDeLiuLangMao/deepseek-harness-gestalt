@@ -132,7 +132,11 @@ describe('Mobile Noise Companion receiver', () => {
     expect(resync?.desktopName).toBe('Authenticated Desktop')
     expect(resync?.sessions.ids).toEqual(['session-v3'])
     expect(resync?.conversations.map(conversation => conversation.sessionId)).toEqual(['session-v3'])
-    expect(resync?.conversations[0]?.nodes.map(node => node.seq)).toEqual([2, 5])
+    expect(resync?.conversations[0]?.nodes.map((node) => {
+      return typeof node === 'object' && node !== null && !Array.isArray(node) && 'seq' in node
+        ? node.seq
+        : undefined
+    })).toEqual([2, 5])
     expect(acceptValidatedCompanionProjection).toHaveBeenNthCalledWith(1, expect.objectContaining({
       type: 'surface-snapshot', operationId: 'surface-v3',
     }))

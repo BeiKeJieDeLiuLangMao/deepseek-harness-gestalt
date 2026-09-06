@@ -138,7 +138,6 @@ function AssembledBrowse({
     listener => surface.subscribe(listener),
     () => surface.getSnapshot(),
   )
-  const conversation = snapshot.conversations[SessionId('session-one')]
   return createElement(MobileBrowse, {
     desktopName: snapshot.desktopName,
     connection: 'online',
@@ -154,7 +153,7 @@ function AssembledBrowse({
     search: snapshot.search,
     onSubmit: (sessionId, text) => surface.submit(sessionId, text),
     onCancel: (sessionId) => { void surface.cancel(sessionId) },
-    onLoadOlder: (sessionId) => { void surface.loadOlder(sessionId, conversation?.nodes[0]?.seq) },
+    onLoadOlder: (sessionId) => { surface.loadOlder(sessionId) },
   })
 }
 

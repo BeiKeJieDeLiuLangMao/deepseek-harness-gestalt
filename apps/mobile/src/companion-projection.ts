@@ -904,7 +904,7 @@ function adaptSessions(dto: MobileSessionListDto): SessionListState {
       ...(row.completed === undefined ? {} : { completed: row.completed }),
       ...(row.projectionValues === undefined
         ? {}
-        : { projectionValues: row.projectionValues as SessionSummary['projectionValues'] }),
+        : { projectionValues: row.projectionValues as NonNullable<SessionSummary['projectionValues']> }),
     }
     return [id, summary]
   })) as Record<SessionId, SessionSummary>
@@ -933,6 +933,9 @@ function adaptConversation(
     }
     if (wait.kind === 'approval') {
       const stored = drafts.get(key)
+      const draft: { outcome?: 'allowed-once' | 'rejected' } = stored?.kind === 'approval'
+        ? { outcome: stored.outcome }
+        : {}
       const approval: MobilePendingApproval = {
         kind: 'approval',
         interactionId: wait.interactionId,
@@ -943,10 +946,10 @@ function adaptConversation(
         ...(wait.payload.reason === undefined || wait.payload.reason === ''
           ? {}
           : { reason: wait.payload.reason }),
-        draft: stored?.kind === 'approval' ? { outcome: stored.outcome } : {},
+        draft,
         answer: async (outcome) => {
           drafts.set(key, { kind: 'approval', outcome })
-          approval.draft.outcome = outcome
+          draft.outcome = outcome
           await requireAcceptedReceipt(settle({
             kind: 'approval',
             sessionId: SessionId(wait.sessionId),
@@ -958,15 +961,18 @@ function adaptConversation(
       return approval
     }
     const stored = drafts.get(key)
+    const draft: { answers?: AskUserQuestionAnswer['answers'] } = stored?.kind === 'question'
+      ? { answers: stored.answers }
+      : {}
     const question: MobilePendingQuestion = {
       kind: 'question',
       interactionId: wait.interactionId,
       sessionId: SessionId(wait.sessionId),
       questions: wait.payload.questions,
-      draft: stored?.kind === 'question' ? { answers: stored.answers } : {},
+      draft,
       answer: async (answer) => {
         drafts.set(key, { kind: 'question', answers: answer.answers })
-        question.draft.answers = answer.answers
+        draft.answers = answer.answers
         await requireAcceptedReceipt(settle({
           kind: 'question',
           sessionId: SessionId(wait.sessionId),

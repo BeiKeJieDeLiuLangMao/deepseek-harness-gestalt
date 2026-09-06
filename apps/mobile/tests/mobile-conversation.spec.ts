@@ -241,7 +241,7 @@ describe('Mobile shared Session presentation', () => {
 
   it('renders shared Approval and Ask User flows from authoritative pending waits', () => {
     const approve = vi.fn(async () => {})
-    const answer = vi.fn(async () => {})
+    const answer = vi.fn<MobilePendingQuestion['answer']>(async () => {})
 
     const { rerender } = render(createElement(MobileConversation, {
       title: 'Interactions', onBack: () => {}, locale: 'en',
@@ -278,7 +278,9 @@ describe('Mobile shared Session presentation', () => {
   })
 
   it('advances, returns, and submits every Ask User selection after a failed settlement', async () => {
-    const answer = vi.fn(async () => { throw new Error('Companion encrypted operation could not be sent') })
+    const answer = vi.fn<MobilePendingQuestion['answer']>(async () => {
+      throw new Error('Companion encrypted operation could not be sent')
+    })
     const wait: MobilePendingQuestion = {
       kind: 'question',
       interactionId: 'rpc-questions',
@@ -320,7 +322,7 @@ describe('Mobile shared Session presentation', () => {
   })
 
   it('submits a custom Ask User answer and a skipped question through the same batch', async () => {
-    const answer = vi.fn(async () => {})
+    const answer = vi.fn<MobilePendingQuestion['answer']>(async () => {})
     const wait: MobilePendingQuestion = {
       kind: 'question',
       interactionId: 'rpc-custom',
@@ -385,7 +387,7 @@ describe('Mobile shared Session presentation', () => {
   })
 
   it('submits multi-select labels together with custom text', async () => {
-    const answer = vi.fn(async () => {})
+    const answer = vi.fn<MobilePendingQuestion['answer']>(async () => {})
     const wait: MobilePendingQuestion = {
       kind: 'question',
       interactionId: 'rpc-multi',
