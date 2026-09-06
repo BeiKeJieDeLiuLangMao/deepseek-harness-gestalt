@@ -1,5 +1,5 @@
 /**
- * Exact Zod codecs for Host-owned member-question Remote snapshot and settle.
+ * Exact Zod codecs for Host-owned member-question Remote snapshot, settle, and admitHumanTurn.
  * @module @deepseek-ai/dsh-member-question-receiver/remote-schemas
  */
 
@@ -7,6 +7,8 @@ import { z } from 'zod'
 import type { CompanionMemberQuestionSettledResult } from '@deepseek-ai/dsh-remote-protocol'
 import type {
   MemberQuestionReceiverSnapshot,
+  MemberQuestionRemoteAdmitHumanTurnRequest,
+  MemberQuestionRemoteAdmitHumanTurnResponse,
   MemberQuestionRemoteSettleRequest,
   MemberQuestionRemoteSettleResponse,
 } from './types.ts'
@@ -138,3 +140,39 @@ export const memberQuestionRemoteSettleRequestSchema = z.strictObject({
 export const memberQuestionRemoteSettleResponseSchema = terminalSchema as unknown as z.ZodType<
   MemberQuestionRemoteSettleResponse
 >
+
+/**
+ * Exact human-turn admission request: encoded uploads only, no attachment refs.
+ * @typert schema
+ */
+export const memberQuestionRemoteAdmitHumanTurnRequestSchema = z.strictObject({
+  receivingSessionId: idSchema,
+  revision: z.number().int().nonnegative(),
+  requestId: idSchema,
+  content: z.array(z.discriminatedUnion('type', [
+    z.strictObject({ type: z.literal('text'), text: z.string() }),
+    z.strictObject({
+      type: z.literal('image'),
+      mediaType: z.union([
+        z.literal('image/png'),
+        z.literal('image/jpeg'),
+        z.literal('image/webp'),
+        z.literal('image/gif'),
+      ]),
+      data: z.string().min(1),
+      name: z.string().optional(),
+    }),
+  ])).min(1),
+  mode: z.union([z.literal('queue'), z.literal('steer')]),
+}) as unknown as z.ZodType<MemberQuestionRemoteAdmitHumanTurnRequest>
+
+/**
+ * Durable admission receipt returned after Host reservation and adapter commit.
+ * @typert schema
+ */
+export const memberQuestionRemoteAdmitHumanTurnResponseSchema = z.strictObject({
+  accepted: z.literal(true),
+  receivingSessionId: idSchema,
+  revision: z.number().int().nonnegative(),
+  rpcId: idSchema,
+}) as unknown as z.ZodType<MemberQuestionRemoteAdmitHumanTurnResponse>

@@ -70,7 +70,7 @@ Session 对象还承载本地提交回显：`session.beginSubmission` 在调用�
 
 - Control baseline 表示进程本地状态，因此 Host 重启后无法重建 jobs。
 - follow 恢复失败会对调用方可见，而不会无限重试。
-- 浏览器 `memberQuestion.admitHumanTurn` 仍经剩余 Host 组合（当前为 ApiProxy）把图片提升后交给 `receiver.admitHumanTurn`。生成的 receiver Remote 仍只暴露 `snapshot` 与 `settle`。
+- ApiProxy 剩余成员提问方法是 `workspaceBinding`、`ensureWorkspaceBinding` 与 `bindWorkspace`。snapshot、settle 与人工轮次准入是生成的 `memberQuestion` Remote。
 - 文件引用补全使用共享 Agent lookup，因此可能恢复冷 Session；`skills/list` 目录是不激活 Agent 的 skill 元数据读取路径。
 - Client admission registry 分派覆盖精确身份与 adapter 上的 prompt、cancel、queue 变更与 command，命中时也会挡住库存 subagent prompt 与 interrupt 路由。`modelRoute` 为普通 Session 使用库存 Host catalog；catalog child 在功能路由打开前保持隐藏。省略 `modelRoute` 不是隐藏。`commandCatalogSessionId` 与 `skillCatalogSessionId` 只是展示 lookup，由 `ui-commands` 与 `ui-skill` 消费。`historyScope: 'owned-suffix'` 按 Host `seedLength` 裁剪展示窗；后来的 `session/end-seed` 不抬高该 floor。`ui-better-sidebar` 注册 Side Chat adapter。
 

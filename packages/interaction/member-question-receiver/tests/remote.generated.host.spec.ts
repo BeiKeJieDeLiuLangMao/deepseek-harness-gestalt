@@ -230,6 +230,7 @@ describe('generated member-question Remote codecs', () => {
     const { TYPERT_REMOTE } = await requireGeneratedArtifacts()
     const calls: unknown[] = []
     const host = await createGeneratedHost()
+    await host.receiver.bind(envelope.authority.accountId, envelope.operation.projectId, 'workspace-generated' as never)
     const arrived = await host.receiver.ingest(envelope)
     const ctx = new Context()
     contexts.push(ctx)
@@ -296,6 +297,30 @@ describe('generated member-question Remote codecs', () => {
       ok: true,
       value: { pending: [] },
     })
+    host.receiver.registerHumanTurnAdmitter(async () => ({ accepted: true as const }))
+    const arrivedText = await host.receiver.ingest({
+      ...envelope,
+      operation: { ...envelope.operation, questionId: parseMemberQuestionId('question-generated-admit') },
+    })
+    await expect(ctx.remote.memberQuestion.admitHumanTurn({
+      receivingSessionId: arrivedText.receivingSessionId,
+      revision: arrivedText.revision,
+      requestId: 'rpc-generated-text',
+      content: [{ type: 'text', text: 'Help me decide.' }],
+      mode: 'queue',
+      attachment: { attachmentId: 'forged' },
+    })).resolves.toMatchObject({
+      ok: true,
+      value: {
+        accepted: true,
+        receivingSessionId: arrivedText.receivingSessionId,
+        rpcId: 'rpc-generated-text',
+      },
+    })
+    const admitCall = calls.find(call => (call as { endpoint: string }).endpoint === 'memberQuestion/admitHumanTurn') as {
+      payload: { args: { request: Record<string, unknown> } }
+    }
+    expect(admitCall.payload.args.request.attachment).toBeUndefined()
     await dispose()
     expect((ctx.remote as { memberQuestion?: unknown }).memberQuestion).toBeUndefined()
   })

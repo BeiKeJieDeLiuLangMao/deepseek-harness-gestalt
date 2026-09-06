@@ -9,7 +9,6 @@ import type {
   MemberQuestionId,
 } from '@deepseek-ai/dsh-remote-protocol'
 import type { RpcRequest, RpcResponse } from './rpc.ts'
-import type { PromptContentPart } from './sessions.ts'
 import type { PlatformAccountId } from '@deepseek-ai/dsh-platform-account'
 import type { ProjectId } from '@deepseek-ai/dsh-project-membership'
 import type { WorkspaceId } from './workspace.ts'
@@ -56,11 +55,4 @@ export interface MemberQuestionsApi {
       | { kind: 'answered'; answers: readonly CompanionMemberQuestionAnswer[] }
       | { kind: 'declined' }
   }>): Promise<RpcResponse<CompanionMemberQuestionSettledResult>>
-  /** Materialize the Host receiving Session and admit one explicit human turn. */
-  admitHumanTurn(request: RpcRequest<{
-    receivingSessionId: ReceivingSessionId
-    revision: number
-    content: readonly PromptContentPart[]
-    mode: 'queue' | 'steer'
-  }>): Promise<RpcResponse<{ accepted: true; sessionId: ReceivingSessionId }>>
 }
