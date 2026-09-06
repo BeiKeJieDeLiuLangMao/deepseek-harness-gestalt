@@ -66,11 +66,15 @@ export function captureSmokeHostIdentity(identity: SmokeHostIdentity): SmokeHost
 
 /** Stop a logged Host only when its live command carries this run's private DSH_HOME. */
 export async function stopOwnedSmokeHost(identity: SmokeHostIdentity | undefined, dshHome: string): Promise<void> {
-  if (identity === undefined || !processExists(identity.pid)) return
+  if (identity === undefined) throw new Error('Desktop smoke Host identity was not captured')
+  if (!processExists(identity.pid)) return
   if (process.platform === 'win32') {
     throw new Error('Desktop smoke Host ownership verification is unavailable on Windows')
   }
-  if (identity.started === undefined || processStart(identity.pid) !== identity.started) return
+  if (identity.started === undefined) throw new Error('Desktop smoke Host start identity was not captured')
+  if (processStart(identity.pid) !== identity.started) {
+    throw new Error(`refusing to signal reused Desktop smoke Host pid ${String(identity.pid)}`)
+  }
   const command = processCommand(identity.pid)
   if (!command.includes(`DSH_HOME=${resolve(dshHome)}`) || !command.includes(identity.origin)) {
     throw new Error(`refusing to signal unverified Desktop smoke Host pid ${String(identity.pid)}`)

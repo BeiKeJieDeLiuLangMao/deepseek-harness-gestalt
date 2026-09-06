@@ -50,6 +50,27 @@ describe('Electron smoke lifecycle', () => {
     }
   })
 
+  it.skipIf(process.platform === 'win32')('refuses a live process with the wrong private home', async () => {
+    const expectedHome = await mkdtemp(join(tmpdir(), 'electron-smoke-expected-home-'))
+    const actualHome = await mkdtemp(join(tmpdir(), 'electron-smoke-actual-home-'))
+    const host = spawn(process.execPath, [orphanFixture, 'host', 'http://127.0.0.1:43124'], {
+      env: { ...process.env, DSH_HOME: actualHome }, stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    const observed = observeSmokeChild(host)
+    try {
+      await expect.poll(() => observed.output()).toContain('host http://127.0.0.1:43124')
+      const parsed = smokeHostIdentity(observed.output())
+      if (parsed === undefined) throw new Error('fixture Host identity missing')
+      const identity = captureSmokeHostIdentity(parsed)
+      await expect(stopOwnedSmokeHost(identity, expectedHome)).rejects.toThrow('unverified')
+      expect(() => process.kill(identity.pid, 0)).not.toThrow()
+    } finally {
+      await stopSmokeChild(host, observed.exited)
+      await rm(expectedHome, { recursive: true, force: true })
+      await rm(actualHome, { recursive: true, force: true })
+    }
+  })
+
   it('rejects a spawn failure instead of waiting for an exit that never arrives', async () => {
     const child = spawn(join(tmpdir(), `missing-electron-${process.pid}`), [], { stdio: ['ignore', 'pipe', 'pipe'] })
     const observed = observeSmokeChild(child)
