@@ -7,8 +7,18 @@ import {
   MobilePendingDraftStore,
   MobilePendingSettlementRejectedError,
   type MobileCompanionProjectionDto,
+  type MobilePendingApproval,
+  type MobilePendingQuestion,
   type MobilePendingSettlement,
 } from '../src/companion-projection.ts'
+
+function rejectExternalDraftMutation(approval: MobilePendingApproval, question: MobilePendingQuestion): void {
+  // @ts-expect-error Consumers receive a readonly view of the owner-managed Approval draft.
+  approval.draft.outcome = 'rejected'
+  // @ts-expect-error Consumers receive a readonly view of the owner-managed Ask User draft.
+  question.draft.answers = []
+}
+void rejectExternalDraftMutation
 
 describe('Mobile Companion JSON projection', () => {
   it('adapts Workspace, Session, conversation nodes, and interaction DTOs without Client Runtime', async () => {

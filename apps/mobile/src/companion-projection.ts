@@ -933,7 +933,7 @@ function adaptConversation(
     }
     if (wait.kind === 'approval') {
       const stored = drafts.get(key)
-      const draft: { outcome?: 'allowed-once' | 'rejected' } = stored?.kind === 'approval'
+      const approvalDraft: { outcome?: 'allowed-once' | 'rejected' } = stored?.kind === 'approval'
         ? { outcome: stored.outcome }
         : {}
       const approval: MobilePendingApproval = {
@@ -946,10 +946,10 @@ function adaptConversation(
         ...(wait.payload.reason === undefined || wait.payload.reason === ''
           ? {}
           : { reason: wait.payload.reason }),
-        draft,
+        draft: approvalDraft,
         answer: async (outcome) => {
           drafts.set(key, { kind: 'approval', outcome })
-          draft.outcome = outcome
+          approvalDraft.outcome = outcome
           await requireAcceptedReceipt(settle({
             kind: 'approval',
             sessionId: SessionId(wait.sessionId),
@@ -961,7 +961,7 @@ function adaptConversation(
       return approval
     }
     const stored = drafts.get(key)
-    const draft: { answers?: AskUserQuestionAnswer['answers'] } = stored?.kind === 'question'
+    const questionDraft: { answers?: AskUserQuestionAnswer['answers'] } = stored?.kind === 'question'
       ? { answers: stored.answers }
       : {}
     const question: MobilePendingQuestion = {
@@ -969,10 +969,10 @@ function adaptConversation(
       interactionId: wait.interactionId,
       sessionId: SessionId(wait.sessionId),
       questions: wait.payload.questions,
-      draft,
+      draft: questionDraft,
       answer: async (answer) => {
         drafts.set(key, { kind: 'question', answers: answer.answers })
-        draft.answers = answer.answers
+        questionDraft.answers = answer.answers
         await requireAcceptedReceipt(settle({
           kind: 'question',
           sessionId: SessionId(wait.sessionId),
