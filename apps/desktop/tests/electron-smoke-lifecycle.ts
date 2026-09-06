@@ -76,7 +76,7 @@ export async function stopOwnedSmokeHost(identity: SmokeHostIdentity | undefined
     throw new Error(`refusing to signal reused Desktop smoke Host pid ${String(identity.pid)}`)
   }
   const command = processCommand(identity.pid)
-  if (!command.includes(`DSH_HOME=${resolve(dshHome)}`) || !command.includes(identity.origin)) {
+  if (!command.includes(`DSH_HOME=${resolve(dshHome)}`) || !/\b(?:dsh|bin\.ts|bin\.js)\b/.test(command)) {
     throw new Error(`refusing to signal unverified Desktop smoke Host pid ${String(identity.pid)}`)
   }
   process.kill(identity.pid, 'SIGTERM')

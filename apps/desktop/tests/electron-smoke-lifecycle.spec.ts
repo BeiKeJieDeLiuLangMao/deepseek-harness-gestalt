@@ -53,12 +53,12 @@ describe('Electron smoke lifecycle', () => {
   it.skipIf(process.platform === 'win32')('refuses a live process with the wrong private home', async () => {
     const expectedHome = await mkdtemp(join(tmpdir(), 'electron-smoke-expected-home-'))
     const actualHome = await mkdtemp(join(tmpdir(), 'electron-smoke-actual-home-'))
-    const host = spawn(process.execPath, [orphanFixture, 'host', 'http://127.0.0.1:43124'], {
+    const host = spawn(process.execPath, [orphanFixture, 'host', 'web', '--host', '127.0.0.1', '--port', '0'], {
       env: { ...process.env, DSH_HOME: actualHome }, stdio: ['ignore', 'pipe', 'pipe'],
     })
     const observed = observeSmokeChild(host)
     try {
-      await expect.poll(() => observed.output()).toContain('host http://127.0.0.1:43124')
+      await expect.poll(() => observed.output()).toContain('host http://127.0.0.1:43123')
       const parsed = smokeHostIdentity(observed.output())
       if (parsed === undefined) throw new Error('fixture Host identity missing')
       const identity = captureSmokeHostIdentity(parsed)
@@ -68,6 +68,25 @@ describe('Electron smoke lifecycle', () => {
       await stopSmokeChild(host, observed.exited)
       await rm(expectedHome, { recursive: true, force: true })
       await rm(actualHome, { recursive: true, force: true })
+    }
+  })
+
+  it.skipIf(process.platform === 'win32')('captures Host identity before a later smoke failure', async () => {
+    const dshHome = await mkdtemp(join(tmpdir(), 'electron-smoke-early-host-'))
+    const parent = spawn(process.execPath, [orphanFixture], {
+      env: { ...process.env, DSH_HOME: dshHome }, stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    const observed = observeSmokeChild(parent)
+    try {
+      await expect.poll(() => observed.output()).toContain('host http://127.0.0.1:43123')
+      const parsed = smokeHostIdentity(`${observed.output()}error later smoke failure\n`)
+      if (parsed === undefined) throw new Error('early Host announcement missing')
+      const identity = captureSmokeHostIdentity(parsed)
+      await expect(observed.exited).resolves.toBeUndefined()
+      await expect(stopOwnedSmokeHost(identity, dshHome)).resolves.toBeUndefined()
+      expect(() => process.kill(identity.pid, 0)).toThrow()
+    } finally {
+      await rm(dshHome, { recursive: true, force: true })
     }
   })
 

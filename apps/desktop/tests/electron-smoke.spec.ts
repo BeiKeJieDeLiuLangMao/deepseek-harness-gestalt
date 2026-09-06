@@ -53,10 +53,13 @@ describe.skipIf(process.env.DSH_DESKTOP_SMOKE !== '1')('Desktop Host smoke', () 
         const failure = processFailure()
         if (failure !== undefined) throw failure
         const text = await readFile(log, 'utf8')
+        const announcedHost = smokeHostIdentity(text)
+        if (hostIdentity === undefined && announcedHost !== undefined) {
+          hostIdentity = captureSmokeHostIdentity(announcedHost)
+        }
         if (text.includes('\nok\n') || text.endsWith('\nok') || /(^|\n)ok\n/.test(text) || text.split('\n').includes('ok')) {
-          const host = smokeHostIdentity(text)
+          const host = announcedHost
           expect(host).toBeDefined()
-          if (host !== undefined) hostIdentity = captureSmokeHostIdentity(host)
           expect(text).toMatch(/(^|\n)ok(\n|$)/)
           expect(text).toContain('companion entry search hit {"type":"session-search"')
           expect(text).toContain('desktop-companion-smoke-indexed-needle')

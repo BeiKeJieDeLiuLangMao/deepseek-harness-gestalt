@@ -2,13 +2,13 @@ import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
 const role = process.argv[2]
-const origin = process.argv[3] ?? 'http://127.0.0.1:43123'
+const origin = 'http://127.0.0.1:43123'
 if (role === 'host') {
   process.on('SIGTERM', () => {})
   process.stdout.write(`host ${origin} pid ${process.pid}\n`)
   setInterval(() => {}, 1_000)
 } else {
-  const host = spawn(process.execPath, [fileURLToPath(import.meta.url), 'host', origin], {
+  const host = spawn(process.execPath, [fileURLToPath(import.meta.url), 'host', 'web', '--host', '127.0.0.1', '--port', '0'], {
     env: process.env,
     detached: false,
     stdio: ['ignore', 'pipe', 'inherit'],
