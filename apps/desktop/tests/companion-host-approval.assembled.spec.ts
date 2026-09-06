@@ -210,8 +210,8 @@ describe('assembled Desktop Companion Approval on shipped dsh web', () => {
     }, pairingDependencies(owner, channels))).resolves.toMatchObject({
       type: 'interaction-receipt', accepted: false, reason: 'not-pending',
     })
-    const log = await approvalResultLog(first.home, sessionId)
-    const bashResult = bashToolResult(log)
+    const log = await approvalResultLog(first.home, sessionId, marker)
+    const bashResult = bashToolResult(log, marker)
     if (bashResult === undefined) throw new Error('the approval-gated bash tool/result never reached the Host log')
     expect(turnEndedAfter(log, bashResult.seq)).toBe(true)
     if (expectWritten) {
@@ -239,14 +239,15 @@ function turnEndedAfter(log: string, seq: number): boolean {
   })
 }
 
-function bashToolResult(log: string): { callId: string; isError: boolean; seq: number; text: string } | undefined {
+function bashToolResult(log: string, marker: string): { callId: string; isError: boolean; seq: number; text: string } | undefined {
   let callId: string | undefined
   for (const line of log.split('\n')) {
     if (!line.includes('"type":"assistant/message"') || !line.includes('"name":"bash"')) continue
     const event = JSON.parse(line) as { seq?: unknown; data?: { message?: { content?: unknown } } }
     const content = event.data?.message?.content
     if (!Array.isArray(content)) continue
-    const call = content.find(block => isRecord(block) && block.type === 'tool-call' && block.name === 'bash')
+    const call = content.find(block => isRecord(block) && block.type === 'tool-call'
+      && block.name === 'bash' && JSON.stringify(block.arguments).includes(marker))
     if (isRecord(call) && typeof call.id === 'string') callId = call.id
   }
   if (callId === undefined) return undefined
@@ -265,10 +266,10 @@ function bashToolResult(log: string): { callId: string; isError: boolean; seq: n
   return undefined
 }
 
-async function approvalResultLog(home: string, sessionId: string): Promise<string> {
+async function approvalResultLog(home: string, sessionId: string, marker: string): Promise<string> {
   await expect.poll(async () => {
     const log = await durableSessionLog(home, sessionId)
-    const result = bashToolResult(log)
+    const result = bashToolResult(log, marker)
     return result !== undefined && turnEndedAfter(log, result.seq)
   }).toBe(true)
   return await durableSessionLog(home, sessionId)
