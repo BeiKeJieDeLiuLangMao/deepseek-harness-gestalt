@@ -77,8 +77,9 @@ export async function stopOwnedSmokeHost(identity: SmokeHostIdentity | undefined
   }
   const command = processCommand(identity.pid)
   const environment = processEnvironment(identity.pid)
-  const expectedHome = `DSH_HOME=${resolve(dshHome)}`
-  const hasExpectedHome = environment.split(/\s+/u).includes(expectedHome)
+  const expectedHome = escapeRegExp(resolve(dshHome))
+  const hasExpectedHome = new RegExp(`(?:^|\\s)DSH_HOME=${expectedHome}(?=\\s[A-Za-z_][A-Za-z0-9_]*=|$)`, 'u')
+    .test(environment)
   const isWebHost = /(?:^|\s)web\s+.*--host\s+127\.0\.0\.1\s+--port\s+0(?:\s|$)/u.test(command)
   if (!hasExpectedHome || !isWebHost) {
     throw new Error(`refusing to signal unverified Desktop smoke Host pid ${String(identity.pid)}`)
@@ -89,6 +90,10 @@ export async function stopOwnedSmokeHost(identity: SmokeHostIdentity | undefined
   if (!await processExitsWithin(identity.pid, TERMINATION_GRACE_MS)) {
     throw new Error(`Desktop smoke Host ${String(identity.pid)} did not exit after SIGKILL`)
   }
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
 }
 
 function processStart(pid: number): string {
