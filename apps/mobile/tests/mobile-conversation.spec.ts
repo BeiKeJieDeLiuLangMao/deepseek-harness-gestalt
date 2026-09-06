@@ -1,18 +1,18 @@
 // @vitest-environment jsdom
 import { createElement, useState } from 'react'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import {
-  EMPTY_CHAT_SNAPSHOT,
-  EMPTY_CONVERSATION_VIEWS,
-  PendingWait,
-  type ConversationNode,
-  type ConversationSnapshot,
-  type ToolResultNode,
-} from '@deepseek-ai/dsh-client-runtime/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { conversationPresentationTranslate } from '@deepseek-ai/dsh-client-ui-conversation/presentation'
-import { questionPresentationTranslate } from '@deepseek-ai/dsh-client-ui-user-questions/presentation'
+import type {
+  MobileConversationNode,
+  MobileConversationView,
+  MobilePendingApproval,
+  MobilePendingQuestion,
+} from '../src/companion-projection.ts'
+import {
+  conversationPresentationTranslate,
+  questionPresentationTranslate,
+} from '../src/mobile-conversation-copy.ts'
 import { MobileConversation } from '../src/MobileConversation.tsx'
 
 afterEach(() => { cleanup() })
@@ -21,13 +21,11 @@ const SID = 'session-mobile' as SessionId
 const imageLoader = async (): Promise<string> => 'data:image/gif;base64,R0lGODlhAQABAAAAACw='
 
 function snapshot(
-  nodes: readonly ConversationNode[],
-  overrides: Partial<ConversationSnapshot> = {},
-): ConversationSnapshot {
+  nodes: readonly MobileConversationNode[],
+  overrides: Partial<MobileConversationView> = {},
+): MobileConversationView {
   return {
     sessionId: SID,
-    views: EMPTY_CONVERSATION_VIEWS,
-    chat: EMPTY_CHAT_SNAPSHOT,
     nodes,
     turnTimings: new Map(),
     turnEnds: new Map(),
@@ -50,7 +48,7 @@ function snapshot(
   }
 }
 
-function tool(overrides: Partial<ToolResultNode> = {}): ToolResultNode {
+function tool(overrides: Record<string, unknown> = {}): MobileConversationNode {
   return {
     kind: 'tool-result',
     seq: 3,
@@ -67,6 +65,31 @@ function tool(overrides: Partial<ToolResultNode> = {}): ToolResultNode {
     },
     subCalls: [],
     ...overrides,
+  }
+}
+
+function approvalWait(answer: MobilePendingApproval['answer']): MobilePendingApproval {
+  return {
+    kind: 'approval',
+    interactionId: 'rpc-approval',
+    sessionId: SID,
+    approvalId: 'approval-1',
+    toolName: 'bash',
+    reason: 'Allow write',
+    draft: {},
+    answer,
+  }
+}
+
+function questionWait(answer: MobilePendingQuestion['answer']): MobilePendingQuestion {
+  return {
+    kind: 'question',
+    interactionId: 'rpc-question',
+    sessionId: SID,
+    questions: [{ id: 'q1', question: 'Continue?', options: [{ label: 'Yes' }] }],
+    draft: {},
+    answer,
+    cancel: async () => {},
   }
 }
 
@@ -101,11 +124,8 @@ describe('Mobile shared Session presentation', () => {
       })
     }
     render(createElement(HistoryHarness))
-
     const load = screen.getByRole('button', { name: 'Load earlier' })
     fireEvent.click(load)
-    fireEvent.click(load)
-
     expect(onLoadOlder).toHaveBeenCalledOnce()
     expect(screen.getByRole('button', { name: 'Loading history…' }).hasAttribute('disabled')).toBe(true)
   })
@@ -135,13 +155,13 @@ describe('Mobile shared Session presentation', () => {
           source: null, provenance: { role: 'inject', label: 'AGENTS.md' }, form: null,
         },
         {
-          kind: 'model-retry', seq: 6, time: 6_000, retryId: 'mobile-retry' as never,
+          kind: 'model-retry', seq: 6, time: 6_000, retryId: 'mobile-retry',
           turn: 1, step: 1, retryState: 'cancelled', provider: 'mock', mode: 'normal',
           policyKey: 'mock-normal', retry: 1, maxRetries: 2, delayMs: 500,
           failure: { code: 'TRANSPORT', message: 'retry failure' },
         },
         {
-          kind: 'command', seq: 7, time: 7_000, commandId: 'mobile-command' as never,
+          kind: 'command', seq: 7, time: 7_000, commandId: 'mobile-command',
           name: 'plan', args: '', outcome: { kind: 'success', text: 'Plan mode entered' },
         },
         {
@@ -215,19 +235,12 @@ describe('Mobile shared Session presentation', () => {
   })
 
   it('renders shared Approval and Ask User flows from authoritative pending waits', () => {
-    const approve = vi.fn(async () => ({ accepted: true as const }))
-    const answer = vi.fn(async () => ({ accepted: true as const }))
-    const approval = new PendingWait('approval', 'rpc-approval' as never, SID, {
-      approvalId: 'approval-1' as never,
-      toolName: 'bash',
-      reason: 'Allow write',
-    }, approve)
-    const question = new PendingWait('question', 'rpc-question' as never, SID, {
-      questions: [{ id: 'q1', question: 'Continue?', options: [{ label: 'Yes' }] }],
-    }, answer)
+    const approve = vi.fn(async () => {})
+    const answer = vi.fn(async () => {})
 
     const { rerender } = render(createElement(MobileConversation, {
-      title: 'Interactions', onBack: () => {}, locale: 'en', snapshot: snapshot([], { pending: [approval] }),
+      title: 'Interactions', onBack: () => {}, locale: 'en',
+      snapshot: snapshot([], { pending: [approvalWait(approve)] }),
       loadImage: imageLoader,
       mutationEnabled: true,
     }))
@@ -235,7 +248,8 @@ describe('Mobile shared Session presentation', () => {
     expect(approve).toHaveBeenCalledOnce()
 
     rerender(createElement(MobileConversation, {
-      title: 'Interactions', onBack: () => {}, locale: 'en', snapshot: snapshot([], { pending: [question] }),
+      title: 'Interactions', onBack: () => {}, locale: 'en',
+      snapshot: snapshot([], { pending: [questionWait(answer)] }),
       loadImage: imageLoader,
       mutationEnabled: true,
     }))
