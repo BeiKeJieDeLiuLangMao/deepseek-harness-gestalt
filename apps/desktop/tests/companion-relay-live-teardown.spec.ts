@@ -4,10 +4,10 @@ import { describe, expect, it, vi } from 'vitest'
 import { runTeardown } from './teardown-collector.ts'
 
 describe('afterEach teardown error collection', () => {
-  it('runs the later-registered cleanup after an earlier one fails and reports the aggregate', async () => {
-    // Registration order [thrower, later]: reverse runs later first, then the
-    // thrower — proving a failure never skips what still follows it, and the
-    // final stop concern is attempted after both.
+  it('keeps draining after a cleanup fails and reports every error in execution order', async () => {
+    // Registration order [later, thrower]: reverse drains thrower first, so
+    // the failure happens before the remaining cleanup and the final stop —
+    // removing the per-entry catch would leave 'later' and 'stop' unrun.
     const order: string[] = []
     const later = vi.fn(() => { order.push('later') })
     const thrower = vi.fn(() => {
@@ -18,16 +18,14 @@ describe('afterEach teardown error collection', () => {
       order.push('stop')
       throw new Error('host stop failed')
     })
-    await expect(runTeardown([thrower, later], stop)).rejects.toMatchObject({
+    await expect(runTeardown([later, thrower], stop)).rejects.toMatchObject({
       name: 'AggregateError',
       errors: [
-        // Execution order: thrower runs after later and fails first; the stop
-        // concern is attempted last, so its error lands second.
         expect.objectContaining({ message: 'cleanup failed' }),
         expect.objectContaining({ message: 'host stop failed' }),
       ],
     })
-    expect(order).toEqual(['later', 'thrower', 'stop'])
+    expect(order).toEqual(['thrower', 'later', 'stop'])
   })
 
   it('rethrows a single cleanup failure directly and still runs the rest', async () => {
@@ -37,7 +35,7 @@ describe('afterEach teardown error collection', () => {
       order.push('thrower')
       throw new Error('only failure')
     })
-    await expect(runTeardown([thrower, later], () => { order.push('stop') })).rejects.toThrow('only failure')
-    expect(order).toEqual(['later', 'thrower', 'stop'])
+    await expect(runTeardown([later, thrower], () => { order.push('stop') })).rejects.toThrow('only failure')
+    expect(order).toEqual(['thrower', 'later', 'stop'])
   })
 })
