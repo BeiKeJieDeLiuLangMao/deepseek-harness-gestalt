@@ -28,9 +28,9 @@ describe('Android acceptance candidate manifest', () => {
   })
 
   it('rejects changed APK, signer, missing or wrong or duplicate runtime identity, workflow, and packaging provenance', () => {
-    for (const mutation of ['artifact', 'signer', 'missing-identity', 'baked-origin', 'duplicate-identity', 'workflow', 'packaging'] as const) {
+    for (const mutation of ['artifact', 'signer-output', 'signer', 'missing-identity', 'baked-origin', 'duplicate-identity', 'workflow', 'packaging'] as const) {
       const fixture = createFixture(mutation === 'baked-origin' ? 'https://wrong.example' : origin,
-        mutation === 'duplicate-identity', mutation === 'missing-identity')
+        mutation === 'duplicate-identity', mutation === 'missing-identity', mutation === 'signer-output')
       if (mutation === 'artifact') writeFileSync(fixture.apk, 'changed')
       else if (mutation === 'signer' || mutation === 'workflow' || mutation === 'packaging') {
         const manifest = JSON.parse(readFileSync(fixture.manifest, 'utf8')) as Record<string, unknown>
@@ -46,6 +46,7 @@ describe('Android acceptance candidate manifest', () => {
       expect(result.status, mutation).not.toBe(0)
       const stage = {
         artifact: 'verify-runtime-identity-count:0',
+        'signer-output': 'verify-signer-digest',
         signer: 'verify-manifest',
         'missing-identity': 'verify-runtime-identity-count:0',
         'baked-origin': 'verify-baked-origin',
@@ -58,7 +59,7 @@ describe('Android acceptance candidate manifest', () => {
   }, 30_000)
 })
 
-function createFixture(bakedOrigin = origin, duplicateIdentity = false, missingIdentity = false) {
+function createFixture(bakedOrigin = origin, duplicateIdentity = false, missingIdentity = false, invalidSignerOutput = false) {
   const directory = mkdtempSync(join(tmpdir(), 'dsh-mobile-acceptance-candidate-'))
   temporary.push(directory)
   const apk = join(directory, 'Gestalt-0.1.3-8.apk')
@@ -88,7 +89,8 @@ function createFixture(bakedOrigin = origin, duplicateIdentity = false, missingI
     ].join('\n'), apk, runtimeIdentityBody])
   }
   const signer = 'b'.repeat(64)
-  writeFileSync(apksigner, `#!/usr/bin/env bash\nprintf 'Signer #1 certificate SHA-256 digest: ${signer}\\n'\n`)
+  const signerOutput = invalidSignerOutput ? 'unexpected signer output' : `Signer #1 certificate SHA-256 digest: ${signer}`
+  writeFileSync(apksigner, `#!/usr/bin/env bash\nprintf '${signerOutput}\\n'\n`)
   chmodSync(apksigner, 0o755)
   writeFileSync(manifest, `${JSON.stringify({
     version: 1,

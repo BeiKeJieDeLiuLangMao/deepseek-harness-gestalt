@@ -44,7 +44,9 @@ apk_digest=$(sha256_file "$apk")
 stage=read-signer-certificate
 signer=$($apksigner verify --print-certs "$apk" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')
 stage=verify-signer-digest
-[[ "$signer" =~ ^[0-9a-fA-F]{64}$ ]]
+if [[ ! "$signer" =~ ^[0-9a-fA-F]{64}$ ]]; then
+  false
+fi
 signer=$(printf '%s' "$signer" | tr '[:upper:]' '[:lower:]')
 stage=read-baked-origin
 baked_origin=$(jq -er 'select(.version == 1) | .origin | strings' "$runtime_identity")
