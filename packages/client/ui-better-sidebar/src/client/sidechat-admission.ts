@@ -109,6 +109,18 @@ function createSidechatAdmission(ctx: SidebarContext): SessionAdmissionAdapter {
     },
     modelRoute: (sessionId) => {
       return {
+        inspect: async (signal) => {
+          const draft = sidechatDraftOf(sessionId)
+          const parentSessionId = draft?.parentSessionId
+            ?? ctx.sessions.list.getSnapshot().byId[sessionId]?.parentId
+          const result = await api.sidechatModel(
+            sessionId,
+            parentSessionId,
+            draft !== undefined,
+            signal,
+          )
+          return { ok: true, value: result }
+        },
         selectModel: async (selection: ModelSelection, signal) => {
           const provisional = sidechatDraftOf(sessionId) !== undefined
           const result = await api.sidechatSelectModel(sessionId, selection, provisional, signal)

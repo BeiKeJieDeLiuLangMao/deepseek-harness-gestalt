@@ -218,6 +218,10 @@ describe('Session fixture lifecycle', () => {
       prompt: async () => ({ ok: true, value: { accepted: true } }),
       cancel: async () => ({ ok: true, value: { accepted: true } }),
       modelRoute: () => ({
+        inspect: async () => ({
+          ok: true,
+          value: { current: selected, routable: true },
+        }),
         selectModel: async () => ({ ok: true, value: { selected } }),
       }),
     }
@@ -228,6 +232,7 @@ describe('Session fixture lifecycle', () => {
     expect(changed).toHaveBeenCalledTimes(1)
 
     const dropSecond = runtime.sessions.registerAdmission(sessionId, second)
+    expect(runtime.sessions.modelRoute(sessionId)?.kind).toBe('feature')
     expect(runtime.sessions.commandCatalogSessionId(sessionId)).toBeUndefined()
     expect(runtime.sessions.skillCatalogSessionId(sessionId)).toBeUndefined()
     await expect(runtime.sessions.modelRoute(sessionId)?.selectModel?.(selected)).resolves.toEqual({
@@ -240,7 +245,8 @@ describe('Session fixture lifecycle', () => {
     expect(runtime.sessions.modelRoute(sessionId)).toBeDefined()
     expect(changed).toHaveBeenCalledTimes(2)
     dropSecond()
-    expect(runtime.sessions.modelRoute(sessionId)?.models).toBeTypeOf('function')
+    expect(runtime.sessions.modelRoute(sessionId)?.kind).toBe('stock')
+    expect(runtime.sessions.modelRoute(sessionId)?.inspect).toBeUndefined()
     expect(runtime.sessions.modelRoute(sessionId)?.selectModel).toBeTypeOf('function')
     expect(runtime.sessions.commandCatalogSessionId(sessionId)).toBe(sessionId)
     expect(changed).toHaveBeenCalledTimes(3)
@@ -248,7 +254,7 @@ describe('Session fixture lifecycle', () => {
     await runtime.dispose()
   })
 
-  it('matches production model-route availability while stock methods stay fail-loud', async () => {
+  it('matches production model-route availability while stock selection stays fail-loud', async () => {
     const runtime = await SlotTestRuntime.create()
     const ordinary = await runtime.sessions.add({ id: 'ordinary' }, { current: false })
     const subagent = await runtime.sessions.add({
@@ -257,11 +263,9 @@ describe('Session fixture lifecycle', () => {
     }, { current: false })
 
     const stock = runtime.sessions.modelRoute(ordinary)
-    expect(stock?.models).toBeTypeOf('function')
+    expect(stock?.kind).toBe('stock')
+    expect(stock?.inspect).toBeUndefined()
     expect(stock?.selectModel).toBeTypeOf('function')
-    await expect(stock?.models?.()).rejects.toThrow(
-      'stock model route "models" is not stubbed for session "ordinary"',
-    )
     await expect(stock?.selectModel?.({ provider: 'fixture', model: 'fixture' })).rejects.toThrow(
       'stock model route "selectModel" is not stubbed for session "ordinary"',
     )

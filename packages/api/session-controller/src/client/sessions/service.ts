@@ -727,17 +727,15 @@ export class ClientSessions implements ISessions {
   }
 
   /**
-   * Stock Host catalog and selection for one ordinary listed Session.
+   * Stock Host selection for one ordinary listed Session. The model directory
+   * reads the shared Host catalog and this Session's durable projection directly.
    * Catalog-addressed children stay off this path.
    * @param sessionId - target Session identity.
-   * @returns the Host `session.modelCatalog` / `session.selectModel` route.
+   * @returns the Host `session.selectModel` route.
    */
   private stockModelRoute(sessionId: SessionId): SessionModelRoute {
     return {
-      models: (signal) => {
-        signal?.throwIfAborted()
-        return this.remotes.session.modelCatalog()
-      },
+      kind: 'stock',
       selectModel: async (selection, signal) => {
         signal?.throwIfAborted()
         const result = await this.remotes.session.selectModel({

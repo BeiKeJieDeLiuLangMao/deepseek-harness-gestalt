@@ -736,7 +736,10 @@ describe('Session Client admission dispatch', () => {
     const parentId = sid('session-parent-0')
 
     const customModelRoute = {
-      models: vi.fn(() => Promise.resolve(ok({}))),
+      inspect: vi.fn(() => Promise.resolve(ok({
+        current: { provider: 'p', model: 'm' },
+        routable: true,
+      }))),
       selectModel: vi.fn(() => Promise.resolve(ok({ selected: { provider: 'p', model: 'm' } }))),
     }
 
@@ -751,7 +754,7 @@ describe('Session Client admission dispatch', () => {
     const drop = svc.registerAdmission(sessionId, route)
 
     const customRoute = svc.modelRoute(sessionId)
-    await expect(customRoute?.models?.()).resolves.toMatchObject({ ok: true })
+    await expect(customRoute?.inspect?.()).resolves.toMatchObject({ ok: true })
     await expect(customRoute?.selectModel?.({ provider: 'p', model: 'm' })).resolves.toMatchObject({
       ok: true,
     })
@@ -764,7 +767,7 @@ describe('Session Client admission dispatch', () => {
     expect(svc.skillCatalogSessionId(sessionId)).toBe(sessionId)
   })
 
-  it('serves stock modelCatalog and selectModel for ordinary Sessions and hides catalog children without a feature route', async () => {
+  it('serves stock selectModel for ordinary Sessions and hides catalog children without a feature route', async () => {
     const { svc, api } = bench()
     const sessionId = sid('session-stock-model')
     const parentId = sid('session-stock-parent')
@@ -811,12 +814,8 @@ describe('Session Client admission dispatch', () => {
     })
 
     const stock = svc.modelRoute(sessionId)
-    expect(stock?.models).toBeTypeOf('function')
+    expect(stock?.inspect).toBeUndefined()
     expect(stock?.selectModel).toBeTypeOf('function')
-    await expect(stock!.models!()).resolves.toMatchObject({
-      ok: true,
-      value: { default: { provider: 'fixture', model: 'fixture' } },
-    })
     api.onSelectModel = payload => Promise.resolve(ok({
       selected: {
         provider: payload.provider,
@@ -846,7 +845,10 @@ describe('Session Client admission dispatch', () => {
       prompt: vi.fn(() => Promise.resolve(ok({ accepted: true as const }))),
       cancel: vi.fn(() => Promise.resolve(ok({ accepted: true as const }))),
       modelRoute: () => ({
-        models: () => Promise.resolve(ok({ groups: [] })),
+        inspect: () => Promise.resolve(ok({
+          current: { provider: 'owned', model: 'child' },
+          routable: true,
+        })),
         selectModel: childSelect,
       }),
     })
@@ -858,14 +860,17 @@ describe('Session Client admission dispatch', () => {
 
     expect(svc.modelRoute(sid('ghost'))).toBeUndefined()
 
-    const admissionModels = vi.fn(() => Promise.resolve(ok({ groups: [{ id: 'owned' }] })))
+    const admissionInspect = vi.fn(() => Promise.resolve(ok({
+      current: { provider: 'owned', model: 'm' },
+      routable: true,
+    })))
     const admissionSelect = vi.fn(() => Promise.resolve(ok({ selected: { provider: 'owned', model: 'm' } })))
     const drop = svc.registerAdmission(sessionId, {
       prompt: vi.fn(() => Promise.resolve(ok({ accepted: true as const }))),
       cancel: vi.fn(() => Promise.resolve(ok({ accepted: true as const }))),
-      modelRoute: () => ({ models: admissionModels, selectModel: admissionSelect }),
+      modelRoute: () => ({ inspect: admissionInspect, selectModel: admissionSelect }),
     })
-    await expect(svc.modelRoute(sessionId)?.models?.()).resolves.toMatchObject({ ok: true })
+    await expect(svc.modelRoute(sessionId)?.inspect?.()).resolves.toMatchObject({ ok: true })
     await svc.modelRoute(sessionId)!.selectModel!({ provider: 'owned', model: 'm' })
     expect(admissionSelect).toHaveBeenCalledTimes(1)
     expect(api.callsOf('session.selectModel')).toHaveLength(1)
@@ -902,14 +907,14 @@ describe('Session Client admission dispatch', () => {
 
     const signal = new AbortController().signal
     const modelRoute: SessionAdmissionModelRoute = {
-      models(signalArg) {
+      inspect(signalArg) {
         expect(this).toBe(modelRoute)
         expect(signalArg).toBe(signal)
         return Promise.resolve({
           ok: false as const,
           error: {
             code: 'session/model-unavailable',
-            message: 'catalog unavailable',
+            message: 'inspection unavailable',
             details: { provider: 'owned', model: 'catalog' },
           },
         })
@@ -927,12 +932,12 @@ describe('Session Client admission dispatch', () => {
     })
 
     const routed = svc.modelRoute(sessionId)!
-    const models = await routed.models!(signal)
-    const modelsFailure = failureOf(models)
-    expect(modelsFailure).toBeInstanceOf(Error)
-    expect(modelsFailure).toMatchObject({
+    const inspection = await routed.inspect!(signal)
+    const inspectionFailure = failureOf(inspection)
+    expect(inspectionFailure).toBeInstanceOf(Error)
+    expect(inspectionFailure).toMatchObject({
       code: 'session/model-unavailable',
-      message: 'catalog unavailable',
+      message: 'inspection unavailable',
       details: { provider: 'owned', model: 'catalog' },
     })
 
@@ -944,15 +949,19 @@ describe('Session Client admission dispatch', () => {
     })
     expect(api.callsOf('session.selectModel')).toEqual([])
 
-    const selectOnly: SessionAdmissionModelRoute = {
+    const replacementRoute: SessionAdmissionModelRoute = {
+      inspect: () => Promise.resolve(ok({
+        current: { provider: 'owned', model: 'ok' },
+        routable: true,
+      })),
       selectModel: () => Promise.resolve(ok({ selected: { provider: 'owned', model: 'ok' } })),
     }
     svc.registerAdmission(sessionId, {
       prompt: vi.fn(() => Promise.resolve(ok({ accepted: true as const }))),
       cancel: vi.fn(() => Promise.resolve(ok({ accepted: true as const }))),
-      modelRoute: () => selectOnly,
+      modelRoute: () => replacementRoute,
     })
-    expect(svc.modelRoute(sessionId)?.models).toBeUndefined()
+    expect(svc.modelRoute(sessionId)?.inspect).toBeTypeOf('function')
   })
 
   it('omits modelRoute without hiding stock, unlike an explicit undefined hide', async () => {
@@ -1052,10 +1061,14 @@ describe('Session Client admission dispatch', () => {
     omit()
 
     const childSelect = vi.fn(() => Promise.resolve(ok({ selected: { provider: 'owned', model: 'child' } })))
+    const childInspect = vi.fn(() => Promise.resolve(ok({
+      current: { provider: 'owned', model: 'child' },
+      routable: true,
+    })))
     const drop = svc.registerAdmission(childId, {
       prompt: vi.fn(() => Promise.resolve(ok({ accepted: true as const }))),
       cancel: vi.fn(() => Promise.resolve(ok({ accepted: true as const }))),
-      modelRoute: () => ({ selectModel: childSelect }),
+      modelRoute: () => ({ inspect: childInspect, selectModel: childSelect }),
     })
     await svc.modelRoute(childId)!.selectModel!({ provider: 'owned', model: 'child' })
     expect(childSelect).toHaveBeenCalledTimes(1)

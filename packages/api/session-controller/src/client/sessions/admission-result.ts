@@ -45,20 +45,15 @@ export async function runSessionAdmission<T>(
 /**
  * Wrap the async methods of one feature model route with admission normalization.
  * @param route - feature route resolved synchronously for one Session.
- * @returns consumer route preserving optional methods, receiver, and signals.
+ * @returns feature route with normalized inspection and selection failures.
  */
 export function sessionAdmissionModelRoute(route: SessionAdmissionModelRoute): SessionModelRoute {
-  const models = route.models?.bind(route)
-  const selectModel = route.selectModel?.bind(route)
+  const inspect = route.inspect.bind(route)
+  const selectModel = route.selectModel.bind(route)
   return {
-    ...(models === undefined
-      ? {}
-      : { models: (signal?: AbortSignal) => runSessionAdmission(() => models(signal)) }),
-    ...(selectModel === undefined
-      ? {}
-      : {
-        selectModel: (selection, signal) =>
-          runSessionAdmission(() => selectModel(selection, signal)),
-      }),
+    kind: 'feature',
+    inspect: (signal?: AbortSignal) => runSessionAdmission(() => inspect(signal)),
+    selectModel: (selection, signal) =>
+      runSessionAdmission(() => selectModel(selection, signal)),
   }
 }
