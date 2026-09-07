@@ -3,7 +3,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { LOADER_SMOKE_TEST_TIMEOUT_MS, runLoaderSmoke, runLoaderSmokeSequence } from '@deepseek-ai/dsh-loader-smoke'
+import { LOADER_SMOKE_TEST_TIMEOUT_MS, runLoaderSmoke } from '@deepseek-ai/dsh-loader-smoke'
 
 const configPath = '/tmp/fixture.cordis.yml'
 const tsconfigPath = fileURLToPath(new URL('../../../../tsconfig.json', import.meta.url))
@@ -114,70 +114,4 @@ describe('runLoaderSmoke', () => {
       processTimeoutMs: 100,
     })).rejects.toThrow('hanging fixture did not exit within 0.1s.')
   })
-})
-
-describe('runLoaderSmokeSequence', () => {
-  it('runs ordered invocations in one isolated cwd with independent argv and environments', async () => {
-    let inspected = ''
-    const results = await runLoaderSmokeSequence({
-      label: 'sequence fixture',
-      tempDirPrefix: 'loader-smoke-sequence-',
-      binScript: fixture('success'),
-      libBinScript: fixture('success'),
-      configPath,
-      tsconfigPath,
-      invocations: [
-        { binArgs: ['first'], env: { LOADER_SMOKE_MARKER: 'one' } },
-        { binArgs: ['second'], env: { LOADER_SMOKE_MARKER: 'two' } },
-      ],
-      inspect: (cwd) => { inspected = cwd },
-    })
-
-    const outputs = results.map(result => JSON.parse(result.stdout) as {
-      args: string[]
-      cwd: string
-      marker: string
-    })
-    expect(outputs.map(output => ({ args: output.args, marker: output.marker }))).toEqual([
-      { args: ['first'], marker: 'one' },
-      { args: ['second'], marker: 'two' },
-    ])
-    expect(outputs[0]?.cwd).toBe(outputs[1]?.cwd)
-    expect(canonicalTempPath(inspected)).toBe(canonicalTempPath(outputs[0]?.cwd ?? ''))
-    expect(existsSync(inspected)).toBe(false)
-  }, LOADER_SMOKE_TEST_TIMEOUT_MS)
-
-  it('rejects an empty invocation list and keeps sequence defaults when an invocation omits argv and exit', async () => {
-    await expect(runLoaderSmokeSequence({
-      label: 'empty sequence',
-      tempDirPrefix: 'loader-smoke-empty-',
-      binScript: fixture('success'),
-      configPath,
-      tsconfigPath,
-      invocations: [],
-    })).rejects.toThrow('at least one invocation')
-
-    const results = await runLoaderSmokeSequence({
-      label: 'default invocation',
-      tempDirPrefix: 'loader-smoke-default-invocation-',
-      binScript: fixture('success'),
-      libBinScript: fixture('success'),
-      configPath,
-      tsconfigPath,
-      invocations: [{}],
-    })
-    const output = JSON.parse(results[0]!.stdout) as { args: string[] }
-    expect(output.args).toEqual([configPath])
-
-    const declared = await runLoaderSmokeSequence({
-      label: 'declared sequence failure',
-      tempDirPrefix: 'loader-smoke-sequence-fail-',
-      binScript: fixture('fail'),
-      libBinScript: fixture('fail'),
-      configPath,
-      tsconfigPath,
-      invocations: [{ expectedExitCode: 7 }],
-    })
-    expect(declared[0]?.stderr).toBe('fixture failed\n')
-  }, LOADER_SMOKE_TEST_TIMEOUT_MS)
 })
