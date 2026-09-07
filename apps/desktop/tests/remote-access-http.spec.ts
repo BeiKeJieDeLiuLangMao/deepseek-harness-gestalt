@@ -2,7 +2,11 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { randomUUID } from 'node:crypto'
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
-import { parseAccountProofJti, parseInstallationId } from '@deepseek-ai/dsh-platform-account'
+import {
+  parseAccountProofJti,
+  parseInstallationId,
+  type AuthenticatedInstallationView,
+} from '@deepseek-ai/dsh-platform-account'
 import {
   MemoryPersonalPairingAuthorityStore,
   PersonalPairingProvider,
@@ -36,8 +40,12 @@ describe('Desktop Settings Remote Access composition', () => {
             id: 'account-one' as never, githubId: 1, githubLogin: 'account-one',
             avatarUrl: 'https://avatars.example/account',
           },
-          installation: { id: parseInstallationId('desktop-one'), kind: 'desktop' as const },
-        })),
+          installation: {
+            id: parseInstallationId('desktop-one'),
+            kind: 'desktop',
+            presentation: { name: 'Settings Desktop', platform: 'macos' },
+          },
+        } satisfies AuthenticatedInstallationView)),
       },
       handshake: handshakeFixture(),
       relay: {
@@ -114,7 +122,7 @@ describe('Desktop Settings Remote Access composition', () => {
 function authentication(accessToken: string): PairingAccountAuthentication {
   return {
     accessToken,
-    proof: { jti: parseAccountProofJti(crypto.randomUUID()), issuedAt: 1, signature: 'signature' },
+    proof: { jti: parseAccountProofJti(randomUUID()), issuedAt: 1, signature: 'signature' },
   }
 }
 
@@ -144,7 +152,8 @@ class SettingsRelaySocket implements RelayEndpointSocket {
     this.sent.push(message)
     if (message.type === 'attach') {
       this.push(encodeRelayMessage({
-        type: 'ready', transportVersion: 1, attachmentId: message.attachmentId,
+        type: 'ready', transportVersion: 1, routeId: message.routeId,
+        attachmentId: message.attachmentId, peers: [],
       }))
     }
   }
