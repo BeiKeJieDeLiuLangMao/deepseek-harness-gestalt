@@ -14,7 +14,7 @@ Status: implemented
 
 版本 1 的 `schedule/change` 增加严格且仅含 id 的 `pause` 与 `resume` 转换。pause 保留记录和目标，但将其排除在 runtime 投递之外；resume 使未变化的目标重新活跃，因此已经过去的目标会成为 overdue。delete 接受活动或已暂停记录。`schedule_list` 返回保留的已暂停记录，并使用 `state: 'paused'`；pause 与 resume 保持为仅供人工使用的 Remote 方法，不成为面向模型的工具。
 
-`ctx.schedules` Service 拥有 `schedules/pause`、`schedules/resume` 与 `schedules/delete`。它们的 wire 标识是 branded `SessionId`，因此人工变更不会调用通用的 Agent-resume lookup。一条由 Service 拥有、按 Session 串行化的 FIFO 会把人工变更与工具管理和到期投递串行化；拆卸会关闭准入并等待已接纳事务，不同 Context 拥有不同队列。已存在的 live 根 Agent 使用普通的 preflight flush、append、post-append flush 和 runtime 重算。cold 变更会在整个事务期间持有独占 `SessionPersistence.open(id, 'write')` handle，并通过该 handle 读取、append 和 flush，既不 enter SessionStore，也不发布 Session 或 Agent 生命周期。关闭 handle 会释放持久化所有权，操作局部的 projection 状态不需要生命周期事件。如果写入所有权输给 Agent 发布，该事务会在同一 FIFO 内重新计算并使用该精确 live 根 Agent。Session 日志仍是唯一持久权威，因此暂停与恢复无需另一个存储即可在重启后保留。
+已交付的 Schedule 插件只在通过 `agent/created` 观察到的 live 根 Agent 所属 scope 内安装三个面向模型的管理工具与 `ScheduleRuntime`。一条由插件拥有、按 Session 串行化的 FIFO 会把工具管理与到期投递串行化；拆卸会停止 runtime 准入并等待已接纳事务，不同 Context 拥有不同队列。每次读取或决策都使用 live Agent 的 Session。`schedule_create`、`schedule_list` 与 `schedule_delete` 会先等待 `ctx.sessions.flush(session)`，再折叠 `session.ownEvents()`；create 和实际发生的 delete 会 append `schedule/change`，并在报告持久成功前等待第二次 flush。runtime 投递使用同一 preflight flush，在 follow-up 准入后 append dispatch，并在重算前等待 post-append flush。Schedule 不会另行获取 Session persistence handle。Session 日志仍是唯一持久权威，因此保留的变更无需另一个存储即可在重启后继续存在。
 
 Schedule 贡献独立的 Session projection，key 为 `schedule`，其中按创建顺序包含保留记录和持久化 `paused` 标志。`init` 保存 `Session.inheritedEventCount`；`apply` 会跳过 `seq` 小于该切点的 `schedule/change` 事件。Host 定义没有 `eventScope` 字段。Client 接收已完成的当前值，绝不折叠 Schedule 事件，也不从工具调用或对话输出重建状态。只有 Client 时钟根据 `scheduledAt` 推导 scheduled 或 overdue 展示。
 
