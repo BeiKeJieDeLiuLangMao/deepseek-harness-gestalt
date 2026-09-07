@@ -270,13 +270,18 @@ describe('phone stream Host routes', () => {
       wireDevice('ios-simulator', 'ios', 'simulator', 'online'),
       wireDevice('ios-real', 'ios', 'real', 'online'),
     ])
-    context.phoneDevices.agentStatus = async id => ({ deviceId: id, installed: true })
+    context.phoneDevices.agentStatus = vi.fn(async id => ({ deviceId: id, installed: true }))
     const installAgent = vi.fn()
     context.phoneDevices.installAgent = installAgent
 
     expect(await mint(origin, 'android-real')).toMatchObject({ preferredFormat: 'h264', agentManaged: true })
     expect((await mint(origin, 'ios-real')).preferredFormat).toBe('h264')
     expect((await mint(origin, 'ios-simulator')).preferredFormat).toBe('mjpeg')
+    expect(context.phoneDevices.agentStatus).toHaveBeenCalledTimes(2)
+    expect(vi.mocked(context.phoneDevices.agentStatus).mock.calls.map(([id]) => id)).toEqual([
+      deviceId('ios-real'),
+      deviceId('ios-simulator'),
+    ])
     expect(installAgent).not.toHaveBeenCalled()
   })
 
@@ -413,10 +418,11 @@ describe('phone stream Host routes', () => {
     }
   })
 
-  it('answers PHONE_AGENT_MISSING when mint install still leaves the iOS real agent absent', async () => {
-    const { origin, context } = await mount([
-      wireDevice('UDID-9', 'ios', 'real', 'online'),
-    ])
+  it.each([
+    { id: 'UDID-9', kind: 'real' },
+    { id: 'SIMULATOR-9', kind: 'simulator' },
+  ] as const)('answers PHONE_AGENT_MISSING when mint install still leaves the iOS $kind agent absent', async ({ id, kind }) => {
+    const { origin, context } = await mount([wireDevice(id, 'ios', kind, 'online')])
     const host = new URL(origin).host
     const installAgent = vi.fn(async (id: ReturnType<typeof deviceId>) => ({
       deviceId: id, installed: false, reinstalled: false,
@@ -429,28 +435,37 @@ describe('phone stream Host routes', () => {
       method: 'POST',
       path: '/phone/session',
       host,
-      body: JSON.stringify({ deviceId: 'UDID-9' }),
+      body: JSON.stringify({ deviceId: id }),
     })
 
     expect(response.status).toBe(409)
     expect(JSON.parse(response.body.toString('utf8'))).toEqual({
       error: {
         code: 'PHONE_AGENT_MISSING',
-        message: 'the iOS real-device control agent is not installed',
+        message: 'the selected iOS device control agent is not installed',
       },
     })
     expect(installAgent).toHaveBeenCalledTimes(1)
   })
 
-  it('does not install an agent when minting an iOS simulator session', async () => {
+  it('installs only the selected missing iOS simulator agent before minting', async () => {
     const { origin, context } = await mount([
-      wireDevice('SIM-9', 'ios', 'simulator', 'online'),
+      wireDevice('8294A429-4C99-411F-A46D-0AD9499B7FDD', 'ios', 'simulator', 'online'),
+      wireDevice('DFB02630-3444-4FB0-B746-0A3C4509CB72', 'ios', 'simulator', 'online'),
     ])
     const host = new URL(origin).host
-    const agentStatus = vi.fn(async (id: ReturnType<typeof deviceId>) => ({ deviceId: id, installed: false }))
-    const installAgent = vi.fn(async (id: ReturnType<typeof deviceId>) => ({
-      deviceId: id, installed: true, reinstalled: false,
+    const installed = new Set(['8294A429-4C99-411F-A46D-0AD9499B7FDD'])
+    const agentStatus = vi.fn(async (id: ReturnType<typeof deviceId>, _signal?: AbortSignal) => ({
+      deviceId: id,
+      installed: installed.has(id),
     }))
+    const installAgent = vi.fn(async (
+      id: ReturnType<typeof deviceId>,
+      _options?: { force?: boolean; signal?: AbortSignal },
+    ) => {
+      installed.add(id)
+      return { deviceId: id, installed: true, reinstalled: false }
+    })
     context.phoneDevices.agentStatus = agentStatus
     context.phoneDevices.installAgent = installAgent
 
@@ -459,17 +474,26 @@ describe('phone stream Host routes', () => {
       method: 'POST',
       path: '/phone/session',
       host,
-      body: JSON.stringify({ deviceId: 'SIM-9' }),
+      body: JSON.stringify({ deviceId: 'DFB02630-3444-4FB0-B746-0A3C4509CB72' }),
     })
 
     expect(response.status).toBe(200)
     expect(JSON.parse(response.body.toString('utf8'))).toMatchObject({
-      deviceId: 'SIM-9',
-      agentManaged: false,
+      deviceId: 'DFB02630-3444-4FB0-B746-0A3C4509CB72',
+      agentManaged: true,
       preferredFormat: 'mjpeg',
     })
-    expect(agentStatus).not.toHaveBeenCalled()
-    expect(installAgent).not.toHaveBeenCalled()
+    expect(agentStatus.mock.calls.map(([id]) => id)).toEqual([
+      deviceId('DFB02630-3444-4FB0-B746-0A3C4509CB72'),
+      deviceId('DFB02630-3444-4FB0-B746-0A3C4509CB72'),
+    ])
+    const signal = agentStatus.mock.calls[0]?.[1]
+    expect(signal).toBeInstanceOf(AbortSignal)
+    expect(signal?.aborted).toBe(false)
+    expect(agentStatus.mock.calls[1]?.[1]).toBe(signal)
+    expect(installAgent).toHaveBeenCalledOnce()
+    expect(installAgent.mock.calls[0]?.[0]).toBe(deviceId('DFB02630-3444-4FB0-B746-0A3C4509CB72'))
+    expect(installAgent.mock.calls[0]?.[1]).toEqual({ signal })
   })
 
   it('preserves the structured real-device issue on agent status and install failures', async () => {

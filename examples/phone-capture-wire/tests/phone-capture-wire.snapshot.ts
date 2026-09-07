@@ -18,7 +18,11 @@ describe('Android capture-source Host wire assembled snapshot', () => {
   it('rejects a mismatched plane with no upstream io and maps a compatible downsample', async () => {
     const sdk = await mkdtemp(join(tmpdir(), 'dsh-phone-capture-wire-sdk-'))
     const fake = await stageFake({
-      devices: [wireDevice('emulator-5554', 'android', 'emulator', 'online')],
+      devices: [
+        wireDevice('emulator-5554', 'android', 'emulator', 'online'),
+        wireDevice('simulator-selected', 'ios', 'simulator', 'online'),
+      ],
+      agent: { installed: false },
       streamFrameCount: 20,
     })
     try {

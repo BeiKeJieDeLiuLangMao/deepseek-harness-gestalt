@@ -245,28 +245,29 @@ export class PhoneStream extends Service {
       if (this.isClosing(signal)) { this.rejectClosing(res, false); return }
       const knownReal = list.ios.reals.find(ref => ref.id === id)
       const knownSimulator = list.ios.simulators.find(ref => ref.id === id)
-      const known = knownReal ?? knownSimulator ?? list.android.find(ref => ref.id === id)
+      const knownIos = knownReal ?? knownSimulator
+      const known = knownIos ?? list.android.find(ref => ref.id === id)
       if (known === undefined) {
         throw new PhoneDevicesError(
           'PHONE_DEVICE_NOT_FOUND',
           `cannot mint stream URLs: ${JSON.stringify(id)} is absent from the latest device listing`,
         )
       }
-      if (knownReal !== undefined) {
+      if (knownIos !== undefined) {
         // Mint installs a missing recoverable agent; PHONE_AGENT_MISSING is the leftover-absent answer.
-        let status = await this.ctx.phoneDevices.agentStatus(id)
+        let status = await this.ctx.phoneDevices.agentStatus(id, signal)
         if (this.isClosing(signal)) { this.rejectClosing(res, false); return }
         if (!status.installed) {
-          await this.ctx.phoneDevices.installAgent(id)
+          await this.ctx.phoneDevices.installAgent(id, { signal })
           if (this.isClosing(signal)) { this.rejectClosing(res, false); return }
-          status = await this.ctx.phoneDevices.agentStatus(id)
+          status = await this.ctx.phoneDevices.agentStatus(id, signal)
           if (this.isClosing(signal)) { this.rejectClosing(res, false); return }
         }
         if (!status.installed) {
           writeJson(res, 409, {
             error: {
               code: 'PHONE_AGENT_MISSING',
-              message: 'the iOS real-device control agent is not installed',
+              message: 'the selected iOS device control agent is not installed',
             },
           })
           return
@@ -274,7 +275,7 @@ export class PhoneStream extends Service {
       }
       writeJson(res, 200, this.sessionFor(
         id,
-        knownReal !== undefined || known.platform === 'android',
+        knownIos !== undefined || known.platform === 'android',
         knownSimulator === undefined ? 'h264' : 'mjpeg',
       ))
     } catch (error) {

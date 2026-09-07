@@ -1,4 +1,10 @@
 {
+  "iosSimulatorMint": {
+    "deviceId": "simulator-selected",
+    "agentManaged": true,
+    "preferredFormat": "mjpeg",
+    "preferredUrl": "/phone/stream/simulator-selected/mjpeg?token={{token}}"
+  },
   "mint": {
     "deviceId": "emulator-5554",
     "ioPath": "/phone/ws/io",

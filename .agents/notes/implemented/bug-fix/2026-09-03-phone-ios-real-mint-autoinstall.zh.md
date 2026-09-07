@@ -1,4 +1,4 @@
-# Agent Note: 在 Host mint 时安装 iOS 真机 agent
+# Agent Note: 在 Host mint 时确保选中 iOS 设备的 agent
 
 Status: implemented
 
@@ -6,11 +6,11 @@ Status: implemented
 
 ## 问题
 
-打开在线 iOS 真机面板时，第一条路径是铸造 `POST /phone/session`。`agentStatus.installed` 为 false 时，Host 直接返回 `409 PHONE_AGENT_MISSING`，并不调用 `installAgent`。GUI `PhoneConnectionController.recoverAgent` 只在该错误相之后运行，因此可恢复的缺失 agent 会挡住画面，即使同一台真机上 `device_act` 已经成功。
+打开在线 iOS 面板时，第一条路径是铸造 `POST /phone/session`。缺失的真机 agent 会在 GUI 恢复运行前挡住画面。模拟器 mint 则完全跳过 agent status，因此当 mobilecli 只为另一台模拟器准备了 agent 时，任意选中的模拟器仍可能拿到 session。
 
 ## 决策
 
-Host mint 持有第一次可恢复安装。对清单中的 iOS 真机，`POST /phone/session` 先跑 `agentStatus`；agent 缺失时调用不带 `force` 的幂等 `installAgent`，复检 status，再签发画面会话。仅当这次安装后 agent 仍缺失时才保留 `PHONE_AGENT_MISSING`。抛出的安装失败沿用既有 Host 映射：`PHONE_AGENT_PROFILE_REQUIRED`（包括 Host 未配置 `provisioningProfilePath`）、`PHONE_REAL_DEVICE_ISSUE` 分支，以及经 `PHONE_UPSTREAM` 透出的 `INSTALL_FAILED_USER_RESTRICTED`。iOS Simulator mint 保持 agent-not-managed，永不安装。`recoverAgent` 仍是 GUI 处理残留缺失、强制重装与受限失败的路径。
+Host mint 持有对清单中确切 iOS 目标的第一次可恢复安装。`POST /phone/session` 先运行 `agentStatus`；真机或模拟器 agent 缺失时调用不带 `force` 的幂等 `installAgent`，复检同一设备，并只在 status 报告已安装后签发。路由把同一个事务 abort signal 传给三次调用。模拟器安装不携带 provisioning profile；真机安装使用 `phone-runtime` 选择的 profile。仅当安装后选中设备的 agent 仍缺失时才保留 `PHONE_AGENT_MISSING`。抛出的安装失败沿用既有 Host 映射：`PHONE_AGENT_PROFILE_REQUIRED`（包括 Host 对真机未配置 `provisioningProfilePath`）、`PHONE_REAL_DEVICE_ISSUE` 分支，以及经 `PHONE_UPSTREAM` 透出的 `INSTALL_FAILED_USER_RESTRICTED`。成功的 iOS session 携带 `agentManaged: true`；`recoverAgent` 仍是 GUI 处理残留缺失、强制重装与受限失败的路径。Android mint 不运行这段 iOS ensure 序列。
 
 ## Alternatives considered
 
@@ -20,8 +20,8 @@ Host mint 持有第一次可恢复安装。对清单中的 iOS 真机，`POST /p
 
 **未配置 `provisioningProfilePath` 时跳过安装。** 拒绝：缺失 profile 是 `PHONE_AGENT_PROFILE_REQUIRED`，不是静默跳过。
 
-**在 iOS Simulator mint 时安装。** 拒绝：模拟器 agent 操作保持 `agent-not-managed`；模拟器 agent 安装归准备流程。
+**依赖模拟器准备流程。** 拒绝：准备流程可以持有一台配置的模拟器，而设备选择器可以按 id 选中另一台在线模拟器。
 
 ## 后果
 
-任何受信任的 mint 调用方（不限于 GUI）都能在可恢复的缺失 agent 上完成安装。不可恢复失败保持结构化，不会签发会话。打开真机面板可能在安装期间等待 `agentTimeoutMs`。包测试固定缺失 → 安装 → 200 会话、安装失败错误码、残留 `PHONE_AGENT_MISSING`，以及不变的模拟器 mint。
+任何受信任的 mint 调用方（不限于 GUI）都能为它选中的 iOS id 安装可恢复的缺失 agent。不可恢复失败保持结构化，不会签发会话。请求取消会中断 status 或安装，而不是等待 mobilecli child ceiling。包测试固定选中 id 的 status → 安装 → 复检 → 200、共享事务取消、安装失败错误码、两类 iOS 设备的残留 `PHONE_AGENT_MISSING`、模拟器 MJPEG，以及不运行 iOS ensure 调用的 Android 路径。
