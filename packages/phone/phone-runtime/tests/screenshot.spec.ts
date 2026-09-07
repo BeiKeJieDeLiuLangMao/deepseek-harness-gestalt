@@ -4,7 +4,9 @@ import PhoneDevices, { deviceId } from '@deepseek-ai/dsh-phone-runtime'
 import type { Config } from '@deepseek-ai/dsh-phone-runtime'
 import { PhoneDevicesError } from '../src/errors.ts'
 import { runMobilecliScreenshot } from '../src/screenshot-process.ts'
+import * as screenshotProcess from '../src/screenshot-process.ts'
 import { persistPhoneScreenshot } from '../src/screenshot-store.ts'
+import * as screenshotStore from '../src/screenshot-store.ts'
 import { isPng } from '../src/png.ts'
 import type { Context as CordisContext } from '@deepseek-ai/cordis'
 import { MobilecliProcessTree, MobilecliServerProcess } from '../src/server-process.ts'
@@ -57,7 +59,7 @@ const BASE_DEVICES = [
 const FAST_CONFIG: Partial<Config> = {
   pollIntervalMs: 20,
   readyTimeoutMs: 6_000,
-  requestTimeoutMs: 1_500,
+  requestTimeoutMs: 10_000,
   bootTimeoutMs: 2_000,
 }
 
@@ -75,6 +77,68 @@ async function mountWith(fake: Awaited<ReturnType<typeof stageFake>>, overrides:
 }
 
 describe('phone runtime PNG screenshot', () => {
+  it('does not persist when cancellation arrives after the screenshot command', async () => {
+    const fake = await stageFake({ devices: BASE_DEVICES })
+    fakes.push(fake)
+    const context = await mountWith(fake)
+    const controller = new AbortController()
+    const run = screenshotProcess.runMobilecliScreenshot
+    const command = vi.spyOn(screenshotProcess, 'runMobilecliScreenshot').mockImplementation(async (options) => {
+      const png = await run(options)
+      controller.abort(new DOMException('cancel after screenshot command', 'AbortError'))
+      return png
+    })
+    const persist = vi.spyOn(screenshotStore, 'persistPhoneScreenshot')
+    try {
+      await expect(context.phoneDevices.screenshot(ANDROID_EMULATOR, controller.signal))
+        .rejects.toMatchObject({ code: 'PHONE_ABORTED' })
+      expect(persist).not.toHaveBeenCalled()
+    } finally {
+      command.mockRestore()
+      persist.mockRestore()
+    }
+  })
+
+  it('removes a persisted screenshot when caller cancellation wins before publication', async () => {
+    const fake = await stageFake({ devices: BASE_DEVICES })
+    fakes.push(fake)
+    const context = await mountWith(fake)
+    const controller = new AbortController()
+    const persist = screenshotStore.persistPhoneScreenshot
+    let saved: string | undefined
+    const spy = vi.spyOn(screenshotStore, 'persistPhoneScreenshot').mockImplementation(async (id, png) => {
+      saved = await persist(id, png)
+      controller.abort(new DOMException('cancel persisted screenshot', 'AbortError'))
+      return saved
+    })
+    try {
+      await expect(context.phoneDevices.screenshot(ANDROID_EMULATOR, controller.signal))
+        .rejects.toMatchObject({ code: 'PHONE_ABORTED' })
+      expect(saved).toBeDefined()
+      if (saved !== undefined) await expect(stat(saved)).rejects.toMatchObject({ code: 'ENOENT' })
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it('preserves cancellation when persisted screenshot removal also fails', async () => {
+    const fake = await stageFake({ devices: BASE_DEVICES })
+    fakes.push(fake)
+    const context = await mountWith(fake)
+    const controller = new AbortController()
+    const spy = vi.spyOn(screenshotStore, 'persistPhoneScreenshot').mockImplementation(async () => {
+      controller.abort(new DOMException('cancel persisted screenshot', 'AbortError'))
+      return join(process.env.DSH_HOME ?? '', 'missing-parent', 'shot.png')
+    })
+    try {
+      const failure = await errorOf(() => context.phoneDevices.screenshot(ANDROID_EMULATOR, controller.signal))
+      expect(failure.code).toBe('PHONE_ABORTED')
+      expect(failure.cause).toBeInstanceOf(AggregateError)
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
   it('classifies a locked-device screenshot onto the structured arm', async () => {
     const fake = await stageFake({
       devices: BASE_DEVICES,

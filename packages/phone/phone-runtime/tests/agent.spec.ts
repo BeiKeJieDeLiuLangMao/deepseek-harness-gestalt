@@ -4,6 +4,7 @@ import PhoneDevices, { deviceId, FREE_SIGNING_PROFILE_REMINDER } from '@deepseek
 import type { Config } from '@deepseek-ai/dsh-phone-runtime'
 import { PhoneDevicesError } from '../src/errors.ts'
 import { runMobilecliAgent } from '../src/agent-process.ts'
+import * as agentProcess from '../src/agent-process.ts'
 import type { Context as CordisContext } from '@deepseek-ai/cordis'
 import { MobilecliProcessTree, MobilecliServerProcess } from '../src/server-process.ts'
 import { stageFake, wireDevice } from './helpers.ts'
@@ -62,6 +63,43 @@ async function mountWith(fake: Awaited<ReturnType<typeof stageFake>>, overrides:
 }
 
 describe('phone runtime on-device agent operations', () => {
+  it('stops installation when cancellation arrives after status resolution', async () => {
+    const fake = await stageFake({ devices: BASE_DEVICES, agent: { installed: true } })
+    fakes.push(fake)
+    const original = agentProcess.runMobilecliAgent
+    const controller = new AbortController()
+    const status = vi.spyOn(agentProcess, 'runMobilecliAgent').mockImplementationOnce(async (options) => {
+      const answer = await original(options)
+      controller.abort(new DOMException('cancel after status', 'AbortError'))
+      return answer
+    })
+    const context = await mountWith(fake)
+    try {
+      await expect(context.phoneDevices.installAgent(ANDROID_EMULATOR, { signal: controller.signal }))
+        .rejects.toMatchObject({ code: 'PHONE_ABORTED' })
+      expect((await fake.agentState()).installCount).toBe(0)
+    } finally {
+      status.mockRestore()
+    }
+  })
+
+  it('joins a held status tree and prevents install continuation during replacement', async () => {
+    const fake = await stageFake({ devices: BASE_DEVICES, agent: { statusDelayMs: 5_000 } })
+    fakes.push(fake)
+    const context = await mountWith(fake, { agentTimeoutMs: 10_000, pollIntervalMs: 60_000 })
+    const pending = context.phoneDevices.installAgent(ANDROID_EMULATOR).catch((error: unknown) => error)
+    await vi.waitFor(() => {
+      expect(MobilecliServerProcess.diagnostics.some(line => line.includes('["agent","status"'))).toBe(true)
+    })
+    const spawn = MobilecliServerProcess.diagnostics.find(line => line.includes('["agent","status"'))
+    const pid = Number(spawn?.match(/spawn pid=(\d+)/u)?.[1])
+    expect(Number.isSafeInteger(pid)).toBe(true)
+    await context.phoneDevices.activateExecutable(fake.executablePath)
+    expect(await pending).toMatchObject({ code: 'PHONE_ABORTED' })
+    expect(() => process.kill(pid, 0)).toThrow()
+    expect((await fake.agentState()).installCount).toBe(0)
+  })
+
   it('refuses agent operations for ids absent from the latest listing before any CLI spawn', async () => {
     const fake = await stageFake({ devices: BASE_DEVICES })
     fakes.push(fake)

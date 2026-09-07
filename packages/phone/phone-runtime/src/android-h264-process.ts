@@ -32,6 +32,8 @@ export interface AndroidH264CaptureOptions {
   readonly environment: Readonly<Record<string, string>>
   /** Runtime-generation or caller cancellation. */
   readonly signal: AbortSignal
+  /** Register exact-tree stop before stream callbacks can suspend or abort. */
+  readonly ownTree?: (stop: () => Promise<void>) => void
   /** Logical display passed as `screenrecord --size`; omitted when unknown. */
   readonly size?: { readonly width: number; readonly height: number }
 }
@@ -71,6 +73,7 @@ export function openAndroidSystemH264(
       environment: options.environment,
       captureStdout: true,
     })
+  options.ownTree?.(() => tree.stop())
   const stdout = tree.process.stdout
   if (stdout === null) {
     return new ReadableStream<Uint8Array>({
