@@ -86,7 +86,9 @@ describe('Desktop Companion attachment receive', () => {
     })).rejects.toMatchObject({ reason: 'hash-mismatch' })
 
     const tampered = new Uint8Array(prepared.ciphertext)
-    tampered[0] ^= 0xff
+    const firstByte = tampered[0]
+    if (firstByte === undefined) throw new Error('sealed attachment is empty')
+    tampered[0] = firstByte ^ 0xff
     expect(await hashCompanionCiphertext(tampered)).not.toBe(prepared.hash)
     await expect(receiveCompanionAttachment(prepared.offer, {
       pairingId, attachmentKey, now: 1_000,
@@ -175,7 +177,9 @@ describe('Desktop Companion attachment receive', () => {
       fetch: async (_input, init) => {
         const headers = new Headers(init?.headers)
         expect(headers.get('x-gestalt-pairing-selector')).toBe(pairingId)
-        return new Response(prepared.ciphertext, { status: 200 })
+        const body = new ArrayBuffer(prepared.ciphertext.byteLength)
+        new Uint8Array(body).set(prepared.ciphertext)
+        return new Response(body, { status: 200 })
       },
     })).resolves.toEqual(prepared.ciphertext)
   })
