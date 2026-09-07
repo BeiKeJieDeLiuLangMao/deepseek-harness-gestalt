@@ -14,10 +14,10 @@ const snapshotDirectory = fileURLToPath(new URL('./snapshots/sidechat-round', im
 
 /** Replay configuration used by the shipped Side Chat browser journey. */
 export const sideChatRoundReplayConfig: SideChatReplayConfig = {
-  file: fileURLToPath(new URL('./snapshots/live-interactions/session.jsonl', import.meta.url)),
+  file: fileURLToPath(new URL('../../../snapshots/web/live-interactions/session.jsonl', import.meta.url)),
   childFiles: [
     join(snapshotDirectory, 'restored-child.jsonl'),
-    fileURLToPath(new URL('./snapshots/live-interactions/session.jsonl', import.meta.url)),
+    fileURLToPath(new URL('../../../snapshots/web/live-interactions/session.jsonl', import.meta.url)),
   ],
 }
 

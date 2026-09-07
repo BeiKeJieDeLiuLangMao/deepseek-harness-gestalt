@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events'
+import { randomUUID } from 'node:crypto'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -24,6 +25,7 @@ import {
   receiveCompanionAttachment,
 } from '../../../../apps/desktop/src/companion-attachments.ts'
 import { handleCompanionProductOperation } from '../../../../apps/desktop/src/companion-product.ts'
+import type { DesktopHostRpc } from '../../../../apps/desktop/src/host-rpc.ts'
 import {
   COMPANION_ATTACHMENT_SEAL_OVERHEAD_BYTES,
   buildCompanionAttachmentOffer,
@@ -43,6 +45,13 @@ afterEach(async () => { await Promise.all(closeServers.splice(0).map(close => cl
 const pairingA = parsePersonalPairingId('pairing-a')
 const attachmentKey = crypto.getRandomValues(new Uint8Array(32))
 const ready = { isCurrent: () => true, requireCurrent: () => {} }
+const unusedHost: DesktopHostRpc = {
+  call: async () => { throw new Error('attachment must not become a Host prompt') },
+  followEvents: async () => { throw new Error('attachment must not follow Host events') },
+  completeEvent: async () => { throw new Error('attachment must not complete a Host event') },
+  followSession: async () => { throw new Error('attachment must not follow a Host session') },
+  followWorkspaces: async () => { throw new Error('attachment must not follow Host workspaces') },
+}
 
 describe('Remote attachment HTTP assembled transfer', () => {
   it.each([
@@ -89,7 +98,7 @@ describe('Remote attachment HTTP assembled transfer', () => {
       plaintext: Uint8Array
     }> = []
     const result = await handleCompanionProductOperation(offer, {
-      host: { call: async () => { throw new Error('attachment must not become a Host prompt') } },
+      host: unusedHost,
       pairingId: pairingA,
       attachmentKey,
       now: () => offer.expiresAt - 1,
@@ -955,7 +964,7 @@ async function start(options: {
     return {
       pairingId: parsePersonalPairingId(value),
       admit: options.admit ?? (async () => ({
-        id: parseAttachmentBlobReservationId(crypto.randomUUID()),
+        id: parseAttachmentBlobReservationId(randomUUID()),
         expiresAt: Number.MAX_SAFE_INTEGER,
         release: async () => {},
       })),
