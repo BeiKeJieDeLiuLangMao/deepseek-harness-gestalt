@@ -152,105 +152,6 @@ describe('assembled Desktop Relay live Session projection on shipped dsh web', (
       }
       claimDelivery()
     }
-    // Real attachment authentication: the Desktop attachment owner verifies
-    // the Mobile IK transcript against the paired static state, and the Mobile
-    // attachment owner produces that transcript from the Relay ready envelope —
-    // exactly the production handshake with a memory-direct transport.
-    const desktopAttachmentOwner = new SnowDesktopAttachmentOwner(selector =>
-      selector === channels.pairingSelector ? channels.desktopReconnectState : undefined)
-    const mobileAttachmentOwner = new SnowMobileAttachmentOwner(
-      channels.mobileReconnectState, channels.pairingSelector)
-    // The negotiated Mobile channel lives in a nullable slot: the lifecycle
-    // cleanup registers before the handshake runs and releases the channel only
-    // when the handshake got far enough to finish it.
-    const negotiatedChannel: { mobile?: SnowCompanionProtocolChannel } = {}
-    const begun = await mobileAttachmentOwner.begin({
-      type: 'ready', transportVersion: 1, routeId: parseRelayRouteId('route-assembled-relay-live'),
-      attachmentId: channels.mobileAttachmentId,
-      peers: [{
-        attachmentId: channels.desktopAttachmentId,
-        pairingSelector: channels.pairingSelector, generation: channels.generation,
-      }],
-    })
-    const relayOwner = new DesktopSnowRelayChannelOwner(
-      desktopAttachmentOwner,
-      relaySend,
-      async (operation, _selector, context) => await owner.handle(operation, {
-        ...pairingDependencies(channels),
-        generation: context.generation,
-        desktopRevision: context.desktopRevision,
-      }),
-      () => 'Assembled Desktop',
-      10_000,
-      {
-        connect: (selector, changed, disconnect) => owner.connectLiveProjection(
-          parsePersonalPairingId(selector), changed, disconnect,
-        ),
-        project: async (change, selector, signal) => await owner.projectLiveSession(
-          change, channels.attachmentKey.slice(), signal,
-        ),
-        retainsConversation: (change, selector) => owner.retainsLiveConversation(
-          parsePersonalPairingId(selector), change,
-        ),
-        reconnect: () => {},
-      },
-    )
-    // One ordered lifecycle cleanup, registered as soon as the pre-handshake
-    // resources exist: retire the relay projection first, settle ALL transport
-    // and relay work (allSettled — one rejecting drain never skips the other or
-    // the relay drain), dispose the Mobile attachment owner and — only when the
-    // handshake got far enough — the negotiated Mobile channel, then zero the
-    // secrets last so nothing in flight observes wiped bytes. Each stage
-    // collects its own error and the remaining stages still run.
-    cleanups.push(async () => {
-      const stageErrors: unknown[] = []
-      const stage = async (run: () => void | Promise<void>): Promise<void> => {
-        try { await run() } catch (error) { stageErrors.push(error instanceof Error ? error : new Error(String(error))) }
-      }
-      await stage(() => { relayOwner.invalidate(channels.pairingSelector) })
-      await stage(async () => {
-        inboundAbort.abort()
-        const settled = await Promise.allSettled([drainDelivery(), drainInbound(), relayOwner.drain()])
-        for (const outcome of settled) {
-          if (outcome.status === 'rejected') stageErrors.push(outcome.reason)
-        }
-        if (transportErrors.length > 0) {
-          const first = transportErrors[0]
-          stageErrors.push(first instanceof Error
-            ? new Error(`memory-direct transport failed: ${first.message}`, { cause: first })
-            : new Error(`memory-direct transport failed: ${String(first)}`))
-        }
-      })
-      await stage(() => { mobileAttachmentOwner.dispose() })
-      await stage(() => { negotiatedChannel.mobile?.dispose() })
-      await stage(() => {
-        channels.attachmentKey.fill(0)
-        channels.mobileReconnectState.fill(0)
-        channels.desktopReconnectState.fill(0)
-      })
-      if (stageErrors.length === 1) throw stageErrors[0]
-      if (stageErrors.length > 1) throw new AggregateError(stageErrors, 'live lifecycle teardown stages failed')
-    })
-
-    const drainTransport = async (): Promise<void> => {
-      inboundAbort.abort()
-      await Promise.all([drainDelivery(), drainInbound()])
-      if (transportErrors.length > 0) {
-        const first = transportErrors[0]
-        throw first instanceof Error
-          ? new Error(`memory-direct transport failed: ${first.message}`, { cause: first })
-          : new Error(`memory-direct transport failed: ${String(first)}`)
-      }
-    }
-    relayOwner.updatePeers({
-      type: 'ready', transportVersion: 1, routeId: parseRelayRouteId('route-assembled-relay-live'),
-      attachmentId: channels.desktopAttachmentId,
-      peers: [{
-        attachmentId: channels.mobileAttachmentId,
-        pairingSelector: channels.pairingSelector, generation: channels.generation,
-      }],
-    }, channels.pairingSelector)
-
     // ONE FIFO scheduler for every Mobile→Desktop relay receive (IK1, IK3, and
     // application frames). Admit and completion are separate contracts: an
     // application send resolves as soon as its frame is queued (WebSocket
@@ -321,6 +222,107 @@ describe('assembled Desktop Relay live Session projection on shipped dsh web', (
     const drainInbound = (): Promise<void> => inboundTask === undefined
       ? Promise.resolve()
       : inboundTask.then(() => drainInbound())
+
+    // Real attachment authentication: the Desktop attachment owner verifies
+    // the Mobile IK transcript against the paired static state, and the Mobile
+    // attachment owner produces that transcript from the Relay ready envelope —
+    // exactly the production handshake with a memory-direct transport.
+    const desktopAttachmentOwner = new SnowDesktopAttachmentOwner(selector =>
+      selector === channels.pairingSelector ? channels.desktopReconnectState : undefined)
+    const mobileAttachmentOwner = new SnowMobileAttachmentOwner(
+      channels.mobileReconnectState, channels.pairingSelector)
+    // The negotiated Mobile channel lives in a nullable slot: the lifecycle
+    // cleanup registers before the handshake runs and releases the channel only
+    // when the handshake got far enough to finish it.
+    const negotiatedChannel: { mobile?: SnowCompanionProtocolChannel } = {}
+
+    const begun = await mobileAttachmentOwner.begin({
+      type: 'ready', transportVersion: 1, routeId: parseRelayRouteId('route-assembled-relay-live'),
+      attachmentId: channels.mobileAttachmentId,
+      peers: [{
+        attachmentId: channels.desktopAttachmentId,
+        pairingSelector: channels.pairingSelector, generation: channels.generation,
+      }],
+    })
+    const relayOwner = new DesktopSnowRelayChannelOwner(
+      desktopAttachmentOwner,
+      relaySend,
+      async (operation, _selector, context) => await owner.handle(operation, {
+        ...pairingDependencies(channels),
+        generation: context.generation,
+        desktopRevision: context.desktopRevision,
+      }),
+      () => 'Assembled Desktop',
+      10_000,
+      {
+        connect: (selector, changed, disconnect) => owner.connectLiveProjection(
+          parsePersonalPairingId(selector), changed, disconnect,
+        ),
+        project: async (change, selector, signal) => await owner.projectLiveSession(
+          change, channels.attachmentKey.slice(), signal,
+        ),
+        retainsConversation: (change, selector) => owner.retainsLiveConversation(
+          parsePersonalPairingId(selector), change,
+        ),
+        reconnect: () => {},
+      },
+    )
+    // One ordered lifecycle cleanup registered the moment the owners, queues,
+    // and relay exist — before the handshake runs, so an accept or finish
+    // failure still retires the relay projection, aborts and joins both queues
+    // and the relay drain, disposes the Mobile attachment owner, frees the
+    // negotiated channel only when the handshake finished it, and zeroes the
+    // secrets last. Each stage collects its own error; the rest still run.
+    cleanups.push(async () => {
+      const stageErrors: unknown[] = []
+      const stage = async (run: () => void | Promise<void>): Promise<void> => {
+        try { await run() } catch (error) { stageErrors.push(error instanceof Error ? error : new Error(String(error))) }
+      }
+      await stage(() => { relayOwner.invalidate(channels.pairingSelector) })
+      await stage(async () => {
+        inboundAbort.abort()
+        const settled = await Promise.allSettled([drainDelivery(), drainInbound(), relayOwner.drain()])
+        for (const outcome of settled) {
+          if (outcome.status === 'rejected') stageErrors.push(outcome.reason)
+        }
+        if (transportErrors.length > 0) {
+          const first = transportErrors[0]
+          stageErrors.push(first instanceof Error
+            ? new Error(`memory-direct transport failed: ${first.message}`, { cause: first })
+            : new Error(`memory-direct transport failed: ${String(first)}`))
+        }
+      })
+      await stage(() => { mobileAttachmentOwner.dispose() })
+      await stage(() => { negotiatedChannel.mobile?.dispose() })
+      await stage(() => {
+        channels.attachmentKey.fill(0)
+        channels.mobileReconnectState.fill(0)
+        channels.desktopReconnectState.fill(0)
+      })
+      if (stageErrors.length === 1) throw stageErrors[0]
+      if (stageErrors.length > 1) throw new AggregateError(stageErrors, 'live lifecycle teardown stages failed')
+    })
+
+
+    const drainTransport = async (): Promise<void> => {
+      inboundAbort.abort()
+      await Promise.all([drainDelivery(), drainInbound()])
+      if (transportErrors.length > 0) {
+        const first = transportErrors[0]
+        throw first instanceof Error
+          ? new Error(`memory-direct transport failed: ${first.message}`, { cause: first })
+          : new Error(`memory-direct transport failed: ${String(first)}`)
+      }
+    }
+    relayOwner.updatePeers({
+      type: 'ready', transportVersion: 1, routeId: parseRelayRouteId('route-assembled-relay-live'),
+      attachmentId: channels.desktopAttachmentId,
+      peers: [{
+        attachmentId: channels.mobileAttachmentId,
+        pairingSelector: channels.pairingSelector, generation: channels.generation,
+      }],
+    }, channels.pairingSelector)
+
     const product = new MobileSnowCompanionProductChannel({
       runtime, connection,
       operationSettlement: assembledOperationSettlement('desktop-relay-live'),
@@ -423,6 +425,40 @@ describe('assembled Desktop Relay live Session projection on shipped dsh web', (
     await expect.poll(async () => await countTurnEnds(first.home, sessionId) > turnsBeforeDisconnect).toBe(true)
     expect(surface.getSnapshot().conversations[localSessionId]?.nodes.length).toBe(nodesBeforeDisconnect)
   }, 180_000)
+
+  it('reports the handshake rejection and still releases every resource', async () => {
+    const channels = await snowProductChannels()
+    const desktopAttachmentOwner = new SnowDesktopAttachmentOwner(selector =>
+      selector === channels.pairingSelector ? channels.desktopReconnectState : undefined)
+    const wrongRoute = parseRelayRouteId('route-not-provisioned')
+    const relayOwner = new DesktopSnowRelayChannelOwner(
+      desktopAttachmentOwner,
+      async () => { throw new Error('no transport in the rejection case') },
+      async () => { throw new Error('no operations in the rejection case') },
+      () => 'Assembled Desktop',
+      10_000,
+      { connect: () => { throw new Error('no live projection in the rejection case') } },
+    )
+    relayOwner.updatePeers({
+      type: 'ready', transportVersion: 1, routeId: wrongRoute,
+      attachmentId: channels.desktopAttachmentId,
+      peers: [{
+        attachmentId: channels.mobileAttachmentId,
+        pairingSelector: channels.pairingSelector, generation: channels.generation,
+      }],
+    }, channels.pairingSelector)
+    // External route mismatch: the IK transcript is produced by a real Mobile
+    // attachment owner for a different route, so the real Desktop attachment
+    // owner rejects it — no internal state is mocked.
+    await expect(relayOwner.receive(
+      await forgedIkp(channels, wrongRoute, channels.mobileAttachmentId),
+      channels.mobileAttachmentId, channels.desktopAttachmentId, channels.pairingSelector, new AbortController().signal,
+    )).rejects.toThrow()
+    relayOwner.invalidate(channels.pairingSelector)
+    channels.attachmentKey.fill(0)
+    channels.mobileReconnectState.fill(0)
+    channels.desktopReconnectState.fill(0)
+  }, 60_000)
 })
 
 
@@ -565,6 +601,24 @@ async function durableSessionLog(home: string, sessionId: string): Promise<strin
 async function countTurnEnds(home: string, sessionId: string): Promise<number> {
   const log = await durableSessionLog(home, sessionId)
   return (log.match(/"type":"turn\/end"/g) ?? []).length
+}
+
+async function forgedIkp(
+  channels: Awaited<ReturnType<typeof snowProductChannels>>,
+  routeId: ReturnType<typeof parseRelayRouteId>,
+  mobileAttachmentId: ReturnType<typeof parseRelayAttachmentId>,
+): Promise<Uint8Array> {
+  const mobile = new SnowMobileAttachmentOwner(channels.mobileReconnectState, channels.pairingSelector)
+  const begun = await mobile.begin({
+    type: 'ready', transportVersion: 1, routeId,
+    attachmentId: mobileAttachmentId,
+    peers: [{
+      attachmentId: channels.desktopAttachmentId,
+      pairingSelector: channels.pairingSelector, generation: channels.generation,
+    }],
+  })
+  mobile.dispose()
+  return begun.payload
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
