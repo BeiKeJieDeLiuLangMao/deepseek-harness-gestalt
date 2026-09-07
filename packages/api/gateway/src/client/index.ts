@@ -114,6 +114,9 @@ export interface ClientRemote extends TypertClientRemote {
   readonly $host: RemoteHostFacts
 }
 
+/** Gateway-owned methods; generated namespaces are registered as child Services. */
+type ClientRemoteServiceContract = Pick<ClientRemote, '$host' | '$mount' | '$on' | '$stream'>
+
 /** The fixed Host facts exposed on `ctx.remote.$host`. */
 export interface RemoteHostFacts {
   /** Host home directory from the ready frame, undefined before it. */
@@ -140,7 +143,7 @@ export function apply(ctx: Context): void {
   new ClientRemoteService(ctx)
 }
 
-class ClientRemoteService extends Service implements ClientRemote {
+class ClientRemoteService extends Service implements ClientRemoteServiceContract {
   private readonly ownerCtx: Context
   private readonly connection: ConnectionHandle
   private readonly namespaces = new Map<string, RemoteNamespaceHandle>()
