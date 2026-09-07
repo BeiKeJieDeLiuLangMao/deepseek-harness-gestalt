@@ -57,12 +57,16 @@ beforeAll(async () => {
 }, 120_000)
 
 afterEach(async () => {
-  try {
-    for (const cleanup of cleanups.splice(0).reverse()) await cleanup()
-    for (const uninstall of uninstalls.splice(0).reverse()) uninstall()
-  } finally {
-    await stopShippedWebHosts(children, homes)
+  const teardownErrors: unknown[] = []
+  for (const cleanup of cleanups.splice(0).reverse()) {
+    try { await cleanup() } catch (error) { teardownErrors.push(error) }
   }
+  for (const uninstall of uninstalls.splice(0).reverse()) {
+    try { uninstall() } catch (error) { teardownErrors.push(error) }
+  }
+  try { await stopShippedWebHosts(children, homes) } catch (error) { teardownErrors.push(error) }
+  if (teardownErrors.length === 1) throw teardownErrors[0]
+  if (teardownErrors.length > 1) throw new AggregateError(teardownErrors, 'multiple teardown failures')
 })
 
 describe('assembled Desktop Relay live Session projection on shipped dsh web', () => {
@@ -194,7 +198,6 @@ describe('assembled Desktop Relay live Session projection on shipped dsh web', (
         reconnect: () => {},
       },
     )
-    let teardownFailure: unknown
     const drainTransport = async (): Promise<void> => {
       inboundAbort.abort()
       await Promise.all([drainDelivery(), drainInbound()])
@@ -205,12 +208,10 @@ describe('assembled Desktop Relay live Session projection on shipped dsh web', (
           : new Error(`memory-direct transport failed: ${String(first)}`)
       }
     }
-    // Each teardown concern runs in its own try block: a transport drain
-    // failure is recorded for the test's error path but cannot block the
-    // LLM, Host, or channel disposals that follow.
-    cleanups.push(async () => {
-      try { await drainTransport() } catch (error) { teardownFailure = error }
-    })
+    // Order matters: abort and settle in-flight receives before disposing the
+    // owners and channels, then zero the key material last so no in-flight
+    // operation can observe wiped bytes.
+    cleanups.push(drainTransport)
     cleanups.push(() => { mobileAttachmentOwner.dispose() })
     cleanups.push(() => { relayOwner.invalidate(channels.pairingSelector) })
     cleanups.push(() => {
@@ -400,7 +401,6 @@ describe('assembled Desktop Relay live Session projection on shipped dsh web', (
     }, pairingDependencies(channels))).resolves.toMatchObject({ type: 'confirmed' })
     await expect.poll(async () => await countTurnEnds(first.home, sessionId) > turnsBeforeDisconnect).toBe(true)
     expect(surface.getSnapshot().conversations[localSessionId]?.nodes.length).toBe(nodesBeforeDisconnect)
-    if (teardownFailure !== undefined) throw teardownFailure
   }, 180_000)
 })
 
