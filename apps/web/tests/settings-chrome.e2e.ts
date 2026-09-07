@@ -5,10 +5,12 @@
 // browser theme-color metadata)
 // the Language row and busy-state Enter preference (both Host-backed), plus
 // Permission as the persisted default for subsequently created sessions.
-// Zero model calls: everything is pure client + persistence state on a blank
-// frame, so there is no fixture and a stray stream would fail loud on the
-// open llm seam.
+// No agent model calls: ordinary cases use client + persistence state on a
+// blank frame, while the Web Search probe reaches a dedicated child-process
+// HTTP fixture through the shipped provider.
 import { readFile } from 'node:fs/promises'
+import type { ChildProcess } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
@@ -19,7 +21,7 @@ import {
   acknowledgeReloadConnectionLoss, assertFixtureInventory, captureStableAria, compareOrRefreshGolden,
   launchWebScaffold, watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
-import { ZH_BROWSER_LOCALE, saveFailureShot } from './support.ts'
+import { newEnglishPage, ZH_BROWSER_LOCALE, saveFailureShot } from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('./expected/settings-chrome', import.meta.url))
 const DIALOG_EXPECTED = join(SNAPSHOT_DIR, 'dialog.expected.md')
@@ -28,6 +30,105 @@ const PLUGINS_EXPECTED = join(SNAPSHOT_DIR, 'plugins.expected.md')
 const DIALOG_EN_EXPECTED = join(SNAPSHOT_DIR, 'dialog-en.expected.md')
 const PLUGIN_ROW_SELECTOR = '[data-plugin-entry$="ui-settings"]'
 const MODE = webSnapshotMode()
+const SEARCH_PROVIDER_FIXTURE = fileURLToPath(new URL('./fixtures/settings-search-provider.mjs', import.meta.url))
+const KIMI_SEARCH_KEY = 'settings-kimi-key'
+const ANTHROPIC_SEARCH_KEY = 'settings-anthropic-key'
+
+interface CapturedSearchRequest {
+  readonly path: string
+  readonly authorization: 'absent' | 'kimi' | 'anthropic' | 'unexpected'
+  readonly apiKey: 'absent' | 'kimi' | 'anthropic' | 'unexpected'
+  readonly body: unknown
+}
+
+interface SearchProviderFixture {
+  readonly baseURL: string
+  requests(): Promise<readonly CapturedSearchRequest[]>
+  close(): Promise<void>
+}
+
+function waitForProviderReady(child: ChildProcess, stderr: () => string): Promise<string> {
+  return new Promise((resolveReady, reject) => {
+    let stdout = ''
+    const cleanup = (): void => {
+      clearTimeout(timer)
+      child.stdout?.off('data', onData)
+      child.off('exit', onExit)
+    }
+    const onData = (chunk: Buffer): void => {
+      stdout += chunk.toString()
+      const line = stdout.split('\n', 1)[0]
+      if (line === undefined || line.length === 0 || !stdout.includes('\n')) return
+      cleanup()
+      const ready = JSON.parse(line) as { baseURL?: unknown }
+      if (typeof ready.baseURL !== 'string') {
+        reject(new Error(`settings search provider printed an invalid ready line: ${line}`))
+        return
+      }
+      resolveReady(ready.baseURL)
+    }
+    const onExit = (code: number | null, signal: NodeJS.Signals | null): void => {
+      cleanup()
+      reject(new Error(
+        `settings search provider exited before ready (code ${String(code)}, signal ${String(signal)}):\n${stderr()}`,
+      ))
+    }
+    const timer = setTimeout(() => {
+      cleanup()
+      reject(new Error(`settings search provider did not become ready:\n${stderr()}`))
+    }, 10_000)
+    child.stdout?.on('data', onData)
+    child.once('exit', onExit)
+  })
+}
+
+async function stopProvider(child: ChildProcess): Promise<void> {
+  if (child.exitCode !== null) {
+    if (child.exitCode !== 0) throw new Error(`settings search provider exited with code ${String(child.exitCode)}`)
+    return
+  }
+  if (child.signalCode !== null) {
+    throw new Error(`settings search provider exited from signal ${child.signalCode}`)
+  }
+  const closed = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => {
+    child.once('close', (code, signal) => { resolve({ code, signal }) })
+  })
+  child.kill('SIGTERM')
+  const timeout = setTimeout(() => { child.kill('SIGKILL') }, 10_000)
+  const result = await closed
+  clearTimeout(timeout)
+  if (result.signal === 'SIGKILL') throw new Error('settings search provider did not stop after SIGTERM')
+  if (result.code !== 0) {
+    throw new Error(`settings search provider exited with code ${String(result.code)} and signal ${String(result.signal)}`)
+  }
+}
+
+async function startSearchProviderFixture(): Promise<SearchProviderFixture> {
+  const child = spawn(process.execPath, [SEARCH_PROVIDER_FIXTURE], {
+    env: {
+      DSH_TEST_KIMI_SEARCH_KEY: KIMI_SEARCH_KEY,
+      DSH_TEST_ANTHROPIC_SEARCH_KEY: ANTHROPIC_SEARCH_KEY,
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  let stderr = ''
+  child.stderr?.on('data', (chunk: Buffer) => { stderr += chunk.toString() })
+  try {
+    const baseURL = await waitForProviderReady(child, () => stderr)
+    return {
+      baseURL,
+      requests: async () => {
+        const response = await fetch(`${baseURL}/requests`)
+        if (!response.ok) throw new Error(`settings search provider inventory returned HTTP ${String(response.status)}`)
+        return await response.json() as CapturedSearchRequest[]
+      },
+      close: () => stopProvider(child),
+    }
+  } catch (error) {
+    await stopProvider(child).catch(() => {})
+    throw error
+  }
+}
 
 describe('web e2e: settings modal and General preferences', () => {
   let scaffold: WebScaffold
@@ -140,6 +241,105 @@ describe('web e2e: settings modal and General preferences', () => {
     await expect.poll(() => page.getByRole('dialog', { name: '设置' }).count(), { timeout: 5_000 }).toBe(0)
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
+
+  it('routes Kimi and Anthropic settings through the generated Host probe', async () => {
+    let provider: SearchProviderFixture | undefined
+    let isolated: WebScaffold | undefined
+    let isolatedBrowser: Browser | undefined
+    let isolatedPage: Page | undefined
+    const failures: unknown[] = []
+    try {
+      provider = await startSearchProviderFixture()
+      isolated = await launchWebScaffold({})
+      isolatedBrowser = await chromium.launch()
+      const providerPage = await newEnglishPage(isolatedBrowser)
+      isolatedPage = providerPage
+      const isolatedTripwire = watchConsole(providerPage)
+      onTestFailed(() => saveFailureShot(providerPage, 'web-e2e-settings-search-provider'))
+      await providerPage.goto(isolated.authenticatedUrl, { waitUntil: 'load' })
+      await providerPage.waitForSelector('[class*="frame"]', { timeout: 30_000 })
+      await providerPage.getByRole('button', { name: 'Settings', exact: true }).click()
+      const dialog = providerPage.getByRole('dialog', { name: 'Settings' })
+      await dialog.getByRole('button', { name: 'Plugins', exact: true }).click()
+      await dialog.getByRole('tab', { name: 'Plugin configuration', exact: true }).waitFor({ timeout: 10_000 })
+      const card = dialog.getByText('Web Search', { exact: true }).locator('xpath=ancestor::li[1]')
+      const openCard = async (): Promise<void> => {
+        await card.getByRole('button', { name: 'Show settings: Web Search', exact: true }).click()
+        await card.getByRole('tab', { name: 'DeepSeek', exact: true }).waitFor({ timeout: 10_000 })
+      }
+      const configureAndProbe = async (
+        providerName: 'Kimi' | 'Anthropic',
+        endpoint: string,
+        apiKey: string,
+        expectedTitle: string,
+      ): Promise<void> => {
+        const tab = card.getByRole('tab', { name: providerName, exact: true })
+        await tab.click()
+        await expect.poll(() => tab.getAttribute('aria-selected'), { timeout: 10_000 }).toBe('true')
+        await card.getByLabel('Endpoint', { exact: true }).fill(endpoint)
+        await card.getByLabel('API key', { exact: true }).fill(apiKey)
+        await card.getByRole('button', { name: 'Save', exact: true }).click()
+        await card.getByRole('button', { name: 'Show settings: Web Search', exact: true })
+          .waitFor({ timeout: 10_000 })
+        await openCard()
+        await card.getByRole('button', { name: 'Test search', exact: true }).click()
+        await expect.poll(
+          () => card.getByRole('status').textContent(),
+          { timeout: 15_000 },
+        ).toBe(`Search succeeded · 1 · ${expectedTitle}`)
+      }
+
+      await openCard()
+      await configureAndProbe(
+        'Kimi',
+        `${provider.baseURL}/kimi/search`,
+        KIMI_SEARCH_KEY,
+        'Kimi assembled result',
+      )
+      await expect.poll(async () => (await provider!.requests()).length, { timeout: 10_000 }).toBe(1)
+
+      await configureAndProbe(
+        'Anthropic',
+        `${provider.baseURL}/anthropic`,
+        ANTHROPIC_SEARCH_KEY,
+        'Anthropic assembled result',
+      )
+      await expect.poll(async () => (await provider!.requests()).length, { timeout: 10_000 }).toBe(2)
+
+      expect(await provider.requests()).toEqual([
+        {
+          path: '/kimi/search',
+          authorization: 'kimi',
+          apiKey: 'absent',
+          body: { text_query: 'deepseek harness' },
+        },
+        {
+          path: '/anthropic/messages',
+          authorization: 'anthropic',
+          apiKey: 'anthropic',
+          body: {
+            model: 'deepseek-v4-flash',
+            max_tokens: 4096,
+            messages: [{
+              role: 'user',
+              content: [{ type: 'text', text: 'Perform a web search for the query: deepseek harness' }],
+            }],
+            tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 5 }],
+          },
+        },
+      ])
+      expect(isolatedTripwire.pageErrors).toEqual([])
+      expect(isolatedTripwire.warnings).toEqual([])
+    } catch (error) {
+      failures.push(error)
+    } finally {
+      await isolatedPage?.close().catch((error: unknown) => { failures.push(error) })
+      await isolatedBrowser?.close().catch((error: unknown) => { failures.push(error) })
+      await isolated?.close().catch((error: unknown) => { failures.push(error) })
+      await provider?.close().catch((error: unknown) => { failures.push(error) })
+    }
+    if (failures.length > 0) throw new AggregateError(failures, 'assembled Web Search settings probe failed')
+  }, 120_000)
 
   it('stores Permission as the default for future sessions without changing an existing session', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-settings-permission'))
