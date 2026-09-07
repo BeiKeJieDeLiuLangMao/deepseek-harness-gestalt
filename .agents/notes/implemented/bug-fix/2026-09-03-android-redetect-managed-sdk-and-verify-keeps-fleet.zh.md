@@ -16,7 +16,7 @@ Android 运行时验证失败会通过 `ctx.phoneDevices.deactivate()` 停掉整
 
 `activateAndroidRuntime` 失败只通过 `this.android.deactivate()` 停止 Android 提供方持有的模拟器；已激活的 fleet 保持就绪，运行时快照保持 `kind: 'ready'`。`verifyAndroidRuntime` 拆分预算：有界在线清单等待在可配置的 `androidRuntimeVerifyTimeoutMs` 上限（默认 180000 毫秒）内每秒轮询 `listDevices`，通过后才 `startCapture`；可识别画面探测保留 15 秒 `ANDROID_RUNTIME_VERIFY_MS` 预算与 4 MB 字节上限。
 
-设置卡片的清单来源接收一个读取 Host 运行时快照的 `runtimeReady` 接口：`PHONE_UNRESOLVED` 的 fleet 拉取只在运行时未就绪时渲染 mobilecli-missing 行；运行时就绪时该拉取落到平台中立的「无设备」恢复行，因为就绪快照证明 fleet 处于活动状态，该解析失败是陈旧信息。
+设置卡片的清单来源接收一个读取 Host 运行时快照的 `runtimeReady` 接口：`PHONE_UNRESOLVED` 的 fleet 拉取只在运行时未就绪时渲染 mobilecli-missing 行；运行时就绪时该拉取落到平台中立的「无设备」恢复行，因为就绪快照证明 fleet 处于活动状态，该解析失败是陈旧信息。已启用的卡片持有该错误且运行时变为就绪时，控制器会重新拉取 fleet。成功拉取会用设备清单替换错误；再次失败则保留来源的既有错误映射。关闭的卡片不会拉取，并在再次启用时执行同一恢复。
 
 ## Alternatives considered
 
@@ -30,4 +30,4 @@ Android 运行时验证失败会通过 `ctx.phoneDevices.deactivate()` 停掉整
 
 ## Consequences
 
-对托管 SDK 的重新检测是幂等的，一次失败的就绪提交只损失模拟器而非 fleet。冷启动最多有三分钟时间出现在清单中；始终不上线的设备仍以 `PHONE_ANDROID_RUNTIME_VERIFY` 失败，只是上限现在可由运维调节。测试固定了托管根目录重新检测、保留 fleet 的验证失败、假定时器下「先在线后 H264」的顺序，以及运行时就绪时 `PHONE_UNRESOLVED` 的回退行为。
+对托管 SDK 的重新检测是幂等的，一次失败的就绪提交只损失模拟器而非 fleet。冷启动最多有三分钟时间出现在清单中；始终不上线的设备仍以 `PHONE_ANDROID_RUNTIME_VERIFY` 失败，只是上限现在可由运维调节。测试固定了托管根目录重新检测、保留 fleet 的验证失败、假定时器下「先在线后 H264」的顺序、运行时就绪时 `PHONE_UNRESOLVED` 的回退行为，以及不在关闭或重复通知时发请求的陈旧错误恢复。

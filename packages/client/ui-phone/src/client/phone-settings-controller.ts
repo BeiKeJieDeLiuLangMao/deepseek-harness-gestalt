@@ -190,10 +190,16 @@ export class PhoneSettingsCardController {
       this.runtime?.ensureDetected()
       const enabled = snapshot.value?.enabled === true
       const environment = this.runtime?.getSnapshot() ?? MISSING_PHONE_ENVIRONMENT
+      let view = resolvePhoneCardView(enabled, this.source)
+      if (enabled && environment.runtime.kind === 'ready'
+        && view.kind === 'errors' && view.errors.some(error => error.kind === 'mobilecli-missing')) {
+        void this.source.redetect()
+        view = resolvePhoneCardView(enabled, this.source)
+      }
       this.store.set({
         enabled,
         writable: snapshot.writable,
-        view: resolvePhoneCardView(enabled, this.source),
+        view,
         runtime: environment.runtime,
         platforms: environment.platforms,
       })

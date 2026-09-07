@@ -16,7 +16,7 @@ A failed Android runtime verification deactivated the whole mobilecli fleet thro
 
 `activateAndroidRuntime` failure stops only the Android Provider's owned emulator through `this.android.deactivate()`; the activated fleet stays ready and the runtime snapshot keeps `kind: 'ready'`. `verifyAndroidRuntime` splits its budgets: a bounded online-listing wait polls `listDevices` every second under the configurable `androidRuntimeVerifyTimeoutMs` ceiling (default 180000 ms) before `startCapture`, while the recognizable-frame probe keeps the 15 s `ANDROID_RUNTIME_VERIFY_MS` budget and the 4 MB byte cap.
 
-The settings-card listing source takes a `runtimeReady` face over the Host runtime snapshot: a `PHONE_UNRESOLVED` fleet pull renders the mobilecli-missing row only while the runtime is not ready; with a ready runtime the pull falls to the platform-neutral no-device recovery, because a ready snapshot proves the fleet is active and the resolution failure is stale.
+The settings-card listing source takes a `runtimeReady` face over the Host runtime snapshot: a `PHONE_UNRESOLVED` fleet pull renders the mobilecli-missing row only while the runtime is not ready; with a ready runtime the pull falls to the platform-neutral no-device recovery, because a ready snapshot proves the fleet is active and the resolution failure is stale. When an enabled card already holds that error and the runtime becomes ready, its controller starts a fresh fleet pull. A successful pull replaces the error with inventory; another failure keeps the source's ordinary error mapping. A disabled card does not pull and performs the same recovery when it is enabled.
 
 ## Alternatives considered
 
@@ -30,4 +30,4 @@ The settings-card listing source takes a `runtimeReady` face over the Host runti
 
 ## Consequences
 
-Redetection is idempotent for the managed SDK, and one failed readiness commit costs only the emulator, not the fleet. Cold boots get up to three minutes to appear in the listing; a device that never comes online still fails with `PHONE_ANDROID_RUNTIME_VERIFY`, now under the operator-tunable ceiling. Tests pin the managed-root redetect, the fleet-preserving verify failure, the online-before-H264 ordering under fake timers, and the ready-runtime `PHONE_UNRESOLVED` fallback.
+Redetection is idempotent for the managed SDK, and one failed readiness commit costs only the emulator, not the fleet. Cold boots get up to three minutes to appear in the listing; a device that never comes online still fails with `PHONE_ANDROID_RUNTIME_VERIFY`, now under the operator-tunable ceiling. Tests pin the managed-root redetect, the fleet-preserving verify failure, the online-before-H264 ordering under fake timers, the ready-runtime `PHONE_UNRESOLVED` fallback, and stale-error recovery without disabled or repeated pulls.
