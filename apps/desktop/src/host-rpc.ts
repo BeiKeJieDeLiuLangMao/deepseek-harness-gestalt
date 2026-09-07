@@ -318,6 +318,11 @@ type RequestOutcome =
   | { kind: 'transport' }
   | { kind: 'limit' }
 
+type EmptyRequestOutcome =
+  | { kind: 'response'; status: number; text: string; headers: IncomingMessage['headers'] }
+  | { kind: 'timeout' }
+  | { kind: 'transport' }
+
 /**
  * Exchange the process launch token at the loopback root for an in-memory Host cookie.
  * @param launchUrl - authenticated `GET /?token=` URL printed by `dsh web`.
@@ -352,8 +357,7 @@ export async function bootstrapDesktopHostCookie(
   if (response.status !== 303) {
     throw new Error(`Desktop Host cookie bootstrap returned HTTP ${String(response.status)}`)
   }
-  const locationHeader = response.headers.location
-  const location = Array.isArray(locationHeader) ? locationHeader[0] : locationHeader
+  const location = response.headers.location
   if (location === undefined) {
     throw new Error('Desktop Host cookie bootstrap omitted Location')
   }
@@ -665,10 +669,10 @@ function cookieRequestHeader(setCookie: string | readonly string[] | undefined):
   return cookies.length === 0 ? undefined : cookies.join('; ')
 }
 
-function requestEmpty(url: URL, timeoutMs: number): Promise<RequestOutcome> {
+function requestEmpty(url: URL, timeoutMs: number): Promise<EmptyRequestOutcome> {
   return new Promise((resolve) => {
     let settled = false
-    const settle = (outcome: RequestOutcome): void => {
+    const settle = (outcome: EmptyRequestOutcome): void => {
       if (settled) return
       settled = true
       clearTimeout(deadline)

@@ -82,7 +82,7 @@ export class EncryptedDesktopSnowPairingStore {
       throw new TypeError('Desktop Snow pairing store must contain an object')
     }
     const document = value as Record<string, unknown>
-    const active = boundedArray(document.active, 'active').map((item) => {
+    const active = boundedArray(document.active, 'active').map((item): PersistedSnowPairingState => {
       if (typeof item !== 'object' || item === null || Array.isArray(item)) {
         throw new TypeError('Desktop Snow pairing store record must be an object')
       }
@@ -377,12 +377,12 @@ export class DesktopSnowPairingVault {
 
   /** Read a defensive reconnect-state copy by Relay pairing selector. */
   reconnectState(selector: RelayPairingSelector): Uint8Array | undefined {
-    return this.active.get(selector as PersonalPairingId)?.reconnectState.slice()
+    return this.active.get(parsePersonalPairingId(selector))?.reconnectState.slice()
   }
 
   /** Read the pairing-scoped application key derived from the authenticated XKpsk3 transcript. */
   attachmentKey(selector: RelayPairingSelector): Uint8Array | undefined {
-    return this.active.get(selector as PersonalPairingId)?.attachmentKey.slice()
+    return this.active.get(parsePersonalPairingId(selector))?.attachmentKey.slice()
   }
 
   /** @returns copies of every pairing-scoped Desktop Relay grant. */
@@ -573,8 +573,12 @@ function cloneConfirmation(transaction: DesktopSnowConfirmationTransaction): Des
     ...transaction,
     desktopCredentialDigest: transaction.desktopCredentialDigest.slice(),
     mobileCredentialDigest: transaction.mobileCredentialDigest.slice(),
-    sealedRelayAuthority: transaction.sealedRelayAuthority?.slice(),
-    reconnectState: transaction.reconnectState?.slice(),
+    ...(transaction.sealedRelayAuthority === undefined
+      ? {}
+      : { sealedRelayAuthority: transaction.sealedRelayAuthority.slice() }),
+    ...(transaction.reconnectState === undefined
+      ? {}
+      : { reconnectState: transaction.reconnectState.slice() }),
     attachmentKey: transaction.attachmentKey.slice(),
   }
 }

@@ -11,7 +11,7 @@ import {
   expandSessionHistoryRecords,
 } from '@deepseek-ai/dsh-api-session-controller'
 import type {
-  SessionHistoryRecord, SessionWireEvent,
+  SessionFollowFrame, SessionPage, SessionWireEvent,
 } from '@deepseek-ai/dsh-api-session-controller/types'
 import type {
   RemoteEventClientId,
@@ -32,6 +32,7 @@ import {
   type CompanionResult,
   type CompanionProjection,
   type CompanionLiveSessionProjection,
+  type CompanionMutationResult,
   type CompanionOperation,
   type CompanionOperationId,
   type CompanionSearchSessionsOperation,
@@ -135,15 +136,18 @@ export interface CompanionProductOperationDependencies {
 }
 
 /** Per-pairing dependencies supplied by the reviewed Desktop channel owner. */
-export type DesktopCompanionPairingDependencies = Omit<CompanionProductOperationDependencies, 'host'>
+export type DesktopCompanionPairingDependencies = Omit<
+  CompanionProductOperationDependencies,
+  'host' | 'workspaceSnapshot' | 'sessionHistory'
+>
 
 /** Shipped Desktop owner that follows Web Host replacement and executes decoded product operations. */
 export class DesktopCompanionProductOwner {
   private installed: {
     readonly rpc: DesktopHostRpc
     readonly cancellation: AbortController
-    workspace?: DesktopWorkspaceFollowCache
-    history?: DesktopSessionHistoryCache
+    readonly workspace: DesktopWorkspaceFollowCache
+    readonly history: DesktopSessionHistoryCache
   } | undefined
   private ledger: DesktopCompanionOperationLedger | undefined
   private readonly interactions = new DesktopCompanionInteractionRegistry()
@@ -182,12 +186,12 @@ export class DesktopCompanionProductOwner {
     signal: AbortSignal,
   ): Promise<DesktopCompanionLiveProjectionPayload> {
     if (change.type !== 'session') throw new Error('Desktop surface synchronization does not project one Session')
-    const host = this.installed?.rpc
-    if (host === undefined) throw new Error('Desktop Web Host is not available')
+    const installed = this.installed
+    if (installed === undefined) throw new Error('Desktop Web Host is not available')
     return await projectDesktopCompanionLiveSession(change.sessionId, change.includeConversation, {
-      host,
-      workspaceSnapshot: signal => this.installed?.workspace?.wait(signal),
-      sessionHistory: this.installed?.history,
+      host: installed.rpc,
+      workspaceSnapshot: signal => installed.workspace.wait(signal),
+      sessionHistory: installed.history,
       pendingInteractions: sessionId => this.pendingInteractions(sessionId, attachmentKey),
     }, signal)
   }
@@ -265,8 +269,8 @@ export class DesktopCompanionProductOwner {
     operation: CompanionProductOperation,
     dependencies: DesktopCompanionPairingDependencies,
   ): Promise<DesktopCompanionOperationOutput> {
-    const host = this.installed?.rpc
-    if (host === undefined) {
+    const installed = this.installed
+    if (installed === undefined) {
       return operationFailed(operation, {
         kind: 'wire', code: 'HOST_WIRE_INVALID', message: 'Desktop Web Host is not available',
       })
@@ -278,14 +282,12 @@ export class DesktopCompanionProductOwner {
         committedAt: dependencies.now(), outcome: 'accepted',
       }
     }
-    const execute = async () => {
-      const withHost = {
+    const execute = async (): Promise<DesktopCompanionOperationOutput> => {
+      const withHost: CompanionProductOperationDependencies = {
         ...dependencies,
-        host,
-        workspaceSnapshot: signal => this.installed?.workspace?.wait(signal),
-        sessionHistory: this.installed?.history,
-        resolveInteraction: interactionId => this.interactions.resolve(interactionId, dependencies.attachmentKey),
-        pendingInteractions: sessionId => this.interactions.project(sessionId, dependencies.attachmentKey),
+        host: installed.rpc,
+        workspaceSnapshot: signal => installed.workspace.wait(signal),
+        sessionHistory: installed.history,
       }
       const output = operation.type === 'refresh-surface'
         ? await this.surfaceDiscovery.refresh(operation, withHost)
@@ -593,7 +595,7 @@ async function loadHistory(
   const session = parseSurfaceSession(sessionsResponse.value, operation.sessionId)
   if (session === undefined) return invalidHostResult(operation, 'history Session status')
   const history = await loadSessionHistoryPage(dependencies, operation.sessionId, {
-    beforeSeq: operation.beforeSeq,
+    ...(operation.beforeSeq === undefined ? {} : { beforeSeq: operation.beforeSeq }),
     maxMessages: operation.maxMessages,
   })
   if (!history.ok) return operationFailed(operation, history.failure)
@@ -1249,9 +1251,10 @@ function isCompanionResultList(
   return Array.isArray(output)
 }
 
-function requireMutationResult(result: CompanionResult): Exclude<CompanionResult, { type: 'status' | 'session-search' | 'image-chunk' }> {
+function requireMutationResult(result: CompanionResult): CompanionMutationResult {
   if (result.type === 'confirmed' || result.type === 'session-created' || result.type === 'attachment-rejected'
-    || result.type === 'operation-failed' || result.type === 'interaction-receipt') return result
+    || result.type === 'operation-failed' || result.type === 'interaction-receipt'
+    || result.type === 'member-question-settled') return result
   throw new Error('Desktop Companion operation ledger contains a non-mutation result')
 }
 
@@ -1260,6 +1263,7 @@ function isCompanionProjectionOutput(
 ): output is CompanionProjection {
   return output.type === 'surface-snapshot' || output.type === 'conversation-snapshot'
     || output.type === 'transcript-page' || output.type === 'foreground-sync' || output.type === 'session-live'
+    || output.type === 'member-question-state' || output.type === 'document-transfer-state'
 }
 
 function attachmentRejected(
@@ -1299,6 +1303,9 @@ const WORKSPACE_FOLLOW_CODEC = workspaceRemote.descriptors.find(
 )?.result
 const SESSION_FOLLOW_CODEC = sessionRemote.descriptors.find(
   descriptor => descriptor.namespace === 'session' && descriptor.method === 'follow',
+)?.result
+const SESSION_PAGE_CODEC = sessionRemote.descriptors.find(
+  descriptor => descriptor.namespace === 'session' && descriptor.method === 'page',
 )?.result
 
 class DesktopWorkspaceFollowCache {
@@ -1474,7 +1481,7 @@ export class DesktopSessionHistoryCache {
       throughSeq: opening.snapshot.throughSeq,
       beforeSeq: request.beforeSeq,
       ...request.maxMessages === undefined ? {} : { maxMessages: request.maxMessages },
-    }, { signal })
+    }, signal === undefined ? undefined : { signal })
     if (!paged.ok) return paged
     const records = parseHistoryRecords(paged.value)
     if (records === undefined) {
@@ -1564,7 +1571,7 @@ export class DesktopSessionHistoryCache {
   }
 
   private accept(key: string, maxMessages: number | undefined, frame: unknown): void {
-    let decoded: { type: string; cursor?: number; records?: unknown; hasMore?: boolean; event?: unknown }
+    let decoded: SessionFollowFrame
     try {
       decoded = decodeSessionFollowFrame(frame)
     } catch (cause) {
@@ -1575,20 +1582,10 @@ export class DesktopSessionHistoryCache {
       return
     }
     if (decoded.type === 'snapshot') {
-      if (typeof decoded.cursor !== 'number' || !Array.isArray(decoded.records)
-        || typeof decoded.hasMore !== 'boolean') {
-        this.failFollow(key, 'Desktop Host session follow snapshot was invalid')
-        return
-      }
-      const records = parseHistoryRecordList(decoded.records)
-      if (records === undefined) {
-        this.failFollow(key, 'Desktop Host session follow snapshot was invalid')
-        return
-      }
       const snapshot: DesktopHistoryFollowSnapshot = {
         maxMessages,
         throughSeq: decoded.cursor,
-        events: expandSessionHistoryRecords(records),
+        events: expandSessionHistoryRecords(decoded.records),
         hasMore: decoded.hasMore,
       }
       this.follows.set(key, snapshot)
@@ -1600,11 +1597,11 @@ export class DesktopSessionHistoryCache {
       return
     }
     const current = this.follows.get(key)
-    if (current === undefined || decoded.type !== 'event' || !isRecord(decoded.event)) {
+    if (current === undefined) {
       this.failFollow(key, 'Desktop Host session follow increment arrived before a snapshot')
       return
     }
-    current.events = [...current.events, decoded.event as SessionWireEvent]
+    current.events = [...current.events, decoded.event]
     const sessionId = key.slice(0, key.lastIndexOf(':'))
     this.onSessionChanged?.(sessionId)
   }
@@ -1621,30 +1618,23 @@ function historyLoadingFailure(): DesktopHostRpcResult {
   }
 }
 
-function decodeSessionFollowFrame(value: unknown): {
-  type: string
-  cursor?: number
-  records?: unknown
-  hasMore?: boolean
-  event?: unknown
-} {
+function decodeSessionFollowFrame(value: unknown): SessionFollowFrame {
   if (SESSION_FOLLOW_CODEC === undefined || SESSION_FOLLOW_CODEC.mode !== 'strict') {
     throw new Error('Desktop Host session follow codec is unavailable')
   }
-  return SESSION_FOLLOW_CODEC.schema.parse(value) as {
-    type: string
-    cursor?: number
-    records?: unknown
-    hasMore?: boolean
-    event?: unknown
-  }
+  return SESSION_FOLLOW_CODEC.schema.parse(value) as SessionFollowFrame
 }
 
-function parseHistoryRecords(value: unknown): { records: SessionHistoryRecord[]; hasMore: boolean } | undefined {
-  if (!isRecord(value) || !Array.isArray(value.records) || typeof value.hasMore !== 'boolean') return undefined
-  const records = parseHistoryRecordList(value.records)
-  if (records === undefined) return undefined
-  return { records, hasMore: value.hasMore }
+function parseHistoryRecords(value: unknown): SessionPage | undefined {
+  if (SESSION_PAGE_CODEC === undefined || SESSION_PAGE_CODEC.mode !== 'strict') {
+    throw new Error('Desktop Host session page codec is unavailable')
+  }
+  try {
+    return SESSION_PAGE_CODEC.schema.parse(value) as SessionPage
+  } catch {
+    // Session page codec failures are projected as invalid Host responses.
+    return undefined
+  }
 }
 
 function conversationHistoryValue(
@@ -1652,17 +1642,6 @@ function conversationHistoryValue(
   hasMore: boolean,
 ): { events: Array<{ event: SessionWireEvent }>; hasMore: boolean } {
   return { events: events.map(event => ({ event })), hasMore }
-}
-
-function parseHistoryRecordList(value: readonly unknown[]): SessionHistoryRecord[] | undefined {
-  const records: SessionHistoryRecord[] = []
-  for (const item of value) {
-    if (!isRecord(item) || (item.type !== 'event' && item.type !== 'chunks') || !isRecord(item.event)) {
-      return undefined
-    }
-    records.push(item as SessionHistoryRecord)
-  }
-  return records
 }
 
 async function loadSessionHistoryPage(
