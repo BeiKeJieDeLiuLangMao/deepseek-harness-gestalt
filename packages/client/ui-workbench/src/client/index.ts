@@ -9,6 +9,7 @@ import type {
   BrowserPageState, BrowserTarget, BrowserWorkspaceCreateRemoteRequest, BrowserWorkspaceProjection,
 } from '@deepseek-ai/dsh-browser-workspace/client'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
+import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import {
   BROWSER_SETTINGS_NAMESPACE,

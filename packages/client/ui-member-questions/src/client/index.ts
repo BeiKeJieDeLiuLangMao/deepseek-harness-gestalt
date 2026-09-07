@@ -5,9 +5,13 @@
  * package does not import PendingQuestion.
  */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
-import type { SessionId } from '@deepseek-ai/dsh-client-connection/client'
+import type {} from '@deepseek-ai/dsh-api-remotes/client'
+import type { ReceivingQuestionBook } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type {} from '@deepseek-ai/dsh-client-locale/client'
+import type {} from '@deepseek-ai/dsh-client-ui-better-sidebar/client'
 import type { DetailsDocumentFocus } from '@deepseek-ai/dsh-client-ui-conversation/client'
-import type { ReceivingQuestionBook } from '@deepseek-ai/dsh-api-session-controller/src/client/sessions/receiving.ts'
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { resolveWorkspacePath } from '@deepseek-ai/dsh-util-workspace-path'
 import { MemberQuestionDock } from './MemberQuestionCard.tsx'
 import { en, zh, type MemberQuestionKey } from './locales.ts'
@@ -39,8 +43,8 @@ declare module '@deepseek-ai/cordis' {
 /** Dictionary namespace owned by this plugin. */
 const NS = 'member-question'
 
-/** Required services: slots, dictionaries, Files-open path, and receiving projection. */
-export const inject = ['slots', 'locale', 'workspaces', 'sessions', 'receivingQuestions']
+/** Required services: slots, dictionaries, Sessions, Host Remote, and receiving projection. */
+export const inject = ['slots', 'locale', 'sessions', 'receivingQuestions', 'remote', 'remote.session']
 
 /**
  * Client plugin body: register the `member-question` dictionaries and the
@@ -61,15 +65,12 @@ export function apply(ctx: ClientContext): void {
   const openReference = (sessionId: SessionId, path: string, title?: string): void => {
     const cwd = ctx.sessions.list.getSnapshot().byId[sessionId]?.cwd
     const absolute = resolveWorkspacePath(cwd, path)
-    const sidebar = ctx.get('betterSidebar') as {
-      getTab(id: string): unknown
-      openFile(scope: { sessionId: string; cwd?: string }, path: string, title?: string): void
-    } | undefined
+    const sidebar = ctx.get('betterSidebar')
     if (sidebar?.getTab('editor') !== undefined) {
       sidebar.openFile(cwd === undefined ? { sessionId } : { sessionId, cwd }, absolute, title)
       return
     }
-    void ctx.workspaces.openPath(absolute)
+    void ctx.remote.session.openWorkspacePath({ path: absolute })
   }
 
   ctx.slots.inject('conversation.input.dock', () => ctx.slots.register(

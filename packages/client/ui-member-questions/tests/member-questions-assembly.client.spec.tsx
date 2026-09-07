@@ -7,17 +7,23 @@
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import type { SessionId } from '@deepseek-ai/dsh-client-connection/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { zh as commonZh, en as commonEn } from '../../locale/src/locales/index.ts'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
+import type { PropsRenderSlots, SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
+import type { InputState } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
+import {
+  chatSnapshot, conversationSnapshot, sessionSnapshot, workspaceSnapshot,
+} from '@deepseek-ai/dsh-client-test-runtime'
 import { createSlotRenderer } from '../../ui-renderer/src/client/scoped-slots.tsx'
 import type { MemberQuestionReceiverSnapshot } from '@deepseek-ai/dsh-member-question-receiver/types'
 import { memberQuestionRemoteSettleRequestSchema } from '../../../interaction/member-question-receiver/src/remote-schemas.ts'
 import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
 import { RemoteStream, type RemoteStreamOptions } from '@deepseek-ai/dsh-api-gateway/client'
-import { ReceivingQuestionBook } from '../../../api/session-controller/src/client/sessions/receiving.ts'
-import * as SessionClient from '../../../api/session-controller/src/client/index.ts'
+import { ReceivingQuestionBook } from '@deepseek-ai/dsh-api-session-controller/client'
+import * as SessionClient from '@deepseek-ai/dsh-api-session-controller/client'
 import { apply as memberApply, inject as memberInject } from '../src/client/index.ts'
 import { apply as questionApply, inject as questionInject } from '../../ui-user-questions/src/client/index.ts'
 import { QuestionPresentationSlot } from '../../ui-user-questions/src/client/QuestionPresentationSlot.tsx'
@@ -26,17 +32,26 @@ afterEach(cleanup)
 
 const SID = 'receiving-session' as SessionId
 
-function hostPending(): MemberQuestionReceiverSnapshot['pending'][number] {
+function bindSnapshot<Snapshot>(value: Snapshot): SnapshotSelectorHook<Snapshot> {
+  return selector => selector(value)
+}
+
+const inputState: InputState = {
+  draft: '', imageIds: [], draftRev: 0, phase: 'plain',
+  occurrences: [], queue: [], annotations: [],
+}
+
+function hostPending(questionId = 'question-1', revision = 1): MemberQuestionReceiverSnapshot['pending'][number] {
   return {
-    questionId: 'question-1' as never,
+    questionId: questionId as never,
     receivingSessionId: SID as never,
     receivingAccountId: 'account-receiver' as never,
-    revision: 1,
+    revision,
     arrivedAt: 100,
     operation: {
       type: 'member-question',
-      operationId: 'operation-1' as never,
-      questionId: 'question-1' as never,
+      operationId: `operation-${questionId}` as never,
+      questionId: questionId as never,
       projectId: 'project-1' as never,
       originSessionId: 'origin-session-1' as never,
       expiresAt: Date.now() + 125_000,
@@ -80,19 +95,50 @@ describe('three Client applies: session-controller, member-questions, user-quest
     ctx.provide('locale', locale)
     slots.installLocale(locale)
 
+    const session = sessionSnapshot(SID)
+    const sessions: SessionListState = {
+      ids: [SID],
+      byId: {
+        [SID]: { id: SID, displayTitle: 'Receiving', running: false, blank: false, updatedAt: 0 },
+      },
+      current: SID,
+      phase: 'ready',
+      subagentsByParent: {},
+      jobsBySession: {},
+      currentAddress: undefined,
+    }
     const binding = {
       key: SID,
       ctx,
       hooks: {},
       keyedHooks: {},
-      props: { sessionId: SID },
+      props: {
+        sessionId: SID,
+        useSession: bindSnapshot(session),
+        useSessions: bindSnapshot(sessions),
+        useSessionPendingInteraction: bindSnapshot(new Map()),
+        useWorkspaces: bindSnapshot(workspaceSnapshot()),
+        useConversation: bindSnapshot(conversationSnapshot()),
+        useChat: bindSnapshot(chatSnapshot()),
+        useTrajectory: bindSnapshot({
+          eventNodes: [], eventLocations: new Map(), requests: [], callSchemas: new Map(),
+          partial: null, runningCalls: [],
+        }),
+        useProjection: () => undefined,
+        useInput: bindSnapshot(inputState),
+        inputActions: {
+          setDraft: () => {}, addImages: () => false, removeImage: () => {}, pruneImages: () => {},
+          submit: () => {}, addTextAnnotation: () => { throw new Error('unused') },
+          updateTextAnnotation: () => {}, removeTextAnnotation: () => {}, discardTextAnnotations: () => {},
+          addImagePin: () => { throw new Error('unused') }, updateImagePin: () => {},
+        },
+      },
     }
     slots.installScope('session', {
       current: { getSnapshot: () => binding, subscribe: () => () => {} },
       resolve: key => key === SID ? binding : undefined,
       renderArea: (_value, props) => props.children,
     })
-    ctx.provide('workspaces', { openPath: vi.fn(async () => {}) })
     ctx.provide('uiSession', { registerPendingInteraction: () => () => {} })
 
     let current = snapshotOf(1, [hostPending()])
@@ -108,28 +154,40 @@ describe('three Client applies: session-controller, member-questions, user-quest
             error: { code: 'gateway/bad-request', message: 'exact payload required', details: {} },
           }
         }
-        current = snapshotOf(2, [], [{
-          questionId: 'question-1' as never,
-          receivingSessionId: SID as never,
-          receivingAccountId: 'account-receiver' as never,
-          revision: 2,
-          arrivedAt: 100,
-          brief: hostPending().operation,
-          terminal: {
-            type: 'member-question-settled',
-            operationId: 'operation-1' as never,
-            questionId: 'question-1' as never,
-            outcome: 'answered',
+        if (!parsed.success) throw new Error('member question request did not parse')
+        const pending = current.pending[0]
+        if (pending === undefined) throw new Error('member question fixture has no pending row')
+        const nextRevision = current.revision + 1
+        const terminal = parsed.data.response.kind === 'answered'
+          ? {
+            type: 'member-question-settled' as const,
+            operationId: pending.operation.operationId,
+            questionId: pending.questionId,
+            outcome: 'answered' as const,
             settledAt: 500,
             settledByInstallationId: 'installation-a' as never,
             settledByDeviceName: 'Desk A',
-            answers: [{ id: 'remove-member', selected: ['移出 (recommended)'] }],
-          },
+            answers: parsed.data.response.answers,
+          }
+          : {
+            type: 'member-question-settled' as const,
+            operationId: pending.operation.operationId,
+            questionId: pending.questionId,
+            outcome: 'declined' as const,
+            settledAt: 500,
+            settledByInstallationId: 'installation-a' as never,
+            settledByDeviceName: 'Desk A',
+          }
+        current = snapshotOf(nextRevision, [], [{
+          questionId: pending.questionId,
+          receivingSessionId: pending.receivingSessionId,
+          receivingAccountId: pending.receivingAccountId,
+          revision: nextRevision,
+          arrivedAt: pending.arrivedAt,
+          brief: pending.operation,
+          terminal,
         }])
-        return {
-          ok: true as const,
-          value: current.terminal[0]!.terminal,
-        }
+        return { ok: true as const, value: terminal }
       }),
     }
     const connection = {
@@ -198,12 +256,15 @@ describe('three Client applies: session-controller, member-questions, user-quest
         'conversation.composer': { kind: 'chain', scope: 'session' },
         'conversation.input.dock': { kind: 'list', scope: 'session' },
       },
-    } as never, (props: {
-      renderSlot: (key: string, owner: object) => unknown
-    }) => props.renderSlot('conversation.input.dock', {
-      session: {},
-      input: { draft: '', phase: 'plain' },
-    }))
+    } as never, (props: PropsRenderSlots<'conversation.input.dock'>) => (
+      props.renderSlot('conversation.input.dock', {
+        session: sessionSnapshot(SID),
+        input: {
+          draft: '', imageIds: [], draftRev: 0, phase: 'plain',
+          occurrences: [], queue: [], annotations: [],
+        },
+      })
+    ))
 
     const sessionFiber = ctx.plugin(SessionClient)
     const questionFiber = ctx.plugin({ inject: [...questionInject], apply: questionApply })
@@ -244,6 +305,21 @@ describe('three Client applies: session-controller, member-questions, user-quest
         expect(mounted.container.querySelector('[data-member-presentation]')).toBeNull()
       })
       expect(ctx.receivingQuestions.pending(SID)).toBeUndefined()
+
+      current = snapshotOf(3, [hostPending('question-2', 3)])
+      await act(async () => { await ctx.receivingQuestions.refresh() })
+      expect(screen.getByText('将王小明移出项目吗？')).toBeTruthy()
+      fireEvent.click(screen.getByRole('button', { name: '放弃整组问题' }))
+      await waitFor(() => { expect(memberQuestion.settle).toHaveBeenCalledTimes(3) })
+      expect(memberQuestion.settle.mock.calls[2]?.[0]).toMatchObject({
+        receivingSessionId: SID,
+        revision: 3,
+        questionId: 'question-2',
+        response: { kind: 'declined' },
+      })
+      await waitFor(() => {
+        expect(mounted.container.querySelector('[data-member-presentation]')).toBeNull()
+      })
     } finally {
       act(() => { mounted.unmount() })
       await memberFiber.dispose()

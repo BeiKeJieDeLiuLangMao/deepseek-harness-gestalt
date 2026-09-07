@@ -11,14 +11,14 @@ import type {
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-user-questions/client'
-import type { SessionId } from '@deepseek-ai/dsh-client-connection/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { DetailsDocumentFocus } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { AskUserQuestionAnswer, AskUserQuestionItem } from '@deepseek-ai/dsh-user-questions/types'
 import type { PendingMemberQuestionView } from '@deepseek-ai/dsh-member-question-receiver/types'
 import type {
   ReceivingMemberQuestionRecord,
   ReceivingQuestionBookView,
-} from '@deepseek-ai/dsh-api-session-controller/src/client/sessions/receiving.ts'
+} from '@deepseek-ai/dsh-api-session-controller/client'
 
 /** Host pending view a member brief renders. */
 export type MemberQuestionWait = PendingMemberQuestionView

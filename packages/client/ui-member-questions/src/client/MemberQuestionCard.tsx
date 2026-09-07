@@ -7,7 +7,7 @@ import {
   type MemberQuestionComposerProps, type MemberQuestionDockProps,
   type MemberQuestionOrigin, type MemberQuestionRole,
 } from './contract/slots.ts'
-import type { ReceivingMemberQuestionRecord } from '@deepseek-ai/dsh-api-session-controller/src/client/sessions/receiving.ts'
+import type { ReceivingMemberQuestionRecord } from '@deepseek-ai/dsh-api-session-controller/client'
 import css from './MemberQuestionCard.module.css'
 
 export type {
