@@ -26,11 +26,11 @@ The public types brand Account, Login Attempt, Account Session, Installation, an
 <a id="model-experience"></a>
 ## Model Experience
 
-None, as Platform Account state adds no messages, tools, or prompt text.
+Indirectly, through Account identity and installation state consumed by Project Membership, Personal Pairing, and received Session work.
 
 #### KV Cache effect
 
-None.
+The Service Definition adds no stable request prefix; downstream consumers render or act on its authenticated identity and installation records.
 
 ## Known Limitations and Deferred Work
 <a id="known-limitations-and-deferred-work"></a>

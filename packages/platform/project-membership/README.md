@@ -36,11 +36,11 @@ Stable failure codes: `DUPLICATE_INVITEE`, `ROLE_REQUIRED`, `NOT_A_MEMBER`, `PRO
 <a id="model-experience"></a>
 ## Model Experience
 
-None, as Project Membership authority stays outside agent sessions and model requests.
+Indirectly, through roster, role, function-tag, invitation, and presence state rendered by `project_members` and member-question consumers.
 
 #### KV Cache effect
 
-None.
+The Service Definition adds no stable request prefix; downstream tools and routing append its current values only when used.
 
 ## Known Limitations and Deferred Work
 <a id="known-limitations-and-deferred-work"></a>

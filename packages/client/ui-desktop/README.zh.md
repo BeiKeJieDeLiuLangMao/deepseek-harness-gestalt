@@ -24,11 +24,11 @@ macOS chrome 在未改动的 DSH 侧栏标题行和中间 Session 内容上方�
 <a id="model-experience"></a>
 ## Model Experience
 
-无。本包只画 Desktop 铬，不进入模型请求。
+通过 Account、Personal Pairing 和 Remote Access 控件间接影响模型；这些控件会把 Mobile 来源的工作准入 Host Session。
 
 #### KV Cache effect
 
-无；本包既不组装也不发送 provider 请求。
+该 chrome 不增加稳定请求前缀；配对 Mobile 工作经它控制的接收 Host 服务进入模型上下文。
 
 ## Known Limitations and Deferred Work
 <a id="known-limitations-and-deferred-work"></a>

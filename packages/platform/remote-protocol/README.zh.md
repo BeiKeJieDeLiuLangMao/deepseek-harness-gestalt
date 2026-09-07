@@ -94,11 +94,11 @@ Major 4 还承载两个 Platform 账号的配对安装之间交换的成员提�
 <a id="model-experience"></a>
 ## 模型体验
 
-无，因为 Remote Protocol 元数据与设备来源永不进入模型请求。
+通过解码后的 Companion operation 间接影响模型；其中的 origin、background、question、answer 与 reference 会进入面向模型的工具和接收 Session。
 
 #### KV Cache 影响
 
-无。
+codec 不增加稳定请求前缀；解码后的 operation 字段只经成员提问与 Host Session Consumer 贡献 token。
 
 ## 已知限制与延后工作
 <a id="known-limitations-and-deferred-work"></a>

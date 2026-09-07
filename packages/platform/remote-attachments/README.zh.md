@@ -46,11 +46,11 @@ store 插件（`name: '@deepseek-ai/dsh-remote-attachments'`）把这些边界�
 <a id="model-experience"></a>
 ## 模型体验
 
-无，因为 attachment 密文与 capability 永不进入模型请求。
+通过成员提问接收器为接收 Session 物化的解密 reference 文件与图片间接影响模型。
 
 #### KV Cache 影响
 
-无。
+该 blob store 不增加稳定请求前缀；被消费的 capability 会经接收 Host materializer 加入有界 reference 内容。
 
 ## 已知限制与延后工作
 <a id="known-limitations-and-deferred-work"></a>

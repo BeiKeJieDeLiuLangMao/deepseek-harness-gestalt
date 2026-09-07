@@ -24,11 +24,11 @@ Web-app composition inserts the snapshot row, then this adapter, then keeps `id:
 <a id="model-experience"></a>
 ## Model Experience
 
-None, as this adapter only patches snapshot prefs and pairs official pages with sidebar tabs; it registers no prompt, schema, stream, or tool.
+Indirectly, through Browser Workspace creation, navigation, and close operations whose state `dsh-tool-browser` later renders.
 
 #### KV Cache effect
 
-None; the package never assembles or sends provider requests.
+The adapter adds no stable request prefix; later browser tool results reflect human workbench operations.
 
 ## Known Limitations and Deferred Work
 <a id="known-limitations-and-deferred-work"></a>

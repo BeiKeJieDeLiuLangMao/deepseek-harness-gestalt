@@ -22,11 +22,11 @@ kind: "package-reference"
 <a id="model-experience"></a>
 ## Model Experience
 
-None，传输层从不贡献模型可见状态。
+通过 roster 与 invitation 变更间接影响模型；这些变更随后会出现在 `project_members` 结果和成员定向提问路由中。
 
 #### KV Cache effect
 
-None。
+该客户端不增加稳定请求前缀；后续工具结果会反映已提交的成员、角色、标签、邀请与在线状态。
 
 ## Known Limitations and Deferred Work
 <a id="known-limitations-and-deferred-work"></a>

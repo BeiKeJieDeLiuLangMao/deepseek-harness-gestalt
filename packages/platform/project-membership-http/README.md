@@ -28,11 +28,11 @@ Presence entries live in a process-local TTL map behind the reserved `PresenceSt
 <a id="model-experience"></a>
 ## Model Experience
 
-None, as installation UI and product clients consume these routes.
+Indirectly, through project, roster, invitation, role, tag, and presence routes that mutate data rendered by model-facing membership consumers.
 
 #### KV Cache effect
 
-None.
+The HTTP layer adds no stable request prefix; successful mutations change later `project_members` results and member-question routing.
 
 ## Known Limitations and Deferred Work
 <a id="known-limitations-and-deferred-work"></a>

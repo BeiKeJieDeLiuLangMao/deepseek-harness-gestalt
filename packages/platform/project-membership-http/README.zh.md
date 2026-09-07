@@ -28,11 +28,11 @@ presence 条目存于进程内 TTL 映射，背后是预留的 `PresenceStore` �
 <a id="model-experience"></a>
 ## 模型体验
 
-无；这些路由由安装 UI 与产品客户端消费。
+通过 project、roster、invitation、role、tag 与 presence 路由间接影响模型；这些路由会改变面向模型的 membership Consumer 所渲染的数据。
 
 #### KV Cache 影响
 
-无。
+HTTP 层不增加稳定请求前缀；成功变更会改变后续 `project_members` 结果与成员提问路由。
 
 ## 已知限制与延后工作
 <a id="known-limitations-and-deferred-work"></a>

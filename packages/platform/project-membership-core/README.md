@@ -41,11 +41,11 @@ Horizontal scaling requires swapping in a backend with equivalent compare-and-mu
 <a id="model-experience"></a>
 ## Model Experience
 
-None, as Project Membership authority stays outside agent sessions and model requests.
+Indirectly, through the authoritative roster, roles, and function tags rendered by `project_members` and member-question consumers.
 
 #### KV Cache effect
 
-None.
+The Provider adds no stable request prefix; roster mutations change later tool-result and member-routing content.
 
 ## Known Limitations and Deferred Work
 <a id="known-limitations-and-deferred-work"></a>

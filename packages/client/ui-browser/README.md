@@ -28,11 +28,11 @@ The behavior is specified by the [workbench official browser Agent Note](../../.
 <a id="model-experience"></a>
 ## Model Experience
 
-None, as this human-facing chrome adds no tools, messages, prompts, or provider requests; page operations stay on `dsh-tool-browser`.
+Indirectly, through Browser Workspace mutations: focus, navigation, input, and page creation change state that `dsh-tool-browser` later renders.
 
 #### KV Cache effect
 
-None; the package never assembles or sends provider requests.
+This package adds no stable request prefix; later browser tool results reflect page operations performed through the chrome.
 
 ## Known Limitations and Deferred Work
 <a id="known-limitations-and-deferred-work"></a>

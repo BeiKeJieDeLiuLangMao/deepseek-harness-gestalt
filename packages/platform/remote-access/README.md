@@ -36,11 +36,11 @@ Persistent deployment state is limited to route identity, credential digest, mon
 <a id="model-experience"></a>
 ## Model Experience
 
-None, as pairing metadata, Device Principal origin, and Settings state never enter a model request.
+Indirectly, through Personal Pairing and Relay authority that deliver authenticated Mobile operations into member-question and Session consumers.
 
 #### KV Cache effect
 
-None.
+The services add no stable request prefix; grants, Device Principals, and Relay delivery determine which remote content reaches model-facing Host work.
 
 ## Known Limitations and Deferred Work
 <a id="known-limitations-and-deferred-work"></a>

@@ -26,11 +26,11 @@ kind: "package-reference"
 <a id="model-experience"></a>
 ## 模型体验
 
-无。Platform 账号状态不对模型可见，不增加消息、工具或提示词文本。
+通过 Project Membership、Personal Pairing 与接收 Session 工作所消费的 Account 身份和安装状态间接影响模型。
 
 #### KV Cache 影响
 
-无。
+该 Service Definition 不增加稳定请求前缀；下游 Consumer 会渲染或使用其经鉴权的身份与安装记录。
 
 ## 已知限制与暂缓事项
 <a id="known-limitations-and-deferred-work"></a>

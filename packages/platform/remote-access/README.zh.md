@@ -36,11 +36,11 @@ Platform 返回不含邀请 PSK 的路由元数据。Desktop 在本地创建完�
 <a id="model-experience"></a>
 ## Model Experience
 
-无，因为配对元数据、设备主体来源与设置状态从不进入模型请求。
+通过 Personal Pairing 与 Relay authority 间接影响模型；它们会把经鉴权的 Mobile operation 投递给成员提问与 Session Consumer。
 
 #### KV Cache effect
 
-无。
+这些服务不增加稳定请求前缀；grant、Device Principal 与 Relay 投递决定哪些远端内容抵达面向模型的 Host 工作。
 
 ## Known Limitations and Deferred Work
 <a id="known-limitations-and-deferred-work"></a>

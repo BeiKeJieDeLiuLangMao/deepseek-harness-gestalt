@@ -34,11 +34,11 @@ Account Sessions bind one Account to one Installation key and immutable Installa
 <a id="model-experience"></a>
 ## Model Experience
 
-None, as Account authorization is outside agent sessions and model requests.
+Indirectly, through Account identity and installation authorization consumed by Project Membership, Personal Pairing, and received Session work.
 
 #### KV Cache effect
 
-None.
+The Provider adds no stable request prefix; its identities and authorization decisions appear through downstream roster, pairing, and receiving consumers.
 
 ## Known Limitations and Deferred Work
 <a id="known-limitations-and-deferred-work"></a>

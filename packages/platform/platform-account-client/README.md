@@ -24,11 +24,11 @@ Installation client shared by Desktop and Mobile. It displays one canonical bili
 <a id="model-experience"></a>
 ## Model Experience
 
-None, as the controller never contributes model-visible state.
+Indirectly, through the authenticated Account Session and installation proof that Project Membership and Personal Pairing consumers use for model-facing work.
 
 #### KV Cache effect
 
-None.
+Account state adds no stable request prefix by itself; authorization changes which membership and paired-device data can reach later model-facing consumers.
 
 ## Known Limitations and Deferred Work
 <a id="known-limitations-and-deferred-work"></a>

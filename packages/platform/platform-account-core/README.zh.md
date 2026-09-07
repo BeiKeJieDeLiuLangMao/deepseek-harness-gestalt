@@ -34,11 +34,11 @@ kind: "package-reference"
 <a id="model-experience"></a>
 ## 模型体验
 
-无。账号授权位于 agent 会话与模型请求之外。
+通过 Project Membership、Personal Pairing 与接收 Session 工作所消费的 Account 身份和安装授权间接影响模型。
 
 #### KV Cache 影响
 
-无。
+该 Provider 不增加稳定请求前缀；其身份和授权决策经下游 roster、pairing 与接收 Consumer 出现。
 
 ## 已知限制与暂缓事项
 <a id="known-limitations-and-deferred-work"></a>

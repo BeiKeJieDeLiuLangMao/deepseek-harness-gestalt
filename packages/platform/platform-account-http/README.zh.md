@@ -24,11 +24,11 @@ kind: "package-reference"
 <a id="model-experience"></a>
 ## 模型体验
 
-无。这些路由由安装界面消费，不由 agent 消费。
+通过登录与 Account Session 路由间接影响模型；这些路由会授权面向模型 Consumer 使用的 Project Membership 与 Personal Pairing 流程。
 
 #### KV Cache 影响
 
-无。
+HTTP 层不增加稳定请求前缀；成功授权会改变 Agent 工作可用的下游身份与 pairing 数据。
 
 ## 已知限制与暂缓事项
 <a id="known-limitations-and-deferred-work"></a>

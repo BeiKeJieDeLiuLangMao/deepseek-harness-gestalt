@@ -30,11 +30,11 @@ pending 卡片消失后，answered、declined、expired、withdrawn 与 supersed
 <a id="model-experience"></a>
 ## Model Experience
 
-无，本包是浏览器侧的作曲卡界面：选择器路由卡片只是呈现共享 ask-user 呈现已携带的问题并经其结算回传答案，自身不注册任何提示词、模式或工具。
+通过它结算到共享 `ask_user_question` 工具结果中的答案间接影响模型。
 
 #### KV Cache effect
 
-无；本包既不组装也不发送 Provider 请求。
+它不增加稳定请求前缀；每次提交的答案都会经共享呈现加入保留的工具结果 token。
 
 ## Known Limitations and Deferred Work
 <a id="known-limitations-and-deferred-work"></a>

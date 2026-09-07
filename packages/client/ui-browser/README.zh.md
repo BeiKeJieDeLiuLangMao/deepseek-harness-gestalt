@@ -28,11 +28,11 @@ Session 持有的官方 Browser chrome 与收起后的标签页预览。[`dsh-cl
 <a id="model-experience"></a>
 ## 模型体验
 
-无，因为这个面向人的 chrome 不增加工具、消息、提示词或 provider 请求；页面操作仍由 `dsh-tool-browser` 负责。
+通过 Browser Workspace 变更间接影响模型：focus、navigation、input 和页面创建会改变 `dsh-tool-browser` 随后渲染的状态。
 
 #### KV Cache 影响
 
-无；本包从不组装或发送 provider 请求。
+本包不增加稳定请求前缀；后续 browser 工具结果会反映通过 chrome 执行的页面操作。
 
 ## 已知限制与延后工作
 <a id="known-limitations-and-deferred-work"></a>

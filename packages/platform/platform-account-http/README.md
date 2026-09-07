@@ -24,11 +24,11 @@ The callback returns a bilingual completion page and never redirects an OAuth co
 <a id="model-experience"></a>
 ## Model Experience
 
-None, as installation UI rather than an agent consumes these routes.
+Indirectly, through login and Account Session routes that authorize Project Membership and Personal Pairing flows used by model-facing consumers.
 
 #### KV Cache effect
 
-None.
+The HTTP layer adds no stable request prefix; successful authorization changes the downstream identity and pairing data available to agent work.
 
 ## Known Limitations and Deferred Work
 <a id="known-limitations-and-deferred-work"></a>

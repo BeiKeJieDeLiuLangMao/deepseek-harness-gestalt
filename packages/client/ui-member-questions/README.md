@@ -30,11 +30,11 @@ Answered, declined, expired, withdrawn, and superseded records remain visible as
 <a id="model-experience"></a>
 ## Model Experience
 
-None, as the package is browser-side composer chrome: the selector-routed card renders questions the shared ask-user presentation already carries and answers through that presentation's settlement, registering no prompt, schema, or tool of its own.
+Indirectly, through answers it settles into the shared `ask_user_question` tool result.
 
 #### KV Cache effect
 
-None; this package neither assembles nor sends a provider request.
+It adds no stable request prefix; each submitted answer contributes retained tool-result tokens through the shared presentation.
 
 ## Known Limitations and Deferred Work
 <a id="known-limitations-and-deferred-work"></a>

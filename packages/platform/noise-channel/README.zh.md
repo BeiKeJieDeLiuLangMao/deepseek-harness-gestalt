@@ -42,11 +42,11 @@ IK 完成后，`SnowDesktopAttachmentOwner` 会把 Desktop 的加密 Companion �
 <a id="model-experience"></a>
 ## Model Experience
 
-无，因为配对、Relay authority 与 Companion transport metadata 都不会进入模型请求。
+通过经鉴权的 Companion operation 间接影响模型；下游 Remote Access Consumer 会把它们解码为成员提问、reference 与其他 Session 工作。
 
 #### KV Cache effect
 
-无。
+该通道不增加稳定请求前缀；解码后的 operation 经下游 Consumer 影响模型上下文与结果。
 
 ## 已知限制与延后工作
 <a id="known-limitations-and-deferred-work"></a>

@@ -94,11 +94,11 @@ The package does not encrypt Companion message traffic. Mobile and Desktop suppl
 <a id="model-experience"></a>
 ## Model Experience
 
-None, as Remote Protocol metadata and device origin never enter a model request.
+Indirectly, through decoded Companion operations whose origin, background, questions, answers, and references feed model-facing tools and receiving Sessions.
 
 #### KV Cache effect
 
-None.
+The codecs add no stable request prefix; decoded operation fields contribute tokens only through their member-question and Host Session consumers.
 
 ## Known Limitations and Deferred Work
 <a id="known-limitations-and-deferred-work"></a>

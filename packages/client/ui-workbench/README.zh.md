@@ -24,11 +24,11 @@ web-app 组合先插入快照行，再插入本适配层，并保留 `id: ui-bro
 <a id="model-experience"></a>
 ## 模型体验
 
-无，因为本适配层只改快照 prefs 并把官方页面与侧栏标签配对，不注册 prompt、schema、流或工具。
+通过 Browser Workspace 的创建、navigation 和 close 操作间接影响模型；其状态随后由 `dsh-tool-browser` 渲染。
 
 #### KV Cache 影响
 
-无；本包从不组装或发送 provider 请求。
+该 adapter 不增加稳定请求前缀；后续 browser 工具结果会反映人工 workbench 操作。
 
 ## 已知限制与延期工作
 <a id="known-limitations-and-deferred-work"></a>

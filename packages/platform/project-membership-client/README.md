@@ -22,11 +22,11 @@ Browser client for Project Membership over the HTTP consumer's `/v1/projects` ro
 <a id="model-experience"></a>
 ## Model Experience
 
-None, as the transport never contributes model-visible state.
+Indirectly, through roster and invitation mutations that later appear in `project_members` results and member-directed question routing.
 
 #### KV Cache effect
 
-None.
+The client adds no stable request prefix; later tool results reflect the committed membership, role, tag, invitation, and presence state.
 
 ## Known Limitations and Deferred Work
 <a id="known-limitations-and-deferred-work"></a>

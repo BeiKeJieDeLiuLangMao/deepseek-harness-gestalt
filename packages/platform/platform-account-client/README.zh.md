@@ -24,11 +24,11 @@ kind: "package-reference"
 <a id="model-experience"></a>
 ## 模型体验
 
-无。控制器不会贡献模型可见状态。
+通过经鉴权的 Account Session 和安装证明间接影响模型；Project Membership 与 Personal Pairing Consumer 使用它们处理面向模型的工作。
 
 #### KV Cache 影响
 
-无。
+Account 状态本身不增加稳定请求前缀；授权会改变哪些成员关系与配对设备数据能够抵达后续面向模型的 Consumer。
 
 ## 已知限制与暂缓事项
 <a id="known-limitations-and-deferred-work"></a>

@@ -59,11 +59,11 @@ Provider 通过随机同目录临时文件原子替换，把一个仅所有者�
 <a id="model-experience"></a>
 ## Model Experience
 
-None, as 认证 arrival、receiver projection、terminal settlement 与 reservation 记账都不会进入模型请求；只有之后的显式 human turn 会进入普通 Host admission adapter。
+通过 Host Session materializer 注入每份有界 Decision Brief，并通过准入的 human turn 间接影响模型。
 
 #### KV Cache effect
 
-Arrival 与 terminal 浏览没有 token 成本或 cache invalidation。Host materializer 会在任何 human prompt 之前注入每条有界 brief；只有显式提交 human message 后，Host admission adapter 才会产生一次普通 Session request。
+每个收到的问题都会加入有界的 origin、background、question 与 reference 上下文；准入的回答随后像普通 human turn 一样改变 Session 前缀。
 
 ## Known Limitations and Deferred Work
 <a id="known-limitations-and-deferred-work"></a>

@@ -24,11 +24,11 @@ The macOS chrome reserves 28px above the unchanged DSH sidebar header and center
 <a id="model-experience"></a>
 ## Model Experience
 
-None, as this package draws Desktop chrome; nothing here reaches a model request.
+Indirectly, through Account, Personal Pairing, and Remote Access controls that admit mobile-origin work into Host Sessions.
 
 #### KV Cache effect
 
-None; this package neither assembles nor sends a provider request.
+The chrome adds no stable request prefix; paired mobile work enters model context through the receiving Host services it controls.
 
 ## Known Limitations and Deferred Work
 <a id="known-limitations-and-deferred-work"></a>

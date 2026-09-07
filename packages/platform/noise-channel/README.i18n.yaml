@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/platform/noise-channel/README.md
-README.md: 0ec78d76af907f6a2b18007b7f3a9ec38c148bca
-README.zh.md: e09d968d24a329e25e1f12c4595b7000638d118b
+README.md: 4243d8f5b19983654d665d0357716d940b9acdc3
+README.zh.md: 1f646cde864cec06321b6a34f37839db7ea8087a

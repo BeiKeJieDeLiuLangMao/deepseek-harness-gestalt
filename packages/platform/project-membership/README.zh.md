@@ -36,11 +36,11 @@ kind: "package-reference"
 <a id="model-experience"></a>
 ## Model Experience
 
-无:项目成员权威数据从不进入智能体会话与模型请求。
+通过 `project_members` 与成员提问 Consumer 渲染的 roster、role、function-tag、invitation 与 presence 状态间接影响模型。
 
 #### KV Cache effect
 
-无。
+该 Service Definition 不增加稳定请求前缀；下游工具和路由只在使用时追加其当前值。
 
 ## Known Limitations and Deferred Work
 <a id="known-limitations-and-deferred-work"></a>

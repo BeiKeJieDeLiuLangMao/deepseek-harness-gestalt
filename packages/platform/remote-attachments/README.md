@@ -46,11 +46,11 @@ The authenticator captured by `createRemoteAttachmentsHttpPlugin()` maps one HTT
 <a id="model-experience"></a>
 ## Model Experience
 
-None, as attachment ciphertext and capabilities never enter a model request.
+Indirectly, through decrypted reference files and images that the member-question receiver materializes for a receiving Session.
 
 #### KV Cache effect
 
-None.
+The blob store adds no stable request prefix; consumed capabilities add bounded reference content through the receiving Host materializer.
 
 ## Known Limitations and Deferred Work
 <a id="known-limitations-and-deferred-work"></a>

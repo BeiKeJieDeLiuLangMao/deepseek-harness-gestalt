@@ -59,11 +59,11 @@ One serialized transaction owner orders load, arrival, terminal publication, fil
 <a id="model-experience"></a>
 ## Model Experience
 
-None, as authenticated arrival, receiver projection, terminal settlement, and reservation bookkeeping do not enter a model request; only a later explicit human turn reaches the ordinary Host admission adapter.
+Indirectly, through the Host Session materializer, which injects each bounded Decision Brief, and through admitted human turns.
 
 #### KV Cache effect
 
-Arrival and terminal browsing have no token cost or cache invalidation. The Host materializer injects each bounded brief before any human prompt; the Host admission adapter produces one ordinary Session request only after explicit human submission.
+Each received question adds bounded origin, background, question, and reference context; an admitted answer then changes the Session prefix like an ordinary human turn.
 
 ## Known Limitations and Deferred Work
 <a id="known-limitations-and-deferred-work"></a>

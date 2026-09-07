@@ -26,11 +26,11 @@ This package never creates Redis Streams, Lists, or another offline queue. A pub
 <a id="model-experience"></a>
 ## Model Experience
 
-None, as Redis Relay coordination never enters a model request.
+Indirectly, through Relay coordination and ciphertext delivery that carry authenticated Companion operations to model-facing consumers.
 
 #### KV Cache effect
 
-None.
+The Redis Provider adds no stable request prefix; routing and invalidation determine which paired operations reach downstream Host consumers.
 
 ## Known Limitations and Deferred Work
 <a id="known-limitations-and-deferred-work"></a>
