@@ -120,6 +120,8 @@
   // suffixes are mutually exclusive, so each aggregate excludes the other's
   // and the package test glob above needs no per-file entry.
   "exclude": [
+    // Generated Remote consumers run after Host tsdown materializes their declarations.
+    "packages/*/*/tests/**/*.generated.host.spec.ts",
     "packages/client/*/src/**",
     "packages/*/*/tests/**/*.client.ts",
     "packages/*/*/tests/**/*.client.tsx",

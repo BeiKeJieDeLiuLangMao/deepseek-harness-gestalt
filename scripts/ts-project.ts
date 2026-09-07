@@ -80,6 +80,26 @@ function semanticCompilerOptions(options: ts.CompilerOptions): ts.CompilerOption
   }
 }
 
+/**
+ * Create a no-emit program for selected roots with one compiler face's Project References.
+ * @param projectRoot - repository root containing the face aggregate.
+ * @param rootNames - repository-relative or absolute source roots to check.
+ * @param face - compiler face whose options and Project References apply.
+ * @returns a program that consumes the referenced projects' emitted declarations.
+ */
+export function createCompilerFaceConsumerProgram(
+  projectRoot: string,
+  rootNames: readonly string[],
+  face: CompilerFace = 'host',
+): ts.Program {
+  const rootConfig = parseConfig(resolve(projectRoot, `tsconfig.${face}.json`))
+  return ts.createProgram({
+    rootNames: rootNames.map(file => resolve(projectRoot, file)),
+    options: semanticCompilerOptions(rootConfig.options),
+    projectReferences: rootConfig.projectReferences,
+  })
+}
+
 /** A repository-scoped TypeScript Program and its shared TypeChecker. */
 export class TypeScriptProject {
   /** The bound cross-file TypeScript program. */
