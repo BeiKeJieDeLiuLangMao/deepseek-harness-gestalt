@@ -1,7 +1,7 @@
 /** Client-safe question, answer, and event types. @module @deepseek-ai/dsh-user-questions/types */
 
 import type { Scoped } from '@deepseek-ai/dsh-scope'
-import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { Agent } from '@deepseek-ai/dsh-agent/types'
 import type { PlatformAccountId } from '@deepseek-ai/dsh-platform-account'
 import type {
   CompanionMemberQuestionOrigin,
