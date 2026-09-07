@@ -29,6 +29,16 @@
   padding: 18px 10px 6px;
 }
 
+/* Desktop chrome reserves its row inside the sidebar only. Browser web has no
+   drag contribution, so these selectors add no top space there. */
+.root:has([data-desktop-chrome='mac']) {
+  padding-top: var(--dsh-window-chrome-height);
+}
+
+.root:has([data-desktop-chrome='win']) {
+  padding-top: calc(var(--dsh-window-chrome-height) + 6px);
+}
+
 /* Scrollbars in the column are a pointer affordance: the shell adds this
    class whenever the pointer is not inside (SidebarRoot.tsx owns the linger),
    and rebinding ui-theme's indirection pair to `transparent` takes the thumb
