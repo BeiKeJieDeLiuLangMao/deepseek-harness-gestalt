@@ -1,5 +1,5 @@
 /** Apply-world reconciliation of durable Side Chat threads into sidebar state. */
-import type { Context } from '../context-types.ts'
+import type { SidebarContext } from '../context-types.ts'
 import type { SidebarStore } from './state.ts'
 import { restorableSideThreads } from './subagent-detect.ts'
 
@@ -9,7 +9,7 @@ import { restorableSideThreads } from './subagent-detect.ts'
  * @param store - Per-session sidebar state owner.
  * @returns Disposer for both projection subscriptions.
  */
-export function subscribeSideThreadRestoration(ctx: Context, store: SidebarStore): () => void {
+export function subscribeSideThreadRestoration(ctx: SidebarContext, store: SidebarStore): () => void {
   const reconcile = (): void => {
     const sessions = ctx.sessions.list.getSnapshot()
     const sessionId = sessions.current

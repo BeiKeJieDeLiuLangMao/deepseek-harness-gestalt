@@ -10,7 +10,7 @@
  */
 import { IconBranchOutline16, IconCodeOutline16, IconFolderOpen16, IconNewChatOutline16, IconPanelLeftOutline16, IconThinkOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
-import type { Context } from '../../context-types.ts'
+import type { SidebarContext } from '../../context-types.ts'
 import { allLeaves, isAgentTabId, type SidebarState } from '../state.ts'
 import { t } from '../locales.ts'
 import { openSidebarFile } from '../intercept.tsx'
@@ -79,7 +79,7 @@ function uiTerminalCount(state: SidebarState): number {
 }
 
 /** The 7 built-in tab descriptors. */
-export function builtinTabs(ctx: Context, options: BuiltinTabOptions = {}): readonly TabDescriptor[] {
+export function builtinTabs(ctx: SidebarContext, options: BuiltinTabOptions = {}): readonly TabDescriptor[] {
   return [
     {
       id: 'editor',

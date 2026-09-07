@@ -7,7 +7,7 @@
 import type { SessionAdmissionAdapter } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { ModelSelection, SessionId } from '@deepseek-ai/dsh-api-remotes/client'
 import { RemoteError, type RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
-import type { Context } from '../context-types.ts'
+import type { SidebarContext } from '../context-types.ts'
 import {
   api, isKnownSidechatSession, noteSidechatDraftSelection, settleSidechatDraft, SidebarApiError,
   sidechatDraftOf,
@@ -35,11 +35,11 @@ function routeFailure<T>(cause: unknown): RemoteResult<T> {
  * @param ctx - sidebar Client context whose `sessions` is ClientSessions.
  * @returns token-checked disposer from `registerAdmissionAdapter`.
  */
-export function installSidechatAdmission(ctx: Context): () => void {
+export function installSidechatAdmission(ctx: SidebarContext): () => void {
   return ctx.sessions.registerAdmissionAdapter(createSidechatAdmission(ctx))
 }
 
-function createSidechatAdmission(ctx: Context): SessionAdmissionAdapter {
+function createSidechatAdmission(ctx: SidebarContext): SessionAdmissionAdapter {
   return {
     id: 'better-sidebar-sidechat',
     handles: sessionId => isKnownSidechatSession(sessionId),

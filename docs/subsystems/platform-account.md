@@ -4,6 +4,13 @@ English | [中文](platform-account.zh.md)
 
 [`@deepseek-ai/dsh-platform-account`](../../packages/platform/platform-account/README.md) defines Platform identity and the proof-of-possession Account Session bound to one Desktop or Mobile Installation. GitHub supplies only the immutable numeric subject and current public login/avatar; its OAuth token is discarded after identity validation.
 
+## Installation identity
+
+```ts type-equiv
+/** Opaque identifier for one Desktop or Mobile app copy. */
+type InstallationId = Branded<'InstallationId'>
+```
+
 ## Login and session lifecycle
 
 An Installation accepts the canonical bilingual privacy notice before it creates a five-minute `LoginAttemptView`. Mobile binds the name and iOS or Android platform returned by its Device adapter to the attempt, then Platform persists that presentation with the Account Session; a caller of `currentInstallation()` receives it only after proving the Mobile Installation key. Mobile prepares the attempt before the authorization button can be pressed, then the button's user activation directly calls the Capacitor Browser adapter; Desktop delegates to Electron `shell.openExternal`. The system browser uses Authorization Code with S256 PKCE, random state, no OAuth scope, and one fixed HTTPS Platform callback. The application receives no callback credential or token-bearing custom URL; `LoginPollResult` completes only when a P-256 `AccountProof` redeems the single-use signed polling token.

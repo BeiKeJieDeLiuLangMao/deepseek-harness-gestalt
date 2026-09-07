@@ -14,7 +14,7 @@
  *
  * Both bundles replicate the official DSH client-bundle preset
  * (packages/client/tsdown.client.ts) and are compiled from the same
- * src/client/index.tsx source — only the registered id and the output file
+ * src/client/index.ts source — only the registered id and the output file
  * name differ, so they cannot drift:
  * - externals resolve through the loader module table at runtime (the
  *   PLATFORM_MODULES seed list from apps/web's platform.ts, plus the
@@ -143,7 +143,7 @@ function browserSourcePath(source: string, sourcemapPath: string): string {
 }
 
 /**
- * One client bundle build for a plugin id. The same src/client/index.tsx is
+ * One client bundle build for a plugin id. The same src/client/index.ts is
  * compiled twice with only the registered id and the output file name
  * differing: the official channel uses the package name (`dsh-better-sidebar`)
  * and the registry channel uses the manifest id
@@ -154,7 +154,7 @@ function browserSourcePath(source: string, sourcemapPath: string): string {
  */
 function clientBundle(pluginId: string, entryFile: string): UserConfig {
   return {
-    entry: { client: 'src/client/index.tsx' },
+    entry: { client: 'src/client/index.ts' },
     outDir: 'lib',
     format: 'cjs',
     platform: 'browser',

@@ -21,7 +21,7 @@
  *   then `exts`; `exts: []` is a catch-all that matches any path.
  */
 import type { ReactNode } from 'react'
-import type { Context } from '../context-types.ts'
+import type { SidebarContext } from '../context-types.ts'
 import {
   activateTab as activateTabReducer, allLeaves, closeTab as closeTabReducer, closeFloatByTab, firstLeaf, floatWithTab,
   leafWithTab, openTabInActivePane, patchTab, raiseFloat, tabOpenIn, togglePanel, treeOf,
@@ -142,7 +142,7 @@ export interface SidebarSettingsDeclaration {
 
 /** Props every tab component receives (builtins and external alike). */
 export interface TabComponentProps {
-  ctx: Context
+  ctx: SidebarContext
   store: SidebarStore
   scope: SessionScope
   tab: SidebarTab
@@ -173,7 +173,7 @@ export interface TabDescriptor {
    * + menu disabled predicate (e.g. terminal at capacity). Receives the
    * session scope and the live sidebar state (counts, expansions).
    */
-  available?: (ctx: Context, scope: SessionScope, state: SidebarState) => boolean
+  available?: (ctx: SidebarContext, scope: SessionScope, state: SidebarState) => boolean
   /**
    * Single-instance sugar: `true` is shorthand for `dedupeKey: () => id`
    * (opening the tab focuses an existing one of the same type instead of
@@ -230,7 +230,7 @@ export interface TabDescriptor {
    * as-is, null/undefined hides the badge. Called on every tab-bar render,
    * so keep it cheap; a throw is swallowed (no badge shown).
    */
-  badge?: (ctx: Context, scope: SessionScope, state: SidebarState) => string | number | null | undefined
+  badge?: (ctx: SidebarContext, scope: SessionScope, state: SidebarState) => string | number | null | undefined
   /**
    * Lifecycle callbacks (v0.12.0+). Fired by the SERVICE paths only:
    * `onOpen` when an open actually creates a tab (a dedupe/id-safety-net
@@ -260,7 +260,7 @@ export type FileFetchStrategy =
 
 /** Props every file viewer component receives. */
 export interface FileViewerProps {
-  ctx: Context
+  ctx: SidebarContext
   store: SidebarStore
   scope: SessionScope
   path: string

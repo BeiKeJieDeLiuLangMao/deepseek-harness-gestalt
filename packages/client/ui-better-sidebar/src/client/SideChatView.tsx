@@ -1,7 +1,7 @@
 /** Side Chat tab shell over the canonical explicit-Session conversation renderer. */
 import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
-import type { Context } from '../context-types.ts'
+import type { SidebarContext } from '../context-types.ts'
 import {
   SIDE_LABEL_PREFIX, SIDE_NEW_THREAD_TITLE, sidechatTabRootThreadId, sidechatTabThreadId,
 } from '../sidechat-core.ts'
@@ -28,7 +28,7 @@ function threadDisplayTitle(title: string): string {
 
 /** One Side Chat tab: thread creation plus the canonical conversation slot. */
 export function SideChatView(props: {
-  ctx: Context
+  ctx: SidebarContext
   scope: SessionScope
   tab: SidebarTab
   visible: boolean

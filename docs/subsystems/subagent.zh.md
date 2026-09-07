@@ -501,6 +501,38 @@ spawn 和 fork 后端通过 `parent.ctx` 创建一个普通的单次 agent，将
 
 Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — the language sides differ only in locale-specific paired document paths. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.zh.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
 
+<a id="ctxsubagentmodelselection--subagentmodelselectionconfig"></a>
+
+### `ctx.subagentModelSelection` — `SubagentModelSelectionConfig`
+
+Singleton settings owner read by delegation tools when an Agent is published.
+
+```ts cordis-catalog
+/**
+ * Read a detached selection preference for the next eligible Agent publication.
+ * @returns the enabled state and exact allowed routes.
+ */
+current(): SubagentModelSelectionSettings
+```
+
+Source: [`packages/subagent/tool-subagent/src/model-selection-settings.ts`](../../packages/subagent/tool-subagent/src/model-selection-settings.ts)
+
+<a id="ctxsubagentroutepreauthorization--subagentroutepreauthorization-abstract-seam"></a>
+
+### `ctx.subagentRoutePreauthorization` — `SubagentRoutePreauthorization` (abstract seam)
+
+Service Definition for deployment-owned exact child LLM routes.
+
+```ts cordis-catalog
+/**
+ * Return detached immutable routes authorized for a new top-level Session.
+ * @returns the deployment's exact provider/model routes.
+ */
+abstract snapshot(): readonly SubagentRoute[]
+```
+
+Source: [`packages/subagent/subagent-route-preauthorization/src/index.ts`](../../packages/subagent/subagent-route-preauthorization/src/index.ts)
+
 <a id="ctxsubagents--subagentruntime"></a>
 
 ### `ctx.subagents` — `SubagentRuntime`
@@ -520,21 +552,20 @@ Named provider registry with one-shot runs, durable discovery, and continuable-c
 async startContinuable(spec: ContinuableStartSpec): Promise<ContinuableStart>
 
 /**
- * Deliver one later message to a continuable child as its next FIFO turn. A
- * resident child's Agent inbox accepts it directly (waking a `waiting`
- * Activation), while an absent one is cold-resumed from its persisted
- * Session. The Agent inbox is the only queue, so every accepted message has
- * one observable order.
- * @param parent - the exact live direct parent authorizing this delivery.
- * @param childId - durable child session id.
- * @param content - user-role content to deliver.
- * @param options - the message source fields and caller cancellation, which stops the
- *   operation only before inbox acceptance.
+ * Steer one model-authored message to the sender's direct parent or direct
+ * continuable child. A running target admits it at the nearest step boundary;
+ * an idle target starts a turn, and an absent direct child cold-resumes from
+ * persistence. The service derives durable sender attribution from the exact
+ * live sender. Caller cancellation stops only pre-acceptance work.
+ * @param sender - exact live Agent authorizing and originating the message.
+ * @param targetId - durable direct-parent or direct-child session id.
+ * @param content - model-authored content to deliver.
+ * @param options - caller cancellation before inbox acceptance.
  * @returns the accepted message's inbox id.
- * @throws when continuation services are unavailable, parent authority is
- *   rejected, or the message was not admitted.
+ * @throws when continuation services are unavailable, adjacency is rejected,
+ *   or the message was not admitted.
  */
-async followup( parent: Agent, childId: SessionId, content: ContentBlock[], options: SubagentFollowupOptions, ): Promise<MessageId>
+async sendMessage( sender: Agent, targetId: SessionId, content: ContentBlock[], options: SubagentSendMessageOptions, ): Promise<MessageId>
 
 /**
  * Interrupt one live continuable child's current turn under a human parent
@@ -552,29 +583,6 @@ async followup( parent: Agent, childId: SessionId, content: ContentBlock[], opti
  *   live target.
  */
 interrupt(targetSessionId: SessionId, authority: SubagentInterruptAuthority): void
-
-/**
- * Deliver selected content from one live continuable child to its durable
- * direct parent. The child is the authority credential; callers cannot name a
- * recipient. Reporting does not conclude the child's turn or Activation.
- * @param child - exact live reporting child.
- * @param content - selected model-facing content.
- * @param options - parent scheduling and pre-acceptance cancellation.
- * @returns the stable identity of the parent-accepted message.
- * @throws when continuation services are unavailable, sender authorization
- *   fails, or the direct parent is not live.
- */
-async reportFrom( child: Agent, content: ContentBlock[], options: SubagentReportOptions, ): Promise<MessageId>
-
-/**
- * Compose one deployment capability into every continuable child's
- * unpublished creation context on fresh creation and cold resume. Grants wait
- * for the next Activation; removing the contribution revokes every resident
- * installation immediately.
- * @param contribution - synchronous child-scope installer.
- * @returns the exact Cordis effect disposer.
- */
-registerContinuableSetup(contribution: ContinuableSetupContribution): () => void
 
 /**
  * Close continuable admission below exact live parent Agents, stop only their
@@ -602,27 +610,16 @@ async drainContinuableChildren(parent: Agent, childIds: readonly SessionId[]): P
 
 /**
  * Enumerate the parent's direct session-backed subagents without loading or
- * resuming an Agent and without any query service: the listing merges the live
- * session store with optional session persistence (live-preferred) and
- * serves each child's durable mode/label from the registered `subagent`
- * projection unit down a three-rung ladder — the registry's watermark
- * snapshot for a live child; for a cold one, a durable projection-cache
- * row when the optional cache serves an own-suffix identity (its `seq`
- * gate proves the value postdates the fork seed, where a child's own
- * descriptor is immutable once appended), else one persistence inspection
- * folded through the registry. The
- * projection fold is the single classification authority; per-child
- * diagnostics relay a fold that served no identity or a failed inspection,
- * never a list-time descriptor parse. Absent persistence, enumeration is
- * live-only (a cold child cannot be resumed then either, so its absence is
- * capability absence, not an error). This service consults no Agent
- * registrations, Activations, or providers.
+ * resuming an Agent. The Session query service supplies one live-preferred
+ * corpus and shared point observations; the projection cache supplies
+ * immutable descriptor hits without opening cold logs. The registered
+ * `subagent` projection remains the sole mode/label classifier.
  *
- * Every persistence read receives `signal`, and the listing rechecks
- * cancellation around each of those awaits. Read rejections that settle
+ * Every query receives `signal`, and the listing rechecks cancellation
+ * around each await. Read rejections that settle
  * after an abort become a stable `SubagentError` with code `CANCELLED`.
  * @param parentSessionId - parent session whose direct children are listed.
- * @param signal - caller-owned cancellation forwarded to persistence reads
+ * @param signal - caller-owned cancellation forwarded to Session queries
  *   and observed around every read await.
  * @returns children and per-child diagnostics ordered by `createdAt`, then id.
  * @throws {@link SubagentError} when the projection registry or the session
@@ -646,6 +643,55 @@ listChildren(parentSessionId: SessionId, signal?: AbortSignal): Promise<Subagent
  * @throws {@link SubagentError} under the same conditions as {@link listChildren}.
  */
 listDescendants(rootSessionId: SessionId, signal?: AbortSignal): Promise<SubagentDescendantListEntry[]>
+
+/**
+ * Remote face of {@link listChildren} for one browser: the durable listing
+ * plus live Agent activity and the delivery-time parent availability hint.
+ * Parent availability is a hint; {@link prompt} performs the authoritative
+ * check. Named apart from the provider-name {@link list}, which owns the
+ * member.
+ * @param parentSessionId - parent session whose direct children are listed.
+ * @param signal - carrier cancellation forwarded to Session queries.
+ * @returns the catalog view for that parent.
+ * @throws {RemoteError} `gateway/bad-request` for an empty parent id,
+ *   `gateway/cancelled` for an aborted read, `subagent/projections-unavailable` when
+ *   the deployment has no projection registry, otherwise `gateway/internal`.
+ */
+@Remote('list') async remoteExportList(parentSessionId: SessionId, signal: AbortSignal): Promise<SubagentCatalog>
+
+/**
+ * Deliver one browser-authored message to a continuable child through the
+ * exact live direct parent, retaining the caller-minted request identity and
+ * validated browser zone on the accepted message. Success identifies the
+ * message the child's FIFO inbox accepted; later execution is independent of
+ * this call.
+ * Image parts are admitted and persisted through the attachment store
+ * before delivery, and the child's model must accept image input.
+ * @param request - durable address, minted identity, content, and optional browser zone.
+ * @param signal - carrier cancellation, owning the call until inbox acceptance.
+ * @returns the accepted message's inbox identity.
+ * @throws {RemoteError} `gateway/bad-request`, `subagent/attachment-invalid`,
+ *   `subagent/invalid-time-zone`, `subagent/parent-unavailable`,
+ *   `subagent/not-resumable`, `subagent/unauthorized`,
+ *   `subagent/delivery-unavailable`, `gateway/cancelled`, or `gateway/internal`.
+ */
+@Remote('prompt') async prompt(request: SubagentPromptRequest, signal: AbortSignal): Promise<SubagentPromptReceipt>
+
+/**
+ * Remote face of {@link interrupt} under one durable parent address. No
+ * catalog, history, persistence, or parent Agent lookup runs: the core
+ * primitive alone authorizes the address against the live Activation, which
+ * is what keeps a live child interruptible while its parent Agent is offline.
+ * Absent, idle, and already-completed targets are accepted no-ops there.
+ * @param childSessionId - durable child session id to interrupt.
+ * @param parentSessionId - durable direct parent whose authority is claimed.
+ * @param mode - required continuable-address discriminator.
+ * @returns acknowledgement that the cancel signal was admitted, not that the target is quiescent.
+ * @throws {RemoteError} `gateway/bad-request` for an empty id,
+ *   `subagent/unauthorized` when the address does not own the live target,
+ *   otherwise `gateway/internal`.
+ */
+@Remote('interruptByParent') interruptByParent( childSessionId: SessionId, parentSessionId: SessionId, mode: 'continuable', ): SubagentInterruptReceipt
 
 /**
  * Register a provider under its name. Registration is effect-scoped and HMR

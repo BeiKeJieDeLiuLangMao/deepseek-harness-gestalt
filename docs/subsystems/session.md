@@ -602,7 +602,7 @@ Consumers that order Sessions by human activity exclude this boundary: picking a
 
 A plugin may declaration-merge extra `SessionEventMap` types. These are **log-only**: NOT `SurfaceEventType`s (they carry no `surfaceOp` and contribute nothing to derived history). Their owner decides whether they belong to an open execution turn or may stand between turns, and enforces any relation in its own invariant companion. The generated [persistence log event catalog](../persistence-catalog.md) enumerates every core and plugin-contributed event with its payload, surface badge, and declaration site; the compaction seam's `compaction/*` semantics are discussed on [compaction.md](compaction.md).
 
-When several events in one plugin-owned family assemble into one Web Client Conversation Node, every start, update, result, resource, or interruption event in that family carries or independently derives the same stable business id. This requirement applies to correlated Node families, not to every Session event; it lets the client group each event without guessing from adjacency or scanning history. See the [Conversation Node cookbook](../cookbook/adding-a-conversation-node.md).
+When several events in one plugin-owned family assemble into one Web Client Conversation Node, every start, update, result, resource, or interruption event in that family carries or independently derives the same stable business id. This requirement applies to correlated Node families, not to every Session event; it lets the client group each event without guessing from adjacency or scanning history. See the [Conversation subsystem](conversation.md).
 
 The hook bridges' `hook/invoked` / `hook/result` pairs (from `@deepseek-ai/dsh-hook-protocol`) correlate by `handlerId`. `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, and `Stop` fire inside the loop's open turn, so their `hook/*` records are turn-enclosed by construction. `SessionStart` gets no `hook/*` record because it runs before turn 1; its context remains pending in the inbox until a waking delivery opens a turn (see [the hook-bridges Agent Note](../../.agents/notes/implemented/feature/2026-06-30-hook-bridges.md)).
 
@@ -612,6 +612,29 @@ What a persistence backend relies on: the durable log persists every event lossl
 
 The backends that consume this contract are on [persistence.md](persistence.md).
 
+## Companion attachment admission
+
+The Session controller accepts one opaque Companion file and returns its durable byte-attachment reference.
+
+```ts type-equiv
+/** Companion opaque-file admission request. */
+interface SessionAdmitAttachmentRequest {
+  readonly sessionId: SessionId
+  readonly operationId: string
+  readonly mediaType: string
+  /** Caller display name; Host records the attachment-owner leaf after `displayName`. */
+  readonly name: string
+  readonly data: string
+}
+```
+
+```ts type-equiv
+/** Durable opaque-file reference after Companion admission. */
+interface SessionAdmitAttachmentValue {
+  readonly attachment: ByteAttachmentRef
+}
+```
+
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
 <a id="cordis-surface"></a>
@@ -620,13 +643,179 @@ The backends that consume this contract are on [persistence.md](persistence.md).
 
 Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — the language sides differ only in locale-specific paired document paths. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
 
+<a id="ctxsessioncontroller--sessioncontroller"></a>
+
+### `ctx.sessionController` — `SessionController`
+
+Host service backing the generated `ctx.remote.session` namespace.
+
+```ts cordis-catalog
+/**
+ * Resolve or resume one ordinary Session for another Host API domain.
+ * @param sessionId - Session identity whose Agent owns the operation.
+ * @returns the live Agent or the stable Session-domain failure.
+ */
+resolveAgent(sessionId: SessionId): Promise<ApiSessionAgentResult>
+
+/**
+ * Inspect one attached or persisted Session without activating its Agent.
+ * @param sessionId - durable Session identity.
+ * @param signal - optional caller cancellation for persistence reads.
+ * @returns the current attached state or persisted header and event prefix.
+ */
+inspect( sessionId: SessionId, signal?: AbortSignal, ): Promise<SessionInspection>
+
+/**
+ * Read all visible Session rows without resuming an Agent.
+ * @param _request - reserved empty list request.
+ * @param signal - cancellation for persistence reads.
+ * @returns visible Session summaries ordered by activity.
+ */
+@Remote('list') async list(_request: SessionListRequest, signal: AbortSignal): Promise<SessionListValue>
+
+/**
+ * Search visible Session content without resuming an Agent.
+ * @param request - literal message-content query.
+ * @param signal - cancellation for list and search reads.
+ * @returns authorized bounded Session search results.
+ */
+@Remote('search') search(request: SessionSearchRequest, signal: AbortSignal): Promise<SessionSearchValue>
+
+/**
+ * Create or idempotently adopt one ordinary Session.
+ * @param request - requested identity, location, and Agent preset.
+ * @returns the Session identity and resolved preset when configured.
+ */
+@Remote('create') create(request: SessionCreateRequest): Promise<SessionCreateValue>
+
+/**
+ * Select one Session-local model after explicitly resuming the Session.
+ * @param request - Session identity and requested model selection.
+ * @returns the normalized selection installed for the Session.
+ */
+@Remote('selectModel') selectModel(request: SessionSelectModelRequest): Promise<SessionSelectModelValue>
+
+/**
+ * Describe every currently routable model for Host-generation selectors.
+ * @returns provider-grouped models, the deployment default, and isolated provider failures.
+ */
+@Remote('modelCatalog') modelCatalog(): Promise<ModelCatalog>
+
+/**
+ * Read the effective allow-only tool catalog for one live Session.
+ * Absent `allow` means no allow-only policy is active; an empty array means
+ * the composition explicitly allows no end tool. `tools` is the same
+ * `ctx.tools.catalogSchemas` view used by model request assembly.
+ * @param request - Session whose Agent context owns the catalog.
+ * @returns the configured union and exact eligible schemas.
+ */
+@Remote('toolEligibility') async toolEligibility(request: SessionToolEligibilityRequest): Promise<SessionToolEligibility>
+
+/**
+ * Report whether this deployment can hand a Session workspace path to a native desktop.
+ * @returns true when the matching open operation is available.
+ */
+@Remote canOpenWorkspacePath(): boolean
+
+/**
+ * Open one path prepared by a Session-aware caller on the Host desktop.
+ * @param request - path after best-effort Session workspace resolution.
+ * @param signal - caller lifetime; abort terminates the native command.
+ * @returns confirmation after the native opener accepts the path.
+ * @throws RemoteError when the request is invalid, cancelled, or the opener fails.
+ */
+@Remote('openWorkspacePath') async openWorkspacePath( request: SessionOpenWorkspacePathRequest, signal: AbortSignal, ): Promise<SessionOpenWorkspacePathValue>
+
+/**
+ * Rename one Session after explicitly resuming it.
+ * @param request - Session identity and proposed title.
+ * @returns the accepted title and durable event sequence.
+ */
+@Remote('rename') rename(request: SessionRenameRequest): Promise<SessionRenameValue>
+
+/**
+ * Fork one cold-readable completed-turn prefix into a new Session.
+ * @param request - source Session and optional event anchor.
+ * @returns the new Session identity.
+ */
+@Remote('fork') fork(request: SessionForkRequest): Promise<SessionForkValue>
+
+/**
+ * Admit one prompt after explicitly resuming its Session.
+ * @param request - Session identity, prompt content, source metadata, and delivery mode.
+ * @param signal - caller cancellation before prompt admission begins.
+ * @returns acknowledgement that the Agent accepted the prompt.
+ */
+@Remote('prompt') prompt(request: SessionPromptRequest, signal: AbortSignal): Promise<SessionPromptValue>
+
+/**
+ * Read one image proven reachable from the addressed Session log.
+ * @param request - Session and attachment identities used for authorization.
+ * @returns the durable attachment reference and base64-encoded bytes.
+ */
+@Remote('attachment') attachment(request: SessionAttachmentRequest): Promise<SessionAttachmentValue>
+
+/**
+ * Admit one Companion opaque file onto a Session without sending it to a model.
+ * Identical `operationId` retries return the recorded reference; a conflicting
+ * payload fails. Concurrent admissions for one Session serialize on the Agent
+ * controller's existing admission chain before append and flush.
+ * @param request - Session identity, Companion operation id, media type, name, and canonical base64.
+ * @returns the durable opaque-byte reference.
+ */
+@Remote('admitAttachment') admitAttachment(request: SessionAdmitAttachmentRequest): Promise<SessionAdmitAttachmentValue>
+
+/**
+ * Mutate one still-pending queue occurrence on a live Agent.
+ * Edit content uses the JSON-safe {@link PromptContentPart} vocabulary;
+ * non-text parts are refused as `session/attachment-invalid`.
+ * @param request - Session, queue item, and requested mutation.
+ * @returns acknowledgement that the queue mutation was applied.
+ */
+@Remote('updateQueue') updateQueue(request: SessionUpdateQueueRequest): SessionUpdateQueueValue
+
+/**
+ * Cancel one active Agent turn without dropping its pending inbox.
+ * @param request - Session whose active Agent turn is cancelled.
+ * @returns acknowledgement that cancellation was requested.
+ */
+@Remote('cancel') cancel(request: SessionCancelRequest): SessionCancelValue
+
+/**
+ * Read one cold-safe, message-aligned Session history page.
+ * @param request - durable address, backward cursor, and page budget.
+ * @param signal - cancellation for persistence reads.
+ * @returns one chronological page.
+ */
+@Remote('page') page(request: SessionPageRequest, signal: AbortSignal): Promise<SessionPage>
+
+/**
+ * Follow one Session log from its opening or resume cursor.
+ * @param request - durable address and last committed sequence already held by the caller.
+ * @param signal - cancellation owned by the Remote stream carrier.
+ * @returns a complete opening snapshot followed by gap-free event frames.
+ */
+@Remote({ mode: 'stream' }) follow(request: SessionFollowRequest, signal: AbortSignal): AsyncIterable<SessionFollowFrame>
+
+/**
+ * Stream a complete live-control baseline followed by replacement frames.
+ * @param signal - cancellation owned by the Remote stream carrier.
+ * @returns one complete baseline followed by live replacement frames.
+ */
+@Remote({ mode: 'stream' }) control(signal: AbortSignal): AsyncIterable<SessionControlFrame>
+```
+
+Types: [SessionId](core.md) · [SessionInspection](persistence.md) · [SessionSearchRequest](session-query.md)
+
+Source: [`packages/api/session-controller/src/index.ts`](../../packages/api/session-controller/src/index.ts)
+
 <a id="ctxsessions--sessionstore"></a>
 
 ### `ctx.sessions` — `SessionStore`
 
 In-memory session store (`ctx.sessions`).
 
-Persistence is intentionally not implemented here — persistence plugins subscribe to `session/event` and flush on `session/flush` / dispose.
+Persistence is intentionally not implemented here — the agent lifecycle attaches a session-log writer to each published session's write handle; a session published outside that lifecycle persists nothing.
 
 ```ts cordis-catalog
 /**
@@ -691,10 +880,9 @@ prepare(id?: SessionId, options?: PrepareSessionOptions): Session
  * assume that.
  *
  * @param session - a {@link prepare}d session not yet in the store.
- * @returns the detach disposer (publication hooks + store removal). It emits
- *   `session/detached` for attachment-owned infrastructure and emits
- *   `session/disposed` only after announcement. When called from a synchronous
- *   `session/created` listener, removal waits until that dispatch unwinds.
+ * @returns the detach disposer (publication hooks + store removal). When called from
+ *   a synchronous `session/created` listener, removal and disposal wait until
+ *   that creation dispatch unwinds.
  * @throws if a session with this id is already in the store.
  */
 enter(session: Session): () => void
@@ -750,12 +938,112 @@ list(): Session[]
  *   `SessionStore`'s id policy.
  * @returns The created live child session.
  */
-fork(source: SessionForkSource, boundary?: number, childSessionId?: SessionId): Session
+fork(source: SessionForkSource, boundary?: SessionSeq, childSessionId?: SessionId): Session
 ```
 
 Types: [CreateSessionOptions](persistence.md) · [PrepareSessionOptions](persistence.md) · [SessionId](core.md)
 
 Source: [`packages/core/session/src/index.ts`](../../packages/core/session/src/index.ts)
+
+<a id="api-session-events"></a>
+
+### `api-session/*` events
+
+<a id="api-sessionactivity--emit"></a>
+
+#### `api-session/activity` — emit
+
+One user-authored durable message advanced Session list activity.
+
+```ts cordis-catalog
+/**
+ * One user-authored durable message advanced Session list activity.
+ * @mode emit
+ * @param sessionId - addressed Session identity.
+ * @param updatedAt - durable message time used for list ordering.
+ */
+'api-session/activity'(sessionId: SessionId, updatedAt: number): void
+```
+
+Types: [SessionId](core.md)
+
+Source: [`packages/api/session-controller/src/types.ts`](../../packages/api/session-controller/src/types.ts)
+
+<a id="api-sessionadded--emit"></a>
+
+#### `api-session/added` — emit
+
+A Session became visible to Session list consumers.
+
+```ts cordis-catalog
+/**
+ * A Session became visible to Session list consumers.
+ * @mode emit
+ * @param summary - initial list row for the Session.
+ */
+'api-session/added'(summary: SessionSummary): void
+```
+
+Source: [`packages/api/session-controller/src/types.ts`](../../packages/api/session-controller/src/types.ts)
+
+<a id="api-sessionerror--emit"></a>
+
+#### `api-session/error` — emit
+
+One Agent failed outside a durable turn position.
+
+```ts cordis-catalog
+/**
+ * One Agent failed outside a durable turn position.
+ * @mode emit
+ * @param sessionId - Agent and Session identity.
+ * @param message - user-safe failure chain.
+ */
+'api-session/error'(sessionId: SessionId, message: string): void
+```
+
+Types: [SessionId](core.md)
+
+Source: [`packages/api/session-controller/src/types.ts`](../../packages/api/session-controller/src/types.ts)
+
+<a id="api-sessionremoved--emit"></a>
+
+#### `api-session/removed` — emit
+
+A Session left the live Host registry.
+
+```ts cordis-catalog
+/**
+ * A Session left the live Host registry.
+ * @mode emit
+ * @param sessionId - removed Session identity.
+ */
+'api-session/removed'(sessionId: SessionId): void
+```
+
+Types: [SessionId](core.md)
+
+Source: [`packages/api/session-controller/src/types.ts`](../../packages/api/session-controller/src/types.ts)
+
+<a id="api-sessionstatus--emit"></a>
+
+#### `api-session/status` — emit
+
+One Agent changed running state.
+
+```ts cordis-catalog
+/**
+ * One Agent changed running state.
+ * @mode emit
+ * @param sessionId - Agent and Session identity.
+ * @param running - whether the Agent is running.
+ */
+'api-session/status'(sessionId: SessionId, running: boolean): void
+```
+
+Types: [SessionId](core.md)
+
+Source: [`packages/api/session-controller/src/types.ts`](../../packages/api/session-controller/src/types.ts)
 
 <a id="session-events"></a>
 
@@ -780,29 +1068,6 @@ Creation announcement during session publication. A synchronous throw vetoes and
  * @mode emit
  */
 'session/created'(this: Scoped<Session>, session: Session): void
-```
-
-Types: [Scoped](scope.md)
-
-Source: [`packages/core/session/src/index.ts`](../../packages/core/session/src/index.ts)
-
-<a id="sessiondetached--emit"></a>
-
-#### `session/detached` — emit
-
-Ownership release for every entered Session, including an unpublished preparation. Persistence uses this edge to retire append state without turning an unpublished reservation into the public created/disposed lifecycle. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`) reuses the attachment owner scope.
-
-```ts cordis-catalog
-/**
- * Ownership release for every entered Session, including an unpublished preparation.
- * Persistence uses this edge to retire append state without turning an unpublished
- * reservation into the public created/disposed lifecycle.
- * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`) reuses the attachment owner scope.
- * @param session - the Session whose store attachment ended.
- * @dshScopeScan unsupported
- * @mode emit
- */
-'session/detached'(this: Scoped<Session>, session: Session): void
 ```
 
 Types: [Scoped](scope.md)

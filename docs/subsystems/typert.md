@@ -307,12 +307,27 @@ Resolve strict generated definitions or conservative SRC markers against current
 
 ```ts cordis-catalog
 /**
+ * Register the sole application-selected forwarded-event source.
+ * @param source - stream factory installed by the Remote assembly.
+ * @param host - stable Host facts included in each Client generation's opening frame.
+ * @returns disposer removing this source and cancelling its active streams.
+ */
+registerRemoteEvents( source: TypertRemoteEventSource, host: RemoteEventHostInfo, ): () => Promise<void>
+
+/**
  * Invoke one live Remote method through strict generated reflection or SRC markers.
  * @param request - decoded endpoint and exact named wire arguments.
- * @returns the validated business result.
+ * @returns the business result without output decoding.
  * @throws {@link TypertGatewayError} for dispatch, provider, or boundary failures; lookup-policy and business errors retain identity.
  */
 async invoke(request: InvokeRemoteRequest): Promise<unknown>
+
+/**
+ * Open one live stream Remote method without assuming a physical carrier.
+ * @param request - decoded endpoint and named wire arguments.
+ * @returns a cancellation-aware iterable over the business results.
+ */
+async stream(request: InvokeRemoteRequest): Promise<AsyncIterable<unknown>>
 ```
 
 Source: [`packages/api/gateway/src/index.ts`](../../packages/api/gateway/src/index.ts)
