@@ -16,6 +16,7 @@ import {
 import TypertGatewayService from '@deepseek-ai/dsh-api-gateway'
 import { apply as applyClientRemote, inject as clientRemoteInject } from '@deepseek-ai/dsh-api-gateway/client'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
+import type {} from '@deepseek-ai/dsh-member-question-receiver/remote'
 import { WorkspaceTypertGenerator } from '@deepseek-ai/dsh-typert-generator'
 import type { TypertContribution } from '@deepseek-ai/dsh-typert-registry/types'
 import type { TypertRemoteContribution } from '@deepseek-ai/dsh-typert-protocol'
