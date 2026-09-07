@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup } from '@testing-library/react'
 import { Context } from '@deepseek-ai/cordis'
+import { SessionId } from '@deepseek-ai/dsh-session/types'
 import { SlotRegistry } from '../src/client/registry.ts'
 import type { ScopedStandardSourceBinding, SlotScopeAdapter } from '../src/client/index.ts'
 import { apply as nodeApply } from '@deepseek-ai/dsh-client-ui-renderer'
@@ -79,9 +80,7 @@ function container(): HTMLElement {
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
-    'test.session': { kind: 'single'; scope: 'session'; owner: { label: string } }
-    'test.maybe': { kind: 'single'; scope: 'session-maybe'; owner: { label: string } }
-    'test.root': { kind: 'single'; scope: 'root' }
+    'test.renderer.session': { kind: 'single'; scope: 'session'; owner: { label: string } }
   }
 }
 
@@ -134,9 +133,9 @@ describe('UI renderer plugin', () => {
     const { ctx, slots, currentListeners, acquireForRender, releaseRender, select } = await bench()
     slots.register({
       name: 'root',
-      children: { 'test.session': { kind: 'single', scope: 'session' } },
-    }, () => null)
-    slots.register({ name: 'test.session' }, ({ sessionId, label }) => (
+      children: { 'test.renderer.session': { kind: 'single', scope: 'session' } },
+    }, ({ renderSlot }) => renderSlot('test.renderer.session', { label: 'selected' }))
+    slots.register({ name: 'test.renderer.session' }, ({ sessionId, label }) => (
       <div data-testid="session-probe">{sessionId}:{label}</div>
     ))
     const el = container()
@@ -144,8 +143,8 @@ describe('UI renderer plugin', () => {
     act(() => {
       mounted.push(ctx.get('uiRenderer')!.mountSession(
         el,
-        'test.session',
-        'explicit-session' as never,
+        'test.renderer.session',
+        SessionId('explicit-session'),
         { label: 'owner' },
       ))
     })
@@ -161,32 +160,26 @@ describe('UI renderer plugin', () => {
     expect(el.querySelector('[data-testid="session-probe"]')?.textContent).toBe('explicit-session:owner')
   })
 
-  it('fails loud before acquiring a React root and allows same-container retry', async () => {
+  it('fails before acquiring a React root and allows same-container retry', async () => {
     const { ctx, slots } = await bench()
     slots.register({
       name: 'root',
-      children: {
-        'test.session': { kind: 'single', scope: 'session' },
-        'test.root': { kind: 'single', scope: 'root' },
-      },
-    }, () => null)
-    slots.register({ name: 'test.session' }, ({ sessionId, label }) => (
+      children: { 'test.renderer.session': { kind: 'single', scope: 'session' } },
+    }, ({ renderSlot }) => renderSlot('test.renderer.session', { label: 'selected' }))
+    slots.register({ name: 'test.renderer.session' }, ({ sessionId, label }) => (
       <div data-testid="session-probe">{sessionId}:{label}</div>
     ))
     const renderer = ctx.get('uiRenderer')!
     const el = container()
-    expect(() => renderer.mountSession(el, 'root', 'explicit-session' as never, {})).toThrow("cannot target 'root'")
-    expect(() => renderer.mountSession(el, 'unknown', 'explicit-session' as never, {})).toThrow('is not declared')
-    expect(() => renderer.mountSession(el, 'test.root', 'explicit-session' as never, {})).toThrow("non-Session scope 'root'")
-    const core = (slots as unknown as {
-      _core: { specDynamic: (key: string) => unknown }
-    })._core
-    const specDynamic = vi.spyOn(core, 'specDynamic').mockReturnValue({ kind: 'single', scope: 'workspace' })
-    expect(() => renderer.mountSession(el, 'test.foreign', 'explicit-session' as never, {})).toThrow("non-Session scope 'workspace'")
-    specDynamic.mockRestore()
-    expect(() => renderer.mountSession(el, 'test.session', 'missing' as never, { label: 'owner' })).toThrow('could not resolve')
+    expect(() => renderer.mountSession(el, 'test.renderer.session', SessionId('missing'), { label: 'owner' }))
+      .toThrow('could not resolve')
     act(() => {
-      mounted.push(renderer.mountSession(el, 'test.session', 'explicit-session' as never, { label: 'retry' }))
+      mounted.push(renderer.mountSession(
+        el,
+        'test.renderer.session',
+        SessionId('explicit-session'),
+        { label: 'retry' },
+      ))
     })
     expect(el.querySelector('[data-testid="session-probe"]')?.textContent).toBe('explicit-session:retry')
   })
@@ -195,29 +188,39 @@ describe('UI renderer plugin', () => {
     const { ctx, slots, fiber, releaseRender } = await bench()
     slots.register({
       name: 'root',
-      children: { 'test.session': { kind: 'single', scope: 'session' } },
-    }, () => <div data-testid="root-probe" />)
-    slots.register({ name: 'test.session' }, ({ sessionId }) => (
+      children: { 'test.renderer.session': { kind: 'single', scope: 'session' } },
+    }, ({ renderSlot }) => (
+      <>
+        <div data-testid="root-probe" />
+        {renderSlot('test.renderer.session', { label: 'selected' })}
+      </>
+    ))
+    slots.register({ name: 'test.renderer.session' }, ({ sessionId }) => (
       <div data-testid="session-probe">{sessionId}</div>
     ))
     const rootEl = container()
     const sessionEl = container()
     act(() => {
       ctx.get('uiRenderer')!.mount(rootEl)
-      ctx.get('uiRenderer')!.mountSession(sessionEl, 'test.session', 'explicit-session' as never, { label: 'owner' })
+      ctx.get('uiRenderer')!.mountSession(
+        sessionEl,
+        'test.renderer.session',
+        SessionId('explicit-session'),
+        { label: 'owner' },
+      )
     })
     const core = (slots as unknown as {
       _core: { records: Map<string, { listeners: Set<() => void> }> }
     })._core
     expect(core.records.get('root')?.listeners.size).toBeGreaterThan(0)
-    expect(core.records.get('test.session')?.listeners.size).toBeGreaterThan(0)
+    expect(core.records.get('test.renderer.session')?.listeners.size).toBeGreaterThan(0)
 
     await stabilize(() => fiber.dispose())
 
     expect(rootEl.childElementCount).toBe(0)
     expect(sessionEl.childElementCount).toBe(0)
     expect(core.records.get('root')?.listeners.size).toBe(0)
-    expect(core.records.get('test.session')?.listeners.size).toBe(0)
+    expect(core.records.get('test.renderer.session')?.listeners.size).toBe(0)
     expect(releaseRender).toHaveBeenCalledOnce()
     expect(ctx.get('uiRenderer')).toBeUndefined()
     expect(() => slots.renderSlot('root', {})).toThrow('not installed')

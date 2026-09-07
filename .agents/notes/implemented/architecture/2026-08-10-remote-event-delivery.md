@@ -122,6 +122,8 @@ That yields a discipline this design depends on: **when those tests import a val
 
 The few Client-owned symbols are therefore **mirrored** on the test side (`scaffold.ts` exports the mirrored welcome-notice constants; the two chat e2e keep importing `dsh-client-runtime/client` because the `runtime` project is already in the Host graph), which lets those four consumers leave the Host graph. The 15 Client project references in `apps/cli/tsconfig.json` lost their owner-map role and are gone. Each mirrored value matches its source verbatim; a drift shows up as a missed selector or an unsuppressed notice, both loud failures.
 
+Package tests that exercise both faces use the built-artifact lane instead of importing Host sources into a Client-named test. `packages/api/remotes/tests/built-lib.e2e.ts` runs a plain Node subprocess that loads built Host libraries and Client bundle handoffs, crosses the real `/api` HTTP route, and exercises generated Goal and Browser Workspace Remotes; the Browser path uses the deterministic Runtime and verifies namespace unload and remount.
+
 ### Change inventory
 
 | Location | Change |
@@ -157,6 +159,7 @@ The few Client-owned symbols are therefore **mirrored** on the test side (`scaff
 What pins this behavior:
 
 - A real composition test puts one `host/remote-event` frame on the real host stream per Host emit, with `event` the Host name and `args` equal element for element.
+- The built-artifact Remote test drives Goal and Browser Workspace calls from Client bundles through real HTTP into Host services; Browser navigate, observe, screenshot, focus, namespace unload, and remount all cross generated contributions.
 - Type-level negatives reject three candidate classes: a name that is not an event, a Scope-bound event (`goal/changed`), and an event whose return is not `void`. `$on('slots/changed', …)` (Client-local) and `$on('skills/change', …)` (declared but unselected) both fail to compile, so `$on`'s key surface equals the allowlist.
 - On the consumer side, `$on('settings/document-updated', …)` resolves `ns` as `SettingsNamespace`: the brand survives the wire.
 - `$on`'s disposer belongs to the calling fiber, and two registrations of one function object retire independently — a table keyed on listener identity would collapse them, so subscriptions are addressed by registration.
