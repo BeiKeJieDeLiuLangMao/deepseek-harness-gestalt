@@ -6,7 +6,7 @@ import { Context } from '@deepseek-ai/cordis'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
-import { createWorkspaceGitCommand } from '../src/git.ts'
+import { createWorkspaceGitCommand, DEFAULT_WORKSPACE_GIT_TIMEOUT_MS } from '../src/git.ts'
 import WorkspaceController from '../src/index.ts'
 
 const roots: Context[] = []
@@ -119,8 +119,17 @@ describe('createWorkspaceGitCommand Host deadline', () => {
     },
   )
 
-  it('rejects a Host timeout outside the Node timer bound', () => {
+  it('resolves omitted and partial config while rejecting a Host timeout outside the Node timer bound', () => {
     const ctx = new Context()
+    expect(WorkspaceController.Config.parse(undefined)).toEqual({
+      gitTimeoutMs: DEFAULT_WORKSPACE_GIT_TIMEOUT_MS,
+    })
+    expect(WorkspaceController.Config.parse({})).toEqual({
+      gitTimeoutMs: DEFAULT_WORKSPACE_GIT_TIMEOUT_MS,
+    })
+    expect(WorkspaceController.Config.parse({ gitTimeoutMs: 5_000 })).toEqual({
+      gitTimeoutMs: 5_000,
+    })
     expect(() => createWorkspaceGitCommand(ctx, process.cwd(), 0)).toThrow(/timeoutMs/)
     expect(() => createWorkspaceGitCommand(ctx, process.cwd(), MAX_TIMER_DELAY_MS + 1)).toThrow(/timeoutMs/)
     expect(() => WorkspaceController.Config.parse({ gitTimeoutMs: 0 })).toThrow()
