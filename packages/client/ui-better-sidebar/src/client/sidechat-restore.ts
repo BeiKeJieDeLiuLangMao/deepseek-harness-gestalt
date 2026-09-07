@@ -15,7 +15,7 @@ export function subscribeSideThreadRestoration(ctx: SidebarContext, store: Sideb
     const sessionId = sessions.current
     if (sessionId === undefined) return
     store.restoreSideThreadsFor(sessionId, restorableSideThreads(
-      sessions.byId,
+      sessions,
       sessionId,
       ctx.workspaces.list.getSnapshot(),
     ))

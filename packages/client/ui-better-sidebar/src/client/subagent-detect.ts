@@ -73,21 +73,30 @@ export function collectBranchIds(
 
 /** List published, unarchived direct Side Chat children eligible for tab restoration. */
 export function restorableSideThreads(
-  byId: SidebarSessionList['byId'],
+  sessions: Pick<SidebarSessionList, 'byId' | 'subagentsByParent'>,
   sessionId: SessionId,
   archive: SideThreadArchiveSnapshot,
 ): SideThreadRef[] {
   if (archive.phase !== 'ready') return []
   const archived = new Set(archive.archivedSessionIds)
+  const catalogLabels = new Map<string, string>()
+  for (const entry of sessions.subagentsByParent?.[sessionId]?.entries ?? []) {
+    if (entry.kind === 'child' && entry.label !== undefined) {
+      catalogLabels.set(entry.id, entry.label)
+    }
+  }
   const threads: SideThreadRef[] = []
-  for (const summary of Object.values(byId)) {
+  for (const summary of Object.values(sessions.byId)) {
     if (summary.origin !== 'subagent' || summary.parentId !== sessionId) continue
     if (summary.provisional === true || summary.blank !== false) continue
-    if (!summary.displayTitle.startsWith(SIDE_LABEL_PREFIX)) continue
+    const label = summary.displayTitle.startsWith(SIDE_LABEL_PREFIX)
+      ? summary.displayTitle
+      : catalogLabels.get(summary.id)
+    if (label === undefined || !label.startsWith(SIDE_LABEL_PREFIX)) continue
     if (archived.has(summary.id)) continue
     threads.push({
       threadId: summary.id,
-      title: summary.displayTitle.slice(SIDE_LABEL_PREFIX.length),
+      title: label.slice(SIDE_LABEL_PREFIX.length),
     })
   }
   return threads
