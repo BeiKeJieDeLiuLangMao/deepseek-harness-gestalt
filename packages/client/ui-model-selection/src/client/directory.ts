@@ -159,6 +159,12 @@ export class ModelDirectory {
     }
   }
 
+  /** Re-inspect feature-owned state after its Host routing inputs change. */
+  refreshFeatureInspection(): void {
+    if (this.disposed || this.routeOf()?.kind !== 'feature') return
+    void this.load().catch(() => { /* the selector exposes the inspection failure */ })
+  }
+
   /** Scope teardown: late settlements lose write access to the store. */
   dispose(): void {
     this.disposed = true

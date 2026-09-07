@@ -58,7 +58,7 @@ export interface SidechatRoutes {
   'sidechat.prompt'(payload: unknown): Promise<{ accepted: true }>
   /** Read the draft, live child, or parent model selection and route availability. */
   'sidechat.model'(payload: unknown): Promise<{ current: ModelSelection; routable: boolean }>
-  /** Validate and apply a model selection to a live child, or return it for a draft. */
+  /** Validate and retain a model selection for a draft or live child. */
   'sidechat.selectModel'(payload: unknown): Promise<{ selected: ModelSelection }>
   /** Abort the thread's running turn (queued work is preserved). */
   'sidechat.cancel'(payload: unknown): Promise<{ accepted: true }>
@@ -389,15 +389,21 @@ export function buildSidechatApi(ctx: SidebarContext): SidechatApi {
       const inheritance = buildSidechatInheritance(
         parentSession.snapshotEvents() as unknown as readonly SidechatLogEvent[],
       )
+      const requestedSelection = modelSelectionOf((payload as { selection?: unknown }).selection)
+      let selectionRef = threadSelections.get(childId)
+      if (selectionRef === undefined) {
+        selectionRef = { current: undefined, assembled: undefined }
+        threadSelections.set(childId, selectionRef)
+      }
       const { agentPreset, setup } = await composeChildSetup(
         ctx,
         resolvePresetId(parentSession.header, parentSession.snapshotEvents()),
       )
-      const requestedSelection = modelSelectionOf((payload as { selection?: unknown }).selection)
-      const selected = requestedSelection === undefined
+      const fallbackSelection = requestedSelection === undefined
         ? currentModelSelection(parent)
         : await resolveModelSelection(ctx, requestedSelection)
-      const selectionRef: ModelSelectionRef = { current: selected, assembled: undefined }
+      selectionRef.current ??= fallbackSelection
+      const selected = selectionRef.current
       const label = sideLabel(text)
       // Honest catalog citizenship: the durable descriptor keeps the thread
       // a HEALTHY row in the host's subagents.list — a cold child without
@@ -436,12 +442,10 @@ export function buildSidechatApi(ctx: SidebarContext): SidechatApi {
       if (agents?.create === undefined) {
         throw new SidebarError('sidechat-error', 'the agents service is unavailable', 503)
       }
-      threadSelections.set(childId, selectionRef)
       let handle: { agent: Agent; dispose(): Promise<void> }
       try {
         handle = await agents.create(options)
       } catch (error) {
-        threadSelections.delete(childId)
         throw new SidebarError('sidechat-error', `thread creation failed: ${error instanceof Error ? error.message : String(error)}`, 500)
       }
       threadDisposers.set(childId, () => handle.dispose())
@@ -557,7 +561,13 @@ export function buildSidechatApi(ctx: SidebarContext): SidechatApi {
       const selected = await resolveModelSelection(ctx, requested)
       const agent = liveThreadAgent(ctx, childId)
       const provisional = (payload as { provisional?: unknown }).provisional === true
-      if (agent === undefined && provisional) return { selected }
+      if (agent === undefined && provisional) {
+        const selection = threadSelections.get(childId)
+          ?? { current: undefined, assembled: undefined }
+        selection.current = selected
+        threadSelections.set(childId, selection)
+        return { selected }
+      }
       if (agent === undefined) {
         const persistence = ctx.get('sessionPersistence') as SidebarSessionPersistenceService | undefined
         if (persistence === undefined) {

@@ -204,7 +204,37 @@ describe('provisional identity lifecycle', () => {
     await vi.waitFor(() => {
       expect(b.api.followStarts).toEqual([sid('parent'), sid('child')])
     })
-    expect(b.api.callsOf('subagents.list')).toContain(sid('child'))
+    expect(b.api.callsOf('subagents.list')).toEqual([sid('parent')])
+  })
+
+  it('discovers a feature-owned child address before opening it for render', async () => {
+    const b = bench()
+    b.api.onSubagentList = parentSessionId => Promise.resolve(ok({
+      entries: parentSessionId === sid('parent')
+        ? [{
+          kind: 'child', id: sid('child'), mode: 'continuable', label: 'Side: child',
+          activity: 'inactive', hasChildren: false,
+        }]
+        : [],
+      parentAvailable: true,
+    }))
+    await feedList(b, [{ id: 'parent' }, { id: 'child', parentId: 'parent', origin: 'subagent' }])
+    b.svc.registerAdmission(sid('child'), {
+      prompt: () => Promise.resolve(ok({ accepted: true as const })),
+      cancel: () => Promise.resolve(ok({ accepted: true as const })),
+    })
+
+    b.svc.openForRender(sid('child'))
+    await vi.waitFor(() => { expect(b.api.followStarts).toEqual([sid('child')]) })
+    expect(b.api.callsOf('subagents.list')).toContain(sid('parent'))
+    expect(b.api.callsOf('session.follow')[0]).toMatchObject({
+      address: {
+        kind: 'subagent',
+        parentSessionId: sid('parent'),
+        childSessionId: sid('child'),
+        mode: 'continuable',
+      },
+    })
   })
 
   it('fails loud on duplicate staging of the same identity', async () => {
@@ -430,6 +460,10 @@ describe('provisional identity lifecycle', () => {
       { id: 'parent' },
       { id: 'child', parentId: 'parent', origin: 'subagent' },
     ])
+    b.svc.registerAdmission(sid('child'), {
+      prompt: () => Promise.resolve(ok({ accepted: true as const })),
+      cancel: () => Promise.resolve(ok({ accepted: true as const })),
+    })
     b.api.onSubagentList = (_payload, signal) => new Promise((_resolve, reject) => {
       signal?.addEventListener('abort', () => {
         reject(signal.reason instanceof Error ? signal.reason : new Error(String(signal.reason)))
@@ -437,13 +471,13 @@ describe('provisional identity lifecycle', () => {
     })
     b.svc.openForRender(sid('child'))
     await Promise.resolve()
-    expect(b.api.callsOf('subagents.list')).toEqual([sid('child')])
-    expect(b.svc.list.getSnapshot().subagentsByParent[sid('child')]?.state).toBe('loading')
+    expect(b.api.callsOf('subagents.list')).toEqual([sid('parent')])
+    expect(b.svc.list.getSnapshot().subagentsByParent[sid('parent')]?.state).toBe('loading')
 
     await b.ctx.fiber.dispose()
     expect(b.api.lastSubagentListSignal?.aborted).toBe(true)
-    expect(b.svc.list.getSnapshot().subagentsByParent[sid('child')]).toBeUndefined()
-    expect(b.api.callsOf('subagents.list')).toEqual([sid('child')])
+    expect(b.svc.list.getSnapshot().subagentsByParent[sid('parent')]).toBeUndefined()
+    expect(b.api.callsOf('subagents.list')).toEqual([sid('parent')])
   })
 
   it('does not rematerialize scopes or start Host I/O on a retained service after disposal', async () => {

@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
-import { liveModelSelection, type Agent, type AgentOptions, type AgentSetup } from '@deepseek-ai/dsh-agent'
+import {
+  liveModelSelection, type Agent, type AgentOptions, type AgentSetup, type ModelSelection,
+} from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { snapshotSubagentDescriptor } from '@deepseek-ai/dsh-subagent'
 import { Context as CordisContext } from '@deepseek-ai/cordis'
@@ -276,6 +278,69 @@ describe('sidechat route lifecycle', () => {
       current: { provider: 'deepseek', model: 'pro', reasoningEffort: 'high' },
       routable: true,
     })
+    await sidechat.dispose()
+  })
+
+  it('keeps a concurrent provisional selection authoritative for first creation', async () => {
+    const preset = Promise.withResolvers<{ id: string }>()
+    const resolvePreset = vi.fn(() => preset.promise)
+    const create = vi.fn(() => Promise.resolve({
+      agent: {
+        id: 'draft-child',
+        ctx: { effect: vi.fn() },
+        inject: vi.fn(),
+        followup: vi.fn(),
+        options: { provider: 'provider-b', model: 'model-b' },
+        session: { events: [], snapshotEvents: () => [], header: {} },
+      } as unknown as Agent,
+      dispose: () => Promise.resolve(),
+    }))
+    const parent = {
+      id: 'parent',
+      options: { provider: 'provider-a', model: 'model-a' },
+      session: { id: 'parent', events: [], snapshotEvents: () => [], header: {} },
+    } as unknown as Agent
+    const ctx = {
+      get: (name: string) => {
+        if (name === 'agents') return { get: (id: string) => id === 'parent' ? parent : undefined, create }
+        if (name === 'agentPresets') return { resolve: resolvePreset, mount: () => Promise.resolve() }
+        if (name === 'llm') {
+          return {
+            resolveCallConfig: (selection: ModelSelection) => Promise.resolve(selection),
+            listProviders: () => [{ id: 'provider-a' }, { id: 'provider-b' }],
+          }
+        }
+        return undefined
+      },
+    } as unknown as Context
+    const sidechat = buildSidechatApi(ctx)
+
+    const starting = sidechat.routes['sidechat.start']({
+      sessionId: 'parent',
+      childId: 'draft-child',
+      text: 'first question',
+      selection: { provider: 'provider-a', model: 'model-a' },
+    })
+    await vi.waitFor(() => { expect(resolvePreset).toHaveBeenCalledOnce() })
+    await expect(sidechat.routes['sidechat.selectModel']({
+      childId: 'draft-child',
+      selection: { provider: 'provider-b', model: 'model-b' },
+      provisional: true,
+    })).resolves.toEqual({ selected: { provider: 'provider-b', model: 'model-b' } })
+    await expect(sidechat.routes['sidechat.model']({
+      childId: 'draft-child',
+      parentSessionId: 'parent',
+      provisional: true,
+    })).resolves.toEqual({
+      current: { provider: 'provider-b', model: 'model-b' },
+      routable: true,
+    })
+
+    preset.resolve({ id: 'standard' })
+    await expect(starting).resolves.toEqual({ childId: 'draft-child', accepted: true })
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      agentOptions: expect.objectContaining({ provider: 'provider-b', model: 'model-b' }),
+    }))
     await sidechat.dispose()
   })
 

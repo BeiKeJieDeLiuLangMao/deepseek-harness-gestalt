@@ -54,9 +54,13 @@ export class ModelDirectoryResolver extends Service {
       this.catalog.resetGeneration()
       for (const directory of this.live.directories.values()) directory.resetConnected()
     })
-    ctx.remote.$on('llm/adapters-updated', () => { this.catalog.refresh() })
-    ctx.remote.$on('settings/document-updated', () => { this.catalog.refresh() })
-    ctx.remote.$on('credentials/reference-updated', () => { this.catalog.refresh() })
+    const refreshModelInputs = (): void => {
+      this.catalog.refresh()
+      for (const directory of this.live.directories.values()) directory.refreshFeatureInspection()
+    }
+    ctx.remote.$on('llm/adapters-updated', refreshModelInputs)
+    ctx.remote.$on('settings/document-updated', refreshModelInputs)
+    ctx.remote.$on('credentials/reference-updated', refreshModelInputs)
   }
 
   /**
@@ -81,6 +85,7 @@ export class ModelDirectoryResolver extends Service {
       listener => sessions.subscribeAdmission(listener),
     )
     live.directories.set(sessionId, directory)
+    directory.refreshFeatureInspection()
     // The composer cannot read this plugin (the dependency runs one way), so
     // the block is pushed: the Host says whether an adapter serves the
     // session's route, and only a definite `false` makes the input inert.

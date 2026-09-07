@@ -230,6 +230,23 @@ export class SessionManager {
   }
 
   /**
+   * Retain a catalog-discovered address for an explicitly rendered child.
+   * @param sessionId - child identity whose parent catalog is already loaded.
+   * @returns whether a healthy direct-parent address was available.
+   */
+  retainSubagentAddress(sessionId: SessionId): boolean {
+    if (!this.accepting()) return false
+    const address = this.navigationAddress(sessionId)
+    if (address === undefined) return false
+    this.addresses.set(sessionId, address)
+    this.sessions.get(sessionId)?.configureSubagent(
+      address,
+      this.catalogs.get(address.parentSessionId)?.parentAvailable,
+    )
+    return true
+  }
+
+  /**
    * Resolve an address for breadcrumb navigation without retaining transport authority.
    * @param sessionId - possible child id in an already-loaded catalog.
    * @returns A retained or catalog-derived direct-parent address.

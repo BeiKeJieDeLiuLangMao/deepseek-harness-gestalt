@@ -17,7 +17,7 @@
  * `current`; `openForRender()` opens a published Session's history without
  * selecting it. The package README owns the consumer contract.
  */
-import { FiberState, type Context, type Fiber } from '@deepseek-ai/cordis'
+import type { Context, Fiber, FiberState } from '@deepseek-ai/cordis'
 import type { SubagentAddress } from '@deepseek-ai/dsh-subagent/client'
 import { SessionSeq, type SessionId } from '@deepseek-ai/dsh-session/types'
 import { workspaceTitleOf } from '@deepseek-ai/dsh-util-workspace-path'
@@ -44,6 +44,9 @@ import type { SessionRemotes } from './remotes.ts'
 import type { SessionListPhase, SessionSearchResultItem, SubagentCatalogSnapshot } from './manager.ts'
 import type { Session } from './session.ts'
 import { sessionAdmissionModelRoute } from './admission-result.ts'
+
+/** Runtime mirror for Cordis's erased `FiberState` const enum. */
+const FIBER_ACTIVE = 2 as FiberState.ACTIVE
 
 /** Session list row projected from the host list RPC plus live stream increments. */
 export interface SessionSummary {
@@ -608,8 +611,24 @@ export class ClientSessions implements ISessions {
     if (this.manager.isProvisional(sessionId)) return
     const record = this.resolve(sessionId)
     if (record === undefined) return
-    void record.session.open()
-    void this.manager.refreshSubagents(sessionId)
+    const open = async (): Promise<void> => {
+      const summary = this.list.getSnapshot().byId[sessionId]
+      if (
+        summary?.origin === 'subagent'
+        && this.resolveAdmission(sessionId) !== undefined
+        && !this.manager.retainSubagentAddress(sessionId)
+      ) {
+        if (summary.parentId === undefined) return
+        await this.manager.refreshSubagents(summary.parentId)
+        if (!this.manager.retainSubagentAddress(sessionId)) return
+      }
+      if (this.disposed || this.scopes.get(sessionId) !== record) return
+      await record.session.open()
+      void this.manager.refreshSubagents(sessionId)
+    }
+    void open().catch((error: unknown) => {
+      console.error('[session-controller] openForRender failed:', error)
+    })
   }
 
   /**
@@ -799,7 +818,7 @@ export class ClientSessions implements ISessions {
     if (this.disposed) return Promise.reject(this.disposedError(operation))
     const op = new Promise<T>((resolve, reject) => {
       queueMicrotask(() => {
-        if (this.disposed || this.rootCtx.fiber.state !== FiberState.ACTIVE) {
+        if (this.disposed || this.rootCtx.fiber.state !== FIBER_ACTIVE) {
           reject(this.disposedError(operation))
           return
         }

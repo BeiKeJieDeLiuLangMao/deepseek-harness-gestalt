@@ -125,6 +125,11 @@ async function bench() {
   const scopes = new Map<SessionId, Context>()
   const addressed = new Set<SessionId>()
   const hidden = new Set<SessionId>()
+  const features = new Map<SessionId, {
+    current: ModelSelection
+    routable: boolean
+    inspections: number
+  }>()
   const admissionListeners = new Set<() => void>()
   ctx.provide('sessions', {
     scope: (id: SessionId) => scopes.get(id),
@@ -142,9 +147,26 @@ async function bench() {
     subagentAddress: (id: SessionId) => addressed.has(id)
       ? { parentSessionId: sid('parent'), childSessionId: id, mode: 'continuable' as const }
       : undefined,
-    modelRoute: (id: SessionId) => hidden.has(id) || scopes.get(id) === undefined
-      ? undefined
-      : {
+    modelRoute: (id: SessionId) => {
+      if (hidden.has(id) || scopes.get(id) === undefined) return undefined
+      const feature = features.get(id)
+      if (feature !== undefined) {
+        return {
+          kind: 'feature' as const,
+          inspect: () => {
+            feature.inspections += 1
+            return Promise.resolve({
+              ok: true as const,
+              value: { current: feature.current, routable: feature.routable },
+            })
+          },
+          selectModel: (selection: ModelSelection) => {
+            feature.current = selection
+            return Promise.resolve({ ok: true as const, value: { selected: selection } })
+          },
+        }
+      }
+      return {
         kind: 'stock' as const,
         selectModel: (selection: ModelSelection) => sessionRemote.selectModel({
           sessionId: id,
@@ -152,7 +174,8 @@ async function bench() {
           model: selection.model,
           ...selection.reasoningEffort === undefined ? {} : { reasoningEffort: selection.reasoningEffort },
         }),
-      },
+      }
+    },
     subscribeAdmission: (listener: () => void) => {
       admissionListeners.add(listener)
       return () => { admissionListeners.delete(listener) }
@@ -188,6 +211,15 @@ async function bench() {
       for (const listener of admissionListeners) listener()
     },
     setRoutable: (next: boolean) => { routable = next },
+    setFeature: (id: SessionId, current: ModelSelection, nextRoutable: boolean) => {
+      features.set(id, { current, routable: nextRoutable, inspections: 0 })
+    },
+    setFeatureRoutable: (id: SessionId, next: boolean) => {
+      const feature = features.get(id)
+      if (feature === undefined) throw new Error(`missing feature ${String(id)}`)
+      feature.routable = next
+    },
+    featureInspections: (id: SessionId) => features.get(id)?.inspections ?? 0,
     blockOf: (key: string) => blocks.get(sid(key)),
   }
 }
@@ -352,6 +384,26 @@ describe('ui-model-selection dual entry', () => {
     await Promise.resolve()
     expect(b.blockOf('s1')).toBeUndefined()
     expect(b.calls.models).toBe(3)
+  })
+
+  it('re-inspects feature routability after model inputs change', async () => {
+    const b = await bench()
+    const sessionId = sid('feature')
+    b.mint('feature')
+    b.setFeature(sessionId, { provider: 'deepseek-official', model: 'deepseek-v4-flash' }, true)
+    b.seat().inject!(sessionId)
+    await vi.waitFor(() => { expect(b.featureInspections(sessionId)).toBe(1) })
+    expect(b.blockOf('feature')).toBeUndefined()
+
+    b.setFeatureRoutable(sessionId, false)
+    b.remote.emit('credentials/reference-updated', ['DEEPSEEK_API_KEY'])
+    await vi.waitFor(() => { expect(b.blockOf('feature')).toEqual({ reason: zh['blocked.composer'] }) })
+    expect(b.featureInspections(sessionId)).toBe(2)
+
+    b.setFeatureRoutable(sessionId, true)
+    b.remote.emit('llm/adapters-updated', [])
+    await vi.waitFor(() => { expect(b.blockOf('feature')).toBeUndefined() })
+    expect(b.featureInspections(sessionId)).toBe(3)
   })
 
   it('never blocks on catalog membership alone', async () => {
