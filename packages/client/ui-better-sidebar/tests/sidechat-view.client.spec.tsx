@@ -175,21 +175,23 @@ describe('SideChatView', () => {
   })
 
   it('mounts the canonical conversation slot for the tab thread without changing the selected Session', () => {
+    const mainThread = 'main-thread' as SessionId
+    const sideThread = 'side-thread' as SessionId
     const snapshot: SidebarSessionList = {
-      current: 'main-thread',
+      current: mainThread,
       byId: {
-        'main-thread': { id: 'main-thread', displayTitle: 'Main', blank: false },
-        'side-thread': {
-          id: 'side-thread',
+        [mainThread]: { id: mainThread, displayTitle: 'Main', blank: false },
+        [sideThread]: {
+          id: sideThread,
           displayTitle: 'Side: question',
           origin: 'subagent',
-          parentId: 'main-thread',
+          parentId: mainThread,
           blank: true,
         },
       },
     }
     const unmount = vi.fn()
-    const mountSession = vi.fn(() => unmount)
+    const mountSession = vi.fn<Context['uiRenderer']['mountSession']>(() => unmount)
     const open = vi.fn()
     const unstage = vi.fn()
     const stageProvisional = vi.fn(() => unstage)
@@ -211,8 +213,8 @@ describe('SideChatView', () => {
     const view = render(
       <SideChatView
         ctx={ctx}
-        scope={{ sessionId: 'main-thread' }}
-        tab={tab('side-thread')}
+        scope={{ sessionId: mainThread }}
+        tab={tab(sideThread)}
         visible
       />,
     )
@@ -220,7 +222,7 @@ describe('SideChatView', () => {
     expect(mountSession).toHaveBeenCalledWith(
       expect.any(HTMLDivElement),
       'conversation',
-      'side-thread',
+      sideThread,
       { renderMode: 'sidechat', openSession: expect.any(Function) },
     )
     const owner = mountSession.mock.calls[0]?.[3] as {
@@ -230,12 +232,12 @@ describe('SideChatView', () => {
     expect(updateTab).toHaveBeenCalledWith('sidechat:side-thread', {
       meta: { threadId: 'nested-child', rootThreadId: 'side-thread' },
     })
-    expect(snapshot.current).toBe('main-thread')
+    expect(snapshot.current).toBe(mainThread)
     expect(open).not.toHaveBeenCalled()
     expect(view.queryByRole('button')).toBeNull()
     expect(stageProvisional).toHaveBeenCalledWith({
-      sessionId: 'side-thread',
-      parentSessionId: 'main-thread',
+      sessionId: sideThread,
+      parentSessionId: mainThread,
       origin: 'subagent',
       title: 'Side: New thread',
     })

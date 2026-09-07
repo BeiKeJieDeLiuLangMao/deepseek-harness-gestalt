@@ -6,7 +6,10 @@
  */
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { MessageId, SessionId } from '@deepseek-ai/dsh-session/types'
+import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
+import type { RemoteFailure, RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import { ClientSessions } from '../../../api/session-controller/src/client/sessions/service.ts'
 import {
   FakeApiClient,
@@ -20,6 +23,11 @@ import { SIDE_LABEL_PREFIX } from '../src/sidechat-core.ts'
 
 const sid = (value: string): SessionId => value as SessionId
 const mid = (value: string): MessageId => value as MessageId
+
+function failureOf<T>(result: RemoteResult<T>): RemoteFailure {
+  if (result.ok) throw new Error('expected a Remote failure')
+  return result.error
+}
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -163,9 +171,9 @@ describe('Side Chat Session admission', () => {
       mediaType: 'image/png',
       data: 'AA==',
     }], 'queue')
-    expect(attachment.ok).toBe(false)
-    expect(attachment.error).toBeInstanceOf(Error)
-    expect(attachment.error).toMatchObject({
+    const attachmentFailure = failureOf(attachment)
+    expect(attachmentFailure).toBeInstanceOf(Error)
+    expect(attachmentFailure).toMatchObject({
       code: 'session/attachment-invalid',
       message: 'Image input is unavailable in Side Chat.',
       details: { reason: 'SUBAGENT_IMAGE_UNSUPPORTED' },
@@ -181,22 +189,20 @@ describe('Side Chat Session admission', () => {
     await svc.binding(childId)!.session.prompt([{ type: 'text', text: 'publish' }], 'queue')
     expect(svc.skillCatalogSessionId(childId)).toBe(childId)
     const missing = await svc.binding(childId)!.session.updateQueue(mid('queue-missing'), { kind: 'remove' })
-    expect(missing.ok).toBe(false)
-    expect(missing.error).toBeInstanceOf(Error)
-    expect(missing.error).toMatchObject({
+    const missingFailure = failureOf(missing)
+    expect(missingFailure).toBeInstanceOf(Error)
+    expect(missingFailure).toMatchObject({
       code: 'session/queue-item-not-found',
       details: { itemId: mid('queue-missing') },
     })
 
     const unavailable = await svc.binding(childId)!.session.updateQueue(mid('queue-running'), { kind: 'steer' })
-    expect(unavailable.ok).toBe(false)
-    expect(unavailable.error).toMatchObject({
+    expect(failureOf(unavailable)).toMatchObject({
       code: 'session/steer-unavailable',
       details: { itemId: mid('queue-running') },
     })
     const unknown = await svc.binding(childId)!.session.updateQueue(mid('queue-unknown'), { kind: 'remove' })
-    expect(unknown.ok).toBe(false)
-    expect(unknown.error).toMatchObject({
+    expect(failureOf(unknown)).toMatchObject({
       code: 'gateway/internal',
       message: 'unexpected queue failure',
       details: {},
@@ -226,8 +232,7 @@ describe('Side Chat Session admission', () => {
     })
 
     const failedStart = await svc.binding(childId)!.session.prompt([{ type: 'text', text: 'first' }], 'queue')
-    expect(failedStart.ok).toBe(false)
-    expect(failedStart.error).toMatchObject({
+    expect(failureOf(failedStart)).toMatchObject({
       code: 'gateway/internal',
       message: 'parent is unavailable',
       details: {},
@@ -244,22 +249,19 @@ describe('Side Chat Session admission', () => {
 
     vi.stubGlobal('fetch', async () => { throw new Error('connection lost') })
     const network = await svc.binding(childId)!.session.prompt([{ type: 'text', text: 'continue' }], 'queue')
-    expect(network.ok).toBe(false)
-    expect(network.error).toMatchObject({
+    expect(failureOf(network)).toMatchObject({
       code: 'gateway/internal',
       message: 'connection lost',
       details: {},
     })
     const cancelled = await svc.binding(childId)!.session.cancel()
-    expect(cancelled.ok).toBe(false)
-    expect(cancelled.error).toMatchObject({
+    expect(failureOf(cancelled)).toMatchObject({
       code: 'gateway/internal',
       message: 'connection lost',
       details: {},
     })
     const selection = await svc.modelRoute(childId)!.selectModel!({ provider: 'owned', model: 'broken' })
-    expect(selection.ok).toBe(false)
-    expect(selection.error).toMatchObject({
+    expect(failureOf(selection)).toMatchObject({
       code: 'gateway/internal',
       message: 'connection lost',
       details: {},
@@ -283,12 +285,12 @@ describe('Side Chat Session admission', () => {
       origin: 'subagent',
       title: 'New thread',
     })
-    const execute = vi.spyOn(ctx.remote.commands, 'execute')
+    vi.spyOn(ctx.remote.commands, 'execute')
       .mockResolvedValueOnce(ok(undefined))
       .mockResolvedValueOnce({
         ok: false,
-        error: { message: 'permission denied upstream' },
-      } as never)
+        error: new RemoteError('gateway/internal', 'permission denied upstream', {}),
+      })
 
     await expect(svc.binding(draftId)!.session.command('/help')).resolves.toEqual({
       ok: true,
@@ -300,9 +302,9 @@ describe('Side Chat Session admission', () => {
     })
 
     const permission = await svc.binding(draftId)!.session.command('/permission read-only')
-    expect(permission.ok).toBe(false)
-    expect(permission.error).toBeInstanceOf(Error)
-    expect(permission.error).toMatchObject({
+    const permissionFailure = failureOf(permission)
+    expect(permissionFailure).toBeInstanceOf(Error)
+    expect(permissionFailure).toMatchObject({
       code: 'gateway/internal',
       message: 'permission denied upstream',
       details: {},
@@ -333,8 +335,7 @@ describe('Side Chat Session admission', () => {
     // A known Side Chat id is the ownership credential; the missing parent remains a routing failure.
     registerSidechatDraft(orphanId, parentId)()
     const orphan = await svc.binding(orphanId)!.session.command('/permission read-only')
-    expect(orphan.ok).toBe(false)
-    expect(orphan.error).toMatchObject({
+    expect(failureOf(orphan)).toMatchObject({
       code: 'gateway/internal',
       message: `Side Chat session "${orphanId}" has no parent`,
       details: {},

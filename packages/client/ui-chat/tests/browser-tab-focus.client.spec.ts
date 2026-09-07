@@ -36,7 +36,6 @@ function navigateResult(overrides: Partial<ToolResultNode> = {}): ToolResultNode
       text: JSON.stringify({ status: 'open', target: TARGET, revision: 2 }, null, 2),
     }],
     isError: false,
-    callView: null,
     resultView: null,
     subCalls: [],
     ...overrides,
@@ -114,7 +113,6 @@ describe('browserTabIdentityFromTool', () => {
       turn: 1,
       step: 0,
       time: 1_000,
-      callView: null,
       subCalls: [],
     }
     expect(browserTabIdentityFromTool(running)).toBeUndefined()
@@ -128,7 +126,6 @@ describe('browserTabIdentityFromTool', () => {
       turn: 1,
       step: 0,
       time: 1_000,
-      callView: null,
       subCalls: [],
     }
     expect(browserTabIdentityFromTool(running)).toEqual(TARGET)
