@@ -231,6 +231,16 @@ describe('Platform certificate renewal automation', () => {
     })
   })
 
+  it('maps the platform region to the Alibaba Cloud CLI standard environment variable', () => {
+    const renew = record(record(workflow.jobs).renew)
+    const steps = renew.steps as Array<Record<string, unknown>>
+    const certificate = steps.find(step => step.name === 'Validate or renew certificate')
+    expect(record(certificate?.env)).toMatchObject({
+      PLATFORM_ALIYUN_REGION: '${{ vars.PLATFORM_ALIYUN_REGION }}',
+      ALIBABA_CLOUD_REGION_ID: '${{ vars.PLATFORM_ALIYUN_REGION }}',
+    })
+  })
+
   it('uploads sanitized local cleanup evidence as a run artifact on failure', () => {
     const renew = record(record(workflow.jobs).renew)
     const steps = renew.steps as Array<Record<string, unknown>>
