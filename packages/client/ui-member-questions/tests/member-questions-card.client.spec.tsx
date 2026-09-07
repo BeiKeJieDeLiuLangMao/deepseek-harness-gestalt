@@ -66,6 +66,7 @@ const kit = {
   sessionId: SID,
   session: sessionSnapshot(SID),
   input: inputState,
+  SessionProvider: ({ children }) => children,
   useSession: unusedHook<SessionSnapshot>(),
   useSessions: unusedHook<SessionListState>(),
   useSessionPendingInteraction: unusedHook<HookSnapshot<MemberQuestionComposerProps['useSessionPendingInteraction']>>(),
@@ -90,7 +91,7 @@ const kit = {
   },
 } satisfies Pick<
   MemberQuestionComposerProps,
-  | 'sessionId' | 'session' | 'input'
+  | 'sessionId' | 'session' | 'input' | 'SessionProvider'
   | 'useSession' | 'useSessions' | 'useSessionPendingInteraction'
   | 'useWorkspaces' | 'useConversation' | 'useChat' | 'useTrajectory'
   | 'useProjection' | 'useInput' | 'inputActions'
@@ -279,12 +280,6 @@ function receivingProps(
   const useReceivingQuestions: SnapshotSelectorHook<ReceivingQuestionBookView> = selector => selector(view)
   return {
     useReceivingQuestions,
-    hooks: {
-      receivingQuestions: {
-        getSnapshot: () => view,
-        subscribe: () => () => {},
-      },
-    },
     settle: vi.fn<MemberQuestionComposerProps['settle']>(async () => {}),
     decline: vi.fn<MemberQuestionComposerProps['decline']>(async () => {}),
     renderSlot: ((_name: 'question.presentation', owner: {
@@ -306,7 +301,6 @@ function receivingProps(
 
 function renderCard(
   carrier: PendingMemberQuestionView,
-  focusDocument: MemberQuestionComposerProps['focusDocument'] = () => {},
   openReference: MemberQuestionComposerProps['openReference'] = () => {},
 ) {
   return render(
@@ -315,7 +309,6 @@ function renderCard(
       {...kit}
       {...receivingProps(carrier)}
       t={seat('member-question')}
-      focusDocument={focusDocument}
       openReference={openReference}
     />,
   )
@@ -345,7 +338,6 @@ describe('member-question routing', () => {
     const props = {
       ...kit,
       t: seat('member-question'),
-      focusDocument: () => {},
       openReference: () => {},
       ...receivingProps(carrier),
     } satisfies MemberQuestionDockProps
@@ -547,7 +539,7 @@ describe('MemberQuestionCard', () => {
   it('opens a referenced document through Files and restores the decision beside the open details panel', async () => {
     const openReference = vi.fn()
     const { carrier } = memberWait()
-    const { container } = renderCard(carrier, undefined, openReference)
+    const { container } = renderCard(carrier, openReference)
 
     fireEvent.click(screen.getByRole('button', { name: /roster\.md/ }))
     expect(openReference).toHaveBeenCalledWith(
@@ -597,7 +589,7 @@ describe('MemberQuestionCard', () => {
       references: [{ path: 'docs/roster.md', reason: '当前成员名单与角色' }],
       cachedReferences: [],
     })
-    renderCard(carrier, undefined, openReference)
+    renderCard(carrier, openReference)
     fireEvent.click(screen.getByRole('button', { name: /roster\.md/ }))
     expect(openReference).not.toHaveBeenCalled()
   })
@@ -685,7 +677,6 @@ describe('MemberQuestionCard', () => {
           {...kit}
           {...receivingProps(carrier, [], seatEn('question'))}
           t={seatEn('member-question')}
-          focusDocument={() => {}}
           openReference={() => {}}
         />,
       )
@@ -710,7 +701,6 @@ describe('MemberQuestionCard', () => {
         {...kit}
         {...extras}
         t={seat('member-question')}
-        focusDocument={() => {}}
         openReference={() => {}}
       />,
     )
@@ -732,7 +722,6 @@ describe('MemberQuestionCard', () => {
       {...kit}
       {...receivingProps(carrier)}
       t={seat('member-question')}
-      focusDocument={() => {}}
       openReference={() => {}}
     />)
     expect(pending.container.querySelector('[data-member-presentation]')).not.toBeNull()
@@ -740,7 +729,6 @@ describe('MemberQuestionCard', () => {
       {...kit}
       {...receivingProps(undefined, [recordOf('expired', 'question-1', 200)])}
       t={seat('member-question')}
-      focusDocument={() => {}}
       openReference={() => {}}
     />)
     expect(pending.container.querySelector('[data-member-presentation]')).toBeNull()

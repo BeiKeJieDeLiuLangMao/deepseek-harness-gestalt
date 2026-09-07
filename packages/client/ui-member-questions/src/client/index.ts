@@ -10,9 +10,9 @@ import type { ReceivingQuestionBook } from '@deepseek-ai/dsh-api-session-control
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-better-sidebar/client'
-import type { DetailsDocumentFocus } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { resolveWorkspacePath } from '@deepseek-ai/dsh-util-workspace-path'
+import type { MemberQuestionDockInjected } from './contract/slots.ts'
 import { MemberQuestionDock } from './MemberQuestionCard.tsx'
 import { en, zh, type MemberQuestionKey } from './locales.ts'
 
@@ -56,12 +56,6 @@ export const inject = ['slots', 'locale', 'sessions', 'receivingQuestions', 'rem
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-member-questions: dictionaries')
 
-  // Resolve the optional provider at gesture time: dynamic client rows may
-  // supply or release ui-conversation after this fiber has registered.
-  const focusDocument = (sessionId: SessionId, document: DetailsDocumentFocus): void => {
-    ctx.get('detailsFocus')?.focus(sessionId, document)
-  }
-
   const openReference = (sessionId: SessionId, path: string, title?: string): void => {
     const cwd = ctx.sessions.list.getSnapshot().byId[sessionId]?.cwd
     const absolute = resolveWorkspacePath(cwd, path)
@@ -82,8 +76,7 @@ export function apply(ctx: ClientContext): void {
       children: {
         'question.presentation': { kind: 'single', scope: 'session' },
       },
-      inject: () => ({
-        focusDocument,
+      inject: (): MemberQuestionDockInjected => ({
         openReference,
         settle: (sessionId, answers) => ctx.receivingQuestions.settle(sessionId, answers),
         decline: sessionId => ctx.receivingQuestions.decline(sessionId),

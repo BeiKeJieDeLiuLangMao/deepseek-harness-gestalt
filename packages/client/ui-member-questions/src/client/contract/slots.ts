@@ -6,13 +6,12 @@
  * child and passes JSON plus Host answer/cancel callbacks.
  */
 import type {
-  HostObservable, PropsLocale, PropsRenderSlots, PropsRuntime, SnapshotSelectorHook,
+  HostObservable, InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime,
 } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-user-questions/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { DetailsDocumentFocus } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { AskUserQuestionAnswer, AskUserQuestionItem } from '@deepseek-ai/dsh-user-questions/types'
 import type { PendingMemberQuestionView } from '@deepseek-ai/dsh-member-question-receiver/types'
 import type {
@@ -167,6 +166,26 @@ export function selectMemberQuestionRecords(
   return records === undefined || records.length === 0 ? null : records
 }
 
+/** Registration-side verbs and receiving projection for the member-question dock. */
+export interface MemberQuestionDockInjected {
+  /** Answer the pending member question through its receiving Session. */
+  settle: (sessionId: SessionId, answers: AskUserQuestionAnswer['answers']) => Promise<void>
+  /** Decline the pending member question through its receiving Session. */
+  decline: (sessionId: SessionId) => Promise<void>
+  /**
+   * Open the receiver-owned cached copy through the registered Files viewer,
+   * or the Host system opener when no Files viewer is registered. Callers
+   * pass only `cachedPath`; a missing cache is a no-op so a same-named
+   * Workspace file is never opened.
+   */
+  openReference: (sessionId: SessionId, path: string, title?: string) => void
+  /** Sources bound to selector hooks before the dock component renders. */
+  hooks: {
+    /** Host-owned pending and terminal member-question projection. */
+    receivingQuestions: HostObservable<ReceivingQuestionBookView>
+  }
+}
+
 /**
  * Full component props of the member-question card: dock runtime share,
  * declared presentation child, JSON pending row, locale, and injected verbs.
@@ -176,32 +195,11 @@ export type MemberQuestionComposerProps =
   & PropsRenderSlots<'question.presentation'>
   & { matched: MemberQuestionWait }
   & PropsLocale<'member-question'>
-  & {
-    useReceivingQuestions: SnapshotSelectorHook<ReceivingQuestionBookView>
-    settle: (sessionId: SessionId, answers: AskUserQuestionAnswer['answers']) => Promise<void>
-    decline: (sessionId: SessionId) => Promise<void>
-    /**
-     * Focus a referenced document in the session's details panel. The callback
-     * resolves `ctx.get('detailsFocus')` per gesture; absent providers make it
-     * a no-op, and providers registered after this entry are available.
-     */
-    focusDocument: (sessionId: SessionId, document: DetailsDocumentFocus) => void
-    /**
-     * Open the receiver-owned cached copy through the registered Files viewer,
-     * or the Host system opener when no Files viewer is registered. Callers
-     * pass only `cachedPath`; a missing cache is a no-op so a same-named
-     * Workspace file is never opened.
-     */
-    openReference: (sessionId: SessionId, path: string, title?: string) => void
-  }
+  & InjectFace<MemberQuestionDockInjected>
 
 /** Additive input-dock carrier that leaves the product composer mounted. */
 export type MemberQuestionDockProps =
   PropsRuntime<'conversation.input.dock'>
   & PropsRenderSlots<'question.presentation'>
   & PropsLocale<'member-question'>
-  & Pick<MemberQuestionComposerProps, 'focusDocument' | 'openReference' | 'settle' | 'decline'>
-  & {
-    hooks: { receivingQuestions: HostObservable<ReceivingQuestionBookView> }
-    useReceivingQuestions: SnapshotSelectorHook<ReceivingQuestionBookView>
-  }
+  & InjectFace<MemberQuestionDockInjected>
