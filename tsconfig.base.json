@@ -160,8 +160,8 @@
       "@deepseek-ai/dsh-host-frontend-static": ["./packages/host/frontend-static/src"],
       "@deepseek-ai/dsh-host-plugin-inventory": ["./packages/host/plugin-inventory/src"],
       "@deepseek-ai/dsh-host-plugin-inventory/types": ["./packages/host/plugin-inventory/src/types.ts"],
-      // Public ./client emits from the browser-safe source file; source-plane
-      // tests must not fall through to built declarations.
+      // Public leaves map to source for source-plane tests; published package
+      // exports continue to point at built lib artifacts.
       "@deepseek-ai/dsh-browser-workspace/client": ["./packages/browser/browser-workspace/src/client.ts"],
       "@deepseek-ai/dsh-remote-access-client/desktop-relay-lifecycle": ["./packages/platform/remote-access-client/src/desktop-relay-lifecycle.ts"],
       "@deepseek-ai/dsh-remote-access-client/node-relay-socket": ["./packages/platform/remote-access-client/src/node-relay-socket.ts"],
