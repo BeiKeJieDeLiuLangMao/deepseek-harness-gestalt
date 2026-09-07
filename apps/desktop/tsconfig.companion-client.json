@@ -1,0 +1,23 @@
+{
+  "extends": "../../tsconfig.base.client.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "lib/companion-client-types",
+    "types": ["node"]
+  },
+  "files": [
+    "tests/companion-host-assembled.spec.ts",
+    "tests/companion-fixture/driver.ts",
+    "tests/companion-fixture/driver.spec.ts",
+    "tests/companion-fixture/wire.ts"
+  ],
+  "references": [
+    { "path": "./tsconfig.json" },
+    { "path": "../mobile" },
+    { "path": "../../packages/core/session" },
+    { "path": "../../packages/attachment/attachment" },
+    { "path": "../../packages/platform/remote-access" },
+    { "path": "../../packages/platform/remote-protocol" },
+    { "path": "../../packages/platform/noise-channel" }
+  ]
+}

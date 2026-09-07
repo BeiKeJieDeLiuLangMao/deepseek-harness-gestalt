@@ -588,6 +588,9 @@ importers:
       '@deepseek-ai/dsh-member-question-sender':
         specifier: workspace:^
         version: link:../../packages/interaction/member-question-sender
+      '@deepseek-ai/dsh-mobile':
+        specifier: workspace:^
+        version: link:../mobile
       '@deepseek-ai/dsh-platform-account-core':
         specifier: workspace:^
         version: link:../../packages/platform/platform-account-core

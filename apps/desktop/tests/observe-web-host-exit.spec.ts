@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { observeWebHostExit } from '../src/observe-web-host-exit.ts'
-import type { WebHostExit } from '../src/spawn-web-host.ts'
+import { formatWebHostExit, type WebHostExit } from '../src/spawn-web-host.ts'
 
 function fakeExit(requestedStop: WebHostExit['requestedStop']['kind']): WebHostExit {
   return Object.freeze({
@@ -12,6 +12,12 @@ function fakeExit(requestedStop: WebHostExit['requestedStop']['kind']): WebHostE
 }
 
 describe('observeWebHostExit', () => {
+  it.each(['none', 'stop', 'abort'] as const)('formats exact wait facts for %s', (kind) => {
+    expect(formatWebHostExit(fakeExit(kind))).toBe(
+      `web host exit pid=1 code=1 signal=null requestedStop=${kind}`,
+    )
+  })
+
   it('calls recovery when diagnostic log throws before onHostExit', async () => {
     const record = fakeExit('none')
     let recoveryCalled = false

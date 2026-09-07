@@ -203,12 +203,20 @@ export class DesktopSub2ApiController implements DesktopSub2ApiActions {
       await setSub2ApiDisabled(this.options.profileDir, true)
       const version = await installedBundleVersion(this.options.profileDir)
       if (this.options.host.origin() !== undefined) {
-        this.set({ state: 'starting', enabled: false, version })
+        this.set({
+          state: 'starting',
+          enabled: false,
+          ...(version === undefined ? {} : { version }),
+        })
         await this.options.host.restart(COMPONENT_HOST_START_TIMEOUT_MS)
       }
       // The Web Host now boots with the row disabled: no processes run, so
       // there is nothing to probe — `installed` is the resting disabled state.
-      this.set({ state: 'installed', enabled: false, version })
+      this.set({
+        state: 'installed',
+        enabled: false,
+        ...(version === undefined ? {} : { version }),
+      })
       return this.snapshot
     } catch (error) {
       this.set({ state: 'error', enabled: this.snapshot.enabled, error: errorMessage(error) })
@@ -268,7 +276,11 @@ export class DesktopSub2ApiController implements DesktopSub2ApiActions {
     }
     const disabled = await isSub2ApiDisabled(this.options.profileDir)
     const version = await installedBundleVersion(this.options.profileDir)
-    this.set({ state: 'installed', enabled: !disabled, version })
+    this.set({
+      state: 'installed',
+      enabled: !disabled,
+      ...(version === undefined ? {} : { version }),
+    })
   }
 
   private async installedOnDisk(): Promise<boolean> {
@@ -344,16 +356,22 @@ export class DesktopSub2ApiController implements DesktopSub2ApiActions {
       if (this.probeStopped(abort)) return
       if (await probe(start)) {
         if (this.probeStopped(abort)) return
-        this.set({ state: 'running', enabled: true, version: await installedBundleVersion(this.options.profileDir) })
+        const version = await installedBundleVersion(this.options.profileDir)
+        this.set({
+          state: 'running',
+          enabled: true,
+          ...(version === undefined ? {} : { version }),
+        })
         return
       }
       if (Date.now() >= deadline) {
         // A dispose that raced the final poll lands in set(), which drops
         // pushes (and writes) after disposal.
+        const version = await installedBundleVersion(this.options.profileDir)
         this.set({
           state: 'error',
           enabled: true,
-          version: await installedBundleVersion(this.options.profileDir),
+          ...(version === undefined ? {} : { version }),
           error: STARTUP_TIMEOUT_ERROR,
         })
         return

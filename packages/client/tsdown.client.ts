@@ -158,14 +158,21 @@ export function staticLinked(id: string, libEntry: readonly string[]): BuildFace
   return browserEntries(id, libEntry, true)
 }
 
-function browserEntries(id: string, libEntry: readonly string[], roster: boolean): BuildFaceConfig {
+function browserEntries(
+  id: string,
+  libEntry: readonly string[],
+  roster: boolean,
+  options: BrowserSubpathOptions = {},
+): BuildFaceConfig {
   // Each entry names its own output file, so two entries with the same basename
   // would overwrite one artifact instead of emitting two.
   const names = new Set(libEntry.map(entry => basename(entry, '.js')))
   if (names.size !== libEntry.length) {
     throw new Error(`tsdown: ${id} entries collide on an output name: ${libEntry.join(', ')}`)
   }
-  return clientOnly(libEntry.map(entry => staticLinkedConfig(id, entry, basename(entry, '.js'), roster)))
+  return clientOnly(libEntry.map(entry => staticLinkedConfig(
+    id, entry, basename(entry, '.js'), roster, options.assetSourceRoot,
+  )))
 }
 
 /**
@@ -174,10 +181,15 @@ function browserEntries(id: string, libEntry: readonly string[], roster: boolean
  * to the Desktop static-linked roster because its `dsh.client` entry still owns the module-table artifact.
  * @param id - package name used in build diagnostics.
  * @param libEntry - emitted JavaScript entries consumed from `lib/types`.
+ * @param options - source root used to recover stylesheet assets from tsc output.
  * @returns Client-face configs for the browser subpaths.
  */
-export function browserSubpath(id: string, libEntry: readonly string[]): BuildFaceConfig {
-  return browserEntries(id, libEntry, false)
+export function browserSubpath(
+  id: string,
+  libEntry: readonly string[],
+  options: BrowserSubpathOptions = {},
+): BuildFaceConfig {
+  return browserEntries(id, libEntry, false, options)
 }
 
 /**
@@ -212,6 +224,11 @@ export function clientOnly(configs: readonly UserConfig[]): BuildFaceConfig {
   return ({ env }) => buildFace(env?.DSH_BUILD_FACE) === 'host'
     ? [SKIP_WORKSPACE_BUILD]
     : [...configs]
+}
+
+interface BrowserSubpathOptions {
+  /** Package-relative source root containing assets imported by emitted modules. */
+  readonly assetSourceRoot?: '.' | 'src'
 }
 
 interface ClientBundleOptions {
@@ -279,6 +296,7 @@ function staticLinkedConfig(
   entry: string,
   outputName = basename(entry, '.js'),
   roster = true,
+  assetSourceRoot: '.' | 'src' = 'src',
 ): UserConfig {
   const emitted = new Set<string>()
   const inlineStyles = new Map<string, string>()
@@ -317,7 +335,7 @@ function staticLinkedConfig(
         const inline = source.endsWith(`${INLINE_CSS_QUERY}`)
         const stylesheet = inline ? source.slice(0, -INLINE_CSS_QUERY.length) : source
         if (!stylesheet.endsWith('.css') || importer === undefined) return null
-        const { file, fileName } = stylesheetAsset(stylesheet, importer)
+        const { file, fileName } = stylesheetAsset(stylesheet, importer, assetSourceRoot)
         if (!emitted.has(fileName)) {
           emitted.add(fileName)
           // originalFileName also puts the physical sheet in the watch graph.
@@ -352,8 +370,18 @@ function isBareSpecifier(specifier: string): boolean {
  * @param importer - absolute path of the importing module, emitted or source.
  * @returns the stylesheet on disk plus its `src`-relative name under `lib/`.
  */
-function stylesheetAsset(source: string, importer: string): { readonly file: string, readonly fileName: string } {
-  const file = sourceAssetPath(source, importer)
+function stylesheetAsset(
+  source: string,
+  importer: string,
+  assetSourceRoot: '.' | 'src',
+): { readonly file: string, readonly fileName: string } {
+  const packageRoot = packageRootPath(importer)
+  const ownerRoot = resolvePath(packageRoot, assetSourceRoot)
+  const file = sourceAssetPath(source, importer, assetSourceRoot)
+  const ownerPath = relative(ownerRoot, file)
+  if (ownerPath === '..' || ownerPath.startsWith(`..${sep}`) || isAbsolute(ownerPath)) {
+    throw new Error(`tsdown: stylesheet ${file} is outside the package sources`)
+  }
   const boundary = file.lastIndexOf(SOURCE_MARKER)
   if (boundary < 0) throw new Error(`tsdown: stylesheet ${file} is outside the package sources`)
   return { file, fileName: file.slice(boundary + SOURCE_MARKER.length).split(sep).join('/') }
@@ -658,11 +686,24 @@ function isSourceMap(value: unknown): value is Record<string, unknown> & { sourc
   return Array.isArray(sources) && sources.every(source => typeof source === 'string')
 }
 
+/** Return the package root owning a source or emitted module path. */
+function packageRootPath(importer: string): string {
+  const typesBoundary = importer.indexOf(TYPES_MARKER)
+  if (typesBoundary >= 0) return importer.slice(0, typesBoundary)
+  const sourceBoundary = importer.indexOf(SOURCE_MARKER)
+  if (sourceBoundary >= 0) return importer.slice(0, sourceBoundary)
+  return dirname(importer)
+}
+
 /** Resolve an emitted JS asset import against its source-tree counterpart. */
-function sourceAssetPath(source: string, importer: string): string {
+function sourceAssetPath(source: string, importer: string, assetSourceRoot: '.' | 'src' = 'src'): string {
   const emitted = resolvePath(dirname(importer), source)
   if (existsSync(emitted)) return emitted
   const boundary = emitted.indexOf(TYPES_MARKER)
   if (boundary < 0) return emitted
-  return resolvePath(emitted.slice(0, boundary), 'src', emitted.slice(boundary + TYPES_MARKER.length))
+  return resolvePath(
+    emitted.slice(0, boundary),
+    assetSourceRoot,
+    emitted.slice(boundary + TYPES_MARKER.length),
+  )
 }

@@ -13,9 +13,11 @@ afterEach(() => {
 })
 
 function fixture(options: {
+  name?: string
   files?: string[]
   invariantSource?: string
   invariantExport?: string
+  clientExport?: { node?: string; default: string }
   runtimeChunks?: Record<string, string>
 } = {}): { root: string; loaderUrl: string } {
   const root = mkdtempSync(join(tmpdir(), 'dsh-built-package-invariants-'))
@@ -23,13 +25,14 @@ function fixture(options: {
   const packageDir = join(root, 'packages', 'core', 'probe')
   mkdirSync(join(packageDir, 'lib'), { recursive: true })
   writeFileSync(join(packageDir, 'package.json'), `${JSON.stringify({
-    name: '@deepseek-ai/dsh-probe',
+    name: options.name ?? '@deepseek-ai/dsh-probe',
     type: 'module',
     files: options.files ?? ['lib/invariant.js'],
     exports: {
       './invariant': {
         default: options.invariantExport ?? './lib/invariant.js',
       },
+      ...(options.clientExport === undefined ? {} : { './client': options.clientExport }),
     },
   }, null, 2)}\n`)
   writeFileSync(
@@ -104,5 +107,50 @@ describe('built package invariant verifier', () => {
     const result = verify(root, loaderUrl)
     expect(result.status).toBe(1)
     expect(result.stderr).toContain('runtime.js')
+  })
+
+  it('loads the client runtime Node entry without evaluating its browser factory', () => {
+    const { root, loaderUrl } = fixture({
+      name: '@deepseek-ai/dsh-client-runtime',
+      files: ['lib/invariant.js', 'lib/client-node.js', 'lib/client.cjs'],
+      clientExport: { node: './lib/client-node.js', default: './lib/client.cjs' },
+      runtimeChunks: {
+        'lib/client-node.js': 'export function createSnapshotStore() {}\n',
+        'lib/client.cjs': 'window.__dshClientRuntime = true\nmodule.exports = {}\n',
+      },
+    })
+
+    const result = verify(root, loaderUrl)
+    expect(result.status, result.stderr).toBe(0)
+  })
+
+  it.each([
+    {
+      label: 'Node condition falls through to the browser factory',
+      files: ['lib/invariant.js', 'lib/client.cjs'],
+      clientExport: { default: './lib/client.cjs' },
+      expected: 'exports["./client"].node must be ./lib/client-node.js',
+    },
+    {
+      label: 'browser default moves away from the client factory',
+      files: ['lib/invariant.js', 'lib/client-node.js', 'lib/browser.js'],
+      clientExport: { node: './lib/client-node.js', default: './lib/browser.js' },
+      expected: 'exports["./client"].default must remain ./lib/client.cjs',
+    },
+  ])('rejects a client runtime whose $label', ({ files, clientExport, expected }) => {
+    const { root, loaderUrl } = fixture({
+      name: '@deepseek-ai/dsh-client-runtime',
+      files,
+      clientExport,
+      runtimeChunks: {
+        'lib/client-node.js': 'export function createSnapshotStore() {}\n',
+        'lib/client.cjs': 'window.__dshClientRuntime = true\nmodule.exports = {}\n',
+        'lib/browser.js': 'export function createSnapshotStore() {}\n',
+      },
+    })
+
+    const result = verify(root, loaderUrl)
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain(expected)
   })
 })

@@ -16,6 +16,12 @@ afterEach(async () => {
 })
 
 describe('spawnWebHost', () => {
+  it('masks overlapping supplied secrets longest first without leaking their suffix', () => {
+    expect(redactWebHostDiagnostic('value shared-secret-suffix and shared-secret', {
+      SHORT_TOKEN: 'shared-secret', LONG_TOKEN: 'shared-secret-suffix',
+    })).toBe('value [REDACTED] and [REDACTED]')
+  })
+
   it('redacts credential values from startup diagnostics', () => {
     const output = [
       'provider key: exact-secret-value',
