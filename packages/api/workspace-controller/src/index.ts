@@ -61,7 +61,7 @@ export class WorkspaceController extends TypertRemoteService {
 
   static Config: z.ZodType<Config> = z.object({
     gitTimeoutMs: z.number().gt(0).max(MAX_TIMER_DELAY_MS).default(DEFAULT_WORKSPACE_GIT_TIMEOUT_MS),
-  })
+  }).prefault({})
 
   private readonly commands: WorkspaceCommands
   private readonly feed: WorkspaceFeed

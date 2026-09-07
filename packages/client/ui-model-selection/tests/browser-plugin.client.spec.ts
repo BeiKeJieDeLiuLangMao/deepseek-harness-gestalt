@@ -145,7 +145,7 @@ async function bench() {
     modelRoute: (id: SessionId) => hidden.has(id) || scopes.get(id) === undefined
       ? undefined
       : {
-        models: () => sessionRemote.modelCatalog(),
+        kind: 'stock' as const,
         selectModel: (selection: ModelSelection) => sessionRemote.selectModel({
           sessionId: id,
           provider: selection.provider,

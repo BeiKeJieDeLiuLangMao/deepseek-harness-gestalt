@@ -45,30 +45,22 @@ async function testAdmissionResult<T>(
 }
 
 function testModelRoute(route: SessionAdmissionModelRoute): SessionModelRoute {
-  const models = route.models?.bind(route)
-  const selectModel = route.selectModel?.bind(route)
+  const inspect = route.inspect.bind(route)
+  const selectModel = route.selectModel.bind(route)
   return {
-    ...(models === undefined
-      ? {}
-      : { models: (signal?: AbortSignal) => testAdmissionResult(() => models(signal)) }),
-    ...(selectModel === undefined
-      ? {}
-      : {
-        selectModel: (selection, signal) =>
-          testAdmissionResult(() => selectModel(selection, signal)),
-      }),
+    kind: 'feature',
+    inspect: (signal?: AbortSignal) => testAdmissionResult(() => inspect(signal)),
+    selectModel: (selection, signal) =>
+      testAdmissionResult(() => selectModel(selection, signal)),
   }
 }
 
 function testStockModelRoute(sessionId: SessionId): SessionModelRoute {
-  const unstubbed = (method: 'models' | 'selectModel'): Promise<never> => Promise.reject(
+  const unstubbed = (method: 'selectModel'): Promise<never> => Promise.reject(
     new Error(`test sessions: stock model route "${method}" is not stubbed for session "${sessionId}"`),
   )
   return {
-    models: (signal) => {
-      signal?.throwIfAborted()
-      return unstubbed('models')
-    },
+    kind: 'stock',
     selectModel: (_selection, signal) => {
       signal?.throwIfAborted()
       return unstubbed('selectModel')

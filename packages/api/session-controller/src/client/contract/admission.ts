@@ -23,25 +23,54 @@ export type SessionAdmissionResult<T> =
   | Extract<RemoteResult<T>, { readonly ok: true }>
   | { readonly ok: false; readonly error: SessionAdmissionFailure }
 
-/** Model inspection and selection routed for one exact Session identity. */
-export interface SessionModelRoute {
-  /**
-   * Read current selection and advisory catalog.
-   * @param signal - optional cancellation for the catalog round-trip.
-   * @returns catalog payload, or Remote failure.
-   */
-  models?(signal?: AbortSignal): Promise<RemoteResult<unknown>>
+/** Feature-owned effective model state when Session history cannot project it. */
+export interface SessionModelInspection {
+  /** Model selection the feature will use for the next request. */
+  readonly current: ModelSelection
+  /** Whether the feature can currently route that selection. */
+  readonly routable: boolean
+}
+
+/** Stock model selection for an ordinary Session with durable projection state. */
+export interface StockSessionModelRoute {
+  readonly kind: 'stock'
+  /** Stock selection state comes from the durable Session projection. */
+  readonly inspect?: never
   /**
    * Validate and select the next request model.
    * @param selection - requested provider and model.
    * @param signal - optional cancellation for the selection round-trip.
    * @returns the accepted selection, or Remote failure.
    */
-  selectModel?(
+  selectModel(
     selection: ModelSelection,
     signal?: AbortSignal,
   ): Promise<RemoteResult<{ selected: ModelSelection }>>
 }
+
+/** Feature-owned model inspection and selection for an exact Session identity. */
+export interface FeatureSessionModelRoute {
+  readonly kind: 'feature'
+  /**
+   * Read feature-owned selection state that is absent from Session projections.
+   * @param signal - optional cancellation for the inspection round-trip.
+   * @returns effective selection state, or Remote failure.
+   */
+  inspect(signal?: AbortSignal): Promise<RemoteResult<SessionModelInspection>>
+  /**
+   * Validate and select the next request model.
+   * @param selection - requested provider and model.
+   * @param signal - optional cancellation for the selection round-trip.
+   * @returns the accepted selection, or Remote failure.
+   */
+  selectModel(
+    selection: ModelSelection,
+    signal?: AbortSignal,
+  ): Promise<RemoteResult<{ selected: ModelSelection }>>
+}
+
+/** Model route selected by Session ownership. */
+export type SessionModelRoute = StockSessionModelRoute | FeatureSessionModelRoute
 
 type AdmissionModelMethod<Method> = Method extends (
   ...args: infer Args
@@ -51,7 +80,7 @@ type AdmissionModelMethod<Method> = Method extends (
 
 /** Feature callback model route before Session Controller normalizes failures. */
 export type SessionAdmissionModelRoute = {
-  [Key in keyof SessionModelRoute]: AdmissionModelMethod<SessionModelRoute[Key]>
+  [Key in Exclude<keyof FeatureSessionModelRoute, 'kind'>]: AdmissionModelMethod<FeatureSessionModelRoute[Key]>
 }
 
 /**

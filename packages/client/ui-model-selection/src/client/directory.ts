@@ -1,13 +1,15 @@
 /**
  * Per-session model directory: the ONE state both selection entries share.
  * The /model popup and composer seat combine one shared Host catalog with the
- * Session's durable selection projection, then submit through the same
+ * stock Session projection or feature inspection, then submit through the same
  * selectModel call. A switch made in either entry updates this shared state.
  */
 import type {
   ModelCatalogFailure, ModelProviderGroup, ModelSelection, ModelSelectionProjection,
 } from '@deepseek-ai/dsh-api-session-controller/types'
-import type { SessionModelRoute } from '@deepseek-ai/dsh-api-session-controller/client'
+import type {
+  SessionModelInspection, SessionModelRoute,
+} from '@deepseek-ai/dsh-api-session-controller/client'
 import type { ObservableSnapshot, SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { ModelCatalogDirectory } from './catalog.ts'
@@ -47,6 +49,7 @@ export class ModelDirectory {
   private generation = 0
   private disposed = false
   private resolved = false
+  private inspected: SessionModelInspection | undefined
   private readonly unsubscribeCatalog: () => void
   private readonly unsubscribeSelection: () => void
   private readonly unsubscribeAdmission: () => void
@@ -65,7 +68,14 @@ export class ModelDirectory {
   ) {
     this.unsubscribeCatalog = catalog.store.subscribe(() => { this.syncInputs() })
     this.unsubscribeSelection = projected.subscribe(() => { this.syncInputs() })
-    this.unsubscribeAdmission = subscribeAdmission?.(() => { this.syncInputs() }) ?? (() => {})
+    this.unsubscribeAdmission = subscribeAdmission?.(() => {
+      ++this.generation
+      this.inspected = undefined
+      this.syncInputs()
+      if (this.routeOf()?.kind === 'feature') {
+        void this.load().catch(() => { /* the selector exposes the inspection failure */ })
+      }
+    }) ?? (() => {})
     this.syncInputs()
   }
 
@@ -74,26 +84,38 @@ export class ModelDirectory {
    * @returns the fresh directory value.
    */
   async load(): Promise<ModelDirectoryState> {
-    this.assertAvailable()
-    await this.catalog.load()
+    const route = this.requireRoute()
+    const generation = ++this.generation
+    if (route.kind === 'feature') {
+      this.store.update((state) => { state.status = 'loading'; state.error = null })
+    }
+    const [inspection] = await Promise.all([
+      route.kind === 'feature' ? route.inspect() : Promise.resolve(undefined),
+      this.catalog.load(),
+    ])
+    if (inspection?.ok === false) {
+      const message = `${inspection.error.code}: ${inspection.error.message}`
+      if (!this.disposed && generation === this.generation) {
+        this.store.update((state) => { state.status = 'error'; state.error = message })
+      }
+      throw new Error(`session model inspection failed: ${message}`)
+    }
+    if (this.disposed || generation !== this.generation) return this.store.getSnapshot()
+    this.inspected = inspection?.value
     this.syncInputs()
     return this.store.getSnapshot()
   }
 
   /**
-   * Select the complete provider/model/reasoning selection. The durable
-   * projection frame updates the shared current; failures surface on the store
-   * and throw so each entry's own retry surface engages.
+   * Select the complete provider/model/reasoning selection. A stock projection
+   * frame or a feature inspection updates the shared current; failures surface
+   * on the store and throw so each entry's own retry surface engages.
    * @param selection - provider, provider-owned model id, and optional adapter-owned effort.
  */
   async select(selection: ModelSelection): Promise<void> {
-    this.assertAvailable()
+    const route = this.requireRoute()
     const generation = ++this.generation
     this.store.update((s) => { s.status = 'selecting'; s.error = null })
-    const route = this.routeOf()
-    if (route?.selectModel === undefined) {
-      throw new Error('model selection is unavailable for this session')
-    }
     const result = await route.selectModel(selection)
     if (this.disposed || generation !== this.generation) {
       if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`)
@@ -102,6 +124,19 @@ export class ModelDirectory {
     if (!result.ok) {
       this.store.update((s) => { s.status = 'error'; s.error = `${result.error.code}: ${result.error.message}` })
       throw new Error(`session.selectModel failed: ${result.error.code}: ${result.error.message}`)
+    }
+    if (route.kind === 'feature') {
+      const inspection = await route.inspect()
+      if (this.disposed || generation !== this.generation) {
+        if (!inspection.ok) throw new Error(`${inspection.error.code}: ${inspection.error.message}`)
+        return
+      }
+      if (!inspection.ok) {
+        const message = `${inspection.error.code}: ${inspection.error.message}`
+        this.store.update((state) => { state.status = 'error'; state.error = message })
+        throw new Error(`session model inspection failed: ${message}`)
+      }
+      this.inspected = inspection.value
     }
     this.store.update((s) => { s.status = 'ready'; s.error = null })
     this.syncInputs()
@@ -113,11 +148,15 @@ export class ModelDirectory {
   resetConnected(): void {
     if (this.disposed) return
     ++this.generation
+    this.inspected = undefined
     this.store.update((state) => {
       if (state.status === 'selecting') state.status = 'idle'
       state.error = null
     })
     this.syncInputs()
+    if (this.routeOf()?.kind === 'feature') {
+      void this.load().catch(() => { /* the selector exposes the inspection failure */ })
+    }
   }
 
   /** Scope teardown: late settlements lose write access to the store. */
@@ -128,18 +167,32 @@ export class ModelDirectory {
     this.unsubscribeAdmission()
   }
 
-  private assertAvailable(): void {
-    if (this.routeOf() === undefined) {
+  private requireRoute(): SessionModelRoute {
+    const route = this.routeOf()
+    if (route === undefined) {
       throw new Error('model selection is unavailable for this session')
     }
+    return route
   }
 
   private syncInputs(): void {
     if (this.disposed) return
-    const available = this.routeOf() !== undefined
+    const route = this.routeOf()
+    const available = route !== undefined
     const catalog = this.catalog.store.getSnapshot()
     const projected = modelSelectionProjection(this.projected.getSnapshot())
-    if (catalog.status !== 'ready' || catalog.value === null || projected === undefined) {
+    const stockCurrent = projected?.next ?? catalog.value?.default
+    const routeState = route === undefined
+      ? undefined
+      : route.kind === 'feature'
+        ? this.inspected
+        : projected === undefined || stockCurrent === undefined || catalog.value === null
+          ? undefined
+          : {
+            current: stockCurrent,
+            routable: catalog.value.routableProviders.includes(stockCurrent.provider),
+          }
+    if (catalog.status !== 'ready' || catalog.value === null || routeState === undefined) {
       if (this.resolved) {
         this.store.update((state) => {
           state.available = available
@@ -161,12 +214,12 @@ export class ModelDirectory {
       })
       return
     }
-    const current = projected.next ?? catalog.value.default
+    const current = routeState.current
     this.resolved = true
     this.store.set({
       available,
       current,
-      routable: catalog.value.routableProviders.includes(current.provider),
+      routable: routeState.routable,
       groups: catalog.value.groups,
       failures: catalog.value.failures,
       status: this.store.getSnapshot().status === 'selecting'

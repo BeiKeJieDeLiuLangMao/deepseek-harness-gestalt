@@ -260,6 +260,12 @@ describe('Side Chat Session admission', () => {
       message: 'connection lost',
       details: {},
     })
+    const inspection = await svc.modelRoute(childId)!.inspect!()
+    expect(failureOf(inspection)).toMatchObject({
+      code: 'gateway/internal',
+      message: 'connection lost',
+      details: {},
+    })
     const selection = await svc.modelRoute(childId)!.selectModel!({ provider: 'owned', model: 'broken' })
     expect(failureOf(selection)).toMatchObject({
       code: 'gateway/internal',
@@ -395,12 +401,18 @@ describe('Side Chat Session admission', () => {
     })])
   })
 
-  it('omits Side Chat models() so Host modelCatalog stays the directory source', async () => {
+  it('inspects Side Chat selection while the model directory keeps the shared Host catalog', async () => {
     const { svc, api, ctx } = bench()
     const parentId = sid('session-model-parent')
     const childId = sid('session-sidechat-model')
     const ordinaryId = sid('session-ordinary-model')
     const fetches = stubSidebarFetch(call => {
+      if (call.method === 'sidechat.model') {
+        return {
+          ok: true,
+          value: { current: { provider: 'owned', model: 'parent' }, routable: true },
+        }
+      }
       if (call.method === 'sidechat.selectModel') {
         return { ok: true, value: { selected: call.body.selection } }
       }
@@ -420,18 +432,34 @@ describe('Side Chat Session admission', () => {
     })
 
     const side = svc.modelRoute(childId)
-    expect(side?.models).toBeUndefined()
+    expect(side?.kind).toBe('feature')
+    if (side?.kind !== 'feature') throw new Error('Side Chat did not install its feature model route')
+    await expect(side.inspect()).resolves.toEqual({
+      ok: true,
+      value: { current: { provider: 'owned', model: 'parent' }, routable: true },
+    })
+    expect(fetches[0]).toEqual({
+      method: 'sidechat.model',
+      body: { childId, parentSessionId: parentId, provisional: true },
+    })
     expect(side?.selectModel).toBeTypeOf('function')
-    await expect(side!.selectModel!({ provider: 'owned', model: 'child' })).resolves.toEqual({
+    await expect(side.selectModel({ provider: 'owned', model: 'child' })).resolves.toEqual({
       ok: true,
       value: { selected: { provider: 'owned', model: 'child' } },
     })
     expect(fetches.some(call => call.method === 'sidechat.selectModel')).toBe(true)
     expect(api.callsOf('session.selectModel')).toEqual([])
 
+    await svc.binding(childId)!.session.prompt([{ type: 'text', text: 'publish' }], 'queue')
+    await expect(side.inspect()).resolves.toMatchObject({ ok: true })
+    expect(fetches.at(-1)).toEqual({
+      method: 'sidechat.model',
+      body: { childId, parentSessionId: parentId },
+    })
+
     const stock = svc.modelRoute(ordinaryId)
-    expect(stock?.models).toBeTypeOf('function')
-    await expect(stock!.models!()).resolves.toMatchObject({ ok: true })
+    expect(stock?.kind).toBe('stock')
+    expect(stock?.inspect).toBeUndefined()
     await expect(stock!.selectModel!({ provider: 'fixture', model: 'fixture' })).resolves.toMatchObject({
       ok: true,
     })

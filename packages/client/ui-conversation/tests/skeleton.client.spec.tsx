@@ -115,6 +115,8 @@ function mount(
     omitSummaryRow?: boolean
     /** Classify the selected child as a subagent instead of an ordinary fork. */
     summaryOrigin?: 'subagent'
+    /** Mark the selected child as a renderer-only Session identity. */
+    provisional?: true
     /** Insert a first-level subagent between the root and selected child. */
     nestedSubagent?: boolean
     /** A composer block another plugin raised for this session. */
@@ -137,6 +139,7 @@ function mount(
     id: SID, displayTitle: 'Child', parentId: options.nestedSubagent === true ? parent : root,
     cwd: '/projects/one', running: false, blank: options.summaryBlank ?? false, updatedAt: 3,
     ...(options.summaryOrigin === undefined ? {} : { origin: options.summaryOrigin }),
+    ...(options.provisional === undefined ? {} : { provisional: options.provisional }),
   }
   const listed = options.omitSummaryRow !== true
   const sessions = createSnapshotStore<SessionListState>({
@@ -495,6 +498,25 @@ describe('ConversationRoot resident composer', () => {
     act(() => { owner.onPick(wid('second')) })
     expect(b.retargetWorkspace).toHaveBeenCalledWith(wid('second'))
     expect(b.view.getByText('Selected Folder')).toBeTruthy()
+  })
+
+  it('inherits a provisional subagent workspace through its nearest listed ancestor', () => {
+    const b = mount(
+      sessionSnapshotOf({ blank: true }),
+      [{ ...workspace('one'), sessionIds: [sid('root')] }],
+      undefined,
+      {
+        summaryBlank: true,
+        summaryOrigin: 'subagent',
+        nestedSubagent: true,
+        provisional: true,
+      },
+    )
+
+    expect(b.view.getByText('one')).toBeTruthy()
+    const box = b.view.getByRole('textbox')
+    expect(box.getAttribute('contenteditable')).toBe('true')
+    expect(box.getAttribute('data-placeholder')).not.toBe('选择工作区以开始')
   })
 
   it('keeps a rejected first prompt engaging instead of returning to the Hero', () => {

@@ -50,13 +50,16 @@ export type {
 } from './contract/session.ts'
 export type { ISessions } from './contract/sessions.ts'
 export type {
+  FeatureSessionModelRoute,
   SessionAdmissionAdapter,
   SessionAdmissionFailure,
   SessionAdmissionModelRoute,
   SessionAdmissionOptions,
   SessionAdmissionResult,
   SessionAdmissionRoute,
+  SessionModelInspection,
   SessionModelRoute,
+  StockSessionModelRoute,
 } from './contract/admission.ts'
 export { ReceivingQuestionBook } from './sessions/receiving.ts'
 export type {

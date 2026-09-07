@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-本包提供 Web GUI 的模型选择：`/model` 弹窗命令与 composer 模型位，两者共用一份按提供方分组的会话级目录。选择模型会提交完整选择——提供方、模型与推理强度——宿主在下一次提示词组装边界对其快照，因此后续请求采用该选择，而运行中的步骤保留已组装选择。composer 位显示两级 Model/Effort 菜单：模型按提供方分组，所选具体模型提供其适配器持有的推理强度名称与默认值。当宿主报告没有适配器服务该会话的路由时，composer 输入停用，直到路由恢复可用。
+本包提供 Web GUI 的模型选择：`/model` 弹窗命令与 composer 模型位，两者共用一份按提供方分组的会话级目录。选择模型会提交完整选择——提供方、模型与推理强度——路由归属方在下一次提示词组装边界对其快照，因此后续请求采用该选择，而运行中的步骤保留已组装选择。composer 位显示两级 Model/Effort 菜单：模型按提供方分组，所选具体模型提供其适配器持有的推理强度名称与默认值。当路由归属方报告没有适配器服务该会话的选择时，composer 输入停用，直到路由恢复可用。
 
 ## 目录
 
@@ -25,7 +25,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-与 `ui-conversation` 及命令包一起挂载本插件；composer 随即在待处理指示器旁显示模型位，`/model` 则以弹窗打开同一份目录。当确切提供方／模型对仍在已公布分组中时，两个表面都显示宿主报告的当前选择；目录行缺席时，可路由的选择保持不变，触发器提示 `Select model`。
+与 `ui-conversation` 及命令包一起挂载本插件；composer 随即在待处理指示器旁显示模型位，`/model` 则以弹窗打开同一份目录。当确切提供方／模型对仍在已公布分组中时，两个入口都显示有效的当前选择：普通 Session 读取持久投影状态，功能自有 Session 则使用其路由的检查结果。目录行缺席时，可路由的选择保持不变，触发器提示 `Select model`。
 
 ### 模型与推理强度
 
@@ -33,7 +33,7 @@ kind: "package-reference"
 
 ### 不可路由的会话
 
-当宿主报告没有适配器服务该会话的路由时，本插件注册一个 composer 阻塞块，输入随本插件自己的文案停用；恢复后无需重新加载即清除。首次加载之前或加载失败之后的 `null` 绝不阻断；目录成员关系同样不阻断——一条仍在服务、只是不公布该模型的路由不在分组里，却可用。
+当路由归属方报告没有适配器服务该会话的选择时，本插件注册一个 composer 阻塞块，输入随本插件自己的文案停用；恢复后无需重新加载即清除。首次成功加载之前的 `null` 绝不阻断；目录成员关系同样不阻断——一条仍在服务、只是不公布该模型的路由不在分组里，却可用。
 
 -----
 
@@ -43,7 +43,7 @@ kind: "package-reference"
 <details>
 <summary>实现细节——点击展开</summary>
 
-两个入口共用一份由 `ModelDirectoryResolver`（`ctx.modelDirectories`）持有的会话级目录：`/model` popupSelect 贡献项（经 `ctx.commandUi` 注册）与 composer 的具名 `conversation.input.model` 位都跟随实时 `sessions.modelRoute`。普通 Session 与 catalog 定址 Session 经该路由加载 Host 建议目录并通过其 `selectModel`、同一个 `ModelDirectory` 实例提交，因此任一入口所做的切换正是另一个入口接下来显示的。缺少 `modelRoute` 时两个入口都隐藏。目录加载与选择共享一个代次计数器，旧响应不会覆盖新结果；连接重置丢弃所有常驻投影，并在显示前重新拉取宿主恢复的选择。目录按会话惰性解析，随会话作用域一并释放。每份常驻目录都会直接在转发的 `llm/adapters-updated` 与 `settings/document-updated` owner 事件上重拉。
+两个入口共用一份由 `ModelDirectoryResolver`（`ctx.modelDirectories`）持有的会话级目录：经 `ctx.commandUi` 注册的 `/model` popupSelect 贡献项与 composer 的具名 `conversation.input.model` 位都跟随实时 `sessions.modelRoute`。每份目录都会加载共享的 Host 建议 catalog。库存路由把该 catalog 与 Session 的持久 `modelSelection` 投影组合，并通过 `selectModel` 提交。功能路由通过 `inspect` 提供其有效选择与可路由状态；目录在首次加载与连接重置时检查，并在成功选择后再次检查，使归属方归一后的值保持权威。缺少 `modelRoute` 时两个入口都隐藏。加载、选择、路由变化与重连共享一个代次计数器，旧响应不会覆盖新结果。目录按 Session 惰性解析，随 Session scope 一并释放。每份常驻目录都会直接在转发的 `llm/adapters-updated` 与 `settings/document-updated` owner event 上重拉。
 
 </details>
 
@@ -77,7 +77,7 @@ kind: "package-reference"
 
 这些限制界定了当前模型表面。它们是当前包约束，不是通用模型路由器对比或任务积压。
 
-- **无创建期选择**——两个入口都要求既有 Session 且具备实时 `sessions.modelRoute`；没有可纳入会话创建的草稿阶段模型选择。功能路由省略 `modelRoute` 时两个入口都隐藏。
+- **通用创建不带模型字段**——两个入口都要求具备实时 `sessions.modelRoute` 的 Session 身份。功能可以暂存临时身份，并通过功能路由持有其草稿选择；普通 `sessions.create()` 不接受模型。功能路由省略 `modelRoute` 时两个入口都隐藏。
 - **目录名仅供呈现**——选择与持久化使用提供方／模型／推理强度 id；目录查询或确切模型元数据查询失败的提供方以不可选失败行列出，重新加载前保持原样。
 - **不能任意输入推理强度**——composer 仅提供确切模型由适配器公布的推理强度；适配器没有推理元数据时不显示 Effort 行。
 

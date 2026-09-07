@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This package provides model selection in the Web GUI: the `/model` popup command and the composer's model seat, both over one per-session directory of provider-grouped models. Choosing a model submits the complete selection — provider, model, and reasoning effort — which the Host snapshots at the next prompt-assembly boundary, so the following request uses it while a running step keeps its assembled selection. The composer seat shows a two-level Model/Effort menu: models stay provider-grouped, and the selected exact model supplies its adapter-owned effort names and default. When the Host reports that no adapter serves the session's route, the composer input goes inert until a route becomes available.
+This package provides model selection in the Web GUI: the `/model` popup command and the composer's model seat, both over one per-session directory of provider-grouped models. Choosing a model submits the complete selection — provider, model, and reasoning effort — which the route owner snapshots at the next prompt-assembly boundary, so the following request uses it while a running step keeps its assembled selection. The composer seat shows a two-level Model/Effort menu: models stay provider-grouped, and the selected exact model supplies its adapter-owned effort names and default. When the route owner reports that no adapter serves the session's selection, the composer input goes inert until a route becomes available.
 
 ## Table of Contents
 
@@ -25,7 +25,7 @@ This package provides model selection in the Web GUI: the `/model` popup command
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount this plugin alongside `ui-conversation` and the commands package; the composer then shows the model seat next to the pending indicator, and `/model` opens the same directory as a popup. Both surfaces show the host-reported current selection when the exact provider/model pair remains in the advertised groups; a missing catalog row leaves the routable selection intact while the trigger prompts `Select model`.
+Mount this plugin alongside `ui-conversation` and the commands package; the composer then shows the model seat next to the pending indicator, and `/model` opens the same directory as a popup. Both entries show the effective current selection when the exact provider/model pair remains in the advertised groups: ordinary Sessions read durable projection state, while feature-owned Sessions use their route's inspection. A missing catalog row leaves the routable selection intact while the trigger prompts `Select model`.
 
 ### Model and effort
 
@@ -33,7 +33,7 @@ Models stay grouped by provider. The menu shows model and effort names only; cat
 
 ### Unroutable sessions
 
-When the Host reports that no adapter serves the session's route, this plugin raises a composer block and the input goes inert with its own copy; recovering clears it without a reload. A `null` before the first load or after one failed never blocks, and catalog membership never blocks either — a route serving a model it does not advertise is missing from the groups yet usable.
+When the route owner reports that no adapter serves the session's selection, this plugin raises a composer block and the input goes inert with its own copy; recovering clears it without a reload. A `null` before the first successful load never blocks, and catalog membership never blocks either — a route serving a model it does not advertise is missing from the groups yet usable.
 
 -----
 
@@ -43,7 +43,7 @@ When the Host reports that no adapter serves the session's route, this plugin ra
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-Two entries over ONE per-session directory owned by `ModelDirectoryResolver` (`ctx.modelDirectories`): the `/model` popupSelect contribution (registered through `ctx.commandUi`) and the composer's named `conversation.input.model` seat both follow live `sessions.modelRoute`. Ordinary and catalog-addressed Sessions load the Host advisory catalog and submit through that route's `selectModel` via the same `ModelDirectory` instance, so a switch made in either entry is what the other shows next. A missing `modelRoute` hides both entries. Directory loads and selections share a generation counter so an older response never overwrites a newer one; a connection reset drops every resident projection and repulls the Host-restored selection. Directories are per-session, resolved lazily, and disposed with the session scope. Every resident directory refetches directly on forwarded `llm/adapters-updated` and `settings/document-updated` owner events.
+Two entries use one per-session directory owned by `ModelDirectoryResolver` (`ctx.modelDirectories`): the `/model` popupSelect contribution registered through `ctx.commandUi` and the composer's named `conversation.input.model` seat both follow live `sessions.modelRoute`. Every directory loads the shared Host advisory catalog. A stock route combines that catalog with the Session's durable `modelSelection` projection and submits through `selectModel`. A feature route supplies `inspect` for its effective selection and routability; the directory inspects on first load and connection reset, and inspects again after a successful selection so the owner-normalized value remains authoritative. A missing `modelRoute` hides both entries. Loads, selections, route changes, and reconnects share a generation counter so an older response never overwrites a newer one. Directories are resolved lazily per Session and disposed with the Session scope. Every resident directory refetches directly on forwarded `llm/adapters-updated` and `settings/document-updated` owner events.
 
 </details>
 
@@ -77,7 +77,7 @@ Switching the route can reduce or invalidate provider-side cache reuse for subse
 
 These limits define the current model surface. They are current package constraints, not a general model-router comparison or a task backlog.
 
-- **No create-time selection** — both entries require an existing Session with a live `sessions.modelRoute`; there is no draft-phase model choice to fold into session creation. A feature that omits `modelRoute` hides both entries.
+- **Generic creation has no model field** — both entries require a Session identity with a live `sessions.modelRoute`. A feature may stage a provisional identity and own its draft selection through a feature route; ordinary `sessions.create()` does not accept a model. A feature that omits `modelRoute` hides both entries.
 - **Directory names are presentation-only** — selection and persistence use provider/model/effort ids; a provider whose catalog or exact-model metadata lookup fails lists as an unselectable failure row until reload.
 - **No arbitrary effort input** — the composer offers only the exact model's adapter-advertised levels; an adapter without reasoning metadata leaves the Effort row absent.
 

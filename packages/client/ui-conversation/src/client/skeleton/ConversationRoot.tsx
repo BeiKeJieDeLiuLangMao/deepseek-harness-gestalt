@@ -2,7 +2,7 @@
 // chain, AND the composer bar (session-maybe slot) stay mounted across
 // no-session/session transitions — the bar renders inert via owner props.
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import type { ConversationSlotProps, InputZone } from '../contract/slots.ts'
@@ -142,8 +142,10 @@ export function ConversationRoot({
     : conversationPhase(session, conversation)
   const openState = session?.openState
   const inputState = useInput(s => s)
-  const cwd = useSessions(s => sessionId === undefined ? undefined : s.byId[sessionId]?.cwd)
-  const summaryBlank = useSessions(s => sessionId === undefined ? undefined : s.byId[sessionId]?.blank)
+  const sessions = useSessions(s => s)
+  const summary = sessionId === undefined ? undefined : sessions.byId[sessionId]
+  const cwd = summary?.cwd
+  const summaryBlank = summary?.blank
   const workspaces = useWorkspaces(s => s)
   // A plugin this package cannot import (ui-model-selection) says this session cannot
   // send; its reason is already localized by whoever raised it.
@@ -234,9 +236,20 @@ export function ConversationRoot({
     if (root !== null) publishWidths(root)
   }, [publishWidths])
 
-  const sessionWorkspace = sessionId === undefined
-    ? undefined
-    : workspaces.items.find(workspace => workspace.sessionIds.includes(sessionId))
+  const sessionWorkspace = useMemo(() => {
+    if (sessionId === undefined) return undefined
+    const seen = new Set<string>()
+    let candidate = sessionId
+    while (!seen.has(candidate)) {
+      seen.add(candidate)
+      const direct = workspaces.items.find(workspace => workspace.sessionIds.includes(candidate))
+      if (direct !== undefined) return direct
+      const ancestor = sessions.byId[candidate]
+      if (ancestor?.origin !== 'subagent' || ancestor.parentId === undefined) return undefined
+      candidate = ancestor.parentId
+    }
+    return undefined
+  }, [sessionId, sessions.byId, workspaces.items])
   const pendingWorkspace = workspaces.items.find(
     workspace => workspace.workspaceId === pendingWorkspaceId,
   )
