@@ -182,6 +182,7 @@ describe('assembled Desktop Companion Ask User question on shipped dsh web', () 
     const pendingQuestion = surface.getSnapshot().conversations[localSessionId]?.pending
       .find((wait): wait is Extract<typeof wait, { kind: 'question' }> => wait.kind === 'question')
     if (pendingQuestion === undefined) throw new Error('Mobile surface never received the Ask User wait')
+    const requestCountBeforeAnswer = llm.requests.length
     await expect(pendingQuestion.answer({ answers: [{ id: 'q1', selected: ['Yes'] }] })).resolves.toBeUndefined()
     await expect.poll(() => settleOperationIds.length).toBe(1)
     const settleOperationId = settleOperationIds[0]
@@ -212,11 +213,9 @@ describe('assembled Desktop Companion Ask User question on shipped dsh web', () 
     if (followUp === undefined) throw new Error('the answered follow-up model request never arrived')
     expect(followUp.toolCallId).toBe(toolResult.callId)
     expect(followUp.answers).toEqual([{ id: 'q1', selected: ['Yes'] }])
+    expect(llm.requests.length).toBeGreaterThan(requestCountBeforeAnswer)
     expect(llm.requests.length).toBe(2)
-    for (const request of llm.requests) {
-      const body = isRecord(request.body) ? JSON.stringify(request.body) : ''
-      expect(body.includes('ask_user_question') || body.includes('tool_call_id')).toBe(true)
-    }
+    expect(answeredFollowUpRequest(llm.requests, 'a-different-tool-call-id')).toBeUndefined()
     expect(owner.pendingInteractions(sessionId, channels.attachmentKey.slice())).toHaveLength(0)
   }, 180_000)
 })
