@@ -12,7 +12,13 @@
       "path": "../../api/gateway/tsconfig.client.json"
     },
     {
+      "path": "../../api/remotes/tsconfig.client.json"
+    },
+    {
       "path": "../../api/session-controller/tsconfig.client.json"
+    },
+    {
+      "path": "../../core/session"
     },
     {
       "path": "../../../vendor/cordis"
@@ -21,7 +27,7 @@
       "path": "../locale"
     },
     {
-      "path": "../connection/tsconfig.client.json"
+      "path": "../ui-better-sidebar"
     },
     {
       "path": "../ui-conversation"

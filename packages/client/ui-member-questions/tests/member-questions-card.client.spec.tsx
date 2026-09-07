@@ -7,17 +7,19 @@
 // presentation's drafts.
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import type { SessionId, SessionListState, WorkspaceListState } from '@deepseek-ai/dsh-client-connection/client'
-import type { SessionSnapshot } from '@deepseek-ai/dsh-api-session-controller/src/client/contract/snapshot.ts'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type {
+  ReceivingMemberQuestionRecord, ReceivingQuestionBookView, SessionListState, SessionSnapshot,
+} from '@deepseek-ai/dsh-api-session-controller/client'
 import type { PendingMemberQuestionView } from '@deepseek-ai/dsh-member-question-receiver/types'
-import type { ReceivingQuestionBookView } from '@deepseek-ai/dsh-api-session-controller/src/client/sessions/receiving.ts'
 import { useState } from 'react'
 import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
-import { registerDomSnapshotSerializer } from '@deepseek-ai/dsh-client-test-runtime'
+import type { InputState } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import { registerDomSnapshotSerializer, sessionSnapshot } from '@deepseek-ai/dsh-client-test-runtime'
 import {
   BACKGROUND_CLAMP, clampBackground, memberBriefOf, selectMemberQuestion,
   selectMemberQuestionRecords,
-  type MemberQuestionComposerProps,
+  type MemberQuestionComposerProps, type MemberQuestionDockProps, type MemberQuestionRole,
 } from '../src/client/contract/slots.ts'
 import { MemberQuestionCard, MemberQuestionDock, MemberQuestionRecords } from '../src/client/MemberQuestionCard.tsx'
 import { en, zh } from '../src/client/locales.ts'
@@ -43,18 +45,56 @@ const seatOver = (dict: Record<string, string>, question: Record<string, string>
 
 const seat = seatOver(zh, questionZh, commonZh)
 
-/** Framework standard-kit stubs: the card consumes only the locale seats. */
+type HookSnapshot<Hook> = Hook extends SnapshotSelectorHook<infer Snapshot> ? Snapshot : never
+
+function unusedHook<Snapshot>(): SnapshotSelectorHook<Snapshot> {
+  return () => { throw new Error('unused') }
+}
+
+const inputState: InputState = {
+  draft: '',
+  imageIds: [],
+  draftRev: 0,
+  phase: 'plain',
+  occurrences: [],
+  queue: [],
+  annotations: [],
+}
+
+/** Framework standard-kit stubs: the card consumes only the locale and input seats. */
 const kit = {
   sessionId: SID,
-  session: undefined,
-  useSession: (() => { throw new Error('unused') }) as unknown as SnapshotSelectorHook<SessionSnapshot>,
-  useSessions: (() => { throw new Error('unused') }) as unknown as SnapshotSelectorHook<SessionListState>,
-  useWorkspaces: (() => { throw new Error('unused') }) as unknown as SnapshotSelectorHook<WorkspaceListState>,
-  useProjection: (() => undefined) as never,
-  useInput: ((selector: (state: { draft: string; phase: 'plain' }) => unknown) =>
-    selector({ draft: '', phase: 'plain' })) as never,
-  inputActions: { setDraft: () => undefined, submit: () => undefined } as never,
-}
+  session: sessionSnapshot(SID),
+  input: inputState,
+  useSession: unusedHook<SessionSnapshot>(),
+  useSessions: unusedHook<SessionListState>(),
+  useSessionPendingInteraction: unusedHook<HookSnapshot<MemberQuestionComposerProps['useSessionPendingInteraction']>>(),
+  useWorkspaces: unusedHook<HookSnapshot<MemberQuestionComposerProps['useWorkspaces']>>(),
+  useConversation: unusedHook<HookSnapshot<MemberQuestionComposerProps['useConversation']>>(),
+  useChat: unusedHook<HookSnapshot<MemberQuestionComposerProps['useChat']>>(),
+  useTrajectory: unusedHook<HookSnapshot<MemberQuestionComposerProps['useTrajectory']>>(),
+  useProjection: () => undefined,
+  useInput: selector => selector(inputState),
+  inputActions: {
+    setDraft: () => {},
+    addImages: () => false,
+    removeImage: () => {},
+    pruneImages: () => {},
+    submit: () => {},
+    addTextAnnotation: () => { throw new Error('unused') },
+    updateTextAnnotation: () => {},
+    removeTextAnnotation: () => {},
+    discardTextAnnotations: () => {},
+    addImagePin: () => { throw new Error('unused') },
+    updateImagePin: () => {},
+  },
+} satisfies Pick<
+  MemberQuestionComposerProps,
+  | 'sessionId' | 'session' | 'input'
+  | 'useSession' | 'useSessions' | 'useSessionPendingInteraction'
+  | 'useWorkspaces' | 'useConversation' | 'useChat' | 'useTrajectory'
+  | 'useProjection' | 'useInput' | 'inputActions'
+>
 
 const NOW = 1_800_000_000_000
 
@@ -75,7 +115,7 @@ const projection = () => ({
     originSessionTitle: '整理迭代计划',
     askerAccountId: 'account-alice',
     askerDisplayName: '王小明',
-    askerRole: 'admin' as const,
+    askerRole: 'admin' as MemberQuestionRole,
     askerAvatarUrl: '',
   },
   references: [
@@ -89,8 +129,14 @@ const projection = () => ({
     },
   ],
   cachedReferences: [
-    { path: 'docs/roster.md', cachedPath: '.dsh/member-questions/question-1/roster.md' },
-    { path: 'reports/activity.csv', cachedPath: '.dsh/member-questions/question-1/activity.csv' },
+    {
+      path: 'docs/roster.md', reason: '当前成员名单与角色',
+      cachedPath: '.dsh/member-questions/question-1/roster.md',
+    },
+    {
+      path: 'reports/activity.csv', reason: '近 30 天活跃度',
+      cachedPath: '.dsh/member-questions/question-1/activity.csv',
+    },
   ],
   expiresAt: NOW + 125 * 1000,
   background: '该成员近 30 天无提交记录。',
@@ -130,7 +176,29 @@ function memberWait(over: Partial<{
   }
 }
 
-function receivingView(wait?: PendingMemberQuestionView, records: readonly unknown[] = []): ReceivingQuestionBookView {
+const recordIntent: ReceivingMemberQuestionRecord['intent'] = {
+  kind: 'member-question',
+  questionId: 'question-1',
+  originSessionId: 'origin-session-1',
+  toProjectMember: 'account-receiver',
+  origin: projection().origin,
+  background: projection().background,
+  references: projection().references,
+  expiresAt: projection().expiresAt,
+}
+
+function recordOf(
+  state: ReceivingMemberQuestionRecord['state'],
+  questionId: string,
+  terminalAt = NOW,
+): ReceivingMemberQuestionRecord {
+  return { questionId, state, askedAt: NOW - 1_000, terminalAt, intent: recordIntent }
+}
+
+function receivingView(
+  wait?: PendingMemberQuestionView,
+  records: readonly ReceivingMemberQuestionRecord[] = [],
+): ReceivingQuestionBookView {
   if (wait === undefined && records.length === 0) return { byId: {} }
   return {
     byId: {
@@ -141,7 +209,7 @@ function receivingView(wait?: PendingMemberQuestionView, records: readonly unkno
         revision: wait?.revision ?? 1,
         materialized: false,
         pending: wait,
-        records: records as ReceivingQuestionBookView['byId'][string]['records'],
+        records,
       },
     },
   }
@@ -204,20 +272,21 @@ function PresentationDouble(props: {
 
 function receivingProps(
   wait?: PendingMemberQuestionView,
-  records: readonly unknown[] = [],
+  records: readonly ReceivingMemberQuestionRecord[] = [],
   questionT: ReturnType<typeof seat> = seat('question'),
 ) {
   const view = receivingView(wait, records)
+  const useReceivingQuestions: SnapshotSelectorHook<ReceivingQuestionBookView> = selector => selector(view)
   return {
-    useReceivingQuestions: ((selector: (next: ReceivingQuestionBookView) => unknown) => selector(view)),
+    useReceivingQuestions,
     hooks: {
       receivingQuestions: {
         getSnapshot: () => view,
         subscribe: () => () => {},
       },
     },
-    settle: vi.fn(async () => {}),
-    decline: vi.fn(async () => {}),
+    settle: vi.fn<MemberQuestionComposerProps['settle']>(async () => {}),
+    decline: vi.fn<MemberQuestionComposerProps['decline']>(async () => {}),
     renderSlot: ((_name: 'question.presentation', owner: {
       requestKey: string
       questions: { id: string; question: string; options?: readonly { label: string }[] }[]
@@ -275,38 +344,30 @@ describe('member-question routing', () => {
     const { carrier } = memberWait()
     const props = {
       ...kit,
-      input: { draft: '', phase: 'plain' },
-      session: {},
       t: seat('member-question'),
       focusDocument: () => {},
       openReference: () => {},
       ...receivingProps(carrier),
-    }
-    const pending = render(MemberQuestionDock(props as never))
+    } satisfies MemberQuestionDockProps
+    const pending = render(<MemberQuestionDock {...props} />)
     expect(pending.container.querySelector('[data-member-presentation]')).not.toBeNull()
     pending.unmount()
-    const terminal = render(MemberQuestionDock({
-      ...props,
-      ...receivingProps(undefined, [{
-        questionId: 'terminal', state: 'withdrawn', askedAt: 100, terminalAt: 200,
-        intent: { kind: 'member-question', questionId: 'terminal' },
-      }]),
-    } as never))
+    const terminal = render(<MemberQuestionDock
+      {...props}
+      {...receivingProps(undefined, [recordOf('withdrawn', 'terminal')])}
+    />)
     expect(terminal.container.querySelector('[data-record-state="withdrawn"]')).not.toBeNull()
     terminal.unmount()
-    const empty = render(MemberQuestionDock({
-      ...props,
-      ...receivingProps(),
-    } as never))
+    const empty = render(<MemberQuestionDock {...props} {...receivingProps()} />)
     expect(empty.container.innerHTML).toBe('')
   })
 
   it('claims only non-empty terminal record projections', () => {
-    expect(selectMemberQuestionRecords({ session: undefined })).toBeNull()
+    expect(selectMemberQuestionRecords({})).toBeNull()
     expect(selectMemberQuestionRecords({ session: {
       memberQuestionRecords: [],
     } })).toBeNull()
-    const records = [{ questionId: 'q' }] as never
+    const records = [recordOf('answered', 'q')]
     expect(selectMemberQuestionRecords({ session: {
       memberQuestionRecords: records,
     } })).toBe(records)
@@ -554,13 +615,8 @@ describe('MemberQuestionCard', () => {
   })
 
   it('renders answered-elsewhere terminal metadata as a passive record band', () => {
-    const intent = { kind: 'member-question', questionId: 'question-1' } as never
     render(<MemberQuestionRecords matched={[{
-      questionId: 'question-1',
-      state: 'answered-elsewhere',
-      askedAt: NOW - 1_000,
-      terminalAt: NOW,
-      intent,
+      ...recordOf('answered-elsewhere', 'question-1'),
       settledByDeviceName: 'Office Mac',
     }]} t={seat('member-question')} />)
     expect(screen.getByText('已在 Office Mac 回答')).toBeTruthy()
@@ -569,24 +625,27 @@ describe('MemberQuestionCard', () => {
   })
 
   it('renders every terminal state and the answered-elsewhere device fallback', () => {
-    const intent = { kind: 'member-question', questionId: 'question-1' } as never
-    const states = ['answered', 'declined', 'expired', 'withdrawn', 'superseded'] as const
+    const states: readonly ReceivingMemberQuestionRecord['state'][] = [
+      'pending', 'answered', 'declined', 'expired', 'withdrawn', 'superseded',
+    ]
     render(<MemberQuestionRecords matched={[
-      ...states.map((state, index) => ({
-        questionId: `question-${String(index)}`, state, askedAt: NOW - 1_000,
-        terminalAt: NOW + index, intent,
-      })),
-      {
-        questionId: 'question-elsewhere', state: 'answered-elsewhere' as const,
-        askedAt: NOW - 1_000, terminalAt: NOW + 10, intent,
-      },
+      ...states.map((state, index) => recordOf(state, `question-${String(index)}`, NOW + index)),
+      recordOf('answered-elsewhere', 'question-elsewhere', NOW + 10),
     ]} t={seat('member-question')} />)
+    expect(screen.getByText('等待回答')).toBeTruthy()
     expect(screen.getByText('已回答')).toBeTruthy()
     expect(screen.getByText('已拒绝')).toBeTruthy()
     expect(screen.getByText('已过期')).toBeTruthy()
     expect(screen.getByText('已撤回')).toBeTruthy()
     expect(screen.getByText('已被新问题取代')).toBeTruthy()
     expect(screen.getByText('已在 成员 回答')).toBeTruthy()
+    cleanup()
+    const seatEn = seatOver(en, questionEn, commonEn)
+    render(<MemberQuestionRecords
+      matched={[recordOf('pending', 'question-pending')]}
+      t={seatEn('member-question')}
+    />)
+    expect(screen.getByText('Pending')).toBeTruthy()
     cleanup()
     expect(render(<MemberQuestionRecords matched={[]} t={seat('member-question')} />).container.innerHTML).toBe('')
   })
@@ -669,24 +728,21 @@ describe('MemberQuestionCard', () => {
 
   it('clears the pending card when the book projection has no pending row', () => {
     const { carrier } = memberWait()
-    const pending = render(MemberQuestionDock({
-      ...kit,
-      ...receivingProps(carrier),
-      t: seat('member-question'),
-      focusDocument: () => {},
-      openReference: () => {},
-    } as never))
+    const pending = render(<MemberQuestionDock
+      {...kit}
+      {...receivingProps(carrier)}
+      t={seat('member-question')}
+      focusDocument={() => {}}
+      openReference={() => {}}
+    />)
     expect(pending.container.querySelector('[data-member-presentation]')).not.toBeNull()
-    pending.rerender(MemberQuestionDock({
-      ...kit,
-      ...receivingProps(undefined, [{
-        questionId: 'question-1', state: 'expired', askedAt: 100, terminalAt: 200,
-        intent: { kind: 'member-question', questionId: 'question-1' },
-      }]),
-      t: seat('member-question'),
-      focusDocument: () => {},
-      openReference: () => {},
-    } as never))
+    pending.rerender(<MemberQuestionDock
+      {...kit}
+      {...receivingProps(undefined, [recordOf('expired', 'question-1', 200)])}
+      t={seat('member-question')}
+      focusDocument={() => {}}
+      openReference={() => {}}
+    />)
     expect(pending.container.querySelector('[data-member-presentation]')).toBeNull()
     expect(pending.container.querySelector('[data-record-state="expired"]')).not.toBeNull()
   })

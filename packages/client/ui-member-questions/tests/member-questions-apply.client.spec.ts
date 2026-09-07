@@ -5,10 +5,11 @@
 // the contribution (HMR safety).
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
-import type { SessionId } from '@deepseek-ai/dsh-client-connection/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { DetailsDocumentFocus } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
+import { TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
 import { MemberQuestionDock } from '../src/client/MemberQuestionCard.tsx'
 import { apply, inject } from '../src/client/index.ts'
 import { apply as nodeApply } from '../src/index.ts'
@@ -18,11 +19,11 @@ async function bench(sessions?: {
   list: { getSnapshot: () => { byId: Record<string, { cwd?: string } | undefined> } }
 }) {
   const ctx = new Context()
-  const workspaces = { openPath: vi.fn(async () => {}), calls: [] as { method: string; args: unknown[] }[] }
-  workspaces.openPath.mockImplementation(async (...args: unknown[]) => {
-    workspaces.calls.push({ method: 'openPath', args })
-  })
-  ctx.provide('workspaces', workspaces)
+  const openWorkspacePath = vi.fn(async () => ({
+    ok: true as const,
+    value: { opened: true },
+  }))
+  new TestRemote(ctx, { session: { openWorkspacePath } })
   ctx.provide('sessions', sessions ?? {
     list: { getSnapshot: () => ({ byId: {} }) },
   })
@@ -48,12 +49,12 @@ async function bench(sessions?: {
   ctx.receivingQuestions = receivingQuestions as never
   const fiber = ctx.plugin({ inject: [...inject], apply })
   await fiber.await()
-  return { ctx, fiber, workspaces, locale }
+  return { ctx, fiber, openWorkspacePath, locale }
 }
 
 describe('ui-member-questions browser apply', () => {
   it('declares every service it binds', () => {
-    expect(inject).toEqual(['slots', 'locale', 'workspaces', 'sessions', 'receivingQuestions'])
+    expect(inject).toEqual(['slots', 'locale', 'sessions', 'receivingQuestions', 'remote', 'remote.session'])
   })
 
   it('node-half apply is an intentional no-op', () => {
@@ -97,7 +98,7 @@ describe('ui-member-questions browser apply', () => {
 
   it('resolves a late details-focus service per gesture and stops after provider disposal', async () => {
     const byId: Record<string, { cwd?: string } | undefined> = {}
-    const { ctx, fiber, workspaces } = await bench({
+    const { ctx, fiber, openWorkspacePath } = await bench({
       list: { getSnapshot: () => ({ byId }) },
     })
     const entry = ctx.slots.entries('conversation.input.dock')[0]!
@@ -129,13 +130,12 @@ describe('ui-member-questions browser apply', () => {
         '/bound-workspace/.dsh/member-questions/question-1/brief.html',
         'brief.html',
       )
-      expect(workspaces.calls.some(call => call.method === 'openPath')).toBe(false)
+      expect(openWorkspacePath).not.toHaveBeenCalled()
 
       await disposeSidebar()
       injected.openReference(sessionId, '.dsh/member-questions/question-1/brief.html', 'brief.html')
-      expect(workspaces.calls).toContainEqual({
-        method: 'openPath',
-        args: ['/bound-workspace/.dsh/member-questions/question-1/brief.html'],
+      expect(openWorkspacePath).toHaveBeenCalledWith({
+        path: '/bound-workspace/.dsh/member-questions/question-1/brief.html',
       })
       expect(openFile).toHaveBeenCalledTimes(1)
 

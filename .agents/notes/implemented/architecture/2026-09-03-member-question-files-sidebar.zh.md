@@ -12,7 +12,7 @@ Status: implemented
 
 Host Session materializer 把传输文档 bytes 写到 receiver 所有的隐藏 Workspace 目录：`.dsh/member-questions/<questionId>/<basename>`。同一提问内冲突的 basename 会加上数字后缀。cache 父目录会先 unlink `.dsh`、`.dsh/member-questions` 或提问目录上的预埋符号链接，再创建仅所有者可访问的真实目录。cache 文件会 unlink leftover 或链接形态路径，再以 `wx`、`0o600` 独占创建仅所有者可访问的普通文件，因此写入不会跟随进入同名 Workspace 文件。receiver ledger 只存 `{ path, reason, cachedPath }` 元数据；文档正文不进入该 JSON 文档。
 
-点击材料芯片只会用 receiving Session id 通过 `ctx.betterSidebar.openFile` 打开该缓存 path。没有 `cachedPath` 的芯片是 no-op：提问 Session path 与同名 Workspace 文件都不会被打开。markdown、沙箱 HTML 与不受支持的类型复用普通 Files viewer。Files editor 标签未注册时，芯片回退到 `ctx.workspaces.openPath` 与 Host 系统打开器。详情面板文档席位不再是产品打开路径。
+点击材料芯片只会用 receiving Session id 通过 `ctx.betterSidebar.openFile` 打开该缓存 path。没有 `cachedPath` 的芯片是 no-op：提问 Session path 与同名 Workspace 文件都不会被打开。markdown、沙箱 HTML 与不受支持的类型复用普通 Files viewer。Files editor 标签未注册时，芯片调用 `ctx.remote.session.openWorkspacePath({ path: absolute })` 与 Host 系统打开器。详情面板文档席位不再是产品打开路径。
 
 [receiving Session 物化记录](2026-09-02-receiving-session-arrival-materialization.zh.md) 仍拥有 Host Session 创建与 brief 注入。[Host receiver ledger](2026-08-31-host-owned-member-question-receiver-ledger.zh.md) 仍拥有 persistence、first claim 与 human-turn reservation。
 
