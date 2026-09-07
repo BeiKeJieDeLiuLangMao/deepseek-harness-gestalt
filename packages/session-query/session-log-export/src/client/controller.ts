@@ -1,4 +1,4 @@
-/** Browser download state shared by the Session Header button and `/export`. */
+/** Browser download state shared by the Trajectory toolbar button and `/export`. */
 
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'

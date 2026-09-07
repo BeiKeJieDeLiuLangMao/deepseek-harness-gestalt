@@ -282,19 +282,25 @@ describe('web e2e: navigation & panes over a rich seeded session', () => {
     await details.getByRole('button', { name: 'Close details' }).click()
   }, 60_000)
 
-  it.skipIf(MODE === 'record')('downloads through the Session Header and /export with one dialog', async () => {
+  it.skipIf(MODE === 'record')('downloads through the Trajectory toolbar and /export with one dialog', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-navigation-export'))
     await ensureSeedOpen(page)
-    const exportButton = page.getByRole('button', { name: 'Session log' })
+    await expect.poll(
+      () => page.getByRole('button', { name: 'Session log' }).count(),
+      { timeout: 10_000 },
+    ).toBe(0)
+    await page.getByRole('tab', { name: 'Trajectory' }).click()
+    const toolbar = page.getByRole('toolbar', { name: 'Trajectory toolbar' })
+    const exportButton = toolbar.getByRole('button', { name: 'Session log' })
+    await exportButton.waitFor({ timeout: 15_000 })
     expect(await exportButton.isDisabled()).toBe(false)
-    const header = exportButton.locator('xpath=ancestor::header[1]')
-    const [buttonBox, headerBox] = await Promise.all([
-      exportButton.boundingBox(), header.boundingBox(),
+    const [buttonBox, searchBox] = await Promise.all([
+      exportButton.boundingBox(), toolbar.getByRole('searchbox', { name: 'Search trajectory' }).boundingBox(),
     ])
-    if (buttonBox === null || headerBox === null) {
-      throw new Error('Session Header export geometry is unavailable')
+    if (buttonBox === null || searchBox === null) {
+      throw new Error('Trajectory toolbar export geometry is unavailable')
     }
-    expect(headerBox.x + headerBox.width - (buttonBox.x + buttonBox.width)).toBeLessThanOrEqual(32)
+    expect(buttonBox.x).toBeGreaterThanOrEqual(searchBox.x + searchBox.width)
     const responsePromise = page.waitForResponse(response =>
       response.request().method() === 'HEAD'
       && new URL(response.url()).pathname === '/api/session.export', { timeout: 30_000 })
@@ -313,7 +319,14 @@ describe('web e2e: navigation & panes over a rich seeded session', () => {
     const content = strFromU8(files['session.jsonl'] as Uint8Array)
     expect(content.split('\n')[0]).toContain(SEED_ID)
     expect(content).toContain('FIRST_DONE')
+    expect(await page.getByRole('dialog', { name: 'Session download started' }).count()).toBe(1)
     await dialog.getByText('Close', { exact: true }).click()
+    await page.getByRole('tab', { name: 'Chat', exact: true }).click()
+    await page.locator('[data-composer-input]').first().waitFor({ timeout: 15_000 })
+    await expect.poll(
+      () => page.getByRole('button', { name: 'Session log' }).count(),
+      { timeout: 10_000 },
+    ).toBe(0)
 
     const observer = await newEnglishPage(browser)
     const observerTripwire = watchConsole(observer)
@@ -350,9 +363,10 @@ describe('web e2e: navigation & panes over a rich seeded session', () => {
       const exportDone = slashEvents.find(event =>
         event.type === 'command/done' && event.data.commandId === exportRun.data.commandId)
       expect(exportDone?.type).toBe('command/done')
-      await page.getByRole('dialog', { name: 'Session download started' }).waitFor({ timeout: 30_000 })
-      await page.getByRole('dialog', { name: 'Session download started' })
-        .getByText('Close', { exact: true }).click()
+      const slashDialog = page.getByRole('dialog', { name: 'Session download started' })
+      await slashDialog.waitFor({ timeout: 30_000 })
+      expect(await slashDialog.count()).toBe(1)
+      await slashDialog.getByText('Close', { exact: true }).click()
       await observer.getByText('Session log download requested.', { exact: true }).waitFor({ timeout: 30_000 })
       expect(observerDownloads).toBe(0)
       expect(await observer.getByRole('dialog', { name: 'Session download started' }).count()).toBe(0)

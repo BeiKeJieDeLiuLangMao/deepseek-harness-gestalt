@@ -370,6 +370,7 @@ function mount(fixture: Awaited<ReturnType<typeof bench>>) {
           loadOlder: trajectory.loadOlder,
           setActualDuration: trajectory.setActualDuration,
           useDuration: bindSnapshotSelector(trajectory.hooks.duration),
+          renderSlot: () => null,
           t: tZh,
         }
       })()
