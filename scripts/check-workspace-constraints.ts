@@ -196,13 +196,7 @@ function sameStringList(actual: readonly string[] | undefined, expected: readonl
 }
 
 export function expectedDshPackageFiles(manifest: PackageManifest): readonly string[] {
-  const declaredPatch = manifest.dsh?.bundle?.patch
-  const bundleFiles = declaredPatch === undefined ? [] : [declaredPatch.replace(/^\.\//, '')]
-  const extras = [
-    ...bundleFiles,
-    ...(manifest.name ? packageFileExtras[manifest.name] ?? [] : []),
-  ]
-  return [
+  const runtimeFiles = [
     'lib/index.js',
     // Packages with an invariant export publish its runtime as a separate
     // bundle; the package-invariant gate validates the source/export pairing.
@@ -225,13 +219,14 @@ export function expectedDshPackageFiles(manifest: PackageManifest): readonly str
     // A surface bundle's startup row is its own bundle: the Loader imports it
     // as a row module, so it cannot ride inside the package entry.
     ...exportDefault(manifest, './startup') === './lib/startup.js' ? ['lib/startup.js'] : [],
-    ...extras,
-    // Subpaths whose runtime default is the tsc-emitted tree (lib/types/*.js —
-    // browser-safe source channels rehomed off src so plain Node can import
-    // them without type stripping) publish the emitted JS alongside the
-    // declarations.
-    ...usesEmittedTreeDefaults(manifest) ? ['lib/types/**/*.js'] : [],
-    'lib/types/**/*.d.ts',
+  ]
+  const declaredPatch = manifest.dsh?.bundle?.patch
+  const bundleFiles = declaredPatch === undefined ? [] : [declaredPatch.replace(/^\.\//, '')]
+  const extras = [
+    ...bundleFiles,
+    ...(manifest.name ? packageFileExtras[manifest.name] ?? [] : []),
+  ]
+  const generatedEntryFiles = [
     ...hasExportPair(manifest, './typert', './lib/typert.host.d.ts', './lib/typert.host.js')
       ? ['lib/typert.host.js', 'lib/typert.host.d.ts']
       : [],
@@ -241,6 +236,20 @@ export function expectedDshPackageFiles(manifest: PackageManifest): readonly str
     ...hasTypertRemoteNavigation(manifest)
       ? ['lib/typert.remote-client.js', 'lib/typert.remote-client.d.ts']
       : [],
+  ]
+  const listedFiles = new Set([...runtimeFiles, ...extras, ...generatedEntryFiles])
+  const exportedRuntimeFiles = exportedLibRuntimeFiles(manifest).filter(file => !listedFiles.has(file))
+  return [
+    ...runtimeFiles,
+    ...extras,
+    ...exportedRuntimeFiles,
+    // Subpaths whose runtime default is the tsc-emitted tree (lib/types/*.js —
+    // browser-safe source channels rehomed off src so plain Node can import
+    // them without type stripping) publish the emitted JS alongside the
+    // declarations.
+    ...usesEmittedTreeDefaults(manifest) ? ['lib/types/**/*.js'] : [],
+    'lib/types/**/*.d.ts',
+    ...generatedEntryFiles,
   ]
 }
 
@@ -264,6 +273,17 @@ function exportDefault(manifest: PackageManifest, subpath: string): string | und
   if (typeof entry === 'string') return entry
   if (typeof entry === 'object' && entry !== null) return entry.default
   return undefined
+}
+
+/** Runtime artifacts directly addressed by supported package export entries. */
+function exportedLibRuntimeFiles(manifest: PackageManifest): string[] {
+  const files = new Set<string>()
+  for (const subpath of Object.keys(manifest.exports ?? {})) {
+    const target = exportDefault(manifest, subpath)
+    if (target?.startsWith('./lib/') !== true || target.startsWith('./lib/types/')) continue
+    files.add(target.slice(2))
+  }
+  return [...files]
 }
 
 /** Whether any export's runtime default points into the tsc-emitted lib/types tree. */

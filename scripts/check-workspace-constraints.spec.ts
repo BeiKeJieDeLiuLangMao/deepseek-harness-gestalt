@@ -1,13 +1,29 @@
 /** Experimental-package publication and dependency constraints. */
 
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
   checkExperimentalDependencyIsolation,
   checkExperimentalManifest,
   checkPnpmBuildPolicy,
+  checkWorkspaceManifest,
   expectedDshPackageFiles,
+  type PackageManifest,
   type WorkspaceManifest,
 } from './check-workspace-constraints.ts'
+
+const webserverManifest = JSON.parse(readFileSync(
+  new URL('../packages/host/webserver/package.json', import.meta.url),
+  'utf8',
+)) as PackageManifest
+
+function publicationFileErrors(manifest: PackageManifest): string[] {
+  return checkWorkspaceManifest({ dir: 'packages/host/webserver', manifest })
+    .filter(error => error.includes('package.json files must be'))
+}
+
+const webserverFilesError = 'packages/host/webserver/package.json: '
+  + '@deepseek-ai/dsh-host-webserver: package.json files must be ["lib/index.js","lib/http.js","lib/types/**/*.d.ts"]'
 
 const experimental: WorkspaceManifest = {
   dir: 'packages/experimental/prototype',
@@ -115,5 +131,38 @@ describe('package payload constraints', () => {
       'lib/client-locale.js',
       'lib/types/**/*.d.ts',
     ])
+  })
+
+  it('derives the webserver public HTTP runtime from its export', () => {
+    expect(expectedDshPackageFiles(webserverManifest)).toEqual([
+      'lib/index.js',
+      'lib/http.js',
+      'lib/types/**/*.d.ts',
+    ])
+    expect(publicationFileErrors(webserverManifest)).toEqual([])
+  })
+
+  it('derives supported string export entries', () => {
+    expect(expectedDshPackageFiles({
+      exports: { './http': './lib/http.js' },
+    })).toEqual([
+      'lib/index.js',
+      'lib/http.js',
+      'lib/types/**/*.d.ts',
+    ])
+  })
+
+  it('rejects a missing public runtime', () => {
+    expect(publicationFileErrors({
+      ...webserverManifest,
+      files: ['lib/index.js', 'lib/types/**/*.d.ts'],
+    })).toEqual([webserverFilesError])
+  })
+
+  it('rejects an extra publication file', () => {
+    expect(publicationFileErrors({
+      ...webserverManifest,
+      files: [...(webserverManifest.files ?? []), 'lib/unused.js'],
+    })).toEqual([webserverFilesError])
   })
 })
