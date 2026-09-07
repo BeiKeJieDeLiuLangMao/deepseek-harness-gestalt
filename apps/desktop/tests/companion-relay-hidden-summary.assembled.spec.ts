@@ -82,6 +82,11 @@ describe('assembled Desktop Relay hidden Session summary on shipped dsh web', ()
       responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
       cookieHeader: cookie,
     })
+    const workspaceFrames: unknown[] = []
+    const workspaceFollow = new AbortController()
+    const watchingWorkspaces = rpc.followWorkspaces(workspaceFollow.signal, (frame) => { workspaceFrames.push(frame) })
+    cleanups.push(async () => { workspaceFollow.abort(); await watchingWorkspaces })
+    await expect.poll(() => workspaceFrames.some(frame => isRecord(frame) && frame.type === 'baseline')).toBe(true)
     const primaryPath = join(first.home, 'primary-workspace')
     await mkdir(primaryPath)
     const primaryWorkspaceId = workspaceIdFromCreate(await createDesktopHostWorkspace(rpc, primaryPath))
@@ -418,13 +423,21 @@ describe('assembled Desktop Relay hidden Session summary on shipped dsh web', ()
     await expect(createDesktopHostSessionRequest(rpc, {
       sessionId: secondarySessionId, workspaceId: secondaryWorkspaceId,
     })).resolves.toMatchObject({ ok: true })
+    await expect.poll(() => latestWorkspaceOrder(workspaceFrames)).toEqual([
+      secondaryWorkspaceId, primaryWorkspaceId,
+    ])
+    const initialWorkspaceOrder = latestWorkspaceOrder(workspaceFrames)
     await expect.poll(() => surface.getSnapshot().workspaces.map(workspace => workspace.workspaceId))
-      .toEqual([secondaryWorkspaceId, primaryWorkspaceId])
+      .toEqual(initialWorkspaceOrder)
+    const [move, before] = initialWorkspaceOrder
+    if (move === undefined || before === undefined) throw new Error('Host Workspace order did not contain both rows')
     await expect(workspaceMutation(rpc, 'workspace/insertBefore', {
-      workspaceId: primaryWorkspaceId, beforeWorkspaceId: secondaryWorkspaceId,
+      workspaceId: before, beforeWorkspaceId: move,
     })).resolves.toMatchObject({ ok: true })
+    await expect.poll(() => latestWorkspaceOrder(workspaceFrames)).toEqual([before, move])
+    expect(latestWorkspaceOrder(workspaceFrames)).not.toEqual(initialWorkspaceOrder)
     await expect.poll(() => surface.getSnapshot().workspaces.map(workspace => workspace.workspaceId))
-      .toEqual([primaryWorkspaceId, secondaryWorkspaceId])
+      .toEqual(latestWorkspaceOrder(workspaceFrames))
     await expect(workspaceMutation(rpc, 'workspace/delete', {
       workspaceId: secondaryWorkspaceId,
     })).resolves.toMatchObject({ ok: true })
@@ -490,6 +503,22 @@ async function startControlledStreamingLlm(apiKey: string): Promise<{
     baseUrl: `http://127.0.0.1:${String(address.port)}`,
     close: () => new Promise<void>((resolve) => { server.close(() => resolve()) }),
   }
+}
+
+function latestWorkspaceOrder(frames: readonly unknown[]): string[] {
+  let order: string[] = []
+  for (const frame of frames) {
+    if (!isRecord(frame)) continue
+    if (frame.type === 'baseline' && isRecord(frame.value) && Array.isArray(frame.value.items)) {
+      order = frame.value.items.flatMap(item => isRecord(item) && typeof item.workspaceId === 'string'
+        ? [item.workspaceId]
+        : [])
+    } else if (frame.type === 'order' && Array.isArray(frame.workspaceIds)
+      && frame.workspaceIds.every(id => typeof id === 'string')) {
+      order = [...frame.workspaceIds]
+    }
+  }
+  return order
 }
 
 function workspaceIdFromCreate(result: Awaited<ReturnType<typeof createDesktopHostWorkspace>>): string {
