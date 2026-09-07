@@ -15,7 +15,7 @@ This table connects model-visible tool names to the plugin package and service s
 
 | Tool package | Model-visible names | Requires | Writes / affects | Shipped aliases | Deployment note |
 | --- | --- | --- | --- | --- | --- |
-| `@deepseek-ai/dsh-tool-ask-user` | `ask_user_question` | `ctx.tools`, `ctx.userQuestions` | `tool/call`, `tool/result after a UI/provider answers the question` | - | ask_user_question pauses the tool call until the active UI provider returns a human answer. |
+| `@deepseek-ai/dsh-tool-ask-user` | `ask_user_question` | `ctx.tools`, `ctx.userQuestions` | `tool/call`, `tool/result after a composed answerer answers the question` | - | ask_user_question pauses the tool call until the composed answerer waterfall returns a human answer. |
 | `@deepseek-ai/dsh-tools` | `run_code`, `tool_search` | `ctx.tools`, `ctx.codeRuntime (execution time)`, `ctx.systemPrompt`, `toolSearch config for deferred discovery` | `tool/call`, `one tool/code-dispatch-start + tool/code-dispatch pair per bridged sub-call`, `tool/result` | - | Owned by the tool registry. `run_code` is a reserved transport outside filterable capability layers under `mode: ptc` / `mode: both` (see the PTC mode Agent Note). `tool_search` is the reserved deferred-schema discovery tool when `toolSearch` is configured (shipped SDK). Under `ptc` the other visible capabilities are declared in a generated SDK section in the loaded runtime's language, and a program calls them through bindings scheduled under the native concurrency contract (submission-ordered starts and policy; concurrency-safe bodies overlap up to `maxParallelSubCalls`) that re-enter the complete guarded tool pipeline and link each nested execution to this outer result. |
 | `@deepseek-ai/dsh-plan-mode` | `exit_plan_mode` | `ctx.tools`, `ctx.systemPrompt`, `ctx.userQuestions (execution time, opportunistic)` | `tool/call`, `plan/mode inactive on an approved review`, `tool/result` | - | exit_plan_mode stays in the model-facing schema while planning is inactive so transitions add no tool-catalog churn on top of the plan-policy change. Its execute path rejects calls outside plan mode; in plan mode it presents the plan over the user-questions seam (approve / keep planning with feedback), and approval logs plan mode inactive at the step boundary. |
 | `@deepseek-ai/dsh-tool-bash` | `bash` | `ctx.tools`, `ctx.shell`, `ctx.systemPrompt`, `ctx.shellEnv`, `ctx.jobs at call time for run_in_background` | `tool/call`, `tool/result` | - | The bash tool is the model-facing consumer of the bash executor seam. A `run_in_background` run registers with the generic `ctx.jobs` runtime and is collected/stopped through the `job_*` tools from `@deepseek-ai/dsh-tool-jobs`; the `enableRunInBackground` config (default true) removes the parameter entirely when disabled. |
@@ -144,7 +144,7 @@ Ask the user a concise question when you need confirmation, a choice, or missing
 
 Source: [`packages/interaction/tool-ask-user/src/index.ts`](../packages/interaction/tool-ask-user/src/index.ts)
 
-ask_user_question pauses the tool call until the active UI provider returns a human answer.
+ask_user_question pauses the tool call until the composed answerer waterfall returns a human answer.
 
 <a id="deepseek-aidsh-tools"></a>
 
@@ -1554,7 +1554,7 @@ Source: [`packages/schedule/schedule/src/tools.ts`](../packages/schedule/schedul
 
 ### `schedule_delete`
 
-Delete one retained active or paused reminder in the current session by the exact id returned by schedule_create or schedule_list. Unknown or already-finished ids return deleted false.
+Delete one retained reminder in the current session by the exact id returned by schedule_create or schedule_list, including a paused reminder. Unknown or already-finished ids return deleted false.
 
 ```json
 {
@@ -1575,7 +1575,7 @@ Source: [`packages/schedule/schedule/src/tools.ts`](../packages/schedule/schedul
 
 ### `schedule_list`
 
-List every retained active or paused reminder in the current session in creation order, including its exact id, UTC target, scheduled, overdue, or paused state, and session-local delivery mode.
+List every retained reminder in the current session in creation order, including its exact id, UTC target, scheduled, overdue, or paused state, and session-local delivery mode.
 
 ```json
 {

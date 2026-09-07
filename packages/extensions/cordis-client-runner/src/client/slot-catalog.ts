@@ -2494,11 +2494,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ownerProps: [
       '/** Owner currency delivered to a dynamic Package\'s business view. */\nexport interface CordisToolViewOwnerProps {\n  readonly pluginId: CordisDynamicPluginId\n  readonly packageId: CordisDynamicPackageId\n  readonly pluginRunId: CordisDynamicPluginRunId\n}',
     ],
-    ownerPropsReferences: [
-      'CordisDynamicPackageId',
-      'CordisDynamicPluginId',
-      'CordisDynamicPluginRunId',
-    ],
+    ownerPropsReferences: [],
     standardProps: [
       'useWorkspaces: SnapshotSelectorHook<WorkspaceSnapshot>',
       'useSessions: UseSessions',
