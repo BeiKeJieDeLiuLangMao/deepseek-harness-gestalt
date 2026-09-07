@@ -38,8 +38,6 @@ export function QuestionPresentationSlot(props: QuestionPresentationSlotProps) {
     useSessionPendingInteraction: props.useSessionPendingInteraction,
     useWorkspaces: props.useWorkspaces,
     useConversation: props.useConversation,
-    useChat: props.useChat,
-    useTrajectory: props.useTrajectory,
     useProjection: props.useProjection,
     useInput: props.useInput,
     inputActions: props.inputActions,

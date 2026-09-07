@@ -6,7 +6,6 @@
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { DetailsDocumentFocus } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
@@ -49,7 +48,7 @@ async function bench(sessions?: {
   ctx.receivingQuestions = receivingQuestions as never
   const fiber = ctx.plugin({ inject: [...inject], apply })
   await fiber.await()
-  return { ctx, fiber, openWorkspacePath, locale }
+  return { ctx, fiber, openWorkspacePath, locale, receivingQuestions }
 }
 
 describe('ui-member-questions browser apply', () => {
@@ -62,7 +61,7 @@ describe('ui-member-questions browser apply', () => {
   })
 
   it('registers the additive input-dock entry and unregisters on teardown', async () => {
-    const { ctx, fiber, locale } = await bench()
+    const { ctx, fiber, locale, receivingQuestions } = await bench()
     try {
       const entries = ctx.slots.entries('conversation.input.dock')
       expect(entries).toHaveLength(1)
@@ -84,42 +83,30 @@ describe('ui-member-questions browser apply', () => {
       expect(typeof injected.settle).toBe('function')
       expect(typeof injected.decline).toBe('function')
       await injected.settle('receiving-session' as SessionId, [{ id: 'channel', selected: ['Canary'] }])
-      expect(ctx.receivingQuestions.settle).toHaveBeenCalledWith(
+      expect(receivingQuestions.settle).toHaveBeenCalledWith(
         'receiving-session',
         [{ id: 'channel', selected: ['Canary'] }],
       )
       await injected.decline('receiving-session' as SessionId)
-      expect(ctx.receivingQuestions.decline).toHaveBeenCalledWith('receiving-session')
+      expect(receivingQuestions.decline).toHaveBeenCalledWith('receiving-session')
     } finally {
       await fiber.dispose()
     }
     expect(ctx.slots.entries('conversation.input.dock')).toHaveLength(0)
   })
 
-  it('resolves a late details-focus service per gesture and stops after provider disposal', async () => {
+  it('uses a late Files viewer per gesture and falls back after provider disposal', async () => {
     const byId: Record<string, { cwd?: string } | undefined> = {}
     const { ctx, fiber, openWorkspacePath } = await bench({
       list: { getSnapshot: () => ({ byId }) },
     })
     const entry = ctx.slots.entries('conversation.input.dock')[0]!
     const injected = (entry.inject as unknown as () => {
-      focusDocument: (sessionId: SessionId, document: DetailsDocumentFocus) => void
       openReference: (sessionId: SessionId, path: string, title?: string) => void
     })()
     const sessionId = 'receiving-session' as SessionId
-    const document = { path: 'brief.html', filename: 'brief.html', from: 'Alice' }
-    const focus = vi.fn()
     const openFile = vi.fn()
     try {
-      expect(() => { injected.focusDocument(sessionId, document) }).not.toThrow()
-      const disposeProvider = ctx.reflect.provide('detailsFocus', { focus })
-      injected.focusDocument(sessionId, document)
-      expect(focus).toHaveBeenCalledWith(sessionId, document)
-
-      await disposeProvider()
-      injected.focusDocument(sessionId, document)
-      expect(focus).toHaveBeenCalledTimes(1)
-
       byId[sessionId] = { cwd: '/bound-workspace' }
       const disposeSidebar = ctx.reflect.provide('betterSidebar', {
         openFile, getTab: () => ({ id: 'editor' }),
