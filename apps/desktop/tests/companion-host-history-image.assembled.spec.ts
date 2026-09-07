@@ -57,12 +57,16 @@ beforeAll(async () => {
 }, 120_000)
 
 afterEach(async () => {
-  try {
-    for (const cleanup of cleanups.splice(0).reverse()) await cleanup()
-    for (const uninstall of uninstalls.splice(0).reverse()) uninstall()
-  } finally {
-    await stopShippedWebHosts(children, homes)
+  const errors: unknown[] = []
+  for (const cleanup of cleanups.splice(0).reverse()) {
+    try { await cleanup() } catch (error) { errors.push(error) }
   }
+  for (const uninstall of uninstalls.splice(0).reverse()) {
+    try { uninstall() } catch (error) { errors.push(error) }
+  }
+  try { await stopShippedWebHosts(children, homes) } catch (error) { errors.push(error) }
+  if (errors.length === 1) throw errors[0]
+  if (errors.length > 1) throw new AggregateError(errors, 'history image fixture teardown failed')
 })
 
 describe('assembled Desktop Companion history image on shipped dsh web', () => {
@@ -111,6 +115,11 @@ describe('assembled Desktop Companion history image on shipped dsh web', () => {
       new FileDesktopCompanionOperationStore(join(first.home, 'companion-history-image-operations.json')),
     ))
     const channels = await snowProductChannels()
+    cleanups.push(async () => {
+      channels.mobile.dispose()
+      channels.desktop.dispose()
+      channels.attachmentKey.fill(0)
+    })
     const runtime = connectedRuntime()
     const connection = new MobileSnowCompanionConnection()
     connection.connect({
