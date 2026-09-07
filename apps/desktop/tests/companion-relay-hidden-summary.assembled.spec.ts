@@ -1,6 +1,7 @@
 /** Hidden Session summary projection through the production Desktop Relay owner. */
 
 import { readFileSync } from 'node:fs'
+import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { createServer, type Server } from 'node:http'
@@ -23,7 +24,8 @@ import {
 } from '../src/companion-operation-ledger.ts'
 import { DesktopSnowRelayChannelOwner } from '../src/remote-relay.ts'
 import {
-  bootstrapDesktopHostCookie, createDesktopHostRpc, createDesktopHostSession, promptDesktopHostSession,
+  archiveDesktopHostSession, bootstrapDesktopHostCookie, createDesktopHostRpc,
+  createDesktopHostSession, createDesktopHostSessionRequest, createDesktopHostWorkspace, promptDesktopHostSession,
 } from '../src/host-rpc.ts'
 import type { RunningWebHost } from '../src/spawn-web-host.ts'
 import {
@@ -80,10 +82,13 @@ describe('assembled Desktop Relay hidden Session summary on shipped dsh web', ()
       responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
       cookieHeader: cookie,
     })
+    const primaryPath = join(first.home, 'primary-workspace')
+    await mkdir(primaryPath)
+    const primaryWorkspaceId = workspaceIdFromCreate(await createDesktopHostWorkspace(rpc, primaryPath))
     const sessionId = parseCompanionSessionId('desktop-relay-live-session')
-    await expect(createDesktopHostSession(rpc, sessionId)).resolves.toMatchObject({
-      ok: true, value: { sessionId },
-    })
+    await expect(createDesktopHostSessionRequest(rpc, {
+      sessionId, workspaceId: primaryWorkspaceId,
+    })).resolves.toMatchObject({ ok: true, value: { sessionId } })
     const owner = new DesktopCompanionProductOwner({
       timeoutMs: 15_000,
       responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
@@ -404,6 +409,31 @@ describe('assembled Desktop Relay hidden Session summary on shipped dsh web', ()
     expect(surface.getSnapshot().conversations[hiddenId as SessionId]).toBeUndefined()
     expect(observedConversationEvidence(surface, observedId)).toEqual(observedNodes)
     expect(surface.getSnapshot().operationFailure).toBeUndefined()
+
+    const secondaryPath = join(first.home, 'secondary-workspace')
+    await mkdir(secondaryPath)
+    const secondaryCreated = await createDesktopHostWorkspace(rpc, secondaryPath)
+    const secondaryWorkspaceId = workspaceIdFromCreate(secondaryCreated)
+    const secondarySessionId = parseCompanionSessionId('desktop-secondary-workspace-session')
+    await expect(createDesktopHostSessionRequest(rpc, {
+      sessionId: secondarySessionId, workspaceId: secondaryWorkspaceId,
+    })).resolves.toMatchObject({ ok: true })
+    await expect.poll(() => surface.getSnapshot().workspaces.map(workspace => workspace.workspaceId))
+      .toEqual([secondaryWorkspaceId, primaryWorkspaceId])
+    await expect(workspaceMutation(rpc, 'workspace/insertBefore', {
+      workspaceId: primaryWorkspaceId, beforeWorkspaceId: secondaryWorkspaceId,
+    })).resolves.toMatchObject({ ok: true })
+    await expect.poll(() => surface.getSnapshot().workspaces.map(workspace => workspace.workspaceId))
+      .toEqual([primaryWorkspaceId, secondaryWorkspaceId])
+    await expect(workspaceMutation(rpc, 'workspace/delete', {
+      workspaceId: secondaryWorkspaceId,
+    })).resolves.toMatchObject({ ok: true })
+    await expect.poll(() => surface.getSnapshot().workspaces.map(workspace => workspace.workspaceId))
+      .toEqual([primaryWorkspaceId])
+    await expect(archiveDesktopHostSession(rpc, sessionId)).resolves.toMatchObject({ ok: true })
+    await expect.poll(() => surface.getSnapshot().sessions.ids.includes(observedId)).toBe(false)
+    expect(surface.getSnapshot().conversations[observedId]).toBeUndefined()
+    expect(surface.getSnapshot().operationFailure).toBeUndefined()
     await drainTransport()
   }, 180_000)
 
@@ -460,6 +490,22 @@ async function startControlledStreamingLlm(apiKey: string): Promise<{
     baseUrl: `http://127.0.0.1:${String(address.port)}`,
     close: () => new Promise<void>((resolve) => { server.close(() => resolve()) }),
   }
+}
+
+function workspaceIdFromCreate(result: Awaited<ReturnType<typeof createDesktopHostWorkspace>>): string {
+  if (!result.ok || !isRecord(result.value) || !isRecord(result.value.workspace)
+    || typeof result.value.workspace.workspaceId !== 'string') {
+    throw new Error(`Workspace create failed: ${JSON.stringify(result)}`)
+  }
+  return result.value.workspace.workspaceId
+}
+
+async function workspaceMutation(
+  rpc: ReturnType<typeof createDesktopHostRpc>,
+  method: 'workspace/delete' | 'workspace/insertBefore',
+  request: Record<string, string>,
+) {
+  return await rpc.call(method, { args: { request } })
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
