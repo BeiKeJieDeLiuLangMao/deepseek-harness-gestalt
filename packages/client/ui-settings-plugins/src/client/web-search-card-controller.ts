@@ -279,6 +279,7 @@ export interface WebSearchShellFace extends CardActions {
   /** Write `backend` so the next search reads this provider. */
   selectProvider: (id: string) => Promise<void>
   /** Probe the selected provider through `settings.testWebSearch`. */
+  testSearch: () => Promise<WebSearchProbe>
 }
 
 /** Outcome of one Plugins-card search probe. */
